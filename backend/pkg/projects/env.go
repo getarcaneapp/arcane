@@ -18,6 +18,7 @@ import (
 	"github.com/compose-spec/compose-go/v2/consts"
 	"github.com/compose-spec/compose-go/v2/dotenv"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
 	"github.com/samber/hot"
 	"go.getarcane.app/acfs"
 )
@@ -128,9 +129,12 @@ func (l *EnvLoader) LoadEnvironment(ctx context.Context) (envMap EnvMap, injecti
 	} else {
 		projectEnvPath := filepath.Join(l.workdir, EffectiveEnvFileName)
 		if err := l.loadAndMergeProjectEnv(ctx, projectEnvPath, envMap, injectionVars); err != nil {
-			if errors.Is(err, os.ErrNotExist) {
+			switch {
+			case errors.Is(err, os.ErrNotExist):
 				slog.DebugContext(ctx, "Project .env file does not exist", "path", projectEnvPath)
-			} else {
+			case errors.Is(err, os.ErrPermission):
+				return envMap, injectionVars, common.Classify(common.ErrProjectEnvUnreadable, errors.WrapIff(err, "%s is not readable by the runtime user (uid %d, gid %d); fix its ownership/read permission or set PUID/PGID to a user that can read it", projectEnvPath, os.Geteuid(), os.Getegid()))
+			default:
 				slog.WarnContext(ctx, "Failed to load project env", "path", projectEnvPath, "error", err)
 			}
 		}
@@ -273,7 +277,15 @@ func validEnvFileCacheEntryInternal(entry envFileCacheEntry) bool {
 	if info.IsDir() {
 		return false
 	}
-	return entry.exists && info.ModTime().Equal(entry.mtime)
+	if !entry.exists || !info.ModTime().Equal(entry.mtime) {
+		return false
+	}
+	// A chmod does not bump mtime, so confirm the file is still readable.
+	file, err := os.Open(entry.path)
+	if err != nil {
+		return false
+	}
+	return file.Close() == nil
 }
 
 func parseProjectEnvFileExistingInternal(path string, contextEnv EnvMap) (EnvMap, error) {
@@ -570,6 +582,40 @@ func BuildOverrideEnvContent(gitContent, effectiveContent string) (string, error
 	return formatEnvMapInternal(override), nil
 }
 
+// CheckProjectEnvAccess reports a configuration error when the runtime user
+// lacks permission to open dir's .env or traverse its path.
+func CheckProjectEnvAccess(ctx context.Context, projectsDir, dir string) *projecttypes.ConfigurationError {
+	envPath := filepath.Join(dir, EffectiveEnvFileName)
+	file, err := os.Open(envPath)
+	if err == nil {
+		if closeErr := file.Close(); closeErr != nil {
+			slog.WarnContext(ctx, "failed to close project env access probe", "path", envPath, "error", closeErr)
+		}
+		return nil
+	}
+	if !errors.Is(err, os.ErrPermission) {
+		return nil
+	}
+
+	disabled := false
+	if strings.TrimSpace(projectsDir) != "" {
+		globalEnv, globalErr := ParseProjectEnvFile(filepath.Join(projectsDir, GlobalEnvFileName), make(EnvMap))
+		if globalErr != nil {
+			slog.DebugContext(ctx, "Failed to read global env while checking project env access", "path", projectsDir, "error", globalErr)
+		} else {
+			disabled = parseComposeBoolInternal(globalEnv, consts.ComposeDisableDefaultEnvFile)
+		}
+	}
+
+	return &projecttypes.ConfigurationError{
+		Code:             common.ConfigurationErrorCodeEnvFileUnreadable,
+		Path:             envPath,
+		UID:              os.Geteuid(),
+		GID:              os.Getegid(),
+		BlocksOperations: !disabled,
+	}
+}
+
 func ReadProjectEnvState(projectPath string) (ProjectEnvState, error) {
 	effectiveContent, hasEffective, effectiveUnreadable, err := readOptionalProjectFileInternal(projectPath, EffectiveEnvFileName)
 	if err != nil {
@@ -820,8 +866,12 @@ func ComposeFileEnvSelection(ctx context.Context, projectsDir, dir string) ([]st
 	// COMPOSE_DISABLE_ENV_FILE skips the project .env; it is read only from the
 	// sources merged so far (.env.global), matching LoadEnvironment.
 	if !parseComposeBoolInternal(envMap, consts.ComposeDisableDefaultEnvFile) {
-		projectEnv, err := ParseProjectEnvFile(filepath.Join(dir, EffectiveEnvFileName), envMap)
+		projectEnvPath := filepath.Join(dir, EffectiveEnvFileName)
+		projectEnv, err := ParseProjectEnvFile(projectEnvPath, envMap)
 		if err != nil {
+			if errors.Is(err, os.ErrPermission) {
+				return nil, common.Classify(common.ErrProjectEnvUnreadable, errors.WrapIff(err, "%s is not readable by the runtime user (uid %d, gid %d); fix its ownership/read permission or set PUID/PGID to a user that can read it", projectEnvPath, os.Geteuid(), os.Getegid()))
+			}
 			return nil, err
 		}
 		maps.Copy(envMap, projectEnv)

@@ -606,7 +606,7 @@ func (h *ProjectHandler) DownProject(ctx context.Context, input *DownProjectInpu
 	if err := h.projectService.DownProject(downCtx, input.ProjectID, *user); err != nil {
 		activitylib.FlushWriter(activityWriter)
 		activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Project stopped", err)
-		if errors.Is(err, common.ErrProjectArchived) {
+		if errors.Is(err, common.ErrProjectArchived) || errors.Is(err, common.ErrProjectEnvUnreadable) {
 			return nil, huma.Error400BadRequest(err.Error())
 		}
 		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to bring down project").Error())
@@ -1198,7 +1198,7 @@ func projectWorkspaceHTTPErrorInternal(err error) error {
 		return huma.Error403Forbidden(err.Error())
 	case errors.Is(err, common.ErrProjectWorkspaceNotFound), errors.Is(err, common.ErrProjectNotFound):
 		return huma.Error404NotFound(err.Error())
-	case errors.Is(err, common.ErrProjectWorkspaceBadRequest):
+	case errors.Is(err, common.ErrProjectWorkspaceBadRequest), errors.Is(err, common.ErrProjectEnvUnreadable):
 		return huma.Error400BadRequest(err.Error())
 	default:
 		return huma.Error500InternalServerError("internal error")

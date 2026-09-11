@@ -6,7 +6,7 @@
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
 	import ContainerActionMenuItem from '#lib/components/arcane-table/cells/container-action-menu-item.svelte';
-	import { BoxIcon, EditIcon, StartIcon, RestartIcon, StopIcon, TrashIcon, RedeployIcon } from '#lib/icons/index.js';
+	import { AlertIcon, BoxIcon, EditIcon, StartIcon, RestartIcon, StopIcon, TrashIcon, RedeployIcon } from '#lib/icons/index.js';
 	import { goto } from '$app/navigation';
 	import { mode } from 'mode-watcher';
 	import { toast } from 'svelte-sonner';
@@ -124,7 +124,16 @@
 		return response.tags;
 	}
 
+	function getConfigurationErrorMessage(project: Project): string | undefined {
+		const configurationError = project.configurationError;
+		if (!configurationError) return undefined;
+		const params = { path: configurationError.path, uid: configurationError.uid, gid: configurationError.gid };
+		return configurationError.blocksOperations ? m.env_file_unreadable_blocked(params) : m.env_file_unreadable_ignored(params);
+	}
+
 	function getStatusTooltip(project: Project): string | undefined {
+		const configurationMessage = getConfigurationErrorMessage(project);
+		if (configurationMessage) return configurationMessage;
 		return project.status.toLowerCase() === 'unknown' && project.statusReason ? project.statusReason : undefined;
 	}
 
@@ -166,6 +175,9 @@
 		project.status === 'deploying' ||
 		project.status === 'restarting';
 	const hasRunningSelection = $derived.by(() => selectedProjects.some((project) => isProjectArchiveBlocked(project)));
+	const hasConfigurationBlockedSelection = $derived.by(() =>
+		selectedProjects.some((project) => project.configurationError?.blocksOperations)
+	);
 
 	const columns = $derived.by(
 		() =>
@@ -213,8 +225,12 @@
 			action: 'up',
 			onClick: handleBulkUp,
 			loading: isBulkLoading.up,
-			disabled: !canDeployProject || isAnyLoading || hasArchivedSelection,
-			disabledReason: hasArchivedSelection ? m.projects_archived_badge() : undefined,
+			disabled: !canDeployProject || isAnyLoading || hasArchivedSelection || hasConfigurationBlockedSelection,
+			disabledReason: hasConfigurationBlockedSelection
+				? m.env_file_unreadable_title()
+				: hasArchivedSelection
+					? m.projects_archived_badge()
+					: undefined,
 			icon: StartIcon
 		},
 		{
@@ -223,8 +239,12 @@
 			action: 'down',
 			onClick: handleBulkDown,
 			loading: isBulkLoading.down,
-			disabled: !canDownProject || isAnyLoading || hasArchivedSelection,
-			disabledReason: hasArchivedSelection ? m.projects_archived_badge() : undefined,
+			disabled: !canDownProject || isAnyLoading || hasArchivedSelection || hasConfigurationBlockedSelection,
+			disabledReason: hasConfigurationBlockedSelection
+				? m.env_file_unreadable_title()
+				: hasArchivedSelection
+					? m.projects_archived_badge()
+					: undefined,
 			icon: StopIcon
 		},
 		{
@@ -233,12 +253,19 @@
 			action: 'redeploy',
 			onClick: handleBulkRedeploy,
 			loading: isBulkLoading.redeploy,
-			disabled: !canDeployProject || isAnyLoading || hasRedeployDisabledSelection || hasArchivedSelection,
-			disabledReason: hasArchivedSelection
-				? m.projects_archived_badge()
-				: hasRedeployDisabledSelection
-					? m.common_redeploy_disabled_arcane_self()
-					: undefined,
+			disabled:
+				!canDeployProject ||
+				isAnyLoading ||
+				hasRedeployDisabledSelection ||
+				hasArchivedSelection ||
+				hasConfigurationBlockedSelection,
+			disabledReason: hasConfigurationBlockedSelection
+				? m.env_file_unreadable_title()
+				: hasArchivedSelection
+					? m.projects_archived_badge()
+					: hasRedeployDisabledSelection
+						? m.common_redeploy_disabled_arcane_self()
+						: undefined,
 			icon: RedeployIcon
 		},
 		{
@@ -313,7 +340,12 @@
 	{#if statusTooltip}
 		<ArcaneTooltip.Root>
 			<ArcaneTooltip.Trigger>
-				<Badge variant={getStatusVariant(item.status)} minWidth="20">{capitalizeFirstLetter(item.status)}</Badge>
+				<span class="inline-flex items-center gap-1.5">
+					<Badge variant={getStatusVariant(item.status)} minWidth="20">{capitalizeFirstLetter(item.status)}</Badge>
+					{#if item.configurationError}
+						<AlertIcon class="size-4 text-amber-500" aria-label={m.env_file_unreadable_title()} />
+					{/if}
+				</span>
 			</ArcaneTooltip.Trigger>
 			<ArcaneTooltip.Content>
 				<p class="max-w-xs text-xs">{statusTooltip}</p>
@@ -329,7 +361,7 @@
 		updateInfo={item.updateInfo}
 		onCheck={() => handleCheckProjectUpdates(item)}
 		checking={!!checkingProjectIds[item.id]}
-		disabled={!!item.isArchived}
+		disabled={!!item.isArchived || !!item.configurationError?.blocksOperations}
 		class="mr-2"
 	/>
 {/snippet}
@@ -430,8 +462,13 @@
 
 {#snippet RowActions({ item }: { item: Project })}
 	{@const status = actionStatus[item.id]}
-	{@const lifecycleDisabled = item.isArchived || isAnyLoading}
-	{@const archivedTitle = item.isArchived ? m.projects_archived_badge() : undefined}
+	{@const configurationBlocked = !!item.configurationError?.blocksOperations}
+	{@const lifecycleDisabled = item.isArchived || isAnyLoading || configurationBlocked}
+	{@const archivedTitle = configurationBlocked
+		? m.env_file_unreadable_title()
+		: item.isArchived
+			? m.projects_archived_badge()
+			: undefined}
 	<RowActionsMenu>
 		<DropdownMenu.Item onclick={() => goto(`/projects/${item.id}`)} disabled={isAnyLoading}>
 			<EditIcon class="size-4" />

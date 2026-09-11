@@ -113,6 +113,14 @@ func validComposeCacheEntryInternal(mtimes map[string]time.Time) bool {
 		if mtime.IsZero() || !info.ModTime().Equal(mtime) {
 			return false
 		}
+		// A chmod does not bump mtime, so confirm the file is still readable.
+		file, err := os.Open(path)
+		if err != nil {
+			return false
+		}
+		if err := file.Close(); err != nil {
+			return false
+		}
 	}
 	return true
 }

@@ -8,10 +8,12 @@ import (
 	"log/slog"
 	"maps"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"emperror.dev/errors"
+	composeapi "github.com/docker/compose/v5/pkg/api"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
 	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
@@ -58,18 +60,87 @@ func groupComposeContainersByProjectInternal(containers []container.Summary) map
 	return containersByProject
 }
 
-// lookupProjectContainers returns containers matched to a project, trying the
-// normalized directory name first and falling back to the effective compose
-// project name (from COMPOSE_PROJECT_NAME) when it differs.
-func lookupProjectContainers(p Project, containersByProject map[string][]container.Summary) []container.Summary {
+// lookupProjectContainersInternal matches project names first, then the working
+// directory if it identifies exactly one Compose project group.
+func lookupProjectContainersInternal(p Project, containersByProject map[string][]container.Summary) []container.Summary {
 	normName := projects.NormalizeProjectName(p.Name)
 	if c := containersByProject[normName]; len(c) > 0 {
 		return c
 	}
 	if p.ComposeProjectName != nil && *p.ComposeProjectName != normName {
-		return containersByProject[*p.ComposeProjectName]
+		if c := containersByProject[*p.ComposeProjectName]; len(c) > 0 {
+			return c
+		}
 	}
-	return nil
+	if p.Path == "" {
+		return nil
+	}
+	projectPath := filepath.Clean(p.Path)
+	var matched []container.Summary
+	var matchedProjectName string
+	for projectName, containers := range containersByProject {
+		for _, c := range containers {
+			workingDir := c.Labels[composeapi.WorkingDirLabel]
+			if workingDir != "" && filepath.Clean(workingDir) == projectPath {
+				if matched != nil && matchedProjectName != projectName {
+					return nil
+				}
+				matchedProjectName = projectName
+				matched = append(matched, c)
+			}
+		}
+	}
+	return matched
+}
+
+func projectServiceInfoFromContainerInternal(ctx context.Context, c container.Summary, meta projects.ArcaneComposeMetadata, currentContainerID string, currentContainerErr error) ProjectServiceInfo {
+	svcName := dockerutil.ComposeServiceLabel(c.Labels)
+
+	var health *string
+	statusLower := strings.ToLower(c.Status)
+	switch {
+	case strings.Contains(statusLower, "(healthy)"):
+		health = new("healthy")
+	case strings.Contains(statusLower, "(unhealthy)"):
+		health = new("unhealthy")
+	case strings.Contains(statusLower, "(starting)"):
+		health = new("starting")
+	}
+
+	resolvedIcon := iconcatalog.Resolve(IconCatalogForContext(ctx), iconcatalog.FirstNonEmpty(
+		projects.FindArcaneIconSet(c.Labels),
+		meta.ServiceIconSets[svcName],
+		meta.ProjectIcon,
+	))
+	return ProjectServiceInfo{
+		Name:             svcName,
+		Image:            c.Image,
+		Status:           string(c.State),
+		ContainerID:      c.ID,
+		ContainerName:    dockerutil.ContainerNameFromNames(c.Names),
+		Ports:            projects.FormatDockerPorts(c.Ports),
+		Health:           health,
+		IconLightURL:     resolvedIcon.IconLightURL,
+		IconDarkURL:      resolvedIcon.IconDarkURL,
+		Labels:           c.Labels,
+		RedeployDisabled: labels.ShouldDisableArcaneServerRedeploy(c.Labels, c.ID, currentContainerID, currentContainerErr),
+	}
+}
+
+// projectServicesFromContainersInternal derives runtime services from labeled
+// containers for projects whose Compose file cannot be loaded.
+func (s *ProjectService) projectServicesFromContainersInternal(ctx context.Context, proj *Project, meta projects.ArcaneComposeMetadata) ([]ProjectServiceInfo, error) {
+	containers, err := s.listGlobalComposeContainersInternal(ctx)
+	if err != nil {
+		return nil, err
+	}
+	matched := lookupProjectContainersInternal(*proj, groupComposeContainersByProjectInternal(containers))
+	currentContainerID, currentContainerErr := cgroup.CurrentContainerID()
+	services := make([]ProjectServiceInfo, 0, len(matched))
+	for _, c := range matched {
+		services = append(services, projectServiceInfoFromContainerInternal(ctx, c, meta, currentContainerID, currentContainerErr))
+	}
+	return services, nil
 }
 
 func (s *ProjectService) ListAllProjects(ctx context.Context) ([]Project, error) {
@@ -156,7 +227,7 @@ func (s *ProjectService) GetProjectStatusCounts(ctx context.Context) (folderCoun
 
 	// 3. Calculate status for each project
 	for _, p := range activeProjects {
-		projectContainers := lookupProjectContainers(p, containersByProject)
+		projectContainers := lookupProjectContainersInternal(p, containersByProject)
 
 		// Convert to ProjectServiceInfo (minimal needed for calculateProjectStatus)
 		var services []ProjectServiceInfo
@@ -785,7 +856,7 @@ func (s *ProjectService) CountProjectsWithPendingUpdates(ctx context.Context, al
 	containersByProject := groupComposeContainersByProjectInternal(allContainers)
 	for i, proj := range activeProjects {
 		details[i].ID = proj.ID
-		for _, c := range lookupProjectContainers(proj, containersByProject) {
+		for _, c := range lookupProjectContainersInternal(proj, containersByProject) {
 			details[i].RuntimeServices = append(details[i].RuntimeServices, project.RuntimeService{Name: dockerutil.ComposeServiceLabel(c.Labels), ContainerID: c.ID, Image: c.Image, ContainerLabels: c.Labels})
 		}
 	}
@@ -869,6 +940,7 @@ func (s *ProjectService) fetchProjectStatusConcurrently(ctx context.Context, pro
 			results[i].HasBuildDirective = p.BuildImageRefsJSON != nil && len(projects.ParseImageRefsJSON(*p.BuildImageRefsJSON)) > 0
 			applyResolvedProjectIconInternal(&results[i], iconcatalog.Resolve(IconCatalogForContext(ctx), metas[i].ProjectIcon))
 			results[i].URLs = metas[i].ProjectURLS
+			results[i].ConfigurationError = projects.CheckProjectEnvAccess(ctx, projectsDir, p.Path)
 			results[i].Status = string(ProjectStatusUnknown)
 		}
 		return results
@@ -919,52 +991,18 @@ func (s *ProjectService) mapProjectToDto(ctx context.Context, projectsDir string
 	resp.HasBuildDirective = p.BuildImageRefsJSON != nil && len(projects.ParseImageRefsJSON(*p.BuildImageRefsJSON)) > 0
 	applyResolvedProjectIconInternal(&resp, iconcatalog.Resolve(IconCatalogForContext(ctx), meta.ProjectIcon))
 	resp.URLs = meta.ProjectURLS
+	resp.ConfigurationError = projects.CheckProjectEnvAccess(ctx, projectsDir, p.Path)
 
-	projectContainers := lookupProjectContainers(p, containersByProject)
+	projectContainers := lookupProjectContainersInternal(p, containersByProject)
 
 	services := make([]ProjectServiceInfo, 0, len(projectContainers))
 
 	for _, c := range projectContainers {
-		svcName := dockerutil.ComposeServiceLabel(c.Labels)
-		state := c.State // "running", "exited", etc.
-
-		// Parse health from Status string if possible
-		var health *string
-		statusLower := strings.ToLower(c.Status)
-		switch {
-		case strings.Contains(statusLower, "(healthy)"):
-			health = new("healthy")
-		case strings.Contains(statusLower, "(unhealthy)"):
-			health = new("unhealthy")
-		case strings.Contains(statusLower, "(starting)"):
-			health = new("starting")
-		}
-
-		containerName := dockerutil.ContainerNameFromNames(c.Names)
-
-		redeployDisabled := labels.ShouldDisableArcaneServerRedeploy(c.Labels, c.ID, currentContainerID, currentContainerErr)
-		if redeployDisabled {
+		service := projectServiceInfoFromContainerInternal(ctx, c, meta, currentContainerID, currentContainerErr)
+		if service.RedeployDisabled {
 			resp.RedeployDisabled = true
 		}
-
-		resolvedIcon := iconcatalog.Resolve(IconCatalogForContext(ctx), iconcatalog.FirstNonEmpty(
-			projects.FindArcaneIconSet(c.Labels),
-			meta.ServiceIconSets[svcName],
-			meta.ProjectIcon,
-		))
-		services = append(services, ProjectServiceInfo{
-			Name:             svcName,
-			Image:            c.Image,
-			Status:           string(state),
-			ContainerID:      c.ID,
-			ContainerName:    containerName,
-			Ports:            projects.FormatDockerPorts(c.Ports),
-			Health:           health,
-			IconLightURL:     resolvedIcon.IconLightURL,
-			IconDarkURL:      resolvedIcon.IconDarkURL,
-			Labels:           c.Labels,
-			RedeployDisabled: redeployDisabled,
-		})
+		services = append(services, service)
 	}
 	_, runningCount := getServiceCounts(services)
 

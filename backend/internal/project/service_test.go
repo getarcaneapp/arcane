@@ -4149,7 +4149,7 @@ func TestProjectService_MapProjectToDto_SetsRedeployDisabledFromRuntimeServices(
 	projectPath := filepath.Join(t.TempDir(), "arcane")
 	now := time.Now()
 	proj := Project{
-		Name:         "arcane",
+		Name:         "arcane-directory",
 		Path:         projectPath,
 		ServiceCount: 1,
 		ID:           "project-arcane",
@@ -4227,6 +4227,7 @@ func TestProjectService_MapProjectToDto_SetsRedeployDisabledFromRuntimeServices(
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			service := &ProjectService{}
+			tt.labels[composeapi.WorkingDirLabel] = projectPath
 			details := service.mapProjectToDto(context.Background(), filepath.Dir(projectPath), proj, map[string][]container.Summary{
 				"arcane": {
 					{
@@ -4237,11 +4238,20 @@ func TestProjectService_MapProjectToDto_SetsRedeployDisabledFromRuntimeServices(
 						Names:  []string{"/arcane-server"},
 						Labels: tt.labels,
 					},
+					{
+						ID: "unrelated-container",
+						Labels: map[string]string{
+							composeapi.ProjectLabel:    "arcane",
+							composeapi.WorkingDirLabel: filepath.Join(filepath.Dir(projectPath), "unrelated"),
+							composeapi.ServiceLabel:    "other",
+						},
+					},
 				},
 			}, tt.currentContainerID, tt.currentErr, projects.ArcaneComposeMetadata{})
 
 			require.Equal(t, tt.wantProject, details.RedeployDisabled)
 			require.Len(t, details.RuntimeServices, 1)
+			require.Equal(t, tt.containerID, details.RuntimeServices[0].ContainerID)
 			require.Equal(t, tt.wantService, details.RuntimeServices[0].RedeployDisabled)
 		})
 	}

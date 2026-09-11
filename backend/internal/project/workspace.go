@@ -156,6 +156,9 @@ func (s *ProjectService) UpdateProjectWorkspace(ctx context.Context, projectID s
 	if err != nil {
 		return nil, err
 	}
+	if err := ensureProjectEnvReadableInternal(ctx, projectsDirectory, proj.Path); err != nil {
+		return nil, err
+	}
 	backup, cleanup, err := s.prepareProjectWorkspaceBackupInternal(ctx, projectsDirectory, proj.Path, manifest.FileChanges)
 	if err != nil {
 		return nil, err

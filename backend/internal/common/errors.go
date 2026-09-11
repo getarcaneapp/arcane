@@ -18,6 +18,10 @@ const (
 	ErrUnavailable  = errors.Sentinel("kind: service unavailable")
 )
 
+// ConfigurationErrorCodeEnvFileUnreadable is the ConfigurationError code reported
+// alongside ErrProjectEnvUnreadable.
+const ConfigurationErrorCodeEnvFileUnreadable = "env_file_unreadable"
+
 type classified struct {
 	kind error
 	err  error
@@ -114,6 +118,7 @@ var (
 	ErrProjectComposeFileNotFound              = Classify(ErrNotFound, errors.Sentinel("Project compose file not found"))
 	ErrComposeFileNotFound                     = Classify(ErrNotFound, errors.Sentinel("no compose file found"))
 	ErrComposeFileEnvInvalid                   = Classify(ErrValidation, errors.Sentinel("invalid COMPOSE_FILE selection"))
+	ErrProjectEnvUnreadable                    = Classify(ErrValidation, errors.Sentinel("project env file is not readable"))
 	ErrEnvironmentInvalidProxyTarget           = Classify(ErrBadRequest, errors.Sentinel("Invalid proxy target URL"))
 	ErrEnvironmentConnectionTestFailed         = Classify(ErrBadRequest, errors.Sentinel("Environment connection test failed"))
 	ErrUnsafeRemoteURL                         = Classify(ErrBadRequest, errors.Sentinel("Remote URL is not allowed"))

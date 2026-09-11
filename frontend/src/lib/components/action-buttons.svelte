@@ -60,6 +60,8 @@
 		refreshLoading = $bindable(false),
 		hasBuildDirective = false,
 		disableRedeploy = false,
+		disabled = false,
+		disabledReason,
 		onRefresh,
 		beforeRemoveActions,
 		beforeRemoveMenuItems
@@ -79,6 +81,8 @@
 		refreshLoading?: boolean;
 		hasBuildDirective?: boolean;
 		disableRedeploy?: boolean;
+		disabled?: boolean;
+		disabledReason?: string;
 		onRefresh?: () => void | Promise<void>;
 		beforeRemoveActions?: Snippet<[ArcaneButtonSize, boolean, boolean]>;
 		beforeRemoveMenuItems?: Snippet<[boolean]>;
@@ -550,7 +554,9 @@
 
 {#snippet RedeployActionButton(size: 'default' | 'icon' = 'default', showLabel = true)}
 	{#if canRedeploy}
-		{#if disableRedeploy}
+		{#if disabled}
+			<ArcaneButton action="redeploy" {size} {showLabel} disabled title={disabledReason} />
+		{:else if disableRedeploy}
 			<span class="inline-flex" title={m.common_redeploy_disabled_arcane_self()}>
 				<ArcaneButton action="redeploy" {size} {showLabel} disabled />
 			</span>
@@ -560,20 +566,34 @@
 					action="redeploy"
 					{size}
 					{showLabel}
+					{disabled}
+					title={disabledReason}
 					onclick={() => confirmAction('redeploy')}
 					loading={uiLoading.redeploy}
 				/>
-				{@render WatchDropdown(() => confirmRedeploy(true), !!uiLoading.redeploy, size, true)}
+				{@render WatchDropdown(() => confirmRedeploy(true), disabled || !!uiLoading.redeploy, size, true)}
 			</ButtonGroup.Root>
 		{:else}
-			<ArcaneButton action="redeploy" {size} {showLabel} onclick={() => confirmAction('redeploy')} loading={uiLoading.redeploy} />
+			<ArcaneButton
+				action="redeploy"
+				{size}
+				{showLabel}
+				{disabled}
+				title={disabledReason}
+				onclick={() => confirmAction('redeploy')}
+				loading={uiLoading.redeploy}
+			/>
 		{/if}
 	{/if}
 {/snippet}
 
 {#snippet RedeployMenuItem()}
 	{#if canRedeploy}
-		{#if disableRedeploy}
+		{#if disabled}
+			<DropdownMenu.Item disabled title={disabledReason}>
+				{m.common_redeploy()}
+			</DropdownMenu.Item>
+		{:else if disableRedeploy}
 			<DropdownMenu.Item disabled title={m.common_redeploy_disabled_arcane_self()}>
 				{m.common_redeploy()}
 			</DropdownMenu.Item>
@@ -588,11 +608,20 @@
 {#snippet DesktopActions(size: 'default' | 'icon', showLabel: boolean)}
 	{#if !isRunning && canStart}
 		{#if type === 'container'}
-			<ArcaneButton action="start" {size} {showLabel} onclick={() => handleStart()} loading={uiLoading.start} />
+			<ArcaneButton
+				action="start"
+				{size}
+				{showLabel}
+				{disabled}
+				title={disabledReason}
+				onclick={() => handleStart()}
+				loading={uiLoading.start}
+			/>
 		{:else}
 			<DeploySplitButton
 				{size}
 				{showLabel}
+				{disabled}
 				customLabel={deployButtonLabel}
 				onDeploy={() => handleDeploy()}
 				onDeployWatch={() => handleDeploy(undefined, true)}
@@ -607,13 +636,23 @@
 				action="stop"
 				{size}
 				{showLabel}
+				{disabled}
+				title={disabledReason}
 				customLabel={type === 'project' ? m.common_down() : undefined}
 				onclick={() => handleStop()}
 				loading={uiLoading.stop}
 			/>
 		{/if}
 		{#if canRestart}
-			<ArcaneButton action="restart" {size} {showLabel} onclick={() => handleRestart()} loading={uiLoading.restart} />
+			<ArcaneButton
+				action="restart"
+				{size}
+				{showLabel}
+				{disabled}
+				title={disabledReason}
+				onclick={() => handleRestart()}
+				loading={uiLoading.restart}
+			/>
 		{/if}
 	{/if}
 
@@ -628,13 +667,29 @@
 
 		{#if type === 'project'}
 			{#if projectHasBuildDirective && canBuild}
-				<ArcaneButton action="build" {size} {showLabel} onclick={() => handleProjectBuild()} loading={uiLoading.build} />
+				<ArcaneButton
+					action="build"
+					{size}
+					{showLabel}
+					{disabled}
+					title={disabledReason}
+					onclick={() => handleProjectBuild()}
+					loading={uiLoading.build}
+				/>
 			{/if}
 
 			{#if canPull}
 				<ButtonGroup.Root>
-					<ArcaneButton action="pull" {size} {showLabel} onclick={() => handleProjectPull()} loading={uiLoading.pull} />
-					{@render WatchDropdown(() => handleProjectPull(true), !!uiLoading.pull, size)}
+					<ArcaneButton
+						action="pull"
+						{size}
+						{showLabel}
+						{disabled}
+						title={disabledReason}
+						onclick={() => handleProjectPull()}
+						loading={uiLoading.pull}
+					/>
+					{@render WatchDropdown(() => handleProjectPull(true), disabled || !!uiLoading.pull, size)}
 				</ButtonGroup.Root>
 			{/if}
 		{/if}
@@ -670,22 +725,22 @@
 			<DropdownMenu.Group>
 				{#if !isRunning && canStart}
 					{#if type === 'container'}
-						<DropdownMenu.Item onclick={handleStart} disabled={uiLoading.start}>
+						<DropdownMenu.Item onclick={handleStart} disabled={disabled || uiLoading.start} title={disabledReason}>
 							{m.common_start()}
 						</DropdownMenu.Item>
 					{:else}
-						<DropdownMenu.Item onclick={() => handleDeploy()} disabled={uiLoading.start}>
+						<DropdownMenu.Item onclick={() => handleDeploy()} disabled={disabled || uiLoading.start} title={disabledReason}>
 							{deployButtonLabel}
 						</DropdownMenu.Item>
 					{/if}
 				{:else if isRunning}
 					{#if canStop}
-						<DropdownMenu.Item onclick={handleStop} disabled={uiLoading.stop}>
+						<DropdownMenu.Item onclick={handleStop} disabled={disabled || uiLoading.stop} title={disabledReason}>
 							{type === 'project' ? m.common_down() : m.common_stop()}
 						</DropdownMenu.Item>
 					{/if}
 					{#if canRestart}
-						<DropdownMenu.Item onclick={handleRestart} disabled={uiLoading.restart}>
+						<DropdownMenu.Item onclick={handleRestart} disabled={disabled || uiLoading.restart} title={disabledReason}>
 							{m.common_restart()}
 						</DropdownMenu.Item>
 					{/if}
@@ -710,12 +765,12 @@
 
 					{#if type === 'project'}
 						{#if projectHasBuildDirective && canBuild}
-							<DropdownMenu.Item onclick={handleProjectBuild} disabled={uiLoading.build}>
+							<DropdownMenu.Item onclick={handleProjectBuild} disabled={disabled || uiLoading.build} title={disabledReason}>
 								{m.build()}
 							</DropdownMenu.Item>
 						{/if}
 						{#if canPull}
-							<DropdownMenu.Item onclick={() => handleProjectPull()} disabled={uiLoading.pull}>
+							<DropdownMenu.Item onclick={() => handleProjectPull()} disabled={disabled || uiLoading.pull} title={disabledReason}>
 								{m.pull()}
 							</DropdownMenu.Item>
 						{/if}

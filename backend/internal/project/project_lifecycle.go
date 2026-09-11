@@ -236,6 +236,9 @@ func (s *ProjectService) DeployProject(ctx context.Context, projectID string, us
 	if err := ensureProjectMutableInternal(projectFromDb); err != nil {
 		return err
 	}
+	if _, err := s.ResolveProjectComposeFile(ctx, projectFromDb); err != nil {
+		return err
+	}
 
 	if err := s.updateProjectStatusInternal(ctx, projectID, ProjectStatusDeploying); err != nil {
 		return errors.WrapIf(err, "failed to update project status to deploying")
@@ -518,6 +521,10 @@ func (s *ProjectService) RedeployProject(ctx context.Context, projectID string, 
 		return err
 	}
 
+	if _, err := s.ResolveProjectComposeFile(ctx, proj); err != nil {
+		return err
+	}
+
 	disabled := s.projectRedeployDisabledInternal(ctx, *proj)
 	if disabled {
 		return errors.New("arcane cannot redeploy itself; use the system upgrade flow (Settings -> Updates) instead")
@@ -552,7 +559,7 @@ func (s *ProjectService) projectRedeployDisabledInternal(ctx context.Context, pr
 	containersByProject := groupComposeContainersByProjectInternal(containers)
 
 	currentContainerID, currentContainerErr := cgroup.CurrentContainerID()
-	for _, containerSummary := range lookupProjectContainers(proj, containersByProject) {
+	for _, containerSummary := range lookupProjectContainersInternal(proj, containersByProject) {
 		if labels.ShouldDisableArcaneServerRedeploy(containerSummary.Labels, containerSummary.ID, currentContainerID, currentContainerErr) {
 			return true
 		}
@@ -647,6 +654,9 @@ func (s *ProjectService) restoreProjectStatusAfterFailedDeployInternal(ctx conte
 func (s *ProjectService) RestartProject(ctx context.Context, projectID string, services []string, user common.User) error {
 	proj, err := s.getMutableProjectInternal(ctx, projectID)
 	if err != nil {
+		return err
+	}
+	if _, err := s.ResolveProjectComposeFile(ctx, proj); err != nil {
 		return err
 	}
 

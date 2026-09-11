@@ -584,6 +584,9 @@ func (s *ProjectService) ResolveProjectComposeFile(ctx context.Context, proj *Pr
 
 	composeFile, err := projects.DetectComposeFile(ctx, projectsDirectory, proj.Path)
 	if err != nil {
+		if errors.Is(err, common.ErrProjectEnvUnreadable) {
+			return "", err
+		}
 		return "", common.Classify(common.ErrProjectComposeFileNotFound, errors.WrapIf(err, "Project compose file not found"))
 	}
 
@@ -635,6 +638,10 @@ func (s *ProjectService) refreshComposeProjectNameInternal(ctx context.Context, 
 
 	meta, err := s.loadComposeMetadataForSyncInternal(ctx, proj.Path, dirName)
 	if err != nil {
+		if errors.Is(err, common.ErrProjectEnvUnreadable) {
+			slog.DebugContext(ctx, "skipped compose project name refresh; project env is unreadable", "projectID", proj.ID, "path", proj.Path, "error", err)
+			return
+		}
 		slog.WarnContext(ctx, "failed to refresh compose project name", "projectID", proj.ID, "path", proj.Path, "error", err)
 		return
 	}

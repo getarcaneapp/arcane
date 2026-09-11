@@ -105,6 +105,9 @@ func (s *ProjectService) GetProjectServices(ctx context.Context, projectID strin
 	}
 
 	composeProject, composeFileFullPath, derr := s.loadComposeProjectForProjectInternal(ctx, projectFromDb)
+	if errors.Is(derr, common.ErrProjectEnvUnreadable) {
+		return s.projectServicesFromContainersInternal(ctx, projectFromDb, s.ProjectMetadata(ctx, *projectFromDb, nil))
+	}
 	if derr != nil {
 		return []ProjectServiceInfo{}, errors.WrapIff(derr, "failed to load compose project in %s", projectFromDb.Path)
 	}
@@ -197,7 +200,18 @@ func (s *ProjectService) GetProjectContent(ctx context.Context, projectID string
 	}
 
 	composePath, composeErr := s.ResolveProjectComposeFile(ctx, proj)
-	if composeErr != nil && !errors.Is(composeErr, common.ErrProjectComposeFileNotFound) {
+	switch {
+	case composeErr == nil, errors.Is(composeErr, common.ErrProjectComposeFileNotFound):
+	case errors.Is(composeErr, common.ErrProjectEnvUnreadable):
+		projectsDirectory, dirErr := s.GetProjectsDirectory(ctx)
+		if dirErr != nil {
+			slog.DebugContext(ctx, "failed to resolve projects directory for compose identification", "projectID", proj.ID, "error", dirErr)
+		}
+		composePath, composeErr = projects.DetectComposeFile(ctx, projectsDirectory, proj.Path)
+		if composeErr != nil && (!errors.Is(composeErr, common.ErrProjectEnvUnreadable) || composePath == "") {
+			return "", "", "", errors.WrapIf(composeErr, "failed to identify project compose file")
+		}
+	default:
 		return "", "", "", composeErr
 	}
 
@@ -267,10 +281,15 @@ func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string
 	// configuration problem is diagnosable.
 	composeSelection, selErr := projects.ComposeFileEnvSelection(ctx, projectsDir, proj.Path)
 	if selErr != nil {
-		slog.WarnContext(ctx, "failed to resolve COMPOSE_FILE selection for project details", "projectID", proj.ID, "path", proj.Path, "error", selErr)
+		selLogLevel := slog.LevelWarn
+		if errors.Is(selErr, common.ErrProjectEnvUnreadable) {
+			selLogLevel = slog.LevelDebug
+		}
+		slog.Log(ctx, selLogLevel, "failed to resolve COMPOSE_FILE selection for project details", "projectID", proj.ID, "path", proj.Path, "error", selErr)
 		composeSelection = nil
 	}
 	resp.ComposeFiles = composeSelectionRelativePathsInternal(proj.Path, composeSelection)
+	resp.ConfigurationError = projects.CheckProjectEnvAccess(ctx, projectsDir, proj.Path)
 
 	if err := s.populateDetailsComposeContentInternal(ctx, proj, opts, composeSelection, &resp); err != nil {
 		return project.Details{}, err
@@ -818,6 +837,23 @@ func (s *ProjectService) enrichWithGitOpsInfo(ctx context.Context, proj *Project
 func (s *ProjectService) enrichComposeDetailsInternal(ctx context.Context, proj *Project, opts project.DetailsOptions, resp *project.Details) {
 	composeFile, err := s.ResolveProjectComposeFile(ctx, proj)
 	if err != nil {
+		if !errors.Is(err, common.ErrProjectEnvUnreadable) {
+			return
+		}
+		// The env is unreadable, so only the compose file's identity is known:
+		// name it for the UI and skip every enrichment that needs interpolation.
+		projectsDirectory, dirErr := s.GetProjectsDirectory(ctx)
+		if dirErr != nil {
+			slog.DebugContext(ctx, "failed to resolve projects directory for compose identification", "projectID", proj.ID, "error", dirErr)
+		}
+		identified, detectErr := projects.DetectComposeFile(ctx, projectsDirectory, proj.Path)
+		if detectErr != nil && (!errors.Is(detectErr, common.ErrProjectEnvUnreadable) || identified == "") {
+			slog.WarnContext(ctx, "failed to identify project compose file", "projectID", proj.ID, "error", detectErr)
+			return
+		}
+		if identified != "" {
+			resp.ComposeFileName = filepath.Base(identified)
+		}
 		return
 	}
 	resp.ComposeFileName = filepath.Base(composeFile)

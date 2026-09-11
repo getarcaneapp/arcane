@@ -224,6 +224,14 @@
 	const serverName = $derived(project?.name ?? '');
 	const serverComposeContent = $derived(project?.composeContent ?? '');
 	const serverEnvContent = $derived(project?.envContent ?? '');
+
+	const configurationError = $derived(project?.configurationError);
+	const composeActionsBlocked = $derived(!!configurationError?.blocksOperations);
+	const configurationErrorMessage = $derived.by(() => {
+		if (!configurationError) return undefined;
+		const params = { path: configurationError.path, uid: configurationError.uid, gid: configurationError.gid };
+		return configurationError.blocksOperations ? m.env_file_unreadable_blocked(params) : m.env_file_unreadable_ignored(params);
+	});
 	const serverOverrideContent = $derived(project?.overrideContent ?? '');
 	const serverIncludeFiles = $derived.by(() =>
 		Object.fromEntries(
@@ -260,7 +268,7 @@
 		effectiveName !== serverName ||
 			inputs.composeContent.value !== serverComposeContent ||
 			inputs.overrideContent.value !== serverOverrideContent ||
-			inputs.envContent.value !== serverEnvContent ||
+			(!configurationError && inputs.envContent.value !== serverEnvContent) ||
 			Object.entries(includeFilesState).some(([relativePath, content]) => content !== serverIncludeFiles[relativePath]) ||
 			projectWorkspaceChanges.length > 0 ||
 			changedProjectWorkspacePaths.length > 0
@@ -278,10 +286,10 @@
 			project?.status !== 'running' &&
 			project?.status !== 'partially running'
 	);
-	let canEditCompose = $derived(canUpdateProject && !project?.isArchived && !isGitOpsManaged);
+	let canEditCompose = $derived(canUpdateProject && !project?.isArchived && !isGitOpsManaged && !composeActionsBlocked);
 	// Override edits are blocked for GitOps-managed projects, mirroring canEditCompose.
-	let canEditOverride = $derived(canUpdateProject && !project?.isArchived && !isGitOpsManaged);
-	let canEditEnv = $derived(canUpdateProject && !project?.isArchived);
+	let canEditOverride = $derived(canUpdateProject && !project?.isArchived && !isGitOpsManaged && !composeActionsBlocked);
+	let canEditEnv = $derived(canUpdateProject && !project?.isArchived && !configurationError);
 	// GitOps-managed projects keep workspace editing for operator-owned files
 	// (secret env files, bind-mounted configs); the backend rejects and marks
 	// read-only the paths the sync itself owns.
@@ -433,7 +441,7 @@
 	});
 	let composeHasChanges = $derived(inputs.composeContent.value !== serverComposeContent);
 	let overrideHasChanges = $derived(inputs.overrideContent.value !== serverOverrideContent);
-	let envHasChanges = $derived(inputs.envContent.value !== serverEnvContent);
+	let envHasChanges = $derived(!configurationError && inputs.envContent.value !== serverEnvContent);
 	let changedIncludeFilePaths = $derived.by(() =>
 		Object.keys(includeFilesState).filter((relativePath) => includeFilesState[relativePath] !== serverIncludeFiles[relativePath])
 	);
@@ -447,7 +455,7 @@
 			)
 	);
 
-	let canSave = $derived(canUpdateProject && !project?.isArchived && hasChanges && !hasAnyErrors);
+	let canSave = $derived(canUpdateProject && !project?.isArchived && hasChanges && !hasAnyErrors && !composeActionsBlocked);
 
 	const tabItems = $derived<TabItem[]>([
 		{
@@ -1462,6 +1470,7 @@
 {#snippet projectComposeTab(project: Project)}
 	<Tabs.Content value="compose" class="h-full min-h-0">
 		<div class="flex h-full min-h-0 flex-col">
+			{@render configurationErrorNotice()}
 			{@render gitSourceNotice()}
 			{@render composeFilesNotice()}
 			<div class="mb-2 flex shrink-0 items-center justify-end gap-2">
@@ -1565,13 +1574,17 @@
 
 									{#snippet second()}
 										<div class="flex min-h-0 flex-1 flex-col">
-											<CodePanel
-												{...envPanelProps()}
-												bind:open={envOpen}
-												bind:value={inputs.envContent.value}
-												bind:hasErrors={envHasErrors}
-												bind:validationReady={envValidationReady}
-											/>
+											{#if configurationError}
+												{@render envUnavailable()}
+											{:else}
+												<CodePanel
+													{...envPanelProps()}
+													bind:open={envOpen}
+													bind:value={inputs.envContent.value}
+													bind:hasErrors={envHasErrors}
+													bind:validationReady={envValidationReady}
+												/>
+											{/if}
 										</div>
 									{/snippet}
 								</ResizableSplit>
@@ -1719,53 +1732,56 @@
 
 {#snippet projectServicesTab(project: Project)}
 	<Tabs.Content value="services" class="h-full min-h-0">
-		{#if canViewProjectLogs}
-			<div class="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-border bg-card">
-				<ResizableSplit
-					class="h-full min-h-0 flex-1"
-					variant="flush"
-					firstClass="bg-muted/20 border-border flex min-h-0 flex-col border-b lg:border-r lg:border-b-0"
-					secondClass="flex min-h-0 flex-col"
-					minSize={200}
-					maxSize={480}
-					minSecondSize={360}
-					defaultRatio={0.22}
-					stackBelow={1024}
-					ariaLabel={m.common_logs()}
-					persistKey="arcane.project.services-split"
-					persistStorage="local"
-				>
-					{#snippet first()}
-						<ProjectServicesPanel
-							services={project.runtimeServices}
-							{projectId}
-							updateInfoByRef={project.updateInfo?.updateInfoByRef}
-							onRefresh={() => refreshProjectDetails()}
-						/>
-					{/snippet}
-					{#snippet second()}
-						<div class="flex h-full min-h-0 flex-col overflow-hidden">
-							{#key project.id}
-								<ProjectsLogsPanel
-									projectId={project.id}
-									bind:autoScroll={autoScrollStackLogs}
-									isRunning={project.status?.toLowerCase().includes('running')}
-								/>
-							{/key}
-						</div>
-					{/snippet}
-				</ResizableSplit>
-			</div>
-		{:else}
-			<div class="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-border bg-card">
-				<ProjectServicesPanel
-					services={project.runtimeServices}
-					{projectId}
-					updateInfoByRef={project.updateInfo?.updateInfoByRef}
-					onRefresh={() => refreshProjectDetails()}
-				/>
-			</div>
-		{/if}
+		<div class="flex h-full min-h-0 flex-col">
+			{@render configurationErrorNotice()}
+			{#if canViewProjectLogs}
+				<div class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border bg-card">
+					<ResizableSplit
+						class="h-full min-h-0 flex-1"
+						variant="flush"
+						firstClass="bg-muted/20 border-border flex min-h-0 flex-col border-b lg:border-r lg:border-b-0"
+						secondClass="flex min-h-0 flex-col"
+						minSize={200}
+						maxSize={480}
+						minSecondSize={360}
+						defaultRatio={0.22}
+						stackBelow={1024}
+						ariaLabel={m.common_logs()}
+						persistKey="arcane.project.services-split"
+						persistStorage="local"
+					>
+						{#snippet first()}
+							<ProjectServicesPanel
+								services={project.runtimeServices}
+								{projectId}
+								updateInfoByRef={project.updateInfo?.updateInfoByRef}
+								onRefresh={() => refreshProjectDetails()}
+							/>
+						{/snippet}
+						{#snippet second()}
+							<div class="flex h-full min-h-0 flex-col overflow-hidden">
+								{#key project.id}
+									<ProjectsLogsPanel
+										projectId={project.id}
+										bind:autoScroll={autoScrollStackLogs}
+										isRunning={project.status?.toLowerCase().includes('running')}
+									/>
+								{/key}
+							</div>
+						{/snippet}
+					</ResizableSplit>
+				</div>
+			{:else}
+				<div class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border bg-card">
+					<ProjectServicesPanel
+						services={project.runtimeServices}
+						{projectId}
+						updateInfoByRef={project.updateInfo?.updateInfoByRef}
+						onRefresh={() => refreshProjectDetails()}
+					/>
+				</div>
+			{/if}
+		</div>
 	</Tabs.Content>
 {/snippet}
 
@@ -1867,6 +1883,16 @@
 	{/if}
 {/snippet}
 
+{#snippet configurationErrorNotice()}
+	{#if configurationErrorMessage}
+		<Alert.Root variant="destructive" class="mb-4">
+			<AlertIcon class="size-4" />
+			<Alert.Title>{m.env_file_unreadable_title()}</Alert.Title>
+			<Alert.Description>{configurationErrorMessage}</Alert.Description>
+		</Alert.Root>
+	{/if}
+{/snippet}
+
 {#snippet composeFilesNotice()}
 	{#if composeFiles.length > 1}
 		<Alert.Root variant="default" class="mb-4">
@@ -1883,6 +1909,14 @@
 			</Alert.Description>
 		</Alert.Root>
 	{/if}
+{/snippet}
+
+{#snippet envUnavailable()}
+	<div
+		class="flex h-full min-h-0 flex-1 items-center justify-center rounded-lg border border-border px-4 text-center text-sm text-muted-foreground"
+	>
+		{m.env_file_unavailable()}
+	</div>
 {/snippet}
 
 {#snippet activeWorkspaceEditor()}
@@ -1927,17 +1961,21 @@
 				/>
 			</div>
 		{:else if activeTreeTab === 'env'}
-			<CodePanel
-				variant="plain"
-				{...envPanelProps()}
-				bind:open={envOpen}
-				bind:value={inputs.envContent.value}
-				bind:hasErrors={envHasErrors}
-				bind:validationReady={envValidationReady}
-				bind:outlineOpen={treeOutlineOpen}
-				bind:diffOpen={treeDiffOpen}
-				bind:commandPaletteOpen={treeCommandPaletteOpen}
-			/>
+			{#if configurationError}
+				{@render envUnavailable()}
+			{:else}
+				<CodePanel
+					variant="plain"
+					{...envPanelProps()}
+					bind:open={envOpen}
+					bind:value={inputs.envContent.value}
+					bind:hasErrors={envHasErrors}
+					bind:validationReady={envValidationReady}
+					bind:outlineOpen={treeOutlineOpen}
+					bind:diffOpen={treeDiffOpen}
+					bind:commandPaletteOpen={treeCommandPaletteOpen}
+				/>
+			{/if}
 		{:else if activeTreeTab.startsWith('file:')}
 			{@const relativePath = activeTreeTab.slice(5)}
 			{@render workspaceFileEditor(relativePath)}
@@ -2077,7 +2115,7 @@
 					updateInfo={project.updateInfo}
 					onCheck={handleCheckProjectUpdates}
 					checking={checkProjectUpdatesMutation.isPending}
-					disabled={!!project.isArchived}
+					disabled={!!project.isArchived || composeActionsBlocked}
 				/>
 			</div>
 
@@ -2172,6 +2210,8 @@
 					{hasBuildDirective}
 					desktopVariant="adaptive"
 					disableRedeploy={!!project.redeployDisabled}
+					disabled={composeActionsBlocked}
+					disabledReason={composeActionsBlocked ? m.env_file_unreadable_title() : undefined}
 					bind:startLoading={isLoading.deploying}
 					bind:stopLoading={isLoading.stopping}
 					bind:restartLoading={isLoading.restarting}

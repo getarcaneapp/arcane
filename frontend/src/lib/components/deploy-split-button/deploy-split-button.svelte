@@ -11,6 +11,7 @@
 		size = 'default',
 		showLabel = true,
 		loading = false,
+		disabled = false,
 		customLabel,
 		onDeploy,
 		onDeployWatch
@@ -18,6 +19,7 @@
 		size?: ArcaneButtonSize;
 		showLabel?: boolean;
 		loading?: boolean;
+		disabled?: boolean;
 		customLabel?: string;
 		onDeploy: () => void | Promise<void>;
 		onDeployWatch?: () => void | Promise<void>;
@@ -25,7 +27,7 @@
 </script>
 
 <ButtonGroup.Root>
-	<ArcaneButton action="deploy" {size} {showLabel} {loading} {customLabel} onclick={() => onDeploy?.()} />
+	<ArcaneButton action="deploy" {size} {showLabel} {loading} {disabled} {customLabel} onclick={() => onDeploy?.()} />
 
 	<DropdownMenu.Root>
 		<DropdownMenu.Trigger
@@ -35,7 +37,7 @@
 				size === 'lg' && 'size-10 rounded-xl'
 			)}
 			aria-label={m.common_open_menu()}
-			disabled={loading}
+			disabled={loading || disabled}
 			onclick={(event) => event.stopPropagation()}
 			onpointerdown={(event) => event.stopPropagation()}
 		>
