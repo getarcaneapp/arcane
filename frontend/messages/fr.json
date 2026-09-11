@@ -3535,5 +3535,9 @@
   "git_repository_token_url_change": "L'URL du référentiel a changé. Saisissez à nouveau le jeton enregistré ou sélectionnez « Effacer le jeton enregistré » avant d'enregistrer.",
   "git_repository_ssh_key_url_change": "L'URL du référentiel a changé. Saisissez à nouveau la clé SSH enregistrée ou sélectionnez « Effacer la clé SSH enregistrée » avant d'enregistrer.",
   "git_repository_clear_token": "Effacer le jeton enregistré",
-  "git_repository_clear_ssh_key": "Supprimer la clé SSH enregistrée"
+  "git_repository_clear_ssh_key": "Supprimer la clé SSH enregistrée",
+  "host_ip_placeholder": "0.0.0.0",
+  "container_port_placeholder": "80",
+  "protocol_tcp": "TCP",
+  "protocol_udp": "UDP"
 }
