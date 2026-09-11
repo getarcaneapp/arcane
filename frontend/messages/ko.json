@@ -3535,5 +3535,9 @@
   "git_repository_token_url_change": "저장소 URL이 변경되었습니다. 저장된 토큰을 다시 입력하거나, 저장하기 전에 ‘저장된 토큰 지우기’를 선택하십시오.",
   "git_repository_ssh_key_url_change": "저장소 URL이 변경되었습니다. 저장된 SSH 키를 다시 입력하거나, 저장하기 전에 ‘저장된 SSH 키 지우기’를 선택하십시오.",
   "git_repository_clear_token": "저장된 토큰 지우기",
-  "git_repository_clear_ssh_key": "저장된 SSH 키 삭제"
+  "git_repository_clear_ssh_key": "저장된 SSH 키 삭제",
+  "host_ip_placeholder": "0.0.0.0",
+  "container_port_placeholder": "80",
+  "protocol_tcp": "TCP",
+  "protocol_udp": "UDP"
 }
