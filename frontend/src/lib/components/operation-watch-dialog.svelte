@@ -35,6 +35,7 @@
 			itemCount={operationWatchStore.lines.length}
 			class="max-h-[70vh] min-h-[280px] overflow-auto rounded-lg border border-border/50 bg-zinc-950 p-4 font-mono text-[12px] leading-relaxed text-zinc-100"
 		>
+			<!-- Lines only append within a session, so their positions are stable identities. -->
 			{#each operationWatchStore.lines as line, idx (idx)}
 				<!-- eslint-disable-next-line svelte/no-at-html-tags -- ansiToHtml escapes markup before adding color spans -->
 				<div class="break-words whitespace-pre-wrap">{@html ansiToHtml(line)}</div>

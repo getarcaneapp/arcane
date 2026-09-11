@@ -29,7 +29,7 @@
 	import { type DetailAction } from '#lib/layouts/index.js';
 	import TabbedPageLayout from '#lib/layouts/tabbed-page-layout.svelte';
 	import BackupList from '../components/volume-backup-table.svelte';
-	import settingsStore from '#lib/stores/config-store.js';
+	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
@@ -74,7 +74,7 @@
 	let volume = $derived(data.volume);
 	let containersDetailed = $derived<{ id: string; name: string }[]>(data.containersDetailed ?? []);
 
-	const backupVolumeName = $derived.by(() => $settingsStore?.backupVolumeName || 'arcane-backups');
+	const backupVolumeName = $derived.by(() => settingsStore.current?.backupVolumeName || 'arcane-backups');
 	const isBackupVolume = $derived(volume?.name === backupVolumeName);
 
 	const currentEnvId = $derived(environmentStore.selected?.id || '0');
@@ -82,7 +82,7 @@
 	const canReadVolume = $derived(hasPermission('volumes:read', currentEnvId));
 	const canUploadVolume = $derived(hasPermission('volumes:upload', currentEnvId));
 	const canBackupVolume = $derived(hasPermission('volumes:backup', currentEnvId));
-	const volumeWorkspaceMaxFileSizeMb = $derived($settingsStore?.volumeWorkspaceMaxFileSizeMb ?? 10);
+	const volumeWorkspaceMaxFileSizeMb = $derived(settingsStore.current?.volumeWorkspaceMaxFileSizeMb ?? 10);
 
 	let isLoading = $state({ remove: false, save: false });
 	const createdDate = $derived(volume.createdAt ? formatDateTimeShort(volume.createdAt) : m.common_unknown());

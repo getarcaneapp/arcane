@@ -70,7 +70,7 @@
 </script>
 
 {#snippet HostPortCell({ item }: { item: PortMappingDto })}
-	<span class:text-muted-foreground={!item.isPublished} class="font-mono text-sm">
+	<span class={['font-mono text-sm', { 'text-muted-foreground': !item.isPublished }]}>
 		{formatHostPort(item)}
 	</span>
 {/snippet}
@@ -90,7 +90,7 @@
 {/snippet}
 
 {#snippet HostIpCell({ item }: { item: PortMappingDto })}
-	<span class:text-muted-foreground={!item.isPublished} class="font-mono text-sm">
+	<span class={['font-mono text-sm', { 'text-muted-foreground': !item.isPublished }]}>
 		{formatHostIp(item)}
 	</span>
 {/snippet}

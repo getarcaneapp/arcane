@@ -2,12 +2,12 @@
 	import type { LayoutProps } from './$types';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { setContext } from 'svelte';
+	import { setSettingsFormContext } from '#lib/hooks/settings-form-context.js';
 	import type { SettingsFormContext, SettingsFormState } from '#lib/types/settings-form.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { SettingsIcon, ArrowRightIcon, ArrowLeftIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import settingsStore from '#lib/stores/config-store.js';
+	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { IsMobile } from '#lib/hooks/is-mobile.svelte.js';
 	import { cn } from '#lib/utils.js';
 	import MobileFloatingFormActions from '#lib/components/form/mobile-floating-form-actions.svelte';
@@ -18,7 +18,7 @@
 	let currentPageName = $derived(page.url.pathname.split('/').pop() || 'settings');
 
 	const isMobile = new IsMobile();
-	const isReadOnly = $derived.by(() => $settingsStore.uiConfigDisabled);
+	const isReadOnly = $derived.by(() => settingsStore.current?.uiConfigDisabled);
 	let pageTitle = $derived.by(() => {
 		switch (currentPageName) {
 			case 'jobs':
@@ -38,7 +38,7 @@
 			case 'webhooks':
 				return m.webhook_page_title();
 			case 'build':
-				return 'Build';
+				return m.build();
 			case 'diagnostics':
 				return m.diagnostics();
 			default:
@@ -55,7 +55,7 @@
 			formState = form;
 		}
 	};
-	setContext('settingsFormState', formContext);
+	setSettingsFormContext(formContext);
 
 	function goBackToSettings() {
 		goto('/settings');

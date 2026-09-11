@@ -23,9 +23,7 @@
 </script>
 
 <div class={cn('flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg bg-muted/40 px-4 py-3', className)}>
-	<!-- Keyed by index on purpose: rows are stateless (icon + text from props) and
-	     labels are not guaranteed unique, so a label-based key could collide. -->
-	{#each items as item, i (i)}
+	{#each items as item (item)}
 		<div class="flex items-center gap-1.5 text-sm text-muted-foreground">
 			{#if item.icon}
 				<item.icon class="size-4 shrink-0" />

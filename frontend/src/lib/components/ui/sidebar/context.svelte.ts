@@ -1,7 +1,7 @@
 import { IsTablet } from '#lib/hooks/is-tablet.svelte.js';
-import { getContext, setContext, onDestroy } from 'svelte';
-import { fromStore } from 'svelte/store';
-import userStore from '#lib/stores/user-store.js';
+import { createContext, onDestroy } from 'svelte';
+
+import userStore from '#lib/stores/user-store.svelte.js';
 import { PersistedState } from 'runed';
 import { SIDEBAR_KEYBOARD_SHORTCUT } from './constants.js';
 
@@ -32,7 +32,7 @@ class SidebarState {
 	setOpen: SidebarStateProps['setOpen'];
 	#isTablet: IsTablet;
 	#isPinnedState = new PersistedState('sidebar-pinned', true);
-	#user = fromStore(userStore);
+	#user = userStore;
 	#isHovered = $state(false);
 	#hoverTimeout: ReturnType<typeof setTimeout> | null = null;
 	state = $derived.by(() => (this.open ? 'expanded' : 'collapsed'));
@@ -121,7 +121,7 @@ class SidebarState {
 	};
 }
 
-const SYMBOL_KEY = 'scn-sidebar';
+export const [useSidebar, setSidebarContext] = createContext<SidebarState>();
 
 /**
  * Instantiates a new `SidebarState` instance and sets it in the context.
@@ -130,14 +130,5 @@ const SYMBOL_KEY = 'scn-sidebar';
  * @returns  The `SidebarState` instance.
  */
 export function setSidebar(props: SidebarStateProps): SidebarState {
-	return setContext(Symbol.for(SYMBOL_KEY), new SidebarState(props));
-}
-
-/**
- * Retrieves the `SidebarState` instance from the context. This is a class instance,
- * so you cannot destructure it.
- * @returns The `SidebarState` instance.
- */
-export function useSidebar(): SidebarState {
-	return getContext(Symbol.for(SYMBOL_KEY));
+	return setSidebarContext(new SidebarState(props));
 }

@@ -1,14 +1,14 @@
 import { createQuery } from '@tanstack/svelte-query';
-import { fromStore } from 'svelte/store';
+
 import { queryKeys } from '#lib/query/query-keys.js';
 import { userHasPermission } from '#lib/utils/auth.js';
 import { swarmService } from '#lib/services/swarm-service.js';
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-import userStore from '#lib/stores/user-store.js';
+import userStore from '#lib/stores/user-store.svelte.js';
 import type { SwarmJoinCandidate } from '#lib/types/swarm.js';
 
 export function useEasyJoinCandidates() {
-	const user = fromStore(userStore);
+	const user = userStore;
 	const managerEnvironmentId = $derived(environmentStore.selected?.id ?? null);
 	const canDiscover = $derived(
 		managerEnvironmentId !== null && userHasPermission(user.current, 'swarm:join', managerEnvironmentId)

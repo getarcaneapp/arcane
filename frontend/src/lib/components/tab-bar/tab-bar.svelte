@@ -14,7 +14,7 @@
 </script>
 
 <Tabs.List class={cn('scrollbar-hide inline-flex max-w-full justify-start gap-1 overflow-x-auto', className)}>
-	{#each items as item}
+	{#each items as item (item.value)}
 		{@const IconComponent = item.icon}
 		<Tabs.Trigger
 			value={item.value}

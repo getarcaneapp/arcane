@@ -3536,5 +3536,9 @@
   "git_repository_token_url_change": "The repository URL has changed. Re-enter the stored token or select Clear stored token before saving.",
   "git_repository_ssh_key_url_change": "The repository URL has changed. Re-enter the stored SSH key or select Clear stored SSH key before saving.",
   "git_repository_clear_token": "Clear stored token",
-  "git_repository_clear_ssh_key": "Clear stored SSH key"
+  "git_repository_clear_ssh_key": "Clear stored SSH key",
+  "host_ip_placeholder": "0.0.0.0",
+  "container_port_placeholder": "80",
+  "protocol_tcp": "TCP",
+  "protocol_udp": "UDP"
 }

@@ -2,7 +2,7 @@
 	import * as Select from '#lib/components/ui/select/index.js';
 	import { getLocale, type Locale } from '#lib/paraglide/runtime.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import userStore from '#lib/stores/user-store.js';
+	import userStore from '#lib/stores/user-store.svelte.js';
 	import { setLocale } from '#lib/utils/formatting.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
@@ -52,7 +52,7 @@
 
 	const updateLocaleMutation = createMutation(() => ({
 		mutationFn: async (locale: Locale) => {
-			if ($userStore) {
+			if (userStore.current) {
 				await userService.updateMyProfile({ locale });
 			}
 			await setLocale(locale);

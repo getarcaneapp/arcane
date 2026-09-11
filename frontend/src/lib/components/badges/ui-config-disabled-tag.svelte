@@ -1,11 +1,11 @@
 <script lang="ts">
-	import settingsStore from '#lib/stores/config-store.js';
+	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { LockIcon } from '#lib/icons/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import * as ArcaneTooltip from '#lib/components/arcane-tooltip/index.js';
 
-	const active = $derived.by(() => $settingsStore.uiConfigDisabled);
+	const active = $derived.by(() => settingsStore.current?.uiConfigDisabled);
 </script>
 
 {#if active}

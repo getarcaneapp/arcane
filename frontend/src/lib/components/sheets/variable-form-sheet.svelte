@@ -13,7 +13,8 @@
 	import type { GlobalVariable, GlobalVariableCreateDto, GlobalVariableUpdateDto } from '#lib/types/variable.js';
 	import { parseEnvText, normalizeVariableKeyInput } from '#lib/utils/env-file.js';
 	import { z } from 'zod/v4';
-	import { createForm, preventDefault } from '#lib/utils/settings.js';
+	import { createForm, preventDefault } from '#lib/utils/settings.svelte.js';
+
 	import * as m from '#lib/paraglide/messages.js';
 
 	type VariableFormPayload =
@@ -97,7 +98,8 @@
 		return { key: variableToEdit?.key ?? '', value, isSecret: variableToEdit?.isSecret ?? false };
 	});
 
-	const { inputs, ...form } = createForm<typeof formSchema>(formSchema, formData);
+	const form = createForm<typeof formSchema>(formSchema, formData);
+	let inputs = $derived(form.inputs);
 
 	const parsed = $derived(parseEnvText(bulkText));
 
@@ -211,7 +213,7 @@
 						<p class="px-3 py-4 text-sm text-muted-foreground">{m.paste_env_empty_preview()}</p>
 					{:else}
 						<ul class="max-h-48 divide-y divide-border/50 overflow-y-auto">
-							{#each parsed.entries as entry, index (index)}
+							{#each parsed.entries as entry (entry)}
 								<li class="flex items-center gap-3 px-3 py-1.5 text-sm">
 									<span class="font-mono font-medium">{entry.key}</span>
 									<span class="min-w-0 flex-1 truncate text-right font-mono text-muted-foreground">
@@ -254,11 +256,11 @@
 						type="text"
 						class="mt-2 font-mono"
 						placeholder={m.key_placeholder()}
-						bind:value={$inputs.key.value}
-						oninput={(e) => normalizeVariableKeyInput(e, (value) => ($inputs.key.value = value))}
+						bind:value={inputs.key.value}
+						oninput={(e) => normalizeVariableKeyInput(e, (value) => (inputs.key.value = value))}
 					/>
-					{#if $inputs.key.error}
-						<p class="mt-1 text-sm text-destructive">{$inputs.key.error}</p>
+					{#if inputs.key.error}
+						<p class="mt-1 text-sm text-destructive">{inputs.key.error}</p>
 					{/if}
 				</div>
 
@@ -269,10 +271,10 @@
 						rows={3}
 						class="mt-2 font-mono"
 						placeholder={variableToEdit?.isSecret ? m.secret_value_placeholder() : m.value_placeholder()}
-						bind:value={$inputs.value.value}
+						bind:value={inputs.value.value}
 					/>
-					{#if $inputs.value.error}
-						<p class="mt-1 text-sm text-destructive">{$inputs.value.error}</p>
+					{#if inputs.value.error}
+						<p class="mt-1 text-sm text-destructive">{inputs.value.error}</p>
 					{/if}
 				</div>
 
@@ -280,7 +282,7 @@
 					id="variable-secret"
 					label={m.secret()}
 					description={m.secret_description()}
-					bind:checked={$inputs.isSecret.value}
+					bind:checked={inputs.isSecret.value}
 				/>
 
 				{@render scopeSelector()}

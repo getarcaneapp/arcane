@@ -43,11 +43,15 @@
 </script>
 
 <div class="space-y-3">
-	{#each rows as row, index (index)}
+	{#each rows as row, index (row)}
 		<div class="space-y-2 rounded-lg border border-border/50 p-3">
 			<div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
 				<Badge variant="outline" class="w-fit shrink-0 font-mono text-xs">
-					{row.kind === 'mount' ? (row.mountType ?? 'mount') : row.kind}
+					{row.kind === 'mount'
+						? (row.mountType ?? m.common_mount())
+						: row.kind === 'bind'
+							? m.containers_mount_type_bind()
+							: m.containers_mount_type_volume()}
 				</Badge>
 				{#if row.kind === 'volume'}
 					<SearchableSelect items={volumeItems} bind:value={row.source} {disabled} class="flex-1" />

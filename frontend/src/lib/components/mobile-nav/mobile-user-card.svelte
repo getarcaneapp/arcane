@@ -6,8 +6,8 @@
 	import type { User } from '#lib/types/auth.js';
 	import LocalePicker from '#lib/components/locale-picker.svelte';
 	import EnvironmentSwitcherDialog from '#lib/components/dialogs/environment-switcher-dialog.svelte';
-	import settingsStore from '#lib/stores/config-store.js';
-	import userStore from '#lib/stores/user-store.js';
+	import settingsStore from '#lib/stores/config-store.svelte.js';
+	import userStore from '#lib/stores/user-store.svelte.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
 	import {
@@ -36,7 +36,7 @@
 	function getConnectionString(): string {
 		if (!environmentStore.selected) return '';
 		if (environmentStore.selected.id === '0') {
-			return $settingsStore.dockerHost || 'unix:///var/run/docker.sock';
+			return settingsStore.current?.dockerHost || 'unix:///var/run/docker.sock';
 		} else {
 			return environmentStore.selected.apiUrl;
 		}
@@ -67,7 +67,7 @@
 			>
 				<ArrowDownIcon class="size-8" />
 			</div>
-			{#if !$autoLoginEnabled}
+			{#if !autoLoginEnabled.current}
 				<form action="/logout" method="POST">
 					<ArcaneButton
 						action="base"

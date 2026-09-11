@@ -19,14 +19,14 @@
 	import { inUseBadge } from '#lib/utils/mobile-card-badges.js';
 	import { TrashIcon, InspectIcon, VolumesIcon, CalendarIcon, EditIcon } from '#lib/icons/index.js';
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
-	import settingsStore from '#lib/stores/config-store.js';
+	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { onMount } from 'svelte';
 	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import type { ColumnVisibilityState } from '@tanstack/table-core';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { hasPermission } from '#lib/utils/auth.js';
-	import userStore from '#lib/stores/user-store.js';
+	import userStore from '#lib/stores/user-store.svelte.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { bulkConfirmAndRun } from '#lib/utils/bulk-actions.js';
 	import RenameVolumeDialog from './components/rename-volume-dialog.svelte';
@@ -56,11 +56,11 @@
 	// Track the user store: hasPermission reads it non-reactively, so without
 	// this the derived would cache a pre-hydration false forever.
 	const canDeleteVolume = $derived.by(() => {
-		$userStore;
+		userStore.current;
 		return hasPermission('volumes:delete', currentEnvId);
 	});
 	const canRenameVolume = $derived.by(() => {
-		$userStore;
+		userStore.current;
 		return hasPermission('volumes:rename', currentEnvId);
 	});
 	let tablePreferences = $state<{ persistCustomSettings(settings: Record<string, unknown>): void }>();
@@ -100,7 +100,7 @@
 		refreshVolumes(nextOptions);
 	}
 
-	const backupVolumeName = $derived.by(() => $settingsStore?.backupVolumeName || 'arcane-backups');
+	const backupVolumeName = $derived.by(() => settingsStore.current?.backupVolumeName || 'arcane-backups');
 	const isBackupVolumeName = (name?: string) => (name ?? '') === backupVolumeName;
 	const isBackupVolume = (item: VolumeSummaryDto) => isBackupVolumeName(item.name);
 
@@ -108,7 +108,7 @@
 	let tablePreferencesReady = $state(false);
 	const queryClient = useQueryClient();
 	const sizesEnabled = $derived.by(() => {
-		$userStore;
+		userStore.current;
 		return (
 			tablePreferencesReady &&
 			!!environmentStore.selected?.id &&

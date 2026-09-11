@@ -6,7 +6,7 @@
 	import * as RadioGroup from '#lib/components/ui/radio-group/index.js';
 	import { mode } from 'mode-watcher';
 	import { m } from '#lib/paraglide/messages.js';
-	import { APPLICATION_THEME_OPTIONS, applyApplicationTheme, resolveApplicationTheme } from '#lib/utils/theme.js';
+	import { APPLICATION_THEME_OPTIONS, applyApplicationTheme, resolveApplicationTheme } from '#lib/utils/theme.svelte.js';
 	import type { CarouselAPI } from '#lib/components/ui/carousel/context.js';
 	import type { ApplicationTheme } from '#lib/types/settings.js';
 

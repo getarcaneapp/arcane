@@ -6,7 +6,7 @@
 	import { goto } from '$app/navigation';
 	import EnvironmentSwitcherDialog from '#lib/components/dialogs/environment-switcher-dialog.svelte';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-	import settingsStore from '#lib/stores/config-store.js';
+	import settingsStore from '#lib/stores/config-store.svelte.js';
 
 	let {
 		message,
@@ -51,7 +51,7 @@
 
 	const connectionErrorMessage = $derived.by(() => {
 		if (environmentStore.selected?.id === '0') {
-			const host = $settingsStore ? $settingsStore.dockerHost : 'unix:///var/run/docker.sock';
+			const host = settingsStore.current ? settingsStore.current?.dockerHost : 'unix:///var/run/docker.sock';
 			return m.error_connection_local_docker_desc({
 				host: host || 'unix:///var/run/docker.sock'
 			});

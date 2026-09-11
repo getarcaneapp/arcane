@@ -7,7 +7,7 @@
 	import { FolderOpenIcon, UploadIcon } from '#lib/icons/index.js';
 	import type { StorageTabProps } from './tab-props';
 
-	let { formInputs }: StorageTabProps = $props();
+	let { formInputs = $bindable() }: StorageTabProps = $props();
 </script>
 
 <div class="space-y-6">
@@ -25,29 +25,29 @@
 				<TextInputWithLabel
 					id="projects-directory"
 					label={m.general_projects_directory_label()}
-					bind:value={$formInputs.projectsDirectory.value}
-					error={$formInputs.projectsDirectory.error}
+					bind:value={formInputs.projectsDirectory.value}
+					error={formInputs.projectsDirectory.error}
 					helpText={m.general_projects_directory_help()}
 				/>
 				<TextInputWithLabel
 					id="templates-directory"
 					label={m.general_templates_directory_label()}
-					bind:value={$formInputs.templatesDirectory.value}
-					error={$formInputs.templatesDirectory.error}
+					bind:value={formInputs.templatesDirectory.value}
+					error={formInputs.templatesDirectory.error}
 					helpText={m.general_templates_directory_help()}
 				/>
 				<TextInputWithLabel
 					id="swarm-stack-sources-directory"
 					label={m.environments_swarm_stack_source_label()}
-					bind:value={$formInputs.swarmStackSourcesDirectory.value}
-					error={$formInputs.swarmStackSourcesDirectory.error}
+					bind:value={formInputs.swarmStackSourcesDirectory.value}
+					error={formInputs.swarmStackSourcesDirectory.error}
 					helpText={m.environments_swarm_stack_source_help()}
 				/>
 				<TextInputWithLabel
 					id="disk-usage-path"
 					label={m.disk_usage_settings()}
-					bind:value={$formInputs.diskUsagePath.value}
-					error={$formInputs.diskUsagePath.error}
+					bind:value={formInputs.diskUsagePath.value}
+					error={formInputs.diskUsagePath.error}
 					helpText={m.disk_usage_settings_description()}
 				/>
 			</div>
@@ -58,7 +58,7 @@
 					label={m.general_follow_project_symlinks_label()}
 					description={m.general_follow_project_symlinks_help()}
 				>
-					<Switch id="follow-project-symlinks" bind:checked={$formInputs.followProjectSymlinks.value} />
+					<Switch id="follow-project-symlinks" bind:checked={formInputs.followProjectSymlinks.value} />
 				</SettingsRow>
 			</div>
 		</Card.Content>
@@ -79,8 +79,8 @@
 					id="max-upload-size"
 					type="number"
 					label={m.docker_max_upload_size_label()}
-					bind:value={$formInputs.maxImageUploadSize.value}
-					error={$formInputs.maxImageUploadSize.error}
+					bind:value={formInputs.maxImageUploadSize.value}
+					error={formInputs.maxImageUploadSize.error}
 					helpText={m.docker_max_upload_size_description()}
 				/>
 			</div>
@@ -95,24 +95,24 @@
 						id="git-sync-max-files"
 						type="number"
 						label={m.git_sync_max_files_label()}
-						bind:value={$formInputs.gitSyncMaxFiles.value}
-						error={$formInputs.gitSyncMaxFiles.error}
+						bind:value={formInputs.gitSyncMaxFiles.value}
+						error={formInputs.gitSyncMaxFiles.error}
 						helpText={m.git_sync_max_files_help()}
 					/>
 					<TextInputWithLabel
 						id="git-sync-max-total-size"
 						type="number"
 						label={m.git_sync_max_total_size_label()}
-						bind:value={$formInputs.gitSyncMaxTotalSizeMb.value}
-						error={$formInputs.gitSyncMaxTotalSizeMb.error}
+						bind:value={formInputs.gitSyncMaxTotalSizeMb.value}
+						error={formInputs.gitSyncMaxTotalSizeMb.error}
 						helpText={m.git_sync_max_total_size_help()}
 					/>
 					<TextInputWithLabel
 						id="git-sync-max-binary-size"
 						type="number"
 						label={m.git_sync_max_binary_size_label()}
-						bind:value={$formInputs.gitSyncMaxBinarySizeMb.value}
-						error={$formInputs.gitSyncMaxBinarySizeMb.error}
+						bind:value={formInputs.gitSyncMaxBinarySizeMb.value}
+						error={formInputs.gitSyncMaxBinarySizeMb.error}
 						helpText={m.git_sync_max_binary_size_help()}
 					/>
 				</div>

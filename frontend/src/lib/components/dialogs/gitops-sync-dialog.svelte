@@ -24,7 +24,8 @@
 	import { settingsService } from '#lib/services/settings-service.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { z } from 'zod/v4';
-	import { createForm, preventDefault } from '#lib/utils/settings.js';
+	import { createForm, preventDefault } from '#lib/utils/settings.svelte.js';
+
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { ArrowRightIcon, CodeIcon, FolderOpenIcon, InfoIcon } from '#lib/icons/index.js';
@@ -169,10 +170,11 @@
 		});
 	});
 
-	let { inputs, ...form } = $derived(createForm<typeof formSchema>(formSchema, formData));
+	let form = $derived(createForm<typeof formSchema>(formSchema, formData));
+	let inputs = $derived(form.inputs);
 
 	const selectedRepository = $derived.by(() => {
-		const repository = repositories.find((item) => item.id === $inputs.repositoryId.value);
+		const repository = repositories.find((item) => item.id === inputs.repositoryId.value);
 		if (!repository) return undefined;
 		return { value: repository.id, label: repository.name };
 	});
@@ -239,12 +241,12 @@
 	}
 
 	const selectedBranch = $derived.by(() => {
-		if ($inputs.branch.value || isEditMode) return $inputs.branch.value;
+		if (inputs.branch.value || isEditMode) return inputs.branch.value;
 		return branches.find((branch) => branch.isDefault)?.name ?? '';
 	});
 
 	function handleSubmit() {
-		$inputs.branch.value = selectedBranch;
+		inputs.branch.value = selectedBranch;
 		const data = form.validate();
 		if (!data) return;
 
@@ -309,12 +311,7 @@
 			<form id="sync-form" onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-4">
 				<div class="space-y-3">
 					<div class="grid gap-3 sm:grid-cols-2">
-						<FormInput
-							label={m.git_sync_name()}
-							type="text"
-							placeholder={m.common_name_placeholder()}
-							bind:input={$inputs.name}
-						/>
+						<FormInput label={m.git_sync_name()} type="text" placeholder={m.common_name_placeholder()} bind:input={inputs.name} />
 
 						<SelectWithLabel
 							id="targetType"
@@ -324,8 +321,8 @@
 							onValueChange={(value) => {
 								const previousDefault = defaultComposePath;
 								selectedTargetType = value as GitOpsSyncTargetType;
-								if ($inputs.composePath.value === previousDefault) {
-									$inputs.composePath.value = defaultComposePath;
+								if (inputs.composePath.value === previousDefault) {
+									inputs.composePath.value = defaultComposePath;
 								}
 							}}
 						/>
@@ -341,12 +338,12 @@
 									if (v) {
 										const repo = repositories.find((r) => r.id === v);
 										if (repo) {
-											$inputs.repositoryId.value = v;
+											inputs.repositoryId.value = v;
 										}
 									}
 								}}
 							>
-								<Select.Trigger id="repository" class="w-full" aria-invalid={$inputs.repositoryId.error ? 'true' : undefined}>
+								<Select.Trigger id="repository" class="w-full" aria-invalid={inputs.repositoryId.error ? 'true' : undefined}>
 									<span>{selectedRepository?.label ?? m.common_select_placeholder()}</span>
 								</Select.Trigger>
 								<Select.Content style="width: var(--bits-select-anchor-width);">
@@ -355,8 +352,8 @@
 									{/each}
 								</Select.Content>
 							</Select.Root>
-							{#if $inputs.repositoryId.error}
-								<p class="mt-1 text-sm text-red-500">{$inputs.repositoryId.error}</p>
+							{#if inputs.repositoryId.error}
+								<p class="mt-1 text-sm text-red-500">{inputs.repositoryId.error}</p>
 							{/if}
 						</div>
 
@@ -373,11 +370,11 @@
 									value={selectedBranch}
 									onValueChange={(v) => {
 										if (v) {
-											$inputs.branch.value = v;
+											inputs.branch.value = v;
 										}
 									}}
 								>
-									<Select.Trigger id="branch" class="w-full" aria-invalid={$inputs.branch.error ? 'true' : undefined}>
+									<Select.Trigger id="branch" class="w-full" aria-invalid={inputs.branch.error ? 'true' : undefined}>
 										<span>{selectedBranch || m.common_select_placeholder()}</span>
 									</Select.Trigger>
 									<Select.Content style="width: var(--bits-select-anchor-width);">
@@ -392,10 +389,10 @@
 									</Select.Content>
 								</Select.Root>
 							{:else}
-								<FormInput type="text" placeholder="main" bind:input={$inputs.branch} />
+								<FormInput type="text" placeholder="main" bind:input={inputs.branch} />
 							{/if}
-							{#if $inputs.branch.error}
-								<p class="mt-1 text-sm text-red-500">{$inputs.branch.error}</p>
+							{#if inputs.branch.error}
+								<p class="mt-1 text-sm text-red-500">{inputs.branch.error}</p>
 							{/if}
 						</div>
 					</div>
@@ -407,7 +404,7 @@
 								<FormInput
 									type="text"
 									placeholder={selectedTargetType === 'swarm_stack' ? 'compose.yml' : 'docker-compose.yml'}
-									bind:input={$inputs.composePath}
+									bind:input={inputs.composePath}
 								/>
 							</div>
 							{@render BrowseFilesButton('compose')}
@@ -418,26 +415,26 @@
 				<div class="grid gap-3 rounded-lg border border-border/70 bg-muted/20 p-3 sm:grid-cols-[minmax(0,1fr)_8rem]">
 					<div class="grid gap-3 sm:grid-cols-2">
 						<div class="flex items-start gap-3">
-							<Switch id="syncDirectorySwitch" bind:checked={$inputs.syncDirectory.value} disabled={lockSyncDirectory} />
+							<Switch id="syncDirectorySwitch" bind:checked={inputs.syncDirectory.value} disabled={lockSyncDirectory} />
 							<div class="space-y-1">
 								<Label for="syncDirectorySwitch" class="mb-0 text-sm leading-none font-medium">{m.git_sync_sync_files()}</Label>
 								<p class="text-xs text-muted-foreground">{m.git_sync_sync_files_description()}</p>
 								{#if lockSyncDirectory}
 									<p class="text-xs text-muted-foreground italic">{m.git_sync_sync_files_locked_hint()}</p>
 								{/if}
-								{#if $inputs.syncDirectory.error}
-									<p class="text-xs font-medium text-destructive">{$inputs.syncDirectory.error}</p>
+								{#if inputs.syncDirectory.error}
+									<p class="text-xs font-medium text-destructive">{inputs.syncDirectory.error}</p>
 								{/if}
 							</div>
 						</div>
 
 						<div class="flex items-start gap-3">
-							<Switch id="autoSyncSwitch" bind:checked={$inputs.autoSync.value} />
+							<Switch id="autoSyncSwitch" bind:checked={inputs.autoSync.value} />
 							<div class="space-y-1">
 								<Label for="autoSyncSwitch" class="mb-0 text-sm leading-none font-medium">{m.git_sync_auto_sync()}</Label>
 								<p class="text-xs text-muted-foreground">{m.common_auto_sync_description()}</p>
-								{#if $inputs.autoSync.error}
-									<p class="text-xs font-medium text-destructive">{$inputs.autoSync.error}</p>
+								{#if inputs.autoSync.error}
+									<p class="text-xs font-medium text-destructive">{inputs.autoSync.error}</p>
 								{/if}
 							</div>
 						</div>
@@ -445,33 +442,33 @@
 						<div class="flex items-start gap-3">
 							<Switch
 								id="pullImageAfterSyncSwitch"
-								bind:checked={$inputs.pullImageAfterSync.value}
-								disabled={$inputs.redeployAfterSync.value}
+								bind:checked={inputs.pullImageAfterSync.value}
+								disabled={inputs.redeployAfterSync.value}
 							/>
 							<div class="space-y-1">
 								<Label for="pullImageAfterSyncSwitch" class="mb-0 text-sm leading-none font-medium"
 									>{m.git_sync_pull_image_after_sync()}</Label
 								>
 								<p class="text-xs text-muted-foreground">
-									{$inputs.redeployAfterSync.value
+									{inputs.redeployAfterSync.value
 										? m.git_sync_pull_image_after_sync_redundant_description()
 										: m.git_sync_pull_image_after_sync_description()}
 								</p>
-								{#if $inputs.pullImageAfterSync.error}
-									<p class="text-xs font-medium text-destructive">{$inputs.pullImageAfterSync.error}</p>
+								{#if inputs.pullImageAfterSync.error}
+									<p class="text-xs font-medium text-destructive">{inputs.pullImageAfterSync.error}</p>
 								{/if}
 							</div>
 						</div>
 
 						<div class="flex items-start gap-3">
-							<Switch id="redeployAfterSyncSwitch" bind:checked={$inputs.redeployAfterSync.value} />
+							<Switch id="redeployAfterSyncSwitch" bind:checked={inputs.redeployAfterSync.value} />
 							<div class="space-y-1">
 								<Label for="redeployAfterSyncSwitch" class="mb-0 text-sm leading-none font-medium"
 									>{m.git_sync_redeploy_after_sync()}</Label
 								>
 								<p class="text-xs text-muted-foreground">{m.git_sync_redeploy_after_sync_description()}</p>
-								{#if $inputs.redeployAfterSync.error}
-									<p class="text-xs font-medium text-destructive">{$inputs.redeployAfterSync.error}</p>
+								{#if inputs.redeployAfterSync.error}
+									<p class="text-xs font-medium text-destructive">{inputs.redeployAfterSync.error}</p>
 								{/if}
 							</div>
 						</div>
@@ -488,11 +485,11 @@
 							id="syncInterval"
 							type="number"
 							placeholder="5"
-							bind:value={$inputs.syncInterval.value}
-							aria-invalid={$inputs.syncInterval.error ? 'true' : undefined}
+							bind:value={inputs.syncInterval.value}
+							aria-invalid={inputs.syncInterval.error ? 'true' : undefined}
 						/>
-						{#if $inputs.syncInterval.error}
-							<p class="text-xs font-medium text-destructive">{$inputs.syncInterval.error}</p>
+						{#if inputs.syncInterval.error}
+							<p class="text-xs font-medium text-destructive">{inputs.syncInterval.error}</p>
 						{/if}
 					</div>
 				</div>
@@ -516,21 +513,21 @@
 									type="number"
 									placeholder="0"
 									helpText={m.git_sync_max_files_per_sync_help()}
-									bind:input={$inputs.maxSyncFiles}
+									bind:input={inputs.maxSyncFiles}
 								/>
 								<FormInput
 									label={m.git_sync_max_total_size_label()}
 									type="number"
 									placeholder="0"
 									helpText={m.git_sync_max_total_size_per_sync_help()}
-									bind:input={$inputs.maxSyncTotalSizeMb}
+									bind:input={inputs.maxSyncTotalSizeMb}
 								/>
 								<FormInput
 									label={m.git_sync_max_binary_size_label()}
 									type="number"
 									placeholder="0"
 									helpText={m.git_sync_max_binary_size_per_sync_help()}
-									bind:input={$inputs.maxSyncBinarySizeMb}
+									bind:input={inputs.maxSyncBinarySizeMb}
 								/>
 							</div>
 						</div>
@@ -571,15 +568,15 @@
 												id="preDeployScriptPath"
 												type="text"
 												placeholder={m.git_sync_pre_deploy_script_path_placeholder()}
-												bind:value={$inputs.preDeployScriptPath.value}
-												aria-invalid={$inputs.preDeployScriptPath.error ? 'true' : undefined}
+												bind:value={inputs.preDeployScriptPath.value}
+												aria-invalid={inputs.preDeployScriptPath.error ? 'true' : undefined}
 											/>
 										</div>
 										{@render BrowseFilesButton('preDeployScript')}
 									</div>
 									<p class="text-xs text-muted-foreground">{m.git_sync_pre_deploy_script_path_help()}</p>
-									{#if $inputs.preDeployScriptPath.error}
-										<p class="text-xs font-medium text-destructive">{$inputs.preDeployScriptPath.error}</p>
+									{#if inputs.preDeployScriptPath.error}
+										<p class="text-xs font-medium text-destructive">{inputs.preDeployScriptPath.error}</p>
 									{/if}
 								</div>
 
@@ -588,7 +585,7 @@
 									type="text"
 									placeholder={m.git_sync_pre_deploy_runner_image_placeholder()}
 									helpText={m.git_sync_pre_deploy_runner_image_help()}
-									bind:input={$inputs.preDeployRunnerImage}
+									bind:input={inputs.preDeployRunnerImage}
 								/>
 
 								<div class="grid gap-3 sm:grid-cols-2">
@@ -597,14 +594,14 @@
 										type="number"
 										placeholder="60"
 										helpText={m.git_sync_pre_deploy_timeout_help()}
-										bind:input={$inputs.preDeployTimeoutSec}
+										bind:input={inputs.preDeployTimeoutSec}
 									/>
 									<FormInput
 										label={m.resource_network_cap()}
 										type="text"
 										placeholder={m.git_sync_pre_deploy_network_mode_placeholder()}
 										helpText={m.git_sync_pre_deploy_network_mode_help()}
-										bind:input={$inputs.preDeployNetworkMode}
+										bind:input={inputs.preDeployNetworkMode}
 									/>
 								</div>
 
@@ -613,7 +610,7 @@
 									label={m.git_sync_pre_deploy_env_label()}
 									placeholder={m.git_sync_pre_deploy_env_placeholder()}
 									helpText={m.git_sync_pre_deploy_env_help()}
-									bind:input={$inputs.preDeployEnv}
+									bind:input={inputs.preDeployEnv}
 									class="[&_textarea]:font-mono [&_textarea]:text-xs"
 								/>
 
@@ -622,7 +619,7 @@
 									label={m.git_sync_pre_deploy_extra_mounts_label()}
 									placeholder={m.git_sync_pre_deploy_extra_mounts_placeholder()}
 									helpText={m.git_sync_pre_deploy_extra_mounts_help()}
-									bind:input={$inputs.preDeployExtraMounts}
+									bind:input={inputs.preDeployExtraMounts}
 									class="[&_textarea]:font-mono [&_textarea]:text-xs"
 								/>
 							</div>
@@ -702,8 +699,8 @@
 		? m.git_sync_browse_files_description_script()
 		: m.git_sync_browse_files_description()}
 	rootPath={fileBrowserTarget === 'preDeployScript'
-		? $inputs.composePath.value.includes('/')
-			? $inputs.composePath.value.replace(/\/[^/]*$/, '')
+		? inputs.composePath.value.includes('/')
+			? inputs.composePath.value.replace(/\/[^/]*$/, '')
 			: ''
 		: ''}
 	fileFilter={fileBrowserTarget === 'preDeployScript' ? undefined : composeFileFilter}
@@ -711,9 +708,9 @@
 	footerHint={fileBrowserTarget === 'preDeployScript' ? undefined : composeFooterHint}
 	onSelect={(path) => {
 		if (fileBrowserTarget === 'preDeployScript') {
-			$inputs.preDeployScriptPath.value = path;
+			inputs.preDeployScriptPath.value = path;
 		} else {
-			$inputs.composePath.value = path;
+			inputs.composePath.value = path;
 		}
 	}}
 />

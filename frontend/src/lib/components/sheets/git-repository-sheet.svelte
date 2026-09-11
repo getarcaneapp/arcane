@@ -8,7 +8,8 @@
 	import { Label } from '#lib/components/ui/label/index.js';
 	import type { GitRepository, GitRepositoryCreateDto, GitRepositoryUpdateDto } from '#lib/types/automation.js';
 	import { z } from 'zod/v4';
-	import { createForm, preventDefault } from '#lib/utils/settings.js';
+	import { createForm, preventDefault } from '#lib/utils/settings.svelte.js';
+
 	import { m } from '#lib/paraglide/messages.js';
 
 	type GitRepositoryFormProps = {
@@ -55,13 +56,14 @@
 		enabled: repositoryToEdit?.enabled ?? true
 	}));
 
-	const { inputs, ...form } = createForm<typeof formSchema>(formSchema, formData);
+	const form = createForm<typeof formSchema>(formSchema, formData);
+	let inputs = $derived(form.inputs);
 
 	let hasToken = $derived(!!repositoryToEdit?.hasToken);
 	let hasSshKey = $derived(!!repositoryToEdit?.hasSshKey);
-	let urlChanged = $derived(isEditMode && $inputs.url.value.trim() !== repositoryToEdit?.url);
-	let tokenNeedsAttention = $derived(urlChanged && hasToken && !clearToken && !$inputs.token?.value?.trim());
-	let sshKeyNeedsAttention = $derived(urlChanged && hasSshKey && !clearSshKey && !$inputs.sshKey?.value?.trim());
+	let urlChanged = $derived(isEditMode && inputs.url.value.trim() !== repositoryToEdit?.url);
+	let tokenNeedsAttention = $derived(urlChanged && hasToken && !clearToken && !inputs.token?.value?.trim());
+	let sshKeyNeedsAttention = $derived(urlChanged && hasSshKey && !clearSshKey && !inputs.sshKey?.value?.trim());
 
 	let selectedAuthType = $state<{ value: string; label: string }>({
 		value: formData.authType,
@@ -96,14 +98,14 @@
 	}
 
 	function clearCredentialErrors() {
-		if ($inputs.token) $inputs.token.error = null;
-		if ($inputs.sshKey) $inputs.sshKey.error = null;
+		if (inputs.token) inputs.token.error = null;
+		if (inputs.sshKey) inputs.sshKey.error = null;
 	}
 
 	function handleSubmit() {
 		const data = form.validate();
-		if (tokenNeedsAttention && $inputs.token) $inputs.token.error = m.git_repository_token_url_change();
-		if (sshKeyNeedsAttention && $inputs.sshKey) $inputs.sshKey.error = m.git_repository_ssh_key_url_change();
+		if (tokenNeedsAttention && inputs.token) inputs.token.error = m.git_repository_token_url_change();
+		if (sshKeyNeedsAttention && inputs.sshKey) inputs.sshKey.error = m.git_repository_ssh_key_url_change();
 		if (!data || tokenNeedsAttention || sshKeyNeedsAttention) return;
 
 		const payload: GitRepositoryCreateDto | GitRepositoryUpdateDto = {
@@ -145,19 +147,14 @@
 >
 	{#snippet children()}
 		<form id="git-repository-form" onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-6">
-			<FormInput
-				label={m.git_repository_name()}
-				type="text"
-				placeholder={m.common_name_placeholder()}
-				bind:input={$inputs.name}
-			/>
+			<FormInput label={m.git_repository_name()} type="text" placeholder={m.common_name_placeholder()} bind:input={inputs.name} />
 
 			<FormInput
 				label={m.git_repository_url()}
 				type="text"
 				placeholder={m.git_repository_url_placeholder()}
 				oninput={clearCredentialErrors}
-				bind:input={$inputs.url}
+				bind:input={inputs.url}
 			/>
 
 			<div class="space-y-2">
@@ -168,7 +165,7 @@
 					onValueChange={(v) => {
 						if (v === 'none' || v === 'http' || v === 'ssh') {
 							selectedAuthType = { value: v, label: getAuthTypeLabel(v) };
-							$inputs.authType.value = v;
+							inputs.authType.value = v;
 						}
 					}}
 				>
@@ -184,7 +181,7 @@
 			</div>
 
 			{#if selectedAuthType.value === 'http'}
-				<FormInput label={m.common_username()} type="text" bind:input={$inputs.username} />
+				<FormInput label={m.common_username()} type="text" bind:input={inputs.username} />
 			{/if}
 			{#if selectedAuthType.value === 'http' || hasToken}
 				<FormInput
@@ -198,7 +195,7 @@
 					warningText={tokenNeedsAttention ? m.git_repository_token_url_change() : undefined}
 					disabled={clearToken}
 					oninput={clearCredentialErrors}
-					bind:input={$inputs.token}
+					bind:input={inputs.token}
 				/>
 				{#if hasToken}
 					<SwitchWithLabel
@@ -218,7 +215,7 @@
 					disabled={clearSshKey}
 					rows={6}
 					oninput={clearCredentialErrors}
-					bind:input={$inputs.sshKey}
+					bind:input={inputs.sshKey}
 				/>
 				{#if hasSshKey}
 					<SwitchWithLabel
@@ -238,7 +235,7 @@
 						onValueChange={(v) => {
 							if (v === 'strict' || v === 'accept_new' || v === 'skip') {
 								selectedSshHostKeyVerification = { value: v, label: getSshHostKeyVerificationLabel(v) };
-								$inputs.sshHostKeyVerification.value = v;
+								inputs.sshHostKeyVerification.value = v;
 							}
 						}}
 					>
@@ -274,14 +271,14 @@
 				label={m.common_description()}
 				type="text"
 				placeholder={m.common_description_placeholder()}
-				bind:input={$inputs.description}
+				bind:input={inputs.description}
 			/>
 
 			<SwitchWithLabel
 				id="isEnabledSwitch"
 				label={m.common_enabled()}
 				description={m.common_enabled_description()}
-				bind:checked={$inputs.enabled.value}
+				bind:checked={inputs.enabled.value}
 			/>
 		</form>
 	{/snippet}

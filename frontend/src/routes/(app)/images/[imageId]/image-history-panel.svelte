@@ -2,7 +2,7 @@
 	import { createQuery } from '@tanstack/svelte-query';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-	import userStore from '#lib/stores/user-store.js';
+	import userStore from '#lib/stores/user-store.svelte.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 
 	import * as Card from '#lib/components/ui/card/index.js';
@@ -18,7 +18,7 @@
 	const historyQuery = createQuery(() => {
 		const environmentId = environmentStore.selected?.id;
 		const requestedImageId = imageId;
-		$userStore;
+		userStore.current;
 		return {
 			queryKey: queryKeys.images.history(environmentId ?? '', requestedImageId),
 			queryFn: async () => {

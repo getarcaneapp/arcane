@@ -3,12 +3,13 @@
 	import { ArrowDownIcon } from '#lib/icons/index.js';
 	import FormInput from '#lib/components/form/form-input.svelte';
 	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
-	import { preventDefault } from '#lib/utils/settings.js';
+	import { preventDefault } from '#lib/utils/settings.svelte.js';
+
 	import { m } from '#lib/paraglide/messages.js';
-	import type { BuildFormInputsStore, SelectOption } from './build-form.types';
+	import type { BuildFormInputs, SelectOption } from './build-form.types';
 
 	let {
-		inputs,
+		inputs = $bindable(),
 		provider,
 		showAdvanced = $bindable(false),
 		isPushMode = false,
@@ -18,7 +19,7 @@
 		registryLoadFailed = false,
 		onSubmit
 	}: {
-		inputs: BuildFormInputsStore;
+		inputs: BuildFormInputs;
 		provider: 'local' | 'depot';
 		showAdvanced?: boolean;
 		isPushMode?: boolean;
@@ -45,11 +46,11 @@
 					description={!registryLoadFailed && registryOptions.length === 0 ? m.registries_none_enabled() : undefined}
 					error={registryLoadFailed ? m.registries_no_list_permission() : null}
 					bind:value={
-						() => $inputs.registryId.value,
+						() => inputs.registryId.value,
 						(value) => {
-							if (value === $inputs.registryId.value) return;
-							$inputs.registryId.value = value;
-							$inputs.repositoryName.value = '';
+							if (value === inputs.registryId.value) return;
+							inputs.registryId.value = value;
+							inputs.repositoryName.value = '';
 						}
 					}
 				/>
@@ -59,13 +60,13 @@
 					label={m.repository_name()}
 					placeholder={m.select_a_repository_name()}
 					options={repositoryOptions}
-					description={$inputs.registryId.value && !registryLoadFailed && repositoryOptions.length === 0
+					description={inputs.registryId.value && !registryLoadFailed && repositoryOptions.length === 0
 						? m.registries_no_repository_names()
 						: undefined}
-					bind:value={$inputs.repositoryName.value}
+					bind:value={inputs.repositoryName.value}
 				/>
 
-				<FormInput label={m.tag()} type="text" placeholder={m.tag_placeholder()} bind:input={$inputs.pushTag} />
+				<FormInput label={m.tag()} type="text" placeholder={m.tag_placeholder()} bind:input={inputs.pushTag} />
 
 				{#if fullImageReference}
 					<div class="space-y-1">
@@ -81,7 +82,7 @@
 					type="text"
 					placeholder={m.image_tags_placeholder()}
 					description={m.image_tags_description()}
-					bind:input={$inputs.tags}
+					bind:input={inputs.tags}
 				/>
 			{/if}
 
@@ -101,7 +102,7 @@
 								type="text"
 								placeholder={m.dockerfile()}
 								description={m.dockerfile_description()}
-								bind:input={$inputs.dockerfile}
+								bind:input={inputs.dockerfile}
 							/>
 
 							<FormInput
@@ -109,7 +110,7 @@
 								type="text"
 								placeholder={m.target_placeholder()}
 								description={m.target_description()}
-								bind:input={$inputs.target}
+								bind:input={inputs.target}
 							/>
 						</div>
 
@@ -118,7 +119,7 @@
 							type="text"
 							placeholder={m.platforms_placeholder()}
 							description={m.platforms_description()}
-							bind:input={$inputs.platforms}
+							bind:input={inputs.platforms}
 							warningText={providerIsLocal ? m.build_provider_warning_single_platform_local() : undefined}
 						/>
 
@@ -128,7 +129,7 @@
 							rows={3}
 							placeholder={m.build_args_placeholder()}
 							description={m.build_args_description()}
-							bind:input={$inputs.buildArgs}
+							bind:input={inputs.buildArgs}
 						/>
 
 						<FormInput
@@ -137,7 +138,7 @@
 							rows={3}
 							placeholder={m.build_labels_placeholder()}
 							description={m.build_labels_description()}
-							bind:input={$inputs.labels}
+							bind:input={inputs.labels}
 						/>
 
 						<FormInput
@@ -146,7 +147,7 @@
 							rows={2}
 							placeholder={m.build_cache_from_placeholder()}
 							description={m.build_cache_from_description()}
-							bind:input={$inputs.cacheFrom}
+							bind:input={inputs.cacheFrom}
 						/>
 
 						<FormInput
@@ -155,7 +156,7 @@
 							rows={2}
 							placeholder={m.build_cache_to_placeholder()}
 							description={m.build_cache_to_description()}
-							bind:input={$inputs.cacheTo}
+							bind:input={inputs.cacheTo}
 							disabled={providerIsLocal}
 							warningText={providerIsLocal ? m.build_provider_warning_unsupported_local() : undefined}
 						/>
@@ -166,7 +167,7 @@
 								type="text"
 								placeholder={m.build_network_placeholder()}
 								description={m.build_network_description()}
-								bind:input={$inputs.network}
+								bind:input={inputs.network}
 								disabled={providerIsDepot}
 								warningText={providerIsDepot ? m.build_provider_warning_unsupported_depot() : undefined}
 							/>
@@ -176,7 +177,7 @@
 								type="text"
 								placeholder={m.build_isolation_placeholder()}
 								description={m.build_isolation_description()}
-								bind:input={$inputs.isolation}
+								bind:input={inputs.isolation}
 								disabled={providerIsDepot}
 								warningText={providerIsDepot ? m.build_provider_warning_unsupported_depot() : undefined}
 							/>
@@ -188,7 +189,7 @@
 								type="text"
 								placeholder={m.build_shm_size_placeholder()}
 								description={m.build_shm_size_description()}
-								bind:input={$inputs.shmSize}
+								bind:input={inputs.shmSize}
 								disabled={providerIsDepot}
 								warningText={providerIsDepot ? m.build_provider_warning_unsupported_depot() : undefined}
 							/>
@@ -199,7 +200,7 @@
 								rows={2}
 								placeholder={m.build_entitlements_placeholder()}
 								description={m.build_entitlements_description()}
-								bind:input={$inputs.entitlements}
+								bind:input={inputs.entitlements}
 								disabled={providerIsLocal}
 								warningText={providerIsLocal ? m.build_provider_warning_unsupported_local() : undefined}
 							/>
@@ -211,7 +212,7 @@
 							rows={2}
 							placeholder={m.build_ulimits_placeholder()}
 							description={m.build_ulimits_description()}
-							bind:input={$inputs.ulimits}
+							bind:input={inputs.ulimits}
 							disabled={providerIsDepot}
 							warningText={providerIsDepot ? m.build_provider_warning_unsupported_depot() : undefined}
 						/>
@@ -222,7 +223,7 @@
 							rows={2}
 							placeholder={m.build_extra_hosts_placeholder()}
 							description={m.build_extra_hosts_description()}
-							bind:input={$inputs.extraHosts}
+							bind:input={inputs.extraHosts}
 							disabled={providerIsDepot}
 							warningText={providerIsDepot ? m.build_provider_warning_unsupported_depot() : undefined}
 						/>
@@ -232,7 +233,7 @@
 								label={m.build_privileged_label()}
 								type="switch"
 								description={m.build_privileged_description()}
-								bind:input={$inputs.privileged}
+								bind:input={inputs.privileged}
 								disabled={providerIsLocal}
 								warningText={providerIsLocal ? m.build_provider_warning_unsupported_local() : undefined}
 							/>
@@ -241,7 +242,7 @@
 								label={m.build_no_cache_label()}
 								type="switch"
 								description={m.build_no_cache_description()}
-								bind:input={$inputs.noCache}
+								bind:input={inputs.noCache}
 							/>
 						</div>
 
@@ -249,7 +250,7 @@
 							label={m.build_pull_base_images_label()}
 							type="switch"
 							description={m.build_pull_base_images_description()}
-							bind:input={$inputs.pull}
+							bind:input={inputs.pull}
 						/>
 					</div>
 				</Collapsible.Content>

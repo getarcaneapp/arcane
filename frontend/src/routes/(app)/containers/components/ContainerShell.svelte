@@ -5,7 +5,7 @@
 	import TerminalControls from '#lib/components/terminal/terminal-controls.svelte';
 	import { m } from '#lib/paraglide/messages.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-	import settingsStore from '#lib/stores/config-store.js';
+	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { TerminalIcon } from '#lib/icons/index.js';
 
 	let {
@@ -15,7 +15,7 @@
 	} = $props();
 
 	let isConnected = $state(false);
-	let selectedShell = $derived($settingsStore.defaultShell || '/bin/sh');
+	let selectedShell = $derived(settingsStore.current?.defaultShell || '/bin/sh');
 	let reconnectKey = $state(0);
 	const websocketUrl = $derived.by(() => {
 		if (!containerId || !selectedShell) return '';

@@ -5,7 +5,7 @@
 	import * as ArcaneTooltip from '#lib/components/arcane-tooltip/index.js';
 	import { badgeVariants } from '#lib/components/ui/badge/index.js';
 	import { cn } from '#lib/utils.js';
-	import settingsStore from '#lib/stores/config-store.js';
+	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { toPortHref } from '#lib/utils/navigation.js';
 	import { mergeProps } from 'bits-ui';
 
@@ -26,7 +26,7 @@
 
 	let expanded = $state(false);
 
-	const baseServerUrl = $derived($settingsStore?.baseServerUrl ?? 'http://localhost');
+	const baseServerUrl = $derived(settingsStore.current?.baseServerUrl ?? 'http://localhost');
 	type PortBadgePort = ContainerPorts | ServicePort;
 
 	type NormalizedPort = {
@@ -98,7 +98,7 @@
 	<span class="text-xs text-muted-foreground">{m.containers_no_ports()}</span>
 {:else}
 	<div class="flex gap-1.5 {wrap ? 'flex-wrap' : 'flex-nowrap'}">
-		{#each published as p, i (i)}
+		{#each published as p (`${p.ip ?? ''}:${p.hostPort ?? ''}:${p.containerPort}/${p.proto ?? ''}`)}
 			<ArcaneTooltip.Root interactive>
 				<ArcaneTooltip.Trigger>
 					{#snippet child({ props })}
@@ -126,7 +126,7 @@
 				</ArcaneTooltip.Content>
 			</ArcaneTooltip.Root>
 		{/each}
-		{#each exposedOnly as p, i (i)}
+		{#each exposedOnly as p (`${p.ip ?? ''}:${p.hostPort ?? ''}:${p.containerPort}/${p.proto ?? ''}`)}
 			<ArcaneTooltip.Root>
 				<ArcaneTooltip.Trigger>
 					<span class={badgeVariants({ variant: 'gray', size: 'sm' })}>

@@ -6,7 +6,7 @@
 	import { SunIcon, MoonIcon, MonitorIcon } from '#lib/icons/index.js';
 	import { cn } from '#lib/utils.js';
 	import { userService } from '#lib/services/user-service.js';
-	import userStore from '#lib/stores/user-store.js';
+	import userStore from '#lib/stores/user-store.svelte.js';
 
 	type Props = {
 		disabled?: boolean;
@@ -27,7 +27,7 @@
 	// choice follows the user to their other devices.
 	async function selectMode(value: 'light' | 'dark' | 'system') {
 		setMode(value);
-		if (!$userStore) return;
+		if (!userStore.current) return;
 
 		const operationResult1 = await tryCatch(
 			(async () => {

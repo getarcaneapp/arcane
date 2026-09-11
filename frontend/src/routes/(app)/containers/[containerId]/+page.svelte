@@ -3,7 +3,7 @@
 
 	import { ArcaneButton, type ArcaneButtonSize } from '#lib/components/arcane-button/index.js';
 	import { goto, refreshAll } from '$app/navigation';
-	import settingsStore from '#lib/stores/config-store.js';
+	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import ActionButtons from '#lib/components/action-buttons.svelte';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { bytes } from '#lib/utils/formatting.js';
@@ -54,7 +54,7 @@
 	import { imageService } from '#lib/services/image-service.js';
 	import { createQuery } from '@tanstack/svelte-query';
 	import { queryKeys } from '#lib/query/query-keys.js';
-	import userStore from '#lib/stores/user-store.js';
+	import userStore from '#lib/stores/user-store.svelte.js';
 	import { isAutoUpdateIgnored, isAutoUpdateLabelDisabled } from '#lib/utils/container-auto-update.js';
 	import KillContainerDialog from '../components/kill-container-dialog.svelte';
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';
@@ -149,7 +149,7 @@
 	const canConvertToCompose = $derived(
 		hasPermission('projects:create', currentEnvId) &&
 			!container?.composeInfo &&
-			$settingsStore?.experimentalFeaturesEnabled === true
+			settingsStore.current?.experimentalFeaturesEnabled === true
 	);
 	const containerStatus = $derived(container?.state?.status ?? '');
 	const isContainerRunning = $derived(containerStatus === 'running' || !!container?.state?.running);
@@ -163,7 +163,7 @@
 	const imageUpdateQuery = createQuery(() => {
 		const environmentId = environmentStore.selected?.id;
 		const image = container?.image;
-		$userStore;
+		userStore.current;
 		return {
 			queryKey: queryKeys.images.updateInfoByRef(environmentId ?? '', image ?? ''),
 			queryFn: async () => {

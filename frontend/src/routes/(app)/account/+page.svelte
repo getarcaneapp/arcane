@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
-	import { fromStore } from 'svelte/store';
 	import { toast } from 'svelte-sonner';
 	import HeaderCard from '#lib/components/header-card.svelte';
 	import * as Tabs from '#lib/components/ui/tabs/index.js';
@@ -13,8 +12,8 @@
 	import TextInputWithLabel from '#lib/components/form/text-input-with-label.svelte';
 	import { m } from '#lib/paraglide/messages.js';
 	import { userService } from '#lib/services/user-service.js';
-	import userStore from '#lib/stores/user-store.js';
-	import settingsStore from '#lib/stores/config-store.js';
+	import userStore from '#lib/stores/user-store.svelte.js';
+	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { getDefaultProfilePicture } from '#lib/utils/docker.js';
 	import { avatarUploadLimitBytes, prepareAvatarUploadFile } from '#lib/utils/avatar-upload.js';
 	import { formatDate, formatRelativeTime } from '#lib/utils/formatting.js';
@@ -52,10 +51,10 @@
 		return BUILT_IN_ROLE_LABELS[roleId]?.() ?? roleId.replace(/^role_/, '').replace(/_/g, ' ');
 	}
 
-	const currentUser = $derived($userStore);
+	const currentUser = $derived(userStore.current);
 	const isOidcUser = $derived(Boolean(currentUser?.oidcSubjectId));
 
-	const settings = fromStore(settingsStore);
+	const settings = settingsStore;
 	const gravatarEnabled = $derived(Boolean(settings.current?.enableGravatar));
 	const avatarMaxUploadSizeMb = $derived(
 		Number(settings.current?.avatarMaxUploadSizeMb) > 0 ? Number(settings.current?.avatarMaxUploadSizeMb) : 2

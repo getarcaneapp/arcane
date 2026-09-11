@@ -1,4 +1,4 @@
-import { onMount } from 'svelte';
+import { onMount, untrack } from 'svelte';
 import {
 	Virtualizer,
 	elementScroll,
@@ -72,8 +72,10 @@ export function createVirtualizer<TScroll extends Element, TItem extends Element
 		get totalSize() {
 			return totalSize;
 		},
-		/** `use:` action target that measures real row heights for accurate offsets. */
-		measureElement: (node: TItem | null) => instance.measureElement(node),
+		measureElement: (node: TItem | null) => {
+			untrack(() => instance.measureElement(node));
+			if (node) return () => queueMicrotask(() => instance.measureElement(null));
+		},
 		measure: () => {
 			instance.measure();
 			for (const node of instance.elementsCache.values()) {

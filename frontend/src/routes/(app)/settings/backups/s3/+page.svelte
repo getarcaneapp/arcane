@@ -2,7 +2,7 @@
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import { toast } from 'svelte-sonner';
-	import settingsStore from '#lib/stores/config-store.js';
+	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { SettingsPageLayout, type SettingsActionButton } from '#lib/layouts/index.js';
 	import { RemoteEnvironmentIcon } from '#lib/icons/index.js';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
@@ -20,7 +20,7 @@
 	let dialogOpen = $state(false);
 	let destinationSession = $state(0);
 	let saving = $state(false);
-	const isReadOnly = $derived.by(() => $settingsStore.uiConfigDisabled);
+	const isReadOnly = $derived.by(() => settingsStore.current?.uiConfigDisabled);
 
 	function openCreate() {
 		selected = null;

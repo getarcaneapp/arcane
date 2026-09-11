@@ -261,7 +261,8 @@
 													{m.containers_aliases()}
 												</div>
 												<div class="space-y-1 text-sm font-medium text-foreground">
-													{#each rawNetworkConfig.aliases as alias, index (index)}
+													<!-- Docker may repeat aliases; these rows render only text. -->
+													{#each rawNetworkConfig.aliases as alias}
 														<div class="cursor-pointer font-mono break-all select-all" title={m.common_click_to_select()}>
 															{alias}
 														</div>

@@ -1,5 +1,4 @@
-import type { FormInput } from '#lib/utils/settings.js';
-import type { Writable } from 'svelte/store';
+import type { FormInput } from '#lib/types/form.js';
 
 export type SelectOption = {
 	label: string;
@@ -36,5 +35,3 @@ export type BuildFormInputs = {
 	push: FormInput<boolean>;
 	load: FormInput<boolean>;
 };
-
-export type BuildFormInputsStore = Writable<BuildFormInputs>;

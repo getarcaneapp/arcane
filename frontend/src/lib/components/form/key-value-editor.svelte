@@ -10,8 +10,8 @@
 
 	let {
 		rows = $bindable([]),
-		keyPlaceholder = 'KEY',
-		valuePlaceholder = 'value',
+		keyPlaceholder = m.key_placeholder(),
+		valuePlaceholder = m.value_placeholder(),
 		addLabel,
 		disabled = false
 	}: {
@@ -32,7 +32,7 @@
 </script>
 
 <div class="space-y-3">
-	{#each rows as row, index (index)}
+	{#each rows as row, index (row)}
 		<div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
 			<Input type="text" placeholder={keyPlaceholder} bind:value={row.key} {disabled} class="flex-1 font-mono" />
 			<span class="hidden font-mono text-muted-foreground sm:inline">=</span>

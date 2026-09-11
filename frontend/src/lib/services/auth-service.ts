@@ -1,7 +1,7 @@
 import { tryCatch } from '#lib/utils/try-catch.js';
 import { goto, refreshAll } from '$app/navigation';
 import BaseAPIService, { APIError } from './api-service';
-import userStore from '#lib/stores/user-store.js';
+import userStore from '#lib/stores/user-store.svelte.js';
 import type { User, MFAChallenge, AuthenticationResponse } from '#lib/types/auth.js';
 import type { OidcStatusInfo } from '#lib/types/settings.js';
 import type { LoginCredentials, AutoLoginConfig } from '#lib/types/auth.js';

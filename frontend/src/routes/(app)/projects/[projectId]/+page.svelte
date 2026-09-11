@@ -34,7 +34,8 @@
 	import { tryCatch } from '#lib/utils/try-catch.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { z } from 'zod/v4';
-	import { createForm } from '#lib/utils/settings.js';
+	import { createForm } from '#lib/utils/settings.svelte.js';
+
 	import { m } from '#lib/paraglide/messages.js';
 	import { gitOpsComposeEditUrl, gitOpsFileEditUrl, gitOpsProjectUrl } from '#lib/utils/gitops.js';
 	import { toGitRouteUrl, toSafeHref } from '#lib/utils/navigation.js';
@@ -53,7 +54,7 @@
 	import { afterNavigate } from '$app/navigation';
 	import { projectService } from '#lib/services/project-service.js';
 	import { projectWorkspaceService } from '#lib/services/project-workspace-service.js';
-	import settingsStore from '#lib/stores/config-store.js';
+	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { gitOpsSyncService } from '#lib/services/gitops-sync-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { hasPermission } from '#lib/utils/auth.js';
@@ -124,7 +125,7 @@
 	let projectWorkspaceStagedUploadedText = $state<Record<string, string>>({});
 	let projectWorkspaceFilePromises: Record<string, Promise<IncludeFile | ProjectWorkspaceFileContent> | undefined> = {};
 	const globalVariableMap = $derived(globalVariablesToMap(data.globalVariables));
-	const projectWorkspaceMaxFileSizeMb = $derived($settingsStore?.projectWorkspaceMaxFileSizeMb ?? 10);
+	const projectWorkspaceMaxFileSizeMb = $derived(settingsStore.current?.projectWorkspaceMaxFileSizeMb ?? 10);
 
 	const projectDetailQuery = createQuery(() => ({
 		queryKey: queryKeys.projects.detail(envId, projectId),
@@ -200,7 +201,8 @@
 		overrideContent: data.editorState.originalOverrideContent || ''
 	}));
 
-	const { inputs, ...form } = createForm<typeof formSchema>(formSchema, initialFormData);
+	const form = createForm<typeof formSchema>(formSchema, initialFormData);
+	let inputs = $derived(form.inputs);
 
 	function withLoadedProjectIncludeContent(details: Project | null | undefined): Project | null {
 		if (!details) return null;
@@ -249,16 +251,16 @@
 		)
 	);
 
-	const composeYamlName = $derived(extractComposeYamlName($inputs.composeContent.value));
+	const composeYamlName = $derived(extractComposeYamlName(inputs.composeContent.value));
 	// The compose file's top-level `name:` is authoritative; surface it as the
 	// effective name without writing to form state reactively.
-	const effectiveName = $derived(composeYamlName ?? $inputs.name.value);
+	const effectiveName = $derived(composeYamlName ?? inputs.name.value);
 
 	let hasChanges = $derived(
 		effectiveName !== serverName ||
-			$inputs.composeContent.value !== serverComposeContent ||
-			$inputs.overrideContent.value !== serverOverrideContent ||
-			$inputs.envContent.value !== serverEnvContent ||
+			inputs.composeContent.value !== serverComposeContent ||
+			inputs.overrideContent.value !== serverOverrideContent ||
+			inputs.envContent.value !== serverEnvContent ||
 			Object.entries(includeFilesState).some(([relativePath, content]) => content !== serverIncludeFiles[relativePath]) ||
 			projectWorkspaceChanges.length > 0 ||
 			changedProjectWorkspacePaths.length > 0
@@ -429,9 +431,9 @@
 		if (directoryFilePaths.has(selectedIncludeTabPreference)) return selectedIncludeTabPreference;
 		return null;
 	});
-	let composeHasChanges = $derived($inputs.composeContent.value !== serverComposeContent);
-	let overrideHasChanges = $derived($inputs.overrideContent.value !== serverOverrideContent);
-	let envHasChanges = $derived($inputs.envContent.value !== serverEnvContent);
+	let composeHasChanges = $derived(inputs.composeContent.value !== serverComposeContent);
+	let overrideHasChanges = $derived(inputs.overrideContent.value !== serverOverrideContent);
+	let envHasChanges = $derived(inputs.envContent.value !== serverEnvContent);
 	let changedIncludeFilePaths = $derived.by(() =>
 		Object.keys(includeFilesState).filter((relativePath) => includeFilesState[relativePath] !== serverIncludeFiles[relativePath])
 	);
@@ -565,7 +567,7 @@
 	}
 
 	function rebaseEditorDraft(details: Project, options: RebaseEditorDraftOptions = {}) {
-		const envDraft = $inputs.envContent.value;
+		const envDraft = inputs.envContent.value;
 		const shouldPreserveEnvDraft = options.preserveEditableDrafts === true && envDraft !== serverEnvContent;
 		const dirtyIncludeDrafts = options.preserveEditableDrafts === true ? getDirtyIncludeDrafts() : {};
 
@@ -578,10 +580,10 @@
 		const savedProjectWorkspaceContents =
 			options.preserveProjectWorkspaceContents === true ? { ...projectWorkspaceContents } : {};
 
-		$inputs.name.value = normalizedProject.name || '';
-		$inputs.composeContent.value = normalizedProject.composeContent || '';
-		$inputs.overrideContent.value = normalizedProject.overrideContent || '';
-		$inputs.envContent.value = shouldPreserveEnvDraft ? envDraft : normalizedProject.envContent || '';
+		inputs.name.value = normalizedProject.name || '';
+		inputs.composeContent.value = normalizedProject.composeContent || '';
+		inputs.overrideContent.value = normalizedProject.overrideContent || '';
+		inputs.envContent.value = shouldPreserveEnvDraft ? envDraft : normalizedProject.envContent || '';
 		projectWorkspaceChanges = [];
 		projectWorkspaceContents = savedProjectWorkspaceContents;
 		// Seed the per-file UI-state records for every retained path. A mounted
@@ -1012,7 +1014,7 @@
 		// nothing on disk to keep, so the override reverts to the add affordance.
 		if (key === 'override' && !overrideExists) {
 			overrideEditorRequested = false;
-			$inputs.overrideContent.value = '';
+			inputs.overrideContent.value = '';
 		}
 		const index = openTabs.indexOf(key);
 		const remaining = openTabs.filter((tab) => tab !== key);
@@ -1070,7 +1072,7 @@
 		overrideEditorRequested = false;
 		overrideOpen = false;
 		const existed = overrideExists;
-		$inputs.overrideContent.value = '';
+		inputs.overrideContent.value = '';
 		if (existed) {
 			await handleSaveChanges();
 		}
@@ -1343,12 +1345,12 @@
 	}
 
 	const allComposeContents = $derived.by(() => {
-		return [$inputs.composeContent.value, $inputs.overrideContent.value, ...Object.values(includeFilesState)].filter(
+		return [inputs.composeContent.value, inputs.overrideContent.value, ...Object.values(includeFilesState)].filter(
 			(value) => value.length > 0
 		);
 	});
 	const codeEditorContext = $derived({
-		envContent: $inputs.envContent.value,
+		envContent: inputs.envContent.value,
 		composeContents: allComposeContents,
 		globalVariables: globalVariableMap
 	});
@@ -1417,7 +1419,7 @@
 			title: composeFileName,
 			language: 'yaml',
 			validationMode: 'compose',
-			error: $inputs.composeContent.error ?? undefined,
+			error: inputs.composeContent.error ?? undefined,
 			readOnly: !canEditCompose,
 			fileId: `project:${projectId}:compose`,
 			originalValue: serverComposeContent,
@@ -1432,7 +1434,7 @@
 			title: overrideFileName,
 			language: 'yaml',
 			validationMode: 'compose',
-			error: $inputs.overrideContent.error ?? undefined,
+			error: inputs.overrideContent.error ?? undefined,
 			readOnly: !canEditOverride,
 			fileId: `project:${projectId}:override`,
 			originalValue: serverOverrideContent,
@@ -1447,7 +1449,7 @@
 			title: '.env',
 			language: 'env',
 			validationMode: 'env',
-			error: $inputs.envContent.error ?? undefined,
+			error: inputs.envContent.error ?? undefined,
 			readOnly: !canEditEnv,
 			fileId: `project:${projectId}:env`,
 			originalValue: serverEnvContent,
@@ -1566,7 +1568,7 @@
 											<CodePanel
 												{...envPanelProps()}
 												bind:open={envOpen}
-												bind:value={$inputs.envContent.value}
+												bind:value={inputs.envContent.value}
 												bind:hasErrors={envHasErrors}
 												bind:validationReady={envValidationReady}
 											/>
@@ -1873,7 +1875,8 @@
 			<Alert.Description>
 				{m.compose_multiple_files_description()}
 				<div class="mt-2 flex flex-wrap gap-1.5">
-					{#each composeFiles as file, i (i)}
+					<!-- COMPOSE_FILE preserves repeated paths; these badges render only text. -->
+					{#each composeFiles as file}
 						<span class="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">{file}</span>
 					{/each}
 				</div>
@@ -1889,7 +1892,7 @@
 				variant="plain"
 				{...composePanelProps()}
 				bind:open={composeOpen}
-				bind:value={$inputs.composeContent.value}
+				bind:value={inputs.composeContent.value}
 				bind:hasErrors={composeHasErrors}
 				bind:validationReady={composeValidationReady}
 				bind:outlineOpen={treeOutlineOpen}
@@ -1915,7 +1918,7 @@
 					variant="plain"
 					open={true}
 					{...overridePanelProps()}
-					bind:value={$inputs.overrideContent.value}
+					bind:value={inputs.overrideContent.value}
 					bind:hasErrors={overrideHasErrors}
 					bind:validationReady={overrideValidationReady}
 					bind:outlineOpen={treeOutlineOpen}
@@ -1928,7 +1931,7 @@
 				variant="plain"
 				{...envPanelProps()}
 				bind:open={envOpen}
-				bind:value={$inputs.envContent.value}
+				bind:value={inputs.envContent.value}
 				bind:hasErrors={envHasErrors}
 				bind:validationReady={envValidationReady}
 				bind:outlineOpen={treeOutlineOpen}
@@ -1996,7 +1999,7 @@
 				<CodePanel
 					{...composePanelProps()}
 					bind:open={composeOpen}
-					bind:value={$inputs.composeContent.value}
+					bind:value={inputs.composeContent.value}
 					bind:hasErrors={composeHasErrors}
 					bind:validationReady={composeValidationReady}
 				/>
@@ -2014,7 +2017,7 @@
 						<CodePanel
 							{...overridePanelProps()}
 							variant="plain"
-							bind:value={$inputs.overrideContent.value}
+							bind:value={inputs.overrideContent.value}
 							bind:hasErrors={overrideHasErrors}
 							bind:validationReady={overrideValidationReady}
 							bind:outlineOpen={overrideOutlineOpen}
@@ -2049,11 +2052,11 @@
 		<div class="min-w-0 flex-1">
 			<div class="flex min-h-9 min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
 				<EditableName
-					bind:value={$inputs.name.value}
+					bind:value={inputs.name.value}
 					displayValue={effectiveName}
 					bind:ref={nameInputRef}
 					variant="inline"
-					error={$inputs.name.error ?? undefined}
+					error={inputs.name.error ?? undefined}
 					originalValue={serverName}
 					canEdit={canEditName}
 					disabledMessage={composeYamlName ? m.compose_project_name_defined_in_yaml() : undefined}
@@ -2080,7 +2083,7 @@
 
 			{#if project.urls && project.urls.length > 0}
 				<div class="mt-1 flex min-w-0 flex-wrap items-center gap-1.5">
-					{#each project.urls as url, i (i)}
+					{#each project.urls as url (url)}
 						<a
 							class="inline-flex h-6 max-w-[10rem] min-w-0 items-center gap-1.5 rounded-[var(--radius)] border border-sky-700/20 bg-background/70 px-2.5 text-[12px] font-semibold ring-offset-background transition-colors hover:border-sky-700/40 hover:bg-sky-500/10 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none sm:max-w-[14rem] md:max-w-[18rem] dark:border-sky-400/40 dark:bg-sky-500/20 dark:text-sky-100 dark:hover:border-sky-300/60 dark:hover:bg-sky-500/30"
 							href={toSafeHref(url)}

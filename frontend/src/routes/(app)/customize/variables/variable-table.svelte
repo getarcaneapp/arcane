@@ -146,8 +146,8 @@
 	{:else}
 		{@const names = scopeNames(item)}
 		<div class="flex flex-wrap items-center gap-1">
-			{#each names.slice(0, 2) as name, index (index)}
-				<Badge variant="outline" size="sm" class="max-w-40 truncate">{name}</Badge>
+			{#each item.environmentIds.slice(0, 2) as environmentId (environmentId)}
+				<Badge variant="outline" size="sm" class="max-w-40 truncate">{envNameById.get(environmentId) ?? environmentId}</Badge>
 			{/each}
 			{#if names.length > 2}
 				<Badge variant="gray" size="sm">{m.plus_count({ count: names.length - 2 })}</Badge>

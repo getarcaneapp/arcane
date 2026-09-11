@@ -4,7 +4,8 @@
 	import SheetFooterActions from '#lib/components/sheets/sheet-footer-actions.svelte';
 	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
 	import RepoTagFields from '#lib/components/form/repo-tag-fields.svelte';
-	import { createForm, preventDefault } from '#lib/utils/settings.js';
+	import { createForm, preventDefault } from '#lib/utils/settings.svelte.js';
+
 	import { imageService } from '#lib/services/image-service.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { toast } from 'svelte-sonner';
@@ -30,7 +31,8 @@
 		tag: 'latest'
 	});
 
-	let { inputs, ...form } = $derived(createForm<typeof schema>(schema, formData));
+	let form = $derived(createForm<typeof schema>(schema, formData));
+	let inputs = $derived(form.inputs);
 	let isTagging = $state(false);
 
 	function handleOpenChange(nextOpen: boolean) {
@@ -77,7 +79,7 @@
 >
 	{#snippet children()}
 		<form onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-4">
-			<RepoTagFields bind:repository={$inputs.repository} bind:tag={$inputs.tag} />
+			<RepoTagFields bind:repository={inputs.repository} bind:tag={inputs.tag} />
 		</form>
 	{/snippet}
 

@@ -1,8 +1,9 @@
 import { settingsService } from '#lib/services/settings-service.js';
 import type { Settings } from '#lib/types/settings.js';
-import { get, writable } from 'svelte/store';
+import { untrack } from 'svelte';
 
-const settingsStore = writable<Settings>();
+let current = $state.raw<Settings>();
+const listeners = new Set<(settings: Settings | undefined) => void>();
 
 const reload = async () => {
 	const settings = await settingsService.getSettings();
@@ -11,19 +12,18 @@ const reload = async () => {
 };
 
 const set = (settings: Settings) => {
-	settingsStore.set(settings);
+	current = settings;
+	untrack(() => {
+		for (const listener of listeners) listener(settings);
+	});
 };
 
 // Auto-login state management
 const AUTO_LOGIN_DISABLED_KEY = 'arcane_auto_login_disabled';
-const autoLoginEnabledStore = writable<boolean>(false);
+let autoLoginEnabled = $state(false);
 
 const setAutoLoginEnabled = (enabled: boolean) => {
-	autoLoginEnabledStore.set(enabled);
-};
-
-const isAutoLoginEnabled = (): boolean => {
-	return get(autoLoginEnabledStore);
+	autoLoginEnabled = enabled;
 };
 
 const cacheAutoLoginDisabled = (): void => {
@@ -44,14 +44,24 @@ const clearAutoLoginDisabledCache = (): void => {
 };
 
 export default {
-	subscribe: settingsStore.subscribe,
+	get current() {
+		return current;
+	},
+	onChange(listener: (settings: Settings | undefined) => void) {
+		listeners.add(listener);
+		untrack(() => listener(current));
+		return () => {
+			listeners.delete(listener);
+		};
+	},
 	reload,
 	set,
 	// Auto-login
 	autoLoginEnabled: {
-		subscribe: autoLoginEnabledStore.subscribe,
+		get current() {
+			return autoLoginEnabled;
+		},
 		set: setAutoLoginEnabled,
-		isEnabled: isAutoLoginEnabled,
 		cacheDisabled: cacheAutoLoginDisabled,
 		isKnownDisabled: isAutoLoginKnownDisabled,
 		clearDisabledCache: clearAutoLoginDisabledCache

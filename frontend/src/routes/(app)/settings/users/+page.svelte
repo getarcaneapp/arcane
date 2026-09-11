@@ -13,8 +13,8 @@
 	import { userService } from '#lib/services/user-service.js';
 	import { roleService } from '#lib/services/role-service.js';
 	import { settingsService } from '#lib/services/settings-service.js';
-	import userStore from '#lib/stores/user-store.js';
-	import settingsStore from '#lib/stores/config-store.js';
+	import userStore from '#lib/stores/user-store.svelte.js';
+	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { SettingsPageLayout, type SettingsActionButton } from '#lib/layouts/index.js';
 	import SettingsRow from '#lib/components/settings/settings-row.svelte';
 	import { Switch } from '#lib/components/ui/switch/index.js';
@@ -163,10 +163,10 @@
 	}
 
 	// Avatar policy: server-wide settings that belong with user management.
-	const isReadOnly = $derived(Boolean($settingsStore?.uiConfigDisabled));
-	const gravatarEnabled = $derived(Boolean($settingsStore?.enableGravatar));
+	const isReadOnly = $derived(Boolean(settingsStore.current?.uiConfigDisabled));
+	const gravatarEnabled = $derived(Boolean(settingsStore.current?.enableGravatar));
 	const avatarMaxUploadSizeMb = $derived(
-		Number($settingsStore?.avatarMaxUploadSizeMb) > 0 ? Number($settingsStore?.avatarMaxUploadSizeMb) : 2
+		Number(settingsStore.current?.avatarMaxUploadSizeMb) > 0 ? Number(settingsStore.current?.avatarMaxUploadSizeMb) : 2
 	);
 	let avatarSizeInput = $derived(String(avatarMaxUploadSizeMb));
 	let avatarSizeError = $state<string | null>(null);

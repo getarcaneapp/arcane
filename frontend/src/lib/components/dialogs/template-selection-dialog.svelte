@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { SvelteSet } from 'svelte/reactivity';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
@@ -37,7 +38,7 @@
 	let { open = $bindable(), templates = [], onSelect, onDownloadSuccess }: Props = $props();
 	void open;
 
-	let loadingStates = $state<Set<string>>(new Set());
+	const loadingStates = new SvelteSet<string>();
 	let sortBy = $state<'name-asc' | 'name-desc'>('name-asc');
 	let groupByRegistry = $state(true);
 	const selectTemplateMutation = createMutation(() => ({
@@ -216,6 +217,7 @@
 
 			{#if normalizeTags(template.metadata?.tags).length > 0}
 				<div class="mb-3 flex flex-wrap gap-1">
+					<!-- Template metadata may contain duplicate tags; badges have no local state. -->
 					{#each normalizeTags(template.metadata?.tags) as tag}
 						<Badge variant="outline" size="sm">{tag}</Badge>
 					{/each}
@@ -279,7 +281,7 @@
 							{filters[sortBy]}
 						</Select.Trigger>
 						<Select.Content>
-							{#each Object.entries(filters) as [value, label]}
+							{#each Object.entries(filters) as [value, label] (value)}
 								<Select.Item {value}>{label}</Select.Item>
 							{/each}
 						</Select.Content>
@@ -300,7 +302,7 @@
 					</div>
 				{:else if groupByRegistry && groupedTemplates.length > 0}
 					<div class="space-y-3">
-						{#each groupedTemplates as group}
+						{#each groupedTemplates as group (group.name)}
 							<Collapsible.Root class="w-full">
 								<Card class="border-2">
 									<Collapsible.Trigger class="flex w-full items-center justify-between px-4 py-3 text-left">
@@ -314,7 +316,7 @@
 									<Collapsible.Content>
 										<div class="px-6 pb-6">
 											<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-												{#each group.items as template}
+												{#each group.items as template (template.id)}
 													{@render templateCard(template)}
 												{/each}
 											</div>
@@ -326,7 +328,7 @@
 					</div>
 				{:else}
 					<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-						{#each sortedTemplates as template}
+						{#each sortedTemplates as template (template.id)}
 							{@render templateCard(template, true)}
 						{/each}
 					</div>

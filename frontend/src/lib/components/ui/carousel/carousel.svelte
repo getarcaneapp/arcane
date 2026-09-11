@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { type CarouselAPI, type CarouselProps, type EmblaContext, setEmblaContext } from './context.js';
+	import { type CarouselAPI, type CarouselProps, setEmblaContext } from './context.js';
 	import { onDestroy } from 'svelte';
 	import { cn, type WithElementRef } from '#lib/utils.js';
 
@@ -7,49 +7,68 @@
 		ref = $bindable(null),
 		opts = {},
 		plugins = [],
-		setApi = () => {},
+		setApi,
 		orientation = 'horizontal',
 		class: className,
 		children,
 		...restProps
 	}: WithElementRef<CarouselProps> = $props();
 
-	// svelte-ignore state_referenced_locally
-	let carouselState = $state<EmblaContext>({
-		api: undefined,
+	let api = $state.raw<CarouselAPI>();
+	let canScrollNext = $state(false);
+	let canScrollPrev = $state(false);
+	let scrollSnaps = $state.raw<number[]>([]);
+	let selectedIndex = $state(0);
+
+	setEmblaContext({
+		get api() {
+			return api;
+		},
+		get orientation() {
+			return orientation;
+		},
+		get options() {
+			return opts;
+		},
+		get plugins() {
+			return plugins;
+		},
+		get canScrollNext() {
+			return canScrollNext;
+		},
+		get canScrollPrev() {
+			return canScrollPrev;
+		},
+		get scrollSnaps() {
+			return scrollSnaps;
+		},
+		get selectedIndex() {
+			return selectedIndex;
+		},
 		scrollPrev,
 		scrollNext,
-		orientation,
-		canScrollNext: false,
-		canScrollPrev: false,
 		handleKeyDown,
-		options: opts,
-		plugins,
 		onInit,
-		scrollSnaps: [],
-		selectedIndex: 0,
 		scrollTo
 	});
 
-	setEmblaContext(carouselState);
-
 	function scrollPrev() {
-		carouselState.api?.scrollPrev();
+		api?.scrollPrev();
 	}
 
 	function scrollNext() {
-		carouselState.api?.scrollNext();
+		api?.scrollNext();
 	}
 
 	function scrollTo(index: number, jump?: boolean) {
-		carouselState.api?.scrollTo(index, jump);
+		api?.scrollTo(index, jump);
 	}
 
 	function onSelect() {
-		if (!carouselState.api) return;
-		carouselState.selectedIndex = carouselState.api.selectedScrollSnap();
-		carouselState.canScrollNext = carouselState.api.canScrollNext();
-		carouselState.canScrollPrev = carouselState.api.canScrollPrev();
+		if (!api) return;
+		selectedIndex = api.selectedScrollSnap();
+		canScrollNext = api.canScrollNext();
+		canScrollPrev = api.canScrollPrev();
 	}
 
 	function handleKeyDown(e: KeyboardEvent) {
@@ -63,15 +82,25 @@
 	}
 
 	function onInit(event: CustomEvent<CarouselAPI>) {
-		carouselState.api = event.detail;
-		setApi(carouselState.api);
+		api = event.detail;
+		setApi?.(api);
 
-		carouselState.scrollSnaps = carouselState.api.scrollSnapList();
-		carouselState.api.on('select', onSelect);
+		scrollSnaps = api.scrollSnapList();
+		api.on('select', onSelect);
+		api.on('reInit', onReInit);
 		onSelect();
 	}
 
-	onDestroy(() => carouselState.api?.off('select', onSelect));
+	function onReInit() {
+		if (!api) return;
+		scrollSnaps = api.scrollSnapList();
+		onSelect();
+	}
+
+	onDestroy(() => {
+		api?.off('select', onSelect);
+		api?.off('reInit', onReInit);
+	});
 </script>
 
 <div

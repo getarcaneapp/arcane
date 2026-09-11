@@ -7,7 +7,8 @@
 		emptyContainerFormValues,
 		toCreateRequest
 	} from '#lib/components/containers/container-form/container-form-state.js';
-	import { createForm } from '#lib/utils/settings.js';
+	import { createForm } from '#lib/utils/settings.svelte.js';
+
 	import { containerService } from '#lib/services/container-service.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { createMutation, useQueryClient } from '@tanstack/svelte-query';

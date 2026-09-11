@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { z } from 'zod/v4';
-	import settingsStore from '#lib/stores/config-store.js';
+	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { SettingsPageLayout } from '#lib/layouts/index.js';
 	import { CodeIcon } from '#lib/icons/index.js';
 	import TextInputWithLabel from '#lib/components/form/text-input-with-label.svelte';
@@ -11,8 +11,8 @@
 
 	let { data } = $props();
 
-	const currentSettings = $derived($settingsStore || data.settings!);
-	const isReadOnly = $derived.by(() => $settingsStore?.uiConfigDisabled);
+	const currentSettings = $derived(settingsStore.current || data.settings!);
+	const isReadOnly = $derived.by(() => settingsStore.current?.uiConfigDisabled);
 
 	const formSchema = z.object({
 		buildProvider: z.enum(['local', 'depot']).default('local'),
@@ -23,7 +23,7 @@
 	});
 
 	const getFormDefaults = () => {
-		const settings = $settingsStore || data.settings!;
+		const settings = settingsStore.current || data.settings!;
 		let buildProvider = settings.buildProvider;
 		if (!settings.depotConfigured && !((settings.depotProjectId ?? '').trim() && (settings.depotToken ?? '').trim())) {
 			buildProvider = 'local';
@@ -50,10 +50,10 @@
 			await settingsService.updateSettings(updated);
 		},
 		onSuccess: () => {
-			$formInputs.depotToken.value = '';
+			formInputs.depotToken.value = '';
 		},
 		onReset: () => {
-			$formInputs.depotToken.value = '';
+			formInputs.depotToken.value = '';
 		},
 		successMessage: m.build_settings_saved()
 	});
@@ -63,8 +63,8 @@
 	const depotConfigured = $derived(Boolean(currentSettings.depotConfigured));
 
 	const depotCredentialsPresent = $derived.by(() => {
-		const projectId = ($formInputs.depotProjectId.value ?? '').trim() || existingDepotProjectId;
-		const token = ($formInputs.depotToken.value ?? '').trim() || existingDepotToken;
+		const projectId = (formInputs.depotProjectId.value ?? '').trim() || existingDepotProjectId;
+		const token = (formInputs.depotToken.value ?? '').trim() || existingDepotToken;
 		return (Boolean(projectId) && Boolean(token)) || depotConfigured;
 	});
 
@@ -78,7 +78,7 @@
 
 	const resolvedProvider = $derived.by(() => {
 		if (!depotCredentialsPresent) return 'local';
-		return $formInputs.buildProvider.value;
+		return formInputs.buildProvider.value;
 	});
 </script>
 
@@ -95,8 +95,8 @@
 				<h3 class="text-base font-semibold">{m.build_workspace()}</h3>
 				<div class="max-w-xl">
 					<TextInputWithLabel
-						bind:value={$formInputs.buildsDirectory.value}
-						error={$formInputs.buildsDirectory.error}
+						bind:value={formInputs.buildsDirectory.value}
+						error={formInputs.buildsDirectory.error}
 						label={m.build_settings_directory_label()}
 						description={m.build_settings_directory_description()}
 						placeholder={m.build_settings_directory_placeholder()}
@@ -115,11 +115,11 @@
 							bind:value={
 								() => resolvedProvider,
 								(value) => {
-									if (value === 'depot' && depotCredentialsPresent) $formInputs.buildProvider.value = 'depot';
-									else $formInputs.buildProvider.value = 'local';
+									if (value === 'depot' && depotCredentialsPresent) formInputs.buildProvider.value = 'depot';
+									else formInputs.buildProvider.value = 'local';
 								}
 							}
-							error={$formInputs.buildProvider.error}
+							error={formInputs.buildProvider.error}
 							label={m.build_settings_default_provider_label()}
 							description={m.build_settings_default_provider_description()}
 							options={providerOptions}
@@ -129,8 +129,8 @@
 						{/if}
 					</div>
 					<TextInputWithLabel
-						bind:value={$formInputs.buildTimeout.value}
-						error={$formInputs.buildTimeout.error}
+						bind:value={formInputs.buildTimeout.value}
+						error={formInputs.buildTimeout.error}
 						label={m.build_settings_timeout_label()}
 						description={m.build_settings_timeout_description()}
 						placeholder={m.build_settings_timeout_placeholder()}
@@ -145,26 +145,26 @@
 				<div class="grid gap-5 sm:grid-cols-2">
 					<TextInputWithLabel
 						bind:value={
-							() => $formInputs.depotProjectId.value,
+							() => formInputs.depotProjectId.value,
 							(value) => {
-								$formInputs.depotProjectId.value = value;
-								if (!depotCredentialsPresent) $formInputs.buildProvider.value = 'local';
+								formInputs.depotProjectId.value = value;
+								if (!depotCredentialsPresent) formInputs.buildProvider.value = 'local';
 							}
 						}
-						error={$formInputs.depotProjectId.error}
+						error={formInputs.depotProjectId.error}
 						label={m.build_settings_depot_project_id_label()}
 						description={m.build_settings_depot_project_id_description()}
 						placeholder={m.build_settings_depot_project_id_placeholder()}
 					/>
 					<TextInputWithLabel
 						bind:value={
-							() => $formInputs.depotToken.value,
+							() => formInputs.depotToken.value,
 							(value) => {
-								$formInputs.depotToken.value = value;
-								if (!depotCredentialsPresent) $formInputs.buildProvider.value = 'local';
+								formInputs.depotToken.value = value;
+								if (!depotCredentialsPresent) formInputs.buildProvider.value = 'local';
 							}
 						}
-						error={$formInputs.depotToken.error}
+						error={formInputs.depotToken.error}
 						label={m.build_settings_depot_token_label()}
 						description={m.build_settings_depot_token_description()}
 						placeholder={m.build_settings_depot_token_placeholder()}

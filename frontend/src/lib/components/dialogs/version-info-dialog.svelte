@@ -6,10 +6,10 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { CopyButton } from '#lib/components/ui/copy-button/index.js';
 	import { getApplicationLogo } from '#lib/utils/docker.js';
-	import { accentColorPreviewStore } from '#lib/utils/theme.js';
+	import { accentColorPreview } from '#lib/utils/theme.svelte.js';
 	import { ExternalLinkIcon, GithubIcon, BookOpenIcon } from '#lib/icons/index.js';
 	import { hasPermission } from '#lib/utils/auth.js';
-	import settingsStore from '#lib/stores/config-store.js';
+	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { settingsService } from '#lib/services/settings-service.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
@@ -41,11 +41,11 @@
 	const displayInfo = $derived(debugMode ? mockVersionInfo : versionInfo);
 
 	const enabledFeatures = $derived((displayInfo.enabledFeatures ?? []).filter(Boolean).join(', '));
-	const accentColor = $derived($accentColorPreviewStore);
+	const accentColor = $derived(accentColorPreview.current);
 	const logoUrl = $derived(getApplicationLogo(false, accentColor, accentColor));
 
 	const canToggleExperimental = $derived(hasPermission('settings:write'));
-	const experimentalEnabled = $derived($settingsStore?.experimentalFeaturesEnabled === true);
+	const experimentalEnabled = $derived(settingsStore.current?.experimentalFeaturesEnabled === true);
 	let savingExperimental = $state(false);
 
 	async function handleExperimentalToggle(enabled: boolean) {

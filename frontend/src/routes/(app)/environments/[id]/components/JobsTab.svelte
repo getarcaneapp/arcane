@@ -24,7 +24,7 @@
 		parseExcludedContainerSet
 	} from '#lib/utils/container-auto-update.js';
 
-	let { formInputs, environmentId }: JobsTabProps = $props();
+	let { formInputs = $bindable(), environmentId }: JobsTabProps = $props();
 
 	const jobsQuery = createQuery(() => ({
 		queryKey: queryKeys.jobs.list(environmentId),
@@ -48,7 +48,7 @@
 
 	const containersPromise = $derived.by(async () => {
 		if (!environmentId) return [];
-		if (!$formInputs.autoUpdate.value && !$formInputs.autoHealEnabled.value) return [];
+		if (!formInputs.autoUpdate.value && !formInputs.autoHealEnabled.value) return [];
 		const result = await tryCatch(
 			containerService.getContainersForEnvironment(environmentId, { pagination: { page: 1, limit: 100 } })
 		);
@@ -72,7 +72,7 @@
 	}
 
 	const excludedContainers = $derived.by(() => {
-		return parseExcludedContainerSet($formInputs.autoUpdateExcludedContainers?.value);
+		return parseExcludedContainerSet(formInputs.autoUpdateExcludedContainers?.value);
 	});
 
 	function resolveSettingsUrl(_job: JobStatus, prereq: JobPrerequisite): string | undefined {
@@ -100,18 +100,18 @@
 	}
 
 	function toggleContainerExclusion(containerName: string) {
-		if ($formInputs.autoUpdateExcludedContainers) {
-			$formInputs.autoUpdateExcludedContainers.value = toggleExcludedContainerValue(excludedContainers, containerName);
+		if (formInputs.autoUpdateExcludedContainers) {
+			formInputs.autoUpdateExcludedContainers.value = toggleExcludedContainerValue(excludedContainers, containerName);
 		}
 	}
 
 	const autoHealExcludedContainers = $derived.by(() => {
-		return parseExcludedContainerSet($formInputs.autoHealExcludedContainers?.value);
+		return parseExcludedContainerSet(formInputs.autoHealExcludedContainers?.value);
 	});
 
 	function toggleAutoHealContainerExclusion(containerName: string) {
-		if ($formInputs.autoHealExcludedContainers) {
-			$formInputs.autoHealExcludedContainers.value = toggleExcludedContainerValue(autoHealExcludedContainers, containerName);
+		if (formInputs.autoHealExcludedContainers) {
+			formInputs.autoHealExcludedContainers.value = toggleExcludedContainerValue(autoHealExcludedContainers, containerName);
 		}
 	}
 
@@ -145,15 +145,15 @@
 	function getEnabledOverride(job: JobStatus): boolean | undefined {
 		switch (job.id) {
 			case 'scheduled-prune':
-				return $formInputs.scheduledPruneEnabled.value;
+				return formInputs.scheduledPruneEnabled.value;
 			case 'auto-update':
-				return $formInputs.autoUpdate.value;
+				return formInputs.autoUpdate.value;
 			case 'image-polling':
-				return $formInputs.pollingEnabled.value;
+				return formInputs.pollingEnabled.value;
 			case 'vulnerability-scan':
-				return $formInputs.vulnerabilityScanEnabled.value;
+				return formInputs.vulnerabilityScanEnabled.value;
 			case 'auto-heal':
-				return $formInputs.autoHealEnabled.value;
+				return formInputs.autoHealEnabled.value;
 			default:
 				return undefined;
 		}
@@ -195,7 +195,7 @@
 {/snippet}
 
 {#snippet autoUpdateSettings(job: JobStatus)}
-	{#if job.id === 'auto-update' && $formInputs.autoUpdate.value}
+	{#if job.id === 'auto-update' && formInputs.autoUpdate.value}
 		<div class="space-y-3 border-t border-border/20 pt-3">
 			<div class="space-y-1">
 				<Label class="text-sm font-medium">
@@ -230,7 +230,7 @@
 					<Label class="text-sm font-medium">{m.jobs_image_event_watcher_label()}</Label>
 					<p class="text-xs text-muted-foreground">{m.jobs_image_event_watcher_description()}</p>
 				</div>
-				<Switch id="image-event-watcher-enabled" bind:checked={$formInputs.imageEventWatcherEnabled.value} />
+				<Switch id="image-event-watcher-enabled" bind:checked={formInputs.imageEventWatcherEnabled.value} />
 			</div>
 			<Alert.Root variant="warning" class="py-2 [&>svg]:top-2">
 				<AlertTriangleIcon class="size-4" />
@@ -241,7 +241,7 @@
 {/snippet}
 
 {#snippet autoHealSettings(job: JobStatus)}
-	{#if job.id === 'auto-heal' && $formInputs.autoHealEnabled.value}
+	{#if job.id === 'auto-heal' && formInputs.autoHealEnabled.value}
 		<div class="space-y-3 border-t border-border/20 pt-3">
 			<div class="grid gap-3 sm:grid-cols-2">
 				<div class="space-y-1">
@@ -252,7 +252,7 @@
 						type="number"
 						min="1"
 						class="h-8 w-full"
-						bind:value={$formInputs.autoHealMaxRestarts.value}
+						bind:value={formInputs.autoHealMaxRestarts.value}
 					/>
 				</div>
 				<div class="space-y-1">
@@ -263,7 +263,7 @@
 						type="number"
 						min="1"
 						class="h-8 w-full"
-						bind:value={$formInputs.autoHealRestartWindow.value}
+						bind:value={formInputs.autoHealRestartWindow.value}
 					/>
 				</div>
 			</div>
@@ -295,15 +295,15 @@
 
 {#snippet jobEnableControl(job: JobStatus)}
 	{#if job.id === 'image-polling'}
-		<Switch aria-label={job.name} bind:checked={$formInputs.pollingEnabled.value} />
+		<Switch aria-label={job.name} bind:checked={formInputs.pollingEnabled.value} />
 	{:else if job.id === 'auto-update'}
-		<Switch aria-label={job.name} bind:checked={$formInputs.autoUpdate.value} disabled={!$formInputs.pollingEnabled.value} />
+		<Switch aria-label={job.name} bind:checked={formInputs.autoUpdate.value} disabled={!formInputs.pollingEnabled.value} />
 	{:else if job.id === 'scheduled-prune'}
-		<Switch aria-label={job.name} bind:checked={$formInputs.scheduledPruneEnabled.value} />
+		<Switch aria-label={job.name} bind:checked={formInputs.scheduledPruneEnabled.value} />
 	{:else if job.id === 'vulnerability-scan'}
-		<Switch aria-label={job.name} bind:checked={$formInputs.vulnerabilityScanEnabled.value} />
+		<Switch aria-label={job.name} bind:checked={formInputs.vulnerabilityScanEnabled.value} />
 	{:else if job.id === 'auto-heal'}
-		<Switch aria-label={job.name} bind:checked={$formInputs.autoHealEnabled.value} />
+		<Switch aria-label={job.name} bind:checked={formInputs.autoHealEnabled.value} />
 	{/if}
 {/snippet}
 
@@ -316,8 +316,8 @@
 		onScheduleUpdate={loadJobs}
 		enabledOverride={capabilityUnknown ? undefined : getEnabledOverride(job)}
 		collapsibleSettings={job.id === 'image-polling' ||
-			(job.id === 'auto-update' && $formInputs.autoUpdate.value) ||
-			(job.id === 'auto-heal' && $formInputs.autoHealEnabled.value)}
+			(job.id === 'auto-update' && formInputs.autoUpdate.value) ||
+			(job.id === 'auto-heal' && formInputs.autoHealEnabled.value)}
 	>
 		{#snippet headerAccessory()}
 			{@render jobEnableControl(job)}

@@ -17,7 +17,7 @@
 	import { formatDateTimeShort } from '#lib/utils/formatting.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { hasPermission } from '#lib/utils/auth.js';
-	import userStore from '#lib/stores/user-store.js';
+	import userStore from '#lib/stores/user-store.svelte.js';
 	import { toast } from 'svelte-sonner';
 
 	type PatchTargetRow = ImagePatchTargetDto & { id: string };
@@ -34,7 +34,7 @@
 	// Track the user store: hasPermission reads it non-reactively, so without
 	// this the derived would cache a pre-hydration false forever.
 	const canPatchImage = $derived.by(() => {
-		$userStore;
+		userStore.current;
 		return hasPermission('images:patch', currentEnvId);
 	});
 

@@ -10,7 +10,7 @@
 		...restProps
 	}: WithElementRef<HTMLAttributes<HTMLDivElement>> = $props();
 
-	const emblaCtx = getEmblaContext('<Carousel.Item/>');
+	const emblaCtx = getEmblaContext();
 </script>
 
 <div

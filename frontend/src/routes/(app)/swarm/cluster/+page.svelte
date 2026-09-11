@@ -13,7 +13,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { createQuery } from '@tanstack/svelte-query';
 	import { queryKeys } from '#lib/query/query-keys.js';
-	import userStore from '#lib/stores/user-store.js';
+	import userStore from '#lib/stores/user-store.svelte.js';
 	import { swarmService } from '#lib/services/swarm-service.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
@@ -29,7 +29,7 @@
 
 	const swarmInfoQuery = createQuery(() => {
 		const environmentId = currentEnvId;
-		$userStore;
+		userStore.current;
 		return {
 			queryKey: queryKeys.swarm.info(environmentId ?? ''),
 			queryFn: async () => {
@@ -42,7 +42,7 @@
 	});
 	const joinTokensQuery = createQuery(() => {
 		const environmentId = currentEnvId;
-		$userStore;
+		userStore.current;
 		return {
 			queryKey: queryKeys.swarm.joinTokens(environmentId ?? ''),
 			queryFn: async () => {
@@ -55,7 +55,7 @@
 	});
 	const unlockKeyQuery = createQuery(() => {
 		const environmentId = currentEnvId;
-		$userStore;
+		userStore.current;
 		return {
 			queryKey: queryKeys.swarm.unlockKey(environmentId ?? ''),
 			queryFn: async () => {

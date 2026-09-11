@@ -14,7 +14,8 @@
 	import { templateService } from '#lib/services/template-service.js';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 	import { toast } from 'svelte-sonner';
-	import { createForm } from '#lib/utils/settings.js';
+	import { createForm } from '#lib/utils/settings.svelte.js';
+
 	import { formatDateTimeShort } from '#lib/utils/formatting.js';
 	import { globalVariablesToMap } from '#lib/utils/template-load.js';
 	import {
@@ -71,13 +72,14 @@
 		envContent: originalEnv
 	});
 
-	let { inputs, ...form } = $derived(createForm<typeof formSchema>(formSchema, formData));
+	let form = $derived(createForm<typeof formSchema>(formSchema, formData));
+	let inputs = $derived(form.inputs);
 
 	const hasChanges = $derived(
-		$inputs.name.value !== originalName ||
-			$inputs.description.value !== originalDescription ||
-			$inputs.composeContent.value !== originalCompose ||
-			$inputs.envContent.value !== originalEnv
+		inputs.name.value !== originalName ||
+			inputs.description.value !== originalDescription ||
+			inputs.composeContent.value !== originalCompose ||
+			inputs.envContent.value !== originalEnv
 	);
 	// fallow-ignore-next-line code-duplication -- template editor form wiring (createForm + getTemplateEditorSaveState); hasChanges fields differ per page
 	const saveState = $derived(getTemplateEditorSaveState(validation, hasChanges));
@@ -111,19 +113,19 @@
 	function handleReset() {
 		resetTemplateEditorFields([
 			{
-				set: (value) => ($inputs.name.value = value),
+				set: (value) => (inputs.name.value = value),
 				value: originalName
 			},
 			{
-				set: (value) => ($inputs.description.value = value),
+				set: (value) => (inputs.description.value = value),
 				value: originalDescription
 			},
 			{
-				set: (value) => ($inputs.composeContent.value = value),
+				set: (value) => (inputs.composeContent.value = value),
 				value: originalCompose
 			},
 			{
-				set: (value) => ($inputs.envContent.value = value),
+				set: (value) => (inputs.envContent.value = value),
 				value: originalEnv
 			}
 		]);
@@ -240,7 +242,7 @@
 {#if !template.isRemote}
 	<!-- Editor workspace for custom templates (same chrome as the create page) -->
 	<TemplateEditorWorkspace
-		{inputs}
+		bind:inputs
 		bind:validation
 		{originalName}
 		{originalCompose}

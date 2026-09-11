@@ -5,7 +5,8 @@
 	import * as Accordion from '#lib/components/ui/accordion/index.js';
 	import type { VolumeCreateRequest } from '#lib/types/docker.js';
 	import { z } from 'zod/v4';
-	import { createForm, preventDefault } from '#lib/utils/settings.js';
+	import { createForm, preventDefault } from '#lib/utils/settings.svelte.js';
+
 	import { parseKeyValuePairs } from '#lib/utils/form-parsers.js';
 	import SelectWithLabel from '../form/select-with-label.svelte';
 	import { m } from '#lib/paraglide/messages.js';
@@ -40,7 +41,8 @@
 		volumeLabels: ''
 	});
 
-	let { inputs, ...form } = $derived(createForm<typeof formSchema>(formSchema, formData));
+	let form = $derived(createForm<typeof formSchema>(formSchema, formData));
+	let inputs = $derived(form.inputs);
 
 	function handleSubmit() {
 		const data = form.validate();
@@ -62,10 +64,10 @@
 	function handleOpenChange(newOpenState: boolean) {
 		open = newOpenState;
 		if (!newOpenState) {
-			$inputs.volumeName.value = '';
-			$inputs.volumeDriver.value = 'local';
-			$inputs.volumeOptText.value = '';
-			$inputs.volumeLabels.value = '';
+			inputs.volumeName.value = '';
+			inputs.volumeDriver.value = 'local';
+			inputs.volumeOptText.value = '';
+			inputs.volumeLabels.value = '';
 		}
 	}
 </script>
@@ -87,12 +89,12 @@
 				placeholder={m.volume_name_placeholder()}
 				description={m.volume_name_description()}
 				disabled={isLoading}
-				bind:input={$inputs.volumeName}
+				bind:input={inputs.volumeName}
 			/>
 
 			<SelectWithLabel
 				id="driver-select"
-				bind:value={$inputs.volumeDriver.value}
+				bind:value={inputs.volumeDriver.value}
 				label={m.volume_driver_label()}
 				description={m.volume_driver_description()}
 				options={drivers}
@@ -111,7 +113,7 @@
 								description={m.volume_driver_options_description()}
 								disabled={isLoading}
 								rows={3}
-								bind:input={$inputs.volumeOptText}
+								bind:input={inputs.volumeOptText}
 							/>
 
 							<FormInput
@@ -121,7 +123,7 @@
 								description={m.volumes_labels_description()}
 								disabled={isLoading}
 								rows={3}
-								bind:input={$inputs.volumeLabels}
+								bind:input={inputs.volumeLabels}
 							/>
 						</div>
 					</Accordion.Content>

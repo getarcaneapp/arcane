@@ -231,7 +231,7 @@
 	{#if network.ipam?.config && network.ipam.config.length > 0}
 		<DetailSection title={m.networks_ipam_title()} icon={SettingsIcon}>
 			<div class="space-y-3">
-				{#each network.ipam.config as config, i (i)}
+				{#each network.ipam.config as config (config)}
 					{@render ipamSubnet(config)}
 				{/each}
 			</div>

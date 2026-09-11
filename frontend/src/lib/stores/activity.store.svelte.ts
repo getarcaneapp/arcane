@@ -21,8 +21,7 @@ import type {
 	ActivityType
 } from '#lib/types/activity.type.js';
 import type { Environment } from '#lib/types/environment.js';
-import userStore from '#lib/stores/user-store.js';
-import { get } from 'svelte/store';
+import userStore from '#lib/stores/user-store.svelte.js';
 import {
 	discardPendingActivityToasts,
 	queueActivityCompletionToast
@@ -185,7 +184,7 @@ function createActivityStore() {
 		}
 		// Only the initiating user's own actions toast — scheduled jobs and
 		// other users' work carry no/another userId and stay silent.
-		const currentUserId = get(userStore)?.id;
+		const currentUserId = userStore.current?.id;
 		if (!activity.startedBy?.userId || !currentUserId || activity.startedBy.userId !== currentUserId) {
 			return;
 		}
@@ -195,7 +194,7 @@ function createActivityStore() {
 	const core = createEnvironmentStreamStore<ActivityEnvironmentState, ActivityStreamEvent>({
 		label: 'Activity',
 		includeEnvironment: (environment) => userStore.hasPermission('activities:read', environment.id),
-		subscribeEnvironmentFilter: (reconcile) => userStore.subscribe(reconcile),
+		subscribeEnvironmentFilter: (reconcile) => userStore.onChange(reconcile),
 		createEnvironmentState(environment: Pick<Environment, 'id' | 'name'>): ActivityEnvironmentState {
 			return {
 				id: environment.id || LOCAL_DOCKER_ENVIRONMENT_ID,

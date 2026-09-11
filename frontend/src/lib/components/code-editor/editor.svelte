@@ -24,12 +24,12 @@
 	import { type Extension } from '@codemirror/state';
 	import { browser } from '$app/env';
 	import { m } from '#lib/paraglide/messages.js';
-	import userStore from '#lib/stores/user-store.js';
+	import userStore from '#lib/stores/user-store.svelte.js';
 	import { mode } from 'mode-watcher';
 	import { arcaneDarkInit, arcaneLightInit } from './theme';
 	import { createDefaultSummary, ENV_SNIPPETS, YAML_SNIPPETS } from './editor-constants';
 	import { createEnterIndentKeymap } from './enter-indentation';
-	import { createMergeHostAction, type MergeActionParams } from './merge-editor';
+	import { createMergeHostAttachment, type MergeAttachmentParams } from './merge-editor.svelte.js';
 	import { analyzeEnvContent } from './analysis/env-analysis';
 	import type { YamlPositionContext } from './analysis/compose-analysis';
 	import type { ComposeSchemaContext } from './analysis/compose-schema';
@@ -108,7 +108,7 @@
 	let activeOutlineItems = $state<OutlineItem[]>([]);
 	let activeView = $state<EditorView | null>(null);
 	let schemaState = $state<ComposeSchemaContext | null>(null);
-	let shortcutsEnabled = $derived($userStore?.preferences?.keyboardShortcutsEnabled !== false);
+	let shortcutsEnabled = $derived(userStore.current?.preferences?.keyboardShortcutsEnabled !== false);
 	let schemaHoverSuppressedUntil = 0;
 
 	const schemaHoverSelectionSuppressionMs = 2500;
@@ -122,12 +122,12 @@
 		globalVariables: editorContext?.globalVariables ?? {}
 	});
 
-	const mergeActionParams = $derived({
+	const mergeAttachmentParams = $derived({
 		diffActive: isDiffActive,
 		language,
 		value,
 		baseline: originalValue ?? ''
-	} satisfies MergeActionParams);
+	} satisfies MergeAttachmentParams);
 
 	function updateSummary(patch: Partial<DiagnosticSummary>) {
 		let changed = false;
@@ -713,25 +713,28 @@
 
 	const theme = $derived.by(() => {
 		// Re-derive when the user's theme/accent preferences change.
-		$userStore;
+		userStore.current;
 		return mode.current === 'dark' ? arcaneDarkInit() : arcaneLightInit();
 	});
 
-	const mergeHostAction = createMergeHostAction({
-		getTheme: () => theme,
-		getLanguageExtension,
-		getReadonlyLanguageExtension: getBasicLanguageExtension,
-		onValueChange: (nextValue) => {
-			value = nextValue;
+	const mergeHostAttachment = createMergeHostAttachment(
+		{
+			getTheme: () => theme,
+			getLanguageExtension,
+			getReadonlyLanguageExtension: getBasicLanguageExtension,
+			onValueChange: (nextValue) => {
+				value = nextValue;
+			},
+			onPrimaryViewReady: (view) => {
+				activeView = view;
+				restoreEditorState(view);
+				updateCursorSummary(view);
+				markReadOnlyReady();
+				markValidationNotRequiredReady();
+			}
 		},
-		onPrimaryViewReady: (view) => {
-			activeView = view;
-			restoreEditorState(view);
-			updateCursorSummary(view);
-			markReadOnlyReady();
-			markValidationNotRequiredReady();
-		}
-	});
+		() => mergeAttachmentParams
+	);
 
 	const extensions = $derived([...getLanguageExtension(language), theme]);
 
@@ -784,7 +787,7 @@
 					<span class="merge-badge merge-badge-add">+ Added</span>
 					<span class="merge-badge merge-badge-del">- Removed</span>
 				</div>
-				<div class="merge-host" use:mergeHostAction={mergeActionParams}></div>
+				<div class="merge-host" {@attach mergeHostAttachment}></div>
 			</div>
 		{:else}
 			<CodeMirror bind:value {extensions} {styles} {placeholder} readonly={readOnly} nodebounce={true} onready={wireNormalView} />
@@ -817,22 +820,20 @@
 	</div>
 
 	<Command.Dialog bind:open={commandPaletteOpen} title={m.editor_commands()} description={m.editor_commands_desc()}>
-		{#snippet children()}
-			<Command.Input placeholder={m.editor_search_commands()} />
-			<Command.List>
-				<Command.Empty>{m.common_no_results_found()}</Command.Empty>
-				<Command.Group>
-					{#each commandItems as item (item.id)}
-						<Command.Item value={item.label} onSelect={() => executeCommand(item.id)}>
-							<span class="flex-1">{item.label}</span>
-							{#if item.shortcut}
-								<Command.Shortcut>{item.shortcut}</Command.Shortcut>
-							{/if}
-						</Command.Item>
-					{/each}
-				</Command.Group>
-			</Command.List>
-		{/snippet}
+		<Command.Input placeholder={m.editor_search_commands()} />
+		<Command.List>
+			<Command.Empty>{m.common_no_results_found()}</Command.Empty>
+			<Command.Group>
+				{#each commandItems as item (item.id)}
+					<Command.Item value={item.label} onSelect={() => executeCommand(item.id)}>
+						<span class="flex-1">{item.label}</span>
+						{#if item.shortcut}
+							<Command.Shortcut>{item.shortcut}</Command.Shortcut>
+						{/if}
+					</Command.Item>
+				{/each}
+			</Command.Group>
+		</Command.List>
 	</Command.Dialog>
 </div>
 

@@ -3,7 +3,8 @@
 	import { ArrowLeftIcon } from '#lib/icons/index.js';
 	import { goto, refreshAll } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
-	import { preventDefault, createForm } from '#lib/utils/settings.js';
+	import { preventDefault, createForm } from '#lib/utils/settings.svelte.js';
+
 	import TemplateSelectionDialog from '#lib/components/dialogs/template-selection-dialog.svelte';
 	import { m } from '#lib/paraglide/messages.js';
 	import { projectService } from '#lib/services/project-service.js';
@@ -29,7 +30,7 @@
 	import ProjectTagEditor from '#lib/components/project-tag-editor.svelte';
 	import { createQuery } from '@tanstack/svelte-query';
 	import { queryKeys } from '#lib/query/query-keys.js';
-	import settingsStore from '#lib/stores/config-store.js';
+	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import {
 		planProjectWorkspaceFileCreate,
 		planProjectWorkspaceFileRename,
@@ -62,7 +63,7 @@
 	const canCreateProject = $derived(hasPermission('projects:create', currentEnvId));
 	const canDeleteContainers = $derived(hasPermission('containers:delete', currentEnvId));
 	const sourceContainerIds = $derived(data.sourceContainerIds ?? []);
-	const projectWorkspaceMaxFileSizeMb = $derived($settingsStore?.projectWorkspaceMaxFileSizeMb ?? 10);
+	const projectWorkspaceMaxFileSizeMb = $derived(settingsStore.current?.projectWorkspaceMaxFileSizeMb ?? 10);
 
 	let ui = $state({
 		saving: false,
@@ -87,7 +88,8 @@
 		envContent: data.envTemplate || ''
 	};
 
-	const { inputs, ...form } = createForm<typeof formSchema>(formSchema, formData);
+	const form = createForm<typeof formSchema>(formSchema, formData);
+	let inputs = $derived(form.inputs);
 
 	let composeOpen = $state(true);
 	let envOpen = $state(true);
@@ -146,17 +148,17 @@
 	);
 	let hasEditorErrors = $derived(hasTemplateEditorErrors(validationState));
 	const codeEditorContext = $derived({
-		envContent: $inputs.envContent.value,
-		composeContents: [$inputs.composeContent.value].filter((value) => value.length > 0),
+		envContent: inputs.envContent.value,
+		composeContents: [inputs.composeContent.value].filter((value) => value.length > 0),
 		globalVariables: globalVariableMap
 	});
 
 	let nameInputRef = $state<HTMLInputElement | null>(null);
 
-	const composeYamlName = $derived(extractComposeYamlName($inputs.composeContent.value));
+	const composeYamlName = $derived(extractComposeYamlName(inputs.composeContent.value));
 	// The compose file's top-level `name:` is authoritative; surface it as the
 	// effective name without writing to form state reactively.
-	const effectiveName = $derived(composeYamlName ?? $inputs.name.value);
+	const effectiveName = $derived(composeYamlName ?? inputs.name.value);
 	const createMenuBusy = $derived(ui.saving || ui.converting || ui.isLoadingTemplateContent);
 
 	async function handleSubmit() {
@@ -209,7 +211,7 @@
 	}
 
 	const { composeHandlers, handleCreateTemplate } = createComposeTemplateDialogFlow({
-		getInputs: () => $inputs,
+		getInputs: () => inputs,
 		setInputValue: (key, value) => form.setValue(key, value),
 		closeTemplateDialog: () => (ui.showTemplateDialog = false),
 		validate: form.validate,
@@ -222,7 +224,7 @@
 			title: m.compose_compose_file_title(),
 			language: 'yaml',
 			validationMode: 'compose',
-			error: $inputs.composeContent.error ?? undefined,
+			error: inputs.composeContent.error ?? undefined,
 			fileId: 'projects:new:compose',
 			editorContext: codeEditorContext
 		} as const;
@@ -233,7 +235,7 @@
 			title: m.compose_env_title(),
 			language: 'env',
 			validationMode: 'env',
-			error: $inputs.envContent.error ?? undefined,
+			error: inputs.envContent.error ?? undefined,
 			fileId: 'projects:new:env',
 			editorContext: codeEditorContext
 		} as const;
@@ -247,7 +249,7 @@
 				variant="plain"
 				{...composePanelProps()}
 				bind:open={composeOpen}
-				bind:value={$inputs.composeContent.value}
+				bind:value={inputs.composeContent.value}
 				bind:hasErrors={validation.composeHasErrors}
 				bind:validationReady={validation.composeValidationReady}
 				bind:outlineOpen={treeOutlineOpen}
@@ -259,7 +261,7 @@
 				variant="plain"
 				{...envPanelProps()}
 				bind:open={envOpen}
-				bind:value={$inputs.envContent.value}
+				bind:value={inputs.envContent.value}
 				bind:hasErrors={validation.envHasErrors}
 				bind:validationReady={validation.envValidationReady}
 				bind:outlineOpen={treeOutlineOpen}
@@ -297,11 +299,11 @@
 
 {#snippet projectNameField(variant: 'inline' | 'block')}
 	<EditableName
-		bind:value={$inputs.name.value}
+		bind:value={inputs.name.value}
 		displayValue={effectiveName}
 		bind:ref={nameInputRef}
 		{variant}
-		error={$inputs.name.error ?? undefined}
+		error={inputs.name.error ?? undefined}
 		originalValue=""
 		placeholder={m.compose_project_name_placeholder()}
 		canEdit={!ui.saving && !ui.isLoadingTemplateContent && !composeYamlName}
@@ -338,7 +340,7 @@
 					tooltipDescription={m.compose_project_name_tooltip_description()}
 					tooltipExample={m.compose_project_name_tooltip_example()}
 					showCreateButton={!hasEditorErrors && canCreateProject}
-					createDisabled={!effectiveName || !$inputs.composeContent.value || hasEditorErrors || createMenuBusy}
+					createDisabled={!effectiveName || !inputs.composeContent.value || hasEditorErrors || createMenuBusy}
 					createLoading={ui.saving}
 					createLabel={m.compose_create_project()}
 					createLoadingLabel={m.common_action_creating()}
@@ -354,8 +356,8 @@
 					fromGitLabel={m.git_from_git_repo()}
 					onFromGit={async () => goto(`/environments/${await environmentStore.getCurrentEnvironmentId()}/gitops?action=create`)}
 					createTemplateLabel={m.templates_create_template()}
-					createTemplateDisabled={!$inputs.name.value ||
-						!$inputs.composeContent.value ||
+					createTemplateDisabled={!inputs.name.value ||
+						!inputs.composeContent.value ||
 						hasEditorErrors ||
 						createMenuBusy ||
 						ui.creatingTemplate}
@@ -455,7 +457,7 @@
 							<CodePanel
 								{...composePanelProps()}
 								bind:open={composeOpen}
-								bind:value={$inputs.composeContent.value}
+								bind:value={inputs.composeContent.value}
 								bind:hasErrors={validation.composeHasErrors}
 								bind:validationReady={validation.composeValidationReady}
 							/>
@@ -465,7 +467,7 @@
 							<CodePanel
 								{...envPanelProps()}
 								bind:open={envOpen}
-								bind:value={$inputs.envContent.value}
+								bind:value={inputs.envContent.value}
 								bind:hasErrors={validation.envHasErrors}
 								bind:validationReady={validation.envValidationReady}
 							/>

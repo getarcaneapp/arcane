@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { z } from 'zod/v4';
-	import settingsStore from '#lib/stores/config-store.js';
+	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { SettingsPageLayout } from '#lib/layouts/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
@@ -10,7 +10,7 @@
 
 	let { data } = $props();
 
-	const isReadOnly = $derived.by(() => $settingsStore?.uiConfigDisabled);
+	const isReadOnly = $derived.by(() => settingsStore.current?.uiConfigDisabled);
 
 	const formSchema = z.object({
 		activityHistoryRetentionDays: z.coerce.number().int().min(0).max(3650),
@@ -19,7 +19,7 @@
 	});
 
 	const getFormDefaults = () => {
-		const settings = $settingsStore || data.settings!;
+		const settings = settingsStore.current || data.settings!;
 		return {
 			activityHistoryRetentionDays: settings.activityHistoryRetentionDays,
 			activityHistoryMaxEntries: settings.activityHistoryMaxEntries,
@@ -55,8 +55,8 @@
 							</div>
 							<div class="max-w-xs">
 								<TextInputWithLabel
-									bind:value={$formInputs.activityHistoryRetentionDays.value}
-									error={$formInputs.activityHistoryRetentionDays.error}
+									bind:value={formInputs.activityHistoryRetentionDays.value}
+									error={formInputs.activityHistoryRetentionDays.error}
 									label={m.activity_history_retention_days()}
 									placeholder={m.activity_history_retention_days_placeholder()}
 									helpText={m.activity_history_retention_days_help()}
@@ -73,8 +73,8 @@
 								</div>
 								<div class="max-w-xs">
 									<TextInputWithLabel
-										bind:value={$formInputs.activityHistoryMaxEntries.value}
-										error={$formInputs.activityHistoryMaxEntries.error}
+										bind:value={formInputs.activityHistoryMaxEntries.value}
+										error={formInputs.activityHistoryMaxEntries.error}
 										label={m.activity_history_max_entries()}
 										placeholder={m.activity_history_max_entries_placeholder()}
 										helpText={m.activity_history_max_entries_help()}
@@ -92,8 +92,8 @@
 								</div>
 								<div class="max-w-xs">
 									<TextInputWithLabel
-										bind:value={$formInputs.maxConcurrentActivities.value}
-										error={$formInputs.maxConcurrentActivities.error}
+										bind:value={formInputs.maxConcurrentActivities.value}
+										error={formInputs.maxConcurrentActivities.error}
 										label={m.activity_max_concurrent()}
 										placeholder={m.activity_max_concurrent_placeholder()}
 										helpText={m.activity_max_concurrent_help()}

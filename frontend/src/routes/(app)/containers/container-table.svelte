@@ -35,7 +35,7 @@
 	import { hasAnyLoadingState } from '#lib/utils/bulk-actions.js';
 	import { Temporal } from 'temporal-polyfill';
 	import { createContainerActions } from './container-table.actions';
-	import settingsStore from '#lib/stores/config-store.js';
+	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import {
 		getActionStatusMessage,
 		getContainerDisplayName,
@@ -208,7 +208,7 @@
 	const canDeleteContainers = $derived(hasPermission('containers:delete', currentEnvId));
 	const canKillContainers = $derived(hasPermission('containers:kill', currentEnvId));
 	const canConvertToCompose = $derived(
-		hasPermission('projects:create', currentEnvId) && $settingsStore?.experimentalFeaturesEnabled === true
+		hasPermission('projects:create', currentEnvId) && settingsStore.current?.experimentalFeaturesEnabled === true
 	);
 
 	function handleBulkConvert(ids: string[]) {

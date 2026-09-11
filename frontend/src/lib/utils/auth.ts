@@ -1,4 +1,4 @@
-import userStore from '#lib/stores/user-store.js';
+import userStore from '#lib/stores/user-store.svelte.js';
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import { m } from '#lib/paraglide/messages.js';
 import { APIError } from '#lib/services/api-service.js';

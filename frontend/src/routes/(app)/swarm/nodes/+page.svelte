@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import userStore from '#lib/stores/user-store.js';
+	import userStore from '#lib/stores/user-store.svelte.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import * as Alert from '#lib/components/ui/alert/index.js';
@@ -50,7 +50,7 @@
 			if (!active || environmentId !== environmentStore.selected?.id || result.error !== null) return;
 			await refresh();
 		}
-		const unsubscribeUser = userStore.subscribe(() => {
+		const unsubscribeUser = userStore.onChange(() => {
 			void reconcileSelectedEnvironment();
 		});
 		const unsubscribeEnvironment = environmentStore.subscribeSelected(() => {

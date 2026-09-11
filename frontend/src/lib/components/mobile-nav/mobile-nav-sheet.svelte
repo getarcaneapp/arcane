@@ -3,7 +3,7 @@
 	import type { NavigationItem } from '#lib/config/navigation-config.js';
 	import { cn } from '#lib/utils.js';
 	import { page } from '$app/state';
-	import userStore from '#lib/stores/user-store.js';
+	import userStore from '#lib/stores/user-store.svelte.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import MobileUserCard from './mobile-user-card.svelte';
@@ -32,7 +32,7 @@
 	} = $props();
 
 	const currentPath = $derived(page.url.pathname);
-	const memoizedUser = $derived(user ?? $userStore);
+	const memoizedUser = $derived(user ?? userStore.current);
 	const currentEnvId = $derived(environmentStore.selected?.id || '0');
 	const managementItemsRaw = $derived(getManagementItems(currentEnvId));
 	const managementItems = $derived(

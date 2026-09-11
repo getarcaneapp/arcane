@@ -3,7 +3,7 @@
 	import { createQuery } from '@tanstack/svelte-query';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-	import userStore from '#lib/stores/user-store.js';
+	import userStore from '#lib/stores/user-store.svelte.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { onDestroy } from 'svelte';
 
@@ -29,7 +29,7 @@
 	const candidatesQuery = createQuery(() => {
 		const environmentId = requestedManagerId;
 		return {
-			queryKey: queryKeys.swarm.joinCandidates(environmentId ?? null, $userStore),
+			queryKey: queryKeys.swarm.joinCandidates(environmentId ?? null, userStore.current),
 			queryFn: async () => {
 				await environmentStore.ready;
 				return swarmService.getSwarmJoinCandidates(environmentId!);

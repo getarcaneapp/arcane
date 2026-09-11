@@ -2,7 +2,7 @@
 	import * as Sidebar from '#lib/components/ui/sidebar/index.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import settingsStore from '#lib/stores/config-store.js';
+	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { EnvironmentsIcon, RemoteEnvironmentIcon, EdgeConnectionIcon, ArrowsUpDownIcon } from '#lib/icons/index.js';
 
 	type Props = {
@@ -14,7 +14,7 @@
 	function getConnectionString(): string {
 		if (!environmentStore.selected) return '';
 		if (environmentStore.selected.id === '0') {
-			return $settingsStore.dockerHost || 'unix:///var/run/docker.sock';
+			return settingsStore.current?.dockerHost || 'unix:///var/run/docker.sock';
 		} else if (environmentStore.selected.isEdge) {
 			return 'Edge connection';
 		} else {

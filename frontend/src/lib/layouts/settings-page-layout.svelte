@@ -1,11 +1,10 @@
 <script lang="ts">
+	import { getSettingsFormContext, hasSettingsFormContext } from '#lib/hooks/settings-form-context.js';
 	import type { Snippet } from 'svelte';
 	import { UiConfigDisabledTag } from '#lib/components/badges/index.js';
 	import StatCard from '#lib/components/stat-card.svelte';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
-	import { getContext } from 'svelte';
-	import type { SettingsFormContext } from '#lib/types/settings-form.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { EllipsisIcon, ResetIcon, type IconType, ArrowDownIcon } from '#lib/icons/index.js';
 	import { cn } from '#lib/utils.js';
@@ -40,12 +39,12 @@
 	const mobileVisibleButtons = $derived(actionButtons.filter((btn) => btn.showOnMobile));
 	const mobileDropdownButtons = $derived(actionButtons.filter((btn) => !btn.showOnMobile));
 
-	const formContext = getContext<SettingsFormContext | undefined>('settingsFormState');
+	const formContext = hasSettingsFormContext() ? getSettingsFormContext() : undefined;
 	const formState = $derived(formContext?.activeForm);
 </script>
 
 {#snippet ActionOptions(options: SettingsActionOption[], disabled = false, showIcons = true)}
-	{#each options as option}
+	{#each options as option (option)}
 		<DropdownMenu.Item onclick={option.onclick} disabled={disabled || option.disabled}>
 			{#if showIcons && option.icon}
 				{@const OptionIcon = option.icon}
@@ -57,7 +56,7 @@
 {/snippet}
 
 {#snippet ActionButtonList(buttons: SettingsActionButton[])}
-	{#each buttons as button}
+	{#each buttons as button (button.id)}
 		{#if button.options?.length}
 			<DropdownMenu.Root>
 				<DropdownMenu.Trigger>
@@ -116,7 +115,7 @@
 					{/if}
 					{#if pageType === 'management' && statCards.length > 0}
 						<div class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
-							{#each statCards as card, i}
+							{#each statCards as card, i (card)}
 								{#if i > 0}
 									<div class="h-4 w-px bg-border/50"></div>
 								{/if}
@@ -195,7 +194,7 @@
 									class="z-[var(--arcane-z-surface)] min-w-[160px] rounded-xl border bg-popover/90 p-1 shadow-lg backdrop-blur-md"
 								>
 									<DropdownMenu.Group>
-										{#each mobileDropdownButtons as button}
+										{#each mobileDropdownButtons as button (button.id)}
 											{#if button.options?.length}
 												<DropdownMenu.Label>{button.label}</DropdownMenu.Label>
 												{@render ActionOptions(button.options, button.disabled, false)}

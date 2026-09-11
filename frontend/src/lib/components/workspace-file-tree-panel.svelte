@@ -727,7 +727,7 @@
 								class="absolute top-0 left-0 w-full"
 								style={`transform: translateY(${virtualItem.start}px)`}
 								data-index={virtualItem.index}
-								use:rowVirtualizer.measureElement
+								{@attach rowVirtualizer.measureElement}
 							>
 								{@render workspaceRow(row)}
 							</div>

@@ -10,7 +10,7 @@
 	import * as InputGroup from '#lib/components/ui/input-group/index.js';
 	import { AlertIcon, ApiKeyIcon, LockIcon, UserIcon, GithubIcon, OpenIdIcon } from '#lib/icons/index.js';
 	import { goto, refreshAll } from '$app/navigation';
-	import userStore from '#lib/stores/user-store.js';
+	import userStore from '#lib/stores/user-store.svelte.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { authService, MFARequiredError } from '#lib/services/auth-service.js';
 	import { passkeyService } from '#lib/services/passkey-service.js';
@@ -19,7 +19,7 @@
 	import { getEffectiveLandingPage } from '#lib/utils/navigation.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { getApplicationLogo } from '#lib/utils/docker.js';
-	import { accentColorPreviewStore } from '#lib/utils/theme.js';
+	import { accentColorPreview } from '#lib/utils/theme.svelte.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import AuthAmbient from '#lib/components/auth/auth-ambient.svelte';
 	import MFAChallenge from '#lib/components/auth/mfa-challenge.svelte';
@@ -36,8 +36,8 @@
 	const showPasskeyLoginButton = $derived(passkeySupported && data.passkeyLoginAvailable === true);
 	const queryClient = useQueryClient();
 
-	const accentColor = $derived($accentColorPreviewStore);
-	const animationsEnabled = $derived($userStore?.preferences?.animationsEnabled ?? true);
+	const accentColor = $derived(accentColorPreview.current);
+	const animationsEnabled = $derived(userStore.current?.preferences?.animationsEnabled ?? true);
 	const logoUrl = $derived(getApplicationLogo(true, accentColor, accentColor, { animated: animationsEnabled }));
 
 	const oidcEnabledBySettings = $derived(data.settings?.oidcEnabled === true);

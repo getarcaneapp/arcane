@@ -6,7 +6,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { roleService } from '#lib/services/role-service.js';
 	import { SettingsPageLayout, type SettingsActionButton } from '#lib/layouts/index.js';
-	import userStore from '#lib/stores/user-store.js';
+	import userStore from '#lib/stores/user-store.svelte.js';
 
 	let { data } = $props();
 

@@ -6,9 +6,10 @@
 	import { ComposeEditorSplit } from '#lib/components/compose/index.js';
 	import { goto } from '$app/navigation';
 	import { m } from '#lib/paraglide/messages.js';
-	import { preventDefault, type FormInputs } from '#lib/utils/settings.js';
+	import { preventDefault } from '#lib/utils/settings.svelte.js';
+	import type { FormInputs } from '#lib/types/form.js';
 	import { ArrowLeftIcon } from '#lib/icons/index.js';
-	import type { Writable } from 'svelte/store';
+
 	import type { Snippet } from 'svelte';
 
 	interface ValidationState {
@@ -26,7 +27,7 @@
 	};
 
 	let {
-		inputs,
+		inputs = $bindable(),
 		validation = $bindable(),
 		originalName = '',
 		originalCompose,
@@ -37,7 +38,7 @@
 		onSubmit,
 		toolbarActions
 	}: {
-		inputs: Writable<FormInputs<NamedTemplateValues>>;
+		inputs: FormInputs<NamedTemplateValues>;
 		validation: ValidationState;
 		originalName?: string;
 		originalCompose?: string;
@@ -69,10 +70,10 @@
 				<div class="hidden h-4 w-px bg-border sm:block"></div>
 				<div class="hidden min-w-0 items-center gap-3 sm:flex">
 					<EditableName
-						bind:value={$inputs.name.value}
+						bind:value={inputs.name.value}
 						bind:ref={nameInputRef}
 						variant="inline"
-						error={$inputs.name.error ?? undefined}
+						error={inputs.name.error ?? undefined}
 						originalValue={originalName}
 						placeholder={m.templates_template_name_placeholder()}
 						canEdit={!saving}
@@ -92,10 +93,10 @@
 			<form class="flex min-h-0 flex-1 flex-col gap-4" onsubmit={preventDefault(onSubmit)}>
 				<div class="block flex-shrink-0 py-4 sm:hidden">
 					<EditableName
-						bind:value={$inputs.name.value}
+						bind:value={inputs.name.value}
 						bind:ref={nameInputRef}
 						variant="block"
-						error={$inputs.name.error ?? undefined}
+						error={inputs.name.error ?? undefined}
 						originalValue={originalName}
 						placeholder={m.templates_template_name_placeholder()}
 						canEdit={!saving}
@@ -105,7 +106,7 @@
 				<div class="flex-shrink-0 px-1 pt-1">
 					<div class="max-w-2xl">
 						<FormInput
-							input={$inputs.description}
+							input={inputs.description}
 							label={m.common_description()}
 							placeholder={m.templates_template_description_placeholder()}
 							disabled={saving}
@@ -118,8 +119,8 @@
 						<CodePanel
 							title="compose.yaml"
 							language="yaml"
-							bind:value={$inputs.composeContent.value}
-							error={$inputs.composeContent.error ?? undefined}
+							bind:value={inputs.composeContent.value}
+							error={inputs.composeContent.error ?? undefined}
 							readOnly={saving}
 							bind:hasErrors={validation.composeHasErrors}
 							bind:validationReady={validation.composeValidationReady}
@@ -127,8 +128,8 @@
 							originalValue={originalCompose}
 							{enableDiff}
 							editorContext={{
-								envContent: $inputs.envContent.value,
-								composeContents: [$inputs.composeContent.value],
+								envContent: inputs.envContent.value,
+								composeContents: [inputs.composeContent.value],
 								globalVariables: globalVariableMap
 							}}
 						/>
@@ -138,8 +139,8 @@
 						<CodePanel
 							title=".env"
 							language="env"
-							bind:value={$inputs.envContent.value}
-							error={$inputs.envContent.error ?? undefined}
+							bind:value={inputs.envContent.value}
+							error={inputs.envContent.error ?? undefined}
 							readOnly={saving}
 							bind:hasErrors={validation.envHasErrors}
 							bind:validationReady={validation.envValidationReady}
@@ -147,8 +148,8 @@
 							originalValue={originalEnv}
 							{enableDiff}
 							editorContext={{
-								envContent: $inputs.envContent.value,
-								composeContents: [$inputs.composeContent.value],
+								envContent: inputs.envContent.value,
+								composeContents: [inputs.composeContent.value],
 								globalVariables: globalVariableMap
 							}}
 						/>

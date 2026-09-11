@@ -5,7 +5,7 @@
 	import SettingsRow from '#lib/components/settings/settings-row.svelte';
 	import { AlertIcon, CodeIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import type { Readable } from 'svelte/store';
+
 	import SectionCard from '#lib/components/section-card.svelte';
 
 	type LifecycleSecurityFormValues = {
@@ -19,13 +19,11 @@
 		error: string | null;
 	};
 
-	type LifecycleSecurityFormInputs = Readable<
-		Record<string, FormField<unknown>> & {
-			[K in keyof LifecycleSecurityFormValues]: FormField<LifecycleSecurityFormValues[K]>;
-		}
-	>;
+	type LifecycleSecurityFormInputs = Record<string, FormField<unknown>> & {
+		[K in keyof LifecycleSecurityFormValues]: FormField<LifecycleSecurityFormValues[K]>;
+	};
 
-	let { formInputs }: { formInputs: LifecycleSecurityFormInputs } = $props();
+	let { formInputs = $bindable() }: { formInputs: LifecycleSecurityFormInputs } = $props();
 </script>
 
 <SectionCard
@@ -40,13 +38,13 @@
 		description={m.security_lifecycle_enabled_description()}
 		layout="inline"
 	>
-		<Switch id="lifecycleEnabledSwitch" bind:checked={$formInputs.lifecycleEnabled.value} />
+		<Switch id="lifecycleEnabledSwitch" bind:checked={formInputs.lifecycleEnabled.value} />
 	</SettingsRow>
 
 	<div class="max-w-xl">
 		<TextInputWithLabel
-			bind:value={$formInputs.lifecycleDefaultRunnerImage.value}
-			error={$formInputs.lifecycleDefaultRunnerImage.error}
+			bind:value={formInputs.lifecycleDefaultRunnerImage.value}
+			error={formInputs.lifecycleDefaultRunnerImage.error}
 			label={m.security_lifecycle_runner_image_label()}
 			description={m.security_lifecycle_runner_image_description()}
 			helpText={m.security_lifecycle_runner_image_help()}
@@ -57,8 +55,8 @@
 
 	<div class="max-w-xs">
 		<TextInputWithLabel
-			bind:value={$formInputs.lifecycleMaxTimeoutSec.value}
-			error={$formInputs.lifecycleMaxTimeoutSec.error}
+			bind:value={formInputs.lifecycleMaxTimeoutSec.value}
+			error={formInputs.lifecycleMaxTimeoutSec.error}
 			label={m.security_lifecycle_max_timeout_label()}
 			description={m.security_lifecycle_max_timeout_description()}
 			helpText={m.security_lifecycle_max_timeout_help()}

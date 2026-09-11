@@ -20,8 +20,7 @@
 		label: string;
 	} = $props();
 
-	// svelte-ignore state_referenced_locally -- direction is fixed per wrapper component.
-	const emblaCtx = getEmblaContext(direction === 'next' ? '<Carousel.Next/>' : '<Carousel.Previous/>');
+	const emblaCtx = getEmblaContext();
 	const isNext = $derived(direction === 'next');
 	const canScroll = $derived(isNext ? emblaCtx.canScrollNext : emblaCtx.canScrollPrev);
 	const positionClass = $derived(

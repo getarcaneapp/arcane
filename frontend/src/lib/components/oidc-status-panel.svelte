@@ -1,8 +1,8 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import { getApplicationLogo } from '#lib/utils/docker.js';
-	import { accentColorPreviewStore } from '#lib/utils/theme.js';
-	import userStore from '#lib/stores/user-store.js';
+	import { accentColorPreview } from '#lib/utils/theme.svelte.js';
+	import userStore from '#lib/stores/user-store.svelte.js';
 	import { m } from '#lib/paraglide/messages.js';
 
 	interface Props {
@@ -15,8 +15,8 @@
 
 	let { busy, busyTitle, busyDescription, error, children }: Props = $props();
 
-	const accentColor = $derived($accentColorPreviewStore);
-	const animationsEnabled = $derived($userStore?.preferences?.animationsEnabled ?? true);
+	const accentColor = $derived(accentColorPreview.current);
+	const animationsEnabled = $derived(userStore.current?.preferences?.animationsEnabled ?? true);
 	const loaderLogoUrl = $derived(
 		getApplicationLogo(false, accentColor, accentColor, { animated: animationsEnabled, loop: animationsEnabled })
 	);

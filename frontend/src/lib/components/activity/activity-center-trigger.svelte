@@ -3,8 +3,7 @@
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { cn } from '#lib/utils.js';
-	import userStore, { userHasPermissionInAnyEnvironment } from '#lib/stores/user-store.js';
-	import { fromStore } from 'svelte/store';
+	import userStore, { userHasPermissionInAnyEnvironment } from '#lib/stores/user-store.svelte.js';
 
 	let {
 		collapsed = false,
@@ -22,7 +21,7 @@
 
 	const activeCount = $derived(activityStore.activeCount);
 	const isActive = $derived(activeCount > 0);
-	const currentUser = fromStore(userStore);
+	const currentUser = userStore;
 	const canReadActivities = $derived(userHasPermissionInAnyEnvironment(currentUser.current, 'activities:read'));
 
 	function handleOpenInternal() {

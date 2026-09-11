@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import * as Card from '#lib/components/ui/card/index.js';
 	import LogViewer from '#lib/components/logs/log-viewer.svelte';
 	import LogControls from '#lib/components/logs/log-controls.svelte';
@@ -41,8 +42,8 @@
 	}
 
 	$effect(() => {
-		if (preferences.autoStartLogs && !isStreaming && serviceId && viewer) {
-			viewer.startLogStream();
+		if (preferences.autoStartLogs && serviceId && viewer) {
+			untrack(handleStart);
 		}
 	});
 </script>

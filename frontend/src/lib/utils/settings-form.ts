@@ -4,11 +4,11 @@ import { z } from 'zod/v4';
 import { UseSettingsForm } from '#lib/hooks/use-settings-form.svelte.js';
 import { m } from '#lib/paraglide/messages.js';
 import type { Settings } from '#lib/types/settings.js';
-import { createForm } from '#lib/utils/settings.js';
+import { createForm } from '#lib/utils/settings.svelte.js';
 
 type SettingsPayload = Partial<Settings> & Record<string, unknown>;
 
-export interface SettingsFormConfig<T extends z.ZodType<SettingsPayload, any>> {
+export interface SettingsFormConfig<T extends z.ZodType<SettingsPayload>> {
 	schema: T;
 	currentSettings: z.infer<T>;
 	getCurrentSettings?: () => z.infer<T>;
@@ -24,7 +24,7 @@ export interface SettingsFormConfig<T extends z.ZodType<SettingsPayload, any>> {
 	errorMessage?: string;
 }
 
-export function createSettingsForm<T extends z.ZodType<any, any>>(config: SettingsFormConfig<T>) {
+export function createSettingsForm<T extends z.ZodType<SettingsPayload>>(config: SettingsFormConfig<T>) {
 	const {
 		schema,
 		currentSettings,
@@ -36,10 +36,11 @@ export function createSettingsForm<T extends z.ZodType<any, any>>(config: Settin
 		errorMessage = m.common_update_failed({ resource: m.settings() })
 	} = config;
 
-	const { inputs: formInputs, ...form } = createForm(schema, currentSettings);
+	const form = createForm(schema, currentSettings);
+	const formInputs = form.inputs;
 
 	const settingsForm = new UseSettingsForm({
-		formInputs,
+		formInputs: () => formInputs,
 		getCurrentSettings: getCurrentSettings ?? (() => currentSettings),
 		onSave
 	});

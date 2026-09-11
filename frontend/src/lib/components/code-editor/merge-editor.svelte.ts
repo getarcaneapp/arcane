@@ -1,17 +1,18 @@
 import { EditorState, type Extension } from '@codemirror/state';
 import { MergeView } from '@codemirror/merge';
 import { EditorView } from '@codemirror/view';
-import type { Action } from 'svelte/action';
+import { untrack } from 'svelte';
+import type { Attachment } from 'svelte/attachments';
 import type { CodeLanguage } from './analysis/types';
 
-export type MergeActionParams = {
+export type MergeAttachmentParams = {
 	diffActive: boolean;
 	language: CodeLanguage;
 	value: string;
 	baseline: string;
 };
 
-type CreateMergeHostActionOptions = {
+type CreateMergeHostAttachmentOptions = {
 	getTheme: () => Extension;
 	getLanguageExtension: (lang: CodeLanguage, options?: { lightweight?: boolean }) => Extension[];
 	getReadonlyLanguageExtension: (lang: CodeLanguage) => Extension[];
@@ -19,11 +20,14 @@ type CreateMergeHostActionOptions = {
 	onPrimaryViewReady: (view: EditorView) => void;
 };
 
-export function createMergeHostAction(options: CreateMergeHostActionOptions): Action<HTMLDivElement, MergeActionParams> {
+export function createMergeHostAttachment(
+	options: CreateMergeHostAttachmentOptions,
+	getParams: () => MergeAttachmentParams
+): Attachment<HTMLDivElement> {
 	const { getTheme, getLanguageExtension, getReadonlyLanguageExtension, onValueChange, onPrimaryViewReady } = options;
 
-	return (node, params) => {
-		let currentParams = params;
+	return (node) => {
+		let currentParams = untrack(getParams);
 		let currentMergeView: MergeView | null = null;
 
 		const destroyCurrentMergeView = () => {
@@ -87,7 +91,7 @@ export function createMergeHostAction(options: CreateMergeHostActionOptions): Ac
 			}
 		};
 
-		const applyParams = (nextParams: MergeActionParams) => {
+		const applyParams = (nextParams: MergeAttachmentParams) => {
 			const mustRecreate = Boolean(currentMergeView && nextParams.language !== currentParams.language);
 			currentParams = nextParams;
 
@@ -104,15 +108,13 @@ export function createMergeHostAction(options: CreateMergeHostActionOptions): Ac
 			syncCurrentMergeView();
 		};
 
-		applyParams(params);
+		untrack(() => applyParams(currentParams));
 
-		return {
-			update(nextParams: MergeActionParams) {
-				applyParams(nextParams);
-			},
-			destroy() {
-				destroyCurrentMergeView();
-			}
-		};
+		$effect(() => {
+			const nextParams = getParams();
+			untrack(() => applyParams(nextParams));
+		});
+
+		return destroyCurrentMergeView;
 	};
 }

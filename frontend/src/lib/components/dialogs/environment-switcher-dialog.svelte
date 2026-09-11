@@ -13,10 +13,10 @@
 	import { toast } from 'svelte-sonner';
 	import { m } from '#lib/paraglide/messages.js';
 	import { cn } from '#lib/utils.js';
-	import settingsStore from '#lib/stores/config-store.js';
+	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { debounced } from '#lib/utils/ws.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
-	import { tick } from 'svelte';
+	import { tick, untrack } from 'svelte';
 	import { EnvironmentsIcon, RemoteEnvironmentIcon, AddIcon, SearchIcon, CloseIcon, SettingsIcon } from '#lib/icons/index.js';
 	import { useQueryClient } from '@tanstack/svelte-query';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
@@ -141,14 +141,8 @@
 	}
 
 	function openSession(_node: HTMLElement) {
-		// Runs when the dialog content mounts (i.e., when `open` becomes true)
-		startInitialLoad();
-		return {
-			destroy() {
-				// Runs when the dialog content unmounts (i.e., when `open` becomes false)
-				resetDialogState();
-			}
-		};
+		untrack(startInitialLoad);
+		return resetDialogState;
 	}
 
 	const debouncedSearch = debounced((query: string) => {
@@ -250,7 +244,7 @@
 
 	function getConnectionString(env: Environment): string {
 		if (env.id === '0') {
-			const host = $settingsStore ? $settingsStore.dockerHost : 'unix:///var/run/docker.sock';
+			const host = settingsStore.current ? settingsStore.current?.dockerHost : 'unix:///var/run/docker.sock';
 			return host || 'unix:///var/run/docker.sock';
 		} else {
 			return env.apiUrl;
@@ -259,120 +253,115 @@
 </script>
 
 <ResponsiveDialog bind:open title={m.sidebar_select_environment()} contentClass="max-w-2xl">
-	{#snippet children()}
-		<div class="m-2 flex flex-col gap-4">
-			{#if open}
-				<div class="hidden" use:openSession aria-hidden="true"></div>
+	<div class="m-2 flex flex-col gap-4">
+		{#if open}
+			<div class="hidden" {@attach openSession} aria-hidden="true"></div>
+		{/if}
+		<div class="relative">
+			<SearchIcon class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+			<Input
+				type="text"
+				placeholder={m.common_search()}
+				value={searchQuery}
+				oninput={(e) => {
+					searchQuery = (e.target as HTMLInputElement).value;
+					debouncedSearch(searchQuery);
+				}}
+				class="h-9 pr-10 pl-10"
+			/>
+			{#if searchQuery}
+				<button
+					type="button"
+					onclick={clearSearch}
+					class="absolute top-1/2 right-3 -translate-y-1/2 rounded-sm p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+					title={m.common_clear_search()}
+				>
+					<CloseIcon class="size-4" />
+				</button>
 			{/if}
-			<div class="relative">
-				<SearchIcon class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-				<Input
-					type="text"
-					placeholder={m.common_search()}
-					value={searchQuery}
-					oninput={(e) => {
-						searchQuery = (e.target as HTMLInputElement).value;
-						debouncedSearch(searchQuery);
-					}}
-					class="h-9 pr-10 pl-10"
-				/>
-				{#if searchQuery}
-					<button
-						type="button"
-						onclick={clearSearch}
-						class="absolute top-1/2 right-3 -translate-y-1/2 rounded-sm p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-						title={m.common_clear_search()}
-					>
-						<CloseIcon class="size-4" />
-					</button>
-				{/if}
-			</div>
+		</div>
 
-			<div bind:this={scrollContainer} onscroll={handleScroll} class="max-h-[50vh] min-h-[200px] overflow-y-auto">
-				{#if isLoading}
-					<div class="flex items-center justify-center py-10">
-						<Spinner class="size-6" />
-					</div>
-				{:else if loadError}
-					<div class="py-10 text-center text-destructive">
-						<p>{m.error_generic()}</p>
-					</div>
-				{:else if environments.length === 0}
-					<div class="py-10 text-center text-muted-foreground">
-						<EnvironmentsIcon class="mx-auto mb-4 size-12 opacity-50" />
-						<p>{m.sidebar_no_environments()}</p>
-					</div>
-				{:else}
-					<div class="space-y-1">
-						{#each environments as env (env.id)}
-							{@const isActive = environmentStore.selected?.id === env.id}
-							{@const isDisabled = !env.enabled}
-							<div
-								class={cn(
-									'flex items-center gap-2 rounded-lg border p-1 transition-colors',
-									isActive && 'border-primary bg-primary/10 font-medium',
-									!isActive && !isDisabled && 'hover:bg-muted/50',
-									!isActive && isDisabled && 'opacity-50'
-								)}
+		<div bind:this={scrollContainer} onscroll={handleScroll} class="max-h-[50vh] min-h-[200px] overflow-y-auto">
+			{#if isLoading}
+				<div class="flex items-center justify-center py-10">
+					<Spinner class="size-6" />
+				</div>
+			{:else if loadError}
+				<div class="py-10 text-center text-destructive">
+					<p>{m.error_generic()}</p>
+				</div>
+			{:else if environments.length === 0}
+				<div class="py-10 text-center text-muted-foreground">
+					<EnvironmentsIcon class="mx-auto mb-4 size-12 opacity-50" />
+					<p>{m.sidebar_no_environments()}</p>
+				</div>
+			{:else}
+				<div class="space-y-1">
+					{#each environments as env (env.id)}
+						{@const isActive = environmentStore.selected?.id === env.id}
+						{@const isDisabled = !env.enabled}
+						<div
+							class={cn(
+								'flex items-center gap-2 rounded-lg border p-1 transition-colors',
+								isActive && 'border-primary bg-primary/10 font-medium',
+								!isActive && !isDisabled && 'hover:bg-muted/50',
+								!isActive && isDisabled && 'opacity-50'
+							)}
+						>
+							<button
+								type="button"
+								onclick={() => !isActive && !isDisabled && handleSelect(env)}
+								disabled={isDisabled}
+								class={cn('flex min-w-0 flex-1 items-center gap-3 rounded-md p-2 text-left', isDisabled && 'cursor-not-allowed')}
 							>
-								<button
-									type="button"
-									onclick={() => !isActive && !isDisabled && handleSelect(env)}
-									disabled={isDisabled}
+								<div
 									class={cn(
-										'flex min-w-0 flex-1 items-center gap-3 rounded-md p-2 text-left',
-										isDisabled && 'cursor-not-allowed'
+										'flex size-8 shrink-0 items-center justify-center rounded-md border',
+										isActive ? 'border-primary bg-primary' : 'border-border'
 									)}
 								>
-									<div
-										class={cn(
-											'flex size-8 shrink-0 items-center justify-center rounded-md border',
-											isActive ? 'border-primary bg-primary' : 'border-border'
-										)}
-									>
-										{#if env.id === '0'}
-											<EnvironmentsIcon class={cn('size-4', isActive && 'text-primary-foreground')} />
-										{:else}
-											<RemoteEnvironmentIcon class={cn('size-4', isActive && 'text-primary-foreground')} />
-										{/if}
-									</div>
-									<div class="flex min-w-0 flex-1 flex-col">
-										<span class="truncate">{env.name}</span>
-										<span class={cn('truncate text-xs', isActive ? 'text-primary/70' : 'text-muted-foreground')}>
-											{getConnectionString(env)}
-										</span>
-									</div>
-								</button>
-								<div class="flex shrink-0 items-center gap-2 pr-2">
-									{#if isActive}
-										<span class="hidden text-xs font-medium text-primary sm:inline">
-											{m.environments_current_environment()}
-										</span>
+									{#if env.id === '0'}
+										<EnvironmentsIcon class={cn('size-4', isActive && 'text-primary-foreground')} />
+									{:else}
+										<RemoteEnvironmentIcon class={cn('size-4', isActive && 'text-primary-foreground')} />
 									{/if}
-									<ArcaneButton
-										action="base"
-										tone="ghost"
-										size="icon"
-										class="size-8"
-										icon={SettingsIcon}
-										showLabel={false}
-										customLabel={m.settings()}
-										onclick={() => handleOpenSettings(env)}
-									/>
 								</div>
+								<div class="flex min-w-0 flex-1 flex-col">
+									<span class="truncate">{env.name}</span>
+									<span class={cn('truncate text-xs', isActive ? 'text-primary/70' : 'text-muted-foreground')}>
+										{getConnectionString(env)}
+									</span>
+								</div>
+							</button>
+							<div class="flex shrink-0 items-center gap-2 pr-2">
+								{#if isActive}
+									<span class="hidden text-xs font-medium text-primary sm:inline">
+										{m.environments_current_environment()}
+									</span>
+								{/if}
+								<ArcaneButton
+									action="base"
+									tone="ghost"
+									size="icon"
+									class="size-8"
+									icon={SettingsIcon}
+									showLabel={false}
+									customLabel={m.settings()}
+									onclick={() => handleOpenSettings(env)}
+								/>
 							</div>
-						{/each}
+						</div>
+					{/each}
 
-						{#if isLoadingMore}
-							<div class="flex items-center justify-center py-4">
-								<Spinner class="size-5" />
-							</div>
-						{/if}
-					</div>
-				{/if}
-			</div>
+					{#if isLoadingMore}
+						<div class="flex items-center justify-center py-4">
+							<Spinner class="size-5" />
+						</div>
+					{/if}
+				</div>
+			{/if}
 		</div>
-	{/snippet}
+	</div>
 
 	{#snippet footer()}
 		<div class="flex w-full items-center justify-between gap-2">

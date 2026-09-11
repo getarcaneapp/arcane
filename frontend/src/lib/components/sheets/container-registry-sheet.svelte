@@ -11,7 +11,8 @@
 		RegistryType
 	} from '#lib/types/docker.js';
 	import { z } from 'zod/v4';
-	import { createForm, preventDefault } from '#lib/utils/settings.js';
+	import { createForm, preventDefault } from '#lib/utils/settings.svelte.js';
+
 	import { parseLines } from '#lib/utils/form-parsers.js';
 	import { m } from '#lib/paraglide/messages.js';
 
@@ -100,9 +101,10 @@
 		awsRegion: open && registryToEdit ? (registryToEdit.awsRegion ?? '') : ''
 	});
 
-	let { inputs, ...form } = $derived(createForm<typeof formSchema>(formSchema, formData));
+	let form = $derived(createForm<typeof formSchema>(formSchema, formData));
+	let inputs = $derived(form.inputs);
 
-	let isECR = $derived($inputs.registryType.value === 'ecr');
+	let isECR = $derived(inputs.registryType.value === 'ecr');
 
 	function handleSubmit() {
 		const data = form.validate();
@@ -132,7 +134,7 @@
 				id="registryTypeSelect"
 				label={m.registries_type_label()}
 				options={registryTypeOptions}
-				bind:value={$inputs.registryType.value}
+				bind:value={inputs.registryType.value}
 				disabled={isEditMode}
 			/>
 
@@ -141,7 +143,7 @@
 				type="text"
 				placeholder={m.registries_url_placeholder()}
 				description={m.registries_url_description()}
-				bind:input={$inputs.url}
+				bind:input={inputs.url}
 			/>
 
 			{#if !isECR}
@@ -149,28 +151,28 @@
 					label={m.common_username()}
 					type="text"
 					description={m.common_username_required()}
-					bind:input={$inputs.username}
+					bind:input={inputs.username}
 				/>
 				<FormInput
 					label={m.common_token()}
 					type="password"
 					placeholder={isEditMode ? m.registries_token_keep_placeholder() : m.registries_token_placeholder()}
 					description={m.registries_token_description()}
-					bind:input={$inputs.token}
+					bind:input={inputs.token}
 				/>
 			{:else}
-				<FormInput label={m.registries_aws_access_key_id()} type="text" bind:input={$inputs.awsAccessKeyId} />
+				<FormInput label={m.registries_aws_access_key_id()} type="text" bind:input={inputs.awsAccessKeyId} />
 				<FormInput
 					label={m.registries_aws_secret_access_key()}
 					type="password"
 					placeholder={isEditMode ? m.registries_token_keep_placeholder() : ''}
-					bind:input={$inputs.awsSecretAccessKey}
+					bind:input={inputs.awsSecretAccessKey}
 				/>
 				<FormInput
 					label={m.registries_aws_region()}
 					type="text"
 					placeholder={m.registries_aws_region_placeholder()}
-					bind:input={$inputs.awsRegion}
+					bind:input={inputs.awsRegion}
 				/>
 			{/if}
 
@@ -178,7 +180,7 @@
 				label={m.common_description()}
 				type="text"
 				placeholder={m.registries_description_placeholder()}
-				bind:input={$inputs.description}
+				bind:input={inputs.description}
 			/>
 			<FormInput
 				label={m.registries_repository_names()}
@@ -186,20 +188,20 @@
 				rows={3}
 				placeholder={m.registries_repository_names_placeholder()}
 				description={m.registries_repository_names_description()}
-				bind:input={$inputs.repositoryNames}
+				bind:input={inputs.repositoryNames}
 			/>
 			<SwitchWithLabel
 				id="isEnabledSwitch"
 				label={m.common_enabled()}
 				description={m.registries_enabled_description()}
-				bind:checked={$inputs.enabled.value}
+				bind:checked={inputs.enabled.value}
 			/>
 			{#if !isECR}
 				<SwitchWithLabel
 					id="insecureSwitch"
 					label={m.registries_allow_insecure_label()}
 					description={m.registries_allow_insecure_description()}
-					bind:checked={$inputs.insecure.value}
+					bind:checked={inputs.insecure.value}
 				/>
 			{/if}
 			<!-- fallow-ignore-next-line code-duplication -- per-sheet footer wrapper ({#snippet footer} -> shared SheetFooterActions); ResponsiveDialog requires a footer snippet in each sheet -->

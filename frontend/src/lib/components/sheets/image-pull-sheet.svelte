@@ -3,7 +3,8 @@
 	import SheetFooterActions from '#lib/components/sheets/sheet-footer-actions.svelte';
 	import FormInput from '#lib/components/form/form-input.svelte';
 	import { z } from 'zod/v4';
-	import { createForm, preventDefault } from '#lib/utils/settings.js';
+	import { createForm, preventDefault } from '#lib/utils/settings.svelte.js';
+
 	import { toast } from 'svelte-sonner';
 	import { m } from '#lib/paraglide/messages.js';
 	import { imageService } from '#lib/services/image-service.js';
@@ -25,7 +26,8 @@
 		tag: 'latest'
 	});
 
-	let { inputs, ...form } = $derived(createForm<typeof formSchema>(formSchema, formData));
+	let form = $derived(createForm<typeof formSchema>(formSchema, formData));
+	let inputs = $derived(form.inputs);
 
 	let isPulling = $state(false);
 
@@ -71,8 +73,8 @@
 
 		open = newOpenState;
 		if (!newOpenState || newOpenState) {
-			$inputs.imageRef.value = '';
-			$inputs.tag.value = 'latest';
+			inputs.imageRef.value = '';
+			inputs.tag.value = 'latest';
 		}
 	}
 </script>
@@ -92,14 +94,14 @@
 				type="text"
 				placeholder={m.images_image_name_placeholder()}
 				description={m.images_image_name_description()}
-				bind:input={$inputs.imageRef}
+				bind:input={inputs.imageRef}
 			/>
 			<FormInput
 				label={m.tag()}
 				type="text"
 				placeholder={m.images_tag_latest()}
 				description={m.images_tag_description()}
-				bind:input={$inputs.tag}
+				bind:input={inputs.tag}
 			/>
 		</form>
 	{/snippet}

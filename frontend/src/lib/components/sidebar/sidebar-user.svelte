@@ -5,7 +5,7 @@
 	import * as Sidebar from '#lib/components/ui/sidebar/index.js';
 	import { useSidebar } from '#lib/components/ui/sidebar/index.js';
 	import type { User } from '#lib/types/auth.js';
-	import settingsStore from '#lib/stores/config-store.js';
+	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { goto } from '$app/navigation';
 	import { ArrowsUpDownIcon, LogoutIcon, SettingsIcon, UserIcon } from '#lib/icons/index.js';
 
@@ -46,7 +46,7 @@
 								<Avatar.Root class="size-8 rounded-lg">
 									{#if user?.avatarUrl}
 										<Avatar.Image src={`${user.avatarUrl}?t=${user.updatedAt}`} alt={displayLabel} />
-									{:else if $settingsStore.enableGravatar}
+									{:else if settingsStore.current?.enableGravatar}
 										{#await getGravatarUrl(user?.email)}
 											<!-- Loading gravatar, show fallback -->
 										{:then url}
@@ -93,7 +93,7 @@
 								<Avatar.Root class="size-8 shrink-0 rounded-lg">
 									{#if user?.avatarUrl}
 										<Avatar.Image src={`${user.avatarUrl}?t=${user.updatedAt}`} alt={displayLabel} />
-									{:else if $settingsStore.enableGravatar}
+									{:else if settingsStore.current?.enableGravatar}
 										{#await getGravatarUrl(user?.email)}
 											<!-- Loading gravatar, show fallback -->
 										{:then url}

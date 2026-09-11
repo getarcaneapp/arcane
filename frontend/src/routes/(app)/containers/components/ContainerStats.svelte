@@ -110,6 +110,7 @@
 		</div>
 		<Skeleton class="h-3 w-full" />
 		<div class="grid grid-cols-2 gap-x-4 gap-y-2">
+			<!-- Skeleton slots have fixed positions and no resource identity. -->
 			{#each Array(4) as _, i (i)}
 				<div class="flex justify-between">
 					<Skeleton class="h-3 w-24" />

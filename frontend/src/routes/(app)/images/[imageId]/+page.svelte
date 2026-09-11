@@ -10,7 +10,7 @@
 	import { onMount, onDestroy, tick } from 'svelte';
 	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { queryKeys } from '#lib/query/query-keys.js';
-	import userStore from '#lib/stores/user-store.js';
+	import userStore from '#lib/stores/user-store.svelte.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { imageService } from '#lib/services/image-service.js';
@@ -83,7 +83,7 @@
 	const scanQuery = createQuery(() => {
 		const environmentId = currentEnvId;
 		const imageId = image?.id;
-		$userStore;
+		userStore.current;
 		return {
 			queryKey: queryKeys.vulnerabilities.scanResult(environmentId, imageId ?? ''),
 			queryFn: async () => {

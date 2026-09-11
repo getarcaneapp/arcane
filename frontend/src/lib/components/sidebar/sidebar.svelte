@@ -21,12 +21,11 @@
 	import SidebarUpdatebanner from './sidebar-updatebanner.svelte';
 	import SidebarPinButton from './sidebar-pin-button.svelte';
 	import ActivityCenterTrigger from '#lib/components/activity/activity-center-trigger.svelte';
-	import userStore from '#lib/stores/user-store.js';
-	import settingsStore from '#lib/stores/config-store.js';
+	import userStore from '#lib/stores/user-store.svelte.js';
+	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import VersionInfoDialog from '#lib/components/dialogs/version-info-dialog.svelte';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-	import { fromStore } from 'svelte/store';
 
 	let {
 		ref = $bindable(null),
@@ -44,12 +43,12 @@
 		permissionsManifest?: PermissionsManifest | null;
 	} = $props();
 
-	const autoLogin = fromStore(settingsStore.autoLoginEnabled);
+	const autoLogin = settingsStore.autoLoginEnabled;
 	const autoLoginEnabled = $derived(autoLogin.current);
 
 	const sidebar = useSidebar();
 
-	const storeUser = fromStore(userStore);
+	const storeUser = userStore;
 	let showVersionDialog = $state(false);
 	const effectiveUser = $derived(storeUser.current ?? user);
 

@@ -5,8 +5,9 @@
 	import { z } from 'zod/v4';
 	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import settingsStore from '#lib/stores/config-store.js';
-	import { createForm } from '#lib/utils/settings.js';
+	import settingsStore from '#lib/stores/config-store.svelte.js';
+	import { createForm } from '#lib/utils/settings.svelte.js';
+
 	import { isDepotBuildAvailable } from '#lib/utils/build-provider.js';
 	import { toast } from 'svelte-sonner';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
@@ -39,7 +40,7 @@
 		isGitBuildContextSource
 	} from './image-build-history';
 
-	const buildsRoot = $derived((($settingsStore?.buildsDirectory ?? '/builds') as string).trim() || '/builds');
+	const buildsRoot = $derived(((settingsStore.current?.buildsDirectory ?? '/builds') as string).trim() || '/builds');
 	const buildsRootLabel = $derived.by(() => {
 		const raw = buildsRoot.trim();
 		if (!raw) return '/builds';
@@ -50,7 +51,7 @@
 		return `…/${tail}`;
 	});
 
-	const depotAvailable = $derived(isDepotBuildAvailable($settingsStore));
+	const depotAvailable = $derived(isDepotBuildAvailable(settingsStore.current));
 
 	const providerOptions = $derived.by<BuildProviderOption[]>(() => {
 		const options: BuildProviderOption[] = [
@@ -105,7 +106,7 @@
 		load: z.boolean().default(true)
 	});
 
-	const { inputs, ...form } = createForm<typeof formSchema>(formSchema, {
+	const form = createForm<typeof formSchema>(formSchema, {
 		dockerfile: '',
 		tags: '',
 		registryId: '',
@@ -126,10 +127,11 @@
 		platforms: '',
 		noCache: false,
 		pull: false,
-		provider: ($settingsStore?.buildProvider as 'local' | 'depot') ?? 'local',
+		provider: (settingsStore.current?.buildProvider as 'local' | 'depot') ?? 'local',
 		push: false,
 		load: true
 	});
+	let inputs = $derived(form.inputs);
 
 	let isBuilding = $state(false);
 	let isDesktop = $state(true);
@@ -150,8 +152,8 @@
 
 	const selectedEnvId = $derived(environmentStore.selected?.id || '0');
 	const queryClient = useQueryClient();
-	const resolvedProvider = $derived(depotAvailable ? $inputs.provider.value : 'local');
-	const isPushMode = $derived(resolvedProvider === 'depot' ? true : $inputs.push.value);
+	const resolvedProvider = $derived(depotAvailable ? inputs.provider.value : 'local');
+	const isPushMode = $derived(resolvedProvider === 'depot' ? true : inputs.push.value);
 
 	const registryRequestOptions = {
 		pagination: { page: 1, limit: 100 },
@@ -179,7 +181,7 @@
 			})
 	);
 
-	const selectedRegistry = $derived(registries.find((registry) => registry.id === $inputs.registryId.value));
+	const selectedRegistry = $derived(registries.find((registry) => registry.id === inputs.registryId.value));
 
 	const repositoryOptions = $derived<SelectOption[]>(
 		(selectedRegistry?.repositoryNames ?? []).map((name) => ({ label: name, value: name }))
@@ -187,7 +189,7 @@
 
 	const fullImageReference = $derived(
 		isPushMode && selectedRegistry
-			? buildImageReference(selectedRegistry.url, $inputs.repositoryName.value, $inputs.pushTag.value)
+			? buildImageReference(selectedRegistry.url, inputs.repositoryName.value, inputs.pushTag.value)
 			: ''
 	);
 
@@ -616,7 +618,7 @@
 
 {#snippet configPanel()}
 	<BuildConfigPanel
-		{inputs}
+		bind:inputs
 		provider={resolvedProvider}
 		bind:showAdvanced
 		{isPushMode}
@@ -662,7 +664,7 @@
 				</Tabs.List>
 
 				<div class="flex items-center gap-3 pr-2">
-					<BuildControls {inputs} provider={resolvedProvider} {providerOptions} {isBuilding} onBuild={handleSubmit} />
+					<BuildControls bind:inputs provider={resolvedProvider} {providerOptions} {isBuilding} onBuild={handleSubmit} />
 					<div class="hidden h-4 w-px bg-border xl:block"></div>
 					<div class="flex items-center gap-2">
 						<div class="relative flex items-center">
@@ -771,7 +773,7 @@
 
 		{#snippet headerActions()}
 			{#if mainTab === 'build'}
-				<BuildControls {inputs} provider={resolvedProvider} {providerOptions} {isBuilding} onBuild={handleSubmit} />
+				<BuildControls bind:inputs provider={resolvedProvider} {providerOptions} {isBuilding} onBuild={handleSubmit} />
 			{/if}
 		{/snippet}
 
@@ -791,7 +793,7 @@
 							</div>
 						{/snippet}
 						{#snippet headerActions()}
-							<BuildControls {inputs} provider={resolvedProvider} {providerOptions} {isBuilding} onBuild={handleSubmit} />
+							<BuildControls bind:inputs provider={resolvedProvider} {providerOptions} {isBuilding} onBuild={handleSubmit} />
 						{/snippet}
 						{#snippet tabContent(buildTabValue)}
 							{#if buildTabValue === 'workspace'}

@@ -9,7 +9,8 @@
 	import { Textarea } from '#lib/components/ui/textarea/index.js';
 	import type { NetworkCreateOptions } from '#lib/types/docker.js';
 	import { z } from 'zod/v4';
-	import { createForm, preventDefault } from '#lib/utils/settings.js';
+	import { createForm, preventDefault } from '#lib/utils/settings.svelte.js';
+
 	import { parseKeyValuePairs } from '#lib/utils/form-parsers.js';
 	import SelectWithLabel from '../form/select-with-label.svelte';
 	import { m } from '#lib/paraglide/messages.js';
@@ -55,7 +56,8 @@
 		gateway: ''
 	});
 
-	let { inputs, ...form } = $derived(createForm<typeof formSchema>(formSchema, formData));
+	let form = $derived(createForm<typeof formSchema>(formSchema, formData));
+	let inputs = $derived(form.inputs);
 
 	// Dynamic labels state for the key-value pairs
 	let labels = $state<{ key: string; value: string }[]>([{ key: '', value: '' }]);
@@ -121,15 +123,15 @@
 		open = newOpenState;
 		if (!newOpenState) {
 			// Reset form data
-			$inputs.networkName.value = '';
-			$inputs.networkDriver.value = 'bridge';
-			$inputs.checkDuplicate.value = true;
-			$inputs.internal.value = false;
-			$inputs.networkLabels.value = '';
-			$inputs.driverOptions.value = '';
-			$inputs.enableIpam.value = false;
-			$inputs.subnet.value = '';
-			$inputs.gateway.value = '';
+			inputs.networkName.value = '';
+			inputs.networkDriver.value = 'bridge';
+			inputs.checkDuplicate.value = true;
+			inputs.internal.value = false;
+			inputs.networkLabels.value = '';
+			inputs.driverOptions.value = '';
+			inputs.enableIpam.value = false;
+			inputs.subnet.value = '';
+			inputs.gateway.value = '';
 			labels = [{ key: '', value: '' }];
 		}
 	}
@@ -152,18 +154,18 @@
 					type="text"
 					placeholder={m.network_name_placeholder()}
 					disabled={isLoading}
-					bind:value={$inputs.networkName.value}
-					class={$inputs.networkName.error ? 'border-destructive' : ''}
+					bind:value={inputs.networkName.value}
+					class={inputs.networkName.error ? 'border-destructive' : ''}
 				/>
-				{#if $inputs.networkName.error}
-					<p class="text-xs text-destructive">{$inputs.networkName.error}</p>
+				{#if inputs.networkName.error}
+					<p class="text-xs text-destructive">{inputs.networkName.error}</p>
 				{/if}
 				<p class="text-xs text-muted-foreground">{m.network_name_description()}</p>
 			</div>
 
 			<SelectWithLabel
 				id="driver-select"
-				bind:value={$inputs.networkDriver.value}
+				bind:value={inputs.networkDriver.value}
 				label={m.network_driver_label()}
 				description={m.network_driver_description()}
 				options={drivers}
@@ -173,11 +175,11 @@
 			<div class="space-y-4">
 				<div class="flex items-center space-x-4">
 					<div class="flex items-center space-x-2">
-						<Checkbox id="check-duplicate" bind:checked={$inputs.checkDuplicate.value} disabled={isLoading} />
+						<Checkbox id="check-duplicate" bind:checked={inputs.checkDuplicate.value} disabled={isLoading} />
 						<Label for="check-duplicate" class="text-sm font-normal">{m.network_check_duplicate_label()}</Label>
 					</div>
 					<div class="flex items-center space-x-2">
-						<Checkbox id="internal" bind:checked={$inputs.internal.value} disabled={isLoading} />
+						<Checkbox id="internal" bind:checked={inputs.internal.value} disabled={isLoading} />
 						<Label for="internal" class="text-sm font-normal">{m.network_internal_label()}</Label>
 					</div>
 				</div>
@@ -190,7 +192,7 @@
 						<div class="space-y-4">
 							<div class="space-y-2">
 								<Label class="text-sm font-medium">{m.labels_key_value_label()}</Label>
-								{#each labels as label, index (index)}
+								{#each labels as label, index (label)}
 									<div class="flex items-center gap-2">
 										<Input type="text" placeholder="Key" bind:value={label.key} disabled={isLoading} class="flex-1" />
 										<Input type="text" placeholder="Value" bind:value={label.value} disabled={isLoading} class="flex-1" />
@@ -223,11 +225,11 @@
 									placeholder={m.network_labels_placeholder()}
 									disabled={isLoading}
 									rows={3}
-									bind:value={$inputs.networkLabels.value}
-									class={$inputs.networkLabels.error ? 'border-destructive' : ''}
+									bind:value={inputs.networkLabels.value}
+									class={inputs.networkLabels.error ? 'border-destructive' : ''}
 								/>
-								{#if $inputs.networkLabels.error}
-									<p class="text-xs text-destructive">{$inputs.networkLabels.error}</p>
+								{#if inputs.networkLabels.error}
+									<p class="text-xs text-destructive">{inputs.networkLabels.error}</p>
 								{/if}
 								<p class="text-xs text-muted-foreground">{m.network_labels_description()}</p>
 							</div>
@@ -245,11 +247,11 @@
 								placeholder={m.network_driver_options_placeholder()}
 								disabled={isLoading}
 								rows={3}
-								bind:value={$inputs.driverOptions.value}
-								class={$inputs.driverOptions.error ? 'border-destructive' : ''}
+								bind:value={inputs.driverOptions.value}
+								class={inputs.driverOptions.error ? 'border-destructive' : ''}
 							/>
-							{#if $inputs.driverOptions.error}
-								<p class="text-xs text-destructive">{$inputs.driverOptions.error}</p>
+							{#if inputs.driverOptions.error}
+								<p class="text-xs text-destructive">{inputs.driverOptions.error}</p>
 							{/if}
 							<p class="text-xs text-muted-foreground">{m.network_driver_options_description()}</p>
 						</div>
@@ -261,11 +263,11 @@
 					<Accordion.Content class="pt-4">
 						<div class="space-y-4">
 							<div class="flex items-center space-x-2">
-								<Checkbox id="enable-ipam" bind:checked={$inputs.enableIpam.value} disabled={isLoading} />
+								<Checkbox id="enable-ipam" bind:checked={inputs.enableIpam.value} disabled={isLoading} />
 								<Label for="enable-ipam" class="text-sm font-medium">{m.network_enable_ipam_label()}</Label>
 							</div>
 
-							{#if $inputs.enableIpam.value}
+							{#if inputs.enableIpam.value}
 								<div class="space-y-4 border-l-2 border-muted pl-6">
 									<div class="space-y-2">
 										<Label for="subnet" class="text-sm font-medium">{m.common_subnet()}</Label>
@@ -274,11 +276,11 @@
 											type="text"
 											placeholder={m.network_example_subnet()}
 											disabled={isLoading}
-											bind:value={$inputs.subnet.value}
-											class={$inputs.subnet.error ? 'border-destructive' : ''}
+											bind:value={inputs.subnet.value}
+											class={inputs.subnet.error ? 'border-destructive' : ''}
 										/>
-										{#if $inputs.subnet.error}
-											<p class="text-xs text-destructive">{$inputs.subnet.error}</p>
+										{#if inputs.subnet.error}
+											<p class="text-xs text-destructive">{inputs.subnet.error}</p>
 										{/if}
 										<p class="text-xs text-muted-foreground">{m.network_subnet_description()}</p>
 									</div>
@@ -290,11 +292,11 @@
 											type="text"
 											placeholder={m.network_example_gateway()}
 											disabled={isLoading}
-											bind:value={$inputs.gateway.value}
-											class={$inputs.gateway.error ? 'border-destructive' : ''}
+											bind:value={inputs.gateway.value}
+											class={inputs.gateway.error ? 'border-destructive' : ''}
 										/>
-										{#if $inputs.gateway.error}
-											<p class="text-xs text-destructive">{$inputs.gateway.error}</p>
+										{#if inputs.gateway.error}
+											<p class="text-xs text-destructive">{inputs.gateway.error}</p>
 										{/if}
 										<p class="text-xs text-muted-foreground">{m.network_gateway_description()}</p>
 									</div>

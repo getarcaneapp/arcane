@@ -22,7 +22,7 @@
 	} from '#lib/config/navigation-config.js';
 	import { isEditableTarget, matchesShortcutEvent } from '#lib/utils/navigation.js';
 	import { cn } from '#lib/utils.js';
-	import userStore, { userHasPermissionInAnyEnvironment } from '#lib/stores/user-store.js';
+	import userStore, { userHasPermissionInAnyEnvironment } from '#lib/stores/user-store.svelte.js';
 	let { data, children }: LayoutProps = $props();
 
 	const versionInformation = $derived(data.versionInformation);
@@ -38,7 +38,7 @@
 	const navigationSettings = $derived.by(() => {
 		// Track the store, not the loader snapshot: saving a preference calls
 		// userStore.setUser() without re-running load().
-		void $userStore;
+		void userStore.current;
 		return getEffectiveNavigationSettings();
 	});
 	const navigationMode = $derived(navigationSettings.mode);
@@ -76,17 +76,20 @@
 		return () => environmentStatusStore.stop();
 	});
 
-	$effect(() => {
-		const redirectPath = getAuthRedirectPath(
+	const authRedirectPath = $derived(
+		getAuthRedirectPath(
 			page.url.pathname,
 			user,
 			currentEnvId,
 			permissionsManifest,
 			permissionsManifestLoadFailed,
 			getEffectiveLandingPage()
-		);
-		if (redirectPath) {
-			goto(redirectPath);
+		)
+	);
+
+	$effect(() => {
+		if (authRedirectPath) {
+			goto(authRedirectPath);
 		}
 	});
 
@@ -104,7 +107,7 @@
 
 	function handleNavigationShortcut(event: KeyboardEvent) {
 		if (event.defaultPrevented) return;
-		if ($userStore?.preferences?.keyboardShortcutsEnabled === false) return;
+		if (userStore.current?.preferences?.keyboardShortcutsEnabled === false) return;
 		if (isMobile.current || isTablet.current) return;
 		if (isEditableTarget(event.target)) return;
 

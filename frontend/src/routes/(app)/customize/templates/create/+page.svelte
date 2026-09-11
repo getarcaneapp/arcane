@@ -4,7 +4,8 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { templateService } from '#lib/services/template-service.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
-	import { createForm } from '#lib/utils/settings.js';
+	import { createForm } from '#lib/utils/settings.svelte.js';
+
 	import { tryCatch } from '#lib/utils/try-catch.js';
 	import { toast } from 'svelte-sonner';
 	import TemplateEditorWorkspace from '../components/template-editor-workspace.svelte';
@@ -37,7 +38,8 @@
 		envContent: ''
 	};
 
-	const { inputs, ...form } = createForm<typeof formSchema>(formSchema, initialValues);
+	const form = createForm<typeof formSchema>(formSchema, initialValues);
+	let inputs = $derived(form.inputs);
 
 	const hasEditorErrors = $derived(
 		hasTemplateEditorErrors(
@@ -49,7 +51,7 @@
 			)
 		)
 	);
-	const canCreate = $derived(!!$inputs.name.value && !!$inputs.composeContent.value && !hasEditorErrors && !saving);
+	const canCreate = $derived(!!inputs.name.value && !!inputs.composeContent.value && !hasEditorErrors && !saving);
 
 	async function handleCreate() {
 		const validated = validateTemplateEditorForm(
@@ -84,7 +86,7 @@
 </script>
 
 <TemplateEditorWorkspace
-	{inputs}
+	bind:inputs
 	bind:validation
 	fileIdPrefix="templates:create"
 	{globalVariableMap}

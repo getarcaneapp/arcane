@@ -3,11 +3,11 @@
 
 	import { goto, afterNavigate } from '$app/navigation';
 	import { onMount, onDestroy } from 'svelte';
-	import userStore from '#lib/stores/user-store.js';
+	import userStore from '#lib/stores/user-store.svelte.js';
 	import { useBackupActivity } from '#lib/hooks/use-backup-activity.svelte.js';
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
 	import { toast } from 'svelte-sonner';
-	import settingsStore from '#lib/stores/config-store.js';
+	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { SettingsPageLayout, type SettingsActionButton } from '#lib/layouts/index.js';
 	import { AlertIcon, BackupIcon, CloudStorageIcon, InfoIcon, LockIcon, ResetIcon, UploadIcon } from '#lib/icons/index.js';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
@@ -82,7 +82,7 @@
 	let restoreFilesSearch = $state('');
 	let restoreFilesLoaded = $state(false);
 	let restoringFiles = $state(false);
-	const isReadOnly = $derived.by(() => $settingsStore.uiConfigDisabled);
+	const isReadOnly = $derived.by(() => settingsStore.current?.uiConfigDisabled);
 	const canManageRecoveryKey = $derived(hasPermission('system-backups:recovery-key'));
 	const destinationOptions = $derived(backupDestinationOptions(data.destinations.length > 0));
 	const s3Options = $derived(s3DestinationOptions(data.destinations));
@@ -387,7 +387,7 @@
 	}
 	onMount(() => {
 		mounted = true;
-		return userStore.subscribe(() => {
+		return userStore.onChange(() => {
 			void discoverStoredBackups();
 		});
 	});

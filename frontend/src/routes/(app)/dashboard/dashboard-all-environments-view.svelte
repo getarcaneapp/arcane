@@ -15,7 +15,7 @@
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
 	import { dashboardStore } from '#lib/stores/dashboard.store.svelte.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-	import userStore from '#lib/stores/user-store.js';
+	import userStore from '#lib/stores/user-store.svelte.js';
 	import { hasAnyPermission, hasPermission } from '#lib/utils/auth.js';
 	import type {
 		DashboardActionItemKind,
@@ -111,7 +111,7 @@
 	let dockerInfoPromiseByEnvironmentId = $state<Record<string, Promise<DockerInfo> | undefined>>({});
 
 	const availableEnvironments = $derived.by(() => {
-		if (!$userStore) {
+		if (!userStore.current) {
 			return [];
 		}
 

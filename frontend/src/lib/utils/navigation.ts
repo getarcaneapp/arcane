@@ -1,6 +1,5 @@
 import { browser } from '$app/env';
 import { PersistedState } from 'runed';
-import { get } from 'svelte/store';
 import { createContext } from 'svelte';
 import {
 	DEFAULT_LANDING_PAGE,
@@ -8,7 +7,7 @@ import {
 	getLandingPageNavItems,
 	type MobileNavigationSettings
 } from '#lib/config/navigation-config.js';
-import userStore from '#lib/stores/user-store.js';
+import userStore from '#lib/stores/user-store.svelte.js';
 
 // --- Mobile nav state ---
 
@@ -20,7 +19,7 @@ export const [getMobileNavigation, setMobileNavigation] = createContext<{
 }>();
 
 export function getEffectiveNavigationSettings(): MobileNavigationSettings {
-	const preferences = get(userStore)?.preferences;
+	const preferences = userStore.current?.preferences;
 	const mode = preferences?.mobileNavigationMode ?? defaultMobileNavigationSettings.mode;
 
 	return {
@@ -37,7 +36,7 @@ export function getEffectiveNavigationSettings(): MobileNavigationSettings {
  * that no longer exists) falls back to the default rather than 404ing.
  */
 export function getEffectiveLandingPage(): string {
-	const candidate = get(userStore)?.preferences?.defaultLandingPage ?? DEFAULT_LANDING_PAGE;
+	const candidate = userStore.current?.preferences?.defaultLandingPage ?? DEFAULT_LANDING_PAGE;
 
 	return getLandingPageNavItems().some((item) => item.url === candidate) ? candidate : DEFAULT_LANDING_PAGE;
 }

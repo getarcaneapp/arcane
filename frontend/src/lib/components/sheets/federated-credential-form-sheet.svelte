@@ -10,7 +10,8 @@
 	import type { CreateFederatedCredential, FederatedCredential, FederatedCredentialMatchType, Role } from '#lib/types/auth.js';
 	import type { Environment } from '#lib/types/environment.js';
 	import { z } from 'zod/v4';
-	import { createForm, preventDefault } from '#lib/utils/settings.js';
+	import { createForm, preventDefault } from '#lib/utils/settings.svelte.js';
+
 	import { plainDateFromInstant, plainDateToInstantString } from '#lib/utils/formatting.js';
 	import * as m from '#lib/paraglide/messages.js';
 	import { InfoIcon } from '#lib/icons/index.js';
@@ -74,10 +75,11 @@
 		expiresAt: plainDateFromInstant(credentialToEdit?.expiresAt)
 	});
 
-	const { inputs, ...form } = $derived(createForm<typeof formSchema>(formSchema, formData));
+	const form = $derived(createForm<typeof formSchema>(formSchema, formData));
+	let inputs = $derived(form.inputs);
 
 	const hasWildcardWarning = $derived.by(() => {
-		const value = String($inputs.subjectMatch.value ?? '').trim();
+		const value = String(inputs.subjectMatch.value ?? '').trim();
 		return shouldWarnSubjectMatchInternal(value);
 	});
 
@@ -150,14 +152,14 @@
 				label={m.common_name()}
 				type="text"
 				placeholder={m.federated_credential_name_placeholder()}
-				bind:input={$inputs.name}
+				bind:input={inputs.name}
 				disabled={isLoading}
 			/>
 			<FormInput
 				label={m.common_description()}
 				type="text"
 				placeholder={m.optional_description_placeholder()}
-				bind:input={$inputs.description}
+				bind:input={inputs.description}
 				disabled={isLoading}
 			/>
 			<FormInput
@@ -165,7 +167,7 @@
 				type="text"
 				placeholder={m.federated_credential_issuer_placeholder()}
 				description={m.federated_credential_issuer_description()}
-				bind:input={$inputs.issuerUrl}
+				bind:input={inputs.issuerUrl}
 				disabled={isLoading}
 			/>
 			<FormInput
@@ -174,7 +176,7 @@
 				rows={3}
 				placeholder={m.federated_credential_audiences_placeholder()}
 				description={m.federated_credential_audiences_description()}
-				bind:input={$inputs.audience}
+				bind:input={inputs.audience}
 				disabled={isLoading}
 			/>
 			<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -182,14 +184,14 @@
 					label={m.federated_credential_subject_claim_label()}
 					type="text"
 					placeholder={m.federated_credential_subject_claim_placeholder()}
-					bind:input={$inputs.subjectClaim}
+					bind:input={inputs.subjectClaim}
 					disabled={isLoading}
 				/>
 				<div class="space-y-2">
 					<Label for="federated-match-type" class="mb-0">{m.federated_credential_match_type_label()}</Label>
-					<Select.Root type="single" bind:value={$inputs.matchType.value} disabled={isLoading}>
+					<Select.Root type="single" bind:value={inputs.matchType.value} disabled={isLoading}>
 						<Select.Trigger id="federated-match-type" class="w-full">
-							<span>{matchTypeLabel($inputs.matchType.value)}</span>
+							<span>{matchTypeLabel(inputs.matchType.value)}</span>
 						</Select.Trigger>
 						<Select.Content>
 							{#each MATCH_TYPES as option (option.value)}
@@ -206,7 +208,7 @@
 				type="text"
 				placeholder={m.federated_credential_subject_match_placeholder()}
 				description={m.federated_credential_subject_match_description()}
-				bind:input={$inputs.subjectMatch}
+				bind:input={inputs.subjectMatch}
 				disabled={isLoading}
 			/>
 			{#if hasWildcardWarning}
@@ -224,9 +226,9 @@
 				scopeLabel={m.common_scope()}
 				{roles}
 				{envOptions}
-				bind:roleValue={$inputs.roleId.value}
-				bind:environmentValue={$inputs.environmentId.value}
-				roleError={$inputs.roleId.error}
+				bind:roleValue={inputs.roleId.value}
+				bind:environmentValue={inputs.environmentId.value}
+				roleError={inputs.roleId.error}
 				{roleSelectedLabel}
 				{envSelectedLabel}
 				disabled={isLoading}
@@ -237,19 +239,19 @@
 					label={m.federated_credential_ttl_label()}
 					type="number"
 					description={m.federated_credential_ttl_description()}
-					bind:input={$inputs.tokenTtlSeconds}
+					bind:input={inputs.tokenTtlSeconds}
 					disabled={isLoading}
 				/>
 				<FormInput
 					label={m.federated_credential_expires_at_label()}
 					type="date"
 					description={m.federated_credential_expires_at_description()}
-					bind:input={$inputs.expiresAt}
+					bind:input={inputs.expiresAt}
 					disabled={isLoading}
 				/>
 			</div>
 			<div class="flex items-center space-x-2">
-				<Switch id="federated-enabled" bind:checked={$inputs.enabled.value} disabled={isLoading} />
+				<Switch id="federated-enabled" bind:checked={inputs.enabled.value} disabled={isLoading} />
 				<div class="grid gap-1.5 leading-none">
 					<Label for="federated-enabled" class="mb-0 text-sm leading-none font-medium">
 						{m.common_enabled()}

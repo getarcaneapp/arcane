@@ -13,7 +13,7 @@
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { cn } from '#lib/utils.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import settingsStore from '#lib/stores/config-store.js';
+	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { deployOptionsStore } from '#lib/stores/deploy-options.store.svelte.js';
 	import { containerService } from '#lib/services/container-service.js';
 	import { projectService } from '#lib/services/project-service.js';
@@ -225,9 +225,9 @@
 	const canPull = $derived(type === 'project' && hasPermission('projects:deploy', currentEnvId));
 	const canBuild = $derived(type === 'project' && hasPermission('projects:deploy', currentEnvId));
 	const deployButtonLabel = $derived(projectHasBuildDirective ? m.compose_build_and_deploy() : m.common_up());
-	const depotAvailable = $derived(isDepotBuildAvailable($settingsStore));
+	const depotAvailable = $derived(isDepotBuildAvailable(settingsStore.current));
 	const projectBuildProvider = $derived.by<'local' | 'depot'>(() => {
-		const configuredProvider = ($settingsStore?.buildProvider as 'local' | 'depot') ?? 'local';
+		const configuredProvider = (settingsStore.current?.buildProvider as 'local' | 'depot') ?? 'local';
 		if (configuredProvider === 'depot' && !depotAvailable) {
 			return 'local';
 		}

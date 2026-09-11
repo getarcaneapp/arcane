@@ -431,7 +431,7 @@
 
 	function handleShellSelectChange(value: string) {
 		if (value !== 'custom') {
-			$formInputs.defaultShell.value = value;
+			formInputs.defaultShell.value = value;
 		}
 	}
 
@@ -513,7 +513,7 @@
 			const operationResult = await tryCatch(
 				(async () => {
 					isTestingConnection = true;
-					const customUrl = $formInputs.apiUrl.value !== environment.apiUrl ? $formInputs.apiUrl.value : undefined;
+					const customUrl = formInputs.apiUrl.value !== environment.apiUrl ? formInputs.apiUrl.value : undefined;
 					const result = await environmentManagementService.testConnection(environment.id, customUrl);
 
 					const nextStatus = result.status as EnvironmentStatus;
@@ -592,10 +592,10 @@
 				<div class="min-w-0 flex-1">
 					<div class="flex min-h-9 min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
 						<EditableName
-							bind:value={$formInputs.name.value}
+							bind:value={formInputs.name.value}
 							bind:ref={nameInputRef}
 							variant="inline"
-							error={$formInputs.name.error ?? undefined}
+							error={formInputs.name.error ?? undefined}
 							originalValue={environment.name}
 							placeholder={m.environments_name_placeholder()}
 							class="max-w-[14rem] min-w-0 sm:max-w-[20rem] md:max-w-[26rem]"
@@ -607,26 +607,26 @@
 								<div
 									class={cn(
 										'size-2 rounded-full transition-colors',
-										$formInputs.enabled.value
+										formInputs.enabled.value
 											? 'bg-emerald-500 shadow-[0_0_8px_var(--color-emerald-500)]'
 											: 'bg-muted-foreground/40'
 									)}
 								></div>
 								<span class="text-sm font-medium">
-									{$formInputs.enabled.value ? m.common_enabled() : m.common_disabled()}
+									{formInputs.enabled.value ? m.common_enabled() : m.common_disabled()}
 								</span>
 							</div>
 							{#if environment.id === '0'}
 								<ArcaneTooltip.Root>
 									<ArcaneTooltip.Trigger>
-										<Switch id="env-enabled-header" disabled={true} bind:checked={$formInputs.enabled.value} />
+										<Switch id="env-enabled-header" disabled={true} bind:checked={formInputs.enabled.value} />
 									</ArcaneTooltip.Trigger>
 									<ArcaneTooltip.Content>
 										<p>{m.environments_local_setting_disabled()}</p>
 									</ArcaneTooltip.Content>
 								</ArcaneTooltip.Root>
 							{:else}
-								<Switch id="env-enabled-header" bind:checked={$formInputs.enabled.value} />
+								<Switch id="env-enabled-header" bind:checked={formInputs.enabled.value} />
 							{/if}
 						</div>
 					</div>
@@ -635,8 +635,8 @@
 							<Input
 								id="api-url"
 								type="url"
-								bind:value={$formInputs.apiUrl.value}
-								class="h-7 w-full max-w-md font-mono text-xs {$formInputs.apiUrl.error ? 'border-destructive' : ''}"
+								bind:value={formInputs.apiUrl.value}
+								class="h-7 w-full max-w-md font-mono text-xs {formInputs.apiUrl.error ? 'border-destructive' : ''}"
 								placeholder={m.environments_api_url_placeholder()}
 								autofocus
 								onkeydown={(e) => {
@@ -645,7 +645,7 @@
 										isEditingApiUrl = false;
 									}
 									if (e.key === 'Escape') {
-										$formInputs.apiUrl.value = environment.apiUrl;
+										formInputs.apiUrl.value = environment.apiUrl;
 										isEditingApiUrl = false;
 									}
 								}}
@@ -654,7 +654,7 @@
 						{:else if environment.id === '0'}
 							<ArcaneTooltip.Root>
 								<ArcaneTooltip.Trigger class="min-w-0">
-									<span class="block truncate px-1 font-mono text-xs text-muted-foreground">{$formInputs.apiUrl.value}</span>
+									<span class="block truncate px-1 font-mono text-xs text-muted-foreground">{formInputs.apiUrl.value}</span>
 								</ArcaneTooltip.Trigger>
 								<ArcaneTooltip.Content>
 									<p>{m.environments_local_setting_disabled()}</p>
@@ -667,13 +667,13 @@
 								title={m.environments_api_url()}
 								onclick={() => (isEditingApiUrl = true)}
 							>
-								{$formInputs.apiUrl.value || m.environments_api_url_placeholder()}
+								{formInputs.apiUrl.value || m.environments_api_url_placeholder()}
 							</button>
 						{/if}
-						<CopyButton text={$formInputs.apiUrl.value} size="icon" class="size-6 shrink-0" />
+						<CopyButton text={formInputs.apiUrl.value} size="icon" class="size-6 shrink-0" />
 					</div>
-					{#if $formInputs.apiUrl.error}
-						<p class="mt-1 text-xs text-destructive">{$formInputs.apiUrl.error}</p>
+					{#if formInputs.apiUrl.error}
+						<p class="mt-1 text-xs text-destructive">{formInputs.apiUrl.error}</p>
 					{/if}
 				</div>
 			</div>
@@ -780,11 +780,11 @@
 
 		{#if showSettingsTabs}
 			<Tabs.Content value="storage">
-				<StorageTab {formInputs} />
+				<StorageTab bind:formInputs />
 			</Tabs.Content>
 
 			<Tabs.Content value="docker">
-				<DockerTab {formInputs} environmentId={environment.id} {shellSelectValue} {handleShellSelectChange} {shellOptions} />
+				<DockerTab bind:formInputs environmentId={environment.id} {shellSelectValue} {handleShellSelectChange} {shellOptions} />
 			</Tabs.Content>
 
 			<Tabs.Content value="security">
@@ -799,19 +799,19 @@
 						/>
 					</div>
 					<Tabs.Content value="trivy">
-						<TrivySecuritySettings {formInputs} environmentId={environment.id} />
+						<TrivySecuritySettings bind:formInputs environmentId={environment.id} />
 					</Tabs.Content>
 					<Tabs.Content value="patching">
-						<ImagePatchSettings {formInputs} />
+						<ImagePatchSettings bind:formInputs />
 					</Tabs.Content>
 					<Tabs.Content value="lifecycle">
-						<LifecycleSecuritySettings {formInputs} />
+						<LifecycleSecuritySettings bind:formInputs />
 					</Tabs.Content>
 				</Tabs.Root>
 			</Tabs.Content>
 
 			<Tabs.Content value="jobs">
-				<JobsTab {formInputs} environmentId={environment.id} />
+				<JobsTab bind:formInputs environmentId={environment.id} />
 			</Tabs.Content>
 		{/if}
 

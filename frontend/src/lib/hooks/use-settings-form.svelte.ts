@@ -1,15 +1,16 @@
-import { getContext, onDestroy } from 'svelte';
-import settingsStore from '#lib/stores/config-store.js';
+import { getSettingsFormContext, hasSettingsFormContext } from '#lib/hooks/settings-form-context.js';
+import { onDestroy } from 'svelte';
+import settingsStore from '#lib/stores/config-store.svelte.js';
 import { settingsService } from '#lib/services/settings-service.js';
 import type { Settings } from '#lib/types/settings.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
-import { fromStore, type Readable } from 'svelte/store';
+
 import type { SettingsFormContext } from '#lib/types/settings-form.js';
 
 type SettingsPayload = Partial<Settings> & Record<string, unknown>;
 
 type Options<TFormInputs, TSaveData extends SettingsPayload> = {
-	formInputs: Readable<TFormInputs>;
+	formInputs: () => TFormInputs;
 	getCurrentSettings: () => TSaveData;
 	/**
 	 * Custom save handler. If provided, this will be called instead of the default
@@ -23,7 +24,7 @@ export class UseSettingsForm<
 	TSaveData extends SettingsPayload
 > {
 	#isLoading = $state(false);
-	#formValues: { readonly current: TFormInputs };
+	#formValues: () => TFormInputs;
 	#saveFunction: (() => Promise<void> | void) | null = null;
 	#resetFunction: (() => void) | null = null;
 	private formContext: SettingsFormContext | undefined;
@@ -33,9 +34,9 @@ export class UseSettingsForm<
 	constructor({ formInputs, getCurrentSettings, onSave }: Options<TFormInputs, TSaveData>) {
 		this.getCurrentSettings = getCurrentSettings;
 		this.customOnSave = onSave;
-		this.#formValues = fromStore(formInputs);
+		this.#formValues = formInputs;
 
-		this.formContext = getContext<SettingsFormContext | undefined>('settingsFormState');
+		this.formContext = hasSettingsFormContext() ? getSettingsFormContext() : undefined;
 
 		if (this.formContext) {
 			onDestroy(() => {
@@ -47,7 +48,7 @@ export class UseSettingsForm<
 	}
 
 	#hasChanges = $derived.by(() => {
-		const currentFormValues = this.#formValues.current;
+		const currentFormValues = this.#formValues();
 
 		const settingsToCompare = this.getCurrentSettings();
 		const keys = Object.keys(currentFormValues) as (keyof TFormInputs)[];
