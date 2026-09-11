@@ -3535,5 +3535,9 @@
   "git_repository_token_url_change": "A tárhely URL-címe megváltozott. A mentés előtt írja be újra a mentett tokent, vagy válassza a „Mentett token törlése” lehetőséget.",
   "git_repository_ssh_key_url_change": "A tároló URL-címe megváltozott. A mentés előtt írja be újra a mentett SSH-kulcsot, vagy válassza a „Mentett SSH-kulcs törlése” lehetőséget.",
   "git_repository_clear_token": "A tárolt token törlése",
-  "git_repository_clear_ssh_key": "A tárolt SSH-kulcs törlése"
+  "git_repository_clear_ssh_key": "A tárolt SSH-kulcs törlése",
+  "host_ip_placeholder": "0.0.0.0",
+  "container_port_placeholder": "80",
+  "protocol_tcp": "TCP",
+  "protocol_udp": "UDP"
 }
