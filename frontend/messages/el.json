@@ -3535,5 +3535,9 @@
   "git_repository_token_url_change": "Η διεύθυνση URL του αποθετηρίου έχει αλλάξει. Εισάγετε ξανά το αποθηκευμένο διακριτικό ή επιλέξτε «Εκκαθάριση αποθηκευμένου διακριτικού» πριν από την αποθήκευση.",
   "git_repository_ssh_key_url_change": "Η διεύθυνση URL του αποθετηρίου έχει αλλάξει. Εισάγετε ξανά το αποθηκευμένο κλειδί SSH ή επιλέξτε «Εκκαθάριση αποθηκευμένου κλειδιού SSH» πριν από την αποθήκευση.",
   "git_repository_clear_token": "Διαγραφή αποθηκευμένου token",
-  "git_repository_clear_ssh_key": "Διαγραφή αποθηκευμένου κλειδιού SSH"
+  "git_repository_clear_ssh_key": "Διαγραφή αποθηκευμένου κλειδιού SSH",
+  "host_ip_placeholder": "0.0.0.0",
+  "container_port_placeholder": "80",
+  "protocol_tcp": "TCP",
+  "protocol_udp": "UDP"
 }
