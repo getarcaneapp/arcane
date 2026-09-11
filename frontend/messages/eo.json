@@ -3535,5 +3535,9 @@
   "git_repository_token_url_change": "La URL de la deponejo ŝanĝiĝis. Re-enigu la konservitan tokenon aŭ elektu Forigi la konservitan tokenon antaŭ ol konservi.",
   "git_repository_ssh_key_url_change": "La URL de la deponejo ŝanĝiĝis. Re-enigu la konservitan SSH-ŝlosilon aŭ elektu Forigi la konservitan SSH-ŝlosilon antaŭ ol konservi.",
   "git_repository_clear_token": "Forviŝi konservitan jetonon",
-  "git_repository_clear_ssh_key": "Forigi konservitan SSH-ŝlosilon"
+  "git_repository_clear_ssh_key": "Forigi konservitan SSH-ŝlosilon",
+  "host_ip_placeholder": "nul punkto nulo nul punkto nulo",
+  "container_port_placeholder": "okdek",
+  "protocol_tcp": "TCP",
+  "protocol_udp": "UDP"
 }
