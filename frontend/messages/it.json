@@ -3535,5 +3535,9 @@
   "git_repository_token_url_change": "L'URL del repository è cambiato. Reinserisci il token salvato oppure seleziona \"Cancella token salvato\" prima di salvare.",
   "git_repository_ssh_key_url_change": "L'URL del repository è cambiato. Reinserisci la chiave SSH salvata oppure seleziona \"Cancella chiave SSH salvata\" prima di salvare.",
   "git_repository_clear_token": "Cancella il token memorizzato",
-  "git_repository_clear_ssh_key": "Elimina la chiave SSH salvata"
+  "git_repository_clear_ssh_key": "Elimina la chiave SSH salvata",
+  "host_ip_placeholder": "0.0.0.0",
+  "container_port_placeholder": "80",
+  "protocol_tcp": "TCP",
+  "protocol_udp": "UDP"
 }
