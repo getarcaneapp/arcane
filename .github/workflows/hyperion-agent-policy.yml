@@ -1,0 +1,24 @@
+name: Hyperion agent policy
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  hyperion-agent-policy:
+    name: Hyperion agent policy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate managed agent context
+        shell: bash
+        run: |
+          test "$(grep -cF '<!-- hyperion-context:start -->' AGENTS.md)" -eq 1
+          test "$(grep -cF '<!-- hyperion-context:end -->' AGENTS.md)" -eq 1
+          grep -qF 'globally configured Hyperion OKF memory' AGENTS.md
+          grep -qF '/home/homelab/Worktrees/<repo>/<task>' AGENTS.md
+          grep -qF 'Agents own the task Git lifecycle' AGENTS.md
