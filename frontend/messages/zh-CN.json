@@ -549,6 +549,8 @@
   "dashboard_all_environment_unavailable_description": "此环境当前处于离线、等待中或无法访问的状态。",
   "dashboard_all_summary_unavailable": "环境摘要不可用。{error}",
   "dashboard_all_agent_incompatible": "代理正在运行较旧版本的 Arcane，无法上报仪表板数据——请升级该代理。",
+  "stats_unavailable": "无法提供实时数据",
+  "stats_stale": "实时数据未更新",
   "containers": "容器",
   "containers_subtitle": "查看和管理您的容器",
   "containers_recent": "最近使用的容器",
