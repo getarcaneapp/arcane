@@ -549,6 +549,8 @@
   "dashboard_all_environment_unavailable_description": "This environment is offline, pending, or otherwise unreachable right now.",
   "dashboard_all_summary_unavailable": "Environment summary unavailable. {error}",
   "dashboard_all_agent_incompatible": "Az ügynök egy régebbi Arcane-verziót futtat, és nem tudja továbbítani a műszerfal adatait — frissítse az ügynököt.",
+  "stats_unavailable": "Élő statisztikák nem elérhetők",
+  "stats_stale": "Az élő statisztikák nem frissülnek",
   "containers": "Containers",
   "containers_subtitle": "View and Manage your Containers",
   "containers_recent": "Recent containers",
