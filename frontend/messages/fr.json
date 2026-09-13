@@ -549,6 +549,8 @@
   "dashboard_all_environment_unavailable_description": "Cet environnement est hors ligne, en attente ou inaccessible pour le moment.",
   "dashboard_all_summary_unavailable": "Le résumé environnemental n'est pas disponible. {error}",
   "dashboard_all_agent_incompatible": "L'agent utilise une ancienne version d'Arcane et ne peut pas transmettre les données du tableau de bord — mettez à jour l'agent.",
+  "stats_unavailable": "Statistiques en direct indisponibles",
+  "stats_stale": "Les statistiques en direct ne se mettent pas à jour",
   "containers": "Conteneurs",
   "containers_subtitle": "Voir et gérer vos conteneurs",
   "containers_recent": "Conteneurs récents",
