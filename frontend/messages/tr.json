@@ -3543,5 +3543,12 @@
   "host_ip_placeholder": "0.0.0.0",
   "container_port_placeholder": "80",
   "protocol_tcp": "TCP",
-  "protocol_udp": "UDP"
+  "protocol_udp": "UDP",
+  "features_title": "Özellikler",
+  "features_vulnerability_management": "Güvenlik açığı yönetimi",
+  "features_vulnerability_description": "Güvenlik açığı taramasını, raporları ve taramaya dayalı görüntü yamalama özelliğini etkinleştirin. Bu özelliği devre dışı bıraktığınızda, kaydedilmiş raporlar ve ayarlar korunur ve devam eden işlemlerin tamamlanmasına izin verilir. Bağımsız görüntü yamalama özelliği kullanılmaya devam eder. Bu özelliği tekrar etkinleştirdiğinizde, kaydedilmiş zamanlamalarınız geri yüklenir.",
+  "features_vulnerability_disabled": "Bu ortamda güvenlik açığı yönetimi devre dışı bırakılmıştır. Kaydedilmiş raporlar ve ayarlar korunur.",
+  "features_unsupported": "Özelliklerin kullanılabilirliğini yönetmek için bu ortamdaki Arcane ajanı güncelleyin. Mevcut çalışma şekli değişmez.",
+  "features_unavailable": "Özellik ayarları kullanılamıyor. Ortam bağlantısını kontrol edin ve tekrar deneyin.",
+  "features_environment_override": "Bu özellik ayarı bir ortam değişkeni aracılığıyla yönetilir. Ayarı güncellemek için bu ortamdaki FEATURE_VULNERABILITY_MANAGEMENT_ENABLED değişkenini değiştirin."
 }
