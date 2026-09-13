@@ -1,14 +1,18 @@
 import { settingsService } from '#lib/services/settings-service.js';
 import type { Settings } from '#lib/types/settings.js';
 import { untrack } from 'svelte';
+import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+import userStore from '#lib/stores/user-store.svelte.js';
 
 let current = $state.raw<Settings>();
 const listeners = new Set<(settings: Settings | undefined) => void>();
 
 const reload = async () => {
-	const settings = await settingsService.getSettings();
-
-	set(settings);
+	const environmentId = await environmentStore.getCurrentEnvironmentId();
+	const settings = userStore.hasPermission('settings:read', environmentId)
+		? await settingsService.getSettingsForEnvironmentMerged(environmentId)
+		: await settingsService.getPublicSettings(environmentId);
+	if (environmentId === environmentStore.selected?.id) set(settings);
 };
 
 const set = (settings: Settings) => {

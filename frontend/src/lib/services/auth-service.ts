@@ -9,6 +9,7 @@ import type { QueryClient } from '@tanstack/svelte-query';
 import { activityStore } from '#lib/stores/activity.store.svelte.js';
 import { dashboardStore } from '#lib/stores/dashboard.store.svelte.js';
 import { environmentStatusStore } from '#lib/stores/environment-status.store.svelte.js';
+import { featureStore } from '#lib/stores/features.store.svelte.js';
 import { getEffectiveLandingPage } from '#lib/utils/navigation.js';
 import { parseInstant } from '#lib/utils/formatting.js';
 import { Temporal } from 'temporal-polyfill';
@@ -225,6 +226,7 @@ class AuthService extends BaseAPIService {
 
 	resetAuthenticatedState(queryClient: QueryClient, options?: { restartMountedStores?: boolean }): void {
 		queryClient.clear();
+		featureStore.clear();
 		const restartActivityStore = activityStore.stop({ resetState: true });
 		const restartDashboardStore = dashboardStore.stop({ resetState: true });
 		const restartEnvironmentStatusStore = environmentStatusStore.stop();

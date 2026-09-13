@@ -58,6 +58,12 @@ func TestGenerate_SettingEnvOverridesMatchModelMetadata(t *testing.T) {
 	assert.Equal(t, expectedSettingOverrideKeys, sortedSettingKeys(doc.SettingEnvOverrides))
 
 	entries := mapSettingOverrideEntries(doc.SettingEnvOverrides)
+	feature, ok := entries["featureVulnerabilityManagementEnabled"]
+	require.True(t, ok)
+	assert.Equal(t, "FEATURE_VULNERABILITY_MANAGEMENT_ENABLED", feature.Env)
+	assert.Equal(t, "true", feature.DefaultValue)
+	assert.Equal(t, "boolean", feature.Type)
+	assert.True(t, feature.Public)
 
 	dockerTimeout, ok := entries["dockerApiTimeout"]
 	require.True(t, ok)
@@ -304,6 +310,7 @@ var expectedSettingOverrideKeys = []string{
 	"eventCleanupInterval",
 	"experimentalFeaturesEnabled",
 	"expiredSessionsCleanupInterval",
+	"featureVulnerabilityManagementEnabled",
 	"followProjectSymlinks",
 	"gitOperationTimeout",
 	"gitSyncMaxBinarySizeMb",

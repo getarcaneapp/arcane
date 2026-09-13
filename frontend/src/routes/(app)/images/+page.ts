@@ -1,3 +1,4 @@
+import { featureStore } from '#lib/stores/features.store.svelte.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 import { imageService } from '#lib/services/image-service.js';
 import { settingsService } from '#lib/services/settings-service.js';
@@ -15,6 +16,7 @@ export const load: PageLoad = async ({ parent }) => {
 		column: 'created',
 		direction: 'desc'
 	});
+	await featureStore.load(envId);
 	let images;
 	let settings;
 	let imageUsageCounts;

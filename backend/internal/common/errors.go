@@ -59,6 +59,7 @@ func (e *classified) Format(s fmt.State, verb rune) {
 }
 
 var (
+	ErrFeatureDisabled                         = Classify(ErrForbidden, errors.Sentinel("feature disabled"))
 	ErrInvalidToken                            = errors.Sentinel("invalid token")
 	ErrExpiredToken                            = errors.Sentinel("token expired")
 	ErrTokenVersionMismatch                    = errors.Sentinel("token version mismatch")

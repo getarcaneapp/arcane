@@ -1,3 +1,4 @@
+import { featureStore } from '#lib/stores/features.store.svelte.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 import { imageService } from '#lib/services/image-service.js';
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
@@ -16,6 +17,7 @@ export const load: PageLoad = async ({ params, parent }): Promise<ImageDetailDat
 	const { queryClient } = await parent();
 	const envId = await environmentStore.getCurrentEnvironmentId();
 
+	await featureStore.load(envId);
 	const { imageId } = params;
 
 	const operationResult = await tryCatch(

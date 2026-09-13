@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { featureStore } from '#lib/stores/features.store.svelte.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { createQuery } from '@tanstack/svelte-query';
 	import { SvelteSet } from 'svelte/reactivity';
@@ -26,6 +27,7 @@
 
 	let { formInputs = $bindable(), environmentId }: JobsTabProps = $props();
 
+	const vulnerabilityManagementEnabled = $derived(featureStore.isEnabled('vulnerabilityManagement', environmentId));
 	const jobsQuery = createQuery(() => ({
 		queryKey: queryKeys.jobs.list(environmentId),
 		queryFn: async () => {
@@ -143,6 +145,7 @@
 	}
 
 	function getEnabledOverride(job: JobStatus): boolean | undefined {
+		if (!vulnerabilityManagementEnabled && (job.id === 'vulnerability-scan' || job.id === 'auto-patch')) return false;
 		switch (job.id) {
 			case 'scheduled-prune':
 				return formInputs.scheduledPruneEnabled.value;
@@ -301,7 +304,11 @@
 	{:else if job.id === 'scheduled-prune'}
 		<Switch aria-label={job.name} bind:checked={formInputs.scheduledPruneEnabled.value} />
 	{:else if job.id === 'vulnerability-scan'}
-		<Switch aria-label={job.name} bind:checked={formInputs.vulnerabilityScanEnabled.value} />
+		<Switch
+			aria-label={job.name}
+			bind:checked={formInputs.vulnerabilityScanEnabled.value}
+			disabled={!vulnerabilityManagementEnabled}
+		/>
 	{:else if job.id === 'auto-heal'}
 		<Switch aria-label={job.name} bind:checked={formInputs.autoHealEnabled.value} />
 	{/if}

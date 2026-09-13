@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { featureStore } from '#lib/stores/features.store.svelte.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
@@ -35,17 +36,21 @@
 	// this the derived would cache a pre-hydration false forever.
 	const canPatchImage = $derived.by(() => {
 		userStore.current;
-		return hasPermission('images:patch', currentEnvId);
+		return featureStore.isEnabled('vulnerabilityManagement', currentEnvId) && hasPermission('images:patch', currentEnvId);
 	});
 
 	async function refreshPatchTargets(options: SearchPaginationSortRequest) {
+		if (!featureStore.isEnabled('vulnerabilityManagement', currentEnvId)) return targets;
+		const requestedEnvId = currentEnvId;
 		const response = await imageService.listPatchTargets(options);
+		if (!featureStore.isEnabled('vulnerabilityManagement', currentEnvId) || requestedEnvId !== currentEnvId) return targets;
 		const mapped = { ...response, data: (response.data ?? []).map((t) => ({ ...t, id: t.imageId })) };
 		targets = mapped;
 		return mapped;
 	}
 
 	async function handlePatchImage(item: PatchTargetRow) {
+		if (!canPatchImage) return;
 		const operationResult = await tryCatch(
 			(async () => {
 				// The fixable counts come from the stored scan, so patch from that report.

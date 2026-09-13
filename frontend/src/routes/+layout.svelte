@@ -60,7 +60,7 @@
 
 <QueryClientProvider client={data.queryClient}>
 	<div class={cn('flex min-h-dvh flex-col', 'bg-transparent')}>
-		{#if !settings && data.user}
+		{#if !settings && data.user && page.route.id !== '/(app)/environments/[id]'}
 			<Error message={m.error_occurred()} showButton={true} />
 		{:else}
 			<Tooltip.Provider>

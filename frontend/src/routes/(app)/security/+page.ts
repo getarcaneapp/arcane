@@ -1,3 +1,4 @@
+import { featureStore } from '#lib/stores/features.store.svelte.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 import { vulnerabilityService } from '#lib/services/vulnerability-service.js';
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
@@ -34,6 +35,18 @@ export const load: PageLoad = async ({ parent }) => {
 		}
 	} satisfies SearchPaginationSortRequest);
 
+	await featureStore.load(envId);
+	if (!featureStore.isEnabled('vulnerabilityManagement', envId)) {
+		return {
+			envId,
+			featureDisabled: true,
+			summary: null,
+			vulnerabilities: { data: [], pagination: { totalPages: 0, totalItems: 0, currentPage: 1, itemsPerPage: 20 } },
+			vulnerabilityRequestOptions,
+			patchRequestOptions
+		};
+	}
+
 	const requestForApi = mapVulnerabilityRequest(vulnerabilityRequestOptions);
 
 	let summary;
@@ -60,6 +73,8 @@ export const load: PageLoad = async ({ parent }) => {
 	}
 
 	return {
+		envId,
+		featureDisabled: false,
 		summary,
 		vulnerabilities: mapVulnerabilityPage(vulnerabilities, vulnerabilityRequestOptions),
 		vulnerabilityRequestOptions,

@@ -3544,5 +3544,12 @@
   "host_ip_placeholder": "0.0.0.0",
   "container_port_placeholder": "80",
   "protocol_tcp": "TCP",
-  "protocol_udp": "UDP"
+  "protocol_udp": "UDP",
+	"features_title": "Features",
+	"features_vulnerability_management": "Vulnerability management",
+	"features_vulnerability_description": "Enable vulnerability scanning, reports, and scan-based image patching. Turning this off retains saved reports and settings and lets active work finish. Standalone image patching remains available. Turning it back on restores your saved schedules.",
+	"features_vulnerability_disabled": "Vulnerability management is disabled for this environment. Saved reports and settings are retained.",
+	"features_unsupported": "Upgrade this environment’s Arcane agent to manage feature availability. Its existing behavior is unchanged.",
+	"features_unavailable": "Feature settings are unavailable. Check the environment connection and try again.",
+	"features_environment_override": "This feature setting is managed by an environment variable. Change FEATURE_VULNERABILITY_MANAGEMENT_ENABLED on this environment to update it."
 }

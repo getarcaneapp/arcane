@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { featureStore } from '#lib/stores/features.store.svelte.js';
 	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import { goto } from '$app/navigation';
 	import { Badge } from '#lib/components/ui/badge/index.js';
@@ -49,11 +50,14 @@
 	let { data } = $props();
 	let { image } = $derived(data);
 
+	const currentEnvId = $derived(environmentStore.selected?.id || '0');
+	const vulnerabilityManagementEnabled = $derived(featureStore.isEnabled('vulnerabilityManagement', currentEnvId));
+
 	const tabItems: TabItem[] = $derived([
 		{ value: 'overview', label: m.common_overview(), icon: ImagesIcon },
 		{ value: 'history', label: m.images_history_title(), icon: LayersIcon },
 		{ value: 'attestations', label: m.images_attestations_title(), icon: InspectIcon },
-		{ value: 'vulnerabilities', label: m.vuln_title(), icon: ShieldCheckIcon }
+		...(vulnerabilityManagementEnabled ? [{ value: 'vulnerabilities', label: m.vuln_title(), icon: ShieldCheckIcon }] : [])
 	]);
 	const urlTab = useUrlTab({
 		validTabs: () => tabItems.map((tab) => tab.value),
@@ -61,10 +65,12 @@
 	});
 	const activeTab = $derived(urlTab.value);
 
-	const currentEnvId = $derived(environmentStore.selected?.id || '0');
+	$effect(() => {
+		if (!vulnerabilityManagementEnabled) stopPolling();
+	});
 	// fallow-ignore-next-line code-duplication -- permission $derived declarations; script-level, no shared render surface
 	const canDeleteImage = $derived(hasPermission('images:delete', currentEnvId));
-	const canScanImage = $derived(hasPermission('vulnerabilities:scan', currentEnvId));
+	const canScanImage = $derived(vulnerabilityManagementEnabled && hasPermission('vulnerabilities:scan', currentEnvId));
 	const canPatchImage = $derived(hasPermission('images:patch', currentEnvId));
 	const canTagImage = $derived(hasPermission('images:tag', currentEnvId));
 	const canReadImage = $derived(hasPermission('images:read', currentEnvId));
@@ -86,15 +92,16 @@
 		userStore.current;
 		return {
 			queryKey: queryKeys.vulnerabilities.scanResult(environmentId, imageId ?? ''),
-			queryFn: async () => {
+			queryFn: async ({ signal }) => {
 				await environmentStore.ready;
-				return vulnerabilityService.getScanResult(imageId!);
+				signal.throwIfAborted();
+				return vulnerabilityService.getScanResult(imageId!, environmentId);
 			},
-			enabled: !!imageId && hasPermission('vulnerabilities:read', environmentId),
+			enabled: vulnerabilityManagementEnabled && !!imageId && hasPermission('vulnerabilities:read', environmentId),
 			retry: false
 		};
 	});
-	const vulnerabilityScan = $derived(scanQuery.data ?? null);
+	const vulnerabilityScan = $derived(vulnerabilityManagementEnabled ? (scanQuery.data ?? null) : null);
 	const scanInProgress = $derived(isVulnerabilityScanInProgress(vulnerabilityScan?.status));
 	let stopScanPolling: (() => void) | null = null;
 	let pollingScope = '';
@@ -106,7 +113,7 @@
 	let destroyed = false;
 
 	async function handleScanImage() {
-		if (!image?.id || isLoading.scanning) return;
+		if (!canScanImage || !image?.id || isLoading.scanning) return;
 		const environmentId = currentEnvId;
 		const requestedImageId = image.id;
 		const requestedKey = scanQueryKey;
@@ -115,9 +122,10 @@
 			const operationResult = await tryCatch(
 				(async () => {
 					await queryClient.cancelQueries({ queryKey: requestedKey });
-					const result = await vulnerabilityService.scanImage(requestedImageId);
+					const result = await vulnerabilityService.scanImage(requestedImageId, environmentId);
+					if (destroyed || !vulnerabilityManagementEnabled || environmentId !== currentEnvId || requestedImageId !== image.id)
+						return;
 					queryClient.setQueryData(requestedKey, result);
-					if (destroyed || environmentId !== currentEnvId || requestedImageId !== image.id) return;
 					scanRequest = { scope: `${environmentId}:${requestedImageId}`, time: result.scanTime || nowInstantString() };
 					if (isVulnerabilityScanInProgress(result.status)) {
 						toastVulnerabilityScanStatus(result, { includeStarted: true });
@@ -164,80 +172,95 @@
 	}
 
 	function beginScanPolling(showToast: boolean) {
-		if (!image?.id || stopScanPolling) return;
+		if (!vulnerabilityManagementEnabled || !image?.id || stopScanPolling) return;
 		const environmentId = currentEnvId;
 		const requestedImageId = image.id;
 		const requestedKey = scanQueryKey;
 		pollingScope = `${environmentId}:${requestedImageId}`;
-		const cancel = startVulnerabilityScanPolling(requestedImageId, (id) => vulnerabilityService.getScanSummary(id), {
-			onUpdate: (summary) => {
-				if (destroyed || environmentId !== currentEnvId || requestedImageId !== image.id) return;
-				queryClient.setQueryData(requestedKey, {
-					...(vulnerabilityScan ?? {}),
-					imageId: summary.imageId,
-					scanTime: summary.scanTime,
-					status: summary.status,
-					scanPhase: summary.scanPhase,
-					summary: summary.summary,
-					error: summary.error
-				} as VulnerabilityScanResult);
-			},
-			onComplete: async (summary) => {
-				if (destroyed || environmentId !== currentEnvId || requestedImageId !== image.id) return;
-				let resolvedSummary = summary;
-				const operationResult = await tryCatch(
-					(async () =>
-						stabilizeFailedVulnerabilitySummary(summary.imageId, summary, (id) => vulnerabilityService.getScanSummary(id), {
-							scanRequestedAt: lastScanRequestedAt ?? vulnerabilityScan?.scanTime
-						}))()
-				);
-				if (operationResult.error !== null) {
-					// Keep original summary when stabilization check fails.
-				} else {
-					resolvedSummary = operationResult.data;
-				}
-
-				if (destroyed || environmentId !== currentEnvId || requestedImageId !== image.id) return;
-				if (isVulnerabilityScanInProgress(resolvedSummary.status)) {
+		const cancel = startVulnerabilityScanPolling(
+			requestedImageId,
+			(id) => vulnerabilityService.getScanSummary(id, environmentId),
+			{
+				onUpdate: (summary) => {
+					if (destroyed || !vulnerabilityManagementEnabled || environmentId !== currentEnvId || requestedImageId !== image.id)
+						return;
 					queryClient.setQueryData(requestedKey, {
 						...(vulnerabilityScan ?? {}),
-						imageId: resolvedSummary.imageId,
-						scanTime: resolvedSummary.scanTime,
-						status: resolvedSummary.status,
-						scanPhase: resolvedSummary.scanPhase,
-						summary: resolvedSummary.summary,
-						error: resolvedSummary.error
+						imageId: summary.imageId,
+						scanTime: summary.scanTime,
+						status: summary.status,
+						scanPhase: summary.scanPhase,
+						summary: summary.summary,
+						error: summary.error
 					} as VulnerabilityScanResult);
+				},
+				onComplete: async (summary) => {
+					if (destroyed || !vulnerabilityManagementEnabled || environmentId !== currentEnvId || requestedImageId !== image.id)
+						return;
+					let resolvedSummary = summary;
+					const operationResult = await tryCatch(
+						(async () =>
+							stabilizeFailedVulnerabilitySummary(
+								summary.imageId,
+								summary,
+								(id) => vulnerabilityService.getScanSummary(id, environmentId),
+								{
+									scanRequestedAt: lastScanRequestedAt ?? vulnerabilityScan?.scanTime
+								}
+							))()
+					);
+					if (operationResult.error !== null) {
+						// Keep original summary when stabilization check fails.
+					} else {
+						resolvedSummary = operationResult.data;
+					}
+
+					if (destroyed || !vulnerabilityManagementEnabled || environmentId !== currentEnvId || requestedImageId !== image.id)
+						return;
+					if (isVulnerabilityScanInProgress(resolvedSummary.status)) {
+						queryClient.setQueryData(requestedKey, {
+							...(vulnerabilityScan ?? {}),
+							imageId: resolvedSummary.imageId,
+							scanTime: resolvedSummary.scanTime,
+							status: resolvedSummary.status,
+							scanPhase: resolvedSummary.scanPhase,
+							summary: resolvedSummary.summary,
+							error: resolvedSummary.error
+						} as VulnerabilityScanResult);
+						stopPolling();
+						beginScanPolling(false);
+						return;
+					}
+
 					stopPolling();
-					beginScanPolling(false);
-					return;
-				}
+					const operationResult2 = await tryCatch(
+						(async () => vulnerabilityService.getScanResult(resolvedSummary.imageId, environmentId))()
+					);
+					if (destroyed || !vulnerabilityManagementEnabled || environmentId !== currentEnvId || requestedImageId !== image.id)
+						return;
+					if (operationResult2.error !== null) {
+						const error = operationResult2.error;
 
-				stopPolling();
-				const operationResult2 = await tryCatch((async () => vulnerabilityService.getScanResult(resolvedSummary.imageId))());
-				if (destroyed || environmentId !== currentEnvId || requestedImageId !== image.id) return;
-				if (operationResult2.error !== null) {
-					const error = operationResult2.error;
-
-					console.error('Failed to load scan result:', error);
-					queryClient.setQueryData(requestedKey, {
-						...(vulnerabilityScan ?? {}),
-						imageId: resolvedSummary.imageId,
-						scanTime: resolvedSummary.scanTime,
-						status: resolvedSummary.status,
-						scanPhase: resolvedSummary.scanPhase,
-						summary: resolvedSummary.summary,
-						error: resolvedSummary.error
-					} as VulnerabilityScanResult);
-				} else {
-					queryClient.setQueryData(requestedKey, operationResult2.data);
-				}
-				if (showToast) {
-					toastVulnerabilityScanStatus(resolvedSummary);
-				}
-			},
-			onError: () => {}
-		});
+						console.error('Failed to load scan result:', error);
+						queryClient.setQueryData(requestedKey, {
+							...(vulnerabilityScan ?? {}),
+							imageId: resolvedSummary.imageId,
+							scanTime: resolvedSummary.scanTime,
+							status: resolvedSummary.status,
+							scanPhase: resolvedSummary.scanPhase,
+							summary: resolvedSummary.summary,
+							error: resolvedSummary.error
+						} as VulnerabilityScanResult);
+					} else {
+						queryClient.setQueryData(requestedKey, operationResult2.data);
+					}
+					if (showToast) {
+						toastVulnerabilityScanStatus(resolvedSummary);
+					}
+				},
+				onError: () => {}
+			}
+		);
 
 		stopScanPolling = cancel;
 	}
@@ -474,9 +497,11 @@
 			<Tabs.Content value="attestations">
 				<ImageAttestationsPanel {image} />
 			</Tabs.Content>
-			<Tabs.Content value="vulnerabilities">
-				<VulnerabilityScanPanel scan={vulnerabilityScan} isScanning={isLoading.scanning} onScan={handleScanImage} />
-			</Tabs.Content>
+			{#if vulnerabilityManagementEnabled}
+				<Tabs.Content value="vulnerabilities">
+					<VulnerabilityScanPanel scan={vulnerabilityScan} isScanning={isLoading.scanning} onScan={handleScanImage} />
+				</Tabs.Content>
+			{/if}
 		</Tabs.Root>
 	{:else}
 		<div class="py-12 text-center">

@@ -23,6 +23,7 @@
 </script>
 
 <script lang="ts">
+	import { featureStore } from '#lib/stores/features.store.svelte.js';
 	import * as Table from '#lib/components/ui/table/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Skeleton } from '#lib/components/ui/skeleton/index.js';
@@ -35,6 +36,7 @@
 	import { cn } from '#lib/utils.js';
 
 	let { rows }: { rows: EnvironmentTableRow[] } = $props();
+	const showVulnerabilities = $derived(rows.some((row) => featureStore.isEnabled('vulnerabilityManagement', row.environment.id)));
 </script>
 
 {#snippet actionCount(count: number, href: string, icon: IconType, tone: 'amber' | 'red')}
@@ -73,7 +75,7 @@
 				<Table.Head>{m.containers()}</Table.Head>
 				<Table.Head>{m.images()}</Table.Head>
 				<Table.Head>{m.updates()}</Table.Head>
-				<Table.Head>{m.vuln_title()}</Table.Head>
+				{#if showVulnerabilities}<Table.Head>{m.vuln_title()}</Table.Head>{/if}
 				<Table.Head class="text-right">{m.cpu_usage()}</Table.Head>
 				<Table.Head class="text-right">{m.memory_usage()}</Table.Head>
 				<Table.Head class="text-right">{m.dashboard_meter_disk()}</Table.Head>
@@ -105,14 +107,18 @@
 						</span>
 					</Table.Cell>
 					{#if row.loading}
-						<Table.Cell colspan={7}><Skeleton class="h-4 w-full max-w-md" /></Table.Cell>
+						<Table.Cell colspan={showVulnerabilities ? 7 : 6}><Skeleton class="h-4 w-full max-w-md" /></Table.Cell>
 					{:else}
 						<Table.Cell class="tabular-nums">{row.running}/{row.total}</Table.Cell>
 						<Table.Cell class="tabular-nums">{row.images}</Table.Cell>
 						<Table.Cell>{@render actionCount(row.updates, '/updates', UpdateIcon, 'amber')}</Table.Cell>
-						<Table.Cell>
-							{@render actionCount(row.vulnerabilities, '/security', ShieldAlertIcon, 'red')}
-						</Table.Cell>
+						{#if showVulnerabilities}
+							<Table.Cell>
+								{#if featureStore.isEnabled('vulnerabilityManagement', row.environment.id)}
+									{@render actionCount(row.vulnerabilities, '/security', ShieldAlertIcon, 'red')}
+								{/if}
+							</Table.Cell>
+						{/if}
 						<Table.Cell class="text-right">{@render metric(row.cpu, 'cpu')}</Table.Cell>
 						<Table.Cell class="text-right">{@render metric(row.memory, 'memory')}</Table.Cell>
 						<Table.Cell class="text-right">{@render metric(row.disk, 'disk')}</Table.Cell>
