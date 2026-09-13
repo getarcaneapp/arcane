@@ -549,6 +549,8 @@
   "dashboard_all_environment_unavailable_description": "Bu ortam şu anda çevrimdışı, bekleme durumunda veya başka bir nedenle erişilemez durumda.",
   "dashboard_all_summary_unavailable": "Ortam özeti mevcut değil. {error}",
   "dashboard_all_agent_incompatible": "Ajan, eski bir Arcane sürümünü çalıştırıyor ve gösterge tablosu verilerini bildiremiyor — ajanı güncelleyin.",
+  "stats_unavailable": "Canlı istatistikler mevcut değil",
+  "stats_stale": "Canlı istatistikler güncellenmiyor",
   "containers": "Konteynerler",
   "containers_subtitle": "Konteynerleri Görüntüleyin ve Yönetin",
   "containers_recent": "Son konteynerler",
