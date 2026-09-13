@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"slices"
 
+	"github.com/getarcaneapp/arcane/types/v2/features"
+
 	"emperror.dev/errors"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
@@ -356,7 +358,7 @@ func setupSettingsSubscriptionsInternal(params settingsSubscriptionsParams) erro
 
 	subscribe(
 		[]string{
-			"vulnerabilityScanEnabled", "vulnerabilityScanInterval", "trivyNetwork", "trivySecurityOpts", "trivyPrivileged",
+			features.VulnerabilityManagementSettingKey, "vulnerabilityScanEnabled", "vulnerabilityScanInterval", "trivyNetwork", "trivySecurityOpts", "trivyPrivileged",
 			"trivyResourceLimitsEnabled", "trivyCpuLimit", "trivyMemoryLimitMb", "trivyConcurrentScanContainers",
 		},
 		func(_ []libarcane.SettingUpdate) {
@@ -366,7 +368,7 @@ func setupSettingsSubscriptionsInternal(params settingsSubscriptionsParams) erro
 		},
 	)
 
-	subscribe([]string{"imageAutoPatchEnabled", "imageAutoPatchInterval"}, func(_ []libarcane.SettingUpdate) {
+	subscribe([]string{features.VulnerabilityManagementSettingKey, "imageAutoPatchEnabled", "imageAutoPatchInterval"}, func(_ []libarcane.SettingUpdate) {
 		if err := params.Scheduler.RescheduleJob(params.LifecycleCtx, params.AutoPatch); err != nil {
 			slog.WarnContext(params.LifecycleCtx, "Failed to reschedule auto-patch job", "error", err)
 		}

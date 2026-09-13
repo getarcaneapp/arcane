@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+	import { featureStore } from '#lib/stores/features.store.svelte.js';
 	import { Switch } from '#lib/components/ui/switch/index.js';
 	import TextInputWithLabel from '#lib/components/form/text-input-with-label.svelte';
 	import SettingsRow from '#lib/components/settings/settings-row.svelte';
@@ -23,7 +25,9 @@
 		[K in keyof ImagePatchFormValues]: FormField<ImagePatchFormValues[K]>;
 	};
 
-	let { formInputs = $bindable() }: { formInputs: ImagePatchFormInputs } = $props();
+	let { formInputs = $bindable(), environmentId }: { formInputs: ImagePatchFormInputs; environmentId?: string } = $props();
+	const targetEnvironmentId = $derived(environmentId ?? environmentStore.selected?.id ?? '0');
+	const vulnerabilityManagementEnabled = $derived(featureStore.isEnabled('vulnerabilityManagement', targetEnvironmentId));
 </script>
 
 <SectionCard
@@ -38,7 +42,11 @@
 		description={m.security_image_auto_patch_enabled_description()}
 		layout="inline"
 	>
-		<Switch id="imageAutoPatchEnabledSwitch" bind:checked={formInputs.imageAutoPatchEnabled.value} />
+		<Switch
+			id="imageAutoPatchEnabledSwitch"
+			disabled={!vulnerabilityManagementEnabled}
+			bind:checked={formInputs.imageAutoPatchEnabled.value}
+		/>
 	</SettingsRow>
 
 	<SettingsRow

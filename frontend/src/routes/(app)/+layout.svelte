@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { LayoutProps } from './$types';
+	import { untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { goto, afterNavigate } from '$app/navigation';
 	import { getAuthRedirectPath } from '#lib/utils/auth.js';
@@ -13,6 +14,8 @@
 	import { getEffectiveLandingPage, getEffectiveNavigationSettings, setMobileNavigation } from '#lib/utils/navigation.js';
 	import { browser } from '$app/env';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+	import { featureStore } from '#lib/stores/features.store.svelte.js';
+	import { isEnvironmentOnline } from '#lib/utils/docker.js';
 	import { environmentStatusStore } from '#lib/stores/environment-status.store.svelte.js';
 	import {
 		navigationItems,
@@ -66,6 +69,19 @@
 	const shortcutItems = $derived.by(() => {
 		const items: NavigationItem[] = [...managementItems, ...resourceItems, ...settingsShortcutItems];
 		return flattenNavigationItems(items).filter((item) => item.shortcut?.length);
+	});
+
+	let previousConnections = new Map<string, boolean>();
+	$effect(() => {
+		const connections = new Map(
+			environmentStore.available.map((environment) => [environment.id, isEnvironmentOnline(environment)])
+		);
+		untrack(() => {
+			for (const [environmentId, online] of connections) {
+				if (online && previousConnections.get(environmentId) === false) void featureStore.refresh(environmentId);
+			}
+			previousConnections = connections;
+		});
 	});
 
 	$effect(() => {
@@ -123,7 +139,11 @@
 	}
 </script>
 
-<svelte:window onkeydown={handleNavigationShortcut} />
+<svelte:window
+	onkeydown={handleNavigationShortcut}
+	onfocus={() => void featureStore.refreshKnown()}
+	ononline={() => void featureStore.refreshKnown()}
+/>
 
 <Sidebar.Provider class={isMobile.current ? 'h-auto min-h-dvh' : undefined}>
 	{#if !isMobile.current}

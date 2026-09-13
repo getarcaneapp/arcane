@@ -1,4 +1,8 @@
 <script lang="ts">
+	import type { Settings } from '#lib/types/settings.js';
+	import SectionCard from '#lib/components/section-card.svelte';
+	import LabeledSwitch from '#lib/components/form/labeled-switch.svelte';
+	import { featureStore } from '#lib/stores/features.store.svelte.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import { onMount } from 'svelte';
@@ -50,7 +54,8 @@
 		VolumesIcon,
 		ScanIcon,
 		ShieldCheckIcon,
-		CodeIcon
+		CodeIcon,
+		SettingsIcon
 	} from '#lib/icons/index.js';
 
 	let { data } = $props();
@@ -93,7 +98,9 @@
 	const isLoadingVersion = $derived(versionQuery.isFetching);
 
 	let isCurrentlyStandby = $derived(currentStatus === 'standby');
-	let showSettingsTabs = $derived(runtimeEnvironment.enabled && isCurrentlyOnline && settings !== null);
+	let showSettingsTabs = $derived(
+		runtimeEnvironment.enabled && isCurrentlyOnline && settings !== null && hasPermission('settings:read', environment.id)
+	);
 	let hasMTLSAssets = $derived(Boolean(runtimeEnvironment.edgeMTLSCertificate));
 	let canPairEnvironments = $derived(hasPermission('environments:pair'));
 	let showMTLSDownloads = $derived(
@@ -198,6 +205,7 @@
 				icon: ConnectionIcon
 			});
 		}
+		items.push({ value: 'features', label: m.features_title(), icon: SettingsIcon });
 
 		if (showSettingsTabs) {
 			items.push(
@@ -239,12 +247,18 @@
 	});
 	const activeTab = $derived(urlTab.value);
 
+	const vulnerabilityManagementEnabled = $derived(featureStore.isEnabled('vulnerabilityManagement', environment.id));
 	let securitySubTab = $state('trivy');
-	const securityTabItems: TabItem[] = [
-		{ value: 'trivy', label: m.security_vulnerability_scanning_heading(), icon: ScanIcon },
+	const activeSecuritySubTab = $derived(
+		!vulnerabilityManagementEnabled && securitySubTab === 'trivy' ? 'patching' : securitySubTab
+	);
+	const securityTabItems: TabItem[] = $derived([
+		...(vulnerabilityManagementEnabled
+			? [{ value: 'trivy', label: m.security_vulnerability_scanning_heading(), icon: ScanIcon }]
+			: []),
 		{ value: 'patching', label: m.security_image_patching_heading(), icon: ShieldCheckIcon },
 		{ value: 'lifecycle', label: m.security_lifecycle_hooks_heading(), icon: CodeIcon }
-	];
+	]);
 
 	$effect(() => {
 		// Don't bounce away when gitops is the only tab (offline/disabled environment) — the
@@ -294,6 +308,7 @@
 		pruneNetworkUntil: settings?.pruneNetworkUntil ?? '',
 		pruneBuildCacheMode: settings?.pruneBuildCacheMode ?? 'none',
 		pruneBuildCacheUntil: settings?.pruneBuildCacheUntil ?? '',
+		featureVulnerabilityManagementEnabled: settings?.featureVulnerabilityManagementEnabled ?? true,
 		vulnerabilityScanEnabled: settings?.vulnerabilityScanEnabled ?? false,
 		toolsImageRegistry: settings?.toolsImageRegistry ?? 'ghcr.io',
 		updateCheckRegistry: settings?.updateCheckRegistry ?? 'auto',
@@ -325,16 +340,38 @@
 
 	// Custom save handler for environment-specific settings
 	async function saveEnvironmentSettings(formData: EnvironmentFormValues) {
-		// Update environment basic info
-		await environmentManagementService.update(environment.id, {
-			name: formData.name,
-			enabled: formData.enabled,
-			apiUrl: formData.apiUrl
-		});
+		const environmentId = environment.id;
+		const featureChanged =
+			formData.featureVulnerabilityManagementEnabled !== currentSettings.featureVulnerabilityManagementEnabled;
+		if (
+			featureChanged &&
+			(!hasPermission('settings:write', environmentId) || !featureStore.isSupported('vulnerabilityManagement', environmentId))
+		) {
+			throw new Error(m.features_unavailable());
+		}
+		if (
+			formData.name !== environment.name ||
+			formData.enabled !== environment.enabled ||
+			formData.apiUrl !== environment.apiUrl
+		) {
+			await environmentManagementService.update(environmentId, {
+				name: formData.name,
+				enabled: formData.enabled,
+				apiUrl: formData.apiUrl
+			});
+		}
+		const parsedCurrentSettings = formSchema.safeParse(currentSettings);
+		const savedFormValues = parsedCurrentSettings.success ? parsedCurrentSettings.data : currentSettings;
+		const otherSettingsChanged = (Object.keys(formData) as (keyof EnvironmentFormValues)[]).some(
+			(key) =>
+				!['name', 'enabled', 'apiUrl', 'featureVulnerabilityManagementEnabled'].includes(key) &&
+				formData[key] !== savedFormValues[key]
+		);
+		let updates: Partial<Settings> = {};
 
 		// Update environment settings if they exist
-		if (settings) {
-			await settingsService.updateSettingsForEnvironment(environment.id, {
+		if (settings && otherSettingsChanged) {
+			updates = {
 				pollingEnabled: formData.pollingEnabled,
 				imageEventWatcherEnabled: formData.imageEventWatcherEnabled,
 				autoUpdate: formData.autoUpdate,
@@ -388,7 +425,16 @@
 				autoHealExcludedContainers: formData.autoHealExcludedContainers,
 				autoHealMaxRestarts: formData.autoHealMaxRestarts,
 				autoHealRestartWindow: formData.autoHealRestartWindow
-			});
+			};
+		}
+		if (featureChanged) updates.featureVulnerabilityManagementEnabled = formData.featureVulnerabilityManagementEnabled;
+		if (Object.keys(updates).length > 0) await settingsService.updateSettingsForEnvironment(environmentId, updates);
+		if (featureChanged) {
+			await featureStore.refresh(environmentId);
+			if (featureStore.status(environmentId) !== 'ready') throw new Error(m.features_unavailable());
+			if (featureStore.isEnabled('vulnerabilityManagement', environmentId) !== formData.featureVulnerabilityManagementEnabled) {
+				throw new Error(m.features_environment_override());
+			}
 		}
 
 		await refreshEnvironment();
@@ -471,6 +517,7 @@
 				(async () => {
 					isRefreshing = true;
 					statusOverride = null;
+					await featureStore.refresh(environment.id);
 					if (environment.id !== '0' && isCurrentlyOnline) await versionQuery.refetch();
 					await refreshAll();
 				})()
@@ -766,6 +813,33 @@
 			<TabBar items={tabItems} value={activeTab} onValueChange={handleTabChange} />
 		</div>
 
+		<Tabs.Content value="features">
+			<section id="features">
+				<SectionCard title={m.features_title()} icon={SettingsIcon} variant="transparent">
+					{#if featureStore.status(environment.id) === 'ready'}
+						<LabeledSwitch
+							id="vulnerability-management"
+							bind:checked={formInputs.featureVulnerabilityManagementEnabled.value}
+							label={m.features_vulnerability_management()}
+							description={m.features_vulnerability_description()}
+							error={formInputs.featureVulnerabilityManagementEnabled.error}
+							disabled={!isCurrentlyOnline ||
+								!settings ||
+								settings.uiConfigDisabled ||
+								!hasPermission('settings:write', environment.id) ||
+								!featureStore.isSupported('vulnerabilityManagement', environment.id)}
+						/>
+						{#if !featureStore.isSupported('vulnerabilityManagement', environment.id)}
+							<p role="status" class="mt-4 text-sm text-muted-foreground">{m.features_unsupported()}</p>
+						{/if}
+					{:else}
+						<p role="status">{m.features_unavailable()}</p>
+						<ArcaneButton action="base" customLabel={m.common_retry()} onclick={refreshEnvironment} />
+					{/if}
+				</SectionCard>
+			</section>
+		</Tabs.Content>
+
 		{#if runtimeEnvironment.isEdge}
 			<Tabs.Content value="connection">
 				<ConnectionEdgeTab
@@ -788,11 +862,11 @@
 			</Tabs.Content>
 
 			<Tabs.Content value="security">
-				<Tabs.Root bind:value={securitySubTab} class="w-full">
+				<Tabs.Root value={activeSecuritySubTab} class="w-full">
 					<div class="mb-4">
 						<TabBar
 							items={securityTabItems}
-							value={securitySubTab}
+							value={activeSecuritySubTab}
 							onValueChange={(value) => {
 								securitySubTab = value;
 							}}
@@ -802,7 +876,7 @@
 						<TrivySecuritySettings bind:formInputs environmentId={environment.id} />
 					</Tabs.Content>
 					<Tabs.Content value="patching">
-						<ImagePatchSettings bind:formInputs />
+						<ImagePatchSettings bind:formInputs environmentId={environment.id} />
 					</Tabs.Content>
 					<Tabs.Content value="lifecycle">
 						<LifecycleSecuritySettings bind:formInputs />

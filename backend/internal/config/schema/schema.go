@@ -126,8 +126,11 @@ var overrideDocRules = map[string]overrideDocRule{
 	"pruneBuildCacheUntil": {
 		requires: "SCHEDULED_PRUNE_ENABLED=true and PRUNE_BUILD_CACHE_MODE=olderThan to have effect at runtime.",
 	},
+	"featureVulnerabilityManagementEnabled": {
+		note: "Disabling retains existing reports and scanner settings, allows active work to finish, and leaves standalone image patching available.",
+	},
 	"vulnerabilityScanInterval": {
-		requires: "VULNERABILITY_SCAN_ENABLED=true to have effect at runtime.",
+		requires: "FEATURE_VULNERABILITY_MANAGEMENT_ENABLED=true and VULNERABILITY_SCAN_ENABLED=true to have effect at runtime.",
 	},
 	"autoHealInterval": {
 		requires: "AUTO_HEAL_ENABLED=true to have effect at runtime.",

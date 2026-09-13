@@ -89,6 +89,9 @@ export function extractServerMessage(data: unknown, includeErrors = false): stri
 
 	const inner = asRecordInternal(innerValue);
 	if (!inner) return undefined;
+	if (inner['code'] === 'feature_disabled' && inner['feature'] === 'vulnerabilityManagement') {
+		return m.features_vulnerability_disabled();
+	}
 
 	const problemType = nonEmptyStringInternal(inner['type']);
 	const localizedMessage = problemType ? problemMessageFactoriesInternal[problemType] : undefined;

@@ -4,6 +4,8 @@ import (
 	"context"
 	"net/http"
 
+	"github.com/getarcaneapp/arcane/types/v2/features"
+
 	"emperror.dev/errors"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
@@ -74,6 +76,8 @@ func (h *ImagePatchHandler) PatchImage(ctx context.Context, input *PatchImageInp
 	record, err := h.imagePatchService.PatchImage(runtimeCtx, input.EnvironmentID, input.ImageID, input.Body, *user)
 	if err != nil {
 		switch {
+		case errors.Is(err, common.ErrFeatureDisabled):
+			return nil, handlerutil.FeatureDisabledError(features.VulnerabilityManagement)
 		case errors.Is(err, common.ErrBadRequest):
 			return nil, huma.Error400BadRequest(err.Error())
 		case errors.Is(err, common.ErrNotFound):
@@ -97,6 +101,9 @@ func (h *ImagePatchHandler) ListPatchTargets(ctx context.Context, input *ListPat
 
 	targets, paginationResp, err := h.imagePatchService.ListPatchTargets(ctx, input.EnvironmentID, params)
 	if err != nil {
+		if errors.Is(err, common.ErrFeatureDisabled) {
+			return nil, handlerutil.FeatureDisabledError(features.VulnerabilityManagement)
+		}
 		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to list image patch targets").Error())
 	}
 	if targets == nil {

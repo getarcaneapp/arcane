@@ -71,6 +71,17 @@ test.describe('Edge Agent Environment', () => {
 	test('should create an edge agent environment and show deployment snippets', async ({ page }) => {
 		const environmentName = `edge-agent-${Date.now().toString().slice(-6)}`;
 		let createdEnvironmentId: string | null = null;
+		const agentSettingsRequests: string[] = [];
+		page.on('request', (request) => {
+			if (!createdEnvironmentId) return;
+			const pathname = new URL(request.url()).pathname;
+			if (
+				pathname === `/api/environments/${createdEnvironmentId}/settings` ||
+				pathname === `/api/environments/${createdEnvironmentId}/settings/public`
+			) {
+				agentSettingsRequests.push(pathname);
+			}
+		});
 
 		await page.route('**/api/environments', async (route) => {
 			if (route.request().method() === 'POST') {
@@ -138,6 +149,10 @@ test.describe('Edge Agent Environment', () => {
 			await expect(page.getByTitle('API URL', { exact: true })).toHaveText(/edge:\/\/edge-agent-/);
 			await expect(page.getByText('Edge', { exact: true }).first()).toBeVisible();
 			await expect(page.getByText('Live Tunnel', { exact: true })).toBeVisible();
+			await expect(
+				page.getByRole('tab', { name: 'Connection & Edge', exact: true })
+			).toHaveAttribute('data-state', 'active');
+			expect(agentSettingsRequests).toEqual([]);
 		} finally {
 			if (createdEnvironmentId) {
 				await page.request.delete(`/api/environments/${createdEnvironmentId}`);

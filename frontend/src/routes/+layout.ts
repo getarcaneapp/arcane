@@ -6,6 +6,7 @@ import { swarmService } from '#lib/services/swarm-service.js';
 import { userService } from '#lib/services/user-service.js';
 import versionService from '#lib/services/version-service.js';
 import settingsStore from '#lib/stores/config-store.svelte.js';
+import { featureStore } from '#lib/stores/features.store.svelte.js';
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import userStore from '#lib/stores/user-store.svelte.js';
 import { type AppVersionInformation } from '#lib/types/settings.js';
@@ -71,6 +72,11 @@ export const load: LayoutLoad = async ({ url }) => {
 		authService.resetAuthenticatedState(queryClient, { restartMountedStores: user !== null });
 	}
 	authenticatedUserId = nextAuthenticatedUserId;
+	if (user) {
+		await userStore.setUser(user);
+	} else {
+		userStore.clearUser();
+	}
 
 	let settings = null;
 	let swarmEnabled = false;
@@ -99,16 +105,24 @@ export const load: LayoutLoad = async ({ url }) => {
 		const settingsRequest = userHasPermission(user, 'settings:read')
 			? tryCatch(settingsService.getSettings()).then(async (result) => {
 					if (!result.error) return result.data;
-					const publicSettings = await tryCatch(settingsService.getPublicSettings());
+					const publicSettings = await tryCatch(settingsService.getPublicSettings(environmentStore.selected?.id ?? '0'));
 					return publicSettings.error ? null : publicSettings.data;
 				})
-			: tryCatch(settingsService.getPublicSettings()).then((result) => (result.error ? null : result.data));
+			: tryCatch(settingsService.getPublicSettings(environmentStore.selected?.id ?? '0')).then((result) =>
+					result.error ? null : result.data
+				);
+		featureStore.connect(queryClient);
+		const featuresRequest = featureStore.refresh(await environmentStore.getCurrentEnvironmentId());
 		const [loadedSettings, loadedSwarmStatus, loadedPermissionsManifest] = await Promise.all([
 			settingsRequest,
 			tryCatch(swarmService.getSwarmStatus()).then((result) => (result.error ? null : result.data)),
 			permissionsManifestRequest
 		]);
-		settings = loadedSettings;
+		// Keep recovery/settings pages reachable while a selected agent is offline.
+		settings =
+			loadedSettings ??
+			(await tryCatch(settingsService.getPublicSettings()).then((result) => (result.error ? null : result.data)));
+		await featuresRequest;
 		swarmEnabled = loadedSwarmStatus?.enabled === true;
 		permissionsManifest = loadedPermissionsManifest;
 		permissionsManifestLoadFailed = loadedPermissionsManifest === null;
@@ -118,12 +132,6 @@ export const load: LayoutLoad = async ({ url }) => {
 
 		// Try to fetch public settings for login page configuration
 		settings = await tryCatch(settingsService.getPublicSettings()).then((result) => (result.error ? null : result.data));
-	}
-
-	if (user) {
-		await userStore.setUser(user);
-	} else {
-		userStore.clearUser();
 	}
 
 	if (settings) {

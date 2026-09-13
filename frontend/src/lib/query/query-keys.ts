@@ -178,8 +178,8 @@ export const queryKeys = {
 		scanResult: (environmentId: string, imageId: string) => ['vulnerabilities', 'scan-result', environmentId, imageId] as const,
 		allByEnvironment: (environmentId: string, request: SearchPaginationSortRequest) =>
 			['vulnerabilities', 'all', environmentId, stableSerialize(request)] as const,
-		imageRows: (imageId: string, request: SearchPaginationSortRequest) =>
-			['vulnerabilities', 'image', imageId, stableSerialize(request)] as const
+		imageRows: (environmentId: string, imageId: string, request: SearchPaginationSortRequest) =>
+			['vulnerabilities', 'image', environmentId, imageId, stableSerialize(request)] as const
 	},
 	buildWorkspace: {
 		all: ['build-workspace'] as const,

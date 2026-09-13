@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { featureStore } from '#lib/stores/features.store.svelte.js';
 	import { goto, refreshAll } from '$app/navigation';
 	import { onDestroy, onMount, untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
@@ -269,7 +270,13 @@
 					containers: snapshot.containers.counts ?? { runningContainers: 0, stoppedContainers: 0, totalContainers: 0 },
 					imageUsageCounts: snapshot.imageUsageCounts,
 					volumeUsageCounts: snapshot.volumeUsageCounts,
-					actionItems: snapshot.actionItems,
+					actionItems: {
+						...snapshot.actionItems,
+						items: snapshot.actionItems.items.filter(
+							(item) =>
+								item.kind !== 'actionable_vulnerabilities' || featureStore.isEnabled('vulnerabilityManagement', environment.id)
+						)
+					},
 					settings: snapshot.settings,
 					versionInfo: snapshot.versionInfo,
 					snapshotState: 'ready',
@@ -319,6 +326,7 @@
 		untrack(() => {
 			for (const environment of environmentsToLoad) {
 				ensureEnvironmentLiveStats(environment);
+				void featureStore.load(environment.id);
 			}
 		});
 	});

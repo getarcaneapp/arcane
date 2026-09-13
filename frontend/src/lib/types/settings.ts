@@ -41,6 +41,7 @@ export type Settings = {
 	pruneBuildCacheMode?: 'none' | 'unused' | 'all' | 'olderThan';
 	pruneBuildCacheUntil?: string;
 	vulnerabilityScanEnabled?: boolean;
+	featureVulnerabilityManagementEnabled?: boolean;
 	vulnerabilityScanInterval?: number;
 	autoHealEnabled?: boolean;
 	autoHealExcludedContainers?: string;

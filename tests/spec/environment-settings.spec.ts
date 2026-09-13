@@ -129,14 +129,18 @@ test.describe('Environment Settings UI', () => {
 		await expect(dockerTab).toHaveAttribute('data-state', 'active');
 
 		await page.goto(`/environments/${LOCAL_ENV_ID}?source=e2e&tab=invalid#tab-state`);
-		await expect.poll(() => new URL(page.url()).searchParams.get('tab')).toBe('storage');
+		await expect.poll(() => new URL(page.url()).searchParams.get('tab')).toBe('features');
 		const canonicalUrl = new URL(page.url());
 		expect(canonicalUrl.searchParams.get('source')).toBe('e2e');
 		expect(canonicalUrl.hash).toBe('#tab-state');
-		await expect(page.getByRole('tab', { name: 'Storage & Limits', exact: true })).toHaveAttribute(
+		await expect(page.getByRole('tab', { name: 'Features', exact: true })).toHaveAttribute(
 			'data-state',
 			'active'
 		);
+		await expect(page.getByRole('heading', { name: 'Features', exact: true })).toBeVisible();
+		await expect(
+			page.getByRole('switch', { name: 'Vulnerability management', exact: true })
+		).toBeVisible();
 	});
 
 	test('should update and save environment details', async ({ page }) => {

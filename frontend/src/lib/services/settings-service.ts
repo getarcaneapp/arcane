@@ -1,6 +1,7 @@
 import BaseAPIService from './api-service';
 import type { Settings, OidcStatusInfo } from '#lib/types/settings.js';
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+import userStore from '#lib/stores/user-store.svelte.js';
 import { isLocalSetting, extractLocalSettings, extractEnvironmentSettings } from '#lib/utils/settings.svelte.js';
 
 type KeyValuePair = { key: string; value: string };
@@ -24,7 +25,9 @@ class SettingsService extends BaseAPIService {
 		// - UI settings from environment 0 (main instance)
 		// - Environment-specific settings from current environment
 		const [mainSettings, envSettings] = await Promise.all([
-			this.api.get('/environments/0/settings'),
+			this.api.get(
+				userStore.hasPermission('settings:read', '0') ? '/environments/0/settings' : '/environments/0/settings/public'
+			),
 			this.api.get(`/environments/${environmentId}/settings`)
 		]);
 
@@ -45,9 +48,18 @@ class SettingsService extends BaseAPIService {
 		return this.normalize(res.data);
 	}
 
-	async getPublicSettings(): Promise<Settings> {
-		const res = await this.api.get(`/environments/0/settings/public`);
+	async getPublicSettingsForEnvironment(environmentId: string, signal?: AbortSignal): Promise<Settings> {
+		const res = await this.api.get(`/environments/${environmentId}/settings/public`, { signal });
 		return this.normalize(res.data);
+	}
+
+	async getPublicSettings(environmentId = '0'): Promise<Settings> {
+		if (environmentId === '0') return this.getPublicSettingsForEnvironment('0');
+		const [mainSettings, environmentSettings] = await Promise.all([
+			this.getPublicSettingsForEnvironment('0'),
+			this.getPublicSettingsForEnvironment(environmentId)
+		]);
+		return { ...extractEnvironmentSettings(environmentSettings), ...extractLocalSettings(mainSettings) } as Settings;
 	}
 
 	async updateSettings(settings: Partial<Settings>) {
@@ -92,7 +104,8 @@ class SettingsService extends BaseAPIService {
 		}
 
 		// Reload and return merged settings
-		return this.getSettings();
+		if (!userStore.hasPermission('settings:read', envId)) return this.getPublicSettings(envId);
+		return this.getSettingsForEnvironmentMerged(envId);
 	}
 
 	async getOidcStatus(): Promise<OidcStatusInfo> {
