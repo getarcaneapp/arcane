@@ -549,6 +549,8 @@
   "dashboard_all_environment_unavailable_description": "Esse ambiente está off-line, pendente ou inacessível no momento.",
   "dashboard_all_summary_unavailable": "Resumo ambiental indisponível. {error}",
   "dashboard_all_agent_incompatible": "O agente está executando uma versão mais antiga do Arcane e não consegue enviar os dados do painel — atualize o agente.",
+  "stats_unavailable": "Estatísticas em tempo real indisponíveis",
+  "stats_stale": "As estatísticas em tempo real não estão sendo atualizadas",
   "containers": "Containers",
   "containers_subtitle": "Veja e gerencie os seus containers",
   "containers_recent": "Containers recentes",
