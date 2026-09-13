@@ -549,6 +549,8 @@
   "dashboard_all_environment_unavailable_description": "Deze omgeving is op dit moment offline, in afwachting of anderszins onbereikbaar.",
   "dashboard_all_summary_unavailable": "Milieuoverzicht niet beschikbaar. {error}",
   "dashboard_all_agent_incompatible": "De agent draait op een oudere versie van Arcane en kan geen dashboardgegevens doorgeven — voer een upgrade van de agent uit.",
+  "stats_unavailable": "Live statistieken niet beschikbaar",
+  "stats_stale": "De live-statistieken worden niet bijgewerkt",
   "containers": "Containers",
   "containers_subtitle": "Bekijk en beheer uw containers",
   "containers_recent": "Recente containers",
