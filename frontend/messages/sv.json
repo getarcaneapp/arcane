@@ -3543,5 +3543,12 @@
   "host_ip_placeholder": "0.0.0.0",
   "container_port_placeholder": "80",
   "protocol_tcp": "TCP",
-  "protocol_udp": "UDP"
+  "protocol_udp": "UDP",
+  "features_title": "Funktioner",
+  "features_vulnerability_management": "Hantering av sårbarheter",
+  "features_vulnerability_description": "Aktivera sårbarhetsskanning, rapporter och skanningsbaserad uppdatering av systemavbildningar. Om du inaktiverar denna funktion behålls sparade rapporter och inställningar, och pågående uppgifter får slutföras. Fristående uppdatering av systemavbildningar förblir tillgänglig. När du aktiverar funktionen igen återställs dina sparade scheman.",
+  "features_vulnerability_disabled": "Sårbarhetshanteringen är inaktiverad för denna miljö. Sparade rapporter och inställningar behålls.",
+  "features_unsupported": "Uppgradera Arcane-agenten i denna miljö för att hantera funktionernas tillgänglighet. Dess nuvarande beteende förblir oförändrat.",
+  "features_unavailable": "Funktionsinställningarna är inte tillgängliga. Kontrollera anslutningen och försök igen.",
+  "features_environment_override": "Denna funktionsinställning styrs av en miljövariabel. Ändra FEATURE_VULNERABILITY_MANAGEMENT_ENABLED i denna miljö för att uppdatera den."
 }
