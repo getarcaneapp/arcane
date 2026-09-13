@@ -549,6 +549,8 @@
   "dashboard_all_environment_unavailable_description": "Наразі це середовище не працює, перебуває на стадії розгляду або недоступне з інших причин.",
   "dashboard_all_summary_unavailable": "Звіт про навколишнє середовище недоступний. {error}",
   "dashboard_all_agent_incompatible": "Агент працює на застарілій версії Arcane і не може надсилати дані на інформаційну панель — оновіть агент.",
+  "stats_unavailable": "Статистика в режимі реального часу недоступна",
+  "stats_stale": "Статистика в режимі реального часу не оновлюється",
   "containers": "Контейнери",
   "containers_subtitle": "Перегляд та управління контейнерами",
   "containers_recent": "Нещодавні контейнери",
