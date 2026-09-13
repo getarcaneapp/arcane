@@ -3543,5 +3543,12 @@
   "host_ip_placeholder": "0.0.0.0",
   "container_port_placeholder": "80",
   "protocol_tcp": "TCP",
-  "protocol_udp": "UDP"
+  "protocol_udp": "UDP",
+  "features_title": "주요 기능",
+  "features_vulnerability_management": "취약점 관리",
+  "features_vulnerability_description": "취약점 스캔, 보고서 및 스캔 기반 이미지 패치 기능을 활성화합니다. 이 기능을 비활성화해도 저장된 보고서와 설정은 유지되며, 진행 중인 작업은 완료됩니다. 독립형 이미지 패치 기능은 계속 사용할 수 있습니다. 이 기능을 다시 활성화하면 저장된 일정이 복원됩니다.",
+  "features_vulnerability_disabled": "이 환경에서는 취약점 관리 기능이 비활성화되었습니다. 저장된 보고서와 설정은 그대로 유지됩니다.",
+  "features_unsupported": "이 환경의 Arcane 에이전트를 업그레이드하여 기능 가용성을 관리하십시오. 기존 동작은 변경되지 않습니다.",
+  "features_unavailable": "기능 설정을 사용할 수 없습니다. 환경 연결 상태를 확인한 후 다시 시도해 주세요.",
+  "features_environment_override": "이 기능 설정은 환경 변수를 통해 관리됩니다. 이 환경에서 FEATURE_VULNERABILITY_MANAGEMENT_ENABLED 값을 변경하여 설정을 업데이트하십시오."
 }
