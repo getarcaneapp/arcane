@@ -3543,5 +3543,12 @@
   "host_ip_placeholder": "0.0.0.0",
   "container_port_placeholder": "80",
   "protocol_tcp": "TCP",
-  "protocol_udp": "UDP"
+  "protocol_udp": "UDP",
+  "features_title": "Funktionen",
+  "features_vulnerability_management": "Schwachstellenmanagement",
+  "features_vulnerability_description": "Aktivieren Sie Schwachstellenscans, Berichte und das patchen von Images auf Basis von Scans. Wenn Sie diese Funktion deaktivieren, bleiben gespeicherte Berichte und Einstellungen erhalten, und laufende Vorgänge werden zu Ende ausgeführt. Das eigenständige Patchen von Images bleibt weiterhin verfügbar. Wenn Sie die Funktion wieder aktivieren, werden Ihre gespeicherten Zeitpläne wiederhergestellt.",
+  "features_vulnerability_disabled": "Das Schwachstellenmanagement ist für diese Umgebung deaktiviert. Gespeicherte Berichte und Einstellungen bleiben erhalten.",
+  "features_unsupported": "Aktualisieren Sie den Arcane-Agenten dieser Umgebung, um die Verfügbarkeit von Funktionen zu verwalten. Das bisherige Verhalten bleibt unverändert.",
+  "features_unavailable": "Die Funktionseinstellungen sind nicht verfügbar. Überprüfen Sie die Verbindung zur Umgebung und versuchen Sie es erneut.",
+  "features_environment_override": "Diese Funktionseinstellung wird über eine Umgebungsvariable verwaltet. Ändern Sie die Umgebungsvariable FEATURE_VULNERABILITY_MANAGEMENT_ENABLED, um die Einstellung zu aktualisieren."
 }
