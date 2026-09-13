@@ -549,6 +549,8 @@
   "dashboard_all_environment_unavailable_description": "Diese Umgebung ist im Moment offline, in Bearbeitung oder aus anderen Gründen nicht erreichbar.",
   "dashboard_all_summary_unavailable": "Umgebungs-Zusammenfassung nicht verfügbar. {error}",
   "dashboard_all_agent_incompatible": "Der Agent verwendet eine ältere Arcane-Version und kann keine Dashboard-Daten melden – führen Sie ein Upgrade des Agenten durch.",
+  "stats_unavailable": "Live-Statistiken nicht verfügbar",
+  "stats_stale": "Die Live-Statistiken werden nicht aktualisiert",
   "containers": "Container",
   "containers_subtitle": "Container anzeigen und verwalten",
   "containers_recent": "Neueste Container",
