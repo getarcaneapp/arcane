@@ -68,11 +68,15 @@ func WriteComposeFile(ctx context.Context, projectsRoot, dirPath, content string
 	}
 
 	composeFileName := DefaultComposeFileName
+	mode := utils.FilePerm
 	if existingFile := detectExistingComposeFileInternal(ctx, projectsRoot, dirPath); existingFile != "" {
 		composeFileName = filepath.Base(existingFile)
+		if entry, statErr := acfs.Stat(ctx, dirPath, "/"+composeFileName, false); statErr == nil {
+			mode = os.FileMode(entry.UnixMode).Perm()
+		}
 	}
 
-	if err := acfs.Write(ctx, dirPath, "/"+composeFileName, []byte(content), acfs.WriteOptions{Mode: utils.FilePerm, InPlace: true}); err != nil {
+	if err := acfs.Write(ctx, dirPath, "/"+composeFileName, []byte(content), acfs.WriteOptions{Mode: mode, InPlace: true}); err != nil {
 		return errors.WrapIf(err, "failed to write compose file")
 	}
 
@@ -113,6 +117,7 @@ func WriteProjectFile(ctx context.Context, projectsRoot, dirPath, fileName, cont
 		return errors.WrapIff(statErr, "failed to inspect project file %s", fileName)
 	}
 
+	mode := utils.FilePerm
 	if statErr == nil {
 		existingContent, readErr := acfs.ReadFile(ctx, dirPath, logicalPath)
 		if readErr == nil && string(existingContent) == content {
@@ -121,9 +126,10 @@ func WriteProjectFile(ctx context.Context, projectsRoot, dirPath, fileName, cont
 		if readErr != nil && !errors.Is(readErr, fs.ErrNotExist) {
 			return errors.WrapIff(readErr, "failed to read project file %s", fileName)
 		}
+		mode = os.FileMode(entry.UnixMode).Perm()
 	}
 
-	if err := acfs.Write(ctx, dirPath, logicalPath, []byte(content), acfs.WriteOptions{Mode: utils.FilePerm, InPlace: true}); err != nil {
+	if err := acfs.Write(ctx, dirPath, logicalPath, []byte(content), acfs.WriteOptions{Mode: mode, InPlace: true}); err != nil {
 		return errors.WrapIff(err, "failed to write project file %s", fileName)
 	}
 

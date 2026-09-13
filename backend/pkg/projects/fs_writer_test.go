@@ -90,6 +90,9 @@ func TestWriteProjectFile_DoesNotReplaceIdenticalContent(t *testing.T) {
 	updated, err := os.Stat(filePath)
 	require.NoError(t, err)
 	assert.True(t, os.SameFile(original, updated), "changed content should preserve the inode")
+	if runtime.GOOS != "windows" {
+		assert.Equal(t, os.FileMode(0o600), updated.Mode().Perm(), "changed content should preserve the file mode")
+	}
 	actual, err := os.ReadFile(filePath)
 	require.NoError(t, err)
 	assert.Equal(t, "VALUE=new\n", string(actual))
@@ -297,6 +300,9 @@ func TestWriteComposeFile_PreservesExistingPodmanComposeNames(t *testing.T) {
 			updated, err := os.Stat(existingComposePath)
 			require.NoError(t, err)
 			assert.True(t, os.SameFile(original, updated), "compose updates should preserve the inode")
+			if runtime.GOOS != "windows" {
+				assert.Equal(t, os.FileMode(0o600), updated.Mode().Perm(), "compose updates should preserve the file mode")
+			}
 
 			_, err = os.Stat(filepath.Join(projectDir, "compose.yaml"))
 			assert.True(t, os.IsNotExist(err), "compose.yaml should not be created when existing podman-compose file is present")
