@@ -435,11 +435,26 @@ test('registers, renames, authenticates with, and removes a passkey with MFA', a
 			await dangerZone.getByRole('button', { name: 'Log out', exact: true }).click();
 			await expect(passkeyPage).toHaveURL('/login');
 
-			await passkeyPage.getByRole('button', { name: 'Passkey', exact: true }).click();
+			await login(passkeyPage, username, password, '/login');
 			const usePasskeyButton = passkeyPage.getByRole('button', {
 				name: 'Use passkey',
 				exact: true
 			});
+			await expect(usePasskeyButton).toBeVisible();
+			const mfaFinishResponsePromise = passkeyPage.waitForResponse(
+				(response) =>
+					response.request().method() === 'POST' &&
+					new URL(response.url()).pathname === '/api/auth/mfa/passkey/finish'
+			);
+			await usePasskeyButton.click();
+			expect((await mfaFinishResponsePromise).ok()).toBe(true);
+			await expect(passkeyPage).toHaveURL('/dashboard');
+			await expect(passkeyPage.locator('main').first()).toBeVisible();
+
+			await passkeyPage.goto('/account');
+			await dangerZone.getByRole('button', { name: 'Log out', exact: true }).click();
+			await expect(passkeyPage).toHaveURL('/login');
+			await passkeyPage.getByRole('button', { name: 'Passkey', exact: true }).click();
 			if (await usePasskeyButton.isVisible().catch(() => false)) {
 				await usePasskeyButton.click();
 			}

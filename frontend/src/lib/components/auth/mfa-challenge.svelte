@@ -38,7 +38,7 @@
 			const operationResult1 = await tryCatch(
 				(async () => {
 					const credential = await startAuthentication({
-						optionsJSON: challenge.options as unknown as PublicKeyCredentialRequestOptionsJSON
+						optionsJSON: $state.snapshot(challenge.options) as unknown as PublicKeyCredentialRequestOptionsJSON
 					});
 					const response = await passkeyService.finishMFA(challenge.transactionId, credential);
 					await onComplete(response);
