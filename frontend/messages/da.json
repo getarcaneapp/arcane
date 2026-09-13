@@ -3543,5 +3543,12 @@
   "host_ip_placeholder": "0.0.0.0",
   "container_port_placeholder": "80",
   "protocol_tcp": "TCP",
-  "protocol_udp": "UDP"
+  "protocol_udp": "UDP",
+  "features_title": "Funktioner",
+  "features_vulnerability_management": "Håndtering af sårbarheder",
+  "features_vulnerability_description": "Aktivér sårbarhedsscanning, rapporter og scanningsbaseret opdatering af systemimages. Hvis du deaktiverer denne funktion, bevares gemte rapporter og indstillinger, og igangværende opgaver færdiggøres. Muligheden for at opdatere systemimages manuelt forbliver tilgængelig. Når du aktiverer funktionen igen, gendannes dine gemte tidsplaner.",
+  "features_vulnerability_disabled": "Sårbarhedsstyring er deaktiveret for dette miljø. Gemte rapporter og indstillinger bevares.",
+  "features_unsupported": "Opgrader dette miljøs Arcane-agent for at styre tilgængeligheden af funktioner. Den nuværende funktionsmåde forbliver uændret.",
+  "features_unavailable": "Funktionsindstillingerne er ikke tilgængelige. Kontroller forbindelsen til miljøet, og prøv igen.",
+  "features_environment_override": "Denne funktionsindstilling styres via en miljøvariabel. Du kan opdatere den ved at ændre FEATURE_VULNERABILITY_MANAGEMENT_ENABLED i dette miljø."
 }
