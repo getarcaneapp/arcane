@@ -82,6 +82,7 @@ var (
 	ErrGlobalVariableSecretValueRequired       = Classify(ErrValidation, errors.Sentinel("A new value is required when making a secret variable readable"))
 	ErrImageUntagged                           = Classify(ErrBadRequest, errors.Sentinel("image has no tag; only tagged images can be patched"))
 	ErrImageLocalOnly                          = Classify(ErrBadRequest, errors.Sentinel("locally built image has no registry source to patch from; rebuild it to update its packages"))
+	ErrPatchRequiresContainerdImageStore       = Classify(ErrBadRequest, errors.Sentinel("image patching requires Docker's containerd image store; enable the containerd-snapshotter feature in daemon.json and restart Docker"))
 	ErrPatchScanReportUnavailable              = Classify(ErrNotFound, errors.Sentinel("no stored scan report is available for this scan; re-scan the image or patch without a report"))
 	ErrPatchScanImageMismatch                  = Classify(ErrBadRequest, errors.Sentinel("the selected scan does not belong to this image"))
 	ErrContainerComposeManaged                 = Classify(ErrConflict, errors.Sentinel("container is managed by a compose project; edit it via the project editor"))

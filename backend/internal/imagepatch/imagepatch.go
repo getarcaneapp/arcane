@@ -20,6 +20,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/moby/buildkit/util/progress/progressui"
+	"github.com/moby/moby/client"
 	ispec "github.com/opencontainers/image-spec/specs-go/v1"
 	copacommon "github.com/project-copacetic/copacetic/pkg/common"
 	copapatch "github.com/project-copacetic/copacetic/pkg/patch"
@@ -98,6 +99,9 @@ func (s *ImagePatchService) PatchImage(ctx context.Context, envID, imageID strin
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return nil, errors.WrapIf(err, "failed to connect to Docker")
+	}
+	if err := requireContainerdImageStoreInternal(runCtx, dockerClient); err != nil {
+		return nil, err
 	}
 
 	imageInspect, err := dockerClient.ImageInspect(runCtx, imageID)
@@ -278,6 +282,9 @@ func (s *ImagePatchService) patchInBackgroundInternal(ctx context.Context, recor
 	if patchErr != nil {
 		if errors.Is(patchErr, copatypes.ErrNoUpdatesFound) {
 			patchErr = errors.New("no OS package updates available for this image")
+		}
+		if strings.Contains(patchErr.Error(), `exporter "docker" could not be found`) {
+			patchErr = common.ErrPatchRequiresContainerdImageStore
 		}
 		s.finishPatchRecordInternal(ctx, record, imagepatch.PatchStatusFailed, patchErr.Error(), nil, durationMs)
 		slog.WarnContext(ctx, "image patch failed",
@@ -695,6 +702,13 @@ func (s *ImagePatchService) PatchFlaggedImages(ctx context.Context, envID string
 	if err := s.settingsService.RequireFeature(ctx, features.VulnerabilityManagement); err != nil {
 		return 0, 0, err
 	}
+	dockerClient, err := s.dockerService.GetClient(ctx)
+	if err != nil {
+		return 0, 0, errors.WrapIf(err, "failed to connect to Docker")
+	}
+	if err := requireContainerdImageStoreInternal(ctx, dockerClient); err != nil {
+		return 0, 0, err
+	}
 	var scans []vulnerability.VulnerabilityScanRecord
 	if err := s.db.WithContext(ctx).
 		Where("status = ? AND fixable_count > 0", vulnerability.ScanStatusCompleted).
@@ -744,6 +758,20 @@ func (s *ImagePatchService) PatchFlaggedImages(ctx context.Context, envID string
 	}
 
 	return patched, skipped, nil
+}
+
+// Copa needs BuildKit's docker exporter, which dockerd only offers with the containerd image store.
+func requireContainerdImageStoreInternal(ctx context.Context, dockerClient *client.Client) error {
+	info, err := dockerClient.Info(ctx, client.InfoOptions{})
+	if err != nil {
+		return errors.WrapIf(err, "failed to inspect Docker")
+	}
+	for _, status := range info.Info.DriverStatus {
+		if status[0] == "driver-type" && status[1] == "io.containerd.snapshotter.v1" {
+			return nil
+		}
+	}
+	return common.ErrPatchRequiresContainerdImageStore
 }
 
 func (s *ImagePatchService) startPatchActivityInternal(ctx context.Context, envID, imageID, imageRef string, user *common.User) string {

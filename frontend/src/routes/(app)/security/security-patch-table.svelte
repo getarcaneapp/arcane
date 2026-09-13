@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { featureStore } from '#lib/stores/features.store.svelte.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
+	import { extractApiErrorMessage } from '#lib/utils/api.js';
 
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
@@ -63,7 +64,7 @@
 			const error = operationResult.error;
 
 			console.error('Failed to patch image:', error);
-			toast.error(m.images_patch_failed());
+			toast.error(m.images_patch_failed(), { description: extractApiErrorMessage(error) });
 		}
 	}
 
