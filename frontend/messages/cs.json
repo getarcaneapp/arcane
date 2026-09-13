@@ -3543,5 +3543,12 @@
   "host_ip_placeholder": "0.0.0.0",
   "container_port_placeholder": "80",
   "protocol_tcp": "TCP",
-  "protocol_udp": "UDP"
+  "protocol_udp": "UDP",
+  "features_title": "Funkce",
+  "features_vulnerability_management": "Správa zranitelností",
+  "features_vulnerability_description": "Povolte skenování zranitelností, vytváření zpráv a opravu obrazů na základě skenování. Vypnutím této funkce zůstanou uložené zprávy a nastavení zachovány a probíhající úlohy budou dokončeny. Samostatná oprava obrazů zůstává k dispozici. Znovu zapnutím této funkce se obnoví vaše uložené plány.",
+  "features_vulnerability_disabled": "Správa zranitelností je v tomto prostředí deaktivována. Uložené zprávy a nastavení zůstanou zachovány.",
+  "features_unsupported": "Proveďte aktualizaci agenta Arcane v tomto prostředí, abyste mohli spravovat dostupnost funkcí. Stávající chování zůstává beze změny.",
+  "features_unavailable": "Nastavení funkcí není k dispozici. Zkontrolujte připojení k prostředí a zkuste to znovu.",
+  "features_environment_override": "Toto nastavení funkce se řídí proměnnou prostředí. Chcete-li jej aktualizovat, změňte v tomto prostředí hodnotu proměnné FEATURE_VULNERABILITY_MANAGEMENT_ENABLED."
 }
