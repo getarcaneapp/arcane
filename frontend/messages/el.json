@@ -549,6 +549,8 @@
   "dashboard_all_environment_unavailable_description": "Αυτό το περιβάλλον είναι εκτός λειτουργίας, σε εκκρεμότητα ή με άλλο τρόπο μη προσβάσιμο αυτή τη στιγμή.",
   "dashboard_all_summary_unavailable": "Περίληψη περιβάλλοντος δεν είναι διαθέσιμη. {error}",
   "dashboard_all_agent_incompatible": "Ο πράκτορας χρησιμοποιεί παλαιότερη έκδοση του Arcane και δεν μπορεί να αναφέρει δεδομένα στον πίνακα ελέγχου — αναβαθμίστε τον πράκτορα.",
+  "stats_unavailable": "Τα ζωντανά στατιστικά δεν είναι διαθέσιμα",
+  "stats_stale": "Τα ζωντανά στατιστικά δεν ενημερώνονται",
   "containers": "Περιέκτες",
   "containers_subtitle": "Προβολή και διαχείριση των containers ",
   "containers_recent": "Πρόσφατα containers",
