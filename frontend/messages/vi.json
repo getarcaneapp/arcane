@@ -3543,5 +3543,12 @@
   "host_ip_placeholder": "0.0.0.0",
   "container_port_placeholder": "80",
   "protocol_tcp": "TCP",
-  "protocol_udp": "UDP"
+  "protocol_udp": "UDP",
+  "features_title": "Tính năng",
+  "features_vulnerability_management": "Quản lý lỗ hổng bảo mật",
+  "features_vulnerability_description": "Kích hoạt tính năng quét lỗ hổng, tạo báo cáo và vá hình ảnh dựa trên kết quả quét. Việc tắt tính năng này sẽ giữ lại các báo cáo và cài đặt đã lưu, đồng thời cho phép các tác vụ đang chạy hoàn tất. Tính năng vá hình ảnh độc lập vẫn có thể sử dụng được. Khi bật lại tính năng này, các lịch trình đã lưu của bạn sẽ được khôi phục.",
+  "features_vulnerability_disabled": "Tính năng quản lý lỗ hổng bảo mật đã bị tắt trong môi trường này. Các báo cáo và cài đặt đã lưu sẽ được giữ nguyên.",
+  "features_unsupported": "Nâng cấp Arcane Agent trong môi trường này để quản lý tính khả dụng của các tính năng. Hành vi hiện tại của nó vẫn không thay đổi.",
+  "features_unavailable": "Không thể truy cập các cài đặt tính năng. Vui lòng kiểm tra kết nối mạng và thử lại.",
+  "features_environment_override": "Cài đặt tính năng này được quản lý thông qua một biến môi trường. Để cập nhật cài đặt này, hãy thay đổi giá trị của biến môi trường FEATURE_VULNERABILITY_MANAGEMENT_ENABLED."
 }
