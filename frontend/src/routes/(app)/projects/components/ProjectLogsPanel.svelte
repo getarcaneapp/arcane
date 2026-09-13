@@ -24,17 +24,16 @@
 	let hasAutoStarted = $state(false);
 
 	function handleStart() {
-		isStreaming = true;
+		if (!isRunning) return;
 		viewer?.startLogStream();
 	}
 
 	function handleStop() {
-		isStreaming = false;
 		viewer?.stopLogStream();
 	}
 
 	async function handleRefresh() {
-		await viewer?.clearLogs({ hard: true, restart: true });
+		await viewer?.clearLogs({ hard: true, restart: isRunning });
 	}
 
 	// The panel stays visible while the project is stopped; the stream pauses and
@@ -67,7 +66,7 @@
 						mobileLayout="full"
 						showDesktop={false}
 						{isStreaming}
-						disabled={!projectId}
+						disabled={!projectId || !isRunning}
 						onStart={handleStart}
 						onStop={handleStop}
 						onRefresh={handleRefresh}
@@ -81,7 +80,7 @@
 				{preferences}
 				mobileLayout="none"
 				{isStreaming}
-				disabled={!projectId}
+				disabled={!projectId || !isRunning}
 				onStart={handleStart}
 				onStop={handleStop}
 				onRefresh={handleRefresh}
@@ -101,8 +100,8 @@
 			maxLines={500}
 			showTimestamps={true}
 			height="100%"
-			onStart={handleStart}
-			onStop={handleStop}
+			onStart={() => (isStreaming = true)}
+			onStop={() => (isStreaming = false)}
 		/>
 	</Card.Content>
 </Card.Root>

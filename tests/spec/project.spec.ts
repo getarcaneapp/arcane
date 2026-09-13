@@ -1597,13 +1597,46 @@ test.describe('Project Detail Page', () => {
 		).toBeVisible();
 		await expect(page.getByTitle('Refresh')).toBeVisible();
 
-		const startButton = page.getByRole('button', { name: 'Start', exact: true });
+		const logViewer = page.getByRole('log');
+		const startButton = page
+			.getByRole('button', { name: 'Start', exact: true })
+			.filter({ visible: true })
+			.first();
+		const stopButton = page
+			.getByRole('button', { name: 'Stop', exact: true })
+			.filter({ visible: true })
+			.first();
+
 		if ((await startButton.count()) > 0) {
-			await startButton.first().click();
+			await startButton.click();
 		}
+		await expect(logViewer).toHaveAttribute('data-is-streaming', 'true');
+		await expect(stopButton).toBeVisible();
+
+		await stopButton.click();
+		await expect(logViewer).toHaveAttribute('data-is-streaming', 'false');
+		await expect(startButton).toBeEnabled();
+
+		await startButton.click();
+		await expect(logViewer).toHaveAttribute('data-is-streaming', 'true');
+
+		await page.getByTitle('Refresh').click();
+		await expect(logViewer).toHaveAttribute('data-is-streaming', 'true');
+		await expect(stopButton).toBeVisible();
 
 		await expect(
 			page.getByText('No project selected. Please select a project to view logs.', { exact: true })
 		).not.toBeVisible();
+
+		const stoppedProject = realProjects.find((p) => p.status === 'stopped');
+		expect(stoppedProject, 'GitOps setup must provide a stopped project').toBeDefined();
+
+		await page.goto(`/projects/${stoppedProject!.id || stoppedProject!.name}?tab=services`);
+		await page.waitForLoadState('load');
+
+		await expect(page.getByText('Real-time project logs', { exact: true })).toBeVisible();
+		await expect(startButton).toBeDisabled();
+		await page.getByTitle('Refresh').click();
+		await expect(logViewer).toHaveAttribute('data-is-streaming', 'false');
 	});
 });
