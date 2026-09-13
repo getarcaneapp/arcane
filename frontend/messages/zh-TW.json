@@ -3543,5 +3543,12 @@
   "host_ip_placeholder": "0.0.0.0",
   "container_port_placeholder": "80",
   "protocol_tcp": "TCP",
-  "protocol_udp": "UDP"
+  "protocol_udp": "UDP",
+  "features_title": "特色",
+  "features_vulnerability_management": "漏洞管理",
+  "features_vulnerability_description": "啟用漏洞掃描、報告及基於掃描的映像修補功能。關閉此功能後，系統會保留已儲存的報告和設定，並讓正在執行的作業完成。獨立映像修補功能仍可使用。重新啟用此功能後，系統將還原您已儲存的排程。",
+  "features_vulnerability_disabled": "此環境已停用漏洞管理功能。已儲存的報告和設定將予以保留。",
+  "features_unsupported": "請將此環境的 Arcane 代理程式升級，以便管理功能可用性。其現有行為維持不變。",
+  "features_unavailable": "無法使用功能設定。請檢查環境連線，然後再試一次。",
+  "features_environment_override": "此功能設定由一個環境變數管理。請在此環境中變更 FEATURE_VULNERABILITY_MANAGEMENT_ENABLED 來更新此設定。"
 }
