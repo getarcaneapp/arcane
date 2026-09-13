@@ -3543,5 +3543,12 @@
   "host_ip_placeholder": "nul punkto nulo nul punkto nulo",
   "container_port_placeholder": "okdek",
   "protocol_tcp": "TCP",
-  "protocol_udp": "UDP"
+  "protocol_udp": "UDP",
+  "features_title": "Karakterizaĵoj",
+  "features_vulnerability_management": "Administrado de vundeblecoj",
+  "features_vulnerability_description": "Aktivigu vundeblécan skanadon, raportojn kaj skan-bazitan bildan patĉadon. Malŝalti ĝin konservas la konservitajn raportojn kaj agordojn kaj permesas al la aktiva laboro finiĝi. Sendependa bilda patĉado restas disponebla. Reŝalti ĝin restarigas viajn konservitajn horarojn.",
+  "features_vulnerability_disabled": "Vundebleca administrado estas malŝaltita por ĉi tiu medio. Konservitaj raportoj kaj agordoj estas retenataj.",
+  "features_unsupported": "Ĝisdatigu la arkan agenton de ĉi tiu medio por administri la haveblecon de trajtoj. Ĝia ekzistanta konduto restas senŝanĝa.",
+  "features_unavailable": "Agordoj de funkcio ne disponeblas. Kontrolu la konekton al la medio kaj provu denove.",
+  "features_environment_override": "Ĉi tiu agordo de funkcio estas administrata per media variablo. Ŝanĝu FEATURE_VULNERABILITY_MANAGEMENT_ENABLED en ĉi tiu medio por ĝisdatigi ĝin."
 }
