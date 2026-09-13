@@ -33,7 +33,7 @@ func TestNewPathMapperForConfiguredDirectory(t *testing.T) {
 
 		source := filepath.Join(containerDir, "0/stack/compose.yaml")
 		expected := filepath.Join(hostDir, "0/stack/compose.yaml")
-		translated, err := pathMapper.ContainerToHost(source)
+		translated, _, err := pathMapper.ContainerToHost(source)
 		require.NoError(t, err)
 		require.Equal(t, filepath.ToSlash(expected), filepath.ToSlash(translated))
 	})
@@ -41,28 +41,29 @@ func TestNewPathMapperForConfiguredDirectory(t *testing.T) {
 
 func TestPathMapper_MatchingMount_NoTranslation(t *testing.T) {
 	pm := NewPathMapper("/app/data/projects", "")
-	result, err := pm.ContainerToHost("/app/data/projects/test/data")
+	result, _, err := pm.ContainerToHost("/app/data/projects/test/data")
 	require.NoError(t, err)
 	assert.Equal(t, "/app/data/projects/test/data", result)
 }
 
 func TestPathMapper_WindowsMount_Translation(t *testing.T) {
 	pm := NewPathMapper("/app/data/projects", "D:/arcane/projects")
-	result, err := pm.ContainerToHost("/app/data/projects/test/data")
+	result, _, err := pm.ContainerToHost("/app/data/projects/test/data")
 	require.NoError(t, err)
 	assert.Equal(t, "D:/arcane/projects/test/data", result)
 }
 
 func TestPathMapper_PathOutsidePrefix_NoTranslation(t *testing.T) {
 	pm := NewPathMapper("/app/data/projects", "D:/arcane/projects")
-	result, err := pm.ContainerToHost("/etc/hosts")
+	result, mapped, err := pm.ContainerToHost("/etc/hosts")
 	require.NoError(t, err)
+	assert.False(t, mapped)
 	assert.Equal(t, "/etc/hosts", result)
 }
 
 func TestPathMapper_PathTraversalPrevention(t *testing.T) {
 	pm := NewPathMapper("/app/data/projects", "/host/projects")
-	result, err := pm.ContainerToHost("/app/data/projects/../../etc/passwd")
+	result, _, err := pm.ContainerToHost("/app/data/projects/../../etc/passwd")
 	require.NoError(t, err)
 	assert.Equal(t, "/app/etc/passwd", result)
 }
@@ -77,12 +78,12 @@ func TestPathMapper_FromMounts_NestedIndependentMount(t *testing.T) {
 	require.True(t, pm.IsNonMatchingMount())
 
 	// Independently-mounted project resolves to its own host path (longest-prefix wins).
-	got, err := pm.ContainerToHost("/app/data/projects/homeassistant/service_postgresql/postgres_data")
+	got, _, err := pm.ContainerToHost("/app/data/projects/homeassistant/service_postgresql/postgres_data")
 	require.NoError(t, err)
 	assert.Equal(t, "/home/user/homeassistant/service_postgresql/postgres_data", got)
 
 	// A project without its own mount still re-bases under /app/data.
-	got, err = pm.ContainerToHost("/app/data/projects/other/data")
+	got, _, err = pm.ContainerToHost("/app/data/projects/other/data")
 	require.NoError(t, err)
 	assert.Equal(t, "/home/user/.arcane/data/projects/other/data", got)
 }
@@ -93,8 +94,9 @@ func TestPathMapper_FromMounts_NoMatchAndMatchingMounts(t *testing.T) {
 	})
 
 	// Path outside every mount is returned unchanged.
-	got, err := pm.ContainerToHost("/etc/hosts")
+	got, mapped, err := pm.ContainerToHost("/etc/hosts")
 	require.NoError(t, err)
+	assert.False(t, mapped)
 	assert.Equal(t, "/etc/hosts", got)
 
 	// A table whose mounts all match (source == destination) needs no translation.

@@ -7226,7 +7226,7 @@ func TestProjectPathMapperUsesCurrentSettingsInternal(t *testing.T) {
 		require.NoError(t, settingsService.SetStringSetting(t.Context(), "projectsDirectory", containerDir+":"+hostDir))
 		mapper := service.projectPathMapperInternal(t.Context())
 		require.NotNil(t, mapper)
-		mapped, err := mapper.ContainerToHost(filepath.Join(containerDir, "data"))
+		mapped, _, err := mapper.ContainerToHost(filepath.Join(containerDir, "data"))
 		require.NoError(t, err)
 		require.Equal(t, filepath.Join(hostDir, "data"), mapped)
 	}
