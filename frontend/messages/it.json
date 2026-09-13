@@ -3543,5 +3543,12 @@
   "host_ip_placeholder": "0.0.0.0",
   "container_port_placeholder": "80",
   "protocol_tcp": "TCP",
-  "protocol_udp": "UDP"
+  "protocol_udp": "UDP",
+  "features_title": "Caratteristiche",
+  "features_vulnerability_management": "Gestione delle vulnerabilità",
+  "features_vulnerability_description": "Attiva la scansione delle vulnerabilità, i report e l'applicazione delle patch alle immagini basata sulla scansione. Disattivando questa funzione, i report e le impostazioni salvati vengono conservati e le operazioni in corso vengono portate a termine. L'applicazione delle patch alle immagini in modalità autonoma rimane disponibile. Riattivando la funzione, vengono ripristinate le pianificazioni salvate.",
+  "features_vulnerability_disabled": "La gestione delle vulnerabilità è disabilitata per questo ambiente. I report e le impostazioni salvati vengono mantenuti.",
+  "features_unsupported": "Eseguire l'aggiornamento dell'agente Arcane di questo ambiente per gestire la disponibilità delle funzionalità. Il suo comportamento attuale rimane invariato.",
+  "features_unavailable": "Le impostazioni delle funzionalità non sono disponibili. Verifica la connessione all'ambiente e riprova.",
+  "features_environment_override": "Questa impostazione della funzionalità è gestita da una variabile d'ambiente. Per aggiornarla, modificare il valore di FEATURE_VULNERABILITY_MANAGEMENT_ENABLED in questo ambiente."
 }
