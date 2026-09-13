@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { createQuery } from '@tanstack/svelte-query';
+	import { onMount } from 'svelte';
+	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
 	import type { ColumnSpec, MobileFieldVisibility } from '#lib/components/arcane-table/index.js';
@@ -43,6 +44,7 @@
 
 	let { environmentId, onApplyBuild }: Props = $props();
 
+	const queryClient = useQueryClient();
 	const EMPTY_BUILD_HISTORY: Paginated<ImageBuildRecord> = {
 		data: [],
 		pagination: { totalPages: 1, totalItems: 0, currentPage: 1, itemsPerPage: 20 }
@@ -58,45 +60,61 @@
 	let selectedId = $state<string | null>(null);
 	let detailsOpen = $state(false);
 
-	const historyQuery = createQuery(() => ({
-		queryKey: queryKeys.images.buildsList(environmentId, requestOptions),
-		queryFn: () => imageService.getImageBuilds(requestOptions)
-	}));
+	const historyQuery = createQuery(() => {
+		const requestedEnvironmentId = environmentId;
+		const options = requestOptions;
+		return {
+			queryKey: queryKeys.images.buildsList(requestedEnvironmentId, options),
+			queryFn: () => imageService.getImageBuilds(options)
+		};
+	});
 
 	const historyItems = $derived<Paginated<ImageBuildRecord>>(historyQuery.data ?? EMPTY_BUILD_HISTORY);
 
-	let historyLastError: string | null = null;
-	$effect(() => {
-		const error = historyQuery.error;
-		if (!error) return;
-		const message = error instanceof Error ? error.message : m.common_error();
-		if (message && message !== historyLastError) {
-			historyLastError = message;
-			toast.error(message);
-		}
+	const detailQuery = createQuery(() => {
+		const requestedEnvironmentId = environmentId;
+		const buildId = selectedId;
+		return {
+			queryKey: queryKeys.images.buildRecord(requestedEnvironmentId, buildId ?? 'none'),
+			queryFn: () => imageService.getImageBuild(buildId!),
+			enabled: !!buildId && detailsOpen
+		};
 	});
-
-	const detailQuery = createQuery(() => ({
-		queryKey: selectedId
-			? queryKeys.images.buildRecord(environmentId, selectedId)
-			: (['images', environmentId, 'builds', 'none'] as const),
-		queryFn: () => imageService.getImageBuild(selectedId!),
-		enabled: !!selectedId && detailsOpen
-	}));
 
 	const selectedBuild = $derived<ImageBuildRecord | null>(detailQuery.data ?? selectedOptimistic);
 	const detailsLoading = $derived(detailQuery.isPending || detailQuery.isFetching);
 	const outputEntries = $derived.by(() => parseBuildOutput(selectedBuild?.output ?? ''));
 
-	let detailLastError: string | null = null;
-	$effect(() => {
-		const error = detailQuery.error;
-		if (!error) return;
-		const message = error instanceof Error ? error.message : m.common_error();
-		if (message && message !== detailLastError) {
-			detailLastError = message;
+	onMount(() => {
+		const cache = queryClient.getQueryCache();
+		let historyLastError = '';
+		let detailLastError = '';
+		function reportError(error: unknown, detail: boolean) {
+			if (!error || (detail && !detailsOpen)) return;
+			let message: string = m.common_error();
+			if (error instanceof Error) message = error.message;
+			if (detail) {
+				if (message === detailLastError) return;
+				detailLastError = message;
+			} else {
+				if (message === historyLastError) return;
+				historyLastError = message;
+			}
 			toast.error(message);
 		}
+		reportError(historyQuery.error, false);
+		reportError(detailQuery.error, true);
+		return cache.subscribe((event) => {
+			if (event.type !== 'updated' && event.type !== 'observerResultsUpdated') return;
+			if (event.query === cache.find({ queryKey: queryKeys.images.buildsList(environmentId, requestOptions), exact: true })) {
+				reportError(event.query.state.error, false);
+			} else if (
+				selectedId &&
+				event.query === cache.find({ queryKey: queryKeys.images.buildRecord(environmentId, selectedId), exact: true })
+			) {
+				reportError(event.query.state.error, true);
+			}
+		});
 	});
 
 	const detailItems = $derived(selectedBuild ? getBuildDetailItems(selectedBuild) : []);

@@ -11,7 +11,8 @@
 </script>
 
 <KeyValueGrid>
-	{#each envVars as env, index (index)}
+	<!-- Docker environment entries can repeat; these cards have no row-local state. -->
+	{#each envVars as env}
 		{#if env.includes('=')}
 			{@const [key, ...valueParts] = env.split('=')}
 			{@const value = valueParts.join('=')}

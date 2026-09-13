@@ -454,10 +454,11 @@ func ContainerWaitTimeout(trivyTimeoutArg string) time.Duration {
 
 func IsSynologyDockerHost(operatingSystem string) bool {
 	// Docker info may return a multi-line OS string on some Synology models.
-	// e.g. DS925+ (Kernel 5.x) returns "Synology NAS\n (containerized)".
-	// Check each line independently so a match on any line is sufficient.
+	// e.g. DS925+ (Kernel 5.x) returns "Synology NAS\n (containerized)";
+	// older DSM builds (e.g. DS1019+, Kernel 4.4) report just "DiskStation".
 	for line := range strings.SplitSeq(operatingSystem, "\n") {
-		if strings.Contains(strings.ToLower(strings.TrimSpace(line)), "synology") {
+		line = strings.ToLower(strings.TrimSpace(line))
+		if strings.Contains(line, "synology") || strings.Contains(line, "diskstation") {
 			return true
 		}
 	}

@@ -36,15 +36,15 @@ export const load: PageLoad = async ({ parent, url }) => {
 	const operationResult = await tryCatch(
 		(async () =>
 			Promise.all([
-				queryClient.fetchQuery({
+				queryClient.query({
 					queryKey: queryKeys.projects.list(envId, projectRequestOptions),
 					queryFn: () => projectService.getProjectsForEnvironment(envId, projectRequestOptions)
 				}),
-				queryClient.fetchQuery({
+				queryClient.query({
 					queryKey: queryKeys.projects.statusCounts(envId),
 					queryFn: () => projectService.getProjectStatusCountsForEnvironment(envId)
 				}),
-				queryClient.fetchQuery({
+				queryClient.query({
 					queryKey: queryKeys.projects.tags(envId),
 					queryFn: () => projectService.getProjectTagsForEnvironment(envId)
 				})

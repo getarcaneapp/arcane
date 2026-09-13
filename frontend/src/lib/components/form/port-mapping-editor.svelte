@@ -31,15 +31,34 @@
 </script>
 
 <div class="space-y-3">
-	{#each rows as row, index (index)}
+	{#each rows as row, index (row)}
 		<div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
-			<Input type="text" placeholder="0.0.0.0" bind:value={row.hostIp} {disabled} class="flex-1 font-mono" title={m.host()} />
-			<Input type="text" placeholder="8080" bind:value={row.hostPort} {disabled} class="flex-1 font-mono" />
+			<Input
+				type="text"
+				placeholder={m.host_ip_placeholder()}
+				bind:value={row.hostIp}
+				{disabled}
+				class="flex-1 font-mono"
+				title={m.host()}
+			/>
+			<Input
+				type="text"
+				placeholder={m.notifications_signal_port_placeholder()}
+				bind:value={row.hostPort}
+				{disabled}
+				class="flex-1 font-mono"
+			/>
 			<span class="hidden text-muted-foreground sm:inline">→</span>
-			<Input type="text" placeholder="80" bind:value={row.containerPort} {disabled} class="flex-1 font-mono" />
+			<Input
+				type="text"
+				placeholder={m.container_port_placeholder()}
+				bind:value={row.containerPort}
+				{disabled}
+				class="flex-1 font-mono"
+			/>
 			<select bind:value={row.protocol} {disabled} class="min-w-16 rounded-md border bg-background px-3 py-2 text-sm">
-				<option value="tcp">TCP</option>
-				<option value="udp">UDP</option>
+				<option value="tcp">{m.protocol_tcp()}</option>
+				<option value="udp">{m.protocol_udp()}</option>
 			</select>
 			<ArcaneButton
 				action="base"

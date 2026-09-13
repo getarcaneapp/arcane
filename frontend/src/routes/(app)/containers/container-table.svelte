@@ -35,7 +35,7 @@
 	import { hasAnyLoadingState } from '#lib/utils/bulk-actions.js';
 	import { Temporal } from 'temporal-polyfill';
 	import { createContainerActions } from './container-table.actions';
-	import settingsStore from '#lib/stores/config-store.js';
+	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import {
 		getActionStatusMessage,
 		getContainerDisplayName,
@@ -129,6 +129,7 @@
 		if (value === currentSetting && value === currentRequest) return;
 
 		customSettings = { ...customSettings, [settingsKey]: value };
+		tablePreferences?.persistCustomSettings(customSettings);
 		const nextOptions: SearchPaginationSortRequest = {
 			...requestOptions,
 			[requestKey]: value,
@@ -162,6 +163,7 @@
 	const isAnyLoading = $derived(hasAnyLoadingState(actionStatus, isBulkLoading));
 
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
+	let tablePreferences = $state<{ persistCustomSettings(settings: Record<string, unknown>): void }>();
 	let customSettings = $state<Record<string, unknown>>({});
 	let showInternal = $derived.by(() => {
 		return (customSettings['showInternalContainers'] as boolean) ?? false;
@@ -206,7 +208,7 @@
 	const canDeleteContainers = $derived(hasPermission('containers:delete', currentEnvId));
 	const canKillContainers = $derived(hasPermission('containers:kill', currentEnvId));
 	const canConvertToCompose = $derived(
-		hasPermission('projects:create', currentEnvId) && $settingsStore?.experimentalFeaturesEnabled === true
+		hasPermission('projects:create', currentEnvId) && settingsStore.current?.experimentalFeaturesEnabled === true
 	);
 
 	function handleBulkConvert(ids: string[]) {
@@ -255,6 +257,7 @@
 
 	function setGroupByProject(value: boolean) {
 		customSettings = { ...customSettings, groupByProject: value };
+		tablePreferences?.persistCustomSettings(customSettings);
 		groupByProject = value;
 		const nextOptions: SearchPaginationSortRequest = {
 			...requestOptions,
@@ -814,6 +817,7 @@
 {/snippet}
 
 <ArcaneTable
+	bind:this={tablePreferences}
 	persistKey="arcane-container-table"
 	items={containers}
 	bind:requestOptions
@@ -856,6 +860,7 @@
 		checked={hideExposedPorts}
 		onCheckedChange={(v) => {
 			customSettings = { ...customSettings, hideExposedPorts: !!v };
+			tablePreferences?.persistCustomSettings(customSettings);
 		}}
 	>
 		{m.containers_hide_unexposed_ports()}

@@ -1,4 +1,8 @@
 <script lang="ts">
+	import type { Settings } from '#lib/types/settings.js';
+	import SectionCard from '#lib/components/section-card.svelte';
+	import LabeledSwitch from '#lib/components/form/labeled-switch.svelte';
+	import { featureStore } from '#lib/stores/features.store.svelte.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import { onMount } from 'svelte';
@@ -18,7 +22,8 @@
 	import { environmentManagementService } from '#lib/services/env-mgmt-service.js';
 	import { settingsService } from '#lib/services/settings-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-	import type { AppVersionInformation } from '#lib/types/settings.js';
+	import { createQuery } from '@tanstack/svelte-query';
+	import { queryKeys } from '#lib/query/query-keys.js';
 	import type { Environment, EnvironmentStatus } from '#lib/types/environment.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { isEnvironmentOnline, resolveEnvironmentStatus } from '#lib/utils/docker.js';
@@ -49,11 +54,14 @@
 		VolumesIcon,
 		ScanIcon,
 		ShieldCheckIcon,
-		CodeIcon
+		CodeIcon,
+		SettingsIcon
 	} from '#lib/icons/index.js';
 
 	let { data } = $props();
-	let { environment, settings, versionInformation } = $derived(data);
+	let { settings, versionInformation } = $derived(data);
+	let lastEnvironment: Environment | undefined;
+	let environment = $derived((lastEnvironment = data.environment ?? lastEnvironment));
 	let refreshedEnvironment: Environment | null = $state(null);
 	let runtimeEnvironment: Environment = $derived.by(() => {
 		const refreshed = refreshedEnvironment;
@@ -69,20 +77,32 @@
 	let showRegenerateDialog = $state(false);
 	let regeneratedApiKey = $state<string | null>(null);
 	let easyJoinDialogOpen = $state(false);
+	let easyJoinSession = $state(0);
 	let nameInputRef = $state<HTMLInputElement | null>(null);
 	let isEditingApiUrl = $state(false);
 	const easyJoinCandidates = useEasyJoinCandidates();
-
-	// Version state
-	let remoteVersion = $state<AppVersionInformation | null>(null);
-	let isLoadingVersion = $state(false);
 
 	// Only non-edge custom URL tests should temporarily override the displayed status.
 	let statusOverride = $state<EnvironmentStatus | null>(null);
 	let currentStatus = $derived(resolveEnvironmentStatus(runtimeEnvironment, statusOverride));
 	let isCurrentlyOnline = $derived(isEnvironmentOnline(runtimeEnvironment, statusOverride));
+
+	const versionQuery = createQuery(() => {
+		const environmentId = environment.id;
+		return {
+			queryKey: queryKeys.system.versionInfo(environmentId),
+			queryFn: () => environmentManagementService.getVersion(environmentId),
+			enabled: environmentId !== '0' && isCurrentlyOnline,
+			retry: false
+		};
+	});
+	const remoteVersion = $derived(versionQuery.data ?? null);
+	const isLoadingVersion = $derived(versionQuery.isFetching);
+
 	let isCurrentlyStandby = $derived(currentStatus === 'standby');
-	let showSettingsTabs = $derived(runtimeEnvironment.enabled && isCurrentlyOnline && settings !== null);
+	let showSettingsTabs = $derived(
+		runtimeEnvironment.enabled && isCurrentlyOnline && settings !== null && hasPermission('settings:read', environment.id)
+	);
 	let hasMTLSAssets = $derived(Boolean(runtimeEnvironment.edgeMTLSCertificate));
 	let canPairEnvironments = $derived(hasPermission('environments:pair'));
 	let showMTLSDownloads = $derived(
@@ -149,7 +169,10 @@
 				id: 'easy-join',
 				action: 'create',
 				label: m.swarm_easy_join_action(),
-				onclick: () => (easyJoinDialogOpen = true),
+				onclick: () => {
+					easyJoinSession += 1;
+					easyJoinDialogOpen = true;
+				},
 				icon: ConnectionIcon
 			});
 		}
@@ -184,6 +207,7 @@
 				icon: ConnectionIcon
 			});
 		}
+		items.push({ value: 'features', label: m.features_title(), icon: SettingsIcon });
 
 		if (showSettingsTabs) {
 			items.push(
@@ -225,12 +249,18 @@
 	});
 	const activeTab = $derived(urlTab.value);
 
+	const vulnerabilityManagementEnabled = $derived(featureStore.isEnabled('vulnerabilityManagement', environment.id));
 	let securitySubTab = $state('trivy');
-	const securityTabItems: TabItem[] = [
-		{ value: 'trivy', label: m.security_vulnerability_scanning_heading(), icon: ScanIcon },
+	const activeSecuritySubTab = $derived(
+		!vulnerabilityManagementEnabled && securitySubTab === 'trivy' ? 'patching' : securitySubTab
+	);
+	const securityTabItems: TabItem[] = $derived([
+		...(vulnerabilityManagementEnabled
+			? [{ value: 'trivy', label: m.security_vulnerability_scanning_heading(), icon: ScanIcon }]
+			: []),
 		{ value: 'patching', label: m.security_image_patching_heading(), icon: ShieldCheckIcon },
 		{ value: 'lifecycle', label: m.security_lifecycle_hooks_heading(), icon: CodeIcon }
-	];
+	]);
 
 	$effect(() => {
 		// Don't bounce away when gitops is the only tab (offline/disabled environment) — the
@@ -280,6 +310,7 @@
 		pruneNetworkUntil: settings?.pruneNetworkUntil ?? '',
 		pruneBuildCacheMode: settings?.pruneBuildCacheMode ?? 'none',
 		pruneBuildCacheUntil: settings?.pruneBuildCacheUntil ?? '',
+		featureVulnerabilityManagementEnabled: settings?.featureVulnerabilityManagementEnabled ?? true,
 		vulnerabilityScanEnabled: settings?.vulnerabilityScanEnabled ?? false,
 		toolsImageRegistry: settings?.toolsImageRegistry ?? 'ghcr.io',
 		updateCheckRegistry: settings?.updateCheckRegistry ?? 'auto',
@@ -311,16 +342,38 @@
 
 	// Custom save handler for environment-specific settings
 	async function saveEnvironmentSettings(formData: EnvironmentFormValues) {
-		// Update environment basic info
-		await environmentManagementService.update(environment.id, {
-			name: formData.name,
-			enabled: formData.enabled,
-			apiUrl: formData.apiUrl
-		});
+		const environmentId = environment.id;
+		const featureChanged =
+			formData.featureVulnerabilityManagementEnabled !== currentSettings.featureVulnerabilityManagementEnabled;
+		if (
+			featureChanged &&
+			(!hasPermission('settings:write', environmentId) || !featureStore.isSupported('vulnerabilityManagement', environmentId))
+		) {
+			throw new Error(m.features_unavailable());
+		}
+		if (
+			formData.name !== environment.name ||
+			formData.enabled !== environment.enabled ||
+			formData.apiUrl !== environment.apiUrl
+		) {
+			await environmentManagementService.update(environmentId, {
+				name: formData.name,
+				enabled: formData.enabled,
+				apiUrl: formData.apiUrl
+			});
+		}
+		const parsedCurrentSettings = formSchema.safeParse(currentSettings);
+		const savedFormValues = parsedCurrentSettings.success ? parsedCurrentSettings.data : currentSettings;
+		const otherSettingsChanged = (Object.keys(formData) as (keyof EnvironmentFormValues)[]).some(
+			(key) =>
+				!['name', 'enabled', 'apiUrl', 'featureVulnerabilityManagementEnabled'].includes(key) &&
+				formData[key] !== savedFormValues[key]
+		);
+		let updates: Partial<Settings> = {};
 
 		// Update environment settings if they exist
-		if (settings) {
-			await settingsService.updateSettingsForEnvironment(environment.id, {
+		if (settings && otherSettingsChanged) {
+			updates = {
 				pollingEnabled: formData.pollingEnabled,
 				imageEventWatcherEnabled: formData.imageEventWatcherEnabled,
 				autoUpdate: formData.autoUpdate,
@@ -374,7 +427,16 @@
 				autoHealExcludedContainers: formData.autoHealExcludedContainers,
 				autoHealMaxRestarts: formData.autoHealMaxRestarts,
 				autoHealRestartWindow: formData.autoHealRestartWindow
-			});
+			};
+		}
+		if (featureChanged) updates.featureVulnerabilityManagementEnabled = formData.featureVulnerabilityManagementEnabled;
+		if (Object.keys(updates).length > 0) await settingsService.updateSettingsForEnvironment(environmentId, updates);
+		if (featureChanged) {
+			await featureStore.refresh(environmentId);
+			if (featureStore.status(environmentId) !== 'ready') throw new Error(m.features_unavailable());
+			if (featureStore.isEnabled('vulnerabilityManagement', environmentId) !== formData.featureVulnerabilityManagementEnabled) {
+				throw new Error(m.features_environment_override());
+			}
 		}
 
 		await refreshEnvironment();
@@ -417,16 +479,9 @@
 
 	function handleShellSelectChange(value: string) {
 		if (value !== 'custom') {
-			$formInputs.defaultShell.value = value;
+			formInputs.defaultShell.value = value;
 		}
 	}
-
-	// Fetch version when environment is online
-	$effect(() => {
-		if (environment.id !== '0' && isCurrentlyOnline && !remoteVersion && !isLoadingVersion) {
-			fetchVersion();
-		}
-	});
 
 	onMount(() => {
 		if (environment.isEdge) {
@@ -457,24 +512,6 @@
 		}
 	}
 
-	async function fetchVersion() {
-		try {
-			const operationResult = await tryCatch(
-				(async () => {
-					isLoadingVersion = true;
-					remoteVersion = await environmentManagementService.getVersion(environment.id);
-				})()
-			);
-			if (operationResult.error !== null) {
-				const err = operationResult.error;
-
-				console.error('Failed to fetch environment version:', err);
-			}
-		} finally {
-			isLoadingVersion = false;
-		}
-	}
-
 	async function refreshEnvironment() {
 		if (isRefreshing) return;
 		try {
@@ -482,7 +519,8 @@
 				(async () => {
 					isRefreshing = true;
 					statusOverride = null;
-					remoteVersion = null;
+					await featureStore.refresh(environment.id);
+					if (environment.id !== '0' && isCurrentlyOnline) await versionQuery.refetch();
 					await refreshAll();
 				})()
 			);
@@ -524,7 +562,7 @@
 			const operationResult = await tryCatch(
 				(async () => {
 					isTestingConnection = true;
-					const customUrl = $formInputs.apiUrl.value !== environment.apiUrl ? $formInputs.apiUrl.value : undefined;
+					const customUrl = formInputs.apiUrl.value !== environment.apiUrl ? formInputs.apiUrl.value : undefined;
 					const result = await environmentManagementService.testConnection(environment.id, customUrl);
 
 					const nextStatus = result.status as EnvironmentStatus;
@@ -603,10 +641,10 @@
 				<div class="min-w-0 flex-1">
 					<div class="flex min-h-9 min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
 						<EditableName
-							bind:value={$formInputs.name.value}
+							bind:value={formInputs.name.value}
 							bind:ref={nameInputRef}
 							variant="inline"
-							error={$formInputs.name.error ?? undefined}
+							error={formInputs.name.error ?? undefined}
 							originalValue={environment.name}
 							placeholder={m.environments_name_placeholder()}
 							class="max-w-[14rem] min-w-0 sm:max-w-[20rem] md:max-w-[26rem]"
@@ -618,26 +656,26 @@
 								<div
 									class={cn(
 										'size-2 rounded-full transition-colors',
-										$formInputs.enabled.value
+										formInputs.enabled.value
 											? 'bg-emerald-500 shadow-[0_0_8px_var(--color-emerald-500)]'
 											: 'bg-muted-foreground/40'
 									)}
 								></div>
 								<span class="text-sm font-medium">
-									{$formInputs.enabled.value ? m.common_enabled() : m.common_disabled()}
+									{formInputs.enabled.value ? m.common_enabled() : m.common_disabled()}
 								</span>
 							</div>
 							{#if environment.id === '0'}
 								<ArcaneTooltip.Root>
 									<ArcaneTooltip.Trigger>
-										<Switch id="env-enabled-header" disabled={true} bind:checked={$formInputs.enabled.value} />
+										<Switch id="env-enabled-header" disabled={true} bind:checked={formInputs.enabled.value} />
 									</ArcaneTooltip.Trigger>
 									<ArcaneTooltip.Content>
 										<p>{m.environments_local_setting_disabled()}</p>
 									</ArcaneTooltip.Content>
 								</ArcaneTooltip.Root>
 							{:else}
-								<Switch id="env-enabled-header" bind:checked={$formInputs.enabled.value} />
+								<Switch id="env-enabled-header" bind:checked={formInputs.enabled.value} />
 							{/if}
 						</div>
 					</div>
@@ -646,8 +684,8 @@
 							<Input
 								id="api-url"
 								type="url"
-								bind:value={$formInputs.apiUrl.value}
-								class="h-7 w-full max-w-md font-mono text-xs {$formInputs.apiUrl.error ? 'border-destructive' : ''}"
+								bind:value={formInputs.apiUrl.value}
+								class="h-7 w-full max-w-md font-mono text-xs {formInputs.apiUrl.error ? 'border-destructive' : ''}"
 								placeholder={m.environments_api_url_placeholder()}
 								autofocus
 								onkeydown={(e) => {
@@ -656,7 +694,7 @@
 										isEditingApiUrl = false;
 									}
 									if (e.key === 'Escape') {
-										$formInputs.apiUrl.value = environment.apiUrl;
+										formInputs.apiUrl.value = environment.apiUrl;
 										isEditingApiUrl = false;
 									}
 								}}
@@ -665,7 +703,7 @@
 						{:else if environment.id === '0'}
 							<ArcaneTooltip.Root>
 								<ArcaneTooltip.Trigger class="min-w-0">
-									<span class="block truncate px-1 font-mono text-xs text-muted-foreground">{$formInputs.apiUrl.value}</span>
+									<span class="block truncate px-1 font-mono text-xs text-muted-foreground">{formInputs.apiUrl.value}</span>
 								</ArcaneTooltip.Trigger>
 								<ArcaneTooltip.Content>
 									<p>{m.environments_local_setting_disabled()}</p>
@@ -678,13 +716,13 @@
 								title={m.environments_api_url()}
 								onclick={() => (isEditingApiUrl = true)}
 							>
-								{$formInputs.apiUrl.value || m.environments_api_url_placeholder()}
+								{formInputs.apiUrl.value || m.environments_api_url_placeholder()}
 							</button>
 						{/if}
-						<CopyButton text={$formInputs.apiUrl.value} size="icon" class="size-6 shrink-0" />
+						<CopyButton text={formInputs.apiUrl.value} size="icon" class="size-6 shrink-0" />
 					</div>
-					{#if $formInputs.apiUrl.error}
-						<p class="mt-1 text-xs text-destructive">{$formInputs.apiUrl.error}</p>
+					{#if formInputs.apiUrl.error}
+						<p class="mt-1 text-xs text-destructive">{formInputs.apiUrl.error}</p>
 					{/if}
 				</div>
 			</div>
@@ -777,6 +815,33 @@
 			<TabBar items={tabItems} value={activeTab} onValueChange={handleTabChange} />
 		</div>
 
+		<Tabs.Content value="features">
+			<section id="features">
+				<SectionCard title={m.features_title()} icon={SettingsIcon} variant="transparent">
+					{#if featureStore.status(environment.id) === 'ready'}
+						<LabeledSwitch
+							id="vulnerability-management"
+							bind:checked={formInputs.featureVulnerabilityManagementEnabled.value}
+							label={m.features_vulnerability_management()}
+							description={m.features_vulnerability_description()}
+							error={formInputs.featureVulnerabilityManagementEnabled.error}
+							disabled={!isCurrentlyOnline ||
+								!settings ||
+								settings.uiConfigDisabled ||
+								!hasPermission('settings:write', environment.id) ||
+								!featureStore.isSupported('vulnerabilityManagement', environment.id)}
+						/>
+						{#if !featureStore.isSupported('vulnerabilityManagement', environment.id)}
+							<p role="status" class="mt-4 text-sm text-muted-foreground">{m.features_unsupported()}</p>
+						{/if}
+					{:else}
+						<p role="status">{m.features_unavailable()}</p>
+						<ArcaneButton action="base" customLabel={m.common_retry()} onclick={refreshEnvironment} />
+					{/if}
+				</SectionCard>
+			</section>
+		</Tabs.Content>
+
 		{#if runtimeEnvironment.isEdge}
 			<Tabs.Content value="connection">
 				<ConnectionEdgeTab
@@ -791,38 +856,38 @@
 
 		{#if showSettingsTabs}
 			<Tabs.Content value="storage">
-				<StorageTab {formInputs} />
+				<StorageTab bind:formInputs />
 			</Tabs.Content>
 
 			<Tabs.Content value="docker">
-				<DockerTab {formInputs} environmentId={environment.id} {shellSelectValue} {handleShellSelectChange} {shellOptions} />
+				<DockerTab bind:formInputs environmentId={environment.id} {shellSelectValue} {handleShellSelectChange} {shellOptions} />
 			</Tabs.Content>
 
 			<Tabs.Content value="security">
-				<Tabs.Root bind:value={securitySubTab} class="w-full">
+				<Tabs.Root value={activeSecuritySubTab} class="w-full">
 					<div class="mb-4">
 						<TabBar
 							items={securityTabItems}
-							value={securitySubTab}
+							value={activeSecuritySubTab}
 							onValueChange={(value) => {
 								securitySubTab = value;
 							}}
 						/>
 					</div>
 					<Tabs.Content value="trivy">
-						<TrivySecuritySettings {formInputs} environmentId={environment.id} />
+						<TrivySecuritySettings bind:formInputs environmentId={environment.id} />
 					</Tabs.Content>
 					<Tabs.Content value="patching">
-						<ImagePatchSettings {formInputs} />
+						<ImagePatchSettings bind:formInputs environmentId={environment.id} />
 					</Tabs.Content>
 					<Tabs.Content value="lifecycle">
-						<LifecycleSecuritySettings {formInputs} />
+						<LifecycleSecuritySettings bind:formInputs />
 					</Tabs.Content>
 				</Tabs.Root>
 			</Tabs.Content>
 
 			<Tabs.Content value="jobs">
-				<JobsTab {formInputs} environmentId={environment.id} />
+				<JobsTab bind:formInputs environmentId={environment.id} />
 			</Tabs.Content>
 		{/if}
 
@@ -847,12 +912,14 @@
 	</AlertDialog.Root>
 </div>
 
-<EasyJoinDialog
-	bind:open={easyJoinDialogOpen}
-	managerEnvironmentId={easyJoinCandidates.managerEnvironmentId ?? undefined}
-	targetEnvironmentId={runtimeEnvironment.id}
-	onComplete={easyJoinCandidates.refresh}
-/>
+{#key `${easyJoinSession}:${easyJoinCandidates.managerEnvironmentId}`}
+	<EasyJoinDialog
+		bind:open={easyJoinDialogOpen}
+		managerEnvironmentId={easyJoinCandidates.managerEnvironmentId ?? undefined}
+		targetEnvironmentId={runtimeEnvironment.id}
+		onComplete={easyJoinCandidates.refresh}
+	/>
+{/key}
 
 <MobileFloatingFormActions
 	hasChanges={settingsForm.hasChanges}

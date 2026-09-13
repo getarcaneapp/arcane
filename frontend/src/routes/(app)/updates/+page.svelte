@@ -110,12 +110,15 @@
 
 	const excludedContainers = $derived(settingsQuery.data?.autoUpdateExcludedContainers ?? '');
 
-	const projectUpdateDetailsQuery = createQuery<Record<string, ImageUpdateInfoDto>>(() => ({
-		queryKey: ['updates', 'projects', 'details', envId, projectUpdatedImageRefs],
-		queryFn: () =>
-			projectUpdatedImageRefs.length > 0 ? imageService.getUpdateInfoByRefs(projectUpdatedImageRefs) : Promise.resolve({}),
-		enabled: projectUpdatedImageRefs.length > 0
-	}));
+	const projectUpdateDetailsQuery = createQuery<Record<string, ImageUpdateInfoDto>>(() => {
+		const environmentId = envId;
+		const imageRefs = projectUpdatedImageRefs;
+		return {
+			queryKey: ['updates', 'projects', 'details', environmentId, imageRefs],
+			queryFn: () => imageService.getUpdateInfoByRefs(imageRefs),
+			enabled: imageRefs.length > 0
+		};
+	});
 
 	const checkUpdatesMutation = createMutation(() => ({
 		mutationKey: ['updates', 'check-all', envId],

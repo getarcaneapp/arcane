@@ -1,4 +1,4 @@
 import ConfirmDialog from './confirm-dialog.svelte';
-export { confirmDialogStore, openConfirmDialog } from './store';
+export { confirmDialogState, openConfirmDialog } from './store.svelte.js';
 
 export { ConfirmDialog };

@@ -3,7 +3,8 @@
 	import { goto, refreshAll } from '$app/navigation';
 	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
-	import { preventDefault, createForm } from '#lib/utils/settings.js';
+	import { preventDefault, createForm } from '#lib/utils/settings.svelte.js';
+
 	import TemplateSelectionDialog from '#lib/components/dialogs/template-selection-dialog.svelte';
 	import { m } from '#lib/paraglide/messages.js';
 	import { swarmService } from '#lib/services/swarm-service.js';
@@ -31,7 +32,7 @@
 		workspaceFileLanguage
 	} from '#lib/utils/workspace-files.js';
 	import { WorkspaceDraftState } from '#lib/components/workspace-editor/workspace-draft-state.svelte.js';
-	import settingsStore from '#lib/stores/config-store.js';
+	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import {
 		createComposeEditorSchema,
 		createComposeTemplateDialogFlow,
@@ -40,7 +41,7 @@
 	} from '#lib/utils/compose-flow.js';
 
 	let { data } = $props();
-	const workspaceMaxFileSizeMb = $derived($settingsStore?.projectWorkspaceMaxFileSizeMb ?? 10);
+	const workspaceMaxFileSizeMb = $derived(settingsStore.current?.projectWorkspaceMaxFileSizeMb ?? 10);
 
 	let ui = $state({
 		saving: false,
@@ -77,7 +78,8 @@
 	const submitLabel = $derived(isEditMode ? m.common_save() : m.common_create_button({ resource: m.swarm_stack() }));
 	const submitLoadingLabel = $derived(isEditMode ? m.common_saving() : m.common_action_creating());
 
-	const { inputs, ...form } = createForm<typeof formSchema>(formSchema, getInitialFormData());
+	const form = createForm<typeof formSchema>(formSchema, getInitialFormData());
+	let inputs = $derived(form.inputs);
 
 	let composeOpen = $state(true);
 	let envOpen = $state(true);
@@ -187,8 +189,8 @@
 
 	const globalVariableMap = $derived(globalVariablesToMap(data.globalVariables));
 	const stackEditorContext = $derived({
-		envContent: $inputs.envContent.value,
-		composeContents: [$inputs.composeContent.value, overrideContent].filter((content) => content.length > 0),
+		envContent: inputs.envContent.value,
+		composeContents: [inputs.composeContent.value, overrideContent].filter((content) => content.length > 0),
 		globalVariables: globalVariableMap
 	});
 
@@ -243,7 +245,7 @@
 	}
 
 	const { composeHandlers, handleCreateTemplate } = createComposeTemplateDialogFlow({
-		getInputs: () => $inputs,
+		getInputs: () => inputs,
 		setInputValue: (key, value) => form.setValue(key, value),
 		closeTemplateDialog: () => (ui.showTemplateDialog = false),
 		validate: form.validate,
@@ -251,7 +253,7 @@
 	});
 
 	const canSubmit = $derived(
-		!!$inputs.name.value && !!$inputs.composeContent.value && !ui.saving && !ui.converting && !ui.isLoadingTemplateContent
+		!!inputs.name.value && !!inputs.composeContent.value && !ui.saving && !ui.converting && !ui.isLoadingTemplateContent
 	);
 </script>
 
@@ -271,10 +273,10 @@
 				<div class="hidden h-4 w-px bg-border sm:block"></div>
 				<div class="hidden items-center gap-3 sm:flex">
 					<EditableName
-						bind:value={$inputs.name.value}
+						bind:value={inputs.name.value}
 						bind:ref={nameInputRef}
 						variant="inline"
-						error={$inputs.name.error ?? undefined}
+						error={inputs.name.error ?? undefined}
 						originalValue={initialName}
 						placeholder={m.compose_project_name_placeholder()}
 						canEdit={!isEditMode && !ui.saving && !ui.isLoadingTemplateContent}
@@ -285,8 +287,8 @@
 
 			<div class="flex items-center gap-2">
 				<ComposeCreateMenu
-					tooltipOpen={!$inputs.name.value && !ui.saving && !ui.converting && !ui.isLoadingTemplateContent ? undefined : false}
-					tooltipVisible={$inputs.name.value === ''}
+					tooltipOpen={!inputs.name.value && !ui.saving && !ui.converting && !ui.isLoadingTemplateContent ? undefined : false}
+					tooltipVisible={inputs.name.value === ''}
 					tooltipTitle={m.compose_project_name_tooltip_title()}
 					tooltipDescription={m.compose_project_name_tooltip_description()}
 					tooltipExample={m.compose_project_name_tooltip_example()}
@@ -317,10 +319,10 @@
 			<div class="flex h-full min-h-0 flex-col">
 				<div class="block flex-shrink-0 px-2 py-4 sm:hidden sm:px-6">
 					<EditableName
-						bind:value={$inputs.name.value}
+						bind:value={inputs.name.value}
 						bind:ref={nameInputRef}
 						variant="block"
-						error={$inputs.name.error ?? undefined}
+						error={inputs.name.error ?? undefined}
 						originalValue={initialName}
 						placeholder={m.compose_project_name_placeholder()}
 						canEdit={!isEditMode && !ui.saving && !ui.isLoadingTemplateContent}
@@ -426,8 +428,8 @@
 													bind:open={composeOpen}
 													title="compose.yaml"
 													language="yaml"
-													bind:value={$inputs.composeContent.value}
-													error={$inputs.composeContent.error ?? undefined}
+													bind:value={inputs.composeContent.value}
+													error={inputs.composeContent.error ?? undefined}
 													fileId={isEditMode ? `swarm:stacks:${initialName}:compose` : 'swarm:stacks:new:compose'}
 													editorContext={stackEditorContext}
 													bind:outlineOpen={treeOutlineOpen}
@@ -464,8 +466,8 @@
 													bind:open={envOpen}
 													title=".env"
 													language="env"
-													bind:value={$inputs.envContent.value}
-													error={$inputs.envContent.error ?? undefined}
+													bind:value={inputs.envContent.value}
+													error={inputs.envContent.error ?? undefined}
 													fileId={isEditMode ? `swarm:stacks:${initialName}:env` : 'swarm:stacks:new:env'}
 													editorContext={stackEditorContext}
 													bind:outlineOpen={treeOutlineOpen}

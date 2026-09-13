@@ -21,8 +21,7 @@ import type {
 	ActivityType
 } from '#lib/types/activity.type.js';
 import type { Environment } from '#lib/types/environment.js';
-import userStore from '#lib/stores/user-store.js';
-import { get } from 'svelte/store';
+import userStore from '#lib/stores/user-store.svelte.js';
 import {
 	discardPendingActivityToasts,
 	queueActivityCompletionToast
@@ -165,6 +164,7 @@ function createActivityStore() {
 	// Last observed status per activity, for completion-toast transition
 	// detection. Intentionally non-reactive: only stream handling reads it.
 	const observedStatusById = new Map<string, ActivityStatus>();
+	const activitySubscribers = new Set<(activities: readonly Activity[]) => void>();
 
 	// Toast when an activity this session observed as active reaches
 	// success/failed while the sheet is closed. Activities that first appear
@@ -184,7 +184,7 @@ function createActivityStore() {
 		}
 		// Only the initiating user's own actions toast — scheduled jobs and
 		// other users' work carry no/another userId and stay silent.
-		const currentUserId = get(userStore)?.id;
+		const currentUserId = userStore.current?.id;
 		if (!activity.startedBy?.userId || !currentUserId || activity.startedBy.userId !== currentUserId) {
 			return;
 		}
@@ -194,7 +194,7 @@ function createActivityStore() {
 	const core = createEnvironmentStreamStore<ActivityEnvironmentState, ActivityStreamEvent>({
 		label: 'Activity',
 		includeEnvironment: (environment) => userStore.hasPermission('activities:read', environment.id),
-		subscribeEnvironmentFilter: (reconcile) => userStore.subscribe(reconcile),
+		subscribeEnvironmentFilter: (reconcile) => userStore.onChange(reconcile),
 		createEnvironmentState(environment: Pick<Environment, 'id' | 'name'>): ActivityEnvironmentState {
 			return {
 				id: environment.id || LOCAL_DOCKER_ENVIRONMENT_ID,
@@ -352,6 +352,7 @@ function createActivityStore() {
 				observedStatusById.delete(id);
 			}
 		}
+		for (const subscriber of activitySubscribers) subscriber(_activities);
 	}
 
 	function mergeActivityInternal(activity: Activity) {
@@ -544,6 +545,13 @@ function createActivityStore() {
 	}
 
 	return {
+		subscribeActivities(subscriber: (activities: readonly Activity[]) => void): () => void {
+			activitySubscribers.add(subscriber);
+			subscriber(_activities);
+			return () => {
+				activitySubscribers.delete(subscriber);
+			};
+		},
 		get activities(): Activity[] {
 			return _activities;
 		},

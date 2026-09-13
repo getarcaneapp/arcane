@@ -58,6 +58,7 @@
 	let selectedEnvironmentForUpgrade = $state<Environment | null>(null);
 	let selectedVersionInfoForUpgrade = $state<AppVersionInformation | null>(null);
 	let easyJoinDialogOpen = $state(false);
+	let easyJoinSession = $state(0);
 	let easyJoinTarget = $state<Environment | null>(null);
 	const easyJoinCandidates = useEasyJoinCandidates();
 
@@ -89,6 +90,7 @@
 	}
 
 	function openEasyJoin(item: Environment) {
+		easyJoinSession += 1;
 		easyJoinTarget = item;
 		easyJoinDialogOpen = true;
 	}
@@ -169,14 +171,6 @@
 			return operationResult.data;
 		}
 	}
-
-	$effect(() => {
-		if (!showUpgradeDialog) {
-			upgradingEnvironmentId = null;
-			selectedEnvironmentForUpgrade = null;
-			selectedVersionInfoForUpgrade = null;
-		}
-	});
 
 	async function handleToggleEnabled(environment: Environment) {
 		const newEnabled = !environment.enabled;
@@ -450,7 +444,13 @@
 />
 
 <UpdateCenterDialog
-	bind:open={showUpgradeDialog}
+	bind:open={
+		() => showUpgradeDialog,
+		(open) => {
+			showUpgradeDialog = open;
+			if (!open) upgradingEnvironmentId = null;
+		}
+	}
 	onConfirm={handleConfirmUpgrade}
 	versionInformation={selectedVersionInfoForUpgrade ?? undefined}
 	canInstall={canInstallUpdates}
@@ -459,9 +459,11 @@
 	bind:upgrading={isLoading.upgrading}
 />
 
-<EasyJoinDialog
-	bind:open={easyJoinDialogOpen}
-	managerEnvironmentId={easyJoinCandidates.managerEnvironmentId ?? undefined}
-	targetEnvironmentId={easyJoinTarget?.id}
-	onComplete={easyJoinCandidates.refresh}
-/>
+{#key `${easyJoinSession}:${easyJoinCandidates.managerEnvironmentId}`}
+	<EasyJoinDialog
+		bind:open={easyJoinDialogOpen}
+		managerEnvironmentId={easyJoinCandidates.managerEnvironmentId ?? undefined}
+		targetEnvironmentId={easyJoinTarget?.id}
+		onComplete={easyJoinCandidates.refresh}
+	/>
+{/key}

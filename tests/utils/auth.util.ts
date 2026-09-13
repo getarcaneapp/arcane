@@ -38,25 +38,27 @@ async function changeDefaultPassword(page: Page, currentPassword: string, newPas
 	await dialog.getByRole('textbox', { name: 'Current Password' }).fill(currentPassword);
 	await dialog.getByRole('textbox', { name: 'New Password', exact: true }).fill('abcdefgh');
 	await dialog.getByRole('textbox', { name: 'Confirm New Password' }).fill('abcdefgh');
-	const policyResponsePromise = page.waitForResponse(
-		(response) =>
-			response.status() === 400 &&
-			response.request().method() === 'POST' &&
-			new URL(response.url()).pathname === '/api/auth/password'
-	);
-	await dialog.getByRole('button', { name: 'Change Password' }).click();
-	const policyResponse = await policyResponsePromise;
+	const submitButton = dialog.getByRole('button', { name: 'Change Password' });
+	await expect(submitButton).toBeDisabled();
+	await dialog.getByRole('textbox', { name: 'New Password', exact: true }).fill('abcdefghijkl');
+	await dialog.getByRole('textbox', { name: 'Confirm New Password' }).fill('abcdefghijkl');
+	await expect(submitButton).toBeDisabled();
+	const policyResponse = await page.request.post('/api/auth/password', {
+		data: { currentPassword, newPassword: 'abcdefghijkl' }
+	});
+	expect(policyResponse.status()).toBe(400);
 	expect(await policyResponse.json()).toMatchObject({
 		status: 400,
 		type: 'urn:arcane:problem:password-policy:strong'
 	});
 	await expect(
-		page.getByText('12+ chars with upper, lower, number, and symbol.', { exact: true })
+		dialog.getByText('12+ chars with upper, lower, number, and symbol.', { exact: true })
 	).toBeVisible();
 
 	await dialog.getByRole('textbox', { name: 'New Password', exact: true }).fill(newPassword);
 	await dialog.getByRole('textbox', { name: 'Confirm New Password' }).fill(newPassword);
-	await dialog.getByRole('button', { name: 'Change Password' }).click();
+	await expect(submitButton).toBeEnabled();
+	await submitButton.click();
 	await page
 		.getByRole('listitem')
 		.filter({ hasText: 'Password changed successfully' })

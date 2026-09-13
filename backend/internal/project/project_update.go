@@ -60,6 +60,9 @@ func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, na
 	if err := ensureProjectMutableInternal(&proj); err != nil {
 		return nil, err
 	}
+	if err := ensureProjectEnvReadableInternal(ctx, projectsDirectory, proj.Path); err != nil {
+		return nil, err
+	}
 	if err := s.ensureProjectStoppedForRenameInternal(ctx, &proj, name); err != nil {
 		return nil, err
 	}
@@ -95,6 +98,16 @@ func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, na
 
 	slog.InfoContext(ctx, "project updated", "projectID", proj.ID, "name", proj.Name)
 	return &proj, nil
+}
+
+// ensureProjectEnvReadableInternal rejects operator-driven file writes into a
+// project whose .env exists but cannot be read by the runtime user.
+func ensureProjectEnvReadableInternal(ctx context.Context, projectsDirectory, projectPath string) error {
+	cfgErr := projects.CheckProjectEnvAccess(ctx, projectsDirectory, projectPath)
+	if cfgErr == nil || !cfgErr.BlocksOperations {
+		return nil
+	}
+	return common.Classify(common.ErrProjectEnvUnreadable, errors.Errorf("%s is not readable by the runtime user (uid %d, gid %d); fix its ownership/read permission or set PUID/PGID to a user that can read it", cfgErr.Path, cfgErr.UID, cfgErr.GID))
 }
 
 // resolveAuthoritativeProjectNameInternal enforces that a top-level `name:` in

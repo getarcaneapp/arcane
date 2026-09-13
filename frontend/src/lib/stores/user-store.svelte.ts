@@ -1,6 +1,6 @@
 import type { User } from '#lib/types/auth.js';
 import { GLOBAL_SCOPE, SUDO_PERMISSION } from '#lib/types/auth.js';
-import { writable, get } from 'svelte/store';
+import { untrack } from 'svelte';
 import { setLocale } from '#lib/utils/formatting.js';
 import {
 	applyAccentColor,
@@ -10,11 +10,12 @@ import {
 	applyInterfaceAnimations,
 	applyOledMode,
 	FONT_SIZE_DEFAULT
-} from '#lib/utils/theme.js';
+} from '#lib/utils/theme.svelte.js';
 import { setMode } from 'mode-watcher';
 import { timeFormatStore } from '#lib/stores/time-format.store.svelte.js';
 
-const userStore = writable<User | null>(null);
+let current = $state.raw<User | null>(null);
+const listeners = new Set<(user: User | null) => void>();
 
 export const userHasPermissionInAnyEnvironment = (user: User | null | undefined, perm: string): boolean => {
 	if (!user?.permissionsByEnv) return false;
@@ -42,7 +43,10 @@ const setUser = async (user: User) => {
 		setMode(preferences.themeMode);
 	}
 
-	userStore.set(user);
+	current = user;
+	untrack(() => {
+		for (const listener of listeners) listener(user);
+	});
 };
 
 const clearUser = () => {
@@ -55,7 +59,10 @@ const clearUser = () => {
 	applyInterfaceAnimations(true);
 	// Light/dark mode is deliberately left alone on logout: it is a device-local
 	// preference and flipping it mid-session is jarring.
-	userStore.set(null);
+	current = null;
+	untrack(() => {
+		for (const listener of listeners) listener(null);
+	});
 };
 
 /**
@@ -66,7 +73,7 @@ const clearUser = () => {
  * checking org-level permissions, or as a fallback before an env is selected).
  */
 const permissions = (envId?: string): Set<string> => {
-	const user = get(userStore);
+	const user = current;
 	if (!user?.permissionsByEnv) return new Set();
 	const out = new Set<string>();
 	const global = user.permissionsByEnv[GLOBAL_SCOPE];
@@ -95,12 +102,12 @@ const hasAnyPermission = (perms: string[], envId?: string): boolean => {
 
 /** Returns true if the caller may perform `perm` in at least one effective environment scope. */
 const hasPermissionInAnyEnvironment = (perm: string): boolean => {
-	return userHasPermissionInAnyEnvironment(get(userStore), perm);
+	return userHasPermissionInAnyEnvironment(current, perm);
 };
 
 /** Returns true if the caller effectively holds global administrator access. */
 const isGlobalAdmin = (): boolean => {
-	const user = get(userStore);
+	const user = current;
 	if (!user) return false;
 	if (typeof user.isGlobalAdmin === 'boolean') return user.isGlobalAdmin;
 	const global = user.permissionsByEnv?.[GLOBAL_SCOPE];
@@ -109,7 +116,16 @@ const isGlobalAdmin = (): boolean => {
 };
 
 export default {
-	subscribe: userStore.subscribe,
+	get current() {
+		return current;
+	},
+	onChange(listener: (user: User | null) => void) {
+		listeners.add(listener);
+		untrack(() => listener(current));
+		return () => {
+			listeners.delete(listener);
+		};
+	},
 	setUser,
 	clearUser,
 	permissions,

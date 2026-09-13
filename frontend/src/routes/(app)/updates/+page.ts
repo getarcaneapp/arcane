@@ -34,16 +34,16 @@ export const load: PageLoad = async ({ parent }) => {
 	const operationResult = await tryCatch(
 		(async () =>
 			Promise.all([
-				queryClient.fetchQuery({
+				queryClient.query({
 					queryKey: queryKeys.containers.list(envId, containerRequestOptions),
 					queryFn: () => containerService.getContainersForEnvironment(envId, containerRequestOptions)
 				}),
-				queryClient.fetchQuery({
+				queryClient.query({
 					queryKey: queryKeys.projects.list(envId, projectRequestOptions),
 					queryFn: () => projectService.getProjectsForEnvironment(envId, projectRequestOptions)
 				}),
 				// `autoUpdateExcludedContainers` drives the ignored state on container rows.
-				queryClient.fetchQuery({
+				queryClient.query({
 					queryKey: queryKeys.settings.byEnvironment(envId),
 					queryFn: () => settingsService.getSettingsForEnvironmentMerged(envId)
 				})

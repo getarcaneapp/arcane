@@ -13,6 +13,7 @@ const (
 	APIErrorCodeBadRequest          APIErrorCode = "BAD_REQUEST"
 	APIErrorCodeUnauthorized        APIErrorCode = "UNAUTHORIZED"
 	APIErrorCodeForbidden           APIErrorCode = "FORBIDDEN"
+	APIErrorCodeFeatureDisabled     APIErrorCode = "feature_disabled"
 	APIErrorCodeNotFound            APIErrorCode = "NOT_FOUND"
 	APIErrorCodeConflict            APIErrorCode = "CONFLICT"
 	APIErrorCodeInternalServerError APIErrorCode = "INTERNAL_SERVER_ERROR"
@@ -113,6 +114,8 @@ func ToAPIError(err error) *APIError {
 		return NewAPIError(err.Error(), APIErrorCodeBadRequest, http.StatusBadRequest)
 	case errors.Is(err, ErrUnauthorized):
 		return NewAPIError(err.Error(), APIErrorCodeUnauthorized, http.StatusUnauthorized)
+	case errors.Is(err, ErrFeatureDisabled):
+		return NewAPIError(err.Error(), APIErrorCodeFeatureDisabled, http.StatusForbidden)
 	case errors.Is(err, ErrForbidden):
 		return NewAPIError(err.Error(), APIErrorCodeForbidden, http.StatusForbidden)
 	case errors.Is(err, ErrNotFound):

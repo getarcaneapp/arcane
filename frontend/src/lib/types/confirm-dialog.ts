@@ -16,3 +16,7 @@ export interface ConfirmDialogOptions {
 		initialState?: boolean;
 	}>;
 }
+
+export type ConfirmDialogState = {
+	current: (ConfirmDialogOptions & { open: boolean; checkboxStates: Record<string, boolean> }) | null;
+};

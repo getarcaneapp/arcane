@@ -297,3 +297,72 @@ test.describe('Security Page', () => {
 		await expect(remoteRow.getByText('Running', { exact: true })).toBeVisible();
 	});
 });
+
+test.describe('Disabled vulnerability management', () => {
+	test.beforeEach(async ({ page }) => {
+		await page.route(/\/api\/environments\/[^/]+\/settings\/public$/, async (route) => {
+			await route.fulfill({
+				json: [{ key: 'featureVulnerabilityManagementEnabled', value: 'false' }]
+			});
+		});
+	});
+
+	for (const path of [ROUTES.page, ROUTES.legacyVulnerabilities]) {
+		test(`blocks vulnerability data requests from ${path}`, async ({ page }) => {
+			const vulnerabilityRequests: string[] = [];
+			page.on('request', (request) => {
+				if (
+					/\/api\/environments\/[^/]+\/(?:images\/[^/]+\/)?vulnerabilities(?:\/|$)/.test(
+						new URL(request.url()).pathname
+					)
+				) {
+					vulnerabilityRequests.push(request.url());
+				}
+			});
+
+			await page.goto(path);
+			await expect(
+				page.getByText(
+					'Vulnerability management is disabled for this environment. Saved reports and settings are retained.',
+					{ exact: true }
+				)
+			).toBeVisible();
+			await expect(page.getByRole('tab', { name: 'Vulnerabilities', exact: true })).toHaveCount(0);
+			await expect(page.getByRole('button', { name: 'Scan all images', exact: true })).toHaveCount(
+				0
+			);
+			await expect(page.getByRole('button', { name: 'Features', exact: true })).toBeVisible();
+			expect(vulnerabilityRequests).toEqual([]);
+		});
+	}
+
+	test('hides image vulnerability controls and keeps standalone patching', async ({ page }) => {
+		await page.route(/\/api\/environments\/0\/images(?:\?.*)?$/, async (route) => {
+			await route.fulfill({
+				json: paginated([
+					{
+						id: 'disabled-feature-image',
+						repo: 'example/feature-test',
+						tag: 'latest',
+						repoTags: ['example/feature-test:latest'],
+						repoDigests: ['example/feature-test@sha256:1234'],
+						size: 1024,
+						created: 1700000000,
+						inUse: false,
+						vulnerabilityScan: { status: 'completed', summary: { total: 9, critical: 9 } }
+					}
+				])
+			});
+		});
+
+		await page.goto('/images');
+		const row = page.getByRole('row').filter({ hasText: 'example/feature-test' });
+		await expect(row).toBeVisible();
+		await expect(
+			page.getByRole('columnheader', { name: 'Vulnerabilities', exact: true })
+		).toHaveCount(0);
+		const menu = await openRowActionsMenu(page, row);
+		await expect(menu.getByRole('menuitem', { name: 'Scan', exact: true })).toHaveCount(0);
+		await expect(menu.getByRole('menuitem', { name: 'Patch', exact: true })).toBeVisible();
+	});
+});

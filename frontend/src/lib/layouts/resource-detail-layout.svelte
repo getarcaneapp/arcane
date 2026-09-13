@@ -33,15 +33,11 @@
 	let scrollY = $state(0);
 	const showFloatingHeader = $derived(scrollY > 120);
 
-	$effect(() => {
-		const onScroll = () => (scrollY = window.scrollY);
-		window.addEventListener('scroll', onScroll, { passive: true });
-		return () => window.removeEventListener('scroll', onScroll);
-	});
-
 	const primaryAction = $derived(actions[0]);
 	const secondaryActions = $derived(actions.slice(1));
 </script>
+
+<svelte:window bind:scrollY />
 
 {#snippet ActionMenu(items: DetailAction[], tone: 'ghost' | 'outline', sizeClass: string, minWidthClass: string)}
 	{#if items.length > 0}

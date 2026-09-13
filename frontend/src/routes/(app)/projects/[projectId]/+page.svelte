@@ -34,7 +34,8 @@
 	import { tryCatch } from '#lib/utils/try-catch.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { z } from 'zod/v4';
-	import { createForm } from '#lib/utils/settings.js';
+	import { createForm } from '#lib/utils/settings.svelte.js';
+
 	import { m } from '#lib/paraglide/messages.js';
 	import { gitOpsComposeEditUrl, gitOpsFileEditUrl, gitOpsProjectUrl } from '#lib/utils/gitops.js';
 	import { toGitRouteUrl, toSafeHref } from '#lib/utils/navigation.js';
@@ -49,10 +50,11 @@
 	import ProjectsLogsPanel from '../components/ProjectLogsPanel.svelte';
 	import ResizableSplit from '#lib/components/resizable-split.svelte';
 	import { Switch } from '#lib/components/ui/switch/index.js';
-	import { untrack } from 'svelte';
+	import { onMount, tick, untrack } from 'svelte';
+	import { afterNavigate } from '$app/navigation';
 	import { projectService } from '#lib/services/project-service.js';
 	import { projectWorkspaceService } from '#lib/services/project-workspace-service.js';
-	import settingsStore from '#lib/stores/config-store.js';
+	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { gitOpsSyncService } from '#lib/services/gitops-sync-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { hasPermission } from '#lib/utils/auth.js';
@@ -123,7 +125,7 @@
 	let projectWorkspaceStagedUploadedText = $state<Record<string, string>>({});
 	let projectWorkspaceFilePromises: Record<string, Promise<IncludeFile | ProjectWorkspaceFileContent> | undefined> = {};
 	const globalVariableMap = $derived(globalVariablesToMap(data.globalVariables));
-	const projectWorkspaceMaxFileSizeMb = $derived($settingsStore?.projectWorkspaceMaxFileSizeMb ?? 10);
+	const projectWorkspaceMaxFileSizeMb = $derived(settingsStore.current?.projectWorkspaceMaxFileSizeMb ?? 10);
 
 	const projectDetailQuery = createQuery(() => ({
 		queryKey: queryKeys.projects.detail(envId, projectId),
@@ -199,7 +201,8 @@
 		overrideContent: data.editorState.originalOverrideContent || ''
 	}));
 
-	const { inputs, ...form } = createForm<typeof formSchema>(formSchema, initialFormData);
+	const form = createForm<typeof formSchema>(formSchema, initialFormData);
+	let inputs = $derived(form.inputs);
 
 	function withLoadedProjectIncludeContent(details: Project | null | undefined): Project | null {
 		if (!details) return null;
@@ -221,6 +224,14 @@
 	const serverName = $derived(project?.name ?? '');
 	const serverComposeContent = $derived(project?.composeContent ?? '');
 	const serverEnvContent = $derived(project?.envContent ?? '');
+
+	const configurationError = $derived(project?.configurationError);
+	const composeActionsBlocked = $derived(!!configurationError?.blocksOperations);
+	const configurationErrorMessage = $derived.by(() => {
+		if (!configurationError) return undefined;
+		const params = { path: configurationError.path, uid: configurationError.uid, gid: configurationError.gid };
+		return configurationError.blocksOperations ? m.env_file_unreadable_blocked(params) : m.env_file_unreadable_ignored(params);
+	});
 	const serverOverrideContent = $derived(project?.overrideContent ?? '');
 	const serverIncludeFiles = $derived.by(() =>
 		Object.fromEntries(
@@ -248,16 +259,16 @@
 		)
 	);
 
-	const composeYamlName = $derived(extractComposeYamlName($inputs.composeContent.value));
+	const composeYamlName = $derived(extractComposeYamlName(inputs.composeContent.value));
 	// The compose file's top-level `name:` is authoritative; surface it as the
 	// effective name without writing to form state reactively.
-	const effectiveName = $derived(composeYamlName ?? $inputs.name.value);
+	const effectiveName = $derived(composeYamlName ?? inputs.name.value);
 
 	let hasChanges = $derived(
 		effectiveName !== serverName ||
-			$inputs.composeContent.value !== serverComposeContent ||
-			$inputs.overrideContent.value !== serverOverrideContent ||
-			$inputs.envContent.value !== serverEnvContent ||
+			inputs.composeContent.value !== serverComposeContent ||
+			inputs.overrideContent.value !== serverOverrideContent ||
+			(!configurationError && inputs.envContent.value !== serverEnvContent) ||
 			Object.entries(includeFilesState).some(([relativePath, content]) => content !== serverIncludeFiles[relativePath]) ||
 			projectWorkspaceChanges.length > 0 ||
 			changedProjectWorkspacePaths.length > 0
@@ -275,10 +286,10 @@
 			project?.status !== 'running' &&
 			project?.status !== 'partially running'
 	);
-	let canEditCompose = $derived(canUpdateProject && !project?.isArchived && !isGitOpsManaged);
+	let canEditCompose = $derived(canUpdateProject && !project?.isArchived && !isGitOpsManaged && !composeActionsBlocked);
 	// Override edits are blocked for GitOps-managed projects, mirroring canEditCompose.
-	let canEditOverride = $derived(canUpdateProject && !project?.isArchived && !isGitOpsManaged);
-	let canEditEnv = $derived(canUpdateProject && !project?.isArchived);
+	let canEditOverride = $derived(canUpdateProject && !project?.isArchived && !isGitOpsManaged && !composeActionsBlocked);
+	let canEditEnv = $derived(canUpdateProject && !project?.isArchived && !configurationError);
 	// GitOps-managed projects keep workspace editing for operator-owned files
 	// (secret env files, bind-mounted configs); the backend rejects and marks
 	// read-only the paths the sync itself owns.
@@ -428,9 +439,9 @@
 		if (directoryFilePaths.has(selectedIncludeTabPreference)) return selectedIncludeTabPreference;
 		return null;
 	});
-	let composeHasChanges = $derived($inputs.composeContent.value !== serverComposeContent);
-	let overrideHasChanges = $derived($inputs.overrideContent.value !== serverOverrideContent);
-	let envHasChanges = $derived($inputs.envContent.value !== serverEnvContent);
+	let composeHasChanges = $derived(inputs.composeContent.value !== serverComposeContent);
+	let overrideHasChanges = $derived(inputs.overrideContent.value !== serverOverrideContent);
+	let envHasChanges = $derived(!configurationError && inputs.envContent.value !== serverEnvContent);
 	let changedIncludeFilePaths = $derived.by(() =>
 		Object.keys(includeFilesState).filter((relativePath) => includeFilesState[relativePath] !== serverIncludeFiles[relativePath])
 	);
@@ -444,7 +455,7 @@
 			)
 	);
 
-	let canSave = $derived(canUpdateProject && !project?.isArchived && hasChanges && !hasAnyErrors);
+	let canSave = $derived(canUpdateProject && !project?.isArchived && hasChanges && !hasAnyErrors && !composeActionsBlocked);
 
 	const tabItems = $derived<TabItem[]>([
 		{
@@ -564,7 +575,7 @@
 	}
 
 	function rebaseEditorDraft(details: Project, options: RebaseEditorDraftOptions = {}) {
-		const envDraft = $inputs.envContent.value;
+		const envDraft = inputs.envContent.value;
 		const shouldPreserveEnvDraft = options.preserveEditableDrafts === true && envDraft !== serverEnvContent;
 		const dirtyIncludeDrafts = options.preserveEditableDrafts === true ? getDirtyIncludeDrafts() : {};
 
@@ -577,10 +588,10 @@
 		const savedProjectWorkspaceContents =
 			options.preserveProjectWorkspaceContents === true ? { ...projectWorkspaceContents } : {};
 
-		$inputs.name.value = normalizedProject.name || '';
-		$inputs.composeContent.value = normalizedProject.composeContent || '';
-		$inputs.overrideContent.value = normalizedProject.overrideContent || '';
-		$inputs.envContent.value = shouldPreserveEnvDraft ? envDraft : normalizedProject.envContent || '';
+		inputs.name.value = normalizedProject.name || '';
+		inputs.composeContent.value = normalizedProject.composeContent || '';
+		inputs.overrideContent.value = normalizedProject.overrideContent || '';
+		inputs.envContent.value = shouldPreserveEnvDraft ? envDraft : normalizedProject.envContent || '';
 		projectWorkspaceChanges = [];
 		projectWorkspaceContents = savedProjectWorkspaceContents;
 		// Seed the per-file UI-state records for every retained path. A mounted
@@ -645,7 +656,7 @@
 		}
 	}));
 
-	$effect(() => {
+	function initializeProjectPreferences() {
 		if (!project?.id) return;
 		if (lastPrefsProjectId === project.id) return;
 
@@ -663,7 +674,8 @@
 		const cur = prefs.current ?? {};
 		const userSelectedTabForProject = userSelectedTabProjectId === project.id;
 		const requestedTab = new URL(window.location.href).searchParams.get('tab');
-		const urlTabValue = tabItems.some((tab) => tab.value === requestedTab) ? (requestedTab as ProjectTab) : null;
+		let urlTabValue: ProjectTab | null = null;
+		if (tabItems.some((tab) => tab.value === requestedTab)) urlTabValue = requestedTab as ProjectTab;
 		if (!userSelectedTabForProject) {
 			selectedTab = urlTabValue ?? cur.tab ?? defaultComposeUIPrefs.tab;
 			// Logs merged into the services tab (#3367): honor legacy ?tab=logs deep
@@ -679,21 +691,27 @@
 		envOpen = cur.envOpen ?? defaultComposeUIPrefs.envOpen;
 		autoScrollStackLogs = cur.autoScroll ?? defaultComposeUIPrefs.autoScroll;
 		selectedFilePreference = cur.selectedFile ?? defaultComposeUIPrefs.selectedFile ?? 'compose';
-		openTabsPreference = cur.openTabs && cur.openTabs.length > 0 ? cur.openTabs : [selectedFilePreference];
+		openTabsPreference = [selectedFilePreference];
+		if (cur.openTabs && cur.openTabs.length > 0) openTabsPreference = cur.openTabs;
 
 		// Auto-detect layout mode from includes and workspace entries. PersistedState
 		// always materializes the defaults, so only trust the stored layoutMode when
 		// this project actually had persisted prefs.
 		const hasIncludes = project?.includeFiles && project.includeFiles.length > 0;
 		const hasWorkspaceEntries = projectWorkspaceEntries.length > 0;
-		const defaultMode = hasIncludes || hasWorkspaceEntries ? 'tree' : 'classic';
-		layoutMode = hadStoredPrefs ? (cur.layoutMode ?? defaultMode) : defaultMode;
+		let defaultMode: 'tree' | 'classic' = 'classic';
+		if (hasIncludes || hasWorkspaceEntries) defaultMode = 'tree';
+		layoutMode = defaultMode;
+		if (hadStoredPrefs) layoutMode = cur.layoutMode ?? defaultMode;
 		// PersistedState seeds storage with the defaults on first mount; persist the
 		// resolved state so the auto-detected layout survives the next visit.
 		if (!hadStoredPrefs || userSelectedTabForProject) {
 			persistPrefs();
 		}
-	});
+		loadSelectedProjectWorkspaceFiles();
+	}
+
+	afterNavigate(initializeProjectPreferences);
 
 	async function handleSaveChanges() {
 		if (!project || !hasChanges) return;
@@ -956,14 +974,21 @@
 			return existingPromise;
 		}
 
+		const requestedEnvId = envId;
+		const pendingFiles = projectWorkspaceFilePromises;
 		const promise = (async () => {
-			const file = await projectWorkspaceService.getWorkspaceFile(currentProjectId, relativePath, envId);
-			if (kind !== 'workspace') {
+			const file = await projectWorkspaceService.getWorkspaceFile(currentProjectId, relativePath, requestedEnvId);
+			if (
+				kind !== 'workspace' &&
+				currentProjectId === projectId &&
+				requestedEnvId === envId &&
+				pendingFiles === projectWorkspaceFilePromises
+			) {
 				updateLoadedProjectWorkspaceSource(kind, relativePath, file.content ?? '');
 			}
 			return file;
 		})().finally(() => {
-			delete projectWorkspaceFilePromises[requestKey];
+			delete pendingFiles[requestKey];
 		});
 
 		projectWorkspaceFilePromises[requestKey] = promise;
@@ -989,6 +1014,7 @@
 		if (layoutMode === 'tree') {
 			persistPrefs();
 		}
+		loadSelectedProjectWorkspaceFiles();
 	}
 
 	function closeFileTab(key: string) {
@@ -996,7 +1022,7 @@
 		// nothing on disk to keep, so the override reverts to the add affordance.
 		if (key === 'override' && !overrideExists) {
 			overrideEditorRequested = false;
-			$inputs.overrideContent.value = '';
+			inputs.overrideContent.value = '';
 		}
 		const index = openTabs.indexOf(key);
 		const remaining = openTabs.filter((tab) => tab !== key);
@@ -1005,6 +1031,7 @@
 			selectedFilePreference = remaining[Math.min(Math.max(index - 1, 0), remaining.length - 1)] ?? 'compose';
 		}
 		persistPrefs();
+		loadSelectedProjectWorkspaceFiles();
 	}
 
 	function treeTabLabel(key: string): string {
@@ -1053,13 +1080,16 @@
 		overrideEditorRequested = false;
 		overrideOpen = false;
 		const existed = overrideExists;
-		$inputs.overrideContent.value = '';
+		inputs.overrideContent.value = '';
 		if (existed) {
 			await handleSaveChanges();
 		}
 	}
 
 	async function loadProjectWorkspaceFileDraft(relativePath: string) {
+		const requestedProjectId = projectId;
+		const requestedEnvId = envId;
+		const pendingFiles = projectWorkspaceFilePromises;
 		if (!relativePath || projectWorkspaceContents[relativePath] !== undefined || projectWorkspaceLoading[relativePath]) {
 			return;
 		}
@@ -1074,11 +1104,14 @@
 			const operationResult = await tryCatch(
 				(async () => {
 					const file = await getProjectWorkspaceFileResource('workspace', relativePath);
+					if (requestedProjectId !== projectId || requestedEnvId !== envId || pendingFiles !== projectWorkspaceFilePromises)
+						return;
 					projectWorkspaceFileMetadata = { ...projectWorkspaceFileMetadata, [relativePath]: file };
 					if (file.editable) updateLoadedProjectWorkspaceFile(relativePath, file.content ?? '');
 				})()
 			);
 			if (operationResult.error !== null) {
+				if (requestedProjectId !== projectId || requestedEnvId !== envId || pendingFiles !== projectWorkspaceFilePromises) return;
 				const error = operationResult.error;
 
 				projectWorkspaceLoadErrors = {
@@ -1087,26 +1120,16 @@
 				};
 			}
 		} finally {
-			projectWorkspaceLoading = removeWorkspaceFileRecord(projectWorkspaceLoading, relativePath);
+			if (requestedProjectId === projectId && requestedEnvId === envId && pendingFiles === projectWorkspaceFilePromises) {
+				projectWorkspaceLoading = removeWorkspaceFileRecord(projectWorkspaceLoading, relativePath);
+			}
 		}
 	}
 
-	$effect(() => {
-		const relativePath = selectedProjectWorkspacePath;
-		const entry = selectedProjectWorkspaceEntry;
-		const hasContent = relativePath ? projectWorkspaceContents[relativePath] !== undefined : true;
-		const hasMetadata = relativePath ? projectWorkspaceFileMetadata[relativePath] !== undefined : true;
-		const isLoadingFile = relativePath ? projectWorkspaceLoading[relativePath] === true : false;
-		const hasLoadError = relativePath ? projectWorkspaceLoadErrors[relativePath] !== undefined : false;
-
-		if (!relativePath || !entry || entry.isDirectory || hasContent || hasMetadata || isLoadingFile || hasLoadError) {
-			return;
-		}
-
-		void loadProjectWorkspaceFileDraft(relativePath);
-	});
-
 	async function loadProjectSourceFile(kind: 'include' | 'directory', relativePath: string) {
+		const requestedProjectId = projectId;
+		const requestedEnvId = envId;
+		const pendingFiles = projectWorkspaceFilePromises;
 		projectWorkspaceLoading = {
 			...projectWorkspaceLoading,
 			[relativePath]: true
@@ -1120,6 +1143,7 @@
 				})()
 			);
 			if (operationResult.error !== null) {
+				if (requestedProjectId !== projectId || requestedEnvId !== envId || pendingFiles !== projectWorkspaceFilePromises) return;
 				const error = operationResult.error;
 
 				projectWorkspaceLoadErrors = {
@@ -1128,23 +1152,54 @@
 				};
 			}
 		} finally {
-			projectWorkspaceLoading = removeWorkspaceFileRecord(projectWorkspaceLoading, relativePath);
+			if (requestedProjectId === projectId && requestedEnvId === envId && pendingFiles === projectWorkspaceFilePromises) {
+				projectWorkspaceLoading = removeWorkspaceFileRecord(projectWorkspaceLoading, relativePath);
+			}
 		}
 	}
 
-	$effect(() => {
-		const relativePath = selectedIncludeTab;
-		if (!relativePath) return;
-		const kind = includeFilePaths.has(relativePath) ? 'include' : 'directory';
-		const loaded =
-			kind === 'include'
-				? includeFilesState[relativePath] !== undefined
-				: loadedDirectoryFileContents[relativePath] !== undefined;
-		if (loaded || projectWorkspaceLoading[relativePath] || projectWorkspaceLoadErrors[relativePath] !== undefined) {
-			return;
+	function loadSelectedProjectWorkspaceFiles() {
+		const relativePath = selectedProjectWorkspacePath;
+		if (
+			relativePath &&
+			selectedProjectWorkspaceEntry &&
+			!selectedProjectWorkspaceEntry.isDirectory &&
+			projectWorkspaceContents[relativePath] === undefined &&
+			!projectWorkspaceFileMetadata[relativePath] &&
+			!projectWorkspaceLoading[relativePath] &&
+			projectWorkspaceLoadErrors[relativePath] === undefined
+		) {
+			void loadProjectWorkspaceFileDraft(relativePath);
 		}
+		const sourcePath = selectedIncludeTab;
+		if (!sourcePath || projectWorkspaceLoading[sourcePath] || projectWorkspaceLoadErrors[sourcePath] !== undefined) return;
+		if (includeFilePaths.has(sourcePath)) {
+			if (includeFilesState[sourcePath] === undefined) void loadProjectSourceFile('include', sourcePath);
+		} else if (loadedDirectoryFileContents[sourcePath] === undefined) {
+			void loadProjectSourceFile('directory', sourcePath);
+		}
+	}
 
-		void loadProjectSourceFile(kind, relativePath);
+	onMount(() => {
+		let active = true;
+		const cache = queryClient.getQueryCache();
+		const loadAfterUpdate = async () => {
+			await tick();
+			if (!active) return;
+			initializeProjectPreferences();
+			loadSelectedProjectWorkspaceFiles();
+		};
+		const unsubscribe = cache.subscribe((event) => {
+			if (event.type !== 'updated' || (event.action.type !== 'success' && event.action.type !== 'error')) return;
+			const workspace = cache.find({ queryKey: queryKeys.projects.workspace(envId, projectId), exact: true });
+			const detail = cache.find({ queryKey: queryKeys.projects.detail(envId, projectId), exact: true });
+			if (event.query === workspace || event.query === detail) void loadAfterUpdate();
+		});
+		void loadAfterUpdate();
+		return () => {
+			active = false;
+			unsubscribe();
+		};
 	});
 
 	function remapProjectWorkspaceState(oldPath: string, newPath: string) {
@@ -1167,6 +1222,7 @@
 		if (remappedSelection) {
 			selectedFilePreference = remappedSelection;
 		}
+		loadSelectedProjectWorkspaceFiles();
 	}
 
 	function removeProjectWorkspaceState(relativePath: string) {
@@ -1188,6 +1244,7 @@
 		if (isWorkspaceFileSelectionUnder(selectedFile, relativePath)) {
 			selectedFilePreference = openTabs[0] ?? 'compose';
 		}
+		loadSelectedProjectWorkspaceFiles();
 	}
 
 	function createProjectWorkspaceFile(parentPath: string, name: string, content = '', stagedFile?: File) {
@@ -1290,16 +1347,18 @@
 
 	function toggleIncludeFileTab(relativePath: string) {
 		ensureIncludeFileUiState(relativePath);
-		selectedIncludeTabPreference = selectedIncludeTab === relativePath ? null : relativePath;
+		if (selectedIncludeTab === relativePath) selectedIncludeTabPreference = null;
+		else selectedIncludeTabPreference = relativePath;
+		loadSelectedProjectWorkspaceFiles();
 	}
 
 	const allComposeContents = $derived.by(() => {
-		return [$inputs.composeContent.value, $inputs.overrideContent.value, ...Object.values(includeFilesState)].filter(
+		return [inputs.composeContent.value, inputs.overrideContent.value, ...Object.values(includeFilesState)].filter(
 			(value) => value.length > 0
 		);
 	});
 	const codeEditorContext = $derived({
-		envContent: $inputs.envContent.value,
+		envContent: inputs.envContent.value,
 		composeContents: allComposeContents,
 		globalVariables: globalVariableMap
 	});
@@ -1368,7 +1427,7 @@
 			title: composeFileName,
 			language: 'yaml',
 			validationMode: 'compose',
-			error: $inputs.composeContent.error ?? undefined,
+			error: inputs.composeContent.error ?? undefined,
 			readOnly: !canEditCompose,
 			fileId: `project:${projectId}:compose`,
 			originalValue: serverComposeContent,
@@ -1383,7 +1442,7 @@
 			title: overrideFileName,
 			language: 'yaml',
 			validationMode: 'compose',
-			error: $inputs.overrideContent.error ?? undefined,
+			error: inputs.overrideContent.error ?? undefined,
 			readOnly: !canEditOverride,
 			fileId: `project:${projectId}:override`,
 			originalValue: serverOverrideContent,
@@ -1398,7 +1457,7 @@
 			title: '.env',
 			language: 'env',
 			validationMode: 'env',
-			error: $inputs.envContent.error ?? undefined,
+			error: inputs.envContent.error ?? undefined,
 			readOnly: !canEditEnv,
 			fileId: `project:${projectId}:env`,
 			originalValue: serverEnvContent,
@@ -1411,6 +1470,7 @@
 {#snippet projectComposeTab(project: Project)}
 	<Tabs.Content value="compose" class="h-full min-h-0">
 		<div class="flex h-full min-h-0 flex-col">
+			{@render configurationErrorNotice()}
 			{@render gitSourceNotice()}
 			{@render composeFilesNotice()}
 			<div class="mb-2 flex shrink-0 items-center justify-end gap-2">
@@ -1494,35 +1554,41 @@
 						{#if selectedIncludeTab}
 							{@render selectedIncludeEditor(project, selectedIncludeTab)}
 						{:else}
-							<ResizableSplit
-								class="min-h-0 flex-1 lg:gap-2"
-								firstClass="flex min-h-0 flex-col"
-								secondClass="flex min-h-0 flex-col"
-								bind:size={composeSplitWidth}
-								minSize={minComposePaneWidth}
-								minSecondSize={minEnvPaneWidth}
-								defaultRatio={0.6}
-								stackBelow={1024}
-								ariaLabel={m.compose_editor_resize_compose_env()}
-								persistKey={`arcane.compose.split:${project.id}:classic`}
-								onResizeEnd={persistPrefs}
-							>
-								{#snippet first()}
-									{@render composeOverrideEditor()}
-								{/snippet}
+							{#key `arcane.compose.split:${project.id}:classic`}
+								<ResizableSplit
+									class="min-h-0 flex-1 lg:gap-2"
+									firstClass="flex min-h-0 flex-col"
+									secondClass="flex min-h-0 flex-col"
+									bind:size={composeSplitWidth}
+									minSize={minComposePaneWidth}
+									minSecondSize={minEnvPaneWidth}
+									defaultRatio={0.6}
+									stackBelow={1024}
+									ariaLabel={m.compose_editor_resize_compose_env()}
+									persistKey={`arcane.compose.split:${project.id}:classic`}
+									onResizeEnd={persistPrefs}
+								>
+									{#snippet first()}
+										{@render composeOverrideEditor()}
+									{/snippet}
 
-								{#snippet second()}
-									<div class="flex min-h-0 flex-1 flex-col">
-										<CodePanel
-											{...envPanelProps()}
-											bind:open={envOpen}
-											bind:value={$inputs.envContent.value}
-											bind:hasErrors={envHasErrors}
-											bind:validationReady={envValidationReady}
-										/>
-									</div>
-								{/snippet}
-							</ResizableSplit>
+									{#snippet second()}
+										<div class="flex min-h-0 flex-1 flex-col">
+											{#if configurationError}
+												{@render envUnavailable()}
+											{:else}
+												<CodePanel
+													{...envPanelProps()}
+													bind:open={envOpen}
+													bind:value={inputs.envContent.value}
+													bind:hasErrors={envHasErrors}
+													bind:validationReady={envValidationReady}
+												/>
+											{/if}
+										</div>
+									{/snippet}
+								</ResizableSplit>
+							{/key}
 						{/if}
 					</div>
 				{/if}
@@ -1666,51 +1732,56 @@
 
 {#snippet projectServicesTab(project: Project)}
 	<Tabs.Content value="services" class="h-full min-h-0">
-		{#if canViewProjectLogs}
-			<div class="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-border bg-card">
-				<ResizableSplit
-					class="h-full min-h-0 flex-1"
-					variant="flush"
-					firstClass="bg-muted/20 border-border flex min-h-0 flex-col border-b lg:border-r lg:border-b-0"
-					secondClass="flex min-h-0 flex-col"
-					minSize={200}
-					maxSize={480}
-					minSecondSize={360}
-					defaultRatio={0.22}
-					stackBelow={1024}
-					ariaLabel={m.common_logs()}
-					persistKey="arcane.project.services-split"
-					persistStorage="local"
-				>
-					{#snippet first()}
-						<ProjectServicesPanel
-							services={project.runtimeServices}
-							{projectId}
-							updateInfoByRef={project.updateInfo?.updateInfoByRef}
-							onRefresh={() => refreshProjectDetails()}
-						/>
-					{/snippet}
-					{#snippet second()}
-						<div class="flex h-full min-h-0 flex-col overflow-hidden">
-							<ProjectsLogsPanel
-								projectId={project.id}
-								bind:autoScroll={autoScrollStackLogs}
-								isRunning={project.status?.toLowerCase().includes('running')}
+		<div class="flex h-full min-h-0 flex-col">
+			{@render configurationErrorNotice()}
+			{#if canViewProjectLogs}
+				<div class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border bg-card">
+					<ResizableSplit
+						class="h-full min-h-0 flex-1"
+						variant="flush"
+						firstClass="bg-muted/20 border-border flex min-h-0 flex-col border-b lg:border-r lg:border-b-0"
+						secondClass="flex min-h-0 flex-col"
+						minSize={200}
+						maxSize={480}
+						minSecondSize={360}
+						defaultRatio={0.22}
+						stackBelow={1024}
+						ariaLabel={m.common_logs()}
+						persistKey="arcane.project.services-split"
+						persistStorage="local"
+					>
+						{#snippet first()}
+							<ProjectServicesPanel
+								services={project.runtimeServices}
+								{projectId}
+								updateInfoByRef={project.updateInfo?.updateInfoByRef}
+								onRefresh={() => refreshProjectDetails()}
 							/>
-						</div>
-					{/snippet}
-				</ResizableSplit>
-			</div>
-		{:else}
-			<div class="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-border bg-card">
-				<ProjectServicesPanel
-					services={project.runtimeServices}
-					{projectId}
-					updateInfoByRef={project.updateInfo?.updateInfoByRef}
-					onRefresh={() => refreshProjectDetails()}
-				/>
-			</div>
-		{/if}
+						{/snippet}
+						{#snippet second()}
+							<div class="flex h-full min-h-0 flex-col overflow-hidden">
+								{#key project.id}
+									<ProjectsLogsPanel
+										projectId={project.id}
+										bind:autoScroll={autoScrollStackLogs}
+										isRunning={project.status?.toLowerCase().includes('running')}
+									/>
+								{/key}
+							</div>
+						{/snippet}
+					</ResizableSplit>
+				</div>
+			{:else}
+				<div class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border bg-card">
+					<ProjectServicesPanel
+						services={project.runtimeServices}
+						{projectId}
+						updateInfoByRef={project.updateInfo?.updateInfoByRef}
+						onRefresh={() => refreshProjectDetails()}
+					/>
+				</div>
+			{/if}
+		</div>
 	</Tabs.Content>
 {/snippet}
 
@@ -1812,6 +1883,16 @@
 	{/if}
 {/snippet}
 
+{#snippet configurationErrorNotice()}
+	{#if configurationErrorMessage}
+		<Alert.Root variant="destructive" class="mb-4">
+			<AlertIcon class="size-4" />
+			<Alert.Title>{m.env_file_unreadable_title()}</Alert.Title>
+			<Alert.Description>{configurationErrorMessage}</Alert.Description>
+		</Alert.Root>
+	{/if}
+{/snippet}
+
 {#snippet composeFilesNotice()}
 	{#if composeFiles.length > 1}
 		<Alert.Root variant="default" class="mb-4">
@@ -1820,13 +1901,22 @@
 			<Alert.Description>
 				{m.compose_multiple_files_description()}
 				<div class="mt-2 flex flex-wrap gap-1.5">
-					{#each composeFiles as file, i (i)}
+					<!-- COMPOSE_FILE preserves repeated paths; these badges render only text. -->
+					{#each composeFiles as file}
 						<span class="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">{file}</span>
 					{/each}
 				</div>
 			</Alert.Description>
 		</Alert.Root>
 	{/if}
+{/snippet}
+
+{#snippet envUnavailable()}
+	<div
+		class="flex h-full min-h-0 flex-1 items-center justify-center rounded-lg border border-border px-4 text-center text-sm text-muted-foreground"
+	>
+		{m.env_file_unavailable()}
+	</div>
 {/snippet}
 
 {#snippet activeWorkspaceEditor()}
@@ -1836,7 +1926,7 @@
 				variant="plain"
 				{...composePanelProps()}
 				bind:open={composeOpen}
-				bind:value={$inputs.composeContent.value}
+				bind:value={inputs.composeContent.value}
 				bind:hasErrors={composeHasErrors}
 				bind:validationReady={composeValidationReady}
 				bind:outlineOpen={treeOutlineOpen}
@@ -1862,7 +1952,7 @@
 					variant="plain"
 					open={true}
 					{...overridePanelProps()}
-					bind:value={$inputs.overrideContent.value}
+					bind:value={inputs.overrideContent.value}
 					bind:hasErrors={overrideHasErrors}
 					bind:validationReady={overrideValidationReady}
 					bind:outlineOpen={treeOutlineOpen}
@@ -1871,17 +1961,21 @@
 				/>
 			</div>
 		{:else if activeTreeTab === 'env'}
-			<CodePanel
-				variant="plain"
-				{...envPanelProps()}
-				bind:open={envOpen}
-				bind:value={$inputs.envContent.value}
-				bind:hasErrors={envHasErrors}
-				bind:validationReady={envValidationReady}
-				bind:outlineOpen={treeOutlineOpen}
-				bind:diffOpen={treeDiffOpen}
-				bind:commandPaletteOpen={treeCommandPaletteOpen}
-			/>
+			{#if configurationError}
+				{@render envUnavailable()}
+			{:else}
+				<CodePanel
+					variant="plain"
+					{...envPanelProps()}
+					bind:open={envOpen}
+					bind:value={inputs.envContent.value}
+					bind:hasErrors={envHasErrors}
+					bind:validationReady={envValidationReady}
+					bind:outlineOpen={treeOutlineOpen}
+					bind:diffOpen={treeDiffOpen}
+					bind:commandPaletteOpen={treeCommandPaletteOpen}
+				/>
+			{/if}
 		{:else if activeTreeTab.startsWith('file:')}
 			{@const relativePath = activeTreeTab.slice(5)}
 			{@render workspaceFileEditor(relativePath)}
@@ -1943,7 +2037,7 @@
 				<CodePanel
 					{...composePanelProps()}
 					bind:open={composeOpen}
-					bind:value={$inputs.composeContent.value}
+					bind:value={inputs.composeContent.value}
 					bind:hasErrors={composeHasErrors}
 					bind:validationReady={composeValidationReady}
 				/>
@@ -1961,7 +2055,7 @@
 						<CodePanel
 							{...overridePanelProps()}
 							variant="plain"
-							bind:value={$inputs.overrideContent.value}
+							bind:value={inputs.overrideContent.value}
 							bind:hasErrors={overrideHasErrors}
 							bind:validationReady={overrideValidationReady}
 							bind:outlineOpen={overrideOutlineOpen}
@@ -1996,11 +2090,11 @@
 		<div class="min-w-0 flex-1">
 			<div class="flex min-h-9 min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
 				<EditableName
-					bind:value={$inputs.name.value}
+					bind:value={inputs.name.value}
 					displayValue={effectiveName}
 					bind:ref={nameInputRef}
 					variant="inline"
-					error={$inputs.name.error ?? undefined}
+					error={inputs.name.error ?? undefined}
 					originalValue={serverName}
 					canEdit={canEditName}
 					disabledMessage={composeYamlName ? m.compose_project_name_defined_in_yaml() : undefined}
@@ -2021,13 +2115,13 @@
 					updateInfo={project.updateInfo}
 					onCheck={handleCheckProjectUpdates}
 					checking={checkProjectUpdatesMutation.isPending}
-					disabled={!!project.isArchived}
+					disabled={!!project.isArchived || composeActionsBlocked}
 				/>
 			</div>
 
 			{#if project.urls && project.urls.length > 0}
 				<div class="mt-1 flex min-w-0 flex-wrap items-center gap-1.5">
-					{#each project.urls as url, i (i)}
+					{#each project.urls as url (url)}
 						<a
 							class="inline-flex h-6 max-w-[10rem] min-w-0 items-center gap-1.5 rounded-[var(--radius)] border border-sky-700/20 bg-background/70 px-2.5 text-[12px] font-semibold ring-offset-background transition-colors hover:border-sky-700/40 hover:bg-sky-500/10 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none sm:max-w-[14rem] md:max-w-[18rem] dark:border-sky-400/40 dark:bg-sky-500/20 dark:text-sky-100 dark:hover:border-sky-300/60 dark:hover:bg-sky-500/30"
 							href={toSafeHref(url)}
@@ -2116,6 +2210,8 @@
 					{hasBuildDirective}
 					desktopVariant="adaptive"
 					disableRedeploy={!!project.redeployDisabled}
+					disabled={composeActionsBlocked}
+					disabledReason={composeActionsBlocked ? m.env_file_unreadable_title() : undefined}
 					bind:startLoading={isLoading.deploying}
 					bind:stopLoading={isLoading.stopping}
 					bind:restartLoading={isLoading.restarting}

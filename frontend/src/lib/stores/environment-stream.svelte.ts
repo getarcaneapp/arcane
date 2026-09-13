@@ -57,7 +57,7 @@ export interface EnvStreamCoreConfig<TState extends StreamEnvStateBase, TEvent e
 export function createEnvironmentStreamStore<TState extends StreamEnvStateBase, TEvent extends StreamEventBase>(
 	config: EnvStreamCoreConfig<TState, TEvent>
 ) {
-	let _environmentStates = $state<Record<string, TState>>({});
+	let _environmentStates = $state.raw<Record<string, TState>>({});
 
 	let started = false;
 	// REST snapshots belong to this store lifecycle, not the shared transport's reconnect lifecycle.

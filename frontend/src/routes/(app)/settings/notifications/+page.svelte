@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { getSettingsFormContext, hasSettingsFormContext } from '#lib/hooks/settings-form-context.js';
 	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import * as Alert from '#lib/components/ui/alert/index.js';
@@ -6,9 +7,10 @@
 	import SettingsRow from '#lib/components/settings/settings-row.svelte';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { toast } from 'svelte-sonner';
-	import { getContext, onMount } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
+	import type { SettingsFormState } from '#lib/types/settings-form.js';
 	import { SettingsPageLayout } from '#lib/layouts/index.js';
-	import settingsStore from '#lib/stores/config-store.js';
+	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';
 	import { notificationService } from '#lib/services/notification-service.js';
@@ -60,22 +62,16 @@
 		{ value: 'mobile', label: m.notifications_mobile_push_tab() }
 	];
 
-	const isReadOnly = $derived.by(() => $settingsStore.uiConfigDisabled);
+	const isReadOnly = $derived.by(() => settingsStore.current?.uiConfigDisabled);
 	const canToggleMobilePush = $derived(hasPermission('settings:write'));
-	const mobilePushEnabled = $derived($settingsStore?.apnsEnabled === true);
+	const mobilePushEnabled = $derived(settingsStore.current?.apnsEnabled === true);
 	let savingMobilePush = $state(false);
 	let mobileDevices = $state<ApnsDevice[]>([]);
 	let testingDeviceId = $state<string | null>(null);
 
-	type SettingsFormState = {
-		hasChanges: boolean;
-		isLoading: boolean;
-		saveFunction: (() => Promise<void>) | null;
-		resetFunction: (() => void) | null;
-	};
 	type ProviderFormRef = { isValid: () => boolean };
 
-	const formState = getContext<SettingsFormState | undefined>('settingsFormState');
+	const formContext = hasSettingsFormContext() ? getSettingsFormContext() : undefined;
 	let providerFormRefs = $state<Partial<Record<NotificationProviderKey, ProviderFormRef>>>({});
 	let savedSettings = $state<NotificationSettingsByProvider>(createNotificationSettingsByProvider());
 	let providerValues = $state<NotificationProviderFormState>(createNotificationProviderFormState());
@@ -91,14 +87,19 @@
 		return settings?.config ? Object.prototype.hasOwnProperty.call(settings.config, field) : false;
 	}
 
-	// Sync with settings form context
-	$effect(() => {
-		if (formState) {
-			formState.hasChanges = hasChanges;
-			formState.isLoading = isLoading;
-			formState.saveFunction = onSubmit;
-			formState.resetFunction = resetForm;
-		}
+	const activeForm: SettingsFormState = {
+		get hasChanges() {
+			return hasChanges;
+		},
+		get isLoading() {
+			return isLoading;
+		},
+		saveFunction: onSubmit,
+		resetFunction: resetForm
+	};
+	if (formContext) formContext.activeForm = activeForm;
+	onDestroy(() => {
+		if (formContext?.activeForm === activeForm) formContext.activeForm = undefined;
 	});
 
 	onMount(() => {

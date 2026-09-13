@@ -9,7 +9,8 @@
 	import { plainDateFromInstant, plainDateToInstantString } from '#lib/utils/formatting.js';
 	import { Temporal } from 'temporal-polyfill';
 	import { z } from 'zod/v4';
-	import { createForm, preventDefault } from '#lib/utils/settings.js';
+	import { createForm, preventDefault } from '#lib/utils/settings.svelte.js';
+
 	import * as m from '#lib/paraglide/messages.js';
 
 	type ApiKeyFormProps = {
@@ -72,7 +73,8 @@
 					)
 	});
 
-	let { inputs, ...form } = $derived(createForm<typeof formSchema>(formSchema, formData));
+	let form = $derived(createForm<typeof formSchema>(formSchema, formData));
+	let inputs = $derived(form.inputs);
 
 	function handleSubmit() {
 		if (isReadOnlyApiKey) return;
@@ -130,7 +132,7 @@
 				type="text"
 				placeholder={m.api_key_name_placeholder()}
 				description={m.api_key_name_description()}
-				bind:input={$inputs.name}
+				bind:input={inputs.name}
 				disabled={isReadOnlyApiKey}
 			/>
 			<FormInput
@@ -138,14 +140,14 @@
 				type="text"
 				placeholder={m.optional_description_placeholder()}
 				description={m.api_key_description_help()}
-				bind:input={$inputs.description}
+				bind:input={inputs.description}
 				disabled={isReadOnlyApiKey}
 			/>
 			<FormInput
 				label={m.api_key_expires_at()}
 				type="date"
 				description={m.api_key_expires_at_description()}
-				bind:input={$inputs.expiresAt}
+				bind:input={inputs.expiresAt}
 				disabled={isReadOnlyApiKey}
 			/>
 			{#if !isReadOnlyApiKey}
@@ -155,9 +157,9 @@
 					<div>
 						<label for="permissions" class="text-sm font-medium">{m.permissions()}</label>
 						<p class="mb-3 text-xs text-muted-foreground">{m.api_key_permissions_description()}</p>
-						<PermissionPicker {manifest} bind:selected={$inputs.permissions.value} showSearch />
-						{#if $inputs.permissions.error}
-							<p class="mt-1 text-xs text-destructive">{$inputs.permissions.error}</p>
+						<PermissionPicker {manifest} bind:selected={inputs.permissions.value} showSearch />
+						{#if inputs.permissions.error}
+							<p class="mt-1 text-xs text-destructive">{inputs.permissions.error}</p>
 						{/if}
 					</div>
 				{/if}

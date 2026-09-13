@@ -1,7 +1,8 @@
 <script lang="ts">
+	import { fromAction } from 'svelte/attachments';
 	import emblaCarouselSvelte from 'embla-carousel-svelte';
 	import type { HTMLAttributes } from 'svelte/elements';
-	import { getEmblaContext } from './context.js';
+	import { getEmblaContext, type EmblaCarouselConfig } from './context.js';
 	import { cn, type WithElementRef } from '#lib/utils.js';
 
 	let {
@@ -11,13 +12,13 @@
 		...restProps
 	}: WithElementRef<HTMLAttributes<HTMLDivElement>> = $props();
 
-	const emblaCtx = getEmblaContext('<Carousel.Content/>');
+	const emblaCtx = getEmblaContext();
 </script>
 
 <div
 	data-slot="carousel-content"
 	class="overflow-hidden"
-	use:emblaCarouselSvelte={{
+	{@attach fromAction(emblaCarouselSvelte, (): EmblaCarouselConfig => ({
 		options: {
 			container: '[data-embla-container]',
 			slides: '[data-embla-slide]',
@@ -25,8 +26,8 @@
 			axis: emblaCtx.orientation === 'horizontal' ? 'x' : 'y'
 		},
 		plugins: emblaCtx.plugins
-	}}
-	onemblaInit={emblaCtx.onInit}
+	}))}
+	{...{ onemblaInit: emblaCtx.onInit }}
 >
 	<div
 		bind:this={ref}

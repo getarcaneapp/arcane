@@ -8,7 +8,7 @@ export const load: PageLoad = async ({ parent }): Promise<{ globalVariables: Glo
 	const { queryClient } = await parent();
 
 	const globalVariables = await tryCatch(
-		queryClient.fetchQuery({
+		queryClient.query({
 			queryKey: queryKeys.variables.list(),
 			queryFn: () => variableService.list()
 		})

@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/getarcaneapp/arcane/types/v2/features"
+
 	"emperror.dev/errors"
 	"github.com/containerd/platforms"
 	"github.com/distribution/reference"
@@ -18,6 +20,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/moby/buildkit/util/progress/progressui"
+	"github.com/moby/moby/client"
 	ispec "github.com/opencontainers/image-spec/specs-go/v1"
 	copacommon "github.com/project-copacetic/copacetic/pkg/common"
 	copapatch "github.com/project-copacetic/copacetic/pkg/patch"
@@ -86,11 +89,19 @@ func NewImagePatchService(db *database.DB, dockerService *docker.DockerClientSer
 // PatchImage starts a background patch run for the given image and returns the
 // pending record (carrying the activity ID) immediately.
 func (s *ImagePatchService) PatchImage(ctx context.Context, envID, imageID string, opts imagepatch.PatchOptions, user common.User) (*imagepatch.PatchRecord, error) {
+	if strings.TrimSpace(opts.ScanID) != "" {
+		if err := s.settingsService.RequireFeature(ctx, features.VulnerabilityManagement); err != nil {
+			return nil, err
+		}
+	}
 	runCtx := utils.ActivityRuntimeContext(ctx, nil)
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return nil, errors.WrapIf(err, "failed to connect to Docker")
+	}
+	if err := requireContainerdImageStoreInternal(runCtx, dockerClient); err != nil {
+		return nil, err
 	}
 
 	imageInspect, err := dockerClient.ImageInspect(runCtx, imageID)
@@ -197,6 +208,14 @@ func (s *ImagePatchService) patchInBackgroundInternal(ctx context.Context, recor
 		return
 	}
 
+	if record.Mode == string(imagepatch.PatchModeReport) {
+		if err := s.settingsService.RequireFeature(ctx, features.VulnerabilityManagement); err != nil {
+			s.finishPatchRecordInternal(ctx, record, imagepatch.PatchStatusFailed, err.Error(), nil, 0)
+			s.completePatchActivityInternal(ctx, activityID, false, err.Error())
+			return
+		}
+	}
+
 	// Copa consumes the scan report as a file; materialize the stored report
 	// into a temp file for the duration of the run.
 	reportPath := ""
@@ -264,6 +283,9 @@ func (s *ImagePatchService) patchInBackgroundInternal(ctx context.Context, recor
 		if errors.Is(patchErr, copatypes.ErrNoUpdatesFound) {
 			patchErr = errors.New("no OS package updates available for this image")
 		}
+		if strings.Contains(patchErr.Error(), `exporter "docker" could not be found`) {
+			patchErr = common.ErrPatchRequiresContainerdImageStore
+		}
 		s.finishPatchRecordInternal(ctx, record, imagepatch.PatchStatusFailed, patchErr.Error(), nil, durationMs)
 		slog.WarnContext(ctx, "image patch failed",
 			"environmentId", record.EnvironmentID,
@@ -289,20 +311,7 @@ func (s *ImagePatchService) patchInBackgroundInternal(ctx context.Context, recor
 		}
 	}
 
-	// Warn when the expected patched tag is missing from the daemon (e.g. copa
-	// took the multi-platform path and arch-suffixed the tag). When it exists,
-	// re-scan it so the security page can show whether the patch worked.
-	if dockerClient, err := s.dockerService.GetClient(ctx); err == nil {
-		if patchedInspect, err := dockerClient.ImageInspect(ctx, record.PatchedRef); err != nil {
-			slog.WarnContext(ctx, "patched image tag not found after patching", "patchedRef", record.PatchedRef, "error", err)
-			s.appendPatchActivityInternal(ctx, activityID, 95, "Patched image was created but the expected tag "+record.PatchedRef+" was not found; check the image list")
-		} else if s.vulnerabilityService != nil {
-			s.appendPatchActivityInternal(ctx, activityID, 95, "Re-scanning patched image to verify the patch")
-			if _, err := s.vulnerabilityService.ScanImage(context.WithoutCancel(ctx), record.EnvironmentID, patchedInspect.ID, common.User{Username: "System"}); err != nil {
-				slog.WarnContext(ctx, "failed to start verification scan of patched image", "patchedRef", record.PatchedRef, "error", err)
-			}
-		}
-	}
+	s.verifyPatchedImageInternal(ctx, record, activityID)
 
 	s.finishPatchRecordInternal(ctx, record, imagepatch.PatchStatusCompleted, "", packagesUpdated, durationMs)
 	slog.InfoContext(ctx, "image patch completed",
@@ -312,6 +321,23 @@ func (s *ImagePatchService) patchInBackgroundInternal(ctx context.Context, recor
 		"durationMs", durationMs,
 	)
 	s.completePatchActivityInternal(ctx, activityID, true, "")
+}
+
+func (s *ImagePatchService) verifyPatchedImageInternal(ctx context.Context, record *ImagePatchRecord, activityID string) {
+	// Warn when the expected patched tag is missing from the daemon (e.g. copa
+	// took the multi-platform path and arch-suffixed the tag). When it exists,
+	// re-scan it so the security page can show whether the patch worked.
+	if dockerClient, err := s.dockerService.GetClient(ctx); err == nil {
+		if patchedInspect, err := dockerClient.ImageInspect(ctx, record.PatchedRef); err != nil {
+			slog.WarnContext(ctx, "patched image tag not found after patching", "patchedRef", record.PatchedRef, "error", err)
+			s.appendPatchActivityInternal(ctx, activityID, 95, "Patched image was created but the expected tag "+record.PatchedRef+" was not found; check the image list")
+		} else if s.vulnerabilityService != nil && s.settingsService.IsFeatureEnabled(ctx, features.VulnerabilityManagement) {
+			s.appendPatchActivityInternal(ctx, activityID, 95, "Re-scanning patched image to verify the patch")
+			if _, err := s.vulnerabilityService.ScanImage(context.WithoutCancel(ctx), record.EnvironmentID, patchedInspect.ID, common.User{Username: "System"}); err != nil {
+				slog.WarnContext(ctx, "failed to start verification scan of patched image", "patchedRef", record.PatchedRef, "error", err)
+			}
+		}
+	}
 }
 
 // platformPinnedRefInternal resolves a tag reference to the manifest digest of
@@ -501,6 +527,9 @@ func (s *ImagePatchService) PatchedRefs(ctx context.Context, envID string) (map[
 // that are themselves patch outputs are folded into their original's row: they
 // are excluded from the list and surface as that row's LastPatchScan instead.
 func (s *ImagePatchService) ListPatchTargets(ctx context.Context, envID string, params pagination.QueryParams) ([]imagepatch.PatchTarget, pagination.Response, error) {
+	if err := s.settingsService.RequireFeature(ctx, features.VulnerabilityManagement); err != nil {
+		return nil, pagination.Response{}, err
+	}
 	patchedRefs, err := s.PatchedRefs(ctx, envID)
 	if err != nil {
 		return nil, pagination.Response{}, err
@@ -670,6 +699,16 @@ func (s *ImagePatchService) latestPatchesByImageInternal(ctx context.Context, en
 // images already patched since their latest scan. Used by the scheduled
 // auto-patch job.
 func (s *ImagePatchService) PatchFlaggedImages(ctx context.Context, envID string, user common.User) (patched, skipped int, err error) {
+	if err := s.settingsService.RequireFeature(ctx, features.VulnerabilityManagement); err != nil {
+		return 0, 0, err
+	}
+	dockerClient, err := s.dockerService.GetClient(ctx)
+	if err != nil {
+		return 0, 0, errors.WrapIf(err, "failed to connect to Docker")
+	}
+	if err := requireContainerdImageStoreInternal(ctx, dockerClient); err != nil {
+		return 0, 0, err
+	}
 	var scans []vulnerability.VulnerabilityScanRecord
 	if err := s.db.WithContext(ctx).
 		Where("status = ? AND fixable_count > 0", vulnerability.ScanStatusCompleted).
@@ -685,6 +724,9 @@ func (s *ImagePatchService) PatchFlaggedImages(ctx context.Context, envID string
 	}
 
 	for i := range scans {
+		if !s.settingsService.IsFeatureEnabled(ctx, features.VulnerabilityManagement) {
+			return patched, skipped + len(scans) - i, errors.WrapIff(common.ErrFeatureDisabled, "remaining patches stopped because feature %s was disabled", features.VulnerabilityManagement)
+		}
 		scan := &scans[i]
 
 		if _, isPatchOutput := patchedRefs[scan.ImageName]; isPatchOutput {
@@ -716,6 +758,20 @@ func (s *ImagePatchService) PatchFlaggedImages(ctx context.Context, envID string
 	}
 
 	return patched, skipped, nil
+}
+
+// Copa needs BuildKit's docker exporter, which dockerd only offers with the containerd image store.
+func requireContainerdImageStoreInternal(ctx context.Context, dockerClient *client.Client) error {
+	info, err := dockerClient.Info(ctx, client.InfoOptions{})
+	if err != nil {
+		return errors.WrapIf(err, "failed to inspect Docker")
+	}
+	for _, status := range info.Info.DriverStatus {
+		if status[0] == "driver-type" && status[1] == "io.containerd.snapshotter.v1" {
+			return nil
+		}
+	}
+	return common.ErrPatchRequiresContainerdImageStore
 }
 
 func (s *ImagePatchService) startPatchActivityInternal(ctx context.Context, envID, imageID, imageRef string, user *common.User) string {

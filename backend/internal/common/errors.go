@@ -18,6 +18,10 @@ const (
 	ErrUnavailable  = errors.Sentinel("kind: service unavailable")
 )
 
+// ConfigurationErrorCodeEnvFileUnreadable is the ConfigurationError code reported
+// alongside ErrProjectEnvUnreadable.
+const ConfigurationErrorCodeEnvFileUnreadable = "env_file_unreadable"
+
 type classified struct {
 	kind error
 	err  error
@@ -55,6 +59,7 @@ func (e *classified) Format(s fmt.State, verb rune) {
 }
 
 var (
+	ErrFeatureDisabled                         = Classify(ErrForbidden, errors.Sentinel("feature disabled"))
 	ErrInvalidToken                            = errors.Sentinel("invalid token")
 	ErrExpiredToken                            = errors.Sentinel("token expired")
 	ErrTokenVersionMismatch                    = errors.Sentinel("token version mismatch")
@@ -77,6 +82,7 @@ var (
 	ErrGlobalVariableSecretValueRequired       = Classify(ErrValidation, errors.Sentinel("A new value is required when making a secret variable readable"))
 	ErrImageUntagged                           = Classify(ErrBadRequest, errors.Sentinel("image has no tag; only tagged images can be patched"))
 	ErrImageLocalOnly                          = Classify(ErrBadRequest, errors.Sentinel("locally built image has no registry source to patch from; rebuild it to update its packages"))
+	ErrPatchRequiresContainerdImageStore       = Classify(ErrBadRequest, errors.Sentinel("image patching requires Docker's containerd image store; enable the containerd-snapshotter feature in daemon.json and restart Docker"))
 	ErrPatchScanReportUnavailable              = Classify(ErrNotFound, errors.Sentinel("no stored scan report is available for this scan; re-scan the image or patch without a report"))
 	ErrPatchScanImageMismatch                  = Classify(ErrBadRequest, errors.Sentinel("the selected scan does not belong to this image"))
 	ErrContainerComposeManaged                 = Classify(ErrConflict, errors.Sentinel("container is managed by a compose project; edit it via the project editor"))
@@ -114,6 +120,7 @@ var (
 	ErrProjectComposeFileNotFound              = Classify(ErrNotFound, errors.Sentinel("Project compose file not found"))
 	ErrComposeFileNotFound                     = Classify(ErrNotFound, errors.Sentinel("no compose file found"))
 	ErrComposeFileEnvInvalid                   = Classify(ErrValidation, errors.Sentinel("invalid COMPOSE_FILE selection"))
+	ErrProjectEnvUnreadable                    = Classify(ErrValidation, errors.Sentinel("project env file is not readable"))
 	ErrEnvironmentInvalidProxyTarget           = Classify(ErrBadRequest, errors.Sentinel("Invalid proxy target URL"))
 	ErrEnvironmentConnectionTestFailed         = Classify(ErrBadRequest, errors.Sentinel("Environment connection test failed"))
 	ErrUnsafeRemoteURL                         = Classify(ErrBadRequest, errors.Sentinel("Remote URL is not allowed"))

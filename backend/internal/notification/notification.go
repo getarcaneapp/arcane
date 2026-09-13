@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"maps"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -359,6 +360,11 @@ func (s *NotificationService) CreateOrUpdateSettings(ctx context.Context, provid
 		return nil, encryptErr
 	}
 	config = encryptedConfig
+	if _, ok := config["events"]; !ok {
+		if existingEvents, ok := existingConfig["events"]; ok {
+			config["events"] = existingEvents
+		}
+	}
 
 	if err != nil {
 		setting = NotificationSettings{
@@ -1217,8 +1223,14 @@ func (s *NotificationService) testNotificationWarningInternal(setting *Notificat
 	if !setting.Enabled {
 		return fmt.Sprintf("%s is disabled, so real notifications will not send", setting.Provider)
 	}
-	if eventType := notificationEventTypeForTestTypeInternal(testType); eventType != "" && !s.isEventEnabled(setting.Config, eventType) {
+	eventType := notificationEventTypeForTestTypeInternal(testType)
+	if eventType != "" && !s.isEventEnabled(setting.Config, eventType) {
 		return fmt.Sprintf("%s events are disabled for %s, so real notifications will not send", eventType, setting.Provider)
+	}
+	if eventType == "" && !slices.ContainsFunc(notifications.AllNotificationEventTypes, func(candidate notifications.NotificationEventType) bool {
+		return s.isEventEnabled(setting.Config, candidate)
+	}) {
+		return fmt.Sprintf("no events are subscribed for %s, so real notifications will not send", setting.Provider)
 	}
 	return ""
 }

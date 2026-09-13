@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -22,6 +23,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	envtypes "github.com/getarcaneapp/arcane/types/v2/env"
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/assert"
@@ -218,6 +220,29 @@ func TestWriteLocalEnvFile_RejectsNewlineInjectionKey(t *testing.T) {
 
 	_, statErr := os.Stat(filepath.Join(projectsDir, ".env.global"))
 	require.True(t, os.IsNotExist(statErr), ".env.global must not be written on validation failure")
+}
+
+func TestWriteLocalEnvFile_PreservesExistingFileMode(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("file mode bits are not represented on Windows FS")
+	}
+	service, _, projectsDir := setupVariableServiceTest(t)
+	ctx := context.Background()
+	envPath := filepath.Join(projectsDir, ".env.global")
+
+	require.NoError(t, service.WriteLocalEnvFile(ctx, []envtypes.Variable{{Key: "A", Value: "1"}}))
+	info, err := os.Stat(envPath)
+	require.NoError(t, err)
+	require.Equal(t, utils.FilePerm, info.Mode().Perm(), "new file must use the configured default mode")
+
+	require.NoError(t, os.Chmod(envPath, 0o600))
+	require.NoError(t, service.WriteLocalEnvFile(ctx, []envtypes.Variable{{Key: "A", Value: "2"}}))
+	info, err = os.Stat(envPath)
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o600), info.Mode().Perm(), "rewrite must keep the existing mode")
+	content, err := os.ReadFile(envPath)
+	require.NoError(t, err)
+	require.Contains(t, string(content), "A=2")
 }
 
 func TestSyncEnvironment_LocalWritesEnvGlobalFile(t *testing.T) {

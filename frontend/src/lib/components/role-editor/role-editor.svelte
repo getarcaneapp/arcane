@@ -8,7 +8,8 @@
 	import { normalizePermissionSelection } from '#lib/utils/permissions.js';
 	import { CopyIcon } from '#lib/icons/index.js';
 	import { z } from 'zod/v4';
-	import { createForm, preventDefault } from '#lib/utils/settings.js';
+	import { createForm, preventDefault } from '#lib/utils/settings.svelte.js';
+
 	import { m } from '#lib/paraglide/messages.js';
 
 	type Props = {
@@ -36,9 +37,10 @@
 		permissions: normalizePermissionSelection(manifest, role?.permissions ?? [])
 	});
 
-	const { inputs, ...form } = $derived(createForm<typeof formSchema>(formSchema, formData));
+	const form = $derived(createForm<typeof formSchema>(formSchema, formData));
+	let inputs = $derived(form.inputs);
 
-	const selectedCount = $derived($inputs.permissions?.value?.length ?? 0);
+	const selectedCount = $derived(inputs.permissions?.value?.length ?? 0);
 
 	function handleSubmit() {
 		if (isBuiltIn) return;
@@ -70,7 +72,7 @@
 					type="text"
 					placeholder={m.roles_name_placeholder()}
 					disabled={isBuiltIn || isLoading}
-					bind:input={$inputs.name}
+					bind:input={inputs.name}
 				/>
 
 				<FormInput
@@ -78,15 +80,15 @@
 					type="text"
 					placeholder={m.roles_description_placeholder()}
 					disabled={isBuiltIn || isLoading}
-					bind:input={$inputs.description}
+					bind:input={inputs.description}
 				/>
 
 				<div>
 					<div class="text-xs text-muted-foreground">
 						{m.roles_permissions_count({ count: selectedCount, total: totalPermissions })}
 					</div>
-					{#if $inputs.permissions?.error}
-						<p class="mt-1 text-sm text-red-500">{$inputs.permissions.error}</p>
+					{#if inputs.permissions?.error}
+						<p class="mt-1 text-sm text-red-500">{inputs.permissions.error}</p>
 					{/if}
 				</div>
 
@@ -123,6 +125,6 @@
 	</div>
 
 	<div>
-		<PermissionPicker {manifest} bind:selected={$inputs.permissions.value} disabled={isBuiltIn || isLoading} />
+		<PermissionPicker {manifest} bind:selected={inputs.permissions.value} disabled={isBuiltIn || isLoading} />
 	</div>
 </form>

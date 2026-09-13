@@ -458,7 +458,8 @@
 								<div>
 									<div class="mb-1 text-[11px] text-muted-foreground">{m.diagnostics_gc_recent_pauses()}</div>
 									<div class="flex h-12 items-end gap-0.5">
-										{#each diag.gc.recentPausesNs as p, i (i)}
+										<!-- Pause durations can repeat; bars render the current snapshot without local state. -->
+										{#each diag.gc.recentPausesNs as p}
 											<div
 												class="flex-1 rounded-sm bg-amber-500/70"
 												style="height: {maxPause ? Math.max(4, (p / maxPause) * 100) : 4}%"

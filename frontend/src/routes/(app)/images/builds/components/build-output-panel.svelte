@@ -6,11 +6,6 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { ansiToHtml } from '#lib/utils/formatting.js';
 
-	type AutoScrollParams = {
-		enabled: boolean;
-		key: number;
-	};
-
 	let {
 		logLines,
 		aggregateStatus,
@@ -29,19 +24,9 @@
 		onReset?: () => void;
 	} = $props();
 
-	function autoScrollToBottom(node: HTMLElement, params: AutoScrollParams) {
-		let current = params;
-		const scroll = () => {
-			if (!current.enabled) return;
-			node.scrollTop = node.scrollHeight;
-		};
-		scroll();
-		return {
-			update(next: AutoScrollParams) {
-				current = next;
-				scroll();
-			}
-		};
+	function autoScrollToBottom(node: HTMLElement) {
+		logLines.length;
+		if (autoScroll) node.scrollTop = node.scrollHeight;
 	}
 </script>
 
@@ -78,7 +63,7 @@
 
 	<!-- Terminal output with refined styling -->
 	<div
-		use:autoScrollToBottom={{ enabled: autoScroll, key: logLines.length }}
+		{@attach autoScrollToBottom}
 		class="group relative min-h-0 flex-1 overflow-auto rounded-2xl border border-border/50 bg-zinc-950 p-5 font-mono text-[13px] leading-[1.7] text-zinc-50 shadow-2xl shadow-black/50 dark:bg-zinc-950"
 	>
 		<div class="relative">

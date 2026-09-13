@@ -18,7 +18,7 @@ export const load: PageLoad = async ({ parent }) => {
 		}
 	} satisfies SearchPaginationSortRequest);
 
-	const repositories = await queryClient.fetchQuery({
+	const repositories = await queryClient.query({
 		queryKey: queryKeys.gitRepositories.list(repositoryRequestOptions),
 		queryFn: () => gitRepositoryService.getRepositories(repositoryRequestOptions)
 	});

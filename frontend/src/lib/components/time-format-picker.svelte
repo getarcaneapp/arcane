@@ -5,7 +5,7 @@
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { userService } from '#lib/services/user-service.js';
 	import { timeFormatStore } from '#lib/stores/time-format.store.svelte.js';
-	import userStore from '#lib/stores/user-store.js';
+	import userStore from '#lib/stores/user-store.svelte.js';
 	import type { TimeFormat } from '#lib/types/auth.js';
 
 	let {

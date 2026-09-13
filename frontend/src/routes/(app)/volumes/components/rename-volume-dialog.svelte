@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import * as Alert from '#lib/components/ui/alert/index.js';
 	import TextInputWithLabel from '#lib/components/form/text-input-with-label.svelte';
 	import SheetFooterActions from '#lib/components/sheets/sheet-footer-actions.svelte';
@@ -20,18 +21,12 @@
 		onSubmit: (newName: string) => void;
 	} = $props();
 
-	let newName = $state('');
+	let newName = $state(untrack(() => volume?.name ?? ''));
 	let error = $state<string | null>(null);
 
 	const isManaged = $derived(Boolean(getManagedByLabel(volume?.labels)));
 	const normalizedName = $derived(newName.trim());
 	const canRename = $derived(Boolean(volume && normalizedName && normalizedName !== volume.name));
-
-	$effect(() => {
-		if (!open) return;
-		newName = volume?.name ?? '';
-		error = null;
-	});
 
 	function handleOpenChange(isOpen: boolean) {
 		if (!isOpen) error = null;

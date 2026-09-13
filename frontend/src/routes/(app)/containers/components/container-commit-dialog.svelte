@@ -6,7 +6,8 @@
 	import * as Alert from '#lib/components/ui/alert/index.js';
 	import FormInput from '#lib/components/form/form-input.svelte';
 	import RepoTagFields from '#lib/components/form/repo-tag-fields.svelte';
-	import { createForm, preventDefault } from '#lib/utils/settings.js';
+	import { createForm, preventDefault } from '#lib/utils/settings.svelte.js';
+
 	import { containerService } from '#lib/services/container-service.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { toast } from 'svelte-sonner';
@@ -39,7 +40,8 @@
 		noPause: false
 	});
 
-	let { inputs, ...form } = $derived(createForm<typeof schema>(schema, formData));
+	let form = $derived(createForm<typeof schema>(schema, formData));
+	let inputs = $derived(form.inputs);
 	let isCommitting = $state(false);
 
 	function handleOpenChange(nextOpen: boolean) {
@@ -99,15 +101,15 @@
 				<InfoIcon class="size-4" />
 				<Alert.Description class="text-sm">{m.containers_commit_registry_note()}</Alert.Description>
 			</Alert.Root>
-			<RepoTagFields bind:repository={$inputs.repository} bind:tag={$inputs.tag} />
+			<RepoTagFields bind:repository={inputs.repository} bind:tag={inputs.tag} />
 			<FormInput
 				label={m.common_description()}
 				placeholder={m.containers_commit_comment_placeholder()}
-				bind:input={$inputs.comment}
+				bind:input={inputs.comment}
 			/>
-			<FormInput label={m.common_author()} placeholder={m.arcane_placeholder()} bind:input={$inputs.author} />
+			<FormInput label={m.common_author()} placeholder={m.arcane_placeholder()} bind:input={inputs.author} />
 			<label class="flex items-center gap-2 text-sm">
-				<input type="checkbox" bind:checked={$inputs.noPause.value} class="size-4 accent-primary" />
+				<input type="checkbox" bind:checked={inputs.noPause.value} class="size-4 accent-primary" />
 				<span>{m.containers_commit_no_pause()}</span>
 			</label>
 		</form>

@@ -12,7 +12,7 @@
 		"@axe-core/playwright": "^4.13.0",
 		"@playwright/test": "^1.62.1",
 		"@types/node": "^26.4.0",
-		"typescript": "^6.0.3",
+		"typescript": "^7.0.1",
 		"vite": "catalog:",
 		"vite-plus": "catalog:"
 	}

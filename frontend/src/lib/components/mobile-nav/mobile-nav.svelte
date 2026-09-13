@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import type { MobileNavigationSettings } from '#lib/config/navigation-config.js';
+	import { onDestroy } from 'svelte';
 	import { getAvailableMobileNavItems, getSwarmNavigationItems } from '#lib/config/navigation-config.js';
 	import MobileNavItem from './mobile-nav-item.svelte';
 	import MobileNavMenuButton from './mobile-nav-menu-button.svelte';
@@ -12,17 +12,15 @@
 	import type { AppVersionInformation } from '#lib/types/settings.js';
 	import type { PermissionsManifest, User } from '#lib/types/auth.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-	import { registerNavigationVisibilityController } from '#lib/utils/navigation.js';
+	import { getMobileNavigation } from '#lib/utils/navigation.js';
 
 	let {
-		navigationSettings,
 		user = null,
 		versionInformation,
 		swarmEnabled = false,
 		permissionsManifest = null,
 		class: className = ''
 	}: {
-		navigationSettings: MobileNavigationSettings;
 		user?: User | null;
 		versionInformation?: AppVersionInformation;
 		swarmEnabled?: boolean;
@@ -30,6 +28,8 @@
 		class?: string;
 	} = $props();
 
+	const navigation = getMobileNavigation();
+	const navigationSettings = $derived(navigation.settings);
 	const swarmItems = $derived(getSwarmNavigationItems(swarmEnabled));
 	const currentEnvId = $derived(environmentStore.selected?.id || '0');
 
@@ -49,72 +49,35 @@
 	const leftItems = $derived(pinnedItems.slice(0, Math.floor(pinnedItems.length / 2)));
 	const rightItems = $derived(pinnedItems.slice(Math.floor(pinnedItems.length / 2)));
 
-	let visible = $state(true);
 	let menuOpen = $state(false);
-	let navElement: HTMLElement;
+	const visible = $derived(navigation.visible);
 
-	function resetVisibility() {
-		visible = true;
+	function setMenuOpen(open: boolean) {
+		menuOpen = open;
+		navigation.visible = true;
+		gestures.reset();
 	}
 
 	const gestures = new MobileNavGestures(
 		{
-			onMenuOpen: () => (menuOpen = true),
-			onVisibilityChange: (isVisible) => (visible = isVisible)
+			onMenuOpen: () => setMenuOpen(true),
+			onVisibilityChange: (isVisible) => (navigation.visible = isVisible)
 		},
 		{
-			scrollToHideEnabled: false,
-			menuOpen: false
+			get scrollToHideEnabled() {
+				return scrollToHideEnabled;
+			},
+			get menuOpen() {
+				return menuOpen;
+			}
 		}
 	);
 
-	// Update gesture options when reactive values change
-	$effect(() => {
-		gestures.updateOptions({
-			scrollToHideEnabled,
-			menuOpen
-		});
+	onDestroy(() => {
+		navigation.visible = true;
 	});
 
-	// Enable touch gestures
-	$effect(() => {
-		scrollToHideEnabled;
-		return gestures.enableTouchGestures();
-	});
-
-	// Enable scroll gestures
-	$effect(() => {
-		scrollToHideEnabled;
-		menuOpen;
-		return gestures.enableScrollGestures();
-	});
-
-	// Enable wheel gestures on nav element
-	$effect(() => {
-		scrollToHideEnabled;
-		menuOpen;
-		if (navElement) {
-			gestures.setElement(navElement);
-			return gestures.enableWheelGestures();
-		}
-	});
-
-	// Show nav when menu closes
-	$effect(() => {
-		if (!menuOpen) {
-			resetVisibility();
-		}
-	});
-
-	$effect(() => {
-		registerNavigationVisibilityController({ resetVisibility });
-		return () => registerNavigationVisibilityController(null);
-	});
-
-	// Keep page padding in sync with nav height via CSS variables
-	$effect(() => {
-		if (!navElement || typeof document === 'undefined') return;
-
+	function measureOffset(navElement: HTMLElement) {
 		const root = document.documentElement;
 		const cssVarName = mode === 'floating' ? '--mobile-floating-nav-offset' : '--mobile-docked-nav-offset';
 
@@ -139,20 +102,20 @@
 		}
 
 		const handleResize = mode === 'floating' ? () => applyOffset() : null;
-		if (handleResize && typeof window !== 'undefined') {
+		if (handleResize) {
 			window.addEventListener('resize', handleResize);
 			window.visualViewport?.addEventListener('resize', handleResize);
 		}
 
 		return () => {
 			observer?.disconnect();
-			if (handleResize && typeof window !== 'undefined') {
+			if (handleResize) {
 				window.removeEventListener('resize', handleResize);
 				window.visualViewport?.removeEventListener('resize', handleResize);
 			}
 			root.style.removeProperty(cssVarName);
 		};
-	});
+	}
 
 	// Mode-specific styles
 	const navClasses = $derived(
@@ -183,26 +146,33 @@
 		)
 	);
 
-	const ariaLabel = $derived(mode === 'docked' ? m.mobile_navigation() : 'Mobile navigation');
 	const testId = $derived(mode === 'floating' ? 'mobile-floating-nav' : 'mobile-docked-nav');
 </script>
 
-<nav bind:this={navElement} class={navClasses} data-testid={testId} aria-label={ariaLabel}>
+<svelte:window
+	ontouchstartcapture={gestures.handleTouchStart}
+	ontouchmovecapture={gestures.handleTouchMove}
+	ontouchendcapture={gestures.handleTouchEnd}
+	ontouchcancelcapture={gestures.handleTouchEnd}
+	onscrollcapture={gestures.handleScroll}
+/>
+
+<nav {@attach gestures.attach} {@attach measureOffset} class={navClasses} data-testid={testId} aria-label={m.mobile_navigation()}>
 	<!-- Left side items -->
 	{#each leftItems as item (item.url)}
 		<MobileNavItem {item} {showLabels} active={currentPath === item.url || currentPath.startsWith(item.url + '/')} />
 	{/each}
 
 	<!-- Center action button -->
-	<MobileNavMenuButton {showLabels} onclick={() => (menuOpen = true)} />
+	<MobileNavMenuButton {showLabels} onclick={() => setMenuOpen(true)} />
 
 	{#each rightItems as item (item.url)}
 		<MobileNavItem {item} {showLabels} active={currentPath === item.url || currentPath.startsWith(item.url + '/')} />
 	{/each}
 
 	{#if pinnedItems.length === 0}
-		<MobileNavMenuButton {showLabels} onclick={() => (menuOpen = true)} />
+		<MobileNavMenuButton {showLabels} onclick={() => setMenuOpen(true)} />
 	{/if}
 </nav>
 
-<MobileNavSheet bind:open={menuOpen} {user} {versionInformation} {swarmItems} {permissionsManifest} />
+<MobileNavSheet bind:open={() => menuOpen, setMenuOpen} {user} {versionInformation} {swarmItems} {permissionsManifest} />

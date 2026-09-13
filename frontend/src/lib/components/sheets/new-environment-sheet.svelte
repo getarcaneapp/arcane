@@ -13,7 +13,8 @@
 	import AgentCommandBlock from '#lib/components/agent-command-block.svelte';
 	import type { CreateEnvironmentDTO, DeploymentSnippetFile } from '#lib/types/environment.js';
 	import { z } from 'zod/v4';
-	import { createForm, preventDefault } from '#lib/utils/settings.js';
+	import { createForm, preventDefault } from '#lib/utils/settings.svelte.js';
+
 	import { m } from '#lib/paraglide/messages.js';
 	import { environmentManagementService } from '#lib/services/env-mgmt-service.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
@@ -65,7 +66,7 @@
 				try {
 					const operationResult1 = await tryCatch(
 						(async () => {
-							const snippets = await queryClient.fetchQuery({
+							const snippets = await queryClient.query({
 								queryKey: queryKeys.environments.deploymentSnippets(created.id),
 								queryFn: () => environmentManagementService.getDeploymentSnippets(created.id),
 								staleTime: 0
@@ -103,7 +104,6 @@
 	const isSubmittingNewAgent = $derived(createEnvironmentMutation.isPending);
 
 	let newAgentUrlProtocol = $state<'https' | 'http'>('http');
-	let newAgentUrlHost = $state('');
 	let edgeMTLSEnabled = $state(false);
 
 	// Direct mode form schema requires URL
@@ -117,39 +117,24 @@
 		name: z.string().min(1, m.environments_name_required()).max(25, m.environments_name_too_long())
 	});
 
-	const { inputs: directInputs, ...directForm } = createForm<typeof directFormSchema>(directFormSchema, {
+	const directForm = createForm<typeof directFormSchema>(directFormSchema, {
 		name: '',
 		apiUrl: ''
 	});
+	let directInputs = $derived(directForm.inputs);
 
-	const { inputs: edgeInputs, ...edgeForm } = createForm<typeof edgeFormSchema>(edgeFormSchema, {
+	const edgeForm = createForm<typeof edgeFormSchema>(edgeFormSchema, {
 		name: ''
 	});
+	let edgeInputs = $derived(edgeForm.inputs);
 
 	// Reset on open/close
-	$effect(() => {
-		if (open) {
-			createdEnvironment = null;
-			connectionMode = 'direct';
-			newAgentUrlProtocol = 'http';
-			newAgentUrlHost = '';
-			edgeMTLSEnabled = false;
-			$directInputs.name.value = '';
-			$directInputs.apiUrl.value = '';
-			$edgeInputs.name.value = '';
-		}
-	});
-
-	// Sync UrlInput value with form validation for direct mode
-	$effect(() => {
-		$directInputs.apiUrl.value = newAgentUrlHost;
-	});
 
 	function handleDirectSubmit() {
 		const data = directForm.validate();
 		if (!data) return;
 
-		const fullUrl = `${newAgentUrlProtocol}://${newAgentUrlHost}`;
+		const fullUrl = `${newAgentUrlProtocol}://${data.apiUrl}`;
 
 		const dto: CreateEnvironmentDTO = {
 			name: data.name,
@@ -328,7 +313,7 @@
 							<FormInput
 								label={m.common_name()}
 								placeholder={m.environments_production_docker()}
-								bind:input={$directInputs.name}
+								bind:input={directInputs.name}
 							/>
 
 							<UrlInput
@@ -336,11 +321,11 @@
 								label={m.environments_agent_address()}
 								placeholder={m.environments_agent_address_placeholder()}
 								description={m.environments_agent_address_description()}
-								bind:value={newAgentUrlHost}
+								bind:value={directInputs.apiUrl.value}
 								bind:protocol={newAgentUrlProtocol}
 								disabled={isSubmittingNewAgent}
 								required
-								error={$directInputs.apiUrl.error ?? undefined}
+								error={directInputs.apiUrl.error ?? undefined}
 							/>
 
 							<ArcaneButton
@@ -359,7 +344,7 @@
 							{m.environments_edge_desc()}
 						</p>
 						<form onsubmit={preventDefault(handleEdgeSubmit)} class="space-y-4">
-							<FormInput label={m.common_name()} placeholder={m.env_remote_docker_host()} bind:input={$edgeInputs.name} />
+							<FormInput label={m.common_name()} placeholder={m.env_remote_docker_host()} bind:input={edgeInputs.name} />
 
 							<LabeledSwitch
 								id="new-edge-agent-mtls"

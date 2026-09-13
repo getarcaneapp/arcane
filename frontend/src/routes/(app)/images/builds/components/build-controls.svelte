@@ -5,15 +5,17 @@
 	import { Switch } from '#lib/components/ui/switch/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
-	import type { BuildFormInputsStore, BuildProviderOption } from './build-form.types';
+	import type { BuildFormInputs, BuildProviderOption } from './build-form.types';
 
 	let {
-		inputs,
+		inputs = $bindable(),
+		provider,
 		providerOptions,
 		isBuilding = false,
 		onBuild
 	}: {
-		inputs: BuildFormInputsStore;
+		inputs: BuildFormInputs;
+		provider: 'local' | 'depot';
 		providerOptions: BuildProviderOption[];
 		isBuilding?: boolean;
 		onBuild?: () => void;
@@ -28,22 +30,28 @@
 		triggerSize="sm"
 		triggerClass="w-[160px]"
 		options={providerOptions}
-		bind:value={$inputs.provider.value}
+		bind:value={
+			() => provider,
+			(value) => {
+				if (value === 'depot') inputs.provider.value = 'depot';
+				else inputs.provider.value = 'local';
+			}
+		}
 	/>
 
 	<div class="hidden h-6 w-px bg-border lg:block"></div>
 
 	<div class="flex items-center gap-2">
-		<Switch id="build-push" checked={$inputs.push.value} onCheckedChange={(v) => ($inputs.push.value = v === true)} />
+		<Switch id="build-push" checked={inputs.push.value} onCheckedChange={(v) => (inputs.push.value = v === true)} />
 		<Label for="build-push" class="text-sm">{m.push()}</Label>
 	</div>
 
 	<div class="flex items-center gap-2">
 		<Switch
 			id="build-load"
-			checked={$inputs.load.value}
-			onCheckedChange={(v) => ($inputs.load.value = v === true)}
-			disabled={$inputs.provider.value === 'depot'}
+			checked={inputs.load.value}
+			onCheckedChange={(v) => (inputs.load.value = v === true)}
+			disabled={provider === 'depot'}
 		/>
 		<Label for="build-load" class="text-sm">{m.load()}</Label>
 	</div>

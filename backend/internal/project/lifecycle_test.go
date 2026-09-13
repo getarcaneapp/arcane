@@ -54,7 +54,7 @@ func newLifecycleTestService(t *testing.T, db *database.DB) (*LifecycleService, 
 	settings, err := settings.NewSettingsService(context.Background(), db, writes, effects)
 	require.NoError(t, err)
 	events := event.NewEventService(db, nil, nil)
-	return NewLifecycleService(db, settings, events, nil), settings
+	return NewLifecycleService(db, settings, events, nil, nil), settings
 }
 
 func writeLifecycleProjectDirWithScript(t *testing.T, scriptRel, scriptBody string) string {

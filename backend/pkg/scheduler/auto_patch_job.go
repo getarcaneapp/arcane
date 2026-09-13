@@ -4,6 +4,9 @@ import (
 	"context"
 	"log/slog"
 
+	"emperror.dev/errors"
+	"github.com/getarcaneapp/arcane/types/v2/features"
+
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
@@ -40,7 +43,7 @@ func (j *AutoPatchJob) Name() string {
 }
 
 func (j *AutoPatchJob) ShouldSchedule(ctx context.Context) bool {
-	return j.settingsService.GetBoolSetting(ctx, "imageAutoPatchEnabled", false)
+	return j.settingsService.IsFeatureEnabled(ctx, features.VulnerabilityManagement) && j.settingsService.GetBoolSetting(ctx, "imageAutoPatchEnabled", false)
 }
 
 // Schedule returns the cron expression for the job. Defaults to daily at 3 AM.
@@ -60,7 +63,7 @@ func (j *AutoPatchJob) Schedule(ctx context.Context) string {
 }
 
 func (j *AutoPatchJob) Run(ctx context.Context) (schedulertypes.Outcome, error) {
-	if !j.settingsService.GetBoolSetting(ctx, "imageAutoPatchEnabled", false) {
+	if !j.ShouldSchedule(ctx) {
 		slog.DebugContext(ctx, "scheduled image patching disabled; skipping run")
 		return schedulertypes.Outcome{Status: schedulertypes.Skipped}, nil
 	}
@@ -68,6 +71,13 @@ func (j *AutoPatchJob) Run(ctx context.Context) (schedulertypes.Outcome, error) 
 	slog.InfoContext(ctx, "scheduled image patching started")
 
 	patched, skipped, err := j.imagePatchService.PatchFlaggedImages(ctx, types.LocalDockerEnvironmentID, autoPatchSystemUser)
+	if errors.Is(err, common.ErrFeatureDisabled) {
+		status := schedulertypes.Skipped
+		if patched > 0 {
+			status = schedulertypes.Partial
+		}
+		return schedulertypes.Outcome{Status: status, Message: err.Error()}, nil
+	}
 	if err != nil {
 		slog.ErrorContext(ctx, "scheduled image patching failed", "error", err)
 		if patched > 0 {

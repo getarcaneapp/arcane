@@ -259,8 +259,10 @@
 		{#if hasExpand}
 			<Table.Cell class="w-8 px-2" data-row-select-ignore>
 				<button
-					class="flex items-center justify-center text-muted-foreground transition-transform duration-200 hover:text-foreground"
-					class:rotate-90={isExpanded}
+					class={cn(
+						'flex items-center justify-center text-muted-foreground transition-transform duration-200 hover:text-foreground',
+						isExpanded && 'rotate-90'
+					)}
 					onclick={(e) => {
 						e.stopPropagation();
 						onToggleRowExpanded?.(rowId);

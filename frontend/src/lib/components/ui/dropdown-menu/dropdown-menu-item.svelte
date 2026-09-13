@@ -1,8 +1,7 @@
 <script lang="ts">
 	import { cn } from '#lib/utils.js';
 	import { DropdownMenu as DropdownMenuPrimitive } from 'bits-ui';
-	import { getContext } from 'svelte';
-	import { dropdownMenuContextKey, type DropdownMenuContext } from './dropdown-menu-context';
+	import { getDropdownMenuContext, hasDropdownMenuContext } from './dropdown-menu-context';
 
 	let {
 		ref = $bindable(null),
@@ -19,7 +18,7 @@
 		onclick?: (event: MouseEvent) => void;
 	} = $props();
 
-	const menuContext = getContext<DropdownMenuContext | null>(dropdownMenuContextKey);
+	const menuContext = hasDropdownMenuContext() ? getDropdownMenuContext() : undefined;
 
 	function handleClick(event: MouseEvent) {
 		onclick?.(event);

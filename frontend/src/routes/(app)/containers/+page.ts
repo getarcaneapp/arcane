@@ -19,7 +19,7 @@ export const load: PageLoad = async ({ parent }) => {
 	let containers;
 	const operationResult = await tryCatch(
 		(async () =>
-			queryClient.fetchQuery({
+			queryClient.query({
 				queryKey: queryKeys.containers.list(envId, containerRequestOptions),
 				queryFn: () => containerService.getContainersForEnvironment(envId, containerRequestOptions)
 			}))()

@@ -108,7 +108,7 @@ func isBackendModuleRoot(path string) bool {
 func ReadProjectFiles(ctx context.Context, projectPath, composePath string) (composeContent, envContent string, err error) {
 	if strings.TrimSpace(composePath) == "" {
 		detected, derr := DetectComposeFile(ctx, "", projectPath)
-		if derr != nil && !errors.Is(derr, common.ErrComposeFileNotFound) {
+		if derr != nil && !errors.Is(derr, common.ErrComposeFileNotFound) && (!errors.Is(derr, common.ErrProjectEnvUnreadable) || detected == "") {
 			return "", "", derr
 		}
 		composePath = detected

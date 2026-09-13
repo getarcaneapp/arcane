@@ -8,7 +8,7 @@
 	import type { Temporal } from 'temporal-polyfill';
 	import type { Snippet } from 'svelte';
 	import type { HTMLAttributes } from 'svelte/elements';
-	import type { FormInput } from '#lib/utils/settings.js';
+	import type { FormInput } from '#lib/types/form.js';
 
 	let {
 		input = $bindable(),

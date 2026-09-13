@@ -1,11 +1,13 @@
 <script lang="ts">
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
-	import { goto } from '$app/navigation';
+	import { goto, afterNavigate } from '$app/navigation';
+	import { onMount, onDestroy } from 'svelte';
+	import userStore from '#lib/stores/user-store.svelte.js';
 	import { useBackupActivity } from '#lib/hooks/use-backup-activity.svelte.js';
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
 	import { toast } from 'svelte-sonner';
-	import settingsStore from '#lib/stores/config-store.js';
+	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { SettingsPageLayout, type SettingsActionButton } from '#lib/layouts/index.js';
 	import { AlertIcon, BackupIcon, CloudStorageIcon, InfoIcon, LockIcon, ResetIcon, UploadIcon } from '#lib/icons/index.js';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
@@ -19,7 +21,6 @@
 	import TextInputWithLabel from '#lib/components/form/text-input-with-label.svelte';
 	import { systemBackupService } from '#lib/services/system-backup-service.js';
 	import { volumeBackupService } from '#lib/services/volume-backup-service.js';
-	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import {
 		backupDestinationOptions,
@@ -54,6 +55,7 @@
 	let systemVolumeOptions = $state<SystemVolumeBackupOption[]>([]);
 	let requestOptions = $derived<SearchPaginationSortRequest>(data.requestOptions);
 	let scheduleOpen = $state(false);
+	let scheduleSession = $state(0);
 	let scheduleType = $state<'system' | 'volume'>('system');
 	let editingScheduleId = $state<string | undefined>();
 	let keyOpen = $state(false);
@@ -86,7 +88,7 @@
 	let restoreFilesSearch = $state('');
 	let restoreFilesLoaded = $state(false);
 	let restoringFiles = $state(false);
-	const isReadOnly = $derived.by(() => $settingsStore.uiConfigDisabled);
+	const isReadOnly = $derived.by(() => settingsStore.current?.uiConfigDisabled);
 	const canManageRecoveryKey = $derived(hasPermission('system-backups:recovery-key'));
 	const destinationOptions = $derived(backupDestinationOptions(data.destinations.length > 0));
 	const s3Options = $derived(s3DestinationOptions(data.destinations));
@@ -147,6 +149,8 @@
 	const invalid = $derived(Boolean(actionKeyInvalid || keyError || destinationError));
 
 	function openSchedule(type: 'system' | 'volume' = 'system', id?: string) {
+		scheduleSession += 1;
+		if (type === 'volume') void loadSystemVolumeOptions();
 		scheduleType = type;
 		editingScheduleId = id;
 		scheduleOpen = true;
@@ -164,6 +168,7 @@
 					await systemBackupService.setRecoveryKey(generated.recoveryKey);
 					newRecoveryKey = generated.recoveryKey;
 					policyCollection = { ...policyCollection, recoveryKeyStored: true };
+					void discoverStoredBackups();
 					keyOpen = true;
 				})()
 			);
@@ -208,6 +213,7 @@
 				(async () => {
 					await systemBackupService.setRecoveryKey(importKeyInput.trim());
 					policyCollection = { ...policyCollection, recoveryKeyStored: true };
+					void discoverStoredBackups();
 					importKeyOpen = false;
 					toast.success(m.system_backups_recovery_key_saved());
 				})()
@@ -241,8 +247,6 @@
 		actionOpen = true;
 	}
 
-	// The picker resets its own selection and search whenever the provider
-	// changes, so the dialog only manages target, key, and provider.
 	async function openRestoreFiles(backup: BackupHistoryEntry) {
 		restoreFilesTarget = backup;
 		restoreFilesRecoveryKey = '';
@@ -254,10 +258,6 @@
 
 	function closeRestoreFiles() {
 		restoreFilesOpen = false;
-		restoreFilesTarget = null;
-		restoreFilesRecoveryKey = '';
-		restoreFilesProvider = null;
-		restoreFilesLoaded = false;
 	}
 
 	function updateRestoreFilesRecoveryKey(value: string) {
@@ -268,6 +268,9 @@
 
 	function loadRestoreFiles() {
 		if (!restoreFilesTarget || restoreFilesKeyInvalid) return;
+		restoreFilesSelectedPaths = [];
+		restoreFilesSelectAll = false;
+		restoreFilesSearch = '';
 		const backupID = restoreFilesTarget.id;
 		const recoveryKey = restoreFilesRecoveryKey.trim();
 		restoreFilesProvider = {
@@ -373,15 +376,24 @@
 		await goto(`/volumes/${encodeURIComponent(backup.resourceName)}?tab=backups`);
 	}
 
-	// With a stored key the S3 repositories are scanned automatically, so
-	// remote snapshots just appear in the table. Scanning opens and lists every
-	// configured repository, so the shared helper serializes runs and throttles
-	// them; backend discovery is idempotent and only imports unknown snapshots.
-	$effect(() => {
-		if (!policyCollection.recoveryKeyStored || data.destinations.length === 0) return;
-		void runAutomaticBackupDiscovery(data.destinations).then((found) => {
-			if (found) void refresh();
+	let mounted = false;
+	async function discoverStoredBackups() {
+		if (!mounted || !policyCollection.recoveryKeyStored || !data.destinations.length) return;
+		if (!hasPermission('system-backups:manage')) return;
+		const found = await runAutomaticBackupDiscovery(data.destinations);
+		if (mounted && found) await refresh();
+	}
+	onMount(() => {
+		mounted = true;
+		return userStore.onChange(() => {
+			void discoverStoredBackups();
 		});
+	});
+	onDestroy(() => {
+		mounted = false;
+	});
+	afterNavigate(() => {
+		void discoverStoredBackups();
 	});
 
 	// Discovered volume backups may reference a volume that does not exist on
@@ -804,12 +816,14 @@
 				</div>
 
 				{#if restoreFilesProvider}
-					<BackupFilePicker
-						provider={restoreFilesProvider}
-						bind:selectedPaths={restoreFilesSelectedPaths}
-						bind:selectAll={restoreFilesSelectAll}
-						bind:search={restoreFilesSearch}
-					/>
+					{#key restoreFilesProvider}
+						<BackupFilePicker
+							provider={restoreFilesProvider}
+							bind:selectedPaths={restoreFilesSelectedPaths}
+							bind:selectAll={restoreFilesSelectAll}
+							bind:search={restoreFilesSearch}
+						/>
+					{/key}
 
 					<Alert.Root variant="warning" class="py-2 [&>svg]:top-2">
 						<AlertIcon class="size-4" />
@@ -901,21 +915,23 @@
 		</div>
 	{/snippet}
 	{#snippet additionalContent()}
-		{#if scheduleOpen}
-			<SystemBackupScheduleDialog
-				bind:open={scheduleOpen}
-				initialType={scheduleType}
-				policyId={editingScheduleId}
-				systemPolicies={policyCollection.policies}
-				volumePolicies={systemVolumePolicyCollection.policies}
-				recoveryKeyStored={policyCollection.recoveryKeyStored}
-				destinations={data.destinations}
-				volumeOptions={systemVolumeOptions}
-				volumeOptionsLoading={systemVolumeOptionsLoading}
-				onLoadVolumeOptions={loadSystemVolumeOptions}
-				onSystemSaved={(policies) => (policyCollection = { ...policyCollection, policies })}
-				onVolumeSaved={(policies) => (systemVolumePolicyCollection = { policies })}
-			/>
+		{#if scheduleSession > 0}
+			{#key scheduleSession}
+				<SystemBackupScheduleDialog
+					bind:open={scheduleOpen}
+					initialType={scheduleType}
+					policyId={editingScheduleId}
+					systemPolicies={policyCollection.policies}
+					volumePolicies={systemVolumePolicyCollection.policies}
+					recoveryKeyStored={policyCollection.recoveryKeyStored}
+					destinations={data.destinations}
+					volumeOptions={systemVolumeOptions}
+					volumeOptionsLoading={systemVolumeOptionsLoading}
+					onLoadVolumeOptions={loadSystemVolumeOptions}
+					onSystemSaved={(policies) => (policyCollection = { ...policyCollection, policies })}
+					onVolumeSaved={(policies) => (systemVolumePolicyCollection = { policies })}
+				/>
+			{/key}
 		{/if}
 
 		{@render recoveryKeyDialog()}

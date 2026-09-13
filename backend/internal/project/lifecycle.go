@@ -30,6 +30,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	dockerutils "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
@@ -84,17 +85,20 @@ type LifecycleService struct {
 	settingsService *settings.SettingsService
 	eventService    *event.EventService
 	dockerService   *docker.DockerClientService
+	imageService    *image.ImageService
 }
 
 // NewLifecycleService constructs a LifecycleService wired against shared
 // infrastructure. The Docker client is obtained lazily on each hook run via
-// dockerService.GetClient so reconnects are transparent.
-func NewLifecycleService(db *database.DB, settingsService *settings.SettingsService, eventService *event.EventService, dockerService *docker.DockerClientService) *LifecycleService {
+// dockerService.GetClient so reconnects are transparent. Runner image pulls go
+// through imageService so configured registry credentials apply.
+func NewLifecycleService(db *database.DB, settingsService *settings.SettingsService, eventService *event.EventService, dockerService *docker.DockerClientService, imageService *image.ImageService) *LifecycleService {
 	return &LifecycleService{
 		db:              db,
 		settingsService: settingsService,
 		eventService:    eventService,
 		dockerService:   dockerService,
+		imageService:    imageService,
 	}
 }
 
@@ -168,6 +172,7 @@ func (s *LifecycleService) executePreDeployInternal(ctx context.Context, project
 		extraMounts,
 		sync.PreDeployNetworkMode,
 		timeout,
+		actor,
 	)
 	durationMs := time.Since(start).Milliseconds()
 
@@ -213,13 +218,14 @@ func (s *LifecycleService) runScriptInContainerInternal(
 	extraMounts []lifecycletype.ExtraMount,
 	networkMode string,
 	timeout time.Duration,
+	actor common.User,
 ) (stdoutContent string, stderrContent string, exitCode int64, err error) {
 	dockerClient, dErr := s.dockerService.GetClient(ctx)
 	if dErr != nil {
 		return "", "", 0, errors.WrapIf(dErr, "failed to connect to Docker")
 	}
 
-	if err := s.ensureRunnerImageInternal(ctx, dockerClient, runnerImage); err != nil {
+	if err := s.ensureRunnerImageInternal(ctx, dockerClient, runnerImage, actor); err != nil {
 		return "", "", 0, errors.WrapIff(err, "failed to ensure runner image %s", runnerImage)
 	}
 
@@ -348,29 +354,26 @@ func (s *LifecycleService) runScriptInContainerInternal(
 }
 
 // ensureRunnerImageInternal makes sure the runner image is available locally,
-// pulling it on a miss. Mirrors the pattern used by vulnerability scanning for
-// the Trivy scanner image, including reuse of the dockerImagePullTimeout
-// setting so operators on slow networks can tune it once.
-func (s *LifecycleService) ensureRunnerImageInternal(ctx context.Context, dockerClient *client.Client, image string) error {
+// pulling it on a miss. The pull is delegated to the image service so the
+// configured registry credentials (and its anonymous retry) apply, bounded by
+// the dockerImagePullTimeout setting so operators on slow networks can tune it.
+func (s *LifecycleService) ensureRunnerImageInternal(ctx context.Context, dockerClient *client.Client, image string, actor common.User) error {
 	if _, err := dockerClient.ImageInspect(ctx, image); err == nil {
 		return nil
+	}
+	if s.imageService == nil {
+		return errors.New("image service is unavailable")
 	}
 
 	pullTimeoutSec := s.settingsService.GetSettingsConfig().DockerImagePullTimeout.AsInt()
 	pullCtx, pullCancel := context.WithTimeout(ctx, timeouts.GetDuration(pullTimeoutSec, timeouts.DefaultDockerImagePull))
 	defer pullCancel()
 
-	pullReader, err := dockerClient.ImagePull(pullCtx, image, client.ImagePullOptions{})
-	if err != nil {
+	if err := s.imageService.PullImage(pullCtx, image, io.Discard, actor, nil); err != nil {
 		if errors.Is(pullCtx.Err(), context.DeadlineExceeded) {
 			return errors.Errorf("runner image pull timed out for %s (increase dockerImagePullTimeout setting if needed)", image)
 		}
 		return errors.WrapIff(err, "pull runner image %s", image)
-	}
-	defer func() { _ = pullReader.Close() }()
-
-	if err := dockerutils.RenderJSONMessageStream(pullReader, io.Discard); err != nil {
-		return errors.WrapIf(err, "failed to complete runner image pull")
 	}
 	return nil
 }

@@ -280,7 +280,7 @@ func (fw *Watcher) handleEventInternal(ctx context.Context, event fsnotify.Event
 // watch), the compose file's own Create event reaches this filter and passes
 // via IsProjectFile.
 func (fw *Watcher) shouldHandleEventInternal(event fsnotify.Event) bool {
-	if !event.Has(fsnotify.Write) && !event.Has(fsnotify.Create) && !event.Has(fsnotify.Rename) && !event.Has(fsnotify.Remove) {
+	if !event.Has(fsnotify.Write) && !event.Has(fsnotify.Create) && !event.Has(fsnotify.Rename) && !event.Has(fsnotify.Remove) && !event.Has(fsnotify.Chmod) {
 		return false
 	}
 	return projects.IsProjectFile(filepath.Base(event.Name))

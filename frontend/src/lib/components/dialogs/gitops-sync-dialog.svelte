@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import FormInput from '#lib/components/form/form-input.svelte';
@@ -23,7 +24,8 @@
 	import { settingsService } from '#lib/services/settings-service.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { z } from 'zod/v4';
-	import { createForm, preventDefault } from '#lib/utils/settings.js';
+	import { createForm, preventDefault } from '#lib/utils/settings.svelte.js';
+
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { ArrowRightIcon, CodeIcon, FolderOpenIcon, InfoIcon } from '#lib/icons/index.js';
@@ -70,7 +72,12 @@
 
 	const composeFileFilter = (file: FileTreeNode) =>
 		file.type === 'file' && (file.name.endsWith('.yml') || file.name.endsWith('.yaml'));
-	let selectedTargetType = $state<GitOpsSyncTargetType>('project');
+	let selectedTargetType = $state<GitOpsSyncTargetType>(untrack(() => normalizeTargetType(syncToEdit?.targetType ?? targetType)));
+
+	const defaultComposePath = $derived.by(() => {
+		if (selectedTargetType === 'swarm_stack') return 'compose.yml';
+		return 'docker-compose.yml';
+	});
 
 	const targetTypeOptions = [
 		{ value: 'project', label: m.project() },
@@ -113,47 +120,64 @@
 		return value * bytesPerMegabyte;
 	}
 
-	const settingsQuery = createQuery(() => ({
-		queryKey: queryKeys.settings.byEnvironment(environmentId),
-		queryFn: () => settingsService.getSettingsForEnvironmentMerged(environmentId),
-		enabled: open,
-		staleTime: 0,
-		refetchOnMount: 'always'
-	}));
+	const settingsQuery = createQuery(() => {
+		const requestEnvironmentId = environmentId;
+		return {
+			queryKey: queryKeys.settings.byEnvironment(requestEnvironmentId),
+			queryFn: () => settingsService.getSettingsForEnvironmentMerged(requestEnvironmentId),
+			enabled: open,
+			staleTime: 0,
+			refetchOnMount: 'always'
+		};
+	});
 	const lifecycleEnabled = $derived(settingsQuery.data?.lifecycleEnabled ?? false);
 	const lifecycleDefaultRunnerImage = $derived(settingsQuery.data?.lifecycleDefaultRunnerImage?.trim() || 'alpine:latest');
 
-	let formData = $derived({
-		name: open && syncToEdit ? syncToEdit.name : '',
-		repositoryId: open && syncToEdit ? syncToEdit.repositoryId : '',
-		branch: open && syncToEdit ? syncToEdit.branch : 'main',
-		composePath:
-			open && syncToEdit ? syncToEdit.composePath : selectedTargetType === 'swarm_stack' ? 'compose.yml' : 'docker-compose.yml',
-		syncDirectory: open && syncToEdit ? (syncToEdit.syncDirectory ?? false) : false,
-		pullImageAfterSync: open && syncToEdit ? (syncToEdit.pullImageAfterSync ?? false) : false,
-		redeployAfterSync: open && syncToEdit ? (syncToEdit.redeployAfterSync ?? false) : false,
-		maxSyncFiles: open && syncToEdit ? (syncToEdit.maxSyncFiles ?? 0) : (settingsQuery.data?.gitSyncMaxFiles ?? 0),
-		maxSyncTotalSizeMb:
-			open && syncToEdit
-				? bytesToMegabytesInternal(syncToEdit.maxSyncTotalSize, 0)
-				: (settingsQuery.data?.gitSyncMaxTotalSizeMb ?? 0),
-		maxSyncBinarySizeMb:
-			open && syncToEdit
-				? bytesToMegabytesInternal(syncToEdit.maxSyncBinarySize, 0)
-				: (settingsQuery.data?.gitSyncMaxBinarySizeMb ?? 0),
-		autoSync: open && syncToEdit ? (syncToEdit.autoSync ?? true) : true,
-		syncInterval: open && syncToEdit ? (syncToEdit.syncInterval ?? 5) : 5,
-		preDeployScriptPath: open && syncToEdit ? (syncToEdit.preDeployScriptPath ?? '') : '',
-		preDeployRunnerImage: open && syncToEdit ? (syncToEdit.preDeployRunnerImage ?? '') : lifecycleDefaultRunnerImage,
-		preDeployTimeoutSec: open && syncToEdit ? (syncToEdit.preDeployTimeoutSec ?? 60) : 60,
-		preDeployNetworkMode: open && syncToEdit ? (syncToEdit.preDeployNetworkMode ?? 'none') : 'none',
-		preDeployEnv: open && syncToEdit ? (syncToEdit.preDeployEnv ?? '') : '',
-		preDeployExtraMounts: open && syncToEdit ? (syncToEdit.preDeployExtraMounts ?? '') : ''
+	const formData = $derived.by(() => {
+		// New drafts use the first settings response; later refreshes preserve edits.
+		if (!untrack(() => isEditMode)) settingsQuery.isFetchedAfterMount;
+		return untrack(() => {
+			let maxSyncFiles = settingsQuery.data?.gitSyncMaxFiles ?? 0;
+			let maxSyncTotalSizeMb = settingsQuery.data?.gitSyncMaxTotalSizeMb ?? 0;
+			let maxSyncBinarySizeMb = settingsQuery.data?.gitSyncMaxBinarySizeMb ?? 0;
+			let preDeployRunnerImage = lifecycleDefaultRunnerImage;
+			if (syncToEdit) {
+				maxSyncFiles = syncToEdit.maxSyncFiles ?? 0;
+				maxSyncTotalSizeMb = bytesToMegabytesInternal(syncToEdit.maxSyncTotalSize, 0);
+				maxSyncBinarySizeMb = bytesToMegabytesInternal(syncToEdit.maxSyncBinarySize, 0);
+				preDeployRunnerImage = syncToEdit.preDeployRunnerImage ?? '';
+			}
+			return {
+				name: syncToEdit?.name ?? '',
+				repositoryId: syncToEdit?.repositoryId ?? '',
+				branch: syncToEdit?.branch ?? 'main',
+				composePath: syncToEdit?.composePath ?? defaultComposePath,
+				syncDirectory: syncToEdit?.syncDirectory ?? false,
+				pullImageAfterSync: syncToEdit?.pullImageAfterSync ?? false,
+				redeployAfterSync: syncToEdit?.redeployAfterSync ?? false,
+				maxSyncFiles,
+				maxSyncTotalSizeMb,
+				maxSyncBinarySizeMb,
+				autoSync: syncToEdit?.autoSync ?? true,
+				syncInterval: syncToEdit?.syncInterval ?? 5,
+				preDeployScriptPath: syncToEdit?.preDeployScriptPath ?? '',
+				preDeployRunnerImage,
+				preDeployTimeoutSec: syncToEdit?.preDeployTimeoutSec ?? 60,
+				preDeployNetworkMode: syncToEdit?.preDeployNetworkMode ?? 'none',
+				preDeployEnv: syncToEdit?.preDeployEnv ?? '',
+				preDeployExtraMounts: syncToEdit?.preDeployExtraMounts ?? ''
+			};
+		});
 	});
 
-	let { inputs, ...form } = $derived(createForm<typeof formSchema>(formSchema, formData));
+	let form = $derived(createForm<typeof formSchema>(formSchema, formData));
+	let inputs = $derived(form.inputs);
 
-	let selectedRepository = $state<{ value: string; label: string } | undefined>(undefined);
+	const selectedRepository = $derived.by(() => {
+		const repository = repositories.find((item) => item.id === inputs.repositoryId.value);
+		if (!repository) return undefined;
+		return { value: repository.id, label: repository.name };
+	});
 	const repositoriesQuery = createQuery(() => ({
 		queryKey: queryKeys.gitRepositories.syncDialog(),
 		queryFn: () => gitRepositoryService.getRepositories({ pagination: { page: 1, limit: 100 } }),
@@ -164,12 +188,15 @@
 	const loadingSettings = $derived(!isEditMode && (settingsQuery.isPending || settingsQuery.isFetching));
 	const loadingData = $derived(repositoriesQuery.isPending || repositoriesQuery.isFetching || loadingSettings);
 
-	const branchesQuery = createQuery(() => ({
-		queryKey: queryKeys.gitRepositories.branches(selectedRepository?.value || ''),
-		queryFn: () => gitRepositoryService.getBranches(selectedRepository?.value || ''),
-		enabled: open && !!selectedRepository?.value,
-		staleTime: 0
-	}));
+	const branchesQuery = createQuery(() => {
+		const repositoryId = selectedRepository?.value || '';
+		return {
+			queryKey: queryKeys.gitRepositories.branches(repositoryId),
+			queryFn: () => gitRepositoryService.getBranches(repositoryId),
+			enabled: open && !!repositoryId,
+			staleTime: 0
+		};
+	});
 	const branches = $derived<BranchInfo[]>(branchesQuery.data?.branches ?? []);
 	const loadingBranches = $derived(!!selectedRepository?.value && (branchesQuery.isPending || branchesQuery.isFetching));
 
@@ -213,35 +240,13 @@
 		);
 	}
 
-	$effect(() => {
-		if (open) {
-			selectedRepository = undefined;
-			showFileBrowser = false;
-			selectedTargetType = isEditMode ? normalizeTargetType(syncToEdit?.targetType) : normalizeTargetType(targetType);
-			if (!isEditMode) {
-				form.reset();
-			}
-		}
-	});
-
-	$effect(() => {
-		if (!open || !syncToEdit || repositories.length === 0 || selectedRepository) return;
-		const repo = repositories.find((r) => r.id === syncToEdit.repositoryId);
-		if (repo) {
-			selectedRepository = { value: repo.id, label: repo.name };
-			$inputs.repositoryId.value = repo.id;
-		}
-	});
-
-	$effect(() => {
-		if (!open || isEditMode || branches.length === 0) return;
-		const defaultBranch = branches.find((b) => b.isDefault);
-		if (defaultBranch && !$inputs.branch.value) {
-			$inputs.branch.value = defaultBranch.name;
-		}
+	const selectedBranch = $derived.by(() => {
+		if (inputs.branch.value || isEditMode) return inputs.branch.value;
+		return branches.find((branch) => branch.isDefault)?.name ?? '';
 	});
 
 	function handleSubmit() {
+		inputs.branch.value = selectedBranch;
 		const data = form.validate();
 		if (!data) return;
 
@@ -284,7 +289,7 @@
 			fileBrowserTarget = target;
 			showFileBrowser = true;
 		}}
-		disabled={!selectedRepository?.value || !$inputs.branch.value}
+		disabled={!selectedRepository?.value || !selectedBranch}
 		title={m.git_sync_browse_files_title()}
 	>
 		<FolderOpenIcon class="size-4" />
@@ -306,19 +311,20 @@
 			<form id="sync-form" onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-4">
 				<div class="space-y-3">
 					<div class="grid gap-3 sm:grid-cols-2">
-						<FormInput
-							label={m.git_sync_name()}
-							type="text"
-							placeholder={m.common_name_placeholder()}
-							bind:input={$inputs.name}
-						/>
+						<FormInput label={m.git_sync_name()} type="text" placeholder={m.common_name_placeholder()} bind:input={inputs.name} />
 
 						<SelectWithLabel
 							id="targetType"
 							label={m.target_type()}
 							value={selectedTargetType}
 							options={targetTypeOptions}
-							onValueChange={(value) => (selectedTargetType = value as GitOpsSyncTargetType)}
+							onValueChange={(value) => {
+								const previousDefault = defaultComposePath;
+								selectedTargetType = value as GitOpsSyncTargetType;
+								if (inputs.composePath.value === previousDefault) {
+									inputs.composePath.value = defaultComposePath;
+								}
+							}}
 						/>
 					</div>
 
@@ -332,13 +338,12 @@
 									if (v) {
 										const repo = repositories.find((r) => r.id === v);
 										if (repo) {
-											selectedRepository = { value: repo.id, label: repo.name };
-											$inputs.repositoryId.value = v;
+											inputs.repositoryId.value = v;
 										}
 									}
 								}}
 							>
-								<Select.Trigger id="repository" class="w-full" aria-invalid={$inputs.repositoryId.error ? 'true' : undefined}>
+								<Select.Trigger id="repository" class="w-full" aria-invalid={inputs.repositoryId.error ? 'true' : undefined}>
 									<span>{selectedRepository?.label ?? m.common_select_placeholder()}</span>
 								</Select.Trigger>
 								<Select.Content style="width: var(--bits-select-anchor-width);">
@@ -347,8 +352,8 @@
 									{/each}
 								</Select.Content>
 							</Select.Root>
-							{#if $inputs.repositoryId.error}
-								<p class="mt-1 text-sm text-red-500">{$inputs.repositoryId.error}</p>
+							{#if inputs.repositoryId.error}
+								<p class="mt-1 text-sm text-red-500">{inputs.repositoryId.error}</p>
 							{/if}
 						</div>
 
@@ -362,15 +367,15 @@
 							{:else if branches.length > 0}
 								<Select.Root
 									type="single"
-									value={$inputs.branch.value}
+									value={selectedBranch}
 									onValueChange={(v) => {
 										if (v) {
-											$inputs.branch.value = v;
+											inputs.branch.value = v;
 										}
 									}}
 								>
-									<Select.Trigger id="branch" class="w-full" aria-invalid={$inputs.branch.error ? 'true' : undefined}>
-										<span>{$inputs.branch.value || m.common_select_placeholder()}</span>
+									<Select.Trigger id="branch" class="w-full" aria-invalid={inputs.branch.error ? 'true' : undefined}>
+										<span>{selectedBranch || m.common_select_placeholder()}</span>
 									</Select.Trigger>
 									<Select.Content style="width: var(--bits-select-anchor-width);">
 										{#each branches as branch (branch.name)}
@@ -384,10 +389,10 @@
 									</Select.Content>
 								</Select.Root>
 							{:else}
-								<FormInput type="text" placeholder="main" bind:input={$inputs.branch} />
+								<FormInput type="text" placeholder="main" bind:input={inputs.branch} />
 							{/if}
-							{#if $inputs.branch.error}
-								<p class="mt-1 text-sm text-red-500">{$inputs.branch.error}</p>
+							{#if inputs.branch.error}
+								<p class="mt-1 text-sm text-red-500">{inputs.branch.error}</p>
 							{/if}
 						</div>
 					</div>
@@ -399,7 +404,7 @@
 								<FormInput
 									type="text"
 									placeholder={selectedTargetType === 'swarm_stack' ? 'compose.yml' : 'docker-compose.yml'}
-									bind:input={$inputs.composePath}
+									bind:input={inputs.composePath}
 								/>
 							</div>
 							{@render BrowseFilesButton('compose')}
@@ -410,26 +415,26 @@
 				<div class="grid gap-3 rounded-lg border border-border/70 bg-muted/20 p-3 sm:grid-cols-[minmax(0,1fr)_8rem]">
 					<div class="grid gap-3 sm:grid-cols-2">
 						<div class="flex items-start gap-3">
-							<Switch id="syncDirectorySwitch" bind:checked={$inputs.syncDirectory.value} disabled={lockSyncDirectory} />
+							<Switch id="syncDirectorySwitch" bind:checked={inputs.syncDirectory.value} disabled={lockSyncDirectory} />
 							<div class="space-y-1">
 								<Label for="syncDirectorySwitch" class="mb-0 text-sm leading-none font-medium">{m.git_sync_sync_files()}</Label>
 								<p class="text-xs text-muted-foreground">{m.git_sync_sync_files_description()}</p>
 								{#if lockSyncDirectory}
 									<p class="text-xs text-muted-foreground italic">{m.git_sync_sync_files_locked_hint()}</p>
 								{/if}
-								{#if $inputs.syncDirectory.error}
-									<p class="text-xs font-medium text-destructive">{$inputs.syncDirectory.error}</p>
+								{#if inputs.syncDirectory.error}
+									<p class="text-xs font-medium text-destructive">{inputs.syncDirectory.error}</p>
 								{/if}
 							</div>
 						</div>
 
 						<div class="flex items-start gap-3">
-							<Switch id="autoSyncSwitch" bind:checked={$inputs.autoSync.value} />
+							<Switch id="autoSyncSwitch" bind:checked={inputs.autoSync.value} />
 							<div class="space-y-1">
 								<Label for="autoSyncSwitch" class="mb-0 text-sm leading-none font-medium">{m.git_sync_auto_sync()}</Label>
 								<p class="text-xs text-muted-foreground">{m.common_auto_sync_description()}</p>
-								{#if $inputs.autoSync.error}
-									<p class="text-xs font-medium text-destructive">{$inputs.autoSync.error}</p>
+								{#if inputs.autoSync.error}
+									<p class="text-xs font-medium text-destructive">{inputs.autoSync.error}</p>
 								{/if}
 							</div>
 						</div>
@@ -437,33 +442,33 @@
 						<div class="flex items-start gap-3">
 							<Switch
 								id="pullImageAfterSyncSwitch"
-								bind:checked={$inputs.pullImageAfterSync.value}
-								disabled={$inputs.redeployAfterSync.value}
+								bind:checked={inputs.pullImageAfterSync.value}
+								disabled={inputs.redeployAfterSync.value}
 							/>
 							<div class="space-y-1">
 								<Label for="pullImageAfterSyncSwitch" class="mb-0 text-sm leading-none font-medium"
 									>{m.git_sync_pull_image_after_sync()}</Label
 								>
 								<p class="text-xs text-muted-foreground">
-									{$inputs.redeployAfterSync.value
+									{inputs.redeployAfterSync.value
 										? m.git_sync_pull_image_after_sync_redundant_description()
 										: m.git_sync_pull_image_after_sync_description()}
 								</p>
-								{#if $inputs.pullImageAfterSync.error}
-									<p class="text-xs font-medium text-destructive">{$inputs.pullImageAfterSync.error}</p>
+								{#if inputs.pullImageAfterSync.error}
+									<p class="text-xs font-medium text-destructive">{inputs.pullImageAfterSync.error}</p>
 								{/if}
 							</div>
 						</div>
 
 						<div class="flex items-start gap-3">
-							<Switch id="redeployAfterSyncSwitch" bind:checked={$inputs.redeployAfterSync.value} />
+							<Switch id="redeployAfterSyncSwitch" bind:checked={inputs.redeployAfterSync.value} />
 							<div class="space-y-1">
 								<Label for="redeployAfterSyncSwitch" class="mb-0 text-sm leading-none font-medium"
 									>{m.git_sync_redeploy_after_sync()}</Label
 								>
 								<p class="text-xs text-muted-foreground">{m.git_sync_redeploy_after_sync_description()}</p>
-								{#if $inputs.redeployAfterSync.error}
-									<p class="text-xs font-medium text-destructive">{$inputs.redeployAfterSync.error}</p>
+								{#if inputs.redeployAfterSync.error}
+									<p class="text-xs font-medium text-destructive">{inputs.redeployAfterSync.error}</p>
 								{/if}
 							</div>
 						</div>
@@ -480,11 +485,11 @@
 							id="syncInterval"
 							type="number"
 							placeholder="5"
-							bind:value={$inputs.syncInterval.value}
-							aria-invalid={$inputs.syncInterval.error ? 'true' : undefined}
+							bind:value={inputs.syncInterval.value}
+							aria-invalid={inputs.syncInterval.error ? 'true' : undefined}
 						/>
-						{#if $inputs.syncInterval.error}
-							<p class="text-xs font-medium text-destructive">{$inputs.syncInterval.error}</p>
+						{#if inputs.syncInterval.error}
+							<p class="text-xs font-medium text-destructive">{inputs.syncInterval.error}</p>
 						{/if}
 					</div>
 				</div>
@@ -508,21 +513,21 @@
 									type="number"
 									placeholder="0"
 									helpText={m.git_sync_max_files_per_sync_help()}
-									bind:input={$inputs.maxSyncFiles}
+									bind:input={inputs.maxSyncFiles}
 								/>
 								<FormInput
 									label={m.git_sync_max_total_size_label()}
 									type="number"
 									placeholder="0"
 									helpText={m.git_sync_max_total_size_per_sync_help()}
-									bind:input={$inputs.maxSyncTotalSizeMb}
+									bind:input={inputs.maxSyncTotalSizeMb}
 								/>
 								<FormInput
 									label={m.git_sync_max_binary_size_label()}
 									type="number"
 									placeholder="0"
 									helpText={m.git_sync_max_binary_size_per_sync_help()}
-									bind:input={$inputs.maxSyncBinarySizeMb}
+									bind:input={inputs.maxSyncBinarySizeMb}
 								/>
 							</div>
 						</div>
@@ -563,15 +568,15 @@
 												id="preDeployScriptPath"
 												type="text"
 												placeholder={m.git_sync_pre_deploy_script_path_placeholder()}
-												bind:value={$inputs.preDeployScriptPath.value}
-												aria-invalid={$inputs.preDeployScriptPath.error ? 'true' : undefined}
+												bind:value={inputs.preDeployScriptPath.value}
+												aria-invalid={inputs.preDeployScriptPath.error ? 'true' : undefined}
 											/>
 										</div>
 										{@render BrowseFilesButton('preDeployScript')}
 									</div>
 									<p class="text-xs text-muted-foreground">{m.git_sync_pre_deploy_script_path_help()}</p>
-									{#if $inputs.preDeployScriptPath.error}
-										<p class="text-xs font-medium text-destructive">{$inputs.preDeployScriptPath.error}</p>
+									{#if inputs.preDeployScriptPath.error}
+										<p class="text-xs font-medium text-destructive">{inputs.preDeployScriptPath.error}</p>
 									{/if}
 								</div>
 
@@ -580,7 +585,7 @@
 									type="text"
 									placeholder={m.git_sync_pre_deploy_runner_image_placeholder()}
 									helpText={m.git_sync_pre_deploy_runner_image_help()}
-									bind:input={$inputs.preDeployRunnerImage}
+									bind:input={inputs.preDeployRunnerImage}
 								/>
 
 								<div class="grid gap-3 sm:grid-cols-2">
@@ -589,14 +594,14 @@
 										type="number"
 										placeholder="60"
 										helpText={m.git_sync_pre_deploy_timeout_help()}
-										bind:input={$inputs.preDeployTimeoutSec}
+										bind:input={inputs.preDeployTimeoutSec}
 									/>
 									<FormInput
 										label={m.resource_network_cap()}
 										type="text"
 										placeholder={m.git_sync_pre_deploy_network_mode_placeholder()}
 										helpText={m.git_sync_pre_deploy_network_mode_help()}
-										bind:input={$inputs.preDeployNetworkMode}
+										bind:input={inputs.preDeployNetworkMode}
 									/>
 								</div>
 
@@ -605,7 +610,7 @@
 									label={m.git_sync_pre_deploy_env_label()}
 									placeholder={m.git_sync_pre_deploy_env_placeholder()}
 									helpText={m.git_sync_pre_deploy_env_help()}
-									bind:input={$inputs.preDeployEnv}
+									bind:input={inputs.preDeployEnv}
 									class="[&_textarea]:font-mono [&_textarea]:text-xs"
 								/>
 
@@ -614,7 +619,7 @@
 									label={m.git_sync_pre_deploy_extra_mounts_label()}
 									placeholder={m.git_sync_pre_deploy_extra_mounts_placeholder()}
 									helpText={m.git_sync_pre_deploy_extra_mounts_help()}
-									bind:input={$inputs.preDeployExtraMounts}
+									bind:input={inputs.preDeployExtraMounts}
 									class="[&_textarea]:font-mono [&_textarea]:text-xs"
 								/>
 							</div>
@@ -689,13 +694,13 @@
 <FileBrowserDialog
 	bind:open={showFileBrowser}
 	repositoryId={selectedRepository?.value || ''}
-	branch={$inputs.branch.value}
+	branch={selectedBranch}
 	description={fileBrowserTarget === 'preDeployScript'
 		? m.git_sync_browse_files_description_script()
 		: m.git_sync_browse_files_description()}
 	rootPath={fileBrowserTarget === 'preDeployScript'
-		? $inputs.composePath.value.includes('/')
-			? $inputs.composePath.value.replace(/\/[^/]*$/, '')
+		? inputs.composePath.value.includes('/')
+			? inputs.composePath.value.replace(/\/[^/]*$/, '')
 			: ''
 		: ''}
 	fileFilter={fileBrowserTarget === 'preDeployScript' ? undefined : composeFileFilter}
@@ -703,9 +708,9 @@
 	footerHint={fileBrowserTarget === 'preDeployScript' ? undefined : composeFooterHint}
 	onSelect={(path) => {
 		if (fileBrowserTarget === 'preDeployScript') {
-			$inputs.preDeployScriptPath.value = path;
+			inputs.preDeployScriptPath.value = path;
 		} else {
-			$inputs.composePath.value = path;
+			inputs.composePath.value = path;
 		}
 	}}
 />

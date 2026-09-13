@@ -5,9 +5,10 @@ import { roleService } from '#lib/services/role-service.js';
 import { swarmService } from '#lib/services/swarm-service.js';
 import { userService } from '#lib/services/user-service.js';
 import versionService from '#lib/services/version-service.js';
-import settingsStore from '#lib/stores/config-store.js';
+import settingsStore from '#lib/stores/config-store.svelte.js';
+import { featureStore } from '#lib/stores/features.store.svelte.js';
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-import userStore from '#lib/stores/user-store.js';
+import userStore from '#lib/stores/user-store.svelte.js';
 import { type AppVersionInformation } from '#lib/types/settings.js';
 import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 import type { PermissionsManifest } from '#lib/types/auth.js';
@@ -40,7 +41,7 @@ let authenticatedUserId: string | null | undefined;
 export const load: LayoutLoad = async ({ url }) => {
 	const versionInformationRequest = versionService.getVersionInformation();
 	const autoLoginConfigRequest = browser
-		? queryClient.fetchQuery({
+		? queryClient.query({
 				queryKey: queryKeys.auth.autoLoginConfig(),
 				queryFn: () => authService.getAutoLoginConfig()
 			})
@@ -55,7 +56,7 @@ export const load: LayoutLoad = async ({ url }) => {
 			settingsStore.autoLoginEnabled.set(true);
 			settingsStore.autoLoginEnabled.clearDisabledCache();
 			if (!user) {
-				user = await queryClient.fetchQuery({
+				user = await queryClient.query({
 					queryKey: queryKeys.auth.autoLoginAttempt(),
 					queryFn: () => authService.attemptAutoLogin()
 				});
@@ -71,6 +72,11 @@ export const load: LayoutLoad = async ({ url }) => {
 		authService.resetAuthenticatedState(queryClient, { restartMountedStores: user !== null });
 	}
 	authenticatedUserId = nextAuthenticatedUserId;
+	if (user) {
+		await userStore.setUser(user);
+	} else {
+		userStore.clearUser();
+	}
 
 	let settings = null;
 	let swarmEnabled = false;
@@ -99,16 +105,24 @@ export const load: LayoutLoad = async ({ url }) => {
 		const settingsRequest = userHasPermission(user, 'settings:read')
 			? tryCatch(settingsService.getSettings()).then(async (result) => {
 					if (!result.error) return result.data;
-					const publicSettings = await tryCatch(settingsService.getPublicSettings());
+					const publicSettings = await tryCatch(settingsService.getPublicSettings(environmentStore.selected?.id ?? '0'));
 					return publicSettings.error ? null : publicSettings.data;
 				})
-			: tryCatch(settingsService.getPublicSettings()).then((result) => (result.error ? null : result.data));
+			: tryCatch(settingsService.getPublicSettings(environmentStore.selected?.id ?? '0')).then((result) =>
+					result.error ? null : result.data
+				);
+		featureStore.connect(queryClient);
+		const featuresRequest = featureStore.refresh(await environmentStore.getCurrentEnvironmentId());
 		const [loadedSettings, loadedSwarmStatus, loadedPermissionsManifest] = await Promise.all([
 			settingsRequest,
 			tryCatch(swarmService.getSwarmStatus()).then((result) => (result.error ? null : result.data)),
 			permissionsManifestRequest
 		]);
-		settings = loadedSettings;
+		// Keep recovery/settings pages reachable while a selected agent is offline.
+		settings =
+			loadedSettings ??
+			(await tryCatch(settingsService.getPublicSettings()).then((result) => (result.error ? null : result.data)));
+		await featuresRequest;
 		swarmEnabled = loadedSwarmStatus?.enabled === true;
 		permissionsManifest = loadedPermissionsManifest;
 		permissionsManifestLoadFailed = loadedPermissionsManifest === null;
@@ -118,12 +132,6 @@ export const load: LayoutLoad = async ({ url }) => {
 
 		// Try to fetch public settings for login page configuration
 		settings = await tryCatch(settingsService.getPublicSettings()).then((result) => (result.error ? null : result.data));
-	}
-
-	if (user) {
-		await userStore.setUser(user);
-	} else {
-		userStore.clearUser();
 	}
 
 	if (settings) {
@@ -151,7 +159,7 @@ export const load: LayoutLoad = async ({ url }) => {
 				currentDigest: info.currentDigest,
 				displayVersion: info.displayVersion,
 				revision: info.revision,
-				shortRevision: info.shortRevision || (info.revision?.slice(0, 8) ?? 'unknown'),
+				shortRevision: info.shortRevision || 'unknown',
 				goVersion: info.goVersion || 'unknown',
 				nodeVersion: info.nodeVersion || 'unknown',
 				svelteKitVersion: info.svelteKitVersion || 'unknown',

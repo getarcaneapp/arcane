@@ -1,7 +1,7 @@
 <script lang="ts" generics="TPolicy extends BackupPolicy, TUpdate extends { id: string } = BackupPolicyUpdate">
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
-	import { untrack, type Snippet } from 'svelte';
+	import { onMount, untrack, type Snippet } from 'svelte';
 	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import BackupPolicyFields from '#lib/components/backup-policy-fields.svelte';
@@ -27,7 +27,6 @@
 		defaultEnabled = true,
 		showStopContainers = false,
 		destinations,
-		resetKey,
 		beforeFields,
 		afterFields,
 		policyPayload = (policy) => backupPolicyUpdateFromPolicy(policy, showStopContainers) as unknown as TUpdate,
@@ -35,7 +34,6 @@
 		updatePolicies,
 		messages,
 		onSaved,
-		onReset,
 		contentClass = 'sm:max-w-[720px]'
 	}: {
 		open: boolean;
@@ -50,7 +48,6 @@
 		defaultEnabled?: boolean;
 		showStopContainers?: boolean;
 		destinations?: S3Destination[];
-		resetKey?: string;
 		beforeFields?: Snippet;
 		afterFields?: Snippet;
 		policyPayload?: (policy: TPolicy) => TUpdate;
@@ -58,7 +55,6 @@
 		updatePolicies: (policies: TUpdate[]) => Promise<TPolicy[]>;
 		messages: { saved: string; saveFailed: string; removed: string };
 		onSaved: (policies: TPolicy[]) => void;
-		onReset?: (policy?: TPolicy) => void;
 		contentClass?: string;
 	} = $props();
 
@@ -66,7 +62,23 @@
 	let deleting = $state(false);
 	let loadedDestinations = $state<S3Destination[]>([]);
 	let destinationsLoading = $state(false);
-	let form = $state<PolicyForm>(newPolicy());
+	const initialPolicy = untrack(() => policies.find((item) => item.id === policyId));
+	let initialForm: PolicyForm;
+	if (initialPolicy) {
+		initialForm = {
+			id: initialPolicy.id,
+			enabled: initialPolicy.enabled,
+			schedule: initialPolicy.schedule,
+			retentionCount: initialPolicy.retentionCount,
+			stopContainers: initialPolicy.stopContainers ?? false,
+			s3DestinationId: initialPolicy.s3DestinationId || '',
+			destination: backupDestinationFromFlags(initialPolicy.localEnabled, initialPolicy.s3Enabled)
+		};
+	} else {
+		initialForm = newPolicy();
+	}
+	let form = $state<PolicyForm>(initialForm);
+
 	const destinationList = $derived(destinations ?? loadedDestinations);
 	const scheduleError = $derived(
 		!form.schedule.trim()
@@ -120,25 +132,8 @@
 		}
 	}
 
-	$effect(() => {
-		if (!open) return;
-		resetKey;
-		untrack(() => {
-			const policy = policies.find((item) => item.id === policyId);
-			form = policy
-				? {
-						id: policy.id,
-						enabled: policy.enabled,
-						schedule: policy.schedule,
-						retentionCount: policy.retentionCount,
-						stopContainers: policy.stopContainers ?? false,
-						s3DestinationId: policy.s3DestinationId || '',
-						destination: backupDestinationFromFlags(policy.localEnabled, policy.s3Enabled)
-					}
-				: newPolicy();
-			onReset?.(policy);
-			if (!destinations) void loadDestinations();
-		});
+	onMount(() => {
+		if (!destinations) void loadDestinations();
 	});
 
 	function updateForm(values: Partial<BackupPolicyForm>) {

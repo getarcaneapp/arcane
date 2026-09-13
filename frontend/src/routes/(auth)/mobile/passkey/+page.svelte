@@ -78,7 +78,7 @@
 				let credential: MobilePasskeyCredential;
 				if (ceremonyRequest.operation === 'authenticate') {
 					credential = await startAuthentication({
-						optionsJSON: ceremonyRequest.options as unknown as PublicKeyCredentialRequestOptionsJSON
+						optionsJSON: $state.snapshot(ceremonyRequest.options) as unknown as PublicKeyCredentialRequestOptionsJSON
 					});
 					if (ceremonyRequest.mobileLogin) {
 						const completion = await passkeyService.finishMobileLogin(
@@ -91,7 +91,7 @@
 					}
 				} else {
 					credential = await startRegistration({
-						optionsJSON: ceremonyRequest.options as unknown as PublicKeyCredentialCreationOptionsJSON
+						optionsJSON: $state.snapshot(ceremonyRequest.options) as unknown as PublicKeyCredentialCreationOptionsJSON
 					});
 				}
 

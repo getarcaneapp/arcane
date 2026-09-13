@@ -19,17 +19,16 @@
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import type { ImageUsageCounts } from '#lib/types/docker.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
-	import { untrack } from 'svelte';
+	import { useEnvironmentRefresh } from '#lib/hooks/use-environment-refresh.svelte.js';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { CloseIcon, VolumesIcon, LocalFolderComputerIcon, SearchIcon } from '#lib/icons/index.js';
-	import { createMutation, createQuery, useQueryClient, keepPreviousData } from '@tanstack/svelte-query';
+	import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import PruneModeCard from '#lib/components/prune/prune-mode-card.svelte';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 
 	let { data } = $props();
 	const queryClient = useQueryClient();
 
-	let images = $derived(data.images);
 	let requestOptions = $derived(data.imageRequestOptions);
 	let selectedIds = $state<string[]>([]);
 	let isPullDialogOpen = $state(false);
@@ -42,8 +41,6 @@
 	let imagePruneMode = $state<'dangling' | 'all' | 'olderThan'>('dangling');
 	let imagePruneUntil = $state('');
 	const envId = $derived(environmentStore.selected?.id || '0');
-	let previousEnvId = untrack(() => envId);
-	let latestImageRequestId = 0;
 	const imageUsageFallback: ImageUsageCounts = {
 		imagesInuse: 0,
 		imagesUnused: 0,
@@ -57,10 +54,14 @@
 
 	const imagesQuery = createQuery(() => {
 		const queryEnvId = envId;
+		const options = requestOptions;
 		return {
-			queryKey: queryKeys.images.list(queryEnvId, requestOptions),
-			queryFn: () => imageService.getImagesForEnvironment(queryEnvId, requestOptions),
-			placeholderData: keepPreviousData,
+			queryKey: queryKeys.images.list(queryEnvId, options),
+			queryFn: () => imageService.getImagesForEnvironment(queryEnvId, options),
+			placeholderData: (previous, query) => {
+				if (query?.queryKey[1] === queryEnvId) return previous;
+				return undefined;
+			},
 			initialData: data.envId === queryEnvId ? data.images : undefined,
 			select: (value) => ({ envId: queryEnvId, value })
 		};
@@ -75,6 +76,8 @@
 			select: (value) => ({ envId: queryEnvId, value })
 		};
 	});
+	const images = $derived(imagesQuery.data?.value ?? data.images);
+
 	const resourcesReady = $derived(imagesQuery.data?.envId === envId);
 
 	const pruneImagesMutation = createMutation(() => ({
@@ -141,15 +144,7 @@
 		}
 	}));
 
-	$effect(() => {
-		if (imagesQuery.data?.envId === envId) {
-			images = imagesQuery.data.value;
-		}
-	});
-
-	$effect(() => {
-		if (envId === previousEnvId) return;
-		previousEnvId = envId;
+	useEnvironmentRefresh(() => {
 		selectedIds = [];
 		isPullDialogOpen = false;
 		isRegistrySearchDialogOpen = false;
@@ -202,26 +197,17 @@
 	];
 
 	async function loadImages(options: SearchPaginationSortRequest = requestOptions, requestedEnvId: string = envId) {
-		const requestId = ++latestImageRequestId;
 		requestOptions = options;
-		const [nextImages] = await Promise.all([
-			queryClient.fetchQuery({
+		await Promise.all([
+			queryClient.query({
 				queryKey: queryKeys.images.list(requestedEnvId, options),
 				queryFn: () => imageService.getImagesForEnvironment(requestedEnvId, options)
 			}),
-			queryClient.fetchQuery({
+			queryClient.query({
 				queryKey: queryKeys.images.usageCounts(requestedEnvId),
 				queryFn: () => imageService.getImageUsageCountsForEnvironment(requestedEnvId)
 			})
 		]);
-
-		if (requestedEnvId !== envId) {
-			selectedIds = [];
-			return;
-		}
-		if (requestId !== latestImageRequestId) return;
-
-		images = nextImages;
 	}
 
 	async function refresh() {
@@ -320,18 +306,20 @@
 <ResourcePageLayout title={m.images()} subtitle={m.images_subtitle()} {actionButtons} {statCards}>
 	{#snippet mainContent()}
 		{#if resourcesReady}
-			<ImageTable
-				bind:images
-				bind:selectedIds
-				bind:requestOptions
-				loading={imagesQuery.isLoading}
-				onRefreshData={async (options) => {
-					await loadImages(options, envId);
-				}}
-				onImageUpdated={async () => {
-					await imagesQuery.refetch();
-				}}
-			/>
+			{#key envId}
+				<ImageTable
+					bind:images={() => images, (value) => queryClient.setQueryData(queryKeys.images.list(envId, requestOptions), value)}
+					bind:selectedIds
+					bind:requestOptions
+					loading={imagesQuery.isLoading}
+					onRefreshData={async (options) => {
+						await loadImages(options, envId);
+					}}
+					onImageUpdated={async () => {
+						await imagesQuery.refetch();
+					}}
+				/>
+			{/key}
 		{/if}
 	{/snippet}
 

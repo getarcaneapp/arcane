@@ -399,6 +399,35 @@ type CreateReponse struct {
 	Tags []Tag `json:"tags"`
 }
 
+// ConfigurationError describes a filesystem-level configuration problem that
+// prevents Arcane from fully using a project.
+type ConfigurationError struct {
+	// Code identifies the configuration problem.
+	//
+	// Required: true
+	Code string `json:"code"`
+
+	// Path is the offending file path.
+	//
+	// Required: true
+	Path string `json:"path"`
+
+	// UID is the effective user id of the Arcane runtime.
+	//
+	// Required: true
+	UID int `json:"uid"`
+
+	// GID is the effective group id of the Arcane runtime.
+	//
+	// Required: true
+	GID int `json:"gid"`
+
+	// BlocksOperations indicates whether the problem prevents project operations.
+	//
+	// Required: true
+	BlocksOperations bool `json:"blocksOperations"`
+}
+
 // Details contains detailed information about a project.
 type Details struct {
 	// Tags are the effective UI and Compose tags for the project.
@@ -570,6 +599,11 @@ type Details struct {
 	//
 	// Required: false
 	RedeployDisabled bool `json:"redeployDisabled,omitempty"`
+
+	// ConfigurationError reports a filesystem-level configuration problem detected for this project.
+	//
+	// Required: false
+	ConfigurationError *ConfigurationError `json:"configurationError,omitempty"`
 }
 
 // Destroy is used to destroy a project.

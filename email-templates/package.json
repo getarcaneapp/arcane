@@ -12,17 +12,17 @@
 		"format:check": "vp fmt --check"
 	},
 	"dependencies": {
-		"react": "^19.2.8",
-		"react-dom": "^19.2.8",
+		"react": "^19.3.0",
+		"react-dom": "^19.3.0",
 		"react-email": "6.9.3",
-		"tailwind-merge": "^3.6.0"
+		"tailwind-merge": "^3.7.0"
 	},
 	"devDependencies": {
-		"@types/node": "^26.4.0",
-		"@types/react": "^19.2.18",
-		"@types/react-dom": "^19.2.5",
+		"@types/node": "^26.5.1",
+		"@types/react": "^19.3.0",
+		"@types/react-dom": "^19.3.0",
 		"tsx": "^4.23.13",
-		"typescript": "^6.0.3",
+		"typescript": "^7.0.1",
 		"vite": "catalog:",
 		"vite-plus": "catalog:"
 	}

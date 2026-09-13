@@ -12,19 +12,20 @@
 	import ApplicationThemePicker from '#lib/components/application-theme/application-theme-picker.svelte';
 	import { Switch } from '#lib/components/ui/switch/index.js';
 	import { DEFAULT_LANDING_PAGE, getLandingPageNavItems } from '#lib/config/navigation-config.js';
-	import { resetNavigationVisibility } from '#lib/utils/navigation.js';
-	import { applyGlassEffects, applyInterfaceAnimations, applyOledMode, DEFAULT_ACCENT_COLOR } from '#lib/utils/theme.js';
+	import { getMobileNavigation } from '#lib/utils/navigation.js';
+	import { applyGlassEffects, applyInterfaceAnimations, applyOledMode, DEFAULT_ACCENT_COLOR } from '#lib/utils/theme.svelte.js';
 	import { debounced } from '#lib/utils/ws.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { userService } from '#lib/services/user-service.js';
-	import userStore from '#lib/stores/user-store.js';
+	import userStore from '#lib/stores/user-store.svelte.js';
 	import type { UserPreferences } from '#lib/types/auth.js';
 	import type { ApplicationTheme, IconCatalog } from '#lib/types/settings.js';
 	import { DockIcon, MonitorSpeakerIcon } from '#lib/icons/index.js';
 	import { cn } from '#lib/utils.js';
 	import { toast } from 'svelte-sonner';
 
-	const currentUser = $derived($userStore);
+	const mobileNavigation = getMobileNavigation();
+	const currentUser = $derived(userStore.current);
 	const preferences = $derived(currentUser?.preferences ?? {});
 	const applicationThemeValue = $derived<ApplicationTheme>(preferences.applicationTheme ?? 'default');
 	const accentColorValue = $derived(
@@ -86,7 +87,7 @@
 
 	function selectMobileNavigationMode(value: 'floating' | 'docked') {
 		if (value === mobileNavigationMode) return;
-		resetNavigationVisibility();
+		mobileNavigation.visible = true;
 		void savePreferences({ mobileNavigationMode: value });
 	}
 </script>

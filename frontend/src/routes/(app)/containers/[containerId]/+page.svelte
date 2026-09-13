@@ -3,7 +3,7 @@
 
 	import { ArcaneButton, type ArcaneButtonSize } from '#lib/components/arcane-button/index.js';
 	import { goto, refreshAll } from '$app/navigation';
-	import settingsStore from '#lib/stores/config-store.js';
+	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import ActionButtons from '#lib/components/action-buttons.svelte';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { bytes } from '#lib/utils/formatting.js';
@@ -52,7 +52,9 @@
 	import { EditIcon, ImagesIcon, PauseIcon, PlayIcon, ProjectsIcon, UpdateIcon, ZapIcon } from '#lib/icons/index.js';
 	import { runContainerLifecycleAction, confirmAndUpdateContainer } from '#lib/utils/container-actions.js';
 	import { imageService } from '#lib/services/image-service.js';
-	import type { ImageUpdateInfoDto } from '#lib/types/docker.js';
+	import { createQuery } from '@tanstack/svelte-query';
+	import { queryKeys } from '#lib/query/query-keys.js';
+	import userStore from '#lib/stores/user-store.svelte.js';
 	import { isAutoUpdateIgnored, isAutoUpdateLabelDisabled } from '#lib/utils/container-auto-update.js';
 	import KillContainerDialog from '../components/kill-container-dialog.svelte';
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';
@@ -147,7 +149,7 @@
 	const canConvertToCompose = $derived(
 		hasPermission('projects:create', currentEnvId) &&
 			!container?.composeInfo &&
-			$settingsStore?.experimentalFeaturesEnabled === true
+			settingsStore.current?.experimentalFeaturesEnabled === true
 	);
 	const containerStatus = $derived(container?.state?.status ?? '');
 	const isContainerRunning = $derived(containerStatus === 'running' || !!container?.state?.running);
@@ -158,32 +160,24 @@
 	let lifecycleStatus = $state<'pausing' | 'unpausing' | ''>('');
 	const isLifecycleActionPending = $derived(lifecycleStatus !== '');
 
-	let updateInfo = $state<ImageUpdateInfoDto | null>(null);
-	let updateLoading = $state(false);
-	$effect(() => {
+	const imageUpdateQuery = createQuery(() => {
+		const environmentId = environmentStore.selected?.id;
 		const image = container?.image;
-		if (!image || !canUpdateContainer) {
-			updateInfo = null;
-			return;
-		}
-		// A slower lookup for a previous image must not overwrite the current one.
-		let current = true;
-		tryCatch(
-			imageService.getUpdateInfoByRefs([image]).then((infoByRef) => {
-				if (current) updateInfo = infoByRef[image] ?? null;
-			})
-		).then((result) => {
-			if (result.error) {
-				if (current) updateInfo = null;
-
-				return;
-			}
-			return result.data;
-		});
-		return () => {
-			current = false;
+		userStore.current;
+		return {
+			queryKey: queryKeys.images.updateInfoByRef(environmentId ?? '', image ?? ''),
+			queryFn: async () => {
+				await environmentStore.ready;
+				return imageService.getUpdateInfoByRefs([image!]);
+			},
+			enabled: !!environmentId && !!image && hasPermission('containers:autoupdate', environmentId)
 		};
 	});
+	const updateInfo = $derived.by(() => {
+		if (container?.image) return imageUpdateQuery.data?.[container.image] ?? null;
+		return null;
+	});
+	let updateLoading = $state(false);
 
 	function handleUpdateContainer() {
 		if (!container) return;
@@ -535,14 +529,16 @@
 
 	<Tabs.Content value="logs" class="h-full">
 		{#if activeTab === 'logs'}
-			<ContainerLogsPanel
-				containerId={container?.id}
-				{stats}
-				{hasInitialStatsLoaded}
-				isRunning={!!container.state?.running}
-				{cpuLimit}
-				bind:autoScroll={autoScrollLogs}
-			/>
+			{#key container?.id}
+				<ContainerLogsPanel
+					containerId={container?.id}
+					{stats}
+					{hasInitialStatsLoaded}
+					isRunning={!!container.state?.running}
+					{cpuLimit}
+					bind:autoScroll={autoScrollLogs}
+				/>
+			{/key}
 		{/if}
 	</Tabs.Content>
 
@@ -586,12 +582,14 @@
 {/snippet}
 
 {#if container}
-	<ContainerDetailStatsSync
-		containerId={container.id}
-		enabled={(activeTab === 'stats' || activeTab === 'logs') && !!container.state?.running}
-		bind:stats
-		bind:hasInitialStatsLoaded
-	/>
+	{#key `${currentEnvId}:${container.id}`}
+		<ContainerDetailStatsSync
+			containerId={container.id}
+			enabled={(activeTab === 'stats' || activeTab === 'logs') && !!container.state?.running}
+			bind:stats
+			bind:hasInitialStatsLoaded
+		/>
+	{/key}
 
 	<TabbedPageLayout {backUrl} backLabel={m.common_back()} {tabItems} selectedTab={activeTab} {onTabChange}>
 		{#snippet headerInfo()}

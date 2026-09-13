@@ -2,6 +2,7 @@
 	import { toast } from 'svelte-sonner';
 	import { dev } from '$app/env';
 	import { page } from '$app/state';
+	import { afterNavigate } from '$app/navigation';
 	import NewEnvironmentSheet from '#lib/components/sheets/new-environment-sheet.svelte';
 	import EnvironmentTable from './environment-table.svelte';
 	import { m } from '#lib/paraglide/messages.js';
@@ -20,6 +21,7 @@
 	let selectedIds = $state<string[]>([]);
 	let requestOptions = $derived(data.environmentRequestOptions);
 	let showEnvironmentSheet = $state(false);
+	let environmentSession = $state(0);
 	let showUpdateAllDialog = $state(false);
 	let isLoading = $state({ refresh: false, creating: false, deleting: false });
 
@@ -68,7 +70,7 @@
 	// fleet, so its progress and result states can be reviewed under `just dev` without
 	// updating anything. `dev` is compiled out of production builds.
 	const updateAllDemo = $derived(dev && page.url.searchParams.get('updateAllDemo') === '1');
-	$effect(() => {
+	afterNavigate(() => {
 		if (updateAllDemo) showUpdateAllDialog = true;
 	});
 
@@ -98,7 +100,10 @@
 						id: 'create',
 						action: 'create' as const,
 						label: m.common_add_button({ resource: m.resource_environment_cap() }),
-						onclick: () => (showEnvironmentSheet = true)
+						onclick: () => {
+							environmentSession += 1;
+							showEnvironmentSheet = true;
+						}
 					}
 				]
 			: []),
@@ -148,7 +153,11 @@
 	{/snippet}
 
 	{#snippet additionalContent()}
-		<NewEnvironmentSheet bind:open={showEnvironmentSheet} {onEnvironmentCreated} />
+		{#if environmentSession > 0}
+			{#key environmentSession}
+				<NewEnvironmentSheet bind:open={showEnvironmentSheet} {onEnvironmentCreated} />
+			{/key}
+		{/if}
 		<UpdateAllDialog bind:open={showUpdateAllDialog} debugDemo={updateAllDemo} onFinished={refresh} />
 	{/snippet}
 </ResourcePageLayout>

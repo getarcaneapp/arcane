@@ -1773,7 +1773,7 @@ func TestTunnelClient_connectAndServe_AutoDoesNotFallbackWhenEstablishedGRPCSess
 }
 
 func TestTunnelClient_connectAndServePoll_OpensGRPCWhenRequired(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	envID := "env-poll-grpc"
@@ -1789,7 +1789,10 @@ func TestTunnelClient_connectAndServePoll_OpensGRPCWhenRequired(t *testing.T) {
 
 	tunnelServer := NewTunnelServerWithRegistry(GetRegistry(), resolver, nil)
 	go tunnelServer.StartCleanupLoop(ctx)
-	defer tunnelServer.WaitForCleanupDone()
+	defer func() {
+		cancel()
+		tunnelServer.WaitForCleanupDone()
+	}()
 
 	managerURL, stopManager := startTestPollAndGRPCManagerInternal(t, ctx, tunnelServer, TunnelPollResponse{
 		Status:              TunnelStatusRequired,
@@ -1817,12 +1820,13 @@ func TestTunnelClient_connectAndServePoll_OpensGRPCWhenRequired(t *testing.T) {
 		return isGRPC
 	}, 3*time.Second, 20*time.Millisecond)
 
-	err := <-errCh
-	require.Error(t, err)
-	assert.True(t,
-		errors.Is(err, context.DeadlineExceeded) || status.Code(err) == codes.DeadlineExceeded,
-		"expected deadline shutdown error, got %v", err,
-	)
+	cancel()
+	select {
+	case err := <-errCh:
+		require.ErrorIs(t, err, context.Canceled)
+	case <-time.After(3 * time.Second):
+		require.FailNow(t, "expected poll-managed gRPC session to stop after cancellation")
+	}
 }
 
 func TestTunnelClient_connectAndServePoll_OpensWebSocketWhenRequired(t *testing.T) {

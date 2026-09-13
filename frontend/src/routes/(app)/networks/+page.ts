@@ -19,7 +19,7 @@ export const load: PageLoad = async ({ parent }) => {
 	let networks;
 	const operationResult = await tryCatch(
 		(async () =>
-			queryClient.fetchQuery({
+			queryClient.query({
 				queryKey: queryKeys.networks.list(envId, networkRequestOptions),
 				queryFn: () => networkService.getNetworksForEnvironment(envId, networkRequestOptions)
 			}))()

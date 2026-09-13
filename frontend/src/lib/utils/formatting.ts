@@ -24,6 +24,15 @@ export function truncateImageDigest(image: string): string {
 	return image.replace(/@sha256:([a-f0-9]{7})[a-f0-9]+/g, '@sha256:$1');
 }
 
+export function withOccurrenceKeys(values?: readonly string[] | null) {
+	const occurrences = new Map<string, number>();
+	return (values ?? []).map((value) => {
+		const occurrence = occurrences.get(value) ?? 0;
+		occurrences.set(value, occurrence + 1);
+		return { value, key: JSON.stringify([value, occurrence]) };
+	});
+}
+
 // --- Byte formatting (MIT, TJ Holowaychuk / Jed Watson) ---
 
 export type BytesFormatOptions = {

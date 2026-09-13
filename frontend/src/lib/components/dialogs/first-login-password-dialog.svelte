@@ -5,10 +5,12 @@
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import { authService } from '#lib/services/auth-service.js';
+	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { toast } from 'svelte-sonner';
 	import { EyeOnIcon, EyeOffIcon, AlertIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { createMutation } from '@tanstack/svelte-query';
+	import { z } from 'zod/v4';
 
 	let {
 		open = $bindable(false),
@@ -26,7 +28,47 @@
 	let showNewPassword = $state(false);
 	let showConfirmPassword = $state(false);
 
-	const isValid = $derived(currentPassword.length > 0 && [...newPassword].length >= 8 && confirmPassword === newPassword);
+	const passwordPolicy = $derived.by(() => {
+		const requiredCharacters = /(?=.*\p{Lu})(?=.*\p{Ll})(?=.*\p{Nd})/su;
+
+		switch (settingsStore.current?.authPasswordPolicy) {
+			case 'basic': {
+				const requirements = m.security_password_policy_basic_tooltip();
+				return { schema: z.string().min(8, requirements), requirements };
+			}
+			case 'standard': {
+				const requirements = m.security_password_policy_standard_tooltip();
+				return {
+					schema: z.string().min(10, requirements).regex(requiredCharacters, requirements),
+					requirements
+				};
+			}
+			default: {
+				const requirements = m.security_password_policy_strong_tooltip();
+				return {
+					schema: z
+						.string()
+						.min(12, requirements)
+						.regex(requiredCharacters, requirements)
+						.regex(/[\p{P}\p{S}\p{White_Space}]/u, requirements),
+					requirements
+				};
+			}
+		}
+	});
+	const formSchema = $derived(
+		z
+			.object({
+				currentPassword: z.string().min(1, m.common_required()),
+				newPassword: passwordPolicy.schema,
+				confirmPassword: z.string()
+			})
+			.refine((data) => data.newPassword === data.confirmPassword, {
+				message: m.first_login_error_mismatch(),
+				path: ['confirmPassword']
+			})
+	);
+	const validation = $derived(formSchema.safeParse({ currentPassword, newPassword, confirmPassword }));
 	const changePasswordMutation = createMutation(() => ({
 		mutationFn: ({ currentPassword, newPassword }: { currentPassword: string; newPassword: string }) =>
 			authService.changePassword(currentPassword, newPassword),
@@ -43,17 +85,13 @@
 	const isLoading = $derived(changePasswordMutation.isPending);
 
 	function handleSubmit() {
-		if (!isValid) {
-			if ([...newPassword].length < 8) {
-				error = m.first_login_error_length();
-			} else if (confirmPassword !== newPassword) {
-				error = m.first_login_error_mismatch();
-			}
+		if (!validation.success) {
+			error = validation.error.issues[0]?.message ?? m.first_login_error_failed();
 			return;
 		}
 
 		error = '';
-		changePasswordMutation.mutate({ currentPassword, newPassword });
+		changePasswordMutation.mutate(validation.data);
 	}
 </script>
 
@@ -115,7 +153,8 @@
 					id="new-password"
 					type={showNewPassword ? 'text' : 'password'}
 					bind:value={newPassword}
-					placeholder={m.first_login_new_password_placeholder()}
+					placeholder={m.users_password_enter()}
+					aria-describedby="new-password-requirements"
 					required
 					disabled={isLoading}
 				/>
@@ -136,6 +175,8 @@
 				</InputGroup.Addon>
 			</InputGroup.Root>
 		</div>
+
+		<p id="new-password-requirements" class="text-sm text-muted-foreground">{passwordPolicy.requirements}</p>
 
 		<div class="space-y-2">
 			<Label for="confirm-password">{m.first_login_confirm_password()}</Label>
@@ -171,7 +212,7 @@
 		<ArcaneButton
 			type="submit"
 			onclick={handleSubmit}
-			disabled={!isValid || isLoading}
+			disabled={!validation.success || isLoading}
 			loading={isLoading}
 			action="confirm"
 			customLabel={m.first_login_submit()}

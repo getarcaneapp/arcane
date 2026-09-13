@@ -3,7 +3,8 @@
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import * as Select from '#lib/components/ui/select/index.js';
-	import { preventDefault } from '#lib/utils/settings.js';
+	import { preventDefault } from '#lib/utils/settings.svelte.js';
+
 	import { m } from '#lib/paraglide/messages.js';
 	import { AddIcon, TrashIcon } from '#lib/icons/index.js';
 	import * as Accordion from '#lib/components/ui/accordion/index.js';
@@ -417,7 +418,7 @@
 					<Accordion.Trigger class="text-sm font-medium">{m.common_ports()}</Accordion.Trigger>
 					<Accordion.Content class="pt-6 pb-5">
 						<div class="space-y-4">
-							{#each form.ports as port, i (i)}
+							{#each form.ports as port, i (port)}
 								<div class="flex items-center gap-4">
 									<Input placeholder="8080" bind:value={port.target} disabled={isLoading} class="flex-1" />
 									<span class="text-muted-foreground">:</span>
@@ -451,7 +452,7 @@
 					<Accordion.Trigger class="text-sm font-medium">{m.common_environment_variables()}</Accordion.Trigger>
 					<Accordion.Content class="pt-6 pb-5">
 						<div class="space-y-4">
-							{#each form.envVars as env, i (i)}
+							{#each form.envVars as env, i (env)}
 								<div class="flex items-center gap-4">
 									<Input placeholder="KEY" bind:value={env.key} disabled={isLoading} class="flex-1" />
 									<span class="text-muted-foreground">=</span>
@@ -476,7 +477,7 @@
 					<Accordion.Trigger class="text-sm font-medium">{m.swarm_service_form_mounts()}</Accordion.Trigger>
 					<Accordion.Content class="pt-6 pb-5">
 						<div class="space-y-4">
-							{#each form.mounts as mount, i (i)}
+							{#each form.mounts as mount, i (mount)}
 								<div class="flex items-center gap-4">
 									<Select.Root type="single" bind:value={mount.type} disabled={isLoading}>
 										<Select.Trigger class="w-24">
@@ -510,7 +511,7 @@
 					<Accordion.Trigger class="text-sm font-medium">{m.common_labels()}</Accordion.Trigger>
 					<Accordion.Content class="pt-6 pb-5">
 						<div class="space-y-4">
-							{#each form.labels as label, i (i)}
+							{#each form.labels as label, i (label)}
 								<div class="flex items-center gap-4">
 									<Input placeholder="key" bind:value={label.key} disabled={isLoading} class="flex-1" />
 									<span class="text-muted-foreground">=</span>

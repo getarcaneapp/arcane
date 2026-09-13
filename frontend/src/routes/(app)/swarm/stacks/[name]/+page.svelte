@@ -287,69 +287,71 @@
 					{#if sourceState === 'available' && source}
 						{@const stackSource = source}
 						<div class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border bg-card">
-							<ResizableSplit
-								class="min-h-0 flex-1"
-								variant="flush"
-								firstClass="bg-muted/20 border-border flex min-h-0 flex-col border-b lg:border-r lg:border-b-0"
-								secondClass="flex min-h-0 flex-col"
-								bind:size={sourceTreeWidth}
-								minSize={200}
-								maxSize={480}
-								minSecondSize={360}
-								defaultRatio={0.2}
-								stackBelow={1024}
-								ariaLabel={m.compose_editor_resize_files_panel()}
-								persistKey={`arcane.swarm.split:${stackName}:source`}
-							>
-								{#snippet first()}
-									<WorkspaceFileTreePanel
-										leadingRows={sourceWorkspaceLeadingRows}
-										entries={[]}
-										selectedFile={selectedSourceFile}
-										onSelect={openSourceTab}
-									/>
-								{/snippet}
-
-								{#snippet second()}
-									<div class="flex h-full min-h-0 flex-1 flex-col">
-										<EditorTabStrip
-											tabs={sourceTabs}
-											activeKey={activeSourceTab}
+							{#key `arcane.swarm.split:${stackName}:source`}
+								<ResizableSplit
+									class="min-h-0 flex-1"
+									variant="flush"
+									firstClass="bg-muted/20 border-border flex min-h-0 flex-col border-b lg:border-r lg:border-b-0"
+									secondClass="flex min-h-0 flex-col"
+									bind:size={sourceTreeWidth}
+									minSize={200}
+									maxSize={480}
+									minSecondSize={360}
+									defaultRatio={0.2}
+									stackBelow={1024}
+									ariaLabel={m.compose_editor_resize_files_panel()}
+									persistKey={`arcane.swarm.split:${stackName}:source`}
+								>
+									{#snippet first()}
+										<WorkspaceFileTreePanel
+											leadingRows={sourceWorkspaceLeadingRows}
+											entries={[]}
+											selectedFile={selectedSourceFile}
 											onSelect={openSourceTab}
-											onClose={closeSourceTab}
 										/>
-										<div class="relative min-h-0 flex-1">
-											{#key activeSourceTab}
-												{#if activeSourceTab === 'compose'}
-													<div class="absolute inset-0 min-h-0 w-full min-w-0">
-														<CodeEditor
-															value={stackSource.composeContent}
-															language="yaml"
-															readOnly={true}
-															fontSize="13px"
-															fileId={`swarm-stack-source:${stackName}:compose.yaml`}
-														/>
-													</div>
-												{:else if stackSource.envContent?.trim()}
-													<div class="absolute inset-0 min-h-0 w-full min-w-0">
-														<CodeEditor
-															value={stackSource.envContent}
-															language="env"
-															readOnly={true}
-															fontSize="13px"
-															fileId={`swarm-stack-source:${stackName}:.env`}
-														/>
-													</div>
-												{:else}
-													<div class="flex h-full items-center justify-center p-6 text-center text-sm text-muted-foreground">
-														No saved `.env` file was stored for this stack.
-													</div>
-												{/if}
-											{/key}
+									{/snippet}
+
+									{#snippet second()}
+										<div class="flex h-full min-h-0 flex-1 flex-col">
+											<EditorTabStrip
+												tabs={sourceTabs}
+												activeKey={activeSourceTab}
+												onSelect={openSourceTab}
+												onClose={closeSourceTab}
+											/>
+											<div class="relative min-h-0 flex-1">
+												{#key activeSourceTab}
+													{#if activeSourceTab === 'compose'}
+														<div class="absolute inset-0 min-h-0 w-full min-w-0">
+															<CodeEditor
+																value={stackSource.composeContent}
+																language="yaml"
+																readOnly={true}
+																fontSize="13px"
+																fileId={`swarm-stack-source:${stackName}:compose.yaml`}
+															/>
+														</div>
+													{:else if stackSource.envContent?.trim()}
+														<div class="absolute inset-0 min-h-0 w-full min-w-0">
+															<CodeEditor
+																value={stackSource.envContent}
+																language="env"
+																readOnly={true}
+																fontSize="13px"
+																fileId={`swarm-stack-source:${stackName}:.env`}
+															/>
+														</div>
+													{:else}
+														<div class="flex h-full items-center justify-center p-6 text-center text-sm text-muted-foreground">
+															No saved `.env` file was stored for this stack.
+														</div>
+													{/if}
+												{/key}
+											</div>
 										</div>
-									</div>
-								{/snippet}
-							</ResizableSplit>
+									{/snippet}
+								</ResizableSplit>
+							{/key}
 						</div>
 					{:else if sourceState === 'loading'}
 						<Card.Root variant="subtle">

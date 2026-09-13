@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
 	import SheetFooterActions from '#lib/components/sheets/sheet-footer-actions.svelte';
 	import SwitchWithLabel from '#lib/components/form/labeled-switch.svelte';
@@ -12,7 +13,8 @@
 	import type { GlobalVariable, GlobalVariableCreateDto, GlobalVariableUpdateDto } from '#lib/types/variable.js';
 	import { parseEnvText, normalizeVariableKeyInput } from '#lib/utils/env-file.js';
 	import { z } from 'zod/v4';
-	import { createForm, preventDefault } from '#lib/utils/settings.js';
+	import { createForm, preventDefault } from '#lib/utils/settings.svelte.js';
+
 	import * as m from '#lib/paraglide/messages.js';
 
 	type VariableFormPayload =
@@ -39,8 +41,13 @@
 	const isEditMode = $derived(!!variableToEdit);
 
 	let entryMode = $state<'single' | 'bulk'>('single');
-	let scope = $state<'all' | 'specific'>('all');
-	let selectedEnvIds = $state<string[]>([]);
+	let scope = $state<'all' | 'specific'>(
+		untrack(() => {
+			if (variableToEdit && !variableToEdit.allEnvironments && variableToEdit.environmentIds.length > 0) return 'specific';
+			return 'all';
+		})
+	);
+	let selectedEnvIds = $state<string[]>(untrack(() => [...(variableToEdit?.environmentIds ?? [])]));
 	let scopeError = $state<string | null>(null);
 	let bulkText = $state('');
 	let bulkSecret = $state(false);
@@ -63,7 +70,7 @@
 		});
 	}
 
-	const formSchema = $derived.by(() => {
+	const formSchema = untrack(() => {
 		const wasSecret = variableToEdit?.isSecret ?? false;
 
 		return z
@@ -85,13 +92,14 @@
 			});
 	});
 
-	const formData = $derived({
-		key: variableToEdit?.key ?? '',
-		value: variableToEdit ? (variableToEdit.isSecret ? '' : variableToEdit.value) : '',
-		isSecret: variableToEdit?.isSecret ?? false
+	const formData = untrack(() => {
+		let value = '';
+		if (variableToEdit && !variableToEdit.isSecret) value = variableToEdit.value;
+		return { key: variableToEdit?.key ?? '', value, isSecret: variableToEdit?.isSecret ?? false };
 	});
 
-	let { inputs, ...form } = $derived(createForm<typeof formSchema>(formSchema, formData));
+	const form = createForm<typeof formSchema>(formSchema, formData);
+	let inputs = $derived(form.inputs);
 
 	const parsed = $derived(parseEnvText(bulkText));
 
@@ -105,19 +113,6 @@
 			seen.add(entry.key);
 		}
 		return [...duplicates];
-	});
-
-	$effect(() => {
-		if (open) {
-			const editing = variableToEdit;
-			entryMode = 'single';
-			bulkText = '';
-			bulkSecret = false;
-			bulkError = null;
-			scopeError = null;
-			scope = editing && !editing.allEnvironments && editing.environmentIds.length > 0 ? 'specific' : 'all';
-			selectedEnvIds = editing ? [...editing.environmentIds] : [];
-		}
 	});
 
 	function validateScope(): boolean {
@@ -167,18 +162,10 @@
 			onSubmit({ mode: 'create', variable: { key: data.key, value: data.value, isSecret: data.isSecret, ...scopeDto() } });
 		}
 	}
-
-	function handleOpenChange(newOpenState: boolean) {
-		open = newOpenState;
-		if (!newOpenState) {
-			variableToEdit = null;
-		}
-	}
 </script>
 
 <ResponsiveDialog.Root
-	{open}
-	onOpenChange={handleOpenChange}
+	bind:open
 	variant="sheet"
 	title={isEditMode ? m.edit_variable() : m.create_variable()}
 	description={isEditMode ? (variableToEdit?.key ?? '') : m.common_add_description()}
@@ -226,7 +213,7 @@
 						<p class="px-3 py-4 text-sm text-muted-foreground">{m.paste_env_empty_preview()}</p>
 					{:else}
 						<ul class="max-h-48 divide-y divide-border/50 overflow-y-auto">
-							{#each parsed.entries as entry, index (index)}
+							{#each parsed.entries as entry (entry)}
 								<li class="flex items-center gap-3 px-3 py-1.5 text-sm">
 									<span class="font-mono font-medium">{entry.key}</span>
 									<span class="min-w-0 flex-1 truncate text-right font-mono text-muted-foreground">
@@ -269,11 +256,11 @@
 						type="text"
 						class="mt-2 font-mono"
 						placeholder={m.key_placeholder()}
-						bind:value={$inputs.key.value}
-						oninput={(e) => normalizeVariableKeyInput(e, (value) => ($inputs.key.value = value))}
+						bind:value={inputs.key.value}
+						oninput={(e) => normalizeVariableKeyInput(e, (value) => (inputs.key.value = value))}
 					/>
-					{#if $inputs.key.error}
-						<p class="mt-1 text-sm text-destructive">{$inputs.key.error}</p>
+					{#if inputs.key.error}
+						<p class="mt-1 text-sm text-destructive">{inputs.key.error}</p>
 					{/if}
 				</div>
 
@@ -284,10 +271,10 @@
 						rows={3}
 						class="mt-2 font-mono"
 						placeholder={variableToEdit?.isSecret ? m.secret_value_placeholder() : m.value_placeholder()}
-						bind:value={$inputs.value.value}
+						bind:value={inputs.value.value}
 					/>
-					{#if $inputs.value.error}
-						<p class="mt-1 text-sm text-destructive">{$inputs.value.error}</p>
+					{#if inputs.value.error}
+						<p class="mt-1 text-sm text-destructive">{inputs.value.error}</p>
 					{/if}
 				</div>
 
@@ -295,7 +282,7 @@
 					id="variable-secret"
 					label={m.secret()}
 					description={m.secret_description()}
-					bind:checked={$inputs.isSecret.value}
+					bind:checked={inputs.isSecret.value}
 				/>
 
 				{@render scopeSelector()}

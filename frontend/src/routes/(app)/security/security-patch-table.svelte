@@ -1,5 +1,7 @@
 <script lang="ts">
+	import { featureStore } from '#lib/stores/features.store.svelte.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
+	import { extractApiErrorMessage } from '#lib/utils/api.js';
 
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
@@ -17,7 +19,7 @@
 	import { formatDateTimeShort } from '#lib/utils/formatting.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { hasPermission } from '#lib/utils/auth.js';
-	import userStore from '#lib/stores/user-store.js';
+	import userStore from '#lib/stores/user-store.svelte.js';
 	import { toast } from 'svelte-sonner';
 
 	type PatchTargetRow = ImagePatchTargetDto & { id: string };
@@ -34,18 +36,22 @@
 	// Track the user store: hasPermission reads it non-reactively, so without
 	// this the derived would cache a pre-hydration false forever.
 	const canPatchImage = $derived.by(() => {
-		$userStore;
-		return hasPermission('images:patch', currentEnvId);
+		userStore.current;
+		return featureStore.isEnabled('vulnerabilityManagement', currentEnvId) && hasPermission('images:patch', currentEnvId);
 	});
 
 	async function refreshPatchTargets(options: SearchPaginationSortRequest) {
+		if (!featureStore.isEnabled('vulnerabilityManagement', currentEnvId)) return targets;
+		const requestedEnvId = currentEnvId;
 		const response = await imageService.listPatchTargets(options);
+		if (!featureStore.isEnabled('vulnerabilityManagement', currentEnvId) || requestedEnvId !== currentEnvId) return targets;
 		const mapped = { ...response, data: (response.data ?? []).map((t) => ({ ...t, id: t.imageId })) };
 		targets = mapped;
 		return mapped;
 	}
 
 	async function handlePatchImage(item: PatchTargetRow) {
+		if (!canPatchImage) return;
 		const operationResult = await tryCatch(
 			(async () => {
 				// The fixable counts come from the stored scan, so patch from that report.
@@ -58,7 +64,7 @@
 			const error = operationResult.error;
 
 			console.error('Failed to patch image:', error);
-			toast.error(m.images_patch_failed());
+			toast.error(m.images_patch_failed(), { description: extractApiErrorMessage(error) });
 		}
 	}
 

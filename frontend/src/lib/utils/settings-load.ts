@@ -9,7 +9,7 @@ type ParentWithQueryClient = () => Promise<{
 }>;
 
 type QueryClientLike = {
-	fetchQuery: <T>(options: { queryKey: unknown; queryFn: () => Promise<T> }) => Promise<T>;
+	query: <T>(options: { queryKey: unknown; queryFn: () => Promise<T> }) => Promise<T>;
 };
 
 export async function loadMergedSettingsPage(parent: ParentWithQueryClient, errorContext: string) {
@@ -19,7 +19,7 @@ export async function loadMergedSettingsPage(parent: ParentWithQueryClient, erro
 
 	const operationResult = await tryCatch(
 		(async () => {
-			const settings = await client.fetchQuery({
+			const settings = await client.query({
 				queryKey: queryKeys.settings.byEnvironment(envId),
 				queryFn: () => settingsService.getSettingsForEnvironmentMerged(envId)
 			});

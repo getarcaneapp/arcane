@@ -2321,7 +2321,7 @@ func (s *GitOpsSyncService) createDirectorySyncProjectInternal(ctx context.Conte
 	// so a collision here means the name is taken by an unrelated/unrecoverable dir;
 	// treat it as a broken binding rather than creating a duplicate.
 	basePath := filepath.Join(projectsDir, projects.SanitizeProjectName(sync.ProjectName))
-	projectPath, folderName, err := projects.CreateExactDir(ctx, projectsDir, basePath, sync.ProjectName, 0o755)
+	projectPath, folderName, err := projects.CreateExactDir(ctx, projectsDir, basePath, sync.ProjectName, utils.DirPerm)
 	if err != nil {
 		if errors.Is(err, projects.ErrProjectDirExists) {
 			return nil, common.Classify(common.ErrGitOpsSyncProjectBindingBroken, errors.WrapIf(errors.Errorf("sync %s cannot create project %q: a directory with that name already exists; refusing to create a duplicate", sync.ID, projects.SanitizeProjectName(sync.ProjectName)), "GitOps sync project binding broken"))
@@ -2341,6 +2341,11 @@ func (s *GitOpsSyncService) createDirectorySyncProjectInternal(ctx context.Conte
 		return nil, errors.WrapIf(err, "failed to promote staged project directory")
 	}
 	stage.stagePath = ""
+
+	if err := os.Chmod(projectPath, utils.DirPerm); err != nil {
+		_ = acfs.RemoveAll(ctx, projectsDir, projectLogical)
+		return nil, errors.WrapIf(err, "failed to set project directory permissions")
+	}
 
 	project := &projectpkg.Project{
 		Name:         sync.ProjectName,
@@ -2376,8 +2381,11 @@ func (s *GitOpsSyncService) updateDirectorySyncProjectInternal(ctx context.Conte
 		}
 	} else if errors.Is(err, os.ErrNotExist) {
 		existed = false
-		if err := os.MkdirAll(projectPath, 0o755); err != nil {
+		if err := os.MkdirAll(projectPath, utils.DirPerm); err != nil {
 			return nil, errors.WrapIf(err, "failed to recreate project directory")
+		}
+		if err := os.Chmod(projectPath, utils.DirPerm); err != nil {
+			return nil, errors.WrapIf(err, "failed to set project directory permissions")
 		}
 	} else {
 		return nil, errors.WrapIf(err, "failed to inspect current project directory")

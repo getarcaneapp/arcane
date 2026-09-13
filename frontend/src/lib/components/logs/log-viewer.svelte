@@ -58,7 +58,7 @@
 		searchTerm = ''
 	}: Props = $props();
 
-	let logs: LogViewerEntry[] = $state([]);
+	let logs = $state.raw<LogViewerEntry[]>([]);
 	let pending: LogViewerEntry[] = [];
 	let flushScheduled = false;
 	let seq = 0;
@@ -291,16 +291,14 @@
 		await wsClient.connect();
 	}
 
-	function processLogObject(obj: any) {
-		if (!obj || typeof obj !== 'object') return;
-		const { level = 'stdout', message = '', timestamp = nowInstantString(), service, containerId } = obj;
-
+	function processLogObject(obj: unknown) {
+		if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return;
 		addLogEntry({
-			level,
-			message,
-			timestamp,
-			service,
-			containerId
+			level: 'level' in obj && typeof obj.level === 'string' ? obj.level : 'stdout',
+			message: 'message' in obj && typeof obj.message === 'string' ? obj.message : '',
+			timestamp: 'timestamp' in obj && typeof obj.timestamp === 'string' ? obj.timestamp : nowInstantString(),
+			service: 'service' in obj && typeof obj.service === 'string' ? obj.service : undefined,
+			containerId: 'containerId' in obj && typeof obj.containerId === 'string' ? obj.containerId : undefined
 		});
 	}
 

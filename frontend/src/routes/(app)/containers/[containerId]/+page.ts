@@ -15,11 +15,11 @@ export const load: PageLoad = async ({ params, parent }) => {
 	const operationResult = await tryCatch(
 		(async () => {
 			const [container, settings] = await Promise.all([
-				queryClient.fetchQuery({
+				queryClient.query({
 					queryKey: queryKeys.containers.detail(envId, containerId),
 					queryFn: () => containerService.getContainerForEnvironment(envId, containerId)
 				}),
-				queryClient.fetchQuery({
+				queryClient.query({
 					queryKey: queryKeys.settings.byEnvironment(envId),
 					queryFn: () => settingsService.getSettingsForEnvironmentMerged(envId)
 				})
@@ -38,13 +38,13 @@ export const load: PageLoad = async ({ params, parent }) => {
 							search: composeProjectName,
 							pagination: { page: 1, limit: 100 } // Ensure we don't miss projects beyond default page size
 						};
-						const projectsResult = await queryClient.fetchQuery({
+						const projectsResult = await queryClient.query({
 							queryKey: queryKeys.projects.list(envId, searchOptions),
 							queryFn: () => projectService.getProjectsForEnvironment(envId, searchOptions)
 						});
 						const matched = projectsResult.data.find((p) => p.name === composeProjectName);
 						if (matched) {
-							return await queryClient.fetchQuery({
+							return await queryClient.query({
 								queryKey: queryKeys.projects.detail(envId, matched.id),
 								queryFn: () => projectService.getProjectForEnvironment(envId, matched.id)
 							});

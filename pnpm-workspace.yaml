@@ -30,7 +30,7 @@ overrides:
   uuid: '>=11.1.1'
   fast-uri: '>=3.1.5'
   ws: '>=8.20.1'
-  '@sveltejs/kit': '^3.0.0-next.25'
+  '@sveltejs/kit': '^3.0.0-next.27'
   '@sveltejs/adapter-static': '>=4.0.0-next.4'
   dompurify: '>=3.4.11'
   ts-deepmerge: '>=8.0.0'
@@ -56,8 +56,8 @@ minimumReleaseAgeExclude:
   - vite-plus@0.3.0
 
 catalog:
-  vite: npm:@voidzero-dev/vite-plus-core@0.3.0
-  vite-plus: 0.3.0
+  vite: npm:@voidzero-dev/vite-plus-core@0.3.1
+  vite-plus: 0.3.1
 peerDependencyRules:
   allowAny:
     - vite

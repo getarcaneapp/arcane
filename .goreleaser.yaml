@@ -411,7 +411,6 @@ changelog:
       - '^build'
       - '^ci'
       - '^revert'
-      - '^chore\(deps\)'
   ai:
     use: openai
     model: openai/gpt-5.6-luna-pro
@@ -420,8 +419,7 @@ changelog:
       Start with a short intro highlighting the most notable changes, wrapped
       in a GitHub alert blockquote (a "> [!NOTE]" line followed by "> " prefixed
       lines). The intro's first sentence must begin with "This release adds" or
-      "This release fixes". Group related changes, merge dependency bumps of the same
-      dependency into one line, and keep it concise. Keep each entry's pull
+      "This release fixes". Group related changes and keep it concise. Keep each entry's pull
       request or commit reference and its author attribution. No emojis.
 
       {{ .ReleaseNotes }}

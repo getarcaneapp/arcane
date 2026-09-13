@@ -1,7 +1,9 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import * as Card from '#lib/components/ui/card/index.js';
 	import LogViewer from '#lib/components/logs/log-viewer.svelte';
 	import LogControls from '#lib/components/logs/log-controls.svelte';
+	import { UseLogPreferences } from '#lib/hooks/use-log-preferences.svelte.js';
 	import LogPanelTitle from '#lib/components/logs/log-panel-title.svelte';
 	import { m } from '#lib/paraglide/messages.js';
 	import { refreshLogViewerStream, startLogViewerStream, stopLogViewerStream } from '#lib/utils/log-viewer.js';
@@ -16,9 +18,8 @@
 	let isStreaming = $state(false);
 	let viewer = $state<ReturnType<typeof LogViewer>>();
 	let autoScroll = $state(true);
-	let autoStartLogs = $state(false);
+	const preferences = new UseLogPreferences();
 	let logSearchTerm = $state('');
-	let showParsedJson = $state(false);
 
 	function handleStart() {
 		startLogViewerStream(viewer);
@@ -41,8 +42,8 @@
 	}
 
 	$effect(() => {
-		if (autoStartLogs && !isStreaming && serviceId && viewer) {
-			viewer.startLogStream();
+		if (preferences.autoStartLogs && serviceId && viewer) {
+			untrack(handleStart);
 		}
 	});
 </script>
@@ -56,8 +57,7 @@
 			<LogControls
 				bind:searchTerm={logSearchTerm}
 				bind:autoScroll
-				bind:autoStartLogs
-				bind:showParsedJson
+				{preferences}
 				{isStreaming}
 				disabled={!serviceId}
 				onStart={handleStart}
@@ -74,7 +74,8 @@
 				bind:autoScroll
 				type="service"
 				{serviceId}
-				bind:showParsedJson
+				bind:showParsedJson={preferences.showParsedJson}
+				tailLines={preferences.tailLines}
 				maxLines={500}
 				showTimestamps={true}
 				height="calc(100vh - 320px)"

@@ -68,10 +68,18 @@ func stripTrailingProjectCounterInternal(name string) string {
 // DetectComposeFile returns the base compose file for dir. COMPOSE_FILE in the
 // project's .env takes precedence over standard detection, mirroring `docker
 // compose`; projectsDir locates .env.global for the COMPOSE_DISABLE_ENV_FILE
-// check and may be empty where no projects directory applies.
+// check and may be empty where no projects directory applies. An unreadable
+// project .env falls back to filename detection and returns the found path
+// together with a common.ErrProjectEnvUnreadable error: that pairing is an
+// identification-only result for discovery and diagnostics, and callers that
+// check err != nil remain strict and must keep doing so.
 func DetectComposeFile(ctx context.Context, projectsDir, dir string) (string, error) {
+	var envErr error
 	if files, err := ComposeFileEnvSelection(ctx, projectsDir, dir); err != nil {
-		return "", err
+		if !errors.Is(err, common.ErrProjectEnvUnreadable) {
+			return "", err
+		}
+		envErr = err
 	} else if len(files) > 0 {
 		return files[0], nil
 	}
@@ -82,7 +90,7 @@ func DetectComposeFile(ctx context.Context, projectsDir, dir string) (string, er
 	for _, filename := range composeFileCandidates {
 		composePath := filepath.Join(dir, filename)
 		if info, err := os.Stat(composePath); err == nil && !info.IsDir() {
-			return composePath, nil
+			return composePath, envErr
 		}
 	}
 
@@ -138,17 +146,17 @@ func DetectComposeFile(ctx context.Context, projectsDir, dir string) (string, er
 
 	switch {
 	case len(dirMatchedCandidates) == 1:
-		return dirMatchedCandidates[0], nil
+		return dirMatchedCandidates[0], envErr
 	case len(dirMatchedCandidates) > 1:
 		return "", errors.Errorf("multiple custom compose files found in %q", dir)
 
 	case len(composeNamedCandidates) == 1:
-		return composeNamedCandidates[0], nil
+		return composeNamedCandidates[0], envErr
 	case len(composeNamedCandidates) > 1:
 		return "", errors.Errorf("multiple custom compose files found in %q", dir)
 
 	case len(customCandidates) == 1:
-		return customCandidates[0], nil
+		return customCandidates[0], envErr
 	case len(customCandidates) > 1:
 		return "", errors.Errorf("multiple custom compose files found in %q", dir)
 
@@ -348,6 +356,9 @@ func LoadComposeProject(
 	// Load full environment (process + global + project .env) for service injection
 	fullEnvMap, injectionVars, err := envLoader.LoadEnvironment(ctx)
 	if err != nil {
+		if errors.Is(err, common.ErrProjectEnvUnreadable) {
+			return nil, err
+		}
 		slog.WarnContext(ctx, "Failed to load environment", "error", err)
 	}
 

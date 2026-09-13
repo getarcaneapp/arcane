@@ -4,7 +4,7 @@
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { preventDefault } from '#lib/utils/settings.js';
+	import { preventDefault } from '#lib/utils/settings.svelte.js';
 
 	let {
 		open = $bindable(false),

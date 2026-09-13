@@ -6,7 +6,7 @@
 	import { goto } from '$app/navigation';
 	import EnvironmentSwitcherDialog from '#lib/components/dialogs/environment-switcher-dialog.svelte';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-	import settingsStore from '#lib/stores/config-store.js';
+	import settingsStore from '#lib/stores/config-store.svelte.js';
 
 	let {
 		message,
@@ -30,19 +30,15 @@
 	const isConnectionError = $derived.by(() => {
 		const lowerMessage = message.toLowerCase();
 		const connectionTerms = [
-			'connection',
-			'proxy',
-			'reset',
-			'timeout',
-			'network',
-			'tcp',
-			'dial',
-			'lookup',
-			'host',
-			'refused',
-			'internal error'
+			'cannot connect to the docker daemon',
+			'failed to connect to docker',
+			'error during connect:',
+			'edge agent is not connected',
+			'no active tunnel for environment',
+			'tunnel connection closed',
+			'proxy request failed'
 		];
-		return connectionTerms.some((term) => lowerMessage.includes(term)) || !status || [500, 502, 503, 504].includes(status);
+		return connectionTerms.some((term) => lowerMessage.includes(term));
 	});
 
 	const connectionErrorTitle = $derived.by(() => {
@@ -55,7 +51,7 @@
 
 	const connectionErrorMessage = $derived.by(() => {
 		if (environmentStore.selected?.id === '0') {
-			const host = $settingsStore ? $settingsStore.dockerHost : 'unix:///var/run/docker.sock';
+			const host = settingsStore.current ? settingsStore.current?.dockerHost : 'unix:///var/run/docker.sock';
 			return m.error_connection_local_docker_desc({
 				host: host || 'unix:///var/run/docker.sock'
 			});

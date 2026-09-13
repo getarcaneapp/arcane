@@ -10,7 +10,13 @@
 	import type { DockerTabProps } from './tab-props';
 	import { arcaneImageRegistryOptions, arcaneToolsImage, arcaneUpdateCheckImage } from '#lib/utils/registry.js';
 
-	let { formInputs, environmentId, shellSelectValue, handleShellSelectChange, shellOptions }: DockerTabProps = $props();
+	let {
+		formInputs = $bindable(),
+		environmentId,
+		shellSelectValue,
+		handleShellSelectChange,
+		shellOptions
+	}: DockerTabProps = $props();
 
 	const deployPullPolicyOptions = [
 		{ value: 'missing', label: 'Missing', description: m.deploy_pull_policy_missing() },
@@ -19,7 +25,7 @@
 	];
 
 	const registryOptions = arcaneImageRegistryOptions();
-	const updateCheckImage = $derived(arcaneUpdateCheckImage($formInputs.updateCheckRegistry.value, environmentId === '0'));
+	const updateCheckImage = $derived(arcaneUpdateCheckImage(formInputs.updateCheckRegistry.value, environmentId === '0'));
 
 	const pruneContainerModes = [
 		{ value: 'none', label: m.none() },
@@ -76,8 +82,8 @@
 				{#if shellSelectValue === 'custom'}
 					<div class="pt-2">
 						<TextInputWithLabel
-							bind:value={$formInputs.defaultShell.value}
-							error={$formInputs.defaultShell.error}
+							bind:value={formInputs.defaultShell.value}
+							error={formInputs.defaultShell.error}
 							label={m.custom()}
 							placeholder={m.bin_sh_placeholder()}
 							helpText={m.docker_shell_custom_path_help()}
@@ -91,11 +97,11 @@
 				<SelectWithLabel
 					id="defaultDeployPullPolicy"
 					name="defaultDeployPullPolicy"
-					bind:value={$formInputs.defaultDeployPullPolicy.value}
+					bind:value={formInputs.defaultDeployPullPolicy.value}
 					label={m.settings_default_deploy_pull_policy()}
 					description={m.settings_default_deploy_pull_policy_description()}
 					options={deployPullPolicyOptions}
-					onValueChange={(v) => ($formInputs.defaultDeployPullPolicy.value = v as 'missing' | 'always' | 'never')}
+					onValueChange={(v) => (formInputs.defaultDeployPullPolicy.value = v as 'missing' | 'always' | 'never')}
 				/>
 			</div>
 
@@ -103,24 +109,24 @@
 				<SelectWithLabel
 					id="toolsImageRegistry"
 					name="toolsImageRegistry"
-					bind:value={$formInputs.toolsImageRegistry.value}
+					bind:value={formInputs.toolsImageRegistry.value}
 					label={m.tools_image_registry_label()}
 					description={m.tools_image_registry_description()}
 					options={registryOptions}
-					onValueChange={(v) => ($formInputs.toolsImageRegistry.value = v as 'ghcr.io' | 'docker.io')}
+					onValueChange={(v) => (formInputs.toolsImageRegistry.value = v as 'ghcr.io' | 'docker.io')}
 				/>
-				<p class="font-mono text-xs text-muted-foreground">{arcaneToolsImage($formInputs.toolsImageRegistry.value)}</p>
+				<p class="font-mono text-xs text-muted-foreground">{arcaneToolsImage(formInputs.toolsImageRegistry.value)}</p>
 			</div>
 
 			<div class="space-y-2">
 				<SelectWithLabel
 					id="updateCheckRegistry"
 					name="updateCheckRegistry"
-					bind:value={$formInputs.updateCheckRegistry.value}
+					bind:value={formInputs.updateCheckRegistry.value}
 					label={m.update_check_registry_label()}
 					description={m.update_check_registry_description()}
 					options={[{ value: 'auto', label: m.auto() }, ...registryOptions]}
-					onValueChange={(v) => ($formInputs.updateCheckRegistry.value = v as 'auto' | 'ghcr.io' | 'docker.io')}
+					onValueChange={(v) => (formInputs.updateCheckRegistry.value = v as 'auto' | 'ghcr.io' | 'docker.io')}
 				/>
 				<p class="text-xs text-muted-foreground {updateCheckImage ? 'font-mono' : ''}">
 					{updateCheckImage ?? m.follows_running_image()}
@@ -130,15 +136,15 @@
 			<TextInputWithLabel
 				id="base-server-url"
 				label={m.general_base_url_label()}
-				bind:value={$formInputs.baseServerUrl.value}
-				error={$formInputs.baseServerUrl.error}
+				bind:value={formInputs.baseServerUrl.value}
+				error={formInputs.baseServerUrl.error}
 				helpText={m.general_base_url_help()}
 			/>
 		</div>
 
 		<div class="border-t pt-6">
 			<SettingsRow layout="inline" label={m.docker_auto_inject_env_label()} description={m.docker_auto_inject_env_description()}>
-				<Switch id="auto-inject-env" bind:checked={$formInputs.autoInjectEnv.value} />
+				<Switch id="auto-inject-env" bind:checked={formInputs.autoInjectEnv.value} />
 			</SettingsRow>
 		</div>
 
@@ -153,21 +159,21 @@
 					title={m.containers()}
 					description={m.scheduled_prune_containers_description()}
 					modeOptions={pruneContainerModes}
-					bind:value={$formInputs.pruneContainerMode.value}
-					bind:untilValue={$formInputs.pruneContainerUntil.value}
+					bind:value={formInputs.pruneContainerMode.value}
+					bind:untilValue={formInputs.pruneContainerUntil.value}
 				/>
 				<PruneModeCard
 					title={m.images()}
 					description={m.scheduled_prune_images_description()}
 					modeOptions={pruneImageModes}
-					bind:value={$formInputs.pruneImageMode.value}
-					bind:untilValue={$formInputs.pruneImageUntil.value}
+					bind:value={formInputs.pruneImageMode.value}
+					bind:untilValue={formInputs.pruneImageUntil.value}
 				/>
 				<PruneModeCard
 					title={m.resource_volumes_cap()}
 					description={m.scheduled_prune_volumes_description()}
 					modeOptions={pruneVolumeModes}
-					bind:value={$formInputs.pruneVolumeMode.value}
+					bind:value={formInputs.pruneVolumeMode.value}
 					warningTitle={m.prune_volumes_warning_title()}
 					warningDescription={m.scheduled_prune_volumes_warning()}
 				/>
@@ -175,15 +181,15 @@
 					title={m.resource_networks_cap()}
 					description={m.scheduled_prune_networks_description()}
 					modeOptions={pruneNetworkModes}
-					bind:value={$formInputs.pruneNetworkMode.value}
-					bind:untilValue={$formInputs.pruneNetworkUntil.value}
+					bind:value={formInputs.pruneNetworkMode.value}
+					bind:untilValue={formInputs.pruneNetworkUntil.value}
 				/>
 				<PruneModeCard
 					title={m.build_cache()}
 					description={m.scheduled_prune_build_cache_description()}
 					modeOptions={pruneBuildCacheModes}
-					bind:value={$formInputs.pruneBuildCacheMode.value}
-					bind:untilValue={$formInputs.pruneBuildCacheUntil.value}
+					bind:value={formInputs.pruneBuildCacheMode.value}
+					bind:untilValue={formInputs.pruneBuildCacheUntil.value}
 				/>
 			</div>
 		</div>

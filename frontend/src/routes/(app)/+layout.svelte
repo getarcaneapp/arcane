@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { LayoutProps } from './$types';
+	import { untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { goto, afterNavigate } from '$app/navigation';
 	import { getAuthRedirectPath } from '#lib/utils/auth.js';
@@ -10,9 +11,11 @@
 	import OperationWatchDialog from '#lib/components/operation-watch-dialog.svelte';
 	import { IsMobile } from '#lib/hooks/is-mobile.svelte.js';
 	import { IsTablet } from '#lib/hooks/is-tablet.svelte.js';
-	import { getEffectiveLandingPage, getEffectiveNavigationSettings } from '#lib/utils/navigation.js';
+	import { getEffectiveLandingPage, getEffectiveNavigationSettings, setMobileNavigation } from '#lib/utils/navigation.js';
 	import { browser } from '$app/env';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+	import { featureStore } from '#lib/stores/features.store.svelte.js';
+	import { isEnvironmentOnline } from '#lib/utils/docker.js';
 	import { environmentStatusStore } from '#lib/stores/environment-status.store.svelte.js';
 	import {
 		navigationItems,
@@ -22,7 +25,7 @@
 	} from '#lib/config/navigation-config.js';
 	import { isEditableTarget, matchesShortcutEvent } from '#lib/utils/navigation.js';
 	import { cn } from '#lib/utils.js';
-	import userStore, { userHasPermissionInAnyEnvironment } from '#lib/stores/user-store.js';
+	import userStore, { userHasPermissionInAnyEnvironment } from '#lib/stores/user-store.svelte.js';
 	let { data, children }: LayoutProps = $props();
 
 	const versionInformation = $derived(data.versionInformation);
@@ -38,10 +41,22 @@
 	const navigationSettings = $derived.by(() => {
 		// Track the store, not the loader snapshot: saving a preference calls
 		// userStore.setUser() without re-running load().
-		$userStore;
+		void userStore.current;
 		return getEffectiveNavigationSettings();
 	});
 	const navigationMode = $derived(navigationSettings.mode);
+	let hiddenNavigationSettings = $state.raw<typeof navigationSettings>();
+	setMobileNavigation({
+		get settings() {
+			return navigationSettings;
+		},
+		get visible() {
+			return !isMobile.current || !navigationSettings.scrollToHide || hiddenNavigationSettings !== navigationSettings;
+		},
+		set visible(value: boolean) {
+			hiddenNavigationSettings = value ? undefined : navigationSettings;
+		}
+	});
 	const currentEnvId = $derived(environmentStore.selected?.id || '0');
 	const managementItemsRaw = $derived(getManagementItems(currentEnvId));
 	const managementItems = $derived(filterByPermissions(managementItemsRaw, user ?? null, currentEnvId, permissionsManifest));
@@ -56,6 +71,19 @@
 		return flattenNavigationItems(items).filter((item) => item.shortcut?.length);
 	});
 
+	let previousConnections = new Map<string, boolean>();
+	$effect(() => {
+		const connections = new Map(
+			environmentStore.available.map((environment) => [environment.id, isEnvironmentOnline(environment)])
+		);
+		untrack(() => {
+			for (const [environmentId, online] of connections) {
+				if (online && previousConnections.get(environmentId) === false) void featureStore.refresh(environmentId);
+			}
+			previousConnections = connections;
+		});
+	});
+
 	$effect(() => {
 		if (!user) {
 			return;
@@ -64,17 +92,20 @@
 		return () => environmentStatusStore.stop();
 	});
 
-	$effect(() => {
-		const redirectPath = getAuthRedirectPath(
+	const authRedirectPath = $derived(
+		getAuthRedirectPath(
 			page.url.pathname,
 			user,
 			currentEnvId,
 			permissionsManifest,
 			permissionsManifestLoadFailed,
 			getEffectiveLandingPage()
-		);
-		if (redirectPath) {
-			goto(redirectPath);
+		)
+	);
+
+	$effect(() => {
+		if (authRedirectPath) {
+			goto(authRedirectPath);
 		}
 	});
 
@@ -92,7 +123,7 @@
 
 	function handleNavigationShortcut(event: KeyboardEvent) {
 		if (event.defaultPrevented) return;
-		if ($userStore?.preferences?.keyboardShortcutsEnabled === false) return;
+		if (userStore.current?.preferences?.keyboardShortcutsEnabled === false) return;
 		if (isMobile.current || isTablet.current) return;
 		if (isEditableTarget(event.target)) return;
 
@@ -102,14 +133,17 @@
 		event.preventDefault();
 		goto(match.url);
 	}
-	$effect(() => void handleNavigationShortcut);
 
 	function flattenNavigationItems(items: NavigationItem[]): NavigationItem[] {
 		return items.flatMap((item) => [item, ...(item.items ? flattenNavigationItems(item.items) : [])]);
 	}
 </script>
 
-<svelte:window onkeydown={handleNavigationShortcut} />
+<svelte:window
+	onkeydown={handleNavigationShortcut}
+	onfocus={() => void featureStore.refreshKnown()}
+	ononline={() => void featureStore.refreshKnown()}
+/>
 
 <Sidebar.Provider class={isMobile.current ? 'h-auto min-h-dvh' : undefined}>
 	{#if !isMobile.current}
@@ -138,7 +172,7 @@
 	</main>
 
 	{#if isMobile.current}
-		<MobileNav {navigationSettings} {user} {versionInformation} {swarmEnabled} {permissionsManifest} />
+		<MobileNav {user} {versionInformation} {swarmEnabled} {permissionsManifest} />
 	{/if}
 </Sidebar.Provider>
 

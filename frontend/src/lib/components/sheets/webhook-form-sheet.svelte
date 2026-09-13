@@ -11,7 +11,8 @@
 	import { gitOpsSyncService } from '#lib/services/gitops-sync-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { z } from 'zod/v4';
-	import { createForm, preventDefault } from '#lib/utils/settings.js';
+	import { createForm, preventDefault } from '#lib/utils/settings.svelte.js';
+
 	import * as m from '#lib/paraglide/messages.js';
 
 	type WebhookFormProps = {
@@ -93,7 +94,8 @@
 	});
 
 	let formData = $derived({ name: '' });
-	let { inputs, ...form } = $derived(createForm<typeof formSchema>(formSchema, formData));
+	let form = $derived(createForm<typeof formSchema>(formSchema, formData));
+	let inputs = $derived(form.inputs);
 
 	async function loadTargetOptions(type: WebhookTargetType) {
 		if (type === 'updater') {
@@ -187,7 +189,7 @@
 				type="text"
 				placeholder={m.webhook_name_placeholder()}
 				description={m.webhook_name_description()}
-				bind:input={$inputs.name}
+				bind:input={inputs.name}
 			/>
 
 			<SelectWithLabel

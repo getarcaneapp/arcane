@@ -442,6 +442,8 @@ func TestIsSynologyDockerHostInternal(t *testing.T) {
 	require.True(t, IsSynologyDockerHost("synology nas"))
 	// Padded with spaces
 	require.True(t, IsSynologyDockerHost("  Synology NAS  "))
+	// DS1019+ (Kernel 4.4): OS field is just "DiskStation"
+	require.True(t, IsSynologyDockerHost("DiskStation"))
 	// Empty / non-Synology
 	require.False(t, IsSynologyDockerHost(""))
 	require.False(t, IsSynologyDockerHost("Ubuntu 24.04.1 LTS"))

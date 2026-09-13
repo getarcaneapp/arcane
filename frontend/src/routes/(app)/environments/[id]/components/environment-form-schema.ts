@@ -32,6 +32,7 @@ export const environmentFormSchema = z
 		pruneNetworkUntil: z.string(),
 		pruneBuildCacheMode: z.enum(['none', 'unused', 'all', 'olderThan']),
 		pruneBuildCacheUntil: z.string(),
+		featureVulnerabilityManagementEnabled: z.boolean(),
 		vulnerabilityScanEnabled: z.boolean(),
 		toolsImageRegistry: z.enum(['ghcr.io', 'docker.io']),
 		updateCheckRegistry: z.enum(['auto', 'ghcr.io', 'docker.io']),

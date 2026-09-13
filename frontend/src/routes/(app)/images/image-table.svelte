@@ -1,10 +1,13 @@
 <script lang="ts">
+	import { featureStore } from '#lib/stores/features.store.svelte.js';
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { goto } from '$app/navigation';
-	import { onDestroy } from 'svelte';
+	import { onMount, onDestroy, tick } from 'svelte';
+	import { useQueryClient } from '@tanstack/svelte-query';
+	import { queryKeys } from '#lib/query/query-keys.js';
 	import { toast } from 'svelte-sonner';
 	import { bytes, formatDateTimeShort, nowInstantString } from '#lib/utils/formatting.js';
 	import { inUseBadge } from '#lib/utils/mobile-card-badges.js';
@@ -27,7 +30,7 @@
 	import { isLikelyStaleFailedSummary, isVulnerabilityScanInProgress } from '#lib/utils/docker.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { hasPermission } from '#lib/utils/auth.js';
-	import userStore from '#lib/stores/user-store.js';
+	import userStore from '#lib/stores/user-store.svelte.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { bulkConfirmAndRun } from '#lib/utils/bulk-actions.js';
 	import InUseStatus from '#lib/components/arcane-table/cells/in-use-status.svelte';
@@ -64,36 +67,41 @@
 		loading?: boolean;
 	} = $props();
 
+	const queryClient = useQueryClient();
 	let isLoading = $state({
 		removing: false,
 		checking: false
 	});
 
 	const currentEnvId = $derived(environmentStore.selected?.id || '0');
+	const vulnerabilityManagementEnabled = $derived(featureStore.isEnabled('vulnerabilityManagement', currentEnvId));
+	$effect(() => {
+		if (!vulnerabilityManagementEnabled) stopBatchScanPolling();
+	});
 	// Track the user store: hasPermission reads it non-reactively, so without
 	// this the deriveds would cache pre-hydration falses forever.
 	const canDeleteImage = $derived.by(() => {
-		$userStore;
+		userStore.current;
 		return hasPermission('images:delete', currentEnvId);
 	});
 	const canPullImage = $derived.by(() => {
-		$userStore;
+		userStore.current;
 		return hasPermission('images:pull', currentEnvId);
 	});
 	const canScanImage = $derived.by(() => {
-		$userStore;
-		return hasPermission('vulnerabilities:scan', currentEnvId);
+		userStore.current;
+		return vulnerabilityManagementEnabled && hasPermission('vulnerabilities:scan', currentEnvId);
 	});
 	const canTagImage = $derived.by(() => {
-		$userStore;
+		userStore.current;
 		return hasPermission('images:tag', currentEnvId);
 	});
 	const canPatchImage = $derived.by(() => {
-		$userStore;
+		userStore.current;
 		return hasPermission('images:patch', currentEnvId);
 	});
 	const canReadImage = $derived.by(() => {
-		$userStore;
+		userStore.current;
 		return hasPermission('images:read', currentEnvId);
 	});
 
@@ -189,7 +197,10 @@
 	}
 
 	async function handleInlineVulnerabilityScan(imageId: string) {
-		const result = await tryCatch(vulnerabilityService.scanImage(imageId));
+		if (!canScanImage) return;
+		const requestedEnvId = currentEnvId;
+		const result = await tryCatch(vulnerabilityService.scanImage(imageId, currentEnvId));
+		if (destroyed || !vulnerabilityManagementEnabled || requestedEnvId !== currentEnvId) return;
 		await handleApiResultWithCallbacks({
 			result,
 			message: m.vuln_scan_failed(),
@@ -240,22 +251,26 @@
 	}
 
 	async function handleUpdateInfoChanged(imageId: string, newUpdateInfo: ImageUpdateInfoDto) {
-		const imageIndex = images.data.findIndex((img) => img.id === imageId);
-		const image = imageIndex !== -1 ? images.data[imageIndex] : undefined;
-		if (image) {
-			image.updateInfo = newUpdateInfo;
-			images = { ...images, data: [...images.data] };
-		}
+		if (destroyed) return;
+		images = {
+			...images,
+			data: images.data.map((image) => {
+				if (image.id === imageId) return { ...image, updateInfo: newUpdateInfo };
+				return image;
+			})
+		};
 		await onImageUpdated?.();
 	}
 
 	async function handleVulnerabilityScanChanged(imageId: string, newScanSummary: VulnerabilityScanSummary) {
-		const imageIndex = images.data.findIndex((img) => img.id === imageId);
-		const image = imageIndex !== -1 ? images.data[imageIndex] : undefined;
-		if (image) {
-			image.vulnerabilityScan = newScanSummary;
-			images = { ...images, data: [...images.data] };
-		}
+		if (destroyed) return;
+		images = {
+			...images,
+			data: images.data.map((image) => {
+				if (image.id === imageId) return { ...image, vulnerabilityScan: newScanSummary };
+				return image;
+			})
+		};
 		if (newScanSummary.status === 'completed' || newScanSummary.status === 'failed') {
 			if (scanRequestedAtByImage[imageId]) {
 				delete scanRequestedAtByImage[imageId];
@@ -277,12 +292,14 @@
 	}
 
 	function getScanningImageIds(): string[] {
+		if (!vulnerabilityManagementEnabled) return [];
 		return (images.data ?? [])
 			.filter((item) => isVulnerabilityScanInProgress(item.vulnerabilityScan?.status))
 			.map((item) => item.id);
 	}
 
 	async function pollBatchScanSummaries() {
+		const requestedEnvId = currentEnvId;
 		const imageIds = getScanningImageIds();
 		if (imageIds.length === 0) {
 			stopBatchScanPolling();
@@ -298,8 +315,8 @@
 		try {
 			const operationResult = await tryCatch(
 				(async () => {
-					const response = await vulnerabilityService.getScanSummaries(imageIds);
-					if (destroyed) return;
+					const response = await vulnerabilityService.getScanSummaries(imageIds, requestedEnvId);
+					if (destroyed || !vulnerabilityManagementEnabled || requestedEnvId !== currentEnvId) return;
 					const summaries = response?.summaries ?? {};
 
 					if (Object.keys(summaries).length > 0 && images.data?.length) {
@@ -357,12 +374,19 @@
 		void pollBatchScanSummaries();
 	}
 
-	$effect(() => {
-		if (getScanningImageIds().length > 0) {
-			startBatchScanPolling();
-		} else {
-			stopBatchScanPolling();
+	onMount(() => {
+		const cache = queryClient.getQueryCache();
+		function updateScanPolling() {
+			if (destroyed) return;
+			if (getScanningImageIds().length > 0) startBatchScanPolling();
+			else stopBatchScanPolling();
 		}
+		updateScanPolling();
+		return cache.subscribe((event) => {
+			if (event.type !== 'updated' && event.type !== 'observerResultsUpdated') return;
+			if (event.query !== cache.find({ queryKey: queryKeys.images.list(currentEnvId, requestOptions), exact: true })) return;
+			void tick().then(updateScanPolling);
+		});
 	});
 
 	onDestroy(() => {
@@ -370,7 +394,7 @@
 		stopBatchScanPolling();
 	});
 
-	const columns = [
+	const allColumns = [
 		{ accessorKey: 'id', title: m.common_id(), hidden: true },
 		{ accessorKey: 'repo', title: m.resource_repository_cap(), sortable: true, cell: RepoCell },
 		{ accessorKey: 'repoTags', title: m.common_tags(), cell: TagCell },
@@ -425,7 +449,9 @@
 		{ accessorKey: 'created', title: m.common_created(), sortable: true, cellComponent: UnixCreatedCell }
 	] satisfies ColumnSpec<ImageSummaryDto>[];
 
-	const mobileFields = [
+	const columns = $derived(allColumns.filter((column) => vulnerabilityManagementEnabled || column.id !== 'vulnerabilities'));
+
+	const allMobileFields = [
 		{ id: 'id', label: m.common_id(), defaultVisible: false },
 		{ id: 'repoTags', label: m.common_tags(), defaultVisible: true },
 		{ id: 'inUse', label: m.common_status(), defaultVisible: true },
@@ -435,6 +461,10 @@
 		{ id: 'size', label: m.common_size(), defaultVisible: true },
 		{ id: 'created', label: m.common_created(), defaultVisible: true }
 	];
+
+	const mobileFields = $derived(
+		allMobileFields.filter((field) => vulnerabilityManagementEnabled || field.id !== 'vulnerabilities')
+	);
 
 	const bulkActions = $derived.by<BulkAction[]>(() => [
 		{
@@ -604,14 +634,15 @@
 {/snippet}
 
 {#snippet VulnerabilitiesCell({ item }: { item: ImageSummaryDto })}
-	<div class="flex items-center justify-center">
-		<VulnerabilityScanItem
-			scanSummary={item.vulnerabilityScan}
-			imageId={item.id}
-			pollingEnabled={false}
-			onScanned={(newSummary) => handleVulnerabilityScanChanged(item.id, newSummary)}
-		/>
-	</div>
+	{#if vulnerabilityManagementEnabled}
+		<div class="flex items-center justify-center">
+			<VulnerabilityScanItem
+				scanSummary={item.vulnerabilityScan}
+				imageId={item.id}
+				onScanned={(newSummary) => handleVulnerabilityScanChanged(item.id, newSummary)}
+			/>
+		</div>
+	{/if}
 {/snippet}
 
 {#snippet MobileTagsValue(item: ImageSummaryDto)}

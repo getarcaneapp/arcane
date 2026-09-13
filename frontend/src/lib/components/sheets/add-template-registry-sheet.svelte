@@ -4,7 +4,8 @@
 	import FormInput from '#lib/components/form/form-input.svelte';
 	import SwitchWithLabel from '#lib/components/form/labeled-switch.svelte';
 	import { z } from 'zod/v4';
-	import { createForm, preventDefault } from '#lib/utils/settings.js';
+	import { createForm, preventDefault } from '#lib/utils/settings.svelte.js';
+
 	import * as Alert from '#lib/components/ui/alert/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { templateService } from '#lib/services/template-service.js';
@@ -29,7 +30,8 @@
 		enabled: true
 	});
 
-	let { inputs, ...form } = $derived(createForm<typeof formSchema>(formSchema, formData));
+	let form = $derived(createForm<typeof formSchema>(formSchema, formData));
+	let inputs = $derived(form.inputs);
 
 	let submitError = $state<string | null>(null);
 	const validateRegistryMutation = createMutation(() => ({
@@ -84,14 +86,14 @@
 				type="text"
 				placeholder={m.templates_registry_url_placeholder()}
 				description={m.templates_registry_url_description()}
-				bind:input={$inputs.url}
+				bind:input={inputs.url}
 			/>
 
 			<SwitchWithLabel
 				id="enabledSwitch"
 				label={m.templates_enable_registry_label()}
 				description={m.templates_enable_registry_description()}
-				bind:checked={$inputs.enabled.value}
+				bind:checked={inputs.enabled.value}
 			/>
 
 			{#if submitError}

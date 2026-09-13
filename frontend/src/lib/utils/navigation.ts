@@ -1,34 +1,25 @@
 import { browser } from '$app/env';
 import { PersistedState } from 'runed';
-import { get } from 'svelte/store';
+import { createContext } from 'svelte';
 import {
 	DEFAULT_LANDING_PAGE,
 	defaultMobileNavigationSettings,
 	getLandingPageNavItems,
 	type MobileNavigationSettings
 } from '#lib/config/navigation-config.js';
-import userStore from '#lib/stores/user-store.js';
+import userStore from '#lib/stores/user-store.svelte.js';
 
 // --- Mobile nav state ---
 
 const pinnedItemsStore = new PersistedState('mobile-nav-settings', defaultMobileNavigationSettings);
 
-type NavigationVisibilityController = {
-	resetVisibility: () => void;
-};
-
-let mobileNavController: NavigationVisibilityController | null = null;
-
-export function registerNavigationVisibilityController(controller: NavigationVisibilityController | null) {
-	mobileNavController = controller;
-}
-
-export function resetNavigationVisibility() {
-	mobileNavController?.resetVisibility();
-}
+export const [getMobileNavigation, setMobileNavigation] = createContext<{
+	readonly settings: MobileNavigationSettings;
+	visible: boolean;
+}>();
 
 export function getEffectiveNavigationSettings(): MobileNavigationSettings {
-	const preferences = get(userStore)?.preferences;
+	const preferences = userStore.current?.preferences;
 	const mode = preferences?.mobileNavigationMode ?? defaultMobileNavigationSettings.mode;
 
 	return {
@@ -45,7 +36,7 @@ export function getEffectiveNavigationSettings(): MobileNavigationSettings {
  * that no longer exists) falls back to the default rather than 404ing.
  */
 export function getEffectiveLandingPage(): string {
-	const candidate = get(userStore)?.preferences?.defaultLandingPage ?? DEFAULT_LANDING_PAGE;
+	const candidate = userStore.current?.preferences?.defaultLandingPage ?? DEFAULT_LANDING_PAGE;
 
 	return getLandingPageNavItems().some((item) => item.url === candidate) ? candidate : DEFAULT_LANDING_PAGE;
 }

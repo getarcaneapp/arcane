@@ -1,11 +1,10 @@
 <script lang="ts">
 	import { DropdownMenu as DropdownMenuPrimitive } from 'bits-ui';
-	import { setContext } from 'svelte';
-	import { dropdownMenuContextKey } from './dropdown-menu-context';
+	import { setDropdownMenuContext } from './dropdown-menu-context';
 
 	let { open = $bindable(false), ...restProps }: DropdownMenuPrimitive.RootProps = $props();
 
-	setContext(dropdownMenuContextKey, {
+	setDropdownMenuContext({
 		close: () => {
 			open = false;
 		}

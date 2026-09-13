@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
@@ -6,7 +7,8 @@
 	import FormInput from '#lib/components/form/form-input.svelte';
 	import LabeledSwitch from '#lib/components/form/labeled-switch.svelte';
 	import type { CreateS3Destination, S3Destination } from '#lib/types/s3-destination.js';
-	import { createForm, preventDefault } from '#lib/utils/settings.js';
+	import { createForm, preventDefault } from '#lib/utils/settings.svelte.js';
+
 	import { s3DestinationService } from '#lib/services/s3-destination-service.js';
 	import { toast } from 'svelte-sonner';
 	import { z } from 'zod/v4';
@@ -53,40 +55,35 @@
 			}
 		});
 
-	let formData = $derived<CreateS3Destination>({
-		name: open && destination ? destination.name : '',
-		endpoint: open && destination ? (destination.endpoint ?? '') : '',
-		bucket: open && destination ? destination.bucket : '',
-		region: open && destination ? destination.region : 'us-east-1',
-		accessKeyId: open && destination ? destination.accessKeyId : '',
+	const formData = untrack((): CreateS3Destination => ({
+		name: destination?.name ?? '',
+		endpoint: destination?.endpoint ?? '',
+		bucket: destination?.bucket ?? '',
+		region: destination?.region ?? 'us-east-1',
+		accessKeyId: destination?.accessKeyId ?? '',
 		secretAccessKey: '',
-		prefix: open && destination ? (destination.prefix ?? '') : '',
-		useSsl: open && destination ? destination.useSsl : true,
-		forcePathStyle: open && destination ? destination.forcePathStyle : true
-	});
+		prefix: destination?.prefix ?? '',
+		useSsl: destination?.useSsl ?? true,
+		forcePathStyle: destination?.forcePathStyle ?? true
+	}));
 
-	let { inputs, ...form } = $derived(createForm<typeof formSchema>(formSchema, formData));
+	const form = createForm<typeof formSchema>(formSchema, formData);
+	let inputs = $derived(form.inputs);
 	let testing = $state(false);
 	let testedConfiguration = $state<string | null>(null);
 	const currentConfiguration = $derived(
 		JSON.stringify({
-			endpoint: $inputs.endpoint.value.trim(),
-			bucket: $inputs.bucket.value.trim(),
-			region: $inputs.region.value.trim(),
-			accessKeyId: $inputs.accessKeyId.value.trim(),
-			secretAccessKey: $inputs.secretAccessKey.value.trim(),
-			prefix: $inputs.prefix.value.trim().replace(/^\/+|\/+$/g, ''),
-			useSsl: $inputs.useSsl.value,
-			forcePathStyle: $inputs.forcePathStyle.value
+			endpoint: inputs.endpoint.value.trim(),
+			bucket: inputs.bucket.value.trim(),
+			region: inputs.region.value.trim(),
+			accessKeyId: inputs.accessKeyId.value.trim(),
+			secretAccessKey: inputs.secretAccessKey.value.trim(),
+			prefix: inputs.prefix.value.trim().replace(/^\/+|\/+$/g, ''),
+			useSsl: inputs.useSsl.value,
+			forcePathStyle: inputs.forcePathStyle.value
 		})
 	);
 	const connectionVerified = $derived(testedConfiguration === currentConfiguration);
-
-	$effect(() => {
-		open;
-		destination?.id;
-		testedConfiguration = null;
-	});
 
 	function handleSubmit() {
 		const data = form.validate();
@@ -128,20 +125,20 @@
 </script>
 
 {#snippet destinationFields()}
-	<FormInput bind:input={$inputs.name} label={m.common_name()} />
+	<FormInput bind:input={inputs.name} label={m.common_name()} />
 	<FormInput
-		bind:input={$inputs.endpoint}
+		bind:input={inputs.endpoint}
 		label={m.backups_s3_endpoint_label()}
 		description={m.backups_s3_endpoint_description()}
 	/>
-	<FormInput bind:input={$inputs.bucket} label={m.backups_s3_bucket_label()} />
-	<FormInput bind:input={$inputs.region} label={m.backups_s3_region_label()} description={m.backups_s3_region_description()} />
+	<FormInput bind:input={inputs.bucket} label={m.backups_s3_bucket_label()} />
+	<FormInput bind:input={inputs.region} label={m.backups_s3_region_label()} description={m.backups_s3_region_description()} />
 {/snippet}
 
 {#snippet credentialFields()}
-	<FormInput bind:input={$inputs.accessKeyId} label={m.backups_s3_access_key_label()} autocomplete="off" />
+	<FormInput bind:input={inputs.accessKeyId} label={m.backups_s3_access_key_label()} autocomplete="off" />
 	<FormInput
-		bind:input={$inputs.secretAccessKey}
+		bind:input={inputs.secretAccessKey}
 		label={m.backups_s3_secret_key_label()}
 		description={destination?.secretConfigured ? m.s3_destination_secret_keep_description() : undefined}
 		type="password"
@@ -150,17 +147,17 @@
 {/snippet}
 
 {#snippet connectionOptions()}
-	<FormInput bind:input={$inputs.prefix} label={m.backups_s3_prefix_label()} description={m.backups_s3_prefix_description()} />
+	<FormInput bind:input={inputs.prefix} label={m.backups_s3_prefix_label()} description={m.backups_s3_prefix_description()} />
 	<div class="mt-1 grid gap-4 border-t pt-5 sm:grid-cols-2">
 		<LabeledSwitch
 			id="s3-destination-ssl"
-			bind:checked={$inputs.useSsl.value}
+			bind:checked={inputs.useSsl.value}
 			label={m.backups_s3_ssl_label()}
 			description={m.backups_s3_ssl_description()}
 		/>
 		<LabeledSwitch
 			id="s3-destination-path-style"
-			bind:checked={$inputs.forcePathStyle.value}
+			bind:checked={inputs.forcePathStyle.value}
 			label={m.backups_s3_path_style_label()}
 			description={m.backups_s3_path_style_description()}
 		/>

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import * as Kbd from '#lib/components/ui/kbd/index.js';
 	import { formatShortcutKeys, type ShortcutKey } from '#lib/utils/navigation.js';
-	import userStore from '#lib/stores/user-store.js';
+	import userStore from '#lib/stores/user-store.svelte.js';
 
 	let {
 		title,
@@ -13,7 +13,7 @@
 		includeTitle?: boolean;
 	} = $props();
 
-	const showShortcut = $derived($userStore?.preferences?.keyboardShortcutsEnabled ?? true);
+	const showShortcut = $derived(userStore.current?.preferences?.keyboardShortcutsEnabled ?? true);
 </script>
 
 <div class="flex flex-wrap items-center gap-2">
@@ -23,7 +23,8 @@
 	{#if showShortcut && shortcut?.length}
 		{@const displayKeys = formatShortcutKeys(shortcut)}
 		<Kbd.Group class="inline-flex items-center gap-1 text-muted-foreground">
-			{#each displayKeys as key, index (index)}
+			<!-- Shortcut sequences may repeat keys; these keycaps have no local state. -->
+			{#each displayKeys as key, index}
 				<Kbd.Root
 					class="text-popover-foreground! in-data-[slot=tooltip-content]:text-popover-foreground! dark:in-data-[slot=tooltip-content]:text-popover-foreground!"
 				>

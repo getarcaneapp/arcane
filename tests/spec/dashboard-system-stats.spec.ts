@@ -16,89 +16,134 @@ const mockedStats = {
 	gpus: []
 };
 
-async function mockDashboardStatsWebSocket(page: Page) {
-	await page.addInitScript((statsPayload) => {
-		const browserWindow = globalThis as typeof globalThis & {
-			WebSocket: any;
-			EventTarget: any;
-			Event: any;
-			MessageEvent: any;
-			CloseEvent: any;
-		};
-		const NativeWebSocket = browserWindow.WebSocket;
-		const statsPathPattern = /\/api\/environments\/[^/]+\/ws\/system\/stats(?:\?.*)?$/;
+type StatsMockOptions = {
+	deliverAfterMs?: number;
+	failConnections?: boolean;
+	closeAfterMessage?: boolean;
+};
 
-		class MockStatsWebSocket extends browserWindow.EventTarget {
-			static CONNECTING = 0;
-			static OPEN = 1;
-			static CLOSING = 2;
-			static CLOSED = 3;
+async function mockDashboardStatsWebSocket(page: Page, options: StatsMockOptions = {}) {
+	await page.addInitScript(
+		({ statsPayload, options }) => {
+			const browserWindow = globalThis as typeof globalThis & {
+				WebSocket: any;
+				EventTarget: any;
+				Event: any;
+				MessageEvent: any;
+				CloseEvent: any;
+				__arcaneStatsMock: { failConnections: boolean };
+			};
+			browserWindow.__arcaneStatsMock = { failConnections: options.failConnections ?? false };
+			const NativeWebSocket = browserWindow.WebSocket;
+			const statsPathPattern = /\/api\/environments\/[^/]+\/ws\/system\/stats(?:\?.*)?$/;
 
-			url: string;
-			readyState = MockStatsWebSocket.CONNECTING;
-			bufferedAmount = 0;
-			extensions = '';
-			protocol = '';
-			binaryType = 'blob';
-			onopen: ((event: unknown) => void) | null = null;
-			onmessage: ((event: unknown) => void) | null = null;
-			onerror: ((event: unknown) => void) | null = null;
-			onclose: ((event: unknown) => void) | null = null;
+			class MockStatsWebSocket extends browserWindow.EventTarget {
+				static CONNECTING = 0;
+				static OPEN = 1;
+				static CLOSING = 2;
+				static CLOSED = 3;
 
-			constructor(url: string | URL) {
-				super();
-				this.url = String(url);
+				url: string;
+				readyState = MockStatsWebSocket.CONNECTING;
+				bufferedAmount = 0;
+				extensions = '';
+				protocol = '';
+				binaryType = 'blob';
+				onopen: ((event: unknown) => void) | null = null;
+				onmessage: ((event: unknown) => void) | null = null;
+				onerror: ((event: unknown) => void) | null = null;
+				onclose: ((event: unknown) => void) | null = null;
 
-				queueMicrotask(() => {
-					if (this.readyState !== MockStatsWebSocket.CONNECTING) return;
-					this.readyState = MockStatsWebSocket.OPEN;
-					const openEvent = new browserWindow.Event('open');
-					this.dispatchEvent(openEvent);
-					this.onopen?.(openEvent);
+				constructor(url: string | URL) {
+					super();
+					this.url = String(url);
 
-					const messageEvent = new browserWindow.MessageEvent('message', {
-						data: JSON.stringify(statsPayload)
+					if (browserWindow.__arcaneStatsMock.failConnections) {
+						queueMicrotask(() => {
+							if (this.readyState !== MockStatsWebSocket.CONNECTING) return;
+							const errorEvent = new browserWindow.Event('error');
+							this.dispatchEvent(errorEvent);
+							this.onerror?.(errorEvent);
+							this.close(1006, '');
+						});
+						return;
+					}
+
+					const deliver = () => {
+						if (this.readyState !== MockStatsWebSocket.CONNECTING) return;
+						this.readyState = MockStatsWebSocket.OPEN;
+						const openEvent = new browserWindow.Event('open');
+						this.dispatchEvent(openEvent);
+						this.onopen?.(openEvent);
+
+						const messageEvent = new browserWindow.MessageEvent('message', {
+							data: JSON.stringify(statsPayload)
+						});
+						this.dispatchEvent(messageEvent);
+						this.onmessage?.(messageEvent);
+
+						if (options.closeAfterMessage) {
+							browserWindow.__arcaneStatsMock.failConnections = true;
+							this.close(1006, '');
+						}
+					};
+
+					if (options.deliverAfterMs) {
+						setTimeout(deliver, options.deliverAfterMs);
+					} else {
+						queueMicrotask(deliver);
+					}
+				}
+
+				send(_data?: string | ArrayBufferLike | Blob | ArrayBufferView) {}
+
+				close(code = 1000, reason = '') {
+					if (this.readyState === MockStatsWebSocket.CLOSED) return;
+					this.readyState = MockStatsWebSocket.CLOSED;
+					const closeEvent = new browserWindow.CloseEvent('close', {
+						code,
+						reason,
+						wasClean: true
 					});
-					this.dispatchEvent(messageEvent);
-					this.onmessage?.(messageEvent);
-				});
+					this.dispatchEvent(closeEvent);
+					this.onclose?.(closeEvent);
+				}
 			}
 
-			send(_data?: string | ArrayBufferLike | Blob | ArrayBufferView) {}
+			const PatchedWebSocket = function (
+				this: unknown,
+				url: string | URL,
+				protocols?: string | string[]
+			) {
+				const urlString = String(url);
+				if (statsPathPattern.test(urlString)) {
+					return new MockStatsWebSocket(urlString);
+				}
+				return protocols === undefined
+					? new NativeWebSocket(url)
+					: new NativeWebSocket(url, protocols);
+			} as unknown as typeof WebSocket;
 
-			close(code = 1000, reason = '') {
-				if (this.readyState === MockStatsWebSocket.CLOSED) return;
-				this.readyState = MockStatsWebSocket.CLOSED;
-				const closeEvent = new browserWindow.CloseEvent('close', { code, reason, wasClean: true });
-				this.dispatchEvent(closeEvent);
-				this.onclose?.(closeEvent);
-			}
-		}
+			Object.defineProperties(PatchedWebSocket, {
+				CONNECTING: { value: NativeWebSocket.CONNECTING },
+				OPEN: { value: NativeWebSocket.OPEN },
+				CLOSING: { value: NativeWebSocket.CLOSING },
+				CLOSED: { value: NativeWebSocket.CLOSED }
+			});
+			PatchedWebSocket.prototype = NativeWebSocket.prototype;
 
-		const PatchedWebSocket = function (
-			this: unknown,
-			url: string | URL,
-			protocols?: string | string[]
-		) {
-			const urlString = String(url);
-			if (statsPathPattern.test(urlString)) {
-				return new MockStatsWebSocket(urlString);
-			}
-			return protocols === undefined
-				? new NativeWebSocket(url)
-				: new NativeWebSocket(url, protocols);
-		} as unknown as typeof WebSocket;
+			browserWindow.WebSocket = PatchedWebSocket;
+		},
+		{ statsPayload: mockedStats, options }
+	);
+}
 
-		Object.defineProperties(PatchedWebSocket, {
-			CONNECTING: { value: NativeWebSocket.CONNECTING },
-			OPEN: { value: NativeWebSocket.OPEN },
-			CLOSING: { value: NativeWebSocket.CLOSING },
-			CLOSED: { value: NativeWebSocket.CLOSED }
-		});
-		PatchedWebSocket.prototype = NativeWebSocket.prototype;
-
-		browserWindow.WebSocket = PatchedWebSocket;
-	}, mockedStats);
+async function allowStatsConnections(page: Page) {
+	await page.evaluate(() => {
+		(
+			globalThis as typeof globalThis & { __arcaneStatsMock: { failConnections: boolean } }
+		).__arcaneStatsMock.failConnections = false;
+	});
 }
 
 async function mockInputCapabilities(page: Page, hoverNone: boolean, maxTouchPoints: number) {
@@ -180,6 +225,60 @@ test.describe('Dashboard system stats websocket', () => {
 		await expect(page.getByText('512 MB / 1 GB', { exact: true })).toBeVisible();
 		await expect(page.getByText('256 MB / 1 GB', { exact: true })).toBeVisible();
 		await expect(page.locator('main').getByText('Local Docker', { exact: true })).toBeVisible();
+	});
+
+	test('keeps skeletons until the deadline when the stream opens without a sample', async ({
+		page
+	}) => {
+		await mockDashboardStatsWebSocket(page, { deliverAfterMs: 12_000 });
+
+		await page.goto(defaultDashboardPath);
+		await page.waitForLoadState('load');
+		await expect(page.getByRole('button', { name: 'Card view', exact: true })).toBeVisible();
+
+		await page.waitForTimeout(5_000);
+		await expect(page.getByText('Live stats unavailable', { exact: true })).toHaveCount(0);
+		await expect(page.getByText('12.3%', { exact: true })).toHaveCount(0);
+
+		await expect(page.getByText('Live stats unavailable', { exact: true })).toBeVisible({
+			timeout: 10_000
+		});
+		await expect(page.getByText('12.3%', { exact: true })).toHaveCount(0);
+
+		await expect(page.getByText('12.3%', { exact: true })).toBeVisible({ timeout: 10_000 });
+		await expect(page.getByText('Live stats unavailable', { exact: true })).toHaveCount(0);
+	});
+
+	test('shows unavailable metrics on connection failure and recovers on refresh', async ({
+		page
+	}) => {
+		await mockDashboardStatsWebSocket(page, { failConnections: true });
+
+		await page.goto(defaultDashboardPath);
+		await page.waitForLoadState('load');
+		await expect(page.getByRole('button', { name: 'Card view', exact: true })).toBeVisible();
+
+		await expect(page.getByText('Live stats unavailable', { exact: true })).toBeVisible();
+		await expect(page.getByText('12.3%', { exact: true })).toHaveCount(0);
+
+		await allowStatsConnections(page);
+		await page.getByRole('button', { name: 'Refresh', exact: true }).click();
+
+		await expect(page.getByText('12.3%', { exact: true })).toBeVisible();
+		await expect(page.getByText('Live stats unavailable', { exact: true })).toHaveCount(0);
+	});
+
+	test('keeps the last sample and flags it stale after the stream disconnects', async ({
+		page
+	}) => {
+		await mockDashboardStatsWebSocket(page, { closeAfterMessage: true });
+
+		await page.goto(defaultDashboardPath);
+		await page.waitForLoadState('load');
+		await expect(page.getByRole('button', { name: 'Card view', exact: true })).toBeVisible();
+
+		await expect(page.getByText('12.3%', { exact: true })).toBeVisible();
+		await expect(page.getByText("Live stats aren't updating", { exact: true })).toBeVisible();
 	});
 
 	test('loads dashboard content without eagerly loading docker info', async ({ page }) => {

@@ -1,9 +1,8 @@
 <script lang="ts">
 	import type { PageProps } from './$types';
-	import { createSubscriber } from 'svelte/reactivity';
-	import { get } from 'svelte/store';
+
 	import DashboardAllEnvironmentsView from './dashboard-all-environments-view.svelte';
-	import userStore from '#lib/stores/user-store.js';
+	import userStore from '#lib/stores/user-store.svelte.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { Temporal } from 'temporal-polyfill';
 
@@ -11,19 +10,7 @@
 
 	const debugAllGood = $derived(data.debugAllGood ?? false);
 
-	const subscribeToUser = createSubscriber((update) => {
-		let initialized = false;
-		return userStore.subscribe(() => {
-			if (initialized) {
-				update();
-			}
-			initialized = true;
-		});
-	});
-	const currentUser = $derived.by(() => {
-		subscribeToUser();
-		return get(userStore);
-	});
+	const currentUser = $derived(userStore.current);
 
 	const greetingBase = $derived.by(() => {
 		const hour = Temporal.Now.zonedDateTimeISO().hour;

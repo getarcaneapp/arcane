@@ -33,13 +33,23 @@ async function createDirectEnvironmentViaUI(page: Page, environmentName: string)
 	const dialog = page.getByRole('dialog');
 	await dialog.getByLabel('Name', { exact: true }).fill(environmentName);
 	await dialog.getByLabel('Agent Address', { exact: true }).fill('localhost:3552');
+	const createResponsePromise = page.waitForResponse(
+		(response) =>
+			response.request().method() === 'POST' &&
+			new URL(response.url()).pathname === '/api/environments'
+	);
 	await page.getByRole('button', { name: 'Generate Agent Configuration', exact: true }).click();
+	const createResponse = await createResponsePromise;
+	expect(createResponse.ok(), await createResponse.text()).toBeTruthy();
+	const created: { data: { id: string } } = await createResponse.json();
+	expect(created.data.id).toBeTruthy();
 
 	await expect(
 		page.getByRole('heading', { name: 'Environment Created Successfully', exact: true })
 	).toBeVisible();
 	await page.getByRole('button', { name: 'Done', exact: true }).click();
 	await expect(page.getByRole('button', { name: environmentName, exact: true })).toBeVisible();
+	return created.data.id;
 }
 
 async function deleteEnvironmentViaUI(page: Page, environmentName: string) {
@@ -119,14 +129,18 @@ test.describe('Environment Settings UI', () => {
 		await expect(dockerTab).toHaveAttribute('data-state', 'active');
 
 		await page.goto(`/environments/${LOCAL_ENV_ID}?source=e2e&tab=invalid#tab-state`);
-		await expect.poll(() => new URL(page.url()).searchParams.get('tab')).toBe('storage');
+		await expect.poll(() => new URL(page.url()).searchParams.get('tab')).toBe('features');
 		const canonicalUrl = new URL(page.url());
 		expect(canonicalUrl.searchParams.get('source')).toBe('e2e');
 		expect(canonicalUrl.hash).toBe('#tab-state');
-		await expect(page.getByRole('tab', { name: 'Storage & Limits', exact: true })).toHaveAttribute(
+		await expect(page.getByRole('tab', { name: 'Features', exact: true })).toHaveAttribute(
 			'data-state',
 			'active'
 		);
+		await expect(page.getByRole('heading', { name: 'Features', exact: true })).toBeVisible();
+		await expect(
+			page.getByRole('switch', { name: 'Vulnerability management', exact: true })
+		).toBeVisible();
 	});
 
 	test('should update and save environment details', async ({ page }) => {
@@ -136,11 +150,10 @@ test.describe('Environment Settings UI', () => {
 		let environmentId = '';
 
 		try {
-			await createDirectEnvironmentViaUI(page, envName);
+			environmentId = await createDirectEnvironmentViaUI(page, envName);
 			await page.getByRole('button', { name: envName, exact: true }).click();
 			await expect(page).toHaveURL(/\/environments\/[^/?]+\?tab=[a-z]+$/);
 
-			environmentId = new URL(page.url()).pathname.split('/').pop()!;
 			await renameEnvironmentInHeader(page, updatedName);
 			await saveAndWaitForPut(page, `/api/environments/${environmentId}`);
 

@@ -1,10 +1,12 @@
 <script lang="ts">
+	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+	import { featureStore } from '#lib/stores/features.store.svelte.js';
 	import { Switch } from '#lib/components/ui/switch/index.js';
 	import TextInputWithLabel from '#lib/components/form/text-input-with-label.svelte';
 	import SettingsRow from '#lib/components/settings/settings-row.svelte';
 	import { SecurityIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import type { Readable } from 'svelte/store';
+
 	import SectionCard from '#lib/components/section-card.svelte';
 
 	type ImagePatchFormValues = {
@@ -19,13 +21,13 @@
 		error: string | null;
 	};
 
-	type ImagePatchFormInputs = Readable<
-		Record<string, FormField<unknown>> & {
-			[K in keyof ImagePatchFormValues]: FormField<ImagePatchFormValues[K]>;
-		}
-	>;
+	type ImagePatchFormInputs = Record<string, FormField<unknown>> & {
+		[K in keyof ImagePatchFormValues]: FormField<ImagePatchFormValues[K]>;
+	};
 
-	let { formInputs }: { formInputs: ImagePatchFormInputs } = $props();
+	let { formInputs = $bindable(), environmentId }: { formInputs: ImagePatchFormInputs; environmentId?: string } = $props();
+	const targetEnvironmentId = $derived(environmentId ?? environmentStore.selected?.id ?? '0');
+	const vulnerabilityManagementEnabled = $derived(featureStore.isEnabled('vulnerabilityManagement', targetEnvironmentId));
 </script>
 
 <SectionCard
@@ -40,7 +42,11 @@
 		description={m.security_image_auto_patch_enabled_description()}
 		layout="inline"
 	>
-		<Switch id="imageAutoPatchEnabledSwitch" bind:checked={$formInputs.imageAutoPatchEnabled.value} />
+		<Switch
+			id="imageAutoPatchEnabledSwitch"
+			disabled={!vulnerabilityManagementEnabled}
+			bind:checked={formInputs.imageAutoPatchEnabled.value}
+		/>
 	</SettingsRow>
 
 	<SettingsRow
@@ -48,13 +54,13 @@
 		description={m.security_image_patch_all_platforms_description()}
 		layout="inline"
 	>
-		<Switch id="imagePatchAllPlatformsSwitch" bind:checked={$formInputs.imagePatchAllPlatforms.value} />
+		<Switch id="imagePatchAllPlatformsSwitch" bind:checked={formInputs.imagePatchAllPlatforms.value} />
 	</SettingsRow>
 
 	<div class="max-w-xl">
 		<TextInputWithLabel
-			bind:value={$formInputs.imagePatchSuffix.value}
-			error={$formInputs.imagePatchSuffix.error}
+			bind:value={formInputs.imagePatchSuffix.value}
+			error={formInputs.imagePatchSuffix.error}
 			label={m.security_image_patch_suffix_label()}
 			description={m.security_image_patch_suffix_description()}
 			placeholder="patched"
@@ -64,8 +70,8 @@
 
 	<div class="max-w-xs">
 		<TextInputWithLabel
-			bind:value={$formInputs.imagePatchTimeoutSec.value}
-			error={$formInputs.imagePatchTimeoutSec.error}
+			bind:value={formInputs.imagePatchTimeoutSec.value}
+			error={formInputs.imagePatchTimeoutSec.error}
 			label={m.security_image_patch_timeout_label()}
 			description={m.security_image_patch_timeout_description()}
 			placeholder="600"

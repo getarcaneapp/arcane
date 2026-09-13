@@ -14,7 +14,7 @@ export const load: PageLoad = async ({ params, parent }) => {
 
 	const operationResult = await tryCatch(
 		(async () => {
-			const volume = await queryClient.fetchQuery({
+			const volume = await queryClient.query({
 				queryKey: queryKeys.volumes.detail(envId, volumeName),
 				queryFn: () => volumeService.getVolumeForEnvironment(envId, volumeName)
 			});
@@ -25,7 +25,7 @@ export const load: PageLoad = async ({ params, parent }) => {
 					volume.containers.map(async (id: string) => {
 						const operationResult = await tryCatch(
 							(async () => {
-								const c = await queryClient.fetchQuery({
+								const c = await queryClient.query({
 									queryKey: queryKeys.containers.detail(envId, id),
 									queryFn: () => containerService.getContainerForEnvironment(envId, id)
 								});

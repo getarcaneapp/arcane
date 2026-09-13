@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { featureStore } from '#lib/stores/features.store.svelte.js';
 	import { goto, refreshAll } from '$app/navigation';
 	import { onDestroy, onMount, untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
@@ -11,15 +12,17 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { settingsService } from '#lib/services/settings-service.js';
 	import { systemService } from '#lib/services/system-service.js';
+	import type { Activity } from '#lib/types/activity.type.js';
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
 	import { dashboardStore } from '#lib/stores/dashboard.store.svelte.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-	import userStore from '#lib/stores/user-store.js';
+	import userStore from '#lib/stores/user-store.svelte.js';
 	import { hasAnyPermission, hasPermission } from '#lib/utils/auth.js';
 	import type {
 		DashboardActionItemKind,
 		DashboardEnvironmentCardState,
 		DashboardEnvironmentOverview,
+		DashboardLiveStatsStatus,
 		SystemStats
 	} from '#lib/types/shared.js';
 	import type { Environment } from '#lib/types/environment.js';
@@ -86,9 +89,12 @@
 	type EnvironmentLiveStatsState = {
 		stats: SystemStats | null;
 		loading: boolean;
-		hasLoaded: boolean;
+		failed: boolean;
 		client: ReconnectingWebSocket<SystemStats> | null;
+		deadline: ReturnType<typeof setTimeout> | null;
 	};
+
+	const LIVE_STATS_DEADLINE_MS = 10_000;
 
 	let isRefreshing = $state(false);
 	let isPruneDialogOpen = $state(false);
@@ -110,7 +116,7 @@
 	let dockerInfoPromiseByEnvironmentId = $state<Record<string, Promise<DockerInfo> | undefined>>({});
 
 	const availableEnvironments = $derived.by(() => {
-		if (!$userStore) {
+		if (!userStore.current) {
 			return [];
 		}
 
@@ -129,13 +135,38 @@
 		return {
 			stats: null,
 			loading: true,
-			hasLoaded: false,
-			client: null
+			failed: false,
+			client: null,
+			deadline: null
 		};
 	}
 
+	function canLoadLiveStats(environment: Environment): boolean {
+		return shouldLoadEnvironment(environment) && hasPermission('system:read', environment.id);
+	}
+
+	function clearLiveStatsDeadline(liveStatsState: EnvironmentLiveStatsState) {
+		if (liveStatsState.deadline) {
+			clearTimeout(liveStatsState.deadline);
+			liveStatsState.deadline = null;
+		}
+	}
+
+	function markLiveStatsFailed(liveStatsState: EnvironmentLiveStatsState) {
+		clearLiveStatsDeadline(liveStatsState);
+		liveStatsState.loading = false;
+		liveStatsState.failed = true;
+	}
+
+	function startLiveStatsAttempt(liveStatsState: EnvironmentLiveStatsState) {
+		clearLiveStatsDeadline(liveStatsState);
+		liveStatsState.loading = liveStatsState.stats === null;
+		liveStatsState.failed = liveStatsState.stats !== null && liveStatsState.failed;
+		liveStatsState.deadline = setTimeout(() => markLiveStatsFailed(liveStatsState), LIVE_STATS_DEADLINE_MS);
+	}
+
 	function ensureEnvironmentLiveStats(environment: Environment) {
-		if (!shouldLoadEnvironment(environment)) {
+		if (!canLoadLiveStats(environment)) {
 			removeEnvironmentLiveStats(environment.id);
 			return;
 		}
@@ -153,24 +184,32 @@
 			return;
 		}
 
-		liveStatsState.loading = !liveStatsState.hasLoaded;
+		startLiveStatsAttempt(liveStatsState);
 		liveStatsState.client = createStatsWebSocket({
 			getEnvId: () => environment.id,
-			onOpen: () => {
-				if (!liveStatsState.hasLoaded) {
-					liveStatsState.loading = true;
-				}
-			},
 			onMessage: (stats) => {
+				clearLiveStatsDeadline(liveStatsState);
 				liveStatsState.stats = stats;
-				liveStatsState.hasLoaded = true;
 				liveStatsState.loading = false;
+				liveStatsState.failed = false;
 			},
 			onError: (error) => {
 				console.error(`Stats websocket error for environment ${environment.id}:`, error);
-			}
+				markLiveStatsFailed(liveStatsState);
+			},
+			onClose: () => markLiveStatsFailed(liveStatsState)
 		});
 		liveStatsState.client.connect();
+	}
+
+	function retryFailedLiveStats() {
+		for (const liveStatsState of Object.values(liveStatsByEnvironmentId)) {
+			if (!liveStatsState.failed || !liveStatsState.client) {
+				continue;
+			}
+			startLiveStatsAttempt(liveStatsState);
+			void liveStatsState.client.connect();
+		}
 	}
 
 	function removeEnvironmentLiveStats(environmentId: string) {
@@ -179,6 +218,7 @@
 			return;
 		}
 
+		clearLiveStatsDeadline(liveStatsState);
 		liveStatsState.client?.close();
 		delete liveStatsByEnvironmentId[environmentId];
 	}
@@ -240,7 +280,14 @@
 			.map((environment) => ({ environment }));
 	});
 	const loadableEnvironmentCards = $derived(environmentCards.filter(({ environment }) => shouldLoadEnvironment(environment)));
-	const loadableEnvironmentIds = $derived.by(() => new Set(loadableEnvironmentCards.map(({ environment }) => environment.id)));
+	const liveStatsEnvironmentIds = $derived.by(
+		() =>
+			new Set(
+				loadableEnvironmentCards
+					.filter(({ environment }) => canLoadLiveStats(environment))
+					.map(({ environment }) => environment.id)
+			)
+	);
 
 	function resolveSnapshotErrorMessage(state: NonNullable<ReturnType<typeof dashboardStore.getEnvironmentState>>): string {
 		if (state.errorCode === 'agent_incompatible') {
@@ -268,7 +315,13 @@
 					containers: snapshot.containers.counts ?? { runningContainers: 0, stoppedContainers: 0, totalContainers: 0 },
 					imageUsageCounts: snapshot.imageUsageCounts,
 					volumeUsageCounts: snapshot.volumeUsageCounts,
-					actionItems: snapshot.actionItems,
+					actionItems: {
+						...snapshot.actionItems,
+						items: snapshot.actionItems.items.filter(
+							(item) =>
+								item.kind !== 'actionable_vulnerabilities' || featureStore.isEnabled('vulnerabilityManagement', environment.id)
+						)
+					},
 					settings: snapshot.settings,
 					versionInfo: snapshot.versionInfo,
 					snapshotState: 'ready',
@@ -318,39 +371,34 @@
 		untrack(() => {
 			for (const environment of environmentsToLoad) {
 				ensureEnvironmentLiveStats(environment);
+				void featureStore.load(environment.id);
 			}
 		});
 	});
 
 	$effect(() => {
-		const reachableEnvironmentIds = loadableEnvironmentIds;
+		const activeEnvironmentIds = liveStatsEnvironmentIds;
 
 		untrack(() => {
 			for (const environmentId of Object.keys(liveStatsByEnvironmentId)) {
-				if (!reachableEnvironmentIds.has(environmentId)) {
+				if (!activeEnvironmentIds.has(environmentId)) {
 					removeEnvironmentLiveStats(environmentId);
 				}
 			}
 		});
 	});
 
-	// A prune runs as a background activity; once the streamed activity reaches a
-	// terminal state, refresh so the dashboard reflects the post-prune resource counts.
-	// A plain (non-reactive) guard dedupes so the refresh fires once per activity
-	// without writing $state inside the effect.
 	let refreshedPruneActivityId: string | null = null;
-	$effect(() => {
+	function refreshCompletedPrune(activities: readonly Activity[] = activityStore.activities) {
 		const id = pendingPruneActivityId;
-		if (!id || id === refreshedPruneActivityId) {
-			return;
-		}
+		if (!id || id === refreshedPruneActivityId) return;
+		const status = activities.find((activity) => activity.id === id)?.status;
+		if (status !== 'success' && status !== 'failed' && status !== 'cancelled') return;
+		refreshedPruneActivityId = id;
+		void refreshOverview();
+	}
 
-		const status = activityStore.getActivity(id)?.status;
-		if (status === 'success' || status === 'failed' || status === 'cancelled') {
-			refreshedPruneActivityId = id;
-			void refreshOverview();
-		}
-	});
+	onMount(() => activityStore.subscribeActivities(refreshCompletedPrune));
 
 	onMount(() => {
 		void dashboardStore.start({ debugAllGood });
@@ -364,6 +412,7 @@
 	async function refreshOverview() {
 		isRefreshing = true;
 		try {
+			retryFailedLiveStats();
 			await refreshAll();
 			await dashboardStore.refresh();
 			reloadVersion += 1;
@@ -399,6 +448,23 @@
 
 	function getLiveStatsState(environmentId: string): EnvironmentLiveStatsState | null {
 		return liveStatsByEnvironmentId[environmentId] ?? null;
+	}
+
+	function getLiveStatsStatus(environment: Environment): DashboardLiveStatsStatus {
+		if (!shouldLoadEnvironment(environment)) {
+			return 'live';
+		}
+		if (!hasPermission('system:read', environment.id)) {
+			return 'denied';
+		}
+		const liveStatsState = getLiveStatsState(environment.id);
+		if (!liveStatsState) {
+			return 'loading';
+		}
+		if (liveStatsState.failed) {
+			return liveStatsState.stats ? 'stale' : 'unavailable';
+		}
+		return liveStatsState.loading ? 'loading' : 'live';
 	}
 
 	function canPruneEnvironment(item: DashboardEnvironmentOverview): boolean {
@@ -485,6 +551,7 @@
 				cpu: getCpuMetric(stats),
 				memory: getMemoryMetric(stats),
 				disk: getDiskMetric(stats),
+				statsStatus: getLiveStatsStatus(environment),
 				versionText: vInfo ? vInfo.displayVersion || vInfo.currentTag || vInfo.currentVersion || 'unknown' : null,
 				updateAvailable: !!vInfo?.updateAvailable,
 				useButton,
@@ -600,6 +667,7 @@
 				// an immediate refresh when no activity id is returned.
 				if (activityId) {
 					pendingPruneActivityId = activityId;
+					refreshCompletedPrune();
 				} else {
 					await refreshOverview();
 				}
@@ -752,15 +820,14 @@
 						{@const environment = baseItem.environment}
 						{@const overview = boardState.overviewById.get(environment.id) ?? baseItem}
 						{@const isCurrent = currentEnvironmentId === environment.id}
-						{@const liveStatsState = getLiveStatsState(environment.id)}
-						{@const systemStats = liveStatsState?.stats ?? null}
-						{@const liveStatsLoading = liveStatsState?.loading ?? shouldLoadEnvironment(environment)}
+						{@const systemStats = getLiveStatsState(environment.id)?.stats ?? null}
+						{@const liveStatsStatus = getLiveStatsStatus(environment)}
 						{@const [useButton, ...menuButtons] = getEnvironmentActionButtons(overview, isCurrent)}
 						<DashboardEnvironmentCard
 							{overview}
 							{isCurrent}
 							{systemStats}
-							{liveStatsLoading}
+							{liveStatsStatus}
 							snapshotLoading={isEnvironmentSnapshotLoading(environment.id)}
 							{useButton}
 							{menuButtons}

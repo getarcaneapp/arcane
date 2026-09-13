@@ -20,11 +20,11 @@ export const load: PageLoad = async ({ parent }) => {
 	} satisfies SearchPaginationSortRequest);
 
 	const [apiKeys, permissionsManifest] = await Promise.all([
-		queryClient.fetchQuery({
+		queryClient.query({
 			queryKey: queryKeys.apiKeys.list(apiKeyRequestOptions),
 			queryFn: () => apiKeyService.getApiKeys(apiKeyRequestOptions)
 		}),
-		queryClient.fetchQuery({
+		queryClient.query({
 			queryKey: ['permissions', 'manifest'],
 			queryFn: () => roleService.getPermissionsManifest(),
 			staleTime: Infinity

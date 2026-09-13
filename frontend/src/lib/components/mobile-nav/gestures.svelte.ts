@@ -1,4 +1,5 @@
 import { SwipeGestureDetector, type SwipeDirection } from '#lib/hooks/use-swipe-gesture.svelte.js';
+import { on } from 'svelte/events';
 
 export interface GestureHandlers {
 	onMenuOpen: () => void;
@@ -12,8 +13,8 @@ export interface GestureOptions {
 
 export class MobileNavGestures {
 	private swipeDetector: SwipeGestureDetector;
-	private lastScrollY = $state(0);
-	private lastWheelTime = $state(0);
+	private lastScrollY = 0;
+	private lastWheelTime = 0;
 	private scrollTimeout: ReturnType<typeof setTimeout> | null = null;
 	private flickDetectTimeout: ReturnType<typeof setTimeout> | null = null;
 	private touchStartY: number | null = null;
@@ -24,7 +25,6 @@ export class MobileNavGestures {
 	private readonly minScrollDistance = 80;
 	private readonly flickVelocityThreshold = 3;
 
-	private navElement: HTMLElement | null = null;
 	private handlers: GestureHandlers;
 	private options: GestureOptions;
 
@@ -46,13 +46,9 @@ export class MobileNavGestures {
 		);
 	}
 
-	setElement(element: HTMLElement | null) {
-		this.navElement = element;
-		this.swipeDetector.setElement(element);
-	}
-
-	private handleTouchStart = (e: TouchEvent) => {
-		if (this.options.menuOpen) return;
+	handleTouchStart = (e: TouchEvent) => {
+		this.handleTouchEnd();
+		if (!this.options.scrollToHideEnabled || this.options.menuOpen) return;
 		const t = e.touches?.[0];
 		if (!t) return;
 		const target = e.target as HTMLElement | null;
@@ -68,8 +64,15 @@ export class MobileNavGestures {
 		this.touchStartX = t.clientX;
 	};
 
-	private handleTouchMove = (e: TouchEvent) => {
-		if (this.options.menuOpen || this.isInteractiveTouch || this.touchStartY === null || this.touchStartX === null) return;
+	handleTouchMove = (e: TouchEvent) => {
+		if (
+			!this.options.scrollToHideEnabled ||
+			this.options.menuOpen ||
+			this.isInteractiveTouch ||
+			this.touchStartY === null ||
+			this.touchStartX === null
+		)
+			return;
 		const t = e.touches?.[0];
 		if (!t) return;
 		const deltaY = t.clientY - this.touchStartY;
@@ -92,14 +95,18 @@ export class MobileNavGestures {
 		this.touchStartX = t.clientX;
 	};
 
-	private handleTouchEnd = () => {
+	handleTouchEnd = () => {
 		this.touchStartY = null;
 		this.touchStartX = null;
 		this.isInteractiveTouch = false;
 	};
 
-	private handleScroll = (e?: Event) => {
+	handleScroll = (e: Event) => {
 		const currentScrollY = window.scrollY;
+		if (!this.options.scrollToHideEnabled || this.options.menuOpen) {
+			this.lastScrollY = currentScrollY;
+			return;
+		}
 		const prevScrollY = this.lastScrollY;
 		const scrollDiff = currentScrollY - prevScrollY;
 
@@ -131,7 +138,8 @@ export class MobileNavGestures {
 
 		if (!atBottom) {
 			this.scrollTimeout = setTimeout(() => {
-				if (window.scrollY < this.minScrollDistance) {
+				this.scrollTimeout = null;
+				if (this.options.scrollToHideEnabled && !this.options.menuOpen && window.scrollY < this.minScrollDistance) {
 					this.handlers.onVisibilityChange(true);
 				}
 			}, 150);
@@ -155,59 +163,28 @@ export class MobileNavGestures {
 		if (this.flickDetectTimeout) clearTimeout(this.flickDetectTimeout);
 		this.flickDetectTimeout = setTimeout(() => {
 			this.lastWheelTime = 0;
+			this.flickDetectTimeout = null;
 		}, 200);
 	};
 
-	enableTouchGestures() {
-		if (typeof window === 'undefined') return () => {};
-		if (!this.options.scrollToHideEnabled) return () => {};
+	reset() {
+		this.handleTouchEnd();
+		this.lastWheelTime = 0;
+		if (this.scrollTimeout) clearTimeout(this.scrollTimeout);
+		if (this.flickDetectTimeout) clearTimeout(this.flickDetectTimeout);
+		this.scrollTimeout = null;
+		this.flickDetectTimeout = null;
+	}
 
-		const options = { passive: true, capture: true };
-		window.addEventListener('touchstart', this.handleTouchStart, options);
-		window.addEventListener('touchmove', this.handleTouchMove, options);
-		window.addEventListener('touchend', this.handleTouchEnd, options);
+	attach = (element: HTMLElement) => {
+		this.lastScrollY = window.scrollY;
+		this.swipeDetector.setElement(element);
+		const removeWheelListener = on(element, 'wheel', this.handleWheel, { passive: false });
 
 		return () => {
-			window.removeEventListener('touchstart', this.handleTouchStart, options);
-			window.removeEventListener('touchmove', this.handleTouchMove, options);
-			window.removeEventListener('touchend', this.handleTouchEnd, options);
+			removeWheelListener();
+			this.swipeDetector.setElement(null);
+			this.reset();
 		};
-	}
-
-	enableScrollGestures() {
-		if (typeof window === 'undefined') return () => {};
-		if (!this.options.scrollToHideEnabled || this.options.menuOpen) {
-			this.handlers.onVisibilityChange(true);
-			return () => {};
-		}
-
-		const scrollHandler = (e: Event) => this.handleScroll(e);
-		window.addEventListener('scroll', scrollHandler, { passive: true, capture: true });
-
-		return () => {
-			window.removeEventListener('scroll', scrollHandler, { capture: true });
-			if (this.scrollTimeout) {
-				clearTimeout(this.scrollTimeout);
-			}
-		};
-	}
-
-	enableWheelGestures() {
-		if (!this.navElement || typeof window === 'undefined') return () => {};
-
-		this.navElement.addEventListener('wheel', this.handleWheel, { passive: false });
-
-		return () => {
-			if (this.navElement) {
-				this.navElement.removeEventListener('wheel', this.handleWheel);
-			}
-			if (this.flickDetectTimeout) {
-				clearTimeout(this.flickDetectTimeout);
-			}
-		};
-	}
-
-	updateOptions(options: GestureOptions) {
-		this.options = options;
-	}
+	};
 }

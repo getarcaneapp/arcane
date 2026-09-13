@@ -17,7 +17,8 @@
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { CloseIcon, ContainersIcon, NetworksIcon, SettingsIcon, VariableIcon, VolumesIcon } from '#lib/icons/index.js';
-	import { preventDefault, createForm } from '#lib/utils/settings.js';
+	import { preventDefault, createForm } from '#lib/utils/settings.svelte.js';
+
 	import { createQuery } from '@tanstack/svelte-query';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { volumeService } from '#lib/services/volume-service.js';
@@ -92,7 +93,7 @@
 	let imageSearchTimer: ReturnType<typeof setTimeout> | undefined;
 	function onImageInput() {
 		clearTimeout(imageSearchTimer);
-		const term = $inputs.image.value.trim();
+		const term = inputs.image.value.trim();
 		if (term.length < 2 || term.includes(':')) {
 			imageSuggestions = [];
 			return;
@@ -117,7 +118,7 @@
 	function handleSubmit() {
 		onSubmit();
 		// Required fields live on the general tab; bring failed validation into view.
-		if ($inputs.name.error || $inputs.image.error) {
+		if (inputs.name.error || inputs.image.error) {
 			selectedTab = 'general';
 		}
 	}
@@ -184,11 +185,11 @@
 							type="text"
 							placeholder={m.container_name_placeholder()}
 							disabled={submitting}
-							bind:value={$inputs.name.value}
-							class={$inputs.name.error ? 'border-destructive' : ''}
+							bind:value={inputs.name.value}
+							class={inputs.name.error ? 'border-destructive' : ''}
 						/>
-						{#if $inputs.name.error}
-							<p class="text-xs text-destructive">{$inputs.name.error}</p>
+						{#if inputs.name.error}
+							<p class="text-xs text-destructive">{inputs.name.error}</p>
 						{/if}
 					</div>
 					<div class="relative space-y-2">
@@ -200,9 +201,9 @@
 							type="text"
 							placeholder={m.nginx_latest_placeholder()}
 							disabled={submitting}
-							bind:value={$inputs.image.value}
+							bind:value={inputs.image.value}
 							oninput={onImageInput}
-							class={$inputs.image.error ? 'border-destructive' : ''}
+							class={inputs.image.error ? 'border-destructive' : ''}
 							autocomplete="off"
 						/>
 						{#if imageSuggestions.length > 0}
@@ -221,8 +222,8 @@
 								{/each}
 							</div>
 						{/if}
-						{#if $inputs.image.error}
-							<p class="text-xs text-destructive">{$inputs.image.error}</p>
+						{#if inputs.image.error}
+							<p class="text-xs text-destructive">{inputs.image.error}</p>
 						{/if}
 						{#if mode === 'edit'}
 							<p class="text-xs text-muted-foreground">{m.image_pull_if_missing_note()}</p>
@@ -233,28 +234,28 @@
 						type="text"
 						placeholder={m.container_command_placeholder()}
 						disabled={submitting}
-						bind:input={$inputs.command}
+						bind:input={inputs.command}
 					/>
 					<FormInput
 						label={m.common_entrypoint()}
 						type="text"
 						placeholder="/docker-entrypoint.sh"
 						disabled={submitting}
-						bind:input={$inputs.entrypoint}
+						bind:input={inputs.entrypoint}
 					/>
 					<FormInput
 						label={m.common_working_directory()}
 						type="text"
 						placeholder={m.app_placeholder()}
 						disabled={submitting}
-						bind:input={$inputs.workingDir}
+						bind:input={inputs.workingDir}
 					/>
 					<FormInput
 						label={m.common_user()}
 						type="text"
 						placeholder={m.container_user_placeholder()}
 						disabled={submitting}
-						bind:input={$inputs.user}
+						bind:input={inputs.user}
 					/>
 				</div>
 			</Tabs.Content>
@@ -304,45 +305,39 @@
 							type="number"
 							placeholder="0"
 							disabled={submitting}
-							bind:input={$inputs.memoryMb}
+							bind:input={inputs.memoryMb}
 						/>
 						<FormInput
 							label={m.memory_swap_mb()}
 							type="number"
 							placeholder="0"
 							disabled={submitting}
-							bind:input={$inputs.memorySwapMb}
+							bind:input={inputs.memorySwapMb}
 						/>
-						<FormInput label={m.common_cpus()} type="number" placeholder="0" disabled={submitting} bind:input={$inputs.cpus} />
-						<FormInput
-							label={m.cpu_shares()}
-							type="number"
-							placeholder="0"
-							disabled={submitting}
-							bind:input={$inputs.cpuShares}
-						/>
+						<FormInput label={m.common_cpus()} type="number" placeholder="0" disabled={submitting} bind:input={inputs.cpus} />
+						<FormInput label={m.cpu_shares()} type="number" placeholder="0" disabled={submitting} bind:input={inputs.cpuShares} />
 					</div>
 					<div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
 						<SelectWithLabel
 							id="restart-policy"
-							bind:value={$inputs.restartPolicy.value}
+							bind:value={inputs.restartPolicy.value}
 							label={m.restart_policy_label()}
 							options={restartPolicies}
 							placeholder={m.container_select_restart_policy()}
 							disabled={submitting}
 						/>
-						{#if $inputs.restartPolicy.value === 'on-failure'}
+						{#if inputs.restartPolicy.value === 'on-failure'}
 							<FormInput
 								label={m.max_retry_label()}
 								type="number"
 								placeholder={m.max_retry_placeholder()}
 								disabled={submitting}
-								bind:input={$inputs.restartMaxRetries}
+								bind:input={inputs.restartMaxRetries}
 							/>
 						{/if}
 					</div>
 					<div class="flex items-center space-x-2">
-						<Checkbox id="auto-remove" bind:checked={$inputs.autoRemove.value} disabled={submitting} />
+						<Checkbox id="auto-remove" bind:checked={inputs.autoRemove.value} disabled={submitting} />
 						<Label for="auto-remove" class="text-sm font-normal">{m.auto_remove_label()}</Label>
 					</div>
 				</div>
@@ -351,11 +346,11 @@
 					{@render groupTitle(m.common_security())}
 					<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
 						<div class="flex items-center space-x-2">
-							<Checkbox id="privileged" bind:checked={$inputs.privileged.value} disabled={submitting} />
+							<Checkbox id="privileged" bind:checked={inputs.privileged.value} disabled={submitting} />
 							<Label for="privileged" class="text-sm font-normal">{m.privileged_label()}</Label>
 						</div>
 						<div class="flex items-center space-x-2">
-							<Checkbox id="readonly-rootfs" bind:checked={$inputs.readonlyRootfs.value} disabled={submitting} />
+							<Checkbox id="readonly-rootfs" bind:checked={inputs.readonlyRootfs.value} disabled={submitting} />
 							<Label for="readonly-rootfs" class="text-sm font-normal">{m.readonly_rootfs_label()}</Label>
 						</div>
 					</div>
@@ -370,50 +365,50 @@
 					<div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
 						<SelectWithLabel
 							id="health-mode"
-							bind:value={$inputs.healthMode.value}
+							bind:value={inputs.healthMode.value}
 							label={m.common_mode()}
 							options={healthModes}
 							disabled={submitting}
 						/>
-						{#if $inputs.healthMode.value === 'custom'}
+						{#if inputs.healthMode.value === 'custom'}
 							<FormInput
 								label={m.health_test_command()}
 								type="text"
 								placeholder="curl -f http://localhost/ || exit 1"
 								disabled={submitting}
-								bind:input={$inputs.healthTest}
+								bind:input={inputs.healthTest}
 							/>
 						{/if}
 					</div>
-					{#if $inputs.healthMode.value === 'custom'}
+					{#if inputs.healthMode.value === 'custom'}
 						<div class="grid grid-cols-2 gap-6 lg:grid-cols-4">
 							<FormInput
 								label={`${m.health_interval()} (s)`}
 								type="number"
 								placeholder="30"
 								disabled={submitting}
-								bind:input={$inputs.healthInterval}
+								bind:input={inputs.healthInterval}
 							/>
 							<FormInput
 								label={`${m.health_timeout()} (s)`}
 								type="number"
 								placeholder="30"
 								disabled={submitting}
-								bind:input={$inputs.healthTimeout}
+								bind:input={inputs.healthTimeout}
 							/>
 							<FormInput
 								label={`${m.health_start_period()} (s)`}
 								type="number"
 								placeholder="0"
 								disabled={submitting}
-								bind:input={$inputs.healthStartPeriod}
+								bind:input={inputs.healthStartPeriod}
 							/>
 							<FormInput
 								label={m.health_retries()}
 								type="number"
 								placeholder="3"
 								disabled={submitting}
-								bind:input={$inputs.healthRetries}
+								bind:input={inputs.healthRetries}
 							/>
 						</div>
 					{/if}

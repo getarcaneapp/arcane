@@ -14,9 +14,6 @@
 		onReconnect?: () => void;
 	} = $props();
 
-	let customShell = $state('');
-	let useCustomShell = $state(false);
-
 	const commonShells = [
 		{ value: '/bin/sh', label: 'sh' },
 		{ value: '/bin/bash', label: 'bash' },
@@ -33,14 +30,20 @@
 		custom: m.custom()
 	};
 
+	let customShell = $derived.by(() => {
+		if (selectedShell && !(selectedShell in shellLabels)) return selectedShell;
+		return '';
+	});
+	const useCustomShell = $derived(selectedShell === 'custom' || (!!selectedShell && !(selectedShell in shellLabels)));
+
 	function handleShellChange(value: string | undefined) {
 		if (!value) return;
 
 		if (value === 'custom') {
-			useCustomShell = true;
+			const draft = customShell;
 			selectedShell = value;
+			customShell = draft;
 		} else {
-			useCustomShell = false;
 			selectedShell = value;
 			onShellChange?.(value);
 		}
@@ -51,38 +54,15 @@
 			onShellChange?.(customShell);
 		}
 	}
-
-	$effect(() => {
-		if (!selectedShell) {
-			return;
-		}
-
-		const isKnownShell = selectedShell in shellLabels;
-		if (!isKnownShell && selectedShell !== 'custom') {
-			useCustomShell = true;
-			customShell = selectedShell;
-			return;
-		}
-
-		if (selectedShell === 'custom') {
-			useCustomShell = true;
-			return;
-		}
-
-		if (isKnownShell) {
-			useCustomShell = false;
-			customShell = '';
-		}
-	});
 </script>
 
 <div class="flex items-center gap-2">
-	<Select.Root bind:value={selectedShell} type="single" onValueChange={handleShellChange}>
+	<Select.Root value={selectedShell} type="single" onValueChange={handleShellChange}>
 		<Select.Trigger class="h-8 w-[140px]">
 			{shellLabels[selectedShell] ?? m.select_shell_placeholder()}
 		</Select.Trigger>
 		<Select.Content>
-			{#each commonShells as shell}
+			{#each commonShells as shell (shell.value)}
 				<Select.Item value={shell.value}>
 					{shell.label}
 				</Select.Item>

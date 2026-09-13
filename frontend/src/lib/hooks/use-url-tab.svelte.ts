@@ -19,8 +19,7 @@ export function useUrlTab<T extends string>({
 	let pendingUrlUpdate = Promise.resolve();
 
 	function currentUrl() {
-		const reactiveUrl = page.url;
-		return typeof window === 'undefined' ? new URL(reactiveUrl.href) : new URL(window.location.href);
+		return new URL((page.shallow?.url ?? page.url).href);
 	}
 
 	function updateUrl(url: URL) {
@@ -43,18 +42,17 @@ export function useUrlTab<T extends string>({
 			);
 	}
 
-	function resolveTab(url = currentUrl()) {
+	function resolveTab(requested: string | null) {
 		const tabs = validTabs();
 		const defaultValue = defaultTab();
 		const fallback = tabs.includes(defaultValue) ? defaultValue : (tabs[0] ?? defaultValue);
-		const requested = url.searchParams.get('tab');
 
 		if (!requested) return fallback;
 		const aliased = aliases()[requested] ?? requested;
 		return tabs.includes(aliased as T) ? (aliased as T) : fallback;
 	}
 
-	let value = $state<T>(resolveTab());
+	let value = $derived(resolveTab(currentUrl().searchParams.get('tab')));
 	let mounted = $state(false);
 
 	onMount(() => {
@@ -79,12 +77,11 @@ export function useUrlTab<T extends string>({
 
 	$effect(() => {
 		const url = currentUrl();
-		const selected = resolveTab(url);
+		const selected = resolveTab(url.searchParams.get('tab'));
 		if (mounted && ready() && url.searchParams.get('tab') !== selected) {
 			url.searchParams.set('tab', selected);
-			updateUrl(url);
+			untrack(() => updateUrl(url));
 		}
-		if (untrack(() => value) !== selected) value = selected;
 	});
 
 	return {

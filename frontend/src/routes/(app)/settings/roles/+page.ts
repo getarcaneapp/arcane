@@ -17,7 +17,7 @@ export const load: PageLoad = async ({ parent }) => {
 		}
 	} satisfies SearchPaginationSortRequest);
 
-	const roles = await queryClient.fetchQuery({
+	const roles = await queryClient.query({
 		queryKey: ['roles', 'list', rolesRequestOptions],
 		queryFn: () => roleService.getRoles(rolesRequestOptions)
 	});

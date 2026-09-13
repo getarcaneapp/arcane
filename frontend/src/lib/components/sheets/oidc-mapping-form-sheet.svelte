@@ -6,7 +6,8 @@
 	import type { OidcRoleMapping, Role } from '#lib/types/auth.js';
 	import type { Environment } from '#lib/types/environment.js';
 	import { z } from 'zod/v4';
-	import { createForm, preventDefault } from '#lib/utils/settings.js';
+	import { createForm, preventDefault } from '#lib/utils/settings.svelte.js';
+
 	import { m } from '#lib/paraglide/messages.js';
 	import {
 		buildGlobalEnvironmentOptions,
@@ -42,7 +43,8 @@
 		environmentId: mappingToEdit?.environmentId ?? GLOBAL_ENVIRONMENT_OPTION_ID
 	});
 
-	const { inputs, ...form } = $derived(createForm<typeof formSchema>(formSchema, formData));
+	const form = $derived(createForm<typeof formSchema>(formSchema, formData));
+	let inputs = $derived(form.inputs);
 
 	function handleSubmit() {
 		const data = form.validate();
@@ -74,7 +76,7 @@
 				type="text"
 				placeholder={m.oidc_mappings_claim_placeholder()}
 				disabled={isLoading}
-				bind:input={$inputs.claimValue}
+				bind:input={inputs.claimValue}
 			/>
 
 			<RoleScopeSelects
@@ -83,9 +85,9 @@
 				scopeLabel={m.oidc_mappings_scope_label()}
 				{roles}
 				{envOptions}
-				bind:roleValue={$inputs.roleId.value}
-				bind:environmentValue={$inputs.environmentId.value}
-				roleError={$inputs.roleId.error}
+				bind:roleValue={inputs.roleId.value}
+				bind:environmentValue={inputs.environmentId.value}
+				roleError={inputs.roleId.error}
 				roleSelectedLabel={selectedLabel.role}
 				envSelectedLabel={selectedLabel.environment}
 				disabled={isLoading}

@@ -7,8 +7,7 @@
 	import { CheckIcon, CloseIcon } from '#lib/icons/index.js';
 	import type { DockerInfo } from '#lib/types/docker.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { bytes } from '#lib/utils/formatting.js';
-	import { formatDateTimeShort } from '#lib/utils/formatting.js';
+	import { bytes, formatDateTimeShort, withOccurrenceKeys } from '#lib/utils/formatting.js';
 
 	interface Props {
 		open: boolean;
@@ -111,7 +110,7 @@
 			{m.docker_info_warnings_section()}
 		</h3>
 		<ul class="space-y-0.5">
-			{#each warnings as warning, i (i)}
+			{#each withOccurrenceKeys(warnings) as { value: warning, key } (key)}
 				<li class="text-xs [overflow-wrap:anywhere] text-amber-700 dark:text-amber-300">{warning}</li>
 			{/each}
 		</ul>
@@ -239,7 +238,7 @@
 			{m.docker_info_storage_details_section()}
 		</h3>
 		<div class="space-y-0.5">
-			{#each info.DriverStatus ?? [] as entry, i (i)}
+			{#each info.DriverStatus ?? [] as entry (entry)}
 				{@render infoRow(entry[0] ?? '', entry[1], false)}
 			{/each}
 		</div>
@@ -324,7 +323,7 @@
 			{m.docker_info_labels_section()}
 		</h3>
 		<div class="flex flex-wrap gap-1">
-			{#each info.Labels ?? [] as label, i (i)}
+			{#each withOccurrenceKeys(info.Labels) as { value: label, key } (key)}
 				<Badge variant="outline" size="sm" class="font-mono">{label}</Badge>
 			{/each}
 		</div>
@@ -335,7 +334,7 @@
 	<div class="grid grid-cols-[minmax(96px,32%)_minmax(0,1fr)] items-baseline gap-x-3">
 		<span class="text-[10px] leading-4 tracking-tight text-muted-foreground uppercase">{label}</span>
 		<div class="flex flex-wrap justify-end gap-1">
-			{#each items ?? [] as item, i (i)}
+			{#each withOccurrenceKeys(items) as { value: item, key } (key)}
 				<Badge variant="outline" size="sm">{item}</Badge>
 			{:else}
 				<span class="text-xs text-muted-foreground">-</span>

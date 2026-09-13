@@ -17,6 +17,8 @@ headless agent modes, and a Cobra CLI.
 - Updating in place allows moving related logic into focused sibling files within the
   same domain. Split by responsibility, not a fixed line count. Avoid trivial file
   splits, unnecessary abstractions, and unrelated restructuring.
+- Avoid nested or chained ternary expressions unless absolutely necessary. Prefer
+  `if`/`else` or `switch` blocks for conditional logic with multiple branches.
 - Keep comments short. If code needs a paragraph to explain its structure, simplify it.
 - Never run state-changing Git commands. Do not stage, commit, push, tag, stash,
   create branches, or create worktrees.

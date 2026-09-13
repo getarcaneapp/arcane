@@ -64,7 +64,7 @@
 
 	let editorOpen = $state(false);
 	let editorFile = $state<FileEntry | null>(null);
-	let editorContent = $state('');
+	let editorDraft = $state<{ envId: string; path: string; content: string } | null>(null);
 	let editorSaving = $state(false);
 
 	const editorContentQuery = createQuery(() => ({
@@ -75,18 +75,10 @@
 		enabled: !!editorFile && editorOpen
 	}));
 
-	let lastSeededPath: string | null = null;
-
-	$effect(() => {
-		if (!editorFile || !editorOpen) {
-			lastSeededPath = null;
-			return;
-		}
-		const data = editorContentQuery.data;
-		if (data && editorFile.path !== lastSeededPath) {
-			lastSeededPath = editorFile.path;
-			editorContent = b64DecodeUnicode(data.content);
-		}
+	const editorContent = $derived.by(() => {
+		if (editorDraft?.envId === envId && editorDraft.path === editorFile?.path) return editorDraft.content;
+		if (!editorContentQuery.data) return '';
+		return b64DecodeUnicode(editorContentQuery.data.content);
 	});
 
 	const editorLoading = $derived(editorContentQuery.isPending || editorContentQuery.isFetching);
@@ -167,7 +159,7 @@
 		if (file.isDirectory) return;
 		editorFile = file;
 		editorOpen = true;
-		editorContent = '';
+		editorDraft = null;
 	}
 
 	async function handleSaveFile() {
@@ -312,7 +304,16 @@
 			{:else}
 				<div class="space-y-2">
 					<Label>{m.build_file_contents()}</Label>
-					<Textarea rows={18} bind:value={editorContent} class="font-mono text-xs" />
+					<Textarea
+						rows={18}
+						bind:value={
+							() => editorContent,
+							(content) => {
+								editorDraft = { envId, path: editorFile?.path ?? '', content };
+							}
+						}
+						class="font-mono text-xs"
+					/>
 					<p class="text-xs text-muted-foreground">{m.build_saving_overwrite()}</p>
 				</div>
 			{/if}

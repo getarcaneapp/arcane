@@ -7,7 +7,7 @@
 	import { toast } from 'svelte-sonner';
 	import type { AuthenticationResponse, MFAChallenge as MFAChallengeData, User } from '#lib/types/auth.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import settingsStore from '#lib/stores/config-store.js';
+	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { settingsService } from '#lib/services/settings-service.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { authService } from '#lib/services/auth-service.js';
@@ -55,7 +55,7 @@
 		await refreshAll();
 		const operationResult = await tryCatch(
 			(async () => {
-				const settings = await queryClient.fetchQuery({
+				const settings = await queryClient.query({
 					queryKey: queryKeys.settings.global(),
 					queryFn: () => settingsService.getSettings()
 				});

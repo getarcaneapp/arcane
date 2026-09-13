@@ -1,7 +1,6 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { z } from 'zod/v4';
-	import settingsStore from '#lib/stores/config-store.js';
+	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { SettingsPageLayout } from '#lib/layouts/index.js';
 	import { ClockIcon } from '#lib/icons/index.js';
@@ -10,7 +9,7 @@
 
 	let { data } = $props();
 
-	const isReadOnly = $derived.by(() => $settingsStore?.uiConfigDisabled);
+	const isReadOnly = $derived.by(() => settingsStore.current?.uiConfigDisabled);
 
 	const formSchema = z.object({
 		dockerApiTimeout: z.coerce.number().int().min(1).max(3600),
@@ -24,7 +23,7 @@
 	});
 
 	const getFormDefaults = () => {
-		const settings = $settingsStore || data.settings!;
+		const settings = settingsStore.current || data.settings!;
 		return {
 			dockerApiTimeout: settings.dockerApiTimeout,
 			dockerImagePullTimeout: settings.dockerImagePullTimeout,
@@ -37,14 +36,12 @@
 		};
 	};
 
-	const { formInputs, registerOnMount } = createSettingsForm({
+	const { formInputs } = createSettingsForm({
 		schema: formSchema,
 		currentSettings: getFormDefaults(),
 		getCurrentSettings: getFormDefaults,
 		successMessage: m.timeouts_save()
 	});
-
-	onMount(() => registerOnMount());
 </script>
 
 <SettingsPageLayout
@@ -61,8 +58,8 @@
 				<h3 class="text-base font-semibold">{m.timeouts_docker_operations()}</h3>
 				<div class="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
 					<TextInputWithLabel
-						bind:value={$formInputs.dockerApiTimeout.value}
-						error={$formInputs.dockerApiTimeout.error}
+						bind:value={formInputs.dockerApiTimeout.value}
+						error={formInputs.dockerApiTimeout.error}
 						label={m.docker_api_timeout()}
 						description={m.docker_api_timeout_description()}
 						placeholder="30"
@@ -70,8 +67,8 @@
 						type="number"
 					/>
 					<TextInputWithLabel
-						bind:value={$formInputs.dockerImagePullTimeout.value}
-						error={$formInputs.dockerImagePullTimeout.error}
+						bind:value={formInputs.dockerImagePullTimeout.value}
+						error={formInputs.dockerImagePullTimeout.error}
 						label={m.docker_image_pull_timeout()}
 						description={m.docker_image_pull_timeout_description()}
 						placeholder="600"
@@ -79,8 +76,8 @@
 						type="number"
 					/>
 					<TextInputWithLabel
-						bind:value={$formInputs.deployWaitTimeout.value}
-						error={$formInputs.deployWaitTimeout.error}
+						bind:value={formInputs.deployWaitTimeout.value}
+						error={formInputs.deployWaitTimeout.error}
 						label={m.deploy_wait_timeout()}
 						description={m.deploy_wait_timeout_description()}
 						placeholder="600"
@@ -88,8 +85,8 @@
 						type="number"
 					/>
 					<TextInputWithLabel
-						bind:value={$formInputs.trivyScanTimeout.value}
-						error={$formInputs.trivyScanTimeout.error}
+						bind:value={formInputs.trivyScanTimeout.value}
+						error={formInputs.trivyScanTimeout.error}
 						label={m.trivy_scan_timeout()}
 						description={m.trivy_scan_timeout_description()}
 						placeholder="900"
@@ -104,8 +101,8 @@
 				<h3 class="text-base font-semibold">{m.timeouts_git_operations()}</h3>
 				<div class="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
 					<TextInputWithLabel
-						bind:value={$formInputs.gitOperationTimeout.value}
-						error={$formInputs.gitOperationTimeout.error}
+						bind:value={formInputs.gitOperationTimeout.value}
+						error={formInputs.gitOperationTimeout.error}
 						label={m.git_operation_timeout()}
 						description={m.git_operation_timeout_description()}
 						placeholder="300"
@@ -120,8 +117,8 @@
 				<h3 class="text-base font-semibold">{m.timeouts_network_operations()}</h3>
 				<div class="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
 					<TextInputWithLabel
-						bind:value={$formInputs.httpClientTimeout.value}
-						error={$formInputs.httpClientTimeout.error}
+						bind:value={formInputs.httpClientTimeout.value}
+						error={formInputs.httpClientTimeout.error}
 						label={m.http_client_timeout()}
 						description={m.http_client_timeout_description()}
 						placeholder="30"
@@ -129,8 +126,8 @@
 						type="number"
 					/>
 					<TextInputWithLabel
-						bind:value={$formInputs.registryTimeout.value}
-						error={$formInputs.registryTimeout.error}
+						bind:value={formInputs.registryTimeout.value}
+						error={formInputs.registryTimeout.error}
 						label={m.registry_timeout()}
 						description={m.registry_timeout_description()}
 						placeholder="30"
@@ -138,8 +135,8 @@
 						type="number"
 					/>
 					<TextInputWithLabel
-						bind:value={$formInputs.proxyRequestTimeout.value}
-						error={$formInputs.proxyRequestTimeout.error}
+						bind:value={formInputs.proxyRequestTimeout.value}
+						error={formInputs.proxyRequestTimeout.error}
 						label={m.proxy_request_timeout()}
 						description={m.proxy_request_timeout_description()}
 						placeholder="60"

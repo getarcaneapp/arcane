@@ -1,4 +1,3 @@
-import { writable } from 'svelte/store';
 import type { ApplicationTheme } from '#lib/types/settings.js';
 
 const APPLICATION_THEME_VALUES = [
@@ -259,9 +258,7 @@ function updateAppearanceCache(partial: AppearanceCache): void {
 	}
 }
 
-// fallow-ignore-next-line unused-export
-export const accentColorPreviewStore = writable<string>(DEFAULT_ACCENT_COLOR);
-const oledModeStore = writable<boolean>(false);
+export const accentColorPreview = $state({ current: DEFAULT_ACCENT_COLOR });
 
 export function resolveApplicationTheme(value?: string | null): ApplicationTheme {
 	if (!value) {
@@ -340,7 +337,7 @@ function syncBrowserThemeColor(): void {
 
 export function applyAccentColor(accentValue: string) {
 	const resolvedAccent = accentValue === 'default' ? DEFAULT_ACCENT_COLOR : accentValue;
-	accentColorPreviewStore.set(resolvedAccent);
+	accentColorPreview.current = resolvedAccent;
 
 	if (typeof document === 'undefined') {
 		return;
@@ -401,8 +398,6 @@ function getColorBrightness(color: string): number {
 }
 
 export function applyOledMode(enabled: boolean): void {
-	oledModeStore.set(enabled);
-
 	if (typeof document === 'undefined') {
 		return;
 	}

@@ -8,10 +8,12 @@ import (
 type VolumeSourcePathMapper interface {
 	TranslateVolumeSources(project *composetypes.Project, translateFileResources bool) error
 	// ContainerToHost translates a single container-side path to its host-side
-	// equivalent, returning the path unchanged when it is outside every mounted
-	// directory. Needed to re-resolve relative Compose paths that escape the
-	// projects mount, where prefix translation has nothing to match.
-	ContainerToHost(containerPath string) (string, error)
+	// equivalent. mapped is false when the path is outside every mounted
+	// directory, in which case the path is returned unchanged; a path inside an
+	// identity mount is also unchanged but reports mapped as true. Needed to
+	// re-resolve relative Compose paths that escape the projects mount, where
+	// prefix translation has nothing to match.
+	ContainerToHost(containerPath string) (hostPath string, mapped bool, err error)
 }
 
 // ComposeContentOptions configures loading a Compose project from in-memory content.

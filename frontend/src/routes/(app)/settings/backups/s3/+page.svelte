@@ -2,7 +2,7 @@
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import { toast } from 'svelte-sonner';
-	import settingsStore from '#lib/stores/config-store.js';
+	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { SettingsPageLayout, type SettingsActionButton } from '#lib/layouts/index.js';
 	import { RemoteEnvironmentIcon } from '#lib/icons/index.js';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
@@ -19,16 +19,19 @@
 	let requestOptions = $derived<SearchPaginationSortRequest>(data.requestOptions);
 	let selected = $state<S3Destination | null>(null);
 	let dialogOpen = $state(false);
+	let destinationSession = $state(0);
 	let saving = $state(false);
-	const isReadOnly = $derived.by(() => $settingsStore.uiConfigDisabled);
+	const isReadOnly = $derived.by(() => settingsStore.current?.uiConfigDisabled);
 
 	function openCreate() {
 		selected = null;
+		destinationSession += 1;
 		dialogOpen = true;
 	}
 
 	function openEdit(destination: S3Destination) {
 		selected = destination;
+		destinationSession += 1;
 		dialogOpen = true;
 	}
 
@@ -115,6 +118,10 @@
 		/>
 	{/snippet}
 	{#snippet additionalContent()}
-		<S3DestinationDialog bind:open={dialogOpen} destination={selected} {saving} onSubmit={saveDestination} />
+		{#if destinationSession > 0}
+			{#key destinationSession}
+				<S3DestinationDialog bind:open={dialogOpen} destination={selected} {saving} onSubmit={saveDestination} />
+			{/key}
+		{/if}
 	{/snippet}
 </SettingsPageLayout>

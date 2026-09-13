@@ -5,7 +5,7 @@ import { variableService } from '#lib/services/variable-service.js';
 import type { GlobalVariable } from '#lib/types/variable.js';
 
 type QueryClientLike = {
-	fetchQuery: <T>(options: { queryKey: unknown; queryFn: () => Promise<T> }) => Promise<T>;
+	query: <T>(options: { queryKey: unknown; queryFn: () => Promise<T> }) => Promise<T>;
 };
 
 type ParentWithQueryClient = () => Promise<{
@@ -23,7 +23,7 @@ export async function loadTemplateAuthoringData(parent: ParentWithQueryClient) {
 
 	const [defaultTemplates, templates, globalVariables] = await Promise.all([
 		tryCatch(
-			client.fetchQuery({
+			client.query({
 				queryKey: queryKeys.templates.defaults(),
 				queryFn: () => templateService.getDefaultTemplates()
 			})
@@ -38,7 +38,7 @@ export async function loadTemplateAuthoringData(parent: ParentWithQueryClient) {
 			}
 		}),
 		tryCatch(
-			client.fetchQuery({
+			client.query({
 				queryKey: queryKeys.templates.allTemplates(),
 				queryFn: () => templateService.getAllTemplates()
 			})
@@ -53,7 +53,7 @@ export async function loadTemplateAuthoringData(parent: ParentWithQueryClient) {
 			}
 		}),
 		tryCatch(
-			client.fetchQuery({
+			client.query({
 				queryKey: queryKeys.variables.list(),
 				queryFn: () => variableService.list()
 			})
@@ -74,7 +74,7 @@ export async function loadTemplateAuthoringData(parent: ParentWithQueryClient) {
 
 export async function loadTemplateContent(client: QueryClientLike, templateId: string) {
 	return tryCatch(
-		client.fetchQuery({
+		client.query({
 			queryKey: queryKeys.templates.content(templateId),
 			queryFn: () => templateService.getTemplateContent(templateId)
 		})

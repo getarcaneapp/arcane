@@ -18,7 +18,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/config v1.33.4
 	github.com/aws/aws-sdk-go-v2/credentials v1.20.4
 	github.com/aws/aws-sdk-go-v2/service/ecr v1.65.0
-	github.com/aws/aws-sdk-go-v2/service/s3 v1.113.0
+	github.com/aws/aws-sdk-go-v2/service/s3 v1.113.1
 	github.com/aws/smithy-go v1.28.1
 	github.com/cenkalti/backoff/v5 v5.0.3
 	github.com/coder/websocket v1.8.15
@@ -32,8 +32,8 @@ require (
 	github.com/docker/compose/v5 v5.5.1
 	github.com/docker/go-units v0.5.0
 	github.com/fsnotify/fsnotify v1.10.1
-	github.com/getarcaneapp/arcane/cli/v2 v2.10.2
-	github.com/getarcaneapp/arcane/types/v2 v2.10.2
+	github.com/getarcaneapp/arcane/cli/v2 v2.11.1
+	github.com/getarcaneapp/arcane/types/v2 v2.11.1
 	github.com/go-git/go-git/v5 v5.19.2
 	github.com/go-webauthn/webauthn v0.18.1
 	github.com/gofrs/flock v0.13.1
@@ -44,13 +44,13 @@ require (
 	github.com/klauspost/compress v1.20.0
 	github.com/labstack/echo/v5 v5.3.1
 	github.com/lestrrat-go/httprc/v3 v3.0.6
-	github.com/lestrrat-go/jwx/v4 v4.4.0
+	github.com/lestrrat-go/jwx/v4 v4.5.0
 	github.com/libtnb/sqlite v1.2.2
 	github.com/lmittmann/tint v1.2.0
 	github.com/moby/buildkit v0.33.0
 	github.com/moby/moby/api v1.56.0
 	github.com/moby/moby/client v0.6.0
-	github.com/nicholas-fedor/shoutrrr v0.19.0
+	github.com/nicholas-fedor/shoutrrr v0.20.0
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.1
 	github.com/orandin/slog-gorm v1.4.0
@@ -90,7 +90,7 @@ require (
 	google.golang.org/protobuf v1.36.12
 	gorm.io/driver/postgres v1.6.2
 	gorm.io/gorm v1.31.2
-	modernc.org/sqlite v1.57.0
+	modernc.org/sqlite v1.58.0
 )
 
 require (

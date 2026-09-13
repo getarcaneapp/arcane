@@ -23,7 +23,7 @@ commit_parsers = [
   { message = "^docs\\(cli\\)", group = "<!-- 31 --> CLI - Documentation", default_scope = "other" },
   { message = "^docs", group = "<!-- 30 --> Documentation", default_scope = "other" },
 
-  { message = "^chore\\(deps\\)", group = "<!-- 40 --> Dependencies" },
+  { message = "^chore\\(deps\\)", skip = true },
         { message = "^chore", skip = true },
         { message = "^release", skip = true },
         { message = "update translations via Crowdin", skip = true },

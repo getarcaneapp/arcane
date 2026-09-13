@@ -37,7 +37,7 @@
 </script>
 
 <div class="space-y-3">
-	{#each rows as row, index (index)}
+	{#each rows as row, index (row)}
 		<div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
 			<SearchableSelect items={networkItems} bind:value={row.network} {disabled} class="min-w-40 flex-1" />
 			<Input

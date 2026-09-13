@@ -1,5 +1,5 @@
 import { PersistedState } from 'runed';
-import settingsStore from './config-store';
+import settingsStore from './config-store.svelte.js';
 
 export type DeployPullPolicy = 'missing' | 'always' | 'never';
 
@@ -50,7 +50,7 @@ function persistState() {
 	};
 }
 
-settingsStore.subscribe((settings) => {
+settingsStore.onChange((settings) => {
 	if (!settings || userOverrodePullPolicy.current) {
 		return;
 	}

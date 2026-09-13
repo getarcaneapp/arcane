@@ -40,7 +40,8 @@
 			{text}
 		</pre>
 	{:else}
-		{#each text as line, i (i)}
+		<!-- Repeated lines are valid; each line renders only text. -->
+		{#each text as line}
 			<pre class={cn('overflow-y-auto text-left font-mono text-sm font-light whitespace-nowrap')}>
 			{line}
 		</pre>

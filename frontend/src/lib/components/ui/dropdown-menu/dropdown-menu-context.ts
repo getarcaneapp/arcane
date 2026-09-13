@@ -1,5 +1,7 @@
+import { createContext } from 'svelte';
+
 export type DropdownMenuContext = {
 	close: () => void;
 };
 
-export const dropdownMenuContextKey = Symbol('dropdown-menu');
+export const [getDropdownMenuContext, setDropdownMenuContext, hasDropdownMenuContext] = createContext<DropdownMenuContext>();

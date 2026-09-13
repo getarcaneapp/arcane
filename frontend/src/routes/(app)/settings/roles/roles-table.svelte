@@ -14,7 +14,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { roleService } from '#lib/services/role-service.js';
 	import { ShieldAlertIcon, TrashIcon, EditIcon } from '#lib/icons/index.js';
-	import userStore from '#lib/stores/user-store.js';
+	import userStore from '#lib/stores/user-store.svelte.js';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
 	import { bulkConfirmAndRun, confirmAndRun } from '#lib/utils/bulk-actions.js';
 

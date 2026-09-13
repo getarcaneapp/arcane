@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { untrack } from 'svelte';
 	import { Terminal } from '@xterm/xterm';
 	import { FitAddon } from '@xterm/addon-fit';
 	import '@xterm/xterm/css/xterm.css';
@@ -18,14 +18,14 @@
 		onDisconnected?: () => void;
 	} = $props();
 
-	let container: HTMLDivElement;
+	let container: HTMLDivElement | null = null;
 	let terminal: Terminal | null = null;
 	let fitAddon: FitAddon | null = null;
 	let ws: WebSocket | null = null;
 	let isReconnecting = false;
 	let openedAt = 0;
 	let resizeObserver: ResizeObserver | null = null;
-	let isReady = $state(false);
+	let fitFrame = 0;
 
 	const darkTheme = {
 		background: '#09090b',
@@ -75,8 +75,8 @@
 		brightWhite: '#ffffff'
 	};
 
-	function initializeTerminal() {
-		if (!container) return;
+	function initializeTerminal(node: HTMLDivElement) {
+		container = node;
 
 		if (terminal) {
 			terminal.dispose();
@@ -92,10 +92,10 @@
 
 		fitAddon = new FitAddon();
 		terminal.loadAddon(fitAddon);
-		terminal.open(container);
+		terminal.open(node);
 
-		requestAnimationFrame(() => {
-			if (fitAddon && container.offsetParent !== null) {
+		fitFrame = requestAnimationFrame(() => {
+			if (fitAddon && node.offsetParent !== null) {
 				fitAddon.fit();
 			}
 		});
@@ -109,12 +109,13 @@
 		resizeObserver = new ResizeObserver(() => {
 			handleResize();
 		});
-		resizeObserver.observe(container);
+		resizeObserver.observe(node);
 	}
 
-	function connectWebSocket() {
+	function connectWebSocket(url: string) {
 		if (ws) {
 			isReconnecting = true;
+			ws.onopen = null;
 			ws.onclose = null;
 			ws.onerror = null;
 			ws.onmessage = null;
@@ -123,7 +124,7 @@
 		}
 
 		isReconnecting = false;
-		ws = new WebSocket(websocketUrl);
+		ws = new WebSocket(url);
 		ws.binaryType = 'arraybuffer';
 
 		ws.onopen = () => {
@@ -175,35 +176,46 @@
 		}
 	}
 
-	onMount(() => {
-		initializeTerminal();
-		window.addEventListener('resize', handleResize);
-		isReady = true;
+	function attachTerminal(node: HTMLDivElement) {
+		untrack(() => initializeTerminal(node));
+
+		$effect(() => {
+			if (websocketUrl) {
+				terminal?.clear();
+				connectWebSocket(websocketUrl);
+			}
+		});
+
+		$effect(() => {
+			if (terminal && mode.current) {
+				terminal.options.theme = mode.current === 'dark' ? darkTheme : lightTheme;
+			}
+		});
 
 		return () => {
-			window.removeEventListener('resize', handleResize);
+			cancelAnimationFrame(fitFrame);
 			resizeObserver?.disconnect();
+			resizeObserver = null;
 			isReconnecting = true;
-			ws?.close();
+			if (ws) {
+				ws.onopen = null;
+				ws.onclose = null;
+				ws.onerror = null;
+				ws.onmessage = null;
+				ws.close();
+				ws = null;
+			}
 			terminal?.dispose();
+			terminal = null;
+			fitAddon = null;
+			container = null;
 		};
-	});
-
-	$effect(() => {
-		if (isReady && websocketUrl && terminal) {
-			terminal.clear();
-			connectWebSocket();
-		}
-	});
-
-	$effect(() => {
-		if (terminal && mode.current) {
-			terminal.options.theme = mode.current === 'dark' ? darkTheme : lightTheme;
-		}
-	});
+	}
 </script>
 
-<div bind:this={container} class="terminal-container h-full w-full" style="height: {height}"></div>
+<svelte:window onresize={handleResize} />
+
+<div {@attach attachTerminal} class="terminal-container h-full w-full" style="height: {height}"></div>
 
 <style>
 	:global(.terminal-container .xterm) {

@@ -172,19 +172,18 @@ func joinHostRelativePathInternal(base, rel string) string {
 	return joined
 }
 
-// ContainerToHost translates a container path to host path
-func (pm *PathMapper) ContainerToHost(containerPath string) (string, error) {
-	if !pm.IsNonMatchingMount() {
-		return containerPath, nil // No translation needed
-	}
-
+// ContainerToHost translates a container path to host path. mapped reports
+// whether a mounted directory contains the path; an identity mount leaves the
+// path unchanged yet still counts as mapped, while a path outside every mount
+// is never mapped, even when no translation could occur.
+func (pm *PathMapper) ContainerToHost(containerPath string) (string, bool, error) {
 	// Auto-discovery mode: resolve against Arcane's real mount table so nested,
 	// independently bind-mounted directories map to their own host path.
 	if len(pm.mounts) > 0 {
 		if host, ok := ResolveHostPath(pm.mounts, containerPath).Get(); ok {
-			return host, nil
+			return host, true, nil
 		}
-		return filepath.Clean(containerPath), nil // outside all mounts: leave unchanged
+		return filepath.Clean(containerPath), false, nil // outside all mounts: leave unchanged
 	}
 
 	cleaned := filepath.Clean(containerPath)
@@ -192,12 +191,12 @@ func (pm *PathMapper) ContainerToHost(containerPath string) (string, error) {
 	// Calculate relative path
 	relPath, err := filepath.Rel(pm.containerPrefix, cleaned)
 	if err != nil {
-		return "", errors.WrapIf(err, "failed to calculate relative path")
+		return "", false, errors.WrapIf(err, "failed to calculate relative path")
 	}
 
 	// Only translate paths within container prefix
 	if strings.HasPrefix(relPath, "..") || relPath == ".." || filepath.IsAbs(relPath) {
-		return cleaned, nil
+		return cleaned, false, nil
 	}
 
 	// Join with host prefix
@@ -209,7 +208,7 @@ func (pm *PathMapper) ContainerToHost(containerPath string) (string, error) {
 		hostPath = filepath.ToSlash(hostPath)
 	}
 
-	return hostPath, nil
+	return hostPath, true, nil
 }
 
 // TranslateVolumeSources translates bind mount sources in a Compose project.
@@ -231,7 +230,7 @@ func (pm *PathMapper) TranslateVolumeSources(project *composetypes.Project, tran
 				continue
 			}
 
-			hostPath, err := pm.ContainerToHost(volume.Source)
+			hostPath, _, err := pm.ContainerToHost(volume.Source)
 			if err != nil {
 				return errors.WrapIff(err, "failed to translate volume source %q", volume.Source)
 			}
@@ -249,7 +248,7 @@ func (pm *PathMapper) TranslateVolumeSources(project *composetypes.Project, tran
 	// Translate secrets
 	for name, secret := range project.Secrets {
 		if secret.File != "" {
-			hostPath, err := pm.ContainerToHost(secret.File)
+			hostPath, _, err := pm.ContainerToHost(secret.File)
 			if err != nil {
 				return errors.WrapIff(err, "failed to translate secret file %q", secret.File)
 			}
@@ -261,7 +260,7 @@ func (pm *PathMapper) TranslateVolumeSources(project *composetypes.Project, tran
 	// Translate configs
 	for name, config := range project.Configs {
 		if config.File != "" {
-			hostPath, err := pm.ContainerToHost(config.File)
+			hostPath, _, err := pm.ContainerToHost(config.File)
 			if err != nil {
 				return errors.WrapIff(err, "failed to translate config file %q", config.File)
 			}
@@ -281,7 +280,7 @@ func (pm *PathMapper) TranslateVolumeSources(project *composetypes.Project, tran
 			continue
 		}
 
-		hostPath, err := pm.ContainerToHost(device)
+		hostPath, _, err := pm.ContainerToHost(device)
 		if err != nil {
 			return errors.WrapIff(err, "failed to translate volume device %q", device)
 		}
@@ -372,6 +371,9 @@ func RemapEscapedRelativeSources(
 		}
 
 		hostPath := joinHostRelativePathInternal(hostWorkingDir, rawSource)
+		if hostPath == target.current {
+			continue // identity mount: the Docker host already resolves it the same way
+		}
 		target.apply(hostPath)
 		slog.WarnContext(ctx,
 			"compose relative path resolves outside the mounted projects directory; remapped so the Docker host resolves it the same way `docker compose up` would",
@@ -475,14 +477,14 @@ func isRemappableSourceInternal(rawSource string) bool {
 // itself is not inside a mounted directory, since there is then no host path to
 // anchor to.
 func hostWorkingDirInternal(ctx context.Context, pathMapper projecttypes.VolumeSourcePathMapper, containerWorkingDir string) (string, bool) {
-	hostWorkingDir, err := pathMapper.ContainerToHost(containerWorkingDir)
+	hostWorkingDir, mapped, err := pathMapper.ContainerToHost(containerWorkingDir)
 	if err != nil {
 		slog.WarnContext(ctx, "failed to resolve host path for project directory; relative paths outside the projects mount may resolve incorrectly",
 			"working_dir", containerWorkingDir, "error", err)
 		return "", false
 	}
 
-	if hostWorkingDir == "" || filepath.Clean(hostWorkingDir) == filepath.Clean(containerWorkingDir) {
+	if !mapped {
 		slog.WarnContext(ctx, "project directory is not inside a mounted directory; relative paths outside the projects mount may resolve incorrectly",
 			"working_dir", containerWorkingDir)
 		return "", false

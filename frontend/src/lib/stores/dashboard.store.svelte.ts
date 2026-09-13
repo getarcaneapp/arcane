@@ -11,7 +11,7 @@ import {
 } from '#lib/stores/environment-stream.svelte.js';
 import type { DashboardSnapshot, DashboardStreamErrorCode, DashboardStreamEvent } from '#lib/types/shared.js';
 import type { Environment } from '#lib/types/environment.js';
-import userStore from '#lib/stores/user-store.js';
+import userStore from '#lib/stores/user-store.svelte.js';
 
 type DashboardEnvironmentState = StreamEnvStateBase & {
 	snapshot: DashboardSnapshot | null;
@@ -28,7 +28,7 @@ function createDashboardStore() {
 	const core = createEnvironmentStreamStore<DashboardEnvironmentState, DashboardStreamEvent>({
 		label: 'Dashboard',
 		includeEnvironment: (environment) => userStore.hasPermission('dashboard:read', environment.id),
-		subscribeEnvironmentFilter: (reconcile) => userStore.subscribe(reconcile),
+		subscribeEnvironmentFilter: (reconcile) => userStore.onChange(reconcile),
 		refreshOnStart: true,
 		clearErrorExtra: { errorCode: undefined },
 		createEnvironmentState(environment: Pick<Environment, 'id' | 'name'>): DashboardEnvironmentState {

@@ -25,7 +25,7 @@ export const load: PageLoad = async ({ parent }) => {
 	);
 
 	// Single API call - counts are included in the response
-	const volumes = await queryClient.fetchQuery({
+	const volumes = await queryClient.query({
 		queryKey: queryKeys.volumes.table(envId, volumeRequestOptions),
 		queryFn: () => volumeService.getVolumesForEnvironment(envId, volumeRequestOptions)
 	});

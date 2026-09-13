@@ -13,7 +13,7 @@
 	import { IsTablet } from '#lib/hooks/is-tablet.svelte.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-	import settingsStore from '#lib/stores/config-store.js';
+	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { cn } from '#lib/utils.js';
 	import { QueryClientProvider } from '@tanstack/svelte-query';
 	import { SvelteQueryDevtools } from '@tanstack/svelte-query-devtools';
@@ -42,7 +42,7 @@
 			String(page.url.pathname).startsWith('/mobile/passkey')
 	);
 
-	const autoLoginEnabled = $derived(settingsStore.autoLoginEnabled.isEnabled());
+	const autoLoginEnabled = $derived(settingsStore.autoLoginEnabled.current);
 	const showPasswordChangeDialog = $derived(
 		!!(data.user && data.user.requiresPasswordChange && !isAuthPage && !autoLoginEnabled)
 	);
@@ -60,7 +60,7 @@
 
 <QueryClientProvider client={data.queryClient}>
 	<div class={cn('flex min-h-dvh flex-col', 'bg-transparent')}>
-		{#if !settings && data.user}
+		{#if !settings && data.user && page.route.id !== '/(app)/environments/[id]'}
 			<Error message={m.error_occurred()} showButton={true} />
 		{:else}
 			<Tooltip.Provider>

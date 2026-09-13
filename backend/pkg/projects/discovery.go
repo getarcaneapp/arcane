@@ -11,6 +11,7 @@ import (
 
 	"emperror.dev/errors"
 	"github.com/compose-spec/compose-go/v2/loader"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"go.yaml.in/yaml/v4"
 )
 
@@ -132,7 +133,16 @@ func walkProjectDirectoriesInternal(ctx context.Context, root, path string, isRo
 	// The projects root directory itself is exempt — we always descend into it
 	// so siblings under the root are all discovered, even if the root happens
 	// to contain its own compose file.
-	if _, err := DetectComposeFile(ctx, root, path); err == nil {
+	switch composePath, err := DetectComposeFile(ctx, root, path); {
+	case err == nil, errors.Is(err, common.ErrProjectEnvUnreadable) && composePath != "":
+		if err != nil {
+			slog.Warn("Discovered project with an unreadable .env",
+				"path", path,
+				"envFile", filepath.Join(path, EffectiveEnvFileName),
+				"uid", os.Geteuid(),
+				"gid", os.Getegid(),
+				"error", err)
+		}
 		*discovered = append(*discovered, DiscoveredProjectDir{
 			DirName: filepath.Base(path),
 			Path:    path,
@@ -140,6 +150,9 @@ func walkProjectDirectoriesInternal(ctx context.Context, root, path string, isRo
 		if !isRoot {
 			return nil
 		}
+	case errors.Is(err, common.ErrComposeFileNotFound):
+	default:
+		slog.Warn("Skipping undetectable project directory during discovery", "path", path, "error", err)
 	}
 
 	if maxDepth > 0 && currentDepth >= maxDepth {

@@ -32,6 +32,8 @@ import { m } from '#lib/paraglide/messages.js';
 import type { ShortcutKey } from '#lib/utils/navigation.js';
 import type { PermissionsManifest, User } from '#lib/types/auth.js';
 import { canReachAccessSurface } from '#lib/utils/access-policy.js';
+import type { FeatureID } from '#lib/types/features.js';
+import { featureStore } from '#lib/stores/features.store.svelte.js';
 
 export type NavigationItem = {
 	title: string;
@@ -45,6 +47,7 @@ export type NavigationItem = {
 	 */
 	accessSurfaceId?: string;
 	adminOnly?: boolean;
+	requiredFeature?: FeatureID;
 };
 
 export type NavigationSections = {
@@ -73,6 +76,7 @@ export const navigationItems: NavigationSections = {
 		{
 			title: m.security(),
 			url: '/security',
+			requiredFeature: 'vulnerabilityManagement',
 			icon: ShieldAlertIcon,
 			accessSurfaceId: 'route.images.vulnerabilities'
 		},
@@ -320,6 +324,7 @@ function canSeeItem(
 	currentEnvId: string | undefined,
 	accessManifest: PermissionsManifest | null | undefined
 ): boolean {
+	if (item.requiredFeature && !featureStore.isEnabled(item.requiredFeature, currentEnvId ?? '0')) return false;
 	if (item.adminOnly && !user.isGlobalAdmin) return false;
 	if (!item.accessSurfaceId) return true;
 	if (!accessManifest?.accessSurfaces?.length) return true;

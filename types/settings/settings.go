@@ -186,6 +186,9 @@ type Update struct {
 	// Required: false
 	PruneBuildCacheUntil *string `json:"pruneBuildCacheUntil,omitzero"`
 
+	// FeatureVulnerabilityManagementEnabled controls vulnerability management for this environment.
+	FeatureVulnerabilityManagementEnabled *string `json:"featureVulnerabilityManagementEnabled,omitzero" enum:"true,false"`
+
 	// VulnerabilityScanEnabled indicates if scheduled vulnerability scanning is enabled.
 	//
 	// Required: false

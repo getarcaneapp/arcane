@@ -186,6 +186,10 @@ func (s *ProjectService) upsertProjectForDir(ctx context.Context, dirName, dirPa
 		First(&existing).Error
 
 	composeMetadata, serviceCountErr := s.loadComposeMetadataForSyncInternal(ctx, dirPath, dirName)
+	serviceCountLogLevel := slog.LevelWarn
+	if errors.Is(serviceCountErr, common.ErrProjectEnvUnreadable) {
+		serviceCountLogLevel = slog.LevelDebug
+	}
 
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		// Create a minimal project entry
@@ -205,7 +209,7 @@ func (s *ProjectService) upsertProjectForDir(ctx context.Context, dirName, dirPa
 			"path", dirPath,
 			"reason", reason)
 		if serviceCountErr != nil {
-			slog.WarnContext(ctx, "failed to read compose service count during project discovery", "project", dirName, "path", dirPath, "error", serviceCountErr)
+			slog.Log(ctx, serviceCountLogLevel, "failed to read compose service count during project discovery", "project", dirName, "path", dirPath, "error", serviceCountErr)
 		}
 		if cerr := s.db.WithContext(ctx).Create(proj).Error; cerr != nil {
 			return errors.WrapIff(cerr, "create project for %q failed", dirPath)
@@ -227,7 +231,7 @@ func (s *ProjectService) upsertProjectForDir(ctx context.Context, dirName, dirPa
 	if serviceCountErr == nil && existing.ServiceCount != composeMetadata.serviceCount {
 		updates["service_count"] = composeMetadata.serviceCount
 	} else if serviceCountErr != nil {
-		slog.WarnContext(ctx, "failed to refresh compose service count during project sync", "projectID", existing.ID, "path", dirPath, "error", serviceCountErr)
+		slog.Log(ctx, serviceCountLogLevel, "failed to refresh compose service count during project sync", "projectID", existing.ID, "path", dirPath, "error", serviceCountErr)
 	}
 	if serviceCountErr == nil && mo.PointerToOption(existing.ComposeProjectName) != mo.PointerToOption(composeMetadata.composeProjectName) {
 		updates["compose_project_name"] = composeMetadata.composeProjectName

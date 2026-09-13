@@ -602,6 +602,14 @@ export interface ProjectTagOption {
 	color: ProjectTagColor;
 }
 
+export type ProjectConfigurationError = {
+	code: 'env_file_unreadable';
+	path: string;
+	uid: number;
+	gid: number;
+	blocksOperations: boolean;
+};
+
 export interface Project {
 	id: string;
 	name: string;
@@ -616,6 +624,7 @@ export interface Project {
 	serviceCount: string;
 	status: string;
 	statusReason?: string;
+	configurationError?: ProjectConfigurationError;
 	updatedAt: string;
 	createdAt: string;
 	isArchived?: boolean;

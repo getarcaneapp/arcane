@@ -3,7 +3,8 @@
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { toast } from 'svelte-sonner';
-	import { createForm } from '#lib/utils/settings.js';
+	import { createForm } from '#lib/utils/settings.svelte.js';
+
 	import { m } from '#lib/paraglide/messages.js';
 	import { templateService } from '#lib/services/template-service.js';
 	import { goto } from '$app/navigation';
@@ -46,10 +47,11 @@
 		envContent: originalEnvContent
 	});
 
-	let { inputs, ...form } = $derived(createForm<typeof formSchema>(formSchema, formData));
+	let form = $derived(createForm<typeof formSchema>(formSchema, formData));
+	let inputs = $derived(form.inputs);
 
 	const hasChanges = $derived(
-		$inputs.composeContent.value !== originalComposeContent || $inputs.envContent.value !== originalEnvContent
+		inputs.composeContent.value !== originalComposeContent || inputs.envContent.value !== originalEnvContent
 	);
 	const saveState = $derived(getTemplateEditorSaveState(validation, hasChanges));
 	const validationState = $derived(saveState.validationState);
@@ -64,8 +66,8 @@
 			setLoading: (value) => (ui.saving = value),
 			onSuccess: async () => {
 				toast.success(m.templates_save_success());
-				originalComposeContent = $inputs.composeContent.value;
-				originalEnvContent = $inputs.envContent.value;
+				originalComposeContent = inputs.composeContent.value;
+				originalEnvContent = inputs.envContent.value;
 			}
 		});
 	}
@@ -73,11 +75,11 @@
 	async function handleReset() {
 		resetTemplateEditorFields([
 			{
-				set: (value) => ($inputs.composeContent.value = value),
+				set: (value) => (inputs.composeContent.value = value),
 				value: originalComposeContent
 			},
 			{
-				set: (value) => ($inputs.envContent.value = value),
+				set: (value) => (inputs.envContent.value = value),
 				value: originalEnvContent
 			}
 		]);
@@ -91,8 +93,8 @@
 			const operationResult = await tryCatch(
 				(async () => {
 					const templateContent = await templateService.getTemplateContent(template.id);
-					$inputs.composeContent.value = templateContent.content ?? template.content ?? '';
-					$inputs.envContent.value = templateContent.envContent ?? template.envContent ?? '';
+					inputs.composeContent.value = templateContent.content ?? template.content ?? '';
+					inputs.envContent.value = templateContent.envContent ?? template.envContent ?? '';
 					toast.success(m.compose_template_loaded({ name: template.name }));
 				})()
 			);
@@ -146,16 +148,16 @@
 	</div>
 
 	<ComposeTemplateEditor
-		bind:composeValue={$inputs.composeContent.value}
-		bind:envValue={$inputs.envContent.value}
+		bind:composeValue={inputs.composeContent.value}
+		bind:envValue={inputs.envContent.value}
 		originalCompose={originalComposeContent}
 		originalEnv={originalEnvContent}
 		bind:validation
 		{globalVariableMap}
 		fileIdPrefix="templates:defaults"
 		readOnly={ui.saving || ui.isLoadingTemplate}
-		composeError={$inputs.composeContent.error}
-		envError={$inputs.envContent.error}
+		composeError={inputs.composeContent.error}
+		envError={inputs.envContent.error}
 	/>
 </div>
 

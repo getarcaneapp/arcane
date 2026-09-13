@@ -8,7 +8,8 @@
 	import type { Role } from '#lib/types/auth.js';
 	import type { Environment } from '#lib/types/environment.js';
 	import { z } from 'zod/v4';
-	import { createForm, preventDefault } from '#lib/utils/settings.js';
+	import { createForm, preventDefault } from '#lib/utils/settings.svelte.js';
+
 	import { isValidUserEmail } from '#lib/utils/formatting.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
@@ -95,7 +96,8 @@
 		roleAssignments: availableRoleAssignments
 	});
 
-	let { inputs, ...form } = $derived(createForm<typeof formSchema>(formSchema, formData));
+	let form = $derived(createForm<typeof formSchema>(formSchema, formData));
+	let inputs = $derived(form.inputs);
 
 	async function submitUser(data: UserFormSubmission) {
 		if (await onSubmit(data)) {
@@ -106,7 +108,7 @@
 	async function handleSubmit() {
 		// createForm trims strings for ordinary text fields. Passwords are opaque,
 		// so preserve exactly what the user entered after validating the raw value.
-		const password = $inputs.password.value;
+		const password = inputs.password.value;
 		const data = form.validate();
 		if (!data) return;
 
@@ -169,7 +171,7 @@
 				type="text"
 				description={m.users_username_description()}
 				disabled={!canEditUsername || isOidcUser}
-				bind:input={$inputs.username}
+				bind:input={inputs.username}
 			/>
 			<FormInput
 				label={isEditMode ? m.common_password() : m.users_password_required_label()}
@@ -185,7 +187,7 @@
 						? m.users_password_description_edit()
 						: m.users_password_description_create()}
 				disabled={isOidcUser}
-				bind:input={$inputs.password}
+				bind:input={inputs.password}
 			/>
 			<FormInput
 				label={m.common_display_name()}
@@ -193,7 +195,7 @@
 				placeholder={m.users_display_name_placeholder()}
 				description={m.users_display_name_description()}
 				disabled={isOidcUser}
-				bind:input={$inputs.displayName}
+				bind:input={inputs.displayName}
 			/>
 			<FormInput
 				label={m.common_email()}
@@ -202,7 +204,7 @@
 				description={m.users_email_description()}
 				autocomplete="email"
 				disabled={isOidcUser}
-				bind:input={$inputs.email}
+				bind:input={inputs.email}
 			/>
 			<IfPermitted adminOnly>
 				<div>
@@ -225,9 +227,9 @@
 							</div>
 						</div>
 					{/if}
-					<RoleAssignmentsEditor bind:assignments={$inputs.roleAssignments.value} {roles} {environments} />
-					{#if $inputs.roleAssignments.error}
-						<p class="mt-1 text-xs text-destructive">{$inputs.roleAssignments.error}</p>
+					<RoleAssignmentsEditor bind:assignments={inputs.roleAssignments.value} {roles} {environments} />
+					{#if inputs.roleAssignments.error}
+						<p class="mt-1 text-xs text-destructive">{inputs.roleAssignments.error}</p>
 					{/if}
 				</div>
 			</IfPermitted>

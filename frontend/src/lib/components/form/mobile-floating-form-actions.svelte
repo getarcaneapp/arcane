@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import { getEffectiveNavigationSettings } from '#lib/utils/navigation.js';
+	import { getMobileNavigation } from '#lib/utils/navigation.js';
 	import { IsMobile } from '#lib/hooks/is-mobile.svelte.js';
 	import { IsTablet } from '#lib/hooks/is-tablet.svelte.js';
 	import { cn } from '#lib/utils.js';
@@ -16,84 +16,16 @@
 
 	const isMobile = new IsMobile();
 	const isTablet = new IsTablet();
-	const navigationSettings = $derived(getEffectiveNavigationSettings());
+	const navigation = getMobileNavigation();
+	const navigationSettings = $derived(navigation.settings);
 	const navigationMode = $derived(navigationSettings.mode);
 	const scrollToHideEnabled = $derived(navigationSettings.scrollToHide);
-
-	// Track mobile nav visibility for FAB positioning
-	let mobileNavVisible = $state(true);
-
-	// Monitor mobile nav visibility when scroll-to-hide is enabled
-	$effect(() => {
-		if (typeof window === 'undefined') return;
-		if (!scrollToHideEnabled || !(isMobile.current || isTablet.current)) {
-			mobileNavVisible = true;
-			return;
-		}
-
-		// Check the mobile nav element's transform to determine visibility
-		const checkNavVisibility = () => {
-			const navElement = document.querySelector('[data-testid="mobile-floating-nav"], [data-testid="mobile-docked-nav"]');
-			if (!navElement) {
-				mobileNavVisible = true;
-				return;
-			}
-
-			const style = window.getComputedStyle(navElement);
-			const transform = style.transform;
-			const opacity = parseFloat(style.opacity);
-
-			// Check if nav is translated away or has low opacity
-			if (transform !== 'none' && transform.includes('matrix')) {
-				const matrix = transform.match(/matrix.*\((.+)\)/);
-				if (matrix) {
-					const rawValues = matrix[1];
-					if (rawValues) {
-						const values = rawValues.split(', ');
-						const translateY = parseFloat(values[5] ?? '0');
-						// If translateY is positive (moved down), nav is hidden
-						mobileNavVisible = translateY === 0 && opacity > 0.5;
-					} else {
-						mobileNavVisible = opacity > 0.5;
-					}
-				}
-			} else {
-				mobileNavVisible = opacity > 0.5;
-			}
-		};
-
-		// Initial check
-		checkNavVisibility();
-
-		// Use MutationObserver to watch for style changes on nav
-		const observer = new MutationObserver(checkNavVisibility);
-		const navElement = document.querySelector('[data-testid="mobile-floating-nav"], [data-testid="mobile-docked-nav"]');
-
-		if (navElement) {
-			observer.observe(navElement, {
-				attributes: true,
-				attributeFilter: ['style', 'class']
-			});
-		}
-
-		// Also check on scroll as a fallback
-		const handleScroll = () => {
-			requestAnimationFrame(checkNavVisibility);
-		};
-
-		window.addEventListener('scroll', handleScroll, { passive: true });
-
-		return () => {
-			observer.disconnect();
-			window.removeEventListener('scroll', handleScroll);
-		};
-	});
 </script>
 
 {#if isMobile.current || isTablet.current}
 	<div
 		class="fixed right-4 z-[var(--arcane-z-app-chrome)] flex flex-col gap-3 transition-[bottom] duration-300 ease-out sm:hidden"
-		style="bottom: {scrollToHideEnabled && !mobileNavVisible
+		style="bottom: {scrollToHideEnabled && !navigation.visible
 			? '1rem'
 			: 'calc(var(--mobile-' +
 				navigationMode +

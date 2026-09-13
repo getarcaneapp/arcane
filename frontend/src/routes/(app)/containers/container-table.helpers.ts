@@ -51,10 +51,6 @@ export function getProjectName(container: ContainerSummaryDto): string {
 	return projectLabel || 'No Project';
 }
 
-export function groupContainerByProject(container: ContainerSummaryDto): string {
-	return getProjectName(container);
-}
-
 export function getContainerStatusLabel(state: string): string {
 	switch (state) {
 		case 'created':

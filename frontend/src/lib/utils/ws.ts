@@ -21,6 +21,7 @@ export class ReconnectingWebSocket<T = unknown> {
 	private readonly maxBackoff: number;
 	private opts: ReconnectWSOptions<T>;
 	private connecting = false;
+	private generation = 0;
 	private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
 	constructor(opts: ReconnectWSOptions<T>) {
@@ -30,11 +31,8 @@ export class ReconnectingWebSocket<T = unknown> {
 	}
 
 	async connect() {
-		if (this.ws && !this.closed) {
-			this.close();
-		}
+		this.close();
 		this.closed = false;
-		this.attempt = 0;
 		await this.connectOnce();
 	}
 
@@ -48,8 +46,10 @@ export class ReconnectingWebSocket<T = unknown> {
 			this.ws = null;
 		}
 
+		const generation = ++this.generation;
 		this.connecting = true;
 		const urlResult = await tryCatch((async () => await this.opts.buildUrl())());
+		if (generation !== this.generation || this.closed) return;
 		if (urlResult.error !== null) {
 			this.connecting = false;
 			this.scheduleReconnect();
@@ -132,6 +132,7 @@ export class ReconnectingWebSocket<T = unknown> {
 	close() {
 		this.closed = true;
 		this.attempt = 0;
+		this.generation++;
 
 		if (this.reconnectTimer) {
 			clearTimeout(this.reconnectTimer);
@@ -147,6 +148,7 @@ export class ReconnectingWebSocket<T = unknown> {
 	closeAndWait(timeoutMs = 2000) {
 		this.closed = true;
 		this.attempt = 0;
+		this.generation++;
 
 		if (this.reconnectTimer) {
 			clearTimeout(this.reconnectTimer);

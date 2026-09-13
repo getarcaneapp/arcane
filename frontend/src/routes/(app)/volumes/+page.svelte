@@ -11,32 +11,34 @@
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { untrack } from 'svelte';
+	import { useEnvironmentRefresh } from '#lib/hooks/use-environment-refresh.svelte.js';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
-	import { createMutation, createQuery, useQueryClient, keepPreviousData } from '@tanstack/svelte-query';
+	import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 
 	let { data } = $props();
 	const queryClient = useQueryClient();
 
-	const pageState = new ResourceListPageState(
-		untrack(() => data.volumes),
-		untrack(() => data.volumeRequestOptions)
-	);
-	let previousEnvId = untrack(() => pageState.envId);
-	let displayedEnvId = $state<string | null>(untrack(() => (data.envId === pageState.envId ? data.envId : null)));
-	const resourcesReady = $derived(displayedEnvId === pageState.envId);
+	const pageState = new ResourceListPageState(untrack(() => data.volumeRequestOptions));
 	const countsFallback: VolumeUsageCounts = { inuse: 0, unused: 0, total: 0 };
 
 	const volumesQuery = createQuery(() => {
 		const queryEnvId = pageState.envId;
+		const options = pageState.requestOptions;
 		return {
-			queryKey: queryKeys.volumes.table(queryEnvId, pageState.requestOptions),
-			queryFn: () => volumeService.getVolumesForEnvironment(queryEnvId, pageState.requestOptions),
-			placeholderData: keepPreviousData,
+			queryKey: queryKeys.volumes.table(queryEnvId, options),
+			queryFn: () => volumeService.getVolumesForEnvironment(queryEnvId, options),
+			placeholderData: (previous, query) => {
+				if (query?.queryKey[1] === queryEnvId) return previous;
+				return undefined;
+			},
 			initialData: data.envId === queryEnvId ? data.volumes : undefined,
 			select: (value) => ({ envId: queryEnvId, value })
 		};
 	});
+
+	const resourcesReady = $derived(volumesQuery.data?.envId === pageState.envId);
+	const volumes = $derived(volumesQuery.data?.value ?? data.volumes);
 
 	const createVolumeMutation = createMutation(() => ({
 		mutationKey: ['volumes', 'create', pageState.envId],
@@ -59,17 +61,7 @@
 		}
 	}));
 
-	$effect(() => {
-		if (volumesQuery.data?.envId === pageState.envId) {
-			pageState.items = volumesQuery.data.value;
-			displayedEnvId = pageState.envId;
-		}
-	});
-
-	$effect(() => {
-		if (pageState.envId === previousEnvId) return;
-		previousEnvId = pageState.envId;
-		displayedEnvId = null;
+	useEnvironmentRefresh(() => {
 		pageState.selectedIds = [];
 		pageState.isCreateDialogOpen = false;
 	});
@@ -80,15 +72,10 @@
 
 	async function loadVolumes(options = pageState.requestOptions, requestedEnvId = pageState.envId) {
 		pageState.requestOptions = options;
-		const next = await queryClient.fetchQuery({
+		await queryClient.query({
 			queryKey: queryKeys.volumes.table(requestedEnvId, options),
 			queryFn: () => volumeService.getVolumesForEnvironment(requestedEnvId, options)
 		});
-		if (requestedEnvId !== pageState.envId) {
-			return;
-		}
-		pageState.items = next;
-		displayedEnvId = requestedEnvId;
 	}
 
 	async function refresh() {
@@ -96,7 +83,10 @@
 	}
 
 	const isRefreshing = $derived(volumesQuery.isFetching && !volumesQuery.isPending);
-	const volumeUsageCounts = $derived(resourcesReady ? (pageState.items.counts ?? countsFallback) : countsFallback);
+	const volumeUsageCounts = $derived.by(() => {
+		if (resourcesReady) return volumes.counts ?? countsFallback;
+		return countsFallback;
+	});
 
 	const canCreateVolume = $derived(hasPermission('volumes:create', pageState.envId));
 
@@ -142,12 +132,17 @@
 <ResourcePageLayout title={m.resource_volumes_cap()} subtitle={m.volumes_subtitle()} {actionButtons} {statCards}>
 	{#snippet mainContent()}
 		{#if resourcesReady}
-			<VolumeTable
-				bind:volumes={pageState.items}
-				bind:selectedIds={pageState.selectedIds}
-				bind:requestOptions={pageState.requestOptions}
-				onRefreshData={loadVolumes}
-			/>
+			{#key pageState.envId}
+				<VolumeTable
+					bind:volumes={
+						() => volumes,
+						(value) => queryClient.setQueryData(queryKeys.volumes.table(pageState.envId, pageState.requestOptions), value)
+					}
+					bind:selectedIds={pageState.selectedIds}
+					bind:requestOptions={pageState.requestOptions}
+					onRefreshData={loadVolumes}
+				/>
+			{/key}
 		{/if}
 	{/snippet}
 

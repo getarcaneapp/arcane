@@ -59,7 +59,7 @@
 		<Card.Content class="p-4">
 			{#if mounts.length > 0}
 				<div class="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
-					{#each mounts as mount, i (i)}
+					{#each mounts as mount (mount.target)}
 						{@const type = getMountType(mount)}
 						{@const source = getMountSource(mount)}
 						{@const target = getMountTarget(mount)}
