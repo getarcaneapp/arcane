@@ -3543,5 +3543,12 @@
   "host_ip_placeholder": "0.0.0.0",
   "container_port_placeholder": "80",
   "protocol_tcp": "TCP",
-  "protocol_udp": "UDP"
+  "protocol_udp": "UDP",
+  "features_title": "Kenmerken",
+  "features_vulnerability_management": "Beheer van kwetsbaarheden",
+  "features_vulnerability_description": "Schakel kwetsbaarheidsscans, rapporten en het patchen van images op basis van scans in. Als u deze functie uitschakelt, blijven opgeslagen rapporten en instellingen behouden en kunnen lopende taken worden voltooid. Het zelfstandig patchen van images blijft beschikbaar. Als u de functie weer inschakelt, worden uw opgeslagen schema’s hersteld.",
+  "features_vulnerability_disabled": "Kwetsbaarheidsbeheer is voor deze omgeving uitgeschakeld. Opgeslagen rapporten en instellingen blijven behouden.",
+  "features_unsupported": "Werk de Arcane-agent van deze omgeving bij om de beschikbaarheid van functies te beheren. Het huidige gedrag blijft ongewijzigd.",
+  "features_unavailable": "De instellingen voor deze functie zijn niet beschikbaar. Controleer de verbinding met de omgeving en probeer het opnieuw.",
+  "features_environment_override": "Deze functie-instelling wordt beheerd via een omgevingsvariabele. Wijzig FEATURE_VULNERABILITY_MANAGEMENT_ENABLED in deze omgeving om de instelling aan te passen."
 }
