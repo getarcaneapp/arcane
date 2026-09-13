@@ -549,6 +549,8 @@
   "dashboard_all_environment_unavailable_description": "この環境は現在オフライン、保留中、またはその他の理由でアクセスできません。",
   "dashboard_all_summary_unavailable": "環境概要が不明。 {error}",
   "dashboard_all_agent_incompatible": "エージェントが古いバージョンのArcaneを実行しているため、ダッシュボードデータを報告できません。エージェントをアップグレードしてください。",
+  "stats_unavailable": "ライブ統計は利用できません",
+  "stats_stale": "ライブ統計が更新されていません",
   "containers": "Containers",
   "containers_subtitle": "View and Manage your Containers",
   "containers_recent": "Recent containers",
