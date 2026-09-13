@@ -3543,5 +3543,12 @@
   "host_ip_placeholder": "0.0.0.0",
   "container_port_placeholder": "80",
   "protocol_tcp": "TCP",
-  "protocol_udp": "UDP"
+  "protocol_udp": "UDP",
+  "features_title": "Caractéristiques",
+  "features_vulnerability_management": "Gestion des vulnérabilités",
+  "features_vulnerability_description": "Activez l'analyse des vulnérabilités, les rapports et l'application de correctifs aux images à partir des analyses. La désactivation de cette fonctionnalité conserve les rapports et les paramètres enregistrés et permet de mener à bien les tâches en cours. L'application de correctifs aux images en mode autonome reste disponible. La réactivation de cette fonctionnalité rétablit vos plannings enregistrés.",
+  "features_vulnerability_disabled": "La gestion des vulnérabilités est désactivée pour cet environnement. Les rapports et paramètres enregistrés sont conservés.",
+  "features_unsupported": "Mettez à jour l’agent Arcane de cet environnement afin de gérer la disponibilité des fonctionnalités. Son comportement actuel reste inchangé.",
+  "features_unavailable": "Les paramètres des fonctionnalités ne sont pas disponibles. Vérifiez la connexion à l'environnement et réessayez.",
+  "features_environment_override": "Ce paramètre est géré par une variable d'environnement. Modifiez la variable FEATURE_VULNERABILITY_MANAGEMENT_ENABLED dans cet environnement pour le mettre à jour."
 }
