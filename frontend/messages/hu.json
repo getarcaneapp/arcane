@@ -3543,5 +3543,12 @@
   "host_ip_placeholder": "0.0.0.0",
   "container_port_placeholder": "80",
   "protocol_tcp": "TCP",
-  "protocol_udp": "UDP"
+  "protocol_udp": "UDP",
+  "features_title": "Jellemzők",
+  "features_vulnerability_management": "Sebezhetőségkezelés",
+  "features_vulnerability_description": "Engedélyezze a sebezhetőségi vizsgálatot, a jelentéseket és a vizsgálatokon alapuló képfrissítést. A funkció kikapcsolása esetén a rendszer megőrzi a mentett jelentéseket és beállításokat, és lehetővé teszi a folyamatban lévő feladatok befejezését. Az önálló képfrissítés továbbra is elérhető marad. A funkció újbóli bekapcsolásakor a rendszer visszaállítja a mentett ütemezéseket.",
+  "features_vulnerability_disabled": "A sebezhetőségkezelés ebben a környezetben ki van kapcsolva. A mentett jelentések és beállítások megmaradnak.",
+  "features_unsupported": "Frissítse a környezet Arcane-ügynökét a funkciók elérhetőségének kezelése érdekében. A jelenlegi működése változatlan marad.",
+  "features_unavailable": "A funkciók beállításai nem érhetők el. Ellenőrizze a környezeti kapcsolatot, majd próbálja meg újra.",
+  "features_environment_override": "Ezt a funkcióbeállítást egy környezeti változó szabályozza. A frissítéshez módosítsa a FEATURE_VULNERABILITY_MANAGEMENT_ENABLED környezeti változót."
 }
