@@ -549,6 +549,8 @@
   "dashboard_all_environment_unavailable_description": "Это окружение сейчас офлайн, ожидает подключения или недоступно по другим причинам.",
   "dashboard_all_summary_unavailable": "Сводка по окружению недоступна. {error}",
   "dashboard_all_agent_incompatible": "Агент работает на устаревшей версии Arcane и не может передавать данные на панель мониторинга — обновите агент.",
+  "stats_unavailable": "Статистика в режиме реального времени недоступна",
+  "stats_stale": "Статистика в реальном времени не обновляется",
   "containers": "Контейнеры",
   "containers_subtitle": "Просмотр и управление контейнерами",
   "containers_recent": "Недавние контейнеры",
