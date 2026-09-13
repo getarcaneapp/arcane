@@ -3543,5 +3543,12 @@
   "host_ip_placeholder": "0.0.0.0",
   "container_port_placeholder": "80",
   "protocol_tcp": "TCP",
-  "protocol_udp": "UDP"
+  "protocol_udp": "UDP",
+  "features_title": "Características",
+  "features_vulnerability_management": "Gestión de vulnerabilidades",
+  "features_vulnerability_description": "Activa el análisis de vulnerabilidades, los informes y la aplicación de parches a imágenes basada en análisis. Al desactivar esta función, se conservan los informes y la configuración guardados y se permite que finalicen las tareas en curso. La aplicación de parches a imágenes de forma independiente sigue estando disponible. Al volver a activarla, se restablecen las programaciones guardadas.",
+  "features_vulnerability_disabled": "La gestión de vulnerabilidades está desactivada en este entorno. Se conservan los informes y la configuración guardados.",
+  "features_unsupported": "Actualiza el agente Arcane de este entorno para gestionar la disponibilidad de las funciones. Su comportamiento actual no sufre cambios.",
+  "features_unavailable": "Las opciones de funciones no están disponibles. Comprueba la conexión con el entorno e inténtalo de nuevo.",
+  "features_environment_override": "Esta configuración de la función se gestiona mediante una variable de entorno. Modifica la variable FEATURE_VULNERABILITY_MANAGEMENT_ENABLED en este entorno para actualizarla."
 }
