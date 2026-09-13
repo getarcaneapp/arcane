@@ -549,6 +549,8 @@
   "dashboard_all_environment_unavailable_description": "Ĉi tiu medio estas eksterreta, atendanta aŭ alie neatingebla nun.",
   "dashboard_all_summary_unavailable": "Resumo pri la medio ne disponeblas. {error}",
   "dashboard_all_agent_incompatible": "La agento uzas malnovan version de Arcane kaj ne povas raporti datumojn de la instrumentpanelo — ĝisdatigu la agenton.",
+  "stats_unavailable": "Realtempaj statistikoj ne disponeblas",
+  "stats_stale": "La vivaj statistikoj ne ĝisdatigas.",
   "containers": "Ujoj",
   "containers_subtitle": "Vidi kaj administri viajn ujojn",
   "containers_recent": "Lastatempaj ujoj",
