@@ -45,6 +45,14 @@ const (
 	NotificationEventAutoHeal           NotificationEventType = "auto_heal"
 )
 
+var AllNotificationEventTypes = []NotificationEventType{
+	NotificationEventImageUpdate,
+	NotificationEventContainerUpdate,
+	NotificationEventVulnerabilityFound,
+	NotificationEventPruneReport,
+	NotificationEventAutoHeal,
+}
+
 type EmailTLSMode string
 
 const (

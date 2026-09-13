@@ -77,6 +77,12 @@ func PrepareNtfyConfig(config database.JSON, providerName string, requireTopic b
 	if requireTopic && ntfyConfig.Topic == "" {
 		return NtfyConfig{}, errors.New("ntfy topic is required")
 	}
+	if _, ok := config["cache"]; !ok {
+		ntfyConfig.Cache = true
+	}
+	if _, ok := config["firebase"]; !ok {
+		ntfyConfig.Firebase = true
+	}
 	if err := DecryptStringCredential(&ntfyConfig.Password); err != nil {
 		return NtfyConfig{}, err
 	}
