@@ -277,3 +277,5 @@ export interface DashboardOverviewSummary {
 export interface DashboardEnvironmentCardState {
 	environment: Environment;
 }
+
+export type DashboardLiveStatsStatus = 'loading' | 'live' | 'stale' | 'unavailable' | 'denied';

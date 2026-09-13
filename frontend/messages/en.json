@@ -549,6 +549,8 @@
   "dashboard_all_environment_unavailable_description": "This environment is offline, pending, or otherwise unreachable right now.",
   "dashboard_all_summary_unavailable": "Environment summary unavailable. {error}",
   "dashboard_all_agent_incompatible": "Agent is running an older Arcane version and can't report dashboard data — upgrade the agent.",
+  "stats_unavailable": "Live stats unavailable",
+  "stats_stale": "Live stats aren't updating",
   "containers": "Containers",
   "containers_subtitle": "View and Manage your Containers",
   "containers_recent": "Recent containers",

@@ -22,6 +22,7 @@
 		DashboardActionItemKind,
 		DashboardEnvironmentCardState,
 		DashboardEnvironmentOverview,
+		DashboardLiveStatsStatus,
 		SystemStats
 	} from '#lib/types/shared.js';
 	import type { Environment } from '#lib/types/environment.js';
@@ -88,9 +89,12 @@
 	type EnvironmentLiveStatsState = {
 		stats: SystemStats | null;
 		loading: boolean;
-		hasLoaded: boolean;
+		failed: boolean;
 		client: ReconnectingWebSocket<SystemStats> | null;
+		deadline: ReturnType<typeof setTimeout> | null;
 	};
+
+	const LIVE_STATS_DEADLINE_MS = 10_000;
 
 	let isRefreshing = $state(false);
 	let isPruneDialogOpen = $state(false);
@@ -131,13 +135,38 @@
 		return {
 			stats: null,
 			loading: true,
-			hasLoaded: false,
-			client: null
+			failed: false,
+			client: null,
+			deadline: null
 		};
 	}
 
+	function canLoadLiveStats(environment: Environment): boolean {
+		return shouldLoadEnvironment(environment) && hasPermission('system:read', environment.id);
+	}
+
+	function clearLiveStatsDeadline(liveStatsState: EnvironmentLiveStatsState) {
+		if (liveStatsState.deadline) {
+			clearTimeout(liveStatsState.deadline);
+			liveStatsState.deadline = null;
+		}
+	}
+
+	function markLiveStatsFailed(liveStatsState: EnvironmentLiveStatsState) {
+		clearLiveStatsDeadline(liveStatsState);
+		liveStatsState.loading = false;
+		liveStatsState.failed = true;
+	}
+
+	function startLiveStatsAttempt(liveStatsState: EnvironmentLiveStatsState) {
+		clearLiveStatsDeadline(liveStatsState);
+		liveStatsState.loading = liveStatsState.stats === null;
+		liveStatsState.failed = liveStatsState.stats !== null && liveStatsState.failed;
+		liveStatsState.deadline = setTimeout(() => markLiveStatsFailed(liveStatsState), LIVE_STATS_DEADLINE_MS);
+	}
+
 	function ensureEnvironmentLiveStats(environment: Environment) {
-		if (!shouldLoadEnvironment(environment)) {
+		if (!canLoadLiveStats(environment)) {
 			removeEnvironmentLiveStats(environment.id);
 			return;
 		}
@@ -155,24 +184,32 @@
 			return;
 		}
 
-		liveStatsState.loading = !liveStatsState.hasLoaded;
+		startLiveStatsAttempt(liveStatsState);
 		liveStatsState.client = createStatsWebSocket({
 			getEnvId: () => environment.id,
-			onOpen: () => {
-				if (!liveStatsState.hasLoaded) {
-					liveStatsState.loading = true;
-				}
-			},
 			onMessage: (stats) => {
+				clearLiveStatsDeadline(liveStatsState);
 				liveStatsState.stats = stats;
-				liveStatsState.hasLoaded = true;
 				liveStatsState.loading = false;
+				liveStatsState.failed = false;
 			},
 			onError: (error) => {
 				console.error(`Stats websocket error for environment ${environment.id}:`, error);
-			}
+				markLiveStatsFailed(liveStatsState);
+			},
+			onClose: () => markLiveStatsFailed(liveStatsState)
 		});
 		liveStatsState.client.connect();
+	}
+
+	function retryFailedLiveStats() {
+		for (const liveStatsState of Object.values(liveStatsByEnvironmentId)) {
+			if (!liveStatsState.failed || !liveStatsState.client) {
+				continue;
+			}
+			startLiveStatsAttempt(liveStatsState);
+			void liveStatsState.client.connect();
+		}
 	}
 
 	function removeEnvironmentLiveStats(environmentId: string) {
@@ -181,6 +218,7 @@
 			return;
 		}
 
+		clearLiveStatsDeadline(liveStatsState);
 		liveStatsState.client?.close();
 		delete liveStatsByEnvironmentId[environmentId];
 	}
@@ -242,7 +280,14 @@
 			.map((environment) => ({ environment }));
 	});
 	const loadableEnvironmentCards = $derived(environmentCards.filter(({ environment }) => shouldLoadEnvironment(environment)));
-	const loadableEnvironmentIds = $derived.by(() => new Set(loadableEnvironmentCards.map(({ environment }) => environment.id)));
+	const liveStatsEnvironmentIds = $derived.by(
+		() =>
+			new Set(
+				loadableEnvironmentCards
+					.filter(({ environment }) => canLoadLiveStats(environment))
+					.map(({ environment }) => environment.id)
+			)
+	);
 
 	function resolveSnapshotErrorMessage(state: NonNullable<ReturnType<typeof dashboardStore.getEnvironmentState>>): string {
 		if (state.errorCode === 'agent_incompatible') {
@@ -332,11 +377,11 @@
 	});
 
 	$effect(() => {
-		const reachableEnvironmentIds = loadableEnvironmentIds;
+		const activeEnvironmentIds = liveStatsEnvironmentIds;
 
 		untrack(() => {
 			for (const environmentId of Object.keys(liveStatsByEnvironmentId)) {
-				if (!reachableEnvironmentIds.has(environmentId)) {
+				if (!activeEnvironmentIds.has(environmentId)) {
 					removeEnvironmentLiveStats(environmentId);
 				}
 			}
@@ -367,6 +412,7 @@
 	async function refreshOverview() {
 		isRefreshing = true;
 		try {
+			retryFailedLiveStats();
 			await refreshAll();
 			await dashboardStore.refresh();
 			reloadVersion += 1;
@@ -402,6 +448,23 @@
 
 	function getLiveStatsState(environmentId: string): EnvironmentLiveStatsState | null {
 		return liveStatsByEnvironmentId[environmentId] ?? null;
+	}
+
+	function getLiveStatsStatus(environment: Environment): DashboardLiveStatsStatus {
+		if (!shouldLoadEnvironment(environment)) {
+			return 'live';
+		}
+		if (!hasPermission('system:read', environment.id)) {
+			return 'denied';
+		}
+		const liveStatsState = getLiveStatsState(environment.id);
+		if (!liveStatsState) {
+			return 'loading';
+		}
+		if (liveStatsState.failed) {
+			return liveStatsState.stats ? 'stale' : 'unavailable';
+		}
+		return liveStatsState.loading ? 'loading' : 'live';
 	}
 
 	function canPruneEnvironment(item: DashboardEnvironmentOverview): boolean {
@@ -488,6 +551,7 @@
 				cpu: getCpuMetric(stats),
 				memory: getMemoryMetric(stats),
 				disk: getDiskMetric(stats),
+				statsStatus: getLiveStatsStatus(environment),
 				versionText: vInfo ? vInfo.displayVersion || vInfo.currentTag || vInfo.currentVersion || 'unknown' : null,
 				updateAvailable: !!vInfo?.updateAvailable,
 				useButton,
@@ -756,15 +820,14 @@
 						{@const environment = baseItem.environment}
 						{@const overview = boardState.overviewById.get(environment.id) ?? baseItem}
 						{@const isCurrent = currentEnvironmentId === environment.id}
-						{@const liveStatsState = getLiveStatsState(environment.id)}
-						{@const systemStats = liveStatsState?.stats ?? null}
-						{@const liveStatsLoading = liveStatsState?.loading ?? shouldLoadEnvironment(environment)}
+						{@const systemStats = getLiveStatsState(environment.id)?.stats ?? null}
+						{@const liveStatsStatus = getLiveStatsStatus(environment)}
 						{@const [useButton, ...menuButtons] = getEnvironmentActionButtons(overview, isCurrent)}
 						<DashboardEnvironmentCard
 							{overview}
 							{isCurrent}
 							{systemStats}
-							{liveStatsLoading}
+							{liveStatsStatus}
 							snapshotLoading={isEnvironmentSnapshotLoading(environment.id)}
 							{useButton}
 							{menuButtons}

@@ -12,7 +12,7 @@
 	import { CpuIcon, EnvironmentsIcon, GpuIcon, MemoryStickIcon, VolumesIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { AppVersionInformation } from '#lib/types/settings.js';
-	import type { DashboardEnvironmentOverview, SystemStats } from '#lib/types/shared.js';
+	import type { DashboardEnvironmentOverview, DashboardLiveStatsStatus, SystemStats } from '#lib/types/shared.js';
 	import { cn } from '#lib/utils.js';
 	import { isEnvironmentOnline } from '#lib/utils/docker.js';
 	import {
@@ -34,7 +34,7 @@
 		overview,
 		isCurrent,
 		systemStats,
-		liveStatsLoading,
+		liveStatsStatus,
 		snapshotLoading,
 		useButton,
 		menuButtons,
@@ -48,7 +48,7 @@
 		overview: DashboardEnvironmentOverview;
 		isCurrent: boolean;
 		systemStats: SystemStats | null;
-		liveStatsLoading: boolean;
+		liveStatsStatus: DashboardLiveStatsStatus;
 		snapshotLoading: boolean;
 		useButton?: ActionButton;
 		menuButtons: ActionButton[];
@@ -201,53 +201,68 @@
 
 		{#if shouldLoadEnvironment(environment)}
 			<div class="border-t border-border/60 pt-3">
-				<div class="grid grid-cols-1 gap-1 {gpuMetric !== null ? 'sm:grid-cols-2 lg:grid-cols-4' : 'sm:grid-cols-3'}">
-					{#if liveStatsLoading}
-						{#each [1, 2, 3] as tile (tile)}
-							<div class="min-w-0 px-2.5 py-2.5">
-								<div class="flex items-start justify-between gap-2">
-									<Skeleton class="h-3 w-20" />
-									<Skeleton class="h-5 w-12" />
+				{#if liveStatsStatus === 'denied'}
+					<p class="px-2.5 text-sm text-muted-foreground">{m.common_access_denied()}</p>
+				{:else}
+					<div
+						class={cn(
+							'grid grid-cols-1 gap-1',
+							gpuMetric !== null ? 'sm:grid-cols-2 lg:grid-cols-4' : 'sm:grid-cols-3',
+							liveStatsStatus === 'stale' && 'opacity-60'
+						)}
+					>
+						{#if liveStatsStatus === 'loading'}
+							{#each [1, 2, 3] as tile (tile)}
+								<div class="min-w-0 px-2.5 py-2.5">
+									<div class="flex items-start justify-between gap-2">
+										<Skeleton class="h-3 w-20" />
+										<Skeleton class="h-5 w-12" />
+									</div>
+									<Skeleton class="mt-2 h-3 w-24" />
+									<Skeleton class="mt-3 h-1.5 w-full" />
 								</div>
-								<Skeleton class="mt-2 h-3 w-24" />
-								<Skeleton class="mt-3 h-1.5 w-full" />
-							</div>
-						{/each}
-					{:else}
-						<DashboardMetricTile
-							title={m.cpu_usage()}
-							icon={CpuIcon}
-							value={formatPercent(cpuMetric)}
-							label={getCpuMetricLabel(systemStats)}
-							meterValue={cpuMetric}
-						/>
-						<DashboardMetricTile
-							title={m.memory_usage()}
-							icon={MemoryStickIcon}
-							value={formatPercent(memoryMetric)}
-							label={getCapacityLabel(systemStats?.memoryUsage, systemStats?.memoryTotal)}
-							labelClass="truncate"
-							meterValue={memoryMetric}
-						/>
-						<DashboardMetricTile
-							title={m.dashboard_meter_disk()}
-							icon={VolumesIcon}
-							value={formatPercent(diskMetric)}
-							label={getCapacityLabel(systemStats?.diskUsage, systemStats?.diskTotal)}
-							labelClass="truncate"
-							meterValue={diskMetric}
-						/>
-						{#if gpuMetric !== null}
+							{/each}
+						{:else}
 							<DashboardMetricTile
-								title={m.dashboard_meter_gpu()}
-								icon={GpuIcon}
-								value={formatPercent(gpuMetric)}
-								label={getGpuMetricLabel(systemStats)}
-								meterValue={gpuMetric}
+								title={m.cpu_usage()}
+								icon={CpuIcon}
+								value={formatPercent(cpuMetric)}
+								label={getCpuMetricLabel(systemStats)}
+								meterValue={cpuMetric}
 							/>
+							<DashboardMetricTile
+								title={m.memory_usage()}
+								icon={MemoryStickIcon}
+								value={formatPercent(memoryMetric)}
+								label={getCapacityLabel(systemStats?.memoryUsage, systemStats?.memoryTotal)}
+								labelClass="truncate"
+								meterValue={memoryMetric}
+							/>
+							<DashboardMetricTile
+								title={m.dashboard_meter_disk()}
+								icon={VolumesIcon}
+								value={formatPercent(diskMetric)}
+								label={getCapacityLabel(systemStats?.diskUsage, systemStats?.diskTotal)}
+								labelClass="truncate"
+								meterValue={diskMetric}
+							/>
+							{#if gpuMetric !== null}
+								<DashboardMetricTile
+									title={m.dashboard_meter_gpu()}
+									icon={GpuIcon}
+									value={formatPercent(gpuMetric)}
+									label={getGpuMetricLabel(systemStats)}
+									meterValue={gpuMetric}
+								/>
+							{/if}
 						{/if}
+					</div>
+					{#if liveStatsStatus === 'unavailable'}
+						<p class="mt-2 px-2.5 text-xs text-muted-foreground">{m.stats_unavailable()}</p>
+					{:else if liveStatsStatus === 'stale'}
+						<p class="mt-2 px-2.5 text-xs text-amber-600 dark:text-amber-400">{m.stats_stale()}</p>
 					{/if}
-				</div>
+				{/if}
 			</div>
 		{/if}
 

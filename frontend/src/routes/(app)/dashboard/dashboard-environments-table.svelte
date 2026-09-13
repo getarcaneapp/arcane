@@ -1,6 +1,7 @@
 <script lang="ts" module>
 	import type { ActionButton } from '#lib/components/action-button-group/index.js';
 	import type { Environment } from '#lib/types/environment.js';
+	import type { DashboardLiveStatsStatus } from '#lib/types/shared.js';
 
 	export interface EnvironmentTableRow {
 		environment: Environment;
@@ -15,6 +16,7 @@
 		cpu: number | null;
 		memory: number | null;
 		disk: number | null;
+		statsStatus: DashboardLiveStatsStatus;
 		versionText: string | null;
 		updateAvailable: boolean;
 		useButton?: ActionButton;
@@ -55,11 +57,18 @@
 	</a>
 {/snippet}
 
-{#snippet metric(value: number | null, variant: MetricRingVariant)}
-	{#if value === null || Number.isNaN(value)}
-		<span class="text-xs text-muted-foreground">—</span>
+{#snippet metric(value: number | null, variant: MetricRingVariant, status: DashboardLiveStatsStatus)}
+	{#if status === 'loading'}
+		<Skeleton class="ml-auto h-4 w-12" />
+	{:else if status === 'denied'}
+		<span class="text-xs text-muted-foreground" title={m.common_access_denied()}>—</span>
+	{:else if value === null || Number.isNaN(value)}
+		<span class="text-xs text-muted-foreground" title={status === 'unavailable' ? m.stats_unavailable() : undefined}>—</span>
 	{:else}
-		<span class="flex items-center justify-end gap-2">
+		<span
+			class={cn('flex items-center justify-end gap-2', status === 'stale' && 'opacity-60')}
+			title={status === 'stale' ? m.stats_stale() : undefined}
+		>
 			<MetricRing percent={value} {variant} />
 			<span class="text-xs font-medium text-foreground tabular-nums">{Math.round(value)}%</span>
 		</span>
@@ -119,9 +128,9 @@
 								{/if}
 							</Table.Cell>
 						{/if}
-						<Table.Cell class="text-right">{@render metric(row.cpu, 'cpu')}</Table.Cell>
-						<Table.Cell class="text-right">{@render metric(row.memory, 'memory')}</Table.Cell>
-						<Table.Cell class="text-right">{@render metric(row.disk, 'disk')}</Table.Cell>
+						<Table.Cell class="text-right">{@render metric(row.cpu, 'cpu', row.statsStatus)}</Table.Cell>
+						<Table.Cell class="text-right">{@render metric(row.memory, 'memory', row.statsStatus)}</Table.Cell>
+						<Table.Cell class="text-right">{@render metric(row.disk, 'disk', row.statsStatus)}</Table.Cell>
 					{/if}
 					<Table.Cell class="text-right">
 						<div class="flex items-center justify-end gap-1">
