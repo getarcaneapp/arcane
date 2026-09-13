@@ -549,6 +549,8 @@
   "dashboard_all_environment_unavailable_description": "To środowisko jest obecnie w trybie offline, w toku lub w inny sposób nieosiągalne.",
   "dashboard_all_summary_unavailable": "Podsumowanie środowiska niedostępne. {error}",
   "dashboard_all_agent_incompatible": "Agent korzysta ze starszej wersji Arcane i nie może przesyłać danych do pulpitu nawigacyjnego — zaktualizuj agenta.",
+  "stats_unavailable": "Statystyki na żywo są niedostępne",
+  "stats_stale": "Statystyki na żywo nie są aktualizowane",
   "containers": "Kontenery",
   "containers_subtitle": "Wyświetl i zarządzaj kontenerami",
   "containers_recent": "Ostatnio używane kontenery",
