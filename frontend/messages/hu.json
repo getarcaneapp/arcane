@@ -1336,6 +1336,10 @@
   "compose_override_remove": "A felülírás eltávolítása",
   "compose_multiple_files_title": "Több compose fájl",
   "compose_multiple_files_description": "Ez a projekt az alábbi compose-fájlokat telepíti, amelyeket a .env fájlban a COMPOSE_FILE változó határoz meg. Az alapfájlon kívüli fájlokat a „Workspace” nézetben lehet szerkeszteni.",
+  "env_file_unreadable_title": "A környezeti fájl olvashatatlan",
+  "env_file_unreadable_blocked": "Az Arcane nem tudja olvasni a {path} fájlt (uid: {uid}, gid: {gid}). Az írási műveletek addig le vannak tiltva, amíg a fájl tulajdonjogát vagy olvasási jogosultságát nem javítod ki, vagy a PUID/PGID értékeket a fájlhoz illeszkedőre nem állítod be.",
+  "env_file_unreadable_ignored": "Az Arcane nem tudja megnyitni a {path} címet (uid: {uid}, gid: {gid}). Ennél a projektnél a .env fájl le van tiltva, így az akciók továbbra is működnek, de a fájl itt nem jeleníthető meg és nem szerkeszthető.",
+  "env_file_unavailable": "A .env fájl nem olvasható, ezért itt nem jelenik meg.",
   "compose_no_services_found": "No services found for this project",
   "compose_service_not_created": "Not created",
   "compose_name_change_not_allowed": "Project name cannot be changed while running. Please stop the project first.",
@@ -3535,5 +3539,9 @@
   "git_repository_token_url_change": "A tárhely URL-címe megváltozott. A mentés előtt írja be újra a mentett tokent, vagy válassza a „Mentett token törlése” lehetőséget.",
   "git_repository_ssh_key_url_change": "A tároló URL-címe megváltozott. A mentés előtt írja be újra a mentett SSH-kulcsot, vagy válassza a „Mentett SSH-kulcs törlése” lehetőséget.",
   "git_repository_clear_token": "A tárolt token törlése",
-  "git_repository_clear_ssh_key": "A tárolt SSH-kulcs törlése"
+  "git_repository_clear_ssh_key": "A tárolt SSH-kulcs törlése",
+  "host_ip_placeholder": "0.0.0.0",
+  "container_port_placeholder": "80",
+  "protocol_tcp": "TCP",
+  "protocol_udp": "UDP"
 }

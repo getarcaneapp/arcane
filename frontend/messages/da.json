@@ -1336,6 +1336,10 @@
   "compose_override_remove": "Fjern overstyring",
   "compose_multiple_files_title": "Flere komponeringsfiler",
   "compose_multiple_files_description": "Dette projekt implementerer nedenstående compose-filer, der er valgt via COMPOSE_FILE i .env-filen. Filer, der ikke er en del af basismappen, redigeres i visningen »Workspace«.",
+  "env_file_unreadable_title": "Miljøfilen kan ikke læses",
+  "env_file_unreadable_blocked": "Arcane kan ikke læse {path} (uid {uid}, gid {gid}). Skrivningshandlinger er deaktiveret, indtil du har rettet filens ejerskabsforhold eller læsetilladelse, eller indstillet PUID/PGID, så de stemmer overens med disse.",
+  "env_file_unreadable_ignored": "Arcane kan ikke læse {path} (uid {uid}, gid {gid}). .env-filen er deaktiveret for dette projekt, så handlinger fungerer stadig, men filen kan ikke vises eller redigeres her.",
+  "env_file_unavailable": ".env-filen kan ikke læses, så den vises ikke her.",
   "compose_no_services_found": "No services found for this project",
   "compose_service_not_created": "Not created",
   "compose_name_change_not_allowed": "Project name cannot be changed while running. Please stop the project first.",
@@ -3535,5 +3539,9 @@
   "git_repository_token_url_change": "URL’en til arkivet er ændret. Indtast det gemte token igen, eller vælg »Ryd gemt token«, før du gemmer.",
   "git_repository_ssh_key_url_change": "URL’en til repositoriet er ændret. Indtast den gemte SSH-nøgle igen, eller vælg »Ryd gemt SSH-nøgle«, før du gemmer.",
   "git_repository_clear_token": "Slet gemt token",
-  "git_repository_clear_ssh_key": "Slet gemt SSH-nøgle"
+  "git_repository_clear_ssh_key": "Slet gemt SSH-nøgle",
+  "host_ip_placeholder": "0.0.0.0",
+  "container_port_placeholder": "80",
+  "protocol_tcp": "TCP",
+  "protocol_udp": "UDP"
 }

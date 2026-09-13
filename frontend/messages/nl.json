@@ -1336,6 +1336,10 @@
   "compose_override_remove": "Overschrijving ongedaan maken",
   "compose_multiple_files_title": "Meerdere opmaakbestanden",
   "compose_multiple_files_description": "Dit project implementeert de onderstaande compose-bestanden, geselecteerd via COMPOSE_FILE in het .env-bestand. Bestanden die niet tot de basis behoren, worden bewerkt in de Workspace-weergave.",
+  "env_file_unreadable_title": "Milieubestand onleesbaar",
+  "env_file_unreadable_blocked": "Arcane kan het bestand {path} (uid {uid}, gid {gid}) niet lezen. De acties voor het opstellen van berichten zijn uitgeschakeld totdat je de eigenaar of de leesrechten van het bestand hebt aangepast, of de PUID/PGID hebt ingesteld zodat deze overeenkomen met die van het bestand.",
+  "env_file_unreadable_ignored": "Arcane kan {path} (uid {uid}, gid {gid}) niet lezen. Voor dit project is het .env-bestand uitgeschakeld, dus acties werken nog wel, maar het bestand kan hier niet worden weergegeven of bewerkt.",
+  "env_file_unavailable": "Het .env-bestand kan niet worden gelezen, dus wordt het hier niet weergegeven.",
   "compose_no_services_found": "Geen services gevonden voor dit project",
   "compose_service_not_created": "Niet aangemaakt",
   "compose_name_change_not_allowed": "Projectnaam kan niet worden gewijzigd tijdens het uitvoeren. Gelieve het project eerst te stoppen.",
@@ -3535,5 +3539,9 @@
   "git_repository_token_url_change": "De URL van de repository is gewijzigd. Voer het opgeslagen token opnieuw in of selecteer ‘Opgeslagen token wissen’ voordat u opslaat.",
   "git_repository_ssh_key_url_change": "De URL van de repository is gewijzigd. Voer de opgeslagen SSH-sleutel opnieuw in of selecteer ‘Opgeslagen SSH-sleutel wissen’ voordat u opslaat.",
   "git_repository_clear_token": "Opgeslagen token wissen",
-  "git_repository_clear_ssh_key": "Opgeslagen SSH-sleutel wissen"
+  "git_repository_clear_ssh_key": "Opgeslagen SSH-sleutel wissen",
+  "host_ip_placeholder": "0.0.0.0",
+  "container_port_placeholder": "80",
+  "protocol_tcp": "TCP",
+  "protocol_udp": "UDP"
 }

@@ -1336,6 +1336,10 @@
   "compose_override_remove": "Hủy bỏ thiết lập ghi đè",
   "compose_multiple_files_title": "Nhiều tệp cấu hình",
   "compose_multiple_files_description": "Dự án này triển khai các tệp compose dưới đây, được chọn thông qua biến môi trường COMPOSE_FILE trong tệp .env. Các tệp khác ngoài tệp gốc được chỉnh sửa trong giao diện Workspace.",
+  "env_file_unreadable_title": "Không thể đọc được tệp cấu hình",
+  "env_file_unreadable_blocked": "Arcane không thể đọc tệp {path} (uid {uid}, gid {gid}). Các thao tác soạn thảo sẽ bị vô hiệu hóa cho đến khi bạn khắc phục quyền sở hữu hoặc quyền đọc của tệp, hoặc thiết lập PUID/PGID sao cho khớp với tệp đó.",
+  "env_file_unreadable_ignored": "Arcane không thể đọc tệp ` {path} ` (uid ` {uid}`, gid ` {gid}`). Tệp .env của dự án này đã bị vô hiệu hóa, do đó các hành động vẫn hoạt động bình thường, nhưng tệp này không thể được hiển thị hoặc chỉnh sửa tại đây.",
+  "env_file_unavailable": "Không thể đọc được tệp .env, do đó tệp này không được hiển thị ở đây.",
   "compose_no_services_found": "Không tìm thấy service nào cho Project này",
   "compose_service_not_created": "Chưa được tạo",
   "compose_name_change_not_allowed": "Không thể thay đổi tên Project khi đang chạy. Vui lòng dừng Project trước.",
@@ -3535,5 +3539,9 @@
   "git_repository_token_url_change": "URL của kho lưu trữ đã thay đổi. Vui lòng nhập lại mã thông báo đã lưu hoặc chọn “Xóa mã thông báo đã lưu” trước khi lưu.",
   "git_repository_ssh_key_url_change": "URL của kho lưu trữ đã thay đổi. Vui lòng nhập lại khóa SSH đã lưu hoặc chọn “Xóa khóa SSH đã lưu” trước khi lưu.",
   "git_repository_clear_token": "Xóa mã thông báo đã lưu",
-  "git_repository_clear_ssh_key": "Xóa khóa SSH đã lưu"
+  "git_repository_clear_ssh_key": "Xóa khóa SSH đã lưu",
+  "host_ip_placeholder": "0.0.0.0",
+  "container_port_placeholder": "80",
+  "protocol_tcp": "TCP",
+  "protocol_udp": "UDP"
 }

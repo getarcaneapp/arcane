@@ -1336,6 +1336,10 @@
   "compose_override_remove": "Überschreibung aufheben",
   "compose_multiple_files_title": "Mehrere Compose-Dateien",
   "compose_multiple_files_description": "Bei diesem Projekt werden die unten aufgeführten Compose-Dateien verwendet, die über die Variable COMPOSE_FILE in der .env-Datei ausgewählt werden. Andere Dateien als die Basisdatei werden in der Ansicht „Workspace“ bearbeitet.",
+  "env_file_unreadable_title": "Umgebungsdatei nicht lesbar",
+  "env_file_unreadable_blocked": "Arcane kann die Datei {path} (uid {uid}, gid {gid}) nicht lesen. Die Erstellungsaktionen sind deaktiviert, bis Sie die Eigentumsrechte oder Leserechte der Datei korrigiert oder die PUID/PGID entsprechend angepasst haben.",
+  "env_file_unreadable_ignored": "Arcane kann die Datei „ {path} “ (UID „ {uid}“, GID „ {gid}“) nicht lesen. Da die .env-Datei dieses Projekts deaktiviert ist, funktionieren die Aktionen zwar weiterhin, die Datei kann hier jedoch weder angezeigt noch bearbeitet werden.",
+  "env_file_unavailable": "Die .env-Datei kann nicht gelesen werden, daher wird sie hier nicht angezeigt.",
   "compose_no_services_found": "Keine Services für dieses Projekt gefunden",
   "compose_service_not_created": "Nicht erstellt",
   "compose_name_change_not_allowed": "Der Projektname kann im laufenden Betrieb nicht geändert werden. Bitte stoppe das Projekt zuerst.",
@@ -3535,5 +3539,9 @@
   "git_repository_token_url_change": "Die Repository-URL hat sich geändert. Geben Sie das gespeicherte Token erneut ein oder wählen Sie „Gespeichertes Token löschen“, bevor Sie speichern.",
   "git_repository_ssh_key_url_change": "Die Repository-URL hat sich geändert. Geben Sie den gespeicherten SSH-Schlüssel erneut ein oder wählen Sie „Gespeicherten SSH-Schlüssel löschen“, bevor Sie speichern.",
   "git_repository_clear_token": "Gespeichertes Token löschen",
-  "git_repository_clear_ssh_key": "Gespeicherten SSH-Schlüssel löschen"
+  "git_repository_clear_ssh_key": "Gespeicherten SSH-Schlüssel löschen",
+  "host_ip_placeholder": "0.0.0.0",
+  "container_port_placeholder": "80",
+  "protocol_tcp": "TCP",
+  "protocol_udp": "UDP"
 }

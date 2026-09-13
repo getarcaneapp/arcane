@@ -1336,6 +1336,10 @@
   "compose_override_remove": "Eliminar anulación",
   "compose_multiple_files_title": "Varios archivos de composición",
   "compose_multiple_files_description": "Este proyecto implementa los archivos de configuración que se indican a continuación, seleccionados mediante la variable COMPOSE_FILE en su archivo .env. Los archivos que no sean los básicos se editan en la vista «Workspace».",
+  "env_file_unreadable_title": "El archivo de entorno no se puede leer",
+  "env_file_unreadable_blocked": "Arcane no puede leer {path} (uid {uid}, gid {gid}). Las acciones de redacción están desactivadas hasta que corrijas la propiedad del archivo o el permiso de lectura, o configures el PUID/PGID para que coincidan con él.",
+  "env_file_unreadable_ignored": "Arcane no puede leer {path} (uid {uid}, gid {gid}). En este proyecto, el archivo .env está desactivado, por lo que las acciones siguen funcionando, pero el archivo no se puede mostrar ni editar aquí.",
+  "env_file_unavailable": "No se puede leer el archivo .env, por lo que no se muestra aquí.",
   "compose_no_services_found": "No se han encontrado servicios para este proyecto",
   "compose_service_not_created": "No creado",
   "compose_name_change_not_allowed": "El nombre del proyecto no se puede cambiar mientras se ejecuta. Por favor detenga el proyecto primero.",
@@ -3535,5 +3539,9 @@
   "git_repository_token_url_change": "La URL del repositorio ha cambiado. Vuelve a introducir el token guardado o selecciona «Borrar el token guardado» antes de guardar.",
   "git_repository_ssh_key_url_change": "La URL del repositorio ha cambiado. Vuelve a introducir la clave SSH guardada o selecciona «Borrar la clave SSH guardada» antes de guardar.",
   "git_repository_clear_token": "Borrar el token almacenado",
-  "git_repository_clear_ssh_key": "Borrar la clave SSH guardada"
+  "git_repository_clear_ssh_key": "Borrar la clave SSH guardada",
+  "host_ip_placeholder": "0.0.0.0",
+  "container_port_placeholder": "80",
+  "protocol_tcp": "TCP",
+  "protocol_udp": "UDP"
 }

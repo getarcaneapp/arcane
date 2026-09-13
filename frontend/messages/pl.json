@@ -1336,6 +1336,10 @@
   "compose_override_remove": "Usuń nadpisanie",
   "compose_multiple_files_title": "Wiele plików kompozycji",
   "compose_multiple_files_description": "W ramach tego projektu wdrażane są poniższe pliki kompozycji, wybrane na podstawie zmiennej COMPOSE_FILE w pliku .env. Pliki inne niż plik bazowy są edytowane w widoku „Workspace”.",
+  "env_file_unreadable_title": "Plik środowiskowy jest nieczytelny",
+  "env_file_unreadable_blocked": "Program Arcane nie może odczytać pliku {path} (uid {uid}, gid {gid}). Funkcje tworzenia wiadomości są wyłączone do czasu skorygowania własności pliku lub uprawnień do odczytu albo ustawienia PUID/PGID tak, aby odpowiadały tym wartościom.",
+  "env_file_unreadable_ignored": "Arcane nie może odczytać pliku {path} (uid {uid}, gid {gid}). W tym projekcie plik .env jest wyłączony, więc akcje nadal działają, ale pliku nie można tutaj wyświetlić ani edytować.",
+  "env_file_unavailable": "Plik .env nie może zostać odczytany, dlatego nie jest tutaj wyświetlany.",
   "compose_no_services_found": "No services found for this project",
   "compose_service_not_created": "Not created",
   "compose_name_change_not_allowed": "Project name cannot be changed while running. Please stop the project first.",
@@ -3535,5 +3539,9 @@
   "git_repository_token_url_change": "Adres URL repozytorium uległ zmianie. Przed zapisaniem wprowadź ponownie zapisany token lub wybierz opcję „Wyczyść zapisany token”.",
   "git_repository_ssh_key_url_change": "Adres URL repozytorium uległ zmianie. Przed zapisaniem należy ponownie wprowadzić zapisany klucz SSH lub wybrać opcję „Wyczyść zapisany klucz SSH”.",
   "git_repository_clear_token": "Wyczyść zapisany token",
-  "git_repository_clear_ssh_key": "Usuń zapisany klucz SSH"
+  "git_repository_clear_ssh_key": "Usuń zapisany klucz SSH",
+  "host_ip_placeholder": "0.0.0.0",
+  "container_port_placeholder": "80",
+  "protocol_tcp": "TCP",
+  "protocol_udp": "UDP"
 }

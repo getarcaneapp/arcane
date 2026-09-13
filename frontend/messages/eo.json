@@ -1336,6 +1336,10 @@
   "compose_override_remove": "Forigu superregon",
   "compose_multiple_files_title": "Pluraj kompozaj dosieroj",
   "compose_multiple_files_description": "Ĉi tiu projekto deplojas la sube listigitajn compose-dosierojn, elektitajn per COMPOSE_FILE en ĝia .env. Dosieroj krom la baza estas redaktataj en la laborspaca vido.",
+  "env_file_unreadable_title": "Medio-dosiero nelegebla",
+  "env_file_unreadable_blocked": "Arcane ne povas legi {path} (uid {uid}, gid {gid}). Kompozaj agoj estas malaktivigitaj ĝis vi korektos la posedon aŭ la legpermeson de la dosiero, aŭ agordos PUID/PGID por kongrui kun ĝi.",
+  "env_file_unreadable_ignored": "Arcane ne povas legi {path} (uid {uid}, gid {gid}). Ĉi tiu projekto havas sian .env malŝaltitan, do agoj ankoraŭ funkcias, sed la dosiero ne povas esti montrata aŭ redaktata ĉi tie.",
+  "env_file_unavailable": "La dosiero .env ne povas esti legata, do ĝi ne estas montrata ĉi tie.",
   "compose_no_services_found": "Neniuj servoj trovitaj por ĉi tiu projekto",
   "compose_service_not_created": "Ne kreita",
   "compose_name_change_not_allowed": "La projekta nomo ne povas esti ŝanĝita dum rulado. Bonvolu unue haltigi la projekton.",
@@ -3535,5 +3539,9 @@
   "git_repository_token_url_change": "La URL de la deponejo ŝanĝiĝis. Re-enigu la konservitan tokenon aŭ elektu Forigi la konservitan tokenon antaŭ ol konservi.",
   "git_repository_ssh_key_url_change": "La URL de la deponejo ŝanĝiĝis. Re-enigu la konservitan SSH-ŝlosilon aŭ elektu Forigi la konservitan SSH-ŝlosilon antaŭ ol konservi.",
   "git_repository_clear_token": "Forviŝi konservitan jetonon",
-  "git_repository_clear_ssh_key": "Forigi konservitan SSH-ŝlosilon"
+  "git_repository_clear_ssh_key": "Forigi konservitan SSH-ŝlosilon",
+  "host_ip_placeholder": "nul punkto nulo nul punkto nulo",
+  "container_port_placeholder": "okdek",
+  "protocol_tcp": "TCP",
+  "protocol_udp": "UDP"
 }

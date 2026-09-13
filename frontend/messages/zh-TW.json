@@ -1336,6 +1336,10 @@
   "compose_override_remove": "移除覆寫",
   "compose_multiple_files_title": "多個 Compose 檔案",
   "compose_multiple_files_description": "此專案會部署以下由其 .env 檔案中的 COMPOSE_FILE 選定的 compose 檔案。除 base 以外的檔案，可於「工作區」檢視中進行編輯。",
+  "env_file_unreadable_title": "無法讀取環境設定檔",
+  "env_file_unreadable_blocked": "Arcane 無法讀取 {path} （uid {uid}，gid {gid}）。在您修正該檔案的所有權或讀取權限，或將 PUID/PGID 設定為與之匹配之前，編寫操作將被停用。",
+  "env_file_unreadable_ignored": "Arcane 無法讀取 {path} （使用者識別碼 {uid}，群組識別碼 {gid}）。此專案已停用 .env 檔案，因此操作功能仍可正常運作，但此處無法顯示或編輯該檔案。",
+  "env_file_unavailable": "由於無法讀取 .env 檔案，因此此處未顯示該檔案。",
   "compose_no_services_found": "在此專案找不到服務",
   "compose_service_not_created": "未建立",
   "compose_name_change_not_allowed": "專案執行中無法變更專案名稱。請先停止專案。",
@@ -3535,5 +3539,9 @@
   "git_repository_token_url_change": "儲存庫的 URL 已變更。請重新輸入已儲存的憑證，或在儲存前選取「清除已儲存的憑證」。",
   "git_repository_ssh_key_url_change": "儲存庫的 URL 已變更。請重新輸入已儲存的 SSH 金鑰，或在儲存前選取「清除已儲存的 SSH 金鑰」。",
   "git_repository_clear_token": "清除儲存的憑證",
-  "git_repository_clear_ssh_key": "清除儲存的 SSH 金鑰"
+  "git_repository_clear_ssh_key": "清除儲存的 SSH 金鑰",
+  "host_ip_placeholder": "0.0.0.0",
+  "container_port_placeholder": "80",
+  "protocol_tcp": "TCP",
+  "protocol_udp": "UDP"
 }

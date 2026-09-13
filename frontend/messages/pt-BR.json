@@ -1336,6 +1336,10 @@
   "compose_override_remove": "Remover a substituição",
   "compose_multiple_files_title": "Vários arquivos de composição",
   "compose_multiple_files_description": "Este projeto implanta os arquivos de composição abaixo, selecionados pela variável COMPOSE_FILE no arquivo .env. Os arquivos que não sejam o arquivo base são editados na visualização “Workspace”.",
+  "env_file_unreadable_title": "Arquivo de ambiente não pode ser lido",
+  "env_file_unreadable_blocked": "O Arcane não consegue ler {path} (uid {uid}, gid {gid}). As ações de composição estão desativadas até que você corrija a propriedade do arquivo ou a permissão de leitura, ou defina o PUID/PGID para que correspondam a ele.",
+  "env_file_unreadable_ignored": "O Arcane não consegue ler {path} (uid {uid}, gid {gid}). Este projeto tem seu arquivo .env desativado; portanto, as ações ainda funcionam, mas o arquivo não pode ser exibido nem editado aqui.",
+  "env_file_unavailable": "O arquivo .env não pode ser lido, por isso não é exibido aqui.",
   "compose_no_services_found": "Nenhum serviço encontrado para este projeto",
   "compose_service_not_created": "Não criado",
   "compose_name_change_not_allowed": "O nome do projeto não pode ser alterado durante a execução. Pare-o para realizar essa ação.",
@@ -3535,5 +3539,9 @@
   "git_repository_token_url_change": "A URL do repositório foi alterada. Digite novamente o token salvo ou selecione “Limpar token salvo” antes de salvar.",
   "git_repository_ssh_key_url_change": "A URL do repositório foi alterada. Digite novamente a chave SSH salva ou selecione “Limpar chave SSH salva” antes de salvar.",
   "git_repository_clear_token": "Limpar o token armazenado",
-  "git_repository_clear_ssh_key": "Limpar a chave SSH armazenada"
+  "git_repository_clear_ssh_key": "Limpar a chave SSH armazenada",
+  "host_ip_placeholder": "0.0.0.0",
+  "container_port_placeholder": "80",
+  "protocol_tcp": "TCP",
+  "protocol_udp": "UDP"
 }

@@ -1336,6 +1336,10 @@
   "compose_override_remove": "Yerine geçecek dosyayı kaldır",
   "compose_multiple_files_title": "Birden fazla oluşturma dosyası",
   "compose_multiple_files_description": "Bu proje, .env dosyasındaki COMPOSE_FILE değişkeniyle belirlenen aşağıdaki compose dosyalarını kullanır. Temel dosya dışındaki dosyalar, Çalışma Alanı görünümünde düzenlenir.",
+  "env_file_unreadable_title": "Çevre dosyası okunamıyor",
+  "env_file_unreadable_blocked": "Arcane, {path} adresindeki dosyayı okuyamıyor (uid {uid}, gid {gid}). Dosyanın sahipliğini veya okuma iznini düzeltene ya da PUID/PGID değerlerini buna uyacak şekilde ayarlayana kadar, Compose işlemleri devre dışı bırakılmıştır.",
+  "env_file_unreadable_ignored": "Arcane, {path} adresindeki dosyayı (uid {uid}, gid {gid}) okuyamıyor. Bu projede .env dosyası devre dışı bırakıldığından, eylemler hâlâ çalışıyor ancak dosya burada görüntülenemiyor veya düzenlenemiyor.",
+  "env_file_unavailable": ".env dosyası okunamadığı için burada gösterilmemiştir.",
   "compose_no_services_found": "Bu proje için herhangi bir hizmet bulunamadı",
   "compose_service_not_created": "Oluşturulmadı",
   "compose_name_change_not_allowed": "Proje Adı çalışırken değiştirilemez. Lütfen önce projeyi durdurun.",
@@ -3535,5 +3539,9 @@
   "git_repository_token_url_change": "Depo URL'si değişti. Kaydetmeden önce kayıtlı jetonu yeniden girin veya \"Kayıtlı jetonu sil\" seçeneğini seçin.",
   "git_repository_ssh_key_url_change": "Depo URL’si değişti. Kaydetmeden önce kayıtlı SSH anahtarını yeniden girin veya “Kayıtlı SSH anahtarını sil” seçeneğini seçin.",
   "git_repository_clear_token": "Kaydedilmiş jetonu sil",
-  "git_repository_clear_ssh_key": "Kaydedilmiş SSH anahtarını sil"
+  "git_repository_clear_ssh_key": "Kaydedilmiş SSH anahtarını sil",
+  "host_ip_placeholder": "0.0.0.0",
+  "container_port_placeholder": "80",
+  "protocol_tcp": "TCP",
+  "protocol_udp": "UDP"
 }
