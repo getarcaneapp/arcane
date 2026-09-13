@@ -3543,5 +3543,12 @@
   "host_ip_placeholder": "0.0.0.0",
   "container_port_placeholder": "80",
   "protocol_tcp": "TCP",
-  "protocol_udp": "UDP"
+  "protocol_udp": "UDP",
+  "features_title": "Funkcje",
+  "features_vulnerability_management": "Zarządzanie lukami w zabezpieczeniach",
+  "features_vulnerability_description": "Włącz skanowanie w poszukiwaniu luk w zabezpieczeniach, generowanie raportów oraz aktualizowanie obrazów na podstawie wyników skanowania. Wyłączenie tej funkcji powoduje zachowanie zapisanych raportów i ustawień oraz umożliwia dokończenie bieżących zadań. Funkcja samodzielnej aktualizacji obrazów pozostaje dostępna. Ponowne włączenie tej funkcji powoduje przywrócenie zapisanych harmonogramów.",
+  "features_vulnerability_disabled": "Zarządzanie lukami w zabezpieczeniach jest wyłączone w tym środowisku. Zapisane raporty i ustawienia zostaną zachowane.",
+  "features_unsupported": "Zaktualizuj agenta Arcane w tym środowisku, aby zarządzać dostępnością funkcji. Dotychczasowe działanie agenta pozostaje bez zmian.",
+  "features_unavailable": "Ustawienia funkcji są niedostępne. Sprawdź połączenie z otoczeniem i spróbuj ponownie.",
+  "features_environment_override": "To ustawienie funkcji jest zarządzane za pomocą zmiennej środowiskowej. Aby je zaktualizować, należy zmienić wartość zmiennej FEATURE_VULNERABILITY_MANAGEMENT_ENABLED w tym środowisku."
 }
