@@ -59,7 +59,9 @@
 	} from '#lib/icons/index.js';
 
 	let { data } = $props();
-	let { environment, settings, versionInformation } = $derived(data);
+	let { settings, versionInformation } = $derived(data);
+	let lastEnvironment: Environment | undefined;
+	let environment = $derived((lastEnvironment = data.environment ?? lastEnvironment));
 	let refreshedEnvironment: Environment | null = $state(null);
 	let runtimeEnvironment: Environment = $derived.by(() => {
 		const refreshed = refreshedEnvironment;
