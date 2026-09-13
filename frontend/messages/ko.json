@@ -549,6 +549,8 @@
   "dashboard_all_environment_unavailable_description": "이 환경은 현재 오프라인 상태이거나 보류 중, 또는 연결할 수 없는 상태입니다.",
   "dashboard_all_summary_unavailable": "환경 요약을 불러올 수 없습니다. {error}",
   "dashboard_all_agent_incompatible": "에이전트가 구버전의 Arcane을 실행 중이어서 대시보드 정보를 전송할 수 없습니다. 최신 버전으로 업데이트 하세요.",
+  "stats_unavailable": "실시간 통계 제공되지 않음",
+  "stats_stale": "실시간 통계가 업데이트되지 않습니다",
   "containers": "컨테이너",
   "containers_subtitle": "컨테이너 조회 및 관리",
   "containers_recent": "최근 컨테이너",
