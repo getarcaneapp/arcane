@@ -266,7 +266,8 @@ func (s *ProjectService) ListProjects(ctx context.Context, params pagination.Que
 	}
 	query = applyProjectArchivedDBFilterInternal(query, archivedFilter)
 	query = applyProjectTagsDBFilterInternal(query, tagsFilter)
-	if statusFilter != "" || updatesFilter != "" || labelFilter != "" {
+	sortsByDerivedStatus := strings.EqualFold(strings.TrimSpace(params.Sort), "status")
+	if statusFilter != "" || updatesFilter != "" || labelFilter != "" || sortsByDerivedStatus {
 		return s.listProjectsWithDerivedFiltersInternal(ctx, params, query)
 	}
 
