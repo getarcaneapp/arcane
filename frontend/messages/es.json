@@ -549,6 +549,8 @@
   "dashboard_all_environment_unavailable_description": "Este entorno está desconectado, pendiente o inaccesible en este momento.",
   "dashboard_all_summary_unavailable": "El resumen medioambiental no está disponible. {error}",
   "dashboard_all_agent_incompatible": "El agente ejecuta una versión anterior de Arcane y no puede informar de los datos del panel de control; actualice el agente.",
+  "stats_unavailable": "No hay estadísticas en directo disponibles",
+  "stats_stale": "Las estadísticas en directo no se actualizan",
   "containers": "Contenedores",
   "containers_subtitle": "Ver y administrar sus contenedores",
   "containers_recent": "Contenedores recientes",
