@@ -549,6 +549,8 @@
   "dashboard_all_environment_unavailable_description": "Toto prostředí je nyní offline, čeká na vyřízení nebo je jinak nedostupné.",
   "dashboard_all_summary_unavailable": "Shrnutí prostředí není k dispozici. {error}",
   "dashboard_all_agent_incompatible": "Agent používá starší verzi Arcane a nemůže odesílat data do dashboardu – proveďte aktualizaci agenta.",
+  "stats_unavailable": "Živé statistiky nejsou k dispozici",
+  "stats_stale": "Živé statistiky se neaktualizují",
   "containers": "Kontejnery",
   "containers_subtitle": "Prohlížejte a spravujte své kontejnery",
   "containers_recent": "Nedávné kontejnery",
