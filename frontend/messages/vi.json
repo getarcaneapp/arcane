@@ -549,6 +549,8 @@
   "dashboard_all_environment_unavailable_description": "Hiện tại, môi trường này đang ở chế độ ngoại tuyến, đang chờ xử lý hoặc không thể truy cập được.",
   "dashboard_all_summary_unavailable": "Không có tóm tắt về môi trường. {error}",
   "dashboard_all_agent_incompatible": "Trình đại lý đang chạy phiên bản Arcane cũ hơn và không thể báo cáo dữ liệu bảng điều khiển — hãy nâng cấp trình đại lý.",
+  "stats_unavailable": "Không có số liệu thống kê trực tiếp",
+  "stats_stale": "Số liệu thống kê trực tiếp không được cập nhật",
   "containers": "Containers",
   "containers_subtitle": "Xem và Quản lý các Container của bạn",
   "containers_recent": "Các Container gần đây",
