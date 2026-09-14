@@ -4,6 +4,7 @@
 		GitOpsSync,
 		GitOpsSyncCounts,
 		GitOpsSyncCreateDto,
+		GitOpsSyncMode,
 		GitOpsSyncUpdateDto,
 		ImportGitOpsSyncRequest
 	} from '#lib/types/automation.js';
@@ -40,18 +41,40 @@
 	const syncCountsFallback: GitOpsSyncCounts = {
 		totalSyncs: 0,
 		activeSyncs: 0,
-		successfulSyncs: 0
+		successfulSyncs: 0,
+		deploySyncs: 0,
+		backupSyncs: 0
 	};
 	const syncCounts = $derived(syncs?.counts ?? syncCountsFallback);
 
 	let dialogTargetType = $state<string | undefined>(undefined);
+	let dialogMode = $state<GitOpsSyncMode | undefined>(undefined);
+	let dialogProjectId = $state<string | undefined>(undefined);
+
+	function parseSyncModeInternal(value: string | null): GitOpsSyncMode | undefined {
+		return value === 'deploy' || value === 'backup' ? value : undefined;
+	}
 
 	afterNavigate(() => {
-		if (page.url.searchParams.get('action') !== 'create') return;
-		openCreateSyncDialog(page.url.searchParams.get('targetType') ?? undefined);
+		const action = page.url.searchParams.get('action');
+		if (action === 'create') {
+			openCreateSyncDialog(
+				page.url.searchParams.get('targetType') ?? undefined,
+				parseSyncModeInternal(page.url.searchParams.get('mode')),
+				page.url.searchParams.get('projectId') ?? undefined
+			);
+		} else if (action === 'edit') {
+			const syncId = page.url.searchParams.get('syncId');
+			if (!syncId) return;
+			void openEditSyncDialogById(syncId);
+		} else {
+			return;
+		}
+
 		const newUrl = new URL(page.url.href);
-		newUrl.searchParams.delete('action');
-		newUrl.searchParams.delete('targetType');
+		for (const param of ['action', 'targetType', 'mode', 'projectId', 'syncId']) {
+			newUrl.searchParams.delete(param);
+		}
 		void goto(newUrl.toString(), { replaceState: true, reset: false });
 	});
 
@@ -68,9 +91,11 @@
 		});
 	}
 
-	function openCreateSyncDialog(targetType?: string | Event) {
+	function openCreateSyncDialog(targetType?: string | Event, mode?: GitOpsSyncMode, projectId?: string) {
 		syncToEdit = null;
 		dialogTargetType = typeof targetType === 'string' ? targetType : undefined;
+		dialogMode = mode;
+		dialogProjectId = projectId;
 		syncSession += 1;
 		isSyncDialogOpen = true;
 	}
@@ -78,8 +103,25 @@
 	function openEditSyncDialog(sync: GitOpsSync) {
 		syncToEdit = sync;
 		dialogTargetType = undefined;
+		dialogMode = undefined;
+		dialogProjectId = undefined;
 		syncSession += 1;
 		isSyncDialogOpen = true;
+	}
+
+	async function openEditSyncDialogById(syncId: string) {
+		const loaded = syncs?.data.find((item) => item.id === syncId);
+		if (loaded) {
+			openEditSyncDialog(loaded);
+			return;
+		}
+
+		await handleApiResultWithCallbacks({
+			result: await tryCatch(gitOpsSyncService.getSync(environmentId, syncId)),
+			message: m.common_not_found_title({ resource: m.resource_sync_cap() }),
+			setLoadingState: (value) => (isLoading.edit = value),
+			onSuccess: (sync) => openEditSyncDialog(sync)
+		});
 	}
 
 	async function handleSyncDialogSubmit(detail: { sync: GitOpsSyncCreateDto | GitOpsSyncUpdateDto; isEditMode: boolean }) {
@@ -232,6 +274,8 @@
 					bind:syncToEdit
 					{environmentId}
 					targetType={dialogTargetType}
+					mode={dialogMode}
+					projectId={dialogProjectId}
 					onSubmit={handleSyncDialogSubmit}
 					isLoading={isLoading.create || isLoading.edit}
 				/>

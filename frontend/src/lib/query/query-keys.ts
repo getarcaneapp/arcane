@@ -159,7 +159,13 @@ export const queryKeys = {
 		all: ['gitops-syncs'] as const,
 		list: (environmentId: string, options: SearchPaginationSortRequest) =>
 			['gitops-syncs', environmentId, stableSerialize(options)] as const,
-		detail: (environmentId: string, syncId: string) => ['gitops-syncs', environmentId, syncId] as const
+		detail: (environmentId: string, syncId: string) => ['gitops-syncs', environmentId, syncId] as const,
+		projectBackup: (environmentId: string, projectId: string) =>
+			['gitops-syncs', environmentId, 'project-backup', projectId] as const,
+		backupPreview: (environmentId: string, syncId: string) => ['gitops-syncs', environmentId, syncId, 'backup-preview'] as const,
+		backupHistory: (environmentId: string, syncId: string) => ['gitops-syncs', environmentId, syncId, 'backup-history'] as const,
+		backupRevision: (environmentId: string, syncId: string, commit: string) =>
+			['gitops-syncs', environmentId, syncId, 'backup-revision', commit] as const
 	},
 	volumes: {
 		sizes: (environmentId: string) => ['volume-sizes', environmentId] as const,

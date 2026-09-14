@@ -8,7 +8,11 @@ import type {
 	SyncStatus,
 	BrowseResponse,
 	ImportGitOpsSyncRequest,
-	ImportGitOpsSyncResponse
+	ImportGitOpsSyncResponse,
+	GitOpsBackupPreview,
+	GitOpsBackupHistoryResponse,
+	GitOpsBackupRevision,
+	ResolveGitOpsBackupConflictRequest
 } from '#lib/types/automation.js';
 import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 import { transformPaginationParams } from '#lib/utils/tables.js';
@@ -51,6 +55,30 @@ class GitOpsSyncService extends BaseAPIService {
 
 	async importSyncs(environmentId: string, syncs: ImportGitOpsSyncRequest[]): Promise<ImportGitOpsSyncResponse> {
 		return this.handleResponse(this.api.post(`/environments/${environmentId}/gitops-syncs/import`, syncs));
+	}
+
+	async previewBackup(environmentId: string, syncId: string): Promise<GitOpsBackupPreview> {
+		return this.handleResponse(this.api.get(`/environments/${environmentId}/gitops-syncs/${syncId}/backup/preview`));
+	}
+
+	async getBackupHistory(environmentId: string, syncId: string, limit = 20): Promise<GitOpsBackupHistoryResponse> {
+		return this.handleResponse(
+			this.api.get(`/environments/${environmentId}/gitops-syncs/${syncId}/backup/history`, { params: { limit } })
+		);
+	}
+
+	async getBackupRevision(environmentId: string, syncId: string, commit: string): Promise<GitOpsBackupRevision> {
+		return this.handleResponse(
+			this.api.get(`/environments/${environmentId}/gitops-syncs/${syncId}/backup/history/${encodeURIComponent(commit)}`)
+		);
+	}
+
+	async resolveBackupConflict(
+		environmentId: string,
+		syncId: string,
+		request: ResolveGitOpsBackupConflictRequest
+	): Promise<SyncResult> {
+		return this.handleResponse(this.api.post(`/environments/${environmentId}/gitops-syncs/${syncId}/backup/resolve`, request));
 	}
 }
 

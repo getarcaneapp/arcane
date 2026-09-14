@@ -2,6 +2,43 @@ package gitops
 
 import "time"
 
+const (
+	// SyncModeDeploy pulls configuration from the repository into Arcane.
+	SyncModeDeploy = "deploy"
+	// SyncModeBackup commits saved project configuration to the repository.
+	SyncModeBackup = "backup"
+)
+
+const (
+	BackupStateNever          = "never"
+	BackupStatePending        = "pending"
+	BackupStateBackingUp      = "backing_up"
+	BackupStateBackedUp       = "backed_up"
+	BackupStatePaused         = "paused"
+	BackupStateFailed         = "failed"
+	BackupStateNeedsAttention = "needs_attention"
+)
+
+const (
+	BackupFailureRepository          = "repository"
+	BackupFailureAuth                = "auth"
+	BackupFailureProjectMissing      = "project_missing"
+	BackupFailureSnapshot            = "snapshot"
+	BackupFailureUnreadableFiles     = "unreadable_files"
+	BackupFailureLimits              = "limits"
+	BackupFailureConflict            = "conflict"
+	BackupFailureDestinationOccupied = "destination_occupied"
+	BackupFailurePushRejected        = "push_rejected"
+)
+
+const (
+	// BackupConflictUseArcane replaces the remote backup files with Arcane's current files.
+	BackupConflictUseArcane = "use_arcane"
+)
+
+// BackupManifestFileName is the manifest written beside backed-up files.
+const BackupManifestFileName = ".arcane-backup.json"
+
 // GitRepository represents a reusable Git repository with credentials.
 type GitRepository struct {
 	// ID of the git repository.
@@ -201,6 +238,36 @@ type GitOpsSync struct {
 	// Required: true
 	TargetType string `json:"targetType"`
 
+	// Mode is the direction of the sync: "deploy" pulls from Git, "backup" commits to Git.
+	//
+	// Required: true
+	Mode string `json:"mode"`
+
+	// BackupDirectory is the repository directory that receives backed-up files.
+	//
+	// Required: false
+	BackupDirectory string `json:"backupDirectory,omitempty"`
+
+	// BackupPaths lists the project-relative files and directories included in backups.
+	//
+	// Required: false
+	BackupPaths []string `json:"backupPaths,omitempty"`
+
+	// BackupState summarizes the backup lifecycle (never, pending, backing_up, backed_up, paused, failed, needs_attention).
+	//
+	// Required: false
+	BackupState string `json:"backupState,omitempty"`
+
+	// BackupFailureReason is the typed reason for the last backup failure.
+	//
+	// Required: false
+	BackupFailureReason *string `json:"backupFailureReason,omitempty"`
+
+	// LastBackupAt is the time the remote last received a new backup commit.
+	//
+	// Required: false
+	LastBackupAt *time.Time `json:"lastBackupAt,omitempty"`
+
 	// PreDeployTimeoutSec bounds the script execution. Capped by the
 	// lifecycleMaxTimeoutSec global setting at run time.
 	//
@@ -255,6 +322,16 @@ type GitOpsSync struct {
 	//
 	// Required: true
 	RedeployAfterSync bool `json:"redeployAfterSync"`
+
+	// BackupOnSave indicates whether saved project changes trigger a backup.
+	//
+	// Required: true
+	BackupOnSave bool `json:"backupOnSave"`
+
+	// BackupPending indicates that saved changes have not reached the repository yet.
+	//
+	// Required: true
+	BackupPending bool `json:"backupPending"`
 }
 
 // SyncCounts contains counts of syncs by status within the current filtered set.
@@ -273,6 +350,16 @@ type SyncCounts struct {
 	//
 	// Required: true
 	SuccessfulSyncs int `json:"successfulSyncs"`
+
+	// DeploySyncs is the number of "deploy" mode syncs in the current filtered set.
+	//
+	// Required: true
+	DeploySyncs int `json:"deploySyncs"`
+
+	// BackupSyncs is the number of "backup" mode syncs in the current filtered set.
+	//
+	// Required: true
+	BackupSyncs int `json:"backupSyncs"`
 }
 
 // CreateRepositoryRequest represents the request to create a git repository.
@@ -392,9 +479,39 @@ type CreateSyncRequest struct {
 	Branch string `json:"branch" binding:"required"`
 
 	// ComposePath is the path to the docker-compose file in the repository.
+	// Required for "deploy" mode; derived from the backup directory in "backup" mode.
 	//
-	// Required: true
-	ComposePath string `json:"composePath" binding:"required"`
+	// Required: false
+	ComposePath string `json:"composePath,omitempty"`
+
+	// Mode selects the sync direction: "deploy" (default) or "backup".
+	//
+	// Required: false
+	Mode string `json:"mode,omitempty" binding:"omitempty,oneof=deploy backup"`
+
+	// ProjectID links an existing project. Required in "backup" mode; optional in
+	// "deploy" mode, where the sync adopts the project instead of creating one.
+	//
+	// Required: false
+	ProjectID string `json:"projectId,omitempty"`
+
+	// BackupDirectory is the repository directory that receives backed-up files.
+	// Required in "backup" mode.
+	//
+	// Required: false
+	BackupDirectory string `json:"backupDirectory,omitempty"`
+
+	// BackupPaths lists project-relative files and directories to back up. Defaults
+	// to the project's compose files when omitted. Environment files are only
+	// included when listed explicitly.
+	//
+	// Required: false
+	BackupPaths []string `json:"backupPaths,omitempty"`
+
+	// BackupOnSave triggers a backup after project changes are saved. Default: true.
+	//
+	// Required: false
+	BackupOnSave *bool `json:"backupOnSave,omitempty"`
 
 	// TargetType specifies if this sync targets a "project" or "swarm_stack".
 	//
@@ -534,6 +651,16 @@ type UpdateSyncRequest struct {
 	// Required: false
 	ProjectName *string `json:"projectName,omitzero"`
 
+	// BackupPaths replaces the backed-up file selection. Omitted or empty leaves it unchanged.
+	//
+	// Required: false
+	BackupPaths []string `json:"backupPaths,omitzero"`
+
+	// BackupOnSave toggles backing up after project changes are saved.
+	//
+	// Required: false
+	BackupOnSave *bool `json:"backupOnSave,omitzero"`
+
 	// AutoSync indicates if the sync should run automatically.
 	//
 	// Required: false
@@ -648,6 +775,40 @@ func (r UpdateSyncRequest) HasPreDeployConfig() bool {
 		r.PreDeployExtraMounts != nil ||
 		r.PreDeployNetworkMode != nil ||
 		r.PreDeployTimeoutSec != nil
+}
+
+// HasDeploymentOptions reports whether the request sets deployment-only
+// options that a backup sync must reject.
+func (r CreateSyncRequest) HasDeploymentOptions() bool {
+	return (r.TargetType != "" && r.TargetType != "project") ||
+		(r.SyncDirectory != nil && *r.SyncDirectory) ||
+		(r.PullImageAfterSync != nil && *r.PullImageAfterSync) ||
+		(r.RedeployAfterSync != nil && *r.RedeployAfterSync) ||
+		r.HasPreDeployConfig()
+}
+
+// HasDeploymentOptions reports whether the request sets deployment-only
+// options that a backup sync must reject.
+func (r UpdateSyncRequest) HasDeploymentOptions() bool {
+	return (r.TargetType != nil && *r.TargetType != "" && *r.TargetType != "project") ||
+		r.ComposePath != nil ||
+		r.ProjectName != nil ||
+		(r.SyncDirectory != nil && *r.SyncDirectory) ||
+		(r.PullImageAfterSync != nil && *r.PullImageAfterSync) ||
+		(r.RedeployAfterSync != nil && *r.RedeployAfterSync) ||
+		r.HasPreDeployConfig()
+}
+
+// HasBackupOptions reports whether the request sets backup-only options that
+// a deploy sync must reject.
+func (r CreateSyncRequest) HasBackupOptions() bool {
+	return r.BackupDirectory != "" || len(r.BackupPaths) > 0 || r.BackupOnSave != nil
+}
+
+// HasBackupOptions reports whether the request sets backup-only options that
+// a deploy sync must reject.
+func (r UpdateSyncRequest) HasBackupOptions() bool {
+	return len(r.BackupPaths) > 0 || r.BackupOnSave != nil
 }
 
 // SyncResult represents the result of a sync operation.
@@ -860,6 +1021,31 @@ type SyncStatus struct {
 	//
 	// Required: false
 	LastSyncCommit *string `json:"lastSyncCommit,omitempty"`
+
+	// Mode is the sync direction ("deploy" or "backup").
+	//
+	// Required: true
+	Mode string `json:"mode"`
+
+	// BackupState summarizes the backup lifecycle for "backup" syncs.
+	//
+	// Required: false
+	BackupState string `json:"backupState,omitempty"`
+
+	// BackupPending indicates saved changes have not reached the repository yet.
+	//
+	// Required: true
+	BackupPending bool `json:"backupPending"`
+
+	// BackupFailureReason is the typed reason for the last backup failure.
+	//
+	// Required: false
+	BackupFailureReason *string `json:"backupFailureReason,omitempty"`
+
+	// LastBackupAt is the time the remote last received a new backup commit.
+	//
+	// Required: false
+	LastBackupAt *time.Time `json:"lastBackupAt,omitempty"`
 }
 
 // ImportGitOpsSyncRequest represents the request to import gitops syncs.
@@ -935,4 +1121,154 @@ type ImportGitOpsSyncResponse struct {
 	//
 	// Required: true
 	Errors []string `json:"errors"`
+}
+
+// BackupManifest is written beside backed-up files so a backup can be
+// recognized and recovered without Arcane's database.
+type BackupManifest struct {
+	// Version of the manifest format.
+	//
+	// Required: true
+	Version int `json:"version"`
+
+	// SyncID is the Arcane sync that produced the backup.
+	//
+	// Required: true
+	SyncID string `json:"syncId"`
+
+	// ProjectName is the name of the backed-up project.
+	//
+	// Required: true
+	ProjectName string `json:"projectName"`
+
+	// EnvironmentID is the Arcane environment that owns the project.
+	//
+	// Required: true
+	EnvironmentID string `json:"environmentId"`
+
+	// GeneratedAt is when the snapshot was taken.
+	//
+	// Required: true
+	GeneratedAt time.Time `json:"generatedAt"`
+
+	// ComposeFiles lists the backed-up Compose entrypoints and overrides.
+	//
+	// Required: true
+	ComposeFiles []string `json:"composeFiles"`
+
+	// Files maps each backed-up path to its SHA-256 content hash.
+	//
+	// Required: true
+	Files map[string]string `json:"files"`
+}
+
+// BackupFileChange describes one file difference between Arcane and the repository.
+type BackupFileChange struct {
+	// Path relative to the backup directory.
+	//
+	// Required: true
+	Path string `json:"path"`
+
+	// Change is "added", "modified", or "removed" from the repository's point of view.
+	//
+	// Required: true
+	Change string `json:"change"`
+}
+
+// BackupPreview describes what the next backup would commit.
+type BackupPreview struct {
+	// State is "clean", "changes", "conflict", or "destination_occupied".
+	//
+	// Required: true
+	State string `json:"state"`
+
+	// RemoteCommit is the current head of the backup branch, when it exists.
+	//
+	// Required: false
+	RemoteCommit string `json:"remoteCommit,omitempty"`
+
+	// Changes lists files the next backup would add, modify, or remove.
+	//
+	// Required: true
+	Changes []BackupFileChange `json:"changes"`
+
+	// Conflicts lists backup-owned files changed in the repository since the last successful backup.
+	//
+	// Required: true
+	Conflicts []BackupFileChange `json:"conflicts"`
+
+	// Files lists every path the snapshot includes.
+	//
+	// Required: true
+	Files []string `json:"files"`
+}
+
+// BackupHistoryEntry is one revision affecting a backup directory.
+type BackupHistoryEntry struct {
+	// Commit hash.
+	//
+	// Required: true
+	Commit string `json:"commit"`
+
+	// Author name of the commit.
+	//
+	// Required: true
+	Author string `json:"author"`
+
+	// Message of the commit.
+	//
+	// Required: true
+	Message string `json:"message"`
+
+	// Date of the commit.
+	//
+	// Required: true
+	Date time.Time `json:"date"`
+
+	// Files changed inside the backup directory, relative to it.
+	//
+	// Required: true
+	Files []string `json:"files"`
+}
+
+// BackupHistoryResponse lists revisions affecting a backup.
+type BackupHistoryResponse struct {
+	// Entries newest first.
+	//
+	// Required: true
+	Entries []BackupHistoryEntry `json:"entries"`
+}
+
+// BackupFileDiff is the unified diff of one file in a revision.
+type BackupFileDiff struct {
+	// Path relative to the backup directory.
+	//
+	// Required: true
+	Path string `json:"path"`
+
+	// Patch is the unified diff text.
+	//
+	// Required: true
+	Patch string `json:"patch"`
+}
+
+// BackupRevision is a revision with its per-file diffs.
+type BackupRevision struct {
+	// Entry describes the commit.
+	//
+	// Required: true
+	Entry BackupHistoryEntry `json:"entry"`
+
+	// Diffs contains one entry per changed file inside the backup directory.
+	//
+	// Required: true
+	Diffs []BackupFileDiff `json:"diffs"`
+}
+
+// ResolveBackupConflictRequest chooses how to resolve a backup that needs attention.
+type ResolveBackupConflictRequest struct {
+	// Strategy is "use_arcane" to replace the repository's backup files with Arcane's.
+	//
+	// Required: true
+	Strategy string `json:"strategy" binding:"required,oneof=use_arcane"`
 }

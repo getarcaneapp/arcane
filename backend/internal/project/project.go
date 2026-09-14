@@ -12,6 +12,7 @@ import (
 
 	"emperror.dev/errors"
 	composetypes "github.com/compose-spec/compose-go/v2/types"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
@@ -62,6 +63,18 @@ type ProjectService struct {
 	// projects, a gitops_syncs lookup — per project, on every list request.
 	// Entries are validated by compose/include/env file mtimes rather than a TTL.
 	metaCache projecttypes.ComposeCache[projects.ArcaneComposeMetadata]
+
+	// filesChanged fires with the project ID after project files are saved
+	// through Arcane, so Git backups can react without polling.
+	filesChanged *actors.Signal[string]
+}
+
+// FilesChanged exposes the project-file-change signal for subscribers.
+func (s *ProjectService) FilesChanged() *actors.Signal[string] {
+	if s == nil {
+		return nil
+	}
+	return s.filesChanged
 }
 
 // EnsureGitOpsProjectLinked persists the bidirectional GitOps/project binding
@@ -208,6 +221,7 @@ func NewProjectService(db *database.DB, settingsService *settings.SettingsServic
 		config:                   cfg,
 		parsedCompose:            projects.NewParsedComposeCache(),
 		metaCache:                projects.NewComposeCache[projects.ArcaneComposeMetadata](1024, nil),
+		filesChanged:             actors.NewSignal[string](),
 	}
 }
 
