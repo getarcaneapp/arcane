@@ -1084,11 +1084,7 @@ func (s *GitOpsSyncService) performSyncAdmittedInternal(ctx context.Context, env
 
 	source, err := s.prepareSyncSource(syncCtx, syncRecord, result, actor)
 	if source != nil && source.repoPath != "" {
-		defer func() {
-			if cleanupErr := s.repoService.Cleanup(source.repoPath); cleanupErr != nil {
-				slog.WarnContext(syncCtx, "Failed to cleanup repository", "path", source.repoPath, "error", cleanupErr)
-			}
-		}()
+		defer s.repoService.Discard(syncCtx, source.repoPath)
 	}
 	if err != nil {
 		return result, err
@@ -1618,11 +1614,7 @@ func (s *GitOpsSyncService) BrowseFiles(ctx context.Context, environmentID, id s
 	if err != nil {
 		return nil, errors.WrapIf(err, "failed to clone repository")
 	}
-	defer func() {
-		if cleanupErr := s.repoService.Cleanup(repoPath); cleanupErr != nil {
-			slog.WarnContext(browseCtx, "Failed to cleanup repository", "path", repoPath, "error", cleanupErr)
-		}
-	}()
+	defer s.repoService.Discard(browseCtx, repoPath)
 
 	// Browse the tree
 	files, err := s.repoService.BrowseTree(browseCtx, repoPath, path)

@@ -16,6 +16,7 @@
 		open: boolean;
 		clearToken?: boolean;
 		clearSshKey?: boolean;
+		clearSigningKey?: boolean;
 		repositoryToEdit: GitRepository | null;
 		onSubmit: (detail: { repository: GitRepositoryCreateDto | GitRepositoryUpdateDto; isEditMode: boolean }) => void;
 		isLoading: boolean;
@@ -25,6 +26,7 @@
 		open = $bindable(false),
 		clearToken = $bindable(false),
 		clearSshKey = $bindable(false),
+		clearSigningKey = $bindable(false),
 		repositoryToEdit = $bindable(),
 		onSubmit,
 		isLoading
@@ -40,6 +42,10 @@
 		token: z.string().optional(),
 		sshKey: z.string().optional(),
 		sshHostKeyVerification: z.enum(['strict', 'accept_new', 'skip']).default('accept_new'),
+		commitAuthorName: z.string().optional(),
+		commitAuthorEmail: z.union([z.literal(''), z.email(m.common_invalid_email())]).optional(),
+		signingKey: z.string().optional(),
+		signingKeyPassphrase: z.string().optional(),
 		description: z.string().optional(),
 		enabled: z.boolean().default(true)
 	});
@@ -52,6 +58,10 @@
 		token: '',
 		sshKey: '',
 		sshHostKeyVerification: (repositoryToEdit?.sshHostKeyVerification || 'accept_new') as 'strict' | 'accept_new' | 'skip',
+		commitAuthorName: repositoryToEdit?.commitAuthorName || '',
+		commitAuthorEmail: repositoryToEdit?.commitAuthorEmail || '',
+		signingKey: '',
+		signingKeyPassphrase: '',
 		description: repositoryToEdit?.description || '',
 		enabled: repositoryToEdit?.enabled ?? true
 	}));
@@ -61,6 +71,7 @@
 
 	let hasToken = $derived(!!repositoryToEdit?.hasToken);
 	let hasSshKey = $derived(!!repositoryToEdit?.hasSshKey);
+	let hasSigningKey = $derived(!!repositoryToEdit?.hasSigningKey);
 	let urlChanged = $derived(isEditMode && inputs.url.value.trim() !== repositoryToEdit?.url);
 	let tokenNeedsAttention = $derived(urlChanged && hasToken && !clearToken && !inputs.token?.value?.trim());
 	let sshKeyNeedsAttention = $derived(urlChanged && hasSshKey && !clearSshKey && !inputs.sshKey?.value?.trim());
@@ -127,12 +138,21 @@
 		if (hasSshKey && clearSshKey) payload.sshKey = '';
 		else if ((selectedAuthType.value === 'ssh' || hasSshKey) && data.sshKey) payload.sshKey = data.sshKey;
 
+		payload.commitAuthorName = data.commitAuthorName?.trim() ?? '';
+		payload.commitAuthorEmail = data.commitAuthorEmail?.trim() ?? '';
+		if (hasSigningKey && clearSigningKey) payload.signingKey = '';
+		else {
+			if (data.signingKey) payload.signingKey = data.signingKey;
+			if (data.signingKeyPassphrase) payload.signingKeyPassphrase = data.signingKeyPassphrase;
+		}
+
 		onSubmit({ repository: payload, isEditMode });
 	}
 
 	function handleOpenChange(newOpenState: boolean) {
 		clearToken = false;
 		clearSshKey = false;
+		clearSigningKey = false;
 		open = newOpenState;
 	}
 </script>
@@ -266,6 +286,45 @@
 					<p class="text-xs text-muted-foreground">{m.git_repository_ssh_host_key_verification_description()}</p>
 				</div>
 			{/if}
+
+			<div class="space-y-3 border-t border-border/50 pt-4">
+				<div>
+					<p class="text-sm font-medium">{m.commit_identity()}</p>
+					<p class="text-xs text-muted-foreground">{m.commit_identity_description()}</p>
+				</div>
+				<div class="grid gap-3 sm:grid-cols-2">
+					<FormInput label={m.commit_author_name()} type="text" placeholder="Arcane" bind:input={inputs.commitAuthorName} />
+					<FormInput
+						label={m.commit_author_email()}
+						type="text"
+						placeholder="arcane@localhost"
+						bind:input={inputs.commitAuthorEmail}
+					/>
+				</div>
+				<FormInput
+					label={m.signing_key()}
+					type="textarea"
+					placeholder={hasSigningKey ? m.common_keep_placeholder() : m.signing_key_placeholder()}
+					disabled={clearSigningKey}
+					rows={4}
+					bind:input={inputs.signingKey}
+				/>
+				{#if hasSigningKey}
+					<SwitchWithLabel
+						id="clearRepositorySigningKey"
+						label={m.git_repository_clear_signing_key()}
+						bind:checked={clearSigningKey}
+					/>
+				{/if}
+				{#if !clearSigningKey}
+					<FormInput
+						label={m.signing_key_passphrase()}
+						type="password"
+						placeholder={hasSigningKey ? m.common_keep_placeholder() : ''}
+						bind:input={inputs.signingKeyPassphrase}
+					/>
+				{/if}
+			</div>
 
 			<FormInput
 				label={m.common_description()}

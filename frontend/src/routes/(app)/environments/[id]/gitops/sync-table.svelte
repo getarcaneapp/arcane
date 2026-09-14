@@ -291,10 +291,10 @@
 	<span class="inline-flex items-center gap-1.5 text-sm">
 		{#if isBackup(item)}
 			<UploadIcon class="size-3.5 text-muted-foreground" />
-			{m.back_up_to_git()}
+			{m.push()}
 		{:else}
 			<DownloadIcon class="size-3.5 text-muted-foreground" />
-			{m.deploy_from_git()}
+			{m.pull()}
 		{/if}
 	</span>
 {/snippet}
@@ -412,7 +412,7 @@
 		fields={[
 			{
 				label: m.direction(),
-				getValue: (item: GitOpsSync) => (isBackup(item) ? m.back_up_to_git() : m.deploy_from_git()),
+				getValue: (item: GitOpsSync) => (isBackup(item) ? m.push() : m.pull()),
 				icon: isBackup(item) ? UploadIcon : DownloadIcon,
 				iconVariant: 'gray' as const,
 				show: mobileFieldVisibility['mode'] ?? true

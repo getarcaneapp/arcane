@@ -561,6 +561,13 @@ func (c *Client) Cleanup(repoPath string) error {
 	return os.RemoveAll(repoPath)
 }
 
+// Discard removes a scratch checkout, logging instead of failing when removal breaks.
+func (c *Client) Discard(ctx context.Context, repoPath string) {
+	if err := c.Cleanup(repoPath); err != nil {
+		slog.WarnContext(ctx, "Failed to cleanup repository", "path", repoPath, "error", err)
+	}
+}
+
 // PurgeScratchDirs removes clone scratch dirs ("gitops-*") under the work dir
 // whose mtime is older than maxAge. maxAge <= 0 removes all (boot sweep).
 func (c *Client) PurgeScratchDirs(ctx context.Context, maxAge time.Duration) (int, error) {
@@ -760,7 +767,7 @@ func (c *Client) appendSyncFile(ctx context.Context, syncDir string, entry acfst
 	}
 
 	fileSize := int64(len(content))
-	isBinary := isBinaryContent(content)
+	isBinary := IsBinaryContent(content)
 
 	if isBinary && limits.maxBinarySize > 0 && fileSize > limits.maxBinarySize {
 		result.SkippedBinaries++
@@ -798,12 +805,11 @@ func (c *Client) isBinarySyncFile(ctx context.Context, syncDir, logicalPath stri
 		return false, err
 	}
 
-	return isBinaryContent(buf[:n]), nil
+	return IsBinaryContent(buf[:n]), nil
 }
 
-// isBinaryContent detects if content is binary using HTTP content type detection.
-// Returns true for binary content, false for text content.
-func isBinaryContent(content []byte) bool {
+// IsBinaryContent reports whether content looks binary rather than text.
+func IsBinaryContent(content []byte) bool {
 	if len(content) == 0 {
 		return false
 	}

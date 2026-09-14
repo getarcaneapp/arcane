@@ -36,9 +36,6 @@ const (
 	BackupConflictUseArcane = "use_arcane"
 )
 
-// BackupManifestFileName is the manifest written beside backed-up files.
-const BackupManifestFileName = ".arcane-backup.json"
-
 // GitRepository represents a reusable Git repository with credentials.
 type GitRepository struct {
 	// ID of the git repository.
@@ -76,6 +73,19 @@ type GitRepository struct {
 	//
 	// Required: false
 	SSHHostKeyVerification string `json:"sshHostKeyVerification,omitempty"`
+
+	// CommitAuthorName is the author name on commits Arcane pushes.
+	//
+	// Required: false
+	CommitAuthorName string `json:"commitAuthorName,omitempty"`
+
+	// CommitAuthorEmail is the author email on commits Arcane pushes.
+	//
+	// Required: false
+	CommitAuthorEmail string `json:"commitAuthorEmail,omitempty"`
+
+	// HasSigningKey indicates whether an OpenPGP signing key is stored.
+	HasSigningKey bool `json:"hasSigningKey"`
 
 	// Description of the git repository.
 	//
@@ -401,6 +411,26 @@ type CreateRepositoryRequest struct {
 	// Required: false
 	SSHHostKeyVerification string `json:"sshHostKeyVerification,omitempty" binding:"omitempty,oneof=strict accept_new skip"`
 
+	// CommitAuthorName is the author name on commits Arcane pushes.
+	//
+	// Required: false
+	CommitAuthorName string `json:"commitAuthorName,omitempty" unorm:"nfc" trim:"true"`
+
+	// CommitAuthorEmail is the author email on commits Arcane pushes.
+	//
+	// Required: false
+	CommitAuthorEmail string `json:"commitAuthorEmail,omitempty" binding:"omitempty,email" trim:"true"`
+
+	// SigningKey is an armored OpenPGP private key used to sign commits.
+	//
+	// Required: false
+	SigningKey string `json:"signingKey,omitempty"`
+
+	// SigningKeyPassphrase unlocks SigningKey when it is passphrase-protected.
+	//
+	// Required: false
+	SigningKeyPassphrase string `json:"signingKeyPassphrase,omitempty"`
+
 	// Description of the git repository.
 	//
 	// Required: false
@@ -449,6 +479,26 @@ type UpdateRepositoryRequest struct {
 	//
 	// Required: false
 	SSHHostKeyVerification *string `json:"sshHostKeyVerification,omitzero" binding:"omitempty,oneof=strict accept_new skip"`
+
+	// CommitAuthorName is the author name on commits Arcane pushes.
+	//
+	// Required: false
+	CommitAuthorName *string `json:"commitAuthorName,omitzero" unorm:"nfc" trim:"true"`
+
+	// CommitAuthorEmail is the author email on commits Arcane pushes.
+	//
+	// Required: false
+	CommitAuthorEmail *string `json:"commitAuthorEmail,omitzero" binding:"omitempty,email" trim:"true"`
+
+	// SigningKey is an armored OpenPGP private key used to sign commits. Empty clears it.
+	//
+	// Required: false
+	SigningKey *string `json:"signingKey,omitzero"`
+
+	// SigningKeyPassphrase unlocks SigningKey when it is passphrase-protected. Empty clears it.
+	//
+	// Required: false
+	SigningKeyPassphrase *string `json:"signingKeyPassphrase,omitzero"`
 
 	// Description of the git repository.
 	//
@@ -956,6 +1006,26 @@ type RepositorySync struct {
 	// Required: false
 	SSHHostKeyVerification string `json:"sshHostKeyVerification,omitempty"`
 
+	// CommitAuthorName is the author name on commits Arcane pushes.
+	//
+	// Required: false
+	CommitAuthorName string `json:"commitAuthorName,omitempty"`
+
+	// CommitAuthorEmail is the author email on commits Arcane pushes.
+	//
+	// Required: false
+	CommitAuthorEmail string `json:"commitAuthorEmail,omitempty"`
+
+	// SigningKey is the armored OpenPGP private key used to sign commits.
+	//
+	// Required: false
+	SigningKey string `json:"signingKey,omitempty"`
+
+	// SigningKeyPassphrase unlocks SigningKey.
+	//
+	// Required: false
+	SigningKeyPassphrase string `json:"signingKeyPassphrase,omitempty"`
+
 	// Description of the git repository.
 	//
 	// Required: false
@@ -1121,45 +1191,6 @@ type ImportGitOpsSyncResponse struct {
 	//
 	// Required: true
 	Errors []string `json:"errors"`
-}
-
-// BackupManifest is written beside backed-up files so a backup can be
-// recognized and recovered without Arcane's database.
-type BackupManifest struct {
-	// Version of the manifest format.
-	//
-	// Required: true
-	Version int `json:"version"`
-
-	// SyncID is the Arcane sync that produced the backup.
-	//
-	// Required: true
-	SyncID string `json:"syncId"`
-
-	// ProjectName is the name of the backed-up project.
-	//
-	// Required: true
-	ProjectName string `json:"projectName"`
-
-	// EnvironmentID is the Arcane environment that owns the project.
-	//
-	// Required: true
-	EnvironmentID string `json:"environmentId"`
-
-	// GeneratedAt is when the snapshot was taken.
-	//
-	// Required: true
-	GeneratedAt time.Time `json:"generatedAt"`
-
-	// ComposeFiles lists the backed-up Compose entrypoints and overrides.
-	//
-	// Required: true
-	ComposeFiles []string `json:"composeFiles"`
-
-	// Files maps each backed-up path to its SHA-256 content hash.
-	//
-	// Required: true
-	Files map[string]string `json:"files"`
 }
 
 // BackupFileChange describes one file difference between Arcane and the repository.

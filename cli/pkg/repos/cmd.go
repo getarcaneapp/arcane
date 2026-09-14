@@ -43,6 +43,10 @@ var (
 	repoCreateUsername         string
 	repoCreateSSHKey           string
 	repoCreateSSHHostKeyVerify string
+	repoCreateAuthorName       string
+	repoCreateAuthorEmail      string
+	repoCreateSigningKey       string
+	repoCreateSigningKeyPass   string
 	repoCreateDescription      string
 	repoCreateEnabled          bool
 )
@@ -56,6 +60,10 @@ var (
 	repoUpdateUsername         string
 	repoUpdateSSHKey           string
 	repoUpdateSSHHostKeyVerify string
+	repoUpdateAuthorName       string
+	repoUpdateAuthorEmail      string
+	repoUpdateSigningKey       string
+	repoUpdateSigningKeyPass   string
 	repoUpdateDescription      string
 	repoUpdateEnabled          bool
 )
@@ -133,6 +141,22 @@ var createCmd = &cobra.Command{
 		if cmd.Flags().Changed("ssh-host-key-verification") {
 			req.SSHHostKeyVerification = repoCreateSSHHostKeyVerify
 		}
+		if cmd.Flags().Changed("author-name") {
+			req.CommitAuthorName = repoCreateAuthorName
+		}
+		if cmd.Flags().Changed("author-email") {
+			req.CommitAuthorEmail = repoCreateAuthorEmail
+		}
+		if cmd.Flags().Changed("signing-key") {
+			signingKeyData, err := os.ReadFile(repoCreateSigningKey)
+			if err != nil {
+				return errors.WrapIf(err, "failed to read signing key file")
+			}
+			req.SigningKey = string(signingKeyData)
+		}
+		if cmd.Flags().Changed("signing-key-passphrase") {
+			req.SigningKeyPassphrase = repoCreateSigningKeyPass
+		}
 		if cmd.Flags().Changed("description") {
 			req.Description = &repoCreateDescription
 		}
@@ -190,6 +214,10 @@ var getCmd = &cobra.Command{
 		if resolved.SSHHostKeyVerification != "" {
 			output.KeyValue("SSH Host Key Verification", resolved.SSHHostKeyVerification)
 		}
+		if resolved.CommitAuthorName != "" || resolved.CommitAuthorEmail != "" {
+			output.KeyValue("Commit Author", strings.TrimSpace(resolved.CommitAuthorName+" <"+resolved.CommitAuthorEmail+">"))
+		}
+		output.KeyValue("Signing Key", resolved.HasSigningKey)
 		if resolved.Description != nil {
 			output.KeyValue("Description", *resolved.Description)
 		}
@@ -242,6 +270,26 @@ var updateCmd = &cobra.Command{
 		}
 		if cmd.Flags().Changed("ssh-host-key-verification") {
 			req.SSHHostKeyVerification = &repoUpdateSSHHostKeyVerify
+		}
+		if cmd.Flags().Changed("author-name") {
+			req.CommitAuthorName = &repoUpdateAuthorName
+		}
+		if cmd.Flags().Changed("author-email") {
+			req.CommitAuthorEmail = &repoUpdateAuthorEmail
+		}
+		if cmd.Flags().Changed("signing-key") {
+			signingKey := ""
+			if repoUpdateSigningKey != "" {
+				signingKeyData, err := os.ReadFile(repoUpdateSigningKey)
+				if err != nil {
+					return errors.WrapIf(err, "failed to read signing key file")
+				}
+				signingKey = string(signingKeyData)
+			}
+			req.SigningKey = &signingKey
+		}
+		if cmd.Flags().Changed("signing-key-passphrase") {
+			req.SigningKeyPassphrase = &repoUpdateSigningKeyPass
 		}
 		if cmd.Flags().Changed("description") {
 			req.Description = &repoUpdateDescription
@@ -490,6 +538,10 @@ func init() {
 	createCmd.Flags().StringVar(&repoCreateUsername, "username", "", "Username for HTTP authentication")
 	createCmd.Flags().StringVar(&repoCreateSSHKey, "ssh-key", "", "Path to SSH key file")
 	createCmd.Flags().StringVar(&repoCreateSSHHostKeyVerify, "ssh-host-key-verification", "", "SSH host key verification (strict, accept_new, skip)")
+	createCmd.Flags().StringVar(&repoCreateAuthorName, "author-name", "", "Author name for commits Arcane pushes")
+	createCmd.Flags().StringVar(&repoCreateAuthorEmail, "author-email", "", "Author email for commits Arcane pushes")
+	createCmd.Flags().StringVar(&repoCreateSigningKey, "signing-key", "", "Path to an armored OpenPGP private key used to sign commits")
+	createCmd.Flags().StringVar(&repoCreateSigningKeyPass, "signing-key-passphrase", "", "Passphrase for the signing key")
 	createCmd.Flags().StringVar(&repoCreateDescription, "description", "", "Repository description")
 	createCmd.Flags().BoolVar(&repoCreateEnabled, "enabled", true, "Enable the repository")
 	createCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
@@ -508,6 +560,10 @@ func init() {
 	updateCmd.Flags().StringVar(&repoUpdateUsername, "username", "", "Username for HTTP authentication")
 	updateCmd.Flags().StringVar(&repoUpdateSSHKey, "ssh-key", "", "Path to SSH key file")
 	updateCmd.Flags().StringVar(&repoUpdateSSHHostKeyVerify, "ssh-host-key-verification", "", "SSH host key verification (strict, accept_new, skip)")
+	updateCmd.Flags().StringVar(&repoUpdateAuthorName, "author-name", "", "Author name for commits Arcane pushes")
+	updateCmd.Flags().StringVar(&repoUpdateAuthorEmail, "author-email", "", "Author email for commits Arcane pushes")
+	updateCmd.Flags().StringVar(&repoUpdateSigningKey, "signing-key", "", "Path to an armored OpenPGP private key used to sign commits (empty clears it)")
+	updateCmd.Flags().StringVar(&repoUpdateSigningKeyPass, "signing-key-passphrase", "", "Passphrase for the signing key")
 	updateCmd.Flags().StringVar(&repoUpdateDescription, "description", "", "Repository description")
 	updateCmd.Flags().BoolVar(&repoUpdateEnabled, "enabled", true, "Enable the repository")
 	updateCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")

@@ -126,53 +126,54 @@
 	{:else}
 		<DetailMetaStrip items={metaItems}>
 			<BackupStateBadge {sync} />
+
+			<div class="ml-auto flex items-center gap-2">
+				{#if canSync}
+					<ArcaneButton
+						action="base"
+						tone="outline-primary"
+						size="sm"
+						icon={UploadIcon}
+						customLabel={m.back_up_now()}
+						loading={backingUp}
+						disabled={backingUp || disconnecting}
+						onclick={backUpNow}
+					/>
+				{/if}
+
+				<RowActionsMenu>
+					<DropdownMenu.Item onclick={() => (historyOpen = true)}>
+						<ClockIcon class="size-4" />
+						{m.history()}
+					</DropdownMenu.Item>
+
+					<DropdownMenu.Item onclick={() => goto(`/environments/${environmentId}/gitops?action=edit&syncId=${sync.id}`)}>
+						<SettingsIcon class="size-4" />
+						{m.settings()}
+					</DropdownMenu.Item>
+
+					{#if needsAttention && canSync}
+						<DropdownMenu.Item onclick={() => (resolveOpen = true)}>
+							<ShieldAlertIcon class="size-4" />
+							{m.resolve()}
+						</DropdownMenu.Item>
+					{/if}
+
+					{#if canDelete}
+						<DropdownMenu.Separator />
+
+						<DropdownMenu.Item variant="destructive" disabled={disconnecting} onclick={disconnect}>
+							<TrashIcon class="size-4" />
+							{m.common_disconnect()}
+						</DropdownMenu.Item>
+					{/if}
+				</RowActionsMenu>
+			</div>
 		</DetailMetaStrip>
 
 		{#if showError}
 			<p class="text-sm break-words text-destructive">{sync.lastSyncError}</p>
 		{/if}
-
-		<div class="flex flex-wrap items-center gap-2">
-			{#if canSync}
-				<ArcaneButton
-					action="base"
-					tone="outline-primary"
-					icon={UploadIcon}
-					customLabel={m.back_up_now()}
-					loading={backingUp}
-					disabled={backingUp || disconnecting}
-					onclick={backUpNow}
-				/>
-			{/if}
-
-			<RowActionsMenu>
-				<DropdownMenu.Item onclick={() => (historyOpen = true)}>
-					<ClockIcon class="size-4" />
-					{m.history()}
-				</DropdownMenu.Item>
-
-				<DropdownMenu.Item onclick={() => goto(`/environments/${environmentId}/gitops?action=edit&syncId=${sync.id}`)}>
-					<SettingsIcon class="size-4" />
-					{m.settings()}
-				</DropdownMenu.Item>
-
-				{#if needsAttention && canSync}
-					<DropdownMenu.Item onclick={() => (resolveOpen = true)}>
-						<ShieldAlertIcon class="size-4" />
-						{m.resolve()}
-					</DropdownMenu.Item>
-				{/if}
-
-				{#if canDelete}
-					<DropdownMenu.Separator />
-
-					<DropdownMenu.Item variant="destructive" disabled={disconnecting} onclick={disconnect}>
-						<TrashIcon class="size-4" />
-						{m.common_disconnect()}
-					</DropdownMenu.Item>
-				{/if}
-			</RowActionsMenu>
-		</div>
 	{/if}
 </DetailSection>
 

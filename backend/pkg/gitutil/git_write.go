@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"emperror.dev/errors"
+	"github.com/ProtonMail/go-crypto/openpgp"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -20,10 +21,17 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"go.getarcane.app/acfs"
+	acfstypes "go.getarcane.app/acfs/types"
 )
 
-// ErrPushRejected reports that the remote branch advanced between checkout and push.
-var ErrPushRejected = errors.Sentinel("push rejected: remote branch was updated by another writer")
+var (
+	// ErrPushRejected reports that the remote branch advanced between checkout and push.
+	ErrPushRejected        = errors.Sentinel("push rejected: remote branch was updated by another writer")
+	ErrInvalidCommit       = errors.Sentinel("invalid commit hash")
+	ErrSelectionUnreadable = errors.Sentinel("selection is unreadable")
+	ErrSelectionLimits     = errors.Sentinel("selection exceeds limits")
+	ErrSelectionInvalid    = errors.Sentinel("selection is invalid")
+)
 
 // WriteCheckout is a scratch clone prepared for committing to one branch.
 type WriteCheckout struct {
@@ -42,6 +50,95 @@ type CommitFile struct {
 	Executable bool
 }
 
+// CollectOptions bounds CollectFiles; SkipDir and SkipFile see base names while directories expand.
+type CollectOptions struct {
+	MaxFiles     int
+	MaxTotalSize int64
+	SkipDir      func(name string) bool
+	SkipFile     func(name string) bool
+}
+
+type fileCollectorInternal struct {
+	root      string
+	opts      CollectOptions
+	files     []CommitFile
+	seen      map[string]struct{}
+	totalSize int64
+}
+
+// CollectFiles reads the selected files and directories under root as text commit files, sorted by path.
+func CollectFiles(ctx context.Context, root string, selection []string, opts CollectOptions) ([]CommitFile, error) {
+	c := &fileCollectorInternal{root: root, opts: opts, seen: make(map[string]struct{})}
+	for _, selected := range selection {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		logical := "/" + selected
+		entry, err := acfs.Stat(ctx, root, logical, false)
+		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				return nil, errors.WrapIff(ErrSelectionUnreadable, "selected path %s does not exist", selected)
+			}
+			return nil, errors.WrapIff(ErrSelectionUnreadable, "cannot inspect %s: %v", selected, err)
+		}
+		if entry.IsSymlink {
+			return nil, errors.WrapIff(ErrSelectionInvalid, "%s is a symbolic link", selected)
+		}
+		if !entry.IsDirectory {
+			if err := c.addInternal(ctx, entry); err != nil {
+				return nil, err
+			}
+			continue
+		}
+		err = acfs.Walk(ctx, root, logical, func(child acfstypes.Entry) error { return c.visitInternal(ctx, child) })
+		if err != nil && !errors.Is(err, ErrSelectionUnreadable) && !errors.Is(err, ErrSelectionLimits) && !errors.Is(err, ErrSelectionInvalid) {
+			return nil, errors.WrapIff(ErrSelectionUnreadable, "cannot walk %s: %v", selected, err)
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	if len(c.files) == 0 {
+		return nil, errors.WrapIf(ErrSelectionInvalid, "the selection contains no files")
+	}
+	sort.Slice(c.files, func(i, j int) bool { return c.files[i].Path < c.files[j].Path })
+	return c.files, nil
+}
+
+func (c *fileCollectorInternal) visitInternal(ctx context.Context, child acfstypes.Entry) error {
+	if child.IsDirectory && (child.Name == ".git" || (c.opts.SkipDir != nil && c.opts.SkipDir(child.Name))) {
+		return fs.SkipDir
+	}
+	if child.IsDirectory || child.IsSymlink || (c.opts.SkipFile != nil && c.opts.SkipFile(child.Name)) {
+		return nil
+	}
+	return c.addInternal(ctx, child)
+}
+
+func (c *fileCollectorInternal) addInternal(ctx context.Context, entry acfstypes.Entry) error {
+	relative := strings.TrimPrefix(entry.Path, "/")
+	if _, ok := c.seen[relative]; ok {
+		return nil
+	}
+	if c.opts.MaxFiles > 0 && len(c.files) >= c.opts.MaxFiles {
+		return errors.WrapIff(ErrSelectionLimits, "file count limit exceeded (max %d files)", c.opts.MaxFiles)
+	}
+	content, err := acfs.ReadFile(ctx, c.root, entry.Path)
+	if err != nil {
+		return errors.WrapIff(ErrSelectionUnreadable, "cannot read %s: %v", relative, err)
+	}
+	if IsBinaryContent(content) {
+		return errors.WrapIff(ErrSelectionInvalid, "%s is not a text file; only text files can be committed", relative)
+	}
+	c.totalSize += int64(len(content))
+	if c.opts.MaxTotalSize > 0 && c.totalSize > c.opts.MaxTotalSize {
+		return errors.WrapIff(ErrSelectionLimits, "total size limit exceeded (max %d bytes)", c.opts.MaxTotalSize)
+	}
+	c.seen[relative] = struct{}{}
+	c.files = append(c.files, CommitFile{Path: relative, Content: content, Executable: os.FileMode(entry.UnixMode)&0o111 != 0})
+	return nil
+}
+
 // CommitRequest describes the tree mutation to commit and push.
 type CommitRequest struct {
 	Files       []CommitFile
@@ -49,6 +146,46 @@ type CommitRequest struct {
 	Message     string
 	AuthorName  string
 	AuthorEmail string
+	SignKey     *openpgp.Entity
+}
+
+// CommitIdentity is the author Arcane commits as for one repository.
+type CommitIdentity struct {
+	Name    string
+	Email   string
+	SignKey *openpgp.Entity
+}
+
+// ParseSigningKey loads an armored OpenPGP private key and unlocks it with
+// passphrase when the key material is encrypted.
+func ParseSigningKey(armored, passphrase string) (*openpgp.Entity, error) {
+	entities, err := openpgp.ReadArmoredKeyRing(strings.NewReader(armored))
+	if err != nil {
+		return nil, errors.WrapIf(err, "signing key is not an armored OpenPGP key")
+	}
+	for _, entity := range entities {
+		if entity.PrivateKey == nil {
+			continue
+		}
+		if entity.PrivateKey.Encrypted {
+			if passphrase == "" {
+				return nil, errors.New("signing key is protected by a passphrase")
+			}
+			if err := entity.PrivateKey.Decrypt([]byte(passphrase)); err != nil {
+				return nil, errors.WrapIf(err, "signing key passphrase is incorrect")
+			}
+		}
+		for _, subkey := range entity.Subkeys {
+			if subkey.PrivateKey == nil || !subkey.PrivateKey.Encrypted {
+				continue
+			}
+			if err := subkey.PrivateKey.Decrypt([]byte(passphrase)); err != nil {
+				return nil, errors.WrapIf(err, "signing key passphrase is incorrect")
+			}
+		}
+		return entity, nil
+	}
+	return nil, errors.New("signing key does not contain a private key")
 }
 
 // HistoryEntry is one commit touching a directory.
@@ -171,7 +308,7 @@ func (c *Client) CommitAndPush(ctx context.Context, checkout *WriteCheckout, req
 	}
 
 	signature := &object.Signature{Name: req.AuthorName, Email: req.AuthorEmail, When: time.Now()}
-	hash, err := worktree.Commit(req.Message, &git.CommitOptions{Author: signature, Committer: signature})
+	hash, err := worktree.Commit(req.Message, &git.CommitOptions{Author: signature, Committer: signature, SignKey: req.SignKey})
 	if err != nil {
 		if errors.Is(err, git.ErrEmptyCommit) {
 			return checkout.HeadCommit, false, nil
@@ -335,11 +472,18 @@ func (c *Client) CommitDiff(ctx context.Context, repoPath, commitHash, directory
 	if err := ctx.Err(); err != nil {
 		return HistoryEntry{}, nil, err
 	}
+	if len(commitHash) < 7 || len(commitHash) > 64 || strings.ContainsFunc(commitHash, func(r rune) bool { return !strings.ContainsRune("0123456789abcdefABCDEF", r) }) {
+		return HistoryEntry{}, nil, ErrInvalidCommit
+	}
 	repo, err := git.PlainOpen(repoPath)
 	if err != nil {
 		return HistoryEntry{}, nil, errors.WrapIf(err, "failed to open repository")
 	}
-	commit, err := repo.CommitObject(plumbing.NewHash(commitHash))
+	hash, err := repo.ResolveRevision(plumbing.Revision(commitHash))
+	if err != nil {
+		return HistoryEntry{}, nil, errors.WrapIf(err, "commit not found")
+	}
+	commit, err := repo.CommitObject(*hash)
 	if err != nil {
 		return HistoryEntry{}, nil, errors.WrapIf(err, "commit not found")
 	}

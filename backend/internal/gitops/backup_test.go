@@ -2,7 +2,6 @@ package gitops
 
 import (
 	"context"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"sync"
@@ -230,16 +229,7 @@ func (e *backupTestEnvInternal) pushRemoteCommitInternal(t *testing.T, branch, m
 	require.NoError(t, err)
 }
 
-func readBackupManifestInternal(t *testing.T, repoPath, directory string) gitops.BackupManifest {
-	t.Helper()
-	data, err := os.ReadFile(filepath.Join(repoPath, filepath.FromSlash(directory), gitops.BackupManifestFileName))
-	require.NoError(t, err)
-	var manifest gitops.BackupManifest
-	require.NoError(t, json.Unmarshal(data, &manifest))
-	return manifest
-}
-
-func TestGitOpsBackup_FirstRunPushesFilesAndManifest(t *testing.T) {
+func TestGitOpsBackup_FirstRunPushesSelectedFiles(t *testing.T) {
 	env := setupGitOpsBackupTestServiceInternal(t)
 	writeBackupProjectFileInternal(t, env.projectPath, "config/app.conf", "key = value\n")
 
@@ -266,12 +256,11 @@ func TestGitOpsBackup_FirstRunPushesFilesAndManifest(t *testing.T) {
 	assert.Contains(t, string(composeBytes), "nginx:1.27-alpine")
 	assert.FileExists(t, filepath.Join(repoPath, "backups", "demo", "config", "app.conf"))
 
-	manifest := readBackupManifestInternal(t, repoPath, "backups/demo")
-	assert.Equal(t, syncRecord.ID, manifest.SyncID)
-	assert.Equal(t, "demo-project", manifest.ProjectName)
-	assert.Contains(t, manifest.ComposeFiles, "compose.yaml")
-	assert.Len(t, manifest.Files, 2)
-	assert.Equal(t, hashBackupContentInternal(composeBytes), manifest.Files["compose.yaml"])
+	assert.NoFileExists(t, filepath.Join(repoPath, "backups", "demo", legacyBackupManifestFileNameInternal))
+
+	snapshot := parseBackupSnapshotInternal(stored.LastBackupSnapshot)
+	assert.Len(t, snapshot, 2)
+	assert.Equal(t, hashBackupContentInternal(composeBytes), snapshot["compose.yaml"])
 }
 
 func TestGitOpsBackup_UnchangedContentMakesNoNewCommit(t *testing.T) {
@@ -316,10 +305,6 @@ func TestGitOpsBackup_AddsAndRemovesFilesAndKeepsUnrelatedRemoteFiles(t *testing
 	assert.FileExists(t, filepath.Join(repoPath, "backups", "demo", "config", "app.conf"))
 	assert.FileExists(t, filepath.Join(repoPath, "docs", "readme.md"))
 	assert.NoFileExists(t, filepath.Join(repoPath, "backups", "demo", "config", "extra.conf"))
-
-	manifest := readBackupManifestInternal(t, repoPath, "backups/demo")
-	assert.NotContains(t, manifest.Files, "config/extra.conf")
-	assert.Contains(t, manifest.Files, "scripts/run.sh")
 }
 
 func TestGitOpsBackup_EnvFilesOnlyIncludedWhenListedExplicitly(t *testing.T) {
@@ -342,16 +327,13 @@ func TestGitOpsBackup_EnvFilesOnlyIncludedWhenListedExplicitly(t *testing.T) {
 			env.createBackupInternal(t, gitops.CreateSyncRequest{BackupPaths: test.paths})
 
 			repoPath := env.checkoutRemoteInternal(t, "main")
-			manifest := readBackupManifestInternal(t, repoPath, "backups/demo")
-			assert.Contains(t, manifest.Files, "compose.yaml")
-			assert.Contains(t, manifest.Files, "config/app.conf")
-			assert.NotContains(t, manifest.Files, "config/.env")
-			assert.NotContains(t, manifest.Files, "config/staging.env")
+			assert.FileExists(t, filepath.Join(repoPath, "backups", "demo", "compose.yaml"))
+			assert.FileExists(t, filepath.Join(repoPath, "backups", "demo", "config", "app.conf"))
+			assert.NoFileExists(t, filepath.Join(repoPath, "backups", "demo", "config", ".env"))
+			assert.NoFileExists(t, filepath.Join(repoPath, "backups", "demo", "config", "staging.env"))
 			if test.wantEnvFile {
-				assert.Contains(t, manifest.Files, ".env")
 				assert.FileExists(t, filepath.Join(repoPath, "backups", "demo", ".env"))
 			} else {
-				assert.NotContains(t, manifest.Files, ".env")
 				assert.NoFileExists(t, filepath.Join(repoPath, "backups", "demo", ".env"))
 			}
 		})

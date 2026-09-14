@@ -305,8 +305,8 @@
 	const isBackupMode = $derived(selectedMode === 'backup');
 
 	const directionOptions = [
-		{ value: 'deploy', label: m.deploy_from_git(), description: m.deploy_from_git_description() },
-		{ value: 'backup', label: m.back_up_to_git(), description: m.back_up_to_git_description() }
+		{ value: 'deploy', label: m.pull(), description: m.deploy_from_git_description() },
+		{ value: 'backup', label: m.push(), description: m.back_up_to_git_description() }
 	] satisfies { value: GitOpsSyncMode; label: string; description: string }[];
 	const selectedDirection = $derived(directionOptions.find((option) => option.value === selectedMode));
 
@@ -704,7 +704,7 @@
 			<form id="sync-form" onsubmit={preventDefault(handleSubmit)} class="grid gap-5 py-2">
 				{#if isEditMode}
 					<p class="text-xs text-muted-foreground">
-						<span class="font-medium text-foreground">{isBackupMode ? m.back_up_to_git() : m.deploy_from_git()}</span>
+						<span class="font-medium text-foreground">{isBackupMode ? m.push() : m.pull()}</span>
 						· {isBackupMode ? m.back_up_to_git_description() : m.deploy_from_git_description()}
 					</p>
 				{:else}

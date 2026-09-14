@@ -86,6 +86,10 @@ export interface GitRepositoryCreateDto {
 	token?: string;
 	sshKey?: string;
 	sshHostKeyVerification?: string;
+	commitAuthorName?: string;
+	commitAuthorEmail?: string;
+	signingKey?: string;
+	signingKeyPassphrase?: string;
 	description?: string;
 	enabled?: boolean;
 }
@@ -98,6 +102,10 @@ export interface GitRepositoryUpdateDto {
 	token?: string;
 	sshKey?: string;
 	sshHostKeyVerification?: string;
+	commitAuthorName?: string;
+	commitAuthorEmail?: string;
+	signingKey?: string;
+	signingKeyPassphrase?: string;
 	description?: string;
 	enabled?: boolean;
 }
@@ -109,8 +117,11 @@ export interface GitRepository {
 	authType: string;
 	hasToken: boolean;
 	hasSshKey: boolean;
+	hasSigningKey: boolean;
 	username?: string;
 	sshHostKeyVerification?: string;
+	commitAuthorName?: string;
+	commitAuthorEmail?: string;
 	description?: string;
 	enabled: boolean;
 	createdAt: string;
