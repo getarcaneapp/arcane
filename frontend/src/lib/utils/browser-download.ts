@@ -12,3 +12,7 @@ export function downloadBlob(data: BlobPart, filename: string): void {
 export function filenameFromPath(path: string, fallback = 'download'): string {
 	return path.split('/').pop() || fallback;
 }
+
+export function filenameFromContentDisposition(header: string | null, fallback: string): string {
+	return /filename="?([^";]+)"?/.exec(header ?? '')?.[1] || fallback;
+}

@@ -22,7 +22,7 @@
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
 	import { hasPermission } from '#lib/utils/auth.js';
-	import { mapVulnerabilityPage, mapVulnerabilityRequest } from '#lib/utils/vulnerability.js';
+	import { mapVulnerabilityPage, mapVulnerabilityRequest, withIgnoredFilter } from '#lib/utils/vulnerability.js';
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';
 
 	let { data } = $props();
@@ -34,20 +34,6 @@
 	let vulnerabilities = $derived<Paginated<VulnerabilityRow>>(data.vulnerabilities);
 	let requestOptions = $derived<SearchPaginationSortRequest>(data.vulnerabilityRequestOptions);
 	let showIgnored = $state(false);
-
-	function withIgnoredFilter(options: SearchPaginationSortRequest, show: boolean): SearchPaginationSortRequest {
-		const filters = { ...options.filters };
-		if (show) {
-			filters['ignored'] = 'true';
-		} else {
-			delete filters['ignored'];
-		}
-
-		return {
-			...options,
-			filters: Object.keys(filters).length > 0 ? filters : undefined
-		};
-	}
 
 	function toggleIgnored(next: boolean) {
 		showIgnored = next;
