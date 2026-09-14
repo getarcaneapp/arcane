@@ -270,7 +270,9 @@
 							bind:values={providerValues[provider]}
 							disabled={isReadOnly}
 							{isTesting}
-							hasExistingCredentials={savedSettings[provider] !== null}
+							hasExistingCredentials={provider === 'matrix'
+								? hasSavedCredential(savedSettings.matrix, 'password')
+								: savedSettings[provider] !== null}
 							hasExistingPassword={provider === 'signal' && hasSavedCredential(savedSettings.signal, 'password')}
 							hasExistingToken={provider === 'signal' && hasSavedCredential(savedSettings.signal, 'token')}
 							onTest={(testType) => testNotification(provider, testType)}
