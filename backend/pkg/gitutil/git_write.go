@@ -66,7 +66,7 @@ type fileCollectorInternal struct {
 	totalSize int64
 }
 
-// CollectFiles reads the selected files and directories under root as text commit files, sorted by path.
+// CollectFiles reads the selected files and directories under root as commit files, sorted by path.
 func CollectFiles(ctx context.Context, root string, selection []string, opts CollectOptions) ([]CommitFile, error) {
 	c := &fileCollectorInternal{root: root, opts: opts, seen: make(map[string]struct{})}
 	for _, selected := range selection {
@@ -126,9 +126,6 @@ func (c *fileCollectorInternal) addInternal(ctx context.Context, entry acfstypes
 	content, err := acfs.ReadFile(ctx, c.root, entry.Path)
 	if err != nil {
 		return errors.WrapIff(ErrSelectionUnreadable, "cannot read %s: %v", relative, err)
-	}
-	if IsBinaryContent(content) {
-		return errors.WrapIff(ErrSelectionInvalid, "%s is not a text file; only text files can be committed", relative)
 	}
 	c.totalSize += int64(len(content))
 	if c.opts.MaxTotalSize > 0 && c.totalSize > c.opts.MaxTotalSize {

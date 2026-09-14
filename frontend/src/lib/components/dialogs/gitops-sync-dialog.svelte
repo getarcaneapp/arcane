@@ -12,7 +12,7 @@
 	import { Input } from '#lib/components/ui/input/index.js';
 	import FileBrowserDialog from '#lib/components/dialogs/file-browser-dialog.svelte';
 	import GitopsDialogFooter from '#lib/components/dialogs/gitops-dialog-footer.svelte';
-	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
+	import WorkspaceFileTreePanel from '#lib/components/workspace-file-tree-panel.svelte';
 	import * as RadioGroup from '#lib/components/ui/radio-group/index.js';
 	import { RadioGroup as RadioGroupPrimitive } from 'bits-ui';
 	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
@@ -32,9 +32,8 @@
 	import { settingsService } from '#lib/services/settings-service.js';
 	import { projectService } from '#lib/services/project-service.js';
 	import { projectWorkspaceService } from '#lib/services/project-workspace-service.js';
-	import { environmentManagementService } from '#lib/services/env-mgmt-service.js';
 	import { hasPermission } from '#lib/utils/auth.js';
-	import { cn } from '#lib/utils.js';
+	import type { WorkspaceDisplayEntry } from '#lib/utils/workspace-files.js';
 	import { z } from 'zod/v4';
 	import { createForm, preventDefault } from '#lib/utils/settings.svelte.js';
 
@@ -65,13 +64,6 @@
 		onSubmit,
 		isLoading
 	}: GitOpsSyncFormProps = $props();
-
-	type BackupFileNode = {
-		name: string;
-		path: string;
-		isDirectory: boolean;
-		children: BackupFileNode[];
-	};
 
 	type GitOpsSyncTargetType = 'project' | 'swarm_stack';
 
@@ -334,23 +326,11 @@
 	const projectOptions = $derived(projects.map((project) => ({ value: project.id, label: project.name })));
 	const deployProjectOptions = $derived([{ value: newProjectOption, label: m.create_new_project() }, ...projectOptions]);
 
-	const environmentQuery = createQuery(() => ({
-		queryKey: queryKeys.environments.detail(environmentId),
-		queryFn: () => environmentManagementService.get(environmentId),
-		enabled: open && isBackupMode,
-		staleTime: 0
-	}));
-
 	function slugifyInternal(value: string): string {
-		return value.trim().replace(/\s+/g, '-');
+		return value.trim().replace(/[\s/]+/g, '-');
 	}
 
-	const suggestedBackupDirectory = $derived.by(() => {
-		const environmentSegment = slugifyInternal(environmentQuery.data?.name ?? '');
-		const projectSegment = slugifyInternal(selectedProject?.name ?? '');
-		if (!environmentSegment || !projectSegment) return '';
-		return `projects/${environmentSegment}/${projectSegment}`;
-	});
+	const suggestedBackupDirectory = $derived(slugifyInternal(selectedProject?.name ?? ''));
 
 	const effectiveBackupDirectory = $derived(inputs.backupDirectory.value.trim() || suggestedBackupDirectory);
 
@@ -375,40 +355,6 @@
 		return isEnvFileInternal(path.split('/').pop() ?? '');
 	}
 
-	function sortNodesInternal(nodes: BackupFileNode[]) {
-		nodes.sort((a, b) => (a.isDirectory === b.isDirectory ? a.name.localeCompare(b.name) : a.isDirectory ? -1 : 1));
-		for (const node of nodes) sortNodesInternal(node.children);
-	}
-
-	const fileTree = $derived.by<BackupFileNode[]>(() => {
-		const roots: BackupFileNode[] = [];
-		const byPath: Record<string, BackupFileNode> = {};
-		const entries = [...workspaceFiles].sort((a, b) => a.relativePath.localeCompare(b.relativePath));
-
-		for (const entry of entries) {
-			const segments = entry.relativePath.split('/').filter(Boolean);
-			let parentPath = '';
-			segments.forEach((segment, index) => {
-				const path = parentPath ? `${parentPath}/${segment}` : segment;
-				const isLeaf = index === segments.length - 1;
-				const existing = byPath[path];
-				if (!existing) {
-					const node: BackupFileNode = { name: segment, path, isDirectory: isLeaf ? entry.isDirectory : true, children: [] };
-					byPath[path] = node;
-					const parent = parentPath ? byPath[parentPath] : undefined;
-					if (parent) parent.children.push(node);
-					else roots.push(node);
-				} else if (isLeaf && entry.isDirectory) {
-					existing.isDirectory = true;
-				}
-				parentPath = path;
-			});
-		}
-
-		sortNodesInternal(roots);
-		return roots;
-	});
-
 	const initialBackupPaths = $derived.by<ReadonlySet<string>>(() => {
 		const stored = syncToEdit?.projectId === selectedProjectId ? (syncToEdit?.backupPaths ?? []) : [];
 		return new Set(stored.filter((path) => path !== envFileName));
@@ -432,28 +378,28 @@
 		return false;
 	}
 
-	function isNodeCheckedInternal(node: BackupFileNode): boolean {
-		if (selectedPaths.has(node.path)) return true;
+	function isNodeCheckedInternal(node: WorkspaceDisplayEntry): boolean {
+		if (selectedPaths.has(node.relativePath)) return true;
 		if (!node.isDirectory && isEnvFileInternal(node.name)) return false;
-		return ancestorSelectedInternal(node.path);
+		return ancestorSelectedInternal(node.relativePath);
 	}
 
-	function isNodeLockedInternal(node: BackupFileNode): boolean {
+	function isNodeLockedInternal(node: WorkspaceDisplayEntry): boolean {
 		if (!node.isDirectory && isEnvFileInternal(node.name)) return false;
-		return ancestorSelectedInternal(node.path);
+		return ancestorSelectedInternal(node.relativePath);
 	}
 
-	function toggleNodeInternal(node: BackupFileNode, checked: boolean) {
+	function toggleNodeInternal(node: WorkspaceDisplayEntry, checked: boolean) {
 		if (isNodeLockedInternal(node)) return;
 		const selection = editableSelectionInternal();
 		if (!checked) {
-			selection.delete(node.path);
+			selection.delete(node.relativePath);
 			return;
 		}
-		selection.add(node.path);
+		selection.add(node.relativePath);
 		if (!node.isDirectory) return;
 		for (const path of [...selection]) {
-			if (path !== node.path && path.startsWith(`${node.path}/`) && !isEnvPathInternal(path)) {
+			if (path !== node.relativePath && path.startsWith(`${node.relativePath}/`) && !isEnvPathInternal(path)) {
 				selection.delete(path);
 			}
 		}
@@ -568,35 +514,12 @@
 	</Button>
 {/snippet}
 
-{#snippet backupFileNode(node: BackupFileNode, depth: number)}
-	{@const checked = isNodeCheckedInternal(node)}
-	{@const locked = isNodeLockedInternal(node)}
-	{@const isEnvFile = !node.isDirectory && isEnvFileInternal(node.name)}
-	<li>
-		<div class="flex items-center gap-2 rounded-md py-1" style={`padding-left: ${depth * 1.25 + 0.25}rem`}>
-			<Checkbox
-				id={`backup-path-${node.path}`}
-				{checked}
-				disabled={locked}
-				onCheckedChange={(value) => toggleNodeInternal(node, value === true)}
-			/>
-			<Label for={`backup-path-${node.path}`} class="mb-0 flex min-w-0 flex-1 items-center gap-2 text-sm font-normal">
-				<span class={cn('truncate', node.isDirectory && 'font-medium')}>{node.name}{node.isDirectory ? '/' : ''}</span>
-				{#if isEnvFile}
-					<span class="shrink-0 rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-600 dark:text-amber-400">
-						{m.environment_file()}
-					</span>
-				{/if}
-			</Label>
-		</div>
-		{#if node.children.length > 0}
-			<ul class="space-y-0.5">
-				{#each node.children as child (child.path)}
-					{@render backupFileNode(child, depth + 1)}
-				{/each}
-			</ul>
-		{/if}
-	</li>
+{#snippet envFileBadge(entry: WorkspaceDisplayEntry)}
+	{#if !entry.isDirectory && isEnvFileInternal(entry.name)}
+		<span class="shrink-0 rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-600 dark:text-amber-400">
+			{m.environment_file()}
+		</span>
+	{/if}
 {/snippet}
 
 {#snippet repositoryAndBranchFields()}
@@ -752,23 +675,25 @@
 					</div>
 
 					<div class="space-y-2">
-						<Label>{m.included_files()}</Label>
-						<div class="max-h-56 overflow-y-auto rounded-md border border-border/50 p-1.5">
+						<div class="flex h-56 flex-col overflow-hidden rounded-md border border-border/50">
 							{#if !selectedProjectId}
-								<p class="px-1 py-2 text-xs text-muted-foreground">{m.project_required()}</p>
+								<p class="px-3 py-2 text-xs text-muted-foreground">{m.project_required()}</p>
 							{:else if loadingWorkspace}
-								<div class="flex items-center gap-2 px-1 py-2">
+								<div class="flex items-center gap-2 px-3 py-2">
 									<Spinner class="size-4" />
 									<span class="text-sm text-muted-foreground">{m.common_loading()}</span>
 								</div>
-							{:else if fileTree.length === 0}
-								<p class="px-1 py-2 text-xs text-muted-foreground">{m.no_project_files()}</p>
 							{:else}
-								<ul class="space-y-0.5">
-									{#each fileTree as node (node.path)}
-										{@render backupFileNode(node, 0)}
-									{/each}
-								</ul>
+								<WorkspaceFileTreePanel
+									title={m.included_files()}
+									entries={workspaceFiles}
+									selectable
+									isChecked={isNodeCheckedInternal}
+									isSelectionLocked={isNodeLockedInternal}
+									onCheckedChange={toggleNodeInternal}
+									rowBadge={envFileBadge}
+									emptyMessage={m.no_project_files()}
+								/>
 							{/if}
 						</div>
 						<p class="text-xs text-muted-foreground">{m.included_files_description()}</p>
