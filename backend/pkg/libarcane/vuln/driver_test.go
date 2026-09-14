@@ -203,7 +203,6 @@ func TestBuildTrivyHostConfig_ExcludesResourcesWhenLimitsDisabled(t *testing.T) 
 
 	hostConfig := BuildHostConfig(
 		"cache-volume",
-		nil,
 		resources,
 		"",
 		false,
@@ -228,7 +227,6 @@ func TestBuildTrivyHostConfig_IncludesResourcesWhenLimitsEnabled(t *testing.T) {
 
 	hostConfig := BuildHostConfig(
 		"cache-volume",
-		nil,
 		resources,
 		"",
 		true,
@@ -251,7 +249,6 @@ func TestBuildTrivyHostConfig_UsesCPUSetAndClearsNanoCPUs(t *testing.T) {
 
 	hostConfig := BuildHostConfig(
 		"cache-volume",
-		nil,
 		resources,
 		"0-1",
 		true,
@@ -269,7 +266,6 @@ func TestBuildTrivyHostConfig_UsesCPUSetAndClearsNanoCPUs(t *testing.T) {
 func TestBuildTrivyHostConfig_AppliesRuntimeSecurity(t *testing.T) {
 	hostConfig := BuildHostConfig(
 		"cache-volume",
-		nil,
 		containertypes.Resources{},
 		"",
 		false,
@@ -285,7 +281,6 @@ func TestBuildTrivyHostConfig_AppliesRuntimeSecurity(t *testing.T) {
 func TestBuildTrivyHostConfig_SkipsCacheMountWhenVolumeEmpty(t *testing.T) {
 	hostConfig := BuildHostConfig(
 		"",
-		nil,
 		containertypes.Resources{},
 		"",
 		false,
@@ -303,7 +298,6 @@ func TestBuildTrivyHostConfig_SkipsCacheMountWhenVolumeEmpty(t *testing.T) {
 	}
 	hostConfig = BuildHostConfig(
 		"",
-		nil,
 		containertypes.Resources{},
 		"",
 		false,
@@ -348,7 +342,6 @@ func TestBuildTrivyBatchHostConfig_SkipsCacheMountWhenVolumeEmpty(t *testing.T) 
 func TestBuildTrivyHostConfig_IncludesInheritedSocketMount(t *testing.T) {
 	hostConfig := BuildHostConfig(
 		"cache-volume",
-		nil,
 		containertypes.Resources{},
 		"",
 		false,

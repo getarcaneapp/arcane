@@ -83,7 +83,8 @@
 		diagnosticSummary = $bindable(createDefaultSummary()),
 		outlineOpen = $bindable(false),
 		diffOpen = $bindable(false),
-		commandPaletteOpen = $bindable(false)
+		commandPaletteOpen = $bindable(false),
+		statusBar = true
 	}: {
 		value?: string;
 		language?: CodeLanguage;
@@ -102,6 +103,7 @@
 		outlineOpen?: boolean;
 		diffOpen?: boolean;
 		commandPaletteOpen?: boolean;
+		statusBar?: boolean;
 	} = $props();
 	void hasErrors;
 
@@ -807,17 +809,18 @@
 		{/if}
 	</div>
 
-	<div class="editor-status">
-		<span>{diagnosticSummary.errors} errors</span>
-		<span>{diagnosticSummary.errors} {m.editor_errors()}</span>
-		<span>{diagnosticSummary.warnings} {m.editor_warnings()}</span>
-		<span>{m.editor_schema()}: {diagnosticSummary.schemaStatus}</span>
-		<span>{m.editor_line()} {diagnosticSummary.cursorLine}, {m.editor_column()} {diagnosticSummary.cursorCol}</span>
-		<span>{m.diagnostics()}: {countCurrentDiagnostics()}</span>
-		{#if !validationReady}
-			<span class="status-muted">{m.editor_validating()}</span>
-		{/if}
-	</div>
+	{#if statusBar}
+		<div class="editor-status">
+			<span>{diagnosticSummary.errors} {m.editor_errors()}</span>
+			<span>{diagnosticSummary.warnings} {m.editor_warnings()}</span>
+			<span>{m.editor_schema()}: {diagnosticSummary.schemaStatus}</span>
+			<span>{m.editor_line()} {diagnosticSummary.cursorLine}, {m.editor_column()} {diagnosticSummary.cursorCol}</span>
+			<span>{m.diagnostics()}: {countCurrentDiagnostics()}</span>
+			{#if !validationReady}
+				<span class="status-muted">{m.editor_validating()}</span>
+			{/if}
+		</div>
+	{/if}
 
 	<Command.Dialog bind:open={commandPaletteOpen} title={m.editor_commands()} description={m.editor_commands_desc()}>
 		<Command.Input placeholder={m.editor_search_commands()} />
