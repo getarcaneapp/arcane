@@ -742,6 +742,7 @@ export interface NetworkSummaryDto {
 	created: string;
 	options?: Record<string, string> | null;
 	labels?: Record<string, string> | null;
+	ipam?: IPAMDto;
 	inUse: boolean;
 	isDefault?: boolean;
 }

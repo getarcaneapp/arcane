@@ -26,6 +26,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	networktypes "github.com/getarcaneapp/arcane/types/v2/network"
 	dockernetwork "github.com/moby/moby/api/types/network"
+	"github.com/moby/moby/client"
 	"github.com/samber/mo"
 )
 
@@ -227,8 +228,13 @@ func (h *NetworkHandler) CreateNetwork(ctx context.Context, input *CreateNetwork
 		return nil, err
 	}
 
-	// Convert to Docker SDK options
-	dockerOptions := input.Body.Options.ToDockerCreateOptions()
+	dockerOptions, err := mapper.MapOne[networktypes.CreateOptions, client.NetworkCreateOptions](input.Body.Options)
+	if err != nil {
+		return nil, huma.Error400BadRequest(errors.WithMessage(err, "Invalid network options").Error())
+	}
+	if !input.Body.Options.EnableIPv6 {
+		dockerOptions.EnableIPv6 = nil
+	}
 
 	var response *dockernetwork.CreateResponse
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)

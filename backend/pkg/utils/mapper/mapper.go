@@ -3,12 +3,43 @@ package mapper
 import (
 	"fmt"
 	"net/netip"
+	"strings"
 
 	"emperror.dev/errors"
 	"github.com/jinzhu/copier"
 )
 
 var typeConverters = []copier.TypeConverter{
+	{
+		SrcType: "",
+		DstType: netip.Prefix{},
+		Fn: func(src any) (any, error) {
+			raw, ok := src.(string)
+			if !ok {
+				return nil, fmt.Errorf("expected string, got %T", src)
+			}
+			if strings.TrimSpace(raw) == "" {
+				return netip.Prefix{}, nil
+			}
+
+			return netip.ParsePrefix(strings.TrimSpace(raw))
+		},
+	},
+	{
+		SrcType: "",
+		DstType: netip.Addr{},
+		Fn: func(src any) (any, error) {
+			raw, ok := src.(string)
+			if !ok {
+				return nil, fmt.Errorf("expected string, got %T", src)
+			}
+			if strings.TrimSpace(raw) == "" {
+				return netip.Addr{}, nil
+			}
+
+			return netip.ParseAddr(strings.TrimSpace(raw))
+		},
+	},
 	{
 		SrcType: netip.Prefix{},
 		DstType: "",
