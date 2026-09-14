@@ -441,6 +441,7 @@
 				return 'scanning';
 			},
 			title: m.vuln_title(),
+			sortable: true,
 			cell: VulnerabilitiesCell,
 			align: 'center',
 			class: 'text-center'
