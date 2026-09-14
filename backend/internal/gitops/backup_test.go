@@ -487,7 +487,7 @@ func TestGitOpsBackup_CreateValidation(t *testing.T) {
 		},
 		{
 			name:    "deployment-only pre-deploy script",
-			request: gitops.CreateSyncRequest{PreDeployScriptPath: &scriptPath},
+			request: gitops.CreateSyncRequest{PreDeployConfigRequest: gitops.PreDeployConfigRequest{PreDeployScriptPath: &scriptPath}},
 			wantErr: common.ErrValidation,
 		},
 	}
@@ -651,4 +651,59 @@ func TestGitOpsDeploy_LinksExistingProject(t *testing.T) {
 		ProjectID:    env.project.ID,
 	}, common.User{ID: "user-1", Username: "tester"})
 	require.ErrorIs(t, err, common.ErrConflict)
+}
+
+func TestGitOpsImport_ForwardsDeployAndLifecycleFields(t *testing.T) {
+	env := setupGitOpsBackupTestServiceInternal(t)
+	ctx := context.Background()
+	require.NoError(t, env.service.settingsService.SetStringSetting(ctx, "lifecycleEnabled", "true"))
+
+	resp, err := env.service.ImportSyncs(ctx, "0", []gitops.ImportGitOpsSyncRequest{
+		{
+			SyncName:           "Media-Server",
+			GitRepo:            "backup-remote",
+			Branch:             "main",
+			DockerComposePath:  "apps/demo/compose.yaml",
+			SyncDirectory:      new(true),
+			ProjectName:        "media-server",
+			PullImageAfterSync: new(true),
+			RedeployAfterSync:  new(true),
+			PreDeployConfigRequest: gitops.PreDeployConfigRequest{
+				PreDeployScriptPath:  new("scripts/decrypt.sh"),
+				PreDeployRunnerImage: new("alpine:3.20"),
+				PreDeployEnv:         new("SOPS_AGE_KEY=secret\n"),
+				PreDeployTimeoutSec:  new(120),
+				PreDeployNetworkMode: new("bridge"),
+			},
+		},
+		{
+			SyncName:          "plain",
+			GitRepo:           "backup-remote",
+			Branch:            "main",
+			DockerComposePath: "apps/demo/compose.yaml",
+		},
+	}, common.SystemUser)
+	require.NoError(t, err)
+	require.Empty(t, resp.Errors)
+	require.Equal(t, 2, resp.SuccessCount)
+
+	var full, plain projectpkg.GitOpsSync
+	require.NoError(t, env.db.Where("name = ?", "Media-Server").First(&full).Error)
+	require.NoError(t, env.db.Where("name = ?", "plain").First(&plain).Error)
+
+	assert.Equal(t, "media-server", full.ProjectName)
+	assert.True(t, full.PullImageAfterSync)
+	assert.True(t, full.RedeployAfterSync)
+	assert.Equal(t, "scripts/decrypt.sh", *full.PreDeployScriptPath)
+	assert.Equal(t, "alpine:3.20", *full.PreDeployRunnerImage)
+	assert.Equal(t, "SOPS_AGE_KEY=secret", *full.PreDeployEnv)
+	assert.Equal(t, 120, full.PreDeployTimeoutSec)
+	assert.Equal(t, "bridge", full.PreDeployNetworkMode)
+
+	assert.Equal(t, "plain", plain.ProjectName)
+	assert.False(t, plain.PullImageAfterSync)
+	assert.False(t, plain.RedeployAfterSync)
+	assert.Nil(t, plain.PreDeployScriptPath)
+	assert.Equal(t, 60, plain.PreDeployTimeoutSec)
+	assert.Equal(t, "none", plain.PreDeployNetworkMode)
 }

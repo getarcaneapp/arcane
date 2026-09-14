@@ -92,7 +92,7 @@
 				<Textarea
 					id="json-content"
 					bind:value={jsonContent}
-					placeholder={`[\n  {\n    "syncName": "example-sync",\n    "gitRepo": "my-repo",\n    "branch": "main",\n    "dockerComposePath": "docker-compose.yml",\n    "autoSync": true,\n    "syncInterval": 10\n  }\n]`}
+					placeholder={`[\n  {\n    "syncName": "example-sync",\n    "gitRepo": "my-repo",\n    "branch": "main",\n    "dockerComposePath": "docker-compose.yml",\n    "autoSync": true,\n    "syncInterval": 10,\n    "projectName": "example",\n    "redeployAfterSync": true\n  }\n]`}
 					class="h-[300px] font-mono text-xs"
 				/>
 				{#if error}

@@ -31,6 +31,7 @@ var (
 	gitopsUpdateBranch      string
 	gitopsUpdateComposePath string
 	gitopsUpdateProjectName string
+	gitopsImportProjectName string
 	gitopsUpdateAutoSync    bool
 	gitopsUpdateInterval    int
 )
@@ -427,6 +428,7 @@ var importCmd = &cobra.Command{
 			DockerComposePath: composePath,
 			AutoSync:          autoSync,
 			SyncInterval:      interval,
+			ProjectName:       gitopsImportProjectName,
 		}
 
 		// The endpoint accepts a batch, so a single sync still has to be wrapped
@@ -516,6 +518,7 @@ func init() {
 	importCmd.Flags().String("compose-path", "", "Path to docker-compose file")
 	importCmd.Flags().Bool("auto-sync", false, "Enable automatic sync")
 	importCmd.Flags().Int("interval", 5, "Sync interval in minutes")
+	importCmd.Flags().StringVar(&gitopsImportProjectName, "project-name", "", "Project name for the sync")
 	importCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 	_ = importCmd.MarkFlagRequired("name")
 	_ = importCmd.MarkFlagRequired("repo-url")
