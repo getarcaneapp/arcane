@@ -53,8 +53,10 @@
 		onEditSync: (sync: GitOpsSync) => void;
 	} = $props();
 
-	const canSync = $derived(hasPermission('gitops:sync', environmentId));
 	const canDelete = $derived(hasPermission('gitops:delete', environmentId));
+	const canBackup = $derived(hasPermission('gitops:backup', environmentId));
+	const canRunBackup = $derived(canBackup && hasPermission('gitops:sync', environmentId));
+	const canEditBackup = $derived(canBackup && hasPermission('gitops:update', environmentId));
 
 	let isLoading = $state({
 		removing: false,
@@ -448,29 +450,29 @@
 {#snippet RowActions({ item }: { item: GitOpsSync })}
 	<RowActionsMenu>
 		{#if isBackup(item)}
-			<DropdownMenu.Item onclick={() => handlePerformSync(item)} disabled={isLoading.syncing || !canSync}>
+			<DropdownMenu.Item onclick={() => handlePerformSync(item)} disabled={isLoading.syncing || !canRunBackup}>
 				<UploadIcon class="size-4" />
 				{m.back_up_now()}
 			</DropdownMenu.Item>
 
-			<DropdownMenu.Item onclick={() => openBackupHistory(item)}>
+			<DropdownMenu.Item onclick={() => openBackupHistory(item)} disabled={!canBackup}>
 				<ClockIcon class="size-4" />
 				{m.history()}
 			</DropdownMenu.Item>
 
-			{#if item.backupState === 'needs_attention' && canSync}
+			{#if item.backupState === 'needs_attention' && canBackup}
 				<DropdownMenu.Item onclick={() => openBackupResolve(item)}>
 					<AlertTriangleIcon class="size-4" />
 					{m.resolve()}
 				</DropdownMenu.Item>
 			{/if}
 
-			<DropdownMenu.Item onclick={() => onEditSync(item)}>
+			<DropdownMenu.Item onclick={() => onEditSync(item)} disabled={!canEditBackup}>
 				<SettingsIcon class="size-4" />
 				{m.settings()}
 			</DropdownMenu.Item>
 
-			{#if canDelete}
+			{#if canDelete && canBackup}
 				<RemoveMenuItem
 					onclick={() => handleDisconnectBackup(item)}
 					disabled={isLoading.removing}

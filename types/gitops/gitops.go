@@ -551,8 +551,8 @@ type CreateSyncRequest struct {
 	// Required: false
 	BackupDirectory string `json:"backupDirectory,omitempty"`
 
-	// BackupPaths lists project-relative files and directories to back up. Defaults
-	// to the project's compose files when omitted. Environment files are only
+	// BackupPaths lists project-relative files and directories to back up. The
+	// project's compose files are always included. Environment files are only
 	// included when listed explicitly.
 	//
 	// Required: false
@@ -701,7 +701,8 @@ type UpdateSyncRequest struct {
 	// Required: false
 	ProjectName *string `json:"projectName,omitzero"`
 
-	// BackupPaths replaces the backed-up file selection. Omitted or empty leaves it unchanged.
+	// BackupPaths replaces the backed-up file selection. Omitted leaves it unchanged;
+	// an empty list keeps only the compose files.
 	//
 	// Required: false
 	BackupPaths []string `json:"backupPaths,omitzero"`
@@ -858,7 +859,7 @@ func (r CreateSyncRequest) HasBackupOptions() bool {
 // HasBackupOptions reports whether the request sets backup-only options that
 // a deploy sync must reject.
 func (r UpdateSyncRequest) HasBackupOptions() bool {
-	return len(r.BackupPaths) > 0 || r.BackupOnSave != nil
+	return r.BackupPaths != nil || r.BackupOnSave != nil
 }
 
 // SyncResult represents the result of a sync operation.

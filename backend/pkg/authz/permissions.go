@@ -200,6 +200,12 @@ const (
 	// permissions (e.g. the built-in Editor role) does not by itself grant the
 	// ability to author hooks; seeded only into the Admin built-in role.
 	PermGitOpsLifecycle = "gitops:lifecycle"
+	// PermGitOpsBackup gates the "Back up to Git" feature. Backup-only routes
+	// (preview, history, resolve) require it alone; the shared sync routes
+	// require it in addition to the matching gitops:* permission when the sync
+	// is a backup. Backups push project files (optionally the .env) to a
+	// repository, so holding the broader gitops:* permissions alone is not enough.
+	PermGitOpsBackup = "gitops:backup"
 
 	PermWebhooksList   = "webhooks:list"
 	PermWebhooksCreate = "webhooks:create"
@@ -331,7 +337,7 @@ func BuiltInEditorPermissions() []string {
 		PermVolumesList, PermVolumesRead, PermVolumesCreate, PermVolumesRename, PermVolumesDelete, PermVolumesPrune, PermVolumesUpload, PermVolumesBackup,
 		PermNetworksList, PermNetworksRead, PermNetworksCreate, PermNetworksDelete, PermNetworksPrune, PermNetworksConnect, PermNetworksDisconnect,
 		PermSwarmRead, PermSwarmSpec, PermSwarmNodes, PermSwarmServices, PermSwarmServicesLogs, PermSwarmStacks, PermSwarmConfigs, PermSwarmSecrets,
-		PermGitOpsList, PermGitOpsRead, PermGitOpsCreate, PermGitOpsUpdate, PermGitOpsDelete, PermGitOpsSync,
+		PermGitOpsList, PermGitOpsRead, PermGitOpsCreate, PermGitOpsUpdate, PermGitOpsDelete, PermGitOpsSync, PermGitOpsBackup,
 		PermWebhooksList, PermWebhooksCreate, PermWebhooksUpdate, PermWebhooksDelete,
 		PermJobsManage, PermNotificationsManage, PermDashboardRead,
 		PermSystemRead, PermSystemPrune,

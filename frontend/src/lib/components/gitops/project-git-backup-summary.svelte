@@ -47,8 +47,11 @@
 	}));
 
 	const sync = $derived(backups.data?.data?.[0] ?? null);
-	const canSync = $derived(hasPermission('gitops:sync', environmentId));
-	const canDelete = $derived(hasPermission('gitops:delete', environmentId));
+	const canBackup = $derived(hasPermission('gitops:backup', environmentId));
+	const canCreate = $derived(canBackup && hasPermission('gitops:create', environmentId));
+	const canRun = $derived(canBackup && hasPermission('gitops:sync', environmentId));
+	const canEdit = $derived(canBackup && hasPermission('gitops:update', environmentId));
+	const canDisconnect = $derived(canBackup && hasPermission('gitops:delete', environmentId));
 	const needsAttention = $derived(sync?.backupState === 'needs_attention');
 	const showError = $derived(!!sync?.lastSyncError && (sync?.backupState === 'failed' || needsAttention));
 	const createHref = $derived(`/environments/${environmentId}/gitops?action=create&mode=backup&projectId=${projectId}`);
@@ -121,14 +124,16 @@
 	{#if !sync}
 		<div class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border/50 px-4 py-3">
 			<p class="text-sm text-muted-foreground">{m.not_backed_up_to_git()}</p>
-			<ArcaneButton action="base" tone="outline-primary" href={createHref} icon={UploadIcon} customLabel={m.back_up_to_git()} />
+			{#if canCreate}
+				<ArcaneButton action="base" tone="outline-primary" href={createHref} icon={UploadIcon} customLabel={m.back_up_to_git()} />
+			{/if}
 		</div>
 	{:else}
 		<DetailMetaStrip items={metaItems}>
 			<BackupStateBadge {sync} />
 
 			<div class="ml-auto flex items-center gap-2">
-				{#if canSync}
+				{#if canRun}
 					<ArcaneButton
 						action="base"
 						tone="outline-primary"
@@ -141,33 +146,37 @@
 					/>
 				{/if}
 
-				<RowActionsMenu>
-					<DropdownMenu.Item onclick={() => (historyOpen = true)}>
-						<ClockIcon class="size-4" />
-						{m.history()}
-					</DropdownMenu.Item>
-
-					<DropdownMenu.Item onclick={() => goto(`/environments/${environmentId}/gitops?action=edit&syncId=${sync.id}`)}>
-						<SettingsIcon class="size-4" />
-						{m.settings()}
-					</DropdownMenu.Item>
-
-					{#if needsAttention && canSync}
-						<DropdownMenu.Item onclick={() => (resolveOpen = true)}>
-							<ShieldAlertIcon class="size-4" />
-							{m.resolve()}
+				{#if canBackup}
+					<RowActionsMenu>
+						<DropdownMenu.Item onclick={() => (historyOpen = true)}>
+							<ClockIcon class="size-4" />
+							{m.history()}
 						</DropdownMenu.Item>
-					{/if}
 
-					{#if canDelete}
-						<DropdownMenu.Separator />
+						{#if canEdit}
+							<DropdownMenu.Item onclick={() => goto(`/environments/${environmentId}/gitops?action=edit&syncId=${sync.id}`)}>
+								<SettingsIcon class="size-4" />
+								{m.settings()}
+							</DropdownMenu.Item>
+						{/if}
 
-						<DropdownMenu.Item variant="destructive" disabled={disconnecting} onclick={disconnect}>
-							<TrashIcon class="size-4" />
-							{m.common_disconnect()}
-						</DropdownMenu.Item>
-					{/if}
-				</RowActionsMenu>
+						{#if needsAttention}
+							<DropdownMenu.Item onclick={() => (resolveOpen = true)}>
+								<ShieldAlertIcon class="size-4" />
+								{m.resolve()}
+							</DropdownMenu.Item>
+						{/if}
+
+						{#if canDisconnect}
+							<DropdownMenu.Separator />
+
+							<DropdownMenu.Item variant="destructive" disabled={disconnecting} onclick={disconnect}>
+								<TrashIcon class="size-4" />
+								{m.common_disconnect()}
+							</DropdownMenu.Item>
+						{/if}
+					</RowActionsMenu>
+				{/if}
 			</div>
 		</DetailMetaStrip>
 

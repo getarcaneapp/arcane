@@ -313,8 +313,8 @@ func TestGitOpsBackup_EnvFilesOnlyIncludedWhenListedExplicitly(t *testing.T) {
 		paths       []string
 		wantEnvFile bool
 	}{
-		{name: "directory selection skips env files", paths: []string{"compose.yaml", "config"}, wantEnvFile: false},
-		{name: "explicit env file is included", paths: []string{"compose.yaml", "config", ".env"}, wantEnvFile: true},
+		{name: "directory selection skips env files", paths: []string{"config"}, wantEnvFile: false},
+		{name: "explicit env file is included", paths: []string{"config", ".env"}, wantEnvFile: true},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -479,11 +479,6 @@ func TestGitOpsBackup_CreateValidation(t *testing.T) {
 			},
 			request: gitops.CreateSyncRequest{Name: "nested", BackupDirectory: "backups/demo/nested"},
 			wantErr: common.ErrConflict,
-		},
-		{
-			name:    "selection missing the compose file",
-			request: gitops.CreateSyncRequest{BackupPaths: []string{"config"}},
-			wantErr: common.ErrValidation,
 		},
 		{
 			name:    "deployment-only directory sync",

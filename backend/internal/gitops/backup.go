@@ -149,19 +149,13 @@ func (s *GitOpsSyncService) prepareBackupCreateInternal(ctx context.Context, tx 
 	if err := s.projectService.EnsureProjectPathUnderRoot(ctx, project, false); err != nil {
 		return nil, err
 	}
-	composeFile, composeFiles, err := s.backupComposeFilesInternal(ctx, project)
+	composeFile, _, err := s.backupComposeFilesInternal(ctx, project)
 	if err != nil {
 		return nil, common.Classify(common.ErrValidation, errors.WithDetails(err, "field", "projectId"))
 	}
 	paths, err := normalizeBackupPathsInternal(req.BackupPaths)
 	if err != nil {
 		return nil, common.Classify(common.ErrValidation, errors.WithDetails(err, "field", "backupPaths"))
-	}
-	if len(paths) == 0 {
-		paths = composeFiles
-	}
-	if !backupSelectionCoversInternal(paths, composeFile) {
-		return nil, common.Classify(common.ErrValidation, errors.WithDetails(errors.New("the backup selection must include the compose file "+composeFile), "field", "backupPaths"))
 	}
 	config := &backupCreateConfigInternal{project: project, directory: directory, paths: paths, composeFile: composeFile, backupOnSave: true}
 	if req.BackupOnSave != nil {
@@ -229,21 +223,10 @@ func (s *GitOpsSyncService) applyModeUpdatesInternal(ctx context.Context, curren
 		updates["backup_conflict"] = false
 		updates["backup_failure_reason"] = nil
 	}
-	if len(req.BackupPaths) > 0 {
+	if req.BackupPaths != nil {
 		paths, err := normalizeBackupPathsInternal(req.BackupPaths)
 		if err != nil {
 			return common.Classify(common.ErrValidation, errors.WithDetails(err, "field", "backupPaths"))
-		}
-		composeFile := strings.TrimPrefix(strings.TrimPrefix(current.ComposePath, current.BackupDirectory), "/")
-		if current.ProjectID != nil {
-			if project, found, lookupErr := s.lookupProjectByIDInternal(ctx, *current.ProjectID); lookupErr == nil && found {
-				if resolved, _, resolveErr := s.backupComposeFilesInternal(ctx, project); resolveErr == nil {
-					composeFile = resolved
-				}
-			}
-		}
-		if !backupSelectionCoversInternal(paths, composeFile) {
-			return common.Classify(common.ErrValidation, errors.WithDetails(errors.New("the backup selection must include the compose file "+composeFile), "field", "backupPaths"))
 		}
 		updates["backup_paths"] = database.StringSlice(paths)
 	}
@@ -687,13 +670,15 @@ func (s *GitOpsSyncService) backupComposeFilesInternal(ctx context.Context, proj
 
 // buildBackupSnapshotInternal reads the selected project files, retrying when they change mid-read.
 func (s *GitOpsSyncService) buildBackupSnapshotInternal(ctx context.Context, sync *projectpkg.GitOpsSync, project *projectpkg.Project) (*backupSnapshotInternal, error) {
-	paths := []string(sync.BackupPaths)
-	if len(paths) == 0 {
-		return nil, errors.WrapIf(git.ErrSelectionInvalid, "no files are selected for backup")
-	}
-	primary, _, err := s.backupComposeFilesInternal(ctx, project)
+	_, composeFiles, err := s.backupComposeFilesInternal(ctx, project)
 	if err != nil {
 		return nil, errors.WrapIf(git.ErrSelectionInvalid, err.Error())
+	}
+	paths := slices.Clone([]string(sync.BackupPaths))
+	for _, composeFile := range composeFiles {
+		if !backupSelectionCoversInternal(paths, composeFile) {
+			paths = append(paths, composeFile)
+		}
 	}
 	maxFiles, maxTotalSize, _ := s.getEffectiveSyncLimits(ctx, sync)
 	options := git.CollectOptions{
@@ -713,9 +698,6 @@ func (s *GitOpsSyncService) buildBackupSnapshotInternal(ctx context.Context, syn
 		snapshot := &backupSnapshotInternal{files: files, hashes: make(map[string]string, len(files))}
 		for _, file := range files {
 			snapshot.hashes[file.Path] = hashBackupContentInternal(file.Content)
-		}
-		if _, ok := snapshot.hashes[primary]; !ok {
-			return nil, errors.WrapIff(git.ErrSelectionInvalid, "compose file %s is not included in the backup selection", primary)
 		}
 
 		stable := true

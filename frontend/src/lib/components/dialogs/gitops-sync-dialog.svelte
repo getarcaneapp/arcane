@@ -86,6 +86,7 @@
 	// editable section and never submit its fields; the backend enforces the same
 	// rule as defense-in-depth.
 	let canManageLifecycle = $derived(hasPermission('gitops:lifecycle', environmentId));
+	let canBackup = $derived(hasPermission('gitops:backup', environmentId));
 
 	// Whether the sync being edited already has a hook configured. Used to flag
 	// its presence to users who can't manage it and to lock the directory-sync
@@ -111,6 +112,8 @@
 		return value === 'swarm_stack' ? 'swarm_stack' : 'project';
 	}
 
+	const envFileName = '.env';
+
 	const formSchema = z
 		.object({
 			mode: z.enum(['deploy', 'backup']).default('deploy'),
@@ -121,6 +124,7 @@
 			composePath: z.string().default(''),
 			backupDirectory: z.string().default(''),
 			backupPaths: z.array(z.string()).default([]),
+			includeEnvFile: z.boolean().default(false),
 			backupOnSave: z.boolean().default(true),
 			syncDirectory: z.boolean().default(false),
 			pullImageAfterSync: z.boolean().default(false),
@@ -207,6 +211,7 @@
 				composePath: syncToEdit?.composePath ?? defaultComposePath,
 				backupDirectory: syncToEdit?.backupDirectory ?? '',
 				backupPaths: syncToEdit?.backupPaths ?? [],
+				includeEnvFile: syncToEdit?.backupPaths?.includes(envFileName) ?? false,
 				backupOnSave: syncToEdit?.backupOnSave ?? true,
 				syncDirectory: syncToEdit?.syncDirectory ?? false,
 				pullImageAfterSync: syncToEdit?.pullImageAfterSync ?? false,
@@ -304,10 +309,11 @@
 	const selectedMode = $derived<GitOpsSyncMode>(inputs.mode.value as GitOpsSyncMode);
 	const isBackupMode = $derived(selectedMode === 'backup');
 
-	const directionOptions = [
+	const allDirectionOptions = [
 		{ value: 'deploy', label: m.pull(), description: m.deploy_from_git_description() },
 		{ value: 'backup', label: m.push(), description: m.back_up_to_git_description() }
 	] satisfies { value: GitOpsSyncMode; label: string; description: string }[];
+	const directionOptions = $derived(allDirectionOptions.filter((option) => option.value !== 'backup' || canBackup || isEditMode));
 	const selectedDirection = $derived(directionOptions.find((option) => option.value === selectedMode));
 
 	const projectListOptions: SearchPaginationSortRequest = {
@@ -360,16 +366,9 @@
 	const workspaceFiles = $derived<WorkspaceFileEntry[]>(workspaceQuery.data?.files ?? []);
 	const loadingWorkspace = $derived(!!selectedProjectId && (workspaceQuery.isPending || workspaceQuery.isFetching));
 
-	const composeFileNames = ['compose.yaml', 'compose.yml', 'docker-compose.yml', 'docker-compose.yaml'];
-
-	function isComposeFileInternal(name: string): boolean {
-		const lowered = name.toLowerCase();
-		return composeFileNames.includes(lowered) || /^(docker-)?compose\..+\.ya?ml$/.test(lowered);
-	}
-
 	function isEnvFileInternal(name: string): boolean {
 		const lowered = name.toLowerCase();
-		return lowered === '.env' || lowered.startsWith('.env.') || lowered.endsWith('.env');
+		return lowered === envFileName || lowered.startsWith('.env.') || lowered.endsWith('.env');
 	}
 
 	function isEnvPathInternal(path: string): boolean {
@@ -410,25 +409,9 @@
 		return roots;
 	});
 
-	const rootFiles = $derived(workspaceFiles.filter((entry) => !entry.isDirectory && !entry.relativePath.includes('/')));
-
-	const entrypointPath = $derived.by(() => {
-		for (const candidate of composeFileNames) {
-			const found = rootFiles.find((entry) => entry.name.toLowerCase() === candidate);
-			if (found) return found.relativePath;
-		}
-		return '';
-	});
-
-	const defaultBackupPaths = $derived(
-		rootFiles.filter((entry) => isComposeFileInternal(entry.name)).map((entry) => entry.relativePath)
-	);
-
 	const initialBackupPaths = $derived.by<ReadonlySet<string>>(() => {
 		const stored = syncToEdit?.projectId === selectedProjectId ? (syncToEdit?.backupPaths ?? []) : [];
-		const paths = new Set(stored.length > 0 ? stored : defaultBackupPaths);
-		if (entrypointPath) paths.add(entrypointPath);
-		return paths;
+		return new Set(stored.filter((path) => path !== envFileName));
 	});
 	const selectionOverrides = new SvelteMap<string, SvelteSet<string>>();
 	const selectedPaths = $derived<ReadonlySet<string>>(selectionOverrides.get(selectedProjectId) ?? initialBackupPaths);
@@ -456,7 +439,6 @@
 	}
 
 	function isNodeLockedInternal(node: BackupFileNode): boolean {
-		if (node.path === entrypointPath) return true;
 		if (!node.isDirectory && isEnvFileInternal(node.name)) return false;
 		return ancestorSelectedInternal(node.path);
 	}
@@ -477,8 +459,10 @@
 		}
 	}
 
-	const backupPaths = $derived([...selectedPaths].sort((a, b) => a.localeCompare(b)));
-	const hasSelectedEnvFile = $derived(backupPaths.some((path) => isEnvPathInternal(path)));
+	const backupPaths = $derived(
+		[...selectedPaths, ...(inputs.includeEnvFile.value ? [envFileName] : [])].sort((a, b) => a.localeCompare(b))
+	);
+	const hasSelectedEnvFile = $derived([...selectedPaths].some((path) => isEnvPathInternal(path)));
 	const backupNamePlaceholder = $derived(m.project_backup_name({ name: selectedProject?.name ?? '' }));
 	const backupSummaryDestination = $derived(
 		`${selectedRepository?.label ?? ''} · ${selectedBranch} / ${effectiveBackupDirectory}`
@@ -598,9 +582,6 @@
 			/>
 			<Label for={`backup-path-${node.path}`} class="mb-0 flex min-w-0 flex-1 items-center gap-2 text-sm font-normal">
 				<span class={cn('truncate', node.isDirectory && 'font-medium')}>{node.name}{node.isDirectory ? '/' : ''}</span>
-				{#if node.path === entrypointPath}
-					<span class="shrink-0 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] text-primary">{m.common_entrypoint()}</span>
-				{/if}
 				{#if isEnvFile}
 					<span class="shrink-0 rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-600 dark:text-amber-400">
 						{m.environment_file()}
@@ -739,7 +720,9 @@
 							disabled={isEditMode}
 							error={inputs.projectId.error}
 							onValueChange={(value) => {
-								if (value) inputs.projectId.value = value;
+								if (!value) return;
+								if (value !== inputs.projectId.value) inputs.includeEnvFile.value = false;
+								inputs.projectId.value = value;
 							}}
 						/>
 
@@ -828,6 +811,19 @@
 								<p class="text-xs text-muted-foreground">{m.back_up_on_save_description()}</p>
 							</div>
 							<Switch id="backupOnSaveSwitch" bind:checked={inputs.backupOnSave.value} disabled={!inputs.autoSync.value} />
+						</div>
+
+						<div class="py-3">
+							<div class="flex items-center justify-between gap-4">
+								<div class="min-w-0">
+									<Label for="includeEnvFileSwitch" class="mb-0 text-sm font-medium">{m.include_environment_file()}</Label>
+									<p class="text-xs text-muted-foreground">{m.include_environment_file_description()}</p>
+								</div>
+								<Switch id="includeEnvFileSwitch" bind:checked={inputs.includeEnvFile.value} />
+							</div>
+							{#if inputs.includeEnvFile.value}
+								<p class="mt-2 text-xs text-amber-600 dark:text-amber-400">{m.environment_file_warning()}</p>
+							{/if}
 						</div>
 					</div>
 

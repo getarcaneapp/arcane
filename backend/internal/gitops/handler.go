@@ -129,10 +129,10 @@ func RegisterGitOpsSyncs(api huma.API, syncService *GitOpsSyncService) {
 	handlerutil.RegisterSecured(api, handlerutil.Operation("performGitOpsSync", "POST", syncPath+"/sync", "Perform a GitOps sync", "Manually trigger a sync operation", "GitOps Syncs"), authz.PermGitOpsSync, h.PerformSync)
 	handlerutil.RegisterSecured(api, handlerutil.Operation("getGitOpsSyncStatus", "GET", syncPath+"/status", "Get GitOps sync status", "Get the current status of a GitOps sync", "GitOps Syncs"), authz.PermGitOpsRead, h.GetStatus)
 	handlerutil.RegisterSecured(api, handlerutil.Operation("browseGitOpsSyncFiles", "GET", syncPath+"/files", "Browse GitOps sync files", "Browse files in the synced repository", "GitOps Syncs"), authz.PermGitOpsRead, h.BrowseFiles)
-	handlerutil.RegisterSecured(api, handlerutil.Operation("previewGitOpsBackup", "GET", syncPath+"/backup/preview", "Preview a Git backup", "Show the files the next backup would commit and any conflicts", "GitOps Syncs"), authz.PermGitOpsRead, h.PreviewBackup)
-	handlerutil.RegisterSecured(api, handlerutil.Operation("listGitOpsBackupHistory", "GET", syncPath+"/backup/history", "List Git backup history", "List repository revisions that changed the backup", "GitOps Syncs"), authz.PermGitOpsRead, h.BackupHistory)
-	handlerutil.RegisterSecured(api, handlerutil.Operation("getGitOpsBackupRevision", "GET", syncPath+"/backup/history/{commit}", "Get a Git backup revision", "Get one revision with per-file diffs", "GitOps Syncs"), authz.PermGitOpsRead, h.BackupRevision)
-	handlerutil.RegisterSecured(api, handlerutil.Operation("resolveGitOpsBackupConflict", "POST", syncPath+"/backup/resolve", "Resolve a Git backup conflict", "Resolve a backup that needs attention", "GitOps Syncs"), authz.PermGitOpsSync, h.ResolveBackupConflict)
+	handlerutil.RegisterSecured(api, handlerutil.Operation("previewGitOpsBackup", "GET", syncPath+"/backup/preview", "Preview a Git backup", "Show the files the next backup would commit and any conflicts", "GitOps Syncs"), authz.PermGitOpsBackup, h.PreviewBackup)
+	handlerutil.RegisterSecured(api, handlerutil.Operation("listGitOpsBackupHistory", "GET", syncPath+"/backup/history", "List Git backup history", "List repository revisions that changed the backup", "GitOps Syncs"), authz.PermGitOpsBackup, h.BackupHistory)
+	handlerutil.RegisterSecured(api, handlerutil.Operation("getGitOpsBackupRevision", "GET", syncPath+"/backup/history/{commit}", "Get a Git backup revision", "Get one revision with per-file diffs", "GitOps Syncs"), authz.PermGitOpsBackup, h.BackupRevision)
+	handlerutil.RegisterSecured(api, handlerutil.Operation("resolveGitOpsBackupConflict", "POST", syncPath+"/backup/resolve", "Resolve a Git backup conflict", "Resolve a backup that needs attention", "GitOps Syncs"), authz.PermGitOpsBackup, h.ResolveBackupConflict)
 }
 
 // requireLifecyclePermissionInternal rejects callers lacking gitops:lifecycle
@@ -152,6 +152,28 @@ func requireLifecyclePermissionInternal(ctx context.Context, environmentID strin
 		return nil
 	}
 	return huma.Error403Forbidden("configuring a pre-deploy lifecycle hook requires the " + authz.PermGitOpsLifecycle + " permission")
+}
+
+// requireBackupPermissionInternal rejects callers lacking gitops:backup for
+// the target environment when the operation touches a backup-mode sync.
+func requireBackupPermissionInternal(ctx context.Context, environmentID string, backup bool) error {
+	if !backup {
+		return nil
+	}
+	if ps, _ := middleware.PermissionsFromContext(ctx); ps.Allows(authz.PermGitOpsBackup, environmentID) {
+		return nil
+	}
+	return huma.Error403Forbidden("backing a project up to Git requires the " + authz.PermGitOpsBackup + " permission")
+}
+
+// requireBackupSyncPermissionInternal loads the sync and applies requireBackupPermissionInternal when it is a backup.
+func (h *GitOpsSyncHandler) requireBackupSyncPermissionInternal(ctx context.Context, environmentID, syncID string) error {
+	sync, err := h.syncService.GetSyncByID(ctx, environmentID, syncID)
+	if err != nil {
+		apiErr := common.ToAPIError(err)
+		return huma.NewError(apiErr.HTTPStatus(), "Failed to retrieve GitOps sync")
+	}
+	return requireBackupPermissionInternal(ctx, environmentID, sync.IsBackup())
 }
 
 // ============================================================================
@@ -185,6 +207,9 @@ func (h *GitOpsSyncHandler) ListSyncs(ctx context.Context, input *ListGitOpsSync
 // CreateSync creates a new GitOps sync.
 func (h *GitOpsSyncHandler) CreateSync(ctx context.Context, input *CreateGitOpsSyncInput) (*handlerutil.Out[gitops.GitOpsSync], error) {
 	if err := requireLifecyclePermissionInternal(ctx, input.EnvironmentID, input.Body.HasPreDeployConfig()); err != nil {
+		return nil, err
+	}
+	if err := requireBackupPermissionInternal(ctx, input.EnvironmentID, input.Body.Mode == gitops.SyncModeBackup); err != nil {
 		return nil, err
 	}
 
@@ -250,6 +275,9 @@ func (h *GitOpsSyncHandler) UpdateSync(ctx context.Context, input *UpdateGitOpsS
 	if err := requireLifecyclePermissionInternal(ctx, input.EnvironmentID, input.Body.HasPreDeployConfig()); err != nil {
 		return nil, err
 	}
+	if err := h.requireBackupSyncPermissionInternal(ctx, input.EnvironmentID, input.SyncID); err != nil {
+		return nil, err
+	}
 
 	actor := handlerutil.CurrentActor(ctx)
 
@@ -273,6 +301,9 @@ func (h *GitOpsSyncHandler) UpdateSync(ctx context.Context, input *UpdateGitOpsS
 
 // DeleteSync deletes a GitOps sync by ID.
 func (h *GitOpsSyncHandler) DeleteSync(ctx context.Context, input *DeleteGitOpsSyncInput) (*handlerutil.Out[base.MessageResponse], error) {
+	if err := h.requireBackupSyncPermissionInternal(ctx, input.EnvironmentID, input.SyncID); err != nil {
+		return nil, err
+	}
 	actor := handlerutil.CurrentActor(ctx)
 
 	if err := h.syncService.DeleteSync(ctx, input.EnvironmentID, input.SyncID, actor); err != nil {
@@ -292,6 +323,9 @@ func (h *GitOpsSyncHandler) DeleteSync(ctx context.Context, input *DeleteGitOpsS
 
 // PerformSync manually triggers a sync operation.
 func (h *GitOpsSyncHandler) PerformSync(ctx context.Context, input *PerformSyncInput) (*handlerutil.Out[gitops.SyncResult], error) {
+	if err := h.requireBackupSyncPermissionInternal(ctx, input.EnvironmentID, input.SyncID); err != nil {
+		return nil, err
+	}
 	actor := handlerutil.CurrentActor(ctx)
 
 	result, err := h.syncService.PerformSync(ctx, input.EnvironmentID, input.SyncID, actor)
