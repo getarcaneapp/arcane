@@ -1,5 +1,6 @@
 import { tryCatch } from '#lib/utils/try-catch.js';
 import { redirect } from '@sveltejs/kit';
+import { browser } from '$app/env';
 import { getEffectiveLandingPage } from '#lib/utils/navigation.js';
 import { passkeyService } from '#lib/services/passkey-service.js';
 
@@ -22,8 +23,13 @@ export const load = async ({ parent, url }) => {
 	);
 
 	const error = url.searchParams.get('error');
+	const storedErrorMessage = browser ? sessionStorage.getItem('oidc_login_error') : null;
+	if (storedErrorMessage) sessionStorage.removeItem('oidc_login_error');
 	const errorMessage =
-		url.searchParams.get('message') || url.searchParams.get('error_message') || url.searchParams.get('errorMessage');
+		url.searchParams.get('message') ||
+		url.searchParams.get('error_message') ||
+		url.searchParams.get('errorMessage') ||
+		storedErrorMessage;
 
 	return {
 		passkeyLoginAvailable: passkeyAvailability?.available === true,

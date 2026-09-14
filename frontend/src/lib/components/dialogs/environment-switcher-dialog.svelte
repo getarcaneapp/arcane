@@ -12,6 +12,7 @@
 	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
 	import { m } from '#lib/paraglide/messages.js';
+	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { cn } from '#lib/utils.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { debounced } from '#lib/utils/ws.js';
@@ -222,19 +223,14 @@
 	async function handleSelect(env: Environment) {
 		if (!env || !env.enabled) return;
 
-		const operationResult2 = await tryCatch(
-			(async () => {
-				await environmentStore.setEnvironment(env);
+		await handleApiResultWithCallbacks({
+			result: await tryCatch(environmentStore.setEnvironment(env)),
+			message: m.environments_connect_error(),
+			onSuccess: () => {
 				closeDialog();
 				toast.success(m.environments_switched_to({ name: env.name }));
-			})()
-		);
-		if (operationResult2.error !== null) {
-			const error = operationResult2.error;
-
-			console.error('Failed to set environment:', error);
-			toast.error(m.environments_connect_error());
-		}
+			}
+		});
 	}
 
 	function handleOpenSettings(env: Environment) {

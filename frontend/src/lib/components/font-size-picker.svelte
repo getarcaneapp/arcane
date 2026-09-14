@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { tryCatch } from '#lib/utils/try-catch.js';
+	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 
 	import * as Slider from '#lib/components/ui/slider/index.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
@@ -22,20 +23,18 @@
 	const persist = debounced(async (px: number) => {
 		const previous = lastPersisted;
 
-		const operationResult1 = await tryCatch(
-			(async () => {
-				await userService.updateMyProfile({ fontSize: px });
+		await handleApiResultWithCallbacks({
+			result: await tryCatch(userService.updateMyProfile({ fontSize: px })),
+			message: m.common_update_failed({ resource: m.font_size() }),
+			onSuccess: async () => {
 				lastPersisted = px;
 				await queryClient.invalidateQueries({ queryKey: queryKeys.users.all });
-			})()
-		);
-		if (operationResult1.error !== null) {
-			const err = operationResult1.error;
-
-			console.error('Failed to update font size', err);
-			currentSize = previous;
-			applyFontSize(previous);
-		}
+			},
+			onError: () => {
+				currentSize = previous;
+				applyFontSize(previous);
+			}
+		});
 	}, 400);
 
 	function handleChange(px: number) {

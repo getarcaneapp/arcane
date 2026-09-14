@@ -6,6 +6,7 @@
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { Switch } from '#lib/components/ui/switch/index.js';
 	import TextInputWithLabel from '#lib/components/form/text-input-with-label.svelte';
+	import SwitchWithLabel from '#lib/components/form/labeled-switch.svelte';
 	import { toast } from 'svelte-sonner';
 	import type { Settings } from '#lib/types/settings.js';
 	import * as ArcaneTooltip from '#lib/components/arcane-tooltip/index.js';
@@ -16,6 +17,7 @@
 	import { SettingsPageLayout } from '#lib/layouts/index.js';
 	import { CopyButton } from '#lib/components/ui/copy-button/index.js';
 	import { createSettingsForm } from '#lib/utils/settings-form.js';
+	import { settingsService } from '#lib/services/settings-service.js';
 	import * as Alert from '#lib/components/ui/alert/index.js';
 	import * as Collapsible from '#lib/components/ui/collapsible/index.js';
 	import SettingsRow from '#lib/components/settings/settings-row.svelte';
@@ -125,6 +127,7 @@
 			oidcAutoRedirectToProvider: z.boolean(),
 			oidcClientId: z.string(),
 			oidcClientSecret: z.string(),
+			oidcClearClientSecret: z.boolean(),
 			oidcIssuerUrl: z.string(),
 			oidcScopes: z.string(),
 			oidcGroupsClaim: z.string(),
@@ -133,57 +136,65 @@
 		})
 		.superRefine((formData, ctx) => {
 			const oidcEnabledForAuthValidation = data.oidcStatus.envForced ? currentSettings.oidcEnabled : formData.oidcEnabled;
-			if (oidcEnabledForAuthValidation) return;
-			if (!formData.authLocalEnabled) {
+			if (!oidcEnabledForAuthValidation && !formData.authLocalEnabled) {
 				ctx.addIssue({
 					code: 'custom',
 					message: m.security_enable_one_provider(),
 					path: ['authLocalEnabled']
 				});
 			}
+			if (formData.oidcEnabled && !data.oidcStatus.envForced) {
+				for (const field of ['oidcClientId', 'oidcIssuerUrl'] as const) {
+					if (!formData[field].trim()) {
+						ctx.addIssue({ code: 'custom', message: m.security_oidc_required_fields(), path: [field] });
+					}
+				}
+				if ((!currentSettings.oidcClientSecret || formData.oidcClearClientSecret) && !formData.oidcClientSecret.trim()) {
+					ctx.addIssue({ code: 'custom', message: m.security_oidc_required_fields(), path: ['oidcClientSecret'] });
+				}
+			}
 		});
 
 	let showMergeAccountsAlert = $state(false);
-	let oidcConfigOpen = $state(false);
 
-	const formDefaults = $derived({
-		authLocalEnabled: currentSettings.authLocalEnabled,
-		authSessionTimeout: currentSettings.authSessionTimeout,
-		authPasswordPolicy: currentSettings.authPasswordPolicy,
-		oidcEnabled: currentSettings.oidcEnabled,
-		oidcMergeAccounts: currentSettings.oidcMergeAccounts,
-		oidcSkipTlsVerify: currentSettings.oidcSkipTlsVerify,
-		oidcAutoRedirectToProvider: currentSettings.oidcAutoRedirectToProvider,
-		oidcClientId: currentSettings.oidcClientId,
-		oidcClientSecret: '',
-		oidcIssuerUrl: currentSettings.oidcIssuerUrl,
-		oidcScopes: currentSettings.oidcScopes,
-		oidcGroupsClaim: currentSettings.oidcGroupsClaim,
-		oidcProviderName: currentSettings.oidcProviderName,
-		oidcProviderLogoUrl: currentSettings.oidcProviderLogoUrl
-	});
+	function readFormValues() {
+		const source = settingsStore.current || data.settings!;
+		return {
+			authLocalEnabled: source.authLocalEnabled,
+			authSessionTimeout: source.authSessionTimeout,
+			authPasswordPolicy: source.authPasswordPolicy,
+			oidcEnabled: source.oidcEnabled,
+			oidcMergeAccounts: source.oidcMergeAccounts,
+			oidcSkipTlsVerify: source.oidcSkipTlsVerify,
+			oidcAutoRedirectToProvider: source.oidcAutoRedirectToProvider,
+			oidcClientId: source.oidcClientId,
+			oidcClientSecret: '',
+			oidcClearClientSecret: false,
+			oidcIssuerUrl: source.oidcIssuerUrl,
+			oidcScopes: source.oidcScopes,
+			oidcGroupsClaim: source.oidcGroupsClaim,
+			oidcProviderName: source.oidcProviderName,
+			oidcProviderLogoUrl: source.oidcProviderLogoUrl
+		};
+	}
 
-	const { formInputs, form, settingsForm } = untrack(() =>
+	const { formInputs } = untrack(() =>
 		createSettingsForm({
 			schema: formSchema,
-			currentSettings: formDefaults,
-			getCurrentSettings: () => ({
-				authLocalEnabled: (settingsStore.current || data.settings!).authLocalEnabled,
-				authSessionTimeout: (settingsStore.current || data.settings!).authSessionTimeout,
-				authPasswordPolicy: (settingsStore.current || data.settings!).authPasswordPolicy,
-				oidcEnabled: (settingsStore.current || data.settings!).oidcEnabled,
-				oidcMergeAccounts: (settingsStore.current || data.settings!).oidcMergeAccounts,
-				oidcSkipTlsVerify: (settingsStore.current || data.settings!).oidcSkipTlsVerify,
-				oidcAutoRedirectToProvider: (settingsStore.current || data.settings!).oidcAutoRedirectToProvider,
-				oidcClientId: (settingsStore.current || data.settings!).oidcClientId,
-				oidcClientSecret: '',
-				oidcIssuerUrl: (settingsStore.current || data.settings!).oidcIssuerUrl,
-				oidcScopes: (settingsStore.current || data.settings!).oidcScopes,
-				oidcGroupsClaim: (settingsStore.current || data.settings!).oidcGroupsClaim,
-				oidcProviderName: (settingsStore.current || data.settings!).oidcProviderName,
-				oidcProviderLogoUrl: (settingsStore.current || data.settings!).oidcProviderLogoUrl
-			}),
-			successMessage: m.security_settings_saved()
+			currentSettings: readFormValues(),
+			getCurrentSettings: readFormValues,
+			onSave: async ({ oidcClientSecret, oidcClearClientSecret, ...rest }) => {
+				const payload: Partial<Settings> = rest;
+				if (oidcClearClientSecret) payload.oidcClientSecret = '';
+				else if (oidcClientSecret) payload.oidcClientSecret = oidcClientSecret;
+				await settingsService.updateSettings(payload);
+			},
+			onSuccess: () => {
+				formInputs.oidcClientSecret.value = '';
+				formInputs.oidcClearClientSecret.value = false;
+			},
+			successMessage: m.security_settings_saved(),
+			errorMessage: m.security_settings_save_failed()
 		})
 	);
 
@@ -195,61 +206,11 @@
 		isOidcEnvForced ? currentSettings.oidcEnabled : formInputs.oidcEnabled.value
 	);
 	const showOidcDetails = $derived(formInputs.oidcEnabled.value || isOidcForcedEnabled);
+	const hasStoredClientSecret = $derived(!!currentSettings.oidcClientSecret);
 
-	async function customSubmit() {
-		const formData = form.validate();
-		if (!formData) {
-			toast.error(m.security_form_validation_error());
-			return;
-		}
-
-		if (formData.oidcEnabled && !isOidcEnvForced) {
-			if (!formData.oidcClientId || !formData.oidcIssuerUrl) {
-				toast.error(m.security_oidc_required_fields());
-				return;
-			}
-		}
-
-		settingsForm.setLoading(true);
-
-		try {
-			const operationResult = await tryCatch(
-				(async () => {
-					await settingsForm.updateSettings({
-						authLocalEnabled: formData.authLocalEnabled,
-						authSessionTimeout: formData.authSessionTimeout,
-						authPasswordPolicy: formData.authPasswordPolicy,
-						oidcEnabled: formData.oidcEnabled,
-						oidcMergeAccounts: formData.oidcMergeAccounts,
-						oidcSkipTlsVerify: formData.oidcSkipTlsVerify,
-						oidcAutoRedirectToProvider: formData.oidcAutoRedirectToProvider,
-						oidcClientId: formData.oidcClientId,
-						oidcIssuerUrl: formData.oidcIssuerUrl,
-						oidcScopes: formData.oidcScopes,
-						oidcGroupsClaim: formData.oidcGroupsClaim,
-						oidcProviderName: formData.oidcProviderName,
-						oidcProviderLogoUrl: formData.oidcProviderLogoUrl,
-						...(formData.oidcClientSecret && { oidcClientSecret: formData.oidcClientSecret })
-					});
-					formInputs.oidcClientSecret.value = '';
-					toast.success(m.security_settings_saved());
-				})()
-			);
-			if (operationResult.error !== null) {
-				const error = operationResult.error;
-
-				console.error('Failed to save settings:', error);
-				toast.error(m.security_settings_save_failed());
-			}
-		} finally {
-			settingsForm.setLoading(false);
-		}
-	}
-
-	function customReset() {
-		form.reset(formDefaults);
-		formInputs.oidcClientSecret.value = '';
-	}
+	let oidcConfigOpen = $derived(
+		!!(formInputs.oidcClientId.error || formInputs.oidcClientSecret.error || formInputs.oidcIssuerUrl.error)
+	);
 
 	function handleLocalSwitchChange(checked: boolean) {
 		if (!checked && !isOidcEnabledForAuthValidation) {
@@ -285,8 +246,6 @@
 		formInputs.oidcMergeAccounts.value = false;
 		showMergeAccountsAlert = false;
 	}
-
-	settingsForm.registerFormActions(customSubmit, customReset);
 </script>
 
 {#snippet passwordPolicyOption(value: 'basic' | 'standard' | 'strong', label: string, tooltip: string)}
@@ -412,12 +371,20 @@
 														type="password"
 														label={m.oidc_client_secret_label()}
 														placeholder={m.oidc_client_secret_placeholder()}
-														disabled={isOidcEnvForced}
+														disabled={isOidcEnvForced || formInputs.oidcClearClientSecret.value}
 														bind:value={formInputs.oidcClientSecret.value}
 														error={formInputs.oidcClientSecret.error}
 														helpText={m.security_oidc_client_secret_help()}
 													/>
 												</div>
+
+												{#if hasStoredClientSecret && !isOidcEnvForced}
+													<SwitchWithLabel
+														id="clearOidcClientSecret"
+														label={m.security_oidc_clear_client_secret()}
+														bind:checked={formInputs.oidcClearClientSecret.value}
+													/>
+												{/if}
 
 												<TextInputWithLabel
 													id="oidcIssuerUrl"

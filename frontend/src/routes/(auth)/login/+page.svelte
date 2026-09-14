@@ -182,7 +182,9 @@
 						<AlertIcon class="size-4" />
 						<Alert.Title>{m.auth_login_problem_title()}</Alert.Title>
 						<Alert.Description>
-							{#if data.error === 'oidc_invalid_response'}
+							{#if data.errorMessage}
+								{data.errorMessage}
+							{:else if data.error === 'oidc_invalid_response'}
 								{m.auth_oidc_invalid_response()}
 							{:else if data.error === 'oidc_misconfigured'}
 								{m.auth_oidc_misconfigured()}
@@ -196,8 +198,12 @@
 								{m.auth_oidc_token_error()}
 							{:else if data.error === 'user_processing_failed'}
 								{m.auth_user_processing_failed()}
-							{:else if data.errorMessage}
-								{data.errorMessage}
+							{:else if data.error === 'oidc_init_failed'}
+								{m.auth_oidc_init_failed()}
+							{:else if data.error === 'oidc_url_generation_failed'}
+								{m.auth_oidc_url_generation_failed()}
+							{:else if data.error === 'oidc_network_error'}
+								{m.auth_oidc_network_error()}
 							{:else}
 								{m.auth_unexpected_error()}
 							{/if}

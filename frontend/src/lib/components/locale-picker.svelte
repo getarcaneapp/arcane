@@ -8,6 +8,8 @@
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { userService } from '#lib/services/user-service.js';
 	import { createMutation, useQueryClient } from '@tanstack/svelte-query';
+	import { toast } from 'svelte-sonner';
+	import { extractApiErrorMessage } from '#lib/utils/api.js';
 
 	let {
 		inline = false,
@@ -69,7 +71,7 @@
 		},
 		onError: (err, _locale, context) => {
 			currentLocale = context?.previousLocale ?? getLocale();
-			console.error('Failed to update locale', err);
+			toast.error(m.common_update_failed({ resource: m.language() }), { description: extractApiErrorMessage(err) });
 		}
 	}));
 

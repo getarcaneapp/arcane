@@ -46,7 +46,7 @@ func ValidateCredentialTargetChange(
 
 	slices.Sort(missingFields)
 	if len(missingFields) == 1 {
-		return common.Classify(common.ErrValidation, errors.WithDetails(errors.Errorf("Changing %s requires re-supplying or clearing the %s", targetName, missingFields[0]), "field", missingFields[0]))
+		return common.Classify(common.ErrValidation, errors.WithDetails(errors.Errorf("Changing %s requires re-entering the %s", targetName, missingFields[0]), "field", missingFields[0]))
 	}
 
 	return common.NewAPIErrorWithDetails(

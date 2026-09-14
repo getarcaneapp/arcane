@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { tryCatch } from '#lib/utils/try-catch.js';
+	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
+	import { m } from '#lib/paraglide/messages.js';
 
 	// Dozzle reference: the compact structured-log summary and expandable details pattern
 	// here were informed by amir20/dozzle's ComplexLogItem.vue and LogDetails.vue.
@@ -228,20 +230,16 @@
 	const hasDetails = $derived(summaryFields.length > SUMMARY_LIMIT || summaryFields.length > 0 || !!rawJson);
 
 	async function copyToClipboard() {
-		const operationResult1 = await tryCatch(
-			(async () => {
-				await navigator.clipboard.writeText(jsonString);
+		await handleApiResultWithCallbacks({
+			result: await tryCatch(navigator.clipboard.writeText(jsonString)),
+			message: m.common_copy_failed(),
+			onSuccess: () => {
 				copied = true;
 				setTimeout(() => {
 					copied = false;
 				}, 2000);
-			})()
-		);
-		if (operationResult1.error !== null) {
-			const err = operationResult1.error;
-
-			console.error('Failed to copy to clipboard:', err);
-		}
+			}
+		});
 	}
 </script>
 

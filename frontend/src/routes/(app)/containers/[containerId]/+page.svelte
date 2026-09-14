@@ -64,6 +64,7 @@
 
 	let autoScrollLogs = $state(true);
 	let hasInitialStatsLoaded = $state(false);
+	let statsError = $state(false);
 
 	// Auto-update: the Docker label controls the state when set (not toggleable via UI)
 	const autoUpdateLabelControlled = $derived(isAutoUpdateLabelDisabled(container?.labels));
@@ -522,6 +523,7 @@
 					{memoryLimitFormatted}
 					{memoryUsagePercent}
 					loading={!hasInitialStatsLoaded}
+					streamError={statsError}
 				/>
 			{/if}
 		</Tabs.Content>
@@ -588,6 +590,7 @@
 			enabled={(activeTab === 'stats' || activeTab === 'logs') && !!container.state?.running}
 			bind:stats
 			bind:hasInitialStatsLoaded
+			bind:statsError
 		/>
 	{/key}
 

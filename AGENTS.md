@@ -151,6 +151,12 @@ frontend/src/
 - Extend `BaseAPIService`; reuse existing services and query/mutation patterns.
 - Use precise TypeScript types. Do not introduce `any`.
 - Reuse shared components before creating page-local variants.
+- Component error paths never end at `console.error`. One-shot actions go through
+  `handleApiResultWithCallbacks` (or `toast.error(headline, { description: extractApiErrorMessage(err) })`
+  where a `Result` does not fit, such as TanStack `onError`); streams and polling feeds set an
+  inline unavailable state where the data renders; page loads rethrow via `throwPageLoadError`.
+  A thrown `APIError.message` is already the server's message, so surface it rather than a
+  canned string alone.
 - Put every rendered string behind Paraglide messages.
 - Reuse a matching key from `frontend/messages/en.json` before adding one.
 - Add new keys only to `en.json`; Crowdin manages every other locale.

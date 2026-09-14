@@ -53,7 +53,13 @@
 	}
 
 	async function refreshFederatedCredentials() {
-		federatedCredentials = await federatedCredentialService.list(requestOptions);
+		await handleApiResultWithCallbacks({
+			result: await tryCatch(federatedCredentialService.list(requestOptions)),
+			message: m.common_refresh_failed({ resource: m.federated_credential_page_title() }),
+			onSuccess: (list) => {
+				federatedCredentials = list;
+			}
+		});
 	}
 
 	async function handleFederatedCredentialSubmit({
@@ -68,43 +74,34 @@
 		const loading = isEditMode ? 'editing' : 'creating';
 		isLoading[loading] = true;
 
-		const operationResult = await tryCatch(
-			(async () => {
-				const safeName = credential.name?.trim() || m.common_unknown();
-				if (isEditMode && credentialId) {
-					const result = await tryCatch(federatedCredentialService.update(credentialId, credential));
-					await handleApiResultWithCallbacks({
-						result,
-						message: m.federated_credential_update_failed({ name: safeName }),
-						setLoadingState: (value) => (isLoading[loading] = value),
-						onSuccess: async () => {
-							toast.success(m.federated_credential_updated_success({ name: safeName }));
-							await refreshFederatedCredentials();
-							isDialogOpen.edit = false;
-							credentialToEdit = null;
-						}
-					});
-				} else {
-					const result = await tryCatch(federatedCredentialService.create(credential));
-					await handleApiResultWithCallbacks({
-						result,
-						message: m.federated_credential_create_failed({ name: safeName }),
-						setLoadingState: (value) => (isLoading[loading] = value),
-						onSuccess: async (createdCredential) => {
-							toast.success(m.federated_credential_created_success({ name: safeName }));
-							await refreshFederatedCredentials();
-							isDialogOpen.create = false;
-							newlyCreatedCredential = createdCredential as FederatedCredential;
-							isDialogOpen.instructions = true;
-						}
-					});
+		const safeName = credential.name?.trim() || m.common_unknown();
+		if (isEditMode && credentialId) {
+			const result = await tryCatch(federatedCredentialService.update(credentialId, credential));
+			await handleApiResultWithCallbacks({
+				result,
+				message: m.federated_credential_update_failed({ name: safeName }),
+				setLoadingState: (value) => (isLoading[loading] = value),
+				onSuccess: async () => {
+					toast.success(m.federated_credential_updated_success({ name: safeName }));
+					await refreshFederatedCredentials();
+					isDialogOpen.edit = false;
+					credentialToEdit = null;
 				}
-			})()
-		);
-		if (operationResult.error !== null) {
-			const error = operationResult.error;
-
-			console.error('Failed to submit federated credential:', error);
+			});
+		} else {
+			const result = await tryCatch(federatedCredentialService.create(credential));
+			await handleApiResultWithCallbacks({
+				result,
+				message: m.federated_credential_create_failed({ name: safeName }),
+				setLoadingState: (value) => (isLoading[loading] = value),
+				onSuccess: async (createdCredential) => {
+					toast.success(m.federated_credential_created_success({ name: safeName }));
+					await refreshFederatedCredentials();
+					isDialogOpen.create = false;
+					newlyCreatedCredential = createdCredential as FederatedCredential;
+					isDialogOpen.instructions = true;
+				}
+			});
 		}
 	}
 
