@@ -257,7 +257,7 @@ func portFromAgentURL(agentURL string) string {
 	if port := parsed.Port(); port != "" {
 		return port
 	}
-	
+
 	switch strings.ToLower(parsed.Scheme) {
 	case "https":
 		return "443"
