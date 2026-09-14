@@ -2805,7 +2805,7 @@
   "environments_create_new_agent_description": "建立一個 API 金鑰和以及部署程式片段來設定新的代理。",
   "environments_production_docker": "正式環境 Docker",
   "environments_agent_address": "代理網址",
-  "environments_agent_address_placeholder": "agent.example.com",
+  "environments_agent_address_placeholder": "agent.example.com:3553",
   "environments_agent_address_description": "存取代理的網址",
   "environments_generate_config": "建立代理設定",
   "new_folder": "新資料夾",

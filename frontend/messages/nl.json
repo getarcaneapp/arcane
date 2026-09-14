@@ -2805,7 +2805,7 @@
   "environments_create_new_agent_description": "Genereer een API-sleutel en inzet snippets voor een nieuwe agent.",
   "environments_production_docker": "Productie Docker",
   "environments_agent_address": "Agent adres",
-  "environments_agent_address_placeholder": "agent.voorbeeld.com",
+  "environments_agent_address_placeholder": "agent.voorbeeld.com:3553",
   "environments_agent_address_description": "De URL waar uw agent toegankelijk is",
   "environments_generate_config": "Genereer Agentconfiguratie",
   "new_folder": "Nieuwe map",

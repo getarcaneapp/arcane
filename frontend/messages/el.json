@@ -2805,7 +2805,7 @@
   "environments_create_new_agent_description": "Δημιουργήστε ένα κλειδί API και αποσπάσματα ανάπτυξης για ένα νέο πράκτορα.",
   "environments_production_docker": "Προσάρτηση Παραγωγής",
   "environments_agent_address": "Διεύθυνση Παράγοντα",
-  "environments_agent_address_placeholder": "agent.example.com",
+  "environments_agent_address_placeholder": "agent.example.com:3553",
   "environments_agent_address_description": "Το URL όπου ο πράκτορας σας θα είναι προσβάσιμος",
   "environments_generate_config": "Δημιουργία Διαμόρφωσης Παράγοντα",
   "new_folder": "Νέος φάκελος",

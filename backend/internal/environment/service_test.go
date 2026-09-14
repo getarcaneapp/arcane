@@ -849,7 +849,7 @@ func TestEnvironmentService_ResolveEnvironmentByAccessToken(t *testing.T) {
 func TestEnvironmentService_GenerateDeploymentSnippets_ExplicitlyUsePollTransport(t *testing.T) {
 	svc := NewEnvironmentService(nil, nil, nil, nil, nil, nil)
 
-	standard, err := svc.GenerateDeploymentSnippets(context.Background(), "env-1", "https://manager.example.com", "token-123")
+	standard, err := svc.GenerateDeploymentSnippets(context.Background(), "env-1", "https://manager.example.com", "https://agent.example.com", "token-123")
 	require.NoError(t, err)
 	require.NotNil(t, standard)
 	require.NotContains(t, standard.DockerRun, "EDGE_TRANSPORT=websocket")
@@ -872,6 +872,61 @@ func TestEnvironmentService_GenerateDeploymentSnippets_ExplicitlyUsePollTranspor
 	require.Contains(t, edgeSnippets.DockerRun, "-v arcane-data:/app/data")
 	require.Contains(t, edgeSnippets.DockerCompose, "- arcane-data:/app/data")
 	require.NotContains(t, edgeSnippets.DockerRun, "-v arcane-data:/data")
+}
+
+func TestEnvironmentService_GenerateDeploymentSnippets_PublishesAgentURLPort(t *testing.T) {
+	svc := NewEnvironmentService(nil, nil, nil, nil, nil, nil)
+
+	defaultPort, err := svc.GenerateDeploymentSnippets(
+		context.Background(),
+		"env-1",
+		"https://manager.example.com",
+		"http://agent.example.com:3553",
+		"token-123",
+	)
+	require.NoError(t, err)
+	require.Contains(t, defaultPort.DockerRun, "-p 3553:3553")
+	require.Contains(t, defaultPort.DockerCompose, "3553:3553")
+	require.Contains(t, defaultPort.DockerRun, "MANAGER_API_URL=https://manager.example.com")
+
+	customPort, err := svc.GenerateDeploymentSnippets(
+		context.Background(),
+		"env-1",
+		"https://manager.example.com",
+		"http://agent.example.com:1234",
+		"token-123",
+	)
+	require.NoError(t, err)
+	require.Contains(t, customPort.DockerRun, "-p 1234:3553")
+	require.NotContains(t, customPort.DockerRun, "-p 3553:3553")
+	require.Contains(t, customPort.DockerCompose, "1234:3553")
+	require.NotContains(t, customPort.DockerCompose, "3553:3553")
+	require.Contains(t, customPort.DockerRun, "MANAGER_API_URL=https://manager.example.com")
+}
+
+func TestPortFromAgentURL(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		url  string
+		want string
+	}{
+		{name: "explicit custom port", url: "http://agent.example.com:1234", want: "1234"},
+		{name: "default agent port", url: "http://agent.example.com:3553", want: "3553"},
+		{name: "http without port uses 80", url: "http://agent.example.com", want: "80"},
+		{name: "https without port uses 443", url: "https://agent.example.com", want: "443"},
+		{name: "ipv6 with port", url: "http://[2001:db8::1]:9999", want: "9999"},
+		{name: "empty falls back to container port", url: "", want: "3553"},
+		{name: "invalid falls back to container port", url: "not a url", want: "3553"},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, testCase.want, portFromAgentURL(testCase.url))
+		})
+	}
 }
 
 func TestEnvironmentService_EnsureSwarmNodeAgentEnvironment_CreatesVisibleEnvironmentAndReusesToken(t *testing.T) {

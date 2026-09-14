@@ -2805,7 +2805,7 @@
   "environments_create_new_agent_description": "새 에이전트에 사용할 API 키와 배포 스니펫을 생성합니다.",
   "environments_production_docker": "프로덕션 Docker",
   "environments_agent_address": "에이전트 주소",
-  "environments_agent_address_placeholder": "agent.example.com",
+  "environments_agent_address_placeholder": "agent.example.com:3553",
   "environments_agent_address_description": "에이전트에 접근할 수 있는 URL입니다.",
   "environments_generate_config": "에이전트 설정 생성",
   "new_folder": "새 폴더",

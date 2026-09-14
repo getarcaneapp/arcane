@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"strings"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
@@ -38,11 +39,13 @@ type DeploymentSnippetMTLS struct {
 const (
 	deploymentSnippetsDataPath = "/app/data"
 	deploymentSnippetsMTLSPath = "/app/data/edge-mtls-agent"
+	agentContainerPort = "3553"
 )
 
 // GenerateDeploymentSnippets generates Docker deployment snippets for an environment.
-func (s *EnvironmentService) GenerateDeploymentSnippets(ctx context.Context, envID string, envAddress string, apiKey string) (*DeploymentSnippets, error) {
-	managerURL := strings.TrimRight(envAddress, "/")
+func (s *EnvironmentService) GenerateDeploymentSnippets(ctx context.Context, envID string, managerURL string, agentURL string, apiKey string) (*DeploymentSnippets, error) {
+	managerURL = strings.TrimRight(managerURL, "/")
+	agentPortMap := fmt.Sprintf("%s:%s", portFromAgentURL(agentURL), agentContainerPort)
 
 	dockerRun := strings.Join([]string{
 		"docker run -d \\",
@@ -52,7 +55,7 @@ func (s *EnvironmentService) GenerateDeploymentSnippets(ctx context.Context, env
 		"  -e EDGE_TRANSPORT=poll \\",
 		fmt.Sprintf("  -e AGENT_TOKEN=%s \\", apiKey),
 		fmt.Sprintf("  -e MANAGER_API_URL=%s \\", managerURL),
-		"  -p 3553:3553 \\",
+		fmt.Sprintf("  -p %s \\", agentPortMap),
 		"  -v /var/run/docker.sock:/var/run/docker.sock \\",
 		fmt.Sprintf("  -v arcane-data:%s \\", deploymentSnippetsDataPath),
 		"  ghcr.io/getarcaneapp/agent:latest",
@@ -70,7 +73,7 @@ func (s *EnvironmentService) GenerateDeploymentSnippets(ctx context.Context, env
 		"      - AGENT_TOKEN=" + apiKey,
 		"      - MANAGER_API_URL=" + managerURL,
 		"    ports:",
-		"      - \"3553:3553\"",
+		"      - " + agentPortMap,
 		"    volumes:",
 		"      - /var/run/docker.sock:/var/run/docker.sock",
 		"      - arcane-data:" + deploymentSnippetsDataPath,
@@ -242,5 +245,25 @@ func buildMTLSDeploymentSnippetInternal(managerURL string, apiKey string, genera
 		DockerCompose: mtlsDockerCompose,
 		Files:         files,
 		HostDirHint:   strings.TrimSpace(generatedAssets.HostDirHint),
+	}
+}
+
+// portFromAgentURL returns the port number the new agent will use for snippet generation
+func portFromAgentURL(agentURL string) string {
+	parsed, err := url.Parse(strings.TrimSpace(agentURL))
+	if err != nil || parsed.Host == "" {
+		return agentContainerPort
+	}
+	if port := parsed.Port(); port != "" {
+		return port
+	}
+	
+	switch strings.ToLower(parsed.Scheme) {
+	case "https":
+		return "443"
+	case "http":
+		return "80"
+	default:
+		return agentContainerPort
 	}
 }

@@ -2805,7 +2805,7 @@
   "environments_create_new_agent_description": "Yeni bir ajan için bir API anahtarı ve dağıtım kod parçacıkları oluşturun.",
   "environments_production_docker": "Üretim Docker'ı",
   "environments_agent_address": "Temsilci Adresi",
-  "environments_agent_address_placeholder": "agent.example.com",
+  "environments_agent_address_placeholder": "agent.example.com:3553",
   "environments_agent_address_description": "Temsilcinize erişilebileceği URL",
   "environments_generate_config": "Ajan Yapılandırmasını Oluştur",
   "new_folder": "Yeni Klasör",

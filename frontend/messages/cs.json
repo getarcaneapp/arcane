@@ -2805,7 +2805,7 @@
   "environments_create_new_agent_description": "Vygenerujte API klíč a úryvky kódu pro nasazení nového agenta.",
   "environments_production_docker": "Produkční Docker",
   "environments_agent_address": "Adresa agenta",
-  "environments_agent_address_placeholder": "agent.example.com",
+  "environments_agent_address_placeholder": "agent.example.com:3553",
   "environments_agent_address_description": "URL adresa, na které bude váš agent dostupný",
   "environments_generate_config": "Vygenerovat konfiguraci agenta",
   "new_folder": "Nová složka",

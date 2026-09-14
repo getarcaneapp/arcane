@@ -2805,7 +2805,7 @@
   "environments_create_new_agent_description": "为新代理生成一个 API 密钥和部署代码片段。",
   "environments_production_docker": "生产停靠栏",
   "environments_agent_address": "代理地址",
-  "environments_agent_address_placeholder": "agent.example.com",
+  "environments_agent_address_placeholder": "agent.example.com:3553",
   "environments_agent_address_description": "您的代理人可以访问的 URL",
   "environments_generate_config": "生成代理配置",
   "new_folder": "新建文件夹",

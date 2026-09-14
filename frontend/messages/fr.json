@@ -2805,7 +2805,7 @@
   "environments_create_new_agent_description": "Générer une clé API et des extraits de déploiement pour un nouvel agent.",
   "environments_production_docker": "Docker de Production",
   "environments_agent_address": "Adresse de l'agent",
-  "environments_agent_address_placeholder": "agent.exemple.com",
+  "environments_agent_address_placeholder": "agent.exemple.com:3553",
   "environments_agent_address_description": "L'URL où votre agent sera accessible",
   "environments_generate_config": "Générer la configuration de l'agent",
   "new_folder": "Nouveau dossier",

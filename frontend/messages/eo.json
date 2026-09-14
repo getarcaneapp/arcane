@@ -2805,7 +2805,7 @@
   "environments_create_new_agent_description": "Kreu API-ŝlosilon kaj deplojajn fragmentojn por nova agento.",
   "environments_production_docker": "Produktada Docker",
   "environments_agent_address": "Adreso de la agento",
-  "environments_agent_address_placeholder": "agento.ekzemplo.com",
+  "environments_agent_address_placeholder": "agento.ekzemplo.com:3553",
   "environments_agent_address_description": "La URL, kie via agento estos alirebla",
   "environments_generate_config": "Generi agentan konfiguron",
   "new_folder": "Nova dosierujo",

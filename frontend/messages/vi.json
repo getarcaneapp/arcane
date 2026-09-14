@@ -2805,7 +2805,7 @@
   "environments_create_new_agent_description": "Tạo API Key và mã triển khai cho một Agent mới.",
   "environments_production_docker": "Production Docker",
   "environments_agent_address": "Địa chỉ Agent",
-  "environments_agent_address_placeholder": "agent.example.com",
+  "environments_agent_address_placeholder": "agent.example.com:3553",
   "environments_agent_address_description": "URL nơi Agent của bạn có thể truy cập được",
   "environments_generate_config": "Tạo cấu hình Agent",
   "new_folder": "Thư mục mới",

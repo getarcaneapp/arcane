@@ -2805,7 +2805,7 @@
   "environments_create_new_agent_description": "Сгенерировать API-ключ и фрагменты развёртывания для нового агента.",
   "environments_production_docker": "Docker для production",
   "environments_agent_address": "Адрес агента",
-  "environments_agent_address_placeholder": "agent.example.com",
+  "environments_agent_address_placeholder": "agent.example.com:3553",
   "environments_agent_address_description": "URL, по которому будет доступен ваш агент",
   "environments_generate_config": "Сгенерировать конфигурацию агента",
   "new_folder": "Новая папка",
