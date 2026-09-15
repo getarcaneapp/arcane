@@ -21,6 +21,7 @@ type BulkLoadingState = {
 	stop: boolean;
 	restart: boolean;
 	remove: boolean;
+	update: boolean;
 };
 
 type ActionDeps = {
@@ -211,6 +212,19 @@ export function createContainerActions({
 		});
 	}
 
+	async function handleBulkUpdate(ids: string[]) {
+		await runBulkAction(ids, {
+			title: (count) => m.containers_bulk_update_confirm_title({ count }),
+			message: (count) => m.containers_bulk_update_confirm_message({ count }),
+			label: m.common_update(),
+			loadingKey: 'update',
+			run: (id) => containerService.updateContainer(id),
+			success: (count) => m.containers_bulk_update_success({ count }),
+			partial: (success, total, failed) => m.containers_bulk_update_partial({ success, total, failed }),
+			failure: () => m.containers_bulk_update_failed()
+		});
+	}
+
 	function handleBulkRemove(ids: string[]) {
 		bulkConfirmAndRun({
 			ids,
@@ -245,6 +259,7 @@ export function createContainerActions({
 		handleBulkStart,
 		handleBulkStop,
 		handleBulkRestart,
-		handleBulkRemove
+		handleBulkRemove,
+		handleBulkUpdate
 	};
 }
