@@ -1035,6 +1035,8 @@
   "networks_options_description": "Network driver-specific options",
   "attachable": "Attachable",
   "ipv6_enabled": "IPv6 Enabled",
+  "ipv6_address": "Διεύθυνση IPv6",
+  "ipv6_gateway": "Πύλη IPv6",
   "ipv4_enabled": "IPv4 Ενεργοποιημένο",
   "ingress": "Πρόοδος",
   "config_only": "Ρύθμιση Μόνο",
