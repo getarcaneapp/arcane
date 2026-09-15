@@ -1035,6 +1035,8 @@
   "networks_options_description": "Možnosti specifické pro síťový ovladač",
   "attachable": "Připojitelné",
   "ipv6_enabled": "IPv6 povoleno",
+  "ipv6_address": "Adresa IPv6",
+  "ipv6_gateway": "Brána IPv6",
   "ipv4_enabled": "IPv4 povoleno",
   "ingress": "Vstup",
   "config_only": "Pouze konfigurace",
