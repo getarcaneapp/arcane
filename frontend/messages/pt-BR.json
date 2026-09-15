@@ -1035,6 +1035,8 @@
   "networks_options_description": "Opções específicas do driver de rede",
   "attachable": "Anexável",
   "ipv6_enabled": "IPv6 ativado",
+  "ipv6_address": "Endereço IPv6",
+  "ipv6_gateway": "Gateway IPv6",
   "ipv4_enabled": "IPv4 habilitado",
   "ingress": "Ingressar",
   "config_only": "Apenas Configuração",
