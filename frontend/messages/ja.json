@@ -1035,6 +1035,8 @@
   "networks_options_description": "Network driver-specific options",
   "attachable": "Attachable",
   "ipv6_enabled": "IPv6 Enabled",
+  "ipv6_address": "IPv6アドレス",
+  "ipv6_gateway": "IPv6ゲートウェイ",
   "ipv4_enabled": "IPv4 有効",
   "ingress": "Ingress",
   "config_only": "設定のみ",
