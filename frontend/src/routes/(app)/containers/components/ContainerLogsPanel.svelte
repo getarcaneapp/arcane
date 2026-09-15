@@ -12,6 +12,9 @@
 	import { calculateCPUPercent, calculateMemoryUsage } from '#lib/utils/docker.js';
 	import { refreshLogViewerStream, startLogViewerStream, stopLogViewerStream } from '#lib/utils/log-viewer.js';
 	import { CpuIcon, FileTextIcon, MemoryStickIcon } from '#lib/icons/index.js';
+	import { containerService } from '#lib/services/container-service.js';
+	import { tryCatch } from '#lib/utils/try-catch.js';
+	import { toast } from 'svelte-sonner';
 	import ContainerLogStatMonitor from './ContainerLogStatMonitor.svelte';
 
 	type StatHistoryPoint = { percent: number; tooltip: string };
@@ -113,6 +116,14 @@
 		await refreshLogViewerStream(viewer);
 	}
 
+	async function handleDownload() {
+		if (!containerId) return;
+		const result = await tryCatch(containerService.downloadContainerLogs(containerId));
+		if (result.error !== null) {
+			toast.error(m.common_download_error(), { description: result.error.message });
+		}
+	}
+
 	// Sync isStreaming from viewer callbacks
 	function handleStreamStart() {
 		isStreaming = true;
@@ -149,6 +160,7 @@
 						onStart={handleStart}
 						onStop={handleStop}
 						onRefresh={handleRefresh}
+						onDownload={handleDownload}
 					/>
 				</div>
 				<Card.Description>{m.containers_logs_description()}</Card.Description>
@@ -163,6 +175,7 @@
 				onStart={handleStart}
 				onStop={handleStop}
 				onRefresh={handleRefresh}
+				onDownload={handleDownload}
 			/>
 		</div>
 	</Card.Header>

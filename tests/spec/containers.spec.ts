@@ -242,6 +242,25 @@ test.describe('Containers Page', () => {
 		await expect(page.getByTestId('container-log-memory-monitor')).toContainText('N/A');
 	});
 
+	test('downloads the full log history from the logs tab', async ({ page }) => {
+		const running = containersData.data.find((c) => c.state === 'running');
+		test.skip(!running, 'No running container available');
+
+		await page.goto(`/containers/${running!.id}`);
+		await page.waitForLoadState('load');
+
+		await page.getByRole('tab', { name: 'Logs' }).click();
+
+		const downloadPromise = page.waitForEvent('download');
+		await page
+			.getByRole('button', { name: 'Download', exact: true })
+			.filter({ visible: true })
+			.click();
+		const download = await downloadPromise;
+		expect(download.suggestedFilename()).toBe(`container-${running!.id.slice(0, 12)}-logs.log`);
+		expect(await download.path()).toBeTruthy();
+	});
+
 	test('should show correct actions based on container state (without changing state)', async ({
 		page
 	}) => {

@@ -2,7 +2,7 @@
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import * as ArcaneTooltip from '#lib/components/arcane-tooltip/index.js';
 	import SwitchWithLabel from '#lib/components/form/labeled-switch.svelte';
-	import { EllipsisIcon } from '#lib/icons/index.js';
+	import { DownloadIcon, EllipsisIcon } from '#lib/icons/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import * as Select from '#lib/components/ui/select/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
@@ -19,7 +19,8 @@
 		disabled = false,
 		onStart,
 		onStop,
-		onRefresh
+		onRefresh,
+		onDownload
 	}: {
 		autoScroll: boolean;
 		preferences: UseLogPreferences;
@@ -31,6 +32,7 @@
 		onStart?: () => void;
 		onStop?: () => void;
 		onRefresh?: () => void;
+		onDownload?: () => void;
 	} = $props();
 
 	const tailOptions = [
@@ -81,6 +83,17 @@
 		onclick={onRefresh}
 		aria-label={m.log_refresh_aria_label()}
 	/>
+	{#if onDownload}
+		<ArcaneButton
+			action="base"
+			tone="ghost"
+			size="icon"
+			icon={DownloadIcon}
+			class="size-8 shrink-0 text-muted-foreground hover:text-foreground"
+			onclick={onDownload}
+			aria-label={m.common_download()}
+		/>
+	{/if}
 {/snippet}
 
 {#snippet mobileMenu()}
@@ -265,6 +278,27 @@
 				aria-label={m.log_refresh_aria_label()}
 				title={m.common_refresh()}
 			/>
+			{#if onDownload}
+				<ArcaneTooltip.Root>
+					<ArcaneTooltip.Trigger>
+						{#snippet child({ props })}
+							<ArcaneButton
+								{...props}
+								action="base"
+								tone="outline"
+								size="sm"
+								icon={DownloadIcon}
+								class="text-xs font-medium"
+								customLabel={m.common_download()}
+								onclick={onDownload}
+							/>
+						{/snippet}
+					</ArcaneTooltip.Trigger>
+					<ArcaneTooltip.Content side="bottom" class="max-w-xs">
+						{m.log_download_tooltip()}
+					</ArcaneTooltip.Content>
+				</ArcaneTooltip.Root>
+			{/if}
 		</div>
 	</div>
 {/if}
