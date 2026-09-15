@@ -91,7 +91,8 @@
 		start: false,
 		stop: false,
 		restart: false,
-		remove: false
+		remove: false,
+		update: false
 	});
 
 	const statsManager = new ContainerStatsManager();
@@ -147,7 +148,8 @@
 		handleBulkStart,
 		handleBulkStop,
 		handleBulkRestart,
-		handleBulkRemove
+		handleBulkRemove,
+		handleBulkUpdate
 	} = createContainerActions({
 		setContainers: (next) => {
 			containers = next;
@@ -338,6 +340,19 @@
 						loading: isBulkLoading.start,
 						disabled: !resourcesCurrent || isAnyLoading,
 						icon: StartIcon
+					}
+				]
+			: []),
+		...(canUpdateContainers
+			? [
+					{
+						id: 'update',
+						label: m.containers_bulk_update({ count: selectedIds?.length ?? 0 }),
+						action: 'update' as const,
+						onClick: handleBulkUpdate,
+						loading: isBulkLoading.update,
+						disabled: !resourcesCurrent || isAnyLoading,
+						icon: UpdateIcon
 					}
 				]
 			: []),
