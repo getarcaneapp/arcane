@@ -1035,6 +1035,8 @@
   "networks_options_description": "Netwerk driver-specifieke opties",
   "attachable": "Toevoegbaar",
   "ipv6_enabled": "IPv6 ingeschakeld",
+  "ipv6_address": "IPv6-adres",
+  "ipv6_gateway": "IPv6-gateway",
   "ipv4_enabled": "IPv4 ingeschakeld",
   "ingress": "Ingress",
   "config_only": "Alleen configuratie",
