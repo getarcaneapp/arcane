@@ -691,7 +691,7 @@ func (h *SwarmHandler) GetNodeAgentDeployment(ctx context.Context, input *GetSwa
 			AppURL:            h.cfg.GetAppURL(),
 		})
 	} else {
-		snippets, err = h.environmentService.GenerateDeploymentSnippets(ctx, env.ID, h.cfg.GetAppURL(), apiKey)
+		snippets, err = h.environmentService.GenerateDeploymentSnippets(ctx, env.ID, h.cfg.GetAppURL(), env.ApiUrl, apiKey)
 	}
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())

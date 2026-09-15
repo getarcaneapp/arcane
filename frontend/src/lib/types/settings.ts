@@ -3,7 +3,16 @@ import type { TemplateRegistryConfig } from './swarm';
 
 // --- Application settings ---
 
-export type ApplicationTheme = 'default' | 'graphite' | 'ocean' | 'amber' | 'github' | 'nord' | 'everforest' | 'rosepine';
+export type ApplicationTheme =
+	| 'default'
+	| 'graphite'
+	| 'carbon'
+	| 'ocean'
+	| 'amber'
+	| 'github'
+	| 'nord'
+	| 'everforest'
+	| 'rosepine';
 export type IconCatalog = 'selfhst' | 'dashboard-icons';
 
 export type Settings = {

@@ -6,6 +6,7 @@
 	import { jobScheduleService } from '#lib/services/job-schedule-service.js';
 	import { containerService } from '#lib/services/container-service.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
+	import { hasPermission } from '#lib/utils/auth.js';
 	import JobCard from '#lib/components/job-card/job-card.svelte';
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { m } from '#lib/paraglide/messages.js';
@@ -28,10 +29,11 @@
 	let { formInputs = $bindable(), environmentId }: JobsTabProps = $props();
 
 	const vulnerabilityManagementEnabled = $derived(featureStore.isEnabled('vulnerabilityManagement', environmentId));
+	const canManageJobs = $derived(hasPermission('jobs:manage', environmentId));
 	const jobsQuery = createQuery(() => ({
 		queryKey: queryKeys.jobs.list(environmentId),
-		queryFn: async () => {
-			const response = await jobScheduleService.listJobs(environmentId);
+		queryFn: async ({ signal }) => {
+			const response = await jobScheduleService.listJobs(environmentId, { signal, suppressAccessDeniedToast: true });
 			return {
 				...response,
 				jobs: response.jobs.map((job) => ({
@@ -40,7 +42,7 @@
 				}))
 			};
 		},
-		enabled: !!environmentId,
+		enabled: !!environmentId && canManageJobs,
 		refetchInterval: 5000
 	}));
 	const jobsResponse = $derived(jobsQuery.data);
@@ -98,6 +100,7 @@
 	}
 
 	function loadJobs() {
+		if (!canManageJobs) return;
 		void jobsQuery.refetch();
 	}
 

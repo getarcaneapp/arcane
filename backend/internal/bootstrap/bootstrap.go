@@ -290,8 +290,8 @@ func initializeStartupState(p initializeStartupStateParams) {
 		func(ctx context.Context) error {
 			// Backfill legacy users.roles first so CreateDefaultAdmin's
 			// zero-global-admin recovery gate sees upgraded assignments.
-			// No-op on modern schemas; runRoleStartupTasks repeats it
-			// idempotently for agent-mode and error-retry coverage.
+			// Runs once (kv completion marker); runRoleStartupTasks repeats
+			// the call for agent-mode and error-retry coverage.
 			if err := p.Role.BackfillLegacyRoleAssignments(ctx); err != nil {
 				slog.WarnContext(ctx, "Failed to backfill legacy role assignments before admin bootstrap", "error", err)
 			}
@@ -354,7 +354,8 @@ func runRoleStartupTasks(ctx context.Context, roleService *role.RoleService, api
 	}
 	// Backfill must run AFTER EnsureBuiltInRoles (it references the role IDs
 	// seeded there) and BEFORE BackfillApiKeyPermissions / AssertGlobalAdminExists
-	// (both consult the assignments table this populates).
+	// (both consult the assignments table this populates). It is a no-op once
+	// its kv completion marker exists.
 	if err := roleService.BackfillLegacyRoleAssignments(ctx); err != nil {
 		slog.ErrorContext(ctx, "Failed to backfill legacy users.roles into user_role_assignments", "error", err)
 	}

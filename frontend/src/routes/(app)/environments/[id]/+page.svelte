@@ -103,6 +103,7 @@
 	let showSettingsTabs = $derived(
 		runtimeEnvironment.enabled && isCurrentlyOnline && settings !== null && hasPermission('settings:read', environment.id)
 	);
+	let showJobsTab = $derived(showSettingsTabs && hasPermission('jobs:manage', environment.id));
 	let hasMTLSAssets = $derived(Boolean(runtimeEnvironment.edgeMTLSCertificate));
 	let canPairEnvironments = $derived(hasPermission('environments:pair'));
 	let showMTLSDownloads = $derived(
@@ -225,13 +226,16 @@
 					value: 'security',
 					label: m.security(),
 					icon: SecurityIcon
-				},
-				{
-					value: 'jobs',
-					label: m.automations(),
-					icon: JobsIcon
 				}
 			);
+		}
+
+		if (showJobsTab) {
+			items.push({
+				value: 'jobs',
+				label: m.automations(),
+				icon: JobsIcon
+			});
 		}
 
 		items.push({
@@ -889,7 +893,9 @@
 					</Tabs.Content>
 				</Tabs.Root>
 			</Tabs.Content>
+		{/if}
 
+		{#if showJobsTab}
 			<Tabs.Content value="jobs">
 				<JobsTab bind:formInputs environmentId={environment.id} />
 			</Tabs.Content>

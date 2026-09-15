@@ -125,7 +125,7 @@ func (j *AutoUpdateJob) Reschedule(ctx context.Context) error {
 func (j *AutoUpdateJob) Reconcile(_ context.Context, previous schedulertypes.Run) (schedulertypes.Outcome, error) {
 	confirmed := confirmedAutoUpdateInternal(previous)
 	if confirmed.Status != schedulertypes.Succeeded {
-		confirmed.Message = "Interrupted auto-update has no confirmed full-batch completion; review and resolve this run to resume the schedule"
+		confirmed.Message = "Interrupted auto-update has no confirmed full-batch completion; review this run's results"
 		if previous.Outcome.Message != "" {
 			confirmed.Message += ": " + previous.Outcome.Message
 		}
@@ -167,7 +167,7 @@ func autoUpdateRetryOptionsInternal(previous schedulertypes.Run) (updatertypes.O
 		return options, schedulertypes.Outcome{Status: schedulertypes.NeedsAttention, Message: "Target results do not confirm full-batch completion; review and resolve this run", ActivityID: previous.Outcome.ActivityID, Targets: previous.Outcome.Targets}, true
 	}
 	if !hasResourceTargets {
-		return options, schedulertypes.Outcome{Status: schedulertypes.NeedsAttention, Message: "The previous update has no confirmed retry targets; review and resolve this run to resume the schedule", ActivityID: previous.Outcome.ActivityID, Targets: previous.Outcome.Targets}, true
+		return options, schedulertypes.Outcome{Status: schedulertypes.NeedsAttention, Message: "The previous update has no confirmed retry targets; review this run's results", ActivityID: previous.Outcome.ActivityID, Targets: previous.Outcome.Targets}, true
 	}
 	if len(options.ResourceIds) > 0 {
 		options.Type = "container"
@@ -215,7 +215,7 @@ func autoUpdateOutcomeInternal(ctx context.Context, result *updatertypes.Result,
 	}
 	if unresolvedTargets {
 		outcome.Status = schedulertypes.NeedsAttention
-		outcome.Message = "Unconfirmed targets remain; review and resolve this run to resume the schedule"
+		outcome.Message = "Unconfirmed targets remain; review this run's results"
 	}
 	var outcomeErr *schedulertypes.OutcomeError
 	if errors.As(err, &outcomeErr) {

@@ -160,6 +160,13 @@ var commandRoutes = []commandRoute{
 	{Method: http.MethodPut, PathPattern: "/api/environments/{id}/job-schedules", CommandName: "job_schedule.upsert"},
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/jobs", CommandName: "job.list"},
 	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/jobs/{jobId}/run", CommandName: "job.run"},
+	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/jobs/{jobId}/runs", CommandName: "job.run.list"},
+	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/jobs/{jobId}/runs/{runId}", CommandName: "job.run.inspect"},
+	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/jobs/{jobId}/runs/{runId}/retry", CommandName: "job.run.retry"},
+	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/jobs/{jobId}/runs/{runId}/cancel", CommandName: "job.run.cancel"},
+	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/jobs/{jobId}/runs/{runId}/resolve", CommandName: "job.run.resolve"},
+	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/jobs/{jobId}/runs/{runId}/ack", CommandName: "job.run.ack"},
+	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/jobs/{jobId}/restart", CommandName: "job.worker.restart"},
 
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/notifications/settings", CommandName: "notification.settings.list"},
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/notifications/settings/{provider}", CommandName: "notification.settings.get"},

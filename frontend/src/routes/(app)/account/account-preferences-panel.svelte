@@ -13,7 +13,7 @@
 	import { Switch } from '#lib/components/ui/switch/index.js';
 	import { DEFAULT_LANDING_PAGE, getLandingPageNavItems } from '#lib/config/navigation-config.js';
 	import { getMobileNavigation } from '#lib/utils/navigation.js';
-	import { applyGlassEffects, applyInterfaceAnimations, applyOledMode, DEFAULT_ACCENT_COLOR } from '#lib/utils/theme.svelte.js';
+	import { applyGlassEffects, applyInterfaceAnimations, applyOledMode } from '#lib/utils/theme.svelte.js';
 	import { debounced } from '#lib/utils/ws.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { userService } from '#lib/services/user-service.js';
@@ -29,7 +29,7 @@
 	const preferences = $derived(currentUser?.preferences ?? {});
 	const applicationThemeValue = $derived<ApplicationTheme>(preferences.applicationTheme ?? 'default');
 	const accentColorValue = $derived(
-		preferences.accentColor && preferences.accentColor !== 'default' ? preferences.accentColor : DEFAULT_ACCENT_COLOR
+		preferences.accentColor && preferences.accentColor !== 'default' ? preferences.accentColor : 'theme'
 	);
 	const iconCatalogValue = $derived(preferences.iconCatalog ?? 'selfhst');
 	const oledModeEnabled = $derived(preferences.oledMode ?? false);

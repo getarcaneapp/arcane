@@ -140,6 +140,10 @@ func applyRunStatusInternal(status *jobschedule.JobStatus, runs []st.Run) {
 			}
 		}
 	}
+	if current := status.CurrentRun; current != nil && current.Status == st.NeedsAttention {
+		status.CurrentRun = nil
+		updateLatestRunInternal(status, *current)
+	}
 	for _, run := range runs {
 		updateLatestRunInternal(status, run)
 		updateLastSuccessInternal(status, run)
@@ -151,14 +155,14 @@ func applyRunStatusInternal(status *jobschedule.JobStatus, runs []st.Run) {
 }
 
 func updateLatestRunInternal(status *jobschedule.JobStatus, run st.Run) {
-	if !run.Status.Terminal() {
+	if !run.Status.Terminal() && run.Status != st.NeedsAttention {
 		if status.CurrentRun == nil || preferCurrentRunInternal(run, *status.CurrentRun) {
 			status.CurrentRun = new(run)
 		}
 		return
 	}
 	current := status.CurrentRun
-	if current != nil && current.ID == run.ID && run.UpdatedAt.After(current.UpdatedAt) && (!run.RemoteAccepted || run.RemoteSettled) {
+	if current != nil && current.ID == run.ID && !run.UpdatedAt.Before(current.UpdatedAt) && (run.Status == st.NeedsAttention || !run.RemoteAccepted || run.RemoteSettled) {
 		status.CurrentRun = nil
 	}
 	if status.LastRun == nil || run.UpdatedAt.After(status.LastRun.UpdatedAt) {
@@ -206,9 +210,9 @@ func currentRunPriorityInternal(status st.RunStatus) int {
 	switch status {
 	case st.Running:
 		return 0
-	case st.NeedsAttention:
+	case st.Queued, st.Waiting, st.Retrying:
 		return 1
-	case st.Queued, st.Waiting, st.Retrying, st.Succeeded, st.Partial, st.Skipped, st.Failed, st.Canceled:
+	case st.NeedsAttention, st.Succeeded, st.Partial, st.Skipped, st.Failed, st.Canceled:
 		return 2
 	default:
 		return 2
