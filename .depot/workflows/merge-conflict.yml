@@ -13,7 +13,9 @@ on:
 jobs:
   label:
     name: Labeling
-    runs-on: depot-ubuntu-latest
+    runs-on:
+      size: 2x8
+      image: g7r5wqb57k.registry.depot.dev/ci:latest
     if: ${{ github.repository == 'getarcaneapp/arcane' && (github.event_name == 'push' || github.event.workflow_run.event == 'pull_request') }}
     permissions:
       contents: read

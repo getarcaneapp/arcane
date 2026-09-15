@@ -1,0 +1,65 @@
+name: Build CI Image
+
+# Build this image successfully before activating its consumers.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".depot/workflows/**"
+      - ".depot/actions/publish-images/action.yml"
+  schedule:
+    - cron: "17 4 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-ci-image
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build-image:
+    if: github.repository == 'getarcaneapp/arcane' && github.ref == 'refs/heads/main'
+    runs-on: depot-ubuntu-24.04-4
+    timeout-minutes: 15
+    steps:
+      - name: Install GCC and envsubst
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc gettext-base
+
+      - name: Install version tools
+        uses: taiki-e/install-action@v2
+        with:
+          tool: just,git-cliff
+          fallback: none
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v4.1.2
+
+      - name: Put standalone tools on the default PATH
+        run: |
+          for tool in just git-cliff cosign; do
+            source="$(command -v "$tool")"
+            if [[ "$source" != "/usr/local/bin/$tool" ]]; then
+              sudo install -m 0755 "$source" "/usr/local/bin/$tool"
+            fi
+          done
+
+      - name: Pre-pull test images
+        run: |
+          docker pull public.ecr.aws/nginx/nginx:stable-alpine
+          docker pull public.ecr.aws/docker/library/busybox:1.37
+
+      - name: Snapshot CI image
+        uses: depot/snapshot-action@v1
+        with:
+          image: g7r5wqb57k.registry.depot.dev/ci:latest
+          env-mask: |
+            DEPOT_SNAPSHOT_TOKEN
+            DEPOT_TOKEN

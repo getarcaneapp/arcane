@@ -13,9 +13,6 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Setup Just
-      uses: extractions/setup-just@v4
-
     - name: Setup Vite+
       uses: voidzero-dev/setup-vp@9446e853b27985e00fb1b21193be026fc09198db
       with:
@@ -40,9 +37,6 @@ runs:
         registry: ${{ inputs.registry }}
         username: ${{ inputs.username }}
         password: ${{ inputs.password }}
-
-    - name: Install cosign
-      uses: sigstore/cosign-installer@v4.1.2
 
     - name: Validate destination registry
       shell: bash
