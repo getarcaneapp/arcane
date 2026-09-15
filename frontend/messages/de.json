@@ -1035,6 +1035,8 @@
   "networks_options_description": "Netzwerkspezifische Optionen des Netzwerk-Treibers",
   "attachable": "Anbindbar",
   "ipv6_enabled": "IPv6 aktiviert",
+  "ipv6_address": "IPv6-Adresse",
+  "ipv6_gateway": "IPv6-Gateway",
   "ipv4_enabled": "IPv4 aktiviert",
   "ingress": "Einzug",
   "config_only": "Nur Konfiguration",
