@@ -1035,6 +1035,8 @@
   "networks_options_description": "Opciones específicas del controlador de red",
   "attachable": "Adjuntable",
   "ipv6_enabled": "IPv6 habilitado",
+  "ipv6_address": "Dirección IPv6",
+  "ipv6_gateway": "Puerta de enlace IPv6",
   "ipv4_enabled": "IPv4 habilitado",
   "ingress": "Progreso",
   "config_only": "Sólo configuración",
