@@ -128,7 +128,11 @@
 		repositoryId: open && syncToEdit ? syncToEdit.repositoryId : '',
 		branch: open && syncToEdit ? syncToEdit.branch : 'main',
 		composePath:
-			open && syncToEdit ? syncToEdit.composePath : selectedTargetType === 'swarm_stack' ? 'compose.yml' : 'docker-compose.yml',
+			open && syncToEdit
+				? syncToEdit.composePath
+				: normalizeTargetType(targetType) === 'swarm_stack'
+					? 'compose.yml'
+					: 'docker-compose.yml',
 		syncDirectory: open && syncToEdit ? (syncToEdit.syncDirectory ?? false) : false,
 		pullImageAfterSync: open && syncToEdit ? (syncToEdit.pullImageAfterSync ?? false) : false,
 		redeployAfterSync: open && syncToEdit ? (syncToEdit.redeployAfterSync ?? false) : false,
@@ -318,7 +322,18 @@
 							label={m.target_type()}
 							value={selectedTargetType}
 							options={targetTypeOptions}
-							onValueChange={(value) => (selectedTargetType = value as GitOpsSyncTargetType)}
+							onValueChange={(value) => {
+								const newType = value as GitOpsSyncTargetType;
+								const oldType = selectedTargetType;
+								selectedTargetType = newType;
+								if (!isEditMode && newType !== oldType) {
+									if (newType === 'swarm_stack' && $inputs.composePath.value === 'docker-compose.yml') {
+										$inputs.composePath.value = 'compose.yml';
+									} else if (newType === 'project' && $inputs.composePath.value === 'compose.yml') {
+										$inputs.composePath.value = 'docker-compose.yml';
+									}
+								}
+							}}
 						/>
 					</div>
 

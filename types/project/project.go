@@ -414,6 +414,11 @@ type Details struct {
 	// Required: false
 	GitOpsManagedBy *string `json:"gitOpsManagedBy,omitempty"`
 
+	// TargetType indicates the deployment target type ("project" or "swarm_stack").
+	//
+	// Required: false
+	TargetType string `json:"targetType,omitempty"`
+
 	// UpdateInfo contains aggregated image update status for the project.
 	//
 	// Required: false

@@ -180,6 +180,7 @@
 					filterOptions: tagCatalog.map((tag) => ({ label: tag.name, value: tag.name }))
 				},
 				{ accessorKey: 'path', title: m.common_working_directory(), sortable: true, cell: DirectoryCell },
+				{ accessorKey: 'targetType', title: m.target_type(), sortable: true, cell: TargetTypeCell },
 				{ accessorKey: 'gitOpsManagedBy', title: m.projects_col_provider(), cell: ProviderCell },
 				{ accessorKey: 'status', title: m.common_status(), sortable: true, cell: StatusCell },
 				{
@@ -283,6 +284,12 @@
 
 {#snippet DirectoryCell({ item }: { item: Project })}
 	<span class="block max-w-[22rem] truncate text-muted-foreground">{item.relativePath ?? item.dirName ?? item.path}</span>
+{/snippet}
+
+{#snippet TargetTypeCell({ item }: { item: Project })}
+	<Badge variant="outline" class="font-normal capitalize">
+		{item.targetType === 'swarm_stack' ? 'Swarm Stack' : 'Compose'}
+	</Badge>
 {/snippet}
 
 {#snippet ProviderCell({ item }: { item: Project })}

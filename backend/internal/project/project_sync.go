@@ -355,6 +355,10 @@ func skipProjectCleanupInternal(p Project, seen map[string]struct{}) bool {
 		return true
 	}
 
+	if p.TargetType == "swarm_stack" {
+		return true
+	}
+
 	// Skip projects whose lifecycle is owned by the gitops system. Their compose
 	// files may not exist on disk yet (e.g. during a sync or after an SSH/clone
 	// failure) and should never be deleted here.

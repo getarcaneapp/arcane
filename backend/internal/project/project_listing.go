@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"maps"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -59,7 +60,7 @@ func groupComposeContainersByProjectInternal(containers []container.Summary) map
 // project name (from COMPOSE_PROJECT_NAME) when it differs.
 func lookupProjectContainers(p Project, containersByProject map[string][]container.Summary) []container.Summary {
 	normName := projects.NormalizeProjectName(p.Name)
-	if c := containersByProject[normName]; len(c) > 0 {
+	if c, ok := containersByProject[normName]; ok {
 		return c
 	}
 	if p.ComposeProjectName != nil && *p.ComposeProjectName != normName {
@@ -68,7 +69,51 @@ func lookupProjectContainers(p Project, containersByProject map[string][]contain
 	return nil
 }
 
+func (s *ProjectService) reconcileSwarmStackProjectsInternal(ctx context.Context) {
+	if s.db == nil {
+		return
+	}
+	var syncs []GitOpsSync
+	if err := s.db.WithContext(ctx).Where("target_type IN ?", []string{"swarm_stack", "stack", "swarm"}).Find(&syncs).Error; err != nil || len(syncs) == 0 {
+		return
+	}
+
+	stackSourcesDir := s.settingsService.GetStringSetting(ctx, "swarmStackSourcesDirectory", "/app/data/swarm/sources")
+
+	for _, sync := range syncs {
+		stackPath := filepath.Join(stackSourcesDir, sync.EnvironmentID, sync.ProjectName)
+		var proj Project
+		err := s.db.WithContext(ctx).Where("gitops_managed_by = ? OR name = ?", sync.ID, sync.ProjectName).First(&proj).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			proj = Project{
+				Name:            sync.ProjectName,
+				Path:            stackPath,
+				TargetType:      "swarm_stack",
+				GitOpsManagedBy: &sync.ID,
+				Status:          ProjectStatusRunning,
+			}
+			if createErr := s.db.WithContext(ctx).Create(&proj).Error; createErr == nil {
+				if sync.ProjectID == nil || *sync.ProjectID != proj.ID {
+					_ = s.db.WithContext(ctx).Model(&GitOpsSync{}).Where("id = ?", sync.ID).Update("project_id", proj.ID).Error
+				}
+			}
+		} else if err == nil {
+			updates := map[string]any{
+				"target_type":       "swarm_stack",
+				"gitops_managed_by": sync.ID,
+				"path":              stackPath,
+				"name":              sync.ProjectName,
+			}
+			_ = s.db.WithContext(ctx).Model(&proj).Updates(updates).Error
+			if sync.ProjectID == nil || *sync.ProjectID != proj.ID {
+				_ = s.db.WithContext(ctx).Model(&GitOpsSync{}).Where("id = ?", sync.ID).Update("project_id", proj.ID).Error
+			}
+		}
+	}
+}
+
 func (s *ProjectService) ListAllProjects(ctx context.Context) ([]Project, error) {
+	s.reconcileSwarmStackProjectsInternal(ctx)
 	var items []Project
 	if err := s.db.WithContext(ctx).Find(&items).Error; err != nil {
 		return nil, errors.WrapIf(err, "list projects")
@@ -164,7 +209,11 @@ func (s *ProjectService) GetProjectStatusCounts(ctx context.Context) (folderCoun
 
 		var status ProjectStatus
 		if len(services) == 0 {
-			status = ProjectStatusStopped
+			if p.TargetType == "swarm_stack" && p.Status != "" {
+				status = p.Status
+			} else {
+				status = ProjectStatusStopped
+			}
 		} else {
 			status = calculateProjectStatus(services)
 		}
@@ -176,6 +225,7 @@ func (s *ProjectService) GetProjectStatusCounts(ctx context.Context) (folderCoun
 }
 
 func (s *ProjectService) ListProjects(ctx context.Context, params pagination.QueryParams) ([]project.Details, pagination.Response, error) {
+	s.reconcileSwarmStackProjectsInternal(ctx)
 	query := s.db.WithContext(ctx).Model(&Project{})
 	statusFilter := ""
 	updatesFilter := ""
@@ -808,6 +858,7 @@ func (s *ProjectService) fetchProjectStatusConcurrently(ctx context.Context, pro
 			results[i].DirName = mo.PointerToOption(p.DirName).OrEmpty()
 			results[i].RelativePath = getProjectRelativePathInternal(projectsDir, p.Path)
 			results[i].GitOpsManagedBy = p.GitOpsManagedBy
+			results[i].TargetType = p.TargetType
 			results[i].HasBuildDirective = p.BuildImageRefsJSON != nil && len(projects.ParseImageRefsJSON(*p.BuildImageRefsJSON)) > 0
 			meta := s.ProjectMetadata(ctx, p, metaEnv)
 			applyResolvedProjectIconInternal(&results[i], iconcatalog.Resolve(IconCatalogForContext(ctx), meta.ProjectIcon))
@@ -841,6 +892,7 @@ func (s *ProjectService) mapProjectToDto(ctx context.Context, projectsDir string
 	resp.DirName = mo.PointerToOption(p.DirName).OrEmpty()
 	resp.RelativePath = getProjectRelativePathInternal(projectsDir, p.Path)
 	resp.GitOpsManagedBy = p.GitOpsManagedBy
+	resp.TargetType = p.TargetType
 	resp.HasBuildDirective = p.BuildImageRefsJSON != nil && len(projects.ParseImageRefsJSON(*p.BuildImageRefsJSON)) > 0
 	meta := s.ProjectMetadata(ctx, p, metaEnv)
 	applyResolvedProjectIconInternal(&resp, iconcatalog.Resolve(IconCatalogForContext(ctx), meta.ProjectIcon))
@@ -938,7 +990,11 @@ func (s *ProjectService) mapProjectToDto(ctx context.Context, projectsDir string
 	// live container/service list as the source of truth.
 	actualServiceCount := len(services)
 	if actualServiceCount == 0 {
-		resp.Status = string(ProjectStatusStopped)
+		if p.TargetType == "swarm_stack" && p.Status != "" {
+			resp.Status = string(p.Status)
+		} else {
+			resp.Status = string(ProjectStatusStopped)
+		}
 	} else {
 		switch {
 		case runningCount >= actualServiceCount:

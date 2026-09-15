@@ -621,6 +621,7 @@ export interface Project {
 	isDiscovered?: boolean;
 	archivedAt?: string;
 	gitOpsManagedBy?: string;
+	targetType?: string;
 	lastSyncCommit?: string;
 	gitRepositoryURL?: string;
 	hasBuildDirective?: boolean;

@@ -667,6 +667,10 @@ func (s *GitOpsSyncService) CreateSync(ctx context.Context, environmentID string
 	}
 	applyLifecycleFieldsToSyncInternal(&syncRecord, lifecycleCfg)
 
+	if req.TargetType == "stack" || req.TargetType == "swarm" || req.TargetType == "swarm_stack" {
+		syncRecord.TargetType = "swarm_stack"
+	}
+
 	// Select("*") forces explicit zero values (e.g. "0 = unlimited" sync limits and
 	// unset pre-deploy fields) to persist instead of GORM substituting column defaults.
 	if err := s.db.WithContext(ctx).Select("*").Omit("Environment", "Repository", "Project").Create(&syncRecord).Error; err != nil { //nolint:unqueryvet // intentional Select("*"); see comment above
@@ -674,6 +678,12 @@ func (s *GitOpsSyncService) CreateSync(ctx context.Context, environmentID string
 		return nil, errors.WrapIf(err, "failed to create sync")
 	}
 	slog.InfoContext(ctx, "GitOps sync created successfully", "syncID", syncRecord.ID, "name", syncRecord.Name)
+
+	if syncRecord.TargetType == "swarm_stack" {
+		if _, err := s.upsertSwarmStackProjectRecordInternal(ctx, &syncRecord); err != nil {
+			slog.WarnContext(ctx, "Failed to upsert Swarm stack project record during CreateSync", "error", err)
+		}
+	}
 
 	// Log event
 	_, _ = s.eventService.CreateEvent(ctx, event.CreateEventRequest{
@@ -806,6 +816,12 @@ func (s *GitOpsSyncService) UpdateSync(ctx context.Context, environmentID, id st
 			Username:      new(actor.Username),
 			EnvironmentID: new(syncRecord.EnvironmentID),
 		})
+	}
+
+	if syncRecord.TargetType == "swarm_stack" {
+		if _, err := s.upsertSwarmStackProjectRecordInternal(ctx, syncRecord); err != nil {
+			slog.WarnContext(ctx, "Failed to upsert Swarm stack project record during UpdateSync", "error", err)
+		}
 	}
 
 	// Reconcile the dynamic job to match the new state.
@@ -1138,12 +1154,18 @@ func (s *GitOpsSyncService) performSwarmStackSyncInternal(ctx context.Context, s
 		return result, s.failSync(ctx, id, result, sync, actor, "Failed to deploy swarm stack", err.Error())
 	}
 
+	project, err := s.upsertSwarmStackProjectRecordInternal(ctx, sync)
+	if err != nil {
+		slog.WarnContext(ctx, "Failed to upsert Swarm stack project record", "stackName", sync.ProjectName, "error", err)
+	}
+
 	if len(syncedFiles) == 0 {
 		syncedFiles = singleFileSyncedFilesInternal(sync, source)
 	}
 	s.updateSyncStatusWithFiles(ctx, id, "success", "", source.commitHash, syncedFiles)
 	result.Success = true
 	result.Message = fmt.Sprintf("Successfully deployed swarm stack %s from %s", sync.ProjectName, sync.ComposePath)
+	s.logSyncSuccess(ctx, sync, project, actor)
 
 	// Log event
 	_, _ = s.eventService.CreateEvent(ctx, event.CreateEventRequest{
@@ -1161,6 +1183,43 @@ func (s *GitOpsSyncService) performSwarmStackSyncInternal(ctx context.Context, s
 
 	slog.InfoContext(ctx, "GitOps swarm stack sync completed", "syncId", id, "stack", sync.ProjectName)
 	return result, nil
+}
+
+func (s *GitOpsSyncService) upsertSwarmStackProjectRecordInternal(ctx context.Context, sync *projectpkg.GitOpsSync) (*projectpkg.Project, error) {
+	var proj projectpkg.Project
+	stackSourcesDir := s.settingsService.GetStringSetting(ctx, "swarmStackSourcesDirectory", "/app/data/swarm/sources")
+	stackPath := filepath.Join(stackSourcesDir, sync.EnvironmentID, sync.ProjectName)
+
+	err := s.db.WithContext(ctx).Where("name = ?", sync.ProjectName).First(&proj).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			proj = projectpkg.Project{
+				Name:            sync.ProjectName,
+				Path:            stackPath,
+				TargetType:      "swarm_stack",
+				GitOpsManagedBy: &sync.ID,
+				Status:          projectpkg.ProjectStatusRunning,
+			}
+			if createErr := s.db.WithContext(ctx).Create(&proj).Error; createErr != nil {
+				return nil, createErr
+			}
+		} else {
+			return nil, err
+		}
+	} else {
+		updates := map[string]any{
+			"target_type":       "swarm_stack",
+			"gitops_managed_by": sync.ID,
+			"path":              stackPath,
+		}
+		_ = s.db.WithContext(ctx).Model(&proj).Updates(updates).Error
+	}
+
+	if sync.ProjectID == nil || *sync.ProjectID != proj.ID {
+		sync.ProjectID = &proj.ID
+		_ = s.db.WithContext(ctx).Model(&projectpkg.GitOpsSync{}).Where("id = ?", sync.ID).Update("project_id", proj.ID).Error
+	}
+	return &proj, nil
 }
 
 // redeployIfRunningAfterSync redeploys a project when it is already running,
