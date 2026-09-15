@@ -875,36 +875,38 @@ func TestEnvironmentService_GenerateDeploymentSnippets_ExplicitlyUsePollTranspor
 }
 
 func TestEnvironmentService_GenerateDeploymentSnippets_PublishesAgentURLPort(t *testing.T) {
-	svc := NewEnvironmentService(nil, nil, nil, nil, nil, nil)
+	t.Parallel()
 
-	defaultPort, err := svc.GenerateDeploymentSnippets(
-		context.Background(),
-		"env-1",
-		"https://manager.example.com",
-		"http://agent.example.com:3553",
-		"token-123",
-	)
-	require.NoError(t, err)
-	require.Contains(t, defaultPort.DockerRun, "-p 3553:3553")
-	require.Contains(t, defaultPort.DockerCompose, "3553:3553")
-	require.Contains(t, defaultPort.DockerRun, "MANAGER_API_URL=https://manager.example.com")
+	tests := []struct {
+		name        string
+		agentURL    string
+		portMapping string
+	}{
+		{name: "default port", agentURL: "http://agent.example.com:3553", portMapping: "3553:3553"},
+		{name: "custom port", agentURL: "http://agent.example.com:1234", portMapping: "1234:3553"},
+	}
 
-	customPort, err := svc.GenerateDeploymentSnippets(
-		context.Background(),
-		"env-1",
-		"https://manager.example.com",
-		"http://agent.example.com:1234",
-		"token-123",
-	)
-	require.NoError(t, err)
-	require.Contains(t, customPort.DockerRun, "-p 1234:3553")
-	require.NotContains(t, customPort.DockerRun, "-p 3553:3553")
-	require.Contains(t, customPort.DockerCompose, "1234:3553")
-	require.NotContains(t, customPort.DockerCompose, "3553:3553")
-	require.Contains(t, customPort.DockerRun, "MANAGER_API_URL=https://manager.example.com")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			svc := NewEnvironmentService(nil, nil, nil, nil, nil, nil)
+
+			snippets, err := svc.GenerateDeploymentSnippets(t.Context(), "env-1", "https://manager.example.com", tt.agentURL, "token-123")
+			require.NoError(t, err)
+			require.NotNil(t, snippets)
+			require.Contains(t, snippets.DockerRun, "  -p "+tt.portMapping+" \\")
+			require.Contains(t, snippets.DockerCompose, fmt.Sprintf("    ports:\n      - %q\n", tt.portMapping))
+			require.Contains(t, snippets.DockerRun, "MANAGER_API_URL=https://manager.example.com")
+			require.Contains(t, snippets.DockerCompose, "MANAGER_API_URL=https://manager.example.com")
+			if tt.portMapping != "3553:3553" {
+				require.NotContains(t, snippets.DockerRun, "-p 3553:3553")
+				require.NotContains(t, snippets.DockerCompose, "3553:3553")
+			}
+		})
+	}
 }
 
-func TestPortFromAgentURL(t *testing.T) {
+func TestAgentHostPortInternal(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -921,10 +923,10 @@ func TestPortFromAgentURL(t *testing.T) {
 		{name: "invalid falls back to container port", url: "not a url", want: "3553"},
 	}
 
-	for _, testCase := range tests {
-		t.Run(testCase.name, func(t *testing.T) {
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			require.Equal(t, testCase.want, portFromAgentURL(testCase.url))
+			require.Equal(t, tt.want, agentHostPortInternal(tt.url))
 		})
 	}
 }

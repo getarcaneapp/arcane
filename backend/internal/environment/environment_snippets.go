@@ -1,14 +1,13 @@
 package environment
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-
 	"context"
 	"fmt"
 	"log/slog"
 	"net/url"
 	"strings"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 )
@@ -43,9 +42,9 @@ const (
 )
 
 // GenerateDeploymentSnippets generates Docker deployment snippets for an environment.
-func (s *EnvironmentService) GenerateDeploymentSnippets(ctx context.Context, envID string, managerURL string, agentURL string, apiKey string) (*DeploymentSnippets, error) {
+func (s *EnvironmentService) GenerateDeploymentSnippets(ctx context.Context, envID, managerURL, agentURL, apiKey string) (*DeploymentSnippets, error) {
 	managerURL = strings.TrimRight(managerURL, "/")
-	agentPortMap := fmt.Sprintf("%s:%s", portFromAgentURL(agentURL), agentContainerPort)
+	portMapping := fmt.Sprintf("%s:%s", agentHostPortInternal(agentURL), agentContainerPort)
 
 	dockerRun := strings.Join([]string{
 		"docker run -d \\",
@@ -55,7 +54,7 @@ func (s *EnvironmentService) GenerateDeploymentSnippets(ctx context.Context, env
 		"  -e EDGE_TRANSPORT=poll \\",
 		fmt.Sprintf("  -e AGENT_TOKEN=%s \\", apiKey),
 		fmt.Sprintf("  -e MANAGER_API_URL=%s \\", managerURL),
-		fmt.Sprintf("  -p %s \\", agentPortMap),
+		fmt.Sprintf("  -p %s \\", portMapping),
 		"  -v /var/run/docker.sock:/var/run/docker.sock \\",
 		fmt.Sprintf("  -v arcane-data:%s \\", deploymentSnippetsDataPath),
 		"  ghcr.io/getarcaneapp/agent:latest",
@@ -73,7 +72,7 @@ func (s *EnvironmentService) GenerateDeploymentSnippets(ctx context.Context, env
 		"      - AGENT_TOKEN=" + apiKey,
 		"      - MANAGER_API_URL=" + managerURL,
 		"    ports:",
-		"      - " + agentPortMap,
+		fmt.Sprintf("      - %q", portMapping),
 		"    volumes:",
 		"      - /var/run/docker.sock:/var/run/docker.sock",
 		"      - arcane-data:" + deploymentSnippetsDataPath,
@@ -248,8 +247,7 @@ func buildMTLSDeploymentSnippetInternal(managerURL string, apiKey string, genera
 	}
 }
 
-// portFromAgentURL returns the port number the new agent will use for snippet generation
-func portFromAgentURL(agentURL string) string {
+func agentHostPortInternal(agentURL string) string {
 	parsed, err := url.Parse(strings.TrimSpace(agentURL))
 	if err != nil || parsed.Host == "" {
 		return agentContainerPort
