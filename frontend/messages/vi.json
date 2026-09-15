@@ -1035,6 +1035,8 @@
   "networks_options_description": "Các tùy chọn cụ thể của Network Driver",
   "attachable": "Có thể Attach",
   "ipv6_enabled": "Đã bật IPv6",
+  "ipv6_address": "Địa chỉ IPv6",
+  "ipv6_gateway": "Cổng IPv6",
   "ipv4_enabled": "Đã bật IPv4",
   "ingress": "Ingress",
   "config_only": "Chỉ cấu hình",
