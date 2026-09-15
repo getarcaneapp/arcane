@@ -322,12 +322,15 @@
 				<div class="space-y-4 border-l-2 border-border/60 pl-5">
 					<div class="grid gap-4 sm:grid-cols-2">
 						<TextInputWithLabel
+							id="trivyCpuLimit"
 							bind:value={formInputs.trivyCpuLimit.value}
 							error={formInputs.trivyCpuLimit.error}
 							disabled={!formInputs.trivyResourceLimitsEnabled.value}
 							label={m.security_trivy_cpu_limit_label()}
 							helpText={m.security_trivy_cpu_limit_help()}
 							type="number"
+							min={0}
+							step="any"
 						/>
 						<TextInputWithLabel
 							bind:value={formInputs.trivyMemoryLimitMb.value}

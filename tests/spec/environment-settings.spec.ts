@@ -1,4 +1,4 @@
-import { test, expect, type Locator, type Page } from '../fixtures/test.fixture';
+import { test, expect, type Locator, type Page, type Request } from '../fixtures/test.fixture';
 
 const LOCAL_ENV_ID = '0';
 const NAME_PLACEHOLDER = 'My Lab Server';
@@ -307,6 +307,76 @@ test.describe('Environment Settings UI', () => {
 					await saveAndWaitForPut(page, `/api/environments/${LOCAL_ENV_ID}/settings`);
 				}
 			}
+		}
+	});
+
+	test('should save decimal trivy CPU limits and reject negative values', async ({ page }) => {
+		test.setTimeout(120_000);
+		const settingsPath = `/api/environments/${LOCAL_ENV_ID}/settings`;
+		const settingsResponse = await page.request.get(settingsPath);
+		expect(settingsResponse.ok()).toBeTruthy();
+		const settings = (await settingsResponse.json()) as Array<{ key: string; value: string }>;
+		const originalSettings = Object.fromEntries(
+			settings
+				.filter(({ key }) =>
+					['trivyResourceLimitsEnabled', 'trivyCpuLimit', 'trivyMemoryLimitMb'].includes(key)
+				)
+				.map(({ key, value }) => [key, value])
+		);
+		expect(Object.keys(originalSettings)).toHaveLength(3);
+
+		try {
+			await openLocalEnvironment(page);
+			await page.getByRole('tab', { name: 'Security', exact: true }).click();
+			await page.locator('#trivyResourceLimitsEnabledSwitch').setChecked(true);
+			const cpuInput = page.getByRole('spinbutton', { name: 'CPU Limit (cores)', exact: true });
+			await expect(cpuInput).toHaveAttribute('min', '0');
+			await expect(cpuInput).toHaveAttribute('step', 'any');
+
+			const values = ['0.5', '1.5', '2.5', '0.25', '1', '0'];
+			if ((await cpuInput.inputValue()) === values[0]) values.reverse();
+
+			for (const value of values) {
+				await cpuInput.fill(value);
+				expect(await cpuInput.evaluate((input: HTMLInputElement) => input.validity.valid)).toBe(
+					true
+				);
+				const requestPromise = page.waitForRequest(
+					(request) =>
+						request.method() === 'PUT' && new URL(request.url()).pathname === settingsPath
+				);
+				await saveAndWaitForPut(page, settingsPath);
+				const payload = (await requestPromise).postDataJSON() as Record<string, unknown>;
+				expect(payload.trivyCpuLimit).toBe(value);
+				expect(payload.trivyResourceLimitsEnabled).toBe('true');
+				await page.reload();
+				await page.getByRole('tab', { name: 'Security', exact: true }).click();
+				await expect(cpuInput).toHaveValue(value);
+			}
+
+			const writes: Request[] = [];
+			const recordWrite = (request: Request) => {
+				if (request.method() === 'PUT' && new URL(request.url()).pathname === settingsPath) {
+					writes.push(request);
+				}
+			};
+			page.on('request', recordWrite);
+			try {
+				await cpuInput.fill('-0.5');
+				await page.getByRole('button', { name: 'Save', exact: true }).first().click();
+				await expect(
+					page.getByText('Please check the form for errors.', { exact: true })
+				).toBeVisible();
+				expect(writes).toHaveLength(0);
+				await page.reload();
+				await page.getByRole('tab', { name: 'Security', exact: true }).click();
+				await expect(cpuInput).toHaveValue(values[values.length - 1]);
+			} finally {
+				page.off('request', recordWrite);
+			}
+		} finally {
+			const restored = await page.request.put(settingsPath, { data: originalSettings });
+			expect(restored.ok()).toBeTruthy();
 		}
 	});
 

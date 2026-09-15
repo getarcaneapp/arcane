@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { HTMLInputAttributes } from 'svelte/elements';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 
@@ -14,6 +15,8 @@
 		error,
 		disabled = false,
 		type = 'text',
+		min,
+		step,
 		autocomplete = 'off',
 		required = false,
 		onChange
@@ -29,6 +32,8 @@
 		error?: string | null;
 		disabled?: boolean;
 		type?: 'text' | 'email' | 'password' | 'number' | 'url';
+		min?: HTMLInputAttributes['min'];
+		step?: HTMLInputAttributes['step'];
 		autocomplete?: HTMLInputElement['autocomplete'];
 		required?: boolean;
 		onChange?: (value: string) => void;
@@ -64,6 +69,8 @@
 		{placeholder}
 		{disabled}
 		{type}
+		{min}
+		{step}
 		{autocomplete}
 		{required}
 		oninput={handleInput}
