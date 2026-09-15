@@ -1035,6 +1035,8 @@
   "networks_options_description": "Options spécifiques au pilote réseau",
   "attachable": "Attachable",
   "ipv6_enabled": "IPv6 Activé",
+  "ipv6_address": "Adresse IPv6",
+  "ipv6_gateway": "Passerelle IPv6",
   "ipv4_enabled": "IPv4 activé",
   "ingress": "Ingressage",
   "config_only": "Config uniquement",
