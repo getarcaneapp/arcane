@@ -1035,6 +1035,8 @@
   "networks_options_description": "Параметры, специфичные для драйвера сети",
   "attachable": "Прикрепляемый",
   "ipv6_enabled": "IPv6 включен",
+  "ipv6_address": "Адрес IPv6",
+  "ipv6_gateway": "Шлюз IPv6",
   "ipv4_enabled": "IPv4 включен",
   "ingress": "Смещение",
   "config_only": "Только настройки",
