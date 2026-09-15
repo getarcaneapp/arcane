@@ -1035,6 +1035,8 @@
   "networks_options_description": "网络驱动选项",
   "attachable": "可附加的",
   "ipv6_enabled": "IPv6 已启用",
+  "ipv6_address": "IPv6 地址",
+  "ipv6_gateway": "IPv6 网关",
   "ipv4_enabled": "IPv4 已启用",
   "ingress": "会议",
   "config_only": "仅配置",
