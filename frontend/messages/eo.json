@@ -1035,6 +1035,8 @@
   "networks_options_description": "Reto-pelil-specifaj opcioj",
   "attachable": "Konektebla",
   "ipv6_enabled": "IPv6 ebligita",
+  "ipv6_address": "IPv6-adreso",
+  "ipv6_gateway": "Pordego IPv6",
   "ipv4_enabled": "IPv4 ebligita",
   "ingress": "Eniro",
   "config_only": "Nur-agorda",
