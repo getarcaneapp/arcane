@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { Label } from '#lib/components/ui/label/index.js';
 	import * as RadioGroup from '#lib/components/ui/radio-group/index.js';
-	import { applyAccentColor } from '#lib/utils/theme.svelte.js';
+	import { applyAccentColor, resolveThemePrimary } from '#lib/utils/theme.svelte.js';
+	import { mode } from 'mode-watcher';
 	import CustomColorDialog from './custom-color.svelte';
 	import { CheckIcon, AddIcon } from '#lib/icons/index.js';
 
@@ -20,7 +21,7 @@
 	let showCustomColorDialog = $state(false);
 
 	const accentColors = [
-		{ label: 'Default', color: 'oklch(0.606 0.25 292.717)' },
+		{ label: 'Purple', color: 'oklch(0.606 0.25 292.717)' },
 		{ label: 'Rose', color: 'oklch(0.63 0.2 15)' },
 		{ label: 'Orange', color: 'oklch(0.68 0.2 50)' },
 		{ label: 'Amber', color: 'oklch(0.75 0.18 80)' },
@@ -29,14 +30,17 @@
 		{ label: 'Blue', color: 'oklch(0.6 0.2 240)' }
 	];
 
+	const themePrimary = $derived(resolveThemePrimary(mode.current === 'dark'));
+
 	// Check if current accent color is a custom color (not in predefined list)
-	let isCustomColor = $derived(!accentColors.some((c) => c.color === selectedColor));
-	let isPreviousColorCustom = $derived(!accentColors.some((c) => c.color === previousColor));
+	let isCustomColor = $derived(selectedColor !== 'theme' && !accentColors.some((c) => c.color === selectedColor));
+	let isPreviousColorCustom = $derived(previousColor !== 'theme' && !accentColors.some((c) => c.color === previousColor));
 
 	function handleAccentColorChange(accentValue: string) {
+		const storedValue = accentValue === 'theme' ? 'default' : accentValue;
 		selectedColor = accentValue;
-		applyAccentColor(accentValue);
-		onSelect?.(accentValue);
+		applyAccentColor(storedValue);
+		onSelect?.(storedValue);
 	}
 </script>
 
@@ -49,6 +53,7 @@
 		}
 	}}
 >
+	{@render colorOption('Theme', 'theme', selectedColor === 'theme')}
 	{#each accentColors as accent (accent.color)}
 		{@render colorOption(accent.label, accent.color, selectedColor === accent.color)}
 	{/each}
@@ -78,10 +83,9 @@
 		>
 			<div
 				class={{
-					'relative z-[var(--arcane-z-raised)] size-8 rounded-full border-2 transition-all duration-200 ease-out group-hover/item:z-[var(--arcane-z-sticky)] group-hover/item:scale-110': true,
-					'bg-black dark:bg-white': color === 'default'
+					'relative z-[var(--arcane-z-raised)] size-8 rounded-full border-2 transition-all duration-200 ease-out group-hover/item:z-[var(--arcane-z-sticky)] group-hover/item:scale-110': true
 				}}
-				style={color !== 'default' ? `background-color: ${color}` : ''}
+				style={`background-color: ${color === 'theme' ? themePrimary : color}`}
 				title={label}
 			>
 				{#if isCustomColorSelection}
