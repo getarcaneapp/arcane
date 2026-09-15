@@ -1035,6 +1035,8 @@
   "networks_options_description": "Opcje specyficzne dla sterownika sieci",
   "attachable": "Montowalne",
   "ipv6_enabled": "IPv6 włączone",
+  "ipv6_address": "Adres IPv6",
+  "ipv6_gateway": "Brama IPv6",
   "ipv4_enabled": "IPv4 włączone",
   "ingress": "Ingress",
   "config_only": "Tylko konfiguracja",
