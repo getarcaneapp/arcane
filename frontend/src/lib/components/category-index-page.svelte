@@ -14,6 +14,7 @@
 		showSearchResults: boolean;
 		searchResults: NormalizedCategory[];
 		isSearching: boolean;
+		searchError: string | null;
 		performSearch: (query: string) => void | Promise<void>;
 		debouncedSearch: (query: string) => void;
 		clearSearch: () => void;
@@ -29,6 +30,7 @@
 		clearSearchLabel: string;
 		// Search-results empty/loading states
 		searchingLabel: string;
+		searchFailedLabel: string;
 		noResultsTitle: string;
 		noResultsDescription: string;
 		// Matching-items section
@@ -51,6 +53,7 @@
 		searchPlaceholder,
 		clearSearchLabel,
 		searchingLabel,
+		searchFailedLabel,
 		noResultsTitle,
 		noResultsDescription,
 		matchingItemsLabel,
@@ -161,6 +164,12 @@
 				<div class="py-8 text-center sm:py-12">
 					<Spinner class="mx-auto mb-3 size-8 text-primary sm:mb-4 sm:size-12" />
 					<p class="text-sm text-muted-foreground sm:text-base">{searchingLabel}</p>
+				</div>
+			{:else if categorySearch.searchError}
+				<div class="py-8 text-center sm:py-12">
+					<SearchIcon class="mx-auto mb-3 size-8 text-destructive sm:mb-4 sm:size-12" />
+					<h3 class="mb-2 text-base font-medium sm:text-lg">{searchFailedLabel}</h3>
+					<p class="text-sm text-muted-foreground sm:text-base">{categorySearch.searchError}</p>
 				</div>
 			{:else if categorySearch.searchResults.length === 0}
 				<div class="py-8 text-center sm:py-12">

@@ -1,5 +1,5 @@
 import type { JobRun, JobRunList } from '#lib/types/job.js';
-import BaseAPIService from './api-service';
+import BaseAPIService, { type APIRequestConfig } from './api-service';
 import type { JobSchedules, JobSchedulesUpdate, JobListResponse, JobRunResponse } from '#lib/types/settings.js';
 
 class JobScheduleService extends BaseAPIService {
@@ -11,8 +11,8 @@ class JobScheduleService extends BaseAPIService {
 		return this.handleResponse(this.api.put(`/environments/${environmentId}/job-schedules`, update));
 	}
 
-	async listJobs(environmentId: string = '0'): Promise<JobListResponse> {
-		return this.handleResponse(this.api.get(`/environments/${environmentId}/jobs`));
+	async listJobs(environmentId: string = '0', config?: APIRequestConfig): Promise<JobListResponse> {
+		return this.handleResponse(this.api.get(`/environments/${environmentId}/jobs`, config));
 	}
 
 	async runJob(jobId: string, environmentId: string = '0', requestId: string = crypto.randomUUID()): Promise<JobRunResponse> {

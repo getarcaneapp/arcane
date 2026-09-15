@@ -15,7 +15,28 @@ permissions:
   packages: write
 
 jobs:
+  next-version:
+    runs-on: depot-ubuntu-24.04-4
+    outputs:
+      version: ${{ steps.next-version.outputs.version }}
+      previous-tag: ${{ steps.next-version.outputs.previous_tag }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup version tools
+        uses: taiki-e/install-action@v2
+        with:
+          tool: just,git-cliff
+
+      - name: Compute next image version
+        id: next-version
+        run: just next-image-version github-output
+
   build-next-images:
+    needs: next-version
     runs-on: depot-ubuntu-24.04-32
 
     steps:
@@ -28,11 +49,6 @@ jobs:
         uses: taiki-e/install-action@v2
         with:
           tool: just
-
-      - name: Setup git-cliff
-        uses: taiki-e/install-action@v2
-        with:
-          tool: git-cliff
 
       - name: Setup Vite+
         uses: voidzero-dev/setup-vp@9446e853b27985e00fb1b21193be026fc09198db
@@ -52,29 +68,6 @@ jobs:
 
       - name: Install cosign
         uses: sigstore/cosign-installer@v4.1.2
-
-      - name: Set up Depot CLI
-        uses: depot/setup-action@v1
-        with:
-          configure-docker: true
-
-      - name: Login to container registries
-        uses: docker/login-action@v4
-        with:
-          registry-auth: |
-            - registry: ghcr.io
-              username: ${{ vars.GHCR_USERNAME }}
-              password: ${{ secrets.ARCANE_BOT_TOKEN }}
-            - registry: quay.io
-              username: ${{ secrets.QUAY_USERNAME }}
-              password: ${{ secrets.QUAY_TOKEN }}
-            - registry: docker.io
-              username: ${{ secrets.DOCKER_USER }}
-              password: ${{ secrets.DOCKER_PAT }}
-
-      - name: Compute next image version
-        id: next-version
-        run: just next-image-version github-output
 
       - name: Capture frontend build versions
         id: frontend-versions
@@ -97,7 +90,7 @@ jobs:
         with:
           distribution: goreleaser-pro
           version: '~> 2'
-          args: release --clean --nightly --skip=announce,validate,homebrew
+          args: release --clean --nightly --skip=announce,validate,homebrew,docker
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
           COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
@@ -105,8 +98,8 @@ jobs:
           BUILD_NEXT: 'true'
           SKIP_RELEASE: 'true'
           SKIP_CHANGELOG: 'true'
-          NEXT_IMAGE_VERSION: ${{ steps.next-version.outputs.version }}
-          GORELEASER_PREVIOUS_TAG: ${{ steps.next-version.outputs.previous_tag }}
+          NEXT_IMAGE_VERSION: ${{ needs.next-version.outputs.version }}
+          GORELEASER_PREVIOUS_TAG: ${{ needs.next-version.outputs.previous-tag }}
           NODE_VERSION: ${{ steps.frontend-versions.outputs.node_version }}
           SVELTEKIT_VERSION: ${{ steps.frontend-versions.outputs.sveltekit_version }}
           GORELEASER_KEY: ${{ secrets.GORELEASER_KEY }}
@@ -123,3 +116,44 @@ jobs:
           R2_BUCKET: ${{ secrets.R2_BUCKET }}
           NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
           NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
+
+  publish-images:
+    name: Publish ${{ matrix.registry }}
+    needs: next-version
+    runs-on: depot-ubuntu-24.04-32
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - registry: ghcr.io
+            username-secret: GHCR_USERNAME
+            password-secret: ARCANE_BOT_TOKEN
+          - registry: docker.io
+            username-secret: DOCKER_USER
+            password-secret: DOCKER_PAT
+          - registry: quay.io
+            username-secret: QUAY_USERNAME
+            password-secret: QUAY_TOKEN
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Publish registry images
+        uses: ./.depot/actions/publish-images
+        with:
+          registry: ${{ matrix.registry }}
+          username: ${{ matrix.registry == 'ghcr.io' && vars.GHCR_USERNAME || secrets[matrix.username-secret] }}
+          password: ${{ secrets[matrix.password-secret] }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+          GORELEASER_KEY: ${{ secrets.GORELEASER_KEY }}
+          BUILD_NEXT: 'true'
+          SKIP_RELEASE: 'true'
+          SKIP_CHANGELOG: 'true'
+          NEXT_IMAGE_VERSION: ${{ needs.next-version.outputs.version }}
+          GORELEASER_PREVIOUS_TAG: ${{ needs.next-version.outputs.previous-tag }}

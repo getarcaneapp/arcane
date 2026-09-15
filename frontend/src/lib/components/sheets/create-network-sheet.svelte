@@ -7,7 +7,7 @@
 	import { Label } from '#lib/components/ui/label/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Textarea } from '#lib/components/ui/textarea/index.js';
-	import type { NetworkCreateOptions } from '#lib/types/docker.js';
+	import type { IPAMConfig, NetworkCreateOptions } from '#lib/types/docker.js';
 	import { z } from 'zod/v4';
 	import { createForm, preventDefault } from '#lib/utils/settings.svelte.js';
 
@@ -41,6 +41,7 @@
 		driverOptions: z.string().optional().default(''),
 		enableIpam: z.boolean().default(false),
 		subnet: z.string().optional().default(''),
+		ipRange: z.string().optional().default(''),
 		gateway: z.string().optional().default('')
 	});
 
@@ -53,6 +54,7 @@
 		driverOptions: '',
 		enableIpam: false,
 		subnet: '',
+		ipRange: '',
 		gateway: ''
 	});
 
@@ -98,11 +100,14 @@
 		};
 
 		// Add IPAM configuration if enabled
-		if (data.enableIpam && (data.subnet?.trim() || data.gateway?.trim())) {
-			const ipamConfig: { subnet?: string; gateway?: string } = {};
+		if (data.enableIpam && (data.subnet?.trim() || data.ipRange?.trim() || data.gateway?.trim())) {
+			const ipamConfig: IPAMConfig = {};
 
 			if (data.subnet?.trim()) {
 				ipamConfig.subnet = data.subnet.trim();
+			}
+			if (data.ipRange?.trim()) {
+				ipamConfig.ipRange = data.ipRange.trim();
 			}
 			if (data.gateway?.trim()) {
 				ipamConfig.gateway = data.gateway.trim();
@@ -131,6 +136,7 @@
 			inputs.driverOptions.value = '';
 			inputs.enableIpam.value = false;
 			inputs.subnet.value = '';
+			inputs.ipRange.value = '';
 			inputs.gateway.value = '';
 			labels = [{ key: '', value: '' }];
 		}
@@ -286,6 +292,22 @@
 									</div>
 
 									<div class="space-y-2">
+										<Label for="ip-range" class="text-sm font-medium">{m.networks_ipam_iprange_label()}</Label>
+										<Input
+											id="ip-range"
+											type="text"
+											placeholder={m.network_example_ip_range()}
+											disabled={isLoading}
+											bind:value={inputs.ipRange.value}
+											class={inputs.ipRange.error ? 'border-destructive' : ''}
+										/>
+										{#if inputs.ipRange.error}
+											<p class="text-xs text-destructive">{inputs.ipRange.error}</p>
+										{/if}
+										<p class="text-xs text-muted-foreground">{m.network_ip_range_description()}</p>
+									</div>
+
+									<div class="space-y-2">
 										<Label for="gateway" class="text-sm font-medium">{m.common_gateway()}</Label>
 										<Input
 											id="gateway"
@@ -313,6 +335,7 @@
 	{#snippet footer()}
 		<SheetFooterActions
 			bind:open
+			onCancel={() => handleOpenChange(false)}
 			cancelDisabled={isLoading}
 			submitDisabled={isLoading}
 			submitLoading={isLoading}

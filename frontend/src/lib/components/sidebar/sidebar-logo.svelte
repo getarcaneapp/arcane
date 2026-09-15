@@ -2,14 +2,15 @@
 	import { cn } from '#lib/utils.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { getApplicationLogo } from '#lib/utils/docker.js';
-	import { accentColorPreview } from '#lib/utils/theme.svelte.js';
+	import { resolveLogoColor } from '#lib/utils/theme.svelte.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
+	import { mode } from 'mode-watcher';
 
 	let { isCollapsed }: { isCollapsed: boolean } = $props();
 
-	const accentColor = $derived(accentColorPreview.current);
+	const logoColor = $derived(resolveLogoColor(mode.current === 'dark'));
 	const animationsEnabled = $derived(userStore.current?.preferences?.animationsEnabled ?? true);
-	const logoUrl = $derived(getApplicationLogo(!isCollapsed, accentColor, accentColor, { animated: animationsEnabled }));
+	const logoUrl = $derived(getApplicationLogo(!isCollapsed, logoColor, logoColor, { animated: animationsEnabled }));
 </script>
 
 <div

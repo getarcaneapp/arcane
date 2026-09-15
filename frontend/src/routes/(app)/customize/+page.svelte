@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { tryCatch } from '#lib/utils/try-catch.js';
+	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 
 	import type { PageProps } from './$types';
 	import { goto } from '$app/navigation';
@@ -22,8 +23,7 @@
 	const permissionsManifest = $derived(data.permissionsManifest);
 	const categorySearch = useCategorySearch<CustomizeCategory>({
 		search: (query) => customizeSearchService.search(query),
-		filter: isAccessibleCategory,
-		onError: (error) => console.error('Search failed:', error)
+		filter: isAccessibleCategory
 	});
 
 	const iconMap: Record<string, any> = {
@@ -59,19 +59,13 @@
 	}
 
 	onMount(async () => {
-		const operationResult = await tryCatch(
-			(async () => {
-				customizeCategories = orderCategoriesByNav(
-					(await customizeSearchService.getCategories()).filter(isAccessibleCategory),
-					getCustomizeSubpageUrlsInNavOrder()
-				);
-			})()
-		);
-		if (operationResult.error !== null) {
-			const error = operationResult.error;
-
-			console.error('Failed to load categories:', error);
-		}
+		await handleApiResultWithCallbacks({
+			result: await tryCatch(customizeSearchService.getCategories()),
+			message: m.common_load_failed({ resource: m.customize_title() }),
+			onSuccess: (categories) => {
+				customizeCategories = orderCategoriesByNav(categories.filter(isAccessibleCategory), getCustomizeSubpageUrlsInNavOrder());
+			}
+		});
 	});
 
 	function navigateToCategory(categoryUrl: string) {
@@ -112,6 +106,9 @@
 		get isSearching() {
 			return categorySearch.isSearching;
 		},
+		get searchError() {
+			return categorySearch.searchError;
+		},
 		performSearch: categorySearch.performSearch,
 		debouncedSearch: categorySearch.debouncedSearch,
 		clearSearch: categorySearch.clearSearch
@@ -125,6 +122,7 @@
 	searchPlaceholder={m.customize_search_placeholder()}
 	clearSearchLabel={m.common_clear_search()}
 	searchingLabel={m.searching()}
+	searchFailedLabel={m.common_search_failed()}
 	noResultsTitle={m.customize_no_options()}
 	noResultsDescription={m.customize_try_adjusting()}
 	matchingItemsLabel={m.customize_available_options()}

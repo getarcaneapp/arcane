@@ -6,6 +6,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 
 	"context"
+	"path/filepath"
 	"slices"
 	"testing"
 	"time"
@@ -59,15 +60,78 @@ func TestValidatePermissionsAgainstCallerRejectsUnknownPermissionBeforeEscalatio
 	require.False(t, errors.Is(err, common.ErrRolePermissionEscalation))
 }
 
-func TestBackfillLegacyRoleAssignmentsIsNoOpWhenColumnAbsent(t *testing.T) {
+func TestBackfillLegacyRoleAssignments(t *testing.T) {
 	ctx := context.Background()
-	_, roleSvc := setupUserAndRoleServices(t)
-	// setupUserAndRoleServices runs migrations through to current, so
-	// users.roles never exists in the fresh test schema.
-	require.False(t, roleSvc.db.Migrator().HasColumn("users", "roles"))
-	require.NoError(t, roleSvc.BackfillLegacyRoleAssignments(ctx))
-	// Idempotent — second call is also fine.
-	require.NoError(t, roleSvc.BackfillLegacyRoleAssignments(ctx))
+
+	t.Run("no-op without legacy column", func(t *testing.T) {
+		_, roleSvc := setupUserAndRoleServices(t)
+		require.False(t, roleSvc.db.Migrator().HasColumn("users", "roles"))
+		require.NoError(t, roleSvc.BackfillLegacyRoleAssignments(ctx))
+		require.NoError(t, roleSvc.BackfillLegacyRoleAssignments(ctx))
+	})
+
+	t.Run("converts legacy roles once", func(t *testing.T) {
+		db, err := database.Initialize(ctx, "file:"+filepath.Join(t.TempDir(), "arcane.db"), database.MigrationOptions{})
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, db.Close()) })
+		require.True(t, db.Migrator().HasColumn("users", "roles"))
+		roleSvc := NewRoleService(db)
+		require.NoError(t, roleSvc.EnsureBuiltInRoles(ctx))
+		require.NoError(t, db.Exec("INSERT INTO environments (id, name, api_url) VALUES (?, ?, ?)", "env-1", "env-1", "http://env-1").Error)
+
+		for id, roles := range map[string]string{
+			"seed-admin":    `[]`,
+			"legacy-admin":  `["user", " ADMIN "]`,
+			"legacy-user":   `["user"]`,
+			"legacy-empty":  `[]`,
+			"legacy-null":   `null`,
+			"legacy-blank":  `[" "]`,
+			"legacy-broken": `not json`,
+			"scoped-manual": `["admin"]`,
+			"global-oidc":   `["admin"]`,
+		} {
+			require.NoError(t, db.Exec("INSERT INTO users (id, username, password_hash, roles) VALUES (?, ?, ?, ?)", id, id, "unused", roles).Error)
+		}
+		require.NoError(t, db.Create(&UserRoleAssignment{UserID: "seed-admin", RoleID: authz.BuiltInRoleAdmin, Source: RoleAssignmentSourceManual}).Error)
+		envID := "env-1"
+		require.NoError(t, roleSvc.SetUserAssignments(ctx, "scoped-manual", []UserRoleAssignment{{RoleID: authz.BuiltInRoleViewer, EnvironmentID: &envID}}))
+		require.NoError(t, roleSvc.ReplaceOidcAssignments(ctx, "global-oidc", []UserRoleAssignment{{RoleID: authz.BuiltInRoleViewer}}))
+
+		require.NoError(t, roleSvc.BackfillLegacyRoleAssignments(ctx))
+		require.Equal(t, []string{authz.BuiltInRoleAdmin}, assignedRoleIDs(t, roleSvc, "legacy-admin"))
+		for _, id := range []string{"legacy-user", "legacy-empty", "legacy-null", "legacy-blank", "legacy-broken"} {
+			require.Equal(t, []string{authz.BuiltInRoleViewer}, assignedRoleIDs(t, roleSvc, id), id)
+		}
+		scoped, err := roleSvc.ListUserAssignments(ctx, "scoped-manual")
+		require.NoError(t, err)
+		require.Len(t, scoped, 1)
+		require.Equal(t, &envID, scoped[0].EnvironmentID)
+		oidc, err := roleSvc.ListUserAssignments(ctx, "global-oidc")
+		require.NoError(t, err)
+		require.Len(t, oidc, 1)
+		require.Equal(t, RoleAssignmentSourceOidc, oidc[0].Source)
+		ps, err := roleSvc.ResolveUserPermissionsInDB(ctx, db.DB, "scoped-manual")
+		require.NoError(t, err)
+		require.True(t, ps.Allows(authz.PermContainersList, "env-1"))
+		require.False(t, ps.Allows(authz.PermContainersList, ""))
+
+		require.NoError(t, roleSvc.SetUserAssignments(ctx, "legacy-user", nil))
+		require.NoError(t, db.Exec("INSERT INTO users (id, username, password_hash, roles) VALUES (?, ?, ?, ?)", "later-admin", "later-admin", "unused", `["admin"]`).Error)
+		require.NoError(t, NewRoleService(db).BackfillLegacyRoleAssignments(ctx))
+		require.Empty(t, assignedRoleIDs(t, roleSvc, "legacy-user"))
+		require.Empty(t, assignedRoleIDs(t, roleSvc, "later-admin"))
+	})
+}
+
+func assignedRoleIDs(t *testing.T, roleSvc *RoleService, userID string) []string {
+	t.Helper()
+	assignments, err := roleSvc.ListUserAssignments(context.Background(), userID)
+	require.NoError(t, err)
+	ids := make([]string, 0, len(assignments))
+	for _, a := range assignments {
+		ids = append(ids, a.RoleID)
+	}
+	return ids
 }
 
 func TestEnsureBuiltInRolesMigratesVariablePermissionsWithoutBackfillingCustomGrants(t *testing.T) {

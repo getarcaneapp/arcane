@@ -143,7 +143,7 @@ func RegisterGitOpsSyncs(api huma.API, syncService *GitOpsSyncService) {
 // Admin built-in role) rather than the broader gitops:create / gitops:update
 // permissions that non-admin roles such as Editor hold. Whether a request
 // touches the hook is decided by the request type itself
-// (gitops.*SyncRequest.HasPreDeployConfig) so the field set has a single owner.
+// (gitops.PreDeployConfigRequest.HasPreDeployConfig) so the field set has a single owner.
 func requireLifecyclePermissionInternal(ctx context.Context, environmentID string, lifecycleRequested bool) error {
 	if !lifecycleRequested {
 		return nil
@@ -235,6 +235,12 @@ func (h *GitOpsSyncHandler) CreateSync(ctx context.Context, input *CreateGitOpsS
 
 // ImportSyncs imports multiple GitOps syncs.
 func (h *GitOpsSyncHandler) ImportSyncs(ctx context.Context, input *ImportGitOpsSyncsInput) (*handlerutil.Out[gitops.ImportGitOpsSyncResponse], error) {
+	for _, item := range input.Body {
+		if err := requireLifecyclePermissionInternal(ctx, input.EnvironmentID, item.HasPreDeployConfig()); err != nil {
+			return nil, err
+		}
+	}
+
 	actor := handlerutil.CurrentActor(ctx)
 
 	response, err := h.syncService.ImportSyncs(ctx, input.EnvironmentID, input.Body, actor)

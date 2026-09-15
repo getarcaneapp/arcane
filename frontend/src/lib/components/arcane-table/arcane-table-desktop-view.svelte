@@ -12,7 +12,8 @@
 		type ColumnWidth,
 		type ColumnAlign,
 		type GroupedData,
-		type GroupSelectionState
+		type GroupSelectionState,
+		type SelectionModifiers
 	} from './arcane-table.types.svelte';
 	import TableCheckbox from './arcane-table-checkbox.svelte';
 	import TableEmpty from './table-empty.svelte';
@@ -57,7 +58,7 @@
 		onGroupToggle?: (groupName: string) => void;
 		getGroupSelectionState?: (groupItems: TData[]) => GroupSelectionState;
 		onToggleGroupSelection?: (groupItems: TData[]) => void;
-		onToggleRowSelection?: (id: string, selected: boolean) => void;
+		onToggleRowSelection?: (id: string, selected: boolean, modifiers?: SelectionModifiers) => void;
 		unstyled?: boolean;
 		expandedRowContent?: Snippet<[{ row: ArcaneRow<TData>; item: TData }]>;
 		expandedRows?: Set<string>;
@@ -105,7 +106,11 @@
 		}
 		if (selectionDisabled) return;
 		const isSelected = selectedIdSet.has(rowId);
-		onToggleRowSelection?.(rowId, !isSelected);
+		onToggleRowSelection?.(rowId, !isSelected, { shiftKey: event.shiftKey });
+	}
+
+	function handleRowMouseDown(event: MouseEvent) {
+		if (event.shiftKey && !hasExpand && !selectionDisabled && !shouldIgnoreTableRowClick(event)) event.preventDefault();
 	}
 
 	// Get cell classes based on column metadata
@@ -254,6 +259,7 @@
 		data-state={selectedIdSet.has(rowId) && 'selected'}
 		data-expanded={isExpanded ? true : undefined}
 		onclick={(event) => handleRowClick(event, rowId)}
+		onmousedown={handleRowMouseDown}
 		class={cn('isolate', hasExpand && 'cursor-pointer', isExpanded && 'bg-muted/30')}
 	>
 		{#if hasExpand}

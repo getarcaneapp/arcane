@@ -363,13 +363,13 @@
 					toast.error(m.environments_cannot_switch_disabled());
 					return;
 				}
-				const result = await tryCatch(
-					(async () => {
-						await environmentStore.setEnvironment(item);
+				await handleApiResultWithCallbacks({
+					result: await tryCatch(environmentStore.setEnvironment(item)),
+					message: m.environments_connect_error(),
+					onSuccess: () => {
 						toast.success(m.environments_switched_to({ name: item.name }));
-					})()
-				);
-				if (result.error) console.error('Failed to set environment:', result.error);
+					}
+				});
 			}}
 			disabled={!item.enabled || environmentStore.selected?.id === item.id}
 		>

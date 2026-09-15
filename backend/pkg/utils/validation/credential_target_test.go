@@ -99,7 +99,7 @@ func TestValidateCredentialTargetChange(t *testing.T) {
 			case tt.wantField != "":
 				require.ErrorIs(t, err, common.ErrValidation)
 				assert.Contains(t, errors.GetDetails(err), tt.wantField)
-				assert.Equal(t, "Changing credential target requires re-supplying or clearing the token", err.Error())
+				assert.Equal(t, "Changing credential target requires re-entering the token", err.Error())
 			case len(tt.wantFields) > 0:
 				var apiErr *common.APIError
 				require.ErrorAs(t, err, &apiErr)

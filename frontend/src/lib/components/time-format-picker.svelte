@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { createMutation, useQueryClient } from '@tanstack/svelte-query';
+	import { toast } from 'svelte-sonner';
+	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import * as Select from '#lib/components/ui/select/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
@@ -37,7 +39,7 @@
 		},
 		onError: (error, _timeFormat, context) => {
 			timeFormatStore.set(context?.previousTimeFormat ?? 'auto');
-			console.error('Failed to update time format', error);
+			toast.error(m.common_update_failed({ resource: m.time_format() }), { description: extractApiErrorMessage(error) });
 		}
 	}));
 </script>

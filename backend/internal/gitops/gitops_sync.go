@@ -1640,28 +1640,31 @@ func (s *GitOpsSyncService) ImportSyncs(ctx context.Context, environmentID strin
 		repo, err := s.repoService.GetRepositoryByName(ctx, importItem.GitRepo)
 		if err != nil {
 			response.FailedCount++
-			response.Errors = append(response.Errors, fmt.Sprintf("Stack '%s': Repository '%s' not found (%v)", importItem.SyncName, importItem.GitRepo, err))
+			response.Errors = append(response.Errors, fmt.Sprintf("Sync '%s': Repository '%s' not found (%v)", importItem.SyncName, importItem.GitRepo, err))
 			continue
 		}
 
 		createReq := gitops.CreateSyncRequest{
-			Name:              importItem.SyncName,
-			RepositoryID:      repo.ID,
-			Branch:            importItem.Branch,
-			ComposePath:       importItem.DockerComposePath,
-			ProjectName:       importItem.SyncName,
-			AutoSync:          new(importItem.AutoSync),
-			SyncInterval:      new(importItem.SyncInterval),
-			SyncDirectory:     importItem.SyncDirectory,
-			MaxSyncFiles:      importItem.MaxSyncFiles,
-			MaxSyncTotalSize:  importItem.MaxSyncTotalSize,
-			MaxSyncBinarySize: importItem.MaxSyncBinarySize,
+			Name:                   importItem.SyncName,
+			RepositoryID:           repo.ID,
+			Branch:                 importItem.Branch,
+			ComposePath:            importItem.DockerComposePath,
+			ProjectName:            importItem.ProjectName,
+			AutoSync:               new(importItem.AutoSync),
+			SyncInterval:           new(importItem.SyncInterval),
+			SyncDirectory:          importItem.SyncDirectory,
+			PullImageAfterSync:     importItem.PullImageAfterSync,
+			RedeployAfterSync:      importItem.RedeployAfterSync,
+			MaxSyncFiles:           importItem.MaxSyncFiles,
+			MaxSyncTotalSize:       importItem.MaxSyncTotalSize,
+			MaxSyncBinarySize:      importItem.MaxSyncBinarySize,
+			PreDeployConfigRequest: importItem.PreDeployConfigRequest,
 		}
 
 		_, err = s.CreateSync(ctx, environmentID, createReq, actor)
 		if err != nil {
 			response.FailedCount++
-			response.Errors = append(response.Errors, fmt.Sprintf("Stack '%s': %v", importItem.SyncName, err))
+			response.Errors = append(response.Errors, fmt.Sprintf("Sync '%s': %v", importItem.SyncName, err))
 		} else {
 			response.SuccessCount++
 		}

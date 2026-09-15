@@ -152,19 +152,10 @@ export async function simpleRefresh<T>(
 	setLoading: (loading: boolean) => void
 ): Promise<void> {
 	setLoading(true);
-	try {
-		const operationResult = await tryCatch(
-			(async () => {
-				const data = await fetch();
-				onSuccess(data);
-			})()
-		);
-		if (operationResult.error !== null) {
-			const error = operationResult.error;
-			console.error('Refresh failed:', error);
-			toast.error(errorMessage);
-		}
-	} finally {
-		setLoading(false);
-	}
+	await handleApiResultWithCallbacks({
+		result: await tryCatch(fetch()),
+		message: errorMessage,
+		setLoadingState: setLoading,
+		onSuccess
+	});
 }

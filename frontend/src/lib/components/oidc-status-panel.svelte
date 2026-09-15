@@ -1,9 +1,10 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import { getApplicationLogo } from '#lib/utils/docker.js';
-	import { accentColorPreview } from '#lib/utils/theme.svelte.js';
+	import { resolveLogoColor } from '#lib/utils/theme.svelte.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { mode } from 'mode-watcher';
 
 	interface Props {
 		busy: boolean;
@@ -15,10 +16,10 @@
 
 	let { busy, busyTitle, busyDescription, error, children }: Props = $props();
 
-	const accentColor = $derived(accentColorPreview.current);
+	const logoColor = $derived(resolveLogoColor(mode.current === 'dark'));
 	const animationsEnabled = $derived(userStore.current?.preferences?.animationsEnabled ?? true);
 	const loaderLogoUrl = $derived(
-		getApplicationLogo(false, accentColor, accentColor, { animated: animationsEnabled, loop: animationsEnabled })
+		getApplicationLogo(false, logoColor, logoColor, { animated: animationsEnabled, loop: animationsEnabled })
 	);
 </script>
 

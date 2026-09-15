@@ -68,11 +68,12 @@ export function getContainerIpAddresses(container: ContainerSummaryDto): string[
 	const seen = new Set<string>();
 	const ipAddresses: string[] = [];
 	for (const networkName of Object.keys(networks).sort((a, b) => a.localeCompare(b))) {
-		const ipAddress = networks[networkName]?.ipAddress?.trim();
-		if (!ipAddress || seen.has(ipAddress)) continue;
-
-		seen.add(ipAddress);
-		ipAddresses.push(ipAddress);
+		const network = networks[networkName];
+		for (const ipAddress of [network?.ipAddress?.trim(), network?.globalIPv6Address?.trim()]) {
+			if (!ipAddress || seen.has(ipAddress)) continue;
+			seen.add(ipAddress);
+			ipAddresses.push(ipAddress);
+		}
 	}
 
 	return ipAddresses;

@@ -268,6 +268,10 @@
 
 				<div class="divide-y">
 					{#each connectedContainers as container (container.id)}
+						{@const addresses = [
+							container.ipv4Address ?? container.IPv4Address,
+							container.ipv6Address ?? container.IPv6Address
+						].filter(Boolean)}
 						<div class="flex flex-col p-3 sm:flex-row sm:items-center">
 							<div class="mb-2 w-full font-medium break-all sm:mb-0 sm:w-1/3">
 								<a href="/containers/{container.id}" class="flex items-center text-primary hover:underline">
@@ -275,17 +279,15 @@
 									{container.name ?? container.Name}
 								</a>
 							</div>
-							<div class="w-full pl-0 sm:w-2/3 sm:pl-4">
-								<code
-									class="cursor-pointer rounded bg-muted px-1.5 py-0.5 font-mono text-xs break-all text-muted-foreground select-all sm:text-sm"
-									title={m.common_click_to_select()}
-								>
-									{container.ipv4Address ??
-										container.IPv4Address ??
-										container.ipv6Address ??
-										container.IPv6Address ??
-										m.common_unknown()}
-								</code>
+							<div class="flex w-full flex-wrap gap-1.5 pl-0 sm:w-2/3 sm:pl-4">
+								{#each addresses.length > 0 ? addresses : [m.common_unknown()] as address (address)}
+									<code
+										class="cursor-pointer rounded bg-muted px-1.5 py-0.5 font-mono text-xs break-all text-muted-foreground select-all sm:text-sm"
+										title={m.common_click_to_select()}
+									>
+										{address}
+									</code>
+								{/each}
 							</div>
 						</div>
 					{/each}

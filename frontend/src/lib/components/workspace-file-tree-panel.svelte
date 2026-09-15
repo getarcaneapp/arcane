@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { Snippet } from 'svelte';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import FileTreeRow from '#lib/components/file-tree-row.svelte';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
@@ -61,10 +62,15 @@
 		title?: string;
 		leadingRows?: WorkspaceTreeLeadingRow[];
 		entries: WorkspaceDisplayEntry[];
-		selectedFile: string;
+		selectedFile?: string;
 		disabled?: boolean;
 		readOnlyMessage?: string;
-		onSelect: (key: string) => void;
+		onSelect?: (key: string) => void;
+		selectable?: boolean;
+		isChecked?: (entry: WorkspaceDisplayEntry) => boolean;
+		isSelectionLocked?: (entry: WorkspaceDisplayEntry) => boolean;
+		onCheckedChange?: (entry: WorkspaceDisplayEntry, checked: boolean) => void;
+		rowBadge?: Snippet<[WorkspaceDisplayEntry]>;
 		onCreateFile?: (parentPath: string, name: string) => void;
 		onCreateFolder?: (parentPath: string, name: string) => void;
 		onRename?: (relativePath: string, newName: string) => void;
@@ -88,10 +94,15 @@
 		title = m.workspace_files(),
 		leadingRows = [],
 		entries,
-		selectedFile,
+		selectedFile = '',
 		disabled = false,
 		readOnlyMessage,
 		onSelect,
+		selectable = false,
+		isChecked,
+		isSelectionLocked,
+		onCheckedChange,
+		rowBadge,
 		onCreateFile,
 		onCreateFolder,
 		onRename,
@@ -645,14 +656,23 @@
 		expanded={openFolders[row.relativePath] === true}
 		showDisclosure={hasDirectories}
 		selected={selectedFile === `file:${row.relativePath}`}
+		{selectable}
+		checked={selectable && !!isChecked?.(row)}
+		disabled={selectable && !!isSelectionLocked?.(row)}
 		pending={row.pending}
 		pendingLabel={m.common_unsaved_changes()}
 		expandLabel={m.workspace_file_expand_folder({ name: row.name })}
 		collapseLabel={m.workspace_file_collapse_folder({ name: row.name })}
 		onToggle={() => toggleFolder(row.relativePath)}
-		onActivate={() => (row.isDirectory ? toggleFolder(row.relativePath) : onSelect(`file:${row.relativePath}`))}
+		onActivate={() => {
+			if (row.isDirectory) toggleFolder(row.relativePath);
+			else if (selectable) onCheckedChange?.(row, !isChecked?.(row));
+			else onSelect?.(`file:${row.relativePath}`);
+		}}
+		onCheckedChange={(checked) => onCheckedChange?.(row, checked)}
 	>
 		{#snippet trailing()}
+			{@render rowBadge?.(row)}
 			{#if row.locked || row.isSymlink || onRename || onMove || onDelete || onDownload || onRestore}
 				<div class="flex shrink-0 items-center gap-0.5">
 					{#each workspaceRowActions(row) as action (action.id)}
@@ -691,7 +711,7 @@
 				selectedFile === leadingRow.key && 'bg-accent',
 				leadingRow.action && 'text-muted-foreground hover:text-foreground'
 			)}
-			onclick={() => (leadingRow.onSelect ? leadingRow.onSelect() : onSelect(leadingRow.key))}
+			onclick={() => (leadingRow.onSelect ? leadingRow.onSelect() : onSelect?.(leadingRow.key))}
 		>
 			{#if hasDirectories}
 				<span class="inline-flex size-4 shrink-0 items-center justify-center"></span>

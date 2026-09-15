@@ -359,6 +359,16 @@ type Update struct {
 	// Required: false
 	TrivyIgnoreUnfixed *string `json:"trivyIgnoreUnfixed,omitzero"`
 
+	// TrivyConfig is the trivy.yaml content passed to scans with --config.
+	//
+	// Required: false
+	TrivyConfig *string `json:"trivyConfig,omitzero"`
+
+	// TrivyIgnore is the .trivyignore content passed to scans with --ignorefile.
+	//
+	// Required: false
+	TrivyIgnore *string `json:"trivyIgnore,omitzero"`
+
 	// ImagePatchSuffix is the suffix appended to the source tag when patching an image.
 	//
 	// Required: false

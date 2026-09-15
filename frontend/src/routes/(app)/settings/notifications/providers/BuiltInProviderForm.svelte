@@ -319,6 +319,7 @@
 			.superRefine((d, ctx) => {
 				if (!d.enabled) return;
 				addRequiredTrimmedFieldIssue(ctx, d.host, 'host', m.common_required());
+				addRequiredCredentialIssue(ctx, d.password, 'password', m.common_required());
 			}),
 		googlechat: z
 			.object({

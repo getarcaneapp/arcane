@@ -5,7 +5,7 @@
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { bytes, formatDateTimeShort, nowInstantString } from '#lib/utils/formatting.js';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
-	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
+	import { handleApiResultWithCallbacks, extractApiErrorMessage } from '#lib/utils/api.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 	import { toast } from 'svelte-sonner';
 	import { onMount, onDestroy, tick } from 'svelte';
@@ -112,7 +112,10 @@
 	});
 	let destroyed = false;
 
+	let scanReportError = $state<string | null>(null);
+
 	async function handleScanImage() {
+		scanReportError = null;
 		if (!canScanImage || !image?.id || isLoading.scanning) return;
 		const environmentId = currentEnvId;
 		const requestedImageId = image.id;
@@ -239,9 +242,7 @@
 					if (destroyed || !vulnerabilityManagementEnabled || environmentId !== currentEnvId || requestedImageId !== image.id)
 						return;
 					if (operationResult2.error !== null) {
-						const error = operationResult2.error;
-
-						console.error('Failed to load scan result:', error);
+						scanReportError = extractApiErrorMessage(operationResult2.error);
 						queryClient.setQueryData(requestedKey, {
 							...(vulnerabilityScan ?? {}),
 							imageId: resolvedSummary.imageId,
@@ -252,6 +253,7 @@
 							error: resolvedSummary.error
 						} as VulnerabilityScanResult);
 					} else {
+						scanReportError = null;
 						queryClient.setQueryData(requestedKey, operationResult2.data);
 					}
 					if (showToast) {
@@ -499,7 +501,12 @@
 			</Tabs.Content>
 			{#if vulnerabilityManagementEnabled}
 				<Tabs.Content value="vulnerabilities">
-					<VulnerabilityScanPanel scan={vulnerabilityScan} isScanning={isLoading.scanning} onScan={handleScanImage} />
+					<VulnerabilityScanPanel
+						scan={vulnerabilityScan}
+						reportError={scanReportError}
+						isScanning={isLoading.scanning}
+						onScan={handleScanImage}
+					/>
 				</Tabs.Content>
 			{/if}
 		</Tabs.Root>
