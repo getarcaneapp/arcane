@@ -376,10 +376,12 @@
 		await goto(`/volumes/${encodeURIComponent(backup.resourceName)}?tab=backups`);
 	}
 
+	let autoDiscovered = false;
 	let mounted = false;
 	async function discoverStoredBackups() {
-		if (!mounted || !policyCollection.recoveryKeyStored || !data.destinations.length) return;
+		if (!mounted || autoDiscovered || !policyCollection.recoveryKeyStored || !data.destinations.length) return;
 		if (!hasPermission('system-backups:manage')) return;
+		autoDiscovered = true;
 		const found = await runAutomaticBackupDiscovery(data.destinations);
 		if (mounted && found) await refresh();
 	}
@@ -396,8 +398,6 @@
 		void discoverStoredBackups();
 	});
 
-	// Discovered volume backups may reference a volume that does not exist on
-	// this instance; restoring creates it before the snapshot is written.
 	function openVolumeRestore(backup: BackupHistoryEntry) {
 		openConfirmDialog({
 			title: m.volumes_backup_restore_title(),

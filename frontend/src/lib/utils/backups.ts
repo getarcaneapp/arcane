@@ -1,6 +1,5 @@
 import { toast } from 'svelte-sonner';
 import { m } from '#lib/paraglide/messages.js';
-import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import { systemBackupService } from '#lib/services/system-backup-service.js';
 import { volumeBackupService } from '#lib/services/volume-backup-service.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
@@ -123,19 +122,6 @@ export function backupPolicyUpdateFromPolicy(policy: BackupPolicy, includeStopCo
 	};
 }
 
-// Scanning opens and lists every configured Rustic repository, which costs
-// several S3 requests per destination, so automatic runs are serialized and
-// throttled per environment and destination set for the whole client session,
-// and explicit runs bypass the throttle because the destination was just
-// connected.
-const DISCOVERY_THROTTLE_MS = 5 * 60 * 1000;
-let discoveryInFlight = false;
-let discoveryDoneKey = '';
-let discoveryCompletedAt = 0;
-
-// discoverDestinationBackups scans one destination for system and volume
-// backups that already exist on it and toasts the outcome. It is meant for
-// explicit triggers such as right after the destination was added.
 export async function discoverDestinationBackups(destinationId: string): Promise<void> {
 	const policiesResult = await tryCatch(systemBackupService.getPolicies());
 	if (policiesResult.error !== null || !policiesResult.data.recoveryKeyStored) return;
@@ -156,45 +142,18 @@ export async function discoverDestinationBackups(destinationId: string): Promise
 	}
 }
 
-// runAutomaticBackupDiscovery scans every configured destination silently and
-// reports whether any snapshots were newly imported, so the caller can
-// refresh. Concurrent calls coalesce into the in-flight run and repeated
-// calls for the same environment and destination set within the throttle
-// window are skipped, so reactive updates never cause redundant S3 repository
-// scans. Switching environments or adding a destination produces a new key
-// and scans again. Backend discovery is idempotent and only imports
-// snapshots that are not known yet.
 export async function runAutomaticBackupDiscovery(destinations: { id: string }[]): Promise<boolean> {
-	const environmentId = await environmentStore.getCurrentEnvironmentId();
-	const runKey = `${environmentId}:${destinations
-		.map((item) => item.id)
-		.sort()
-		.join(',')}`;
-	if (
-		discoveryInFlight ||
-		destinations.length === 0 ||
-		(runKey === discoveryDoneKey && Date.now() - discoveryCompletedAt < DISCOVERY_THROTTLE_MS)
-	) {
-		return false;
-	}
-	discoveryInFlight = true;
-	try {
-		const results = await Promise.allSettled([
-			...destinations.map((item) => systemBackupService.discover(item.id, '')),
-			...destinations.map((item) => volumeBackupService.discoverBackups(item.id))
-		]);
-		let discovered = 0;
-		for (const result of results) {
-			if (result.status === 'rejected') {
-				console.warn('S3 backup discovery failed', result.reason);
-				continue;
-			}
-			discovered += typeof result.value === 'number' ? result.value : result.value.count;
+	const results = await Promise.allSettled([
+		...destinations.map((item) => systemBackupService.discover(item.id, '')),
+		...destinations.map((item) => volumeBackupService.discoverBackups(item.id))
+	]);
+	let discovered = 0;
+	for (const result of results) {
+		if (result.status === 'rejected') {
+			console.warn('S3 backup discovery failed', result.reason);
+			continue;
 		}
-		return discovered > 0;
-	} finally {
-		discoveryInFlight = false;
-		discoveryDoneKey = runKey;
-		discoveryCompletedAt = Date.now();
+		discovered += typeof result.value === 'number' ? result.value : result.value.count;
 	}
+	return discovered > 0;
 }

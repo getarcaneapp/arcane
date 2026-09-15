@@ -255,10 +255,7 @@ func checkBackupObjectInternal(ctx context.Context, client *awss3.Client, bucket
 	return object.Body.Close()
 }
 
-// ListRepositoryRoots returns the first-level path segments below root in the
-// configured bucket. Volume backup repositories live one root per Arcane
-// instance, so enumerating them is how another instance's backups are
-// discovered when a destination is connected.
+// ListRepositoryRoots returns the first-level prefixes below root, one per Arcane instance.
 func ListRepositoryRoots(ctx context.Context, configuration Configuration, root string) ([]string, error) {
 	configuration = configuration.Normalized()
 	if err := configuration.Validate(true); err != nil {

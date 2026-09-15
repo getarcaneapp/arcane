@@ -1439,7 +1439,7 @@ func (s *SystemBackupService) SetRecoveryKey(ctx context.Context, recoveryKey st
 				return nil, errors.New("delete the existing system backups before replacing the recovery key; they can only be opened with the current key")
 			}
 			var volumeBackups int64
-			if err := s.db.WithContext(ctx).Model(&volume.VolumeBackup{}).Count(&volumeBackups).Error; err != nil {
+			if err := s.db.WithContext(ctx).Model(&volume.VolumeBackup{}).Where("format = ?", volume.VolumeBackupFormatRustic).Count(&volumeBackups).Error; err != nil {
 				return nil, err
 			}
 			if volumeBackups > 0 {
@@ -1450,8 +1450,6 @@ func (s *SystemBackupService) SetRecoveryKey(ctx context.Context, recoveryKey st
 	if err := s.recoveryKeys.Set(ctx, recoveryKey); err != nil {
 		return nil, err
 	}
-	// Volume backup repositories are keyed by the recovery key too; re-key any
-	// legacy repositories immediately so backups and restores keep working.
 	if s.volumeService != nil {
 		if err := s.volumeService.MigrateRepositoryPasswords(ctx); err != nil {
 			slog.WarnContext(ctx, "failed to re-key volume backup repositories to the recovery key", "error", err.Error())

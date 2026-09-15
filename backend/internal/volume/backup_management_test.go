@@ -2,7 +2,7 @@ package volume
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"testing"
 	"time"
 
@@ -60,15 +60,13 @@ func TestVolumeBackupPasswordPrefersRecoveryKey(t *testing.T) {
 		recoveryKeys:  recoveryKeys,
 	}
 
-	// Without a stored recovery key the legacy instance-key derivation applies.
-	password, err := service.volumeBackupPasswordInternal(t.Context())
+	password, err := service.volumeBackupPasswordInternal(t.Context(), nil)
 	require.NoError(t, err)
 	require.Equal(t, service.legacyVolumePasswordInternal(), password)
 
-	// Once a recovery key is stored it replaces the derived password.
 	recoveryKey := "QWERTY-ABCDEF-234567-GHIJKL-MNOPQR-STUVWX-YZ2345-ZXCVBN"
 	require.NoError(t, recoveryKeys.Set(t.Context(), recoveryKey))
-	password, err = service.volumeBackupPasswordInternal(t.Context())
+	password, err = service.volumeBackupPasswordInternal(t.Context(), nil)
 	require.NoError(t, err)
 	require.Equal(t, recoveryKey, password)
 }
