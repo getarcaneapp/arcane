@@ -1035,6 +1035,8 @@
   "networks_options_description": "네트워크 드라이버별 옵션",
   "attachable": "연결 가능",
   "ipv6_enabled": "IPv6 활성화됨",
+  "ipv6_address": "IPv6 주소",
+  "ipv6_gateway": "IPv6 게이트웨이",
   "ipv4_enabled": "IPv4 활성화됨",
   "ingress": "Ingress",
   "config_only": "구성 전용",
