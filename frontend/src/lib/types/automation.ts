@@ -345,6 +345,19 @@ export interface ImportGitOpsSyncRequest {
 	dockerComposePath: string;
 	autoSync: boolean;
 	syncInterval: number;
+	syncDirectory?: boolean;
+	maxSyncFiles?: number;
+	maxSyncTotalSize?: number;
+	maxSyncBinarySize?: number;
+	projectName?: string;
+	pullImageAfterSync?: boolean;
+	redeployAfterSync?: boolean;
+	preDeployScriptPath?: string;
+	preDeployRunnerImage?: string;
+	preDeployEnv?: string;
+	preDeployExtraMounts?: string;
+	preDeployTimeoutSec?: number;
+	preDeployNetworkMode?: string;
 }
 
 export interface ImportGitOpsSyncResponse {

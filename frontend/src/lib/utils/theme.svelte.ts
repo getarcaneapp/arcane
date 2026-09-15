@@ -3,6 +3,7 @@ import type { ApplicationTheme } from '#lib/types/settings.js';
 const APPLICATION_THEME_VALUES = [
 	'default',
 	'graphite',
+	'carbon',
 	'ocean',
 	'amber',
 	'github',
@@ -77,23 +78,44 @@ export const APPLICATION_THEME_OPTIONS: readonly ApplicationThemeOption[] = [
 		}
 	},
 	{
+		value: 'carbon',
+		preview: {
+			light: {
+				background: '#F4F4F4',
+				sidebar: '#EBEBEC',
+				card: '#FCFCFC',
+				border: '#D4D4D8',
+				foreground: '#1C1C1E',
+				primary: '#4A6FA5'
+			},
+			dark: {
+				background: '#0B0B0B',
+				sidebar: '#131315',
+				card: '#1C1C1F',
+				border: '#46464B',
+				foreground: '#D8D8D8',
+				primary: '#6B91D1'
+			}
+		}
+	},
+	{
 		value: 'ocean',
 		preview: {
 			light: {
-				background: '#edf6fb',
-				sidebar: '#d7ebf5',
-				card: '#f8fcff',
-				border: '#b7d7e7',
-				foreground: '#0f2942',
-				primary: '#0f77a8'
+				background: '#EAF0FF',
+				sidebar: '#DDE5FA',
+				card: '#F8FAFF',
+				border: '#B9C6E8',
+				foreground: '#1E2A45',
+				primary: '#3B5CB5'
 			},
 			dark: {
-				background: '#22384c',
-				sidebar: '#1b2d3f',
-				card: '#2a4358',
-				border: '#456983',
-				foreground: '#eef7fb',
-				primary: '#73b9da'
+				background: '#10121B',
+				sidebar: '#151A2C',
+				card: '#1D2338',
+				border: '#474C5E',
+				foreground: '#CFD2E4',
+				primary: '#83ABFF'
 			}
 		}
 	},
@@ -208,7 +230,7 @@ const APP_THEME_ATTRIBUTE = 'data-app-theme';
 const OLED_CLASS = 'oled';
 const DARK_CLASS = 'dark';
 const OLED_THEME_COLOR = '#000000';
-export const DEFAULT_ACCENT_COLOR = 'oklch(0.606 0.25 292.717)';
+const DEFAULT_ACCENT_COLOR = 'oklch(0.606 0.25 292.717)';
 
 let htmlClassObserver: MutationObserver | null = null;
 
@@ -258,7 +280,31 @@ function updateAppearanceCache(partial: AppearanceCache): void {
 	}
 }
 
-export const accentColorPreview = $state({ current: DEFAULT_ACCENT_COLOR });
+const appearanceState = $state({ theme: 'default' as ApplicationTheme, accent: 'default' });
+
+const THEME_LOGO_PRIMARIES = Object.fromEntries(
+	APPLICATION_THEME_OPTIONS.map((option) => [
+		option.value,
+		{ light: option.preview.light.primary, dark: option.preview.dark.primary }
+	])
+) as Record<ApplicationTheme, { light: string; dark: string }>;
+
+export function resolveThemePrimary(isDarkMode: boolean): string {
+	if (appearanceState.theme === 'default') {
+		return DEFAULT_ACCENT_COLOR;
+	}
+
+	const primaries = THEME_LOGO_PRIMARIES[appearanceState.theme];
+	return isDarkMode ? primaries.dark : primaries.light;
+}
+
+export function resolveLogoColor(isDarkMode: boolean): string {
+	if (appearanceState.accent !== 'default' && appearanceState.accent !== 'theme') {
+		return appearanceState.accent;
+	}
+
+	return resolveThemePrimary(isDarkMode);
+}
 
 export function resolveApplicationTheme(value?: string | null): ApplicationTheme {
 	if (!value) {
@@ -270,6 +316,7 @@ export function resolveApplicationTheme(value?: string | null): ApplicationTheme
 
 export function applyApplicationTheme(themeValue?: string | null): void {
 	const theme = resolveApplicationTheme(themeValue);
+	appearanceState.theme = theme;
 
 	if (typeof document === 'undefined') {
 		return;
@@ -336,14 +383,18 @@ function syncBrowserThemeColor(): void {
 }
 
 export function applyAccentColor(accentValue: string) {
-	const resolvedAccent = accentValue === 'default' ? DEFAULT_ACCENT_COLOR : accentValue;
-	accentColorPreview.current = resolvedAccent;
+	// The 'theme' sentinel means "inherit the application theme" and behaves
+	// exactly like 'default' (no override). It is normalized here so invalid
+	// CSS can never reach the custom-accent branch below.
+	const normalizedAccent = accentValue === 'theme' ? 'default' : accentValue;
+	const resolvedAccent = normalizedAccent === 'default' ? DEFAULT_ACCENT_COLOR : normalizedAccent;
+	appearanceState.accent = normalizedAccent;
 
 	if (typeof document === 'undefined') {
 		return;
 	}
 
-	if (accentValue === 'default') {
+	if (normalizedAccent === 'default') {
 		document.documentElement.style.removeProperty('--primary');
 		document.documentElement.style.removeProperty('--primary-foreground');
 		document.documentElement.style.removeProperty('--ring');

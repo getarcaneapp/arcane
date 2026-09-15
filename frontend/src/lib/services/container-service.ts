@@ -1,4 +1,4 @@
-import BaseAPIService from './api-service';
+import BaseAPIService, { extractServerMessage, handleUnauthorizedResponseInternal } from './api-service';
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import type {
 	ContainerStatusCounts,
@@ -13,6 +13,8 @@ import type {
 } from '#lib/types/docker.js';
 import type { SearchPaginationSortRequest, Paginated } from '#lib/types/shared.js';
 import { transformPaginationParams } from '#lib/utils/tables.js';
+import { downloadFromUrl } from '#lib/utils/browser-download.js';
+import { tryCatch } from '#lib/utils/try-catch.js';
 
 export type ContainersPaginatedResponse = Paginated<ContainerSummaryDto, ContainerStatusCounts> & {
 	groups?: ContainerSummaryGroupDto[];
@@ -144,6 +146,33 @@ class ContainerService extends BaseAPIService {
 	async setAutoUpdate(containerId: string, enabled: boolean): Promise<{ success: boolean; data: { message: string } }> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		return this.handleResponse(this.api.put(`/environments/${envId}/containers/${containerId}/auto-update`, { enabled }));
+	}
+
+	async downloadContainerLogs(containerId: string, environmentId?: string): Promise<void> {
+		const envId = await this.resolveEnvironmentId(environmentId);
+		const base = this.api.defaults.baseURL.replace(/\/+$/, '');
+		const url = `${base}/environments/${envId}/containers/${containerId}/logs/download`;
+		if (await this.probeDownloadInternal(url)) {
+			downloadFromUrl(url);
+		}
+	}
+
+	private async probeDownloadInternal(url: string, retry = false): Promise<boolean> {
+		const probe = new AbortController();
+		const response = await fetch(url, { credentials: 'include', signal: probe.signal });
+		if (response.ok) {
+			probe.abort();
+			return true;
+		}
+		const body = await tryCatch(response.json());
+		const message = extractServerMessage(body.data, true);
+		if (response.status === 401 && !retry) {
+			const path = new URL(url, window.location.origin).pathname;
+			const action = await handleUnauthorizedResponseInternal(path, false, message);
+			if (action === 'retry') return this.probeDownloadInternal(url, true);
+			if (action !== 'none') return false;
+		}
+		throw new Error(message ?? `${response.status} ${response.statusText}`.trim());
 	}
 }
 

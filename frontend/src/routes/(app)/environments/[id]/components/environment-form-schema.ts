@@ -48,6 +48,8 @@ export const environmentFormSchema = z
 		trivyServerUrl: z.string(),
 		trivyServerToken: z.string(),
 		trivyIgnoreUnfixed: z.boolean(),
+		trivyConfig: z.string(),
+		trivyIgnore: z.string(),
 		imagePatchSuffix: z.string(),
 		imagePatchTimeoutSec: z.coerce.number().int().min(1),
 		imagePatchAllPlatforms: z.boolean(),

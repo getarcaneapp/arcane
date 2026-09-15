@@ -6,7 +6,7 @@
 	import { toast } from 'svelte-sonner';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 	import InUseStatus from '#lib/components/arcane-table/cells/in-use-status.svelte';
-	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
+	import { handleApiResultWithCallbacks, extractApiErrorMessage } from '#lib/utils/api.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 	import { formatDateTimeShort, truncateString } from '#lib/utils/formatting.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
@@ -139,14 +139,10 @@
 		return cache.subscribe((event) => {
 			if (event.type !== 'updated') return;
 			if (event.query !== cache.find({ queryKey: queryKeys.volumes.sizes(currentEnvId), exact: true })) return;
-			if (event.action.type === 'error') {
-				console.error('Failed to load volume sizes:', event.query.state.error);
-				return;
-			}
 			if (event.action.type === 'success' && sizesEnabled && requestOptions?.sort?.column === 'size') {
-				void tryCatch(refreshVolumes(requestOptions, false)).then((result) => {
-					if (result.error) console.error('Failed to refresh volume size sorting:', result.error);
-				});
+				void tryCatch(refreshVolumes(requestOptions, false)).then((result) =>
+					handleApiResultWithCallbacks({ result, message: m.common_refresh_failed({ resource: m.resource_volumes_cap() }) })
+				);
 			}
 		});
 	});
@@ -288,6 +284,8 @@
 		{/if}
 	{:else if item.size > 0}
 		<span class="text-sm tabular-nums">{bytes.format(item.size)}</span>
+	{:else if sizesEnabled && sizesQuery.isError}
+		<span class="text-sm text-muted-foreground" title={extractApiErrorMessage(sizesQuery.error)}>{m.common_unavailable()}</span>
 	{:else}
 		<span class="text-sm text-muted-foreground">-</span>
 	{/if}

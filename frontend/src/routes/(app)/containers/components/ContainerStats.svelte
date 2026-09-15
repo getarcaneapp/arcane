@@ -15,6 +15,7 @@
 		memoryLimitFormatted: string;
 		memoryUsagePercent: number;
 		loading?: boolean;
+		streamError?: boolean;
 	}
 
 	let {
@@ -25,7 +26,8 @@
 		memoryUsageFormatted,
 		memoryLimitFormatted,
 		memoryUsagePercent,
-		loading = false
+		loading = false,
+		streamError = false
 	}: Props = $props();
 
 	const networkInterfaces = $derived(stats?.networks ? Object.entries(stats.networks) : []);
@@ -121,7 +123,11 @@
 	</div>
 {/snippet}
 
-{#if loading}
+{#if loading && streamError}
+	<div class="rounded-lg border border-dashed py-12 text-center text-muted-foreground">
+		<div class="text-sm">{m.containers_stats_stream_failed()}</div>
+	</div>
+{:else if loading}
 	<div class="space-y-6">
 		<div class="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-lg bg-muted/40 px-4 py-3">
 			{#each Array(3) as _, i (i)}

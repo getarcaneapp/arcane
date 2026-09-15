@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '../fixtures/test.fixture';
+import { test, expect, type Locator, type Page } from '../fixtures/test.fixture';
 import { fetchNetworksCountsWithRetry } from '../utils/fetch.util';
 import authUtil from '../utils/auth.util';
 
@@ -21,14 +21,17 @@ test.beforeEach(async ({ page }) => {
 	await navigateToNetworks(page);
 });
 
-async function createNetworkViaUI(page: Page, networkName: string) {
+async function openCreateNetworkDialog(page: Page, networkName: string) {
 	await page.getByRole('button', { name: 'Create Network' }).first().click();
 	const dialog = page.getByRole('dialog');
 	await expect(dialog).toBeVisible();
 	await expect(dialog.getByRole('heading', { name: 'Create New Network' })).toBeVisible();
 	await dialog.getByLabel('Network Name *').fill(networkName);
+	return dialog;
+}
 
-	const createRequest = page.waitForResponse(
+function waitForCreateNetworkResponse(page: Page) {
+	return page.waitForResponse(
 		(response) => {
 			const request = response.request();
 			if (request.method() !== 'POST') return false;
@@ -36,6 +39,22 @@ async function createNetworkViaUI(page: Page, networkName: string) {
 		},
 		{ timeout: 15000 }
 	);
+}
+
+async function fillIpam(
+	dialog: Locator,
+	values: { subnet?: string; ipRange?: string; gateway?: string }
+) {
+	await dialog.getByRole('button', { name: 'IPAM Configuration' }).click();
+	await dialog.getByLabel('Enable IPAM Configuration').check();
+	if (values.subnet !== undefined) await dialog.getByLabel('Subnet').fill(values.subnet);
+	if (values.ipRange !== undefined) await dialog.getByLabel('IP Range').fill(values.ipRange);
+	if (values.gateway !== undefined) await dialog.getByLabel('Gateway').fill(values.gateway);
+}
+
+async function createNetworkViaUI(page: Page, networkName: string) {
+	const dialog = await openCreateNetworkDialog(page, networkName);
+	const createRequest = waitForCreateNetworkResponse(page);
 
 	await dialog.getByRole('button', { name: 'Create Network' }).click();
 	const createResponse = await createRequest;
@@ -201,6 +220,118 @@ test.describe('Networks Page', () => {
 
 		const removeBtn = page.getByRole('button', { name: 'Remove' });
 		await expect(removeBtn).toBeDisabled();
+	});
+
+	test('creates a network with a subnet, IP range, and gateway', async ({ page }) => {
+		const networkName = `e2e-iprange-network-${Date.now()}`;
+		const subnet = '172.28.0.0/16';
+		const ipRange = '172.28.5.0/24';
+		const gateway = '172.28.0.1';
+		try {
+			await openCreateNetworkDialog(page, networkName);
+			const dialog = page.getByRole('dialog');
+			await fillIpam(dialog, { subnet, ipRange, gateway });
+
+			const createRequest = waitForCreateNetworkResponse(page);
+			await dialog.getByRole('button', { name: 'Create Network' }).click();
+			const createResponse = await createRequest;
+			expect(createResponse.ok()).toBe(true);
+			expect(createResponse.request().postDataJSON()).toMatchObject({
+				name: networkName,
+				options: { ipam: { driver: 'default', config: [{ subnet, ipRange, gateway }] } }
+			});
+			await expect(dialog).toBeHidden();
+
+			const inspect = await page.request.get(
+				`/api/environments/0/networks/${encodeURIComponent(networkName)}`
+			);
+			expect(inspect.ok()).toBe(true);
+			const inspected = await inspect.json();
+			expect(inspected.data.ipam.config[0]).toMatchObject({ subnet, ipRange, gateway });
+
+			await page.goto(`/networks/${encodeURIComponent(networkName)}`);
+			await expect(page.getByRole('heading', { level: 1, name: networkName })).toBeVisible();
+			await expect(page.getByText(ipRange, { exact: true })).toBeVisible();
+		} finally {
+			await removeNetworkViaApi(page, networkName);
+		}
+	});
+
+	test('omits blank IP range, drops IPAM when disabled, and resets on close', async ({ page }) => {
+		const blankRangeName = `e2e-blank-range-${Date.now()}`;
+		const disabledIpamName = `e2e-ipam-off-${Date.now()}`;
+		try {
+			await openCreateNetworkDialog(page, blankRangeName);
+			const dialog = page.getByRole('dialog');
+			await fillIpam(dialog, { subnet: '172.29.0.0/16', ipRange: '   ' });
+
+			let createRequest = waitForCreateNetworkResponse(page);
+			await dialog.getByRole('button', { name: 'Create Network' }).click();
+			let createResponse = await createRequest;
+			expect(createResponse.ok()).toBe(true);
+			const blankBody = createResponse.request().postDataJSON();
+			expect(blankBody.options.ipam.config[0]).toEqual({ subnet: '172.29.0.0/16' });
+			await expect(dialog).toBeHidden();
+
+			await openCreateNetworkDialog(page, disabledIpamName);
+			await fillIpam(dialog, { subnet: '172.30.0.0/16', ipRange: '172.30.1.0/24' });
+			await dialog.getByLabel('Enable IPAM Configuration').uncheck();
+			await expect(dialog.getByLabel('IP Range')).toBeHidden();
+
+			createRequest = waitForCreateNetworkResponse(page);
+			await dialog.getByRole('button', { name: 'Create Network' }).click();
+			createResponse = await createRequest;
+			expect(createResponse.ok()).toBe(true);
+			expect(createResponse.request().postDataJSON().options.ipam).toBeUndefined();
+			await expect(dialog).toBeHidden();
+
+			await openCreateNetworkDialog(page, 'e2e-reset-check');
+			await fillIpam(dialog, { ipRange: '172.31.1.0/24' });
+			await dialog.getByRole('button', { name: 'Cancel' }).click();
+			await expect(dialog).toBeHidden();
+
+			await page.getByRole('button', { name: 'Create Network' }).first().click();
+			await expect(dialog).toBeVisible();
+			await expect(dialog.getByLabel('Enable IPAM Configuration')).toBeHidden();
+			await dialog.getByRole('button', { name: 'IPAM Configuration' }).click();
+			await expect(dialog.getByLabel('Enable IPAM Configuration')).not.toBeChecked();
+			await dialog.getByLabel('Enable IPAM Configuration').check();
+			await expect(dialog.getByLabel('IP Range')).toHaveValue('');
+		} finally {
+			await removeNetworkViaApi(page, blankRangeName);
+			await removeNetworkViaApi(page, disabledIpamName);
+		}
+	});
+
+	test('shows an actionable error for an invalid or out-of-subnet IP range', async ({ page }) => {
+		const networkName = `e2e-bad-cidr-${Date.now()}`;
+		const toast = page
+			.getByRole('region', { name: 'Notifications alt+T', exact: true })
+			.getByRole('listitem');
+		try {
+			await openCreateNetworkDialog(page, networkName);
+			const dialog = page.getByRole('dialog');
+			await fillIpam(dialog, { subnet: '172.32.0.0/16', ipRange: 'not-a-cidr' });
+
+			let createRequest = waitForCreateNetworkResponse(page);
+			await dialog.getByRole('button', { name: 'Create Network' }).click();
+			expect((await createRequest).ok()).toBe(false);
+			await expect(toast.filter({ hasText: 'not-a-cidr' })).toContainText('Failed to create');
+			await expect(dialog).toBeVisible();
+			await expect(dialog.getByLabel('IP Range')).toHaveValue('not-a-cidr');
+
+			await dialog.getByLabel('IP Range').fill('10.99.0.0/24');
+			createRequest = waitForCreateNetworkResponse(page);
+			await dialog.getByRole('button', { name: 'Create Network' }).click();
+			expect((await createRequest).ok()).toBe(false);
+			await expect(toast.filter({ hasText: "doesn't contain ip-range" })).toContainText(
+				'10.99.0.0/24'
+			);
+			await expect(dialog).toBeVisible();
+			await expect(dialog.getByLabel('Network Name *')).toHaveValue(networkName);
+		} finally {
+			await removeNetworkViaApi(page, networkName);
+		}
 	});
 
 	test('Details page shows usage badge', async ({ page }) => {

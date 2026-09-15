@@ -103,6 +103,7 @@
 	let showSettingsTabs = $derived(
 		runtimeEnvironment.enabled && isCurrentlyOnline && settings !== null && hasPermission('settings:read', environment.id)
 	);
+	let showJobsTab = $derived(showSettingsTabs && hasPermission('jobs:manage', environment.id));
 	let hasMTLSAssets = $derived(Boolean(runtimeEnvironment.edgeMTLSCertificate));
 	let canPairEnvironments = $derived(hasPermission('environments:pair'));
 	let showMTLSDownloads = $derived(
@@ -225,13 +226,16 @@
 					value: 'security',
 					label: m.security(),
 					icon: SecurityIcon
-				},
-				{
-					value: 'jobs',
-					label: m.automations(),
-					icon: JobsIcon
 				}
 			);
+		}
+
+		if (showJobsTab) {
+			items.push({
+				value: 'jobs',
+				label: m.automations(),
+				icon: JobsIcon
+			});
 		}
 
 		items.push({
@@ -326,6 +330,8 @@
 		trivyServerUrl: settings?.trivyServerUrl || '',
 		trivyServerToken: settings?.trivyServerToken || '',
 		trivyIgnoreUnfixed: settings?.trivyIgnoreUnfixed ?? true,
+		trivyConfig: settings?.trivyConfig || '',
+		trivyIgnore: settings?.trivyIgnore || '',
 		imagePatchSuffix: settings?.imagePatchSuffix || 'patched',
 		imagePatchTimeoutSec: settings?.imagePatchTimeoutSec ?? 600,
 		imagePatchAllPlatforms: settings?.imagePatchAllPlatforms ?? false,
@@ -415,6 +421,8 @@
 				trivyServerUrl: formData.trivyServerUrl,
 				trivyServerToken: formData.trivyServerToken,
 				trivyIgnoreUnfixed: formData.trivyIgnoreUnfixed,
+				trivyConfig: formData.trivyConfig,
+				trivyIgnore: formData.trivyIgnore,
 				imagePatchSuffix: formData.imagePatchSuffix,
 				imagePatchTimeoutSec: formData.imagePatchTimeoutSec,
 				imagePatchAllPlatforms: formData.imagePatchAllPlatforms,
@@ -885,7 +893,9 @@
 					</Tabs.Content>
 				</Tabs.Root>
 			</Tabs.Content>
+		{/if}
 
+		{#if showJobsTab}
 			<Tabs.Content value="jobs">
 				<JobsTab bind:formInputs environmentId={environment.id} />
 			</Tabs.Content>

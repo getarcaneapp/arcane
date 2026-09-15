@@ -1,11 +1,15 @@
-export function downloadBlob(data: BlobPart, filename: string): void {
-	const url = window.URL.createObjectURL(new Blob([data]));
+export function downloadFromUrl(url: string, filename = ''): void {
 	const link = document.createElement('a');
 	link.href = url;
 	link.setAttribute('download', filename);
 	document.body.appendChild(link);
 	link.click();
 	link.remove();
+}
+
+export function downloadBlob(data: BlobPart, filename: string): void {
+	const url = window.URL.createObjectURL(new Blob([data]));
+	downloadFromUrl(url, filename);
 	window.URL.revokeObjectURL(url);
 }
 

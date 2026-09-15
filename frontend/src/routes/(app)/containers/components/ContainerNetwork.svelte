@@ -226,6 +226,34 @@
 										</Card.Content>
 									</Card.Root>
 
+									{#if rawNetworkConfig.globalIPv6Address}
+										<Card.Root variant="outlined">
+											<Card.Content class="flex flex-col p-3">
+												<div class="mb-2 text-xs font-semibold text-muted-foreground">{m.ipv6_address()}</div>
+												<div
+													class="cursor-pointer font-mono text-sm font-medium break-all text-foreground select-all"
+													title={m.common_click_to_select()}
+												>
+													{rawNetworkConfig.globalIPv6PrefixLen
+														? `${rawNetworkConfig.globalIPv6Address}/${rawNetworkConfig.globalIPv6PrefixLen}`
+														: rawNetworkConfig.globalIPv6Address}
+												</div>
+											</Card.Content>
+										</Card.Root>
+
+										<Card.Root variant="outlined">
+											<Card.Content class="flex flex-col p-3">
+												<div class="mb-2 text-xs font-semibold text-muted-foreground">{m.ipv6_gateway()}</div>
+												<div
+													class="cursor-pointer font-mono text-sm font-medium break-all text-foreground select-all"
+													title={m.common_click_to_select()}
+												>
+													{rawNetworkConfig.ipv6Gateway || m.common_na()}
+												</div>
+											</Card.Content>
+										</Card.Root>
+									{/if}
+
 									{#if rawNetworkConfig.networkId}
 										<Card.Root variant="outlined" class="sm:col-span-2">
 											<Card.Content class="flex flex-col p-3">

@@ -19,7 +19,8 @@
 	import { getEffectiveLandingPage } from '#lib/utils/navigation.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { getApplicationLogo } from '#lib/utils/docker.js';
-	import { accentColorPreview } from '#lib/utils/theme.svelte.js';
+	import { resolveLogoColor } from '#lib/utils/theme.svelte.js';
+	import { mode } from 'mode-watcher';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import AuthAmbient from '#lib/components/auth/auth-ambient.svelte';
 	import MFAChallenge from '#lib/components/auth/mfa-challenge.svelte';
@@ -36,9 +37,9 @@
 	const showPasskeyLoginButton = $derived(passkeySupported && data.passkeyLoginAvailable === true);
 	const queryClient = useQueryClient();
 
-	const accentColor = $derived(accentColorPreview.current);
+	const logoColor = $derived(resolveLogoColor(mode.current === 'dark'));
 	const animationsEnabled = $derived(userStore.current?.preferences?.animationsEnabled ?? true);
-	const logoUrl = $derived(getApplicationLogo(true, accentColor, accentColor, { animated: animationsEnabled }));
+	const logoUrl = $derived(getApplicationLogo(true, logoColor, logoColor, { animated: animationsEnabled }));
 
 	const oidcEnabledBySettings = $derived(data.settings?.oidcEnabled === true);
 	const showOidcLoginButton = $derived(oidcEnabledBySettings);
@@ -182,7 +183,9 @@
 						<AlertIcon class="size-4" />
 						<Alert.Title>{m.auth_login_problem_title()}</Alert.Title>
 						<Alert.Description>
-							{#if data.error === 'oidc_invalid_response'}
+							{#if data.errorMessage}
+								{data.errorMessage}
+							{:else if data.error === 'oidc_invalid_response'}
 								{m.auth_oidc_invalid_response()}
 							{:else if data.error === 'oidc_misconfigured'}
 								{m.auth_oidc_misconfigured()}
@@ -196,8 +199,12 @@
 								{m.auth_oidc_token_error()}
 							{:else if data.error === 'user_processing_failed'}
 								{m.auth_user_processing_failed()}
-							{:else if data.errorMessage}
-								{data.errorMessage}
+							{:else if data.error === 'oidc_init_failed'}
+								{m.auth_oidc_init_failed()}
+							{:else if data.error === 'oidc_url_generation_failed'}
+								{m.auth_oidc_url_generation_failed()}
+							{:else if data.error === 'oidc_network_error'}
+								{m.auth_oidc_network_error()}
 							{:else}
 								{m.auth_unexpected_error()}
 							{/if}

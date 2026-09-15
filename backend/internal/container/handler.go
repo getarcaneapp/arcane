@@ -16,6 +16,7 @@ import (
 	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
 
 	"emperror.dev/errors"
+	"github.com/containerd/errdefs"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
@@ -295,6 +296,16 @@ func RegisterContainers(api huma.API, containerSvc *ContainerService, dockerSvc 
 		Tags:        []string{"Containers"},
 		Security:    handlerutil.DefaultOperationSecurity(),
 	}, authz.PermContainersDelete, h.DeleteContainer)
+
+	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "download-container-logs",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/containers/{containerId}/logs/download",
+		Summary:     "Download container logs",
+		Description: "Download every log line Docker retains for the container as a text file",
+		Tags:        []string{"Containers"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}, authz.PermContainersLogs, h.DownloadContainerLogs)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "set-container-auto-update",
@@ -639,6 +650,17 @@ func (h *ContainerHandler) GetContainer(ctx context.Context, input *GetContainer
 			Data:    details,
 		},
 	}, nil
+}
+
+func (h *ContainerHandler) DownloadContainerLogs(ctx context.Context, input *GetContainerInput) (*huma.StreamResponse, error) {
+	reader, filename, err := h.containerService.DownloadLogs(ctx, input.ContainerID)
+	if err != nil {
+		if errdefs.IsNotFound(err) {
+			return nil, huma.Error404NotFound(errors.WithMessage(err, "Failed to retrieve container").Error())
+		}
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to download container logs").Error())
+	}
+	return handlerutil.DownloadResponse(reader, -1, filename), nil
 }
 
 func (h *ContainerHandler) GenerateCompose(ctx context.Context, input *GenerateComposeInput) (*handlerutil.Out[containertypes.GenerateComposeResponse], error) {

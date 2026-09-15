@@ -16,6 +16,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/dbutil"
@@ -88,21 +89,9 @@ func (s *RoleService) EnsureBuiltInRoles(ctx context.Context) error {
 	})
 }
 
-// BackfillLegacyRoleAssignments migrates the pre-RBAC users.roles JSON column
-// into rows in user_role_assignments. Safe to call on every boot: a no-op once
-// the column is gone.
-//
-// Users with "admin" in their legacy roles get a global Admin assignment;
-// every other user gets a global Viewer assignment. The NULL environment_id
-// lands the perms in PermissionSet.Global, which is what ps.Allows(perm, "")
-// consults for org-level checks (list environments, read settings, list users,
-// etc.) AND for env-scoped checks at the union step. Inserting per-environment
-// viewer rows instead would lock non-admins out of the settings area entirely.
-//
-// Lives here (not as a SQL migration) so the column-existence check is trivial
-// in Go and the same code path covers both postgres and sqlite. Idempotent via
-// ON CONFLICT DO NOTHING on the (user_id, role_id, env) unique index, so a
-// half-finished prior run can be safely retried.
+const legacyRoleBackfillCompletedKey = "migration.legacy_user_roles.v1.completed"
+
+// BackfillLegacyRoleAssignments converts pre-RBAC users.roles into global assignments once, gated by a kv marker committed with the rows.
 func (s *RoleService) BackfillLegacyRoleAssignments(ctx context.Context) error {
 	migrator := s.db.WithContext(ctx).Migrator()
 	if !migrator.HasColumn("users", "roles") {
@@ -114,9 +103,19 @@ func (s *RoleService) BackfillLegacyRoleAssignments(ctx context.Context) error {
 		Roles string `gorm:"column:roles"`
 	}
 
-	return dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+	var inserted int64
+	err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+		claimed, err := kv.NewKVService(&database.DB{DB: tx}).CreateIfAbsent(ctx, legacyRoleBackfillCompletedKey, time.Now().UTC().Format(time.RFC3339))
+		if err != nil {
+			return errors.WrapIf(err, "failed to claim legacy role backfill marker")
+		}
+		if !claimed {
+			return nil
+		}
 		var rows []legacyUser
-		if err := tx.Table("users").Select("id, roles").Scan(&rows).Error; err != nil {
+		if err := tx.Table("users").Select("id, roles").
+			Where("NOT EXISTS (SELECT 1 FROM user_role_assignments ura WHERE ura.user_id = users.id)").
+			Scan(&rows).Error; err != nil {
 			return errors.WrapIf(err, "failed to read legacy users.roles for backfill")
 		}
 		for _, u := range rows {
@@ -129,23 +128,25 @@ func (s *RoleService) BackfillLegacyRoleAssignments(ctx context.Context) error {
 				RoleID: roleID,
 				Source: RoleAssignmentSourceManual,
 			}
-			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&assignment).Error; err != nil {
-				return errors.WrapIff(err, "failed to backfill assignment for user %s", u.ID)
+			result := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&assignment)
+			if result.Error != nil {
+				return errors.WrapIff(result.Error, "failed to backfill assignment for user %s", u.ID)
 			}
+			inserted += result.RowsAffected
 		}
-		slog.InfoContext(ctx, "Backfilled legacy users.roles into user_role_assignments", "userCount", len(rows))
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+	if inserted > 0 {
+		slog.InfoContext(ctx, "Backfilled legacy users.roles into user_role_assignments", "assignmentCount", inserted)
+	}
+	return nil
 }
 
-// legacyRolesContainsAdminInternal reports whether a pre-RBAC users.roles JSON
-// value contains the literal "admin" (case-insensitive). Empty / null / malformed
-// JSON yields false — treat as non-admin and assign Viewer.
+// legacyRolesContainsAdminInternal reports whether a legacy users.roles JSON value names "admin"; anything else was a regular user.
 func legacyRolesContainsAdminInternal(raw string) bool {
-	raw = strings.TrimSpace(raw)
-	if raw == "" || raw == "[]" || raw == "null" {
-		return false
-	}
 	var roles []string
 	if err := json.Unmarshal([]byte(raw), &roles); err != nil {
 		return false

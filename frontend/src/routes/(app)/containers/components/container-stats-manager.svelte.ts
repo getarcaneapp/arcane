@@ -8,6 +8,7 @@ export class ContainerStatsManager {
 	private connections = new SvelteMap<string, ReconnectingWebSocket<ContainerStats>>();
 	private stats = new SvelteMap<string, ContainerStats>();
 	private loadingStates = new SvelteMap<string, boolean>();
+	private errorStates = new SvelteMap<string, boolean>();
 	private desiredIds = new SvelteSet<string>();
 	private currentEnvId: string | null = null;
 
@@ -22,10 +23,12 @@ export class ContainerStatsManager {
 			onMessage: (data: ContainerStats) => {
 				this.stats.set(containerId, data);
 				this.loadingStates.set(containerId, false);
+				this.errorStates.delete(containerId);
 			},
-			onError: (err) => {
-				console.error(`[ContainerStatsManager] Stats error for container ${containerId}:`, err);
+			onError: () => {
+				this.stats.delete(containerId);
 				this.loadingStates.set(containerId, false);
+				this.errorStates.set(containerId, true);
 			},
 			shouldReconnect: () => this.connections.has(containerId)
 		});
@@ -41,6 +44,7 @@ export class ContainerStatsManager {
 			this.connections.delete(containerId);
 			this.stats.delete(containerId);
 			this.loadingStates.delete(containerId);
+			this.errorStates.delete(containerId);
 		}
 	}
 
@@ -67,6 +71,10 @@ export class ContainerStatsManager {
 
 	isLoading(containerId: string): boolean {
 		return this.loadingStates.get(containerId) ?? false;
+	}
+
+	hasError(containerId: string): boolean {
+		return this.errorStates.get(containerId) ?? false;
 	}
 
 	hasConnection(containerId: string): boolean {
@@ -119,5 +127,6 @@ export class ContainerStatsManager {
 		this.connections.clear();
 		this.stats.clear();
 		this.loadingStates.clear();
+		this.errorStates.clear();
 	}
 }

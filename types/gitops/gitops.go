@@ -513,6 +513,8 @@ type UpdateRepositoryRequest struct {
 
 // CreateSyncRequest represents the request to create a gitops sync.
 type CreateSyncRequest struct {
+	PreDeployConfigRequest
+
 	// Name of the sync configuration.
 	//
 	// Required: true
@@ -627,7 +629,12 @@ type CreateSyncRequest struct {
 	//
 	// Required: false
 	MaxSyncBinarySize *int64 `json:"maxSyncBinarySize,omitempty"`
+}
 
+// PreDeployConfigRequest carries the pre-deploy lifecycle hook fields shared by
+// the create, update, and import sync requests. A nil pointer means the field
+// is absent from the request body; on update, an empty string clears the value.
+type PreDeployConfigRequest struct {
 	// PreDeployScriptPath is the optional path inside the synced repo to a
 	// script executed in a throwaway container before each deploy.
 	//
@@ -641,36 +648,40 @@ type CreateSyncRequest struct {
 	PreDeployRunnerImage *string `json:"preDeployRunnerImage,omitempty"`
 
 	// PreDeployEnv is the env config exposed to the script, one KEY=VALUE
-	// entry per line; same format as a .env file. Keys must match POSIX
-	// identifier syntax.
+	// entry per line; same format as a .env file.
 	//
 	// Required: false
 	PreDeployEnv *string `json:"preDeployEnv,omitempty"`
 
 	// PreDeployExtraMounts is the bind-mount config added to the runner
 	// container, one entry per line in docker -v "src:tgt[:ro|:rw]" form.
-	// Source and target must be absolute paths.
 	//
 	// Required: false
 	PreDeployExtraMounts *string `json:"preDeployExtraMounts,omitempty"`
 
 	// PreDeployTimeoutSec bounds the script execution. Capped by the
-	// lifecycleMaxTimeoutSec global setting at validation time. Defaults to 60.
+	// lifecycleMaxTimeoutSec global setting. Defaults to 60.
 	//
 	// Required: false
 	PreDeployTimeoutSec *int `json:"preDeployTimeoutSec,omitempty"`
 
 	// PreDeployNetworkMode is the Docker network mode for the runner
-	// container. Defaults to "none" (no network access). Set to "bridge",
-	// "host", or a named Docker network to grant outbound or compose-network
-	// access.
+	// container: "none" (default), "bridge", "host", or a named network.
 	//
 	// Required: false
 	PreDeployNetworkMode *string `json:"preDeployNetworkMode,omitempty"`
 }
 
+// HasPreDeployConfig reports whether any pre-deploy hook field is present.
+// Configuring the hook is gated behind the gitops:lifecycle permission.
+func (r PreDeployConfigRequest) HasPreDeployConfig() bool {
+	return r != PreDeployConfigRequest{}
+}
+
 // UpdateSyncRequest represents the request to update a gitops sync.
 type UpdateSyncRequest struct {
+	PreDeployConfigRequest
+
 	// Name of the sync configuration.
 	//
 	// Required: false
@@ -761,71 +772,6 @@ type UpdateSyncRequest struct {
 	//
 	// Required: false
 	MaxSyncBinarySize *int64 `json:"maxSyncBinarySize,omitzero"`
-
-	// PreDeployScriptPath is the optional path inside the synced repo to a
-	// script executed in a throwaway container before each deploy. Set to
-	// an empty string to clear an existing configuration.
-	//
-	// Required: false
-	PreDeployScriptPath *string `json:"preDeployScriptPath,omitzero"`
-
-	// PreDeployRunnerImage is the image used to run the pre-deploy script.
-	// When omitted, the lifecycleDefaultRunnerImage setting is used.
-	//
-	// Required: false
-	PreDeployRunnerImage *string `json:"preDeployRunnerImage,omitzero"`
-
-	// PreDeployEnv is the env config exposed to the script, one KEY=VALUE
-	// entry per line; same format as a .env file. Keys must match POSIX
-	// identifier syntax.
-	//
-	// Required: false
-	PreDeployEnv *string `json:"preDeployEnv,omitzero"`
-
-	// PreDeployExtraMounts is the bind-mount config added to the runner
-	// container, one entry per line in docker -v "src:tgt[:ro|:rw]" form.
-	// Source and target must be absolute paths.
-	//
-	// Required: false
-	PreDeployExtraMounts *string `json:"preDeployExtraMounts,omitzero"`
-
-	// PreDeployTimeoutSec bounds the script execution. Capped by the
-	// lifecycleMaxTimeoutSec global setting at validation time.
-	//
-	// Required: false
-	PreDeployTimeoutSec *int `json:"preDeployTimeoutSec,omitzero"`
-
-	// PreDeployNetworkMode is the Docker network mode for the runner
-	// container. Set to "none", "bridge", "host", or a named Docker
-	// network. Empty string resets to the default ("none").
-	//
-	// Required: false
-	PreDeployNetworkMode *string `json:"preDeployNetworkMode,omitzero"`
-}
-
-// HasPreDeployConfig reports whether the request carries any pre-deploy
-// lifecycle hook field. Configuring the hook is gated behind the dedicated
-// gitops:lifecycle permission (see the GitOps sync handlers), so callers use
-// this to decide whether that authorization check applies. A nil pointer means
-// the field is absent from the request body.
-func (r CreateSyncRequest) HasPreDeployConfig() bool {
-	return r.PreDeployScriptPath != nil ||
-		r.PreDeployRunnerImage != nil ||
-		r.PreDeployEnv != nil ||
-		r.PreDeployExtraMounts != nil ||
-		r.PreDeployNetworkMode != nil ||
-		r.PreDeployTimeoutSec != nil
-}
-
-// HasPreDeployConfig reports whether the request carries any pre-deploy
-// lifecycle hook field. See CreateSyncRequest.HasPreDeployConfig.
-func (r UpdateSyncRequest) HasPreDeployConfig() bool {
-	return r.PreDeployScriptPath != nil ||
-		r.PreDeployRunnerImage != nil ||
-		r.PreDeployEnv != nil ||
-		r.PreDeployExtraMounts != nil ||
-		r.PreDeployNetworkMode != nil ||
-		r.PreDeployTimeoutSec != nil
 }
 
 // HasDeploymentOptions reports whether the request sets deployment-only
@@ -1121,6 +1067,8 @@ type SyncStatus struct {
 
 // ImportGitOpsSyncRequest represents the request to import gitops syncs.
 type ImportGitOpsSyncRequest struct {
+	PreDeployConfigRequest
+
 	// SyncName is the name of the sync configuration.
 	//
 	// Required: true
@@ -1174,6 +1122,23 @@ type ImportGitOpsSyncRequest struct {
 	//
 	// Required: false
 	MaxSyncBinarySize *int64 `json:"maxSyncBinarySize,omitempty"`
+
+	// ProjectName is the compose project name. Defaults to SyncName.
+	//
+	// Required: false
+	ProjectName string `json:"projectName,omitempty"`
+
+	// PullImageAfterSync pulls each service image after a sync that changes
+	// managed content. Default: false.
+	//
+	// Required: false
+	PullImageAfterSync *bool `json:"pullImageAfterSync,omitempty"`
+
+	// RedeployAfterSync redeploys the project after a sync that changes
+	// managed content. Default: false.
+	//
+	// Required: false
+	RedeployAfterSync *bool `json:"redeployAfterSync,omitempty"`
 }
 
 // ImportGitOpsSyncResponse represents the response for importing gitops syncs.

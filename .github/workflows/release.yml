@@ -157,3 +157,27 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release edit ${{ github.ref_name }} --draft=false
+
+  update-website-release-assets:
+    needs: release
+    if: github.repository == 'getarcaneapp/arcane'
+    runs-on: depot-ubuntu-24.04-16
+    permissions: {}
+
+    steps:
+      - name: Request website App token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.ARCANE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.ARCANE_APP_PRIVATE_KEY }}
+          owner: getarcaneapp
+          repositories: website
+          permission-contents: write
+
+      - name: Dispatch website release assets update
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          gh api --method POST repos/getarcaneapp/website/dispatches \
+            -f event_type=arcane-release-published

@@ -13,7 +13,7 @@
 	import { inUseBadge } from '#lib/utils/mobile-card-badges.js';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
-	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
+	import { handleApiResultWithCallbacks, extractApiErrorMessage } from '#lib/utils/api.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 	import ImageUpdateItem from '#lib/components/image-update-item.svelte';
 	import VulnerabilityScanItem from '#lib/components/vulnerability/vulnerability-scan-item.svelte';
@@ -298,6 +298,8 @@
 			.map((item) => item.id);
 	}
 
+	let scanPollError = $state<string | null>(null);
+
 	async function pollBatchScanSummaries() {
 		const requestedEnvId = currentEnvId;
 		const imageIds = getScanningImageIds();
@@ -352,10 +354,7 @@
 					}
 				})()
 			);
-			if (operationResult.error !== null) {
-				const error = operationResult.error;
-				console.error('Failed to poll vulnerability summaries:', error);
-			}
+			scanPollError = operationResult.error !== null ? extractApiErrorMessage(operationResult.error) : null;
 		} finally {
 			scanPollInFlight = false;
 			if (!destroyed && getScanningImageIds().length > 0) {
@@ -640,6 +639,7 @@
 			<VulnerabilityScanItem
 				scanSummary={item.vulnerabilityScan}
 				imageId={item.id}
+				pollError={scanPollError}
 				onScanned={(newSummary) => handleVulnerabilityScanChanged(item.id, newSummary)}
 			/>
 		</div>

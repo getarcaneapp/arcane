@@ -178,6 +178,38 @@ func TestProxyPermissionDeniedChecksVolumeWorkspaceManifestPermissions(t *testin
 	require.Equal(t, rawBody, replayed)
 }
 
+func gitOpsSyncMatcher() *authz.PermissionMatcher {
+	m := authz.NewPermissionMatcher()
+	m.Add(http.MethodPost, "/gitops-syncs/import", authz.PermGitOpsCreate)
+	return m
+}
+
+func newProxyGitOpsImportContext(body string) *echo.Context {
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodPost, "/api/environments/"+proxyTestEnvID+"/gitops-syncs/import", bytes.NewReader([]byte(body)))
+	req.Header.Set("Content-Type", "application/json")
+	return e.NewContext(req, httptest.NewRecorder())
+}
+
+func TestProxyPermissionDeniedChecksGitOpsImportLifecyclePermission(t *testing.T) {
+	m := newProxyAuthzMiddleware(gitOpsSyncMatcher())
+	hookBody := `[{"syncName":"a","gitRepo":"r","branch":"main","dockerComposePath":"compose.yaml","preDeployScriptPath":"scripts/run.sh"}]`
+	plainBody := `[{"syncName":"a","gitRepo":"r","branch":"main","dockerComposePath":"compose.yaml"}]`
+
+	createOnly := authz.NewPermissionSet()
+	createOnly.AddEnv(proxyTestEnvID, authz.PermGitOpsCreate)
+	require.True(t, m.proxyPermissionDenied(newProxyGitOpsImportContext(hookBody), createOnly, proxyTestEnvID))
+	require.False(t, m.proxyPermissionDenied(newProxyGitOpsImportContext(plainBody), createOnly, proxyTestEnvID))
+
+	withLifecycle := authz.NewPermissionSet()
+	withLifecycle.AddEnv(proxyTestEnvID, authz.PermGitOpsCreate, authz.PermGitOpsLifecycle)
+	c := newProxyGitOpsImportContext(hookBody)
+	require.False(t, m.proxyPermissionDenied(c, withLifecycle, proxyTestEnvID))
+	replayed, err := io.ReadAll(c.Request().Body)
+	require.NoError(t, err)
+	require.Equal(t, hookBody, string(replayed))
+}
+
 // wsTerminalMatcher mirrors ws.AddProxiedPermissions for the container terminal
 // stream: the proxy computes the suffix "/ws/containers/{id}/terminal" for a
 // forwarded WebSocket request, and the matcher requires containers:exec for it.

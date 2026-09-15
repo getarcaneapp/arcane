@@ -15,7 +15,7 @@ const (
 // on the user model and as the wire DTO.
 type Preferences struct {
 	ThemeMode                  *string `json:"themeMode,omitempty" enum:"light,dark,system" doc:"Light/dark mode preference"`
-	ApplicationTheme           *string `json:"applicationTheme,omitempty" enum:"default,graphite,ocean,amber,github,nord,everforest,rosepine" doc:"Application theme preset"`
+	ApplicationTheme           *string `json:"applicationTheme,omitempty" enum:"default,graphite,carbon,ocean,amber,github,nord,everforest,rosepine" doc:"Application theme preset"`
 	AccentColor                *string `json:"accentColor,omitempty" doc:"Primary accent color, or 'default'"`
 	IconCatalog                *string `json:"iconCatalog,omitempty" enum:"selfhst,dashboard-icons" doc:"Catalog used to resolve project and container icon slugs"`
 	OledMode                   *bool   `json:"oledMode,omitempty" doc:"Use true-black backgrounds in dark mode"`

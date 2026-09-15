@@ -28,6 +28,7 @@ import (
 	libcrypto "go.getarcane.app/sys/crypto"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
@@ -582,6 +583,7 @@ func (s *SettingsService) publishSettingsChangesInternal(updates []libarcane.Set
 func (s *SettingsService) updateSettingsInternal(ctx context.Context, updates settingstypes.Update) (settingsUpdateResultInternal, error) {
 	defaultCfg := s.getDefaultSettings()
 	cfg := s.GetSettingsConfig().Clone()
+	oidcClientSecretUpdated := updates.OidcClientSecret != nil && !s.IsEnvOverrideActive("oidcClientSecret")
 	trivyServerTokenUpdated := updates.TrivyServerToken != nil && *updates.TrivyServerToken != "" && !s.IsEnvOverrideActive("trivyServerToken")
 	normalizeTargetURL := func(value string) string {
 		normalized, err := httpx.NormalizeBaseURL(value)
@@ -597,9 +599,32 @@ func (s *SettingsService) updateSettingsInternal(ctx context.Context, updates se
 		updates.OidcIssuerUrl,
 		normalizeTargetURL,
 		map[string]bool{"oidcClientSecret": cfg.OidcClientSecret.Value != ""},
-		map[string]bool{"oidcClientSecret": updates.OidcClientSecret != nil && *updates.OidcClientSecret != ""},
+		map[string]bool{"oidcClientSecret": updates.OidcClientSecret != nil},
 	); err != nil {
 		return settingsUpdateResultInternal{}, err
+	}
+
+	effectiveValue := func(current SettingVariable, next *string) string {
+		if next != nil {
+			return *next
+		}
+		return current.Value
+	}
+	oidcClientSecret := cfg.OidcClientSecret.Value
+	if oidcClientSecretUpdated {
+		oidcClientSecret = *updates.OidcClientSecret
+	}
+	if effectiveValue(cfg.OidcEnabled, updates.OidcEnabled) == "true" {
+		required := []struct{ key, value string }{
+			{"oidcClientId", effectiveValue(cfg.OidcClientId, updates.OidcClientId)},
+			{"oidcClientSecret", oidcClientSecret},
+			{"oidcIssuerUrl", effectiveValue(cfg.OidcIssuerUrl, updates.OidcIssuerUrl)},
+		}
+		for _, field := range required {
+			if strings.TrimSpace(field.value) == "" {
+				return settingsUpdateResultInternal{}, common.Classify(common.ErrValidation, errors.WithDetails(errors.Errorf("Enabling OIDC requires %s", field.key), "field", field.key))
+			}
+		}
 	}
 
 	if err := validation.ValidateCredentialTargetChange(
@@ -617,7 +642,7 @@ func (s *SettingsService) updateSettingsInternal(ctx context.Context, updates se
 	if err != nil {
 		return settingsUpdateResultInternal{}, err
 	}
-	if updates.OidcClientSecret != nil && *updates.OidcClientSecret != "" {
+	if oidcClientSecretUpdated {
 		valuesToUpdate = append(valuesToUpdate, SettingVariable{Key: "oidcClientSecret", Value: *updates.OidcClientSecret})
 	}
 	if trivyServerTokenUpdated {

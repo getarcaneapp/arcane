@@ -42,7 +42,7 @@
 	data-slot="card-header"
 	class={cn(
 		'@container/card-header relative grid auto-rows-min grid-rows-[auto_auto] items-start gap-1.5 px-6 has-[[data-slot=card-action]]:grid-cols-[1fr_auto]',
-		icon && 'flex flex-row items-start space-y-0',
+		icon && 'flex flex-row items-center space-y-0',
 		icon && compact ? 'gap-2 p-2' : icon ? 'gap-3 p-4' : 'py-5',
 		icon && enableHover && 'transition-colors group-[&:not(:has(button:hover,a:hover,[role=button]:hover))]:hover:bg-muted/30',
 		className

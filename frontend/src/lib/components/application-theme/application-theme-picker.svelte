@@ -32,6 +32,10 @@
 			label: m.application_theme_graphite(),
 			description: m.application_theme_graphite_description()
 		},
+		carbon: {
+			label: m.application_theme_carbon(),
+			description: m.application_theme_carbon_description()
+		},
 		ocean: {
 			label: m.application_theme_ocean(),
 			description: m.application_theme_ocean_description()
@@ -129,7 +133,8 @@
 				{#each APPLICATION_THEME_OPTIONS as theme (theme.value)}
 					{@const option = themeCopy[theme.value]}
 					{@const preview = isDarkMode ? theme.preview.dark : theme.preview.light}
-					{@const previewAccentColor = accentColor.trim() || preview.primary}
+					{@const previewAccentColor =
+						accentColor.trim() === '' || accentColor.trim() === 'theme' ? preview.primary : accentColor}
 					<Carousel.Item class="basis-[92%] sm:basis-[88%] lg:basis-[84%] xl:basis-[80%]">
 						<div class="h-full p-1">
 							<RadioGroup.Item id={`application-theme-${theme.value}`} value={theme.value} class="sr-only" {disabled} />

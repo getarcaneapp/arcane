@@ -8,10 +8,11 @@
 		limit?: number;
 		loading?: boolean;
 		stopped?: boolean;
+		unavailable?: boolean;
 		type: 'cpu' | 'memory';
 	}
 
-	let { value, limit, loading = false, stopped = false, type }: Props = $props();
+	let { value, limit, loading = false, stopped = false, unavailable = false, type }: Props = $props();
 
 	const memoryPercent = $derived.by(() => {
 		if (type !== 'memory' || !value || !limit || limit === 0) return undefined;
@@ -28,6 +29,8 @@
 
 {#if stopped}
 	<div class="text-xs text-muted-foreground">{m.common_na()}</div>
+{:else if unavailable && value === undefined}
+	<div class="text-xs text-muted-foreground">{m.common_unavailable()}</div>
 {:else if loading}
 	<div class="flex items-center gap-2">
 		<div class="size-[26px] shrink-0 animate-pulse rounded-full bg-muted"></div>

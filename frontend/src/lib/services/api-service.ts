@@ -167,7 +167,7 @@ async function parseResponseBody(response: Response, responseType: APIRequestCon
 	}
 }
 
-async function parseErrorResponseBody(error: KyHTTPError, responseType: APIRequestConfig['responseType'] = 'json'): Promise<any> {
+async function parseErrorResponseBody(error: KyHTTPError): Promise<any> {
 	if (error.data !== undefined) {
 		return error.data;
 	}
@@ -176,7 +176,7 @@ async function parseErrorResponseBody(error: KyHTTPError, responseType: APIReque
 		return undefined;
 	}
 
-	return parseResponseBody(error.response.clone(), responseType);
+	return parseResponseBody(error.response.clone());
 }
 
 function normalizeUrl(baseURL: string, url: string): string {
@@ -416,7 +416,7 @@ class APIClient {
 		requestUrl: string
 	): Promise<APIResponse<T>> {
 		const errorResponse = error.response;
-		const parsed = await parseErrorResponseBody(error, config.responseType);
+		const parsed = await parseErrorResponseBody(error);
 		const response: APIResponse = {
 			data: parsed,
 			headers: errorResponse.headers,

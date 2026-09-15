@@ -6,7 +6,8 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { CopyButton } from '#lib/components/ui/copy-button/index.js';
 	import { getApplicationLogo } from '#lib/utils/docker.js';
-	import { accentColorPreview } from '#lib/utils/theme.svelte.js';
+	import { resolveLogoColor } from '#lib/utils/theme.svelte.js';
+	import { mode } from 'mode-watcher';
 	import { ExternalLinkIcon, GithubIcon, BookOpenIcon } from '#lib/icons/index.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
@@ -41,8 +42,8 @@
 	const displayInfo = $derived(debugMode ? mockVersionInfo : versionInfo);
 
 	const enabledFeatures = $derived((displayInfo.enabledFeatures ?? []).filter(Boolean).join(', '));
-	const accentColor = $derived(accentColorPreview.current);
-	const logoUrl = $derived(getApplicationLogo(false, accentColor, accentColor));
+	const logoColor = $derived(resolveLogoColor(mode.current === 'dark'));
+	const logoUrl = $derived(getApplicationLogo(false, logoColor, logoColor));
 
 	const canToggleExperimental = $derived(hasPermission('settings:write'));
 	const experimentalEnabled = $derived(settingsStore.current?.experimentalFeaturesEnabled === true);

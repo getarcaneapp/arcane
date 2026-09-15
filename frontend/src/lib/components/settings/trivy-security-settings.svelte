@@ -14,6 +14,7 @@
 	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
 	import TextInputWithLabel from '#lib/components/form/text-input-with-label.svelte';
 	import SettingsRow from '#lib/components/settings/settings-row.svelte';
+	import CodeEditor from '#lib/components/code-editor/editor.svelte';
 	import { SecurityIcon, InfoIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { toast } from 'svelte-sonner';
@@ -38,6 +39,8 @@
 		| 'trivyServerUrl'
 		| 'trivyServerToken'
 		| 'trivyIgnoreUnfixed'
+		| 'trivyConfig'
+		| 'trivyIgnore'
 	>;
 
 	type FormField<T> = {
@@ -182,6 +185,34 @@
 			layout="inline"
 		>
 			<Switch id="trivyIgnoreUnfixedSwitch" bind:checked={formInputs.trivyIgnoreUnfixed.value} />
+		</SettingsRow>
+
+		<SettingsRow label={m.security_trivy_config_label()} description={m.security_trivy_config_description()}>
+			<div class="overflow-hidden rounded-md border border-border/60">
+				<CodeEditor
+					bind:value={formInputs.trivyConfig.value}
+					language="yaml"
+					validationMode="none"
+					autoHeight={true}
+					statusBar={false}
+					fontSize="13px"
+					placeholder={m.security_trivy_config_placeholder()}
+				/>
+			</div>
+		</SettingsRow>
+
+		<SettingsRow label={m.security_trivy_ignore_label()} description={m.security_trivy_ignore_description()}>
+			<div class="overflow-hidden rounded-md border border-border/60">
+				<CodeEditor
+					bind:value={formInputs.trivyIgnore.value}
+					language="plaintext"
+					validationMode="none"
+					autoHeight={true}
+					statusBar={false}
+					fontSize="13px"
+					placeholder={m.security_trivy_ignore_placeholder()}
+				/>
+			</div>
 		</SettingsRow>
 
 		<SettingsRow

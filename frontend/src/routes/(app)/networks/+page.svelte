@@ -15,6 +15,8 @@
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
+	import { extractApiErrorMessage } from '#lib/utils/api.js';
+	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	let { data } = $props();
 	const queryClient = useQueryClient();
@@ -53,8 +55,10 @@
 				pageState.isCreateDialogOpen = false;
 			}
 		},
-		onError: (_error, variables) => {
-			toast.error(m.common_create_failed({ resource: `${m.resource_network()} "${variables.name}"` }));
+		onError: (error, variables) => {
+			toast.error(m.common_create_failed({ resource: `${m.resource_network()} "${variables.name}"` }), {
+				description: extractApiErrorMessage(error)
+			});
 		}
 	}));
 
@@ -64,7 +68,7 @@
 	});
 
 	async function handleCreate(name: string, options: NetworkCreateOptions) {
-		await createNetworkMutation.mutateAsync({ name, options, requestedEnvId: pageState.envId });
+		await tryCatch(createNetworkMutation.mutateAsync({ name, options, requestedEnvId: pageState.envId }));
 	}
 
 	async function loadNetworks(options = pageState.requestOptions, requestedEnvId = pageState.envId) {
