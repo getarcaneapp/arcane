@@ -508,6 +508,8 @@
 				autoUpdateOverride = enabled;
 			}}
 			onViewPortMappings={showNetworkTab ? navigateToNetworkPortMappings : undefined}
+			onViewStorage={hasMounts ? () => onTabChange('storage') : undefined}
+			onViewNetworks={showNetworkTab ? () => onTabChange('network') : undefined}
 		/>
 	</Tabs.Content>
 
