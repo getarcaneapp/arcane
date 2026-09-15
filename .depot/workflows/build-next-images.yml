@@ -16,7 +16,9 @@ permissions:
 
 jobs:
   next-version:
-    runs-on: depot-ubuntu-24.04-4
+    runs-on:
+      size: 4x16
+      image: g7r5wqb57k.registry.depot.dev/ci:latest
     outputs:
       version: ${{ steps.next-version.outputs.version }}
       previous-tag: ${{ steps.next-version.outputs.previous_tag }}
@@ -26,29 +28,21 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Setup version tools
-        uses: taiki-e/install-action@v2
-        with:
-          tool: just,git-cliff
-
       - name: Compute next image version
         id: next-version
         run: just next-image-version github-output
 
   build-next-images:
     needs: next-version
-    runs-on: depot-ubuntu-24.04-32
+    runs-on:
+      size: 32x128
+      image: g7r5wqb57k.registry.depot.dev/ci:latest
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
-
-      - name: Setup Just
-        uses: taiki-e/install-action@v2
-        with:
-          tool: just
 
       - name: Setup Vite+
         uses: voidzero-dev/setup-vp@9446e853b27985e00fb1b21193be026fc09198db
@@ -62,12 +56,6 @@ jobs:
         with:
           go-version-file: backend/go.mod
           cache-dependency-path: backend/go.sum
-
-      - name: Install envsubst
-        run: sudo apt-get update && sudo apt-get install -y gettext-base
-
-      - name: Install cosign
-        uses: sigstore/cosign-installer@v4.1.2
 
       - name: Capture frontend build versions
         id: frontend-versions
@@ -120,7 +108,9 @@ jobs:
   publish-images:
     name: Publish ${{ matrix.registry }}
     needs: next-version
-    runs-on: depot-ubuntu-24.04-32
+    runs-on:
+      size: 32x128
+      image: g7r5wqb57k.registry.depot.dev/ci:latest
     strategy:
       fail-fast: false
       matrix:

@@ -75,7 +75,7 @@ func (q *Queue) Submit(ctx context.Context, request st.Request) (st.Run, error) 
 				result = existing
 				return nil
 			}
-			if request.Trigger != "manual" && request.Trigger != "remote" && existing.Trigger != "manual" && existing.Trigger != "remote" && !existing.Status.Terminal() && existing.Status != st.Running {
+			if request.Trigger != "manual" && request.Trigger != "remote" && existing.Trigger != "manual" && existing.Trigger != "remote" && !existing.Status.Terminal() && existing.Status != st.Running && existing.Status != st.NeedsAttention {
 				result = existing
 				return nil
 			}
@@ -114,7 +114,7 @@ func (q *Queue) Checkpoint(ctx context.Context, jobID, schedule string, next tim
 		if first && record.Schedule == schedule && !record.NextRun.IsZero() && !record.NextRun.After(now) && record.LastEnqueuedAt.Before(record.NextRun) {
 			pending := false
 			for _, run := range record.Runs {
-				if !run.Status.Terminal() {
+				if !run.Status.Terminal() && run.Status != st.NeedsAttention {
 					pending = true
 					break
 				}
@@ -439,7 +439,7 @@ func (q *Queue) nextRunInternal(runs []st.Run) (*st.Run, time.Time) {
 	blocked := false
 	for index := range runs {
 		run := &runs[index]
-		if run.Status == st.NeedsAttention || (run.Status == st.Running && run.Owner == q.owner) {
+		if run.Status == st.Running && run.Owner == q.owner {
 			blocked = true
 		}
 		if run.Status == st.Running && run.Owner != q.owner && interrupted == nil {
@@ -453,7 +453,7 @@ func (q *Queue) nextRunInternal(runs []st.Run) (*st.Run, time.Time) {
 	now := time.Now()
 	for index := range runs {
 		run := &runs[index]
-		if run.Status.Terminal() {
+		if run.Status.Terminal() || run.Status == st.NeedsAttention {
 			continue
 		}
 		if run.NextAttempt == nil || !run.NextAttempt.After(now) {

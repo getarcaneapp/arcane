@@ -24,7 +24,7 @@ func newResolutionQueueInternal(t *testing.T) *Queue {
 	return New(kv.NewKVService(&database.DB{DB: db}), nil, nil)
 }
 
-func TestResolvePreservesEvidenceAndUnblocksSchedule(t *testing.T) {
+func TestResolvePreservesEvidenceWithoutBlockingSchedule(t *testing.T) {
 	q := newResolutionQueueInternal(t)
 	ctx := t.Context()
 	run, err := q.Submit(ctx, st.Request{JobID: "auto-update", Trigger: "manual"})
@@ -42,7 +42,8 @@ func TestResolvePreservesEvidenceAndUnblocksSchedule(t *testing.T) {
 	history, err := q.List(ctx, "0", "auto-update", 1, 20)
 	require.NoError(t, err)
 	selected, _ := q.nextRunInternal(history.Runs)
-	require.Nil(t, selected)
+	require.NotNil(t, selected)
+	require.Equal(t, pending.ID, selected.ID)
 	for len(q.wake) > 0 {
 		<-q.wake
 	}
