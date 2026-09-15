@@ -4,6 +4,7 @@ import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import type {
 	BackupEntry,
 	CreateVolumeBackupRequest,
+	DiscoverVolumeBackupsResponse,
 	UpdateVolumeBackupPolicy,
 	VolumeBackupPolicyCollection
 } from '#lib/types/shared.js';
@@ -39,6 +40,11 @@ class VolumeBackupService extends BaseAPIService {
 		const params = transformPaginationParams(options);
 		const res = await this.api.get(`/environments/${envId}/volumes/${volumeName}/backups`, { params });
 		return res.data;
+	}
+
+	async discoverBackups(s3DestinationId: string): Promise<DiscoverVolumeBackupsResponse> {
+		const envId = await environmentStore.getCurrentEnvironmentId();
+		return this.handleResponse(this.api.post(`/environments/${envId}/volumes/backups/discover`, { s3DestinationId }));
 	}
 
 	async restoreBackup(volumeName: string, backupId: string): Promise<unknown> {

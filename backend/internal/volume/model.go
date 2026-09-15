@@ -34,16 +34,19 @@ const (
 type VolumeBackup struct {
 	database.BaseModel
 
-	VolumeName        string                     `json:"volumeName" gorm:"column:volume_name;index"`
-	Size              int64                      `json:"size" gorm:"column:size"`
-	CreatedAt         time.Time                  `json:"createdAt" gorm:"column:created_at"`
-	Status            VolumeBackupStatus         `json:"status" gorm:"column:status;type:text;not null;default:succeeded"`
-	Trigger           VolumeBackupTrigger        `json:"trigger" gorm:"column:trigger;type:text;not null;default:manual"`
-	Destination       volume.BackupDestination   `json:"destination" gorm:"column:destination;type:text;not null;default:local"`
-	Format            VolumeBackupFormat         `json:"format" gorm:"column:format;type:text;not null;default:archive"`
-	LocalSnapshotID   string                     `json:"localSnapshotId,omitempty" gorm:"column:local_snapshot_id;type:text"`
-	RemoteSnapshotID  string                     `json:"remoteSnapshotId,omitempty" gorm:"column:remote_snapshot_id;type:text"`
-	S3DestinationID   string                     `json:"s3DestinationId,omitempty" gorm:"column:s3_destination_id;type:text;index"`
+	VolumeName       string                   `json:"volumeName" gorm:"column:volume_name;index"`
+	Size             int64                    `json:"size" gorm:"column:size"`
+	CreatedAt        time.Time                `json:"createdAt" gorm:"column:created_at"`
+	Status           VolumeBackupStatus       `json:"status" gorm:"column:status;type:text;not null;default:succeeded"`
+	Trigger          VolumeBackupTrigger      `json:"trigger" gorm:"column:trigger;type:text;not null;default:manual"`
+	Destination      volume.BackupDestination `json:"destination" gorm:"column:destination;type:text;not null;default:local"`
+	Format           VolumeBackupFormat       `json:"format" gorm:"column:format;type:text;not null;default:archive"`
+	LocalSnapshotID  string                   `json:"localSnapshotId,omitempty" gorm:"column:local_snapshot_id;type:text"`
+	RemoteSnapshotID string                   `json:"remoteSnapshotId,omitempty" gorm:"column:remote_snapshot_id;type:text"`
+	S3DestinationID  string                   `json:"s3DestinationId,omitempty" gorm:"column:s3_destination_id;type:text;index"`
+	// RemoteInstanceID records which Arcane instance repository root a
+	// discovered remote snapshot belongs to; empty means this instance.
+	RemoteInstanceID  string                     `json:"remoteInstanceId,omitempty" gorm:"column:remote_instance_id;type:text"`
 	S3DestinationName string                     `json:"s3DestinationName,omitempty" gorm:"-"`
 	PolicyID          string                     `json:"policyId,omitempty" gorm:"column:policy_id;type:text;index"`
 	Error             string                     `json:"error,omitempty" gorm:"column:error;type:text"`

@@ -184,6 +184,15 @@ type RestoreBackupFilesInput struct {
 	Body          backuptypes.RestoreSelection
 }
 
+type DiscoverVolumeBackupsInput struct {
+	EnvironmentID string                             `path:"id" doc:"Environment ID"`
+	Body          volumetypes.DiscoverBackupsRequest `doc:"Destination to scan"`
+}
+
+type DiscoverVolumeBackupsOutput struct {
+	Body base.ApiResponse[volumetypes.DiscoverBackupsResponse]
+}
+
 type BackupHasPathInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	BackupID      string `path:"backupId" doc:"Backup ID"`
@@ -399,6 +408,16 @@ func RegisterVolumes(api huma.API, dockerService *docker.DockerClientService, vo
 		Tags:        []string{"Volume Backup"},
 		Security:    handlerutil.DefaultOperationSecurity(),
 	}, authz.PermVolumesBackup, h.DeleteBackup)
+
+	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "discover-volume-backups",
+		Method:      http.MethodPost,
+		Path:        "/environments/{id}/volumes/backups/discover",
+		Summary:     "Discover volume backups on an S3 destination",
+		Description: "Import existing volume backups stored on the destination by this or other Arcane instances",
+		Tags:        []string{"Volume Backup"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}, authz.PermVolumesBackup, h.DiscoverBackups)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "upload-retained-volume-backup-to-s3",
@@ -1075,6 +1094,25 @@ func (h *VolumeHandler) DeleteBackup(ctx context.Context, input *DeleteBackupInp
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
 			Data:    base.MessageResponse{Message: "Backup deleted successfully", ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()},
+		},
+	}, nil
+}
+
+func (h *VolumeHandler) DiscoverBackups(ctx context.Context, input *DiscoverVolumeBackupsInput) (*DiscoverVolumeBackupsOutput, error) {
+	if _, err := handlerutil.RequireUser(ctx); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(input.Body.S3DestinationID) == "" {
+		return nil, huma.Error400BadRequest("select an S3 destination to discover")
+	}
+	created, failures, err := h.volumeService.DiscoverRemoteBackups(ctx, input.Body.S3DestinationID)
+	if err != nil {
+		return nil, huma.Error400BadRequest(err.Error())
+	}
+	return &DiscoverVolumeBackupsOutput{
+		Body: base.ApiResponse[volumetypes.DiscoverBackupsResponse]{
+			Success: true,
+			Data:    volumetypes.DiscoverBackupsResponse{Count: created, Errors: failures},
 		},
 	}, nil
 }

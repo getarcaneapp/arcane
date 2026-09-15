@@ -30,6 +30,7 @@
 		onChanged,
 		onRestore,
 		onRestoreFiles,
+		onRestoreVolume,
 		onUpload,
 		onDelete,
 		onOpenVolume
@@ -39,6 +40,7 @@
 		onChanged: (options: SearchPaginationSortRequest) => Promise<Paginated<BackupHistoryEntry>>;
 		onRestore: (backup: BackupHistoryEntry) => void;
 		onRestoreFiles: (backup: BackupHistoryEntry) => void;
+		onRestoreVolume?: (backup: BackupHistoryEntry) => void;
 		onUpload: (backup: BackupHistoryEntry) => void;
 		onDelete: (backup: BackupHistoryEntry) => void;
 		onOpenVolume: (backup: BackupHistoryEntry) => void;
@@ -88,6 +90,11 @@
 			{/if}
 			<RemoveMenuItem onclick={() => onDelete(item)} label={m.common_delete()} />
 		{:else}
+			{#if onRestoreVolume}
+				<DropdownMenu.Item onclick={() => onRestoreVolume(item)} disabled={item.status !== 'succeeded'}
+					><RestartIcon class="size-4" />{m.volumes_backups_restore()}</DropdownMenu.Item
+				>
+			{/if}
 			<DropdownMenu.Item onclick={() => onOpenVolume(item)}
 				><VolumesIcon class="size-4" />{m.backups_open_volume()}</DropdownMenu.Item
 			>

@@ -143,6 +143,11 @@ export interface VolumeBackupPolicyCollection {
 	s3Available: boolean;
 }
 
+export interface DiscoverVolumeBackupsResponse {
+	count: number;
+	errors?: string[];
+}
+
 // --- Customize search ---
 
 export interface CustomizationMeta {

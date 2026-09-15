@@ -22,18 +22,19 @@ import (
 
 // Dependencies are the collaborators the volume domain needs.
 type Dependencies struct {
-	DB          *database.DB
-	Docker      *docker.DockerClientService
-	Event       *event.EventService
-	Settings    *settings.SettingsService
-	Image       *image.ImageService
-	Activity    *activity.ActivityService
-	Environment *environment.EnvironmentService
-	Container   *container.ContainerService
-	Engine      *backup.Engine
-	S3          *s3domain.S3DestinationService
-	Config      *config.Config
-	Upload      *upload.UploadService
+	DB           *database.DB
+	Docker       *docker.DockerClientService
+	Event        *event.EventService
+	Settings     *settings.SettingsService
+	Image        *image.ImageService
+	Activity     *activity.ActivityService
+	Environment  *environment.EnvironmentService
+	Container    *container.ContainerService
+	Engine       *backup.Engine
+	S3           *s3domain.S3DestinationService
+	Config       *config.Config
+	Upload       *upload.UploadService
+	RecoveryKeys *backup.RecoveryKeyStore
 }
 
 // Module wires the volume domain and mounts its routes.
@@ -45,7 +46,7 @@ type Module struct {
 // New builds the volume domain from its dependencies.
 func New(deps Dependencies) *Module {
 	return &Module{
-		service: NewVolumeService(deps.DB, deps.Docker, deps.Event, deps.Activity, deps.Settings, deps.Container, deps.Image, deps.Engine, deps.S3, deps.Config),
+		service: NewVolumeService(deps.DB, deps.Docker, deps.Event, deps.Activity, deps.Settings, deps.Container, deps.Image, deps.Engine, deps.S3, deps.Config, deps.RecoveryKeys),
 		deps:    deps,
 	}
 }

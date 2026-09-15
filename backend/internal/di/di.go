@@ -8,6 +8,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/apns"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/appimages"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/auth"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/backup"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/build"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/diagnostics"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
@@ -106,6 +107,7 @@ var ServiceOptions = fx.Options(
 		provideS3ModuleInternal,
 		provideS3ServiceInternal,
 		provideBackupEngineInternal,
+		backup.NewRecoveryKeyStore,
 		upload.NewUploadService,
 		upload.New,
 

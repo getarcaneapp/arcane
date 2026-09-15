@@ -20,8 +20,14 @@
 	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
 	import TextInputWithLabel from '#lib/components/form/text-input-with-label.svelte';
 	import { systemBackupService } from '#lib/services/system-backup-service.js';
+	import { volumeBackupService } from '#lib/services/volume-backup-service.js';
 	import { hasPermission } from '#lib/utils/auth.js';
-	import { backupDestinationOptions, backupPolicyDestinationDisplay, s3DestinationOptions } from '#lib/utils/backups.js';
+	import {
+		backupDestinationOptions,
+		backupPolicyDestinationDisplay,
+		runAutomaticBackupDiscovery,
+		s3DestinationOptions
+	} from '#lib/utils/backups.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import type {
 		BackupHistoryEntry,
@@ -370,20 +376,12 @@
 		await goto(`/volumes/${encodeURIComponent(backup.resourceName)}?tab=backups`);
 	}
 
-	let autoDiscovered = false;
 	let mounted = false;
 	async function discoverStoredBackups() {
-		if (!mounted || autoDiscovered || !policyCollection.recoveryKeyStored || !data.destinations.length) return;
+		if (!mounted || !policyCollection.recoveryKeyStored || !data.destinations.length) return;
 		if (!hasPermission('system-backups:manage')) return;
-		autoDiscovered = true;
-		const destinations = data.destinations;
-		const result = await tryCatch(Promise.all(destinations.map((item) => systemBackupService.discover(item.id, ''))));
-		if (!mounted) return;
-		if (result.error !== null) {
-			console.warn('S3 backup discovery failed', result.error);
-			return;
-		}
-		if (result.data.some((count) => count > 0)) await refresh();
+		const found = await runAutomaticBackupDiscovery(data.destinations);
+		if (mounted && found) await refresh();
 	}
 	onMount(() => {
 		mounted = true;
@@ -397,6 +395,31 @@
 	afterNavigate(() => {
 		void discoverStoredBackups();
 	});
+
+	// Discovered volume backups may reference a volume that does not exist on
+	// this instance; restoring creates it before the snapshot is written.
+	function openVolumeRestore(backup: BackupHistoryEntry) {
+		openConfirmDialog({
+			title: m.volumes_backup_restore_title(),
+			message: m.volumes_backup_restore_message({ volumeName: backup.resourceName }),
+			confirm: {
+				label: m.volumes_backups_restore(),
+				action: async () => {
+					const operationResult = await tryCatch(
+						(async () => {
+							const result = await volumeBackupService.restoreBackup(backup.resourceName, backup.id);
+							toast.success(m.volumes_backup_restore_success(), activityToastOptions(extractActivityId(result)));
+						})()
+					);
+					if (operationResult.error !== null) {
+						const error = operationResult.error;
+
+						toast.error(error instanceof Error ? error.message : m.common_failed());
+					}
+				}
+			}
+		});
+	}
 
 	const backupActivity = useBackupActivity(
 		() => '0',
@@ -884,6 +907,7 @@
 				onChanged={(options) => systemBackupService.listHistory(options)}
 				onRestore={(item) => openAction('restore', item)}
 				onRestoreFiles={openRestoreFiles}
+				onRestoreVolume={openVolumeRestore}
 				onUpload={(item) => openAction('upload', item)}
 				onDelete={(item) => openAction('delete', item)}
 				onOpenVolume={openVolumeBackups}
