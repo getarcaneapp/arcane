@@ -1035,6 +1035,8 @@
   "networks_options_description": "Ağ sürücüsüne özgü seçenekler",
   "attachable": "Takılabilir",
   "ipv6_enabled": "IPv6 Etkin",
+  "ipv6_address": "IPv6 Adresi",
+  "ipv6_gateway": "IPv6 Ağ Geçidi",
   "ipv4_enabled": "IPv4 Etkin",
   "ingress": "Trafik yöneticisi",
   "config_only": "Yalnızca Yapılandırma",
