@@ -93,6 +93,7 @@ builds:
     mod_timestamp: '{{ .CommitTimestamp }}'
 
   - id: arcane-cli
+    skip: '{{ if index .Env "IMAGE_REGISTRY" }}true{{ end }}'
     main: .
     dir: cli
     binary: arcane-cli
@@ -159,6 +160,7 @@ notarize:
 
 signs:
   - id: cosign-checksums
+    if: '{{ not (index .Env "IMAGE_REGISTRY") }}'
     cmd: cosign
     artifacts: checksum
     signature: '${artifact}.sigstore.json'
@@ -173,19 +175,19 @@ signs:
 
 checksum:
   extra_files:
-    - glob: dist/arcane-cli_linux_amd64_v1/arcane-cli
+    - glob: '{{ if not (index .Env "IMAGE_REGISTRY") }}dist/arcane-cli_linux_amd64_v1/arcane-cli{{ end }}'
       name_template: arcane-cli_linux_amd64
-    - glob: dist/arcane-cli_linux_arm64_v8.0/arcane-cli
+    - glob: '{{ if not (index .Env "IMAGE_REGISTRY") }}dist/arcane-cli_linux_arm64_v8.0/arcane-cli{{ end }}'
       name_template: arcane-cli_linux_arm64
-    - glob: dist/arcane-cli_linux_386_sse2/arcane-cli
+    - glob: '{{ if not (index .Env "IMAGE_REGISTRY") }}dist/arcane-cli_linux_386_sse2/arcane-cli{{ end }}'
       name_template: arcane-cli_linux_386
-    - glob: dist/arcane-cli_linux_arm_7/arcane-cli
+    - glob: '{{ if not (index .Env "IMAGE_REGISTRY") }}dist/arcane-cli_linux_arm_7/arcane-cli{{ end }}'
       name_template: arcane-cli_linux_armv7
-    - glob: dist/arcane-cli_linux_riscv64_rva20u64/arcane-cli
+    - glob: '{{ if not (index .Env "IMAGE_REGISTRY") }}dist/arcane-cli_linux_riscv64_rva20u64/arcane-cli{{ end }}'
       name_template: arcane-cli_linux_riscv64
-    - glob: dist/arcane-cli_darwin_amd64_v1/arcane-cli
+    - glob: '{{ if not (index .Env "IMAGE_REGISTRY") }}dist/arcane-cli_darwin_amd64_v1/arcane-cli{{ end }}'
       name_template: arcane-cli_darwin_amd64
-    - glob: dist/arcane-cli_darwin_arm64_v8.0/arcane-cli
+    - glob: '{{ if not (index .Env "IMAGE_REGISTRY") }}dist/arcane-cli_darwin_arm64_v8.0/arcane-cli{{ end }}'
       name_template: arcane-cli_darwin_arm64
 
 nightly:
@@ -271,16 +273,17 @@ homebrew_casks:
       name: homebrew-tap
     commit_msg_template: 'chore(brew): update {{ .ProjectName }} to {{ .Tag }}'
 
+# IMAGE_REGISTRY selects one destination in the independent CI image jobs.
 dockers_v2:
   - id: arcane-image
     ids:
       - arcane
     dockerfile: docker/Dockerfile-static
     images:
-      - 'ghcr.io/getarcaneapp/arcane'
-      - 'ghcr.io/getarcaneapp/manager'
-      - 'getarcaneapp/manager'
-      - 'quay.io/getarcaneapp/manager'
+      - '{{ if or (not (index .Env "IMAGE_REGISTRY")) (eq (index .Env "IMAGE_REGISTRY") "ghcr.io") }}ghcr.io/getarcaneapp/arcane{{ end }}'
+      - '{{ if or (not (index .Env "IMAGE_REGISTRY")) (eq (index .Env "IMAGE_REGISTRY") "ghcr.io") }}ghcr.io/getarcaneapp/manager{{ end }}'
+      - '{{ if or (not (index .Env "IMAGE_REGISTRY")) (eq (index .Env "IMAGE_REGISTRY") "docker.io") }}getarcaneapp/manager{{ end }}'
+      - '{{ if or (not (index .Env "IMAGE_REGISTRY")) (eq (index .Env "IMAGE_REGISTRY") "quay.io") }}quay.io/getarcaneapp/manager{{ end }}'
     tags:
       - '{{ if index .Env "BUILD_NEXT" }}next{{ end }}'
       - 'v{{ .Version }}'
@@ -310,10 +313,10 @@ dockers_v2:
       - arcane-agent
     dockerfile: docker/Dockerfile-agent-static
     images:
-      - 'ghcr.io/getarcaneapp/arcane-headless'
-      - 'ghcr.io/getarcaneapp/agent'
-      - 'getarcaneapp/agent'
-      - 'quay.io/getarcaneapp/agent'
+      - '{{ if or (not (index .Env "IMAGE_REGISTRY")) (eq (index .Env "IMAGE_REGISTRY") "ghcr.io") }}ghcr.io/getarcaneapp/arcane-headless{{ end }}'
+      - '{{ if or (not (index .Env "IMAGE_REGISTRY")) (eq (index .Env "IMAGE_REGISTRY") "ghcr.io") }}ghcr.io/getarcaneapp/agent{{ end }}'
+      - '{{ if or (not (index .Env "IMAGE_REGISTRY")) (eq (index .Env "IMAGE_REGISTRY") "docker.io") }}getarcaneapp/agent{{ end }}'
+      - '{{ if or (not (index .Env "IMAGE_REGISTRY")) (eq (index .Env "IMAGE_REGISTRY") "quay.io") }}quay.io/getarcaneapp/agent{{ end }}'
     tags:
       - '{{ if index .Env "BUILD_NEXT" }}next{{ end }}'
       - 'v{{ .Version }}'
@@ -379,7 +382,7 @@ blobs:
       - glob: dist/arcane_*_checksums.txt.sigstore.json
         name_template: arcane-cli_checksums.txt.sigstore.json
     include_meta: false
-    disable: '{{ if not (index .Env "BUILD_NEXT") }}true{{ end }}'
+    disable: '{{ if or (index .Env "IMAGE_REGISTRY") (not (index .Env "BUILD_NEXT")) }}true{{ end }}'
 
   - provider: s3
     endpoint: '{{ index .Env "R2_ENDPOINT" }}'
@@ -394,7 +397,7 @@ blobs:
       - glob: dist/arcane_*_checksums.txt.sigstore.json
         name_template: arcane_checksums.txt.sigstore.json
     include_meta: false
-    disable: '{{ if not (index .Env "BUILD_NEXT") }}true{{ end }}'
+    disable: '{{ if or (index .Env "IMAGE_REGISTRY") (not (index .Env "BUILD_NEXT")) }}true{{ end }}'
 
 changelog:
   disable: '{{ if isEnvSet "SKIP_CHANGELOG" }}true{{ else if isEnvSet "OPENAI_API_KEY" }}false{{ else }}true{{ end }}'

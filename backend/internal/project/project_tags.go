@@ -13,6 +13,7 @@ import (
 
 	"emperror.dev/errors"
 	projectpkg "github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
+	gitopstypes "github.com/getarcaneapp/arcane/types/v2/gitops"
 	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -226,6 +227,9 @@ func excludeComposeOwnedUITagsInternal(uiTags []string, composeTags []projecttyp
 func deleteProjectWithTagsInternal(tx *gorm.DB, projectID string) error {
 	if err := tx.Where("project_id = ?", projectID).Delete(&ProjectTag{}).Error; err != nil {
 		return errors.WrapIf(err, "delete project tags")
+	}
+	if err := tx.Where("mode = ? AND project_id = ?", gitopstypes.SyncModeBackup, projectID).Delete(&GitOpsSync{}).Error; err != nil {
+		return errors.WrapIf(err, "delete project git backups")
 	}
 	return errors.WrapIf(tx.Delete(&Project{}, "id = ?", projectID).Error, "delete project")
 }

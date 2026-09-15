@@ -221,8 +221,7 @@ func TestSettingsServiceUpdateSettingsRejectsOIDCIssuerChangeWithStoredSecretInt
 	require.NoError(t, svc.UpdateSetting(ctx, "oidcClientSecret", "old-client-secret"))
 
 	_, err = svc.UpdateSettings(ctx, settingstypes.Update{
-		OidcIssuerUrl:    new("https://attacker.example.com"),
-		OidcClientSecret: new(""),
+		OidcIssuerUrl: new("https://attacker.example.com"),
 	})
 	require.ErrorIs(t, err, common.ErrValidation)
 
@@ -230,6 +229,44 @@ func TestSettingsServiceUpdateSettingsRejectsOIDCIssuerChangeWithStoredSecretInt
 	require.NoError(t, loadErr)
 	require.Equal(t, "https://issuer.example.com", current.OidcIssuerUrl.Value)
 	require.Equal(t, "old-client-secret", current.OidcClientSecret.Value)
+}
+
+func TestSettingsServiceUpdateSettingsAllowsOIDCIssuerChangeWhenClearingSecretInternal(t *testing.T) {
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+	svc, err := newSettingsServiceForTestInternal(t, ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, svc.UpdateSetting(ctx, "oidcIssuerUrl", "https://issuer.example.com"))
+	require.NoError(t, svc.UpdateSetting(ctx, "oidcClientSecret", "old-client-secret"))
+
+	_, err = svc.UpdateSettings(ctx, settingstypes.Update{
+		OidcIssuerUrl:    new("https://replacement.example.com"),
+		OidcClientSecret: new(""),
+	})
+	require.NoError(t, err)
+
+	current, loadErr := svc.GetSettings(ctx)
+	require.NoError(t, loadErr)
+	require.Equal(t, "https://replacement.example.com", current.OidcIssuerUrl.Value)
+	require.Empty(t, current.OidcClientSecret.Value)
+}
+
+func TestSettingsServiceUpdateSettingsRejectsEnablingOIDCWithoutSecretInternal(t *testing.T) {
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+	svc, err := newSettingsServiceForTestInternal(t, ctx, db)
+	require.NoError(t, err)
+
+	_, err = svc.UpdateSettings(ctx, settingstypes.Update{
+		OidcEnabled:   new("true"),
+		OidcClientId:  new("arcane"),
+		OidcIssuerUrl: new("https://issuer.example.com"),
+	})
+	require.ErrorIs(t, err, common.ErrValidation)
+
+	current, loadErr := svc.GetSettings(ctx)
+	require.NoError(t, loadErr)
+	require.Equal(t, "false", current.OidcEnabled.Value)
 }
 
 func TestSettingsServiceUpdateSettingsAllowsOIDCIssuerChangeWithReplacementSecretInternal(t *testing.T) {

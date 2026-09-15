@@ -32,6 +32,10 @@ type ListGitOpsSyncsInput struct {
 	Order         string `query:"order" default:"asc" doc:"Sort direction"`
 	Start         int    `query:"start" default:"0" doc:"Start index"`
 	Limit         int    `query:"limit" default:"20" doc:"Items per page"`
+	Mode          string `query:"mode" doc:"Filter by direction (deploy or backup)"`
+	ProjectID     string `query:"projectId" doc:"Filter by linked project ID"`
+	RepositoryID  string `query:"repositoryId" doc:"Filter by repository ID"`
+	AutoSync      string `query:"autoSync" doc:"Filter by automatic sync (true or false)"`
 }
 
 type ListGitOpsSyncsOutput struct {
@@ -80,6 +84,31 @@ type ImportGitOpsSyncsInput struct {
 	Body          []gitops.ImportGitOpsSyncRequest
 }
 
+const maxBackupHistoryLimit = 200
+
+type BackupPreviewInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	SyncID        string `path:"syncId" doc:"Sync ID"`
+}
+
+type BackupHistoryInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	SyncID        string `path:"syncId" doc:"Sync ID"`
+	Limit         int    `query:"limit" default:"20" doc:"Maximum number of revisions"`
+}
+
+type BackupRevisionInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	SyncID        string `path:"syncId" doc:"Sync ID"`
+	Commit        string `path:"commit" doc:"Commit hash"`
+}
+
+type ResolveBackupConflictInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	SyncID        string `path:"syncId" doc:"Sync ID"`
+	Body          gitops.ResolveBackupConflictRequest
+}
+
 // ============================================================================
 // Registration
 // ============================================================================
@@ -100,6 +129,10 @@ func RegisterGitOpsSyncs(api huma.API, syncService *GitOpsSyncService) {
 	handlerutil.RegisterSecured(api, handlerutil.Operation("performGitOpsSync", "POST", syncPath+"/sync", "Perform a GitOps sync", "Manually trigger a sync operation", "GitOps Syncs"), authz.PermGitOpsSync, h.PerformSync)
 	handlerutil.RegisterSecured(api, handlerutil.Operation("getGitOpsSyncStatus", "GET", syncPath+"/status", "Get GitOps sync status", "Get the current status of a GitOps sync", "GitOps Syncs"), authz.PermGitOpsRead, h.GetStatus)
 	handlerutil.RegisterSecured(api, handlerutil.Operation("browseGitOpsSyncFiles", "GET", syncPath+"/files", "Browse GitOps sync files", "Browse files in the synced repository", "GitOps Syncs"), authz.PermGitOpsRead, h.BrowseFiles)
+	handlerutil.RegisterSecured(api, handlerutil.Operation("previewGitOpsBackup", "GET", syncPath+"/backup/preview", "Preview a Git backup", "Show the files the next backup would commit and any conflicts", "GitOps Syncs"), authz.PermGitOpsBackup, h.PreviewBackup)
+	handlerutil.RegisterSecured(api, handlerutil.Operation("listGitOpsBackupHistory", "GET", syncPath+"/backup/history", "List Git backup history", "List repository revisions that changed the backup", "GitOps Syncs"), authz.PermGitOpsBackup, h.BackupHistory)
+	handlerutil.RegisterSecured(api, handlerutil.Operation("getGitOpsBackupRevision", "GET", syncPath+"/backup/history/{commit}", "Get a Git backup revision", "Get one revision with per-file diffs", "GitOps Syncs"), authz.PermGitOpsBackup, h.BackupRevision)
+	handlerutil.RegisterSecured(api, handlerutil.Operation("resolveGitOpsBackupConflict", "POST", syncPath+"/backup/resolve", "Resolve a Git backup conflict", "Resolve a backup that needs attention", "GitOps Syncs"), authz.PermGitOpsBackup, h.ResolveBackupConflict)
 }
 
 // requireLifecyclePermissionInternal rejects callers lacking gitops:lifecycle
@@ -110,7 +143,7 @@ func RegisterGitOpsSyncs(api huma.API, syncService *GitOpsSyncService) {
 // Admin built-in role) rather than the broader gitops:create / gitops:update
 // permissions that non-admin roles such as Editor hold. Whether a request
 // touches the hook is decided by the request type itself
-// (gitops.*SyncRequest.HasPreDeployConfig) so the field set has a single owner.
+// (gitops.PreDeployConfigRequest.HasPreDeployConfig) so the field set has a single owner.
 func requireLifecyclePermissionInternal(ctx context.Context, environmentID string, lifecycleRequested bool) error {
 	if !lifecycleRequested {
 		return nil
@@ -121,6 +154,28 @@ func requireLifecyclePermissionInternal(ctx context.Context, environmentID strin
 	return huma.Error403Forbidden("configuring a pre-deploy lifecycle hook requires the " + authz.PermGitOpsLifecycle + " permission")
 }
 
+// requireBackupPermissionInternal rejects callers lacking gitops:backup for
+// the target environment when the operation touches a backup-mode sync.
+func requireBackupPermissionInternal(ctx context.Context, environmentID string, backup bool) error {
+	if !backup {
+		return nil
+	}
+	if ps, _ := middleware.PermissionsFromContext(ctx); ps.Allows(authz.PermGitOpsBackup, environmentID) {
+		return nil
+	}
+	return huma.Error403Forbidden("backing a project up to Git requires the " + authz.PermGitOpsBackup + " permission")
+}
+
+// requireBackupSyncPermissionInternal loads the sync and applies requireBackupPermissionInternal when it is a backup.
+func (h *GitOpsSyncHandler) requireBackupSyncPermissionInternal(ctx context.Context, environmentID, syncID string) error {
+	sync, err := h.syncService.GetSyncByID(ctx, environmentID, syncID)
+	if err != nil {
+		apiErr := common.ToAPIError(err)
+		return huma.NewError(apiErr.HTTPStatus(), "Failed to retrieve GitOps sync")
+	}
+	return requireBackupPermissionInternal(ctx, environmentID, sync.IsBackup())
+}
+
 // ============================================================================
 // Handler Methods
 // ============================================================================
@@ -128,6 +183,11 @@ func requireLifecyclePermissionInternal(ctx context.Context, environmentID strin
 // ListSyncs returns a paginated list of GitOps syncs.
 func (h *GitOpsSyncHandler) ListSyncs(ctx context.Context, input *ListGitOpsSyncsInput) (*ListGitOpsSyncsOutput, error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
+	for key, value := range map[string]string{"mode": input.Mode, "projectId": input.ProjectID, "repositoryId": input.RepositoryID, "autoSync": input.AutoSync} {
+		if value != "" {
+			params.Filters[key] = value
+		}
+	}
 
 	syncs, paginationResp, counts, err := h.syncService.GetSyncsPaginated(ctx, input.EnvironmentID, params)
 	if err != nil {
@@ -147,6 +207,9 @@ func (h *GitOpsSyncHandler) ListSyncs(ctx context.Context, input *ListGitOpsSync
 // CreateSync creates a new GitOps sync.
 func (h *GitOpsSyncHandler) CreateSync(ctx context.Context, input *CreateGitOpsSyncInput) (*handlerutil.Out[gitops.GitOpsSync], error) {
 	if err := requireLifecyclePermissionInternal(ctx, input.EnvironmentID, input.Body.HasPreDeployConfig()); err != nil {
+		return nil, err
+	}
+	if err := requireBackupPermissionInternal(ctx, input.EnvironmentID, input.Body.Mode == gitops.SyncModeBackup); err != nil {
 		return nil, err
 	}
 
@@ -172,6 +235,12 @@ func (h *GitOpsSyncHandler) CreateSync(ctx context.Context, input *CreateGitOpsS
 
 // ImportSyncs imports multiple GitOps syncs.
 func (h *GitOpsSyncHandler) ImportSyncs(ctx context.Context, input *ImportGitOpsSyncsInput) (*handlerutil.Out[gitops.ImportGitOpsSyncResponse], error) {
+	for _, item := range input.Body {
+		if err := requireLifecyclePermissionInternal(ctx, input.EnvironmentID, item.HasPreDeployConfig()); err != nil {
+			return nil, err
+		}
+	}
+
 	actor := handlerutil.CurrentActor(ctx)
 
 	response, err := h.syncService.ImportSyncs(ctx, input.EnvironmentID, input.Body, actor)
@@ -212,6 +281,9 @@ func (h *GitOpsSyncHandler) UpdateSync(ctx context.Context, input *UpdateGitOpsS
 	if err := requireLifecyclePermissionInternal(ctx, input.EnvironmentID, input.Body.HasPreDeployConfig()); err != nil {
 		return nil, err
 	}
+	if err := h.requireBackupSyncPermissionInternal(ctx, input.EnvironmentID, input.SyncID); err != nil {
+		return nil, err
+	}
 
 	actor := handlerutil.CurrentActor(ctx)
 
@@ -235,6 +307,9 @@ func (h *GitOpsSyncHandler) UpdateSync(ctx context.Context, input *UpdateGitOpsS
 
 // DeleteSync deletes a GitOps sync by ID.
 func (h *GitOpsSyncHandler) DeleteSync(ctx context.Context, input *DeleteGitOpsSyncInput) (*handlerutil.Out[base.MessageResponse], error) {
+	if err := h.requireBackupSyncPermissionInternal(ctx, input.EnvironmentID, input.SyncID); err != nil {
+		return nil, err
+	}
 	actor := handlerutil.CurrentActor(ctx)
 
 	if err := h.syncService.DeleteSync(ctx, input.EnvironmentID, input.SyncID, actor); err != nil {
@@ -254,6 +329,9 @@ func (h *GitOpsSyncHandler) DeleteSync(ctx context.Context, input *DeleteGitOpsS
 
 // PerformSync manually triggers a sync operation.
 func (h *GitOpsSyncHandler) PerformSync(ctx context.Context, input *PerformSyncInput) (*handlerutil.Out[gitops.SyncResult], error) {
+	if err := h.requireBackupSyncPermissionInternal(ctx, input.EnvironmentID, input.SyncID); err != nil {
+		return nil, err
+	}
 	actor := handlerutil.CurrentActor(ctx)
 
 	result, err := h.syncService.PerformSync(ctx, input.EnvironmentID, input.SyncID, actor)
@@ -298,6 +376,72 @@ func (h *GitOpsSyncHandler) BrowseFiles(ctx context.Context, input *BrowseSyncFi
 		Body: base.ApiResponse[gitops.BrowseResponse]{
 			Success: true,
 			Data:    *response,
+		},
+	}, nil
+}
+
+// PreviewBackup shows what the next backup would commit.
+func (h *GitOpsSyncHandler) PreviewBackup(ctx context.Context, input *BackupPreviewInput) (*handlerutil.Out[gitops.BackupPreview], error) {
+	preview, err := h.syncService.PreviewBackup(ctx, input.EnvironmentID, input.SyncID)
+	if err != nil {
+		apiErr := common.ToAPIError(err)
+		return nil, huma.NewError(apiErr.HTTPStatus(), errors.WithMessage(err, "Failed to preview Git backup").Error())
+	}
+
+	return &handlerutil.Out[gitops.BackupPreview]{
+		Body: base.ApiResponse[gitops.BackupPreview]{
+			Success: true,
+			Data:    *preview,
+		},
+	}, nil
+}
+
+// BackupHistory lists revisions affecting the backup.
+func (h *GitOpsSyncHandler) BackupHistory(ctx context.Context, input *BackupHistoryInput) (*handlerutil.Out[gitops.BackupHistoryResponse], error) {
+	history, err := h.syncService.GetBackupHistory(ctx, input.EnvironmentID, input.SyncID, min(input.Limit, maxBackupHistoryLimit))
+	if err != nil {
+		apiErr := common.ToAPIError(err)
+		return nil, huma.NewError(apiErr.HTTPStatus(), errors.WithMessage(err, "Failed to load Git backup history").Error())
+	}
+
+	return &handlerutil.Out[gitops.BackupHistoryResponse]{
+		Body: base.ApiResponse[gitops.BackupHistoryResponse]{
+			Success: true,
+			Data:    *history,
+		},
+	}, nil
+}
+
+// BackupRevision returns one revision with diffs.
+func (h *GitOpsSyncHandler) BackupRevision(ctx context.Context, input *BackupRevisionInput) (*handlerutil.Out[gitops.BackupRevision], error) {
+	revision, err := h.syncService.GetBackupRevision(ctx, input.EnvironmentID, input.SyncID, input.Commit)
+	if err != nil {
+		apiErr := common.ToAPIError(err)
+		return nil, huma.NewError(apiErr.HTTPStatus(), errors.WithMessage(err, "Failed to load Git backup revision").Error())
+	}
+
+	return &handlerutil.Out[gitops.BackupRevision]{
+		Body: base.ApiResponse[gitops.BackupRevision]{
+			Success: true,
+			Data:    *revision,
+		},
+	}, nil
+}
+
+// ResolveBackupConflict resolves a backup that needs attention.
+func (h *GitOpsSyncHandler) ResolveBackupConflict(ctx context.Context, input *ResolveBackupConflictInput) (*handlerutil.Out[gitops.SyncResult], error) {
+	actor := handlerutil.CurrentActor(ctx)
+
+	result, err := h.syncService.ResolveBackupConflict(ctx, input.EnvironmentID, input.SyncID, input.Body, actor)
+	if err != nil {
+		apiErr := common.ToAPIError(err)
+		return nil, huma.NewError(apiErr.HTTPStatus(), errors.WithMessage(err, "Failed to resolve Git backup conflict").Error())
+	}
+
+	return &handlerutil.Out[gitops.SyncResult]{
+		Body: base.ApiResponse[gitops.SyncResult]{
+			Success: result.Success,
+			Data:    *result,
 		},
 	}, nil
 }

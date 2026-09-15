@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"math"
 	"os"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -43,10 +44,14 @@ const (
 	NanoCPUsPerCore = int64(1_000_000_000)
 	BytesPerMB      = int64(1024 * 1024)
 
-	outputPathPrefixInternal       = "/tmp/arcane-trivy-result-"
-	registryConfigCopyDestInternal = "/tmp"
-	registryConfigTarNameInternal  = "arcane-registry-auth/config.json"
-	errorExcerptSizeInternal       = int64(32 * 1024)
+	// ContainerFilesDir is where generated files are copied inside the scan container.
+	ContainerFilesDir  = "/tmp"
+	RegistryConfigFile = "arcane-registry-auth/config.json"
+	TrivyConfigFile    = "trivy-config.yaml"
+	TrivyIgnoreFile    = "trivy-ignore"
+
+	outputPathPrefixInternal = "/tmp/arcane-trivy-result-"
+	errorExcerptSizeInternal = int64(32 * 1024)
 )
 
 type RuntimeOptions struct {
@@ -87,15 +92,6 @@ func NewOutputPath() string {
 	return outputPathPrefixInternal + strconv.FormatInt(time.Now().UnixNano(), 10) + ".json"
 }
 
-func CleanupTempFiles(ctx context.Context, tempFiles []string) {
-	// System temp scratch: no acfs root exists for it.
-	for _, f := range tempFiles {
-		if err := os.Remove(f); err != nil {
-			slog.WarnContext(ctx, "failed to remove trivy temp file", "path", f, "error", err)
-		}
-	}
-}
-
 func BuildBatchHostConfig(
 	cacheVolume string,
 	runtimeOptions RuntimeOptions,
@@ -122,7 +118,6 @@ func BuildBatchHostConfig(
 
 func BuildHostConfig(
 	cacheVolume string,
-	tempFiles []string,
 	resources containertypes.Resources,
 	cpuSet string,
 	applyLimits bool,
@@ -149,8 +144,6 @@ func BuildHostConfig(
 
 	ApplyRuntimeSecurity(hostConfig, securityOpts, privileged)
 	ApplyContainerResources(hostConfig, resources, cpuSet, applyLimits)
-
-	addTempFileMountsInternal(hostConfig, tempFiles)
 	return hostConfig
 }
 
@@ -184,27 +177,6 @@ func ApplyContainerResources(hostConfig *containertypes.HostConfig, resources co
 	}
 
 	hostConfig.Resources = resources
-}
-
-func addTempFileMountsInternal(hostConfig *containertypes.HostConfig, tempFiles []string) {
-	for _, tempFile := range tempFiles {
-		switch {
-		case strings.Contains(tempFile, "trivy-config"):
-			hostConfig.Mounts = append(hostConfig.Mounts, mounttypes.Mount{
-				Type:     mounttypes.TypeBind,
-				Source:   tempFile,
-				Target:   "/tmp/trivy-config.yaml",
-				ReadOnly: true,
-			})
-		case strings.Contains(tempFile, "trivy-ignore"):
-			hostConfig.Mounts = append(hostConfig.Mounts, mounttypes.Mount{
-				Type:     mounttypes.TypeBind,
-				Source:   tempFile,
-				Target:   "/tmp/trivy-ignore",
-				ReadOnly: true,
-			})
-		}
-	}
 }
 
 func CreateLogTempFile(prefix string) (*os.File, error) {
@@ -371,22 +343,26 @@ func RemoveContainer(ctx context.Context, dockerClient *client.Client, container
 	}
 }
 
-func CopyRegistryConfigToContainer(ctx context.Context, dockerClient *client.Client, containerID string, configJSON []byte) error {
-	if dockerClient == nil || containerID == "" || len(configJSON) == 0 {
+func CopyFilesToContainer(ctx context.Context, dockerClient *client.Client, containerID, destDir string, files map[string][]byte) error {
+	if dockerClient == nil || containerID == "" || len(files) == 0 {
 		return nil
 	}
 
 	var buf bytes.Buffer
 	tw := tar.NewWriter(&buf)
 
-	if err := tw.WriteHeader(&tar.Header{Name: "arcane-registry-auth/", Mode: 0o755, Typeflag: tar.TypeDir}); err != nil {
-		return err
-	}
-	if err := tw.WriteHeader(&tar.Header{Name: registryConfigTarNameInternal, Mode: 0o644, Size: int64(len(configJSON))}); err != nil {
-		return err
-	}
-	if _, err := tw.Write(configJSON); err != nil {
-		return err
+	for name, content := range files {
+		if dir := path.Dir(name); dir != "." {
+			if err := tw.WriteHeader(&tar.Header{Name: dir + "/", Mode: 0o755, Typeflag: tar.TypeDir}); err != nil {
+				return err
+			}
+		}
+		if err := tw.WriteHeader(&tar.Header{Name: name, Mode: 0o644, Size: int64(len(content))}); err != nil {
+			return err
+		}
+		if _, err := tw.Write(content); err != nil {
+			return err
+		}
 	}
 	if err := tw.Close(); err != nil {
 		return err
@@ -396,7 +372,7 @@ func CopyRegistryConfigToContainer(ctx context.Context, dockerClient *client.Cli
 	defer copyCancel()
 
 	_, err := dockerClient.CopyToContainer(copyCtx, containerID, client.CopyToContainerOptions{
-		DestinationPath: registryConfigCopyDestInternal,
+		DestinationPath: destDir,
 		Content:         &buf,
 	})
 	return err

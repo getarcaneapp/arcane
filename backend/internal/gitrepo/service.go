@@ -115,6 +115,11 @@ func (s *GitRepositoryService) FindEnabledRepositoryByURL(ctx context.Context, r
 	return nil, nil
 }
 
+const (
+	defaultCommitAuthorName  = "Arcane"
+	defaultCommitAuthorEmail = "arcane@localhost"
+)
+
 func (s *GitRepositoryService) CreateRepository(ctx context.Context, req gitops.CreateRepositoryRequest, actor common.User) (*GitRepository, error) {
 	if err := normalization.Normalize(&req); err != nil {
 		return nil, err
@@ -125,6 +130,8 @@ func (s *GitRepositoryService) CreateRepository(ctx context.Context, req gitops.
 		AuthType:               req.AuthType,
 		Username:               req.Username,
 		SSHHostKeyVerification: req.SSHHostKeyVerification,
+		CommitAuthorName:       req.CommitAuthorName,
+		CommitAuthorEmail:      req.CommitAuthorEmail,
 		Description:            req.Description,
 		Enabled:                true,
 	}
@@ -153,6 +160,15 @@ func (s *GitRepositoryService) CreateRepository(ctx context.Context, req gitops.
 			return nil, errors.WrapIf(err, "failed to encrypt SSH key")
 		}
 		repository.SSHKey = encrypted
+	}
+
+	if req.SigningKey != "" {
+		signingKey, passphrase, err := encryptSigningKeyInternal(req.SigningKey, req.SigningKeyPassphrase)
+		if err != nil {
+			return nil, err
+		}
+		repository.SigningKey = signingKey
+		repository.SigningKeyPassphrase = passphrase
 	}
 
 	if err := s.db.WithContext(ctx).Create(&repository).Error; err != nil {
@@ -224,6 +240,12 @@ func (s *GitRepositoryService) UpdateRepository(ctx context.Context, id string, 
 	if req.SSHHostKeyVerification != nil {
 		updates["ssh_host_key_verification"] = *req.SSHHostKeyVerification
 	}
+	if req.CommitAuthorName != nil {
+		updates["commit_author_name"] = *req.CommitAuthorName
+	}
+	if req.CommitAuthorEmail != nil {
+		updates["commit_author_email"] = *req.CommitAuthorEmail
+	}
 
 	if req.Token != nil {
 		if *req.Token == "" {
@@ -247,6 +269,10 @@ func (s *GitRepositoryService) UpdateRepository(ctx context.Context, id string, 
 			}
 			updates["ssh_key"] = encrypted
 		}
+	}
+
+	if err := applySigningKeyUpdateInternal(repository, req, updates); err != nil {
+		return nil, err
 	}
 
 	if len(updates) > 0 {
@@ -382,6 +408,98 @@ func (s *GitRepositoryService) GetAuthConfig(ctx context.Context, repository *Gi
 	return authConfig, nil
 }
 
+// GetCommitIdentity returns the author for commits Arcane pushes to the
+// repository, with the signing key unlocked when one is stored.
+func (s *GitRepositoryService) GetCommitIdentity(ctx context.Context, repository *GitRepository) (git.CommitIdentity, error) {
+	identity := git.CommitIdentity{Name: repository.CommitAuthorName, Email: repository.CommitAuthorEmail}
+	if identity.Name == "" {
+		identity.Name = defaultCommitAuthorName
+	}
+	if identity.Email == "" {
+		identity.Email = defaultCommitAuthorEmail
+	}
+	if repository.SigningKey == "" {
+		return identity, nil
+	}
+	armored, err := crypto.Decrypt(repository.SigningKey)
+	if err != nil {
+		return identity, errors.WrapIf(err, "failed to decrypt signing key")
+	}
+	passphrase := ""
+	if repository.SigningKeyPassphrase != "" {
+		if passphrase, err = crypto.Decrypt(repository.SigningKeyPassphrase); err != nil {
+			return identity, errors.WrapIf(err, "failed to decrypt signing key passphrase")
+		}
+	}
+	identity.SignKey, err = git.ParseSigningKey(armored, passphrase)
+	if err != nil {
+		return identity, err
+	}
+	return identity, nil
+}
+
+// encryptSigningKeyInternal validates that armored unlocks with passphrase and
+// returns both encrypted for storage.
+func encryptSigningKeyInternal(armored, passphrase string) (string, string, error) {
+	if _, err := git.ParseSigningKey(armored, passphrase); err != nil {
+		return "", "", common.Classify(common.ErrValidation, errors.WithDetails(err, "field", "signingKey"))
+	}
+	encryptedKey, err := crypto.Encrypt(armored)
+	if err != nil {
+		return "", "", errors.WrapIf(err, "failed to encrypt signing key")
+	}
+	encryptedPassphrase := ""
+	if passphrase != "" {
+		if encryptedPassphrase, err = crypto.Encrypt(passphrase); err != nil {
+			return "", "", errors.WrapIf(err, "failed to encrypt signing key passphrase")
+		}
+	}
+	return encryptedKey, encryptedPassphrase, nil
+}
+
+// applySigningKeyUpdateInternal resolves the signing key and passphrase an
+// update leaves in place, re-validating the pair whenever either changes.
+func applySigningKeyUpdateInternal(current *GitRepository, req gitops.UpdateRepositoryRequest, updates map[string]any) error {
+	if req.SigningKey == nil && req.SigningKeyPassphrase == nil {
+		return nil
+	}
+	if req.SigningKey != nil && *req.SigningKey == "" {
+		updates["signing_key"] = ""
+		updates["signing_key_passphrase"] = ""
+		return nil
+	}
+	armored := ""
+	if req.SigningKey != nil {
+		armored = *req.SigningKey
+	} else if current.SigningKey != "" {
+		decrypted, err := crypto.Decrypt(current.SigningKey)
+		if err != nil {
+			return errors.WrapIf(err, "failed to decrypt signing key")
+		}
+		armored = decrypted
+	}
+	if armored == "" {
+		return nil
+	}
+	passphrase := ""
+	if req.SigningKeyPassphrase != nil {
+		passphrase = *req.SigningKeyPassphrase
+	} else if current.SigningKeyPassphrase != "" {
+		decrypted, err := crypto.Decrypt(current.SigningKeyPassphrase)
+		if err != nil {
+			return errors.WrapIf(err, "failed to decrypt signing key passphrase")
+		}
+		passphrase = decrypted
+	}
+	encryptedKey, encryptedPassphrase, err := encryptSigningKeyInternal(armored, passphrase)
+	if err != nil {
+		return err
+	}
+	updates["signing_key"] = encryptedKey
+	updates["signing_key_passphrase"] = encryptedPassphrase
+	return nil
+}
+
 func (s *GitRepositoryService) ListBranches(ctx context.Context, id string) ([]gitops.BranchInfo, error) {
 	settings := s.settingsService.GetSettingsConfig()
 	listCtx, cancel := context.WithTimeout(ctx, timeouts.GetDuration(settings.GitOperationTimeout.AsInt(), timeouts.DefaultGitOperation))
@@ -433,12 +551,7 @@ func (s *GitRepositoryService) BrowseFiles(ctx context.Context, id, branch, path
 	if err != nil {
 		return nil, errors.WrapIf(err, "failed to clone repository")
 	}
-	defer func() {
-		if cleanupErr := s.Cleanup(repoPath); cleanupErr != nil {
-			// Log cleanup error but don't fail the operation
-			_ = cleanupErr
-		}
-	}()
+	defer s.Discard(ctx, repoPath)
 
 	// Browse the tree
 	files, err := s.BrowseTree(ctx, repoPath, path)
@@ -500,7 +613,10 @@ func (s *GitRepositoryService) processSyncItem(ctx context.Context, item gitops.
 }
 
 func (s *GitRepositoryService) updateExistingRepository(ctx context.Context, item gitops.RepositorySync, existing *GitRepository) error {
-	needsUpdate := s.checkRepositoryNeedsUpdate(item, existing)
+	needsUpdate, err := s.checkRepositoryNeedsUpdate(item, existing)
+	if err != nil {
+		return errors.WrapIff(err, "failed to reconcile repository %s", item.ID)
+	}
 
 	if needsUpdate {
 		// Use Save to trigger GORM callbacks including UpdatedAt
@@ -512,38 +628,65 @@ func (s *GitRepositoryService) updateExistingRepository(ctx context.Context, ite
 	return nil
 }
 
-func (s *GitRepositoryService) checkRepositoryNeedsUpdate(item gitops.RepositorySync, existing *GitRepository) bool {
+func (s *GitRepositoryService) checkRepositoryNeedsUpdate(item gitops.RepositorySync, existing *GitRepository) (bool, error) {
 	needsUpdate := utils.ApplyChanged(&existing.Name, mo.Some(item.Name))
 	needsUpdate = utils.ApplyChanged(&existing.URL, mo.Some(item.URL)) || needsUpdate
 	needsUpdate = utils.ApplyChanged(&existing.AuthType, mo.Some(item.AuthType)) || needsUpdate
 	needsUpdate = utils.ApplyChanged(&existing.Username, mo.Some(item.Username)) || needsUpdate
 	needsUpdate = utils.ApplyChanged(&existing.SSHHostKeyVerification, mo.Some(item.SSHHostKeyVerification)) || needsUpdate
+	needsUpdate = utils.ApplyChanged(&existing.CommitAuthorName, mo.Some(item.CommitAuthorName)) || needsUpdate
+	needsUpdate = utils.ApplyChanged(&existing.CommitAuthorEmail, mo.Some(item.CommitAuthorEmail)) || needsUpdate
 	needsUpdate = utils.ApplyNullable(&existing.Description, mo.PointerToOption(item.Description)) || needsUpdate
 	needsUpdate = utils.ApplyChanged(&existing.Enabled, mo.Some(item.Enabled)) || needsUpdate
 
-	// Handle Token update
-	if item.Token != "" {
-		encryptedToken, err := crypto.Encrypt(item.Token)
-		if err == nil {
-			needsUpdate = utils.ApplyChanged(&existing.Token, mo.Some(encryptedToken)) || needsUpdate
+	signingKey, passphrase := item.SigningKey, item.SigningKeyPassphrase
+	if signingKey != "" {
+		if _, err := git.ParseSigningKey(signingKey, passphrase); err != nil {
+			signingKey, passphrase = "", ""
 		}
-	} else if existing.Token != "" {
-		existing.Token = ""
-		needsUpdate = true
 	}
-
-	// Handle SSH Key update
-	if item.SSHKey != "" {
-		encryptedSSHKey, err := crypto.Encrypt(item.SSHKey)
-		if err == nil {
-			needsUpdate = utils.ApplyChanged(&existing.SSHKey, mo.Some(encryptedSSHKey)) || needsUpdate
+	for _, credential := range []struct {
+		field     *string
+		plaintext string
+	}{
+		{&existing.Token, item.Token},
+		{&existing.SSHKey, item.SSHKey},
+		{&existing.SigningKey, signingKey},
+		{&existing.SigningKeyPassphrase, passphrase},
+	} {
+		changed, err := applyEncryptedInternal(credential.field, credential.plaintext)
+		if err != nil {
+			return false, err
 		}
-	} else if existing.SSHKey != "" {
-		existing.SSHKey = ""
-		needsUpdate = true
+		needsUpdate = changed || needsUpdate
 	}
+	return needsUpdate, nil
+}
 
-	return needsUpdate
+// applyEncryptedInternal stores plaintext encrypted in field only when it differs from the stored value.
+func applyEncryptedInternal(field *string, plaintext string) (bool, error) {
+	if plaintext == "" {
+		if *field == "" {
+			return false, nil
+		}
+		*field = ""
+		return true, nil
+	}
+	if *field != "" {
+		current, err := crypto.Decrypt(*field)
+		if err != nil {
+			return false, errors.WrapIf(err, "failed to decrypt stored credential")
+		}
+		if current == plaintext {
+			return false, nil
+		}
+	}
+	encrypted, err := crypto.Encrypt(plaintext)
+	if err != nil {
+		return false, errors.WrapIf(err, "failed to encrypt credential")
+	}
+	*field = encrypted
+	return true, nil
 }
 
 func (s *GitRepositoryService) createNewRepository(ctx context.Context, item gitops.RepositorySync) error {
@@ -564,6 +707,14 @@ func (s *GitRepositoryService) createNewRepository(ctx context.Context, item git
 		}
 	}
 
+	var encryptedSigningKey, encryptedPassphrase string
+	if item.SigningKey != "" {
+		encryptedSigningKey, encryptedPassphrase, err = encryptSigningKeyInternal(item.SigningKey, item.SigningKeyPassphrase)
+		if err != nil {
+			return errors.WrapIff(err, "failed to encrypt signing key for repository %s", item.ID)
+		}
+	}
+
 	sshHostKeyVerification := item.SSHHostKeyVerification
 	if sshHostKeyVerification == "" {
 		sshHostKeyVerification = "accept_new"
@@ -577,6 +728,10 @@ func (s *GitRepositoryService) createNewRepository(ctx context.Context, item git
 		Token:                  encryptedToken,
 		SSHKey:                 encryptedSSHKey,
 		SSHHostKeyVerification: sshHostKeyVerification,
+		CommitAuthorName:       item.CommitAuthorName,
+		CommitAuthorEmail:      item.CommitAuthorEmail,
+		SigningKey:             encryptedSigningKey,
+		SigningKeyPassphrase:   encryptedPassphrase,
 		Description:            item.Description,
 		Enabled:                item.Enabled,
 		ID:                     item.ID,

@@ -186,7 +186,7 @@ test.describe('Notification settings', () => {
 
 		// Trigger test
 		await openTestMenu(page);
-		await page.getByRole('menuitem', { name: 'Simple Test Notification', exact: true }).click();
+		await page.getByRole('menuitem', { name: 'Simple', exact: true }).click();
 
 		// Handle Save & Test if needed
 		const saveAndTestButton = page.getByRole('button', { name: 'Save & Test', exact: true });
@@ -209,7 +209,7 @@ test.describe('Notification settings', () => {
 		await page.getByPlaceholder('Enter webhook token').fill('abc-def-ghi');
 
 		await openTestMenu(page);
-		await page.getByRole('menuitem', { name: 'Simple Test Notification', exact: true }).click();
+		await page.getByRole('menuitem', { name: 'Simple', exact: true }).click();
 
 		const saveAndTestButton = page.getByRole('button', { name: 'Save & Test', exact: true });
 		if (await saveAndTestButton.isVisible().catch(() => false)) {
@@ -232,7 +232,7 @@ test.describe('Notification settings', () => {
 			.fill('xoxb-123456789012-1234567890123-abcdefghijklmnopqrstuvwx');
 
 		await openTestMenu(page);
-		await page.getByRole('menuitem', { name: 'Simple Test Notification', exact: true }).click();
+		await page.getByRole('menuitem', { name: 'Simple', exact: true }).click();
 
 		const saveAndTestButton = page.getByRole('button', { name: 'Save & Test', exact: true });
 		if (await saveAndTestButton.isVisible().catch(() => false)) {
@@ -256,7 +256,7 @@ test.describe('Notification settings', () => {
 		await page.getByPlaceholder('@channel, 123456789, @another_channel').fill('123456789');
 
 		await openTestMenu(page);
-		await page.getByRole('menuitem', { name: 'Simple Test Notification', exact: true }).click();
+		await page.getByRole('menuitem', { name: 'Simple', exact: true }).click();
 
 		const saveAndTestButton = page.getByRole('button', { name: 'Save & Test', exact: true });
 		if (await saveAndTestButton.isVisible().catch(() => false)) {
@@ -276,7 +276,7 @@ test.describe('Notification settings', () => {
 		await page.getByPlaceholder('https://example.com/webhook').fill('https://example.com/webhook');
 
 		await openTestMenu(page);
-		await page.getByRole('menuitem', { name: 'Simple Test Notification', exact: true }).click();
+		await page.getByRole('menuitem', { name: 'Simple', exact: true }).click();
 
 		const saveAndTestButton = page.getByRole('button', { name: 'Save & Test', exact: true });
 		if (await saveAndTestButton.isVisible().catch(() => false)) {
@@ -299,7 +299,7 @@ test.describe('Notification settings', () => {
 		await page.locator('#generic-payload-template').fill(template);
 
 		await openTestMenu(page);
-		await page.getByRole('menuitem', { name: 'Simple Test Notification', exact: true }).click();
+		await page.getByRole('menuitem', { name: 'Simple', exact: true }).click();
 
 		const saveAndTestButton = page.getByRole('button', { name: 'Save & Test', exact: true });
 		if (await saveAndTestButton.isVisible().catch(() => false)) {
@@ -328,7 +328,7 @@ test.describe('Notification settings', () => {
 		await page.locator('#signal-recipients').fill('+1987654321');
 
 		await openTestMenu(page);
-		await page.getByRole('menuitem', { name: 'Simple Test Notification', exact: true }).click();
+		await page.getByRole('menuitem', { name: 'Simple', exact: true }).click();
 
 		const saveAndTestButton = page.getByRole('button', { name: 'Save & Test', exact: true });
 		if (await saveAndTestButton.isVisible().catch(() => false)) {
@@ -349,7 +349,7 @@ test.describe('Notification settings', () => {
 		await page.getByPlaceholder('my-updates').fill('arcane-updates');
 
 		await openTestMenu(page);
-		await page.getByRole('menuitem', { name: 'Simple Test Notification', exact: true }).click();
+		await page.getByRole('menuitem', { name: 'Simple', exact: true }).click();
 
 		const saveAndTestButton = page.getByRole('button', { name: 'Save & Test', exact: true });
 		if (await saveAndTestButton.isVisible().catch(() => false)) {

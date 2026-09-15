@@ -181,6 +181,7 @@ func (s *ProjectService) UpdateProjectWorkspace(ctx context.Context, projectID s
 		"action":          "update_project_workspace",
 		"fileChangeCount": len(manifest.FileChanges),
 	}, "could not log project workspace update")
+	s.filesChanged.Publish(proj.ID)
 	return s.GetProjectWorkspace(ctx, projectID)
 }
 

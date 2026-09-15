@@ -132,15 +132,35 @@
 		{ accessorKey: 'name', title: m.common_name(), sortable: true, cell: NameCell },
 		{ accessorKey: 'inUse', title: m.common_status(), sortable: true, cell: StatusCell },
 		{ accessorKey: 'driver', title: m.common_driver(), sortable: true, cell: DriverCell },
-		{ accessorKey: 'scope', title: m.common_scope(), sortable: true, cell: ScopeCell }
+		{ accessorKey: 'scope', title: m.common_scope(), sortable: true, cell: ScopeCell },
+		{
+			id: 'subnet',
+			accessorFn: (row) => ipamValues(row, 'subnet').join(' '),
+			title: m.common_subnet(),
+			sortable: true,
+			cell: SubnetCell
+		},
+		{
+			id: 'gateway',
+			accessorFn: (row) => ipamValues(row, 'gateway').join(' '),
+			title: m.common_gateway(),
+			sortable: true,
+			cell: GatewayCell
+		}
 	] satisfies ColumnSpec<NetworkSummaryDto>[];
 
 	const mobileFields = [
 		{ id: 'id', label: m.common_id(), defaultVisible: false },
 		{ id: 'inUse', label: m.common_status(), defaultVisible: true },
 		{ id: 'driver', label: m.common_driver(), defaultVisible: true },
-		{ id: 'scope', label: m.common_scope(), defaultVisible: true }
+		{ id: 'scope', label: m.common_scope(), defaultVisible: true },
+		{ id: 'subnet', label: m.common_subnet(), defaultVisible: true },
+		{ id: 'gateway', label: m.common_gateway(), defaultVisible: true }
 	];
+
+	function ipamValues(item: NetworkSummaryDto, key: 'subnet' | 'gateway'): string[] {
+		return (item.ipam?.config ?? []).map((c) => c[key]).filter((v): v is string => !!v);
+	}
 
 	const bulkActions = $derived.by<BulkAction[]>(() => [
 		{
@@ -182,6 +202,32 @@
 
 {#snippet ScopeCell({ item }: { item: NetworkSummaryDto })}
 	<Badge variant={item.scope === 'local' ? 'green' : 'amber'} minWidth="20">{capitalizeFirstLetter(item.scope)}</Badge>
+{/snippet}
+
+{#snippet SubnetCell({ item }: { item: NetworkSummaryDto })}
+	{@const subnets = ipamValues(item, 'subnet')}
+	{#if subnets.length === 0}
+		<span class="text-muted-foreground">—</span>
+	{:else}
+		<div class="flex flex-col font-mono text-sm">
+			{#each subnets as subnet (subnet)}
+				<span>{subnet}</span>
+			{/each}
+		</div>
+	{/if}
+{/snippet}
+
+{#snippet GatewayCell({ item }: { item: NetworkSummaryDto })}
+	{@const gateways = ipamValues(item, 'gateway')}
+	{#if gateways.length === 0}
+		<span class="text-muted-foreground">—</span>
+	{:else}
+		<div class="flex flex-col font-mono text-sm">
+			{#each gateways as gateway (gateway)}
+				<span>{gateway}</span>
+			{/each}
+		</div>
+	{/if}
 {/snippet}
 
 {#snippet StatusCell({ item }: { item: NetworkSummaryDto })}
@@ -235,6 +281,22 @@
 				type: 'badge' as const,
 				badgeVariant: item.scope === 'local' ? ('green' as const) : ('amber' as const),
 				show: mobileFieldVisibility['scope'] ?? true
+			},
+			{
+				label: m.common_subnet(),
+				getValue: (item: NetworkSummaryDto) => ipamValues(item, 'subnet').join(', ') || '—',
+				icon: NetworksIcon,
+				iconVariant: 'gray' as const,
+				type: 'mono' as const,
+				show: mobileFieldVisibility['subnet'] ?? true
+			},
+			{
+				label: m.common_gateway(),
+				getValue: (item: NetworkSummaryDto) => ipamValues(item, 'gateway').join(', ') || '—',
+				icon: GlobeIcon,
+				iconVariant: 'gray' as const,
+				type: 'mono' as const,
+				show: mobileFieldVisibility['gateway'] ?? true
 			}
 		]}
 		rowActions={RowActions}

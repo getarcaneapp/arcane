@@ -406,14 +406,17 @@ func (s *EnvironmentService) SyncRepositoriesToEnvironment(ctx context.Context, 
 	return s.fanOutSyncToEnvironment(ctx, environmentID, "git repositories", "/api/git-repositories/sync",
 		func(repo gitrepo.GitRepository) (gitops.RepositorySync, bool, error) {
 			item := gitops.RepositorySync{
-				ID:          repo.ID,
-				Name:        repo.Name,
-				URL:         repo.URL,
-				AuthType:    repo.AuthType,
-				Username:    repo.Username,
-				Description: repo.Description,
-				Enabled:     repo.Enabled,
-				CreatedAt:   repo.CreatedAt,
+				ID:                     repo.ID,
+				Name:                   repo.Name,
+				URL:                    repo.URL,
+				AuthType:               repo.AuthType,
+				Username:               repo.Username,
+				SSHHostKeyVerification: repo.SSHHostKeyVerification,
+				CommitAuthorName:       repo.CommitAuthorName,
+				CommitAuthorEmail:      repo.CommitAuthorEmail,
+				Description:            repo.Description,
+				Enabled:                repo.Enabled,
+				CreatedAt:              repo.CreatedAt,
 			}
 			if repo.UpdatedAt != nil {
 				item.UpdatedAt = *repo.UpdatedAt
@@ -433,6 +436,22 @@ func (s *EnvironmentService) SyncRepositoriesToEnvironment(ctx context.Context, 
 					return gitops.RepositorySync{}, false, fmt.Errorf("failed to decrypt SSH key for repository %s for sync: %w", repo.ID, err)
 				}
 				item.SSHKey = decryptedSSHKey
+			}
+
+			if repo.SigningKey != "" {
+				decryptedSigningKey, err := crypto.Decrypt(repo.SigningKey)
+				if err != nil {
+					return gitops.RepositorySync{}, false, fmt.Errorf("failed to decrypt signing key for repository %s for sync: %w", repo.ID, err)
+				}
+				item.SigningKey = decryptedSigningKey
+			}
+
+			if repo.SigningKeyPassphrase != "" {
+				decryptedPassphrase, err := crypto.Decrypt(repo.SigningKeyPassphrase)
+				if err != nil {
+					return gitops.RepositorySync{}, false, fmt.Errorf("failed to decrypt signing key passphrase for repository %s for sync: %w", repo.ID, err)
+				}
+				item.SigningKeyPassphrase = decryptedPassphrase
 			}
 
 			return item, true, nil

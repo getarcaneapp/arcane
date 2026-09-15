@@ -83,6 +83,8 @@ export type Settings = {
 	trivyServerUrl: string;
 	trivyServerToken: string;
 	trivyIgnoreUnfixed: boolean;
+	trivyConfig: string;
+	trivyIgnore: string;
 	imagePatchSuffix: string;
 	imagePatchTimeoutSec: number;
 	imagePatchAllPlatforms: boolean;

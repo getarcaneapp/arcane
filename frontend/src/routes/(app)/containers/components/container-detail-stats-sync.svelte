@@ -11,16 +11,19 @@
 		containerId,
 		enabled,
 		stats = $bindable<ContainerStatsType | null>(null),
-		hasInitialStatsLoaded = $bindable(false)
+		hasInitialStatsLoaded = $bindable(false),
+		statsError = $bindable(false)
 	}: {
 		containerId?: string;
 		enabled: boolean;
 		stats?: ContainerStatsType | null;
 		hasInitialStatsLoaded?: boolean;
+		statsError?: boolean;
 	} = $props();
 
 	stats = null;
 	hasInitialStatsLoaded = false;
+	statsError = false;
 
 	let statsWebSocket: ReconnectingWebSocket<ContainerStatsType> | null = null;
 	let isConnecting = false;
@@ -60,13 +63,17 @@
 						lastStatsRead = statsData.read;
 						stats = { ...statsData, statsHistory: history };
 						hasInitialStatsLoaded = true;
+						statsError = false;
 					},
 					onOpen: () => {
 						isConnecting = false;
+						statsError = false;
 					},
-					onError: (err) => {
-						console.error('Stats WebSocket error:', err);
+					onError: () => {
 						isConnecting = false;
+						stats = null;
+						hasInitialStatsLoaded = false;
+						statsError = true;
 					},
 					onClose: () => {
 						isConnecting = false;
@@ -81,10 +88,8 @@
 		);
 		if (requestGeneration !== generation) return;
 		if (operationResult.error !== null) {
-			const error = operationResult.error;
-
-			console.error('Failed to connect to stats stream:', error);
 			isConnecting = false;
+			statsError = true;
 		}
 	}
 

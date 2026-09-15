@@ -16,6 +16,7 @@
 		type FieldSpec,
 		type GroupedData,
 		type GroupSelectionState,
+		type SelectionModifiers,
 		type SortState,
 		encodeHidden,
 		applyHiddenPatch,
@@ -26,7 +27,13 @@
 		type BulkAction
 	} from './arcane-table.types.svelte';
 	import type { Component } from 'svelte';
-	import { extractPersistedPreferences, fromFilterMap, restoreTableRequestOptions, toFilterMap } from './arcane-table.utils';
+	import {
+		extractPersistedPreferences,
+		fromFilterMap,
+		getTableRowsForItems,
+		restoreTableRequestOptions,
+		toFilterMap
+	} from './arcane-table.utils';
 	import ArcaneTablePagination from './arcane-table-pagination.svelte';
 	import ArcaneTableHeader from './arcane-table-header.svelte';
 	import ArcaneTableCell from './arcane-table-cell.svelte';
@@ -306,12 +313,25 @@
 		}
 	}
 
-	function onToggleRow(checked: boolean, id: string) {
+	// Shift-select anchor; valid only against the row order and selection array it was recorded with.
+	let rangeAnchor: { id: string; orderKey: string; selection: string[] | undefined } | null = null;
+
+	function onToggleRow(checked: boolean, id: string, modifiers?: SelectionModifiers) {
+		const ids = orderedRowIds;
+		const orderKey = ids.join('\0');
+		const anchor =
+			modifiers?.shiftKey && rangeAnchor?.orderKey === orderKey && rangeAnchor.selection === selectedIds ? rangeAnchor : null;
+		const anchorIndex = anchor ? ids.indexOf(anchor.id) : -1;
+		const targetIndex = anchor ? ids.indexOf(id) : -1;
+		const useRange = anchorIndex >= 0 && targetIndex >= 0;
+		const rangeIds = useRange ? ids.slice(Math.min(anchorIndex, targetIndex), Math.max(anchorIndex, targetIndex) + 1) : [id];
 		if (checked) {
-			if (!selectedIds?.includes(id)) selectedIds = [...(selectedIds ?? []), id];
+			selectedIds = Array.from(new Set([...(selectedIds ?? []), ...rangeIds]));
 		} else {
-			selectedIds = (selectedIds ?? []).filter((x) => x !== id);
+			const remove = new Set(rangeIds);
+			selectedIds = (selectedIds ?? []).filter((x) => !remove.has(x));
 		}
+		rangeAnchor = { id: useRange && anchor ? anchor.id : id, orderKey, selection: selectedIds };
 	}
 
 	function buildColumns(specs: ColumnSpec<TData>[], isSelectionDisabled: boolean): ArcaneColumnDef<TData>[] {
@@ -339,7 +359,7 @@
 					const id = (row.original as TData).id;
 					return renderComponent(TableCheckbox, {
 						checked: (selectedIds ?? []).includes(id),
-						onCheckedChange: (value) => onToggleRow(!!value, id),
+						onCheckedChange: (value, modifiers) => onToggleRow(!!value, id, modifiers),
 						'aria-label': m.common_select_row()
 					});
 				},
@@ -616,6 +636,15 @@
 		}));
 	});
 
+	// Row ids in display order (flat model, or expanded groups in group order), matching the desktop view.
+	const orderedRowIds = $derived.by((): string[] => {
+		const groups = effectiveGroupedRows;
+		if (!groups || groups.length === 0) return table.getRowModel().rows.map((row) => row.id);
+		return groups.flatMap((group) =>
+			(groupCollapsedState[group.groupName] ?? true) ? [] : getTableRowsForItems(rowIndex, group.items).map((row) => row.id)
+		);
+	});
+
 	// Get selection state for a group
 	function getGroupSelectionState(groupItems: TData[]): GroupSelectionState {
 		const groupIds = groupItems.map((item) => item.id);
@@ -741,7 +770,7 @@
 					onGroupToggle={handleGroupToggle}
 					{getGroupSelectionState}
 					{onToggleGroupSelection}
-					onToggleRowSelection={(id, selected) => onToggleRow(selected, id)}
+					onToggleRowSelection={(id, selected, modifiers) => onToggleRow(selected, id, modifiers)}
 					{unstyled}
 					{expandedRowContent}
 					{expandedRows}

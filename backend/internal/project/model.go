@@ -1,11 +1,12 @@
 package project
 
 import (
+	"time"
+
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/gitrepo"
-
-	"time"
+	gitopstypes "github.com/getarcaneapp/arcane/types/v2/gitops"
 )
 
 type ProjectStatus string
@@ -100,6 +101,51 @@ type GitOpsSync struct {
 	SyncDirectory          bool       `json:"syncDirectory" gorm:"column:sync_directory"` // Sync entire directory containing compose file
 	PullImageAfterSync     bool       `json:"pullImageAfterSync" gorm:"column:pull_image_after_sync;default:false"`
 	RedeployAfterSync      bool       `json:"redeployAfterSync" gorm:"column:redeploy_after_sync;default:false"`
+
+	// Backup mode ("backup" commits saved project files to the repository;
+	// "deploy" is the original pull direction).
+	Mode                string               `json:"mode" gorm:"column:mode;default:'deploy'" sortable:"true" search:"mode,backup,deploy,direction"`
+	BackupDirectory     string               `json:"backupDirectory" gorm:"column:backup_directory" sortable:"true" search:"backup,directory,destination,folder"`
+	BackupPaths         database.StringSlice `json:"backupPaths" gorm:"column:backup_paths;type:text"`
+	BackupOnSave        bool                 `json:"backupOnSave" gorm:"column:backup_on_save;default:true"`
+	BackupPending       bool                 `json:"backupPending" gorm:"column:backup_pending;default:false"`
+	BackupPendingSince  *time.Time           `json:"backupPendingSince,omitempty" gorm:"column:backup_pending_since"`
+	BackupConflict      bool                 `json:"backupConflict" gorm:"column:backup_conflict;default:false"`
+	BackupFailureReason *string              `json:"backupFailureReason,omitempty" gorm:"column:backup_failure_reason"`
+	LastBackupAt        *time.Time           `json:"lastBackupAt,omitempty" gorm:"column:last_backup_at" sortable:"true"`
+	LastBackupSnapshot  *string              `json:"-" gorm:"column:last_backup_snapshot"`
+}
+
+// IsBackup reports whether the sync commits project files to Git.
+func (s GitOpsSync) IsBackup() bool {
+	return s.Mode == gitopstypes.SyncModeBackup
+}
+
+// BackupState derives the persisted backup lifecycle state.
+func (s GitOpsSync) BackupState() string {
+	if !s.IsBackup() {
+		return ""
+	}
+	status := ""
+	if s.LastSyncStatus != nil {
+		status = *s.LastSyncStatus
+	}
+	switch {
+	case status == "running":
+		return gitopstypes.BackupStateBackingUp
+	case s.BackupConflict:
+		return gitopstypes.BackupStateNeedsAttention
+	case status == "failed":
+		return gitopstypes.BackupStateFailed
+	case !s.AutoSync:
+		return gitopstypes.BackupStatePaused
+	case s.BackupPending:
+		return gitopstypes.BackupStatePending
+	case s.LastBackupAt != nil:
+		return gitopstypes.BackupStateBackedUp
+	default:
+		return gitopstypes.BackupStateNever
+	}
 }
 
 func (GitOpsSync) TableName() string {

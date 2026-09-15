@@ -3,6 +3,7 @@ package image
 import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 
+	"cmp"
 	"context"
 	"io"
 	"log/slog"
@@ -803,24 +804,24 @@ func (s *ImageService) ListImagesPaginated(ctx context.Context, params paginatio
 		}
 	}
 
+	var vulnerabilityMap map[string]*vulnerabilitytypes.ScanSummary
+	if s.vulnerabilityService != nil && len(imageIDs) > 0 {
+		var err error
+		vulnerabilityMap, err = s.vulnerabilityService.GetScanSummariesByImageIDs(ctx, imageIDs)
+		if err != nil {
+			return nil, pagination.Response{}, err
+		}
+	}
+
 	projectIDByName := s.BuildProjectIDMap(ctx, containers)
 	usageMap := BuildVolumeUsageMap(containers, projectIDByName)
 	updateMap := buildUpdateMapInternal(updateRecords)
 
-	items := MapDockerImagesToDTOs(dockerImages, containers, usageMap, updateMap, nil)
+	items := MapDockerImagesToDTOs(dockerImages, containers, usageMap, updateMap, vulnerabilityMap)
 
 	config := s.getImagePaginationConfig()
 
 	result := config.SearchOrderAndPaginate(items, params)
-
-	if s.vulnerabilityService != nil && len(result.Items) > 0 {
-		pageImageIDs := getImageIDsFromSummariesInternal(result.Items)
-		vulnerabilityMap, err := s.vulnerabilityService.GetScanSummariesByImageIDs(ctx, pageImageIDs)
-		if err != nil {
-			return nil, pagination.Response{}, err
-		}
-		applyVulnerabilitySummariesToItemsInternal(result.Items, vulnerabilityMap)
-	}
 
 	paginationResp := pagination.BuildResponse(result.TotalCount, result.TotalAvailable, params)
 
@@ -1024,36 +1025,6 @@ func buildUpdateMapInternal(records []imageupdate.ImageUpdateRecord) map[string]
 	return updateMap
 }
 
-func getImageIDsFromSummariesInternal(items []imagetypes.Summary) []string {
-	seen := make(map[string]struct{}, len(items))
-	ids := make([]string, 0, len(items))
-
-	for _, item := range items {
-		if item.ID == "" {
-			continue
-		}
-		if _, exists := seen[item.ID]; exists {
-			continue
-		}
-		seen[item.ID] = struct{}{}
-		ids = append(ids, item.ID)
-	}
-
-	return ids
-}
-
-func applyVulnerabilitySummariesToItemsInternal(items []imagetypes.Summary, vulnerabilityMap map[string]*vulnerabilitytypes.ScanSummary) {
-	if len(items) == 0 || len(vulnerabilityMap) == 0 {
-		return
-	}
-
-	for i := range items {
-		if summary, exists := vulnerabilityMap[items[i].ID]; exists {
-			items[i].VulnerabilityScan = summary
-		}
-	}
-}
-
 func parseRepoAndTagFromRepoTag(repoTag string) (repo, tag string) {
 	if named, err := ref.ParseNormalizedNamed(repoTag); err == nil {
 		repo = ref.FamiliarName(named)
@@ -1180,6 +1151,14 @@ func MapDockerImagesToDTOs(dockerImages []image.Summary, containers []container.
 	return items
 }
 
+func vulnerabilitySortCountsInternal(i imagetypes.Summary) vulnerabilitytypes.SeveritySummary {
+	scan := i.VulnerabilityScan
+	if scan == nil || scan.Status != vulnerabilitytypes.ScanStatusCompleted || scan.Summary == nil {
+		return vulnerabilitytypes.SeveritySummary{Total: -1}
+	}
+	return *scan.Summary
+}
+
 func (s *ImageService) getImagePaginationConfig() pagination.Config[imagetypes.Summary] {
 	return pagination.Config[imagetypes.Summary]{
 		SearchAccessors: []pagination.SearchAccessor[imagetypes.Summary]{
@@ -1249,6 +1228,17 @@ func (s *ImageService) getImagePaginationConfig() pagination.Config[imagetypes.S
 						return -1
 					}
 					return 1
+				},
+			},
+			{
+				Key: "vulnerabilities",
+				Fn: func(a, b imagetypes.Summary) int {
+					ac, bc := vulnerabilitySortCountsInternal(a), vulnerabilitySortCountsInternal(b)
+					return cmp.Or(
+						cmp.Compare(ac.Total, bc.Total),
+						cmp.Compare(ac.Critical, bc.Critical),
+						cmp.Compare(ac.High, bc.High),
+					)
 				},
 			},
 		},

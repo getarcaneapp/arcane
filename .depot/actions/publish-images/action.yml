@@ -1,0 +1,71 @@
+name: Publish next registry images
+description: Build and sign manager and agent images for one registry
+inputs:
+  registry:
+    description: Destination registry
+    required: true
+  username:
+    description: Registry username
+    required: true
+  password:
+    description: Registry password
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Setup Just
+      uses: extractions/setup-just@v4
+
+    - name: Setup Vite+
+      uses: voidzero-dev/setup-vp@9446e853b27985e00fb1b21193be026fc09198db
+      with:
+        node-version: 26
+        cache: true
+        run-install: true
+
+    - name: Setup Go
+      uses: actions/setup-go@v7
+      with:
+        go-version-file: backend/go.mod
+        cache-dependency-path: backend/go.sum
+
+    - name: Set up Depot CLI
+      uses: depot/setup-action@v1
+      with:
+        configure-docker: true
+
+    - name: Login to destination registry
+      uses: docker/login-action@v4
+      with:
+        registry: ${{ inputs.registry }}
+        username: ${{ inputs.username }}
+        password: ${{ inputs.password }}
+
+    - name: Install cosign
+      uses: sigstore/cosign-installer@v4.1.2
+
+    - name: Validate destination registry
+      shell: bash
+      run: |
+        case '${{ inputs.registry }}' in
+          ghcr.io|docker.io|quay.io) ;;
+          *) echo 'Unsupported image registry' >&2; exit 1 ;;
+        esac
+
+    - name: Capture frontend build versions
+      id: frontend-versions
+      shell: bash
+      run: |
+        echo "node_version=$(node --version)" >> "$GITHUB_OUTPUT"
+        echo "sveltekit_version=$(vp -C frontend node -p 'require("@sveltejs/kit/package.json").version')" >> "$GITHUB_OUTPUT"
+
+    - name: Run GoReleaser
+      uses: goreleaser/goreleaser-action@v7
+      with:
+        distribution: goreleaser-pro
+        version: '~> 2'
+        args: release --clean --nightly --skip=announce,validate,archive,nfpm,notarize,homebrew
+      env:
+        IMAGE_REGISTRY: ${{ inputs.registry }}
+        NODE_VERSION: ${{ steps.frontend-versions.outputs.node_version }}
+        SVELTEKIT_VERSION: ${{ steps.frontend-versions.outputs.sveltekit_version }}

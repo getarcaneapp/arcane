@@ -86,6 +86,10 @@ export interface GitRepositoryCreateDto {
 	token?: string;
 	sshKey?: string;
 	sshHostKeyVerification?: string;
+	commitAuthorName?: string;
+	commitAuthorEmail?: string;
+	signingKey?: string;
+	signingKeyPassphrase?: string;
 	description?: string;
 	enabled?: boolean;
 }
@@ -98,6 +102,10 @@ export interface GitRepositoryUpdateDto {
 	token?: string;
 	sshKey?: string;
 	sshHostKeyVerification?: string;
+	commitAuthorName?: string;
+	commitAuthorEmail?: string;
+	signingKey?: string;
+	signingKeyPassphrase?: string;
 	description?: string;
 	enabled?: boolean;
 }
@@ -109,19 +117,42 @@ export interface GitRepository {
 	authType: string;
 	hasToken: boolean;
 	hasSshKey: boolean;
+	hasSigningKey: boolean;
 	username?: string;
 	sshHostKeyVerification?: string;
+	commitAuthorName?: string;
+	commitAuthorEmail?: string;
 	description?: string;
 	enabled: boolean;
 	createdAt: string;
 	updatedAt: string;
 }
 
+export type GitOpsSyncMode = 'deploy' | 'backup';
+
+export type GitOpsBackupState = 'never' | 'pending' | 'backing_up' | 'backed_up' | 'paused' | 'failed' | 'needs_attention';
+
+export type GitOpsBackupFailureReason =
+	| 'repository'
+	| 'auth'
+	| 'project_missing'
+	| 'snapshot'
+	| 'unreadable_files'
+	| 'limits'
+	| 'conflict'
+	| 'destination_occupied'
+	| 'push_rejected';
+
 export interface GitOpsSyncCreateDto {
 	name: string;
 	repositoryId: string;
 	branch: string;
-	composePath: string;
+	composePath?: string;
+	mode?: GitOpsSyncMode;
+	projectId?: string;
+	backupDirectory?: string;
+	backupPaths?: string[];
+	backupOnSave?: boolean;
 	targetType?: string;
 	projectName?: string;
 	autoSync?: boolean;
@@ -147,6 +178,8 @@ export interface GitOpsSyncUpdateDto {
 	composePath?: string;
 	targetType?: string;
 	projectName?: string;
+	backupPaths?: string[];
+	backupOnSave?: boolean;
 	autoSync?: boolean;
 	syncInterval?: number;
 	syncDirectory?: boolean;
@@ -172,6 +205,14 @@ export interface GitOpsSync {
 	branch: string;
 	composePath: string;
 	targetType?: string;
+	mode: GitOpsSyncMode;
+	backupDirectory?: string;
+	backupPaths?: string[];
+	backupOnSave: boolean;
+	backupPending: boolean;
+	backupState?: GitOpsBackupState;
+	backupFailureReason?: GitOpsBackupFailureReason;
+	lastBackupAt?: string;
 	projectName: string;
 	projectId?: string;
 	autoSync: boolean;
@@ -204,6 +245,8 @@ export interface GitOpsSyncCounts {
 	totalSyncs: number;
 	activeSyncs: number;
 	successfulSyncs: number;
+	deploySyncs: number;
+	backupSyncs: number;
 }
 
 export interface SyncResult {
@@ -234,6 +277,52 @@ export interface SyncStatus {
 	lastSyncStatus?: string;
 	lastSyncError?: string;
 	lastSyncCommit?: string;
+	mode: GitOpsSyncMode;
+	backupState?: GitOpsBackupState;
+	backupPending: boolean;
+	backupFailureReason?: GitOpsBackupFailureReason;
+	lastBackupAt?: string;
+}
+
+export type GitOpsBackupPreviewState = 'clean' | 'changes' | 'conflict' | 'destination_occupied';
+
+export interface GitOpsBackupFileChange {
+	path: string;
+	change: 'added' | 'modified' | 'removed';
+}
+
+export interface GitOpsBackupPreview {
+	state: GitOpsBackupPreviewState;
+	remoteCommit?: string;
+	changes: GitOpsBackupFileChange[];
+	conflicts: GitOpsBackupFileChange[];
+	files: string[];
+}
+
+export interface GitOpsBackupHistoryEntry {
+	commit: string;
+	author: string;
+	message: string;
+	date: string;
+	files: string[];
+}
+
+export interface GitOpsBackupHistoryResponse {
+	entries: GitOpsBackupHistoryEntry[];
+}
+
+export interface GitOpsBackupFileDiff {
+	path: string;
+	patch: string;
+}
+
+export interface GitOpsBackupRevision {
+	entry: GitOpsBackupHistoryEntry;
+	diffs: GitOpsBackupFileDiff[];
+}
+
+export interface ResolveGitOpsBackupConflictRequest {
+	strategy: 'use_arcane';
 }
 
 export interface GitRepositoryTestResponse {
@@ -256,6 +345,19 @@ export interface ImportGitOpsSyncRequest {
 	dockerComposePath: string;
 	autoSync: boolean;
 	syncInterval: number;
+	syncDirectory?: boolean;
+	maxSyncFiles?: number;
+	maxSyncTotalSize?: number;
+	maxSyncBinarySize?: number;
+	projectName?: string;
+	pullImageAfterSync?: boolean;
+	redeployAfterSync?: boolean;
+	preDeployScriptPath?: string;
+	preDeployRunnerImage?: string;
+	preDeployEnv?: string;
+	preDeployExtraMounts?: string;
+	preDeployTimeoutSec?: number;
+	preDeployNetworkMode?: string;
 }
 
 export interface ImportGitOpsSyncResponse {

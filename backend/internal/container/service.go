@@ -1388,36 +1388,6 @@ func (s *ContainerService) StreamStats(ctx context.Context, containerID string, 
 	}
 }
 
-func (s *ContainerService) StreamLogs(ctx context.Context, containerID string, logsChan chan<- string, follow bool, tail, since string, timestamps bool) error {
-	dockerClient, err := s.dockerService.GetClient(ctx)
-	if err != nil {
-		return errors.WrapIf(err, "failed to connect to Docker")
-	}
-
-	containerInspect, err := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, client.ContainerInspectOptions{})
-	if err != nil {
-		return errors.WrapIf(err, "failed to inspect container for logs")
-	}
-
-	options := client.ContainerLogsOptions{
-		ShowStdout: true,
-		ShowStderr: true,
-		Follow:     follow,
-		Tail:       tail,
-		Since:      since,
-		Timestamps: timestamps,
-	}
-
-	logs, err := dockerClient.ContainerLogs(ctx, containerID, options)
-	if err != nil {
-		return errors.WrapIf(err, "failed to get container logs")
-	}
-	defer func() { _ = logs.Close() }()
-
-	isTTY := containerInspect.Container.Config != nil && containerInspect.Container.Config.Tty
-	return dockerutils.StreamContainerLogs(ctx, logs, logsChan, follow, isTTY)
-}
-
 func (s *ContainerService) ListContainersPaginated(
 	ctx context.Context,
 	params pagination.QueryParams,

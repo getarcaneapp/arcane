@@ -437,6 +437,7 @@
 	<ContainerStatsCell
 		value={statsManager.getCPUPercent(item.id)}
 		loading={statsManager.isLoading(item.id) ?? false}
+		unavailable={statsManager.hasError(item.id)}
 		stopped={item.state !== 'running'}
 		type="cpu"
 	/>
@@ -444,7 +445,13 @@
 
 {#snippet MemoryCell({ item }: { item: ContainerSummaryDto })}
 	{@const memoryData = statsManager.getMemoryUsage(item.id)}
-	<ContainerStatsCell value={memoryData?.usage} limit={memoryData?.limit} stopped={item.state !== 'running'} type="memory" />
+	<ContainerStatsCell
+		value={memoryData?.usage}
+		limit={memoryData?.limit}
+		unavailable={statsManager.hasError(item.id)}
+		stopped={item.state !== 'running'}
+		type="memory"
+	/>
 {/snippet}
 
 {#snippet PortsCell({ item }: { item: ContainerSummaryDto })}
@@ -625,7 +632,7 @@
 				getValue: (item: ContainerSummaryDto) => {
 					const cpu = statsManager.getCPUPercent(item.id);
 					if (item.state !== 'running') return m.common_na();
-					if (cpu === undefined) return '...';
+					if (cpu === undefined) return statsManager.hasError(item.id) ? m.common_unavailable() : '...';
 					return `${cpu.toFixed(1)}%`;
 				},
 				icon: ClockIcon,
@@ -637,7 +644,7 @@
 				getValue: (item: ContainerSummaryDto) => {
 					const memData = statsManager.getMemoryUsage(item.id);
 					if (item.state !== 'running') return m.common_na();
-					if (!memData?.usage) return '...';
+					if (!memData?.usage) return statsManager.hasError(item.id) ? m.common_unavailable() : '...';
 					return `${(memData.usage / 1024 / 1024).toFixed(0)} MB`;
 				},
 				icon: ClockIcon,

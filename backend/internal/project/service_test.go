@@ -82,7 +82,7 @@ func setupProjectTestDB(t *testing.T) *database.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&Project{}, &ProjectTag{}, &settings.SettingVariable{}, &imageupdate.ImageUpdateRecord{}, &event.Event{}))
+	require.NoError(t, db.AutoMigrate(&Project{}, &ProjectTag{}, &GitOpsSync{}, &settings.SettingVariable{}, &imageupdate.ImageUpdateRecord{}, &event.Event{}))
 	return &database.DB{DB: db}
 }
 

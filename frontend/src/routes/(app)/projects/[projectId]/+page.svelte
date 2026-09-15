@@ -24,6 +24,7 @@
 	import { type TabItem } from '#lib/components/tab-bar/index.js';
 	import TabbedPageLayout from '#lib/layouts/tabbed-page-layout.svelte';
 	import ActionButtons from '#lib/components/action-buttons.svelte';
+	import ProjectGitBackupSummary from '#lib/components/gitops/project-git-backup-summary.svelte';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import * as ArcaneTooltip from '#lib/components/arcane-tooltip/index.js';
 	import { getStatusVariant, getThemedIconUrl } from '#lib/utils/docker.js';
@@ -1472,6 +1473,9 @@
 		<div class="flex h-full min-h-0 flex-col">
 			{@render configurationErrorNotice()}
 			{@render gitSourceNotice()}
+			{#if !isGitOpsManaged}
+				<ProjectGitBackupSummary environmentId={envId} projectId={project.id} projectName={project.name} />
+			{/if}
 			{@render composeFilesNotice()}
 			<div class="mb-2 flex shrink-0 items-center justify-end gap-2">
 				<label for="layout-mode-toggle" class="cursor-pointer text-xs text-muted-foreground" title={m.project_view_description()}>

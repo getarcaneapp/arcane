@@ -22,7 +22,7 @@
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
 	import { hasPermission } from '#lib/utils/auth.js';
-	import { mapVulnerabilityPage, mapVulnerabilityRequest } from '#lib/utils/vulnerability.js';
+	import { mapVulnerabilityPage, mapVulnerabilityRequest, withVulnerabilityToggles } from '#lib/utils/vulnerability.js';
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';
 
 	let { data } = $props();
@@ -34,23 +34,14 @@
 	let vulnerabilities = $derived<Paginated<VulnerabilityRow>>(data.vulnerabilities);
 	let requestOptions = $derived<SearchPaginationSortRequest>(data.vulnerabilityRequestOptions);
 	let showIgnored = $state(false);
-
-	function withIgnoredFilter(options: SearchPaginationSortRequest, show: boolean): SearchPaginationSortRequest {
-		const filters = { ...options.filters };
-		if (show) {
-			filters['ignored'] = 'true';
-		} else {
-			delete filters['ignored'];
-		}
-
-		return {
-			...options,
-			filters: Object.keys(filters).length > 0 ? filters : undefined
-		};
-	}
+	let fixAvailable = $state(false);
 
 	function toggleIgnored(next: boolean) {
 		showIgnored = next;
+	}
+
+	function toggleFixAvailable(next: boolean) {
+		fixAvailable = next;
 	}
 	let isLoading = $state({ refreshing: false, scanningAll: false });
 	let scanProgress = $state({ current: 0, total: 0 });
@@ -128,7 +119,7 @@
 		}
 		await featureStore.refresh(requestedEnvId);
 		if (requestedEnvId !== currentEnvId || !vulnerabilityManagementEnabled) return;
-		const requestForApi = mapVulnerabilityRequest(withIgnoredFilter(requestOptions, showIgnored));
+		const requestForApi = mapVulnerabilityRequest(withVulnerabilityToggles(requestOptions, { showIgnored, fixAvailable }));
 		await parallelRefresh(
 			{
 				summary: {
@@ -424,6 +415,8 @@
 								bind:requestOptions
 								{showIgnored}
 								onToggleIgnored={toggleIgnored}
+								{fixAvailable}
+								onToggleFixAvailable={toggleFixAvailable}
 							/>
 						</div>
 					</Tabs.Content>

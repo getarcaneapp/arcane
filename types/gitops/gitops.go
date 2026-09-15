@@ -2,6 +2,40 @@ package gitops
 
 import "time"
 
+const (
+	// SyncModeDeploy pulls configuration from the repository into Arcane.
+	SyncModeDeploy = "deploy"
+	// SyncModeBackup commits saved project configuration to the repository.
+	SyncModeBackup = "backup"
+)
+
+const (
+	BackupStateNever          = "never"
+	BackupStatePending        = "pending"
+	BackupStateBackingUp      = "backing_up"
+	BackupStateBackedUp       = "backed_up"
+	BackupStatePaused         = "paused"
+	BackupStateFailed         = "failed"
+	BackupStateNeedsAttention = "needs_attention"
+)
+
+const (
+	BackupFailureRepository          = "repository"
+	BackupFailureAuth                = "auth"
+	BackupFailureProjectMissing      = "project_missing"
+	BackupFailureSnapshot            = "snapshot"
+	BackupFailureUnreadableFiles     = "unreadable_files"
+	BackupFailureLimits              = "limits"
+	BackupFailureConflict            = "conflict"
+	BackupFailureDestinationOccupied = "destination_occupied"
+	BackupFailurePushRejected        = "push_rejected"
+)
+
+const (
+	// BackupConflictUseArcane replaces the remote backup files with Arcane's current files.
+	BackupConflictUseArcane = "use_arcane"
+)
+
 // GitRepository represents a reusable Git repository with credentials.
 type GitRepository struct {
 	// ID of the git repository.
@@ -39,6 +73,19 @@ type GitRepository struct {
 	//
 	// Required: false
 	SSHHostKeyVerification string `json:"sshHostKeyVerification,omitempty"`
+
+	// CommitAuthorName is the author name on commits Arcane pushes.
+	//
+	// Required: false
+	CommitAuthorName string `json:"commitAuthorName,omitempty"`
+
+	// CommitAuthorEmail is the author email on commits Arcane pushes.
+	//
+	// Required: false
+	CommitAuthorEmail string `json:"commitAuthorEmail,omitempty"`
+
+	// HasSigningKey indicates whether an OpenPGP signing key is stored.
+	HasSigningKey bool `json:"hasSigningKey"`
 
 	// Description of the git repository.
 	//
@@ -201,6 +248,36 @@ type GitOpsSync struct {
 	// Required: true
 	TargetType string `json:"targetType"`
 
+	// Mode is the direction of the sync: "deploy" pulls from Git, "backup" commits to Git.
+	//
+	// Required: true
+	Mode string `json:"mode"`
+
+	// BackupDirectory is the repository directory that receives backed-up files.
+	//
+	// Required: false
+	BackupDirectory string `json:"backupDirectory,omitempty"`
+
+	// BackupPaths lists the project-relative files and directories included in backups.
+	//
+	// Required: false
+	BackupPaths []string `json:"backupPaths,omitempty"`
+
+	// BackupState summarizes the backup lifecycle (never, pending, backing_up, backed_up, paused, failed, needs_attention).
+	//
+	// Required: false
+	BackupState string `json:"backupState,omitempty"`
+
+	// BackupFailureReason is the typed reason for the last backup failure.
+	//
+	// Required: false
+	BackupFailureReason *string `json:"backupFailureReason,omitempty"`
+
+	// LastBackupAt is the time the remote last received a new backup commit.
+	//
+	// Required: false
+	LastBackupAt *time.Time `json:"lastBackupAt,omitempty"`
+
 	// PreDeployTimeoutSec bounds the script execution. Capped by the
 	// lifecycleMaxTimeoutSec global setting at run time.
 	//
@@ -255,6 +332,16 @@ type GitOpsSync struct {
 	//
 	// Required: true
 	RedeployAfterSync bool `json:"redeployAfterSync"`
+
+	// BackupOnSave indicates whether saved project changes trigger a backup.
+	//
+	// Required: true
+	BackupOnSave bool `json:"backupOnSave"`
+
+	// BackupPending indicates that saved changes have not reached the repository yet.
+	//
+	// Required: true
+	BackupPending bool `json:"backupPending"`
 }
 
 // SyncCounts contains counts of syncs by status within the current filtered set.
@@ -273,6 +360,16 @@ type SyncCounts struct {
 	//
 	// Required: true
 	SuccessfulSyncs int `json:"successfulSyncs"`
+
+	// DeploySyncs is the number of "deploy" mode syncs in the current filtered set.
+	//
+	// Required: true
+	DeploySyncs int `json:"deploySyncs"`
+
+	// BackupSyncs is the number of "backup" mode syncs in the current filtered set.
+	//
+	// Required: true
+	BackupSyncs int `json:"backupSyncs"`
 }
 
 // CreateRepositoryRequest represents the request to create a git repository.
@@ -313,6 +410,26 @@ type CreateRepositoryRequest struct {
 	//
 	// Required: false
 	SSHHostKeyVerification string `json:"sshHostKeyVerification,omitempty" binding:"omitempty,oneof=strict accept_new skip"`
+
+	// CommitAuthorName is the author name on commits Arcane pushes.
+	//
+	// Required: false
+	CommitAuthorName string `json:"commitAuthorName,omitempty" unorm:"nfc" trim:"true"`
+
+	// CommitAuthorEmail is the author email on commits Arcane pushes.
+	//
+	// Required: false
+	CommitAuthorEmail string `json:"commitAuthorEmail,omitempty" binding:"omitempty,email" trim:"true"`
+
+	// SigningKey is an armored OpenPGP private key used to sign commits.
+	//
+	// Required: false
+	SigningKey string `json:"signingKey,omitempty"`
+
+	// SigningKeyPassphrase unlocks SigningKey when it is passphrase-protected.
+	//
+	// Required: false
+	SigningKeyPassphrase string `json:"signingKeyPassphrase,omitempty"`
 
 	// Description of the git repository.
 	//
@@ -363,6 +480,26 @@ type UpdateRepositoryRequest struct {
 	// Required: false
 	SSHHostKeyVerification *string `json:"sshHostKeyVerification,omitzero" binding:"omitempty,oneof=strict accept_new skip"`
 
+	// CommitAuthorName is the author name on commits Arcane pushes.
+	//
+	// Required: false
+	CommitAuthorName *string `json:"commitAuthorName,omitzero" unorm:"nfc" trim:"true"`
+
+	// CommitAuthorEmail is the author email on commits Arcane pushes.
+	//
+	// Required: false
+	CommitAuthorEmail *string `json:"commitAuthorEmail,omitzero" binding:"omitempty,email" trim:"true"`
+
+	// SigningKey is an armored OpenPGP private key used to sign commits. Empty clears it.
+	//
+	// Required: false
+	SigningKey *string `json:"signingKey,omitzero"`
+
+	// SigningKeyPassphrase unlocks SigningKey when it is passphrase-protected. Empty clears it.
+	//
+	// Required: false
+	SigningKeyPassphrase *string `json:"signingKeyPassphrase,omitzero"`
+
 	// Description of the git repository.
 	//
 	// Required: false
@@ -376,6 +513,8 @@ type UpdateRepositoryRequest struct {
 
 // CreateSyncRequest represents the request to create a gitops sync.
 type CreateSyncRequest struct {
+	PreDeployConfigRequest
+
 	// Name of the sync configuration.
 	//
 	// Required: true
@@ -392,9 +531,39 @@ type CreateSyncRequest struct {
 	Branch string `json:"branch" binding:"required"`
 
 	// ComposePath is the path to the docker-compose file in the repository.
+	// Required for "deploy" mode; derived from the backup directory in "backup" mode.
 	//
-	// Required: true
-	ComposePath string `json:"composePath" binding:"required"`
+	// Required: false
+	ComposePath string `json:"composePath,omitempty"`
+
+	// Mode selects the sync direction: "deploy" (default) or "backup".
+	//
+	// Required: false
+	Mode string `json:"mode,omitempty" binding:"omitempty,oneof=deploy backup"`
+
+	// ProjectID links an existing project. Required in "backup" mode; optional in
+	// "deploy" mode, where the sync adopts the project instead of creating one.
+	//
+	// Required: false
+	ProjectID string `json:"projectId,omitempty"`
+
+	// BackupDirectory is the repository directory that receives backed-up files.
+	// Required in "backup" mode.
+	//
+	// Required: false
+	BackupDirectory string `json:"backupDirectory,omitempty"`
+
+	// BackupPaths lists project-relative files and directories to back up. The
+	// project's compose files are always included. Environment files are only
+	// included when listed explicitly.
+	//
+	// Required: false
+	BackupPaths []string `json:"backupPaths,omitempty"`
+
+	// BackupOnSave triggers a backup after project changes are saved. Default: true.
+	//
+	// Required: false
+	BackupOnSave *bool `json:"backupOnSave,omitempty"`
 
 	// TargetType specifies if this sync targets a "project" or "swarm_stack".
 	//
@@ -460,7 +629,12 @@ type CreateSyncRequest struct {
 	//
 	// Required: false
 	MaxSyncBinarySize *int64 `json:"maxSyncBinarySize,omitempty"`
+}
 
+// PreDeployConfigRequest carries the pre-deploy lifecycle hook fields shared by
+// the create, update, and import sync requests. A nil pointer means the field
+// is absent from the request body; on update, an empty string clears the value.
+type PreDeployConfigRequest struct {
 	// PreDeployScriptPath is the optional path inside the synced repo to a
 	// script executed in a throwaway container before each deploy.
 	//
@@ -474,36 +648,40 @@ type CreateSyncRequest struct {
 	PreDeployRunnerImage *string `json:"preDeployRunnerImage,omitempty"`
 
 	// PreDeployEnv is the env config exposed to the script, one KEY=VALUE
-	// entry per line; same format as a .env file. Keys must match POSIX
-	// identifier syntax.
+	// entry per line; same format as a .env file.
 	//
 	// Required: false
 	PreDeployEnv *string `json:"preDeployEnv,omitempty"`
 
 	// PreDeployExtraMounts is the bind-mount config added to the runner
 	// container, one entry per line in docker -v "src:tgt[:ro|:rw]" form.
-	// Source and target must be absolute paths.
 	//
 	// Required: false
 	PreDeployExtraMounts *string `json:"preDeployExtraMounts,omitempty"`
 
 	// PreDeployTimeoutSec bounds the script execution. Capped by the
-	// lifecycleMaxTimeoutSec global setting at validation time. Defaults to 60.
+	// lifecycleMaxTimeoutSec global setting. Defaults to 60.
 	//
 	// Required: false
 	PreDeployTimeoutSec *int `json:"preDeployTimeoutSec,omitempty"`
 
 	// PreDeployNetworkMode is the Docker network mode for the runner
-	// container. Defaults to "none" (no network access). Set to "bridge",
-	// "host", or a named Docker network to grant outbound or compose-network
-	// access.
+	// container: "none" (default), "bridge", "host", or a named network.
 	//
 	// Required: false
 	PreDeployNetworkMode *string `json:"preDeployNetworkMode,omitempty"`
 }
 
+// HasPreDeployConfig reports whether any pre-deploy hook field is present.
+// Configuring the hook is gated behind the gitops:lifecycle permission.
+func (r PreDeployConfigRequest) HasPreDeployConfig() bool {
+	return r != PreDeployConfigRequest{}
+}
+
 // UpdateSyncRequest represents the request to update a gitops sync.
 type UpdateSyncRequest struct {
+	PreDeployConfigRequest
+
 	// Name of the sync configuration.
 	//
 	// Required: false
@@ -533,6 +711,17 @@ type UpdateSyncRequest struct {
 	//
 	// Required: false
 	ProjectName *string `json:"projectName,omitzero"`
+
+	// BackupPaths replaces the backed-up file selection. Omitted leaves it unchanged;
+	// an empty list keeps only the compose files.
+	//
+	// Required: false
+	BackupPaths []string `json:"backupPaths,omitzero"`
+
+	// BackupOnSave toggles backing up after project changes are saved.
+	//
+	// Required: false
+	BackupOnSave *bool `json:"backupOnSave,omitzero"`
 
 	// AutoSync indicates if the sync should run automatically.
 	//
@@ -583,71 +772,40 @@ type UpdateSyncRequest struct {
 	//
 	// Required: false
 	MaxSyncBinarySize *int64 `json:"maxSyncBinarySize,omitzero"`
-
-	// PreDeployScriptPath is the optional path inside the synced repo to a
-	// script executed in a throwaway container before each deploy. Set to
-	// an empty string to clear an existing configuration.
-	//
-	// Required: false
-	PreDeployScriptPath *string `json:"preDeployScriptPath,omitzero"`
-
-	// PreDeployRunnerImage is the image used to run the pre-deploy script.
-	// When omitted, the lifecycleDefaultRunnerImage setting is used.
-	//
-	// Required: false
-	PreDeployRunnerImage *string `json:"preDeployRunnerImage,omitzero"`
-
-	// PreDeployEnv is the env config exposed to the script, one KEY=VALUE
-	// entry per line; same format as a .env file. Keys must match POSIX
-	// identifier syntax.
-	//
-	// Required: false
-	PreDeployEnv *string `json:"preDeployEnv,omitzero"`
-
-	// PreDeployExtraMounts is the bind-mount config added to the runner
-	// container, one entry per line in docker -v "src:tgt[:ro|:rw]" form.
-	// Source and target must be absolute paths.
-	//
-	// Required: false
-	PreDeployExtraMounts *string `json:"preDeployExtraMounts,omitzero"`
-
-	// PreDeployTimeoutSec bounds the script execution. Capped by the
-	// lifecycleMaxTimeoutSec global setting at validation time.
-	//
-	// Required: false
-	PreDeployTimeoutSec *int `json:"preDeployTimeoutSec,omitzero"`
-
-	// PreDeployNetworkMode is the Docker network mode for the runner
-	// container. Set to "none", "bridge", "host", or a named Docker
-	// network. Empty string resets to the default ("none").
-	//
-	// Required: false
-	PreDeployNetworkMode *string `json:"preDeployNetworkMode,omitzero"`
 }
 
-// HasPreDeployConfig reports whether the request carries any pre-deploy
-// lifecycle hook field. Configuring the hook is gated behind the dedicated
-// gitops:lifecycle permission (see the GitOps sync handlers), so callers use
-// this to decide whether that authorization check applies. A nil pointer means
-// the field is absent from the request body.
-func (r CreateSyncRequest) HasPreDeployConfig() bool {
-	return r.PreDeployScriptPath != nil ||
-		r.PreDeployRunnerImage != nil ||
-		r.PreDeployEnv != nil ||
-		r.PreDeployExtraMounts != nil ||
-		r.PreDeployNetworkMode != nil ||
-		r.PreDeployTimeoutSec != nil
+// HasDeploymentOptions reports whether the request sets deployment-only
+// options that a backup sync must reject.
+func (r CreateSyncRequest) HasDeploymentOptions() bool {
+	return (r.TargetType != "" && r.TargetType != "project") ||
+		(r.SyncDirectory != nil && *r.SyncDirectory) ||
+		(r.PullImageAfterSync != nil && *r.PullImageAfterSync) ||
+		(r.RedeployAfterSync != nil && *r.RedeployAfterSync) ||
+		r.HasPreDeployConfig()
 }
 
-// HasPreDeployConfig reports whether the request carries any pre-deploy
-// lifecycle hook field. See CreateSyncRequest.HasPreDeployConfig.
-func (r UpdateSyncRequest) HasPreDeployConfig() bool {
-	return r.PreDeployScriptPath != nil ||
-		r.PreDeployRunnerImage != nil ||
-		r.PreDeployEnv != nil ||
-		r.PreDeployExtraMounts != nil ||
-		r.PreDeployNetworkMode != nil ||
-		r.PreDeployTimeoutSec != nil
+// HasDeploymentOptions reports whether the request sets deployment-only
+// options that a backup sync must reject.
+func (r UpdateSyncRequest) HasDeploymentOptions() bool {
+	return (r.TargetType != nil && *r.TargetType != "" && *r.TargetType != "project") ||
+		r.ComposePath != nil ||
+		r.ProjectName != nil ||
+		(r.SyncDirectory != nil && *r.SyncDirectory) ||
+		(r.PullImageAfterSync != nil && *r.PullImageAfterSync) ||
+		(r.RedeployAfterSync != nil && *r.RedeployAfterSync) ||
+		r.HasPreDeployConfig()
+}
+
+// HasBackupOptions reports whether the request sets backup-only options that
+// a deploy sync must reject.
+func (r CreateSyncRequest) HasBackupOptions() bool {
+	return r.BackupDirectory != "" || len(r.BackupPaths) > 0 || r.BackupOnSave != nil
+}
+
+// HasBackupOptions reports whether the request sets backup-only options that
+// a deploy sync must reject.
+func (r UpdateSyncRequest) HasBackupOptions() bool {
+	return r.BackupPaths != nil || r.BackupOnSave != nil
 }
 
 // SyncResult represents the result of a sync operation.
@@ -795,6 +953,26 @@ type RepositorySync struct {
 	// Required: false
 	SSHHostKeyVerification string `json:"sshHostKeyVerification,omitempty"`
 
+	// CommitAuthorName is the author name on commits Arcane pushes.
+	//
+	// Required: false
+	CommitAuthorName string `json:"commitAuthorName,omitempty"`
+
+	// CommitAuthorEmail is the author email on commits Arcane pushes.
+	//
+	// Required: false
+	CommitAuthorEmail string `json:"commitAuthorEmail,omitempty"`
+
+	// SigningKey is the armored OpenPGP private key used to sign commits.
+	//
+	// Required: false
+	SigningKey string `json:"signingKey,omitempty"`
+
+	// SigningKeyPassphrase unlocks SigningKey.
+	//
+	// Required: false
+	SigningKeyPassphrase string `json:"signingKeyPassphrase,omitempty"`
+
 	// Description of the git repository.
 	//
 	// Required: false
@@ -860,10 +1038,37 @@ type SyncStatus struct {
 	//
 	// Required: false
 	LastSyncCommit *string `json:"lastSyncCommit,omitempty"`
+
+	// Mode is the sync direction ("deploy" or "backup").
+	//
+	// Required: true
+	Mode string `json:"mode"`
+
+	// BackupState summarizes the backup lifecycle for "backup" syncs.
+	//
+	// Required: false
+	BackupState string `json:"backupState,omitempty"`
+
+	// BackupPending indicates saved changes have not reached the repository yet.
+	//
+	// Required: true
+	BackupPending bool `json:"backupPending"`
+
+	// BackupFailureReason is the typed reason for the last backup failure.
+	//
+	// Required: false
+	BackupFailureReason *string `json:"backupFailureReason,omitempty"`
+
+	// LastBackupAt is the time the remote last received a new backup commit.
+	//
+	// Required: false
+	LastBackupAt *time.Time `json:"lastBackupAt,omitempty"`
 }
 
 // ImportGitOpsSyncRequest represents the request to import gitops syncs.
 type ImportGitOpsSyncRequest struct {
+	PreDeployConfigRequest
+
 	// SyncName is the name of the sync configuration.
 	//
 	// Required: true
@@ -917,6 +1122,23 @@ type ImportGitOpsSyncRequest struct {
 	//
 	// Required: false
 	MaxSyncBinarySize *int64 `json:"maxSyncBinarySize,omitempty"`
+
+	// ProjectName is the compose project name. Defaults to SyncName.
+	//
+	// Required: false
+	ProjectName string `json:"projectName,omitempty"`
+
+	// PullImageAfterSync pulls each service image after a sync that changes
+	// managed content. Default: false.
+	//
+	// Required: false
+	PullImageAfterSync *bool `json:"pullImageAfterSync,omitempty"`
+
+	// RedeployAfterSync redeploys the project after a sync that changes
+	// managed content. Default: false.
+	//
+	// Required: false
+	RedeployAfterSync *bool `json:"redeployAfterSync,omitempty"`
 }
 
 // ImportGitOpsSyncResponse represents the response for importing gitops syncs.
@@ -935,4 +1157,115 @@ type ImportGitOpsSyncResponse struct {
 	//
 	// Required: true
 	Errors []string `json:"errors"`
+}
+
+// BackupFileChange describes one file difference between Arcane and the repository.
+type BackupFileChange struct {
+	// Path relative to the backup directory.
+	//
+	// Required: true
+	Path string `json:"path"`
+
+	// Change is "added", "modified", or "removed" from the repository's point of view.
+	//
+	// Required: true
+	Change string `json:"change"`
+}
+
+// BackupPreview describes what the next backup would commit.
+type BackupPreview struct {
+	// State is "clean", "changes", "conflict", or "destination_occupied".
+	//
+	// Required: true
+	State string `json:"state"`
+
+	// RemoteCommit is the current head of the backup branch, when it exists.
+	//
+	// Required: false
+	RemoteCommit string `json:"remoteCommit,omitempty"`
+
+	// Changes lists files the next backup would add, modify, or remove.
+	//
+	// Required: true
+	Changes []BackupFileChange `json:"changes"`
+
+	// Conflicts lists backup-owned files changed in the repository since the last successful backup.
+	//
+	// Required: true
+	Conflicts []BackupFileChange `json:"conflicts"`
+
+	// Files lists every path the snapshot includes.
+	//
+	// Required: true
+	Files []string `json:"files"`
+}
+
+// BackupHistoryEntry is one revision affecting a backup directory.
+type BackupHistoryEntry struct {
+	// Commit hash.
+	//
+	// Required: true
+	Commit string `json:"commit"`
+
+	// Author name of the commit.
+	//
+	// Required: true
+	Author string `json:"author"`
+
+	// Message of the commit.
+	//
+	// Required: true
+	Message string `json:"message"`
+
+	// Date of the commit.
+	//
+	// Required: true
+	Date time.Time `json:"date"`
+
+	// Files changed inside the backup directory, relative to it.
+	//
+	// Required: true
+	Files []string `json:"files"`
+}
+
+// BackupHistoryResponse lists revisions affecting a backup.
+type BackupHistoryResponse struct {
+	// Entries newest first.
+	//
+	// Required: true
+	Entries []BackupHistoryEntry `json:"entries"`
+}
+
+// BackupFileDiff is the unified diff of one file in a revision.
+type BackupFileDiff struct {
+	// Path relative to the backup directory.
+	//
+	// Required: true
+	Path string `json:"path"`
+
+	// Patch is the unified diff text.
+	//
+	// Required: true
+	Patch string `json:"patch"`
+}
+
+// BackupRevision is a revision with its per-file diffs.
+type BackupRevision struct {
+	// Entry describes the commit.
+	//
+	// Required: true
+	Entry BackupHistoryEntry `json:"entry"`
+
+	// Diffs contains one entry per changed file inside the backup directory.
+	//
+	// Required: true
+	Diffs []BackupFileDiff `json:"diffs"`
+}
+
+// ResolveBackupConflictRequest chooses how to resolve a backup that needs attention.
+type ResolveBackupConflictRequest struct {
+	// Strategy is "use_arcane" to replace the repository's backup files with Arcane's.
+	//
+	// Required: true
+	Strategy string `json:"strategy" binding:"required,oneof=use_arcane"`
 }

@@ -249,6 +249,7 @@ func registerDynamicJobs(params dynamicJobsParams) error {
 			return err
 		}
 		params.GitOpsSync.RegisterAutoSyncJobsOnStartup(params.AppCtx)
+		params.GitOpsSync.SubscribeProjectFileChanges(params.AppCtx)
 	}
 
 	// Environment health: one job per enabled environment (manager only). The Jobs

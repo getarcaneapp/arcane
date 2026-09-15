@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { tryCatch } from '#lib/utils/try-catch.js';
+	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 
 	import { userPrefersMode, setMode } from 'mode-watcher';
 	import { m } from '#lib/paraglide/messages.js';
@@ -29,17 +30,11 @@
 		setMode(value);
 		if (!userStore.current) return;
 
-		const operationResult1 = await tryCatch(
-			(async () => {
-				const updated = await userService.updateMyProfile({ preferences: { themeMode: value } });
-				await userStore.setUser(updated);
-			})()
-		);
-		if (operationResult1.error !== null) {
-			const err = operationResult1.error;
-
-			console.error('Failed to save theme mode', err);
-		}
+		await handleApiResultWithCallbacks({
+			result: await tryCatch(userService.updateMyProfile({ preferences: { themeMode: value } })),
+			message: m.common_update_failed({ resource: m.theme() }),
+			onSuccess: (updated) => userStore.setUser(updated)
+		});
 	}
 </script>
 

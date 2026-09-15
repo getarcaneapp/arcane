@@ -26,6 +26,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/category"
 	searchtypes "github.com/getarcaneapp/arcane/types/v2/search"
 	settingstypes "github.com/getarcaneapp/arcane/types/v2/settings"
+	"go.yaml.in/yaml/v4"
 )
 
 const (
@@ -371,6 +372,16 @@ func (h *SettingsHandler) validateSettingsUpdateInput(input settingstypes.Update
 		value, err := strconv.Atoi(strings.TrimSpace(*input.AvatarMaxUploadSizeMb))
 		if err != nil || value < 1 || value > 50 {
 			return huma.Error400BadRequest("avatarMaxUploadSizeMb must be between 1 and 50")
+		}
+	}
+
+	if input.TrivyConfig != nil && strings.TrimSpace(*input.TrivyConfig) != "" {
+		var doc map[string]any
+		if err := yaml.Unmarshal([]byte(*input.TrivyConfig), &doc); err != nil {
+			return huma.Error400BadRequest("trivyConfig must be a YAML mapping: " + err.Error())
+		}
+		if doc == nil {
+			return huma.Error400BadRequest("trivyConfig must be a YAML mapping")
 		}
 	}
 

@@ -35,7 +35,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
-	"github.com/getarcaneapp/arcane/types/v2/vulnerability"
 	"github.com/moby/moby/api/types/container"
 	dockercontainer "github.com/moby/moby/api/types/container"
 	dockertypesimage "github.com/moby/moby/api/types/image"
@@ -62,38 +61,6 @@ func setupImageProjectTestDBInternal(t *testing.T) *database.DB {
 		&event.Event{},
 	))
 	return &database.DB{DB: db}
-}
-
-func TestGetImageIDsFromSummariesInternal(t *testing.T) {
-	items := []imagetypes.Summary{
-		{ID: "img1"},
-		{ID: "img2"},
-		{ID: "img1"},
-		{ID: ""},
-	}
-
-	got := getImageIDsFromSummariesInternal(items)
-	assert.Equal(t, []string{"img1", "img2"}, got)
-}
-
-func TestApplyVulnerabilitySummariesToItemsInternal(t *testing.T) {
-	items := []imagetypes.Summary{
-		{ID: "img1"},
-		{ID: "img2"},
-	}
-
-	summary := &vulnerability.ScanSummary{
-		ImageID: "img1",
-		Status:  vulnerability.ScanStatusCompleted,
-	}
-	vulnerabilityMap := map[string]*vulnerability.ScanSummary{
-		"img1": summary,
-	}
-
-	applyVulnerabilitySummariesToItemsInternal(items, vulnerabilityMap)
-
-	assert.Equal(t, summary, items[0].VulnerabilityScan)
-	assert.Nil(t, items[1].VulnerabilityScan)
 }
 
 func TestCollectPinnedReferencesByImageIDInternal(t *testing.T) {

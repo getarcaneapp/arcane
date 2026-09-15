@@ -13,6 +13,7 @@ replace (
 require (
 	emperror.dev/emperror v0.33.0
 	emperror.dev/errors v0.8.1
+	github.com/ProtonMail/go-crypto v1.4.1
 	github.com/anthdm/hollywood v1.0.5
 	github.com/aws/aws-sdk-go-v2 v1.47.0
 	github.com/aws/aws-sdk-go-v2/config v1.33.4
@@ -34,6 +35,7 @@ require (
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/getarcaneapp/arcane/cli/v2 v2.11.1
 	github.com/getarcaneapp/arcane/types/v2 v2.11.1
+	github.com/go-git/go-billy/v5 v5.9.0
 	github.com/go-git/go-git/v5 v5.19.2
 	github.com/go-webauthn/webauthn v0.18.1
 	github.com/gofrs/flock v0.13.1
@@ -103,7 +105,6 @@ require (
 	github.com/Masterminds/semver v1.5.0 // indirect
 	github.com/Masterminds/semver/v3 v3.5.0 // indirect
 	github.com/Microsoft/go-winio v0.6.3-0.20251027160822-ad3df93bed29 // indirect
-	github.com/ProtonMail/go-crypto v1.4.1 // indirect
 	github.com/acarl005/stripansi v0.0.0-20180116102854-5a71ef0e047d // indirect
 	github.com/aquasecurity/go-pep440-version v0.0.2-0.20260224065243-f9bba28c51a4 // indirect
 	github.com/aquasecurity/go-version v0.0.1 // indirect
@@ -162,7 +163,6 @@ require (
 	github.com/fvbommel/sortorder v1.2.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.3 // indirect
 	github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376 // indirect
-	github.com/go-git/go-billy/v5 v5.9.0 // indirect
 	github.com/go-jose/go-jose/v4 v4.1.4 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect

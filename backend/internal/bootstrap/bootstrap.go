@@ -329,6 +329,9 @@ func initializeGitOpsStartupStateInternal(appCtx context.Context, gitOpsSync *gi
 	if err := gitOpsSync.CleanupOrphanedSyncsOnStartup(appCtx); err != nil {
 		slog.WarnContext(appCtx, "Failed to clean up orphaned GitOps syncs on startup", "error", err)
 	}
+	if err := gitOpsSync.ReconcileInterruptedBackupsOnStartup(appCtx); err != nil {
+		slog.WarnContext(appCtx, "Failed to reconcile interrupted Git backups on startup", "error", err)
+	}
 	// Sweep leaked gitops scratch dirs before the filesystem watcher can import
 	// them as phantom projects and before the directory-sync reconcile runs.
 	if err := gitOpsSync.CleanupLeakedScratchDirsOnStartup(appCtx); err != nil {

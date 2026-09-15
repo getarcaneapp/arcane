@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/netip"
+	"slices"
 	"sort"
 	"strings"
 
@@ -18,6 +19,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/mapper"
 	networktypes "github.com/getarcaneapp/arcane/types/v2/network"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/network"
@@ -369,7 +371,10 @@ func (s *NetworkService) ListNetworksPaginated(ctx context.Context, params pagin
 	}
 	rawNets := networkList.Items
 
-	items := s.convertToNetworkSummaries(rawNets, inUseByID, inUseByName)
+	items, err := s.convertToNetworkSummaries(rawNets, inUseByID, inUseByName)
+	if err != nil {
+		return nil, pagination.Response{}, networktypes.UsageCounts{}, err
+	}
 	config := s.buildNetworkPaginationConfig()
 	result := config.SearchOrderAndPaginate(items, params)
 	counts := s.calculateNetworkUsageCounts(items)
@@ -400,15 +405,18 @@ func buildTopologyContainerInfoInternal(containers []container.Summary) map[stri
 	return infoByID
 }
 
-func (s *NetworkService) convertToNetworkSummaries(rawNets []network.Summary, inUseByID, inUseByName map[string]bool) []networktypes.Summary {
+func (s *NetworkService) convertToNetworkSummaries(rawNets []network.Summary, inUseByID, inUseByName map[string]bool) ([]networktypes.Summary, error) {
 	items := make([]networktypes.Summary, 0, len(rawNets))
 	for _, n := range rawNets {
-		netDto := networktypes.NewSummary(n)
+		netDto, err := mapper.MapOne[network.Summary, networktypes.Summary](n)
+		if err != nil {
+			return nil, errors.WrapIf(err, "failed to map network")
+		}
 		netDto.InUse = inUseByID[netDto.ID] || inUseByName[netDto.Name]
 		netDto.IsDefault = dockerutil.IsDefaultNetwork(netDto.Name)
 		items = append(items, netDto)
 	}
-	return items
+	return items, nil
 }
 
 func (s *NetworkService) buildNetworkPaginationConfig() pagination.Config[networktypes.Summary] {
@@ -418,6 +426,10 @@ func (s *NetworkService) buildNetworkPaginationConfig() pagination.Config[networ
 			func(n networktypes.Summary) (string, error) { return n.Driver, nil },
 			func(n networktypes.Summary) (string, error) { return n.Scope, nil },
 			func(n networktypes.Summary) (string, error) { return n.ID, nil },
+			func(n networktypes.Summary) (string, error) {
+				subnets, gateways := ipamValuesInternal(n)
+				return strings.Join(append(subnets, gateways...), " "), nil
+			},
 		},
 		SortBindings:    s.buildNetworkSortBindings(),
 		FilterAccessors: s.buildNetworkFilterAccessors(),
@@ -453,7 +465,35 @@ func (s *NetworkService) buildNetworkSortBindings() []pagination.SortBinding[net
 			Key: "inUse",
 			Fn:  s.compareNetworkInUse,
 		},
+		{
+			Key: "subnet",
+			Fn: func(a, b networktypes.Summary) int {
+				subnetsA, _ := ipamValuesInternal(a)
+				subnetsB, _ := ipamValuesInternal(b)
+				return slices.Compare(subnetsA, subnetsB)
+			},
+		},
+		{
+			Key: "gateway",
+			Fn: func(a, b networktypes.Summary) int {
+				_, gatewaysA := ipamValuesInternal(a)
+				_, gatewaysB := ipamValuesInternal(b)
+				return slices.Compare(gatewaysA, gatewaysB)
+			},
+		},
 	}
+}
+
+func ipamValuesInternal(n networktypes.Summary) (subnets, gateways []string) {
+	for _, cfg := range n.IPAM.Config {
+		if cfg.Subnet != "" {
+			subnets = append(subnets, cfg.Subnet)
+		}
+		if cfg.Gateway != "" {
+			gateways = append(gateways, cfg.Gateway)
+		}
+	}
+	return subnets, gateways
 }
 
 func (s *NetworkService) compareNetworkCreated(a, b networktypes.Summary) int {

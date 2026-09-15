@@ -95,6 +95,9 @@ func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, na
 
 	s.refreshProjectAfterContentUpdateInternal(ctx, &proj, composeContent, overrideContent)
 	s.logProjectUpdateEventInternal(ctx, &proj, composeContent, envContent, overrideContent, user)
+	if composeContent != nil || envContent != nil || overrideContent != nil {
+		s.filesChanged.Publish(proj.ID)
+	}
 
 	slog.InfoContext(ctx, "project updated", "projectID", proj.ID, "name", proj.Name)
 	return &proj, nil

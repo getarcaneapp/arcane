@@ -8,6 +8,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { AddIcon, TrashIcon } from '#lib/icons/index.js';
 	import * as Accordion from '#lib/components/ui/accordion/index.js';
+	import * as Alert from '#lib/components/ui/alert/index.js';
 	import FormInput from '#lib/components/form/form-input.svelte';
 	import { untrack } from 'svelte';
 	import { getSwarmServiceModeLabel } from '#lib/utils/docker.js';
@@ -168,6 +169,8 @@
 		return mode === 'replicated-job' || mode === 'global-job';
 	}
 
+	let specParseError = $state<string | null>(null);
+
 	function parseInitialSpec(specText: string): SwarmServiceSpecRaw | null {
 		if (!specText.trim()) return null;
 
@@ -175,7 +178,7 @@
 			const parsed = JSON.parse(specText) as unknown;
 			return asRecord(parsed) as SwarmServiceSpecRaw;
 		} catch (error) {
-			console.error('Failed to parse service spec:', error);
+			specParseError = error instanceof Error ? error.message : String(error);
 			return null;
 		}
 	}
@@ -378,6 +381,11 @@
 <ResponsiveDialog bind:open onOpenChange={handleOpenChange} variant="sheet" {title} {description} contentClass="sm:max-w-[600px]">
 	{#snippet children()}
 		<form onsubmit={preventDefault(handleSubmit)} class="space-y-6 py-4">
+			{#if specParseError}
+				<Alert.Root variant="destructive">
+					<Alert.Description>{m.swarm_service_spec_parse_failed()} {specParseError}</Alert.Description>
+				</Alert.Root>
+			{/if}
 			<!-- Basic Config -->
 			<div class="space-y-4">
 				<FormInput input={form.name} label={m.common_name()} placeholder="my-service" disabled={isLoading} />

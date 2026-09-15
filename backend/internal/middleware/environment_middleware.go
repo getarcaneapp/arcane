@@ -3,6 +3,7 @@ package middleware
 import (
 	"github.com/samber/mo"
 
+	"bytes"
 	"context"
 	"encoding/json/v2"
 	"io"
@@ -12,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"slices"
 	"strings"
 	"time"
 
@@ -22,6 +24,7 @@ import (
 	wsutil "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/ws"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	httputils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
+	"github.com/getarcaneapp/arcane/types/v2/gitops"
 	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
 	"github.com/labstack/echo/v5"
 )
@@ -35,6 +38,7 @@ const (
 	proxyTimeout = 30 * time.Minute
 
 	maxProxiedWorkspaceManifestBytes = 1024 * 1024
+	maxProxiedGitOpsSyncBodyBytes    = 1024 * 1024
 )
 
 // managementEndpointSet contains paths handled locally and never proxied to remote environments.
@@ -257,19 +261,23 @@ func (m *EnvironmentMiddleware) proxyPermissionDenied(c *echo.Context, ps *authz
 			"method", method, "path", suffix, "permission", perm, "environment_id", envID)
 		return true
 	}
+	var required []string
+	var err error
 	if isVolumeWorkspaceUpdateRequestInternal(method, suffix) {
-		required, err := proxiedVolumeWorkspacePermissionsInternal(c.Request())
-		if err != nil {
-			slog.DebugContext(c.Request().Context(), "Denying proxied volume workspace request with invalid manifest",
-				"path", suffix, "environment_id", envID, "error", err)
+		required, err = proxiedVolumeWorkspacePermissionsInternal(c.Request())
+	} else {
+		required, err = proxiedGitOpsSyncPermissionsInternal(c.Request(), method, suffix)
+	}
+	if err != nil {
+		slog.DebugContext(c.Request().Context(), "Denying proxied request with invalid body",
+			"path", suffix, "environment_id", envID, "error", err)
+		return true
+	}
+	for _, operationPermission := range required {
+		if !ps.Allows(operationPermission, envID) {
+			slog.DebugContext(c.Request().Context(), "Denying proxied request: body-derived permission denied",
+				"path", suffix, "permission", operationPermission, "environment_id", envID)
 			return true
-		}
-		for _, operationPermission := range required {
-			if !ps.Allows(operationPermission, envID) {
-				slog.DebugContext(c.Request().Context(), "Denying proxied volume workspace operation",
-					"path", suffix, "permission", operationPermission, "environment_id", envID)
-				return true
-			}
 		}
 	}
 	return false
@@ -360,6 +368,60 @@ func proxiedVolumeWorkspacePermissionsInternal(request *http.Request) ([]string,
 		}
 		return required, nil
 	}
+}
+
+// proxiedGitOpsSyncPermissionsInternal mirrors the handler-level lifecycle and
+// backup gates for POST /gitops-syncs, POST /gitops-syncs/import, and PUT
+// /gitops-syncs/{syncId}. The agent authenticates forwarded requests as sudo,
+// so these body-dependent checks must run at the proxy. Returns nil for any
+// other route.
+func proxiedGitOpsSyncPermissionsInternal(request *http.Request, method, suffix string) ([]string, error) {
+	segments := strings.Split(strings.Trim(suffix, "/"), "/")
+	isCreate := len(segments) == 1 && segments[0] == "gitops-syncs" && method == http.MethodPost
+	isImport := len(segments) == 2 && segments[0] == "gitops-syncs" && segments[1] == "import" && method == http.MethodPost
+	isUpdate := len(segments) == 2 && segments[0] == "gitops-syncs" && segments[1] != "" && method == http.MethodPut
+	if !isCreate && !isImport && !isUpdate || request == nil || request.Body == nil {
+		return nil, nil
+	}
+
+	body, readErr := io.ReadAll(io.LimitReader(request.Body, maxProxiedGitOpsSyncBodyBytes+1))
+	closeErr := request.Body.Close()
+	if err := errors.Combine(readErr, closeErr); err != nil {
+		return nil, errors.WrapIf(err, "read gitops sync body")
+	}
+	if len(body) > maxProxiedGitOpsSyncBodyBytes {
+		return nil, errors.New("gitops sync body is too large")
+	}
+	request.Body = io.NopCloser(bytes.NewReader(body))
+
+	type syncBodyInternal struct {
+		gitops.PreDeployConfigRequest
+
+		Mode string `json:"mode"`
+	}
+	var items []syncBodyInternal
+	if isImport {
+		if err := json.Unmarshal(body, &items); err != nil {
+			return nil, errors.WrapIf(err, "decode gitops sync import body")
+		}
+	} else {
+		var single syncBodyInternal
+		if err := json.Unmarshal(body, &single); err != nil {
+			return nil, errors.WrapIf(err, "decode gitops sync body")
+		}
+		items = []syncBodyInternal{single}
+	}
+
+	var required []string
+	for _, item := range items {
+		if item.HasPreDeployConfig() && !slices.Contains(required, authz.PermGitOpsLifecycle) {
+			required = append(required, authz.PermGitOpsLifecycle)
+		}
+		if isCreate && item.Mode == gitops.SyncModeBackup && !slices.Contains(required, authz.PermGitOpsBackup) {
+			required = append(required, authz.PermGitOpsBackup)
+		}
+	}
+	return required, nil
 }
 
 type proxiedReplayBodyInternal struct {

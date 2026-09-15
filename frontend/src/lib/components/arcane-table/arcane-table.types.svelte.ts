@@ -166,6 +166,8 @@ export type GroupedData<T> = {
 
 export type GroupSelectionState = 'none' | 'some' | 'all';
 
+export type SelectionModifiers = { shiftKey: boolean };
+
 export function shouldIgnoreTableRowClick(event: MouseEvent): boolean {
 	const target = event.target as HTMLElement | null;
 	return !!target?.closest('a, button, input, [role="checkbox"], [data-slot="checkbox"], [data-row-select-ignore]');

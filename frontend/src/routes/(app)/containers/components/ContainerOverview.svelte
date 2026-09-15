@@ -2,6 +2,7 @@
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
 	import { Switch } from '#lib/components/ui/switch/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { ContainerDetailsDto } from '#lib/types/docker.js';
@@ -18,6 +19,8 @@
 		autoUpdateLabelControlled?: boolean;
 		onAutoUpdateChange?: (enabled: boolean) => void;
 		onViewPortMappings?: () => void;
+		onViewStorage?: () => void;
+		onViewNetworks?: () => void;
 	}
 
 	let {
@@ -26,7 +29,9 @@
 		autoUpdateEnabled = true,
 		autoUpdateLabelControlled = false,
 		onAutoUpdateChange,
-		onViewPortMappings
+		onViewPortMappings,
+		onViewStorage,
+		onViewNetworks
 	}: Props = $props();
 
 	let autoUpdateToggling = $state(false);
@@ -187,13 +192,27 @@
 			</KeyValueCard>
 
 			<KeyValueCard label={m.resource_volumes_cap()} valueClass="text-sm font-medium text-foreground">
-				{mountCount}
-				{mountCount === 1 ? m.common_mount() : m.common_mounts()}
+				{#if onViewStorage}
+					<Button variant="link" size="sm" class="h-auto w-fit justify-start p-0" onclick={onViewStorage}>
+						{mountCount}
+						{mountCount === 1 ? m.common_mount() : m.common_mounts()}
+					</Button>
+				{:else}
+					{mountCount}
+					{mountCount === 1 ? m.common_mount() : m.common_mounts()}
+				{/if}
 			</KeyValueCard>
 
 			<KeyValueCard label={m.resource_networks_cap()} valueClass="text-sm font-medium text-foreground">
-				{networkCount}
-				{networkCount === 1 ? m.resource_network() : m.resource_networks()}
+				{#if onViewNetworks}
+					<Button variant="link" size="sm" class="h-auto w-fit justify-start p-0" onclick={onViewNetworks}>
+						{networkCount}
+						{networkCount === 1 ? m.resource_network() : m.resource_networks()}
+					</Button>
+				{:else}
+					{networkCount}
+					{networkCount === 1 ? m.resource_network() : m.resource_networks()}
+				{/if}
 			</KeyValueCard>
 		</div>
 	</DetailSection>

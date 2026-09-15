@@ -4,6 +4,7 @@
 	import { page } from '$app/state';
 	import { m } from '#lib/paraglide/messages.js';
 	import { authService } from '#lib/services/auth-service.js';
+	import { APIError } from '#lib/services/api-service.js';
 	import OidcStatusPanel from '#lib/components/oidc-status-panel.svelte';
 	import { createMutation } from '@tanstack/svelte-query';
 
@@ -32,24 +33,25 @@
 			}
 			window.location.href = authUrl;
 		},
-		onError: (err: any) => {
-			console.error('OIDC login initiation error:', err);
-
-			let userMessage = m.auth_oidc_init_failed();
+		onError: (err: unknown) => {
+			const serverMessage = err instanceof APIError && err.response ? err.message.trim() : '';
+			const text = err instanceof Error ? err.message : '';
+			let fallback = m.auth_oidc_init_failed();
 			let redirectError = 'oidc_init_failed';
 
-			if (err.message === 'oidc_url_generation_failed') {
-				userMessage = m.auth_oidc_url_generation_failed();
+			if (text === 'oidc_url_generation_failed') {
+				fallback = m.auth_oidc_url_generation_failed();
 				redirectError = 'oidc_url_generation_failed';
-			} else if (err.message?.includes('discovery')) {
-				userMessage = m.auth_oidc_misconfigured();
+			} else if (text.includes('discovery')) {
+				fallback = m.auth_oidc_misconfigured();
 				redirectError = 'oidc_misconfigured';
-			} else if (err.message?.includes('network') || err.message?.includes('timeout')) {
-				userMessage = m.auth_oidc_network_error();
+			} else if (text.includes('network') || text.includes('timeout') || text.includes('fetch')) {
+				fallback = m.auth_oidc_network_error();
 				redirectError = 'oidc_network_error';
 			}
 
-			error = userMessage;
+			error = serverMessage || fallback;
+			if (serverMessage) sessionStorage.setItem('oidc_login_error', serverMessage);
 			setTimeout(() => goto(`/login?error=${redirectError}`), 3000);
 		}
 	}));
