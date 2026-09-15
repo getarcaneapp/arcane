@@ -1035,6 +1035,8 @@
   "networks_options_description": "網路驅動設定",
   "attachable": "可掛接",
   "ipv6_enabled": "已啟用 IPv6",
+  "ipv6_address": "IPv6 位址",
+  "ipv6_gateway": "IPv6 閘道器",
   "ipv4_enabled": "已啟用 IPv4",
   "ingress": "傳入（Ingress）",
   "config_only": "僅設定（Config Only）",
