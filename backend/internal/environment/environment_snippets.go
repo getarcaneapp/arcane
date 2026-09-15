@@ -39,7 +39,7 @@ type DeploymentSnippetMTLS struct {
 const (
 	deploymentSnippetsDataPath = "/app/data"
 	deploymentSnippetsMTLSPath = "/app/data/edge-mtls-agent"
-	agentContainerPort = "3553"
+	agentContainerPort         = "3553"
 )
 
 // GenerateDeploymentSnippets generates Docker deployment snippets for an environment.
