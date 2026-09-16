@@ -242,6 +242,8 @@
   "log_auto_scroll_tooltip": "Maintient la vue sur les lignes de journal les plus récentes pendant que de nouvelles entrées arrivent.",
   "log_auto_start_tooltip": "Lance automatiquement la diffusion des journaux lorsque vous ouvrez ce panneau.",
   "log_parsed_mode_tooltip": "Affiche les journaux structurés sous forme analysée lorsqu'ils sont disponibles. Désactivez-la pour voir le texte brut original.",
+  "log_stream_labels": "Étiquettes de flux",
+  "log_stream_labels_tooltip": "Affiche STDOUT et STDERR sous forme de texte sur chaque ligne. Désactivez cette option pour afficher à la place un point vert pour STDOUT et un carré rouge pour STDERR.",
   "log_download_tooltip": "Télécharge toutes les lignes de journal que Docker conserve encore pour ce conteneur, en ignorant les paramètres « search », « tail » et « parsed ».",
   "common_logout": "Déconnexion",
   "common_redeploy": "Redéployer",
