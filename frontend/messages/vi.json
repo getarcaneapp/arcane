@@ -242,6 +242,8 @@
   "log_auto_scroll_tooltip": "Giữ cho cửa sổ hiển thị luôn tập trung vào các dòng nhật ký mới nhất khi có các mục mới xuất hiện.",
   "log_auto_start_tooltip": "Tự động bắt đầu ghi nhật ký khi bạn mở bảng điều khiển này.",
   "log_parsed_mode_tooltip": "Hiển thị nhật ký có cấu trúc dưới dạng đã được phân tích nếu có sẵn. Tắt tính năng này để xem văn bản dòng gốc chưa qua xử lý.",
+  "log_stream_labels": "Nhãn luồng",
+  "log_stream_labels_tooltip": "Hiển thị STDOUT và STDERR dưới dạng văn bản trên từng dòng. Tắt tính năng này để thay vào đó hiển thị một chấm màu xanh lá cây cho STDOUT và một hình vuông màu đỏ cho STDERR.",
   "log_download_tooltip": "Tải xuống mọi dòng nhật ký mà Docker vẫn lưu giữ cho container này, bỏ qua các thiết lập về tìm kiếm, xem cuối dòng và phân tích cú pháp.",
   "common_logout": "Đăng xuất",
   "common_redeploy": "Redeploy",
