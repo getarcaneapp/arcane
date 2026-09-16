@@ -242,6 +242,8 @@
   "log_auto_scroll_tooltip": "Keeps the view pinned to the newest log lines while new entries arrive.",
   "log_auto_start_tooltip": "Starts streaming logs automatically when you open this panel.",
   "log_parsed_mode_tooltip": "Shows structured logs in parsed form when available. Turn it off to see the original raw line text.",
+  "log_stream_labels": "Etykiety strumieni",
+  "log_stream_labels_tooltip": "Wyświetla dane z STDOUT i STDERR jako tekst w poszczególnych wierszach. Wyłącz tę opcję, aby zamiast tego wyświetlać zieloną kropkę dla STDOUT i czerwony kwadrat dla STDERR.",
   "log_download_tooltip": "Pobiera wszystkie wiersze dziennika, które Docker nadal przechowuje dla tego kontenera, pomijając ustawienia dotyczące wyszukiwania, przeglądania końca pliku i analizy.",
   "common_logout": "Wyloguj",
   "common_redeploy": "Ponowne wdrożenie",
