@@ -15,6 +15,7 @@ import {
 import type { TableActionConfig, TableBulkActionConfig } from '#lib/utils/table-action-types.js';
 import { toast } from 'svelte-sonner';
 import { getContainerDisplayName, type ActionStatus } from './container-table.helpers';
+import { throwOnUpdateFailure } from '#lib/utils/update-actions.ts';
 
 type BulkLoadingState = {
 	start: boolean;
@@ -226,7 +227,7 @@ export function createContainerActions({
 			message,
 			confirmLabel: m.common_update(),
 			destructive: false,
-			run: (id) => containerService.updateContainer(id),
+			run: (id) => containerService.updateContainer(id).then(throwOnUpdateFailure),
 			messages: {
 				success: (count) => m.containers_bulk_update_success({ count }),
 				partial: (success, total, failed) => m.containers_bulk_update_partial({ success, total, failed }),
