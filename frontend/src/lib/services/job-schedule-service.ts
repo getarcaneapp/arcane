@@ -15,12 +15,8 @@ class JobScheduleService extends BaseAPIService {
 		return this.handleResponse(this.api.get(`/environments/${environmentId}/jobs`, config));
 	}
 
-	async runJob(jobId: string, environmentId: string = '0', requestId: string = crypto.randomUUID()): Promise<JobRunResponse> {
-		return this.handleResponse(
-			this.api.post(`/environments/${environmentId}/jobs/${encodeURIComponent(jobId)}/run`, undefined, {
-				headers: { 'Idempotency-Key': requestId }
-			})
-		);
+	async runJob(jobId: string, environmentId: string = '0'): Promise<JobRunResponse> {
+		return this.handleResponse(this.api.post(`/environments/${environmentId}/jobs/${encodeURIComponent(jobId)}/run`));
 	}
 	async listRuns(jobId: string, environmentId: string, page = 1): Promise<JobRunList> {
 		return this.handleResponse(

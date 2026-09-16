@@ -36,15 +36,11 @@
 		collapsibleSettings?: boolean;
 	} = $props();
 
-	let requestId: string | undefined;
 	let showScheduleDialog = $state(false);
 	const runJobMutation = createMutation(() => ({
-		mutationFn: () => {
-			requestId ??= crypto.randomUUID();
-			return jobScheduleService.runJob(job.id, environmentId, requestId);
-		},
+		mutationFn: () => jobScheduleService.runJob(job.id, environmentId),
+		retry: false,
 		onSuccess: () => {
-			requestId = undefined;
 			toast.success(m.jobs_run_queued());
 			onScheduleUpdate?.();
 		}
