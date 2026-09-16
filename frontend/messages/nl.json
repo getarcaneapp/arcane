@@ -1749,6 +1749,8 @@
   "http_client_timeout_description": "Standaard tijdslimiet voor HTTP-verzoeken in seconden (standaard: 30)",
   "registry_timeout": "Register Tijdslimiet",
   "registry_timeout_description": "Tijdslimiet voor containerregistratie activiteiten in seconden (standaard: 30)",
+  "registry_tag_timeout": "Time-out van registertag",
+  "registry_tag_timeout_description": "Time-out in seconden voor het weergeven van alle tags in een afbeeldingenrepository tijdens controles bij versie-updates. Grote repositories geven duizenden tags weer, verdeeld over vele pagina’s (standaard: 120)",
   "proxy_request_timeout": "Proxy Verzoek Tijdslimiet",
   "proxy_request_timeout_description": "Tijdslimiet voor proxied verzoeken in seconden (standaard: 60)",
   "customize_title": "Aanpassen",
