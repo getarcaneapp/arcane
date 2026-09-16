@@ -1749,6 +1749,8 @@
   "http_client_timeout_description": "Výchozí časový limit pro HTTP požadavky v sekundách (výchozí: 30)",
   "registry_timeout": "Časový limit registru",
   "registry_timeout_description": "Časový limit operací registru kontejnerů v sekundách (výchozí: 30)",
+  "registry_tag_timeout": "Časový limit registru",
+  "registry_tag_timeout_description": "Časový limit pro vypsání všech značek v úložišti obrázků během kontroly aktualizací verzí, v sekundách. Velká úložiště vrací tisíce značek rozložených na mnoho stránek (výchozí hodnota: 120)",
   "proxy_request_timeout": "Časový limit požadavku proxy",
   "proxy_request_timeout_description": "Časový limit pro proxy požadavky v sekundách (výchozí: 60)",
   "customize_title": "Přizpůsobení",
