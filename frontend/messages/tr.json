@@ -242,6 +242,8 @@
   "log_auto_scroll_tooltip": "Yeni girdiler geldikçe, görünümü en yeni günlük satırlarına sabit tutar.",
   "log_auto_start_tooltip": "Bu paneli açtığınızda günlüklerin akışını otomatik olarak başlatır.",
   "log_parsed_mode_tooltip": "Mevcut olduğunda, yapılandırılmış günlükleri ayrıştırılmış biçimde gösterir. Orijinal ham satır metnini görmek için bu özelliği devre dışı bırakın.",
+  "log_stream_labels": "Akış etiketleri",
+  "log_stream_labels_tooltip": "STDOUT ve STDERR çıktılarını her satırda metin olarak gösterir. Bu özelliği kapatırsanız, STDOUT için yeşil bir nokta, STDERR için ise kırmızı bir kare görüntülenir.",
   "log_download_tooltip": "Bu konteyner için Docker’ın hâlâ sakladığı her bir günlük satırını indirir; arama, kuyruk ve ayrıştırma ayarlarını göz ardı eder.",
   "common_logout": "Oturumu kapat",
   "common_redeploy": "Yeniden Dağıtma",
