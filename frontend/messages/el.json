@@ -1579,7 +1579,7 @@
   "security_trivy_resource_limits_label": "Όρια Πόρων Trivy",
   "security_trivy_resource_limits_description": "Ρυθμίστε τα όρια CPU και μνήμης για περιέκτες σάρωσης Trivy.",
   "security_trivy_cpu_limit_label": "Όριο CPU (πυρήνες)",
-  "security_trivy_cpu_limit_help": "Μόνο ολόκληροι αριθμοί (για παράδειγμα: 1 ή 2).",
+  "security_trivy_cpu_limit_help": "Πυρήνες CPU, όπως 0,5 ή 1,5. Ορίστε την τιμή 0 για να μην υπάρχει όριο CPU. Οι κεντρικοί υπολογιστές που χρησιμοποιούν συγγένεια CPU αντί για ποσοστώσεις CPU χρησιμοποιούν ολόκληρους πυρήνες.",
   "security_trivy_memory_limit_label": "Όριο Μνήμης (Mb)",
   "security_trivy_concurrent_scan_containers_label": "Σύγχρονα Δοχεία Σάρωσης",
   "security_trivy_concurrent_scan_containers_help": "Μέγιστος αριθμός δοχείων σάρωσης Trivy που μπορούν να τρέξουν ταυτόχρονα κατά μήκος χειροκίνητων και προγραμματισμένων σαρώσεων.",
