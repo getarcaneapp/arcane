@@ -1579,7 +1579,7 @@
   "security_trivy_resource_limits_label": "Trivy Kaynak Sınırları",
   "security_trivy_resource_limits_description": "Trivy tarama konteynerleri için CPU ve bellek sınırlarını yapılandırın.",
   "security_trivy_cpu_limit_label": "CPU Sınırı (çekirdek sayısı)",
-  "security_trivy_cpu_limit_help": "Yalnızca tam sayılar (örneğin: 1 veya 2).",
+  "security_trivy_cpu_limit_help": "0,5 veya 1,5 gibi CPU çekirdekleri. CPU sınırı olmaması için 0 değerini ayarlayın. CPU kotaları yerine CPU afinitesi kullanan ana bilgisayarlar, tam çekirdekleri kullanır.",
   "security_trivy_memory_limit_label": "Bellek Sınırı (MB)",
   "security_trivy_concurrent_scan_containers_label": "Eşzamanlı Tarama Konteynerleri",
   "security_trivy_concurrent_scan_containers_help": "Elle ve zamanlanmış taramalar dahil olmak üzere aynı anda çalıştırılabilecek maksimum Trivy tarama konteyneri sayısı.",
