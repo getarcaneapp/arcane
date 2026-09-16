@@ -1579,7 +1579,7 @@
   "security_trivy_resource_limits_label": "Ліміт трійних ресурсів",
   "security_trivy_resource_limits_description": "Налаштування ЦП та пам'яті для контейнерів з трьома скануваннями.",
   "security_trivy_cpu_limit_label": "Ліміт ЦП (ядер)",
-  "security_trivy_cpu_limit_help": "Цілі числа (наприклад: 1 або 2).",
+  "security_trivy_cpu_limit_help": "Ядра процесора, наприклад 0,5 або 1,5. Щоб не встановлювати обмеження на використання процесора, вкажіть значення 0. Хости, які використовують афінність до процесора замість квот на використання процесора, використовують цілі ядра.",
   "security_trivy_memory_limit_label": "Обмеження пам'яті (МБ)",
   "security_trivy_concurrent_scan_containers_label": "одночасні сканувальні контейнери",
   "security_trivy_concurrent_scan_containers_help": "Максимальна кількість контейнерів для сканування Trivy , які можуть працювати одночасно через ручні та заплановані сканування.",
