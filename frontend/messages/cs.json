@@ -242,6 +242,8 @@
   "log_auto_scroll_tooltip": "Udržuje zobrazení připnuté na nejnovějších řádcích logu, zatímco přicházejí nové záznamy.",
   "log_auto_start_tooltip": "Spustí automatické streamování logů při otevření tohoto panelu.",
   "log_parsed_mode_tooltip": "Zobrazí strukturované logy v parsované podobě, pokud jsou k dispozici. Vypněte, chcete-li zobrazit původní nezpracovaný text.",
+  "log_stream_labels": "Štítky streamů",
+  "log_stream_labels_tooltip": "Zobrazuje výstupy STDOUT a STDERR jako text v jednotlivých řádcích. Vypnutím této funkce se místo toho bude pro STDOUT zobrazovat zelená tečka a pro STDERR červený čtvereček.",
   "log_download_tooltip": "Stáhne všechny řádky protokolu, které Docker pro tento kontejner stále uchovává, přičemž ignoruje nastavení pro vyhledávání, sledování a analýzu.",
   "common_logout": "Odhlásit",
   "common_redeploy": "Znovu nasadit",
