@@ -242,6 +242,8 @@
   "log_auto_scroll_tooltip": "Mantém a exibição fixada nas linhas de registro mais recentes enquanto novas entradas chegam.",
   "log_auto_start_tooltip": "Inicia o fluxo de logs automaticamente quando você abre esse painel.",
   "log_parsed_mode_tooltip": "Mostra registros estruturados em formato analisado quando disponível. Desative-o para ver o texto original da linha bruta.",
+  "log_stream_labels": "Rótulos de fluxo",
+  "log_stream_labels_tooltip": "Exibe STDOUT e STDERR como texto em cada linha. Desative essa opção para que, em vez disso, seja exibido um ponto verde para STDOUT e um quadrado vermelho para STDERR.",
   "log_download_tooltip": "Baixa todas as linhas de log que o Docker ainda mantém para este contêiner, ignorando as configurações de pesquisa, tail e análise.",
   "common_logout": "Encerrar sessão",
   "common_redeploy": "Relançar",
