@@ -242,6 +242,8 @@
   "log_auto_scroll_tooltip": "Håller vyn fäst vid de nyaste logglinjerna medan nya poster kommer in.",
   "log_auto_start_tooltip": "Börjar strömma loggar automatiskt när du öppnar den här panelen.",
   "log_parsed_mode_tooltip": "Visar strukturerade loggar i parsad form när de är tillgängliga. Stäng av den om du vill se den ursprungliga råa radtexten.",
+  "log_stream_labels": "Strömningsetiketter",
+  "log_stream_labels_tooltip": "Visar STDOUT och STDERR som text på varje rad. Stäng av funktionen för att istället visa en grön prick för STDOUT och en röd fyrkant för STDERR.",
   "log_download_tooltip": "Hämtar alla loggrader som Docker fortfarande lagrar för denna container, utan att ta hänsyn till inställningarna för search, tail och parsed.",
   "common_logout": "Logout",
   "common_redeploy": "Redeploy",
