@@ -242,6 +242,8 @@
   "log_auto_scroll_tooltip": "Hält die Ansicht auf die neuesten Protokollzeilen fixiert, während neue Einträge eintreffen.",
   "log_auto_start_tooltip": "Startet automatisch das Streaming von Protokollen, wenn Sie dieses Panel öffnen.",
   "log_parsed_mode_tooltip": "Zeigt strukturierte Protokolle in geparster Form an, sofern verfügbar. Schalten Sie es aus, um den ursprünglichen Rohtext zu sehen.",
+  "log_stream_labels": "Stream-Bezeichnungen",
+  "log_stream_labels_tooltip": "Zeigt STDOUT und STDERR als Text in jeder Zeile an. Deaktivieren Sie diese Option, um stattdessen einen grünen Punkt für STDOUT und ein rotes Quadrat für STDERR anzuzeigen.",
   "log_download_tooltip": "Lädt jede Protokollzeile herunter, die Docker für diesen Container noch speichert, wobei die Einstellungen für „search“, „tail“ und „parsed“ ignoriert werden.",
   "common_logout": "Abmelden",
   "common_redeploy": "Neu deployen",
