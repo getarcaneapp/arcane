@@ -1749,6 +1749,8 @@
   "http_client_timeout_description": "Timeout predefinito per le richieste HTTP in secondi (predefinito: 30)",
   "registry_timeout": "Timeout Registro",
   "registry_timeout_description": "Timeout per le operazioni del registro container in secondi (predefinito: 30)",
+  "registry_tag_timeout": "Timeout del tag del Registro di sistema",
+  "registry_tag_timeout_description": "Timeout, espresso in secondi, per l'elenco di tutti i tag presenti in un archivio di immagini durante i controlli di aggiornamento della versione. Gli archivi di grandi dimensioni restituiscono migliaia di tag distribuiti su molte pagine (impostazione predefinita: 120)",
   "proxy_request_timeout": "Timeout Richiesta Proxy",
   "proxy_request_timeout_description": "Timeout per le richieste proxy in secondi (predefinito: 60)",
   "customize_title": "Personalizzazione",
