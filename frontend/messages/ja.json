@@ -242,6 +242,8 @@
   "log_auto_scroll_tooltip": "新しいエントリが到着する間、ビューを最新のログ行に固定します。",
   "log_auto_start_tooltip": "このパネルを開くと、自動的にログのストリーミングを開始します。",
   "log_parsed_mode_tooltip": "構造化ログが利用可能な場合、解析された形式で表示します。元の行のテキストを見るにはオフにします。",
+  "log_stream_labels": "ストリームのラベル",
+  "log_stream_labels_tooltip": "STDOUT と STDERR を各行にテキストとして表示します。この設定をオフにすると、代わりに STDOUT には緑色のドット、STDERR には赤色の四角が表示されます。",
   "log_download_tooltip": "このコンテナについて、Docker がまだ保持しているすべてのログ行をダウンロードします。この際、「search」、「tail」、および「parsed」の設定は無視されます。",
   "common_logout": "Logout",
   "common_redeploy": "Redeploy",
