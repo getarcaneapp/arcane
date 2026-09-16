@@ -1749,6 +1749,8 @@
   "http_client_timeout_description": "Thời gian chờ mặc định cho các yêu cầu HTTP (đơn vị: giây) (mặc định: 30)",
   "registry_timeout": "Thời gian chờ của Registry",
   "registry_timeout_description": "Thời gian chờ cho các thao tác trên kho lưu trữ container (đơn vị: giây) (mặc định: 30)",
+  "registry_tag_timeout": "Thời gian chờ của thẻ đăng ký",
+  "registry_tag_timeout_description": "Thời gian chờ để liệt kê tất cả các thẻ trong kho lưu trữ hình ảnh trong quá trình kiểm tra cập nhật phiên bản, tính bằng giây. Các kho lưu trữ lớn có thể trả về hàng nghìn thẻ trải dài trên nhiều trang (mặc định: 120)",
   "proxy_request_timeout": "Thời gian chờ yêu cầu proxy",
   "proxy_request_timeout_description": "Thời gian chờ cho các yêu cầu được chuyển tiếp qua proxy (đơn vị: giây) (mặc định: 60)",
   "customize_title": "Tùy chỉnh",
