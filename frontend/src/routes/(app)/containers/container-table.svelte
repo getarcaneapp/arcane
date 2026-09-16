@@ -224,11 +224,15 @@
 		goto(`/projects/new?fromContainers=${convertibleIds.join(',')}&fromEnv=${encodeURIComponent(currentEnvId)}`);
 	}
 
-	function handleSelectedBulkUpdate(ids: string[]) {
-		const validUpdateIds = ids.filter((id) => {
+	function filterUpdatableContainerIds() {
+		return selectedIds?.filter((id) => {
 			const container = containers.data?.find((c) => c.id === id);
 			return container?.updateInfo?.hasUpdate;
 		});
+	}
+
+	function handleSelectedBulkUpdate(ids: string[]) {
+		const validUpdateIds = filterUpdatableContainerIds();
 
 		if (!validUpdateIds?.length) {
 			return;
@@ -401,12 +405,12 @@
 					}
 				]
 			: []),
-		...(canUpdateContainers
+		...(canUpdateContainers && filterUpdatableContainerIds()?.length > 0
 			? [
 					{
 						id: 'update',
 						label: m.containers_bulk_update({
-							count: selectedIds?.length ?? 0
+							count: filterUpdatableContainerIds()?.length ?? 0
 						}),
 						action: 'update' as const,
 						onClick: handleSelectedBulkUpdate,
