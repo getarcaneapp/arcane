@@ -242,6 +242,8 @@
   "log_auto_scroll_tooltip": "Mantiene la vista bloccata sulle righe di registro più recenti mentre arrivano nuove voci.",
   "log_auto_start_tooltip": "Avvia lo streaming dei registri automaticamente quando si apre questo pannello.",
   "log_parsed_mode_tooltip": "Mostra i log strutturati in forma analizzata, se disponibili. Disattivarlo per vedere il testo originale della riga grezza.",
+  "log_stream_labels": "Etichette dei flussi",
+  "log_stream_labels_tooltip": "Visualizza STDOUT e STDERR come testo su ogni riga. Disattivalo per visualizzare invece un punto verde per STDOUT e un quadrato rosso per STDERR.",
   "log_download_tooltip": "Scarica tutte le righe di log che Docker conserva ancora per questo container, ignorando le impostazioni relative a “search”, “tail” e “parsed”.",
   "common_logout": "Esci",
   "common_redeploy": "Redistribuisci",
