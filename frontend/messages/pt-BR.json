@@ -1579,7 +1579,7 @@
   "security_trivy_resource_limits_label": "Limites de Recursos Trivy",
   "security_trivy_resource_limits_description": "Configurar os limites de CPU e memória para os contêineres de verificação Trivy.",
   "security_trivy_cpu_limit_label": "Limite de CPU (núcleos)",
-  "security_trivy_cpu_limit_help": "Somente números naturais (ex.: 1 ou 2).",
+  "security_trivy_cpu_limit_help": "Núcleos da CPU, como 0,5 ou 1,5. Defina como 0 para não haver limite de CPU. Os hosts que utilizam afinidade de CPU em vez de cotas de CPU utilizam núcleos inteiros.",
   "security_trivy_memory_limit_label": "Limite de memória (MB)",
   "security_trivy_concurrent_scan_containers_label": "Containers de escaneamento simultâneos",
   "security_trivy_concurrent_scan_containers_help": "Número máximo de caixas de verificação de Trivy que podem ser executados ao mesmo tempo através de escaneamentos manuais e programados.",
