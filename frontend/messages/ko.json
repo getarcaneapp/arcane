@@ -242,6 +242,8 @@
   "log_auto_scroll_tooltip": "새로운 로그가 추가될 때 항상 최신 로그 위치로 자동 스크롤합니다.",
   "log_auto_start_tooltip": "이 패널을 열 때 로그 스트리밍을 자동으로 시작합니다.",
   "log_parsed_mode_tooltip": "구조화된 로그를 보기 편하게 분석(Parsed)하여 표시합니다. 원본 텍스트를 보려면 이 옵션을 끄세요.",
+  "log_stream_labels": "스트림 레이블",
+  "log_stream_labels_tooltip": "STDOUT과 STDERR을 각 줄마다 텍스트로 표시합니다. 이 기능을 끄면 STDOUT은 녹색 점으로, STDERR은 빨간색 사각형으로 표시됩니다.",
   "log_download_tooltip": "이 컨테이너에 대해 Docker가 여전히 보관하고 있는 모든 로그 행을 다운로드하며, ‘search’, ‘tail’ 및 ‘parsed’ 설정은 무시합니다.",
   "common_logout": "로그아웃",
   "common_redeploy": "재배포",
