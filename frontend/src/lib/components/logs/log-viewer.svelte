@@ -35,6 +35,7 @@
 		onStart?: () => void;
 		onStop?: () => void;
 		showParsedJson?: boolean;
+		showStreamLabels?: boolean;
 		groupAdjacentLines?: boolean;
 		searchTerm?: string;
 	}
@@ -54,6 +55,7 @@
 		onStart,
 		onStop,
 		showParsedJson = $bindable(false),
+		showStreamLabels = true,
 		groupAdjacentLines = false,
 		searchTerm = ''
 	}: Props = $props();
@@ -494,6 +496,24 @@
 	</div>
 {/snippet}
 
+{#snippet renderLevelLabel(level: LogViewerEntry['level'], labelClass: string)}
+	{#if showStreamLabels || (level !== 'stdout' && level !== 'stderr')}
+		<span class={cn('shrink-0', labelClass, getLevelClass(level))}>
+			{level.toUpperCase()}
+		</span>
+	{:else}
+		<span
+			class={cn('inline-flex h-4 shrink-0 items-center', labelClass, getLevelClass(level))}
+			role="img"
+			aria-label={level.toUpperCase()}
+			title={level.toUpperCase()}
+			data-stream={level}
+		>
+			<span class={cn('size-2 bg-current', level === 'stdout' ? 'rounded-full' : 'rounded-[2px]')}></span>
+		</span>
+	{/if}
+{/snippet}
+
 {#snippet renderGroupedSummary(displayEntry: LogViewerDisplayEntry, contentClass: string)}
 	<div class="flex min-w-0 items-start gap-2">
 		<Collapsible.Trigger
@@ -575,9 +595,7 @@
 								{getDisplayEntryService(displayLog)}
 							</span>
 						{/if}
-						<span class="shrink-0 {getLevelClass(getDisplayEntryLevel(displayLog))}">
-							{getDisplayEntryLevel(displayLog).toUpperCase()}
-						</span>
+						{@render renderLevelLabel(getDisplayEntryLevel(displayLog), '')}
 					</div>
 					{#if displayLog.grouped}
 						<Collapsible.Root
@@ -627,9 +645,7 @@
 							{getDisplayEntryService(displayLog)}
 						</span>
 					{/if}
-					<span class="mr-2 min-w-fit shrink-0 pt-1 text-xs {getLevelClass(getDisplayEntryLevel(displayLog))}">
-						{getDisplayEntryLevel(displayLog).toUpperCase()}
-					</span>
+					{@render renderLevelLabel(getDisplayEntryLevel(displayLog), 'mr-2 min-w-fit pt-1 text-xs')}
 					<div class="min-w-0 flex-1">
 						{#if displayLog.grouped}
 							<Collapsible.Root

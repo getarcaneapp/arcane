@@ -96,6 +96,7 @@
 			{projectId}
 			tailLines={preferences.tailLines}
 			bind:showParsedJson={preferences.showParsedJson}
+			showStreamLabels={preferences.showStreamLabels}
 			type="project"
 			maxLines={500}
 			showTimestamps={true}

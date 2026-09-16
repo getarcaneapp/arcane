@@ -160,6 +160,17 @@
 					<span class="text-xs text-muted-foreground">{m.log_parsed_mode_tooltip()}</span>
 				</div>
 			</DropdownMenu.CheckboxItem>
+			<DropdownMenu.CheckboxItem
+				checked={preferences.showStreamLabels}
+				onCheckedChange={(checked) => {
+					preferences.showStreamLabels = checked === true;
+				}}
+			>
+				<div class="flex flex-col gap-0.5">
+					<span class="font-medium">{m.log_stream_labels()}</span>
+					<span class="text-xs text-muted-foreground">{m.log_stream_labels_tooltip()}</span>
+				</div>
+			</DropdownMenu.CheckboxItem>
 		</DropdownMenu.Content>
 	</DropdownMenu.Root>
 {/snippet}
@@ -185,8 +196,8 @@
 {/if}
 
 {#if showDesktop}
-	<div class="hidden flex-col gap-3 lg:flex lg:flex-row lg:items-center lg:justify-end">
-		<div class="flex flex-wrap items-center gap-4">
+	<div class="hidden flex-wrap items-center justify-end gap-x-4 gap-y-2 lg:flex">
+		<div class="flex shrink-0 items-center gap-4">
 			<ArcaneTooltip.Root>
 				<ArcaneTooltip.Trigger>
 					{#snippet child({ props })}
@@ -243,27 +254,46 @@
 					{m.log_parsed_mode_tooltip()}
 				</ArcaneTooltip.Content>
 			</ArcaneTooltip.Root>
+
+			<ArcaneTooltip.Root>
+				<ArcaneTooltip.Trigger>
+					{#snippet child({ props })}
+						<SwitchWithLabel
+							triggerProps={props}
+							id="stream-labels-toggle"
+							checked={preferences.showStreamLabels}
+							label={m.log_stream_labels()}
+							onCheckedChange={(checked) => {
+								preferences.showStreamLabels = checked;
+							}}
+						/>
+					{/snippet}
+				</ArcaneTooltip.Trigger>
+				<ArcaneTooltip.Content side="bottom" class="max-w-xs">
+					{m.log_stream_labels_tooltip()}
+				</ArcaneTooltip.Content>
+			</ArcaneTooltip.Root>
 		</div>
 
-		<Input type="search" placeholder={m.common_search()} bind:value={searchTerm} class="h-9 w-44 text-xs" />
+		<div class="flex shrink-0 items-center gap-3">
+			<Input type="search" placeholder={m.common_search()} bind:value={searchTerm} class="h-9 w-44 text-xs" />
 
-		<Select.Root
-			type="single"
-			value={preferences.selectedTail.current}
-			disabled={isStreaming}
-			onValueChange={(v: string) => (preferences.selectedTail.current = v)}
-		>
-			<Select.Trigger class="h-9 w-32 text-xs">
-				<span>{selectedLabel}</span>
-			</Select.Trigger>
-			<Select.Content>
-				{#each tailOptions as option (option.value)}
-					<Select.Item value={option.value}>{option.label}</Select.Item>
-				{/each}
-			</Select.Content>
-		</Select.Root>
+			<Select.Root
+				type="single"
+				value={preferences.selectedTail.current}
+				disabled={isStreaming}
+				onValueChange={(v: string) => (preferences.selectedTail.current = v)}
+			>
+				<Select.Trigger class="h-9 w-32 text-xs">
+					<span>{selectedLabel}</span>
+				</Select.Trigger>
+				<Select.Content>
+					{#each tailOptions as option (option.value)}
+						<Select.Item value={option.value}>{option.label}</Select.Item>
+					{/each}
+				</Select.Content>
+			</Select.Root>
 
-		<div class="flex items-center gap-3">
 			{#if isStreaming}
 				<ArcaneButton action="stop" tone="outline" size="sm" class="text-xs font-medium" onclick={onStop} />
 			{:else}
