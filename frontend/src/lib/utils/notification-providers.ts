@@ -146,9 +146,13 @@ export function createNotificationProviderFormState(
 	) as NotificationProviderFormState;
 }
 
+function cloneProviderFormValues<K extends NotificationProviderKey>(values: ProviderFormValuesMap[K]): ProviderFormValuesMap[K] {
+	return JSON.parse(JSON.stringify(values)) as ProviderFormValuesMap[K];
+}
+
 export function cloneNotificationProviderFormState(state: NotificationProviderFormState): NotificationProviderFormState {
 	return Object.fromEntries(
-		NOTIFICATION_PROVIDER_KEYS.map((provider) => [provider, { ...state[provider] }])
+		NOTIFICATION_PROVIDER_KEYS.map((provider) => [provider, cloneProviderFormValues(state[provider])])
 	) as NotificationProviderFormState;
 }
 
@@ -157,7 +161,7 @@ export function updateNotificationProviderFormState<K extends NotificationProvid
 	provider: K,
 	values: ProviderFormValuesMap[K]
 ): NotificationProviderFormState {
-	return { ...state, [provider]: { ...values } } as NotificationProviderFormState;
+	return { ...state, [provider]: cloneProviderFormValues(values) } as NotificationProviderFormState;
 }
 
 export function getNotificationProviderDefinition<K extends NotificationProviderKey>(

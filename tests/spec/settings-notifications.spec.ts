@@ -32,7 +32,10 @@ test.describe('Notification settings', () => {
 	const setupNotificationTest = async (
 		page: Page,
 		provider: string,
-		options: { failProviders?: ReadonlySet<string> } = {}
+		options: {
+			failProviders?: ReadonlySet<string>;
+			initialSettings?: Array<Record<string, unknown>>;
+		} = {}
 	) => {
 		const observedErrors: string[] = [];
 
@@ -52,7 +55,8 @@ test.describe('Notification settings', () => {
 		const savedProviders: string[] = [];
 		// Saved settings are kept in memory and served back on GET so that a
 		// reload round-trips them through the form like the real backend would.
-		const persistedSettings: Array<Record<string, unknown>> = [];
+		const persistedSettings: Array<Record<string, unknown>> = [...(options.initialSettings ?? [])];
+		const savedPayloads: Array<Record<string, unknown>> = [];
 
 		await page.route('**/api/environments/*/notifications/settings', async (route) => {
 			const req = route.request();
@@ -70,6 +74,7 @@ test.describe('Notification settings', () => {
 				const saved = req.postDataJSON() as Record<string, unknown>;
 				const savedProvider = String(saved.provider ?? '');
 				attemptedProviders.push(savedProvider);
+				savedPayloads.push(saved);
 				if (options.failProviders?.has(savedProvider)) {
 					await route.fulfill({
 						status: 500,
@@ -121,9 +126,36 @@ test.describe('Notification settings', () => {
 			wasTestEndpointCalled: () => testEndpointCalled,
 			wasSaveEndpointCalled: () => saveEndpointCalled,
 			getAttemptedProviders: () => [...attemptedProviders],
-			getSavedProviders: () => [...savedProviders]
+			getSavedProviders: () => [...savedProviders],
+			getSavedPayloads: () => [...savedPayloads]
 		};
 	};
+
+	const telegramSettings = (chatIds: string[]) => ({
+		provider: 'telegram',
+		enabled: true,
+		config: {
+			chatIds,
+			preview: true,
+			notification: true,
+			title: '',
+			events: {
+				image_update: true,
+				container_update: true,
+				vulnerability_found: true,
+				prune_report: true,
+				auto_heal: true
+			}
+		}
+	});
+
+	const telegramChatIds = (payload: Record<string, unknown>) =>
+		(payload.config as { chatIds: string[] }).chatIds;
+
+	const telegramRow = (page: Page, index: number) => ({
+		chatId: page.locator(`#telegram-chat-id-${index}`),
+		topicId: page.locator(`#telegram-topic-id-${index}`)
+	});
 
 	test('saves only changed providers and retains failed providers as dirty', async ({ page }) => {
 		const { getAttemptedProviders, getSavedProviders } = await setupNotificationTest(
@@ -253,7 +285,7 @@ test.describe('Notification settings', () => {
 		await page
 			.getByPlaceholder('123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11')
 			.fill('123456:TEST-TOKEN');
-		await page.getByPlaceholder('@channel, 123456789, @another_channel').fill('123456789');
+		await telegramRow(page, 0).chatId.fill('123456789');
 
 		await openTestMenu(page);
 		await page.getByRole('menuitem', { name: 'Simple', exact: true }).click();
@@ -265,6 +297,123 @@ test.describe('Notification settings', () => {
 
 		await expect.poll(wasTestEndpointCalled, { timeout: 10_000 }).toBe(true);
 		getErrorCheck();
+	});
+
+	test('loads, edits and saves telegram topic destinations', async ({ page }) => {
+		const { getSavedPayloads, wasSaveEndpointCalled } = await setupNotificationTest(
+			page,
+			'telegram',
+			{
+				initialSettings: [telegramSettings(['@channel', '-1001234567890:42'])]
+			}
+		);
+
+		await openProviderTab(page, 'Telegram');
+		const saveButton = page.getByRole('button', { name: 'Save', exact: true });
+		const panel = page.getByRole('tabpanel').filter({ visible: true });
+
+		// Existing chats and chatId:topicId entries load into separate fields.
+		await expect(telegramRow(page, 0).chatId).toHaveValue('@channel');
+		await expect(telegramRow(page, 0).topicId).toHaveValue('');
+		await expect(telegramRow(page, 1).chatId).toHaveValue('-1001234567890');
+		await expect(telegramRow(page, 1).topicId).toHaveValue('42');
+		await expect(saveButton).toBeDisabled();
+
+		// A second topic in the same group plus a plain chat.
+		await panel.getByRole('button', { name: 'Add destination' }).click();
+		await telegramRow(page, 2).chatId.fill(' -1001234567890 ');
+		await telegramRow(page, 2).topicId.fill(' 7 ');
+		await panel.getByRole('button', { name: 'Add destination' }).click();
+		await telegramRow(page, 3).chatId.fill('123456789');
+		await expect(saveButton).toBeEnabled();
+
+		// The redacted bot token stays blank and does not block saving.
+		await expect(page.getByPlaceholder('123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11')).toHaveValue(
+			''
+		);
+		await saveButton.click();
+		await expect.poll(wasSaveEndpointCalled).toBe(true);
+		expect(telegramChatIds(getSavedPayloads()[0])).toEqual([
+			'@channel',
+			'-1001234567890:42',
+			'-1001234567890:7',
+			'123456789'
+		]);
+		await expect(saveButton).toBeDisabled();
+
+		// Saved destinations round-trip through a reload.
+		await page.reload();
+		await openProviderTab(page, 'Telegram');
+		await expect(telegramRow(page, 3).chatId).toHaveValue('123456789');
+		await expect(telegramRow(page, 2).topicId).toHaveValue('7');
+
+		// Clearing a topic marks the form dirty and Reset restores the baseline.
+		await telegramRow(page, 1).topicId.fill('');
+		await expect(saveButton).toBeEnabled();
+		await page.getByRole('button', { name: 'Reset', exact: true }).click();
+		await expect(telegramRow(page, 1).topicId).toHaveValue('42');
+		await expect(saveButton).toBeDisabled();
+
+		// Removing a row saves the remaining destinations in order.
+		await panel.getByRole('button', { name: 'Remove' }).nth(1).click();
+		await expect(telegramRow(page, 1).topicId).toHaveValue('7');
+		await saveButton.click();
+		await expect.poll(() => getSavedPayloads().length).toBe(2);
+		expect(telegramChatIds(getSavedPayloads()[1])).toEqual([
+			'@channel',
+			'-1001234567890:7',
+			'123456789'
+		]);
+	});
+
+	test('rejects invalid telegram destinations before saving or testing', async ({ page }) => {
+		const { wasSaveEndpointCalled, wasTestEndpointCalled } = await setupNotificationTest(
+			page,
+			'telegram'
+		);
+
+		await openProviderTab(page, 'Telegram');
+		await enableCurrentProvider(page);
+		await page
+			.getByPlaceholder('123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11')
+			.fill('123456:TEST-TOKEN');
+
+		const saveButton = page.getByRole('button', { name: 'Save', exact: true });
+		const panel = page.getByRole('tabpanel').filter({ visible: true });
+
+		// Non-numeric and non-positive topics are rejected.
+		await telegramRow(page, 0).chatId.fill('-1001234567890');
+		await telegramRow(page, 0).topicId.fill('abc');
+		await expect(panel.getByText('Topic ID must be a positive whole number')).toBeVisible();
+		await saveButton.click();
+		await expect(page.getByText('Please check the form for errors').first()).toBeVisible();
+		expect(wasSaveEndpointCalled()).toBe(false);
+
+		await telegramRow(page, 0).topicId.fill('0');
+		await expect(panel.getByText('Topic ID must be a positive whole number')).toBeVisible();
+
+		// A topic without a chat is incomplete.
+		await telegramRow(page, 0).topicId.fill('5');
+		await telegramRow(page, 0).chatId.fill('');
+		await expect(panel.getByText('This field is required')).toBeVisible();
+
+		// A colon in the chat field is not accepted as an inline topic.
+		await telegramRow(page, 0).chatId.fill('-1001234567890:5');
+		await expect(panel.getByText(/Chat ID cannot contain a colon/)).toBeVisible();
+
+		// Save & Test is blocked while the form is invalid.
+		await openTestMenu(page);
+		await page.getByRole('menuitem', { name: 'Simple', exact: true }).click();
+		await page.getByRole('button', { name: 'Save & Test', exact: true }).click();
+		await expect(page.getByText('Please check the form for errors').first()).toBeVisible();
+		expect(wasSaveEndpointCalled()).toBe(false);
+		expect(wasTestEndpointCalled()).toBe(false);
+
+		// Fixing the row lets the save go through.
+		await telegramRow(page, 0).chatId.fill('-1001234567890');
+		await expect(panel.getByText(/Chat ID cannot contain a colon/)).toHaveCount(0);
+		await saveButton.click();
+		await expect.poll(wasSaveEndpointCalled).toBe(true);
 	});
 
 	test('should allow testing generic webhook notifications', async ({ page }) => {

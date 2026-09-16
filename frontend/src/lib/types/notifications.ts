@@ -77,9 +77,14 @@ export interface EmailFormValues extends BaseProviderFormValues {
 	authMode: EmailAuthMode;
 }
 
+export interface TelegramDestination {
+	chatId: string;
+	topicId: string;
+}
+
 export interface TelegramFormValues extends BaseProviderFormValues {
 	botToken: string;
-	chatIds: string;
+	destinations: TelegramDestination[];
 	preview: boolean;
 	notification: boolean;
 	title: string;
@@ -278,13 +283,29 @@ export function emailSettingsToFormValues(settings?: NotificationSettings): Emai
 	};
 }
 
+function telegramChatIdsToDestinations(chatIds: string[]): TelegramDestination[] {
+	const destinations = chatIds.map((entry) => {
+		const separator = entry.indexOf(':');
+		if (separator < 0) return { chatId: entry.trim(), topicId: '' };
+		return { chatId: entry.slice(0, separator).trim(), topicId: entry.slice(separator + 1).trim() };
+	});
+	return destinations.length > 0 ? destinations : [{ chatId: '', topicId: '' }];
+}
+
+function telegramDestinationsToChatIds(destinations: TelegramDestination[]): string[] {
+	return destinations
+		.map(({ chatId, topicId }) => ({ chatId: chatId.trim(), topicId: topicId.trim() }))
+		.filter(({ chatId, topicId }) => chatId.length > 0 || topicId.length > 0)
+		.map(({ chatId, topicId }) => (topicId ? `${chatId}:${topicId}` : chatId));
+}
+
 export function telegramSettingsToFormValues(settings?: NotificationSettings): TelegramFormValues {
 	const cfg = getConfig(settings);
 	const events = getEvents(cfg);
 	return {
 		enabled: settings?.enabled ?? false,
 		botToken: getString(cfg, 'botToken'),
-		chatIds: getStringArray(cfg, 'chatIds').join(', '),
+		destinations: telegramChatIdsToDestinations(getStringArray(cfg, 'chatIds')),
 		preview: getBoolean(cfg, 'preview', true),
 		notification: getBoolean(cfg, 'notification', true),
 		title: getString(cfg, 'title'),
@@ -366,10 +387,7 @@ export function telegramFormValuesToSettings(values: TelegramFormValues): Notifi
 		enabled: values.enabled,
 		config: {
 			botToken: values.botToken,
-			chatIds: values.chatIds
-				.split(',')
-				.map((id) => id.trim())
-				.filter((id) => id.length > 0),
+			chatIds: telegramDestinationsToChatIds(values.destinations),
 			preview: values.preview,
 			notification: values.notification,
 			title: values.title,

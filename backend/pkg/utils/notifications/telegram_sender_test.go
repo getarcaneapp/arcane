@@ -45,6 +45,26 @@ func TestBuildTelegramURL(t *testing.T) {
 			},
 			wantURL: "telegram://123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11@telegram?chats=%40mybot&title=Container+Updates",
 		},
+		{
+			name: "config with topic destination",
+			config: TelegramConfig{
+				BotToken:     "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11",
+				ChatIDs:      []string{"-1001234567890:42"},
+				Preview:      true,
+				Notification: true,
+			},
+			wantURL: "telegram://123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11@telegram?chats=-1001234567890%3A42",
+		},
+		{
+			name: "config with mixed chat and topic destinations",
+			config: TelegramConfig{
+				BotToken:     "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11",
+				ChatIDs:      []string{"@channel", "-1001234567890:42", "-1001234567890:7"},
+				Preview:      true,
+				Notification: true,
+			},
+			wantURL: "telegram://123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11@telegram?chats=%40channel%2C-1001234567890%3A42%2C-1001234567890%3A7",
+		},
 	}
 
 	for _, tt := range tests {
