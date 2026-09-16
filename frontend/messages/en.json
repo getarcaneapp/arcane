@@ -636,6 +636,7 @@
   "containers_bulk_update": "Update ({count})",
   "containers_bulk_update_confirm_title": "Update {count} Container(s)",
   "containers_bulk_update_confirm_message": "Are you sure you want to update {count} container(s)?",
+  "containers_bulk_update_filtered_confirm_message": "Only {filteredCount} out of {totalCount} containers are eligible for updates.  Are you sure you want to update {filteredCount} container(s)?",
   "containers_bulk_update_success": "Successfully updated {count} container(s)",
   "containers_bulk_update_partial": "Updated {success} of {total} container(s). {failed} failed.",
   "containers_bulk_update_failed": "Failed to update containers",

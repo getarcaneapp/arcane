@@ -165,7 +165,9 @@
 	const isAnyLoading = $derived(hasAnyLoadingState(actionStatus, isBulkLoading));
 
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
-	let tablePreferences = $state<{ persistCustomSettings(settings: Record<string, unknown>): void }>();
+	let tablePreferences = $state<{
+		persistCustomSettings(settings: Record<string, unknown>): void;
+	}>();
 	let customSettings = $state<Record<string, unknown>>({});
 	let showInternal = $derived.by(() => {
 		return (customSettings['showInternalContainers'] as boolean) ?? false;
@@ -220,6 +222,19 @@
 		});
 		if (convertibleIds.length === 0) return;
 		goto(`/projects/new?fromContainers=${convertibleIds.join(',')}&fromEnv=${encodeURIComponent(currentEnvId)}`);
+	}
+
+	function handleSelectedBulkUpdate(ids: string[]) {
+		const validUpdateIds = ids.filter((id) => {
+			const container = containers.data?.find((c) => c.id === id);
+			return container?.updateInfo?.hasUpdate;
+		});
+
+		if (!validUpdateIds?.length) {
+			return;
+		}
+
+		handleBulkUpdate(validUpdateIds, ids);
 	}
 
 	// The dialog is mounted only while a row is targeted, so it gets fresh state on
@@ -280,9 +295,25 @@
 
 	const columns = $derived([
 		{ accessorKey: 'id', title: m.common_id(), cell: IdCell, hidden: true },
-		{ accessorKey: 'names', id: 'name', title: m.common_name(), sortable: !groupByProject, cell: NameCell },
-		{ accessorKey: 'image', title: m.common_image(), sortable: !groupByProject, cell: ImageCell },
-		{ accessorKey: 'state', title: m.common_state(), sortable: !groupByProject, cell: StateCell },
+		{
+			accessorKey: 'names',
+			id: 'name',
+			title: m.common_name(),
+			sortable: !groupByProject,
+			cell: NameCell
+		},
+		{
+			accessorKey: 'image',
+			title: m.common_image(),
+			sortable: !groupByProject,
+			cell: ImageCell
+		},
+		{
+			accessorKey: 'state',
+			title: m.common_state(),
+			sortable: !groupByProject,
+			cell: StateCell
+		},
 		{
 			id: 'updates',
 			accessorFn: (row) => {
@@ -310,10 +341,31 @@
 			cell: MemoryCell
 		},
 		{ accessorKey: 'status', title: m.common_status() },
-		{ accessorKey: 'networkSettings', id: 'ipAddress', title: m.containers_ip_address(), sortable: false, cell: IPAddressCell },
-		{ accessorKey: 'ports', title: m.common_ports(), sortable: !groupByProject, cell: PortsCell },
-		{ accessorKey: 'created', title: m.common_created(), sortable: !groupByProject, cell: CreatedCell },
-		{ id: 'label', accessorFn: (row) => Object.keys(row.labels ?? {}).length, title: m.common_labels(), hidden: true }
+		{
+			accessorKey: 'networkSettings',
+			id: 'ipAddress',
+			title: m.containers_ip_address(),
+			sortable: false,
+			cell: IPAddressCell
+		},
+		{
+			accessorKey: 'ports',
+			title: m.common_ports(),
+			sortable: !groupByProject,
+			cell: PortsCell
+		},
+		{
+			accessorKey: 'created',
+			title: m.common_created(),
+			sortable: !groupByProject,
+			cell: CreatedCell
+		},
+		{
+			id: 'label',
+			accessorFn: (row) => Object.keys(row.labels ?? {}).length,
+			title: m.common_labels(),
+			hidden: true
+		}
 	] satisfies ColumnSpec<ContainerSummaryDto>[]);
 
 	const mobileFields = [
@@ -324,7 +376,11 @@
 		{ id: 'memoryUsage', label: m.memory_usage(), defaultVisible: false },
 		{ id: 'status', label: m.common_status(), defaultVisible: true },
 		{ id: 'image', label: m.common_image(), defaultVisible: true },
-		{ id: 'ipAddress', label: m.containers_ip_address(), defaultVisible: false },
+		{
+			id: 'ipAddress',
+			label: m.containers_ip_address(),
+			defaultVisible: false
+		},
 		{ id: 'ports', label: m.common_ports(), defaultVisible: true },
 		{ id: 'created', label: m.common_created(), defaultVisible: true }
 	];
@@ -334,7 +390,9 @@
 			? [
 					{
 						id: 'start',
-						label: m.containers_bulk_start({ count: selectedIds?.length ?? 0 }),
+						label: m.containers_bulk_start({
+							count: selectedIds?.length ?? 0
+						}),
 						action: 'start' as const,
 						onClick: handleBulkStart,
 						loading: isBulkLoading.start,
@@ -347,9 +405,11 @@
 			? [
 					{
 						id: 'update',
-						label: m.containers_bulk_update({ count: selectedIds?.length ?? 0 }),
+						label: m.containers_bulk_update({
+							count: selectedIds?.length ?? 0
+						}),
 						action: 'update' as const,
-						onClick: handleBulkUpdate,
+						onClick: handleSelectedBulkUpdate,
 						loading: isBulkLoading.update,
 						disabled: !resourcesCurrent || isAnyLoading,
 						icon: UpdateIcon
@@ -360,7 +420,9 @@
 			? [
 					{
 						id: 'stop',
-						label: m.containers_bulk_stop({ count: selectedIds?.length ?? 0 }),
+						label: m.containers_bulk_stop({
+							count: selectedIds?.length ?? 0
+						}),
 						action: 'stop' as const,
 						onClick: handleBulkStop,
 						loading: isBulkLoading.stop,
@@ -373,7 +435,9 @@
 			? [
 					{
 						id: 'restart',
-						label: m.containers_bulk_restart({ count: selectedIds?.length ?? 0 }),
+						label: m.containers_bulk_restart({
+							count: selectedIds?.length ?? 0
+						}),
 						action: 'restart' as const,
 						onClick: handleBulkRestart,
 						loading: isBulkLoading.restart,
@@ -386,7 +450,9 @@
 			? [
 					{
 						id: 'remove',
-						label: m.containers_bulk_remove({ count: selectedIds?.length ?? 0 }),
+						label: m.containers_bulk_remove({
+							count: selectedIds?.length ?? 0
+						}),
 						action: 'remove' as const,
 						onClick: handleBulkRemove,
 						loading: isBulkLoading.remove,
@@ -399,7 +465,9 @@
 			? [
 					{
 						id: 'convert',
-						label: m.containers_bulk_convert({ count: selectedIds?.length ?? 0 }),
+						label: m.containers_bulk_convert({
+							count: selectedIds?.length ?? 0
+						}),
 						action: 'base' as const,
 						onClick: handleBulkConvert,
 						disabled: !resourcesCurrent || isAnyLoading,
