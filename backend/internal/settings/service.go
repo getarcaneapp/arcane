@@ -297,6 +297,7 @@ func DefaultSettingsConfig() *Settings {
 		GitOperationTimeout:    SettingVariable{Value: "300"},
 		HTTPClientTimeout:      SettingVariable{Value: "30"},
 		RegistryTimeout:        SettingVariable{Value: "30"},
+		RegistryTagTimeout:     SettingVariable{Value: "120"},
 		ProxyRequestTimeout:    SettingVariable{Value: "60"},
 		DeployWaitTimeout:      SettingVariable{Value: "600"},
 		BuildProvider:          SettingVariable{Value: "local"},

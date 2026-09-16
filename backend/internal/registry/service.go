@@ -22,6 +22,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	utilsregistry "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/registryauth"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
@@ -78,6 +79,12 @@ type ContainerRegistryService struct {
 	ecrRefreshGroup        singleflight.Group
 	distributionHTTPClient *http.Client
 	kvService              *kv.KVService
+	settingsService        *settings.SettingsService
+}
+
+func (s *ContainerRegistryService) WithSettingsService(settingsService *settings.SettingsService) *ContainerRegistryService {
+	s.settingsService = settingsService
+	return s
 }
 
 // NewContainerRegistryService creates a registry service. kvService may be nil

@@ -34,6 +34,7 @@ var timeoutSettingKeys = []string{
 	"gitOperationTimeout",
 	"httpClientTimeout",
 	"registryTimeout",
+	"registryTagTimeout",
 	"proxyRequestTimeout",
 	"deployWaitTimeout",
 	"trivyResourceLimitsEnabled",

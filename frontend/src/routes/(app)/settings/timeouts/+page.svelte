@@ -19,6 +19,7 @@
 		gitOperationTimeout: z.coerce.number().int().min(30).max(3600),
 		httpClientTimeout: z.coerce.number().int().min(5).max(300),
 		registryTimeout: z.coerce.number().int().min(5).max(300),
+		registryTagTimeout: z.coerce.number().int().min(5).max(3600),
 		proxyRequestTimeout: z.coerce.number().int().min(10).max(600)
 	});
 
@@ -32,6 +33,7 @@
 			gitOperationTimeout: settings.gitOperationTimeout,
 			httpClientTimeout: settings.httpClientTimeout,
 			registryTimeout: settings.registryTimeout,
+			registryTagTimeout: settings.registryTagTimeout,
 			proxyRequestTimeout: settings.proxyRequestTimeout
 		};
 	};
@@ -132,6 +134,15 @@
 						description={m.registry_timeout_description()}
 						placeholder="30"
 						helpText="Timeout in seconds (5-300)"
+						type="number"
+					/>
+					<TextInputWithLabel
+						bind:value={formInputs.registryTagTimeout.value}
+						error={formInputs.registryTagTimeout.error}
+						label={m.registry_tag_timeout()}
+						description={m.registry_tag_timeout_description()}
+						placeholder="120"
+						helpText="Timeout in seconds (5-3600)"
 						type="number"
 					/>
 					<TextInputWithLabel

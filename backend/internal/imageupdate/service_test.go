@@ -2518,3 +2518,73 @@ func TestContainerAggregationPreservesImageResultInternal(t *testing.T) {
 	require.Nil(t, original.ImageUpdate.ContainerUpdates)
 	require.Nil(t, original.ImageUpdate.ImageUpdate, "snapshot must not create recursive JSON")
 }
+
+func TestContainerTagChecksUseRegistryTagTimeoutInternal(t *testing.T) {
+	for _, tt := range []struct {
+		name            string
+		tagTimeout      string
+		respond         func(w http.ResponseWriter, r *http.Request)
+		wantErrContains string
+	}{
+		{name: "listing slower than registry timeout succeeds within tag budget", tagTimeout: "30", respond: func(w http.ResponseWriter, _ *http.Request) {
+			time.Sleep(1300 * time.Millisecond)
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"name": "team/app", "tags": []string{"1.0.0", "1.1.0"}}))
+		}},
+		{name: "stalled listing fails at tag budget", tagTimeout: "1", respond: func(_ http.ResponseWriter, r *http.Request) {
+			<-r.Context().Done()
+		}, wantErrContains: context.DeadlineExceeded.Error()},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			db := setupImageUpdateRegistryTestDBInternal(t)
+			t.Setenv("REGISTRY_TAG_TIMEOUT", tt.tagTimeout)
+			settingsService := newImageUpdateTestSettingsServiceInternal(t, "1", "30")
+			registryServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if !strings.HasSuffix(r.URL.Path, "/tags/list") {
+					http.NotFound(w, r)
+					return
+				}
+				tt.respond(w, r)
+			}))
+			defer registryServer.Close()
+			registryURL, err := url.Parse(registryServer.URL)
+			require.NoError(t, err)
+			imageRef := registryURL.Host + "/team/app:1.0.0"
+			imageID := digest.FromString("tag-timeout").String()
+			dockerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				switch {
+				case strings.HasSuffix(r.URL.Path, "/containers/json"):
+					require.NoError(t, json.NewEncoder(w).Encode([]dockertypescontainer.Summary{{ID: "one", Image: imageRef, ImageID: imageID}}))
+				case strings.Contains(r.URL.Path, "/images/"):
+					require.NoError(t, json.NewEncoder(w).Encode(dockertypesimage.InspectResponse{ID: imageID, RepoTags: []string{imageRef}}))
+				case strings.Contains(r.URL.Path, "/containers/"):
+					require.NoError(t, json.NewEncoder(w).Encode(dockertypescontainer.InspectResponse{ID: "one", Image: imageID, Config: &dockertypescontainer.Config{Image: imageRef}}))
+				default:
+					http.NotFound(w, r)
+				}
+			}))
+			defer dockerServer.Close()
+			registryService := registry.NewContainerRegistryService(db, func(context.Context) (registry.RegistryDaemonClient, error) {
+				return &fakeRegistryDaemonClient{distributionInspectFn: func(context.Context, string, client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
+					return client.DistributionInspectResult{}, errors.New("manifest not found")
+				}}, nil
+			}, nil, registryServer.Client()).WithSettingsService(settingsService)
+			svc := NewImageUpdateService(db, settingsService, registryService, &docker.DockerClientService{Client: newImageUpdateTestDockerClientInternal(t, dockerServer)}, nil, nil, nil)
+
+			start := time.Now()
+			checks, err := svc.checkContainerTagUpdatesInternal(t.Context(), []string{imageRef}, nil)
+			elapsed := time.Since(start)
+			require.NoError(t, err)
+			require.Contains(t, checks, "one")
+			require.Less(t, elapsed, 3*time.Second)
+			if tt.wantErrContains != "" {
+				require.Contains(t, checks["one"].Error, tt.wantErrContains)
+				return
+			}
+			require.Empty(t, checks["one"].Error)
+			require.True(t, checks["one"].HasUpdate)
+			require.Equal(t, "1.1.0", checks["one"].LatestVersion)
+		})
+	}
+}

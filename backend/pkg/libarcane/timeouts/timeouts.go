@@ -11,6 +11,7 @@ const (
 	DefaultGitOperation    = 5 * time.Minute
 	DefaultHTTPClient      = 30 * time.Second
 	DefaultRegistry        = 30 * time.Second
+	DefaultRegistryTags    = 120 * time.Second
 	DefaultProxyRequest    = 60 * time.Second
 	DefaultBuildTimeout    = 30 * time.Minute
 	// DefaultDeployWait bounds how long compose up waits for services to become
