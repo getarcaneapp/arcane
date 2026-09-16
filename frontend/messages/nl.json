@@ -242,6 +242,8 @@
   "log_auto_scroll_tooltip": "Houdt de weergave vastgepind op de nieuwste logregels terwijl er nieuwe items binnenkomen.",
   "log_auto_start_tooltip": "Start het streamen van logs automatisch wanneer je dit paneel opent.",
   "log_parsed_mode_tooltip": "Toont gestructureerde logs in geparseerde vorm indien beschikbaar. Zet het uit om de originele ruwe tekst te zien.",
+  "log_stream_labels": "Streamlabels",
+  "log_stream_labels_tooltip": "Geeft STDOUT en STDERR weer als tekst op elke regel. Schakel deze optie uit om in plaats daarvan een groene stip voor STDOUT en een rood vierkantje voor STDERR weer te geven.",
   "log_download_tooltip": "Hiermee worden alle logregels gedownload die Docker nog voor deze container bewaart, waarbij de instellingen voor ‘search’, ‘tail’ en ‘parsed’ worden genegeerd.",
   "common_logout": "Afmelden",
   "common_redeploy": "Herimplementeren",
