@@ -1579,7 +1579,7 @@
   "security_trivy_resource_limits_label": "Trivy Grondstoffen Limieten",
   "security_trivy_resource_limits_description": "Configureer CPU en geheugen limieten voor Trivy scan containers.",
   "security_trivy_cpu_limit_label": "CPU-limiet (cores)",
-  "security_trivy_cpu_limit_help": "Alleen hele getallen (bijvoorbeeld: 1 of 2).",
+  "security_trivy_cpu_limit_help": "CPU-kernen, zoals 0,5 of 1,5. Stel deze waarde in op 0 als er geen CPU-limiet geldt. Hosts die gebruikmaken van CPU-affiniteit in plaats van CPU-quota’s, gebruiken volledige kernen.",
   "security_trivy_memory_limit_label": "Geheugen Limiet (MB)",
   "security_trivy_concurrent_scan_containers_label": "Gelijktijdige Scan Containers",
   "security_trivy_concurrent_scan_containers_help": "Maximaal aantal Trivy scan containers die tegelijkertijd kunnen worden uitgevoerd over handmatige en geplande scans.",
