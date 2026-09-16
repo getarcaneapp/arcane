@@ -242,6 +242,8 @@
   "log_auto_scroll_tooltip": "Keeps the view pinned to the newest log lines while new entries arrive.",
   "log_auto_start_tooltip": "Starts streaming logs automatically when you open this panel.",
   "log_parsed_mode_tooltip": "Shows structured logs in parsed form when available. Turn it off to see the original raw line text.",
+  "log_stream_labels": "Stream-etiketter",
+  "log_stream_labels_tooltip": "Viser STDOUT og STDERR som tekst på hver linje. Slå funktionen fra for i stedet at vise en grøn prik for STDOUT og en rød firkant for STDERR.",
   "log_download_tooltip": "Henter alle loglinjer, som Docker stadig opbevarer for denne container, uden at tage hensyn til indstillingerne for »search«, »tail« og »parsed«.",
   "common_logout": "Logout",
   "common_redeploy": "Redeploy",
