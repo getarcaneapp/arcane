@@ -1749,6 +1749,8 @@
   "http_client_timeout_description": "HTTP 요청의 기본 타임아웃입니다 (단위: 초, 기본값: 30).",
   "registry_timeout": "레지스트리 타임아웃",
   "registry_timeout_description": "컨테이너 레지스트리 작업의 타임아웃입니다 (단위: 초, 기본값: 30).",
+  "registry_tag_timeout": "레지스트리 태그 시간 초과",
+  "registry_tag_timeout_description": "버전 업데이트 확인 시 이미지 저장소의 모든 태그를 나열하는 데 걸리는 타임아웃 시간(초). 대규모 저장소의 경우 여러 페이지에 걸쳐 수천 개의 태그가 반환됩니다(기본값: 120).",
   "proxy_request_timeout": "프록시 요청 타임아웃",
   "proxy_request_timeout_description": "프록시 요청의 타임아웃입니다 (단위: 초, 기본값: 60).",
   "customize_title": "사용자 지정",
