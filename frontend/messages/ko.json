@@ -1579,7 +1579,7 @@
   "security_trivy_resource_limits_label": "Trivy 리소스 제한",
   "security_trivy_resource_limits_description": "Trivy 스캔 컨테이너의 CPU 및 메모리 제한을 설정합니다.",
   "security_trivy_cpu_limit_label": "CPU 제한 (코어 수)",
-  "security_trivy_cpu_limit_help": "정수만 입력 가능합니다 (예: 1 또는 2).",
+  "security_trivy_cpu_limit_help": "0.5나 1.5와 같은 CPU 코어 수. CPU 제한을 적용하지 않으려면 0을 설정합니다. CPU 할당량 대신 CPU 어피니티를 사용하는 호스트는 전체 코어를 사용합니다.",
   "security_trivy_memory_limit_label": "메모리 제한 (MB)",
   "security_trivy_concurrent_scan_containers_label": "동시 스캔 컨테이너 수",
   "security_trivy_concurrent_scan_containers_help": "수동 및 예약 스캔을 포함하여 동시에 실행할 수 있는 Trivy 스캔 컨테이너의 최대 개수입니다.",
