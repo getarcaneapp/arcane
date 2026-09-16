@@ -1579,7 +1579,7 @@
   "security_trivy_resource_limits_label": "Ограничения ресурсов Trivy",
   "security_trivy_resource_limits_description": "Настроить ограничения процессора и памяти для контейнеров сканирования Trivy.",
   "security_trivy_cpu_limit_label": "Лимит CPU (ядер)",
-  "security_trivy_cpu_limit_help": "Только целые числа (например: 1 или 2).",
+  "security_trivy_cpu_limit_help": "Ядра процессора, например 0,5 или 1,5. Укажите значение 0, чтобы не устанавливать ограничение на использование процессора. Хосты, использующие аффинность процессора вместо квот на процессор, используют целые ядра.",
   "security_trivy_memory_limit_label": "Лимит памяти (МБ)",
   "security_trivy_concurrent_scan_containers_label": "Одновременно сканировать контейнеры",
   "security_trivy_concurrent_scan_containers_help": "Максимальное количество контейнеров сканирования Trivy, которые могут выполняться одновременно через ручные и запланированные сканирования.",
