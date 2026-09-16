@@ -48,8 +48,10 @@
 		createComposeEditorSchema,
 		createComposeTemplateDialogFlow,
 		extractComposeYamlName,
+		resolveProjectEditorLayout,
 		submitComposeResourceForm,
-		templateNameSlug
+		templateNameSlug,
+		type ProjectEditorLayoutMode
 	} from '#lib/utils/compose-flow.js';
 	import {
 		getTemplateEditorValidationState,
@@ -93,7 +95,7 @@
 
 	let composeOpen = $state(true);
 	let envOpen = $state(true);
-	let layoutMode = $state<'classic' | 'tree'>('classic');
+	let layoutMode = $state<ProjectEditorLayoutMode>(resolveProjectEditorLayout('classic'));
 	let treePaneWidth = $state(280);
 	const workspaceDraft = new WorkspaceDraftState({
 		fallbackTab: 'compose',

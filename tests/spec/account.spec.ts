@@ -18,6 +18,7 @@ type UserPreferences = {
 	keyboardShortcutsEnabled?: boolean;
 	mobileNavigationMode?: 'floating' | 'docked';
 	defaultLandingPage?: string;
+	defaultProjectEditorLayout?: 'auto' | 'classic' | 'tree';
 };
 
 type AccountUser = {
@@ -224,6 +225,18 @@ test('manages an isolated account, preferences, credentials, and sessions', asyn
 				preferences: { defaultLandingPage: landingPage }
 			});
 
+			const projectEditorLayout =
+				original.preferences?.defaultProjectEditorLayout === 'tree' ? 'classic' : 'tree';
+			const projectEditorLayoutResponse = await waitForProfileUpdate(accountPage, async () => {
+				await accountPage.locator('#account-project-editor-layout').click();
+				await accountPage
+					.getByRole('option', { name: projectEditorLayout === 'tree' ? /^Tree\b/ : /^Classic\b/ })
+					.click();
+			});
+			expect(projectEditorLayoutResponse.request().postDataJSON()).toEqual({
+				preferences: { defaultProjectEditorLayout: projectEditorLayout }
+			});
+
 			const keyboardShortcutsEnabled = !(original.preferences?.keyboardShortcutsEnabled ?? true);
 			const keyboardResponse = await waitForProfileUpdate(accountPage, () =>
 				accountPage.locator('#account-keyboard-shortcuts').click()
@@ -251,6 +264,7 @@ test('manages an isolated account, preferences, credentials, and sessions', asyn
 				preferences: {
 					themeMode,
 					defaultLandingPage: landingPage,
+					defaultProjectEditorLayout: projectEditorLayout,
 					keyboardShortcutsEnabled,
 					mobileNavigationMode
 				}

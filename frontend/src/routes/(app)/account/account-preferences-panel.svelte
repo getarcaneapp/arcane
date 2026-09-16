@@ -18,7 +18,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { userService } from '#lib/services/user-service.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
-	import type { UserPreferences } from '#lib/types/auth.js';
+	import type { ProjectEditorLayout, UserPreferences } from '#lib/types/auth.js';
 	import type { ApplicationTheme, IconCatalog } from '#lib/types/settings.js';
 	import { DockIcon, MonitorSpeakerIcon } from '#lib/icons/index.js';
 	import { cn } from '#lib/utils.js';
@@ -39,6 +39,7 @@
 	const keyboardShortcutsEnabled = $derived(preferences.keyboardShortcutsEnabled ?? true);
 	const mobileNavigationMode = $derived(preferences.mobileNavigationMode ?? 'floating');
 	const mobileNavigationShowLabels = $derived(preferences.mobileNavigationShowLabels ?? true);
+	const projectEditorLayoutValue = $derived<ProjectEditorLayout>(preferences.defaultProjectEditorLayout ?? 'auto');
 	const isDarkMode = $derived(mode.current === 'dark');
 	const isDefaultApplicationTheme = $derived(applicationThemeValue === 'default');
 
@@ -49,6 +50,11 @@
 			label: m.icon_catalog_dashboard_icons(),
 			description: m.icon_catalog_dashboard_icons_description()
 		}
+	]);
+	const projectEditorLayoutOptions = $derived([
+		{ value: 'auto', label: m.automatic(), description: m.project_editor_layout_auto_description() },
+		{ value: 'classic', label: m.classic(), description: m.project_editor_layout_classic_description() },
+		{ value: 'tree', label: m.tree(), description: m.project_editor_layout_tree_description() }
 	]);
 	const landingPageOptions = $derived(getLandingPageNavItems().map((item) => ({ value: item.url, label: item.title })));
 	const landingValue = $derived.by(() => {
@@ -101,6 +107,19 @@
 			</SettingsRow>
 			<SettingsRow label={m.time_format()} description={m.account_time_format_desc()} layout="inline">
 				<TimeFormatPicker id="accountTimeFormatPicker" />
+			</SettingsRow>
+			<SettingsRow label={m.project_editor_layout()} description={m.project_editor_layout_description()} layout="inline">
+				<div class="w-52">
+					<SelectWithLabel
+						id="account-project-editor-layout"
+						label={m.project_editor_layout()}
+						hideLabel
+						triggerSize="sm"
+						value={projectEditorLayoutValue}
+						options={projectEditorLayoutOptions}
+						onValueChange={(value) => void savePreferences({ defaultProjectEditorLayout: value as ProjectEditorLayout })}
+					/>
+				</div>
 			</SettingsRow>
 		</div>
 	</section>
