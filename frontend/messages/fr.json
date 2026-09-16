@@ -1579,7 +1579,7 @@
   "security_trivy_resource_limits_label": "Limite de ressources Trivy",
   "security_trivy_resource_limits_description": "Configurer les limites de CPU et de mémoire pour les conteneurs d'analyse Trivy.",
   "security_trivy_cpu_limit_label": "Limite du CPU (cœurs)",
-  "security_trivy_cpu_limit_help": "Des nombres entiers seulement (par exemple : 1 ou 2).",
+  "security_trivy_cpu_limit_help": "Cœurs de processeur, par exemple 0,5 ou 1,5. Définissez la valeur 0 pour ne pas limiter l'utilisation du processeur. Les hôtes utilisant l'affinité CPU au lieu des quotas CPU utilisent des cœurs entiers.",
   "security_trivy_memory_limit_label": "Limite de mémoire (MB)",
   "security_trivy_concurrent_scan_containers_label": "Conteneurs de balayage simultanés",
   "security_trivy_concurrent_scan_containers_help": "Nombre maximum de conteneurs d'analyse Trivy qui peuvent s'exécuter en même temps à travers les balayages manuels et planifiés.",
