@@ -1749,6 +1749,8 @@
   "http_client_timeout_description": "HTTP 请求的默认超时时间（以秒为单位，默认：30）",
   "registry_timeout": "Registry 超时",
   "registry_timeout_description": "容器 Registry 操作的超时时间（以秒为单位，默认：30）",
+  "registry_tag_timeout": "注册表标签超时",
+  "registry_tag_timeout_description": "在版本更新检查期间，列出图像存储库中所有标签的超时时间（单位：秒）。大型存储库会返回数千个标签，分布在多页中（默认值：120）",
   "proxy_request_timeout": "代理请求超时",
   "proxy_request_timeout_description": "代理请求的超时时间（以秒为单位，默认：60）",
   "customize_title": "自定义",
