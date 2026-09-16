@@ -1,13 +1,15 @@
 import type { z } from 'zod/v4';
 
-export function mapZodFieldErrors<T extends object>(validation: z.ZodSafeParseResult<T>): Partial<Record<keyof T, string>> {
-	const errors: Partial<Record<keyof T, string>> = {};
+export type ProviderFieldErrors<T extends object> = Partial<Record<keyof T, string>> & Record<string, string | undefined>;
+
+export function mapZodFieldErrors<T extends object>(validation: z.ZodSafeParseResult<T>): ProviderFieldErrors<T> {
+	const errors: Record<string, string | undefined> = {};
 	if (validation.success) {
-		return errors;
+		return errors as ProviderFieldErrors<T>;
 	}
 
 	for (const issue of validation.error.issues) {
-		const key = issue.path?.[0] as keyof T | undefined;
+		const key = issue.path.map(String).join('.');
 		if (!key || errors[key]) {
 			continue;
 		}
@@ -15,5 +17,5 @@ export function mapZodFieldErrors<T extends object>(validation: z.ZodSafeParseRe
 		errors[key] = issue.message;
 	}
 
-	return errors;
+	return errors as ProviderFieldErrors<T>;
 }

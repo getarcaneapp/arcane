@@ -75,9 +75,10 @@
 				type="service"
 				{serviceId}
 				bind:showParsedJson={preferences.showParsedJson}
+				showStreamLabels={preferences.showStreamLabels}
 				tailLines={preferences.tailLines}
 				maxLines={500}
-				showTimestamps={true}
+				showTimestamps={preferences.showTimestamps}
 				height="calc(100vh - 320px)"
 				onStart={handleStreamStart}
 				onStop={handleStreamStop}

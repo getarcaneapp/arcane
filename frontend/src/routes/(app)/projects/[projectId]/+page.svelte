@@ -87,7 +87,14 @@
 		workspaceReadOnlyMessage,
 		type WorkspaceDisplayEntry
 	} from '#lib/utils/workspace-files.js';
-	import { composeTreeSplitProps, extractComposeYamlName } from '#lib/utils/compose-flow.js';
+	import {
+		composeTreeSplitProps,
+		extractComposeYamlName,
+		projectEditorLayoutPreference,
+		resolveProjectEditorLayout,
+		type ProjectEditorLayoutMode
+	} from '#lib/utils/compose-flow.js';
+	import type { ProjectEditorLayout } from '#lib/types/auth.js';
 
 	let { data } = $props();
 	let projectId = $derived(data.projectId);
@@ -354,7 +361,7 @@
 	let treeOutlineOpen = $state(false);
 	let treeDiffOpen = $state(false);
 	let treeCommandPaletteOpen = $state(false);
-	let layoutMode = $state<'classic' | 'tree'>('classic');
+	let layoutMode = $state<ProjectEditorLayoutMode>('classic');
 	let selectedIncludeTabPreference = $state<string | null>(null);
 	let treePaneWidth = $state(280);
 	let composeSplitWidth = $state<number | null>(null);
@@ -480,7 +487,8 @@
 		overrideOpen: boolean;
 		envOpen: boolean;
 		autoScroll: boolean;
-		layoutMode: 'classic' | 'tree';
+		layoutMode: ProjectEditorLayoutMode;
+		layoutPreference?: ProjectEditorLayout;
 		selectedFile?: 'compose' | 'env' | 'override' | string;
 		openTabs?: string[];
 	};
@@ -663,9 +671,9 @@
 
 		const prefsStorageKey = `arcane.compose.ui:${project.id}`;
 		const hadStoredPrefs = sessionStorage.getItem(prefsStorageKey) !== null;
-		// The tree/classic auto-detect needs the lazily loaded workspace; without
-		// stored prefs, wait for its query to settle before finalizing.
-		if (!hadStoredPrefs && !(projectWorkspaceQuery.isSuccess || projectWorkspaceQuery.isError)) return;
+		const layoutPreference = projectEditorLayoutPreference();
+		// Auto mode needs the lazily loaded workspace to pick a layout before the editors mount.
+		if (layoutPreference === 'auto' && !(projectWorkspaceQuery.isSuccess || projectWorkspaceQuery.isError)) return;
 
 		lastPrefsProjectId = project.id;
 		prefs = new PersistedState<ComposeUIPrefs>(prefsStorageKey, defaultComposeUIPrefs, {
@@ -695,18 +703,15 @@
 		openTabsPreference = [selectedFilePreference];
 		if (cur.openTabs && cur.openTabs.length > 0) openTabsPreference = cur.openTabs;
 
-		// Auto-detect layout mode from includes and workspace entries. PersistedState
-		// always materializes the defaults, so only trust the stored layoutMode when
-		// this project actually had persisted prefs.
+		// Stored layout only counts when saved under the account default still in effect (legacy prefs count as auto).
 		const hasIncludes = project?.includeFiles && project.includeFiles.length > 0;
 		const hasWorkspaceEntries = projectWorkspaceEntries.length > 0;
-		let defaultMode: 'tree' | 'classic' = 'classic';
-		if (hasIncludes || hasWorkspaceEntries) defaultMode = 'tree';
-		layoutMode = defaultMode;
-		if (hadStoredPrefs) layoutMode = cur.layoutMode ?? defaultMode;
+		const defaultMode = resolveProjectEditorLayout(hasIncludes || hasWorkspaceEntries ? 'tree' : 'classic');
+		const storedLayoutValid = hadStoredPrefs && (cur.layoutPreference ?? 'auto') === layoutPreference;
+		layoutMode = storedLayoutValid ? (cur.layoutMode ?? defaultMode) : defaultMode;
 		// PersistedState seeds storage with the defaults on first mount; persist the
-		// resolved state so the auto-detected layout survives the next visit.
-		if (!hadStoredPrefs || userSelectedTabForProject) {
+		// resolved state so the resolved layout survives the next visit.
+		if (!storedLayoutValid || userSelectedTabForProject) {
 			persistPrefs();
 		}
 		loadSelectedProjectWorkspaceFiles();
@@ -852,6 +857,7 @@
 			envOpen,
 			autoScroll: autoScrollStackLogs,
 			layoutMode,
+			layoutPreference: projectEditorLayoutPreference(),
 			selectedFile,
 			openTabs
 		};
@@ -1477,126 +1483,132 @@
 				<ProjectGitBackupSummary environmentId={envId} projectId={project.id} projectName={project.name} />
 			{/if}
 			{@render composeFilesNotice()}
-			<div class="mb-2 flex shrink-0 items-center justify-end gap-2">
-				<label for="layout-mode-toggle" class="cursor-pointer text-xs text-muted-foreground" title={m.project_view_description()}>
-					{m.workspace()}
-				</label>
-				<Switch
-					id="layout-mode-toggle"
-					checked={layoutMode === 'tree'}
-					aria-label={m.project_view_description()}
-					onCheckedChange={(checked) => {
-						layoutMode = checked ? 'tree' : 'classic';
-						if (checked) {
-							openFileTab('compose');
-							selectedIncludeTabPreference = null;
-						}
-						persistPrefs();
-					}}
-				/>
-			</div>
+			{#if lastPrefsProjectId === project.id}
+				<div class="mb-2 flex shrink-0 items-center justify-end gap-2">
+					<label
+						for="layout-mode-toggle"
+						class="cursor-pointer text-xs text-muted-foreground"
+						title={m.project_view_description()}
+					>
+						{m.workspace()}
+					</label>
+					<Switch
+						id="layout-mode-toggle"
+						checked={layoutMode === 'tree'}
+						aria-label={m.project_view_description()}
+						onCheckedChange={(checked) => {
+							layoutMode = checked ? 'tree' : 'classic';
+							if (checked) {
+								openFileTab('compose');
+								selectedIncludeTabPreference = null;
+							}
+							persistPrefs();
+						}}
+					/>
+				</div>
 
-			<div class="min-h-0 flex-1">
-				{#if layoutMode === 'tree'}
-					<div class="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-border bg-card">
-						<ResizableSplit
-							class="h-full min-h-0 flex-1"
-							{...composeTreeSplitProps}
-							bind:size={treePaneWidth}
-							ariaLabel={m.compose_editor_resize_files_panel()}
-							persistKey="arcane.compose.split:tree"
-							persistStorage="local"
-							onResizeEnd={persistPrefs}
-						>
-							{#snippet first()}
-								<WorkspaceFileTreePanel
-									leadingRows={projectWorkspaceLeadingRows}
-									entries={projectWorkspaceEntries}
-									{selectedFile}
-									disabled={!canEditProjectWorkspace}
-									readOnlyMessage={isGitOpsManaged ? m.projects_workspace_readonly_git() : undefined}
-									onSelect={selectProjectWorkspaceFile}
-									onCreateFile={createProjectWorkspaceFile}
-									onCreateFolder={createProjectWorkspaceFolder}
-									onUpload={uploadProjectWorkspaceFiles}
-									onDownload={downloadProjectWorkspaceFile}
-									validateName={(name, parentPath) => validateProjectWorkspaceFileName(name, parentPath, composeFileName)}
-									onRename={renameProjectWorkspaceFile}
-									onMove={moveProjectWorkspaceFile}
-									onDelete={deleteProjectWorkspaceFile}
-								/>
-							{/snippet}
+				<div class="min-h-0 flex-1">
+					{#if layoutMode === 'tree'}
+						<div class="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-border bg-card">
+							<ResizableSplit
+								class="h-full min-h-0 flex-1"
+								{...composeTreeSplitProps}
+								bind:size={treePaneWidth}
+								ariaLabel={m.compose_editor_resize_files_panel()}
+								persistKey="arcane.compose.split:tree"
+								persistStorage="local"
+								onResizeEnd={persistPrefs}
+							>
+								{#snippet first()}
+									<WorkspaceFileTreePanel
+										leadingRows={projectWorkspaceLeadingRows}
+										entries={projectWorkspaceEntries}
+										{selectedFile}
+										disabled={!canEditProjectWorkspace}
+										readOnlyMessage={isGitOpsManaged ? m.projects_workspace_readonly_git() : undefined}
+										onSelect={selectProjectWorkspaceFile}
+										onCreateFile={createProjectWorkspaceFile}
+										onCreateFolder={createProjectWorkspaceFolder}
+										onUpload={uploadProjectWorkspaceFiles}
+										onDownload={downloadProjectWorkspaceFile}
+										validateName={(name, parentPath) => validateProjectWorkspaceFileName(name, parentPath, composeFileName)}
+										onRename={renameProjectWorkspaceFile}
+										onMove={moveProjectWorkspaceFile}
+										onDelete={deleteProjectWorkspaceFile}
+									/>
+								{/snippet}
 
-							{#snippet second()}
-								<div class="flex h-full min-h-0 flex-1 flex-col">
-									<!-- fallow-ignore-next-line code-duplication -- compose editor tree panel; per-page bindings/persistKey/file-rendering diverge -->
-									<EditorTabStrip tabs={treeTabs} activeKey={activeTreeTab} onSelect={openFileTab} onClose={closeFileTab}>
-										{#snippet actions()}
-											<ComposeFileEditorPanel
-												outlineOpen={treeOutlineOpen}
-												outlineLabel={m.compose_editor_toggle_outline()}
-												onToggleOutline={() => (treeOutlineOpen = !treeOutlineOpen)}
-												diffOpen={treeDiffOpen}
-												diffLabel={m.compose_editor_toggle_diff()}
-												onToggleDiff={() => (treeDiffOpen = !treeDiffOpen)}
-												commandPaletteLabel={m.compose_editor_command_palette()}
-												onOpenCommandPalette={() => (treeCommandPaletteOpen = true)}
-											/>
-										{/snippet}
-									</EditorTabStrip>
-									<div class="flex min-h-0 flex-1 flex-col">
-										{@render activeWorkspaceEditor()}
-									</div>
-								</div>
-							{/snippet}
-						</ResizableSplit>
-					</div>
-				{:else}
-					<div class="flex h-full min-h-0 flex-col gap-4">
-						{@render includeFileNavigation(project)}
-
-						{#if selectedIncludeTab}
-							{@render selectedIncludeEditor(project, selectedIncludeTab)}
-						{:else}
-							{#key `arcane.compose.split:${project.id}:classic`}
-								<ResizableSplit
-									class="min-h-0 flex-1 lg:gap-2"
-									firstClass="flex min-h-0 flex-col"
-									secondClass="flex min-h-0 flex-col"
-									bind:size={composeSplitWidth}
-									minSize={minComposePaneWidth}
-									minSecondSize={minEnvPaneWidth}
-									defaultRatio={0.6}
-									stackBelow={1024}
-									ariaLabel={m.compose_editor_resize_compose_env()}
-									persistKey={`arcane.compose.split:${project.id}:classic`}
-									onResizeEnd={persistPrefs}
-								>
-									{#snippet first()}
-										{@render composeOverrideEditor()}
-									{/snippet}
-
-									{#snippet second()}
-										<div class="flex min-h-0 flex-1 flex-col">
-											{#if configurationError}
-												{@render envUnavailable()}
-											{:else}
-												<CodePanel
-													{...envPanelProps()}
-													bind:open={envOpen}
-													bind:value={inputs.envContent.value}
-													bind:hasErrors={envHasErrors}
-													bind:validationReady={envValidationReady}
+								{#snippet second()}
+									<div class="flex h-full min-h-0 flex-1 flex-col">
+										<!-- fallow-ignore-next-line code-duplication -- compose editor tree panel; per-page bindings/persistKey/file-rendering diverge -->
+										<EditorTabStrip tabs={treeTabs} activeKey={activeTreeTab} onSelect={openFileTab} onClose={closeFileTab}>
+											{#snippet actions()}
+												<ComposeFileEditorPanel
+													outlineOpen={treeOutlineOpen}
+													outlineLabel={m.compose_editor_toggle_outline()}
+													onToggleOutline={() => (treeOutlineOpen = !treeOutlineOpen)}
+													diffOpen={treeDiffOpen}
+													diffLabel={m.compose_editor_toggle_diff()}
+													onToggleDiff={() => (treeDiffOpen = !treeDiffOpen)}
+													commandPaletteLabel={m.compose_editor_command_palette()}
+													onOpenCommandPalette={() => (treeCommandPaletteOpen = true)}
 												/>
-											{/if}
+											{/snippet}
+										</EditorTabStrip>
+										<div class="flex min-h-0 flex-1 flex-col">
+											{@render activeWorkspaceEditor()}
 										</div>
-									{/snippet}
-								</ResizableSplit>
-							{/key}
-						{/if}
-					</div>
-				{/if}
-			</div>
+									</div>
+								{/snippet}
+							</ResizableSplit>
+						</div>
+					{:else}
+						<div class="flex h-full min-h-0 flex-col gap-4">
+							{@render includeFileNavigation(project)}
+
+							{#if selectedIncludeTab}
+								{@render selectedIncludeEditor(project, selectedIncludeTab)}
+							{:else}
+								{#key `arcane.compose.split:${project.id}:classic`}
+									<ResizableSplit
+										class="min-h-0 flex-1 lg:gap-2"
+										firstClass="flex min-h-0 flex-col"
+										secondClass="flex min-h-0 flex-col"
+										bind:size={composeSplitWidth}
+										minSize={minComposePaneWidth}
+										minSecondSize={minEnvPaneWidth}
+										defaultRatio={0.6}
+										stackBelow={1024}
+										ariaLabel={m.compose_editor_resize_compose_env()}
+										persistKey={`arcane.compose.split:${project.id}:classic`}
+										onResizeEnd={persistPrefs}
+									>
+										{#snippet first()}
+											{@render composeOverrideEditor()}
+										{/snippet}
+
+										{#snippet second()}
+											<div class="flex min-h-0 flex-1 flex-col">
+												{#if configurationError}
+													{@render envUnavailable()}
+												{:else}
+													<CodePanel
+														{...envPanelProps()}
+														bind:open={envOpen}
+														bind:value={inputs.envContent.value}
+														bind:hasErrors={envHasErrors}
+														bind:validationReady={envValidationReady}
+													/>
+												{/if}
+											</div>
+										{/snippet}
+									</ResizableSplit>
+								{/key}
+							{/if}
+						</div>
+					{/if}
+				</div>
+			{/if}
 		</div>
 	</Tabs.Content>
 {/snippet}

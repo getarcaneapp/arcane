@@ -1,6 +1,8 @@
 import { arcaneButtonVariants, actionConfigs } from '#lib/components/arcane-button/variants.js';
 import { m } from '#lib/paraglide/messages.js';
 import { templateService } from '#lib/services/template-service.js';
+import userStore from '#lib/stores/user-store.svelte.js';
+import type { ProjectEditorLayout } from '#lib/types/auth.js';
 import type { Template } from '#lib/types/swarm.js';
 import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
@@ -58,6 +60,18 @@ export const dropdownItemClass =
 	'text-foreground/90 outline-none transition-colors ' +
 	'hover:bg-primary/10 focus:bg-primary/10 ' +
 	'data-[disabled]:opacity-50 data-[disabled]:pointer-events-none';
+
+export type ProjectEditorLayoutMode = Exclude<ProjectEditorLayout, 'auto'>;
+
+export function projectEditorLayoutPreference(): ProjectEditorLayout {
+	const value = userStore.current?.preferences?.defaultProjectEditorLayout;
+	return value === 'classic' || value === 'tree' ? value : 'auto';
+}
+
+export function resolveProjectEditorLayout(autoLayout: ProjectEditorLayoutMode): ProjectEditorLayoutMode {
+	const preference = projectEditorLayoutPreference();
+	return preference === 'auto' ? autoLayout : preference;
+}
 
 export function templateNameSlug(name: string): string {
 	return name.toLowerCase().replace(/[^a-z0-9-_]/g, '-');

@@ -243,10 +243,10 @@
 	async function handleSaveAndTest() {
 		showUnsavedDialog = false;
 		await onSubmit();
-		if (pendingTestAction) {
+		if (!hasChanges && pendingTestAction) {
 			await pendingTestAction();
-			pendingTestAction = null;
 		}
+		pendingTestAction = null;
 	}
 </script>
 

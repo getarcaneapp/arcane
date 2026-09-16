@@ -131,6 +131,8 @@ export const GLOBAL_SCOPE = 'global';
 
 export type TimeFormat = 'auto' | '12h' | '24h';
 
+export type ProjectEditorLayout = 'auto' | 'classic' | 'tree';
+
 /**
  * Personal display/UI preferences stored on the user record. Every field is
  * optional: an unset value falls back to the frontend default.
@@ -148,6 +150,7 @@ export type UserPreferences = {
 	mobileNavigationMode?: 'floating' | 'docked';
 	mobileNavigationShowLabels?: boolean;
 	defaultLandingPage?: string;
+	defaultProjectEditorLayout?: ProjectEditorLayout;
 };
 
 export type User = {

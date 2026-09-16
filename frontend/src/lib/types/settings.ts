@@ -121,6 +121,7 @@ export type Settings = {
 	gitOperationTimeout: number;
 	httpClientTimeout: number;
 	registryTimeout: number;
+	registryTagTimeout: number;
 	proxyRequestTimeout: number;
 	buildProvider: 'local' | 'depot';
 	buildsDirectory: string;

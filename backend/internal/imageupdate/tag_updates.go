@@ -11,6 +11,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/imageref"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	imageupdatetypes "github.com/getarcaneapp/arcane/types/v2/imageupdate"
@@ -42,7 +43,13 @@ func (r tagRegistryInternal) ImageDigest(ctx context.Context, imageRef string) (
 	if r.service == nil {
 		return "", errors.New("registry service unavailable")
 	}
-	result, err := r.service.InspectImageDigest(ctx, imageRef, r.credentials)
+	timeoutSeconds := 0
+	if r.settings != nil {
+		timeoutSeconds = r.settings.GetSettingsConfig().RegistryTimeout.AsInt()
+	}
+	digestCtx, cancel := context.WithTimeout(ctx, timeouts.GetDuration(timeoutSeconds, timeouts.DefaultRegistry))
+	defer cancel()
+	result, err := r.service.InspectImageDigest(digestCtx, imageRef, r.credentials)
 	if err != nil {
 		return "", err
 	}
@@ -123,7 +130,11 @@ func (s *ImageUpdateService) checkContainerTagInternal(ctx context.Context, engi
 		}
 		defer s.registryLimiter.Release(parsed.RegistryHost)
 	}
-	checkCtx, cancel := s.registryContextInternal(ctx)
+	timeoutSeconds := 0
+	if s.settingsService != nil {
+		timeoutSeconds = s.settingsService.GetSettingsConfig().RegistryTagTimeout.AsInt()
+	}
+	checkCtx, cancel := context.WithTimeout(ctx, timeouts.GetDuration(timeoutSeconds, timeouts.DefaultRegistryTags))
 	defer cancel()
 	check, err := engine.CheckContainerUpdate(checkCtx, cnt.ID)
 	if err != nil {

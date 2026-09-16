@@ -1437,6 +1437,47 @@ test.describe('Project Detail Page', () => {
 		}
 	});
 
+	test('should apply the account default project editor layout', async ({ page }) => {
+		const regularProject = realProjects.find((p) => !p.gitOpsManagedBy);
+		test.skip(!regularProject, 'No regular (non-GitOps) projects found');
+
+		const setDefaultLayout = async (layout: 'auto' | 'classic' | 'tree') => {
+			const response = await page.request.put('/api/auth/me/profile', {
+				data: { preferences: { defaultProjectEditorLayout: layout } }
+			});
+			expect(response.ok(), `set default project editor layout to ${layout}`).toBeTruthy();
+		};
+		const openConfiguration = async () => {
+			await page.goto(`/projects/${regularProject!.id || regularProject!.name}`);
+			await page.waitForLoadState('load');
+			await page.getByRole('tab', { name: 'Configuration', exact: true }).click();
+		};
+		const workspaceFilesLabel = page.getByText('Workspace Files', { exact: true });
+
+		try {
+			await setDefaultLayout('tree');
+			await openConfiguration();
+			await expect(workspaceFilesLabel).toBeVisible();
+			await expect(page.locator('[data-tab-key="compose"][data-active="true"]')).toBeVisible();
+
+			await page.goto(ROUTES.newProject);
+			await page.waitForLoadState('load');
+			await expect(workspaceFilesLabel).toBeVisible();
+
+			await setDefaultLayout('classic');
+			await openConfiguration();
+			await expect(page.getByRole('heading', { name: 'compose.yaml' })).toBeVisible();
+			await expect(workspaceFilesLabel).not.toBeVisible();
+
+			await page.goto(ROUTES.newProject);
+			await page.waitForLoadState('load');
+			await expect(page.getByRole('heading', { name: 'Docker Compose File' })).toBeVisible();
+			await expect(workspaceFilesLabel).not.toBeVisible();
+		} finally {
+			await setDefaultLayout('auto');
+		}
+	});
+
 	test('should enable Save when editing the initial file in restored tree view', async ({
 		page
 	}) => {

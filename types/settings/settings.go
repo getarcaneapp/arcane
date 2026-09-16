@@ -471,6 +471,11 @@ type Update struct {
 	// Required: false
 	RegistryTimeout *string `json:"registryTimeout,omitzero"`
 
+	// RegistryTagTimeout is the timeout for listing every tag in a repository during version update checks in seconds.
+	//
+	// Required: false
+	RegistryTagTimeout *string `json:"registryTagTimeout,omitzero"`
+
 	// ProxyRequestTimeout is the timeout for proxied requests to remote environments in seconds.
 	//
 	// Required: false

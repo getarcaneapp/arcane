@@ -305,8 +305,8 @@ func provideAuthModuleInternal(service *auth.AuthService, userService *user.User
 	})
 }
 
-func provideContainerRegistryModuleInternal(db *database.DB, dockerService *docker.DockerClientService, kvService *kv.KVService, environment *environment.EnvironmentService) *registry.Module {
-	return registry.New(registry.Dependencies{DB: db, Docker: dockerService, KV: kvService, SyncRemoteRegistries: environment.SyncRegistriesToRemoteEnvironments})
+func provideContainerRegistryModuleInternal(db *database.DB, dockerService *docker.DockerClientService, kvService *kv.KVService, settingsService *settings.SettingsService, environment *environment.EnvironmentService) *registry.Module {
+	return registry.New(registry.Dependencies{DB: db, Docker: dockerService, KV: kvService, Settings: settingsService, SyncRemoteRegistries: environment.SyncRegistriesToRemoteEnvironments})
 }
 
 func provideContainerRegistryServiceInternal(module *registry.Module) *registry.ContainerRegistryService {

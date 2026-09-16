@@ -20,7 +20,11 @@ func (s *ContainerRegistryService) ListImageTags(ctx context.Context, imageRef s
 	if err != nil {
 		return nil, err
 	}
-	lookupCtx, cancel := context.WithTimeout(ctx, timeouts.DefaultRegistry)
+	timeoutSeconds := 0
+	if s.settingsService != nil {
+		timeoutSeconds = s.settingsService.GetSettingsConfig().RegistryTagTimeout.AsInt()
+	}
+	lookupCtx, cancel := context.WithTimeout(ctx, timeouts.GetDuration(timeoutSeconds, timeouts.DefaultRegistryTags))
 	defer cancel()
 
 	tags, _, err := registryOperationWithCredentialsInternal(lookupCtx, s, parts.RegistryHost, "registry tag listing of "+parts.NormalizedRef, externalCreds,

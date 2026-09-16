@@ -4,6 +4,7 @@
 	import type { NotificationProviderKey, ProviderFormValuesMap } from '#lib/types/notifications.js';
 	import ProviderFormWrapper from './ProviderFormWrapper.svelte';
 	import EventSubscriptions from './EventSubscriptions.svelte';
+	import TelegramDestinationsEditor from './TelegramDestinationsEditor.svelte';
 	import DynamicProviderFormBuilder from './DynamicProviderFormBuilder.svelte';
 	import NotificationProviderTestMenu, {
 		type NotificationProviderTestOption,
@@ -154,7 +155,7 @@
 			.object({
 				enabled: z.boolean(),
 				botToken: z.string(),
-				chatIds: z.string(),
+				destinations: z.array(z.object({ chatId: z.string(), topicId: z.string() })),
 				preview: z.boolean(),
 				notification: z.boolean(),
 				title: z.string(),
@@ -163,13 +164,29 @@
 			.superRefine((d, ctx) => {
 				if (!d.enabled) return;
 				addRequiredCredentialIssue(ctx, d.botToken, 'botToken', m.common_required());
-				if (!d.chatIds.trim()) {
-					ctx.addIssue({
-						code: 'custom',
-						message: m.common_required(),
-						path: ['chatIds']
-					});
+				const destinations = d.destinations.map((row) => ({ chatId: row.chatId.trim(), topicId: row.topicId.trim() }));
+				if (!destinations.some((row) => row.chatId || row.topicId)) {
+					addCustomFieldIssue(ctx, 'destinations', m.common_required());
 				}
+				destinations.forEach((row, index) => {
+					if (!row.chatId && !row.topicId) return;
+					if (!row.chatId) {
+						ctx.addIssue({ code: 'custom', message: m.common_required(), path: ['destinations', index, 'chatId'] });
+					} else if (row.chatId.includes(':')) {
+						ctx.addIssue({
+							code: 'custom',
+							message: m.notifications_telegram_chat_id_invalid(),
+							path: ['destinations', index, 'chatId']
+						});
+					}
+					if (row.topicId && !/^[1-9]\d*$/.test(row.topicId)) {
+						ctx.addIssue({
+							code: 'custom',
+							message: m.notifications_telegram_topic_id_invalid(),
+							path: ['destinations', index, 'topicId']
+						});
+					}
+				});
 			}),
 		signal: z
 			.object({
@@ -488,15 +505,6 @@
 				placeholder: m.notifications_telegram_bot_token_placeholder(),
 				helpText: m.notifications_telegram_bot_token_help(),
 				inputType: 'password'
-			},
-			{
-				kind: 'textarea',
-				key: 'chatIds',
-				id: 'telegram-chat-ids',
-				label: m.notifications_telegram_chat_ids_label(),
-				placeholder: m.notifications_telegram_chat_ids_placeholder(),
-				helpText: m.notifications_telegram_chat_ids_help(),
-				rows: 2
 			},
 			{
 				kind: 'input',
@@ -1109,6 +1117,10 @@
 	{disabled}
 >
 	<DynamicProviderFormBuilder bind:values {disabled} errors={fieldErrors} schema={selectedSchema} />
+
+	{#if provider === 'telegram' && 'destinations' in values}
+		<TelegramDestinationsEditor bind:destinations={values.destinations} errors={fieldErrors} {disabled} />
+	{/if}
 
 	<EventSubscriptions
 		providerId={provider}
