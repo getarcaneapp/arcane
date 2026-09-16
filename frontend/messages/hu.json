@@ -242,6 +242,8 @@
   "log_auto_scroll_tooltip": "Új bejegyzések érkezésekor a nézetet a legfrissebb naplóbejegyzésekre rögzíti.",
   "log_auto_start_tooltip": "A panel megnyitásakor automatikusan elindul a naplófájlok streamelése.",
   "log_parsed_mode_tooltip": "Ha elérhető, a strukturált naplóbejegyzéseket feldolgozott formában jeleníti meg. Kapcsold ki, ha az eredeti, feldolgozatlan sorokat szeretnéd látni.",
+  "log_stream_labels": "Stream-címkék",
+  "log_stream_labels_tooltip": "Az STDOUT és az STDERR kimenetet szövegként jeleníti meg minden sorban. Kapcsold ki ezt a beállítást, ha helyette az STDOUT-hoz zöld pontot, az STDERR-hez pedig piros négyzetet szeretnél látni.",
   "log_download_tooltip": "Letölti az összes naplóbejegyzést, amelyet a Docker még mindig tárol ehhez a konténerhez, figyelmen kívül hagyva a „search”, „tail” és „parsed” beállításokat.",
   "common_logout": "Kijelentkezés",
   "common_redeploy": "Redeploy",
