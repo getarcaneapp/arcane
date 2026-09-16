@@ -182,7 +182,7 @@
 				</div>
 				{#if upgradeCheck.shouldShowBanner}
 					<UpdateAvailableBanner
-						class="mt-3 rounded-xl px-3 py-2.5"
+						class="mt-3 rounded-xl px-3 py-2"
 						label={m.sidebar_update_available()}
 						versionChip={upgradeCheck.versionChip}
 						disabled={upgradeCheck.checkingUpgrade}

@@ -46,6 +46,7 @@ export function useUpgradeCheck({ queryScope, getVersionInformation, getDebug = 
 		if (!versionInformation) return '';
 		if (updateType === 'semver') return versionInformation.newestVersion ?? '';
 		if (updateType === 'digest') return versionInformation.currentTag ?? '';
+		if (getDebug()) return versionInformation.displayVersion ?? '';
 		return '';
 	});
 

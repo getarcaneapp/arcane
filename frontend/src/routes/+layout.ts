@@ -9,7 +9,7 @@ import settingsStore from '#lib/stores/config-store.svelte.js';
 import { featureStore } from '#lib/stores/features.store.svelte.js';
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import userStore from '#lib/stores/user-store.svelte.js';
-import { type AppVersionInformation } from '#lib/types/settings.js';
+import { versionStore } from '#lib/stores/version.store.svelte.js';
 import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 import type { PermissionsManifest } from '#lib/types/auth.js';
 import { authService } from '#lib/services/auth-service.js';
@@ -138,43 +138,8 @@ export const load: LayoutLoad = async ({ url }) => {
 		settingsStore.set(settings);
 	}
 
-	let versionInformation: AppVersionInformation = {
-		currentVersion: versionService.getCurrentVersion(),
-		displayVersion: versionService.getCurrentVersion(),
-		revision: 'unknown',
-		shortRevision: 'unknown',
-		goVersion: 'unknown',
-		nodeVersion: 'unknown',
-		svelteKitVersion: 'unknown',
-		enabledFeatures: [],
-		isSemverVersion: false
-	};
-
-	await tryCatch(
-		(async () => {
-			const info = await versionInformationRequest;
-			versionInformation = {
-				currentVersion: info.currentVersion,
-				currentTag: info.currentTag,
-				currentDigest: info.currentDigest,
-				displayVersion: info.displayVersion,
-				revision: info.revision,
-				shortRevision: info.shortRevision || 'unknown',
-				goVersion: info.goVersion || 'unknown',
-				nodeVersion: info.nodeVersion || 'unknown',
-				svelteKitVersion: info.svelteKitVersion || 'unknown',
-				enabledFeatures: info.enabledFeatures ?? [],
-				buildTime: info.buildTime,
-				isSemverVersion: info.isSemverVersion,
-				newestVersion: info.newestVersion,
-				newestDigest: info.newestDigest,
-				updateAvailable: info.updateAvailable,
-				releaseUrl: info.releaseUrl,
-				releaseNotes: info.releaseNotes,
-				releasedAt: info.releasedAt
-			};
-		})()
-	);
+	const versionInformation = await versionInformationRequest;
+	versionStore.seed(versionInformation);
 
 	const redirectPath = getAuthRedirectPath(
 		url.pathname,

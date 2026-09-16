@@ -10,6 +10,7 @@ import { activityStore } from '#lib/stores/activity.store.svelte.js';
 import { dashboardStore } from '#lib/stores/dashboard.store.svelte.js';
 import { environmentStatusStore } from '#lib/stores/environment-status.store.svelte.js';
 import { featureStore } from '#lib/stores/features.store.svelte.js';
+import { versionStore } from '#lib/stores/version.store.svelte.js';
 import { getEffectiveLandingPage } from '#lib/utils/navigation.js';
 import { parseInstant } from '#lib/utils/formatting.js';
 import { Temporal } from 'temporal-polyfill';
@@ -230,12 +231,14 @@ class AuthService extends BaseAPIService {
 		const restartActivityStore = activityStore.stop({ resetState: true });
 		const restartDashboardStore = dashboardStore.stop({ resetState: true });
 		const restartEnvironmentStatusStore = environmentStatusStore.stop();
+		const restartVersionStore = versionStore.stop();
 		userStore.clearUser();
 
 		if (options?.restartMountedStores) {
 			if (restartActivityStore) void activityStore.start();
 			if (restartDashboardStore) void dashboardStore.start();
 			if (restartEnvironmentStatusStore) void environmentStatusStore.start();
+			if (restartVersionStore) versionStore.start();
 		}
 	}
 
