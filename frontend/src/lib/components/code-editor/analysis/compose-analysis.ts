@@ -336,8 +336,8 @@ function buildOutline(doc: YamlDocLike): OutlineItem[] {
 	const sections = ['services', 'networks', 'volumes', 'configs', 'secrets'];
 
 	for (const section of sections) {
-		const sectionNode = doc.getIn([section], true) as { range?: [number, number, number] } | undefined;
-		const sectionRange = sectionNode?.range;
+		const sectionNode = doc.getIn([section], true) as ParsedNode | null | undefined;
+		const sectionRange = getRange(sectionNode);
 		if (!sectionRange) continue;
 
 		outline.push({
@@ -349,12 +349,13 @@ function buildOutline(doc: YamlDocLike): OutlineItem[] {
 			level: 0
 		});
 
-		const value = doc.getIn([section]) as unknown;
-		if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
+		if (!isMap(sectionNode)) continue;
 
-		for (const key of Object.keys(value as Record<string, unknown>)) {
-			const node = doc.getIn([section, key], true) as { range?: [number, number, number] } | undefined;
-			const range = node?.range;
+		for (const pair of sectionNode.items) {
+			if (!isPair(pair)) continue;
+			const key = scalarToKey(pair.key);
+			if (key === null) continue;
+			const range = getRange(pair.value ?? pair.key);
 			if (!range) continue;
 
 			outline.push({
