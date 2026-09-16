@@ -99,7 +99,7 @@
 			showStreamLabels={preferences.showStreamLabels}
 			type="project"
 			maxLines={500}
-			showTimestamps={true}
+			showTimestamps={preferences.showTimestamps}
 			height="100%"
 			onStart={() => (isStreaming = true)}
 			onStop={() => (isStreaming = false)}

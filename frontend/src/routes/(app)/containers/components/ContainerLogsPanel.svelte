@@ -217,7 +217,7 @@
 				showStreamLabels={preferences.showStreamLabels}
 				tailLines={preferences.tailLines}
 				maxLines={500}
-				showTimestamps={true}
+				showTimestamps={preferences.showTimestamps}
 				groupAdjacentLines={true}
 				height="100%"
 				onStart={handleStreamStart}

@@ -244,6 +244,8 @@
   "log_parsed_mode_tooltip": "Shows structured logs in parsed form when available. Turn it off to see the original raw line text.",
   "log_stream_labels": "Stream labels",
   "log_stream_labels_tooltip": "Shows STDOUT and STDERR as text on each line. Turn it off to show a green dot for STDOUT and a red square for STDERR instead.",
+  "log_timestamps": "Timestamps",
+  "log_timestamps_tooltip": "Show timestamps next to log entries.",
   "log_download_tooltip": "Downloads every log line Docker still keeps for this container, ignoring the search, tail, and parsed settings.",
   "common_logout": "Logout",
   "common_redeploy": "Redeploy",

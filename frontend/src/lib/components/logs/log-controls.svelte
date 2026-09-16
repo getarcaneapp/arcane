@@ -171,6 +171,17 @@
 					<span class="text-xs text-muted-foreground">{m.log_stream_labels_tooltip()}</span>
 				</div>
 			</DropdownMenu.CheckboxItem>
+			<DropdownMenu.CheckboxItem
+				checked={preferences.showTimestamps}
+				onCheckedChange={(checked) => {
+					preferences.showTimestamps = checked === true;
+				}}
+			>
+				<div class="flex flex-col gap-0.5">
+					<span class="font-medium">{m.log_timestamps()}</span>
+					<span class="text-xs text-muted-foreground">{m.log_timestamps_tooltip()}</span>
+				</div>
+			</DropdownMenu.CheckboxItem>
 		</DropdownMenu.Content>
 	</DropdownMenu.Root>
 {/snippet}
@@ -197,7 +208,7 @@
 
 {#if showDesktop}
 	<div class="hidden flex-wrap items-center justify-end gap-x-4 gap-y-2 lg:flex">
-		<div class="flex shrink-0 items-center gap-4">
+		<div class="flex flex-wrap items-center gap-x-4 gap-y-2">
 			<ArcaneTooltip.Root>
 				<ArcaneTooltip.Trigger>
 					{#snippet child({ props })}
@@ -271,6 +282,25 @@
 				</ArcaneTooltip.Trigger>
 				<ArcaneTooltip.Content side="bottom" class="max-w-xs">
 					{m.log_stream_labels_tooltip()}
+				</ArcaneTooltip.Content>
+			</ArcaneTooltip.Root>
+
+			<ArcaneTooltip.Root>
+				<ArcaneTooltip.Trigger>
+					{#snippet child({ props })}
+						<SwitchWithLabel
+							triggerProps={props}
+							id="timestamps-toggle"
+							checked={preferences.showTimestamps}
+							label={m.log_timestamps()}
+							onCheckedChange={(checked) => {
+								preferences.showTimestamps = checked;
+							}}
+						/>
+					{/snippet}
+				</ArcaneTooltip.Trigger>
+				<ArcaneTooltip.Content side="bottom" class="max-w-xs">
+					{m.log_timestamps_tooltip()}
 				</ArcaneTooltip.Content>
 			</ArcaneTooltip.Root>
 		</div>

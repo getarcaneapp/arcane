@@ -5,6 +5,7 @@ export class UseLogPreferences {
 	autoStart = new PersistedState('arcane_log_auto_start', 'false');
 	parsedJson = new PersistedState('arcane_log_json_parsing_v3', 'false');
 	streamLabels = new PersistedState('arcane_log_show_stream_labels', 'true');
+	timestamps = new PersistedState('arcane_log_show_timestamps', 'true');
 
 	get tailLines() {
 		const selectedTail = this.selectedTail.current || '100';
@@ -26,6 +27,14 @@ export class UseLogPreferences {
 
 	set showStreamLabels(enabled: boolean) {
 		this.streamLabels.current = String(enabled);
+	}
+
+	get showTimestamps() {
+		return this.timestamps.current === 'true';
+	}
+
+	set showTimestamps(enabled: boolean) {
+		this.timestamps.current = String(enabled);
 	}
 
 	// The viewer may enable parsed mode for this session without persisting it.
