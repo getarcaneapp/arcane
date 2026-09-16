@@ -1579,7 +1579,7 @@
   "security_trivy_resource_limits_label": "Trivy 資源限制",
   "security_trivy_resource_limits_description": "設定 Trivy 掃描容器時的 CPU 和記憶體限制。",
   "security_trivy_cpu_limit_label": "CPU 限制（核心數）",
-  "security_trivy_cpu_limit_help": "僅限整數（例如：1 或 2）。",
+  "security_trivy_cpu_limit_help": "CPU 核心數，例如 0.5 或 1.5。若設定為 0，則表示不設 CPU 限制。使用 CPU 親和性而非 CPU 配額的主機，會以整數核心為單位進行計算。",
   "security_trivy_memory_limit_label": "記憶體限制（MB）",
   "security_trivy_concurrent_scan_containers_label": "並行掃描容器",
   "security_trivy_concurrent_scan_containers_help": "Trivy 掃描容器時可同時執行手動掃描和排程掃描的最大數量。",
