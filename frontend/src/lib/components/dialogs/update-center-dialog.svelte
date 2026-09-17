@@ -2,7 +2,6 @@
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
-	import * as ScrollArea from '#lib/components/ui/scroll-area/index.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import Spinner from '#lib/components/ui/spinner/spinner.svelte';
 	import { m } from '#lib/paraglide/messages.js';
@@ -479,7 +478,7 @@
 
 <Dialog.Root {open} onOpenChange={(nextOpen) => (open = nextOpen)}>
 	<Dialog.Content
-		class={cn('gap-0 overflow-hidden p-0 sm:max-w-[560px]', upgrading && '[&>button]:hidden')}
+		class={cn('flex max-h-[90dvh] flex-col gap-0 overflow-hidden p-0 sm:max-w-[560px]', upgrading && '[&>button]:hidden')}
 		onInteractOutside={(e: Event) => {
 			if (upgrading) e.preventDefault();
 		}}
@@ -561,7 +560,7 @@
 				</Dialog.Header>
 			</div>
 
-			<div class="border-t border-border/60">
+			<div class="flex min-h-0 flex-1 flex-col border-t border-border/60">
 				<div class="flex items-center justify-between px-6 pt-4 pb-2">
 					<h3 class="text-sm font-semibold text-foreground">{m.update_center_whats_new()}</h3>
 					{#if effectiveReleaseUrl}
@@ -577,7 +576,7 @@
 					{/if}
 				</div>
 
-				<ScrollArea.Root class="h-[260px] px-6 pb-4">
+				<div class="min-h-0 flex-1 overflow-y-auto px-6 pb-4">
 					{#if effectiveReleaseNotes}
 						<ReleaseNotes markdown={effectiveReleaseNotes} />
 					{:else if debug && debugFetching}
@@ -594,7 +593,7 @@
 							{m.update_center_release_notes_unavailable()}
 						</p>
 					{/if}
-				</ScrollArea.Root>
+				</div>
 			</div>
 
 			<div class="border-t border-border/60 bg-muted/30 px-6 py-3">

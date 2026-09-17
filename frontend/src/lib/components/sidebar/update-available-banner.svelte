@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { cn } from '#lib/utils.js';
+	import { ArrowRightIcon, CircleArrowUpIcon } from '#lib/icons/index.js';
 
 	let {
 		label,
@@ -21,20 +22,21 @@
 	{onclick}
 	{disabled}
 	class={cn(
-		'group flex w-full items-center gap-2.5 text-left transition-colors hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60',
+		'group flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden disabled:cursor-not-allowed disabled:opacity-60',
 		className
 	)}
 >
-	<span class="relative flex size-2 shrink-0 items-center justify-center">
-		<span class="absolute inline-flex size-2 animate-ping rounded-full bg-blue-500 opacity-60"></span>
-		<span class="relative inline-flex size-1.5 rounded-full bg-blue-500"></span>
+	<span class="flex size-6 shrink-0 items-center justify-center rounded-md bg-primary/15 text-primary">
+		<CircleArrowUpIcon class="size-3.5 shrink-0" aria-hidden="true" />
 	</span>
-	<span class="flex-1 text-sm font-medium text-foreground">
-		{label}
+	<span class="grid min-w-0 flex-1 leading-tight">
+		<span class="truncate text-xs font-medium">{label}</span>
+		{#if versionChip}
+			<span class="truncate text-[11px] text-muted-foreground tabular-nums">{versionChip}</span>
+		{/if}
 	</span>
-	{#if versionChip}
-		<span class="rounded-md bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
-			{versionChip}
-		</span>
-	{/if}
+	<ArrowRightIcon
+		class="size-3.5 shrink-0 text-muted-foreground/50 transition-colors group-hover:text-foreground"
+		aria-hidden="true"
+	/>
 </button>

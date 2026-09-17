@@ -38,7 +38,7 @@
 		"@tanstack/svelte-query": "^6.1.48",
 		"@tanstack/svelte-table": "^9.2.4",
 		"@tanstack/table-core": "9.2.4",
-		"@tanstack/virtual-core": "^3.17.10",
+		"@tanstack/virtual-core": "^3.17.11",
 		"@uiw/codemirror-themes": "^4.25.11",
 		"@xterm/addon-fit": "^0.11.0",
 		"@xterm/xterm": "^6.0.0",
@@ -50,7 +50,7 @@
 		"embla-carousel-svelte": "^8.6.0",
 		"formsnap": "^2.0.1",
 		"ky": "^2.1.0",
-		"marked": "^18.0.12",
+		"marked": "^18.0.13",
 		"mode-watcher": "^1.1.0",
 		"runed": "^0.37.1",
 		"svelte": "^5.57.0",
@@ -62,10 +62,10 @@
 		"temporal-polyfill": "^1.0.5",
 		"vaul-svelte": "1.0.0-next.7",
 		"yaml": "^2.9.1",
-		"zod": "^4.6.2"
+		"zod": "^4.6.5"
 	},
 	"devDependencies": {
-		"@iconify/json": "^2.2.527",
+		"@iconify/json": "^2.2.528",
 		"@inlang/paraglide-js": "2.25.2",
 		"@sveltejs/adapter-static": "^4.0.0-next.4",
 		"@sveltejs/vite-plugin-svelte": "^7.3.0",

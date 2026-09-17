@@ -1,3 +1,6 @@
+> [!IMPORTANT]
+> Feature requests have moved to [Discussions](https://github.com/getarcaneapp/arcane/discussions/categories/feature-requests). Open new requests and upvote existing ones there; issues are only used for Bug reports now to help maintain priority on those issues. 
+
 <div align="center">
 
   <img src=".github/assets/img/arcane-full-trace-fill.svg" alt="Arcane Logo" width="500" />

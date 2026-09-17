@@ -1,12 +1,11 @@
 <script lang="ts">
 	import { cn } from '#lib/utils.js';
-	import * as Separator from '#lib/components/ui/separator/index.js';
 	import * as Tooltip from '#lib/components/ui/tooltip/index.js';
 	import { useSidebar } from '#lib/components/ui/sidebar/index.js';
 	import type { AppVersionInformation } from '#lib/types/settings.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import UpdateAllDialog from '#lib/components/dialogs/update-all-dialog.svelte';
-	import { DownloadIcon } from '#lib/icons/index.js';
+	import { CircleArrowUpIcon } from '#lib/icons/index.js';
 	import { useUpgradeCheck } from '#lib/hooks/use-upgrade-check.svelte.js';
 	import UpdateAvailableBanner from './update-available-banner.svelte';
 
@@ -42,12 +41,9 @@
 />
 
 {#if upgradeCheck.shouldShowBanner}
-	<div class={cn('pb-2', isCollapsed ? 'px-1' : 'px-3')}>
-		<Separator.Root class="mb-2 opacity-30" />
-
+	<div class={cn('pb-1', isCollapsed ? 'px-0' : 'px-3')}>
 		{#if !isCollapsed}
 			<UpdateAvailableBanner
-				class="rounded-lg px-2.5 py-2"
 				label={m.sidebar_update_available()}
 				versionChip={upgradeCheck.versionChip}
 				disabled={upgradeCheck.checkingUpgrade}
@@ -60,14 +56,11 @@
 						<button
 							onclick={upgradeCheck.openDialog}
 							disabled={upgradeCheck.checkingUpgrade}
-							class="relative mx-auto flex size-8 items-center justify-center rounded-lg transition-colors hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60"
+							class="relative mx-auto flex size-8 items-center justify-center rounded-md bg-primary/15 text-primary transition-colors hover:bg-primary/25 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden disabled:cursor-not-allowed disabled:opacity-60"
 							{...props}
 						>
-							<DownloadIcon class="size-4 text-foreground/80" />
-							<span class="absolute top-1 right-1 flex size-2">
-								<span class="absolute inline-flex size-2 animate-ping rounded-full bg-blue-500 opacity-70"></span>
-								<span class="relative inline-flex size-2 rounded-full bg-blue-500 ring-2 ring-[var(--sidebar)]"></span>
-							</span>
+							<CircleArrowUpIcon class="size-4 shrink-0" aria-hidden="true" />
+							<span class="absolute -top-0.5 -right-0.5 size-2 rounded-full bg-primary ring-2 ring-sidebar"></span>
 						</button>
 					{/snippet}
 				</Tooltip.Trigger>

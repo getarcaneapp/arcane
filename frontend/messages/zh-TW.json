@@ -1749,6 +1749,8 @@
   "http_client_timeout_description": "設定 HTTP 請求的預設逾時秒數（預設 30）",
   "registry_timeout": "儲存庫逾時",
   "registry_timeout_description": "容器儲存庫操作的逾時秒數（預設：30）",
+  "registry_tag_timeout": "登錄檔標籤超時",
+  "registry_tag_timeout_description": "在版本更新檢查期間，列出影像儲存庫中所有標籤的超時時間（以秒為單位）。大型儲存庫會返回橫跨多頁的數千個標籤（預設值：120）",
   "proxy_request_timeout": "Proxy 請求逾時",
   "proxy_request_timeout_description": "經 Proxy 請求的逾時秒數（預設：60）",
   "customize_title": "自訂",

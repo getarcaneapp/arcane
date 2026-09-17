@@ -7,53 +7,39 @@ function getCurrentVersion() {
 	return currentVersion;
 }
 
+export function toAppVersionInformation(data: Partial<AppVersionInformation>): AppVersionInformation {
+	return {
+		currentVersion: data.currentVersion || getCurrentVersion(),
+		currentTag: data.currentTag,
+		currentDigest: data.currentDigest,
+		displayVersion: data.displayVersion || data.currentVersion || getCurrentVersion(),
+		revision: data.revision || 'unknown',
+		shortRevision: data.shortRevision || data.revision?.slice(0, 8) || 'unknown',
+		goVersion: data.goVersion || 'unknown',
+		nodeVersion: data.nodeVersion || 'unknown',
+		svelteKitVersion: data.svelteKitVersion || 'unknown',
+		enabledFeatures: data.enabledFeatures ?? [],
+		buildTime: data.buildTime,
+		isSemverVersion: data.isSemverVersion || false,
+		newestVersion: data.newestVersion,
+		newestDigest: data.newestDigest,
+		updateAvailable: data.updateAvailable || false,
+		releaseUrl: data.releaseUrl,
+		releaseNotes: data.releaseNotes,
+		releasedAt: data.releasedAt
+	};
+}
+
 async function getVersionInformation(): Promise<AppVersionInformation> {
 	const operationResult = await tryCatch(
 		(async () => {
 			const res = await apiClient.get('/app-version', {
 				timeout: 2000
 			});
-			const data = res.data as Partial<AppVersionInformation>;
-
-			return {
-				currentVersion: data.currentVersion || getCurrentVersion(),
-				currentTag: data.currentTag,
-				currentDigest: data.currentDigest,
-				displayVersion: data.displayVersion || data.currentVersion || getCurrentVersion(),
-				revision: data.revision || 'unknown',
-				shortRevision: data.shortRevision || data.revision?.slice(0, 8) || 'unknown',
-				goVersion: data.goVersion || 'unknown',
-				nodeVersion: data.nodeVersion || 'unknown',
-				svelteKitVersion: data.svelteKitVersion || 'unknown',
-				enabledFeatures: data.enabledFeatures ?? [],
-				buildTime: data.buildTime,
-				isSemverVersion: data.isSemverVersion || false,
-				newestVersion: data.newestVersion,
-				newestDigest: data.newestDigest,
-				updateAvailable: data.updateAvailable || false,
-				releaseUrl: data.releaseUrl,
-				releaseNotes: data.releaseNotes,
-				releasedAt: data.releasedAt
-			};
+			return toAppVersionInformation(res.data as Partial<AppVersionInformation>);
 		})()
 	);
-	if (operationResult.error !== null) {
-		// Fallback to basic version info if app-version endpoint fails
-		return {
-			currentVersion: getCurrentVersion(),
-			displayVersion: getCurrentVersion(),
-			revision: 'unknown',
-			shortRevision: 'unknown',
-			goVersion: 'unknown',
-			nodeVersion: 'unknown',
-			svelteKitVersion: 'unknown',
-			enabledFeatures: [],
-			isSemverVersion: false,
-			updateAvailable: false
-		};
-	} else {
-		return operationResult.data;
-	}
+	return operationResult.error !== null ? toAppVersionInformation({}) : operationResult.data;
 }
 
 async function getNewestVersion(): Promise<string | undefined> {

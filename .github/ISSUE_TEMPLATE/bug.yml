@@ -140,19 +140,28 @@ body:
     validations:
       required: false
 
+  - type: markdown
+    attributes:
+      value: |
+        > [!IMPORTANT]
+        > **Required step:** Set `LOG_LEVEL=debug` in your environment (e.g. in your `.env` file or Docker Compose environment section), restart Arcane, reproduce the issue, and then provide the resulting logs below. Reports without debug logs may be closed.
+
   - type: textarea
     id: logs
     attributes:
-      label: Relevant Logs or Error Messages
-      description: Please share any relevant logs, error messages, or console output
+      label: Debug Logs
+      description: Logs captured with LOG_LEVEL=debug after reproducing the issue (required)
       placeholder: |
-        Paste any error messages, logs from the browser console, or Docker logs here...
+        1. Set LOG_LEVEL=debug in your .env file or Docker Compose environment
+        2. Restart Arcane
+        3. Reproduce the issue
+        4. Paste the logs here...
 
         To get Docker logs: docker logs <container-name>
         Browser console: F12 -> Console tab
       render: shell
     validations:
-      required: false
+      required: true
 
   - type: textarea
     id: compose

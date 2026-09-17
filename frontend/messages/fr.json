@@ -1749,6 +1749,8 @@
   "http_client_timeout_description": "Délai par défaut pour les requêtes HTTP en secondes (par défaut : 30)",
   "registry_timeout": "Expiration du délai du Registre",
   "registry_timeout_description": "Délai pour les opérations sur le registre de conteneurs en secondes (par défaut : 30)",
+  "registry_tag_timeout": "Délai d'expiration des étiquettes du registre",
+  "registry_tag_timeout_description": "Délai d'attente, en secondes, pour l'énumération de toutes les balises d'un référentiel d'images lors des vérifications de mise à jour de version. Les référentiels volumineux renvoient des milliers de balises réparties sur de nombreuses pages (valeur par défaut : 120)",
   "proxy_request_timeout": "Expiration du délai d'attente de la requête proxy dépassé",
   "proxy_request_timeout_description": "Délai d'expiration pour les requêtes via proxy en secondes (par défaut : 60)",
   "customize_title": "Personnalisation",

@@ -28,6 +28,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/types/v2/version"
 	"github.com/samber/hot"
+	"go.getarcane.app/streams/agg"
 	"go.getarcane.app/sys/cgroup"
 )
 
@@ -53,21 +54,23 @@ type VersionService struct {
 	dockerService            *docker.DockerClientService
 	imageUpdateService       *imageupdate.ImageUpdateService
 	settingsService          *settings.SettingsService
+	streamHub                *agg.Hub[version.StreamEvent]
 }
 
-func NewVersionService(httpClient *http.Client, disabled bool, version string, revision string, containerRegistryService *registry.ContainerRegistryService, dockerService *docker.DockerClientService, imageUpdateService *imageupdate.ImageUpdateService, settingsService *settings.SettingsService) *VersionService {
+func NewVersionService(httpClient *http.Client, disabled bool, appVersion string, revision string, containerRegistryService *registry.ContainerRegistryService, dockerService *docker.DockerClientService, imageUpdateService *imageupdate.ImageUpdateService, settingsService *settings.SettingsService) *VersionService {
 	if httpClient == nil {
 		httpClient = http.DefaultClient
 	}
 	service := &VersionService{
 		httpClient:               httpClient,
 		disabled:                 disabled,
-		version:                  version,
+		version:                  appVersion,
 		revision:                 revision,
 		containerRegistryService: containerRegistryService,
 		dockerService:            dockerService,
 		imageUpdateService:       imageUpdateService,
 		settingsService:          settingsService,
+		streamHub:                agg.NewHub[version.StreamEvent](),
 	}
 	loader := func(_ []struct{}) (map[struct{}]latestRelease, error) {
 		ctx, cancel := context.WithTimeout(context.Background(), defaultRequestTimeout)

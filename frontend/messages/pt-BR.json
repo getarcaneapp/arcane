@@ -1749,6 +1749,8 @@
   "http_client_timeout_description": "Tempo limite padrão para solicitações HTTP em segundos (padrão: 30)",
   "registry_timeout": "Tempo limite do registro",
   "registry_timeout_description": "Tempo limite para operações do registro do container em segundos (padrão: 30)",
+  "registry_tag_timeout": "Tempo limite da tag do Registro",
+  "registry_tag_timeout_description": "Tempo limite, em segundos, para listar todas as tags em um repositório de imagens durante as verificações de atualização de versão. Repositórios grandes retornam milhares de tags distribuídas por várias páginas (padrão: 120)",
   "proxy_request_timeout": "Tempo limite da solicitação de Proxy",
   "proxy_request_timeout_description": "Tempo limite para pedidos de proxy em segundos (padrão: 60)",
   "customize_title": "Personalização",

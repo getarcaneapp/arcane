@@ -1,13 +1,9 @@
-name: ⚡️ Feature Request
-description: Suggest a new feature or enhancement for Arcane
-title: '⚡️ Feature: '
-type: 'Feature'
-labels: "needs more upvotes"
+title: "⚡️ Feature Request: "
 body:
   - type: markdown
     attributes:
       value: |
-        Thanks for taking the time to suggest a new feature!
+        Thanks for taking the time to suggest a new feature! Proposals and voting belong in Discussions.
 
   - type: textarea
     id: description

@@ -17,6 +17,7 @@
 	import { featureStore } from '#lib/stores/features.store.svelte.js';
 	import { isEnvironmentOnline } from '#lib/utils/docker.js';
 	import { environmentStatusStore } from '#lib/stores/environment-status.store.svelte.js';
+	import { versionStore } from '#lib/stores/version.store.svelte.js';
 	import {
 		navigationItems,
 		getManagementItems,
@@ -28,7 +29,7 @@
 	import userStore, { userHasPermissionInAnyEnvironment } from '#lib/stores/user-store.svelte.js';
 	let { data, children }: LayoutProps = $props();
 
-	const versionInformation = $derived(data.versionInformation);
+	const versionInformation = $derived(versionStore.current ?? data.versionInformation);
 	const user = $derived(data.user);
 	const permissionsManifest = $derived(data.permissionsManifest);
 	const permissionsManifestLoadFailed = $derived(data.permissionsManifestLoadFailed);
@@ -89,7 +90,11 @@
 			return;
 		}
 		void environmentStatusStore.start();
-		return () => environmentStatusStore.stop();
+		versionStore.start();
+		return () => {
+			environmentStatusStore.stop();
+			versionStore.stop();
+		};
 	});
 
 	const authRedirectPath = $derived(

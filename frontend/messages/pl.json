@@ -1749,6 +1749,8 @@
   "http_client_timeout_description": "Default timeout for HTTP requests in seconds (default: 30)",
   "registry_timeout": "Registry Timeout",
   "registry_timeout_description": "Timeout for container registry operations in seconds (default: 30)",
+  "registry_tag_timeout": "Limit czasu dla etykiety rejestru",
+  "registry_tag_timeout_description": "Limit czasu na wyświetlenie wszystkich tagów w repozytorium obrazów podczas sprawdzania aktualizacji wersji, w sekundach. Duże repozytoria zawierają tysiące tagów rozmieszczonych na wielu stronach (wartość domyślna: 120)",
   "proxy_request_timeout": "Proxy Request Timeout",
   "proxy_request_timeout_description": "Timeout for proxied requests in seconds (default: 60)",
   "customize_title": "Customization",

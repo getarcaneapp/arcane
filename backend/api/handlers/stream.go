@@ -14,6 +14,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/version"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
@@ -22,6 +23,7 @@ import (
 	environmenttypes "github.com/getarcaneapp/arcane/types/v2/environment"
 	eventtypes "github.com/getarcaneapp/arcane/types/v2/event"
 	streamtypes "github.com/getarcaneapp/arcane/types/v2/stream"
+	versiontypes "github.com/getarcaneapp/arcane/types/v2/version"
 	"go.getarcane.app/streams/agg"
 )
 
@@ -42,10 +44,11 @@ type StreamHandler struct {
 	dashboard   *dashboard.DashboardHandler
 	activity    *activity.ActivityHandler
 	environment *environment.EnvironmentHandler
+	version     *version.VersionService
 }
 
 type StreamClientInput struct {
-	Channels     string `query:"channels" doc:"Comma-separated channels to subscribe to: environments, dashboard, activities, events"`
+	Channels     string `query:"channels" doc:"Comma-separated channels to subscribe to: environments, dashboard, activities, events, version"`
 	DebugAllGood bool   `query:"debugAllGood" default:"false" doc:"Debug mode for the dashboard channel: force an empty action item list"`
 	Limit        int    `query:"limit" default:"0" doc:"Maximum activities to include in each activities-channel snapshot"`
 }
@@ -59,12 +62,14 @@ func RegisterStream(
 	activityHandler *activity.ActivityHandler,
 	environmentHandler *environment.EnvironmentHandler,
 	eventService *event.EventService,
+	versionService *version.VersionService,
 ) {
 	h := &StreamHandler{
 		events:      eventService,
 		dashboard:   dashboardHandler,
 		activity:    activityHandler,
 		environment: environmentHandler,
+		version:     versionService,
 	}
 
 	huma.Register(api, huma.Operation{
@@ -72,7 +77,7 @@ func RegisterStream(
 		Method:      http.MethodGet,
 		Path:        "/stream",
 		Summary:     "Multiplexed client stream",
-		Description: "Streams the requested channels (environments, dashboard, activities, events) over a single JSON-lines connection",
+		Description: "Streams the requested channels (environments, dashboard, activities, events, version) over a single JSON-lines connection",
 		Tags:        []string{"Stream"},
 		Security:    handlerutil.DefaultOperationSecurity(),
 		// Ungated: each channel applies its own permission check below, and a
@@ -122,7 +127,7 @@ func (h *StreamHandler) streamClientInternal(ctx context.Context, ps *authz.Perm
 // dropping any the caller lacks permission for.
 func (h *StreamHandler) producersForInternal(ps *authz.PermissionSet, input *StreamClientInput) []agg.Producer[streamtypes.Event] {
 	requested := parseStreamChannelsInternal(input.Channels)
-	producers := make([]agg.Producer[streamtypes.Event], 0, 4)
+	producers := make([]agg.Producer[streamtypes.Event], 0, 5)
 
 	if requested[streamtypes.ChannelEnvironments] {
 		// Ungated like listEnvironments; the producer filters to the caller's
@@ -191,11 +196,22 @@ func (h *StreamHandler) producersForInternal(ps *authz.PermissionSet, input *Str
 			h.events.RunStreamProducer,
 		))
 	}
+
+	if requested[streamtypes.ChannelVersion] {
+		// Ungated like GET /app-version.
+		producers = append(producers, forwardStreamChannelInternal(
+			streamtypes.ChannelVersion,
+			func(channel string, event versiontypes.StreamEvent) streamtypes.Event {
+				return streamtypes.Event{Channel: channel, Version: &event, Timestamp: event.Timestamp}
+			},
+			h.version.RunStreamProducer,
+		))
+	}
 	return producers
 }
 
 func parseStreamChannelsInternal(raw string) map[string]bool {
-	channels := make(map[string]bool, 4)
+	channels := make(map[string]bool, 5)
 	for name := range strings.SplitSeq(raw, ",") {
 		if trimmed := strings.TrimSpace(strings.ToLower(name)); trimmed != "" {
 			channels[trimmed] = true

@@ -1,5 +1,7 @@
 package version
 
+import "time"
+
 // Info contains detailed version information about the application.
 type Info struct {
 	// CurrentVersion is the current version string.
@@ -114,4 +116,22 @@ type Check struct {
 	//
 	// Required: false
 	ReleaseURL string `json:"releaseUrl,omitempty"`
+}
+
+// StreamEvent is one version-channel line on the multiplexed client stream.
+type StreamEvent struct {
+	// Type is the event kind: "snapshot".
+	//
+	// Required: true
+	Type string `json:"type"`
+
+	// Info is the app version information for a "snapshot".
+	//
+	// Required: false
+	Info *Info `json:"info,omitempty"`
+
+	// Timestamp is when the event was produced.
+	//
+	// Required: true
+	Timestamp time.Time `json:"timestamp"`
 }

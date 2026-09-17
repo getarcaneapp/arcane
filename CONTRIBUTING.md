@@ -7,7 +7,7 @@ Thanks for helping make Arcane better! We've built a modern, streamlined develop
 ## 🌟 Ways to Contribute
 
 - 🐛 **Report bugs** using our issue templates
-- 💡 **Suggest features** or improvements
+- 💡 **Suggest features** in [Discussions](https://github.com/getarcaneapp/arcane/discussions/new?category=feature-requests). Proposals and voting belong there. Maintainers can create linked implementation issues when work is ready.
 - 🔧 **Code contributions** (frontend, backend, DevOps)
 - 📚 **Documentation** improvements
 - 🌍 **Translations** via [Crowdin](https://crowdin.com/project/arcane-docker-management)
@@ -331,8 +331,8 @@ docker system prune -f
 
 ### Need Help?
 
-- **Bug Report**: [Create an issue](https://github.com/ofkm/arcane/issues/new?template=bug.yml)
-- **Feature Request**: [Suggest a feature](https://github.com/ofkm/arcane/issues/new?template=feature.yml)
+- **Bug Report**: [Create an issue](https://github.com/getarcaneapp/arcane/issues/new?template=bug.yml)
+- **Feature Request**: [Suggest a feature](https://github.com/getarcaneapp/arcane/discussions/new?category=feature-requests) (Discussions)
 - **Development Question**: Open a discussion in the repository
 
 Thank you for contributing to Arcane! Your help makes this project better for everyone. 🚀
