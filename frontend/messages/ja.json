@@ -594,6 +594,8 @@
   "containers_check_updates": "Update Containers",
   "containers_check_updates_failed": "Failed to Check Containers for Updates",
   "containers_check_updates_success": "Containers Updated Successfully.",
+  "containers_resource_sort_unsupported": "この環境では、CPU またはメモリ使用量で並べ替えるには、新しいバージョンのエージェントが必要です。エージェントを更新し、リソースのリアルタイム使用量で並べ替えを行ってください。",
+  "containers_resource_refresh_failed": "自動更新に失敗しました： {message}",
   "update_container": "Update Container",
   "standalone_containers": "スタンドアロンコンテナ",
   "wrap_text": "テキストの折り返し",
