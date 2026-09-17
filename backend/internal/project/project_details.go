@@ -4,8 +4,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
 	"github.com/moby/moby/api/types/container"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-
 	"bufio"
 	"context"
 	"io"
@@ -506,9 +504,13 @@ func (s *ProjectService) enrichProjectsWithUpdateInfoInternal(
 	projectsList []Project,
 	details []project.Details,
 	includeHidden bool,
+	env *projectMetadataEnvInternal,
 ) {
 	if len(projectsList) == 0 || len(details) == 0 {
 		return
+	}
+	if env == nil {
+		env = s.newProjectMetadataEnvInternal(ctx, projectsList)
 	}
 
 	var hiddenServicesByProjectID, hiddenRefsByProjectID map[string]map[string]bool
@@ -520,7 +522,6 @@ func (s *ProjectService) enrichProjectsWithUpdateInfoInternal(
 	allImageRefs := make([]string, 0)
 	servicesByProjectID := make(map[string][]composetypes.ServiceConfig, len(projectsList))
 	projectIDs := make([]string, 0, len(projectsList))
-	cfg := s.settingsService.GetSettingsOrDefaults(ctx)
 
 	type imageRefsResult struct {
 		projectID string
@@ -546,7 +547,7 @@ func (s *ProjectService) enrichProjectsWithUpdateInfoInternal(
 			}
 			defer func() { <-sem }()
 
-			refs, services := s.resolveProjectUpdateServicesInternal(ctx, proj, cfg, includeHidden, hiddenServicesByProjectID[proj.ID], hiddenRefsByProjectID[proj.ID])
+			refs, services := s.resolveProjectUpdateServicesInternal(ctx, proj, env, includeHidden, hiddenServicesByProjectID[proj.ID], hiddenRefsByProjectID[proj.ID])
 			resultsCh <- imageRefsResult{projectID: proj.ID, refs: refs, services: services}
 		}(proj)
 	}
@@ -585,8 +586,8 @@ func (s *ProjectService) enrichProjectsWithUpdateInfoInternal(
 	}
 }
 
-func (s *ProjectService) resolveProjectUpdateServicesInternal(ctx context.Context, proj Project, cfg *settings.Settings, includeHidden bool, hiddenRuntimeServices, hiddenRuntimeRefs map[string]bool) ([]string, []composetypes.ServiceConfig) {
-	composeProject, err := s.getCachedComposeProjectInternal(ctx, &proj, cfg)
+func (s *ProjectService) resolveProjectUpdateServicesInternal(ctx context.Context, proj Project, env *projectMetadataEnvInternal, includeHidden bool, hiddenRuntimeServices, hiddenRuntimeRefs map[string]bool) ([]string, []composetypes.ServiceConfig) {
+	composeProject, err := s.getCachedComposeProjectInternal(ctx, &proj, env)
 	if err != nil {
 		slog.WarnContext(ctx, "failed to resolve project services for update summary", "projectID", proj.ID, "projectName", proj.Name, "error", err)
 		refs := projects.ParseImageRefsJSON(proj.ImageRefsJSON)
@@ -745,8 +746,8 @@ func mergeProjectContainerUpdateInfoInternal(base map[string]*imagetypes.UpdateI
 	return result
 }
 
-func (s *ProjectService) getProjectImageRefsFromComposeInternal(ctx context.Context, proj Project, cfg *settings.Settings) ([]string, []string, error) {
-	composeProject, err := s.getCachedComposeProjectInternal(ctx, &proj, cfg)
+func (s *ProjectService) getProjectImageRefsFromComposeInternal(ctx context.Context, proj Project, env *projectMetadataEnvInternal) ([]string, []string, error) {
+	composeProject, err := s.getCachedComposeProjectInternal(ctx, &proj, env)
 	if err != nil {
 		return nil, nil, errors.WrapIf(err, "load compose project")
 	}

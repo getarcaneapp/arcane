@@ -287,11 +287,12 @@ func (s *ProjectService) ListProjects(ctx context.Context, params pagination.Que
 		"count", len(projectsArray))
 
 	// Fetch live status concurrently for all projects
-	result := s.fetchProjectStatusConcurrently(ctx, projectsArray)
+	env := s.newProjectMetadataEnvInternal(ctx, projectsArray)
+	result := s.fetchProjectStatusConcurrently(ctx, projectsArray, env)
 	if err := s.enrichProjectsWithTagsInternal(ctx, result); err != nil {
 		return nil, pagination.Response{}, err
 	}
-	s.enrichProjectsWithUpdateInfoInternal(ctx, projectsArray, result, true)
+	s.enrichProjectsWithUpdateInfoInternal(ctx, projectsArray, result, true, env)
 
 	slog.DebugContext(ctx, "Completed ListProjects request",
 		"result_count", len(result))
@@ -378,11 +379,12 @@ func (s *ProjectService) filterProjectsWithDerivedFiltersInternal(
 		return pagination.FilterResult[project.Details]{}, errors.WrapIf(err, "failed to list projects")
 	}
 
-	items := s.fetchProjectStatusConcurrently(ctx, projectsArray)
+	env := s.newProjectMetadataEnvInternal(ctx, projectsArray)
+	items := s.fetchProjectStatusConcurrently(ctx, projectsArray, env)
 	if err := s.enrichProjectsWithTagsInternal(ctx, items); err != nil {
 		return pagination.FilterResult[project.Details]{}, err
 	}
-	s.enrichProjectsWithUpdateInfoInternal(ctx, projectsArray, items, true)
+	s.enrichProjectsWithUpdateInfoInternal(ctx, projectsArray, items, true, env)
 	items = s.appendDiscoveredComposeProjectUpdatesInternal(ctx, params, projectsArray, items)
 
 	return s.buildProjectDerivedPaginationConfigInternal().SearchOrderAndPaginate(items, withoutProjectDBFiltersInternal(params)), nil
@@ -861,7 +863,7 @@ func (s *ProjectService) CountProjectsWithPendingUpdates(ctx context.Context, al
 			details[i].RuntimeServices = append(details[i].RuntimeServices, project.RuntimeService{Name: dockerutil.ComposeServiceLabel(c.Labels), ContainerID: c.ID, Image: c.Image, ContainerLabels: c.Labels})
 		}
 	}
-	s.enrichProjectsWithUpdateInfoInternal(ctx, activeProjects, details, false)
+	s.enrichProjectsWithUpdateInfoInternal(ctx, activeProjects, details, false, nil)
 
 	count := 0
 	for i := range details {
@@ -910,19 +912,12 @@ func (s *ProjectService) countDiscoveredComposeProjectUpdatesInternal(ctx contex
 }
 
 // fetchProjectStatusConcurrently fetches live Docker status for multiple projects in parallel
-// Optimized to use a single Docker API call instead of N calls + N file reads
-func (s *ProjectService) fetchProjectStatusConcurrently(ctx context.Context, projectsList []Project) []project.Details {
-	projectsDir, err := s.GetProjectsDirectory(ctx)
-	if err != nil {
-		slog.WarnContext(ctx, "failed to resolve projects directory for relative project paths", "error", err)
-	}
-
-	// Resolved once for the whole list: ProjectMetadata would
-	// otherwise re-stat the projects directory and re-clone settings per project.
-	metaEnv := &projectMetadataEnvInternal{
-		projectsDirectory: projectsDir,
-		autoInjectEnv:     s.settingsService.GetBoolSetting(ctx, "autoInjectEnv", false),
-	}
+// Optimized to use a single Docker API call instead of N calls + N file reads.
+// metaEnv is resolved once for the whole list: ProjectMetadata would otherwise
+// re-stat the projects directory, re-clone settings, and re-query GitOps
+// compose paths per project.
+func (s *ProjectService) fetchProjectStatusConcurrently(ctx context.Context, projectsList []Project, metaEnv *projectMetadataEnvInternal) []project.Details {
+	projectsDir := metaEnv.projectsDirectory
 
 	// 1. Fetch all compose containers in one go
 	containers, err := s.listGlobalComposeContainersInternal(ctx)
@@ -1080,20 +1075,12 @@ func (s *ProjectService) mapProjectToDto(ctx context.Context, projectsDir string
 func (s *ProjectService) ProjectMetadata(ctx context.Context, p Project, env *projectMetadataEnvInternal) projects.ArcaneComposeMetadata {
 	empty := projects.ArcaneComposeMetadata{ServiceIconSets: map[string]projects.IconSet{}}
 
-	composeFile, err := s.ResolveProjectComposeFile(ctx, &p)
+	if env == nil {
+		env = s.newProjectMetadataEnvInternal(ctx, []Project{p})
+	}
+	composeFile, err := s.resolveProjectComposeFileInternal(ctx, &p, env)
 	if err != nil {
 		return empty
-	}
-
-	if env == nil {
-		projectsDirectory, projectsDirErr := s.GetProjectsDirectory(ctx)
-		if projectsDirErr != nil {
-			slog.WarnContext(ctx, "failed to resolve projects directory for Arcane compose metadata", "path", composeFile, "error", projectsDirErr)
-		}
-		env = &projectMetadataEnvInternal{
-			projectsDirectory: projectsDirectory,
-			autoInjectEnv:     s.settingsService.GetBoolSetting(ctx, "autoInjectEnv", false),
-		}
 	}
 
 	fingerprint := fmt.Sprintf("%q|%q|%t", composeFile, env.projectsDirectory, env.autoInjectEnv)

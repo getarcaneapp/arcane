@@ -195,14 +195,106 @@ func (s *ProjectService) CreateGitOpsManagedProject(ctx context.Context, sync *G
 	return nil
 }
 
-// projectMetadataEnvInternal carries the inputs ParseArcaneComposeMetadata needs
-// beyond the project itself. Resolving them costs a settings clone and a stat
-// syscall each, so list paths resolve once and reuse across every project.
+// projectMetadataEnvInternal carries the request-scoped inputs compose
+// resolution needs beyond the project itself. Resolving them costs a settings
+// clone, a stat syscall, and a gitops_syncs query each, so list paths resolve
+// once and reuse across metadata and update enrichment for every project.
 const maxConcurrentComposeReads = 8
 
 type projectMetadataEnvInternal struct {
 	projectsDirectory string
 	autoInjectEnv     bool
+	// settings is the snapshot shared by compose loads; nil resolves lazily.
+	settings *settings.Settings
+	// gitOpsComposePaths maps the listed projects' GitOps sync IDs to their
+	// configured compose paths. nil means the paths were not preloaded and are
+	// queried per project; a missing key in a preloaded map means no sync row.
+	gitOpsComposePaths map[string]string
+
+	// composeFiles memoizes successfully resolved compose files by project ID.
+	// Failures are not stored so a later phase in the same request retries
+	// resolution instead of replaying an error that may have been transient.
+	composeFilesMu sync.Mutex
+	composeFiles   map[string]string
+}
+
+// newProjectMetadataEnvInternal resolves the shared inputs once and preloads
+// the GitOps compose paths of every listed project in a single query.
+func (s *ProjectService) newProjectMetadataEnvInternal(ctx context.Context, projectsList []Project) *projectMetadataEnvInternal {
+	projectsDirectory, err := s.GetProjectsDirectory(ctx)
+	if err != nil {
+		slog.WarnContext(ctx, "failed to resolve projects directory for compose selection", "error", err)
+	}
+	env := &projectMetadataEnvInternal{
+		projectsDirectory: projectsDirectory,
+		autoInjectEnv:     s.settingsService.GetBoolSetting(ctx, "autoInjectEnv", false),
+		settings:          s.settingsService.GetSettingsOrDefaults(ctx),
+		composeFiles:      make(map[string]string, len(projectsList)),
+	}
+
+	syncIDs := make([]string, 0, len(projectsList))
+	for _, proj := range projectsList {
+		if id := gitOpsSyncIDInternal(&proj); id != "" {
+			syncIDs = append(syncIDs, id)
+		}
+	}
+	if len(syncIDs) == 0 {
+		return env
+	}
+	var syncRecords []GitOpsSync
+	if err := s.db.WithContext(ctx).Select("id", "compose_path").Where("id IN ?", syncIDs).Find(&syncRecords).Error; err != nil {
+		// Leave the map nil so each project falls back to its own lookup and
+		// surfaces the failure the same way it did before batching.
+		slog.WarnContext(ctx, "failed to batch resolve GitOps compose paths", "error", err)
+		return env
+	}
+	env.gitOpsComposePaths = make(map[string]string, len(syncRecords))
+	for _, record := range syncRecords {
+		env.gitOpsComposePaths[record.ID] = record.ComposePath
+	}
+	return env
+}
+
+func gitOpsSyncIDInternal(proj *Project) string {
+	if proj == nil || proj.GitOpsManagedBy == nil {
+		return ""
+	}
+	return strings.TrimSpace(*proj.GitOpsManagedBy)
+}
+
+// composeFileInternal memoizes a project's resolved compose file for the
+// request so metadata and update enrichment share one resolution. Only
+// successful resolutions are cached: a failure (for example a transient
+// filesystem or GitOps lookup error) is returned as-is and the next caller
+// resolves again, matching the per-phase retry of the unmemoized flow.
+//
+// The mutex is deliberately not held across resolve: it does filesystem and
+// database work, and holding the lock would serialize the concurrent
+// per-project workers. Callers run one worker per project within a phase and
+// phases run back to back, so the same project is not resolved concurrently;
+// if it ever were, both workers would compute the same path and the duplicate
+// work is harmless.
+func (env *projectMetadataEnvInternal) composeFileInternal(projectID string, resolve func() (string, error)) (string, error) {
+	if env == nil || projectID == "" {
+		return resolve()
+	}
+	env.composeFilesMu.Lock()
+	cached, ok := env.composeFiles[projectID]
+	env.composeFilesMu.Unlock()
+	if ok {
+		return cached, nil
+	}
+	path, err := resolve()
+	if err != nil {
+		return "", err
+	}
+	env.composeFilesMu.Lock()
+	if env.composeFiles == nil {
+		env.composeFiles = make(map[string]string)
+	}
+	env.composeFiles[projectID] = path
+	env.composeFilesMu.Unlock()
+	return path, nil
 }
 
 type registryCredentialsProviderInternal func(context.Context) ([]containerregistry.Credential, error)
@@ -551,12 +643,26 @@ func (s *ProjectService) rebuildComposeNameCacheInternal(ctx context.Context) er
 // (.env.global first, the project's .env on top) wins, then a GitOps sync's
 // configured compose path, then standard detection.
 func (s *ProjectService) ResolveProjectComposeFile(ctx context.Context, proj *Project) (string, error) {
+	return s.resolveProjectComposeFileInternal(ctx, proj, nil)
+}
+
+// resolveProjectComposeFileInternal is ResolveProjectComposeFile with the
+// request-scoped inputs supplied by env; a nil env resolves them per call.
+func (s *ProjectService) resolveProjectComposeFileInternal(ctx context.Context, proj *Project, env *projectMetadataEnvInternal) (string, error) {
 	if proj == nil {
 		return "", errors.New("project is nil")
 	}
+	return env.composeFileInternal(proj.ID, func() (string, error) {
+		return s.resolveProjectComposeFileUncachedInternal(ctx, proj, env)
+	})
+}
 
+func (s *ProjectService) resolveProjectComposeFileUncachedInternal(ctx context.Context, proj *Project, env *projectMetadataEnvInternal) (string, error) {
 	projectsDirectory := ""
-	if s.settingsService != nil {
+	switch {
+	case env != nil:
+		projectsDirectory = env.projectsDirectory
+	case s.settingsService != nil:
 		var dirErr error
 		projectsDirectory, dirErr = s.GetProjectsDirectory(ctx)
 		if dirErr != nil {
@@ -571,13 +677,13 @@ func (s *ProjectService) ResolveProjectComposeFile(ctx context.Context, proj *Pr
 		return files[0], nil
 	}
 
-	if proj.GitOpsManagedBy != nil && strings.TrimSpace(*proj.GitOpsManagedBy) != "" {
-		var syncRecord GitOpsSync
-		if err := s.db.WithContext(ctx).
-			Select("compose_path").
-			Where("id = ?", *proj.GitOpsManagedBy).
-			First(&syncRecord).Error; err == nil {
-			composeFileName := strings.TrimSpace(filepath.Base(syncRecord.ComposePath))
+	if syncID := gitOpsSyncIDInternal(proj); syncID != "" {
+		composePath, found, err := s.gitOpsComposePathInternal(ctx, syncID, env)
+		if err != nil {
+			return "", errors.WrapIff(err, "failed to resolve GitOps compose path for project %s", proj.ID)
+		}
+		if found {
+			composeFileName := strings.TrimSpace(filepath.Base(composePath))
 			if composeFileName != "" && composeFileName != "." {
 				candidate := filepath.Join(proj.Path, composeFileName)
 				// os.Stat rather than acfs: proj.Path may be an imported project
@@ -591,8 +697,6 @@ func (s *ProjectService) ResolveProjectComposeFile(ctx context.Context, proj *Pr
 					return "", errors.WrapIff(statErr, "failed to inspect GitOps compose file %s", candidate)
 				}
 			}
-		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-			return "", errors.WrapIff(err, "failed to resolve GitOps compose path for project %s", proj.ID)
 		}
 	}
 
@@ -605,6 +709,25 @@ func (s *ProjectService) ResolveProjectComposeFile(ctx context.Context, proj *Pr
 	}
 
 	return composeFile, nil
+}
+
+// gitOpsComposePathInternal returns the configured compose path of a GitOps
+// sync, served from the preloaded request map when one is available.
+func (s *ProjectService) gitOpsComposePathInternal(ctx context.Context, syncID string, env *projectMetadataEnvInternal) (string, bool, error) {
+	if env != nil && env.gitOpsComposePaths != nil {
+		composePath, found := env.gitOpsComposePaths[syncID]
+		return composePath, found, nil
+	}
+	var syncRecord GitOpsSync
+	err := s.db.WithContext(ctx).Select("compose_path").Where("id = ?", syncID).First(&syncRecord).Error
+	switch {
+	case err == nil:
+		return syncRecord.ComposePath, true, nil
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		return "", false, nil
+	default:
+		return "", false, err
+	}
 }
 
 func (s *ProjectService) loadComposeProjectForProjectInternal(ctx context.Context, proj *Project, services ...string) (*composetypes.Project, string, error) {
@@ -626,14 +749,18 @@ func (s *ProjectService) loadComposeProjectForProjectInternal(ctx context.Contex
 	return composeProject, composeFileFullPath, nil
 }
 
-func (s *ProjectService) getCachedComposeProjectInternal(ctx context.Context, proj *Project, cfg *settings.Settings) (*composetypes.Project, error) {
+func (s *ProjectService) getCachedComposeProjectInternal(ctx context.Context, proj *Project, env *projectMetadataEnvInternal) (*composetypes.Project, error) {
 	if proj == nil {
 		return nil, errors.New("project is nil")
+	}
+	var cfg *settings.Settings
+	if env != nil {
+		cfg = env.settings
 	}
 	if cfg == nil {
 		cfg = s.settingsService.GetSettingsOrDefaults(ctx)
 	}
-	composePath, err := s.ResolveProjectComposeFile(ctx, proj)
+	composePath, err := s.resolveProjectComposeFileInternal(ctx, proj, env)
 	if err != nil {
 		return nil, err
 	}

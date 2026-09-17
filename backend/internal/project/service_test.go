@@ -7631,7 +7631,7 @@ func TestStoppedProjectTagPolicyNeverInheritsSharedDigestCheck(t *testing.T) {
 	require.Equal(t, "unknown", detail.UpdateInfo.Status)
 	require.Nil(t, detail.UpdateInfo.ServiceUpdates["app"].UpdateInfo)
 	list := []projecttypes.Details{{ID: projectRecord.ID}}
-	service.enrichProjectsWithUpdateInfoInternal(t.Context(), []Project{*projectRecord}, list, true)
+	service.enrichProjectsWithUpdateInfoInternal(t.Context(), []Project{*projectRecord}, list, true, nil)
 	require.Equal(t, "unknown", list[0].UpdateInfo.Status)
 	require.Nil(t, list[0].UpdateInfo.ServiceUpdates["app"].UpdateInfo)
 	target := "3.2.0"
@@ -7641,7 +7641,7 @@ func TestStoppedProjectTagPolicyNeverInheritsSharedDigestCheck(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "has_update", detail.UpdateInfo.Status)
 	require.Equal(t, target, detail.UpdateInfo.ServiceUpdates["app"].UpdateInfo.LatestVersion)
-	service.enrichProjectsWithUpdateInfoInternal(t.Context(), []Project{*projectRecord}, list, true)
+	service.enrichProjectsWithUpdateInfoInternal(t.Context(), []Project{*projectRecord}, list, true, nil)
 	require.Equal(t, "has_update", list[0].UpdateInfo.Status)
 	count, err := service.CountProjectsWithPendingUpdates(t.Context(), []container.Summary{})
 	require.NoError(t, err)
@@ -7689,7 +7689,7 @@ func TestConfiguredProjectUsesScheduledRuntimeChecks(t *testing.T) {
 			service.enrichProjectUpdateInfoInternal(ctx, &detail)
 			require.Equal(t, tt.wantUpdate, detail.UpdateInfo.HasUpdate)
 			list := []projecttypes.Details{{ID: proj.ID, RuntimeServices: runtime}}
-			service.enrichProjectsWithUpdateInfoInternal(ctx, []Project{proj}, list, true)
+			service.enrichProjectsWithUpdateInfoInternal(ctx, []Project{proj}, list, true, nil)
 			require.Equal(t, tt.wantUpdate, list[0].UpdateInfo.HasUpdate)
 			for _, info := range []*projecttypes.UpdateInfo{detail.UpdateInfo, list[0].UpdateInfo} {
 				if tt.wantUpdate {
