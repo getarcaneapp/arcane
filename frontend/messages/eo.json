@@ -594,6 +594,8 @@
   "containers_check_updates": "Ĝisdatigi ujojn",
   "containers_check_updates_failed": "Malsukcesis kontroli ujojn por ĝisdatigoj",
   "containers_check_updates_success": "Ujoj estis sukcese ĝisdatigitaj.",
+  "containers_resource_sort_unsupported": "Klasifiko laŭ CPU- aŭ memorkonsumo postulas pli novan agenton por ĉi tiu medio. Ĝisdatigu la agenton por klasifiki laŭ realtempa rimuzo.",
+  "containers_resource_refresh_failed": "Aŭtomata refreŝigo malsukcesis: {message}",
   "update_container": "Ĝisdatigi ujon",
   "standalone_containers": "Memstaraj ujoj",
   "wrap_text": "Tekstoverŝo",
