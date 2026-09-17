@@ -594,6 +594,8 @@
   "containers_check_updates": "Aktualizuj kontenery",
   "containers_check_updates_failed": "Nie udało się sprawdzić aktualizacji kontenerów",
   "containers_check_updates_success": "Kontenery zostały pomyślnie zaktualizowane.",
+  "containers_resource_sort_unsupported": "Sortowanie według obciążenia procesora lub pamięci wymaga nowszej wersji agenta dla tego środowiska. Zaktualizuj agenta, aby sortować dane według aktualnego zużycia zasobów.",
+  "containers_resource_refresh_failed": "Nie udało się wykonać automatycznego odświeżenia: {message}",
   "update_container": "Aktualizuj kontener",
   "standalone_containers": "Pojemniki wolnostojące",
   "wrap_text": "Zawijanie tekstu",
