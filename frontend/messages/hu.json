@@ -594,6 +594,8 @@
   "containers_check_updates": "Update Containers",
   "containers_check_updates_failed": "Failed to Check Containers for Updates",
   "containers_check_updates_success": "Containers Updated Successfully.",
+  "containers_resource_sort_unsupported": "A CPU- vagy memóriahasználat szerinti rendezéshez újabb verziójú ügynökre van szükség ebben a környezetben. Frissítse az ügynököt, hogy az erőforrások aktuális használata szerint rendezzen.",
+  "containers_resource_refresh_failed": "Az automatikus frissítés sikertelen volt: {message}",
   "update_container": "Update Container",
   "standalone_containers": "Önálló konténerek",
   "wrap_text": "Szöveg körbefolyása",
