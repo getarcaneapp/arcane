@@ -594,6 +594,8 @@
   "containers_check_updates": "Actualizar Contenedores",
   "containers_check_updates_failed": "Error al comprobar Contenedores para Actualizaciones",
   "containers_check_updates_success": "Contenedores actualizados con éxito.",
+  "containers_resource_sort_unsupported": "Para ordenar los resultados por uso de la CPU o de la memoria, se necesita un agente más reciente para este entorno. Actualiza el agente para ordenar los resultados según el uso de los recursos en tiempo real.",
+  "containers_resource_refresh_failed": "Error en la actualización automática: {message}",
   "update_container": "Actualizar Contenedor",
   "standalone_containers": "Contenedores independientes",
   "wrap_text": "Ajustar el texto",
