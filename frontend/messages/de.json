@@ -594,6 +594,8 @@
   "containers_check_updates": "Container aktualisieren",
   "containers_check_updates_failed": "Container konnten nicht auf Updates geprüft werden",
   "containers_check_updates_success": "Container erfolgreich aktualisiert.",
+  "containers_resource_sort_unsupported": "Für die Sortierung nach CPU- oder Speicherauslastung ist in dieser Umgebung ein neuerer Agent erforderlich. Aktualisieren Sie den Agenten, um nach der aktuellen Ressourcenauslastung zu sortieren.",
+  "containers_resource_refresh_failed": "Die automatische Aktualisierung ist fehlgeschlagen: {message}",
   "update_container": "Container aktualisieren",
   "standalone_containers": "Standalone-Container",
   "wrap_text": "Text umbrechen",
