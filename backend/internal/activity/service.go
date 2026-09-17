@@ -550,7 +550,7 @@ func (s *ActivityService) AppendMessages(ctx context.Context, activityID string,
 	out := make([]activitytypes.Message, 0, len(messages))
 	for _, message := range messages {
 		dto := activityMessageToDTOInternal(message)
-		s.publishMessageInternal(current.EnvironmentID, dto)
+		s.publishMessageInternal(current.EnvironmentID, current.Type, dto)
 		out = append(out, dto)
 	}
 	s.publishActivityInternal(activityToDTOInternal(current))
@@ -1358,12 +1358,13 @@ func (s *ActivityService) admitActivityPublishInternal(activity activitytypes.Ac
 	return true
 }
 
-func (s *ActivityService) publishMessageInternal(environmentID string, message activitytypes.Message) {
+func (s *ActivityService) publishMessageInternal(environmentID string, activityType activitytypes.Type, message activitytypes.Message) {
 	s.publishInternal(environmentID, activitytypes.StreamEvent{
-		Type:       "message",
-		ActivityID: message.ActivityID,
-		Message:    &message,
-		Timestamp:  time.Now(),
+		Type:         "message",
+		ActivityID:   message.ActivityID,
+		ActivityType: activityType,
+		Message:      &message,
+		Timestamp:    time.Now(),
 	})
 }
 

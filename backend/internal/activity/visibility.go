@@ -58,6 +58,12 @@ func (h *ActivityHandler) canReadActivityStreamEventInternal(ctx context.Context
 	if event.ActivityID == "" {
 		return true
 	}
+	// Only job activities are scoped by target environment. Events that carry a
+	// type hint for any other activity type need no database reread; job
+	// metadata is mutable, so job events are still checked against the row.
+	if event.ActivityType != "" && event.ActivityType != activitytypes.TypeJobRun {
+		return true
+	}
 	var model Activity
 	// Message events carry no activity metadata. Check the owning row before output.
 	if err := h.activityService.db.WithContext(ctx).Select("type", "environment_id", "metadata").Where("id = ? AND environment_id = ?", event.ActivityID, "0").First(&model).Error; err != nil {

@@ -510,7 +510,7 @@ func (h *ActivityHandler) applyActivitySourceLabelInternal(ctx context.Context, 
 }
 
 func (h *ActivityHandler) applyActivityStreamEventSourceLabelInternal(ctx context.Context, environmentID string, event *activitytypes.StreamEvent) {
-	if event == nil {
+	if event == nil || (event.Activity == nil && len(event.Activities) == 0) {
 		return
 	}
 	sourceID, sourceName := h.resolveActivitySourceInternal(ctx, environmentID)

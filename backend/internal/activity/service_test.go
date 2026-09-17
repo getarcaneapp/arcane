@@ -126,6 +126,7 @@ func TestActivityServiceStreamFanoutInternal(t *testing.T) {
 	messageEvent := receiveActivityEventInternal(t, events)
 	require.Equal(t, "message", messageEvent.Type)
 	require.Equal(t, created.ID, messageEvent.ActivityID)
+	require.Equal(t, activitytypes.TypeProjectDeploy, messageEvent.ActivityType)
 	require.NotNil(t, messageEvent.Message)
 	require.Equal(t, "Deploying services", messageEvent.Message.Message)
 }

@@ -104,6 +104,10 @@ type StreamEvent struct {
 	Message       *Message   `json:"message,omitempty"`
 	Error         string     `json:"error,omitempty"`
 	Timestamp     time.Time  `json:"timestamp"`
+	// ActivityType is the type of the owning activity for events that carry no
+	// activity payload. It is an internal hint used to skip visibility rereads
+	// for ordinary activities and is never serialized.
+	ActivityType Type `json:"-"`
 }
 
 type ClearHistoryResult struct {
