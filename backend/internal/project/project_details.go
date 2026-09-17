@@ -571,11 +571,11 @@ func (s *ProjectService) enrichProjectsWithUpdateInfoInternal(
 		}
 	}
 
-	records := s.getProjectServiceUpdateRecordsInternal(ctx, projectIDs)
+	recordsByProjectID := groupUpdateRecordsByProjectInternal(s.getProjectServiceUpdateRecordsInternal(ctx, projectIDs))
 	scoped := s.getProjectContainerUpdateInfoInternal(ctx, details)
 	for i := range details {
 		if services := servicesByProjectID[details[i].ID]; services != nil {
-			details[i].UpdateInfo = BuildConfiguredUpdateInfo(details[i].ID, services, updateInfoByRef, records, configuredRuntimeServiceUpdateInfoInternal(services, details[i].RuntimeServices, scoped))
+			details[i].UpdateInfo = BuildConfiguredUpdateInfo(details[i].ID, services, updateInfoByRef, recordsByProjectID[details[i].ID], configuredRuntimeServiceUpdateInfoInternal(services, details[i].RuntimeServices, scoped))
 			continue
 		}
 		refs := imageRefsByProjectID[details[i].ID]
@@ -614,6 +614,14 @@ func (s *ProjectService) getProjectServiceUpdateRecordsInternal(ctx context.Cont
 		return nil
 	}
 	return records
+}
+
+func groupUpdateRecordsByProjectInternal(records []imageupdate.ImageUpdateRecord) map[string][]imageupdate.ImageUpdateRecord {
+	grouped := make(map[string][]imageupdate.ImageUpdateRecord)
+	for _, record := range records {
+		grouped[record.ProjectID] = append(grouped[record.ProjectID], record)
+	}
+	return grouped
 }
 
 // BuildConfiguredUpdateInfo matches checks to current services and aggregates their results.

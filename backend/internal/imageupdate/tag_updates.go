@@ -324,12 +324,18 @@ func (s *ImageUpdateService) saveContainerTagResultInternal(ctx context.Context,
 	})
 }
 
+// attachContainerUpdatesInternal binds each container's policy result to the
+// image result sharing its normalized reference. The image-only snapshot is
+// taken before the first container result is attached so it stays untouched.
 func attachContainerUpdatesInternal(results map[string]*imageupdatetypes.Response, containerUpdates map[string]*imageupdatetypes.Response) {
+	containerIDsByRef := make(map[string][]string, len(containerUpdates))
+	for id, update := range containerUpdates {
+		normalized := refs.NormalizeImageUpdateRef(update.ImageRef)
+		containerIDsByRef[normalized] = append(containerIDsByRef[normalized], id)
+	}
 	for imageRef, result := range results {
-		for id, update := range containerUpdates {
-			if refs.NormalizeImageUpdateRef(update.ImageRef) != refs.NormalizeImageUpdateRef(imageRef) {
-				continue
-			}
+		for _, id := range containerIDsByRef[refs.NormalizeImageUpdateRef(imageRef)] {
+			update := containerUpdates[id]
 			if result.ImageUpdate == nil {
 				imageOnly := *result
 				imageOnly.ContainerUpdates = nil

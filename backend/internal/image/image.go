@@ -745,8 +745,9 @@ func (s *ImageService) GetUpdateInfoByImageRefs(ctx context.Context, imageRefs [
 		return nil, errors.WrapIf(err, "failed to fetch update records by image refs")
 	}
 
+	index := indexLatestImageUpdateRecordsInternal(updateRecords)
 	for _, lookup := range lookups {
-		if record := selectLatestMatchingImageUpdateRecordInternal(lookup, updateRecords); record != nil {
+		if record := selectLatestMatchingImageUpdateRecordInternal(lookup, updateRecords, index); record != nil {
 			result[lookup.originalRef] = record.UpdateInfo()
 		}
 	}
@@ -848,26 +849,53 @@ func buildImageRefUpdateLookupsInternal(imageRefs []string) []imageRefUpdateLook
 	return lookups
 }
 
+type imageUpdateRecordKeyInternal struct {
+	repository string
+	tag        string
+}
+
+func newImageUpdateRecordKeyInternal(repository, tag string) imageUpdateRecordKeyInternal {
+	return imageUpdateRecordKeyInternal{repository: strings.TrimSpace(repository), tag: strings.ToLower(strings.TrimSpace(tag))}
+}
+
+// indexLatestImageUpdateRecordsInternal maps each repository and tag to the
+// position of its latest record. Ties keep the earliest position, matching
+// the order the records were fetched in.
+func indexLatestImageUpdateRecordsInternal(updateRecords []imageupdate.ImageUpdateRecord) map[imageUpdateRecordKeyInternal]int {
+	index := make(map[imageUpdateRecordKeyInternal]int, len(updateRecords))
+	for i := range updateRecords {
+		key := newImageUpdateRecordKeyInternal(updateRecords[i].Repository, updateRecords[i].Tag)
+		if existing, ok := index[key]; !ok || updateRecords[i].CheckTime.After(updateRecords[existing].CheckTime) {
+			index[key] = i
+		}
+	}
+	return index
+}
+
+// selectLatestMatchingImageUpdateRecordInternal picks the latest record across
+// the lookup's repository aliases; equal check times fall back to fetch order.
 func selectLatestMatchingImageUpdateRecordInternal(
 	lookup imageRefUpdateLookup,
 	updateRecords []imageupdate.ImageUpdateRecord,
+	index map[imageUpdateRecordKeyInternal]int,
 ) *imageupdate.ImageUpdateRecord {
-	var latest *imageupdate.ImageUpdateRecord
-
-	for i := range updateRecords {
-		record := &updateRecords[i]
-		if !strings.EqualFold(strings.TrimSpace(record.Tag), lookup.tag) {
+	latest := -1
+	for repository := range lookup.repositoryCandidates {
+		i, ok := index[newImageUpdateRecordKeyInternal(repository, lookup.tag)]
+		if !ok {
 			continue
 		}
-		if _, exists := lookup.repositoryCandidates[strings.TrimSpace(record.Repository)]; !exists {
-			continue
-		}
-		if latest == nil || record.CheckTime.After(latest.CheckTime) {
-			latest = record
+		switch {
+		case latest == -1,
+			updateRecords[i].CheckTime.After(updateRecords[latest].CheckTime),
+			updateRecords[i].CheckTime.Equal(updateRecords[latest].CheckTime) && i < latest:
+			latest = i
 		}
 	}
-
-	return latest
+	if latest == -1 {
+		return nil
+	}
+	return &updateRecords[latest]
 }
 
 func convertLabels(labels map[string]string) map[string]any {
