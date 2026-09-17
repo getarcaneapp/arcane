@@ -594,6 +594,8 @@
   "containers_check_updates": "Atualizar containers",
   "containers_check_updates_failed": "Falha ao verificar as atualizações dos containers",
   "containers_check_updates_success": "Containers atualizados com sucesso.",
+  "containers_resource_sort_unsupported": "Para classificar por uso da CPU ou da memória, é necessário um agente mais recente para este ambiente. Atualize o agente para classificar por uso de recursos em tempo real.",
+  "containers_resource_refresh_failed": "Falha na atualização automática: {message}",
   "update_container": "Atualizar container",
   "standalone_containers": "Contêineres autônomos",
   "wrap_text": "Quebrar texto",
