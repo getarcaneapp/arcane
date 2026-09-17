@@ -594,6 +594,8 @@
   "containers_check_updates": "컨테이너 업데이트",
   "containers_check_updates_failed": "컨테이너 업데이트 확인 실패",
   "containers_check_updates_success": "컨테이너 업데이트 완료.",
+  "containers_resource_sort_unsupported": "이 환경에서 CPU 또는 메모리 사용량 기준으로 정렬하려면 최신 버전의 에이전트가 필요합니다. 에이전트를 업데이트하여 실시간 리소스 사용량 기준으로 정렬하십시오.",
+  "containers_resource_refresh_failed": "자동 새로고침에 실패했습니다: {message}",
   "update_container": "컨테이너 업데이트",
   "standalone_containers": "독립형 컨테이너",
   "wrap_text": "텍스트 감싸기",
