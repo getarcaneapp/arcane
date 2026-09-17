@@ -594,6 +594,8 @@
   "containers_check_updates": "Очистити контейнери",
   "containers_check_updates_failed": "Не вдалося перевірити наявність оновлень для контейнерів",
   "containers_check_updates_success": "Контейнери успішно оновлено.",
+  "containers_resource_sort_unsupported": "Для сортування за завантаженням процесора або пам’яті потрібно встановити новішу версію агента для цього середовища. Оновіть агент, щоб здійснювати сортування за поточним використанням ресурсів.",
+  "containers_resource_refresh_failed": "Автоматичне оновлення не вдалося: {message}",
   "update_container": "Оновити контейнер",
   "standalone_containers": "Автономні контейнери",
   "wrap_text": "Обтікання текстом",
