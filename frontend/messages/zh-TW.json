@@ -594,6 +594,8 @@
   "containers_check_updates": "更新容器",
   "containers_check_updates_failed": "檢查容器更新時失敗",
   "containers_check_updates_success": "容器更新成功。",
+  "containers_resource_sort_unsupported": "若要依 CPU 或記憶體使用量進行排序，此環境需要較新版本的代理程式。請更新代理程式，以便依即時資源使用量進行排序。",
+  "containers_resource_refresh_failed": "自動重新整理失敗： {message}",
   "update_container": "更新容器",
   "standalone_containers": "獨立容器",
   "wrap_text": "文字換行",
