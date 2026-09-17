@@ -594,6 +594,8 @@
   "containers_check_updates": "Konteynerleri Güncelle",
   "containers_check_updates_failed": "Konteynerlerde Güncelleme Kontrolü Yapılamadı",
   "containers_check_updates_success": "Konteynerler başarıyla güncellendi.",
+  "containers_resource_sort_unsupported": "CPU veya bellek kullanımına göre sıralama yapmak için bu ortamda daha yeni bir ajanın kullanılması gerekir. Canlı kaynak kullanımına göre sıralama yapabilmek için ajanı güncelleyin.",
+  "containers_resource_refresh_failed": "Otomatik yenileme başarısız oldu: {message}",
   "update_container": "Konteyneri Güncelle",
   "standalone_containers": "Bağımsız konteynerler",
   "wrap_text": "Metni kaydır",
