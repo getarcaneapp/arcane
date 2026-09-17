@@ -594,6 +594,8 @@
   "containers_check_updates": "Cập nhật Containers",
   "containers_check_updates_failed": "Kiểm tra bản cập nhật Container thất bại",
   "containers_check_updates_success": "Đã cập nhật các Container thành công.",
+  "containers_resource_sort_unsupported": "Để sắp xếp theo mức sử dụng CPU hoặc bộ nhớ, cần phải có một phiên bản trình quản lý mới hơn cho môi trường này. Hãy cập nhật trình quản lý để sắp xếp theo mức sử dụng tài nguyên thời gian thực.",
+  "containers_resource_refresh_failed": "Không thể tự động làm mới: {message}",
   "update_container": "Cập nhật Container",
   "standalone_containers": "Các container độc lập",
   "wrap_text": "Chèn văn bản",
