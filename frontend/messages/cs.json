@@ -594,6 +594,8 @@
   "containers_check_updates": "Aktualizovat kontejnery",
   "containers_check_updates_failed": "Nepodařilo se zkontrolovat aktualizace pro kontejnery",
   "containers_check_updates_success": "Kontejnery byly úspěšně aktualizovány.",
+  "containers_resource_sort_unsupported": "Třídění podle využití procesoru nebo paměti vyžaduje v tomto prostředí novější verzi agenta. Aktualizujte agenta, aby třídil podle aktuálního využití zdrojů.",
+  "containers_resource_refresh_failed": "Automatické obnovení se nezdařilo: {message}",
   "update_container": "Aktualizovat kontejner",
   "standalone_containers": "Samostatné kontejnery",
   "wrap_text": "Zalamování textu",
