@@ -594,6 +594,8 @@
   "containers_check_updates": "Ενημέρωση Containers",
   "containers_check_updates_failed": "Αποτυχία ελέγχου containers για ενημερώσεις",
   "containers_check_updates_success": "Τα Containers Ενημερώθηκαν Επιτυχώς.",
+  "containers_resource_sort_unsupported": "Για την ταξινόμηση βάσει της χρήσης της CPU ή της μνήμης απαιτείται νεότερη έκδοση του agent για αυτό το περιβάλλον. Ενημερώστε τον agent ώστε να πραγματοποιεί ταξινόμηση βάσει της τρέχουσας χρήσης των πόρων.",
+  "containers_resource_refresh_failed": "Η αυτόματη ανανέωση απέτυχε: {message}",
   "update_container": "Ενημέρωση Περιέκτη",
   "standalone_containers": "Αυτόνομα κοντέινερ",
   "wrap_text": "Προσαρμογή κειμένου",
