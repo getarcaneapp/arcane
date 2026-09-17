@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json/v2"
 	"log/slog"
+	"maps"
+	"slices"
 	"strings"
 	"time"
 
@@ -363,7 +365,139 @@ func (s *RoleService) CountUsersAssignedToRole(ctx context.Context, roleID strin
 	return int(count), nil
 }
 
+// CountUsersAssignedToRoles returns the distinct assigned user count of every
+// given role in one grouped query. Roles without assignments are absent.
+func (s *RoleService) CountUsersAssignedToRoles(ctx context.Context, roleIDs []string) (map[string]int, error) {
+	counts := make(map[string]int, len(roleIDs))
+	if len(roleIDs) == 0 {
+		return counts, nil
+	}
+	type roleUserCountRow struct {
+		RoleID string `gorm:"column:role_id"`
+		Count  int    `gorm:"column:count"`
+	}
+	var rows []roleUserCountRow
+	if err := s.db.WithContext(ctx).
+		Model(&UserRoleAssignment{}).
+		Select("role_id, COUNT(DISTINCT user_id) AS count").
+		Where("role_id IN ?", roleIDs).
+		Group("role_id").
+		Scan(&rows).Error; err != nil {
+		return nil, errors.WrapIf(err, "failed to count users assigned to roles")
+	}
+	for _, row := range rows {
+		counts[row.RoleID] = row.Count
+	}
+	return counts, nil
+}
+
 // ---------- User role assignments ----------
+
+// UserRoleSummaries is the per-request RBAC data a user list needs: each
+// listed user's assignments and effective permissions, plus the set of every
+// effective global admin so last-admin checks need no further queries. Each
+// map is nil when its load failed, so callers can keep using the parts that
+// succeeded and treat the rest as unknown.
+type UserRoleSummaries struct {
+	Assignments    map[string][]UserRoleAssignment
+	Permissions    map[string]*authz.PermissionSet
+	GlobalAdminIDs map[string]struct{}
+}
+
+// GlobalAdminsExcludingUser reports how many effective global admins remain
+// besides the given user, mirroring CountGlobalAdminsExcludingUser. known is
+// false when the admin set could not be loaded.
+func (u UserRoleSummaries) GlobalAdminsExcludingUser(userID string) (remaining int, known bool) {
+	if u.GlobalAdminIDs == nil {
+		return 0, false
+	}
+	remaining = len(u.GlobalAdminIDs)
+	if _, ok := u.GlobalAdminIDs[userID]; ok {
+		remaining--
+	}
+	return remaining, true
+}
+
+// LoadUserRoleSummaries batches what toUserResponseDtoInternal used to query
+// per user: three queries regardless of page size. Permissions are unioned
+// from each assignment's role exactly as ResolveUserPermissionsInDB does and
+// refresh the per-user permission cache. A failed query leaves its section
+// nil and is reported in the combined error; the other sections still load,
+// matching the independent per-user lookups this replaces.
+func (s *RoleService) LoadUserRoleSummaries(ctx context.Context, userIDs []string) (UserRoleSummaries, error) {
+	var summaries UserRoleSummaries
+	var loadErrs []error
+	if len(userIDs) > 0 {
+		assignments, permissions, err := s.loadUserAssignmentsAndPermissionsInternal(ctx, userIDs)
+		if err != nil {
+			loadErrs = append(loadErrs, err)
+		}
+		summaries.Assignments, summaries.Permissions = assignments, permissions
+	}
+	adminIDs, err := s.listEffectiveGlobalAdminIDsInternal(ctx, s.db.WithContext(ctx), "")
+	if err != nil {
+		loadErrs = append(loadErrs, err)
+	}
+	summaries.GlobalAdminIDs = adminIDs
+	return summaries, errors.Combine(loadErrs...)
+}
+
+// loadUserAssignmentsAndPermissionsInternal returns the users' assignments and,
+// when their roles also load, the resulting permission sets. Assignments are
+// returned even when the role permissions fail.
+func (s *RoleService) loadUserAssignmentsAndPermissionsInternal(ctx context.Context, userIDs []string) (map[string][]UserRoleAssignment, map[string]*authz.PermissionSet, error) {
+	var assignments []UserRoleAssignment
+	if err := s.db.WithContext(ctx).
+		Where("user_id IN ?", userIDs).
+		Order("source ASC, role_id ASC").
+		Find(&assignments).Error; err != nil {
+		return nil, nil, errors.WrapIf(err, "failed to list user assignments")
+	}
+	assignmentsByUser := make(map[string][]UserRoleAssignment, len(userIDs))
+	roleIDs := make(map[string]struct{})
+	for _, assignment := range assignments {
+		assignmentsByUser[assignment.UserID] = append(assignmentsByUser[assignment.UserID], assignment)
+		roleIDs[assignment.RoleID] = struct{}{}
+	}
+	permissionsByRole, err := s.rolePermissionsInternal(ctx, slices.Collect(maps.Keys(roleIDs)))
+	if err != nil {
+		return assignmentsByUser, nil, err
+	}
+	permissionsByUser := make(map[string]*authz.PermissionSet, len(userIDs))
+	for _, userID := range userIDs {
+		ps := authz.NewPermissionSet()
+		for _, assignment := range assignmentsByUser[userID] {
+			perms, known := permissionsByRole[assignment.RoleID]
+			if !known {
+				continue
+			}
+			if assignment.EnvironmentID == nil {
+				ps.AddGlobal(perms...)
+			} else {
+				ps.AddEnv(*assignment.EnvironmentID, perms...)
+			}
+		}
+		permissionsByUser[userID] = ps
+		s.userCache.Set(userID, ps)
+	}
+	return assignmentsByUser, permissionsByUser, nil
+}
+
+// rolePermissionsInternal loads and decodes the permissions of the given roles once.
+func (s *RoleService) rolePermissionsInternal(ctx context.Context, roleIDs []string) (map[string][]string, error) {
+	permissions := make(map[string][]string, len(roleIDs))
+	if len(roleIDs) == 0 {
+		return permissions, nil
+	}
+	var roles []Role
+	if err := s.db.WithContext(ctx).Select("id", "permissions").Where("id IN ?", roleIDs).Find(&roles).Error; err != nil {
+		return nil, errors.WrapIf(err, "failed to load role permissions")
+	}
+	for _, r := range roles {
+		permissions[r.ID] = []string(r.Permissions)
+	}
+	return permissions, nil
+}
 
 func (s *RoleService) ListUserAssignments(ctx context.Context, userID string) ([]UserRoleAssignment, error) {
 	var out []UserRoleAssignment
@@ -508,6 +642,16 @@ func (s *RoleService) CountGlobalAdminsExcludingUser(ctx context.Context, exclud
 }
 
 func (s *RoleService) countEffectiveGlobalAdminsInternal(ctx context.Context, tx *gorm.DB, excludedUserID string) (int, error) {
+	adminIDs, err := s.listEffectiveGlobalAdminIDsInternal(ctx, tx, excludedUserID)
+	if err != nil {
+		return 0, err
+	}
+	return len(adminIDs), nil
+}
+
+// listEffectiveGlobalAdminIDsInternal returns every non-service-account user
+// whose global role assignments union to full admin permissions.
+func (s *RoleService) listEffectiveGlobalAdminIDsInternal(ctx context.Context, tx *gorm.DB, excludedUserID string) (map[string]struct{}, error) {
 	type globalPermissionRow struct {
 		UserID      string `gorm:"column:user_id"`
 		Permissions string `gorm:"column:permissions"`
@@ -524,7 +668,7 @@ func (s *RoleService) countEffectiveGlobalAdminsInternal(ctx context.Context, tx
 		query = query.Where("u.id <> ?", excludedUserID)
 	}
 	if err := query.Scan(&rows).Error; err != nil {
-		return 0, errors.WrapIf(err, "failed to list global role permissions for admin count")
+		return nil, errors.WrapIf(err, "failed to list global role permissions for admin count")
 	}
 
 	permissionsByUser := make(map[string]*authz.PermissionSet, len(rows))
@@ -536,18 +680,18 @@ func (s *RoleService) countEffectiveGlobalAdminsInternal(ctx context.Context, tx
 		}
 		perms, err := decodePermissionsJSONInternal(r.Permissions)
 		if err != nil {
-			return 0, errors.WrapIf(err, "failed to decode role permissions")
+			return nil, errors.WrapIf(err, "failed to decode role permissions")
 		}
 		ps.AddGlobal(perms...)
 	}
 
-	count := 0
-	for _, ps := range permissionsByUser {
+	adminIDs := make(map[string]struct{})
+	for userID, ps := range permissionsByUser {
 		if ps.IsGlobalAdmin() {
-			count++
+			adminIDs[userID] = struct{}{}
 		}
 	}
-	return count, nil
+	return adminIDs, nil
 }
 
 // ---------- Permission resolution ----------

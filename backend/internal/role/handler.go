@@ -154,9 +154,17 @@ func (h *RoleHandler) ListRoles(ctx context.Context, input *ListRolesInput) (*ha
 	if err != nil {
 		return nil, huma.Error500InternalServerError("failed to list roles: " + err.Error())
 	}
+	roleIDs := make([]string, len(roles))
+	for i := range roles {
+		roleIDs[i] = roles[i].ID
+	}
+	assignedUserCounts, err := h.roleService.CountUsersAssignedToRoles(ctx, roleIDs)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("failed to count role assignments: " + err.Error())
+	}
 	dtos := make([]roletypes.Role, len(roles))
 	for i := range roles {
-		dtos[i] = h.toRoleDTO(ctx, &roles[i])
+		dtos[i] = toRoleDTOInternal(&roles[i], assignedUserCounts[roles[i].ID])
 	}
 	return &handlerutil.Page[roletypes.Role]{
 		Body: base.Paginated[roletypes.Role]{
@@ -304,20 +312,27 @@ func (h *RoleHandler) SetUserRoleAssignments(ctx context.Context, input *SetUser
 
 // ---------- DTO mappers ----------
 
+// toRoleDTO maps a single role, counting its assigned users with one query;
+// list responses count every page role at once instead.
 func (h *RoleHandler) toRoleDTO(ctx context.Context, r *Role) roletypes.Role {
-	out := roletypes.Role{
-		ID:          r.ID,
-		Name:        r.Name,
-		Description: r.Description,
-		Permissions: []string(r.Permissions),
-		BuiltIn:     r.BuiltIn,
-		CreatedAt:   r.CreatedAt,
-		UpdatedAt:   r.UpdatedAt,
+	assignedUserCount, err := h.roleService.CountUsersAssignedToRole(ctx, r.ID)
+	if err != nil {
+		assignedUserCount = 0
 	}
-	if count, err := h.roleService.CountUsersAssignedToRole(ctx, r.ID); err == nil {
-		out.AssignedUserCount = count
+	return toRoleDTOInternal(r, assignedUserCount)
+}
+
+func toRoleDTOInternal(r *Role, assignedUserCount int) roletypes.Role {
+	return roletypes.Role{
+		ID:                r.ID,
+		Name:              r.Name,
+		Description:       r.Description,
+		Permissions:       []string(r.Permissions),
+		BuiltIn:           r.BuiltIn,
+		CreatedAt:         r.CreatedAt,
+		UpdatedAt:         r.UpdatedAt,
+		AssignedUserCount: assignedUserCount,
 	}
-	return out
 }
 
 func toAssignmentDTOInternal(r *UserRoleAssignment) roletypes.RoleAssignment {

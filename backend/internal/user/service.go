@@ -601,21 +601,36 @@ func (s *UserService) ListUsersPaginated(ctx context.Context, params pagination.
 }
 
 func (s *UserService) ToUserResponseDto(ctx context.Context, u common.User) (user.User, error) {
-	return s.toUserResponseDtoInternal(ctx, u), nil
+	return s.toUserResponseDtosInternal(ctx, []common.User{u})[0], nil
 }
 
+// toUserResponseDtosInternal loads the RBAC data for every user in one batch
+// and maps the DTOs from it. Sections whose query failed are unknown and left
+// at their defaults, as a failed per-user lookup did before; the sections that
+// loaded are still applied.
 func (s *UserService) toUserResponseDtosInternal(ctx context.Context, users []common.User) []user.User {
+	var summaries role.UserRoleSummaries
+	if s.roleService != nil {
+		userIDs := make([]string, len(users))
+		for i := range users {
+			userIDs[i] = users[i].ID
+		}
+		var err error
+		if summaries, err = s.roleService.LoadUserRoleSummaries(ctx, userIDs); err != nil {
+			slog.WarnContext(ctx, "failed to load user role summaries", "error", err)
+		}
+	}
 	result := make([]user.User, len(users))
 	for i, u := range users {
-		result[i] = s.toUserResponseDtoInternal(ctx, u)
+		result[i] = toUserResponseDtoInternal(u, summaries)
 	}
 	return result
 }
 
-// toUserResponseDtoInternal builds the public User DTO. RoleAssignments and
-// PermissionsByEnv come from the RBAC service. CanDelete is false when this
-// user is the only effective global admin.
-func (s *UserService) toUserResponseDtoInternal(ctx context.Context, u common.User) user.User {
+// toUserResponseDtoInternal builds the public User DTO from the user row and
+// the batched RBAC summaries. CanDelete is false when this user is known to be
+// the only effective global admin.
+func toUserResponseDtoInternal(u common.User, summaries role.UserRoleSummaries) user.User {
 	dto := user.User{
 		ID:                     u.ID,
 		Username:               u.Username,
@@ -642,26 +657,18 @@ func (s *UserService) toUserResponseDtoInternal(ctx context.Context, u common.Us
 		avatarURL := fmt.Sprintf("/api/users/%s/avatar", u.ID)
 		dto.AvatarURL = &avatarURL
 	}
-	if s.roleService == nil {
-		return dto
+	for _, r := range summaries.Assignments[u.ID] {
+		dto.RoleAssignments = append(dto.RoleAssignments, user.RoleAssignmentSummary{
+			RoleID:        r.RoleID,
+			EnvironmentID: r.EnvironmentID,
+			Source:        r.Source,
+		})
 	}
-	if rows, err := s.roleService.ListUserAssignments(ctx, u.ID); err == nil {
-		dto.RoleAssignments = make([]user.RoleAssignmentSummary, len(rows))
-		for i, r := range rows {
-			dto.RoleAssignments[i] = user.RoleAssignmentSummary{
-				RoleID:        r.RoleID,
-				EnvironmentID: r.EnvironmentID,
-				Source:        r.Source,
-			}
-		}
-	}
-	if ps, err := s.roleService.ResolvePermissions(ctx, &u); err == nil && ps != nil {
+	if ps := summaries.Permissions[u.ID]; ps != nil {
 		dto.IsGlobalAdmin = ps.IsGlobalAdmin()
 		dto.PermissionsByEnv = permissionSetToMap(ps)
-		if dto.IsGlobalAdmin {
-			if remaining, cerr := s.roleService.CountGlobalAdminsExcludingUser(ctx, u.ID); cerr == nil && remaining == 0 {
-				dto.CanDelete = false
-			}
+		if remaining, known := summaries.GlobalAdminsExcludingUser(u.ID); dto.IsGlobalAdmin && known && remaining == 0 {
+			dto.CanDelete = false
 		}
 	}
 	return dto
