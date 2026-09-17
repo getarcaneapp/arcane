@@ -9,6 +9,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -107,11 +108,7 @@ func projectServiceInfoFromContainerInternal(ctx context.Context, c container.Su
 		health = new("starting")
 	}
 
-	resolvedIcon := iconcatalog.Resolve(IconCatalogForContext(ctx), iconcatalog.FirstNonEmpty(
-		projects.FindArcaneIconSet(c.Labels),
-		meta.ServiceIconSets[svcName],
-		meta.ProjectIcon,
-	))
+	resolvedIcon := resolveServiceIconInternal(IconCatalogForContext(ctx), c.Labels, svcName, meta)
 	return ProjectServiceInfo{
 		Name:             svcName,
 		Image:            c.Image,
@@ -125,6 +122,16 @@ func projectServiceInfoFromContainerInternal(ctx context.Context, c container.Su
 		Labels:           c.Labels,
 		RedeployDisabled: labels.ShouldDisableArcaneServerRedeploy(c.Labels, c.ID, currentContainerID, currentContainerErr),
 	}
+}
+
+// resolveServiceIconInternal picks a service icon from its container labels,
+// then the compose metadata's per-service and project-level icon sets.
+func resolveServiceIconInternal(catalog string, containerLabels map[string]string, serviceName string, meta projects.ArcaneComposeMetadata) iconcatalog.ResolvedIconSet {
+	return iconcatalog.Resolve(catalog, iconcatalog.FirstNonEmpty(
+		projects.FindArcaneIconSet(containerLabels),
+		meta.ServiceIconSets[serviceName],
+		meta.ProjectIcon,
+	))
 }
 
 // projectServicesFromContainersInternal derives runtime services from labeled
@@ -379,15 +386,50 @@ func (s *ProjectService) filterProjectsWithDerivedFiltersInternal(
 		return pagination.FilterResult[project.Details]{}, errors.WrapIf(err, "failed to list projects")
 	}
 
-	env := s.newProjectMetadataEnvInternal(ctx, projectsArray)
-	items := s.fetchProjectStatusConcurrently(ctx, projectsArray, env)
+	// Filtering, searching, and sorting only read database columns, tags, and
+	// the container snapshot, so every candidate gets a lean row and the
+	// compose-backed presentation fields are resolved for the page alone.
+	env := s.newProjectMetadataEnvInternal(ctx, nil)
+	snapshot := s.projectContainerSnapshotInternal(ctx)
+	items := s.projectListRowsInternal(ctx, env.projectsDirectory, projectsArray, snapshot)
 	if err := s.enrichProjectsWithTagsInternal(ctx, items); err != nil {
 		return pagination.FilterResult[project.Details]{}, err
 	}
-	s.enrichProjectsWithUpdateInfoInternal(ctx, projectsArray, items, true, env)
-	items = s.appendDiscoveredComposeProjectUpdatesInternal(ctx, params, projectsArray, items)
+	updatesFiltered := strings.TrimSpace(params.Filters["updates"]) != ""
+	if updatesFiltered {
+		s.preloadGitOpsComposePathsInternal(ctx, env, projectsArray)
+		s.enrichProjectsWithUpdateInfoInternal(ctx, projectsArray, items, true, env)
+		items = s.appendDiscoveredComposeProjectUpdatesInternal(ctx, params, projectsArray, items, snapshot)
+	}
 
-	return s.buildProjectDerivedPaginationConfigInternal().SearchOrderAndPaginate(items, withoutProjectDBFiltersInternal(params)), nil
+	result := s.buildProjectDerivedPaginationConfigInternal().SearchOrderAndPaginate(items, withoutProjectDBFiltersInternal(params))
+
+	byID := make(map[string]Project, len(projectsArray))
+	for _, proj := range projectsArray {
+		byID[proj.ID] = proj
+	}
+	pageProjects := make([]Project, 0, len(result.Items))
+	pageDetails := make([]project.Details, 0, len(result.Items))
+	pageIndexes := make([]int, 0, len(result.Items))
+	for i, item := range result.Items {
+		proj, tracked := byID[item.ID]
+		if !tracked {
+			// Discovered compose rows are built complete.
+			continue
+		}
+		pageProjects = append(pageProjects, proj)
+		pageDetails = append(pageDetails, item)
+		pageIndexes = append(pageIndexes, i)
+	}
+	if !updatesFiltered {
+		s.preloadGitOpsComposePathsInternal(ctx, env, pageProjects)
+		s.enrichProjectsWithUpdateInfoInternal(ctx, pageProjects, pageDetails, true, env)
+	}
+	s.applyProjectPresentationInternal(ctx, pageProjects, pageDetails, env)
+	for k, i := range pageIndexes {
+		result.Items[i] = pageDetails[k]
+	}
+	return result, nil
 }
 
 func withoutProjectDBFiltersInternal(params pagination.QueryParams) pagination.QueryParams {
@@ -404,19 +446,18 @@ func (s *ProjectService) appendDiscoveredComposeProjectUpdatesInternal(
 	params pagination.QueryParams,
 	projectsArray []Project,
 	items []project.Details,
+	snapshot projectContainerSnapshotInternal,
 ) []project.Details {
 	if !shouldIncludeDiscoveredComposeProjectUpdatesInternal(params) {
 		return items
 	}
-
-	composeContainers, err := s.listGlobalComposeContainersInternal(ctx)
-	if err != nil {
-		slog.WarnContext(ctx, "failed to list compose containers for project update rows", "error", err)
+	if snapshot.err != nil {
+		slog.WarnContext(ctx, "failed to list compose containers for project update rows", "error", snapshot.err)
 		return items
 	}
 
 	knownProjectNames := s.buildKnownComposeProjectNameSetInternal(ctx, projectsArray, false)
-	discovered := buildDiscoveredComposeProjectUpdateRowsInternal(ctx, composeContainers, knownProjectNames, s.imageService, IconCatalogForContext(ctx))
+	discovered := buildDiscoveredComposeProjectUpdateRowsInternal(ctx, snapshot.containers, knownProjectNames, s.imageService, IconCatalogForContext(ctx))
 	if len(discovered) == 0 {
 		return items
 	}
@@ -911,48 +952,39 @@ func (s *ProjectService) countDiscoveredComposeProjectUpdatesInternal(ctx contex
 	return len(buildDiscoveredComposeProjectUpdateRowsInternal(ctx, composeContainers, knownProjectNames, s.imageService, IconCatalogForContext(ctx)))
 }
 
-// fetchProjectStatusConcurrently fetches live Docker status for multiple projects in parallel
-// Optimized to use a single Docker API call instead of N calls + N file reads.
-// metaEnv is resolved once for the whole list: ProjectMetadata would otherwise
-// re-stat the projects directory, re-clone settings, and re-query GitOps
-// compose paths per project.
-func (s *ProjectService) fetchProjectStatusConcurrently(ctx context.Context, projectsList []Project, metaEnv *projectMetadataEnvInternal) []project.Details {
-	projectsDir := metaEnv.projectsDirectory
+// projectContainerSnapshotInternal is the compose container listing shared by
+// every row of one list request, grouped once by compose project name.
+type projectContainerSnapshotInternal struct {
+	containers          []container.Summary
+	byProject           map[string][]container.Summary
+	err                 error
+	currentContainerID  string
+	currentContainerErr error
+}
 
-	// 1. Fetch all compose containers in one go
+func (s *ProjectService) projectContainerSnapshotInternal(ctx context.Context) projectContainerSnapshotInternal {
 	containers, err := s.listGlobalComposeContainersInternal(ctx)
 	if err != nil {
 		slog.ErrorContext(ctx, "Failed to list global compose containers", "error", err)
-		// Fallback: return basic info with unknown status
-		metas := s.resolveProjectMetadataConcurrentlyInternal(ctx, projectsList, metaEnv)
-		results := make([]project.Details, len(projectsList))
-		for i, p := range projectsList {
-			_ = mapper.MapStruct(p, &results[i])
-			results[i].CreatedAt = p.CreatedAt.Format(time.RFC3339)
-			results[i].UpdatedAt = p.UpdatedAt.Format(time.RFC3339)
-			results[i].DirName = mo.PointerToOption(p.DirName).OrEmpty()
-			results[i].RelativePath = getProjectRelativePathInternal(projectsDir, p.Path)
-			results[i].GitOpsManagedBy = p.GitOpsManagedBy
-			results[i].HasBuildDirective = p.BuildImageRefsJSON != nil && len(projects.ParseImageRefsJSON(*p.BuildImageRefsJSON)) > 0
-			applyResolvedProjectIconInternal(&results[i], iconcatalog.Resolve(IconCatalogForContext(ctx), metas[i].ProjectIcon))
-			results[i].URLs = metas[i].ProjectURLS
-			results[i].ConfigurationError = projects.CheckProjectEnvAccess(ctx, projectsDir, p.Path)
-			results[i].Status = string(ProjectStatusUnknown)
-		}
-		return results
+		return projectContainerSnapshotInternal{err: err}
 	}
-
-	// 2. Group containers by project name
-	containersByProject := groupComposeContainersByProjectInternal(containers)
-
-	// 3. Map to DTOs
-	metas := s.resolveProjectMetadataConcurrentlyInternal(ctx, projectsList, metaEnv)
-	results := make([]project.Details, len(projectsList))
 	currentContainerID, currentContainerErr := cgroup.CurrentContainerID()
-	for i, p := range projectsList {
-		results[i] = s.mapProjectToDto(ctx, projectsDir, p, containersByProject, currentContainerID, currentContainerErr, metas[i])
+	return projectContainerSnapshotInternal{
+		containers:          containers,
+		byProject:           groupComposeContainersByProjectInternal(containers),
+		currentContainerID:  currentContainerID,
+		currentContainerErr: currentContainerErr,
 	}
+}
 
+// fetchProjectStatusConcurrently builds complete list rows for an already
+// paginated page: live status from a single Docker API call plus the
+// compose-backed presentation fields. metaEnv is resolved once for the whole
+// list: ProjectMetadata would otherwise re-stat the projects directory,
+// re-clone settings, and re-query GitOps compose paths per project.
+func (s *ProjectService) fetchProjectStatusConcurrently(ctx context.Context, projectsList []Project, metaEnv *projectMetadataEnvInternal) []project.Details {
+	results := s.projectListRowsInternal(ctx, metaEnv.projectsDirectory, projectsList, s.projectContainerSnapshotInternal(ctx))
+	s.applyProjectPresentationInternal(ctx, projectsList, results, metaEnv)
 	return results
 }
 
@@ -973,7 +1005,87 @@ func (s *ProjectService) resolveProjectMetadataConcurrentlyInternal(ctx context.
 	return metas
 }
 
-func (s *ProjectService) mapProjectToDto(ctx context.Context, projectsDir string, p Project, containersByProject map[string][]container.Summary, currentContainerID string, currentContainerErr error, meta projects.ArcaneComposeMetadata) project.Details {
+// applyProjectPresentationInternal resolves compose metadata for projectsList
+// and fills the fields filtering and sorting never read: project and service
+// icons, custom URLs, and the env access probe. details must align with
+// projectsList by index.
+func (s *ProjectService) applyProjectPresentationInternal(ctx context.Context, projectsList []Project, details []project.Details, metaEnv *projectMetadataEnvInternal) {
+	if len(projectsList) == 0 {
+		return
+	}
+	metas := s.resolveProjectMetadataConcurrentlyInternal(ctx, projectsList, metaEnv)
+	catalog := IconCatalogForContext(ctx)
+	for i := range projectsList {
+		resp := &details[i]
+		applyResolvedProjectIconInternal(resp, iconcatalog.Resolve(catalog, metas[i].ProjectIcon))
+		resp.URLs = metas[i].ProjectURLS
+		resp.ConfigurationError = projects.CheckProjectEnvAccess(ctx, metaEnv.projectsDirectory, projectsList[i].Path)
+		for k := range resp.RuntimeServices {
+			service := &resp.RuntimeServices[k]
+			icon := resolveServiceIconInternal(catalog, service.ContainerLabels, service.Name, metas[i])
+			service.IconLightURL, service.IconDarkURL = icon.IconLightURL, icon.IconDarkURL
+		}
+	}
+}
+
+func (s *ProjectService) projectListRowsInternal(ctx context.Context, projectsDir string, projectsList []Project, snapshot projectContainerSnapshotInternal) []project.Details {
+	rows := make([]project.Details, len(projectsList))
+	inferredCounts := make(map[string]int)
+	for i, p := range projectsList {
+		rows[i] = projectListRowInternal(ctx, projectsDir, p, snapshot)
+		if p.ServiceCount == 0 && rows[i].ServiceCount > 0 {
+			inferredCounts[p.ID] = rows[i].ServiceCount
+		}
+	}
+	s.persistInferredServiceCountsInternal(ctx, inferredCounts)
+	return rows
+}
+
+// persistInferredServiceCountsInternal writes service counts inferred from live
+// containers back to projects whose stored count is still zero. The plain list
+// path sorts and paginates on the service_count column in SQL before rows are
+// enriched, so a count that only lives in the response leaves those projects
+// on the wrong page until a filesystem sync parses their compose file. The
+// write runs synchronously on the request context as one batched statement
+// per chunk: it only fires for projects that still have a zero count, so it is
+// cheap and needs no detached goroutine. Failures are logged; the response
+// already carries the inferred value.
+func (s *ProjectService) persistInferredServiceCountsInternal(ctx context.Context, counts map[string]int) {
+	if len(counts) == 0 || s.db == nil {
+		return
+	}
+	ids := make([]string, 0, len(counts))
+	for id := range counts {
+		ids = append(ids, id)
+	}
+	for chunk := range slices.Chunk(ids, inferredServiceCountBatchSizeInternal) {
+		var caseExpr strings.Builder
+		args := make([]any, 0, 2*len(chunk))
+		caseExpr.WriteString("CASE id")
+		for _, id := range chunk {
+			caseExpr.WriteString(" WHEN ? THEN ?")
+			args = append(args, id, counts[id])
+		}
+		caseExpr.WriteString(" ELSE service_count END")
+		if err := s.db.WithContext(ctx).Model(&Project{}).
+			Where("id IN ? AND service_count = 0", chunk).
+			Update("service_count", gorm.Expr(caseExpr.String(), args...)).Error; err != nil {
+			slog.WarnContext(ctx, "failed to persist inferred project service counts", "count", len(chunk), "error", err)
+			return
+		}
+	}
+}
+
+// inferredServiceCountBatchSizeInternal bounds the ids in one inferred
+// service count update so the statement stays under SQLite's bound variable
+// limit (two placeholders per id in the CASE plus one in the IN list).
+const inferredServiceCountBatchSizeInternal = 200
+
+// projectListRowInternal builds the fields the list filters, search, and sort
+// read from database columns and the shared container snapshot. Fields that
+// need compose metadata are left for applyProjectPresentationInternal. When
+// the container listing failed the row reports an unknown status.
+func projectListRowInternal(ctx context.Context, projectsDir string, p Project, snapshot projectContainerSnapshotInternal) project.Details {
 	var resp project.Details
 	_ = mapper.MapStruct(p, &resp)
 
@@ -985,59 +1097,32 @@ func (s *ProjectService) mapProjectToDto(ctx context.Context, projectsDir string
 	resp.RelativePath = getProjectRelativePathInternal(projectsDir, p.Path)
 	resp.GitOpsManagedBy = p.GitOpsManagedBy
 	resp.HasBuildDirective = p.BuildImageRefsJSON != nil && len(projects.ParseImageRefsJSON(*p.BuildImageRefsJSON)) > 0
-	applyResolvedProjectIconInternal(&resp, iconcatalog.Resolve(IconCatalogForContext(ctx), meta.ProjectIcon))
-	resp.URLs = meta.ProjectURLS
-	resp.ConfigurationError = projects.CheckProjectEnvAccess(ctx, projectsDir, p.Path)
+	// Use DB service count as the source of truth for "Total Services"
+	// since we are not parsing the YAML here.
+	resp.ServiceCount = p.ServiceCount
+	if snapshot.err != nil {
+		resp.Status = string(ProjectStatusUnknown)
+		return resp
+	}
 
-	projectContainers := lookupProjectContainersInternal(p, containersByProject)
-
+	projectContainers := lookupProjectContainersInternal(p, snapshot.byProject)
 	services := make([]ProjectServiceInfo, 0, len(projectContainers))
-
 	for _, c := range projectContainers {
-		service := projectServiceInfoFromContainerInternal(ctx, c, meta, currentContainerID, currentContainerErr)
+		service := projectServiceInfoFromContainerInternal(ctx, c, projects.ArcaneComposeMetadata{}, snapshot.currentContainerID, snapshot.currentContainerErr)
 		if service.RedeployDisabled {
 			resp.RedeployDisabled = true
 		}
 		services = append(services, service)
 	}
 	_, runningCount := getServiceCounts(services)
-
-	// Convert to RuntimeServices
-	runtimeServices := make([]project.RuntimeService, len(services))
-	for k, s := range services {
-		runtimeServices[k] = project.RuntimeService{
-			Name:             s.Name,
-			Image:            s.Image,
-			Status:           s.Status,
-			ContainerID:      s.ContainerID,
-			ContainerLabels:  s.Labels,
-			ContainerName:    s.ContainerName,
-			Ports:            s.Ports,
-			Health:           s.Health,
-			IconLightURL:     s.IconLightURL,
-			IconDarkURL:      s.IconDarkURL,
-			ServiceConfig:    s.ServiceConfig,
-			RedeployDisabled: s.RedeployDisabled,
-		}
-	}
-	resp.RuntimeServices = runtimeServices
-
-	// Use DB service count as the source of truth for "Total Services"
-	// since we are not parsing the YAML here.
-	resp.ServiceCount = p.ServiceCount
+	resp.RuntimeServices = buildProjectRuntimeServicesInternal(services)
 	resp.RunningCount = runningCount
+	// Newly discovered projects have no persisted count yet. Infer it from the
+	// live containers; projectListRowsInternal persists the inferred value so
+	// SQL sorting and pagination on service_count see it on later requests.
 	if resp.ServiceCount == 0 && len(services) > 0 {
 		resp.ServiceCount = len(services)
-		// Persist the inferred count so later list loads do not need compose parsing.
-		go func(ctx context.Context, pid string, count int) {
-			s.db.WithContext(ctx).Model(&Project{}).Where("id = ?", pid).Update("service_count", count)
-		}(context.WithoutCancel(ctx), p.ID, resp.ServiceCount)
 	}
-
-	// For missing service count (e.g. newly discovered projects), skip the
-	// expensive CountServicesFromCompose call which loads and parses the entire
-	// compose project. The count will be populated the next time the project
-	// detail endpoint is called or during the periodic filesystem sync.
 
 	// Calculate Status using actual container count from Docker rather than the
 	// (potentially stale) DB ServiceCount. The DB value can become outdated when

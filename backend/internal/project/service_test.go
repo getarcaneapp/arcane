@@ -4226,9 +4226,8 @@ func TestProjectService_MapProjectToDto_SetsRedeployDisabledFromRuntimeServices(
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			service := &ProjectService{}
 			tt.labels[composeapi.WorkingDirLabel] = projectPath
-			details := service.mapProjectToDto(context.Background(), filepath.Dir(projectPath), proj, map[string][]container.Summary{
+			details := projectListRowInternal(context.Background(), filepath.Dir(projectPath), proj, projectContainerSnapshotInternal{byProject: map[string][]container.Summary{
 				"arcane": {
 					{
 						ID:     tt.containerID,
@@ -4247,7 +4246,7 @@ func TestProjectService_MapProjectToDto_SetsRedeployDisabledFromRuntimeServices(
 						},
 					},
 				},
-			}, tt.currentContainerID, tt.currentErr, projects.ArcaneComposeMetadata{})
+			}, currentContainerID: tt.currentContainerID, currentContainerErr: tt.currentErr})
 
 			require.Equal(t, tt.wantProject, details.RedeployDisabled)
 			require.Len(t, details.RuntimeServices, 1)
@@ -4255,6 +4254,49 @@ func TestProjectService_MapProjectToDto_SetsRedeployDisabledFromRuntimeServices(
 			require.Equal(t, tt.wantService, details.RuntimeServices[0].RedeployDisabled)
 		})
 	}
+}
+
+func TestProjectService_ProjectListRows_PersistsInferredServiceCount(t *testing.T) {
+	db := setupProjectTestDB(t)
+	projectsDir := t.TempDir()
+	projectPath := filepath.Join(projectsDir, "inferred")
+	require.NoError(t, os.MkdirAll(projectPath, 0o755))
+	inferred := Project{ID: "inferred", Name: "inferred", Path: projectPath, ServiceCount: 0}
+	known := Project{ID: "known", Name: "known", Path: filepath.Join(projectsDir, "known"), ServiceCount: 4}
+	require.NoError(t, db.Create(&inferred).Error)
+	require.NoError(t, db.Create(&known).Error)
+	service := &ProjectService{db: db}
+
+	snapshot := projectContainerSnapshotInternal{byProject: map[string][]container.Summary{
+		"inferred": {
+			{ID: "c1", State: "running", Names: []string{"/inferred-web"}, Labels: map[string]string{
+				composeapi.ProjectLabel: "inferred", composeapi.ServiceLabel: "web", composeapi.WorkingDirLabel: projectPath,
+			}},
+			{ID: "c2", State: "exited", Names: []string{"/inferred-db"}, Labels: map[string]string{
+				composeapi.ProjectLabel: "inferred", composeapi.ServiceLabel: "db", composeapi.WorkingDirLabel: projectPath,
+			}},
+		},
+		"known": {
+			{ID: "c3", State: "running", Names: []string{"/known-web"}, Labels: map[string]string{
+				composeapi.ProjectLabel: "known", composeapi.ServiceLabel: "web", composeapi.WorkingDirLabel: known.Path,
+			}},
+		},
+	}}
+
+	rows := service.projectListRowsInternal(context.Background(), projectsDir, []Project{inferred, known}, snapshot)
+	require.Len(t, rows, 2)
+	require.Equal(t, 2, rows[0].ServiceCount)
+	require.Equal(t, 4, rows[1].ServiceCount)
+
+	// The inferred count is persisted because the plain list path sorts and
+	// paginates on this column in SQL.
+	var stored Project
+	require.NoError(t, db.First(&stored, "id = ?", "inferred").Error)
+	require.Equal(t, 2, stored.ServiceCount)
+
+	var storedKnown Project
+	require.NoError(t, db.First(&storedKnown, "id = ?", "known").Error)
+	require.Equal(t, 4, storedKnown.ServiceCount, "a persisted non-zero count must not be overwritten by the live container count")
 }
 
 func TestProjectService_ListProjects_WithDerivedStatusFilter_AllowsAllPageSizeSentinel(t *testing.T) {
@@ -7188,14 +7230,9 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalWhenTargetPres
 	require.NoDirExists(t, newPath)
 }
 
-func TestProjectService_MapProjectToDto_SeedsHasBuildDirectiveFromPersistedRefs(t *testing.T) {
+func TestProjectListRow_SeedsHasBuildDirectiveFromPersistedRefs(t *testing.T) {
 	ctx := context.Background()
-	db := setupProjectTestDB(t)
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
-	require.NoError(t, err)
-
-	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load())
-	metaEnv := &projectMetadataEnvInternal{projectsDirectory: t.TempDir()}
+	projectsDirectory := t.TempDir()
 
 	now := time.Now()
 	tests := []struct {
@@ -7211,7 +7248,7 @@ func TestProjectService_MapProjectToDto_SeedsHasBuildDirectiveFromPersistedRefs(
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			p := Project{ID: tt.name, Name: tt.name, Path: t.TempDir(), UpdatedAt: &now, BuildImageRefsJSON: tt.buildImageRefsJSON}
-			assert.Equal(t, tt.want, svc.mapProjectToDto(ctx, metaEnv.projectsDirectory, p, nil, "", nil, svc.ProjectMetadata(ctx, p, metaEnv)).HasBuildDirective)
+			assert.Equal(t, tt.want, projectListRowInternal(ctx, projectsDirectory, p, projectContainerSnapshotInternal{}).HasBuildDirective)
 		})
 	}
 }

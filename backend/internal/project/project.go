@@ -206,9 +206,10 @@ type projectMetadataEnvInternal struct {
 	autoInjectEnv     bool
 	// settings is the snapshot shared by compose loads; nil resolves lazily.
 	settings *settings.Settings
-	// gitOpsComposePaths maps the listed projects' GitOps sync IDs to their
-	// configured compose paths. nil means the paths were not preloaded and are
-	// queried per project; a missing key in a preloaded map means no sync row.
+	// gitOpsComposePaths maps preloaded GitOps sync IDs to their configured
+	// compose paths. Sync IDs that were preloaded but have no row map to "",
+	// which resolves the same way as a missing row; sync IDs absent from the
+	// map are queried per project.
 	gitOpsComposePaths map[string]string
 
 	// composeFiles memoizes successfully resolved compose files by project ID.
@@ -231,7 +232,14 @@ func (s *ProjectService) newProjectMetadataEnvInternal(ctx context.Context, proj
 		settings:          s.settingsService.GetSettingsOrDefaults(ctx),
 		composeFiles:      make(map[string]string, len(projectsList)),
 	}
+	s.preloadGitOpsComposePathsInternal(ctx, env, projectsList)
+	return env
+}
 
+// preloadGitOpsComposePathsInternal fetches the GitOps compose paths of the
+// given projects in one query and merges them into env, so list paths can
+// widen the preloaded set to the rows they end up enriching.
+func (s *ProjectService) preloadGitOpsComposePathsInternal(ctx context.Context, env *projectMetadataEnvInternal, projectsList []Project) {
 	syncIDs := make([]string, 0, len(projectsList))
 	for _, proj := range projectsList {
 		if id := gitOpsSyncIDInternal(&proj); id != "" {
@@ -239,20 +247,24 @@ func (s *ProjectService) newProjectMetadataEnvInternal(ctx context.Context, proj
 		}
 	}
 	if len(syncIDs) == 0 {
-		return env
+		return
 	}
 	var syncRecords []GitOpsSync
 	if err := s.db.WithContext(ctx).Select("id", "compose_path").Where("id IN ?", syncIDs).Find(&syncRecords).Error; err != nil {
-		// Leave the map nil so each project falls back to its own lookup and
-		// surfaces the failure the same way it did before batching.
+		// Leave these IDs unloaded so each project falls back to its own lookup
+		// and surfaces the failure the same way it did before batching.
 		slog.WarnContext(ctx, "failed to batch resolve GitOps compose paths", "error", err)
-		return env
+		return
 	}
-	env.gitOpsComposePaths = make(map[string]string, len(syncRecords))
+	if env.gitOpsComposePaths == nil {
+		env.gitOpsComposePaths = make(map[string]string, len(syncIDs))
+	}
+	for _, id := range syncIDs {
+		env.gitOpsComposePaths[id] = ""
+	}
 	for _, record := range syncRecords {
 		env.gitOpsComposePaths[record.ID] = record.ComposePath
 	}
-	return env
 }
 
 func gitOpsSyncIDInternal(proj *Project) string {
@@ -714,9 +726,10 @@ func (s *ProjectService) resolveProjectComposeFileUncachedInternal(ctx context.C
 // gitOpsComposePathInternal returns the configured compose path of a GitOps
 // sync, served from the preloaded request map when one is available.
 func (s *ProjectService) gitOpsComposePathInternal(ctx context.Context, syncID string, env *projectMetadataEnvInternal) (string, bool, error) {
-	if env != nil && env.gitOpsComposePaths != nil {
-		composePath, found := env.gitOpsComposePaths[syncID]
-		return composePath, found, nil
+	if env != nil {
+		if composePath, preloaded := env.gitOpsComposePaths[syncID]; preloaded {
+			return composePath, true, nil
+		}
 	}
 	var syncRecord GitOpsSync
 	err := s.db.WithContext(ctx).Select("compose_path").Where("id = ?", syncID).First(&syncRecord).Error
