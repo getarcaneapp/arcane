@@ -99,6 +99,174 @@ async function currentReloadCount(page: Page) {
 	);
 }
 
+// Huma renders errors as RFC 7807 problem documents; the dialog surfaces `detail`.
+async function fulfillProblem(route: Route, status: number, detail: string) {
+	await route.fulfill({
+		status,
+		contentType: 'application/problem+json',
+		body: JSON.stringify({ title: 'Error', status, detail })
+	});
+}
+
+test.describe('Update All startup', () => {
+	const CONFLICT_DETAIL = 'an update-all job is already in progress';
+
+	test('a failed start surfaces the API error and returns to the confirm step', async ({
+		page
+	}) => {
+		let statusCalls = 0;
+		await page.route(/\/api\/environments\/0\/system\/upgrade\/all$/, async (route) => {
+			await fulfillProblem(route, 500, 'Failed to initiate upgrade: pull access denied');
+		});
+		await page.route(/\/api\/environments\/0\/system\/upgrade\/all\/status$/, async (route) => {
+			statusCalls++;
+			await fulfillJob(route, 'running', 'updating');
+		});
+
+		await page.goto('/environments');
+		await openAndConfirmUpdateAll(page);
+
+		const toast = page
+			.locator('li[data-sonner-toast]')
+			.filter({ hasText: 'Failed to start update all' });
+		await expect(toast).toBeVisible({ timeout: 10_000 });
+		await expect(toast).toContainText('pull access denied');
+
+		// Back at the confirm step, ready for another attempt — and no polling started.
+		const dialog = page.getByRole('dialog');
+		await expect(dialog.getByRole('heading', { name: 'Update all environments' })).toBeVisible();
+		await expect(dialog.getByRole('button', { name: 'Update All', exact: true })).toBeVisible();
+		expect(statusCalls).toBe(0);
+	});
+
+	test('a 409 conflict adopts the active job and follows it to completion', async ({ page }) => {
+		let startCalls = 0;
+		let statusCalls = 0;
+		await page.route(/\/api\/environments\/0\/system\/upgrade\/all$/, async (route) => {
+			startCalls++;
+			await fulfillProblem(route, 409, CONFLICT_DETAIL);
+		});
+		await page.route(/\/api\/environments\/0\/system\/upgrade\/all\/status$/, async (route) => {
+			statusCalls++;
+			// First read (adoption) reports the job still running; the poll completes it.
+			if (statusCalls === 1) {
+				await fulfillJob(route, 'running', 'updating');
+				return;
+			}
+			await fulfillJob(route, 'completed', 'updated');
+		});
+
+		await page.goto('/environments');
+		await openAndConfirmUpdateAll(page);
+
+		const dialog = page.getByRole('dialog');
+		await expect(dialog.getByRole('heading', { name: 'All environments processed' })).toBeVisible({
+			timeout: 10_000
+		});
+		await expect(dialog.getByText('1 of 1', { exact: true })).toBeVisible();
+		await expect(page.locator('li[data-sonner-toast]')).toHaveCount(0);
+		// The conflict is never retried; the existing job is tracked instead.
+		expect(startCalls).toBe(1);
+		expect(statusCalls).toBeGreaterThanOrEqual(2);
+	});
+
+	test('a 409 conflict without an active job reports the conflict and does not retry', async ({
+		page
+	}) => {
+		let startCalls = 0;
+		let statusCalls = 0;
+		await page.route(/\/api\/environments\/0\/system\/upgrade\/all$/, async (route) => {
+			startCalls++;
+			await fulfillProblem(route, 409, CONFLICT_DETAIL);
+		});
+		await page.route(/\/api\/environments\/0\/system\/upgrade\/all\/status$/, async (route) => {
+			statusCalls++;
+			// The guard tripped but the latest job is already terminal: nothing to adopt.
+			await fulfillJob(route, 'completed', 'updated');
+		});
+
+		await page.goto('/environments');
+		await openAndConfirmUpdateAll(page);
+
+		const toast = page
+			.locator('li[data-sonner-toast]')
+			.filter({ hasText: 'Failed to start update all' });
+		await expect(toast).toBeVisible({ timeout: 10_000 });
+		await expect(toast).toContainText(CONFLICT_DETAIL);
+
+		const dialog = page.getByRole('dialog');
+		await expect(dialog.getByRole('heading', { name: 'Update all environments' })).toBeVisible();
+
+		// Wait past one poll interval to prove neither polling nor a retry kicked in.
+		// The three status reads are the persistence-window grace, not polling.
+		await page.waitForTimeout(4_000);
+		expect(startCalls).toBe(1);
+		expect(statusCalls).toBe(3);
+	});
+
+	test('a 409 conflict adopts a job that is persisted shortly after the conflict', async ({
+		page
+	}) => {
+		let statusCalls = 0;
+		await page.route(/\/api\/environments\/0\/system\/upgrade\/all$/, async (route) => {
+			await fulfillProblem(route, 409, CONFLICT_DETAIL);
+		});
+		await page.route(/\/api\/environments\/0\/system\/upgrade\/all\/status$/, async (route) => {
+			statusCalls++;
+			// The winning client's job row does not exist yet on the first read.
+			if (statusCalls === 1) {
+				await fulfillProblem(route, 404, 'no update-all job found');
+				return;
+			}
+			await fulfillJob(
+				route,
+				statusCalls === 2 ? 'running' : 'completed',
+				statusCalls === 2 ? 'updating' : 'updated'
+			);
+		});
+
+		await page.goto('/environments');
+		await openAndConfirmUpdateAll(page);
+
+		const dialog = page.getByRole('dialog');
+		await expect(dialog.getByRole('heading', { name: 'All environments processed' })).toBeVisible({
+			timeout: 10_000
+		});
+		await expect(page.locator('li[data-sonner-toast]')).toHaveCount(0);
+	});
+
+	test('closing the dialog during a pending start ignores the late response', async ({ page }) => {
+		let releaseStart!: () => void;
+		const startReleased = new Promise<void>((resolve) => {
+			releaseStart = resolve;
+		});
+		let statusCalls = 0;
+		await page.route(/\/api\/environments\/0\/system\/upgrade\/all$/, async (route) => {
+			await startReleased;
+			await fulfillJob(route, 'running', 'updating');
+		});
+		await page.route(/\/api\/environments\/0\/system\/upgrade\/all\/status$/, async (route) => {
+			statusCalls++;
+			await fulfillJob(route, 'running', 'updating');
+		});
+
+		await page.goto('/environments');
+		await openAndConfirmUpdateAll(page);
+
+		const dialog = page.getByRole('dialog');
+		await expect(dialog.getByRole('heading', { name: 'Updating environments…' })).toBeVisible();
+		await dialog.getByRole('button', { name: 'Close', exact: true }).first().click();
+		await expect(dialog).toBeHidden();
+
+		// The start response arrives after closure: it must not reopen or start polling.
+		releaseStart();
+		await page.waitForTimeout(4_000);
+		await expect(dialog).toBeHidden();
+		expect(statusCalls).toBe(0);
+		await expect(page.locator('li[data-sonner-toast]')).toHaveCount(0);
+	});
+});
+
 test.describe('Manager self-update recovery', () => {
 	test('Update All keeps the manager result visible and refreshes without a document reload', async ({
 		page

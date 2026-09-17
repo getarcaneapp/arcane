@@ -6,7 +6,6 @@
 	import Spinner from '#lib/components/ui/spinner/spinner.svelte';
 	import { cn } from '#lib/utils.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { toast } from 'svelte-sonner';
 	import { onDestroy } from 'svelte';
 	import { refreshAll } from '$app/navigation';
 	import systemUpgradeService, {
@@ -15,7 +14,8 @@
 		type UpdateAllEnvironmentStatus
 	} from '#lib/services/api/system-upgrade-service.js';
 	import { SuccessIcon, ClockIcon, AlertIcon, AlertTriangleIcon, ExternalLinkIcon } from '#lib/icons/index.js';
-	import BaseAPIService from '#lib/services/api-service.js';
+	import BaseAPIService, { APIError } from '#lib/services/api-service.js';
+	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import ReleaseNotes from '#lib/components/release-notes.svelte';
 	import type { AppVersionInformation } from '#lib/types/settings.js';
 	import { formatRelativeTime, nowInstantString } from '#lib/utils/formatting.js';
@@ -41,6 +41,10 @@
 	type Phase = 'confirm' | 'running' | 'finished';
 
 	const POLL_INTERVAL_MS = 3000;
+	// After a 409 the winning job may not be persisted yet; re-read status this many
+	// times, this far apart, before concluding there is nothing to adopt.
+	const CONFLICT_STATUS_READS = 3;
+	const CONFLICT_STATUS_RETRY_MS = 1000;
 	const MANAGER_ENVIRONMENT_ID = '0';
 
 	let phase = $state<Phase>('confirm');
@@ -48,6 +52,10 @@
 	let reconnecting = $state(false);
 	let pollActive = false;
 	let pollTimer: ReturnType<typeof setTimeout> | null = null;
+	// Bumped on every confirm and reset so a startup/status response that lands after
+	// the dialog closed (or a newer attempt began) is ignored instead of restarting
+	// polling for a dialog nobody is looking at.
+	let startAttempt = 0;
 
 	function stopPolling() {
 		pollActive = false;
@@ -61,6 +69,7 @@
 	// step, without mutating $state from inside an $effect. The confirm step never
 	// renders job/reconnecting, so clearing them here is safe.
 	function resetState() {
+		startAttempt++;
 		stopPolling();
 		BaseAPIService.setUpgradeInProgress(false);
 		phase = 'confirm';
@@ -112,6 +121,7 @@
 	}
 
 	async function handleConfirm() {
+		const attempt = ++startAttempt;
 		phase = 'running';
 		reconnecting = false;
 
@@ -122,20 +132,33 @@
 
 		BaseAPIService.setUpgradeInProgress(true);
 
-		const operationResult1 = await tryCatch(
-			(async () => {
-				job = await systemUpgradeService.triggerUpdateAll();
-			})()
-		);
-		if (operationResult1.error !== null) {
-			toast.error(m.environments_update_all_trigger_failed());
+		const startResult = await tryCatch(systemUpgradeService.triggerUpdateAll());
+		let next = startResult.data;
+		// The backend refuses a second job while one is active (409). Adopt that job
+		// and follow it instead of failing; never retry the POST.
+		if (startResult.error instanceof APIError && startResult.error.status === 409) {
+			// A concurrent start answers 409 before its job row is persisted, so the first
+			// read can still show no job (404) or the previous terminal one.
+			for (let read = 0; read < CONFLICT_STATUS_READS && attempt === startAttempt; read++) {
+				if (read > 0) await new Promise((resolve) => setTimeout(resolve, CONFLICT_STATUS_RETRY_MS));
+				const active = (await tryCatch(systemUpgradeService.getUpdateAllStatus())).data;
+				if (active?.status === 'running' || active?.status === 'pending_restart') {
+					next = active;
+					break;
+				}
+			}
+		}
+		// The dialog closed (or was re-confirmed) while the request was in flight.
+		if (attempt !== startAttempt) return;
+
+		if (!next) {
+			await handleApiResultWithCallbacks({ result: startResult, message: m.environments_update_all_trigger_failed() });
 			resetState();
 			return;
 		}
 
-		if (phase !== 'running') return;
-
-		if (job && (job.status === 'completed' || job.status === 'failed')) {
+		job = next;
+		if (job.status === 'completed' || job.status === 'failed') {
 			finishTerminalJob(job);
 			return;
 		}
@@ -165,6 +188,7 @@
 	}
 
 	onDestroy(() => {
+		startAttempt++;
 		stopPolling();
 		BaseAPIService.setUpgradeInProgress(false);
 	});
