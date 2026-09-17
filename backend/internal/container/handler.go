@@ -45,11 +45,12 @@ type ContainerHandler struct {
 
 // ContainerPaginatedResponse is the paginated list response for containers.
 type ContainerPaginatedResponse struct {
-	Success    bool                          `json:"success"`
-	Data       []containertypes.Summary      `json:"data"`
-	Groups     []containertypes.SummaryGroup `json:"groups,omitempty"`
-	Counts     containertypes.StatusCounts   `json:"counts"`
-	Pagination base.PaginationResponse       `json:"pagination"`
+	Success               bool                          `json:"success"`
+	Data                  []containertypes.Summary      `json:"data"`
+	Groups                []containertypes.SummaryGroup `json:"groups,omitempty"`
+	Counts                containertypes.StatusCounts   `json:"counts"`
+	Pagination            base.PaginationResponse       `json:"pagination"`
+	ResourceSortSupported bool                          `json:"resourceSortSupported"`
 }
 
 type ListContainersInput struct {
@@ -319,6 +320,10 @@ func RegisterContainers(api huma.API, containerSvc *ContainerService, dockerSvc 
 }
 
 func (h *ContainerHandler) ListContainers(ctx context.Context, input *ListContainersInput) (*ListContainersOutput, error) {
+	if ps, _ := middleware.PermissionsFromContext(ctx); containerResourceSortPermissionDeniedInternal(ps, input.EnvironmentID, input.Sort) {
+		return nil, huma.Error403Forbidden("permission denied: " + authz.PermContainersRead)
+	}
+
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	if input.Updates != "" {
 		params.Filters["updates"] = input.Updates
@@ -337,11 +342,12 @@ func (h *ContainerHandler) ListContainers(ctx context.Context, input *ListContai
 
 	return &ListContainersOutput{
 		Body: ContainerPaginatedResponse{
-			Success:    true,
-			Data:       result.Items,
-			Groups:     result.Groups,
-			Counts:     result.Counts,
-			Pagination: handlerutil.PaginationResponse(result.Pagination),
+			Success:               true,
+			Data:                  result.Items,
+			Groups:                result.Groups,
+			Counts:                result.Counts,
+			Pagination:            handlerutil.PaginationResponse(result.Pagination),
+			ResourceSortSupported: true,
 		},
 	}, nil
 }

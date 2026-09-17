@@ -239,3 +239,30 @@ func TestProxyPermissionDeniedWSTerminalRequiresExec(t *testing.T) {
 		"expected WS terminal to be allowed with containers:exec")
 
 }
+
+func TestProxyPermissionDeniedResourceSortRequiresRead(t *testing.T) {
+	m := newProxyAuthzMiddleware(containerMatcher())
+
+	listOnly := authz.NewPermissionSet()
+	listOnly.AddEnv(proxyTestEnvID, authz.PermContainersList)
+
+	for _, sort := range []string{"cpuUsage", "memoryUsage"} {
+		c := newProxyRequestContext(http.MethodGet, "/api/environments/"+proxyTestEnvID+"/containers?sort="+sort)
+		require.True(t, m.proxyPermissionDenied(c, listOnly, proxyTestEnvID),
+			"expected resource sort %q to be denied with only containers:list", sort)
+	}
+
+	c := newProxyRequestContext(http.MethodGet, "/api/environments/"+proxyTestEnvID+"/containers?sort=name")
+	require.False(t, m.proxyPermissionDenied(c, listOnly, proxyTestEnvID),
+		"expected non-resource sorts to stay allowed with containers:list")
+
+	c = newProxyRequestContext(http.MethodGet, "/api/environments/"+proxyTestEnvID+"/containers")
+	require.False(t, m.proxyPermissionDenied(c, listOnly, proxyTestEnvID),
+		"expected the plain list to stay allowed with containers:list")
+
+	withRead := authz.NewPermissionSet()
+	withRead.AddEnv(proxyTestEnvID, authz.PermContainersList, authz.PermContainersRead)
+	c = newProxyRequestContext(http.MethodGet, "/api/environments/"+proxyTestEnvID+"/containers?sort=memoryUsage&order=desc")
+	require.False(t, m.proxyPermissionDenied(c, withRead, proxyTestEnvID),
+		"expected resource sort to be allowed with containers:list and containers:read")
+}

@@ -790,6 +790,45 @@ type HostConfig struct {
 	Memory int64 `json:"memory,omitempty"`
 }
 
+// Resource sort keys accepted by the container list endpoint. They are part of
+// the shared API contract: the manager's environment proxy inspects the sort
+// query parameter to enforce the additional containers:read permission before
+// forwarding resource-sorted requests to an agent.
+const (
+	SortCPUUsage    = "cpuUsage"
+	SortMemoryUsage = "memoryUsage"
+)
+
+// IsResourceSort reports whether sort is a resource-based sort key.
+func IsResourceSort(sort string) bool {
+	return sort == SortCPUUsage || sort == SortMemoryUsage
+}
+
+// ResourceSample is a point-in-time resource usage sample for a container,
+// returned with resource-sorted list responses so ordering and displayed
+// values come from the same data.
+type ResourceSample struct {
+	// CPUPercent is the normalized CPU usage percentage (0-100 scale).
+	//
+	// Required: true
+	CPUPercent float64 `json:"cpuPercent"`
+
+	// MemoryUsageBytes is the memory usage in bytes.
+	//
+	// Required: true
+	MemoryUsageBytes uint64 `json:"memoryUsageBytes"`
+
+	// MemoryLimitBytes is the memory limit in bytes.
+	//
+	// Required: true
+	MemoryLimitBytes uint64 `json:"memoryLimitBytes"`
+
+	// SampleTime is when the sample was taken.
+	//
+	// Required: true
+	SampleTime time.Time `json:"sampleTime"`
+}
+
 // Summary represents a container summary.
 type Summary struct {
 	// ID is the unique identifier of the container.
@@ -884,6 +923,13 @@ type Summary struct {
 	//
 	// Required: false
 	Hidden bool `json:"hidden,omitempty"`
+
+	// ResourceSample holds the resource usage sample collected for a
+	// resource-sorted list request. Nil when the request was not resource-sorted
+	// or the sample was unavailable (stopped container or collection failure).
+	//
+	// Required: false
+	ResourceSample *ResourceSample `json:"resourceSample,omitempty"`
 }
 
 // ComposeInfo contains Docker Compose project information extracted from container labels.

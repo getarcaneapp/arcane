@@ -18,6 +18,7 @@ import { tryCatch } from '#lib/utils/try-catch.js';
 
 export type ContainersPaginatedResponse = Paginated<ContainerSummaryDto, ContainerStatusCounts> & {
 	groups?: ContainerSummaryGroupDto[];
+	resourceSortSupported?: boolean;
 };
 export type ContainerListRequestOptions = SearchPaginationSortRequest & {
 	groupByProject?: boolean;

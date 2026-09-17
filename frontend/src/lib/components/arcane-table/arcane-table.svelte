@@ -687,6 +687,11 @@
 	let lastPersistedSettings: string | null = null;
 	let persistTimeout: ReturnType<typeof setTimeout> | undefined;
 
+	export function persistSort(sort: SortState | undefined) {
+		if (!enablePersist || !prefs) return;
+		prefs.current = { ...prefs.current, s: encodeSort(sort) };
+	}
+
 	export function persistCustomSettings(settings: Record<string, unknown>) {
 		if (!preferencesReady || !prefs) return;
 		const settingsJson = JSON.stringify(settings);

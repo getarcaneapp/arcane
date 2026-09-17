@@ -24,6 +24,7 @@ import (
 	wsutil "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/ws"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	httputils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
+	containertypes "github.com/getarcaneapp/arcane/types/v2/container"
 	"github.com/getarcaneapp/arcane/types/v2/gitops"
 	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
 	"github.com/labstack/echo/v5"
@@ -273,6 +274,7 @@ func (m *EnvironmentMiddleware) proxyPermissionDenied(c *echo.Context, ps *authz
 			"path", suffix, "environment_id", envID, "error", err)
 		return true
 	}
+	required = withContainerResourceSortPermissionsInternal(required, c.Request(), method, suffix)
 	for _, operationPermission := range required {
 		if !ps.Allows(operationPermission, envID) {
 			slog.DebugContext(c.Request().Context(), "Denying proxied request: body-derived permission denied",
@@ -422,6 +424,18 @@ func proxiedGitOpsSyncPermissionsInternal(request *http.Request, method, suffix 
 		}
 	}
 	return required, nil
+}
+
+// withContainerResourceSortPermissionsInternal adds containers:read for
+// resource-sorted container lists, which collect per-container stats.
+func withContainerResourceSortPermissionsInternal(required []string, request *http.Request, method, suffix string) []string {
+	if request == nil || method != http.MethodGet || strings.Trim(suffix, "/") != "containers" {
+		return required
+	}
+	if containertypes.IsResourceSort(request.URL.Query().Get("sort")) {
+		return append(required, authz.PermContainersRead)
+	}
+	return required
 }
 
 type proxiedReplayBodyInternal struct {

@@ -45,16 +45,21 @@ import (
 	"go.getarcane.app/updater"
 	"go.getarcane.app/updater/labels"
 	"go.getarcane.app/updater/pkg/utils/tagpolicy"
+	"golang.org/x/sync/singleflight"
 )
 
 type ContainerService struct {
-	dockerService   *docker.DockerClientService
-	eventService    *event.EventService
-	imageService    *image.ImageService
-	settingsService *settings.SettingsService
-	projectService  *project.ProjectService
-	statsHistory    containerstats.Store
-	iconMetaCache   *hot.HotCache[string, projects.ArcaneComposeMetadata]
+	dockerService         *docker.DockerClientService
+	eventService          *event.EventService
+	imageService          *image.ImageService
+	settingsService       *settings.SettingsService
+	projectService        *project.ProjectService
+	statsHistory          containerstats.Store
+	iconMetaCache         *hot.HotCache[string, projects.ArcaneComposeMetadata]
+	resourceSampleCache   *hot.HotCache[string, containertypes.ResourceSample]
+	resourceSampleFlight  singleflight.Group
+	resourceSampleTimeout time.Duration
+	resourceBatchTimeout  time.Duration
 }
 
 const (
@@ -81,6 +86,9 @@ func NewContainerService(eventService *event.EventService, dockerService *docker
 			WithTTL(containerIconMetadataTTL).
 			WithJanitor().
 			Build(),
+		resourceSampleCache:   newResourceSampleCacheInternal(containerResourceSampleTTL),
+		resourceSampleTimeout: containerResourceCollectTimeout,
+		resourceBatchTimeout:  timeouts.DefaultDockerAPI,
 	}
 }
 
@@ -1441,6 +1449,10 @@ func (s *ContainerService) ListContainersPaginated(
 		}, nil
 	}
 
+	if isContainerResourceSortRequestInternal(params, groupBy) {
+		return s.listContainersByResourceInternal(ctx, config, items, counts, params)
+	}
+
 	result := config.SearchOrderAndPaginate(items, params)
 	s.ApplySummaryIcons(ctx, result.Items, nil)
 	paginationResp := pagination.BuildResponse(result.TotalCount, result.TotalAvailable, params)
@@ -1778,7 +1790,23 @@ func (s *ContainerService) buildContainerSortBindings() []pagination.SortBinding
 				return 0
 			},
 		},
+		{
+			Key:    containertypes.SortCPUUsage,
+			Fn:     containerResourceSampleSortInternal(containertypes.SortCPUUsage, false),
+			DescFn: containerResourceSampleSortInternal(containertypes.SortCPUUsage, true),
+		},
+		{
+			Key:    containertypes.SortMemoryUsage,
+			Fn:     containerResourceSampleSortInternal(containertypes.SortMemoryUsage, false),
+			DescFn: containerResourceSampleSortInternal(containertypes.SortMemoryUsage, true),
+		},
 	}
+}
+
+// isContainerResourceSortRequestInternal limits resource sorting to the
+// ungrouped list: project-grouped mode keeps the existing group pagination.
+func isContainerResourceSortRequestInternal(params pagination.QueryParams, groupBy string) bool {
+	return groupBy != containerGroupByProject && containertypes.IsResourceSort(params.Sort)
 }
 
 func compareContainerPortsForSortInternal(a, b containertypes.Summary) int {

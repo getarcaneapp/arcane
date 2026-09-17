@@ -12,6 +12,7 @@
 	import { formatDateTimeShort, truncateImageDigest } from '#lib/utils/formatting.js';
 	import type { ContainerSummaryDto } from '#lib/types/docker.js';
 	import type { ColumnSpec, BulkAction } from '#lib/components/arcane-table/index.js';
+	import type { SortState } from '#lib/components/arcane-table/arcane-table.types.svelte';
 	import { m } from '#lib/paraglide/messages.js';
 	import { PortBadge } from '#lib/components/badges/index.js';
 	import { UniversalMobileCard } from '#lib/components/arcane-table/index.js';
@@ -28,8 +29,10 @@
 	import { ContainerStatsManager } from './components/container-stats-manager.svelte';
 	import ContainerStatsSync from './components/container-stats-sync.svelte';
 	import ContainerStatsCell from './components/container-stats-cell.svelte';
+	import { ContainerResourcePoller } from './components/container-resource-poller.svelte';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { hasPermission } from '#lib/utils/auth.js';
+	import * as Alert from '#lib/components/ui/alert/index.js';
 	import IconImage from '#lib/components/icon-image.svelte';
 	import { COMPOSE_PROJECT_LABEL, getContainerIpAddresses, getThemedIconUrl, parseImageRef } from '#lib/utils/docker.js';
 	import { hasAnyLoadingState } from '#lib/utils/bulk-actions.js';
@@ -60,7 +63,9 @@
 		RedeployIcon,
 		PauseIcon,
 		PlayIcon,
-		ZapIcon
+		ZapIcon,
+		AlertTriangleIcon,
+		InfoIcon
 	} from '#lib/icons/index.js';
 	import KillContainerDialog from './components/kill-container-dialog.svelte';
 
@@ -97,6 +102,20 @@
 
 	const statsManager = new ContainerStatsManager();
 
+	const resourceSortSupported = $derived(containers.resourceSortSupported === true);
+	const resourceSortActive = $derived.by(() => {
+		if (groupByProject || !resourceSortSupported) return false;
+		return isResourceSort(requestOptions?.sort);
+	});
+
+	const resourceRefreshIntervalMs = 5000;
+	const resourcePoller = new ContainerResourcePoller(resourceRefreshIntervalMs);
+	const defaultSort: SortState = { column: 'created', direction: 'desc' };
+
+	function isResourceSort(sort: SearchPaginationSortRequest['sort']): boolean {
+		return sort?.column === 'cpuUsage' || sort?.column === 'memoryUsage';
+	}
+
 	function buildGroupedRequest(options: SearchPaginationSortRequest, grouped = groupByProject): ContainerListRequestOptions {
 		return {
 			...options,
@@ -104,14 +123,39 @@
 		};
 	}
 
+	async function fetchContainers(request: ContainerListRequestOptions): Promise<ContainersPaginatedResponse> {
+		return onRefreshData ? onRefreshData(request) : containerService.getContainers(request);
+	}
+
+	// Refreshes can overlap: a resource poll may still be in flight when the user changes
+	// the page or a filter, or when the parent refreshes the bound data itself. The
+	// generation orders requests started here; the identity check catches any other
+	// writer. Only a request that is newest on both counts may write table state.
+	let refreshGeneration = 0;
+
 	async function refreshContainers(options: SearchPaginationSortRequest, grouped = groupByProject) {
-		const request = buildGroupedRequest(options, grouped);
-		if (onRefreshData) {
-			const result = await onRefreshData(request);
-			containers = result;
-			return result;
+		const generation = ++refreshGeneration;
+		const seen = containers;
+		const superseded = () => generation !== refreshGeneration || containers !== seen;
+		let request = buildGroupedRequest(options, grouped);
+		let result = await fetchContainers(request);
+		if (superseded()) return containers;
+
+		// Older agents cannot order by live CPU or memory and silently fall back to a name
+		// sort. Replace a persisted resource sort with the default so the request, the
+		// persisted preference, and the rendered order agree.
+		if (result.resourceSortSupported !== true && isResourceSort(request.sort)) {
+			request = { ...request, sort: defaultSort, pagination: { page: 1, limit: getCurrentLimit() } };
+			tablePreferences?.persistSort(defaultSort);
+			requestOptions = {
+				...options,
+				sort: request.sort,
+				pagination: request.pagination
+			};
+			result = await fetchContainers(request);
+			if (superseded()) return containers;
 		}
-		const result = await containerService.getContainers(request);
+
 		containers = result;
 		return result;
 	}
@@ -167,6 +211,7 @@
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
 	let tablePreferences = $state<{
 		persistCustomSettings(settings: Record<string, unknown>): void;
+		persistSort(sort: SortState | undefined): void;
 	}>();
 	let customSettings = $state<Record<string, unknown>>({});
 	let showInternal = $derived.by(() => {
@@ -187,7 +232,7 @@
 	);
 
 	const shouldConnect = $derived.by(() => {
-		if (!resourcesCurrent) {
+		if (!resourcesCurrent || resourceSortActive) {
 			return new Set<string>();
 		}
 		const cpuVisible = columnVisibility['cpuUsage'] !== false;
@@ -204,6 +249,14 @@
 
 	const currentEnvId = $derived(environmentStore.selected?.id || '0');
 	const resourcesCurrent = $derived(environmentId === currentEnvId);
+
+	// Only the on/off state is tracked here. The callback reads requestOptions when
+	// it runs, so pagination or filter changes do not restart the poll cycle.
+	$effect(() => {
+		if (!resourceSortActive || !resourcesCurrent) return;
+		resourcePoller.start(() => refreshContainers(requestOptions));
+		return () => resourcePoller.stop();
+	});
 	const canUpdateContainers = $derived(hasPermission('containers:autoupdate', currentEnvId));
 	const canEditContainers = $derived(hasPermission('containers:edit', currentEnvId));
 	const canStartContainers = $derived(hasPermission('containers:start', currentEnvId));
@@ -331,17 +384,19 @@
 			cell: UpdatesCell
 		},
 		{
-			accessorFn: (row) => statsManager.getCPUPercent(row.id) ?? -1,
 			id: 'cpuUsage',
+			// TanStack only treats accessor columns as sortable, so the sampled value is
+			// exposed even though ordering happens on the server.
+			accessorFn: (row) => row.resourceSample?.cpuPercent ?? null,
 			title: m.cpu_usage(),
-			clientSort: !groupByProject,
+			sortable: !groupByProject && resourceSortSupported,
 			cell: CPUCell
 		},
 		{
-			accessorFn: (row) => statsManager.getMemoryPercent(row.id) ?? -1,
 			id: 'memoryUsage',
+			accessorFn: (row) => row.resourceSample?.memoryUsageBytes ?? null,
 			title: m.memory_usage(),
-			clientSort: !groupByProject,
+			sortable: !groupByProject && resourceSortSupported,
 			cell: MemoryCell
 		},
 		{ accessorKey: 'status', title: m.common_status() },
@@ -521,24 +576,43 @@
 {/snippet}
 
 {#snippet CPUCell({ item }: { item: ContainerSummaryDto })}
-	<ContainerStatsCell
-		value={statsManager.getCPUPercent(item.id)}
-		loading={statsManager.isLoading(item.id) ?? false}
-		unavailable={statsManager.hasError(item.id)}
-		stopped={item.state !== 'running'}
-		type="cpu"
-	/>
+	{#if resourceSortActive}
+		<ContainerStatsCell
+			value={item.resourceSample?.cpuPercent}
+			unavailable={!item.resourceSample}
+			stopped={item.state !== 'running'}
+			type="cpu"
+		/>
+	{:else}
+		<ContainerStatsCell
+			value={statsManager.getCPUPercent(item.id)}
+			loading={statsManager.isLoading(item.id) ?? false}
+			unavailable={statsManager.hasError(item.id)}
+			stopped={item.state !== 'running'}
+			type="cpu"
+		/>
+	{/if}
 {/snippet}
 
 {#snippet MemoryCell({ item }: { item: ContainerSummaryDto })}
-	{@const memoryData = statsManager.getMemoryUsage(item.id)}
-	<ContainerStatsCell
-		value={memoryData?.usage}
-		limit={memoryData?.limit}
-		unavailable={statsManager.hasError(item.id)}
-		stopped={item.state !== 'running'}
-		type="memory"
-	/>
+	{#if resourceSortActive}
+		<ContainerStatsCell
+			value={item.resourceSample?.memoryUsageBytes}
+			limit={item.resourceSample?.memoryLimitBytes}
+			unavailable={!item.resourceSample}
+			stopped={item.state !== 'running'}
+			type="memory"
+		/>
+	{:else}
+		{@const memoryData = statsManager.getMemoryUsage(item.id)}
+		<ContainerStatsCell
+			value={memoryData?.usage}
+			limit={memoryData?.limit}
+			unavailable={statsManager.hasError(item.id)}
+			stopped={item.state !== 'running'}
+			type="memory"
+		/>
+	{/if}
 {/snippet}
 
 {#snippet PortsCell({ item }: { item: ContainerSummaryDto })}
@@ -717,8 +791,12 @@
 			{
 				label: m.cpu_usage(),
 				getValue: (item: ContainerSummaryDto) => {
-					const cpu = statsManager.getCPUPercent(item.id);
 					if (item.state !== 'running') return m.common_na();
+					if (resourceSortActive) {
+						const cpu = item.resourceSample?.cpuPercent;
+						return cpu === undefined ? m.common_unavailable() : `${cpu.toFixed(1)}%`;
+					}
+					const cpu = statsManager.getCPUPercent(item.id);
 					if (cpu === undefined) return statsManager.hasError(item.id) ? m.common_unavailable() : '...';
 					return `${cpu.toFixed(1)}%`;
 				},
@@ -729,8 +807,12 @@
 			{
 				label: m.memory_usage(),
 				getValue: (item: ContainerSummaryDto) => {
-					const memData = statsManager.getMemoryUsage(item.id);
 					if (item.state !== 'running') return m.common_na();
+					if (resourceSortActive) {
+						const usage = item.resourceSample?.memoryUsageBytes;
+						return usage === undefined ? m.common_unavailable() : `${(usage / 1024 / 1024).toFixed(0)} MB`;
+					}
+					const memData = statsManager.getMemoryUsage(item.id);
 					if (!memData?.usage) return statsManager.hasError(item.id) ? m.common_unavailable() : '...';
 					return `${(memData.usage / 1024 / 1024).toFixed(0)} MB`;
 				},
@@ -909,6 +991,20 @@
 		</RowActionsMenu>
 	{/if}
 {/snippet}
+
+{#if !resourceSortSupported && !groupByProject}
+	<Alert.Root class="mb-4">
+		<InfoIcon class="size-4" />
+		<Alert.Title>{m.containers_resource_sort_unsupported()}</Alert.Title>
+	</Alert.Root>
+{/if}
+
+{#if resourceSortActive && resourcePoller.error}
+	<Alert.Root variant="destructive" class="mb-4">
+		<AlertTriangleIcon class="size-4" />
+		<Alert.Title>{m.containers_resource_refresh_failed({ message: resourcePoller.error })}</Alert.Title>
+	</Alert.Root>
+{/if}
 
 <ArcaneTable
 	bind:this={tablePreferences}

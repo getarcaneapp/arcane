@@ -167,6 +167,13 @@ export interface ContainerEditConfigDto {
 	running: boolean;
 }
 
+export interface ContainerResourceSample {
+	cpuPercent: number;
+	memoryUsageBytes: number;
+	memoryLimitBytes: number;
+	sampleTime: string;
+}
+
 export interface ContainerSummaryDto extends BaseContainer {
 	updateStrategy?: string;
 	ports: ContainerPorts[];
@@ -176,6 +183,7 @@ export interface ContainerSummaryDto extends BaseContainer {
 	updateInfo?: ImageUpdateInfoDto;
 	redeployDisabled?: boolean;
 	hidden?: boolean;
+	resourceSample?: ContainerResourceSample | null;
 }
 
 export interface ContainerSummaryGroupDto {
