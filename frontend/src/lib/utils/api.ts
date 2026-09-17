@@ -101,6 +101,12 @@ function extractApiErrorStatus(err: unknown, fallbackStatus = 500): number {
 	return fallbackStatus;
 }
 
+/** True when the server explicitly rejected the caller's credentials (401/403). */
+export function isAuthRejectionError(err: unknown): boolean {
+	const status = extractApiErrorStatus(err, 0);
+	return status === 401 || status === 403;
+}
+
 export function throwPageLoadError(err: unknown, fallbackMessage: string): never {
 	const status = extractApiErrorStatus(err);
 	const message = extractApiErrorMessage(err) || fallbackMessage;

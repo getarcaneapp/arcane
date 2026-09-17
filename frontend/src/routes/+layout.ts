@@ -11,13 +11,14 @@ import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import userStore from '#lib/stores/user-store.svelte.js';
 import { versionStore } from '#lib/stores/version.store.svelte.js';
 import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
-import type { PermissionsManifest } from '#lib/types/auth.js';
+import type { PermissionsManifest, User } from '#lib/types/auth.js';
 import { authService } from '#lib/services/auth-service.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 import { QueryClient } from '@tanstack/svelte-query';
 import { queryKeys } from '#lib/query/query-keys.js';
 import { redirect } from '@sveltejs/kit';
 import { getAuthRedirectPath, userHasPermission } from '#lib/utils/auth.js';
+import { isAuthRejectionError } from '#lib/utils/api.js';
 import { getEffectiveLandingPage } from '#lib/utils/navigation.js';
 import type { LayoutLoad } from './$types';
 
@@ -38,6 +39,16 @@ const queryClient = new QueryClient({
 
 let authenticatedUserId: string | null | undefined;
 
+// The layout load re-runs on every navigation and re-checks the session. A
+// transient failure of that check (network blip, 5xx, 429) must not sign the
+// user out of the SPA: that clears every cache, bounces through /login and
+// lands on the landing page. Only an explicit rejection means the session is
+// gone; anything else keeps the user we already know about.
+function resolveUserAfterLoadFailureInternal(error: unknown): User | null {
+	if (isAuthRejectionError(error)) return null;
+	return userStore.current;
+}
+
 export const load: LayoutLoad = async ({ url }) => {
 	const versionInformationRequest = versionService.getVersionInformation();
 	const autoLoginConfigRequest = browser
@@ -47,7 +58,9 @@ export const load: LayoutLoad = async ({ url }) => {
 			})
 		: Promise.resolve(null);
 	let [user, autoLoginConfig] = await Promise.all([
-		tryCatch(userService.getCurrentUser()).then((result) => (result.error ? null : result.data)),
+		tryCatch(userService.getCurrentUser()).then((result) =>
+			result.error ? resolveUserAfterLoadFailureInternal(result.error) : result.data
+		),
 		autoLoginConfigRequest
 	]);
 
@@ -98,7 +111,9 @@ export const load: LayoutLoad = async ({ url }) => {
 		const environments = await environmentsRequest;
 		if (!environments.error) {
 			await environmentStore.initialize(environments.data.data);
-		} else {
+		} else if (!environmentStore.isInitialized()) {
+			// A failed refetch on an already-initialised store keeps the current
+			// selection; re-initialising with [] would drop it to "No Environment".
 			await environmentStore.initialize([]);
 		}
 

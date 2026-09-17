@@ -9,22 +9,20 @@
 
 	let {
 		projectId,
-		autoScroll = $bindable(),
-		isRunning = true
+		autoScroll = $bindable()
 	}: {
 		projectId: string;
 		autoScroll: boolean;
-		isRunning?: boolean;
 	} = $props();
 
 	let isStreaming = $state(false);
 	let viewer = $state<ReturnType<typeof LogViewer>>();
 	const preferences = new UseLogPreferences();
 	let logSearchTerm = $state('');
-	let hasAutoStarted = $state(false);
+	// Plain guard, not $state: it is only written from the auto-start effect and never rendered.
+	let hasAutoStarted = false;
 
 	function handleStart() {
-		if (!isRunning) return;
 		viewer?.startLogStream();
 	}
 
@@ -33,20 +31,11 @@
 	}
 
 	async function handleRefresh() {
-		await viewer?.clearLogs({ hard: true, restart: isRunning });
+		await viewer?.clearLogs({ hard: true, restart: true });
 	}
 
-	// The panel stays visible while the project is stopped; the stream pauses and
-	// picks back up (via auto-start) once the project is running again.
 	$effect(() => {
-		if (!isRunning) {
-			hasAutoStarted = false;
-			if (isStreaming) handleStop();
-		}
-	});
-
-	$effect(() => {
-		if (preferences.autoStartLogs && !hasAutoStarted && !isStreaming && projectId && isRunning && viewer) {
+		if (preferences.autoStartLogs && !hasAutoStarted && !isStreaming && projectId && viewer) {
 			hasAutoStarted = true;
 			handleStart();
 		}
@@ -66,7 +55,7 @@
 						mobileLayout="full"
 						showDesktop={false}
 						{isStreaming}
-						disabled={!projectId || !isRunning}
+						disabled={!projectId}
 						onStart={handleStart}
 						onStop={handleStop}
 						onRefresh={handleRefresh}
@@ -80,7 +69,7 @@
 				{preferences}
 				mobileLayout="none"
 				{isStreaming}
-				disabled={!projectId || !isRunning}
+				disabled={!projectId}
 				onStart={handleStart}
 				onStop={handleStop}
 				onRefresh={handleRefresh}

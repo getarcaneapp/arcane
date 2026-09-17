@@ -1777,11 +1777,7 @@
 						{#snippet second()}
 							<div class="flex h-full min-h-0 flex-col overflow-hidden">
 								{#key project.id}
-									<ProjectsLogsPanel
-										projectId={project.id}
-										bind:autoScroll={autoScrollStackLogs}
-										isRunning={project.status?.toLowerCase().includes('running')}
-									/>
+									<ProjectsLogsPanel projectId={project.id} bind:autoScroll={autoScrollStackLogs} />
 								{/key}
 							</div>
 						{/snippet}
