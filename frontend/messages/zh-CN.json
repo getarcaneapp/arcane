@@ -594,6 +594,8 @@
   "containers_check_updates": "更新容器",
   "containers_check_updates_failed": "检查容器更新失败",
   "containers_check_updates_success": "容器更新成功。",
+  "containers_resource_sort_unsupported": "若要按 CPU 或内存使用情况进行排序，该环境需要更新版本的代理。请更新代理，以便按实时资源使用情况进行排序。",
+  "containers_resource_refresh_failed": "自动刷新失败： {message}",
   "update_container": "更新容器",
   "standalone_containers": "独立容器",
   "wrap_text": "文本换行",
