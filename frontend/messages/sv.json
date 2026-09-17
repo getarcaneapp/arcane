@@ -594,6 +594,8 @@
   "containers_check_updates": "Update Containers",
   "containers_check_updates_failed": "Failed to Check Containers for Updates",
   "containers_check_updates_success": "Containers Updated Successfully.",
+  "containers_resource_sort_unsupported": "För att kunna sortera efter CPU- eller minnesanvändning krävs en nyare agent för den här miljön. Uppdatera agenten så att sorteringen sker efter aktuell resursanvändning.",
+  "containers_resource_refresh_failed": "Den automatiska uppdateringen misslyckades: {message}",
   "update_container": "Update Container",
   "standalone_containers": "Fristående containrar",
   "wrap_text": "Textomslag",
