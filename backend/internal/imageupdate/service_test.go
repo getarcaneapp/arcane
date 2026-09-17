@@ -85,6 +85,11 @@ func setupImageUpdateRegistryTestDBInternal(t *testing.T) *database.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
+	// Every pooled connection to a private in-memory database sees its own
+	// empty schema, so concurrent scan workers must share a single connection.
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	sqlDB.SetMaxOpenConns(1)
 	require.NoError(t, db.AutoMigrate(
 		&registry.ContainerRegistry{},
 		&kv.KVEntry{},
@@ -2415,11 +2420,13 @@ func (testProjectRow) TableName() string { return "projects" }
 
 func TestContainerTagChecksPersistIndependentPoliciesInternal(t *testing.T) {
 	db := setupImageUpdateRegistryTestDBInternal(t)
+	var tagListings atomic.Int64
 	registryServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.HasSuffix(r.URL.Path, "/tags/list") {
 			http.NotFound(w, r)
 			return
 		}
+		tagListings.Add(1)
 		w.Header().Set("Content-Type", "application/json")
 		require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"name": "team/app", "tags": []string{"1.0.0", "1.1.0", "2.0.0"}}))
 	}))
@@ -2462,6 +2469,7 @@ func TestContainerTagChecksPersistIndependentPoliciesInternal(t *testing.T) {
 	require.Len(t, checks, 2)
 	require.Equal(t, "1.1.0", checks["one"].LatestVersion)
 	require.Equal(t, "2.0.0", checks["two"].LatestVersion)
+	require.EqualValues(t, 1, tagListings.Load(), "replicas of one repository share a single tag listing per scan")
 	var records []ImageUpdateRecord
 	require.NoError(t, db.Order("container_id").Find(&records).Error)
 	require.Len(t, records, 2)
@@ -2587,4 +2595,69 @@ func TestContainerTagChecksUseRegistryTagTimeoutInternal(t *testing.T) {
 			require.Equal(t, "1.1.0", checks["one"].LatestVersion)
 		})
 	}
+}
+
+func TestContainerTagChecksPersistResultsFinishedBeforeScanDeadlineInternal(t *testing.T) {
+	db := setupImageUpdateRegistryTestDBInternal(t)
+	t.Setenv("REGISTRY_TAG_TIMEOUT", "30")
+	settingsService := newImageUpdateTestSettingsServiceInternal(t, "30", "30")
+	registryServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/team/fast/tags/list"):
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"name": "team/fast", "tags": []string{"1.0.0", "1.1.0"}}))
+		case strings.HasSuffix(r.URL.Path, "/team/slow/tags/list"):
+			// Stall until the scan deadline cancels the request.
+			<-r.Context().Done()
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer registryServer.Close()
+	registryURL, err := url.Parse(registryServer.URL)
+	require.NoError(t, err)
+	imageRefs := map[string]string{"fast": registryURL.Host + "/team/fast:1.0.0", "slow": registryURL.Host + "/team/slow:1.0.0"}
+	imageIDs := map[string]string{"fast": digest.FromString("fast").String(), "slow": digest.FromString("slow").String()}
+	nameFor := func(path string) string {
+		if strings.Contains(path, "slow") {
+			return "slow"
+		}
+		return "fast"
+	}
+	dockerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		name := nameFor(r.URL.Path)
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/containers/json"):
+			require.NoError(t, json.NewEncoder(w).Encode([]dockertypescontainer.Summary{
+				{ID: "fast", Image: imageRefs["fast"], ImageID: imageIDs["fast"]},
+				{ID: "slow", Image: imageRefs["slow"], ImageID: imageIDs["slow"]},
+			}))
+		case strings.Contains(r.URL.Path, "/images/"):
+			require.NoError(t, json.NewEncoder(w).Encode(dockertypesimage.InspectResponse{ID: imageIDs[name], RepoTags: []string{imageRefs[name]}}))
+		case strings.Contains(r.URL.Path, "/containers/"):
+			require.NoError(t, json.NewEncoder(w).Encode(dockertypescontainer.InspectResponse{ID: name, Image: imageIDs[name], Config: &dockertypescontainer.Config{Image: imageRefs[name]}}))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer dockerServer.Close()
+	registryService := registry.NewContainerRegistryService(db, func(context.Context) (registry.RegistryDaemonClient, error) {
+		return &fakeRegistryDaemonClient{distributionInspectFn: func(context.Context, string, client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
+			return client.DistributionInspectResult{}, errors.New("manifest not found")
+		}}, nil
+	}, nil, registryServer.Client()).WithSettingsService(settingsService)
+	svc := NewImageUpdateService(db, settingsService, registryService, &docker.DockerClientService{Client: newImageUpdateTestDockerClientInternal(t, dockerServer)}, nil, nil, nil)
+
+	scanCtx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	_, err = svc.checkContainerTagUpdatesInternal(scanCtx, []string{imageRefs["fast"], imageRefs["slow"]}, nil)
+	require.ErrorContains(t, err, context.DeadlineExceeded.Error())
+	var records []ImageUpdateRecord
+	require.NoError(t, db.Find(&records).Error)
+	require.Len(t, records, 1, "only the check that finished before the scan deadline is stored")
+	require.Equal(t, "container::fast", records[0].ID)
+	require.True(t, records[0].HasUpdate)
+	require.Equal(t, "1.1.0", mo.PointerToOption(records[0].LatestVersion).OrEmpty())
+	require.Empty(t, mo.PointerToOption(records[0].LastError).OrEmpty(), "a stored result must not be overwritten by the cancellation")
 }

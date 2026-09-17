@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"emperror.dev/errors"
@@ -12,6 +14,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/imageref"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	imageupdatetypes "github.com/getarcaneapp/arcane/types/v2/imageupdate"
@@ -21,42 +24,128 @@ import (
 
 	"go.getarcane.app/updater/pkg/utils/tagpolicy"
 	"go.getarcane.app/updater/refs"
+	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/singleflight"
 
 	"gorm.io/gorm"
 )
 
+// tagCheckWorkers bounds concurrent container policy evaluations per scan; the
+// registry limiter still caps concurrent requests per registry host.
+const tagCheckWorkers = 10
+
+// staleDigestRecordDeleteChunk bounds the IN list used to clear container
+// records whose policy switched to digest tracking.
+const staleDigestRecordDeleteChunk = 500
+
+// tagRegistryInternal adapts the registry service for one container tag scan.
+// Successful tag listings are shared per repository and digest lookups per
+// reference so replicas of the same image cost one registry request, and the
+// scan's manager-provided credentials never leak into the service caches.
 type tagRegistryInternal struct {
 	service     *registry.ContainerRegistryService
 	credentials []containerregistry.Credential
 	docker      *docker.DockerClientService
 	settings    *settings.SettingsService
+	tags        *scanRegistryMemoInternal[[]string]
+	digests     *scanRegistryMemoInternal[string]
+}
+
+func newTagRegistryInternal(service *registry.ContainerRegistryService, credentials []containerregistry.Credential, dockerService *docker.DockerClientService, settingsService *settings.SettingsService) tagRegistryInternal {
+	return tagRegistryInternal{
+		service:     service,
+		credentials: credentials,
+		docker:      dockerService,
+		settings:    settingsService,
+		tags:        newScanRegistryMemoInternal[[]string](),
+		digests:     newScanRegistryMemoInternal[string](),
+	}
+}
+
+// scanRegistryMemoInternal memoizes successful registry lookups for one scan
+// and coalesces concurrent misses for the same key into a single request.
+// Failures are not stored: each waiting caller receives the shared error and
+// the next caller retries, so a transient fault never sticks for the scan.
+type scanRegistryMemoInternal[V any] struct {
+	flight singleflight.Group
+	mu     sync.Mutex
+	values map[string]V
+}
+
+func newScanRegistryMemoInternal[V any]() *scanRegistryMemoInternal[V] {
+	return &scanRegistryMemoInternal[V]{values: map[string]V{}}
+}
+
+func (m *scanRegistryMemoInternal[V]) doInternal(key string, fetch func() (V, error)) (V, error) {
+	m.mu.Lock()
+	value, ok := m.values[key]
+	m.mu.Unlock()
+	if ok {
+		return value, nil
+	}
+	shared, err, _ := m.flight.Do(key, func() (any, error) {
+		fetched, fetchErr := fetch()
+		if fetchErr != nil {
+			return nil, fetchErr
+		}
+		m.mu.Lock()
+		m.values[key] = fetched
+		m.mu.Unlock()
+		return fetched, nil
+	})
+	var zero V
+	if err != nil {
+		return zero, err
+	}
+	value, ok = shared.(V)
+	if !ok {
+		return zero, errors.New("registry lookup returned an unexpected result type")
+	}
+	return value, nil
 }
 
 func (r tagRegistryInternal) ListTags(ctx context.Context, imageRef string) ([]string, error) {
 	if r.service == nil {
 		return nil, errors.New("registry service unavailable")
 	}
-	return r.service.ListImageTags(ctx, imageRef, r.credentials)
+	fetch := func() ([]string, error) { return r.service.ListImageTags(ctx, imageRef, r.credentials) }
+	parsed, err := refs.NormalizeReference(imageRef)
+	if err != nil || r.tags == nil {
+		return fetch()
+	}
+	tags, err := r.tags.doInternal(parsed.RegistryHost+"/"+parsed.Repository, fetch)
+	if err != nil {
+		return nil, err
+	}
+	// Callers may sort or filter the listing in place.
+	return slices.Clone(tags), nil
 }
 
 func (r tagRegistryInternal) ImageDigest(ctx context.Context, imageRef string) (string, error) {
 	if r.service == nil {
 		return "", errors.New("registry service unavailable")
 	}
-	timeoutSeconds := 0
-	if r.settings != nil {
-		timeoutSeconds = r.settings.GetSettingsConfig().RegistryTimeout.AsInt()
+	fetch := func() (string, error) {
+		timeoutSeconds := 0
+		if r.settings != nil {
+			timeoutSeconds = r.settings.GetSettingsConfig().RegistryTimeout.AsInt()
+		}
+		digestCtx, cancel := context.WithTimeout(ctx, timeouts.GetDuration(timeoutSeconds, timeouts.DefaultRegistry))
+		defer cancel()
+		result, err := r.service.InspectImageDigest(digestCtx, imageRef, r.credentials)
+		if err != nil {
+			return "", err
+		}
+		if result == nil {
+			return "", errors.New("registry returned no digest")
+		}
+		return result.Digest, nil
 	}
-	digestCtx, cancel := context.WithTimeout(ctx, timeouts.GetDuration(timeoutSeconds, timeouts.DefaultRegistry))
-	defer cancel()
-	result, err := r.service.InspectImageDigest(digestCtx, imageRef, r.credentials)
-	if err != nil {
-		return "", err
+	parsed, err := refs.NormalizeReference(imageRef)
+	if err != nil || r.digests == nil {
+		return fetch()
 	}
-	if result == nil {
-		return "", errors.New("registry returned no digest")
-	}
-	return result.Digest, nil
+	return r.digests.doInternal(parsed.NormalizedRef, fetch)
 }
 
 func (s *ImageUpdateService) checkContainerTagUpdatesInternal(ctx context.Context, imageRefs []string, credentials []containerregistry.Credential) (map[string]*imageupdatetypes.Response, error) {
@@ -81,7 +170,7 @@ func (s *ImageUpdateService) checkContainerTagUpdatesInternal(ctx context.Contex
 		return results, errors.WrapIf(err, "list containers for tag update checks")
 	}
 
-	adapter := tagRegistryInternal{service: s.registryService, credentials: credentials, docker: s.dockerService, settings: s.settingsService}
+	adapter := newTagRegistryInternal(s.registryService, credentials, s.dockerService, s.settingsService)
 	engine, err := updater.New(updater.Config{RegistryTagLister: adapter, RegistryDigestResolver: adapter, DockerClientProvider: adapter, Settings: adapter})
 	if err != nil {
 		return results, err
@@ -92,26 +181,64 @@ func (s *ImageUpdateService) checkContainerTagUpdatesInternal(ctx context.Contex
 		}
 	}()
 	policy := updater.DefaultLabelPolicy()
+	candidates := make([]container.Summary, 0, len(listed.Items))
+	var staleDigestContainerIDs []string
 	for _, cnt := range listed.Items {
 		if !wanted[refs.NormalizeImageUpdateRef(cnt.Image)] {
 			continue
 		}
 		tagPolicy, policyErr := tagpolicy.Resolve(cnt.Image, policy.TagPolicy(cnt.Labels))
 		if policyErr == nil && tagPolicy.Strategy == "digest" {
-			if s.db != nil {
-				if err := s.db.WithContext(ctx).Where("container_id = ?", cnt.ID).Delete(&ImageUpdateRecord{}).Error; err != nil {
-					return results, err
-				}
-			}
+			staleDigestContainerIDs = append(staleDigestContainerIDs, cnt.ID)
 			continue
 		}
-		result := s.checkContainerTagInternal(ctx, engine, cnt)
-		results[cnt.ID] = result
-		if err := s.saveContainerTagResultInternal(ctx, cnt, result); err != nil {
-			return results, err
+		candidates = append(candidates, cnt)
+	}
+	if err := s.deleteContainerUpdateRecordsInternal(ctx, staleDigestContainerIDs); err != nil {
+		return results, err
+	}
+
+	// Policies are evaluated concurrently; the shared adapter dedupes registry
+	// requests across replicas and the registry limiter caps them per host.
+	// Each result is persisted as soon as its check completes, so a scan that
+	// reaches its deadline keeps every check that finished before it. Saves are
+	// serialized and run on the group context: once the scan is cancelled the
+	// remaining writes fail instead of replacing stored results with
+	// cancellation errors.
+	checks := make([]*imageupdatetypes.Response, len(candidates))
+	var saveMu sync.Mutex
+	g, groupCtx := errgroup.WithContext(ctx)
+	g.SetLimit(tagCheckWorkers)
+	for i, cnt := range candidates {
+		g.Go(func() (workerErr error) {
+			defer utils.RecoverToError(&workerErr, "container tag check worker", "containerId", cnt.ID)
+			checks[i] = s.checkContainerTagInternal(groupCtx, engine, cnt)
+			saveMu.Lock()
+			defer saveMu.Unlock()
+			return s.saveContainerTagResultInternal(groupCtx, cnt, checks[i])
+		})
+	}
+	waitErr := g.Wait()
+	for i, cnt := range candidates {
+		if checks[i] != nil {
+			results[cnt.ID] = checks[i]
 		}
 	}
-	return results, nil
+	return results, waitErr
+}
+
+// deleteContainerUpdateRecordsInternal clears the stored results of containers
+// whose policy no longer tracks tags, in bounded IN-list chunks.
+func (s *ImageUpdateService) deleteContainerUpdateRecordsInternal(ctx context.Context, containerIDs []string) error {
+	if s.db == nil {
+		return nil
+	}
+	for chunk := range slices.Chunk(containerIDs, staleDigestRecordDeleteChunk) {
+		if err := s.db.WithContext(ctx).Where("container_id IN ?", chunk).Delete(&ImageUpdateRecord{}).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *ImageUpdateService) checkContainerTagInternal(ctx context.Context, engine *updater.Service, cnt container.Summary) *imageupdatetypes.Response {
