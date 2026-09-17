@@ -594,6 +594,8 @@
   "containers_check_updates": "Containers bijwerken",
   "containers_check_updates_failed": "Controleren van Containers voor updates mislukt",
   "containers_check_updates_success": "Containers succesvol bijgewerkt.",
+  "containers_resource_sort_unsupported": "Om te sorteren op CPU- of geheugengebruik is een nieuwere agent voor deze omgeving nodig. Werk de agent bij om te kunnen sorteren op het actuele resourcegebruik.",
+  "containers_resource_refresh_failed": "Automatisch vernieuwen is mislukt: {message}",
   "update_container": "Update Container",
   "standalone_containers": "Zelfstandige containers",
   "wrap_text": "Tekst ombreken",
