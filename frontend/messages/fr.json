@@ -594,6 +594,8 @@
   "containers_check_updates": "Mettre à jour les conteneurs",
   "containers_check_updates_failed": "Échec de la vérification des mises à jour des conteneurs",
   "containers_check_updates_success": "Conteneurs mis à jour avec succès.",
+  "containers_resource_sort_unsupported": "Le tri en fonction de l'utilisation du processeur ou de la mémoire nécessite un agent plus récent pour cet environnement. Mettez à jour l'agent afin de pouvoir trier les données en fonction de l'utilisation en temps réel des ressources.",
+  "containers_resource_refresh_failed": "Échec de l'actualisation automatique : {message}",
   "update_container": "Mettre à jour le conteneur",
   "standalone_containers": "Conteneurs autonomes",
   "wrap_text": "Justification du texte",
