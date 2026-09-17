@@ -594,6 +594,8 @@
   "containers_check_updates": "Обновление контейнеров",
   "containers_check_updates_failed": "Не удалось выполнить проверку обновлений",
   "containers_check_updates_success": "Контейнеры успешно обновлены.",
+  "containers_resource_sort_unsupported": "Для сортировки по загрузке ЦП или памяти требуется более новая версия агента для данной среды. Обновите агент, чтобы обеспечить сортировку по текущему использованию ресурсов.",
+  "containers_resource_refresh_failed": "Ошибка автоматического обновления: {message}",
   "update_container": "Обновить контейнер",
   "standalone_containers": "Автономные контейнеры",
   "wrap_text": "Обтекание текста",
