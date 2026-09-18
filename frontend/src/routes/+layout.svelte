@@ -33,6 +33,13 @@
 
 	const isMobile = new IsMobile();
 	const isTablet = new IsTablet();
+
+	// Mirror the effective layout onto <html> so CSS (sidebar visibility, etc.) can follow the
+	// per-device layout preference instead of raw viewport breakpoints. `$effect.pre` runs
+	// before the first DOM commit, so the attribute is present at first paint.
+	$effect.pre(() => {
+		document.documentElement.setAttribute('data-layout', isMobile.current ? 'mobile' : 'desktop');
+	});
 	const isNavigating = $derived(navigating.type !== null);
 
 	const isAuthPage = $derived(

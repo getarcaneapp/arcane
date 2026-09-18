@@ -18,6 +18,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { userService } from '#lib/services/user-service.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
+	import { getLayoutMode, layoutModeStore, type LayoutMode } from '#lib/stores/layout-mode.store.svelte.js';
 	import type { ProjectEditorLayout, UserPreferences } from '#lib/types/auth.js';
 	import type { ApplicationTheme, IconCatalog } from '#lib/types/settings.js';
 	import { DockIcon, MonitorSpeakerIcon } from '#lib/icons/index.js';
@@ -55,6 +56,14 @@
 		{ value: 'auto', label: m.automatic(), description: m.project_editor_layout_auto_description() },
 		{ value: 'classic', label: m.classic(), description: m.project_editor_layout_classic_description() },
 		{ value: 'tree', label: m.tree(), description: m.project_editor_layout_tree_description() }
+	]);
+	// Device-local (localStorage), not part of the account preferences: a user may want
+	// desktop layout on a tablet and automatic on a phone.
+	const layoutModeValue = $derived<LayoutMode>(getLayoutMode());
+	const layoutModeOptions = $derived([
+		{ value: 'auto', label: m.automatic(), description: m.layout_mode_auto_description() },
+		{ value: 'mobile', label: m.layout_mode_mobile(), description: m.layout_mode_mobile_description() },
+		{ value: 'desktop', label: m.layout_mode_desktop(), description: m.layout_mode_desktop_description() }
 	]);
 	const landingPageOptions = $derived(getLandingPageNavItems().map((item) => ({ value: item.url, label: item.title })));
 	const landingValue = $derived.by(() => {
@@ -132,6 +141,19 @@
 			</SettingsRow>
 			<SettingsRow label={m.font_size()} description={m.font_size_description()} layout="inline">
 				<FontSizePicker />
+			</SettingsRow>
+			<SettingsRow label={m.layout_mode()} description={m.layout_mode_description()} layout="inline">
+				<div class="w-52">
+					<SelectWithLabel
+						id="account-layout-mode"
+						label={m.layout_mode()}
+						hideLabel
+						triggerSize="sm"
+						value={layoutModeValue}
+						options={layoutModeOptions}
+						onValueChange={(value) => (layoutModeStore.current = value as LayoutMode)}
+					/>
+				</div>
 			</SettingsRow>
 			<SettingsRow label={m.icon_catalog()} description={m.icon_catalog_description()} layout="inline">
 				<div class="w-52">

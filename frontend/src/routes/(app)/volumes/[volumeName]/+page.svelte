@@ -28,6 +28,7 @@
 	import { volumeWorkspaceService } from '#lib/services/volume-workspace-service.js';
 	import { type DetailAction } from '#lib/layouts/index.js';
 	import TabbedPageLayout from '#lib/layouts/tabbed-page-layout.svelte';
+	import { ActionButtonGroup } from '#lib/components/action-button-group/index.js';
 	import BackupList from '../components/volume-backup-table.svelte';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
@@ -1054,17 +1055,7 @@
 		{/snippet}
 
 		{#snippet headerActions()}
-			<div class="flex items-center gap-2">
-				{#each actions as act (act.id)}
-					<ArcaneButton
-						action={act.action}
-						customLabel={act.label}
-						loading={act.loading}
-						disabled={act.disabled}
-						onclick={act.onclick}
-					/>
-				{/each}
-			</div>
+			<ActionButtonGroup buttons={actions} />
 		{/snippet}
 
 		{#snippet tabContent(tab)}

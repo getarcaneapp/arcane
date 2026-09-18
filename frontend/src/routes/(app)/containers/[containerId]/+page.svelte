@@ -336,7 +336,7 @@
 </script>
 
 {#snippet containerHeader(container: ContainerDetailsDto)}
-	<div class="flex items-center gap-2">
+	<div class="flex flex-wrap items-center gap-x-2 gap-y-1">
 		<IconImage
 			src={containerIconUrl}
 			alt={containerDisplayName}
@@ -344,7 +344,10 @@
 			class="size-5"
 			containerClass="size-9"
 		/>
-		<h1 class="max-w-75 truncate text-lg font-semibold" title={containerDisplayName}>
+		<h1
+			class="max-w-[10rem] min-w-0 truncate text-lg font-semibold sm:max-w-[14rem] md:max-w-[18rem] lg:max-w-[22rem]"
+			title={containerDisplayName}
+		>
 			{containerDisplayName}
 		</h1>
 		{#if container?.state}
@@ -602,24 +605,21 @@
 		{/snippet}
 
 		{#snippet headerActions()}
-			<div class="container-detail-actions">
-				<ActionButtons
-					id={container.id}
-					name={containerDisplayName}
-					type="container"
-					itemState={container.state?.running ? 'running' : 'stopped'}
-					desktopVariant="adaptive"
-					disableRedeploy={!!container.redeployDisabled}
-				>
-					{#snippet beforeRemoveActions(size, showLabel, actionButtonsLifecyclePending)}
-						{@render containerLifecycleButtons(container, size, showLabel, actionButtonsLifecyclePending)}
-					{/snippet}
+			<ActionButtons
+				id={container.id}
+				name={containerDisplayName}
+				type="container"
+				itemState={container.state?.running ? 'running' : 'stopped'}
+				disableRedeploy={!!container.redeployDisabled}
+			>
+				{#snippet beforeRemoveActions(size, showLabel, actionButtonsLifecyclePending)}
+					{@render containerLifecycleButtons(container, size, showLabel, actionButtonsLifecyclePending)}
+				{/snippet}
 
-					{#snippet beforeRemoveMenuItems(actionButtonsLifecyclePending)}
-						{@render containerLifecycleMenu(container, actionButtonsLifecyclePending)}
-					{/snippet}
-				</ActionButtons>
-			</div>
+				{#snippet beforeRemoveMenuItems(actionButtonsLifecyclePending)}
+					{@render containerLifecycleMenu(container, actionButtonsLifecyclePending)}
+				{/snippet}
+			</ActionButtons>
 		{/snippet}
 
 		{#snippet tabContent(activeTab)}
@@ -646,14 +646,3 @@
 {:else}
 	<ResourceNotFound resource={m.container()} resourceListTitle={m.containers()} backHref="/containers" onRetry={refreshData} />
 {/if}
-
-<style>
-	.container-detail-actions {
-		display: flex;
-		flex: 1 1 auto;
-		min-width: 0;
-		align-items: center;
-		justify-content: flex-end;
-		gap: 0.5rem;
-	}
-</style>

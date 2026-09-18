@@ -1,7 +1,7 @@
 <script lang="ts">
 	// Close convention: the component that owns `open` must close it in the
 	// success path. Dialogs delegate closing to their parent and never self-close on submit.
-	import { MediaQuery } from 'svelte/reactivity';
+	import { IsMobile } from '#lib/hooks/is-mobile.svelte.js';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import * as Drawer from '#lib/components/ui/drawer/index.js';
 	import * as Sheet from '#lib/components/ui/sheet/index.js';
@@ -23,7 +23,8 @@
 		variant = 'dialog'
 	}: ResponsiveDialogProps = $props();
 
-	const isDesktop = new MediaQuery('(min-width: 768px)');
+	const isMobile = new IsMobile();
+	const isDesktop = $derived(!isMobile.current);
 
 	function handleOpenChange(newOpen: boolean) {
 		if (!newOpen && !dismissible) return;
@@ -40,7 +41,7 @@
 	{/if}
 {/snippet}
 
-{#if isDesktop.current}
+{#if isDesktop}
 	{#if variant === 'sheet'}
 		<Sheet.Root {open} onOpenChange={handleOpenChange}>
 			{#if trigger}

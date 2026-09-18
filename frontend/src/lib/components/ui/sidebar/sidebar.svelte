@@ -31,7 +31,7 @@
 {:else}
 	<div
 		bind:this={ref}
-		class="group peer hidden text-sidebar-foreground md:block"
+		class="group peer hidden text-sidebar-foreground desktop-layout:block"
 		data-state={sidebar.state}
 		data-collapsible={sidebar.state === 'collapsed' ? collapsible : ''}
 		data-variant={variant}
@@ -54,7 +54,7 @@
 		<div
 			data-slot="sidebar-container"
 			class={cn(
-				'fixed inset-y-0 z-[var(--arcane-z-app-chrome)] hidden h-dvh w-(--sidebar-width) overflow-x-hidden transition-[left,right,width] duration-200 ease-out md:flex',
+				'fixed inset-y-0 z-[var(--arcane-z-app-chrome)] hidden h-dvh w-(--sidebar-width) overflow-x-hidden transition-[left,right,width] duration-200 ease-out desktop-layout:flex',
 				side === 'left'
 					? 'left-0 group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)]'
 					: 'right-0 group-data-[collapsible=offcanvas]:right-[calc(var(--sidebar-width)*-1)]',

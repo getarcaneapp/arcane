@@ -6,6 +6,9 @@
 @import './themes.css';
 
 @custom-variant dark (&:is(.dark *));
+/* Effective layout, set on <html> by the root layout from IsMobile + the per-device layout preference. */
+@custom-variant desktop-layout (&:where([data-layout='desktop'], [data-layout='desktop'] *));
+@custom-variant mobile-layout (&:where([data-layout='mobile'], [data-layout='mobile'] *));
 
 :root {
 	color-scheme: light;

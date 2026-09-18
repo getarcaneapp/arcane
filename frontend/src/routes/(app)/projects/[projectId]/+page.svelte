@@ -4,6 +4,7 @@
 	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import * as Alert from '#lib/components/ui/alert/index.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import {
 		ArrowLeftIcon,
 		ArrowDownIcon,
@@ -116,6 +117,7 @@
 
 	const envId = $derived(environmentStore.selected?.id || '0');
 	const canUpdateProject = $derived(hasPermission('projects:update', envId));
+	const canArchiveProject = $derived(hasPermission('projects:archive', envId));
 	const canViewProjectLogs = $derived(hasPermission('projects:logs', envId));
 	// Project lifecycle permissions are evaluated per-button inside
 	// <ActionButtons/> directly; no need to derive them here.
@@ -2193,48 +2195,72 @@
 		{/snippet}
 
 		{#snippet headerActions()}
-			<div class="flex items-center gap-2">
-				{#if hasChanges && canUpdateProject}
-					<ArcaneButton
-						action="save"
-						loading={isLoading.saving}
-						onclick={handleSaveChanges}
-						disabled={!canSave}
-						customLabel={m.common_save()}
-						loadingLabel={m.common_saving()}
-					/>
-				{/if}
-				<IfPermitted perm="projects:archive">
-					<ArcaneButton
-						action="archive"
-						loading={isLoading.archiving}
-						onclick={handleArchiveToggle}
-						disabled={archiveRequiresStopped}
-						title={archiveRequiresStopped ? m.projects_archive_requires_stopped() : undefined}
-						customLabel={project?.isArchived ? m.projects_unarchive() : m.projects_archive()}
-					/>
-				</IfPermitted>
-				<ActionButtons
-					id={project.id}
-					name={project.name}
-					type="project"
-					itemState={project.status}
-					{hasBuildDirective}
-					desktopVariant="adaptive"
-					disableRedeploy={!!project.redeployDisabled}
-					disabled={composeActionsBlocked}
-					disabledReason={composeActionsBlocked ? m.env_file_unreadable_title() : undefined}
-					bind:startLoading={isLoading.deploying}
-					bind:stopLoading={isLoading.stopping}
-					bind:restartLoading={isLoading.restarting}
-					bind:removeLoading={isLoading.removing}
-					bind:redeployLoading={isLoading.redeploying}
-					onActionComplete={() => {
-						void refreshProjectDetails();
-					}}
-					onRefresh={() => refreshProjectDetails()}
-				/>
-			</div>
+			<ActionButtons
+				id={project.id}
+				name={project.name}
+				type="project"
+				itemState={project.status}
+				{hasBuildDirective}
+				disableRedeploy={!!project.redeployDisabled}
+				disabled={composeActionsBlocked}
+				disabledReason={composeActionsBlocked ? m.env_file_unreadable_title() : undefined}
+				bind:startLoading={isLoading.deploying}
+				bind:stopLoading={isLoading.stopping}
+				bind:restartLoading={isLoading.restarting}
+				bind:removeLoading={isLoading.removing}
+				bind:redeployLoading={isLoading.redeploying}
+				onActionComplete={() => {
+					void refreshProjectDetails();
+				}}
+				onRefresh={() => refreshProjectDetails()}
+			>
+				{#snippet leadingActions(size, showLabel)}
+					{#if hasChanges && canUpdateProject}
+						<ArcaneButton
+							action="save"
+							{size}
+							{showLabel}
+							loading={isLoading.saving}
+							onclick={handleSaveChanges}
+							disabled={!canSave}
+							customLabel={m.common_save()}
+							loadingLabel={m.common_saving()}
+						/>
+					{/if}
+					<IfPermitted perm="projects:archive">
+						<ArcaneButton
+							action="archive"
+							{size}
+							{showLabel}
+							loading={isLoading.archiving}
+							onclick={handleArchiveToggle}
+							disabled={archiveRequiresStopped}
+							title={archiveRequiresStopped ? m.projects_archive_requires_stopped() : undefined}
+							customLabel={project?.isArchived ? m.projects_unarchive() : m.projects_archive()}
+						/>
+					</IfPermitted>
+				{/snippet}
+
+				{#snippet leadingMenuItems()}
+					{#if hasChanges && canUpdateProject}
+						<DropdownMenu.Item onclick={handleSaveChanges} disabled={!canSave || isLoading.saving}>
+							{isLoading.saving ? m.common_saving() : m.common_save()}
+						</DropdownMenu.Item>
+					{/if}
+					{#if canArchiveProject}
+						<DropdownMenu.Item
+							onclick={handleArchiveToggle}
+							disabled={archiveRequiresStopped || isLoading.archiving}
+							title={archiveRequiresStopped ? m.projects_archive_requires_stopped() : undefined}
+						>
+							{project?.isArchived ? m.projects_unarchive() : m.projects_archive()}
+						</DropdownMenu.Item>
+					{/if}
+					{#if (hasChanges && canUpdateProject) || canArchiveProject}
+						<DropdownMenu.Separator />
+					{/if}
+				{/snippet}
+			</ActionButtons>
 		{/snippet}
 
 		{#snippet tabContent()}

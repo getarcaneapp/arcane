@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { flushSync } from 'svelte';
 	import type { Snippet } from 'svelte';
 	import { openConfirmDialog } from './confirm-dialog';
 	import { goto, refreshAll } from '$app/navigation';
@@ -49,7 +49,6 @@
 		name,
 		type = 'container',
 		itemState = 'stopped',
-		desktopVariant = 'labels',
 		loading = $bindable<LoadingStates>({}),
 		onActionComplete = $bindable<(status?: string) => void>(() => {}),
 		startLoading = $bindable(false),
@@ -63,6 +62,8 @@
 		disabled = false,
 		disabledReason,
 		onRefresh,
+		leadingActions,
+		leadingMenuItems,
 		beforeRemoveActions,
 		beforeRemoveMenuItems
 	}: {
@@ -70,7 +71,6 @@
 		name?: string;
 		type?: TargetType;
 		itemState?: string;
-		desktopVariant?: 'labels' | 'adaptive';
 		loading?: LoadingStates;
 		onActionComplete?: (status?: string) => void;
 		startLoading?: boolean;
@@ -84,6 +84,8 @@
 		disabled?: boolean;
 		disabledReason?: string;
 		onRefresh?: () => void | Promise<void>;
+		leadingActions?: Snippet<[ArcaneButtonSize, boolean, boolean]>;
+		leadingMenuItems?: Snippet<[boolean]>;
 		beforeRemoveActions?: Snippet<[ArcaneButtonSize, boolean, boolean]>;
 		beforeRemoveMenuItems?: Snippet<[boolean]>;
 	} = $props();
@@ -238,30 +240,69 @@
 		return configuredProvider;
 	});
 
-	// Tailwind xl breakpoint is 1280px. We use this to avoid mounting two desktop variants at once
-	// (which would duplicate portaled popovers when the same `open` state is bound twice).
-	let isXlUp = $state(true);
-	let isLgUp = $state(true);
-	const adaptiveIconOnly = $derived(!isXlUp);
+	// The header gives this component a spanning column whose width does not depend on
+	// its content (flex-1 basis-0). We measure the rendered row against that column and
+	// step labels -> icons -> menu until it fits, then probe back up when space returns.
+	// Measuring the real row (instead of an invisible mirror) keeps root font size and
+	// locale label widths in the equation and never mounts the actions twice.
+	type Tier = 'labels' | 'icons' | 'menu';
+	const TIERS: Tier[] = ['labels', 'icons', 'menu'];
+	let tier = $state<Tier>('labels');
+	let rootEl: HTMLElement | undefined;
+	let rowEl: HTMLElement | undefined;
 
-	onMount(() => {
-		const mqlXl = window.matchMedia('(min-width: 1280px)');
-		const mqlLg = window.matchMedia('(min-width: 1024px)');
+	function fits() {
+		// Commit the current `tier` to the DOM before reading layout.
+		flushSync();
+		if (!rootEl || !rowEl) return true;
+		return rowEl.getBoundingClientRect().width <= rootEl.getBoundingClientRect().width + 0.5;
+	}
 
-		const update = () => {
-			isXlUp = mqlXl.matches;
-			isLgUp = mqlLg.matches;
-		};
+	// Step down until the row fits, then probe upward while the larger tier still fits.
+	// `mayLeaveMenu` is false for row-content triggers (label or loading changes) so an
+	// open ellipsis menu is never unmounted underneath the user.
+	function resolveTier(mayLeaveMenu: boolean) {
+		let i = TIERS.indexOf(tier);
+		while (!fits() && i < TIERS.length - 1) {
+			i++;
+			tier = TIERS[i] ?? 'menu';
+		}
+		while (i > 0 && (tier !== 'menu' || mayLeaveMenu)) {
+			const larger = TIERS[i - 1] ?? 'labels';
+			tier = larger;
+			if (fits()) {
+				i--;
+			} else {
+				tier = TIERS[i] ?? 'menu';
+				break;
+			}
+		}
+	}
 
-		update();
-
-		mqlXl.addEventListener('change', update);
-		mqlLg.addEventListener('change', update);
+	function observeRoot(node: HTMLElement) {
+		rootEl = node;
+		const ro = new ResizeObserver(() => resolveTier(true));
+		ro.observe(node);
+		// The floating header bubble is shrink-to-fit, so its column does not grow when the
+		// viewport does; listen to the window as well so we can probe back up.
+		const onResize = () => resolveTier(true);
+		window.addEventListener('resize', onResize);
 		return () => {
-			mqlXl.removeEventListener('change', update);
-			mqlLg.removeEventListener('change', update);
+			ro.disconnect();
+			window.removeEventListener('resize', onResize);
+			rootEl = undefined;
 		};
-	});
+	}
+
+	function observeRow(node: HTMLElement) {
+		rowEl = node;
+		const ro = new ResizeObserver(() => resolveTier(false));
+		ro.observe(node);
+		return () => {
+			ro.disconnect();
+			if (rowEl === node) rowEl = undefined;
+		};
+	}
 
 	async function handleRefresh() {
 		if (!onRefresh) return;
@@ -606,6 +647,8 @@
 {/snippet}
 
 {#snippet DesktopActions(size: 'default' | 'icon', showLabel: boolean)}
+	{@render leadingActions?.(size, showLabel, isLifecycleActionPending)}
+
 	{#if !isRunning && canStart}
 		{#if type === 'container'}
 			<ArcaneButton
@@ -723,6 +766,7 @@
 			class="z-[var(--arcane-z-surface)] min-w-[180px] rounded-xl border bg-popover/20 p-1 shadow-lg backdrop-blur-md"
 		>
 			<DropdownMenu.Group>
+				{@render leadingMenuItems?.(isLifecycleActionPending)}
 				{#if !isRunning && canStart}
 					{#if type === 'container'}
 						<DropdownMenu.Item onclick={handleStart} disabled={disabled || uiLoading.start} title={disabledReason}>
@@ -793,27 +837,14 @@
 	</DropdownMenu.Root>
 {/snippet}
 
-{#if desktopVariant === 'adaptive'}
-	<div>
-		<!-- On xl+ show labels; below xl use icon-only to avoid overflow in constrained headers (sidebar layouts) -->
-		{#if isLgUp}
-			<div class="flex items-center gap-2">
-				{@render DesktopActions(adaptiveIconOnly ? 'icon' : 'default', !adaptiveIconOnly)}
-			</div>
-		{:else}
-			<div class="flex items-center">
-				{@render ActionsMenu()}
-			</div>
-		{/if}
-	</div>
-{:else}
-	<div>
-		<div class="hidden items-center gap-2 lg:flex">
-			{@render DesktopActions('default', true)}
-		</div>
-
-		<div class="flex items-center lg:hidden">
+<div class="flex min-w-0 flex-1 justify-end" {@attach observeRoot}>
+	{#if tier === 'menu'}
+		<div class="flex shrink-0 items-center" {@attach observeRow}>
 			{@render ActionsMenu()}
 		</div>
-	</div>
-{/if}
+	{:else}
+		<div class="flex shrink-0 items-center gap-2" {@attach observeRow}>
+			{@render DesktopActions(tier === 'labels' ? 'default' : 'icon', tier === 'labels')}
+		</div>
+	{/if}
+</div>

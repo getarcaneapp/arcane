@@ -1,9 +1,9 @@
 <script lang="ts">
-	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { goto, refreshAll } from '$app/navigation';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import TabbedPageLayout from '#lib/layouts/tabbed-page-layout.svelte';
+	import { ActionButtonGroup, type ActionButton } from '#lib/components/action-button-group/index.js';
 	import { type TabItem } from '#lib/components/tab-bar/index.js';
 	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
@@ -32,6 +32,9 @@
 	import ServiceNetwork from '../components/ServiceNetwork.svelte';
 	import ServiceStorage from '../components/ServiceStorage.svelte';
 	import { Input } from '#lib/components/ui/input/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
+	import SheetFooterActions from '#lib/components/sheets/sheet-footer-actions.svelte';
 	import ResourceNotFound from '#lib/components/resource-not-found.svelte';
 	import {
 		DockIcon,
@@ -41,6 +44,7 @@
 		NetworksIcon,
 		VolumesIcon,
 		EditIcon,
+		LayersIcon,
 		RedeployIcon,
 		TrashIcon
 	} from '#lib/icons/index.js';
@@ -57,6 +61,7 @@
 	let { data } = $props();
 	let service = $derived(data?.service as SwarmServiceInspect);
 
+	let scaleDialogOpen = $state(false);
 	let userScaleReplicas = $state<number | null>(null);
 	let userScaleReplicasServiceId = $state<string | null>(null);
 	let isLoading = $state({ update: false, rollback: false, remove: false, scale: false });
@@ -173,6 +178,47 @@
 	const envId = $derived(environmentStore.selected?.id || '0');
 	const canManageServices = $derived(hasPermission('swarm:services', envId));
 	const canScaleService = $derived(canManageServices && showsReplicas);
+
+	// Scaling lives behind a dialog so the header keeps a single measured action group;
+	// inline controls could not collapse and overflowed into the service info.
+	const serviceActions = $derived<ActionButton[]>([
+		...(canScaleService
+			? [
+					{
+						id: 'scale',
+						action: 'base' as const,
+						label: m.swarm_service_scale(),
+						icon: LayersIcon,
+						disabled: isLoading.scale,
+						onclick: () => (scaleDialogOpen = true)
+					}
+				]
+			: []),
+		{
+			id: 'edit',
+			action: 'edit',
+			label: m.common_edit(),
+			icon: EditIcon,
+			disabled: isLoading.update,
+			onclick: openEdit
+		},
+		{
+			id: 'rollback',
+			action: 'redeploy',
+			label: m.swarm_service_rollback(),
+			icon: RedeployIcon,
+			disabled: isLoading.rollback,
+			onclick: handleRollback
+		},
+		{
+			id: 'delete',
+			action: 'remove',
+			label: m.common_delete(),
+			icon: TrashIcon,
+			disabled: isLoading.remove,
+			onclick: handleDelete
+		}
+	]);
 	const canViewServiceLogs = $derived(hasPermission('swarm:services:logs', envId));
 
 	const tabItems = $derived<TabItem[]>([
@@ -283,6 +329,7 @@
 			setLoadingState: (v) => (isLoading.scale = v),
 			onSuccess: async () => {
 				toast.success(m.swarm_service_scale_success({ name: serviceName, replicas }));
+				scaleDialogOpen = false;
 				await refreshData();
 			}
 		});
@@ -292,11 +339,14 @@
 {#if service}
 	<TabbedPageLayout backUrl="/swarm/services" backLabel={m.common_back()} {tabItems} {selectedTab} {onTabChange}>
 		{#snippet headerInfo()}
-			<div class="flex items-center gap-2">
-				<div class="flex size-9 items-center justify-center rounded-full bg-primary/10">
+			<div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+				<div class="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10">
 					<DockIcon class="size-5 text-primary" />
 				</div>
-				<h1 class="max-w-[300px] truncate text-lg font-semibold" title={serviceName}>
+				<h1
+					class="max-w-[10rem] min-w-0 truncate text-lg font-semibold sm:max-w-[14rem] md:max-w-[18rem] lg:max-w-[22rem]"
+					title={serviceName}
+				>
 					{serviceName}
 				</h1>
 				<Badge variant={getSwarmServiceModeVariant(serviceMode)} minWidth="20">{getSwarmServiceModeLabel(serviceMode)}</Badge>
@@ -311,36 +361,7 @@
 
 		{#snippet headerActions()}
 			{#if canManageServices}
-				<div class="flex items-center gap-2">
-					{#if canScaleService}
-						<div class="flex items-center gap-2">
-							<Input
-								type="number"
-								min="0"
-								step="1"
-								value={scaleReplicas}
-								oninput={onScaleReplicasInput}
-								class="h-8 w-20"
-								disabled={isLoading.scale}
-							/>
-							<ArcaneButton action="base" tone="outline" size="sm" onclick={handleScale} disabled={isLoading.scale}>
-								{m.swarm_service_scale()}
-							</ArcaneButton>
-						</div>
-					{/if}
-					<ArcaneButton action="base" tone="outline" size="sm" onclick={openEdit} disabled={isLoading.update}>
-						<EditIcon class="size-4" />
-						<span class="hidden sm:inline">{m.common_edit()}</span>
-					</ArcaneButton>
-					<ArcaneButton action="base" tone="outline" size="sm" onclick={handleRollback} disabled={isLoading.rollback}>
-						<RedeployIcon class="size-4" />
-						<span class="hidden sm:inline">{m.swarm_service_rollback()}</span>
-					</ArcaneButton>
-					<ArcaneButton action="base" tone="outline-destructive" size="sm" onclick={handleDelete} disabled={isLoading.remove}>
-						<TrashIcon class="size-4" />
-						<span class="hidden sm:inline">{m.common_delete()}</span>
-					</ArcaneButton>
-				</div>
+				<ActionButtonGroup size="sm" buttons={serviceActions} />
 			{/if}
 		{/snippet}
 
@@ -391,6 +412,46 @@
 			{/if}
 		{/snippet}
 	</TabbedPageLayout>
+
+	{#if canScaleService}
+		<ResponsiveDialog.Root
+			bind:open={scaleDialogOpen}
+			title={m.swarm_service_scale()}
+			description={m.swarm_service_scale_description({ name: serviceName })}
+		>
+			{#snippet children()}
+				<form
+					class="grid gap-2 py-4"
+					onsubmit={(event) => {
+						event.preventDefault();
+						void handleScale();
+					}}
+				>
+					<Label for="swarm-service-scale-replicas">{m.swarm_replicas()}</Label>
+					<Input
+						id="swarm-service-scale-replicas"
+						type="number"
+						min="0"
+						step="1"
+						value={scaleReplicas}
+						oninput={onScaleReplicasInput}
+						disabled={isLoading.scale}
+					/>
+				</form>
+			{/snippet}
+
+			{#snippet footer()}
+				<SheetFooterActions
+					onCancel={() => (scaleDialogOpen = false)}
+					submitAction="base"
+					submitLabel={m.swarm_service_scale()}
+					submitLoading={isLoading.scale}
+					submitDisabled={isLoading.scale}
+					onSubmit={() => void handleScale()}
+				/>
+			{/snippet}
+		</ResponsiveDialog.Root>
+	{/if}
 
 	{#if editOpen}
 		<ServiceEditorDialog

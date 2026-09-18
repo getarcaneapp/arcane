@@ -66,7 +66,8 @@
 		gitEditUrl?: string | null;
 	} = $props();
 
-	const isMobile = new IsMobile();
+	// Physical viewport only: auto height is about screen space, not the layout preference.
+	const isMobile = new IsMobile({ honorLayoutMode: false });
 	const effectiveAutoHeight = $derived(autoHeight || isMobile.current);
 	const editUrl = $derived(readOnly && !(enableDiff && diffOpen) && gitEditUrl ? gitEditUrl : null);
 

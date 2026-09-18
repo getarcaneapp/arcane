@@ -73,7 +73,7 @@
 		{#if isSubPage}
 			<div
 				class={cn(
-					'sticky top-4 z-[var(--arcane-z-sticky)] mx-4 mb-6 rounded-lg border shadow-lg md:hidden',
+					'sticky top-4 z-[var(--arcane-z-sticky)] mx-4 mb-6 rounded-lg border shadow-lg desktop-layout:hidden',
 					'bg-background/95 backdrop-blur-md'
 				)}
 			>

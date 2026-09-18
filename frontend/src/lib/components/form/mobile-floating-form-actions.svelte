@@ -2,7 +2,6 @@
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { getMobileNavigation } from '#lib/utils/navigation.js';
 	import { IsMobile } from '#lib/hooks/is-mobile.svelte.js';
-	import { IsTablet } from '#lib/hooks/is-tablet.svelte.js';
 	import { cn } from '#lib/utils.js';
 
 	interface Props {
@@ -15,16 +14,15 @@
 	let { hasChanges, isLoading, onSave, onReset }: Props = $props();
 
 	const isMobile = new IsMobile();
-	const isTablet = new IsTablet();
 	const navigation = getMobileNavigation();
 	const navigationSettings = $derived(navigation.settings);
 	const navigationMode = $derived(navigationSettings.mode);
 	const scrollToHideEnabled = $derived(navigationSettings.scrollToHide);
 </script>
 
-{#if isMobile.current || isTablet.current}
+{#if isMobile.current}
 	<div
-		class="fixed right-4 z-[var(--arcane-z-app-chrome)] flex flex-col gap-3 transition-[bottom] duration-300 ease-out sm:hidden"
+		class="fixed right-4 z-[var(--arcane-z-app-chrome)] flex flex-col gap-3 transition-[bottom] duration-300 ease-out"
 		style="bottom: {scrollToHideEnabled && !navigation.visible
 			? '1rem'
 			: 'calc(var(--mobile-' +
