@@ -20,6 +20,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/mapper"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/netutils"
 	networktypes "github.com/getarcaneapp/arcane/types/v2/network"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/network"
@@ -470,7 +471,7 @@ func (s *NetworkService) buildNetworkSortBindings() []pagination.SortBinding[net
 			Fn: func(a, b networktypes.Summary) int {
 				subnetsA, _ := ipamValuesInternal(a)
 				subnetsB, _ := ipamValuesInternal(b)
-				return slices.Compare(subnetsA, subnetsB)
+				return compareIPAMListsInternal(subnetsA, subnetsB, netutils.CompareSubnets)
 			},
 		},
 		{
@@ -478,7 +479,7 @@ func (s *NetworkService) buildNetworkSortBindings() []pagination.SortBinding[net
 			Fn: func(a, b networktypes.Summary) int {
 				_, gatewaysA := ipamValuesInternal(a)
 				_, gatewaysB := ipamValuesInternal(b)
-				return slices.Compare(gatewaysA, gatewaysB)
+				return compareIPAMListsInternal(gatewaysA, gatewaysB, netutils.CompareAddresses)
 			},
 		},
 	}
@@ -494,6 +495,14 @@ func ipamValuesInternal(n networktypes.Summary) (subnets, gateways []string) {
 		}
 	}
 	return subnets, gateways
+}
+
+// compareIPAMListsInternal sorts copies of both lists so IPAM entry order does
+// not affect row order; the displayed entries are untouched.
+func compareIPAMListsInternal(a, b []string, compare func(x, y string) int) int {
+	sortedA := slices.SortedFunc(slices.Values(a), compare)
+	sortedB := slices.SortedFunc(slices.Values(b), compare)
+	return slices.CompareFunc(sortedA, sortedB, compare)
 }
 
 func (s *NetworkService) compareNetworkCreated(a, b networktypes.Summary) int {

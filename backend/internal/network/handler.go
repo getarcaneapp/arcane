@@ -3,9 +3,7 @@ package network
 import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 
-	"bytes"
 	"context"
-	"net"
 	"net/http"
 	"sort"
 	"strings"
@@ -23,6 +21,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/mapper"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/netutils"
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	networktypes "github.com/getarcaneapp/arcane/types/v2/network"
 	dockernetwork "github.com/moby/moby/api/types/network"
@@ -326,22 +325,7 @@ func (h *NetworkHandler) GetNetwork(ctx context.Context, input *GetNetworkInput)
 				valB = b.IPv6Address
 			}
 
-			// Parse IPs for proper numeric comparison
-			ipA, _, _ := strings.Cut(valA, "/")
-			ipB, _, _ := strings.Cut(valB, "/")
-
-			parsedA := net.ParseIP(ipA)
-			parsedB := net.ParseIP(ipB)
-
-			if parsedA == nil || parsedB == nil {
-				// Fallback to string comparison if parsing fails
-				if input.Order == "desc" {
-					return valA > valB
-				}
-				return valA < valB
-			}
-
-			cmp := bytes.Compare(parsedA, parsedB)
+			cmp := netutils.CompareAddresses(valA, valB)
 			if input.Order == "desc" {
 				return cmp > 0
 			}
