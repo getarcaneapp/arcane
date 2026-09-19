@@ -5,6 +5,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 
+	"cmp"
 	"context"
 	"fmt"
 	"log/slog"
@@ -772,84 +773,68 @@ func imageRefsFromSummariesInternal(images []image.Summary, limit int) []string 
 	return imageRefs
 }
 
-type imageContainerUsageInternal struct {
-	optedOut bool
-	eligible bool
-}
-
 func filterImageSummariesByContainerOptOutInternal(images []image.Summary, containers []container.Summary, excludedContainers map[string]bool, limit int) []string {
-	usageByImageID := make(map[string]imageContainerUsageInternal)
-	usageByRef := make(map[string]imageContainerUsageInternal)
+	// True when at least one container using the image ID or reference has
+	// not opted out; present but false when every such container opted out.
+	eligibleByImageID := make(map[string]bool)
+	eligibleByRef := make(map[string]bool)
 
 	for _, summary := range containers {
-		disabled := labels.IsUpdateDisabled(summary.Labels) || slices.ContainsFunc(summary.Names, func(name string) bool {
+		eligible := !labels.IsUpdateDisabled(summary.Labels) && !slices.ContainsFunc(summary.Names, func(name string) bool {
 			return excludedContainers[strings.TrimPrefix(name, "/")]
 		})
-		usage := imageContainerUsageInternal{
-			optedOut: disabled,
-			eligible: !disabled,
-		}
 
 		if imageID := strings.TrimSpace(summary.ImageID); imageID != "" {
-			usageByImageID[imageID] = mergeImageContainerUsageInternal(usageByImageID[imageID], usage)
+			eligibleByImageID[imageID] = eligibleByImageID[imageID] || eligible
 		}
-
-		imageRef := strings.TrimSpace(summary.Image)
-		if imageRef == "" || refs.IsImageIDLikeReference(imageRef) {
-			continue
+		if normalizedRef := refs.NormalizeImageUpdateRef(summary.Image); normalizedRef != "" {
+			eligibleByRef[normalizedRef] = eligibleByRef[normalizedRef] || eligible
 		}
-
-		normalizedRef := refs.NormalizeImageUpdateRef(imageRef)
-		if normalizedRef == "" {
-			continue
-		}
-
-		usageByRef[normalizedRef] = mergeImageContainerUsageInternal(usageByRef[normalizedRef], usage)
 	}
 
 	seen := make(map[string]struct{})
 	filtered := make([]string, 0)
 
+	// Equivalent spellings share one candidate; the first one seen is kept.
+	// Digest-pinned refs do not normalize, so they dedupe on their own spelling.
+	addCandidate := func(imageRef, imageID string) bool {
+		imageRef = strings.TrimSpace(imageRef)
+		if imageRef == "" || imageRef == "<none>:<none>" || refs.IsImageIDLikeReference(imageRef) {
+			return false
+		}
+		key := cmp.Or(refs.NormalizeImageUpdateRef(imageRef), imageRef)
+		if _, exists := seen[key]; exists {
+			return false
+		}
+
+		eligibleByID, usedByID := eligibleByImageID[strings.TrimSpace(imageID)]
+		eligibleRef, usedByRef := eligibleByRef[key]
+		if (usedByID || usedByRef) && !eligibleByID && !eligibleRef {
+			return false
+		}
+
+		seen[key] = struct{}{}
+		filtered = append(filtered, imageRef)
+		return limit > 0 && len(filtered) >= limit
+	}
+
 	for _, summary := range images {
-		imageUsage, hasImageUsage := usageByImageID[strings.TrimSpace(summary.ID)]
-
 		for _, imageRef := range summary.RepoTags {
-			if imageRef == "<none>:<none>" {
-				continue
-			}
-			if _, exists := seen[imageRef]; exists {
-				continue
-			}
-
-			usage := imageUsage
-			hasUsage := hasImageUsage
-
-			normalizedRef := refs.NormalizeImageUpdateRef(imageRef)
-			if refUsage, hasRefUsage := usageByRef[normalizedRef]; hasRefUsage {
-				usage = mergeImageContainerUsageInternal(usage, refUsage)
-				hasUsage = true
-			}
-
-			if hasUsage && usage.optedOut && !usage.eligible {
-				continue
-			}
-
-			seen[imageRef] = struct{}{}
-			filtered = append(filtered, imageRef)
-			if limit > 0 && len(filtered) >= limit {
+			if addCandidate(imageRef, summary.ID) {
 				return filtered
 			}
 		}
 	}
 
-	return filtered
-}
-
-func mergeImageContainerUsageInternal(current, next imageContainerUsageInternal) imageContainerUsageInternal {
-	return imageContainerUsageInternal{
-		optedOut: current.optedOut || next.optedOut,
-		eligible: current.eligible || next.eligible,
+	// Containers can run images whose tag is no longer present locally, so
+	// their references are candidates too.
+	for _, summary := range containers {
+		if addCandidate(summary.Image, summary.ImageID) {
+			return filtered
+		}
 	}
+
+	return filtered
 }
 
 func (s *ImageUpdateService) inspectLocalImageSnapshotInternal(ctx context.Context, imageRef string, composeBuildRefs map[string]struct{}) (*localImageSnapshot, error) {
@@ -906,13 +891,6 @@ func (s *ImageUpdateService) inspectLocalImageSnapshotInternal(ctx context.Conte
 		AllDigests:    allDigests,
 		IsLocalBuild:  isLocalBuild,
 	}, nil
-}
-
-func (s *ImageUpdateService) normalizeRepository(regHost, repo string) string {
-	if regHost == "docker.io" && !strings.Contains(repo, "/") {
-		return "library/" + repo
-	}
-	return repo
 }
 
 func (s *ImageUpdateService) CheckImageUpdateByID(ctx context.Context, imageID string) (*imageupdate.Response, error) {
@@ -1064,13 +1042,6 @@ func extractRepoAndTagFromImage(dockerImage image.InspectResponse) (repo, tag st
 	return "<none>", "<none>"
 }
 
-func stringToPtr(s string) *string {
-	if s == "" {
-		return nil
-	}
-	return new(s)
-}
-
 func buildImageUpdateRecord(imageID, repo, tag string, result *imageupdate.Response) *ImageUpdateRecord {
 	currentVersion := result.CurrentVersion
 	if currentVersion == "" {
@@ -1084,15 +1055,15 @@ func buildImageUpdateRecord(imageID, repo, tag string, result *imageupdate.Respo
 		HasUpdate:      result.HasUpdate,
 		UpdateType:     result.UpdateType,
 		CurrentVersion: currentVersion,
-		LatestVersion:  stringToPtr(result.LatestVersion),
-		CurrentDigest:  stringToPtr(result.CurrentDigest),
-		LatestDigest:   stringToPtr(result.LatestDigest),
+		LatestVersion:  mo.EmptyableToOption(result.LatestVersion).ToPointer(),
+		CurrentDigest:  mo.EmptyableToOption(result.CurrentDigest).ToPointer(),
+		LatestDigest:   mo.EmptyableToOption(result.LatestDigest).ToPointer(),
 		CheckTime:      result.CheckTime,
 		ResponseTimeMs: result.ResponseTimeMs,
-		LastError:      stringToPtr(result.Error),
-		AuthMethod:     stringToPtr(result.AuthMethod),
-		AuthUsername:   stringToPtr(result.AuthUsername),
-		AuthRegistry:   stringToPtr(result.AuthRegistry),
+		LastError:      mo.EmptyableToOption(result.Error).ToPointer(),
+		AuthMethod:     mo.EmptyableToOption(result.AuthMethod).ToPointer(),
+		AuthUsername:   mo.EmptyableToOption(result.AuthUsername).ToPointer(),
+		AuthRegistry:   mo.EmptyableToOption(result.AuthRegistry).ToPointer(),
 		UsedCredential: result.UsedCredential,
 	}
 }
@@ -1336,8 +1307,8 @@ func (s *ImageUpdateService) parseAndGroupImagesInternal(imageRefs []string) (ma
 		if _, ok := regRepos[parts.Registry]; !ok {
 			regRepos[parts.Registry] = make(map[string]struct{})
 		}
-		regRepos[parts.Registry][s.normalizeRepository(parts.Registry, parts.Repository)] = struct{}{}
-		normalizedRef := strings.ToLower(fmt.Sprintf("%s/%s:%s", parts.Registry, s.normalizeRepository(parts.Registry, parts.Repository), parts.Tag))
+		regRepos[parts.Registry][parts.Repository] = struct{}{}
+		normalizedRef := strings.ToLower(fmt.Sprintf("%s/%s:%s", parts.Registry, parts.Repository, parts.Tag))
 		if idx, exists := indexByNormalizedRef[normalizedRef]; exists {
 			images[idx].refs = append(images[idx].refs, imageRef)
 			continue

@@ -257,50 +257,6 @@ func TestImageUpdateService_ParseImageReference_Fallback(t *testing.T) {
 	}
 }
 
-// TestNormalizeRepository tests repository normalization
-func TestImageUpdateService_NormalizeRepository(t *testing.T) {
-	tests := []struct {
-		name       string
-		regHost    string
-		repo       string
-		wantNormal string
-	}{
-		{
-			name:       "Docker Hub single name adds library",
-			regHost:    "docker.io",
-			repo:       "redis",
-			wantNormal: "library/redis",
-		},
-		{
-			name:       "Docker Hub with slash unchanged",
-			regHost:    "docker.io",
-			repo:       "traefik/traefik",
-			wantNormal: "traefik/traefik",
-		},
-		{
-			name:       "Custom registry unchanged",
-			regHost:    "gcr.io",
-			repo:       "project/app",
-			wantNormal: "project/app",
-		},
-		{
-			name:       "Custom registry single name unchanged",
-			regHost:    "gcr.io",
-			repo:       "nginx",
-			wantNormal: "nginx",
-		},
-	}
-
-	svc := &ImageUpdateService{}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := svc.normalizeRepository(tt.regHost, tt.repo)
-			assert.Equal(t, tt.wantNormal, result, "repository normalization mismatch")
-		})
-	}
-}
-
 // TestGetLocalImageDigestWithAll_ExtractsAllDigests tests that all digests are collected
 func TestImageUpdateService_GetLocalImageDigestWithAll_Logic(t *testing.T) {
 	// This is a unit test for the digest extraction logic
@@ -392,38 +348,6 @@ func TestImageUpdateService_DockerReferenceCompatibility(t *testing.T) {
 }
 
 // TestStringToPtr tests the helper function for creating string pointers
-func TestStringToPtr(t *testing.T) {
-	tests := []struct {
-		name    string
-		input   string
-		wantNil bool
-	}{
-		{
-			name:    "empty string returns nil",
-			input:   "",
-			wantNil: true,
-		},
-		{
-			name:    "non-empty string returns pointer",
-			input:   "test",
-			wantNil: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := stringToPtr(tt.input)
-			if tt.wantNil {
-				assert.Nil(t, result)
-			} else {
-				require.NotNil(t, result)
-				assert.Equal(t, tt.input, *result)
-			}
-		})
-	}
-}
-
-// setupImageUpdateTestDB creates an in-memory SQLite database for testing
 func setupImageUpdateTestDB(t *testing.T) *database.DB {
 	t.Helper()
 	dsn := fmt.Sprintf("file:image-update-test-%d?mode=memory&cache=shared", time.Now().UnixNano())
@@ -1438,7 +1362,7 @@ func TestImageUpdateService_NotificationSentReset(t *testing.T) {
 				HasUpdate:        true,
 				UpdateType:       "digest",
 				CurrentVersion:   "7.0",
-				LatestDigest:     stringToPtr("sha256:old"),
+				LatestDigest:     new("sha256:old"),
 				NotificationSent: true,
 			},
 			newResult: &imageupdate.Response{
@@ -1461,7 +1385,7 @@ func TestImageUpdateService_NotificationSentReset(t *testing.T) {
 				HasUpdate:        true,
 				UpdateType:       "tag",
 				CurrentVersion:   "7.0",
-				LatestVersion:    stringToPtr("7.0.1"),
+				LatestVersion:    new("7.0.1"),
 				NotificationSent: true,
 			},
 			newResult: &imageupdate.Response{
@@ -1505,8 +1429,8 @@ func TestImageUpdateService_NotificationSentReset(t *testing.T) {
 				HasUpdate:        true,
 				UpdateType:       "digest",
 				CurrentVersion:   "7.0",
-				LatestDigest:     stringToPtr("sha256:same"),
-				LatestVersion:    stringToPtr("7.0.1"),
+				LatestDigest:     new("sha256:same"),
+				LatestVersion:    new("7.0.1"),
 				NotificationSent: true,
 			},
 			newResult: &imageupdate.Response{
@@ -1609,8 +1533,8 @@ func TestImageUpdateService_RateLimitErrorPreservesPreviousResult(t *testing.T) 
 				Tag:            tag,
 				HasUpdate:      false,
 				CurrentVersion: tag,
-				CurrentDigest:  stringToPtr("sha256:current"),
-				LatestDigest:   stringToPtr("sha256:current"),
+				CurrentDigest:  new("sha256:current"),
+				LatestDigest:   new("sha256:current"),
 				CheckTime:      checkTime,
 			}
 			require.NoError(t, db.Create(existing).Error)
@@ -1906,7 +1830,7 @@ func TestImageUpdateService_GetUpdateSummaryForImageIDs_FiltersToLiveImages(t *t
 			HasUpdate:      false,
 			UpdateType:     "digest",
 			CurrentVersion: "latest",
-			LastError:      stringToPtr("rate limited"),
+			LastError:      new("rate limited"),
 			CheckTime:      now,
 		},
 		{
@@ -1916,7 +1840,7 @@ func TestImageUpdateService_GetUpdateSummaryForImageIDs_FiltersToLiveImages(t *t
 			HasUpdate:      true,
 			UpdateType:     "digest",
 			CurrentVersion: "latest",
-			LastError:      stringToPtr("stale failure"),
+			LastError:      new("stale failure"),
 			CheckTime:      now,
 		},
 	}
@@ -2070,11 +1994,21 @@ func TestImageUpdateService_GetAllImageRefsHonorsExclusiveContainerOptOutInterna
 		unusedRef   = "local/unused:latest"
 	)
 
+	const (
+		runningOnlyRef  = "ghcr.io/example/running-only:1.2"
+		stoppedOnlyRef  = "example/stopped-only:2.0"
+		disabledOnlyRef = "example/disabled-only:3.0"
+		pinnedRef       = "example/pinned@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+		enabledAlias    = "local/enabled"
+		idOnlyImage     = "sha256:00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"
+	)
+
 	images := []dockertypesimage.Summary{
 		{ID: "sha256:disabled", RepoTags: []string{disabledRef}},
 		{ID: "sha256:enabled", RepoTags: []string{enabledRef}},
 		{ID: "sha256:shared", RepoTags: []string{sharedRef}},
 		{ID: "sha256:unused", RepoTags: []string{unusedRef}},
+		{ID: "sha256:untagged", RepoTags: []string{"<none>:<none>"}},
 	}
 	containers := []dockertypescontainer.Summary{
 		{
@@ -2095,6 +2029,12 @@ func TestImageUpdateService_GetAllImageRefsHonorsExclusiveContainerOptOutInterna
 			ID:    "shared-enabled-container",
 			Image: sharedRef,
 		},
+		{ID: "running-only", ImageID: "sha256:untagged", Image: runningOnlyRef, State: dockertypescontainer.StateRunning},
+		{ID: "stopped-only", ImageID: "sha256:pruned", Image: stoppedOnlyRef, State: dockertypescontainer.StateExited},
+		{ID: "disabled-only", ImageID: "sha256:pruned-disabled", Image: disabledOnlyRef, Labels: map[string]string{labels.LabelUpdater: "false"}},
+		{ID: "enabled-alias", ImageID: "sha256:enabled", Image: enabledAlias},
+		{ID: "pinned-container", ImageID: "sha256:pinned", Image: pinnedRef},
+		{ID: "id-only", ImageID: idOnlyImage, Image: idOnlyImage},
 	}
 
 	server := newImageUpdateDiscoveryServerInternal(t, images, containers)
@@ -2113,17 +2053,15 @@ func TestImageUpdateService_GetAllImageRefsHonorsExclusiveContainerOptOutInterna
 	got, err := svc.getAllImageRefsInternal(context.Background(), 0)
 
 	require.NoError(t, err)
-	assert.NotContains(t, got, disabledRef)
-	assert.Contains(t, got, enabledRef)
-	assert.Contains(t, got, sharedRef)
-	assert.Contains(t, got, unusedRef)
+	assert.Equal(t, []string{enabledRef, sharedRef, unusedRef, runningOnlyRef, stoppedOnlyRef, pinnedRef}, got)
 }
 
 func TestImageUpdateService_GetAllImageRefsAppliesLimitAfterOptOutFilteringInternal(t *testing.T) {
 	const (
-		disabledRef = "local/disabled:latest"
-		enabledRef  = "local/enabled:latest"
-		unusedRef   = "local/unused:latest"
+		disabledRef      = "local/disabled:latest"
+		enabledRef       = "local/enabled:latest"
+		unusedRef        = "local/unused:latest"
+		containerOnlyRef = "local/container-only:1.0"
 	)
 
 	images := []dockertypesimage.Summary{
@@ -2141,6 +2079,7 @@ func TestImageUpdateService_GetAllImageRefsAppliesLimitAfterOptOutFilteringInter
 			ID:    "enabled-container",
 			Image: enabledRef,
 		},
+		{ID: "container-only", ImageID: "sha256:container-only", Image: containerOnlyRef},
 	}
 
 	server := newImageUpdateDiscoveryServerInternal(t, images, containers)
@@ -2157,9 +2096,12 @@ func TestImageUpdateService_GetAllImageRefsAppliesLimitAfterOptOutFilteringInter
 	)
 
 	got, err := svc.getAllImageRefsInternal(context.Background(), 2)
-
 	require.NoError(t, err)
 	assert.Equal(t, []string{enabledRef, unusedRef}, got)
+
+	got, err = svc.getAllImageRefsInternal(context.Background(), 3)
+	require.NoError(t, err)
+	assert.Equal(t, []string{enabledRef, unusedRef, containerOnlyRef}, got)
 }
 
 func TestImageUpdateService_GetAllImageRefsExcludesAliasesOfOptedOutImageInternal(t *testing.T) {
@@ -2398,13 +2340,15 @@ func TestFilterImageSummariesByContainerOptOutHonorsSettingsExclusionsInternal(t
 		{ID: "c1", Names: []string{"/excluded-app"}, ImageID: "sha256:excluded", Image: excludedRef},
 		{ID: "c2", Names: []string{"/shared-excluded"}, ImageID: "sha256:shared", Image: sharedRef},
 		{ID: "c3", Names: []string{"/shared-enabled"}, ImageID: "sha256:shared", Image: sharedRef},
+		{ID: "c4", Names: []string{"/excluded-only"}, ImageID: "sha256:excluded-only", Image: "local/excluded-only:1.0"},
+		{ID: "c5", Names: []string{"/shared-short"}, ImageID: "sha256:shared", Image: "local/shared"},
+		{ID: "c6", Names: []string{"/shared-long"}, ImageID: "sha256:shared", Image: "docker.io/local/shared:latest"},
 	}
-	excluded := map[string]bool{"excluded-app": true, "shared-excluded": true, "unknown-name": true}
+	excluded := map[string]bool{"excluded-app": true, "shared-excluded": true, "excluded-only": true, "unknown-name": true}
 
 	got := filterImageSummariesByContainerOptOutInternal(images, containers, excluded, 0)
 
-	assert.NotContains(t, got, excludedRef)
-	assert.Contains(t, got, sharedRef)
+	assert.Equal(t, []string{sharedRef}, got)
 }
 
 // testProjectRow is a minimal stand-in for project.Project: the project
