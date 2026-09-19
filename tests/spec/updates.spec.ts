@@ -43,6 +43,64 @@ function containerWithUpdate(container: (typeof CONTAINERS)[number]) {
 	};
 }
 
+const TAG_UPDATE_PROJECT = {
+	id: 'update-project-tag',
+	name: 'updates-tag-project',
+	imageRef: 'public.ecr.aws/docker/library/redis:7'
+};
+
+/** Serves one project whose tag moved to a new version while the tag's digest stayed the same. */
+async function stubProjectWithTagUpdate(page: Page) {
+	const checkTime = new Date().toISOString();
+	await page.route(/\/api\/environments\/0\/projects(?:\?.*)?$/, async (route) => {
+		await route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify({
+				success: true,
+				data: [
+					{
+						id: TAG_UPDATE_PROJECT.id,
+						name: TAG_UPDATE_PROJECT.name,
+						path: `/projects/${TAG_UPDATE_PROJECT.name}`,
+						status: 'running',
+						runningCount: '1',
+						serviceCount: '1',
+						createdAt: checkTime,
+						updatedAt: checkTime,
+						updateInfo: {
+							status: 'has_update',
+							hasUpdate: true,
+							imageCount: 1,
+							checkedImageCount: 1,
+							imagesWithUpdates: 1,
+							imagesNotPulled: 0,
+							errorCount: 0,
+							imageRefs: [TAG_UPDATE_PROJECT.imageRef],
+							updatedImageRefs: [TAG_UPDATE_PROJECT.imageRef],
+							updateInfoByRef: {
+								[TAG_UPDATE_PROJECT.imageRef]: {
+									hasUpdate: true,
+									updateType: 'tag',
+									currentVersion: '7.2.4',
+									latestVersion: '7.4.1',
+									currentDigest: 'sha256:same-digest',
+									latestDigest: 'sha256:same-digest',
+									checkTime,
+									responseTimeMs: 12,
+									error: ''
+								}
+							},
+							lastCheckedAt: checkTime
+						}
+					}
+				],
+				pagination: { totalItems: 1, totalPages: 1, currentPage: 1, itemsPerPage: 20 }
+			})
+		});
+	});
+}
+
 /** Serves the two update-pending containers so the tab always has selectable rows. */
 async function stubContainersWithUpdates(page: Page) {
 	await page.route(/\/api\/environments\/0\/containers(?:\?.*)?$/, async (route) => {
@@ -62,6 +120,23 @@ async function stubContainersWithUpdates(page: Page) {
 		});
 	});
 }
+
+test.describe('Updates Page Project Rows', () => {
+	test('shows the versions behind a tag update even when the digest is unchanged', async ({
+		page
+	}) => {
+		await stubContainersWithUpdates(page);
+		await stubProjectWithTagUpdate(page);
+
+		await page.goto(`${UPDATES_ROUTE}?tab=projects`);
+		await page.waitForLoadState('load');
+
+		const row = page.getByRole('row').filter({ hasText: TAG_UPDATE_PROJECT.name });
+		await expect(row.getByText('7.2.4', { exact: true })).toBeVisible();
+		await expect(row.getByText('7.4.1', { exact: true })).toBeVisible();
+		await expect(row.getByText('sha256:same-digest')).toHaveCount(0);
+	});
+});
 
 test.describe('Updates Page Actions', () => {
 	test('applies updates to the selected container rows', async ({ page }) => {

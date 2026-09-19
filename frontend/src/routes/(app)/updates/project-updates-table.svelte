@@ -15,7 +15,6 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import type { Project } from '#lib/types/swarm.js';
-	import type { ImageUpdateInfoDto } from '#lib/types/docker.js';
 	import { ProjectsIcon, ImagesIcon, UpdateIcon } from '#lib/icons/index.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { bulkConfirmAndRun, confirmAndRun } from '#lib/utils/bulk-actions.js';
@@ -36,56 +35,55 @@
 	interface Props {
 		projects: Paginated<Project>;
 		requestOptions: SearchPaginationSortRequest;
-		updateInfoByRef?: Record<string, ImageUpdateInfoDto>;
 		onRefreshData: (options: SearchPaginationSortRequest) => Promise<void>;
 	}
 
-	let { projects = $bindable(), requestOptions = $bindable(), updateInfoByRef = {}, onRefreshData }: Props = $props();
+	let { projects = $bindable(), requestOptions = $bindable(), onRefreshData }: Props = $props();
 
 	let selectedIds = $state<string[]>([]);
 	let mobileFieldVisibility = $state<MobileFieldVisibility>({});
 	let updatingProjectIds = $state<Record<string, boolean>>({});
 	let bulkUpdating = $state(false);
 
-	function summarizeImageRefs(imageRefs: string[]): string {
-		if (imageRefs.length === 0) return '-';
-		if (imageRefs.length === 1) return imageRefs[0] ?? '-';
-		return `${imageRefs[0] ?? ''} +${imageRefs.length - 1} more`;
-	}
-
-	function resolveProjectValue(project: Project, mode: 'current' | 'latest') {
-		const updatedRefs = project.updateInfo?.updatedImageRefs ?? [];
-		if (updatedRefs.length === 0) return '-';
-		if (updatedRefs.length > 1) {
-			return m.images_has_updates();
-		}
-
-		const firstRef = updatedRefs[0];
-		const info = firstRef ? updateInfoByRef[firstRef] : undefined;
-		if (!info) return '-';
-
-		return formatImageUpdateValue(info, mode);
-	}
-
-	function resolveCheckedAt(project: Project) {
-		const updatedRefs = project.updateInfo?.updatedImageRefs ?? [];
-		if (updatedRefs.length === 1) {
-			const firstRef = updatedRefs[0];
-			return (firstRef ? updateInfoByRef[firstRef]?.checkTime : undefined) ?? project.updateInfo?.lastCheckedAt ?? '';
-		}
-		return project.updateInfo?.lastCheckedAt ?? '';
-	}
-
 	function mapProjectRow(project: Project): ProjectUpdateRow {
-		const updatedRefs = project.updateInfo?.updatedImageRefs ?? project.updateInfo?.imageRefs ?? [];
+		const updateInfo = project.updateInfo;
+		const updatedRefs = updateInfo?.updatedImageRefs ?? [];
+		const summaryRefs = updatedRefs.length > 0 ? updatedRefs : (updateInfo?.imageRefs ?? []);
+		const firstRef = summaryRefs[0] ?? '';
+
+		let imageSummary = '-';
+		if (summaryRefs.length === 1) {
+			imageSummary = firstRef;
+		} else if (summaryRefs.length > 1) {
+			imageSummary = `${firstRef} +${summaryRefs.length - 1} more`;
+		}
+
+		// The list response already carries the per-reference result that raised the
+		// notification, with the project's update policy applied, so the row must read
+		// that record rather than the image-level check for the same reference.
+		const info = updatedRefs.length === 1 ? updateInfo?.updateInfoByRef?.[firstRef] : undefined;
+		// The backend blanks the target when services sharing a reference disagree, so
+		// fall back to the multi-update summary instead of picking one arbitrarily.
+		const hasSingleTarget = !!info && (!!info.latestVersion?.trim() || !!info.latestDigest?.trim());
+
+		let currentValue = '-';
+		let latestValue = '-';
+		if (updatedRefs.length > 1 || (info && !hasSingleTarget)) {
+			currentValue = m.images_has_updates();
+			latestValue = m.images_has_updates();
+		} else if (info) {
+			currentValue = formatImageUpdateValue(info, 'current');
+			latestValue = formatImageUpdateValue(info, 'latest');
+		}
+
 		return {
 			id: project.id,
 			projectId: project.id,
 			name: project.name,
-			imageSummary: summarizeImageRefs(updatedRefs),
-			currentValue: resolveProjectValue(project, 'current'),
-			latestValue: resolveProjectValue(project, 'latest'),
-			checkedAt: resolveCheckedAt(project),
+			imageSummary,
+			currentValue,
+			latestValue,
+			checkedAt: info?.checkTime || updateInfo?.lastCheckedAt || '',
 			project
 		};
 	}
@@ -99,14 +97,14 @@
 		{ accessorKey: 'name', title: m.common_name(), sortable: true, cell: NameCell },
 		{ accessorKey: 'imageSummary', title: m.common_image(), sortable: false, cell: ImageCell },
 		{ accessorKey: 'currentValue', title: m.common_current(), sortable: false, cellComponent: DigestCell },
-		{ accessorKey: 'latestValue', title: m.image_update_latest_digest_label(), sortable: false, cellComponent: DigestCell },
+		{ accessorKey: 'latestValue', title: m.image_update_latest_label(), sortable: false, cellComponent: DigestCell },
 		{ accessorKey: 'checkedAt', title: m.common_updated(), sortable: false, cellComponent: CheckedAtCell }
 	] satisfies ColumnSpec<ProjectUpdateRow>[];
 
 	const mobileFields = [
 		{ id: 'imageSummary', label: m.common_image(), defaultVisible: true },
 		{ id: 'currentValue', label: m.common_current(), defaultVisible: true },
-		{ id: 'latestValue', label: m.image_update_latest_digest_label(), defaultVisible: true },
+		{ id: 'latestValue', label: m.image_update_latest_label(), defaultVisible: true },
 		{ id: 'checkedAt', label: m.common_updated(), defaultVisible: true }
 	];
 
@@ -213,7 +211,7 @@
 				getValue: (item: ProjectUpdateRow) => item.currentValue
 			},
 			{
-				label: m.image_update_latest_digest_label(),
+				label: m.image_update_latest_label(),
 				getValue: (item: ProjectUpdateRow) => item.latestValue
 			},
 			{

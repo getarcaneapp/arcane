@@ -15,7 +15,6 @@
 	import { settingsService } from '#lib/services/settings-service.js';
 	import { confirmAndApplyAllUpdates } from '#lib/utils/update-actions.js';
 	import type { ContainersPaginatedResponse } from '#lib/services/container-service.js';
-	import type { ImageUpdateInfoDto } from '#lib/types/docker.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import type { Project } from '#lib/types/swarm.js';
 	import { ContainersIcon, ProjectsIcon, UpdateIcon } from '#lib/icons/index.js';
@@ -91,16 +90,6 @@
 			(envId === data.envId ? initialProjects : emptyProjects)
 	);
 
-	const projectUpdatedImageRefs = $derived.by(() => {
-		const refs = new Set<string>();
-		for (const project of projects.data ?? []) {
-			for (const imageRef of project.updateInfo?.updatedImageRefs ?? []) {
-				refs.add(imageRef);
-			}
-		}
-		return Array.from(refs).sort();
-	});
-
 	const settingsQuery = createQuery(() => ({
 		queryKey: queryKeys.settings.byEnvironment(envId),
 		queryFn: () => settingsService.getSettingsForEnvironmentMerged(envId),
@@ -110,25 +99,12 @@
 
 	const excludedContainers = $derived(settingsQuery.data?.autoUpdateExcludedContainers ?? '');
 
-	const projectUpdateDetailsQuery = createQuery<Record<string, ImageUpdateInfoDto>>(() => {
-		const environmentId = envId;
-		const imageRefs = projectUpdatedImageRefs;
-		return {
-			queryKey: ['updates', 'projects', 'details', environmentId, imageRefs],
-			queryFn: () => imageService.getUpdateInfoByRefs(imageRefs),
-			enabled: imageRefs.length > 0
-		};
-	});
-
 	const checkUpdatesMutation = createMutation(() => ({
 		mutationKey: ['updates', 'check-all', envId],
 		mutationFn: () => imageService.checkAllImages(),
 		onSuccess: async () => {
 			toast.success(m.images_update_check_completed());
 			await Promise.all([containersQuery.refetch(), projectsQuery.refetch()]);
-			if (projectUpdatedImageRefs.length > 0) {
-				await projectUpdateDetailsQuery.refetch();
-			}
 		},
 		onError: () => {
 			toast.error(m.images_update_check_failed());
@@ -169,9 +145,6 @@
 		containerSnapshot = null;
 		projectSnapshot = null;
 		await Promise.all([containersQuery.refetch(), projectsQuery.refetch()]);
-		if (projectUpdatedImageRefs.length > 0) {
-			await projectUpdateDetailsQuery.refetch();
-		}
 	}
 
 	// The run is synchronous server-side (bounded by the updater apply timeout),
@@ -268,7 +241,6 @@
 						<ProjectUpdatesTable
 							{projects}
 							bind:requestOptions={projectRequestOptions}
-							updateInfoByRef={projectUpdateDetailsQuery.data}
 							onRefreshData={async (options) => {
 								projectRequestOptions = ensureUpdatesFilter(options);
 								projectSnapshot = {

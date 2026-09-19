@@ -94,14 +94,14 @@
 		{ accessorKey: 'name', title: m.common_name(), sortable: true, cell: NameCell },
 		{ accessorKey: 'imageRef', title: m.common_image(), sortable: true, cell: ImageCell },
 		{ accessorKey: 'currentValue', title: m.common_current(), sortable: false, cellComponent: DigestCell },
-		{ accessorKey: 'latestValue', title: m.image_update_latest_digest_label(), sortable: false, cellComponent: DigestCell },
+		{ accessorKey: 'latestValue', title: m.image_update_latest_label(), sortable: false, cellComponent: DigestCell },
 		{ accessorKey: 'checkedAt', title: m.common_updated(), sortable: false, cellComponent: CheckedAtCell }
 	] satisfies ColumnSpec<ContainerUpdateRow>[];
 
 	const mobileFields = [
 		{ id: 'imageRef', label: m.common_image(), defaultVisible: true },
 		{ id: 'currentValue', label: m.common_current(), defaultVisible: true },
-		{ id: 'latestValue', label: m.image_update_latest_digest_label(), defaultVisible: true },
+		{ id: 'latestValue', label: m.image_update_latest_label(), defaultVisible: true },
 		{ id: 'checkedAt', label: m.common_updated(), defaultVisible: true }
 	];
 
@@ -254,7 +254,7 @@
 				getValue: (item: ContainerUpdateRow) => item.currentValue
 			},
 			{
-				label: m.image_update_latest_digest_label(),
+				label: m.image_update_latest_label(),
 				getValue: (item: ContainerUpdateRow) => item.latestValue
 			},
 			{
