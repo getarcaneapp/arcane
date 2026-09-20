@@ -463,6 +463,10 @@ func UpgradeContainer(ctx context.Context, dockerClient *client.Client, oldConta
 	originalName := strings.TrimPrefix(oldContainer.Name, "/")
 	oldName := fmt.Sprintf("%s-old-%d", originalName, time.Now().UnixNano())
 
+	if oldContainer.Config == nil {
+		return errors.Errorf("container %s inspection has no config; refusing to recreate", originalName)
+	}
+
 	// Create new container config
 	config := *oldContainer.Config
 	config.Image = newImage
@@ -487,12 +491,19 @@ func UpgradeContainer(ctx context.Context, dockerClient *client.Client, oldConta
 		)
 	}
 
+	// Pin every attached volume to its resolved name so the recreated container
+	// keeps its data instead of receiving fresh anonymous volumes (#3953).
+	if hostConfig == nil {
+		hostConfig = &container.HostConfig{}
+	}
+	hostConfig.Binds, hostConfig.Mounts, err = docker.PreserveVolumeMounts(hostConfig.Binds, hostConfig.Mounts, oldContainer.Mounts)
+	if err != nil {
+		return errors.WrapIff(err, "preserve volumes of container %s", originalName)
+	}
+
 	// Fix for "conflicting options: hostname and the network mode"
 	// When network mode is "host" or "container:...", Hostname must be empty
-	var nm container.NetworkMode
-	if hostConfig != nil {
-		nm = hostConfig.NetworkMode
-	}
+	nm := hostConfig.NetworkMode
 	if nm.IsHost() || nm.IsContainer() {
 		config.Hostname = ""
 		config.Domainname = ""
@@ -509,10 +520,8 @@ func UpgradeContainer(ctx context.Context, dockerClient *client.Client, oldConta
 	// When network mode is "container:...", port mappings are not allowed
 	if nm.IsContainer() {
 		config.ExposedPorts = nil
-		if hostConfig != nil {
-			hostConfig.PortBindings = nil
-			hostConfig.PublishAllPorts = false
-		}
+		hostConfig.PortBindings = nil
+		hostConfig.PublishAllPorts = false
 	}
 
 	// Build network config - preserve all network settings including IP addresses

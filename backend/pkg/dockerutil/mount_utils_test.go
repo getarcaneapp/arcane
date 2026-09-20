@@ -163,3 +163,75 @@ func TestMountForSubpath(t *testing.T) {
 		require.Nil(t, MountForSubpath([]containertypes.MountPoint{bad}, "/app/data/projects/foo", "/workspace"))
 	})
 }
+
+func TestPreserveVolumeMounts(t *testing.T) {
+	anon := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	mountPoints := []containertypes.MountPoint{
+		{Type: mounttypes.TypeVolume, Name: anon, Destination: "/app/data", RW: true},
+		{Type: mounttypes.TypeVolume, Name: "named", Destination: "/data", RW: true},
+		{Type: mounttypes.TypeVolume, Name: "ro", Destination: "/ro", RW: false},
+		{Type: mounttypes.TypeBind, Source: "/host", Destination: "/bind", RW: true},
+	}
+
+	tests := []struct {
+		name       string
+		binds      []string
+		mounts     []mounttypes.Mount
+		points     []containertypes.MountPoint
+		wantBinds  []string
+		wantMounts []mounttypes.Mount
+		wantErr    bool
+	}{
+		{
+			name:   "image-declared volume gains explicit mount",
+			points: mountPoints[:1],
+			wantMounts: []mounttypes.Mount{
+				{Type: mounttypes.TypeVolume, Source: anon, Target: "/app/data"},
+			},
+		},
+		{
+			name:      "anonymous bind gains volume name, explicit binds preserved",
+			binds:     []string{"/app/data", "named:/data", "/host:/bind:ro"},
+			points:    mountPoints,
+			wantBinds: []string{anon + ":/app/data", "named:/data", "/host:/bind:ro"},
+			wantMounts: []mounttypes.Mount{
+				{Type: mounttypes.TypeVolume, Source: "ro", Target: "/ro", ReadOnly: true},
+			},
+		},
+		{
+			name: "structured mount keeps options and gets source",
+			mounts: []mounttypes.Mount{
+				{Type: mounttypes.TypeVolume, Target: "/app/data/", VolumeOptions: &mounttypes.VolumeOptions{Subpath: "sub"}},
+				{Type: mounttypes.TypeTmpfs, Target: "/tmp"},
+			},
+			points: mountPoints[:1],
+			wantMounts: []mounttypes.Mount{
+				{Type: mounttypes.TypeVolume, Source: anon, Target: "/app/data/", VolumeOptions: &mounttypes.VolumeOptions{Subpath: "sub"}},
+				{Type: mounttypes.TypeTmpfs, Target: "/tmp"},
+			},
+		},
+		{
+			name:    "volume without name fails",
+			points:  []containertypes.MountPoint{{Type: mounttypes.TypeVolume, Destination: "/app/data"}},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			origBinds := append([]string(nil), tt.binds...)
+			origMounts := append([]mounttypes.Mount(nil), tt.mounts...)
+
+			binds, mounts, err := PreserveVolumeMounts(tt.binds, tt.mounts, tt.points)
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tt.wantBinds, binds)
+			require.Equal(t, tt.wantMounts, mounts)
+			require.Equal(t, origBinds, tt.binds)
+			require.Equal(t, origMounts, tt.mounts)
+		})
+	}
+}

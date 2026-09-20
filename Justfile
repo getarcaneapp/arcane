@@ -1281,28 +1281,29 @@ _utils-list-feats:
         exit 1
     fi
 
-    issues=$(
-        gh issue list \
-            --repo getarcaneapp/arcane \
-            --type Feature \
-            --state open \
-            --limit 10000 \
-            --json number,title,state,url,reactionGroups \
-            --jq 'map(. + {upvotes: ([.reactionGroups[]? | select(.content == "THUMBS_UP") | .users.totalCount] | add // 0)}) | sort_by(.upvotes, .number) | reverse | .[] | [.upvotes, .number, .state, .title, .url] | @tsv'
+    discussions=$(
+        gh api graphql \
+            --paginate \
+            --slurp \
+            -f owner=getarcaneapp \
+            -f name=arcane \
+            -F endCursor=null \
+            -f query='query($owner: String!, $name: String!, $endCursor: String) { repository(owner: $owner, name: $name) { discussions(first: 100, after: $endCursor) { nodes { number title url category { slug } isAnswered upvoteCount reactionGroups { content users { totalCount } } } pageInfo { hasNextPage endCursor } } } }' \
+        | jq -r 'map(.data.repository.discussions.nodes[] | select(.category.slug == "feature-requests") | . + {upvotes: (.upvoteCount + ([.reactionGroups[]? | select(.content == "THUMBS_UP") | .users.totalCount] | add // 0))}) | sort_by(.upvotes, .number) | reverse | .[] | [.upvotes, .number, (if .isAnswered then "answered" else "open" end), .title, .url] | @tsv'
     )
 
-    if [ -z "$issues" ]; then
-        echo "No open Feature issues found."
+    if [ -z "$discussions" ]; then
+        echo "No Feature discussions found."
         exit 0
     fi
 
-    echo "Open Feature issues by upvotes:"
+    echo "Feature discussions by votes (upvotes + 👍):"
     echo ""
 
-    while IFS=$'\t' read -r upvotes number state title url; do
-        printf "%3d 👍 - #%-4s [%s] %s\n" "$upvotes" "$number" "$state" "$title"
+    while IFS=$'\t' read -r votes number status title url; do
+        printf "%3d votes - #%-4s [%s] %s\n" "$votes" "$number" "$status" "$title"
         printf "         %s\n\n" "$url"
-    done <<< "$issues"
+    done <<< "$discussions"
 
 [group('release')]
 _utils-list-fixes:
