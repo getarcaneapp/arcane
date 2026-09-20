@@ -614,6 +614,8 @@
   "containers_update_pulling_image": "Đang pull Image mới nhất...",
   "containers_update_success": "Container \"{name}\" đã được cập nhật thành công",
   "containers_update_failed": "Cập nhật Container \"{name}\" thất bại",
+  "containers_update_skipped": "Container \"{name}\" chưa được cập nhật",
+  "containers_update_skipped_no_reason": "Trình cập nhật đã bỏ qua container này mà không nêu lý do",
   "containers_remove_confirm_title": "Xác nhận gỡ bỏ Container",
   "containers_remove_confirm_message": "Bạn có chắc chắn muốn gỡ bỏ Container này? Thao tác này không thể hoàn tác.",
   "containers_remove_force_label": "Bắt buộc gỡ bỏ (kill Container nếu đang chạy)",
