@@ -614,6 +614,8 @@
   "containers_update_pulling_image": "En son görüntü yükleniyor...",
   "containers_update_success": "\"{name}\" adlı konteyner başarıyla güncellendi",
   "containers_update_failed": "\"{name} \" adlı konteyner güncellenemedi",
+  "containers_update_skipped": "\"{name}\" adlı konteyner güncellenmedi",
+  "containers_update_skipped_no_reason": "Güncelleyici, herhangi bir neden belirtmeden bu kapsayıcıyı atladı",
   "containers_remove_confirm_title": "Konteynerin Kaldırılmasını Onayla",
   "containers_remove_confirm_message": "{resource} dosyasını kaldırmak istediğinizden emin misiniz? Bu işlem geri alınamaz.",
   "containers_remove_force_label": "Zorla kaldır (çalışıyorsa konteyneri sonlandır)",
