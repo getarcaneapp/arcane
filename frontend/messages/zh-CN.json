@@ -614,6 +614,8 @@
   "containers_update_pulling_image": "正在拉取最新镜像……",
   "containers_update_success": "容器“{name}”更新成功",
   "containers_update_failed": "容器“{name}”更新失败",
+  "containers_update_skipped": "容器“{name}”未更新",
+  "containers_update_skipped_no_reason": "更新程序跳过了此容器，但未说明原因",
   "containers_remove_confirm_title": "确认移除容器",
   "containers_remove_confirm_message": "您确定要移除容器吗？此操作不可撤销。",
   "containers_remove_force_label": "强制移除（强制停止正在运行的容器）",
