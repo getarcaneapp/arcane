@@ -614,6 +614,8 @@
   "containers_update_pulling_image": "Puxando a imagem mais recente...",
   "containers_update_success": "Container \"{name}\" atualizado com sucesso",
   "containers_update_failed": "Falha ao atualizar o container \"{name}\"",
+  "containers_update_skipped": "O contêiner “{name}” não foi atualizado",
+  "containers_update_skipped_no_reason": "O programa de atualização ignorou este contêiner sem indicar o motivo",
   "containers_remove_confirm_title": "Confirmar remoção do container",
   "containers_remove_confirm_message": "Deseja mesmo remover este container? Esta ação não pode ser desfeita.",
   "containers_remove_force_label": "Forçar remoção (elimina o container se estiver em execução)",
