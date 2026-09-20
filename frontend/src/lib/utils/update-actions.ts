@@ -20,18 +20,41 @@ export function applyScopedUpdate(type: Extract<AutoUpdateResourceType, 'contain
 	return imageService.runAutoUpdate({ type, resourceIds: [id] });
 }
 
+type ThrowOnUpdateFailureOptions = {
+	/**
+	 * Also reject a result whose resource was skipped. A skipped container was
+	 * not updated, so a selected-container bulk action must not count it as one.
+	 * Project runs keep their default: a skip there is a normal partial outcome.
+	 */
+	rejectSkipped?: boolean;
+};
+
 /**
  * The updater reports per-resource failures in the body of a 200, so a resolved
  * promise alone does not mean the update landed. Bulk runners tally by
  * rejection, so surface those failures as a throw before they get counted as
  * successes.
  */
-export function throwOnUpdateFailure<T extends Pick<AutoUpdateResult, 'failed' | 'items'>>(result: T): T {
+export function throwOnUpdateFailure<T extends Pick<AutoUpdateResult, 'failed' | 'items'>>(
+	result: T,
+	{ rejectSkipped = false }: ThrowOnUpdateFailureOptions = {}
+): T {
 	if ((result?.failed ?? 0) > 0) {
 		const firstError = result.items?.find((item) => item.status === 'failed')?.error;
 		throw new Error(firstError || m.updates_bulk_update_failed());
 	}
+	if (rejectSkipped) {
+		const skipped = result?.items?.find((item) => item.status === 'skipped');
+		if (skipped) {
+			throw new Error(skipped.error || m.containers_update_skipped_no_reason());
+		}
+	}
 	return result;
+}
+
+/** {@link throwOnUpdateFailure} for a single-container update: a skipped container did not update. */
+export function throwOnContainerUpdateFailure<T extends Pick<AutoUpdateResult, 'failed' | 'items'>>(result: T): T {
+	return throwOnUpdateFailure(result, { rejectSkipped: true });
 }
 
 /** Emits a single toast describing an updater run's updated/failed/skipped tally. */

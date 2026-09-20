@@ -614,6 +614,8 @@
   "containers_update_pulling_image": "Pulling latest image...",
   "containers_update_success": "Container \"{name}\" updated successfully",
   "containers_update_failed": "Failed to update container \"{name}\"",
+  "containers_update_skipped": "Container \"{name}\" was not updated",
+  "containers_update_skipped_no_reason": "The updater skipped this container without giving a reason",
   "containers_remove_confirm_title": "Confirm Container Removal",
   "containers_remove_confirm_message": "Are you sure you want to remove this container? This action cannot be undone.",
   "containers_remove_force_label": "Force remove (kill the container if running)",

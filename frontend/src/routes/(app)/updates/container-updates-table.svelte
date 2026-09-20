@@ -27,7 +27,7 @@
 	import { confirmAndUpdateContainer } from '#lib/utils/container-actions.js';
 	import { isAutoUpdateIgnored, isAutoUpdateLabelDisabled } from '#lib/utils/container-auto-update.js';
 	import { bulkConfirmAndRun } from '#lib/utils/bulk-actions.js';
-	import { throwOnUpdateFailure } from '#lib/utils/update-actions.js';
+	import { throwOnContainerUpdateFailure } from '#lib/utils/update-actions.js';
 	import { formatImageUpdateCheckedAt, formatImageUpdateValue } from '#lib/utils/image-updates.js';
 	import { toast } from 'svelte-sonner';
 
@@ -154,7 +154,7 @@
 			title: m.updates_bulk_update_confirm_title({ count: ids.length }),
 			message: m.updates_bulk_update_confirm_message({ count: ids.length }),
 			confirmLabel: m.common_update(),
-			run: (id) => containerService.updateContainer(id).then(throwOnUpdateFailure),
+			run: (id) => containerService.updateContainer(id).then(throwOnContainerUpdateFailure),
 			messages: {
 				success: (count) => m.updates_bulk_update_success({ count }),
 				partial: (success, total, failed) => m.updates_bulk_update_partial({ success, total, failed }),

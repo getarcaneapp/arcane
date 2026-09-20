@@ -274,15 +274,18 @@ func TestUpdaterService_ApplyPendingNoRecordsInternal(t *testing.T) {
 
 // Type and ResourceIds are Arcane-side scoping the engine never acted on;
 // ApplyPending handles a scoped request itself before reaching the engine.
+// A pending run, forced or scoped, never lifts settings exclusions: that
+// override belongs to UpdateSingleContainer alone.
 func TestUpdaterService_ModuleOptionsFromUpdaterOptionsInternal(t *testing.T) {
 	got := moduleOptionsFromUpdaterOptionsInternal(arcaneupdater.Options{
-		Type:        string(updater.ResourceTypeImage),
-		ResourceIds: []string{"image-1", "image-2"},
+		Type:        string(updater.ResourceTypeContainer),
+		ResourceIds: []string{"container-1", "container-2"},
 		ForceUpdate: true,
 		DryRun:      true,
 	})
 
 	assert.Equal(t, updater.Options{Force: true, DryRun: true}, got)
+	assert.False(t, got.IgnoreSettingsExclusions)
 }
 
 func TestUpdaterService_ResultFromModulePreservesRestartedInternal(t *testing.T) {
