@@ -614,6 +614,8 @@
   "containers_update_pulling_image": "Récupération de la dernière image...",
   "containers_update_success": "Le conteneur \"{name}\" a été mis à jour avec succès",
   "containers_update_failed": "Impossible de mettre à jour le conteneur \"{name}\"",
+  "containers_update_skipped": "Le conteneur «{name}» n'a pas été mis à jour",
+  "containers_update_skipped_no_reason": "Le programme de mise à jour a ignoré ce conteneur sans donner de raison.",
   "containers_remove_confirm_title": "Confirmer la suppression du conteneur",
   "containers_remove_confirm_message": "Êtes-vous sûr de vouloir supprimer ce conteneur ? Cette action est irréversible.",
   "containers_remove_force_label": "Forcer la suppression (kill du conteneur s'il est en cours)",
