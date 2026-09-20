@@ -614,6 +614,8 @@
   "containers_update_pulling_image": "Получение последнего образа...",
   "containers_update_success": "Контейнер \"{name}\" успешно обновлен",
   "containers_update_failed": "Не удалось обновить контейнер \"{name}\"",
+  "containers_update_skipped": "Контейнер «{name}» не был обновлён",
+  "containers_update_skipped_no_reason": "Программа обновления пропустила этот контейнер, не указав причину",
   "containers_remove_confirm_title": "Подтвердить удаление контейнера",
   "containers_remove_confirm_message": "Вы уверены, что хотите удалить {resource}? Это действие нельзя отменить.",
   "containers_remove_force_label": "Принудительно удалить (закрыть контейнер, если запущен)",
