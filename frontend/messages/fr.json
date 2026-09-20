@@ -1888,7 +1888,7 @@
   "registries_allow_insecure_label": "Autoriser la connexion non sécurisée",
   "registries_allow_insecure_description": "Autoriser les connexions HTTP",
   "registry_docker_hub": "Docker Hub",
-  "no_pull_limits": "Pas de limite de traction",
+  "no_pull_limits": "Pas de limite de téléchargement",
   "follows_running_image": "Indique la clé de registre à partir de laquelle l'image d'exécution a été extraite.",
   "registry_github_container_registry": "GitHub Container Registry",
   "registry_google_container_registry": "Google Container Registry",
