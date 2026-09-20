@@ -5,6 +5,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/libtnb/sqlite"
+	"github.com/moby/moby/api/types/mount"
 	"github.com/stretchr/testify/require"
 	"go.getarcane.app/sys/crypto"
 	"gorm.io/gorm"
@@ -107,4 +108,19 @@ func TestRecoveryKeyValidation(t *testing.T) {
 	key, err := GenerateRecoveryKey()
 	require.NoError(t, err)
 	require.NoError(t, ValidateRecoveryKey(key))
+}
+
+func TestSnapshotCommandInternal(t *testing.T) {
+	single, err := snapshotCommandInternal("volume", RootSnapshotInput(mount.Mount{Type: mount.TypeVolume, Source: "data", Target: "/volume"}))
+	require.NoError(t, err)
+	require.Equal(t, []string{"backup", "--init", "--json", "--host", "arcane", "--label", "volume", "--as-path", "/", "--", "/volume"}, single)
+
+	multi, err := snapshotCommandInternal("arcane-system-recovery", CreateSnapshotInput{Sources: []string{"/data", "/projects"}})
+	require.NoError(t, err)
+	require.Equal(t, []string{"backup", "--init", "--json", "--host", "arcane", "--label", "arcane-system-recovery", "--", "/data", "/projects"}, multi)
+
+	_, err = snapshotCommandInternal("x", CreateSnapshotInput{Sources: []string{"/data", "/projects"}, AsPath: "/"})
+	require.ErrorContains(t, err, "single source")
+	_, err = snapshotCommandInternal("x", CreateSnapshotInput{})
+	require.ErrorContains(t, err, "at least one snapshot source")
 }

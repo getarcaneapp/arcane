@@ -43,7 +43,7 @@
 	import SystemVolumeScopeFields from './system-volume-scope-fields.svelte';
 	import BackupFilePicker from '#lib/components/backup-file-picker.svelte';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
-	import type { BackupFileProvider } from '#lib/types/backup.js';
+	import type { BackupFileProvider, BackupFileRootLoadState } from '#lib/types/backup.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { useQueryClient } from '@tanstack/svelte-query';
 
@@ -247,36 +247,46 @@
 		actionOpen = true;
 	}
 
+	// Replacing the provider remounts the picker; its root-load callback is the
+	// only thing that marks the dialog ready to restore.
+	function resetRestoreFilesPicker() {
+		restoreFilesProvider = null;
+		restoreFilesLoaded = false;
+		restoreFilesSelectedPaths = [];
+		restoreFilesSelectAll = false;
+		restoreFilesSearch = '';
+	}
+
 	async function openRestoreFiles(backup: BackupHistoryEntry) {
 		restoreFilesTarget = backup;
 		restoreFilesRecoveryKey = '';
-		restoreFilesProvider = null;
-		restoreFilesLoaded = false;
+		resetRestoreFilesPicker();
 		restoreFilesOpen = true;
 		if (policyCollection.recoveryKeyStored) loadRestoreFiles();
 	}
 
 	function closeRestoreFiles() {
 		restoreFilesOpen = false;
+		resetRestoreFilesPicker();
 	}
 
 	function updateRestoreFilesRecoveryKey(value: string) {
 		restoreFilesRecoveryKey = value;
-		restoreFilesProvider = null;
-		restoreFilesLoaded = false;
+		resetRestoreFilesPicker();
 	}
 
 	function loadRestoreFiles() {
 		if (!restoreFilesTarget || restoreFilesKeyInvalid) return;
-		restoreFilesSelectedPaths = [];
-		restoreFilesSelectAll = false;
-		restoreFilesSearch = '';
+		resetRestoreFilesPicker();
 		const backupID = restoreFilesTarget.id;
 		const recoveryKey = restoreFilesRecoveryKey.trim();
 		restoreFilesProvider = {
 			browse: (request) => systemBackupService.browseFiles(backupID, recoveryKey, request)
 		};
-		restoreFilesLoaded = true;
+	}
+
+	function updateRestoreFilesRootLoad(state: BackupFileRootLoadState) {
+		restoreFilesLoaded = state === 'ready';
 	}
 
 	async function restoreSelectedFiles() {
@@ -790,6 +800,7 @@
 					<InfoIcon class="size-4" />
 					<Alert.Description class="text-xs">
 						{m.system_backups_restore_files_lifecycle_info()}
+						{m.system_backups_restore_files_current_directory()}
 					</Alert.Description>
 				</Alert.Root>
 
@@ -822,6 +833,7 @@
 							bind:selectedPaths={restoreFilesSelectedPaths}
 							bind:selectAll={restoreFilesSelectAll}
 							bind:search={restoreFilesSearch}
+							onRootLoad={updateRestoreFilesRootLoad}
 						/>
 					{/key}
 

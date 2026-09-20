@@ -16,13 +16,14 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/cli/upgrade"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	recoverytypes "github.com/getarcaneapp/arcane/backend/v2/internal/recovery"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/systembackup"
 	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	rusticruntime "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/rustic"
 	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
 	backuptypes "github.com/getarcaneapp/arcane/types/v2/backup"
+	recoverytypes "github.com/getarcaneapp/arcane/types/v2/recovery"
 	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
@@ -56,6 +57,9 @@ func runRestoreInternal(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("decode recovery request: %w", err)
 	}
 	_ = os.Remove(requestPath)
+	if len(request.Stages) == 0 {
+		return errors.New("recovery request has no restore stages")
+	}
 	dockerClient, err := client.New(client.FromEnv)
 	if err != nil {
 		return fmt.Errorf("connect to Docker: %w", err)
@@ -65,30 +69,59 @@ func runRestoreInternal(_ *cobra.Command, _ []string) error {
 	if err != nil {
 		return fmt.Errorf("inspect Arcane container: %w", err)
 	}
+	if _, err := dockerClient.ImageInspect(ctx, rusticImage); err != nil {
+		reader, pullErr := dockerClient.ImagePull(ctx, rusticImage, client.ImagePullOptions{})
+		if pullErr != nil {
+			return fmt.Errorf("pull Arcane tools image for Rustic: %w", pullErr)
+		}
+		if pullErr = dockerutil.RenderJSONMessageStream(reader, nil); pullErr != nil {
+			_ = reader.Close()
+			return fmt.Errorf("pull Arcane tools image for Rustic: %w", pullErr)
+		}
+		_ = reader.Close()
+	}
 	if _, err := dockerClient.ContainerStop(ctx, request.ContainerID, client.ContainerStopOptions{Timeout: new(30)}); err != nil {
 		return fmt.Errorf("stop Arcane container: %w", err)
 	}
-	if err := restoreSnapshotInternal(ctx, dockerClient, request); err != nil {
-		_, _ = dockerClient.ContainerStart(ctx, request.ContainerID, client.ContainerStartOptions{})
-		return err
+	restart := func() { _, _ = dockerClient.ContainerStart(ctx, request.ContainerID, client.ContainerStartOptions{}) }
+	if err := runStagesInternal(ctx, dockerClient, request, request.Stages); err != nil {
+		// Arcane restarts only when the rollback succeeds; otherwise it stays
+		// stopped rather than running with mismatched data and projects.
+		err = fmt.Errorf("rustic system restore failed: %w", err)
+		if len(request.RollbackStages) == 0 {
+			return errors.Combine(err, errors.New("no pre-restore system backup is available for rollback; Arcane was left stopped"))
+		}
+		if rollbackErr := runStagesInternal(context.WithoutCancel(ctx), dockerClient, request, request.RollbackStages); rollbackErr != nil {
+			return errors.Combine(err, fmt.Errorf("restoring the pre-restore system backup failed; Arcane was left stopped: %w", rollbackErr))
+		}
+		restart()
+		return fmt.Errorf("%w; the pre-restore system backup was restored", err)
+	}
+	if !request.ProjectsIncluded {
+		slog.Warn("the restored system backup did not include the projects directory; the current projects directory was left untouched")
 	}
 	manifestData, err := os.ReadFile("/app/data/.arcane-recovery.json")
 	if err != nil {
-		_, _ = dockerClient.ContainerStart(ctx, request.ContainerID, client.ContainerStartOptions{})
+		restart()
 		return fmt.Errorf("read restored recovery manifest: %w", err)
 	}
 	var manifest recoverytypes.Manifest
 	if err := json.Unmarshal(manifestData, &manifest); err != nil {
-		_, _ = dockerClient.ContainerStart(ctx, request.ContainerID, client.ContainerStartOptions{})
+		restart()
 		return fmt.Errorf("decode restored recovery manifest: %w", err)
 	}
 	_ = os.Remove("/app/data/.arcane-recovery.json")
-	if manifest.FormatVersion != 1 || len(manifest.Environment) == 0 {
-		_, _ = dockerClient.ContainerStart(ctx, request.ContainerID, client.ContainerStartOptions{})
+	if (manifest.FormatVersion != 1 && manifest.FormatVersion != recoverytypes.ManifestFormatVersion) || len(manifest.Environment) == 0 {
+		restart()
 		return errors.New("unsupported or incomplete Arcane recovery manifest")
 	}
+	// Projects were restored into the current directory, so the recovered
+	// configuration must keep pointing there rather than at the backup-time path.
+	if request.ProjectsSetting != "" {
+		manifest.Environment["PROJECTS_DIRECTORY"] = request.ProjectsSetting
+	}
 	if err := finalizeRestoredBackupInternal(ctx, manifest.Environment["DATABASE_URL"], manifest.BackupID, manifest.ActivityID, request); err != nil {
-		_, _ = dockerClient.ContainerStart(ctx, request.ContainerID, client.ContainerStartOptions{})
+		restart()
 		return fmt.Errorf("finalize restored system backup: %w", err)
 	}
 	if err := upgrade.UpgradeContainer(ctx, dockerClient, inspect.Container, request.ContainerImage, manifest.Environment); err != nil {
@@ -120,6 +153,15 @@ func finalizeRestoredBackupInternal(ctx context.Context, databaseURL, manifestBa
 	}
 	if err := preserveSafetyBackupInternal(db, request.SafetyBackup); err != nil {
 		return err
+	}
+	// Keep the restored database pointing at the directory projects were restored into.
+	if value := strings.TrimSpace(request.ProjectsSetting); value != "" {
+		err := db.Model(&settings.SettingVariable{}).
+			Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "key"}}, DoUpdates: clause.Assignments(map[string]any{"value": value})}).
+			Create(map[string]any{"key": "projectsDirectory", "value": value}).Error
+		if err != nil {
+			return err
+		}
 	}
 	return finalizeRestoredActivityInternal(db, manifestActivityID)
 }
@@ -212,30 +254,20 @@ func finalizeRestoredActivityInternal(db *gorm.DB, activityID string) error {
 	}).Error
 }
 
-func restoreSnapshotInternal(ctx context.Context, dockerClient *client.Client, request recoverytypes.RestoreRequest) error {
-	if _, err := dockerClient.ImageInspect(ctx, rusticImage); err != nil {
-		reader, pullErr := dockerClient.ImagePull(ctx, rusticImage, client.ImagePullOptions{})
-		if pullErr != nil {
-			return fmt.Errorf("pull Arcane tools image for Rustic: %w", pullErr)
+// runStagesInternal restores each stage in order, replacing the target's
+// contents with the snapshot path.
+func runStagesInternal(ctx context.Context, dockerClient *client.Client, request recoverytypes.RestoreRequest, stages []recoverytypes.RestoreStage) error {
+	for _, stage := range stages {
+		if len(stage.Target.Mounts) == 0 || strings.TrimSpace(stage.Target.Path) == "" {
+			return fmt.Errorf("restore stage for %s has no destination", stage.SourcePath)
 		}
-		if pullErr = dockerutil.RenderJSONMessageStream(reader, nil); pullErr != nil {
-			_ = reader.Close()
-			return fmt.Errorf("pull Arcane tools image for Rustic: %w", pullErr)
+		mounts := append([]mount.Mount{}, stage.Repository.Mounts...)
+		mounts = append(mounts, stage.Target.Mounts...)
+		command := []string{"restore", "--delete", stage.SnapshotID + ":" + stage.SourcePath, stage.Target.Path}
+		if _, err := rusticruntime.Run(ctx, dockerClient, request.RecoveryKey, command, stage.Repository.Environment, mounts, container.NetworkMode(request.NetworkMode)); err != nil {
+			slog.Error("Rustic system restore stage failed", "source", stage.SourcePath, "error", err)
+			return fmt.Errorf("restore %s: %w", stage.SourcePath, err)
 		}
-		_ = reader.Close()
-	}
-	mounts := append([]mount.Mount{}, request.RepositoryMounts...)
-	request.AppDataMount.Target = "/restore"
-	request.AppDataMount.ReadOnly = false
-	mounts = append(mounts, request.AppDataMount)
-	snapshotPath := strings.TrimSpace(request.SnapshotPath)
-	if snapshotPath == "" {
-		snapshotPath = "/"
-	}
-	command := []string{"restore", "--delete", request.SnapshotID + ":" + snapshotPath, "/restore"}
-	if _, err := rusticruntime.Run(ctx, dockerClient, request.RecoveryKey, command, request.RepositoryEnvironment, mounts, container.NetworkMode(request.NetworkMode)); err != nil {
-		slog.Error("Rustic system restore failed", "error", err)
-		return fmt.Errorf("rustic system restore failed: %w", err)
 	}
 	return nil
 }

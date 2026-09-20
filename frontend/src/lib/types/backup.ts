@@ -77,3 +77,5 @@ export type BackupRestoreSelection = {
 export type BackupFileProvider = {
 	browse(request: BackupFileBrowseRequest): Promise<Paginated<BackupFileEntry>>;
 };
+
+export type BackupFileRootLoadState = 'loading' | 'ready' | 'error';

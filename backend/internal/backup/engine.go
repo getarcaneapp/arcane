@@ -70,6 +70,37 @@ type RestoreOptions struct {
 	// DestinationPath overrides the restore target path inside the helper
 	// container; the target mount's path is used when empty.
 	DestinationPath string
+	// ExtraMounts are attached alongside the target, e.g. mounts nested inside it.
+	ExtraMounts []mount.Mount
+}
+
+// CreateSnapshotInput describes what one snapshot captures: the mounts to
+// attach to the helper and the helper paths to back up. AsPath rewrites the
+// snapshot path of a single source and cannot combine with several.
+type CreateSnapshotInput struct {
+	Mounts  []mount.Mount
+	Sources []string
+	AsPath  string
+}
+
+// RootSnapshotInput captures one mount with its contents at the snapshot root.
+func RootSnapshotInput(source mount.Mount) CreateSnapshotInput {
+	return CreateSnapshotInput{Mounts: []mount.Mount{source}, Sources: []string{source.Target}, AsPath: "/"}
+}
+
+func snapshotCommandInternal(label string, input CreateSnapshotInput) ([]string, error) {
+	if len(input.Sources) == 0 {
+		return nil, errors.New("at least one snapshot source is required")
+	}
+	if input.AsPath != "" && len(input.Sources) > 1 {
+		return nil, errors.New("a snapshot path rewrite requires a single source")
+	}
+	command := []string{"backup", "--init", "--json", "--host", "arcane", "--label", label}
+	if input.AsPath != "" {
+		command = append(command, "--as-path", input.AsPath)
+	}
+	command = append(command, "--")
+	return append(command, input.Sources...), nil
 }
 
 // Engine executes typed Rustic operations through the official Rustic image.
@@ -126,13 +157,14 @@ func (e *Engine) Stop(ctx context.Context) error {
 	return stopErr
 }
 
-// CreateSnapshot backs the source mount up into the repository and returns the
-// created snapshot. The repository is initialized on first use.
-func (e *Engine) CreateSnapshot(ctx context.Context, dockerClient *client.Client, repository Repository, password, label string, source mount.Mount) (Snapshot, error) {
-	output, err := e.runInternal(ctx, dockerClient, repository, password,
-		[]string{"backup", "--init", "--json", "--as-path", "/", "--host", "arcane", "--label", label, "--", source.Target},
-		source,
-	)
+// CreateSnapshot backs the input's sources up into the repository as one
+// snapshot. The repository is initialized on first use.
+func (e *Engine) CreateSnapshot(ctx context.Context, dockerClient *client.Client, repository Repository, password, label string, input CreateSnapshotInput) (Snapshot, error) {
+	command, err := snapshotCommandInternal(label, input)
+	if err != nil {
+		return Snapshot{}, err
+	}
+	output, err := e.runInternal(ctx, dockerClient, repository, password, command, input.Mounts...)
 	if err != nil {
 		return Snapshot{}, err
 	}
@@ -161,7 +193,8 @@ func (e *Engine) RestoreSnapshot(ctx context.Context, dockerClient *client.Clien
 		destination = target.Target
 	}
 	command = append(command, "--", source, destination)
-	_, err := e.runInternal(ctx, dockerClient, repository, password, command, target)
+	mounts := append([]mount.Mount{target}, options.ExtraMounts...)
+	_, err := e.runInternal(ctx, dockerClient, repository, password, command, mounts...)
 	return err
 }
 
@@ -328,7 +361,7 @@ func (e *Engine) Replicate(ctx context.Context, dockerClient *client.Client, fro
 		return Snapshot{}, fmt.Errorf("failed to load Rustic snapshot for replication: %w", err)
 	}
 	copyMount.ReadOnly = true
-	snapshot, err := e.CreateSnapshot(ctx, dockerClient, to, password, label, copyMount)
+	snapshot, err := e.CreateSnapshot(ctx, dockerClient, to, password, label, RootSnapshotInput(copyMount))
 	if err != nil {
 		return Snapshot{}, fmt.Errorf("failed to replicate Rustic snapshot: %w", err)
 	}

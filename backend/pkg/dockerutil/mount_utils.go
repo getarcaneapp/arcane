@@ -108,6 +108,57 @@ func MountForSubpath(mounts []container.MountPoint, containerPath string, target
 	}
 }
 
+// MountForEnclosingPath returns the most-specific mount covering containerPath
+// mounted whole at target, plus containerPath's path relative to that mount.
+// Unlike MountForSubpath the subpath need not exist yet, so restores can create
+// it. Returns nil when no bind or volume mount covers containerPath.
+func MountForEnclosingPath(mounts []container.MountPoint, containerPath string, target string) (*mount.Mount, string) {
+	if strings.TrimSpace(containerPath) == "" {
+		return nil, ""
+	}
+	var best *container.MountPoint
+	for i := range mounts {
+		m := &mounts[i]
+		if m.Destination == "" || !pathHasPrefixInternal(containerPath, m.Destination) {
+			continue
+		}
+		if best == nil || len(m.Destination) > len(best.Destination) {
+			best = m
+		}
+	}
+	if best == nil {
+		return nil, ""
+	}
+	enclosing := MountForDestination(mounts, best.Destination, target)
+	if enclosing == nil {
+		return nil, ""
+	}
+	return enclosing, strings.TrimPrefix(strings.TrimPrefix(containerPath, best.Destination), "/")
+}
+
+// NestedMounts mirrors every bind or volume mount whose destination lies
+// strictly below containerPath, re-targeted beneath target, so a helper
+// container sees the same tree the current container does. Parents precede
+// their children; unsupported mount types are skipped.
+func NestedMounts(mounts []container.MountPoint, containerPath string, target string) []mount.Mount {
+	containerPath = strings.TrimRight(containerPath, "/")
+	if containerPath == "" {
+		return nil
+	}
+	var nested []mount.Mount
+	for _, m := range mounts {
+		if m.Destination == containerPath || !pathHasPrefixInternal(m.Destination, containerPath) {
+			continue
+		}
+		relative := strings.TrimPrefix(strings.TrimPrefix(m.Destination, containerPath), "/")
+		if mirrored := MountForDestination(mounts, m.Destination, path.Join(target, relative)); mirrored != nil {
+			nested = append(nested, *mirrored)
+		}
+	}
+	slices.SortStableFunc(nested, func(a, b mount.Mount) int { return len(a.Target) - len(b.Target) })
+	return nested
+}
+
 // pathHasPrefixInternal reports whether containerPath is at or under prefix,
 // treating both as POSIX-style paths. Avoids false positives like
 // "/app/datax" matching "/app/data".

@@ -235,3 +235,48 @@ func TestPreserveVolumeMounts(t *testing.T) {
 		})
 	}
 }
+
+func TestMountForEnclosingPath(t *testing.T) {
+	mounts := []containertypes.MountPoint{
+		{Type: mounttypes.TypeVolume, Name: "arcane-data", Destination: "/app/data", RW: true},
+		{Type: mounttypes.TypeBind, Source: "/host/projects", Destination: "/app/data/projects", RW: true},
+		{Type: mounttypes.TypeTmpfs, Destination: "/app/data/tmp"},
+	}
+	enclosing, relative := MountForEnclosingPath(mounts, "/app/data/custom/projects", "/restore")
+	require.Equal(t, &mounttypes.Mount{Type: mounttypes.TypeVolume, Source: "arcane-data", Target: "/restore"}, enclosing)
+	require.Equal(t, "custom/projects", relative)
+
+	enclosing, relative = MountForEnclosingPath(mounts, "/app/data/projects/demo", "/restore")
+	require.Equal(t, &mounttypes.Mount{Type: mounttypes.TypeBind, Source: "/host/projects", Target: "/restore"}, enclosing)
+	require.Equal(t, "demo", relative)
+
+	enclosing, relative = MountForEnclosingPath(mounts, "/app/data", "/restore")
+	require.Equal(t, "arcane-data", enclosing.Source)
+	require.Equal(t, "", relative)
+
+	enclosing, _ = MountForEnclosingPath(mounts, "/app/data/tmp/x", "/restore")
+	require.Nil(t, enclosing)
+	enclosing, _ = MountForEnclosingPath(mounts, "/srv/projects", "/restore")
+	require.Nil(t, enclosing)
+	enclosing, _ = MountForEnclosingPath(mounts, "", "/restore")
+	require.Nil(t, enclosing)
+}
+
+func TestNestedMounts(t *testing.T) {
+	mounts := []containertypes.MountPoint{
+		{Type: mounttypes.TypeBind, Source: "/host/deep", Destination: "/app/data/projects/deep", RW: false},
+		{Type: mounttypes.TypeVolume, Name: "arcane-data", Destination: "/app/data", RW: true},
+		{Type: mounttypes.TypeBind, Source: "/host/projects", Destination: "/app/data/projects", RW: true},
+		{Type: mounttypes.TypeTmpfs, Destination: "/app/data/tmp"},
+		{Type: mounttypes.TypeBind, Source: "/host/other", Destination: "/app/datasets", RW: true},
+	}
+	require.Equal(t, []mounttypes.Mount{
+		{Type: mounttypes.TypeBind, Source: "/host/projects", Target: "/data/projects"},
+		{Type: mounttypes.TypeBind, Source: "/host/deep", Target: "/data/projects/deep", ReadOnly: true},
+	}, NestedMounts(mounts, "/app/data", "/data"))
+	require.Equal(t, []mounttypes.Mount{
+		{Type: mounttypes.TypeBind, Source: "/host/deep", Target: "/projects/deep", ReadOnly: true},
+	}, NestedMounts(mounts, "/app/data/projects/", "/projects"))
+	require.Empty(t, NestedMounts(mounts, "/app/data/projects/deep", "/x"))
+	require.Empty(t, NestedMounts(mounts, "", "/x"))
+}

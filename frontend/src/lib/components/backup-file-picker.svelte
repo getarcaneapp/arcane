@@ -1,20 +1,21 @@
 <script lang="ts">
 	import { onDestroy, onMount, tick, untrack } from 'svelte';
 	import { tryCatch } from '#lib/utils/try-catch.js';
+	import { extractApiErrorMessage } from '#lib/utils/api.js';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import FileTreeRow from '#lib/components/file-tree-row.svelte';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { createVirtualizer } from '#lib/components/ui/virtualizer.svelte.js';
-	import type { BackupFileEntry, BackupFileProvider } from '#lib/types/backup.js';
+	import type { BackupFileEntry, BackupFileProvider, BackupFileRootLoadState } from '#lib/types/backup.js';
 	import * as m from '#lib/paraglide/messages.js';
 
 	type FolderPageState = {
 		entries: BackupFileEntry[];
 		continuationStart?: number;
 		loading: boolean;
-		error: boolean;
+		error: string | null;
 		requestID: number;
 	};
 
@@ -26,12 +27,14 @@
 		provider,
 		selectedPaths = $bindable([]),
 		selectAll = $bindable(false),
-		search = $bindable('')
+		search = $bindable(''),
+		onRootLoad
 	}: {
 		provider: BackupFileProvider;
 		selectedPaths?: string[];
 		selectAll?: boolean;
 		search?: string;
+		onRootLoad?: (state: BackupFileRootLoadState) => void;
 	} = $props();
 
 	let pages = $state<Record<string, FolderPageState>>({});
@@ -51,6 +54,9 @@
 		return result;
 	});
 	const rootLoading = $derived(pages['']?.loading === true && pages['']?.entries.length === 0);
+	const rootError = $derived(
+		pages[''] !== undefined && !pages['']?.loading && pages['']?.entries.length === 0 ? (pages['']?.error ?? null) : null
+	);
 	const rootEmpty = $derived(
 		pages[''] !== undefined && !pages['']?.loading && !pages['']?.error && pages['']?.entries.length === 0
 	);
@@ -70,7 +76,7 @@
 	}));
 
 	function pageStateInternal(folder: string): FolderPageState {
-		return pages[folder] ?? { entries: [], loading: false, error: false, requestID: 0 };
+		return pages[folder] ?? { entries: [], loading: false, error: null, requestID: 0 };
 	}
 
 	function updatePageInternal(folder: string, state: FolderPageState) {
@@ -108,7 +114,9 @@
 		const current = pageStateInternal(folder);
 		if (current.loading) return;
 		const requestID = ++nextRequestID;
-		updatePageInternal(folder, { ...current, loading: true, error: false, requestID });
+		const rootLoad = folder === '' && replace;
+		updatePageInternal(folder, { ...current, loading: true, error: null, requestID });
+		if (rootLoad) onRootLoad?.('loading');
 
 		const requestResult1 = await tryCatch(
 			(async () => {
@@ -126,15 +134,17 @@
 					entries: unique,
 					continuationStart: continuationStart < page.pagination.totalItems ? continuationStart : undefined,
 					loading: false,
-					error: false,
+					error: null,
 					requestID
 				});
+				if (rootLoad) onRootLoad?.('ready');
 			})()
 		);
 		if (requestResult1.error !== null) {
 			const latest = pages[folder];
 			if (generation !== requestGeneration || latest?.requestID !== requestID) return;
-			updatePageInternal(folder, { ...latest, loading: false, error: true });
+			updatePageInternal(folder, { ...latest, loading: false, error: extractApiErrorMessage(requestResult1.error) });
+			if (rootLoad) onRootLoad?.('error');
 			return;
 		}
 		await tick();
@@ -259,6 +269,18 @@
 			<div class="flex items-center justify-center py-8">
 				<Spinner class="size-5 text-muted-foreground" />
 			</div>
+		{:else if rootError !== null}
+			<div class="flex flex-col items-center justify-center gap-2 px-4 py-8 text-center text-sm" data-backup-file-root-error>
+				<span class="font-medium">{m.backup_file_browser_load_failed()}</span>
+				<span class="text-xs text-muted-foreground">{rootError}</span>
+				<ArcaneButton
+					action="base"
+					tone="ghost"
+					size="sm"
+					customLabel={m.common_retry()}
+					onclick={() => loadPageInternal('', 0, true)}
+				/>
+			</div>
 		{:else if rootEmpty}
 			<div class="flex items-center justify-center py-8 text-sm text-muted-foreground">
 				{m.volume_backup_no_files()}
@@ -304,6 +326,7 @@
 								>
 									{#if state?.error}
 										<span>{m.backup_file_browser_load_remaining_failed()}</span>
+										<span class="truncate" title={state.error}>{state.error}</span>
 										<ArcaneButton
 											action="base"
 											tone="ghost"

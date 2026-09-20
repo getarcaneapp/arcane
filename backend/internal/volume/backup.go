@@ -762,7 +762,7 @@ func (s *VolumeService) executeBackupInternal(ctx context.Context, entry *Volume
 		if passwordErr != nil {
 			return passwordErr
 		}
-		localSnapshot, err = s.engine.CreateSnapshot(ctx, dockerClient, repository, password, volumeName, volumeSourceMountInternal(volumeName))
+		localSnapshot, err = s.engine.CreateSnapshot(ctx, dockerClient, repository, password, volumeName, backup.RootSnapshotInput(volumeSourceMountInternal(volumeName)))
 		if err != nil {
 			return fmt.Errorf("failed to create local Rustic snapshot: %w", err)
 		}
@@ -786,7 +786,7 @@ func (s *VolumeService) executeBackupInternal(ctx context.Context, entry *Volume
 			}
 			remoteSnapshot, err = s.engine.Replicate(ctx, dockerClient, localRepository, localSnapshot.ID, remoteRepository, password, volumeName)
 		} else {
-			remoteSnapshot, err = s.engine.CreateSnapshot(ctx, dockerClient, remoteRepository, password, volumeName, volumeSourceMountInternal(volumeName))
+			remoteSnapshot, err = s.engine.CreateSnapshot(ctx, dockerClient, remoteRepository, password, volumeName, backup.RootSnapshotInput(volumeSourceMountInternal(volumeName)))
 		}
 		if err != nil {
 			return fmt.Errorf("failed to create S3 Rustic snapshot: %w", err)
