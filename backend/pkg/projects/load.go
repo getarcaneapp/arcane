@@ -221,7 +221,7 @@ func LoadComposeProjectFromContent(ctx context.Context, opts projecttypes.Compos
 		rawSources = harvestRawSourcesInternal(ctx, configDetails, loaderOptions...)
 	}
 
-	return finishLoadedProjectInternal(ctx, project, workingDir, opts.PathMapper, false, rawSources)
+	return finishLoadedProjectInternal(ctx, project, workingDir, opts.PathMapper, false, rawSources, nil)
 }
 
 // wrapTypeCastMappingLenientInternal prepares the interp type-cast mapping for lenient
@@ -328,8 +328,15 @@ func ApplyLenientLoaderOptions(ctx context.Context, opts *loader.Options, compos
 	}
 }
 
-// LoadComposeProject loads a compose project from composeFile. envOverride and
-// configureLoader are optional and may be nil. When lenient is true, undefined
+// PrepareProjectFunc runs against a loaded project after service selection,
+// include/override merging, and local path resolution, but before Docker host
+// path translation, so bind sources are still local filesystem paths. It may
+// mutate the filesystem (e.g. create missing bind directories) and a returned
+// error aborts the load.
+type PrepareProjectFunc func(ctx context.Context, project *composetypes.Project) error
+
+// LoadComposeProject loads a compose project from composeFile. envOverride,
+// configureLoader, and prepare are optional and may be nil. When lenient is true, undefined
 // ${VAR} references are tolerated: instead of substituting them with an empty
 // string (which produces invalid volume/bind specs like ":/path"), they are
 // replaced with a placeholder value so structural validation can succeed. This
@@ -346,6 +353,7 @@ func LoadComposeProject(
 	lenient bool,
 	dependencies *projecttypes.ComposeDependencies,
 	services []string,
+	prepare PrepareProjectFunc,
 ) (project *composetypes.Project, err error) {
 	defer recoverComposeLoadPanicInternal(ctx, composeFile, &project, &err)
 
@@ -459,7 +467,7 @@ func LoadComposeProject(
 		rawSources = harvestRawSourcesInternal(ctx, cfg, loaderOptions...)
 	}
 
-	project, err = finishLoadedProjectInternal(ctx, project, workdir, pathMapper, true, rawSources)
+	project, err = finishLoadedProjectInternal(ctx, project, workdir, pathMapper, true, rawSources, prepare)
 	if err != nil {
 		return nil, err
 	}
@@ -468,12 +476,20 @@ func LoadComposeProject(
 	return project, nil
 }
 
-func finishLoadedProjectInternal(ctx context.Context, project *composetypes.Project, workingDir string, pathMapper projecttypes.VolumeSourcePathMapper, translateFileResources bool, rawSources map[string]string) (*composetypes.Project, error) {
+func finishLoadedProjectInternal(ctx context.Context, project *composetypes.Project, workingDir string, pathMapper projecttypes.VolumeSourcePathMapper, translateFileResources bool, rawSources map[string]string, prepare PrepareProjectFunc) (*composetypes.Project, error) {
 	if err := applyServiceLabelMetadataInternal(project); err != nil {
 		return nil, err
 	}
 	project = project.WithoutUnnecessaryResources()
 	ResolveRelativeProjectPaths(project, workingDir)
+
+	// Sources are local absolute paths here; host translation below rewrites
+	// them for the Docker daemon and they would no longer be usable locally.
+	if prepare != nil {
+		if err := prepare(ctx, project); err != nil {
+			return nil, errors.WrapIf(err, "prepare compose project")
+		}
+	}
 
 	if !isNilVolumeSourcePathMapperInternal(pathMapper) {
 		if err := pathMapper.TranslateVolumeSources(project, translateFileResources); err != nil {
@@ -604,7 +620,7 @@ func LoadComposeProjectFromDir(ctx context.Context, dir, projectName, projectsDi
 		return nil, "", err
 	}
 
-	proj, err := LoadComposeProject(ctx, composeFile, projectName, projectsDirectory, autoInjectEnv, pathMapper, nil, nil, false, nil, nil)
+	proj, err := LoadComposeProject(ctx, composeFile, projectName, projectsDirectory, autoInjectEnv, pathMapper, nil, nil, false, nil, nil, nil)
 	if err != nil {
 		return nil, "", err
 	}

@@ -147,7 +147,7 @@ func (s *ProjectService) ValidateComposeDirectory(ctx context.Context, projectNa
 		pathMapper,
 		nil,
 		nil,
-		true, nil, nil,
+		true, nil, nil, nil,
 	)
 	if err != nil {
 		return 0, err
@@ -743,7 +743,10 @@ func (s *ProjectService) gitOpsComposePathInternal(ctx context.Context, syncID s
 	}
 }
 
-func (s *ProjectService) loadComposeProjectForProjectInternal(ctx context.Context, proj *Project, services ...string) (*composetypes.Project, string, error) {
+// loadComposeProjectForProjectInternal loads the executable compose model for
+// proj. prepare is optional and runs before host path translation; deployment
+// paths use it to create missing bind directories, read paths pass nil.
+func (s *ProjectService) loadComposeProjectForProjectInternal(ctx context.Context, proj *Project, prepare projects.PrepareProjectFunc, services ...string) (*composetypes.Project, string, error) {
 	composeFileFullPath, err := s.ResolveProjectComposeFile(ctx, proj)
 	if err != nil {
 		return nil, "", err
@@ -754,7 +757,7 @@ func (s *ProjectService) loadComposeProjectForProjectInternal(ctx context.Contex
 
 	pathMapper := s.projectPathMapperInternal(ctx)
 
-	composeProject, loadErr := projects.LoadComposeProject(ctx, composeFileFullPath, projects.NormalizeProjectName(proj.Name), projectsDirectory, utils.BoolOrDefault(cfg.AutoInjectEnv.Value, false), pathMapper, nil, nil, false, nil, services)
+	composeProject, loadErr := projects.LoadComposeProject(ctx, composeFileFullPath, projects.NormalizeProjectName(proj.Name), projectsDirectory, utils.BoolOrDefault(cfg.AutoInjectEnv.Value, false), pathMapper, nil, nil, false, nil, services, prepare)
 	if loadErr != nil {
 		return nil, "", loadErr
 	}

@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/stretchr/testify/assert"
@@ -72,4 +73,27 @@ func TestProjectService_ApplyGitSyncProjectFiles_TolerantOfPermissionLockedEnv(t
 	envBytes, err := os.ReadFile(envPath)
 	require.NoError(t, err)
 	assert.Equal(t, "FOO=locked\n", string(envBytes))
+}
+
+func TestPrepareProjectBindDirectoriesInternal_PermissionFailure(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("permission bits are ignored when running as root")
+	}
+
+	projectPath := t.TempDir()
+	locked := filepath.Join(projectPath, "locked")
+	require.NoError(t, os.Mkdir(locked, 0o500))
+	t.Cleanup(func() { assert.NoError(t, os.Chmod(locked, 0o755)) })
+
+	project := &composetypes.Project{Services: composetypes.Services{
+		"app": {Name: "app", Volumes: []composetypes.ServiceVolumeConfig{{
+			Type: composetypes.VolumeTypeBind, Source: filepath.Join(locked, "conf"), Target: "/etc/caddy",
+		}}},
+	}}
+
+	err := prepareProjectBindDirectoriesInternal(projectPath)(context.Background(), project)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), filepath.Join(locked, "conf"))
+	assert.Contains(t, err.Error(), "service app")
+	assert.NoDirExists(t, filepath.Join(locked, "conf"))
 }

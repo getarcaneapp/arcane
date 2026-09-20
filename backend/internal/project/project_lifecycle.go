@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"path/filepath"
+	"slices"
 	"time"
 
 	"emperror.dev/errors"
@@ -80,7 +82,7 @@ func (s *ProjectService) UpdateProjectServices(ctx context.Context, projectID st
 		return err
 	}
 	if discoverTags {
-		effective, _, err := s.loadComposeProjectForProjectInternal(ctx, proj, servicesToUpdate...)
+		effective, _, err := s.loadComposeProjectForProjectInternal(ctx, proj, nil, servicesToUpdate...)
 		if err != nil {
 			return errors.WrapIf(err, "load project for service image checks")
 		}
@@ -105,7 +107,7 @@ func (s *ProjectService) updateProjectServicesInternal(ctx context.Context, proj
 	previousStatus := projectFromDb.Status
 
 	// 1. Load project
-	compProj, _, err := s.loadComposeProjectForProjectInternal(ctx, projectFromDb, servicesToUpdate...)
+	compProj, _, err := s.loadComposeProjectForProjectInternal(ctx, projectFromDb, prepareProjectBindDirectoriesInternal(projectFromDb.Path), servicesToUpdate...)
 	if err != nil {
 		return errors.WrapIf(err, "failed to load compose project")
 	}
@@ -153,6 +155,61 @@ func (s *ProjectService) updateProjectServicesInternal(ctx context.Context, proj
 	}
 	s.logProjectEventInternal(ctx, event.EventTypeProjectUpdate, projectID, projectFromDb.Name, user, metadata, "could not log project service update action")
 
+	return nil
+}
+
+// prepareProjectBindDirectoriesInternal returns the load-time preparation for
+// deployments: missing bind-mount sources inside projectPath are created as
+// Arcane's runtime user before any container is stopped or created. Left to
+// the Docker daemon, those directories would be created as root (#4132).
+//
+// Only bind sources with Compose's automatic host path creation enabled are
+// considered (short syntax, or long syntax without create_host_path: false),
+// mirroring what the daemon would otherwise do. Existing files, directories,
+// and symlinks are left untouched, as are sources outside the project
+// directory, and the root-confined acfs calls reject symlinks escaping it.
+func prepareProjectBindDirectoriesInternal(projectPath string) projects.PrepareProjectFunc {
+	return func(ctx context.Context, project *composetypes.Project) error {
+		for _, serviceName := range slices.Sorted(maps.Keys(project.Services)) {
+			for _, volume := range project.Services[serviceName].Volumes {
+				if volume.Type != composetypes.VolumeTypeBind || volume.Source == "" {
+					continue
+				}
+				if volume.Bind != nil && !bool(volume.Bind.CreateHostPath) {
+					continue
+				}
+				if err := ensureProjectBindDirectoryInternal(ctx, projectPath, volume.Source); err != nil {
+					return errors.WrapIff(err, "bind source %s for service %s", volume.Source, serviceName)
+				}
+			}
+		}
+		return nil
+	}
+}
+
+// ensureProjectBindDirectoryInternal creates source (and missing parents)
+// when it lies inside projectPath and nothing exists there yet.
+func ensureProjectBindDirectoryInternal(ctx context.Context, projectPath, source string) error {
+	logicalPath, err := acfs.LogicalPath(projectPath, source)
+	if err != nil {
+		if errors.Is(err, acfs.ErrOutsideRoot) {
+			return nil
+		}
+		return err
+	}
+	if logicalPath == "/" {
+		return nil
+	}
+
+	exists, err := acfs.Exists(ctx, projectPath, logicalPath)
+	if err != nil || exists {
+		return err
+	}
+
+	if err := acfs.MkdirAll(ctx, projectPath, logicalPath, utils.DirPerm); err != nil {
+		return err
+	}
+	slog.InfoContext(ctx, "created missing bind directory for project deployment", "projectPath", projectPath, "source", source)
 	return nil
 }
 
@@ -263,7 +320,7 @@ func (s *ProjectService) DeployProject(ctx context.Context, projectID string, us
 			return s.lifecycleService.RunPreDeploy(ctx, projectFromDb, user)
 		},
 		Load: func(ctx context.Context) (*composetypes.Project, error) {
-			model, _, err := s.loadComposeProjectForProjectInternal(ctx, projectFromDb)
+			model, _, err := s.loadComposeProjectForProjectInternal(ctx, projectFromDb, prepareProjectBindDirectoriesInternal(projectFromDb.Path))
 			if err == nil {
 				closeSuppression = s.eventService.BeginComposeSuppressionWindow(model.Name)
 			}
@@ -298,7 +355,7 @@ func (s *ProjectService) DownProject(ctx context.Context, projectID string, user
 		return err
 	}
 
-	proj, _, lerr := s.loadComposeProjectForProjectInternal(ctx, projectFromDb)
+	proj, _, lerr := s.loadComposeProjectForProjectInternal(ctx, projectFromDb, nil)
 	if lerr != nil {
 		_ = s.updateProjectStatusInternal(ctx, projectID, ProjectStatusRunning)
 		return errors.WrapIf(lerr, "failed to load compose project")
@@ -467,7 +524,7 @@ func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, r
 	}
 
 	if removeVolumes {
-		if compProj, _, lerr := s.loadComposeProjectForProjectInternal(ctx, proj); lerr == nil {
+		if compProj, _, lerr := s.loadComposeProjectForProjectInternal(ctx, proj, nil); lerr == nil {
 			defer s.eventService.BeginComposeSuppressionWindow(compProj.Name)()
 			if derr := projects.ComposeDown(ctx, compProj, true); derr != nil {
 				slog.WarnContext(ctx, "failed to remove volumes", "error", derr)
@@ -574,7 +631,7 @@ func (s *ProjectService) PullProjectImages(ctx context.Context, projectID string
 		return err
 	}
 
-	compProj, _, lerr := s.loadComposeProjectForProjectInternal(ctx, proj)
+	compProj, _, lerr := s.loadComposeProjectForProjectInternal(ctx, proj, nil)
 	if lerr != nil {
 		return errors.WrapIf(lerr, "failed to load compose project")
 	}
@@ -596,7 +653,7 @@ func (s *ProjectService) BuildProjectServices(ctx context.Context, projectID str
 		return err
 	}
 
-	projectModel, _, derr := s.loadComposeProjectForProjectInternal(ctx, projectFromDb)
+	projectModel, _, derr := s.loadComposeProjectForProjectInternal(ctx, projectFromDb, nil)
 	if derr != nil {
 		return errors.WrapIff(derr, "failed to load compose project in %s", projectFromDb.Path)
 	}
@@ -617,7 +674,7 @@ func (s *ProjectService) EnsureProjectImagesPresent(ctx context.Context, project
 		return err
 	}
 
-	compProj, _, lerr := s.loadComposeProjectForProjectInternal(ctx, proj)
+	compProj, _, lerr := s.loadComposeProjectForProjectInternal(ctx, proj, nil)
 	if lerr != nil {
 		return errors.WrapIf(lerr, "failed to load compose project")
 	}
@@ -664,7 +721,7 @@ func (s *ProjectService) RestartProject(ctx context.Context, projectID string, s
 		return errors.WrapIf(err, "failed to update project status to restarting")
 	}
 
-	compProj, _, lerr := s.loadComposeProjectForProjectInternal(ctx, proj)
+	compProj, _, lerr := s.loadComposeProjectForProjectInternal(ctx, proj, nil)
 	if lerr != nil {
 		_ = s.updateProjectStatusInternal(ctx, projectID, ProjectStatusRunning)
 		return errors.WrapIf(lerr, "failed to load compose project")

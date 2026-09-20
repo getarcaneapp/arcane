@@ -134,7 +134,7 @@ func LoadCachedComposeProject(ctx context.Context, cache projecttypes.ComposeCac
 		}
 	}
 	dependencies := projecttypes.ComposeDependencies{}
-	model, err := LoadComposeProject(ctx, composePath, projectName, projectsDirectory, autoInject, pathMapper, nil, nil, false, &dependencies, nil)
+	model, err := LoadComposeProject(ctx, composePath, projectName, projectsDirectory, autoInject, pathMapper, nil, nil, false, &dependencies, nil, nil)
 	if err != nil {
 		return nil, err
 	}

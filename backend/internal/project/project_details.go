@@ -102,7 +102,7 @@ func (s *ProjectService) GetProjectServices(ctx context.Context, projectID strin
 		return nil, err
 	}
 
-	composeProject, composeFileFullPath, derr := s.loadComposeProjectForProjectInternal(ctx, projectFromDb)
+	composeProject, composeFileFullPath, derr := s.loadComposeProjectForProjectInternal(ctx, projectFromDb, nil)
 	if errors.Is(derr, common.ErrProjectEnvUnreadable) {
 		return s.projectServicesFromContainersInternal(ctx, projectFromDb, s.ProjectMetadata(ctx, *projectFromDb, nil))
 	}
@@ -948,7 +948,7 @@ func (s *ProjectService) StreamProjectLogs(ctx context.Context, projectID string
 }
 
 func (s *ProjectService) CountServicesFromCompose(ctx context.Context, p Project) (int, error) {
-	proj, _, err := s.loadComposeProjectForProjectInternal(ctx, &p)
+	proj, _, err := s.loadComposeProjectForProjectInternal(ctx, &p, nil)
 	if err != nil {
 		return 0, err
 	}

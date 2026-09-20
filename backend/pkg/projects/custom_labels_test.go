@@ -233,7 +233,7 @@ services:
 	dir := t.TempDir()
 	path := filepath.Join(dir, "compose.yaml")
 	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
-	disk, err := LoadComposeProject(t.Context(), path, "metadata", dir, false, nil, nil, nil, false, nil, nil)
+	disk, err := LoadComposeProject(t.Context(), path, "metadata", dir, false, nil, nil, nil, false, nil, nil, nil)
 	require.NoError(t, err)
 	memory, err := LoadComposeProjectFromContent(t.Context(), projecttypes.ComposeContentOptions{ComposeContent: content, WorkingDir: dir, ProjectName: "metadata"})
 	require.NoError(t, err)
@@ -288,7 +288,7 @@ services:
         enabled: true
         constraint: "=3.20.1"
 `), 0o600))
-	project, err := LoadComposeProject(t.Context(), filepath.Join(dir, "compose.yaml"), "metadata", dir, false, nil, nil, nil, false, nil, nil)
+	project, err := LoadComposeProject(t.Context(), filepath.Join(dir, "compose.yaml"), "metadata", dir, false, nil, nil, nil, false, nil, nil, nil)
 	require.NoError(t, err)
 	require.Equal(t, "3.20.x", project.Services["main"].Labels[updaterlabels.LabelUpdateConstraint])
 	require.Equal(t, "false", project.Services["main"].Labels[updaterlabels.LabelUpdater])

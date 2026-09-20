@@ -413,7 +413,7 @@ func (s *ProjectService) prepareProjectRenameVolumeMigrationInternal(ctx context
 		return nil, nil
 	}
 
-	composeProject, _, err := s.loadComposeProjectForProjectInternal(ctx, proj)
+	composeProject, _, err := s.loadComposeProjectForProjectInternal(ctx, proj, nil)
 	if err != nil {
 		if errors.Is(err, common.ErrProjectComposeFileNotFound) {
 			return nil, nil
@@ -1041,7 +1041,7 @@ func (s *ProjectService) persistProjectImageChangesInternal(ctx context.Context,
 	if proj.GitOpsManagedBy != nil && strings.TrimSpace(*proj.GitOpsManagedBy) != "" {
 		return nil, errors.New("tag updates cannot edit a GitOps-managed project; update image tags in the source repository")
 	}
-	effective, _, err := s.loadComposeProjectForProjectInternal(ctx, proj)
+	effective, _, err := s.loadComposeProjectForProjectInternal(ctx, proj, nil)
 	if err != nil {
 		return nil, fmt.Errorf("load project for tag update: %w", err)
 	}

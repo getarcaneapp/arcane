@@ -7764,3 +7764,63 @@ func TestConfiguredProjectAggregatesReplicaAndPreviewChecks(t *testing.T) {
 	require.Empty(t, summary.UpdateInfoByRef["example:3.1.0"].LatestVersion)
 	require.Equal(t, "3.2.0", scoped["two"].LatestVersion, "aggregation must not modify shared checks")
 }
+
+func TestPrepareProjectBindDirectoriesInternal(t *testing.T) {
+	t.Parallel()
+
+	newProject := func(volumes ...composetypes.ServiceVolumeConfig) *composetypes.Project {
+		return &composetypes.Project{Services: composetypes.Services{
+			"app": {Name: "app", Volumes: volumes},
+		}}
+	}
+	bind := func(source string) composetypes.ServiceVolumeConfig {
+		return composetypes.ServiceVolumeConfig{Type: composetypes.VolumeTypeBind, Source: source, Target: "/t", Bind: &composetypes.ServiceVolumeBind{CreateHostPath: true}}
+	}
+
+	t.Run("creates missing nested directories only", func(t *testing.T) {
+		t.Parallel()
+		projectPath := t.TempDir()
+		outside := t.TempDir()
+		existingFile := filepath.Join(projectPath, "Caddyfile")
+		require.NoError(t, os.WriteFile(existingFile, []byte("x"), 0o600))
+		existingDir := filepath.Join(projectPath, "data")
+		require.NoError(t, os.Mkdir(existingDir, 0o700))
+
+		noCreate := bind(filepath.Join(projectPath, "manual"))
+		noCreate.Bind.CreateHostPath = false
+		project := newProject(
+			bind(filepath.Join(projectPath, "caddy", "conf")),
+			composetypes.ServiceVolumeConfig{Type: composetypes.VolumeTypeBind, Source: filepath.Join(projectPath, "plain"), Target: "/p"},
+			bind(existingFile),
+			bind(existingDir),
+			bind(projectPath),
+			bind(filepath.Join(outside, "elsewhere")),
+			noCreate,
+			composetypes.ServiceVolumeConfig{Type: composetypes.VolumeTypeVolume, Source: "named", Target: "/v"},
+		)
+
+		require.NoError(t, prepareProjectBindDirectoriesInternal(projectPath)(context.Background(), project))
+
+		assert.DirExists(t, filepath.Join(projectPath, "caddy", "conf"))
+		assert.DirExists(t, filepath.Join(projectPath, "plain"), "long syntax without bind block is auto-created like the daemon would")
+		assert.FileExists(t, existingFile)
+		info, err := os.Stat(existingDir)
+		require.NoError(t, err)
+		assert.Equal(t, os.FileMode(0o700), info.Mode().Perm(), "existing directory permissions preserved")
+		assert.NoDirExists(t, filepath.Join(outside, "elsewhere"))
+		assert.NoDirExists(t, filepath.Join(projectPath, "manual"), "create_host_path: false is respected")
+		assert.NoDirExists(t, filepath.Join(projectPath, "named"))
+	})
+
+	t.Run("rejects symlink escaping the project", func(t *testing.T) {
+		t.Parallel()
+		projectPath := t.TempDir()
+		outside := t.TempDir()
+		require.NoError(t, os.Symlink(outside, filepath.Join(projectPath, "link")))
+
+		err := prepareProjectBindDirectoriesInternal(projectPath)(context.Background(), newProject(bind(filepath.Join(projectPath, "link", "conf"))))
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "service app")
+		assert.NoDirExists(t, filepath.Join(outside, "conf"))
+	})
+}

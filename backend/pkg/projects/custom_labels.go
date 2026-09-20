@@ -324,7 +324,7 @@ func loadComposeProjectForMetadataFromFileInternal(ctx context.Context, composeF
 		opts.SkipValidation = true
 		opts.SkipConsistencyCheck = true
 		opts.SkipResolveEnvironment = false
-	}, false, nil, nil)
+	}, false, nil, nil, nil)
 }
 
 func loadComposeEnvironment(workdir string) map[string]string {
