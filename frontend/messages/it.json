@@ -614,6 +614,8 @@
   "containers_update_pulling_image": "Estrazione immagine più recente...",
   "containers_update_success": "Contenitore \"{name}\" aggiornato con successo",
   "containers_update_failed": "Impossibile aggiornare il contenitore \"{name}\"",
+  "containers_update_skipped": "Il contenitore \"{name}\" non è stato aggiornato",
+  "containers_update_skipped_no_reason": "Il programma di aggiornamento ha saltato questo contenitore senza fornire alcuna motivazione",
   "containers_remove_confirm_title": "Conferma l'eliminazione dei container",
   "containers_remove_confirm_message": "Sei sicuro di eliminare questo container? Questa azione non può essere annullata.",
   "containers_remove_force_label": "Eliminazione forzata (blocca il container se in esecuzione)",
