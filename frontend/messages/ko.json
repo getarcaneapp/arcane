@@ -614,6 +614,8 @@
   "containers_update_pulling_image": "최신 이미지 가져오는 중…",
   "containers_update_success": "\"{name}\" 컨테이너 업데이트 완료",
   "containers_update_failed": "\"{name}\" 컨테이너 업데이트 실패",
+  "containers_update_skipped": "\"{name}\" 컨테이너가 업데이트되지 않았습니다.",
+  "containers_update_skipped_no_reason": "업데이터가 아무런 이유도 밝히지 않은 채 이 컨테이너를 건너뛰었습니다.",
   "containers_remove_confirm_title": "컨테이너 제거 확인",
   "containers_remove_confirm_message": "이 컨테이너를 제거하시겠습니까? 이 작업은 취소할 수 없습니다.",
   "containers_remove_force_label": "강제 제거 (실행 중인 경우 컨테이너 종료)",
