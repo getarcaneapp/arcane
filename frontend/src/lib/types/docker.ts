@@ -182,6 +182,8 @@ export interface ContainerSummaryDto extends BaseContainer {
 	mounts: ContainerMounts[];
 	updateInfo?: ImageUpdateInfoDto;
 	redeployDisabled?: boolean;
+	/** Eligibility under the updater label and exclusion setting; absent on older agents. */
+	autoUpdateEnabled?: boolean;
 	hidden?: boolean;
 	resourceSample?: ContainerResourceSample | null;
 }
@@ -309,6 +311,8 @@ export interface ContainerDetailsDto {
 	iconLightUrl?: string;
 	iconDarkUrl?: string;
 	redeployDisabled?: boolean;
+	/** Eligibility under the updater label and exclusion setting; absent on older agents. */
+	autoUpdateEnabled?: boolean;
 }
 
 export interface ContainerCommitRequest {

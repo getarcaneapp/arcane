@@ -48,6 +48,11 @@ type ImageHandler struct {
 
 // --- Huma Input/Output Wrappers ---
 
+// ListImagesOutput is the image list response including the upload limit.
+type ListImagesOutput struct {
+	Body image.ListResponse
+}
+
 type ListImagesInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Search        string `query:"search" doc:"Search query"`
@@ -311,7 +316,7 @@ func RegisterImages(api huma.API, dockerService *docker.DockerClientService, ima
 }
 
 // ListImages returns a paginated list of images.
-func (h *ImageHandler) ListImages(ctx context.Context, input *ListImagesInput) (*handlerutil.Page[image.Summary], error) {
+func (h *ImageHandler) ListImages(ctx context.Context, input *ListImagesInput) (*ListImagesOutput, error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	if input.InUse != "" {
 		params.Filters["inUse"] = input.InUse
@@ -333,11 +338,12 @@ func (h *ImageHandler) ListImages(ctx context.Context, input *ListImagesInput) (
 		images = []image.Summary{}
 	}
 
-	return &handlerutil.Page[image.Summary]{
-		Body: base.Paginated[image.Summary]{
-			Success:    true,
-			Data:       images,
-			Pagination: handlerutil.PaginationResponse(paginationResp),
+	return &ListImagesOutput{
+		Body: image.ListResponse{
+			Success:            true,
+			Data:               images,
+			Pagination:         handlerutil.PaginationResponse(paginationResp),
+			MaxImageUploadSize: h.settingsService.GetIntSetting(ctx, "maxImageUploadSize", 500),
 		},
 	}, nil
 }

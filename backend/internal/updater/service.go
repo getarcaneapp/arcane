@@ -1226,7 +1226,7 @@ func (s *UpdaterService) collectUsedImagesFromContainersInternal(ctx context.Con
 			continue
 		}
 
-		if containerSummaryExcludedInternal(summary, excludedContainers) {
+		if dockerutil.ContainerNameExcluded(summary.Names, excludedContainers) {
 			s.loggerInternal().DebugContext(ctx, "collectUsedImagesFromContainers: skipping excluded container", "containerId", summary.ID, "names", summary.Names)
 			continue
 		}
@@ -1304,15 +1304,7 @@ func (s *UpdaterService) buildExcludedContainerSetInternal(ctx context.Context) 
 	if s.deps.Settings == nil {
 		return nil
 	}
-	names := utils.UniqueNonEmptyStrings(strings.Split(s.deps.Settings.GetStringSetting(ctx, "autoUpdateExcludedContainers", ""), ","))
-	if len(names) == 0 {
-		return nil
-	}
-	excluded := make(map[string]bool, len(names))
-	for _, name := range names {
-		excluded[name] = true
-	}
-	return excluded
+	return dockerutil.ExcludedContainerNameSet(s.deps.Settings.GetStringSetting(ctx, "autoUpdateExcludedContainers", ""))
 }
 
 func (s *UpdaterService) collectUsedImagesFromProjectsInternal(ctx context.Context, out map[string]struct{}) error {
@@ -1383,16 +1375,4 @@ func addNormalizedImageUpdateRefInternal(ctx context.Context, out map[string]str
 		return
 	}
 	slog.Debug(logMessage, args...)
-}
-
-func containerSummaryExcludedInternal(summary container.Summary, excludedContainers map[string]bool) bool {
-	if len(excludedContainers) == 0 {
-		return false
-	}
-	for _, name := range summary.Names {
-		if excludedContainers[strings.TrimPrefix(name, "/")] {
-			return true
-		}
-	}
-	return false
 }

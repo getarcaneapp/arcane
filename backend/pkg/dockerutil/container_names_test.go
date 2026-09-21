@@ -45,3 +45,13 @@ func TestContainerNameFromNames(t *testing.T) {
 		})
 	}
 }
+
+func TestExcludedContainerNames(t *testing.T) {
+	assert.Nil(t, ExcludedContainerNameSet(" , "))
+
+	excluded := ExcludedContainerNameSet(" app ,db,,app")
+	assert.Equal(t, map[string]bool{"app": true, "db": true}, excluded)
+	assert.True(t, ContainerNameExcluded([]string{"/other", "/db"}, excluded))
+	assert.False(t, ContainerNameExcluded([]string{"/other"}, excluded))
+	assert.False(t, ContainerNameExcluded([]string{"/app"}, nil))
+}

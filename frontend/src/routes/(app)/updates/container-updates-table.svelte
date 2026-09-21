@@ -25,7 +25,8 @@
 	import IfPermitted from '#lib/components/if-permitted.svelte';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { confirmAndUpdateContainer } from '#lib/utils/container-actions.js';
-	import { isAutoUpdateIgnored, isAutoUpdateLabelDisabled } from '#lib/utils/container-auto-update.js';
+	import { isAutoUpdateLabelDisabled } from '#lib/utils/container-auto-update.js';
+	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { bulkConfirmAndRun } from '#lib/utils/bulk-actions.js';
 	import { throwOnContainerUpdateFailure } from '#lib/utils/update-actions.js';
 	import { formatImageUpdateCheckedAt, formatImageUpdateValue } from '#lib/utils/image-updates.js';
@@ -41,6 +42,9 @@
 		checkedAt: string;
 		ignored: boolean;
 		labelControlled: boolean;
+		/** False when the agent omitted `autoUpdateEnabled`; ignoring is then unavailable. */
+		statusAvailable: boolean;
+		ignoreTitle: string;
 		updateInfo?: ImageUpdateInfoDto;
 		container: ContainerSummaryDto;
 	};
@@ -48,19 +52,11 @@
 	interface Props {
 		containers: ContainersPaginatedResponse;
 		requestOptions: SearchPaginationSortRequest;
-		/** `autoUpdateExcludedContainers` setting — a CSV of ignored container names. */
-		excludedContainers?: string;
 		onRefreshData: (options: ContainerListRequestOptions) => Promise<ContainersPaginatedResponse>;
 		onIgnoreChanged?: () => Promise<unknown> | unknown;
 	}
 
-	let {
-		containers = $bindable(),
-		requestOptions = $bindable(),
-		excludedContainers,
-		onRefreshData,
-		onIgnoreChanged
-	}: Props = $props();
+	let { containers = $bindable(), requestOptions = $bindable(), onRefreshData, onIgnoreChanged }: Props = $props();
 
 	let selectedIds = $state<string[]>([]);
 	let mobileFieldVisibility = $state<MobileFieldVisibility>({});
@@ -70,6 +66,14 @@
 
 	function mapContainerRow(container: ContainerSummaryDto): ContainerUpdateRow {
 		const name = getContainerDisplayName(container);
+		const labelControlled = isAutoUpdateLabelDisabled(container.labels);
+		const statusAvailable = typeof container.autoUpdateEnabled === 'boolean';
+		let ignoreTitle = m.updates_ignore_description();
+		if (!statusAvailable) {
+			ignoreTitle = m.auto_update_status_unavailable();
+		} else if (labelControlled) {
+			ignoreTitle = m.auto_update_controlled_by_label();
+		}
 		return {
 			id: container.id,
 			containerId: container.id,
@@ -78,8 +82,10 @@
 			currentValue: formatImageUpdateValue(container.updateInfo, 'current'),
 			latestValue: formatImageUpdateValue(container.updateInfo, 'latest'),
 			checkedAt: container.updateInfo?.checkTime ?? '',
-			ignored: isAutoUpdateIgnored(name, container.labels, excludedContainers),
-			labelControlled: isAutoUpdateLabelDisabled(container.labels),
+			ignored: container.autoUpdateEnabled === false,
+			labelControlled,
+			statusAvailable,
+			ignoreTitle,
 			updateInfo: container.updateInfo,
 			container
 		};
@@ -125,23 +131,28 @@
 
 	// Ignoring writes to the shared `autoUpdateExcludedContainers` setting, so the
 	// row stays listed (the list is driven by `updateInfo.hasUpdate`) and only its
-	// rendering changes once the settings query reports the new value back.
+	// rendering changes once the refreshed rows report the new status back.
 	async function handleToggleIgnore(item: ContainerUpdateRow) {
 		const enable = item.ignored;
 		ignoringContainerIds = { ...ignoringContainerIds, [item.containerId]: true };
 		try {
-			const operationResult = await tryCatch(
+			const operationResult = await tryCatch(containerService.setAutoUpdate(item.containerId, enable));
+			if (operationResult.error !== null) {
+				toast.error(m.auto_update_failed(), { description: extractApiErrorMessage(operationResult.error) });
+				return;
+			}
+			toast.success(enable ? m.auto_update_enabled_toast() : m.auto_update_disabled_toast());
+			// The setting is saved at this point; a failed reload must not read as a failed toggle.
+			const refreshResult = await tryCatch(
 				(async () => {
-					await containerService.setAutoUpdate(item.containerId, enable);
-					toast.success(enable ? m.auto_update_enabled_toast() : m.auto_update_disabled_toast());
 					await onIgnoreChanged?.();
+					await refreshRows();
 				})()
 			);
-			if (operationResult.error !== null) {
-				const error = operationResult.error;
-
-				console.error('Auto-update toggle failed:', error);
-				toast.error(m.auto_update_failed());
+			if (refreshResult.error !== null) {
+				toast.error(m.common_refresh_failed({ resource: m.updates() }), {
+					description: extractApiErrorMessage(refreshResult.error)
+				});
 			}
 		} finally {
 			ignoringContainerIds = { ...ignoringContainerIds, [item.containerId]: false };
@@ -222,8 +233,8 @@
 
 			<DropdownMenu.Item
 				onclick={() => handleToggleIgnore(item)}
-				disabled={item.labelControlled || !!ignoringContainerIds[item.containerId]}
-				title={item.labelControlled ? m.auto_update_controlled_by_label() : m.updates_ignore_description()}
+				disabled={item.labelControlled || !item.statusAvailable || !!ignoringContainerIds[item.containerId]}
+				title={item.ignoreTitle}
 			>
 				{#if ignoringContainerIds[item.containerId]}
 					<Spinner class="size-4" />

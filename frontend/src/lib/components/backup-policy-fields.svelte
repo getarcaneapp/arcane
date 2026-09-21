@@ -19,6 +19,8 @@
 		schedulePlaceholder,
 		showStopContainers = false,
 		destinationsLoading = false,
+		destinationReadOnly = false,
+		destinationsLoadError = null,
 		onChange
 	}: {
 		idPrefix: string;
@@ -32,11 +34,21 @@
 		schedulePlaceholder: string;
 		showStopContainers?: boolean;
 		destinationsLoading?: boolean;
+		/** Keeps the configured destination as-is when the user cannot list destinations. */
+		destinationReadOnly?: boolean;
+		destinationsLoadError?: string | null;
 		onChange: (values: Partial<BackupPolicyForm>) => void;
 	} = $props();
 
-	const destinationOptions = $derived(backupDestinationOptions(destinations.length > 0, true));
-	const s3Options = $derived(s3DestinationOptions(destinations));
+	const keepsConfiguredS3 = $derived(destinationReadOnly && form.destination !== 'local');
+	const destinationOptions = $derived(backupDestinationOptions(destinations.length > 0 || keepsConfiguredS3, true));
+	const s3Options = $derived.by(() => {
+		const options = s3DestinationOptions(destinations);
+		if (form.s3DestinationId && !options.some((item) => item.value === form.s3DestinationId)) {
+			options.push({ label: form.s3DestinationId, value: form.s3DestinationId, description: '' });
+		}
+		return options;
+	});
 </script>
 
 <div class="space-y-5">
@@ -85,7 +97,14 @@
 		label={m.backups_destination_label()}
 		description={m.volume_backup_destination_description()}
 		options={destinationOptions}
+		disabled={destinationReadOnly}
 	/>
+	{#if destinationReadOnly}
+		<p class="text-xs text-muted-foreground">{m.volume_backup_destination_read_only()}</p>
+	{/if}
+	{#if destinationsLoadError}
+		<p class="text-sm text-destructive">{m.s3_destinations_load_failed()}: {destinationsLoadError}</p>
+	{/if}
 	{#if form.destination !== 'local'}
 		<SelectWithLabel
 			id={`${idPrefix}-s3-destination`}
@@ -94,7 +113,7 @@
 			label={m.volume_backup_s3_destination_label()}
 			description={m.volume_backup_s3_destination_description()}
 			error={destinationError}
-			disabled={destinationsLoading}
+			disabled={destinationsLoading || destinationReadOnly}
 			options={s3Options}
 		/>
 	{/if}

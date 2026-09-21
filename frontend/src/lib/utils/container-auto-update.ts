@@ -1,12 +1,9 @@
 /**
- * Auto-update exclusion helpers shared by the container detail page, the
- * environment jobs tab and the updates table. The backend stores exclusions as
- * a CSV of container *names* in `autoUpdateExcludedContainers`, and the Docker
- * label `com.getarcaneapp.arcane.updater=false` overrides that setting.
- *
- * Keyed on labels + a resolved name rather than a container DTO: the detail
- * page has `ContainerDetailsDto.name` while the tables have
- * `ContainerSummaryDto.names[]`.
+ * Auto-update exclusion helpers shared by the environment jobs tab, the
+ * container detail page and the updates table. The backend stores exclusions
+ * as a CSV of container *names* in `autoUpdateExcludedContainers`, and the
+ * Docker label `com.getarcaneapp.arcane.updater=false` overrides that setting.
+ * Container responses carry the resolved `autoUpdateEnabled` status.
  */
 
 const AUTO_UPDATE_LABEL = 'com.getarcaneapp.arcane.updater';
@@ -32,12 +29,4 @@ export function parseExcludedContainerSet(csv?: string): Set<string> {
 			.map((entry) => normalizeContainerName(entry.trim()))
 			.filter(Boolean)
 	);
-}
-
-/** True when the container is excluded from auto-updates, by label or by setting. */
-export function isAutoUpdateIgnored(name: string, labels: Record<string, string> | undefined, excludedCsv?: string): boolean {
-	if (isAutoUpdateLabelDisabled(labels)) return true;
-	const normalized = normalizeContainerName(name ?? '');
-	if (!normalized) return false;
-	return parseExcludedContainerSet(excludedCsv).has(normalized);
 }

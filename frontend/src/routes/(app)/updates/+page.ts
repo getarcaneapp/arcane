@@ -1,7 +1,6 @@
 import { tryCatch } from '#lib/utils/try-catch.js';
 import { containerService, type ContainerListRequestOptions } from '#lib/services/container-service.js';
 import { projectService } from '#lib/services/project-service.js';
-import { settingsService } from '#lib/services/settings-service.js';
 import { queryKeys } from '#lib/query/query-keys.js';
 import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 import { resolveInitialTableRequest } from '#lib/utils/tables.js';
@@ -30,7 +29,6 @@ export const load: PageLoad = async ({ parent }) => {
 
 	let containers;
 	let projects;
-	let settings;
 	const operationResult = await tryCatch(
 		(async () =>
 			Promise.all([
@@ -41,11 +39,6 @@ export const load: PageLoad = async ({ parent }) => {
 				queryClient.query({
 					queryKey: queryKeys.projects.list(envId, projectRequestOptions),
 					queryFn: () => projectService.getProjectsForEnvironment(envId, projectRequestOptions)
-				}),
-				// `autoUpdateExcludedContainers` drives the ignored state on container rows.
-				queryClient.query({
-					queryKey: queryKeys.settings.byEnvironment(envId),
-					queryFn: () => settingsService.getSettingsForEnvironmentMerged(envId)
 				})
 			]))()
 	);
@@ -54,14 +47,13 @@ export const load: PageLoad = async ({ parent }) => {
 
 		throwPageLoadError(err, 'Failed to load updates');
 	} else {
-		[containers, projects, settings] = operationResult.data;
+		[containers, projects] = operationResult.data;
 	}
 
 	return {
 		envId,
 		containers,
 		projects,
-		settings,
 		containerRequestOptions,
 		projectRequestOptions
 	};

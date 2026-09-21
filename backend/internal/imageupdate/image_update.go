@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
-	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -30,6 +29,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/notification"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
+	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/ratelimit"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/registryauth"
@@ -739,11 +739,9 @@ func (s *ImageUpdateService) getAllImageRefsInternal(ctx context.Context, limit 
 		return imageRefsFromSummariesInternal(imageList.Items, limit), nil
 	}
 
-	excludedContainers := make(map[string]bool)
+	var excludedContainers map[string]bool
 	if s.settingsService != nil {
-		for _, name := range utils.UniqueNonEmptyStrings(strings.Split(s.settingsService.GetStringSetting(ctx, "autoUpdateExcludedContainers", ""), ",")) {
-			excludedContainers[name] = true
-		}
+		excludedContainers = dockerutil.ExcludedContainerNameSet(s.settingsService.GetStringSetting(ctx, "autoUpdateExcludedContainers", ""))
 	}
 
 	return filterImageSummariesByContainerOptOutInternal(imageList.Items, containerList.Items, excludedContainers, limit), nil
@@ -780,9 +778,7 @@ func filterImageSummariesByContainerOptOutInternal(images []image.Summary, conta
 	eligibleByRef := make(map[string]bool)
 
 	for _, summary := range containers {
-		eligible := !labels.IsUpdateDisabled(summary.Labels) && !slices.ContainsFunc(summary.Names, func(name string) bool {
-			return excludedContainers[strings.TrimPrefix(name, "/")]
-		})
+		eligible := !labels.IsUpdateDisabled(summary.Labels) && !dockerutil.ContainerNameExcluded(summary.Names, excludedContainers)
 
 		if imageID := strings.TrimSpace(summary.ImageID); imageID != "" {
 			eligibleByImageID[imageID] = eligibleByImageID[imageID] || eligible

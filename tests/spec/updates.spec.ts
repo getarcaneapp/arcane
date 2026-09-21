@@ -19,8 +19,8 @@ const CONTAINERS = [
 		ignored: false
 	},
 	{
-		// Listed in `autoUpdateExcludedContainers`: automatic runs skip it, but a
-		// user may still update it explicitly (#4123).
+		// Excluded from auto-update (`autoUpdateEnabled: false`): automatic runs
+		// skip it, but a user may still update it explicitly (#4123).
 		id: 'update-row-c',
 		name: 'updates-gamma',
 		image: 'public.ecr.aws/docker/library/nginx:1.27',
@@ -38,6 +38,7 @@ function containerWithUpdate(container: (typeof CONTAINERS)[number]) {
 		command: 'sleep',
 		created: 1_700_000_000,
 		labels: {},
+		autoUpdateEnabled: !container.ignored,
 		state: 'running',
 		status: 'Up 2 hours',
 		ports: [],
@@ -112,21 +113,6 @@ async function stubProjectWithTagUpdate(page: Page) {
 				pagination: { totalItems: 1, totalPages: 1, currentPage: 1, itemsPerPage: 20 }
 			})
 		});
-	});
-}
-
-/** Marks the ignored fixture as excluded in the setting that drives the "Ignored" badge. */
-async function stubExcludedContainersSetting(page: Page) {
-	const excluded = CONTAINERS.filter((container) => container.ignored)
-		.map((container) => container.name)
-		.join(',');
-	await page.route(/\/api\/environments\/0\/settings$/, async (route) => {
-		const response = await route.fetch();
-		const settings = ((await response.json()) as { key: string; value: string }[]).filter(
-			(setting) => setting.key !== 'autoUpdateExcludedContainers'
-		);
-		settings.push({ key: 'autoUpdateExcludedContainers', value: excluded });
-		await route.fulfill({ response, json: settings });
 	});
 }
 
@@ -265,7 +251,6 @@ test.describe('Updates Page Actions', () => {
 	test('applies updates to the selected container rows, including an ignored one', async ({
 		page
 	}) => {
-		await stubExcludedContainersSetting(page);
 		const listFetches = await stubContainersWithUpdates(page);
 		const requested = await stubContainerUpdates(page, {});
 
@@ -292,7 +277,6 @@ test.describe('Updates Page Actions', () => {
 	});
 
 	test('does not count skipped or failed container updates as updated', async ({ page }) => {
-		await stubExcludedContainersSetting(page);
 		await stubContainersWithUpdates(page);
 		const [alpha, beta] = CONTAINERS;
 		const requested = await stubContainerUpdates(page, {
@@ -315,7 +299,6 @@ test.describe('Updates Page Actions', () => {
 	});
 
 	test('row update reports a skipped reason or the server error and recovers', async ({ page }) => {
-		await stubExcludedContainersSetting(page);
 		const listFetches = await stubContainersWithUpdates(page);
 		const outcomes: Record<string, ContainerUpdateOutcome> = {
 			[IGNORED_CONTAINER.id]: { kind: 'skipped', reason: 'immutable image reference' }

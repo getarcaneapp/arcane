@@ -1182,6 +1182,11 @@ func (s *ContainerService) GetContainerDetails(ctx context.Context, id string) (
 	details := containertypes.NewDetails(containerInspect)
 	currentContainerID, currentContainerErr := cgroup.CurrentContainerID()
 	details.RedeployDisabled = labels.ShouldDisableArcaneServerRedeploy(details.Labels, details.ID, currentContainerID, currentContainerErr)
+	var excluded map[string]bool
+	if s.settingsService != nil {
+		excluded = dockerutils.ExcludedContainerNameSet(s.settingsService.GetStringSetting(ctx, "autoUpdateExcludedContainers", ""))
+	}
+	details.AutoUpdateEnabled = !labels.IsUpdateDisabled(details.Labels) && !dockerutils.ContainerNameExcluded([]string{details.Name}, excluded)
 	s.applyContainerDetailsIconInternal(ctx, &details)
 
 	return details, nil
@@ -1421,7 +1426,7 @@ func (s *ContainerService) ListContainersPaginated(
 	dockerContainers = FilterExcludedContainers(dockerContainers, includeInternal, includeHidden)
 	updateInfoMap := s.getUpdateInfoMapInternal(ctx, dockerContainers)
 	currentContainerID, currentContainerErr := cgroup.CurrentContainerID()
-	items := s.BuildSummaries(dockerContainers, updateInfoMap, currentContainerID, currentContainerErr)
+	items := s.BuildSummaries(ctx, dockerContainers, updateInfoMap, currentContainerID, currentContainerErr)
 
 	config := s.buildContainerPaginationConfig()
 	counts := s.CalculateStatusCounts(items)
@@ -1614,8 +1619,12 @@ func (s *ContainerService) getUpdateInfoMapInternal(ctx context.Context, contain
 	return result
 }
 
-func (s *ContainerService) BuildSummaries(containers []container.Summary, updateInfoMap map[string]*imagetypes.UpdateInfo, currentContainerID string, currentContainerErr error) []containertypes.Summary {
+func (s *ContainerService) BuildSummaries(ctx context.Context, containers []container.Summary, updateInfoMap map[string]*imagetypes.UpdateInfo, currentContainerID string, currentContainerErr error) []containertypes.Summary {
 	items := make([]containertypes.Summary, 0, len(containers))
+	var excluded map[string]bool
+	if s.settingsService != nil {
+		excluded = dockerutils.ExcludedContainerNameSet(s.settingsService.GetStringSetting(ctx, "autoUpdateExcludedContainers", ""))
+	}
 	for _, dc := range containers {
 		summary := containertypes.NewSummary(dc)
 		key := dc.ImageID
@@ -1635,6 +1644,7 @@ func (s *ContainerService) BuildSummaries(containers []container.Summary, update
 			summary.UpdateInfo = info
 		}
 		summary.RedeployDisabled = labels.ShouldDisableArcaneServerRedeploy(summary.Labels, summary.ID, currentContainerID, currentContainerErr)
+		summary.AutoUpdateEnabled = !labels.IsUpdateDisabled(dc.Labels) && !dockerutils.ContainerNameExcluded(dc.Names, excluded)
 		summary.Hidden, _ = utils.ParseBool(dc.Labels[libarcane.HiddenResourceLabel])
 		items = append(items, summary)
 	}

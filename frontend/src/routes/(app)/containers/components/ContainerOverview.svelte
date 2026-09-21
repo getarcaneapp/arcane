@@ -10,6 +10,7 @@
 	import { StartIcon, StopIcon, NetworksIcon, VolumesIcon, HealthIcon } from '#lib/icons/index.js';
 	import { containerService } from '#lib/services/container-service.js';
 	import { DetailMetaStrip, DetailSection, KeyValueCard, type DetailMetaItem } from '#lib/components/resource-detail/index.js';
+	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { toast } from 'svelte-sonner';
 
 	interface Props {
@@ -17,7 +18,9 @@
 		primaryIpAddress: string;
 		autoUpdateEnabled?: boolean;
 		autoUpdateLabelControlled?: boolean;
-		onAutoUpdateChange?: (enabled: boolean) => void;
+		/** False when the agent did not report a status; the toggle is then disabled. */
+		autoUpdateStatusAvailable?: boolean;
+		onAutoUpdateChange?: (enabled: boolean) => void | Promise<void>;
 		onViewPortMappings?: () => void;
 		onViewStorage?: () => void;
 		onViewNetworks?: () => void;
@@ -28,6 +31,7 @@
 		primaryIpAddress,
 		autoUpdateEnabled = true,
 		autoUpdateLabelControlled = false,
+		autoUpdateStatusAvailable = true,
 		onAutoUpdateChange,
 		onViewPortMappings,
 		onViewStorage,
@@ -39,15 +43,18 @@
 	async function handleAutoUpdateToggle(checked: boolean) {
 		autoUpdateToggling = true;
 		try {
-			const operationResult = await tryCatch(
-				(async () => {
-					await containerService.setAutoUpdate(container.id, checked);
-					onAutoUpdateChange?.(checked);
-					toast.success(checked ? m.auto_update_enabled_toast() : m.auto_update_disabled_toast());
-				})()
-			);
+			const operationResult = await tryCatch(containerService.setAutoUpdate(container.id, checked));
 			if (operationResult.error !== null) {
-				toast.error(m.auto_update_failed());
+				toast.error(m.auto_update_failed(), { description: extractApiErrorMessage(operationResult.error) });
+				return;
+			}
+			toast.success(checked ? m.auto_update_enabled_toast() : m.auto_update_disabled_toast());
+			// The setting is saved at this point; a failed reload must not read as a failed toggle.
+			const refreshResult = await tryCatch(Promise.resolve(onAutoUpdateChange?.(checked)));
+			if (refreshResult.error !== null) {
+				toast.error(m.common_refresh_failed({ resource: m.resource_container() }), {
+					description: extractApiErrorMessage(refreshResult.error)
+				});
 			}
 		} finally {
 			autoUpdateToggling = false;
@@ -160,14 +167,22 @@
 				<div class="flex items-center gap-3">
 					<Switch
 						checked={autoUpdateEnabled}
-						disabled={autoUpdateToggling || autoUpdateLabelControlled}
+						disabled={autoUpdateToggling || autoUpdateLabelControlled || !autoUpdateStatusAvailable}
 						onCheckedChange={handleAutoUpdateToggle}
 					/>
 					<span class="text-sm font-medium text-foreground">
-						{autoUpdateEnabled ? m.common_enabled() : m.common_disabled()}
+						{#if !autoUpdateStatusAvailable}
+							{m.common_na()}
+						{:else if autoUpdateEnabled}
+							{m.common_enabled()}
+						{:else}
+							{m.common_disabled()}
+						{/if}
 					</span>
 				</div>
-				{#if autoUpdateLabelControlled}
+				{#if !autoUpdateStatusAvailable}
+					<span class="text-xs text-muted-foreground">{m.auto_update_status_unavailable()}</span>
+				{:else if autoUpdateLabelControlled}
 					<span class="text-xs text-muted-foreground">{m.auto_update_controlled_by_label()}</span>
 				{/if}
 			</KeyValueCard>

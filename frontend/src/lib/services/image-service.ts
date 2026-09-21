@@ -29,20 +29,22 @@ export type ImagePullResult = {
 	error?: string;
 };
 
+/** Image list page plus the upload limit (MB) the environment enforces; absent on older agents. */
+export type ImagesPaginatedResponse = Paginated<ImageSummaryDto> & {
+	maxImageUploadSize?: number;
+};
+
 class ImageService extends BaseAPIService {
 	private async resolveEnvironmentId(environmentId?: string): Promise<string> {
 		return environmentId ?? (await environmentStore.getCurrentEnvironmentId());
 	}
 
-	async getImages(options?: SearchPaginationSortRequest): Promise<Paginated<ImageSummaryDto>> {
+	async getImages(options?: SearchPaginationSortRequest): Promise<ImagesPaginatedResponse> {
 		const envId = await this.resolveEnvironmentId();
 		return this.getImagesForEnvironment(envId, options);
 	}
 
-	async getImagesForEnvironment(
-		environmentId: string,
-		options?: SearchPaginationSortRequest
-	): Promise<Paginated<ImageSummaryDto>> {
+	async getImagesForEnvironment(environmentId: string, options?: SearchPaginationSortRequest): Promise<ImagesPaginatedResponse> {
 		const params = transformPaginationParams(options);
 		const res = await this.api.get(`/environments/${environmentId}/images`, { params });
 		return res.data;

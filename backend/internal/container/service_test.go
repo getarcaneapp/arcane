@@ -120,11 +120,12 @@ func TestContainerSummaryIconsAppliedAfterGrouping(t *testing.T) {
 			projects.ArcaneIconLabel:     "immich",
 		}},
 		{ID: "db", Names: []string{"/db"}, Labels: map[string]string{
-			"com.docker.compose.project": "media",
+			"com.docker.compose.project":      "media",
+			"com.getarcaneapp.arcane.updater": "false",
 		}},
 	}
 
-	items := service.BuildSummaries(dockerContainers, nil, "", nil)
+	items := service.BuildSummaries(t.Context(), dockerContainers, nil, "", nil)
 	for _, item := range items {
 		require.Empty(t, item.IconLightURL, "icons must be deferred until after pagination")
 	}
@@ -141,6 +142,9 @@ func TestContainerSummaryIconsAppliedAfterGrouping(t *testing.T) {
 	require.Len(t, groups, 1)
 	require.NotEmpty(t, groups[0].Items[0].IconLightURL)
 	require.NotEmpty(t, flattened[0].IconLightURL, "flattened items must carry icons applied to the groups")
+	for _, item := range flattened {
+		require.Equal(t, item.ID != "db", item.AutoUpdateEnabled, "grouped items carry the label-derived auto-update status for %s", item.ID)
+	}
 }
 
 func groupNamesOf(groups []containertypes.SummaryGroup) []string {
@@ -595,13 +599,14 @@ func TestBuildSummariesUsesContainerTagPolicyUpdates(t *testing.T) {
 		{ID: "second", Image: "app:3.1.0", ImageID: "shared-image", Labels: map[string]string{strategyLabel: "auto"}},
 		{ID: "unchecked", Image: "app:3.1.0", ImageID: "shared-image", Labels: map[string]string{strategyLabel: "tag"}},
 		{ID: "digest", Image: "app:3.1.0", ImageID: "shared-image", Labels: map[string]string{strategyLabel: "digest"}},
+		{ID: "opted-out", Names: []string{"/opted-out"}, Image: "app:3.1.0", ImageID: "shared-image", Labels: map[string]string{"com.getarcaneapp.arcane.updater": "false"}},
 	}
 	updates := map[string]*imagetypes.UpdateInfo{
 		"shared-image":      {HasUpdate: true, UpdateType: "digest"},
 		"container::first":  {HasUpdate: true, UpdateType: "tag", LatestVersion: "3.2.0"},
 		"container::second": {HasUpdate: true, UpdateType: "tag", LatestVersion: "4.0.0"},
 	}
-	items := service.BuildSummaries(containers, updates, "", nil)
+	items := service.BuildSummaries(t.Context(), containers, updates, "", nil)
 	require.Equal(t, "tag", items[0].UpdateStrategy)
 	require.Equal(t, "tag", items[1].UpdateStrategy)
 	require.Equal(t, "digest", items[3].UpdateStrategy)
@@ -609,4 +614,11 @@ func TestBuildSummariesUsesContainerTagPolicyUpdates(t *testing.T) {
 	require.Equal(t, "4.0.0", items[1].UpdateInfo.LatestVersion)
 	require.Nil(t, items[2].UpdateInfo)
 	require.Equal(t, "digest", items[3].UpdateInfo.UpdateType)
+
+	require.True(t, items[0].AutoUpdateEnabled, "containers without opt-out are eligible")
+	require.False(t, items[4].AutoUpdateEnabled, "the updater label disables auto-update")
+	encoded, err := json.Marshal(items[4])
+	require.NoError(t, err)
+	require.Contains(t, string(encoded), `"autoUpdateEnabled":false`, "false status must stay serialized")
+
 }

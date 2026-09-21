@@ -88,6 +88,20 @@ func (f *resourceStatsServerInternal) handler() http.Handler {
 			list := append([]container.Summary{}, f.containers...)
 			f.mu.Unlock()
 			_ = json.NewEncoder(w).Encode(list)
+		case strings.HasPrefix(path, "/containers/") && strings.HasSuffix(path, "/json"):
+			id := strings.TrimSuffix(strings.TrimPrefix(path, "/containers/"), "/json")
+			f.mu.Lock()
+			defer f.mu.Unlock()
+			for _, summary := range f.containers {
+				if summary.ID == id {
+					inspect := container.InspectResponse{ID: summary.ID, Name: summary.Names[0], Image: summary.ImageID, Config: &container.Config{Image: summary.Image, Labels: summary.Labels}, State: &container.State{Status: summary.State}}
+					if err := json.NewEncoder(w).Encode(inspect); err != nil {
+						http.Error(w, err.Error(), http.StatusInternalServerError)
+					}
+					return
+				}
+			}
+			w.WriteHeader(http.StatusNotFound)
 		case strings.HasPrefix(path, "/containers/") && strings.HasSuffix(path, "/stats"):
 			id := strings.TrimSuffix(strings.TrimPrefix(path, "/containers/"), "/stats")
 			cur := f.current.Add(1)
@@ -177,13 +191,30 @@ func TestResourceSortRanksMemoryByBytesNotPercent(t *testing.T) {
 	fixture.setStats("high-percent", 10, 800, 1000)
 	fixture.addContainer("high-bytes", "high-bytes", "running")
 	fixture.setStats("high-bytes", 10, 900, 10000)
+	fixture.addContainer("opted-out", "opted-out", "running", map[string]string{"com.getarcaneapp.arcane.updater": "false"})
+	fixture.setStats("opted-out", 10, 100, 10000)
 	svc := newResourceSortServiceInternal(t, fixture)
 
 	result := listResourceSortedInternal(t, svc, resourceSortParamsInternal(containertypes.SortMemoryUsage, "desc", 0, 20))
-	require.Equal(t, []string{"high-bytes", "high-percent"}, summaryIDsInternal(result.Items))
+	require.Equal(t, []string{"high-bytes", "high-percent", "opted-out"}, summaryIDsInternal(result.Items))
+	require.True(t, result.Items[0].AutoUpdateEnabled)
+	require.False(t, result.Items[2].AutoUpdateEnabled)
 
 	result = listResourceSortedInternal(t, svc, resourceSortParamsInternal(containertypes.SortMemoryUsage, "asc", 0, 20))
-	require.Equal(t, []string{"high-percent", "high-bytes"}, summaryIDsInternal(result.Items))
+	require.Equal(t, []string{"opted-out", "high-percent", "high-bytes"}, summaryIDsInternal(result.Items))
+
+	flat, err := svc.ListContainersPaginated(t.Context(), resourceSortParamsInternal("name", "asc", 0, 20), true, true, true, "")
+	require.NoError(t, err)
+	require.Equal(t, []string{"high-bytes", "high-percent", "opted-out"}, summaryIDsInternal(flat.Items))
+	require.True(t, flat.Items[0].AutoUpdateEnabled)
+	require.False(t, flat.Items[2].AutoUpdateEnabled)
+
+	details, err := svc.GetContainerDetails(t.Context(), "opted-out")
+	require.NoError(t, err)
+	require.False(t, details.AutoUpdateEnabled, "detail status must match the list status")
+	details, err = svc.GetContainerDetails(t.Context(), "high-bytes")
+	require.NoError(t, err)
+	require.True(t, details.AutoUpdateEnabled)
 }
 
 func TestResourceSortOrdersAcrossPages(t *testing.T) {

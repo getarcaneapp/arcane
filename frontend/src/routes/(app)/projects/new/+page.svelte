@@ -25,7 +25,9 @@
 	import { Switch } from '#lib/components/ui/switch/index.js';
 	import DockerRunConverterDialog from '#lib/components/compose/docker-run-converter-dialog.svelte';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
-	import { globalVariablesToMap } from '#lib/utils/template-load.js';
+	import { globalVariablesToMap, type TemplateAuthoringResource } from '#lib/utils/template-load.js';
+	import * as Alert from '#lib/components/ui/alert/index.js';
+	import { AlertIcon } from '#lib/icons/index.js';
 	import type { ProjectTag } from '#lib/types/swarm.js';
 	import ProjectTagEditor from '#lib/components/project-tag-editor.svelte';
 	import { createQuery } from '@tanstack/svelte-query';
@@ -120,6 +122,20 @@
 	});
 
 	const globalVariableMap = $derived(globalVariablesToMap(data.globalVariables));
+	const canUseTemplates = $derived(data.templatePermissions.canListTemplates && data.templatePermissions.canReadTemplates);
+	const resourceLabels: Record<TemplateAuthoringResource, () => string> = {
+		defaultTemplates: m.templates_defaults_title,
+		templates: m.templates_title,
+		globalVariables: m.variables_title
+	};
+	const templateLoadNotices = $derived.by(() => {
+		const notices: string[] = data.templateLoadErrors.map((item) =>
+			m.compose_optional_resource_load_failed({ resource: resourceLabels[item.resource](), message: item.message })
+		);
+		if (data.selectedTemplateForbidden) notices.push(m.templates_load_forbidden());
+		if (data.selectedTemplateError) notices.push(`${m.templates_load_failed()}: ${data.selectedTemplateError}`);
+		return notices;
+	});
 	const newProjectWorkspaceEntries = $derived(workspaceDraft.entries);
 	const newProjectWorkspaceLeadingRows = [
 		{ key: 'compose', label: 'compose.yaml', iconClass: 'text-blue-500', locked: true },
@@ -348,6 +364,7 @@
 					createLoadingLabel={m.common_action_creating()}
 					onCreate={() => handleSubmit()}
 					itemsDisabled={createMenuBusy}
+					showUseTemplate={canUseTemplates}
 					useTemplateLabel={m.common_use_template()}
 					onUseTemplate={() => {
 						// fallow-ignore-next-line code-duplication -- shared ComposeCreateMenu wiring with swarm stack create; labels/handlers are page-specific
@@ -378,6 +395,17 @@
 					{@render projectNameField('block')}
 					<ProjectTagEditor bind:tags={newProjectTags} availableTags={availableProjectTags} canEdit={!ui.saving} class="mt-2" />
 				</div>
+
+				{#if templateLoadNotices.length > 0}
+					<Alert.Root variant="warning" class="py-2 [&>svg]:top-2">
+						<AlertIcon class="size-4" />
+						<Alert.Description class="text-xs">
+							{#each templateLoadNotices as notice (notice)}
+								<p>{notice}</p>
+							{/each}
+						</Alert.Description>
+					</Alert.Root>
+				{/if}
 
 				<div class="flex shrink-0 items-center justify-end gap-2">
 					<label

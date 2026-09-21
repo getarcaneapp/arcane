@@ -48,9 +48,9 @@
 		totalImageSize: 0
 	};
 
-	const maxUploadSizeMB = $derived(
-		parseInt(String((data.envId === envId ? data.settings?.maxImageUploadSize : undefined) || '500'), 10)
-	);
+	// The upload limit rides along with the image list; older agents omit it and
+	// the server still enforces the real limit.
+	const DEFAULT_MAX_UPLOAD_SIZE_MB = 500;
 
 	const imagesQuery = createQuery(() => {
 		const queryEnvId = envId;
@@ -77,6 +77,7 @@
 		};
 	});
 	const images = $derived(imagesQuery.data?.value ?? data.images);
+	const maxUploadSizeMB = $derived(images?.maxImageUploadSize ?? DEFAULT_MAX_UPLOAD_SIZE_MB);
 
 	const resourcesReady = $derived(imagesQuery.data?.envId === envId);
 

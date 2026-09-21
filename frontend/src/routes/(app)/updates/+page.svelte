@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { createMutation, createQuery, keepPreviousData } from '@tanstack/svelte-query';
+	import { createMutation, createQuery, keepPreviousData, useQueryClient } from '@tanstack/svelte-query';
 	import { untrack } from 'svelte';
 	import { m } from '#lib/paraglide/messages.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
@@ -12,7 +12,6 @@
 	import { imageService } from '#lib/services/image-service.js';
 	import { containerService, type ContainerListRequestOptions } from '#lib/services/container-service.js';
 	import { projectService } from '#lib/services/project-service.js';
-	import { settingsService } from '#lib/services/settings-service.js';
 	import { confirmAndApplyAllUpdates } from '#lib/utils/update-actions.js';
 	import type { ContainersPaginatedResponse } from '#lib/services/container-service.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
@@ -23,6 +22,7 @@
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';
 
 	let { data } = $props();
+	const queryClient = useQueryClient();
 
 	const initialContainers = untrack(() => data.containers as ContainersPaginatedResponse);
 	const initialProjects = untrack(() => data.projects as Paginated<Project>);
@@ -90,14 +90,15 @@
 			(envId === data.envId ? initialProjects : emptyProjects)
 	);
 
-	const settingsQuery = createQuery(() => ({
-		queryKey: queryKeys.settings.byEnvironment(envId),
-		queryFn: () => settingsService.getSettingsForEnvironmentMerged(envId),
-		initialData: envId === data.envId ? data.settings : undefined,
-		refetchOnMount: false
-	}));
-
-	const excludedContainers = $derived(settingsQuery.data?.autoUpdateExcludedContainers ?? '');
+	// Ignoring a container changes its `autoUpdateEnabled` on every container
+	// response, so cached lists and details for this environment go stale.
+	async function invalidateContainerQueries() {
+		containerSnapshot = null;
+		await Promise.all([
+			queryClient.invalidateQueries({ queryKey: queryKeys.containers.all }),
+			queryClient.invalidateQueries({ queryKey: ['container', envId] })
+		]);
+	}
 
 	const checkUpdatesMutation = createMutation(() => ({
 		mutationKey: ['updates', 'check-all', envId],
@@ -223,9 +224,8 @@
 					{#key `${envId}-containers`}
 						<ContainerUpdatesTable
 							{containers}
-							{excludedContainers}
 							bind:requestOptions={containerRequestOptions}
-							onIgnoreChanged={() => settingsQuery.refetch()}
+							onIgnoreChanged={invalidateContainerQueries}
 							onRefreshData={async (options) => {
 								containerRequestOptions = ensureStandaloneContainerUpdatesFilter(options);
 								const next = await containerService.getContainersForEnvironment(envId, containerRequestOptions);

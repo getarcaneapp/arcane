@@ -1,7 +1,6 @@
 import { featureStore } from '#lib/stores/features.store.svelte.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 import { imageService } from '#lib/services/image-service.js';
-import { settingsService } from '#lib/services/settings-service.js';
 import { queryKeys } from '#lib/query/query-keys.js';
 import { resolveListPageLoadContext } from '#lib/utils/tables.js';
 import { throwPageLoadError } from '#lib/utils/api.js';
@@ -18,7 +17,6 @@ export const load: PageLoad = async ({ parent }) => {
 	});
 	await featureStore.load(envId);
 	let images;
-	let settings;
 	let imageUsageCounts;
 	const operationResult = await tryCatch(
 		(async () =>
@@ -26,10 +24,6 @@ export const load: PageLoad = async ({ parent }) => {
 				queryClient.query({
 					queryKey: queryKeys.images.list(envId, imageRequestOptions),
 					queryFn: () => imageService.getImagesForEnvironment(envId, imageRequestOptions)
-				}),
-				queryClient.query({
-					queryKey: queryKeys.settings.byEnvironment(envId),
-					queryFn: () => settingsService.getSettingsForEnvironmentMerged(envId)
 				}),
 				queryClient.query({
 					queryKey: queryKeys.images.usageCounts(envId),
@@ -42,8 +36,8 @@ export const load: PageLoad = async ({ parent }) => {
 
 		throwPageLoadError(err, 'Failed to load images');
 	} else {
-		[images, settings, imageUsageCounts] = operationResult.data;
+		[images, imageUsageCounts] = operationResult.data;
 	}
 
-	return { envId, images, imageRequestOptions, settings, imageUsageCounts };
+	return { envId, images, imageRequestOptions, imageUsageCounts };
 };

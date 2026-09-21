@@ -6,10 +6,24 @@ import (
 	"strings"
 	"time"
 
+	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	"github.com/getarcaneapp/arcane/types/v2/vulnerability"
 	"github.com/moby/moby/api/types/image"
 )
+
+// ListResponse is the paginated image list together with the upload limit the
+// environment enforces, so list consumers need no settings access.
+type ListResponse struct {
+	Success    bool                    `json:"success" doc:"Whether the request was successful"`
+	Data       []Summary               `json:"data" doc:"Array of items for the current page"`
+	Pagination base.PaginationResponse `json:"pagination" doc:"Pagination metadata"`
+
+	// MaxImageUploadSize is the maximum image archive upload size in MB.
+	//
+	// Required: true
+	MaxImageUploadSize int `json:"maxImageUploadSize" doc:"Maximum image archive upload size in MB"`
+}
 
 type UpdateInfo struct {
 	// CheckTime is the time when the update check was performed.

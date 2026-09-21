@@ -20,20 +20,28 @@ export const load: PageLoad = async ({ url, parent }) => {
 	const sourceContainerIds = url.searchParams.get('fromContainers')?.split(',').filter(Boolean) ?? [];
 	const sourceEnvironmentId = url.searchParams.get('fromEnv') || undefined;
 
-	const [{ defaultTemplates, templates: allTemplates, globalVariables }, generated] = await Promise.all([
+	const [{ defaultTemplates, templates: allTemplates, globalVariables, permissions, loadErrors }, generated] = await Promise.all([
 		loadTemplateAuthoringData(parent),
 		sourceContainerIds.length ? generateFromContainers(sourceContainerIds, sourceEnvironmentId) : null
 	]);
 
 	const selectedTemplate = templateId
-		? await loadTemplateContent(queryClient as Parameters<typeof loadTemplateContent>[0], templateId)
+		? await loadTemplateContent(
+				queryClient as Parameters<typeof loadTemplateContent>[0],
+				templateId,
+				permissions.canReadTemplates
+			)
 		: null;
 
 	return {
 		composeTemplates: allTemplates,
-		envTemplate: generated ? '' : selectedTemplate?.envContent || defaultTemplates.envTemplate,
-		defaultTemplate: generated?.composeContent || selectedTemplate?.content || defaultTemplates.composeTemplate,
-		selectedTemplate: selectedTemplate?.template || null,
+		envTemplate: generated ? '' : selectedTemplate?.content?.envContent || defaultTemplates.envTemplate,
+		defaultTemplate: generated?.composeContent || selectedTemplate?.content?.content || defaultTemplates.composeTemplate,
+		selectedTemplate: selectedTemplate?.content?.template || null,
+		selectedTemplateError: selectedTemplate?.error ?? null,
+		selectedTemplateForbidden: selectedTemplate?.forbidden ?? false,
+		templatePermissions: permissions,
+		templateLoadErrors: loadErrors,
 		sourceContainerIds,
 		sourceEnvironmentId,
 		sourceContainerName: generated?.name ?? '',

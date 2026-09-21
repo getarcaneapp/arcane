@@ -9,6 +9,9 @@
 	import type { S3Destination } from '#lib/types/s3-destination.js';
 	import { s3DestinationService } from '#lib/services/s3-destination-service.js';
 	import { backupDestinationFromFlags, backupPolicyDestinationValues, backupPolicyUpdateFromPolicy } from '#lib/utils/backups.js';
+	import { extractApiErrorMessage } from '#lib/utils/api.js';
+	import { hasPermission } from '#lib/utils/auth.js';
+	import { GLOBAL_SCOPE } from '#lib/types/auth.js';
 	import { toast } from 'svelte-sonner';
 	import * as m from '#lib/paraglide/messages.js';
 
@@ -62,6 +65,11 @@
 	let deleting = $state(false);
 	let loadedDestinations = $state<S3Destination[]>([]);
 	let destinationsLoading = $state(false);
+	let destinationsLoadError = $state<string | null>(null);
+	// Destinations are a global resource. Without list access the dialog keeps a
+	// policy's configured destination read-only instead of requesting the list.
+	const canListDestinations = $derived(hasPermission('s3-destinations:list', GLOBAL_SCOPE));
+	const destinationsAccessible = $derived(destinations !== undefined || canListDestinations);
 	const initialPolicy = untrack(() => policies.find((item) => item.id === policyId));
 	let initialForm: PolicyForm;
 	if (initialPolicy) {
@@ -95,6 +103,8 @@
 	const destinationError = $derived.by(() => {
 		if (form.destination === 'local' || destinationsLoading) return null;
 		if (!form.s3DestinationId) return m.volume_backup_s3_destination_required();
+		// A destination that could not be enumerated is retained as configured.
+		if (!destinationsAccessible || destinationsLoadError) return null;
 		if (!destinations && !loadedDestinations.some((item) => item.id === form.s3DestinationId))
 			return m.volume_backup_destination_unavailable();
 		return null;
@@ -116,6 +126,7 @@
 
 	async function loadDestinations() {
 		destinationsLoading = true;
+		destinationsLoadError = null;
 		try {
 			const operationResult1 = await tryCatch(
 				(async () => {
@@ -123,9 +134,7 @@
 				})()
 			);
 			if (operationResult1.error !== null) {
-				const error = operationResult1.error;
-
-				toast.error(error instanceof Error ? error.message : m.s3_destinations_load_failed());
+				destinationsLoadError = extractApiErrorMessage(operationResult1.error);
 			}
 		} finally {
 			destinationsLoading = false;
@@ -133,7 +142,7 @@
 	}
 
 	onMount(() => {
-		if (!destinations) void loadDestinations();
+		if (!destinations && canListDestinations) void loadDestinations();
 	});
 
 	function updateForm(values: Partial<BackupPolicyForm>) {
@@ -213,6 +222,8 @@
 				schedulePlaceholder={defaultSchedule}
 				{showStopContainers}
 				{destinationsLoading}
+				destinationReadOnly={!destinationsAccessible}
+				{destinationsLoadError}
 				onChange={updateForm}
 			/>
 			{#if afterFields}

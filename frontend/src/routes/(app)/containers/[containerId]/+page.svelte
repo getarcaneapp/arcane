@@ -52,13 +52,14 @@
 	import { EditIcon, ImagesIcon, PauseIcon, PlayIcon, ProjectsIcon, UpdateIcon, ZapIcon } from '#lib/icons/index.js';
 	import { runContainerLifecycleAction, confirmAndUpdateContainer } from '#lib/utils/container-actions.js';
 	import { imageService } from '#lib/services/image-service.js';
-	import { createQuery } from '@tanstack/svelte-query';
+	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
-	import { isAutoUpdateIgnored, isAutoUpdateLabelDisabled } from '#lib/utils/container-auto-update.js';
+	import { isAutoUpdateLabelDisabled } from '#lib/utils/container-auto-update.js';
 	import KillContainerDialog from '../components/kill-container-dialog.svelte';
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';
 	let { data } = $props();
+	const queryClient = useQueryClient();
 	let container = $derived(data?.container as ContainerDetailsDto);
 	let stats = $state(null as ContainerStatsType | null);
 
@@ -66,13 +67,19 @@
 	let hasInitialStatsLoaded = $state(false);
 	let statsError = $state(false);
 
-	// Auto-update: the Docker label controls the state when set (not toggleable via UI)
+	// Auto-update: the Docker label controls the state when set (not toggleable via UI).
+	// The status itself comes from the container response; older agents omit it.
 	const autoUpdateLabelControlled = $derived(isAutoUpdateLabelDisabled(container?.labels));
-	let autoUpdateOverride = $state<boolean | null>(null);
-	const autoUpdateEnabled = $derived(
-		autoUpdateOverride ??
-			!isAutoUpdateIgnored(container?.name ?? '', container?.labels, data?.settings?.autoUpdateExcludedContainers)
-	);
+	const autoUpdateStatusAvailable = $derived(typeof container?.autoUpdateEnabled === 'boolean');
+	const autoUpdateEnabled = $derived(container?.autoUpdateEnabled === true);
+
+	async function handleAutoUpdateChanged() {
+		await Promise.all([
+			queryClient.invalidateQueries({ queryKey: queryKeys.containers.all }),
+			queryClient.invalidateQueries({ queryKey: queryKeys.containers.detail(currentEnvId, container.id) })
+		]);
+		await refreshAll();
+	}
 
 	const cleanContainerName = (name: string | undefined): string => {
 		if (!name) return m.common_not_found_title({ resource: m.containers() });
@@ -507,9 +514,8 @@
 			{primaryIpAddress}
 			{autoUpdateEnabled}
 			{autoUpdateLabelControlled}
-			onAutoUpdateChange={(enabled) => {
-				autoUpdateOverride = enabled;
-			}}
+			{autoUpdateStatusAvailable}
+			onAutoUpdateChange={handleAutoUpdateChanged}
 			onViewPortMappings={showNetworkTab ? navigateToNetworkPortMappings : undefined}
 			onViewStorage={hasMounts ? () => onTabChange('storage') : undefined}
 			onViewNetworks={showNetworkTab ? () => onTabChange('network') : undefined}

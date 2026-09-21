@@ -181,6 +181,7 @@ func TestDashboardService_GetSnapshot_ReturnsDashboardSnapshot(t *testing.T) {
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 	require.NoError(t, settingsSvc.SetStringSetting(context.Background(), "projectsDirectory", projectsDir))
+	require.NoError(t, settingsSvc.SetStringSetting(context.Background(), "autoUpdateExcludedContainers", "stopped-app"))
 	projectPath := createComposeProjectDirInternal(t, projectsDir, "project-with-update")
 	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte("services:\n  app:\n    image: repo/worker:latest\n"), 0o644))
 	dirName := "project-with-update"
@@ -200,6 +201,8 @@ func TestDashboardService_GetSnapshot_ReturnsDashboardSnapshot(t *testing.T) {
 
 	require.Len(t, snapshot.Containers.Data, 2)
 	require.Equal(t, "container-stopped", snapshot.Containers.Data[0].ID)
+	require.False(t, snapshot.Containers.Data[0].AutoUpdateEnabled, "settings exclusion applies to dashboard summaries")
+	require.True(t, snapshot.Containers.Data[1].AutoUpdateEnabled)
 	require.Equal(t, 1, snapshot.Containers.Counts.RunningContainers)
 	require.Equal(t, 1, snapshot.Containers.Counts.StoppedContainers)
 	require.Equal(t, 2, snapshot.Containers.Counts.TotalContainers)
@@ -403,6 +406,7 @@ func TestDashboardService_GetSnapshot_CachesFullSnapshotsPerIconCatalog(t *testi
 	}
 
 	dockerSvc := newDashboardTestDockerService(t, settingsSvc, containers, images, nil)
+	require.NoError(t, settingsSvc.SetStringSetting(context.Background(), "autoUpdateExcludedContainers", "running-app"))
 	containerSvc := container.NewContainerService(nil, dockerSvc, nil, settingsSvc, nil)
 	svc := NewDashboardService(db, dockerSvc, containerSvc, nil, nil, settingsSvc, nil, nil, nil, nil)
 
@@ -410,6 +414,7 @@ func TestDashboardService_GetSnapshot_CachesFullSnapshotsPerIconCatalog(t *testi
 	require.NoError(t, err)
 	require.Len(t, defaultSnapshot.Containers.Data, 1)
 	require.Contains(t, defaultSnapshot.Containers.Data[0].IconLightURL, "selfhst")
+	require.False(t, defaultSnapshot.Containers.Data[0].AutoUpdateEnabled, "container service summaries honor the settings exclusion")
 
 	// A user preferring another catalog must not be served the default-catalog
 	// snapshot from the cache.

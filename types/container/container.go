@@ -919,6 +919,13 @@ type Summary struct {
 	// Required: false
 	RedeployDisabled bool `json:"redeployDisabled,omitempty"`
 
+	// AutoUpdateEnabled reports whether the container is eligible for auto-update
+	// under its updater label and the excluded-containers setting. It does not
+	// reflect whether the auto-update scheduler itself is enabled.
+	//
+	// Required: true
+	AutoUpdateEnabled bool `json:"autoUpdateEnabled"`
+
 	// Hidden indicates whether the container is hidden from lists and dashboard counts.
 	//
 	// Required: false
@@ -1050,6 +1057,13 @@ type Details struct {
 	//
 	// Required: false
 	RedeployDisabled bool `json:"redeployDisabled,omitempty"`
+
+	// AutoUpdateEnabled reports whether the container is eligible for auto-update
+	// under its updater label and the excluded-containers setting. It does not
+	// reflect whether the auto-update scheduler itself is enabled.
+	//
+	// Required: true
+	AutoUpdateEnabled bool `json:"autoUpdateEnabled"`
 
 	// ActivityID is the background activity that tracked the action returning these details.
 	//

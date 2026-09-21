@@ -38,6 +38,8 @@
 
 		// Dropdown items.
 		itemsDisabled: boolean;
+		// Hide the template item when the user cannot list and read templates.
+		showUseTemplate?: boolean;
 		useTemplateLabel: string;
 		onUseTemplate: () => void;
 		convertLabel: string;
@@ -69,6 +71,7 @@
 		createLoadingLabel,
 		onCreate,
 		itemsDisabled,
+		showUseTemplate = true,
 		useTemplateLabel,
 		onUseTemplate,
 		convertLabel,
@@ -138,10 +141,12 @@
 		</DropdownMenu.Trigger>
 		<DropdownMenu.Content align="end" class={dropdownContentClass}>
 			<DropdownMenu.Group>
-				<DropdownMenu.Item class={dropdownItemClass} disabled={itemsDisabled} onclick={onUseTemplate}>
-					<TemplateIcon class="size-4" />
-					{useTemplateLabel}
-				</DropdownMenu.Item>
+				{#if showUseTemplate}
+					<DropdownMenu.Item class={dropdownItemClass} disabled={itemsDisabled} onclick={onUseTemplate}>
+						<TemplateIcon class="size-4" />
+						{useTemplateLabel}
+					</DropdownMenu.Item>
+				{/if}
 				<DropdownMenu.Item class={dropdownItemClass} onclick={onConvert}>
 					<TerminalIcon class="size-4" />
 					{convertLabel}

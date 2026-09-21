@@ -44,6 +44,7 @@
 	import BackupFilePicker from '#lib/components/backup-file-picker.svelte';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { hasPermission } from '#lib/utils/auth.js';
+	import { GLOBAL_SCOPE } from '#lib/types/auth.js';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import BackupPolicyDialog from '#lib/components/backup-policy-dialog.svelte';
@@ -81,6 +82,8 @@
 	const canReadActivities = $derived(hasPermission('activities:read', currentEnvId));
 	const canBackupVolume = $derived(hasPermission('volumes:backup', currentEnvId));
 	const canDeleteBackup = $derived(hasPermission('volumes:backup', currentEnvId));
+	// Destinations are a global resource; an environment-scoped backup grant does not cover them.
+	const canListS3Destinations = $derived(hasPermission('s3-destinations:list', GLOBAL_SCOPE));
 
 	let backupsPaginated = $state<VolumeBackupListResponse>({
 		data: [],
@@ -94,6 +97,7 @@
 	let backupWarnings = $state<string[]>([]);
 	let backupPolicies = $state<VolumeBackupPolicy[]>([]);
 	let s3Destinations = $state<S3Destination[]>([]);
+	let s3DestinationsError = $state<string | null>(null);
 	let showBackupPolicy = $state(false);
 	let policySession = $state(0);
 	let editingBackupPolicyId = $state<string | undefined>();
@@ -403,14 +407,17 @@
 		const name = volumeName;
 		const [collection, destinations] = await Promise.all([
 			volumeBackupService.getPolicies(name),
-			canBackupVolume
-				? tryCatch(s3DestinationService.listAll()).then((result) => (result.error ? [] : result.data))
-				: Promise.resolve([]),
+			canBackupVolume && canListS3Destinations ? tryCatch(s3DestinationService.listAll()) : Promise.resolve(null),
 			loadData(requestOptions)
 		]);
 		if (!active || environmentId !== currentEnvId || name !== volumeName) return;
 		backupPolicies = collection.policies;
-		s3Destinations = destinations;
+		if (destinations === null) return;
+		if (destinations.error !== null) {
+			s3DestinationsError = extractApiErrorMessage(destinations.error);
+		} else {
+			s3Destinations = destinations.data;
+		}
 	});
 
 	const columns = [
@@ -553,27 +560,29 @@
 					size="sm"
 					icon={AddIcon}
 				/>
-				<DropdownMenu.Root>
-					<DropdownMenu.Trigger
-						class={cn(arcaneButtonVariants({ tone: 'outline-primary', size: 'icon' }), 'size-8 rounded-md')}
-						aria-label={m.common_open_menu()}
-						disabled={creating || backupActivity.activeIds.length > 0}
-					>
-						<ArrowDownIcon class="size-4" />
-					</DropdownMenu.Trigger>
-					<DropdownMenu.Content align="end" class="w-64">
-						<DropdownMenu.Label>{m.backups_destination_label()}</DropdownMenu.Label>
-						<DropdownMenu.Item onclick={() => handleCreate({ destination: 'local' })}>
-							{m.local()}
-						</DropdownMenu.Item>
-						<DropdownMenu.Item onclick={() => openS3DestinationDialog('s3')}>
-							{m.backups_destination_s3()}
-						</DropdownMenu.Item>
-						<DropdownMenu.Item onclick={() => openS3DestinationDialog('local_s3')}>
-							{m.backups_destination_local_s3()}
-						</DropdownMenu.Item>
-					</DropdownMenu.Content>
-				</DropdownMenu.Root>
+				{#if canListS3Destinations}
+					<DropdownMenu.Root>
+						<DropdownMenu.Trigger
+							class={cn(arcaneButtonVariants({ tone: 'outline-primary', size: 'icon' }), 'size-8 rounded-md')}
+							aria-label={m.common_open_menu()}
+							disabled={creating || backupActivity.activeIds.length > 0}
+						>
+							<ArrowDownIcon class="size-4" />
+						</DropdownMenu.Trigger>
+						<DropdownMenu.Content align="end" class="w-64">
+							<DropdownMenu.Label>{m.backups_destination_label()}</DropdownMenu.Label>
+							<DropdownMenu.Item onclick={() => handleCreate({ destination: 'local' })}>
+								{m.local()}
+							</DropdownMenu.Item>
+							<DropdownMenu.Item onclick={() => openS3DestinationDialog('s3')}>
+								{m.backups_destination_s3()}
+							</DropdownMenu.Item>
+							<DropdownMenu.Item onclick={() => openS3DestinationDialog('local_s3')}>
+								{m.backups_destination_local_s3()}
+							</DropdownMenu.Item>
+						</DropdownMenu.Content>
+					</DropdownMenu.Root>
+				{/if}
 			</ButtonGroup.Root>
 		</div>
 	{/if}
@@ -682,6 +691,15 @@
 			<AlertIcon class="size-4" />
 			<Alert.Description class="text-xs">
 				{backupWarnings[0]}
+			</Alert.Description>
+		</Alert.Root>
+	{/if}
+
+	{#if s3DestinationsError}
+		<Alert.Root variant="destructive" class="py-2 [&>svg]:top-2">
+			<AlertIcon class="size-4" />
+			<Alert.Description class="text-xs">
+				{m.s3_destinations_load_failed()}: {s3DestinationsError}
 			</Alert.Description>
 		</Alert.Root>
 	{/if}
@@ -810,6 +828,7 @@
 			enabledDescription={m.volume_backup_policy_enabled_description()}
 			defaultSchedule="0 0 2 * * *"
 			showStopContainers
+			destinations={canListS3Destinations && !s3DestinationsError ? s3Destinations : undefined}
 			updatePolicies={async (policies) => (await volumeBackupService.updatePolicies(volumeName, policies)).policies}
 			messages={{
 				saved: m.volume_backup_policy_saved(),
