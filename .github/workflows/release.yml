@@ -42,14 +42,14 @@ jobs:
           fi
 
       - name: Checkout release source
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
 
       - name: Setup git-cliff
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@94c31af3204a9f15ab40b35ad084410b905bbc73 # v2.87.17
         with:
           tool: git-cliff@2.14.2
 
@@ -87,7 +87,7 @@ jobs:
       - name: Request App Token
         if: steps.version.outputs.tag != ''
         id: app-token
-        uses: actions/create-github-app-token@v3
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           client-id: ${{ secrets.ARCANE_APP_CLIENT_ID }}
           private-key: ${{ secrets.ARCANE_APP_PRIVATE_KEY }}
@@ -146,28 +146,28 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.prepare.outputs.commit }}
           fetch-depth: 0
 
       - name: Setup Just
-        uses: extractions/setup-just@v4
+        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
 
       - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@9446e853b27985e00fb1b21193be026fc09198db
+        uses: voidzero-dev/setup-vp@24d870228786dc83ae73482406bdd1e7befaec14 # v1.21.0
         with:
           node-version: 26
           cache: true
           run-install: true
 
       - name: Set up Depot CLI
-        uses: depot/setup-action@v1
+        uses: depot/setup-action@91bc8495a33ebfc504ffc89e5674379ccf23c29c # v1.7.2
         with:
           configure-docker: true
 
       - name: Login to container registries
-        uses: docker/login-action@v4
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry-auth: |
             - registry: ghcr.io
@@ -187,7 +187,7 @@ jobs:
         run: just build single frontend
 
       - name: Setup Go
-        uses: actions/setup-go@v7
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: backend/go.mod
           cache: true
@@ -199,7 +199,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y gettext-base
 
       - name: Install cosign
-        uses: sigstore/cosign-installer@v4.1.2
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
       - name: Capture frontend build versions
         id: frontend-versions
@@ -209,7 +209,7 @@ jobs:
 
       - name: Request App Token
         id: app-token
-        uses: actions/create-github-app-token@v3
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           client-id: ${{ secrets.ARCANE_APP_CLIENT_ID }}
           private-key: ${{ secrets.ARCANE_APP_PRIVATE_KEY }}
@@ -233,7 +233,7 @@ jobs:
           fi
 
       - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v7
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
         with:
           distribution: goreleaser-pro
           version: "~> v2"
@@ -264,28 +264,28 @@ jobs:
           echo "agent=$(docker buildx imagetools inspect "${AGENT_IMAGE_NAME}:${RELEASE_TAG}" --format '{{ .Manifest.Digest }}')" >> "$GITHUB_OUTPUT"
 
       - name: Container image attestation (manager)
-        uses: actions/attest-build-provenance@v4
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-name: ${{ env.MANAGER_IMAGE_NAME }}
           subject-digest: ${{ steps.digests.outputs.manager }}
           push-to-registry: true
 
       - name: Container image attestation (manager alias)
-        uses: actions/attest-build-provenance@v4
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-name: ${{ env.MANAGER_IMAGE_ALIAS }}
           subject-digest: ${{ steps.digests.outputs.manager }}
           push-to-registry: true
 
       - name: Container image attestation (agent)
-        uses: actions/attest-build-provenance@v4
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-name: ${{ env.AGENT_IMAGE_NAME }}
           subject-digest: ${{ steps.digests.outputs.agent }}
           push-to-registry: true
 
       - name: Container image attestation (agent alias)
-        uses: actions/attest-build-provenance@v4
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-name: ${{ env.AGENT_IMAGE_ALIAS }}
           subject-digest: ${{ steps.digests.outputs.agent }}
@@ -299,7 +299,7 @@ jobs:
     steps:
       - name: Request App Token
         id: app-token
-        uses: actions/create-github-app-token@v3
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           client-id: ${{ secrets.ARCANE_APP_CLIENT_ID }}
           private-key: ${{ secrets.ARCANE_APP_PRIVATE_KEY }}
@@ -325,7 +325,7 @@ jobs:
     steps:
       - name: Request website App token
         id: app-token
-        uses: actions/create-github-app-token@v3
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           client-id: ${{ secrets.ARCANE_APP_CLIENT_ID }}
           private-key: ${{ secrets.ARCANE_APP_PRIVATE_KEY }}

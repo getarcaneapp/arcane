@@ -90,14 +90,11 @@ updates:
       prefix: "chore"
       include: "scope"
 
+  # Dependabot only scans .github/workflows plus listed composite-action dirs;
+  # .depot/workflows/*.yml must be bumped by hand.
   - package-ecosystem: "github-actions"
-    directory: "/"
+    directories: ["/", "/.depot/actions/publish-images"]
     patterns: ["*"]
-    ignore:
-      - dependency-name: "*"
-        update-types:
-          - "version-update:semver-minor"
-          - "version-update:semver-patch"
     cooldown:
       default-days: 2
     schedule:

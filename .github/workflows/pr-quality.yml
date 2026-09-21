@@ -15,7 +15,7 @@ jobs:
         steps:
             - name: Request App Token
               id: app-token
-              uses: actions/create-github-app-token@v3
+              uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
               with:
                   client-id: ${{ secrets.ARCANE_APP_CLIENT_ID }}
                   private-key: ${{ secrets.ARCANE_APP_PRIVATE_KEY }}
@@ -25,7 +25,7 @@ jobs:
                   permission-issues: write
                   permission-pull-requests: write
 
-            - uses: peakoss/anti-slop@v0
+            - uses: peakoss/anti-slop@57858eead489d08b255fab2af45a506c2ca6eab2 # v0.3.0
               with:
                   github-token: ${{ steps.app-token.outputs.token }}
 

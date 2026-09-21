@@ -34,13 +34,13 @@ jobs:
           sudo apt-get install -y gcc gettext-base
 
       - name: Install version tools
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@94c31af3204a9f15ab40b35ad084410b905bbc73 # v2.87.17
         with:
           tool: just,git-cliff
           fallback: none
 
       - name: Install cosign
-        uses: sigstore/cosign-installer@v4.1.2
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
       - name: Put standalone tools on the default PATH
         run: |
@@ -57,7 +57,7 @@ jobs:
           docker pull public.ecr.aws/docker/library/busybox:1.37
 
       - name: Snapshot CI image
-        uses: depot/snapshot-action@v1
+        uses: depot/snapshot-action@a082cbabd407afdf324a7b4f41889795636f4b24 # v1.2.1
         with:
           image: g7r5wqb57k.registry.depot.dev/ci:latest
           env-mask: |
