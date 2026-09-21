@@ -11,39 +11,39 @@ filter_unconventional = true
 tag_pattern = "v[0-9]*"
 commit_preprocessors = [{ pattern = '\((\w+\s)?#([0-9]+)\)', replace = "" }]
 commit_parsers = [
-  { message = "^feat\\(cli\\)", group = "<!-- 01 --> CLI - New features" },
-  { message = "^feat", group = "<!-- 00 --> New features" },
+  { message = "^feat\\(cli\\)", group = "CLI - New features" },
+  { message = "^feat", group = "New features" },
 
-  { message = "^fix\\(cli\\)", group = "<!-- 11 --> CLI - Bug fixes" },
-  { message = "^fix", group = "<!-- 10 --> Bug fixes" },
+  { message = "^fix\\(cli\\)", group = "CLI - Bug fixes" },
+  { message = "^fix", group = "Bug fixes" },
 
-  { message = "^perf\\(cli\\)", group = "<!-- 21 --> CLI - Performance improvements" },
-  { message = "^perf", group = "<!-- 20 --> Performance improvements" },
+  { message = "^perf\\(cli\\)", group = "CLI - Performance improvements" },
+  { message = "^perf", group = "Performance improvements" },
 
-  { message = "^docs\\(cli\\)", group = "<!-- 31 --> CLI - Documentation", default_scope = "other" },
-  { message = "^docs", group = "<!-- 30 --> Documentation", default_scope = "other" },
+  { message = "^docs\\(cli\\)", group = "CLI - Documentation", default_scope = "other" },
+  { message = "^docs", group = "Documentation", default_scope = "other" },
 
   { message = "^chore\\(deps\\)", skip = true },
-        { message = "^chore", skip = true },
-        { message = "^release", skip = true },
-        { message = "update translations via Crowdin", skip = true },
-  { message = ".*", group = "<!-- 50 --> Other", default_scope = "other"},
+  { message = "^chore", skip = true },
+  { message = "^release", skip = true },
+  { message = "update translations via Crowdin", skip = true },
+  { message = ".*", group = "Other", default_scope = "other" },
 ]
 filter_commits = false
 
+[bump]
+no_increment_regex = "^(chore|ci|docs|refactor|style|test)"
+
 [changelog]
+format = true
 trim = true
 body = """
 ## {{ version | default(value="Unknown Version") }}
-{% for group, commits in commits | group_by(attribute="group") %}
-### {{ group | striptags | trim | upper_first }}
-{% for commit in commits %}
-  * {{ commit.message }} \
-    {%- if commit.remote.pr_number -%}
-      ([#{{ commit.remote.pr_number }}]({{ self::remote_url() }}/pull/{{ commit.remote.pr_number }}) by @{{ commit.remote.username | default(value=commit.author.name) }})
-    {%- else -%}
-      ([{{ commit.id | truncate(length=7, end="") }}]({{ self::remote_url() }}/commit/{{ commit.id }}) by @{{ commit.remote.username | default(value=commit.author.name) }})
-    {%- endif -%}
+{% for entry in commits | commit_groups(groups=["New features", "CLI - New features", "Bug fixes", "CLI - Bug fixes", "Performance improvements", "CLI - Performance improvements", "Documentation", "CLI - Documentation", "Other"]) %}
+### {{ entry.group }}
+{% for commit in entry.commits %}
+  - {{ commit.message | trim }} \
+    {%- if commit.remote.pr_number %} ([#{{ commit.remote.pr_number }}]({{ self::remote_url() }}/pull/{{ commit.remote.pr_number }}) by @{{ commit.remote.pr_author | default(value=commit.remote.username) | default(value=commit.author.name) }}){%- else %} ([{{ commit.id | truncate(length=7, end="") }}]({{ self::remote_url() }}/commit/{{ commit.id }}) by @{{ commit.remote.username | default(value=commit.author.name) }}){%- endif -%}
 {% endfor %}
 {% endfor %}
 {% if version %}
