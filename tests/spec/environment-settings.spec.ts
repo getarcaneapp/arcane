@@ -1,3 +1,5 @@
+import { waitForDialogReady } from '../utils/playwright.util';
+import { removeApiResource } from '../utils/fetch.util';
 import { test, expect, type Locator, type Page, type Request } from '../fixtures/test.fixture';
 
 const LOCAL_ENV_ID = '0';
@@ -23,7 +25,11 @@ async function renameEnvironmentInHeader(page: Page, newName: string) {
 	await expect(environmentTitleButton(page)).toHaveText(newName);
 }
 
-async function createDirectEnvironmentViaUI(page: Page, environmentName: string) {
+async function createDirectEnvironmentViaUI(
+	page: Page,
+	environmentName: string,
+	environmentIds: Set<string>
+) {
 	await page.goto('/environments');
 	await page.waitForLoadState('load');
 
@@ -31,6 +37,7 @@ async function createDirectEnvironmentViaUI(page: Page, environmentName: string)
 	await expect(page.getByText('Create New Agent Environment')).toBeVisible();
 
 	const dialog = page.getByRole('dialog');
+	await waitForDialogReady(dialog);
 	await dialog.getByLabel('Name', { exact: true }).fill(environmentName);
 	await dialog.getByLabel('Agent Address', { exact: true }).fill('localhost:3552');
 	const createResponsePromise = page.waitForResponse(
@@ -42,6 +49,7 @@ async function createDirectEnvironmentViaUI(page: Page, environmentName: string)
 	const createResponse = await createResponsePromise;
 	expect(createResponse.ok(), await createResponse.text()).toBeTruthy();
 	const created: { data: { id: string } } = await createResponse.json();
+	environmentIds.add(created.data.id);
 	expect(created.data.id).toBeTruthy();
 
 	await expect(
@@ -50,25 +58,6 @@ async function createDirectEnvironmentViaUI(page: Page, environmentName: string)
 	await page.getByRole('button', { name: 'Done', exact: true }).click();
 	await expect(page.getByRole('button', { name: environmentName, exact: true })).toBeVisible();
 	return created.data.id;
-}
-
-async function deleteEnvironmentViaUI(page: Page, environmentName: string) {
-	await page.goto('/environments');
-	await page.waitForLoadState('load');
-
-	const envRow = page.getByRole('row').filter({
-		has: page.getByRole('button', { name: environmentName, exact: true })
-	});
-
-	if ((await envRow.count()) === 0) {
-		return;
-	}
-
-	await envRow.hover();
-	await envRow.getByRole('button', { name: 'Open menu', exact: true }).click();
-	await page.getByRole('menuitem', { name: 'Delete', exact: true }).click();
-	await page.getByRole('button', { name: 'Remove', exact: true }).click();
-	await expect(page.getByRole('button', { name: environmentName, exact: true })).toHaveCount(0);
 }
 
 async function openLocalEnvironment(page: Page) {
@@ -102,6 +91,61 @@ async function selectSettingOption(page: Page, trigger: Locator, optionText: str
 
 test.describe('Environment Settings UI', () => {
 	test.describe.configure({ mode: 'serial' });
+	const settingKeys = new Set([
+		'baseServerUrl',
+		'followProjectSymlinks',
+		'defaultDeployPullPolicy',
+		'trivyNetwork',
+		'trivyResourceLimitsEnabled',
+		'trivyMemoryLimitMb',
+		'trivyCpuLimit'
+	]);
+	let originalSettings: Record<string, string> = {};
+	test.beforeEach(async ({ page }) => {
+		originalSettings = {};
+		const response = await page.request.get(`/api/environments/${LOCAL_ENV_ID}/settings`);
+		expect(response.ok(), 'Read original environment settings').toBe(true);
+		const settings: Array<{ key: string; value: string }> = await response.json();
+		expect(Array.isArray(settings)).toBe(true);
+		originalSettings = Object.fromEntries(
+			settings
+				.filter((setting) => settingKeys.has(setting.key))
+				.map((setting) => [setting.key, setting.value])
+		);
+	});
+	test.afterEach(async ({ page }) => {
+		if (Object.keys(originalSettings).length === 0) return;
+		try {
+			const currentResponse = await page.request.get(`/api/environments/${LOCAL_ENV_ID}/settings`);
+			expect(currentResponse.ok()).toBe(true);
+			const current: Array<{ key: string; value: string }> = await currentResponse.json();
+			const changed = Object.fromEntries(
+				Object.entries(originalSettings).filter(
+					([key, value]) => current.find((setting) => setting.key === key)?.value !== value
+				)
+			);
+			if (Object.keys(changed).length === 0) return;
+			const response = await page.request.put(`/api/environments/${LOCAL_ENV_ID}/settings`, {
+				data: changed
+			});
+			expect(
+				response.ok(),
+				`Restore environment settings: ${response.status()} ${await response.text()}`
+			).toBe(true);
+			const restoredResponse = await page.request.get(`/api/environments/${LOCAL_ENV_ID}/settings`);
+			expect(restoredResponse.ok()).toBe(true);
+			const restored: Array<{ key: string; value: string }> = await restoredResponse.json();
+			expect(
+				Object.fromEntries(
+					restored
+						.filter((setting) => settingKeys.has(setting.key))
+						.map((setting) => [setting.key, setting.value])
+				)
+			).toEqual(originalSettings);
+		} catch (error) {
+			expect.soft(false, `Restore environment settings: ${String(error)}`).toBe(true);
+		}
+	});
 
 	test('should keep primary tabs selectable and restore them from the URL', async ({ page }) => {
 		await page.goto('/settings');
@@ -148,9 +192,10 @@ test.describe('Environment Settings UI', () => {
 		const envName = `settings-ui-${Date.now().toString().slice(-5)}`;
 		const updatedName = `${envName}-updated`;
 		let environmentId = '';
+		const environmentIds = new Set<string>();
 
 		try {
-			environmentId = await createDirectEnvironmentViaUI(page, envName);
+			environmentId = await createDirectEnvironmentViaUI(page, envName, environmentIds);
 			await page.getByRole('button', { name: envName, exact: true }).click();
 			await expect(page).toHaveURL(/\/environments\/[^/?]+\?tab=[a-z]+$/);
 
@@ -160,11 +205,7 @@ test.describe('Environment Settings UI', () => {
 			await page.reload();
 			await expect(environmentTitleButton(page)).toHaveText(updatedName);
 		} finally {
-			if (environmentId) {
-				await page.request.delete(`/api/environments/${environmentId}`).catch(() => undefined);
-			}
-			await deleteEnvironmentViaUI(page, updatedName);
-			await deleteEnvironmentViaUI(page, envName);
+			for (const id of environmentIds) await removeApiResource(page, `/api/environments/${id}`);
 		}
 	});
 

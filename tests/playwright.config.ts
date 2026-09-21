@@ -6,7 +6,7 @@ const configuredWorkers = process.env.PLAYWRIGHT_WORKERS;
 const workers =
 	configuredWorkers && Number.isInteger(Number(configuredWorkers))
 		? Number(configuredWorkers)
-		: configuredWorkers || (process.env.CI ? 1 : 2);
+		: configuredWorkers || 1;
 
 export default defineConfig({
 	testDir: '.',
@@ -16,7 +16,7 @@ export default defineConfig({
 	retries: process.env.CI ? 2 : 0,
 	retryStrategy: 'isolated',
 	workers,
-	globalSetup: './setup/global-setup',
+	globalSetup: ['./setup/docker-browser', './setup/global-setup'],
 	globalTeardown: './setup/global-teardown',
 	reporter: process.env.CI
 		? [
@@ -35,7 +35,8 @@ export default defineConfig({
 	use: {
 		baseURL,
 		serviceWorkers: 'block',
-		trace: 'on-first-retry',
+		trace: 'retain-on-failure',
+		screenshot: 'only-on-failure',
 		video: 'retain-on-failure'
 	},
 	projects: [

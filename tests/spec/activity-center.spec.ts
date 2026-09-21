@@ -1,3 +1,5 @@
+import { removeApiResource } from '../utils/fetch.util';
+import { waitForDialogReady } from '../utils/playwright.util';
 import { test, expect, type Locator, type Page, type Route } from '../fixtures/test.fixture';
 
 type MockEnvironment = {
@@ -255,7 +257,7 @@ async function createNetworkViaUI(page: Page, networkName: string) {
 
 	await page.getByRole('button', { name: 'Create Network' }).first().click();
 	const dialog = page.getByRole('dialog');
-	await expect(dialog).toBeVisible();
+	await waitForDialogReady(dialog);
 	await dialog.locator('#network-name').fill(networkName);
 
 	const createRequest = page.waitForResponse(
@@ -280,13 +282,6 @@ async function createNetworkViaUI(page: Page, networkName: string) {
 		activityId: extractActivityId(body),
 		networkId: extractCreatedNetworkId(body)
 	};
-}
-
-async function removeNetworkViaApi(page: Page, networkId: string | undefined) {
-	if (!networkId) return;
-	await page.request
-		.delete(`/api/environments/0/networks/${encodeURIComponent(networkId)}`)
-		.catch(() => undefined);
 }
 
 async function openActivityCenter(page: Page) {
@@ -623,6 +618,7 @@ test.describe('Activity Center', () => {
 		try {
 			const created = await createNetworkViaUI(page, networkName);
 			networkId = created.networkId;
+			expect(networkId, 'Created network must have an ID').toBeTruthy();
 			expect(created.activityId).toBeTruthy();
 
 			const [environmentResponse, userResponse] = await Promise.all([
@@ -668,7 +664,10 @@ test.describe('Activity Center', () => {
 			// (e.g. "Creating network") are no longer rendered in the detail panel.
 			await expect(detailPanel.getByText('Network created successfully').first()).toBeVisible();
 		} finally {
-			await removeNetworkViaApi(page, networkId);
+			await removeApiResource(
+				page,
+				`/api/environments/0/networks/${encodeURIComponent(networkId ?? networkName)}`
+			);
 		}
 	});
 });

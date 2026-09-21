@@ -1,5 +1,6 @@
+import { waitForDialogReady } from '../utils/playwright.util';
 import { test, expect, type Page } from '../fixtures/test.fixture';
-import { fetchVolumeCountsWithRetry } from '../utils/fetch.util';
+import { removeApiResource, fetchVolumeCountsWithRetry } from '../utils/fetch.util';
 import { VolumeUsageCounts } from 'types/volumes.type';
 import { openRowActionsMenu } from '../utils/table-actions.util';
 
@@ -16,6 +17,12 @@ async function openCreateVolumeSheet(page: Page) {
 	await expect(page.getByRole('heading', { name: 'Volumes', level: 1 })).toBeVisible();
 
 	const createButton = page.getByRole('button', { name: 'Create Volume' }).first();
+	await expect(
+		createButton
+			.or(page.getByRole('button', { name: 'More actions', exact: true }))
+			.filter({ visible: true })
+			.first()
+	).toBeVisible();
 	if (await createButton.isVisible().catch(() => false)) {
 		await createButton.click();
 	} else {
@@ -25,7 +32,7 @@ async function openCreateVolumeSheet(page: Page) {
 		await page.getByRole('menuitem', { name: 'Create Volume', exact: true }).click();
 	}
 
-	await expect(page.getByRole('dialog')).toBeVisible();
+	await waitForDialogReady(page.getByRole('dialog'));
 }
 
 async function createVolumeViaUI(page: Page, volumeName: string) {
@@ -68,9 +75,7 @@ async function createVolumeViaApi(page: Page, volumeName: string) {
 }
 
 async function removeVolumeViaApi(page: Page, volumeName: string) {
-	await page.request
-		.delete(`/api/environments/0/volumes/${encodeURIComponent(volumeName)}`)
-		.catch(() => undefined);
+	await removeApiResource(page, `/api/environments/0/volumes/${encodeURIComponent(volumeName)}`);
 }
 
 async function gotoVolumeDetail(page: Page, volumeName: string) {
@@ -100,8 +105,7 @@ async function ensureFacetOpen(page: Page, title: string) {
 	const trigger = page.getByTestId(triggerId).first();
 	const content = page.getByTestId(contentId).first();
 
-	if (await content.isVisible().catch(() => false)) return { trigger, content };
-
+	await expect(trigger).toBeVisible();
 	if ((await trigger.getAttribute('data-state')) !== 'open') await trigger.click();
 	await content.waitFor({ state: 'visible' });
 	return { trigger, content };
@@ -272,6 +276,7 @@ test.describe('Volumes Page', () => {
 
 			const dialog = page.getByRole('dialog');
 			await expect(dialog).toBeVisible();
+			await waitForDialogReady(dialog);
 			await dialog.getByLabel('New volume name').fill(targetName);
 
 			const renameRequest = page.waitForResponse((response) => {

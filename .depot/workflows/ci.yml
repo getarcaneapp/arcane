@@ -184,16 +184,8 @@ jobs:
             fi
           done
 
-      - name: Cache Playwright Browsers
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ hashFiles('pnpm-lock.yaml', 'tests/package.json') }}
-          restore-keys: |
-            ${{ runner.os }}-playwright-
-
-      - name: Setup and Install Playwright Dependencies
-        run: just deps install tests
+      - name: Install E2E test dependencies
+        run: vp -C tests install
 
       - name: Run Playwright E2E tests
         run: mkdir -p tests/test-results && vp -C tests exec playwright test --project=chromium
@@ -207,7 +199,9 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: playwright-report-${{ matrix.database.name }}
-          path: tests/.report
+          path: |
+            tests/.report
+            tests/test-results
           include-hidden-files: true
           retention-days: 15
 
@@ -257,6 +251,7 @@ jobs:
         env:
           COMPOSE_FILE: setup/compose-proxy.yaml
           BASE_URL: http://localhost:3002
+          PLAYWRIGHT_DOCKER_BROWSER: '0'
           PLAYWRIGHT_JUNIT_OUTPUT_FILE: test-results/playwright-cli.xml
 
       - name: Upload Playwright HTML report
@@ -264,7 +259,9 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: playwright-report-proxy-cli
-          path: tests/.report
+          path: |
+            tests/.report
+            tests/test-results
           include-hidden-files: true
           retention-days: 15
 

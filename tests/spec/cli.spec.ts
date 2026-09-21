@@ -605,7 +605,9 @@ test.describe('arcane-cli e2e', () => {
 						'api-keys',
 						'delete',
 						created.id
-					]).catch(() => undefined);
+					]).catch((error: unknown) => {
+						expect.soft(false, `Remove CLI test key: ${String(error)}`).toBe(true);
+					});
 				}
 			}
 		});
@@ -735,14 +737,30 @@ test.describe('arcane-cli remote environment RBAC', () => {
 
 	test.afterAll(async () => {
 		if (readonlyKeyId) {
-			await adminFetch(`/api/api-keys/${readonlyKeyId}`, { method: 'DELETE' }).catch(
-				() => undefined
-			);
+			try {
+				const response = await adminFetch(`/api/api-keys/${readonlyKeyId}`, { method: 'DELETE' });
+				expect
+					.soft(
+						response.ok || response.status === 404,
+						`Remove read-only key: ${response.status} ${await response.text()}`
+					)
+					.toBe(true);
+			} catch (error) {
+				expect.soft(false, `Remove read-only key: ${String(error)}`).toBe(true);
+			}
 		}
 		if (remoteEnvId) {
-			await adminFetch(`/api/environments/${remoteEnvId}`, { method: 'DELETE' }).catch(
-				() => undefined
-			);
+			try {
+				const response = await adminFetch(`/api/environments/${remoteEnvId}`, { method: 'DELETE' });
+				expect
+					.soft(
+						response.ok || response.status === 404,
+						`Remove remote environment: ${response.status} ${await response.text()}`
+					)
+					.toBe(true);
+			} catch (error) {
+				expect.soft(false, `Remove remote environment: ${String(error)}`).toBe(true);
+			}
 		}
 		if (createdAdminKey) {
 			await deleteTestApiKeys();

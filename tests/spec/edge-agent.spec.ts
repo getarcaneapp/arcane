@@ -1,3 +1,4 @@
+import { removeApiResource } from '../utils/fetch.util';
 import { test, expect, type Page } from '../fixtures/test.fixture';
 
 const ROUTES = {
@@ -155,7 +156,7 @@ test.describe('Edge Agent Environment', () => {
 			expect(agentSettingsRequests).toEqual([]);
 		} finally {
 			if (createdEnvironmentId) {
-				await page.request.delete(`/api/environments/${createdEnvironmentId}`);
+				await removeApiResource(page, `/api/environments/${createdEnvironmentId}`);
 			}
 		}
 	});

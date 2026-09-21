@@ -59,13 +59,10 @@ async function injectExpired401Always(page: Page, urlPattern: string | RegExp) {
  * Mock /auth/refresh to return a synthetic 200 and browser cookie. Returns a
  * getter to assert how many refresh requests were made.
  */
-async function mockRefreshSuccess(page: Page, delayMs = 0): Promise<() => number> {
+async function mockRefreshSuccess(page: Page): Promise<() => number> {
 	let callCount = 0;
 	await page.route(/\/api\/auth\/refresh$/, async (route) => {
 		callCount++;
-		if (delayMs > 0) {
-			await new Promise((resolve) => setTimeout(resolve, delayMs));
-		}
 		await route.fulfill({
 			status: 200,
 			headers: {
@@ -110,7 +107,11 @@ test('signed-in OIDC callbacks reach the callback exchange', async ({ page }) =>
 test.describe('Token refresh behaviour', () => {
 	test('@cross-browser shows useful login errors and accepts the configured admin password', async ({
 		page
-	}) => {
+	}, testInfo) => {
+		// Keep each browser's login attempts in its own rate-limit bucket.
+		await page.setExtraHTTPHeaders({
+			'X-Forwarded-For': testInfo.project.name === 'firefox' ? '198.18.0.2' : '198.18.0.3'
+		});
 		await page.context().clearCookies();
 		let gatewayFailurePending = true;
 		await page.route(/\/api\/auth\/login$/, async (route) => {

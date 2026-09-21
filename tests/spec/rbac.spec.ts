@@ -7,7 +7,7 @@ import {
 	type Page,
 	type Request
 } from '../fixtures/test.fixture';
-import { readApiData } from '../utils/fetch.util';
+import { removeApiResource, readApiData } from '../utils/fetch.util';
 import { openRowActionsMenu } from '../utils/table-actions.util';
 
 type TestRole = {
@@ -615,18 +615,18 @@ test('administers scoped identities and enforces their browser access immediatel
 		await noAccessContext?.close();
 
 		if (restrictedUser) {
-			await page.request.delete(`/api/users/${restrictedUser.id}`).catch(() => undefined);
+			await removeApiResource(page, `/api/users/${restrictedUser.id}`);
 		}
 		if (noAccessUser) {
-			await page.request.delete(`/api/users/${noAccessUser.id}`).catch(() => undefined);
+			await removeApiResource(page, `/api/users/${noAccessUser.id}`);
 		}
 		for (const role of [clonedRole, localRole, remoteRole]) {
 			if (role) {
-				await page.request.delete(`/api/roles/${role.id}`).catch(() => undefined);
+				await removeApiResource(page, `/api/roles/${role.id}`);
 			}
 		}
 		if (remoteEnvironment) {
-			await page.request.delete(`/api/environments/${remoteEnvironment.id}`).catch(() => undefined);
+			await removeApiResource(page, `/api/environments/${remoteEnvironment.id}`);
 		}
 	}
 });

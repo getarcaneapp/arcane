@@ -1,10 +1,30 @@
-import { execFileSync, execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+export function captureComposeDiagnostics(composeFile: string) {
+	const directory = path.resolve(__dirname, '../test-results/compose');
+	fs.mkdirSync(directory, { recursive: true });
+	for (const [name, args] of [
+		['services', ['ps', '--all', '--format', 'json']],
+		['logs', ['logs', '--no-color', '--timestamps']]
+	] as const) {
+		try {
+			const output = execFileSync('docker', ['compose', '-f', composeFile, ...args], {
+				encoding: 'utf8',
+				maxBuffer: 32 * 1024 * 1024
+			});
+			fs.writeFileSync(path.join(directory, `${name}.txt`), output);
+		} catch (error) {
+			fs.writeFileSync(path.join(directory, `${name}.txt`), `Capture failed: ${String(error)}\n`);
+			console.error(`Failed to capture Compose ${name}:`, error);
+		}
+	}
+}
 
 function ensureProjectsDirIsContainerWritable(projectsDir: string) {
 	fs.mkdirSync(projectsDir, { recursive: true });
@@ -47,13 +67,31 @@ async function globalSetup() {
 	// before `docker compose up` so Docker does not create it as root, and make it
 	// writable for the hardened non-root runtime user (65532).
 	const projectsDir = path.resolve(__dirname, 'projects');
-	ensureProjectsDirIsContainerWritable(projectsDir);
 
 	try {
+		ensureProjectsDirIsContainerWritable(projectsDir);
+		const staticProjectDir = path.join(projectsDir, 'test-project-static');
+		fs.accessSync(path.join(staticProjectDir, 'compose.yaml'), fs.constants.R_OK);
+		const staticEnvFile = path.join(staticProjectDir, '.env');
+		if (!fs.existsSync(staticEnvFile)) fs.writeFileSync(staticEnvFile, '');
+		for (const image of [
+			'public.ecr.aws/docker/library/busybox:1.37',
+			'public.ecr.aws/docker/library/alpine:3.20',
+			'public.ecr.aws/nginx/nginx:stable-alpine'
+		]) {
+			try {
+				execFileSync('docker', ['image', 'inspect', image], { stdio: 'ignore' });
+			} catch {
+				execFileSync('docker', ['pull', image], { stdio: 'inherit' });
+			}
+		}
 		console.log('Building and starting Docker containers...');
-		execSync(`docker compose -f ${composeFile} up -d --build`, { stdio: 'inherit' });
+		execFileSync('docker', ['compose', '-f', composeFile, 'up', '-d', '--build'], {
+			stdio: 'inherit'
+		});
 		console.log('Docker containers are up.');
 	} catch (error) {
+		captureComposeDiagnostics(composeFile);
 		console.error('Failed to start Docker containers:', error);
 		throw error;
 	}
@@ -66,7 +104,9 @@ async function globalSetup() {
 	let attempts = 0;
 	while (attempts < maxAttempts) {
 		try {
-			const response = await fetch(baseURL);
+			const response = await fetch(new URL('/api/health', baseURL), {
+				signal: AbortSignal.timeout(2000)
+			});
 			if (response.ok) {
 				console.log('Server is ready!');
 				break;
@@ -79,6 +119,7 @@ async function globalSetup() {
 	}
 
 	if (attempts === maxAttempts) {
+		captureComposeDiagnostics(composeFile);
 		throw new Error(`Server at ${baseURL} did not become ready in time.`);
 	}
 

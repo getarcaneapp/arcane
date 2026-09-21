@@ -1,7 +1,13 @@
 import { test, expect, type Page } from '../fixtures/test.fixture';
-import { fetchImageCountsWithRetry, fetchImagesWithRetry } from '../utils/fetch.util';
+import {
+	fetchImageCountsWithRetry,
+	fetchImagesWithRetry,
+	readApiData,
+	readList
+} from '../utils/fetch.util';
 import { ImageUsageCounts } from 'types/image.type';
 import { openRowActionsMenu } from '../utils/table-actions.util';
+import { waitForDialogReady } from '../utils/playwright.util';
 
 const ROUTES = {
 	page: '/images',
@@ -83,22 +89,19 @@ async function mockImageDeleteFlow(page: Page, failFirst = false) {
 	return state;
 }
 
-async function fetchAllImagesForUsage(page: Page): Promise<any[]> {
+async function fetchAllImagesForUsage(page: Page): Promise<Record<string, unknown>[]> {
 	const limit = 200;
 	let start = 0;
-	const all: any[] = [];
+	const all: Record<string, unknown>[] = [];
 
 	while (true) {
-		const res = await page.request.get(`${ROUTES.apiImages}?start=${start}&limit=${limit}`);
-		if (!res.ok()) {
-			throw new Error(`HTTP ${res.status()}`);
-		}
-
-		const body = await res.json().catch(() => null as any);
-		const data = Array.isArray(body?.data) ? body.data : [];
+		const { data, pagination } = await readList<Record<string, unknown>>(
+			await page.request.get(`${ROUTES.apiImages}?start=${start}&limit=${limit}`),
+			'List images for usage'
+		);
 		all.push(...data);
-
-		const totalItems = Number(body?.pagination?.totalItems ?? all.length);
+		expect(pagination?.totalItems, 'Image list must include a total').toBeDefined();
+		const totalItems = pagination!.totalItems!;
 		if (data.length === 0 || all.length >= totalItems) {
 			break;
 		}
@@ -211,13 +214,8 @@ let imageCounts: ImageUsageCounts = {
 test.beforeEach(async ({ page }) => {
 	await navigateToImages(page);
 
-	try {
-		const images = await fetchImagesWithRetry(page);
-		realImages = Array.isArray(images) ? images : [];
-		imageCounts = await fetchImageCountsWithRetry(page);
-	} catch {
-		realImages = [];
-	}
+	realImages = await fetchImagesWithRetry(page);
+	imageCounts = await fetchImageCountsWithRetry(page);
 });
 
 test.describe('Images Page', () => {
@@ -309,7 +307,13 @@ test.describe('Images Page', () => {
 		await navigateToImages(page);
 
 		let pruneButton = page.getByRole('button', { name: 'Prune Unused' });
-		const isDirectlyVisible = await pruneButton.isVisible().catch(() => false);
+		await expect(
+			pruneButton
+				.or(page.getByRole('button', { name: 'More actions' }))
+				.filter({ visible: true })
+				.first()
+		).toBeVisible();
+		const isDirectlyVisible = await pruneButton.isVisible();
 
 		if (!isDirectlyVisible) {
 			await page.getByRole('button', { name: 'More actions' }).click();
@@ -334,29 +338,69 @@ test.describe('Images Page', () => {
 	});
 
 	test('should pull image from dropdown menu', async ({ page }) => {
-		test.skip(!realImages.length, 'No images available for pull API test');
+		test.setTimeout(90_000);
+		const reference = 'public.ecr.aws/docker/library/busybox:1.37';
+		const fixtures = await readList<{ id: string }>(
+			await page.request.get(ROUTES.apiImages, { params: { search: reference } }),
+			'Find image pull fixture'
+		);
+		expect(fixtures.data).toHaveLength(1);
 		await navigateToImages(page);
+		await page.getByPlaceholder('Search…').first().fill(fixtures.data[0].id);
 
-		const firstRow = page
+		const row = page
 			.getByRole('row')
-			.filter({ has: page.getByRole('button', { name: 'Open menu', exact: true }) })
-			.first();
-		const menu = await openRowActionsMenu(page, firstRow);
+			.filter({ has: page.locator(`a[href="/images/${fixtures.data[0].id}"]`) });
+		const menu = await openRowActionsMenu(page, row);
+		const responsePromise = page.waitForResponse(
+			(response) =>
+				response.request().method() === 'POST' &&
+				new URL(response.url()).pathname === `${ROUTES.apiImages}/pull`
+		);
 		await menu.getByRole('menuitem', { name: 'Pull' }).click();
-
-		await page.waitForLoadState('load');
-
+		const response = await responsePromise;
+		expect(response.ok(), 'Pull fixture image').toBe(true);
+		const frames = (await response.text())
+			.trim()
+			.split('\n')
+			.map(
+				(line) =>
+					JSON.parse(line) as {
+						activityId?: string;
+						done?: boolean;
+						error?: unknown;
+					}
+			);
+		expect(frames.some((frame) => frame.error)).toBe(false);
+		expect(frames).toContainEqual(expect.objectContaining({ done: true }));
+		const activityId = frames.find((frame) => frame.activityId)?.activityId;
+		expect(activityId).toBeTruthy();
 		await expect(
-			page.getByRole('region', { name: 'Notifications alt+T', exact: true }).getByRole('listitem')
+			page
+				.getByRole('region', { name: 'Notifications alt+T', exact: true })
+				.getByRole('listitem')
+				.filter({ hasText: `Image ${reference} pulled successfully` })
 		).toBeVisible();
+		await expect
+			.poll(
+				async () => {
+					const detail = await readApiData<{ activity: { status: string } }>(
+						await page.request.get(`/api/environments/0/activities/${activityId}`),
+						'Get image pull activity'
+					);
+					return detail.activity.status;
+				},
+				{ timeout: 60_000 }
+			)
+			.toBe('success');
 	});
 
 	test('should call remove API on row action remove click and confirmation', async ({ page }) => {
-		test.skip(!realImages.length, 'No images available for remove API test');
+		expect(realImages.length, 'No images available for remove API test').toBeGreaterThan(0);
 		await navigateToImages(page);
 
 		const removableImage = realImages.find((image) => image.repo && image.repo !== '<none>');
-		test.skip(!removableImage, 'No removable images available');
+		expect(removableImage, 'No removable images available').toBeTruthy();
 		const removePath = `/api/environments/0/images/${removableImage.id}`;
 
 		let removeRequestCount = 0;
@@ -408,7 +452,10 @@ test.describe('Images Page', () => {
 	test('should remove selected images sequentially and refresh the list and usage counts', async ({
 		page
 	}) => {
-		test.skip(realImages.length < 2, 'At least two images are required for bulk remove test');
+		expect(
+			realImages.length,
+			'At least two images are required for bulk remove test'
+		).toBeGreaterThanOrEqual(2);
 		await navigateToImages(page);
 
 		const rows = getImageRows(page);
@@ -441,7 +488,10 @@ test.describe('Images Page', () => {
 	test('should continue bulk removal after a failed image and refresh successful results', async ({
 		page
 	}) => {
-		test.skip(realImages.length < 2, 'At least two images are required for bulk remove test');
+		expect(
+			realImages.length,
+			'At least two images are required for bulk remove test'
+		).toBeGreaterThanOrEqual(2);
 		await navigateToImages(page);
 
 		const rows = getImageRows(page);
@@ -472,7 +522,13 @@ test.describe('Images Page', () => {
 		await navigateToImages(page);
 
 		let pruneButton = page.getByRole('button', { name: 'Prune Unused' });
-		const isDirectlyVisible = await pruneButton.isVisible().catch(() => false);
+		await expect(
+			pruneButton
+				.or(page.getByRole('button', { name: 'More actions' }))
+				.filter({ visible: true })
+				.first()
+		).toBeVisible();
+		const isDirectlyVisible = await pruneButton.isVisible();
 
 		if (!isDirectlyVisible) {
 			await page.getByRole('button', { name: 'More actions' }).click();
@@ -485,7 +541,13 @@ test.describe('Images Page', () => {
 		await expect(
 			dialog.getByRole('heading', { name: 'Prune Unused Images', exact: true })
 		).toBeVisible();
+		const pruneResponsePromise = page.waitForResponse(
+			(response) =>
+				response.request().method() === 'POST' &&
+				new URL(response.url()).pathname === '/api/environments/0/images/prune'
+		);
 		await dialog.getByRole('button', { name: 'Prune Images', exact: true }).click();
+		await readApiData<Record<string, unknown>>(await pruneResponsePromise, 'Prune dangling images');
 
 		await expect(
 			page
@@ -505,11 +567,16 @@ test.describe('Images Page', () => {
 		await page.getByRole('button', { name: 'Pull Image' }).click();
 		const dialogHeading = page.getByRole('heading', { name: 'Pull Image' });
 		await expect(dialogHeading).toBeVisible();
+		await waitForDialogReady(page.getByRole('dialog'));
 
 		await page
 			.getByRole('textbox', { name: 'Image Name *' })
 			.fill('public.ecr.aws/docker/library/alpine');
 		await page.getByRole('textbox', { name: 'Tag' }).fill('3.20');
+		await expect(page.getByRole('textbox', { name: 'Image Name *' })).toHaveValue(
+			'public.ecr.aws/docker/library/alpine'
+		);
+		await expect(page.getByRole('textbox', { name: 'Tag' })).toHaveValue('3.20');
 
 		await page.getByRole('button', { name: 'Pull', exact: true }).click();
 

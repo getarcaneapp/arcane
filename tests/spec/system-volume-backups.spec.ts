@@ -1,3 +1,4 @@
+import { removeApiResource } from '../utils/fetch.util';
 import { expect, test, type Page } from '../fixtures/test.fixture';
 import type { Activity } from '../../frontend/src/lib/types/activity.type';
 
@@ -81,9 +82,10 @@ async function createVolumeViaApi(page: Page, volumeName: string) {
 }
 
 async function removeVolumeViaApi(page: Page, volumeName: string) {
-	await page.request
-		.delete(`/api/environments/0/volumes/${encodeURIComponent(volumeName)}?force=true`)
-		.catch(() => undefined);
+	await removeApiResource(
+		page,
+		`/api/environments/0/volumes/${encodeURIComponent(volumeName)}?force=true`
+	);
 }
 
 async function mockSystemBackupPage(

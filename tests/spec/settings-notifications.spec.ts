@@ -222,9 +222,7 @@ test.describe('Notification settings', () => {
 
 		// Handle Save & Test if needed
 		const saveAndTestButton = page.getByRole('button', { name: 'Save & Test', exact: true });
-		if (await saveAndTestButton.isVisible().catch(() => false)) {
-			await saveAndTestButton.click();
-		}
+		await saveAndTestButton.click();
 
 		await expect.poll(wasTestEndpointCalled, { timeout: 10_000 }).toBe(true);
 		getErrorCheck();
@@ -244,9 +242,7 @@ test.describe('Notification settings', () => {
 		await page.getByRole('menuitem', { name: 'Simple', exact: true }).click();
 
 		const saveAndTestButton = page.getByRole('button', { name: 'Save & Test', exact: true });
-		if (await saveAndTestButton.isVisible().catch(() => false)) {
-			await saveAndTestButton.click();
-		}
+		await saveAndTestButton.click();
 
 		await expect.poll(wasTestEndpointCalled, { timeout: 10_000 }).toBe(true);
 		getErrorCheck();
@@ -267,9 +263,7 @@ test.describe('Notification settings', () => {
 		await page.getByRole('menuitem', { name: 'Simple', exact: true }).click();
 
 		const saveAndTestButton = page.getByRole('button', { name: 'Save & Test', exact: true });
-		if (await saveAndTestButton.isVisible().catch(() => false)) {
-			await saveAndTestButton.click();
-		}
+		await saveAndTestButton.click();
 
 		await expect.poll(wasTestEndpointCalled, { timeout: 10_000 }).toBe(true);
 		getErrorCheck();
@@ -291,9 +285,7 @@ test.describe('Notification settings', () => {
 		await page.getByRole('menuitem', { name: 'Simple', exact: true }).click();
 
 		const saveAndTestButton = page.getByRole('button', { name: 'Save & Test', exact: true });
-		if (await saveAndTestButton.isVisible().catch(() => false)) {
-			await saveAndTestButton.click();
-		}
+		await saveAndTestButton.click();
 
 		await expect.poll(wasTestEndpointCalled, { timeout: 10_000 }).toBe(true);
 		getErrorCheck();
@@ -428,9 +420,7 @@ test.describe('Notification settings', () => {
 		await page.getByRole('menuitem', { name: 'Simple', exact: true }).click();
 
 		const saveAndTestButton = page.getByRole('button', { name: 'Save & Test', exact: true });
-		if (await saveAndTestButton.isVisible().catch(() => false)) {
-			await saveAndTestButton.click();
-		}
+		await saveAndTestButton.click();
 
 		await expect.poll(wasTestEndpointCalled, { timeout: 10_000 }).toBe(true);
 		getErrorCheck();
@@ -451,9 +441,7 @@ test.describe('Notification settings', () => {
 		await page.getByRole('menuitem', { name: 'Simple', exact: true }).click();
 
 		const saveAndTestButton = page.getByRole('button', { name: 'Save & Test', exact: true });
-		if (await saveAndTestButton.isVisible().catch(() => false)) {
-			await saveAndTestButton.click();
-		}
+		await saveAndTestButton.click();
 
 		await expect.poll(wasTestEndpointCalled, { timeout: 10_000 }).toBe(true);
 		getErrorCheck();
@@ -499,9 +487,7 @@ test.describe('Notification settings', () => {
 		await page.getByRole('menuitem', { name: 'Simple', exact: true }).click();
 
 		const saveAndTestButton = page.getByRole('button', { name: 'Save & Test', exact: true });
-		if (await saveAndTestButton.isVisible().catch(() => false)) {
-			await saveAndTestButton.click();
-		}
+		await saveAndTestButton.click();
 
 		await expect.poll(wasTestEndpointCalled, { timeout: 10_000 }).toBe(true);
 		getErrorCheck();

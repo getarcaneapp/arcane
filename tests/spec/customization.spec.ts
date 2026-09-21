@@ -1,5 +1,6 @@
+import { waitForDialogReady } from '../utils/playwright.util';
 import { expect, test, type Locator, type Page } from '../fixtures/test.fixture';
-import { readApiData } from '../utils/fetch.util';
+import { removeApiResource, readApiData } from '../utils/fetch.util';
 import { openRowActionsMenu } from '../utils/table-actions.util';
 
 type GlobalVariable = {
@@ -55,7 +56,7 @@ function variableRow(page: Page, key: string) {
 async function openVariableSheet(page: Page) {
 	await page.getByRole('button', { name: 'Add Variable', exact: true }).click();
 	const dialog = page.getByRole('dialog', { name: 'Create Variable' });
-	await expect(dialog).toBeVisible();
+	await waitForDialogReady(dialog);
 	return dialog;
 }
 
@@ -176,6 +177,7 @@ test('manages variables and deploys an edited template with real substitution', 
 		const editMenu = await openRowActionsMenu(page, editableRow);
 		await editMenu.getByRole('menuitem', { name: 'Edit', exact: true }).click();
 		const editDialog = page.getByRole('dialog', { name: 'Edit Variable' });
+		await waitForDialogReady(editDialog);
 		await editDialog.locator('#variable-value').fill('first-edited');
 		const editResponsePromise = page.waitForResponse(
 			(response) =>
@@ -334,7 +336,7 @@ test('manages variables and deploys an edited template with real substitution', 
 		);
 		expect(container.config.env).toContain(`${publicKey}=${publicValue}`);
 
-		await page.request.delete(`/api/environments/0/projects/${project.id}/destroy`, {
+		await removeApiResource(page, `/api/environments/0/projects/${project.id}/destroy`, {
 			data: { removeVolumes: false }
 		});
 		projectId = null;
@@ -356,18 +358,20 @@ test('manages variables and deploys an edited template with real substitution', 
 		templateId = null;
 	} finally {
 		if (projectId) {
-			await page.request
-				.delete(`/api/environments/0/projects/${projectId}/destroy`, {
-					data: { removeVolumes: false }
-				})
-				.catch(() => undefined);
+			await removeApiResource(page, `/api/environments/0/projects/${projectId}/destroy`, {
+				data: { removeVolumes: false }
+			});
 		}
 		if (templateId) {
-			await page.request.delete(`/api/templates/${templateId}`).catch(() => undefined);
+			await removeApiResource(page, `/api/templates/${templateId}`);
 		}
-		const variables = await listVariables(page).catch(() => []);
-		for (const variable of variables.filter((candidate) => candidate.key.endsWith(suffix))) {
-			await page.request.delete(`/api/variables/${variable.id}`).catch(() => undefined);
+		try {
+			const variables = await listVariables(page);
+			for (const variable of variables.filter((candidate) => candidate.key.endsWith(suffix))) {
+				await removeApiResource(page, `/api/variables/${variable.id}`);
+			}
+		} catch (error) {
+			expect.soft(false, `Clean up variables: ${String(error)}`).toBe(true);
 		}
 	}
 });

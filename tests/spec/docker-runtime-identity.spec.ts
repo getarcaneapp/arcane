@@ -176,39 +176,56 @@ function dockerFileStat(volumePath: string, filePath: string) {
 
 function cleanupContainer(name: string) {
 	try {
-		docker(['rm', '-f', name], { stdio: 'inherit' });
-	} catch {
-		// ignore cleanup failures
+		docker(['rm', '-f', name]);
+	} catch (error) {
+		if (!String(error).includes('No such container'))
+			expect.soft(false, `Remove container ${name}: ${String(error)}`).toBe(true);
 	}
 }
 
 function cleanupDir(dir: string) {
 	try {
-		// Files may be owned by root inside the container, so use Docker to remove them.
-		docker(['run', '--rm', '-v', `${dir}:/mnt`, HELPER_IMAGE, 'rm', '-rf', '/mnt']);
-	} catch {
-		// ignore
-	}
-	try {
 		fs.rmSync(dir, { recursive: true, force: true });
 	} catch {
-		// ignore cleanup failures
+		try {
+			// The runtime may leave files owned by its container user.
+			const runnerUid = process.getuid?.();
+			const runnerGid = process.getgid?.();
+			if (runnerUid === undefined || runnerGid === undefined) {
+				throw new Error('Cannot restore test directory ownership without runner UID/GID');
+			}
+			docker([
+				'run',
+				'--rm',
+				'-v',
+				`${dir}:/mnt`,
+				HELPER_IMAGE,
+				'sh',
+				'-c',
+				`chown ${runnerUid}:${runnerGid} /mnt && chmod 0700 /mnt && find /mnt -mindepth 1 -delete`
+			]);
+			fs.rmSync(dir, { recursive: true, force: true });
+		} catch (error) {
+			expect.soft(false, `Remove directory ${dir}: ${String(error)}`).toBe(true);
+		}
 	}
 }
 
 function cleanupNetwork(name: string) {
 	try {
-		docker(['network', 'rm', name], { stdio: 'inherit' });
-	} catch {
-		// ignore cleanup failures
+		docker(['network', 'rm', name]);
+	} catch (error) {
+		if (!String(error).includes('not found'))
+			expect.soft(false, `Remove network ${name}: ${String(error)}`).toBe(true);
 	}
 }
 
 function cleanupVolume(name: string) {
 	try {
-		docker(['volume', 'rm', '-f', name], { stdio: 'inherit' });
-	} catch {
-		// ignore cleanup failures
+		docker(['volume', 'rm', '-f', name]);
+	} catch (error) {
+		if (!String(error).includes('no such volume'))
+			expect.soft(false, `Remove volume ${name}: ${String(error)}`).toBe(true);
 	}
 }
 

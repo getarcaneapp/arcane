@@ -262,6 +262,7 @@ test('resource sort polls, suspends in background tabs, and surfaces failures', 
 	page
 }) => {
 	test.setTimeout(60000);
+	await page.clock.install();
 	const scenario: Scenario = { supported: true, fixtures: basicFixtures, requests: [] };
 	await installContainersMock(page, scenario);
 	await openContainers(page);
@@ -283,7 +284,7 @@ test('resource sort polls, suspends in background tabs, and surfaces failures', 
 		document.dispatchEvent(new Event('visibilitychange'));
 	});
 	const frozen = scenario.requests.length;
-	await page.waitForTimeout(6500);
+	await page.clock.runFor(6500);
 	expect(scenario.requests.length).toBe(frozen);
 
 	await page.evaluate(() => {

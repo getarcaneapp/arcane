@@ -230,22 +230,23 @@ test.describe('Dashboard system stats websocket', () => {
 	test('keeps skeletons until the deadline when the stream opens without a sample', async ({
 		page
 	}) => {
+		await page.clock.install();
 		await mockDashboardStatsWebSocket(page, { deliverAfterMs: 12_000 });
 
 		await page.goto(defaultDashboardPath);
 		await page.waitForLoadState('load');
 		await expect(page.getByRole('button', { name: 'Card view', exact: true })).toBeVisible();
 
-		await page.waitForTimeout(5_000);
+		await page.clock.runFor(5_000);
 		await expect(page.getByText('Live stats unavailable', { exact: true })).toHaveCount(0);
 		await expect(page.getByText('12.3%', { exact: true })).toHaveCount(0);
 
-		await expect(page.getByText('Live stats unavailable', { exact: true })).toBeVisible({
-			timeout: 10_000
-		});
+		await page.clock.runFor(5_000);
+		await expect(page.getByText('Live stats unavailable', { exact: true })).toBeVisible();
 		await expect(page.getByText('12.3%', { exact: true })).toHaveCount(0);
 
-		await expect(page.getByText('12.3%', { exact: true })).toBeVisible({ timeout: 10_000 });
+		await page.clock.runFor(2_000);
+		await expect(page.getByText('12.3%', { exact: true })).toBeVisible();
 		await expect(page.getByText('Live stats unavailable', { exact: true })).toHaveCount(0);
 	});
 

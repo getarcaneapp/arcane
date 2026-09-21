@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '../fixtures/test.fixture';
-import { createTestApiKeys, deleteTestApiKeys } from '../utils/playwright.util';
+import { createTestApiKeys, deleteTestApiKeys, waitForDialogReady } from '../utils/playwright.util';
+import { fetchApiKeysWithRetry } from '../utils/fetch.util';
 import { openRowActionsMenu } from '../utils/table-actions.util';
 
 const API_KEYS_ROUTE = '/settings/api-keys';
@@ -10,14 +11,22 @@ async function navigateToApiKeys(page: Page) {
 }
 
 test.describe('API Keys Page', () => {
-	// Create test API keys before tests that need existing data
-	test.beforeAll(async () => {
+	// Each test starts with its own required keys.
+	test.beforeEach(async () => {
 		await createTestApiKeys(3);
 	});
 
-	// Clean up test API keys after all tests
-	test.afterAll(async () => {
+	// Remove fixture keys before the next test.
+	test.afterEach(async ({ page }) => {
 		await deleteTestApiKeys();
+		await expect
+			.poll(
+				async () =>
+					(await fetchApiKeysWithRetry(page)).data.filter((key) =>
+						key.name.startsWith('test-api-key-')
+					).length
+			)
+			.toBe(0);
 	});
 
 	test('should display the API keys page title and description', async ({ page }) => {
@@ -55,18 +64,16 @@ test.describe('API Keys Page', () => {
 
 		await page.getByRole('button', { name: 'Create API Key' }).click();
 		const createDialog = page.getByRole('dialog');
-		await expect(createDialog).toBeVisible();
+		await waitForDialogReady(createDialog);
 
-		const apiKeyName = `test-key-${Date.now()}`;
+		const apiKeyName = `test-api-key-created-${Date.now()}`;
 
 		// Fill in the name field
 		await createDialog.getByLabel('Name', { exact: true }).fill(apiKeyName);
 
 		// Optionally fill description
 		const descInput = createDialog.getByLabel('Description', { exact: true });
-		if (await descInput.count()) {
-			await descInput.fill('E2E test API key');
-		}
+		await descInput.fill('E2E test API key');
 
 		// Select at least one permission (form requires min 1)
 		await createDialog
@@ -158,7 +165,7 @@ test.describe('API Keys Page', () => {
 		await page.getByRole('button', { name: 'Create API Key' }).click();
 		const createDialog = page.getByRole('dialog');
 
-		const apiKeyName = `delete-test-${Date.now()}`;
+		const apiKeyName = `test-api-key-delete-${Date.now()}`;
 		await createDialog.getByLabel('Name', { exact: true }).fill(apiKeyName);
 
 		// Select at least one permission (form requires min 1)
@@ -170,11 +177,11 @@ test.describe('API Keys Page', () => {
 		await createDialog.getByRole('button', { name: 'Create API Key', exact: true }).click();
 
 		// Wait for creation success and close reveal dialog
-		await expect(page.getByText('API Key Created')).toBeVisible({ timeout: 10000 });
-		await page.getByRole('button', { name: 'Done' }).click();
+		const createdDialog = page.getByRole('dialog', { name: 'API Key Created' });
+		await expect(createdDialog).toBeVisible({ timeout: 10000 });
+		await createdDialog.getByRole('button', { name: 'Done' }).click();
 
-		// Wait for toasts to clear
-		await page.waitForTimeout(1000);
+		await expect(createdDialog).toBeHidden();
 
 		// Now delete the key
 		const keyRow = page
@@ -208,12 +215,7 @@ test.describe('API Keys Page', () => {
 			.getByRole('row')
 			.filter({ has: page.getByRole('button', { name: 'Open menu', exact: true }) })
 			.getByRole('checkbox');
-		const checkboxCount = await checkboxes.count();
-
-		if (checkboxCount < 2) {
-			test.skip(true, 'Need at least 2 API keys for bulk selection test');
-			return;
-		}
+		await expect(checkboxes.nth(1)).toBeVisible();
 
 		await checkboxes.nth(0).check();
 		await checkboxes.nth(1).check();

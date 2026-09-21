@@ -1,5 +1,5 @@
 import { test, expect, type Locator, type Page } from '../fixtures/test.fixture';
-import { fetchImagesWithRetry } from '../utils/fetch.util';
+import { fetchImagesWithRetry, readList } from '../utils/fetch.util';
 
 const ROUTES = {
 	page: '/images',
@@ -57,12 +57,12 @@ async function fetchImagesTotal(page: Page, updatesFilter?: string): Promise<num
 		params.set('updates', updatesFilter);
 	}
 
-	const res = await page.request.get(`/api/environments/0/images?${params.toString()}`);
-	expect(res.status()).toBe(200);
-
-	const body = await res.json().catch(() => null as any);
-	const totalItems = Number(body?.pagination?.totalItems ?? 0);
-	return Number.isFinite(totalItems) ? totalItems : 0;
+	const result = await readList(
+		await page.request.get(`/api/environments/0/images?${params.toString()}`),
+		'List filtered images'
+	);
+	expect(result.pagination?.totalItems, 'Image list must include a total').toBeDefined();
+	return result.pagination!.totalItems!;
 }
 
 async function getCheckUpdatesAction(page: Page): Promise<Locator> {
@@ -73,22 +73,13 @@ async function getCheckUpdatesAction(page: Page): Promise<Locator> {
 		.filter({ visible: true })
 		.first();
 
-	if (
-		await expect(directButton)
-			.toBeVisible({ timeout: 5000 })
-			.then(
-				() => true,
-				() => false
-			)
-	) {
-		return directButton;
-	}
-
 	const menuTrigger = page
 		.getByRole('button', { name: 'More actions' })
 		.filter({ visible: true })
 		.first();
-	await expect(menuTrigger).toBeVisible();
+	await expect(directButton.or(menuTrigger).first()).toBeVisible();
+	if (await directButton.isVisible()) return directButton;
+
 	await menuTrigger.click();
 
 	const menu = page.getByRole('menu').filter({ visible: true }).last();
@@ -98,17 +89,25 @@ async function getCheckUpdatesAction(page: Page): Promise<Locator> {
 	return menuItem;
 }
 
+async function openImageUpdateCard(page: Page, trigger: Locator): Promise<Locator> {
+	const usesTouchPopover = await page.evaluate(() => window.matchMedia('(hover: none)').matches);
+	if (usesTouchPopover) {
+		await trigger.click();
+	} else {
+		await trigger.hover();
+	}
+
+	const content = page.locator('[data-open="true"]').filter({ visible: true }).last();
+	await expect(content).toBeVisible();
+	return content;
+}
+
 let realImages: any[] = [];
 
 test.beforeEach(async ({ page }) => {
 	await navigateToImages(page);
 
-	try {
-		const images = await fetchImagesWithRetry(page);
-		realImages = Array.isArray(images) ? images : [];
-	} catch {
-		realImages = [];
-	}
+	realImages = await fetchImagesWithRetry(page);
 });
 
 test.describe('Image Update UI - Check All Updates Button', () => {
@@ -152,7 +151,7 @@ test.describe('Image Update UI - Check All Updates Button', () => {
 
 test.describe('Image Update UI - Individual Image Update Check via Hover Card', () => {
 	test('should display update status icons in the images table', async ({ page }) => {
-		test.skip(!realImages.length, 'No images available');
+		expect(realImages.length, 'No images available').toBeGreaterThan(0);
 
 		await navigateToImages(page);
 
@@ -165,7 +164,7 @@ test.describe('Image Update UI - Individual Image Update Check via Hover Card', 
 	});
 
 	test('should show hover card tooltip when hovering over update status icon', async ({ page }) => {
-		test.skip(!realImages.length, 'No images available');
+		expect(realImages.length, 'No images available').toBeGreaterThan(0);
 
 		await navigateToImages(page);
 
@@ -181,90 +180,57 @@ test.describe('Image Update UI - Individual Image Update Check via Hover Card', 
 
 		// Look for the update status icon trigger element (Tooltip.Trigger wraps a span)
 		const updateStatusTrigger = firstRow.getByTestId('image-update-trigger').first();
-		const hasTrigger = await updateStatusTrigger.isVisible().catch(() => false);
-
-		if (hasTrigger) {
-			// Hover to trigger tooltip
-			await updateStatusTrigger.hover();
-
-			// Wait for tooltip content to appear
-			await page.waitForTimeout(500);
-
-			// Check if tooltip/hover card content appeared
-			const tooltipContent = page.getByRole('tooltip');
-			const tooltipVisible = await tooltipContent.isVisible().catch(() => false);
-
-			// The hover card should be visible after hovering
-			if (tooltipVisible) {
-				await expect(tooltipContent).toBeVisible();
-			}
-		}
+		await openImageUpdateCard(page, updateStatusTrigger);
 	});
 
 	test('should allow triggering individual image update check from hover card', async ({
 		page
 	}) => {
-		test.skip(!realImages.length, 'No images available');
+		expect(realImages.length, 'No images available').toBeGreaterThan(0);
 
-		// Find an image with valid repo/tag for update checking
-		const testImage = realImages.find(
-			(img) => img.repo && img.tag && img.repo !== '<none>' && img.tag !== '<none>'
+		const fixtures = await readList<{ id: string; repoTags: string[] }>(
+			await page.request.get('/api/environments/0/images', {
+				params: { search: TEST_IMAGE_REFS.busybox }
+			}),
+			'Find BusyBox fixture'
 		);
-		test.skip(!testImage, 'No suitable image found for update check');
-
+		const testImage = fixtures.data.find((image) =>
+			image.repoTags?.includes(TEST_IMAGE_REFS.busybox)
+		);
+		expect(testImage, 'BusyBox fixture must be present').toBeDefined();
 		await navigateToImages(page);
-		await expect(page.getByRole('table')).toBeVisible();
-
-		// Find the row for our test image or the first row with a valid image
-		const firstRow = page
+		const filteredImagesResponse = page.waitForResponse((response) => {
+			const url = new URL(response.url());
+			return (
+				response.request().method() === 'GET' &&
+				url.pathname === '/api/environments/0/images' &&
+				url.searchParams.get('search') === testImage!.id
+			);
+		});
+		await page.getByPlaceholder('Search…').first().fill(testImage!.id);
+		const filteredResponse = await filteredImagesResponse;
+		expect(filteredResponse.ok()).toBe(true);
+		await filteredResponse.finished();
+		await expect(page.getByRole('table').locator('tbody tr')).toHaveCount(1);
+		const row = page
 			.getByRole('row')
-			.filter({ has: page.getByTestId('image-update-trigger') })
-			.first();
-		await expect(firstRow).toBeVisible();
-
-		// Look for the update status trigger (could be a button or icon)
-		const updateTrigger = firstRow.getByTestId('image-update-trigger').first();
-		const hasUpdateTrigger = await updateTrigger.isVisible().catch(() => false);
-
-		if (hasUpdateTrigger) {
-			// If it's a clickable button (for unchecked images), click it
-			const updateButton = updateTrigger.getByRole('button').first();
-			const hasButton = await updateButton.isVisible().catch(() => false);
-
-			if (hasButton) {
-				await updateButton.click();
-
-				// Wait for checking to complete (either a toast or state change)
-				await expect(async () => {
-					const toast = page
-						.getByRole('region', { name: 'Notifications alt+T', exact: true })
-						.getByRole('listitem');
-					const toastVisible = await toast.isVisible().catch(() => false);
-					expect(toastVisible).toBeTruthy();
-				}).toPass({ timeout: 30000 });
-			} else {
-				// If it's an icon, hover to show the tooltip with recheck button
-				await updateTrigger.hover();
-				await page.waitForTimeout(500);
-
-				// Look for the recheck button in the tooltip
-				const recheckButton = page.getByRole('tooltip').getByRole('button').first();
-				const hasRecheckButton = await recheckButton.isVisible().catch(() => false);
-
-				if (hasRecheckButton) {
-					await recheckButton.click();
-
-					// Wait for the check to complete
-					await expect(async () => {
-						const toast = page
-							.getByRole('region', { name: 'Notifications alt+T', exact: true })
-							.getByRole('listitem');
-						const toastVisible = await toast.isVisible().catch(() => false);
-						expect(toastVisible).toBeTruthy();
-					}).toPass({ timeout: 30000 });
-				}
-			}
+			.filter({ has: page.locator(`a[href="/images/${testImage!.id}"]`) });
+		const trigger = row.getByTestId('image-update-trigger');
+		await expect(trigger).toBeVisible();
+		const responsePromise = page.waitForResponse(
+			(response) =>
+				response.request().method() === 'POST' &&
+				decodeURIComponent(new URL(response.url()).pathname) ===
+					`/api/environments/0/image-updates/check/${testImage!.id}`
+		);
+		if (await trigger.evaluate((element) => element.tagName === 'BUTTON')) {
+			await trigger.click();
+		} else {
+			const updateCard = await openImageUpdateCard(page, trigger);
+			await updateCard.getByRole('button', { name: 'Re-check Updates', exact: true }).click();
 		}
+		expect((await responsePromise).ok()).toBe(true);
+		await expect(page.locator('li[data-sonner-toast]').first()).toBeVisible();
 	});
 });
 
@@ -323,7 +289,7 @@ test.describe('Image Update API Endpoints', () => {
 
 test.describe('Image Update UI Integration', () => {
 	test('should display update status icon in images table', async ({ page }) => {
-		test.skip(!realImages.length, 'No images available');
+		expect(realImages.length, 'No images available').toBeGreaterThan(0);
 
 		await navigateToImages(page);
 
@@ -336,12 +302,12 @@ test.describe('Image Update UI Integration', () => {
 	});
 
 	test('should display update information in image detail page', async ({ page }) => {
-		test.skip(!realImages.length, 'No images available');
+		expect(realImages.length, 'No images available').toBeGreaterThan(0);
 
 		const testImage = realImages.find(
 			(img) => img.repoTags?.[0] && !img.repoTags[0].includes('<none>')
 		);
-		test.skip(!testImage, 'No suitable image found');
+		expect(testImage, 'No suitable image found').toBeTruthy();
 
 		// Navigate to image detail
 		await page.goto(`/images/${encodeURIComponent(testImage.id)}`);

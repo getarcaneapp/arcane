@@ -1,3 +1,4 @@
+import { removeApiResource, readApiData } from '../utils/fetch.util';
 import { test, expect, type Page } from '../fixtures/test.fixture';
 import { openRowActionsMenu } from '../utils/table-actions.util';
 
@@ -50,7 +51,7 @@ async function createDestinationViaApi(
 }
 
 async function deleteDestinationViaApi(page: Page, destinationId: string) {
-	await page.request.delete(`/api/backups/s3/${destinationId}`).catch(() => undefined);
+	await removeApiResource(page, `/api/backups/s3/${destinationId}`);
 }
 
 async function createVolumeViaApi(page: Page, volumeName: string) {
@@ -63,9 +64,10 @@ async function createVolumeViaApi(page: Page, volumeName: string) {
 }
 
 async function removeVolumeViaApi(page: Page, volumeName: string) {
-	await page.request
-		.delete(`/api/environments/0/volumes/${encodeURIComponent(volumeName)}?force=true`)
-		.catch(() => undefined);
+	await removeApiResource(
+		page,
+		`/api/environments/0/volumes/${encodeURIComponent(volumeName)}?force=true`
+	);
 }
 
 async function getVolumeWorkspaceRevision(page: Page, volumeName: string) {
@@ -111,23 +113,18 @@ async function readVolumeFile(page: Page, volumeName: string, filePath: string) 
 	const response = await page.request.get(
 		`/api/environments/0/volumes/${encodeURIComponent(volumeName)}/workspace/file?relativePath=${encodeURIComponent(relativePath)}`
 	);
-	if (!response.ok()) {
-		return null;
-	}
-	const body = await response.json();
-	const content = body?.data?.content;
-	return typeof content === 'string' ? content : null;
+	const data = await readApiData<{ content: string }>(response, `Read volume file ${filePath}`);
+	expect(typeof data.content).toBe('string');
+	return data.content;
 }
 
 async function listBackups(page: Page, volumeName: string): Promise<BackupEntry[]> {
-	const response = await page.request.get(
-		`/api/environments/0/volumes/${encodeURIComponent(volumeName)}/backups`
+	const backups = await readApiData<BackupEntry[]>(
+		await page.request.get(`/api/environments/0/volumes/${encodeURIComponent(volumeName)}/backups`),
+		`List backups for ${volumeName}`
 	);
-	if (!response.ok()) {
-		return [];
-	}
-	const body = await response.json();
-	return (body?.data ?? []) as BackupEntry[];
+	expect(Array.isArray(backups)).toBe(true);
+	return backups;
 }
 
 // Backups run Rustic in a helper container, so the request returns before the
@@ -353,9 +350,7 @@ test.describe('S3 Backups', () => {
 			expect(await readVolumeFile(page, volumeName, '/payload.txt')).toBe(fileContent);
 		} finally {
 			if (backupId) {
-				await page.request
-					.delete(`/api/environments/0/volumes/backups/${backupId}`)
-					.catch(() => undefined);
+				await removeApiResource(page, `/api/environments/0/volumes/backups/${backupId}`);
 			}
 			await removeVolumeViaApi(page, volumeName);
 			await deleteDestinationViaApi(page, destination.id);
@@ -383,7 +378,10 @@ test.describe('S3 Backups', () => {
 			const blocked = await page.request.delete(`/api/backups/s3/${destination.id}`);
 			expect(blocked.status()).toBe(409);
 
-			await page.request.delete(`/api/environments/0/volumes/backups/${created.id}`);
+			const removed = await page.request.delete(
+				`/api/environments/0/volumes/backups/${created.id}`
+			);
+			expect(removed.ok(), await removed.text()).toBe(true);
 			backupId = undefined;
 
 			const remoteEnvironments = await countRemoteEnvironments(page);
@@ -397,9 +395,7 @@ test.describe('S3 Backups', () => {
 			}
 		} finally {
 			if (backupId) {
-				await page.request
-					.delete(`/api/environments/0/volumes/backups/${backupId}`)
-					.catch(() => undefined);
+				await removeApiResource(page, `/api/environments/0/volumes/backups/${backupId}`);
 			}
 			await removeVolumeViaApi(page, volumeName);
 			await deleteDestinationViaApi(page, destination.id);

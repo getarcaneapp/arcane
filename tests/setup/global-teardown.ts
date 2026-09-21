@@ -1,4 +1,5 @@
-import { execFileSync, execSync } from 'child_process';
+import { execFileSync } from 'child_process';
+import { captureComposeDiagnostics } from './global-setup';
 import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -13,13 +14,16 @@ async function globalTeardown() {
 		? path.resolve(__dirname, '..', process.env.COMPOSE_FILE)
 		: path.resolve(__dirname, 'compose.yaml');
 	const projectsDir = path.resolve(__dirname, 'projects');
+	const failures: unknown[] = [];
+	captureComposeDiagnostics(composeFile);
 
 	// 1. Stop and remove Docker containers
 	try {
 		console.log('Stopping Docker containers...');
-		execSync(`docker compose -f ${composeFile} down -v`, { stdio: 'inherit' });
+		execFileSync('docker', ['compose', '-f', composeFile, 'down', '-v'], { stdio: 'inherit' });
 		console.log('Docker containers stopped and volumes removed.');
 	} catch (error) {
+		failures.push(error);
 		console.error('Warning: Failed to stop Docker containers cleanly:', error);
 	}
 
@@ -69,9 +73,11 @@ async function globalTeardown() {
 			}
 		}
 	} catch (error) {
+		failures.push(error);
 		console.error('Warning: Failed to clean up projects directory:', error);
 	}
 
+	if (failures.length > 0) throw new AggregateError(failures, 'E2E environment cleanup failed');
 	console.log('Global teardown complete.\n');
 }
 

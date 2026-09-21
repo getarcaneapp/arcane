@@ -1,5 +1,6 @@
+import { stat } from 'node:fs/promises';
 import { test, expect, type Page } from '../fixtures/test.fixture';
-import { fetchContainersWithRetry, type Paginated } from '../utils/fetch.util';
+import { readApiData, removeApiResource, type Paginated } from '../utils/fetch.util';
 import { ContainerSummary } from 'types/containers.type';
 import { openRowActionsMenu } from '../utils/table-actions.util';
 
@@ -124,10 +125,48 @@ async function navigateToContainers(page: Page) {
 
 let containersData: Paginated<ContainerSummary> = { data: [], pagination: { totalItems: 0 } };
 
+const fixtureContainerIds = new Set<string>();
+
 test.describe('Containers Page', () => {
 	test.beforeEach(async ({ page }) => {
+		containersData = { data: [] };
+		for (const state of ['running', 'exited']) {
+			const name = `e2e-list-${state}-${Date.now()}`;
+			const container = await readApiData<{ id: string }>(
+				await page.request.post('/api/environments/0/containers', {
+					data: {
+						name,
+						image: 'public.ecr.aws/docker/library/busybox:1.37',
+						cmd: state === 'running' ? ['sleep', '3600'] : ['true']
+					}
+				}),
+				`Create ${state} container fixture`
+			);
+			fixtureContainerIds.add(container.id);
+			await expect
+				.poll(
+					async () =>
+						(
+							await readApiData<{ state: { status: string } }>(
+								await page.request.get(`/api/environments/0/containers/${container.id}`),
+								'Read fixture state'
+							)
+						).state.status
+				)
+				.toBe(state);
+			containersData.data.push({ id: container.id, names: [name], state });
+		}
 		await navigateToContainers(page);
-		containersData = await fetchContainersWithRetry(page);
+	});
+
+	test.afterEach(async ({ page }) => {
+		for (const id of fixtureContainerIds) {
+			await removeApiResource(
+				page,
+				`/api/environments/0/containers/${id}?force=true&volumes=false`
+			);
+		}
+		fixtureContainerIds.clear();
 	});
 
 	test('should display the containers page title and description', async ({ page }) => {
@@ -168,7 +207,7 @@ test.describe('Containers Page', () => {
 	});
 
 	test('should navigate to container details on Inspect', async ({ page }) => {
-		test.skip(containersData.data.length === 0, 'No containers available');
+		expect(containersData.data.length, 'No containers available').toBeGreaterThan(0);
 		await navigateToContainers(page);
 
 		const firstRow = page
@@ -187,7 +226,7 @@ test.describe('Containers Page', () => {
 		page
 	}) => {
 		const running = containersData.data.find((c) => c.state === 'running');
-		test.skip(!running, 'No running container available');
+		expect(running, 'No running container available').toBeDefined();
 
 		await page.goto(`/containers/${running!.id}`);
 		await page.waitForLoadState('load');
@@ -204,7 +243,7 @@ test.describe('Containers Page', () => {
 		page
 	}) => {
 		const running = containersData.data.find((container) => container.state === 'running');
-		test.skip(!running, 'No running container available');
+		expect(running, 'No running container available').toBeDefined();
 
 		await mockContainerLogsWebSocket(page);
 		await page.goto(`/containers/${running!.id}`);
@@ -229,7 +268,7 @@ test.describe('Containers Page', () => {
 		page
 	}) => {
 		const stopped = containersData.data.find((c) => c.state !== 'running');
-		test.skip(!stopped, 'No stopped container available');
+		expect(stopped, 'No stopped container available').toBeDefined();
 
 		await page.goto(`/containers/${stopped!.id}`);
 		await page.waitForLoadState('load');
@@ -242,9 +281,9 @@ test.describe('Containers Page', () => {
 		await expect(page.getByTestId('container-log-memory-monitor')).toContainText('N/A');
 	});
 
-	test('downloads the full log history from the logs tab', async ({ page }) => {
+	test('downloads the full log history from the logs tab', async ({ page }, testInfo) => {
 		const running = containersData.data.find((c) => c.state === 'running');
-		test.skip(!running, 'No running container available');
+		expect(running, 'No running container available').toBeDefined();
 
 		await page.goto(`/containers/${running!.id}`);
 		await page.waitForLoadState('load');
@@ -258,7 +297,9 @@ test.describe('Containers Page', () => {
 			.click();
 		const download = await downloadPromise;
 		expect(download.suggestedFilename()).toBe(`container-${running!.id.slice(0, 12)}-logs.log`);
-		expect(await download.path()).toBeTruthy();
+		const downloadPath = testInfo.outputPath(download.suggestedFilename());
+		await download.saveAs(downloadPath);
+		expect((await stat(downloadPath)).isFile()).toBe(true);
 	});
 
 	test('should show correct actions based on container state (without changing state)', async ({
@@ -269,40 +310,28 @@ test.describe('Containers Page', () => {
 
 		await navigateToContainers(page);
 
-		if (running) {
-			const runningName = running.names?.[0]?.replace(/^\/+/, '') ?? running.id;
-			const row = page
-				.getByRole('row')
-				.filter({ has: page.getByRole('link', { name: runningName, exact: true }) });
-			const menu = await openRowActionsMenu(page, row);
-			await expect(menu.getByRole('menuitem', { name: 'Restart', exact: true })).toBeVisible();
-			await expect(menu.getByRole('menuitem', { name: 'Stop', exact: true })).toBeVisible();
-			await page.keyboard.press('Escape');
-		} else {
-			test.info().annotations.push({
-				type: 'note',
-				description: 'No running container to validate actions'
-			});
-		}
+		expect(running, 'Running container fixture must exist').toBeDefined();
+		expect(stopped, 'Stopped container fixture must exist').toBeDefined();
+		const runningName = running!.names?.[0]?.replace(/^\/+/, '') ?? running!.id;
+		const runningRow = page
+			.getByRole('row')
+			.filter({ has: page.getByRole('link', { name: runningName, exact: true }) });
+		const runningMenu = await openRowActionsMenu(page, runningRow);
+		await expect(runningMenu.getByRole('menuitem', { name: 'Restart', exact: true })).toBeVisible();
+		await expect(runningMenu.getByRole('menuitem', { name: 'Stop', exact: true })).toBeVisible();
+		await page.keyboard.press('Escape');
 
-		if (stopped) {
-			const stoppedName = stopped.names?.[0]?.replace(/^\/+/, '') ?? stopped.id;
-			const row = page
-				.getByRole('row')
-				.filter({ has: page.getByRole('link', { name: stoppedName, exact: true }) });
-			const menu = await openRowActionsMenu(page, row);
-			await expect(menu.getByRole('menuitem', { name: 'Start', exact: true })).toBeVisible();
-			await page.keyboard.press('Escape');
-		} else {
-			test.info().annotations.push({
-				type: 'note',
-				description: 'No stopped container to validate actions'
-			});
-		}
+		const stoppedName = stopped!.names?.[0]?.replace(/^\/+/, '') ?? stopped!.id;
+		const stoppedRow = page
+			.getByRole('row')
+			.filter({ has: page.getByRole('link', { name: stoppedName, exact: true }) });
+		const stoppedMenu = await openRowActionsMenu(page, stoppedRow);
+		await expect(stoppedMenu.getByRole('menuitem', { name: 'Start', exact: true })).toBeVisible();
+		await page.keyboard.press('Escape');
 	});
 
 	test('should open the Remove dialog from row actions and allow cancel', async ({ page }) => {
-		test.skip(containersData.data.length === 0, 'No containers available');
+		expect(containersData.data.length, 'No containers available').toBeGreaterThan(0);
 		const any = containersData.data[0];
 
 		await navigateToContainers(page);

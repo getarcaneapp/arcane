@@ -1,5 +1,10 @@
 import { test, expect, type Locator, type Page, type Response } from '../fixtures/test.fixture';
-import { fetchProjectCountsWithRetry, fetchProjectsWithRetry } from '../utils/fetch.util';
+import {
+	readApiData,
+	removeApiResource,
+	fetchProjectCountsWithRetry,
+	fetchProjectsWithRetry
+} from '../utils/fetch.util';
 import type { Activity } from '../types/activity.type';
 import { Project, ProjectStatusCounts } from 'types/project.type';
 import { TEST_COMPOSE_YAML, TEST_ENV_FILE } from '../setup/project.data';
@@ -9,7 +14,6 @@ const ROUTES = {
 	page: '/projects',
 	apiProjects: '/api/environments/0/projects',
 	apiImageUpdatesCheckAll: '/api/environments/0/image-updates/check-all',
-	apiImageUpdatesCheckBatch: '/api/environments/0/image-updates/check-batch',
 	apiUpdaterRun: '/api/environments/0/updater/run',
 	newProject: '/projects/new'
 };
@@ -56,37 +60,31 @@ async function clickProjectsPageUpdateAction(page: Page) {
 
 async function clickProjectDetailUpdateAction(page: Page) {
 	const recheckButton = page.getByRole('button', { name: 'Re-check Updates', exact: true }).first();
-	if (await recheckButton.isVisible().catch(() => false)) {
+	const updateTrigger = page.getByTestId('project-update-trigger').first();
+	await expect(recheckButton.or(updateTrigger).filter({ visible: true }).first()).toBeVisible();
+	if (await recheckButton.isVisible()) {
 		await recheckButton.click();
 		return true;
 	}
-
-	const updateTrigger = page.getByTestId('project-update-trigger').first();
-	if (!(await updateTrigger.isVisible().catch(() => false))) {
-		return false;
-	}
-	await updateTrigger.click();
-
-	if (!(await recheckButton.isVisible().catch(() => false))) {
-		return false;
+	if (await updateTrigger.evaluate((element) => element.tagName === 'BUTTON')) {
+		await updateTrigger.click();
+		return true;
 	}
 
+	const usesTouchPopover = await page.evaluate(() => window.matchMedia('(hover: none)').matches);
+	if (usesTouchPopover) await updateTrigger.click();
+	else await updateTrigger.hover();
 	await recheckButton.click();
 	return true;
 }
 
-async function fetchProjectDetail(page: Page, projectId: string): Promise<Project | null> {
-	const res = await page.request.get(`/api/environments/0/projects/${projectId}`);
-	if (!res.ok()) {
-		return null;
-	}
-
-	const body = await res.json().catch(() => null as any);
-	if (!body) return null;
-	if (body.project) return body.project as Project;
-	if (body.data?.project) return body.data.project as Project;
-	if (body.data) return body.data as Project;
-	return body as Project;
+async function fetchProjectDetail(page: Page, projectId: string): Promise<Project> {
+	const project = await readApiData<Project>(
+		await page.request.get(`/api/environments/0/projects/${projectId}`),
+		`Get project ${projectId}`
+	);
+	expect(project.id).toBeTruthy();
+	return project;
 }
 
 async function fetchLatestProjectDeployActivity(
@@ -99,13 +97,11 @@ async function fetchLatestProjectDeployActivity(
 		search: projectId,
 		limit: '10'
 	});
-	const res = await page.request.get(`/api/environments/0/activities?${params.toString()}`);
-	if (!res.ok()) {
-		return null;
-	}
-
-	const body = await res.json().catch(() => null as any);
-	const activities = (body?.data ?? []) as Activity[];
+	const activities = await readApiData<Activity[]>(
+		await page.request.get(`/api/environments/0/activities?${params.toString()}`),
+		'List project deploy activities'
+	);
+	expect(Array.isArray(activities)).toBe(true);
 	return (
 		activities.find(
 			(activity) =>
@@ -126,26 +122,6 @@ async function expectProjectDeployActivitySucceeded(page: Page, projectId: strin
 			}
 		)
 		.toBe('success');
-}
-
-async function findProjectWithDetailUpdateAction(page: Page): Promise<Project | null> {
-	for (const project of realProjects) {
-		if (Number(project.serviceCount ?? 0) <= 0) {
-			continue;
-		}
-
-		const projectID = project.id || project.name;
-		if (!projectID) {
-			continue;
-		}
-
-		const detail = await fetchProjectDetail(page, projectID);
-		if ((detail?.updateInfo?.imageRefs?.length ?? 0) > 0) {
-			return detail;
-		}
-	}
-
-	return null;
 }
 
 function getPathname(url: string): string {
@@ -173,6 +149,7 @@ async function createProjectViaUI(
 	projectName: string,
 	composeContent = TEST_COMPOSE_YAML
 ) {
+	createdProjectNames.add(projectName);
 	const containerName = `test-nginx-container-${Date.now()}`;
 	const envFile = TEST_ENV_FILE.replace(/CONTAINER_NAME=.*/m, `CONTAINER_NAME=${containerName}`);
 
@@ -227,40 +204,30 @@ async function destroyCurrentProjectViaUI(page: Page) {
 
 	const dialog = page.getByRole('dialog');
 	await expect(dialog).toBeVisible();
+	await dialog
+		.getByRole('checkbox', { name: 'Remove volumes (Warning: Data will be lost)', exact: true })
+		.check();
 	await dialog.getByRole('button', { name: 'Destroy', exact: true }).click();
 
 	await page.waitForURL(ROUTES.page, { timeout: 10000 });
 }
 
-async function destroyProjectByNameViaUI(page: Page, projectName: string) {
-	if (page.isClosed()) {
-		return;
+async function destroyProjectByNameViaAPI(page: Page, projectName: string) {
+	try {
+		const projects = await readApiData<Project[]>(
+			await page.request.get(ROUTES.apiProjects, {
+				params: { search: projectName, archived: 'all' }
+			}),
+			`Find project ${projectName} for cleanup`
+		);
+		expect(Array.isArray(projects)).toBe(true);
+		for (const project of projects.filter((candidate) => candidate.name === projectName)) {
+			expect(project.id).toBeTruthy();
+			await destroyProjectByIdViaAPI(page, project.id!);
+		}
+	} catch (error) {
+		expect.soft(false, `Clean up project ${projectName}: ${String(error)}`).toBe(true);
 	}
-
-	await page.goto(ROUTES.page);
-	await page.waitForLoadState('load');
-
-	const searchInput = page.getByPlaceholder('Search…');
-	if (await searchInput.isVisible().catch(() => false)) {
-		await searchInput.fill(projectName);
-	}
-
-	const projectLink = page.getByRole('link', { name: projectName, exact: true });
-	const row = page.getByRole('row').filter({ has: projectLink }).first();
-	if (!(await row.isVisible().catch(() => false))) {
-		return;
-	}
-
-	const menu = await openRowActionsMenu(page, row);
-	await menu.getByRole('menuitem', { name: 'Destroy', exact: true }).click();
-
-	const dialog = page.getByRole('dialog');
-	await expect(dialog).toBeVisible();
-	await dialog.getByRole('button', { name: 'Destroy', exact: true }).click();
-
-	await expect(page.getByRole('row').filter({ has: projectLink })).toHaveCount(0, {
-		timeout: 15000
-	});
 }
 
 async function destroyProjectByIdViaAPI(page: Page, projectId: string) {
@@ -268,13 +235,15 @@ async function destroyProjectByIdViaAPI(page: Page, projectId: string) {
 		return;
 	}
 
-	await page.request
-		.delete(`/api/environments/0/projects/${encodeURIComponent(projectId)}/destroy`, {
+	await removeApiResource(
+		page,
+		`/api/environments/0/projects/${encodeURIComponent(projectId)}/destroy`,
+		{
 			data: {
-				removeVolumes: false
+				removeVolumes: true
 			}
-		})
-		.catch(() => undefined);
+		}
+	);
 }
 
 async function expectProjectStopped(page: Page, projectId: string) {
@@ -325,6 +294,7 @@ async function createExitedMarkerProject(page: Page, projectName: string) {
 	return { projectId, marker };
 }
 
+const createdProjectNames = new Set<string>();
 let realProjects: Project[] = [];
 let projectCounts: ProjectStatusCounts = {
 	runningProjects: 0,
@@ -340,7 +310,11 @@ function getRequiredGitOpsProject(): Project & { id: string } {
 	return project as Project & { id: string };
 }
 
-test.beforeEach(async ({ page }) => {
+test.beforeEach(async ({ page, registerCleanup }) => {
+	createdProjectNames.clear();
+	registerCleanup(async () => {
+		for (const name of createdProjectNames) await destroyProjectByNameViaAPI(page, name);
+	});
 	await navigateToProjects(page);
 
 	realProjects = await fetchProjectsWithRetry(page);
@@ -386,7 +360,7 @@ test.describe('Projects Page', () => {
 	});
 
 	test('should show project actions menu', async ({ page }) => {
-		test.skip(!realProjects.length, 'No projects available for actions menu test');
+		expect(realProjects.length, 'No projects available for actions menu test').toBeGreaterThan(0);
 
 		await page.waitForLoadState('load');
 		const firstRow = page
@@ -403,9 +377,7 @@ test.describe('Projects Page', () => {
 			name: 'Restart',
 			exact: true
 		});
-		const hasStateAction =
-			(await upItem.count()) > 0 || (await downItem.count()) > 0 || (await restartItem.count()) > 0;
-		expect(hasStateAction).toBe(true);
+		await expect(upItem.or(downItem).or(restartItem).first()).toBeVisible();
 		await expect(menu.getByRole('menuitem', { name: 'Pull & Redeploy' })).toBeVisible();
 		await expect(menu.getByRole('menuitem', { name: 'Archive' })).toBeVisible();
 		await expect(menu.getByRole('menuitem', { name: 'Destroy' })).toBeVisible();
@@ -444,18 +416,15 @@ test.describe('Projects Page', () => {
 			await expect(row).toHaveCount(0, { timeout: 10000 });
 		} finally {
 			if (projectId) {
-				await page.request
-					.post(`/api/environments/0/projects/${projectId}/unarchive`)
-					.catch(() => undefined);
 				await destroyProjectByIdViaAPI(page, projectId);
 			} else {
-				await destroyProjectByNameViaUI(page, projectName);
+				await destroyProjectByNameViaAPI(page, projectName);
 			}
 		}
 	});
 
 	test('should navigate to project details when project name is clicked', async ({ page }) => {
-		test.skip(!realProjects.length, 'No projects available for navigation test');
+		expect(realProjects.length, 'No projects available for navigation test').toBeGreaterThan(0);
 
 		await page.waitForLoadState('load');
 		const projectName = realProjects[0].name;
@@ -467,7 +436,7 @@ test.describe('Projects Page', () => {
 	});
 
 	test('should allow searching/filtering projects', async ({ page }) => {
-		test.skip(!realProjects.length, 'No projects available for search test');
+		expect(realProjects.length, 'No projects available for search test').toBeGreaterThan(0);
 
 		const searchInput = page.getByPlaceholder('Search…');
 		await expect(searchInput).toBeVisible();
@@ -509,7 +478,7 @@ test.describe('Projects Page', () => {
 	});
 
 	test('should display project status badges', async ({ page }) => {
-		test.skip(!realProjects.length, 'No projects available for status badge test');
+		expect(realProjects.length, 'No projects available for status badge test').toBeGreaterThan(0);
 
 		await page.waitForLoadState('load');
 
@@ -758,32 +727,11 @@ test.describe('New Compose Project Page', () => {
 			await expectProjectDeployActivitySucceeded(page, projectId);
 
 			expect(projectPullRequestCount).toBe(0);
-			// The activity record is committed before the streamed response reaches EOF in
-			// the browser, so polling the API can beat the detail page's local state update.
-			// Reload from the completed server state before asserting the rendered action.
-			// A transient 500 from any request in the reload's load chain lands on the app
-			// error page (rendered as the generic "Unable to connect to Docker daemon"
-			// message), which never recovers on its own — retry the reload instead of
-			// failing the test on a one-off backend blip under CI load.
-			await expect(async () => {
-				await page.reload();
-				await expect(page).toHaveURL(new RegExp(`/projects/${projectId}`));
-				await expect(page.getByRole('button', { name: projectName, exact: true })).toBeVisible({
-					timeout: 10000
-				});
-			}).toPass({ timeout: 60000 });
-			await expect
-				.poll(async () => (await fetchProjectDetail(page, projectId))?.status, {
-					message: 'Expected project to still be running after reload',
-					timeout: 30000
-				})
-				.toBe('running');
 			await expect(page.getByRole('button', { name: 'Down', exact: true })).toBeVisible({
 				timeout: 30000
 			});
 		} finally {
-			const projectId = createdProjectId ?? getProjectIdFromPageUrl(page.url());
-			await destroyProjectByIdViaAPI(page, projectId);
+			await destroyProjectByNameViaAPI(page, projectName);
 		}
 	});
 
@@ -866,11 +814,7 @@ test.describe('New Compose Project Page', () => {
 				recreateVolumes: false
 			});
 		} finally {
-			if (!page.isClosed() && /\/projects\/.+/.test(getPathname(page.url()))) {
-				await destroyCurrentProjectViaUI(page);
-			} else {
-				await destroyProjectByNameViaUI(page, projectName);
-			}
+			await destroyProjectByNameViaAPI(page, projectName);
 		}
 	});
 
@@ -962,21 +906,21 @@ test.describe('New Compose Project Page', () => {
 				recreateVolumes: false
 			});
 		} finally {
-			if (!page.isClosed() && /\/projects\/.+/.test(getPathname(page.url()))) {
-				await destroyCurrentProjectViaUI(page);
-			} else {
-				await destroyProjectByNameViaUI(page, projectName);
-			}
+			await destroyProjectByNameViaAPI(page, projectName);
 		}
 	});
 
 	test('should allow redeploy requests to complete after 10 seconds without client timeout', async ({
 		page
 	}) => {
-		test.slow();
+		await page.clock.install();
 
 		const projectName = `test-redeploy-timeout-${Date.now()}`;
-		let redeployRequestStartedAt: number | undefined;
+		let redeployRequestStarted = false;
+		let releaseRedeploy!: () => void;
+		const redeployReleased = new Promise<void>((resolve) => {
+			releaseRedeploy = resolve;
+		});
 		const redeployPathPattern = /\/api\/environments\/[^/]+\/projects\/[^/]+\/redeploy$/;
 
 		try {
@@ -992,8 +936,8 @@ test.describe('New Compose Project Page', () => {
 						return;
 					}
 
-					redeployRequestStartedAt = Date.now();
-					await new Promise((resolve) => setTimeout(resolve, 11_000));
+					redeployRequestStarted = true;
+					await redeployReleased;
 					await route.fulfill({
 						status: 200,
 						contentType: 'application/json',
@@ -1031,17 +975,22 @@ test.describe('New Compose Project Page', () => {
 			await redeployRequestPromise;
 
 			await expect
-				.poll(() => redeployRequestStartedAt, {
+				.poll(() => redeployRequestStarted, {
 					message: 'Expected the redeploy request to be issued'
 				})
-				.toBeDefined();
+				.toBe(true);
+
+			const startedAt = await page.evaluate(() => Date.now());
+			await page.clock.runFor(11_000);
+			expect((await page.evaluate(() => Date.now())) - startedAt).toBeGreaterThanOrEqual(11_000);
+			releaseRedeploy();
 
 			await expect(page.getByText('Project pulled successfully.', { exact: true })).toBeVisible({
 				timeout: 20_000
 			});
-			expect(Date.now() - redeployRequestStartedAt!).toBeGreaterThanOrEqual(11_000);
 		} finally {
-			await destroyProjectByNameViaUI(page, projectName);
+			releaseRedeploy();
+			await destroyProjectByNameViaAPI(page, projectName);
 		}
 	});
 
@@ -1153,7 +1102,6 @@ test.describe('GitOps Managed Project', () => {
 		await configTab.click();
 		await page.waitForLoadState('load');
 
-		await page.waitForTimeout(800);
 		const composeContent = page
 			.locator('.cm-editor')
 			.filter({ visible: true })
@@ -1180,15 +1128,16 @@ test.describe('GitOps Managed Project', () => {
 		});
 		const workspaceFilesLabel = page.getByText('Workspace Files', { exact: true });
 		// Projects with extra files default to tree view; start from classic.
-		if (await workspaceFilesLabel.isVisible().catch(() => false)) {
+		await expect(page.locator('.cm-editor').filter({ visible: true }).first()).toBeVisible();
+		if (await workspaceFilesLabel.isVisible()) {
 			await layoutSwitch.click();
 			await expect(workspaceFilesLabel).not.toBeVisible();
 		}
 
-		await page.waitForTimeout(800);
 		const envEditor = page.locator('.cm-editor').filter({ visible: true }).nth(1);
 		const marker = `ARCANE_E2E_${Date.now()}`;
 		const envContent = envEditor.locator('.cm-content');
+		await expect(envContent).toBeVisible();
 		const originalEnv = await getCodeMirrorValue(envEditor);
 		const updatedEnv = `${originalEnv.trimEnd()}\n${marker}=1\n`;
 
@@ -1197,25 +1146,25 @@ test.describe('GitOps Managed Project', () => {
 		await expect(envEditor).toContainText(marker);
 		await expect(page.getByRole('button', { name: 'Save', exact: true }).first()).toBeVisible();
 
-		if (await layoutSwitch.count()) {
-			await layoutSwitch.click();
-			await page.waitForLoadState('load');
-			await expect(workspaceFilesLabel).toBeVisible();
+		await expect(layoutSwitch).toBeVisible();
 
-			const envFileButton = page.getByRole('button', { name: '.env' }).first();
-			await expect(envFileButton).toBeVisible();
-			await envFileButton.click();
+		await layoutSwitch.click();
+		await page.waitForLoadState('load');
+		await expect(workspaceFilesLabel).toBeVisible();
 
-			const treeEnvEditor = page.locator('.cm-editor').filter({ visible: true }).first();
-			const treeEnvContent = treeEnvEditor.locator('.cm-content');
-			await expect(treeEnvContent).not.toHaveAttribute('aria-readonly', 'true');
-			await expect(treeEnvEditor).toContainText(marker);
-		}
+		const envFileButton = page.getByRole('button', { name: '.env' }).first();
+		await expect(envFileButton).toBeVisible();
+		await envFileButton.click();
+
+		const treeEnvEditor = page.locator('.cm-editor').filter({ visible: true }).first();
+		const treeEnvContent = treeEnvEditor.locator('.cm-content');
+		await expect(treeEnvContent).not.toHaveAttribute('aria-readonly', 'true');
+		await expect(treeEnvEditor).toContainText(marker);
 	});
 
 	test('should allow editing for non-GitOps managed projects', async ({ page }) => {
 		const regularProject = realProjects.find((p) => !p.gitOpsManagedBy && p.status === 'stopped');
-		test.skip(!regularProject, 'No regular (non-GitOps) stopped projects found');
+		expect(regularProject, 'No regular (non-GitOps) stopped projects found').toBeTruthy();
 
 		await page.goto(`/projects/${regularProject!.id}`);
 		await page.waitForLoadState('load');
@@ -1240,7 +1189,7 @@ test.describe('GitOps Managed Project', () => {
 		page
 	}) => {
 		const regularProject = realProjects.find((p) => !p.gitOpsManagedBy);
-		test.skip(!regularProject, 'No regular (non-GitOps) projects found');
+		expect(regularProject, 'No regular (non-GitOps) projects found').toBeTruthy();
 
 		await page.goto(`/projects/${regularProject!.id}`);
 		await page.waitForLoadState('load');
@@ -1262,7 +1211,9 @@ test.describe('GitOps Managed Project', () => {
 
 test.describe('Project Detail Page', () => {
 	test('should navigate back to projects by default', async ({ page }) => {
-		test.skip(!realProjects.length, 'No projects available for back navigation test');
+		expect(realProjects.length, 'No projects available for back navigation test').toBeGreaterThan(
+			0
+		);
 
 		const firstProject = realProjects[0];
 		await page.goto(`/projects/${firstProject.id || firstProject.name}`);
@@ -1277,7 +1228,7 @@ test.describe('Project Detail Page', () => {
 	});
 
 	test('should display project details for existing project', async ({ page }) => {
-		test.skip(!realProjects.length, 'No projects available for detail page test');
+		expect(realProjects.length, 'No projects available for detail page test').toBeGreaterThan(0);
 
 		const firstProject = realProjects[0];
 		await page.goto(`/projects/${firstProject.id || firstProject.name}`);
@@ -1296,7 +1247,7 @@ test.describe('Project Detail Page', () => {
 	});
 
 	test('should display tabs navigation', async ({ page }) => {
-		test.skip(!realProjects.length, 'No projects available for navigation test');
+		expect(realProjects.length, 'No projects available for navigation test').toBeGreaterThan(0);
 		const firstProject = realProjects[0];
 		await page.goto(`/projects/${firstProject.id || firstProject.name}`);
 		await page.waitForLoadState('load');
@@ -1311,28 +1262,29 @@ test.describe('Project Detail Page', () => {
 		await expect(page.getByRole('tab', { name: 'Logs', exact: true })).toHaveCount(0);
 	});
 
-	test('should check updates for the current project via the image batch endpoint', async ({
-		page
-	}) => {
-		const projectWithServices = await findProjectWithDetailUpdateAction(page);
-		test.skip(
-			!projectWithServices,
-			'No project with detail-page update action available for project update check test'
+	test('should check updates for the current project without deploying it', async ({ page }) => {
+		const projectName = `test-project-update-check-${Date.now()}`;
+		const projectID = await createProjectViaUI(page, projectName);
+		const project = await readApiData<Project>(
+			await page.request.get(`/api/environments/0/projects/${projectID}/updates`),
+			`Get project ${projectID} update metadata`
 		);
+		expect(
+			project.updateInfo?.imageRefs?.length,
+			'Created project must expose its configured image'
+		).toBeGreaterThan(0);
 
-		let batchRequests = 0;
+		let checkRequests = 0;
 		let updaterRunRequests = 0;
 
-		await page.route('**/api/environments/*/image-updates/check-batch', async (route) => {
-			batchRequests += 1;
-			const body = route.request().postDataJSON() as { imageRefs?: string[] } | null;
-			expect(Array.isArray(body?.imageRefs)).toBe(true);
-			expect((body?.imageRefs?.length ?? 0) > 0).toBe(true);
-
+		await page.route(`**/api/environments/*/updater/projects/${projectID}/check`, async (route) => {
+			checkRequests += 1;
+			expect(route.request().method()).toBe('POST');
+			expect(route.request().postDataJSON()).toEqual({});
 			await route.fulfill({
 				status: 200,
 				contentType: 'application/json',
-				body: JSON.stringify({ success: true, data: {} })
+				body: JSON.stringify({ success: true, data: project.updateInfo })
 			});
 		});
 
@@ -1345,18 +1297,18 @@ test.describe('Project Detail Page', () => {
 			});
 		});
 
-		await page.goto(`/projects/${projectWithServices!.id || projectWithServices!.name}`);
+		await page.goto(`/projects/${projectID}`);
 		await page.waitForLoadState('load');
 
 		const clicked = await clickProjectDetailUpdateAction(page);
-		test.skip(!clicked, 'Current project detail view has no clickable update action');
+		expect(clicked, 'Current project detail view has no clickable update action').toBeTruthy();
 
-		await expect.poll(() => batchRequests).toBe(1);
+		await expect.poll(() => checkRequests).toBe(1);
 		expect(updaterRunRequests).toBe(0);
 	});
 
 	test('should display services tab content', async ({ page }) => {
-		test.skip(!realProjects.length, 'No projects available for services test');
+		expect(realProjects.length, 'No projects available for services test').toBeGreaterThan(0);
 
 		const projectWithServices =
 			realProjects.find((p) => (p.serviceCount ?? 0) > 0) ?? realProjects[0]!;
@@ -1373,20 +1325,11 @@ test.describe('Project Detail Page', () => {
 		const nginxService = page.getByRole('heading', { name: 'nginx', exact: true });
 		const emptyState = page.getByText('No services found for this project', { exact: true });
 
-		if ((await nginxService.count()) > 0) {
-			await expect(nginxService.first()).toBeVisible();
-		} else {
-			const anyServiceBadge = page
-				.getByText('Running', { exact: true })
-				.or(page.getByText('Stopped', { exact: true }))
-				.or(page.getByText('Unknown', { exact: true }))
-				.first();
-			if ((await anyServiceBadge.count()) > 0) {
-				await expect(anyServiceBadge).toBeVisible();
-			} else {
-				await expect(emptyState).toBeVisible();
-			}
-		}
+		const serviceStatus = page
+			.getByText('Running', { exact: true })
+			.or(page.getByText('Stopped', { exact: true }))
+			.or(page.getByText('Unknown', { exact: true }));
+		await expect(nginxService.or(serviceStatus).or(emptyState).first()).toBeVisible();
 	});
 
 	test('should display the configured service port host IP', async ({ page }) => {
@@ -1423,13 +1366,13 @@ test.describe('Project Detail Page', () => {
 			if (projectId) {
 				await destroyProjectByIdViaAPI(page, projectId);
 			} else {
-				await destroyProjectByNameViaUI(page, projectName);
+				await destroyProjectByNameViaAPI(page, projectName);
 			}
 		}
 	});
 
 	test('should display configuration editors', async ({ page }) => {
-		test.skip(!realProjects.length, 'No projects available for configuration test');
+		expect(realProjects.length, 'No projects available for configuration test').toBeGreaterThan(0);
 
 		const firstProject = realProjects[0];
 		await page.goto(`/projects/${firstProject.id || firstProject.name}`);
@@ -1443,7 +1386,8 @@ test.describe('Project Detail Page', () => {
 		// - tree view (default when the project has extra files): file list on the
 		//   left and a tabbed code panel on the right
 		const workspaceFilesLabel = page.getByText('Workspace Files', { exact: true });
-		const isTreeView = await workspaceFilesLabel.isVisible().catch(() => false);
+		await expect(page.locator('.cm-editor').filter({ visible: true }).first()).toBeVisible();
+		const isTreeView = await workspaceFilesLabel.isVisible();
 
 		if (isTreeView) {
 			const composeFileButton = page.getByRole('button', { name: 'compose.yaml' }).first();
@@ -1469,7 +1413,8 @@ test.describe('Project Detail Page', () => {
 				name: 'Toggle workspace mode',
 				exact: true
 			});
-			if (await layoutSwitch.count()) {
+			await expect(layoutSwitch).toBeVisible();
+			{
 				await layoutSwitch.click();
 				await expect(workspaceFilesLabel).toBeVisible();
 
@@ -1487,8 +1432,11 @@ test.describe('Project Detail Page', () => {
 
 	test('should apply the account default project editor layout', async ({ page }) => {
 		const regularProject = realProjects.find((p) => !p.gitOpsManagedBy);
-		test.skip(!regularProject, 'No regular (non-GitOps) projects found');
+		expect(regularProject, 'No regular (non-GitOps) projects found').toBeTruthy();
 
+		const originalUser = await readApiData<{
+			preferences?: { defaultProjectEditorLayout?: 'auto' | 'classic' | 'tree' };
+		}>(await page.request.get('/api/auth/me'), 'Get original editor preference');
 		const setDefaultLayout = async (layout: 'auto' | 'classic' | 'tree') => {
 			const response = await page.request.put('/api/auth/me/profile', {
 				data: { preferences: { defaultProjectEditorLayout: layout } }
@@ -1522,7 +1470,7 @@ test.describe('Project Detail Page', () => {
 			await expect(page.getByRole('heading', { name: 'Docker Compose File' })).toBeVisible();
 			await expect(workspaceFilesLabel).not.toBeVisible();
 		} finally {
-			await setDefaultLayout('auto');
+			await setDefaultLayout(originalUser.preferences?.defaultProjectEditorLayout ?? 'auto');
 		}
 	});
 
@@ -1530,7 +1478,7 @@ test.describe('Project Detail Page', () => {
 		page
 	}) => {
 		const regularProject = realProjects.find((p) => !p.gitOpsManagedBy);
-		test.skip(!regularProject, 'No regular (non-GitOps) projects found');
+		expect(regularProject, 'No regular (non-GitOps) projects found').toBeTruthy();
 
 		await page.goto(`/projects/${regularProject!.id || regularProject!.name}`);
 		await page.waitForLoadState('load');
@@ -1543,14 +1491,12 @@ test.describe('Project Detail Page', () => {
 			name: 'Toggle workspace mode',
 			exact: true
 		});
-		test.skip(
-			(await layoutSwitch.count()) === 0,
-			'No layout switch available for project configuration'
-		);
+		await expect(layoutSwitch).toBeVisible();
 
 		const workspaceFilesLabel = page.getByText('Workspace Files', { exact: true });
 
-		if (!(await workspaceFilesLabel.isVisible().catch(() => false))) {
+		await expect(page.locator('.cm-editor').filter({ visible: true }).first()).toBeVisible();
+		if (!(await workspaceFilesLabel.isVisible())) {
 			await layoutSwitch.click();
 			await expect(workspaceFilesLabel).toBeVisible();
 		}
@@ -1631,7 +1577,8 @@ test.describe('Project Detail Page', () => {
 				name: 'Toggle workspace mode',
 				exact: true
 			});
-			if (await layoutSwitch.count()) {
+			await expect(layoutSwitch).toBeVisible();
+			{
 				await layoutSwitch.click();
 				await expect(page.locator('.cm-editor').filter({ visible: true }).first()).toBeVisible();
 
@@ -1663,7 +1610,7 @@ test.describe('Project Detail Page', () => {
 				})
 				.toContain(marker);
 		} finally {
-			await destroyCurrentProjectViaUI(page);
+			await destroyProjectByNameViaAPI(page, projectName);
 		}
 	});
 
@@ -1722,7 +1669,7 @@ test.describe('Project Detail Page', () => {
 				socketsAfterStop
 			);
 		} finally {
-			await destroyProjectByIdViaAPI(page, projectId || getProjectIdFromPageUrl(page.url()));
+			await destroyProjectByNameViaAPI(page, projectName);
 		}
 	});
 
@@ -1764,7 +1711,10 @@ test.describe('Project Detail Page', () => {
 	});
 
 	test('should surface a project log stream connection failure inline', async ({ page }) => {
-		test.skip(!realProjects.length, 'No projects available for log stream failure test');
+		expect(
+			realProjects.length,
+			'No projects available for log stream failure test'
+		).toBeGreaterThan(0);
 
 		const targetProject = realProjects[0];
 		await page.routeWebSocket('**/api/environments/*/ws/projects/*/logs**', (ws) => {

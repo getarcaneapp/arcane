@@ -1,3 +1,4 @@
+import { expect, type Locator } from '@playwright/test';
 import playwrightConfig from '../playwright.config';
 
 export async function createTestApiKeys(count: number = 2) {
@@ -28,4 +29,17 @@ export async function deleteTestApiKeys() {
 	if (!response.ok) {
 		throw new Error(`Failed to delete test API keys: ${response.status} ${response.statusText}`);
 	}
+}
+
+export async function waitForDialogReady(dialog: Locator) {
+	await expect(dialog).toBeVisible();
+	await dialog.evaluate(async (element) => {
+		await Promise.all(element.getAnimations().map((animation) => animation.finished));
+	});
+	await expect
+		.poll(
+			() => dialog.evaluate((element) => element.contains(element.ownerDocument.activeElement)),
+			{ message: 'Dialog must finish opening and receive focus before input' }
+		)
+		.toBe(true);
 }

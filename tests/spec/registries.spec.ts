@@ -1,3 +1,5 @@
+import { readApiData, removeApiResource } from '../utils/fetch.util';
+import { waitForDialogReady } from '../utils/playwright.util';
 import { test, expect, type Page } from '../fixtures/test.fixture';
 import { openRowActionsMenu } from '../utils/table-actions.util';
 
@@ -77,6 +79,11 @@ async function mockRegistryPullUsage(
 }
 
 test.describe('Container Registries', () => {
+	const registryIds = new Set<string>();
+	test.afterEach(async ({ page }) => {
+		for (const id of registryIds) await removeApiResource(page, `/api/container-registries/${id}`);
+		registryIds.clear();
+	});
 	test.beforeEach(async ({ page }) => {
 		await page.goto(route);
 		await page.waitForLoadState('load');
@@ -146,7 +153,7 @@ test.describe('Container Registries', () => {
 		// Create
 		await page.getByRole('button', { name: 'Add Registry' }).click();
 		const dialog = page.getByRole('dialog');
-		await expect(dialog).toBeVisible();
+		await waitForDialogReady(dialog);
 
 		const url = `e2e.example.com-${Date.now()}`;
 
@@ -160,9 +167,17 @@ test.describe('Container Registries', () => {
 
 		// Optional description
 		const desc = dialog.getByLabel('Description', { exact: true });
-		if (await desc.count()) await desc.fill('E2E test registry');
+		await desc.fill('E2E test registry');
 
+		const createdPromise = page.waitForResponse(
+			(response) =>
+				response.request().method() === 'POST' &&
+				new URL(response.url()).pathname === '/api/container-registries'
+		);
 		await dialog.getByRole('button', { name: 'Add Registry', exact: true }).click();
+
+		const created = await readApiData<{ id: string }>(await createdPromise, 'Create registry');
+		registryIds.add(created.id);
 
 		// Creation complete when dialog closes
 		await expect(dialog).toBeHidden({ timeout: 10000 });
@@ -180,29 +195,38 @@ test.describe('Container Registries', () => {
 	});
 
 	test('should open Remove Selected dialog and cancel (no mutation)', async ({ page }) => {
+		const registry = await readApiData<{ id: string }>(
+			await page.request.post('/api/container-registries', {
+				data: {
+					url: `e2e-select-${Date.now()}.example.com`,
+					username: 'e2e',
+					token: TOKEN,
+					description: '',
+					insecure: false,
+					enabled: true,
+					registryType: 'generic',
+					repositoryNames: [],
+					awsAccessKeyId: '',
+					awsSecretAccessKey: '',
+					awsRegion: ''
+				}
+			}),
+			'Create registry selection fixture'
+		);
+		registryIds.add(registry.id);
+		await page.goto(route);
 		const firstRowCheckbox = page
 			.getByRole('row')
 			.filter({ has: page.getByRole('button', { name: 'Open menu', exact: true }) })
 			.getByRole('checkbox')
 			.first();
-		if (await firstRowCheckbox.count()) {
-			await firstRowCheckbox.check();
-
-			const removeSelected = page.getByRole('button', {
-				name: 'Remove Selected (1)',
-				exact: true
-			});
-			if (await removeSelected.count()) {
-				await removeSelected.click();
-
-				const confirm = page.getByRole('dialog');
-				await expect(
-					confirm.getByRole('heading', { name: 'Remove 1 Registry(ies)', exact: true })
-				).toBeVisible();
-
-				await page.getByRole('button', { name: 'Cancel' }).click();
-				await expect(confirm).toBeHidden();
-			}
-		}
+		await firstRowCheckbox.check();
+		await page.getByRole('button', { name: 'Remove Selected (1)', exact: true }).click();
+		const confirm = page.getByRole('dialog');
+		await expect(
+			confirm.getByRole('heading', { name: 'Remove 1 Registry(ies)', exact: true })
+		).toBeVisible();
+		await confirm.getByRole('button', { name: 'Cancel', exact: true }).click();
+		await expect(confirm).toBeHidden();
 	});
 });

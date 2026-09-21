@@ -1,5 +1,6 @@
 import { test, expect, type Locator, type Page } from '../fixtures/test.fixture';
-import { fetchNetworksCountsWithRetry } from '../utils/fetch.util';
+import { removeApiResource, fetchNetworksCountsWithRetry, readApiData } from '../utils/fetch.util';
+import { waitForDialogReady } from '../utils/playwright.util';
 import authUtil from '../utils/auth.util';
 
 async function navigateToNetworks(page: Page) {
@@ -10,9 +11,11 @@ async function navigateToNetworks(page: Page) {
 
 async function ensureAuthenticated(page: Page) {
 	const currentUserResponse = await page.request.get('/api/auth/me');
-	if (!currentUserResponse.ok()) {
+	if (currentUserResponse.status() === 401) {
 		await authUtil.login(page);
 		await expect(page.getByRole('button', { name: 'Card view', exact: true })).toBeVisible();
+	} else {
+		expect(currentUserResponse.ok(), 'Check current user').toBe(true);
 	}
 }
 
@@ -24,7 +27,7 @@ test.beforeEach(async ({ page }) => {
 async function openCreateNetworkDialog(page: Page, networkName: string) {
 	await page.getByRole('button', { name: 'Create Network' }).first().click();
 	const dialog = page.getByRole('dialog');
-	await expect(dialog).toBeVisible();
+	await waitForDialogReady(dialog);
 	await expect(dialog.getByRole('heading', { name: 'Create New Network' })).toBeVisible();
 	await dialog.getByLabel('Network Name *').fill(networkName);
 	return dialog;
@@ -58,21 +61,18 @@ async function createNetworkViaUI(page: Page, networkName: string) {
 
 	await dialog.getByRole('button', { name: 'Create Network' }).click();
 	const createResponse = await createRequest;
-	const responseBody = await createResponse.json().catch(() => undefined);
-	if (!createResponse.ok()) {
-		const responseText = await createResponse.text().catch(() => '');
-		throw new Error(
-			`Failed to create network ${networkName}: ${createResponse.status()} ${responseText}`
-		);
-	}
+	const network = await readApiData<{ id: string }>(
+		createResponse,
+		`Create network ${networkName}`
+	);
+	expect(network.id).toBeTruthy();
 	await expect(dialog).toBeHidden();
 	await expect(page.getByText(networkName, { exact: true }).first()).toBeVisible();
 
-	return responseBody?.data?.id ?? networkName;
+	return network.id;
 }
 
 async function createNetworkViaApi(page: Page, networkName: string) {
-	await page.goto('about:blank');
 	const response = await page.request.post('/api/environments/0/networks', {
 		data: {
 			name: networkName,
@@ -88,32 +88,13 @@ async function createNetworkViaApi(page: Page, networkName: string) {
 	}
 }
 
-async function findNetworkRow(page: Page, networkName: string, maxRetries = 10) {
-	for (let i = 0; i < maxRetries; i++) {
-		const searchInput = page.getByPlaceholder('Search…').first();
-		if (await searchInput.isVisible().catch(() => false)) {
-			await searchInput.fill(networkName);
-		}
-
-		const row = page
-			.getByRole('row')
-			.filter({ has: page.getByRole('link', { name: networkName, exact: true }) })
-			.first();
-		if (await row.isVisible().catch(() => false)) return row;
-		await page.waitForTimeout(500);
-		await navigateToNetworks(page);
-	}
-	return page
-		.getByRole('row')
-		.filter({ has: page.getByRole('link', { name: networkName, exact: true }) })
-		.first();
-}
-
-async function removeNetworkViaApi(page: Page, networkName: string) {
-	await page.goto('about:blank');
-	await page.request
-		.delete(`/api/environments/0/networks/${encodeURIComponent(networkName)}`)
-		.catch(() => undefined);
+async function findNetworkRow(page: Page, networkName: string) {
+	await page.getByPlaceholder('Search…').first().fill(networkName);
+	const row = page.getByRole('row').filter({
+		has: page.getByRole('link', { name: networkName, exact: true })
+	});
+	await expect(row).toBeVisible();
+	return row;
 }
 
 test.describe('Networks Page', () => {
@@ -145,7 +126,10 @@ test.describe('Networks Page', () => {
 			await expect(page.getByRole('button', { name: 'Name' })).toBeVisible();
 			await expect(await findNetworkRow(page, networkName)).toBeVisible();
 		} finally {
-			await removeNetworkViaApi(page, networkName);
+			await removeApiResource(
+				page,
+				`/api/environments/0/networks/${encodeURIComponent(networkName)}`
+			);
 		}
 	});
 
@@ -173,7 +157,10 @@ test.describe('Networks Page', () => {
 				})
 				.toBe(404);
 		} finally {
-			await removeNetworkViaApi(page, networkName);
+			await removeApiResource(
+				page,
+				`/api/environments/0/networks/${encodeURIComponent(networkName)}`
+			);
 		}
 	});
 
@@ -185,7 +172,10 @@ test.describe('Networks Page', () => {
 			await expect(page).toHaveURL(/\/networks\/.+/);
 			await expect(page.getByRole('heading', { level: 1, name: networkName })).toBeVisible();
 		} finally {
-			await removeNetworkViaApi(page, networkName);
+			await removeApiResource(
+				page,
+				`/api/environments/0/networks/${encodeURIComponent(networkName)}`
+			);
 		}
 	});
 
@@ -253,7 +243,10 @@ test.describe('Networks Page', () => {
 			await expect(page.getByRole('heading', { level: 1, name: networkName })).toBeVisible();
 			await expect(page.getByText(ipRange, { exact: true })).toBeVisible();
 		} finally {
-			await removeNetworkViaApi(page, networkName);
+			await removeApiResource(
+				page,
+				`/api/environments/0/networks/${encodeURIComponent(networkName)}`
+			);
 		}
 	});
 
@@ -298,8 +291,14 @@ test.describe('Networks Page', () => {
 			await dialog.getByLabel('Enable IPAM Configuration').check();
 			await expect(dialog.getByLabel('IP Range')).toHaveValue('');
 		} finally {
-			await removeNetworkViaApi(page, blankRangeName);
-			await removeNetworkViaApi(page, disabledIpamName);
+			await removeApiResource(
+				page,
+				`/api/environments/0/networks/${encodeURIComponent(blankRangeName)}`
+			);
+			await removeApiResource(
+				page,
+				`/api/environments/0/networks/${encodeURIComponent(disabledIpamName)}`
+			);
 		}
 	});
 
@@ -330,7 +329,10 @@ test.describe('Networks Page', () => {
 			await expect(dialog).toBeVisible();
 			await expect(dialog.getByLabel('Network Name *')).toHaveValue(networkName);
 		} finally {
-			await removeNetworkViaApi(page, networkName);
+			await removeApiResource(
+				page,
+				`/api/environments/0/networks/${encodeURIComponent(networkName)}`
+			);
 		}
 	});
 
@@ -343,7 +345,10 @@ test.describe('Networks Page', () => {
 
 			await expect(page.getByText('Unused').first()).toBeVisible();
 		} finally {
-			await removeNetworkViaApi(page, networkName);
+			await removeApiResource(
+				page,
+				`/api/environments/0/networks/${encodeURIComponent(networkName)}`
+			);
 		}
 	});
 });

@@ -46,12 +46,11 @@ async function switchContextMode(page: Page, mode: 'Workspace' | 'Remote Git'): 
 
 async function openAdvancedBuildOptions(page: Page) {
 	const dockerfileInput = page.locator('#dockerfile');
-	const alreadyVisible = await dockerfileInput.isVisible().catch(() => false);
-	if (alreadyVisible) {
-		return;
+	const trigger = page.getByRole('button', { name: 'Advanced', exact: true }).first();
+	await expect(trigger).toBeVisible();
+	if ((await trigger.getAttribute('aria-expanded')) !== 'true') {
+		await trigger.click();
 	}
-
-	await page.getByRole('button', { name: 'Advanced', exact: true }).first().click();
 	await expect(dockerfileInput).toBeVisible();
 }
 
@@ -133,7 +132,8 @@ async function mockDepotConfiguredSettings(page: Page) {
 		}
 
 		const upstream = await route.fetch();
-		const original = await upstream.json().catch(() => ({}));
+		expect(upstream.ok(), `Fetch settings: ${upstream.status()}`).toBe(true);
+		const original = await upstream.json();
 		const patched = injectDepotSettings(original);
 
 		await route.fulfill({

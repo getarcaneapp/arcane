@@ -28,6 +28,7 @@ services:
       - '-allowGET=(/v[\d.]+)?/containers(/.*)?'
       - '-allowGET=(/v[\d.]+)?/exec(/.*)?'
       - '-allowGET=(/v[\d.]+)?/images(/.*)?'
+      - '-allowGET=(/v[\d.]+)?/distribution/.+/json'
       - '-allowGET=(/v[\d.]+)?/info(/.*)?'
       - '-allowGET=(/v[\d.]+)?/networks(/.*)?'
       - '-allowGET=(/v[\d.]+)?/volumes(/.*)?'

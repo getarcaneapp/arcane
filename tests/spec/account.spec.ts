@@ -1,3 +1,4 @@
+import { waitForDialogReady } from '../utils/playwright.util';
 import { fileURLToPath } from 'node:url';
 import {
 	expect,
@@ -7,7 +8,7 @@ import {
 	type BrowserContext,
 	type Page
 } from '../fixtures/test.fixture';
-import { readApiData } from '../utils/fetch.util';
+import { removeApiResource, readApiData } from '../utils/fetch.util';
 
 const AVATAR_PATH = fileURLToPath(
 	new URL('../../backend/resources/images/icon-128x128.png', import.meta.url)
@@ -161,6 +162,7 @@ test('manages an isolated account, preferences, credentials, and sessions', asyn
 
 			await accountPage.getByRole('button', { name: 'New key', exact: true }).click();
 			const keyDialog = accountPage.getByRole('dialog', { name: 'Create API Key' });
+			await waitForDialogReady(keyDialog);
 			await keyDialog.getByLabel('Name', { exact: true }).fill(keyName);
 			await keyDialog.getByLabel('Description', { exact: true }).fill('Account browser journey');
 			const keyCreateResponsePromise = accountPage.waitForResponse(
@@ -317,7 +319,7 @@ test('manages an isolated account, preferences, credentials, and sessions', asyn
 	} finally {
 		await accountContext?.close();
 		if (user) {
-			await page.request.delete(`/api/users/${user.id}`).catch(() => undefined);
+			await removeApiResource(page, `/api/users/${user.id}`);
 		}
 	}
 });
@@ -469,7 +471,14 @@ test('registers, renames, authenticates with, and removes a passkey with MFA', a
 			await dangerZone.getByRole('button', { name: 'Log out', exact: true }).click();
 			await expect(passkeyPage).toHaveURL('/login');
 			await passkeyPage.getByRole('button', { name: 'Passkey', exact: true }).click();
-			if (await usePasskeyButton.isVisible().catch(() => false)) {
+			await expect
+				.poll(
+					async () =>
+						new URL(passkeyPage.url()).pathname === '/dashboard' ||
+						(await usePasskeyButton.isVisible())
+				)
+				.toBe(true);
+			if (await usePasskeyButton.isVisible()) {
 				await usePasskeyButton.click();
 			}
 			await expect(passkeyPage).toHaveURL('/dashboard');
@@ -518,7 +527,7 @@ test('registers, renames, authenticates with, and removes a passkey with MFA', a
 	} finally {
 		await passkeyContext?.close();
 		if (user) {
-			await page.request.delete(`/api/users/${user.id}`).catch(() => undefined);
+			await removeApiResource(page, `/api/users/${user.id}`);
 		}
 	}
 });

@@ -38,6 +38,7 @@ async function openConvertFromDockerRun(page: Page) {
 	await menu.getByRole('menuitem', { name: 'Convert from Docker Run', exact: true }).click();
 
 	await expect(page.getByRole('button', SELECTORS.convertButton())).toBeVisible();
+	await expect(page.getByPlaceholder(SELECTORS.textareaPlaceholder)).toBeEditable();
 }
 
 async function setupMockConvert(page: Page, payload: ConvertResponse) {
@@ -85,7 +86,6 @@ test.describe('Docker Run to Compose Converter', () => {
 
 	test('should convert docker run command with environment variables', async ({ page }) => {
 		await openConvertFromDockerRun(page);
-		await page.waitForTimeout(300);
 
 		const dockerCommand =
 			'docker run -d --name postgres -e POSTGRES_DB=mydb -e POSTGRES_USER=user -e POSTGRES_PASSWORD=pass postgres:15';
@@ -114,7 +114,6 @@ test.describe('Docker Run to Compose Converter', () => {
 
 	test('should use example commands', async ({ page }) => {
 		await openConvertFromDockerRun(page);
-		await page.waitForTimeout(300);
 
 		await page.getByRole('button', { name: SELECTORS.exampleButtonName }).first().click();
 
@@ -125,7 +124,6 @@ test.describe('Docker Run to Compose Converter', () => {
 
 	test('should disable convert button when no command is entered', async ({ page }) => {
 		await openConvertFromDockerRun(page);
-		await page.waitForTimeout(300);
 
 		const convertBtn = page.getByRole('button', SELECTORS.convertButton());
 
@@ -140,7 +138,6 @@ test.describe('Docker Run to Compose Converter', () => {
 
 	test('should populate stack name only when empty', async ({ page }) => {
 		await openConvertFromDockerRun(page);
-		await page.waitForTimeout(300);
 
 		await page
 			.getByPlaceholder(SELECTORS.textareaPlaceholder)
