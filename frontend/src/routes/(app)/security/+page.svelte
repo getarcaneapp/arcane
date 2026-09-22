@@ -33,6 +33,7 @@
 
 	let vulnerabilities = $derived<Paginated<VulnerabilityRow>>(data.vulnerabilities);
 	let requestOptions = $derived<SearchPaginationSortRequest>(data.vulnerabilityRequestOptions);
+	let selectedVulnerabilityIds = $state<string[]>([]);
 	let showIgnored = $state(false);
 	let fixAvailable = $state(false);
 
@@ -111,6 +112,7 @@
 
 	async function refreshAll() {
 		const requestedEnvId = currentEnvId;
+		selectedVulnerabilityIds = [];
 		if (displayedEnvId !== requestedEnvId) {
 			summary = null;
 			vulnerabilities = { data: [], pagination: { totalPages: 0, totalItems: 0, currentPage: 1, itemsPerPage: 20 } };
@@ -413,6 +415,7 @@
 							<SecurityVulnerabilityTable
 								bind:vulnerabilities
 								bind:requestOptions
+								bind:selectedIds={selectedVulnerabilityIds}
 								{showIgnored}
 								onToggleIgnored={toggleIgnored}
 								{fixAvailable}

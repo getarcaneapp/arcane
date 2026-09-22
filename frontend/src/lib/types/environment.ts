@@ -213,3 +213,14 @@ export interface IgnoredVulnerability {
 	createdBy: string;
 	createdAt: string;
 }
+
+export interface BulkVulnerabilityFilters {
+	search?: string;
+	severity?: string;
+	imageName?: string;
+	fixAvailable?: boolean;
+}
+
+export interface BulkVulnerabilityActionResponse {
+	affectedCount: number;
+}
