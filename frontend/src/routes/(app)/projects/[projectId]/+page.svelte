@@ -2215,7 +2215,7 @@
 				onRefresh={() => refreshProjectDetails()}
 			>
 				{#snippet leadingActions(size, showLabel)}
-					{#if hasChanges && canUpdateProject}
+					{#if canUpdateProject}
 						<ArcaneButton
 							action="save"
 							{size}
@@ -2242,7 +2242,7 @@
 				{/snippet}
 
 				{#snippet leadingMenuItems()}
-					{#if hasChanges && canUpdateProject}
+					{#if canUpdateProject}
 						<DropdownMenu.Item onclick={handleSaveChanges} disabled={!canSave || isLoading.saving}>
 							{isLoading.saving ? m.common_saving() : m.common_save()}
 						</DropdownMenu.Item>
@@ -2256,7 +2256,7 @@
 							{project?.isArchived ? m.projects_unarchive() : m.projects_archive()}
 						</DropdownMenu.Item>
 					{/if}
-					{#if (hasChanges && canUpdateProject) || canArchiveProject}
+					{#if canUpdateProject || canArchiveProject}
 						<DropdownMenu.Separator />
 					{/if}
 				{/snippet}

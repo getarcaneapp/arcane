@@ -228,6 +228,9 @@
 	const canRemove = $derived(
 		type === 'container' ? hasPermission('containers:delete', currentEnvId) : hasPermission('projects:delete', currentEnvId)
 	);
+	// Whether the start/stop/restart block above the deploy options renders anything,
+	// so its leading separator never lands next to a caller-provided one.
+	const hasLifecycleMenuItems = $derived((!isRunning && canStart) || (isRunning && (canStop || canRestart)));
 	const canPull = $derived(type === 'project' && hasPermission('projects:deploy', currentEnvId));
 	const canBuild = $derived(type === 'project' && hasPermission('projects:deploy', currentEnvId));
 	const deployButtonLabel = $derived(projectHasBuildDirective ? m.compose_build_and_deploy() : m.common_up());
@@ -791,7 +794,9 @@
 				{/if}
 
 				{#if type === 'project' && (canStart || canRedeploy)}
-					<DropdownMenu.Separator />
+					{#if hasLifecycleMenuItems}
+						<DropdownMenu.Separator />
+					{/if}
 					<DeployOptionsMenuItems />
 					<DropdownMenu.Separator />
 				{/if}

@@ -1144,7 +1144,7 @@ test.describe('GitOps Managed Project', () => {
 		await expect(envContent).not.toHaveAttribute('aria-readonly', 'true');
 		await setCodeMirrorValue(page, envEditor, updatedEnv);
 		await expect(envEditor).toContainText(marker);
-		await expect(page.getByRole('button', { name: 'Save', exact: true }).first()).toBeVisible();
+		await expect(page.getByRole('button', { name: 'Save', exact: true }).first()).toBeEnabled();
 
 		await expect(layoutSwitch).toBeVisible();
 
@@ -1564,7 +1564,7 @@ test.describe('Project Detail Page', () => {
 			await expect(saveButtons.first()).toBeEnabled();
 			await saveButtons.first().click();
 
-			await expect(saveButtons).toHaveCount(0);
+			await expect(saveButtons.first()).toBeDisabled();
 
 			composeEditor = page.locator('.cm-editor').filter({ visible: true }).first();
 			await expect
