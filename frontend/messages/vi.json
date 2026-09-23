@@ -1413,6 +1413,8 @@
   "environments_test_connection_error": "Kết nối thất bại",
   "environments_testing_connection": "Đang kiểm tra kết nối…",
   "environments_api_url": "API URL",
+  "environments_access_token_for_url_label": "Mã thông báo truy cập của đại lý",
+  "environments_access_token_for_url_help": "Hãy nhập lại mã truy cập hiện có của đại lý để lưu URL API mới. Bạn không cần phải thay đổi mã này.",
   "environments_created_success": "Môi trường đã được tạo thành công",
   "environments_delete_message": "Bạn có chắc chắn muốn xóa môi trường {name}?",
   "environments_delete_failed": "Xóa môi trường {name} thất bại",
