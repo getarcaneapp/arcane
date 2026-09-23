@@ -1413,6 +1413,8 @@
   "environments_test_connection_error": "連線失敗",
   "environments_testing_connection": "正在測試連線…",
   "environments_api_url": "API 網址",
+  "environments_access_token_for_url_label": "代理存取憑證",
+  "environments_access_token_for_url_help": "請重新輸入代理程式現有的存取憑證，以儲存新的 API URL。您無需輪替該憑證。",
   "environments_created_success": "環境建立成功",
   "environments_delete_message": "確定要刪除 {name} 環境？",
   "environments_delete_failed": "刪除環境 {name} 時失敗",
