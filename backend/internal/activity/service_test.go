@@ -103,6 +103,8 @@ func TestActivityServiceStreamFanoutInternal(t *testing.T) {
 
 	events, _, unsubscribe := service.Subscribe("0")
 	defer unsubscribe()
+	otherEvents, _, unsubscribeOther := service.Subscribe("0")
+	defer unsubscribeOther()
 
 	created, err := service.StartActivity(ctx, StartActivityRequest{
 		EnvironmentID: "0",
@@ -115,6 +117,9 @@ func TestActivityServiceStreamFanoutInternal(t *testing.T) {
 	require.Equal(t, "activity", first.Type)
 	require.Equal(t, created.ID, first.ActivityID)
 	require.NotNil(t, first.Activity)
+	other := receiveActivityEventInternal(t, otherEvents)
+	require.Equal(t, first, other)
+	require.NotSame(t, first.Activity, other.Activity)
 
 	_, err = service.AppendMessage(ctx, created.ID, AppendActivityMessageRequest{
 		Level:   activitytypes.MessageLevelInfo,
@@ -129,6 +134,10 @@ func TestActivityServiceStreamFanoutInternal(t *testing.T) {
 	require.Equal(t, activitytypes.TypeProjectDeploy, messageEvent.ActivityType)
 	require.NotNil(t, messageEvent.Message)
 	require.Equal(t, "Deploying services", messageEvent.Message.Message)
+	require.Nil(t, messageEvent.Activity)
+	require.Nil(t, messageEvent.Activities)
+	require.Equal(t, messageEvent, receiveActivityEventInternal(t, otherEvents))
+
 }
 
 func TestActivityServiceRetentionCleanupInternal(t *testing.T) {

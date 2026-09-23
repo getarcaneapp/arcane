@@ -1382,7 +1382,13 @@ func (s *ActivityService) publishInternal(environmentID string, event activityty
 	s.subscribersMu.RUnlock()
 
 	for _, sub := range subs {
-		sub.enqueue(event)
+		// Source labeling mutates activity fields independently for each subscriber.
+		subscriberEvent := event
+		if event.Activity != nil {
+			subscriberEvent.Activity = new(*event.Activity)
+		}
+		subscriberEvent.Activities = slices.Clone(event.Activities)
+		sub.enqueue(subscriberEvent)
 	}
 }
 
