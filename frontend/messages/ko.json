@@ -1413,6 +1413,8 @@
   "environments_test_connection_error": "연결 실패",
   "environments_testing_connection": "연결 테스트 중…",
   "environments_api_url": "API URL",
+  "environments_access_token_for_url_label": "에이전트 액세스 토큰",
+  "environments_access_token_for_url_help": "새로운 API URL을 저장하려면 에이전트의 기존 액세스 토큰을 다시 입력하세요. 토큰을 갱신할 필요는 없습니다.",
   "environments_created_success": "환경 생성 완료",
   "environments_delete_message": "환경 {name}을(를) 삭제하시겠습니까?",
   "environments_delete_failed": "환경 {name} 삭제 실패",
