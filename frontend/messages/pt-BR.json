@@ -1413,6 +1413,8 @@
   "environments_test_connection_error": "Conexão falhou",
   "environments_testing_connection": "Testando conexão…",
   "environments_api_url": "URL da API",
+  "environments_access_token_for_url_label": "Token de acesso do agente",
+  "environments_access_token_for_url_help": "Digite novamente o token de acesso existente do agente para salvar a nova URL da API. Não é necessário atualizá-lo.",
   "environments_created_success": "Ambiente criado com sucesso",
   "environments_delete_message": "Deseja mesmo apagar o ambiente \"{name}\"?",
   "environments_delete_failed": "Falha ao apagar o ambiente \"{name}\"",
