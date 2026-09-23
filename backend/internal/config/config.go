@@ -109,6 +109,11 @@ type Config struct {
 	HTTPClientTimeout int    `env:"HTTP_CLIENT_TIMEOUT" default:"0"`
 	BackupVolumeName  string `env:"ARCANE_BACKUP_VOLUME_NAME" default:"arcane-backups"`
 
+	// HTTPProxy, HTTPSProxy and NoProxy are forwarded to temporary Trivy scan containers.
+	HTTPProxy  string `env:"HTTP_PROXY" default:""`
+	HTTPSProxy string `env:"HTTPS_PROXY" default:""`
+	NoProxy    string `env:"NO_PROXY" default:""`
+
 	// Timezone for cron job scheduling. Uses IANA timezone names (e.g., "America/New_York", "Europe/London").
 	// "Local" uses the system's local timezone, "UTC" for Coordinated Universal Time.
 	Timezone string `env:"TZ" default:"Local"`

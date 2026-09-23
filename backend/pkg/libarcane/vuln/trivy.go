@@ -117,6 +117,22 @@ func BuildDockerHostEnv(dockerHost string) []string {
 	return []string{"DOCKER_HOST=" + dockerHost}
 }
 
+// ProxyEnv returns HTTP_PROXY, HTTPS_PROXY and NO_PROXY entries for the non-empty values
+// so Trivy containers download databases through the same proxy as Arcane (#4163).
+func ProxyEnv(httpProxy, httpsProxy, noProxy string) []string {
+	values := [...][2]string{{"HTTP_PROXY", httpProxy}, {"HTTPS_PROXY", httpsProxy}, {"NO_PROXY", noProxy}}
+	env := make([]string, 0, len(values))
+	for _, kv := range values {
+		if value := strings.TrimSpace(kv[1]); value != "" {
+			env = append(env, kv[0]+"="+value)
+		}
+	}
+	if len(env) == 0 {
+		return nil
+	}
+	return env
+}
+
 // ScanCacheBackendArgsForArch returns the Trivy cache-backend flags for a GOARCH.
 // The default BoltDB-backed cache can fail with ENOMEM on arm/v7 and 386 because
 // Go's heap reservations fragment the limited 32-bit virtual address space.

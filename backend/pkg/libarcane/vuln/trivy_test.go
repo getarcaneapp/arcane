@@ -166,6 +166,45 @@ func TestIgnoreUnfixedArgs(t *testing.T) {
 	require.Nil(t, IgnoreUnfixedArgs(false))
 }
 
+func TestProxyEnv(t *testing.T) {
+	tests := []struct {
+		name       string
+		httpProxy  string
+		httpsProxy string
+		noProxy    string
+		want       []string
+	}{
+		{
+			name:       "empty values return nil",
+			httpsProxy: "   ",
+			want:       nil,
+		},
+		{
+			name:       "all values in fixed order",
+			httpProxy:  "http://proxy:3128",
+			httpsProxy: "http://user:pass@proxy:3128",
+			noProxy:    "localhost,127.0.0.1,.corp.example",
+			want: []string{
+				"HTTP_PROXY=http://proxy:3128",
+				"HTTPS_PROXY=http://user:pass@proxy:3128",
+				"NO_PROXY=localhost,127.0.0.1,.corp.example",
+			},
+		},
+		{
+			name:       "trims values and skips blanks",
+			httpsProxy: "  http://proxy:3128  ",
+			noProxy:    "   ",
+			want:       []string{"HTTPS_PROXY=http://proxy:3128"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, ProxyEnv(tt.httpProxy, tt.httpsProxy, tt.noProxy))
+		})
+	}
+}
+
 func TestBuildContainerConfig_IncludesEnv(t *testing.T) {
 	config := BuildContainerConfig(
 		"ghcr.io/getarcaneapp/tools:latest",
