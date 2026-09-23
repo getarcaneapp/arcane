@@ -1413,6 +1413,8 @@
   "environments_test_connection_error": "Verbindung fehlgeschlagen",
   "environments_testing_connection": "Verbindung wird getestet…",
   "environments_api_url": "API-URL",
+  "environments_access_token_for_url_label": "Agent-Zugriffstoken",
+  "environments_access_token_for_url_help": "Geben Sie das vorhandene Zugriffstoken des Agenten erneut ein, um die neue API-URL zu speichern. Sie müssen es nicht rotieren.",
   "environments_created_success": "Umgebung erfolgreich erstellt",
   "environments_delete_message": "Möchtest du die Umgebung {name} wirklich löschen?",
   "environments_delete_failed": "Umgebung {name} konnte nicht gelöscht werden",
