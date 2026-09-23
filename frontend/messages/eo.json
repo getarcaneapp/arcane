@@ -1413,6 +1413,8 @@
   "environments_test_connection_error": "Konekto malsukcesis",
   "environments_testing_connection": "Testante konekton…",
   "environments_api_url": "API-URL",
+  "environments_access_token_for_url_label": "Agenta alirtokeno",
+  "environments_access_token_for_url_help": "Re-enigu la ekzistantan alirtokenon de la agento por konservi la novan API-URL. Vi ne bezonas ĝin rotacii.",
   "environments_created_success": "Medio estis sukcese kreita",
   "environments_delete_message": "Ĉu vi certas, ke vi volas forigi medion «{name}»?",
   "environments_delete_failed": "Malsukcesis forigi medion «{name}»",
