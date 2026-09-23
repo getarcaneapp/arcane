@@ -44,18 +44,18 @@
 	}));
 </script>
 
-<div class={`time-format-picker ${className}`}>
+<div class={className}>
 	<Select.Root
 		type="single"
 		value={timeFormatStore.current}
 		onValueChange={(value) => updateTimeFormatMutation.mutate(value as TimeFormat)}
 	>
-		<Select.Trigger {id} class="h-9 w-32 text-sm font-medium" aria-label={m.time_format_select()}>
+		<Select.Trigger {id} class="h-9 w-32" aria-label={m.time_format_select()}>
 			<span class="truncate">{currentLabel}</span>
 		</Select.Trigger>
 		<Select.Content class="max-w-70 min-w-40">
 			{#each options as option (option.value)}
-				<Select.Item class="text-sm" value={option.value}>{option.label}</Select.Item>
+				<Select.Item value={option.value}>{option.label}</Select.Item>
 			{/each}
 		</Select.Content>
 	</Select.Root>

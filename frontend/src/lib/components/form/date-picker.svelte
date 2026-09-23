@@ -54,7 +54,7 @@
 				/>
 			{/snippet}
 		</Popover.Trigger>
-		<Popover.Content class="w-auto p-0" align="start">
+		<Popover.Content class="w-auto" align="start">
 			<Calendar
 				type="single"
 				value={calendarDisplayDate}

@@ -38,10 +38,6 @@ export const templateBtnClass = arcaneButtonVariants({
 	hoverEffect: 'none'
 });
 
-export const dropdownContentClass =
-	'arcane-dd-content min-w-[220px] overflow-visible rounded-lg border border-primary/30 bg-background/95 ' +
-	'backdrop-blur supports-[backdrop-filter]:bg-background/80 ring-1 ring-inset ring-primary/20 shadow-sm p-1';
-
 // Shared file-tree ResizableSplit preset for the compose editor pages
 // (project detail + new project); size binding and persistKey stay per-page.
 export const composeTreeSplitProps = {
@@ -54,12 +50,6 @@ export const composeTreeSplitProps = {
 	defaultRatio: 0.22,
 	stackBelow: 1024
 } as const;
-
-export const dropdownItemClass =
-	'flex cursor-pointer select-none items-center gap-2 rounded-md px-3 py-2 text-sm ' +
-	'text-foreground/90 outline-none transition-colors ' +
-	'hover:bg-primary/10 focus:bg-primary/10 ' +
-	'data-[disabled]:opacity-50 data-[disabled]:pointer-events-none';
 
 export type ProjectEditorLayoutMode = Exclude<ProjectEditorLayout, 'auto'>;
 

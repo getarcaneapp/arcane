@@ -8,7 +8,6 @@
 	import MobileNavSheet from './mobile-nav-sheet.svelte';
 	import { m } from '#lib/paraglide/messages.js';
 	import { MobileNavGestures } from './gestures.svelte';
-	import './styles.css';
 	import type { AppVersionInformation } from '#lib/types/settings.js';
 	import type { PermissionsManifest, User } from '#lib/types/auth.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
@@ -120,13 +119,15 @@
 	// Mode-specific styles
 	const navClasses = $derived(
 		cn(
-			'mobile-nav-base',
-			mode === 'floating' ? 'mobile-nav-floating' : 'mobile-nav-docked',
+			// Capture vertical gestures so opening the sheet doesn't scroll the page; keep items tappable above the gesture layer.
+			'pointer-events-auto isolate w-49/50 max-w-md origin-bottom transform-gpu touch-pan-x touch-pinch-zoom overscroll-contain subpixel-antialiased will-change-transform contain-layout contain-paint contain-style backface-hidden',
+			'[&_:is(button,a)]:pointer-events-auto [&_:is(button,a)]:relative [&_:is(button,a)]:isolate [&_:is(button,a)]:z-(--arcane-z-raised) [&_:is(button,a)]:touch-manipulation pointer-fine:[&_:is(button,a)]:cursor-pointer',
+			'motion-reduce:transition-none motion-reduce:[&_button]:transform-none!',
 			mode === 'floating'
-				? 'fixed left-1/2 z-[var(--arcane-z-app-chrome)] -translate-x-1/2 transform'
-				: 'fixed right-0 bottom-0 left-0 z-[var(--arcane-z-app-chrome)] gap-2',
+				? 'fixed bottom-floating-nav left-1/2 z-(--arcane-z-app-chrome) -translate-x-1/2 pointer-fine:hover:border-muted pointer-fine:hover:shadow-lg pointer-fine:hover:backdrop-blur-xl'
+				: 'fixed right-0 bottom-0 left-0 z-(--arcane-z-app-chrome) gap-2',
 			'border-border/30 bg-background/60 backdrop-blur-xl',
-			'shadow-sm transition-[translate,scale,opacity] duration-300 ease-out select-none',
+			'shadow-sm transition duration-300 ease-out select-none',
 			'flex items-center',
 			mode === 'floating'
 				? cn(
@@ -134,7 +135,10 @@
 						// On very small screens, tighten spacing so labeled items + center action fit.
 						showLabels ? 'gap-1.5 px-2.5 py-1.5 sm:gap-2 sm:px-3 sm:py-2' : 'gap-2.5 px-3.5 py-2 sm:gap-3 sm:px-4 sm:py-2.5'
 					)
-				: cn('justify-around border-t border-border/50', showLabels ? 'px-4 pt-2 pb-4' : 'px-4 pt-2.5 pb-4'),
+				: cn(
+						'justify-around border-t border-border/50',
+						showLabels ? 'px-4 pt-2 pb-(--safe-area-bottom)' : 'px-4 pt-2.5 pb-(--safe-area-bottom)'
+					),
 			visible
 				? mode === 'floating'
 					? 'translate-y-0 scale-100 opacity-100'

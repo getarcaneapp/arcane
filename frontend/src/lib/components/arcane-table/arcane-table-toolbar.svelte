@@ -3,7 +3,7 @@
 	import DataTableFacetedFilter from './arcane-table-filter.svelte';
 	import DataTableTextFilter from './arcane-table-text-filter.svelte';
 	import DataTableViewOptions from './arcane-table-view-options.svelte';
-	import { Input } from '#lib/components/ui/input/index.js';
+	import * as InputGroup from '#lib/components/ui/input-group/index.js';
 	import {
 		imageUpdateFilters,
 		usageFilters,
@@ -168,9 +168,11 @@
 
 <div class={cn('flex flex-wrap items-center gap-2 px-4 py-3', className)}>
 	<div class="order-1 flex min-w-0 flex-1 items-center gap-2 md:flex-none">
-		<div class="relative min-w-0 flex-1 md:w-64 md:flex-none">
-			<SearchIcon class="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-			<Input
+		<InputGroup.Root class="min-w-0 flex-1 md:w-64 md:flex-none">
+			<InputGroup.Addon>
+				<SearchIcon aria-hidden="true" />
+			</InputGroup.Addon>
+			<InputGroup.Input
 				placeholder={m.common_search()}
 				value={(table.atoms.globalFilter.get() as string) ?? ''}
 				oninput={(e) => debouncedSetGlobal(e.currentTarget.value)}
@@ -178,9 +180,8 @@
 				onkeydown={(e) => {
 					if (e.key === 'Enter') table.setGlobalFilter((e.currentTarget as HTMLInputElement).value);
 				}}
-				class="h-9 w-full pl-8"
 			/>
-		</div>
+		</InputGroup.Root>
 
 		{#if hasFilterColumns}
 			<div class="hidden items-center gap-1.5 md:flex">
@@ -195,7 +196,7 @@
 								<FilterIcon class="size-4" />
 								{#if activeFilterCount > 0}
 									<span
-										class="absolute -top-1 -right-1 flex size-4 items-center justify-center rounded-full bg-primary text-[10px] font-medium text-primary-foreground"
+										class="absolute -top-1 -right-1 flex size-4 items-center justify-center rounded-full bg-primary text-3xs font-medium text-primary-foreground"
 									>
 										{activeFilterCount}
 									</span>
@@ -203,7 +204,7 @@
 							</ArcaneButton>
 						{/snippet}
 					</Popover.Trigger>
-					<Popover.Content align="end" class="w-56 p-2">
+					<Popover.Content align="end" size="sm" class="w-56">
 						<div class="flex flex-col gap-1.5">
 							{@render filterList()}
 						</div>

@@ -40,7 +40,7 @@
 <Dialog.Root {open} {onOpenChange}>
 	<Dialog.Content class="max-w-md">
 		<Dialog.Header>
-			<Dialog.Title class="flex items-center gap-2">{m.custom_accent_color()}</Dialog.Title>
+			<Dialog.Title><span class="flex items-center gap-2">{m.custom_accent_color()}</span></Dialog.Title>
 			<Dialog.Description>
 				{m.custom_accent_color_description()}
 			</Dialog.Description>
@@ -49,18 +49,18 @@
 		<form onsubmit={preventDefault(applyCustomColor)}>
 			<div class="space-y-4">
 				<div>
-					<Label for="custom-color-input" class="text-sm font-medium">{m.color_value()}</Label>
+					<Label for="custom-color-input">{m.color_value()}</Label>
 					<div class="flex items-center gap-2">
 						<div class="w-full">
 							<Input id="custom-color-input" bind:value={customColorInput} placeholder="#3b82f6" class="mt-1 flex-1" />
 						</div>
 						<div
 							class={{
-								'mt-1 rounded-lg border-1 border-border transition-[height,width] duration-200 ease-in-out': true,
+								'mt-1 rounded-lg border-1 border-border bg-(--swatch) transition-all duration-200 ease-in-out': true,
 								'h-9 w-9': isValidColor(customColorInput),
 								'h-0 w-0': !isValidColor(customColorInput)
 							}}
-							style="background-color: {customColorInput}"
+							style="--swatch: {customColorInput}"
 						></div>
 					</div>
 				</div>

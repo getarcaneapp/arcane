@@ -292,7 +292,7 @@
 		bind:open={detailsOpen}
 		title={selectedBuild ? (selectedBuild.tags?.[0] ?? m.build_output()) : m.build_output()}
 		description={selectedBuild ? selectedBuild.contextDir : undefined}
-		contentClass="sm:max-w-[1100px]"
+		contentClass="sm:max-w-275"
 		class="min-h-0 lg:overflow-hidden"
 	>
 		<div class="space-y-4 pb-4">
@@ -328,16 +328,10 @@
 				{/if}
 			{/if}
 
-			<div class="grid gap-4 lg:h-[70vh] lg:grid-cols-[360px_minmax(0,1fr)] lg:items-stretch">
+			<div class="grid gap-4 lg:h-screen-70 lg:grid-cols-aside-90 lg:items-stretch">
 				<div class="min-h-0 space-y-3 lg:overflow-auto lg:overscroll-contain lg:pr-1">
 					{#each detailItems as detail (detail.label)}
-						<KeyValueCard
-							label={detail.label}
-							variant="outlined"
-							contentClass="flex flex-col gap-2 p-3"
-							labelClass="text-[10px] font-semibold tracking-[0.12em] text-muted-foreground uppercase"
-							valueClass="text-xs break-all whitespace-pre-wrap"
-						>
+						<KeyValueCard label={detail.label} variant="outlined" compact>
 							{detail.value}
 						</KeyValueCard>
 					{/each}
@@ -346,17 +340,17 @@
 					<div class="flex items-center justify-between border-b border-border/60 px-4 py-3">
 						<div class="text-sm font-medium">{m.build_output()}</div>
 						{#if selectedBuild?.outputTruncated}
-							<span class="text-xs text-amber-400">{m.build_output_truncated()}</span>
+							<span class="text-xs text-warning">{m.build_output_truncated()}</span>
 						{/if}
 					</div>
-					<div class="max-h-[60vh] min-h-[260px] overflow-auto overscroll-contain p-4 lg:max-h-none lg:min-h-0 lg:flex-1">
+					<div class="max-h-screen-60 min-h-65 overflow-auto overscroll-contain p-4 lg:max-h-none lg:min-h-0 lg:flex-1">
 						{#if detailsLoading}
 							<div class="flex h-full items-center justify-center">
-								<Spinner class="size-6 text-muted-foreground" />
+								<Spinner tone="muted" class="size-6" />
 							</div>
 						{:else if selectedBuild?.output}
 							{#if outputEntries.length > 0}
-								<div class="rounded-lg border border-border/50 bg-zinc-950/40 p-3 font-mono text-xs leading-relaxed">
+								<div class="rounded-lg border border-border/50 bg-muted/50 p-3 font-mono text-xs leading-relaxed">
 									{#each outputEntries as entry, entryIndex (entry.text + entryIndex)}
 										<div class={`break-words whitespace-pre-wrap ${entry.isError ? 'text-destructive' : 'text-foreground'}`}>
 											{entry.text}

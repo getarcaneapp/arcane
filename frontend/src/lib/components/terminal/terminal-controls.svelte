@@ -58,7 +58,7 @@
 
 <div class="flex items-center gap-2">
 	<Select.Root value={selectedShell} type="single" onValueChange={handleShellChange}>
-		<Select.Trigger class="h-8 w-[140px]">
+		<Select.Trigger class="h-8 w-35">
 			{shellLabels[selectedShell] ?? m.select_shell_placeholder()}
 		</Select.Trigger>
 		<Select.Content>
@@ -75,7 +75,7 @@
 			type="text"
 			bind:value={customShell}
 			placeholder={m.shell_custom_placeholder()}
-			class="h-8 w-[180px]"
+			class="h-8 w-45"
 			onkeydown={(e) => {
 				if (e.key === 'Enter') {
 					handleCustomShellSubmit();

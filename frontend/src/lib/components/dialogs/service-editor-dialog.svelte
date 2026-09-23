@@ -378,7 +378,7 @@
 	}
 </script>
 
-<ResponsiveDialog bind:open onOpenChange={handleOpenChange} variant="sheet" {title} {description} contentClass="sm:max-w-[600px]">
+<ResponsiveDialog bind:open onOpenChange={handleOpenChange} variant="sheet" {title} {description} contentClass="sm:max-w-150">
 	{#snippet children()}
 		<form onsubmit={preventDefault(handleSubmit)} class="space-y-6 py-4">
 			{#if specParseError}
@@ -420,138 +420,158 @@
 			</div>
 
 			<!-- Advanced Options -->
-			<Accordion.Root class="w-full space-y-5" type="multiple">
-				<!-- Ports -->
-				<Accordion.Item value="ports">
-					<Accordion.Trigger class="text-sm font-medium">{m.common_ports()}</Accordion.Trigger>
-					<Accordion.Content class="pt-6 pb-5">
-						<div class="space-y-4">
-							{#each form.ports as port, i (port)}
-								<div class="flex items-center gap-4">
-									<Input placeholder="8080" bind:value={port.target} disabled={isLoading} class="flex-1" />
-									<span class="text-muted-foreground">:</span>
-									<Input placeholder="80" bind:value={port.published} disabled={isLoading} class="flex-1" />
-									<Select.Root type="single" bind:value={port.protocol} disabled={isLoading}>
-										<Select.Trigger class="w-20">
-											<span class="uppercase">{port.protocol}</span>
-										</Select.Trigger>
-										<Select.Content>
-											<Select.Item value="tcp" label="TCP">TCP</Select.Item>
-											<Select.Item value="udp" label="UDP">UDP</Select.Item>
-										</Select.Content>
-									</Select.Root>
-									<ArcaneButton action="remove" size="sm" onclick={() => removePort(i)} disabled={isLoading} icon={TrashIcon} />
-								</div>
-							{/each}
-							<ArcaneButton
-								action="create"
-								size="sm"
-								onclick={addPort}
-								disabled={isLoading}
-								icon={AddIcon}
-								customLabel={m.swarm_service_form_add_port()}
-							/>
-						</div>
-					</Accordion.Content>
-				</Accordion.Item>
+			<Accordion.Root class="w-full" type="multiple">
+				<div class="space-y-5">
+					<!-- Ports -->
+					<Accordion.Item value="ports">
+						<Accordion.Trigger>{m.common_ports()}</Accordion.Trigger>
+						<Accordion.Content>
+							<div class="space-y-4 pt-6 pb-5">
+								{#each form.ports as port, i (port)}
+									<div class="flex items-center gap-4">
+										<Input placeholder="8080" bind:value={port.target} disabled={isLoading} class="flex-1" />
+										<span class="text-muted-foreground">:</span>
+										<Input placeholder="80" bind:value={port.published} disabled={isLoading} class="flex-1" />
+										<Select.Root type="single" bind:value={port.protocol} disabled={isLoading}>
+											<Select.Trigger class="w-20">
+												<span class="uppercase">{port.protocol}</span>
+											</Select.Trigger>
+											<Select.Content>
+												<Select.Item value="tcp" label="TCP">TCP</Select.Item>
+												<Select.Item value="udp" label="UDP">UDP</Select.Item>
+											</Select.Content>
+										</Select.Root>
+										<ArcaneButton action="remove" size="sm" onclick={() => removePort(i)} disabled={isLoading} icon={TrashIcon} />
+									</div>
+								{/each}
+								<ArcaneButton
+									action="create"
+									size="sm"
+									onclick={addPort}
+									disabled={isLoading}
+									icon={AddIcon}
+									customLabel={m.swarm_service_form_add_port()}
+								/>
+							</div>
+						</Accordion.Content>
+					</Accordion.Item>
 
-				<!-- Environment Variables -->
-				<Accordion.Item value="env">
-					<Accordion.Trigger class="text-sm font-medium">{m.common_environment_variables()}</Accordion.Trigger>
-					<Accordion.Content class="pt-6 pb-5">
-						<div class="space-y-4">
-							{#each form.envVars as env, i (env)}
-								<div class="flex items-center gap-4">
-									<Input placeholder="KEY" bind:value={env.key} disabled={isLoading} class="flex-1" />
-									<span class="text-muted-foreground">=</span>
-									<Input placeholder="value" bind:value={env.value} disabled={isLoading} class="flex-1" />
-									<ArcaneButton action="remove" size="sm" onclick={() => removeEnvVar(i)} disabled={isLoading} icon={TrashIcon} />
-								</div>
-							{/each}
-							<ArcaneButton
-								action="create"
-								size="sm"
-								onclick={addEnvVar}
-								disabled={isLoading}
-								icon={AddIcon}
-								customLabel={m.swarm_service_form_add_variable()}
-							/>
-						</div>
-					</Accordion.Content>
-				</Accordion.Item>
+					<!-- Environment Variables -->
+					<Accordion.Item value="env">
+						<Accordion.Trigger>{m.common_environment_variables()}</Accordion.Trigger>
+						<Accordion.Content>
+							<div class="space-y-4 pt-6 pb-5">
+								{#each form.envVars as env, i (env)}
+									<div class="flex items-center gap-4">
+										<Input placeholder="KEY" bind:value={env.key} disabled={isLoading} class="flex-1" />
+										<span class="text-muted-foreground">=</span>
+										<Input placeholder="value" bind:value={env.value} disabled={isLoading} class="flex-1" />
+										<ArcaneButton
+											action="remove"
+											size="sm"
+											onclick={() => removeEnvVar(i)}
+											disabled={isLoading}
+											icon={TrashIcon}
+										/>
+									</div>
+								{/each}
+								<ArcaneButton
+									action="create"
+									size="sm"
+									onclick={addEnvVar}
+									disabled={isLoading}
+									icon={AddIcon}
+									customLabel={m.swarm_service_form_add_variable()}
+								/>
+							</div>
+						</Accordion.Content>
+					</Accordion.Item>
 
-				<!-- Mounts -->
-				<Accordion.Item value="mounts">
-					<Accordion.Trigger class="text-sm font-medium">{m.swarm_service_form_mounts()}</Accordion.Trigger>
-					<Accordion.Content class="pt-6 pb-5">
-						<div class="space-y-4">
-							{#each form.mounts as mount, i (mount)}
-								<div class="flex items-center gap-4">
-									<Select.Root type="single" bind:value={mount.type} disabled={isLoading}>
-										<Select.Trigger class="w-24">
-											<span class="capitalize">{mount.type}</span>
-										</Select.Trigger>
-										<Select.Content>
-											<Select.Item value="volume" label="Volume">Volume</Select.Item>
-											<Select.Item value="bind" label="Bind">Bind</Select.Item>
-										</Select.Content>
-									</Select.Root>
-									<Input placeholder="source" bind:value={mount.source} disabled={isLoading} class="flex-1" />
-									<span class="text-muted-foreground">→</span>
-									<Input placeholder="/target" bind:value={mount.target} disabled={isLoading} class="flex-1" />
-									<ArcaneButton action="remove" size="sm" onclick={() => removeMount(i)} disabled={isLoading} icon={TrashIcon} />
-								</div>
-							{/each}
-							<ArcaneButton
-								action="create"
-								size="sm"
-								onclick={addMount}
-								disabled={isLoading}
-								icon={AddIcon}
-								customLabel={m.swarm_service_form_add_mount()}
-							/>
-						</div>
-					</Accordion.Content>
-				</Accordion.Item>
+					<!-- Mounts -->
+					<Accordion.Item value="mounts">
+						<Accordion.Trigger>{m.swarm_service_form_mounts()}</Accordion.Trigger>
+						<Accordion.Content>
+							<div class="space-y-4 pt-6 pb-5">
+								{#each form.mounts as mount, i (mount)}
+									<div class="flex items-center gap-4">
+										<Select.Root type="single" bind:value={mount.type} disabled={isLoading}>
+											<Select.Trigger class="w-24">
+												<span class="capitalize">{mount.type}</span>
+											</Select.Trigger>
+											<Select.Content>
+												<Select.Item value="volume" label="Volume">Volume</Select.Item>
+												<Select.Item value="bind" label="Bind">Bind</Select.Item>
+											</Select.Content>
+										</Select.Root>
+										<Input placeholder="source" bind:value={mount.source} disabled={isLoading} class="flex-1" />
+										<span class="text-muted-foreground">→</span>
+										<Input placeholder="/target" bind:value={mount.target} disabled={isLoading} class="flex-1" />
+										<ArcaneButton
+											action="remove"
+											size="sm"
+											onclick={() => removeMount(i)}
+											disabled={isLoading}
+											icon={TrashIcon}
+										/>
+									</div>
+								{/each}
+								<ArcaneButton
+									action="create"
+									size="sm"
+									onclick={addMount}
+									disabled={isLoading}
+									icon={AddIcon}
+									customLabel={m.swarm_service_form_add_mount()}
+								/>
+							</div>
+						</Accordion.Content>
+					</Accordion.Item>
 
-				<!-- Labels -->
-				<Accordion.Item value="labels">
-					<Accordion.Trigger class="text-sm font-medium">{m.common_labels()}</Accordion.Trigger>
-					<Accordion.Content class="pt-6 pb-5">
-						<div class="space-y-4">
-							{#each form.labels as label, i (label)}
-								<div class="flex items-center gap-4">
-									<Input placeholder="key" bind:value={label.key} disabled={isLoading} class="flex-1" />
-									<span class="text-muted-foreground">=</span>
-									<Input placeholder="value" bind:value={label.value} disabled={isLoading} class="flex-1" />
-									<ArcaneButton action="remove" size="sm" onclick={() => removeLabel(i)} disabled={isLoading} icon={TrashIcon} />
-								</div>
-							{/each}
-							<ArcaneButton
-								action="create"
-								size="sm"
-								onclick={addLabel}
-								disabled={isLoading}
-								icon={AddIcon}
-								customLabel={m.add_label()}
-							/>
-						</div>
-					</Accordion.Content>
-				</Accordion.Item>
+					<!-- Labels -->
+					<Accordion.Item value="labels">
+						<Accordion.Trigger>{m.common_labels()}</Accordion.Trigger>
+						<Accordion.Content>
+							<div class="space-y-4 pt-6 pb-5">
+								{#each form.labels as label, i (label)}
+									<div class="flex items-center gap-4">
+										<Input placeholder="key" bind:value={label.key} disabled={isLoading} class="flex-1" />
+										<span class="text-muted-foreground">=</span>
+										<Input placeholder="value" bind:value={label.value} disabled={isLoading} class="flex-1" />
+										<ArcaneButton
+											action="remove"
+											size="sm"
+											onclick={() => removeLabel(i)}
+											disabled={isLoading}
+											icon={TrashIcon}
+										/>
+									</div>
+								{/each}
+								<ArcaneButton
+									action="create"
+									size="sm"
+									onclick={addLabel}
+									disabled={isLoading}
+									icon={AddIcon}
+									customLabel={m.add_label()}
+								/>
+							</div>
+						</Accordion.Content>
+					</Accordion.Item>
 
-				<!-- Advanced Container Config -->
-				<Accordion.Item value="advanced">
-					<Accordion.Trigger class="text-sm font-medium">{m.swarm_service_form_advanced()}</Accordion.Trigger>
-					<Accordion.Content class="pt-6 pb-5">
-						<div class="space-y-5">
-							<FormInput input={form.command} label={m.common_command()} placeholder="/bin/sh" disabled={isLoading} />
-							<FormInput input={form.args} label={m.common_args()} placeholder="-c echo hello" disabled={isLoading} />
-							<FormInput input={form.workingDir} label={m.common_working_directory()} placeholder="/app" disabled={isLoading} />
-							<FormInput input={form.user} label={m.common_user()} placeholder="1000:1000" disabled={isLoading} />
-							<FormInput input={form.hostname} label={m.hostname()} placeholder="my-service" disabled={isLoading} />
-						</div>
-					</Accordion.Content>
-				</Accordion.Item>
+					<!-- Advanced Container Config -->
+					<Accordion.Item value="advanced">
+						<Accordion.Trigger>{m.swarm_service_form_advanced()}</Accordion.Trigger>
+						<Accordion.Content>
+							<div class="space-y-5 pt-6 pb-5">
+								<FormInput input={form.command} label={m.common_command()} placeholder="/bin/sh" disabled={isLoading} />
+								<FormInput input={form.args} label={m.common_args()} placeholder="-c echo hello" disabled={isLoading} />
+								<FormInput input={form.workingDir} label={m.common_working_directory()} placeholder="/app" disabled={isLoading} />
+								<FormInput input={form.user} label={m.common_user()} placeholder="1000:1000" disabled={isLoading} />
+								<FormInput input={form.hostname} label={m.hostname()} placeholder="my-service" disabled={isLoading} />
+							</div>
+						</Accordion.Content>
+					</Accordion.Item>
+				</div>
 			</Accordion.Root>
 		</form>
 	{/snippet}

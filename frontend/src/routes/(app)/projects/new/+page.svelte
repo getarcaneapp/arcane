@@ -138,8 +138,8 @@
 	});
 	const newProjectWorkspaceEntries = $derived(workspaceDraft.entries);
 	const newProjectWorkspaceLeadingRows = [
-		{ key: 'compose', label: 'compose.yaml', iconClass: 'text-blue-500', locked: true },
-		{ key: 'env', label: '.env', iconClass: 'text-green-500', locked: true }
+		{ key: 'compose', label: 'compose.yaml', iconClass: 'text-info', locked: true },
+		{ key: 'env', label: '.env', iconClass: 'text-success', locked: true }
 	];
 	let treeOutlineOpen = $state(false);
 	let treeDiffOpen = $state(false);
@@ -151,7 +151,7 @@
 			key,
 			label: key === 'compose' ? 'compose.yaml' : key === 'env' ? '.env' : workspaceFileBasename(key.slice(5)),
 			title: key === 'compose' ? 'compose.yaml' : key === 'env' ? '.env' : key.slice(5),
-			iconClass: key === 'compose' ? 'text-blue-500' : key === 'env' ? 'text-green-500' : 'text-muted-foreground',
+			iconClass: key === 'compose' ? 'text-info' : key === 'env' ? 'text-success' : 'text-muted-foreground',
 			pending: false
 		}))
 	);
@@ -397,9 +397,9 @@
 				</div>
 
 				{#if templateLoadNotices.length > 0}
-					<Alert.Root variant="warning" class="py-2 [&>svg]:top-2">
+					<Alert.Root variant="warning" size="sm">
 						<AlertIcon class="size-4" />
-						<Alert.Description class="text-xs">
+						<Alert.Description>
 							{#each templateLoadNotices as notice (notice)}
 								<p>{notice}</p>
 							{/each}

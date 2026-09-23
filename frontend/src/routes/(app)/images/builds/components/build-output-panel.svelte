@@ -40,9 +40,9 @@
 						buildError
 							? 'bg-destructive'
 							: hasReachedComplete
-								? 'bg-green-500'
+								? 'bg-success'
 								: isBuilding
-									? 'animate-pulse bg-blue-500'
+									? 'animate-pulse bg-info'
 									: 'bg-muted-foreground/30'
 					}`}
 				></div>
@@ -64,14 +64,14 @@
 	<!-- Terminal output with refined styling -->
 	<div
 		{@attach autoScrollToBottom}
-		class="group relative min-h-0 flex-1 overflow-auto rounded-2xl border border-border/50 bg-zinc-950 p-5 font-mono text-[13px] leading-[1.7] text-zinc-50 shadow-2xl shadow-black/50 dark:bg-zinc-950"
+		class="group dark relative min-h-0 flex-1 overflow-auto rounded-2xl border border-border/50 bg-background p-5 font-mono text-xs-plus leading-relaxed text-foreground shadow-2xl shadow-black/50"
 	>
 		<div class="relative">
 			{#if logLines.length === 0}
-				<div class="flex min-h-[200px] items-center justify-center">
+				<div class="flex min-h-50 items-center justify-center">
 					<div class="text-center">
-						<TerminalIcon class="mx-auto mb-3 size-8 text-zinc-700" />
-						<p class="text-sm text-zinc-500">{m.build_output_placeholder()}</p>
+						<TerminalIcon class="mx-auto mb-3 size-8 text-muted-foreground/50" />
+						<p class="text-sm text-muted-foreground">{m.build_output_placeholder()}</p>
 					</div>
 				</div>
 			{:else}

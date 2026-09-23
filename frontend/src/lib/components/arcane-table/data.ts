@@ -76,27 +76,27 @@ export const vulnerabilitySeverityFilters: FilterOption[] = [
 	{
 		value: 'CRITICAL',
 		label: m.vuln_severity_critical(),
-		dotClass: 'bg-red-500'
+		dotClass: 'bg-destructive'
 	},
 	{
 		value: 'HIGH',
 		label: m.vuln_severity_high(),
-		dotClass: 'bg-orange-500'
+		dotClass: 'bg-orange'
 	},
 	{
 		value: 'MEDIUM',
 		label: m.vuln_severity_medium(),
-		dotClass: 'bg-amber-500'
+		dotClass: 'bg-warning'
 	},
 	{
 		value: 'LOW',
 		label: m.vuln_severity_low(),
-		dotClass: 'bg-emerald-500'
+		dotClass: 'bg-success'
 	},
 	{
 		value: 'UNKNOWN',
 		label: m.common_unknown(),
-		dotClass: 'bg-slate-400'
+		dotClass: 'bg-muted-foreground'
 	}
 ];
 

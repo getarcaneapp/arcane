@@ -76,7 +76,7 @@
 			/>
 		</div>
 	</Card.Header>
-	<Card.Content class="flex min-h-0 flex-1 flex-col p-0">
+	<div class="flex min-h-0 flex-1 flex-col">
 		<LogViewer
 			class="min-h-0 flex-1"
 			searchTerm={logSearchTerm}
@@ -93,5 +93,5 @@
 			onStart={() => (isStreaming = true)}
 			onStop={() => (isStreaming = false)}
 		/>
-	</Card.Content>
+	</div>
 </Card.Root>

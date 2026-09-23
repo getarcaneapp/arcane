@@ -134,7 +134,7 @@
 		<span class="font-mono text-muted-foreground select-none">••••••••</span>
 	{:else}
 		<div class="flex items-center gap-2">
-			<span class="max-w-[280px] truncate font-mono text-sm">{item.value}</span>
+			<span class="max-w-70 truncate font-mono text-sm">{item.value}</span>
 			<CopyButton text={item.value} class="size-6" />
 		</div>
 	{/if}
@@ -147,7 +147,9 @@
 		{@const names = scopeNames(item)}
 		<div class="flex flex-wrap items-center gap-1">
 			{#each item.environmentIds.slice(0, 2) as environmentId (environmentId)}
-				<Badge variant="outline" size="sm" class="max-w-40 truncate">{envNameById.get(environmentId) ?? environmentId}</Badge>
+				<Badge variant="outline" size="sm" class="max-w-40"
+					><span class="block min-w-0 truncate">{envNameById.get(environmentId) ?? environmentId}</span></Badge
+				>
 			{/each}
 			{#if names.length > 2}
 				<Badge variant="gray" size="sm">{m.plus_count({ count: names.length - 2 })}</Badge>

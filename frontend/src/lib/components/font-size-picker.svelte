@@ -43,7 +43,7 @@
 	}
 </script>
 
-<div class={`font-size-picker flex items-center gap-3 ${className}`}>
+<div class={`flex items-center gap-3 ${className}`}>
 	<Slider.Root
 		type="single"
 		bind:value={currentSize}

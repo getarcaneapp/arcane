@@ -28,7 +28,6 @@
 		<Sidebar.MenuButton
 			size="lg"
 			tooltipContent={environmentStore.selected ? environmentStore.selected.name : m.sidebar_no_environment()}
-			class="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
 			onclick={() => onOpenDialog?.()}
 		>
 			{#if environmentStore.selected}

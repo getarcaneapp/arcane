@@ -32,7 +32,7 @@
 	<span class="grid min-w-0 flex-1 leading-tight">
 		<span class="truncate text-xs font-medium">{label}</span>
 		{#if versionChip}
-			<span class="truncate text-[11px] text-muted-foreground tabular-nums">{versionChip}</span>
+			<span class="truncate text-2xs text-muted-foreground tabular-nums">{versionChip}</span>
 		{/if}
 	</span>
 	<ArrowRightIcon

@@ -513,7 +513,7 @@
 		</div>
 	{:else if browser && isReady}
 		<div
-			class="network-diagram-shell overflow-hidden rounded-[28px] border"
+			class="network-diagram-shell overflow-hidden rounded-3xl border"
 			style:--diagram-shell-background={canvasTheme.shellBackground}
 			style:--diagram-shell-border={canvasTheme.shellBorder}
 			style:--diagram-shell-shadow={canvasTheme.shellShadow}

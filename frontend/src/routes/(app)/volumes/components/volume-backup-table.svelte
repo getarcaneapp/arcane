@@ -24,7 +24,7 @@
 		UploadIcon,
 		ArrowDownIcon
 	} from '#lib/icons/index.js';
-	import { ArcaneButton, arcaneButtonVariants } from '#lib/components/arcane-button/index.js';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import * as ButtonGroup from '#lib/components/ui/button-group/index.js';
 	import { toast } from 'svelte-sonner';
 	import { bytes, formatDateTimeShort } from '#lib/utils/formatting.js';
@@ -55,7 +55,6 @@
 	import BackupSizeCell from '#lib/components/arcane-table/cells/backup-size-cell.svelte';
 	import CreatedAtCell from '#lib/components/arcane-table/cells/created-at-cell.svelte';
 	import BackupManagementCell from '#lib/components/arcane-table/cells/backup-management-cell.svelte';
-	import { cn } from '#lib/utils.js';
 	import { bulkConfirmAndRun } from '#lib/utils/bulk-actions.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import {
@@ -562,12 +561,18 @@
 				/>
 				{#if canListS3Destinations}
 					<DropdownMenu.Root>
-						<DropdownMenu.Trigger
-							class={cn(arcaneButtonVariants({ tone: 'outline-primary', size: 'icon' }), 'size-8 rounded-md')}
-							aria-label={m.common_open_menu()}
-							disabled={creating || backupActivity.activeIds.length > 0}
-						>
-							<ArrowDownIcon class="size-4" />
+						<DropdownMenu.Trigger disabled={creating || backupActivity.activeIds.length > 0}>
+							{#snippet child({ props })}
+								<ArcaneButton
+									{...props}
+									action="base"
+									tone="outline-primary"
+									size="icon"
+									icon={ArrowDownIcon}
+									class="size-8 rounded-md"
+									aria-label={m.common_open_menu()}
+								/>
+							{/snippet}
 						</DropdownMenu.Trigger>
 						<DropdownMenu.Content align="end" class="w-64">
 							<DropdownMenu.Label>{m.backups_destination_label()}</DropdownMenu.Label>
@@ -679,26 +684,26 @@
 		{/each}
 	</div>
 
-	<Alert.Root class="py-2 [&>svg]:top-2">
+	<Alert.Root size="sm">
 		<InfoIcon class="size-4" />
-		<Alert.Description class="text-xs">
+		<Alert.Description>
 			{m.volume_backup_encryption_note()}
 		</Alert.Description>
 	</Alert.Root>
 
 	{#if backupWarnings.length > 0}
-		<Alert.Root variant="warning" class="py-2 [&>svg]:top-2">
+		<Alert.Root variant="warning" size="sm">
 			<AlertIcon class="size-4" />
-			<Alert.Description class="text-xs">
+			<Alert.Description>
 				{backupWarnings[0]}
 			</Alert.Description>
 		</Alert.Root>
 	{/if}
 
 	{#if s3DestinationsError}
-		<Alert.Root variant="destructive" class="py-2 [&>svg]:top-2">
+		<Alert.Root variant="destructive" size="sm">
 			<AlertIcon class="size-4" />
-			<Alert.Description class="text-xs">
+			<Alert.Description>
 				{m.s3_destinations_load_failed()}: {s3DestinationsError}
 			</Alert.Description>
 		</Alert.Root>
@@ -724,13 +729,13 @@
 	bind:open={showRestoreFiles}
 	title={m.volume_restore_files()}
 	description={m.volumes_backup_restore_desc()}
-	contentClass="sm:max-w-[640px]"
+	contentClass="sm:max-w-160"
 >
 	{#snippet children()}
 		<div class="space-y-3 py-2">
-			<Alert.Root class="py-2 [&>svg]:top-2">
+			<Alert.Root size="sm">
 				<InfoIcon class="size-4" />
-				<Alert.Description class="text-xs">
+				<Alert.Description>
 					{m.volume_backup_restore_files_lifecycle_info()}
 				</Alert.Description>
 			</Alert.Root>
@@ -746,17 +751,17 @@
 				{/key}
 			{/if}
 
-			<Alert.Root variant="warning" class="py-2 [&>svg]:top-2">
+			<Alert.Root variant="warning" size="sm">
 				<AlertIcon class="size-4" />
-				<Alert.Description class="text-xs">
+				<Alert.Description>
 					{m.volumes_backup_overwrite_warning()}
 				</Alert.Description>
 			</Alert.Root>
 
 			{#if hasWorkspaceChanges}
-				<Alert.Root variant="warning" class="py-2 [&>svg]:top-2">
+				<Alert.Root variant="warning" size="sm">
 					<AlertIcon class="size-4" />
-					<Alert.Description class="text-xs">
+					<Alert.Description>
 						{m.volumes_backup_restore_discard_changes()}
 					</Alert.Description>
 				</Alert.Root>
@@ -787,7 +792,7 @@
 	bind:open={showS3DestinationDialog}
 	title={m.volume_backup_choose_s3_destination()}
 	description={m.volume_backup_choose_s3_destination_description()}
-	contentClass="sm:max-w-[520px]"
+	contentClass="sm:max-w-130"
 >
 	{#snippet children()}
 		<div class="py-2">

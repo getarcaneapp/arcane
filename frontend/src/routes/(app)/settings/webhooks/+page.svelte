@@ -102,8 +102,8 @@
 							}}
 						/>
 					</div>
-					<div class="rounded-lg border border-yellow-200 bg-yellow-50 p-4 dark:border-yellow-800 dark:bg-yellow-900/20">
-						<p class="text-sm text-yellow-800 dark:text-yellow-200">
+					<div class="rounded-lg border border-warning/30 bg-warning/10 p-4">
+						<p class="text-sm text-warning">
 							<strong>{m.common_important()}:</strong>
 							{m.webhook_token_warning()}
 						</p>

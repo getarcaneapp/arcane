@@ -46,13 +46,13 @@
 			key,
 			label: key === 'compose' ? 'compose.yaml' : '.env',
 			title: key === 'compose' ? 'compose.yaml' : '.env',
-			iconClass: key === 'compose' ? 'text-blue-500' : 'text-green-500',
+			iconClass: key === 'compose' ? 'text-info' : 'text-success',
 			pending: false
 		}))
 	);
 	const sourceWorkspaceLeadingRows = [
-		{ key: 'compose', label: 'compose.yaml', iconClass: 'text-blue-500', locked: true },
-		{ key: 'env', label: '.env', iconClass: 'text-green-500', locked: true }
+		{ key: 'compose', label: 'compose.yaml', iconClass: 'text-info', locked: true },
+		{ key: 'env', label: '.env', iconClass: 'text-success', locked: true }
 	];
 
 	function openSourceTab(key: string) {
@@ -240,24 +240,24 @@
 			title: m.services(),
 			value: totalServices,
 			icon: DockIcon,
-			iconColor: 'text-blue-500'
+			iconColor: 'text-info'
 		},
 		{
 			title: m.tasks(),
 			value: totalTasks,
 			icon: JobsIcon,
-			iconColor: 'text-indigo-500'
+			iconColor: 'text-indigo'
 		}
 	]);
 </script>
 
 <ResourcePageLayout title={stackName} subtitle={stackSubtitle} icon={LayersIcon} {actionButtons} {statCards}>
 	{#snippet mainContent()}
-		<div class="flex min-h-[calc(100vh-18rem)] flex-col gap-4">
+		<div class="flex min-h-screen-inset-18 flex-col gap-4">
 			{#if !hasLiveStack && canViewSource}
 				<Card.Root variant="subtle">
-					<Card.Content class="p-4 text-sm">
-						{m.swarm_stacks_not_deployed_files_found()}
+					<Card.Content>
+						<p class="text-sm">{m.swarm_stacks_not_deployed_files_found()}</p>
 					</Card.Content>
 				</Card.Root>
 			{/if}
@@ -355,12 +355,14 @@
 						</div>
 					{:else if sourceState === 'loading'}
 						<Card.Root variant="subtle">
-							<Card.Content class="p-6 text-center text-sm text-muted-foreground">{m.swarm_stack_source_loading()}</Card.Content>
+							<Card.Content>
+								<p class="text-center text-sm text-muted-foreground">{m.swarm_stack_source_loading()}</p>
+							</Card.Content>
 						</Card.Root>
 					{:else if sourceState === 'missing'}
 						<Card.Root variant="subtle">
-							<Card.Content class="p-6 text-sm">
-								<div class="space-y-2">
+							<Card.Content>
+								<div class="space-y-2 text-sm">
 									<p class="font-medium">{m.common_not_found_title({ resource: 'Saved source' })}</p>
 									<p class="text-muted-foreground">
 										{m.common_not_found_description({ resource: 'saved source' })}
@@ -370,8 +372,8 @@
 						</Card.Root>
 					{:else if sourceState === 'error'}
 						<Card.Root variant="subtle">
-							<Card.Content class="p-6 text-sm">
-								<div class="space-y-2">
+							<Card.Content>
+								<div class="space-y-2 text-sm">
 									<p class="font-medium">{m.common_action_failed()}</p>
 									<p class="text-muted-foreground">{m.swarm_stack_source_load_error()}</p>
 								</div>

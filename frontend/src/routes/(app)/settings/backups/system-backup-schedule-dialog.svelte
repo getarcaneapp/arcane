@@ -144,7 +144,7 @@
 			removed: m.system_backups_schedule_removed()
 		}}
 		onSaved={onSystemSaved}
-		contentClass="sm:max-w-[760px]"
+		contentClass="sm:max-w-190"
 	/>
 {:else}
 	<BackupPolicyDialog
@@ -169,6 +169,6 @@
 			removed: m.system_volume_backups_schedule_removed()
 		}}
 		onSaved={onVolumeSaved}
-		contentClass="sm:max-w-[760px]"
+		contentClass="sm:max-w-190"
 	/>
 {/if}

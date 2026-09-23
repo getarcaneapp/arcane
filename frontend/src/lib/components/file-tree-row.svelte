@@ -56,10 +56,10 @@
 
 <div
 	class={cn(
-		'group flex min-h-8 w-full items-center gap-1.5 rounded-md pr-2 text-[13px] hover:bg-accent',
+		'group flex min-h-8 w-full items-center gap-1.5 rounded-md pr-2 pl-(--indent) text-xs-plus hover:bg-accent',
 		selected && 'bg-accent'
 	)}
-	style={`padding-left: ${0.5 + depth * 1}rem`}
+	style={`--indent: ${0.5 + depth * 1}rem`}
 	data-path={path}
 	data-directory={isDirectory}
 >
@@ -99,9 +99,9 @@
 	>
 		{#if isDirectory}
 			<span class="relative size-4 shrink-0">
-				<FolderOpenIcon class={cn('size-4 text-amber-500', loading && 'opacity-40')} />
+				<FolderOpenIcon class={cn('size-4 text-warning', loading && 'opacity-40')} />
 				{#if loading}
-					<Spinner aria-hidden="true" class="absolute inset-0 size-4 text-foreground" />
+					<Spinner aria-hidden="true" tone="foreground" class="absolute inset-0 size-4" />
 				{/if}
 			</span>
 		{:else}

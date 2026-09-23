@@ -51,13 +51,7 @@
 		<div class="flex flex-wrap items-center justify-between gap-2 py-2.5">
 			<span class="text-sm font-semibold">{m.events_metadata_title()}</span>
 			<div class="flex items-center gap-2">
-				<CopyButton
-					text={eventJson}
-					variant="ghost"
-					size="default"
-					class="h-8 px-2 text-xs"
-					title={m.events_copy_full_event_json_title()}
-				>
+				<CopyButton text={eventJson} variant="ghost" size="sm" title={m.events_copy_full_event_json_title()}>
 					<span class="text-xs">{m.common_copy_json()}</span>
 				</CopyButton>
 				<ArcaneButton
@@ -77,7 +71,7 @@
 			<div class="max-h-80 overflow-auto border-t border-border/50">
 				{#each metadataEntries as entry (entry.key)}
 					<div
-						class="grid grid-cols-[minmax(0,1fr)_minmax(0,2fr)] items-start gap-3 border-b border-border/50 py-2 last:border-b-0 sm:grid-cols-[minmax(0,260px)_minmax(0,1fr)]"
+						class="grid grid-cols-split-1-2 items-start gap-3 border-b border-border/50 py-2 last:border-b-0 sm:grid-cols-aside-65"
 					>
 						<div class="font-mono text-xs break-all text-muted-foreground">{entry.key}</div>
 						<pre class="font-mono text-xs leading-relaxed break-all whitespace-pre-wrap">{entry.value}</pre>

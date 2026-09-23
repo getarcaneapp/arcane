@@ -3,7 +3,6 @@
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { SettingsPageLayout } from '#lib/layouts/index.js';
-	import { Label } from '#lib/components/ui/label/index.js';
 	import { ActivityIcon } from '#lib/icons/index.js';
 	import TextInputWithLabel from '#lib/components/form/text-input-with-label.svelte';
 	import { createSettingsForm } from '#lib/utils/settings-form.js';
@@ -45,64 +44,35 @@
 	{#snippet mainContent()}
 		<fieldset disabled={isReadOnly} class="relative space-y-8">
 			<div class="space-y-4">
-				<h3 class="text-lg font-medium">{m.activity_history_section_title()}</h3>
-				<div class="rounded-lg border bg-card shadow-sm">
-					<div class="space-y-6 p-6">
-						<div class="grid gap-4 md:grid-cols-[1fr_1.5fr] md:gap-8">
-							<div>
-								<Label class="text-base">{m.activity_history_retention_days()}</Label>
-								<p class="mt-1 text-sm text-muted-foreground">{m.activity_history_retention_days_description()}</p>
-							</div>
-							<div class="max-w-xs">
-								<TextInputWithLabel
-									bind:value={formInputs.activityHistoryRetentionDays.value}
-									error={formInputs.activityHistoryRetentionDays.error}
-									label={m.activity_history_retention_days()}
-									placeholder={m.activity_history_retention_days_placeholder()}
-									helpText={m.activity_history_retention_days_help()}
-									type="number"
-								/>
-							</div>
-						</div>
-
-						<div class="border-t pt-6">
-							<div class="grid gap-4 md:grid-cols-[1fr_1.5fr] md:gap-8">
-								<div>
-									<Label class="text-base">{m.activity_history_max_entries()}</Label>
-									<p class="mt-1 text-sm text-muted-foreground">{m.activity_history_max_entries_description()}</p>
-								</div>
-								<div class="max-w-xs">
-									<TextInputWithLabel
-										bind:value={formInputs.activityHistoryMaxEntries.value}
-										error={formInputs.activityHistoryMaxEntries.error}
-										label={m.activity_history_max_entries()}
-										placeholder={m.activity_history_max_entries_placeholder()}
-										helpText={m.activity_history_max_entries_help()}
-										type="number"
-									/>
-								</div>
-							</div>
-						</div>
-
-						<div class="border-t pt-6">
-							<div class="grid gap-4 md:grid-cols-[1fr_1.5fr] md:gap-8">
-								<div>
-									<Label class="text-base">{m.activity_max_concurrent()}</Label>
-									<p class="mt-1 text-sm text-muted-foreground">{m.activity_max_concurrent_description()}</p>
-								</div>
-								<div class="max-w-xs">
-									<TextInputWithLabel
-										bind:value={formInputs.maxConcurrentActivities.value}
-										error={formInputs.maxConcurrentActivities.error}
-										label={m.activity_max_concurrent()}
-										placeholder={m.activity_max_concurrent_placeholder()}
-										helpText={m.activity_max_concurrent_help()}
-										type="number"
-									/>
-								</div>
-							</div>
-						</div>
-					</div>
+				<h3 class="text-base font-semibold">{m.activity_history_section_title()}</h3>
+				<div class="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+					<TextInputWithLabel
+						bind:value={formInputs.activityHistoryRetentionDays.value}
+						error={formInputs.activityHistoryRetentionDays.error}
+						label={m.activity_history_retention_days()}
+						description={m.activity_history_retention_days_description()}
+						placeholder={m.activity_history_retention_days_placeholder()}
+						helpText={m.activity_history_retention_days_help()}
+						type="number"
+					/>
+					<TextInputWithLabel
+						bind:value={formInputs.activityHistoryMaxEntries.value}
+						error={formInputs.activityHistoryMaxEntries.error}
+						label={m.activity_history_max_entries()}
+						description={m.activity_history_max_entries_description()}
+						placeholder={m.activity_history_max_entries_placeholder()}
+						helpText={m.activity_history_max_entries_help()}
+						type="number"
+					/>
+					<TextInputWithLabel
+						bind:value={formInputs.maxConcurrentActivities.value}
+						error={formInputs.maxConcurrentActivities.error}
+						label={m.activity_max_concurrent()}
+						description={m.activity_max_concurrent_description()}
+						placeholder={m.activity_max_concurrent_placeholder()}
+						helpText={m.activity_max_concurrent_help()}
+						type="number"
+					/>
 				</div>
 			</div>
 		</fieldset>

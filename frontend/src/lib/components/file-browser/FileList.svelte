@@ -158,7 +158,7 @@
 {#snippet NameCell({ item }: { item: FileEntry })}
 	<div class="flex items-center gap-2">
 		{#if item.isDirectory}
-			<FolderOpenIcon class={minimal ? 'size-4 text-muted-foreground' : 'size-4 text-blue-500'} />
+			<FolderOpenIcon class={minimal ? 'size-4 text-muted-foreground' : 'size-4 text-info'} />
 			<button class="text-left font-medium hover:underline" onclick={() => onNavigate(item.path)}>
 				{item.name}
 			</button>
@@ -171,9 +171,9 @@
 				<Tooltip.Root>
 					<Tooltip.Trigger>
 						<span class="inline-flex items-center gap-1 text-xs">
-							<ExternalLinkIcon class="size-3 text-purple-500" />
+							<ExternalLinkIcon class="size-3 text-primary" />
 							{#if item.linkTarget === '(external)'}
-								<span class="text-amber-500">(external)</span>
+								<span class="text-warning">(external)</span>
 							{/if}
 						</span>
 					</Tooltip.Trigger>
@@ -263,7 +263,7 @@
 {/snippet}
 
 <div
-	class={`file-browser-table overflow-hidden ${
+	class={`overflow-hidden ${
 		minimal ? 'file-browser-table--minimal' : 'file-browser-table--card rounded-lg border bg-card shadow-sm'
 	}`}
 >

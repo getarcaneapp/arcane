@@ -41,7 +41,7 @@
 				<button
 					type="button"
 					class={cn(
-						'flex h-full items-center gap-1.5 pr-1 pl-3 text-[13px]',
+						'flex h-full items-center gap-1.5 pr-1 pl-3 text-xs-plus',
 						isActive ? 'text-foreground' : 'text-muted-foreground'
 					)}
 					title={tab.title}

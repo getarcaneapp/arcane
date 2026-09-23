@@ -4,9 +4,24 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import type { ComponentProps } from 'svelte';
 
-	type Props = ComponentProps<typeof LoadingSpinnerIcon>;
+	type Props = ComponentProps<typeof LoadingSpinnerIcon> & {
+		/** Defaults to the surrounding text color. */
+		tone?: 'current' | 'foreground' | 'muted' | 'primary' | 'info';
+	};
 
-	let { class: className, ...restProps }: Props = $props();
+	let { class: className, tone = 'current', ...restProps }: Props = $props();
 </script>
 
-<LoadingSpinnerIcon role="status" aria-label={m.common_loading()} class={cn('size-4', className)} {...restProps} />
+<LoadingSpinnerIcon
+	role="status"
+	aria-label={m.common_loading()}
+	class={cn(
+		'size-4',
+		tone === 'foreground' && 'text-foreground',
+		tone === 'muted' && 'text-muted-foreground',
+		tone === 'primary' && 'text-primary',
+		tone === 'info' && 'text-info',
+		className
+	)}
+	{...restProps}
+/>

@@ -13,7 +13,6 @@
 	import FileBrowserDialog from '#lib/components/dialogs/file-browser-dialog.svelte';
 	import GitopsDialogFooter from '#lib/components/dialogs/gitops-dialog-footer.svelte';
 	import WorkspaceFileTreePanel from '#lib/components/workspace-file-tree-panel.svelte';
-	import * as RadioGroup from '#lib/components/ui/radio-group/index.js';
 	import { RadioGroup as RadioGroupPrimitive } from 'bits-ui';
 	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 	import type {
@@ -516,14 +515,14 @@
 
 {#snippet envFileBadge(entry: WorkspaceDisplayEntry)}
 	{#if !entry.isDirectory && isEnvFileInternal(entry.name)}
-		<span class="shrink-0 rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-600 dark:text-amber-400">
+		<span class="shrink-0 rounded bg-warning/10 px-1.5 py-0.5 text-3xs text-warning">
 			{m.environment_file()}
 		</span>
 	{/if}
 {/snippet}
 
 {#snippet repositoryAndBranchFields()}
-	<div class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_12rem]">
+	<div class="grid gap-3 sm:grid-cols-content-aside-48">
 		<div class="space-y-2">
 			<Label for="repository">{m.git_sync_repository()}</Label>
 			<Select.Root
@@ -541,14 +540,14 @@
 				<Select.Trigger id="repository" class="w-full" aria-invalid={inputs.repositoryId.error ? 'true' : undefined}>
 					<span>{selectedRepository?.label ?? m.common_select_placeholder()}</span>
 				</Select.Trigger>
-				<Select.Content style="width: var(--bits-select-anchor-width);">
+				<Select.Content class="w-(--bits-select-anchor-width)">
 					{#each repositories as repo (repo.id)}
-						<Select.Item value={repo.id} class="truncate">{repo.name}</Select.Item>
+						<Select.Item value={repo.id}><span class="block min-w-0 truncate">{repo.name}</span></Select.Item>
 					{/each}
 				</Select.Content>
 			</Select.Root>
 			{#if inputs.repositoryId.error}
-				<p class="mt-1 text-sm text-red-500">{inputs.repositoryId.error}</p>
+				<p class="mt-1 text-sm text-destructive">{inputs.repositoryId.error}</p>
 			{/if}
 		</div>
 
@@ -572,13 +571,15 @@
 					<Select.Trigger id="branch" class="w-full" aria-invalid={inputs.branch.error ? 'true' : undefined}>
 						<span>{selectedBranch || m.common_select_placeholder()}</span>
 					</Select.Trigger>
-					<Select.Content style="width: var(--bits-select-anchor-width);">
+					<Select.Content class="w-(--bits-select-anchor-width)">
 						{#each branches as branch (branch.name)}
-							<Select.Item value={branch.name} class="truncate">
-								{branch.name}
-								{#if branch.isDefault}
-									<span class="ml-2 text-xs text-muted-foreground">({m.common_default()})</span>
-								{/if}
+							<Select.Item value={branch.name}>
+								<span class="block min-w-0 truncate">
+									{branch.name}
+									{#if branch.isDefault}
+										<span class="ml-2 text-xs text-muted-foreground">({m.common_default()})</span>
+									{/if}
+								</span>
 							</Select.Item>
 						{/each}
 					</Select.Content>
@@ -587,7 +588,7 @@
 				<FormInput type="text" placeholder="main" bind:input={inputs.branch} />
 			{/if}
 			{#if inputs.branch.error}
-				<p class="mt-1 text-sm text-red-500">{inputs.branch.error}</p>
+				<p class="mt-1 text-sm text-destructive">{inputs.branch.error}</p>
 			{/if}
 		</div>
 	</div>
@@ -613,7 +614,7 @@
 					</p>
 				{:else}
 					<div class="space-y-2">
-						<RadioGroup.Root
+						<RadioGroupPrimitive.Root
 							class="inline-flex max-w-full flex-wrap items-center justify-start gap-1 rounded-lg border border-border/60 bg-muted/40 p-1 text-muted-foreground"
 							value={selectedMode}
 							onValueChange={(value) => (inputs.mode.value = value as GitOpsSyncMode)}
@@ -623,12 +624,12 @@
 								<RadioGroupPrimitive.Item
 									id={`sync-mode-${option.value}`}
 									value={option.value}
-									class="inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium whitespace-nowrap text-muted-foreground ring-offset-background transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none data-[state=checked]:bg-primary/15 data-[state=checked]:text-primary data-[state=checked]:ring-1 data-[state=checked]:ring-primary/30 dark:data-[state=checked]:text-[color-mix(in_oklch,var(--primary)_55%,white)]"
+									class="inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium whitespace-nowrap text-muted-foreground ring-offset-background transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none data-[state=checked]:bg-primary/15 data-[state=checked]:text-primary data-[state=checked]:ring-1 data-[state=checked]:ring-primary/30 dark:data-[state=checked]:text-primary-tint"
 								>
 									{option.label}
 								</RadioGroupPrimitive.Item>
 							{/each}
-						</RadioGroup.Root>
+						</RadioGroupPrimitive.Root>
 						<p class="text-xs text-muted-foreground">{selectedDirection?.description}</p>
 					</div>
 				{/if}
@@ -698,14 +699,14 @@
 						</div>
 						<p class="text-xs text-muted-foreground">{m.included_files_description()}</p>
 						{#if hasSelectedEnvFile}
-							<p class="text-xs text-amber-600 dark:text-amber-400">{m.environment_file_warning()}</p>
+							<p class="text-xs text-warning">{m.environment_file_warning()}</p>
 						{/if}
 					</div>
 
 					<div class="divide-y divide-border/50 border-y border-border/50">
 						<div class="flex items-center justify-between gap-4 py-3">
 							<div class="min-w-0">
-								<Label for="backupAutoSyncSwitch" class="mb-0 text-sm font-medium">{m.automatic_backup()}</Label>
+								<Label for="backupAutoSyncSwitch" class="mb-0">{m.automatic_backup()}</Label>
 								<p class="text-xs text-muted-foreground">{m.automatic_backup_description()}</p>
 							</div>
 							<div class="flex shrink-0 items-center gap-3">
@@ -732,7 +733,7 @@
 
 						<div class="flex items-center justify-between gap-4 py-3">
 							<div class="min-w-0">
-								<Label for="backupOnSaveSwitch" class="mb-0 text-sm font-medium">{m.back_up_on_save()}</Label>
+								<Label for="backupOnSaveSwitch" class="mb-0">{m.back_up_on_save()}</Label>
 								<p class="text-xs text-muted-foreground">{m.back_up_on_save_description()}</p>
 							</div>
 							<Switch id="backupOnSaveSwitch" bind:checked={inputs.backupOnSave.value} disabled={!inputs.autoSync.value} />
@@ -741,13 +742,13 @@
 						<div class="py-3">
 							<div class="flex items-center justify-between gap-4">
 								<div class="min-w-0">
-									<Label for="includeEnvFileSwitch" class="mb-0 text-sm font-medium">{m.include_environment_file()}</Label>
+									<Label for="includeEnvFileSwitch" class="mb-0">{m.include_environment_file()}</Label>
 									<p class="text-xs text-muted-foreground">{m.include_environment_file_description()}</p>
 								</div>
 								<Switch id="includeEnvFileSwitch" bind:checked={inputs.includeEnvFile.value} />
 							</div>
 							{#if inputs.includeEnvFile.value}
-								<p class="mt-2 text-xs text-amber-600 dark:text-amber-400">{m.environment_file_warning()}</p>
+								<p class="mt-2 text-xs text-warning">{m.environment_file_warning()}</p>
 							{/if}
 						</div>
 					</div>
@@ -812,7 +813,7 @@
 					<div class="divide-y divide-border/50 border-y border-border/50">
 						<div class="flex items-center justify-between gap-4 py-3">
 							<div class="min-w-0">
-								<Label for="autoSyncSwitch" class="mb-0 text-sm font-medium">{m.git_sync_auto_sync()}</Label>
+								<Label for="autoSyncSwitch" class="mb-0">{m.git_sync_auto_sync()}</Label>
 								<p class="text-xs text-muted-foreground">{m.common_auto_sync_description()}</p>
 								{#if inputs.autoSync.error}
 									<p class="text-xs font-medium text-destructive">{inputs.autoSync.error}</p>
@@ -842,7 +843,7 @@
 
 						<div class="flex items-center justify-between gap-4 py-3">
 							<div class="min-w-0">
-								<Label for="syncDirectorySwitch" class="mb-0 text-sm font-medium">{m.git_sync_sync_files()}</Label>
+								<Label for="syncDirectorySwitch" class="mb-0">{m.git_sync_sync_files()}</Label>
 								<p class="text-xs text-muted-foreground">
 									{lockSyncDirectory ? m.git_sync_sync_files_locked_hint() : m.git_sync_sync_files_description()}
 								</p>
@@ -855,8 +856,7 @@
 
 						<div class="flex items-center justify-between gap-4 py-3">
 							<div class="min-w-0">
-								<Label for="pullImageAfterSyncSwitch" class="mb-0 text-sm font-medium">{m.git_sync_pull_image_after_sync()}</Label
-								>
+								<Label for="pullImageAfterSyncSwitch" class="mb-0">{m.git_sync_pull_image_after_sync()}</Label>
 								<p class="text-xs text-muted-foreground">
 									{inputs.redeployAfterSync.value
 										? m.git_sync_pull_image_after_sync_redundant_description()
@@ -875,7 +875,7 @@
 
 						<div class="flex items-center justify-between gap-4 py-3">
 							<div class="min-w-0">
-								<Label for="redeployAfterSyncSwitch" class="mb-0 text-sm font-medium">{m.git_sync_redeploy_after_sync()}</Label>
+								<Label for="redeployAfterSyncSwitch" class="mb-0">{m.git_sync_redeploy_after_sync()}</Label>
 								<p class="text-xs text-muted-foreground">{m.git_sync_redeploy_after_sync_description()}</p>
 								{#if inputs.redeployAfterSync.error}
 									<p class="text-xs font-medium text-destructive">{inputs.redeployAfterSync.error}</p>
@@ -886,12 +886,17 @@
 					</div>
 
 					<Collapsible.Root class="group/collapsible">
-						<Collapsible.Trigger
-							type="button"
-							class="flex w-full items-center justify-between gap-3 py-1 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
-						>
-							{m.git_sync_per_sync_file_limits_title()}
-							<ArrowRightIcon class="size-4 shrink-0 transition-transform group-data-[state=open]/collapsible:rotate-90" />
+						<Collapsible.Trigger>
+							{#snippet child({ props })}
+								<button
+									{...props}
+									type="button"
+									class="flex w-full items-center justify-between gap-3 py-1 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+								>
+									{m.git_sync_per_sync_file_limits_title()}
+									<ArrowRightIcon class="size-4 shrink-0 transition-transform group-data-[state=open]/collapsible:rotate-90" />
+								</button>
+							{/snippet}
 						</Collapsible.Trigger>
 						<Collapsible.Content>
 							<div class="space-y-3 pt-3">
@@ -925,20 +930,23 @@
 
 					{#if lifecycleEnabled && canManageLifecycle && selectedTargetType === 'project'}
 						<Collapsible.Root class="group/collapsible">
-							<Collapsible.Trigger
-								type="button"
-								class="flex w-full items-center justify-between gap-3 py-1 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
-							>
-								{m.git_sync_pre_deploy_title()}
-								<ArrowRightIcon class="size-4 shrink-0 transition-transform group-data-[state=open]/collapsible:rotate-90" />
+							<Collapsible.Trigger>
+								{#snippet child({ props })}
+									<button
+										{...props}
+										type="button"
+										class="flex w-full items-center justify-between gap-3 py-1 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+									>
+										{m.git_sync_pre_deploy_title()}
+										<ArrowRightIcon class="size-4 shrink-0 transition-transform group-data-[state=open]/collapsible:rotate-90" />
+									</button>
+								{/snippet}
 							</Collapsible.Trigger>
 							<Collapsible.Content>
 								<div class="space-y-3 pt-3">
-									<Alert.Root
-										class="border-amber-500/30 bg-amber-500/5 text-amber-700 dark:text-amber-300 [&>svg]:top-1/2 [&>svg]:-translate-y-1/2"
-									>
+									<Alert.Root variant="warning-subtle" size="sm" class="[&>svg]:top-1/2 [&>svg]:-translate-y-1/2">
 										<InfoIcon class="size-4" />
-										<Alert.Description class="text-xs">
+										<Alert.Description>
 											{m.git_sync_pre_deploy_acknowledgement()}
 										</Alert.Description>
 									</Alert.Root>
@@ -946,7 +954,7 @@
 									<p class="text-xs text-muted-foreground">{m.git_sync_pre_deploy_description()}</p>
 
 									<div class="space-y-2">
-										<Label for="preDeployScriptPath" class="text-sm font-medium">
+										<Label for="preDeployScriptPath">
 											{m.git_sync_pre_deploy_script_path_label()}
 										</Label>
 										<div class="flex gap-2">
@@ -1045,7 +1053,7 @@
 	{#snippet footer()}
 		<GitopsDialogFooter cancelLabel={m.common_cancel()} {isLoading} onCancel={() => (open = false)}>
 			{#snippet primary()}
-				<Button type="submit" form="sync-form" class="arcane-button-create flex-1" disabled={isLoading}>
+				<Button type="submit" form="sync-form" class="flex-1" disabled={isLoading}>
 					{#if isLoading}
 						<Spinner class="mr-2 size-4" />
 					{/if}

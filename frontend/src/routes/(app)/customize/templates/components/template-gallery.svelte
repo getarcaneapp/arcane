@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Input } from '#lib/components/ui/input/index.js';
+	import * as InputGroup from '#lib/components/ui/input-group/index.js';
 	import * as Select from '#lib/components/ui/select/index.js';
 	import ArcaneTablePagination from '#lib/components/arcane-table/arcane-table-pagination.svelte';
 	import EmptyState from '#lib/components/states/empty-state.svelte';
@@ -144,9 +144,11 @@
 
 <div class="space-y-4">
 	<div class="flex flex-wrap items-center gap-2">
-		<div class="relative min-w-0 flex-1 md:w-64 md:flex-none">
-			<SearchIcon class="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-			<Input
+		<InputGroup.Root class="min-w-0 flex-1 md:w-64 md:flex-none">
+			<InputGroup.Addon>
+				<SearchIcon aria-hidden="true" />
+			</InputGroup.Addon>
+			<InputGroup.Input
 				placeholder={m.templates_search_placeholder()}
 				bind:value={searchValue}
 				oninput={(e) => debouncedSearch(e.currentTarget.value)}
@@ -154,12 +156,11 @@
 				onkeydown={(e) => {
 					if (e.key === 'Enter') applySearch((e.currentTarget as HTMLInputElement).value);
 				}}
-				class="h-9 w-full pl-8"
 			/>
-		</div>
+		</InputGroup.Root>
 
 		<Select.Root allowDeselect={false} type="single" value={typeFilter} onValueChange={applyTypeFilter}>
-			<Select.Trigger class="h-9 w-[140px]">
+			<Select.Trigger class="h-9 w-35">
 				{typeFilterLabel}
 			</Select.Trigger>
 			<Select.Content>
@@ -196,19 +197,13 @@
 			{setPageSize}
 		/>
 	{:else if hasActiveQuery}
-		<EmptyState
-			icon={SearchIcon}
-			title={m.common_no_results_found()}
-			description={m.common_no_results_hint()}
-			class="rounded-xl border border-border/50 py-12"
-		/>
+		<EmptyState icon={SearchIcon} title={m.common_no_results_found()} description={m.common_no_results_hint()} />
 	{:else}
 		<EmptyState
 			icon={TemplateIcon}
 			title={m.templates_no_templates()}
 			actionLabel={canCreateTemplate ? m.templates_create_template() : undefined}
 			actionHref={canCreateTemplate ? '/customize/templates/create' : undefined}
-			class="rounded-xl border border-border/50 py-12"
 		/>
 	{/if}
 </div>

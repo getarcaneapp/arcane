@@ -24,27 +24,27 @@
 				<Card.Description>{m.containers_storage_description()}</Card.Description>
 			</div>
 		</Card.Header>
-		<Card.Content class="p-4">
+		<Card.Content>
 			{#if container.mounts && container.mounts.length > 0}
 				<div class="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
 					{#each container.mounts as mount (mount.destination)}
 						<Card.Root variant="subtle">
-							<Card.Content class="p-4">
+							<Card.Content>
 								<div class="mb-4 flex items-center justify-between border-b border-border pb-4">
 									<div class="flex items-center gap-3">
 										<div
 											class="rounded-lg p-2 {mount.type === 'volume'
-												? 'bg-purple-500/10'
+												? 'bg-primary/10'
 												: mount.type === 'bind'
-													? 'bg-blue-500/10'
-													: 'bg-amber-500/10'}"
+													? 'bg-info/10'
+													: 'bg-warning/10'}"
 										>
 											{#if mount.type === 'volume'}
-												<VolumesIcon class="size-5 text-purple-500" />
+												<VolumesIcon class="size-5 text-primary" />
 											{:else if mount.type === 'bind'}
-												<VolumesIcon class="size-5 text-blue-500" />
+												<VolumesIcon class="size-5 text-info" />
 											{:else}
-												<TerminalIcon class="size-5 text-amber-500" />
+												<TerminalIcon class="size-5 text-warning" />
 											{/if}
 										</div>
 										<div class="min-w-0 flex-1">
@@ -60,14 +60,14 @@
 											</div>
 										</div>
 									</div>
-									<Badge variant={mount.rw ? 'outline' : 'secondary'} class="text-xs font-semibold">
+									<Badge variant={mount.rw ? 'outline' : 'secondary'}>
 										{mount.rw ? m.common_rw() : m.common_ro()}
 									</Badge>
 								</div>
 
 								<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-									<Card.Root variant="outlined" class="sm:col-span-2">
-										<Card.Content class="flex flex-col p-3">
+									<Card.Root variant="outlined" class="sm:col-span-2" size="sm">
+										<Card.Content class="flex flex-col">
 											<div class="mb-2 text-xs font-semibold text-muted-foreground">
 												{m.containers_mount_label_container()}
 											</div>
@@ -80,8 +80,8 @@
 										</Card.Content>
 									</Card.Root>
 
-									<Card.Root variant="outlined" class="sm:col-span-2">
-										<Card.Content class="flex flex-col p-3">
+									<Card.Root variant="outlined" class="sm:col-span-2" size="sm">
+										<Card.Content class="flex flex-col">
 											<div class="mb-2 text-xs font-semibold text-muted-foreground">
 												{mount.type === 'volume'
 													? m.containers_mount_label_volume()
@@ -99,8 +99,8 @@
 									</Card.Root>
 
 									{#if mount.type === 'volume' && mount.driver}
-										<Card.Root variant="outlined">
-											<Card.Content class="flex flex-col p-3">
+										<Card.Root variant="outlined" size="sm">
+											<Card.Content class="flex flex-col">
 												<div class="mb-2 text-xs font-semibold text-muted-foreground">{m.common_driver()}</div>
 												<div class="text-sm font-medium text-foreground">
 													{mount.driver}
@@ -110,8 +110,8 @@
 									{/if}
 
 									{#if mount.propagation}
-										<Card.Root variant="outlined">
-											<Card.Content class="flex flex-col p-3">
+										<Card.Root variant="outlined" size="sm">
+											<Card.Content class="flex flex-col">
 												<div class="mb-2 text-xs font-semibold text-muted-foreground">{m.container_propagation()}</div>
 												<div class="text-sm font-medium text-foreground">
 													<!-- fallow-ignore-next-line code-duplication -- container vs swarm-service storage; typed Mount vs ServiceMount props diverge across the boundary -->

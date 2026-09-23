@@ -198,19 +198,19 @@
 			title: m.templates_local_templates(),
 			value: localTemplatesCount,
 			icon: FolderOpenIcon,
-			iconColor: 'text-blue-500'
+			iconColor: 'text-info'
 		},
 		{
 			title: m.templates_remote_templates(),
 			value: remoteTemplatesCount,
 			icon: RegistryIcon,
-			iconColor: 'text-green-500'
+			iconColor: 'text-success'
 		},
 		{
 			title: m.templates_registries(),
 			value: registries.length,
 			icon: TemplateIcon,
-			iconColor: 'text-purple-500'
+			iconColor: 'text-purple'
 		}
 	]);
 </script>

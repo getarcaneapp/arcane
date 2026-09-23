@@ -31,7 +31,7 @@
 </script>
 
 <div
-	class="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-1.5 gap-y-0.5 rounded-md border px-2 py-1"
+	class="grid min-w-0 grid-cols-icon-content-action items-center gap-x-1.5 gap-y-0.5 rounded-md border px-2 py-1"
 	data-testid={resourceType ? `backup-policy-${resourceType}-${policy.id}` : undefined}
 >
 	<Badge variant={policy.enabled ? 'green' : 'gray'}>{policy.enabled ? m.common_enabled() : m.common_disabled()}</Badge>

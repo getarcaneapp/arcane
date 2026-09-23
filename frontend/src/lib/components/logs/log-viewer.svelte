@@ -170,7 +170,6 @@
 	const humanType = $derived(type === 'project' ? m.project() : type === 'service' ? m.swarm_service() : m.container());
 	const fillParent = $derived(height === '100%');
 	const minHeight = $derived(height === '100%' ? '0' : '300px');
-	const viewportStyle = $derived(fillParent ? 'min-height: 0;' : `height: ${height}; min-height: ${minHeight};`);
 
 	function buildWebSocketEndpoint(path: string): string {
 		const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
@@ -373,30 +372,30 @@
 		switch (level) {
 			case 'stderr':
 			case 'error':
-				return 'text-red-400';
+				return 'text-destructive';
 			case 'stdout':
 			case 'info':
-				return 'text-green-400';
+				return 'text-success';
 			default:
-				return 'text-gray-300';
+				return 'text-foreground/80';
 		}
 	}
 
 	// Generate consistent color for service names (similar to docker compose)
 	function getServiceColor(service: string): string {
 		const colors = [
-			'text-cyan-400',
-			'text-yellow-400',
-			'text-green-400',
-			'text-blue-400',
-			'text-purple-400',
-			'text-pink-400',
-			'text-orange-400',
-			'text-teal-400',
-			'text-lime-400',
-			'text-indigo-400',
-			'text-fuchsia-400',
-			'text-rose-400'
+			'text-cyan',
+			'text-warning',
+			'text-success',
+			'text-info',
+			'text-purple',
+			'text-pink',
+			'text-orange',
+			'text-teal',
+			'text-lime',
+			'text-indigo',
+			'text-fuchsia',
+			'text-rose'
 		];
 
 		// Simple hash function to consistently map service names to colors
@@ -404,7 +403,7 @@
 		for (let i = 0; i < service.length; i++) {
 			hash = service.charCodeAt(i) + ((hash << 5) - hash);
 		}
-		return colors[Math.abs(hash) % colors.length] ?? 'text-gray-300';
+		return colors[Math.abs(hash) % colors.length] ?? 'text-foreground/80';
 	}
 
 	function isStructuredLogData(value: unknown): value is Record<string, unknown> {
@@ -509,22 +508,28 @@
 			title={level.toUpperCase()}
 			data-stream={level}
 		>
-			<span class={cn('size-2 bg-current', level === 'stdout' ? 'rounded-full' : 'rounded-[2px]')}></span>
+			<span class={cn('size-2 bg-current', level === 'stdout' ? 'rounded-full' : 'rounded-xs')}></span>
 		</span>
 	{/if}
 {/snippet}
 
 {#snippet renderGroupedSummary(displayEntry: LogViewerDisplayEntry, contentClass: string)}
 	<div class="flex min-w-0 items-start gap-2">
-		<Collapsible.Trigger
-			class="inline-flex shrink-0 items-center gap-1 rounded border border-transparent px-1 py-0.5 text-zinc-500 outline-none hover:bg-white/4 focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
-		>
-			{#if isGroupExpanded(displayEntry)}
-				<ArrowDownIcon class="size-4" />
-			{:else}
-				<ArrowRightIcon class="size-4" />
-			{/if}
-			<span class="text-[11px] font-medium">+{getGroupedSummaryCount(displayEntry)}</span>
+		<Collapsible.Trigger>
+			{#snippet child({ props })}
+				<button
+					{...props}
+					type="button"
+					class="inline-flex shrink-0 items-center gap-1 rounded border border-transparent px-1 py-0.5 text-muted-foreground outline-none hover:bg-white/4 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+				>
+					{#if isGroupExpanded(displayEntry)}
+						<ArrowDownIcon class="size-4" />
+					{:else}
+						<ArrowRightIcon class="size-4" />
+					{/if}
+					<span class="text-2xs font-medium">+{getGroupedSummaryCount(displayEntry)}</span>
+				</button>
+			{/snippet}
 		</Collapsible.Trigger>
 
 		{@render renderLogMessage(displayEntry.entries[0]!, contentClass)}
@@ -533,13 +538,13 @@
 
 <div
 	class={cn(
-		'log-viewer rounded-t-none rounded-b-xl border bg-black text-white',
+		'dark rounded-t-none rounded-b-xl border bg-black text-white',
 		fillParent && 'flex h-full min-h-0 flex-col',
 		className
 	)}
 >
 	{#if error}
-		<div class="border-b border-red-700 bg-red-900/20 p-3 text-sm text-red-200">
+		<div class="border-b border-destructive bg-destructive/10 p-3 text-sm text-destructive">
 			{error}
 		</div>
 	{/if}
@@ -547,10 +552,10 @@
 	<div
 		bind:this={logContainer}
 		class={cn(
-			'log-viewer overflow-y-auto rounded-t-none rounded-b-xl border bg-black font-mono text-xs text-white sm:text-sm',
-			fillParent && 'min-h-0 flex-1'
+			'overflow-y-auto rounded-t-none rounded-b-xl border bg-black font-mono text-xs text-white sm:text-sm',
+			fillParent ? 'min-h-0 flex-1' : 'h-(--log-height) min-h-(--log-min-height)'
 		)}
-		style={viewportStyle}
+		style={fillParent ? undefined : `--log-height: ${height}; --log-min-height: ${minHeight}`}
 		role="log"
 		aria-live={isStreaming ? 'polite' : 'off'}
 		aria-relevant="additions"
@@ -560,7 +565,7 @@
 		data-is-streaming={isStreaming}
 	>
 		{#if displayLogs.length === 0}
-			<div class="p-4 text-center text-gray-500">
+			<div class="p-4 text-center text-muted-foreground">
 				{#if !(containerId || projectId || serviceId)}
 					{m.log_viewer_no_selection({ type: humanType })}
 				{:else if !isStreaming}
@@ -574,14 +579,14 @@
 				<!-- Mobile view -->
 				<div
 					class={cn(
-						'border-l-2 border-transparent px-3 py-2 transition-colors hover:border-blue-500 hover:bg-gray-900/50 sm:hidden',
-						index % 2 === 1 && 'bg-zinc-900/60'
+						'border-l-2 border-transparent px-3 py-2 transition-colors hover:border-info hover:bg-card/50 sm:hidden',
+						index % 2 === 1 && 'bg-card/60'
 					)}
 				>
 					<div class="mb-1 flex flex-wrap items-center gap-2 text-xs">
 						{#if showTimestamps && getDisplayEntryTimestamp(displayLog)}
 							<span
-								class="inline-flex shrink-0 self-start rounded-md border border-sky-500/15 bg-zinc-900 px-2 py-1 font-semibold text-sky-400 tabular-nums"
+								class="inline-flex shrink-0 self-start rounded-md border border-info/15 bg-card px-2 py-1 font-semibold text-info tabular-nums"
 								title={getDisplayEntryTimestamp(displayLog)}
 							>
 								{formatLogTimestamp(getDisplayEntryTimestamp(displayLog))}
@@ -602,11 +607,11 @@
 							open={isGroupExpanded(displayLog)}
 							onOpenChange={(open: boolean) => setGroupExpanded(displayLog, open)}
 						>
-							{@render renderGroupedSummary(displayLog, 'text-sm break-words whitespace-pre-wrap text-gray-300')}
+							{@render renderGroupedSummary(displayLog, 'text-sm break-words whitespace-pre-wrap text-foreground/80')}
 							<Collapsible.Content>
-								<div class="mt-2 space-y-1.5 border-l border-zinc-800 pl-4">
+								<div class="mt-2 space-y-1.5 border-l border-border pl-4">
 									{#each displayLog.entries.slice(1) as entry (entry.id)}
-										{@render renderLogMessage(entry, 'text-sm break-words whitespace-pre-wrap text-gray-300')}
+										{@render renderLogMessage(entry, 'text-sm break-words whitespace-pre-wrap text-foreground/80')}
 									{/each}
 								</div>
 							</Collapsible.Content>
@@ -614,7 +619,7 @@
 					{:else}
 						<div class="flex flex-col gap-1.5">
 							{#each displayLog.entries as entry (entry.id)}
-								{@render renderLogMessage(entry, 'text-sm break-words whitespace-pre-wrap text-gray-300')}
+								{@render renderLogMessage(entry, 'text-sm break-words whitespace-pre-wrap text-foreground/80')}
 							{/each}
 						</div>
 					{/if}
@@ -623,13 +628,13 @@
 				<!-- Desktop view -->
 				<div
 					class={cn(
-						'hidden items-start border-l-2 border-transparent px-3 py-1.5 transition-colors hover:border-blue-500 hover:bg-gray-900/50 sm:flex',
-						index % 2 === 1 && 'bg-zinc-900/60'
+						'hidden items-start border-l-2 border-transparent px-3 py-1.5 transition-colors hover:border-info hover:bg-card/50 sm:flex',
+						index % 2 === 1 && 'bg-card/60'
 					)}
 				>
 					{#if showTimestamps && getDisplayEntryTimestamp(displayLog)}
 						<span
-							class="mr-3 inline-flex min-w-[178px] shrink-0 self-start rounded-md border border-sky-500/15 bg-zinc-900 px-2.5 py-1 text-[11px] font-semibold text-sky-400 tabular-nums"
+							class="mr-3 inline-flex min-w-44.5 shrink-0 self-start rounded-md border border-info/15 bg-card px-2.5 py-1 text-2xs font-semibold text-info tabular-nums"
 							title={getDisplayEntryTimestamp(displayLog)}
 						>
 							{formatLogTimestamp(getDisplayEntryTimestamp(displayLog))}
@@ -637,7 +642,7 @@
 					{/if}
 					{#if type === 'project' && getDisplayEntryService(displayLog)}
 						<span
-							class="mr-3 max-w-[120px] min-w-[120px] shrink-0 truncate text-xs font-semibold {getServiceColor(
+							class="mr-3 max-w-30 min-w-30 shrink-0 truncate text-xs font-semibold {getServiceColor(
 								getDisplayEntryService(displayLog)!
 							)}"
 							title={getDisplayEntryService(displayLog)}
@@ -652,11 +657,11 @@
 								open={isGroupExpanded(displayLog)}
 								onOpenChange={(open: boolean) => setGroupExpanded(displayLog, open)}
 							>
-								{@render renderGroupedSummary(displayLog, 'break-words whitespace-pre-wrap text-gray-300')}
+								{@render renderGroupedSummary(displayLog, 'break-words whitespace-pre-wrap text-foreground/80')}
 								<Collapsible.Content>
-									<div class="mt-2 space-y-1 border-l border-zinc-800 pl-4">
+									<div class="mt-2 space-y-1 border-l border-border pl-4">
 										{#each displayLog.entries.slice(1) as entry (entry.id)}
-											{@render renderLogMessage(entry, 'break-words whitespace-pre-wrap text-gray-300')}
+											{@render renderLogMessage(entry, 'break-words whitespace-pre-wrap text-foreground/80')}
 										{/each}
 									</div>
 								</Collapsible.Content>
@@ -664,7 +669,7 @@
 						{:else}
 							<div class="flex flex-1 flex-col gap-1">
 								{#each displayLog.entries as entry (entry.id)}
-									{@render renderLogMessage(entry, 'break-words whitespace-pre-wrap text-gray-300')}
+									{@render renderLogMessage(entry, 'break-words whitespace-pre-wrap text-foreground/80')}
 								{/each}
 							</div>
 						{/if}

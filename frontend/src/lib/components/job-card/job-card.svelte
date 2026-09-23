@@ -136,7 +136,7 @@
 
 <article class="flex min-w-0 flex-col gap-3 py-5">
 	<div class="flex min-w-0 flex-wrap items-start justify-between gap-x-6 gap-y-3">
-		<div class="flex min-w-0 flex-[1_1_20rem] flex-col gap-1.5">
+		<div class="flex min-w-0 grow basis-80 flex-col gap-1.5">
 			<div class="flex min-h-9 flex-wrap items-center gap-2">
 				{@render headerAccessory?.()}
 				<h4 class="text-base font-semibold">{jobNameLabel(job)}</h4>

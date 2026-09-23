@@ -51,7 +51,7 @@
 			title: m.swarm_stacks_total(),
 			value: totalStacks,
 			icon: LayersIcon,
-			iconColor: 'text-blue-500'
+			iconColor: 'text-info'
 		}
 	]);
 </script>

@@ -9,8 +9,6 @@
 	import { cn } from '#lib/utils.js';
 	import {
 		shouldIgnoreTableRowClick,
-		type ColumnWidth,
-		type ColumnAlign,
 		type GroupedData,
 		type GroupSelectionState,
 		type SelectionModifiers
@@ -78,26 +76,6 @@
 	// concrete cells. Pin them with an instantiation expression — no cast involved.
 	const FlexRender = FlexRenderBase<ArcaneFeatures, TData, unknown>;
 
-	// Get column width class from meta
-	function getWidthClass(width?: ColumnWidth): string {
-		if (!width || width === 'auto') return '';
-		if (width === 'min') return 'w-0';
-		if (width === 'max') return 'w-full';
-		return '';
-	}
-
-	// Get column alignment class from meta
-	function getAlignClass(align?: ColumnAlign): string {
-		if (!align || align === 'left') return '';
-		if (align === 'center') return 'text-center';
-		if (align === 'right') return 'text-right';
-		return '';
-	}
-
-	// Narrow, transparent select cell so the row's hover/selected highlight shows through it
-	// uniformly (it carried an opaque background before, which broke the highlight at the edge).
-	const selectCellClasses = 'w-0 pr-4!';
-
 	function handleRowClick(event: MouseEvent, rowId: string) {
 		if (shouldIgnoreTableRowClick(event)) return;
 		if (hasExpand) {
@@ -111,20 +89,6 @@
 
 	function handleRowMouseDown(event: MouseEvent) {
 		if (event.shiftKey && !hasExpand && !selectionDisabled && !shouldIgnoreTableRowClick(event)) event.preventDefault();
-	}
-
-	// Get cell classes based on column metadata
-	function getCellClasses(cell: ArcaneCell<TData>, isGrouped: boolean, isFirstCell: boolean): string {
-		const meta = cell.column.columnDef.meta;
-		return cn(
-			cell.column.id === 'select' && selectCellClasses,
-			cell.column.id === 'actions' && actionsCellClasses,
-			getWidthClass(meta?.width),
-			getAlignClass(meta?.align),
-			meta?.truncate && !wrapText && 'max-w-0 truncate',
-			wrapText && cell.column.id !== 'select' && cell.column.id !== 'actions' && 'break-words whitespace-normal',
-			isGrouped && isFirstCell && cell.column.id !== 'select' && 'pl-10'
-		);
 	}
 
 	// Get rows for a specific group from the table model
@@ -195,24 +159,6 @@
 		};
 	});
 
-	// Row actions are a real pinned column: sticky to the row's right edge with its own reserved
-	// width, so the floating button never overlaps data columns and survives horizontal scroll.
-	// The gutter must stay opaque to mask content scrolling beneath it, so it can't bg-inherit the
-	// row's translucent tints (they'd stack with the row's own paint into a darker block). Instead it
-	// mirrors the row states from ui/table table-row.svelte as pre-composited opaque colors. Under
-	// the virtualized table-fixed layout an auto-sized (w-0 + nowrap) column would collapse, so it
-	// gets an explicit width there instead.
-	const actionsCellClasses = $derived(
-		cn(
-			'sticky right-0 z-[var(--arcane-z-sticky)] p-0 whitespace-nowrap',
-			shouldVirtualize ? 'w-24' : 'w-0',
-			'bg-background',
-			'group-hover/row:bg-[color-mix(in_oklab,var(--color-primary)_6%,var(--color-background))]',
-			'group-data-[state=selected]/row:bg-[color-mix(in_oklab,var(--color-primary)_12%,var(--color-background))]',
-			'group-data-[expanded]/row:bg-[color-mix(in_oklab,var(--color-muted)_30%,var(--color-background))]'
-		)
-	);
-
 	// Runes can't be created conditionally, so the virtualizer always exists but is `enabled` only
 	// when we actually virtualize; disabled, it stays cheap and reports an empty window.
 	const rowVirtualizer = createVirtualizer<HTMLElement, HTMLTableRowElement>(() => {
@@ -260,10 +206,10 @@
 		data-expanded={isExpanded ? true : undefined}
 		onclick={(event) => handleRowClick(event, rowId)}
 		onmousedown={handleRowMouseDown}
-		class={cn('isolate', hasExpand && 'cursor-pointer', isExpanded && 'bg-muted/30')}
+		class={cn('isolate', hasExpand && 'cursor-pointer')}
 	>
 		{#if hasExpand}
-			<Table.Cell class="w-8 px-2" data-row-select-ignore>
+			<Table.Cell variant="expander" data-row-select-ignore>
 				<button
 					class={cn(
 						'flex items-center justify-center text-muted-foreground transition-transform duration-200 hover:text-foreground',
@@ -281,18 +227,35 @@
 		{/if}
 		{#each row.getVisibleCells() as cell, cellIndex (cell.id)}
 			{@const isFirstDataCell = !selectionDisabled ? cellIndex === 1 : cellIndex === 0}
+			{@const meta = cell.column.columnDef.meta}
 			<Table.Cell
-				style={typeof cell.column.columnDef.meta?.width === 'number' ? `width: ${cell.column.columnDef.meta.width}px` : undefined}
-				class={getCellClasses(cell, isGroupedRow, isFirstDataCell)}
+				pinned={cell.column.id === 'actions'}
+				variant={cell.column.id === 'select' ? 'checkbox' : 'default'}
+				indent={isGroupedRow && isFirstDataCell && cell.column.id !== 'select'}
+				style={typeof meta?.width === 'number' ? `--col-width: ${meta.width}px` : undefined}
+				class={cn(
+					cell.column.id === 'actions' && (shouldVirtualize ? 'w-24' : 'w-0'),
+					meta?.width === 'min' && 'w-0',
+					meta?.width === 'max' && 'w-full',
+					meta?.align === 'center' && 'text-center',
+					meta?.align === 'right' && 'text-right',
+					meta?.truncate && !wrapText && 'max-w-0',
+					wrapText && cell.column.id !== 'select' && cell.column.id !== 'actions' && 'break-words whitespace-normal',
+					typeof meta?.width === 'number' && 'w-(--col-width)'
+				)}
 			>
-				{@render cellContent(cell)}
+				{#if meta?.truncate && !wrapText}
+					<span class="block min-w-0 truncate">{@render cellContent(cell)}</span>
+				{:else}
+					{@render cellContent(cell)}
+				{/if}
 			</Table.Cell>
 		{/each}
 	</Table.Row>
 
 	{#if hasExpand && isExpanded && expandedRowContent}
-		<Table.Row class="bg-muted/10 hover:bg-muted/10">
-			<Table.Cell colspan={columnsCount} class="p-0">
+		<Table.Row variant="detail">
+			<Table.Cell colspan={columnsCount} variant="flush">
 				<div transition:slide={{ duration: 200 }}>
 					<div class="px-6 py-4">
 						{@render expandedRowContent({ row, item: row.original })}
@@ -306,17 +269,17 @@
 {#snippet emptyState()}
 	<Table.Row>
 		<Table.Cell colspan={columnsCount} class="h-48">
-			<TableEmpty class={cn('rounded-lg py-12', unstyled ? 'bg-transparent' : 'bg-card/30')} />
+			<TableEmpty {unstyled} />
 		</Table.Cell>
 	</Table.Row>
 {/snippet}
 
 {#snippet skeletonRows()}
 	{#each Array.from({ length: 8 }, (_, i) => i) as r (r)}
-		<Table.Row class="hover:bg-transparent">
+		<Table.Row variant="static">
 			{#each Array.from({ length: columnsCount }, (_, i) => i) as c (c)}
 				<Table.Cell>
-					<Skeleton class="h-4 w-full max-w-[140px]" />
+					<Skeleton class="h-4 w-full max-w-35" />
 				</Table.Cell>
 			{/each}
 		</Table.Row>
@@ -328,18 +291,20 @@
 		{#each table.getHeaderGroups() as headerGroup (headerGroup.id)}
 			<Table.Row>
 				{#if hasExpand}
-					<Table.Head class="w-8 px-2"></Table.Head>
+					<Table.Head variant="expander"></Table.Head>
 				{/if}
 				{#each headerGroup.headers as header (header.id)}
+					{@const meta = header.column.columnDef.meta}
 					<Table.Head
 						colspan={header.colSpan}
-						style={typeof header.column.columnDef.meta?.width === 'number'
-							? `width: ${header.column.columnDef.meta.width}px`
-							: undefined}
+						pinned={header.column.id === 'actions'}
+						variant={header.column.id === 'select' ? 'checkbox' : 'default'}
+						style={typeof meta?.width === 'number' ? `--col-width: ${meta.width}px` : undefined}
 						class={cn(
-							getWidthClass(header.column.columnDef.meta?.width),
-							header.column.id === 'select' && selectCellClasses,
-							header.column.id === 'actions' && cn(actionsCellClasses, 'z-[var(--arcane-z-page-floating)] bg-background')
+							meta?.width === 'min' && 'w-0',
+							meta?.width === 'max' && 'w-full',
+							header.column.id === 'actions' && (shouldVirtualize ? 'w-24' : 'w-0'),
+							typeof meta?.width === 'number' && 'w-(--col-width)'
 						)}
 					>
 						{#if !header.isPlaceholder}
@@ -359,14 +324,12 @@
 	{@const IconComponent = groupIcon?.(group.groupName)}
 
 	<Table.Row
-		class={cn(
-			'cursor-pointer transition-colors',
-			!unstyled && (hasSelection ? 'bg-primary/10 hover:bg-primary/15' : 'bg-background hover:bg-primary/15')
-		)}
+		variant={unstyled ? 'static' : 'default'}
+		data-state={hasSelection ? 'selected' : undefined}
 		onclick={() => onGroupToggle?.(group.groupName)}
 	>
 		{#if !selectionDisabled}
-			<Table.Cell class={selectCellClasses}>
+			<Table.Cell variant="checkbox">
 				<TableCheckbox
 					checked={selectionState === 'all'}
 					indeterminate={selectionState === 'some'}
@@ -376,8 +339,8 @@
 				/>
 			</Table.Cell>
 		{/if}
-		<Table.Cell colspan={columnsCount - (selectionDisabled ? 0 : 1)} class="py-3 font-medium">
-			<div class="flex items-center gap-2">
+		<Table.Cell colspan={columnsCount - (selectionDisabled ? 0 : 1)}>
+			<div class="flex items-center gap-2 font-medium">
 				{#if isCollapsed}
 					<ArrowRightIcon class="size-4 text-muted-foreground" />
 				{:else}
@@ -408,7 +371,7 @@
 	{@const padTop = first ? Math.max(0, first.start - scrollMargin) : 0}
 	{@const padBottom = last ? Math.max(0, rowVirtualizer.totalSize - (last.end - scrollMargin)) : 0}
 	{#if padTop > 0}
-		<tr aria-hidden="true"><td colspan={columnsCount} class="border-0 p-0" style="height: {padTop}px"></td></tr>
+		<tr aria-hidden="true"><td colspan={columnsCount} class="h-(--pad) border-0 p-0" style="--pad: {padTop}px"></td></tr>
 	{/if}
 	{#each vItems as vItem (vItem.key)}
 		{@const row = flatRows[vItem.index]}
@@ -417,7 +380,7 @@
 		{/if}
 	{/each}
 	{#if padBottom > 0}
-		<tr aria-hidden="true"><td colspan={columnsCount} class="border-0 p-0" style="height: {padBottom}px"></td></tr>
+		<tr aria-hidden="true"><td colspan={columnsCount} class="h-(--pad) border-0 p-0" style="--pad: {padBottom}px"></td></tr>
 	{/if}
 {/snippet}
 
@@ -429,7 +392,7 @@
 	)}
 >
 	{#if !unstyled}
-		<div aria-hidden="true" class="sticky top-0 z-[var(--arcane-z-sticky)] -mb-10 h-10 backdrop-blur-sm"></div>
+		<div aria-hidden="true" class="sticky top-0 z-(--arcane-z-sticky) -mb-10 h-10 backdrop-blur-sm"></div>
 	{/if}
 	<Table.Root bind:ref={tableElement} class={shouldVirtualize ? 'table-fixed' : undefined}>
 		{@render tableHeader()}

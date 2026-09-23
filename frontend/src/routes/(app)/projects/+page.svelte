@@ -229,19 +229,19 @@
 			title: m.compose_total(),
 			value: totalCompose,
 			icon: ProjectsIcon,
-			iconColor: 'text-amber-500'
+			iconColor: 'text-warning'
 		},
 		{
 			title: m.common_running(),
 			value: runningCompose,
 			icon: StartIcon,
-			iconColor: 'text-green-500'
+			iconColor: 'text-success'
 		},
 		{
 			title: m.common_stopped(),
 			value: stoppedCompose,
 			icon: StopIcon,
-			iconColor: 'text-red-500'
+			iconColor: 'text-destructive'
 		},
 		{
 			title: m.projects_archived_count(),

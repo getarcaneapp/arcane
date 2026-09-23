@@ -85,7 +85,7 @@
 	variant="sheet"
 	title={m.images_pull_image()}
 	description={m.images_pull_description()}
-	contentClass="sm:max-w-[600px]"
+	contentClass="sm:max-w-150"
 >
 	{#snippet children()}
 		<form onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-6">

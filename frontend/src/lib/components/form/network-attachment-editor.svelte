@@ -45,10 +45,11 @@
 				placeholder={m.containers_aliases()}
 				bind:value={row.aliases}
 				{disabled}
-				class="flex-1 font-mono"
+				mono
+				class="flex-1"
 				title={m.aliases_note()}
 			/>
-			<Input type="text" placeholder={m.static_ip()} bind:value={row.ipv4Address} {disabled} class="flex-1 font-mono" />
+			<Input type="text" placeholder={m.static_ip()} bind:value={row.ipv4Address} {disabled} mono class="flex-1" />
 			<ArcaneButton
 				action="base"
 				tone="ghost"

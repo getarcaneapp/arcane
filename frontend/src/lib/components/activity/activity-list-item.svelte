@@ -71,7 +71,7 @@
 
 <div
 	class={cn(
-		'group relative grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-3 border-b border-border/40 text-left transition-colors last:border-b-0 hover:bg-muted/30',
+		'group relative grid w-full grid-cols-icon-content-action items-start gap-3 border-b border-border/40 text-left transition-colors last:border-b-0 hover:bg-muted/30',
 		child ? 'px-3 py-2' : 'px-4 py-3',
 		expanded && 'bg-muted/40'
 	)}
@@ -101,14 +101,14 @@
 				<div class="flex min-w-0 items-center gap-2">
 					<span class="truncate text-sm font-semibold text-foreground">{activityTypeLabel(activity.type)}</span>
 					{#if relativeTime}
-						<span class="shrink-0 text-[11px] text-muted-foreground/70">· {relativeTime}</span>
+						<span class="shrink-0 text-2xs text-muted-foreground/70">· {relativeTime}</span>
 					{/if}
 				</div>
 				{#if resourceLabel}
 					<div class="truncate text-xs text-muted-foreground">{resourceLabel}</div>
 				{/if}
 				{#if !child || expanded}
-					<div class="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] text-muted-foreground/80">
+					<div class="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-2xs text-muted-foreground/80">
 						{#if sourceEnvironmentName}
 							<span class="truncate">{sourceEnvironmentName}</span>
 						{/if}
@@ -123,7 +123,7 @@
 		</div>
 
 		{#if expanded}
-			<div class="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
+			<div class="flex flex-wrap gap-x-4 gap-y-1 text-2xs text-muted-foreground">
 				<span
 					>{m.common_started()}
 					<span class="text-foreground tabular-nums">{formatDateTimeInternal(activity.startedAt)}</span></span
@@ -140,7 +140,7 @@
 			<div class="flex flex-col gap-1.5">
 				<div class="line-clamp-2 text-xs leading-relaxed text-muted-foreground">{subtitle}</div>
 				{#if isActive}
-					<Progress value={100} indeterminate class="h-1.5 rounded-full" />
+					<Progress value={100} indeterminate class="h-1.5" />
 				{/if}
 			</div>
 		{/if}

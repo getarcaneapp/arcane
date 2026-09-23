@@ -20,7 +20,7 @@
 				<Card.Description>{m.directories_storage_paths_description()}</Card.Description>
 			</div>
 		</Card.Header>
-		<Card.Content class="p-4">
+		<Card.Content>
 			<div class="grid gap-6 sm:grid-cols-2">
 				<TextInputWithLabel
 					id="projects-directory"
@@ -73,48 +73,50 @@
 				<Card.Description>{m.sync_upload_limits_description()}</Card.Description>
 			</div>
 		</Card.Header>
-		<Card.Content class="space-y-6 p-4">
-			<div class="grid gap-6 sm:grid-cols-2">
-				<TextInputWithLabel
-					id="max-upload-size"
-					type="number"
-					label={m.docker_max_upload_size_label()}
-					bind:value={formInputs.maxImageUploadSize.value}
-					error={formInputs.maxImageUploadSize.error}
-					helpText={m.docker_max_upload_size_description()}
-				/>
-			</div>
-
-			<div class="space-y-4 border-t pt-6">
-				<div class="space-y-0.5">
-					<h3 class="text-sm font-medium">{m.git_sync_file_limits_title()}</h3>
-					<div class="text-xs text-muted-foreground">{m.git_sync_file_limits_description()}</div>
+		<Card.Content>
+			<div class="flex flex-col gap-6">
+				<div class="grid gap-6 sm:grid-cols-2">
+					<TextInputWithLabel
+						id="max-upload-size"
+						type="number"
+						label={m.docker_max_upload_size_label()}
+						bind:value={formInputs.maxImageUploadSize.value}
+						error={formInputs.maxImageUploadSize.error}
+						helpText={m.docker_max_upload_size_description()}
+					/>
 				</div>
-				<div class="grid gap-4 sm:grid-cols-3">
-					<TextInputWithLabel
-						id="git-sync-max-files"
-						type="number"
-						label={m.git_sync_max_files_label()}
-						bind:value={formInputs.gitSyncMaxFiles.value}
-						error={formInputs.gitSyncMaxFiles.error}
-						helpText={m.git_sync_max_files_help()}
-					/>
-					<TextInputWithLabel
-						id="git-sync-max-total-size"
-						type="number"
-						label={m.git_sync_max_total_size_label()}
-						bind:value={formInputs.gitSyncMaxTotalSizeMb.value}
-						error={formInputs.gitSyncMaxTotalSizeMb.error}
-						helpText={m.git_sync_max_total_size_help()}
-					/>
-					<TextInputWithLabel
-						id="git-sync-max-binary-size"
-						type="number"
-						label={m.git_sync_max_binary_size_label()}
-						bind:value={formInputs.gitSyncMaxBinarySizeMb.value}
-						error={formInputs.gitSyncMaxBinarySizeMb.error}
-						helpText={m.git_sync_max_binary_size_help()}
-					/>
+
+				<div class="space-y-4 border-t pt-6">
+					<div class="space-y-0.5">
+						<h3 class="text-sm font-medium">{m.git_sync_file_limits_title()}</h3>
+						<div class="text-xs text-muted-foreground">{m.git_sync_file_limits_description()}</div>
+					</div>
+					<div class="grid gap-4 sm:grid-cols-3">
+						<TextInputWithLabel
+							id="git-sync-max-files"
+							type="number"
+							label={m.git_sync_max_files_label()}
+							bind:value={formInputs.gitSyncMaxFiles.value}
+							error={formInputs.gitSyncMaxFiles.error}
+							helpText={m.git_sync_max_files_help()}
+						/>
+						<TextInputWithLabel
+							id="git-sync-max-total-size"
+							type="number"
+							label={m.git_sync_max_total_size_label()}
+							bind:value={formInputs.gitSyncMaxTotalSizeMb.value}
+							error={formInputs.gitSyncMaxTotalSizeMb.error}
+							helpText={m.git_sync_max_total_size_help()}
+						/>
+						<TextInputWithLabel
+							id="git-sync-max-binary-size"
+							type="number"
+							label={m.git_sync_max_binary_size_label()}
+							bind:value={formInputs.gitSyncMaxBinarySizeMb.value}
+							error={formInputs.gitSyncMaxBinarySizeMb.error}
+							helpText={m.git_sync_max_binary_size_help()}
+						/>
+					</div>
 				</div>
 			</div>
 		</Card.Content>

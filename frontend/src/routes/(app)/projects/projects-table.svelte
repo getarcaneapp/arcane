@@ -310,7 +310,7 @@
 {/snippet}
 
 {#snippet DirectoryCell({ item }: { item: Project })}
-	<span class="block max-w-[22rem] truncate text-muted-foreground">{item.relativePath ?? item.dirName ?? item.path}</span>
+	<span class="block max-w-88 truncate text-muted-foreground">{item.relativePath ?? item.dirName ?? item.path}</span>
 {/snippet}
 
 {#snippet ProviderCell({ item }: { item: Project })}
@@ -343,7 +343,7 @@
 				<span class="inline-flex items-center gap-1.5">
 					<Badge variant={getStatusVariant(item.status)} minWidth="20">{capitalizeFirstLetter(item.status)}</Badge>
 					{#if item.configurationError}
-						<AlertIcon class="size-4 text-amber-500" aria-label={m.env_file_unreadable_title()} />
+						<AlertIcon class="size-4 text-warning" aria-label={m.env_file_unreadable_title()} />
 					{/if}
 				</span>
 			</ArcaneTooltip.Trigger>
@@ -587,7 +587,7 @@
 				void onToggleArchived?.(checked === true);
 			}}
 		/>
-		<Label for="projects-show-archived" class="mb-0 min-w-0 text-sm font-medium text-muted-foreground">
+		<Label for="projects-show-archived" variant="muted" class="mb-0 min-w-0">
 			{m.projects_show_archived()}
 		</Label>
 	</div>

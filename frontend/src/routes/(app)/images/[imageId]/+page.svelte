@@ -411,104 +411,108 @@
 
 <ResourceDetailLayout backUrl="/images" backLabel={m.images()} title={detailTitle} {actions}>
 	{#if image}
-		{#snippet kvTile(label: string, value: string, opts?: { class?: string })}
-			<KeyValueCard {label} cardClass={opts?.class} valueTitle={value}>
+		{#snippet kvTile(label: string, value: string, wide = false)}
+			<KeyValueCard {label} class={wide ? 'sm:col-span-2 lg:col-span-3' : undefined} valueTitle={value}>
 				{value}
 			</KeyValueCard>
 		{/snippet}
 
-		<Tabs.Root value={activeTab} class="space-y-6">
-			<TabBar items={tabItems} value={activeTab} onValueChange={(value) => urlTab.select(value)} />
+		<Tabs.Root value={activeTab}>
+			<div class="space-y-6">
+				<TabBar items={tabItems} value={activeTab} onValueChange={(value) => urlTab.select(value)} />
 
-			<Tabs.Content value="overview" class="space-y-6">
-				<DetailMetaStrip
-					items={[
-						{ icon: VolumesIcon, value: imageSize },
-						{ icon: ClockIcon, value: createdDate },
-						{ icon: CpuIcon, value: `${architecture} · ${osName}` }
-					]}
-				/>
+				<Tabs.Content value="overview">
+					<div class="space-y-6">
+						<DetailMetaStrip
+							items={[
+								{ icon: VolumesIcon, value: imageSize },
+								{ icon: ClockIcon, value: createdDate },
+								{ icon: CpuIcon, value: `${architecture} · ${osName}` }
+							]}
+						/>
 
-				{#if hasPinnedRefs}
-					<div class="space-y-2">
-						<span class="inline-flex items-center gap-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-							<TagIcon class="size-4" />
-							{m.images_pinned_references()}
-						</span>
-						<div class="flex flex-col gap-2">
-							{#each pinnedRefs as pin (pin)}
-								<div
-									class="flex max-w-2xl items-center justify-between gap-2 rounded-lg border border-border/50 bg-muted/40 p-2.5"
-								>
-									<span class="font-mono text-xs break-all text-foreground select-all" title={m.common_click_to_select()}>
-										{pin}
-									</span>
-									<CopyButton text={pin} size="icon" class="size-7 shrink-0" />
+						{#if hasPinnedRefs}
+							<div class="space-y-2">
+								<span class="inline-flex items-center gap-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+									<TagIcon class="size-4" />
+									{m.images_pinned_references()}
+								</span>
+								<div class="flex flex-col gap-2">
+									{#each pinnedRefs as pin (pin)}
+										<div
+											class="flex max-w-2xl items-center justify-between gap-2 rounded-lg border border-border/50 bg-muted/40 p-2.5"
+										>
+											<span class="font-mono text-xs break-all text-foreground select-all" title={m.common_click_to_select()}>
+												{pin}
+											</span>
+											<CopyButton text={pin} size="icon" class="size-7 shrink-0" />
+										</div>
+									{/each}
 								</div>
-							{/each}
+							</div>
+						{/if}
+
+						{#if hasTags}
+							<div class="flex flex-wrap items-center gap-2">
+								<span class="inline-flex items-center gap-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+									<TagIcon class="size-4" />
+									{m.common_tags()}
+								</span>
+								{#each repoTags as tag (tag)}
+									<Badge variant="secondary" class="cursor-pointer select-all" title={m.common_click_to_select()}>
+										{tag}
+									</Badge>
+								{/each}
+							</div>
+						{/if}
+
+						<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+							{@render kvTile(m.common_id(), image?.id || m.common_na(), true)}
+							{#if image?.dockerVersion}
+								{@render kvTile(m.common_docker_version(), image.dockerVersion)}
+							{/if}
+							{#if image?.author}
+								{@render kvTile(m.common_author(), image.author)}
+							{/if}
+							{#if image.config?.workingDir}
+								{@render kvTile(m.common_working_dir(), image.config.workingDir)}
+							{/if}
 						</div>
+
+						{#if hasEnv}
+							<DetailSection title={m.common_environment_variables()}>
+								<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+									{#each envVars as env (env)}
+										{#if env.includes('=')}
+											{@const [key, ...valueParts] = env.split('=')}
+											{@render kvTile(key ?? '', valueParts.join('='))}
+										{:else}
+											{@render kvTile('ENV_VAR', env)}
+										{/if}
+									{/each}
+								</div>
+							</DetailSection>
+						{/if}
 					</div>
-				{/if}
-
-				{#if hasTags}
-					<div class="flex flex-wrap items-center gap-2">
-						<span class="inline-flex items-center gap-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-							<TagIcon class="size-4" />
-							{m.common_tags()}
-						</span>
-						{#each repoTags as tag (tag)}
-							<Badge variant="secondary" class="cursor-pointer text-xs select-all" title={m.common_click_to_select()}>
-								{tag}
-							</Badge>
-						{/each}
-					</div>
-				{/if}
-
-				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-					{@render kvTile(m.common_id(), image?.id || m.common_na(), { class: 'sm:col-span-2 lg:col-span-3' })}
-					{#if image?.dockerVersion}
-						{@render kvTile(m.common_docker_version(), image.dockerVersion)}
-					{/if}
-					{#if image?.author}
-						{@render kvTile(m.common_author(), image.author)}
-					{/if}
-					{#if image.config?.workingDir}
-						{@render kvTile(m.common_working_dir(), image.config.workingDir)}
-					{/if}
-				</div>
-
-				{#if hasEnv}
-					<DetailSection title={m.common_environment_variables()}>
-						<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-							{#each envVars as env (env)}
-								{#if env.includes('=')}
-									{@const [key, ...valueParts] = env.split('=')}
-									{@render kvTile(key ?? '', valueParts.join('='))}
-								{:else}
-									{@render kvTile('ENV_VAR', env)}
-								{/if}
-							{/each}
-						</div>
-					</DetailSection>
-				{/if}
-			</Tabs.Content>
-
-			<Tabs.Content value="history">
-				<ImageHistoryPanel imageId={image.id} />
-			</Tabs.Content>
-			<Tabs.Content value="attestations">
-				<ImageAttestationsPanel {image} />
-			</Tabs.Content>
-			{#if vulnerabilityManagementEnabled}
-				<Tabs.Content value="vulnerabilities">
-					<VulnerabilityScanPanel
-						scan={vulnerabilityScan}
-						reportError={scanReportError}
-						isScanning={isLoading.scanning}
-						onScan={handleScanImage}
-					/>
 				</Tabs.Content>
-			{/if}
+
+				<Tabs.Content value="history">
+					<ImageHistoryPanel imageId={image.id} />
+				</Tabs.Content>
+				<Tabs.Content value="attestations">
+					<ImageAttestationsPanel {image} />
+				</Tabs.Content>
+				{#if vulnerabilityManagementEnabled}
+					<Tabs.Content value="vulnerabilities">
+						<VulnerabilityScanPanel
+							scan={vulnerabilityScan}
+							reportError={scanReportError}
+							isScanning={isLoading.scanning}
+							onScan={handleScanImage}
+						/>
+					</Tabs.Content>
+				{/if}
+			</div>
 		</Tabs.Root>
 	{:else}
 		<div class="py-12 text-center">

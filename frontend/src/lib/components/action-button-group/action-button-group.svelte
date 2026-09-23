@@ -144,7 +144,7 @@
 	<div class="flex w-full items-center justify-between gap-2">
 		<span>{button.loading ? button.loadingLabel || button.label : button.label}</span>
 		{#if button.badge !== undefined}
-			<span class="text-[10px] text-muted-foreground">({button.badge})</span>
+			<span class="text-3xs text-muted-foreground">({button.badge})</span>
 		{/if}
 	</div>
 {/snippet}
@@ -157,7 +157,7 @@
 					<DropdownMenu.SubTrigger disabled={button.disabled || button.loading}>
 						{@render menuButtonLabel(button)}
 					</DropdownMenu.SubTrigger>
-					<DropdownMenu.SubContent class="min-w-[180px]">
+					<DropdownMenu.SubContent class="min-w-45">
 						<DropdownMenu.Item onclick={() => handleOverflowAction(button)} disabled={button.disabled || button.loading}>
 							{button.label}
 						</DropdownMenu.Item>
@@ -176,7 +176,7 @@
 
 {#snippet buttonContent(button: ActionButton)}
 	{#if button.badge !== undefined}
-		<span class="rounded-full border px-1 py-0.5 text-[10px] text-muted-foreground">
+		<span class="rounded-full border px-1 py-0.5 text-3xs text-muted-foreground">
 			{button.badge}
 		</span>
 	{/if}
@@ -205,17 +205,21 @@
 			</ArcaneButton>
 		{:else}
 			<DropdownMenu.Root>
-				<DropdownMenu.Trigger
-					class={cn(
-						'inline-flex items-center justify-center rounded-xl border border-border/80 bg-background/90 text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.34),0_1px_2px_rgba(15,23,42,0.05)] backdrop-blur-sm transition-[background-color,border-color,color,box-shadow,transform,filter] duration-200 ease-out outline-none hover:border-border hover:bg-accent/60 hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring/70 focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-[0.985] dark:bg-card/70 dark:hover:bg-accent/40',
-						size === 'sm' ? 'size-8 rounded-lg' : 'size-9'
-					)}
-					aria-label={m.common_open_menu()}
-				>
-					<ArrowDownIcon class="size-4" />
+				<DropdownMenu.Trigger>
+					{#snippet child({ props })}
+						<ArcaneButton
+							{...props}
+							action="base"
+							tone="outline"
+							size="icon"
+							icon={ArrowDownIcon}
+							class={size === 'sm' ? 'size-8 rounded-lg' : undefined}
+							aria-label={m.common_open_menu()}
+						/>
+					{/snippet}
 				</DropdownMenu.Trigger>
 
-				<DropdownMenu.Content align="end" class="min-w-[180px]">
+				<DropdownMenu.Content align="end" class="min-w-45">
 					{@render menuItemsList(button.menuItems ?? [])}
 				</DropdownMenu.Content>
 			</DropdownMenu.Root>
@@ -279,7 +283,7 @@
 				<DropdownMenu.Root>
 					{@render ellipsisTrigger(m.common_more_actions())}
 
-					<DropdownMenu.Content align="end" class="min-w-[160px]">
+					<DropdownMenu.Content align="end" class="min-w-40">
 						{@render menuButtons(overflowButtons)}
 					</DropdownMenu.Content>
 				</DropdownMenu.Root>
@@ -290,7 +294,7 @@
 			<DropdownMenu.Root>
 				{@render ellipsisTrigger('More actions')}
 
-				<DropdownMenu.Content align="end" class="min-w-[160px]">
+				<DropdownMenu.Content align="end" class="min-w-40">
 					{@render menuButtons(buttons)}
 				</DropdownMenu.Content>
 			</DropdownMenu.Root>

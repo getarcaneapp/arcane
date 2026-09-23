@@ -52,7 +52,7 @@
 <Sheet.Root open={!!file} onOpenChange={(open) => !open && onClose()}>
 	<Sheet.Content class="flex h-full flex-col sm:max-w-2xl">
 		<Sheet.Header>
-			<Sheet.Title class="truncate">{file.name}</Sheet.Title>
+			<Sheet.Title><span class="block min-w-0 truncate">{file.name}</span></Sheet.Title>
 			<Sheet.Description class="break-all">{file.path}</Sheet.Description>
 		</Sheet.Header>
 

@@ -82,7 +82,7 @@
 			title: m.swarm_nodes_total(),
 			value: totalNodes,
 			icon: UsersIcon,
-			iconColor: 'text-blue-500'
+			iconColor: 'text-info'
 		}
 	]);
 </script>
@@ -91,8 +91,8 @@
 	{#snippet mainContent()}
 		<div class="space-y-4">
 			{#if uncoveredNodeCount > 0}
-				<Alert.Root class="border-amber-500/30 bg-amber-500/10 text-amber-900 dark:text-amber-100">
-					<AlertTriangleIcon class="size-4 text-amber-600 dark:text-amber-300" />
+				<Alert.Root variant="warning-subtle">
+					<AlertTriangleIcon class="size-4 text-warning" />
 					<Alert.Title>{m.swarm_node_agent_warning_title()}</Alert.Title>
 					<Alert.Description>{m.swarm_node_agent_warning_description({ count: uncoveredNodeCount })}</Alert.Description>
 				</Alert.Root>

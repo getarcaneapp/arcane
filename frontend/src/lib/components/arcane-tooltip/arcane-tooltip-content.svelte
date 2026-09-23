@@ -2,7 +2,7 @@
 	import * as Tooltip from '#lib/components/ui/tooltip/index.js';
 	import * as Popover from '#lib/components/ui/popover/index.js';
 	import { getArcaneTooltipContext } from './context.svelte.js';
-	import { cn, type WithoutChildrenOrChild } from '#lib/utils.js';
+	import type { WithoutChildrenOrChild } from '#lib/utils.js';
 	import type { ComponentProps, Snippet } from 'svelte';
 
 	export type ArcaneTooltipContentProps = WithoutChildrenOrChild<ComponentProps<typeof Tooltip.Content>>;
@@ -15,9 +15,12 @@
 		side = 'top',
 		arrowClasses,
 		portalProps,
+		variant = 'default',
 		...restProps
 	}: ArcaneTooltipContentProps & {
 		children?: Snippet;
+		/** `panel` drops padding for rich content that brings its own layout. */
+		variant?: 'default' | 'panel';
 	} = $props();
 
 	const ctx = getArcaneTooltipContext();
@@ -28,16 +31,14 @@
 		bind:ref
 		{sideOffset}
 		{side}
-		class={cn(
-			'w-fit max-w-[min(calc(100vw-2rem),320px)] border-border/50 bg-popover/90 px-3 py-1.5 text-xs text-balance shadow-lg backdrop-blur-md',
-			className
-		)}
+		variant={variant === 'panel' ? 'panel' : 'tooltip'}
+		class={className}
 		{...restProps}
 	>
 		{@render children?.()}
 	</Popover.Content>
 {:else}
-	<Tooltip.Content bind:ref {sideOffset} {side} class={className} {arrowClasses} {portalProps} {...restProps}>
+	<Tooltip.Content bind:ref {sideOffset} {side} {variant} class={className} {arrowClasses} {portalProps} {...restProps}>
 		{@render children?.()}
 	</Tooltip.Content>
 {/if}

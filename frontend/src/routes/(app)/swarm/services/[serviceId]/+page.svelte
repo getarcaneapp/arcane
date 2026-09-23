@@ -343,10 +343,7 @@
 				<div class="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10">
 					<DockIcon class="size-5 text-primary" />
 				</div>
-				<h1
-					class="max-w-[10rem] min-w-0 truncate text-lg font-semibold sm:max-w-[14rem] md:max-w-[18rem] lg:max-w-[22rem]"
-					title={serviceName}
-				>
+				<h1 class="max-w-40 min-w-0 truncate text-lg font-semibold sm:max-w-56 md:max-w-72 lg:max-w-88" title={serviceName}>
 					{serviceName}
 				</h1>
 				<Badge variant={getSwarmServiceModeVariant(serviceMode)} minWidth="20">{getSwarmServiceModeLabel(serviceMode)}</Badge>

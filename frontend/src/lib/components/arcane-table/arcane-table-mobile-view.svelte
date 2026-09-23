@@ -54,7 +54,7 @@
 	{#each Array.from({ length: 6 }, (_, i) => i) as r (r)}
 		<div class="px-3 py-2.5">
 			<div class="flex items-center gap-3">
-				<Skeleton class="size-9 rounded-md" />
+				<Skeleton class="size-9" />
 				<div class="flex-1 space-y-1.5">
 					<Skeleton class="h-4 w-1/2" />
 					<Skeleton class="h-3 w-1/3" />
@@ -81,7 +81,7 @@
 
 {#snippet emptyState()}
 	<div class="p-4">
-		<TableEmpty class={cn('min-h-48 rounded-xl py-12', unstyled ? 'border-transparent bg-transparent' : 'bg-card/30')} />
+		<TableEmpty {unstyled} class="min-h-48" />
 	</div>
 {/snippet}
 

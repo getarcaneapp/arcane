@@ -686,7 +686,7 @@
 							error={formInputs.name.error ?? undefined}
 							originalValue={environment.name}
 							placeholder={m.environments_name_placeholder()}
-							class="max-w-[14rem] min-w-0 sm:max-w-[20rem] md:max-w-[26rem]"
+							class="max-w-56 min-w-0 sm:max-w-80 md:max-w-104"
 						/>
 
 						<!-- Enable/Disable indicator -->
@@ -695,9 +695,7 @@
 								<div
 									class={cn(
 										'size-2 rounded-full transition-colors',
-										formInputs.enabled.value
-											? 'bg-emerald-500 shadow-[0_0_8px_var(--color-emerald-500)]'
-											: 'bg-muted-foreground/40'
+										formInputs.enabled.value ? 'bg-success shadow-glow shadow-success' : 'bg-muted-foreground/40'
 									)}
 								></div>
 								<span class="text-sm font-medium">
@@ -725,7 +723,10 @@
 								type="url"
 								bind:value={formInputs.apiUrl.value}
 								oninput={clearAccessToken}
-								class="h-7 w-full max-w-md font-mono text-xs {formInputs.apiUrl.error ? 'border-destructive' : ''}"
+								mono
+								size="sm"
+								class="h-7 w-full max-w-md"
+								aria-invalid={!!formInputs.apiUrl.error}
 								placeholder={m.environments_api_url_placeholder()}
 								autofocus
 								onkeydown={(e) => {
@@ -784,12 +785,7 @@
 			<!-- ActionButtonGroup measures its own width to decide what overflows, so it
 			     needs a row that actually spans the header, not a shrink-to-fit column. -->
 			<div class="flex w-full min-w-0 shrink-0 flex-col items-start gap-2 sm:w-auto sm:min-w-md sm:items-end">
-				<span
-					class={cn(
-						'text-xs',
-						settingsForm.hasChanges ? 'text-orange-600 dark:text-orange-400' : 'text-green-600 dark:text-green-400'
-					)}
-				>
+				<span class={cn('text-xs', settingsForm.hasChanges ? 'text-warning' : 'text-success')}>
 					{settingsForm.hasChanges ? m.common_unsaved_changes() : m.common_all_changes_saved()}
 				</span>
 				<div class="flex w-full">
@@ -807,19 +803,15 @@
 		/>
 
 		{#if environment.enabled && settings && isCurrentlyStandby}
-			<div
-				class="flex items-start gap-3 rounded-lg border border-blue-500/30 bg-blue-500/10 p-4 text-blue-900 dark:text-blue-200"
-			>
-				<AlertIcon class="mt-0.5 size-5 shrink-0 text-blue-600 dark:text-blue-400" />
+			<div class="flex items-start gap-3 rounded-lg border border-info/30 bg-info/10 p-4 text-info">
+				<AlertIcon class="mt-0.5 size-5 shrink-0 text-info" />
 				<div class="flex-1 space-y-1">
 					<p class="text-sm font-medium">{m.common_status()}: {m.common_standby()}</p>
 				</div>
 			</div>
 		{:else if !environment.enabled || !isCurrentlyOnline || !settings}
-			<div
-				class="flex items-start gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-amber-900 dark:text-amber-200"
-			>
-				<AlertIcon class="mt-0.5 size-5 shrink-0 text-amber-600 dark:text-amber-400" />
+			<div class="flex items-start gap-3 rounded-lg border border-warning/30 bg-warning/10 p-4 text-warning">
+				<AlertIcon class="mt-0.5 size-5 shrink-0 text-warning" />
 				<div class="flex-1 space-y-1">
 					<p class="text-sm font-medium">
 						{#if !environment.enabled}
@@ -840,7 +832,7 @@
 	</div>
 
 	{#if regeneratedApiKey}
-		<div class="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-4 text-emerald-950 dark:text-emerald-100">
+		<div class="rounded-lg border border-success/30 bg-success/10 p-4 text-success">
 			<div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
 				<div class="space-y-2">
 					<p class="text-sm font-medium">{m.environments_new_api_key()}</p>

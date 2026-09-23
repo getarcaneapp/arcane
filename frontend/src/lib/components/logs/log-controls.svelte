@@ -306,7 +306,7 @@
 		</div>
 
 		<div class="flex shrink-0 items-center gap-3">
-			<Input type="search" placeholder={m.common_search()} bind:value={searchTerm} class="h-9 w-44 text-xs" />
+			<Input type="search" placeholder={m.common_search()} bind:value={searchTerm} size="sm" class="h-9 w-44" />
 
 			<Select.Root
 				type="single"
@@ -314,7 +314,7 @@
 				disabled={isStreaming}
 				onValueChange={(v: string) => (preferences.selectedTail.current = v)}
 			>
-				<Select.Trigger class="h-9 w-32 text-xs">
+				<Select.Trigger class="h-9 w-32">
 					<span>{selectedLabel}</span>
 				</Select.Trigger>
 				<Select.Content>

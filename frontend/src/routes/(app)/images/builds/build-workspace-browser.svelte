@@ -193,7 +193,7 @@
 		<div class="min-w-0 flex-1 space-y-3">
 			<FileBreadcrumb path={currentPath} {rootLabel} onNavigate={handleNavigate} />
 			<div class="flex min-w-0 items-center gap-3">
-				<div class="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground" title={absoluteCurrentPath}>
+				<div class="min-w-0 flex-1 truncate font-mono text-2xs text-muted-foreground" title={absoluteCurrentPath}>
 					{absoluteCurrentPath}
 				</div>
 			</div>
@@ -214,7 +214,7 @@
 						/>
 					{/snippet}
 				</DropdownMenu.Trigger>
-				<DropdownMenu.Content align="end" class="min-w-[180px]">
+				<DropdownMenu.Content align="end" class="min-w-45">
 					<DropdownMenu.Item onclick={handleCopyPath}>
 						<CopyIcon class="size-4" />
 						Copy current path
@@ -237,7 +237,7 @@
 
 	{#if loading}
 		<div class="flex flex-1 items-center justify-center p-8">
-			<Spinner class="size-8 text-muted-foreground" />
+			<Spinner tone="muted" class="size-8" />
 		</div>
 	{:else if error}
 		<div class="rounded-lg border border-destructive/20 bg-destructive/10 p-6 text-sm text-destructive">
@@ -295,7 +295,7 @@
 		<div class="space-y-4 py-2">
 			{#if editorLoading}
 				<div class="flex items-center justify-center py-8">
-					<Spinner class="size-8 text-muted-foreground" />
+					<Spinner tone="muted" class="size-8" />
 				</div>
 			{:else if editorError}
 				<div class="rounded-lg border border-destructive/20 bg-destructive/10 p-4 text-sm text-destructive">
@@ -312,13 +312,14 @@
 								editorDraft = { envId, path: editorFile?.path ?? '', content };
 							}
 						}
-						class="font-mono text-xs"
+						mono
+						size="sm"
 					/>
 					<p class="text-xs text-muted-foreground">{m.build_saving_overwrite()}</p>
 				</div>
 			{/if}
 		</div>
-		<Dialog.Footer class="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+		<Dialog.Footer class="flex flex-col-reverse sm:flex-row sm:justify-end">
 			<ArcaneButton action="cancel" tone="outline" type="button" onclick={() => (editorOpen = false)} />
 			{#if canBuildImage}
 				<ArcaneButton

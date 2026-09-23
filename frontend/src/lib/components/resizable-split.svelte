@@ -199,8 +199,8 @@
 	class={['flex min-h-0 min-w-0', isStacked && (variant === 'flush' ? 'flex-col' : 'flex-col gap-4'), className]}
 >
 	<div
-		class={['min-h-0 min-w-0 overflow-hidden', isStacked ? 'flex-1' : 'flex-none', firstClass]}
-		style={isStacked ? '' : `width: ${layout.size}px;`}
+		class={['min-h-0 min-w-0 overflow-hidden', isStacked ? 'flex-1' : 'w-(--first-size) flex-none', firstClass]}
+		style={isStacked ? undefined : `--first-size: ${layout.size}px`}
 		aria-hidden={!isStacked && collapsedSide === 'first'}
 	>
 		{#if isStacked || collapsedSide !== 'first'}
@@ -214,10 +214,11 @@
 			aria-orientation="vertical"
 			aria-label={ariaLabel ?? m.common_resize_panels()}
 			class={[
-				'group relative z-[var(--arcane-z-sticky)] flex shrink-0 cursor-col-resize items-stretch justify-center overflow-visible',
+				'group relative z-(--arcane-z-sticky) flex shrink-0 cursor-col-resize items-stretch justify-center overflow-visible',
+				'w-(--handle-size)',
 				handleClass
 			]}
-			style={`width: ${layoutHandleSize}px;`}
+			style={`--handle-size: ${layoutHandleSize}px`}
 			onpointerdown={startResize}
 		>
 			{#if variant === 'flush'}
@@ -228,7 +229,7 @@
 			{/if}
 			{#if collapsedSide}
 				<button
-					class="absolute inset-0 z-[var(--arcane-z-raised)] m-auto flex size-6 items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-sm hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+					class="absolute inset-0 z-(--arcane-z-raised) m-auto flex size-6 items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-sm hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
 					onclick={(event) => {
 						event.stopPropagation();
 						restoreCollapsed();
@@ -249,8 +250,11 @@
 	{/if}
 
 	<div
-		class={['min-h-0 min-w-0 flex-1 overflow-hidden', secondClass]}
-		style={!isStacked && collapsedSide === 'second' ? 'flex: 0 0 0px; width: 0px;' : ''}
+		class={[
+			'min-h-0 min-w-0 overflow-hidden',
+			!isStacked && collapsedSide === 'second' ? 'w-0 shrink-0 grow-0 basis-0' : 'flex-1',
+			secondClass
+		]}
 		aria-hidden={!isStacked && collapsedSide === 'second'}
 	>
 		{#if isStacked || collapsedSide !== 'second'}

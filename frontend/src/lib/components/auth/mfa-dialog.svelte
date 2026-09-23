@@ -33,9 +33,11 @@
 <Dialog.Root bind:open>
 	<Dialog.Content class="sm:max-w-md">
 		<Dialog.Header>
-			<Dialog.Title class="flex items-center gap-2">
-				<ShieldCheckIcon class="size-5 text-primary" />
-				{enabled ? m.account_passkey_mfa_disable_title() : m.account_passkey_mfa_title()}
+			<Dialog.Title>
+				<span class="flex items-center gap-2">
+					<ShieldCheckIcon class="size-5 text-primary" />
+					{enabled ? m.account_passkey_mfa_disable_title() : m.account_passkey_mfa_title()}
+				</span>
 			</Dialog.Title>
 			<Dialog.Description>
 				{enabled ? m.account_passkey_mfa_disable_description() : m.account_passkey_mfa_description()}

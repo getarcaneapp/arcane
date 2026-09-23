@@ -235,22 +235,22 @@
 			title: m.common_total(),
 			value: syncCounts.totalSyncs,
 			icon: RefreshIcon,
-			iconColor: 'text-blue-500',
-			bgColor: 'bg-blue-500/10'
+			iconColor: 'text-info',
+			bgColor: 'bg-info/10'
 		},
 		{
 			title: m.common_active(),
 			value: syncCounts.activeSyncs,
 			icon: ClockIcon,
-			iconColor: 'text-purple-500',
-			bgColor: 'bg-purple-500/10'
+			iconColor: 'text-purple',
+			bgColor: 'bg-purple/10'
 		},
 		{
 			title: m.common_successful(),
 			value: syncCounts.successfulSyncs,
 			icon: SuccessIcon,
-			iconColor: 'text-green-500',
-			bgColor: 'bg-green-500/10'
+			iconColor: 'text-success',
+			bgColor: 'bg-success/10'
 		}
 	]);
 </script>

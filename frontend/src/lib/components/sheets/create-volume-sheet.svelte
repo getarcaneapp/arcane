@@ -78,7 +78,7 @@
 	variant="sheet"
 	title={m.create_volume_title()}
 	description={m.create_volume_description()}
-	contentClass="sm:max-w-[600px]"
+	contentClass="sm:max-w-150"
 >
 	{#snippet children()}
 		<form onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-6">
@@ -103,9 +103,9 @@
 
 			<Accordion.Root type="single" class="w-full">
 				<Accordion.Item value="advanced">
-					<Accordion.Trigger class="text-sm font-medium">{m.volume_advanced_settings()}</Accordion.Trigger>
-					<Accordion.Content class="pt-4">
-						<div class="space-y-4">
+					<Accordion.Trigger>{m.volume_advanced_settings()}</Accordion.Trigger>
+					<Accordion.Content>
+						<div class="space-y-4 pt-4">
 							<FormInput
 								label={m.common_driver_options()}
 								type="textarea"

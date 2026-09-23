@@ -48,7 +48,7 @@
 </script>
 
 <Dialog.Root {open} onOpenChange={(nextOpen) => (open = nextOpen)}>
-	<Dialog.Content class="sm:max-w-[425px]">
+	<Dialog.Content class="sm:max-w-106.25">
 		<Dialog.Header>
 			<Dialog.Title>{m.new_folder()}</Dialog.Title>
 			<Dialog.Description>

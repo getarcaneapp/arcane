@@ -159,19 +159,19 @@
 			title: m.common_total(),
 			value: containerStatusCounts.totalContainers,
 			icon: BoxIcon,
-			iconColor: 'text-blue-500'
+			iconColor: 'text-info'
 		},
 		{
 			title: m.common_running(),
 			value: containerStatusCounts.runningContainers,
 			icon: BoxIcon,
-			iconColor: 'text-green-500'
+			iconColor: 'text-success'
 		},
 		{
 			title: m.common_stopped(),
 			value: containerStatusCounts.stoppedContainers,
 			icon: BoxIcon,
-			iconColor: 'text-red-500'
+			iconColor: 'text-destructive'
 		}
 	]);
 </script>

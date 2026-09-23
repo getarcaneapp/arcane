@@ -52,13 +52,13 @@
 	{@const vip = vipMap[networkId]}
 	{@const info = networkDetails[networkId]}
 	<Card.Root variant="subtle">
-		<Card.Content class="p-4">
+		<Card.Content>
 			{@render networkSummary(info, aliases, networkId)}
 
 			<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
 				{#if vip}
-					<Card.Root variant="outlined">
-						<Card.Content class="flex flex-col p-3">
+					<Card.Root variant="outlined" size="sm">
+						<Card.Content class="flex flex-col">
 							<div class="mb-2 text-xs font-semibold text-muted-foreground">{m.networks_service_vip_label()}</div>
 							<code
 								class="cursor-pointer rounded bg-muted px-1.5 py-0.5 font-mono text-sm break-all text-muted-foreground select-all"
@@ -69,8 +69,8 @@
 					</Card.Root>
 				{/if}
 
-				<Card.Root variant="outlined">
-					<Card.Content class="flex flex-col p-3">
+				<Card.Root variant="outlined" size="sm">
+					<Card.Content class="flex flex-col">
 						<div class="mb-2 text-xs font-semibold text-muted-foreground">{m.common_id()}</div>
 						<code
 							class="cursor-pointer rounded bg-muted px-1.5 py-0.5 font-mono text-xs break-all text-muted-foreground select-all sm:text-sm"
@@ -81,8 +81,8 @@
 				</Card.Root>
 
 				{#if aliases.length > 0}
-					<Card.Root variant="outlined">
-						<Card.Content class="flex flex-col p-3">
+					<Card.Root variant="outlined" size="sm">
+						<Card.Content class="flex flex-col">
 							<div class="mb-2 text-xs font-semibold text-muted-foreground">
 								{m.containers_aliases()}
 							</div>
@@ -108,8 +108,8 @@
 {/snippet}
 
 {#snippet configurationNetwork(configNetwork: NonNullable<ServiceNetworkDetail['configNetwork']>)}
-	<Card.Root variant="outlined" class="sm:col-span-2">
-		<Card.Content class="p-3">
+	<Card.Root variant="outlined" class="sm:col-span-2" size="sm">
+		<Card.Content>
 			<div class="mb-3 flex items-center justify-between border-b border-border pb-3">
 				<div>
 					<div class="text-sm font-semibold text-foreground">
@@ -150,8 +150,8 @@
 
 {#snippet networkSummary(info: ServiceNetworkDetail | undefined, aliases: string[], networkId: string)}
 	<div class="mb-4 flex items-center gap-3 border-b border-border pb-4">
-		<div class="rounded-lg bg-blue-500/10 p-2">
-			<NetworksIcon class="size-5 text-blue-500" />
+		<div class="rounded-lg bg-info/10 p-2">
+			<NetworksIcon class="size-5 text-info" />
 		</div>
 		<div class="min-w-0 flex-1">
 			<div class="text-base font-semibold break-all text-foreground">
@@ -234,7 +234,7 @@
 				</Card.Title>
 			</div>
 		</Card.Header>
-		<Card.Content class="p-4">
+		<Card.Content>
 			{#if ports.length > 0}
 				<div class="flex flex-wrap gap-2">
 					{#each ports as port (`${port.publishedPort ?? 'internal'}:${port.targetPort}/${port.protocol}:${port.publishMode ?? ''}`)}
@@ -257,7 +257,7 @@
 				</Card.Title>
 			</div>
 		</Card.Header>
-		<Card.Content class="p-4">
+		<Card.Content>
 			{#if networks.length > 0 || virtualIPs.length > 0}
 				<div class="grid grid-cols-1 gap-4">
 					{#each networks as network (network.target)}

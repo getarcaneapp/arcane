@@ -52,6 +52,6 @@
 		stroke-linecap="round"
 		stroke-dasharray={circumference}
 		stroke-dashoffset={dashOffset}
-		style="transition: stroke-dashoffset 300ms ease-out;"
+		class="transition-all duration-300 ease-out"
 	/>
 </svg>

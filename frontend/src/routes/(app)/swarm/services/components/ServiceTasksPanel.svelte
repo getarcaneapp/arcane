@@ -55,7 +55,7 @@
 			</ArcaneButton>
 		</div>
 	</Card.Header>
-	<Card.Content class="p-4">
+	<Card.Content>
 		{#if isLoading && !hasLoaded}
 			<div class="py-12 text-center text-sm text-muted-foreground">{m.swarm_service_tasks_loading()}</div>
 		{:else if tasks.length === 0}
@@ -69,7 +69,7 @@
 			<div class="grid grid-cols-1 gap-3 lg:grid-cols-2 xl:grid-cols-3">
 				{#each tasks as task (task.id)}
 					<Card.Root variant="subtle">
-						<Card.Content class="p-4">
+						<Card.Content>
 							<div class="mb-3 flex items-center justify-between border-b border-border pb-3">
 								<div class="min-w-0 flex-1">
 									<div class="truncate text-sm font-semibold text-foreground" title={task.name}>
@@ -98,7 +98,7 @@
 								{#if task.error}
 									<div class="col-span-2">
 										<div class="mb-1 text-xs font-semibold text-muted-foreground">{m.common_error()}</div>
-										<div class="text-sm break-all text-red-400">{task.error}</div>
+										<div class="text-sm break-all text-destructive">{task.error}</div>
 									</div>
 								{/if}
 							</div>

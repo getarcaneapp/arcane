@@ -27,13 +27,13 @@
 <ResponsiveDialog
 	bind:open={operationWatchStore.open}
 	title={operationWatchStore.title}
-	contentClass="sm:max-w-[1100px]"
+	contentClass="sm:max-w-275"
 	class="min-h-0"
 >
 	<div class="space-y-3 pb-4">
 		<PinnedScrollRegion
 			itemCount={operationWatchStore.lines.length}
-			class="max-h-[70vh] min-h-[280px] overflow-auto rounded-lg border border-border/50 bg-zinc-950 p-4 font-mono text-[12px] leading-relaxed text-zinc-100"
+			class="dark max-h-screen-70 min-h-70 overflow-auto rounded-lg border border-border/50 bg-background p-4 font-mono text-xs leading-relaxed text-foreground"
 		>
 			<!-- Lines only append within a session, so their positions are stable identities. -->
 			{#each operationWatchStore.lines as line, idx (idx)}
@@ -41,7 +41,7 @@
 				<div class="break-words whitespace-pre-wrap">{@html ansiToHtml(line)}</div>
 			{/each}
 			{#if operationWatchStore.lines.length === 0}
-				<div class="flex min-h-[240px] items-center justify-center text-zinc-500">
+				<div class="flex min-h-60 items-center justify-center text-muted-foreground">
 					{m.activity_output_loading()}
 				</div>
 			{/if}

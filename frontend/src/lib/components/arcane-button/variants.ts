@@ -37,8 +37,8 @@ import {
 export const arcaneButtonVariants = tv({
 	base:
 		'inline-flex items-center justify-center gap-2 rounded-xl text-sm font-medium whitespace-nowrap select-none ' +
-		'border transition-[background-color,border-color,color,box-shadow,transform,filter] duration-200 ease-out ' +
-		'active:scale-[0.985] ' +
+		'border transition duration-200 ease-out ' +
+		'active:scale-98 ' +
 		'disabled:pointer-events-none disabled:opacity-55 disabled:saturate-[0.82] disabled:shadow-none ' +
 		'aria-disabled:pointer-events-none aria-disabled:opacity-55 aria-disabled:saturate-[0.82] aria-disabled:shadow-none ' +
 		'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70 focus-visible:ring-offset-2 focus-visible:ring-offset-background ' +
@@ -46,70 +46,70 @@ export const arcaneButtonVariants = tv({
 	variants: {
 		tone: {
 			'outline-primary':
-				'border-primary/20 bg-primary/[0.06] text-foreground! shadow-[inset_0_1px_0_rgba(255,255,255,0.28),0_1px_2px_rgba(15,23,42,0.06)] ' +
-				'hover:border-primary/40 hover:bg-primary/[0.1] hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.24),0_8px_20px_-12px_rgba(15,23,42,0.28)] ' +
-				'dark:border-primary/30 dark:bg-primary/[0.12] dark:text-primary-foreground dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_1px_2px_rgba(0,0,0,0.18)] ' +
-				'dark:hover:border-primary/50 dark:hover:bg-primary/[0.18] dark:hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_10px_24px_-14px_rgba(0,0,0,0.5)]',
+				'border-primary/20 bg-primary/[0.06] text-foreground! shadow-button ' +
+				'hover:border-primary/40 hover:bg-primary/[0.1] hover:shadow-button-hover ' +
+				'dark:border-primary/30 dark:bg-primary/[0.12] dark:text-primary-foreground ' +
+				'dark:hover:border-primary/50 dark:hover:bg-primary/[0.18]',
 			'outline-primary-login':
-				'w-full border-primary/20 bg-primary/[0.06] text-foreground! shadow-[inset_0_1px_0_rgba(255,255,255,0.28),0_1px_2px_rgba(15,23,42,0.06)] ' +
-				'hover:border-primary/40 hover:bg-primary/[0.1] hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.24),0_8px_20px_-12px_rgba(15,23,42,0.28)] ' +
-				'dark:border-primary/30 dark:bg-primary/[0.12] dark:text-primary-foreground dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_1px_2px_rgba(0,0,0,0.18)] ' +
-				'dark:hover:border-primary/50 dark:hover:bg-primary/[0.18] dark:hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_10px_24px_-14px_rgba(0,0,0,0.5)]',
+				'w-full border-primary/20 bg-primary/[0.06] text-foreground! shadow-button ' +
+				'hover:border-primary/40 hover:bg-primary/[0.1] hover:shadow-button-hover ' +
+				'dark:border-primary/30 dark:bg-primary/[0.12] dark:text-primary-foreground ' +
+				'dark:hover:border-primary/50 dark:hover:bg-primary/[0.18]',
 			'outline-destructive':
-				'border-destructive/20 bg-destructive/[0.06] text-foreground! shadow-[inset_0_1px_0_rgba(255,255,255,0.28),0_1px_2px_rgba(15,23,42,0.06)] ' +
-				'hover:border-destructive/40 hover:bg-destructive/[0.1] hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.24),0_8px_20px_-12px_rgba(15,23,42,0.28)] ' +
-				'dark:border-destructive/30 dark:bg-destructive/[0.12] dark:text-destructive-foreground dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_1px_2px_rgba(0,0,0,0.18)] ' +
-				'dark:hover:border-destructive/50 dark:hover:bg-destructive/[0.18] dark:hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_10px_24px_-14px_rgba(0,0,0,0.5)]',
+				'border-destructive/20 bg-destructive/[0.06] text-foreground! shadow-button ' +
+				'hover:border-destructive/40 hover:bg-destructive/[0.1] hover:shadow-button-hover ' +
+				'dark:border-destructive/30 dark:bg-destructive/[0.12] dark:text-destructive-foreground ' +
+				'dark:hover:border-destructive/50 dark:hover:bg-destructive/[0.18]',
 			'outline-success':
-				'border-emerald-500/20 bg-emerald-500/[0.06] text-foreground! shadow-[inset_0_1px_0_rgba(255,255,255,0.28),0_1px_2px_rgba(15,23,42,0.06)] ' +
-				'hover:border-emerald-500/40 hover:bg-emerald-500/[0.1] hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.24),0_8px_20px_-12px_rgba(15,23,42,0.28)] ' +
-				'dark:border-emerald-500/30 dark:bg-emerald-500/[0.12] dark:text-emerald-300 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_1px_2px_rgba(0,0,0,0.18)] ' +
-				'dark:hover:border-emerald-500/50 dark:hover:bg-emerald-500/[0.18] dark:hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_10px_24px_-14px_rgba(0,0,0,0.5)]',
+				'border-success/20 bg-success/[0.06] text-foreground! shadow-button ' +
+				'hover:border-success/40 hover:bg-success/[0.1] hover:shadow-button-hover ' +
+				'dark:border-success/30 dark:bg-success/[0.12] dark:text-success ' +
+				'dark:hover:border-success/50 dark:hover:bg-success/[0.18]',
 			'outline-info':
-				'border-sky-500/20 bg-sky-500/[0.06] text-foreground! shadow-[inset_0_1px_0_rgba(255,255,255,0.28),0_1px_2px_rgba(15,23,42,0.06)] ' +
-				'hover:border-sky-500/40 hover:bg-sky-500/[0.1] hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.24),0_8px_20px_-12px_rgba(15,23,42,0.28)] ' +
-				'dark:border-sky-500/30 dark:bg-sky-500/[0.12] dark:text-sky-300 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_1px_2px_rgba(0,0,0,0.18)] ' +
-				'dark:hover:border-sky-500/50 dark:hover:bg-sky-500/[0.18] dark:hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_10px_24px_-14px_rgba(0,0,0,0.5)]',
+				'border-info/20 bg-info/[0.06] text-foreground! shadow-button ' +
+				'hover:border-info/40 hover:bg-info/[0.1] hover:shadow-button-hover ' +
+				'dark:border-info/30 dark:bg-info/[0.12] dark:text-info ' +
+				'dark:hover:border-info/50 dark:hover:bg-info/[0.18]',
 			'outline-warning':
-				'border-amber-500/20 bg-amber-500/[0.06] text-foreground! shadow-[inset_0_1px_0_rgba(255,255,255,0.28),0_1px_2px_rgba(15,23,42,0.06)] ' +
-				'hover:border-amber-500/40 hover:bg-amber-500/[0.1] hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.24),0_8px_20px_-12px_rgba(15,23,42,0.28)] ' +
-				'dark:border-amber-500/30 dark:bg-amber-500/[0.12] dark:text-amber-200 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_1px_2px_rgba(0,0,0,0.18)] ' +
-				'dark:hover:border-amber-500/50 dark:hover:bg-amber-500/[0.18] dark:hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_10px_24px_-14px_rgba(0,0,0,0.5)]',
+				'border-warning/20 bg-warning/[0.06] text-foreground! shadow-button ' +
+				'hover:border-warning/40 hover:bg-warning/[0.1] hover:shadow-button-hover ' +
+				'dark:border-warning/30 dark:bg-warning/[0.12] dark:text-warning ' +
+				'dark:hover:border-warning/50 dark:hover:bg-warning/[0.18]',
 			'outline-tag':
-				'border-teal-500/20 bg-teal-500/[0.06] text-foreground! shadow-[inset_0_1px_0_rgba(255,255,255,0.28),0_1px_2px_rgba(15,23,42,0.06)] ' +
-				'hover:border-teal-500/40 hover:bg-teal-500/[0.1] hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.24),0_8px_20px_-12px_rgba(15,23,42,0.28)] ' +
-				'dark:border-teal-500/30 dark:bg-teal-500/[0.12] dark:text-teal-200 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_1px_2px_rgba(0,0,0,0.18)] ' +
-				'dark:hover:border-teal-500/50 dark:hover:bg-teal-500/[0.18] dark:hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_10px_24px_-14px_rgba(0,0,0,0.5)]',
+				'border-teal/20 bg-teal/[0.06] text-foreground! shadow-button ' +
+				'hover:border-teal/40 hover:bg-teal/[0.1] hover:shadow-button-hover ' +
+				'dark:border-teal/30 dark:bg-teal/[0.12] dark:text-teal ' +
+				'dark:hover:border-teal/50 dark:hover:bg-teal/[0.18]',
 			'outline-scan':
-				'border-indigo-500/20 bg-indigo-500/[0.06] text-foreground! shadow-[inset_0_1px_0_rgba(255,255,255,0.28),0_1px_2px_rgba(15,23,42,0.06)] ' +
-				'hover:border-indigo-500/40 hover:bg-indigo-500/[0.1] hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.24),0_8px_20px_-12px_rgba(15,23,42,0.28)] ' +
-				'dark:border-indigo-500/30 dark:bg-indigo-500/[0.12] dark:text-indigo-200 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_1px_2px_rgba(0,0,0,0.18)] ' +
-				'dark:hover:border-indigo-500/50 dark:hover:bg-indigo-500/[0.18] dark:hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_10px_24px_-14px_rgba(0,0,0,0.5)]',
+				'border-indigo/20 bg-indigo/[0.06] text-foreground! shadow-button ' +
+				'hover:border-indigo/40 hover:bg-indigo/[0.1] hover:shadow-button-hover ' +
+				'dark:border-indigo/30 dark:bg-indigo/[0.12] dark:text-indigo ' +
+				'dark:hover:border-indigo/50 dark:hover:bg-indigo/[0.18]',
 			'outline-commit':
-				'border-cyan-500/20 bg-cyan-500/[0.06] text-foreground! shadow-[inset_0_1px_0_rgba(255,255,255,0.28),0_1px_2px_rgba(15,23,42,0.06)] ' +
-				'hover:border-cyan-500/40 hover:bg-cyan-500/[0.1] hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.24),0_8px_20px_-12px_rgba(15,23,42,0.28)] ' +
-				'dark:border-cyan-500/30 dark:bg-cyan-500/[0.12] dark:text-cyan-200 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_1px_2px_rgba(0,0,0,0.18)] ' +
-				'dark:hover:border-cyan-500/50 dark:hover:bg-cyan-500/[0.18] dark:hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_10px_24px_-14px_rgba(0,0,0,0.5)]',
+				'border-cyan/20 bg-cyan/[0.06] text-foreground! shadow-button ' +
+				'hover:border-cyan/40 hover:bg-cyan/[0.1] hover:shadow-button-hover ' +
+				'dark:border-cyan/30 dark:bg-cyan/[0.12] dark:text-cyan ' +
+				'dark:hover:border-cyan/50 dark:hover:bg-cyan/[0.18]',
 			'outline-build':
-				'border-violet-500/20 bg-violet-500/[0.06] text-foreground! shadow-[inset_0_1px_0_rgba(255,255,255,0.28),0_1px_2px_rgba(15,23,42,0.06)] ' +
-				'hover:border-violet-500/40 hover:bg-violet-500/[0.1] hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.24),0_8px_20px_-12px_rgba(15,23,42,0.28)] ' +
-				'dark:border-violet-500/30 dark:bg-violet-500/[0.12] dark:text-violet-200 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_1px_2px_rgba(0,0,0,0.18)] ' +
-				'dark:hover:border-violet-500/50 dark:hover:bg-violet-500/[0.18] dark:hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_10px_24px_-14px_rgba(0,0,0,0.5)]',
+				'border-violet/20 bg-violet/[0.06] text-foreground! shadow-button ' +
+				'hover:border-violet/40 hover:bg-violet/[0.1] hover:shadow-button-hover ' +
+				'dark:border-violet/30 dark:bg-violet/[0.12] dark:text-violet ' +
+				'dark:hover:border-violet/50 dark:hover:bg-violet/[0.18]',
 			'outline-sync':
-				'border-purple-500/20 bg-purple-500/[0.06] text-foreground! shadow-[inset_0_1px_0_rgba(255,255,255,0.28),0_1px_2px_rgba(15,23,42,0.06)] ' +
-				'hover:border-purple-500/40 hover:bg-purple-500/[0.1] hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.24),0_8px_20px_-12px_rgba(15,23,42,0.28)] ' +
-				'dark:border-purple-500/30 dark:bg-purple-500/[0.12] dark:text-purple-200 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_1px_2px_rgba(0,0,0,0.18)] ' +
-				'dark:hover:border-purple-500/50 dark:hover:bg-purple-500/[0.18] dark:hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_10px_24px_-14px_rgba(0,0,0,0.5)]',
+				'border-purple/20 bg-purple/[0.06] text-foreground! shadow-button ' +
+				'hover:border-purple/40 hover:bg-purple/[0.1] hover:shadow-button-hover ' +
+				'dark:border-purple/30 dark:bg-purple/[0.12] dark:text-purple ' +
+				'dark:hover:border-purple/50 dark:hover:bg-purple/[0.18]',
 			'outline-archive':
-				'border-slate-500/20 bg-slate-500/[0.06] text-foreground! shadow-[inset_0_1px_0_rgba(255,255,255,0.28),0_1px_2px_rgba(15,23,42,0.06)] ' +
-				'hover:border-slate-500/40 hover:bg-slate-500/[0.1] hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.24),0_8px_20px_-12px_rgba(15,23,42,0.28)] ' +
-				'dark:border-slate-500/30 dark:bg-slate-500/[0.12] dark:text-slate-200 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_1px_2px_rgba(0,0,0,0.18)] ' +
-				'dark:hover:border-slate-500/50 dark:hover:bg-slate-500/[0.18] dark:hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_10px_24px_-14px_rgba(0,0,0,0.5)]',
+				'border-muted-foreground/20 bg-muted-foreground/[0.06] text-foreground! shadow-button ' +
+				'hover:border-muted-foreground/40 hover:bg-muted-foreground/[0.1] hover:shadow-button-hover ' +
+				'dark:border-muted-foreground/30 dark:bg-muted-foreground/[0.12] dark:text-muted-foreground ' +
+				'dark:hover:border-muted-foreground/50 dark:hover:bg-muted-foreground/[0.18]',
 
 			outline:
-				'border-border/80 bg-background/90 text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.34),0_1px_2px_rgba(15,23,42,0.05)] backdrop-blur-sm ' +
-				'hover:border-border hover:bg-accent/60 hover:text-accent-foreground hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.24),0_8px_20px_-12px_rgba(15,23,42,0.22)] ' +
-				'dark:bg-card/70 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_1px_2px_rgba(0,0,0,0.16)] dark:hover:bg-accent/40',
+				'border-border/80 bg-background/90 text-foreground shadow-button backdrop-blur-sm ' +
+				'hover:border-border hover:bg-accent/60 hover:text-accent-foreground hover:shadow-button-hover ' +
+				'dark:bg-card/70 dark:hover:bg-accent/40',
 
 			ghost:
 				'border-transparent bg-transparent text-foreground! shadow-none ' +

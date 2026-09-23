@@ -80,7 +80,7 @@
 	}
 </script>
 
-{#snippet localeSelect(triggerClass: string, ariaLabel?: string, contentClass?: string, itemClass?: string)}
+{#snippet localeSelect(compact: boolean, ariaLabel?: string)}
 	<Select.Root
 		type="single"
 		value={currentLocale}
@@ -91,27 +91,27 @@
 			onOpenChange?.(open);
 		}}
 	>
-		<Select.Trigger {id} class={triggerClass} aria-label={ariaLabel}>
+		<Select.Trigger {id} class={compact ? 'h-9 w-32' : 'w-full'} aria-label={ariaLabel}>
 			<span class="truncate">{locales[currentLocale]}</span>
 		</Select.Trigger>
-		<Select.Content class={contentClass}>
+		<Select.Content class={compact ? 'max-w-70 min-w-40' : undefined}>
 			{#each Object.entries(locales) as [value, label] (value)}
-				<Select.Item class={itemClass} {value}>{label}</Select.Item>
+				<Select.Item {value}>{label}</Select.Item>
 			{/each}
 		</Select.Content>
 	</Select.Root>
 {/snippet}
 
-<div class={`locale-picker ${className}`}>
+<div class={className}>
 	{#if inline}
-		{@render localeSelect('h-9 w-32 text-sm font-medium', undefined, 'max-w-70 min-w-40', 'text-sm')}
+		{@render localeSelect(true)}
 	{:else}
 		<div class="px-3 py-2">
 			<div class="grid gap-2">
-				<Label for={id} class="text-sm leading-none font-medium">
+				<Label for={id}>
 					{m.language()}
 				</Label>
-				{@render localeSelect('w-full', m.common_select_locale())}
+				{@render localeSelect(false, m.common_select_locale())}
 			</div>
 		</div>
 	{/if}

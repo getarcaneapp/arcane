@@ -679,7 +679,7 @@
 <div class="flex h-full min-h-0 flex-col gap-4 overflow-hidden pt-3 md:gap-5 md:pt-5">
 	<header class="flex shrink-0 items-start justify-between gap-4">
 		<div class="min-w-0 space-y-1">
-			<p class="text-[11px] font-semibold tracking-[0.14em] text-muted-foreground uppercase">{m.dashboard_title()}</p>
+			<p class="text-2xs font-semibold tracking-widest text-muted-foreground uppercase">{m.dashboard_title()}</p>
 			<h1 class="text-xl font-semibold tracking-tight sm:text-2xl">{heroGreeting}</h1>
 		</div>
 
@@ -693,8 +693,7 @@
 						aria-pressed={boardView === option.view}
 						class={cn(
 							'inline-flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
-							boardView === option.view &&
-								'bg-primary/15 text-primary ring-1 ring-primary/30 dark:text-[color-mix(in_oklch,var(--primary)_55%,white)]'
+							boardView === option.view && 'bg-primary/15 text-primary ring-1 ring-primary/30 dark:text-primary-tint'
 						)}
 						onclick={() => (boardViewPref.current = option.view)}
 					>
@@ -719,7 +718,7 @@
 			<div class="grid grid-cols-2 gap-x-6 gap-y-4 lg:grid-cols-4">
 				{#each [{ icon: UpdateIcon, label: m.updates() }, { icon: ContainersIcon, label: m.containers() }, { icon: ImagesIcon, label: m.images() }, { icon: VolumesIcon, label: m.resource_volumes_cap() }] as tile (tile.label)}
 					<div class="min-w-0">
-						<div class="flex items-center gap-1.5 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+						<div class="flex items-center gap-1.5 text-2xs font-semibold tracking-wide text-muted-foreground uppercase">
 							<tile.icon class="size-3.5" />
 							<span>{tile.label}</span>
 						</div>
@@ -737,7 +736,7 @@
 					class="group min-w-0 cursor-pointer rounded-sm text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring"
 				>
 					<div
-						class="flex items-center gap-1.5 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase transition-colors group-hover:text-foreground"
+						class="flex items-center gap-1.5 text-2xs font-semibold tracking-wide text-muted-foreground uppercase transition-colors group-hover:text-foreground"
 					>
 						<UpdateIcon class="size-3.5" />
 						<span>{m.updates()}</span>
@@ -745,7 +744,7 @@
 					<div class="mt-1 text-2xl font-semibold tracking-tight tabular-nums">{updatesOverview.pending}</div>
 					<div class="mt-0.5 flex h-4 items-center gap-1.5 truncate text-xs text-muted-foreground">
 						{#if updatesOverview.pending === 0 && !updatesOverview.checking}
-							<VerifiedCheckIcon class="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+							<VerifiedCheckIcon class="size-3.5 shrink-0 text-success" />
 							<span class="truncate">{m.dashboard_updates_up_to_date()}</span>
 						{:else if updatesOverview.checking}
 							<span class="truncate">{m.dashboard_updates_checking()}</span>
@@ -761,7 +760,7 @@
 					class="group min-w-0 cursor-pointer rounded-sm border-border/60 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring max-lg:border-l max-lg:pl-6 lg:border-l lg:pl-6"
 				>
 					<div
-						class="flex items-center gap-1.5 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase transition-colors group-hover:text-foreground"
+						class="flex items-center gap-1.5 text-2xs font-semibold tracking-wide text-muted-foreground uppercase transition-colors group-hover:text-foreground"
 					>
 						<ContainersIcon class="size-3.5" />
 						<span>{m.containers()}</span>
@@ -776,7 +775,7 @@
 					class="group min-w-0 cursor-pointer rounded-sm border-border/60 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring lg:border-l lg:pl-6"
 				>
 					<div
-						class="flex items-center gap-1.5 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase transition-colors group-hover:text-foreground"
+						class="flex items-center gap-1.5 text-2xs font-semibold tracking-wide text-muted-foreground uppercase transition-colors group-hover:text-foreground"
 					>
 						<ImagesIcon class="size-3.5" />
 						<span>{m.images()}</span>
@@ -791,7 +790,7 @@
 					class="group min-w-0 cursor-pointer rounded-sm border-border/60 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring max-lg:border-l max-lg:pl-6 lg:border-l lg:pl-6"
 				>
 					<div
-						class="flex items-center gap-1.5 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase transition-colors group-hover:text-foreground"
+						class="flex items-center gap-1.5 text-2xs font-semibold tracking-wide text-muted-foreground uppercase transition-colors group-hover:text-foreground"
 					>
 						<VolumesIcon class="size-3.5" />
 						<span>{m.resource_volumes_cap()}</span>

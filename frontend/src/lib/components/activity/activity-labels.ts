@@ -21,10 +21,10 @@ export type ActivityBadgeVariant = 'red' | 'green' | 'blue' | 'gray' | 'amber' |
 
 const statusDisplay = new Map(
 	Object.entries({
-		queued: { label: m.activity_status_queued, variant: 'amber', accentClass: 'bg-amber-500' },
-		running: { label: m.common_running, variant: 'blue', accentClass: 'bg-blue-500' },
-		success: { label: m.common_success, variant: 'green', accentClass: 'bg-emerald-500' },
-		failed: { label: m.common_failed, variant: 'red', accentClass: 'bg-red-500' },
+		queued: { label: m.activity_status_queued, variant: 'amber', accentClass: 'bg-warning' },
+		running: { label: m.common_running, variant: 'blue', accentClass: 'bg-info' },
+		success: { label: m.common_success, variant: 'green', accentClass: 'bg-success' },
+		failed: { label: m.common_failed, variant: 'red', accentClass: 'bg-destructive' },
 		cancelled: { label: m.activity_status_cancelled, variant: 'gray', accentClass: 'bg-muted-foreground/40' }
 	} satisfies Record<ActivityStatus, { label: () => string; variant: ActivityBadgeVariant; accentClass: string }>)
 );

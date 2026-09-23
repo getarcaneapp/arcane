@@ -55,10 +55,10 @@
 
 	function levelClass(level: string): string {
 		const l = level.toLowerCase();
-		if (l.startsWith('error')) return 'text-red-400';
-		if (l.startsWith('warn')) return 'text-amber-400';
-		if (l.startsWith('debug')) return 'text-zinc-500';
-		return 'text-emerald-400';
+		if (l.startsWith('error')) return 'text-destructive';
+		if (l.startsWith('warn')) return 'text-warning';
+		if (l.startsWith('debug')) return 'text-muted-foreground';
+		return 'text-success';
 	}
 
 	function fmtTime(t: string): string {
@@ -86,7 +86,7 @@
 <div class="overflow-hidden rounded-xl border border-border/60">
 	<div class="flex flex-wrap items-center gap-2 border-b border-border/60 bg-muted/30 px-3 py-2">
 		<span class="flex items-center gap-1.5 text-xs font-medium">
-			<span class={cn('size-2 rounded-full', connected ? 'bg-emerald-500' : 'bg-zinc-500')}></span>
+			<span class={cn('size-2 rounded-full', connected ? 'bg-success' : 'bg-muted-foreground')}></span>
 			{connected ? m.diagnostics_logs_streaming() : m.disconnected()}
 		</span>
 		<span class="text-xs text-muted-foreground tabular-nums">{m.diagnostics_logs_count({ count: filtered.length })}</span>
@@ -125,8 +125,8 @@
 
 	<div
 		bind:this={viewport}
-		class="overflow-y-auto bg-background px-3 py-2 font-mono text-xs leading-relaxed"
-		style="height: {height};"
+		class="h-(--panel-height) overflow-y-auto bg-background px-3 py-2 font-mono text-xs leading-relaxed"
+		style="--panel-height: {height}"
 		role="log"
 		aria-live={connected ? 'polite' : 'off'}
 	>

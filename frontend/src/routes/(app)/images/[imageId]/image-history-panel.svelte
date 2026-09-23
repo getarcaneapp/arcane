@@ -58,7 +58,7 @@
 			<p class="py-8 text-sm text-muted-foreground">{m.images_history_empty()}</p>
 		{:else}
 			<div class="overflow-x-auto">
-				<table class="w-full min-w-[720px] text-sm">
+				<table class="w-full min-w-180 text-sm">
 					<thead class="border-b text-left text-xs text-muted-foreground uppercase">
 						<tr>
 							<th class="py-2 pr-4 font-medium">{m.common_id()}</th>
@@ -71,14 +71,14 @@
 					<tbody>
 						{#each history as item, index (`${item.id}-${index}`)}
 							<tr class="border-b last:border-0">
-								<td class="max-w-[180px] py-3 pr-4 font-mono text-xs break-all">{item.id || m.images_history_missing_layer()}</td>
+								<td class="max-w-45 py-3 pr-4 font-mono text-xs break-all">{item.id || m.images_history_missing_layer()}</td>
 								<td class="py-3 pr-4 whitespace-nowrap">{formatCreated(item.created)}</td>
 								<td class="py-3 pr-4 whitespace-nowrap">{bytes.format(item.size)}</td>
-								<td class="max-w-[320px] py-3 pr-4 font-mono text-xs break-all">{item.createdBy || m.common_na()}</td>
+								<td class="max-w-80 py-3 pr-4 font-mono text-xs break-all">{item.createdBy || m.common_na()}</td>
 								<td class="py-3">
 									<div class="flex flex-wrap gap-1">
 										{#each item.tags ?? [] as tag (tag)}
-											<Badge variant="secondary" class="text-xs">{tag}</Badge>
+											<Badge variant="secondary">{tag}</Badge>
 										{:else}
 											<span class="text-muted-foreground">{m.common_na()}</span>
 										{/each}

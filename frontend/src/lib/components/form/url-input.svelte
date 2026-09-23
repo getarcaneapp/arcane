@@ -41,7 +41,7 @@
 
 <div class="grid gap-2">
 	{#if label}
-		<Label for={id} class="text-xs">{label}</Label>
+		<Label for={id} size="xs">{label}</Label>
 	{/if}
 
 	<ButtonGroup.Root class="w-full">
@@ -52,7 +52,7 @@
 						{...props}
 						action="base"
 						tone="outline"
-						class="w-[5.5rem] shrink-0 justify-between gap-1 text-sm"
+						class="w-22 shrink-0 justify-between gap-1 text-sm"
 						{disabled}
 						customLabel="{protocol}://"
 					>
@@ -61,11 +61,11 @@
 				{/snippet}
 			</DropdownMenu.Trigger>
 			<DropdownMenu.Content align="center" class="min-w-0">
-				<DropdownMenu.Item class="py-1.5" onclick={() => selectProtocol('https')}>https://</DropdownMenu.Item>
-				<DropdownMenu.Item class="py-1.5" onclick={() => selectProtocol('http')}>http://</DropdownMenu.Item>
+				<DropdownMenu.Item onclick={() => selectProtocol('https')}>https://</DropdownMenu.Item>
+				<DropdownMenu.Item onclick={() => selectProtocol('http')}>http://</DropdownMenu.Item>
 			</DropdownMenu.Content>
 		</DropdownMenu.Root>
-		<InputGroup.Root class={['flex-1', error ? 'border-destructive' : ''].filter(Boolean).join(' ')}>
+		<InputGroup.Root class="flex-1">
 			<InputGroup.Input {id} {value} oninput={handleInput} {placeholder} {disabled} {required} aria-invalid={!!error} />
 		</InputGroup.Root>
 	</ButtonGroup.Root>

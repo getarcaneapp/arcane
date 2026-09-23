@@ -61,7 +61,7 @@
 			</ArcaneButton>
 		{/snippet}
 	</Popover.Trigger>
-	<Popover.Content class="w-[240px] p-2" align="start" data-testid={`facet-${title.toLowerCase()}-content`}>
+	<Popover.Content size="sm" class="w-60" align="start" data-testid={`facet-${title.toLowerCase()}-content`}>
 		<div class="flex flex-col gap-2">
 			<Input
 				{placeholder}

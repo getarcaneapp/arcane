@@ -162,7 +162,7 @@
 {#snippet ExpiresCell({ item }: { item: ApiKey })}
 	<div class="flex items-center gap-2">
 		{#if item.expiresAt}
-			<span class={isPastDate(item.expiresAt) ? 'text-red-500' : ''}>{formatOptionalDateTime(item.expiresAt)}</span>
+			<span class={isPastDate(item.expiresAt) ? 'text-destructive' : ''}>{formatOptionalDateTime(item.expiresAt)}</span>
 		{:else}
 			<span class="text-muted-foreground">{m.common_never()}</span>
 		{/if}

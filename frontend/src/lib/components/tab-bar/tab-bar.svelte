@@ -13,12 +13,12 @@
 	let { items, onValueChange, class: className }: Props = $props();
 </script>
 
-<Tabs.List class={cn('scrollbar-hide inline-flex max-w-full justify-start gap-1 overflow-x-auto', className)}>
+<Tabs.List scrollable class={cn('inline-flex max-w-full justify-start', className)}>
 	{#each items as item (item.value)}
 		{@const IconComponent = item.icon}
 		<Tabs.Trigger
 			value={item.value}
-			class={cn('flex-shrink-0 gap-2 whitespace-nowrap', item.class)}
+			class="flex-shrink-0 whitespace-nowrap"
 			disabled={item.disabled}
 			onclick={() => onValueChange(item.value)}
 		>
@@ -28,7 +28,7 @@
 			{item.label}
 			{#if item.badge !== undefined}
 				<span
-					class="ml-1 inline-flex min-w-[18px] items-center justify-center rounded-full bg-primary/20 px-1 text-[11px] font-semibold text-primary dark:bg-primary/25 dark:text-[color-mix(in_oklch,var(--primary)_55%,white)]"
+					class="ml-1 inline-flex min-w-4.5 items-center justify-center rounded-full bg-primary/20 px-1 text-2xs font-semibold text-primary dark:bg-primary/25 dark:text-primary-tint"
 				>
 					{item.badge}
 				</span>
@@ -36,14 +36,3 @@
 		</Tabs.Trigger>
 	{/each}
 </Tabs.List>
-
-<style>
-	:global(.scrollbar-hide) {
-		-ms-overflow-style: none; /* IE and Edge */
-		scrollbar-width: none; /* Firefox */
-	}
-
-	:global(.scrollbar-hide::-webkit-scrollbar) {
-		display: none; /* Chrome, Safari and Opera */
-	}
-</style>

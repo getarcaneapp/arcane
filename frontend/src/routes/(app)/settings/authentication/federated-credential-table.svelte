@@ -137,7 +137,7 @@
 {/snippet}
 
 {#snippet IssuerCell({ item }: { item: FederatedCredential })}
-	<span class="max-w-[18rem] truncate text-muted-foreground">{item.issuerUrl}</span>
+	<span class="max-w-72 truncate text-muted-foreground">{item.issuerUrl}</span>
 {/snippet}
 
 {#snippet SubjectCell({ item }: { item: FederatedCredential })}

@@ -45,7 +45,7 @@
 </script>
 
 <RadioGroup.Root
-	class="flex flex-wrap gap-3"
+	class="flex flex-wrap"
 	value={isCustomColor ? 'custom' : selectedColor}
 	onValueChange={(value) => {
 		if (value != 'custom') {
@@ -83,14 +83,14 @@
 		>
 			<div
 				class={{
-					'relative z-[var(--arcane-z-raised)] size-8 rounded-full border-2 transition-all duration-200 ease-out group-hover/item:z-[var(--arcane-z-sticky)] group-hover/item:scale-110': true
+					'relative z-(--arcane-z-raised) size-8 rounded-full border-2 bg-(--swatch) transition-all duration-200 ease-out group-hover/item:z-(--arcane-z-sticky) group-hover/item:scale-110': true
 				}}
-				style={`background-color: ${color === 'theme' ? themePrimary : color}`}
+				style={`--swatch: ${color === 'theme' ? themePrimary : color}`}
 				title={label}
 			>
 				{#if isCustomColorSelection}
 					<div
-						class="absolute inset-0 flex items-center justify-center rounded-full border-2 border-dashed border-gray-300 bg-muted"
+						class="absolute inset-0 flex items-center justify-center rounded-full border-2 border-dashed border-border bg-muted"
 					>
 						<AddIcon class="size-4 text-muted-foreground" />
 					</div>
@@ -101,7 +101,7 @@
 				{/if}
 			</div>
 			<div
-				class="absolute top-12 left-1/2 z-[var(--arcane-z-sticky)] max-w-0 -translate-x-1/2 transform overflow-hidden rounded-md border bg-background px-2 py-1 text-xs whitespace-nowrap text-muted-foreground opacity-0 shadow-sm transition-[max-width,opacity,color] duration-300 ease-out group-hover/item:max-w-[100px] group-hover/item:text-foreground group-hover/item:opacity-100"
+				class="absolute top-12 left-1/2 z-(--arcane-z-sticky) max-w-0 -translate-x-1/2 transform overflow-hidden rounded-md border bg-background px-2 py-1 text-xs whitespace-nowrap text-muted-foreground opacity-0 shadow-sm transition-all duration-300 ease-out group-hover/item:max-w-25 group-hover/item:text-foreground group-hover/item:opacity-100"
 			>
 				{label}
 			</div>

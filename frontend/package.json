@@ -15,7 +15,8 @@
 		"format:check": "vp fmt --check ./src",
 		"check:watch": "svelte-kit sync && svelte-check --tsgo --incremental --tsconfig ./tsconfig.json --watch",
 		"paraglide:compile": "paraglide-js compile --project ./project.inlang --outdir ./src/lib/paraglide --strategy cookie preferredLanguage baseLocale --silent",
-		"fallow": "fallow"
+		"fallow": "fallow",
+		"lint": "eslint src"
 	},
 	"dependencies": {
 		"@codemirror/autocomplete": "^6.20.3",
@@ -67,17 +68,21 @@
 	"devDependencies": {
 		"@iconify/json": "^2.2.530",
 		"@inlang/paraglide-js": "2.25.4",
+		"@shadcn/lint": "^0.2.0",
 		"@sveltejs/adapter-static": "^4.0.0-next.4",
 		"@sveltejs/vite-plugin-svelte": "^7.3.0",
 		"@tailwindcss/vite": "^4.3.3",
 		"@tanstack/svelte-query-devtools": "^6.2.1",
 		"@types/node": "^26.6.2",
+		"@typescript-eslint/parser": "^8.70.1",
 		"@typescript/native": "npm:typescript@^7.0.2",
+		"eslint": "^10.11.0",
 		"fallow": "^3.27.0",
 		"isomorphic-dompurify": "^4.3.0",
 		"paneforge": "^1.0.2",
 		"shadcn-svelte": "^1.7.0",
 		"svelte-check": "^4.7.6",
+		"svelte-eslint-parser": "^1.8.1",
 		"svelte-toolbelt": "^0.10.6",
 		"sveltekit-superforms": "^2.30.2",
 		"tailwindcss": "^4.3.3",

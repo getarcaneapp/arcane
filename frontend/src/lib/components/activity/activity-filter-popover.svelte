@@ -51,25 +51,29 @@
 {/snippet}
 
 <Popover.Root>
-	<Popover.Trigger
-		title={m.activity_filters_label()}
-		aria-label={m.activity_filters_label()}
-		class={cn(
-			'relative flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden',
-			activityStore.activeFilterCount > 0 && 'bg-primary/10 text-primary'
-		)}
-	>
-		<FilterIcon class="size-4" aria-hidden="true" />
-		{#if activityStore.activeFilterCount > 0}
-			<span
-				class="absolute -top-1 -right-1 flex size-4 items-center justify-center rounded-full bg-primary text-[10px] font-semibold text-primary-foreground tabular-nums"
+	<Popover.Trigger title={m.activity_filters_label()} aria-label={m.activity_filters_label()}>
+		{#snippet child({ props })}
+			<button
+				{...props}
+				type="button"
+				class={cn(
+					'relative flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden',
+					activityStore.activeFilterCount > 0 && 'bg-primary/10 text-primary'
+				)}
 			>
-				{activityStore.activeFilterCount}
-			</span>
-		{/if}
+				<FilterIcon class="size-4" aria-hidden="true" />
+				{#if activityStore.activeFilterCount > 0}
+					<span
+						class="absolute -top-1 -right-1 flex size-4 items-center justify-center rounded-full bg-primary text-3xs font-semibold text-primary-foreground tabular-nums"
+					>
+						{activityStore.activeFilterCount}
+					</span>
+				{/if}
+			</button>
+		{/snippet}
 	</Popover.Trigger>
-	<Popover.Content class="max-h-[min(60vh,480px)] w-56 overflow-y-auto p-2" align="end">
-		<p class="px-2 pt-1 pb-1.5 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+	<Popover.Content size="sm" class="max-h-(--max-height-popover) w-56 overflow-y-auto" align="end">
+		<p class="px-2 pt-1 pb-1.5 text-2xs font-medium tracking-wide text-muted-foreground uppercase">
 			{m.activity_filter_status()}
 		</p>
 		{#each statuses as status (status)}
@@ -77,7 +81,7 @@
 				activityStore.toggleStatusFilter(status)
 			)}
 		{/each}
-		<p class="px-2 pt-3 pb-1.5 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+		<p class="px-2 pt-3 pb-1.5 text-2xs font-medium tracking-wide text-muted-foreground uppercase">
 			{m.activity_filter_type()}
 		</p>
 		{#each types as type (type)}

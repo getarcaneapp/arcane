@@ -149,19 +149,19 @@
 	variant="sheet"
 	title={m.create_network_title()}
 	description={m.create_network_description()}
-	contentClass="sm:max-w-[600px]"
+	contentClass="sm:max-w-150"
 >
 	{#snippet children()}
 		<form onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-6">
 			<div class="space-y-2">
-				<Label for="network-name" class="text-sm font-medium">{m.network_name_label()}</Label>
+				<Label for="network-name">{m.network_name_label()}</Label>
 				<Input
 					id="network-name"
 					type="text"
 					placeholder={m.network_name_placeholder()}
 					disabled={isLoading}
 					bind:value={inputs.networkName.value}
-					class={inputs.networkName.error ? 'border-destructive' : ''}
+					aria-invalid={!!inputs.networkName.error}
 				/>
 				{#if inputs.networkName.error}
 					<p class="text-xs text-destructive">{inputs.networkName.error}</p>
@@ -182,22 +182,22 @@
 				<div class="flex items-center space-x-4">
 					<div class="flex items-center space-x-2">
 						<Checkbox id="check-duplicate" bind:checked={inputs.checkDuplicate.value} disabled={isLoading} />
-						<Label for="check-duplicate" class="text-sm font-normal">{m.network_check_duplicate_label()}</Label>
+						<Label for="check-duplicate" weight="normal">{m.network_check_duplicate_label()}</Label>
 					</div>
 					<div class="flex items-center space-x-2">
 						<Checkbox id="internal" bind:checked={inputs.internal.value} disabled={isLoading} />
-						<Label for="internal" class="text-sm font-normal">{m.network_internal_label()}</Label>
+						<Label for="internal" weight="normal">{m.network_internal_label()}</Label>
 					</div>
 				</div>
 			</div>
 
 			<Accordion.Root type="single" class="w-full">
 				<Accordion.Item value="labels">
-					<Accordion.Trigger class="text-sm font-medium">{m.common_labels()}</Accordion.Trigger>
-					<Accordion.Content class="pt-4">
-						<div class="space-y-4">
+					<Accordion.Trigger>{m.common_labels()}</Accordion.Trigger>
+					<Accordion.Content>
+						<div class="space-y-4 pt-4">
 							<div class="space-y-2">
-								<Label class="text-sm font-medium">{m.labels_key_value_label()}</Label>
+								<Label>{m.labels_key_value_label()}</Label>
 								{#each labels as label, index (label)}
 									<div class="flex items-center gap-2">
 										<Input type="text" placeholder="Key" bind:value={label.key} disabled={isLoading} class="flex-1" />
@@ -225,14 +225,14 @@
 							</div>
 
 							<div class="space-y-2">
-								<Label for="network-labels" class="text-sm font-medium">{m.network_labels_text_label()}</Label>
+								<Label for="network-labels">{m.network_labels_text_label()}</Label>
 								<Textarea
 									id="network-labels"
 									placeholder={m.network_labels_placeholder()}
 									disabled={isLoading}
 									rows={3}
 									bind:value={inputs.networkLabels.value}
-									class={inputs.networkLabels.error ? 'border-destructive' : ''}
+									aria-invalid={!!inputs.networkLabels.error}
 								/>
 								{#if inputs.networkLabels.error}
 									<p class="text-xs text-destructive">{inputs.networkLabels.error}</p>
@@ -244,17 +244,17 @@
 				</Accordion.Item>
 
 				<Accordion.Item value="options">
-					<Accordion.Trigger class="text-sm font-medium">{m.common_driver_options()}</Accordion.Trigger>
-					<Accordion.Content class="pt-4">
-						<div class="space-y-2">
-							<Label for="driver-options" class="text-sm font-medium">{m.common_driver_options()}</Label>
+					<Accordion.Trigger>{m.common_driver_options()}</Accordion.Trigger>
+					<Accordion.Content>
+						<div class="space-y-2 pt-4">
+							<Label for="driver-options">{m.common_driver_options()}</Label>
 							<Textarea
 								id="driver-options"
 								placeholder={m.network_driver_options_placeholder()}
 								disabled={isLoading}
 								rows={3}
 								bind:value={inputs.driverOptions.value}
-								class={inputs.driverOptions.error ? 'border-destructive' : ''}
+								aria-invalid={!!inputs.driverOptions.error}
 							/>
 							{#if inputs.driverOptions.error}
 								<p class="text-xs text-destructive">{inputs.driverOptions.error}</p>
@@ -265,25 +265,25 @@
 				</Accordion.Item>
 
 				<Accordion.Item value="ipam">
-					<Accordion.Trigger class="text-sm font-medium">{m.networks_ipam_title()}</Accordion.Trigger>
-					<Accordion.Content class="pt-4">
-						<div class="space-y-4">
+					<Accordion.Trigger>{m.networks_ipam_title()}</Accordion.Trigger>
+					<Accordion.Content>
+						<div class="space-y-4 pt-4">
 							<div class="flex items-center space-x-2">
 								<Checkbox id="enable-ipam" bind:checked={inputs.enableIpam.value} disabled={isLoading} />
-								<Label for="enable-ipam" class="text-sm font-medium">{m.network_enable_ipam_label()}</Label>
+								<Label for="enable-ipam">{m.network_enable_ipam_label()}</Label>
 							</div>
 
 							{#if inputs.enableIpam.value}
 								<div class="space-y-4 border-l-2 border-muted pl-6">
 									<div class="space-y-2">
-										<Label for="subnet" class="text-sm font-medium">{m.common_subnet()}</Label>
+										<Label for="subnet">{m.common_subnet()}</Label>
 										<Input
 											id="subnet"
 											type="text"
 											placeholder={m.network_example_subnet()}
 											disabled={isLoading}
 											bind:value={inputs.subnet.value}
-											class={inputs.subnet.error ? 'border-destructive' : ''}
+											aria-invalid={!!inputs.subnet.error}
 										/>
 										{#if inputs.subnet.error}
 											<p class="text-xs text-destructive">{inputs.subnet.error}</p>
@@ -292,14 +292,14 @@
 									</div>
 
 									<div class="space-y-2">
-										<Label for="ip-range" class="text-sm font-medium">{m.networks_ipam_iprange_label()}</Label>
+										<Label for="ip-range">{m.networks_ipam_iprange_label()}</Label>
 										<Input
 											id="ip-range"
 											type="text"
 											placeholder={m.network_example_ip_range()}
 											disabled={isLoading}
 											bind:value={inputs.ipRange.value}
-											class={inputs.ipRange.error ? 'border-destructive' : ''}
+											aria-invalid={!!inputs.ipRange.error}
 										/>
 										{#if inputs.ipRange.error}
 											<p class="text-xs text-destructive">{inputs.ipRange.error}</p>
@@ -308,14 +308,14 @@
 									</div>
 
 									<div class="space-y-2">
-										<Label for="gateway" class="text-sm font-medium">{m.common_gateway()}</Label>
+										<Label for="gateway">{m.common_gateway()}</Label>
 										<Input
 											id="gateway"
 											type="text"
 											placeholder={m.network_example_gateway()}
 											disabled={isLoading}
 											bind:value={inputs.gateway.value}
-											class={inputs.gateway.error ? 'border-destructive' : ''}
+											aria-invalid={!!inputs.gateway.error}
 										/>
 										{#if inputs.gateway.error}
 											<p class="text-xs text-destructive">{inputs.gateway.error}</p>

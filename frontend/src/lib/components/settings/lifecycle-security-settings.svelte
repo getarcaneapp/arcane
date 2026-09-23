@@ -26,13 +26,7 @@
 	let { formInputs = $bindable() }: { formInputs: LifecycleSecurityFormInputs } = $props();
 </script>
 
-<SectionCard
-	variant="transparent"
-	title={m.security_lifecycle_hooks_heading()}
-	icon={CodeIcon}
-	class="flex flex-col"
-	contentClass="divide-y divide-border/40 lg:p-6 lg:pt-0 [&>*]:py-5 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0"
->
+<SectionCard variant="transparent" title={m.security_lifecycle_hooks_heading()} icon={CodeIcon} class="flex flex-col" divided>
 	<SettingsRow
 		label={m.security_lifecycle_enabled_label()}
 		description={m.security_lifecycle_enabled_description()}
@@ -65,9 +59,9 @@
 	</div>
 
 	<div>
-		<Alert.Root variant="warning" class="py-2 [&>svg]:top-2">
+		<Alert.Root variant="warning" size="sm">
 			<AlertIcon class="size-4" />
-			<Alert.Description class="text-xs">
+			<Alert.Description>
 				{m.security_lifecycle_hooks_note()}
 			</Alert.Description>
 		</Alert.Root>

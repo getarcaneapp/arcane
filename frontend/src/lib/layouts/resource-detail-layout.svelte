@@ -39,17 +39,17 @@
 
 <svelte:window bind:scrollY />
 
-{#snippet ActionMenu(items: DetailAction[], tone: 'ghost' | 'outline', sizeClass: string, minWidthClass: string)}
+{#snippet ActionMenu(items: DetailAction[], tone: 'ghost' | 'outline')}
 	{#if items.length > 0}
 		<DropdownMenu.Root>
 			<DropdownMenu.Trigger>
 				{#snippet child({ props })}
-					<ArcaneButton {...props} action="base" {tone} size="icon" class={sizeClass}>
+					<ArcaneButton {...props} action="base" {tone} size="icon" class={tone === 'ghost' ? 'size-8' : 'size-9'}>
 						<EllipsisIcon class="size-4" />
 					</ArcaneButton>
 				{/snippet}
 			</DropdownMenu.Trigger>
-			<DropdownMenu.Content align="end" class={minWidthClass}>
+			<DropdownMenu.Content align="end" class={tone === 'ghost' ? 'min-w-35' : 'min-w-40'}>
 				{#each items as act (act.id)}
 					<DropdownMenu.Item onclick={act.onclick} disabled={act.disabled || act.loading}>
 						{act.loading ? act.loadingLabel || act.label : act.label}
@@ -62,7 +62,7 @@
 
 {#if showFloatingHeader}
 	<div
-		class="fixed top-4 left-1/2 z-[var(--arcane-z-page-floating)] w-[calc(100%-2rem)] max-w-fit -translate-x-1/2 animate-in px-2 duration-200 fade-in slide-in-from-top-2 sm:w-auto sm:px-0"
+		class="fixed top-4 left-1/2 z-(--arcane-z-page-floating) w-full-inset max-w-fit -translate-x-1/2 animate-in px-2 duration-200 fade-in slide-in-from-top-2 sm:w-auto sm:px-0"
 	>
 		<div
 			class="bubble-shadow-lg flex items-center gap-3 rounded-lg border border-border/60 bg-popover/95 px-4 py-2 backdrop-blur-md supports-backdrop-filter:bg-popover/85"
@@ -75,7 +75,7 @@
 				<div class="h-4 w-px bg-border/60"></div>
 			{/if}
 
-			<span class="max-w-[200px] truncate text-sm font-semibold">{title}</span>
+			<span class="max-w-50 truncate text-sm font-semibold">{title}</span>
 
 			{#if primaryAction}
 				<div class="h-4 w-px bg-border/60"></div>
@@ -87,7 +87,7 @@
 						disabled={primaryAction.disabled}
 						onclick={primaryAction.onclick}
 					/>
-					{@render ActionMenu(secondaryActions, 'ghost', 'size-8', 'min-w-[140px]')}
+					{@render ActionMenu(secondaryActions, 'ghost')}
 				</div>
 			{/if}
 		</div>
@@ -116,7 +116,7 @@
 						onclick={primaryAction.onclick}
 					/>
 				{:else}
-					{@render ActionMenu(actions, 'outline', 'size-9', 'min-w-[160px]')}
+					{@render ActionMenu(actions, 'outline')}
 				{/if}
 			</div>
 		</div>

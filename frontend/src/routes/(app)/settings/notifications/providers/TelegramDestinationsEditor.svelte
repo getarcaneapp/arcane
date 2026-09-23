@@ -27,7 +27,7 @@
 
 <div class="space-y-3">
 	<div>
-		<Label class="text-sm font-medium">{m.notifications_telegram_destinations_label()}</Label>
+		<Label>{m.notifications_telegram_destinations_label()}</Label>
 		<p class="text-sm text-muted-foreground">{m.notifications_telegram_destinations_help()}</p>
 	</div>
 	{#each destinations as destination, index (destination)}

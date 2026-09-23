@@ -81,7 +81,7 @@
 <EnvironmentSwitcherDialog bind:open={envSwitcherOpen} />
 
 <Sidebar.Root {collapsible} {variant} {...restProps}>
-	<Sidebar.Header class={isCollapsed ? 'gap-0 p-1 pb-2' : ''}>
+	<Sidebar.Header collapsed={isCollapsed}>
 		{#if isCollapsed}
 			<div class="flex justify-center">
 				<SidebarPinButton />
@@ -107,11 +107,13 @@
 				<ActivityCenterTrigger collapsed compact />
 			</div>
 		{:else}
-			<Sidebar.Menu class="pt-1">
-				<Sidebar.MenuItem>
-					<ActivityCenterTrigger compact />
-				</Sidebar.MenuItem>
-			</Sidebar.Menu>
+			<div class="pt-1">
+				<Sidebar.Menu>
+					<Sidebar.MenuItem>
+						<ActivityCenterTrigger compact />
+					</Sidebar.MenuItem>
+				</Sidebar.Menu>
+			</div>
 		{/if}
 	</Sidebar.Header>
 	<Sidebar.Content class={!isCollapsed ? '-mt-2' : ''}>

@@ -142,28 +142,28 @@
 
 			<KeyValueCard label={m.common_image_id()} valueTitle={m.common_click_to_select()}>{container.imageId}</KeyValueCard>
 
-			<KeyValueCard label={m.common_created()} valueClass="text-sm font-medium text-foreground">
+			<KeyValueCard label={m.common_created()} valueFormat="text">
 				{formatRelativeTime(createdInstant) || m.common_na()}
 				<div class="text-xs font-normal text-muted-foreground">{formatDateTimeShort(createdInstant) || m.common_na()}</div>
 			</KeyValueCard>
 
 			{#if container.state?.running}
-				<KeyValueCard label={m.common_started()} valueClass="text-sm font-medium text-foreground">
+				<KeyValueCard label={m.common_started()} valueFormat="text">
 					{formatRelativeTime(startedInstant) || m.common_na()}
 					<div class="text-xs font-normal text-muted-foreground">{formatDateTimeShort(startedInstant) || m.common_na()}</div>
 				</KeyValueCard>
 			{:else if container.state?.finishedAt && !container.state.finishedAt.startsWith('0001')}
-				<KeyValueCard label={m.common_finished()} valueClass="text-sm font-medium text-foreground">
+				<KeyValueCard label={m.common_finished()} valueFormat="text">
 					{formatRelativeTime(finishedInstant) || m.common_na()}
 					<div class="text-xs font-normal text-muted-foreground">{formatDateTimeShort(finishedInstant) || m.common_na()}</div>
 				</KeyValueCard>
 			{/if}
 
-			<KeyValueCard label={m.common_restart_policy()} valueClass="text-sm font-medium text-foreground capitalize">
-				{restartPolicy}
+			<KeyValueCard label={m.common_restart_policy()} valueFormat="text">
+				<span class="capitalize">{restartPolicy}</span>
 			</KeyValueCard>
 
-			<KeyValueCard label={m.auto_update_title()} valueClass="flex flex-col gap-2">
+			<KeyValueCard label={m.auto_update_title()} stacked>
 				<div class="flex items-center gap-3">
 					<Switch
 						checked={autoUpdateEnabled}
@@ -187,7 +187,7 @@
 				{/if}
 			</KeyValueCard>
 
-			<KeyValueCard label={m.common_ports()} valueClass="flex flex-col gap-2 text-sm font-medium text-foreground">
+			<KeyValueCard label={m.common_ports()} valueFormat="text" stacked>
 				<div>
 					{#if uniquePorts.total === 0}
 						{m.containers_no_ports()}
@@ -206,9 +206,9 @@
 				{/if}
 			</KeyValueCard>
 
-			<KeyValueCard label={m.resource_volumes_cap()} valueClass="text-sm font-medium text-foreground">
+			<KeyValueCard label={m.resource_volumes_cap()} valueFormat="text">
 				{#if onViewStorage}
-					<Button variant="link" size="sm" class="h-auto w-fit justify-start p-0" onclick={onViewStorage}>
+					<Button variant="link" size="inline" class="w-fit justify-start" onclick={onViewStorage}>
 						{mountCount}
 						{mountCount === 1 ? m.common_mount() : m.common_mounts()}
 					</Button>
@@ -218,9 +218,9 @@
 				{/if}
 			</KeyValueCard>
 
-			<KeyValueCard label={m.resource_networks_cap()} valueClass="text-sm font-medium text-foreground">
+			<KeyValueCard label={m.resource_networks_cap()} valueFormat="text">
 				{#if onViewNetworks}
-					<Button variant="link" size="sm" class="h-auto w-fit justify-start p-0" onclick={onViewNetworks}>
+					<Button variant="link" size="inline" class="w-fit justify-start" onclick={onViewNetworks}>
 						{networkCount}
 						{networkCount === 1 ? m.resource_network() : m.resource_networks()}
 					</Button>
@@ -239,14 +239,14 @@
 					<KeyValueCard
 						label={m.common_command()}
 						valueTitle={m.common_click_to_select()}
-						cardClass="sm:col-span-2 lg:col-span-3 xl:col-span-4"
+						class="sm:col-span-2 lg:col-span-3 xl:col-span-4"
 					>
 						{container.config.cmd.join(' ')}
 					</KeyValueCard>
 				{/if}
 
 				{#if container.config?.entrypoint && container.config.entrypoint.length > 0}
-					<KeyValueCard label={m.common_entrypoint()} valueTitle={m.common_click_to_select()} cardClass="sm:col-span-2">
+					<KeyValueCard label={m.common_entrypoint()} valueTitle={m.common_click_to_select()} class="sm:col-span-2">
 						{container.config.entrypoint.join(' ')}
 					</KeyValueCard>
 				{/if}

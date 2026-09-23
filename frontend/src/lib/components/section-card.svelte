@@ -11,8 +11,8 @@
 		icon?: IconType;
 		iconVariant?: 'primary' | 'emerald' | 'red' | 'amber' | 'blue' | 'purple' | 'cyan' | 'orange' | 'indigo' | 'pink';
 		class?: string;
-		headerClass?: string;
-		contentClass?: string;
+		/** Stacks children as a divided list of setting rows. */
+		divided?: boolean;
 		actions?: Snippet;
 		children: Snippet;
 	}
@@ -24,15 +24,14 @@
 		icon,
 		iconVariant = 'primary',
 		class: className,
-		headerClass,
-		contentClass = 'p-4',
+		divided = false,
 		actions,
 		children
 	}: Props = $props();
 </script>
 
 <Card.Root {variant} class={className}>
-	<Card.Header {icon} {iconVariant} class={headerClass}>
+	<Card.Header {icon} {iconVariant}>
 		<div class="flex min-w-0 flex-1 flex-col space-y-1.5">
 			<Card.Title>
 				<h2>{title}</h2>
@@ -47,7 +46,13 @@
 			</Card.Action>
 		{/if}
 	</Card.Header>
-	<Card.Content class={contentClass}>
-		{@render children()}
-	</Card.Content>
+	{#if divided}
+		<div class="divide-y divide-border/40 px-6 lg:p-6 lg:pt-0 [&>*]:py-5 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0">
+			{@render children()}
+		</div>
+	{:else}
+		<Card.Content>
+			{@render children()}
+		</Card.Content>
+	{/if}
 </Card.Root>

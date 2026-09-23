@@ -263,69 +263,73 @@
 				<TabBar items={tabItems} value={providerTab} onValueChange={urlTab.select} class="self-start" />
 
 				{#each NOTIFICATION_PROVIDER_KEYS as provider (provider)}
-					<Tabs.Content value={provider} class="mt-4 space-y-4">
-						<BuiltInProviderForm
-							bind:this={providerFormRefs[provider]}
-							{provider}
-							bind:values={providerValues[provider]}
-							disabled={isReadOnly}
-							{isTesting}
-							hasExistingCredentials={provider === 'matrix'
-								? hasSavedCredential(savedSettings.matrix, 'password')
-								: savedSettings[provider] !== null}
-							hasExistingPassword={provider === 'signal' && hasSavedCredential(savedSettings.signal, 'password')}
-							hasExistingToken={provider === 'signal' && hasSavedCredential(savedSettings.signal, 'token')}
-							onTest={(testType) => testNotification(provider, testType)}
-						/>
+					<Tabs.Content value={provider} class="mt-4">
+						<div class="space-y-4">
+							<BuiltInProviderForm
+								bind:this={providerFormRefs[provider]}
+								{provider}
+								bind:values={providerValues[provider]}
+								disabled={isReadOnly}
+								{isTesting}
+								hasExistingCredentials={provider === 'matrix'
+									? hasSavedCredential(savedSettings.matrix, 'password')
+									: savedSettings[provider] !== null}
+								hasExistingPassword={provider === 'signal' && hasSavedCredential(savedSettings.signal, 'password')}
+								hasExistingToken={provider === 'signal' && hasSavedCredential(savedSettings.signal, 'token')}
+								onTest={(testType) => testNotification(provider, testType)}
+							/>
+						</div>
 					</Tabs.Content>
 				{/each}
-				<Tabs.Content value="mobile" class="mt-4 space-y-4">
-					<SettingsRow
-						label={m.notifications_mobile_push_label()}
-						description={m.notifications_mobile_push_description()}
-						layout="inline"
-					>
-						<Switch
-							id="apnsEnabled"
-							checked={mobilePushEnabled}
-							disabled={isReadOnly || !canToggleMobilePush || savingMobilePush}
-							onCheckedChange={(checked) => void handleMobilePushToggle(checked)}
-						/>
-					</SettingsRow>
-					{#if mobilePushEnabled}
-						<div class="space-y-2">
-							<p class="text-sm font-medium">{m.notifications_mobile_devices()}</p>
-							{#if mobileDevices.length === 0}
-								<p class="text-xs text-muted-foreground">{m.notifications_mobile_devices_empty()}</p>
-							{:else}
-								<ul class="divide-y divide-border/40">
-									{#each mobileDevices as device (device.id)}
-										<li class="flex items-center justify-between gap-3 py-2">
-											<div class="min-w-0">
-												<p class="truncate text-sm">{device.label || device.id}</p>
-												{#if device.lastSeenAt}
-													<p class="text-xs text-muted-foreground">{formatRelativeTime(device.lastSeenAt)}</p>
-												{/if}
-											</div>
-											<div class="flex shrink-0 items-center gap-2">
-												<ArcaneButton
-													action="test"
-													size="sm"
-													loading={testingDeviceId === device.id}
-													onclick={() => testMobileDevice(device)}
-												/>
-												<ArcaneButton action="remove" size="sm" onclick={() => removeMobileDevice(device)} />
-											</div>
-										</li>
-									{/each}
-								</ul>
-							{/if}
-						</div>
-					{/if}
-					<Alert.Root variant="warning" class="py-2 [&>svg]:top-2">
-						<AlertIcon class="size-4" />
-						<Alert.Description class="text-xs">{m.notifications_mobile_push_external_warning()}</Alert.Description>
-					</Alert.Root>
+				<Tabs.Content value="mobile" class="mt-4">
+					<div class="space-y-4">
+						<SettingsRow
+							label={m.notifications_mobile_push_label()}
+							description={m.notifications_mobile_push_description()}
+							layout="inline"
+						>
+							<Switch
+								id="apnsEnabled"
+								checked={mobilePushEnabled}
+								disabled={isReadOnly || !canToggleMobilePush || savingMobilePush}
+								onCheckedChange={(checked) => void handleMobilePushToggle(checked)}
+							/>
+						</SettingsRow>
+						{#if mobilePushEnabled}
+							<div class="space-y-2">
+								<p class="text-sm font-medium">{m.notifications_mobile_devices()}</p>
+								{#if mobileDevices.length === 0}
+									<p class="text-xs text-muted-foreground">{m.notifications_mobile_devices_empty()}</p>
+								{:else}
+									<ul class="divide-y divide-border/40">
+										{#each mobileDevices as device (device.id)}
+											<li class="flex items-center justify-between gap-3 py-2">
+												<div class="min-w-0">
+													<p class="truncate text-sm">{device.label || device.id}</p>
+													{#if device.lastSeenAt}
+														<p class="text-xs text-muted-foreground">{formatRelativeTime(device.lastSeenAt)}</p>
+													{/if}
+												</div>
+												<div class="flex shrink-0 items-center gap-2">
+													<ArcaneButton
+														action="test"
+														size="sm"
+														loading={testingDeviceId === device.id}
+														onclick={() => testMobileDevice(device)}
+													/>
+													<ArcaneButton action="remove" size="sm" onclick={() => removeMobileDevice(device)} />
+												</div>
+											</li>
+										{/each}
+									</ul>
+								{/if}
+							</div>
+						{/if}
+						<Alert.Root variant="warning" size="sm">
+							<AlertIcon class="size-4" />
+							<Alert.Description>{m.notifications_mobile_push_external_warning()}</Alert.Description>
+						</Alert.Root>
+					</div>
 				</Tabs.Content>
 			</Tabs.Root>
 		</fieldset>

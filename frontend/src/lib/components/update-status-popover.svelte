@@ -1,6 +1,7 @@
 <script lang="ts">
 	import * as ArcaneTooltip from '#lib/components/arcane-tooltip/index.js';
 	import type { Snippet } from 'svelte';
+	import { cn } from '#lib/utils.js';
 
 	type TooltipSide = 'top' | 'right' | 'bottom' | 'left';
 
@@ -9,7 +10,7 @@
 		interactive?: boolean;
 		directTrigger?: boolean;
 		side?: TooltipSide;
-		contentClass?: string;
+		contentWidth?: 'sm' | 'md' | 'lg' | 'xl';
 		trigger: Snippet<[{ props: Record<string, unknown> }]>;
 		content: Snippet;
 	}
@@ -19,7 +20,7 @@
 		interactive = false,
 		directTrigger = false,
 		side = 'right',
-		contentClass = 'max-w-[280px] p-0',
+		contentWidth = 'lg',
 		trigger,
 		content
 	}: Props = $props();
@@ -37,7 +38,17 @@
 			{@render trigger({ props: {} })}
 		</ArcaneTooltip.Trigger>
 	{/if}
-	<ArcaneTooltip.Content {side} class={contentClass} data-open={open ? 'true' : 'false'}>
+	<ArcaneTooltip.Content
+		{side}
+		variant="panel"
+		class={cn(
+			contentWidth === 'sm' && 'max-w-55',
+			contentWidth === 'md' && 'max-w-60',
+			contentWidth === 'lg' && 'max-w-70',
+			contentWidth === 'xl' && 'max-w-80'
+		)}
+		data-open={open ? 'true' : 'false'}
+	>
 		{@render content()}
 	</ArcaneTooltip.Content>
 </ArcaneTooltip.Root>

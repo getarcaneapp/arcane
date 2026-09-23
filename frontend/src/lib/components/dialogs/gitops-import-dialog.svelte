@@ -93,10 +93,12 @@
 					id="json-content"
 					bind:value={jsonContent}
 					placeholder={`[\n  {\n    "syncName": "example-sync",\n    "gitRepo": "my-repo",\n    "branch": "main",\n    "dockerComposePath": "docker-compose.yml",\n    "autoSync": true,\n    "syncInterval": 10,\n    "projectName": "example",\n    "redeployAfterSync": true\n  }\n]`}
-					class="h-[300px] font-mono text-xs"
+					mono
+					size="sm"
+					class="h-75"
 				/>
 				{#if error}
-					<p class="text-sm text-red-500">{error}</p>
+					<p class="text-sm text-destructive">{error}</p>
 				{/if}
 			</div>
 		</div>
@@ -105,7 +107,7 @@
 	{#snippet footer()}
 		<GitopsDialogFooter cancelLabel={m.common_cancel()} {isLoading} onCancel={() => (open = false)}>
 			{#snippet primary()}
-				<Button onclick={handleSubmit} class="arcane-button-create flex-1" disabled={isLoading}>
+				<Button onclick={handleSubmit} class="flex-1" disabled={isLoading}>
 					{#if isLoading}
 						<Spinner class="mr-2 size-4" />
 					{/if}

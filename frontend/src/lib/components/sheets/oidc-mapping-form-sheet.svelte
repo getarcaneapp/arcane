@@ -67,7 +67,7 @@
 	variant="sheet"
 	title={isEditMode ? m.oidc_mappings_edit_title() : m.oidc_mappings_create_title()}
 	description={m.oidc_mappings_subtitle()}
-	contentClass="sm:max-w-[500px]"
+	contentClass="sm:max-w-125"
 >
 	{#snippet children()}
 		<form onsubmit={preventDefault(handleSubmit)} novalidate class="grid gap-4 py-6">

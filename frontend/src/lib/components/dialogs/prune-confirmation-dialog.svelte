@@ -27,7 +27,7 @@
 	onOpenChange={(isOpen) => !isOpen && handleCancelInternal()}
 	title={m.prune_confirm_system_title()}
 	description={m.prune_confirm_description()}
-	contentClass="sm:max-w-[860px]"
+	contentClass="sm:max-w-215"
 >
 	{#if open}
 		<PruneConfirmationDialogContent {defaults} {isPruning} {onConfirm} onCancel={handleCancelInternal} />

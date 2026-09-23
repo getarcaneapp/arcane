@@ -27,7 +27,7 @@
 		<span class="font-mono text-sm">{label}</span>
 		{#if info?.updateAvailable}
 			<span
-				class="inline-flex items-center text-amber-600 dark:text-amber-400"
+				class="inline-flex items-center text-warning"
 				title={info.newestVersion
 					? m.sidebar_update_available_tooltip({ version: info.newestVersion })
 					: m.sidebar_update_available()}

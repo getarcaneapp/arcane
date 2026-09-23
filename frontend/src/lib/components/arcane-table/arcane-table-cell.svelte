@@ -2,4 +2,4 @@
 	let { value }: { value: unknown } = $props();
 </script>
 
-<span class="max-w-[500px] truncate">{value ?? ''}</span>
+<span class="max-w-125 truncate">{value ?? ''}</span>

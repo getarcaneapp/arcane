@@ -107,10 +107,10 @@
 	{#if tags.length > 0}
 		<div class="mt-auto flex flex-wrap gap-1">
 			{#each tags.slice(0, MAX_TAGS) as tag (tag)}
-				<Badge variant="outline" class="text-xs">{tag}</Badge>
+				<Badge variant="outline">{tag}</Badge>
 			{/each}
 			{#if tags.length > MAX_TAGS}
-				<Badge variant="outline" class="text-xs">+{tags.length - MAX_TAGS}</Badge>
+				<Badge variant="outline">+{tags.length - MAX_TAGS}</Badge>
 			{/if}
 		</div>
 	{/if}

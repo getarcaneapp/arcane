@@ -31,7 +31,7 @@
 
 <div
 	class={cn(
-		'group relative grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-3 border-b border-border/40 px-4 py-3 text-left transition-colors last:border-b-0 hover:bg-muted/30',
+		'group relative grid w-full grid-cols-icon-content-action items-start gap-3 border-b border-border/40 px-4 py-3 text-left transition-colors last:border-b-0 hover:bg-muted/30',
 		expanded && 'bg-muted/40'
 	)}
 >
@@ -57,14 +57,14 @@
 			<div class="min-w-0 flex-1">
 				<div class="flex min-w-0 items-center gap-2">
 					<span class="truncate text-sm font-semibold text-foreground">{activityTypeLabel(leadActivity.type)}</span>
-					<span class="shrink-0 text-[11px] text-muted-foreground/70">· {m.activity_batch_items({ count: group.total })}</span>
+					<span class="shrink-0 text-2xs text-muted-foreground/70">· {m.activity_batch_items({ count: group.total })}</span>
 				</div>
 				{#if jobActivity?.resourceName}<div class="truncate text-xs text-muted-foreground">{jobActivity.resourceName}</div>{/if}
 				<div class="flex min-w-0 flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground">
 					<span>{m.activity_batch_done_of_total({ done: group.done, total: group.total })}</span>
 					{#if group.failed > 0}
 						<span class="text-muted-foreground/50">·</span>
-						<span class="text-red-500">{m.activity_batch_failed_count({ count: group.failed })}</span>
+						<span class="text-destructive">{m.activity_batch_failed_count({ count: group.failed })}</span>
 					{/if}
 				</div>
 			</div>
@@ -74,7 +74,7 @@
 		</div>
 
 		{#if isActive}
-			<Progress value={100} indeterminate class="h-1.5 rounded-full" />
+			<Progress value={100} indeterminate class="h-1.5" />
 		{/if}
 	</div>
 

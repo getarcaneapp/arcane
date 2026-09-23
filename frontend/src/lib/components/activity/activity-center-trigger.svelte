@@ -60,7 +60,7 @@
 				<span class="ml-2 min-w-0 flex-1 truncate text-left text-xs font-medium">{m.activity_center_title()}</span>
 				<span
 					class={cn(
-						'ml-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[10px] leading-none font-semibold tabular-nums',
+						'ml-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-3xs leading-none font-semibold tabular-nums',
 						isActive ? 'bg-primary text-primary-foreground' : 'bg-sidebar-accent text-sidebar-foreground/45'
 					)}
 				>
@@ -68,7 +68,7 @@
 				</span>
 			{:else if isActive}
 				<span
-					class="absolute -top-0.5 -right-0.5 flex min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] leading-4 font-bold text-primary-foreground tabular-nums ring-2 ring-sidebar"
+					class="absolute -top-0.5 -right-0.5 flex min-w-4 items-center justify-center rounded-full bg-primary px-1 text-3xs leading-4 font-bold text-primary-foreground tabular-nums ring-2 ring-sidebar"
 				>
 					{activeCount > 9 ? m.activity_count_many() : activeCount}
 				</span>
@@ -96,7 +96,7 @@
 					<span
 						aria-live="polite"
 						aria-atomic="true"
-						class="absolute -top-2 -right-2 flex min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] leading-4 font-bold text-primary-foreground tabular-nums"
+						class="absolute -top-2 -right-2 flex min-w-4 items-center justify-center rounded-full bg-primary px-1 text-3xs leading-4 font-bold text-primary-foreground tabular-nums"
 					>
 						{activeCount > 9 ? m.activity_count_many() : activeCount}
 					</span>

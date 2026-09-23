@@ -16,8 +16,8 @@
 	</Card.Title>
 	{#if live}
 		<div class="flex items-center gap-2">
-			<div class="size-2 animate-pulse rounded-full bg-green-500"></div>
-			<span class="text-xs font-semibold text-green-600 sm:text-sm">{m.common_live()}</span>
+			<div class="size-2 animate-pulse rounded-full bg-success"></div>
+			<span class="text-xs font-semibold text-success sm:text-sm">{m.common_live()}</span>
 		</div>
 	{/if}
 </div>

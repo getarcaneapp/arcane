@@ -105,7 +105,7 @@
 						{@const triggerProps = mergeProps(props, {
 							class: cn(
 								badgeVariants({ variant: 'sky', size: 'sm' }),
-								'hover:bg-sky-500/20 hover:border-sky-500/40 dark:hover:border-sky-500/50 focus-visible:outline-none'
+								'hover:bg-info/20 hover:border-info/40 focus-visible:outline-none'
 							),
 							href: toPortHref(p.hostPort!, baseServerUrl),
 							target: '_blank',

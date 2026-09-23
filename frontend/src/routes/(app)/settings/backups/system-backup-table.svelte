@@ -73,7 +73,8 @@
 {#snippet TriggerCell({ item }: { item: BackupHistoryEntry })}<BackupTriggerCell trigger={item.trigger} />{/snippet}
 {#snippet DestinationCell({ item }: { item: BackupHistoryEntry })}<BackupDestinationCell {item} />{/snippet}
 {#snippet SizeCell({ item }: { item: BackupHistoryEntry })}<BackupSizeCell size={item.size} />{/snippet}
-{#snippet ErrorCell({ item }: { item: BackupHistoryEntry })}<span class="max-w-72 truncate text-red-500">{item.error || '-'}</span
+{#snippet ErrorCell({ item }: { item: BackupHistoryEntry })}<span class="max-w-72 truncate text-destructive"
+		>{item.error || '-'}</span
 	>{/snippet}
 
 {#snippet RowActions({ item }: { item: BackupHistoryEntry })}

@@ -22,16 +22,14 @@
 	{/if}
 	{#if showShortcut && shortcut?.length}
 		{@const displayKeys = formatShortcutKeys(shortcut)}
-		<Kbd.Group class="inline-flex items-center gap-1 text-muted-foreground">
+		<Kbd.Group>
 			<!-- Shortcut sequences may repeat keys; these keycaps have no local state. -->
 			{#each displayKeys as key, index}
-				<Kbd.Root
-					class="text-popover-foreground! in-data-[slot=tooltip-content]:text-popover-foreground! dark:in-data-[slot=tooltip-content]:text-popover-foreground!"
-				>
+				<Kbd.Root>
 					{key}
 				</Kbd.Root>
 				{#if index < displayKeys.length - 1}
-					<span class="text-[10px] text-muted-foreground/70">+</span>
+					<span class="text-3xs text-muted-foreground/70">+</span>
 				{/if}
 			{/each}
 		</Kbd.Group>

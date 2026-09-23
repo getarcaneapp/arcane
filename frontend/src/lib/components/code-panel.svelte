@@ -127,7 +127,7 @@
 {/snippet}
 
 {#if variant === 'plain'}
-	<div class="relative z-[var(--arcane-z-content)] flex min-h-0 {effectiveAutoHeight ? '' : 'flex-1'} flex-col" data-open={open}>
+	<div class="relative z-(--arcane-z-content) flex min-h-0 {effectiveAutoHeight ? '' : 'flex-1'} flex-col" data-open={open}>
 		{@render editorBody()}
 	</div>
 {:else}
@@ -136,44 +136,42 @@
 			<Card.Title>
 				<h2>{title}</h2>
 			</Card.Title>
-			<Card.Action class="flex items-center gap-1 pt-1">
-				<ArcaneButton
-					action="base"
-					tone={outlineOpen ? 'outline-primary' : 'ghost'}
-					size="icon"
-					showLabel={false}
-					icon={FileTextIcon}
-					customLabel={m.compose_editor_toggle_outline()}
-					onclick={() => (outlineOpen = !outlineOpen)}
-				/>
-				{#if enableDiff && originalValue !== undefined}
+			<Card.Action>
+				<div class="flex items-center gap-1 pt-1">
 					<ArcaneButton
 						action="base"
-						tone={diffOpen ? 'outline-primary' : 'ghost'}
+						tone={outlineOpen ? 'outline-primary' : 'ghost'}
 						size="icon"
 						showLabel={false}
-						icon={ArrowsUpDownIcon}
-						customLabel={m.compose_editor_toggle_diff()}
-						onclick={() => (diffOpen = !diffOpen)}
+						icon={FileTextIcon}
+						customLabel={m.compose_editor_toggle_outline()}
+						onclick={() => (outlineOpen = !outlineOpen)}
 					/>
-				{/if}
-				<ArcaneButton
-					action="base"
-					tone="ghost"
-					size="icon"
-					showLabel={false}
-					icon={SearchIcon}
-					customLabel={m.compose_editor_command_palette()}
-					onclick={() => (commandPaletteOpen = true)}
-				/>
+					{#if enableDiff && originalValue !== undefined}
+						<ArcaneButton
+							action="base"
+							tone={diffOpen ? 'outline-primary' : 'ghost'}
+							size="icon"
+							showLabel={false}
+							icon={ArrowsUpDownIcon}
+							customLabel={m.compose_editor_toggle_diff()}
+							onclick={() => (diffOpen = !diffOpen)}
+						/>
+					{/if}
+					<ArcaneButton
+						action="base"
+						tone="ghost"
+						size="icon"
+						showLabel={false}
+						icon={SearchIcon}
+						customLabel={m.compose_editor_command_palette()}
+						onclick={() => (commandPaletteOpen = true)}
+					/>
+				</div>
 			</Card.Action>
 		</Card.Header>
-		<Card.Content
-			class="relative z-[var(--arcane-z-content)] flex min-h-0 {effectiveAutoHeight
-				? ''
-				: 'flex-1'} flex-col overflow-visible p-0"
-		>
+		<div class="relative z-(--arcane-z-content) flex min-h-0 {effectiveAutoHeight ? '' : 'flex-1'} flex-col overflow-visible">
 			{@render editorBody()}
-		</Card.Content>
+		</div>
 	</Card.Root>
 {/if}

@@ -27,16 +27,20 @@
 {#if dialog}
 	<Dialog.Root bind:open={dialog.open}>
 		<Dialog.Content
-			class="z-[var(--arcane-z-critical-surface)] w-full max-w-md sm:max-w-lg"
-			overlayClass="z-[var(--arcane-z-critical-surface)]"
+			class="z-(--arcane-z-critical-surface) w-full max-w-md sm:max-w-lg"
+			overlayClass="z-(--arcane-z-critical-surface)"
 		>
-			<Dialog.Header class="space-y-3">
-				<Dialog.Title class="flex items-start gap-3 text-lg leading-tight font-semibold">
-					<AlertIcon class="mt-0.5 size-5 shrink-0 text-destructive" />
-					<span class="min-w-0 break-words">
-						{dialog.title}
-					</span>
-				</Dialog.Title>
+			<Dialog.Header>
+				<div class="space-y-3">
+					<Dialog.Title>
+						<span class="flex items-start gap-3 leading-tight">
+							<AlertIcon class="mt-0.5 size-5 shrink-0 text-destructive" />
+							<span class="min-w-0 break-words">
+								{dialog.title}
+							</span>
+						</span>
+					</Dialog.Title>
+				</div>
 			</Dialog.Header>
 
 			<div class="mt-4 min-w-0 text-sm leading-relaxed break-words whitespace-pre-wrap text-muted-foreground">
@@ -65,12 +69,10 @@
 							{/if}
 
 							<div class="min-w-0">
-								<Label
-									id={`${checkbox.id}-label`}
-									for={checkbox.id}
-									class="min-w-0 text-sm leading-relaxed font-medium break-words peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-								>
-									{checkbox.label}
+								<Label id={`${checkbox.id}-label`} for={checkbox.id} class="min-w-0 break-words peer-disabled:cursor-not-allowed">
+									<span class="leading-relaxed">
+										{checkbox.label}
+									</span>
 								</Label>
 
 								{#if checkbox.id === 'files' && dialog.checkboxStates[checkbox.id]}
@@ -84,9 +86,9 @@
 
 			<Dialog.Footer class="mt-6">
 				<div class="flex w-full justify-end gap-3">
-					<ArcaneButton class="min-w-[80px]" action="cancel" onclick={() => (dialog.open = false)} />
+					<ArcaneButton class="min-w-20" action="cancel" onclick={() => (dialog.open = false)} />
 					<ArcaneButton
-						class="min-w-[80px]"
+						class="min-w-20"
 						action={dialog.confirm.button ?? (dialog.confirm.destructive ? 'remove' : 'confirm')}
 						customLabel={dialog.confirm.label}
 						onclick={handleConfirm}

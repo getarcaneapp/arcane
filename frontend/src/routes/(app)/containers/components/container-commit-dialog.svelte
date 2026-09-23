@@ -93,13 +93,13 @@
 	onOpenChange={handleOpenChange}
 	title={m.containers_commit_title({ name: containerName })}
 	description={m.containers_commit_description()}
-	contentClass="sm:max-w-[560px]"
+	contentClass="sm:max-w-140"
 >
 	{#snippet children()}
 		<form onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-4">
-			<Alert.Root class="border-cyan-500/30 bg-cyan-500/10 text-cyan-950 dark:text-cyan-100">
+			<Alert.Root variant="info">
 				<InfoIcon class="size-4" />
-				<Alert.Description class="text-sm">{m.containers_commit_registry_note()}</Alert.Description>
+				<Alert.Description>{m.containers_commit_registry_note()}</Alert.Description>
 			</Alert.Root>
 			<RepoTagFields bind:repository={inputs.repository} bind:tag={inputs.tag} />
 			<FormInput

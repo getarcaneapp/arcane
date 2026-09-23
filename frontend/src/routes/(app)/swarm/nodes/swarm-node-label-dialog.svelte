@@ -53,16 +53,16 @@
 <ResponsiveDialog.Root bind:open title={m.add_label()} description={m.common_labels_description({ resource: m.swarm_node() })}>
 	<form onsubmit={handleSubmit} class="space-y-4 px-6 py-4">
 		<div class="space-y-2">
-			<Label for="label-key" class={isReservedPrefix ? 'text-red-500' : ''}>{m.swarm_node_label_key()}</Label>
+			<Label for="label-key" variant={isReservedPrefix ? 'destructive' : 'default'}>{m.swarm_node_label_key()}</Label>
 			<Input
 				id="label-key"
 				bind:value={key}
 				placeholder={m.swarm_service_form_key_placeholder()}
 				required
-				class={isReservedPrefix ? 'border-red-500 focus-visible:ring-red-500' : ''}
+				aria-invalid={!!isReservedPrefix}
 			/>
 			{#if isReservedPrefix}
-				<p class="text-[11px] font-medium text-red-500">
+				<p class="text-2xs font-medium text-destructive">
 					{m.swarm_node_label_reserved_prefixes()}
 				</p>
 			{/if}

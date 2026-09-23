@@ -9,7 +9,7 @@
 	bind:ref
 	data-slot="drawer-overlay"
 	class={cn(
-		'fixed inset-0 z-[var(--arcane-z-overlay)] bg-white/10 backdrop-blur-md data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:fill-mode-forwards data-[state=open]:animate-in data-[state=open]:fade-in-0 dark:bg-black/60',
+		'fixed inset-0 z-(--arcane-z-overlay) bg-black/40 backdrop-blur-xl data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:fill-mode-forwards data-[state=open]:animate-in data-[state=open]:fade-in-0 dark:bg-black/60',
 		className
 	)}
 	{...restProps}

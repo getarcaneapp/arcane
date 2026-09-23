@@ -120,7 +120,7 @@
 				? m.api_key_bootstrap_description()
 				: m.api_key_edit_description({ name: apiKeyToEdit?.name ?? m.common_unknown() })
 		: m.api_key_create_description()}
-	contentClass="sm:max-w-[500px]"
+	contentClass="sm:max-w-125"
 >
 	{#snippet children()}
 		<form onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-6">

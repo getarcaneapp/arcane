@@ -130,11 +130,11 @@
 	});
 	const stackFileEntries = $derived(stackWorkspace.entries);
 	const stackWorkspaceLeadingRows = $derived.by(() => [
-		{ key: 'compose', label: 'compose.yaml', iconClass: 'text-blue-500', locked: true },
+		{ key: 'compose', label: 'compose.yaml', iconClass: 'text-info', locked: true },
 		...(overrideActive
-			? [{ key: 'override', label: 'compose.override.yaml', iconClass: 'text-purple-500', locked: true }]
+			? [{ key: 'override', label: 'compose.override.yaml', iconClass: 'text-purple', locked: true }]
 			: [{ key: 'add-override', label: m.compose_override_add(), action: true, onSelect: addOverride }]),
-		{ key: 'env', label: '.env', iconClass: 'text-green-500', locked: true }
+		{ key: 'env', label: '.env', iconClass: 'text-success', locked: true }
 	]);
 
 	let stackTreeWidth = $state<number | null>(null);
@@ -157,11 +157,11 @@
 				key === 'compose' ? 'compose.yaml' : key === 'override' ? 'compose.override.yaml' : key === 'env' ? '.env' : key.slice(5),
 			iconClass:
 				key === 'compose'
-					? 'text-blue-500'
+					? 'text-info'
 					: key === 'override'
-						? 'text-purple-500'
+						? 'text-purple'
 						: key === 'env'
-							? 'text-green-500'
+							? 'text-success'
 							: 'text-muted-foreground',
 			pending: false
 		}))
@@ -338,7 +338,7 @@
 									checked={deployOptions.prune}
 									onCheckedChange={(checked) => (deployOptions.prune = checked === true)}
 								/>
-								<Label for="swarm-stack-prune" class="font-normal">{m.swarm_stack_deploy_prune()}</Label>
+								<Label for="swarm-stack-prune" weight="normal">{m.swarm_stack_deploy_prune()}</Label>
 							</div>
 							<div class="flex items-center gap-2">
 								<Checkbox
@@ -346,10 +346,10 @@
 									checked={deployOptions.withRegistryAuth}
 									onCheckedChange={(checked) => (deployOptions.withRegistryAuth = checked === true)}
 								/>
-								<Label for="swarm-stack-registry-auth" class="font-normal">{m.swarm_stack_registry_auth()}</Label>
+								<Label for="swarm-stack-registry-auth" weight="normal">{m.swarm_stack_registry_auth()}</Label>
 							</div>
 							<div class="flex min-w-56 items-center gap-2">
-								<Label for="swarm-stack-resolve-image" class="shrink-0 font-normal">{m.swarm_stack_resolve_image()}</Label>
+								<Label for="swarm-stack-resolve-image" weight="normal" class="shrink-0">{m.swarm_stack_resolve_image()}</Label>
 								<Select.Root type="single" bind:value={deployOptions.resolveImage}>
 									<Select.Trigger id="swarm-stack-resolve-image" class="h-8 min-w-32">
 										<span class="truncate">

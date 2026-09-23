@@ -49,7 +49,7 @@
 		<div class="flex items-center justify-between space-x-2 sm:justify-start">
 			<p class="text-sm font-medium">{m.common_rows_per_page()}</p>
 			<Select.Root allowDeselect={false} type="single" value={selectValue} onValueChange={handlePageSizeChange}>
-				<Select.Trigger class="h-11 w-[70px] sm:h-8">
+				<Select.Trigger class="h-11 w-17.5 sm:h-8">
 					{displayValue}
 				</Select.Trigger>
 				<Select.Content side="top">
@@ -65,7 +65,7 @@
 			</Select.Root>
 		</div>
 		<div class="flex items-center justify-between sm:justify-center">
-			<div class="flex items-center justify-center text-sm font-medium sm:w-[100px]">
+			<div class="flex items-center justify-center text-sm font-medium sm:w-25">
 				{m.common_page_of({ page: currentPage, total: totalPages })}
 			</div>
 			<div class="flex items-center space-x-1 sm:space-x-2">

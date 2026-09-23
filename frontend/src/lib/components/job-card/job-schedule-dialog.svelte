@@ -92,12 +92,12 @@
 	onOpenChange={handleOpenChange}
 	title={m.jobs_edit_schedule()}
 	description={job.name}
-	contentClass="sm:max-w-[500px]"
+	contentClass="sm:max-w-125"
 >
 	<div class="space-y-4 py-4">
 		<div class="space-y-2">
 			<Label for="schedule">{m.jobs_cron_expression()}</Label>
-			<Input id="schedule" bind:value={scheduleValue} placeholder="0 */15 * * * *" class={error ? 'border-destructive' : ''} />
+			<Input id="schedule" bind:value={scheduleValue} placeholder="0 */15 * * * *" aria-invalid={!!error} />
 			{#if error}
 				<p class="text-sm text-destructive">{error}</p>
 			{:else}
@@ -112,7 +112,7 @@
 					<Button
 						variant="outline"
 						onclick={() => useCronExample(example.value)}
-						class="min-h-12 items-start justify-start px-3 py-2 whitespace-normal"
+						class="min-h-12 items-start justify-start whitespace-normal"
 					>
 						<div class="text-left">
 							<div class="text-xs leading-4 font-medium">{example.label}</div>

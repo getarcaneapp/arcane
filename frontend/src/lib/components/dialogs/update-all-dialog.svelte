@@ -218,8 +218,8 @@
 	const failed = $derived(job?.status === 'failed');
 
 	const completedColors = {
-		segment: 'bg-green-500',
-		badge: 'border-green-500/40 bg-green-500/10 text-green-600 dark:text-green-400',
+		segment: 'bg-success',
+		badge: 'border-success/40 bg-success/10 text-success',
 		text: 'text-muted-foreground'
 	};
 	const pendingDisplay = {
@@ -242,9 +242,9 @@
 			triggered: { label: m.environments_update_all_status_triggered, ...completedColors },
 			skipped_offline: {
 				label: m.environments_update_all_status_skipped_offline,
-				segment: 'bg-amber-500',
-				badge: 'border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400',
-				text: 'text-amber-600 dark:text-amber-400'
+				segment: 'bg-warning',
+				badge: 'border-warning/40 bg-warning/10 text-warning',
+				text: 'text-warning'
 			},
 			failed: {
 				label: m.common_failed,
@@ -338,8 +338,9 @@
 	}}
 >
 	<Dialog.Content
+		sectioned
 		class={cn(
-			'flex max-h-[90dvh] flex-col gap-0 overflow-hidden p-0 sm:max-w-[520px]',
+			'flex max-h-(--max-height-dscreen-90) flex-col overflow-hidden sm:max-w-130',
 			phase === 'running' && '[&>button]:hidden'
 		)}
 		onInteractOutside={(e: Event) => {
@@ -348,12 +349,14 @@
 	>
 		{#if phase === 'confirm'}
 			<div class="px-6 pt-6 pb-4">
-				<Dialog.Header class="space-y-3">
-					<Dialog.Title class="text-lg">{title}</Dialog.Title>
-					<Dialog.Description>{m.environments_update_all_message()}</Dialog.Description>
-					{#if versionInformation}
-						<VersionUpdateSummary {versionInformation} {releasedAgo} />
-					{/if}
+				<Dialog.Header>
+					<div class="space-y-3">
+						<Dialog.Title>{title}</Dialog.Title>
+						<Dialog.Description>{m.environments_update_all_message()}</Dialog.Description>
+						{#if versionInformation}
+							<VersionUpdateSummary {versionInformation} {releasedAgo} />
+						{/if}
+					</div>
 				</Dialog.Header>
 			</div>
 
@@ -391,10 +394,10 @@
 								{#if failed}
 									<AlertTriangleIcon class="size-4 shrink-0 text-destructive" />
 								{:else}
-									<SuccessIcon class="size-4 shrink-0 text-green-600 dark:text-green-400" />
+									<SuccessIcon class="size-4 shrink-0 text-success" />
 								{/if}
 							{/if}
-							<Dialog.Title class="truncate text-lg">{title}</Dialog.Title>
+							<Dialog.Title><span class="block min-w-0 truncate">{title}</span></Dialog.Title>
 						</div>
 						{#if totalCount > 0}
 							<span class="shrink-0 text-xs text-muted-foreground tabular-nums">
@@ -414,7 +417,7 @@
 
 				{#if reconnecting}
 					<div
-						class="mt-4 flex items-center gap-2 rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2.5 text-sm text-amber-700 dark:text-amber-400"
+						class="mt-4 flex items-center gap-2 rounded-lg border border-warning/20 bg-warning/5 px-3 py-2.5 text-sm text-warning"
 					>
 						<Spinner class="size-4" />
 						<span>{m.environments_update_all_manager_restarting()}</span>
@@ -454,7 +457,7 @@
 										<div class="flex items-center gap-1.5">
 											<span class="truncate font-medium">{result.environmentName}</span>
 											{#if result.environmentId === MANAGER_ENVIRONMENT_ID}
-												<span class="shrink-0 rounded border px-1 text-[10px] text-muted-foreground">{m.manager()}</span>
+												<span class="shrink-0 rounded border px-1 text-3xs text-muted-foreground">{m.manager()}</span>
 											{/if}
 										</div>
 										{#if result.status === 'failed' && result.error}
@@ -486,7 +489,7 @@
 			{/if}
 		{/if}
 
-		<Dialog.Footer class="border-t border-border/60 px-6 py-4">
+		<Dialog.Footer>
 			{#if phase === 'confirm'}
 				<Button variant="outline" onclick={() => (open = false)}>{m.common_cancel()}</Button>
 				{#if canConfirm}

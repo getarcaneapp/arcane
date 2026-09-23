@@ -144,7 +144,7 @@
 	description={isEditMode
 		? m.federated_credential_edit_description({ name: credentialToEdit?.name ?? m.common_unknown() })
 		: m.federated_credential_create_description()}
-	contentClass="sm:max-w-[560px]"
+	contentClass="sm:max-w-140"
 >
 	{#snippet children()}
 		<form onsubmit={preventDefault(handleSubmit)} novalidate class="grid gap-4 py-6">
@@ -212,10 +212,10 @@
 				disabled={isLoading}
 			/>
 			{#if hasWildcardWarning}
-				<Alert.Root variant="default" class="border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950">
-					<InfoIcon class="h-4 w-4 text-amber-600 dark:text-amber-500" />
-					<Alert.Title class="text-amber-900 dark:text-amber-100">{m.federated_credential_wildcard_warning_title()}</Alert.Title>
-					<Alert.Description class="text-amber-800 dark:text-amber-200">
+				<Alert.Root variant="warning-subtle">
+					<InfoIcon class="h-4 w-4 text-warning" />
+					<Alert.Title>{m.federated_credential_wildcard_warning_title()}</Alert.Title>
+					<Alert.Description>
 						{m.federated_credential_wildcard_warning_description()}
 					</Alert.Description>
 				</Alert.Root>
@@ -253,10 +253,10 @@
 			<div class="flex items-center space-x-2">
 				<Switch id="federated-enabled" bind:checked={inputs.enabled.value} disabled={isLoading} />
 				<div class="grid gap-1.5 leading-none">
-					<Label for="federated-enabled" class="mb-0 text-sm leading-none font-medium">
+					<Label for="federated-enabled" class="mb-0">
 						{m.common_enabled()}
 					</Label>
-					<p class="text-[0.8rem] text-muted-foreground">
+					<p class="text-xs text-muted-foreground">
 						{m.federated_credential_enabled_description()}
 					</p>
 				</div>

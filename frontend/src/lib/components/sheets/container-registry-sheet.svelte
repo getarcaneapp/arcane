@@ -126,7 +126,7 @@
 	variant="sheet"
 	title={isEditMode ? m.registries_edit_title() : m.common_add_button({ resource: m.common_registry() })}
 	description={isEditMode ? m.registries_edit_description() : m.registries_add_description()}
-	contentClass="sm:max-w-[500px]"
+	contentClass="sm:max-w-125"
 >
 	{#snippet children()}
 		<form onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-6">

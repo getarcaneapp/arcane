@@ -92,31 +92,32 @@
 	</div>
 {/snippet}
 
-<ResponsiveDialog bind:open title={m.resolve_backup()} description={sync?.name} contentClass="sm:max-w-xl" class="pb-6">
-	{#if preview.isPending}
-		<div class="flex items-center gap-2 py-8 text-sm text-muted-foreground">
-			<Spinner class="size-4" />
-			{m.common_loading()}
-		</div>
-	{:else if preview.isError}
-		<p class="py-8 text-sm text-destructive">{m.backup_preview_load_failed()}</p>
-	{:else}
-		<div class="space-y-4">
-			<p class="text-sm font-medium">{stateLabel}</p>
-			<p class="text-sm text-muted-foreground">{m.use_arcane_files_description()}</p>
+<ResponsiveDialog bind:open title={m.resolve_backup()} description={sync?.name} contentClass="sm:max-w-xl">
+	<div class="pb-6">
+		{#if preview.isPending}
+			<div class="flex items-center gap-2 py-8 text-sm text-muted-foreground">
+				<Spinner class="size-4" />
+				{m.common_loading()}
+			</div>
+		{:else if preview.isError}
+			<p class="py-8 text-sm text-destructive">{m.backup_preview_load_failed()}</p>
+		{:else}
+			<div class="space-y-4">
+				<p class="text-sm font-medium">{stateLabel}</p>
+				<p class="text-sm text-muted-foreground">{m.use_arcane_files_description()}</p>
 
-			{#if (preview.data?.conflicts ?? []).length > 0}
-				{@render fileList(m.conflicts(), preview.data?.conflicts ?? [])}
-			{/if}
+				{#if (preview.data?.conflicts ?? []).length > 0}
+					{@render fileList(m.conflicts(), preview.data?.conflicts ?? [])}
+				{/if}
 
-			{#if (preview.data?.changes ?? []).length > 0}
-				{@render fileList(m.changes(), preview.data?.changes ?? [])}
-			{:else}
-				<p class="text-sm text-muted-foreground">{m.no_pending_changes()}</p>
-			{/if}
-		</div>
-	{/if}
-
+				{#if (preview.data?.changes ?? []).length > 0}
+					{@render fileList(m.changes(), preview.data?.changes ?? [])}
+				{:else}
+					<p class="text-sm text-muted-foreground">{m.no_pending_changes()}</p>
+				{/if}
+			</div>
+		{/if}
+	</div>
 	{#snippet footer()}
 		<ArcaneButton action="base" tone="outline" customLabel={m.common_cancel()} icon={null} onclick={() => (open = false)} />
 		<ArcaneButton

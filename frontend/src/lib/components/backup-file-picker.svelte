@@ -267,7 +267,7 @@
 	<div bind:this={scrollElement} class="h-64 overflow-auto rounded-md border p-1" data-backup-file-tree>
 		{#if rootLoading}
 			<div class="flex items-center justify-center py-8">
-				<Spinner class="size-5 text-muted-foreground" />
+				<Spinner tone="muted" class="size-5" />
 			</div>
 		{:else if rootError !== null}
 			<div class="flex flex-col items-center justify-center gap-2 px-4 py-8 text-center text-sm" data-backup-file-root-error>
@@ -286,13 +286,13 @@
 				{m.volume_backup_no_files()}
 			</div>
 		{:else}
-			<div class="relative min-w-max" style={`height: ${rowVirtualizer.totalSize}px`}>
+			<div class="relative h-(--total-height) min-w-max" style={`--total-height: ${rowVirtualizer.totalSize}px`}>
 				{#each rowVirtualizer.virtualItems as virtualItem (virtualItem.key)}
 					{@const row = rows[virtualItem.index]}
 					{#if row}
 						<div
-							class="absolute top-0 left-0 w-full"
-							style={`transform: translateY(${virtualItem.start}px)`}
+							class="absolute top-0 left-0 w-full translate-y-(--row-start)"
+							style={`--row-start: ${virtualItem.start}px`}
 							data-index={virtualItem.index}
 							{@attach rowVirtualizer.measureElement}
 						>
@@ -321,8 +321,8 @@
 							{:else}
 								{@const state = pages[row.folder]}
 								<div
-									class="flex min-h-8 items-center gap-1.5 pr-2 text-xs text-muted-foreground"
-									style={`padding-left: ${0.5 + row.depth * 1}rem`}
+									class="flex min-h-8 items-center gap-1.5 pr-2 pl-(--indent) text-xs text-muted-foreground"
+									style={`--indent: ${0.5 + row.depth * 1}rem`}
 								>
 									{#if state?.error}
 										<span>{m.backup_file_browser_load_remaining_failed()}</span>

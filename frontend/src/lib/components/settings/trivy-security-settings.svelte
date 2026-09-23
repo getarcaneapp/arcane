@@ -160,7 +160,7 @@
 		title={m.security_vulnerability_scanning_heading()}
 		icon={SecurityIcon}
 		class="flex flex-col"
-		contentClass="divide-y divide-border/40 lg:p-6 lg:pt-0 [&>*]:py-5 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0"
+		divided
 	>
 		<div class="max-w-xl">
 			<SelectWithLabel
@@ -263,9 +263,9 @@
 						description={m.security_trivy_server_token_description()}
 						type="password"
 					/>
-					<Alert.Root variant="default" class="border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950">
-						<InfoIcon class="h-4 w-4 text-amber-900 dark:text-amber-100" />
-						<Alert.Description class="text-amber-800 dark:text-amber-200">
+					<Alert.Root variant="warning-subtle">
+						<InfoIcon class="h-4 w-4 text-warning" />
+						<Alert.Description>
 							{m.security_trivy_server_note()}
 						</Alert.Description>
 					</Alert.Root>
@@ -281,7 +281,8 @@
 			<Textarea
 				bind:value={formInputs.trivySecurityOpts.value}
 				aria-label={m.security_trivy_security_opts_label()}
-				class="min-h-28 font-mono text-sm"
+				mono
+				class="min-h-28"
 				placeholder={m.security_trivy_security_opts_placeholder()}
 				rows={4}
 			/>
@@ -298,9 +299,9 @@
 			<Switch id="trivyPrivilegedSwitch" bind:checked={formInputs.trivyPrivileged.value} />
 		</SettingsRow>
 		{#if formInputs.trivyPrivileged.value}
-			<Alert.Root variant="default" class="border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950">
-				<InfoIcon class="h-4 w-4 text-amber-900 dark:text-amber-100" />
-				<Alert.Description class="text-amber-800 dark:text-amber-200">
+			<Alert.Root variant="warning-subtle">
+				<InfoIcon class="h-4 w-4 text-warning" />
+				<Alert.Description>
 					{m.security_trivy_privileged_note()}
 				</Alert.Description>
 			</Alert.Root>

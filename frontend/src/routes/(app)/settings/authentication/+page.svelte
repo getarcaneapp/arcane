@@ -285,10 +285,10 @@
 						<h3 class="text-base font-semibold">{m.authentication()}</h3>
 
 						{#if isAutoLoginEnabled}
-							<Alert.Root variant="default" class="border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950">
-								<InfoIcon class="h-4 w-4 text-amber-600 dark:text-amber-500" />
-								<Alert.Title class="text-amber-900 dark:text-amber-100">{m.security_auto_login_enabled_title()}</Alert.Title>
-								<Alert.Description class="text-amber-800 dark:text-amber-200">
+							<Alert.Root variant="warning-subtle">
+								<InfoIcon class="h-4 w-4 text-warning" />
+								<Alert.Title>{m.security_auto_login_enabled_title()}</Alert.Title>
+								<Alert.Description>
 									{m.security_auto_login_enabled_description()}
 								</Alert.Description>
 							</Alert.Root>
@@ -344,11 +344,17 @@
 												onCheckedChange={handleOidcEnabledChange}
 											/>
 											{#if showOidcDetails}
-												<Collapsible.Trigger
-													class="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
-												>
-													<span>{oidcConfigOpen ? m.common_hide() : m.common_show()} {m.common_configuration()}</span>
-													<ArrowDownIcon class={cn('size-3.5 transition-transform', oidcConfigOpen && 'rotate-180')} />
+												<Collapsible.Trigger>
+													{#snippet child({ props })}
+														<button
+															{...props}
+															type="button"
+															class="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+														>
+															<span>{oidcConfigOpen ? m.common_hide() : m.common_show()} {m.common_configuration()}</span>
+															<ArrowDownIcon class={cn('size-3.5 transition-transform', oidcConfigOpen && 'rotate-180')} />
+														</button>
+													{/snippet}
 												</Collapsible.Trigger>
 											{/if}
 										</div>
@@ -477,7 +483,7 @@
 
 												<div class="rounded-lg border bg-muted/30 p-4">
 													<div class="mb-2 flex items-center gap-2">
-														<InfoIcon class="size-4 text-blue-600" />
+														<InfoIcon class="size-4 text-info" />
 														<span class="text-sm font-medium">{m.oidc_redirect_uri_title()}</span>
 													</div>
 													<p class="mb-3 text-sm text-muted-foreground">{m.oidc_redirect_uri_description()}</p>

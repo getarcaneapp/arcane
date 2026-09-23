@@ -169,7 +169,7 @@
 	variant="sheet"
 	title={isEditMode ? m.edit_variable() : m.create_variable()}
 	description={isEditMode ? (variableToEdit?.key ?? '') : m.common_add_description()}
-	contentClass="sm:max-w-[540px]"
+	contentClass="sm:max-w-135"
 >
 	{#snippet children()}
 		<form onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-6">
@@ -202,7 +202,8 @@
 					<Textarea
 						id="variable-bulk-text"
 						rows={10}
-						class="mt-2 font-mono text-sm"
+						mono
+						class="mt-2"
 						placeholder={m.paste_env_placeholder()}
 						bind:value={bulkText}
 					/>
@@ -254,7 +255,8 @@
 					<Input
 						id="variable-key"
 						type="text"
-						class="mt-2 font-mono"
+						mono
+						class="mt-2"
 						placeholder={m.key_placeholder()}
 						bind:value={inputs.key.value}
 						oninput={(e) => normalizeVariableKeyInput(e, (value) => (inputs.key.value = value))}
@@ -269,7 +271,8 @@
 					<Textarea
 						id="variable-value"
 						rows={3}
-						class="mt-2 font-mono"
+						mono
+						class="mt-2"
 						placeholder={variableToEdit?.isSecret ? m.secret_value_placeholder() : m.value_placeholder()}
 						bind:value={inputs.value.value}
 					/>
@@ -307,27 +310,29 @@
 	<div>
 		<Label class="mb-0">{m.common_scope()}</Label>
 		<RadioGroup.Root
-			class="mt-2 gap-2"
+			class="mt-2"
 			value={scope}
 			onValueChange={(value) => {
 				scope = value as 'all' | 'specific';
 				scopeError = null;
 			}}
 		>
-			<label class="flex cursor-pointer items-start gap-3 rounded-md border border-border/50 p-3 hover:bg-accent/40">
-				<RadioGroup.Item value="all" class="mt-0.5" />
-				<div class="grid gap-1 leading-none">
-					<span class="text-sm font-medium">{m.all_environments()}</span>
-					<span class="text-xs text-muted-foreground">{m.all_environments_description()}</span>
-				</div>
-			</label>
-			<label class="flex cursor-pointer items-start gap-3 rounded-md border border-border/50 p-3 hover:bg-accent/40">
-				<RadioGroup.Item value="specific" class="mt-0.5" />
-				<div class="grid gap-1 leading-none">
-					<span class="text-sm font-medium">{m.specific_environments()}</span>
-					<span class="text-xs text-muted-foreground">{m.specific_environments_description()}</span>
-				</div>
-			</label>
+			<div class="grid gap-2">
+				<label class="flex cursor-pointer items-start gap-3 rounded-md border border-border/50 p-3 hover:bg-accent/40">
+					<RadioGroup.Item value="all" class="mt-0.5" />
+					<div class="grid gap-1 leading-none">
+						<span class="text-sm font-medium">{m.all_environments()}</span>
+						<span class="text-xs text-muted-foreground">{m.all_environments_description()}</span>
+					</div>
+				</label>
+				<label class="flex cursor-pointer items-start gap-3 rounded-md border border-border/50 p-3 hover:bg-accent/40">
+					<RadioGroup.Item value="specific" class="mt-0.5" />
+					<div class="grid gap-1 leading-none">
+						<span class="text-sm font-medium">{m.specific_environments()}</span>
+						<span class="text-xs text-muted-foreground">{m.specific_environments_description()}</span>
+					</div>
+				</label>
+			</div>
 		</RadioGroup.Root>
 		{#if scope === 'specific'}
 			<div class="mt-2">

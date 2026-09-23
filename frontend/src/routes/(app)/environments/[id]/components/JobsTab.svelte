@@ -186,7 +186,7 @@
 {#snippet jobCategory(label: string, categoryJobs: JobStatus[], isAgent: boolean, durableRuns: boolean)}
 	{#if categoryJobs.length > 0}
 		<div
-			class="grid min-w-0 gap-x-6 gap-y-2 rounded-xl border border-border bg-transparent px-4 py-2 sm:px-5 lg:grid-cols-[7rem_minmax(0,1fr)]"
+			class="grid min-w-0 gap-x-6 gap-y-2 rounded-xl border border-border bg-transparent px-4 py-2 sm:px-5 lg:grid-cols-aside-28"
 		>
 			<h3 class="flex min-h-9 items-center text-sm font-semibold text-foreground lg:mt-5 lg:self-start">
 				{label}
@@ -204,7 +204,7 @@
 	{#if job.id === 'auto-update' && formInputs.autoUpdate.value}
 		<div class="space-y-3 border-t border-border/20 pt-3">
 			<div class="space-y-1">
-				<Label class="text-sm font-medium">
+				<Label>
 					{m.excluded_containers()}
 					{#await containersPromise then containers}
 						<span class="ml-1 font-normal text-muted-foreground">
@@ -233,14 +233,14 @@
 		<div class="space-y-3 border-t border-border/20 pt-3">
 			<div class="flex items-center justify-between gap-3">
 				<div class="space-y-1">
-					<Label class="text-sm font-medium">{m.jobs_image_event_watcher_label()}</Label>
+					<Label>{m.jobs_image_event_watcher_label()}</Label>
 					<p class="text-xs text-muted-foreground">{m.jobs_image_event_watcher_description()}</p>
 				</div>
 				<Switch id="image-event-watcher-enabled" bind:checked={formInputs.imageEventWatcherEnabled.value} />
 			</div>
-			<Alert.Root variant="warning" class="py-2 [&>svg]:top-2">
+			<Alert.Root variant="warning" size="sm">
 				<AlertTriangleIcon class="size-4" />
-				<Alert.Description class="text-xs">{m.jobs_image_event_watcher_warning()}</Alert.Description>
+				<Alert.Description>{m.jobs_image_event_watcher_warning()}</Alert.Description>
 			</Alert.Root>
 		</div>
 	{/if}
@@ -251,7 +251,7 @@
 		<div class="space-y-3 border-t border-border/20 pt-3">
 			<div class="grid gap-3 sm:grid-cols-2">
 				<div class="space-y-1">
-					<Label for="auto-heal-max-restarts" class="text-sm font-medium">{m.auto_heal_max_restarts_label()}</Label>
+					<Label for="auto-heal-max-restarts">{m.auto_heal_max_restarts_label()}</Label>
 					<p class="text-xs text-muted-foreground">{m.auto_heal_max_restarts_description()}</p>
 					<Input
 						id="auto-heal-max-restarts"
@@ -262,7 +262,7 @@
 					/>
 				</div>
 				<div class="space-y-1">
-					<Label for="auto-heal-restart-window" class="text-sm font-medium">{m.auto_heal_restart_window_label()}</Label>
+					<Label for="auto-heal-restart-window">{m.auto_heal_restart_window_label()}</Label>
 					<p class="text-xs text-muted-foreground">{m.auto_heal_restart_window_description()}</p>
 					<Input
 						id="auto-heal-restart-window"
@@ -275,7 +275,7 @@
 			</div>
 
 			<div class="space-y-1">
-				<Label class="text-sm font-medium">
+				<Label>
 					{m.excluded_containers()}
 					{#await containersPromise then containers}
 						<span class="ml-1 font-normal text-muted-foreground">
@@ -372,50 +372,55 @@
 	idPrefix: string;
 	onToggle: (containerName: string) => void;
 })}
-	<ScrollArea.Root class="h-64 w-full rounded-md border p-2">
-		<div class="space-y-2">
-			{#await containersPromise}
-				<div class="flex items-center justify-center p-4">
-					<Spinner class="size-4" />
-				</div>
-			{:then containers}
-				{@const allItems = containers.map(config.mapItem)}
-				{@const filteredItems = config.term
-					? allItems.filter((item) => item.label.toLowerCase().includes(config.term.toLowerCase()))
-					: allItems}
-
-				{#if filteredItems.length === 0}
-					<p class="py-4 text-center text-sm text-muted-foreground">
-						{m.common_no_results_found()}
-					</p>
-				{:else}
-					{#each filteredItems as container (container.value)}
-						<div class="flex items-center space-x-2">
-							<Checkbox
-								id="{config.idPrefix}{container.value}"
-								checked={container.selected}
-								disabled={container.disabled}
-								onCheckedChange={() => config.onToggle(container.value)}
-							/>
-							<Label
-								for="{config.idPrefix}{container.value}"
-								class="text-sm font-normal {container.disabled ? 'text-muted-foreground' : ''}"
-							>
-								{container.label}
-								{#if container.hint}
-									<span class="ml-1 text-xs opacity-70">{container.hint}</span>
-								{/if}
-							</Label>
+	<div class="h-64 w-full overflow-hidden rounded-md border">
+		<ScrollArea.Root class="h-full">
+			<div class="p-2">
+				<div class="space-y-2">
+					{#await containersPromise}
+						<div class="flex items-center justify-center p-4">
+							<Spinner class="size-4" />
 						</div>
-					{/each}
-				{/if}
-			{:catch error}
-				<div class="p-2 text-sm text-destructive">
-					{(error instanceof Error ? error.message : '') || m.jobs_containers_load_error()}
+					{:then containers}
+						{@const allItems = containers.map(config.mapItem)}
+						{@const filteredItems = config.term
+							? allItems.filter((item) => item.label.toLowerCase().includes(config.term.toLowerCase()))
+							: allItems}
+
+						{#if filteredItems.length === 0}
+							<p class="py-4 text-center text-sm text-muted-foreground">
+								{m.common_no_results_found()}
+							</p>
+						{:else}
+							{#each filteredItems as container (container.value)}
+								<div class="flex items-center space-x-2">
+									<Checkbox
+										id="{config.idPrefix}{container.value}"
+										checked={container.selected}
+										disabled={container.disabled}
+										onCheckedChange={() => config.onToggle(container.value)}
+									/>
+									<Label
+										for="{config.idPrefix}{container.value}"
+										weight="normal"
+										variant={container.disabled ? 'muted' : 'default'}
+									>
+										{container.label}
+										{#if container.hint}
+											<span class="ml-1 text-xs opacity-70">{container.hint}</span>
+										{/if}
+									</Label>
+								</div>
+							{/each}
+						{/if}
+					{:catch error}
+						<div class="p-2 text-sm text-destructive">
+							{(error instanceof Error ? error.message : '') || m.jobs_containers_load_error()}
+						</div>
+					{/await}
 				</div>
-			{/await}
-		</div>
-	</ScrollArea.Root>
+			</div>
+		</ScrollArea.Root>
+	</div>
 {/snippet}
 
 <section class="flex w-full min-w-0 flex-col gap-6">

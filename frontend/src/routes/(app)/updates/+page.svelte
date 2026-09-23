@@ -197,19 +197,19 @@
 			title: m.common_total(),
 			value: totalAffectedResources,
 			icon: UpdateIcon,
-			iconColor: 'text-blue-500'
+			iconColor: 'text-info'
 		},
 		{
 			title: m.standalone_containers(),
 			value: containerCount,
 			icon: ContainersIcon,
-			iconColor: 'text-emerald-500'
+			iconColor: 'text-success'
 		},
 		{
 			title: m.projects_title(),
 			value: projects.pagination?.totalItems ?? 0,
 			icon: ProjectsIcon,
-			iconColor: 'text-amber-500'
+			iconColor: 'text-warning'
 		}
 	]);
 </script>

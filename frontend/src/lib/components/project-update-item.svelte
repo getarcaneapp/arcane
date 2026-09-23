@@ -85,60 +85,60 @@
 				case 'has_update':
 					return {
 						icon: CircleArrowUpIcon,
-						gradientFrom: 'from-blue-500',
-						gradientTo: 'to-cyan-500',
-						shadowColor: 'shadow-blue-500/25',
-						headerClass: 'bg-linear-to-br from-blue-50 to-cyan-50/30 dark:from-blue-950/20 dark:to-cyan-950/10',
-						titleClass: 'text-blue-950 dark:text-blue-100',
-						descriptionClass: 'text-blue-900/80 dark:text-blue-300/80',
+						gradientFrom: 'from-info',
+						gradientTo: 'to-cyan',
+						shadowColor: 'shadow-info/25',
+						headerClass: 'bg-linear-to-br from-info/10 to-cyan/5',
+						titleClass: 'text-info',
+						descriptionClass: 'text-info/80',
 						title: m.images_has_updates(),
 						description: updatedSummaryText ?? m.images_has_updates()
 					};
 				case 'not_pulled':
 					return {
 						icon: DownloadIcon,
-						gradientFrom: 'from-blue-500',
-						gradientTo: 'to-cyan-500',
-						shadowColor: 'shadow-blue-500/25',
-						headerClass: 'bg-linear-to-br from-blue-50 to-cyan-50/30 dark:from-blue-950/20 dark:to-cyan-950/10',
-						titleClass: 'text-blue-950 dark:text-blue-100',
-						descriptionClass: 'text-blue-900/80 dark:text-blue-300/80',
+						gradientFrom: 'from-info',
+						gradientTo: 'to-cyan',
+						shadowColor: 'shadow-info/25',
+						headerClass: 'bg-linear-to-br from-info/10 to-cyan/5',
+						titleClass: 'text-info',
+						descriptionClass: 'text-info/80',
 						title: m.image_update_not_pulled_title(),
 						description: notPulledSummaryText ?? m.image_update_not_pulled_desc()
 					};
 				case 'up_to_date':
 					return {
 						icon: VerifiedCheckIcon,
-						gradientFrom: 'from-emerald-500',
-						gradientTo: 'to-green-500',
-						shadowColor: 'shadow-emerald-500/25',
-						headerClass: 'bg-linear-to-br from-emerald-50 to-green-50/30 dark:from-emerald-950/20 dark:to-green-950/10',
-						titleClass: 'text-emerald-950 dark:text-emerald-100',
-						descriptionClass: 'text-emerald-900/80 dark:text-emerald-300/80',
+						gradientFrom: 'from-success',
+						gradientTo: 'to-success',
+						shadowColor: 'shadow-success/25',
+						headerClass: 'bg-linear-to-br from-success/10 to-success/5',
+						titleClass: 'text-success',
+						descriptionClass: 'text-success/80',
 						title: m.image_update_up_to_date_title(),
 						description: m.image_update_up_to_date_desc()
 					};
 				case 'error':
 					return {
 						icon: AlertIcon,
-						gradientFrom: 'from-rose-500',
-						gradientTo: 'to-red-500',
-						shadowColor: 'shadow-red-500/25',
-						headerClass: 'bg-linear-to-br from-rose-50 to-red-50/40 dark:from-rose-950/20 dark:to-red-950/10',
-						titleClass: 'text-red-950 dark:text-red-100',
-						descriptionClass: 'text-red-900/80 dark:text-red-300/80',
+						gradientFrom: 'from-rose',
+						gradientTo: 'to-destructive',
+						shadowColor: 'shadow-destructive/25',
+						headerClass: 'bg-linear-to-br from-rose/10 to-destructive/5',
+						titleClass: 'text-destructive',
+						descriptionClass: 'text-destructive/80',
 						title: m.image_update_check_failed_title(),
 						description: errorMessage || m.image_update_could_not_query_registry()
 					};
 				default:
 					return {
 						icon: AlertIcon,
-						gradientFrom: 'from-gray-400',
-						gradientTo: 'to-slate-500',
-						shadowColor: 'shadow-gray-400/25',
-						headerClass: 'bg-linear-to-br from-gray-50 to-slate-50/30 dark:from-gray-900/20 dark:to-slate-900/10',
-						titleClass: 'text-gray-950 dark:text-gray-100',
-						descriptionClass: 'text-gray-800 dark:text-gray-300/80',
+						gradientFrom: 'from-muted-foreground',
+						gradientTo: 'to-muted-foreground',
+						shadowColor: 'shadow-muted-foreground/25',
+						headerClass: 'bg-linear-to-br from-muted/50 to-muted/20',
+						titleClass: 'text-foreground',
+						descriptionClass: 'text-muted-foreground',
 						title: m.image_update_status_unknown(),
 						description: m.image_update_click_to_check()
 					};
@@ -194,12 +194,7 @@
 	{/if}
 {/snippet}
 
-<UpdateStatusPopover
-	bind:open={isOpen}
-	interactive={canCheck}
-	directTrigger={directCheckFromTrigger}
-	contentClass="max-w-[320px] p-0"
->
+<UpdateStatusPopover bind:open={isOpen} interactive={canCheck} directTrigger={directCheckFromTrigger} contentWidth="xl">
 	{#snippet trigger({ props })}
 		{#if checking}
 			<span
@@ -208,12 +203,12 @@
 				aria-label={indicatorLabel}
 				data-testid="project-update-trigger"
 			>
-				<Spinner class="size-4 text-blue-400" />
+				<Spinner tone="info" class="size-4" />
 			</span>
 		{:else if directCheckFromTrigger}
 			{@const triggerProps = mergeProps(props, {
 				onclick: handleCheckClick,
-				class: `group inline-flex size-4 items-center justify-center align-middle transition-colors disabled:cursor-not-allowed dark:hover:bg-blue-950 ${className}`
+				class: `group inline-flex size-4 items-center justify-center align-middle transition-colors disabled:cursor-not-allowed dark:hover:bg-info/10 ${className}`
 			})}
 			<button
 				{...triggerProps}
@@ -223,9 +218,9 @@
 				data-testid="project-update-trigger"
 			>
 				{#if status === 'error'}
-					<AlertIcon class="size-4 text-red-500 transition-colors group-hover:text-blue-400" />
+					<AlertIcon class="size-4 text-destructive transition-colors group-hover:text-info" />
 				{:else}
-					<span class="flex size-4 items-center justify-center text-gray-400 transition-colors group-hover:text-blue-400">
+					<span class="flex size-4 items-center justify-center text-muted-foreground transition-colors group-hover:text-info">
 						<UncheckedRingIcon />
 					</span>
 				{/if}
@@ -238,15 +233,15 @@
 				data-testid="project-update-trigger"
 			>
 				{#if status === 'error'}
-					<AlertIcon class="size-4 text-red-500" />
+					<AlertIcon class="size-4 text-destructive" />
 				{:else if status === 'up_to_date'}
-					<VerifiedCheckIcon class="size-4 text-green-500" />
+					<VerifiedCheckIcon class="size-4 text-success" />
 				{:else if status === 'has_update'}
-					<CircleArrowUpIcon class="size-4 text-blue-500" />
+					<CircleArrowUpIcon class="size-4 text-info" />
 				{:else if status === 'not_pulled'}
-					<DownloadIcon class="size-4 text-blue-500" />
+					<DownloadIcon class="size-4 text-info" />
 				{:else}
-					<div class="flex size-4 items-center justify-center text-gray-400 opacity-60">
+					<div class="flex size-4 items-center justify-center text-muted-foreground opacity-60">
 						<UncheckedRingIcon />
 					</div>
 				{/if}
@@ -259,12 +254,12 @@
 			{#if checking}
 				<UpdateStatusBanner
 					icon={Spinner}
-					wrapperClass="bg-linear-to-br from-blue-50 to-cyan-50/30 p-4 dark:from-blue-950/20 dark:to-cyan-950/10"
-					gradientFrom="from-blue-500"
-					gradientTo="to-cyan-500"
-					shadowColor="shadow-blue-500/25"
-					titleClass="text-blue-950 dark:text-blue-100"
-					descriptionClass="text-blue-900/80 dark:text-blue-300/80"
+					wrapperClass="bg-linear-to-br from-info/10 to-info/5 p-4"
+					gradientFrom="from-info"
+					gradientTo="to-cyan"
+					shadowColor="shadow-info/25"
+					titleClass="text-info"
+					descriptionClass="text-info/80"
 					title={m.image_update_checking_title()}
 					description={m.image_update_querying_registry()}
 				/>
@@ -289,7 +284,7 @@
 
 						{#if serviceUpdates.length > 0}
 							<div class="space-y-2">
-								<div class="text-[11px] font-medium tracking-wide text-foreground uppercase">{m.services()}</div>
+								<div class="text-2xs font-medium tracking-wide text-foreground uppercase">{m.services()}</div>
 								<div class="max-h-60 space-y-1 overflow-auto">
 									{#each serviceUpdates as [serviceName, service] (serviceName)}
 										{@const parsed = parseImageRef(service.imageRef)}
@@ -298,7 +293,7 @@
 												<ImageUpdateItem updateInfo={service.updateInfo ?? undefined} repo={parsed.repo} tag={parsed.tag} />
 												<span class="min-w-0 flex-1 text-xs font-medium break-all">{serviceName}</span>
 											</div>
-											<div class="mt-1 font-mono text-[11px] break-all text-muted-foreground">{service.imageRef}</div>
+											<div class="mt-1 font-mono text-2xs break-all text-muted-foreground">{service.imageRef}</div>
 											{#if service.updateInfo?.hasUpdate && service.updateInfo.updateType === 'tag' && service.updateInfo.latestVersion}
 												<div class="mt-1 flex flex-wrap items-center gap-1 font-mono text-xs break-all">
 													<span>{parsed.tag}</span>
@@ -314,7 +309,7 @@
 
 						{#if status === 'has_update' && fallbackUpdatedImageRefs.length > 0}
 							<div class="space-y-2">
-								<div class="text-[11px] font-medium tracking-wide text-foreground uppercase">{m.images_has_updates()}</div>
+								<div class="text-2xs font-medium tracking-wide text-foreground uppercase">{m.images_has_updates()}</div>
 								<div class="max-h-40 space-y-1 overflow-auto">
 									{#each fallbackUpdatedImageRefs as imageRef (imageRef)}
 										{@render refRow(imageRef)}
@@ -341,7 +336,7 @@
 
 						{#if notPulledImageRefs.length > 0 && (status === 'not_pulled' || status === 'has_update')}
 							<div class="space-y-2">
-								<div class="text-[11px] font-medium tracking-wide text-foreground uppercase">
+								<div class="text-2xs font-medium tracking-wide text-foreground uppercase">
 									{m.image_update_not_pulled_title()}
 								</div>
 								<div class="max-h-40 space-y-1 overflow-auto">
@@ -354,7 +349,7 @@
 
 						{#if errorCount > 0 && status !== 'error'}
 							<div class="flex items-center gap-2 text-xs text-muted-foreground">
-								<AlertIcon class="size-3.5 text-red-500" />
+								<AlertIcon class="size-3.5 text-destructive" />
 								<span>{errorCount} {m.common_error()}</span>
 							</div>
 						{/if}

@@ -164,7 +164,8 @@
 				<Progress
 					value={cpuUsagePercent}
 					max={100}
-					class="h-3 {cpuUsagePercent > 80 ? '[&>div]:bg-destructive' : cpuUsagePercent > 60 ? '[&>div]:bg-warning' : ''}"
+					class="h-3"
+					tone={cpuUsagePercent > 80 ? 'destructive' : cpuUsagePercent > 60 ? 'warning' : 'default'}
 				/>
 				{#if stats.cpu_stats}
 					<div class="flex items-center justify-between text-xs text-muted-foreground">
@@ -220,7 +221,8 @@
 				<Progress
 					value={memoryUsagePercent}
 					max={100}
-					class="h-3 {memoryUsagePercent > 80 ? '[&>div]:bg-destructive' : memoryUsagePercent > 60 ? '[&>div]:bg-warning' : ''}"
+					class="h-3"
+					tone={memoryUsagePercent > 80 ? 'destructive' : memoryUsagePercent > 60 ? 'warning' : 'default'}
 				/>
 			</div>
 			<div class="grid grid-cols-1 gap-x-4 gap-y-2 text-xs sm:grid-cols-2 lg:grid-cols-3">
@@ -258,7 +260,7 @@
 									</div>
 								{/if}
 								{#if interfaceStats.rx_dropped > 0 || interfaceStats.tx_dropped > 0}
-									<div class="text-warning mt-1 text-xs">
+									<div class="mt-1 text-xs text-warning">
 										{m.containers_stats_dropped()}: {interfaceStats.rx_dropped + interfaceStats.tx_dropped}
 									</div>
 								{/if}

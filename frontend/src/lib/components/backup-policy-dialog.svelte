@@ -37,7 +37,7 @@
 		updatePolicies,
 		messages,
 		onSaved,
-		contentClass = 'sm:max-w-[720px]'
+		contentClass = 'sm:max-w-180'
 	}: {
 		open: boolean;
 		idPrefix: string;

@@ -34,9 +34,9 @@
 <div class="space-y-3">
 	{#each rows as row, index (row)}
 		<div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
-			<Input type="text" placeholder={keyPlaceholder} bind:value={row.key} {disabled} class="flex-1 font-mono" />
+			<Input type="text" placeholder={keyPlaceholder} bind:value={row.key} {disabled} mono class="flex-1" />
 			<span class="hidden font-mono text-muted-foreground sm:inline">=</span>
-			<Input type="text" placeholder={valuePlaceholder} bind:value={row.value} {disabled} class="flex-1 font-mono" />
+			<Input type="text" placeholder={valuePlaceholder} bind:value={row.value} {disabled} mono class="flex-1" />
 			<ArcaneButton
 				action="base"
 				tone="ghost"

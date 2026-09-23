@@ -264,12 +264,12 @@
 			</div>
 			<div
 				class="absolute -top-1 -right-1 size-3 rounded-full border-2 border-background {statusValue === 'online'
-					? 'bg-green-500'
+					? 'bg-success'
 					: statusValue === 'standby'
-						? 'bg-blue-500'
+						? 'bg-info'
 						: statusValue === 'pending'
-							? 'bg-amber-500'
-							: 'bg-red-500'}"
+							? 'bg-warning'
+							: 'bg-destructive'}"
 			></div>
 		</div>
 		{#if environmentStore.selected?.id === item.id}
@@ -279,7 +279,7 @@
 		{/if}
 		<div class="flex flex-col gap-0.5 leading-tight">
 			<button
-				class="text-foreground-primary h-auto min-h-0 cursor-pointer p-0 text-left text-sm leading-tight font-medium hover:underline"
+				class="h-auto min-h-0 cursor-pointer p-0 text-left text-sm leading-tight font-medium text-foreground hover:underline"
 				onclick={() => goto(`/environments/${item.id}`)}
 			>
 				{item.name}

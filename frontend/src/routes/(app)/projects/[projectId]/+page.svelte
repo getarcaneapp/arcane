@@ -319,9 +319,9 @@
 	const gitComposeEditUrl = $derived(gitOpsComposeEditUrl(lifecycleSync));
 	const gitOverrideEditUrl = $derived(gitOpsFileEditUrl(lifecycleSync, overrideFileName));
 	const projectWorkspaceLeadingRows = $derived([
-		{ key: 'compose', label: composeFileName, iconClass: 'text-blue-500', locked: true },
+		{ key: 'compose', label: composeFileName, iconClass: 'text-info', locked: true },
 		...(overrideActive
-			? [{ key: 'override', label: overrideFileName, iconClass: 'text-purple-500', locked: true }]
+			? [{ key: 'override', label: overrideFileName, iconClass: 'text-purple', locked: true }]
 			: canEditOverride
 				? [
 						{
@@ -332,7 +332,7 @@
 						}
 					]
 				: []),
-		{ key: 'env', label: '.env', iconClass: 'text-green-500', locked: true }
+		{ key: 'env', label: '.env', iconClass: 'text-success', locked: true }
 	]);
 	let archiveRequiresStopped = $derived(
 		!!project &&
@@ -430,11 +430,11 @@
 			title: treeTabTitle(key),
 			iconClass:
 				key === 'compose'
-					? 'text-blue-500'
+					? 'text-info'
 					: key === 'override'
-						? 'text-purple-500'
+						? 'text-purple'
 						: key === 'env'
-							? 'text-green-500'
+							? 'text-success'
 							: 'text-muted-foreground',
 			pending: treeTabPending(key)
 		}))
@@ -2113,7 +2113,7 @@
 					canEdit={canEditName}
 					disabledMessage={composeYamlName ? m.compose_project_name_defined_in_yaml() : undefined}
 					onCommit={saveNameIfChanged}
-					class="max-w-[10rem] min-w-0 sm:max-w-[14rem] md:max-w-[18rem] lg:max-w-[22rem]"
+					class="max-w-40 min-w-0 sm:max-w-56 md:max-w-72 lg:max-w-88"
 				/>
 				{@render projectStatus(project)}
 				{#if project.isArchived}
@@ -2137,13 +2137,13 @@
 				<div class="mt-1 flex min-w-0 flex-wrap items-center gap-1.5">
 					{#each project.urls as url (url)}
 						<a
-							class="inline-flex h-6 max-w-[10rem] min-w-0 items-center gap-1.5 rounded-[var(--radius)] border border-sky-700/20 bg-background/70 px-2.5 text-[12px] font-semibold ring-offset-background transition-colors hover:border-sky-700/40 hover:bg-sky-500/10 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none sm:max-w-[14rem] md:max-w-[18rem] dark:border-sky-400/40 dark:bg-sky-500/20 dark:text-sky-100 dark:hover:border-sky-300/60 dark:hover:bg-sky-500/30"
+							class="inline-flex h-6 max-w-40 min-w-0 items-center gap-1.5 rounded-lg border border-info/20 bg-background/70 px-2.5 text-xs font-semibold ring-offset-background transition-colors hover:border-info/40 hover:bg-info/10 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none sm:max-w-56 md:max-w-72 dark:bg-info/20 dark:hover:bg-info/30"
 							href={toSafeHref(url)}
 							target="_blank"
 							rel="noopener noreferrer"
 							title={url}
 						>
-							<GlobeIcon class="size-3 text-sky-500" />
+							<GlobeIcon class="size-3 text-info" />
 							<span class="truncate">{formatUrlLabel(url)}</span>
 						</a>
 					{/each}

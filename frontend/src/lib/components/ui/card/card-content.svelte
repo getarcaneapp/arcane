@@ -10,6 +10,16 @@
 	}: WithElementRef<HTMLAttributes<HTMLDivElement>> = $props();
 </script>
 
-<div bind:this={ref} data-slot="card-content" class={cn('px-6', className)} {...restProps}>
+<!-- Padding follows the card: compact in `size="sm"` cards, and lined up with a plain (icon-less) header above it. -->
+<div
+	bind:this={ref}
+	data-slot="card-content"
+	class={cn(
+		'p-4 [[data-slot=card][data-size=sm]>&]:p-3',
+		'[[data-slot=card-header][data-variant=plain]~&]:px-6 [[data-slot=card-header][data-variant=plain]~&]:pt-0 [[data-slot=card-header][data-variant=plain]~&]:pb-6',
+		className
+	)}
+	{...restProps}
+>
 	{@render children?.()}
 </div>

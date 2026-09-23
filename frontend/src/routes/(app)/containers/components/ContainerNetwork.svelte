@@ -117,7 +117,7 @@
 				</Card.Title>
 			</div>
 		</Card.Header>
-		<Card.Content class="p-4">
+		<Card.Content>
 			{#if container.ports && container.ports.length > 0}
 				<!-- fallow-ignore-next-line code-duplication -- container vs swarm-service network; typed props diverge across the boundary -->
 				<PortBadge ports={container.ports} />
@@ -140,16 +140,16 @@
 				<Card.Description>{m.containers_networks_description()}</Card.Description>
 			</div>
 		</Card.Header>
-		<Card.Content class="p-4">
+		<Card.Content>
 			{#if container.networkSettings?.networks && Object.keys(container.networkSettings.networks).length > 0}
 				<div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
 					<!-- fallow-ignore-next-line code-duplication -- container vs swarm-service network; typed props diverge across the boundary -->
 					{#each Object.entries(container.networkSettings.networks) as [networkName, rawNetworkConfig] (networkName)}
 						<Card.Root variant="subtle">
-							<Card.Content class="p-4">
+							<Card.Content>
 								<div class="mb-4 flex items-center gap-3 border-b border-border pb-4">
-									<div class="rounded-lg bg-blue-500/10 p-2">
-										<NetworksIcon class="size-5 text-blue-500" />
+									<div class="rounded-lg bg-info/10 p-2">
+										<NetworksIcon class="size-5 text-info" />
 									</div>
 									<div class="min-w-0 flex-1">
 										<div class="text-base font-semibold break-all text-foreground">
@@ -172,8 +172,8 @@
 								</div>
 
 								<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-									<Card.Root variant="outlined">
-										<Card.Content class="flex flex-col p-3">
+									<Card.Root variant="outlined" size="sm">
+										<Card.Content class="flex flex-col">
 											<div class="mb-2 text-xs font-semibold text-muted-foreground">
 												{m.containers_ip_address()}
 											</div>
@@ -186,8 +186,8 @@
 										</Card.Content>
 									</Card.Root>
 
-									<Card.Root variant="outlined">
-										<Card.Content class="flex flex-col p-3">
+									<Card.Root variant="outlined" size="sm">
+										<Card.Content class="flex flex-col">
 											<div class="mb-2 text-xs font-semibold text-muted-foreground">{m.common_gateway()}</div>
 											<div
 												class="cursor-pointer font-mono text-sm font-medium break-all text-foreground select-all"
@@ -198,8 +198,8 @@
 										</Card.Content>
 									</Card.Root>
 
-									<Card.Root variant="outlined">
-										<Card.Content class="flex flex-col p-3">
+									<Card.Root variant="outlined" size="sm">
+										<Card.Content class="flex flex-col">
 											<div class="mb-2 text-xs font-semibold text-muted-foreground">
 												{m.containers_mac_address()}
 											</div>
@@ -212,8 +212,8 @@
 										</Card.Content>
 									</Card.Root>
 
-									<Card.Root variant="outlined">
-										<Card.Content class="flex flex-col p-3">
+									<Card.Root variant="outlined" size="sm">
+										<Card.Content class="flex flex-col">
 											<div class="mb-2 text-xs font-semibold text-muted-foreground">{m.common_subnet()}</div>
 											<div
 												class="cursor-pointer font-mono text-sm font-medium break-all text-foreground select-all"
@@ -227,8 +227,8 @@
 									</Card.Root>
 
 									{#if rawNetworkConfig.globalIPv6Address}
-										<Card.Root variant="outlined">
-											<Card.Content class="flex flex-col p-3">
+										<Card.Root variant="outlined" size="sm">
+											<Card.Content class="flex flex-col">
 												<div class="mb-2 text-xs font-semibold text-muted-foreground">{m.ipv6_address()}</div>
 												<div
 													class="cursor-pointer font-mono text-sm font-medium break-all text-foreground select-all"
@@ -241,8 +241,8 @@
 											</Card.Content>
 										</Card.Root>
 
-										<Card.Root variant="outlined">
-											<Card.Content class="flex flex-col p-3">
+										<Card.Root variant="outlined" size="sm">
+											<Card.Content class="flex flex-col">
 												<div class="mb-2 text-xs font-semibold text-muted-foreground">{m.ipv6_gateway()}</div>
 												<div
 													class="cursor-pointer font-mono text-sm font-medium break-all text-foreground select-all"
@@ -255,8 +255,8 @@
 									{/if}
 
 									{#if rawNetworkConfig.networkId}
-										<Card.Root variant="outlined" class="sm:col-span-2">
-											<Card.Content class="flex flex-col p-3">
+										<Card.Root variant="outlined" class="sm:col-span-2" size="sm">
+											<Card.Content class="flex flex-col">
 												<div class="mb-2 text-xs font-semibold text-muted-foreground">{m.network_id()}</div>
 												<div
 													class="cursor-pointer font-mono text-sm font-medium break-all text-foreground select-all"
@@ -269,8 +269,8 @@
 									{/if}
 
 									{#if rawNetworkConfig.endpointId}
-										<Card.Root variant="outlined" class="sm:col-span-2">
-											<Card.Content class="flex flex-col p-3">
+										<Card.Root variant="outlined" class="sm:col-span-2" size="sm">
+											<Card.Content class="flex flex-col">
 												<div class="mb-2 text-xs font-semibold text-muted-foreground">{m.container_endpoint_id()}</div>
 												<div
 													class="cursor-pointer font-mono text-sm font-medium break-all text-foreground select-all"
@@ -283,8 +283,8 @@
 									{/if}
 
 									{#if rawNetworkConfig.aliases && rawNetworkConfig.aliases.length > 0}
-										<Card.Root variant="outlined" class="sm:col-span-2">
-											<Card.Content class="flex flex-col p-3">
+										<Card.Root variant="outlined" class="sm:col-span-2" size="sm">
+											<Card.Content class="flex flex-col">
 												<div class="mb-2 text-xs font-semibold text-muted-foreground">
 													{m.containers_aliases()}
 												</div>
@@ -330,16 +330,11 @@
 							placeholder={m.containers_aliases()}
 							bind:value={connectAliases}
 							disabled={connectPending}
-							class="flex-1 font-mono"
+							mono
+							class="flex-1"
 							title={m.aliases_note()}
 						/>
-						<Input
-							type="text"
-							placeholder={m.static_ip()}
-							bind:value={connectIp}
-							disabled={connectPending}
-							class="flex-1 font-mono"
-						/>
+						<Input type="text" placeholder={m.static_ip()} bind:value={connectIp} disabled={connectPending} mono class="flex-1" />
 						<ArcaneButton
 							action="base"
 							tone="outline"

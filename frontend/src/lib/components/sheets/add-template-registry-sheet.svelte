@@ -77,7 +77,7 @@
 	variant="sheet"
 	title={m.templates_add_registry_title()}
 	description={m.templates_add_registry_description()}
-	contentClass="sm:max-w-[500px]"
+	contentClass="sm:max-w-125"
 >
 	{#snippet children()}
 		<form onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-6">
@@ -97,10 +97,10 @@
 			/>
 
 			{#if submitError}
-				<Alert.Root class="border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-950">
+				<Alert.Root variant="destructive-subtle">
 					<AlertIcon class="size-4" />
 					<Alert.Title>{m.templates_registry_validation_error_title()}</Alert.Title>
-					<Alert.Description class="text-sm">{submitError}</Alert.Description>
+					<Alert.Description>{submitError}</Alert.Description>
 				</Alert.Root>
 			{/if}
 		</form>

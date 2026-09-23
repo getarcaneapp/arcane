@@ -169,7 +169,7 @@
 	variant="sheet"
 	title={destination ? m.s3_destination_edit_title() : m.s3_destination_add_title()}
 	description={m.s3_destination_dialog_description()}
-	contentClass="sm:max-w-[640px]"
+	contentClass="sm:max-w-160"
 >
 	{#snippet children()}
 		<form onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-6">
@@ -180,7 +180,7 @@
 	{/snippet}
 	{#snippet footer()}
 		<div class="flex w-full flex-col gap-2">
-			<p class={connectionVerified ? 'text-xs text-green-600' : 'text-xs text-muted-foreground'}>
+			<p class={connectionVerified ? 'text-xs text-success' : 'text-xs text-muted-foreground'}>
 				{connectionVerified ? m.s3_destination_test_verified() : m.s3_destination_test_required()}
 			</p>
 			<SheetFooterActions

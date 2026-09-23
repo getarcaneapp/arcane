@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { Input } from '#lib/components/ui/input/index.js';
 	import * as Tabs from '#lib/components/ui/tabs/index.js';
-	import { cn } from '#lib/utils.js';
 	import { m } from '#lib/paraglide/messages.js';
 
 	export type PruneModeOption = {
@@ -133,7 +132,7 @@
 <div class="flex h-full flex-col gap-2.5 rounded-lg bg-muted/20 p-3 ring-1 ring-border/20">
 	<div class="space-y-0.5">
 		<p class="text-xs font-medium">{title}</p>
-		<p class="text-[11px] leading-tight text-muted-foreground">{description}</p>
+		<p class="text-2xs leading-tight text-muted-foreground">{description}</p>
 	</div>
 
 	<Tabs.Root {value} onValueChange={handleModeChange}>
@@ -142,10 +141,9 @@
 				<Tabs.Trigger
 					value={option.value}
 					{disabled}
-					class={cn(
-						'h-6 flex-1 text-xs',
-						option.destructive && value === option.value && 'bg-destructive/15 text-destructive shadow-sm hover:bg-destructive/10'
-					)}
+					size="sm"
+					variant={option.destructive ? 'destructive' : 'default'}
+					class="h-6 flex-1"
 				>
 					{option.label}
 				</Tabs.Trigger>
@@ -154,14 +152,15 @@
 	</Tabs.Root>
 
 	{#if hasOlderThanInternal() && value === olderThanMode}
-		<div class="grid gap-1.5 sm:grid-cols-[minmax(0,1fr)_auto]">
+		<div class="grid gap-1.5 sm:grid-cols-content-action">
 			<Input
 				type="number"
 				min="1"
 				value={durationAmountInternal}
 				oninput={handleDurationAmountInputInternal}
 				{disabled}
-				class="h-8 text-xs"
+				size="sm"
+				class="h-8"
 				placeholder={m.prune_duration_placeholder()}
 			/>
 			<select
@@ -179,7 +178,7 @@
 	{/if}
 
 	{#if warningDescription && getSelectedOptionInternal()?.destructive}
-		<div class="mt-auto rounded-md border border-amber-500/30 bg-amber-500/10 p-2 text-xs text-amber-900 dark:text-amber-200">
+		<div class="mt-auto rounded-md border border-warning/30 bg-warning/10 p-2 text-xs text-warning">
 			{#if warningTitle}
 				<p class="font-medium">{warningTitle}</p>
 			{/if}

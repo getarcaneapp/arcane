@@ -123,7 +123,7 @@
 	}}>{m.jobs_run_history()}</Button
 >
 <Dialog.Root bind:open>
-	<Dialog.Content class="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+	<Dialog.Content class="max-h-(--max-height-screen-85) overflow-y-auto sm:max-w-2xl">
 		<Dialog.Header
 			><Dialog.Title>{m.jobs_run_history()}</Dialog.Title><Dialog.Description>{jobId}</Dialog.Description></Dialog.Header
 		>
@@ -131,7 +131,7 @@
 		{#each runs.data?.runs ?? [] as run (run.id)}
 			<Button
 				variant="outline"
-				class="h-auto w-full justify-between gap-2 text-left"
+				class="h-auto w-full justify-between text-left"
 				onclick={() => {
 					selected = run.id;
 				}}

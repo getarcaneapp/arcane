@@ -28,7 +28,7 @@
 		label={m.build_provider()}
 		hideLabel
 		triggerSize="sm"
-		triggerClass="w-[160px]"
+		compact
 		options={providerOptions}
 		bind:value={
 			() => provider,
@@ -43,7 +43,7 @@
 
 	<div class="flex items-center gap-2">
 		<Switch id="build-push" checked={inputs.push.value} onCheckedChange={(v) => (inputs.push.value = v === true)} />
-		<Label for="build-push" class="text-sm">{m.push()}</Label>
+		<Label for="build-push">{m.push()}</Label>
 	</div>
 
 	<div class="flex items-center gap-2">
@@ -53,7 +53,7 @@
 			onCheckedChange={(v) => (inputs.load.value = v === true)}
 			disabled={provider === 'depot'}
 		/>
-		<Label for="build-load" class="text-sm">{m.load()}</Label>
+		<Label for="build-load">{m.load()}</Label>
 	</div>
 
 	<IfPermitted perm="images:build">

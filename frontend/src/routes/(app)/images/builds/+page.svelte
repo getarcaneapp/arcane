@@ -639,23 +639,17 @@
 		<Tabs.Root bind:value={rightPanelTab} class="flex h-full flex-col">
 			<!-- Tabs header with refined styling -->
 			<div class="flex shrink-0 items-center justify-between border-b border-border/50 bg-muted/40 px-3 py-2">
-				<Tabs.List class="flex items-center gap-1 rounded-lg border border-border/60 bg-muted/60 p-1">
-					<Tabs.Trigger
-						value="config"
-						class="rounded-md px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground data-[state=active]:bg-primary/10 data-[state=active]:text-foreground"
-					>
+				<Tabs.List class="flex items-center">
+					<Tabs.Trigger value="config" size="sm">
 						<CodeIcon class="mr-2 size-3.5" />
 						{m.build_configuration()}
 					</Tabs.Trigger>
-					<Tabs.Trigger
-						value="output"
-						class="rounded-md px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground data-[state=active]:bg-primary/10 data-[state=active]:text-foreground"
-					>
+					<Tabs.Trigger value="output" size="sm">
 						<TerminalIcon class="mr-2 size-3.5" />
 						{m.build_output()}
 						{#if logLines.length > 0}
 							<span
-								class="ml-1.5 rounded-full bg-primary/15 px-1.5 py-0.5 text-[10px] font-semibold text-primary ring-1 ring-primary/20"
+								class="ml-1.5 rounded-full bg-primary/15 px-1.5 py-0.5 text-3xs font-semibold text-primary ring-1 ring-primary/20"
 							>
 								{logLines.length}
 							</span>
@@ -671,16 +665,16 @@
 							<div
 								class={`size-2 rounded-full transition-all ${
 									buildError
-										? 'bg-red-500 shadow-lg shadow-red-500/50'
+										? 'bg-destructive shadow-lg shadow-destructive/50'
 										: hasReachedComplete
-											? 'bg-green-500 shadow-lg shadow-green-500/50'
+											? 'bg-success shadow-lg shadow-success/50'
 											: isBuilding
-												? 'animate-pulse bg-blue-500 shadow-lg shadow-blue-500/50'
-												: 'bg-zinc-600'
+												? 'animate-pulse bg-info shadow-lg shadow-info/50'
+												: 'bg-muted-foreground'
 								}`}
 							></div>
 							{#if isBuilding}
-								<div class="absolute inset-0 size-2 animate-ping rounded-full bg-blue-500 opacity-75"></div>
+								<div class="absolute inset-0 size-2 animate-ping rounded-full bg-info opacity-75"></div>
 							{/if}
 						</div>
 						<span class="text-xs font-medium text-muted-foreground">{statusLabel}</span>
@@ -708,18 +702,12 @@
 
 {#if isDesktop}
 	<ResourceDetailLayout title={m.build_workspace()} subtitle={m.manual_build_workspace_subtitle()}>
-		<Tabs.Root value={mainTab} onValueChange={mainUrlTab.select} class="flex h-[calc(100vh-12rem)] flex-col">
-			<Tabs.List class="mb-3 flex w-fit gap-2 rounded-lg border border-border/60 bg-muted/60 p-1">
-				<Tabs.Trigger
-					value="build"
-					class="rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground hover:text-foreground data-[state=active]:bg-primary/10 data-[state=active]:text-foreground"
-				>
+		<Tabs.Root value={mainTab} onValueChange={mainUrlTab.select} class="flex h-(--height-screen-inset-12) flex-col">
+			<Tabs.List class="mb-3 flex w-fit">
+				<Tabs.Trigger value="build">
 					{m.build_workspace()}
 				</Tabs.Trigger>
-				<Tabs.Trigger
-					value="history"
-					class="rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground hover:text-foreground data-[state=active]:bg-primary/10 data-[state=active]:text-foreground"
-				>
+				<Tabs.Trigger value="history">
 					{m.build_history()}
 				</Tabs.Trigger>
 			</Tabs.List>
@@ -734,7 +722,7 @@
 						minSecondSize={520}
 						defaultRatio={0.28}
 						handleSize={10}
-						handleClass="bg-zinc-950/50 rounded-full"
+						handleClass="bg-muted-foreground/50 rounded-full"
 						allowCollapse={true}
 						persistKey="arcane.build.workspace.split"
 					>
@@ -758,7 +746,7 @@
 		</Tabs.Root>
 	</ResourceDetailLayout>
 {:else}
-	<TabbedPageLayout tabItems={mainTabItems} selectedTab={mainTab} onTabChange={onMainTabChange} class="min-h-[calc(100vh-10rem)]">
+	<TabbedPageLayout tabItems={mainTabItems} selectedTab={mainTab} onTabChange={onMainTabChange} class="min-h-screen-inset-10">
 		{#snippet headerInfo()}
 			<div class="flex flex-col gap-1">
 				{#if mainTab === 'history'}
@@ -778,13 +766,13 @@
 		{/snippet}
 
 		{#snippet tabContent(tab)}
-			<div class="min-h-[60vh]">
+			<div class="min-h-screen-60">
 				{#if tab === 'build'}
 					<TabbedPageLayout
 						tabItems={buildMobileTabItems}
 						selectedTab={buildTab}
 						onTabChange={onBuildTabChange}
-						class="min-h-[60vh]"
+						class="min-h-screen-60"
 					>
 						{#snippet headerInfo()}
 							<div class="flex flex-col gap-1">
@@ -803,7 +791,7 @@
 									{@render configPanel()}
 								</Card.Root>
 							{:else}
-								<Card.Root class="flex h-full min-h-[500px] flex-col overflow-hidden">
+								<Card.Root class="flex h-full min-h-125 flex-col overflow-hidden">
 									<BuildOutputPanel
 										{logLines}
 										{aggregateStatus}
@@ -818,7 +806,7 @@
 						{/snippet}
 					</TabbedPageLayout>
 				{:else}
-					<Card.Root class="flex h-full min-h-[500px] flex-col overflow-hidden">
+					<Card.Root class="flex h-full min-h-125 flex-col overflow-hidden">
 						{@render historyContent()}
 					</Card.Root>
 				{/if}

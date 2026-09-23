@@ -31,7 +31,7 @@
 					</Card.Title>
 				</div>
 			</Card.Header>
-			<Card.Content class="p-4">
+			<Card.Content>
 				<EnvVarsList {envVars} nameOnlyLabel={m.common_name()} />
 			</Card.Content>
 		</Card.Root>
@@ -47,7 +47,7 @@
 					<Card.Description>{m.common_labels_description({ resource: m.swarm_service() })}</Card.Description>
 				</div>
 			</Card.Header>
-			<Card.Content class="p-4">
+			<Card.Content>
 				<KeyValueGrid>
 					{#each Object.entries(labels) as [key, value] (key)}
 						<KeyValueCard label={key}>{value?.toString() || ''}</KeyValueCard>
@@ -66,16 +66,18 @@
 					</Card.Title>
 				</div>
 			</Card.Header>
-			<Card.Content class="p-4">
+			<Card.Content>
 				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
 					{#if command.length > 0}
 						<Card.Root variant="subtle" class="sm:col-span-2 lg:col-span-3 xl:col-span-4">
-							<Card.Content class="flex flex-col gap-2 p-4">
-								<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-									{m.common_command()}
-								</div>
-								<div class="cursor-pointer font-mono text-sm font-medium break-all text-foreground select-all">
-									{command.join(' ')}
+							<Card.Content>
+								<div class="flex flex-col gap-2">
+									<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+										{m.common_command()}
+									</div>
+									<div class="cursor-pointer font-mono text-sm font-medium break-all text-foreground select-all">
+										{command.join(' ')}
+									</div>
 								</div>
 							</Card.Content>
 						</Card.Root>
@@ -83,12 +85,14 @@
 
 					{#if args.length > 0}
 						<Card.Root variant="subtle" class="sm:col-span-2 lg:col-span-3 xl:col-span-4">
-							<Card.Content class="flex flex-col gap-2 p-4">
-								<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-									{m.common_args()}
-								</div>
-								<div class="cursor-pointer font-mono text-sm font-medium break-all text-foreground select-all">
-									{args.join(' ')}
+							<Card.Content>
+								<div class="flex flex-col gap-2">
+									<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+										{m.common_args()}
+									</div>
+									<div class="cursor-pointer font-mono text-sm font-medium break-all text-foreground select-all">
+										{args.join(' ')}
+									</div>
 								</div>
 							</Card.Content>
 						</Card.Root>
@@ -96,12 +100,14 @@
 
 					{#if workingDir}
 						<Card.Root variant="subtle">
-							<Card.Content class="flex flex-col gap-2 p-4">
-								<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-									{m.common_working_directory()}
-								</div>
-								<div class="cursor-pointer font-mono text-sm font-medium break-all text-foreground select-all">
-									{workingDir}
+							<Card.Content>
+								<div class="flex flex-col gap-2">
+									<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+										{m.common_working_directory()}
+									</div>
+									<div class="cursor-pointer font-mono text-sm font-medium break-all text-foreground select-all">
+										{workingDir}
+									</div>
 								</div>
 							</Card.Content>
 						</Card.Root>
@@ -109,12 +115,14 @@
 
 					{#if user}
 						<Card.Root variant="subtle">
-							<Card.Content class="flex flex-col gap-2 p-4">
-								<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-									{m.common_user()}
-								</div>
-								<div class="cursor-pointer font-mono text-sm font-medium text-foreground select-all">
-									{user}
+							<Card.Content>
+								<div class="flex flex-col gap-2">
+									<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+										{m.common_user()}
+									</div>
+									<div class="cursor-pointer font-mono text-sm font-medium text-foreground select-all">
+										{user}
+									</div>
 								</div>
 							</Card.Content>
 						</Card.Root>
@@ -122,10 +130,12 @@
 
 					{#if hostname}
 						<Card.Root variant="subtle">
-							<Card.Content class="flex flex-col gap-2 p-4">
-								<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{m.hostname()}</div>
-								<div class="cursor-pointer font-mono text-sm font-medium text-foreground select-all">
-									{hostname}
+							<Card.Content>
+								<div class="flex flex-col gap-2">
+									<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{m.hostname()}</div>
+									<div class="cursor-pointer font-mono text-sm font-medium text-foreground select-all">
+										{hostname}
+									</div>
 								</div>
 							</Card.Content>
 						</Card.Root>

@@ -15,7 +15,7 @@
 
 <div
 	class={cn(
-		'flex border-b border-border/30 transition-[height,padding] duration-300',
+		'flex border-b border-border/30 transition-all duration-300',
 		isCollapsed ? 'h-16 items-center justify-center px-2' : 'h-14 items-center justify-center px-4'
 	)}
 >
@@ -23,7 +23,7 @@
 		<img
 			src={logoUrl}
 			alt={m.layout_title()}
-			class={cn('drop-shadow-sm transition-[height,width] duration-300', isCollapsed ? 'h-6 w-6' : 'h-9 w-auto max-w-[160px]')}
+			class={cn('drop-shadow-sm transition-all duration-300', isCollapsed ? 'h-6 w-6' : 'h-9 w-auto max-w-40')}
 			width={isCollapsed ? '24' : '160'}
 			height={isCollapsed ? '24' : '72'}
 		/>

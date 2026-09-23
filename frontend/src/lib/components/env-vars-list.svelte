@@ -18,11 +18,7 @@
 			{@const value = valueParts.join('=')}
 			<KeyValueCard label={key ?? ''} {valueTitle}>{value}</KeyValueCard>
 		{:else}
-			<KeyValueCard
-				label={nameOnlyLabel}
-				labelClass="text-muted-foreground text-xs font-semibold tracking-wide uppercase"
-				{valueTitle}
-			>
+			<KeyValueCard label={nameOnlyLabel} {valueTitle}>
 				{env}
 			</KeyValueCard>
 		{/if}

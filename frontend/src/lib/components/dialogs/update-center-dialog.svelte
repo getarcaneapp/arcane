@@ -478,7 +478,8 @@
 
 <Dialog.Root {open} onOpenChange={(nextOpen) => (open = nextOpen)}>
 	<Dialog.Content
-		class={cn('flex max-h-[90dvh] flex-col gap-0 overflow-hidden p-0 sm:max-w-[560px]', upgrading && '[&>button]:hidden')}
+		sectioned
+		class={cn('flex max-h-(--max-height-dscreen-90) flex-col overflow-hidden sm:max-w-140', upgrading && '[&>button]:hidden')}
 		onInteractOutside={(e: Event) => {
 			if (upgrading) e.preventDefault();
 		}}
@@ -486,7 +487,7 @@
 		{#if upgrading}
 			<div class="px-6 pt-6 pb-2">
 				<Dialog.Header>
-					<Dialog.Title class="text-lg">{installingTitle}</Dialog.Title>
+					<Dialog.Title>{installingTitle}</Dialog.Title>
 				</Dialog.Header>
 			</div>
 
@@ -497,7 +498,7 @@
 							<span
 								class={cn(
 									'flex size-6 shrink-0 items-center justify-center rounded-full border transition-colors',
-									step.state === 'done' && 'border-green-500/40 bg-green-500/10 text-green-600 dark:text-green-400',
+									step.state === 'done' && 'border-success/40 bg-success/10 text-success',
 									step.state === 'active' && 'border-primary/40 bg-primary/10 text-primary',
 									step.state === 'pending' && 'border-border bg-muted/40 text-muted-foreground/60'
 								)}
@@ -525,8 +526,8 @@
 				</ol>
 
 				{#if upgradeStatus === 'complete'}
-					<div class="mt-4 flex items-center justify-between rounded-lg border border-green-500/20 bg-green-500/5 px-3 py-2.5">
-						<p class="flex items-center gap-2 text-sm font-medium text-green-700 dark:text-green-400">
+					<div class="mt-4 flex items-center justify-between rounded-lg border border-success/20 bg-success/5 px-3 py-2.5">
+						<p class="flex items-center gap-2 text-sm font-medium text-success">
 							<SuccessIcon class="size-4" />
 							{m.update_center_complete()}
 						</p>
@@ -540,23 +541,25 @@
 			</div>
 		{:else}
 			<div class="px-6 pt-6 pb-4">
-				<Dialog.Header class="space-y-3">
-					<Dialog.Title class="text-lg">
-						{#if isRemoteEnvironment && versionInformation?.newestVersion}
-							{m.upgrade_remote_description({
-								targetDescription: environmentName ?? '',
-								version: versionInformation.newestVersion
-							})}
-						{:else if isRemoteEnvironment}
-							{m.update_center_remote_title({ target: environmentName ?? '' })}
-						{:else if !isSemver && trackingTag}
-							{m.upgrade_update_tag({ tag: trackingTag })}
-						{:else}
-							{m.update_center_title()}
-						{/if}
-					</Dialog.Title>
+				<Dialog.Header>
+					<div class="space-y-3">
+						<Dialog.Title>
+							{#if isRemoteEnvironment && versionInformation?.newestVersion}
+								{m.upgrade_remote_description({
+									targetDescription: environmentName ?? '',
+									version: versionInformation.newestVersion
+								})}
+							{:else if isRemoteEnvironment}
+								{m.update_center_remote_title({ target: environmentName ?? '' })}
+							{:else if !isSemver && trackingTag}
+								{m.upgrade_update_tag({ tag: trackingTag })}
+							{:else}
+								{m.update_center_title()}
+							{/if}
+						</Dialog.Title>
 
-					<VersionUpdateSummary {versionInformation} {newestVersion} {releasedAgo} />
+						<VersionUpdateSummary {versionInformation} {newestVersion} {releasedAgo} />
+					</div>
 				</Dialog.Header>
 			</div>
 
@@ -602,7 +605,7 @@
 				</p>
 			</div>
 
-			<Dialog.Footer class="border-t border-border/60 px-6 py-4">
+			<Dialog.Footer>
 				<ArcaneButton action="cancel" customLabel={m.update_center_later()} onclick={() => (open = false)} />
 				{#if canInstall}
 					<ArcaneButton action="update" customLabel={installLabel} onclick={handleConfirm} />

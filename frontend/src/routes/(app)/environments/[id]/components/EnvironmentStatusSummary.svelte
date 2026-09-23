@@ -62,13 +62,13 @@
 	let statusDotClass = $derived.by((): string => {
 		switch (statusBadge.variant) {
 			case 'green':
-				return 'bg-emerald-500 shadow-[0_0_8px_var(--color-emerald-500)]';
+				return 'bg-success shadow-glow shadow-success';
 			case 'blue':
-				return 'bg-blue-500';
+				return 'bg-info';
 			case 'amber':
-				return 'bg-amber-500';
+				return 'bg-warning';
 			default:
-				return 'bg-red-500';
+				return 'bg-destructive';
 		}
 	});
 
@@ -120,12 +120,7 @@
 					{m.sidebar_update_available()}: {remoteVersion.newestVersion}
 				</Badge>
 				{#if remoteVersion.releaseUrl}
-					<a
-						href={remoteVersion.releaseUrl}
-						target="_blank"
-						rel="noopener noreferrer"
-						class="text-xs text-blue-500 hover:underline"
-					>
+					<a href={remoteVersion.releaseUrl} target="_blank" rel="noopener noreferrer" class="text-xs text-info hover:underline">
 						{m.version_info_view_release()}
 					</a>
 				{/if}

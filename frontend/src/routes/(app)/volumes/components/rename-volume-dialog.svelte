@@ -51,7 +51,7 @@
 	onOpenChange={handleOpenChange}
 	title={m.volumes_rename_title()}
 	description={m.volumes_rename_description()}
-	contentClass="sm:max-w-[500px]"
+	contentClass="sm:max-w-125"
 >
 	{#snippet children()}
 		<form
@@ -75,7 +75,7 @@
 				<Alert.Root variant="warning">
 					<AlertTriangleIcon class="size-4" />
 					<Alert.Title>{m.volumes_rename_managed_warning_title()}</Alert.Title>
-					<Alert.Description class="text-foreground">{m.volumes_rename_managed_warning_description()}</Alert.Description>
+					<Alert.Description>{m.volumes_rename_managed_warning_description()}</Alert.Description>
 				</Alert.Root>
 			{/if}
 		</form>

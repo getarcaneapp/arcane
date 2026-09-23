@@ -18,7 +18,7 @@
 
 {#snippet labelBlock(wrapperClass: string)}
 	<div class={wrapperClass}>
-		<Label class="text-sm font-medium">{label}</Label>
+		<Label>{label}</Label>
 		{#if description}
 			<p class="mt-0.5 text-xs text-muted-foreground">{description}</p>
 		{/if}

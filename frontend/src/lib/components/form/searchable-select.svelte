@@ -36,11 +36,6 @@
 		tone,
 		variant = 'outline',
 		size = 'sm',
-		contentClass,
-		commandClass,
-		inputClass,
-		listClass,
-		itemClass,
 		showCheckboxes = true,
 		class: className
 	}: {
@@ -61,11 +56,6 @@
 		tone?: ArcaneButtonTone;
 		variant?: 'default' | 'destructive' | 'outline' | 'secondary' | 'ghost' | 'link';
 		size?: ArcaneButtonSize;
-		contentClass?: string;
-		commandClass?: string;
-		inputClass?: string;
-		listClass?: string;
-		itemClass?: string;
 		showCheckboxes?: boolean;
 		class?: string;
 	} = $props();
@@ -153,15 +143,10 @@
 			</ArcaneButton>
 		{/snippet}
 	</Popover.Trigger>
-	<Popover.Content
-		class={cn(
-			'backdrop-blur-0 w-[var(--bits-popover-anchor-width)] bg-popover p-0 text-popover-foreground backdrop-saturate-100',
-			contentClass
-		)}
-	>
-		<Command.Root shouldFilter={false} class={cn('rounded-none bg-transparent', commandClass)}>
+	<Popover.Content class="w-(--bits-popover-anchor-width)">
+		<Command.Root shouldFilter={false}>
 			{#if !disableSearch}
-				<Command.Input placeholder={m.common_search()} class={cn(inputClass)} bind:value={searchText} {oninput} />
+				<Command.Input placeholder={m.common_search()} bind:value={searchText} {oninput} />
 			{/if}
 			<Command.Empty>
 				{#if isLoading}
@@ -172,14 +157,13 @@
 					{emptyText}
 				{/if}
 			</Command.Empty>
-			<Command.List class={cn(listClass)}>
+			<Command.List>
 				<Command.Group>
 					{#each filteredItems as item (item.value)}
 						{@const isSelected = item.selected ?? item.value === value}
 						<Command.Item
 							value={item.value}
 							disabled={item.disabled}
-							class={cn(itemClass)}
 							onSelect={() => {
 								if (item.disabled) return;
 								if (value !== undefined) value = item.value;

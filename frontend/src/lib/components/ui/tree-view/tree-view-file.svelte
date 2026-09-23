@@ -6,7 +6,7 @@
 	let { name, icon, type = 'button', class: className, ...rest }: TreeViewFileProps = $props();
 </script>
 
-<button {type} class={cn('flex place-items-center gap-1 pl-[3px]', className)} {...rest}>
+<button {type} class={cn('flex place-items-center gap-1 pl-0.75', className)} {...rest}>
 	{#if icon}
 		{@render icon({ name })}
 	{:else}

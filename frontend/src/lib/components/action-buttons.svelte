@@ -6,7 +6,7 @@
 	import { toast } from 'svelte-sonner';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
-	import { ArcaneButton, arcaneButtonVariants, type ArcaneButtonSize } from '#lib/components/arcane-button/index.js';
+	import { ArcaneButton, type ArcaneButtonSize } from '#lib/components/arcane-button/index.js';
 	import DeploySplitButton from '#lib/components/deploy-split-button/deploy-split-button.svelte';
 	import DeployOptionsMenuItems from '#lib/components/deploy-split-button/deploy-options-menu-items.svelte';
 	import * as ButtonGroup from '#lib/components/ui/button-group/index.js';
@@ -575,13 +575,21 @@
 {#snippet WatchDropdown(onWatch: () => void, disabled: boolean, size: 'default' | 'icon' = 'default', withDeployOptions = false)}
 	<DropdownMenu.Root>
 		<DropdownMenu.Trigger
-			class={cn(arcaneButtonVariants({ tone: 'outline-primary', size: 'icon' }), size === 'icon' && 'size-9 rounded-md')}
-			aria-label={m.common_open_menu()}
 			{disabled}
 			onclick={(event) => event.stopPropagation()}
 			onpointerdown={(event) => event.stopPropagation()}
 		>
-			<ArrowDownIcon class="size-4" />
+			{#snippet child({ props })}
+				<ArcaneButton
+					{...props}
+					action="base"
+					tone="outline-primary"
+					size="icon"
+					icon={ArrowDownIcon}
+					class={cn(size === 'icon' && 'size-9 rounded-md')}
+					aria-label={m.common_open_menu()}
+				/>
+			{/snippet}
 		</DropdownMenu.Trigger>
 		<DropdownMenu.Content align="end" class={cn(withDeployOptions && 'w-72')}>
 			{#if withDeployOptions}
@@ -759,15 +767,20 @@
 
 {#snippet ActionsMenu()}
 	<DropdownMenu.Root>
-		<DropdownMenu.Trigger class="inline-flex size-9 items-center justify-center rounded-lg border bg-background/70">
-			<span class="sr-only">{m.common_open_menu()}</span>
-			<EllipsisIcon />
+		<DropdownMenu.Trigger>
+			{#snippet child({ props })}
+				<button
+					{...props}
+					type="button"
+					class="inline-flex size-9 items-center justify-center rounded-lg border bg-background/70"
+				>
+					<span class="sr-only">{m.common_open_menu()}</span>
+					<EllipsisIcon />
+				</button>
+			{/snippet}
 		</DropdownMenu.Trigger>
 
-		<DropdownMenu.Content
-			align="end"
-			class="z-[var(--arcane-z-surface)] min-w-[180px] rounded-xl border bg-popover/20 p-1 shadow-lg backdrop-blur-md"
-		>
+		<DropdownMenu.Content align="end" class="z-(--arcane-z-surface) min-w-45">
 			<DropdownMenu.Group>
 				{@render leadingMenuItems?.(isLifecycleActionPending)}
 				{#if !isRunning && canStart}

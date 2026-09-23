@@ -62,7 +62,7 @@
 			{/if}
 		{/if}
 		{#if input?.error}
-			<p class="mt-1 text-sm text-red-500">{input.error}</p>
+			<p class="mt-1 text-sm text-destructive">{input.error}</p>
 		{/if}
 		{#if helpText}
 			<p class="mt-1 text-xs text-muted-foreground">{helpText}</p>

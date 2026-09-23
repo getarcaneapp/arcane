@@ -585,7 +585,7 @@
 
 {#snippet workspaceToolbar()}
 	<div class="flex h-9 shrink-0 items-center border-b border-border px-2">
-		<span class="text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">{title}</span>
+		<span class="text-2xs font-semibold tracking-wider text-muted-foreground uppercase">{title}</span>
 		{#if hasHeaderActions}
 			<div class="ml-auto flex items-center gap-0.5">
 				{#if canCreateFile}
@@ -707,7 +707,7 @@
 		<button
 			type="button"
 			class={cn(
-				'flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-[13px] hover:bg-accent',
+				'flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-xs-plus hover:bg-accent',
 				selectedFile === leadingRow.key && 'bg-accent',
 				leadingRow.action && 'text-muted-foreground hover:text-foreground'
 			)}
@@ -733,40 +733,42 @@
 
 {#snippet workspaceTree()}
 	<div bind:this={treeScrollElement} class="min-h-0 flex-1 overflow-auto">
-		<TreeView.Root class="min-w-max p-2 whitespace-nowrap">
-			{@render workspaceLeadingRows()}
+		<div class="min-w-max p-2">
+			<TreeView.Root class="min-w-max whitespace-nowrap">
+				{@render workspaceLeadingRows()}
 
-			{#if rows.length === 0}
-				<div class="px-7 py-3 text-xs text-muted-foreground">{emptyMessage}</div>
-			{:else}
-				<div class="relative" style={`height: ${rowVirtualizer.totalSize}px`}>
-					{#each rowVirtualizer.virtualItems as virtualItem (virtualItem.key)}
-						{@const row = rows[virtualItem.index]}
-						{#if row}
-							<div
-								class="absolute top-0 left-0 w-full"
-								style={`transform: translateY(${virtualItem.start}px)`}
-								data-index={virtualItem.index}
-								{@attach rowVirtualizer.measureElement}
-							>
-								{@render workspaceRow(row)}
-							</div>
-						{/if}
-					{/each}
-				</div>
-			{/if}
-		</TreeView.Root>
+				{#if rows.length === 0}
+					<div class="px-7 py-3 text-xs text-muted-foreground">{emptyMessage}</div>
+				{:else}
+					<div class="relative h-(--total-height)" style={`--total-height: ${rowVirtualizer.totalSize}px`}>
+						{#each rowVirtualizer.virtualItems as virtualItem (virtualItem.key)}
+							{@const row = rows[virtualItem.index]}
+							{#if row}
+								<div
+									class="absolute top-0 left-0 w-full translate-y-(--row-start)"
+									style={`--row-start: ${virtualItem.start}px`}
+									data-index={virtualItem.index}
+									{@attach rowVirtualizer.measureElement}
+								>
+									{@render workspaceRow(row)}
+								</div>
+							{/if}
+						{/each}
+					</div>
+				{/if}
+			</TreeView.Root>
+		</div>
 	</div>
 {/snippet}
 
 {#snippet workspaceDestination(option: FolderDestinationOption)}
 	<div
 		class={cn(
-			'flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm',
+			'flex w-full items-center gap-2 rounded px-2 py-1.5 pl-(--indent) text-left text-sm',
 			dialogDestinationPath === option.relativePath && !option.disabled && 'bg-accent',
 			option.disabled ? 'opacity-45' : 'hover:bg-accent'
 		)}
-		style={`padding-left: ${0.5 + option.depth * 1.25}rem`}
+		style={`--indent: ${0.5 + option.depth * 1.25}rem`}
 	>
 		{#if option.relativePath && option.hasChildren}
 			<button
@@ -796,7 +798,7 @@
 				dialogError = null;
 			}}
 		>
-			<FolderOpenIcon class="size-4 shrink-0 text-amber-500" />
+			<FolderOpenIcon class="size-4 shrink-0 text-warning" />
 			<span class="min-w-0 flex-1 truncate">{option.label}</span>
 		</button>
 		{#if option.reason}
@@ -809,7 +811,7 @@
 	{#if hasDestinationPicker}
 		<div class="min-h-0 space-y-2">
 			<Label>{m.workspace_file_move_destination_label()}</Label>
-			<div class="max-h-[56vh] min-h-80 space-y-1 overflow-auto rounded-md border p-1">
+			<div class="max-h-screen-60 min-h-80 space-y-1 overflow-auto rounded-md border p-1">
 				{#each visibleDestinationOptions as option (option.relativePath)}
 					{@render workspaceDestination(option)}
 				{/each}
@@ -849,9 +851,9 @@
 
 {#snippet workspaceDialog()}
 	<Dialog.Root bind:open={dialogOpen}>
-		<Dialog.Content class="max-h-[calc(100vh-2rem)] max-w-2xl overflow-hidden">
+		<Dialog.Content class="max-h-(--max-height-screen-inset-2) max-w-2xl overflow-hidden">
 			<form
-				class="flex max-h-[calc(100vh-5rem)] min-h-0 flex-col gap-4"
+				class="flex max-h-screen-inset-5 min-h-0 flex-col gap-4"
 				onsubmit={(event) => {
 					event.preventDefault();
 					void handleDialogSubmit();

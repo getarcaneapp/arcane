@@ -143,7 +143,7 @@
 							onCheckedChange={(checked) => toggleGroup(group.resource, checked === true)}
 							aria-label={m.common_select_all()}
 						/>
-						<Accordion.Trigger class="flex-1 py-2 text-left text-sm font-medium">
+						<Accordion.Trigger size="sm" class="flex-1 text-left">
 							<div class="flex flex-1 items-center justify-between gap-2 pr-2">
 								<span>
 									{m.permissions_group_label({

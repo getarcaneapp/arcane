@@ -494,10 +494,10 @@
 		<div class="flex flex-wrap gap-1.5">
 			{#each item.repoTags.slice(0, 2) as repoTag, tagIndex (`${repoTag}-${tagIndex}`)}
 				{@const tag = repoTag.split(':').pop() || repoTag}
-				<Badge variant="outline" class="font-mono text-xs">{tag}</Badge>
+				<Badge variant="outline" mono>{tag}</Badge>
 			{/each}
 			{#if item.repoTags.length > 2}
-				<Badge variant="outline" class="text-xs">+{item.repoTags.length - 2}</Badge>
+				<Badge variant="outline">+{item.repoTags.length - 2}</Badge>
 			{/if}
 		</div>
 	{:else if item.pinnedReferences && item.pinnedReferences.length > 0 && item.pinnedReferences[0]}
@@ -506,7 +506,8 @@
 		<div class="flex max-w-md flex-wrap items-center gap-1.5">
 			<Badge
 				variant="outline"
-				class="h-auto max-w-full font-mono text-xs break-all whitespace-normal select-all"
+				mono
+				class="h-auto max-w-full break-all whitespace-normal select-all"
 				title={m.common_click_to_select()}
 			>
 				{firstPin}
@@ -515,7 +516,7 @@
 				<Tooltip.Provider>
 					<Tooltip.Root>
 						<Tooltip.Trigger>
-							<Badge variant="outline" class="text-xs">+{overflowPins.length}</Badge>
+							<Badge variant="outline">+{overflowPins.length}</Badge>
 						</Tooltip.Trigger>
 						<Tooltip.Content class="pointer-events-auto max-w-sm">
 							<div class="flex flex-col gap-1.5">
@@ -529,7 +530,7 @@
 			{/if}
 		</div>
 	{:else if item.tag && item.tag !== '<none>'}
-		<Badge variant="outline" class="font-mono text-xs">{item.tag}</Badge>
+		<Badge variant="outline" mono>{item.tag}</Badge>
 	{:else}
 		<span class="text-muted-foreground italic">{m.images_untagged()}</span>
 	{/if}
@@ -547,39 +548,23 @@
 	{#each usages as usage, usageIndex (`${usage.type}-${usage.id ?? usage.name}-${usageIndex}`)}
 		{#if usage.type === 'project'}
 			{#if usage.id}
-				<a class="inline-flex" href={`/projects/${encodeURIComponent(usage.id)}`}>
-					<Badge
-						variant="outline"
-						class="inline-flex items-center gap-1 rounded-md bg-background/80 text-xs transition-colors hover:bg-accent/40 focus-visible:ring-2 focus-visible:ring-primary/40"
-					>
-						<ProjectsIcon class="size-3" />
-						<span>{usage.name}</span>
-					</Badge>
-				</a>
+				<Badge variant="outline" href={`/projects/${encodeURIComponent(usage.id)}`}>
+					<ProjectsIcon class="size-3" />
+					<span>{usage.name}</span>
+				</Badge>
 			{:else}
-				<Badge
-					variant="outline"
-					class="inline-flex items-center gap-1 rounded-md bg-background/80 text-xs transition-colors hover:bg-accent/40 focus-visible:ring-2 focus-visible:ring-primary/40"
-				>
+				<Badge variant="outline">
 					<ProjectsIcon class="size-3" />
 					<span>{usage.name}</span>
 				</Badge>
 			{/if}
 		{:else if usage.id}
-			<a class="inline-flex" href={`/containers/${encodeURIComponent(usage.id)}`}>
-				<Badge
-					variant="outline"
-					class="inline-flex items-center gap-1 rounded-md bg-background/80 text-xs transition-colors hover:bg-accent/40 focus-visible:ring-2 focus-visible:ring-primary/40"
-				>
-					<ContainersIcon class="size-3" />
-					<span>{usage.name}</span>
-				</Badge>
-			</a>
+			<Badge variant="outline" href={`/containers/${encodeURIComponent(usage.id)}`}>
+				<ContainersIcon class="size-3" />
+				<span>{usage.name}</span>
+			</Badge>
 		{:else}
-			<Badge
-				variant="outline"
-				class="inline-flex items-center gap-1 rounded-md bg-background/80 text-xs transition-colors hover:bg-accent/40 focus-visible:ring-2 focus-visible:ring-primary/40"
-			>
+			<Badge variant="outline">
 				<ContainersIcon class="size-3" />
 				<span>{usage.name}</span>
 			</Badge>
@@ -599,10 +584,7 @@
 				<Tooltip.Provider>
 					<Tooltip.Root>
 						<Tooltip.Trigger>
-							<Badge
-								variant="outline"
-								class="inline-flex items-center rounded-md bg-background/80 text-xs transition-colors hover:bg-accent/40 focus-visible:ring-2 focus-visible:ring-primary/40"
-							>
+							<Badge variant="outline">
 								+{overflowUsage.length}
 							</Badge>
 						</Tooltip.Trigger>

@@ -71,8 +71,8 @@
 			</ArcaneButton>
 		{/snippet}
 	</Popover.Trigger>
-	<Popover.Content class="w-[240px] p-0" align="start" data-testid={`facet-${title.toLowerCase()}-content`}>
-		<Command.Root class="rounded-none bg-transparent">
+	<Popover.Content class="w-60" align="start" data-testid={`facet-${title.toLowerCase()}-content`}>
+		<Command.Root>
 			<Command.Input placeholder={title} />
 			<Command.List>
 				<Command.Empty>{m.common_no_results_found()}</Command.Empty>
@@ -87,7 +87,6 @@
 								const filterValues = Array.from(selectedValues);
 								column?.setFilterValue(filterValues.length ? filterValues : undefined);
 							}}
-							class="gap-2"
 						>
 							{#if showCheckboxes}
 								<div

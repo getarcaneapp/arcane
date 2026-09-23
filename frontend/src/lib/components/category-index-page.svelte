@@ -126,7 +126,7 @@
 		<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-3">
 			{#each categories as category (category.id)}
 				{@const Icon = category.icon}
-				<Card class="hover-lift h-full hover:border-primary/30">
+				<Card interactive class="h-full">
 					<button
 						onclick={() => navigate(category.href)}
 						class="relative flex h-full w-full cursor-pointer items-center gap-3 p-4 text-left focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:outline-none focus-visible:ring-inset sm:gap-4 sm:p-5"
@@ -162,7 +162,7 @@
 
 			{#if categorySearch.isSearching}
 				<div class="py-8 text-center sm:py-12">
-					<Spinner class="mx-auto mb-3 size-8 text-primary sm:mb-4 sm:size-12" />
+					<Spinner tone="primary" class="mx-auto mb-3 size-8 sm:mb-4 sm:size-12" />
 					<p class="text-sm text-muted-foreground sm:text-base">{searchingLabel}</p>
 				</div>
 			{:else if categorySearch.searchError}
@@ -209,7 +209,7 @@
 							<!-- Show matching items with descriptions -->
 							{#if result.matchingItems && result.matchingItems.length > 0}
 								<div class="space-y-2 p-4 sm:p-5">
-									<h4 class="text-[11px] font-medium tracking-[0.08em] text-muted-foreground uppercase">
+									<h4 class="text-2xs font-medium tracking-widest text-muted-foreground uppercase">
 										{matchingItemsLabel}
 									</h4>
 									{#each result.matchingItems as item (item.key)}
@@ -236,7 +236,7 @@
 													{/if}
 												</div>
 												<span
-													class="shrink-0 rounded-md bg-foreground/5 px-2 py-1 font-mono text-[11px] text-muted-foreground ring-1 ring-border/70 ring-inset"
+													class="shrink-0 rounded-md bg-foreground/5 px-2 py-1 font-mono text-2xs text-muted-foreground ring-1 ring-border/70 ring-inset"
 												>
 													{item.type}
 												</span>

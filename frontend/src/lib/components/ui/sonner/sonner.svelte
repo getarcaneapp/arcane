@@ -7,20 +7,20 @@
 
 <Sonner
 	theme={mode.current}
-	class="toaster group z-[var(--arcane-z-toast)]"
+	class="group z-(--arcane-z-toast)"
 	toastOptions={{
 		classes: {
 			toast:
-				'group toast group-[.toaster]:bg-background group-[.toaster]:text-foreground group-[.toaster]:border-border group-[.toaster]:rounded-xl group-[.toaster]:shadow-lg',
+				'group toast group-data-[sonner-toaster]:bg-background group-data-[sonner-toaster]:text-foreground group-data-[sonner-toaster]:border-border group-data-[sonner-toaster]:rounded-xl group-data-[sonner-toaster]:shadow-lg',
 			title: 'group-[.toast]:font-semibold',
 			description: 'group-[.toast]:text-muted-foreground',
 			actionButton: 'group-[.toast]:bg-primary group-[.toast]:text-primary-foreground',
 			cancelButton: 'group-[.toast]:bg-muted group-[.toast]:text-muted-foreground',
 			// Flat per-type accent: a colored left border, no glass/heavy bg.
-			success: 'group-[.toaster]:border-l-4 group-[.toaster]:border-l-emerald-500',
-			error: 'group-[.toaster]:border-l-4 group-[.toaster]:border-l-red-500',
-			warning: 'group-[.toaster]:border-l-4 group-[.toaster]:border-l-amber-500',
-			info: 'group-[.toaster]:border-l-4 group-[.toaster]:border-l-sky-500'
+			success: 'group-data-[sonner-toaster]:border-l-4 group-data-[sonner-toaster]:border-l-success',
+			error: 'group-data-[sonner-toaster]:border-l-4 group-data-[sonner-toaster]:border-l-destructive',
+			warning: 'group-data-[sonner-toaster]:border-l-4 group-data-[sonner-toaster]:border-l-warning',
+			info: 'group-data-[sonner-toaster]:border-l-4 group-data-[sonner-toaster]:border-l-info'
 		}
 	}}
 	{...restProps}

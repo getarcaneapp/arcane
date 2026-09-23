@@ -210,8 +210,8 @@ test.describe('System-managed volume backups', () => {
 		await page.goto('/settings/backups');
 		const systemCard = page.getByTestId('backup-policy-system-system-nightly');
 		const volumeCard = page.getByTestId('backup-policy-volume-volume-nightly');
-		await expect(systemCard.getByText('System')).toHaveClass(/text-purple-/);
-		await expect(volumeCard.getByText('Volume')).toHaveClass(/text-purple-/);
+		await expect(systemCard.getByText('System')).toHaveClass(/(^|\s)text-purple(\s|$)/);
+		await expect(volumeCard.getByText('Volume')).toHaveClass(/(^|\s)text-purple(\s|$)/);
 		await volumeCard.getByRole('button', { name: 'Edit Schedule' }).click();
 		const dialog = page.getByRole('dialog', { name: 'Edit Schedule' });
 

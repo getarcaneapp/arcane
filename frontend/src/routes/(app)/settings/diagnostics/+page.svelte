@@ -167,25 +167,25 @@
 				title: m.diagnostics_updated_ago({ ago: agoText }),
 				value: paused ? m.paused() : connected ? m.common_live() : m.diagnostics_status_connecting(),
 				icon: ActivityIcon,
-				iconColor: paused ? 'text-amber-500' : connected ? 'text-emerald-500' : 'text-muted-foreground'
+				iconColor: paused ? 'text-warning' : connected ? 'text-success' : 'text-muted-foreground'
 			},
 			{
 				title: m.goroutines(),
 				value: fmtNum(diag.runtime.goroutines),
 				icon: ActivityIcon,
-				iconColor: diag.runtime.leakedGoroutines > 0 ? 'text-rose-500' : 'text-sky-500'
+				iconColor: diag.runtime.leakedGoroutines > 0 ? 'text-rose' : 'text-sky'
 			},
 			{
 				title: m.diagnostics_stat_heap_alloc(),
 				value: fmtBytes(diag.memory.heapAlloc),
 				icon: MemoryStickIcon,
-				iconColor: 'text-violet-500'
+				iconColor: 'text-primary'
 			},
 			{
 				title: m.common_uptime(),
 				value: fmtUptime(diag.runtime.uptimeSeconds),
 				icon: ClockIcon,
-				iconColor: 'text-teal-500'
+				iconColor: 'text-teal'
 			}
 		];
 	});
@@ -327,7 +327,7 @@
 </script>
 
 {#snippet statusList(rows: { label: string; value: string | number }[])}
-	<dl class="grid grid-cols-[minmax(0,1fr)_auto] gap-x-6 gap-y-2.5 text-sm">
+	<dl class="grid grid-cols-content-action gap-x-6 gap-y-2.5 text-sm">
 		{#each rows as r (r.label)}
 			<dt class="text-muted-foreground">{r.label}</dt>
 			<dd class="text-right font-medium tabular-nums">{r.value}</dd>
@@ -363,216 +363,237 @@
 			<Tabs.Root value={activeTab} class="w-full">
 				<TabBar items={diagnosticsTabItems} value={activeTab} onValueChange={urlTab.select} />
 
-				<Tabs.Content value="overview" class="mt-6 space-y-8">
-					{#if diag.runtime.leakedGoroutines > 0}
-						<Alert.Root variant="destructive">
-							<AlertTriangleIcon class="size-4" />
-							<Alert.Title>{m.diagnostics_leaks_count({ count: diag.runtime.leakedGoroutines })}</Alert.Title>
-							<Alert.Description class="flex flex-wrap items-center gap-3">
-								{m.diagnostics_leaks_hint()}
-								<ArcaneButton
-									action="base"
-									tone="outline"
-									size="sm"
-									customLabel={m.diagnostics_tab_profiling()}
-									onclick={() => urlTab.select('profiling')}
-								/>
-							</Alert.Description>
-						</Alert.Root>
-					{/if}
-
-					<section class="space-y-6">
-						{@render sectionHeading(m.diagnostics_section_system())}
-						<div class="grid gap-10 lg:grid-cols-2">
-							<div class="space-y-3">
-								<h4 class="text-xs font-semibold tracking-wider text-muted-foreground uppercase">
-									{m.diagnostics_section_runtime()}
-								</h4>
-								{@render statusList([
-									{ label: m.diagnostics_runtime_go_version(), value: diag.runtime.goVersion },
-									{ label: m.platform(), value: `${diag.runtime.os}/${diag.runtime.arch}` },
-									{ label: m.diagnostics_runtime_gomaxprocs(), value: diag.runtime.gomaxprocs },
-									{ label: m.diagnostics_runtime_num_cpu(), value: diag.runtime.numCpu },
-									{ label: m.goroutines(), value: fmtNum(diag.runtime.goroutines) },
-									{ label: m.diagnostics_runtime_leaked_goroutines(), value: leakedGoroutineValue(diag) },
-									{ label: m.diagnostics_runtime_ws_workers(), value: fmtNum(diag.runtime.wsWorkerGoroutines) },
-									{ label: m.diagnostics_runtime_cgo_calls(), value: fmtNum(diag.runtime.numCgoCall) },
-									{ label: m.common_uptime(), value: fmtUptime(diag.runtime.uptimeSeconds) }
-								])}
-							</div>
-							<div class="space-y-3">
-								<h4 class="text-xs font-semibold tracking-wider text-muted-foreground uppercase">
-									{m.diagnostics_section_memory()}
-								</h4>
-								{#if heapBar}
-									<div class="flex h-2 overflow-hidden rounded-full bg-muted/40">
-										<div class="bg-violet-500" style="width: {heapBar.inuse}%" title={m.diagnostics_mem_in_use()}></div>
-										<div class="bg-violet-500/40" style="width: {heapBar.idle}%" title={m.idle()}></div>
-										<div class="bg-zinc-500/40" style="width: {heapBar.released}%" title={m.diagnostics_mem_released()}></div>
+				<Tabs.Content value="overview" class="mt-6">
+					<div class="space-y-8">
+						{#if diag.runtime.leakedGoroutines > 0}
+							<Alert.Root variant="destructive">
+								<AlertTriangleIcon class="size-4" />
+								<Alert.Title>{m.diagnostics_leaks_count({ count: diag.runtime.leakedGoroutines })}</Alert.Title>
+								<Alert.Description>
+									<div class="flex flex-wrap items-center gap-3">
+										{m.diagnostics_leaks_hint()}
+										<ArcaneButton
+											action="base"
+											tone="outline"
+											size="sm"
+											customLabel={m.diagnostics_tab_profiling()}
+											onclick={() => urlTab.select('profiling')}
+										/>
 									</div>
-									<div class="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
-										<span>
-											<span class="mr-1 inline-block size-2 rounded-full bg-violet-500"></span>
-											{m.diagnostics_mem_in_use()}
-											{fmtBytes(diag.memory.heapInuse)}
-										</span>
-										<span>
-											<span class="mr-1 inline-block size-2 rounded-full bg-violet-500/40"></span>
-											{m.idle()}
-											{fmtBytes(diag.memory.heapIdle - diag.memory.heapReleased)}
-										</span>
-										<span>
-											<span class="mr-1 inline-block size-2 rounded-full bg-zinc-500/40"></span>
-											{m.diagnostics_mem_released()}
-											{fmtBytes(diag.memory.heapReleased)}
-										</span>
+								</Alert.Description>
+							</Alert.Root>
+						{/if}
+
+						<section class="space-y-6">
+							{@render sectionHeading(m.diagnostics_section_system())}
+							<div class="grid gap-10 lg:grid-cols-2">
+								<div class="space-y-3">
+									<h4 class="text-xs font-semibold tracking-wider text-muted-foreground uppercase">
+										{m.diagnostics_section_runtime()}
+									</h4>
+									{@render statusList([
+										{ label: m.diagnostics_runtime_go_version(), value: diag.runtime.goVersion },
+										{ label: m.platform(), value: `${diag.runtime.os}/${diag.runtime.arch}` },
+										{ label: m.diagnostics_runtime_gomaxprocs(), value: diag.runtime.gomaxprocs },
+										{ label: m.diagnostics_runtime_num_cpu(), value: diag.runtime.numCpu },
+										{ label: m.goroutines(), value: fmtNum(diag.runtime.goroutines) },
+										{ label: m.diagnostics_runtime_leaked_goroutines(), value: leakedGoroutineValue(diag) },
+										{ label: m.diagnostics_runtime_ws_workers(), value: fmtNum(diag.runtime.wsWorkerGoroutines) },
+										{ label: m.diagnostics_runtime_cgo_calls(), value: fmtNum(diag.runtime.numCgoCall) },
+										{ label: m.common_uptime(), value: fmtUptime(diag.runtime.uptimeSeconds) }
+									])}
+								</div>
+								<div class="space-y-3">
+									<h4 class="text-xs font-semibold tracking-wider text-muted-foreground uppercase">
+										{m.diagnostics_section_memory()}
+									</h4>
+									{#if heapBar}
+										<div class="flex h-2 overflow-hidden rounded-full bg-muted/40">
+											<div class="w-(--seg) bg-primary" style="--seg: {heapBar.inuse}%" title={m.diagnostics_mem_in_use()}></div>
+											<div class="w-(--seg) bg-primary/40" style="--seg: {heapBar.idle}%" title={m.idle()}></div>
+											<div
+												class="w-(--seg) bg-muted-foreground/40"
+												style="--seg: {heapBar.released}%"
+												title={m.diagnostics_mem_released()}
+											></div>
+										</div>
+										<div class="flex flex-wrap gap-x-4 gap-y-1 text-2xs text-muted-foreground">
+											<span>
+												<span class="mr-1 inline-block size-2 rounded-full bg-primary"></span>
+												{m.diagnostics_mem_in_use()}
+												{fmtBytes(diag.memory.heapInuse)}
+											</span>
+											<span>
+												<span class="mr-1 inline-block size-2 rounded-full bg-primary/40"></span>
+												{m.idle()}
+												{fmtBytes(diag.memory.heapIdle - diag.memory.heapReleased)}
+											</span>
+											<span>
+												<span class="mr-1 inline-block size-2 rounded-full bg-muted-foreground/40"></span>
+												{m.diagnostics_mem_released()}
+												{fmtBytes(diag.memory.heapReleased)}
+											</span>
+										</div>
+									{/if}
+									{@render statusList([
+										{ label: m.diagnostics_mem_heap_alloc(), value: fmtBytes(diag.memory.heapAlloc) },
+										{ label: m.diagnostics_mem_heap_sys(), value: fmtBytes(diag.memory.heapSys) },
+										{ label: m.diagnostics_mem_heap_objects(), value: fmtNum(diag.memory.heapObjects) },
+										{ label: m.diagnostics_mem_stack_in_use(), value: fmtBytes(diag.memory.stackInuse) },
+										{ label: m.diagnostics_mem_total_alloc(), value: fmtBytes(diag.memory.totalAlloc) },
+										{ label: m.diagnostics_mem_sys_total(), value: fmtBytes(diag.memory.sys) },
+										{ label: m.diagnostics_mem_next_gc(), value: fmtBytes(diag.memory.nextGc) },
+										{
+											label: m.diagnostics_mem_gc_cpu_fraction(),
+											value: `${(diag.memory.gcCpuFraction * 100).toFixed(3)}%`
+										}
+									])}
+								</div>
+							</div>
+						</section>
+
+						<section class="space-y-4 border-t border-border/50 pt-8">
+							{@render sectionHeading(m.diagnostics_section_gc())}
+							<div class="grid items-start gap-10 lg:grid-cols-2">
+								{@render statusList([
+									{ label: m.diagnostics_gc_total_cycles(), value: fmtNum(diag.gc.numGc) },
+									{ label: m.diagnostics_gc_forced_cycles(), value: fmtNum(diag.memory.numForcedGc) },
+									{ label: m.diagnostics_gc_total_pause(), value: fmtMs(diag.gc.pauseTotalNs) },
+									{ label: m.diagnostics_gc_last(), value: diag.gc.lastGc ? formatTime(diag.gc.lastGc) : '—' }
+								])}
+								{#if diag.gc.recentPausesNs?.length}
+									<div>
+										<div class="mb-1 text-2xs text-muted-foreground">{m.diagnostics_gc_recent_pauses()}</div>
+										<div class="flex h-12 items-end gap-0.5">
+											<!-- Pause durations can repeat; bars render the current snapshot without local state. -->
+											{#each diag.gc.recentPausesNs as p}
+												<div
+													class="h-(--bar) flex-1 rounded-sm bg-warning/70"
+													style="--bar: {maxPause ? Math.max(4, (p / maxPause) * 100) : 4}%"
+													title={fmtMs(p)}
+												></div>
+											{/each}
+										</div>
 									</div>
 								{/if}
-								{@render statusList([
-									{ label: m.diagnostics_mem_heap_alloc(), value: fmtBytes(diag.memory.heapAlloc) },
-									{ label: m.diagnostics_mem_heap_sys(), value: fmtBytes(diag.memory.heapSys) },
-									{ label: m.diagnostics_mem_heap_objects(), value: fmtNum(diag.memory.heapObjects) },
-									{ label: m.diagnostics_mem_stack_in_use(), value: fmtBytes(diag.memory.stackInuse) },
-									{ label: m.diagnostics_mem_total_alloc(), value: fmtBytes(diag.memory.totalAlloc) },
-									{ label: m.diagnostics_mem_sys_total(), value: fmtBytes(diag.memory.sys) },
-									{ label: m.diagnostics_mem_next_gc(), value: fmtBytes(diag.memory.nextGc) },
-									{
-										label: m.diagnostics_mem_gc_cpu_fraction(),
-										value: `${(diag.memory.gcCpuFraction * 100).toFixed(3)}%`
-									}
-								])}
 							</div>
-						</div>
-					</section>
-
-					<section class="space-y-4 border-t border-border/50 pt-8">
-						{@render sectionHeading(m.diagnostics_section_gc())}
-						<div class="grid items-start gap-10 lg:grid-cols-2">
-							{@render statusList([
-								{ label: m.diagnostics_gc_total_cycles(), value: fmtNum(diag.gc.numGc) },
-								{ label: m.diagnostics_gc_forced_cycles(), value: fmtNum(diag.memory.numForcedGc) },
-								{ label: m.diagnostics_gc_total_pause(), value: fmtMs(diag.gc.pauseTotalNs) },
-								{ label: m.diagnostics_gc_last(), value: diag.gc.lastGc ? formatTime(diag.gc.lastGc) : '—' }
-							])}
-							{#if diag.gc.recentPausesNs?.length}
-								<div>
-									<div class="mb-1 text-[11px] text-muted-foreground">{m.diagnostics_gc_recent_pauses()}</div>
-									<div class="flex h-12 items-end gap-0.5">
-										<!-- Pause durations can repeat; bars render the current snapshot without local state. -->
-										{#each diag.gc.recentPausesNs as p}
-											<div
-												class="flex-1 rounded-sm bg-amber-500/70"
-												style="height: {maxPause ? Math.max(4, (p / maxPause) * 100) : 4}%"
-												title={fmtMs(p)}
-											></div>
-										{/each}
-									</div>
-								</div>
-							{/if}
-						</div>
-					</section>
+						</section>
+					</div>
 				</Tabs.Content>
 
-				<Tabs.Content value="connections" class="mt-6 space-y-4">
-					{@render sectionHeading(m.diagnostics_section_connections({ count: diag.websocket.connections?.length ?? 0 }))}
-					<div class="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3 lg:grid-cols-6">
-						{#each wsCounts as c (c.label)}
-							<div>
-								<div class="text-xs text-muted-foreground">{c.label}</div>
-								<div class="text-lg font-semibold tabular-nums">{fmtNum(c.value)}</div>
-							</div>
-						{/each}
-					</div>
-					{#if diag.websocket.connections?.length}
-						<div class="overflow-x-auto">
-							<Table.Root>
-								<Table.Header>
-									<Table.Row>
-										<Table.Head>{m.diagnostics_conn_kind()}</Table.Head>
-										<Table.Head>{m.resource()}</Table.Head>
-										<Table.Head>{m.diagnostics_conn_client_ip()}</Table.Head>
-										<Table.Head>{m.common_user()}</Table.Head>
-										<Table.Head>{m.diagnostics_conn_since()}</Table.Head>
-									</Table.Row>
-								</Table.Header>
-								<Table.Body>
-									{#each diag.websocket.connections as c (c.id)}
-										<Table.Row>
-											<Table.Cell>{wsKindLabels[c.kind] ?? c.kind}</Table.Cell>
-											<Table.Cell class="font-mono text-xs text-muted-foreground">{c.resourceId || '—'}</Table.Cell>
-											<Table.Cell class="font-mono text-xs text-muted-foreground">{c.clientIp || '—'}</Table.Cell>
-											<Table.Cell class="text-xs text-muted-foreground">{c.userId || '—'}</Table.Cell>
-											<Table.Cell class="text-xs text-muted-foreground tabular-nums">
-												{c.startedAt ? formatTime(c.startedAt) : '—'}
-											</Table.Cell>
-										</Table.Row>
-									{/each}
-								</Table.Body>
-							</Table.Root>
+				<Tabs.Content value="connections" class="mt-6">
+					<div class="space-y-4">
+						{@render sectionHeading(m.diagnostics_section_connections({ count: diag.websocket.connections?.length ?? 0 }))}
+						<div class="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3 lg:grid-cols-6">
+							{#each wsCounts as c (c.label)}
+								<div>
+									<div class="text-xs text-muted-foreground">{c.label}</div>
+									<div class="text-lg font-semibold tabular-nums">{fmtNum(c.value)}</div>
+								</div>
+							{/each}
 						</div>
-					{:else}
-						<p class="py-8 text-sm text-muted-foreground">{m.diagnostics_connections_empty()}</p>
-					{/if}
+						{#if diag.websocket.connections?.length}
+							<div class="overflow-x-auto">
+								<Table.Root>
+									<Table.Header>
+										<Table.Row>
+											<Table.Head>{m.diagnostics_conn_kind()}</Table.Head>
+											<Table.Head>{m.resource()}</Table.Head>
+											<Table.Head>{m.diagnostics_conn_client_ip()}</Table.Head>
+											<Table.Head>{m.common_user()}</Table.Head>
+											<Table.Head>{m.diagnostics_conn_since()}</Table.Head>
+										</Table.Row>
+									</Table.Header>
+									<Table.Body>
+										{#each diag.websocket.connections as c (c.id)}
+											<Table.Row>
+												<Table.Cell>{wsKindLabels[c.kind] ?? c.kind}</Table.Cell>
+												<Table.Cell><span class="font-mono text-xs text-muted-foreground">{c.resourceId || '—'}</span></Table.Cell
+												>
+												<Table.Cell><span class="font-mono text-xs text-muted-foreground">{c.clientIp || '—'}</span></Table.Cell>
+												<Table.Cell><span class="text-xs text-muted-foreground">{c.userId || '—'}</span></Table.Cell>
+												<Table.Cell>
+													<span class="text-xs text-muted-foreground tabular-nums">
+														{c.startedAt ? formatTime(c.startedAt) : '—'}
+													</span>
+												</Table.Cell>
+											</Table.Row>
+										{/each}
+									</Table.Body>
+								</Table.Root>
+							</div>
+						{:else}
+							<p class="py-8 text-sm text-muted-foreground">{m.diagnostics_connections_empty()}</p>
+						{/if}
+					</div>
 				</Tabs.Content>
 
 				<Tabs.Content value="logs" class="mt-6">
 					<DiagnosticLogPanel height="min(70vh, 640px)" />
 				</Tabs.Content>
 
-				<Tabs.Content value="profiling" class="mt-6 space-y-8">
-					<section class="space-y-4">
-						{@render sectionHeading(m.diagnostics_section_leaks())}
-						<DiagnosticLeakPanel
-							leakedGoroutines={diag.runtime.leakedGoroutines}
-							leakScannedAt={diag.runtime.leakScannedAt}
-							onscanned={onLeakScanned}
-						/>
-					</section>
+				<Tabs.Content value="profiling" class="mt-6">
+					<div class="space-y-8">
+						<section class="space-y-4">
+							{@render sectionHeading(m.diagnostics_section_leaks())}
+							<DiagnosticLeakPanel
+								leakedGoroutines={diag.runtime.leakedGoroutines}
+								leakScannedAt={diag.runtime.leakScannedAt}
+								onscanned={onLeakScanned}
+							/>
+						</section>
 
-					<section class="space-y-4 border-t border-border/50 pt-8">
-						{@render sectionHeading(m.diagnostics_section_dumps())}
-						<div class="space-y-2">
-							{#each dumps as d (d.id)}
-								<Collapsible.Root open={dumpOpen[d.id]} onOpenChange={(o: boolean) => onDumpToggle(d.id, o)}>
-									<Collapsible.Trigger
-										class="flex w-full items-center justify-between rounded-lg border border-border/60 px-3 py-2 text-sm font-medium hover:bg-muted/30"
-									>
-										{d.label}
-										<ArrowDownIcon class={cn('size-4 transition-transform', dumpOpen[d.id] && '-rotate-180')} />
-									</Collapsible.Trigger>
-									<Collapsible.Content>
-										<pre
-											class="mt-1 max-h-96 overflow-auto rounded-lg border border-border/60 bg-background p-3 font-mono text-[11px] leading-relaxed">{dumpLoading[
-												d.id
-											]
-												? m.common_loading()
-												: dumpText[d.id] || m.diagnostics_dump_empty()}</pre>
-									</Collapsible.Content>
-								</Collapsible.Root>
-							{/each}
-						</div>
-					</section>
+						<section class="space-y-4 border-t border-border/50 pt-8">
+							{@render sectionHeading(m.diagnostics_section_dumps())}
+							<div class="space-y-2">
+								{#each dumps as d (d.id)}
+									<Collapsible.Root open={dumpOpen[d.id]} onOpenChange={(o: boolean) => onDumpToggle(d.id, o)}>
+										<Collapsible.Trigger>
+											{#snippet child({ props })}
+												<button
+													{...props}
+													type="button"
+													class="flex w-full items-center justify-between rounded-lg border border-border/60 px-3 py-2 text-sm font-medium hover:bg-muted/30"
+												>
+													{d.label}
+													<ArrowDownIcon class={cn('size-4 transition-transform', dumpOpen[d.id] && '-rotate-180')} />
+												</button>
+											{/snippet}
+										</Collapsible.Trigger>
+										<Collapsible.Content>
+											<pre
+												class="mt-1 max-h-96 overflow-auto rounded-lg border border-border/60 bg-background p-3 font-mono text-2xs leading-relaxed">{dumpLoading[
+													d.id
+												]
+													? m.common_loading()
+													: dumpText[d.id] || m.diagnostics_dump_empty()}</pre>
+										</Collapsible.Content>
+									</Collapsible.Root>
+								{/each}
+							</div>
+						</section>
 
-					<section class="space-y-4 border-t border-border/50 pt-8">
-						{@render sectionHeading(m.diagnostics_section_profiles(), m.diagnostics_profiles_hint())}
-						<ul class="divide-y divide-border/40">
-							{#each profiles as p (p.id)}
-								<li class="flex items-center justify-between gap-4 py-2.5">
-									<span class="text-sm font-medium">{p.label}</span>
-									<ArcaneButton
-										action="base"
-										tone="outline"
-										size="sm"
-										icon={DownloadIcon}
-										customLabel={m.diagnostics_download()}
-										loading={downloading === p.id}
-										disabled={downloading !== null}
-										onclick={() => download(p.id)}
-									/>
-								</li>
-							{/each}
-						</ul>
-					</section>
+						<section class="space-y-4 border-t border-border/50 pt-8">
+							{@render sectionHeading(m.diagnostics_section_profiles(), m.diagnostics_profiles_hint())}
+							<ul class="divide-y divide-border/40">
+								{#each profiles as p (p.id)}
+									<li class="flex items-center justify-between gap-4 py-2.5">
+										<span class="text-sm font-medium">{p.label}</span>
+										<ArcaneButton
+											action="base"
+											tone="outline"
+											size="sm"
+											icon={DownloadIcon}
+											customLabel={m.diagnostics_download()}
+											loading={downloading === p.id}
+											disabled={downloading !== null}
+											onclick={() => download(p.id)}
+										/>
+									</li>
+								{/each}
+							</ul>
+						</section>
+					</div>
 				</Tabs.Content>
 			</Tabs.Root>
 		{:else if !error}

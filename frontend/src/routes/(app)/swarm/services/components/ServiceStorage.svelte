@@ -40,10 +40,10 @@
 
 	function getMountIconColor(type: string, mount: SwarmServiceMount): { bg: string; text: string } {
 		if (type === 'bind' || (type === 'volume' && isBindBackedVolume(mount))) {
-			return { bg: 'bg-blue-500/10', text: 'text-blue-500' };
+			return { bg: 'bg-info/10', text: 'text-info' };
 		}
-		if (type === 'volume') return { bg: 'bg-purple-500/10', text: 'text-purple-500' };
-		return { bg: 'bg-amber-500/10', text: 'text-amber-500' };
+		if (type === 'volume') return { bg: 'bg-purple/10', text: 'text-purple' };
+		return { bg: 'bg-warning/10', text: 'text-warning' };
 	}
 </script>
 
@@ -56,7 +56,7 @@
 				</Card.Title>
 			</div>
 		</Card.Header>
-		<Card.Content class="p-4">
+		<Card.Content>
 			{#if mounts.length > 0}
 				<div class="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
 					{#each mounts as mount (mount.target)}
@@ -67,7 +67,7 @@
 						{@const iconColor = getMountIconColor(type, mount)}
 						{@const bindBacked = type === 'volume' && isBindBackedVolume(mount)}
 						<Card.Root variant="subtle">
-							<Card.Content class="p-4">
+							<Card.Content>
 								<div class="mb-4 flex items-center justify-between border-b border-border pb-4">
 									<div class="flex items-center gap-3">
 										<div class="rounded-lg p-2 {iconColor.bg}">
@@ -97,8 +97,8 @@
 								</div>
 
 								<div class="grid grid-cols-1 gap-3">
-									<Card.Root variant="outlined">
-										<Card.Content class="flex flex-col p-3">
+									<Card.Root variant="outlined" size="sm">
+										<Card.Content class="flex flex-col">
 											<div class="mb-2 text-xs font-semibold text-muted-foreground">
 												{m.containers_mount_label_container()}
 											</div>
@@ -109,8 +109,8 @@
 									</Card.Root>
 
 									{#if source && type !== 'tmpfs'}
-										<Card.Root variant="outlined">
-											<Card.Content class="flex flex-col p-3">
+										<Card.Root variant="outlined" size="sm">
+											<Card.Content class="flex flex-col">
 												<div class="mb-2 text-xs font-semibold text-muted-foreground">
 													{type === 'volume' ? m.containers_mount_label_volume() : m.containers_mount_label_host()}
 												</div>
@@ -122,8 +122,8 @@
 									{/if}
 
 									{#if bindBacked && mount.volumeOptions?.['device']}
-										<Card.Root variant="outlined">
-											<Card.Content class="flex flex-col p-3">
+										<Card.Root variant="outlined" size="sm">
+											<Card.Content class="flex flex-col">
 												<div class="mb-2 text-xs font-semibold text-muted-foreground">{m.dashboard_meter_gpu_device()}:</div>
 												<div class="cursor-pointer font-mono text-sm font-medium break-all text-foreground select-all">
 													{mount.volumeOptions['device']}
@@ -133,8 +133,8 @@
 									{/if}
 
 									{#if mount.devicePath}
-										<Card.Root variant="outlined">
-											<Card.Content class="flex flex-col p-3">
+										<Card.Root variant="outlined" size="sm">
+											<Card.Content class="flex flex-col">
 												<div class="mb-2 text-xs font-semibold text-muted-foreground">
 													{bindBacked ? m.containers_mount_label_volume() : m.containers_mount_label_host()}
 												</div>

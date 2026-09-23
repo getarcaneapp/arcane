@@ -44,7 +44,7 @@
 	onOpenChange={(nextOpen) => (open = nextOpen)}
 	title={m.docker_engine_title({ engine: dockerInfo?.Name ?? 'Docker Engine' })}
 	description={m.docker_info_dialog_description()}
-	contentClass="sm:max-w-[1100px]"
+	contentClass="sm:max-w-275"
 	showCloseButton={false}
 >
 	{#snippet children()}
@@ -105,13 +105,13 @@
 {/snippet}
 
 {#snippet warningsCard(warnings: string[])}
-	<div class="space-y-0.5 border-l-2 border-amber-500/50 pl-2.5">
-		<h3 class="text-[10px] font-semibold tracking-wider text-amber-600 uppercase dark:text-amber-400">
+	<div class="space-y-0.5 border-l-2 border-warning/50 pl-2.5">
+		<h3 class="text-3xs font-semibold tracking-wider text-warning uppercase">
 			{m.docker_info_warnings_section()}
 		</h3>
 		<ul class="space-y-0.5">
 			{#each withOccurrenceKeys(warnings) as { value: warning, key } (key)}
-				<li class="text-xs [overflow-wrap:anywhere] text-amber-700 dark:text-amber-300">{warning}</li>
+				<li class="text-xs wrap-anywhere text-warning">{warning}</li>
 			{/each}
 		</ul>
 	</div>
@@ -119,10 +119,10 @@
 
 {#snippet statStrip(info: DockerInfo)}
 	<div class="flex flex-wrap items-center gap-x-5 gap-y-1.5 border-b border-border/50 pb-2.5">
-		{@render stat(m.common_running(), info.ContainersRunning ?? 0, 'bg-emerald-500')}
-		{@render stat(m.paused(), info.ContainersPaused ?? 0, 'bg-amber-500')}
-		{@render stat(m.common_stopped(), info.ContainersStopped ?? 0, 'bg-red-500')}
-		{@render stat(m.images(), info.Images ?? 0, 'bg-blue-500')}
+		{@render stat(m.common_running(), info.ContainersRunning ?? 0, 'bg-success')}
+		{@render stat(m.paused(), info.ContainersPaused ?? 0, 'bg-warning')}
+		{@render stat(m.common_stopped(), info.ContainersStopped ?? 0, 'bg-destructive')}
+		{@render stat(m.images(), info.Images ?? 0, 'bg-info')}
 		<div class="hidden h-3 w-px bg-border/50 sm:block"></div>
 		{@render stat(m.common_cpus(), info.NCPU ?? 0)}
 		{@render stat(m.docker_info_memory_label(), (info.MemTotal ? bytes.format(info.MemTotal) : null) ?? '-')}
@@ -137,13 +137,13 @@
 			<span class="size-1.5 shrink-0 self-center rounded-full {dot}"></span>
 		{/if}
 		<span class="text-sm font-semibold tabular-nums">{value}</span>
-		<span class="text-[10px] tracking-tight whitespace-nowrap text-muted-foreground uppercase">{label}</span>
+		<span class="text-3xs tracking-tight whitespace-nowrap text-muted-foreground uppercase">{label}</span>
 	</div>
 {/snippet}
 
 {#snippet systemSection(info: DockerInfo)}
 	<section class="space-y-1.5">
-		<h3 class="border-b border-border/50 pb-1 text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">
+		<h3 class="border-b border-border/50 pb-1 text-3xs font-semibold tracking-wider text-muted-foreground uppercase">
 			{m.docker_info_system_section()}
 		</h3>
 		<div class="space-y-0.5">
@@ -163,17 +163,15 @@
 
 {#snippet versionSection(info: DockerInfo)}
 	<section class="space-y-1.5">
-		<h3 class="border-b border-border/50 pb-1 text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">
+		<h3 class="border-b border-border/50 pb-1 text-3xs font-semibold tracking-wider text-muted-foreground uppercase">
 			{m.docker_info_version_section()}
 		</h3>
 		<div class="space-y-0.5">
 			{@render infoRow(m.docker_info_server_version_label(), info.ServerVersion)}
 			{@render infoRow(m.docker_info_api_version_label(), info.apiVersion)}
 			{@render infoRow(m.go_version(), info.goVersion)}
-			<div class="grid grid-cols-[minmax(104px,38%)_minmax(0,1fr)] items-baseline gap-x-3">
-				<span class="text-[10px] leading-4 tracking-tight text-muted-foreground uppercase"
-					>{m.docker_info_git_commit_label()}</span
-				>
+			<div class="grid grid-cols-label-value items-baseline gap-x-3">
+				<span class="text-3xs leading-4 tracking-tight text-muted-foreground uppercase">{m.docker_info_git_commit_label()}</span>
 				<div class="flex items-center justify-end gap-1.5">
 					<code class="rounded bg-muted px-1.5 py-0.5 text-xs">{info.gitCommit?.slice(0, 8) ?? '-'}</code>
 					{#if info.gitCommit}
@@ -195,7 +193,7 @@
 
 {#snippet configurationSection(info: DockerInfo)}
 	<section class="space-y-1.5">
-		<h3 class="border-b border-border/50 pb-1 text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">
+		<h3 class="border-b border-border/50 pb-1 text-3xs font-semibold tracking-wider text-muted-foreground uppercase">
 			{m.common_configuration()}
 		</h3>
 		<div class="space-y-0.5">
@@ -215,7 +213,7 @@
 
 {#snippet capabilitiesSection(info: DockerInfo)}
 	<section class="space-y-1.5">
-		<h3 class="border-b border-border/50 pb-1 text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">
+		<h3 class="border-b border-border/50 pb-1 text-3xs font-semibold tracking-wider text-muted-foreground uppercase">
 			{m.docker_info_capabilities_section()}
 		</h3>
 		<div class="grid grid-cols-2 gap-x-4 gap-y-0.5">
@@ -234,7 +232,7 @@
 
 {#snippet storageDetailsSection(info: DockerInfo)}
 	<section class="space-y-1.5">
-		<h3 class="border-b border-border/50 pb-1 text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">
+		<h3 class="border-b border-border/50 pb-1 text-3xs font-semibold tracking-wider text-muted-foreground uppercase">
 			{m.docker_info_storage_details_section()}
 		</h3>
 		<div class="space-y-0.5">
@@ -247,7 +245,7 @@
 
 {#snippet networkSection(info: DockerInfo)}
 	<section class="space-y-1.5">
-		<h3 class="border-b border-border/50 pb-1 text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">
+		<h3 class="border-b border-border/50 pb-1 text-3xs font-semibold tracking-wider text-muted-foreground uppercase">
 			{m.resource_networks_cap()} & {m.docker_info_proxy_label()}
 		</h3>
 		<div class="space-y-0.5">
@@ -271,7 +269,7 @@
 
 {#snippet securitySection(info: DockerInfo)}
 	<section class="space-y-1.5">
-		<h3 class="border-b border-border/50 pb-1 text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">
+		<h3 class="border-b border-border/50 pb-1 text-3xs font-semibold tracking-wider text-muted-foreground uppercase">
 			{m.security()} & {m.docker_info_runtimes()}
 		</h3>
 		<div class="space-y-1">
@@ -283,7 +281,7 @@
 
 {#snippet pluginsSection(info: DockerInfo)}
 	<section class="space-y-1.5">
-		<h3 class="border-b border-border/50 pb-1 text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">
+		<h3 class="border-b border-border/50 pb-1 text-3xs font-semibold tracking-wider text-muted-foreground uppercase">
 			{m.docker_info_plugins_section()}
 		</h3>
 		<div class="space-y-1">
@@ -304,7 +302,7 @@
 		Nodes?: number;
 	}}
 	<section class="space-y-1.5">
-		<h3 class="border-b border-border/50 pb-1 text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">
+		<h3 class="border-b border-border/50 pb-1 text-3xs font-semibold tracking-wider text-muted-foreground uppercase">
 			{m.swarm()}
 		</h3>
 		<div class="space-y-0.5">
@@ -319,20 +317,20 @@
 
 {#snippet labelsSection(info: DockerInfo)}
 	<section class="space-y-1.5">
-		<h3 class="border-b border-border/50 pb-1 text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">
+		<h3 class="border-b border-border/50 pb-1 text-3xs font-semibold tracking-wider text-muted-foreground uppercase">
 			{m.docker_info_labels_section()}
 		</h3>
 		<div class="flex flex-wrap gap-1">
 			{#each withOccurrenceKeys(info.Labels) as { value: label, key } (key)}
-				<Badge variant="outline" size="sm" class="font-mono">{label}</Badge>
+				<Badge variant="outline" size="sm" mono>{label}</Badge>
 			{/each}
 		</div>
 	</section>
 {/snippet}
 
 {#snippet tagGroup(label: string, items: string[] | undefined)}
-	<div class="grid grid-cols-[minmax(96px,32%)_minmax(0,1fr)] items-baseline gap-x-3">
-		<span class="text-[10px] leading-4 tracking-tight text-muted-foreground uppercase">{label}</span>
+	<div class="grid grid-cols-label-value items-baseline gap-x-3">
+		<span class="text-3xs leading-4 tracking-tight text-muted-foreground uppercase">{label}</span>
 		<div class="flex flex-wrap justify-end gap-1">
 			{#each withOccurrenceKeys(items) as { value: item, key } (key)}
 				<Badge variant="outline" size="sm">{item}</Badge>
@@ -345,9 +343,9 @@
 
 {#snippet capRow(label: string, value: boolean | undefined)}
 	<div class="flex items-center justify-between gap-2">
-		<span class="text-[10px] tracking-tight [overflow-wrap:anywhere] text-muted-foreground uppercase">{label}</span>
+		<span class="text-3xs tracking-tight wrap-anywhere text-muted-foreground uppercase">{label}</span>
 		{#if value}
-			<CheckIcon class="size-3 shrink-0 text-emerald-600 dark:text-emerald-400" />
+			<CheckIcon class="size-3 shrink-0 text-success" />
 			<span class="sr-only">{m.common_yes()}</span>
 		{:else}
 			<CloseIcon class="size-3 shrink-0 text-muted-foreground/50" />
@@ -358,9 +356,9 @@
 
 {#snippet blockRow(label: string, value: string)}
 	<div class="space-y-0.5 pt-0.5">
-		<div class="text-[10px] tracking-tight text-muted-foreground uppercase">{label}</div>
+		<div class="text-3xs tracking-tight text-muted-foreground uppercase">{label}</div>
 		<div
-			class="max-h-48 overflow-y-auto rounded-md bg-muted/30 px-2 py-1 font-mono text-[11px] leading-relaxed break-all text-foreground/80"
+			class="max-h-48 overflow-y-auto rounded-md bg-muted/30 px-2 py-1 font-mono text-2xs leading-relaxed break-all text-foreground/80"
 		>
 			{value}
 		</div>
@@ -368,9 +366,9 @@
 {/snippet}
 
 {#snippet infoRow(label: string, value: string | number | undefined | null, mono: boolean = true)}
-	<div class="grid grid-cols-[minmax(104px,38%)_minmax(0,1fr)] items-baseline gap-x-3">
-		<span class="text-[10px] leading-4 tracking-tight text-muted-foreground uppercase">{label}</span>
-		<span class="text-right text-xs leading-4 [overflow-wrap:anywhere] {mono ? 'font-mono' : ''}">
+	<div class="grid grid-cols-label-value items-baseline gap-x-3">
+		<span class="text-3xs leading-4 tracking-tight text-muted-foreground uppercase">{label}</span>
+		<span class="text-right text-xs leading-4 wrap-anywhere {mono ? 'font-mono' : ''}">
 			{value === undefined || value === null || value === '' ? '-' : value}
 		</span>
 	</div>

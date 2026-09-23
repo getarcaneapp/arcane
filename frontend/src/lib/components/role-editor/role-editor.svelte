@@ -54,72 +54,74 @@
 	}
 </script>
 
-<form onsubmit={preventDefault(handleSubmit)} novalidate class="grid grid-cols-1 gap-6 lg:grid-cols-[320px_1fr]">
+<form onsubmit={preventDefault(handleSubmit)} novalidate class="grid grid-cols-1 gap-6 lg:grid-cols-aside-80">
 	<div class="space-y-4">
 		<Card.Root>
 			<Card.Header>
-				<Card.Title class="text-base">
-					{role ? m.roles_edit_title() : m.roles_create_title()}
+				<Card.Title>
+					<span class="text-base">{role ? m.roles_edit_title() : m.roles_create_title()}</span>
 				</Card.Title>
 			</Card.Header>
-			<Card.Content class="space-y-4 p-6 pt-2">
-				<div class="flex items-center gap-2">
-					<Badge variant={isBuiltIn ? 'blue' : 'green'} size="sm">{isBuiltIn ? m.roles_built_in() : m.custom()}</Badge>
-				</div>
-
-				<FormInput
-					label={m.common_name()}
-					type="text"
-					placeholder={m.roles_name_placeholder()}
-					disabled={isBuiltIn || isLoading}
-					bind:input={inputs.name}
-				/>
-
-				<FormInput
-					label={m.common_description()}
-					type="text"
-					placeholder={m.roles_description_placeholder()}
-					disabled={isBuiltIn || isLoading}
-					bind:input={inputs.description}
-				/>
-
-				<div>
-					<div class="text-xs text-muted-foreground">
-						{m.roles_permissions_count({ count: selectedCount, total: totalPermissions })}
+			<Card.Content>
+				<div class="flex flex-col gap-4">
+					<div class="flex items-center gap-2">
+						<Badge variant={isBuiltIn ? 'blue' : 'green'} size="sm">{isBuiltIn ? m.roles_built_in() : m.custom()}</Badge>
 					</div>
-					{#if inputs.permissions?.error}
-						<p class="mt-1 text-sm text-red-500">{inputs.permissions.error}</p>
+
+					<FormInput
+						label={m.common_name()}
+						type="text"
+						placeholder={m.roles_name_placeholder()}
+						disabled={isBuiltIn || isLoading}
+						bind:input={inputs.name}
+					/>
+
+					<FormInput
+						label={m.common_description()}
+						type="text"
+						placeholder={m.roles_description_placeholder()}
+						disabled={isBuiltIn || isLoading}
+						bind:input={inputs.description}
+					/>
+
+					<div>
+						<div class="text-xs text-muted-foreground">
+							{m.roles_permissions_count({ count: selectedCount, total: totalPermissions })}
+						</div>
+						{#if inputs.permissions?.error}
+							<p class="mt-1 text-sm text-destructive">{inputs.permissions.error}</p>
+						{/if}
+					</div>
+
+					{#if isBuiltIn}
+						<p class="text-xs text-muted-foreground">{m.roles_built_in_note()}</p>
+					{/if}
+
+					{#if isBuiltIn && onClone}
+						<ArcaneButton
+							action="base"
+							tone="outline"
+							type="button"
+							class="w-full"
+							icon={CopyIcon}
+							onclick={onClone}
+							customLabel={m.roles_clone_button()}
+							disabled={isLoading}
+						/>
+					{/if}
+
+					{#if !isBuiltIn}
+						<ArcaneButton
+							action="save"
+							type="submit"
+							class="w-full"
+							disabled={isLoading}
+							loading={isLoading}
+							onclick={handleSubmit}
+							customLabel={role ? m.roles_save_changes() : m.common_create_button({ resource: m.roles_title() })}
+						/>
 					{/if}
 				</div>
-
-				{#if isBuiltIn}
-					<p class="text-xs text-muted-foreground">{m.roles_built_in_note()}</p>
-				{/if}
-
-				{#if isBuiltIn && onClone}
-					<ArcaneButton
-						action="base"
-						tone="outline"
-						type="button"
-						class="w-full"
-						icon={CopyIcon}
-						onclick={onClone}
-						customLabel={m.roles_clone_button()}
-						disabled={isLoading}
-					/>
-				{/if}
-
-				{#if !isBuiltIn}
-					<ArcaneButton
-						action="save"
-						type="submit"
-						class="w-full"
-						disabled={isLoading}
-						loading={isLoading}
-						onclick={handleSubmit}
-						customLabel={role ? m.roles_save_changes() : m.common_create_button({ resource: m.roles_title() })}
-					/>
-				{/if}
 			</Card.Content>
 		</Card.Root>
 	</div>

@@ -254,30 +254,30 @@
 	const updatePriority = $derived.by(() => {
 		if (!effectiveUpdateInfo) return null;
 		if (effectiveUpdateInfo.error)
-			return { level: 'Error', color: 'text-red-500', description: m.image_update_could_not_query_registry() };
+			return { level: 'Error', color: 'text-destructive', description: m.image_update_could_not_query_registry() };
 		if (effectiveUpdateInfo.updateType === 'local')
-			return { level: m.image_update_local_title(), color: 'text-slate-500', description: m.image_update_local_desc() };
+			return { level: m.image_update_local_title(), color: 'text-muted-foreground', description: m.image_update_local_desc() };
 		if (effectiveUpdateInfo.updateType === 'not_pulled')
 			return {
 				level: m.image_update_not_pulled_title(),
-				color: 'text-blue-500',
+				color: 'text-info',
 				description: m.image_update_not_pulled_desc()
 			};
 		if (!effectiveUpdateInfo.hasUpdate)
-			return { level: 'None', color: 'text-green-500', description: m.image_update_up_to_date_desc() };
+			return { level: 'None', color: 'text-success', description: m.image_update_up_to_date_desc() };
 		if (effectiveUpdateInfo.updateType === 'digest')
 			return {
 				level: m.image_update_digest_title(),
-				color: 'text-blue-500',
+				color: 'text-info',
 				description: m.image_update_digest_desc()
 			};
 		if (effectiveUpdateInfo.updateType === 'tag') {
 			const desc = effectiveUpdateInfo.latestVersion
 				? m.image_update_tag_description_new({ version: effectiveUpdateInfo.latestVersion })
 				: m.image_update_tag_description();
-			return { level: m.image_update_version_title(), color: 'text-yellow-500', description: desc };
+			return { level: m.image_update_version_title(), color: 'text-warning', description: desc };
 		}
-		return { level: m.common_unknown(), color: 'text-gray-500', description: m.image_update_unknown_type() };
+		return { level: m.common_unknown(), color: 'text-muted-foreground', description: m.image_update_unknown_type() };
 	});
 </script>
 
@@ -302,7 +302,7 @@
 
 {#snippet versionDisplay(label: string, version: string, bgClass: string, textClass: string = '')}
 	<div class="flex items-center justify-between">
-		<div class="flex items-center gap-1.5 text-gray-500 dark:text-gray-400">
+		<div class="flex items-center gap-1.5 text-muted-foreground">
 			{#if label === m.common_current()}
 				<BoxIcon class="size-3" />
 			{:else}
@@ -347,24 +347,24 @@
 {/snippet}
 
 {#snippet errorState()}
-	<div class="bg-linear-to-br from-rose-50 to-red-50/40 p-4 dark:from-rose-950/20 dark:to-red-950/10">
+	<div class="bg-linear-to-br from-destructive/10 to-destructive/5 p-4">
 		<div class="flex items-start gap-3">
-			{@render iconCircle(AlertIcon, 'from-rose-500', 'to-red-500', 'shadow-red-500/25')}
+			{@render iconCircle(AlertIcon, 'from-rose', 'to-destructive', 'shadow-destructive/25')}
 			<div class="flex-1">
-				<div class="text-sm font-semibold text-red-950 dark:text-red-100">{m.image_update_check_failed_title()}</div>
-				<div class="text-xs text-red-900/80 dark:text-red-300/80">{m.image_update_could_not_query_registry()}</div>
+				<div class="text-sm font-semibold text-destructive">{m.image_update_check_failed_title()}</div>
+				<div class="text-xs text-destructive/80">{m.image_update_could_not_query_registry()}</div>
 				{@render authBadgeDisplay()}
 			</div>
 		</div>
 	</div>
 	<div class="bg-transparent p-4">
 		<div class="space-y-3">
-			<div class="text-xs text-gray-600 dark:text-gray-300">
+			<div class="text-xs text-muted-foreground">
 				<span class="font-medium">{m.image_update_error_label()}</span>
 				<span class="ml-1 wrap-break-word">{effectiveUpdateInfo?.error}</span>
 			</div>
 			{#if repo && tag}
-				<div class="text-xs text-gray-500 dark:text-gray-400">
+				<div class="text-xs text-muted-foreground">
 					{m.image_update_image_label()} <span class="font-mono">{repo}:{tag}</span>
 				</div>
 			{/if}
@@ -374,14 +374,14 @@
 {/snippet}
 
 {#snippet successState()}
-	<div class="bg-linear-to-br from-emerald-50 to-green-50/30 p-4 dark:from-emerald-950/20 dark:to-green-950/10">
+	<div class="bg-linear-to-br from-success/10 to-success/5 p-4">
 		<div class="flex items-start gap-3">
-			{@render iconCircle(VerifiedCheckIcon, 'from-emerald-500', 'to-green-500', 'shadow-emerald-500/25')}
+			{@render iconCircle(VerifiedCheckIcon, 'from-success', 'to-success', 'shadow-success/25')}
 			<div class="flex-1">
-				<div class="text-sm font-semibold text-emerald-950 dark:text-emerald-100">
+				<div class="text-sm font-semibold text-success">
 					{m.image_update_up_to_date_title()}
 				</div>
-				<div class="text-xs text-emerald-900/80 dark:text-emerald-300/80">{m.image_update_up_to_date_desc()}</div>
+				<div class="text-xs text-success/80">{m.image_update_up_to_date_desc()}</div>
 				{@render authBadgeDisplay()}
 			</div>
 		</div>
@@ -421,54 +421,42 @@
 {/snippet}
 
 {#snippet digestState(title: string, description: string, icon: Component)}
-	<div class="bg-linear-to-br from-blue-50 to-cyan-50/30 p-4 dark:from-blue-950/20 dark:to-cyan-950/10">
+	<div class="bg-linear-to-br from-info/10 to-info/5 p-4">
 		<div class="flex items-start gap-3">
-			{@render iconCircle(icon, 'from-blue-500', 'to-cyan-500', 'shadow-blue-500/25')}
+			{@render iconCircle(icon, 'from-info', 'to-cyan', 'shadow-info/25')}
 			<div class="flex-1">
-				<div class="text-sm font-semibold text-blue-950 dark:text-blue-100">{title}</div>
-				<div class="text-xs text-blue-900/80 dark:text-blue-300/80">{description}</div>
+				<div class="text-sm font-semibold text-info">{title}</div>
+				<div class="text-xs text-info/80">{description}</div>
 				{@render authBadgeDisplay()}
 			</div>
 		</div>
 	</div>
-	{@render updateDetails(
-		m.image_update_latest_digest_label(),
-		'bg-blue-100 dark:bg-blue-900/30',
-		'text-blue-800 dark:text-blue-300',
-		'bg-blue-50 dark:bg-blue-950/30',
-		'text-blue-800 dark:text-blue-300'
-	)}
+	{@render updateDetails(m.image_update_latest_digest_label(), 'bg-info/10', 'text-info', 'bg-info/10', 'text-info')}
 	{@render recheckButton()}
 {/snippet}
 
 {#snippet versionUpdateState()}
-	<div class="bg-linear-to-br from-amber-50 to-yellow-50/30 p-4 dark:from-amber-950/20 dark:to-yellow-950/10">
+	<div class="bg-linear-to-br from-warning/10 to-warning/5 p-4">
 		<div class="flex items-start gap-3">
-			{@render iconCircle(CircleArrowUpIcon, 'from-amber-500', 'to-yellow-500', 'shadow-amber-500/25')}
+			{@render iconCircle(CircleArrowUpIcon, 'from-warning', 'to-warning', 'shadow-warning/25')}
 			<div class="flex-1">
-				<div class="text-sm font-semibold text-amber-950 dark:text-amber-100">{m.image_update_version_title()}</div>
-				<div class="text-xs text-amber-900/80 dark:text-amber-300/80">{m.image_update_version_desc()}</div>
+				<div class="text-sm font-semibold text-warning">{m.image_update_version_title()}</div>
+				<div class="text-xs text-warning/80">{m.image_update_version_desc()}</div>
 				{@render authBadgeDisplay()}
 			</div>
 		</div>
 	</div>
-	{@render updateDetails(
-		m.image_update_latest_label(),
-		'bg-amber-100 dark:bg-amber-900/30',
-		'text-amber-800 dark:text-amber-300',
-		'bg-amber-50 dark:bg-amber-950/30',
-		'text-amber-800 dark:text-amber-300'
-	)}
+	{@render updateDetails(m.image_update_latest_label(), 'bg-warning/10', 'text-warning', 'bg-warning/10', 'text-warning')}
 	{@render recheckButton()}
 {/snippet}
 
 {#snippet localState()}
-	<div class="bg-linear-to-br from-slate-50 to-slate-100/40 p-4 dark:from-slate-950/20 dark:to-slate-900/20">
+	<div class="bg-linear-to-br from-muted/50 to-muted/20 p-4">
 		<div class="flex items-start gap-3">
-			{@render iconCircle(BoxIcon, 'from-slate-500', 'to-gray-500', 'shadow-slate-500/25')}
+			{@render iconCircle(BoxIcon, 'from-muted-foreground', 'to-muted-foreground', 'shadow-muted-foreground/25')}
 			<div class="flex-1">
-				<div class="text-sm font-semibold text-slate-950 dark:text-slate-100">{m.image_update_local_title()}</div>
-				<div class="text-xs text-slate-900/80 dark:text-slate-300/80">{m.image_update_local_desc()}</div>
+				<div class="text-sm font-semibold text-foreground">{m.image_update_local_title()}</div>
+				<div class="text-xs text-muted-foreground">{m.image_update_local_desc()}</div>
 			</div>
 		</div>
 	</div>
@@ -477,24 +465,24 @@
 {#snippet loadingState()}
 	<UpdateStatusBanner
 		icon={Spinner}
-		wrapperClass="bg-linear-to-br from-blue-50 to-cyan-50/30 p-4 dark:from-blue-950/20 dark:to-cyan-950/10"
-		gradientFrom="from-blue-500"
-		gradientTo="to-cyan-500"
-		shadowColor="shadow-blue-500/25"
-		titleClass="text-blue-950 dark:text-blue-100"
-		descriptionClass="text-blue-900/80 dark:text-blue-300/80"
+		wrapperClass="bg-linear-to-br from-info/10 to-info/5 p-4"
+		gradientFrom="from-info"
+		gradientTo="to-cyan"
+		shadowColor="shadow-info/25"
+		titleClass="text-info"
+		descriptionClass="text-info/80"
 		title={m.image_update_checking_title()}
 		description={m.image_update_querying_registry()}
 	/>
 {/snippet}
 
 {#snippet unknownState()}
-	<div class="bg-linear-to-br from-gray-50 to-slate-50/30 p-4 dark:from-gray-900/20 dark:to-slate-900/10">
+	<div class="bg-linear-to-br from-muted/50 to-muted/20 p-4">
 		<div class="flex items-center gap-3">
-			{@render iconCircle(AlertIcon, 'from-gray-400', 'to-slate-500', 'shadow-gray-400/25')}
+			{@render iconCircle(AlertIcon, 'from-muted-foreground', 'to-muted-foreground', 'shadow-muted-foreground/25')}
 			<div>
-				<div class="text-sm font-semibold text-gray-950 dark:text-gray-100">{m.image_update_status_unknown()}</div>
-				<div class="text-xs text-gray-800 dark:text-gray-300/80">
+				<div class="text-sm font-semibold text-foreground">{m.image_update_status_unknown()}</div>
+				<div class="text-xs text-muted-foreground">
 					{#if canCheckUpdate}
 						{m.image_update_click_to_check()}
 					{:else}
@@ -507,14 +495,14 @@
 {/snippet}
 
 {#if isLocalImage}
-	<UpdateStatusPopover bind:open={isOpen} contentClass="max-w-[280px] p-0">
+	<UpdateStatusPopover bind:open={isOpen}>
 		{#snippet trigger({ props })}
 			<span
 				{...props}
 				class="mr-2 inline-flex size-4 items-center justify-center align-middle"
 				data-testid="image-update-trigger"
 			>
-				<BoxIcon class="size-4 text-slate-500" />
+				<BoxIcon class="size-4 text-muted-foreground" />
 			</span>
 		{/snippet}
 
@@ -525,7 +513,7 @@
 		{/snippet}
 	</UpdateStatusPopover>
 {:else if effectiveUpdateInfo}
-	<UpdateStatusPopover bind:open={isOpen} contentClass="max-w-[280px] p-0">
+	<UpdateStatusPopover bind:open={isOpen}>
 		{#snippet trigger({ props })}
 			<span
 				{...props}
@@ -533,15 +521,15 @@
 				data-testid="image-update-trigger"
 			>
 				{#if hasError}
-					<AlertIcon class="size-4 text-red-500" />
+					<AlertIcon class="size-4 text-destructive" />
 				{:else if effectiveUpdateInfo?.updateType === 'not_pulled'}
-					<DownloadIcon class="size-4 text-blue-500" />
+					<DownloadIcon class="size-4 text-info" />
 				{:else if !effectiveUpdateInfo?.hasUpdate}
-					<VerifiedCheckIcon class="size-4 text-green-500" />
+					<VerifiedCheckIcon class="size-4 text-success" />
 				{:else if effectiveUpdateInfo?.updateType === 'digest'}
-					<CircleArrowUpIcon class="size-4 text-blue-500" />
+					<CircleArrowUpIcon class="size-4 text-info" />
 				{:else}
-					<CircleArrowUpIcon class="size-4 text-yellow-500" />
+					<CircleArrowUpIcon class="size-4 text-warning" />
 				{/if}
 			</span>
 		{/snippet}
@@ -563,10 +551,10 @@
 		{/snippet}
 	</UpdateStatusPopover>
 {:else if isLoadingInBackground || isChecking}
-	<UpdateStatusPopover contentClass="max-w-[220px] p-0">
+	<UpdateStatusPopover contentWidth="sm">
 		{#snippet trigger({ props })}
 			<span {...props} class="mr-2 inline-flex size-4 items-center justify-center" data-testid="image-update-trigger">
-				<Spinner class="size-4 text-blue-400" />
+				<Spinner tone="info" class="size-4" />
 			</span>
 		{/snippet}
 
@@ -577,24 +565,24 @@
 		{/snippet}
 	</UpdateStatusPopover>
 {:else}
-	<UpdateStatusPopover interactive directTrigger={canCheckUpdate} contentClass="max-w-[240px] p-0">
+	<UpdateStatusPopover interactive directTrigger={canCheckUpdate} contentWidth="md">
 		{#snippet trigger({ props })}
 			{#if canCheckUpdate}
 				{@const triggerProps = mergeProps(props, {
 					onclick: checkImageUpdate,
 					class:
-						'mr-2 inline-flex size-4 items-center justify-center rounded-full text-gray-400 transition-colors hover:text-blue-400 disabled:cursor-not-allowed'
+						'mr-2 inline-flex size-4 items-center justify-center rounded-full text-muted-foreground transition-colors hover:text-info disabled:cursor-not-allowed'
 				})}
 				<button {...triggerProps} disabled={isChecking} data-testid="image-update-trigger">
 					{#if isChecking}
-						<Spinner class="size-3 text-blue-400" />
+						<Spinner tone="info" class="size-3" />
 					{:else}
 						<UncheckedRingIcon />
 					{/if}
 				</button>
 			{:else}
 				<span {...props} class="mr-2 inline-flex size-4 items-center justify-center" data-testid="image-update-trigger">
-					<div class="flex size-4 items-center justify-center text-gray-400 opacity-30">
+					<div class="flex size-4 items-center justify-center text-muted-foreground opacity-30">
 						<UncheckedRingIcon />
 					</div>
 				</span>

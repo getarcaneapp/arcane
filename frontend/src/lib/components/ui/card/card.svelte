@@ -6,12 +6,21 @@
 		ref = $bindable(null),
 		class: className,
 		variant = 'default',
+		size = 'default',
+		interactive = false,
+		selected = false,
 		onclick,
 		children,
 		...restProps
 	}: WithElementRef<
 		HTMLAttributes<HTMLDivElement> & {
 			variant?: 'default' | 'subtle' | 'outlined' | 'transparent';
+			/** `sm` tightens the content padding for dense tiles. */
+			size?: 'default' | 'sm';
+			/** Hover affordance for cards that act as links or choices. */
+			interactive?: boolean;
+			/** Highlights the current or chosen card. */
+			selected?: boolean;
 			onclick?: (e: MouseEvent) => void;
 		}
 	> = $props();
@@ -47,12 +56,15 @@
 <div
 	bind:this={ref}
 	data-slot="card"
+	data-size={size}
 	class={cn(
 		'group relative isolate gap-0 overflow-hidden rounded-xl border border-border/70 p-0 text-card-foreground transition-colors duration-200',
 		getVariantClasses(variant),
 		onclick
 			? 'cursor-pointer [&:not(:has(button:hover,a:hover,[role=button]:hover))]:hover:bg-muted/60 [&:not(:has(button:hover,a:hover,[role=button]:hover))]:hover:shadow-sm'
 			: '',
+		interactive && 'transition hover:border-primary/30 hover:shadow-md',
+		selected && 'border-primary/40 bg-primary/5',
 		className
 	)}
 	onclick={onclick ? handleClick : undefined}

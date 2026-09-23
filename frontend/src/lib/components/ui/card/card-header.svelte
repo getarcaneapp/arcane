@@ -10,6 +10,7 @@
 		iconVariant = 'primary',
 		compact = false,
 		enableHover = false,
+		divider = false,
 		loading = false,
 		children,
 		...restProps
@@ -19,31 +20,35 @@
 			iconVariant?: 'primary' | 'emerald' | 'red' | 'amber' | 'blue' | 'purple' | 'cyan' | 'orange' | 'indigo' | 'pink';
 			compact?: boolean;
 			enableHover?: boolean;
+			/** Rule between the header and the content below. */
+			divider?: boolean;
 			loading?: boolean;
 		}
 	> = $props();
 
 	const iconVariantClasses = {
 		primary: 'bg-primary/10 text-primary ring-1 ring-primary/20',
-		emerald: 'bg-emerald-500/10 text-emerald-600 ring-1 ring-emerald-500/20 dark:text-emerald-400',
-		red: 'bg-red-500/10 text-red-600 ring-1 ring-red-500/20 dark:text-red-400',
-		amber: 'bg-amber-500/10 text-amber-600 ring-1 ring-amber-500/20 dark:text-amber-400',
-		blue: 'bg-blue-500/10 text-blue-600 ring-1 ring-blue-500/20 dark:text-blue-400',
-		purple: 'bg-purple-500/10 text-purple-600 ring-1 ring-purple-500/20 dark:text-purple-400',
-		cyan: 'bg-cyan-500/10 text-cyan-600 ring-1 ring-cyan-500/20 dark:text-cyan-400',
-		orange: 'bg-orange-500/10 text-orange-600 ring-1 ring-orange-500/20 dark:text-orange-400',
-		indigo: 'bg-indigo-500/10 text-indigo-600 ring-1 ring-indigo-500/20 dark:text-indigo-400',
-		pink: 'bg-pink-500/10 text-pink-600 ring-1 ring-pink-500/20 dark:text-pink-400'
+		emerald: 'bg-success/10 text-success ring-1 ring-success/20',
+		red: 'bg-destructive/10 text-destructive ring-1 ring-destructive/20',
+		amber: 'bg-warning/10 text-warning ring-1 ring-warning/20',
+		blue: 'bg-info/10 text-info ring-1 ring-info/20',
+		purple: 'bg-purple/10 text-purple ring-1 ring-purple/20',
+		cyan: 'bg-cyan/10 text-cyan ring-1 ring-cyan/20',
+		orange: 'bg-orange/10 text-orange ring-1 ring-orange/20',
+		indigo: 'bg-indigo/10 text-indigo ring-1 ring-indigo/20',
+		pink: 'bg-pink/10 text-pink ring-1 ring-pink/20'
 	};
 </script>
 
 <div
 	bind:this={ref}
 	data-slot="card-header"
+	data-variant={icon ? (compact ? 'compact' : 'icon') : 'plain'}
 	class={cn(
-		'@container/card-header relative grid auto-rows-min grid-rows-[auto_auto] items-start gap-1.5 px-6 has-[[data-slot=card-action]]:grid-cols-[1fr_auto]',
+		'@container/card-header relative grid auto-rows-min grid-rows-[auto_auto] items-start gap-1.5 px-6 has-[[data-slot=card-action]]:grid-cols-content-action',
 		icon && 'flex flex-row items-center space-y-0',
 		icon && compact ? 'gap-2 p-2' : icon ? 'gap-3 p-4' : 'py-5',
+		divider && 'border-b',
 		icon && enableHover && 'transition-colors group-[&:not(:has(button:hover,a:hover,[role=button]:hover))]:hover:bg-muted/30',
 		className
 	)}

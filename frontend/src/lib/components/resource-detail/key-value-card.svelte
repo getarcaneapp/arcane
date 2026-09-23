@@ -1,39 +1,60 @@
 <script lang="ts">
 	import * as Card from '#lib/components/ui/card/index.js';
 	import type { Snippet } from 'svelte';
+	import { cn } from '#lib/utils.js';
 
 	interface Props {
 		label: string;
 		children: Snippet;
-		labelClass?: string;
-		valueClass?: string;
+		/** `code` renders a selectable monospace value; `text` renders plain text. */
+		valueFormat?: 'code' | 'text';
+		/** Stacks multiple value children vertically. */
+		stacked?: boolean;
 		valueTitle?: string;
-		cardClass?: string;
-		contentClass?: string;
+		class?: string;
+		compact?: boolean;
 		variant?: 'default' | 'subtle' | 'outlined';
 	}
 
 	let {
 		label,
 		children,
-		labelClass = 'text-muted-foreground text-xs font-semibold tracking-wide break-all uppercase',
-		valueClass = 'text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all',
+		valueFormat = 'code',
+		stacked = false,
 		valueTitle,
-		cardClass,
-		contentClass,
+		class: className,
+		compact = false,
 		variant = 'subtle'
 	}: Props = $props();
 </script>
 
 {#snippet content()}
-	<Card.Content class={contentClass ?? 'flex flex-col gap-2 p-4'}>
-		<div class={labelClass}>{label}</div>
-		<div class={valueClass} title={valueTitle}>
-			{@render children()}
+	<Card.Content>
+		<div class="flex flex-col gap-2">
+			<div
+				class={compact
+					? 'text-3xs font-semibold tracking-widest text-muted-foreground uppercase'
+					: 'text-xs font-semibold tracking-wide break-all text-muted-foreground uppercase'}
+			>
+				{label}
+			</div>
+			<div
+				class={cn(
+					valueFormat === 'text' && 'text-sm font-medium text-foreground',
+					valueFormat === 'code' && compact && 'text-xs break-all whitespace-pre-wrap',
+					valueFormat === 'code' &&
+						!compact &&
+						'cursor-pointer font-mono text-sm font-medium break-all text-foreground select-all',
+					stacked && 'flex flex-col gap-2'
+				)}
+				title={valueTitle}
+			>
+				{@render children()}
+			</div>
 		</div>
 	</Card.Content>
 {/snippet}
 
-<Card.Root {variant} class={cardClass}>
+<Card.Root {variant} size={compact ? 'sm' : 'default'} class={className}>
 	{@render content()}
 </Card.Root>

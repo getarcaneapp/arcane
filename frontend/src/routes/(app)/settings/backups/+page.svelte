@@ -586,9 +586,9 @@
 
 {#snippet recoveryKeySummary()}
 	{#if !policyCollection.recoveryKeyStored}
-		<div class="flex items-center justify-between gap-3 rounded-md border border-amber-500/40 bg-amber-500/5 px-3 py-2">
+		<div class="flex items-center justify-between gap-3 rounded-md border border-warning/40 bg-warning/5 px-3 py-2">
 			<div class="flex min-w-0 items-center gap-2">
-				<LockIcon class="size-4 shrink-0 text-amber-500" />
+				<LockIcon class="size-4 shrink-0 text-warning" />
 				<p class="text-sm">{m.system_backups_recovery_key_needed()}</p>
 			</div>
 			<ArcaneButton
@@ -608,18 +608,12 @@
 		bind:open={keyOpen}
 		title={m.system_backups_recovery_key()}
 		description={m.system_backups_recovery_key_saved()}
-		contentClass={action === 'create' ? 'sm:max-w-[760px]' : 'sm:max-w-[560px]'}
+		contentClass={action === 'create' ? 'sm:max-w-190' : 'sm:max-w-140'}
 	>
 		{#snippet children()}
 			<div class="space-y-3 py-2">
 				<div class="flex items-center gap-2">
-					<Input
-						id="system-backup-recovery-key"
-						value={newRecoveryKey}
-						readonly
-						spellcheck={false}
-						class="font-mono tracking-wide uppercase"
-					/>
+					<Input id="system-backup-recovery-key" value={newRecoveryKey} readonly spellcheck={false} mono />
 					<CopyButton text={newRecoveryKey} variant="outline" tabindex={0} class="shrink-0" />
 				</div>
 				<Alert.Root variant="destructive">
@@ -639,7 +633,7 @@
 		bind:open={importKeyOpen}
 		title={m.system_backups_import_recovery_key()}
 		description={m.system_backups_import_recovery_key_description()}
-		contentClass="sm:max-w-[560px]"
+		contentClass="sm:max-w-140"
 	>
 		{#snippet children()}
 			<div class="space-y-3 py-2">
@@ -678,7 +672,7 @@
 		bind:open={actionOpen}
 		title={dialogTitle()}
 		description={dialogDescription()}
-		contentClass={action === 'create' ? 'sm:max-w-[760px]' : 'sm:max-w-[560px]'}
+		contentClass={action === 'create' ? 'sm:max-w-190' : 'sm:max-w-140'}
 	>
 		{#snippet children()}
 			<div class="space-y-5 py-2">
@@ -792,13 +786,13 @@
 		}}
 		title={m.volume_restore_files()}
 		description={m.system_backups_restore_files_description()}
-		contentClass="sm:max-w-[640px]"
+		contentClass="sm:max-w-160"
 	>
 		{#snippet children()}
 			<div class="space-y-3 py-2">
-				<Alert.Root class="py-2 [&>svg]:top-2">
+				<Alert.Root size="sm">
 					<InfoIcon class="size-4" />
-					<Alert.Description class="text-xs">
+					<Alert.Description>
 						{m.system_backups_restore_files_lifecycle_info()}
 						{m.system_backups_restore_files_current_directory()}
 					</Alert.Description>
@@ -837,9 +831,9 @@
 						/>
 					{/key}
 
-					<Alert.Root variant="warning" class="py-2 [&>svg]:top-2">
+					<Alert.Root variant="warning" size="sm">
 						<AlertIcon class="size-4" />
-						<Alert.Description class="text-xs">
+						<Alert.Description>
 							{m.volumes_backup_overwrite_warning()}
 						</Alert.Description>
 					</Alert.Root>

@@ -247,7 +247,7 @@
 					</div>
 
 					{#if createdEnvironment.mtlsEnabled}
-						<div class="space-y-3 rounded-lg border border-sky-500/25 bg-sky-500/8 p-4">
+						<div class="space-y-3 rounded-lg border border-info/25 bg-info/8 p-4">
 							<div class="space-y-1">
 								<p class="text-sm font-medium">{m.environments_new_agent_mtls_enabled()}</p>
 								<p class="text-xs text-muted-foreground">
@@ -295,11 +295,11 @@
 			{:else}
 				<Tabs.Root bind:value={connectionMode} class="w-full">
 					<Tabs.List class="grid w-full grid-cols-2">
-						<Tabs.Trigger value="direct" class="flex items-center gap-2">
+						<Tabs.Trigger value="direct" class="flex items-center">
 							<RemoteEnvironmentIcon class="size-4" />
 							Direct
 						</Tabs.Trigger>
-						<Tabs.Trigger value="edge" class="flex items-center gap-2">
+						<Tabs.Trigger value="edge" class="flex items-center">
 							<EdgeConnectionIcon class="size-4" />
 							Edge
 						</Tabs.Trigger>

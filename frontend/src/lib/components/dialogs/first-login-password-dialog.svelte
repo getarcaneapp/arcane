@@ -100,7 +100,7 @@
 	dismissible={false}
 	title={m.first_login_title()}
 	description={m.first_login_description()}
-	contentClass="sm:max-w-[425px]"
+	contentClass="sm:max-w-106.25"
 >
 	<form
 		onsubmit={(e) => {

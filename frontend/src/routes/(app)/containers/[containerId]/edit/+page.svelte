@@ -80,7 +80,7 @@
 	</div>
 
 	<div class="mx-auto w-full max-w-full px-6 py-6">
-		<div class="mb-6 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-600 dark:text-amber-400">
+		<div class="mb-6 rounded-lg border border-warning/40 bg-warning/10 px-4 py-3 text-sm text-warning">
 			{m.edit_recreate_banner()}
 		</div>
 		<ContainerForm

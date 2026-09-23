@@ -37,13 +37,6 @@
 
 	let isEditing = $state(false);
 	let wrapperClass = $derived(cn('group', variant === 'block' ? 'w-full' : 'min-w-0', className));
-	let inputClass = $derived(
-		cn(
-			'h-8 px-2 font-semibold',
-			variant === 'block' ? 'max-w-[280px] min-w-[120px] text-left text-base' : 'max-w-[360px] text-lg',
-			error && 'border-destructive'
-		)
-	);
 
 	async function beginEdit() {
 		if (!canEdit) return;
@@ -59,7 +52,9 @@
 			bind:ref
 			bind:value
 			{placeholder}
-			class={inputClass}
+			size={variant === 'block' ? 'default' : 'lg'}
+			class={variant === 'block' ? 'h-8 max-w-70 min-w-30' : 'h-8 max-w-90'}
+			aria-invalid={!!error}
 			autofocus
 			onkeydown={(e) => {
 				if (e.key === 'Enter') {
@@ -83,7 +78,7 @@
 		<h1 class="m-0 w-full">
 			<button
 				type="button"
-				class="min-h-[32px] w-full rounded bg-transparent px-1 py-1 text-center text-base font-semibold transition-colors hover:bg-muted/50 focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 {error
+				class="min-h-8 w-full rounded bg-transparent px-1 py-1 text-center text-base font-semibold transition-colors hover:bg-muted/50 focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 {error
 					? 'border border-destructive'
 					: ''}"
 				title={canEdit ? `${shownValue || placeholder} (tap to edit)` : shownValue || placeholder}
@@ -97,14 +92,14 @@
 
 		{#if canEdit}
 			<div class="flex items-center justify-center">
-				<span class="flex items-center gap-0.5 text-[8px] whitespace-nowrap text-muted-foreground opacity-30">
+				<span class="flex items-center gap-0.5 text-4xs whitespace-nowrap text-muted-foreground opacity-30">
 					<EditIcon class="size-1.5" />
 					{m.tap_to_edit()}
 				</span>
 			</div>
 		{:else}
 			<div class="flex items-center justify-center">
-				<span class="inline-flex cursor-help items-center gap-0.5 text-[8px] whitespace-nowrap text-muted-foreground opacity-40">
+				<span class="inline-flex cursor-help items-center gap-0.5 text-4xs whitespace-nowrap text-muted-foreground opacity-40">
 					<InfoIcon class="size-1.5" />
 					{m.cannot_edit()}
 				</span>
@@ -112,7 +107,7 @@
 		{/if}
 	{:else}
 		<div class="flex h-8 min-w-0 items-center gap-1.5">
-			<h1 class="m-0 max-w-[360px] min-w-0">
+			<h1 class="m-0 max-w-90 min-w-0">
 				<button
 					type="button"
 					class={cn(

@@ -75,7 +75,7 @@
 	onOpenChange={handleOpenChange}
 	title={m.images_tag_image()}
 	description={m.images_tag_dialog_description()}
-	contentClass="sm:max-w-[520px]"
+	contentClass="sm:max-w-130"
 >
 	{#snippet children()}
 		<form onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-4">

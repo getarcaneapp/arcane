@@ -54,7 +54,7 @@
 
 <div class="space-y-2.5">
 	<div>
-		<Label for={id} class="text-sm font-medium">
+		<Label for={id}>
 			{label}{#if required}<span class="ml-0.5 text-destructive">*</span>{/if}
 		</Label>
 		{#if description}
@@ -74,13 +74,13 @@
 		{autocomplete}
 		{required}
 		oninput={handleInput}
-		class={error ? 'border-destructive' : ''}
+		aria-invalid={!!error}
 	/>
 
 	{#if error}
 		<p class="text-xs font-medium text-destructive">{error}</p>
 	{/if}
 	{#if helpText || reserveHelpTextSpace}
-		<p class="min-h-[1rem] text-xs text-muted-foreground">{helpText}</p>
+		<p class="min-h-4 text-xs text-muted-foreground">{helpText}</p>
 	{/if}
 </div>

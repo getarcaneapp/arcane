@@ -4,5 +4,4 @@ export interface TabItem {
 	icon?: any;
 	badge?: string | number;
 	disabled?: boolean;
-	class?: string;
 }

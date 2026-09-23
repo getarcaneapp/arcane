@@ -118,13 +118,13 @@
 			title: m.volumes_stat_total(),
 			value: volumeUsageCounts.total,
 			icon: VolumesIcon,
-			iconColor: 'text-blue-500'
+			iconColor: 'text-info'
 		},
 		{
 			title: m.unused_volumes(),
 			value: volumeUsageCounts.unused,
 			icon: VolumeUnusedIcon,
-			iconColor: 'text-amber-500'
+			iconColor: 'text-warning'
 		}
 	]);
 </script>

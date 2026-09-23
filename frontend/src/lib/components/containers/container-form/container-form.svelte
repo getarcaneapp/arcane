@@ -135,10 +135,10 @@
 
 {#snippet capabilitySelector(label: string, field: 'capAdd' | 'capDrop', available: { label: string; value: string }[])}
 	<div class="space-y-2">
-		<Label class="text-sm font-medium">{label}</Label>
+		<Label>{label}</Label>
 		<div class="flex flex-wrap gap-1.5">
 			{#each rows[field] as cap (cap)}
-				<Badge variant="secondary" class="gap-1 font-mono text-xs">
+				<Badge variant="secondary" mono>
 					{cap}
 					<button type="button" onclick={() => (rows[field] = rows[field].filter((c) => c !== cap))} disabled={submitting}>
 						<CloseIcon class="size-3" />
@@ -174,244 +174,262 @@
 
 		<div class="flex-1 py-6">
 			<!-- General -->
-			<Tabs.Content value="general" class="mt-0 space-y-6">
-				<div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
-					<div class="space-y-2">
-						<Label for="container-name" class="text-sm font-medium">
-							{m.container_name_label()} <span class="text-destructive">*</span>
-						</Label>
-						<Input
-							id="container-name"
+			<Tabs.Content value="general" class="mt-0">
+				<div class="space-y-6">
+					<div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+						<div class="space-y-2">
+							<Label for="container-name">
+								{m.container_name_label()} <span class="text-destructive">*</span>
+							</Label>
+							<Input
+								id="container-name"
+								type="text"
+								placeholder={m.container_name_placeholder()}
+								disabled={submitting}
+								bind:value={inputs.name.value}
+								aria-invalid={!!inputs.name.error}
+							/>
+							{#if inputs.name.error}
+								<p class="text-xs text-destructive">{inputs.name.error}</p>
+							{/if}
+						</div>
+						<div class="relative space-y-2">
+							<Label for="container-image">
+								{m.common_image()} <span class="text-destructive">*</span>
+							</Label>
+							<Input
+								id="container-image"
+								type="text"
+								placeholder={m.nginx_latest_placeholder()}
+								disabled={submitting}
+								bind:value={inputs.image.value}
+								oninput={onImageInput}
+								aria-invalid={!!inputs.image.error}
+								autocomplete="off"
+							/>
+							{#if imageSuggestions.length > 0}
+								<div class="absolute z-10 w-full rounded-md border bg-popover shadow-md">
+									{#each imageSuggestions as suggestion (suggestion.name)}
+										<button
+											type="button"
+											class="block w-full px-3 py-2 text-left text-sm hover:bg-accent"
+											onclick={() => applyImageSuggestion(suggestion.name)}
+										>
+											<span class="font-mono">{suggestion.name}</span>
+											{#if suggestion.official}
+												<Badge variant="secondary" size="xs" class="ml-2">official</Badge>
+											{/if}
+										</button>
+									{/each}
+								</div>
+							{/if}
+							{#if inputs.image.error}
+								<p class="text-xs text-destructive">{inputs.image.error}</p>
+							{/if}
+							{#if mode === 'edit'}
+								<p class="text-xs text-muted-foreground">{m.image_pull_if_missing_note()}</p>
+							{/if}
+						</div>
+						<FormInput
+							label={m.common_command()}
 							type="text"
-							placeholder={m.container_name_placeholder()}
+							placeholder={m.container_command_placeholder()}
 							disabled={submitting}
-							bind:value={inputs.name.value}
-							class={inputs.name.error ? 'border-destructive' : ''}
+							bind:input={inputs.command}
 						/>
-						{#if inputs.name.error}
-							<p class="text-xs text-destructive">{inputs.name.error}</p>
-						{/if}
-					</div>
-					<div class="relative space-y-2">
-						<Label for="container-image" class="text-sm font-medium">
-							{m.common_image()} <span class="text-destructive">*</span>
-						</Label>
-						<Input
-							id="container-image"
+						<FormInput
+							label={m.common_entrypoint()}
 							type="text"
-							placeholder={m.nginx_latest_placeholder()}
+							placeholder="/docker-entrypoint.sh"
 							disabled={submitting}
-							bind:value={inputs.image.value}
-							oninput={onImageInput}
-							class={inputs.image.error ? 'border-destructive' : ''}
-							autocomplete="off"
+							bind:input={inputs.entrypoint}
 						/>
-						{#if imageSuggestions.length > 0}
-							<div class="absolute z-10 w-full rounded-md border bg-popover shadow-md">
-								{#each imageSuggestions as suggestion (suggestion.name)}
-									<button
-										type="button"
-										class="block w-full px-3 py-2 text-left text-sm hover:bg-accent"
-										onclick={() => applyImageSuggestion(suggestion.name)}
-									>
-										<span class="font-mono">{suggestion.name}</span>
-										{#if suggestion.official}
-											<Badge variant="secondary" class="ml-2 text-[10px]">official</Badge>
-										{/if}
-									</button>
-								{/each}
-							</div>
-						{/if}
-						{#if inputs.image.error}
-							<p class="text-xs text-destructive">{inputs.image.error}</p>
-						{/if}
-						{#if mode === 'edit'}
-							<p class="text-xs text-muted-foreground">{m.image_pull_if_missing_note()}</p>
-						{/if}
+						<FormInput
+							label={m.common_working_directory()}
+							type="text"
+							placeholder={m.app_placeholder()}
+							disabled={submitting}
+							bind:input={inputs.workingDir}
+						/>
+						<FormInput
+							label={m.common_user()}
+							type="text"
+							placeholder={m.container_user_placeholder()}
+							disabled={submitting}
+							bind:input={inputs.user}
+						/>
 					</div>
-					<FormInput
-						label={m.common_command()}
-						type="text"
-						placeholder={m.container_command_placeholder()}
-						disabled={submitting}
-						bind:input={inputs.command}
-					/>
-					<FormInput
-						label={m.common_entrypoint()}
-						type="text"
-						placeholder="/docker-entrypoint.sh"
-						disabled={submitting}
-						bind:input={inputs.entrypoint}
-					/>
-					<FormInput
-						label={m.common_working_directory()}
-						type="text"
-						placeholder={m.app_placeholder()}
-						disabled={submitting}
-						bind:input={inputs.workingDir}
-					/>
-					<FormInput
-						label={m.common_user()}
-						type="text"
-						placeholder={m.container_user_placeholder()}
-						disabled={submitting}
-						bind:input={inputs.user}
-					/>
 				</div>
 			</Tabs.Content>
 
 			<!-- Environment (env vars + labels) -->
-			<Tabs.Content value="environment" class="mt-0 space-y-8">
-				<div class="space-y-4">
-					{@render groupTitle(m.common_environment_variables())}
-					<KeyValueEditor bind:rows={rows.env} disabled={submitting} />
-				</div>
-				<div class="space-y-4">
-					{@render groupTitle(m.common_labels())}
-					<KeyValueEditor
-						bind:rows={rows.labels}
-						disabled={submitting}
-						keyPlaceholder="com.example.key"
-						valuePlaceholder="value"
-					/>
+			<Tabs.Content value="environment" class="mt-0">
+				<div class="space-y-8">
+					<div class="space-y-4">
+						{@render groupTitle(m.common_environment_variables())}
+						<KeyValueEditor bind:rows={rows.env} disabled={submitting} />
+					</div>
+					<div class="space-y-4">
+						{@render groupTitle(m.common_labels())}
+						<KeyValueEditor
+							bind:rows={rows.labels}
+							disabled={submitting}
+							keyPlaceholder="com.example.key"
+							valuePlaceholder="value"
+						/>
+					</div>
 				</div>
 			</Tabs.Content>
 
 			<!-- Ports -->
-			<Tabs.Content value="ports" class="mt-0 space-y-4">
-				{@render groupTitle(m.common_port_mappings())}
-				<PortMappingEditor bind:rows={rows.ports} disabled={submitting} />
+			<Tabs.Content value="ports" class="mt-0">
+				<div class="space-y-4">
+					{@render groupTitle(m.common_port_mappings())}
+					<PortMappingEditor bind:rows={rows.ports} disabled={submitting} />
+				</div>
 			</Tabs.Content>
 
 			<!-- Volumes -->
-			<Tabs.Content value="volumes" class="mt-0 space-y-4">
-				{@render groupTitle(m.resource_volumes_cap(), mode === 'edit' ? m.mount_options_note() : undefined)}
-				<VolumeMountEditor bind:rows={rows.volumes} volumes={volumeNames} disabled={submitting} />
+			<Tabs.Content value="volumes" class="mt-0">
+				<div class="space-y-4">
+					{@render groupTitle(m.resource_volumes_cap(), mode === 'edit' ? m.mount_options_note() : undefined)}
+					<VolumeMountEditor bind:rows={rows.volumes} volumes={volumeNames} disabled={submitting} />
+				</div>
 			</Tabs.Content>
 
 			<!-- Networks -->
-			<Tabs.Content value="networks" class="mt-0 space-y-4">
-				{@render groupTitle(m.resource_networks_cap(), m.aliases_note())}
-				<NetworkAttachmentEditor bind:rows={rows.networks} networks={networkNames} disabled={submitting} />
+			<Tabs.Content value="networks" class="mt-0">
+				<div class="space-y-4">
+					{@render groupTitle(m.resource_networks_cap(), m.aliases_note())}
+					<NetworkAttachmentEditor bind:rows={rows.networks} networks={networkNames} disabled={submitting} />
+				</div>
 			</Tabs.Content>
 
 			<!-- Advanced (resources, security, healthcheck) -->
-			<Tabs.Content value="advanced" class="mt-0 space-y-8">
-				<div class="space-y-4">
-					{@render groupTitle(m.common_resources())}
-					<div class="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
-						<FormInput
-							label={m.memory_limit_mb()}
-							type="number"
-							placeholder="0"
-							disabled={submitting}
-							bind:input={inputs.memoryMb}
-						/>
-						<FormInput
-							label={m.memory_swap_mb()}
-							type="number"
-							placeholder="0"
-							disabled={submitting}
-							bind:input={inputs.memorySwapMb}
-						/>
-						<FormInput label={m.common_cpus()} type="number" placeholder="0" disabled={submitting} bind:input={inputs.cpus} />
-						<FormInput label={m.cpu_shares()} type="number" placeholder="0" disabled={submitting} bind:input={inputs.cpuShares} />
-					</div>
-					<div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
-						<SelectWithLabel
-							id="restart-policy"
-							bind:value={inputs.restartPolicy.value}
-							label={m.restart_policy_label()}
-							options={restartPolicies}
-							placeholder={m.container_select_restart_policy()}
-							disabled={submitting}
-						/>
-						{#if inputs.restartPolicy.value === 'on-failure'}
+			<Tabs.Content value="advanced" class="mt-0">
+				<div class="space-y-8">
+					<div class="space-y-4">
+						{@render groupTitle(m.common_resources())}
+						<div class="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
 							<FormInput
-								label={m.max_retry_label()}
-								type="number"
-								placeholder={m.max_retry_placeholder()}
-								disabled={submitting}
-								bind:input={inputs.restartMaxRetries}
-							/>
-						{/if}
-					</div>
-					<div class="flex items-center space-x-2">
-						<Checkbox id="auto-remove" bind:checked={inputs.autoRemove.value} disabled={submitting} />
-						<Label for="auto-remove" class="text-sm font-normal">{m.auto_remove_label()}</Label>
-					</div>
-				</div>
-
-				<div class="space-y-4 border-t border-border/50 pt-6">
-					{@render groupTitle(m.common_security())}
-					<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-						<div class="flex items-center space-x-2">
-							<Checkbox id="privileged" bind:checked={inputs.privileged.value} disabled={submitting} />
-							<Label for="privileged" class="text-sm font-normal">{m.privileged_label()}</Label>
-						</div>
-						<div class="flex items-center space-x-2">
-							<Checkbox id="readonly-rootfs" bind:checked={inputs.readonlyRootfs.value} disabled={submitting} />
-							<Label for="readonly-rootfs" class="text-sm font-normal">{m.readonly_rootfs_label()}</Label>
-						</div>
-					</div>
-					<div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
-						{@render capabilitySelector(m.cap_add(), 'capAdd', availableCapAdd)}
-						{@render capabilitySelector(m.cap_drop(), 'capDrop', availableCapDrop)}
-					</div>
-				</div>
-
-				<div class="space-y-4 border-t border-border/50 pt-6">
-					{@render groupTitle(m.health_configuration())}
-					<div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
-						<SelectWithLabel
-							id="health-mode"
-							bind:value={inputs.healthMode.value}
-							label={m.common_mode()}
-							options={healthModes}
-							disabled={submitting}
-						/>
-						{#if inputs.healthMode.value === 'custom'}
-							<FormInput
-								label={m.health_test_command()}
-								type="text"
-								placeholder="curl -f http://localhost/ || exit 1"
-								disabled={submitting}
-								bind:input={inputs.healthTest}
-							/>
-						{/if}
-					</div>
-					{#if inputs.healthMode.value === 'custom'}
-						<div class="grid grid-cols-2 gap-6 lg:grid-cols-4">
-							<FormInput
-								label={`${m.health_interval()} (s)`}
-								type="number"
-								placeholder="30"
-								disabled={submitting}
-								bind:input={inputs.healthInterval}
-							/>
-							<FormInput
-								label={`${m.health_timeout()} (s)`}
-								type="number"
-								placeholder="30"
-								disabled={submitting}
-								bind:input={inputs.healthTimeout}
-							/>
-							<FormInput
-								label={`${m.health_start_period()} (s)`}
+								label={m.memory_limit_mb()}
 								type="number"
 								placeholder="0"
 								disabled={submitting}
-								bind:input={inputs.healthStartPeriod}
+								bind:input={inputs.memoryMb}
 							/>
 							<FormInput
-								label={m.health_retries()}
+								label={m.memory_swap_mb()}
 								type="number"
-								placeholder="3"
+								placeholder="0"
 								disabled={submitting}
-								bind:input={inputs.healthRetries}
+								bind:input={inputs.memorySwapMb}
+							/>
+							<FormInput label={m.common_cpus()} type="number" placeholder="0" disabled={submitting} bind:input={inputs.cpus} />
+							<FormInput
+								label={m.cpu_shares()}
+								type="number"
+								placeholder="0"
+								disabled={submitting}
+								bind:input={inputs.cpuShares}
 							/>
 						</div>
-					{/if}
+						<div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+							<SelectWithLabel
+								id="restart-policy"
+								bind:value={inputs.restartPolicy.value}
+								label={m.restart_policy_label()}
+								options={restartPolicies}
+								placeholder={m.container_select_restart_policy()}
+								disabled={submitting}
+							/>
+							{#if inputs.restartPolicy.value === 'on-failure'}
+								<FormInput
+									label={m.max_retry_label()}
+									type="number"
+									placeholder={m.max_retry_placeholder()}
+									disabled={submitting}
+									bind:input={inputs.restartMaxRetries}
+								/>
+							{/if}
+						</div>
+						<div class="flex items-center space-x-2">
+							<Checkbox id="auto-remove" bind:checked={inputs.autoRemove.value} disabled={submitting} />
+							<Label for="auto-remove" weight="normal">{m.auto_remove_label()}</Label>
+						</div>
+					</div>
+
+					<div class="space-y-4 border-t border-border/50 pt-6">
+						{@render groupTitle(m.common_security())}
+						<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+							<div class="flex items-center space-x-2">
+								<Checkbox id="privileged" bind:checked={inputs.privileged.value} disabled={submitting} />
+								<Label for="privileged" weight="normal">{m.privileged_label()}</Label>
+							</div>
+							<div class="flex items-center space-x-2">
+								<Checkbox id="readonly-rootfs" bind:checked={inputs.readonlyRootfs.value} disabled={submitting} />
+								<Label for="readonly-rootfs" weight="normal">{m.readonly_rootfs_label()}</Label>
+							</div>
+						</div>
+						<div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+							{@render capabilitySelector(m.cap_add(), 'capAdd', availableCapAdd)}
+							{@render capabilitySelector(m.cap_drop(), 'capDrop', availableCapDrop)}
+						</div>
+					</div>
+
+					<div class="space-y-4 border-t border-border/50 pt-6">
+						{@render groupTitle(m.health_configuration())}
+						<div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+							<SelectWithLabel
+								id="health-mode"
+								bind:value={inputs.healthMode.value}
+								label={m.common_mode()}
+								options={healthModes}
+								disabled={submitting}
+							/>
+							{#if inputs.healthMode.value === 'custom'}
+								<FormInput
+									label={m.health_test_command()}
+									type="text"
+									placeholder="curl -f http://localhost/ || exit 1"
+									disabled={submitting}
+									bind:input={inputs.healthTest}
+								/>
+							{/if}
+						</div>
+						{#if inputs.healthMode.value === 'custom'}
+							<div class="grid grid-cols-2 gap-6 lg:grid-cols-4">
+								<FormInput
+									label={`${m.health_interval()} (s)`}
+									type="number"
+									placeholder="30"
+									disabled={submitting}
+									bind:input={inputs.healthInterval}
+								/>
+								<FormInput
+									label={`${m.health_timeout()} (s)`}
+									type="number"
+									placeholder="30"
+									disabled={submitting}
+									bind:input={inputs.healthTimeout}
+								/>
+								<FormInput
+									label={`${m.health_start_period()} (s)`}
+									type="number"
+									placeholder="0"
+									disabled={submitting}
+									bind:input={inputs.healthStartPeriod}
+								/>
+								<FormInput
+									label={m.health_retries()}
+									type="number"
+									placeholder="3"
+									disabled={submitting}
+									bind:input={inputs.healthRetries}
+								/>
+							</div>
+						{/if}
+					</div>
 				</div>
 			</Tabs.Content>
 		</div>

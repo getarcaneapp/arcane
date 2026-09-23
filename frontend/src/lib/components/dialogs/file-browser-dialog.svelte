@@ -118,56 +118,58 @@
 		<!-- Breadcrumb navigation. "Root" is the dialog's configured root (or the
 		     repo root when no rootPath was passed). Navigation stops there. -->
 		<div class="flex items-center gap-2 text-sm">
-			<Button variant="ghost" size="sm" onclick={() => (userPath = '')} disabled={atRoot} class="h-8 px-2">
+			<Button variant="ghost" size="sm" onclick={() => (userPath = '')} disabled={atRoot} class="h-8">
 				<FolderOpenIcon class="size-4" />
 				<span class="ml-1">{normalizedRoot || m.git_sync_browse_root()}</span>
 			</Button>
 			{#each pathSegments as segment, index (`${index}-${segment}`)}
 				<ArrowRightIcon class="size-4 text-muted-foreground" />
-				<Button variant="ghost" size="sm" onclick={() => goToPath(index)} class="h-8 px-2">
+				<Button variant="ghost" size="sm" onclick={() => goToPath(index)} class="h-8">
 					{segment}
 				</Button>
 			{/each}
 		</div>
 
 		<!-- File list -->
-		<ScrollArea class="h-96 rounded-md border">
-			{#if loading}
-				<div class="flex items-center justify-center py-8">
-					<Spinner class="size-6" />
-				</div>
-			{:else if files.length === 0}
-				<div class="flex items-center justify-center py-8 text-sm text-muted-foreground">{m.git_sync_browse_no_files()}</div>
-			{:else}
-				<div class="space-y-1 p-2">
-					{#if !atRoot}
-						<button
-							onclick={goBack}
-							class="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left transition-colors hover:bg-accent"
-						>
-							<FolderOpenIcon class="size-4 text-muted-foreground" />
-							<span class="text-sm">..</span>
-						</button>
-					{/if}
-					{#each files as file (file.path)}
-						{@const canSelect = file.type === 'directory' || fileFilter(file)}
-						<button
-							onclick={() => handleFileClick(file)}
-							disabled={!canSelect}
-							class="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
-						>
-							{#if file.type === 'directory'}
-								<FolderOpenIcon class="size-4 text-blue-500" />
-							{:else}
-								<FileTextIcon class="size-4 text-muted-foreground" />
-							{/if}
-							<span class="text-sm">{file.name}</span>
-							{@render fileBadge?.(file)}
-						</button>
-					{/each}
-				</div>
-			{/if}
-		</ScrollArea>
+		<div class="h-96 overflow-hidden rounded-md border">
+			<ScrollArea class="h-full">
+				{#if loading}
+					<div class="flex items-center justify-center py-8">
+						<Spinner class="size-6" />
+					</div>
+				{:else if files.length === 0}
+					<div class="flex items-center justify-center py-8 text-sm text-muted-foreground">{m.git_sync_browse_no_files()}</div>
+				{:else}
+					<div class="space-y-1 p-2">
+						{#if !atRoot}
+							<button
+								onclick={goBack}
+								class="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left transition-colors hover:bg-accent"
+							>
+								<FolderOpenIcon class="size-4 text-muted-foreground" />
+								<span class="text-sm">..</span>
+							</button>
+						{/if}
+						{#each files as file (file.path)}
+							{@const canSelect = file.type === 'directory' || fileFilter(file)}
+							<button
+								onclick={() => handleFileClick(file)}
+								disabled={!canSelect}
+								class="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+							>
+								{#if file.type === 'directory'}
+									<FolderOpenIcon class="size-4 text-info" />
+								{:else}
+									<FileTextIcon class="size-4 text-muted-foreground" />
+								{/if}
+								<span class="text-sm">{file.name}</span>
+								{@render fileBadge?.(file)}
+							</button>
+						{/each}
+					</div>
+				{/if}
+			</ScrollArea>
+		</div>
 
 		{@render footerHint?.()}
 	</div>

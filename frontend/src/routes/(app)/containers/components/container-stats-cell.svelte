@@ -33,7 +33,7 @@
 	<div class="text-xs text-muted-foreground">{m.common_unavailable()}</div>
 {:else if loading}
 	<div class="flex items-center gap-2">
-		<div class="size-[26px] shrink-0 animate-pulse rounded-full bg-muted"></div>
+		<div class="size-6.5 shrink-0 animate-pulse rounded-full bg-muted"></div>
 		<div class="h-3 w-16 animate-pulse rounded bg-muted"></div>
 	</div>
 {:else if type === 'memory' && memoryFormatted}

@@ -17,7 +17,6 @@
 	import { getDefaultProfilePicture } from '#lib/utils/docker.js';
 	import { avatarUploadLimitBytes, prepareAvatarUploadFile } from '#lib/utils/avatar-upload.js';
 	import { formatDate, formatRelativeTime } from '#lib/utils/formatting.js';
-	import { cn } from '#lib/utils.js';
 	import { GLOBAL_SCOPE } from '#lib/types/auth.js';
 	import { Temporal } from 'temporal-polyfill';
 	import { UserIcon, SettingsIcon } from '#lib/icons/index.js';
@@ -212,174 +211,172 @@
 		<Tabs.Root value={activeTab}>
 			<TabBar items={accountTabItems} value={activeTab} onValueChange={urlTab.select} />
 
-			<Tabs.Content value="account" class="mt-6 space-y-10">
-				<section class="space-y-5">
-					<div>
-						<h2 class="text-base font-semibold tracking-tight sm:text-lg">{m.account_profile_title()}</h2>
-						<p class="mt-1 text-xs text-muted-foreground sm:text-sm">{m.account_profile_description()}</p>
-					</div>
-					<ImageCropper.Root
-						id="account-avatar-cropper"
-						bind:src={cropperAvatarSrc}
-						accept="image/png, image/jpeg, image/webp"
-						onCropped={handleCroppedAvatar}
-						onError={handleAvatarCropError}
-						onUnsupportedFile={handleUnsupportedAvatarFile}
-					>
-						<ImageCropper.Dialog>
-							<div class="space-y-1">
-								<h3 class="text-base font-semibold tracking-tight">{m.account_avatar_crop_title()}</h3>
-								<p class="text-sm text-muted-foreground">{m.account_avatar_crop_description()}</p>
-							</div>
-							<div class="h-72 overflow-hidden rounded-lg border bg-muted/40">
-								<ImageCropper.Cropper />
-							</div>
-							<ImageCropper.Controls class="justify-end">
-								<ImageCropper.Cancel disabled={avatarUploading} />
-								<ImageCropper.Crop disabled={avatarUploading} />
-							</ImageCropper.Controls>
-						</ImageCropper.Dialog>
+			<Tabs.Content value="account" class="mt-6">
+				<div class="space-y-10">
+					<section class="space-y-5">
+						<div>
+							<h2 class="text-base font-semibold tracking-tight sm:text-lg">{m.account_profile_title()}</h2>
+							<p class="mt-1 text-xs text-muted-foreground sm:text-sm">{m.account_profile_description()}</p>
+						</div>
+						<ImageCropper.Root
+							id="account-avatar-cropper"
+							bind:src={cropperAvatarSrc}
+							accept="image/png, image/jpeg, image/webp"
+							onCropped={handleCroppedAvatar}
+							onError={handleAvatarCropError}
+							onUnsupportedFile={handleUnsupportedAvatarFile}
+						>
+							<ImageCropper.Dialog>
+								<div class="space-y-1">
+									<h3 class="text-base font-semibold tracking-tight">{m.account_avatar_crop_title()}</h3>
+									<p class="text-sm text-muted-foreground">{m.account_avatar_crop_description()}</p>
+								</div>
+								<div class="h-72 overflow-hidden rounded-lg border bg-muted/40">
+									<ImageCropper.Cropper />
+								</div>
+								<ImageCropper.Controls class="justify-end">
+									<ImageCropper.Cancel disabled={avatarUploading} />
+									<ImageCropper.Crop disabled={avatarUploading} />
+								</ImageCropper.Controls>
+							</ImageCropper.Dialog>
 
-						<div class="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
-							<div class="flex min-w-0 items-center gap-4">
-								<ImageCropper.UploadTrigger
-									aria-label={m.account_upload_photo()}
-									class={cn(
-										'group/avatar relative size-16 overflow-hidden rounded-xl focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:outline-none',
-										avatarUploading && 'pointer-events-none opacity-70'
-									)}
-									disabled={avatarUploading}
-								>
-									{#key avatarCacheBuster}
-										<Avatar.Root class="size-16 rounded-xl transition-all group-hover/avatar:opacity-80">
-											{#if avatarSrc}
-												<Avatar.Image src={avatarSrc} alt={currentUser.displayName ?? currentUser.username} />
-											{:else}
-												{#await avatarUrl}
-													<Avatar.Image src={getDefaultProfilePicture()} alt={currentUser.displayName ?? currentUser.username} />
-												{:then url}
-													<Avatar.Image src={url} alt={currentUser.displayName ?? currentUser.username} />
-												{/await}
-											{/if}
-											<Avatar.Fallback class="rounded-xl bg-primary text-xl font-semibold text-primary-foreground">
-												{(currentUser.displayName ?? currentUser.username).charAt(0).toUpperCase()}
-											</Avatar.Fallback>
-										</Avatar.Root>
-									{/key}
-									<div
-										class="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity group-hover/avatar:opacity-100"
-									>
-										<div class="text-xs font-medium text-white">{m.upload()}</div>
+							<div class="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
+								<div class="flex min-w-0 items-center gap-4">
+									<ImageCropper.UploadTrigger aria-label={m.account_upload_photo()} class="size-16" disabled={avatarUploading}>
+										{#key avatarCacheBuster}
+											<Avatar.Root size="lg">
+												{#if avatarSrc}
+													<Avatar.Image src={avatarSrc} alt={currentUser.displayName ?? currentUser.username} />
+												{:else}
+													{#await avatarUrl}
+														<Avatar.Image
+															src={getDefaultProfilePicture()}
+															alt={currentUser.displayName ?? currentUser.username}
+														/>
+													{:then url}
+														<Avatar.Image src={url} alt={currentUser.displayName ?? currentUser.username} />
+													{/await}
+												{/if}
+												<Avatar.Fallback>
+													{(currentUser.displayName ?? currentUser.username).charAt(0).toUpperCase()}
+												</Avatar.Fallback>
+											</Avatar.Root>
+										{/key}
+										<div
+											class="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity group-hover/avatar:opacity-100"
+										>
+											<div class="text-xs font-medium text-white">{m.upload()}</div>
+										</div>
+									</ImageCropper.UploadTrigger>
+									<div class="flex min-w-0 flex-col items-start gap-1">
+										<div class="text-sm font-medium">@{currentUser.username}</div>
+										<div class="text-xs text-muted-foreground">
+											{isOidcUser ? m.account_single_sign_on() : m.account_local_account()}
+										</div>
+										{#if currentUser.avatarUrl}
+											<div class="mt-1 flex items-center gap-2">
+												<ArcaneButton
+													action="remove"
+													size="sm"
+													tone="ghost"
+													customLabel={m.common_remove()}
+													showLabel={true}
+													class="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+													onclick={removeAvatar}
+													disabled={avatarUploading}
+												/>
+											</div>
+										{/if}
 									</div>
-								</ImageCropper.UploadTrigger>
-								<div class="flex min-w-0 flex-col items-start gap-1">
-									<div class="text-sm font-medium">@{currentUser.username}</div>
-									<div class="text-xs text-muted-foreground">
-										{isOidcUser ? m.account_single_sign_on() : m.account_local_account()}
-									</div>
-									{#if currentUser.avatarUrl}
-										<div class="mt-1 flex items-center gap-2">
-											<ArcaneButton
-												action="remove"
-												size="sm"
-												tone="ghost"
-												customLabel={m.common_remove()}
-												showLabel={true}
-												class="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-												onclick={removeAvatar}
-												disabled={avatarUploading}
-											/>
+								</div>
+								<div class="hidden text-right sm:block">
+									{#if formatDate(currentUser.createdAt)}
+										<div class="text-xs text-muted-foreground">
+											{m.account_member_since()}
+											{formatDate(currentUser.createdAt)}
 										</div>
 									{/if}
-								</div>
-							</div>
-							<div class="hidden text-right sm:block">
-								{#if formatDate(currentUser.createdAt)}
-									<div class="text-xs text-muted-foreground">
-										{m.account_member_since()}
-										{formatDate(currentUser.createdAt)}
+									<div class="text-xs text-muted-foreground" title={currentUser.lastLogin ?? ''}>
+										{m.account_last_login_prefix()}
+										{formatRelativeTime(currentUser.lastLogin) || m.common_never()}
 									</div>
-								{/if}
-								<div class="text-xs text-muted-foreground" title={currentUser.lastLogin ?? ''}>
-									{m.account_last_login_prefix()}
-									{formatRelativeTime(currentUser.lastLogin) || m.common_never()}
 								</div>
 							</div>
-						</div>
-					</ImageCropper.Root>
+						</ImageCropper.Root>
 
-					<div class="grid gap-5 sm:grid-cols-2">
-						<TextInputWithLabel
-							id="account-display-name"
-							bind:value={() => profileDisplayName, (value) => updateProfileField('displayName', value)}
-							label={m.common_display_name()}
-							placeholder={m.account_display_name_placeholder()}
-							disabled={isOidcUser}
-						/>
-						<TextInputWithLabel
-							id="account-email"
-							type="email"
-							bind:value={() => profileEmail, (value) => updateProfileField('email', value)}
-							label={m.common_email()}
-							placeholder={m.account_email_placeholder()}
-							disabled={isOidcUser}
-						/>
-					</div>
-					{#if !isOidcUser}
-						<div class="flex justify-end gap-2">
-							<ArcaneButton
-								action="cancel"
-								tone="outline"
-								customLabel={m.common_reset()}
-								onclick={() => (profileDraft = null)}
-								disabled={!profileDirty || profileSaving}
+						<div class="grid gap-5 sm:grid-cols-2">
+							<TextInputWithLabel
+								id="account-display-name"
+								bind:value={() => profileDisplayName, (value) => updateProfileField('displayName', value)}
+								label={m.common_display_name()}
+								placeholder={m.account_display_name_placeholder()}
+								disabled={isOidcUser}
 							/>
-							<ArcaneButton
-								action="save"
-								customLabel={m.account_save_profile()}
-								onclick={saveProfile}
-								loading={profileSaving}
-								disabled={!profileDirty || profileSaving}
+							<TextInputWithLabel
+								id="account-email"
+								type="email"
+								bind:value={() => profileEmail, (value) => updateProfileField('email', value)}
+								label={m.common_email()}
+								placeholder={m.account_email_placeholder()}
+								disabled={isOidcUser}
 							/>
 						</div>
-					{:else}
-						<p class="text-xs text-muted-foreground">{m.account_profile_managed_by_idp()}</p>
-					{/if}
-
-					<div class="space-y-2 border-t border-border/50 pt-5">
-						<h3 class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-							{m.account_roles_and_access()}
-						</h3>
-						{#if currentUser.roleAssignments && currentUser.roleAssignments.length > 0}
-							<ul class="flex flex-wrap gap-2">
-								{#each currentUser.roleAssignments as ra (`${ra.roleId}-${ra.environmentId ?? 'global'}`)}
-									<li class="rounded-lg border border-border/60 bg-muted/20 px-3 py-1.5">
-										<span class="text-sm font-medium">{prettyRoleName(ra.roleId)}</span>
-										<span class="ml-2 text-xs text-muted-foreground">
-											{ra.environmentId ? m.account_role_environment({ env: ra.environmentId }) : m.account_global_scope()}
-											{#if ra.source === 'oidc'}
-												<span class="ml-1 opacity-70">{m.account_via_sso()}</span>
-											{/if}
-										</span>
-									</li>
-								{/each}
-							</ul>
+						{#if !isOidcUser}
+							<div class="flex justify-end gap-2">
+								<ArcaneButton
+									action="cancel"
+									tone="outline"
+									customLabel={m.common_reset()}
+									onclick={() => (profileDraft = null)}
+									disabled={!profileDirty || profileSaving}
+								/>
+								<ArcaneButton
+									action="save"
+									customLabel={m.account_save_profile()}
+									onclick={saveProfile}
+									loading={profileSaving}
+									disabled={!profileDirty || profileSaving}
+								/>
+							</div>
 						{:else}
-							<p class="text-sm text-muted-foreground">{m.account_no_roles()}</p>
+							<p class="text-xs text-muted-foreground">{m.account_profile_managed_by_idp()}</p>
 						{/if}
 
-						{#if currentUser.permissionsByEnv}
-							{@const envCount = Object.keys(currentUser.permissionsByEnv).length}
-							{@const globalCount = currentUser.permissionsByEnv[GLOBAL_SCOPE]?.length ?? 0}
-							<p class="text-xs text-muted-foreground">
-								{m.account_permissions_summary({ globalCount, environmentCount: envCount })}
-							</p>
-						{/if}
-					</div>
-				</section>
+						<div class="space-y-2 border-t border-border/50 pt-5">
+							<h3 class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+								{m.account_roles_and_access()}
+							</h3>
+							{#if currentUser.roleAssignments && currentUser.roleAssignments.length > 0}
+								<ul class="flex flex-wrap gap-2">
+									{#each currentUser.roleAssignments as ra (`${ra.roleId}-${ra.environmentId ?? 'global'}`)}
+										<li class="rounded-lg border border-border/60 bg-muted/20 px-3 py-1.5">
+											<span class="text-sm font-medium">{prettyRoleName(ra.roleId)}</span>
+											<span class="ml-2 text-xs text-muted-foreground">
+												{ra.environmentId ? m.account_role_environment({ env: ra.environmentId }) : m.account_global_scope()}
+												{#if ra.source === 'oidc'}
+													<span class="ml-1 opacity-70">{m.account_via_sso()}</span>
+												{/if}
+											</span>
+										</li>
+									{/each}
+								</ul>
+							{:else}
+								<p class="text-sm text-muted-foreground">{m.account_no_roles()}</p>
+							{/if}
 
-				<AccountApiKeysPanel />
-				<AccountSecurityPanel />
+							{#if currentUser.permissionsByEnv}
+								{@const envCount = Object.keys(currentUser.permissionsByEnv).length}
+								{@const globalCount = currentUser.permissionsByEnv[GLOBAL_SCOPE]?.length ?? 0}
+								<p class="text-xs text-muted-foreground">
+									{m.account_permissions_summary({ globalCount, environmentCount: envCount })}
+								</p>
+							{/if}
+						</div>
+					</section>
+
+					<AccountApiKeysPanel />
+					<AccountSecurityPanel />
+				</div>
 			</Tabs.Content>
 
 			<Tabs.Content value="preferences" class="mt-6">

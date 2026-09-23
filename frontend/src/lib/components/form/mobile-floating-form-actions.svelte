@@ -22,8 +22,8 @@
 
 {#if isMobile.current}
 	<div
-		class="fixed right-4 z-[var(--arcane-z-app-chrome)] flex flex-col gap-3 transition-[bottom] duration-300 ease-out"
-		style="bottom: {scrollToHideEnabled && !navigation.visible
+		class="fixed right-4 bottom-(--fab-bottom) z-(--arcane-z-app-chrome) flex flex-col gap-3 transition-all duration-300 ease-out"
+		style="--fab-bottom: {scrollToHideEnabled && !navigation.visible
 			? '1rem'
 			: 'calc(var(--mobile-' +
 				navigationMode +
@@ -55,7 +55,7 @@
 
 		<!-- Status indicator for mobile -->
 		{#if hasChanges}
-			<div class="absolute -top-2 -left-2 size-3 animate-pulse rounded-full bg-orange-500"></div>
+			<div class="absolute -top-2 -left-2 size-3 animate-pulse rounded-full bg-warning"></div>
 		{/if}
 	</div>
 {/if}

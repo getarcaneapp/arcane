@@ -9,11 +9,11 @@
 	function lineClassInternal(level: ActivityMessage['level']): string {
 		switch (level) {
 			case 'error':
-				return 'text-red-300';
+				return 'text-destructive';
 			case 'warning':
-				return 'text-amber-300';
+				return 'text-warning';
 			default:
-				return 'text-zinc-100';
+				return 'text-foreground';
 		}
 	}
 </script>

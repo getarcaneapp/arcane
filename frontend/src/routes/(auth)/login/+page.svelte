@@ -160,12 +160,12 @@
 
 <AuthAmbient />
 
-<div class="relative z-[var(--arcane-z-raised)] flex min-h-dvh items-center justify-center p-6">
-	<div class="w-full max-w-[400px]">
+<div class="relative z-(--arcane-z-raised) flex min-h-dvh items-center justify-center p-6">
+	<div class="w-full max-w-100">
 		<div class="flex flex-col items-center">
 			<img class="logo h-12 w-auto sm:h-14" src={logoUrl} alt={m.layout_title()} />
 			{#if data.versionInformation?.displayVersion}
-				<span class="enter mt-3 font-mono text-[10px] tracking-[0.2em] text-muted-foreground/60 uppercase" style="--d: 500ms"
+				<span class="enter mt-3 font-mono text-3xs tracking-ultrawide text-muted-foreground/60 uppercase" style="--d: 500ms"
 					>{data.versionInformation.displayVersion}</span
 				>
 			{/if}
@@ -249,7 +249,7 @@
 					{#if showLocalLoginForm}
 						<form id="login-form" name="login" action="" method="post" onsubmit={handleLogin} class="space-y-4" autocomplete="on">
 							<div class="space-y-2">
-								<Label for="username" class="text-xs">{m.common_username()}</Label>
+								<Label for="username" size="xs">{m.common_username()}</Label>
 								<InputGroup.Root role={undefined}>
 									<InputGroup.Addon role={undefined}>
 										<UserIcon />
@@ -268,7 +268,7 @@
 								</InputGroup.Root>
 							</div>
 							<div class="space-y-2">
-								<Label for="password" class="text-xs">{m.common_password()}</Label>
+								<Label for="password" size="xs">{m.common_password()}</Label>
 								<InputGroup.Root role={undefined}>
 									<InputGroup.Addon role={undefined}>
 										<LockIcon />

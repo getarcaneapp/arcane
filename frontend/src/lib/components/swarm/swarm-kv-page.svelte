@@ -186,94 +186,99 @@
 			title: messages.statTitle,
 			value: items.length,
 			icon,
-			iconColor: 'text-blue-500'
+			iconColor: 'text-info'
 		}
 	]);
 </script>
 
 <ResourcePageLayout title={messages.pageTitle} subtitle={messages.pageSubtitle} {icon} {actionButtons} {statCards}>
 	{#snippet mainContent()}
-		<div class={canManage ? 'grid gap-4 lg:grid-cols-[1fr,1.1fr]' : 'grid gap-4'}>
+		<div class={canManage ? 'grid gap-4 lg:grid-cols-2' : 'grid gap-4'}>
 			{#if canManage}
-				<Card.Root class="pt-0">
+				<Card.Root>
 					<Card.Header>
 						<Card.Title>{messages.createTitle}</Card.Title>
 						<Card.Description>{messages.createSubtitle}</Card.Description>
 					</Card.Header>
-					<Card.Content class="space-y-3 pb-6">
-						<Input placeholder={messages.namePlaceholder} bind:value={createName} />
-						<Textarea rows={10} bind:value={createData} placeholder={messages.dataPlaceholder} class="font-mono text-xs" />
-						<IfPermitted perm={permission}>
-							<ArcaneButton
-								action="create"
-								customLabel={messages.createButton}
-								onclick={handleCreate}
-								disabled={isLoading.create}
-								loading={isLoading.create}
-							/>
-						</IfPermitted>
+					<Card.Content>
+						<div class="flex flex-col gap-3">
+							<Input placeholder={messages.namePlaceholder} bind:value={createName} />
+							<Textarea rows={10} bind:value={createData} placeholder={messages.dataPlaceholder} mono size="sm" />
+							<IfPermitted perm={permission}>
+								<ArcaneButton
+									action="create"
+									customLabel={messages.createButton}
+									onclick={handleCreate}
+									disabled={isLoading.create}
+									loading={isLoading.create}
+								/>
+							</IfPermitted>
+						</div>
 					</Card.Content>
 				</Card.Root>
 			{/if}
 
 			<div class="space-y-4">
-				<Card.Root class="pt-0">
+				<Card.Root>
 					<Card.Header>
 						<Card.Title>{messages.listTitle}</Card.Title>
 						<Card.Description>{messages.listSubtitle}</Card.Description>
 					</Card.Header>
-					<Card.Content class="space-y-3 pb-6">
-						{#if items.length === 0}
-							<div class="py-8 text-center text-sm text-muted-foreground">{messages.empty}</div>
-						{:else}
-							{#each items as item (item.id)}
-								<Card.Root class="overflow-hidden border py-0">
-									<button
-										type="button"
-										class={`w-full px-4 py-3 text-left transition-colors ${selectedId === item.id ? 'bg-muted/50' : 'hover:bg-muted/40'}`}
-										onclick={() => toggleItem(item)}
-									>
-										<div class="flex items-center justify-between gap-2">
-											<div class="min-w-0">
-												<div class="truncate font-medium">{getSwarmSpecName(item.spec, item.id)}</div>
-												<div class="font-mono text-xs text-muted-foreground">{item.id}</div>
-											</div>
-											<div class="shrink-0 text-xs text-muted-foreground">{formatSwarmTimestamp(item.updatedAt)}</div>
-										</div>
-									</button>
-
-									{#if selectedId === item.id}
-										<div class="space-y-3 border-t px-4 pt-4 pb-5">
-											<div class="flex items-center gap-2">
-												<div class="font-mono text-xs text-muted-foreground">{item.id}</div>
-												<CopyButton text={item.id} />
-											</div>
-											<p class="text-sm text-muted-foreground">{messages.immutableNotice}</p>
-											<Input placeholder={messages.namePlaceholder} bind:value={editName} readonly />
-											<Textarea
-												rows={12}
-												bind:value={editData}
-												placeholder={messages.dataPlaceholder}
-												class="font-mono text-xs"
-												readonly
-											/>
-											{#if canManage}
-												<div class="flex flex-wrap items-center gap-2 pt-1">
-													<ArcaneButton
-														action="remove"
-														customLabel={messages.deleteButton}
-														icon={TrashIcon}
-														onclick={() => handleRemove(item)}
-														disabled={isLoading.delete}
-														loading={isLoading.delete}
-													/>
+					<Card.Content>
+						<div class="flex flex-col gap-3">
+							{#if items.length === 0}
+								<div class="py-8 text-center text-sm text-muted-foreground">{messages.empty}</div>
+							{:else}
+								{#each items as item (item.id)}
+									<Card.Root class="overflow-hidden">
+										<button
+											type="button"
+											class={`w-full px-4 py-3 text-left transition-colors ${selectedId === item.id ? 'bg-muted/50' : 'hover:bg-muted/40'}`}
+											onclick={() => toggleItem(item)}
+										>
+											<div class="flex items-center justify-between gap-2">
+												<div class="min-w-0">
+													<div class="truncate font-medium">{getSwarmSpecName(item.spec, item.id)}</div>
+													<div class="font-mono text-xs text-muted-foreground">{item.id}</div>
 												</div>
-											{/if}
-										</div>
-									{/if}
-								</Card.Root>
-							{/each}
-						{/if}
+												<div class="shrink-0 text-xs text-muted-foreground">{formatSwarmTimestamp(item.updatedAt)}</div>
+											</div>
+										</button>
+
+										{#if selectedId === item.id}
+											<div class="space-y-3 border-t px-4 pt-4 pb-5">
+												<div class="flex items-center gap-2">
+													<div class="font-mono text-xs text-muted-foreground">{item.id}</div>
+													<CopyButton text={item.id} />
+												</div>
+												<p class="text-sm text-muted-foreground">{messages.immutableNotice}</p>
+												<Input placeholder={messages.namePlaceholder} bind:value={editName} readonly />
+												<Textarea
+													rows={12}
+													bind:value={editData}
+													placeholder={messages.dataPlaceholder}
+													mono
+													size="sm"
+													readonly
+												/>
+												{#if canManage}
+													<div class="flex flex-wrap items-center gap-2 pt-1">
+														<ArcaneButton
+															action="remove"
+															customLabel={messages.deleteButton}
+															icon={TrashIcon}
+															onclick={() => handleRemove(item)}
+															disabled={isLoading.delete}
+															loading={isLoading.delete}
+														/>
+													</div>
+												{/if}
+											</div>
+										{/if}
+									</Card.Root>
+								{/each}
+							{/if}
+						</div>
 					</Card.Content>
 				</Card.Root>
 			</div>

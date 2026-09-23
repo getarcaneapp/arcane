@@ -84,7 +84,7 @@
 		)}
 		<div class="flex flex-wrap items-center gap-3">
 			<Select.Root type="single" bind:value={selectedPlatform}>
-				<Select.Trigger size="sm" class="w-full sm:w-[180px]">
+				<Select.Trigger size="sm" class="w-full sm:w-45">
 					<span class="truncate">{selectedPlatformLabel}</span>
 				</Select.Trigger>
 				<Select.Content>
@@ -96,7 +96,7 @@
 			</Select.Root>
 
 			<Select.Root type="single" bind:value={selectedPredicateType}>
-				<Select.Trigger size="sm" class="w-full sm:w-[280px]">
+				<Select.Trigger size="sm" class="w-full sm:w-70">
 					<span class="truncate">{selectedPredicateLabel}</span>
 				</Select.Trigger>
 				<Select.Content>

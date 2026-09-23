@@ -24,7 +24,10 @@
 		if (event.defaultPrevented) return;
 		document.getElementById(triggerState.rootState.id)?.click();
 	}}
-	class={cn('hover:cursor-pointer', className)}
+	class={cn(
+		'group/avatar relative overflow-hidden rounded-xl hover:cursor-pointer focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-70',
+		className
+	)}
 >
 	{@render children?.()}
 </button>

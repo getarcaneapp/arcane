@@ -68,7 +68,7 @@
 
 	const sizeClasses = $derived(
 		compact
-			? { iconContainer: 'size-10', image: 'size-5', icon: 'size-4', title: 'text-sm', subtitle: 'text-[10px]' }
+			? { iconContainer: 'size-10', image: 'size-5', icon: 'size-4', title: 'text-sm', subtitle: 'text-3xs' }
 			: { iconContainer: 'size-11', image: 'size-6', icon: 'size-5', title: 'text-base', subtitle: 'text-xs' }
 	);
 
@@ -88,28 +88,28 @@
 
 	function getIconBgClass(variant: IconVariant): string {
 		const map: Record<IconVariant, string> = {
-			emerald: 'bg-emerald-500/8',
-			red: 'bg-red-500/8',
-			amber: 'bg-amber-500/8',
-			blue: 'bg-blue-500/8',
-			purple: 'bg-purple-500/8',
+			emerald: 'bg-success/8',
+			red: 'bg-destructive/8',
+			amber: 'bg-warning/8',
+			blue: 'bg-info/8',
+			purple: 'bg-purple/8',
 			gray: 'bg-muted/40',
-			sky: 'bg-sky-500/8',
-			orange: 'bg-orange-500/8'
+			sky: 'bg-sky/8',
+			orange: 'bg-orange/8'
 		};
 		return map[variant];
 	}
 
 	function getIconTextClass(variant: IconVariant): string {
 		const map: Record<IconVariant, string> = {
-			emerald: 'text-emerald-500',
-			red: 'text-red-500',
-			amber: 'text-amber-500',
-			blue: 'text-blue-500',
-			purple: 'text-purple-500',
+			emerald: 'text-success',
+			red: 'text-destructive',
+			amber: 'text-warning',
+			blue: 'text-info',
+			purple: 'text-purple',
 			gray: 'text-muted-foreground',
-			sky: 'text-sky-500',
-			orange: 'text-orange-500'
+			sky: 'text-sky',
+			orange: 'text-orange'
 		};
 		return map[variant];
 	}
@@ -184,7 +184,7 @@
 {#snippet expandedField(field: FieldDefinition<T>)}
 	{@const value = field.getValue(item)}
 	{#if value !== null && value !== undefined}
-		<div class="flex min-w-0 flex-1 basis-[140px] items-center gap-2.5">
+		<div class="flex min-w-0 flex-1 basis-35 items-center gap-2.5">
 			{#if field.icon}
 				{@const FieldIcon = field.icon}
 				<div
@@ -197,7 +197,7 @@
 				</div>
 			{/if}
 			<div class="min-w-0 flex-1">
-				<div class="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+				<div class="text-2xs font-medium tracking-wide text-muted-foreground uppercase">
 					{field.label}
 				</div>
 				<div class="truncate text-sm leading-snug font-medium">
@@ -222,7 +222,7 @@
 				{@const value = field.getValue(item)}
 				{#if value !== null && value !== undefined}
 					<div class="flex items-baseline gap-2">
-						<span class="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">{field.label}:</span>
+						<span class="text-2xs font-semibold tracking-wide text-muted-foreground uppercase">{field.label}:</span>
 						{@render FieldValue(field, value, true)}
 					</div>
 				{/if}
@@ -234,44 +234,45 @@
 <div class={cn('group relative w-full px-3 py-2', className)}>
 	<Card.Root
 		variant="subtle"
-		class={cn(
-			'overflow-hidden text-left transition-all duration-200',
-			onclick && 'cursor-pointer hover:border-white/20 hover:shadow-md'
-		)}
+		size="sm"
+		interactive={!!onclick}
+		class="overflow-hidden text-left"
 		onclick={onclick ? () => onclick(item) : undefined}
 	>
-		<Card.Content class={cn('flex flex-col text-left', compact ? 'gap-2.5 p-3' : 'gap-3 p-3.5')}>
-			{@render cardHeader()}
+		<Card.Content>
+			<div class={compact ? 'flex flex-col gap-2.5 text-left' : 'flex flex-col gap-3 text-left'}>
+				{@render cardHeader()}
 
-			{#if resolvedBadges.length > 0}
-				<div class="flex flex-wrap items-center gap-1">
-					{#each resolvedBadges as badge (`${badge.variant}:${badge.text}`)}
-						<Badge variant={badge.variant} size="sm" minWidth="20">{badge.text}</Badge>
-					{/each}
-				</div>
-			{/if}
+				{#if resolvedBadges.length > 0}
+					<div class="flex flex-wrap items-center gap-1">
+						{#each resolvedBadges as badge (`${badge.variant}:${badge.text}`)}
+							<Badge variant={badge.variant} size="sm" minWidth="20">{badge.text}</Badge>
+						{/each}
+					</div>
+				{/if}
 
-			{@render additionalFields()}
+				{@render additionalFields()}
 
-			<!-- Custom children content -->
-			{#if children}
-				{@render children()}
-			{/if}
+				<!-- Custom children content -->
+				{#if children}
+					{@render children()}
+				{/if}
+			</div>
 		</Card.Content>
 
 		{#if !compact && footer}
 			{@const footerValue = footer.getValue(item)}
 			{#if footerValue}
 				{@const FooterIcon = footer.icon}
-				<Card.Footer class="flex items-center gap-2.5 border-t border-border/40 bg-muted/30 px-3.5 py-2.5!">
+				<div class="flex items-center gap-2.5 border-t border-border/40 bg-muted/30 px-3.5 py-2.5">
 					<FooterIcon class="size-4 text-muted-foreground" />
-					<span class="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+					<span class="text-2xs font-medium tracking-wide text-muted-foreground uppercase">
 						{footer.label}
 					</span>
 					<span class="ml-auto font-mono text-xs font-medium text-foreground">
 						{footerValue}
 					</span>
-				</Card.Footer>
+				</div>
 			{/if}
 		{/if}
 	</Card.Root>

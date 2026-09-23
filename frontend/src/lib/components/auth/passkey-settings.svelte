@@ -365,7 +365,7 @@
 
 	<div class="space-y-5">
 		{#if recoveryCodes.length > 0}
-			<Alert.Root class="border-primary/30 bg-primary/5">
+			<Alert.Root variant="primary-subtle">
 				<AlertIcon class="size-4 text-primary" />
 				<Alert.Title>{m.account_passkey_mfa_recovery_codes()}</Alert.Title>
 				<Alert.Description>
@@ -401,15 +401,17 @@
 			<Alert.Root variant="destructive">
 				<AlertIcon class="size-4" />
 				<Alert.Title>{m.account_passkey_load_failed()}</Alert.Title>
-				<Alert.Description class="space-y-3">
-					<p>{loadError}</p>
-					<ArcaneButton
-						action="refresh"
-						tone="outline"
-						size="sm"
-						customLabel={m.common_retry()}
-						onclick={() => void loadAccountData()}
-					/>
+				<Alert.Description>
+					<div class="space-y-3">
+						<p>{loadError}</p>
+						<ArcaneButton
+							action="refresh"
+							tone="outline"
+							size="sm"
+							customLabel={m.common_retry()}
+							onclick={() => void loadAccountData()}
+						/>
+					</div>
 				</Alert.Description>
 			</Alert.Root>
 		{/if}

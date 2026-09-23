@@ -39,7 +39,7 @@
 
 {#if visible}
 	<div
-		class={`pointer-events-none fixed inset-x-0 top-0 z-[var(--arcane-z-loading)] ${thickness} ${className}`}
+		class={`pointer-events-none fixed inset-x-0 top-0 z-(--arcane-z-loading) ${thickness} ${className}`}
 		role="progressbar"
 		aria-busy="true"
 		aria-label={m.common_loading()}
@@ -51,7 +51,7 @@
 				<div class="peg absolute top-0 right-0 h-full w-3"></div>
 			</div>
 
-			<div class="bar absolute inset-y-0 left-0 w-1/3" style="animation-delay: -1s;">
+			<div class="bar bar-offset absolute inset-y-0 left-0 w-1/3">
 				<div class="peg absolute top-0 right-0 h-full w-3"></div>
 			</div>
 
@@ -61,24 +61,24 @@
 {/if}
 
 <style>
-	:root {
-		--arcane-primary: hsl(var(--primary));
-	}
-
 	.bar {
-		background: var(--arcane-primary);
+		background: var(--primary);
 		animation: arcane-slide 2s linear infinite;
 		box-shadow:
-			0 0 12px var(--arcane-primary),
-			0 0 2px var(--arcane-primary);
+			0 0 12px var(--primary),
+			0 0 2px var(--primary);
 		opacity: 0.95;
+	}
+
+	.bar-offset {
+		animation-delay: -1s;
 	}
 
 	.peg {
 		background: linear-gradient(
 			to right,
-			color-mix(in oklab, var(--arcane-primary) 0%, transparent),
-			color-mix(in oklab, var(--arcane-primary) 90%, transparent)
+			color-mix(in oklab, var(--primary) 0%, transparent),
+			color-mix(in oklab, var(--primary) 90%, transparent)
 		);
 		filter: blur(2px);
 	}

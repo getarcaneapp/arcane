@@ -796,11 +796,18 @@
 		{/if}
 
 		{#if outlineOpen && activeOutlineItems.length > 0}
-			<div class="outline-panel">
-				<div class="outline-title">Outline</div>
-				<div class="outline-list">
+			<div
+				class="absolute top-2 right-2 z-(--arcane-z-sticky) max-h-full-inset w-64 overflow-hidden rounded-sm border bg-popover text-popover-foreground shadow-lg"
+			>
+				<div class="border-b px-3 py-2 text-xs font-bold">Outline</div>
+				<div class="max-h-80 overflow-auto p-1">
 					{#each activeOutlineItems as item (item.id)}
-						<button type="button" class="outline-item level-{item.level}" onclick={() => jumpToOutlineItem(item)}>
+						<button
+							type="button"
+							class="w-full rounded-sm px-2 py-1 text-left text-xs hover:bg-primary/18"
+							class:pl-4={item.level === 1}
+							onclick={() => jumpToOutlineItem(item)}
+						>
 							{item.label}
 						</button>
 					{/each}
@@ -1016,43 +1023,6 @@
 	:global(.arcane-code-editor .merge-host .cm-merge-b .cm-deletedLineGutter) {
 		background-color: #f85149 !important;
 		color: #fff !important;
-	}
-	.outline-panel {
-		position: absolute;
-		top: 0.5rem;
-		right: 0.5rem;
-		z-index: var(--arcane-z-sticky);
-		width: 16rem;
-		max-height: calc(100% - 1rem);
-		overflow: hidden;
-		border: 1px solid var(--border);
-		border-radius: 0.5rem;
-		background: color-mix(in oklab, var(--background) 95%, black 5%);
-		box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
-	}
-	.outline-title {
-		padding: 0.5rem 0.75rem;
-		font-size: 0.75rem;
-		font-weight: 700;
-		border-bottom: 1px solid var(--border);
-	}
-	.outline-list {
-		max-height: 20rem;
-		overflow: auto;
-		padding: 0.25rem;
-	}
-	.outline-item {
-		width: 100%;
-		text-align: left;
-		padding: 0.25rem 0.5rem;
-		font-size: 0.75rem;
-		border-radius: 0.375rem;
-	}
-	.outline-item:hover {
-		background: color-mix(in oklab, var(--primary) 18%, transparent);
-	}
-	.outline-item.level-1 {
-		padding-left: 1rem;
 	}
 	.editor-status {
 		display: flex;

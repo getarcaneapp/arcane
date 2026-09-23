@@ -100,9 +100,11 @@
 <Dialog.Root {open} onOpenChange={handleOpenChange}>
 	<Dialog.Content class="sm:max-w-md">
 		<Dialog.Header>
-			<Dialog.Title class="flex items-center gap-2">
-				<ApiKeyIcon class="size-5 text-primary" />
-				{m.account_passkey_step_up_title()}
+			<Dialog.Title>
+				<span class="flex items-center gap-2">
+					<ApiKeyIcon class="size-5 text-primary" />
+					{m.account_passkey_step_up_title()}
+				</span>
 			</Dialog.Title>
 			<Dialog.Description>{m.account_passkey_step_up_description()}</Dialog.Description>
 		</Dialog.Header>

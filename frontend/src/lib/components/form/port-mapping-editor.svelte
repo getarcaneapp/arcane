@@ -38,7 +38,8 @@
 				placeholder={m.host_ip_placeholder()}
 				bind:value={row.hostIp}
 				{disabled}
-				class="flex-1 font-mono"
+				mono
+				class="flex-1"
 				title={m.host()}
 			/>
 			<Input
@@ -46,7 +47,8 @@
 				placeholder={m.notifications_signal_port_placeholder()}
 				bind:value={row.hostPort}
 				{disabled}
-				class="flex-1 font-mono"
+				mono
+				class="flex-1"
 			/>
 			<span class="hidden text-muted-foreground sm:inline">→</span>
 			<Input
@@ -54,7 +56,8 @@
 				placeholder={m.container_port_placeholder()}
 				bind:value={row.containerPort}
 				{disabled}
-				class="flex-1 font-mono"
+				mono
+				class="flex-1"
 			/>
 			<select bind:value={row.protocol} {disabled} class="min-w-16 rounded-md border bg-background px-3 py-2 text-sm">
 				<option value="tcp">{m.protocol_tcp()}</option>

@@ -37,13 +37,9 @@
 			<DropdownMenu.Root>
 				<DropdownMenu.Trigger>
 					{#snippet child({ props })}
-						<Sidebar.MenuButton
-							size="lg"
-							class="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
-							{...props}
-						>
+						<Sidebar.MenuButton size="lg" {...props}>
 							{#key user?.updatedAt}
-								<Avatar.Root class="size-8 rounded-lg">
+								<Avatar.Root>
 									{#if user?.avatarUrl}
 										<Avatar.Image src={`${user.avatarUrl}?t=${user.updatedAt}`} alt={displayLabel} />
 									{:else if settingsStore.current?.enableGravatar}
@@ -55,7 +51,7 @@
 											<!-- Gravatar failed, show fallback -->
 										{/await}
 									{/if}
-									<Avatar.Fallback class="rounded-lg bg-primary text-sm font-semibold text-primary-foreground">
+									<Avatar.Fallback>
 										{displayLabel.charAt(0).toUpperCase()}
 									</Avatar.Fallback>
 								</Avatar.Root>
@@ -70,12 +66,7 @@
 						</Sidebar.MenuButton>
 					{/snippet}
 				</DropdownMenu.Trigger>
-				<DropdownMenu.Content
-					class="min-w-60 rounded-xl border border-border/30 p-1.5 shadow-lg backdrop-blur-2xl backdrop-saturate-150"
-					side="right"
-					align="end"
-					sideOffset={12}
-				>
+				<DropdownMenu.Content class="min-w-60" side="right" align="end" sideOffset={12}>
 					<div
 						role="group"
 						tabindex="-1"
@@ -90,7 +81,7 @@
 					>
 						<div class="flex items-center gap-2.5 px-2 py-2">
 							{#key user?.updatedAt}
-								<Avatar.Root class="size-8 shrink-0 rounded-lg">
+								<Avatar.Root>
 									{#if user?.avatarUrl}
 										<Avatar.Image src={`${user.avatarUrl}?t=${user.updatedAt}`} alt={displayLabel} />
 									{:else if settingsStore.current?.enableGravatar}
@@ -102,7 +93,7 @@
 											<!-- Gravatar failed, show fallback -->
 										{/await}
 									{/if}
-									<Avatar.Fallback class="rounded-lg bg-primary text-xs font-semibold text-primary-foreground">
+									<Avatar.Fallback>
 										{displayLabel.charAt(0).toUpperCase()}
 									</Avatar.Fallback>
 								</Avatar.Root>
@@ -116,7 +107,6 @@
 						<DropdownMenu.Separator class="my-1" />
 
 						<DropdownMenu.Item
-							class="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-sm text-foreground transition-colors hover:bg-muted/60"
 							onSelect={() => {
 								goto('/account');
 							}}
@@ -126,7 +116,6 @@
 						</DropdownMenu.Item>
 
 						<DropdownMenu.Item
-							class="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-sm text-foreground transition-colors hover:bg-muted/60"
 							onSelect={() => {
 								goto('/account?tab=preferences');
 							}}

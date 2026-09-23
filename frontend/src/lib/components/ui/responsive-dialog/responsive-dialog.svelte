@@ -85,8 +85,8 @@
 			{/if}
 			<Dialog.Content
 				class={cn(
-					'max-h-[calc(100vh-2rem)] grid-rows-[auto_minmax(0,1fr)_auto]! overflow-hidden p-0!',
-					contentClass ?? 'sm:max-w-[425px]'
+					'max-h-screen-inset-2 grid-rows-[auto_minmax(0,1fr)_auto]! overflow-hidden p-0!',
+					contentClass ?? 'sm:max-w-106.25'
 				)}
 				showCloseButton={showCloseButton && dismissible}
 				interactOutsideBehavior={dismissible ? 'close' : 'ignore'}
@@ -120,7 +120,7 @@
 				{@render trigger()}
 			</Drawer.Trigger>
 		{/if}
-		<Drawer.Content class="flex max-h-[85vh] flex-col overflow-hidden">
+		<Drawer.Content class="flex max-h-screen-85 flex-col overflow-hidden">
 			{#if title || description}
 				<Drawer.Header class="shrink-0 text-left">
 					{#if title}

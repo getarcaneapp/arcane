@@ -48,13 +48,15 @@
 				<Alert.Description>{m.templates_alert_remote_registries_description()}</Alert.Description>
 			</Alert.Root>
 
-			<Alert.Root class="border-primary/20 bg-primary/5 dark:border-primary/30 dark:bg-primary/10">
+			<Alert.Root variant="primary-subtle">
 				<CommunityIcon class="size-4" />
 				<Alert.Title>{m.templates_community_registry_title()}</Alert.Title>
-				<Alert.Description class="space-y-2">
-					<p>{m.templates_community_registry_description()}</p>
-					<div class="flex w-full max-w-[475px] flex-col gap-2">
-						<Snippet text="https://registry.getarcane.app/registry.json" />
+				<Alert.Description>
+					<div class="space-y-2">
+						<p>{m.templates_community_registry_description()}</p>
+						<div class="flex w-full max-w-118.75 flex-col gap-2">
+							<Snippet text="https://registry.getarcane.app/registry.json" />
+						</div>
 					</div>
 				</Alert.Description>
 			</Alert.Root>

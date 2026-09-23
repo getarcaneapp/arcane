@@ -15,7 +15,7 @@
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
 	import { TerminalIcon, TemplateIcon, AddIcon, ArrowDownIcon as ChevronDown, GitBranchIcon } from '#lib/icons/index.js';
-	import { dropdownContentClass, dropdownItemClass, templateBtnClass } from '#lib/utils/compose-flow.js';
+	import { templateBtnClass } from '#lib/utils/compose-flow.js';
 	import { mergeProps } from 'bits-ui';
 
 	interface Props {
@@ -87,7 +87,7 @@
 </script>
 
 {#snippet createTemplateItem()}
-	<DropdownMenu.Item class={dropdownItemClass} disabled={createTemplateDisabled} onclick={onCreateTemplate}>
+	<DropdownMenu.Item disabled={createTemplateDisabled} onclick={onCreateTemplate}>
 		{#if createTemplateLoading}
 			<Spinner class="size-4" />
 		{:else}
@@ -115,7 +115,7 @@
 					/>
 				{/snippet}
 			</ArcaneTooltip.Trigger>
-			<ArcaneTooltip.Content class="arcane-tooltip-content max-w-[280px]">
+			<ArcaneTooltip.Content class="max-w-70">
 				{#if tooltipVisible}
 					<p class="mb-1 text-sm font-medium">{tooltipTitle}</p>
 					<p class="text-xs text-muted-foreground">{tooltipDescription}</p>
@@ -139,19 +139,19 @@
 				/>
 			{/snippet}
 		</DropdownMenu.Trigger>
-		<DropdownMenu.Content align="end" class={dropdownContentClass}>
+		<DropdownMenu.Content align="end" class="min-w-55">
 			<DropdownMenu.Group>
 				{#if showUseTemplate}
-					<DropdownMenu.Item class={dropdownItemClass} disabled={itemsDisabled} onclick={onUseTemplate}>
+					<DropdownMenu.Item disabled={itemsDisabled} onclick={onUseTemplate}>
 						<TemplateIcon class="size-4" />
 						{useTemplateLabel}
 					</DropdownMenu.Item>
 				{/if}
-				<DropdownMenu.Item class={dropdownItemClass} onclick={onConvert}>
+				<DropdownMenu.Item onclick={onConvert}>
 					<TerminalIcon class="size-4" />
 					{convertLabel}
 				</DropdownMenu.Item>
-				<DropdownMenu.Item class={dropdownItemClass} onclick={onFromGit}>
+				<DropdownMenu.Item onclick={onFromGit}>
 					<GitBranchIcon class="size-4" />
 					{fromGitLabel}
 				</DropdownMenu.Item>

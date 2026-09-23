@@ -101,11 +101,11 @@
 
 	const severityItems = $derived.by(() => {
 		const items = [
-			{ key: 'critical', value: summaryCounts.critical, label: m.vuln_severity_critical(), dotClass: 'bg-red-500' },
-			{ key: 'high', value: summaryCounts.high, label: m.vuln_severity_high(), dotClass: 'bg-orange-500' },
-			{ key: 'medium', value: summaryCounts.medium, label: m.vuln_severity_medium(), dotClass: 'bg-amber-500' },
-			{ key: 'low', value: summaryCounts.low, label: m.vuln_severity_low(), dotClass: 'bg-emerald-500' },
-			{ key: 'unknown', value: summaryCounts.unknown, label: m.common_unknown(), dotClass: 'bg-slate-400' }
+			{ key: 'critical', value: summaryCounts.critical, label: m.vuln_severity_critical(), dotClass: 'bg-destructive' },
+			{ key: 'high', value: summaryCounts.high, label: m.vuln_severity_high(), dotClass: 'bg-orange' },
+			{ key: 'medium', value: summaryCounts.medium, label: m.vuln_severity_medium(), dotClass: 'bg-warning' },
+			{ key: 'low', value: summaryCounts.low, label: m.vuln_severity_low(), dotClass: 'bg-success' },
+			{ key: 'unknown', value: summaryCounts.unknown, label: m.common_unknown(), dotClass: 'bg-muted-foreground' }
 		];
 		return items.filter((item) => item.value > 0);
 	});

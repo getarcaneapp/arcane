@@ -3,7 +3,7 @@
 
 	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import { Input } from '#lib/components/ui/input/index.js';
+	import * as InputGroup from '#lib/components/ui/input-group/index.js';
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { environmentManagementService } from '#lib/services/env-mgmt-service.js';
@@ -253,9 +253,11 @@
 		{#if open}
 			<div class="hidden" {@attach openSession} aria-hidden="true"></div>
 		{/if}
-		<div class="relative">
-			<SearchIcon class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-			<Input
+		<InputGroup.Root>
+			<InputGroup.Addon>
+				<SearchIcon aria-hidden="true" />
+			</InputGroup.Addon>
+			<InputGroup.Input
 				type="text"
 				placeholder={m.common_search()}
 				value={searchQuery}
@@ -263,21 +265,22 @@
 					searchQuery = (e.target as HTMLInputElement).value;
 					debouncedSearch(searchQuery);
 				}}
-				class="h-9 pr-10 pl-10"
 			/>
 			{#if searchQuery}
-				<button
-					type="button"
-					onclick={clearSearch}
-					class="absolute top-1/2 right-3 -translate-y-1/2 rounded-sm p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-					title={m.common_clear_search()}
-				>
-					<CloseIcon class="size-4" />
-				</button>
+				<InputGroup.Addon align="inline-end">
+					<InputGroup.Button
+						size="icon-xs"
+						onclick={clearSearch}
+						title={m.common_clear_search()}
+						aria-label={m.common_clear_search()}
+					>
+						<CloseIcon class="size-4" />
+					</InputGroup.Button>
+				</InputGroup.Addon>
 			{/if}
-		</div>
+		</InputGroup.Root>
 
-		<div bind:this={scrollContainer} onscroll={handleScroll} class="max-h-[50vh] min-h-[200px] overflow-y-auto">
+		<div bind:this={scrollContainer} onscroll={handleScroll} class="max-h-screen-50 min-h-50 overflow-y-auto">
 			{#if isLoading}
 				<div class="flex items-center justify-center py-10">
 					<Spinner class="size-6" />

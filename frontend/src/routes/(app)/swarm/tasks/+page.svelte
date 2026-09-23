@@ -48,7 +48,7 @@
 			title: m.swarm_tasks_total(),
 			value: totalTasks,
 			icon: JobsIcon,
-			iconColor: 'text-blue-500'
+			iconColor: 'text-info'
 		}
 	]);
 </script>

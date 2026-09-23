@@ -47,10 +47,7 @@
 					</div>
 					<div>
 						<h2 class="text-sm font-semibold tracking-tight">{m.build_context()}</h2>
-						<p
-							class="mt-0.5 max-w-[220px] truncate text-xs text-muted-foreground sm:max-w-[280px] lg:max-w-[360px]"
-							title={contextDir}
-						>
+						<p class="mt-0.5 max-w-55 truncate text-xs text-muted-foreground sm:max-w-70 lg:max-w-90" title={contextDir}>
 							{contextMode === 'remote' ? `${m.remote_source()}` : `${m.build_context()}:`}
 							{contextDir}
 						</p>
@@ -102,7 +99,7 @@
 					</div>
 
 					<div class="mt-5 space-y-3">
-						<label for="remote-context-url" class="text-xs font-medium tracking-[0.12em] text-muted-foreground uppercase">
+						<label for="remote-context-url" class="text-xs font-medium tracking-widest text-muted-foreground uppercase">
 							{m.git_repository_url()}
 						</label>
 						<input

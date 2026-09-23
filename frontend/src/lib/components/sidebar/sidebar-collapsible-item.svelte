@@ -53,7 +53,7 @@
 		</Sidebar.MenuButton>
 		<Collapsible.Trigger>
 			{#snippet child({ props })}
-				<Sidebar.MenuAction {...props} aria-label={m.sidebar_toggle_submenu()} class="data-[state=open]:bg-sidebar-accent">
+				<Sidebar.MenuAction {...props} aria-label={m.sidebar_toggle_submenu()}>
 					<ArrowRightIcon class="transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
 				</Sidebar.MenuAction>
 			{/snippet}

@@ -126,7 +126,7 @@
 	}
 
 	function getLevelDotClass(level: string | undefined): string {
-		if (!level) return 'bg-zinc-500';
+		if (!level) return 'bg-muted-foreground';
 		const normalizedLevel = level.toLowerCase();
 		if (
 			normalizedLevel === 'error' ||
@@ -136,21 +136,21 @@
 			normalizedLevel === 'panic' ||
 			normalizedLevel === 'emergency'
 		) {
-			return 'bg-red-400';
+			return 'bg-destructive';
 		}
 		if (normalizedLevel === 'warn' || normalizedLevel === 'warning' || normalizedLevel === 'alert') {
-			return 'bg-orange-400';
+			return 'bg-orange';
 		}
 		if (normalizedLevel === 'info' || normalizedLevel === 'information' || normalizedLevel === 'notice') {
-			return 'bg-emerald-400';
+			return 'bg-success';
 		}
 		if (normalizedLevel === 'debug' || normalizedLevel === 'dbg') {
-			return 'bg-sky-400';
+			return 'bg-sky';
 		}
 		if (normalizedLevel === 'trace' || normalizedLevel === 'verbose' || normalizedLevel === 'finest') {
-			return 'bg-violet-400';
+			return 'bg-violet';
 		}
-		return 'bg-zinc-500';
+		return 'bg-muted-foreground';
 	}
 
 	function safeStringify(value: unknown, indent = 0): string {
@@ -251,28 +251,28 @@
 	<div class="min-w-0 flex-1">
 		<div class="flex flex-wrap items-center gap-x-4 gap-y-1">
 			{#if extracted.target}
-				<span class="truncate text-[11px] font-medium text-cyan-400" title={extracted.target}>
+				<span class="truncate text-2xs font-medium text-info" title={extracted.target}>
 					{extracted.target}
 				</span>
 			{/if}
 
 			{#if extracted.message}
-				<span class="min-w-0 text-gray-100">{extracted.message}</span>
+				<span class="min-w-0 text-foreground">{extracted.message}</span>
 			{:else if !extracted.hasStructure}
-				<span class="min-w-0 text-gray-300">{safeStringify(data)}</span>
+				<span class="min-w-0 text-foreground/80">{safeStringify(data)}</span>
 			{/if}
 
 			{#each visibleSummaryFields as field (field.path)}
-				<span class="inline-flex max-w-full min-w-0 items-baseline gap-0.5 text-gray-300">
-					<span class="shrink-0 text-zinc-500">{field.label}=</span>
-					<span class="truncate font-semibold text-zinc-100" title={safeStringify(field.value)}>
+				<span class="inline-flex max-w-full min-w-0 items-baseline gap-0.5 text-foreground/80">
+					<span class="shrink-0 text-muted-foreground">{field.label}=</span>
+					<span class="truncate font-semibold text-foreground" title={safeStringify(field.value)}>
 						{formatInlineValue(field.value)}
 					</span>
 				</span>
 			{/each}
 
 			{#if showOverflowCount && hiddenSummaryCount > 0}
-				<span class="text-[11px] font-medium text-zinc-500">+{hiddenSummaryCount}</span>
+				<span class="text-2xs font-medium text-muted-foreground">+{hiddenSummaryCount}</span>
 			{/if}
 		</div>
 	</div>
@@ -281,16 +281,22 @@
 <Collapsible.Root bind:open={showDetails}>
 	<div class="flex min-w-0 items-start gap-2">
 		{#if hasDetails}
-			<Collapsible.Trigger
-				class="flex min-w-0 flex-1 items-start gap-3 rounded-md border border-transparent px-1 py-0.5 text-left outline-none hover:bg-white/3 focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
-			>
-				{@render entrySummary(true)}
+			<Collapsible.Trigger>
+				{#snippet child({ props })}
+					<button
+						{...props}
+						type="button"
+						class="flex min-w-0 flex-1 items-start gap-3 rounded-md border border-transparent px-1 py-0.5 text-left outline-none hover:bg-white/3 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+					>
+						{@render entrySummary(true)}
 
-				{#if showDetails}
-					<ArrowDownIcon class="mt-0.5 size-4 shrink-0 text-zinc-500" />
-				{:else}
-					<ArrowRightIcon class="mt-0.5 size-4 shrink-0 text-zinc-500" />
-				{/if}
+						{#if showDetails}
+							<ArrowDownIcon class="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+						{:else}
+							<ArrowRightIcon class="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+						{/if}
+					</button>
+				{/snippet}
 			</Collapsible.Trigger>
 		{:else}
 			<div class="flex min-w-0 flex-1 items-start gap-3 px-1 py-0.5">
@@ -301,11 +307,11 @@
 		<button
 			type="button"
 			onclick={copyToClipboard}
-			class="shrink-0 rounded p-1 text-zinc-500 transition-colors hover:bg-white/5 hover:text-zinc-100"
+			class="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground"
 			title={copied ? 'Copied' : 'Copy JSON'}
 		>
 			{#if copied}
-				<CheckIcon class="size-3.5 text-green-400" />
+				<CheckIcon class="size-3.5 text-success" />
 			{:else}
 				<CopyIcon class="size-3.5" />
 			{/if}
@@ -314,12 +320,12 @@
 
 	{#if hasDetails}
 		<Collapsible.Content>
-			<div class="mt-2 rounded-md border border-zinc-800 bg-zinc-950/75 p-3">
+			<div class="mt-2 rounded-md border border-border bg-background/75 p-3">
 				{#if summaryFields.length > 0}
-					<div class="grid gap-x-4 gap-y-2 md:grid-cols-[minmax(140px,180px)_1fr]">
+					<div class="grid gap-x-4 gap-y-2 md:grid-cols-key-value">
 						{#each summaryFields as field (field.path)}
-							<div class="font-mono text-[11px] text-zinc-500">{field.path}</div>
-							<pre class="overflow-x-auto text-xs break-all whitespace-pre-wrap text-zinc-100">{safeStringify(
+							<div class="font-mono text-2xs text-muted-foreground">{field.path}</div>
+							<pre class="overflow-x-auto text-xs break-all whitespace-pre-wrap text-foreground">{safeStringify(
 									field.value,
 									2
 								)}</pre>
@@ -327,8 +333,8 @@
 					</div>
 				{/if}
 
-				<div class="mt-3 border-t border-zinc-800 pt-3">
-					<pre class="overflow-x-auto text-xs break-all whitespace-pre-wrap text-zinc-300">{jsonString}</pre>
+				<div class="mt-3 border-t border-border pt-3">
+					<pre class="overflow-x-auto text-xs break-all whitespace-pre-wrap text-foreground/80">{jsonString}</pre>
 				</div>
 			</div>
 		</Collapsible.Content>

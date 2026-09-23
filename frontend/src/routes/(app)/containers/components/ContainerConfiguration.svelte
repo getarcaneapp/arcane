@@ -29,7 +29,7 @@
 					<Card.Description>{m.containers_env_vars_description()}</Card.Description>
 				</div>
 			</Card.Header>
-			<Card.Content class="p-4">
+			<Card.Content>
 				{#if container.config?.env && container.config.env.length > 0}
 					<EnvVarsList
 						envVars={container.config.env}
@@ -58,7 +58,7 @@
 					<Card.Description>{m.common_labels_description({ resource: m.resource_container() })}</Card.Description>
 				</div>
 			</Card.Header>
-			<Card.Content class="p-4">
+			<Card.Content>
 				{#if container.labels && Object.keys(container.labels).length > 0}
 					<KeyValueGrid>
 						{#each Object.entries(container.labels) as [key, value] (key)}

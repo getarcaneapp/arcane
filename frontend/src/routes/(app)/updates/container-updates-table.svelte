@@ -235,11 +235,7 @@
 			{item.name}
 		</a>
 		{#if item.ignored}
-			<Badge
-				variant="outline"
-				class="text-muted-foreground"
-				title={item.labelControlled ? m.auto_update_controlled_by_label() : undefined}
-			>
+			<Badge variant="gray" title={item.labelControlled ? m.auto_update_controlled_by_label() : undefined}>
 				{m.common_ignored()}
 			</Badge>
 		{/if}

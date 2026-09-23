@@ -293,13 +293,13 @@
 			title: m.images_total(),
 			value: imageUsageCounts.totalImages,
 			icon: VolumesIcon,
-			iconColor: 'text-blue-500'
+			iconColor: 'text-info'
 		},
 		{
 			title: m.images_total_size(),
 			value: String(bytes.format(imageUsageCounts.totalImageSize)),
 			icon: LocalFolderComputerIcon,
-			iconColor: 'text-amber-500'
+			iconColor: 'text-warning'
 		}
 	]);
 </script>
@@ -386,7 +386,7 @@
 								{/if}
 							</div>
 							{#if uploadProgress}
-								<Progress value={(uploadProgress.bytesDone / uploadProgress.totalBytes) * 100} class="h-1.5 rounded-full" />
+								<Progress value={(uploadProgress.bytesDone / uploadProgress.totalBytes) * 100} class="h-1.5" />
 							{/if}
 						</div>
 					{/if}

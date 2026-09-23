@@ -129,10 +129,10 @@
 
 <AuthAmbient />
 
-<main class="relative z-[var(--arcane-z-raised)] flex min-h-dvh items-center justify-center p-5 sm:p-8">
+<main class="relative z-(--arcane-z-raised) flex min-h-dvh items-center justify-center p-5 sm:p-8">
 	<section
 		aria-labelledby="mobile-passkey-title"
-		class="w-full max-w-md rounded-3xl border bg-card/75 p-6 shadow-[0_24px_80px_-32px_rgba(0,0,0,0.55)] ring-1 ring-border/40 backdrop-blur-xl sm:p-8"
+		class="w-full max-w-md rounded-3xl border bg-card/75 p-6 shadow-float ring-1 ring-border/40 backdrop-blur-xl sm:p-8"
 	>
 		<div class="mb-7 flex items-center justify-between gap-4">
 			<div class="flex items-center gap-3">
@@ -144,11 +144,11 @@
 			<ShieldCheckIcon class="size-5 text-primary" />
 		</div>
 
-		<div class="mb-7 h-px w-10 bg-primary/70 shadow-[0_0_8px_var(--primary)]"></div>
+		<div class="mb-7 h-px w-10 bg-primary/70 shadow-glow shadow-primary"></div>
 
 		{#if status === 'preparing'}
 			<div class="flex min-h-64 flex-col items-center justify-center text-center">
-				<Spinner class="size-10 text-primary" />
+				<Spinner tone="primary" class="size-10" />
 				<h1 id="mobile-passkey-title" class="mt-5 text-2xl font-semibold tracking-tight">
 					{m.mobile_passkey_preparing_title()}
 				</h1>

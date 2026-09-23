@@ -172,7 +172,7 @@
 </script>
 
 {#snippet templateCard(template: Template, showRegistry: boolean = false)}
-	<Card class="border transition-colors hover:border-primary/20 hover:bg-muted/50">
+	<Card interactive>
 		<div class="p-4">
 			<div class="mb-2 flex items-start justify-between gap-2">
 				<div class="flex min-w-0 items-start gap-3">
@@ -187,10 +187,10 @@
 				</div>
 				<div class="ml-2 flex flex-shrink-0 flex-wrap items-center gap-1">
 					{#if template.metadata?.version}
-						<Badge variant="outline" class="text-xs">v{template.metadata.version}</Badge>
+						<Badge variant="outline">v{template.metadata.version}</Badge>
 					{/if}
 					{#if template.metadata?.envUrl || template.envContent}
-						<Badge variant="secondary" class="text-xs">
+						<Badge variant="secondary">
 							<SettingsIcon class="mr-1 size-3" />
 							ENV
 						</Badge>
@@ -200,7 +200,7 @@
 
 			{#if showRegistry}
 				<div class="mb-2">
-					<Badge variant="secondary" class="text-xs">
+					<Badge variant="secondary">
 						{#if template.isRemote}
 							<RegistryIcon class="size-3" />
 						{:else}
@@ -261,7 +261,7 @@
 	bind:open
 	title={m.templates_choose_title()}
 	description={m.templates_choose_description()}
-	contentClass="sm:max-w-[900px]"
+	contentClass="sm:max-w-225"
 >
 	{#snippet children()}
 		<div class="space-y-4">
@@ -275,9 +275,9 @@
 					/>
 				</div>
 				<div class="flex items-center gap-3">
-					<Label for="sortBy" class="text-sm font-medium whitespace-nowrap">{m.common_sort_by()}</Label>
+					<Label for="sortBy" class="whitespace-nowrap">{m.common_sort_by()}</Label>
 					<Select.Root bind:value={sortBy} type="single">
-						<Select.Trigger id="sortBy" class="h-9 rounded-md border bg-background px-2 text-sm">
+						<Select.Trigger id="sortBy" class="h-9">
 							{filters[sortBy]}
 						</Select.Trigger>
 						<Select.Content>
@@ -289,7 +289,7 @@
 				</div>
 			</div>
 
-			<ScrollArea class="max-h-[65vh]">
+			<ScrollArea class="max-h-(--max-height-screen-70)">
 				{#if allTemplates.length === 0}
 					<div class="py-10 text-center text-muted-foreground">
 						<FileTextIcon class="mx-auto mb-4 size-12 opacity-50" />
@@ -304,14 +304,18 @@
 					<div class="space-y-3">
 						{#each groupedTemplates as group (group.name)}
 							<Collapsible.Root class="w-full">
-								<Card class="border-2">
-									<Collapsible.Trigger class="flex w-full items-center justify-between px-4 py-3 text-left">
-										<div class="flex items-center gap-2">
-											<ArrowDownIcon class="hidden size-4 data-[state=open]:block" />
-											<ArrowRightIcon class="block size-4 data-[state=open]:hidden" />
-											<span class="font-semibold">{group.name}</span>
-											<Badge variant="secondary" class="ml-2">{group.items.length}</Badge>
-										</div>
+								<Card>
+									<Collapsible.Trigger>
+										{#snippet child({ props })}
+											<button {...props} type="button" class="flex w-full items-center justify-between px-4 py-3 text-left">
+												<div class="flex items-center gap-2">
+													<ArrowDownIcon class="hidden size-4 data-[state=open]:block" />
+													<ArrowRightIcon class="block size-4 data-[state=open]:hidden" />
+													<span class="font-semibold">{group.name}</span>
+													<Badge variant="secondary" class="ml-2">{group.items.length}</Badge>
+												</div>
+											</button>
+										{/snippet}
 									</Collapsible.Trigger>
 									<Collapsible.Content>
 										<div class="px-6 pb-6">

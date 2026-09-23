@@ -68,7 +68,7 @@
 		class={cn(
 			'flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-medium transition-all duration-200 ease-out',
 			focusStyles &&
-				'hover:scale-[1.01] focus-visible:ring-1 focus-visible:ring-muted-foreground/50 focus-visible:ring-offset-1 focus-visible:ring-offset-transparent',
+				'hover:scale-101 focus-visible:ring-1 focus-visible:ring-muted-foreground/50 focus-visible:ring-offset-1 focus-visible:ring-offset-transparent',
 			isActiveItem(item) ? 'bg-muted text-foreground shadow-sm hover:bg-muted/70' : 'text-foreground hover:bg-muted/50'
 		)}
 		aria-current={focusStyles && isActiveItem(item) ? 'page' : undefined}
@@ -87,7 +87,7 @@
 				onclick={handleItemClick}
 				class={cn(
 					'flex items-center gap-3 rounded-xl px-4 py-2 text-sm transition-all duration-200 ease-out',
-					'hover:scale-[1.01] focus-visible:ring-1 focus-visible:ring-muted-foreground/50 focus-visible:ring-offset-1 focus-visible:ring-offset-transparent',
+					'hover:scale-101 focus-visible:ring-1 focus-visible:ring-muted-foreground/50 focus-visible:ring-offset-1 focus-visible:ring-offset-transparent',
 					isActiveItem(subItem)
 						? 'bg-muted/70 text-foreground shadow-sm'
 						: 'text-muted-foreground hover:bg-muted/40 hover:text-foreground'
@@ -117,14 +117,8 @@
 {/snippet}
 
 <Drawer.Root {open} onOpenChange={(nextOpen) => (open = nextOpen)} shouldScaleBackground direction="bottom" modal={true}>
-	<Drawer.Overlay class="fixed inset-0 z-[var(--arcane-z-overlay)] bg-black/40 backdrop-blur-xl" />
-	<Drawer.Content
-		data-testid="mobile-nav-sheet"
-		class={cn(
-			'rounded-t-3xl border border-t bg-background/95 shadow-sm backdrop-blur-md',
-			'z-[var(--arcane-z-surface)] flex max-h-[85vh] flex-col'
-		)}
-	>
+	<Drawer.Overlay />
+	<Drawer.Content data-testid="mobile-nav-sheet" class="flex max-h-(--max-height-screen-85) flex-col">
 		<div class="px-6 pt-4">
 			{#if memoizedUser}
 				<MobileUserCard user={memoizedUser} class="mb-6" />
@@ -135,14 +129,14 @@
 		<div class="scrollbar-hide flex-1 overflow-y-auto px-6">
 			<div class="space-y-8">
 				<section>
-					<h4 class="mb-4 px-3 text-[11px] font-semibold tracking-widest text-muted-foreground/70 uppercase">
+					<h4 class="mb-4 px-3 text-2xs font-semibold tracking-widest text-muted-foreground/70 uppercase">
 						{m.sidebar_management()}
 					</h4>
 					{@render navItems(managementItems, true)}
 				</section>
 
 				<section>
-					<h4 class="mb-4 px-3 text-[11px] font-semibold tracking-widest text-muted-foreground/70 uppercase">
+					<h4 class="mb-4 px-3 text-2xs font-semibold tracking-widest text-muted-foreground/70 uppercase">
 						{m.resources()}
 					</h4>
 					{@render navItems(resourceItems, true)}
@@ -150,7 +144,7 @@
 
 				{#if swarmItems.length > 0}
 					<section>
-						<h4 class="mb-4 px-3 text-[11px] font-semibold tracking-widest text-muted-foreground/70 uppercase">
+						<h4 class="mb-4 px-3 text-2xs font-semibold tracking-widest text-muted-foreground/70 uppercase">
 							{m.swarm()}
 						</h4>
 						<div class="space-y-2">
@@ -163,7 +157,7 @@
 
 				{#if settingsItems.length > 0}
 					<section>
-						<h4 class="mb-4 px-3 text-[11px] font-semibold tracking-widest text-muted-foreground/70 uppercase">
+						<h4 class="mb-4 px-3 text-2xs font-semibold tracking-widest text-muted-foreground/70 uppercase">
 							{m.sidebar_administration()}
 						</h4>
 						{@render navItems(settingsItems, false)}
@@ -200,14 +194,3 @@
 	canConfirm={upgradeCheck.shouldShowUpgrade}
 	debugDemo={debug}
 />
-
-<style>
-	:global(.scrollbar-hide) {
-		-ms-overflow-style: none; /* IE and Edge */
-		scrollbar-width: none; /* Firefox */
-	}
-
-	:global(.scrollbar-hide::-webkit-scrollbar) {
-		display: none; /* Chrome, Safari and Opera */
-	}
-</style>

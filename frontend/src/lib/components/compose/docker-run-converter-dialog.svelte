@@ -57,13 +57,13 @@
 </script>
 
 <Dialog.Root bind:open>
-	<Dialog.Content class="max-h-[80vh] sm:max-w-[800px]">
+	<Dialog.Content class="max-h-(--max-height-screen-80) sm:max-w-200">
 		<Dialog.Header>
 			<Dialog.Title>{m.compose_converter_title()}</Dialog.Title>
 			<Dialog.Description>{m.compose_converter_description()}</Dialog.Description>
 		</Dialog.Header>
 
-		<div class="max-h-[60vh] space-y-4 overflow-y-auto">
+		<div class="max-h-screen-60 space-y-4 overflow-y-auto">
 			<div class="space-y-2">
 				<Label for="dockerRunCommand">{m.docker_run_command()}</Label>
 				<Textarea
@@ -72,12 +72,12 @@
 					placeholder={m.compose_docker_run_placeholder()}
 					rows={3}
 					disabled={converting}
-					class="font-mono text-sm"
+					mono
 				/>
 			</div>
 
 			<div class="space-y-2">
-				<Label class="text-xs text-muted-foreground">{m.compose_example_commands_label()}</Label>
+				<Label variant="muted" size="xs">{m.compose_example_commands_label()}</Label>
 				<div class="space-y-1">
 					{#each exampleCommands as command (command)}
 						<ArcaneButton

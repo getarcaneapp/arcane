@@ -180,7 +180,7 @@
 	variant="sheet"
 	title={m.create_webhook()}
 	description={m.webhook_create_description()}
-	contentClass="sm:max-w-[500px]"
+	contentClass="sm:max-w-125"
 >
 	{#snippet children()}
 		<form onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-6">

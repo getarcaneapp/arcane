@@ -162,7 +162,7 @@
 	description={isEditMode
 		? m.users_edit_description({ username: userToEdit?.username ?? m.common_unknown() })
 		: m.users_create_description()}
-	contentClass="sm:max-w-[640px]"
+	contentClass="sm:max-w-160"
 >
 	{#snippet children()}
 		<form onsubmit={preventDefault(handleSubmit)} novalidate class="grid gap-4 py-6">

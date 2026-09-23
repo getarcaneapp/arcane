@@ -46,7 +46,7 @@
 	{#each rows as row, index (row)}
 		<div class="space-y-2 rounded-lg border border-border/50 p-3">
 			<div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
-				<Badge variant="outline" class="w-fit shrink-0 font-mono text-xs">
+				<Badge variant="outline" mono class="w-fit shrink-0">
 					{row.kind === 'mount'
 						? (row.mountType ?? m.common_mount())
 						: row.kind === 'bind'
@@ -61,7 +61,8 @@
 						placeholder={m.container_source_path_or_volume()}
 						bind:value={row.source}
 						disabled={disabled || row.kind === 'mount'}
-						class="flex-1 font-mono"
+						mono
+						class="flex-1"
 					/>
 				{/if}
 				<span class="hidden text-muted-foreground sm:inline">:</span>
@@ -70,7 +71,8 @@
 					placeholder={m.container_path()}
 					bind:value={row.target}
 					disabled={disabled || row.kind === 'mount'}
-					class="flex-1 font-mono"
+					mono
+					class="flex-1"
 				/>
 				<ArcaneButton
 					action="base"
@@ -85,10 +87,10 @@
 			<div class="flex items-center gap-4">
 				<div class="flex items-center space-x-2">
 					<Checkbox bind:checked={row.readOnly} {disabled} />
-					<Label class="text-sm font-normal">{m.read_only_label()}</Label>
+					<Label weight="normal">{m.read_only_label()}</Label>
 				</div>
 				{#if row.rawOptions}
-					<Badge variant="secondary" class="font-mono text-xs" title={m.mount_options_note()}>
+					<Badge variant="secondary" mono title={m.mount_options_note()}>
 						{row.rawOptions}
 					</Badge>
 				{/if}

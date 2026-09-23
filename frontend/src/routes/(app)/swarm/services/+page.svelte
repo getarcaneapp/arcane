@@ -71,7 +71,7 @@
 			title: m.swarm_services_total(),
 			value: totalServices,
 			icon: DockIcon,
-			iconColor: 'text-blue-500'
+			iconColor: 'text-info'
 		}
 	]);
 </script>

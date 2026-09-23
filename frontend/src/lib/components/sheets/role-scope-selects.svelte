@@ -48,7 +48,7 @@
 	<div class="space-y-2">
 		<Label for="{idPrefix}-role" class="mb-0">{roleLabel}</Label>
 		<Select.Root type="single" bind:value={roleValue} {disabled}>
-			<Select.Trigger id="{idPrefix}-role" class="w-full {roleError ? 'border-destructive' : ''}">
+			<Select.Trigger id="{idPrefix}-role" class="w-full" aria-invalid={!!roleError}>
 				<span>{roleSelectedLabel(roleValue)}</span>
 			</Select.Trigger>
 			<Select.Content>

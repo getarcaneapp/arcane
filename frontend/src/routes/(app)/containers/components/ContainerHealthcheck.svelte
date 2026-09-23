@@ -118,38 +118,44 @@
 				<Card.Description>{m.health_status_description()}</Card.Description>
 			</div>
 		</Card.Header>
-		<Card.Content class="p-4">
+		<Card.Content>
 			<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
 				<Card.Root variant="subtle">
-					<Card.Content class="flex flex-col gap-2 p-4">
-						<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-							{m.common_health_status()}
-						</div>
-						<div>
-							<Badge variant={statusVariant} minWidth="20">{health?.status ?? m.common_unknown()}</Badge>
+					<Card.Content>
+						<div class="flex flex-col gap-2">
+							<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+								{m.common_health_status()}
+							</div>
+							<div>
+								<Badge variant={statusVariant} minWidth="20">{health?.status ?? m.common_unknown()}</Badge>
+							</div>
 						</div>
 					</Card.Content>
 				</Card.Root>
 
 				<Card.Root variant="subtle">
-					<Card.Content class="flex flex-col gap-2 p-4">
-						<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-							{m.health_failing_streak()}
-						</div>
-						<div class="text-sm font-medium text-foreground">
-							{health?.failingStreak ?? 0}
+					<Card.Content>
+						<div class="flex flex-col gap-2">
+							<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+								{m.health_failing_streak()}
+							</div>
+							<div class="text-sm font-medium text-foreground">
+								{health?.failingStreak ?? 0}
+							</div>
 						</div>
 					</Card.Content>
 				</Card.Root>
 
 				{#if retriesBudget}
 					<Card.Root variant="subtle">
-						<Card.Content class="flex flex-col gap-2 p-4">
-							<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-								{m.health_retries_remaining()}
-							</div>
-							<div class="text-sm font-medium text-foreground">
-								{retriesBudget.remaining} / {retriesBudget.retries}
+						<Card.Content>
+							<div class="flex flex-col gap-2">
+								<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+									{m.health_retries_remaining()}
+								</div>
+								<div class="text-sm font-medium text-foreground">
+									{retriesBudget.remaining} / {retriesBudget.retries}
+								</div>
 							</div>
 						</Card.Content>
 					</Card.Root>
@@ -157,16 +163,18 @@
 
 				{#if nextCheck}
 					<Card.Root variant="subtle">
-						<Card.Content class="flex flex-col gap-2 p-4">
-							<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-								{m.health_next_check()}
-							</div>
-							<div class="text-sm font-medium text-foreground" title={formatProbeDate(nextCheck.at)}>
-								{#if nextCheck.overdue}
-									{m.health_next_check_running_now()}
-								{:else}
-									{formatRelativeTime(nextCheck.at)}
-								{/if}
+						<Card.Content>
+							<div class="flex flex-col gap-2">
+								<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+									{m.health_next_check()}
+								</div>
+								<div class="text-sm font-medium text-foreground" title={formatProbeDate(nextCheck.at)}>
+									{#if nextCheck.overdue}
+										{m.health_next_check_running_now()}
+									{:else}
+										{formatRelativeTime(nextCheck.at)}
+									{/if}
+								</div>
 							</div>
 						</Card.Content>
 					</Card.Root>
@@ -184,77 +192,89 @@
 				<Card.Description>{m.health_configuration_description()}</Card.Description>
 			</div>
 		</Card.Header>
-		<Card.Content class="p-4">
+		<Card.Content>
 			<div class="space-y-3">
 				<Card.Root variant="subtle">
-					<Card.Content class="flex flex-col gap-2 p-4">
-						<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-							{m.health_test_command()}
+					<Card.Content>
+						<div class="flex flex-col gap-2">
+							<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+								{m.health_test_command()}
+							</div>
+							{#if testCommand.type === 'inherit'}
+								<div class="text-sm text-muted-foreground italic">
+									{m.health_inherit_from_image()}
+								</div>
+							{:else if testCommand.type === 'none'}
+								<div class="text-sm text-muted-foreground italic">
+									{m.health_disabled_in_image()}
+								</div>
+							{:else}
+								<pre
+									class="cursor-pointer rounded-md bg-black/5 p-2 font-mono text-sm break-all whitespace-pre-wrap text-foreground select-all dark:bg-white/5"
+									title={m.common_click_to_select()}>{testCommand.text}</pre>
+							{/if}
 						</div>
-						{#if testCommand.type === 'inherit'}
-							<div class="text-sm text-muted-foreground italic">
-								{m.health_inherit_from_image()}
-							</div>
-						{:else if testCommand.type === 'none'}
-							<div class="text-sm text-muted-foreground italic">
-								{m.health_disabled_in_image()}
-							</div>
-						{:else}
-							<pre
-								class="cursor-pointer rounded-md bg-black/5 p-2 font-mono text-sm break-all whitespace-pre-wrap text-foreground select-all dark:bg-white/5"
-								title={m.common_click_to_select()}>{testCommand.text}</pre>
-						{/if}
 					</Card.Content>
 				</Card.Root>
 
 				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
 					<Card.Root variant="subtle">
-						<Card.Content class="flex flex-col gap-2 p-4">
-							<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-								{m.health_interval()}
-							</div>
-							<div class="font-mono text-sm font-medium text-foreground">
-								{formatDurationNs(healthcheck?.interval)}
-							</div>
-						</Card.Content>
-					</Card.Root>
-					<Card.Root variant="subtle">
-						<Card.Content class="flex flex-col gap-2 p-4">
-							<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-								{m.health_timeout()}
-							</div>
-							<div class="font-mono text-sm font-medium text-foreground">
-								{formatDurationNs(healthcheck?.timeout)}
+						<Card.Content>
+							<div class="flex flex-col gap-2">
+								<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+									{m.health_interval()}
+								</div>
+								<div class="font-mono text-sm font-medium text-foreground">
+									{formatDurationNs(healthcheck?.interval)}
+								</div>
 							</div>
 						</Card.Content>
 					</Card.Root>
 					<Card.Root variant="subtle">
-						<Card.Content class="flex flex-col gap-2 p-4">
-							<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-								{m.health_start_period()}
-							</div>
-							<div class="font-mono text-sm font-medium text-foreground">
-								{formatDurationNs(healthcheck?.startPeriod)}
-							</div>
-						</Card.Content>
-					</Card.Root>
-					<Card.Root variant="subtle">
-						<Card.Content class="flex flex-col gap-2 p-4">
-							<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-								{m.health_start_interval()}
-							</div>
-							<div class="font-mono text-sm font-medium text-foreground">
-								{formatDurationNs(healthcheck?.startInterval)}
+						<Card.Content>
+							<div class="flex flex-col gap-2">
+								<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+									{m.health_timeout()}
+								</div>
+								<div class="font-mono text-sm font-medium text-foreground">
+									{formatDurationNs(healthcheck?.timeout)}
+								</div>
 							</div>
 						</Card.Content>
 					</Card.Root>
 					<Card.Root variant="subtle">
-						<Card.Content class="flex flex-col gap-2 p-4">
-							<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-								{m.health_retries()}
+						<Card.Content>
+							<div class="flex flex-col gap-2">
+								<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+									{m.health_start_period()}
+								</div>
+								<div class="font-mono text-sm font-medium text-foreground">
+									{formatDurationNs(healthcheck?.startPeriod)}
+								</div>
 							</div>
-							<div class="font-mono text-sm font-medium text-foreground">
-								{healthcheck?.retries ?? 0}
+						</Card.Content>
+					</Card.Root>
+					<Card.Root variant="subtle">
+						<Card.Content>
+							<div class="flex flex-col gap-2">
+								<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+									{m.health_start_interval()}
+								</div>
+								<div class="font-mono text-sm font-medium text-foreground">
+									{formatDurationNs(healthcheck?.startInterval)}
+								</div>
+							</div>
+						</Card.Content>
+					</Card.Root>
+					<Card.Root variant="subtle">
+						<Card.Content>
+							<div class="flex flex-col gap-2">
+								<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+									{m.health_retries()}
+								</div>
+								<div class="font-mono text-sm font-medium text-foreground">
+									{healthcheck?.retries ?? 0}
+								</div>
 							</div>
 						</Card.Content>
 					</Card.Root>
@@ -272,7 +292,7 @@
 				<Card.Description>{m.health_recent_probes_description()}</Card.Description>
 			</div>
 		</Card.Header>
-		<Card.Content class="p-4">
+		<Card.Content>
 			{#if recentProbes.length === 0}
 				<div class="rounded-lg border border-dashed py-8 text-center text-muted-foreground">
 					<div class="text-sm">{m.health_no_probes_yet()}</div>
@@ -282,29 +302,31 @@
 					{#each recentProbes as probe (probeKey(probe))}
 						{@const key = probeKey(probe)}
 						<Card.Root variant="subtle">
-							<Card.Content class="flex flex-col gap-2 p-4">
-								<div class="flex flex-wrap items-center justify-between gap-2">
-									<div class="flex items-center gap-3">
-										<Badge variant={probe.exitCode === 0 ? 'green' : 'red'} size="sm" minWidth="20"
-											>{`${m.health_exit_code()}: ${probe.exitCode}`}</Badge
-										>
-										<span class="text-xs text-muted-foreground" title={formatProbeDate(probe.start)}>
-											{probe.start ? formatRelativeTime(probe.start) : '—'}
-										</span>
-										<span class="text-xs text-muted-foreground">
-											{m.duration()}: {probeDuration(probe.start, probe.end)}
-										</span>
+							<Card.Content>
+								<div class="flex flex-col gap-2">
+									<div class="flex flex-wrap items-center justify-between gap-2">
+										<div class="flex items-center gap-3">
+											<Badge variant={probe.exitCode === 0 ? 'green' : 'red'} size="sm" minWidth="20"
+												>{`${m.health_exit_code()}: ${probe.exitCode}`}</Badge
+											>
+											<span class="text-xs text-muted-foreground" title={formatProbeDate(probe.start)}>
+												{probe.start ? formatRelativeTime(probe.start) : '—'}
+											</span>
+											<span class="text-xs text-muted-foreground">
+												{m.duration()}: {probeDuration(probe.start, probe.end)}
+											</span>
+										</div>
+										{#if probe.output}
+											<button type="button" class="text-xs text-primary hover:underline" onclick={() => toggleExpanded(key)}>
+												{expanded[key] ? m.common_hide() : m.common_show()}
+											</button>
+										{/if}
 									</div>
-									{#if probe.output}
-										<button type="button" class="text-xs text-primary hover:underline" onclick={() => toggleExpanded(key)}>
-											{expanded[key] ? m.common_hide() : m.common_show()}
-										</button>
+									{#if probe.output && expanded[key]}
+										<pre
+											class="max-h-64 overflow-auto rounded-md bg-black/5 p-2 font-mono text-xs whitespace-pre-wrap text-foreground dark:bg-white/5">{probe.output}</pre>
 									{/if}
 								</div>
-								{#if probe.output && expanded[key]}
-									<pre
-										class="max-h-64 overflow-auto rounded-md bg-black/5 p-2 font-mono text-xs whitespace-pre-wrap text-foreground dark:bg-white/5">{probe.output}</pre>
-								{/if}
 							</Card.Content>
 						</Card.Root>
 					{/each}

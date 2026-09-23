@@ -78,9 +78,7 @@
 		<div
 			class={cn(
 				'rounded-lg border px-3 py-2 text-sm',
-				hasScan && count > 0
-					? 'border-rose-500/40 bg-rose-500/10 text-rose-600 dark:text-rose-400'
-					: 'border-border/60 bg-card/40'
+				hasScan && count > 0 ? 'border-destructive/40 bg-destructive/10 text-destructive' : 'border-border/60 bg-card/40'
 			)}
 		>
 			{#if !hasScan}
@@ -128,7 +126,7 @@
 
 	{#if profileText}
 		<pre
-			class="max-h-96 overflow-auto rounded-lg border border-border/60 bg-background p-3 font-mono text-[11px] leading-relaxed">{profileText}</pre>
+			class="max-h-96 overflow-auto rounded-lg border border-border/60 bg-background p-3 font-mono text-2xs leading-relaxed">{profileText}</pre>
 	{:else if hasScan && count === 0}
 		<p class="text-sm text-muted-foreground">{m.diagnostics_leaks_empty()}</p>
 	{/if}

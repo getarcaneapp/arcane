@@ -66,7 +66,7 @@
 			/>
 		</div>
 	</Card.Header>
-	<Card.Content class="p-0">
+	<div>
 		<div class="rounded-lg border bg-card/90 p-0 backdrop-blur-sm">
 			<LogViewer
 				searchTerm={logSearchTerm}
@@ -84,5 +84,5 @@
 				onStop={handleStreamStop}
 			/>
 		</div>
-	</Card.Content>
+	</div>
 </Card.Root>

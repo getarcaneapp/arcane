@@ -48,11 +48,11 @@
 		class={cn(
 			'inline-flex items-center gap-1.5 text-sm tabular-nums transition-colors hover:underline',
 			count === 0 && 'text-muted-foreground',
-			count > 0 && tone === 'amber' && 'text-amber-600 dark:text-amber-400',
-			count > 0 && tone === 'red' && 'text-red-600 dark:text-red-400'
+			count > 0 && tone === 'amber' && 'text-warning',
+			count > 0 && tone === 'red' && 'text-destructive'
 		)}
 	>
-		<Icon class={cn('size-3.5 shrink-0', count === 0 && 'text-emerald-600 dark:text-emerald-400')} />
+		<Icon class={cn('size-3.5 shrink-0', count === 0 && 'text-success')} />
 		{count}
 	</a>
 {/snippet}
@@ -93,17 +93,17 @@
 		</Table.Header>
 		<Table.Body>
 			{#each rows as row (row.environment.id)}
-				<Table.Row class={cn(row.isCurrent && 'bg-primary/5')}>
+				<Table.Row data-state={row.isCurrent ? 'selected' : undefined}>
 					<Table.Cell>
 						<div class="flex min-w-0 items-center gap-2">
 							<a class="truncate font-medium hover:underline" href="/environments/{row.environment.id}">
 								{row.environment.name}
 							</a>
 							{#if row.versionText}
-								<Badge variant="gray" size="sm" class="font-mono">
+								<Badge variant="gray" size="sm" mono>
 									{row.versionText}
 									{#if row.updateAvailable}
-										<span class="ml-1.5 inline-flex h-2 w-2 rounded-full bg-amber-500"></span>
+										<span class="ml-1.5 inline-flex h-2 w-2 rounded-full bg-warning"></span>
 									{/if}
 								</Badge>
 							{/if}
@@ -111,15 +111,15 @@
 					</Table.Cell>
 					<Table.Cell>
 						<span class="flex items-center gap-2">
-							<span class={cn('size-2 rounded-full', row.online ? 'bg-emerald-500' : 'bg-muted-foreground/40')}></span>
+							<span class={cn('size-2 rounded-full', row.online ? 'bg-success' : 'bg-muted-foreground/40')}></span>
 							<span class="text-sm text-muted-foreground">{row.online ? m.common_online() : m.common_offline()}</span>
 						</span>
 					</Table.Cell>
 					{#if row.loading}
 						<Table.Cell colspan={showVulnerabilities ? 7 : 6}><Skeleton class="h-4 w-full max-w-md" /></Table.Cell>
 					{:else}
-						<Table.Cell class="tabular-nums">{row.running}/{row.total}</Table.Cell>
-						<Table.Cell class="tabular-nums">{row.images}</Table.Cell>
+						<Table.Cell><span class="tabular-nums">{row.running}/{row.total}</span></Table.Cell>
+						<Table.Cell><span class="tabular-nums">{row.images}</span></Table.Cell>
 						<Table.Cell>{@render actionCount(row.updates, '/updates', UpdateIcon, 'amber')}</Table.Cell>
 						{#if showVulnerabilities}
 							<Table.Cell>
@@ -152,7 +152,7 @@
 									<DropdownMenu.Item
 										disabled={!!(btn.disabled || btn.loading)}
 										onclick={btn.onclick}
-										class={cn(btn.action === 'prune' && 'text-destructive data-highlighted:text-destructive')}
+										variant={btn.action === 'prune' ? 'destructive' : 'default'}
 									>
 										{#if btn.icon}
 											<btn.icon class="size-4" />

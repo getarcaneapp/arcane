@@ -9,7 +9,8 @@ import type { HTMLAttributes } from 'svelte/elements';
 import type { WithChildren, WithoutChildren } from 'bits-ui';
 
 export type CopyButtonPropsWithoutHTML = WithChildren<
-	Pick<ButtonPropsWithoutHTML, 'size' | 'variant'> & {
+	Pick<ButtonPropsWithoutHTML, 'variant'> & {
+		size?: Exclude<ButtonPropsWithoutHTML['size'], 'inline'>;
 		ref?: HTMLButtonElement | null;
 		text: string;
 		icon?: Snippet<[]>;

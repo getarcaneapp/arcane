@@ -75,7 +75,7 @@
 		if (!isOpen) files = [];
 	}}
 >
-	<Dialog.Content class="sm:max-w-[500px]">
+	<Dialog.Content class="sm:max-w-125">
 		<Dialog.Header>
 			<Dialog.Title>{m.workspace_upload_files()}</Dialog.Title>
 			<Dialog.Description>
@@ -86,13 +86,13 @@
 			<FileDropZone {onUpload} {onFileRejected} multiple fileCount={files.length} disabled={uploading} />
 
 			{#if files.length > 0}
-				<div class="flex max-h-[200px] flex-col gap-2 overflow-y-auto pr-1">
+				<div class="flex max-h-50 flex-col gap-2 overflow-y-auto pr-1">
 					{#each files as file, i (file.name + i)}
 						<div class="flex flex-col gap-1.5 rounded-lg border border-border bg-muted/50 p-2">
 							<div class="flex items-center justify-between gap-2">
 								<div class="flex flex-col overflow-hidden">
 									<span class="truncate text-xs font-medium">{file.name}</span>
-									<span class="text-[10px] text-muted-foreground">{displaySize(file.size)}</span>
+									<span class="text-3xs text-muted-foreground">{displaySize(file.size)}</span>
 								</div>
 								<ArcaneButton
 									action="base"
@@ -105,7 +105,7 @@
 								/>
 							</div>
 							{#if uploadingFile === file.name && uploadProgress}
-								<Progress value={(uploadProgress.bytesDone / uploadProgress.totalBytes) * 100} class="h-1 rounded-full" />
+								<Progress value={(uploadProgress.bytesDone / uploadProgress.totalBytes) * 100} class="h-1" />
 							{/if}
 						</div>
 					{/each}

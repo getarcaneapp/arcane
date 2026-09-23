@@ -36,16 +36,16 @@
 <div class="flex items-center space-x-2">
 	<Switch {...switchProps} bind:checked />
 	<div class="grid gap-1.5 leading-none">
-		<Label for={id} class="mb-0 text-sm leading-none font-medium">
+		<Label for={id} class="mb-0">
 			{label}
 		</Label>
 		{#if error}
-			<p class="text-[0.8rem] font-medium text-destructive">
+			<p class="text-xs font-medium text-destructive">
 				{error}
 			</p>
 		{/if}
 		{#if description}
-			<p class="text-[0.8rem] text-muted-foreground">
+			<p class="text-xs text-muted-foreground">
 				{description}
 			</p>
 		{/if}

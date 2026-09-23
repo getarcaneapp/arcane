@@ -28,7 +28,7 @@
 			</CopyButton>
 		</div>
 	</Card.Header>
-	<Card.Content class="p-0">
+	<div>
 		<pre class="overflow-auto rounded-b-lg bg-muted/40 p-4 font-mono text-xs leading-relaxed"><code>{json}</code></pre>
-	</Card.Content>
+	</div>
 </Card.Root>

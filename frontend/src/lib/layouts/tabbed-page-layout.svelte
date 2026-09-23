@@ -41,13 +41,15 @@
 <div class={cn('flex h-full min-h-0 flex-col bg-background', className)}>
 	<Tabs.Root value={selectedTab} class="flex min-h-0 w-full flex-1 flex-col">
 		<div
-			class="sticky top-0 border-b transition-opacity duration-300"
-			style="opacity: {floatingHeaderVisible ? 0 : 1}; pointer-events: {floatingHeaderVisible ? 'none' : 'auto'};"
+			class={cn(
+				'sticky top-0 border-b transition-opacity duration-300',
+				floatingHeaderVisible && 'pointer-events-none opacity-0'
+			)}
 			inert={floatingHeaderVisible || undefined}
 		>
 			<div class="max-w-full px-4 py-3">
 				<div class="flex items-start gap-3">
-					<div class="flex max-w-[70%] min-w-0 items-start gap-2">
+					<div class="flex max-w-7-10 min-w-0 items-start gap-2">
 						{#if backUrl}
 							<ArcaneButton action="base" tone="ghost" size="sm" href={backUrl}>
 								<ArrowLeftIcon class="size-4" />
@@ -80,7 +82,7 @@
 		{#if floatingHeaderVisible}
 			<!-- A full-width, click-through strip centres the bubble. Positioning the bubble itself at
 			     left-1/2 would cap its shrink-to-fit width at half the viewport. -->
-			<div class="pointer-events-none fixed inset-x-4 top-4 z-[var(--arcane-z-page-floating)] flex justify-center">
+			<div class="pointer-events-none fixed inset-x-4 top-4 z-(--arcane-z-page-floating) flex justify-center">
 				<div
 					class="bubble-shadow-lg pointer-events-auto max-w-full rounded-lg border border-border/50 bg-popover/90 px-4 py-3 backdrop-blur-md supports-backdrop-filter:bg-popover/80"
 				>

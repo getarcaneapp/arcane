@@ -41,5 +41,5 @@
 	}}
 	type="file"
 	{id}
-	style="display: none;"
+	class="hidden"
 />

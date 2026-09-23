@@ -16,7 +16,7 @@
 		options = [],
 		groupLabel,
 		hideLabel = false,
-		triggerClass = 'w-full',
+		compact = false,
 		triggerSize = 'default',
 		onValueChange
 	}: {
@@ -31,7 +31,7 @@
 		options: { label: string; value: string; description?: string; badge?: string }[];
 		groupLabel?: string;
 		hideLabel?: boolean;
-		triggerClass?: string;
+		compact?: boolean;
 		triggerSize?: 'sm' | 'default';
 		onValueChange?: (value: string) => void;
 	} = $props();
@@ -46,7 +46,7 @@
 				<span class="flex items-center gap-2 font-medium">
 					{option.label}
 					{#if option.badge}
-						<Badge variant="purple" size="sm" class="relative -top-px px-1.5 py-0 text-[10px] leading-4">{option.badge}</Badge>
+						<Badge variant="purple" size="xs" class="relative -top-px">{option.badge}</Badge>
 					{/if}
 				</span>
 				{#if option.description}
@@ -64,7 +64,7 @@
 		</Label>
 	{:else}
 		<div>
-			<Label for={id} class="text-sm font-medium">
+			<Label for={id}>
 				{label}
 			</Label>
 			{#if description}
@@ -74,11 +74,11 @@
 	{/if}
 
 	<Select.Root type="single" bind:value {name} {disabled} onValueChange={(v) => onValueChange?.(v)}>
-		<Select.Trigger size={triggerSize} class="{triggerClass} {error ? 'border-destructive' : ''}" {id}>
+		<Select.Trigger size={triggerSize} class={compact ? 'w-40' : 'w-full'} aria-invalid={!!error} {id}>
 			<span class="flex items-center gap-2">
 				{selected?.label ?? placeholder}
 				{#if selected?.badge}
-					<Badge variant="purple" size="sm" class="relative -top-px px-1.5 py-0 text-[10px] leading-4">{selected.badge}</Badge>
+					<Badge variant="purple" size="xs" class="relative -top-px">{selected.badge}</Badge>
 				{/if}
 			</span>
 		</Select.Trigger>

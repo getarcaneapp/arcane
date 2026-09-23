@@ -44,9 +44,8 @@ get along, so we shut typescript up by casting `value` to `never`.
 			<span
 				aria-hidden="true"
 				data-slot="slider-ticks"
-				class="pointer-events-none absolute inset-x-0 top-1/2 -mt-0.5 h-1"
-				style="background-image: repeating-linear-gradient(to right, var(--muted-foreground) 0, var(--muted-foreground) 1px, transparent 1px, transparent calc((100% - 1px) / {ticks.length -
-					1}));"
+				class="pointer-events-none absolute inset-x-0 top-1/2 -mt-0.5 h-1 bg-[repeating-linear-gradient(to_right,var(--muted-foreground)_0,var(--muted-foreground)_1px,transparent_1px,transparent_calc((100%_-_1px)_/_var(--tick-gaps)))]"
+				style="--tick-gaps: {ticks.length - 1}"
 			></span>
 		{/if}
 		{#each thumbItems as thumb (thumb.index)}

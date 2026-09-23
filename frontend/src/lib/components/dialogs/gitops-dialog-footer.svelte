@@ -12,7 +12,7 @@
 	let { cancelLabel, isLoading = false, onCancel, primary }: Props = $props();
 </script>
 
-<Button type="button" class="arcane-button-cancel flex-1" variant="outline" onclick={onCancel} disabled={isLoading}>
+<Button type="button" class="flex-1" variant="outline" onclick={onCancel} disabled={isLoading}>
 	{cancelLabel}
 </Button>
 

@@ -179,7 +179,7 @@
 			/>
 		</div>
 	</Card.Header>
-	<Card.Content class="flex min-h-0 flex-1 flex-col p-0">
+	<div class="flex min-h-0 flex-1 flex-col">
 		<div class="shrink-0 border-b px-4 pb-4" data-testid="container-log-stats">
 			<div class="grid gap-3 md:grid-cols-2">
 				<ContainerLogStatMonitor
@@ -224,5 +224,5 @@
 				onStop={handleStreamStop}
 			/>
 		</div>
-	</Card.Content>
+	</div>
 </Card.Root>

@@ -843,14 +843,16 @@
 						<Card.Description>{workspaceReadOnlyMessage(selectedWorkspaceMetadata.readOnlyReason)}</Card.Description>
 					</div>
 				</Card.Header>
-				<Card.Content class="space-y-2 text-sm text-muted-foreground">
-					<p>{m.common_size()}: {bytes.format(selectedWorkspaceMetadata.size, { unitSeparator: ' ' })}</p>
-					{#if selectedWorkspaceMetadata.mimeType}<p>
-							{m.common_type()}: {selectedWorkspaceMetadata.mimeType}
-						</p>{/if}
-					{#if selectedWorkspaceEntry?.linkTarget}<p>
-							{m.volumes_symlink_target_tooltip({ target: selectedWorkspaceEntry.linkTarget })}
-						</p>{/if}
+				<Card.Content>
+					<div class="flex flex-col gap-2 text-sm text-muted-foreground">
+						<p>{m.common_size()}: {bytes.format(selectedWorkspaceMetadata.size, { unitSeparator: ' ' })}</p>
+						{#if selectedWorkspaceMetadata.mimeType}<p>
+								{m.common_type()}: {selectedWorkspaceMetadata.mimeType}
+							</p>{/if}
+						{#if selectedWorkspaceEntry?.linkTarget}<p>
+								{m.volumes_symlink_target_tooltip({ target: selectedWorkspaceEntry.linkTarget })}
+							</p>{/if}
+					</div>
 				</Card.Content>
 			</Card.Root>
 		</div>
@@ -887,9 +889,9 @@
 
 {#snippet workspaceRestoreForm()}
 	<div class="space-y-4 py-2">
-		<Alert.Root class="py-2 [&>svg]:top-2">
+		<Alert.Root size="sm">
 			<InfoIcon class="size-4" />
-			<Alert.Description class="text-xs">{m.volumes_backup_safety_info()}</Alert.Description>
+			<Alert.Description>{m.volumes_backup_safety_info()}</Alert.Description>
 		</Alert.Root>
 		{#if workspaceRestorePath}
 			<code class="block rounded bg-muted/40 px-2 py-1 font-mono text-xs break-all">/{workspaceRestorePath}</code>
@@ -958,7 +960,7 @@
 					<Alert.Description>{m.volumes_workspace_truncated()}</Alert.Description>
 				</Alert.Root>
 			{/if}
-			<div class="flex h-[calc(100vh-15rem)] min-h-[32rem] flex-col overflow-hidden rounded-lg border border-border bg-card">
+			<div class="flex h-screen-inset-15 min-h-128 flex-col overflow-hidden rounded-lg border border-border bg-card">
 				{#key `arcane.volume.workspace.split:${currentEnvId}:${volume.name}`}
 					<ResizableSplit
 						class="h-full min-h-0 flex-1"
@@ -1096,7 +1098,7 @@
 	onOpenChange={(open) => (showWorkspaceRestore = open)}
 	title={m.volumes_workspace_restore()}
 	description={m.volumes_workspace_backup_restore_desc()}
-	contentClass="sm:max-w-[520px]"
+	contentClass="sm:max-w-130"
 >
 	{#snippet children()}
 		{@render workspaceRestoreForm()}

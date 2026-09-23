@@ -80,7 +80,7 @@
 	contentClass="sm:max-w-3xl"
 >
 	<div class="space-y-5 px-6 py-6">
-		<Alert.Root class="border-primary/20 bg-primary/5">
+		<Alert.Root variant="primary-subtle">
 			<EdgeConnectionIcon class="size-4" />
 			<Alert.Title>{m.swarm_node_agent_dialog_blurb_title()}</Alert.Title>
 			<Alert.Description>{m.swarm_node_agent_dialog_blurb_description()}</Alert.Description>

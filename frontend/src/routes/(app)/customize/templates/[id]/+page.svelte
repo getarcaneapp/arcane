@@ -302,12 +302,12 @@
 		actions={remoteActions}
 	>
 		{#snippet badges()}
-			<Badge variant="secondary" class="gap-1">
+			<Badge variant="secondary">
 				<GlobeIcon class="size-3" />
 				{m.templates_remote()}
 			</Badge>
 			{#if template.registry?.name}
-				<Badge variant="outline" class="gap-1">
+				<Badge variant="outline">
 					<RegistryIcon class="size-3" />
 					{template.registry.name}
 				</Badge>
@@ -321,7 +321,7 @@
 						<CodeIcon class="size-4 text-muted-foreground" />
 						<h2 class="font-mono text-sm font-medium">compose.yaml</h2>
 					</div>
-					<div class="relative h-[480px] overflow-hidden rounded-lg border border-border/50 sm:h-[560px]">
+					<div class="relative h-120 overflow-hidden rounded-lg border border-border/50 sm:h-140">
 						<div class="absolute inset-0">
 							<CodeEditor bind:value={data.templateData.content} language="yaml" readOnly={true} fontSize="13px" />
 						</div>
@@ -334,7 +334,7 @@
 							<FileTextIcon class="size-4 text-muted-foreground" />
 							<h2 class="font-mono text-sm font-medium">.env</h2>
 						</div>
-						<div class="relative h-[280px] overflow-hidden rounded-lg border border-border/50">
+						<div class="relative h-70 overflow-hidden rounded-lg border border-border/50">
 							<div class="absolute inset-0">
 								<CodeEditor bind:value={data.templateData.envContent} language="env" readOnly={true} fontSize="13px" />
 							</div>
@@ -431,7 +431,7 @@
 						<h3 class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{m.common_tags()}</h3>
 						<div class="flex flex-wrap gap-1">
 							{#each template.metadata.tags as tag (tag)}
-								<Badge variant="outline" class="text-xs">{tag}</Badge>
+								<Badge variant="outline">{tag}</Badge>
 							{/each}
 						</div>
 					</div>

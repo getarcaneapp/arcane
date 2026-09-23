@@ -215,7 +215,7 @@
 
 <svelte:window onresize={handleResize} />
 
-<div {@attach attachTerminal} class="terminal-container h-full w-full" style="height: {height}"></div>
+<div {@attach attachTerminal} class="terminal-container h-(--terminal-height) w-full" style="--terminal-height: {height}"></div>
 
 <style>
 	:global(.terminal-container .xterm) {

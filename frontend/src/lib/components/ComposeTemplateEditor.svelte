@@ -53,7 +53,7 @@
 	envClass="contents"
 >
 	{#snippet compose()}
-		<Card.Root class="flex min-h-[360px] min-w-0 flex-1 flex-col lg:col-span-3 lg:min-h-0">
+		<Card.Root class="flex min-h-90 min-w-0 flex-1 flex-col lg:col-span-3 lg:min-h-0">
 			<Card.Header icon={CodeIcon} class="shrink-0">
 				<div class="flex flex-col space-y-1.5">
 					<Card.Title>
@@ -62,7 +62,7 @@
 					<Card.Description>{composeDescription}</Card.Description>
 				</div>
 			</Card.Header>
-			<Card.Content class="flex min-h-0 min-w-0 flex-1 flex-col p-0">
+			<div class="flex min-h-0 min-w-0 flex-1 flex-col">
 				<div class="min-h-0 min-w-0 flex-1 rounded-b-xl">
 					<CodeEditor
 						bind:value={composeValue}
@@ -81,9 +81,9 @@
 						}}
 					/>
 				</div>
-			</Card.Content>
+			</div>
 			{#if composeError}
-				<Card.Footer class="pt-0">
+				<Card.Footer>
 					<p class="text-xs font-medium text-destructive">{composeError}</p>
 				</Card.Footer>
 			{/if}
@@ -91,7 +91,7 @@
 	{/snippet}
 
 	{#snippet env()}
-		<Card.Root class="flex min-h-[360px] min-w-0 flex-1 flex-col lg:col-span-2 lg:min-h-0">
+		<Card.Root class="flex min-h-90 min-w-0 flex-1 flex-col lg:col-span-2 lg:min-h-0">
 			<Card.Header icon={VariableIcon} class="shrink-0">
 				<div class="flex flex-col space-y-1.5">
 					<Card.Title>
@@ -100,7 +100,7 @@
 					<Card.Description>{envDescription}</Card.Description>
 				</div>
 			</Card.Header>
-			<Card.Content class="flex min-h-0 min-w-0 flex-1 flex-col p-0">
+			<div class="flex min-h-0 min-w-0 flex-1 flex-col">
 				<div class="min-h-0 min-w-0 flex-1 rounded-b-xl">
 					<CodeEditor
 						bind:value={envValue}
@@ -119,9 +119,9 @@
 						}}
 					/>
 				</div>
-			</Card.Content>
+			</div>
 			{#if envError}
-				<Card.Footer class="pt-0">
+				<Card.Footer>
 					<p class="text-xs font-medium text-destructive">{envError}</p>
 				</Card.Footer>
 			{/if}

@@ -48,7 +48,7 @@ export interface ResponsiveDialogProps {
 
 	/**
 	 * CSS class for the dialog content container
-	 * @default 'sm:max-w-[425px]'
+	 * @default 'sm:max-w-106.25'
 	 */
 	contentClass?: string;
 

@@ -121,13 +121,13 @@
 			title: m.networks_total(),
 			value: networkUsageCounts.total,
 			icon: NetworksIcon,
-			iconColor: 'text-blue-500'
+			iconColor: 'text-info'
 		},
 		{
 			title: m.unused_networks(),
 			value: networkUsageCounts.unused,
 			icon: ConnectionIcon,
-			iconColor: 'text-amber-500'
+			iconColor: 'text-warning'
 		}
 	]);
 </script>

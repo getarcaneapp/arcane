@@ -98,9 +98,9 @@
 	</Sidebar.MenuItem>
 {/snippet}
 
-<Sidebar.Group class="p-1.5">
-	<Sidebar.GroupLabel class="h-7 px-1.5 group-data-[collapsible=icon]:-mt-7">{label}</Sidebar.GroupLabel>
-	<Sidebar.Menu class="gap-0.5">
+<Sidebar.Group>
+	<Sidebar.GroupLabel class="group-data-[collapsible=icon]:-mt-7">{label}</Sidebar.GroupLabel>
+	<Sidebar.Menu>
 		{#each enhancedItems as item (item.url)}
 			{#if (item.items?.length ?? 0) > 0}
 				{#if sidebar.state === 'collapsed' && !sidebar.hoverExpansionEnabled}

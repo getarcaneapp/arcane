@@ -19,7 +19,7 @@
 		'flex-shrink-0 rounded-full transition-all duration-200 ease-out active:scale-95',
 		'flex items-center justify-center',
 		// Keep a large tap target but allow a slightly smaller footprint on the smallest screens.
-		showLabels ? 'size-[52px] sm:size-14' : 'size-12 sm:size-[52px]'
+		showLabels ? 'size-13 sm:size-14' : 'size-12 sm:size-13'
 	)}
 	aria-label={m.mobile_navigation()}
 	{onclick}

@@ -105,11 +105,11 @@
 	onOpenChange={handleOpenChange}
 	title={m.images_search_registry()}
 	description={m.images_search_registry_description()}
-	contentClass="sm:max-w-[720px]"
+	contentClass="sm:max-w-180"
 >
 	{#snippet children()}
 		<div class="grid gap-4 py-4">
-			<div class="grid gap-3 sm:grid-cols-[1fr_9rem_auto]">
+			<div class="grid gap-3 sm:grid-cols-content-36-action">
 				<div class="space-y-2">
 					<Label for="image-registry-search-query">{m.images_search_query()}</Label>
 					<InputGroup.Root>
@@ -156,14 +156,14 @@
 			</div>
 
 			{#if results.length > 0}
-				<div class="max-h-[420px] overflow-auto rounded-lg border border-border">
+				<div class="max-h-105 overflow-auto rounded-lg border border-border">
 					{#each results as result (result.name)}
-						<div class="grid gap-3 border-b p-3 last:border-b-0 sm:grid-cols-[1fr_auto] sm:items-center">
+						<div class="grid gap-3 border-b p-3 last:border-b-0 sm:grid-cols-content-action sm:items-center">
 							<div class="min-w-0 space-y-1">
 								<div class="flex flex-wrap items-center gap-2">
 									<span class="font-mono text-sm font-medium break-all">{result.name}</span>
 									{#if result.official}
-										<span class="text-emerald-400" title={m.common_verified()} aria-label={m.common_verified()}>
+										<span class="text-success" title={m.common_verified()} aria-label={m.common_verified()}>
 											<VerifiedCheckIcon class="size-3.5" aria-hidden="true" />
 										</span>
 									{/if}

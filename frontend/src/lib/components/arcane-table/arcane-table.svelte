@@ -760,7 +760,7 @@
 			<div
 				{@attach (node) => restoreScroll(node, 'desktop')}
 				bind:this={desktopScrollEl}
-				class="[isolation:isolate] h-full min-h-0 flex-1 overflow-auto bg-background"
+				class="isolate h-full min-h-0 flex-1 overflow-auto bg-background"
 			>
 				<ArcaneTableDesktopView
 					{rowIndex}
@@ -786,10 +786,7 @@
 				/>
 			</div>
 		{:else}
-			<div
-				{@attach (node) => restoreScroll(node, 'mobile')}
-				class="[isolation:isolate] block flex-1 overflow-auto bg-background/80"
-			>
+			<div {@attach (node) => restoreScroll(node, 'mobile')} class="isolate block flex-1 overflow-auto bg-background/80">
 				{#if unstyled}
 					<div class="divide-y divide-border/40">
 						{@render MobileViewSnippet()}

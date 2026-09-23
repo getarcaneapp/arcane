@@ -57,7 +57,7 @@
 				<Card.Description>{m.connection_edge_description()}</Card.Description>
 			</div>
 		</Card.Header>
-		<Card.Content class="p-4">
+		<Card.Content>
 			<EnvironmentConnectionDetails {environment} {currentStatus} />
 		</Card.Content>
 	</Card.Root>
@@ -72,83 +72,85 @@
 					<Card.Description>{m.environments_agent_mtls_description()}</Card.Description>
 				</div>
 			</Card.Header>
-			<Card.Content class="space-y-6 p-4">
-				{#if mtlsCertificateBadge && environment.edgeMTLSCertificate}
-					<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-						{@render badgeTile(
-							m.environments_edge_mtls_certificate_status_label(),
-							mtlsCertificateBadge.text,
-							mtlsCertificateBadge.variant
-						)}
-						{@render tile(
-							m.environments_edge_mtls_certificate_expires_label(),
-							environment.edgeMTLSCertificate.expiresAt
-								? formatDateTimeShort(environment.edgeMTLSCertificate.expiresAt) || m.common_unknown()
-								: '—',
-							{
-								subtext:
-									environment.edgeMTLSCertificate.daysRemaining !== undefined
-										? m.environments_edge_mtls_certificate_days_remaining({
-												count: environment.edgeMTLSCertificate.daysRemaining
-											})
-										: undefined
-							}
-						)}
-						{#if environment.edgeMTLSCertificate.commonName}
-							{@render tile(
-								m.environments_edge_mtls_certificate_common_name_label(),
-								environment.edgeMTLSCertificate.commonName,
-								{ mono: true }
+			<Card.Content>
+				<div class="flex flex-col gap-6">
+					{#if mtlsCertificateBadge && environment.edgeMTLSCertificate}
+						<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+							{@render badgeTile(
+								m.environments_edge_mtls_certificate_status_label(),
+								mtlsCertificateBadge.text,
+								mtlsCertificateBadge.variant
 							)}
-						{/if}
-					</div>
-				{/if}
-
-				{#if showMTLSDownloads}
-					<div class="flex flex-wrap items-center gap-2">
-						<ArcaneButton
-							action="base"
-							tone="outline"
-							href={mtlsBundleDownloadHref}
-							rel="external"
-							icon={DownloadIcon}
-							customLabel={m.environments_agent_mtls_download_bundle()}
-						/>
-						<ArcaneButton
-							action="base"
-							tone="outline"
-							href={mtlsCertificateDownloadHref}
-							rel="external"
-							icon={DownloadIcon}
-							customLabel={m.environments_agent_mtls_download_certificate()}
-						/>
-						<ArcaneButton
-							action="base"
-							tone="outline"
-							href={mtlsKeyDownloadHref}
-							rel="external"
-							icon={DownloadIcon}
-							customLabel={m.environments_agent_mtls_download_key()}
-						/>
-					</div>
-				{/if}
-
-				<div class={showMTLSDownloads || mtlsCertificateBadge ? 'border-t pt-6' : ''}>
-					<div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-						<div class="space-y-0.5">
-							<h3 class="text-sm font-medium">{m.environments_regenerate_api_key()}</h3>
-							<p class="text-xs text-muted-foreground">{m.environments_regenerate_dialog_message()}</p>
+							{@render tile(
+								m.environments_edge_mtls_certificate_expires_label(),
+								environment.edgeMTLSCertificate.expiresAt
+									? formatDateTimeShort(environment.edgeMTLSCertificate.expiresAt) || m.common_unknown()
+									: '—',
+								{
+									subtext:
+										environment.edgeMTLSCertificate.daysRemaining !== undefined
+											? m.environments_edge_mtls_certificate_days_remaining({
+													count: environment.edgeMTLSCertificate.daysRemaining
+												})
+											: undefined
+								}
+							)}
+							{#if environment.edgeMTLSCertificate.commonName}
+								{@render tile(
+									m.environments_edge_mtls_certificate_common_name_label(),
+									environment.edgeMTLSCertificate.commonName,
+									{ mono: true }
+								)}
+							{/if}
 						</div>
-						<ArcaneButton
-							action="base"
-							tone="outline"
-							onclick={onRegenerateApiKey}
-							disabled={isRegeneratingKey}
-							loading={isRegeneratingKey}
-							icon={ResetIcon}
-							customLabel={m.environments_regenerate_api_key()}
-							class="shrink-0"
-						/>
+					{/if}
+
+					{#if showMTLSDownloads}
+						<div class="flex flex-wrap items-center gap-2">
+							<ArcaneButton
+								action="base"
+								tone="outline"
+								href={mtlsBundleDownloadHref}
+								rel="external"
+								icon={DownloadIcon}
+								customLabel={m.environments_agent_mtls_download_bundle()}
+							/>
+							<ArcaneButton
+								action="base"
+								tone="outline"
+								href={mtlsCertificateDownloadHref}
+								rel="external"
+								icon={DownloadIcon}
+								customLabel={m.environments_agent_mtls_download_certificate()}
+							/>
+							<ArcaneButton
+								action="base"
+								tone="outline"
+								href={mtlsKeyDownloadHref}
+								rel="external"
+								icon={DownloadIcon}
+								customLabel={m.environments_agent_mtls_download_key()}
+							/>
+						</div>
+					{/if}
+
+					<div class={showMTLSDownloads || mtlsCertificateBadge ? 'border-t pt-6' : ''}>
+						<div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+							<div class="space-y-0.5">
+								<h3 class="text-sm font-medium">{m.environments_regenerate_api_key()}</h3>
+								<p class="text-xs text-muted-foreground">{m.environments_regenerate_dialog_message()}</p>
+							</div>
+							<ArcaneButton
+								action="base"
+								tone="outline"
+								onclick={onRegenerateApiKey}
+								disabled={isRegeneratingKey}
+								loading={isRegeneratingKey}
+								icon={ResetIcon}
+								customLabel={m.environments_regenerate_api_key()}
+								class="shrink-0"
+							/>
+						</div>
 					</div>
 				</div>
 			</Card.Content>

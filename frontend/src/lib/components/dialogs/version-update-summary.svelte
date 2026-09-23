@@ -52,7 +52,7 @@
 		{#if currentDigest}
 			<div class="flex items-baseline gap-2">
 				<span class="w-16 shrink-0 tracking-wide text-muted-foreground/70 uppercase">{m.common_current()}</span>
-				<code class="min-w-0 flex-1 rounded-md bg-muted/50 px-2 py-1 font-mono text-[11px] break-all text-muted-foreground">
+				<code class="min-w-0 flex-1 rounded-md bg-muted/50 px-2 py-1 font-mono text-2xs break-all text-muted-foreground">
 					{currentDigest}
 				</code>
 			</div>
@@ -60,7 +60,7 @@
 		{#if newDigest}
 			<div class="flex items-baseline gap-2">
 				<span class="w-16 shrink-0 tracking-wide text-primary/80 uppercase">{m.update_center_new_label()}</span>
-				<code class="min-w-0 flex-1 rounded-md bg-primary/10 px-2 py-1 font-mono text-[11px] font-medium break-all text-primary">
+				<code class="min-w-0 flex-1 rounded-md bg-primary/10 px-2 py-1 font-mono text-2xs font-medium break-all text-primary">
 					{newDigest}
 				</code>
 			</div>

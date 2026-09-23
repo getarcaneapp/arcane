@@ -74,7 +74,8 @@
 	<Card.Header
 		{icon}
 		enableHover
-		class="cursor-pointer border-b select-none"
+		divider
+		class="cursor-pointer select-none"
 		role="button"
 		tabindex={0}
 		onclick={onHeaderClick}
@@ -105,9 +106,9 @@
 	</Card.Header>
 	{#if expanded}
 		<div transition:slide={{ duration: 200 }}>
-			<Card.Content class="p-0">
+			<div>
 				{@render children()}
-			</Card.Content>
+			</div>
 		</div>
 	{/if}
 </Card.Root>

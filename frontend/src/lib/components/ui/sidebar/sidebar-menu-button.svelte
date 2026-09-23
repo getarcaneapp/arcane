@@ -2,7 +2,7 @@
 	import { tv, type VariantProps } from 'tailwind-variants';
 
 	export const sidebarMenuButtonVariants = tv({
-		base: 'peer/menu-button outline-hidden ring-sidebar-ring hover:bg-sidebar-accent hover:text-sidebar-accent-foreground active:bg-sidebar-accent active:text-sidebar-accent-foreground group-has-data-[sidebar=menu-action]/menu-item:pr-8 data-[active=true]:bg-sidebar-accent data-[active=true]:text-sidebar-accent-foreground data-[state=open]:hover:bg-sidebar-accent data-[state=open]:hover:text-sidebar-accent-foreground group-data-[collapsible=icon]:!size-8 group-data-[collapsible=icon]:!p-0 flex w-full items-center gap-2 overflow-hidden rounded-md p-2 text-left text-sm transition-[width,height,padding] focus-visible:ring-2 disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-[active=true]:font-medium [&>span:last-child]:truncate [&>svg]:size-4 [&>svg]:shrink-0 [&>svg]:flex-shrink-0 group-data-[collapsible=icon]:[&>span]:hidden group-data-[collapsible=icon]:[&>svg.ml-auto]:hidden group-data-[collapsible=icon]:[&>div.grid]:hidden [&>a]:flex [&>a]:w-full [&>a]:items-center [&>a]:gap-2 [&>button]:flex [&>button]:w-full [&>button]:items-center [&>button]:gap-2 group-data-[collapsible=icon]:[&>a]:w-auto group-data-[collapsible=icon]:[&>button]:w-auto',
+		base: 'peer/menu-button outline-hidden ring-sidebar-ring hover:bg-sidebar-accent hover:text-sidebar-accent-foreground active:bg-sidebar-accent active:text-sidebar-accent-foreground group-has-data-[sidebar=menu-action]/menu-item:pr-8 data-[active=true]:bg-sidebar-accent data-[active=true]:text-sidebar-accent-foreground data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground data-[state=open]:hover:bg-sidebar-accent data-[state=open]:hover:text-sidebar-accent-foreground group-data-[collapsible=icon]:!size-8 group-data-[collapsible=icon]:!p-0 flex w-full items-center gap-2 overflow-hidden rounded-md p-2 text-left text-sm transition-[width,height,padding] focus-visible:ring-2 disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-[active=true]:font-medium [&>span:last-child]:truncate [&>svg]:size-4 [&>svg]:shrink-0 [&>svg]:flex-shrink-0 group-data-[collapsible=icon]:[&>span]:hidden group-data-[collapsible=icon]:[&>svg.ml-auto]:hidden group-data-[collapsible=icon]:[&>div.grid]:hidden [&>a]:flex [&>a]:w-full [&>a]:items-center [&>a]:gap-2 [&>button]:flex [&>button]:w-full [&>button]:items-center [&>button]:gap-2 group-data-[collapsible=icon]:[&>a]:w-auto group-data-[collapsible=icon]:[&>button]:w-auto',
 		variants: {
 			variant: {
 				default: 'hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
@@ -101,7 +101,7 @@
 				{@render Button({ props })}
 			{/snippet}
 		</ArcaneTooltip.Trigger>
-		<ArcaneTooltip.Content side="right" align="center" class="z-[var(--arcane-z-surface)]" {...tooltipContentProps}>
+		<ArcaneTooltip.Content side="right" align="center" class="z-(--arcane-z-surface)" {...tooltipContentProps}>
 			{#if typeof tooltipContent === 'string'}
 				{tooltipContent}
 			{:else if tooltipContent}

@@ -57,16 +57,16 @@
 
 	function statusDotClass(status: string | undefined): string {
 		const normalized = (status ?? '').toLowerCase();
-		if (normalized === 'running') return 'bg-emerald-500';
-		if (normalized === 'exited') return 'bg-red-500';
-		return 'bg-amber-500';
+		if (normalized === 'running') return 'bg-success';
+		if (normalized === 'exited') return 'bg-destructive';
+		return 'bg-warning';
 	}
 
 	function healthClass(health: string | undefined): string {
 		const normalized = (health ?? '').toLowerCase();
-		if (normalized === 'healthy') return 'text-emerald-500';
-		if (normalized === 'unhealthy') return 'text-red-500';
-		return 'text-amber-500';
+		if (normalized === 'healthy') return 'text-success';
+		if (normalized === 'unhealthy') return 'text-destructive';
+		return 'text-warning';
 	}
 
 	// Runtime ports arrive as "8081:80/tcp" (or "80/tcp" when unpublished).

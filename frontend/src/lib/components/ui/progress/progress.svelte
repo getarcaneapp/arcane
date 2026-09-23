@@ -8,8 +8,12 @@
 		max = 100,
 		value,
 		indeterminate = false,
+		tone = 'default',
 		...restProps
-	}: WithoutChildrenOrChild<ProgressPrimitive.RootProps> & { indeterminate?: boolean } = $props();
+	}: WithoutChildrenOrChild<ProgressPrimitive.RootProps> & {
+		indeterminate?: boolean;
+		tone?: 'default' | 'warning' | 'destructive';
+	} = $props();
 </script>
 
 <ProgressPrimitive.Root
@@ -25,8 +29,13 @@
 		</div>
 	{:else}
 		<div
-			class="h-full w-full flex-1 bg-primary transition-all"
-			style={`transform: translateX(-${100 - (100 * (value ?? 0)) / (max ?? 1)}%)`}
+			class={cn(
+				'h-full w-full flex-1 translate-x-(--progress-offset) transition-all',
+				tone === 'default' && 'bg-primary',
+				tone === 'warning' && 'bg-warning',
+				tone === 'destructive' && 'bg-destructive'
+			)}
+			style={`--progress-offset: -${100 - (100 * (value ?? 0)) / (max ?? 1)}%`}
 		></div>
 	{/if}
 </ProgressPrimitive.Root>

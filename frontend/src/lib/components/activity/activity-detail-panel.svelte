@@ -47,14 +47,14 @@
 					<TerminalIcon class="size-4 text-muted-foreground" aria-hidden="true" />
 					<span class="text-sm font-semibold">{m.activity_output_title()}</span>
 				</div>
-				<CopyButton text={outputText} variant="ghost" size="default" class="h-8 px-2 text-xs" tabindex={0}>
+				<CopyButton text={outputText} variant="ghost" size="sm" tabindex={0}>
 					<span class="text-xs">{m.activity_copy_output()}</span>
 				</CopyButton>
 			</div>
 
-			<div class="bg-zinc-950 font-mono text-[12px] leading-relaxed text-zinc-100">
+			<div class="dark bg-background font-mono text-xs leading-relaxed text-foreground">
 				{#if isDetailError && messages.length === 0}
-					<div class="flex min-h-32 flex-col items-center justify-center gap-2 text-zinc-500">
+					<div class="flex min-h-32 flex-col items-center justify-center gap-2 text-muted-foreground">
 						<span>{m.activity_output_load_failed()}</span>
 						<button
 							type="button"
@@ -65,12 +65,12 @@
 						</button>
 					</div>
 				{:else if isLoading && messages.length === 0}
-					<div class="flex min-h-32 items-center justify-center text-zinc-500">
+					<div class="flex min-h-32 items-center justify-center text-muted-foreground">
 						<ActivityIcon class="mr-2 size-4 animate-pulse" aria-hidden="true" />
 						{m.activity_output_loading()}
 					</div>
 				{:else if messages.length === 0}
-					<div class="flex min-h-32 items-center justify-center text-center text-zinc-500">
+					<div class="flex min-h-32 items-center justify-center text-center text-muted-foreground">
 						{m.activity_output_empty()}
 					</div>
 				{:else}

@@ -355,20 +355,24 @@
 {#snippet LabelsCell({ item }: { item: SwarmNodeSummary })}
 	<div class="flex flex-wrap items-center gap-1.5">
 		{#each Object.entries(item.systemLabels ?? {}) as [key, value] (key)}
-			<div class="group relative overflow-hidden rounded-[var(--radius)]">
-				<Badge variant="gray" class="max-w-[200px] truncate">{`${key}${value ? `=${value}` : ''}`}</Badge>
+			<div class="group relative overflow-hidden rounded-lg">
+				<Badge variant="gray" class="max-w-50"
+					><span class="block min-w-0 truncate">{`${key}${value ? `=${value}` : ''}`}</span></Badge
+				>
 			</div>
 		{/each}
 		{#each Object.entries(item.labels ?? {}) as [key, value] (key)}
-			<div class="group relative overflow-hidden rounded-[var(--radius)]">
-				<Badge variant="blue" class="max-w-[200px] truncate">{`${key}${value ? `=${value}` : ''}`}</Badge>
+			<div class="group relative overflow-hidden rounded-lg">
+				<Badge variant="blue" class="max-w-50"
+					><span class="block min-w-0 truncate">{`${key}${value ? `=${value}` : ''}`}</span></Badge
+				>
 				{#if canManageNodes}
 					<button
-						class="absolute inset-0 flex cursor-pointer items-center justify-end rounded-[var(--radius)] bg-blue-500/10 pr-1 opacity-0 backdrop-blur-[1px] transition-opacity group-hover:opacity-100 dark:bg-blue-400/20"
+						class="absolute inset-0 flex cursor-pointer items-center justify-end rounded-lg bg-info/10 pr-1 opacity-0 backdrop-blur-2xs transition-opacity group-hover:opacity-100"
 						onclick={() => removeLabel(item, key)}
 						title={m.common_remove()}
 					>
-						<div class="scale-90 rounded-full bg-red-500 p-0.5 shadow-lg transition-transform group-hover:scale-100">
+						<div class="scale-90 rounded-full bg-destructive p-0.5 shadow-lg transition-transform group-hover:scale-100">
 							<CloseIcon class="size-3 text-white" />
 						</div>
 					</button>
@@ -377,7 +381,7 @@
 		{/each}
 		{#if canManageNodes}
 			<button
-				class="inline-flex items-center gap-1 rounded border border-dashed border-border px-2 py-0.5 text-[11px] font-medium transition-colors hover:border-primary hover:text-primary"
+				class="inline-flex items-center gap-1 rounded border border-dashed border-border px-2 py-0.5 text-2xs font-medium transition-colors hover:border-primary hover:text-primary"
 				onclick={() => openAddLabelDialog(item)}
 			>
 				<AddIcon class="size-3" />

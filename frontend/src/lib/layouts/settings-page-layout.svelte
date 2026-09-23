@@ -73,10 +73,7 @@
 						</ArcaneButton>
 					{/snippet}
 				</DropdownMenu.Trigger>
-				<DropdownMenu.Content
-					align="end"
-					class="z-[var(--arcane-z-surface)] min-w-[160px] rounded-xl border bg-popover/90 p-1 shadow-lg backdrop-blur-md"
-				>
+				<DropdownMenu.Content align="end" class="z-(--arcane-z-surface) min-w-40">
 					<DropdownMenu.Group>
 						{@render ActionOptions(button.options)}
 					</DropdownMenu.Group>
@@ -141,9 +138,9 @@
 				{#if pageType === 'form' && formState?.saveFunction && !showReadOnlyTag}
 					<div class="hidden items-center gap-2 sm:flex">
 						{#if formState.hasChanges}
-							<span class="mr-2 text-xs text-orange-600 dark:text-orange-400">{m.common_unsaved_changes()}</span>
+							<span class="mr-2 text-xs text-warning">{m.common_unsaved_changes()}</span>
 						{:else}
-							<span class="mr-2 text-xs text-green-600 dark:text-green-400">{m.common_all_changes_saved()}</span>
+							<span class="mr-2 text-xs text-success">{m.common_all_changes_saved()}</span>
 						{/if}
 
 						{#if formState.hasChanges && formState.resetFunction}
@@ -165,7 +162,7 @@
 							disabled={!formState.hasChanges}
 							loading={formState.isLoading}
 							size="sm"
-							class="min-w-[80px] gap-2"
+							class="min-w-20 gap-2"
 						/>
 					</div>
 				{/if}
@@ -189,10 +186,7 @@
 									{/snippet}
 								</DropdownMenu.Trigger>
 
-								<DropdownMenu.Content
-									align="end"
-									class="z-[var(--arcane-z-surface)] min-w-[160px] rounded-xl border bg-popover/90 p-1 shadow-lg backdrop-blur-md"
-								>
+								<DropdownMenu.Content align="end" class="z-(--arcane-z-surface) min-w-40">
 									<DropdownMenu.Group>
 										{#each mobileDropdownButtons as button (button.id)}
 											{#if button.options?.length}

@@ -163,7 +163,7 @@
 			title: m.info(),
 			value: counts?.info ?? 0,
 			icon: InfoIcon,
-			iconColor: 'text-blue-500',
+			iconColor: 'text-info',
 			onclick: () => toggleSeverityFilter('info'),
 			active: activeSeverities.includes('info')
 		},
@@ -171,7 +171,7 @@
 			title: m.common_success(),
 			value: counts?.success ?? 0,
 			icon: CheckIcon,
-			iconColor: 'text-green-500',
+			iconColor: 'text-success',
 			onclick: () => toggleSeverityFilter('success'),
 			active: activeSeverities.includes('success')
 		},
@@ -179,7 +179,7 @@
 			title: m.warning(),
 			value: counts?.warning ?? 0,
 			icon: AlertIcon,
-			iconColor: 'text-yellow-500',
+			iconColor: 'text-warning',
 			onclick: () => toggleSeverityFilter('warning'),
 			active: activeSeverities.includes('warning')
 		},
@@ -187,7 +187,7 @@
 			title: m.common_error(),
 			value: counts?.error ?? 0,
 			icon: CloseIcon,
-			iconColor: 'text-red-500',
+			iconColor: 'text-destructive',
 			onclick: () => toggleSeverityFilter('error'),
 			active: activeSeverities.includes('error')
 		}

@@ -78,21 +78,21 @@
 	function tagColorClassInternal(color: ProjectTagColor | undefined): string {
 		switch (color) {
 			case 'purple':
-				return 'bg-violet-500';
+				return 'bg-violet';
 			case 'blue':
-				return 'bg-blue-500';
+				return 'bg-info';
 			case 'green':
-				return 'bg-emerald-500';
+				return 'bg-success';
 			case 'yellow':
-				return 'bg-amber-400';
+				return 'bg-warning';
 			case 'orange':
-				return 'bg-orange-500';
+				return 'bg-orange';
 			case 'red':
-				return 'bg-red-500';
+				return 'bg-destructive';
 			case 'pink':
-				return 'bg-pink-500';
+				return 'bg-pink';
 			default:
-				return 'bg-zinc-400';
+				return 'bg-muted-foreground';
 		}
 	}
 
@@ -155,20 +155,20 @@
 			</button>
 		{/snippet}
 	</Popover.Trigger>
-	<Popover.Content class="w-72 p-0" align="start" onclick={(event) => event.stopPropagation()}>
-		<Command.Root class="rounded-none bg-transparent">
+	<Popover.Content class="w-72" align="start" onclick={(event) => event.stopPropagation()}>
+		<Command.Root>
 			<Command.Input bind:value={search} placeholder={m.project_tags_search()} />
 			<Command.List>
-				<Command.Empty class={canCreate ? 'px-4 py-5' : undefined}>
+				<Command.Empty>
 					{#if canCreate}
-						<div class="flex flex-col items-center gap-4">
+						<div class="flex flex-col items-center gap-4 px-4">
 							<p class="leading-snug">
 								{m.project_tags_create_prompt()}<br />
 								<span class="font-medium">“{normalizedSearch}”</span>
 							</p>
 							<div class="flex items-center gap-2">
 								<Select.Root type="single" bind:value={selectedColor}>
-									<Select.Trigger class="h-9 min-w-28 bg-background">
+									<Select.Trigger class="h-9 min-w-28">
 										<span class="block size-2.5 shrink-0 rounded-full {tagColorClassInternal(selectedColor)}"></span>
 										{colorOptions.find((option) => option.value === selectedColor)?.label}
 									</Select.Trigger>

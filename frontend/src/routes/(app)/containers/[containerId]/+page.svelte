@@ -401,10 +401,7 @@
 			class="size-5"
 			containerClass="size-9"
 		/>
-		<h1
-			class="max-w-[10rem] min-w-0 truncate text-lg font-semibold sm:max-w-[14rem] md:max-w-[18rem] lg:max-w-[22rem]"
-			title={containerDisplayName}
-		>
+		<h1 class="max-w-40 min-w-0 truncate text-lg font-semibold sm:max-w-56 md:max-w-72 lg:max-w-88" title={containerDisplayName}>
 			{containerDisplayName}
 		</h1>
 		{#if container?.state}
@@ -417,11 +414,11 @@
 			<Badge variant="amber" minWidth="20">{m.sidebar_update_available()}</Badge>
 		{/if}
 		{#if project && composeInfo}
-			<a href="/projects/{project.id}" title={m.projects_title()}>
-				<Badge variant="gray" size="sm" class="max-w-40 truncate font-normal hover:text-foreground">
+			<Badge variant="gray" size="sm" href="/projects/{project.id}" title={m.projects_title()} class="max-w-40">
+				<span class="block min-w-0 truncate">
 					{composeInfo.projectName}
-				</Badge>
-			</a>
+				</span>
+			</Badge>
 		{/if}
 	</div>
 {/snippet}

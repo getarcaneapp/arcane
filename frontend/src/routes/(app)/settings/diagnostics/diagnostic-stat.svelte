@@ -19,11 +19,11 @@
 		<Icon class="size-4" />
 	</div>
 	<div class="min-w-0">
-		<div class="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">{label}</div>
+		<div class="text-2xs font-medium tracking-wide text-muted-foreground uppercase">{label}</div>
 		<div class="flex items-baseline gap-1">
 			<span class="text-lg leading-tight font-semibold tabular-nums">{value}</span>
 			{#if unit}<span class="text-xs text-muted-foreground">{unit}</span>{/if}
 		</div>
-		{#if sub}<div class="truncate text-[11px] text-muted-foreground">{sub}</div>{/if}
+		{#if sub}<div class="truncate text-2xs text-muted-foreground">{sub}</div>{/if}
 	</div>
 </div>
