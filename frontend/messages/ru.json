@@ -1413,6 +1413,8 @@
   "environments_test_connection_error": "Сбой подключения",
   "environments_testing_connection": "Проверка подключения…",
   "environments_api_url": "API URL",
+  "environments_access_token_for_url_label": "Токен доступа агента",
+  "environments_access_token_for_url_help": "Введите существующий токен доступа агента ещё раз, чтобы сохранить новый URL-адрес API. Ротация токена не требуется.",
   "environments_created_success": "Окружение успешно создано",
   "environments_delete_message": "Вы уверены, что хотите удалить окружение {name}?",
   "environments_delete_failed": "Не удалось удалить окружение {name}",
