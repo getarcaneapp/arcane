@@ -7,6 +7,8 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base32"
+	"encoding/hex"
+	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"fmt"
 	"io"
@@ -302,25 +304,91 @@ func (e *Engine) ListSnapshots(ctx context.Context, dockerClient *client.Client,
 	if err != nil {
 		return nil, err
 	}
-	var snapshots []DiscoveredSnapshot
-	if err := json.Unmarshal([]byte(output), &snapshots); err != nil {
+	return decodeSnapshotsInternal(output)
+}
+
+func decodeSnapshotsInternal(output string) ([]DiscoveredSnapshot, error) {
+	trimmedOutput := strings.TrimSpace(output)
+	if len(trimmedOutput) == 0 || trimmedOutput[0] != '[' {
+		return nil, errors.New("invalid Rustic snapshot listing: expected an array")
+	}
+	var entries []jsontext.Value
+	if err := json.Unmarshal([]byte(output), &entries); err != nil {
 		return nil, fmt.Errorf("failed to decode Rustic snapshots: %w", err)
 	}
-	if len(snapshots) == 0 || snapshots[0].ID != "" {
-		return snapshots, nil
-	}
-	// Newer Rustic versions group snapshots by (host, label).
-	var groups []struct {
-		Snapshots []DiscoveredSnapshot `json:"snapshots"`
-	}
-	if err := json.Unmarshal([]byte(output), &groups); err != nil {
-		return nil, fmt.Errorf("failed to decode grouped Rustic snapshots: %w", err)
-	}
-	snapshots = snapshots[:0]
-	for _, group := range groups {
-		snapshots = append(snapshots, group.Snapshots...)
+
+	snapshots := make([]DiscoveredSnapshot, 0, len(entries))
+	grouped := false
+	for index, entry := range entries {
+		if entry.Kind() != '{' {
+			return nil, fmt.Errorf("invalid Rustic snapshot listing entry %d: expected an object", index)
+		}
+		var fields map[string]jsontext.Value
+		if err := json.Unmarshal(entry, &fields); err != nil {
+			return nil, fmt.Errorf("failed to decode Rustic snapshot listing entry %d: %w", index, err)
+		}
+		_, hasID := fields["id"]
+		groupEntries, hasSnapshots := fields["snapshots"]
+		if hasID == hasSnapshots {
+			return nil, fmt.Errorf("invalid Rustic snapshot listing entry %d: expected an ID or snapshot group", index)
+		}
+		if index > 0 && grouped != hasSnapshots {
+			return nil, errors.New("invalid Rustic snapshot listing: mixed flat and grouped entries")
+		}
+		grouped = hasSnapshots
+		if !hasSnapshots {
+			snapshot, err := decodeSnapshotInternal(entry)
+			if err != nil {
+				return nil, fmt.Errorf("invalid Rustic snapshot listing entry %d: %w", index, err)
+			}
+			snapshots = append(snapshots, snapshot)
+			continue
+		}
+		if groupEntries.Kind() != '[' {
+			return nil, fmt.Errorf("invalid Rustic snapshot group %d: expected a snapshots array", index)
+		}
+		var members []jsontext.Value
+		if err := json.Unmarshal(groupEntries, &members); err != nil {
+			return nil, fmt.Errorf("failed to decode Rustic snapshot group %d: %w", index, err)
+		}
+		for memberIndex, member := range members {
+			snapshot, err := decodeSnapshotInternal(member)
+			if err != nil {
+				return nil, fmt.Errorf("invalid Rustic snapshot group %d entry %d: %w", index, memberIndex, err)
+			}
+			snapshots = append(snapshots, snapshot)
+		}
 	}
 	return snapshots, nil
+}
+
+func decodeSnapshotInternal(raw jsontext.Value) (DiscoveredSnapshot, error) {
+	if raw.Kind() != '{' {
+		return DiscoveredSnapshot{}, errors.New("expected a snapshot object")
+	}
+	var fields map[string]jsontext.Value
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return DiscoveredSnapshot{}, fmt.Errorf("failed to decode Rustic snapshot fields: %w", err)
+	}
+	if _, grouped := fields["snapshots"]; grouped {
+		return DiscoveredSnapshot{}, errors.New("expected a flat snapshot object")
+	}
+	var snapshot DiscoveredSnapshot
+	if err := json.Unmarshal(raw, &snapshot); err != nil {
+		return DiscoveredSnapshot{}, fmt.Errorf("failed to decode Rustic snapshot payload: %w", err)
+	}
+	if !fullSnapshotIDInternal(snapshot.ID) {
+		return DiscoveredSnapshot{}, errors.New("invalid full snapshot ID")
+	}
+	return snapshot, nil
+}
+
+func fullSnapshotIDInternal(id string) bool {
+	if len(id) != 64 {
+		return false
+	}
+	_, err := hex.DecodeString(id)
+	return err == nil
 }
 
 // ForgetSnapshots removes the snapshots from the repository and prunes their
@@ -329,7 +397,59 @@ func (e *Engine) ForgetSnapshots(ctx context.Context, dockerClient *client.Clien
 	if len(snapshotIDs) == 0 {
 		return errors.New("at least one snapshot ID is required")
 	}
-	_, err := e.runInternal(ctx, dockerClient, repository, password, append([]string{"forget", "--prune", "--"}, snapshotIDs...))
+	requested := make([]string, 0, len(snapshotIDs))
+	seen := make(map[string]struct{}, len(snapshotIDs))
+	for _, id := range snapshotIDs {
+		if !fullSnapshotIDInternal(id) {
+			return errors.New("a full snapshot ID is required")
+		}
+		canonicalID := strings.ToLower(id)
+		if _, exists := seen[canonicalID]; !exists {
+			seen[canonicalID] = struct{}{}
+			requested = append(requested, canonicalID)
+		}
+	}
+	if e == nil {
+		return errors.New("backup engine is unavailable")
+	}
+	if strings.TrimSpace(repository.ID) == "" {
+		return errors.New("backup repository ID is required")
+	}
+	executor, err := e.executorForInternal(repository.ID) //nolint:contextcheck // Repository executors outlive requests so shutdown cleanup can finish.
+	if err != nil {
+		return err
+	}
+	task, err := executor.Submit(ctx, "rustic forget", func(workCtx context.Context) (string, error) {
+		output, err := e.runContainerInternal(workCtx, dockerClient, repository, password, []string{"snapshots", "--json"})
+		if err != nil {
+			return "", err
+		}
+		snapshots, err := decodeSnapshotsInternal(output)
+		if err != nil {
+			return "", err
+		}
+		existing := make(map[string]string, len(snapshots))
+		for _, snapshot := range snapshots {
+			existing[strings.ToLower(snapshot.ID)] = snapshot.ID
+		}
+		command := []string{"forget", "--prune"}
+		for _, id := range requested {
+			if listedID, found := existing[id]; found {
+				if len(command) == 2 {
+					command = append(command, "--")
+				}
+				command = append(command, listedID)
+			}
+		}
+		if len(command) == 2 {
+			command = []string{"prune"}
+		}
+		return e.runContainerInternal(workCtx, dockerClient, repository, password, command)
+	}, nil)
+	if err != nil {
+		return err
+	}
+	_, err = task.Wait(context.WithoutCancel(ctx))
 	return err
 }
 
