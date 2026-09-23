@@ -1413,6 +1413,8 @@
   "environments_test_connection_error": "La connexion a échoué",
   "environments_testing_connection": "Test de la connexion…",
   "environments_api_url": "URL de l'API",
+  "environments_access_token_for_url_label": "Jeton d'accès de l'agent",
+  "environments_access_token_for_url_help": "Saisissez à nouveau le jeton d'accès existant de l'agent pour enregistrer la nouvelle URL de l'API. Il n'est pas nécessaire de le renouveler.",
   "environments_created_success": "Environnement créé avec succès",
   "environments_delete_message": "Êtes-vous sûr de vouloir supprimer l'environnement {name}?",
   "environments_delete_failed": "Impossible de supprimer l'environnement {name}",
