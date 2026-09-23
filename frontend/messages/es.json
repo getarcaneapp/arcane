@@ -1413,6 +1413,8 @@
   "environments_test_connection_error": "Conexión fallida",
   "environments_testing_connection": "Probando conexión…",
   "environments_api_url": "URL de la API",
+  "environments_access_token_for_url_label": "Token de acceso del agente",
+  "environments_access_token_for_url_help": "Vuelve a introducir el token de acceso actual del agente para guardar la nueva URL de la API. No es necesario renovarlo.",
   "environments_created_success": "Entorno creado correctamente",
   "environments_delete_message": "¿Estás seguro de que deseas borrar el entorno {name}?",
   "environments_delete_failed": "Error al eliminar el entorno {name}",
