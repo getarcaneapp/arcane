@@ -7270,16 +7270,19 @@ func TestProjectPathMapperUsesCurrentSettingsInternal(t *testing.T) {
 }
 
 func TestPrepareProjectServiceImages(t *testing.T) {
-	source := []byte("# operator configuration\nservices:\n  web:\n    image: \"app:${VERSION}\" # keep this comment\n    environment:\n      VERSION: ${VERSION}\n  worker:\n    image: app:${VERSION}\n")
-	effective := &composetypes.Project{Services: composetypes.Services{"web": {Image: "app:1.2.0"}, "worker": {Image: "app:1.2.0"}}}
-	updated, names, err := prepareProjectServiceImagesInternal(source, effective, map[string]updatertypes.ServiceImageChange{"web": {ExpectedRef: "docker.io/library/app:1.2.0", TargetRef: "app:1.3.0"}})
+	source := []byte("\xEF\xBB\xBF# operator configuration\r\n\r\nservices:\r\n  web:\r\n    image: \"app:${VERSION}\"   # keep this comment\r\n    environment:\r\n      VERSION: ${VERSION}\r\n\r\n  worker:\r\n    image: 'app:1.2.0'  \r\n  tagged:\r\n    image: !!str app:1.2.0\r\n  escaped:\r\n    image: \"app\\u003a1.2.0\"\r\n  untouched:\r\n    image: app:1.2.0 # stays\r\n\r\r  plain:\r\n    image: app:1.2.0")
+	expected := "\xEF\xBB\xBF# operator configuration\r\n\r\nservices:\r\n  web:\r\n    image: \"app:1.3.0\"   # keep this comment\r\n    environment:\r\n      VERSION: ${VERSION}\r\n\r\n  worker:\r\n    image: 'docker.io/library/app:1.3.0'  \r\n  tagged:\r\n    image: !!str app:1.3.0\r\n  escaped:\r\n    image: \"app:1.3.0\"\r\n  untouched:\r\n    image: app:1.2.0 # stays\r\n\r\r  plain:\r\n    image: app:1.3.0"
+	effective := &composetypes.Project{Services: composetypes.Services{"web": {Image: "app:1.2.0"}, "worker": {Image: "app:1.2.0"}, "tagged": {Image: "app:1.2.0"}, "escaped": {Image: "app:1.2.0"}, "untouched": {Image: "app:1.2.0"}, "plain": {Image: "app:1.2.0"}}}
+	updated, names, err := prepareProjectServiceImagesInternal(source, effective, map[string]updatertypes.ServiceImageChange{
+		"web":     {ExpectedRef: "docker.io/library/app:1.2.0", TargetRef: "app:1.3.0"},
+		"worker":  {ExpectedRef: "app:1.2.0", TargetRef: "docker.io/library/app:1.3.0"},
+		"tagged":  {ExpectedRef: "app:1.2.0", TargetRef: "app:1.3.0"},
+		"escaped": {ExpectedRef: "app:1.2.0", TargetRef: "app:1.3.0"},
+		"plain":   {ExpectedRef: "app:1.2.0", TargetRef: "app:1.3.0"},
+	})
 	require.NoError(t, err)
-	require.Equal(t, []string{"web"}, names)
-	require.Contains(t, string(updated), "# operator configuration")
-	require.Contains(t, string(updated), "# keep this comment")
-	require.Contains(t, string(updated), "image: \"app:1.3.0\"")
-	require.Contains(t, string(updated), "image: app:${VERSION}")
-	require.Contains(t, string(updated), "VERSION: ${VERSION}")
+	require.Equal(t, []string{"escaped", "plain", "tagged", "web", "worker"}, names)
+	require.Equal(t, expected, string(updated))
 	require.Equal(t, "app:1.2.0", effective.Services["web"].Image)
 }
 
@@ -7292,6 +7295,8 @@ func TestPrepareProjectServiceImagesRejectsUnsupportedSource(t *testing.T) {
 		{"image alias", "x-image: &image app:1.2.0\nservices:\n  web:\n    image: *image\n", "app:1.2.0"},
 		{"missing image", "services:\n  web:\n    build: .\n", "app:1.2.0"},
 		{"multiple documents", "services:\n  web:\n    image: app:1.2.0\n---\nservices: {}\n", "app:1.2.0"},
+		{"literal block image", "services:\n  web:\n    image: |\n      app:1.2.0\n", "app:1.2.0"},
+		{"multi-line plain image", "services:\n  web:\n    image: app:${VERSION}\n      tail\n", "app:1.2.0"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			effective := &composetypes.Project{Services: composetypes.Services{"web": {Image: "app:1.2.0"}}}
@@ -7379,7 +7384,7 @@ func TestUpdateProjectServiceImagesPersistsBeforeDeploymentAndRetries(t *testing
 	require.NoError(t, err)
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", directory))
 	projectPath := createComposeProjectDir(t, directory, "image-tags")
-	source := "# keep\nservices:\n  app:\n    image: app:${VERSION}\n  worker:\n    image: app:${VERSION}\n"
+	source := "# keep\n\nservices:\n  app:\n    image: app:${VERSION}\n\n  worker:\n    image: app:${VERSION}\n"
 	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte(source), 0o600))
 	require.NoError(t, os.Chmod(filepath.Join(projectPath, "compose.yaml"), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(projectPath, ".env"), []byte("VERSION=1.2.0\n"), 0o600))
@@ -7394,8 +7399,7 @@ func TestUpdateProjectServiceImagesPersistsBeforeDeploymentAndRetries(t *testing
 		require.ErrorIs(t, err, deploymentError)
 		content, err := os.ReadFile(filepath.Join(projectPath, "compose.yaml"))
 		require.NoError(t, err)
-		require.Contains(t, string(content), "image: app:1.3.0")
-		require.Contains(t, string(content), "image: app:${VERSION}")
+		require.Equal(t, "# keep\n\nservices:\n  app:\n    image: app:1.3.0\n\n  worker:\n    image: app:${VERSION}\n", string(content))
 		mode, err := os.Stat(filepath.Join(projectPath, "compose.yaml"))
 		require.NoError(t, err)
 		require.Equal(t, os.FileMode(0o600), mode.Mode().Perm())
@@ -7585,7 +7589,7 @@ func TestProjectServiceManualUpdateDiscoversTags(t *testing.T) {
 			content, err := os.ReadFile(filepath.Join(path, "compose.yaml"))
 			require.NoError(t, err)
 			if tt.wantChanged {
-				require.Contains(t, string(content), tt.wantRef)
+				require.Equal(t, strings.Replace(source, "image: app:1.2.0", "image: "+tt.wantRef, 1), string(content))
 			} else {
 				require.Equal(t, source, string(content))
 			}
