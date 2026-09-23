@@ -1413,6 +1413,8 @@
   "environments_test_connection_error": "Połączenie nieudane",
   "environments_testing_connection": "Sprawdzanie połączenia…",
   "environments_api_url": "Adres URL API",
+  "environments_access_token_for_url_label": "Token dostępu agenta",
+  "environments_access_token_for_url_help": "Wprowadź ponownie istniejący token dostępu agenta, aby zapisać nowy adres URL interfejsu API. Nie ma potrzeby jego rotacji.",
   "environments_created_success": "Środowisko utworzone pomyślnie",
   "environments_delete_message": "Czy na pewno chcesz usunąć środowisko {name}?",
   "environments_delete_failed": "Nie udało się usunąć środowiska {name}",
