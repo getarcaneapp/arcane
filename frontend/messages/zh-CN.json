@@ -1413,6 +1413,8 @@
   "environments_test_connection_error": "连接失败",
   "environments_testing_connection": "正在测试连接…",
   "environments_api_url": "API URL",
+  "environments_access_token_for_url_label": "代理访问令牌",
+  "environments_access_token_for_url_help": "请重新输入代理的现有访问令牌，以保存新的 API 网址。无需轮换该令牌。",
   "environments_created_success": "环境创建成功",
   "environments_delete_message": "您确定要删除环境“{name}”吗？",
   "environments_delete_failed": "删除环境 {name} 失败",
