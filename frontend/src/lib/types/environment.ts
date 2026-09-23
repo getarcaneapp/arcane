@@ -39,6 +39,7 @@ export interface CreateEnvironmentDTO {
 
 export interface UpdateEnvironmentDTO {
 	apiUrl?: string;
+	accessToken?: string;
 	name?: string;
 	enabled?: boolean;
 	isEdge?: boolean;

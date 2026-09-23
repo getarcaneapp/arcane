@@ -1413,6 +1413,8 @@
   "environments_test_connection_error": "Connection failed",
   "environments_testing_connection": "Testing Connection…",
   "environments_api_url": "API URL",
+  "environments_access_token_for_url_label": "Agent access token",
+  "environments_access_token_for_url_help": "Re-enter the agent's existing access token to save the new API URL. You don't need to rotate it.",
   "environments_created_success": "Environment created successfully",
   "environments_delete_message": "Are you sure you want to delete environment {name}?",
   "environments_delete_failed": "Failed to delete environment {name}",

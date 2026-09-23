@@ -1,11 +1,20 @@
 import { z } from 'zod/v4';
 import { m } from '#lib/paraglide/messages.js';
 
-export const environmentFormSchema = z
-	.object({
-		name: z.string().min(1),
-		enabled: z.boolean(),
-		apiUrl: z.string(),
+export const environmentUpdateSchema = z.object({
+	name: z.string().min(1),
+	enabled: z.boolean(),
+	apiUrl: z.string(),
+	accessToken: z
+		.string()
+		.trim()
+		.optional()
+		.transform((value) => value || undefined)
+});
+
+export const environmentFormSchema = environmentUpdateSchema
+	.extend({
+		accessToken: z.string(),
 		pollingEnabled: z.boolean(),
 		imageEventWatcherEnabled: z.boolean(),
 		autoUpdate: z.boolean(),

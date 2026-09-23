@@ -789,21 +789,36 @@ func TestEnvironmentServiceUpdateEnvironmentRejectsTargetChangeWithStoredTokenIn
 	require.Equal(t, oldToken, *stored.AccessToken)
 }
 
-func TestEnvironmentServiceUpdateEnvironmentAllowsTargetChangeWithReplacementTokenInternal(t *testing.T) {
-	ctx := context.Background()
-	db := setupEnvironmentServiceTestDB(t)
-	svc := NewEnvironmentService(db, nil, nil, nil, nil, nil)
+func TestEnvironmentServiceUpdateEnvironmentAllowsTargetChangeWithExplicitTokenInternal(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		token string
+	}{
+		{name: "reenter existing token", token: "stored-agent-token"},
+		{name: "use replacement token", token: "replacement-agent-token"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+			db := setupEnvironmentServiceTestDB(t)
+			svc := NewEnvironmentService(db, nil, nil, nil, nil, nil)
 
-	oldToken := "stored-agent-token"
-	createTestEnvironment(t, db, "env-target", "http://agent.example:3553", &oldToken)
+			oldToken := "stored-agent-token"
+			createTestEnvironment(t, db, "env-target", "http://agent.example:3553", &oldToken)
 
-	updated, err := svc.UpdateEnvironment(ctx, "env-target", map[string]any{
-		"api_url":      "http://replacement.example:3553",
-		"access_token": "replacement-agent-token",
-	}, nil, nil)
-	require.NoError(t, err)
-	require.Equal(t, "http://replacement.example:3553", updated.ApiUrl)
-	require.Equal(t, "replacement-agent-token", *updated.AccessToken)
+			updated, err := svc.UpdateEnvironment(ctx, "env-target", map[string]any{
+				"api_url":      "http://replacement.example:3553",
+				"access_token": tc.token,
+			}, nil, nil)
+			require.NoError(t, err)
+			require.Equal(t, "http://replacement.example:3553", updated.ApiUrl)
+			require.Equal(t, tc.token, *updated.AccessToken)
+
+			var stored Environment
+			require.NoError(t, db.WithContext(ctx).First(&stored, "id = ?", "env-target").Error)
+			require.Equal(t, updated.ApiUrl, stored.ApiUrl)
+			require.Equal(t, tc.token, *stored.AccessToken)
+		})
+	}
 }
 
 func TestEnvironmentService_getCachedEnvironmentIDForTokenInternal_ExpiresAndCleansReverseIndex(t *testing.T) {

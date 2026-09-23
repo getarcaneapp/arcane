@@ -47,17 +47,18 @@ async function createDirectEnvironmentViaUI(
 	);
 	await page.getByRole('button', { name: 'Generate Agent Configuration', exact: true }).click();
 	const createResponse = await createResponsePromise;
-	expect(createResponse.ok(), await createResponse.text()).toBeTruthy();
-	const created: { data: { id: string } } = await createResponse.json();
+	expect(createResponse.ok(), 'Create direct environment').toBeTruthy();
+	const created: { data: { id: string; apiKey?: string } } = await createResponse.json();
 	environmentIds.add(created.data.id);
 	expect(created.data.id).toBeTruthy();
+	if (!created.data.apiKey) throw new Error('New agent environment did not return an API key');
 
 	await expect(
 		page.getByRole('heading', { name: 'Environment Created Successfully', exact: true })
 	).toBeVisible();
 	await page.getByRole('button', { name: 'Done', exact: true }).click();
 	await expect(page.getByRole('button', { name: environmentName, exact: true })).toBeVisible();
-	return created.data.id;
+	return { id: created.data.id, apiKey: created.data.apiKey };
 }
 
 async function openLocalEnvironment(page: Page) {
@@ -79,6 +80,7 @@ async function saveAndWaitForPut(page: Page, expectedPath: string) {
 	const response = await responsePromise;
 	expect(response.ok(), `Expected successful PUT to ${expectedPath}`).toBeTruthy();
 	await expect(saveButton).toBeDisabled({ timeout: 10000 });
+	return response.request();
 }
 
 async function selectSettingOption(page: Page, trigger: Locator, optionText: string) {
@@ -191,19 +193,104 @@ test.describe('Environment Settings UI', () => {
 		test.setTimeout(120_000); // 120 seconds timeout for this lengthy UI workflow
 		const envName = `settings-ui-${Date.now().toString().slice(-5)}`;
 		const updatedName = `${envName}-updated`;
-		let environmentId = '';
 		const environmentIds = new Set<string>();
 
 		try {
-			environmentId = await createDirectEnvironmentViaUI(page, envName, environmentIds);
+			const { id: environmentId, apiKey } = await createDirectEnvironmentViaUI(
+				page,
+				envName,
+				environmentIds
+			);
+			const environmentPath = `/api/environments/${environmentId}`;
 			await page.getByRole('button', { name: envName, exact: true }).click();
 			await expect(page).toHaveURL(/\/environments\/[^/?]+\?tab=[a-z]+$/);
 
+			const apiUrlButton = page.getByTitle('API URL', { exact: true });
+			const originalApiUrl = (await apiUrlButton.textContent())!.trim();
+			const updatedApiUrl = originalApiUrl.replace(':3552', ':3553');
+			expect(updatedApiUrl).not.toBe(originalApiUrl);
+
 			await renameEnvironmentInHeader(page, updatedName);
-			await saveAndWaitForPut(page, `/api/environments/${environmentId}`);
+			const nameRequest = await saveAndWaitForPut(page, environmentPath);
+			expect(nameRequest.postDataJSON()).not.toHaveProperty('accessToken');
 
 			await page.reload();
 			await expect(environmentTitleButton(page)).toHaveText(updatedName);
+
+			await apiUrlButton.click();
+			await page.locator('#api-url').fill(updatedApiUrl);
+			await page.locator('#api-url').press('Tab');
+			const tokenInput = page.getByLabel('Agent access token', { exact: true });
+			await expect(tokenInput).toBeVisible();
+			await expect(tokenInput).toHaveAttribute('type', 'password');
+			await expect(tokenInput).toHaveValue('');
+
+			const rejectedResponsePromise = page.waitForResponse(
+				(response) =>
+					response.request().method() === 'PUT' &&
+					new URL(response.url()).pathname === environmentPath
+			);
+			await page.getByRole('button', { name: 'Save', exact: true }).first().click();
+			const rejectedResponse = await rejectedResponsePromise;
+			expect(rejectedResponse.status()).toBe(400);
+			expect(rejectedResponse.request().postDataJSON()).not.toHaveProperty('accessToken');
+			await expect(
+				page.getByText('Changing environment API URL requires re-entering the accessToken')
+			).toBeVisible();
+			const afterRejection = await page.request.get(environmentPath);
+			expect(afterRejection.ok()).toBe(true);
+			expect(((await afterRejection.json()) as { data: { apiUrl: string } }).data.apiUrl).toBe(
+				originalApiUrl
+			);
+
+			await tokenInput.fill(apiKey);
+			await apiUrlButton.click();
+			await page.locator('#api-url').fill(`${updatedApiUrl}/changed`);
+			await page.locator('#api-url').press('Tab');
+			await expect(tokenInput).toHaveValue('');
+			await apiUrlButton.click();
+			await page.locator('#api-url').fill(updatedApiUrl);
+			await page.locator('#api-url').press('Tab');
+			await tokenInput.fill(apiKey);
+			await page.route(`**${environmentPath}`, async (route) => {
+				if (route.request().method() !== 'PUT') return route.continue();
+				await route.fulfill({
+					status: 503,
+					contentType: 'application/problem+json',
+					body: JSON.stringify({ detail: 'Temporary update failure' })
+				});
+			});
+			const failedResponsePromise = page.waitForResponse(
+				(response) =>
+					response.request().method() === 'PUT' &&
+					new URL(response.url()).pathname === environmentPath
+			);
+			await page.getByRole('button', { name: 'Save', exact: true }).first().click();
+			expect((await failedResponsePromise).status()).toBe(503);
+			await expect(page.getByText('Temporary update failure')).toBeVisible();
+			expect((await tokenInput.inputValue()) === apiKey).toBe(true);
+			await page.unroute(`**${environmentPath}`);
+
+			const updateRequest = await saveAndWaitForPut(page, environmentPath);
+			const updatePayload = updateRequest.postDataJSON() as Record<string, unknown>;
+			expect(updatePayload.apiUrl).toBe(updatedApiUrl);
+			expect(updatePayload.accessToken === apiKey).toBe(true);
+			await expect(tokenInput).toBeHidden();
+			await apiUrlButton.click();
+			await page.locator('#api-url').fill(`${updatedApiUrl}/another`);
+			await page.locator('#api-url').press('Tab');
+			await expect(tokenInput).toHaveValue('');
+			await apiUrlButton.click();
+			await page.locator('#api-url').press('Escape');
+			await expect(apiUrlButton).toHaveText(updatedApiUrl);
+			await expect(tokenInput).toBeHidden();
+
+			await page.reload();
+			await expect(apiUrlButton).toHaveText(updatedApiUrl);
+			await expect(tokenInput).toBeHidden();
+			await renameEnvironmentInHeader(page, `${updatedName}-again`);
+			const secondNameRequest = await saveAndWaitForPut(page, environmentPath);
+			expect(secondNameRequest.postDataJSON()).not.toHaveProperty('accessToken');
 		} finally {
 			for (const id of environmentIds) await removeApiResource(page, `/api/environments/${id}`);
 		}
@@ -211,6 +298,7 @@ test.describe('Environment Settings UI', () => {
 
 	test('should update and save the base server URL in Docker settings', async ({ page }) => {
 		await openLocalEnvironment(page);
+		await expect(page.getByLabel('Agent access token', { exact: true })).toBeHidden();
 		await page.getByRole('tab', { name: 'Docker Settings', exact: true }).click();
 
 		const baseServerUrlInput = page.locator('#base-server-url');
@@ -224,7 +312,11 @@ test.describe('Environment Settings UI', () => {
 		try {
 			await baseServerUrlInput.fill(updatedBaseServerUrl);
 			await expect(baseServerUrlInput).toHaveValue(updatedBaseServerUrl);
-			await saveAndWaitForPut(page, `/api/environments/${LOCAL_ENV_ID}/settings`);
+			const settingsRequest = await saveAndWaitForPut(
+				page,
+				`/api/environments/${LOCAL_ENV_ID}/settings`
+			);
+			expect(settingsRequest.postDataJSON()).not.toHaveProperty('accessToken');
 
 			await page.reload();
 			await page.getByRole('tab', { name: 'Docker Settings', exact: true }).click();
@@ -297,21 +389,53 @@ test.describe('Environment Settings UI', () => {
 	});
 
 	test('should reset unsaved environment detail changes', async ({ page }) => {
-		await openLocalEnvironment(page);
+		const envName = `settings-reset-${Date.now().toString().slice(-5)}`;
+		const environmentIds = new Set<string>();
+		try {
+			const { id: environmentId, apiKey } = await createDirectEnvironmentViaUI(
+				page,
+				envName,
+				environmentIds
+			);
+			await openEnvironment(page, environmentId);
+			const titleButton = environmentTitleButton(page);
+			const apiUrlButton = page.getByTitle('API URL', { exact: true });
+			const originalApiUrl = (await apiUrlButton.textContent())!.trim();
+			await renameEnvironmentInHeader(page, `${envName}-pending`);
+			await apiUrlButton.click();
+			await page.locator('#api-url').fill(originalApiUrl.replace(':3552', ':3553'));
+			await page.locator('#api-url').press('Tab');
+			const tokenInput = page.getByLabel('Agent access token', { exact: true });
+			await tokenInput.fill(apiKey);
 
-		const titleButton = environmentTitleButton(page);
-		const originalName = (await titleButton.textContent())!.trim();
-		await renameEnvironmentInHeader(page, `${originalName}-pending`);
+			const saveButton = page.getByRole('button', { name: 'Save', exact: true }).first();
+			const resetButton = page.getByRole('button', { name: 'Reset', exact: true }).first();
+			await expect(saveButton).toBeEnabled();
+			await expect(resetButton).toBeVisible();
+			await resetButton.click();
+			await expect(titleButton).toHaveText(envName);
+			await expect(apiUrlButton).toHaveText(originalApiUrl);
+			await expect(tokenInput).toBeHidden();
+			await expect(saveButton).toBeDisabled();
 
-		const saveButton = page.getByRole('button', { name: 'Save', exact: true }).first();
-		const resetButton = page.getByRole('button', { name: 'Reset', exact: true }).first();
-
-		await expect(saveButton).toBeEnabled();
-		await expect(resetButton).toBeVisible();
-		await resetButton.click();
-
-		await expect(titleButton).toHaveText(originalName);
-		await expect(saveButton).toBeDisabled();
+			await apiUrlButton.click();
+			await page.locator('#api-url').fill(originalApiUrl.replace(':3552', ':3553'));
+			await page.locator('#api-url').press('Tab');
+			await expect(tokenInput).toHaveValue('');
+			await tokenInput.fill(apiKey);
+			await page.getByRole('button', { name: 'Back to Environments', exact: true }).click();
+			await expect(page).toHaveURL(/\/environments$/);
+			await expect(page.getByRole('heading', { name: 'Environments', exact: true })).toBeVisible();
+			await page.getByRole('button', { name: envName, exact: true }).click();
+			await expect(page).toHaveURL(new RegExp(`/environments/${environmentId}(?:\\?|$)`));
+			await expect(environmentTitleButton(page)).toHaveText(envName);
+			await apiUrlButton.click();
+			await page.locator('#api-url').fill(originalApiUrl.replace(':3552', ':3553'));
+			await page.locator('#api-url').press('Tab');
+			await expect(tokenInput).toHaveValue('');
+		} finally {
+			for (const id of environmentIds) await removeApiResource(page, `/api/environments/${id}`);
+		}
 	});
 
 	test('should update and save the default deploy pull policy in Docker settings', async ({

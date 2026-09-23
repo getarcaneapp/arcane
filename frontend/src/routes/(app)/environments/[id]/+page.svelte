@@ -2,6 +2,7 @@
 	import type { Settings } from '#lib/types/settings.js';
 	import SectionCard from '#lib/components/section-card.svelte';
 	import LabeledSwitch from '#lib/components/form/labeled-switch.svelte';
+	import TextInputWithLabel from '#lib/components/form/text-input-with-label.svelte';
 	import { featureStore } from '#lib/stores/features.store.svelte.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -16,7 +17,7 @@
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { CopyButton } from '#lib/components/ui/copy-button/index.js';
 	import { cn } from '#lib/utils.js';
-	import { goto, refreshAll } from '$app/navigation';
+	import { beforeNavigate, goto, refreshAll } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
 	import { m } from '#lib/paraglide/messages.js';
 	import { environmentManagementService } from '#lib/services/env-mgmt-service.js';
@@ -36,7 +37,11 @@
 	import StorageTab from './components/StorageTab.svelte';
 	import DockerTab from './components/DockerTab.svelte';
 	import JobsTab from './components/JobsTab.svelte';
-	import { environmentFormSchema, type EnvironmentFormValues } from './components/environment-form-schema';
+	import {
+		environmentFormSchema,
+		environmentUpdateSchema,
+		type EnvironmentFormValues
+	} from './components/environment-form-schema';
 	import TrivySecuritySettings from '#lib/components/settings/trivy-security-settings.svelte';
 	import ImagePatchSettings from '#lib/components/settings/image-patch-settings.svelte';
 	import LifecycleSecuritySettings from '#lib/components/settings/lifecycle-security-settings.svelte';
@@ -61,7 +66,8 @@
 	let { data } = $props();
 	let { settings, versionInformation } = $derived(data);
 	let lastEnvironment: Environment | undefined;
-	let environment = $derived((lastEnvironment = data.environment ?? lastEnvironment));
+	let loadedEnvironment = $derived((lastEnvironment = data.environment ?? lastEnvironment));
+	let environment = $derived(loadedEnvironment);
 	let refreshedEnvironment: Environment | null = $state(null);
 	let runtimeEnvironment: Environment = $derived.by(() => {
 		const refreshed = refreshedEnvironment;
@@ -285,9 +291,10 @@
 
 	// Build current settings object from environment and settings data
 	const currentSettings = $derived({
-		name: environment.name,
-		enabled: environment.enabled,
-		apiUrl: environment.apiUrl,
+		name: loadedEnvironment.name,
+		enabled: loadedEnvironment.enabled,
+		apiUrl: loadedEnvironment.apiUrl,
+		accessToken: '',
 		pollingEnabled: settings?.pollingEnabled ?? false,
 		imageEventWatcherEnabled: settings?.imageEventWatcherEnabled ?? false,
 		autoUpdate: settings?.autoUpdate ?? false,
@@ -349,6 +356,8 @@
 	// Custom save handler for environment-specific settings
 	async function saveEnvironmentSettings(formData: EnvironmentFormValues) {
 		const environmentId = environment.id;
+		const submittedInputs = formInputs;
+		const apiUrlChanged = formData.apiUrl !== environment.apiUrl;
 		const featureChanged =
 			formData.featureVulnerabilityManagementEnabled !== currentSettings.featureVulnerabilityManagementEnabled;
 		if (
@@ -357,22 +366,26 @@
 		) {
 			throw new Error(m.features_unavailable());
 		}
-		if (
-			formData.name !== environment.name ||
-			formData.enabled !== environment.enabled ||
-			formData.apiUrl !== environment.apiUrl
-		) {
-			await environmentManagementService.update(environmentId, {
-				name: formData.name,
-				enabled: formData.enabled,
-				apiUrl: formData.apiUrl
+		if (formData.name !== environment.name || formData.enabled !== environment.enabled || apiUrlChanged) {
+			const update = environmentUpdateSchema.parse({
+				...formData,
+				accessToken: directRemoteUrlChanged ? formData.accessToken : undefined
 			});
+			const result = await tryCatch(environmentManagementService.update(environmentId, update));
+			if (result.error) {
+				throw new Error(result.error.message);
+			}
+			submittedInputs.accessToken.value = '';
+			formData.accessToken = '';
+			if (environment.id === environmentId) {
+				environment = result.data;
+			}
 		}
 		const parsedCurrentSettings = formSchema.safeParse(currentSettings);
 		const savedFormValues = parsedCurrentSettings.success ? parsedCurrentSettings.data : currentSettings;
 		const otherSettingsChanged = (Object.keys(formData) as (keyof EnvironmentFormValues)[]).some(
 			(key) =>
-				!['name', 'enabled', 'apiUrl', 'featureVulnerabilityManagementEnabled'].includes(key) &&
+				!['name', 'enabled', 'apiUrl', 'accessToken', 'featureVulnerabilityManagementEnabled'].includes(key) &&
 				formData[key] !== savedFormValues[key]
 		);
 		let updates: Partial<Settings> = {};
@@ -461,17 +474,35 @@
 		}
 	}
 
+	function clearAccessToken(): void {
+		formInputs.accessToken.value = '';
+	}
+
 	let { formInputs, settingsForm, resetForm, onSubmit } = $derived(
 		createSettingsForm({
 			schema: formSchema,
 			currentSettings,
-			getCurrentSettings: () => currentSettings,
+			getCurrentSettings: () => ({
+				...currentSettings,
+				name: environment.name,
+				enabled: environment.enabled,
+				apiUrl: environment.apiUrl
+			}),
 			onSave: saveEnvironmentSettings,
 			successMessage: m.common_update_success({ resource: m.resource_environment_cap() }),
 			errorMessage: m.common_update_failed({ resource: m.resource_environment() }),
 			onReset: () => toast.info(m.changes_reset())
 		})
 	);
+	let directRemoteUrlChanged = $derived(
+		environment.id !== '0' && !environment.isEdge && formInputs.apiUrl.value !== environment.apiUrl
+	);
+
+	beforeNavigate((navigation) => {
+		if (navigation.willUnload || (navigation.to && navigation.to.url.pathname !== navigation.from?.url.pathname)) {
+			clearAccessToken();
+		}
+	});
 
 	const shellOptions = [
 		{ value: '/bin/sh', label: '/bin/sh', description: m.docker_shell_sh_description() },
@@ -693,6 +724,7 @@
 								id="api-url"
 								type="url"
 								bind:value={formInputs.apiUrl.value}
+								oninput={clearAccessToken}
 								class="h-7 w-full max-w-md font-mono text-xs {formInputs.apiUrl.error ? 'border-destructive' : ''}"
 								placeholder={m.environments_api_url_placeholder()}
 								autofocus
@@ -703,6 +735,7 @@
 									}
 									if (e.key === 'Escape') {
 										formInputs.apiUrl.value = environment.apiUrl;
+										clearAccessToken();
 										isEditingApiUrl = false;
 									}
 								}}
@@ -731,6 +764,19 @@
 					</div>
 					{#if formInputs.apiUrl.error}
 						<p class="mt-1 text-xs text-destructive">{formInputs.apiUrl.error}</p>
+					{/if}
+					{#if directRemoteUrlChanged}
+						<div class="mt-3 max-w-md">
+							<TextInputWithLabel
+								id="agent-access-token-for-url"
+								type="password"
+								autocomplete="off"
+								label={m.environments_access_token_for_url_label()}
+								description={m.environments_access_token_for_url_help()}
+								bind:value={formInputs.accessToken.value}
+								disabled={settingsForm.isLoading}
+							/>
+						</div>
 					{/if}
 				</div>
 			</div>

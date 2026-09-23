@@ -4,7 +4,11 @@ services:
     # A directory created under the data dir is served as a bucket, so backups
     # have somewhere to write without a separate provisioning container.
     entrypoint:
-      ['sh', '-c', 'mkdir -p /data/arcane-backups && exec minio server /data --address :9000']
+      [
+        'sh',
+        '-c',
+        'mkdir -p /data/arcane-backups && exec minio server /data --address :9000 --console-address :9001'
+      ]
     environment:
       - MINIO_ROOT_USER=arcane-test
       - MINIO_ROOT_PASSWORD=arcane-test-secret
