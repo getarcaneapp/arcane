@@ -12,7 +12,7 @@ import type {
 	ContainerEditRequest
 } from '#lib/types/docker.js';
 import type { SearchPaginationSortRequest, Paginated } from '#lib/types/shared.js';
-import type { AutoUpdateResult } from '#lib/types/automation.js';
+import type { Activity } from '#lib/types/activity.type.js';
 import { transformPaginationParams } from '#lib/utils/tables.js';
 import { downloadFromUrl } from '#lib/utils/browser-download.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
@@ -120,9 +120,12 @@ class ContainerService extends BaseAPIService {
 		return this.handleResponse(this.api.delete(`/environments/${envId}/containers/${containerId}`, { params }));
 	}
 
-	async updateContainer(containerId: string): Promise<AutoUpdateResult> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
-		return this.handleResponse(this.api.post(`/environments/${envId}/containers/${containerId}/update`));
+	updateContainer(containerId: string, environmentId: string): Promise<Activity> {
+		return this.handleResponse<Activity>(
+			this.api.post(`/environments/${environmentId}/containers/${containerId}/update`, undefined, {
+				params: { async: 'true' }
+			})
+		).then((activity) => ({ ...activity, sourceEnvironmentId: environmentId }));
 	}
 
 	async redeployContainer(containerId: string): Promise<ContainerDetailsDto> {

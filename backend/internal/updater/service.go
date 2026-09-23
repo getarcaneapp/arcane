@@ -19,6 +19,7 @@ import (
 	"emperror.dev/errors"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
@@ -48,8 +49,9 @@ import (
 
 // UpdaterService is Arcane's handler-facing service for the standalone updater engine.
 type UpdaterService struct {
-	deps   updaterDependenciesInternal
-	engine *updater.Service
+	deps          updaterDependenciesInternal
+	engine        *updater.Service
+	singleUpdates *actors.Executor
 	// updateMu serializes per-container updates. docker compose's recreate
 	// pipeline is not concurrency-safe for sibling containers sharing a
 	// namespace. ponytail: global lock ceiling — all updates serialize; fine
@@ -438,12 +440,52 @@ func (s *UpdaterService) containerIDsForImagesInternal(ctx context.Context, imag
 
 // UpdateSingleContainer updates a single container by ID to the latest available image.
 func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID string) (out *arcaneupdater.Result, err error) {
+	activity, workCtx, err := s.startSingleContainerUpdateActivityInternal(ctx, containerID)
+	if err != nil {
+		return nil, err
+	}
+	activityID := ""
+	if activity != nil {
+		activityID = activity.ID
+	}
+	defer func() {
+		s.finishSingleContainerUpdateInternal(workCtx, activityID, out, err)
+	}()
+	defer utils.RecoverToError(&err, "single container update")
+	return s.runSingleContainerUpdateInternal(workCtx, containerID, activityID)
+}
+
+// AcceptSingleContainerUpdate persists and submits a cancellable update activity.
+func (s *UpdaterService) AcceptSingleContainerUpdate(ctx context.Context, containerID string) (*activitytypes.Activity, error) {
+	if s.deps.Activity == nil || s.singleUpdates == nil {
+		return nil, errors.New("asynchronous container updates unavailable")
+	}
+	activity, workCtx, err := s.startSingleContainerUpdateActivityInternal(ctx, containerID)
+	if err != nil {
+		return nil, err
+	}
+	_, err = s.singleUpdates.Submit(workCtx, "update container", func(actorCtx context.Context) (*arcaneupdater.Result, error) {
+		runCtx := utils.ActivityRuntimeContext(workCtx, actorCtx)
+		return s.runSingleContainerUpdateInternal(runCtx, containerID, activity.ID)
+	}, func(result *arcaneupdater.Result, runErr error) {
+		s.finishSingleContainerUpdateInternal(workCtx, activity.ID, result, runErr)
+	})
+	if err != nil {
+		s.finishSingleContainerUpdateInternal(workCtx, activity.ID, nil, err)
+		return nil, errors.WrapIf(err, "submit container update")
+	}
+	return activity, nil
+}
+
+func (s *UpdaterService) runSingleContainerUpdateInternal(ctx context.Context, containerID, activityID string) (out *arcaneupdater.Result, err error) {
 	start := time.Now()
-	activityID := s.startSingleContainerUpdateActivityInternal(ctx, containerID)
 	out = &arcaneupdater.Result{Items: []arcaneupdater.ResourceResult{}, ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()}
-	ctx = s.trackActivityInternal(ctx, activityID)
 	ctx = contextWithActivityIDInternal(ctx, activityID)
-	activitylib.AwaitHandlerActivitySlot(ctx, s.deps.Activity, activityID, "0")
+	if s.deps.Activity != nil && activityID != "" {
+		if err := s.deps.Activity.AwaitActivitySlotBounded(ctx, activityID, "0"); err != nil {
+			return out, err
+		}
+	}
 
 	defer func() {
 		if out == nil {
@@ -453,11 +495,13 @@ func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID 
 			out.Duration = time.Since(start).String()
 		}
 		out.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
-		s.completeAutoUpdateActivityInternal(ctx, activityID, out, err)
 	}()
 
 	s.updateMu.Lock()
 	defer s.updateMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return out, err
+	}
 
 	// The caller picked this container, so the autoUpdateExcludedContainers
 	// setting does not apply: it only governs automatic and pending runs, which
@@ -904,26 +948,110 @@ func (s *UpdaterService) startAutoUpdateActivityInternal(ctx context.Context, dr
 	return activity.ID
 }
 
-func (s *UpdaterService) startSingleContainerUpdateActivityInternal(ctx context.Context, containerID string) string {
+func (s *UpdaterService) startSingleContainerUpdateActivityInternal(ctx context.Context, containerID string) (*activitytypes.Activity, context.Context, error) {
 	if s.deps.Activity == nil {
-		return ""
+		return nil, ctx, nil
 	}
-	activity, err := s.deps.Activity.StartActivity(ctx, activitylib.StartRequest{
+	name := containerID
+	lookupCtx, cancelLookup := context.WithTimeout(ctx, 2*time.Second)
+	if dockerClient, dockerErr := s.DockerClient(lookupCtx); dockerErr == nil && dockerClient != nil {
+		if inspected, inspectErr := libarcane.ContainerInspectWithCompatibility(lookupCtx, dockerClient, containerID, client.ContainerInspectOptions{}); inspectErr == nil {
+			if actualName := strings.TrimPrefix(strings.TrimSpace(inspected.Container.Name), "/"); actualName != "" {
+				name = actualName
+			}
+		}
+	}
+	cancelLookup()
+	user, _ := common.CurrentUserFromContext(ctx)
+	if initiator, ok := utils.UpdateInitiatorFromContext(ctx); ok {
+		user = &common.User{Username: initiator.Username}
+		user.ID = initiator.UserID
+		if initiator.DisplayName != "" {
+			user.DisplayName = &initiator.DisplayName
+		}
+	}
+	activity, workCtx, err := s.deps.Activity.StartTrackedActivity(ctx, activitylib.StartRequest{
 		EnvironmentID: "0",
 		Type:          activitytypes.TypeAutoUpdate,
 		Queue:         true,
+		DeferSlot:     true,
 		ResourceType:  mo.EmptyableToOption(strings.TrimSpace("container")).ToPointer(),
 		ResourceID:    &containerID,
-		ResourceName:  mo.EmptyableToOption(strings.TrimSpace(containerID)).ToPointer(),
+		ResourceName:  &name,
+		StartedBy:     user,
 		Step:          "Updating container",
 		LatestMessage: "Container update started",
 		Metadata:      database.JSON{"containerID": containerID},
 	})
 	if err != nil {
-		slog.DebugContext(ctx, "failed to start container update activity", "containerID", containerID, "error", err)
-		return ""
+		return nil, nil, errors.WrapIf(err, "start container update activity")
 	}
-	return activity.ID
+	return activity, workCtx, nil
+}
+
+func (s *UpdaterService) finishSingleContainerUpdateInternal(ctx context.Context, activityID string, result *arcaneupdater.Result, runErr error) {
+	if s.deps.Activity == nil || activityID == "" {
+		return
+	}
+	metadata, message := singleContainerActivitySummaryInternal(result)
+	writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	defer cancel()
+	if containerName, ok := metadata["containerName"].(string); ok && containerName != "" {
+		if _, err := s.deps.Activity.UpdateActivity(writeCtx, activityID, activitylib.UpdateRequest{ResourceName: &containerName}); err != nil {
+			slog.WarnContext(writeCtx, "failed to update container activity name", "activityId", activityID, "error", err)
+		}
+	}
+	if err := s.deps.Activity.PatchActivityMetadata(writeCtx, activityID, metadata); err != nil {
+		slog.WarnContext(writeCtx, "failed to persist container update result", "activityId", activityID, "error", err)
+	}
+	if runErr == nil && result != nil && result.Failed == 0 {
+		if result.Updated > 0 || result.Restarted > 0 {
+			message = "Container updated"
+		}
+		if _, err := s.deps.Activity.CompleteActivity(writeCtx, activityID, activitytypes.StatusSuccess, message, nil); err != nil {
+			slog.ErrorContext(writeCtx, "failed to complete container update activity", "activityId", activityID, "error", err)
+		}
+		return
+	}
+	if runErr == nil && result == nil {
+		runErr = errors.New("container update produced no result")
+	}
+	if runErr == nil && result != nil && len(result.Items) > 0 && result.Items[0].Error != "" {
+		runErr = errors.New(result.Items[0].Error)
+	}
+	s.completeAutoUpdateActivityInternal(ctx, activityID, result, runErr)
+}
+
+func singleContainerActivitySummaryInternal(result *arcaneupdater.Result) (database.JSON, string) {
+	metadata := database.JSON{}
+	message := "Container update completed"
+	if result == nil {
+		return metadata, message
+	}
+	metadata["updated"] = result.Updated
+	metadata["restarted"] = result.Restarted
+	metadata["skipped"] = result.Skipped
+	metadata["failed"] = result.Failed
+	if len(result.Items) > 0 {
+		item := result.Items[0]
+		metadata["updateOutcome"] = item.Status
+		if item.ResourceName != "" {
+			metadata["containerName"] = item.ResourceName
+		}
+		if item.Error != "" {
+			metadata["updateReason"] = item.Error
+			if item.Status == string(updater.StatusSkipped) {
+				return metadata, "Container update skipped: " + item.Error
+			}
+		}
+	}
+	if result.Skipped > 0 {
+		return metadata, "Container update skipped"
+	}
+	if result.Updated == 0 && result.Restarted == 0 && result.Failed == 0 {
+		message = "Container already current"
+	}
+	return metadata, message
 }
 
 func (s *UpdaterService) appendAutoUpdateActivityMessageInternal(ctx context.Context, activityID, message, step string, progress int) {

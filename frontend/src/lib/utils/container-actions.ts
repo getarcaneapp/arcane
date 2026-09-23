@@ -4,7 +4,10 @@ import { containerService } from '#lib/services/container-service.js';
 import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
-import type { AutoUpdateResult } from '#lib/types/automation.js';
+import type { Activity } from '#lib/types/activity.type.js';
+import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+import { hasPermission } from '#lib/utils/auth.js';
+import { activityStore } from '#lib/stores/activity.store.svelte.js';
 import { toast } from 'svelte-sonner';
 
 type ContainerLifecycleAction = 'start' | 'stop' | 'restart' | 'pause' | 'unpause';
@@ -138,19 +141,19 @@ export function confirmAndRemoveContainer({
 type ConfirmAndUpdateContainerOptions = {
 	containerId: string;
 	containerName: string;
-	showPullingToast?: boolean;
-	useActivityToast?: boolean;
+	environmentId: string;
 	setLoading?: (loading: boolean) => void;
 	onRefresh?: () => Promise<unknown> | unknown;
+	onAccepted?: (activity: Activity, environmentId: string) => void | Promise<void>;
 };
 
 export function confirmAndUpdateContainer({
 	containerId,
 	containerName,
-	showPullingToast = false,
-	useActivityToast = false,
+	environmentId,
 	setLoading,
-	onRefresh
+	onRefresh,
+	onAccepted
 }: ConfirmAndUpdateContainerOptions) {
 	openConfirmDialog({
 		title: m.update_container(),
@@ -160,61 +163,22 @@ export function confirmAndUpdateContainer({
 			destructive: false,
 			action: async () => {
 				setLoading?.(true);
-				if (showPullingToast) {
-					toast.info(m.containers_update_pulling_image());
-				}
-
-				const operationResult = await tryCatch(
-					handleApiResultWithCallbacks({
-						result: await tryCatch(containerService.updateContainer(containerId)),
-						message: m.containers_update_failed({ name: containerName }),
-						setLoadingState: (value) => setLoading?.(value),
-						async onSuccess(result) {
-							showContainerUpdateResultToast(result, containerName, useActivityToast);
-							await onRefresh?.();
-						}
-					})
-				);
-				if (operationResult.error !== null) {
-					const error = operationResult.error;
-					console.error('Container update failed:', error);
-					toast.error(m.containers_update_failed({ name: containerName }));
-					setLoading?.(false);
-				}
+				await handleApiResultWithCallbacks({
+					result: await tryCatch(containerService.updateContainer(containerId, environmentId)),
+					message: m.containers_update_accept_failed({ name: containerName }),
+					setLoadingState: (value) => setLoading?.(value),
+					async onSuccess(activity) {
+						const canReadActivity = hasPermission('activities:read', environmentId);
+						if (canReadActivity) activityStore.acceptActivity(activity);
+						toast.info(
+							m.containers_update_accepted({ name: containerName }),
+							canReadActivity ? activityToastOptions(activity.id, false, environmentId) : undefined
+						);
+						await onAccepted?.(activity, environmentId);
+						if (!canReadActivity && environmentStore.selected?.id === environmentId) await onRefresh?.();
+					}
+				});
 			}
 		}
 	});
-}
-
-/**
- * A single-container update answers 200 with a one-item result, so the outcome
- * lives in the tally: failed, updated (or restarted), skipped with the engine's
- * reason, or nothing to do. A skip is not "up to date" — the engine did not
- * apply anything, and its reason says why.
- */
-function showContainerUpdateResultToast(result: AutoUpdateResult, containerName: string, useActivityToast: boolean) {
-	const toastOptions = useActivityToast ? activityToastOptions(extractActivityId(result)) : undefined;
-	const itemWithStatus = (status: AutoUpdateResult['items'][number]['status']) =>
-		result.items?.find((item) => item.status === status);
-
-	if ((result.failed ?? 0) > 0) {
-		toast.error(m.containers_update_failed({ name: containerName }), {
-			...toastOptions,
-			description: itemWithStatus('failed')?.error
-		});
-		return;
-	}
-	if ((result.updated ?? 0) + (result.restarted ?? 0) > 0) {
-		toast.success(m.containers_update_success({ name: containerName }), toastOptions);
-		return;
-	}
-	const skipped = itemWithStatus('skipped');
-	if (skipped) {
-		toast.info(m.containers_update_skipped({ name: containerName }), {
-			...toastOptions,
-			description: skipped.error || m.containers_update_skipped_no_reason()
-		});
-		return;
-	}
-	toast.info(m.image_update_up_to_date_title(), toastOptions);
 }

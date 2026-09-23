@@ -1,5 +1,9 @@
 <script lang="ts">
 	import { tryCatch } from '#lib/utils/try-catch.js';
+	import { onMount } from 'svelte';
+	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+	import { activityStore } from '#lib/stores/activity.store.svelte.js';
+	import { createContainerUpdateActivityTracker } from '#lib/utils/container-update-activities.js';
 
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
@@ -28,7 +32,6 @@
 	import { isAutoUpdateLabelDisabled } from '#lib/utils/container-auto-update.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { bulkConfirmAndRun } from '#lib/utils/bulk-actions.js';
-	import { throwOnContainerUpdateFailure } from '#lib/utils/update-actions.js';
 	import { formatImageUpdateCheckedAt, formatImageUpdateValue } from '#lib/utils/image-updates.js';
 	import { toast } from 'svelte-sonner';
 
@@ -63,6 +66,22 @@
 	let updatingContainerIds = $state<Record<string, boolean>>({});
 	let ignoringContainerIds = $state<Record<string, boolean>>({});
 	let bulkUpdating = $state(false);
+	let updateTableMounted = false;
+	const currentEnvironmentId = $derived(environmentStore.selected?.id || '0');
+	const updateActivities = createContainerUpdateActivityTracker(
+		() => currentEnvironmentId,
+		() => {
+			if (updateTableMounted) void refreshRows();
+		}
+	);
+	onMount(() => {
+		updateTableMounted = true;
+		const unsubscribe = activityStore.subscribeActivities(updateActivities.observe);
+		return () => {
+			updateTableMounted = false;
+			unsubscribe();
+		};
+	});
 
 	function mapContainerRow(container: ContainerSummaryDto): ContainerUpdateRow {
 		const name = getContainerDisplayName(container);
@@ -112,7 +131,9 @@
 	];
 
 	async function refreshRows() {
-		containers = await onRefreshData(requestOptions as ContainerListRequestOptions);
+		const requestedEnvId = currentEnvironmentId;
+		const next = await onRefreshData(requestOptions as ContainerListRequestOptions);
+		if (updateTableMounted && requestedEnvId === currentEnvironmentId) containers = next;
 	}
 
 	async function handleUpdateContainer(container: ContainerSummaryDto) {
@@ -121,11 +142,14 @@
 		confirmAndUpdateContainer({
 			containerId: container.id,
 			containerName,
-			showPullingToast: true,
+			environmentId: currentEnvironmentId,
 			setLoading: (loading) => {
 				updatingContainerIds = { ...updatingContainerIds, [container.id]: loading };
 			},
-			onRefresh: refreshRows
+			onRefresh: () => (updateTableMounted ? refreshRows() : undefined),
+			onAccepted: (activity) => {
+				if (updateTableMounted) updateActivities.accept(activity);
+			}
 		});
 	}
 
@@ -160,19 +184,30 @@
 	}
 
 	function handleBulkUpdate(ids: string[]) {
+		const updateEnvironmentId = currentEnvironmentId;
 		bulkConfirmAndRun({
 			ids,
 			title: m.updates_bulk_update_confirm_title({ count: ids.length }),
 			message: m.updates_bulk_update_confirm_message({ count: ids.length }),
 			confirmLabel: m.common_update(),
-			run: (id) => containerService.updateContainer(id).then(throwOnContainerUpdateFailure),
+			run: (id) => containerService.updateContainer(id, updateEnvironmentId),
 			messages: {
-				success: (count) => m.updates_bulk_update_success({ count }),
-				partial: (success, total, failed) => m.updates_bulk_update_partial({ success, total, failed }),
-				failure: () => m.updates_bulk_update_failed()
+				success: (count) => m.containers_bulk_update_accepted({ count }),
+				partial: (success, total, failed) => m.containers_bulk_update_accept_partial({ success, total, failed }),
+				failure: () => m.containers_bulk_update_accept_failed()
+			},
+			acceptanceOnly: true,
+			activityLink: hasPermission('activities:read', updateEnvironmentId),
+			onItemSuccess: (_id, activity) => {
+				if (updateTableMounted) updateActivities.accept(activity);
 			},
 			setLoading: (loading) => (bulkUpdating = loading),
-			onComplete: refreshRows,
+			onComplete: () =>
+				updateTableMounted &&
+				updateEnvironmentId === currentEnvironmentId &&
+				!hasPermission('activities:read', updateEnvironmentId)
+					? refreshRows()
+					: undefined,
 			clearSelection: () => (selectedIds = [])
 		});
 	}

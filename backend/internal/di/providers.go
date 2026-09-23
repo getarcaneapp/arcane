@@ -326,6 +326,9 @@ func provideProjectServiceInternal(db *database.DB, settings *settings.SettingsS
 type updaterServiceParams struct {
 	fx.In
 
+	Context       context.Context
+	Lifecycle     fx.Lifecycle
+	ActorRuntime  *actors.Runtime
 	DB            *database.DB
 	Settings      *settings.SettingsService
 	Docker        *docker.DockerClientService
@@ -340,19 +343,29 @@ type updaterServiceParams struct {
 }
 
 func provideUpdaterModuleInternal(p updaterServiceParams) (*updater.Module, error) {
-	return updater.New(updater.Dependencies{
-		DB:           p.DB,
-		Settings:     p.Settings,
-		Docker:       p.Docker,
-		Project:      p.Project,
-		ImageUpdate:  p.ImageUpdate,
-		Registry:     p.Registry,
-		Event:        p.Event,
-		Image:        p.Image,
-		Notification: p.Notification,
-		SelfUpgrade:  p.SystemUpgrade,
-		Activity:     p.Activity,
+	executor, err := actors.NewExecutor(p.Context, p.ActorRuntime, "updater", "single-container", 3)
+	if err != nil {
+		return nil, err
+	}
+	module, err := updater.New(updater.Dependencies{
+		DB:            p.DB,
+		Settings:      p.Settings,
+		Docker:        p.Docker,
+		Project:       p.Project,
+		ImageUpdate:   p.ImageUpdate,
+		Registry:      p.Registry,
+		Event:         p.Event,
+		Image:         p.Image,
+		Notification:  p.Notification,
+		SelfUpgrade:   p.SystemUpgrade,
+		Activity:      p.Activity,
+		SingleUpdates: executor,
 	})
+	if err != nil {
+		return nil, errors.Combine(err, executor.Stop(p.Context))
+	}
+	p.Lifecycle.Append(fx.Hook{OnStop: executor.Stop})
+	return module, nil
 }
 
 func provideUserServiceInternal(db *database.DB, role *role.RoleService) *user.UserService {

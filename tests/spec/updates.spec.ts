@@ -2,7 +2,7 @@ import { test, expect, type Page, type Route } from '../fixtures/test.fixture';
 import { openRowActionsMenu } from '../utils/table-actions.util';
 
 const UPDATES_ROUTE = '/updates';
-const CONTAINER_UPDATE_ROUTE = /\/api\/environments\/0\/containers\/[^/]+\/update$/;
+const CONTAINER_UPDATE_ROUTE = /\/api\/environments\/0\/containers\/[^/]+\/update\?async=true$/;
 const CONTAINER_LIST_ROUTE = /\/api\/environments\/0\/containers(?:\?.*)?$/;
 
 const CONTAINERS = [
@@ -145,17 +145,6 @@ type ContainerUpdateOutcome =
 	| { kind: 'failed'; error: string }
 	| { kind: 'request-error'; error: string };
 
-function containerUpdateItem(containerId: string, status: string, error?: string) {
-	const container = CONTAINERS.find((candidate) => candidate.id === containerId)!;
-	return {
-		resourceId: containerId,
-		resourceName: container.name,
-		resourceType: 'container',
-		status,
-		error
-	};
-}
-
 /** Answers `POST .../containers/{id}/update` per container and records which ids were requested. */
 async function stubContainerUpdates(page: Page, outcomes: Record<string, ContainerUpdateOutcome>) {
 	const requested: string[] = [];
@@ -171,32 +160,22 @@ async function stubContainerUpdates(page: Page, outcomes: Record<string, Contain
 			});
 			return;
 		}
-		const data =
-			outcome.kind === 'updated'
-				? {
-						checked: 1,
-						updated: 1,
-						skipped: 0,
-						failed: 0,
-						items: [containerUpdateItem(containerId, 'updated')]
-					}
-				: outcome.kind === 'skipped'
-					? {
-							checked: 1,
-							updated: 0,
-							skipped: 1,
-							failed: 0,
-							items: [containerUpdateItem(containerId, 'skipped', outcome.reason)]
-						}
-					: {
-							checked: 1,
-							updated: 0,
-							skipped: 0,
-							failed: 1,
-							items: [containerUpdateItem(containerId, 'failed', outcome.error)]
-						};
+		const container = CONTAINERS.find((candidate) => candidate.id === containerId)!;
+		const now = new Date().toISOString();
+		const data = {
+			id: `update-activity-${requested.length}`,
+			environmentId: '0',
+			sourceEnvironmentId: '0',
+			type: 'auto_update',
+			status: 'queued',
+			resourceType: 'container',
+			resourceId: containerId,
+			resourceName: container.name,
+			createdAt: now,
+			startedAt: now
+		};
 		await route.fulfill({
-			status: 200,
+			status: 202,
 			contentType: 'application/json',
 			json: { success: true, data }
 		});
@@ -248,10 +227,10 @@ test.describe('Updates Page Project Rows', () => {
 });
 
 test.describe('Updates Page Actions', () => {
-	test('applies updates to the selected container rows, including an ignored one', async ({
+	test('accepts updates for the selected container rows, including an ignored one', async ({
 		page
 	}) => {
-		const listFetches = await stubContainersWithUpdates(page);
+		await stubContainersWithUpdates(page);
 		const requested = await stubContainerUpdates(page, {});
 
 		await page.goto(UPDATES_ROUTE);
@@ -259,16 +238,16 @@ test.describe('Updates Page Actions', () => {
 		await expect(
 			containerRow(page, IGNORED_CONTAINER).getByText('Ignored', { exact: true })
 		).toBeVisible();
-		const fetchesBeforeUpdate = listFetches.count;
 
 		await selectAllContainerRows(page);
 		await confirmBulkUpdate(page);
 
-		await expect(page.getByText(`Updated ${CONTAINERS.length} resource(s)`)).toBeVisible({
+		await expect(
+			page.getByText(`Started updates for ${CONTAINERS.length} container(s)`)
+		).toBeVisible({
 			timeout: 15_000
 		});
 		expect(requested.sort()).toEqual(CONTAINERS.map((c) => c.id).sort());
-		expect(listFetches.count).toBeGreaterThan(fetchesBeforeUpdate);
 		for (const container of CONTAINERS) {
 			await expect(
 				containerRow(page, container).getByRole('checkbox', { name: 'Select row' })
@@ -276,12 +255,12 @@ test.describe('Updates Page Actions', () => {
 		}
 	});
 
-	test('does not count skipped or failed container updates as updated', async ({ page }) => {
+	test('counts submission failures separately from later update outcomes', async ({ page }) => {
 		await stubContainersWithUpdates(page);
 		const [alpha, beta] = CONTAINERS;
 		const requested = await stubContainerUpdates(page, {
-			[beta.id]: { kind: 'skipped', reason: 'immutable image reference' },
-			[IGNORED_CONTAINER.id]: { kind: 'failed', error: 'pull failed: registry unreachable' }
+			[beta.id]: { kind: 'failed', error: 'pull failed: registry unreachable' },
+			[IGNORED_CONTAINER.id]: { kind: 'request-error', error: 'executor unavailable' }
 		});
 
 		await page.goto(UPDATES_ROUTE);
@@ -291,15 +270,16 @@ test.describe('Updates Page Actions', () => {
 		await confirmBulkUpdate(page);
 
 		await expect(
-			page.getByText(`Updated 1 of ${CONTAINERS.length} resource(s), 2 failed`)
+			page.getByText(`Started 2 of ${CONTAINERS.length} container update(s). 1 could not start.`)
 		).toBeVisible({
 			timeout: 15_000
 		});
+		await expect(page.getByText(`Updated ${CONTAINERS.length} resource(s)`)).toHaveCount(0);
 		expect(requested.sort()).toEqual([alpha.id, beta.id, IGNORED_CONTAINER.id].sort());
 	});
 
-	test('row update reports a skipped reason or the server error and recovers', async ({ page }) => {
-		const listFetches = await stubContainersWithUpdates(page);
+	test('row update acknowledges acceptance and reports submission errors', async ({ page }) => {
+		await stubContainersWithUpdates(page);
 		const outcomes: Record<string, ContainerUpdateOutcome> = {
 			[IGNORED_CONTAINER.id]: { kind: 'skipped', reason: 'immutable image reference' }
 		};
@@ -307,18 +287,16 @@ test.describe('Updates Page Actions', () => {
 
 		await page.goto(UPDATES_ROUTE);
 		await page.waitForLoadState('load');
-		const fetchesBeforeUpdate = listFetches.count;
 
 		await updateContainerFromRow(page, IGNORED_CONTAINER);
 		await expect(
-			page.getByText(`Container "${IGNORED_CONTAINER.name}" was not updated`)
+			page.getByText(`Update started for container "${IGNORED_CONTAINER.name}"`)
 		).toBeVisible({
 			timeout: 15_000
 		});
-		await expect(page.getByText('immutable image reference')).toBeVisible();
+		await expect(page.getByText('immutable image reference')).toHaveCount(0);
 		await expect(page.getByText('Up to Date')).toHaveCount(0);
 		expect(requested).toEqual([IGNORED_CONTAINER.id]);
-		await expect.poll(() => listFetches.count).toBeGreaterThan(fetchesBeforeUpdate);
 
 		outcomes[IGNORED_CONTAINER.id] = {
 			kind: 'request-error',
@@ -326,7 +304,9 @@ test.describe('Updates Page Actions', () => {
 		};
 		await updateContainerFromRow(page, IGNORED_CONTAINER);
 		await expect(
-			page.getByText(`Failed to update container "${IGNORED_CONTAINER.name}"`)
+			page.getByText(
+				`Could not confirm the update request for container "${IGNORED_CONTAINER.name}"`
+			)
 		).toBeVisible({
 			timeout: 15_000
 		});

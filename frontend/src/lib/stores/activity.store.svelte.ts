@@ -164,6 +164,7 @@ function createActivityStore() {
 	// Last observed status per activity, for completion-toast transition
 	// detection. Intentionally non-reactive: only stream handling reads it.
 	const observedStatusById = new Map<string, ActivityStatus>();
+	const completionToastQueuedIds = new Set<string>();
 	const activitySubscribers = new Set<(activities: readonly Activity[]) => void>();
 
 	// Toast when an activity this session observed as active reaches
@@ -173,7 +174,7 @@ function createActivityStore() {
 	function noteActivityStatusInternal(activity: Activity) {
 		const prev = observedStatusById.get(activity.id);
 		observedStatusById.set(activity.id, activity.status);
-		if (!prev || !isActiveStatusInternal(prev) || prev === activity.status) {
+		if (!prev || !isActiveStatusInternal(prev) || prev === activity.status || completionToastQueuedIds.has(activity.id)) {
 			return;
 		}
 		if (activity.status !== 'success' && activity.status !== 'failed') {
@@ -188,6 +189,7 @@ function createActivityStore() {
 		if (!activity.startedBy?.userId || !currentUserId || activity.startedBy.userId !== currentUserId) {
 			return;
 		}
+		completionToastQueuedIds.add(activity.id);
 		queueActivityCompletionToast(activity, openCenterInternal);
 	}
 
@@ -350,6 +352,7 @@ function createActivityStore() {
 		for (const id of observedStatusById.keys()) {
 			if (!present.has(id)) {
 				observedStatusById.delete(id);
+				completionToastQueuedIds.delete(id);
 			}
 		}
 		for (const subscriber of activitySubscribers) subscriber(_activities);
@@ -545,6 +548,17 @@ function createActivityStore() {
 	}
 
 	return {
+		acceptActivity: (activity: Activity) => {
+			const current = _activities.find((item) => item.id === activity.id);
+			if (current) {
+				if (!isActiveStatusInternal(current.status) && isActiveStatusInternal(activity.status)) {
+					observedStatusById.set(activity.id, activity.status);
+					noteActivityStatusInternal(current);
+				}
+				return;
+			}
+			mergeActivityInternal(activity);
+		},
 		subscribeActivities(subscriber: (activities: readonly Activity[]) => void): () => void {
 			activitySubscribers.add(subscriber);
 			subscriber(_activities);
@@ -632,6 +646,7 @@ function createActivityStore() {
 				sessionGeneration += 1;
 				requestedEnvironments = {};
 				observedStatusById.clear();
+				completionToastQueuedIds.clear();
 				discardPendingActivityToasts();
 				_activities = [];
 				_environmentActivities = {};

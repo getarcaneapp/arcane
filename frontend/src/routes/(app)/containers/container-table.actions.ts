@@ -15,7 +15,8 @@ import {
 import type { TableActionConfig, TableBulkActionConfig } from '#lib/utils/table-action-types.js';
 import { toast } from 'svelte-sonner';
 import { getContainerDisplayName, type ActionStatus } from './container-table.helpers';
-import { throwOnContainerUpdateFailure } from '#lib/utils/update-actions.js';
+import type { Activity } from '#lib/types/activity.type.js';
+import { hasPermission } from '#lib/utils/auth.js';
 
 type BulkLoadingState = {
 	start: boolean;
@@ -31,6 +32,9 @@ type ActionDeps = {
 	refreshContainers: () => Promise<ContainersPaginatedResponse>;
 	actionStatus: Record<string, ActionStatus>;
 	isBulkLoading: BulkLoadingState;
+	environmentId: () => string;
+	onUpdateAccepted: (activity: Activity) => void;
+	canRefreshUpdates: () => boolean;
 };
 
 type ContainerActionKind = 'start' | 'stop' | 'restart' | 'pause' | 'unpause' | 'redeploy';
@@ -55,7 +59,10 @@ export function createContainerActions({
 	setSelectedIds,
 	refreshContainers,
 	actionStatus,
-	isBulkLoading
+	isBulkLoading,
+	environmentId,
+	onUpdateAccepted,
+	canRefreshUpdates
 }: ActionDeps) {
 	const reloadContainers = async () => {
 		const result = await refreshContainers();
@@ -120,11 +127,12 @@ export function createContainerActions({
 		confirmAndUpdateContainer({
 			containerId: container.id,
 			containerName,
-			useActivityToast: true,
+			environmentId: environmentId(),
 			setLoading: (loading) => {
 				actionStatus[container.id] = loading ? 'updating' : '';
 			},
-			onRefresh: reloadContainers
+			onRefresh: () => (canRefreshUpdates() ? reloadContainers() : undefined),
+			onAccepted: onUpdateAccepted
 		});
 	}
 
@@ -214,6 +222,7 @@ export function createContainerActions({
 	}
 
 	function handleBulkUpdate(validIds: string[], allIds: string[]) {
+		const updateEnvironmentId = environmentId();
 		const totalCount = allIds.length;
 		const filteredCount = validIds.length;
 		const message =
@@ -227,16 +236,22 @@ export function createContainerActions({
 			message,
 			confirmLabel: m.common_update(),
 			destructive: false,
-			run: (id) => containerService.updateContainer(id).then(throwOnContainerUpdateFailure),
+			run: (id) => containerService.updateContainer(id, updateEnvironmentId),
 			messages: {
-				success: (count) => m.containers_bulk_update_success({ count }),
-				partial: (success, total, failed) => m.containers_bulk_update_partial({ success, total, failed }),
-				failure: () => m.containers_bulk_update_failed()
+				success: (count) => m.containers_bulk_update_accepted({ count }),
+				partial: (success, total, failed) => m.containers_bulk_update_accept_partial({ success, total, failed }),
+				failure: () => m.containers_bulk_update_accept_failed()
 			},
+			acceptanceOnly: true,
+			activityLink: hasPermission('activities:read', updateEnvironmentId),
+			onItemSuccess: (_id, activity) => onUpdateAccepted(activity),
 			setLoading: (loading) => {
 				isBulkLoading['update'] = loading;
 			},
-			onComplete: () => reloadContainers(),
+			onComplete: () =>
+				canRefreshUpdates() && updateEnvironmentId === environmentId() && !hasPermission('activities:read', updateEnvironmentId)
+					? reloadContainers()
+					: undefined,
 			clearSelection: () => setSelectedIds([])
 		});
 	}

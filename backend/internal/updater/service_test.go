@@ -13,6 +13,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
 	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
@@ -27,6 +28,7 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -42,6 +44,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/notification"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	arcaneupdater "github.com/getarcaneapp/arcane/types/v2/updater"
 	"github.com/libtnb/sqlite"
 	dockerauthconfig "github.com/moby/moby/api/pkg/authconfig"
@@ -56,6 +59,7 @@ import (
 	"go.getarcane.app/updater/labels"
 	"go.getarcane.app/updater/refs"
 	updatertypes "go.getarcane.app/updater/types"
+	"go.uber.org/fx/fxtest"
 	"gorm.io/gorm"
 )
 
@@ -731,6 +735,151 @@ func TestUpdaterService_RecordUpdateRunAppendsActivityMessageInternal(t *testing
 			require.Len(t, detail.Messages, 1)
 			assert.Equal(t, tt.wantLevel, detail.Messages[0].Level)
 			assert.Equal(t, tt.wantMessage, detail.Messages[0].Message)
+		})
+	}
+}
+
+func TestUpdaterService_AcceptSingleContainerUpdateUsesQueuedActivityInternal(t *testing.T) {
+	for _, cancelActivity := range []bool{false, true} {
+		name := "request disconnect"
+		if cancelActivity {
+			name = "activity cancellation while queued"
+		}
+		t.Run(name, func(t *testing.T) {
+			db := setupProjectTestDBInternal(t)
+			require.NoError(t, db.AutoMigrate(&activity.Activity{}, &activity.ActivityMessage{}))
+			sqlDB, err := db.DB.DB()
+			require.NoError(t, err)
+			sqlDB.SetMaxOpenConns(1)
+			activityService := activity.NewActivityService(db, nil)
+			svc, err := NewUpdaterService(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, activityService)
+			require.NoError(t, err)
+
+			lifecycle := fxtest.NewLifecycle(t)
+			runtime, err := actors.NewRuntime(t.Context(), lifecycle)
+			require.NoError(t, err)
+			executor, err := actors.NewExecutor(t.Context(), runtime, "updater-test", t.Name(), 3)
+			require.NoError(t, err)
+			svc.singleUpdates = executor
+			release := make(chan struct{})
+			var releaseOnce sync.Once
+			defer releaseOnce.Do(func() { close(release) })
+			t.Cleanup(func() {
+				stopCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+				defer cancel()
+				require.NoError(t, executor.Stop(stopCtx))
+				require.NoError(t, lifecycle.Stop(stopCtx))
+			})
+			started := make(chan struct{})
+			_, err = executor.Submit(t.Context(), "hold executor", func(context.Context) (int, error) {
+				close(started)
+				<-release
+				return 0, nil
+			}, nil)
+			require.NoError(t, err)
+			<-started
+
+			requestCtx, cancelRequest := context.WithCancel(context.Background())
+			workCtx := utils.ActivityRuntimeContext(requestCtx, t.Context())
+			type acceptedInternal struct {
+				activity *activitytypes.Activity
+				err      error
+			}
+			accepted := make(chan acceptedInternal, 1)
+			go func() {
+				item, acceptErr := svc.AcceptSingleContainerUpdate(workCtx, "missing-container")
+				accepted <- acceptedInternal{activity: item, err: acceptErr}
+			}()
+			var item *activitytypes.Activity
+			select {
+			case result := <-accepted:
+				require.NoError(t, result.err)
+				item = result.activity
+			case <-time.After(time.Second):
+				require.FailNow(t, "acceptance waited for executor work")
+			}
+			require.Equal(t, activitytypes.StatusQueued, item.Status)
+			cancelRequest()
+			if cancelActivity {
+				_, err = activityService.CancelActivity(context.Background(), "0", item.ID, "test")
+				require.NoError(t, err)
+			}
+			releaseOnce.Do(func() { close(release) })
+
+			wantStatus := activitytypes.StatusFailed
+			if cancelActivity {
+				wantStatus = activitytypes.StatusCancelled
+			}
+			require.Eventually(t, func() bool {
+				var saved activity.Activity
+				return db.First(&saved, "id = ?", item.ID).Error == nil && saved.Status == wantStatus
+			}, 5*time.Second, 10*time.Millisecond)
+		})
+	}
+}
+
+func TestUpdaterService_AcceptSingleContainerUpdateFailureFinalizesInternal(t *testing.T) {
+	db := setupProjectTestDBInternal(t)
+	require.NoError(t, db.AutoMigrate(&activity.Activity{}, &activity.ActivityMessage{}))
+	activityService := activity.NewActivityService(db, nil)
+	svc, err := NewUpdaterService(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, activityService)
+	require.NoError(t, err)
+	lifecycle := fxtest.NewLifecycle(t)
+	runtime, err := actors.NewRuntime(t.Context(), lifecycle)
+	require.NoError(t, err)
+	executor, err := actors.NewExecutor(t.Context(), runtime, "updater-test", t.Name(), 3)
+	require.NoError(t, err)
+	svc.singleUpdates = executor
+	stopCtx, cancelStop := context.WithTimeout(context.Background(), time.Second)
+	require.NoError(t, executor.Stop(stopCtx))
+	cancelStop()
+	t.Cleanup(func() {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		require.NoError(t, lifecycle.Stop(cleanupCtx))
+	})
+
+	accepted, err := svc.AcceptSingleContainerUpdate(context.Background(), "container-1")
+	require.Nil(t, accepted)
+	require.ErrorContains(t, err, "submit container update")
+	var saved activity.Activity
+	require.NoError(t, db.First(&saved, "resource_id = ?", "container-1").Error)
+	require.Equal(t, activitytypes.StatusFailed, saved.Status)
+
+	unmigrated := setupProjectTestDBInternal(t)
+	svc.deps.Activity = activity.NewActivityService(unmigrated, nil)
+	accepted, err = svc.AcceptSingleContainerUpdate(context.Background(), "container-2")
+	require.Nil(t, accepted)
+	require.ErrorContains(t, err, "start container update activity")
+}
+
+func TestUpdaterService_SingleContainerActivityResultMessagesInternal(t *testing.T) {
+	for _, tt := range []struct {
+		name        string
+		result      *arcaneupdater.Result
+		wantStatus  activitytypes.Status
+		wantMessage string
+	}{
+		{name: "updated", result: &arcaneupdater.Result{Updated: 1, Items: []arcaneupdater.ResourceResult{{Status: string(updater.StatusUpdated), ResourceName: "web"}}}, wantStatus: activitytypes.StatusSuccess, wantMessage: "Container updated"},
+		{name: "restarted", result: &arcaneupdater.Result{Restarted: 1, Items: []arcaneupdater.ResourceResult{{Status: string(updater.StatusRestarted), ResourceName: "web"}}}, wantStatus: activitytypes.StatusSuccess, wantMessage: "Container updated"},
+		{name: "skipped", result: &arcaneupdater.Result{Skipped: 1, Items: []arcaneupdater.ResourceResult{{Status: string(updater.StatusSkipped), Error: "immutable image reference"}}}, wantStatus: activitytypes.StatusSuccess, wantMessage: "Container update skipped: immutable image reference"},
+		{name: "already current", result: &arcaneupdater.Result{Checked: 1, Items: []arcaneupdater.ResourceResult{{Status: string(updater.StatusUpToDate)}}}, wantStatus: activitytypes.StatusSuccess, wantMessage: "Container already current"},
+		{name: "failed", result: &arcaneupdater.Result{Failed: 1, Items: []arcaneupdater.ResourceResult{{Status: string(updater.StatusFailed), Error: "pull failed"}}}, wantStatus: activitytypes.StatusFailed, wantMessage: "pull failed"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			db := setupProjectTestDBInternal(t)
+			require.NoError(t, db.AutoMigrate(&activity.Activity{}, &activity.ActivityMessage{}))
+			activityService := activity.NewActivityService(db, nil)
+			svc, err := NewUpdaterService(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, activityService)
+			require.NoError(t, err)
+			started, err := activityService.StartActivity(t.Context(), activitylib.StartRequest{EnvironmentID: "0", Type: activitytypes.TypeAutoUpdate, Metadata: database.JSON{"containerID": "old-id"}})
+			require.NoError(t, err)
+			svc.finishSingleContainerUpdateInternal(t.Context(), started.ID, tt.result, nil)
+			var saved activity.Activity
+			require.NoError(t, db.First(&saved, "id = ?", started.ID).Error)
+			require.Equal(t, tt.wantStatus, saved.Status)
+			require.Equal(t, tt.wantMessage, saved.LatestMessage)
+			require.Equal(t, "old-id", saved.Metadata["containerID"])
 		})
 	}
 }

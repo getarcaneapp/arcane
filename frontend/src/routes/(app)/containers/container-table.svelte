@@ -25,6 +25,9 @@
 	import ImageUpdateItem from '#lib/components/image-update-item.svelte';
 	import { PersistedState } from 'runed';
 	import { onMount } from 'svelte';
+	import { useQueryClient } from '@tanstack/svelte-query';
+	import { activityStore } from '#lib/stores/activity.store.svelte.js';
+	import { createContainerUpdateActivityTracker } from '#lib/utils/container-update-activities.js';
 	import { mode } from 'mode-watcher';
 	import { ContainerStatsManager } from './components/container-stats-manager.svelte';
 	import ContainerStatsSync from './components/container-stats-sync.svelte';
@@ -101,6 +104,17 @@
 	});
 
 	const statsManager = new ContainerStatsManager();
+	const queryClient = useQueryClient();
+	let updateTableMounted = false;
+	const updateActivities = createContainerUpdateActivityTracker(
+		() => environmentId,
+		() => {
+			if (!updateTableMounted || environmentId !== environmentStore.selected?.id) return;
+			void queryClient.invalidateQueries({ queryKey: ['containers', environmentId] });
+			void queryClient.invalidateQueries({ queryKey: ['container', environmentId] });
+			void refreshContainers(requestOptions);
+		}
+	);
 
 	const resourceSortSupported = $derived(containers.resourceSortSupported === true);
 	const resourceSortActive = $derived.by(() => {
@@ -203,7 +217,12 @@
 		},
 		refreshContainers: () => refreshContainers(requestOptions),
 		actionStatus,
-		isBulkLoading
+		isBulkLoading,
+		environmentId: () => environmentId,
+		onUpdateAccepted: (activity) => {
+			if (updateTableMounted) updateActivities.accept(activity);
+		},
+		canRefreshUpdates: () => updateTableMounted && environmentId === environmentStore.selected?.id
 	});
 
 	const isAnyLoading = $derived(hasAnyLoadingState(actionStatus, isBulkLoading));
@@ -303,6 +322,8 @@
 	}
 
 	onMount(() => {
+		updateTableMounted = true;
+		const unsubscribeActivities = activityStore.subscribeActivities(updateActivities.observe);
 		collapsedGroupsState = new PersistedState<Record<string, boolean>>('container-groups-collapsed', {});
 
 		const persistedInternal = (customSettings['showInternalContainers'] as boolean) ?? false;
@@ -325,6 +346,8 @@
 		}
 
 		return () => {
+			updateTableMounted = false;
+			unsubscribeActivities();
 			statsManager.destroy();
 		};
 	});

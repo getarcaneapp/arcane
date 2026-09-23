@@ -144,6 +144,7 @@ func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) e
 	}
 
 	m.setIconCatalogHeaderInternal(c, user)
+	m.setUpdateInitiatorHeadersInternal(c, user)
 
 	apiURL, accessToken, enabled, err := m.resolver(c.Request().Context(), envID)
 	if err != nil || apiURL == "" {
@@ -208,6 +209,25 @@ func (m *EnvironmentMiddleware) setIconCatalogHeaderInternal(c *echo.Context, us
 		return
 	}
 	c.Request().Header.Set(utils.HeaderIconCatalog, *user.Preferences.IconCatalog)
+}
+
+func (m *EnvironmentMiddleware) setUpdateInitiatorHeadersInternal(c *echo.Context, user *common.User) {
+	headers := c.Request().Header
+	headers.Del(utils.HeaderUpdateInitiatorID)
+	headers.Del(utils.HeaderUpdateInitiatorName)
+	headers.Del(utils.HeaderUpdateInitiatorDisplayName)
+	updatePath := strings.Contains(c.Request().URL.Path, "/containers/") && strings.HasSuffix(c.Request().URL.Path, "/update")
+	if c.Request().Method != http.MethodPost || !updatePath {
+		return
+	}
+	if user == nil || user.ID == "" {
+		return
+	}
+	headers.Set(utils.HeaderUpdateInitiatorID, user.ID)
+	headers.Set(utils.HeaderUpdateInitiatorName, user.Username)
+	if user.DisplayName != nil {
+		headers.Set(utils.HeaderUpdateInitiatorDisplayName, *user.DisplayName)
+	}
 }
 
 // proxyPermissionDenied reports whether the caller lacks permission to perform

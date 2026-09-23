@@ -227,9 +227,13 @@
 							bind:requestOptions={containerRequestOptions}
 							onIgnoreChanged={invalidateContainerQueries}
 							onRefreshData={async (options) => {
-								containerRequestOptions = ensureStandaloneContainerUpdatesFilter(options);
-								const next = await containerService.getContainersForEnvironment(envId, containerRequestOptions);
-								containerSnapshot = { envId, value: next };
+								const requestedEnvId = envId;
+								const requestedOptions = ensureStandaloneContainerUpdatesFilter(options);
+								const next = await containerService.getContainersForEnvironment(requestedEnvId, requestedOptions);
+								if (requestedEnvId === envId) {
+									containerRequestOptions = requestedOptions;
+									containerSnapshot = { envId: requestedEnvId, value: next };
+								}
 								return next;
 							}}
 						/>

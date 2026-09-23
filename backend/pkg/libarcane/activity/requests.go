@@ -49,7 +49,11 @@ type StartRequest struct {
 	// limiter: with a free slot it starts running as usual; otherwise it is
 	// created with status queued and the caller must block on
 	// SlotWaiter.AwaitActivitySlot before doing the work.
-	Queue         bool
+	Queue bool
+	// DeferSlot persists a queued activity without reserving a slot until its
+	// serialized worker starts. It is used by actor-owned work submitted after
+	// activity creation so queued tasks cannot hold slots ahead of the actor.
+	DeferSlot     bool
 	Type          activitytypes.Type
 	ResourceType  *string
 	ResourceID    *string
@@ -63,6 +67,7 @@ type StartRequest struct {
 
 type UpdateRequest struct {
 	Status        activitytypes.Status
+	ResourceName  *string
 	Progress      *int
 	Step          *string
 	LatestMessage *string

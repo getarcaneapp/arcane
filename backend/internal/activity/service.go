@@ -322,7 +322,9 @@ func (s *ActivityService) StartActivity(ctx context.Context, req StartActivityRe
 	status := activitytypes.StatusRunning
 	var slotRelease func()
 	if req.Queue {
-		if release, ok := s.limiter.tryAcquireInternal(ctx, environmentID).Get(); ok {
+		if req.DeferSlot {
+			status = activitytypes.StatusQueued
+		} else if release, ok := s.limiter.tryAcquireInternal(ctx, environmentID).Get(); ok {
 			slotRelease = release
 		} else {
 			status = activitytypes.StatusQueued
@@ -364,6 +366,26 @@ func (s *ActivityService) StartActivity(ctx context.Context, req StartActivityRe
 	dto := activityToDTOInternal(model)
 	s.publishActivityInternal(dto)
 	return &dto, nil
+}
+
+// StartTrackedActivity holds the cancellation lock across persistence and
+// registration, so cancellation cannot treat the new row as untracked.
+func (s *ActivityService) StartTrackedActivity(ctx context.Context, req StartActivityRequest) (*activitytypes.Activity, context.Context, error) {
+	if err := s.checkInitInternal(); err != nil {
+		return nil, nil, err
+	}
+	s.runningMu.Lock()
+	defer s.runningMu.Unlock()
+	activity, err := s.StartActivity(ctx, req)
+	if err != nil {
+		return nil, nil, err
+	}
+	workCtx, cancel := context.WithCancelCause(ctx)
+	if s.running == nil {
+		s.running = map[string]context.CancelCauseFunc{}
+	}
+	s.running[activity.ID] = cancel
+	return activity, workCtx, nil
 }
 
 func (s *ActivityService) registerSlotReleaseInternal(activityID string, release func()) {
@@ -457,6 +479,9 @@ func (s *ActivityService) UpdateActivity(ctx context.Context, activityID string,
 	}
 	if req.Status != "" {
 		updates["status"] = req.Status
+	}
+	if req.ResourceName != nil {
+		updates["resource_name"] = strings.TrimSpace(*req.ResourceName)
 	}
 	if req.Progress != nil {
 		updates["progress"] = *clampProgressPtrInternal(req.Progress)

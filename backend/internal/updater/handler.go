@@ -3,6 +3,7 @@ package updater
 import (
 	"context"
 	"net/http"
+	"reflect"
 
 	"emperror.dev/errors"
 	"github.com/danielgtaylor/huma/v2"
@@ -11,6 +12,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
 	"github.com/getarcaneapp/arcane/types/v2/updater"
@@ -32,6 +34,12 @@ type RunUpdaterInput struct {
 type UpdateContainerInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ContainerID   string `path:"containerId" doc:"Container ID to update"`
+	Async         bool   `query:"async" doc:"Return an accepted activity immediately instead of waiting for the update"`
+}
+
+type updateContainerOutput struct {
+	Status int
+	Body   base.ApiResponse[any]
 }
 
 type GetUpdaterStatusInput struct {
@@ -85,6 +93,8 @@ func RegisterUpdater(api huma.API, updaterService *UpdaterService, appCtx handle
 		Security:    handlerutil.DefaultOperationSecurity(),
 	}, authz.PermImageUpdatesRead, h.GetUpdaterHistory)
 
+	acceptedSchema := huma.SchemaFromType(api.OpenAPI().Components.Schemas, reflect.TypeFor[base.ApiResponse[activitytypes.Activity]]())
+	completedSchema := huma.SchemaFromType(api.OpenAPI().Components.Schemas, reflect.TypeFor[base.ApiResponse[*updater.Result]]())
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "update-container",
 		Method:      http.MethodPost,
@@ -93,7 +103,11 @@ func RegisterUpdater(api huma.API, updaterService *UpdaterService, appCtx handle
 		Description: "Pull the latest image and apply the appropriate update strategy for a specific container",
 		Tags:        []string{"Updater", "Containers"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermImageUpdatesCheck, h.UpdateContainer)
+		Responses: map[string]*huma.Response{
+			"200": {Description: "Container update completed", Content: map[string]*huma.MediaType{"application/json": {Schema: completedSchema}}},
+			"202": {Description: "Container update accepted", Content: map[string]*huma.MediaType{"application/json": {Schema: acceptedSchema}}},
+		},
+	}, authz.PermImageUpdatesCheck, h.updateContainerInternal)
 }
 
 // RunUpdater applies pending container updates.
@@ -152,16 +166,26 @@ func (h *UpdaterHandler) GetUpdaterHistory(ctx context.Context, input *GetUpdate
 	}, nil
 }
 
-// UpdateContainer updates a single container by pulling the latest image and applying the appropriate update flow.
-func (h *UpdaterHandler) UpdateContainer(ctx context.Context, input *UpdateContainerInput) (*handlerutil.Out[*updater.Result], error) {
+func (h *UpdaterHandler) updateContainerInternal(ctx context.Context, input *UpdateContainerInput) (*updateContainerOutput, error) {
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
+	if input.Async {
+		activity, err := h.updaterService.AcceptSingleContainerUpdate(runtimeCtx, input.ContainerID)
+		if err != nil {
+			return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to accept container update").Error())
+		}
+		return &updateContainerOutput{
+			Status: http.StatusAccepted,
+			Body:   base.ApiResponse[any]{Success: true, Data: activity},
+		}, nil
+	}
 	out, err := h.updaterService.UpdateSingleContainer(runtimeCtx, input.ContainerID)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to run updater").Error())
 	}
 
-	return &handlerutil.Out[*updater.Result]{
-		Body: base.ApiResponse[*updater.Result]{
+	return &updateContainerOutput{
+		Status: http.StatusOK,
+		Body: base.ApiResponse[any]{
 			Success: true,
 			Data:    out,
 		},

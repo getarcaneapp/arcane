@@ -337,16 +337,23 @@ func TestEnvironmentMiddleware_ForwardsResolvedIconCatalogHeaderOnly(t *testing.
 		catalog        *string
 		clientSupplied string
 		wantHeader     string
+		userID         string
+		userName       string
+		wantInitiator  string
 	}{
-		{name: "forwards the caller's preference", catalog: new("dashboard-icons"), wantHeader: "dashboard-icons"},
+		{name: "forwards the caller's preference", catalog: new("dashboard-icons"), wantHeader: "dashboard-icons", userID: "user-1", userName: "operator", wantInitiator: "user-1"},
 		{name: "strips a client-supplied header when the caller has no preference", clientSupplied: "dashboard-icons", wantHeader: ""},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var forwarded string
+			var forwardedInitiator string
+			var forwardedName string
 			backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				forwarded = r.Header.Get(utils.HeaderIconCatalog)
+				forwardedInitiator = r.Header.Get(utils.HeaderUpdateInitiatorID)
+				forwardedName = r.Header.Get(utils.HeaderUpdateInitiatorName)
 				w.WriteHeader(http.StatusOK)
 			}))
 			defer backend.Close()
@@ -361,6 +368,8 @@ func TestEnvironmentMiddleware_ForwardsResolvedIconCatalogHeaderOnly(t *testing.
 				authValidator: func(ctx context.Context, c *echo.Context) (*authz.PermissionSet, *common.User, bool) {
 					_, _ = ctx, c
 					u := &common.User{}
+					u.ID = tt.userID
+					u.Username = tt.userName
 					u.Preferences.IconCatalog = tt.catalog
 					return authz.SudoPermissionSet(), u, true
 				},
@@ -370,11 +379,13 @@ func TestEnvironmentMiddleware_ForwardsResolvedIconCatalogHeaderOnly(t *testing.
 
 			router := echo.New()
 			api := attachMiddleware(router, mw)
-			api.GET("/environments/:id/containers", func(c *echo.Context) error {
+			api.POST("/environments/:id/containers/:containerId/update", func(c *echo.Context) error {
 				return c.JSON(http.StatusOK, map[string]any{"success": true})
 			})
 
-			req := httptest.NewRequest(http.MethodGet, "/api/environments/env-remote/containers", nil)
+			req := httptest.NewRequest(http.MethodPost, "/api/environments/env-remote/containers/container-1/update", nil)
+			req.Header.Set(utils.HeaderUpdateInitiatorID, "spoofed")
+			req.Header.Set(utils.HeaderUpdateInitiatorName, "spoofed")
 			if tt.clientSupplied != "" {
 				req.Header.Set(utils.HeaderIconCatalog, tt.clientSupplied)
 			}
@@ -383,6 +394,8 @@ func TestEnvironmentMiddleware_ForwardsResolvedIconCatalogHeaderOnly(t *testing.
 
 			require.Equal(t, http.StatusOK, recorder.Code)
 			assert.Equal(t, tt.wantHeader, forwarded)
+			assert.Equal(t, tt.wantInitiator, forwardedInitiator)
+			assert.Equal(t, tt.userName, forwardedName)
 		})
 	}
 }

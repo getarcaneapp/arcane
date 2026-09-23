@@ -7,6 +7,8 @@ import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 import type { Result } from '#lib/types/result.js';
 import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
+import { activityStore } from '#lib/stores/activity.store.svelte.js';
+import type { Activity } from '#lib/types/activity.type.js';
 
 /**
  * Shared helpers for table bulk operations (start/stop/remove/prune/…). These
@@ -45,6 +47,10 @@ export interface RunBulkOperationOptions<T> {
 	onItemFailure?: (id: string, error: Error) => void;
 	/** Run operations one at a time instead of concurrently. Defaults to concurrent. */
 	sequential?: boolean;
+	/** The requests were accepted for background work; completion belongs to activities. */
+	acceptanceOnly?: boolean;
+	activityLink?: boolean;
+	onItemSuccess?: (id: string, value: T) => void;
 }
 
 /**
@@ -60,7 +66,10 @@ async function runBulkOperation<T>({
 	onComplete,
 	clearSelection,
 	onItemFailure,
-	sequential = false
+	sequential = false,
+	acceptanceOnly = false,
+	activityLink = true,
+	onItemSuccess
 }: RunBulkOperationOptions<T>): Promise<BulkOperationResult> {
 	const total = ids?.length ?? 0;
 	const result: BulkOperationResult = { total, success: 0, failed: 0 };
@@ -74,8 +83,10 @@ async function runBulkOperation<T>({
 			onItemFailure?.(id, outcome.error);
 		} else {
 			result.success += 1;
-			const activityId = extractActivityId(outcome.data);
+			onItemSuccess?.(id, outcome.data as T);
+			const activityId = acceptanceOnly ? (outcome.data as Activity).id : extractActivityId(outcome.data);
 			if (activityId) {
+				if (acceptanceOnly && activityLink) activityStore.acceptActivity(outcome.data as Activity);
 				activityIds.push(activityId);
 				firstActivityId ??= activityId;
 			}
@@ -106,14 +117,17 @@ async function runBulkOperation<T>({
 
 	// The summary toast below covers every spawned activity; suppress the
 	// per-activity completion toasts for all of them, not just the linked one.
-	for (const activityId of activityIds) {
-		markActivityToastShown(activityId);
+	if (!acceptanceOnly) {
+		for (const activityId of activityIds) markActivityToastShown(activityId);
 	}
 
 	if (result.failed === 0) {
-		toast.success(messages.success(result.success), activityToastOptions(firstActivityId));
+		const options = activityLink ? activityToastOptions(firstActivityId, !acceptanceOnly) : undefined;
+		if (acceptanceOnly) toast.info(messages.success(result.success), options);
+		else toast.success(messages.success(result.success), options);
 	} else if (result.success > 0) {
-		toast.warning(messages.partial(result.success, total, result.failed));
+		const options = activityLink ? activityToastOptions(firstActivityId, !acceptanceOnly) : undefined;
+		toast.warning(messages.partial(result.success, total, result.failed), options);
 	} else {
 		toast.error(messages.failure());
 	}
@@ -158,7 +172,10 @@ export function bulkConfirmAndRun<T>({
 	onComplete,
 	clearSelection,
 	onItemFailure,
-	sequential
+	sequential,
+	acceptanceOnly,
+	activityLink,
+	onItemSuccess
 }: BulkConfirmAndRunOptions<T>): void {
 	if (!ids || ids.length === 0) return;
 
@@ -178,7 +195,10 @@ export function bulkConfirmAndRun<T>({
 					onComplete,
 					clearSelection,
 					onItemFailure,
-					sequential
+					sequential,
+					acceptanceOnly,
+					activityLink,
+					onItemSuccess
 				});
 			}
 		}

@@ -445,6 +445,19 @@ func TestActivityServiceQueuedActivityFlipsToRunningWhenSlotFreesInternal(t *tes
 	var model Activity
 	require.NoError(t, service.db.First(&model, "id = ?", second.ID).Error)
 	require.Equal(t, activitytypes.StatusRunning, model.Status)
+
+	_, err = service.CompleteActivity(ctx, second.ID, activitytypes.StatusSuccess, "done", nil)
+	require.NoError(t, err)
+	firstDeferred, err := service.StartActivity(ctx, StartActivityRequest{EnvironmentID: "0", Type: activitytypes.TypeImagePull, Queue: true, DeferSlot: true})
+	require.NoError(t, err)
+	secondDeferred, err := service.StartActivity(ctx, StartActivityRequest{EnvironmentID: "0", Type: activitytypes.TypeImagePull, Queue: true, DeferSlot: true})
+	require.NoError(t, err)
+	require.Equal(t, activitytypes.StatusQueued, firstDeferred.Status)
+	require.Equal(t, activitytypes.StatusQueued, secondDeferred.Status)
+	require.NoError(t, service.AwaitActivitySlot(ctx, firstDeferred.ID, "0"))
+	_, err = service.CompleteActivity(ctx, firstDeferred.ID, activitytypes.StatusSuccess, "done", nil)
+	require.NoError(t, err)
+	require.NoError(t, service.AwaitActivitySlot(ctx, secondDeferred.ID, "0"))
 }
 
 func TestActivityServiceLimitIncreaseKeepsCountingActiveSlotsInternal(t *testing.T) {

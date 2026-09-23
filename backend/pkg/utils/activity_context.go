@@ -3,12 +3,33 @@ package utils
 import (
 	"context"
 	"regexp"
+	"strings"
 	"time"
+
+	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
 )
 
 type appLifecycleContextKey struct{}
 
 type activityBatchIDContextKey struct{}
+type updateInitiatorContextKeyInternal struct{}
+
+// WithUpdateInitiator carries manager-authenticated attribution through an
+// agent request without changing the authenticated agent identity.
+func WithUpdateInitiator(ctx context.Context, initiator activitytypes.StartedBy) context.Context {
+	initiator.UserID = strings.TrimSpace(initiator.UserID)
+	initiator.Username = strings.TrimSpace(initiator.Username)
+	if initiator.UserID == "" || initiator.Username == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, updateInitiatorContextKeyInternal{}, initiator)
+}
+
+// UpdateInitiatorFromContext returns trusted proxied update attribution.
+func UpdateInitiatorFromContext(ctx context.Context) (activitytypes.StartedBy, bool) {
+	initiator, ok := ctx.Value(updateInitiatorContextKeyInternal{}).(activitytypes.StartedBy)
+	return initiator, ok
+}
 
 var activityBatchIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 

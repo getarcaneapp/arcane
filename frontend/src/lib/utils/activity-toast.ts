@@ -2,7 +2,7 @@ import { activityStore } from '#lib/stores/activity.store.svelte.js';
 import { markActivityToastShown } from '#lib/components/activity/activity-completion-toasts.js';
 import { m } from '#lib/paraglide/messages.js';
 
-export function activityToastOptions(activityId?: string, suppressCompletion = true) {
+export function activityToastOptions(activityId?: string, suppressCompletion = true, environmentId?: string) {
 	if (!activityId) {
 		return undefined;
 	}
@@ -14,7 +14,7 @@ export function activityToastOptions(activityId?: string, suppressCompletion = t
 	return {
 		action: {
 			label: m.activity_view_activity(),
-			onClick: () => activityStore.openCenter(activityId)
+			onClick: () => activityStore.openCenter(activityId, undefined, environmentId)
 		}
 	};
 }

@@ -7,7 +7,7 @@
 	import ActionButtons from '#lib/components/action-buttons.svelte';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { bytes } from '#lib/utils/formatting.js';
-	import { tick } from 'svelte';
+	import { onMount, tick } from 'svelte';
 	import { page } from '$app/state';
 	import type { ContainerDetailsDto, ContainerNetworkSettings, ContainerStats as ContainerStatsType } from '#lib/types/docker.js';
 	import { m } from '#lib/paraglide/messages.js';
@@ -54,6 +54,12 @@
 	import { imageService } from '#lib/services/image-service.js';
 	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { queryKeys } from '#lib/query/query-keys.js';
+	import { activityStore } from '#lib/stores/activity.store.svelte.js';
+	import { createContainerUpdateActivityTracker } from '#lib/utils/container-update-activities.js';
+	import { APIError } from '#lib/services/api-service.js';
+	import { containerService } from '#lib/services/container-service.js';
+	import { extractApiErrorMessage } from '#lib/utils/api.js';
+	import { toast } from 'svelte-sonner';
 	import userStore from '#lib/stores/user-store.svelte.js';
 	import { isAutoUpdateLabelDisabled } from '#lib/utils/container-auto-update.js';
 	import KillContainerDialog from '../components/kill-container-dialog.svelte';
@@ -186,17 +192,61 @@
 		return null;
 	});
 	let updateLoading = $state(false);
+	let updateViewMounted = false;
+	const updateActivities = createContainerUpdateActivityTracker(
+		() => currentEnvId,
+		() => {
+			void refreshAfterUpdate();
+		},
+		() => container.id
+	);
+	onMount(() => {
+		updateViewMounted = true;
+		const unsubscribe = activityStore.subscribeActivities(updateActivities.observe);
+		return () => {
+			updateViewMounted = false;
+			unsubscribe();
+		};
+	});
+
+	async function refreshAfterUpdate() {
+		const environmentId = currentEnvId;
+		const containerId = container.id;
+		const result = await tryCatch(containerService.getContainerForEnvironment(environmentId, containerId));
+		if (!updateViewMounted || environmentId !== currentEnvId || containerId !== container.id) return;
+		if (result.error instanceof APIError && result.error.status === 404) {
+			await queryClient.invalidateQueries({ queryKey: ['containers', environmentId] });
+			if (!updateViewMounted || environmentId !== currentEnvId || containerId !== container.id) return;
+			await goto('/containers');
+			return;
+		}
+		if (result.error !== null) {
+			toast.error(m.common_refresh_failed({ resource: m.containers() }), {
+				description: extractApiErrorMessage(result.error)
+			});
+			return;
+		}
+		await Promise.all([
+			queryClient.invalidateQueries({ queryKey: ['containers', environmentId] }),
+			queryClient.invalidateQueries({ queryKey: queryKeys.images.updateInfoByRef(environmentId, container.image) }),
+			queryClient.invalidateQueries({ queryKey: queryKeys.containers.detail(environmentId, containerId) })
+		]);
+		if (updateViewMounted && environmentId === currentEnvId && containerId === container.id) await refreshAll();
+	}
 
 	function handleUpdateContainer() {
 		if (!container) return;
 		confirmAndUpdateContainer({
 			containerId: container.id,
 			containerName: containerDisplayName,
-			showPullingToast: true,
+			environmentId: currentEnvId,
 			setLoading: (loading) => {
 				updateLoading = loading;
 			},
-			onRefresh: () => refreshAll()
+			onRefresh: refreshAfterUpdate,
+			onAccepted: (activity) => {
+				if (updateViewMounted) updateActivities.accept(activity);
+			}
 		});
 	}
 

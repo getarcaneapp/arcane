@@ -18,6 +18,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cookie"
+	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
 )
 
 // securityRequirements holds parsed security requirements from an operation.
@@ -241,9 +242,21 @@ func tryAgentAuthCtxInternal(ctx huma.Context, cfg *config.Config) (huma.Context
 		return ctx, false
 	}
 	applyProxiedIconCatalogInternal(ctx, user)
+	authCtx := setUserInContextInternal(ctx.Context(), user, authz.SudoPermissionSet())
+	updatePath := strings.Contains(ctx.URL().Path, "/containers/") && strings.HasSuffix(ctx.URL().Path, "/update")
+	if ctx.Method() == http.MethodPost && updatePath {
+		if initiatorID := strings.TrimSpace(ctx.Header(utils.HeaderUpdateInitiatorID)); initiatorID != "" {
+			initiator := activitytypes.StartedBy{
+				UserID:      initiatorID,
+				Username:    strings.TrimSpace(ctx.Header(utils.HeaderUpdateInitiatorName)),
+				DisplayName: strings.TrimSpace(ctx.Header(utils.HeaderUpdateInitiatorDisplayName)),
+			}
+			authCtx = utils.WithUpdateInitiator(authCtx, initiator)
+		}
+	}
 	// The agent token path is infrastructure-level and not per-user, so it
 	// gets a sudo PermissionSet that bypasses every check.
-	return huma.WithContext(ctx, setUserInContextInternal(ctx.Context(), user, authz.SudoPermissionSet())), true
+	return huma.WithContext(ctx, authCtx), true
 }
 
 // opportunisticBearerAuthInternal populates the user/session context if a valid

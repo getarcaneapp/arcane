@@ -6,6 +6,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
@@ -20,17 +21,18 @@ import (
 
 // Dependencies are the collaborators the updater domain needs.
 type Dependencies struct {
-	DB           *database.DB
-	Settings     *settings.SettingsService
-	Docker       *docker.DockerClientService
-	Project      *project.ProjectService
-	ImageUpdate  *imageupdate.ImageUpdateService
-	Registry     *registry.ContainerRegistryService
-	Event        *event.EventService
-	Image        *image.ImageService
-	Notification *notification.NotificationService
-	SelfUpgrade  selfUpgradeServiceInternal
-	Activity     *activity.ActivityService
+	DB            *database.DB
+	Settings      *settings.SettingsService
+	Docker        *docker.DockerClientService
+	Project       *project.ProjectService
+	ImageUpdate   *imageupdate.ImageUpdateService
+	Registry      *registry.ContainerRegistryService
+	Event         *event.EventService
+	Image         *image.ImageService
+	Notification  *notification.NotificationService
+	SelfUpgrade   selfUpgradeServiceInternal
+	Activity      *activity.ActivityService
+	SingleUpdates *actors.Executor
 }
 
 // Module wires the updater domain and mounts its routes.
@@ -56,6 +58,7 @@ func New(deps Dependencies) (*Module, error) {
 	if err != nil {
 		return nil, err
 	}
+	service.singleUpdates = deps.SingleUpdates
 	return &Module{service: service}, nil
 }
 
