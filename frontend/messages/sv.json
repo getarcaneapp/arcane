@@ -3620,7 +3620,7 @@
   "editor_compose_updater_enabled_detail": "Aktivera bilduppdateringar",
   "editor_compose_updater_enabled_info": "Boolesk variabel. Ställ in på ”false” för att inaktivera bilduppdateringar för de berörda tjänsterna.",
   "editor_compose_updater_strategy_detail": "Uppdateringsstrategi",
-  "editor_compose_updater_strategy_info": "Standardinställningen är ”auto”: kompletta stabila semantiska versionstaggar följer nyare taggar som uppfyller kraven; rörliga taggar som ”latest” och ”alpine” följer ändringar i sammanfattningen. Ställ in ”digest” för att behålla den aktuella taggen, eller ”tag” för att kräva versionsbaserat val.",
+  "editor_compose_updater_strategy_info": "Standardinställning är ”digest”: den konfigurerade taggen behålls och endast dess bilddigest följs. Ställ in ”auto” för att låta fullständiga, stabila semantiska versionstaggar följa nyare taggar som uppfyller kriterierna, eller ”tag” för att kräva versionsbaserat urval. En begränsning eller ett taggmönster utan strategi möjliggör också versionsbaserat urval.",
   "editor_compose_updater_constraint_detail": "Versionsbegränsning",
   "editor_compose_updater_constraint_info": "Semantisk versionsbegränsning för tagguppdateringar, till exempel 3.x eller >=3.1.0 <4.0.0. Utan en sådan begränsning sker uppdateringarna inom den aktuella huvudversionen, eller den aktuella underversionen för 0.x.",
   "editor_compose_updater_tag_pattern_detail": "Taggmönster",
