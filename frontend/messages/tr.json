@@ -3620,7 +3620,7 @@
   "editor_compose_updater_enabled_detail": "Görüntü güncellemelerini etkinleştir",
   "editor_compose_updater_enabled_info": "Boolean. Etkilenen hizmetlerdeki resim güncellemelerini devre dışı bırakmak için false olarak ayarlayın.",
   "editor_compose_updater_strategy_detail": "Güncelleme stratejisi",
-  "editor_compose_updater_strategy_info": "Varsayılan ayar “auto”dur: Tam ve kararlı semantik sürüm etiketleri, daha yeni ve uygun etiketleri takip eder; “latest” ve “alpine” gibi hareketli etiketler ise özet değişikliklerini takip eder. Mevcut etiketi korumak için “digest” seçeneğini, sürüm tabanlı seçim gerektirmek için ise “tag” seçeneğini ayarlayın.",
+  "editor_compose_updater_strategy_info": "Varsayılan ayar “digest”tir: yapılandırılan etiket korunur ve yalnızca onun görüntü özeti izlenir. Tam ve kararlı semantik sürüm etiketlerinin daha yeni ve uygun etiketleri izlemesini sağlamak için “auto” değerini, sürüm tabanlı seçim yapılmasını zorunlu kılmak için ise “tag” değerini ayarlayın. Strateji içermeyen bir kısıtlama veya etiket kalıbı da sürüm tabanlı seçimi etkinleştirir.",
   "editor_compose_updater_constraint_detail": "Sürüm kısıtlaması",
   "editor_compose_updater_constraint_info": "Etiket güncellemeleri için anlamsal sürüm kısıtlaması; örneğin 3.x veya >=3.1.0 <4.0.0. Kısıtlama olmadığında, güncellemeler mevcut ana sürüm kapsamında kalır; 0.x sürümlerinde ise mevcut alt sürüm kapsamında kalır.",
   "editor_compose_updater_tag_pattern_detail": "Etiket şablonu",
