@@ -3620,7 +3620,7 @@
   "editor_compose_updater_enabled_detail": "Abilita gli aggiornamenti delle immagini",
   "editor_compose_updater_enabled_info": "Booleano. Impostare su \"false\" per disabilitare gli aggiornamenti delle immagini per i servizi interessati.",
   "editor_compose_updater_strategy_detail": "Strategia di aggiornamento",
-  "editor_compose_updater_strategy_info": "L'impostazione predefinita è \"auto\": i tag di versione semantica stabili completi seguono i tag più recenti idonei; i tag dinamici come \"latest\" e \"alpine\" seguono le modifiche del digest. Impostare \"digest\" per mantenere il tag corrente, oppure \"tag\" per richiedere una selezione basata sulla versione.",
+  "editor_compose_updater_strategy_info": "Impostazione predefinita: \"digest\"; il tag configurato viene mantenuto e viene seguito solo il suo digest. Impostare \"auto\" per consentire ai tag di versione semantica stabili completi di seguire i tag più recenti idonei, oppure \"tag\" per richiedere la selezione basata sulla versione. Anche un vincolo o un modello di tag senza una strategia abilita la selezione basata sulla versione.",
   "editor_compose_updater_constraint_detail": "Vincolo di versione",
   "editor_compose_updater_constraint_info": "Vincolo di versione semantica per gli aggiornamenti dei tag, ad esempio 3.x o >=3.1.0 <4.0.0. In assenza di un vincolo, gli aggiornamenti rimangono all'interno della versione principale corrente o, nel caso delle versioni 0.x, della versione secondaria corrente.",
   "editor_compose_updater_tag_pattern_detail": "Modello di tag",
