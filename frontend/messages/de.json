@@ -3620,7 +3620,7 @@
   "editor_compose_updater_enabled_detail": "Bildaktualisierungen aktivieren",
   "editor_compose_updater_enabled_info": "Boolescher Wert. Setzen Sie diesen Wert auf „false“, um Bildaktualisierungen für die betroffenen Dienste zu deaktivieren.",
   "editor_compose_updater_strategy_detail": "Aktualisierungsstrategie",
-  "editor_compose_updater_strategy_info": "Standardmäßig ist „auto“ eingestellt: Vollständige, stabile semantische Versions-Tags folgen den neueren, in Frage kommenden Tags; bewegliche Tags wie „latest“ und „alpine“ folgen den Digest-Änderungen. Setzen Sie „digest“, um das aktuelle Tag beizubehalten, oder „tag“, um eine versionsbasierte Auswahl zu erzwingen.",
+  "editor_compose_updater_strategy_info": "Standardmäßig „digest“: Das konfigurierte Tag wird beibehalten und es wird ausschließlich dessen Image-Digest verfolgt. Setzen Sie den Wert auf „auto“, damit vollständige, stabile semantische Versions-Tags neueren, in Frage kommenden Tags folgen, oder auf „tag“, um eine versionsbasierte Auswahl zu erzwingen. Eine Einschränkung oder ein Tag-Muster ohne Strategie ermöglicht ebenfalls eine versionsbasierte Auswahl.",
   "editor_compose_updater_constraint_detail": "Versionsbeschränkung",
   "editor_compose_updater_constraint_info": "Semantische Versionsbeschränkung für Tag-Updates, z. B. 3.x oder >=3.1.0 <4.0.0. Ohne eine solche Beschränkung bleiben Updates innerhalb der aktuellen Hauptversion bzw. – bei 0.x – innerhalb der aktuellen Nebenversion.",
   "editor_compose_updater_tag_pattern_detail": "Tag-Muster",
