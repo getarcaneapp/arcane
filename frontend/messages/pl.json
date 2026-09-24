@@ -3620,7 +3620,7 @@
   "editor_compose_updater_enabled_detail": "Włącz aktualizacje obrazów",
   "editor_compose_updater_enabled_info": "Wartość logiczna. Ustaw wartość „false”, aby wyłączyć aktualizacje obrazów dla odpowiednich usług.",
   "editor_compose_updater_strategy_detail": "Strategia aktualizacji",
-  "editor_compose_updater_strategy_info": "Domyślnie ustawione jest opcja „auto”: pełne, stabilne tagi wersji semantycznej podążają za nowszymi, kwalifikującymi się tagami; tagi dynamiczne, takie jak „latest” i „alpine”, podążają za zmianami w skrócie. Ustaw opcję „digest”, aby zachować bieżący tag, lub opcję „tag”, aby wymusić wybór oparty na wersji.",
+  "editor_compose_updater_strategy_info": "Domyślnie stosowana jest strategia „digest”: skonfigurowany tag jest zachowywany, a śledzony jest wyłącznie jego skrót obrazu. Ustaw wartość „auto”, aby pełne, stabilne tagi wersji semantycznej podążały za nowszymi kwalifikującymi się tagami, lub „tag”, aby wymusić wybór oparty na wersji. Ograniczenie lub wzorzec tagu bez określonej strategii również umożliwia wybór oparty na wersji.",
   "editor_compose_updater_constraint_detail": "Ograniczenie dotyczące wersji",
   "editor_compose_updater_constraint_info": "Ograniczenie wersji semantycznej dla aktualizacji tagów, np. 3.x lub >=3.1.0 <4.0.0. Bez takiego ograniczenia aktualizacje pozostają w ramach bieżącej wersji głównej lub bieżącej wersji podrzędnej w przypadku wersji 0.x.",
   "editor_compose_updater_tag_pattern_detail": "Wzór tagów",
