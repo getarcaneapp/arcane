@@ -603,14 +603,13 @@ func TestBuildSummariesUsesContainerTagPolicyUpdates(t *testing.T) {
 	}
 	updates := map[string]*imagetypes.UpdateInfo{
 		"shared-image":      {HasUpdate: true, UpdateType: "digest"},
-		"container::first":  {HasUpdate: true, UpdateType: "tag", LatestVersion: "3.2.0"},
 		"container::second": {HasUpdate: true, UpdateType: "tag", LatestVersion: "4.0.0"},
 	}
 	items := service.BuildSummaries(t.Context(), containers, updates, "", nil)
-	require.Equal(t, "tag", items[0].UpdateStrategy)
+	require.Equal(t, "digest", items[0].UpdateStrategy, "an unlabeled container follows the digest")
 	require.Equal(t, "tag", items[1].UpdateStrategy)
 	require.Equal(t, "digest", items[3].UpdateStrategy)
-	require.Equal(t, "3.2.0", items[0].UpdateInfo.LatestVersion)
+	require.Equal(t, "digest", items[0].UpdateInfo.UpdateType)
 	require.Equal(t, "4.0.0", items[1].UpdateInfo.LatestVersion)
 	require.Nil(t, items[2].UpdateInfo)
 	require.Equal(t, "digest", items[3].UpdateInfo.UpdateType)

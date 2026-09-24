@@ -7483,11 +7483,10 @@ func TestDiscoveredProjectTagUpdatesRemainScoped(t *testing.T) {
 	require.Equal(t, target, detail.UpdateInfo.UpdateInfoByRef["example:3.1.0"].LatestVersion)
 	delete(containers[1].Labels, labels.LabelUpdateStrategy)
 	rows = buildDiscoveredComposeProjectUpdateRowsInternal(t.Context(), containers, nil, imageSvc, "")
-	require.Len(t, rows, 1, "removing tag strategy retains automatic stable-version updates")
-	require.True(t, rows[0].UpdateInfo.HasUpdate)
+	require.Empty(t, rows, "removing the strategy label falls back to digest checks")
 	detail.RuntimeServices[0].ContainerLabels = containers[1].Labels
 	service.enrichProjectUpdateInfoInternal(t.Context(), &detail)
-	require.True(t, detail.UpdateInfo.HasUpdate, "default auto is equivalent to explicit tag for a stable full version")
+	require.False(t, detail.UpdateInfo.HasUpdate, "an undeclared strategy no longer inherits a tag record")
 	for _, policy := range []map[string]string{{labels.LabelUpdateStrategy: "digest"}, {labels.LabelUpdateStrategy: "tag", labels.LabelUpdateConstraint: "3.1.x"}, {labels.LabelUpdateStrategy: "tag", labels.LabelUpdateTagPattern: ".*"}, {labels.LabelUpdateStrategy: "tag", labels.LabelUpdater: "off"}} {
 		current := map[string]string{"com.docker.compose.project": "first-project", "com.docker.compose.service": "web"}
 		for key, value := range policy {
@@ -7568,7 +7567,7 @@ func TestProjectServiceManualUpdateDiscoversTags(t *testing.T) {
 		{name: "new tag", tags: []string{"1.2.0", "1.3.0", "2.0.0"}, wantRef: "docker.io/library/app:1.3.0", wantChanged: true, wantCalls: 1},
 		{name: "same tag digest fallback", tags: []string{"1.2.0", "2.0.0"}, wantRef: "app:1.2.0", wantCalls: 1},
 		{name: "planned dependency does not discover tags", tags: []string{"1.2.0", "1.3.0"}, wantRef: "app:1.2.0", skipDiscovery: true},
-		{name: "unlabeled automatic tag", tags: []string{"1.2.0", "1.3.0", "2.0.0"}, wantRef: "docker.io/library/app:1.3.0", wantChanged: true, wantCalls: 1, omitLabels: true},
+		{name: "unlabeled digest default", tags: []string{"1.2.0", "1.3.0", "2.0.0"}, wantRef: "app:1.2.0", omitLabels: true},
 		{name: "explicit automatic tag", tags: []string{"1.2.0", "1.3.0", "2.0.0"}, wantRef: "docker.io/library/app:1.3.0", wantChanged: true, wantCalls: 1, strategy: "auto"},
 		{name: "explicit digest optout", tags: []string{"1.2.0", "1.3.0"}, wantRef: "app:1.2.0", strategy: "digest"},
 	} {
@@ -7729,18 +7728,18 @@ func TestConfiguredProjectUsesScheduledRuntimeChecks(t *testing.T) {
 			require.NoError(t, err)
 			require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", directory))
 			path := createComposeProjectDir(t, directory, "scheduled-project")
-			sourceLabels := composetypes.Labels{}
-			source := "services:\n  web:\n    image: " + tt.sourceRef + "\n"
+			sourceLabels := composetypes.Labels{labels.LabelUpdateStrategy: "auto"}
+			source := "services:\n  web:\n    image: " + tt.sourceRef + "\n    labels:\n      com.getarcaneapp.arcane.updater.strategy: auto\n"
 			if tt.sourceConstraint != "" {
 				sourceLabels[labels.LabelUpdateConstraint] = tt.sourceConstraint
-				source += "    labels:\n      com.getarcaneapp.arcane.updater.constraint: " + tt.sourceConstraint + "\n"
+				source += "      com.getarcaneapp.arcane.updater.constraint: " + tt.sourceConstraint + "\n"
 			}
 			require.NoError(t, os.WriteFile(filepath.Join(path, "compose.yaml"), []byte(source), 0o600))
 			proj := Project{ID: "scheduled-project", Name: "scheduled-project", Path: path}
 			require.NoError(t, db.Create(&proj).Error)
 			target := "3.2.0"
-			require.NoError(t, db.Create(&imageupdate.ImageUpdateRecord{ID: "container::scheduled", ContainerID: "scheduled", ImageID: "shared", PolicyKey: imageref.UpdatePolicyKey("example:3.1.0", nil), Repository: "docker.io/library/example", Tag: "3.1.0", LatestVersion: &target, HasUpdate: true, UpdateType: "tag", CheckTime: time.Now()}).Error)
-			runtimeLabels := map[string]string{"com.docker.compose.project": "scheduled-project", "com.docker.compose.service": "web"}
+			require.NoError(t, db.Create(&imageupdate.ImageUpdateRecord{ID: "container::scheduled", ContainerID: "scheduled", ImageID: "shared", PolicyKey: imageref.UpdatePolicyKey("example:3.1.0", map[string]string{labels.LabelUpdateStrategy: "auto"}), Repository: "docker.io/library/example", Tag: "3.1.0", LatestVersion: &target, HasUpdate: true, UpdateType: "tag", CheckTime: time.Now()}).Error)
+			runtimeLabels := map[string]string{"com.docker.compose.project": "scheduled-project", "com.docker.compose.service": "web", labels.LabelUpdateStrategy: "auto"}
 			if tt.runtimeConstraint != "" {
 				runtimeLabels[labels.LabelUpdateConstraint] = tt.runtimeConstraint
 			}

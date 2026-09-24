@@ -3621,7 +3621,7 @@
 	"editor_compose_updater_enabled_detail": "Enable image updates",
 	"editor_compose_updater_enabled_info": "Boolean. Set to false to disable image updates for the affected services.",
 	"editor_compose_updater_strategy_detail": "Update strategy",
-	"editor_compose_updater_strategy_info": "Defaults to auto: complete stable semantic version tags follow newer eligible tags; moving tags such as latest and alpine follow digest changes. Set digest to keep the current tag, or tag to require version-based selection.",
+	"editor_compose_updater_strategy_info": "Defaults to digest: the configured tag is kept and only its image digest is followed. Set auto to let complete stable semantic version tags follow newer eligible tags, or tag to require version-based selection. A constraint or tag-pattern without a strategy also enables version-based selection.",
 	"editor_compose_updater_constraint_detail": "Version constraint",
 	"editor_compose_updater_constraint_info": "Semantic version constraint for tag updates, such as 3.x or >=3.1.0 <4.0.0. Without a constraint, updates stay within the current major, or the current minor for 0.x.",
 	"editor_compose_updater_tag_pattern_detail": "Tag pattern",

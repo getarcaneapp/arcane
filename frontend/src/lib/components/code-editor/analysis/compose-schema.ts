@@ -429,7 +429,7 @@ function getArcaneSchemaDocForPath(path: Array<string | number>): SchemaDoc | nu
 				return {
 					title: `${title}.${field.label}`,
 					description: field.info,
-					...(field.label === 'strategy' ? { defaultValue: 'auto' } : {})
+					...(field.label === 'strategy' ? { defaultValue: 'digest' } : {})
 				};
 		}
 		return null;

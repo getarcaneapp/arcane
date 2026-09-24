@@ -899,10 +899,12 @@ func TestUpdaterService_ApplyPending_ProjectFailureDoesNotBlockOtherProjectsInte
 	failedLabels := map[string]string{
 		"com.docker.compose.project": "proj-fail",
 		"com.docker.compose.service": "app",
+		labels.LabelUpdateStrategy:   "auto",
 	}
 	updatedLabels := map[string]string{
 		"com.docker.compose.project": "proj-success",
 		"com.docker.compose.service": "app",
+		labels.LabelUpdateStrategy:   "auto",
 	}
 
 	containers := []container.Summary{
@@ -1062,6 +1064,7 @@ func TestUpdaterService_ApplyPending_RoutesLegacyArcaneServerThroughSelfUpgradeI
 		"com.docker.compose.project":   "arcane",
 		"com.docker.compose.service":   "server",
 		labels.LabelArcaneLegacyServer: "true",
+		labels.LabelUpdateStrategy:     "auto",
 	}
 
 	containers := []container.Summary{

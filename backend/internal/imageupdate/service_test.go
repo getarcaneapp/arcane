@@ -69,6 +69,9 @@ func (f *fakeRegistryDaemonClient) DistributionInspect(ctx context.Context, imag
 	return f.distributionInspectFn(ctx, imageRef, options)
 }
 
+// autoLabels opts a test container into tag-based update checks.
+var autoLabels = map[string]string{labels.LabelUpdateStrategy: "auto"}
+
 func newImageUpdateTestDockerClientInternal(t *testing.T, server *httptest.Server) *client.Client {
 	t.Helper()
 	cli, err := client.New(
@@ -2380,7 +2383,7 @@ func TestContainerTagChecksPersistIndependentPoliciesInternal(t *testing.T) {
 	imageRef := registryURL.Host + "/team/app:1.0.0"
 	imageID := digest.FromString("shared").String()
 	values := map[string]map[string]string{
-		"one": {},
+		"one": {labels.LabelUpdateStrategy: "auto"},
 		"two": {labels.LabelUpdateStrategy: "auto", labels.LabelUpdateConstraint: "2.x"},
 	}
 	dockerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -2425,6 +2428,8 @@ func TestContainerTagChecksPersistIndependentPoliciesInternal(t *testing.T) {
 	single, checkErr := svc.CheckImageUpdate(t.Context(), imageRef)
 	require.NoError(t, checkErr)
 	require.True(t, single.HasUpdate)
+	require.Equal(t, UpdateTypeTag, single.UpdateType)
+	require.Equal(t, "1.1.0", single.LatestVersion, "the first container candidate promotes the image result")
 	require.NotEmpty(t, single.Error, "keep the old-tag digest error visible")
 	require.Len(t, single.ContainerUpdates, 2)
 	// The image-level digest error is stored independently of container candidates.
@@ -2463,6 +2468,8 @@ func TestContainerAggregationPreservesImageResultInternal(t *testing.T) {
 	scoped := &imageupdate.Response{ImageRef: "docker.io/library/alpine:3.20.0", HasUpdate: true, UpdateType: UpdateTypeTag, CurrentVersion: "3.20.0", LatestVersion: "3.20.1"}
 	attachContainerUpdatesInternal(results, map[string]*imageupdate.Response{"tagged": scoped})
 	require.True(t, original.HasUpdate)
+	require.Equal(t, UpdateTypeTag, original.UpdateType)
+	require.Equal(t, "3.20.1", original.LatestVersion)
 	require.Same(t, scoped, original.ContainerUpdates["tagged"])
 	require.NotNil(t, original.ImageUpdate)
 	require.False(t, original.ImageUpdate.HasUpdate, "untagged siblings must keep the original digest result")
@@ -2507,11 +2514,11 @@ func TestContainerTagChecksUseRegistryTagTimeoutInternal(t *testing.T) {
 				w.Header().Set("Content-Type", "application/json")
 				switch {
 				case strings.HasSuffix(r.URL.Path, "/containers/json"):
-					require.NoError(t, json.NewEncoder(w).Encode([]dockertypescontainer.Summary{{ID: "one", Image: imageRef, ImageID: imageID}}))
+					require.NoError(t, json.NewEncoder(w).Encode([]dockertypescontainer.Summary{{ID: "one", Image: imageRef, ImageID: imageID, Labels: autoLabels}}))
 				case strings.Contains(r.URL.Path, "/images/"):
 					require.NoError(t, json.NewEncoder(w).Encode(dockertypesimage.InspectResponse{ID: imageID, RepoTags: []string{imageRef}}))
 				case strings.Contains(r.URL.Path, "/containers/"):
-					require.NoError(t, json.NewEncoder(w).Encode(dockertypescontainer.InspectResponse{ID: "one", Image: imageID, Config: &dockertypescontainer.Config{Image: imageRef}}))
+					require.NoError(t, json.NewEncoder(w).Encode(dockertypescontainer.InspectResponse{ID: "one", Image: imageID, Config: &dockertypescontainer.Config{Image: imageRef, Labels: autoLabels}}))
 				default:
 					http.NotFound(w, r)
 				}
@@ -2574,13 +2581,13 @@ func TestContainerTagChecksPersistResultsFinishedBeforeScanDeadlineInternal(t *t
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/containers/json"):
 			require.NoError(t, json.NewEncoder(w).Encode([]dockertypescontainer.Summary{
-				{ID: "fast", Image: imageRefs["fast"], ImageID: imageIDs["fast"]},
-				{ID: "slow", Image: imageRefs["slow"], ImageID: imageIDs["slow"]},
+				{ID: "fast", Image: imageRefs["fast"], ImageID: imageIDs["fast"], Labels: autoLabels},
+				{ID: "slow", Image: imageRefs["slow"], ImageID: imageIDs["slow"], Labels: autoLabels},
 			}))
 		case strings.Contains(r.URL.Path, "/images/"):
 			require.NoError(t, json.NewEncoder(w).Encode(dockertypesimage.InspectResponse{ID: imageIDs[name], RepoTags: []string{imageRefs[name]}}))
 		case strings.Contains(r.URL.Path, "/containers/"):
-			require.NoError(t, json.NewEncoder(w).Encode(dockertypescontainer.InspectResponse{ID: name, Image: imageIDs[name], Config: &dockertypescontainer.Config{Image: imageRefs[name]}}))
+			require.NoError(t, json.NewEncoder(w).Encode(dockertypescontainer.InspectResponse{ID: name, Image: imageIDs[name], Config: &dockertypescontainer.Config{Image: imageRefs[name], Labels: autoLabels}}))
 		default:
 			http.NotFound(w, r)
 		}

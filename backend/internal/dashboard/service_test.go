@@ -445,8 +445,8 @@ func TestPendingContainerCountUsesScopedTagRecords(t *testing.T) {
 	require.NoError(t, db.Create(&records).Error)
 	service := &DashboardService{db: db}
 	containers := []dockercontainer.Summary{
-		{ID: "first", Image: "app:1.2.3", ImageID: "shared", Labels: map[string]string{}},
-		{ID: "unchecked", Image: "app:1.2.3", ImageID: "shared"},
+		{ID: "first", Image: "app:1.2.3", ImageID: "shared", Labels: map[string]string{labels.LabelUpdateStrategy: "auto"}},
+		{ID: "unchecked", Image: "app:1.2.3", ImageID: "shared", Labels: map[string]string{labels.LabelUpdateStrategy: "auto"}},
 	}
 	count, err := service.getPendingContainerUpdatesCountInternal(t.Context(), containers)
 	require.NoError(t, err)
