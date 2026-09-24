@@ -5,7 +5,7 @@
 
 	let { children }: LayoutProps = $props();
 
-	const projectName = $derived(page.data['project'].name);
+	const projectName = $derived(page.data['project']?.name);
 	const pageTitle = $derived(`${m.layout_title()} | ${m.projects_title()} | ${projectName}`);
 </script>
 

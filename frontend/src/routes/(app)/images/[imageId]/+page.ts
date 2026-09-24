@@ -10,6 +10,7 @@ import { error } from '@sveltejs/kit';
 
 type ImageDetailData = {
 	image: ImageDetailSummaryDto;
+	envId: string;
 	error?: string;
 };
 
@@ -43,7 +44,8 @@ export const load: PageLoad = async ({ params, parent }): Promise<ImageDetailDat
 					...image,
 					repo,
 					tag
-				}
+				},
+				envId
 			};
 		})()
 	);

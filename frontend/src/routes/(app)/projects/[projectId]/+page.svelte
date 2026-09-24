@@ -63,7 +63,7 @@
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { RefreshIcon } from '#lib/icons/index.js';
 	import IconImage from '#lib/components/icon-image.svelte';
-	import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
+	import { createMutation, createQuery, skipToken, useQueryClient } from '@tanstack/svelte-query';
 	import ProjectUpdateItem from '#lib/components/project-update-item.svelte';
 	import ProjectTagEditor from '#lib/components/project-tag-editor.svelte';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
@@ -97,7 +97,9 @@
 	} from '#lib/utils/compose-flow.js';
 	import type { ProjectEditorLayout } from '#lib/types/auth.js';
 
-	let { data } = $props();
+	import type { PageProps } from './$types';
+
+	let { data }: PageProps = $props();
 	let projectId = $derived(data.projectId);
 	const queryClient = useQueryClient();
 
@@ -116,6 +118,8 @@
 	});
 
 	const envId = $derived(environmentStore.selected?.id || '0');
+	// Undefined once the page is leaving or the selected environment no longer owns the loaded project.
+	const loadedProjectId = $derived(data.envId === envId ? data.projectId : undefined);
 	const canUpdateProject = $derived(hasPermission('projects:update', envId));
 	const canArchiveProject = $derived(hasPermission('projects:archive', envId));
 	const canViewProjectLogs = $derived(hasPermission('projects:logs', envId));
@@ -138,9 +142,9 @@
 	const projectWorkspaceMaxFileSizeMb = $derived(settingsStore.current?.projectWorkspaceMaxFileSizeMb ?? 10);
 
 	const projectDetailQuery = createQuery(() => ({
-		queryKey: queryKeys.projects.detail(envId, projectId),
-		queryFn: () => projectService.getProjectForEnvironment(envId, projectId),
-		initialData: data.project,
+		queryKey: queryKeys.projects.detail(envId, loadedProjectId ?? ''),
+		queryFn: loadedProjectId ? () => projectService.getProjectForEnvironment(envId, loadedProjectId) : skipToken,
+		initialData: loadedProjectId ? data.project : undefined,
 		refetchOnMount: (query) => query.state.isInvalidated
 	}));
 	const projectTagsQuery = createQuery(() => ({
@@ -167,16 +171,15 @@
 	// The workspace walk can be slow on large projects, so it loads lazily and
 	// never blocks navigation; +page.ts prefetches this key without awaiting.
 	const projectWorkspaceQuery = createQuery(() => ({
-		queryKey: queryKeys.projects.workspace(envId, projectId),
-		queryFn: () => projectWorkspaceService.getWorkspace(projectId, envId)
+		queryKey: queryKeys.projects.workspace(envId, loadedProjectId ?? ''),
+		queryFn: loadedProjectId ? () => projectWorkspaceService.getWorkspace(loadedProjectId, envId) : skipToken
 	}));
 
 	const lifecycleSyncQuery = createQuery(() => {
-		const syncId = data.project?.gitOpsManagedBy;
+		const syncId = loadedProjectId ? data.project?.gitOpsManagedBy : undefined;
 		return {
 			queryKey: queryKeys.gitOpsSyncs.detail(envId, syncId ?? 'none'),
-			queryFn: () => gitOpsSyncService.getSync(envId, syncId!),
-			enabled: !!syncId,
+			queryFn: syncId ? () => gitOpsSyncService.getSync(envId, syncId) : skipToken,
 			staleTime: 30_000
 		};
 	});
@@ -668,7 +671,7 @@
 	}));
 
 	function initializeProjectPreferences() {
-		if (!project?.id) return;
+		if (!loadedProjectId || !project?.id) return;
 		if (lastPrefsProjectId === project.id) return;
 
 		const prefsStorageKey = `arcane.compose.ui:${project.id}`;
@@ -677,6 +680,8 @@
 		// Auto mode needs the lazily loaded workspace to pick a layout before the editors mount.
 		if (layoutPreference === 'auto' && !(projectWorkspaceQuery.isSuccess || projectWorkspaceQuery.isError)) return;
 
+		// A reused page must not carry another project's drafts.
+		if (lastPrefsProjectId) rebaseEditorDraft(project, { clearLoadedFileCache: true });
 		lastPrefsProjectId = project.id;
 		prefs = new PersistedState<ComposeUIPrefs>(prefsStorageKey, defaultComposeUIPrefs, {
 			storage: 'session',
@@ -722,7 +727,11 @@
 	afterNavigate(initializeProjectPreferences);
 
 	async function handleSaveChanges() {
-		if (!project || !hasChanges) return;
+		const requestedProjectId = loadedProjectId;
+		const requestedEnvId = envId;
+		// The editor draft belongs to the loaded project only after its preferences are applied.
+		if (!requestedProjectId || !project || lastPrefsProjectId !== project.id || !hasChanges) return;
+		const isRequestedProject = () => loadedProjectId === requestedProjectId && envId === requestedEnvId;
 		if (project.isArchived) {
 			toast.error(m.projects_archive_edit_blocked());
 			return;
@@ -759,40 +768,42 @@
 				(async () => {
 					if (workspaceUpdate.fileChanges.length > 0) {
 						const workspace = await projectWorkspaceService.updateWorkspace(
-							projectId,
+							requestedProjectId,
 							{
 								fileTreeRevision: projectWorkspaceQuery.data?.fileTreeRevision ?? '',
 								fileChanges: workspaceUpdate.fileChanges
 							},
 							workspaceUpdate.files,
-							envId
+							requestedEnvId
 						);
 						workspaceCommitted = true;
-						queryClient.setQueryData(queryKeys.projects.workspace(envId, projectId), workspace);
+						queryClient.setQueryData(queryKeys.projects.workspace(requestedEnvId, requestedProjectId), workspace);
 
-						loadedProjectWorkspaceContents = { ...loadedProjectWorkspaceContents, ...projectWorkspaceContents };
-						loadedIncludeFileContents = {
-							...loadedIncludeFileContents,
-							...Object.fromEntries(
-								changedIncludeFilePaths.flatMap((relativePath) => {
-									const content = includeFilesState[relativePath];
-									return content === undefined ? [] : [[relativePath, content] as const];
-								})
-							)
-						};
-						projectWorkspaceChanges = [];
-						projectWorkspaceStagedFiles = {};
-						projectWorkspaceStagedUploadedText = {};
+						if (isRequestedProject()) {
+							loadedProjectWorkspaceContents = { ...loadedProjectWorkspaceContents, ...projectWorkspaceContents };
+							loadedIncludeFileContents = {
+								...loadedIncludeFileContents,
+								...Object.fromEntries(
+									changedIncludeFilePaths.flatMap((relativePath) => {
+										const content = includeFilesState[relativePath];
+										return content === undefined ? [] : [[relativePath, content] as const];
+									})
+								)
+							};
+							projectWorkspaceChanges = [];
+							projectWorkspaceStagedFiles = {};
+							projectWorkspaceStagedUploadedText = {};
+						}
 					}
 
 					const updatedProject = await projectService.updateProject(
-						projectId,
+						requestedProjectId,
 						namePayload,
 						composePayload,
 						envPayload,
 						overridePayload
 					);
-					rebaseEditorDraft(updatedProject, { preserveProjectWorkspaceContents: true });
+					if (isRequestedProject()) rebaseEditorDraft(updatedProject, { preserveProjectWorkspaceContents: true });
 					await syncProjectQueries(updatedProject);
 					toast.success(
 						m.common_update_success({ resource: m.project() }),
@@ -923,7 +934,7 @@
 		kind: ProjectWorkspaceSource,
 		relativePath: string
 	): IncludeFile | ProjectWorkspaceFileContent | Promise<IncludeFile | ProjectWorkspaceFileContent> {
-		const currentProjectId = project?.id;
+		const currentProjectId = loadedProjectId ? project?.id : undefined;
 		if (!currentProjectId) {
 			throw new Error(m.projects_workspace_not_loaded());
 		}
@@ -989,7 +1000,7 @@
 			const file = await projectWorkspaceService.getWorkspaceFile(currentProjectId, relativePath, requestedEnvId);
 			if (
 				kind !== 'workspace' &&
-				currentProjectId === projectId &&
+				currentProjectId === loadedProjectId &&
 				requestedEnvId === envId &&
 				pendingFiles === projectWorkspaceFilePromises
 			) {
@@ -1096,10 +1107,15 @@
 	}
 
 	async function loadProjectWorkspaceFileDraft(relativePath: string) {
-		const requestedProjectId = projectId;
+		const requestedProjectId = loadedProjectId;
 		const requestedEnvId = envId;
 		const pendingFiles = projectWorkspaceFilePromises;
-		if (!relativePath || projectWorkspaceContents[relativePath] !== undefined || projectWorkspaceLoading[relativePath]) {
+		if (
+			!requestedProjectId ||
+			!relativePath ||
+			projectWorkspaceContents[relativePath] !== undefined ||
+			projectWorkspaceLoading[relativePath]
+		) {
 			return;
 		}
 
@@ -1113,14 +1129,15 @@
 			const operationResult = await tryCatch(
 				(async () => {
 					const file = await getProjectWorkspaceFileResource('workspace', relativePath);
-					if (requestedProjectId !== projectId || requestedEnvId !== envId || pendingFiles !== projectWorkspaceFilePromises)
+					if (requestedProjectId !== loadedProjectId || requestedEnvId !== envId || pendingFiles !== projectWorkspaceFilePromises)
 						return;
 					projectWorkspaceFileMetadata = { ...projectWorkspaceFileMetadata, [relativePath]: file };
 					if (file.editable) updateLoadedProjectWorkspaceFile(relativePath, file.content ?? '');
 				})()
 			);
 			if (operationResult.error !== null) {
-				if (requestedProjectId !== projectId || requestedEnvId !== envId || pendingFiles !== projectWorkspaceFilePromises) return;
+				if (requestedProjectId !== loadedProjectId || requestedEnvId !== envId || pendingFiles !== projectWorkspaceFilePromises)
+					return;
 				const error = operationResult.error;
 
 				projectWorkspaceLoadErrors = {
@@ -1129,16 +1146,17 @@
 				};
 			}
 		} finally {
-			if (requestedProjectId === projectId && requestedEnvId === envId && pendingFiles === projectWorkspaceFilePromises) {
+			if (requestedProjectId === loadedProjectId && requestedEnvId === envId && pendingFiles === projectWorkspaceFilePromises) {
 				projectWorkspaceLoading = removeWorkspaceFileRecord(projectWorkspaceLoading, relativePath);
 			}
 		}
 	}
 
 	async function loadProjectSourceFile(kind: 'include' | 'directory', relativePath: string) {
-		const requestedProjectId = projectId;
+		const requestedProjectId = loadedProjectId;
 		const requestedEnvId = envId;
 		const pendingFiles = projectWorkspaceFilePromises;
+		if (!requestedProjectId) return;
 		projectWorkspaceLoading = {
 			...projectWorkspaceLoading,
 			[relativePath]: true
@@ -1152,7 +1170,8 @@
 				})()
 			);
 			if (operationResult.error !== null) {
-				if (requestedProjectId !== projectId || requestedEnvId !== envId || pendingFiles !== projectWorkspaceFilePromises) return;
+				if (requestedProjectId !== loadedProjectId || requestedEnvId !== envId || pendingFiles !== projectWorkspaceFilePromises)
+					return;
 				const error = operationResult.error;
 
 				projectWorkspaceLoadErrors = {
@@ -1161,7 +1180,7 @@
 				};
 			}
 		} finally {
-			if (requestedProjectId === projectId && requestedEnvId === envId && pendingFiles === projectWorkspaceFilePromises) {
+			if (requestedProjectId === loadedProjectId && requestedEnvId === envId && pendingFiles === projectWorkspaceFilePromises) {
 				projectWorkspaceLoading = removeWorkspaceFileRecord(projectWorkspaceLoading, relativePath);
 			}
 		}
@@ -1200,8 +1219,9 @@
 		};
 		const unsubscribe = cache.subscribe((event) => {
 			if (event.type !== 'updated' || (event.action.type !== 'success' && event.action.type !== 'error')) return;
-			const workspace = cache.find({ queryKey: queryKeys.projects.workspace(envId, projectId), exact: true });
-			const detail = cache.find({ queryKey: queryKeys.projects.detail(envId, projectId), exact: true });
+			if (!loadedProjectId) return;
+			const workspace = cache.find({ queryKey: queryKeys.projects.workspace(envId, loadedProjectId), exact: true });
+			const detail = cache.find({ queryKey: queryKeys.projects.detail(envId, loadedProjectId), exact: true });
 			if (event.query === workspace || event.query === detail) void loadAfterUpdate();
 		});
 		void loadAfterUpdate();
@@ -1313,11 +1333,8 @@
 	}
 
 	async function downloadProjectWorkspaceFile(relativePath: string) {
-		const operationResult = await tryCatch(
-			(async () => {
-				await projectWorkspaceService.downloadWorkspaceFile(projectId, relativePath, envId);
-			})()
-		);
+		if (!loadedProjectId) return;
+		const operationResult = await tryCatch(projectWorkspaceService.downloadWorkspaceFile(loadedProjectId, relativePath, envId));
 		if (operationResult.error !== null) {
 			const error = operationResult.error;
 
@@ -1373,12 +1390,14 @@
 	});
 
 	async function refreshProjectDetails(options: RefreshProjectDetailsOptions = {}) {
-		if (!projectId) return;
+		const requestedProjectId = loadedProjectId;
+		const requestedEnvId = envId;
+		if (!requestedProjectId) return;
 		await handleApiResultWithCallbacks({
-			result: await tryCatch(projectService.getProject(projectId)),
+			result: await tryCatch(projectService.getProject(requestedProjectId)),
 			message: m.common_refresh_failed({ resource: m.project() }),
 			onSuccess: async (updatedProject) => {
-				if (options.forceRebaseDraft || !hasChanges) {
+				if (loadedProjectId === requestedProjectId && envId === requestedEnvId && (options.forceRebaseDraft || !hasChanges)) {
 					rebaseEditorDraft(updatedProject, options);
 				}
 				await syncProjectQueries(updatedProject);

@@ -72,6 +72,7 @@ export const load: PageLoad = async ({ params, parent }) => {
 		project,
 		editorState,
 		globalVariables,
+		envId,
 		error: null as string | null
 	};
 };

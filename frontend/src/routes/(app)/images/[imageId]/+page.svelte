@@ -9,7 +9,7 @@
 	import { tryCatch } from '#lib/utils/try-catch.js';
 	import { toast } from 'svelte-sonner';
 	import { onMount, onDestroy, tick } from 'svelte';
-	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
+	import { createQuery, skipToken, useQueryClient } from '@tanstack/svelte-query';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
@@ -46,11 +46,16 @@
 		ShieldCheckIcon,
 		InspectIcon
 	} from '#lib/icons/index.js';
+	import type { ImageDetailSummaryDto } from '#lib/types/docker.js';
+	import type { PageProps } from './$types';
 
-	let { data } = $props();
-	let { image } = $derived(data);
+	let { data }: PageProps = $props();
+	// Undefined while SvelteKit hands this departing page another route's data.
+	const image = $derived<ImageDetailSummaryDto | undefined>(data.image);
 
 	const currentEnvId = $derived(environmentStore.selected?.id || '0');
+	// Only request image data from the environment the image was loaded from.
+	const loadedImageId = $derived(data.envId === currentEnvId ? image?.id : undefined);
 	const vulnerabilityManagementEnabled = $derived(featureStore.isEnabled('vulnerabilityManagement', currentEnvId));
 
 	const tabItems: TabItem[] = $derived([
@@ -85,19 +90,21 @@
 	let tagDialogOpen = $state(false);
 
 	const queryClient = useQueryClient();
-	const scanQueryKey = $derived(queryKeys.vulnerabilities.scanResult(currentEnvId, image?.id ?? ''));
+	const scanQueryKey = $derived(queryKeys.vulnerabilities.scanResult(currentEnvId, loadedImageId ?? ''));
 	const scanQuery = createQuery(() => {
 		const environmentId = currentEnvId;
-		const imageId = image?.id;
+		const imageId = loadedImageId;
 		userStore.current;
 		return {
 			queryKey: queryKeys.vulnerabilities.scanResult(environmentId, imageId ?? ''),
-			queryFn: async ({ signal }) => {
-				await environmentStore.ready;
-				signal.throwIfAborted();
-				return vulnerabilityService.getScanResult(imageId!, environmentId);
-			},
-			enabled: vulnerabilityManagementEnabled && !!imageId && hasPermission('vulnerabilities:read', environmentId),
+			queryFn: imageId
+				? async ({ signal }) => {
+						await environmentStore.ready;
+						signal.throwIfAborted();
+						return vulnerabilityService.getScanResult(imageId, environmentId);
+					}
+				: skipToken,
+			enabled: vulnerabilityManagementEnabled && hasPermission('vulnerabilities:read', environmentId),
 			retry: false
 		};
 	});
@@ -116,9 +123,9 @@
 
 	async function handleScanImage() {
 		scanReportError = null;
-		if (!canScanImage || !image?.id || isLoading.scanning) return;
+		if (!canScanImage || !loadedImageId || isLoading.scanning) return;
 		const environmentId = currentEnvId;
-		const requestedImageId = image.id;
+		const requestedImageId = loadedImageId;
 		const requestedKey = scanQueryKey;
 		isLoading.scanning = true;
 		try {
@@ -126,7 +133,12 @@
 				(async () => {
 					await queryClient.cancelQueries({ queryKey: requestedKey });
 					const result = await vulnerabilityService.scanImage(requestedImageId, environmentId);
-					if (destroyed || !vulnerabilityManagementEnabled || environmentId !== currentEnvId || requestedImageId !== image.id)
+					if (
+						destroyed ||
+						!vulnerabilityManagementEnabled ||
+						environmentId !== currentEnvId ||
+						requestedImageId !== loadedImageId
+					)
 						return;
 					queryClient.setQueryData(requestedKey, result);
 					scanRequest = { scope: `${environmentId}:${requestedImageId}`, time: result.scanTime || nowInstantString() };
@@ -150,13 +162,14 @@
 	}
 
 	async function handlePatchImage() {
-		if (!image?.id || isLoading.patching) return;
+		const imageId = loadedImageId;
+		if (!imageId || isLoading.patching) return;
 		isLoading.patching = true;
 
 		// Prefer the stored scan report when one exists; fall back to
 		// patching all outdated OS packages.
-		const options = vulnerabilityScan?.hasReport ? { scanId: image.id } : undefined;
-		const result = await tryCatch(imageService.patchImage(image.id, options));
+		const options = vulnerabilityScan?.hasReport ? { scanId: imageId } : undefined;
+		const result = await tryCatch(imageService.patchImage(imageId, options));
 		await handleApiResultWithCallbacks({
 			result,
 			message: m.images_patch_failed(),
@@ -175,9 +188,9 @@
 	}
 
 	function beginScanPolling(showToast: boolean) {
-		if (!vulnerabilityManagementEnabled || !image?.id || stopScanPolling) return;
+		if (!vulnerabilityManagementEnabled || !loadedImageId || stopScanPolling) return;
 		const environmentId = currentEnvId;
-		const requestedImageId = image.id;
+		const requestedImageId = loadedImageId;
 		const requestedKey = scanQueryKey;
 		pollingScope = `${environmentId}:${requestedImageId}`;
 		const cancel = startVulnerabilityScanPolling(
@@ -185,7 +198,12 @@
 			(id) => vulnerabilityService.getScanSummary(id, environmentId),
 			{
 				onUpdate: (summary) => {
-					if (destroyed || !vulnerabilityManagementEnabled || environmentId !== currentEnvId || requestedImageId !== image.id)
+					if (
+						destroyed ||
+						!vulnerabilityManagementEnabled ||
+						environmentId !== currentEnvId ||
+						requestedImageId !== loadedImageId
+					)
 						return;
 					queryClient.setQueryData(requestedKey, {
 						...(vulnerabilityScan ?? {}),
@@ -198,7 +216,12 @@
 					} as VulnerabilityScanResult);
 				},
 				onComplete: async (summary) => {
-					if (destroyed || !vulnerabilityManagementEnabled || environmentId !== currentEnvId || requestedImageId !== image.id)
+					if (
+						destroyed ||
+						!vulnerabilityManagementEnabled ||
+						environmentId !== currentEnvId ||
+						requestedImageId !== loadedImageId
+					)
 						return;
 					let resolvedSummary = summary;
 					const operationResult = await tryCatch(
@@ -218,7 +241,12 @@
 						resolvedSummary = operationResult.data;
 					}
 
-					if (destroyed || !vulnerabilityManagementEnabled || environmentId !== currentEnvId || requestedImageId !== image.id)
+					if (
+						destroyed ||
+						!vulnerabilityManagementEnabled ||
+						environmentId !== currentEnvId ||
+						requestedImageId !== loadedImageId
+					)
 						return;
 					if (isVulnerabilityScanInProgress(resolvedSummary.status)) {
 						queryClient.setQueryData(requestedKey, {
@@ -239,7 +267,12 @@
 					const operationResult2 = await tryCatch(
 						(async () => vulnerabilityService.getScanResult(resolvedSummary.imageId, environmentId))()
 					);
-					if (destroyed || !vulnerabilityManagementEnabled || environmentId !== currentEnvId || requestedImageId !== image.id)
+					if (
+						destroyed ||
+						!vulnerabilityManagementEnabled ||
+						environmentId !== currentEnvId ||
+						requestedImageId !== loadedImageId
+					)
 						return;
 					if (operationResult2.error !== null) {
 						scanReportError = extractApiErrorMessage(operationResult2.error);
@@ -312,7 +345,7 @@
 	});
 	const pinnedRepository = $derived.by(() => (pinnedRefs[0] ? parseImageRef(pinnedRefs[0]).repo : ''));
 
-	async function handleImageRemove(id: string) {
+	function handleImageRemove(id: string) {
 		openConfirmDialog({
 			title: m.common_remove_title({ resource: m.resource_image() }),
 			message: m.images_remove_message(),
@@ -335,7 +368,7 @@
 						setLoadingState: (value) => (isLoading.removing = value),
 						onSuccess: async (data) => {
 							toast.success(m.image_removed_successfully(), activityToastOptions(extractActivityId(data)));
-							goto('/images');
+							if (loadedImageId === id) void goto('/images');
 						}
 					});
 				}
@@ -370,7 +403,7 @@
 				label: m.images_export(),
 				loading: isLoading.exporting,
 				disabled: isLoading.exporting,
-				onclick: () => handleExportImage(image.id)
+				onclick: () => loadedImageId && handleExportImage(loadedImageId)
 			});
 		}
 		if (canScanImage) {
@@ -402,7 +435,7 @@
 				label: m.common_remove(),
 				loading: isLoading.removing,
 				disabled: isLoading.removing,
-				onclick: () => handleImageRemove(image.id)
+				onclick: () => loadedImageId && handleImageRemove(loadedImageId)
 			});
 		}
 		return list;

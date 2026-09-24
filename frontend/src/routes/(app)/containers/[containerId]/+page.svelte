@@ -52,7 +52,7 @@
 	import { EditIcon, ImagesIcon, PauseIcon, PlayIcon, ProjectsIcon, UpdateIcon, ZapIcon } from '#lib/icons/index.js';
 	import { runContainerLifecycleAction, confirmAndUpdateContainer } from '#lib/utils/container-actions.js';
 	import { imageService } from '#lib/services/image-service.js';
-	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
+	import { createQuery, skipToken, useQueryClient } from '@tanstack/svelte-query';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
 	import { createContainerUpdateActivityTracker } from '#lib/utils/container-update-activities.js';
@@ -64,9 +64,11 @@
 	import { isAutoUpdateLabelDisabled } from '#lib/utils/container-auto-update.js';
 	import KillContainerDialog from '../components/kill-container-dialog.svelte';
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';
-	let { data } = $props();
+	import type { PageProps } from './$types';
+	let { data }: PageProps = $props();
 	const queryClient = useQueryClient();
-	let container = $derived(data?.container as ContainerDetailsDto);
+	// Undefined while SvelteKit hands this departing page another route's data.
+	const container = $derived<ContainerDetailsDto | undefined>(data.container);
 	let stats = $state(null as ContainerStatsType | null);
 
 	let autoScrollLogs = $state(true);
@@ -80,6 +82,7 @@
 	const autoUpdateEnabled = $derived(container?.autoUpdateEnabled === true);
 
 	async function handleAutoUpdateChanged() {
+		if (!container) return;
 		await Promise.all([
 			queryClient.invalidateQueries({ queryKey: queryKeys.containers.all }),
 			queryClient.invalidateQueries({ queryKey: queryKeys.containers.detail(currentEnvId, container.id) })
@@ -151,6 +154,8 @@
 	const showNetworkTab = $derived(hasNetworks || hasPorts);
 	const hasMounts = $derived(!!(container?.mounts && container.mounts.length > 0));
 	const currentEnvId = $derived(environmentStore.selected?.id || '0');
+	// False once the selected environment moves away from the one this container was loaded from.
+	const isLoadedEnvironment = $derived(data.envId === currentEnvId);
 	const canViewLogs = $derived(hasPermission('containers:logs', currentEnvId));
 	const canExecShell = $derived(hasPermission('containers:exec', currentEnvId));
 	const canPauseContainer = $derived(hasPermission('containers:pause', currentEnvId));
@@ -176,15 +181,17 @@
 
 	const imageUpdateQuery = createQuery(() => {
 		const environmentId = environmentStore.selected?.id;
-		const image = container?.image;
+		const image = isLoadedEnvironment ? container?.image : undefined;
 		userStore.current;
 		return {
 			queryKey: queryKeys.images.updateInfoByRef(environmentId ?? '', image ?? ''),
-			queryFn: async () => {
-				await environmentStore.ready;
-				return imageService.getUpdateInfoByRefs([image!]);
-			},
-			enabled: !!environmentId && !!image && hasPermission('containers:autoupdate', environmentId)
+			queryFn: image
+				? async () => {
+						await environmentStore.ready;
+						return imageService.getUpdateInfoByRefs([image]);
+					}
+				: skipToken,
+			enabled: !!environmentId && hasPermission('containers:autoupdate', environmentId)
 		};
 	});
 	const updateInfo = $derived.by(() => {
@@ -198,7 +205,7 @@
 		() => {
 			void refreshAfterUpdate();
 		},
-		() => container.id
+		() => container?.id ?? ''
 	);
 	onMount(() => {
 		updateViewMounted = true;
@@ -210,13 +217,14 @@
 	});
 
 	async function refreshAfterUpdate() {
+		if (!container || !isLoadedEnvironment) return;
 		const environmentId = currentEnvId;
-		const containerId = container.id;
+		const { id: containerId, image } = container;
 		const result = await tryCatch(containerService.getContainerForEnvironment(environmentId, containerId));
-		if (!updateViewMounted || environmentId !== currentEnvId || containerId !== container.id) return;
+		if (!updateViewMounted || environmentId !== currentEnvId || containerId !== container?.id) return;
 		if (result.error instanceof APIError && result.error.status === 404) {
 			await queryClient.invalidateQueries({ queryKey: ['containers', environmentId] });
-			if (!updateViewMounted || environmentId !== currentEnvId || containerId !== container.id) return;
+			if (!updateViewMounted || environmentId !== currentEnvId || containerId !== container?.id) return;
 			await goto('/containers');
 			return;
 		}
@@ -228,14 +236,14 @@
 		}
 		await Promise.all([
 			queryClient.invalidateQueries({ queryKey: ['containers', environmentId] }),
-			queryClient.invalidateQueries({ queryKey: queryKeys.images.updateInfoByRef(environmentId, container.image) }),
+			queryClient.invalidateQueries({ queryKey: queryKeys.images.updateInfoByRef(environmentId, image) }),
 			queryClient.invalidateQueries({ queryKey: queryKeys.containers.detail(environmentId, containerId) })
 		]);
-		if (updateViewMounted && environmentId === currentEnvId && containerId === container.id) await refreshAll();
+		if (updateViewMounted && environmentId === currentEnvId && containerId === container?.id) await refreshAll();
 	}
 
 	function handleUpdateContainer() {
-		if (!container) return;
+		if (!container || !isLoadedEnvironment) return;
 		confirmAndUpdateContainer({
 			containerId: container.id,
 			containerName: containerDisplayName,
@@ -279,7 +287,7 @@
 		!!(container?.config?.healthcheck?.test && container.config.healthcheck.test.length > 0) || !!container?.state?.health
 	);
 
-	const project = $derived(data?.project ?? null);
+	const project = $derived(data.project ?? null);
 	const composeInfo = $derived(container?.composeInfo ?? null);
 	const composeServiceName = $derived(composeInfo?.serviceName ?? '');
 	const rootComposeFilename = $derived.by(() => {
@@ -645,7 +653,7 @@
 	{#key `${currentEnvId}:${container.id}`}
 		<ContainerDetailStatsSync
 			containerId={container.id}
-			enabled={(activeTab === 'stats' || activeTab === 'logs') && !!container.state?.running}
+			enabled={isLoadedEnvironment && (activeTab === 'stats' || activeTab === 'logs') && !!container.state?.running}
 			bind:stats
 			bind:hasInitialStatsLoaded
 			bind:statsError

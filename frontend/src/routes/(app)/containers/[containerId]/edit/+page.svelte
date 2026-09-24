@@ -12,7 +12,7 @@
 	import { containerService } from '#lib/services/container-service.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { createMutation, useQueryClient } from '@tanstack/svelte-query';
-	import { goto } from '$app/navigation';
+	import { afterNavigate, goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
 	import { m } from '#lib/paraglide/messages.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
@@ -22,22 +22,36 @@
 	import { ArrowLeftIcon } from '#lib/icons/index.js';
 	import type { ContainerEditRequest } from '#lib/types/docker.js';
 
-	let { data } = $props();
+	import type { PageProps } from './$types';
+
+	let { data }: PageProps = $props();
 
 	const queryClient = useQueryClient();
-	// The form is intentionally seeded once from the load-time snapshot.
-	// svelte-ignore state_referenced_locally
-	const form = createForm<typeof containerFormSchema>(containerFormSchema, formValuesFromEditConfig(data.editConfig));
+	// The form is intentionally seeded once per container from the load-time snapshot.
+	let seededContainerId = untrack(() => data.containerId);
+	let form = $state.raw(
+		untrack(() => createForm<typeof containerFormSchema>(containerFormSchema, formValuesFromEditConfig(data.editConfig)))
+	);
 	let rows = $state(untrack(() => rowsFromEditConfig(data.editConfig)));
 
+	// A reused page must not edit one container with another container's form.
+	afterNavigate(() => {
+		if (!data.editConfig || data.containerId === seededContainerId) return;
+		seededContainerId = data.containerId;
+		form = createForm<typeof containerFormSchema>(containerFormSchema, formValuesFromEditConfig(data.editConfig));
+		rows = rowsFromEditConfig(data.editConfig);
+	});
+
+	type EditContainerVariables = { containerId: string; envId: string; request: ContainerEditRequest };
+
 	const editContainerMutation = createMutation(() => ({
-		mutationFn: (request: ContainerEditRequest) => containerService.editContainer(data.containerId, request),
-		onSuccess: async (details) => {
+		mutationFn: ({ containerId, request }: EditContainerVariables) => containerService.editContainer(containerId, request),
+		onSuccess: async (details, { containerId, envId }) => {
 			toast.success(m.edit_success(), activityToastOptions(extractActivityId(details)));
 			await queryClient.invalidateQueries({ queryKey: queryKeys.containers.all });
-			queryClient.removeQueries({ queryKey: queryKeys.containers.detail(data.envId, data.containerId) });
-			queryClient.removeQueries({ queryKey: queryKeys.containers.editConfig(data.envId, data.containerId) });
-			goto(`/containers/${details.id}`);
+			queryClient.removeQueries({ queryKey: queryKeys.containers.detail(envId, containerId) });
+			queryClient.removeQueries({ queryKey: queryKeys.containers.editConfig(envId, containerId) });
+			if (data.containerId === containerId) void goto(`/containers/${details.id}`);
 		},
 		onError: (error) => {
 			toast.error(m.edit_failed(), { description: extractApiErrorMessage(error) });
@@ -47,7 +61,7 @@
 	function handleSubmit() {
 		const values = form.validate();
 		if (!values) return;
-		const request = toEditRequest(values, rows);
+		const variables = { containerId: data.containerId, envId: data.envId, request: toEditRequest(values, rows) };
 		openConfirmDialog({
 			title: m.edit_confirm_title(),
 			message: m.edit_confirm_message({ name: data.editConfig.name }),
@@ -55,7 +69,7 @@
 				label: m.common_save(),
 				destructive: false,
 				action: () => {
-					editContainerMutation.mutate(request);
+					editContainerMutation.mutate(variables);
 				}
 			}
 		});
@@ -75,7 +89,7 @@
 				customLabel={m.common_back()}
 			/>
 			<div class="hidden h-4 w-px bg-border sm:block"></div>
-			<h1 class="truncate text-base font-semibold">{m.common_edit()} · {data.editConfig.name}</h1>
+			<h1 class="truncate text-base font-semibold">{m.common_edit()} · {data.editConfig?.name}</h1>
 		</div>
 	</div>
 

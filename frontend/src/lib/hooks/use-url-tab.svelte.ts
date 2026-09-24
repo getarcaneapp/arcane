@@ -1,6 +1,6 @@
 import { tryCatch } from '#lib/utils/try-catch.js';
 import { goto } from '$app/navigation';
-import { page } from '$app/state';
+import { navigating, page } from '$app/state';
 import { onMount, untrack } from 'svelte';
 
 type UseUrlTabOptions<T extends string> = {
@@ -17,29 +17,23 @@ export function useUrlTab<T extends string>({
 	aliases = () => ({})
 }: UseUrlTabOptions<T>) {
 	let pendingUrlUpdate = Promise.resolve();
+	// A departing page must not rewrite the next route's URL.
+	const routeId = page.route.id;
 
 	function currentUrl() {
 		return new URL((page.shallow?.url ?? page.url).href);
 	}
 
+	function ownsUrl(url: URL) {
+		const target = navigating.to?.url.pathname;
+		return page.route.id === routeId && currentUrl().pathname === url.pathname && (!target || target === url.pathname);
+	}
+
 	function updateUrl(url: URL) {
 		const state = page.state;
-		pendingUrlUpdate = tryCatch(pendingUrlUpdate)
-			.then((result) => {
-				if (result.error !== null) {
-					return undefined;
-				} else {
-					return result.data;
-				}
-			})
-			.then(() =>
-				goto(url, {
-					replace: true,
-					shallow: true,
-					reset: false,
-					state
-				})
-			);
+		pendingUrlUpdate = pendingUrlUpdate.then(async () => {
+			if (ownsUrl(url)) await tryCatch(goto(url, { replace: true, shallow: true, reset: false, state }));
+		});
 	}
 
 	function resolveTab(requested: string | null) {
@@ -78,7 +72,7 @@ export function useUrlTab<T extends string>({
 	$effect(() => {
 		const url = currentUrl();
 		const selected = resolveTab(url.searchParams.get('tab'));
-		if (mounted && ready() && url.searchParams.get('tab') !== selected) {
+		if (mounted && ready() && ownsUrl(url) && url.searchParams.get('tab') !== selected) {
 			url.searchParams.set('tab', selected);
 			untrack(() => updateUrl(url));
 		}

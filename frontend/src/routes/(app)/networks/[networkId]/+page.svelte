@@ -37,7 +37,8 @@
 	let sortCol = $state('name');
 	let sortDir = $state<'asc' | 'desc'>('asc');
 
-	let network = $derived(data.network);
+	// Undefined while SvelteKit hands this departing page another route's data.
+	let network = $derived<NetworkInspectDto | undefined>(data.network);
 	const shortId = $derived(network?.id?.substring(0, 12) ?? m.common_unknown());
 	const createdDate = $derived(network?.created ? formatDateTimeShort(network.created) : m.common_unknown());
 
@@ -54,13 +55,14 @@
 		sortCol = column;
 		sortDir = newSortDir;
 
-		if (data.network?.id) {
+		const networkId = data.network?.id;
+		if (networkId) {
 			const operationResult = await tryCatch(
-				(async () =>
-					networkService.getNetwork(data.network.id, {
-						sort: { column: sortCol, direction: sortDir }
-					}))()
+				networkService.getNetwork(networkId, {
+					sort: { column: sortCol, direction: sortDir }
+				})
 			);
+			if (data.network?.id !== networkId) return;
 			if (operationResult.error !== null) {
 				const err = operationResult.error;
 
@@ -83,25 +85,24 @@
 			toast.error(m.networks_missing_id ? m.networks_missing_id() : m.error_occurred());
 			return;
 		}
+		const networkId = network.id;
+		const networkName = network.name ?? shortId;
 
 		openConfirmDialog({
 			title: m.common_remove_title({ resource: m.resource_network() }),
-			message: m.networks_remove_confirm_message({ name: network?.name ?? shortId }),
+			message: m.networks_remove_confirm_message({ name: networkName }),
 			confirm: {
 				label: m.common_remove(),
 				destructive: true,
 				action: async () => {
 					isRemoving = true;
 					await handleApiResultWithCallbacks({
-						result: await tryCatch(networkService.deleteNetwork(network.id)),
-						message: m.networks_remove_failed({ name: network?.name ?? shortId }),
+						result: await tryCatch(networkService.deleteNetwork(networkId)),
+						message: m.networks_remove_failed({ name: networkName }),
 						setLoadingState: (value) => (isRemoving = value),
-						onSuccess: async (data) => {
-							toast.success(
-								m.networks_remove_success({ name: network?.name ?? shortId }),
-								activityToastOptions(extractActivityId(data))
-							);
-							goto('/networks');
+						onSuccess: async (result) => {
+							toast.success(m.networks_remove_success({ name: networkName }), activityToastOptions(extractActivityId(result)));
+							if (data.network?.id === networkId) void goto('/networks');
 						},
 						onError: (error) => {
 							errorMessage = error?.message ?? m.error_occurred();

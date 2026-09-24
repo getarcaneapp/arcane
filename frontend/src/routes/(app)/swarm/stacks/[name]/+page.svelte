@@ -24,7 +24,9 @@
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 
-	let { data } = $props();
+	import type { PageProps } from './$types';
+
+	let { data }: PageProps = $props();
 
 	let stack = $derived(data.stack);
 	let services = $derived(data.services);
@@ -268,20 +270,24 @@
 				</div>
 
 				<Tabs.Content value="services" class="min-h-0 flex-1">
-					<SwarmServicesTable
-						bind:services
-						bind:requestOptions={servicesRequestOptions}
-						fetchServices={fetchStackServices}
-						persistKey={`arcane-swarm-stack-services-table-${stackName}`}
-					/>
+					{#if services}
+						<SwarmServicesTable
+							bind:services
+							bind:requestOptions={servicesRequestOptions}
+							fetchServices={fetchStackServices}
+							persistKey={`arcane-swarm-stack-services-table-${stackName}`}
+						/>
+					{/if}
 				</Tabs.Content>
 				<Tabs.Content value="tasks" class="min-h-0 flex-1">
-					<SwarmTasksTable
-						bind:tasks
-						bind:requestOptions={tasksRequestOptions}
-						fetchTasks={fetchStackTasks}
-						persistKey={`arcane-swarm-stack-tasks-table-${stackName}`}
-					/>
+					{#if tasks}
+						<SwarmTasksTable
+							bind:tasks
+							bind:requestOptions={tasksRequestOptions}
+							fetchTasks={fetchStackTasks}
+							persistKey={`arcane-swarm-stack-tasks-table-${stackName}`}
+						/>
+					{/if}
 				</Tabs.Content>
 				<Tabs.Content value="source" class="flex min-h-0 flex-1 flex-col">
 					{#if sourceState === 'available' && source}

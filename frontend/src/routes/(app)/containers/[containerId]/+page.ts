@@ -60,6 +60,7 @@ export const load: PageLoad = async ({ params, parent }) => {
 
 	return {
 		container,
-		project
+		project,
+		envId
 	};
 };

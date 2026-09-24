@@ -58,8 +58,11 @@
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';
 
-	let { data } = $props();
-	let service = $derived(data?.service as SwarmServiceInspect);
+	import type { PageProps } from './$types';
+
+	let { data }: PageProps = $props();
+	// Undefined while SvelteKit hands this departing page another route's data.
+	const service = $derived<SwarmServiceInspect | undefined>(data.service);
 
 	let scaleDialogOpen = $state(false);
 	let userScaleReplicas = $state<number | null>(null);
@@ -260,13 +263,16 @@
 
 	async function handleUpdate(payload: { spec: Record<string, unknown>; options?: Record<string, unknown> }) {
 		if (!service?.id) return;
+		const serviceId = service.id;
+		const name = serviceName;
 		isLoading.update = true;
 		await handleApiResultWithCallbacks({
-			result: await tryCatch(swarmService.updateService(service.id, { version: editVersion, ...payload })),
-			message: m.common_update_failed({ resource: `${m.swarm_service()} "${serviceName}"` }),
+			result: await tryCatch(swarmService.updateService(serviceId, { version: editVersion, ...payload })),
+			message: m.common_update_failed({ resource: `${m.swarm_service()} "${name}"` }),
 			setLoadingState: (v) => (isLoading.update = v),
 			onSuccess: async () => {
-				toast.success(m.common_update_success({ resource: `${m.swarm_service()} "${serviceName}"` }));
+				toast.success(m.common_update_success({ resource: `${m.swarm_service()} "${name}"` }));
+				if (service?.id !== serviceId) return;
 				editOpen = false;
 				await refreshData();
 			}
@@ -274,21 +280,24 @@
 	}
 
 	function handleRollback() {
+		if (!service?.id) return;
+		const serviceId = service.id;
+		const name = serviceName;
 		openConfirmDialog({
 			title: m.swarm_service_rollback_title(),
-			message: m.swarm_service_rollback_confirm({ name: serviceName }),
+			message: m.swarm_service_rollback_confirm({ name }),
 			confirm: {
 				label: m.swarm_service_rollback(),
 				destructive: false,
 				action: async () => {
 					isLoading.rollback = true;
 					await handleApiResultWithCallbacks({
-						result: await tryCatch(swarmService.rollbackService(service.id)),
-						message: m.swarm_service_rollback_failed({ name: serviceName }),
+						result: await tryCatch(swarmService.rollbackService(serviceId)),
+						message: m.swarm_service_rollback_failed({ name }),
 						setLoadingState: (v) => (isLoading.rollback = v),
 						onSuccess: async () => {
-							toast.success(m.swarm_service_rollback_success({ name: serviceName }));
-							await refreshData();
+							toast.success(m.swarm_service_rollback_success({ name }));
+							if (service?.id === serviceId) await refreshData();
 						}
 					});
 				}
@@ -297,6 +306,9 @@
 	}
 
 	function handleDelete() {
+		if (!service?.id) return;
+		const serviceId = service.id;
+		const name = serviceName;
 		openConfirmDialog({
 			title: m.common_delete_title({ resource: m.swarm_service() }),
 			message: m.common_delete_confirm({ resource: m.swarm_service() }),
@@ -306,12 +318,12 @@
 				action: async () => {
 					isLoading.remove = true;
 					await handleApiResultWithCallbacks({
-						result: await tryCatch(swarmService.removeService(service.id)),
-						message: m.common_delete_failed({ resource: `${m.swarm_service()} "${serviceName}"` }),
+						result: await tryCatch(swarmService.removeService(serviceId)),
+						message: m.common_delete_failed({ resource: `${m.swarm_service()} "${name}"` }),
 						setLoadingState: (v) => (isLoading.remove = v),
 						onSuccess: async () => {
-							toast.success(m.common_delete_success({ resource: `${m.swarm_service()} "${serviceName}"` }));
-							goto('/swarm/services');
+							toast.success(m.common_delete_success({ resource: `${m.swarm_service()} "${name}"` }));
+							if (service?.id === serviceId) void goto('/swarm/services');
 						}
 					});
 				}
@@ -321,14 +333,17 @@
 
 	async function handleScale() {
 		if (!service?.id || !canScaleService) return;
+		const serviceId = service.id;
+		const name = serviceName;
 		const replicas = Math.max(0, Number(scaleReplicas) || 0);
 		isLoading.scale = true;
 		await handleApiResultWithCallbacks({
-			result: await tryCatch(swarmService.scaleService(service.id, { replicas })),
-			message: m.common_update_failed({ resource: `${m.swarm_service()} "${serviceName}"` }),
+			result: await tryCatch(swarmService.scaleService(serviceId, { replicas })),
+			message: m.common_update_failed({ resource: `${m.swarm_service()} "${name}"` }),
 			setLoadingState: (v) => (isLoading.scale = v),
 			onSuccess: async () => {
-				toast.success(m.swarm_service_scale_success({ name: serviceName, replicas }));
+				toast.success(m.swarm_service_scale_success({ name, replicas }));
+				if (service?.id !== serviceId) return;
 				scaleDialogOpen = false;
 				await refreshData();
 			}

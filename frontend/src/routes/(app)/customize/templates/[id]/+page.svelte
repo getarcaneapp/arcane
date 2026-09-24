@@ -36,11 +36,15 @@
 		TrashIcon
 	} from '#lib/icons/index.js';
 
-	let { data } = $props();
+	import type { Template } from '#lib/types/swarm.js';
+	import type { PageProps } from './$types';
 
-	let template = $derived(data.templateData.template);
-	let services = $derived(data.templateData.services);
-	let envVars = $derived(data.templateData.envVariables);
+	let { data }: PageProps = $props();
+
+	// Undefined while SvelteKit hands this departing page another route's data.
+	const template = $derived<Template | undefined>(data.templateData?.template);
+	const services = $derived(data.templateData?.services);
+	const envVars = $derived(data.templateData?.envVariables);
 
 	// Edit state (custom templates only)
 	let status = $state({
@@ -60,10 +64,10 @@
 	// Form schema for custom template editing
 	const formSchema = createNamedTemplateSchema();
 
-	let originalName = $derived(template.name);
-	let originalDescription = $derived(template.description ?? '');
-	let originalCompose = $derived(data.templateData.content);
-	let originalEnv = $derived(data.templateData.envContent);
+	let originalName = $derived(template?.name ?? '');
+	let originalDescription = $derived(template?.description ?? '');
+	let originalCompose = $derived(data.templateData?.content ?? '');
+	let originalEnv = $derived(data.templateData?.envContent ?? '');
 
 	let formData = $derived({
 		name: originalName,
@@ -87,11 +91,13 @@
 	const canSave = $derived(saveState.canSave);
 
 	async function handleSave() {
+		if (!template) return;
+		const templateId = template.id;
 		await runTemplateEditorSave({
 			validationState,
 			validate: form.validate,
 			save: (validated) =>
-				templateService.updateTemplate(template.id, {
+				templateService.updateTemplate(templateId, {
 					name: validated.name,
 					description: validated.description,
 					content: validated.composeContent,
@@ -101,6 +107,7 @@
 			setLoading: (value) => (status.saving = value),
 			onSuccess: async (validated) => {
 				toast.success(m.templates_save_template_success({ name: validated.name }));
+				if (template?.id !== templateId) return;
 				originalName = validated.name;
 				originalDescription = validated.description ?? '';
 				originalCompose = validated.composeContent;
@@ -133,20 +140,22 @@
 
 	// Read-only view helpers (remote templates)
 	const localVersionOfRemote = $derived.by(() => {
-		if (!template.isRemote || !template.metadata?.remoteUrl) return null;
+		if (!template?.isRemote || !template.metadata?.remoteUrl) return null;
 		return data.allTemplates.find((t) => !t.isRemote && t.metadata?.remoteUrl === template.metadata?.remoteUrl);
 	});
 
-	const canDownload = $derived(template.isRemote && !localVersionOfRemote);
+	const canDownload = $derived(!!template?.isRemote && !localVersionOfRemote);
 
 	async function handleDownload() {
-		if (status.isDownloading || !canDownload) return;
+		if (!template || status.isDownloading || !canDownload) return;
+		const { id: templateId, name } = template;
 		status.isDownloading = true;
 		try {
 			const operationResult = await tryCatch(
 				(async () => {
-					const downloadedTemplate = await templateService.download(template.id);
-					toast.success(m.templates_downloaded_success({ name: template.name }));
+					const downloadedTemplate = await templateService.download(templateId);
+					toast.success(m.templates_downloaded_success({ name }));
+					if (template?.id !== templateId) return;
 					if (downloadedTemplate?.id) {
 						await goto(`/customize/templates/${downloadedTemplate.id}`, { replaceState: true });
 					} else {
@@ -165,11 +174,12 @@
 		}
 	}
 
-	async function handleDelete() {
-		if (status.isDeleting) return;
+	function handleDelete() {
+		if (!template || status.isDeleting) return;
+		const { id: templateId, name } = template;
 		openConfirmDialog({
 			title: m.common_delete_title({ resource: m.resource_template() }),
-			message: m.common_delete_confirm({ resource: `${m.resource_template()} "${template.name}"` }),
+			message: m.common_delete_confirm({ resource: `${m.resource_template()} "${name}"` }),
 			confirm: {
 				label: m.templates_delete_template(),
 				destructive: true,
@@ -177,9 +187,10 @@
 					status.isDeleting = true;
 					const operationResult = await tryCatch(
 						(async () => {
-							await templateService.deleteTemplate(template.id);
-							toast.success(m.common_delete_success({ resource: `${m.resource_template()} "${template.name}"` }));
-							await goto('/customize/templates');
+							await templateService.deleteTemplate(templateId);
+							toast.success(m.common_delete_success({ resource: `${m.resource_template()} "${name}"` }));
+							if (template?.id === templateId) await goto('/customize/templates');
+							else status.isDeleting = false;
 						})()
 					);
 					if (operationResult.error !== null) {
@@ -187,9 +198,7 @@
 
 						console.error('Error deleting template:', error);
 						toast.error(
-							error instanceof Error
-								? error.message
-								: m.common_delete_failed({ resource: `${m.resource_template()} "${template.name}"` })
+							error instanceof Error ? error.message : m.common_delete_failed({ resource: `${m.resource_template()} "${name}"` })
 						);
 						status.isDeleting = false;
 					}
@@ -204,7 +213,7 @@
 				id: 'create-project',
 				action: 'create',
 				label: m.compose_create_project(),
-				onclick: () => goto(`/projects/new?templateId=${template.id}`)
+				onclick: () => template && goto(`/projects/new?templateId=${template.id}`)
 			}
 		];
 		if (canDownload) {
@@ -229,7 +238,7 @@
 	});
 
 	const documentationHost = $derived.by(() => {
-		const url = template.metadata?.documentationUrl;
+		const url = template?.metadata?.documentationUrl;
 		if (!url) return null;
 		try {
 			return new URL(url).hostname;
@@ -239,7 +248,7 @@
 	});
 </script>
 
-{#if !template.isRemote}
+{#if template && !template.isRemote}
 	<!-- Editor workspace for custom templates (same chrome as the create page) -->
 	<TemplateEditorWorkspace
 		bind:inputs
@@ -292,7 +301,7 @@
 			</DropdownMenu.Root>
 		{/snippet}
 	</TemplateEditorWorkspace>
-{:else}
+{:else if template}
 	<!-- Marketplace-style read-only view for remote templates -->
 	<ResourceDetailLayout
 		backUrl="/customize/templates"
