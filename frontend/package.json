@@ -66,7 +66,7 @@
 		"zod": "^4.6.5"
 	},
 	"devDependencies": {
-		"@iconify/json": "^2.2.530",
+		"@iconify/json": "^2.2.531",
 		"@inlang/paraglide-js": "2.25.4",
 		"@shadcn/lint": "^0.2.0",
 		"@sveltejs/adapter-static": "^4.0.0-next.4",

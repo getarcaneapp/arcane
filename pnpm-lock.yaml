@@ -386,8 +386,8 @@ importers:
         version: 4.6.5
     devDependencies:
       '@iconify/json':
-        specifier: ^2.2.530
-        version: 2.2.530
+        specifier: ^2.2.531
+        version: 2.2.531
       '@inlang/paraglide-js':
         specifier: 2.25.4
         version: 2.25.4(@typescript/typescript6@6.0.2)(@voidzero-dev/vite-plus-core@0.3.3(@types/node@26.6.2)(@typescript/typescript6@6.0.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1))
@@ -1031,8 +1031,8 @@ packages:
     resolution: {integrity: sha512-bV0Tgo9K4hfPCek+aMAn81RppFKv2ySDQeMoSZuvTASywNTnVJCArCZE2FWqpvIatKu7VMRLWlR1EazvVhDyhQ==}
     engines: {node: '>=18.18'}
 
-  '@iconify/json@2.2.530':
-    resolution: {integrity: sha512-BW//xItEASwJNDEqhUMh6XTWnRTe/zV3V6wDMyMMy7WHHaN+14HKPkzU6lV/1Cz52wb+67Z8S9S7XahSVmjiPQ==}
+  '@iconify/json@2.2.531':
+    resolution: {integrity: sha512-l6gaD4Pde01hDbHDjPJUTr+8oZU5qW+ZzzsJflFTnHx7hpl+ata2jlMLkApM/aljISjFWUYYxnaLoFHkCLn3QA==}
 
   '@iconify/types@2.0.0':
     resolution: {integrity: sha512-+wluvCrRhXrhyOmRDJ3q8mux9JkKy5SJ/v8ol2tu4FVjyYvtEzkc/3pK15ET6RKg4b4w4BmTk1+gsCUhf21Ykg==}
@@ -4939,7 +4939,7 @@ snapshots:
 
   '@humanwhocodes/retry@0.4.3': {}
 
-  '@iconify/json@2.2.530':
+  '@iconify/json@2.2.531':
     dependencies:
       '@iconify/types': 2.0.0
       pathe: 2.0.3
