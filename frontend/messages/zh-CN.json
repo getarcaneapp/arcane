@@ -3620,7 +3620,7 @@
   "editor_compose_updater_enabled_detail": "启用镜像更新",
   "editor_compose_updater_enabled_info": "布尔值。设置为 false 可禁用受影响服务的镜像更新。",
   "editor_compose_updater_strategy_detail": "更新策略",
-  "editor_compose_updater_strategy_info": "默认值为 auto：完整的稳定语义化版本标签会跟随较新的符合条件的标签；latest、alpine 等浮动标签则跟随摘要变更。将策略设为 digest 会保留当前标签（仅跟随镜像摘要变更）；设为 tag 则要求基于版本号选择标签。",
+  "editor_compose_updater_strategy_info": "默认采用 digest 策略：保留配置的标签，仅追踪其图像摘要。将策略设为 auto 可让完整的稳定语义版本标签追踪较新的符合条件的标签；设为 tag 则要求基于版本进行选择。未指定策略的约束或标签模式也会启用基于版本的选择。",
   "editor_compose_updater_constraint_detail": "版本限制",
   "editor_compose_updater_constraint_info": "标签更新的语义版本约束，例如 3.x 或 >=3.1.0 <4.0.0。如果没有约束，更新将保持在当前主版本范围内，对于 0.x 版本则保持在当前次版本范围内。",
   "editor_compose_updater_tag_pattern_detail": "标签模式",
