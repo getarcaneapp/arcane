@@ -36,7 +36,6 @@ import (
 	"github.com/samber/hot"
 	"github.com/samber/mo"
 	"go.getarcane.app/updater"
-	"go.getarcane.app/updater/labels"
 	"go.getarcane.app/updater/pkg/utils/tagpolicy"
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
@@ -674,7 +673,7 @@ func (s *ImageService) GetUpdateInfoByContainers(ctx context.Context, containers
 	policies := make(map[string]string, len(containers))
 	for _, cnt := range containers {
 		policy, policyErr := tagpolicy.Resolve(cnt.Image, updater.DefaultLabelPolicy().TagPolicy(cnt.Labels))
-		if (policyErr == nil && policy.Strategy == "digest") || labels.IsUpdateDisabled(cnt.Labels) {
+		if (policyErr == nil && policy.Strategy == "digest") || imageref.IsUpdateCheckDisabled(cnt.Labels) {
 			continue
 		}
 		containerIDs = append(containerIDs, cnt.ID)

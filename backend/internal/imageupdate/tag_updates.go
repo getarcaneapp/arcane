@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
-	"strings"
 	"sync"
 	"time"
 
@@ -170,8 +169,12 @@ func (s *ImageUpdateService) checkContainerTagUpdatesInternal(ctx context.Contex
 		return results, errors.WrapIf(err, "list containers for tag update checks")
 	}
 
+	// This engine only reads. Containers excluded from automatic installation
+	// (updater label or UI exclusion) are still checked; only the update-check
+	// label opts a container out of monitoring, so no Settings provider is wired.
 	adapter := newTagRegistryInternal(s.registryService, credentials, s.dockerService, s.settingsService)
-	engine, err := updater.New(updater.Config{RegistryTagLister: adapter, RegistryDigestResolver: adapter, DockerClientProvider: adapter, Settings: adapter})
+	checkPolicy := updater.LabelPolicy{IsUpdateDisabledFunc: imageref.IsUpdateCheckDisabled}
+	engine, err := updater.New(updater.Config{RegistryTagLister: adapter, RegistryDigestResolver: adapter, DockerClientProvider: adapter, LabelPolicy: checkPolicy})
 	if err != nil {
 		return results, err
 	}
@@ -184,7 +187,7 @@ func (s *ImageUpdateService) checkContainerTagUpdatesInternal(ctx context.Contex
 	candidates := make([]container.Summary, 0, len(listed.Items))
 	var staleDigestContainerIDs []string
 	for _, cnt := range listed.Items {
-		if !wanted[refs.NormalizeImageUpdateRef(cnt.Image)] {
+		if !wanted[refs.NormalizeImageUpdateRef(cnt.Image)] || imageref.IsUpdateCheckDisabled(cnt.Labels) {
 			continue
 		}
 		tagPolicy, policyErr := tagpolicy.Resolve(cnt.Image, policy.TagPolicy(cnt.Labels))
@@ -293,13 +296,6 @@ func (r tagRegistryInternal) DockerClient(ctx context.Context) (*client.Client, 
 		return nil, errors.New("docker service unavailable")
 	}
 	return r.docker.GetClient(ctx)
-}
-
-func (r tagRegistryInternal) ExcludedContainers(ctx context.Context) ([]string, error) {
-	if r.settings == nil {
-		return nil, nil
-	}
-	return strings.Split(r.settings.GetStringSetting(ctx, "autoUpdateExcludedContainers", ""), ","), nil
 }
 
 func (s *ImageUpdateService) saveContainerTagResultInternal(ctx context.Context, cnt container.Summary, result *imageupdatetypes.Response) error {

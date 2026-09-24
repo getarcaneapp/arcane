@@ -162,11 +162,12 @@ func (s *UpdaterService) checkProjectServiceInternal(ctx context.Context, projec
 		record.UpdateType = imageupdate.UpdateTypeLocal
 		return record
 	}
-	policy := updater.DefaultLabelPolicy()
-	if policy.IsUpdateDisabled(service.Labels) {
+	// Disabling automatic installation keeps the preview check; only the
+	// update-check label opts a service out of monitoring.
+	if imageref.IsUpdateCheckDisabled(service.Labels) {
 		return record
 	}
-	check, err := s.engine.CheckImageUpdate(ctx, updatertypes.CheckRequest{ImageRef: service.Image, Policy: policy.TagPolicy(service.Labels)})
+	check, err := s.engine.CheckImageUpdate(ctx, updatertypes.CheckRequest{ImageRef: service.Image, Policy: updater.DefaultLabelPolicy().TagPolicy(service.Labels)})
 	if err != nil {
 		if cerrdefs.IsNotFound(err) {
 			record.UpdateType = imageupdate.UpdateTypeNotPulled

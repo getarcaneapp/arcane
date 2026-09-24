@@ -36,6 +36,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/iconcatalog"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/imageref"
 	containertypes "github.com/getarcaneapp/arcane/types/v2/container"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
@@ -1640,7 +1641,8 @@ func (s *ContainerService) BuildSummaries(ctx context.Context, containers []cont
 		if policyErr != nil || resolved.Strategy == "tag" {
 			key = "container::" + dc.ID
 		}
-		if info, exists := updateInfoMap[key]; exists {
+		// A shared image result must not surface for a container that opted out of checks.
+		if info, exists := updateInfoMap[key]; exists && !imageref.IsUpdateCheckDisabled(dc.Labels) {
 			summary.UpdateInfo = info
 		}
 		summary.RedeployDisabled = labels.ShouldDisableArcaneServerRedeploy(summary.Labels, summary.ID, currentContainerID, currentContainerErr)

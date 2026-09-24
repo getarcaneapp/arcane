@@ -699,12 +699,17 @@ func TestImageServiceContainerTagUpdatesStayScoped(t *testing.T) {
 		{"com.getarcaneapp.arcane.updater.strategy": "digest"},
 		{"com.getarcaneapp.arcane.updater.strategy": "tag", "com.getarcaneapp.arcane.updater.constraint": "3.1.x"},
 		{"com.getarcaneapp.arcane.updater.strategy": "tag", "com.getarcaneapp.arcane.updater.constraint": "3.x", "com.getarcaneapp.arcane.updater.tag-pattern": ".*"},
-		{"com.getarcaneapp.arcane.updater.strategy": "tag", "com.getarcaneapp.arcane.updater.constraint": "3.x", "com.getarcaneapp.arcane.updater": "false"},
+		{"com.getarcaneapp.arcane.updater.strategy": "tag", "com.getarcaneapp.arcane.updater.constraint": "3.x", imageref.UpdateCheckLabel: "false"},
 	} {
 		checks, err := svc.GetUpdateInfoByContainers(t.Context(), []container.Summary{{ID: "first", Image: "example:3.1.0", Labels: currentLabels}, {ID: "second", Image: "example:3.1.0", Labels: secondLabels}})
 		require.NoError(t, err)
 		require.NotContains(t, checks, "first")
 		require.Contains(t, checks, "second")
 	}
-
+	// Disabling automatic installation does not change the monitoring policy,
+	// so the stored check stays visible (#3532).
+	installExcluded := map[string]string{"com.getarcaneapp.arcane.updater.strategy": "tag", "com.getarcaneapp.arcane.updater.constraint": "3.x", "com.getarcaneapp.arcane.updater": "false"}
+	checks, err := svc.GetUpdateInfoByContainers(t.Context(), []container.Summary{{ID: "first", Image: "example:3.1.0", Labels: installExcluded}})
+	require.NoError(t, err)
+	require.Equal(t, firstTarget, checks["first"].LatestVersion)
 }

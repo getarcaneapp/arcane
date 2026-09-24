@@ -29,7 +29,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/notification"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/ratelimit"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/registryauth"
@@ -45,7 +44,6 @@ import (
 	"github.com/samber/mo"
 	"go.getarcane.app/sys/crypto"
 	"go.getarcane.app/updater/digest"
-	"go.getarcane.app/updater/labels"
 	"go.getarcane.app/updater/refs"
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
@@ -322,7 +320,8 @@ func (s *ImageUpdateService) CheckImageUpdate(ctx context.Context, imageRef stri
 		attachContainerUpdatesInternal(map[string]*imageupdate.Response{imageRef: result}, containerUpdates)
 		s.completeImageUpdateActivityInternal(ctx, activityID, false, result.Error)
 		if result.HasUpdate {
-			s.SendBatchUpdateNotifications(ctx)
+			// A failed flush is already logged; the records stay pending for the next one.
+			_ = s.SendBatchUpdateNotifications(ctx)
 			return result, nil
 		}
 		return result, err
@@ -352,7 +351,8 @@ func (s *ImageUpdateService) CheckImageUpdate(ctx context.Context, imageRef stri
 	s.notifyImageUpdateInternal(ctx, imageRef, digestResult, snapshot)
 	attachContainerUpdatesInternal(map[string]*imageupdate.Response{imageRef: digestResult}, containerUpdates)
 	if len(containerUpdates) > 0 {
-		s.SendBatchUpdateNotifications(ctx)
+		// A failed flush is already logged; the records stay pending for the next one.
+		_ = s.SendBatchUpdateNotifications(ctx)
 	}
 
 	finalMessage := "Image update check completed"
@@ -735,16 +735,11 @@ func (s *ImageUpdateService) getAllImageRefsInternal(ctx context.Context, limit 
 	containerList, err := dockerClient.ContainerList(containerCtx, client.ContainerListOptions{All: true})
 	cancelContainers()
 	if err != nil {
-		slog.WarnContext(ctx, "failed to list Docker containers; continuing without updater opt-out filtering", "error", err.Error())
+		slog.WarnContext(ctx, "failed to list Docker containers; continuing without update-check opt-out filtering", "error", err.Error())
 		return imageRefsFromSummariesInternal(imageList.Items, limit), nil
 	}
 
-	var excludedContainers map[string]bool
-	if s.settingsService != nil {
-		excludedContainers = dockerutil.ExcludedContainerNameSet(s.settingsService.GetStringSetting(ctx, "autoUpdateExcludedContainers", ""))
-	}
-
-	return filterImageSummariesByContainerOptOutInternal(imageList.Items, containerList.Items, excludedContainers, limit), nil
+	return filterImageSummariesByContainerOptOutInternal(imageList.Items, containerList.Items, limit), nil
 }
 
 func imageRefsFromSummariesInternal(images []image.Summary, limit int) []string {
@@ -771,22 +766,52 @@ func imageRefsFromSummariesInternal(images []image.Summary, limit int) []string 
 	return imageRefs
 }
 
-func filterImageSummariesByContainerOptOutInternal(images []image.Summary, containers []container.Summary, excludedContainers map[string]bool, limit int) []string {
+// monitoringEligibilityInternal records, per image ID and normalized
+// reference, whether at least one consuming container still permits update
+// checks. Only the update-check label is consulted: containers excluded from
+// automatic installation keep being monitored.
+type monitoringEligibilityInternal struct {
 	// True when at least one container using the image ID or reference has
 	// not opted out; present but false when every such container opted out.
-	eligibleByImageID := make(map[string]bool)
-	eligibleByRef := make(map[string]bool)
+	byImageID   map[string]bool
+	byRef       map[string]bool
+	byContainer map[string]bool
+}
 
+func newMonitoringEligibilityInternal(containers []container.Summary) monitoringEligibilityInternal {
+	eligibility := monitoringEligibilityInternal{byImageID: map[string]bool{}, byRef: map[string]bool{}, byContainer: map[string]bool{}}
 	for _, summary := range containers {
-		eligible := !labels.IsUpdateDisabled(summary.Labels) && !dockerutil.ContainerNameExcluded(summary.Names, excludedContainers)
-
+		eligible := !imageref.IsUpdateCheckDisabled(summary.Labels)
+		eligibility.byContainer[summary.ID] = eligible
 		if imageID := strings.TrimSpace(summary.ImageID); imageID != "" {
-			eligibleByImageID[imageID] = eligibleByImageID[imageID] || eligible
+			eligibility.byImageID[imageID] = eligibility.byImageID[imageID] || eligible
 		}
 		if normalizedRef := refs.NormalizeImageUpdateRef(summary.Image); normalizedRef != "" {
-			eligibleByRef[normalizedRef] = eligibleByRef[normalizedRef] || eligible
+			eligibility.byRef[normalizedRef] = eligibility.byRef[normalizedRef] || eligible
 		}
 	}
+	return eligibility
+}
+
+// imageEligible reports whether an image may be checked: unused images are
+// eligible, used images need one consumer that has not opted out.
+func (e monitoringEligibilityInternal) imageEligible(imageID, normalizedRef string) bool {
+	eligibleByID, usedByID := e.byImageID[strings.TrimSpace(imageID)]
+	eligibleRef, usedByRef := e.byRef[normalizedRef]
+	return (!usedByID && !usedByRef) || eligibleByID || eligibleRef
+}
+
+// recordEligible reports whether a stored result may still be reported. Results
+// scoped to a container that no longer exists are stale and not eligible.
+func (e monitoringEligibilityInternal) recordEligible(record *ImageUpdateRecord) bool {
+	if record.ContainerID != "" {
+		return e.byContainer[record.ContainerID]
+	}
+	return e.imageEligible(record.ID, refs.NormalizeImageUpdateRef(record.Repository+":"+record.Tag))
+}
+
+func filterImageSummariesByContainerOptOutInternal(images []image.Summary, containers []container.Summary, limit int) []string {
+	eligibility := newMonitoringEligibilityInternal(containers)
 
 	seen := make(map[string]struct{})
 	filtered := make([]string, 0)
@@ -803,9 +828,7 @@ func filterImageSummariesByContainerOptOutInternal(images []image.Summary, conta
 			return false
 		}
 
-		eligibleByID, usedByID := eligibleByImageID[strings.TrimSpace(imageID)]
-		eligibleRef, usedByRef := eligibleByRef[key]
-		if (usedByID || usedByRef) && !eligibleByID && !eligibleRef {
+		if !eligibility.imageEligible(imageID, key) {
 			return false
 		}
 
@@ -1242,6 +1265,30 @@ func (s *ImageUpdateService) GetUnnotifiedUpdates(ctx context.Context) (map[stri
 	return result, nil
 }
 
+// filterUnnotifiedByMonitoringInternal drops records whose resource no longer
+// permits update checks, using the same eligibility rules as discovery. A
+// failed container listing is returned so nothing is sent or marked.
+func (s *ImageUpdateService) filterUnnotifiedByMonitoringInternal(ctx context.Context, records map[string]*ImageUpdateRecord) error {
+	dockerClient, err := s.dockerClientInternal(ctx)
+	if err != nil {
+		return errors.WrapIf(err, "resolve update-check eligibility")
+	}
+	apiCtx, cancel := s.dockerAPIContextInternal(ctx)
+	listed, err := dockerClient.ContainerList(apiCtx, client.ContainerListOptions{All: true})
+	cancel()
+	if err != nil {
+		return errors.WrapIf(err, "list containers for update-check eligibility")
+	}
+	eligibility := newMonitoringEligibilityInternal(listed.Items)
+	for id, record := range records {
+		if !eligibility.recordEligible(record) {
+			slog.DebugContext(ctx, "Skipping update notification for resource opted out of update checks", "recordId", id)
+			delete(records, id)
+		}
+	}
+	return nil
+}
+
 // MarkUpdatesAsNotified marks the given image IDs as having been notified
 func (s *ImageUpdateService) MarkUpdatesAsNotified(ctx context.Context, imageIDs []string) error {
 	if len(imageIDs) == 0 {
@@ -1645,14 +1692,19 @@ func (s *ImageUpdateService) CheckMultipleImages(ctx context.Context, imageRefs 
 		"errorCount", errorCount,
 		"duration", time.Since(startBatch))
 
-	s.SendBatchUpdateNotifications(ctx)
+	// A failed flush is already logged; the records stay pending for the next one.
+	_ = s.SendBatchUpdateNotifications(ctx)
 
 	return results, nil
 }
 
-func (s *ImageUpdateService) SendBatchUpdateNotifications(ctx context.Context) {
+// SendBatchUpdateNotifications delivers pending update notifications. It
+// returns an error only when the pending set could not be determined, so a
+// caller about to consume the records can stop before their notifications
+// are lost; delivery failures leave the records unnotified for the next flush.
+func (s *ImageUpdateService) SendBatchUpdateNotifications(ctx context.Context) error {
 	if s.notificationService == nil {
-		return
+		return nil
 	}
 
 	// Serialize the query→send→mark sequence so the poll-end flush and the
@@ -1675,9 +1727,16 @@ func (s *ImageUpdateService) SendBatchUpdateNotifications(ctx context.Context) {
 	defer cancel()
 
 	unnotifiedUpdates, err := s.GetUnnotifiedUpdates(notifCtx)
+	if err == nil && len(unnotifiedUpdates) > 0 {
+		// Records for resources that opted out of monitoring since the check, or
+		// whose container is gone, stay unnotified: they resurface if monitoring
+		// is re-enabled and are otherwise removed by orphan cleanup.
+		err = s.filterUnnotifiedByMonitoringInternal(notifCtx, unnotifiedUpdates)
+	}
 	switch {
 	case err != nil:
 		slog.WarnContext(ctx, "Failed to get unnotified updates", "error", err.Error())
+		return errors.WrapIf(err, "flush pending update notifications")
 	case len(unnotifiedUpdates) > 0:
 		updatesToNotify := make(map[string]*imageupdate.Response)
 		imageIDsToMark := make([]string, 0, len(unnotifiedUpdates))
@@ -1713,7 +1772,7 @@ func (s *ImageUpdateService) SendBatchUpdateNotifications(ctx context.Context) {
 		// the next poll. Failures remain visible in the delivery history.
 		if delivered == 0 {
 			slog.DebugContext(ctx, "No providers delivered image update notifications; leaving records unnotified", "count", len(imageIDsToMark))
-			return
+			return nil
 		}
 		if markErr := s.MarkUpdatesAsNotified(notifCtx, imageIDsToMark); markErr != nil {
 			slog.WarnContext(ctx, "Failed to mark updates as notified", "error", markErr.Error())
@@ -1721,6 +1780,7 @@ func (s *ImageUpdateService) SendBatchUpdateNotifications(ctx context.Context) {
 	default:
 		slog.DebugContext(ctx, "No new updates to notify")
 	}
+	return nil
 }
 
 func (s *ImageUpdateService) CheckAllImages(ctx context.Context, limit int, externalCreds []containerregistry.Credential) (map[string]*imageupdate.Response, error) {

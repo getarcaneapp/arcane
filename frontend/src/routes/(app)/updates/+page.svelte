@@ -225,7 +225,7 @@
 						<ContainerUpdatesTable
 							{containers}
 							bind:requestOptions={containerRequestOptions}
-							onIgnoreChanged={invalidateContainerQueries}
+							onAutoUpdateChanged={invalidateContainerQueries}
 							onRefreshData={async (options) => {
 								const requestedEnvId = envId;
 								const requestedOptions = ensureStandaloneContainerUpdatesFilter(options);

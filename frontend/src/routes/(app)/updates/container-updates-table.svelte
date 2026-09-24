@@ -43,11 +43,12 @@
 		currentValue: string;
 		latestValue: string;
 		checkedAt: string;
-		ignored: boolean;
+		/** Automatic installation is off; checks and notifications still run. */
+		autoUpdateDisabled: boolean;
 		labelControlled: boolean;
-		/** False when the agent omitted `autoUpdateEnabled`; ignoring is then unavailable. */
+		/** False when the agent omitted `autoUpdateEnabled`; toggling is then unavailable. */
 		statusAvailable: boolean;
-		ignoreTitle: string;
+		autoUpdateTitle: string;
 		updateInfo?: ImageUpdateInfoDto;
 		container: ContainerSummaryDto;
 	};
@@ -56,15 +57,15 @@
 		containers: ContainersPaginatedResponse;
 		requestOptions: SearchPaginationSortRequest;
 		onRefreshData: (options: ContainerListRequestOptions) => Promise<ContainersPaginatedResponse>;
-		onIgnoreChanged?: () => Promise<unknown> | unknown;
+		onAutoUpdateChanged?: () => Promise<unknown> | unknown;
 	}
 
-	let { containers = $bindable(), requestOptions = $bindable(), onRefreshData, onIgnoreChanged }: Props = $props();
+	let { containers = $bindable(), requestOptions = $bindable(), onRefreshData, onAutoUpdateChanged }: Props = $props();
 
 	let selectedIds = $state<string[]>([]);
 	let mobileFieldVisibility = $state<MobileFieldVisibility>({});
 	let updatingContainerIds = $state<Record<string, boolean>>({});
-	let ignoringContainerIds = $state<Record<string, boolean>>({});
+	let togglingAutoUpdateIds = $state<Record<string, boolean>>({});
 	let bulkUpdating = $state(false);
 	let updateTableMounted = false;
 	const currentEnvironmentId = $derived(environmentStore.selected?.id || '0');
@@ -87,11 +88,14 @@
 		const name = getContainerDisplayName(container);
 		const labelControlled = isAutoUpdateLabelDisabled(container.labels);
 		const statusAvailable = typeof container.autoUpdateEnabled === 'boolean';
-		let ignoreTitle = m.updates_ignore_description();
+		const autoUpdateDisabled = container.autoUpdateEnabled === false;
+		let autoUpdateTitle = m.updates_disable_auto_update_description();
 		if (!statusAvailable) {
-			ignoreTitle = m.auto_update_status_unavailable();
+			autoUpdateTitle = m.auto_update_status_unavailable();
 		} else if (labelControlled) {
-			ignoreTitle = m.auto_update_controlled_by_label();
+			autoUpdateTitle = m.auto_update_controlled_by_label();
+		} else if (autoUpdateDisabled) {
+			autoUpdateTitle = m.auto_update_disabled_checks_continue();
 		}
 		return {
 			id: container.id,
@@ -101,10 +105,10 @@
 			currentValue: formatImageUpdateValue(container.updateInfo, 'current'),
 			latestValue: formatImageUpdateValue(container.updateInfo, 'latest'),
 			checkedAt: container.updateInfo?.checkTime ?? '',
-			ignored: container.autoUpdateEnabled === false,
+			autoUpdateDisabled,
 			labelControlled,
 			statusAvailable,
-			ignoreTitle,
+			autoUpdateTitle,
 			updateInfo: container.updateInfo,
 			container
 		};
@@ -153,12 +157,13 @@
 		});
 	}
 
-	// Ignoring writes to the shared `autoUpdateExcludedContainers` setting, so the
-	// row stays listed (the list is driven by `updateInfo.hasUpdate`) and only its
-	// rendering changes once the refreshed rows report the new status back.
-	async function handleToggleIgnore(item: ContainerUpdateRow) {
-		const enable = item.ignored;
-		ignoringContainerIds = { ...ignoringContainerIds, [item.containerId]: true };
+	// Disabling writes to the shared `autoUpdateExcludedContainers` setting, so the
+	// row stays listed (the list is driven by `updateInfo.hasUpdate`, and checks
+	// keep running) and only its rendering changes once the refreshed rows report
+	// the new status back.
+	async function handleToggleAutoUpdate(item: ContainerUpdateRow) {
+		const enable = item.autoUpdateDisabled;
+		togglingAutoUpdateIds = { ...togglingAutoUpdateIds, [item.containerId]: true };
 		try {
 			const operationResult = await tryCatch(containerService.setAutoUpdate(item.containerId, enable));
 			if (operationResult.error !== null) {
@@ -169,7 +174,7 @@
 			// The setting is saved at this point; a failed reload must not read as a failed toggle.
 			const refreshResult = await tryCatch(
 				(async () => {
-					await onIgnoreChanged?.();
+					await onAutoUpdateChanged?.();
 					await refreshRows();
 				})()
 			);
@@ -179,7 +184,7 @@
 				});
 			}
 		} finally {
-			ignoringContainerIds = { ...ignoringContainerIds, [item.containerId]: false };
+			togglingAutoUpdateIds = { ...togglingAutoUpdateIds, [item.containerId]: false };
 		}
 	}
 
@@ -231,12 +236,18 @@
 
 {#snippet NameCell({ item }: { item: ContainerUpdateRow })}
 	<div class="flex items-center gap-2">
-		<a class="font-medium hover:underline {item.ignored ? 'text-muted-foreground' : ''}" href={`/containers/${item.containerId}`}>
+		<a
+			class="font-medium hover:underline {item.autoUpdateDisabled ? 'text-muted-foreground' : ''}"
+			href={`/containers/${item.containerId}`}
+		>
 			{item.name}
 		</a>
-		{#if item.ignored}
-			<Badge variant="gray" title={item.labelControlled ? m.auto_update_controlled_by_label() : undefined}>
-				{m.common_ignored()}
+		{#if item.autoUpdateDisabled}
+			<Badge
+				variant="gray"
+				title={item.labelControlled ? m.auto_update_controlled_by_label() : m.auto_update_disabled_checks_continue()}
+			>
+				{m.updates_auto_update_disabled()}
 			</Badge>
 		{/if}
 	</div>
@@ -263,18 +274,18 @@
 			</DropdownMenu.Item>
 
 			<DropdownMenu.Item
-				onclick={() => handleToggleIgnore(item)}
-				disabled={item.labelControlled || !item.statusAvailable || !!ignoringContainerIds[item.containerId]}
-				title={item.ignoreTitle}
+				onclick={() => handleToggleAutoUpdate(item)}
+				disabled={item.labelControlled || !item.statusAvailable || !!togglingAutoUpdateIds[item.containerId]}
+				title={item.autoUpdateTitle}
 			>
-				{#if ignoringContainerIds[item.containerId]}
+				{#if togglingAutoUpdateIds[item.containerId]}
 					<Spinner class="size-4" />
-				{:else if item.ignored}
+				{:else if item.autoUpdateDisabled}
 					<EyeOnIcon class="size-4" />
 				{:else}
 					<EyeOffIcon class="size-4" />
 				{/if}
-				{item.ignored ? m.common_unignore() : m.common_ignore()}
+				{item.autoUpdateDisabled ? m.updates_enable_auto_update() : m.updates_disable_auto_update()}
 			</DropdownMenu.Item>
 		</RowActionsMenu>
 	</IfPermitted>
@@ -289,7 +300,10 @@
 		})}
 		title={(item: ContainerUpdateRow) => item.name}
 		subtitle={(item: ContainerUpdateRow) => item.imageRef}
-		badges={[(item: ContainerUpdateRow) => (item.ignored ? { variant: 'gray' as const, text: m.common_ignored() } : null)]}
+		badges={[
+			(item: ContainerUpdateRow) =>
+				item.autoUpdateDisabled ? { variant: 'gray' as const, text: m.updates_auto_update_disabled() } : null
+		]}
 		fields={[
 			{
 				label: m.common_current(),

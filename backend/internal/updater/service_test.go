@@ -567,6 +567,43 @@ func TestUpdaterService_PendingImageUpdatesAdapterInternal(t *testing.T) {
 }
 
 // TestUpdaterService_PendingImageUpdatesFlushesPendingNotificationsInternal guards
+// newEmptyContainerListDockerServiceInternal stubs the container listing the
+// notification flush uses to resolve update-check eligibility.
+func newEmptyContainerListDockerServiceInternal(t *testing.T) *docker.DockerClientService {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if strings.HasSuffix(r.URL.Path, "/containers/json") {
+			require.NoError(t, json.NewEncoder(w).Encode([]container.Summary{}))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	t.Cleanup(server.Close)
+	return &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}
+}
+
+// PendingImageUpdates must not hand records to the engine when the flush could
+// not determine what to send (#3532): consuming them would lose the pending
+// notification for good instead of retrying once Docker is reachable again.
+func TestUpdaterService_PendingImageUpdatesAbortsWhenNotificationEligibilityUnresolvedInternal(t *testing.T) {
+	db := setupProjectTestDBInternal(t)
+	require.NoError(t, db.AutoMigrate(&imageupdate.ImageUpdateRecord{}, &notification.NotificationSettings{}))
+	notif := notification.NewNotificationService(db, nil, nil, nil, nil)
+	imageUpdates := imageupdate.NewImageUpdateService(db, nil, nil, nil, nil, notif, nil)
+	svc, err := NewUpdaterService(db, nil, nil, nil, imageUpdates, nil, nil, nil, notif, nil, nil)
+	require.NoError(t, err)
+	require.NoError(t, db.Create(&imageupdate.ImageUpdateRecord{ID: "sha256:pending", Repository: "test/repo", Tag: "latest", HasUpdate: true}).Error)
+
+	records, err := svc.PendingImageUpdates(context.Background())
+	require.ErrorContains(t, err, "flush pending update notifications")
+	require.Nil(t, records)
+	var reloaded imageupdate.ImageUpdateRecord
+	require.NoError(t, db.First(&reloaded, "id = ?", "sha256:pending").Error)
+	require.True(t, reloaded.HasUpdate)
+	require.False(t, reloaded.NotificationSent)
+}
+
 // issue #3132: the updater consumes and clears has_update records without checking
 // notification_sent, so an "Updates Available" notification pending at consumption
 // time was silently lost. PendingImageUpdates must flush it before the engine runs.
@@ -592,7 +629,7 @@ func TestUpdaterService_PendingImageUpdatesFlushesPendingNotificationsInternal(t
 	}).Error)
 
 	notif := notification.NewNotificationService(db, nil, nil, nil, nil)
-	imageUpdates := imageupdate.NewImageUpdateService(db, nil, nil, nil, nil, notif, nil)
+	imageUpdates := imageupdate.NewImageUpdateService(db, nil, nil, newEmptyContainerListDockerServiceInternal(t), nil, notif, nil)
 	svc, svcErr := NewUpdaterService(db, nil, nil, nil, imageUpdates, nil, nil, nil, notif, nil, nil)
 	require.NoError(t, svcErr)
 
@@ -623,7 +660,7 @@ func TestUpdaterService_PendingImageUpdatesNoProvidersLeavesUnnotifiedInternal(t
 	require.NoError(t, db.AutoMigrate(&imageupdate.ImageUpdateRecord{}, &notification.NotificationSettings{}))
 
 	notif := notification.NewNotificationService(db, nil, nil, nil, nil)
-	imageUpdates := imageupdate.NewImageUpdateService(db, nil, nil, nil, nil, notif, nil)
+	imageUpdates := imageupdate.NewImageUpdateService(db, nil, nil, newEmptyContainerListDockerServiceInternal(t), nil, notif, nil)
 	svc, svcErr := NewUpdaterService(db, nil, nil, nil, imageUpdates, nil, nil, nil, notif, nil, nil)
 	require.NoError(t, svcErr)
 

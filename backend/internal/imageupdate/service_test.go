@@ -1678,6 +1678,107 @@ func TestImageUpdateService_MarkUpdatesAsNotified_EmptyList(t *testing.T) {
 // regression where completeImageUpdateActivityInternal cancels the activity-tracked
 // ctx before the batch notification step runs, killing the unnotified-updates query
 // with "context canceled" so notifications were never dispatched (issue #2920).
+// newImageUpdateNotificationDockerServiceInternal stubs the container listing
+// the notification flush uses to resolve current update-check eligibility.
+func newImageUpdateNotificationDockerServiceInternal(t *testing.T, containers []dockertypescontainer.Summary) *docker.DockerClientService {
+	t.Helper()
+	server := newImageUpdateDiscoveryServerInternal(t, nil, containers)
+	t.Cleanup(server.Close)
+	return &docker.DockerClientService{Client: newImageUpdateTestDockerClientInternal(t, server)}
+}
+
+func newImageUpdateGenericWebhookProviderInternal(t *testing.T, db *database.DB) *atomic.Int32 {
+	t.Helper()
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(server.Close)
+	require.NoError(t, db.Create(&notification.NotificationSettings{
+		Provider: notifications.NotificationProviderGeneric,
+		Enabled:  true,
+		Config:   database.JSON{"webhookUrl": server.URL, "method": "POST", "contentType": "application/json"},
+	}).Error)
+	return &calls
+}
+
+// TestImageUpdateService_SendBatchNotifications_FiltersByUpdateCheckEligibility
+// covers issue #3532: containers excluded from automatic installation keep
+// receiving notifications, while the update-check label, stale container
+// records, and images used only by opted-out containers are held back.
+func TestImageUpdateService_SendBatchNotifications_FiltersByUpdateCheckEligibility(t *testing.T) {
+	db := setupImageUpdateTestDB(t)
+	require.NoError(t, db.AutoMigrate(&notification.NotificationSettings{}))
+	calls := newImageUpdateGenericWebhookProviderInternal(t, db)
+
+	containers := []dockertypescontainer.Summary{
+		{ID: "install-excluded", ImageID: "sha256:install-excluded", Image: "test/install-excluded:latest", Labels: map[string]string{labels.LabelUpdater: "false"}},
+		{ID: "unmonitored", ImageID: "sha256:unmonitored", Image: "test/unmonitored:latest", Labels: map[string]string{imageref.UpdateCheckLabel: "false"}},
+		{ID: "shared-unmonitored", ImageID: "sha256:shared", Image: "test/shared:latest", Labels: map[string]string{imageref.UpdateCheckLabel: "false"}},
+		{ID: "shared-monitored", ImageID: "sha256:shared", Image: "test/shared:latest", Labels: map[string]string{labels.LabelUpdater: "false"}},
+		{ID: "ref-only-unmonitored", ImageID: "sha256:rebuilt", Image: "test/ref-only:2.0", Labels: map[string]string{imageref.UpdateCheckLabel: "false"}},
+	}
+	notif := notification.NewNotificationService(db, nil, nil, nil, nil)
+	svc := NewImageUpdateService(db, nil, nil, newImageUpdateNotificationDockerServiceInternal(t, containers), nil, notif, nil)
+
+	records := []ImageUpdateRecord{
+		{ID: "sha256:install-excluded", Repository: "docker.io/test/install-excluded", Tag: "latest", HasUpdate: true},
+		{ID: "sha256:unmonitored", Repository: "docker.io/test/unmonitored", Tag: "latest", HasUpdate: true},
+		{ID: "sha256:shared", Repository: "docker.io/test/shared", Tag: "latest", HasUpdate: true},
+		{ID: "sha256:pruned", Repository: "docker.io/test/ref-only", Tag: "2.0", HasUpdate: true},
+		{ID: "sha256:unused", Repository: "docker.io/test/unused", Tag: "latest", HasUpdate: true},
+		{ID: "container::install-excluded", ContainerID: "install-excluded", ImageID: "sha256:install-excluded", Repository: "docker.io/test/install-excluded", Tag: "latest", HasUpdate: true, UpdateType: UpdateTypeTag},
+		{ID: "container::unmonitored", ContainerID: "unmonitored", ImageID: "sha256:unmonitored", Repository: "docker.io/test/unmonitored", Tag: "latest", HasUpdate: true, UpdateType: UpdateTypeTag},
+		{ID: "container::gone", ContainerID: "gone", ImageID: "sha256:gone", Repository: "docker.io/test/gone", Tag: "latest", HasUpdate: true, UpdateType: UpdateTypeTag},
+	}
+	require.NoError(t, db.Create(&records).Error)
+
+	svc.SendBatchUpdateNotifications(context.Background())
+
+	require.EqualValues(t, 1, calls.Load(), "eligible records are delivered in one batch")
+	notified := map[string]bool{}
+	var reloaded []ImageUpdateRecord
+	require.NoError(t, db.Find(&reloaded).Error)
+	for _, record := range reloaded {
+		notified[record.ID] = record.NotificationSent
+	}
+	assert.True(t, notified["sha256:install-excluded"], "updater=false still notifies")
+	assert.True(t, notified["sha256:shared"], "one monitored consumer keeps the image notified")
+	assert.True(t, notified["sha256:unused"], "unused images stay monitored")
+	assert.True(t, notified["container::install-excluded"], "check-only containers notify")
+	assert.False(t, notified["sha256:unmonitored"], "image used only by an opted-out container")
+	assert.False(t, notified["sha256:pruned"], "reference used only by an opted-out container")
+	assert.False(t, notified["container::unmonitored"], "opted-out container record")
+	assert.False(t, notified["container::gone"], "stale container record")
+
+	// Re-enabling monitoring lets the held-back records notify on the next flush.
+	containers[1].Labels = nil
+	svc.dockerService = newImageUpdateNotificationDockerServiceInternal(t, containers)
+	svc.SendBatchUpdateNotifications(context.Background())
+	require.EqualValues(t, 2, calls.Load())
+	var resumed ImageUpdateRecord
+	require.NoError(t, db.First(&resumed, "id = ?", "container::unmonitored").Error)
+	assert.True(t, resumed.NotificationSent)
+}
+
+func TestImageUpdateService_SendBatchNotifications_UnresolvedEligibilityLeavesUnnotified(t *testing.T) {
+	db := setupImageUpdateTestDB(t)
+	require.NoError(t, db.AutoMigrate(&notification.NotificationSettings{}))
+	calls := newImageUpdateGenericWebhookProviderInternal(t, db)
+
+	notif := notification.NewNotificationService(db, nil, nil, nil, nil)
+	svc := NewImageUpdateService(db, nil, nil, nil, nil, notif, nil)
+	require.NoError(t, db.Create(&ImageUpdateRecord{ID: "sha256:img", Repository: "test/repo", Tag: "latest", HasUpdate: true}).Error)
+
+	svc.SendBatchUpdateNotifications(context.Background())
+
+	require.Zero(t, calls.Load(), "nothing is sent when eligibility cannot be resolved")
+	var reloaded ImageUpdateRecord
+	require.NoError(t, db.First(&reloaded, "id = ?", "sha256:img").Error)
+	assert.False(t, reloaded.NotificationSent)
+}
+
 func TestImageUpdateService_SendBatchNotifications_DetachesCanceledContext(t *testing.T) {
 	db := setupImageUpdateTestDB(t)
 	require.NoError(t, db.AutoMigrate(&notification.NotificationSettings{}))
@@ -1701,7 +1802,7 @@ func TestImageUpdateService_SendBatchNotifications_DetachesCanceledContext(t *te
 	}).Error)
 
 	notif := notification.NewNotificationService(db, nil, nil, nil, nil)
-	svc := NewImageUpdateService(db, nil, nil, nil, nil, notif, nil)
+	svc := NewImageUpdateService(db, nil, nil, newImageUpdateNotificationDockerServiceInternal(t, nil), nil, notif, nil)
 
 	rec := ImageUpdateRecord{
 		ID:               "sha256:img1",
@@ -1740,7 +1841,7 @@ func TestImageUpdateService_SendBatchNotifications_NoEligibleProviders_LeavesUnn
 	require.NoError(t, db.AutoMigrate(&notification.NotificationSettings{}))
 
 	notif := notification.NewNotificationService(db, nil, nil, nil, nil)
-	svc := NewImageUpdateService(db, nil, nil, nil, nil, notif, nil)
+	svc := NewImageUpdateService(db, nil, nil, newImageUpdateNotificationDockerServiceInternal(t, nil), nil, notif, nil)
 
 	rec := ImageUpdateRecord{
 		ID:               "sha256:img-no-provider",
@@ -1792,7 +1893,7 @@ func TestImageUpdateService_SendBatchNotifications_PartialFailureStillMarksNotif
 	}
 
 	notif := notification.NewNotificationService(db, nil, nil, nil, nil)
-	svc := NewImageUpdateService(db, nil, nil, nil, nil, notif, nil)
+	svc := NewImageUpdateService(db, nil, nil, newImageUpdateNotificationDockerServiceInternal(t, nil), nil, notif, nil)
 
 	rec := ImageUpdateRecord{
 		ID:               "sha256:img-partial",
@@ -2017,7 +2118,7 @@ func TestImageUpdateService_GetAllImageRefsHonorsExclusiveContainerOptOutInterna
 		{
 			ID:     "disabled-container",
 			Image:  disabledRef,
-			Labels: map[string]string{labels.LabelUpdater: "false"},
+			Labels: map[string]string{imageref.UpdateCheckLabel: "false"},
 		},
 		{
 			ID:    "enabled-container",
@@ -2026,7 +2127,7 @@ func TestImageUpdateService_GetAllImageRefsHonorsExclusiveContainerOptOutInterna
 		{
 			ID:     "shared-disabled-container",
 			Image:  sharedRef,
-			Labels: map[string]string{labels.LabelUpdater: "off"},
+			Labels: map[string]string{imageref.UpdateCheckLabel: "off"},
 		},
 		{
 			ID:    "shared-enabled-container",
@@ -2034,7 +2135,7 @@ func TestImageUpdateService_GetAllImageRefsHonorsExclusiveContainerOptOutInterna
 		},
 		{ID: "running-only", ImageID: "sha256:untagged", Image: runningOnlyRef, State: dockertypescontainer.StateRunning},
 		{ID: "stopped-only", ImageID: "sha256:pruned", Image: stoppedOnlyRef, State: dockertypescontainer.StateExited},
-		{ID: "disabled-only", ImageID: "sha256:pruned-disabled", Image: disabledOnlyRef, Labels: map[string]string{labels.LabelUpdater: "false"}},
+		{ID: "disabled-only", ImageID: "sha256:pruned-disabled", Image: disabledOnlyRef, Labels: map[string]string{imageref.UpdateCheckLabel: "false"}},
 		{ID: "enabled-alias", ImageID: "sha256:enabled", Image: enabledAlias},
 		{ID: "pinned-container", ImageID: "sha256:pinned", Image: pinnedRef},
 		{ID: "id-only", ImageID: idOnlyImage, Image: idOnlyImage},
@@ -2076,7 +2177,7 @@ func TestImageUpdateService_GetAllImageRefsAppliesLimitAfterOptOutFilteringInter
 		{
 			ID:     "disabled-container",
 			Image:  disabledRef,
-			Labels: map[string]string{labels.LabelUpdater: "0"},
+			Labels: map[string]string{imageref.UpdateCheckLabel: "0"},
 		},
 		{
 			ID:    "enabled-container",
@@ -2130,7 +2231,7 @@ func TestImageUpdateService_GetAllImageRefsExcludesAliasesOfOptedOutImageInterna
 			ID:      "disabled-container",
 			ImageID: imageID,
 			Image:   primaryRef,
-			Labels:  map[string]string{labels.LabelUpdater: "false"},
+			Labels:  map[string]string{imageref.UpdateCheckLabel: "false"},
 		},
 		{
 			ID:      "enabled-container",
@@ -2178,7 +2279,7 @@ func TestImageUpdateService_GetAllImageRefsKeepsImageSharedByEligibleContainerIn
 			ID:      "disabled-container",
 			ImageID: imageID,
 			Image:   imageRef,
-			Labels:  map[string]string{labels.LabelUpdater: "false"},
+			Labels:  map[string]string{imageref.UpdateCheckLabel: "false"},
 		},
 		{
 			ID:      "enabled-container",
@@ -2221,7 +2322,7 @@ func TestImageUpdateService_GetAllImageRefsFallsBackToRefWhenImageIDsDifferInter
 			ID:      "disabled-container",
 			ImageID: "sha256:container-list-id",
 			Image:   imageRef,
-			Labels:  map[string]string{labels.LabelUpdater: "false"},
+			Labels:  map[string]string{imageref.UpdateCheckLabel: "false"},
 		},
 	}
 
@@ -2261,7 +2362,7 @@ func TestImageUpdateService_GetAllImageRefsMergesIDAndReferenceEligibilityIntern
 			ID:      "disabled-container",
 			ImageID: imageID,
 			Image:   imageRef,
-			Labels:  map[string]string{labels.LabelUpdater: "false"},
+			Labels:  map[string]string{imageref.UpdateCheckLabel: "false"},
 		},
 		{
 			ID:      "eligible-container",
@@ -2329,29 +2430,34 @@ func TestImageUpdateService_GetAllImageRefsFallsBackWhenContainerDiscoveryFailsI
 	assert.Equal(t, []string{firstRef, secondRef}, got)
 }
 
-func TestFilterImageSummariesByContainerOptOutHonorsSettingsExclusionsInternal(t *testing.T) {
+func TestFilterImageSummariesKeepsInstallExcludedContainersMonitoredInternal(t *testing.T) {
 	const (
-		excludedRef = "local/excluded:latest"
-		sharedRef   = "local/shared:latest"
+		labelDisabledRef = "local/label-disabled:latest"
+		uiExcludedRef    = "local/ui-excluded:latest"
+		unmonitoredRef   = "local/unmonitored:latest"
+		sharedRef        = "local/shared:latest"
 	)
 
 	images := []dockertypesimage.Summary{
-		{ID: "sha256:excluded", RepoTags: []string{excludedRef}},
+		{ID: "sha256:label-disabled", RepoTags: []string{labelDisabledRef}},
+		{ID: "sha256:ui-excluded", RepoTags: []string{uiExcludedRef}},
+		{ID: "sha256:unmonitored", RepoTags: []string{unmonitoredRef}},
 		{ID: "sha256:shared", RepoTags: []string{sharedRef}},
 	}
+	// Both automatic-installation exclusions keep the image monitored; only the
+	// update-check label (any spelling, false-like values only) removes it.
 	containers := []dockertypescontainer.Summary{
-		{ID: "c1", Names: []string{"/excluded-app"}, ImageID: "sha256:excluded", Image: excludedRef},
-		{ID: "c2", Names: []string{"/shared-excluded"}, ImageID: "sha256:shared", Image: sharedRef},
-		{ID: "c3", Names: []string{"/shared-enabled"}, ImageID: "sha256:shared", Image: sharedRef},
-		{ID: "c4", Names: []string{"/excluded-only"}, ImageID: "sha256:excluded-only", Image: "local/excluded-only:1.0"},
-		{ID: "c5", Names: []string{"/shared-short"}, ImageID: "sha256:shared", Image: "local/shared"},
-		{ID: "c6", Names: []string{"/shared-long"}, ImageID: "sha256:shared", Image: "docker.io/local/shared:latest"},
+		{ID: "c1", Names: []string{"/label-disabled"}, ImageID: "sha256:label-disabled", Image: labelDisabledRef, Labels: map[string]string{labels.LabelUpdater: "false"}},
+		{ID: "c2", Names: []string{"/ui-excluded"}, ImageID: "sha256:ui-excluded", Image: uiExcludedRef},
+		{ID: "c3", Names: []string{"/unmonitored"}, ImageID: "sha256:unmonitored", Image: unmonitoredRef, Labels: map[string]string{strings.ToUpper(imageref.UpdateCheckLabel): "no"}},
+		{ID: "c4", Names: []string{"/shared-unmonitored"}, ImageID: "sha256:shared", Image: sharedRef, Labels: map[string]string{imageref.UpdateCheckLabel: "off"}},
+		{ID: "c5", Names: []string{"/shared-garbage-value"}, ImageID: "sha256:shared", Image: "docker.io/local/shared:latest", Labels: map[string]string{imageref.UpdateCheckLabel: "maybe", labels.LabelUpdater: "false"}},
+		{ID: "c6", Names: []string{"/unmonitored-only"}, ImageID: "sha256:pruned", Image: "local/unmonitored-only:1.0", Labels: map[string]string{imageref.UpdateCheckLabel: "0"}},
 	}
-	excluded := map[string]bool{"excluded-app": true, "shared-excluded": true, "excluded-only": true, "unknown-name": true}
 
-	got := filterImageSummariesByContainerOptOutInternal(images, containers, excluded, 0)
+	got := filterImageSummariesByContainerOptOutInternal(images, containers, 0)
 
-	assert.Equal(t, []string{sharedRef}, got)
+	assert.Equal(t, []string{labelDisabledRef, uiExcludedRef, sharedRef}, got)
 }
 
 // testProjectRow is a minimal stand-in for project.Project: the project
@@ -2460,6 +2566,77 @@ func TestContainerTagChecksPersistIndependentPoliciesInternal(t *testing.T) {
 	require.Equal(t, imageref.UpdatePolicyKey(imageRef, current.Labels), retained.PolicyKey)
 	require.Equal(t, limited.Error, *retained.LastError)
 
+}
+
+// TestContainerTagChecksSeparateMonitoringFromInstallationInternal covers
+// issue #3532: a container excluded from automatic installation still gets a
+// tag check, while the update-check label skips the check and leaves the
+// container's stored result untouched for the installer.
+func TestContainerTagChecksSeparateMonitoringFromInstallationInternal(t *testing.T) {
+	db := setupImageUpdateRegistryTestDBInternal(t)
+	registryServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasSuffix(r.URL.Path, "/tags/list") {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"name": "team/app", "tags": []string{"1.0.0", "1.1.0"}}))
+	}))
+	defer registryServer.Close()
+	registryURL, err := url.Parse(registryServer.URL)
+	require.NoError(t, err)
+	imageRef := registryURL.Host + "/team/app:1.0.0"
+	imageID := digest.FromString("shared").String()
+	values := map[string]map[string]string{
+		"install-excluded": {labels.LabelUpdateStrategy: "auto", labels.LabelUpdater: "false"},
+		"unmonitored":      {labels.LabelUpdateStrategy: "auto", imageref.UpdateCheckLabel: "false"},
+	}
+	var inspected []string
+	dockerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/containers/json"):
+			require.NoError(t, json.NewEncoder(w).Encode([]dockertypescontainer.Summary{
+				{ID: "install-excluded", Names: []string{"/install-excluded"}, Image: imageRef, ImageID: imageID, Labels: values["install-excluded"]},
+				{ID: "unmonitored", Names: []string{"/unmonitored"}, Image: imageRef, ImageID: imageID, Labels: values["unmonitored"]},
+			}))
+		case strings.Contains(r.URL.Path, "/containers/"):
+			id := "install-excluded"
+			if strings.Contains(r.URL.Path, "/unmonitored/") {
+				id = "unmonitored"
+			}
+			inspected = append(inspected, id)
+			require.NoError(t, json.NewEncoder(w).Encode(dockertypescontainer.InspectResponse{ID: id, Name: "/" + id, Image: imageID, Config: &dockertypescontainer.Config{Image: imageRef, Labels: values[id]}}))
+		default:
+			t.Errorf("unexpected Docker request %s", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer dockerServer.Close()
+	registryService := registry.NewContainerRegistryService(db, func(context.Context) (registry.RegistryDaemonClient, error) {
+		return &fakeRegistryDaemonClient{}, nil
+	}, nil, registryServer.Client())
+	settingsService := newImageUpdateTestSettingsServiceInternal(t, "5", "5")
+	// The UI exclusion governs installation only; it must not reach the checker.
+	require.NoError(t, settingsService.SetStringSetting(t.Context(), "autoUpdateExcludedContainers", "install-excluded"))
+	svc := NewImageUpdateService(db, settingsService, registryService, &docker.DockerClientService{Client: newImageUpdateTestDockerClientInternal(t, dockerServer)}, nil, nil, nil)
+
+	pending := "1.1.0"
+	stale := ImageUpdateRecord{ID: "container::unmonitored", ContainerID: "unmonitored", ImageID: imageID, PolicyKey: imageref.UpdatePolicyKey(imageRef, values["unmonitored"]), Repository: registryURL.Host + "/team/app", Tag: "1.0.0", HasUpdate: true, UpdateType: UpdateTypeTag, LatestVersion: &pending, CheckTime: time.Now().UTC()}
+	require.NoError(t, db.Create(&stale).Error)
+
+	checks, err := svc.checkContainerTagUpdatesInternal(t.Context(), []string{imageRef}, nil)
+	require.NoError(t, err)
+	require.Len(t, checks, 1)
+	require.True(t, checks["install-excluded"].HasUpdate, "updater=false and the UI exclusion do not block checks")
+	require.Equal(t, "1.1.0", checks["install-excluded"].LatestVersion)
+	require.Empty(t, checks["install-excluded"].Error)
+	require.Equal(t, []string{"install-excluded"}, inspected, "opted-out containers are never inspected")
+
+	var retained ImageUpdateRecord
+	require.NoError(t, db.First(&retained, "id = ?", "container::unmonitored").Error)
+	require.True(t, retained.HasUpdate, "monitoring opt-out keeps pending updates for the installer")
+	require.Equal(t, stale.PolicyKey, retained.PolicyKey)
 }
 
 func TestContainerAggregationPreservesImageResultInternal(t *testing.T) {

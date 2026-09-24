@@ -182,8 +182,13 @@
 				</div>
 				{#if !autoUpdateStatusAvailable}
 					<span class="text-xs text-muted-foreground">{m.auto_update_status_unavailable()}</span>
-				{:else if autoUpdateLabelControlled}
-					<span class="text-xs text-muted-foreground">{m.auto_update_controlled_by_label()}</span>
+				{:else}
+					{#if autoUpdateLabelControlled}
+						<span class="text-xs text-muted-foreground">{m.auto_update_controlled_by_label()}</span>
+					{/if}
+					{#if !autoUpdateEnabled}
+						<span class="text-xs text-muted-foreground">{m.auto_update_disabled_checks_continue()}</span>
+					{/if}
 				{/if}
 			</KeyValueCard>
 

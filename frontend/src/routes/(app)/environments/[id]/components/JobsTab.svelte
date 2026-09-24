@@ -21,6 +21,7 @@
 	import type { ContainerSummaryDto } from '#lib/types/docker.js';
 	import type { JobsTabProps } from './tab-props';
 	import {
+		UPDATE_CHECK_LABEL,
 		isAutoUpdateLabelDisabled,
 		normalizeContainerName,
 		parseExcludedContainerSet
@@ -213,6 +214,9 @@
 					{/await}
 				</Label>
 				<p class="text-xs text-muted-foreground">{m.auto_update_exclude_description()}</p>
+				<p class="text-xs text-muted-foreground">
+					{m.auto_update_check_label_hint({ label: `${UPDATE_CHECK_LABEL}=false` })}
+				</p>
 			</div>
 
 			<div class="space-y-2">

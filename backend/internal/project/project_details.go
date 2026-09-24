@@ -646,7 +646,7 @@ func BuildConfiguredUpdateInfo(projectID string, services []composetypes.Service
 		policy, policyErr := tagpolicy.Resolve(imageRef, updater.DefaultLabelPolicy().TagPolicy(service.Labels))
 		if record != nil && record.PolicyKey == imageref.UpdatePolicyKey(imageRef, service.Labels) {
 			info = record.UpdateInfo()
-		} else if policyErr == nil && policy.Strategy == "digest" {
+		} else if policyErr == nil && policy.Strategy == "digest" && !imageref.IsUpdateCheckDisabled(service.Labels) {
 			info = byRef[imageRef]
 		}
 
@@ -724,6 +724,21 @@ func (s *ProjectService) getProjectContainerUpdateInfoInternal(ctx context.Conte
 func mergeProjectContainerUpdateInfoInternal(base map[string]*imagetypes.UpdateInfo, services []project.RuntimeService, scoped map[string]*imagetypes.UpdateInfo) map[string]*imagetypes.UpdateInfo {
 	result := make(map[string]*imagetypes.UpdateInfo, len(base))
 	maps.Copy(result, base)
+	// Shared image results are dropped for references used only by services
+	// that opted out of update checks.
+	monitored := make(map[string]bool)
+	for _, service := range services {
+		imageRef := strings.TrimSpace(service.Image)
+		if imageRef == "" {
+			continue
+		}
+		monitored[imageRef] = monitored[imageRef] || !imageref.IsUpdateCheckDisabled(service.ContainerLabels)
+	}
+	for imageRef, isMonitored := range monitored {
+		if !isMonitored {
+			delete(result, imageRef)
+		}
+	}
 	seen := make(map[string]bool)
 	for _, service := range services {
 		info := scoped[service.ContainerID]

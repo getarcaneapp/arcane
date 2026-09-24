@@ -227,7 +227,7 @@ test.describe('Updates Page Project Rows', () => {
 });
 
 test.describe('Updates Page Actions', () => {
-	test('accepts updates for the selected container rows, including an ignored one', async ({
+	test('accepts updates for the selected container rows, including one with automatic updates disabled', async ({
 		page
 	}) => {
 		await stubContainersWithUpdates(page);
@@ -236,7 +236,7 @@ test.describe('Updates Page Actions', () => {
 		await page.goto(UPDATES_ROUTE);
 		await page.waitForLoadState('load');
 		await expect(
-			containerRow(page, IGNORED_CONTAINER).getByText('Ignored', { exact: true })
+			containerRow(page, IGNORED_CONTAINER).getByText('Automatic updates disabled', { exact: true })
 		).toBeVisible();
 
 		await selectAllContainerRows(page);

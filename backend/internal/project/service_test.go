@@ -7487,7 +7487,11 @@ func TestDiscoveredProjectTagUpdatesRemainScoped(t *testing.T) {
 	detail.RuntimeServices[0].ContainerLabels = containers[1].Labels
 	service.enrichProjectUpdateInfoInternal(t.Context(), &detail)
 	require.False(t, detail.UpdateInfo.HasUpdate, "an undeclared strategy no longer inherits a tag record")
-	for _, policy := range []map[string]string{{labels.LabelUpdateStrategy: "digest"}, {labels.LabelUpdateStrategy: "tag", labels.LabelUpdateConstraint: "3.1.x"}, {labels.LabelUpdateStrategy: "tag", labels.LabelUpdateTagPattern: ".*"}, {labels.LabelUpdateStrategy: "tag", labels.LabelUpdater: "off"}} {
+	// Turning off automatic installation keeps the check current (#3532).
+	containers[1].Labels = map[string]string{labels.LabelUpdateStrategy: "tag", labels.LabelUpdater: "off", "com.docker.compose.project": "first-project", "com.docker.compose.service": "web"}
+	rows = buildDiscoveredComposeProjectUpdateRowsInternal(t.Context(), containers, nil, imageSvc, "")
+	require.Len(t, rows, 1, "updater=false containers keep their check results")
+	for _, policy := range []map[string]string{{labels.LabelUpdateStrategy: "digest"}, {labels.LabelUpdateStrategy: "tag", labels.LabelUpdateConstraint: "3.1.x"}, {labels.LabelUpdateStrategy: "tag", labels.LabelUpdateTagPattern: ".*"}, {labels.LabelUpdateStrategy: "tag", imageref.UpdateCheckLabel: "off"}} {
 		current := map[string]string{"com.docker.compose.project": "first-project", "com.docker.compose.service": "web"}
 		for key, value := range policy {
 			current[key] = value
@@ -7513,6 +7517,17 @@ func TestProjectTagSummaryDoesNotMutateSharedReferenceResults(t *testing.T) {
 	require.Empty(t, merged["example:3.1.0"].LatestVersion)
 	require.False(t, base["example:3.1.0"].HasUpdate)
 	require.Equal(t, "3.2.0", scoped["first"].LatestVersion)
+
+	// A shared image result is dropped when every service using the reference
+	// opted out of update checks, and kept while one still monitors it.
+	base = map[string]*imagetypes.UpdateInfo{"example:3.1.0": {HasUpdate: true, UpdateType: "digest"}, "other:1.0": {HasUpdate: true, UpdateType: "digest"}}
+	unmonitored := map[string]string{imageref.UpdateCheckLabel: "false"}
+	merged = mergeProjectContainerUpdateInfoInternal(base, []projecttypes.RuntimeService{{ContainerID: "a", Image: "example:3.1.0", ContainerLabels: unmonitored}, {ContainerID: "b", Image: "example:3.1.0", ContainerLabels: map[string]string{labels.LabelUpdater: "false"}}}, nil)
+	require.True(t, merged["example:3.1.0"].HasUpdate, "updater=false keeps the shared result")
+	require.True(t, merged["other:1.0"].HasUpdate, "references without runtime services are untouched")
+	merged = mergeProjectContainerUpdateInfoInternal(base, []projecttypes.RuntimeService{{ContainerID: "a", Image: "example:3.1.0", ContainerLabels: unmonitored}}, nil)
+	require.NotContains(t, merged, "example:3.1.0")
+	require.True(t, base["example:3.1.0"].HasUpdate)
 }
 
 func TestCountProjectsWithPendingTagUpdatesUsesRuntimeContainers(t *testing.T) {

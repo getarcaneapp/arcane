@@ -693,9 +693,12 @@ func (s *UpdaterService) PendingImageUpdates(ctx context.Context) ([]updater.Ima
 
 	// Flush pending "Updates Available" notifications before the engine
 	// consumes and clears these records, otherwise the notification for an
-	// update applied here is silently lost (#3132).
+	// update applied here is silently lost (#3132). A flush that cannot
+	// determine what to send aborts the run so the records survive for retry.
 	if s.deps.ImageUpdates != nil {
-		s.deps.ImageUpdates.SendBatchUpdateNotifications(ctx)
+		if err := s.deps.ImageUpdates.SendBatchUpdateNotifications(ctx); err != nil {
+			return nil, err
+		}
 	}
 	s.appendAutoUpdateActivityMessageInternal(
 		ctx,

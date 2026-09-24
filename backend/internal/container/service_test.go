@@ -600,6 +600,7 @@ func TestBuildSummariesUsesContainerTagPolicyUpdates(t *testing.T) {
 		{ID: "unchecked", Image: "app:3.1.0", ImageID: "shared-image", Labels: map[string]string{strategyLabel: "tag"}},
 		{ID: "digest", Image: "app:3.1.0", ImageID: "shared-image", Labels: map[string]string{strategyLabel: "digest"}},
 		{ID: "opted-out", Names: []string{"/opted-out"}, Image: "app:3.1.0", ImageID: "shared-image", Labels: map[string]string{"com.getarcaneapp.arcane.updater": "false"}},
+		{ID: "unmonitored", Image: "app:3.1.0", ImageID: "shared-image", Labels: map[string]string{"com.getarcaneapp.arcane.update-check": "false"}},
 	}
 	updates := map[string]*imagetypes.UpdateInfo{
 		"shared-image":      {HasUpdate: true, UpdateType: "digest"},
@@ -616,6 +617,9 @@ func TestBuildSummariesUsesContainerTagPolicyUpdates(t *testing.T) {
 
 	require.True(t, items[0].AutoUpdateEnabled, "containers without opt-out are eligible")
 	require.False(t, items[4].AutoUpdateEnabled, "the updater label disables auto-update")
+	require.Equal(t, "digest", items[4].UpdateInfo.UpdateType, "disabling automatic updates keeps check results visible")
+	require.Nil(t, items[5].UpdateInfo, "the update-check label hides the shared image result")
+	require.True(t, items[5].AutoUpdateEnabled, "the update-check label does not affect installation eligibility")
 	encoded, err := json.Marshal(items[4])
 	require.NoError(t, err)
 	require.Contains(t, string(encoded), `"autoUpdateEnabled":false`, "false status must stay serialized")

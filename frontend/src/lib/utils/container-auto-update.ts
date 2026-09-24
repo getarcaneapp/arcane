@@ -3,10 +3,14 @@
  * container detail page and the updates table. The backend stores exclusions
  * as a CSV of container *names* in `autoUpdateExcludedContainers`, and the
  * Docker label `com.getarcaneapp.arcane.updater=false` overrides that setting.
- * Container responses carry the resolved `autoUpdateEnabled` status.
+ * Container responses carry the resolved `autoUpdateEnabled` status. Both
+ * controls only stop automatic installation; update checks and notifications
+ * are opted out separately with `UPDATE_CHECK_LABEL`.
  */
 
 const AUTO_UPDATE_LABEL = 'com.getarcaneapp.arcane.updater';
+/** Setting this label to a false-like value disables update checks and notifications. */
+export const UPDATE_CHECK_LABEL = 'com.getarcaneapp.arcane.update-check';
 const DISABLED_LABEL_VALUES = ['false', '0', 'no', 'off'];
 
 /** Strips the leading slashes Docker puts on container names. */

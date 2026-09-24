@@ -11,7 +11,34 @@ import (
 
 	ref "github.com/distribution/reference"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/registryauth"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 )
+
+// UpdateCheckLabel opts a container or service out of update checks and
+// notifications. Automatic installation is governed separately by the
+// updater label and the UI exclusion list.
+const UpdateCheckLabel = "com.getarcaneapp.arcane.update-check"
+
+// IsUpdateCheckDisabled reports whether labels opt the resource out of update
+// monitoring. Checks stay enabled unless the value parses as false.
+func IsUpdateCheckDisabled(labels map[string]string) bool {
+	value, ok := labels[UpdateCheckLabel]
+	if !ok {
+		// Other spellings are accepted; among conflicting ones the smallest key
+		// wins so the answer does not depend on map iteration order.
+		var matched string
+		for key, candidate := range labels {
+			if strings.EqualFold(strings.TrimSpace(key), UpdateCheckLabel) && (!ok || key < matched) {
+				matched, value, ok = key, candidate, true
+			}
+		}
+	}
+	if !ok {
+		return false
+	}
+	enabled, parsed := utils.ParseBool(value)
+	return parsed && !enabled
+}
 
 // LocalBuildRegistry is Arcane's reserved registry host for locally built image tags.
 const LocalBuildRegistry = "arcane.local"
@@ -60,11 +87,13 @@ func ParseUpdateLookup(imageRef string) (originalRef, tag string, repositoryCand
 	return trimmedRef, tag, repositoryCandidates, true
 }
 
-// UpdatePolicyKey identifies the configured reference and selection policy.
+// UpdatePolicyKey identifies the configured reference, selection policy, and
+// monitoring eligibility a stored check result belongs to. Automatic
+// installation eligibility is deliberately not part of the key.
 func UpdatePolicyKey(imageRef string, labels map[string]string) string {
 	policy := updater.DefaultLabelPolicy().TagPolicy(labels)
 	if resolved, err := tagpolicy.Resolve(imageRef, policy); err == nil {
 		policy = resolved
 	}
-	return fmt.Sprintf("%q:%q:%q:%q:%t", refs.NormalizeImageUpdateRef(imageRef), policy.Strategy, policy.Constraint, policy.TagPattern, updater.DefaultLabelPolicy().IsUpdateDisabled(labels))
+	return fmt.Sprintf("%q:%q:%q:%q:%t", refs.NormalizeImageUpdateRef(imageRef), policy.Strategy, policy.Constraint, policy.TagPattern, IsUpdateCheckDisabled(labels))
 }
