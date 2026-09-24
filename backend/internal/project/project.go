@@ -313,7 +313,7 @@ type registryCredentialsProviderInternal func(context.Context) ([]containerregis
 
 func NewProjectService(db *database.DB, settingsService *settings.SettingsService, eventService *event.EventService, imageService *image.ImageService, dockerService *docker.DockerClientService, buildService buildServiceInternal, lifecycleService *LifecycleService, containerRegistryService *registry.ContainerRegistryService, cfg *config.Config) *ProjectService {
 	return &ProjectService{
-		composeCoordinator:       projects.NewCoordinator(projecttypes.ComposeCommands{Stop: composeStopProjectServicesInternal, Up: composeUpProjectServicesInternal}),
+		composeCoordinator:       projects.NewCoordinator(projecttypes.ComposeCommands{Stop: composeStopProjectServicesInternal, Up: composeUpProjectServicesInternal, Create: projects.ComposeCreate}),
 		db:                       db,
 		settingsService:          settingsService,
 		eventService:             eventService,

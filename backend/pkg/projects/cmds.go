@@ -114,6 +114,26 @@ func ComposeUp(ctx context.Context, proj *composetypes.Project, services []strin
 	return c.svc.Up(composeCtx, proj, api.UpOptions{Create: upOptions, Start: startOptions})
 }
 
+// ComposeCreate force-recreates services without starting them, so a stopped
+// container picks up config changes (a recreated namespace provider, for one)
+// and stays stopped.
+func ComposeCreate(ctx context.Context, proj *composetypes.Project, services []string, authConfigs map[string]registry.AuthConfig) error {
+	selected, err := SelectServices(proj, services)
+	if err != nil {
+		return err
+	}
+	createCtx, cancel := detachFromHTTPContextInternal(ctx, defaultComposeTimeout)
+	defer cancel()
+
+	c, err := NewClient(createCtx, "", authConfigs, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = c.Close() }()
+
+	return c.svc.Create(createCtx, selected, api.CreateOptions{Services: services, Recreate: api.RecreateForce, RecreateDependencies: api.RecreateDiverged})
+}
+
 func composeUpOptionsInternal(proj *composetypes.Project, services []string, removeOrphans bool, forceRecreate bool, waitTimeout time.Duration, envOpts ComposeEnvOptions) (api.CreateOptions, api.StartOptions) {
 	recreatePolicy := api.RecreateDiverged
 	if forceRecreate {

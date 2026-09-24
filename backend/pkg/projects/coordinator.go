@@ -4,6 +4,8 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"maps"
+	"slices"
 	"strings"
 	"time"
 
@@ -24,6 +26,9 @@ func NewCoordinator(commands projecttypes.ComposeCommands) projecttypes.ComposeC
 	}
 	if commands.Up == nil {
 		commands.Up = ComposeUp
+	}
+	if commands.Create == nil {
+		commands.Create = ComposeCreate
 	}
 	return &composeCoordinatorInternal{commands: commands}
 }
@@ -83,7 +88,8 @@ func ResolveRemoveOrphans(gitOpsManaged bool, options *projecttypes.DeployOption
 
 // UpdateServices validates scope before pulling or stopping any service.
 func (c *composeCoordinatorInternal) UpdateServices(ctx context.Context, request projecttypes.ComposeServiceUpdate) error {
-	selected, err := SelectServices(request.Project, request.Services)
+	scope := slices.Concat(request.Services, request.Dependents)
+	selected, err := SelectServices(request.Project, slices.Concat(scope, request.StoppedDependents))
 	if err != nil {
 		if request.RestoreBeforeMutation != nil {
 			request.RestoreBeforeMutation(ctx)
@@ -96,14 +102,24 @@ func (c *composeCoordinatorInternal) UpdateServices(ctx context.Context, request
 		}
 		return errors.WrapIf(err, "pull updated service images")
 	}
-	if err := c.commands.Stop(ctx, selected, request.Services); err != nil {
+	if err := c.commands.Stop(ctx, selected, scope); err != nil {
 		slog.WarnContext(ctx, "compose stop failed, continuing", "error", err)
 	}
-	if err := c.commands.Up(ctx, selected, request.Services, false, true, false, request.AuthConfigs, request.WaitTimeout); err != nil {
+	if err := c.commands.Up(ctx, selected, scope, false, true, false, request.AuthConfigs, request.WaitTimeout); err != nil {
 		if request.Recover != nil {
 			request.Recover(ctx)
 		}
 		return errors.WrapIf(err, "failed to up services")
+	}
+	// Stopped dependents are recreated after the up so they resolve the new
+	// provider containers, and are left stopped.
+	if len(request.StoppedDependents) > 0 {
+		if err := c.commands.Create(ctx, selected, request.StoppedDependents, request.AuthConfigs); err != nil {
+			if request.Recover != nil {
+				request.Recover(ctx)
+			}
+			return errors.WrapIf(err, "failed to recreate stopped dependents")
+		}
 	}
 	return nil
 }
@@ -122,6 +138,55 @@ func SelectServices(model *composetypes.Project, services []string) (*composetyp
 		return nil, err
 	}
 	return selected.WithoutUnnecessaryResources(), nil
+}
+
+// NamespaceDependents returns the services outside services that join a member's
+// network/ipc/pid namespace or use volumes_from it, transitively. Mirrors compose's
+// parentNamespaceRecreated cascade; services inactive for model.Profiles are skipped.
+func NamespaceDependents(model *composetypes.Project, services []string) []string {
+	if model == nil {
+		return nil
+	}
+	members := make(map[string]struct{}, len(services))
+	for _, name := range services {
+		members[name] = struct{}{}
+	}
+	added := map[string]struct{}{}
+	all := model.AllServices()
+	joins := func(svc composetypes.ServiceConfig) bool {
+		for _, mode := range []string{svc.NetworkMode, svc.Ipc, svc.Pid} {
+			if name, ok := strings.CutPrefix(mode, composetypes.ServicePrefix); ok {
+				if _, member := members[name]; member {
+					return true
+				}
+			}
+		}
+		for _, vol := range svc.VolumesFrom {
+			if strings.HasPrefix(vol, composetypes.ContainerPrefix) {
+				continue
+			}
+			name, _, _ := strings.Cut(vol, ":")
+			if _, member := members[name]; member {
+				return true
+			}
+		}
+		return false
+	}
+	for changed := true; changed; {
+		changed = false
+		for name, svc := range all {
+			if _, ok := members[name]; ok || !svc.HasProfile(model.Profiles) || !joins(svc) {
+				continue
+			}
+			members[name] = struct{}{}
+			added[name] = struct{}{}
+			changed = true
+		}
+	}
+	if len(added) == 0 {
+		return nil
+	}
+	return slices.Sorted(maps.Keys(added))
 }
 
 // PullServices pulls each selected registry image once through the application image service.

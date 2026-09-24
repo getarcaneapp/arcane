@@ -107,9 +107,17 @@ func (s *ProjectService) updateProjectServicesInternal(ctx context.Context, proj
 	previousStatus := projectFromDb.Status
 
 	// 1. Load project
-	compProj, _, err := s.loadComposeProjectForProjectInternal(ctx, projectFromDb, prepareProjectBindDirectoriesInternal(projectFromDb.Path), servicesToUpdate...)
+	prepare := prepareProjectBindDirectoriesInternal(projectFromDb.Path)
+	compProj, _, err := s.loadComposeProjectForProjectInternal(ctx, projectFromDb, prepare, servicesToUpdate...)
 	if err != nil {
 		return errors.WrapIf(err, "failed to load compose project")
+	}
+	dependents, stoppedDependents := s.existingNamespaceDependentsInternal(ctx, compProj, servicesToUpdate)
+	if len(dependents)+len(stoppedDependents) > 0 {
+		slog.InfoContext(ctx, "recreating namespace dependents with updated services", "projectID", projectID, "services", servicesToUpdate, "dependents", dependents, "stoppedDependents", stoppedDependents)
+		if compProj, _, err = s.loadComposeProjectForProjectInternal(ctx, projectFromDb, prepare, slices.Concat(servicesToUpdate, dependents, stoppedDependents)...); err != nil {
+			return errors.WrapIf(err, "failed to load compose project with dependents")
+		}
 	}
 
 	defer s.eventService.BeginComposeSuppressionWindow(compProj.Name)()
@@ -129,7 +137,7 @@ func (s *ProjectService) updateProjectServicesInternal(ctx context.Context, proj
 
 	progressWriter, _ := ctx.Value(dockerutil.ProgressWriterKey{}).(io.Writer)
 	if err := s.composeCoordinator.UpdateServices(ctx, projecttypes.ComposeServiceUpdate{
-		Project: compProj, Services: servicesToUpdate,
+		Project: compProj, Services: servicesToUpdate, Dependents: dependents, StoppedDependents: stoppedDependents,
 		Images: s.composeImageOperationsInternal(&user, credentials), Progress: progressWriter,
 		AuthConfigs: s.composeRegistryAuthConfigsInternal(ctx), WaitTimeout: s.deployWaitTimeoutInternal(),
 		RestoreBeforeMutation: func(ctx context.Context) {
@@ -153,9 +161,51 @@ func (s *ProjectService) updateProjectServicesInternal(ctx context.Context, proj
 		"projectName": projectFromDb.Name,
 		"services":    append([]string(nil), servicesToUpdate...),
 	}
+	if len(dependents) > 0 {
+		metadata["dependents"] = dependents
+	}
+	if len(stoppedDependents) > 0 {
+		metadata["stoppedDependents"] = stoppedDependents
+	}
 	s.logProjectEventInternal(ctx, event.EventTypeProjectUpdate, projectID, projectFromDb.Name, user, metadata, "could not log project service update action")
 
 	return nil
+}
+
+// existingNamespaceDependentsInternal splits projects.NamespaceDependents into
+// services with a running container and services with only stopped ones, so a
+// stopped dependent is recreated but not started, and a declared-but-never-
+// created dependent is left alone. A ComposePs failure treats every dependent
+// as running: a dangling namespace reference is the worse outcome.
+func (s *ProjectService) existingNamespaceDependentsInternal(ctx context.Context, compProj *composetypes.Project, services []string) (running, stopped []string) {
+	if len(services) == 0 {
+		return nil, nil
+	}
+	deps := projects.NamespaceDependents(compProj, services)
+	if len(deps) == 0 {
+		return nil, nil
+	}
+	summaries, err := projects.ComposePs(ctx, s.dockerService.DockerHost(), compProj, deps, true)
+	if err != nil {
+		slog.WarnContext(ctx, "failed to list namespace dependent containers; recreating all dependents", "project", compProj.Name, "dependents", deps, "error", err)
+		return deps, nil
+	}
+	for _, name := range deps {
+		var found, isRunning bool
+		for _, summary := range summaries {
+			if summary.Service == name {
+				found = true
+				isRunning = isRunning || summary.State == "running"
+			}
+		}
+		switch {
+		case isRunning:
+			running = append(running, name)
+		case found:
+			stopped = append(stopped, name)
+		}
+	}
+	return running, stopped
 }
 
 // prepareProjectBindDirectoriesInternal returns the load-time preparation for

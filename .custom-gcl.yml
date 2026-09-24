@@ -1,4 +1,4 @@
-version: v2.13.0
+version: v2.13.2
 name: golangci-lint-custom
 destination: ./.bin
 

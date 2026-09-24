@@ -1113,7 +1113,9 @@ func TestProjectService_UpdateProjectServicesForcesRecreateInternal(t *testing.T
 			RepoTags:    []string{imageRef},
 			RepoDigests: []string{repository + "@" + imageDigest},
 		},
-	}, nil)
+	}, func(fullRef string, _ string) {
+		assert.Equal(t, imageRef, fullRef, "namespace dependents must not be pulled")
+	})
 
 	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}
 	imageUpdateService := imageupdate.NewImageUpdateService(db, nil, nil, dockerService, nil, nil, nil)
@@ -1121,7 +1123,22 @@ func TestProjectService_UpdateProjectServicesForcesRecreateInternal(t *testing.T
 	imageService := image.NewImageService(db, dockerService, nil, imageUpdateService, nil, eventService)
 
 	projectPath := createComposeProjectDir(t, projectsDir, "compose-update-force")
-	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte("services:\n  app:\n    image: "+imageRef+"\n    labels:\n      com.getarcaneapp.arcane.updater.strategy: digest\n  unrelated:\n    image: busybox:latest\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte("services:\n  app:\n    image: "+imageRef+"\n    labels:\n      com.getarcaneapp.arcane.updater.strategy: digest\n  sidecar:\n    image: busybox:latest\n    network_mode: service:app\n  dormant:\n    image: busybox:latest\n    network_mode: service:app\n  never:\n    image: busybox:latest\n    pid: service:app\n  gated:\n    image: busybox:latest\n    network_mode: service:app\n    profiles: [extra]\n  unrelated:\n    image: busybox:latest\n"), 0o644))
+
+	composeContainerInternal := func(service string, state container.ContainerState) container.Summary {
+		return container.Summary{
+			ID:     service + "-container",
+			Names:  []string{"/compose-update-force-" + service + "-1"},
+			State:  state,
+			Labels: map[string]string{composeapi.ProjectLabel: "compose-update-force", composeapi.ServiceLabel: service, composeapi.ConfigHashLabel: service + "-hash"},
+		}
+	}
+	runtimeServer := newProjectRuntimeDockerServerInternal(t, []container.Summary{
+		composeContainerInternal("app", container.StateRunning),
+		composeContainerInternal("sidecar", container.StateRunning),
+		composeContainerInternal("dormant", container.StateExited),
+	})
+	t.Setenv("DOCKER_HOST", dockerHostFromProjectRuntimeServerURLInternal(t, runtimeServer.URL))
 
 	projectRecord := &Project{
 		ID:      "project-update-force",
@@ -1138,7 +1155,9 @@ func TestProjectService_UpdateProjectServicesForcesRecreateInternal(t *testing.T
 		composeStopProjectServicesInternal = originalComposeStop
 		composeUpProjectServicesInternal = originalComposeUp
 	})
-	composeStopProjectServicesInternal = func(context.Context, *composetypes.Project, []string) error {
+	var stopped []string
+	composeStopProjectServicesInternal = func(_ context.Context, _ *composetypes.Project, services []string) error {
+		stopped = services
 		return nil
 	}
 	upCalled := false
@@ -1147,9 +1166,9 @@ func TestProjectService_UpdateProjectServicesForcesRecreateInternal(t *testing.T
 		assert.True(t, eventService.ShouldSuppressDaemonEvent("container", "replacement", "app", selected.Name))
 		assert.False(t, eventService.ShouldSuppressDaemonEvent("image", "pulled-image", "", ""))
 		upCalled = true
-		assert.Equal(t, []string{"app"}, selected.ServiceNames())
+		assert.Equal(t, []string{"app", "dormant", "sidecar"}, selected.ServiceNames(), "stopped dependents stay in the model for recreation")
 		forceRecreate = force
-		assert.Equal(t, []string{"app"}, services)
+		assert.Equal(t, []string{"app", "sidecar"}, services, "stopped dependents are not started")
 		assert.False(t, removeOrphans)
 		return errors.New("compose up failed after assertion")
 	}
@@ -1160,6 +1179,7 @@ func TestProjectService_UpdateProjectServicesForcesRecreateInternal(t *testing.T
 	assert.True(t, eventService.ShouldSuppressDaemonEvent("container", "replacement", "app", "compose-update-force"), "failed updates retain correlation through rollback grace")
 	assert.False(t, eventService.ShouldSuppressDaemonEvent("container", "unrelated", "unrelated", "other-project"))
 	assert.True(t, upCalled)
+	assert.Equal(t, []string{"app", "sidecar"}, stopped)
 	assert.True(t, forceRecreate, "service updates must force recreate after pulling the updated image")
 }
 

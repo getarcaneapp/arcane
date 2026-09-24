@@ -45,8 +45,13 @@ type ComposeDeployment struct {
 
 // ComposeServiceUpdate supplies an already authorized service update.
 type ComposeServiceUpdate struct {
-	Project               *composetypes.Project
-	Services              []string
+	Project  *composetypes.Project
+	Services []string
+	// Dependents are recreated alongside Services because they share a member's
+	// namespace or volumes; they are never pulled. StoppedDependents are
+	// recreated without being started so an operator's stop is preserved.
+	Dependents            []string
+	StoppedDependents     []string
 	Images                ComposeImageOperations
 	Progress              io.Writer
 	AuthConfigs           map[string]registry.AuthConfig
@@ -57,8 +62,9 @@ type ComposeServiceUpdate struct {
 
 // ComposeCommands supplies the SDK operations used by the coordinator.
 type ComposeCommands struct {
-	Stop func(context.Context, *composetypes.Project, []string) error
-	Up   func(context.Context, *composetypes.Project, []string, bool, bool, bool, map[string]registry.AuthConfig, time.Duration) error
+	Stop   func(context.Context, *composetypes.Project, []string) error
+	Up     func(context.Context, *composetypes.Project, []string, bool, bool, bool, map[string]registry.AuthConfig, time.Duration) error
+	Create func(context.Context, *composetypes.Project, []string, map[string]registry.AuthConfig) error
 }
 
 // ComposeCoordinator executes Compose workflows through application collaborators.
