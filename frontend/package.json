@@ -36,7 +36,7 @@
 		"@lezer/highlight": "^1.2.3",
 		"@simplewebauthn/browser": "^14.0.0",
 		"@sveltejs/kit": "3.0.0-next.27",
-		"@tanstack/svelte-query": "^6.2.1",
+		"@tanstack/svelte-query": "^6.2.3",
 		"@tanstack/svelte-table": "^9.2.4",
 		"@tanstack/table-core": "9.2.4",
 		"@tanstack/virtual-core": "^3.17.11",
