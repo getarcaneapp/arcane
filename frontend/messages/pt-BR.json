@@ -3620,7 +3620,7 @@
   "editor_compose_updater_enabled_detail": "Ativar atualizações de imagens",
   "editor_compose_updater_enabled_info": "Booleano. Defina como “false” para desativar as atualizações de imagem para os serviços afetados.",
   "editor_compose_updater_strategy_detail": "Estratégia de atualização",
-  "editor_compose_updater_strategy_info": "O padrão é “auto”: as tags de versão semântica estáveis completas seguem as tags elegíveis mais recentes; tags dinâmicas, como “latest” e “alpine”, seguem as alterações do resumo. Defina “digest” para manter a tag atual ou “tag” para exigir a seleção com base na versão.",
+  "editor_compose_updater_strategy_info": "O padrão é “digest”: a tag configurada é mantida e apenas seu resumo de imagem é seguido. Defina como “auto” para permitir que tags de versão semântica estáveis completas sigam tags mais recentes elegíveis, ou como “tag” para exigir a seleção com base na versão. Uma restrição ou um padrão de tag sem uma estratégia também permite a seleção com base na versão.",
   "editor_compose_updater_constraint_detail": "Restrição de versão",
   "editor_compose_updater_constraint_info": "Restrição de versão semântica para atualizações de tags, como 3.x ou >=3.1.0 <4.0.0. Sem essa restrição, as atualizações permanecem dentro da versão principal atual ou, no caso de 0.x, da versão secundária atual.",
   "editor_compose_updater_tag_pattern_detail": "Padrão de tags",
