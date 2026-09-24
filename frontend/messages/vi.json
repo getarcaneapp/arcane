@@ -3620,7 +3620,7 @@
   "editor_compose_updater_enabled_detail": "Bật tính năng cập nhật hình ảnh",
   "editor_compose_updater_enabled_info": "Boolean. Đặt thành false để vô hiệu hóa tính năng cập nhật hình ảnh cho các dịch vụ liên quan.",
   "editor_compose_updater_strategy_detail": "Chiến lược cập nhật",
-  "editor_compose_updater_strategy_info": "Mặc định là \"auto\": các thẻ phiên bản ngữ nghĩa ổn định sẽ tuân theo các thẻ mới hơn đủ điều kiện; các thẻ động như \"latest\" và \"alpine\" sẽ tuân theo các thay đổi trong bản tóm tắt. Đặt thành \"digest\" để giữ nguyên thẻ hiện tại, hoặc đặt thành \"tag\" để yêu cầu lựa chọn dựa trên phiên bản.",
+  "editor_compose_updater_strategy_info": "Mặc định là “digest”: thẻ đã được cấu hình sẽ được giữ nguyên và chỉ theo dõi giá trị băm hình ảnh của nó. Đặt thành “auto” để cho phép các thẻ phiên bản ngữ nghĩa ổn định đầy đủ theo sau các thẻ mới hơn đủ điều kiện, hoặc đặt thành “tag” để yêu cầu lựa chọn dựa trên phiên bản. Một ràng buộc hoặc mẫu thẻ không có chiến lược cũng cho phép lựa chọn dựa trên phiên bản.",
   "editor_compose_updater_constraint_detail": "Hạn chế về phiên bản",
   "editor_compose_updater_constraint_info": "Hạn chế phiên bản theo ngữ nghĩa đối với các bản cập nhật thẻ, chẳng hạn như 3.x hoặc >=3.1.0 <4.0.0. Nếu không có hạn chế này, các bản cập nhật sẽ vẫn nằm trong phạm vi phiên bản chính hiện tại, hoặc phiên bản phụ hiện tại đối với các phiên bản 0.x.",
   "editor_compose_updater_tag_pattern_detail": "Mẫu thẻ",
