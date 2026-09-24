@@ -3620,7 +3620,7 @@
   "editor_compose_updater_enabled_detail": "Képfrissítések engedélyezése",
   "editor_compose_updater_enabled_info": "Boolean. Állítsa false értékre, ha le szeretné tiltani a képfrissítéseket az érintett szolgáltatások esetében.",
   "editor_compose_updater_strategy_detail": "Frissítési stratégia",
-  "editor_compose_updater_strategy_info": "Alapértelmezés szerint „auto”: a teljes stabil szemantikai verziócímkék az újabb, megfelelő címkéket követik; az olyan mozgó címkék, mint a „latest” és az „alpine”, az összefoglaló változásokat követik. Állítsa be az „digest” értéket az aktuális címke megtartásához, vagy a „tag” értéket a verzióalapú kiválasztáshoz.",
+  "editor_compose_updater_strategy_info": "Alapértelmezés szerint a „digest” beállítás érvényes: a konfigurált címke megmarad, és csak annak kép-összefoglalója kerül figyelembevételre. Az „auto” beállítás esetén a teljes, stabil szemantikai verziócímkék követik az újabb, megfelelő címkéket, míg a „tag” beállítás esetén verzióalapú kiválasztás történik. A stratégiát nem tartalmazó korlátozás vagy címkeminta szintén verzióalapú kiválasztást tesz lehetővé.",
   "editor_compose_updater_constraint_detail": "Verziókorlátozás",
   "editor_compose_updater_constraint_info": "Szemantikus verziókorlátozás a címkék frissítéseihez, például 3.x vagy >=3.1.0 <4.0.0. Korlátozás hiányában a frissítések az aktuális főverzión belül maradnak, illetve 0.x esetén az aktuális alverzión belül.",
   "editor_compose_updater_tag_pattern_detail": "Címke-séma",
