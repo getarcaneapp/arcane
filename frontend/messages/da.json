@@ -3620,7 +3620,7 @@
   "editor_compose_updater_enabled_detail": "Aktivér billedopdateringer",
   "editor_compose_updater_enabled_info": "Boolean. Indstil til false for at deaktivere billedopdateringer for de berørte tjenester.",
   "editor_compose_updater_strategy_detail": "Opdateringsstrategi",
-  "editor_compose_updater_strategy_info": "Standardindstillingen er »auto«: Komplette stabile semantiske versionsmærker følger nyere kvalificerede mærker; flytbare mærker såsom »latest« og »alpine« følger ændringer i digest-versionen. Indstil »digest« for at beholde det aktuelle mærke, eller »tag« for at kræve versionsbaseret valg.",
+  "editor_compose_updater_strategy_info": "Standardindstillinger for digest: Det konfigurerede tag bevares, og kun dets billeddigest følges. Indstil til »auto« for at lade komplette, stabile semantiske versionstagge følge nyere, kvalificerede tagge, eller til »tag« for at kræve versionsbaseret udvælgelse. En begrænsning eller et tagmønster uden en strategi aktiverer ligeledes versionsbaseret udvælgelse.",
   "editor_compose_updater_constraint_detail": "Versionsbegrænsning",
   "editor_compose_updater_constraint_info": "Semantisk versionsbegrænsning for tag-opdateringer, f.eks. 3.x eller >=3.1.0 <4.0.0. Uden en sådan begrænsning forbliver opdateringerne inden for den aktuelle hovedversion eller den aktuelle underversion for 0.x.",
   "editor_compose_updater_tag_pattern_detail": "Tag-mønster",
