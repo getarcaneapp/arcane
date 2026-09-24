@@ -3,12 +3,18 @@
 	import type { HTMLInputAttributes } from 'svelte/elements';
 
 	let {
+		ref = $bindable(null),
 		value = $bindable(),
 		size = 'default',
 		mono = false,
 		class: className,
 		...props
-	}: Omit<HTMLInputAttributes, 'size'> & { value?: string; size?: 'default' | 'sm'; mono?: boolean } = $props();
+	}: Omit<HTMLInputAttributes, 'size'> & {
+		ref?: HTMLInputElement | null;
+		value?: string;
+		size?: 'default' | 'sm';
+		mono?: boolean;
+	} = $props();
 </script>
 
 <input
@@ -19,6 +25,7 @@
 		mono && 'font-mono',
 		className
 	)}
+	bind:this={ref}
 	bind:value
 	{...props}
 />

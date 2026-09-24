@@ -283,7 +283,7 @@ jobs:
           docker pull "$PLAYWRIGHT_DOCKER_IMAGE_REPOSITORY:v$version-noble"
           docker pull public.ecr.aws/nginx/nginx:stable-alpine
           docker pull public.ecr.aws/docker/library/busybox:1.37
-          docker pull quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+          docker pull cgr.dev/chainguard/minio:latest-dev@sha256:d7c906993247627c19f37fc1fa302c34cf2d209ae0e7dc7d52fb0be6ac2849ba
           docker pull ghcr.io/rustic-rs/rustic:v0.11.2
           docker save public.ecr.aws/nginx/nginx:stable-alpine public.ecr.aws/docker/library/busybox:1.37 > /tmp/test-images.tar
 
