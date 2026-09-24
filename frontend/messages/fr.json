@@ -3620,7 +3620,7 @@
   "editor_compose_updater_enabled_detail": "Activer les mises à jour des images",
   "editor_compose_updater_enabled_info": "Booléen. Définissez cette valeur sur « false » pour désactiver la mise à jour des images pour les services concernés.",
   "editor_compose_updater_strategy_detail": "Stratégie de mise à jour",
-  "editor_compose_updater_strategy_info": "La valeur par défaut est « auto » : les balises de version sémantique stables complètes suivent les balises éligibles les plus récentes ; les balises mobiles telles que « latest » et « alpine » suivent les modifications du résumé. Définissez « digest » pour conserver la balise actuelle, ou « tag » pour exiger une sélection basée sur la version.",
+  "editor_compose_updater_strategy_info": "Par défaut, la stratégie « digest » est utilisée : la balise configurée est conservée et seule sa signature de hachage est prise en compte. Définissez la valeur « auto » pour que les balises de version sémantique stables complètes suivent les balises éligibles plus récentes, ou « tag » pour exiger une sélection basée sur la version. Une contrainte ou un modèle de balise sans stratégie active également la sélection basée sur la version.",
   "editor_compose_updater_constraint_detail": "Contrainte de version",
   "editor_compose_updater_constraint_info": "Contrainte de version sémantique pour les mises à jour des balises, par exemple 3.x ou >=3.1.0 <4.0.0. En l'absence de contrainte, les mises à jour restent dans la même version majeure, ou dans la même version mineure pour les versions 0.x.",
   "editor_compose_updater_tag_pattern_detail": "Modèle de balise",
