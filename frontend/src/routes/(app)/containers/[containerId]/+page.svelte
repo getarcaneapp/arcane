@@ -24,6 +24,7 @@
 	import ContainerShell from '../components/ContainerShell.svelte';
 	import ContainerComposePanel from '../components/ContainerComposePanel.svelte';
 	import ContainerInspect from '../components/ContainerInspect.svelte';
+	import ContainerProcesses from '../components/ContainerProcesses.svelte';
 	import ContainerDetailStatsSync from '../components/container-detail-stats-sync.svelte';
 	import ContainerHealthcheck from '../components/ContainerHealthcheck.svelte';
 	import ContainerCommitDialog from '../components/container-commit-dialog.svelte';
@@ -41,7 +42,8 @@
 		StatsIcon,
 		CodeIcon,
 		InspectIcon,
-		HealthIcon
+		HealthIcon,
+		LayoutListIcon
 	} from '#lib/icons/index.js';
 	import { parse as parseYaml } from 'yaml';
 	import type { IncludeFile } from '#lib/types/swarm.js';
@@ -349,6 +351,7 @@
 	const tabItems = $derived<TabItem[]>([
 		{ value: 'overview', label: m.common_overview(), icon: ContainersIcon },
 		...(showStats ? [{ value: 'stats', label: m.containers_nav_metrics(), icon: StatsIcon }] : []),
+		{ value: 'processes', label: m.containers_processes_title(), icon: LayoutListIcon },
 		...(canViewLogs ? [{ value: 'logs', label: m.common_logs(), icon: FileTextIcon }] : []),
 		...(showShell ? [{ value: 'shell', label: m.common_shell(), icon: TerminalIcon }] : []),
 		...(hasHealthcheck ? [{ value: 'healthcheck', label: m.containers_nav_healthcheck(), icon: HealthIcon }] : []),
@@ -586,6 +589,12 @@
 			{/if}
 		</Tabs.Content>
 	{/if}
+
+	<Tabs.Content value="processes" class="h-full">
+		{#if activeTab === 'processes'}
+			<ContainerProcesses containerId={container.id} status={containerStatus} />
+		{/if}
+	</Tabs.Content>
 
 	<Tabs.Content value="logs" class="h-full">
 		{#if activeTab === 'logs'}

@@ -11,12 +11,17 @@ import (
 
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
+	"net/url"
 	"regexp"
+	"strings"
 	"testing"
+	"time"
 
+	"github.com/containerd/errdefs"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
@@ -624,4 +629,75 @@ func TestBuildSummariesUsesContainerTagPolicyUpdates(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, string(encoded), `"autoUpdateEnabled":false`, "false status must stay serialized")
 
+}
+
+func TestContainerServiceGetContainerProcessesInternal(t *testing.T) {
+	tests := []struct {
+		name       string
+		status     int
+		body       string
+		wantTitles []string
+		wantRows   [][]string
+		wantErr    func(error) bool
+	}{
+		{
+			name:       "docker snapshot",
+			status:     http.StatusOK,
+			body:       `{"Titles":["PID","USER","%CPU","%MEM","ELAPSED","CMD"],"Processes":[["1","root","0.0","0.1","01:02:03","nginx: master process nginx -g daemon off;"],["29","nginx","0.0","0.1","01:02:03","nginx: worker process"]]}`,
+			wantTitles: []string{"PID", "USER", "%CPU", "%MEM", "ELAPSED", "CMD"},
+			wantRows:   [][]string{{"1", "root", "0.0", "0.1", "01:02:03", "nginx: master process nginx -g daemon off;"}, {"29", "nginx", "0.0", "0.1", "01:02:03", "nginx: worker process"}},
+		},
+		{name: "empty", status: http.StatusOK, body: `{}`, wantTitles: []string{}, wantRows: [][]string{}},
+		{name: "not found", status: http.StatusNotFound, body: `{"message":"No such container: container-1"}`, wantErr: errdefs.IsNotFound},
+		{name: "not running", status: http.StatusConflict, body: `{"message":"container container-1 is not running"}`, wantErr: errdefs.IsConflict},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var gotQuery url.Values
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodGet || dockerTestPathInternal(r.URL.Path) != "/containers/container-1/top" {
+					http.NotFound(w, r)
+					return
+				}
+				gotQuery = r.URL.Query()
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(tt.status)
+				if _, err := io.WriteString(w, tt.body); err != nil {
+					t.Error(err)
+				}
+			}))
+			t.Cleanup(server.Close)
+			svc := NewContainerService(nil, docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClientInternal(t, server)), nil, nil, nil)
+
+			processes, err := svc.GetContainerProcesses(context.Background(), "container-1")
+			require.Equal(t, strings.Join(containerProcessesPsArgs, " "), gotQuery.Get("ps_args"))
+			if tt.wantErr != nil {
+				require.True(t, tt.wantErr(err), "unexpected error: %v", err)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tt.wantTitles, processes.Titles)
+			require.Equal(t, tt.wantRows, processes.Processes)
+		})
+	}
+}
+
+func TestContainerServiceGetContainerProcessesPropagatesContextInternal(t *testing.T) {
+	requestDone := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+		close(requestDone)
+	}))
+	t.Cleanup(server.Close)
+	svc := NewContainerService(nil, docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClientInternal(t, server)), nil, nil, nil)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	_, err := svc.GetContainerProcesses(ctx, "container-1")
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	select {
+	case <-requestDone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Docker request was not cancelled")
+	}
 }

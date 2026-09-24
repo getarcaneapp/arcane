@@ -185,6 +185,16 @@ func RegisterContainers(api huma.API, containerSvc *ContainerService, dockerSvc 
 	}, authz.PermContainersRead, h.GetContainer)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "get-container-processes",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/containers/{containerId}/processes",
+		Summary:     "Get container processes",
+		Description: "Snapshot of the processes running inside the container, as reported by Docker",
+		Tags:        []string{"Containers"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}, authz.PermContainersRead, h.GetContainerProcesses)
+
+	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "start-container",
 		Method:      http.MethodPost,
 		Path:        "/environments/{id}/containers/{containerId}/start",
@@ -654,6 +664,30 @@ func (h *ContainerHandler) GetContainer(ctx context.Context, input *GetContainer
 		Body: base.ApiResponse[containertypes.Details]{
 			Success: true,
 			Data:    details,
+		},
+	}, nil
+}
+
+func (h *ContainerHandler) GetContainerProcesses(ctx context.Context, input *GetContainerInput) (*handlerutil.Out[containertypes.Processes], error) {
+	processes, err := h.containerService.GetContainerProcesses(ctx, input.ContainerID)
+	if err != nil {
+		message := errors.WithMessage(err, "Failed to retrieve container processes").Error()
+		switch {
+		case errdefs.IsNotFound(err):
+			return nil, huma.Error404NotFound(message)
+		case errdefs.IsConflict(err):
+			return nil, huma.Error409Conflict(message)
+		case errors.Is(err, context.DeadlineExceeded):
+			return nil, huma.Error504GatewayTimeout(message)
+		default:
+			return nil, huma.Error500InternalServerError(message)
+		}
+	}
+
+	return &handlerutil.Out[containertypes.Processes]{
+		Body: base.ApiResponse[containertypes.Processes]{
+			Success: true,
+			Data:    processes,
 		},
 	}, nil
 }

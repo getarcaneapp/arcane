@@ -1065,3 +1065,8 @@ export interface ContainerRegistryPullUsage {
 	checkedAt: string;
 	error?: string;
 }
+
+export interface ContainerProcessesDto {
+	titles: string[];
+	processes: string[][];
+}

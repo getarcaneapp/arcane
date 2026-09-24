@@ -25,6 +25,18 @@ type attrFilterHandler struct {
 	dropKeys map[string]struct{}
 }
 
+// gormLogger drops traces for queries interrupted by a canceled request context.
+type gormLogger struct {
+	logger.Interface
+}
+
+func (l gormLogger) Trace(ctx context.Context, begin time.Time, fc func() (string, int64), err error) {
+	if errors.Is(err, context.Canceled) {
+		return
+	}
+	l.Interface.Trace(ctx, begin, fc, err)
+}
+
 type stackAttrHandler struct {
 	handler slog.Handler
 	attrs   []slog.Attr
@@ -274,5 +286,5 @@ func BuildGormLogger(cfg *config.Config) logger.Interface {
 		slogGorm.SetLogLevel(slogGorm.SlowQueryLogType, slog.LevelWarn),
 	)
 
-	return slogGorm.New(opts...)
+	return gormLogger{Interface: slogGorm.New(opts...)}
 }

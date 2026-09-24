@@ -167,7 +167,9 @@ func (s *EnvironmentService) ResolveEnvironmentName(ctx context.Context, environ
 	}
 	env, err := s.GetEnvironmentByID(ctx, environmentID)
 	if err != nil || env == nil {
-		slog.WarnContext(ctx, "failed to resolve environment name", "environmentID", environmentID, "error", err)
+		if !errors.Is(err, context.Canceled) {
+			slog.WarnContext(ctx, "failed to resolve environment name", "environmentID", environmentID, "error", err)
+		}
 		return DisplayName(environmentID, "")
 	}
 	return DisplayName(env.ID, env.Name)

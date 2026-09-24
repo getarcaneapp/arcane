@@ -3738,5 +3738,9 @@
 	"minutes": "minutes",
 	"commits_files_to": "Commits {count} file(s) to",
 	"create_new_project": "Create a new project",
-	"link_existing_project_description": "Link an existing project instead of creating one. Its files are replaced from the repository; local .env values are kept."
+	"link_existing_project_description": "Link an existing project instead of creating one. Its files are replaced from the repository; local .env values are kept.",
+	"containers_processes_title": "Processes",
+	"containers_processes_description": "Processes running inside the container, as reported by Docker. Refreshes every few seconds.",
+	"containers_processes_unavailable": "Container is not running. Processes unavailable.",
+	"containers_processes_empty": "No processes reported"
 }

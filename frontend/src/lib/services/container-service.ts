@@ -9,7 +9,8 @@ import type {
 	ContainerCommitRequest,
 	ContainerCommitResult,
 	ContainerEditConfigDto,
-	ContainerEditRequest
+	ContainerEditRequest,
+	ContainerProcessesDto
 } from '#lib/types/docker.js';
 import type { SearchPaginationSortRequest, Paginated } from '#lib/types/shared.js';
 import type { Activity } from '#lib/types/activity.type.js';
@@ -64,6 +65,11 @@ class ContainerService extends BaseAPIService {
 
 	async getContainerForEnvironment(environmentId: string, containerId: string): Promise<ContainerDetailsDto> {
 		return this.handleResponse(this.api.get(`/environments/${environmentId}/containers/${containerId}`));
+	}
+
+	async getContainerProcesses(containerId: string, signal?: AbortSignal): Promise<ContainerProcessesDto> {
+		const envId = await environmentStore.getCurrentEnvironmentId();
+		return this.handleResponse(this.api.get(`/environments/${envId}/containers/${containerId}/processes`, { signal }));
 	}
 
 	async startContainer(containerId: string): Promise<any> {

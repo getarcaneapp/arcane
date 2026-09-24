@@ -1194,6 +1194,38 @@ func (s *ContainerService) GetContainerDetails(ctx context.Context, id string) (
 }
 
 // GetContainerNameByReference resolves a container's clean name from a Docker ID or name.
+
+// containerProcessesPsArgs asks ps for per-process CPU and memory; Windows daemons ignore it.
+var containerProcessesPsArgs = []string{"-eo", "pid,user,%cpu,%mem,etime,cmd"}
+
+// GetContainerProcesses returns Docker's `top` snapshot for a container.
+func (s *ContainerService) GetContainerProcesses(ctx context.Context, containerID string) (containertypes.Processes, error) {
+	dockerClient, err := s.dockerService.GetClient(ctx)
+	if err != nil {
+		return containertypes.Processes{}, errors.WrapIf(err, "failed to connect to Docker")
+	}
+
+	timeout := timeouts.DefaultDockerAPI
+	if s.settingsService != nil {
+		timeout = timeouts.GetDuration(s.settingsService.GetSettingsConfig().DockerAPITimeout.AsInt(), timeouts.DefaultDockerAPI)
+	}
+	topCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	result, err := dockerClient.ContainerTop(topCtx, containerID, client.ContainerTopOptions{Arguments: containerProcessesPsArgs})
+	if err != nil {
+		return containertypes.Processes{}, errors.WrapIf(err, "failed to list container processes")
+	}
+	processes := containertypes.Processes{Titles: result.Titles, Processes: result.Processes}
+	if processes.Titles == nil {
+		processes.Titles = []string{}
+	}
+	if processes.Processes == nil {
+		processes.Processes = [][]string{}
+	}
+	return processes, nil
+}
+
 func (s *ContainerService) GetContainerNameByReference(ctx context.Context, ref string) (string, error) {
 	info, err := s.GetContainerByReference(ctx, ref)
 	if err != nil {
