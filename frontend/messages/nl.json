@@ -3737,5 +3737,9 @@
   "minutes": "notulen",
   "commits_files_to": "Slaat {count} bestand(en) op in",
   "create_new_project": "Maak een nieuw project aan",
-  "link_existing_project_description": "Koppel een bestaand project in plaats van er een aan te maken. De bestanden worden vervangen vanuit de repository; de waarden in het lokale .env-bestand blijven behouden."
+  "link_existing_project_description": "Koppel een bestaand project in plaats van er een aan te maken. De bestanden worden vervangen vanuit de repository; de waarden in het lokale .env-bestand blijven behouden.",
+  "containers_processes_title": "Processen",
+  "containers_processes_description": "Processen die binnen de container draaien, zoals gerapporteerd door Docker. Wordt om de paar seconden vernieuwd.",
+  "containers_processes_unavailable": "De container draait niet. Er zijn geen processen beschikbaar.",
+  "containers_processes_empty": "Er zijn geen processen gemeld"
 }
