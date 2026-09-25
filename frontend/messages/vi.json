@@ -1308,6 +1308,7 @@
   "swarm_easy_join_targets_required": "Chọn ít nhất một Môi trường từ xa.",
   "worker": "Người lao động",
   "swarm_easy_join_data_path_placeholder": "Địa chỉ đường dẫn dữ liệu (tùy chọn)",
+  "swarm_easy_join_manager_addresses_help": "Để trống để sử dụng các địa chỉ máy chủ quản lý được phát hiện từ cụm này. Bất kỳ địa chỉ nào bạn nhập vào đều phải có thể truy cập được từ mọi máy chủ Docker đã chọn, ví dụ: 100.64.0.10:2377.",
   "swarm_easy_join_results_title": "Kết quả ghép nối",
   "swarm_easy_join_result_joined": "Đã tham gia và được xác minh",
   "swarm_easy_join_result_already_member": "Đã là thành viên và đã được xác minh",
