@@ -1308,6 +1308,7 @@
   "swarm_easy_join_targets_required": "Välj minst en fjärrmiljö.",
   "worker": "Arbetare",
   "swarm_easy_join_data_path_placeholder": "Datavägsadress (valfritt)",
+  "swarm_easy_join_manager_addresses_help": "Lämna fältet tomt om du vill använda de manageradresser som har upptäckts i detta kluster. Alla adresser du anger måste vara nåbara från varje vald Docker-värd, till exempel 100.64.0.10:2377.",
   "swarm_easy_join_results_title": "Sammanställning av resultaten",
   "swarm_easy_join_result_joined": "Registrerad och verifierad",
   "swarm_easy_join_result_already_member": "Redan medlem och verifierad",
