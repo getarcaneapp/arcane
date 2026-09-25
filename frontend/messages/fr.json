@@ -3737,5 +3737,9 @@
   "minutes": "minutes",
   "commits_files_to": "Valide le(s) fichier(s) « {count} » vers",
   "create_new_project": "Créer un nouveau projet",
-  "link_existing_project_description": "Liez un projet existant au lieu d'en créer un nouveau. Ses fichiers sont remplacés à partir du dépôt ; les valeurs du fichier .env local sont conservées."
+  "link_existing_project_description": "Liez un projet existant au lieu d'en créer un nouveau. Ses fichiers sont remplacés à partir du dépôt ; les valeurs du fichier .env local sont conservées.",
+  "containers_processes_title": "Processus",
+  "containers_processes_description": "Processus en cours d'exécution à l'intérieur du conteneur, tels que signalés par Docker. Actualisation toutes les quelques secondes.",
+  "containers_processes_unavailable": "Le conteneur ne s'exécute pas. Les processus ne sont pas disponibles.",
+  "containers_processes_empty": "Aucun processus n'a été signalé"
 }
