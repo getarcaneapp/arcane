@@ -1308,6 +1308,7 @@
   "swarm_easy_join_targets_required": "Sélectionnez au moins un environnement distant.",
   "worker": "Travailleur",
   "swarm_easy_join_data_path_placeholder": "Adresse du chemin de données (facultative)",
+  "swarm_easy_join_manager_addresses_help": "Laissez ce champ vide pour utiliser les adresses des gestionnaires détectées dans ce cluster. Toute adresse que vous saisissez doit être accessible depuis chaque hôte Docker sélectionné, par exemple 100.64.0.10:2377.",
   "swarm_easy_join_results_title": "Résultats de la jonction",
   "swarm_easy_join_result_joined": "Inscrit et vérifié",
   "swarm_easy_join_result_already_member": "Déjà membre et identifié",
