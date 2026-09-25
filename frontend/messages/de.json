@@ -1308,6 +1308,7 @@
   "swarm_easy_join_targets_required": "Wählen Sie mindestens eine Remote-Umgebung aus.",
   "worker": "Worker-Node",
   "swarm_easy_join_data_path_placeholder": "Datenpfadadresse (optional)",
+  "swarm_easy_join_manager_addresses_help": "Lassen Sie das Feld leer, um die aus diesem Cluster ermittelten Manager-Adressen zu verwenden. Jede von Ihnen eingegebene Adresse muss von jedem ausgewählten Docker-Host aus erreichbar sein, zum Beispiel 100.64.0.10:2377.",
   "swarm_easy_join_results_title": "Ergebnisse zusammenführen",
   "swarm_easy_join_result_joined": "Registriert und verifiziert",
   "swarm_easy_join_result_already_member": "Bereits Mitglied und verifiziert",
