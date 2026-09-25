@@ -2,7 +2,8 @@ import type { Diagnostic } from '@codemirror/lint';
 import type { AnalysisResult, EditorContext, OutlineItem } from './types';
 import { hasClosingQuote, isOpenQuote } from './parse-env-utils';
 
-const ENV_KEY_REGEX = /^[A-Za-z_][A-Za-z0-9_]*$/;
+// Compose passes dotted and hyphenated names (e.g. .NET config keys) through to containers unchanged.
+const ENV_KEY_REGEX = /^[A-Za-z_][A-Za-z0-9_.-]*$/;
 
 type ParsedEnvLine = {
 	lineNumber: number;
@@ -34,7 +35,7 @@ function parseEnvLine(line: string, lineNumber: number, from: number, diagnostic
 			from: keyFrom,
 			to: keyTo,
 			severity: 'error',
-			message: `Invalid variable name "${key}". Use letters, numbers and underscore only.`
+			message: `Invalid variable name "${key}". Use letters, numbers, underscores, dots and hyphens only.`
 		});
 		return null;
 	}
