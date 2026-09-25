@@ -180,7 +180,7 @@ export const queryKeys = {
 			['volume-backups', environmentId, volumeName, backupId, 'has-path', path] as const
 	},
 	vulnerabilities: {
-		summaryByEnvironment: (environmentId: string) => ['vulnerabilities', 'summary', environmentId] as const,
+		overviewByEnvironment: (environmentId: string) => ['vulnerabilities', 'overview', environmentId] as const,
 		scanResult: (environmentId: string, imageId: string) => ['vulnerabilities', 'scan-result', environmentId, imageId] as const,
 		allByEnvironment: (environmentId: string, request: SearchPaginationSortRequest) =>
 			['vulnerabilities', 'all', environmentId, stableSerialize(request)] as const,

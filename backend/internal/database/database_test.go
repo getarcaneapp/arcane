@@ -119,6 +119,44 @@ func TestMigration066_GlobalVariables_UpAndDown(t *testing.T) {
 	assert.Zero(t, rowCount)
 }
 
+func TestMigration088_VulnerabilityRisk_BackfillsCVSSAndDowngrades(t *testing.T) {
+	ctx := context.Background()
+	rawDB, _ := newSQLiteSQLDBInternal(t, t.TempDir(), "arcane-vulnerability-risk.db")
+
+	require.NoError(t, migrateDatabaseToVersionInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 87))
+	_, err := rawDB.Exec(`INSERT INTO vulnerability_scans (id, image_name, status, scan_time) VALUES ('img-1', 'nginx:latest', 'completed', CURRENT_TIMESTAMP)`)
+	require.NoError(t, err)
+	_, err = rawDB.Exec(`INSERT INTO vulnerability_scan_items (image_id, vulnerability_id, pkg_name, severity, details) VALUES
+		('img-1', 'CVE-V3', 'openssl', 'HIGH', '{"cvss":{"v2Score":5,"v3Score":7.5}}'),
+		('img-1', 'CVE-V2', 'curl', 'MEDIUM', '{"cvss":{"v2Score":4.3}}'),
+		('img-1', 'CVE-NONE', 'zlib', 'LOW', NULL)`)
+	require.NoError(t, err)
+
+	require.NoError(t, migrateDatabaseToVersionInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 88))
+	scores := map[string]stdsql.NullFloat64{}
+	rows, err := rawDB.Query(`SELECT vulnerability_id, cvss_score FROM vulnerability_scan_items`)
+	require.NoError(t, err)
+	for rows.Next() {
+		var id string
+		var score stdsql.NullFloat64
+		require.NoError(t, rows.Scan(&id, &score))
+		scores[id] = score
+	}
+	require.NoError(t, rows.Err())
+	require.NoError(t, rows.Close())
+	assert.InDelta(t, 7.5, scores["CVE-V3"].Float64, 0.001)
+	assert.InDelta(t, 4.3, scores["CVE-V2"].Float64, 0.001)
+	assert.False(t, scores["CVE-NONE"].Valid)
+
+	var tableCount int
+	require.NoError(t, rawDB.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN ('vulnerability_threat_intel', 'vulnerability_risk_snapshots')`).Scan(&tableCount))
+	assert.Equal(t, 2, tableCount)
+
+	require.NoError(t, migrateDatabaseToVersionInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 87))
+	require.NoError(t, rawDB.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN ('vulnerability_threat_intel', 'vulnerability_risk_snapshots')`).Scan(&tableCount))
+	assert.Zero(t, tableCount)
+}
+
 func TestMigration067_ActivityBatchID_UpAndDown(t *testing.T) {
 	ctx := context.Background()
 	rawDB, _ := newSQLiteSQLDBInternal(t, t.TempDir(), "arcane-activity-batch-id.db")

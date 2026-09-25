@@ -175,6 +175,17 @@ var jobMetadataRegistry = map[string]JobMetadata{
 			},
 		},
 	},
+	"vulnerability-risk": {
+		ID:             "vulnerability-risk",
+		Name:           "Vulnerability Risk",
+		Description:    "Refreshes CISA KEV and FIRST EPSS threat intelligence and records the daily environment risk snapshot",
+		Category:       "security",
+		SettingsKey:    "",
+		ManagerOnly:    false,
+		IsContinuous:   false,
+		CanRunManually: true,
+		Prerequisites:  []JobPrerequisiteMetadata{},
+	},
 	"auto-patch": {
 		ID:             "auto-patch",
 		Name:           "Image Auto Patch",

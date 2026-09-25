@@ -7,28 +7,34 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { vulnerabilityService } from '#lib/services/vulnerability-service.js';
 	import { imageService } from '#lib/services/image-service.js';
-	import { parallelRefresh } from '#lib/utils/api.js';
+	import { extractApiErrorMessage, parallelRefresh } from '#lib/utils/api.js';
 	import { useEnvironmentRefresh } from '#lib/hooks/use-environment-refresh.svelte.js';
-	import type { EnvironmentVulnerabilitySummary, VulnerabilityWithImage } from '#lib/types/environment.js';
+	import type { VulnerabilityRiskOverview, VulnerabilityWithImage } from '#lib/types/environment.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { onMount, onDestroy, untrack } from 'svelte';
 	import SecurityVulnerabilityTable from './security-vulnerability-table.svelte';
 	import SecurityPatchTable from './security-patch-table.svelte';
+	import SecurityOverview from './security-overview.svelte';
 	import type { ImagePatchTargetDto } from '#lib/types/docker.js';
 	import { toast } from 'svelte-sonner';
-	import { InspectIcon, ShieldAlertIcon, ShieldCheckIcon } from '#lib/icons/index.js';
+	import { ActivityIcon, InspectIcon, ShieldAlertIcon, ShieldCheckIcon } from '#lib/icons/index.js';
 	import { TabBar, type TabItem } from '#lib/components/tab-bar/index.js';
 	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
 	import { hasPermission } from '#lib/utils/auth.js';
-	import { mapVulnerabilityPage, mapVulnerabilityRequest, withVulnerabilityToggles } from '#lib/utils/vulnerability.js';
+	import {
+		getSeveritySegments,
+		mapVulnerabilityPage,
+		mapVulnerabilityRequest,
+		withVulnerabilityToggles
+	} from '#lib/utils/vulnerability.js';
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';
 
 	let { data } = $props();
 	let displayedEnvId = $derived(data.envId);
 
-	let summary = $derived<EnvironmentVulnerabilitySummary | null>(data.summary);
+	let overview = $derived<VulnerabilityRiskOverview | null>(data.overview);
 	type VulnerabilityRow = VulnerabilityWithImage & { id: string };
 
 	let vulnerabilities = $derived<Paginated<VulnerabilityRow>>(data.vulnerabilities);
@@ -47,10 +53,13 @@
 	let isLoading = $state({ refreshing: false, scanningAll: false });
 	let scanProgress = $state({ current: 0, total: 0 });
 	const urlTab = useUrlTab({
-		validTabs: () => ['vulnerabilities', 'patches'],
-		defaultTab: () => 'vulnerabilities'
+		validTabs: () => ['overview', 'vulnerabilities', 'patches'],
+		defaultTab: () => 'overview',
+		// Legacy /images/vulnerabilities?tab=ignored links open the vulnerability table.
+		aliases: () => ({ ignored: 'vulnerabilities' })
 	});
 	const securityTabItems: TabItem[] = [
+		{ value: 'overview', label: m.common_overview(), icon: ActivityIcon },
 		{ value: 'vulnerabilities', label: m.vuln_title(), icon: ShieldAlertIcon },
 		{ value: 'patches', label: m.patches(), icon: ShieldCheckIcon }
 	];
@@ -84,37 +93,36 @@
 		}
 	}
 
-	const summaryCounts = $derived.by(() => ({
-		critical: summary?.summary?.critical ?? 0,
-		high: summary?.summary?.high ?? 0,
-		medium: summary?.summary?.medium ?? 0,
-		low: summary?.summary?.low ?? 0,
-		unknown: summary?.summary?.unknown ?? 0,
-		total: summary?.summary?.total ?? 0
-	}));
+	const severityItems = $derived(getSeveritySegments(overview?.summary));
 
-	const imagesScannedLabel = $derived.by(() => {
-		const total = summary?.totalImages ?? 0;
-		const scanned = summary?.scannedImages ?? 0;
-		return `${scanned}/${total}`;
-	});
+	async function refreshOverview() {
+		const requestedEnvId = currentEnvId;
+		const result = await tryCatch(vulnerabilityService.getRiskOverviewForEnvironment(requestedEnvId));
+		if (result.error !== null) {
+			toast.error(m.common_refresh_failed({ resource: m.security() }), { description: extractApiErrorMessage(result.error) });
+			return;
+		}
+		if (!destroyed && vulnerabilityManagementEnabled && requestedEnvId === currentEnvId) overview = result.data;
+	}
 
-	const severityItems = $derived.by(() => {
-		const items = [
-			{ key: 'critical', value: summaryCounts.critical, label: m.vuln_severity_critical(), dotClass: 'bg-destructive' },
-			{ key: 'high', value: summaryCounts.high, label: m.vuln_severity_high(), dotClass: 'bg-orange' },
-			{ key: 'medium', value: summaryCounts.medium, label: m.vuln_severity_medium(), dotClass: 'bg-warning' },
-			{ key: 'low', value: summaryCounts.low, label: m.vuln_severity_low(), dotClass: 'bg-success' },
-			{ key: 'unknown', value: summaryCounts.unknown, label: m.common_unknown(), dotClass: 'bg-muted-foreground' }
-		];
-		return items.filter((item) => item.value > 0);
-	});
+	async function showVulnerability(vulnerabilityId: string) {
+		showIgnored = false;
+		fixAvailable = false;
+		requestOptions = {
+			...requestOptions,
+			search: vulnerabilityId,
+			pagination: { ...(requestOptions.pagination ?? { limit: 20 }), page: 1 }
+		};
+		urlTab.select('vulnerabilities');
+		await refreshAll();
+	}
 
-	async function refreshAll() {
+	// reset drops retained data first so a failed reload leaves the page empty rather than stale.
+	async function refreshAll(reset = false) {
 		const requestedEnvId = currentEnvId;
 		selectedVulnerabilityIds = [];
-		if (displayedEnvId !== requestedEnvId) {
-			summary = null;
+		if (reset || displayedEnvId !== requestedEnvId) {
+			overview = null;
 			vulnerabilities = { data: [], pagination: { totalPages: 0, totalItems: 0, currentPage: 1, itemsPerPage: 20 } };
 			patchTargets = { data: [], pagination: { totalPages: 0, totalItems: 0, currentPage: 1, itemsPerPage: 20 } };
 			displayedEnvId = requestedEnvId;
@@ -124,10 +132,10 @@
 		const requestForApi = mapVulnerabilityRequest(withVulnerabilityToggles(requestOptions, { showIgnored, fixAvailable }));
 		await parallelRefresh(
 			{
-				summary: {
-					fetch: () => vulnerabilityService.getEnvironmentSummaryForEnvironment(requestedEnvId),
+				overview: {
+					fetch: () => vulnerabilityService.getRiskOverviewForEnvironment(requestedEnvId),
 					onSuccess: (data) => {
-						if (!destroyed && vulnerabilityManagementEnabled && requestedEnvId === currentEnvId) summary = data;
+						if (!destroyed && vulnerabilityManagementEnabled && requestedEnvId === currentEnvId) overview = data;
 					},
 					errorMessage: m.common_refresh_failed({ resource: m.security() })
 				},
@@ -165,7 +173,7 @@
 		const MAX_IDLE_TICKS = 3;
 		let attempts = 0;
 		let idleTicks = 0;
-		let lastScanned = summary?.scannedImages ?? 0;
+		let lastScanned = overview?.drivers.imagesScanned ?? 0;
 
 		stopScanPolling();
 
@@ -185,8 +193,8 @@
 			await refreshAll();
 			if (destroyed || !vulnerabilityManagementEnabled) return;
 
-			const currentScanned = summary?.scannedImages ?? 0;
-			const currentTotal = summary?.totalImages ?? targetTotal;
+			const currentScanned = overview?.drivers.imagesScanned ?? 0;
+			const currentTotal = overview?.drivers.imagesTotal ?? targetTotal;
 
 			if (currentTotal > 0 && currentScanned >= currentTotal) {
 				stopScanPolling();
@@ -213,6 +221,8 @@
 
 	function handleTabChange(value: string) {
 		urlTab.select(value);
+		// Ignores made in the table change the overview.
+		if (value === 'overview') void refreshOverview();
 	}
 
 	onMount(() => {
@@ -333,13 +343,11 @@
 	let wasFeatureEnabled = true;
 	$effect(() => {
 		const enabled = vulnerabilityManagementEnabled;
+		// Disabled content is hidden by the template; re-enabling reloads it.
 		if (!enabled) {
 			stopScanPolling();
-			summary = null;
-			vulnerabilities = { data: [], pagination: { totalPages: 0, totalItems: 0, currentPage: 1, itemsPerPage: 20 } };
-			patchTargets = { data: [], pagination: { totalPages: 0, totalItems: 0, currentPage: 1, itemsPerPage: 20 } };
 		} else if (!wasFeatureEnabled) {
-			untrack(() => void refreshAll());
+			untrack(() => void refreshAll(true));
 		}
 		wasFeatureEnabled = enabled;
 	});
@@ -362,7 +370,7 @@
 			id: 'refresh',
 			action: 'restart',
 			label: m.common_refresh(),
-			onclick: refreshAll,
+			onclick: () => refreshAll(),
 			loading: isLoading.refreshing,
 			disabled: isLoading.refreshing || isLoading.scanningAll
 		});
@@ -379,57 +387,49 @@
 		{#if !vulnerabilityManagementEnabled}
 			<FeatureDisabled />
 		{:else}
-			<div class="space-y-6">
-				<div class="rounded-lg border border-border/40 bg-muted/20 px-4 py-3">
-					<div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-						<div class="flex items-baseline gap-4 text-xs text-muted-foreground">
-							<span
-								>{m.security_images_scanned()}:
-								<span class="font-medium text-foreground tabular-nums">{imagesScannedLabel}</span></span
-							>
-							<span
-								>{m.security_total_vulnerabilities()}:
-								<span class="font-medium text-foreground tabular-nums">{summaryCounts.total}</span></span
-							>
+			<Tabs.Root value={activeTab}>
+				<TabBar items={securityTabItems} value={activeTab} onValueChange={handleTabChange} />
+				<Tabs.Content value="overview" class="mt-4">
+					{#if overview}
+						<SecurityOverview {overview} onSelectVulnerability={showVulnerability} />
+					{/if}
+				</Tabs.Content>
+				<Tabs.Content value="vulnerabilities" class="mt-4 space-y-3">
+					{#if overview}
+						<div class="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-xs text-muted-foreground">
+							<span>
+								{m.security_images_scanned()}:
+								<span class="font-medium text-foreground tabular-nums"
+									>{overview.drivers.imagesScanned}/{overview.drivers.imagesTotal}</span
+								>
+							</span>
+							{#each severityItems as item (item.key)}
+								<span class="flex items-center gap-1.5">
+									<span class="{item.barClass} size-1.5 shrink-0 rounded-full" aria-hidden="true"></span>
+									<span class="font-semibold text-foreground tabular-nums">{item.count}</span>
+									{item.label}
+								</span>
+							{/each}
 						</div>
-						{#if severityItems.length > 0}
-							<div class="flex flex-wrap items-center gap-x-4 gap-y-1.5">
-								{#each severityItems as item (item.key)}
-									<div class="flex items-center gap-1.5">
-										<span class="{item.dotClass} h-1.5 w-1.5 shrink-0 rounded-full" aria-hidden="true"></span>
-										<span class="text-xs text-muted-foreground">
-											<span class="font-semibold text-foreground tabular-nums">{item.value}</span>
-											<span class="ml-0.5">{item.label}</span>
-										</span>
-									</div>
-								{/each}
-							</div>
-						{/if}
+					{/if}
+					<div class="rounded-xl border border-border/60">
+						<SecurityVulnerabilityTable
+							bind:vulnerabilities
+							bind:requestOptions
+							bind:selectedIds={selectedVulnerabilityIds}
+							{showIgnored}
+							onToggleIgnored={toggleIgnored}
+							{fixAvailable}
+							onToggleFixAvailable={toggleFixAvailable}
+						/>
 					</div>
-				</div>
-
-				<Tabs.Root value={activeTab}>
-					<TabBar items={securityTabItems} value={activeTab} onValueChange={handleTabChange} />
-					<Tabs.Content value="vulnerabilities" class="mt-4">
-						<div class="rounded-xl border border-border/60">
-							<SecurityVulnerabilityTable
-								bind:vulnerabilities
-								bind:requestOptions
-								bind:selectedIds={selectedVulnerabilityIds}
-								{showIgnored}
-								onToggleIgnored={toggleIgnored}
-								{fixAvailable}
-								onToggleFixAvailable={toggleFixAvailable}
-							/>
-						</div>
-					</Tabs.Content>
-					<Tabs.Content value="patches" class="mt-4">
-						<div class="rounded-xl border border-border/60">
-							<SecurityPatchTable bind:targets={patchTargets} bind:requestOptions={patchRequestOptions} />
-						</div>
-					</Tabs.Content>
-				</Tabs.Root>
-			</div>
+				</Tabs.Content>
+				<Tabs.Content value="patches" class="mt-4">
+					<div class="rounded-xl border border-border/60">
+						<SecurityPatchTable bind:targets={patchTargets} bind:requestOptions={patchRequestOptions} />
+					</div>
+				</Tabs.Content>
+			</Tabs.Root>
 		{/if}
 	{/snippet}
 </ResourcePageLayout>

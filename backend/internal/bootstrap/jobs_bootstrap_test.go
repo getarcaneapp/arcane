@@ -136,13 +136,14 @@ func TestFeatureChangeReschedulesScanAndPatchJobsInternal(t *testing.T) {
 		ActorRuntime:      runtime,
 		Settings:          settings,
 		VulnerabilityScan: scheduler.NewVulnerabilityScanJob(nil, nil),
+		VulnerabilityRisk: scheduler.NewVulnerabilityRiskJob(nil, nil),
 		AutoPatch:         scheduler.NewAutoPatchJob(nil, nil),
 	}))
-	require.Len(t, settings.featureCallbacks, 2)
+	require.Len(t, settings.featureCallbacks, 3)
 	for _, callback := range settings.featureCallbacks {
 		callback([]libarcane.SettingUpdate{{Key: features.VulnerabilityManagementSettingKey, Value: "false"}})
 	}
-	require.ElementsMatch(t, []string{scheduler.VulnerabilityScanJobName, scheduler.AutoPatchJobName}, schedulerStub.jobs)
+	require.ElementsMatch(t, []string{scheduler.VulnerabilityScanJobName, scheduler.VulnerabilityRiskJobName, scheduler.AutoPatchJobName}, schedulerStub.jobs)
 	stopCtx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	require.NoError(t, lifecycle.Stop(stopCtx))

@@ -142,6 +142,113 @@ export interface VulnerabilityWithImage extends Vulnerability {
 	ignoreId?: string;
 }
 
+export type VulnerabilityRiskBand = 'none' | 'low' | 'medium' | 'high' | 'critical';
+
+export interface VulnerabilityPackageInsight {
+	pkgName: string;
+	severity: VulnerabilitySeverity;
+	count: number;
+	installedVersion: string;
+	fixedVersion?: string;
+}
+
+export interface VulnerabilityScanInsights {
+	riskScore: number;
+	riskBand: VulnerabilityRiskBand;
+	highestCvss: number;
+	highestVulnerabilityId?: string;
+	fixableCount: number;
+	knownExploitedCount: number;
+	exposure: VulnerabilityExposure;
+	topPackages: VulnerabilityPackageInsight[];
+}
+
+export type VulnerabilityExposure = 'running' | 'stopped' | 'unused' | 'unknown';
+
+export interface VulnerabilityRiskTrendPoint {
+	date: string;
+	riskScore: number;
+}
+
+export interface VulnerabilityRiskDrivers {
+	knownExploited: number;
+	overdueKnownExploited: number;
+	highEpss: number;
+	exposedCriticalHigh: number;
+	fixable: number;
+	findings: number;
+	imagesScanned: number;
+	imagesTotal: number;
+}
+
+export interface VulnerabilityRiskExposureBreakdown {
+	running: number;
+	stopped: number;
+	unused: number;
+	unknown: number;
+}
+
+export interface VulnerabilityRiskScoreDriver {
+	vulnerabilityId: string;
+	imageName: string;
+	exposure: VulnerabilityExposure;
+	knownExploited: boolean;
+	risk: number;
+}
+
+export interface VulnerabilityRiskImage {
+	imageId: string;
+	imageName: string;
+	riskScore: number;
+	riskBand: VulnerabilityRiskBand;
+	exposure: VulnerabilityExposure;
+	runningContainers: number;
+	knownExploited: number;
+	critical: number;
+	high: number;
+	fixable: number;
+	findings: number;
+}
+
+export interface VulnerabilityRiskFinding {
+	vulnerabilityId: string;
+	pkgName: string;
+	title?: string;
+	severity: VulnerabilitySeverity;
+	cvss: number;
+	risk: number;
+	epss?: number;
+	knownExploited: boolean;
+	ransomware: boolean;
+	kevDueDate?: string;
+	imagesAffected: number;
+	runningImagesAffected: number;
+	fixedVersion?: string;
+}
+
+export interface VulnerabilityThreatIntelStatus {
+	enabled: boolean;
+	lastSyncedAt?: string;
+	stale: boolean;
+}
+
+export interface VulnerabilityRiskOverview {
+	riskScore: number;
+	riskBand: VulnerabilityRiskBand;
+	delta7d?: number;
+	trend: VulnerabilityRiskTrendPoint[];
+	drivers: VulnerabilityRiskDrivers;
+	drivers7dAgo?: VulnerabilityRiskDrivers;
+	summary: SeveritySummary;
+	exposure: VulnerabilityRiskExposureBreakdown;
+	scoreDriver?: VulnerabilityRiskScoreDriver;
+	riskiestImages: VulnerabilityRiskImage[];
+	riskiestFindings: VulnerabilityRiskFinding[];
+	prevalentFindings: VulnerabilityRiskFinding[];
+	threatIntel: VulnerabilityThreatIntelStatus;
+	computedAt: string;
+}
+
 export interface SeveritySummary {
 	critical: number;
 	high: number;
@@ -149,12 +256,6 @@ export interface SeveritySummary {
 	low: number;
 	unknown: number;
 	total: number;
-}
-
-export interface EnvironmentVulnerabilitySummary {
-	totalImages: number;
-	scannedImages: number;
-	summary?: SeveritySummary;
 }
 
 export interface VulnerabilityScanResult {
@@ -170,6 +271,7 @@ export interface VulnerabilityScanResult {
 	duration?: number;
 	scannerVersion?: string;
 	hasReport?: boolean;
+	insights?: VulnerabilityScanInsights;
 }
 
 export interface VulnerabilityScanSummary {

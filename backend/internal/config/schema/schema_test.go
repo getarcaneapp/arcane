@@ -381,4 +381,5 @@ var expectedSettingOverrideKeys = []string{
 	"volumeHelperIdleTimeout",
 	"vulnerabilityScanEnabled",
 	"vulnerabilityScanInterval",
+	"vulnerabilityThreatIntelEnabled",
 }

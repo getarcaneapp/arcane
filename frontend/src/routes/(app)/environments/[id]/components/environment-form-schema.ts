@@ -57,6 +57,7 @@ export const environmentFormSchema = environmentUpdateSchema
 		trivyServerUrl: z.string(),
 		trivyServerToken: z.string(),
 		trivyIgnoreUnfixed: z.boolean(),
+		vulnerabilityThreatIntelEnabled: z.boolean(),
 		trivyConfig: z.string(),
 		trivyIgnore: z.string(),
 		imagePatchSuffix: z.string(),

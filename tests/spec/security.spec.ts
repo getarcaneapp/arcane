@@ -7,8 +7,8 @@ const ROUTES = {
 	legacyVulnerabilities: '/images/vulnerabilities'
 };
 
-async function navigateToSecurity(page: Page) {
-	await page.goto(ROUTES.page);
+async function navigateToSecurity(page: Page, tab = 'vulnerabilities') {
+	await page.goto(`${ROUTES.page}?tab=${tab}`);
 	await page.waitForLoadState('load');
 }
 
@@ -31,19 +31,40 @@ function vulnerabilityResponse(response: { url(): string; request(): { method():
 		: null;
 }
 
-async function mockSecurityPageData(page: Page, imageNames: string[]) {
-	await page.route(/\/api\/environments\/[^/]+\/vulnerabilities\/summary$/, async (route) => {
+async function mockRiskOverview(page: Page) {
+	await page.route(/\/api\/environments\/[^/]+\/vulnerabilities\/overview$/, async (route) => {
 		await route.fulfill({
 			json: {
 				success: true,
 				data: {
-					totalImages: 1,
-					scannedImages: 1,
-					summary: { critical: 0, high: 1, medium: 0, low: 0, unknown: 0, total: 1 }
+					riskScore: 75,
+					riskBand: 'high',
+					trend: [{ date: '2026-09-13', riskScore: 75 }],
+					drivers: {
+						knownExploited: 0,
+						overdueKnownExploited: 0,
+						highEpss: 0,
+						exposedCriticalHigh: 1,
+						fixable: 1,
+						findings: 1,
+						imagesScanned: 1,
+						imagesTotal: 1
+					},
+					summary: { critical: 0, high: 1, medium: 0, low: 0, unknown: 0, total: 1 },
+					exposure: { running: 1, stopped: 0, unused: 0, unknown: 0 },
+					riskiestImages: [],
+					riskiestFindings: [],
+					prevalentFindings: [],
+					threatIntel: { enabled: false, stale: false },
+					computedAt: '2026-09-13T10:00:00Z'
 				}
 			}
 		});
 	});
+}
+
+async function mockSecurityPageData(page: Page, imageNames: string[]) {
+	await mockRiskOverview(page);
 	await page.route(
 		/\/api\/environments\/[^/]+\/vulnerabilities\/image-options(?:\?.*)?$/,
 		async (route) => {
@@ -89,13 +110,17 @@ test.describe('Security Page', () => {
 		await expect(page.getByRole('heading', { name: 'Security', level: 1 })).toBeVisible();
 	});
 
-	test('shows the vulnerabilities and patches tabs', async ({ page }) => {
-		await navigateToSecurity(page);
+	test('opens on the overview tab and shows the vulnerabilities and patches tabs', async ({
+		page
+	}) => {
+		await page.goto(ROUTES.page);
+		await page.waitForLoadState('load');
 
-		await expect(page.getByRole('tab', { name: 'Vulnerabilities', exact: true })).toHaveAttribute(
+		await expect(page.getByRole('tab', { name: 'Overview', exact: true })).toHaveAttribute(
 			'data-state',
 			'active'
 		);
+		await expect(page.getByRole('tab', { name: 'Vulnerabilities', exact: true })).toBeVisible();
 		await expect(page.getByRole('tab', { name: 'Patches', exact: true })).toBeVisible();
 	});
 
@@ -181,18 +206,7 @@ test.describe('Security Page', () => {
 		let ignorePayload: unknown;
 		let unignoreRequestCount = 0;
 
-		await page.route(/\/api\/environments\/0\/vulnerabilities\/summary$/, async (route) => {
-			await route.fulfill({
-				json: {
-					success: true,
-					data: {
-						totalImages: 1,
-						scannedImages: 1,
-						summary: { critical: 0, high: 1, medium: 0, low: 0, unknown: 0, total: 1 }
-					}
-				}
-			});
-		});
+		await mockRiskOverview(page);
 		await page.route(/\/api\/environments\/0\/vulnerabilities\/all(?:\?.*)?$/, async (route) => {
 			const showIgnored = new URL(route.request().url()).searchParams.get('ignored') === 'true';
 			const rows =
