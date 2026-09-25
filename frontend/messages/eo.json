@@ -1308,6 +1308,7 @@
   "swarm_easy_join_targets_required": "Elektu almenaŭ unu malproksiman medion.",
   "worker": "Laboristo",
   "swarm_easy_join_data_path_placeholder": "Datumvoja adreso (nedeviga)",
+  "swarm_easy_join_manager_addresses_help": "Lasu malplena por uzi la adresojn de la administrantoj malkovritajn en ĉi tiu klustro. Ĉiu adreso, kiun vi enigas, devas esti atingebla de ĉiu elektita Docker-gastiganto, ekzemple 100.64.0.10:2377.",
   "swarm_easy_join_results_title": "Kunigitaj rezultoj",
   "swarm_easy_join_result_joined": "Aliĝinta kaj verigita",
   "swarm_easy_join_result_already_member": "Jam membro kaj konfirmita",
