@@ -3737,5 +3737,9 @@
   "minutes": "phút",
   "commits_files_to": "Ghi  tập tin( {count} ) vào",
   "create_new_project": "Tạo một dự án mới",
-  "link_existing_project_description": "Liên kết một dự án hiện có thay vì tạo một dự án mới. Các tệp của dự án đó sẽ được thay thế từ kho lưu trữ; các giá trị trong tệp .env cục bộ vẫn được giữ nguyên."
+  "link_existing_project_description": "Liên kết một dự án hiện có thay vì tạo một dự án mới. Các tệp của dự án đó sẽ được thay thế từ kho lưu trữ; các giá trị trong tệp .env cục bộ vẫn được giữ nguyên.",
+  "containers_processes_title": "Các quy trình",
+  "containers_processes_description": "Các tiến trình đang chạy bên trong container, theo báo cáo của Docker. Thông tin được cập nhật sau vài giây.",
+  "containers_processes_unavailable": "Container không đang chạy. Không có tiến trình nào.",
+  "containers_processes_empty": "Không có quy trình nào được báo cáo"
 }
