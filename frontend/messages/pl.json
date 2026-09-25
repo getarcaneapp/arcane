@@ -1308,6 +1308,7 @@
   "swarm_easy_join_targets_required": "Wybierz co najmniej jedno środowisko zdalne.",
   "worker": "Worker",
   "swarm_easy_join_data_path_placeholder": "Adres ścieżki danych (opcjonalnie)",
+  "swarm_easy_join_manager_addresses_help": "Pozostaw pole puste, aby użyć adresów menedżerów wykrytych w tej klastrze. Każdy wprowadzony adres musi być dostępny z każdego wybranego hosta Docker, na przykład 100.64.0.10:2377.",
   "swarm_easy_join_results_title": "Wyniki połączeń",
   "swarm_easy_join_result_joined": "Zarejestrowany i zweryfikowany",
   "swarm_easy_join_result_already_member": "Jesteś już członkiem i masz zweryfikowany profil",
