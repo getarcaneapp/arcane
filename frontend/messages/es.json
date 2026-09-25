@@ -3737,5 +3737,9 @@
   "minutes": "minutos",
   "commits_files_to": "Se han publicado {count} archivo(s) en",
   "create_new_project": "Crear un nuevo proyecto",
-  "link_existing_project_description": "Vincula un proyecto ya existente en lugar de crear uno nuevo. Sus archivos se sustituyen por los del repositorio; se conservan los valores del archivo .env local."
+  "link_existing_project_description": "Vincula un proyecto ya existente en lugar de crear uno nuevo. Sus archivos se sustituyen por los del repositorio; se conservan los valores del archivo .env local.",
+  "containers_processes_title": "Procesos",
+  "containers_processes_description": "Procesos que se están ejecutando dentro del contenedor, según informa Docker. Se actualiza cada pocos segundos.",
+  "containers_processes_unavailable": "El contenedor no se está ejecutando. Los procesos no están disponibles.",
+  "containers_processes_empty": "No se han notificado procesos"
 }
