@@ -1308,6 +1308,7 @@
   "swarm_easy_join_targets_required": "Válasszon ki legalább egy távoli környezetet.",
   "worker": "Worker",
   "swarm_easy_join_data_path_placeholder": "Adatútvonal-cím (opcionális)",
+  "swarm_easy_join_manager_addresses_help": "Ha üresen hagyja, akkor a rendszer a klaszterből felderített menedzsercímeket fogja használni. A megadott címnek minden kiválasztott Docker-gépetől elérhetőnek kell lennie, például 100.64.0.10:2377.",
   "swarm_easy_join_results_title": "Összesített eredmények",
   "swarm_easy_join_result_joined": "Csatlakozott és hitelesítve",
   "swarm_easy_join_result_already_member": "Már regisztrált és hitelesített felhasználó",
