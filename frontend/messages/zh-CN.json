@@ -3737,5 +3737,9 @@
   "minutes": "分钟",
   "commits_files_to": "将 {count} 个文件提交到",
   "create_new_project": "创建新项目",
-  "link_existing_project_description": "链接现有项目而非新建项目。其文件将被仓库内容替换，本地 .env 值会保留。"
+  "link_existing_project_description": "链接现有项目而非新建项目。其文件将被仓库内容替换，本地 .env 值会保留。",
+  "containers_processes_title": "流程",
+  "containers_processes_description": "Docker 报告的在容器内运行的进程。每隔几秒刷新一次。",
+  "containers_processes_unavailable": "容器未运行。无法获取进程信息。",
+  "containers_processes_empty": "未报告任何进程"
 }
