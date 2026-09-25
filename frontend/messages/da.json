@@ -3737,5 +3737,9 @@
   "minutes": "minutter",
   "commits_files_to": "Committerer fil(erne) fra {count} til",
   "create_new_project": "Opret et nyt projekt",
-  "link_existing_project_description": "Kobl et eksisterende projekt til i stedet for at oprette et nyt. Dets filer erstattes med filer fra repositoriet; de lokale .env-værdier bevares."
+  "link_existing_project_description": "Kobl et eksisterende projekt til i stedet for at oprette et nyt. Dets filer erstattes med filer fra repositoriet; de lokale .env-værdier bevares.",
+  "containers_processes_title": "Processer",
+  "containers_processes_description": "Processer, der kører inde i containeren, som angivet af Docker. Opdateres hvert par sekunder.",
+  "containers_processes_unavailable": "Containeren kører ikke. Processerne er ikke tilgængelige.",
+  "containers_processes_empty": "Der er ikke rapporteret om nogen processer"
 }
