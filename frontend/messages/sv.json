@@ -3737,5 +3737,9 @@
   "minutes": "minuter",
   "commits_files_to": "Lägger in filen/filerna {count} i",
   "create_new_project": "Skapa ett nytt projekt",
-  "link_existing_project_description": "Länka ett befintligt projekt istället för att skapa ett nytt. Filerna hämtas från arkivet, medan de lokala .env-värdena behålls."
+  "link_existing_project_description": "Länka ett befintligt projekt istället för att skapa ett nytt. Filerna hämtas från arkivet, medan de lokala .env-värdena behålls.",
+  "containers_processes_title": "Processer",
+  "containers_processes_description": "Processer som körs inuti containern, enligt uppgifter från Docker. Uppdateras med några sekunders mellanrum.",
+  "containers_processes_unavailable": "Containern körs inte. Processerna är inte tillgängliga.",
+  "containers_processes_empty": "Inga processer har rapporterats"
 }
