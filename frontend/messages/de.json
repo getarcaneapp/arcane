@@ -3737,5 +3737,9 @@
   "minutes": "Minuten",
   "commits_files_to": "Überträgt die Datei(en) „ {count} “ in",
   "create_new_project": "Neues Projekt erstellen",
-  "link_existing_project_description": "Verlinken Sie ein bestehendes Projekt, anstatt ein neues anzulegen. Die Dateien werden aus dem Repository ersetzt; lokale .env-Werte bleiben erhalten."
+  "link_existing_project_description": "Verlinken Sie ein bestehendes Projekt, anstatt ein neues anzulegen. Die Dateien werden aus dem Repository ersetzt; lokale .env-Werte bleiben erhalten.",
+  "containers_processes_title": "Prozesse",
+  "containers_processes_description": "Prozesse, die innerhalb des Containers laufen, wie von Docker gemeldet. Die Anzeige wird alle paar Sekunden aktualisiert.",
+  "containers_processes_unavailable": "Der Container läuft nicht. Prozesse sind nicht verfügbar.",
+  "containers_processes_empty": "Es wurden keine Prozesse gemeldet"
 }
