@@ -1308,6 +1308,7 @@
   "swarm_easy_join_targets_required": "En az bir Uzak Ortam seçin.",
   "worker": "Görevci",
   "swarm_easy_join_data_path_placeholder": "Veri yolu adresi (isteğe bağlı)",
+  "swarm_easy_join_manager_addresses_help": "Bu kümeden tespit edilen yönetici adreslerini kullanmak için bu alanı boş bırakın. Girdiğiniz herhangi bir adrese, seçilen tüm Docker ana bilgisayarlarından erişilebilmelidir; örneğin, 100.64.0.10:2377.",
   "swarm_easy_join_results_title": "Katılım Bilgileri",
   "swarm_easy_join_result_joined": "Katıldı ve doğrulandı",
   "swarm_easy_join_result_already_member": "Zaten üye ve doğrulanmış",
