@@ -1308,6 +1308,7 @@
   "swarm_easy_join_targets_required": "少なくとも1つのリモート環境を選択してください。",
   "worker": "労働者",
   "swarm_easy_join_data_path_placeholder": "データパスアドレス（任意）",
+  "swarm_easy_join_manager_addresses_help": "このクラスターから検出されたマネージャーのアドレスを使用する場合は、空欄のままにしてください。入力するアドレスは、選択したすべての Docker ホストから到達可能である必要があります（例：100.64.0.10:2377）。",
   "swarm_easy_join_results_title": "参加結果",
   "swarm_easy_join_result_joined": "参加済み・本人確認済み",
   "swarm_easy_join_result_already_member": "すでに会員登録済みで、本人確認も完了しています",
