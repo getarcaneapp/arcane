@@ -3737,5 +3737,9 @@
   "minutes": "dakika",
   "commits_files_to": "{count} dosya(ları)nı şuraya kaydet:",
   "create_new_project": "Yeni bir proje oluştur",
-  "link_existing_project_description": "Yeni bir proje oluşturmak yerine mevcut bir projeyi bağlayın. Bu projenin dosyaları depodan yenileriyle değiştirilir; yerel .env değerleri korunur."
+  "link_existing_project_description": "Yeni bir proje oluşturmak yerine mevcut bir projeyi bağlayın. Bu projenin dosyaları depodan yenileriyle değiştirilir; yerel .env değerleri korunur.",
+  "containers_processes_title": "Süreçler",
+  "containers_processes_description": "Docker tarafından bildirildiği üzere, konteyner içinde çalışan işlemler. Birkaç saniyede bir güncellenir.",
+  "containers_processes_unavailable": "Konteyner çalışmıyor. İşlemler erişilemez.",
+  "containers_processes_empty": "Bildirilen işlem yok"
 }
