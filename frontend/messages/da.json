@@ -1308,6 +1308,7 @@
   "swarm_easy_join_targets_required": "Vælg mindst ét fjernmiljø.",
   "worker": "Worker",
   "swarm_easy_join_data_path_placeholder": "Datavejsadresse (valgfri)",
+  "swarm_easy_join_manager_addresses_help": "Lad feltet være tomt for at bruge de manageradresser, der er fundet i denne klynge. Enhver adresse, du indtaster, skal kunne nås fra alle de valgte Docker-værter, f.eks. 100.64.0.10:2377.",
   "swarm_easy_join_results_title": "Sammenlign resultater",
   "swarm_easy_join_result_joined": "Tilmeldt og bekræftet",
   "swarm_easy_join_result_already_member": "Er allerede medlem og bekræftet",
