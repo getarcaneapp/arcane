@@ -3737,5 +3737,9 @@
   "minutes": "議事録",
   "commits_files_to": "{count} ファイルを",
   "create_new_project": "新しいプロジェクトを作成する",
-  "link_existing_project_description": "新しいプロジェクトを作成する代わりに、既存のプロジェクトをリンクします。そのファイルはリポジトリから上書きされますが、ローカルの .env の値は保持されます。"
+  "link_existing_project_description": "新しいプロジェクトを作成する代わりに、既存のプロジェクトをリンクします。そのファイルはリポジトリから上書きされますが、ローカルの .env の値は保持されます。",
+  "containers_processes_title": "プロセス",
+  "containers_processes_description": "Docker によって報告される、コンテナ内で実行中のプロセス。数秒ごとに更新されます。",
+  "containers_processes_unavailable": "コンテナは実行されていません。プロセスは利用できません。",
+  "containers_processes_empty": "報告されたプロセスはありません"
 }
