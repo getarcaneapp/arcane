@@ -3737,5 +3737,9 @@
   "minutes": "會議記錄",
   "commits_files_to": "將 {count} 個檔案提交至",
   "create_new_project": "建立新專案",
-  "link_existing_project_description": "連結現有專案，而非建立新專案。其檔案將從儲存庫中替換；本機端的 .env 值則會保留。"
+  "link_existing_project_description": "連結現有專案，而非建立新專案。其檔案將從儲存庫中替換；本機端的 .env 值則會保留。",
+  "containers_processes_title": "流程",
+  "containers_processes_description": "根據 Docker 回報，目前在容器內執行的程序。每隔幾秒鐘更新一次。",
+  "containers_processes_unavailable": "容器未運行。無法取得相關進程資訊。",
+  "containers_processes_empty": "未通報任何程序"
 }
