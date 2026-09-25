@@ -1308,6 +1308,7 @@
   "swarm_easy_join_targets_required": "請至少選取一個遠端環境。",
   "worker": "工人",
   "swarm_easy_join_data_path_placeholder": "資料路徑位址（可選）",
+  "swarm_easy_join_manager_addresses_help": "若要使用從此叢集偵測到的管理員位址，請留空。您輸入的任何位址都必須能從每個已選取的 Docker 主機存取，例如 100.64.0.10:2377。",
   "swarm_easy_join_results_title": "合併結果",
   "swarm_easy_join_result_joined": "已加入並完成驗證",
   "swarm_easy_join_result_already_member": "已是會員且已通過驗證",
