@@ -3737,5 +3737,9 @@
   "minutes": "minuty",
   "commits_files_to": "Zaznamená soubory z adresáře „ {count} “ do",
   "create_new_project": "Vytvořte nový projekt",
-  "link_existing_project_description": "Místo vytváření nového projektu propojte existující projekt. Jeho soubory budou nahrazeny soubory z repozitáře; místní hodnoty v souboru .env zůstanou zachovány."
+  "link_existing_project_description": "Místo vytváření nového projektu propojte existující projekt. Jeho soubory budou nahrazeny soubory z repozitáře; místní hodnoty v souboru .env zůstanou zachovány.",
+  "containers_processes_title": "Procesy",
+  "containers_processes_description": "Procesy spuštěné uvnitř kontejneru, jak je uvádí Docker. Údaje se aktualizují každých několik sekund.",
+  "containers_processes_unavailable": "Kontejner není spuštěn. Procesy nejsou k dispozici.",
+  "containers_processes_empty": "Nebyly hlášeny žádné procesy"
 }
