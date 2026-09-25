@@ -15,7 +15,8 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { swarmService } from '#lib/services/swarm-service.js';
 	import type { SwarmJoinCandidate, SwarmJoinEnvironmentResult, SwarmJoinEnvironmentTarget } from '#lib/types/swarm.js';
-	import { extractApiErrorMessage } from '#lib/utils/api.js';
+	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '#lib/utils/api.js';
+	import { parseList } from '#lib/utils/form-parsers.js';
 
 	type Props = {
 		open: boolean;
@@ -40,6 +41,8 @@
 	const candidates = $derived(
 		(candidatesQuery.data ?? []).filter((candidate) => !targetEnvironmentId || candidate.environmentId === targetEnvironmentId)
 	);
+	let managerAddressesInput = $state('');
+	const remoteAddrs = $derived(parseList(managerAddressesInput));
 	let targetDraft = $state<Record<string, SwarmJoinEnvironmentTarget> | null>(null);
 	const targets = $derived.by(() => {
 		if (targetDraft) return targetDraft;
@@ -101,23 +104,23 @@
 		isJoining = true;
 		mutationError = '';
 		results = [];
-		try {
-			const operationResult = await tryCatch(
-				(async () => {
-					const response = await swarmService.joinEnvironments({ remoteAddrs: [], targets: selectedTargets }, environmentId);
-					if (destroyed || environmentId !== requestedManagerId) return;
-					results = response.results;
-					await onComplete?.();
-				})()
-			);
-			if (operationResult.error !== null && !destroyed && environmentId === requestedManagerId) {
-				const error = operationResult.error;
-
+		const result = await tryCatch(swarmService.joinEnvironments({ remoteAddrs, targets: selectedTargets }, environmentId));
+		if (destroyed || environmentId !== requestedManagerId) {
+			isJoining = false;
+			return;
+		}
+		await handleApiResultWithCallbacks({
+			result,
+			message: m.swarm_cluster_join_failed(),
+			setLoadingState: (value) => (isJoining = value),
+			onSuccess: async (response) => {
+				results = response.results;
+				await onComplete?.();
+			},
+			onError: (error) => {
 				mutationError = extractApiErrorMessage(error);
 			}
-		} finally {
-			isJoining = false;
-		}
+		});
 	}
 
 	function resultLabel(result: SwarmJoinEnvironmentResult): string {
@@ -157,6 +160,16 @@
 					{m.swarm_easy_join_no_candidates()}
 				</div>
 			{:else}
+				<div class="space-y-1.5">
+					<label for="easy-join-manager-addresses" class="text-sm font-medium">{m.swarm_cluster_manager_addresses_label()}</label>
+					<Input
+						id="easy-join-manager-addresses"
+						placeholder={m.swarm_cluster_join_remote_addrs_placeholder()}
+						bind:value={managerAddressesInput}
+						disabled={isJoining}
+					/>
+					<p class="text-xs text-muted-foreground">{m.swarm_easy_join_manager_addresses_help()}</p>
+				</div>
 				<div class="space-y-3">
 					{#each candidates as candidate (candidate.environmentId)}
 						{@const target = targets[candidate.environmentId]}
@@ -165,6 +178,7 @@
 								<input
 									type="checkbox"
 									checked={!!target}
+									disabled={isJoining}
 									onchange={(event) => toggleCandidate(candidate, event.currentTarget.checked)}
 								/>
 								<span>
@@ -181,6 +195,7 @@
 											<select
 												class="h-9 w-full rounded-md border border-input bg-background px-3"
 												value={target.role}
+												disabled={isJoining}
 												onchange={(event) =>
 													updateTarget(candidate.environmentId, {
 														role: event.currentTarget.value as 'worker' | 'manager'
@@ -195,6 +210,7 @@
 											<select
 												class="h-9 w-full rounded-md border border-input bg-background px-3"
 												value={target.availability}
+												disabled={isJoining}
 												onchange={(event) =>
 													updateTarget(candidate.environmentId, {
 														availability: event.currentTarget.value as 'active' | 'pause' | 'drain'
@@ -210,16 +226,19 @@
 										<Input
 											placeholder={m.swarm_cluster_listen_addr_placeholder()}
 											value={target.listenAddr ?? ''}
+											disabled={isJoining}
 											oninput={(event) => updateTarget(candidate.environmentId, { listenAddr: event.currentTarget.value })}
 										/>
 										<Input
 											placeholder={m.swarm_cluster_advertise_addr_placeholder()}
 											value={target.advertiseAddr ?? ''}
+											disabled={isJoining}
 											oninput={(event) => updateTarget(candidate.environmentId, { advertiseAddr: event.currentTarget.value })}
 										/>
 										<Input
 											placeholder={m.swarm_easy_join_data_path_placeholder()}
 											value={target.dataPathAddr ?? ''}
+											disabled={isJoining}
 											oninput={(event) => updateTarget(candidate.environmentId, { dataPathAddr: event.currentTarget.value })}
 										/>
 									</div>
@@ -239,7 +258,11 @@
 								>{candidates.find((candidate) => candidate.environmentId === result.environmentId)?.environmentName ??
 									result.environmentId}</span
 							>
-							<span class={result.state === 'failed' ? 'text-right text-destructive' : 'text-right text-muted-foreground'}>
+							<span
+								class={result.state === 'failed'
+									? 'min-w-0 text-right break-words text-destructive'
+									: 'min-w-0 text-right break-words text-muted-foreground'}
+							>
 								{resultLabel(result)}{result.error ? `: ${result.error}` : ''}
 							</span>
 						</div>

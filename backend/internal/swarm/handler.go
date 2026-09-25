@@ -20,7 +20,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
 	"github.com/getarcaneapp/arcane/types/v2/base"
@@ -1208,7 +1207,14 @@ func (h *SwarmHandler) InitSwarm(ctx context.Context, input *InitSwarmInput) (*h
 // when the join operation fails.
 func (h *SwarmHandler) JoinSwarm(ctx context.Context, input *JoinSwarmInput) (*handlerutil.Out[base.MessageResponse], error) {
 	if err := h.swarmService.JoinSwarm(ctx, input.Body); err != nil {
-		return nil, mapSwarmServiceErrorInternal(err, "Failed to join swarm")
+		detail := redactSwarmJoinTokenInternal(err.Error(), input.Body.JoinToken)
+		slog.WarnContext(ctx, "swarm join failed", "environmentId", input.EnvironmentID, "operation", "join-swarm", "error", detail)
+		httpErr := mapSwarmServiceErrorInternal(err, detail)
+		var model *huma.ErrorModel
+		if errors.As(httpErr, &model) {
+			model.Detail = redactSwarmJoinTokenInternal(model.Detail, input.Body.JoinToken)
+		}
+		return nil, httpErr
 	}
 
 	h.auditSwarmMutation(ctx, input.EnvironmentID, "lifecycle.join", "swarm", "cluster", "cluster", map[string]any{"remoteAddrs": input.Body.RemoteAddrs})
@@ -1249,18 +1255,6 @@ func (h *SwarmHandler) JoinEnvironments(ctx context.Context, input *JoinSwarmEnv
 		}
 		if permissions == nil || !permissions.Allows(authz.PermSwarmJoin, target.EnvironmentID) {
 			return nil, huma.Error403Forbidden("swarm:join permission is required for every target environment")
-		}
-	}
-
-	if len(input.Body.RemoteAddrs) == 0 {
-		nodes, _, err := h.swarmService.ListNodesPaginated(ctx, input.EnvironmentID, pagination.QueryParams{Limit: -1})
-		if err != nil {
-			return nil, mapSwarmServiceErrorInternal(err, "Failed to derive swarm manager addresses")
-		}
-		for _, node := range nodes {
-			if node.ManagerAddress != "" {
-				input.Body.RemoteAddrs = append(input.Body.RemoteAddrs, node.ManagerAddress)
-			}
 		}
 	}
 

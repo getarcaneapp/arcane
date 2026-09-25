@@ -1308,6 +1308,7 @@
   "swarm_easy_join_targets_required": "Select at least one Remote Environment.",
   "worker": "Worker",
   "swarm_easy_join_data_path_placeholder": "Data-path address (optional)",
+  "swarm_easy_join_manager_addresses_help": "Leave blank to use the manager addresses discovered from this cluster. Any address you enter must be reachable from every selected Docker host, for example 100.64.0.10:2377.",
   "swarm_easy_join_results_title": "Join results",
   "swarm_easy_join_result_joined": "Joined and verified",
   "swarm_easy_join_result_already_member": "Already a member and verified",

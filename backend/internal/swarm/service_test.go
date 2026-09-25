@@ -12,10 +12,12 @@ import (
 
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
 	swarmtypes "github.com/getarcaneapp/arcane/types/v2/swarm"
 	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/api/types/swarm"
@@ -96,6 +98,45 @@ func TestDefaultSwarmListenAddrInternal(t *testing.T) {
 	require.Equal(t, defaultSwarmListenAddr, defaultSwarmListenAddrInternal(""))
 	require.Equal(t, defaultSwarmListenAddr, defaultSwarmListenAddrInternal("   "))
 	require.Equal(t, "eth0:2377", defaultSwarmListenAddrInternal(" eth0:2377 "))
+}
+
+func TestSelectSwarmManagerAddressesInternal(t *testing.T) {
+	nodes := []swarmtypes.NodeSummary{
+		{ID: "manager-1", ManagerAddress: "10.0.0.1:2377"},
+		{ID: "worker-1"},
+		{ID: "manager-2", ManagerAddress: "10.0.0.2:2377"},
+	}
+
+	addrs, err := selectSwarmManagerAddressesInternal([]string{" 100.64.0.10:2377 ", "", "100.64.0.11:2377"}, nodes)
+	require.NoError(t, err)
+	require.Equal(t, []string{"100.64.0.10:2377", "100.64.0.11:2377"}, addrs)
+
+	addrs, err = selectSwarmManagerAddressesInternal([]string{"  "}, nodes)
+	require.NoError(t, err)
+	require.Equal(t, []string{"10.0.0.1:2377", "10.0.0.2:2377"}, addrs)
+
+	_, err = selectSwarmManagerAddressesInternal(nil, []swarmtypes.NodeSummary{{ID: "worker-1"}})
+	require.ErrorIs(t, err, common.ErrBadRequest)
+}
+
+func TestDescribeSwarmJoinFailureInternal(t *testing.T) {
+	const token = "SWMTKN-1-secret"
+	statusErr := func(code int, body string) error {
+		return errors.Join(&remenv.StatusError{StatusCode: code, Body: []byte(body)})
+	}
+
+	require.Equal(t,
+		"failed to join swarm: Timeout was reached before node joined using [redacted]",
+		describeSwarmJoinFailureInternal(statusErr(500, `{"title":"Internal Server Error","status":500,"detail":"failed to join swarm: Timeout was reached before node joined using `+token+`"}`), token),
+	)
+	require.Equal(t, "legacy join failure", describeSwarmJoinFailureInternal(statusErr(400, `{"success":false,"error":"legacy join failure"}`), token))
+	require.Equal(t, "swarm join failed with HTTP 502 from the target agent", describeSwarmJoinFailureInternal(statusErr(502, "<html>bad gateway</html>"), token))
+	require.Equal(t, "swarm join failed with HTTP 404 from the target agent", describeSwarmJoinFailureInternal(statusErr(404, ""), token))
+	require.Equal(t,
+		"failed to send request to environment edge: dial tcp 10.0.0.9:3552: connect: connection refused",
+		describeSwarmJoinFailureInternal(errors.New("failed to send request to environment edge: dial tcp 10.0.0.9:3552: connect: connection refused"), token),
+	)
+	require.Equal(t, "token [redacted] rejected", describeSwarmJoinFailureInternal(errors.New("token "+token+" rejected"), token))
 }
 
 func TestSwarmService_FetchSwarmNodeIdentityViaEdgeInternal_UsesEnvironmentAccessToken(t *testing.T) {

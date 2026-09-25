@@ -31,6 +31,7 @@ import (
 	libswarm "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/swarm"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	appfs "github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	swarmtypes "github.com/getarcaneapp/arcane/types/v2/swarm"
 	networktypes "github.com/moby/moby/api/types/network"
@@ -888,15 +889,16 @@ func (s *SwarmService) JoinEnvironments(ctx context.Context, managerEnvironmentI
 	if len(request.Targets) == 0 {
 		return &swarmtypes.SwarmJoinEnvironmentsResponse{Results: []swarmtypes.SwarmJoinEnvironmentResult{}}, nil
 	}
-	if len(request.RemoteAddrs) == 0 {
-		return nil, errors.New("at least one swarm manager address is required")
-	}
 
-	tokens, err := s.getSwarmJoinTokensForEnvironmentInternal(ctx, managerEnvironmentID)
+	nodes, _, err := s.ListNodesPaginated(ctx, managerEnvironmentID, pagination.QueryParams{Limit: -1})
 	if err != nil {
 		return nil, err
 	}
-	nodes, _, err := s.ListNodesPaginated(ctx, managerEnvironmentID, pagination.QueryParams{Limit: -1})
+	remoteAddrs, err := selectSwarmManagerAddressesInternal(request.RemoteAddrs, nodes)
+	if err != nil {
+		return nil, err
+	}
+	tokens, err := s.getSwarmJoinTokensForEnvironmentInternal(ctx, managerEnvironmentID)
 	if err != nil {
 		return nil, err
 	}
@@ -908,7 +910,7 @@ func (s *SwarmService) JoinEnvironments(ctx context.Context, managerEnvironmentI
 	results := make([]swarmtypes.SwarmJoinEnvironmentResult, len(request.Targets))
 	processTargetInternal := func(index int) {
 		target := request.Targets[index]
-		results[index] = s.joinEnvironmentInternal(ctx, managerEnvironmentID, target, request.RemoteAddrs, tokens, memberNodeIDs)
+		results[index] = s.joinEnvironmentInternal(ctx, managerEnvironmentID, target, remoteAddrs, tokens, memberNodeIDs)
 	}
 
 	for index, target := range request.Targets {
@@ -935,6 +937,60 @@ func (s *SwarmService) JoinEnvironments(ctx context.Context, managerEnvironmentI
 	_ = group.Wait()
 
 	return &swarmtypes.SwarmJoinEnvironmentsResponse{Results: results}, nil
+}
+
+// selectSwarmManagerAddressesInternal prefers explicit manager addresses and
+// otherwise uses the addresses advertised by the cluster's manager nodes.
+func selectSwarmManagerAddressesInternal(explicit []string, nodes []swarmtypes.NodeSummary) ([]string, error) {
+	addrs := make([]string, 0, len(explicit))
+	for _, addr := range explicit {
+		if trimmed := strings.TrimSpace(addr); trimmed != "" {
+			addrs = append(addrs, trimmed)
+		}
+	}
+	if len(addrs) > 0 {
+		return addrs, nil
+	}
+	for _, node := range nodes {
+		if node.ManagerAddress != "" {
+			addrs = append(addrs, node.ManagerAddress)
+		}
+	}
+	if len(addrs) == 0 {
+		return nil, common.Classify(common.ErrBadRequest, errors.New("no swarm manager addresses were discovered; enter manager addresses reachable from the target hosts"))
+	}
+	return addrs, nil
+}
+
+// describeSwarmJoinFailureInternal turns a proxied join failure into a concise,
+// token-free message. Agent HTTP errors contribute their detail; transport
+// errors keep their own text.
+func describeSwarmJoinFailureInternal(err error, joinToken string) string {
+	var status *remenv.StatusError
+	if !errors.As(err, &status) {
+		return redactSwarmJoinTokenInternal(err.Error(), joinToken)
+	}
+	var body struct {
+		Detail string `json:"detail"`
+		Error  string `json:"error"`
+	}
+	if len(bytes.TrimSpace(status.Body)) > 0 && json.Unmarshal(status.Body, &body) == nil {
+		if detail := strings.TrimSpace(body.Detail); detail != "" {
+			return redactSwarmJoinTokenInternal(detail, joinToken)
+		}
+		if legacy := strings.TrimSpace(body.Error); legacy != "" {
+			return redactSwarmJoinTokenInternal(legacy, joinToken)
+		}
+	}
+	return fmt.Sprintf("swarm join failed with HTTP %d from the target agent", status.StatusCode)
+}
+
+// redactSwarmJoinTokenInternal masks the join token wherever it appears in message.
+func redactSwarmJoinTokenInternal(message, joinToken string) string {
+	if joinToken == "" {
+		return message
+	}
+	return strings.ReplaceAll(message, joinToken, "[redacted]")
 }
 
 func (s *SwarmService) getSwarmJoinTokensForEnvironmentInternal(ctx context.Context, environmentID string) (*swarmtypes.SwarmJoinTokensResponse, error) {
@@ -1013,11 +1069,13 @@ func (s *SwarmService) joinEnvironmentInternal(
 	var joinResponse struct {
 		Success bool `json:"success"`
 	}
-	if err := s.environmentService.ProxyJSONRequest(ctx, target.EnvironmentID, http.MethodPost, "/api/environments/0/swarm/join", body, &joinResponse); err != nil || !joinResponse.Success {
+	if err := s.environmentService.ProxyJSONRequest(ctx, target.EnvironmentID, http.MethodPost, "/api/environments/0/swarm/join", body, &joinResponse); err != nil {
+		message := describeSwarmJoinFailureInternal(err, joinToken)
+		result.Error = &message
+		return result
+	}
+	if !joinResponse.Success {
 		message := "swarm join failed"
-		if err != nil {
-			message = err.Error()
-		}
 		result.Error = &message
 		return result
 	}
