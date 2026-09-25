@@ -3737,5 +3737,9 @@
   "minutes": "jegyzőkönyv",
   "commits_files_to": "A „ {count} ” fájl(ok)at a következő helyre menti:",
   "create_new_project": "Új projekt létrehozása",
-  "link_existing_project_description": "Ahelyett, hogy új projektet hoznál létre, csatlakoztasd a meglévőt. A fájljait a tárolóból cserélik ki; a helyi .env-értékek megmaradnak."
+  "link_existing_project_description": "Ahelyett, hogy új projektet hoznál létre, csatlakoztasd a meglévőt. A fájljait a tárolóból cserélik ki; a helyi .env-értékek megmaradnak.",
+  "containers_processes_title": "Folyamatok",
+  "containers_processes_description": "A Docker által jelzett, a konténerben futó folyamatok. Néhány másodpercenként frissül.",
+  "containers_processes_unavailable": "A konténer nem fut. A folyamatok nem érhetők el.",
+  "containers_processes_empty": "Nem jelentettek folyamatokat"
 }
