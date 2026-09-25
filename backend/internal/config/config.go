@@ -328,26 +328,8 @@ func resolveFileBasedEnvVariable(field reflect.Value, fieldType reflect.StructFi
 		return
 	}
 
-	// Check both double underscore (__FILE) and single underscore (_FILE) variants
-	// Double underscore takes precedence
-	var filePath string
-	for _, suffix := range []string{"__FILE", "_FILE"} {
-		if fp := os.Getenv(envTag + suffix); fp != "" {
-			filePath = fp
-			break
-		}
-	}
-
-	if filePath == "" {
-		return
-	}
-
-	// os.* rather than acfs: *_FILE Docker secret paths are arbitrary absolute
-	// paths on the host, so no confinement root exists for them.
-	fileContent, err := os.ReadFile(filePath) //nolint:gosec // file path intentionally comes from *_FILE env vars for Docker secrets
-	if err != nil {
-		slog.Warn("Failed to read secret from file, falling back to direct env var",
-			"error", err)
+	fileContent, ok := utils.ReadEnvFile(envTag)
+	if !ok {
 		return
 	}
 

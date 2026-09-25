@@ -3,6 +3,7 @@ package settings
 import (
 	"context"
 	"encoding/base64"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -838,7 +839,10 @@ func TestSettingsService_LoadDatabaseSettings_UIConfigurationDisabled_Env(t *tes
 	// Set env + disable flag BEFORE service init
 	t.Setenv("UI_CONFIGURATION_DISABLED", "true")
 	t.Setenv("PROJECTS_DIRECTORY", "env/projects")
-	t.Setenv("BASE_SERVER_URL", "https://env.example")
+	// One value as a variable, one as a Docker secret file.
+	baseURLFile := filepath.Join(t.TempDir(), "base-server-url")
+	require.NoError(t, os.WriteFile(baseURLFile, []byte("https://env.example\n"), 0o600))
+	t.Setenv("BASE_SERVER_URL_FILE", baseURLFile)
 
 	c := config.Load()
 	c.UIConfigurationDisabled = true
