@@ -1308,6 +1308,7 @@
   "swarm_easy_join_targets_required": "Vyberte alespoň jedno vzdálené prostředí.",
   "worker": "Pracovník",
   "swarm_easy_join_data_path_placeholder": "Adresa datové cesty (volitelné)",
+  "swarm_easy_join_manager_addresses_help": "Nechte pole prázdné, chcete-li použít adresy správců zjištěné z tohoto clusteru. Jakákoli zadaná adresa musí být dostupná ze všech vybraných hostitelů Dockeru, například 100.64.0.10:2377.",
   "swarm_easy_join_results_title": "Sloučit výsledky",
   "swarm_easy_join_result_joined": "Zaregistrován a ověřen",
   "swarm_easy_join_result_already_member": "Již jste členem a máte ověřený účet",
