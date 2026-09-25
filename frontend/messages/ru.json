@@ -1308,6 +1308,7 @@
   "swarm_easy_join_targets_required": "Выберите как минимум одно удалённое окружение.",
   "worker": "Рабочий процесс",
   "swarm_easy_join_data_path_placeholder": "Адрес канала передачи данных (необязательно)",
+  "swarm_easy_join_manager_addresses_help": "Оставьте поле пустым, чтобы использовать адреса менеджеров, обнаруженные в этом кластере. Любой введенный вами адрес должен быть доступен с каждого выбранного хоста Docker, например 100.64.0.10:2377.",
   "swarm_easy_join_results_title": "Результаты подключения",
   "swarm_easy_join_result_joined": "Подключено и подтверждено",
   "swarm_easy_join_result_already_member": "Уже подключено и подтверждено",
