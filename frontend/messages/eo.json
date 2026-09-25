@@ -3737,5 +3737,9 @@
   "minutes": "minutoj",
   "commits_files_to": "Komitas la dosieron(j) {count} al",
   "create_new_project": "Kreu novan projekton",
-  "link_existing_project_description": "Konektu ekzistantan projekton anstataŭ krei novan. Ĝiaj dosieroj estas anstataŭigitaj el la deponejo; lokaj .env-valoroj estas konservataj."
+  "link_existing_project_description": "Konektu ekzistantan projekton anstataŭ krei novan. Ĝiaj dosieroj estas anstataŭigitaj el la deponejo; lokaj .env-valoroj estas konservataj.",
+  "containers_processes_title": "Procezoj",
+  "containers_processes_description": "Procezoj kurantaj ene de la ujo, laŭ Docker. Ĝisdatigas ĉiun kelkajn sekundojn.",
+  "containers_processes_unavailable": "La ujo ne funkcias. Procezoj ne disponeblas.",
+  "containers_processes_empty": "Neniuj procezoj raportitaj"
 }
