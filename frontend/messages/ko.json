@@ -3737,5 +3737,9 @@
   "minutes": "분",
   "commits_files_to": "{count} 의 파일(들)을 다음 위치에 커밋합니다.",
   "create_new_project": "새 프로젝트 만들기",
-  "link_existing_project_description": "새 프로젝트를 생성하는 대신 기존 프로젝트를 연결하세요. 해당 프로젝트의 파일은 저장소에서 가져와 덮어쓰며, 로컬 .env 파일의 값은 그대로 유지됩니다."
+  "link_existing_project_description": "새 프로젝트를 생성하는 대신 기존 프로젝트를 연결하세요. 해당 프로젝트의 파일은 저장소에서 가져와 덮어쓰며, 로컬 .env 파일의 값은 그대로 유지됩니다.",
+  "containers_processes_title": "프로세스",
+  "containers_processes_description": "Docker에서 보고하는, 컨테이너 내에서 실행 중인 프로세스입니다. 몇 초마다 업데이트됩니다.",
+  "containers_processes_unavailable": "컨테이너가 실행 중이 아닙니다. 프로세스를 확인할 수 없습니다.",
+  "containers_processes_empty": "보고된 프로세스가 없습니다."
 }
