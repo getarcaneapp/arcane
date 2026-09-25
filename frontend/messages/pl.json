@@ -3737,5 +3737,9 @@
   "minutes": "protokoły",
   "commits_files_to": "Zapisuje pliki z katalogu „ {count} ” do",
   "create_new_project": "Utwórz nowy projekt",
-  "link_existing_project_description": "Zamiast tworzyć nowy projekt, podłącz istniejący. Jego pliki zostaną zastąpione plikami z repozytorium; lokalne wartości w pliku .env zostaną zachowane."
+  "link_existing_project_description": "Zamiast tworzyć nowy projekt, podłącz istniejący. Jego pliki zostaną zastąpione plikami z repozytorium; lokalne wartości w pliku .env zostaną zachowane.",
+  "containers_processes_title": "Procesy",
+  "containers_processes_description": "Procesy uruchomione wewnątrz kontenera, zgodnie z danymi podanymi przez Docker. Dane są odświeżane co kilka sekund.",
+  "containers_processes_unavailable": "Kontener nie działa. Procesy są niedostępne.",
+  "containers_processes_empty": "Nie zgłoszono żadnych procesów"
 }
