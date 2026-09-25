@@ -1308,6 +1308,7 @@
   "swarm_easy_join_targets_required": "원격 환경을 하나 이상 선택하십시오.",
   "worker": "Worker",
   "swarm_easy_join_data_path_placeholder": "데이터 경로 주소 (선택 사항)",
+  "swarm_easy_join_manager_addresses_help": "이 클러스터에서 탐지된 관리자 주소를 사용하려면 이 필드를 비워 두십시오. 입력하는 주소는 선택한 모든 Docker 호스트에서 연결 가능해야 합니다(예: 100.64.0.10:2377).",
   "swarm_easy_join_results_title": "합류 결과",
   "swarm_easy_join_result_joined": "가입 및 인증 완료",
   "swarm_easy_join_result_already_member": "이미 회원이며 인증을 완료했습니다",
