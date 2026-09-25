@@ -39,6 +39,7 @@ async function mockRiskOverview(page: Page) {
 				data: {
 					riskScore: 75,
 					riskBand: 'high',
+					scoreStatus: 'complete',
 					trend: [{ date: '2026-09-13', riskScore: 75 }],
 					drivers: {
 						knownExploited: 0,
@@ -48,7 +49,8 @@ async function mockRiskOverview(page: Page) {
 						fixable: 1,
 						findings: 1,
 						imagesScanned: 1,
-						imagesTotal: 1
+						imagesTotal: 1,
+						scoredImages: 1
 					},
 					summary: { critical: 0, high: 1, medium: 0, low: 0, unknown: 0, total: 1 },
 					exposure: { running: 1, stopped: 0, unused: 0, unknown: 0 },

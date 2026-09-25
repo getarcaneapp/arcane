@@ -52,16 +52,32 @@
 		// Worsening drivers show a week-over-week delta; the rest show their denominator.
 		trackDelta: boolean;
 		context?: string;
+		// Threat-data counters are unavailable, not zero, until the feeds have synced.
+		unavailable?: boolean;
 	};
+
+	const threatDataUnavailable = $derived(!overview.threatIntel.enabled || !overview.threatIntel.lastSyncedAt);
+	const scoreBasis = $derived(
+		overview.drivers.scoredImages === 1
+			? m.security_patch_priority_basis_one()
+			: m.security_patch_priority_basis({ count: overview.drivers.scoredImages })
+	);
 
 	const drivers = $derived<Driver[]>([
 		{
 			key: 'knownExploited',
 			label: m.security_driver_known_exploited(),
 			help: m.security_driver_known_exploited_help(),
-			trackDelta: true
+			trackDelta: true,
+			unavailable: threatDataUnavailable
 		},
-		{ key: 'highEpss', label: m.security_driver_high_epss(), help: m.security_driver_high_epss_help(), trackDelta: true },
+		{
+			key: 'highEpss',
+			label: m.security_driver_high_epss(),
+			help: m.security_driver_high_epss_help(),
+			trackDelta: true,
+			unavailable: threatDataUnavailable
+		},
 		{
 			key: 'exposedCriticalHigh',
 			label: m.security_driver_exposed(),
@@ -72,7 +88,8 @@
 			key: 'overdueKnownExploited',
 			label: m.security_driver_overdue_kev(),
 			help: m.security_driver_overdue_kev_help(),
-			trackDelta: true
+			trackDelta: true,
+			unavailable: threatDataUnavailable
 		},
 		{
 			key: 'imagesScanned',
@@ -147,7 +164,7 @@
 		</ArcaneTooltip.Trigger>
 		<ArcaneTooltip.Content class="max-w-64">
 			<p class="mb-1 text-sm font-medium">{title}</p>
-			<p class="text-xs text-muted-foreground">{body}</p>
+			<p class="text-xs">{body}</p>
 		</ArcaneTooltip.Content>
 	</ArcaneTooltip.Root>
 {/snippet}
@@ -163,7 +180,15 @@
 			<div
 				class="flex flex-col items-center gap-3 lg:col-span-2 lg:justify-center lg:self-stretch lg:border-r lg:border-border/50 lg:pr-12"
 			>
-				<RiskGauge score={overview.riskScore} band={overview.riskBand} size={460} stroke={22} />
+				<RiskGauge
+					score={overview.riskScore}
+					band={overview.riskBand}
+					status={overview.scoreStatus}
+					help={m.security_patch_priority_help()}
+					size={460}
+					stroke={22}
+				/>
+				<p class="text-xs text-muted-foreground">{scoreBasis}</p>
 				{#if overview.scoreDriver}
 					{@const driver = overview.scoreDriver}
 					<button
@@ -177,11 +202,7 @@
 								<Badge variant="red" size="xs">{m.vuln_kev_badge()}</Badge>
 							{/if}
 						</span>
-						{#if driver.exposure === 'unused'}
-							<span>{m.vuln_exposure_unused()}</span>
-						{:else if driver.exposure === 'stopped'}
-							<span>{m.vuln_exposure_stopped()}</span>
-						{/if}
+						<span class="font-mono text-xs">{driver.pkgName} → {driver.fixedVersion}</span>
 					</button>
 				{/if}
 			</div>
@@ -242,11 +263,15 @@
 						{@render HelpTip(driver.label, driver.help)}
 					</dt>
 					<dd class="mt-2 flex items-baseline justify-center gap-2">
-						<span class="text-3xl font-semibold tabular-nums">{overview.drivers[driver.key]}</span>
-						{#if driver.trackDelta}
-							{@render Delta(driverDelta(driver.key))}
-						{:else if driver.context}
-							<span class="text-xs text-muted-foreground tabular-nums">{driver.context}</span>
+						{#if driver.unavailable}
+							<span class="text-3xl font-semibold text-muted-foreground" aria-label={m.security_driver_unavailable()}>–</span>
+						{:else}
+							<span class="text-3xl font-semibold tabular-nums">{overview.drivers[driver.key]}</span>
+							{#if driver.trackDelta}
+								{@render Delta(driverDelta(driver.key))}
+							{:else if driver.context}
+								<span class="text-xs text-muted-foreground tabular-nums">{driver.context}</span>
+							{/if}
 						{/if}
 					</dd>
 				</div>
@@ -315,12 +340,12 @@
 									</span>
 									<span class="text-right">
 										{#if findingRank === 'risk'}
-											<span class="block text-sm font-semibold tabular-nums">{finding.risk.toFixed(1)}</span>
+											<span class="block text-sm font-semibold tabular-nums">{Math.round(finding.risk * 10)}</span>
 											<span class="block text-3xs text-muted-foreground">{m.vuln_cvss()} {finding.cvss.toFixed(1)}</span>
 										{:else}
 											<span class="block text-sm font-semibold tabular-nums">{finding.imagesAffected}</span>
 											<span class="block text-3xs text-muted-foreground"
-												>{m.security_risk_value({ value: finding.risk.toFixed(1) })}</span
+												>{m.security_risk_value({ value: Math.round(finding.risk * 10) })}</span
 											>
 										{/if}
 									</span>
@@ -335,7 +360,7 @@
 				<h3 class="mb-3 text-sm font-medium">{m.security_riskiest_images()}</h3>
 				<ul class="divide-y divide-border/40">
 					{#each overview.riskiestImages as image (image.imageId)}
-						{@const band = getRiskBandDisplay(image.riskBand)}
+						{@const band = getRiskBandDisplay(image.riskBand, image.scoreStatus)}
 						<li>
 							<a
 								href="/images/{image.imageId}?tab=vulnerabilities"
@@ -357,7 +382,13 @@
 											style="--risk-width: {image.riskScore}%"
 										></span>
 									</span>
-									<span class="w-8 text-right text-sm font-semibold tabular-nums">{image.riskScore}</span>
+									<span class="w-8 text-right text-sm font-semibold tabular-nums">
+										{#if image.scoreStatus === 'unavailable'}
+											<span class="text-muted-foreground" aria-label={band.label}>–</span>
+										{:else}
+											{image.riskScore}
+										{/if}
+									</span>
 								</span>
 							</a>
 						</li>

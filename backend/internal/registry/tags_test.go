@@ -2,6 +2,7 @@ package registry
 
 import (
 	"context"
+	"encoding/base64"
 	"io"
 	"net/http"
 	"strings"
@@ -30,8 +31,11 @@ func TestListImageTagsCredentialsInternal(t *testing.T) {
 			createTestPullRegistryInternal(t, db, "https://index.docker.io/v1/", "stored-user", "stored-token")
 			calls := 0
 			client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-				calls++
 				assert.Equal(t, "registry-1.docker.io", req.URL.Host)
+				if req.URL.Path == "/v2/" {
+					return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody, Header: http.Header{}}, nil
+				}
+				calls++
 				assert.Equal(t, "/v2/library/nginx/tags/list", req.URL.Path)
 				user, password, _ := req.BasicAuth()
 				assert.Equal(t, tt.wantUser, user)
@@ -48,15 +52,24 @@ func TestListImageTagsCredentialsInternal(t *testing.T) {
 }
 
 func TestListImageTagsDoesNotFallBackOnRateLimitInternal(t *testing.T) {
-	calls := 0
+	// The registry client retries 429s itself, so count credentialed and anonymous listings rather than requests.
+	credentialed, anonymous := 0, 0
 	svc := NewContainerRegistryService(nil, nil, nil, &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-		calls++
-		return &http.Response{StatusCode: http.StatusTooManyRequests, Body: io.NopCloser(strings.NewReader("")), Header: http.Header{}}, nil
+		if req.URL.Path == "/v2/" {
+			return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody, Header: http.Header{}}, nil
+		}
+		if req.Header.Get("Authorization") == "" {
+			anonymous++
+		} else {
+			credentialed++
+		}
+		return &http.Response{StatusCode: http.StatusTooManyRequests, Body: http.NoBody, Header: http.Header{}}, nil
 	})})
 	tags, err := svc.ListImageTags(t.Context(), "registry.test/team/app:1.0.0", []containerregistry.Credential{{URL: "registry.test", Username: "user", Token: "token", Enabled: true}})
 	require.Error(t, err)
 	assert.Nil(t, tags)
-	assert.Equal(t, 1, calls)
+	assert.Positive(t, credentialed)
+	assert.Zero(t, anonymous, "a rate-limited credential must not spend the anonymous quota")
 }
 
 func TestListImageTagsCancellationInternal(t *testing.T) {
@@ -68,25 +81,34 @@ func TestListImageTagsCancellationInternal(t *testing.T) {
 }
 
 func TestListImageTagsRejectedCredentialFallbackInternal(t *testing.T) {
+	basic := "Basic " + base64.StdEncoding.EncodeToString([]byte("user:token"))
 	for _, tt := range []struct {
-		name      string
-		host      string
-		wantError bool
-		wantCalls int
+		name          string
+		host          string
+		wantError     bool
+		wantTokenAuth []string
 	}{
-		{name: "private registry public image", host: "registry.test", wantCalls: 3},
-		{name: "docker hub preserves quota", host: "docker.io", wantError: true, wantCalls: 2},
+		{name: "private registry public image", host: "registry.test", wantTokenAuth: []string{basic, ""}},
+		{name: "docker hub preserves quota", host: "docker.io", wantError: true, wantTokenAuth: []string{basic}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			calls := 0
+			// The registry challenges at /v2/ and its token endpoint rejects the stored credential but serves anonymous tokens.
+			var tokenAuth []string
 			svc := NewContainerRegistryService(nil, nil, nil, &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-				calls++
-				response := &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"tags":["1.0.1"]}`)), Header: http.Header{}}
-				if req.URL.Path == "/token" {
-					response.StatusCode = http.StatusUnauthorized
-				} else if req.Header.Get("Authorization") != "" {
+				response := &http.Response{StatusCode: http.StatusOK, Body: http.NoBody, Header: http.Header{}}
+				switch req.URL.Path {
+				case "/v2/":
 					response.StatusCode = http.StatusUnauthorized
 					response.Header.Set("WWW-Authenticate", `Bearer realm="https://auth.test/token"`)
+				case "/token":
+					tokenAuth = append(tokenAuth, req.Header.Get("Authorization"))
+					if req.Header.Get("Authorization") != "" {
+						response.StatusCode = http.StatusUnauthorized
+					} else {
+						response.Body = io.NopCloser(strings.NewReader(`{"token":"anonymous-token"}`))
+					}
+				default:
+					response.Body = io.NopCloser(strings.NewReader(`{"tags":["1.0.1"]}`))
 				}
 				return response, nil
 			})})
@@ -98,7 +120,7 @@ func TestListImageTagsRejectedCredentialFallbackInternal(t *testing.T) {
 				require.NoError(t, err)
 				assert.Equal(t, []string{"1.0.1"}, tags)
 			}
-			assert.Equal(t, tt.wantCalls, calls)
+			assert.Equal(t, tt.wantTokenAuth, tokenAuth)
 		})
 	}
 }

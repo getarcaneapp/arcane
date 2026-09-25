@@ -29,6 +29,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/validation"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
+	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	dockerregistry "github.com/moby/moby/api/types/registry"
 	"github.com/moby/moby/client"
 	"go.getarcane.app/sys/crypto"
@@ -1342,6 +1343,10 @@ func isUnauthorizedRegistryErrorInternal(err error) bool {
 	// Prefer structured error type check from the Docker SDK / containerd.
 	if cerrdefs.IsUnauthorized(err) || cerrdefs.IsPermissionDenied(err) {
 		return true
+	}
+	var registryErr *transport.Error
+	if errors.As(err, &registryErr) {
+		return registryErr.StatusCode == http.StatusUnauthorized || registryErr.StatusCode == http.StatusForbidden
 	}
 
 	// Fallback: some Docker daemon versions return plain-text errors without

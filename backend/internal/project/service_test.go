@@ -7611,6 +7611,10 @@ type serviceTagTransportInternal struct {
 }
 
 func (s *serviceTagTransportInternal) RoundTrip(request *http.Request) (*http.Response, error) {
+	// The /v2/ version check precedes every listing and is not a tag call.
+	if request.URL.Path == "/v2/" {
+		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: http.NoBody, Request: request}, nil
+	}
 	s.calls++
 	payload, err := json.Marshal(map[string]any{"name": "library/app", "tags": s.tags})
 	if err != nil {

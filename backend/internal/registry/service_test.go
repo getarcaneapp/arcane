@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -94,10 +93,39 @@ func (f *fakeRegistryDaemonClient) DistributionInspect(ctx context.Context, imag
 	return f.distributionInspectFn(ctx, imageRef, options)
 }
 
+const dockerHubChallengeInternal = `Bearer realm="https://auth.docker.io/token",service="registry.docker.io"`
+
+// registryPingInternal answers the /v2/ version check every registry client sends first: a bearer challenge when set, else OK.
+func registryPingInternal(w http.ResponseWriter, r *http.Request, challenge string) bool {
+	if r.URL.Path != "/v2/" {
+		return false
+	}
+	if challenge != "" {
+		w.Header().Set("WWW-Authenticate", challenge)
+		w.WriteHeader(http.StatusUnauthorized)
+		return true
+	}
+	w.WriteHeader(http.StatusOK)
+	return true
+}
+
+// writeManifestHeadInternal answers a manifest HEAD with the headers a client needs to trust the digest without a body.
+func writeManifestHeadInternal(w http.ResponseWriter, digest string) {
+	w.Header().Set("Content-Type", "application/vnd.docker.distribution.manifest.v2+json")
+	w.Header().Set("Content-Length", "0")
+	w.Header().Set("Docker-Content-Digest", digest)
+	w.WriteHeader(http.StatusOK)
+}
+
 func newDockerHubRateLimitTestClient(t *testing.T, handler http.HandlerFunc) *http.Client {
 	t.Helper()
 
-	server := httptest.NewTLSServer(handler)
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if registryPingInternal(w, r, dockerHubChallengeInternal) {
+			return
+		}
+		handler(w, r)
+	}))
 	t.Cleanup(server.Close)
 
 	targetURL, err := url.Parse(server.URL)
@@ -237,7 +265,7 @@ func TestContainerRegistryService_GetRegistryPullUsage_AnonymousDockerHubLimit(t
 			_, _ = w.Write([]byte(`{"token":"anonymous-token"}`))
 		case r.Method == http.MethodHead && r.URL.Path == "/v2/ratelimitpreview/test/manifests/latest":
 			if r.Header.Get("Authorization") != "Bearer anonymous-token" {
-				w.Header().Set("WWW-Authenticate", `Bearer realm="https://auth.docker.io/token",service="registry.docker.io"`)
+				w.Header().Set("WWW-Authenticate", dockerHubChallengeInternal)
 				w.WriteHeader(http.StatusUnauthorized)
 				return
 			}
@@ -289,7 +317,7 @@ func TestContainerRegistryService_GetRegistryPullUsage_UsesDockerHubCredential(t
 			_, _ = w.Write([]byte(`{"token":"credential-token"}`))
 		case r.Method == http.MethodHead && r.URL.Path == "/v2/ratelimitpreview/test/manifests/latest":
 			if r.Header.Get("Authorization") != "Bearer credential-token" {
-				w.Header().Set("WWW-Authenticate", `Bearer realm="https://auth.docker.io/token",service="registry.docker.io"`)
+				w.Header().Set("WWW-Authenticate", dockerHubChallengeInternal)
 				w.WriteHeader(http.StatusUnauthorized)
 				return
 			}
@@ -328,7 +356,7 @@ func TestContainerRegistryService_GetRegistryPullUsage_CredentialErrorIsNonFatal
 		case r.URL.Path == "/token":
 			w.WriteHeader(http.StatusUnauthorized)
 		case r.Method == http.MethodHead && r.URL.Path == "/v2/ratelimitpreview/test/manifests/latest":
-			w.Header().Set("WWW-Authenticate", `Bearer realm="https://auth.docker.io/token",service="registry.docker.io"`)
+			w.Header().Set("WWW-Authenticate", dockerHubChallengeInternal)
 			w.WriteHeader(http.StatusUnauthorized)
 		default:
 			if !assert.Failf(t, "unexpected failure", "unexpected request %s %s", r.Method, r.URL.Path) {
@@ -344,7 +372,7 @@ func TestContainerRegistryService_GetRegistryPullUsage_CredentialErrorIsNonFatal
 	registry := result.Registries[0]
 	assert.Equal(t, "credential", registry.AuthMethod)
 	assert.Equal(t, "docker-user", registry.AuthUsername)
-	assert.Contains(t, registry.Error, "token request failed with status: 401")
+	assert.Contains(t, registry.Error, "401 Unauthorized")
 }
 
 func TestContainerRegistryService_RecordImagePull_IncrementsObservedRegistryCount(t *testing.T) {
@@ -981,6 +1009,10 @@ func TestContainerRegistryService_InspectImageDigest_FallbackUsesStoredCredentia
 	}, nil)
 	svc.distributionHTTPClient = &http.Client{
 		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			// The version check never carries credentials; only manifest requests count.
+			if req.URL.Path == "/v2/" {
+				return &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: http.NoBody}, nil
+			}
 			authorization := req.Header.Get("Authorization")
 			if authorization == "" {
 				anonymousCalls++
@@ -989,8 +1021,11 @@ func TestContainerRegistryService_InspectImageDigest_FallbackUsesStoredCredentia
 			assert.Equal(t, "Basic "+base64.StdEncoding.EncodeToString([]byte("ghcr-user:ghcr-token")), authorization)
 			return &http.Response{
 				StatusCode: http.StatusOK,
-				Header:     http.Header{"Docker-Content-Digest": []string{wantDigest}},
-				Body:       io.NopCloser(strings.NewReader("")),
+				Header: http.Header{
+					"Docker-Content-Digest": []string{wantDigest},
+					"Content-Type":          []string{"application/vnd.docker.distribution.manifest.v2+json"},
+				},
+				Body: http.NoBody,
 			}, nil
 		}),
 	}
@@ -1008,9 +1043,11 @@ func TestContainerRegistryService_InspectImageDigest_FallsBackWhenDistributionNo
 	wantDigest := digest.FromString("fallback-not-found").String()
 
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if registryPingInternal(w, r, "") {
+			return
+		}
 		if r.URL.Path == "/v2/team/app/manifests/1.2.3" {
-			w.Header().Set("Docker-Content-Digest", wantDigest)
-			w.WriteHeader(http.StatusOK)
+			writeManifestHeadInternal(w, wantDigest)
 			return
 		}
 		http.NotFound(w, r)
@@ -1045,9 +1082,11 @@ func TestContainerRegistryService_InspectImageDigest_FallsBackWhenDistributionFo
 	wantDigest := digest.FromString("fallback-forbidden").String()
 
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if registryPingInternal(w, r, "") {
+			return
+		}
 		if r.URL.Path == "/v2/team/app/manifests/1.2.3" {
-			w.Header().Set("Docker-Content-Digest", wantDigest)
-			w.WriteHeader(http.StatusOK)
+			writeManifestHeadInternal(w, wantDigest)
 			return
 		}
 		http.NotFound(w, r)
@@ -1085,25 +1124,21 @@ func TestContainerRegistryService_InspectImageDigest_RetriesStoredCredentialsAft
 	var authHeaders []string
 	var tokenURL string
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		challenge := `Bearer realm="` + tokenURL + `",service="registry.example.com"`
+		if registryPingInternal(w, r, challenge) {
+			return
+		}
 		switch r.URL.Path {
 		case "/v2/team/app/manifests/1.2.3":
 			authHeaders = append(authHeaders, r.Header.Get("Authorization"))
-			switch len(authHeaders) {
-			case 1:
-				w.Header().Set("WWW-Authenticate", `Bearer realm="`+tokenURL+`",service="registry.example.com"`)
-				w.WriteHeader(http.StatusUnauthorized)
-			case 2:
+			switch r.Header.Get("Authorization") {
+			case "Bearer credential-token":
 				w.WriteHeader(http.StatusForbidden)
-			case 3:
-				w.Header().Set("WWW-Authenticate", `Bearer realm="`+tokenURL+`",service="registry.example.com"`)
-				w.WriteHeader(http.StatusUnauthorized)
-			case 4:
-				w.Header().Set("Docker-Content-Digest", wantDigest)
-				w.WriteHeader(http.StatusOK)
+			case "Bearer anonymous-token":
+				writeManifestHeadInternal(w, wantDigest)
 			default:
-				if !assert.Failf(t, "unexpected failure", "unexpected manifest call %d", len(authHeaders)) {
-					return
-				}
+				w.Header().Set("WWW-Authenticate", challenge)
+				w.WriteHeader(http.StatusUnauthorized)
 			}
 		case "/token":
 			username, password, ok := r.BasicAuth()
@@ -1154,11 +1189,7 @@ func TestContainerRegistryService_InspectImageDigest_RetriesStoredCredentialsAft
 	require.NoError(t, err)
 	assert.Equal(t, wantDigest, result.Digest)
 	// Stored credentials go first; only after rejection does the lookup retry anonymously.
-	require.Len(t, authHeaders, 4)
-	assert.Equal(t, "Basic c3RvcmVkLXVzZXI6c3RvcmVkLXRva2Vu", authHeaders[0])
-	assert.Equal(t, "Bearer credential-token", authHeaders[1])
-	assert.Empty(t, authHeaders[2])
-	assert.Equal(t, "Bearer anonymous-token", authHeaders[3])
+	assert.Equal(t, []string{"Bearer credential-token", "Bearer anonymous-token"}, authHeaders)
 	assert.Equal(t, "anonymous", result.AuthMethod)
 	assert.False(t, result.UsedCredential)
 }
@@ -1215,9 +1246,13 @@ func TestContainerRegistryService_InspectImageDigest_PreservesAnonymousUnauthori
 
 	var tokenURL string
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		challenge := `Bearer realm="` + tokenURL + `",service="registry.example.com"`
+		if registryPingInternal(w, r, challenge) {
+			return
+		}
 		switch r.URL.Path {
 		case "/v2/team/app/manifests/1.2.3":
-			w.Header().Set("WWW-Authenticate", `Bearer realm="`+tokenURL+`",service="registry.example.com"`)
+			w.Header().Set("WWW-Authenticate", challenge)
 			w.WriteHeader(http.StatusUnauthorized)
 		case "/token":
 			if !assert.NoError(t, json.NewEncoder(w).Encode(map[string]string{
@@ -1249,7 +1284,7 @@ func TestContainerRegistryService_InspectImageDigest_PreservesAnonymousUnauthori
 	require.NotNil(t, result)
 	assert.Equal(t, "anonymous", result.AuthMethod)
 	assert.Contains(t, err.Error(), "anonymous access unauthorized")
-	assert.Contains(t, err.Error(), "status: 401")
+	assert.Contains(t, err.Error(), "401 Unauthorized")
 	assert.Contains(t, err.Error(), "failed to load enabled registries")
 }
 

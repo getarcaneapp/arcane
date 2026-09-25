@@ -143,6 +143,7 @@ export interface VulnerabilityWithImage extends Vulnerability {
 }
 
 export type VulnerabilityRiskBand = 'none' | 'low' | 'medium' | 'high' | 'critical';
+export type VulnerabilityScoreStatus = 'complete' | 'provisional' | 'unavailable';
 
 export interface VulnerabilityPackageInsight {
 	pkgName: string;
@@ -155,6 +156,7 @@ export interface VulnerabilityPackageInsight {
 export interface VulnerabilityScanInsights {
 	riskScore: number;
 	riskBand: VulnerabilityRiskBand;
+	scoreStatus: VulnerabilityScoreStatus;
 	highestCvss: number;
 	highestVulnerabilityId?: string;
 	fixableCount: number;
@@ -179,6 +181,7 @@ export interface VulnerabilityRiskDrivers {
 	findings: number;
 	imagesScanned: number;
 	imagesTotal: number;
+	scoredImages: number;
 }
 
 export interface VulnerabilityRiskExposureBreakdown {
@@ -191,6 +194,8 @@ export interface VulnerabilityRiskExposureBreakdown {
 export interface VulnerabilityRiskScoreDriver {
 	vulnerabilityId: string;
 	imageName: string;
+	pkgName: string;
+	fixedVersion: string;
 	exposure: VulnerabilityExposure;
 	knownExploited: boolean;
 	risk: number;
@@ -201,6 +206,7 @@ export interface VulnerabilityRiskImage {
 	imageName: string;
 	riskScore: number;
 	riskBand: VulnerabilityRiskBand;
+	scoreStatus: VulnerabilityScoreStatus;
 	exposure: VulnerabilityExposure;
 	runningContainers: number;
 	knownExploited: number;
@@ -235,6 +241,7 @@ export interface VulnerabilityThreatIntelStatus {
 export interface VulnerabilityRiskOverview {
 	riskScore: number;
 	riskBand: VulnerabilityRiskBand;
+	scoreStatus: VulnerabilityScoreStatus;
 	delta7d?: number;
 	trend: VulnerabilityRiskTrendPoint[];
 	drivers: VulnerabilityRiskDrivers;
