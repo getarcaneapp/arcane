@@ -3737,5 +3737,9 @@
   "minutes": "minuti",
   "commits_files_to": "Esegue il commit dei file {count} in",
   "create_new_project": "Crea un nuovo progetto",
-  "link_existing_project_description": "Collega un progetto esistente invece di crearne uno nuovo. I suoi file vengono sostituiti con quelli presenti nel repository; i valori del file .env locale vengono mantenuti."
+  "link_existing_project_description": "Collega un progetto esistente invece di crearne uno nuovo. I suoi file vengono sostituiti con quelli presenti nel repository; i valori del file .env locale vengono mantenuti.",
+  "containers_processes_title": "Processi",
+  "containers_processes_description": "Processi in esecuzione all'interno del container, come riportato da Docker. L'aggiornamento avviene ogni pochi secondi.",
+  "containers_processes_unavailable": "Il container non è in esecuzione. Processi non disponibili.",
+  "containers_processes_empty": "Non sono stati segnalati processi"
 }
