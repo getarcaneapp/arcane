@@ -1308,6 +1308,7 @@
   "swarm_easy_join_targets_required": "请至少选择一个远程环境。",
   "worker": "工作节点",
   "swarm_easy_join_data_path_placeholder": "数据路径地址（可选）",
+  "swarm_easy_join_manager_addresses_help": "若要使用从该集群中发现的管理员地址，请留空。您输入的任何地址都必须可从每个已选定的 Docker 主机访问，例如 100.64.0.10:2377。",
   "swarm_easy_join_results_title": "加入结果",
   "swarm_easy_join_result_joined": "已加入并通过验证",
   "swarm_easy_join_result_already_member": "已是成员且已通过验证",
