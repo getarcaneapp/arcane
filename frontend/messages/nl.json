@@ -1308,6 +1308,7 @@
   "swarm_easy_join_targets_required": "Selecteer ten minste één externe omgeving.",
   "worker": "Werknemer",
   "swarm_easy_join_data_path_placeholder": "Adres van het datapad (optioneel)",
+  "swarm_easy_join_manager_addresses_help": "Laat dit veld leeg om de manageradressen te gebruiken die uit dit cluster zijn gedetecteerd. Elk adres dat u invoert, moet bereikbaar zijn vanaf elke geselecteerde Docker-host, bijvoorbeeld 100.64.0.10:2377.",
   "swarm_easy_join_results_title": "Resultaten samenvoegen",
   "swarm_easy_join_result_joined": "Aangemeld en geverifieerd",
   "swarm_easy_join_result_already_member": "Je bent al lid en geverifieerd",
