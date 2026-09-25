@@ -3960,7 +3960,7 @@ func TestBuildDiscoveredComposeProjectUpdateRowsInternal_FallsBackToImageID(t *t
 		CheckTime:      time.Now().UTC(),
 	}).Error)
 
-	rows := buildDiscoveredComposeProjectUpdateRowsInternal(ctx, []container.Summary{
+	containers := []container.Summary{
 		{
 			ID:      "media-web",
 			Image:   "nginx:latest",
@@ -3971,10 +3971,44 @@ func TestBuildDiscoveredComposeProjectUpdateRowsInternal_FallsBackToImageID(t *t
 				"com.docker.compose.service": "web",
 			},
 		},
-	}, map[string]struct{}{}, imageService, iconcatalog.DefaultCatalog)
+		{
+			ID:      "media-web-replica",
+			Image:   "nginx:latest",
+			ImageID: "sha256:media-image",
+			State:   "running",
+			Labels: map[string]string{
+				"com.docker.compose.project": "media",
+				"com.docker.compose.service": "web",
+				labels.LabelUpdater:          "false",
+			},
+		},
+		{
+			ID:      "pinned-web",
+			Image:   "nginx:1.25.0",
+			ImageID: "sha256:media-image",
+			State:   "running",
+			Labels: map[string]string{
+				"com.docker.compose.project": "pinned",
+				"com.docker.compose.service": "web",
+				labels.LabelUpdateStrategy:   "tag",
+			},
+		},
+	}
+	rows := buildDiscoveredComposeProjectUpdateRowsInternal(ctx, containers, map[string]struct{}{}, imageService, iconcatalog.DefaultCatalog)
 
-	require.Len(t, rows, 1)
+	require.Len(t, rows, 1, "replicas count once and a tag policy never inherits the digest check")
+	assert.Equal(t, "compose:media", rows[0].ID)
 	assert.Equal(t, []string{"nginx:latest"}, rows[0].UpdateInfo.UpdatedImageRefs)
+
+	// The tracked-project path resolves the same record through the runtime image ID.
+	service := &ProjectService{imageService: imageService}
+	detail := projecttypes.Details{ID: "tracked", RuntimeServices: []projecttypes.RuntimeService{{Name: "web", ContainerID: "media-web", Image: "nginx:latest", ImageID: "sha256:media-image", ContainerLabels: containers[0].Labels}}}
+	service.enrichProjectUpdateInfoInternal(ctx, &detail)
+	require.True(t, detail.UpdateInfo.HasUpdate)
+	assert.Equal(t, []string{"nginx:latest"}, detail.UpdateInfo.UpdatedImageRefs)
+	detail.RuntimeServices[0].ImageID = ""
+	service.enrichProjectUpdateInfoInternal(ctx, &detail)
+	require.False(t, detail.UpdateInfo.HasUpdate, "a missing runtime image ID inherits nothing")
 }
 
 func TestProjectService_ListProjects_FiltersArchivedProjects(t *testing.T) {
@@ -7552,6 +7586,23 @@ func TestCountProjectsWithPendingTagUpdatesUsesRuntimeContainers(t *testing.T) {
 	count, err = service.CountProjectsWithPendingUpdates(t.Context(), containers)
 	require.NoError(t, err)
 	require.Zero(t, count)
+
+	// A digest check stored under another local tag of the running image marks
+	// the project once, however many replicas share the image.
+	require.NoError(t, db.Create(&Project{Name: "third", Path: "third", ImageRefsJSON: `["app:latest"]`}).Error)
+	require.NoError(t, db.Create(&imageupdate.ImageUpdateRecord{ID: "moving-image", Repository: "docker.io/library/app", Tag: "stable", HasUpdate: true, UpdateType: "digest"}).Error)
+	containers = append(containers,
+		container.Summary{ID: "third-one", Image: "app:latest", ImageID: "moving-image", Labels: map[string]string{"com.docker.compose.project": "third", "com.docker.compose.service": "web"}},
+		container.Summary{ID: "third-two", Image: "app:latest", ImageID: "moving-image", Labels: map[string]string{"com.docker.compose.project": "third", "com.docker.compose.service": "web", labels.LabelUpdater: "false"}},
+	)
+	count, err = service.CountProjectsWithPendingUpdates(t.Context(), containers)
+	require.NoError(t, err)
+	require.Equal(t, 1, count)
+	containers[2].Labels[imageref.UpdateCheckLabel] = "false"
+	containers[3].Labels[imageref.UpdateCheckLabel] = "false"
+	count, err = service.CountProjectsWithPendingUpdates(t.Context(), containers)
+	require.NoError(t, err)
+	require.Zero(t, count, "disabling update checks on every replica suppresses the project")
 }
 
 type serviceTagTransportInternal struct {
@@ -7801,6 +7852,14 @@ func TestConfiguredProjectAggregatesReplicaAndPreviewChecks(t *testing.T) {
 	require.Empty(t, summary.ServiceUpdates["web"].UpdateInfo.LatestVersion)
 	require.Empty(t, summary.UpdateInfoByRef["example:3.1.0"].LatestVersion)
 	require.Equal(t, "3.2.0", scoped["two"].LatestVersion, "aggregation must not modify shared checks")
+
+	// A configured check reporting no update does not hide a pending replica.
+	records[0].HasUpdate = false
+	records[0].LatestVersion = nil
+	summary = BuildConfiguredUpdateInfo("project", configs, nil, records, runtimeUpdates)
+	require.True(t, summary.HasUpdate)
+	require.True(t, summary.ServiceUpdates["web"].UpdateInfo.HasUpdate)
+	require.Equal(t, "3.2.0", scoped["two"].LatestVersion)
 }
 
 func TestPrepareProjectBindDirectoriesInternal(t *testing.T) {

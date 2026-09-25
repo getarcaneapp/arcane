@@ -48,6 +48,8 @@ type ProjectServiceInfo struct {
 	ServiceConfig    *composetypes.ServiceConfig `json:"service_config,omitempty"`
 	Labels           map[string]string           `json:"labels,omitempty"`
 	RedeployDisabled bool                        `json:"redeploy_disabled,omitempty"`
+	// ImageID is the runtime image ID; it never leaves the server.
+	ImageID string `json:"-"`
 }
 
 func getServiceCounts(services []ProjectServiceInfo) (total int, running int) {
@@ -126,6 +128,7 @@ func (s *ProjectService) GetProjectServices(ctx context.Context, projectID strin
 		slog.Error("compose ps error", "projectName", composeProject.Name, "error", err)
 		return nil, errors.WrapIf(err, "failed to get compose services status")
 	}
+	imageIDs := s.runtimeImageIDsByContainerInternal(ctx, composeProject.Name)
 	currentContainerID, currentContainerErr := cgroup.CurrentContainerID()
 
 	have := map[string]bool{}
@@ -166,6 +169,7 @@ func (s *ProjectService) GetProjectServices(ctx context.Context, projectID strin
 			ServiceConfig:    svcConfig,
 			Labels:           c.Labels,
 			RedeployDisabled: labels.ShouldDisableArcaneServerRedeploy(c.Labels, c.ID, currentContainerID, currentContainerErr),
+			ImageID:          imageIDs[c.ID],
 		})
 		have[c.Service] = true
 	}
@@ -189,6 +193,27 @@ func (s *ProjectService) GetProjectServices(ctx context.Context, projectID strin
 	}
 
 	return services, nil
+}
+
+// runtimeImageIDsByContainerInternal maps a Compose project's container IDs to
+// their runtime image IDs. Compose ps omits image IDs, so one batched container
+// list supplies them; a listing failure only leaves image-level checks unmatched.
+func (s *ProjectService) runtimeImageIDsByContainerInternal(ctx context.Context, projectName string) map[string]string {
+	imageIDs := make(map[string]string)
+	if s.dockerService == nil {
+		return imageIDs
+	}
+	containers, err := s.listGlobalComposeContainersInternal(ctx)
+	if err != nil {
+		slog.WarnContext(ctx, "failed to list containers for project image identity", "projectName", projectName, "error", err)
+		return imageIDs
+	}
+	for _, c := range containers {
+		if dockerutil.ComposeProjectLabel(c.Labels) == projectName && c.ImageID != "" {
+			imageIDs[c.ID] = c.ImageID
+		}
+	}
+	return imageIDs
 }
 
 func (s *ProjectService) GetProjectContent(ctx context.Context, projectID string) (composeContent, envContent, overrideContent string, err error) {
@@ -412,6 +437,7 @@ func buildProjectRuntimeServicesInternal(services []ProjectServiceInfo) []projec
 			IconDarkURL:      svc.IconDarkURL,
 			ServiceConfig:    svc.ServiceConfig,
 			RedeployDisabled: svc.RedeployDisabled,
+			ImageID:          svc.ImageID,
 		}
 	}
 	return runtimeServices
@@ -709,7 +735,7 @@ func (s *ProjectService) getProjectContainerUpdateInfoInternal(ctx context.Conte
 	for _, detail := range details {
 		for _, service := range detail.RuntimeServices {
 			if service.ContainerID != "" {
-				containers = append(containers, container.Summary{ID: service.ContainerID, Image: service.Image, Labels: service.ContainerLabels})
+				containers = append(containers, container.Summary{ID: service.ContainerID, Image: service.Image, ImageID: service.ImageID, Labels: service.ContainerLabels})
 			}
 		}
 	}

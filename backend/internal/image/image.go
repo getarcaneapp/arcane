@@ -663,27 +663,63 @@ func (s *ImageService) GetUpdateInfoByImageIDs(ctx context.Context, imageIDs []s
 	return result, nil
 }
 
-// GetUpdateInfoByContainers returns checks matching each container's current policy.
+// GetUpdateInfoByContainers returns the stored check matching each container's
+// current policy, keyed by container ID. Digest policies read the image-level
+// record for the container's runtime image ID, so a check recorded under another
+// local tag of the same image still applies. Tag policies read the container's
+// own record and require an exact policy key. Containers that opted out of update
+// checks are omitted; disabling automatic installation does not hide results.
 func (s *ImageService) GetUpdateInfoByContainers(ctx context.Context, containers []container.Summary) (map[string]*imagetypes.UpdateInfo, error) {
 	result := make(map[string]*imagetypes.UpdateInfo)
 	if s.db == nil || len(containers) == 0 {
 		return result, nil
 	}
-	containerIDs := make([]string, 0, len(containers))
+	digestImageIDs := make(map[string]string, len(containers))
+	tagContainerIDs := make([]string, 0, len(containers))
 	policies := make(map[string]string, len(containers))
 	for _, cnt := range containers {
-		policy, policyErr := tagpolicy.Resolve(cnt.Image, updater.DefaultLabelPolicy().TagPolicy(cnt.Labels))
-		if (policyErr == nil && policy.Strategy == "digest") || imageref.IsUpdateCheckDisabled(cnt.Labels) {
+		if cnt.ID == "" || imageref.IsUpdateCheckDisabled(cnt.Labels) {
 			continue
 		}
-		containerIDs = append(containerIDs, cnt.ID)
+		policy, policyErr := tagpolicy.Resolve(cnt.Image, updater.DefaultLabelPolicy().TagPolicy(cnt.Labels))
+		if policyErr == nil && policy.Strategy == "digest" {
+			if imageID := strings.TrimSpace(cnt.ImageID); imageID != "" {
+				digestImageIDs[cnt.ID] = imageID
+			}
+			continue
+		}
+		tagContainerIDs = append(tagContainerIDs, cnt.ID)
 		policies[cnt.ID] = imageref.UpdatePolicyKey(cnt.Image, cnt.Labels)
 	}
-	if len(containerIDs) == 0 {
+
+	if len(digestImageIDs) > 0 {
+		imageIDs := make([]string, 0, len(digestImageIDs))
+		seen := make(map[string]struct{}, len(digestImageIDs))
+		for _, imageID := range digestImageIDs {
+			if _, exists := seen[imageID]; exists {
+				continue
+			}
+			seen[imageID] = struct{}{}
+			imageIDs = append(imageIDs, imageID)
+		}
+		byImageID, err := s.GetUpdateInfoByImageIDs(ctx, imageIDs)
+		if err != nil {
+			return nil, err
+		}
+		for containerID, imageID := range digestImageIDs {
+			if info := byImageID[imageID]; info != nil {
+				// Each container gets its own copy so aggregation never mutates a shared record.
+				scoped := *info
+				result[containerID] = &scoped
+			}
+		}
+	}
+
+	if len(tagContainerIDs) == 0 {
 		return result, nil
 	}
 	var records []imageupdate.ImageUpdateRecord
-	if err := s.db.WithContext(ctx).Where("container_id IN ?", containerIDs).Find(&records).Error; err != nil {
+	if err := s.db.WithContext(ctx).Where("container_id IN ?", tagContainerIDs).Find(&records).Error; err != nil {
 		return nil, errors.WrapIf(err, "failed to fetch container update records")
 	}
 	for i := range records {

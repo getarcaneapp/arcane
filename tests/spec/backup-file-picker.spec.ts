@@ -1,4 +1,5 @@
-import { expect, test, type Locator, type Page, type Route } from '../fixtures/test.fixture';
+import { expect, test, type Page, type Route } from '../fixtures/test.fixture';
+import { setCodeMirrorValue } from '../utils/playwright.util';
 
 const VOLUME_NAME = 'backup-picker-e2e';
 const BACKUP_ID = 'backup-picker-snapshot';
@@ -283,12 +284,6 @@ async function openVolumeWorkspaceEditor(page: Page) {
 	return editor;
 }
 
-async function replaceEditorText(page: Page, editor: Locator, content: string) {
-	await editor.click({ position: { x: 10, y: 10 } });
-	await editor.press('ControlOrMeta+A');
-	await page.keyboard.insertText(content);
-}
-
 async function mockProjectWorkspacePage(
 	page: Page,
 	workspaceState: () => { content: string; revision: number }
@@ -534,7 +529,7 @@ test.describe('Backup file picker', () => {
 
 		await page.keyboard.press('Escape');
 		const editor = await openVolumeWorkspaceEditor(page);
-		await replaceEditorText(page, editor, 'local draft');
+		await setCodeMirrorValue(editor, 'local draft');
 		await expect(page.getByRole('img', { name: 'Unsaved changes' })).toHaveCount(1);
 
 		await openVolumeRestoreFilesDialog(page);
@@ -600,7 +595,7 @@ test.describe('Backup file picker', () => {
 
 		await page.keyboard.press('Escape');
 		const editor = await openVolumeWorkspaceEditor(page);
-		await replaceEditorText(page, editor, 'local draft');
+		await setCodeMirrorValue(editor, 'local draft');
 		await page.getByRole('tab', { name: 'Backups', exact: true }).click();
 		const backupRow = page.getByRole('row').filter({ hasText: BACKUP_ID }).first();
 		await backupRow.getByRole('button', { name: 'Open menu' }).click();

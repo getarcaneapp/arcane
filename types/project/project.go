@@ -166,6 +166,9 @@ type RuntimeService struct {
 	// ContainerLabels carries runtime policy inputs for server-side update aggregation.
 	ContainerLabels map[string]string `json:"-"`
 
+	// ImageID is the runtime image ID used to match image-level update checks.
+	ImageID string `json:"-"`
+
 	// Name is the service name from the compose file.
 	//
 	// Required: true

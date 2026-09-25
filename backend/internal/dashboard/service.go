@@ -3,8 +3,6 @@ package dashboard
 import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
-
 	"context"
 	"sort"
 	"strconv"
@@ -37,9 +35,7 @@ import (
 	versiontypes "github.com/getarcaneapp/arcane/types/v2/version"
 	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
 	"go.getarcane.app/sys/cgroup"
-	"go.getarcane.app/updater"
 	"go.getarcane.app/updater/labels"
-	"go.getarcane.app/updater/pkg/utils/tagpolicy"
 )
 
 const (
@@ -419,29 +415,24 @@ func filterStandaloneDockerContainersInternal(containers []dockercontainer.Summa
 	return filtered
 }
 
+// getPendingContainerUpdatesCountInternal counts standalone containers whose
+// stored check reports an update, through the same lookup the container list
+// uses. Containers sharing one image each count once.
 func (s *DashboardService) getPendingContainerUpdatesCountInternal(ctx context.Context, containers []dockercontainer.Summary) (int, error) {
-	if s.db == nil || len(containers) == 0 {
+	if s.imageService == nil || len(containers) == 0 {
 		return 0, nil
 	}
-	var imageIDs, containerIDs []string
-	for _, c := range containers {
-		if labels.IsUpdateDisabled(c.Labels) {
-			continue
-		}
-		policy, policyErr := tagpolicy.Resolve(c.Image, updater.DefaultLabelPolicy().TagPolicy(c.Labels))
-		if policyErr != nil || policy.Strategy == "tag" {
-			containerIDs = append(containerIDs, c.ID)
-		} else {
-			imageIDs = append(imageIDs, c.ImageID)
-		}
-	}
-	var count int64
-	err := s.db.WithContext(ctx).Model(&imageupdate.ImageUpdateRecord{}).
-		Where("has_update = ? AND ((container_id = ? AND id IN ?) OR container_id IN ?)", true, "", imageIDs, containerIDs).Count(&count).Error
+	updates, err := s.imageService.GetUpdateInfoByContainers(ctx, containers)
 	if err != nil {
-		return 0, errors.WrapIf(err, "failed to count pending container updates")
+		return 0, errors.WrapIf(err, "failed to resolve pending container updates")
 	}
-	return int(count), nil
+	count := 0
+	for _, info := range updates {
+		if info != nil && info.HasUpdate {
+			count++
+		}
+	}
+	return count, nil
 }
 
 func (s *DashboardService) getPendingProjectUpdatesCountInternal(ctx context.Context, allContainers []dockercontainer.Summary) (int, error) {

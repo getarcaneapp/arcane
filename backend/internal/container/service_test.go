@@ -607,9 +607,12 @@ func TestBuildSummariesUsesContainerTagPolicyUpdates(t *testing.T) {
 		{ID: "opted-out", Names: []string{"/opted-out"}, Image: "app:3.1.0", ImageID: "shared-image", Labels: map[string]string{"com.getarcaneapp.arcane.updater": "false"}},
 		{ID: "unmonitored", Image: "app:3.1.0", ImageID: "shared-image", Labels: map[string]string{"com.getarcaneapp.arcane.update-check": "false"}},
 	}
+	// The lookup keys results by container ID; containers opted out of checks have no entry.
 	updates := map[string]*imagetypes.UpdateInfo{
-		"shared-image":      {HasUpdate: true, UpdateType: "digest"},
-		"container::second": {HasUpdate: true, UpdateType: "tag", LatestVersion: "4.0.0"},
+		"first":     {HasUpdate: true, UpdateType: "digest"},
+		"second":    {HasUpdate: true, UpdateType: "tag", LatestVersion: "4.0.0"},
+		"digest":    {HasUpdate: true, UpdateType: "digest"},
+		"opted-out": {HasUpdate: true, UpdateType: "digest"},
 	}
 	items := service.BuildSummaries(t.Context(), containers, updates, "", nil)
 	require.Equal(t, "digest", items[0].UpdateStrategy, "an unlabeled container follows the digest")
@@ -623,7 +626,7 @@ func TestBuildSummariesUsesContainerTagPolicyUpdates(t *testing.T) {
 	require.True(t, items[0].AutoUpdateEnabled, "containers without opt-out are eligible")
 	require.False(t, items[4].AutoUpdateEnabled, "the updater label disables auto-update")
 	require.Equal(t, "digest", items[4].UpdateInfo.UpdateType, "disabling automatic updates keeps check results visible")
-	require.Nil(t, items[5].UpdateInfo, "the update-check label hides the shared image result")
+	require.Nil(t, items[5].UpdateInfo, "a container without a lookup result reports no status")
 	require.True(t, items[5].AutoUpdateEnabled, "the update-check label does not affect installation eligibility")
 	encoded, err := json.Marshal(items[4])
 	require.NoError(t, err)

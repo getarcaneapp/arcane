@@ -53,8 +53,7 @@
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { EditIcon, ImagesIcon, PauseIcon, PlayIcon, ProjectsIcon, UpdateIcon, ZapIcon } from '#lib/icons/index.js';
 	import { runContainerLifecycleAction, confirmAndUpdateContainer } from '#lib/utils/container-actions.js';
-	import { imageService } from '#lib/services/image-service.js';
-	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
+	import { useQueryClient } from '@tanstack/svelte-query';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
 	import { createContainerUpdateActivityTracker } from '#lib/utils/container-update-activities.js';
@@ -62,7 +61,6 @@
 	import { containerService } from '#lib/services/container-service.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { toast } from 'svelte-sonner';
-	import userStore from '#lib/stores/user-store.svelte.js';
 	import { isAutoUpdateLabelDisabled } from '#lib/utils/container-auto-update.js';
 	import KillContainerDialog from '../components/kill-container-dialog.svelte';
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';
@@ -176,23 +174,9 @@
 	let lifecycleStatus = $state<'pausing' | 'unpausing' | ''>('');
 	const isLifecycleActionPending = $derived(lifecycleStatus !== '');
 
-	const imageUpdateQuery = createQuery(() => {
-		const environmentId = environmentStore.selected?.id;
-		const image = container?.image;
-		userStore.current;
-		return {
-			queryKey: queryKeys.images.updateInfoByRef(environmentId ?? '', image ?? ''),
-			queryFn: async () => {
-				await environmentStore.ready;
-				return imageService.getUpdateInfoByRefs([image!]);
-			},
-			enabled: !!environmentId && !!image && hasPermission('containers:autoupdate', environmentId)
-		};
-	});
-	const updateInfo = $derived.by(() => {
-		if (container?.image) return imageUpdateQuery.data?.[container.image] ?? null;
-		return null;
-	});
+	// The details response carries the stored check for this container's current
+	// policy; an older agent that omits it reports no status rather than "up to date".
+	const updateInfo = $derived(canUpdateContainer ? (container?.updateInfo ?? null) : null);
 	let updateLoading = $state(false);
 	let updateViewMounted = false;
 	const updateActivities = createContainerUpdateActivityTracker(
@@ -230,7 +214,6 @@
 		}
 		await Promise.all([
 			queryClient.invalidateQueries({ queryKey: ['containers', environmentId] }),
-			queryClient.invalidateQueries({ queryKey: queryKeys.images.updateInfoByRef(environmentId, container.image) }),
 			queryClient.invalidateQueries({ queryKey: queryKeys.containers.detail(environmentId, containerId) })
 		]);
 		if (updateViewMounted && environmentId === currentEnvId && containerId === container.id) await refreshAll();

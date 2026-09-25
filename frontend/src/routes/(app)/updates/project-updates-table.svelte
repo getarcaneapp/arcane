@@ -38,7 +38,7 @@
 		onRefreshData: (options: SearchPaginationSortRequest) => Promise<void>;
 	}
 
-	let { projects = $bindable(), requestOptions = $bindable(), onRefreshData }: Props = $props();
+	let { projects, requestOptions = $bindable(), onRefreshData }: Props = $props();
 
 	let selectedIds = $state<string[]>([]);
 	let mobileFieldVisibility = $state<MobileFieldVisibility>({});
@@ -236,10 +236,7 @@
 	onRefresh={async (options) => {
 		requestOptions = options;
 		await onRefreshData(options);
-		return {
-			...projects,
-			data: (projects.data ?? []).map(mapProjectRow)
-		};
+		return tableItems;
 	}}
 	{columns}
 	{mobileFields}

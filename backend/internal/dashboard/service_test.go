@@ -28,6 +28,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/volume"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/imageref"
 	dashboardtypes "github.com/getarcaneapp/arcane/types/v2/dashboard"
 	usertypes "github.com/getarcaneapp/arcane/types/v2/user"
 	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
@@ -163,6 +164,14 @@ func TestDashboardService_GetSnapshot_ReturnsDashboardSnapshot(t *testing.T) {
 		Tag:        "latest",
 		HasUpdate:  true,
 	})
+	// Recorded under another local tag of the running container's image.
+	createDashboardTestImageUpdateRecord(t, db, imageupdate.ImageUpdateRecord{
+		ID:         "sha256:image-a",
+		Repository: "docker.io/repo/app",
+		Tag:        "edge",
+		HasUpdate:  true,
+		UpdateType: "digest",
+	})
 
 	createDashboardTestAPIKey(t, db, apikey.ApiKey{
 		Name:      "expiring-soon",
@@ -192,8 +201,9 @@ func TestDashboardService_GetSnapshot_ReturnsDashboardSnapshot(t *testing.T) {
 		Path:    projectPath,
 		Status:  project.ProjectStatusStopped,
 	}).Error)
-	projectSvc := project.NewProjectService(db, settingsSvc, nil, image.NewImageService(db, nil, nil, nil, nil, nil), nil, nil, nil, nil, config.Load())
-	svc := NewDashboardService(db, dockerSvc, nil, projectSvc, nil, settingsSvc, nil, nil, nil, volume.NewVolumeService(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil))
+	imageSvc := image.NewImageService(db, nil, nil, nil, nil, nil)
+	projectSvc := project.NewProjectService(db, settingsSvc, nil, imageSvc, nil, nil, nil, nil, config.Load())
+	svc := NewDashboardService(db, dockerSvc, nil, projectSvc, imageSvc, settingsSvc, nil, nil, nil, volume.NewVolumeService(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil))
 
 	snapshot, err := svc.GetSnapshot(context.Background(), DashboardActionItemsOptions{}, true)
 	require.NoError(t, err)
@@ -221,9 +231,9 @@ func TestDashboardService_GetSnapshot_ReturnsDashboardSnapshot(t *testing.T) {
 
 	require.ElementsMatch(t, []dashboardtypes.ActionItem{
 		{Kind: dashboardtypes.ActionItemKindStoppedContainers, Count: 1, Severity: dashboardtypes.ActionItemSeverityWarning},
-		{Kind: dashboardtypes.ActionItemKindImageUpdates, Count: 2, Severity: dashboardtypes.ActionItemSeverityWarning},
+		{Kind: dashboardtypes.ActionItemKindImageUpdates, Count: 3, Severity: dashboardtypes.ActionItemSeverityWarning},
 		{Kind: dashboardtypes.ActionItemKindExpiringKeys, Count: 1, Severity: dashboardtypes.ActionItemSeverityWarning},
-	}, snapshot.ActionItems.Items)
+	}, snapshot.ActionItems.Items, "the excluded stopped container, the moving-tag container, and the project each count once")
 }
 
 func TestDashboardService_GetSnapshot_DebugAllGoodOnlyClearsActionItems(t *testing.T) {
@@ -437,13 +447,15 @@ func TestDashboardService_GetSnapshot_CachesFullSnapshotsPerIconCatalog(t *testi
 
 func TestPendingContainerCountUsesScopedTagRecords(t *testing.T) {
 	db, _ := setupDashboardServiceTestDB(t)
+	tagLabels := map[string]string{labels.LabelUpdateStrategy: "auto"}
 	records := []imageupdate.ImageUpdateRecord{
-		{ID: "shared", HasUpdate: true},
-		{ID: "container::first", ContainerID: "first", ImageID: "shared", HasUpdate: true},
-		{ID: "container::other-project", ContainerID: "other-project", ImageID: "shared", HasUpdate: true},
+		// A digest record recorded under another local tag of the shared image.
+		{ID: "shared", Repository: "docker.io/library/app", Tag: "stable", HasUpdate: true, UpdateType: "digest"},
+		{ID: "container::first", PolicyKey: imageref.UpdatePolicyKey("app:1.2.3", tagLabels), ContainerID: "first", ImageID: "shared", HasUpdate: true, UpdateType: "tag"},
+		{ID: "container::other-project", PolicyKey: imageref.UpdatePolicyKey("app:1.2.3", tagLabels), ContainerID: "other-project", ImageID: "shared", HasUpdate: true, UpdateType: "tag"},
 	}
 	require.NoError(t, db.Create(&records).Error)
-	service := &DashboardService{db: db}
+	service := &DashboardService{db: db, imageService: image.NewImageService(db, nil, nil, nil, nil, nil)}
 	containers := []dockercontainer.Summary{
 		{ID: "first", Image: "app:1.2.3", ImageID: "shared", Labels: map[string]string{labels.LabelUpdateStrategy: "auto"}},
 		{ID: "unchecked", Image: "app:1.2.3", ImageID: "shared", Labels: map[string]string{labels.LabelUpdateStrategy: "auto"}},
@@ -454,9 +466,21 @@ func TestPendingContainerCountUsesScopedTagRecords(t *testing.T) {
 	containers = append(containers, dockercontainer.Summary{ID: "digest", Image: "app:latest", ImageID: "shared"})
 	count, err = service.getPendingContainerUpdatesCountInternal(t.Context(), containers)
 	require.NoError(t, err)
-	require.Equal(t, 2, count)
+	require.Equal(t, 2, count, "a digest record under another tag of the running image counts")
+	containers = append(containers, dockercontainer.Summary{ID: "digest-twin", Image: "app:latest", ImageID: "shared"})
+	count, err = service.getPendingContainerUpdatesCountInternal(t.Context(), containers)
+	require.NoError(t, err)
+	require.Equal(t, 3, count, "separate containers sharing one image each count once")
 	containers[0].Labels[labels.LabelUpdater] = "off"
 	count, err = service.getPendingContainerUpdatesCountInternal(t.Context(), containers)
 	require.NoError(t, err)
-	require.Equal(t, 1, count)
+	require.Equal(t, 3, count, "disabling automatic installation keeps the pending update visible")
+	containers[0].Labels[imageref.UpdateCheckLabel] = "false"
+	count, err = service.getPendingContainerUpdatesCountInternal(t.Context(), containers)
+	require.NoError(t, err)
+	require.Equal(t, 2, count, "disabling update checks suppresses the result")
+	containers[2].ImageID = ""
+	count, err = service.getPendingContainerUpdatesCountInternal(t.Context(), containers)
+	require.NoError(t, err)
+	require.Equal(t, 1, count, "a missing runtime image ID inherits no digest check")
 }

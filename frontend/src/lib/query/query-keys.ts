@@ -121,7 +121,6 @@ export const queryKeys = {
 		usageCounts: (environmentId: string) => ['images', 'usage-counts', environmentId] as const,
 		history: (environmentId: string, imageId: string) => ['image', environmentId, imageId, 'history'] as const,
 		detail: (environmentId: string, imageId: string) => ['image', environmentId, imageId] as const,
-		updateInfoByRef: (environmentId: string, imageRef: string) => ['image-update-info', environmentId, imageRef] as const,
 		updateCheck: (environmentId: string, imageId: string) => ['image-update', environmentId, imageId] as const,
 		builds: (environmentId: string) => ['images', environmentId, 'builds'] as const,
 		buildsList: (environmentId: string, options: SearchPaginationSortRequest) =>

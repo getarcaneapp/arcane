@@ -1,5 +1,5 @@
-import { waitForDialogReady } from '../utils/playwright.util';
-import { expect, test, type Locator, type Page } from '../fixtures/test.fixture';
+import { setCodeMirrorValue, waitForDialogReady } from '../utils/playwright.util';
+import { expect, test, type Page } from '../fixtures/test.fixture';
 import { removeApiResource, readApiData } from '../utils/fetch.util';
 import { openRowActionsMenu } from '../utils/table-actions.util';
 
@@ -33,14 +33,6 @@ type ContainerDetails = {
 	id: string;
 	config: { env?: string[] };
 };
-
-async function setCodeMirrorValue(page: Page, editor: Locator, text: string) {
-	const content = editor.locator('.cm-content').first();
-	await expect(content).toBeVisible();
-	await content.click({ position: { x: 10, y: 10 } });
-	await content.press('ControlOrMeta+A');
-	await page.keyboard.insertText(text);
-}
 
 async function listVariables(page: Page): Promise<GlobalVariable[]> {
 	return readApiData<GlobalVariable[]>(
@@ -220,12 +212,12 @@ test('manages variables and deploys an edited template with real substitution', 
 		const editors = page.locator('.cm-editor').filter({ visible: true });
 		const composeEditor = editors.first();
 		const envEditor = editors.nth(1);
-		await setCodeMirrorValue(page, composeEditor, 'services:\n  broken: [\n');
-		await setCodeMirrorValue(page, envEditor, 'NOT VALID ENV');
+		await setCodeMirrorValue(composeEditor, 'services:\n  broken: [\n');
+		await setCodeMirrorValue(envEditor, 'NOT VALID ENV');
 		await expect(page.getByRole('button', { name: 'Create Template', exact: true })).toBeDisabled();
 
-		await setCodeMirrorValue(page, composeEditor, composeContent);
-		await setCodeMirrorValue(page, envEditor, 'TEMPLATE_LOCAL=value\n');
+		await setCodeMirrorValue(composeEditor, composeContent);
+		await setCodeMirrorValue(envEditor, 'TEMPLATE_LOCAL=value\n');
 		const createTemplateButton = page.getByRole('button', { name: 'Create Template', exact: true });
 		await expect(createTemplateButton).toBeEnabled({ timeout: 20_000 });
 		const templateCreateResponsePromise = page.waitForResponse(

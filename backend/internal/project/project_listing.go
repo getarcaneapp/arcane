@@ -121,6 +121,7 @@ func projectServiceInfoFromContainerInternal(ctx context.Context, c container.Su
 		IconDarkURL:      resolvedIcon.IconDarkURL,
 		Labels:           c.Labels,
 		RedeployDisabled: labels.ShouldDisableArcaneServerRedeploy(c.Labels, c.ID, currentContainerID, currentContainerErr),
+		ImageID:          c.ImageID,
 	}
 }
 
@@ -549,7 +550,6 @@ func buildDiscoveredComposeProjectUpdateRowsInternal(
 		return nil
 	}
 
-	updateInfoByRef := getRuntimeContainerUpdateInfoByRefInternal(ctx, composeContainers, imageService)
 	scoped := getRuntimeContainerUpdateInfoByContainerIDInternal(ctx, composeContainers, imageService)
 	rows := make([]project.Details, 0, len(containersByProject))
 	for projectName, projectContainers := range containersByProject {
@@ -557,9 +557,9 @@ func buildDiscoveredComposeProjectUpdateRowsInternal(
 		imageRefs := projects.ImageRefsFromRuntimeServices(runtimeServices)
 		checkServices := make([]project.RuntimeService, 0, len(projectContainers))
 		for _, c := range projectContainers {
-			checkServices = append(checkServices, project.RuntimeService{Name: dockerutil.ComposeServiceLabel(c.Labels), ContainerID: c.ID, Image: c.Image, ContainerLabels: c.Labels})
+			checkServices = append(checkServices, project.RuntimeService{Name: dockerutil.ComposeServiceLabel(c.Labels), ContainerID: c.ID, Image: c.Image, ImageID: c.ImageID, ContainerLabels: c.Labels})
 		}
-		updateInfo := BuildUpdateInfoSummary(imageRefs, mergeProjectContainerUpdateInfoInternal(updateInfoByRef, checkServices, scoped))
+		updateInfo := BuildUpdateInfoSummary(imageRefs, mergeProjectContainerUpdateInfoInternal(nil, checkServices, scoped))
 		if updateInfo == nil || !updateInfo.HasUpdate {
 			continue
 		}
@@ -606,74 +606,6 @@ func getRuntimeContainerUpdateInfoByContainerIDInternal(ctx context.Context, con
 	return scoped
 }
 
-func getRuntimeContainerUpdateInfoByRefInternal(
-	ctx context.Context,
-	composeContainers []container.Summary,
-	imageService *image.ImageService,
-) map[string]*imagetypes.UpdateInfo {
-	if imageService == nil || len(composeContainers) == 0 {
-		return nil
-	}
-
-	imageRefs := make([]string, 0, len(composeContainers))
-	imageIDsByRef := make(map[string][]string, len(composeContainers))
-	seenRefs := make(map[string]struct{}, len(composeContainers))
-	for _, c := range composeContainers {
-		imageRef := strings.TrimSpace(c.Image)
-		if imageRef == "" {
-			continue
-		}
-		if _, exists := seenRefs[imageRef]; !exists {
-			seenRefs[imageRef] = struct{}{}
-			imageRefs = append(imageRefs, imageRef)
-		}
-		if imageID := strings.TrimSpace(c.ImageID); imageID != "" {
-			imageIDsByRef[imageRef] = append(imageIDsByRef[imageRef], imageID)
-		}
-	}
-
-	updateInfoByRef := make(map[string]*imagetypes.UpdateInfo, len(imageRefs))
-	if len(imageRefs) > 0 {
-		if refResults, err := imageService.GetUpdateInfoByImageRefs(ctx, imageRefs); err == nil {
-			maps.Copy(updateInfoByRef, refResults)
-		} else {
-			slog.WarnContext(ctx, "failed to fetch compose project update info by image ref", "error", err)
-		}
-	}
-
-	missingImageIDs := make([]string, 0)
-	for _, imageRef := range imageRefs {
-		if updateInfoByRef[imageRef] != nil {
-			continue
-		}
-		missingImageIDs = append(missingImageIDs, imageIDsByRef[imageRef]...)
-	}
-
-	if len(missingImageIDs) == 0 {
-		return updateInfoByRef
-	}
-
-	updateInfoByID, err := imageService.GetUpdateInfoByImageIDs(ctx, missingImageIDs)
-	if err != nil {
-		slog.WarnContext(ctx, "failed to fetch compose project update info by image id", "error", err)
-		return updateInfoByRef
-	}
-
-	for imageRef, imageIDs := range imageIDsByRef {
-		if updateInfoByRef[imageRef] != nil {
-			continue
-		}
-		for _, imageID := range imageIDs {
-			if info := updateInfoByID[imageID]; info != nil {
-				updateInfoByRef[imageRef] = info
-				break
-			}
-		}
-	}
-
-	return updateInfoByRef
-}
-
 func buildDiscoveredRuntimeServicesInternal(containers []container.Summary, iconCatalog string) []project.RuntimeService {
 	runtimeServices := make([]project.RuntimeService, 0, len(containers))
 	seenServices := make(map[string]struct{}, len(containers))
@@ -701,6 +633,7 @@ func buildDiscoveredRuntimeServicesInternal(containers []container.Summary, icon
 			Image:           imageRef,
 			Status:          string(c.State),
 			ContainerID:     c.ID,
+			ImageID:         c.ImageID,
 			ContainerLabels: c.Labels,
 			ContainerName:   containerName,
 			Ports:           projects.FormatDockerPorts(c.Ports),
@@ -901,7 +834,7 @@ func (s *ProjectService) CountProjectsWithPendingUpdates(ctx context.Context, al
 	for i, proj := range activeProjects {
 		details[i].ID = proj.ID
 		for _, c := range lookupProjectContainersInternal(proj, containersByProject) {
-			details[i].RuntimeServices = append(details[i].RuntimeServices, project.RuntimeService{Name: dockerutil.ComposeServiceLabel(c.Labels), ContainerID: c.ID, Image: c.Image, ContainerLabels: c.Labels})
+			details[i].RuntimeServices = append(details[i].RuntimeServices, project.RuntimeService{Name: dockerutil.ComposeServiceLabel(c.Labels), ContainerID: c.ID, Image: c.Image, ImageID: c.ImageID, ContainerLabels: c.Labels})
 		}
 	}
 	s.enrichProjectsWithUpdateInfoInternal(ctx, activeProjects, details, false, nil)

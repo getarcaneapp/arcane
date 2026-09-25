@@ -11,6 +11,7 @@ import {
 import { TEST_COMPOSE_YAML } from '../setup/project.data';
 import { removeApiResource, readApiData } from '../utils/fetch.util';
 import { openRowActionsMenu } from '../utils/table-actions.util';
+import { setCodeMirrorValue } from '../utils/playwright.util';
 
 type TestRole = {
 	id: string;
@@ -785,11 +786,7 @@ test('administers scoped identities and enforces their browser access immediatel
 				.locator('.cm-editor')
 				.filter({ visible: true })
 				.first();
-			const composeContent = composeEditor.locator('.cm-content').first();
-			await expect(composeContent).toBeVisible();
-			await composeContent.click({ position: { x: 10, y: 10 } });
-			await composeContent.press('ControlOrMeta+A');
-			await environmentAdminPage.keyboard.insertText(TEST_COMPOSE_YAML);
+			await setCodeMirrorValue(composeEditor, TEST_COMPOSE_YAML);
 			await expect(environmentAdminPage.locator('button[data-action="create"]')).toBeVisible();
 			environmentAdminPage.off('request', recordOptionalRequest);
 			expect(optionalRequests).toEqual([]);

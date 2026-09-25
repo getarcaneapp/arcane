@@ -56,11 +56,12 @@
 	interface Props {
 		containers: ContainersPaginatedResponse;
 		requestOptions: SearchPaginationSortRequest;
-		onRefreshData: (options: ContainerListRequestOptions) => Promise<ContainersPaginatedResponse>;
+		// Refreshed rows arrive through the `containers` prop once the parent's query updates.
+		onRefreshData: (options: ContainerListRequestOptions) => Promise<void>;
 		onAutoUpdateChanged?: () => Promise<unknown> | unknown;
 	}
 
-	let { containers = $bindable(), requestOptions = $bindable(), onRefreshData, onAutoUpdateChanged }: Props = $props();
+	let { containers, requestOptions = $bindable(), onRefreshData, onAutoUpdateChanged }: Props = $props();
 
 	let selectedIds = $state<string[]>([]);
 	let mobileFieldVisibility = $state<MobileFieldVisibility>({});
@@ -135,9 +136,7 @@
 	];
 
 	async function refreshRows() {
-		const requestedEnvId = currentEnvironmentId;
-		const next = await onRefreshData(requestOptions as ContainerListRequestOptions);
-		if (updateTableMounted && requestedEnvId === currentEnvironmentId) containers = next;
+		await onRefreshData(requestOptions as ContainerListRequestOptions);
 	}
 
 	async function handleUpdateContainer(container: ContainerSummaryDto) {
@@ -333,12 +332,8 @@
 	bind:mobileFieldVisibility
 	onRefresh={async (options) => {
 		requestOptions = options;
-		const next = await onRefreshData(options as ContainerListRequestOptions);
-		containers = next;
-		return {
-			...next,
-			data: (next.data ?? []).map(mapContainerRow)
-		};
+		await onRefreshData(options as ContainerListRequestOptions);
+		return tableItems;
 	}}
 	{columns}
 	{mobileFields}

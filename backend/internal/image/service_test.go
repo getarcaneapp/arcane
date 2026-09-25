@@ -712,4 +712,23 @@ func TestImageServiceContainerTagUpdatesStayScoped(t *testing.T) {
 	checks, err := svc.GetUpdateInfoByContainers(t.Context(), []container.Summary{{ID: "first", Image: "example:3.1.0", Labels: installExcluded}})
 	require.NoError(t, err)
 	require.Equal(t, firstTarget, checks["first"].LatestVersion)
+
+	// A digest check recorded under another local tag of the running image
+	// applies to every digest-policy container using that image ID.
+	require.NoError(t, db.Create(&imageupdate.ImageUpdateRecord{ID: "moving-image", Repository: "docker.io/library/app", Tag: "stable", CurrentVersion: "stable", HasUpdate: true, UpdateType: "digest", CheckTime: now}).Error)
+	digestContainers := []container.Summary{
+		{ID: "moving", Image: "app:latest", ImageID: "moving-image"},
+		{ID: "moving-twin", Image: "app:latest", ImageID: "moving-image", Labels: map[string]string{"com.getarcaneapp.arcane.updater": "false"}},
+		{ID: "moving-unmonitored", Image: "app:latest", ImageID: "moving-image", Labels: map[string]string{imageref.UpdateCheckLabel: "false"}},
+		{ID: "moving-tag", Image: "app:latest", ImageID: "moving-image", Labels: map[string]string{"com.getarcaneapp.arcane.updater.strategy": "tag"}},
+		{ID: "moving-no-id", Image: "app:latest"},
+	}
+	checks, err = svc.GetUpdateInfoByContainers(t.Context(), digestContainers)
+	require.NoError(t, err)
+	require.True(t, checks["moving"].HasUpdate)
+	require.True(t, checks["moving-twin"].HasUpdate, "disabling automatic installation keeps the check visible")
+	require.NotContains(t, checks, "moving-unmonitored", "disabling update checks suppresses the result")
+	require.NotContains(t, checks, "moving-tag", "a tag policy never falls back to the shared digest check")
+	require.NotContains(t, checks, "moving-no-id", "a missing runtime image ID matches nothing")
+	require.NotSame(t, checks["moving"], checks["moving-twin"], "each container receives its own copy")
 }

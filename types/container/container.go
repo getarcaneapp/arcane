@@ -1065,6 +1065,11 @@ type Details struct {
 	// Required: true
 	AutoUpdateEnabled bool `json:"autoUpdateEnabled"`
 
+	// UpdateInfo is the stored update check matching this container's current policy.
+	//
+	// Required: false
+	UpdateInfo *imagetypes.UpdateInfo `json:"updateInfo,omitempty"`
+
 	// ActivityID is the background activity that tracked the action returning these details.
 	//
 	// Required: false

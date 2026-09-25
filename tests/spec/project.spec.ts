@@ -1,4 +1,4 @@
-import { test, expect, type Locator, type Page, type Response } from '../fixtures/test.fixture';
+import { test, expect, type Page, type Response } from '../fixtures/test.fixture';
 import {
 	readApiData,
 	removeApiResource,
@@ -9,6 +9,7 @@ import type { Activity } from '../types/activity.type';
 import { Project, ProjectStatusCounts } from 'types/project.type';
 import { TEST_COMPOSE_YAML, TEST_ENV_FILE } from '../setup/project.data';
 import { openRowActionsMenu } from '../utils/table-actions.util';
+import { getCodeMirrorValue, setCodeMirrorValue } from '../utils/playwright.util';
 
 const ROUTES = {
 	page: '/projects',
@@ -26,27 +27,6 @@ const DEPLOY_STREAM_SUCCESS =
 async function navigateToProjects(page: Page) {
 	await page.goto(ROUTES.page);
 	await page.waitForLoadState('load');
-}
-
-async function setCodeMirrorValue(page: Page, editor: Locator, text: string) {
-	const content = editor.locator('.cm-content').first();
-	await expect(content).toBeVisible();
-	await content.click({ position: { x: 10, y: 10 } });
-	await content.press('ControlOrMeta+A');
-	await page.keyboard.insertText(text);
-}
-
-async function getCodeMirrorValue(editor: Locator) {
-	const content = editor.locator('.cm-content').first();
-	await expect(content).toBeVisible();
-	return content.evaluate((node) => {
-		const lineNodes = Array.from(node.querySelectorAll('.cm-line'));
-		if (lineNodes.length > 0) {
-			return lineNodes.map((line) => line.textContent ?? '').join('\n');
-		}
-
-		return (node as { textContent?: string | null }).textContent ?? '';
-	});
 }
 
 async function clickProjectsPageUpdateAction(page: Page) {
@@ -166,8 +146,8 @@ async function createProjectViaUI(
 	await expect(composeEditor).toBeVisible();
 	await expect(envEditor).toBeVisible();
 
-	await setCodeMirrorValue(page, composeEditor, composeContent);
-	await setCodeMirrorValue(page, envEditor, envFile);
+	await setCodeMirrorValue(composeEditor, composeContent);
+	await setCodeMirrorValue(envEditor, envFile);
 	await expect
 		.poll(async () => (await getCodeMirrorValue(composeEditor)).trimEnd(), {
 			message: 'Expected compose editor to contain the exact test compose fixture before creation'
@@ -513,9 +493,9 @@ test.describe('New Compose Project Page', () => {
 		const composeEditor = page.locator('.cm-editor').filter({ visible: true }).first();
 		const composeContent = composeEditor.locator('.cm-content').first();
 
-		await expect(composeContent).toBeVisible();
+		await setCodeMirrorValue(composeEditor, '');
 		await composeContent.click({ position: { x: 10, y: 10 } });
-		await composeContent.press('ControlOrMeta+A');
+		await expect(composeContent).toBeFocused();
 		await page.keyboard.type('services:', { delay: 0 });
 		await page.keyboard.press('Enter');
 		await page.keyboard.type('web:', { delay: 0 });
@@ -574,10 +554,10 @@ test.describe('New Compose Project Page', () => {
 		const composeEditor = page.locator('.cm-editor').filter({ visible: true }).first();
 		await expect(composeEditor).toBeVisible();
 
-		await setCodeMirrorValue(page, composeEditor, 'services:\n\tredis:\n\t\timage: redis:latest\n');
+		await setCodeMirrorValue(composeEditor, 'services:\n\tredis:\n\t\timage: redis:latest\n');
 		await expect(page.locator('button[data-action="create"]')).toHaveCount(0);
 
-		await setCodeMirrorValue(page, composeEditor, TEST_COMPOSE_YAML);
+		await setCodeMirrorValue(composeEditor, TEST_COMPOSE_YAML);
 		const createButton = page.locator('button[data-action="create"]');
 		await expect(createButton).toBeVisible();
 		await expect(createButton).toBeEnabled();
@@ -596,11 +576,11 @@ test.describe('New Compose Project Page', () => {
 		await expect(composeEditor).toBeVisible();
 		await expect(envEditor).toBeVisible();
 
-		await setCodeMirrorValue(page, composeEditor, TEST_COMPOSE_YAML);
-		await setCodeMirrorValue(page, envEditor, 'NOT VALID LINE');
+		await setCodeMirrorValue(composeEditor, TEST_COMPOSE_YAML);
+		await setCodeMirrorValue(envEditor, 'NOT VALID LINE');
 		await expect(page.locator('button[data-action="create"]')).toHaveCount(0);
 
-		await setCodeMirrorValue(page, envEditor, TEST_ENV_FILE);
+		await setCodeMirrorValue(envEditor, TEST_ENV_FILE);
 		const createButton = page.locator('button[data-action="create"]');
 		await expect(createButton).toBeVisible();
 		await expect(createButton).toBeEnabled();
@@ -622,7 +602,7 @@ test.describe('New Compose Project Page', () => {
 
 			const composeEditor = page.locator('.cm-editor').filter({ visible: true }).first();
 			await expect(composeEditor).toBeVisible();
-			await setCodeMirrorValue(page, composeEditor, TEST_COMPOSE_YAML);
+			await setCodeMirrorValue(composeEditor, TEST_COMPOSE_YAML);
 			await expect(composeEditor).toContainText('nginx');
 			await expect
 				.poll(async () => (await getCodeMirrorValue(composeEditor)).trimEnd(), {
@@ -633,7 +613,7 @@ test.describe('New Compose Project Page', () => {
 
 			const envEditor = page.locator('.cm-editor').filter({ visible: true }).nth(1);
 			await expect(envEditor).toBeVisible();
-			await setCodeMirrorValue(page, envEditor, envFile);
+			await setCodeMirrorValue(envEditor, envFile);
 			await expect(envEditor).toContainText('nginx');
 
 			await page.route('/api/environments/*/projects', async (route) => {
@@ -1142,7 +1122,7 @@ test.describe('GitOps Managed Project', () => {
 		const updatedEnv = `${originalEnv.trimEnd()}\n${marker}=1\n`;
 
 		await expect(envContent).not.toHaveAttribute('aria-readonly', 'true');
-		await setCodeMirrorValue(page, envEditor, updatedEnv);
+		await setCodeMirrorValue(envEditor, updatedEnv);
 		await expect(envEditor).toContainText(marker);
 		await expect(page.getByRole('button', { name: 'Save', exact: true }).first()).toBeEnabled();
 
@@ -1522,7 +1502,7 @@ test.describe('Project Detail Page', () => {
 		const marker = `ARCANE_TREE_SAVE_${Date.now()}`;
 		const originalCompose = await getCodeMirrorValue(treeComposeEditor);
 		const updatedCompose = `${originalCompose.trimEnd()}\n# ${marker}\n`;
-		await setCodeMirrorValue(page, treeComposeEditor, updatedCompose);
+		await setCodeMirrorValue(treeComposeEditor, updatedCompose);
 
 		const saveButton = page.getByRole('button', { name: 'Save', exact: true }).first();
 		await expect(saveButton).toBeVisible();
