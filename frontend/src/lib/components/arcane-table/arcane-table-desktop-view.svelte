@@ -105,6 +105,15 @@
 	const shouldVirtualize = $derived(
 		!isGrouped && !hasExpand && !wrapText && !!scrollElement && flatRows.length > VIRTUALIZE_THRESHOLD
 	);
+	// Natural column widths (% of the table) measured from an auto-layout pass, then locked for table-fixed.
+	let lockedColumns = $state<{ key: string; widths: number[] } | null>(null);
+	const columnKey = $derived(
+		table
+			.getVisibleLeafColumns()
+			.map((column) => column.id)
+			.join('|')
+	);
+	const columnWidths = $derived(shouldVirtualize && lockedColumns?.key === columnKey ? lockedColumns.widths : null);
 	const getItemKey = $derived.by(() => {
 		const rows = flatRows;
 		return (index: number) => rows[index]?.id ?? index;
@@ -144,11 +153,24 @@
 				remeasure();
 			}
 		};
+		const measureColumns = () => {
+			if (columnWidths || !body.querySelector('tr[data-index]')) return;
+			const cells = tableNode.tHead?.rows[0]?.cells;
+			const tableWidth = tableNode.getBoundingClientRect().width;
+			if (!cells || !tableWidth) return;
+			lockedColumns = {
+				key: columnKey,
+				widths: Array.from(cells, (cell) => (cell.getBoundingClientRect().width / tableWidth) * 100)
+			};
+		};
 		const fontsChanged = () => {
 			remeasure();
 			updateLayout();
 		};
-		const observer = new ResizeObserver(updateLayout);
+		const observer = new ResizeObserver(() => {
+			measureColumns();
+			updateLayout();
+		});
 		observer.observe(tableNode);
 		if (tableNode.tHead) observer.observe(tableNode.tHead);
 		document.fonts.addEventListener('loadingdone', fontsChanged);
@@ -228,23 +250,25 @@
 		{#each row.getVisibleCells() as cell, cellIndex (cell.id)}
 			{@const isFirstDataCell = !selectionDisabled ? cellIndex === 1 : cellIndex === 0}
 			{@const meta = cell.column.columnDef.meta}
+			{@const clip =
+				!wrapText && (meta?.truncate || (!!columnWidths && cell.column.id !== 'select' && cell.column.id !== 'actions'))}
 			<Table.Cell
 				pinned={cell.column.id === 'actions'}
 				variant={cell.column.id === 'select' ? 'checkbox' : 'default'}
 				indent={isGroupedRow && isFirstDataCell && cell.column.id !== 'select'}
 				style={typeof meta?.width === 'number' ? `--col-width: ${meta.width}px` : undefined}
 				class={cn(
-					cell.column.id === 'actions' && (shouldVirtualize ? 'w-24' : 'w-0'),
+					cell.column.id === 'actions' && 'w-0',
 					meta?.width === 'min' && 'w-0',
 					meta?.width === 'max' && 'w-full',
 					meta?.align === 'center' && 'text-center',
 					meta?.align === 'right' && 'text-right',
-					meta?.truncate && !wrapText && 'max-w-0',
+					clip && 'max-w-0',
 					wrapText && cell.column.id !== 'select' && cell.column.id !== 'actions' && 'break-words whitespace-normal',
 					typeof meta?.width === 'number' && 'w-(--col-width)'
 				)}
 			>
-				{#if meta?.truncate && !wrapText}
+				{#if clip}
 					<span class="block min-w-0 truncate">{@render cellContent(cell)}</span>
 				{:else}
 					{@render cellContent(cell)}
@@ -293,18 +317,20 @@
 				{#if hasExpand}
 					<Table.Head variant="expander"></Table.Head>
 				{/if}
-				{#each headerGroup.headers as header (header.id)}
+				{#each headerGroup.headers as header, i (header.id)}
 					{@const meta = header.column.columnDef.meta}
+					{@const pxWidth = typeof meta?.width === 'number' ? `${meta.width}px` : undefined}
+					{@const colWidth = columnWidths ? `${columnWidths[i]}%` : pxWidth}
 					<Table.Head
 						colspan={header.colSpan}
 						pinned={header.column.id === 'actions'}
 						variant={header.column.id === 'select' ? 'checkbox' : 'default'}
-						style={typeof meta?.width === 'number' ? `--col-width: ${meta.width}px` : undefined}
+						style={colWidth ? `--col-width: ${colWidth}` : undefined}
 						class={cn(
 							meta?.width === 'min' && 'w-0',
 							meta?.width === 'max' && 'w-full',
-							header.column.id === 'actions' && (shouldVirtualize ? 'w-24' : 'w-0'),
-							typeof meta?.width === 'number' && 'w-(--col-width)'
+							header.column.id === 'actions' && 'w-0',
+							colWidth && 'w-(--col-width)'
 						)}
 					>
 						{#if !header.isPlaceholder}
@@ -394,7 +420,7 @@
 	{#if !unstyled}
 		<div aria-hidden="true" class="sticky top-0 z-(--arcane-z-sticky) -mb-10 h-10 backdrop-blur-sm"></div>
 	{/if}
-	<Table.Root bind:ref={tableElement} class={shouldVirtualize ? 'table-fixed' : undefined}>
+	<Table.Root bind:ref={tableElement} class={columnWidths ? 'table-fixed' : undefined}>
 		{@render tableHeader()}
 		<Table.Body bind:ref={bodyElement}>
 			{#if isGrouped && groupedRows}

@@ -33,7 +33,7 @@
 		hostPort: string | null;
 		containerPort: string;
 		proto?: string;
-		ip?: string | null;
+		ips: string[];
 		isPublished: boolean;
 	};
 
@@ -56,21 +56,32 @@
 
 	function normalize(p: PortBadgePort): NormalizedPort {
 		const hostPort = getPublicPort(p);
+		// An unspecified host IP binds all interfaces.
+		const ip = (isContainerPort(p) ? p.ip : p.host_ip)?.trim() || '0.0.0.0';
 		return {
 			hostPort,
 			containerPort: getPrivatePort(p),
 			proto: getProto(p),
-			ip: (isContainerPort(p) ? p.ip : p.host_ip)?.trim() || null,
+			ips: [ip],
 			isPublished: hostPort !== null
 		};
 	}
 
+	function portKey(p: NormalizedPort): string {
+		return `${p.hostPort ?? ''}:${p.containerPort}/${p.proto ?? ''}`;
+	}
+
+	// Bindings that differ only by host IP (e.g. 0.0.0.0 and ::) share one badge.
 	function uniquePorts(list: PortBadgePort[]): NormalizedPort[] {
 		const map = new Map<string, NormalizedPort>();
 		for (const p of list) {
 			const n = normalize(p);
-			const key = `${n.ip ?? ''}:${n.hostPort ?? ''}:${n.containerPort}/${n.proto ?? ''}`;
-			if (!map.has(key)) map.set(key, n);
+			const existing = map.get(portKey(n));
+			if (!existing) {
+				map.set(portKey(n), n);
+				continue;
+			}
+			for (const ip of n.ips) if (!existing.ips.includes(ip)) existing.ips.push(ip);
 		}
 		return Array.from(map.values()).sort((a, b) => {
 			// Published ports first
@@ -98,7 +109,7 @@
 	<span class="text-xs text-muted-foreground">{m.containers_no_ports()}</span>
 {:else}
 	<div class="flex gap-1.5 {wrap ? 'flex-wrap' : 'flex-nowrap'}">
-		{#each published as p (`${p.ip ?? ''}:${p.hostPort ?? ''}:${p.containerPort}/${p.proto ?? ''}`)}
+		{#each published as p (portKey(p))}
 			<ArcaneTooltip.Root interactive>
 				<ArcaneTooltip.Trigger>
 					{#snippet child({ props })}
@@ -120,13 +131,15 @@
 					{/snippet}
 				</ArcaneTooltip.Trigger>
 				<ArcaneTooltip.Content>
-					<p class="text-xs">
-						{m.published()}: {p.ip ?? '0.0.0.0'}:{p.hostPort} → {p.containerPort}{p.proto ? `/${p.proto}` : ''}
-					</p>
+					{#each p.ips as ip (ip)}
+						<p class="text-xs">
+							{m.published()}: {ip.includes(':') ? `[${ip}]` : ip}:{p.hostPort} → {p.containerPort}{p.proto ? `/${p.proto}` : ''}
+						</p>
+					{/each}
 				</ArcaneTooltip.Content>
 			</ArcaneTooltip.Root>
 		{/each}
-		{#each exposedOnly as p (`${p.ip ?? ''}:${p.hostPort ?? ''}:${p.containerPort}/${p.proto ?? ''}`)}
+		{#each exposedOnly as p (portKey(p))}
 			<ArcaneTooltip.Root>
 				<ArcaneTooltip.Trigger>
 					<span class={badgeVariants({ variant: 'gray', size: 'sm' })}>

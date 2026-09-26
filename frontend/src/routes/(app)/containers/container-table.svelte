@@ -282,6 +282,12 @@
 	const canStopContainers = $derived(hasPermission('containers:stop', currentEnvId));
 	const canRestartContainers = $derived(hasPermission('containers:restart', currentEnvId));
 	const canDeleteContainers = $derived(hasPermission('containers:delete', currentEnvId));
+	// Reserve room for per-row state buttons so every State cell fits the width measured from the first rows.
+	const stateActionsMinWidth = $derived.by(() => {
+		if (canUpdateContainers) return 'min-w-15';
+		if (canStartContainers || canStopContainers) return 'min-w-7';
+		return '';
+	});
 	const canKillContainers = $derived(hasPermission('containers:kill', currentEnvId));
 	const canConvertToCompose = $derived(
 		hasPermission('projects:create', currentEnvId) && settingsStore.current?.experimentalFeaturesEnabled === true
@@ -647,8 +653,8 @@
 	{@const iconUrl = getThemedIconUrl(item, mode.current)}
 	{@const projectLabel = item.labels?.[COMPOSE_PROJECT_LABEL]}
 	<div class="flex items-center gap-2">
-		<IconImage src={iconUrl} alt={displayName} fallback={BoxIcon} class="size-6" containerClass="size-8" />
-		<a class="font-medium hover:underline" href="/containers/{item.id}">{displayName}</a>
+		<IconImage src={iconUrl} alt={displayName} fallback={BoxIcon} class="size-6" containerClass="size-8 shrink-0" />
+		<a class="min-w-0 truncate font-medium hover:underline" href="/containers/{item.id}">{displayName}</a>
 		{#if item.hidden}
 			<Badge variant="gray" size="sm">{m.hidden()}</Badge>
 		{/if}
@@ -679,7 +685,7 @@
 		{:else}
 			<Badge variant={getStateBadgeVariant(item.state)} minWidth="20">{getContainerStatusLabel(item.state)}</Badge>
 		{/if}
-		<div class="flex items-center gap-1">
+		<div class="flex items-center gap-1 {stateActionsMinWidth}">
 			{#if !status && item.state !== 'running' && canStartContainers}
 				<ArcaneButton
 					action="base"
