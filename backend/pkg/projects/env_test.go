@@ -503,3 +503,19 @@ func TestComposeFileEnvSelection(t *testing.T) {
 		assert.Equal(t, []string{filepath.Join(dir, "base.yml")}, files)
 	})
 }
+
+func TestEnvContentChanged(t *testing.T) {
+	t.Run("ignores formatting-only changes", func(t *testing.T) {
+		oldEnv := "B=2\nA=1\n# comment\n"
+		newEnv := "A=1\nB=2\n"
+
+		assert.False(t, EnvContentChanged(oldEnv, newEnv))
+	})
+
+	t.Run("detects semantic changes", func(t *testing.T) {
+		oldEnv := "A=1\nB=2\n"
+		newEnv := "A=1\nB=3\n"
+
+		assert.True(t, EnvContentChanged(oldEnv, newEnv))
+	})
+}

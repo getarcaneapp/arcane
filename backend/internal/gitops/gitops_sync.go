@@ -7,7 +7,6 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
-	"maps"
 	"os"
 	"path"
 	"path/filepath"
@@ -1767,7 +1766,7 @@ func (s *GitOpsSyncService) createProjectForSyncInternal(ctx context.Context, sy
 		return nil, s.failSync(ctx, id, result, sync, actor, "Failed to mark project as GitOps-managed", err.Error())
 	}
 
-	if _, err := s.projectService.ApplyGitSyncProjectFiles(ctx, project.ID, composeContent, envContent, overrideContent, overrideFileName, actor); err != nil {
+	if _, _, err := s.projectService.ApplyGitSyncProjectFiles(ctx, project.ID, composeContent, envContent, overrideContent, overrideFileName, actor); err != nil {
 		return nil, s.failSync(ctx, id, result, sync, actor, "Failed to sync project env files", err.Error())
 	}
 
@@ -1819,56 +1818,15 @@ func (s *GitOpsSyncService) getOrCreateProjectInternal(ctx context.Context, sync
 }
 
 func (s *GitOpsSyncService) updateProjectForSyncInternal(ctx context.Context, sync *projectpkg.GitOpsSync, id string, project *projectpkg.Project, composeContent string, envContent *string, overrideContent *string, overrideFileName string, result *gitops.SyncResult, actor common.User) error {
-	// Get current content to see if it changed
-	oldCompose, oldEnv, oldOverride, _ := s.projectService.GetProjectContent(ctx, project.ID)
-
-	// Update existing project's compose and env files
-	_, err := s.projectService.ApplyGitSyncProjectFiles(ctx, project.ID, composeContent, envContent, overrideContent, overrideFileName, actor)
+	_, changed, err := s.projectService.ApplyGitSyncProjectFiles(ctx, project.ID, composeContent, envContent, overrideContent, overrideFileName, actor)
 	if err != nil {
 		return s.failSync(ctx, id, result, sync, actor, "Failed to update project files", err.Error())
 	}
-	slog.InfoContext(ctx, "Updated project files", "projectName", project.Name, "projectId", project.ID)
-
-	newCompose, newEnv, newOverride, _ := s.projectService.GetProjectContent(ctx, project.ID)
-	contentChanged := oldCompose != newCompose || envContentChangedInternal(oldEnv, newEnv) || oldOverride != newOverride
-
-	// If content changed and project is running, redeploy. A redeploy failure
-	// is classified as common.ErrRedeployAfterSyncFailed so the parent flow
-	// can reflect it on the sync row's LastSyncError.
-	if contentChanged {
-		details, err := s.projectService.GetProjectDetails(ctx, project.ID, projecttypes.DetailsOptions{})
-		running := err == nil && (details.Status == string(projectpkg.ProjectStatusRunning) || details.Status == string(projectpkg.ProjectStatusPartiallyRunning))
-		if running || sync.RedeployAfterSync {
-			slog.InfoContext(ctx, "Redeploying project due to content change from Git sync", "projectName", project.Name, "projectId", project.ID, "wasRunning", running)
-			if err := s.projectService.RedeployProject(ctx, project.ID, actor, nil); err != nil {
-				slog.ErrorContext(ctx, "Failed to redeploy project after Git sync", "error", err, "projectId", project.ID)
-				return common.Classify(common.ErrRedeployAfterSyncFailed, errors.WrapIf(err, "redeploy failed"))
-			}
-		} else {
-			// Project isn't running and RedeployAfterSync is off, so
-			// RedeployProject (and its pull side effect) never runs. Pull
-			// explicitly if this sync opted into PullImageAfterSync, so a
-			// stopped container isn't left referencing an image tag that's
-			// since been re-pointed or pruned upstream. A pull failure is
-			// returned rather than swallowed, so it surfaces on the sync
-			// row's LastSyncError instead of the sync silently reporting
-			// success with a stale image.
-			if err := s.pullImageAfterSyncIfConfiguredInternal(ctx, sync, project, actor); err != nil {
-				return err
-			}
-		}
+	slog.InfoContext(ctx, "Updated project files", "projectName", project.Name, "projectId", project.ID, "changed", changed)
+	if !changed {
+		return nil
 	}
-	return nil
-}
-
-func envContentChangedInternal(oldEnv, newEnv string) bool {
-	oldEnvMap, oldErr := projects.ParseProjectEnvContent(oldEnv, nil)
-	newEnvMap, newErr := projects.ParseProjectEnvContent(newEnv, nil)
-	if oldErr != nil || newErr != nil {
-		return oldEnv != newEnv
-	}
-
-	return !maps.Equal(oldEnvMap, newEnvMap)
+	return s.redeployIfRunningAfterSync(ctx, sync, project, actor, "single-file")
 }
 
 // parseSyncedFiles parses the JSON array of synced file paths from the database
@@ -2066,7 +2024,7 @@ func (s *GitOpsSyncService) stageDirectorySyncInternal(ctx context.Context, sync
 		_ = acfs.RemoveAll(ctx, projectsDir, stageLogical)
 		return nil, err
 	}
-	if project != nil && envContentChangedInternal(preEnvContent, postEnvContent) {
+	if project != nil && projects.EnvContentChanged(preEnvContent, postEnvContent) {
 		contentsChanged = true
 	}
 

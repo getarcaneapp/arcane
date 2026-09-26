@@ -266,27 +266,28 @@ func (s *ProjectService) refreshProjectAfterContentUpdateInternal(ctx context.Co
 	}
 }
 
-func (s *ProjectService) ApplyGitSyncProjectFiles(ctx context.Context, projectID string, composeContent string, gitEnvContent *string, gitOverrideContent *string, gitOverrideFileName string, user common.User) (*Project, error) {
+func (s *ProjectService) ApplyGitSyncProjectFiles(ctx context.Context, projectID string, composeContent string, gitEnvContent *string, gitOverrideContent *string, gitOverrideFileName string, user common.User) (*Project, bool, error) {
 	proj, projectsDirectory, err := s.getProjectForUpdate(ctx, projectID)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	if err := ensureProjectMutableInternal(&proj); err != nil {
-		return nil, err
+		return nil, false, err
 	}
+	before := s.readGitSyncProjectContentInternal(ctx, proj.ID)
 
 	envUpdate, err := s.prepareGitSyncEnvUpdateInternal(proj.Path, gitEnvContent)
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to resolve git env state")
+		return nil, false, errors.WrapIf(err, "failed to resolve git env state")
 	}
 
 	if err := projects.ValidateComposeContentForUpdate(ctx, projectsDirectory, proj.Path, proj.Name, composeContent, envUpdate.effectiveContent, gitOverrideContent, gitOverrideFileName, true); err != nil {
-		return nil, errors.WrapIf(err, "invalid compose file")
+		return nil, false, errors.WrapIf(err, "invalid compose file")
 	}
 
 	backup, cleanupBackup, err := s.prepareProjectUpdateBackupInternal(ctx, projectsDirectory, proj.Path, &composeContent, gitEnvContent, gitOverrideContent)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	defer cleanupBackup()
 
@@ -296,7 +297,7 @@ func (s *ProjectService) ApplyGitSyncProjectFiles(ctx context.Context, projectID
 		// A failure after the env persist would otherwise leave the project with
 		// new env values and an old or partially updated compose file set.
 		err = s.handleProjectUpdateFailureInternal(ctx, projectID, projectsDirectory, &proj, backup, &journalActive, projectStateCommitted, err)
-		return nil, err
+		return nil, false, err
 	}
 
 	s.refreshComposeProjectNameInternal(ctx, &proj)
@@ -310,20 +311,54 @@ func (s *ProjectService) ApplyGitSyncProjectFiles(ctx context.Context, projectID
 		slog.WarnContext(ctx, "failed to update service counts after git sync", "projectID", proj.ID, "error", err)
 	}
 
+	after := s.readGitSyncProjectContentInternal(ctx, proj.ID)
+	envSourceRemoved := gitEnvContent == nil && envUpdate.state.HasGitSource
+	changed := s.logGitSyncProjectUpdateInternal(ctx, &proj, before, after, envSourceRemoved, user)
+
+	return &proj, changed, nil
+}
+
+// gitSyncProjectContentInternal is the effective content compared before and
+// after a git sync apply. Unreadable snapshots always compare as changed.
+type gitSyncProjectContentInternal struct {
+	compose, env, override string
+	unreadable             bool
+}
+
+func (s *ProjectService) readGitSyncProjectContentInternal(ctx context.Context, projectID string) gitSyncProjectContentInternal {
+	compose, env, override, err := s.GetProjectContent(ctx, projectID)
+	if err != nil {
+		slog.WarnContext(ctx, "failed to read project content for git sync change detection; treating as changed", "projectID", projectID, "error", err)
+		return gitSyncProjectContentInternal{unreadable: true}
+	}
+	return gitSyncProjectContentInternal{compose: compose, env: env, override: override}
+}
+
+// logGitSyncProjectUpdateInternal logs project.update when the effective content
+// changed or the Git env source was removed, and reports whether content changed.
+func (s *ProjectService) logGitSyncProjectUpdateInternal(ctx context.Context, proj *Project, before, after gitSyncProjectContentInternal, envSourceRemoved bool, user common.User) bool {
+	unreadable := before.unreadable || after.unreadable
+	composeChanged := unreadable || before.compose != after.compose
+	envChanged := unreadable || projects.EnvContentChanged(before.env, after.env)
+	overrideChanged := unreadable || before.override != after.override
+	contentChanged := composeChanged || envChanged || overrideChanged
+	if !contentChanged && !envSourceRemoved {
+		return false
+	}
+
 	metadata := database.JSON{
 		"action":          "git_sync_update",
 		"projectID":       proj.ID,
 		"projectName":     proj.Name,
-		"composeUpdated":  true,
-		"envUpdated":      gitEnvContent != nil,
-		"overrideUpdated": gitOverrideContent != nil,
+		"composeUpdated":  composeChanged,
+		"envUpdated":      envChanged,
+		"overrideUpdated": overrideChanged,
 	}
-	if gitEnvContent == nil {
+	if envSourceRemoved {
 		metadata["envSourceRemoved"] = true
 	}
 	s.logProjectEventInternal(ctx, event.EventTypeProjectUpdate, proj.ID, proj.Name, user, metadata, "could not log git sync project update action")
-
-	return &proj, nil
+	return contentChanged
 }
 
 // applyGitSyncProjectFilesInternal persists the synced env, compose, and

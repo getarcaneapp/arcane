@@ -431,6 +431,17 @@ func BuildEffectiveEnvContent(gitContent, overrideContent string) (string, error
 	return concatenated, nil
 }
 
+// EnvContentChanged reports whether two env contents differ semantically,
+// ignoring ordering and comments. Unparseable content is compared verbatim.
+func EnvContentChanged(oldContent, newContent string) bool {
+	oldEnv, oldErr := ParseProjectEnvContent(oldContent, nil)
+	newEnv, newErr := ParseProjectEnvContent(newContent, nil)
+	if oldErr != nil || newErr != nil {
+		return oldContent != newContent
+	}
+	return !maps.Equal(oldEnv, newEnv)
+}
+
 var envKeyLineRegexInternal = regexp.MustCompile(`^(\s*(?:export\s+)?)([A-Za-z_][A-Za-z0-9_.-]*)(\s*=)(.*)$`)
 
 // mergeEnvOverridesInPlaceInternal rewrites the value of every gitContent line

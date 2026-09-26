@@ -3003,7 +3003,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_MigratesDirectEnvIntoProjectOve
 	require.NoError(t, db.Create(project).Error)
 
 	gitEnv := "TOKEN=git\nREMOTE_ONLY=1\n"
-	updated, err := svc.ApplyGitSyncProjectFiles(ctx, project.ID, "services:\n  app:\n    image: nginx:alpine\n", &gitEnv, nil, "", common.User{
+	updated, _, err := svc.ApplyGitSyncProjectFiles(ctx, project.ID, "services:\n  app:\n    image: nginx:alpine\n", &gitEnv, nil, "", common.User{
 		ID:       "u1",
 		Username: "tester",
 	})
@@ -3060,13 +3060,14 @@ func TestProjectService_ApplyGitSyncProjectFiles_PreservesGitEnvSyntax(t *testin
 `
 	gitEnv := "# keep git formatting\nZ_LAST=last\nCLOUDFLARE_CLIENT_SECRET=$$pbkdf2-sha512$$310000$$XXX\nQUOTED_SECRET='$pbkdf2-sha512$310000$XXX'\nA_FIRST=first"
 
-	for range 2 {
-		updated, err := svc.ApplyGitSyncProjectFiles(ctx, project.ID, compose, &gitEnv, nil, "", common.User{
+	for i := range 2 {
+		updated, changed, err := svc.ApplyGitSyncProjectFiles(ctx, project.ID, compose, &gitEnv, nil, "", common.User{
 			ID:       "u1",
 			Username: "tester",
 		})
 		require.NoError(t, err)
 		require.NotNil(t, updated)
+		assert.Equal(t, i == 0, changed)
 
 		effectiveBytes, readErr := os.ReadFile(filepath.Join(projectPath, ".env"))
 		require.NoError(t, readErr)
@@ -3116,7 +3117,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_NormalizesStaleCopiedGitOverrid
 	}
 	require.NoError(t, db.Create(project).Error)
 
-	updated, err := svc.ApplyGitSyncProjectFiles(ctx, project.ID, "services:\n  app:\n    image: nginx:alpine\n", new("BASE=git-updated\nSHARED=1\nREMOTE_ONLY=1\n"), nil, "", common.User{
+	updated, _, err := svc.ApplyGitSyncProjectFiles(ctx, project.ID, "services:\n  app:\n    image: nginx:alpine\n", new("BASE=git-updated\nSHARED=1\nREMOTE_ONLY=1\n"), nil, "", common.User{
 		ID:       "u1",
 		Username: "tester",
 	})
@@ -3164,7 +3165,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_RemovesLegacyDeletedGitMasks(t 
 	}
 	require.NoError(t, db.Create(project).Error)
 
-	updated, err := svc.ApplyGitSyncProjectFiles(ctx, project.ID, "services:\n  app:\n    image: nginx:alpine\n", new("TOKEN=git-updated\nSHARED=1\nREMOTE_ONLY=1\n"), nil, "", common.User{
+	updated, _, err := svc.ApplyGitSyncProjectFiles(ctx, project.ID, "services:\n  app:\n    image: nginx:alpine\n", new("TOKEN=git-updated\nSHARED=1\nREMOTE_ONLY=1\n"), nil, "", common.User{
 		ID:       "u1",
 		Username: "tester",
 	})
@@ -3212,7 +3213,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_RemovesGitEnvSource(t *testing.
 	}
 	require.NoError(t, db.Create(project).Error)
 
-	updated, err := svc.ApplyGitSyncProjectFiles(ctx, project.ID, "services:\n  app:\n    image: nginx:alpine\n", nil, nil, "", common.User{
+	updated, _, err := svc.ApplyGitSyncProjectFiles(ctx, project.ID, "services:\n  app:\n    image: nginx:alpine\n", nil, nil, "", common.User{
 		ID:       "u1",
 		Username: "tester",
 	})
@@ -3255,7 +3256,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_WritesAndRemovesComposeOverride
 	require.NoError(t, db.Create(project).Error)
 
 	overrideContent := "services:\n  app:\n    image: busybox:latest\n"
-	updated, err := svc.ApplyGitSyncProjectFiles(ctx, project.ID, "services:\n  app:\n    image: nginx:alpine\n", nil, new(overrideContent), "compose.override.yaml", common.User{
+	updated, _, err := svc.ApplyGitSyncProjectFiles(ctx, project.ID, "services:\n  app:\n    image: nginx:alpine\n", nil, new(overrideContent), "compose.override.yaml", common.User{
 		ID:       "u1",
 		Username: "tester",
 	})
@@ -3267,7 +3268,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_WritesAndRemovesComposeOverride
 	assert.Equal(t, overrideContent, string(overrideBytes))
 
 	// A subsequent sync without an override removes the previously synced file.
-	updated, err = svc.ApplyGitSyncProjectFiles(ctx, project.ID, "services:\n  app:\n    image: nginx:alpine\n", nil, nil, "", common.User{
+	updated, _, err = svc.ApplyGitSyncProjectFiles(ctx, project.ID, "services:\n  app:\n    image: nginx:alpine\n", nil, nil, "", common.User{
 		ID:       "u1",
 		Username: "tester",
 	})
@@ -3313,7 +3314,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_UsesGlobalEnvDuringComposeValid
       - ${MYPATH}cats/templates:/app/templates
 `
 
-	updated, err := svc.ApplyGitSyncProjectFiles(ctx, project.ID, compose, nil, nil, "", common.User{
+	updated, _, err := svc.ApplyGitSyncProjectFiles(ctx, project.ID, compose, nil, nil, "", common.User{
 		ID:       "u1",
 		Username: "tester",
 	})
@@ -3365,7 +3366,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_TolerantOfUndefinedComposeVar(t
 	}
 	require.NoError(t, db.Create(project).Error)
 
-	updated, err := svc.ApplyGitSyncProjectFiles(ctx, project.ID, compose, nil, nil, "", common.User{
+	updated, _, err := svc.ApplyGitSyncProjectFiles(ctx, project.ID, compose, nil, nil, "", common.User{
 		ID:       "u1",
 		Username: "tester",
 	})
