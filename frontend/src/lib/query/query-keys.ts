@@ -72,7 +72,12 @@ export const queryKeys = {
 	containerRegistries: {
 		all: ['container-registries'] as const,
 		list: (options: SearchPaginationSortRequest) => ['container-registries', stableSerialize(options)] as const,
-		pullUsage: () => ['container-registries', 'pull-usage'] as const
+		pullUsage: () => ['container-registries', 'pull-usage'] as const,
+		detail: (registryId: string) => ['container-registries', 'detail', registryId] as const,
+		repositories: (registryId: string, options: SearchPaginationSortRequest) =>
+			['container-registries', 'repositories', registryId, stableSerialize(options)] as const,
+		tags: (registryId: string, repository: string, options: SearchPaginationSortRequest) =>
+			['container-registries', 'tags', registryId, repository, stableSerialize(options)] as const
 	},
 	templates: {
 		all: ['templates'] as const,

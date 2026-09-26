@@ -159,6 +159,8 @@ func RegisterContainerRegistries(api huma.API, h *ContainerRegistryHandler) {
 		Security:    handlerutil.DefaultOperationSecurity(),
 		Middlewares: middleware.RequirePermission(api, authz.PermRegistriesTest),
 	}, h.TestRegistry)
+
+	registerContainerRegistryBrowseInternal(api, h)
 }
 
 // ============================================================================

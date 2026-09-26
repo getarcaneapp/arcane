@@ -37,6 +37,7 @@ import (
 	"go.getarcane.app/updater/digest"
 	"go.getarcane.app/updater/refs"
 	"go.getarcane.app/updater/registry"
+	"gorm.io/gorm"
 )
 
 const (
@@ -178,6 +179,9 @@ func (s *ContainerRegistryService) GetRegistriesPaginated(ctx context.Context, p
 func (s *ContainerRegistryService) GetRegistryByID(ctx context.Context, id string) (*ContainerRegistry, error) {
 	var registryRecord ContainerRegistry
 	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&registryRecord).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, common.ErrContainerRegistryNotFound
+		}
 		return nil, errors.WrapIf(err, "failed to get container registry")
 	}
 	return &registryRecord, nil
@@ -1049,43 +1053,53 @@ func (s *ContainerRegistryService) getMatchingRegistryCredentialsInternal(ctx co
 			continue
 		}
 
-		if reg.RegistryType == "ecr" {
-			ecrUser, ecrPass, ecrErr := s.GetOrRefreshECRToken(ctx, reg)
-			if ecrErr != nil {
-				slog.WarnContext(ctx, "failed to get ECR token", "registry", reg.URL, "error", ecrErr)
-				continue
-			}
-			creds = append(creds, resolvedRegistryCredential{
-				Username:      ecrUser,
-				Token:         ecrPass,
-				ServerAddress: normalizeRegistryServerAddressInternal(reg.URL),
-			})
+		credential, credErr := s.credentialForRegistryInternal(ctx, reg)
+		if credErr != nil {
+			slog.WarnContext(ctx, "failed to resolve registry credential", "registry", reg.URL, "error", credErr)
 			continue
 		}
-
-		username := strings.TrimSpace(reg.Username)
-		if username == "" || reg.Token == "" {
-			continue
+		if credential != nil {
+			creds = append(creds, *credential)
 		}
-
-		token, decryptErr := crypto.Decrypt(reg.Token)
-		if decryptErr != nil {
-			slog.WarnContext(ctx, "failed to decrypt registry token", "registry", reg.URL, "error", decryptErr)
-			continue
-		}
-		token = strings.TrimSpace(token)
-		if token == "" {
-			continue
-		}
-
-		creds = append(creds, resolvedRegistryCredential{
-			Username:      username,
-			Token:         token,
-			ServerAddress: normalizeRegistryServerAddressInternal(reg.URL),
-		})
 	}
 
 	return creds, nil
+}
+
+// credentialForRegistryInternal resolves the stored credential of one registry.
+// It returns nil when the registry is configured for anonymous access.
+func (s *ContainerRegistryService) credentialForRegistryInternal(ctx context.Context, reg *ContainerRegistry) (*resolvedRegistryCredential, error) {
+	if reg.RegistryType == RegistryTypeECR {
+		ecrUser, ecrPass, err := s.GetOrRefreshECRToken(ctx, reg)
+		if err != nil {
+			return nil, errors.WrapIf(err, "failed to get ECR token")
+		}
+		return &resolvedRegistryCredential{
+			Username:      ecrUser,
+			Token:         ecrPass,
+			ServerAddress: normalizeRegistryServerAddressInternal(reg.URL),
+		}, nil
+	}
+
+	username := strings.TrimSpace(reg.Username)
+	if username == "" || reg.Token == "" {
+		return nil, nil
+	}
+
+	token, err := crypto.Decrypt(reg.Token)
+	if err != nil {
+		return nil, errors.WrapIf(err, "failed to decrypt registry token")
+	}
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return nil, nil
+	}
+
+	return &resolvedRegistryCredential{
+		Username:      username,
+		Token:         token,
+		ServerAddress: normalizeRegistryServerAddressInternal(reg.URL),
+	}, nil
 }
 
 // SyncRegistries syncs registries from a manager to this agent instance

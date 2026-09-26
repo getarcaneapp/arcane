@@ -69,6 +69,8 @@ var permissionCatalog = []PermissionCatalogResource{
 		{"update", PermRegistriesUpdate, "Update", ""},
 		{"delete", PermRegistriesDelete, "Delete", ""},
 		{"test", PermRegistriesTest, "Test", ""},
+		{"browse", PermRegistriesBrowse, "Browse", "Browse repositories and tags stored in the registry (the pages also require Read)"},
+		{"delete-tags", PermRegistriesDeleteTags, "Delete tags", "Delete image manifests from the registry"},
 	}},
 	{"templates", "Templates", PermissionScopeGlobal, []PermissionCatalogAction{
 		{"list", PermTemplatesList, "List", ""},

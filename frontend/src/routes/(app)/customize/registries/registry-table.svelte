@@ -14,7 +14,8 @@
 	import CreatedAtCell from '#lib/components/arcane-table/cells/created-at-cell.svelte';
 	import { m } from '#lib/paraglide/messages.js';
 	import { containerRegistryService } from '#lib/services/container-registry-service.js';
-	import { RegistryIcon, UserIcon, ExternalLinkIcon, EditIcon, TrashIcon, TestIcon } from '#lib/icons/index.js';
+	import { RegistryIcon, UserIcon, ExternalLinkIcon, EditIcon, TrashIcon, TestIcon, FolderOpenIcon } from '#lib/icons/index.js';
+	import { goto } from '$app/navigation';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { getRegistryDisplayName } from '#lib/utils/registry.js';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
@@ -38,6 +39,7 @@
 	let testingId = $state<string | null>(null);
 
 	const canDeleteRegistry = $derived(hasPermission('registries:delete'));
+	const canBrowseRegistry = $derived(hasPermission('registries:read') && hasPermission('registries:browse'));
 
 	function maskAccessKeyId(keyId: string | undefined): string {
 		if (!keyId) return m.common_na();
@@ -188,7 +190,11 @@
 
 {#snippet UrlCell({ item }: { item: ContainerRegistry })}
 	<div class="flex flex-col">
-		<span class="font-medium">{item.url || 'docker.io'}</span>
+		{#if canBrowseRegistry}
+			<a class="font-medium hover:underline" href="/customize/registries/{item.id}">{item.url || 'docker.io'}</a>
+		{:else}
+			<span class="font-medium">{item.url || 'docker.io'}</span>
+		{/if}
 		<span class="text-xs text-muted-foreground">{getRegistryDisplayName(item)}</span>
 	</div>
 {/snippet}
@@ -221,6 +227,7 @@
 		icon={{ component: RegistryIcon, variant: 'purple' as const }}
 		title={(item) => item.url}
 		subtitle={(item) => ((mobileFieldVisibility['id'] ?? true) ? item.id : null)}
+		onclick={canBrowseRegistry ? (item: ContainerRegistry) => goto(`/customize/registries/${item.id}`) : undefined}
 		badges={[{ variant: 'purple' as const, text: m.common_registry() }]}
 		fields={[
 			{
@@ -254,6 +261,13 @@
 
 {#snippet RowActions({ item }: { item: ContainerRegistry })}
 	<RowActionsMenu>
+		{#if canBrowseRegistry}
+			<DropdownMenu.Item onclick={() => goto(`/customize/registries/${item.id}`)}>
+				<FolderOpenIcon class="size-4" />
+				{m.registries_browse()}
+			</DropdownMenu.Item>
+		{/if}
+
 		<IfPermitted perm="registries:test">
 			<DropdownMenu.Item onclick={() => handleTest(item.id, item.url)} disabled={testingId === item.id}>
 				{#if testingId === item.id}

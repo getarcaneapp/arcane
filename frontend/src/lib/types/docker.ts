@@ -1046,6 +1046,30 @@ export interface ContainerRegistry {
 	updatedAt?: string;
 }
 
+export interface RegistryRepository {
+	id: string;
+	name: string;
+}
+
+export interface RegistryTagPlatform {
+	os: string;
+	architecture: string;
+	variant?: string;
+	digest: string;
+	size: number;
+}
+
+export interface RegistryTag {
+	id: string;
+	name: string;
+	digest?: string;
+	mediaType?: string;
+	size: number;
+	created?: string;
+	platforms: RegistryTagPlatform[];
+	error?: string;
+}
+
 export interface ContainerRegistryPullUsageResponse {
 	registries: ContainerRegistryPullUsage[];
 }

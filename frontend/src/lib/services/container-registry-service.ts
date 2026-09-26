@@ -2,7 +2,9 @@ import BaseAPIService from './api-service';
 import type {
 	ContainerRegistryCreateDto,
 	ContainerRegistryPullUsageResponse,
-	ContainerRegistryUpdateDto
+	ContainerRegistryUpdateDto,
+	RegistryRepository,
+	RegistryTag
 } from '#lib/types/docker.js';
 import type { ContainerRegistry } from '#lib/types/docker.js';
 import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
@@ -37,6 +39,24 @@ class ContainerRegistryService extends BaseAPIService {
 
 	async testRegistry(id: string): Promise<unknown> {
 		return this.handleResponse(this.api.post(`/container-registries/${id}/test`));
+	}
+
+	async getRepositories(id: string, options?: SearchPaginationSortRequest): Promise<Paginated<RegistryRepository>> {
+		const params = transformPaginationParams(options);
+		const res = await this.api.get(`/container-registries/${id}/repositories`, { params });
+		const page: Paginated<Omit<RegistryRepository, 'id'>> = res.data;
+		return { ...page, data: page.data.map((repository) => ({ ...repository, id: repository.name })) };
+	}
+
+	async getTags(id: string, repository: string, options?: SearchPaginationSortRequest): Promise<Paginated<RegistryTag>> {
+		const params = { ...transformPaginationParams(options), repository };
+		const res = await this.api.get(`/container-registries/${id}/tags`, { params });
+		const page: Paginated<Omit<RegistryTag, 'id'>> = res.data;
+		return { ...page, data: page.data.map((tag) => ({ ...tag, id: tag.name })) };
+	}
+
+	async deleteTag(id: string, repository: string, tag: string): Promise<{ digest: string }> {
+		return this.handleResponse(this.api.delete(`/container-registries/${id}/tags`, { params: { repository, tag } }));
 	}
 }
 

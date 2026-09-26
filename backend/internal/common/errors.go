@@ -105,6 +105,7 @@ var (
 	ErrOidcMappingEnvManaged                   = Classify(ErrConflict, errors.Sentinel("OIDC role mapping is managed by OIDC_ROLE_MAPPINGS and cannot be edited at runtime"))
 	ErrNoGlobalAdminRemains                    = Classify(ErrConflict, errors.Sentinel("At least one user must retain a global Admin role assignment"))
 	ErrProjectNotFound                         = Classify(ErrNotFound, errors.Sentinel("Project not found"))
+	ErrContainerRegistryNotFound               = Classify(ErrNotFound, errors.Sentinel("Container registry not found"))
 	ErrProjectArchived                         = Classify(ErrConflict, errors.Sentinel("project is archived and must be unarchived before this action"))
 	ErrProjectMustBeStopped                    = Classify(ErrConflict, errors.Sentinel("project must be stopped before archiving"))
 	ErrProjectWorkspaceConflict                = Classify(ErrConflict, errors.Sentinel("Project workspace changed; refresh it and try again"))

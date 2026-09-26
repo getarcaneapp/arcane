@@ -56,12 +56,14 @@ const (
 	PermEnvironmentsPair   = "environments:pair"
 	PermEnvironmentsSync   = "environments:sync"
 
-	PermRegistriesList   = "registries:list"
-	PermRegistriesRead   = "registries:read"
-	PermRegistriesCreate = "registries:create"
-	PermRegistriesUpdate = "registries:update"
-	PermRegistriesDelete = "registries:delete"
-	PermRegistriesTest   = "registries:test"
+	PermRegistriesList       = "registries:list"
+	PermRegistriesRead       = "registries:read"
+	PermRegistriesCreate     = "registries:create"
+	PermRegistriesUpdate     = "registries:update"
+	PermRegistriesDelete     = "registries:delete"
+	PermRegistriesTest       = "registries:test"
+	PermRegistriesBrowse     = "registries:browse"
+	PermRegistriesDeleteTags = "registries:delete-tags"
 
 	PermTemplatesList   = "templates:list"
 	PermTemplatesRead   = "templates:read"
@@ -323,7 +325,7 @@ func BuiltInEditorPermissions() []string {
 		PermFederatedList, PermFederatedRead,
 		PermSettingsRead,
 		PermEnvironmentsList, PermEnvironmentsRead, PermEnvironmentsSync,
-		PermRegistriesList, PermRegistriesRead,
+		PermRegistriesList, PermRegistriesRead, PermRegistriesBrowse,
 		PermTemplatesList, PermTemplatesRead, PermTemplatesCreate, PermTemplatesUpdate, PermTemplatesDelete,
 		PermVariablesRead, PermVariablesCreate, PermVariablesUpdate, PermVariablesDelete, PermVariablesSync,
 		PermGitReposList, PermGitReposRead,
