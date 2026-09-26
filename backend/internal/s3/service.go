@@ -11,8 +11,10 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	s3config "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/s3"
 	backuptypes "github.com/getarcaneapp/arcane/types/v2/backup"
+	"github.com/samber/mo"
 	"go.getarcane.app/sys/crypto"
 	"gorm.io/gorm"
 )
@@ -115,16 +117,19 @@ func (s *S3DestinationService) GetS3Destination(ctx context.Context, id string) 
 	return &dto, nil
 }
 
-func applyS3ConfigurationInternal(destination *S3Destination, configuration s3config.Configuration, encryptedSecret string) {
-	destination.Name = configuration.Name
-	destination.Endpoint = configuration.Endpoint
-	destination.Bucket = configuration.Bucket
-	destination.Region = configuration.Region
-	destination.AccessKeyID = configuration.AccessKeyID
-	destination.SecretAccessKey = encryptedSecret
-	destination.Prefix = configuration.Prefix
-	destination.UseSSL = configuration.UseSSL
-	destination.ForcePathStyle = configuration.ForcePathStyle
+// applyS3ConfigurationInternal copies configuration onto destination and
+// reports whether any field actually changed.
+func applyS3ConfigurationInternal(destination *S3Destination, configuration s3config.Configuration, encryptedSecret string) bool {
+	changed := utils.ApplyChanged(&destination.Name, mo.Some(configuration.Name))
+	changed = utils.ApplyChanged(&destination.Endpoint, mo.Some(configuration.Endpoint)) || changed
+	changed = utils.ApplyChanged(&destination.Bucket, mo.Some(configuration.Bucket)) || changed
+	changed = utils.ApplyChanged(&destination.Region, mo.Some(configuration.Region)) || changed
+	changed = utils.ApplyChanged(&destination.AccessKeyID, mo.Some(configuration.AccessKeyID)) || changed
+	changed = utils.ApplyChanged(&destination.SecretAccessKey, mo.Some(encryptedSecret)) || changed
+	changed = utils.ApplyChanged(&destination.Prefix, mo.Some(configuration.Prefix)) || changed
+	changed = utils.ApplyChanged(&destination.UseSSL, mo.Some(configuration.UseSSL)) || changed
+	changed = utils.ApplyChanged(&destination.ForcePathStyle, mo.Some(configuration.ForcePathStyle)) || changed
+	return changed
 }
 
 func (s *S3DestinationService) CreateS3Destination(ctx context.Context, input backuptypes.CreateS3Destination) (*backuptypes.S3Destination, error) {
@@ -270,23 +275,29 @@ func (s *S3DestinationService) SyncS3Destinations(ctx context.Context, destinati
 		if err := configuration.Validate(true); err != nil {
 			return fmt.Errorf("invalid S3 destination %s: %w", configuration.ID, err)
 		}
-		encryptedSecret, err := crypto.Encrypt(configuration.SecretAccessKey)
-		if err != nil {
-			return fmt.Errorf("failed to encrypt S3 secret access key for %s: %w", configuration.ID, err)
-		}
 		destination, exists := existingByID[configuration.ID]
 		if !exists {
 			destination = &S3Destination{ID: configuration.ID}
 		}
-		applyS3ConfigurationInternal(destination, configuration, encryptedSecret)
-		if !item.CreatedAt.IsZero() {
+		// The manager resends the full set every health tick; unchanged rows
+		// keep their ciphertext and skip the write.
+		secretChanged, err := utils.ApplyEncrypted(&destination.SecretAccessKey, configuration.SecretAccessKey)
+		if err != nil {
+			return fmt.Errorf("failed to apply S3 secret access key for %s: %w", configuration.ID, err)
+		}
+		changed := applyS3ConfigurationInternal(destination, configuration, destination.SecretAccessKey) || secretChanged || !exists
+		if !item.CreatedAt.IsZero() && !destination.CreatedAt.Equal(item.CreatedAt) {
 			destination.CreatedAt = item.CreatedAt
+			changed = true
 		}
-		if item.UpdatedAt != nil {
+		if item.UpdatedAt != nil && (destination.UpdatedAt == nil || !destination.UpdatedAt.Equal(*item.UpdatedAt)) {
 			destination.UpdatedAt = item.UpdatedAt
+			changed = true
 		}
-		if err := s.db.WithContext(ctx).Save(destination).Error; err != nil {
-			return fmt.Errorf("failed to sync S3 destination %s: %w", configuration.ID, err)
+		if changed {
+			if err := s.db.WithContext(ctx).Save(destination).Error; err != nil {
+				return fmt.Errorf("failed to sync S3 destination %s: %w", configuration.ID, err)
+			}
 		}
 		syncedIDs[configuration.ID] = struct{}{}
 	}

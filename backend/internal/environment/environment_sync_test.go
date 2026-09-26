@@ -170,3 +170,51 @@ func TestSyncRepositoriesPreservesEmptyCredentials(t *testing.T) {
 	service := environment.NewEnvironmentService(db, server.Client(), nil, nil, nil, nil)
 	require.NoError(t, service.SyncRepositoriesToEnvironment(t.Context(), "remote"))
 }
+
+func TestSyncSkipsUnchangedPayloadUntilForgotten(t *testing.T) {
+	db := setupSyncDBInternal(t)
+	var calls atomic.Int32
+	var reject atomic.Bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		if reject.Load() {
+			http.Error(w, "agent unavailable", http.StatusInternalServerError)
+			return
+		}
+		// A write failure only means the manager already gave up on this
+		// request, which the call-count assertions below would surface.
+		_, _ = w.Write([]byte(`{"success":true}`))
+	}))
+	defer server.Close()
+	token, err := crypto.Encrypt("secret")
+	require.NoError(t, err)
+	require.NoError(t, db.Create(&registry.ContainerRegistry{BaseModel: database.BaseModel{ID: "ghcr"}, URL: "ghcr.io", RegistryType: registry.RegistryTypeGeneric, Username: "user", Token: token}).Error)
+	require.NoError(t, db.Create(&environment.Environment{BaseModel: database.BaseModel{ID: "remote"}, ApiUrl: server.URL, AccessToken: new("agent-token")}).Error)
+	service := environment.NewEnvironmentService(db, server.Client(), nil, nil, nil, nil)
+	sync := func() error { return service.SyncRegistriesToEnvironment(t.Context(), "remote") }
+	changeRegistry := func(url string) {
+		require.NoError(t, db.Model(&registry.ContainerRegistry{}).Where("id = ?", "ghcr").Update("url", url).Error)
+	}
+
+	require.NoError(t, sync())
+	require.NoError(t, sync())
+	require.EqualValues(t, 1, calls.Load(), "an unchanged payload is not resent")
+
+	changeRegistry("ghcr.io/v2")
+	require.NoError(t, sync())
+	require.EqualValues(t, 2, calls.Load(), "a changed payload is resent")
+
+	service.ForgetSyncState("remote")
+	require.NoError(t, sync())
+	require.EqualValues(t, 3, calls.Load(), "forgetting forces a resend")
+
+	reject.Store(true)
+	changeRegistry("ghcr.io/v3")
+	require.Error(t, sync())
+	require.EqualValues(t, 4, calls.Load())
+	reject.Store(false)
+	require.NoError(t, sync())
+	require.EqualValues(t, 5, calls.Load(), "a rejected payload is retried")
+	require.NoError(t, sync())
+	require.EqualValues(t, 5, calls.Load(), "an accepted payload is remembered")
+}

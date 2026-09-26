@@ -554,6 +554,7 @@ func (h *VolumeHandler) UpdateBackupPolicy(ctx context.Context, input *UpdateVol
 			// Destinations are reconciled before every policy write so the agent
 			// can validate S3 references. Only batches that actually need S3
 			// fail on a sync error; local-only edits proceed.
+			h.environmentService.ForgetSyncState(input.EnvironmentID)
 			if syncErr := h.environmentService.SyncS3DestinationsToEnvironment(activityCtx, input.EnvironmentID); syncErr != nil {
 				if hasS3 {
 					errorStatus = http.StatusBadGateway

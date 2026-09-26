@@ -78,6 +78,23 @@ func waitForSettingsNotificationsInternal(t *testing.T, svc *SettingsService) {
 	require.NoError(t, err)
 }
 
+func TestSettingsService_EnsureDefaultSettings_ReplacesRetiredDefaults(t *testing.T) {
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+	svc, err := newSettingsServiceForTestInternal(t, ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, db.Create(&SettingVariable{Key: "dockerClientRefreshInterval", Value: "*/30 * * * * *"}).Error)
+	require.NoError(t, db.Create(&SettingVariable{Key: "autoHealInterval", Value: "*/10 * * * * *"}).Error)
+
+	require.NoError(t, svc.EnsureDefaultSettings(ctx))
+
+	var retired, custom SettingVariable
+	require.NoError(t, db.First(&retired, "key = ?", "dockerClientRefreshInterval").Error)
+	require.Equal(t, "0 */5 * * * *", retired.Value, "the retired default moves to the current default")
+	require.NoError(t, db.First(&custom, "key = ?", "autoHealInterval").Error)
+	require.Equal(t, "*/10 * * * * *", custom.Value, "a customised value is left alone")
+}
+
 func TestSettingsService_EnsureDefaultSettings_Idempotent(t *testing.T) {
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)

@@ -1,6 +1,10 @@
 package utils
 
-import "sync"
+import (
+	"context"
+	"sync"
+	"sync/atomic"
+)
 
 // KeyedMutex hands out one mutex per key, so unrelated keys proceed
 // concurrently while work on the same key is serialized.
@@ -62,6 +66,40 @@ func (k *KeyedMutex) Lock(key string) func() {
 	return func() {
 		entry.mu.Unlock()
 		k.release(key, entry)
+	}
+}
+
+// LockContext is Lock bounded by ctx. When ctx ends first the key is left
+// untouched and the waiter is released once the lock would have been taken.
+func (k *KeyedMutex) LockContext(ctx context.Context, key string) (func(), error) {
+	entry := k.reserve(key)
+	unlock := func() {
+		entry.mu.Unlock()
+		k.release(key, entry)
+	}
+	// Exactly one side claims the outcome: the worker once it holds the lock,
+	// or the caller once ctx ends. The loser is responsible for nothing, so
+	// the lock can never be left held by an exited goroutine.
+	var claimed atomic.Bool
+	acquired := make(chan struct{})
+	go func() {
+		entry.mu.Lock()
+		if !claimed.CompareAndSwap(false, true) {
+			unlock()
+			return
+		}
+		close(acquired)
+	}()
+	select {
+	case <-acquired:
+		return unlock, nil
+	case <-ctx.Done():
+		if !claimed.CompareAndSwap(false, true) {
+			// The worker claimed first; wait for the handoff and give it back.
+			<-acquired
+			unlock()
+		}
+		return nil, ctx.Err()
 	}
 }
 

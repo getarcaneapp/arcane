@@ -105,7 +105,7 @@ func DiscoverProjectDirectories(ctx context.Context, root string, followSymlinks
 func walkProjectDirectoriesInternal(ctx context.Context, root, path string, isRoot bool, currentDepth int, maxDepth int, followSymlinks bool, ancestors map[string]struct{}, discovered *[]DiscoveredProjectDir) error {
 	if !isRoot {
 		name := filepath.Base(path)
-		if IsInternalScratchDirName(name) || IsFilesystemSnapshotDirName(name) {
+		if IsIgnoredProjectDirName(name) {
 			return nil
 		}
 	}
@@ -229,8 +229,18 @@ func IsFilesystemSnapshotDirName(name string) bool {
 // filesystem snapshot/trash directory name, i.e. the path points into a
 // point-in-time copy rather than a live project directory.
 func PathContainsSnapshotDirectory(relPath string) bool {
+	return pathHasSegmentInternal(relPath, IsFilesystemSnapshotDirName)
+}
+
+// PathContainsIgnoredDirectory reports whether any segment of relPath is a
+// directory that project discovery skips (see IsIgnoredProjectDirName).
+func PathContainsIgnoredDirectory(relPath string) bool {
+	return pathHasSegmentInternal(relPath, IsIgnoredProjectDirName)
+}
+
+func pathHasSegmentInternal(relPath string, match func(string) bool) bool {
 	for segment := range strings.SplitSeq(filepath.ToSlash(relPath), "/") {
-		if IsFilesystemSnapshotDirName(segment) {
+		if match(segment) {
 			return true
 		}
 	}
@@ -260,6 +270,12 @@ func IsInternalScratchDirName(name string) bool {
 		return true
 	}
 	return IsGitOpsScratchDirName(name)
+}
+
+// IsIgnoredProjectDirName reports whether discovery and the filesystem watcher
+// must skip name: Arcane scratch directories and filesystem snapshot directories.
+func IsIgnoredProjectDirName(name string) bool {
+	return IsInternalScratchDirName(name) || IsFilesystemSnapshotDirName(name)
 }
 
 // ComposeContentProjectName returns the normalized top-level `name:` from

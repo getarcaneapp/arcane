@@ -64,6 +64,8 @@ export function createJSONLineStream<TEvent extends JSONLineEventBase>(config: J
 	// Closing a tab leaves teardown to whenever the browser gets around to
 	// dropping the socket. Until it does, the server keeps writing heartbeats
 	// into a connection nobody is reading — so tear down explicitly instead.
+	// A hidden tab is torn down the same way: every open stream makes the
+	// manager poll each remote agent, which nobody is looking at.
 	function watchPageLifecycle() {
 		if (!browser || removePageLifecycleListeners) {
 			return;
@@ -76,17 +78,32 @@ export function createJSONLineStream<TEvent extends JSONLineEventBase>(config: J
 				void connectStream(nextGeneration());
 			}
 		};
+		const onVisibilityChange = () => {
+			if (document.hidden) {
+				abortStream();
+				return;
+			}
+			if (started && !streamAbortController && !_streamFailed) {
+				void connectStream(nextGeneration());
+			}
+		};
 
 		window.addEventListener('pagehide', onPageHide);
 		window.addEventListener('pageshow', onPageShow);
+		document.addEventListener('visibilitychange', onVisibilityChange);
 		removePageLifecycleListeners = () => {
 			window.removeEventListener('pagehide', onPageHide);
 			window.removeEventListener('pageshow', onPageShow);
+			document.removeEventListener('visibilitychange', onVisibilityChange);
 		};
 	}
 
 	async function connectStream(generation: number) {
 		if (!browser || !isCurrentGeneration(generation)) {
+			return;
+		}
+		// Reconnects and restarts in a background tab wait for visibilitychange.
+		if (document.hidden) {
 			return;
 		}
 

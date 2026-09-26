@@ -143,6 +143,7 @@ func (s *EnvironmentService) runHealthCheckInternal(ctx context.Context, envID s
 	if !environment.Enabled {
 		return schedulertypes.Outcome{Status: schedulertypes.Canceled, Message: "Environment disabled"}, nil
 	}
+	wasOnline := environment.Status == string(EnvironmentStatusOnline)
 	status, err := s.TestConnection(ctx, envID, nil)
 	switch {
 	case err != nil:
@@ -155,6 +156,12 @@ func (s *EnvironmentService) runHealthCheckInternal(ctx context.Context, envID s
 	// Local environment (ID "0") has no registries/repositories to push.
 	if envID == "0" {
 		return schedulertypes.Outcome{Status: schedulertypes.Succeeded}, nil
+	}
+
+	// An agent that just came back may have restarted with different state;
+	// resend everything once instead of trusting the last delivered payload.
+	if !wasOnline {
+		s.ForgetSyncState(envID)
 	}
 
 	var syncErrors []error

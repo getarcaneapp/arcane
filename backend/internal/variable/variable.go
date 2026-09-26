@@ -56,10 +56,14 @@ type VariableService struct {
 
 	statusMu   sync.RWMutex
 	syncStatus map[string]env.EnvironmentSyncStatus
+
+	// syncGate skips the agent PUT when the effective variable set is unchanged.
+	syncGate utils.SyncGate
 }
 
 func NewVariableService(db *database.DB, environmentService *environment.EnvironmentService, settingsService *settings.SettingsService, kvService *kv.KVService) *VariableService {
 	service := &VariableService{
+		syncGate:        utils.SyncGate{Expiry: environment.SyncDeliveryExpiry},
 		db:              db,
 		settingsService: settingsService,
 		kvService:       kvService,
@@ -317,6 +321,11 @@ func (s *VariableService) SyncEnvironment(ctx context.Context, envID string) err
 	return err
 }
 
+// ForgetSyncState makes the next SyncEnvironment resend regardless of change.
+func (s *VariableService) ForgetSyncState(envID string) {
+	s.syncGate.Forget(envID)
+}
+
 func (s *VariableService) syncEnvironmentInternal(ctx context.Context, envID string) error {
 	if envID != environment.LocalEnvironmentID {
 		if err := s.importRemoteLegacyVarsOnceInternal(ctx, envID); err != nil {
@@ -337,11 +346,20 @@ func (s *VariableService) syncEnvironmentInternal(ctx context.Context, envID str
 	if err != nil {
 		return errors.WrapIf(err, "failed to marshal variables for sync")
 	}
+	unchanged, finishDelivery, err := s.syncGate.Begin(ctx, envID, agentVariablesPath, body)
+	if err != nil {
+		return errors.WrapIf(err, "variable sync cancelled while waiting for an in-flight delivery")
+	}
+	if unchanged {
+		return nil
+	}
 
 	var out struct {
 		Success bool `json:"success"`
 	}
-	return s.proxyEnvironmentJSON(ctx, envID, http.MethodPut, agentVariablesPath, body, &out)
+	err = s.proxyEnvironmentJSON(ctx, envID, http.MethodPut, agentVariablesPath, body, &out)
+	finishDelivery(err == nil)
+	return err
 }
 
 // syncTargetsInternal returns the local environment plus every enabled
@@ -362,7 +380,13 @@ func (s *VariableService) syncTargetsInternal(ctx context.Context) []string {
 // enabled remote environment in parallel, waiting for all of them. Failures
 // are recorded per environment and never abort the other pushes.
 func (s *VariableService) SyncAll(ctx context.Context) []env.EnvironmentSyncStatus {
-	s.syncEnvironmentsInternal(ctx, s.syncTargetsInternal(ctx))
+	targets := s.syncTargetsInternal(ctx)
+	// An explicit sync exists to repair agents, so every target is resent even
+	// when the manager's payload has not changed.
+	for _, envID := range targets {
+		s.ForgetSyncState(envID)
+	}
+	s.syncEnvironmentsInternal(ctx, targets)
 	return s.SyncStatuses()
 }
 
@@ -531,10 +555,7 @@ func (s *VariableService) WriteLocalEnvFile(ctx context.Context, vars []env.Vari
 
 	var builder strings.Builder
 	builder.WriteString("# Global Environment Variables\n")
-	builder.WriteString("# These variables are available to all projects\n")
-	builder.WriteString("# Last updated: ")
-	builder.WriteString(time.Now().Format(time.RFC3339))
-	builder.WriteString("\n\n")
+	builder.WriteString("# These variables are available to all projects\n\n")
 
 	for _, v := range vars {
 		if strings.TrimSpace(v.Key) == "" {

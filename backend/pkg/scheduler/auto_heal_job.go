@@ -31,6 +31,7 @@ import (
 )
 
 const AutoHealJobName = "auto-heal"
+const autoHealDefaultSchedule = "0 */5 * * * *"
 const autoHealInspectConcurrency = 4
 const autoHealAdmissionScopeInternal = "auto-heal"
 
@@ -88,15 +89,15 @@ func (j *AutoHealJob) ShouldSchedule(ctx context.Context) bool {
 }
 
 func (j *AutoHealJob) Schedule(ctx context.Context) string {
-	schedule := j.settingsService.GetStringSetting(ctx, "autoHealInterval", "*/30 * * * * *")
+	schedule := j.settingsService.GetStringSetting(ctx, "autoHealInterval", autoHealDefaultSchedule)
 	if schedule == "" {
-		schedule = "*/30 * * * * *"
+		schedule = autoHealDefaultSchedule
 	}
 
 	parser := scheduleutil.Parser()
 	if _, err := parser.Parse(schedule); err != nil {
 		slog.WarnContext(ctx, "Invalid cron expression for auto-heal, using default", "invalid_schedule", schedule, "error", err)
-		return "*/30 * * * * *"
+		return autoHealDefaultSchedule
 	}
 
 	return schedule

@@ -479,8 +479,6 @@ func (s *EnvironmentService) fanOutSyncToEnvironment[Model any, Item any, Reques
 		return err
 	}
 
-	slog.InfoContext(ctx, "Starting sync to environment", "kind", kind, "environmentID", environmentID, "environmentName", target.Name, "apiUrl", target.TargetURL)
-
 	var records []Model
 	if err := s.db.WithContext(ctx).Find(&records).Error; err != nil {
 		return errors.WrapIff(err, "failed to get %s", kind)
@@ -501,6 +499,18 @@ func (s *EnvironmentService) fanOutSyncToEnvironment[Model any, Item any, Reques
 	if err != nil {
 		return errors.WrapIf(err, "failed to marshal sync request")
 	}
+	unchanged, finishDelivery, err := s.syncGate.Begin(ctx, environmentID, path, reqBody)
+	if err != nil {
+		return errors.WrapIf(err, "sync cancelled while waiting for an in-flight delivery")
+	}
+	if unchanged {
+		slog.DebugContext(ctx, "Skipping sync; payload unchanged since last delivery", "kind", kind, "environmentID", environmentID, "environmentName", target.Name)
+		return nil
+	}
+	delivered := false
+	defer func() { finishDelivery(delivered) }()
+
+	slog.InfoContext(ctx, "Starting sync to environment", "kind", kind, "environmentID", environmentID, "environmentName", target.Name, "apiUrl", target.TargetURL)
 
 	reqCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
@@ -520,6 +530,7 @@ func (s *EnvironmentService) fanOutSyncToEnvironment[Model any, Item any, Reques
 	if !result.Success {
 		return errors.Errorf("sync failed: %s", result.Data.Message)
 	}
+	delivered = true
 
 	slog.InfoContext(ctx, "Successfully synced to environment", "kind", kind, "environmentID", environmentID, "environmentName", target.Name)
 

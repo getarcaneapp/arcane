@@ -253,7 +253,7 @@ func (fw *Watcher) drainPendingPathsInternal() []string {
 // It does NOT decide whether the event should trigger a sync — that is
 // shouldHandleEventInternal's job.
 func (fw *Watcher) handleEventInternal(ctx context.Context, event fsnotify.Event) {
-	if event.Has(fsnotify.Create) {
+	if event.Has(fsnotify.Create) && !projects.IsIgnoredProjectDirName(filepath.Base(event.Name)) {
 		logicalName := fw.logicalPathForWatchEventInternal(event.Name)
 		if fw.isWatchableDirectory(event.Name) {
 			if fw.shouldWatchDir(logicalName) {
@@ -281,6 +281,12 @@ func (fw *Watcher) handleEventInternal(ctx context.Context, event fsnotify.Event
 // via IsProjectFile.
 func (fw *Watcher) shouldHandleEventInternal(event fsnotify.Event) bool {
 	if !event.Has(fsnotify.Write) && !event.Has(fsnotify.Create) && !event.Has(fsnotify.Rename) && !event.Has(fsnotify.Remove) && !event.Has(fsnotify.Chmod) {
+		return false
+	}
+	// Arcane's own scratch directories (update backups, GitOps staging) churn
+	// compose files that must not re-sync the live projects.
+	rel, err := filepath.Rel(fw.watchedPath, fw.logicalPathForWatchEventInternal(event.Name))
+	if err == nil && projects.PathContainsIgnoredDirectory(rel) {
 		return false
 	}
 	return projects.IsProjectFile(filepath.Base(event.Name))
@@ -332,6 +338,9 @@ func (fw *Watcher) addExistingDirectoriesRecursiveInternal(path string, logicalP
 	}
 
 	for _, entry := range entries {
+		if projects.IsIgnoredProjectDirName(entry.Name()) {
+			continue
+		}
 		childPath := filepath.Join(path, entry.Name())
 		if !projects.IsProjectDirectoryEntry(entry, childPath, fw.followSymlinks) {
 			continue

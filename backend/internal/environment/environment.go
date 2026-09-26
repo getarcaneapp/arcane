@@ -23,6 +23,7 @@ import (
 	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/entityjobs"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	httputils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/validation"
 	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
@@ -55,12 +56,31 @@ type EnvironmentService struct {
 	// runtimeWatchers receive a coalesced wake-up whenever an environment's
 	// liveness changes. See environment_runtime_notify.go.
 	runtimeWatchers runtimeWatchersInternal
+
+	// syncGate skips the periodic registry/S3/repository pushes to an agent
+	// while the payload it last accepted is unchanged.
+	syncGate utils.SyncGate
 }
+
+// SyncDeliveryExpiry bounds how long an accepted config push is trusted. An
+// agent rebuilt with a fresh data volume while its status stayed online gets
+// everything again within this window without operator action.
+const SyncDeliveryExpiry = time.Hour
 
 // VariableSyncer pushes the effective global-variable set to one environment.
 // Implemented by variable.VariableService.
 type VariableSyncer interface {
 	SyncEnvironment(ctx context.Context, envID string) error
+	ForgetSyncState(envID string)
+}
+
+// ForgetSyncState makes the next sync of every resource group resend to the
+// environment regardless of whether the payload changed.
+func (s *EnvironmentService) ForgetSyncState(environmentID string) {
+	s.syncGate.Forget(environmentID)
+	if s.variableSyncer != nil {
+		s.variableSyncer.ForgetSyncState(environmentID)
+	}
 }
 
 const (
@@ -73,6 +93,7 @@ func NewEnvironmentService(db *database.DB, httpClient *http.Client, dockerServi
 		httpClient = http.DefaultClient
 	}
 	return &EnvironmentService{
+		syncGate:        utils.SyncGate{Expiry: SyncDeliveryExpiry},
 		db:              db,
 		httpClient:      httpClient,
 		dockerService:   dockerService,
@@ -375,6 +396,7 @@ func (s *EnvironmentService) DeleteEnvironment(ctx context.Context, id string, u
 	}
 
 	s.edgeTokens.invalidate(id)
+	s.ForgetSyncState(id)
 	s.remoteEnvs.remove(id)
 
 	// Create event in background
@@ -510,6 +532,7 @@ func (s *EnvironmentService) SyncResourcesToEnvironment(ctx context.Context, env
 	}, func(ctx context.Context) error {
 		var failedGroups []string
 
+		s.ForgetSyncState(environmentID)
 		if err := s.SyncRegistriesToEnvironment(ctx, environmentID); err != nil {
 			slog.WarnContext(ctx, "Failed to sync registries", "environmentID", environmentID, "error", err.Error())
 			failedGroups = append(failedGroups, "container registries")

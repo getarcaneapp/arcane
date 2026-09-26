@@ -1191,27 +1191,23 @@ func (s *ContainerRegistryService) checkRegistryNeedsUpdateInternal(item contain
 	if newType == RegistryTypeGeneric {
 		needsUpdate = utils.ApplyChanged(&existing.Username, mo.Some(item.Username)) || needsUpdate
 
-		encryptedToken, err := crypto.Encrypt(item.Token)
+		tokenChanged, err := utils.ApplyEncrypted(&existing.Token, item.Token)
 		if err != nil {
-			slog.Warn("failed to encrypt token during sync, skipping field", "registry", existing.ID, "error", err)
-		} else {
-			needsUpdate = utils.ApplyChanged(&existing.Token, mo.Some(encryptedToken)) || needsUpdate
+			return false, errors.WrapIff(err, "failed to apply token for registry %s", existing.ID)
 		}
-
-		return needsUpdate, nil
+		return tokenChanged || needsUpdate, nil
 	}
 
 	credChanged := utils.ApplyChanged(&existing.AWSAccessKeyID, mo.Some(item.AWSAccessKeyID))
 	credChanged = utils.ApplyChanged(&existing.AWSRegion, mo.Some(item.AWSRegion)) || credChanged
 
-	// Encrypt and update AWS secret if provided
+	// Update the AWS secret only when the manager sent one that differs.
 	if item.AWSSecretAccessKey != "" {
-		encryptedSecret, err := crypto.Encrypt(item.AWSSecretAccessKey)
+		secretChanged, err := utils.ApplyEncrypted(&existing.AWSSecretAccessKey, item.AWSSecretAccessKey)
 		if err != nil {
-			slog.Warn("failed to encrypt AWS secret during sync, skipping field", "registry", existing.ID, "error", err)
-		} else {
-			credChanged = utils.ApplyChanged(&existing.AWSSecretAccessKey, mo.Some(encryptedSecret)) || credChanged
+			return false, errors.WrapIff(err, "failed to apply AWS secret for registry %s", existing.ID)
 		}
+		credChanged = secretChanged || credChanged
 	}
 
 	// Invalidate cached ECR token when credentials change

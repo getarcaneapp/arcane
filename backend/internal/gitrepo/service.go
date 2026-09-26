@@ -654,39 +654,13 @@ func (s *GitRepositoryService) checkRepositoryNeedsUpdate(item gitops.Repository
 		{&existing.SigningKey, signingKey},
 		{&existing.SigningKeyPassphrase, passphrase},
 	} {
-		changed, err := applyEncryptedInternal(credential.field, credential.plaintext)
+		changed, err := utils.ApplyEncrypted(credential.field, credential.plaintext)
 		if err != nil {
 			return false, err
 		}
 		needsUpdate = changed || needsUpdate
 	}
 	return needsUpdate, nil
-}
-
-// applyEncryptedInternal stores plaintext encrypted in field only when it differs from the stored value.
-func applyEncryptedInternal(field *string, plaintext string) (bool, error) {
-	if plaintext == "" {
-		if *field == "" {
-			return false, nil
-		}
-		*field = ""
-		return true, nil
-	}
-	if *field != "" {
-		current, err := crypto.Decrypt(*field)
-		if err != nil {
-			return false, errors.WrapIf(err, "failed to decrypt stored credential")
-		}
-		if current == plaintext {
-			return false, nil
-		}
-	}
-	encrypted, err := crypto.Encrypt(plaintext)
-	if err != nil {
-		return false, errors.WrapIf(err, "failed to encrypt credential")
-	}
-	*field = encrypted
-	return true, nil
 }
 
 func (s *GitRepositoryService) createNewRepository(ctx context.Context, item gitops.RepositorySync) error {

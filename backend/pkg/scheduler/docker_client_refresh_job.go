@@ -13,7 +13,7 @@ import (
 )
 
 const DockerClientRefreshJobName = "docker-client-refresh"
-const dockerClientRefreshDefaultSchedule = "*/30 * * * * *"
+const dockerClientRefreshDefaultSchedule = "0 */5 * * * *"
 
 // DockerClientRefreshJob keeps the cached Docker client aligned with the daemon
 // API version after daemon restarts or upgrades.

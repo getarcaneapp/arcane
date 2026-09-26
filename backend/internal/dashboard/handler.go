@@ -4,6 +4,7 @@ import (
 	"context"
 	stderrors "errors"
 	"net/http"
+	"net/url"
 	"time"
 
 	"emperror.dev/errors"
@@ -36,6 +37,7 @@ type DashboardHandler struct {
 type GetDashboardInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	DebugAllGood  bool   `query:"debugAllGood" default:"false" doc:"Debug mode: force an empty action item list"`
+	IncludeTables bool   `query:"includeTables" default:"true" doc:"Include the first-page container and image tables"`
 }
 
 const (
@@ -77,7 +79,7 @@ func (h *DashboardHandler) GetDashboard(ctx context.Context, input *GetDashboard
 
 	snapshot, err := h.dashboardService.GetSnapshot(ctx, DashboardActionItemsOptions{
 		DebugAllGood: input.DebugAllGood,
-	}, true)
+	}, input.IncludeTables)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
@@ -290,10 +292,13 @@ func (h *DashboardHandler) runRemoteDashboardStreamPollerInternal(ctx context.Co
 // survives for classification (proxyRemoteJSONInternal would translate it
 // into a huma error first).
 func (h *DashboardHandler) fetchRemoteDashboardSnapshotInternal(ctx context.Context, environment environment.Environment, debugAllGood bool) (*dashboardtypes.Snapshot, error) {
-	path := "/api/environments/0/dashboard"
+	// The all-environments dashboard only reads the aggregate counters, so the
+	// agent is asked to leave the container/image tables out of the payload.
+	query := url.Values{"includeTables": {"false"}}
 	if debugAllGood {
-		path += "?debugAllGood=true"
+		query.Set("debugAllGood", "true")
 	}
+	path := "/api/environments/0/dashboard?" + query.Encode()
 
 	var out base.ApiResponse[dashboardtypes.Snapshot]
 	if err := h.environmentService.ProxyJSONRequestForEnvironment(ctx, environment, http.MethodGet, path, nil, &out); err != nil {

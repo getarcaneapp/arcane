@@ -209,7 +209,7 @@ func DefaultSettingsConfig() *Settings {
 		PollingEnabled:                        SettingVariable{Value: "true"},
 		PollingInterval:                       SettingVariable{Value: "0 0 * * * *"},
 		ImageEventWatcherEnabled:              SettingVariable{Value: "false"},
-		DockerClientRefreshInterval:           SettingVariable{Value: "*/30 * * * * *"},
+		DockerClientRefreshInterval:           SettingVariable{Value: "0 */5 * * * *"},
 		EventCleanupInterval:                  SettingVariable{Value: "0 0 */6 * * *"},
 		ExpiredSessionsCleanupInterval:        SettingVariable{Value: "0 0 0 * * *"},
 		ActivityHistoryRetentionDays:          SettingVariable{Value: "30"},
@@ -231,7 +231,7 @@ func DefaultSettingsConfig() *Settings {
 		PruneBuildCacheMode:                   SettingVariable{Value: "none"},
 		PruneBuildCacheUntil:                  SettingVariable{Value: ""},
 		AutoHealEnabled:                       SettingVariable{Value: "false"},
-		AutoHealInterval:                      SettingVariable{Value: "*/30 * * * * *"},
+		AutoHealInterval:                      SettingVariable{Value: "0 */5 * * * *"},
 		AutoHealExcludedContainers:            SettingVariable{Value: ""},
 		AutoHealMaxRestarts:                   SettingVariable{Value: "5"},
 		AutoHealRestartWindow:                 SettingVariable{Value: "30"},
@@ -764,6 +764,13 @@ func (s *SettingsService) persistSettings(ctx context.Context, values []SettingV
 	})
 }
 
+// retiredSettingValuesInternal lists former defaults that startup replaces
+// with the current default when an install still holds them verbatim.
+var retiredSettingValuesInternal = map[string][]string{
+	"dockerClientRefreshInterval": {"*/30 * * * * *"},
+	"autoHealInterval":            {"*/30 * * * * *"},
+}
+
 func (s *SettingsService) EnsureDefaultSettings(ctx context.Context) error {
 	_, err := s.writes.Execute(ctx, "ensure default settings", func(writeCtx context.Context) (actors.NoPayload, error) {
 		defaultSettings := s.getDefaultSettings()
@@ -781,6 +788,10 @@ func (s *SettingsService) EnsureDefaultSettings(ctx context.Context) error {
 					}
 				case err != nil:
 					return errors.WrapIff(err, "failed to check for existing setting %s", defaultSetting.Key)
+				case slices.Contains(retiredSettingValuesInternal[defaultSetting.Key], existing.Value):
+					if err := tx.Model(&SettingVariable{}).Where("key = ?", defaultSetting.Key).Update("value", defaultSetting.Value).Error; err != nil {
+						return errors.WrapIff(err, "failed to replace retired default for setting %s", defaultSetting.Key)
+					}
 				}
 			}
 			return nil

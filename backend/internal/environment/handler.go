@@ -942,6 +942,7 @@ func (h *EnvironmentHandler) triggerPostUpdateTasksInternal(ctx context.Context,
 }
 
 func (h *EnvironmentHandler) triggerEnvironmentResourceSyncInternal(ctx context.Context, environmentID string, environmentName string, reason string) {
+	h.environmentService.ForgetSyncState(environmentID)
 	detachedCtx := context.WithoutCancel(ctx)
 
 	go func(syncCtx context.Context, envID string, envName string, syncReason string) {

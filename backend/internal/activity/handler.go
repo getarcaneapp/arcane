@@ -646,16 +646,21 @@ func (h *ActivityHandler) proxyListActivitiesForEnvironmentInternal(ctx context.
 }
 
 func (h *ActivityHandler) listRemoteActivitiesInternal(ctx context.Context, input *ListActivitiesInput, fetch func(string) (*base.Paginated[activitytypes.Activity], error)) (*handlerutil.Page[activitytypes.Activity], error) {
-	all := *input
-	all.Start, all.Limit = 0, -1
-	remote, remoteErr := fetch("/api/environments/0/activities?" + activityListQueryInternal(&all).Encode())
-	var remoteActivities []activitytypes.Activity
-	if remoteErr == nil {
-		remoteActivities = remote.Data
-	}
+	params := normalizeRemoteActivityParamsInternal(activityListParamsInternal(input))
+	// The agent only ships the newest window the merged page can use, not its
+	// whole history; the stream poller repeats this every few seconds.
+	remoteActivities, remoteTotal, remoteErr := collectActivityWindowInternal(remoteActivityWindowInternal(params), func(start, limit int) ([]activitytypes.Activity, int64, error) {
+		page := *input
+		page.Start, page.Limit = start, limit
+		remote, err := fetch("/api/environments/0/activities?" + activityListQueryInternal(&page).Encode())
+		if err != nil {
+			return nil, 0, err
+		}
+		return remote.Data, max(remote.Pagination.TotalItems, 0), nil
+	})
 	// The proxy may have exhausted its timeout; manager summaries still need
 	// to be read so an offline environment's queued work remains visible.
-	activities, page, err := h.activityService.ListRemoteActivities(ctx, input.EnvironmentID, remoteActivities, activityListParamsInternal(input))
+	activities, page, err := h.activityService.ListRemoteActivities(ctx, input.EnvironmentID, remoteActivities, remoteTotal, params)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}

@@ -56,7 +56,7 @@ func TestJobService_GetJobSchedules_DefaultDockerClientRefreshInterval(t *testin
 	jobSvc := NewJobService(db, settingsSvc, &config.Config{})
 	cfg := jobSvc.GetJobSchedules(ctx)
 
-	require.Equal(t, "*/30 * * * * *", cfg.DockerClientRefreshInterval)
+	require.Equal(t, "0 */5 * * * *", cfg.DockerClientRefreshInterval)
 	require.Equal(t, "0 0 * * * *", cfg.PollingInterval)
 }
 
@@ -112,7 +112,7 @@ func TestJobService_ListJobs_IncludesDockerClientRefreshJob(t *testing.T) {
 	require.True(t, refreshJob.CanRunManually)
 	require.Equal(t, "monitoring", refreshJob.Category)
 	require.Equal(t, "dockerClientRefreshInterval", refreshJob.SettingsKey)
-	require.Equal(t, "*/30 * * * * *", refreshJob.Schedule)
+	require.Equal(t, "0 */5 * * * *", refreshJob.Schedule)
 }
 
 func TestJobService_ListJobs_UsesRuntimeScheduleAndNextRun(t *testing.T) {
