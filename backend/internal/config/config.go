@@ -218,16 +218,22 @@ func loadFromEnv(cfg *Config) {
 			return
 		}
 
-		defaultValue := fieldType.Tag.Get("default")
-
-		// Get the environment value directly first
-		envValue := utils.TrimQuotes(os.Getenv(envTag))
+		envValue := os.Getenv(envTag)
+		if hasOptionInternal(fieldType, "file") {
+			envValue, _ = utils.LookupEnvOrFile(envTag)
+		}
+		envValue = utils.TrimQuotes(envValue)
 		if envValue == "" {
-			envValue = defaultValue
+			envValue = fieldType.Tag.Get("default")
 		}
 
 		setFieldValueInternal(field, fieldType, envValue)
 	})
+}
+
+// hasOptionInternal reports whether the field's `options` tag lists option.
+func hasOptionInternal(fieldType reflect.StructField, option string) bool {
+	return slices.Contains(strings.Split(fieldType.Tag.Get("options"), ","), option)
 }
 
 // DeprecatedEnvVarsSet returns the env names of fields tagged deprecated that
@@ -236,7 +242,7 @@ func (c *Config) DeprecatedEnvVarsSet() []string {
 	var envNames []string
 	v := reflect.ValueOf(c).Elem()
 	visitConfigFields(v, func(field reflect.Value, fieldType reflect.StructField) {
-		if !slices.Contains(strings.Split(fieldType.Tag.Get("options"), ","), "deprecated") {
+		if !hasOptionInternal(fieldType, "deprecated") {
 			return
 		}
 		if field.Kind() == reflect.String && field.String() == "" {
@@ -259,8 +265,6 @@ func applyOptions(cfg *Config) {
 		options := strings.SplitSeq(optionsTag, ",")
 		for option := range options {
 			switch strings.TrimSpace(option) {
-			case "file":
-				resolveFileBasedEnvVariable(field, fieldType)
 			case "toLower":
 				if field.Kind() == reflect.String {
 					field.SetString(strings.ToLower(field.String()))
@@ -309,39 +313,6 @@ func visitConfigFields(v reflect.Value, fn func(reflect.Value, reflect.StructFie
 		}
 
 		fn(field, fieldType)
-	}
-}
-
-// resolveFileBasedEnvVariable checks if an environment variable with the suffix "_FILE" is set,
-// reads the content of the file specified by that variable, and sets the corresponding field's value.
-func resolveFileBasedEnvVariable(field reflect.Value, fieldType reflect.StructField) {
-	// Only process string and []byte fields
-	isString := field.Kind() == reflect.String
-	isByteSlice := field.Kind() == reflect.Slice && field.Type().Elem().Kind() == reflect.Uint8
-	if !isString && !isByteSlice {
-		return
-	}
-
-	// Only process fields with the "env" tag
-	envTag := fieldType.Tag.Get("env")
-	if envTag == "" {
-		return
-	}
-
-	fileContent, ok := utils.ReadEnvFile(envTag)
-	if !ok {
-		return
-	}
-
-	// Log when file value overrides a direct env var
-	if os.Getenv(envTag) != "" {
-		slog.Debug("Using secret from file, overriding direct env var")
-	}
-
-	if isString {
-		field.SetString(strings.TrimSpace(string(fileContent)))
-	} else {
-		field.SetBytes(fileContent)
 	}
 }
 

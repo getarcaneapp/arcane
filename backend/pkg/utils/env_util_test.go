@@ -8,51 +8,67 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func writeSecretFileInternal(t *testing.T, name, content string) string {
-	t.Helper()
-	path := filepath.Join(t.TempDir(), name)
-	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
-	return path
-}
-
 func TestLookupEnvOrFile(t *testing.T) {
-	t.Run("file stands in for the variable, trimmed", func(t *testing.T) {
-		t.Setenv("ARCANE_TEST_SECRET_FILE", writeSecretFileInternal(t, "single", "from-file\n"))
-		t.Setenv("ARCANE_TEST_SECRET", "from-env")
+	const name = "ARCANE_TEST_SECRET"
+	writeFile := func(t *testing.T, content string) string {
+		t.Helper()
+		path := filepath.Join(t.TempDir(), "secret")
+		require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+		return path
+	}
 
-		value, ok := LookupEnvOrFile("ARCANE_TEST_SECRET")
-		require.True(t, ok)
-		require.Equal(t, "from-file", value)
-	})
+	tests := []struct {
+		name  string
+		setup func(t *testing.T)
+		want  string
+		found bool
+	}{
+		{
+			name: "file wins over the variable and is trimmed",
+			setup: func(t *testing.T) {
+				t.Setenv(name+"_FILE", writeFile(t, "from-file\n"))
+				t.Setenv(name, "from-env")
+			},
+			want:  "from-file",
+			found: true,
+		},
+		{
+			name: "double underscore wins over single",
+			setup: func(t *testing.T) {
+				t.Setenv(name+"__FILE", writeFile(t, "double"))
+				t.Setenv(name+"_FILE", writeFile(t, "single"))
+			},
+			want:  "double",
+			found: true,
+		},
+		{
+			name: "unreadable file falls back to the variable",
+			setup: func(t *testing.T) {
+				t.Setenv(name+"_FILE", filepath.Join(t.TempDir(), "missing"))
+				t.Setenv(name, "from-env")
+			},
+			want:  "from-env",
+			found: true,
+		},
+		{
+			name:  "variable only",
+			setup: func(t *testing.T) { t.Setenv(name, "from-env") },
+			want:  "from-env",
+			found: true,
+		},
+		{
+			name:  "unset",
+			setup: func(t *testing.T) {},
+			found: false,
+		},
+	}
 
-	t.Run("double underscore takes precedence", func(t *testing.T) {
-		t.Setenv("ARCANE_TEST_SECRET__FILE", writeSecretFileInternal(t, "double", "double"))
-		t.Setenv("ARCANE_TEST_SECRET_FILE", writeSecretFileInternal(t, "single", "single"))
-
-		value, ok := LookupEnvOrFile("ARCANE_TEST_SECRET")
-		require.True(t, ok)
-		require.Equal(t, "double", value)
-	})
-
-	t.Run("falls back to the variable without a file", func(t *testing.T) {
-		t.Setenv("ARCANE_TEST_SECRET", "from-env")
-
-		value, ok := LookupEnvOrFile("ARCANE_TEST_SECRET")
-		require.True(t, ok)
-		require.Equal(t, "from-env", value)
-	})
-
-	t.Run("falls back to the variable when the file is unreadable", func(t *testing.T) {
-		t.Setenv("ARCANE_TEST_SECRET_FILE", filepath.Join(t.TempDir(), "missing"))
-		t.Setenv("ARCANE_TEST_SECRET", "from-env")
-
-		value, ok := LookupEnvOrFile("ARCANE_TEST_SECRET")
-		require.True(t, ok)
-		require.Equal(t, "from-env", value)
-	})
-
-	t.Run("reports absence", func(t *testing.T) {
-		_, ok := LookupEnvOrFile("ARCANE_TEST_SECRET_UNSET")
-		require.False(t, ok)
-	})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.setup(t)
+			got, ok := LookupEnvOrFile(name)
+			require.Equal(t, tt.found, ok)
+			require.Equal(t, tt.want, got)
+		})
+	}
 }
