@@ -52,6 +52,7 @@ import (
 	"github.com/samber/mo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.getarcane.app/acfs"
 	buildtypes "go.getarcane.app/builds/types"
 	"go.getarcane.app/updater/labels"
 	"go.uber.org/fx/fxtest"
@@ -7914,15 +7915,48 @@ func TestPrepareProjectBindDirectoriesInternal(t *testing.T) {
 		assert.NoDirExists(t, filepath.Join(projectPath, "named"))
 	})
 
-	t.Run("rejects symlink escaping the project", func(t *testing.T) {
+	t.Run("skips sources reached through symlinks escaping the project", func(t *testing.T) {
+		t.Parallel()
+		parent := t.TempDir()
+		projectPath := filepath.Join(parent, "project")
+		require.NoError(t, os.Mkdir(projectPath, 0o755))
+		outside := filepath.Join(parent, "appdata")
+		existingExternal := filepath.Join(outside, "jellyfin", "data")
+		require.NoError(t, os.MkdirAll(existingExternal, 0o700))
+		require.NoError(t, os.Symlink(outside, filepath.Join(projectPath, "abs")))
+		require.NoError(t, os.Symlink(filepath.Join("..", "appdata"), filepath.Join(projectPath, "rel")))
+
+		project := newProject(
+			bind(filepath.Join(projectPath, "abs", "jellyfin", "data")),
+			bind(filepath.Join(projectPath, "abs", "missing")),
+			bind(filepath.Join(projectPath, "rel", "jellyfin", "data")),
+			bind(filepath.Join(projectPath, "rel", "other")),
+			bind(filepath.Join(projectPath, "local", "conf")),
+		)
+
+		require.NoError(t, prepareProjectBindDirectoriesInternal(projectPath)(context.Background(), project))
+
+		info, err := os.Stat(existingExternal)
+		require.NoError(t, err)
+		assert.Equal(t, os.FileMode(0o700), info.Mode().Perm(), "external directory permissions preserved")
+		assert.NoDirExists(t, filepath.Join(outside, "missing"))
+		assert.NoDirExists(t, filepath.Join(outside, "other"))
+		assert.DirExists(t, filepath.Join(projectPath, "local", "conf"))
+	})
+
+	t.Run("reports symlink loops and canceled contexts", func(t *testing.T) {
 		t.Parallel()
 		projectPath := t.TempDir()
-		outside := t.TempDir()
-		require.NoError(t, os.Symlink(outside, filepath.Join(projectPath, "link")))
+		require.NoError(t, os.Symlink("loop", filepath.Join(projectPath, "loop")))
 
-		err := prepareProjectBindDirectoriesInternal(projectPath)(context.Background(), newProject(bind(filepath.Join(projectPath, "link", "conf"))))
-		require.Error(t, err)
+		err := prepareProjectBindDirectoriesInternal(projectPath)(context.Background(), newProject(bind(filepath.Join(projectPath, "loop", "conf"))))
+		require.ErrorIs(t, err, acfs.ErrSymlinkLoop)
 		assert.Contains(t, err.Error(), "service app")
-		assert.NoDirExists(t, filepath.Join(outside, "conf"))
+
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		err = prepareProjectBindDirectoriesInternal(projectPath)(ctx, newProject(bind(filepath.Join(projectPath, "conf"))))
+		require.ErrorIs(t, err, context.Canceled)
+		assert.NoDirExists(t, filepath.Join(projectPath, "conf"))
 	})
 }
