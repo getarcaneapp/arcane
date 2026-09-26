@@ -24,6 +24,7 @@ import (
 	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/resources"
 	"github.com/getarcaneapp/arcane/types/v2/auth"
 	"github.com/go-webauthn/webauthn/protocol"
@@ -561,6 +562,7 @@ func (s *passkeyService) FinishPasskeyLogin(ctx context.Context, ceremonyID stri
 		slog.WarnContext(ctx, "passkey login validation failed", "stage", "parse", "error", err)
 		return nil, ErrPasskeyResponse
 	}
+	utils.NormalizePasskeyAssertionExtensions(session.Extensions, parsed)
 
 	var resolved *webAuthnUser
 	user, credential, err := s.webAuthn.ValidatePasskeyLogin(func(_ []byte, userHandle []byte) (webauthn.User, error) {
@@ -1151,6 +1153,7 @@ func (s *passkeyService) finishKnownUserAssertionInternal(ctx context.Context, t
 	if err != nil {
 		return nil, ErrPasskeyResponse
 	}
+	utils.NormalizePasskeyAssertionExtensions(session.Extensions, parsed)
 	credential, err := s.webAuthn.ValidateLogin(adapter, session, parsed)
 	if err != nil || credential == nil {
 		return nil, ErrPasskeyResponse
