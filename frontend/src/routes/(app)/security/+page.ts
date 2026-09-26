@@ -40,7 +40,7 @@ export const load: PageLoad = async ({ parent }) => {
 		return {
 			envId,
 			featureDisabled: true,
-			summary: null,
+			overview: null,
 			vulnerabilities: { data: [], pagination: { totalPages: 0, totalItems: 0, currentPage: 1, itemsPerPage: 20 } },
 			vulnerabilityRequestOptions,
 			patchRequestOptions
@@ -49,14 +49,14 @@ export const load: PageLoad = async ({ parent }) => {
 
 	const requestForApi = mapVulnerabilityRequest(vulnerabilityRequestOptions);
 
-	let summary;
+	let overview;
 	let vulnerabilities;
 	const operationResult = await tryCatch(
 		(async () =>
 			Promise.all([
 				queryClient.query({
-					queryKey: queryKeys.vulnerabilities.summaryByEnvironment(envId),
-					queryFn: () => vulnerabilityService.getEnvironmentSummaryForEnvironment(envId)
+					queryKey: queryKeys.vulnerabilities.overviewByEnvironment(envId),
+					queryFn: () => vulnerabilityService.getRiskOverviewForEnvironment(envId)
 				}),
 				queryClient.query({
 					queryKey: queryKeys.vulnerabilities.allByEnvironment(envId, requestForApi),
@@ -69,13 +69,13 @@ export const load: PageLoad = async ({ parent }) => {
 
 		throwPageLoadError(err, 'Failed to load security data');
 	} else {
-		[summary, vulnerabilities] = operationResult.data;
+		[overview, vulnerabilities] = operationResult.data;
 	}
 
 	return {
 		envId,
 		featureDisabled: false,
-		summary,
+		overview,
 		vulnerabilities: mapVulnerabilityPage(vulnerabilities, vulnerabilityRequestOptions),
 		vulnerabilityRequestOptions,
 		patchRequestOptions

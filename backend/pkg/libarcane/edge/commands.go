@@ -69,6 +69,7 @@ var commandRoutes = []commandRoute{
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/images/{imageId}/vulnerabilities/list", CommandName: "vulnerability.list"},
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/vulnerabilities/scanner-status", CommandName: "vulnerability.scanner_status"},
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/vulnerabilities/summary", CommandName: "vulnerability.summary"},
+	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/vulnerabilities/overview", CommandName: "vulnerability.overview"},
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/vulnerabilities/all", CommandName: "vulnerability.all"},
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/vulnerabilities/export", CommandName: "vulnerability.export"},
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/vulnerabilities/image-options", CommandName: "vulnerability.image_options"},

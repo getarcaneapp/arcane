@@ -7,11 +7,11 @@ FROM --platform=$BUILDPLATFORM ghcr.io/voidzero-dev/vite-plus:latest AS frontend
 ENV CI=true
 WORKDIR /app
 
-COPY --chown=vp:vp pnpm-lock.yaml pnpm-workspace.yaml package.json ./
-COPY --chown=vp:vp frontend/package.json ./frontend/package.json
+COPY --chown=vp:vp --parents pnpm-lock.yaml pnpm-workspace.yaml package.json \
+    frontend/package.json tests/package.json email-templates/package.json ./
 
 RUN --mount=type=cache,id=arcane-pnpm-v3,target=/home/vp/.local/share/pnpm/store,sharing=locked,uid=1000,gid=1000 \
-    vp install --frozen-lockfile --prefer-offline
+    vp install --frozen-lockfile --prefer-offline --filter ./frontend...
 
 RUN printf 'NODE_VERSION=%s\nSVELTEKIT_VERSION=%s\n' \
     "$(vp node --version)" \

@@ -1,3 +1,37 @@
+## v2.14.0
+
+### New features
+
+- bulk ignore and restore for vulnerability findings ([\#4158](https://github.com/getarcaneapp/arcane/pull/4158) by @kmendell)
+- add search to template selection dialog ([\#4183](https://github.com/getarcaneapp/arcane/pull/4183) by @kmendell)
+- add container processes tab ([\#4187](https://github.com/getarcaneapp/arcane/pull/4187) by @kmendell)
+- redesigned risk based security view ([\#4204](https://github.com/getarcaneapp/arcane/pull/4204) by @kmendell)
+
+### Bug fixes
+
+- environment-admin resource pages request globally protected data ([\#4151](https://github.com/getarcaneapp/arcane/pull/4151) by @kmendell)
+- keep project Save action mounted so toolbar layout stays stable ([\#4157](https://github.com/getarcaneapp/arcane/pull/4157) by @kmendell)
+- isolate subscriber payloads to prevent concurrent writes ([\#4159](https://github.com/getarcaneapp/arcane/pull/4159) by @kmendell)
+- allow token re-entry when changing agent API URL ([\#4160](https://github.com/getarcaneapp/arcane/pull/4160) by @kmendell)
+- allow deleting records for missing snapshots ([\#4161](https://github.com/getarcaneapp/arcane/pull/4161) by @kmendell)
+- run container updates through the activity system ([\#4167](https://github.com/getarcaneapp/arcane/pull/4167) by @kmendell)
+- forward proxy config to Trivy scan containers ([\#4168](https://github.com/getarcaneapp/arcane/pull/4168) by @kmendell)
+- keep Compose formatting when applying tag updates ([\#4172](https://github.com/getarcaneapp/arcane/pull/4172) by @kmendell)
+- recreate namespace dependents when updating Compose services ([\#4179](https://github.com/getarcaneapp/arcane/pull/4179) by @kmendell)
+- keep pinned Compose tags unless updater strategy opts in ([\#4180](https://github.com/getarcaneapp/arcane/pull/4180) by @kmendell)
+- keep checking updates for containers excluded from automatic updates ([\#4181](https://github.com/getarcaneapp/arcane/pull/4181) by @kmendell)
+- resolve pending update status consistently across containers, projects, and dashboard ([\#4189](https://github.com/getarcaneapp/arcane/pull/4189) by @kmendell)
+- surface Docker join errors and allow manager-address override in Easy Join ([\#4191](https://github.com/getarcaneapp/arcane/pull/4191) by @kmendell)
+- allow dots and hyphens in .env variable names ([\#4199](https://github.com/getarcaneapp/arcane/pull/4199) by @DominikZublasing)
+- only log project update on git sync when content changed ([\#4206](https://github.com/getarcaneapp/arcane/pull/4206) by @kmendell)
+- skip symlinked external bind sources when preparing project updates ([\#4207](https://github.com/getarcaneapp/arcane/pull/4207) by @kmendell)
+- accept Safari's unrequested appid=false on passkey assertions ([\#4208](https://github.com/getarcaneapp/arcane/pull/4208) by @kmendell)
+
+### Other
+
+- improve risk score model ([\#4205](https://github.com/getarcaneapp/arcane/pull/4205) by @kmendell)
+
+**Full Changelog**: https://github.com/getarcaneapp/arcane/compare/v2.13.1...v2.14.0
 ## v2.13.1
 
 ### Bug fixes

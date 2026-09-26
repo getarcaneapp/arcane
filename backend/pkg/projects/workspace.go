@@ -73,7 +73,7 @@ func ReadProjectWorkspace(projectPath string, maxDepth int, skipDirectories, com
 		maxDepth:         maxDepth,
 		maxEntries:       maxEntries,
 		maxFileSizeBytes: maxFileSizeBytes,
-		protected:        ProtectedProjectFilePaths(composeFileName),
+		protected:        ProtectedProjectPaths(projectAbs, composeFileName),
 		skipDirs:         projectScanSkipDirectorySetInternal(skipDirectories),
 		files:            []workspacetypes.FileEntry{},
 		revisionHash:     sha256.New(),
@@ -267,14 +267,29 @@ func ApplyProjectWorkspaceChanges(projectPath string, changes []project.Workspac
 	}
 	defer func() { _ = root.Close() }()
 
-	protected := ProtectedProjectFilePaths(opts.ComposeFileName)
 	for _, change := range changes {
+		// Recomputed per change: an earlier change may have removed a directory
+		// that shadowed a protected name.
+		protected := ProtectedProjectPaths(projectPath, opts.ComposeFileName)
 		if err := applyWorkspaceFileChangeInternal(root, protected, change, uploads, opts.MaxFileSizeBytes); err != nil {
 			return err
 		}
 	}
 
 	return nil
+}
+
+// ProtectedProjectPaths is ProtectedProjectFilePaths minus names that are
+// directories in projectPath. Neither Arcane nor compose treats such a
+// directory as project configuration, so it belongs to the workspace.
+func ProtectedProjectPaths(projectPath, composeFileName string) map[string]bool {
+	protected := ProtectedProjectFilePaths(composeFileName)
+	for name := range protected {
+		if info, err := os.Lstat(filepath.Join(projectPath, name)); err == nil && info.IsDir() {
+			delete(protected, name)
+		}
+	}
+	return protected
 }
 
 func ProtectedProjectFilePaths(composeFileName string) map[string]bool {

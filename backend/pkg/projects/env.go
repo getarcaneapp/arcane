@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"emperror.dev/errors"
@@ -303,7 +304,8 @@ func parseProjectEnvFileExistingInternal(path string, contextEnv EnvMap) (EnvMap
 // Stays on os.*: env files may be symlinks resolving outside any confinement
 // root (a supported setup), which acfs cannot follow.
 func ParseProjectEnvFile(path string, contextEnv EnvMap) (EnvMap, error) {
-	if _, err := os.Stat(path); err != nil {
+	info, err := os.Stat(path)
+	if err != nil || info.IsDir() {
 		return nil, nil //nolint:nilerr // missing .env is not an error
 	}
 	return parseProjectEnvFileExistingInternal(path, contextEnv)
@@ -336,14 +338,14 @@ func WithTransientValidationEnvFile(ctx context.Context, projectPath string, eff
 	originalContent, readErr := os.ReadFile(filepath.Join(projectPath, ".env"))
 	originalExists := readErr == nil
 	if readErr != nil && !os.IsNotExist(readErr) {
-		if !errors.Is(readErr, os.ErrPermission) {
+		if !errors.Is(readErr, os.ErrPermission) && !errors.Is(readErr, syscall.EISDIR) {
 			return errors.WrapIf(readErr, "prepare env file for compose validation")
 		}
-		// The file exists but is permission-locked (e.g. chmod 000, foreign-owned).
+		// The path exists but is permission-locked (e.g. chmod 000, foreign-owned) or a directory.
 		// Its contents can't be verified or safely overwritten, so leave it
 		// untouched and validate against whatever's already on disk instead of
 		// aborting the whole update.
-		slog.Warn("skipping permission-locked .env file during compose validation; leaving it untouched", "projectPath", projectPath)
+		slog.Warn("skipping unreadable .env during compose validation; leaving it untouched", "projectPath", projectPath, "error", readErr)
 		if run == nil {
 			return nil
 		}
@@ -429,6 +431,17 @@ func BuildEffectiveEnvContent(gitContent, overrideContent string) (string, error
 	}
 
 	return concatenated, nil
+}
+
+// EnvContentChanged reports whether two env contents differ semantically,
+// ignoring ordering and comments. Unparseable content is compared verbatim.
+func EnvContentChanged(oldContent, newContent string) bool {
+	oldEnv, oldErr := ParseProjectEnvContent(oldContent, nil)
+	newEnv, newErr := ParseProjectEnvContent(newContent, nil)
+	if oldErr != nil || newErr != nil {
+		return oldContent != newContent
+	}
+	return !maps.Equal(oldEnv, newEnv)
 }
 
 var envKeyLineRegexInternal = regexp.MustCompile(`^(\s*(?:export\s+)?)([A-Za-z_][A-Za-z0-9_.-]*)(\s*=)(.*)$`)
@@ -633,7 +646,7 @@ func ReadProjectEnvState(projectPath string) (ProjectEnvState, error) {
 	}
 
 	if effectiveUnreadable || gitSourceUnreadable || overrideUnreadable {
-		slog.Warn("skipping permission-locked project env file(s); leaving them untouched",
+		slog.Warn("skipping unreadable project env file(s); leaving them untouched",
 			"projectPath", projectPath,
 			"effectiveUnreadable", effectiveUnreadable,
 			"gitSourceUnreadable", gitSourceUnreadable,
@@ -679,13 +692,13 @@ func ReadProjectEnvState(projectPath string) (ProjectEnvState, error) {
 
 // WriteManagedEnvFile writes (or, for project.env, removes) one of the three
 // env-merge bookkeeping files — fileName must be EffectiveEnvFileName,
-// GitSourceEnvFileName, or OverrideEnvFileName. If the existing file is
-// permission-locked, the write is skipped and a warning logged instead: its
-// contents can't be verified, and a locked file is typically unwritable too,
-// so attempting the write would abort the whole caller.
+// GitSourceEnvFileName, or OverrideEnvFileName. If the existing path is
+// unreadable (permission-locked or a directory), the write is skipped and a
+// warning logged instead: its contents can't be verified, and such a path is
+// typically unwritable too, so attempting the write would abort the whole caller.
 func WriteManagedEnvFile(ctx context.Context, projectsDirectory, projectPath, fileName string, unreadable bool, content string) error {
 	if unreadable {
-		slog.Warn("skipping permission-locked project env file; leaving it untouched", "projectPath", projectPath, "file", fileName)
+		slog.Warn("skipping unreadable project env file; leaving it untouched", "projectPath", projectPath, "file", fileName)
 		return nil
 	}
 
@@ -705,11 +718,11 @@ func WriteManagedEnvFile(ctx context.Context, projectsDirectory, projectPath, fi
 }
 
 // readOptionalProjectFileInternal reads fileName from projectPath. A missing
-// file is reported via exists=false with no error. A permission error is
-// reported via unreadable=true with no error: the file is present but its
+// file is reported via exists=false with no error. A permission error or a
+// directory at the path is reported via unreadable=true with no error: its
 // contents cannot be verified, so callers must treat it as absent for merge
 // purposes and must not attempt to overwrite or remove it. Any other I/O
-// error (e.g. the path is a directory) is still returned as a hard failure.
+// error is still returned as a hard failure.
 // A project env file may itself be a symlink whose target lives outside the
 // project directory, so the read goes through os rather than the root-confined
 // API — the same deliberate exception the .env write path makes (#3556).
@@ -721,7 +734,7 @@ func readOptionalProjectFileInternal(projectPath, fileName string) (content stri
 	if errors.Is(readErr, os.ErrNotExist) {
 		return "", false, false, nil
 	}
-	if errors.Is(readErr, os.ErrPermission) {
+	if errors.Is(readErr, os.ErrPermission) || errors.Is(readErr, syscall.EISDIR) {
 		return "", false, true, nil
 	}
 	return "", false, false, errors.WrapIff(readErr, "read %s", fileName)

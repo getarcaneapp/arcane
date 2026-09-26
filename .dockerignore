@@ -33,6 +33,7 @@ LICENSE
 *.md
 docs
 tests
+!tests/package.json
 **/*.test.js
 **/*.spec.js
 **/*.stories.js

@@ -132,6 +132,9 @@ var overrideDocRules = map[string]overrideDocRule{
 	"vulnerabilityScanInterval": {
 		requires: "FEATURE_VULNERABILITY_MANAGEMENT_ENABLED=true and VULNERABILITY_SCAN_ENABLED=true to have effect at runtime.",
 	},
+	"vulnerabilityThreatIntelEnabled": {
+		requires: "FEATURE_VULNERABILITY_MANAGEMENT_ENABLED=true to have effect at runtime.",
+	},
 	"autoHealInterval": {
 		requires: "AUTO_HEAL_ENABLED=true to have effect at runtime.",
 	},

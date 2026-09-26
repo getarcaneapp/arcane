@@ -6,6 +6,7 @@ import (
 	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
+	"github.com/google/go-containerregistry/pkg/authn"
 	"go.getarcane.app/updater/refs"
 	updaterregistry "go.getarcane.app/updater/registry"
 )
@@ -29,9 +30,9 @@ func (s *ContainerRegistryService) ListImageTags(ctx context.Context, imageRef s
 
 	tags, _, err := registryOperationWithCredentialsInternal(lookupCtx, s, parts.RegistryHost, "registry tag listing of "+parts.NormalizedRef, externalCreds,
 		func(ctx context.Context, credential *resolvedRegistryCredential) ([]string, error) {
-			var auth *updaterregistry.Credentials
+			var auth *authn.AuthConfig
 			if credential != nil {
-				auth = &updaterregistry.Credentials{Username: credential.Username, Token: credential.Token}
+				auth = &authn.AuthConfig{Username: credential.Username, Password: credential.Token}
 			}
 			return updaterregistry.FetchTags(ctx, parts.RegistryHost, parts.Repository, auth, s.distributionHTTPClient)
 		})

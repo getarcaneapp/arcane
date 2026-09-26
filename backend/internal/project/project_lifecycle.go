@@ -217,7 +217,8 @@ func (s *ProjectService) existingNamespaceDependentsInternal(ctx context.Context
 // considered (short syntax, or long syntax without create_host_path: false),
 // mirroring what the daemon would otherwise do. Existing files, directories,
 // and symlinks are left untouched, as are sources outside the project
-// directory, and the root-confined acfs calls reject symlinks escaping it.
+// directory or reached through a symlink escaping it (#4195); those are left
+// to Docker.
 func prepareProjectBindDirectoriesInternal(projectPath string) projects.PrepareProjectFunc {
 	return func(ctx context.Context, project *composetypes.Project) error {
 		for _, serviceName := range slices.Sorted(maps.Keys(project.Services)) {
@@ -238,7 +239,8 @@ func prepareProjectBindDirectoriesInternal(projectPath string) projects.PrepareP
 }
 
 // ensureProjectBindDirectoryInternal creates source (and missing parents)
-// when it lies inside projectPath and nothing exists there yet.
+// when it resolves inside projectPath and nothing exists there yet. Sources
+// escaping the project, lexically or through a symlink, are skipped.
 func ensureProjectBindDirectoryInternal(ctx context.Context, projectPath, source string) error {
 	logicalPath, err := acfs.LogicalPath(projectPath, source)
 	if err != nil {
@@ -252,11 +254,17 @@ func ensureProjectBindDirectoryInternal(ctx context.Context, projectPath, source
 	}
 
 	exists, err := acfs.Exists(ctx, projectPath, logicalPath)
-	if err != nil || exists {
+	if errors.Is(err, acfs.ErrOutsideRoot) || exists {
+		return nil
+	}
+	if err != nil {
 		return err
 	}
 
 	if err := acfs.MkdirAll(ctx, projectPath, logicalPath, utils.DirPerm); err != nil {
+		if errors.Is(err, acfs.ErrOutsideRoot) {
+			return nil
+		}
 		return err
 	}
 	slog.InfoContext(ctx, "created missing bind directory for project deployment", "projectPath", projectPath, "source", source)

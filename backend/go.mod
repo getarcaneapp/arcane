@@ -13,13 +13,13 @@ replace (
 require (
 	emperror.dev/emperror v0.33.0
 	emperror.dev/errors v0.8.1
-	github.com/ProtonMail/go-crypto v1.4.1
+	github.com/ProtonMail/go-crypto v1.5.1
 	github.com/anthdm/hollywood v1.0.5
-	github.com/aws/aws-sdk-go-v2 v1.47.0
-	github.com/aws/aws-sdk-go-v2/config v1.33.5
-	github.com/aws/aws-sdk-go-v2/credentials v1.20.5
-	github.com/aws/aws-sdk-go-v2/service/ecr v1.66.0
-	github.com/aws/aws-sdk-go-v2/service/s3 v1.113.1
+	github.com/aws/aws-sdk-go-v2 v1.47.1
+	github.com/aws/aws-sdk-go-v2/config v1.33.6
+	github.com/aws/aws-sdk-go-v2/credentials v1.20.6
+	github.com/aws/aws-sdk-go-v2/service/ecr v1.66.1
+	github.com/aws/aws-sdk-go-v2/service/s3 v1.113.4
 	github.com/aws/smithy-go v1.28.2
 	github.com/cenkalti/backoff/v5 v5.0.3
 	github.com/coder/websocket v1.8.15
@@ -33,8 +33,8 @@ require (
 	github.com/docker/compose/v5 v5.5.1
 	github.com/docker/go-units v0.5.0
 	github.com/fsnotify/fsnotify v1.10.1
-	github.com/getarcaneapp/arcane/cli/v2 v2.13.0
-	github.com/getarcaneapp/arcane/types/v2 v2.13.0
+	github.com/getarcaneapp/arcane/cli/v2 v2.13.1
+	github.com/getarcaneapp/arcane/types/v2 v2.13.1
 	github.com/go-git/go-billy/v5 v5.9.1
 	github.com/go-git/go-git/v5 v5.19.2
 	github.com/go-webauthn/webauthn v0.18.2
@@ -43,7 +43,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/jinzhu/copier v0.4.0
 	github.com/jwx-go/jwkfetch/v4 v4.0.4
-	github.com/klauspost/compress v1.20.0
+	github.com/klauspost/compress v1.20.1
 	github.com/labstack/echo/v5 v5.3.1
 	github.com/lestrrat-go/httprc/v3 v3.0.6
 	github.com/lestrrat-go/jwx/v4 v4.5.0
@@ -52,7 +52,7 @@ require (
 	github.com/moby/buildkit v0.33.0
 	github.com/moby/moby/api v1.56.0
 	github.com/moby/moby/client v0.6.0
-	github.com/nicholas-fedor/shoutrrr v0.21.0
+	github.com/nicholas-fedor/shoutrrr v0.21.1
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.1
 	github.com/orandin/slog-gorm v1.4.0
@@ -69,14 +69,14 @@ require (
 	github.com/stretchr/testify v1.12.1
 	github.com/subosito/gotenv v1.6.0
 	github.com/wneessen/go-mail v0.8.1
-	go.getarcane.app/acfs v0.6.0
-	go.getarcane.app/builds v0.4.1
-	go.getarcane.app/docker/convert v0.3.1
+	go.getarcane.app/acfs v0.6.1
+	go.getarcane.app/builds v0.4.2
+	go.getarcane.app/docker/convert v0.3.2
 	go.getarcane.app/kit v0.2.0
 	go.getarcane.app/streams v0.4.3
 	go.getarcane.app/sys/cgroup v0.2.3
-	go.getarcane.app/sys/crypto v0.2.1
-	go.getarcane.app/updater v0.10.1
+	go.getarcane.app/sys/crypto v0.2.2
+	go.getarcane.app/updater v0.11.0
 	go.uber.org/fx v1.24.0
 	go.yaml.in/yaml/v4 v4.0.0-rc.6
 	golang.org/x/crypto v0.57.0
@@ -111,18 +111,18 @@ require (
 	github.com/aquasecurity/trivy v0.72.0 // indirect
 	github.com/aquasecurity/trivy-db v0.0.0-20260629102122-a0049d7ad12f // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.20 // indirect
-	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.20.0 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/configsources v1.5.3 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.8.3 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/v4a v1.5.3 // indirect
+	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.20.1 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/configsources v1.5.4 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.8.4 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/v4a v1.5.4 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.19 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/checksum v1.11.3 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.14.3 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.20.3 // indirect
-	github.com/aws/aws-sdk-go-v2/service/signin v1.10.0 // indirect
-	github.com/aws/aws-sdk-go-v2/service/sso v1.38.0 // indirect
-	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.43.0 // indirect
-	github.com/aws/aws-sdk-go-v2/service/sts v1.51.0 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/checksum v1.11.5 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.14.4 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.20.4 // indirect
+	github.com/aws/aws-sdk-go-v2/service/signin v1.10.1 // indirect
+	github.com/aws/aws-sdk-go-v2/service/sso v1.38.1 // indirect
+	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.43.1 // indirect
+	github.com/aws/aws-sdk-go-v2/service/sts v1.51.1 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/buger/goterm v1.0.4 // indirect
@@ -139,7 +139,7 @@ require (
 	github.com/cloudflare/circl v1.6.3 // indirect
 	github.com/containerd/console v1.0.5 // indirect
 	github.com/containerd/containerd/api v1.11.1 // indirect
-	github.com/containerd/containerd/v2 v2.3.5 // indirect
+	github.com/containerd/containerd/v2 v2.3.6 // indirect
 	github.com/containerd/continuity v0.5.0 // indirect
 	github.com/containerd/errdefs/pkg v0.3.0 // indirect
 	github.com/containerd/log v0.1.0 // indirect
@@ -211,7 +211,7 @@ require (
 	github.com/mattn/go-isatty v0.0.24 // indirect
 	github.com/mattn/go-localereader v0.0.1 // indirect
 	github.com/mattn/go-runewidth v0.0.30 // indirect
-	github.com/mattn/go-shellwords v1.0.14 // indirect
+	github.com/mattn/go-shellwords v1.0.15 // indirect
 	github.com/mattn/go-sqlite3 v1.14.24 // indirect
 	github.com/mfridman/interpolate v0.0.2 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect

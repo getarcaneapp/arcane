@@ -249,6 +249,7 @@ func DefaultSettingsConfig() *Settings {
 		FeatureVulnerabilityManagementEnabled: SettingVariable{Value: "true"},
 		VulnerabilityScanEnabled:              SettingVariable{Value: "false"},
 		VulnerabilityScanInterval:             SettingVariable{Value: "0 0 0 * * *"},
+		VulnerabilityThreatIntelEnabled:       SettingVariable{Value: "true"},
 		TrivyDbRegistry:                       SettingVariable{Value: "ghcr.io"},
 		TrivyNetwork:                          SettingVariable{Value: ""},
 		TrivySecurityOpts:                     SettingVariable{Value: ""},

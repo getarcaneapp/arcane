@@ -3,6 +3,7 @@
 	import * as Table from '#lib/components/ui/table/index.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import EmptyState from '#lib/components/states/empty-state.svelte';
+	import MonoCell from '#lib/components/vulnerability/mono-cell.svelte';
 	import Spinner from '#lib/components/ui/spinner/spinner.svelte';
 	import { m } from '#lib/paraglide/messages.js';
 	import { LayoutListIcon } from '#lib/icons/index.js';
@@ -82,7 +83,7 @@
 					{#each processes as cells (pidIndex >= 0 ? cells[pidIndex] : cells)}
 						<Table.Row>
 							{#each cells as cell}
-								<Table.Cell class="font-mono text-xs">{cell}</Table.Cell>
+								<Table.Cell><MonoCell value={cell} /></Table.Cell>
 							{/each}
 						</Table.Row>
 					{/each}

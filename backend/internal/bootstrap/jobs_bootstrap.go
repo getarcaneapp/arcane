@@ -104,6 +104,7 @@ type registerJobsParams struct {
 	ScheduledPrune         *scheduler.ScheduledPruneJob
 	FilesystemWatcher      *scheduler.FilesystemWatcherJob
 	VulnerabilityScan      *scheduler.VulnerabilityScanJob
+	VulnerabilityRisk      *scheduler.VulnerabilityRiskJob
 	AutoPatch              *scheduler.AutoPatchJob
 	AutoHeal               *scheduler.AutoHealJob
 	ActivitySweep          *scheduler.ActivitySweepJob
@@ -151,6 +152,7 @@ func registerJobs(params registerJobsParams) error {
 		params.ExpiredSessionsCleanup,
 		params.ScheduledPrune,
 		params.VulnerabilityScan,
+		params.VulnerabilityRisk,
 		params.AutoPatch,
 		params.AutoHeal,
 		params.ActivitySweep,
@@ -196,6 +198,7 @@ func registerJobs(params registerJobsParams) error {
 		FilesystemWatcher:  params.FilesystemWatcher,
 		ScheduledPrune:     params.ScheduledPrune,
 		VulnerabilityScan:  params.VulnerabilityScan,
+		VulnerabilityRisk:  params.VulnerabilityRisk,
 		AutoPatch:          params.AutoPatch,
 		AutoHeal:           params.AutoHeal,
 		Apns:               params.Apns,
@@ -284,6 +287,7 @@ type settingsSubscriptionsParams struct {
 	FilesystemWatcher  *scheduler.FilesystemWatcherJob
 	ScheduledPrune     *scheduler.ScheduledPruneJob
 	VulnerabilityScan  *scheduler.VulnerabilityScanJob
+	VulnerabilityRisk  *scheduler.VulnerabilityRiskJob
 	AutoPatch          *scheduler.AutoPatchJob
 	AutoHeal           *scheduler.AutoHealJob
 	Apns               *apns.ApnsService
@@ -308,6 +312,13 @@ func setupSettingsSubscriptionsInternal(params settingsSubscriptionsParams) erro
 	subscribe := func(keys []string, callback func([]libarcane.SettingUpdate)) {
 		unsubscribes = append(unsubscribes, params.Settings.SubscribeSettingsChanges(keys, callback))
 	}
+	rescheduleOn := func(keys []string, job schedulertypes.Job) {
+		subscribe(keys, func(_ []libarcane.SettingUpdate) {
+			if err := params.Scheduler.RescheduleJob(params.LifecycleCtx, job); err != nil {
+				slog.WarnContext(params.LifecycleCtx, "Failed to reschedule job", "job", job.Name(), "error", err)
+			}
+		})
+	}
 	timeoutSyncExecutor, cancelTimeoutSync, err := setupTimeoutSettingsSubscriptionInternal(params, subscribe)
 	if err != nil {
 		return err
@@ -329,11 +340,7 @@ func setupSettingsSubscriptionsInternal(params settingsSubscriptionsParams) erro
 		})
 	})
 
-	subscribe([]string{"autoUpdate", "autoUpdateInterval"}, func(_ []libarcane.SettingUpdate) {
-		if err := params.Scheduler.RescheduleJob(params.LifecycleCtx, params.AutoUpdate); err != nil {
-			slog.WarnContext(params.LifecycleCtx, "Failed to reschedule auto-update job", "error", err)
-		}
-	})
+	rescheduleOn([]string{"autoUpdate", "autoUpdateInterval"}, params.AutoUpdate)
 
 	subscribe([]string{"projectsDirectory", "followProjectSymlinks"}, func(_ []libarcane.SettingUpdate) {
 		if params.FilesystemWatcher != nil {
@@ -351,38 +358,14 @@ func setupSettingsSubscriptionsInternal(params settingsSubscriptionsParams) erro
 		}
 	})
 
-	subscribe([]string{"scheduledPruneEnabled", "scheduledPruneInterval"}, func(_ []libarcane.SettingUpdate) {
-		if err := params.Scheduler.RescheduleJob(params.LifecycleCtx, params.ScheduledPrune); err != nil {
-			slog.WarnContext(params.LifecycleCtx, "Failed to reschedule scheduled-prune job", "error", err)
-		}
-	})
-
-	subscribe(
-		[]string{
-			features.VulnerabilityManagementSettingKey, "vulnerabilityScanEnabled", "vulnerabilityScanInterval", "trivyNetwork", "trivySecurityOpts", "trivyPrivileged",
-			"trivyResourceLimitsEnabled", "trivyCpuLimit", "trivyMemoryLimitMb", "trivyConcurrentScanContainers",
-		},
-		func(_ []libarcane.SettingUpdate) {
-			if err := params.Scheduler.RescheduleJob(params.LifecycleCtx, params.VulnerabilityScan); err != nil {
-				slog.WarnContext(params.LifecycleCtx, "Failed to reschedule vulnerability-scan job", "error", err)
-			}
-		},
-	)
-
-	subscribe([]string{features.VulnerabilityManagementSettingKey, "imageAutoPatchEnabled", "imageAutoPatchInterval"}, func(_ []libarcane.SettingUpdate) {
-		if err := params.Scheduler.RescheduleJob(params.LifecycleCtx, params.AutoPatch); err != nil {
-			slog.WarnContext(params.LifecycleCtx, "Failed to reschedule auto-patch job", "error", err)
-		}
-	})
-
-	subscribe(
-		[]string{"autoHealEnabled", "autoHealInterval", "autoHealExcludedContainers", "autoHealMaxRestarts", "autoHealRestartWindow"},
-		func(_ []libarcane.SettingUpdate) {
-			if err := params.Scheduler.RescheduleJob(params.LifecycleCtx, params.AutoHeal); err != nil {
-				slog.WarnContext(params.LifecycleCtx, "Failed to reschedule auto-heal job", "error", err)
-			}
-		},
-	)
+	rescheduleOn([]string{"scheduledPruneEnabled", "scheduledPruneInterval"}, params.ScheduledPrune)
+	rescheduleOn([]string{
+		features.VulnerabilityManagementSettingKey, "vulnerabilityScanEnabled", "vulnerabilityScanInterval", "trivyNetwork", "trivySecurityOpts", "trivyPrivileged",
+		"trivyResourceLimitsEnabled", "trivyCpuLimit", "trivyMemoryLimitMb", "trivyConcurrentScanContainers",
+	}, params.VulnerabilityScan)
+	rescheduleOn([]string{features.VulnerabilityManagementSettingKey}, params.VulnerabilityRisk)
+	rescheduleOn([]string{features.VulnerabilityManagementSettingKey, "imageAutoPatchEnabled", "imageAutoPatchInterval"}, params.AutoPatch)
+	rescheduleOn([]string{"autoHealEnabled", "autoHealInterval", "autoHealExcludedContainers", "autoHealMaxRestarts", "autoHealRestartWindow"}, params.AutoHeal)
 
 	params.Lifecycle.Append(fx.Hook{
 		OnStop: func(ctx context.Context) error {

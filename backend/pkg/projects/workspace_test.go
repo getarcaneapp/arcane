@@ -454,3 +454,47 @@ func TestApplyProjectWorkspaceChanges_BaselineGuardsConcurrentEdit(t *testing.T)
 	require.NoError(t, err)
 	require.Equal(t, "fresh draft\n", string(content))
 }
+
+func TestReadProjectWorkspace_ListsEnvDirectoryContents(t *testing.T) {
+	t.Parallel()
+
+	projectDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "compose.yaml"), []byte("services: {}\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "project.env"), []byte("APP_VALUE=local\n"), 0o644))
+	require.NoError(t, os.Mkdir(filepath.Join(projectDir, ".env"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, ".env", "app.env"), []byte("APP_VALUE=sub\n"), 0o644))
+
+	files, _, _, err := ReadProjectWorkspace(projectDir, 3, "", "compose.yaml", 0, 0)
+	require.NoError(t, err)
+
+	relativePaths := make([]string, 0, len(files))
+	for _, file := range files {
+		relativePaths = append(relativePaths, file.RelativePath)
+	}
+	assert.ElementsMatch(t, []string{".env", ".env/app.env"}, relativePaths)
+}
+
+func TestApplyWorkspaceFileChanges_EnvDirectory(t *testing.T) {
+	t.Parallel()
+
+	projectDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "compose.yaml"), []byte("services: {}\n"), 0o644))
+	require.NoError(t, os.Mkdir(filepath.Join(projectDir, ".env"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, ".env", "app.env"), []byte("A=1\n"), 0o644))
+	opts := ProjectWorkspaceApplyOptions{ComposeFileName: "compose.yaml"}
+
+	require.NoError(t, ApplyProjectWorkspaceChanges(projectDir, []project.WorkspaceFileChange{
+		{Operation: "update_file", RelativePath: ".env/app.env", UploadIndex: new(0)},
+	}, map[int][]byte{0: []byte("A=2\n")}, opts))
+	content, err := os.ReadFile(filepath.Join(projectDir, ".env", "app.env"))
+	require.NoError(t, err)
+	assert.Equal(t, "A=2\n", string(content))
+
+	// Once the directory is gone, the name is protected configuration again,
+	// even within the same batch.
+	err = ApplyProjectWorkspaceChanges(projectDir, []project.WorkspaceFileChange{
+		{Operation: "delete", RelativePath: ".env", Recursive: true},
+		{Operation: "create_file", RelativePath: ".env", UploadIndex: new(0)},
+	}, map[int][]byte{0: []byte("B=1\n")}, opts)
+	require.ErrorIs(t, err, ErrProjectWorkspaceProtectedPath)
+}

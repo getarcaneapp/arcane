@@ -8,13 +8,13 @@ ENV CI=true
 WORKDIR /app
 
 # Copy dependency manifests first to preserve the install layer cache
-COPY --chown=vp:vp pnpm-lock.yaml pnpm-workspace.yaml package.json ./
-COPY --chown=vp:vp frontend/package.json ./frontend/package.json
+COPY --chown=vp:vp --parents pnpm-lock.yaml pnpm-workspace.yaml package.json \
+    frontend/package.json tests/package.json email-templates/package.json ./
 
 # Install dependencies with a persistent package store cache
 RUN mkdir -p /home/vp/.local/share/pnpm/store
 RUN --mount=type=cache,id=arcane-pnpm-v3,target=/home/vp/.local/share/pnpm/store,sharing=locked,uid=1000,gid=1000 \
-    vp install --frozen-lockfile --prefer-offline
+    vp install --frozen-lockfile --prefer-offline --filter ./frontend...
 
 # Copy frontend source
 COPY --chown=vp:vp frontend ./frontend

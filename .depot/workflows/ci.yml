@@ -113,8 +113,8 @@ jobs:
           working-directory: ${{ matrix.module.name }}
           only-new-issues: false
 
-  type-check:
-    name: Type Check
+  frontend-linter:
+    name: Frontend Linter
     runs-on:
       size: 2x8
       image: g7r5wqb57k.registry.depot.dev/ci:latest
@@ -137,6 +137,9 @@ jobs:
 
       - name: Run workspace type checks
         run: just lint js
+
+      - name: Run shadcn lint
+        run: vp -C frontend run lint
 
   e2e-tests:
     name: E2E Tests (${{ matrix.database.name }})
@@ -259,7 +262,7 @@ jobs:
         env:
           COMPOSE_FILE: setup/compose-proxy.yaml
           BASE_URL: http://localhost:3002
-          PLAYWRIGHT_DOCKER_BROWSER: '0'
+          PLAYWRIGHT_DOCKER_BROWSER: "0"
           PLAYWRIGHT_JUNIT_OUTPUT_FILE: test-results/playwright-cli.xml
 
       - name: Upload Playwright HTML report

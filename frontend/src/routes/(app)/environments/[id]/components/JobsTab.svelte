@@ -149,7 +149,8 @@
 	}
 
 	function getEnabledOverride(job: JobStatus): boolean | undefined {
-		if (!vulnerabilityManagementEnabled && (job.id === 'vulnerability-scan' || job.id === 'auto-patch')) return false;
+		if (!vulnerabilityManagementEnabled && ['vulnerability-scan', 'vulnerability-risk', 'auto-patch'].includes(job.id))
+			return false;
 		switch (job.id) {
 			case 'scheduled-prune':
 				return formInputs.scheduledPruneEnabled.value;

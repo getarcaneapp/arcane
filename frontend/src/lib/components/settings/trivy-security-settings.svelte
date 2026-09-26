@@ -39,6 +39,7 @@
 		| 'trivyServerUrl'
 		| 'trivyServerToken'
 		| 'trivyIgnoreUnfixed'
+		| 'vulnerabilityThreatIntelEnabled'
 		| 'trivyConfig'
 		| 'trivyIgnore'
 	>;
@@ -185,6 +186,14 @@
 			layout="inline"
 		>
 			<Switch id="trivyIgnoreUnfixedSwitch" bind:checked={formInputs.trivyIgnoreUnfixed.value} />
+		</SettingsRow>
+
+		<SettingsRow
+			label={m.security_threat_intel_enabled_label()}
+			description={m.security_threat_intel_enabled_description()}
+			layout="inline"
+		>
+			<Switch id="vulnerabilityThreatIntelEnabledSwitch" bind:checked={formInputs.vulnerabilityThreatIntelEnabled.value} />
 		</SettingsRow>
 
 		<SettingsRow label={m.security_trivy_config_label()} description={m.security_trivy_config_description()}>

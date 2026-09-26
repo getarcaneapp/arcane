@@ -206,8 +206,8 @@ jobs:
             > Analysis from commit ${{ github.sha }}
           edit-mode: replace
 
-  type-check:
-    name: Type Check
+  frontend-linter:
+    name: Frontend Linter
     runs-on: depot-ubuntu-latest
     steps:
       - name: Checkout code
@@ -231,6 +231,9 @@ jobs:
 
       - name: Run workspace type checks
         run: just lint js
+
+      - name: Run shadcn lint
+        run: vp -C frontend run lint
 
   e2e-tests:
     name: E2E Tests (${{ matrix.database.name }})
@@ -342,7 +345,7 @@ jobs:
         env:
           COMPOSE_FILE: setup/compose-proxy.yaml
           BASE_URL: http://localhost:3002
-          PLAYWRIGHT_DOCKER_BROWSER: '0'
+          PLAYWRIGHT_DOCKER_BROWSER: "0"
           E2E_ADMIN_STATIC_API_KEY: ${{ secrets.E2E_ADMIN_STATIC_API_KEY }}
 
       - name: Upload Playwright HTML report

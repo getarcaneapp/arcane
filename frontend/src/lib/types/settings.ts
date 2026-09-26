@@ -92,6 +92,7 @@ export type Settings = {
 	trivyServerUrl: string;
 	trivyServerToken: string;
 	trivyIgnoreUnfixed: boolean;
+	vulnerabilityThreatIntelEnabled: boolean;
 	trivyConfig: string;
 	trivyIgnore: string;
 	imagePatchSuffix: string;

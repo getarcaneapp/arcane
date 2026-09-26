@@ -594,6 +594,23 @@ func TestImageUpdateService_InspectLocalImageSnapshot_NoRepoDigestsRemainsLocal(
 	assert.Equal(t, "sha256:local-only-image", snapshot.PrimaryDigest)
 }
 
+// registryPingInternal answers the /v2/ version check every registry client sends before its first request.
+func registryPingInternal(w http.ResponseWriter, r *http.Request) bool {
+	if r.URL.Path != "/v2/" {
+		return false
+	}
+	w.WriteHeader(http.StatusOK)
+	return true
+}
+
+// writeManifestHeadInternal answers a manifest HEAD with the headers a client needs to trust the digest without a body.
+func writeManifestHeadInternal(w http.ResponseWriter, digest string) {
+	w.Header().Set("Content-Type", "application/vnd.docker.distribution.manifest.v2+json")
+	w.Header().Set("Content-Length", "0")
+	w.Header().Set("Docker-Content-Digest", digest)
+	w.WriteHeader(http.StatusOK)
+}
+
 func newImageUpdateFallbackServer(t *testing.T, repositoryTag, localDigest, remoteDigest string) *httptest.Server {
 	t.Helper()
 
@@ -630,8 +647,9 @@ func newImageUpdateFallbackServer(t *testing.T, repositoryTag, localDigest, remo
 			}
 			return
 		case r.URL.Path == manifestPath:
-			w.Header().Set("Docker-Content-Digest", remoteDigest)
-			w.WriteHeader(http.StatusOK)
+			writeManifestHeadInternal(w, remoteDigest)
+			return
+		case registryPingInternal(w, r):
 			return
 		default:
 			http.NotFound(w, r)
@@ -662,8 +680,9 @@ func newImageUpdateRegistryOnlyServer(t *testing.T, repositoryTag, remoteDigest 
 			http.Error(w, "not found", http.StatusNotFound)
 			return
 		case r.URL.Path == manifestPath:
-			w.Header().Set("Docker-Content-Digest", remoteDigest)
-			w.WriteHeader(http.StatusOK)
+			writeManifestHeadInternal(w, remoteDigest)
+			return
+		case registryPingInternal(w, r):
 			return
 		default:
 			http.NotFound(w, r)
@@ -2475,6 +2494,9 @@ func TestContainerTagChecksPersistIndependentPoliciesInternal(t *testing.T) {
 	db := setupImageUpdateRegistryTestDBInternal(t)
 	var tagListings atomic.Int64
 	registryServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if registryPingInternal(w, r) {
+			return
+		}
 		if !strings.HasSuffix(r.URL.Path, "/tags/list") {
 			http.NotFound(w, r)
 			return
@@ -2575,6 +2597,9 @@ func TestContainerTagChecksPersistIndependentPoliciesInternal(t *testing.T) {
 func TestContainerTagChecksSeparateMonitoringFromInstallationInternal(t *testing.T) {
 	db := setupImageUpdateRegistryTestDBInternal(t)
 	registryServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if registryPingInternal(w, r) {
+			return
+		}
 		if !strings.HasSuffix(r.URL.Path, "/tags/list") {
 			http.NotFound(w, r)
 			return
@@ -2676,6 +2701,9 @@ func TestContainerTagChecksUseRegistryTagTimeoutInternal(t *testing.T) {
 			t.Setenv("REGISTRY_TAG_TIMEOUT", tt.tagTimeout)
 			settingsService := newImageUpdateTestSettingsServiceInternal(t, "1", "30")
 			registryServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if registryPingInternal(w, r) {
+					return
+				}
 				if !strings.HasSuffix(r.URL.Path, "/tags/list") {
 					http.NotFound(w, r)
 					return
@@ -2731,6 +2759,7 @@ func TestContainerTagChecksPersistResultsFinishedBeforeScanDeadlineInternal(t *t
 	settingsService := newImageUpdateTestSettingsServiceInternal(t, "30", "30")
 	registryServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
+		case registryPingInternal(w, r):
 		case strings.HasSuffix(r.URL.Path, "/team/fast/tags/list"):
 			w.Header().Set("Content-Type", "application/json")
 			require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"name": "team/fast", "tags": []string{"1.0.0", "1.1.0"}}))

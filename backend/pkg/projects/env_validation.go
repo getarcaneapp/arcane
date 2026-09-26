@@ -61,11 +61,15 @@ func BuildValidationEnvironment(ctx context.Context, projectsDirectory, projectP
 // Stays on os.*: env files may be symlinks resolving outside any confinement
 // root (a supported setup), which acfs cannot follow.
 func ParseValidationEnvFile(path string, contextEnv EnvMap) (EnvMap, error) {
-	if _, err := os.Stat(path); err != nil {
+	info, err := os.Stat(path)
+	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil
 		}
 		return nil, errors.WrapIf(err, "stat file")
+	}
+	if info.IsDir() {
+		return nil, nil
 	}
 
 	content, err := os.ReadFile(path)

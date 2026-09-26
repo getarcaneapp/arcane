@@ -29,6 +29,8 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/validation"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
+	"github.com/google/go-containerregistry/pkg/authn"
+	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	dockerregistry "github.com/moby/moby/api/types/registry"
 	"github.com/moby/moby/client"
 	"go.getarcane.app/sys/crypto"
@@ -90,7 +92,7 @@ func (s *ContainerRegistryService) WithSettingsService(settingsService *settings
 // NewContainerRegistryService creates a registry service. kvService may be nil
 // in tests that do not need pull tracking or rate-limit caching.
 func NewContainerRegistryService(db *database.DB, dockerClient registryDaemonGetter, kvService *kv.KVService, distributionHTTPClients ...*http.Client) *ContainerRegistryService {
-	distributionHTTPClient := registry.NewHTTPClient()
+	distributionHTTPClient := &http.Client{Timeout: 30 * time.Second}
 	if len(distributionHTTPClients) > 0 && distributionHTTPClients[0] != nil {
 		distributionHTTPClient = distributionHTTPClients[0]
 	}
@@ -633,7 +635,7 @@ func (s *ContainerRegistryService) getObservedPullsInternal(ctx context.Context,
 	return value
 }
 
-func (s *ContainerRegistryService) dockerHubCredentialForRegistryInternal(reg ContainerRegistry) (*registry.Credentials, string, string, error) {
+func (s *ContainerRegistryService) dockerHubCredentialForRegistryInternal(reg ContainerRegistry) (*authn.AuthConfig, string, string, error) {
 	if reg.RegistryType != RegistryTypeGeneric {
 		return nil, "anonymous", "", nil
 	}
@@ -653,13 +655,13 @@ func (s *ContainerRegistryService) dockerHubCredentialForRegistryInternal(reg Co
 		return nil, "anonymous", "", nil
 	}
 
-	return &registry.Credentials{
+	return &authn.AuthConfig{
 		Username: username,
-		Token:    token,
+		Password: token,
 	}, "credential", username, nil
 }
 
-func (s *ContainerRegistryService) fetchDockerHubRateLimitInternal(ctx context.Context, credential *registry.Credentials) (*registry.RateLimitInfo, error) {
+func (s *ContainerRegistryService) fetchDockerHubRateLimitInternal(ctx context.Context, credential *authn.AuthConfig) (*registry.RateLimitInfo, error) {
 	return registry.FetchRegistryRateLimit(ctx, "docker.io", dockerHubRateLimitRepository, dockerHubRateLimitTag, credential, dockerHubRateLimitHTTPClientInternal(s.distributionHTTPClient))
 }
 
@@ -1343,6 +1345,10 @@ func isUnauthorizedRegistryErrorInternal(err error) bool {
 	if cerrdefs.IsUnauthorized(err) || cerrdefs.IsPermissionDenied(err) {
 		return true
 	}
+	var registryErr *transport.Error
+	if errors.As(err, &registryErr) {
+		return registryErr.StatusCode == http.StatusUnauthorized || registryErr.StatusCode == http.StatusForbidden
+	}
 
 	// Fallback: some Docker daemon versions return plain-text errors without
 	// a typed wrapper. These known substrings cover Docker Hub, GHCR, and
@@ -1439,11 +1445,11 @@ func (s *ContainerRegistryService) fetchDigestFromDaemonInternal(ctx context.Con
 }
 
 func (s *ContainerRegistryService) fetchDigestFromRegistryInternal(ctx context.Context, registryHost, repository, tag string, credential *resolvedRegistryCredential) (string, error) {
-	var distributionCredential *registry.Credentials
+	var distributionCredential *authn.AuthConfig
 	if credential != nil {
-		distributionCredential = &registry.Credentials{
+		distributionCredential = &authn.AuthConfig{
 			Username: strings.TrimSpace(credential.Username),
-			Token:    strings.TrimSpace(credential.Token),
+			Password: strings.TrimSpace(credential.Token),
 		}
 	}
 

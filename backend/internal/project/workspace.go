@@ -199,7 +199,7 @@ func (s *ProjectService) resolveProjectWorkspacePathInternal(ctx context.Context
 		composeFileName = filepath.Base(composeFile)
 	}
 	rootName, _, _ := strings.Cut(rel, "/")
-	protected := projects.ProtectedProjectFilePaths(composeFileName)
+	protected := projects.ProtectedProjectPaths(proj.Path, composeFileName)
 	if protected[rel] || protected[rootName] {
 		return nil, "", "", acfstypes.Entry{}, common.Classify(common.ErrProjectWorkspaceForbidden, errors.New("project configuration is not part of the workspace"))
 	}

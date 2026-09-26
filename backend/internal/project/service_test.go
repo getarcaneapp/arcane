@@ -52,6 +52,7 @@ import (
 	"github.com/samber/mo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.getarcane.app/acfs"
 	buildtypes "go.getarcane.app/builds/types"
 	"go.getarcane.app/updater/labels"
 	"go.uber.org/fx/fxtest"
@@ -3003,7 +3004,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_MigratesDirectEnvIntoProjectOve
 	require.NoError(t, db.Create(project).Error)
 
 	gitEnv := "TOKEN=git\nREMOTE_ONLY=1\n"
-	updated, err := svc.ApplyGitSyncProjectFiles(ctx, project.ID, "services:\n  app:\n    image: nginx:alpine\n", &gitEnv, nil, "", common.User{
+	updated, _, err := svc.ApplyGitSyncProjectFiles(ctx, project.ID, "services:\n  app:\n    image: nginx:alpine\n", &gitEnv, nil, "", common.User{
 		ID:       "u1",
 		Username: "tester",
 	})
@@ -3060,13 +3061,14 @@ func TestProjectService_ApplyGitSyncProjectFiles_PreservesGitEnvSyntax(t *testin
 `
 	gitEnv := "# keep git formatting\nZ_LAST=last\nCLOUDFLARE_CLIENT_SECRET=$$pbkdf2-sha512$$310000$$XXX\nQUOTED_SECRET='$pbkdf2-sha512$310000$XXX'\nA_FIRST=first"
 
-	for range 2 {
-		updated, err := svc.ApplyGitSyncProjectFiles(ctx, project.ID, compose, &gitEnv, nil, "", common.User{
+	for i := range 2 {
+		updated, changed, err := svc.ApplyGitSyncProjectFiles(ctx, project.ID, compose, &gitEnv, nil, "", common.User{
 			ID:       "u1",
 			Username: "tester",
 		})
 		require.NoError(t, err)
 		require.NotNil(t, updated)
+		assert.Equal(t, i == 0, changed)
 
 		effectiveBytes, readErr := os.ReadFile(filepath.Join(projectPath, ".env"))
 		require.NoError(t, readErr)
@@ -3116,7 +3118,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_NormalizesStaleCopiedGitOverrid
 	}
 	require.NoError(t, db.Create(project).Error)
 
-	updated, err := svc.ApplyGitSyncProjectFiles(ctx, project.ID, "services:\n  app:\n    image: nginx:alpine\n", new("BASE=git-updated\nSHARED=1\nREMOTE_ONLY=1\n"), nil, "", common.User{
+	updated, _, err := svc.ApplyGitSyncProjectFiles(ctx, project.ID, "services:\n  app:\n    image: nginx:alpine\n", new("BASE=git-updated\nSHARED=1\nREMOTE_ONLY=1\n"), nil, "", common.User{
 		ID:       "u1",
 		Username: "tester",
 	})
@@ -3164,7 +3166,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_RemovesLegacyDeletedGitMasks(t 
 	}
 	require.NoError(t, db.Create(project).Error)
 
-	updated, err := svc.ApplyGitSyncProjectFiles(ctx, project.ID, "services:\n  app:\n    image: nginx:alpine\n", new("TOKEN=git-updated\nSHARED=1\nREMOTE_ONLY=1\n"), nil, "", common.User{
+	updated, _, err := svc.ApplyGitSyncProjectFiles(ctx, project.ID, "services:\n  app:\n    image: nginx:alpine\n", new("TOKEN=git-updated\nSHARED=1\nREMOTE_ONLY=1\n"), nil, "", common.User{
 		ID:       "u1",
 		Username: "tester",
 	})
@@ -3212,7 +3214,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_RemovesGitEnvSource(t *testing.
 	}
 	require.NoError(t, db.Create(project).Error)
 
-	updated, err := svc.ApplyGitSyncProjectFiles(ctx, project.ID, "services:\n  app:\n    image: nginx:alpine\n", nil, nil, "", common.User{
+	updated, _, err := svc.ApplyGitSyncProjectFiles(ctx, project.ID, "services:\n  app:\n    image: nginx:alpine\n", nil, nil, "", common.User{
 		ID:       "u1",
 		Username: "tester",
 	})
@@ -3255,7 +3257,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_WritesAndRemovesComposeOverride
 	require.NoError(t, db.Create(project).Error)
 
 	overrideContent := "services:\n  app:\n    image: busybox:latest\n"
-	updated, err := svc.ApplyGitSyncProjectFiles(ctx, project.ID, "services:\n  app:\n    image: nginx:alpine\n", nil, new(overrideContent), "compose.override.yaml", common.User{
+	updated, _, err := svc.ApplyGitSyncProjectFiles(ctx, project.ID, "services:\n  app:\n    image: nginx:alpine\n", nil, new(overrideContent), "compose.override.yaml", common.User{
 		ID:       "u1",
 		Username: "tester",
 	})
@@ -3267,7 +3269,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_WritesAndRemovesComposeOverride
 	assert.Equal(t, overrideContent, string(overrideBytes))
 
 	// A subsequent sync without an override removes the previously synced file.
-	updated, err = svc.ApplyGitSyncProjectFiles(ctx, project.ID, "services:\n  app:\n    image: nginx:alpine\n", nil, nil, "", common.User{
+	updated, _, err = svc.ApplyGitSyncProjectFiles(ctx, project.ID, "services:\n  app:\n    image: nginx:alpine\n", nil, nil, "", common.User{
 		ID:       "u1",
 		Username: "tester",
 	})
@@ -3313,7 +3315,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_UsesGlobalEnvDuringComposeValid
       - ${MYPATH}cats/templates:/app/templates
 `
 
-	updated, err := svc.ApplyGitSyncProjectFiles(ctx, project.ID, compose, nil, nil, "", common.User{
+	updated, _, err := svc.ApplyGitSyncProjectFiles(ctx, project.ID, compose, nil, nil, "", common.User{
 		ID:       "u1",
 		Username: "tester",
 	})
@@ -3365,7 +3367,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_TolerantOfUndefinedComposeVar(t
 	}
 	require.NoError(t, db.Create(project).Error)
 
-	updated, err := svc.ApplyGitSyncProjectFiles(ctx, project.ID, compose, nil, nil, "", common.User{
+	updated, _, err := svc.ApplyGitSyncProjectFiles(ctx, project.ID, compose, nil, nil, "", common.User{
 		ID:       "u1",
 		Username: "tester",
 	})
@@ -7611,6 +7613,10 @@ type serviceTagTransportInternal struct {
 }
 
 func (s *serviceTagTransportInternal) RoundTrip(request *http.Request) (*http.Response, error) {
+	// The /v2/ version check precedes every listing and is not a tag call.
+	if request.URL.Path == "/v2/" {
+		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: http.NoBody, Request: request}, nil
+	}
 	s.calls++
 	payload, err := json.Marshal(map[string]any{"name": "library/app", "tags": s.tags})
 	if err != nil {
@@ -7909,15 +7915,48 @@ func TestPrepareProjectBindDirectoriesInternal(t *testing.T) {
 		assert.NoDirExists(t, filepath.Join(projectPath, "named"))
 	})
 
-	t.Run("rejects symlink escaping the project", func(t *testing.T) {
+	t.Run("skips sources reached through symlinks escaping the project", func(t *testing.T) {
+		t.Parallel()
+		parent := t.TempDir()
+		projectPath := filepath.Join(parent, "project")
+		require.NoError(t, os.Mkdir(projectPath, 0o755))
+		outside := filepath.Join(parent, "appdata")
+		existingExternal := filepath.Join(outside, "jellyfin", "data")
+		require.NoError(t, os.MkdirAll(existingExternal, 0o700))
+		require.NoError(t, os.Symlink(outside, filepath.Join(projectPath, "abs")))
+		require.NoError(t, os.Symlink(filepath.Join("..", "appdata"), filepath.Join(projectPath, "rel")))
+
+		project := newProject(
+			bind(filepath.Join(projectPath, "abs", "jellyfin", "data")),
+			bind(filepath.Join(projectPath, "abs", "missing")),
+			bind(filepath.Join(projectPath, "rel", "jellyfin", "data")),
+			bind(filepath.Join(projectPath, "rel", "other")),
+			bind(filepath.Join(projectPath, "local", "conf")),
+		)
+
+		require.NoError(t, prepareProjectBindDirectoriesInternal(projectPath)(context.Background(), project))
+
+		info, err := os.Stat(existingExternal)
+		require.NoError(t, err)
+		assert.Equal(t, os.FileMode(0o700), info.Mode().Perm(), "external directory permissions preserved")
+		assert.NoDirExists(t, filepath.Join(outside, "missing"))
+		assert.NoDirExists(t, filepath.Join(outside, "other"))
+		assert.DirExists(t, filepath.Join(projectPath, "local", "conf"))
+	})
+
+	t.Run("reports symlink loops and canceled contexts", func(t *testing.T) {
 		t.Parallel()
 		projectPath := t.TempDir()
-		outside := t.TempDir()
-		require.NoError(t, os.Symlink(outside, filepath.Join(projectPath, "link")))
+		require.NoError(t, os.Symlink("loop", filepath.Join(projectPath, "loop")))
 
-		err := prepareProjectBindDirectoriesInternal(projectPath)(context.Background(), newProject(bind(filepath.Join(projectPath, "link", "conf"))))
-		require.Error(t, err)
+		err := prepareProjectBindDirectoriesInternal(projectPath)(context.Background(), newProject(bind(filepath.Join(projectPath, "loop", "conf"))))
+		require.ErrorIs(t, err, acfs.ErrSymlinkLoop)
 		assert.Contains(t, err.Error(), "service app")
-		assert.NoDirExists(t, filepath.Join(outside, "conf"))
+
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		err = prepareProjectBindDirectoriesInternal(projectPath)(ctx, newProject(bind(filepath.Join(projectPath, "conf"))))
+		require.ErrorIs(t, err, context.Canceled)
+		assert.NoDirExists(t, filepath.Join(projectPath, "conf"))
 	})
 }

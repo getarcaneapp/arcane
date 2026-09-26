@@ -253,6 +253,8 @@ html.reduce-effects *::after {
 	--shadow-button-hover: var(--button-shadow-hover);
 
 	--grid-template-columns-content-action: minmax(0, 1fr) auto;
+	--grid-template-columns-content-actions: minmax(0, 1fr) auto auto;
+	--grid-template-columns-index-content-action: 1.25rem minmax(0, 1fr) auto;
 	--grid-template-columns-icon-content-action: auto minmax(0, 1fr) auto;
 	--grid-template-columns-content-36-action: minmax(0, 1fr) 9rem auto;
 	--grid-template-columns-halves-action: repeat(2, minmax(0, 1fr)) auto;
@@ -265,6 +267,7 @@ html.reduce-effects *::after {
 	--grid-template-columns-aside-80: 20rem minmax(0, 1fr);
 	--grid-template-columns-aside-90: 22.5rem minmax(0, 1fr);
 	--grid-template-columns-split-1-2: minmax(0, 1fr) minmax(0, 2fr);
+	--grid-template-columns-split-2-3: minmax(0, 2fr) minmax(0, 3fr);
 	--grid-template-columns-split-6-5: minmax(0, 1.2fr) minmax(0, 1fr);
 
 	--height-screen-70: 70vh;
@@ -286,6 +289,7 @@ html.reduce-effects *::after {
 	--max-height-popover: min(60vh, 30rem);
 
 	--width-full-inset: calc(100% - 2rem);
+	--width-full-outset: calc(100% + 1rem);
 	--width-panel: min(94vw, 47.5rem);
 	--max-width-crumb: 28ch;
 	--max-width-7-10: 70%;

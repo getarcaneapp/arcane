@@ -199,6 +199,11 @@ type Update struct {
 	// Required: false
 	VulnerabilityScanInterval *string `json:"vulnerabilityScanInterval,omitzero"`
 
+	// VulnerabilityThreatIntelEnabled enables fetching CISA KEV and FIRST EPSS threat intelligence.
+	//
+	// Required: false
+	VulnerabilityThreatIntelEnabled *string `json:"vulnerabilityThreatIntelEnabled,omitzero"`
+
 	// MaxImageUploadSize is the maximum size for image uploads.
 	//
 	// Required: false

@@ -147,6 +147,7 @@ var JobOptions = fx.Options(
 		scheduler.NewScheduledPruneJob,
 		provideFilesystemWatcherJobInternal,
 		scheduler.NewVulnerabilityScanJob,
+		scheduler.NewVulnerabilityRiskJob,
 		scheduler.NewAutoPatchJob,
 		scheduler.NewAutoHealJob,
 		scheduler.NewActivitySweepJob,

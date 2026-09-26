@@ -6,13 +6,13 @@ replace github.com/getarcaneapp/arcane/types/v2 => ../types
 
 require (
 	charm.land/bubbles/v2 v2.2.1
-	charm.land/bubbletea/v2 v2.0.9
+	charm.land/bubbletea/v2 v2.0.10
 	charm.land/fang/v2 v2.0.1
 	charm.land/lipgloss/v2 v2.0.6
 	charm.land/log/v2 v2.0.1
 	emperror.dev/errors v0.8.1
 	github.com/charmbracelet/x/term v0.2.2
-	github.com/getarcaneapp/arcane/types/v2 v2.13.0
+	github.com/getarcaneapp/arcane/types/v2 v2.13.1
 	github.com/go-viper/mapstructure/v2 v2.5.0
 	github.com/mattn/go-runewidth v0.0.30
 	github.com/samber/hot v0.13.1
@@ -20,7 +20,7 @@ require (
 	github.com/spf13/pflag v1.0.10
 	github.com/spf13/viper v1.21.0
 	github.com/stretchr/testify v1.12.1
-	go.getarcane.app/acfs v0.6.0
+	go.getarcane.app/acfs v0.6.1
 	go.getarcane.app/sys/bytes v0.2.1
 )
 
@@ -82,7 +82,7 @@ require (
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/xhit/go-str2duration/v2 v2.1.0 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
-	go.getarcane.app/builds v0.4.1 // indirect
+	go.getarcane.app/builds v0.4.2 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.71.0 // indirect
 	go.opentelemetry.io/otel v1.46.0 // indirect

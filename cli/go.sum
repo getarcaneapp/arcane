@@ -1,7 +1,7 @@
 charm.land/bubbles/v2 v2.2.1 h1:Fq1+qm5hV6GkvzLQDhCBpXXE5tLgvh1PRriCLwSvIQU=
 charm.land/bubbles/v2 v2.2.1/go.mod h1:wdMgn+sje1KNXdwFizIWjbf328fIUBxqEmJ/vYPo8yc=
-charm.land/bubbletea/v2 v2.0.9 h1:DpJCMWKgzQK8SJv4zbKKFHAI10ymWy/evClPFk0k0f8=
-charm.land/bubbletea/v2 v2.0.9/go.mod h1:2SkdgoTXluXJHOUwAoRlRXF/28vklb1rFl6GcgV1/ss=
+charm.land/bubbletea/v2 v2.0.10 h1:oolvo20VBpI0PfqE7iFjkZ1bx0WpmXGfnKz5Yldjq5o=
+charm.land/bubbletea/v2 v2.0.10/go.mod h1:QOatcnhOjYIfxzUSTz6raF7Ex4R/rIuHa3SnBdCCpMc=
 charm.land/fang/v2 v2.0.1 h1:zQCM8JQJ1JnQX/66B5jlCYBUxL2as5JXQZ2KJ6EL0mY=
 charm.land/fang/v2 v2.0.1/go.mod h1:S1GmkpcvK+OB5w9caywUnJcsMew45Ot8FXqoz8ALrII=
 charm.land/lipgloss/v2 v2.0.6 h1:EaGKeuA8FvF+v2BT5VmZd2LoYLaMZJXA5n34th8nCIQ=
@@ -166,10 +166,10 @@ github.com/xhit/go-str2duration/v2 v2.1.0 h1:lxklc02Drh6ynqX+DdPyp5pCKLUQpRT8bp8
 github.com/xhit/go-str2duration/v2 v2.1.0/go.mod h1:ohY8p+0f07DiV6Em5LKB0s2YpLtXVyJfNt1+BlmyAsU=
 github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e h1:JVG44RsyaB9T2KIHavMF/ppJZNG9ZpyihvCd0w101no=
 github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e/go.mod h1:RbqR21r5mrJuqunuUZ/Dhy/avygyECGrLceyNeo4LiM=
-go.getarcane.app/acfs v0.6.0 h1:OOoDXmfByGWh9uJcDwtoQdWz1u2huIBhljn4mm1Ifco=
-go.getarcane.app/acfs v0.6.0/go.mod h1:Z+0Gs4LGNjvGMLq+TKv/oGKh29FRbAH6mcVPwY5KhFI=
-go.getarcane.app/builds v0.4.1 h1:R8iEgTf9+NDtI1IEzF2R3Mn+v6AGUqwCMs7CEFpVRZk=
-go.getarcane.app/builds v0.4.1/go.mod h1:vSWYulIelS9m91mPpvaN+orZ4/A20eGGcynP892eMkg=
+go.getarcane.app/acfs v0.6.1 h1:xPDfof8Tbr3ZQ6ATcyFM4EtyUh+K657CThpGdg+dz50=
+go.getarcane.app/acfs v0.6.1/go.mod h1:Z+0Gs4LGNjvGMLq+TKv/oGKh29FRbAH6mcVPwY5KhFI=
+go.getarcane.app/builds v0.4.2 h1:pWrNrJ4pjLm2Dpwii4bkf0ptKrlE9N8j/EL1F6o15mA=
+go.getarcane.app/builds v0.4.2/go.mod h1:sOgXeqAcEUeblqdUOSPGZLYz3rlTJpTMXaSy0aQhmlQ=
 go.getarcane.app/sys/bytes v0.2.1 h1:Mm/VV1FAde3bVvzmSBxB7HVGkj7ZUw2Gbl1DPcUhlEo=
 go.getarcane.app/sys/bytes v0.2.1/go.mod h1:fcMYM7dknLk+KDXYAg6XOfRF22POYxcTnQeypFEjDbE=
 go.opentelemetry.io/auto/sdk v1.2.1 h1:jXsnJ4Lmnqd11kwkBV2LgLoFMZKizbCi5fNZ/ipaZ64=

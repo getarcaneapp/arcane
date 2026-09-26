@@ -554,6 +554,18 @@ func persistEffectiveEnvContentInternal(ctx context.Context, projectPath, projec
 		return errors.WrapIf(err, "read project env state")
 	}
 
+	// WriteManagedEnvFile skips unreadable paths so git sync keeps working; an
+	// explicit env save would then be dropped without any feedback.
+	targets := []string{projects.EffectiveEnvFileName}
+	if state.HasGitSource {
+		targets = append(targets, projects.OverrideEnvFileName)
+	}
+	for _, name := range targets {
+		if info, statErr := os.Stat(filepath.Join(projectPath, name)); statErr == nil && info.IsDir() {
+			return errors.Errorf("cannot save environment: %s is a directory", name)
+		}
+	}
+
 	if state.HasGitSource && state.HasEffective && envContent == state.EffectiveContent {
 		storedEffectiveContent, buildErr := projects.BuildEffectiveEnvContent(state.GitContent, state.OverrideContent)
 		if buildErr == nil && envContent == storedEffectiveContent {
