@@ -10,6 +10,8 @@ import (
 
 // Resolve releases reviewed, inactive work without discarding its execution evidence.
 func (q *Queue) Resolve(ctx context.Context, environmentID, jobID, runID, resolvedBy string) (st.Run, error) {
+	// Hold the mutex through the write so a worker cannot claim the job between
+	// the active check and resolution. This path is operator-driven and rare.
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	if q.active[queueKeyInternal(environmentID, jobID)] {

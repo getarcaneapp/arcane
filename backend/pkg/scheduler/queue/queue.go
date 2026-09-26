@@ -44,8 +44,9 @@ type Queue struct {
 // Cancellation of ctx affects admission only, not an accepted run's lifetime.
 func (q *Queue) Submit(ctx context.Context, request st.Request) (st.Run, error) {
 	q.mu.Lock()
-	defer q.mu.Unlock()
-	if q.stopping {
+	stopping := q.stopping
+	q.mu.Unlock()
+	if stopping {
 		return st.Run{}, errors.New("job queue is stopping")
 	}
 	if request.EnvironmentID == "" {
@@ -105,8 +106,8 @@ func (q *Queue) signalInternal() {
 // Checkpoint records the next due occurrence atomically with overdue recovery.
 func (q *Queue) Checkpoint(ctx context.Context, jobID, schedule string, next time.Time) error {
 	q.mu.Lock()
-	defer q.mu.Unlock()
 	first := !q.checkpointed[jobID]
+	q.mu.Unlock()
 	recovered := false
 	var recoveredRun st.Run
 	err := q.mutateInternal(ctx, "0", jobID, func(record *st.QueueRecord) error {
@@ -131,7 +132,9 @@ func (q *Queue) Checkpoint(ctx context.Context, jobID, schedule string, next tim
 		return nil
 	})
 	if err == nil {
+		q.mu.Lock()
 		q.checkpointed[jobID] = true
+		q.mu.Unlock()
 		if recovered {
 			q.observeRunInternal(ctx, recoveredRun)
 			q.signalInternal()
@@ -144,8 +147,9 @@ func (q *Queue) Checkpoint(ctx context.Context, jobID, schedule string, next tim
 // are harmless, but a stopped queue cannot be restarted; create a new instance.
 func (q *Queue) Start(ctx context.Context) error {
 	q.mu.Lock()
-	defer q.mu.Unlock()
-	if q.started {
+	started := q.started
+	q.mu.Unlock()
+	if started {
 		return nil
 	}
 	if q.execute == nil {
@@ -156,14 +160,33 @@ func (q *Queue) Start(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	// Compact history before replaying projections so oversized legacy records
+	// cannot stall startup or hold the mutex against submissions.
+	now := time.Now().UTC()
 	for _, record := range records {
-		for _, run := range record.Runs {
-			if q.observer != nil {
-				if err := q.UpdateRun(ctx, run, func(*st.Run) error { return nil }); err != nil {
-					return err
+		if err := q.mutateInternal(ctx, record.EnvironmentID, record.JobID, func(current *st.QueueRecord) error {
+			pruneRunsInternal(current, now)
+			return nil
+		}); err != nil {
+			return err
+		}
+	}
+	// Replay from the pre-prune snapshot so runs just compacted into receipts still
+	// get their projection repaired. The observer rereads each run, and a run that
+	// was dropped entirely is a cheap no-op.
+	if q.observer != nil {
+		for _, record := range records {
+			for _, run := range record.Runs {
+				if run.ActivityID != "" {
+					q.observeRunInternal(ctx, run)
 				}
 			}
 		}
+	}
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if q.started {
+		return nil
 	}
 	runCtx, cancel := context.WithCancel(ctx)
 	q.cancel = cancel

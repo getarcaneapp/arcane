@@ -1,10 +1,12 @@
 package queue
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json/v2"
+	"maps"
 	"slices"
 	"sort"
 	"time"
@@ -189,14 +191,17 @@ func (q *Queue) pruneInternal(ctx context.Context) error {
 	return nil
 }
 
+// pruneRunsInternal keeps the newest retained runs per job. Runs needing attention
+// are inactive and age out like terminal runs; unsettled remote evidence never does.
 func pruneRunsInternal(record *st.QueueRecord, now time.Time) {
-	terminal := 0
+	retained := 0
 	for index, run := range slices.Backward(record.Runs) {
-		if !run.Status.Terminal() || (run.RemoteAccepted && !run.RemoteSettled) {
+		active := !run.Status.Terminal() && run.Status != st.NeedsAttention
+		if active || (run.RemoteAccepted && !run.RemoteSettled) {
 			continue
 		}
-		terminal++
-		if terminal <= 100 && now.Sub(run.UpdatedAt) < 7*24*time.Hour {
+		retained++
+		if retained <= 100 && now.Sub(run.UpdatedAt) < 7*24*time.Hour {
 			continue
 		}
 		if run.Trigger == "manual" || run.Trigger == "remote" {
@@ -208,6 +213,15 @@ func pruneRunsInternal(record *st.QueueRecord, now time.Time) {
 			record.Receipts[run.ID] = run
 		}
 		record.Runs = append(record.Runs[:index], record.Runs[index+1:]...)
+	}
+	if len(record.Receipts) <= 1000 {
+		return
+	}
+	receipts := slices.SortedFunc(maps.Values(record.Receipts), func(a, b st.Run) int {
+		return cmp.Or(a.UpdatedAt.Compare(b.UpdatedAt), cmp.Compare(a.ID, b.ID))
+	})
+	for _, receipt := range receipts[:len(receipts)-1000] {
+		delete(record.Receipts, receipt.ID)
 	}
 }
 
