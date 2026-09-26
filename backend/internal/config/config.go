@@ -219,12 +219,15 @@ func loadFromEnv(cfg *Config) {
 		}
 
 		envValue := os.Getenv(envTag)
+		var fromFile bool
 		if hasOptionInternal(fieldType, "file") {
-			envValue, _ = utils.LookupEnvOrFile(envTag)
+			envValue, _, fromFile = utils.LookupEnvOrFile(envTag)
 		}
-		envValue = utils.TrimQuotes(envValue)
-		if envValue == "" {
-			envValue = fieldType.Tag.Get("default")
+		if !fromFile {
+			envValue = utils.TrimQuotes(envValue)
+			if envValue == "" {
+				envValue = fieldType.Tag.Get("default")
+			}
 		}
 
 		setFieldValueInternal(field, fieldType, envValue)

@@ -8,8 +8,9 @@ import (
 
 // LookupEnvOrFile is os.LookupEnv with Docker secret support: when NAME__FILE
 // or NAME_FILE (checked in that order) names a readable file, its trimmed
-// contents stand in for NAME. An unreadable file is logged and skipped.
-func LookupEnvOrFile(name string) (string, bool) {
+// contents stand in for NAME. An unreadable file falls back to NAME.
+// The booleans report whether a value was found and whether it came from a file.
+func LookupEnvOrFile(name string) (value string, found bool, fromFile bool) {
 	for _, suffix := range []string{"__FILE", "_FILE"} {
 		filePath := os.Getenv(name + suffix)
 		if filePath == "" {
@@ -23,8 +24,9 @@ func LookupEnvOrFile(name string) (string, bool) {
 			break
 		}
 
-		return strings.TrimSpace(string(content)), true
+		return strings.TrimSpace(string(content)), true, true
 	}
 
-	return os.LookupEnv(name)
+	value, found = os.LookupEnv(name)
+	return value, found, false
 }
