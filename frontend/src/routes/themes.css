@@ -29,6 +29,12 @@
 	--glass-base: var(--surface);
 	--glass-tint: var(--primary);
 	--glass-shadow-color: oklch(0.11 0.012 264.4 / 0.12);
+	--syntax-comment: oklch(0.55 0.02 260);
+	--syntax-keyword: oklch(0.5 0.09 300);
+	--syntax-property: oklch(0.5 0.13 258);
+	--syntax-string: oklch(0.5 0.08 190);
+	--syntax-number: oklch(0.55 0.1 70);
+	--syntax-operator: oklch(0.5 0.06 258);
 }
 
 :root.dark[data-app-theme='graphite'] {
@@ -62,6 +68,12 @@
 	--glass-base: var(--surface);
 	--glass-tint: var(--primary);
 	--glass-shadow-color: oklch(0 0 0 / 0.38);
+	--syntax-comment: oklch(0.62 0.02 260);
+	--syntax-keyword: oklch(0.8 0.08 300);
+	--syntax-property: oklch(0.8 0.1 255);
+	--syntax-string: oklch(0.82 0.07 190);
+	--syntax-number: oklch(0.84 0.09 75);
+	--syntax-operator: oklch(0.78 0.05 255);
 }
 
 :root[data-app-theme='carbon'] {
@@ -95,6 +107,12 @@
 	--glass-base: var(--surface);
 	--glass-tint: var(--primary);
 	--glass-shadow-color: oklch(0.227 0.004 286.1 / 0.12);
+	--syntax-comment: oklch(0.55 0 0);
+	--syntax-keyword: oklch(0.5 0.2 350);
+	--syntax-property: oklch(0.5 0.17 262);
+	--syntax-string: oklch(0.5 0.13 150);
+	--syntax-number: oklch(0.5 0.2 300);
+	--syntax-operator: oklch(0.5 0.1 220);
 }
 
 :root.dark[data-app-theme='carbon'] {
@@ -128,6 +146,12 @@
 	--glass-base: var(--surface);
 	--glass-tint: var(--primary);
 	--glass-shadow-color: oklch(0 0 0 / 0.4);
+	--syntax-comment: oklch(0.66 0 0);
+	--syntax-keyword: oklch(0.78 0.14 345);
+	--syntax-property: oklch(0.76 0.12 262);
+	--syntax-string: oklch(0.8 0.15 150);
+	--syntax-number: oklch(0.78 0.13 300);
+	--syntax-operator: oklch(0.8 0.1 220);
 }
 
 :root[data-app-theme='ocean'] {
@@ -161,6 +185,12 @@
 	--glass-base: var(--surface);
 	--glass-tint: var(--primary);
 	--glass-shadow-color: oklch(0.288 0.052 265.1 / 0.12);
+	--syntax-comment: oklch(0.55 0.03 265);
+	--syntax-keyword: oklch(0.55 0.17 30);
+	--syntax-property: oklch(0.5 0.16 266);
+	--syntax-string: oklch(0.5 0.1 190);
+	--syntax-number: oklch(0.58 0.12 70);
+	--syntax-operator: oklch(0.5 0.12 230);
 }
 
 :root.dark[data-app-theme='ocean'] {
@@ -194,6 +224,12 @@
 	--glass-base: var(--surface);
 	--glass-tint: var(--primary);
 	--glass-shadow-color: oklch(0 0 0 / 0.38);
+	--syntax-comment: oklch(0.65 0.03 265);
+	--syntax-keyword: oklch(0.8 0.12 30);
+	--syntax-property: oklch(0.8 0.12 264);
+	--syntax-string: oklch(0.82 0.1 185);
+	--syntax-number: oklch(0.86 0.1 80);
+	--syntax-operator: oklch(0.8 0.1 230);
 }
 
 :root[data-app-theme='amber'] {
@@ -227,6 +263,12 @@
 	--glass-base: var(--surface);
 	--glass-tint: var(--primary);
 	--glass-shadow-color: oklch(0.16 0.024 63.6 / 0.12);
+	--syntax-comment: oklch(0.55 0.02 70);
+	--syntax-keyword: oklch(0.5 0.17 30);
+	--syntax-property: oklch(0.55 0.15 65);
+	--syntax-string: oklch(0.5 0.12 120);
+	--syntax-number: oklch(0.55 0.15 45);
+	--syntax-operator: oklch(0.5 0.08 180);
 }
 
 :root.dark[data-app-theme='amber'] {
@@ -260,6 +302,12 @@
 	--glass-base: var(--surface);
 	--glass-tint: var(--primary);
 	--glass-shadow-color: oklch(0 0 0 / 0.34);
+	--syntax-comment: oklch(0.66 0.02 70);
+	--syntax-keyword: oklch(0.78 0.13 30);
+	--syntax-property: oklch(0.84 0.13 75);
+	--syntax-string: oklch(0.82 0.13 120);
+	--syntax-number: oklch(0.86 0.12 55);
+	--syntax-operator: oklch(0.8 0.08 180);
 }
 
 :root[data-app-theme='github'] {
@@ -293,6 +341,12 @@
 	--glass-base: var(--surface);
 	--glass-tint: var(--primary);
 	--glass-shadow-color: oklch(0.12 0.008 248.2 / 0.1);
+	--syntax-comment: #6e7781;
+	--syntax-keyword: #cf222e;
+	--syntax-property: #8250df;
+	--syntax-string: #0a3069;
+	--syntax-number: #953800;
+	--syntax-operator: #0550ae;
 }
 
 :root.dark[data-app-theme='github'] {
@@ -326,6 +380,12 @@
 	--glass-base: var(--surface);
 	--glass-tint: var(--primary);
 	--glass-shadow-color: oklch(0 0 0 / 0.34);
+	--syntax-comment: #8b949e;
+	--syntax-keyword: #ff7b72;
+	--syntax-property: #d2a8ff;
+	--syntax-string: #7ee787;
+	--syntax-number: #ffa657;
+	--syntax-operator: #a5d6ff;
 }
 
 :root[data-app-theme='nord'] {
@@ -359,6 +419,12 @@
 	--glass-base: var(--surface);
 	--glass-tint: var(--primary);
 	--glass-shadow-color: oklch(0.16 0.02 258.6 / 0.1);
+	--syntax-comment: oklch(0.55 0.03 260);
+	--syntax-keyword: oklch(0.55 0.08 260);
+	--syntax-property: oklch(0.52 0.09 235);
+	--syntax-string: oklch(0.55 0.1 130);
+	--syntax-number: oklch(0.6 0.12 45);
+	--syntax-operator: oklch(0.55 0.07 330);
 }
 
 :root.dark[data-app-theme='nord'] {
@@ -392,6 +458,12 @@
 	--glass-base: var(--surface);
 	--glass-tint: var(--primary);
 	--glass-shadow-color: oklch(0 0 0 / 0.33);
+	--syntax-comment: oklch(0.62 0.03 265);
+	--syntax-keyword: oklch(0.72 0.08 255);
+	--syntax-property: oklch(0.8 0.08 220);
+	--syntax-string: oklch(0.78 0.08 130);
+	--syntax-number: oklch(0.73 0.1 40);
+	--syntax-operator: oklch(0.75 0.07 330);
 }
 
 :root[data-app-theme='everforest'] {
@@ -425,6 +497,12 @@
 	--glass-base: var(--surface);
 	--glass-tint: var(--primary);
 	--glass-shadow-color: oklch(0.18 0.022 156.1 / 0.1);
+	--syntax-comment: oklch(0.58 0.03 130);
+	--syntax-keyword: oklch(0.58 0.16 25);
+	--syntax-property: oklch(0.52 0.12 140);
+	--syntax-string: oklch(0.58 0.12 80);
+	--syntax-number: oklch(0.58 0.13 330);
+	--syntax-operator: oklch(0.52 0.08 180);
 }
 
 :root.dark[data-app-theme='everforest'] {
@@ -458,6 +536,12 @@
 	--glass-base: var(--surface);
 	--glass-tint: var(--primary);
 	--glass-shadow-color: oklch(0 0 0 / 0.34);
+	--syntax-comment: oklch(0.64 0.02 140);
+	--syntax-keyword: oklch(0.76 0.1 20);
+	--syntax-property: oklch(0.8 0.09 128);
+	--syntax-string: oklch(0.84 0.1 85);
+	--syntax-number: oklch(0.78 0.08 340);
+	--syntax-operator: oklch(0.78 0.07 180);
 }
 
 :root[data-app-theme='rosepine'] {
@@ -491,6 +575,12 @@
 	--glass-base: var(--surface);
 	--glass-tint: var(--primary);
 	--glass-shadow-color: oklch(0.19 0.024 313.7 / 0.1);
+	--syntax-comment: oklch(0.62 0.03 300);
+	--syntax-keyword: oklch(0.55 0.14 355);
+	--syntax-property: oklch(0.58 0.12 350);
+	--syntax-string: oklch(0.66 0.14 70);
+	--syntax-number: oklch(0.55 0.1 300);
+	--syntax-operator: oklch(0.5 0.08 220);
 }
 
 :root.dark[data-app-theme='rosepine'] {
@@ -524,6 +614,12 @@
 	--glass-base: var(--surface);
 	--glass-tint: var(--primary);
 	--glass-shadow-color: oklch(0 0 0 / 0.34);
+	--syntax-comment: oklch(0.6 0.03 300);
+	--syntax-keyword: oklch(0.72 0.16 355);
+	--syntax-property: oklch(0.82 0.07 20);
+	--syntax-string: oklch(0.85 0.1 80);
+	--syntax-number: oklch(0.8 0.08 300);
+	--syntax-operator: oklch(0.82 0.07 200);
 }
 
 .dark.oled:not([data-app-theme]) {

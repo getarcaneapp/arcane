@@ -1,4 +1,4 @@
-import { EditorState, type Extension } from '@codemirror/state';
+import { Compartment, EditorState, type Extension } from '@codemirror/state';
 import { MergeView } from '@codemirror/merge';
 import { EditorView } from '@codemirror/view';
 import { untrack } from 'svelte';
@@ -29,6 +29,8 @@ export function createMergeHostAttachment(
 	return (node) => {
 		let currentParams = untrack(getParams);
 		let currentMergeView: MergeView | null = null;
+		const themeCompartmentA = new Compartment();
+		const themeCompartmentB = new Compartment();
 
 		const destroyCurrentMergeView = () => {
 			if (!currentMergeView) return;
@@ -39,8 +41,8 @@ export function createMergeHostAttachment(
 		const createCurrentMergeView = () => {
 			if (!currentParams.diffActive || currentMergeView) return;
 
-			const theme = getTheme();
-			const readonlyExtension = [EditorState.readOnly.of(true), EditorView.editable.of(false), theme];
+			const theme = untrack(getTheme);
+			const readonlyExtension = [EditorState.readOnly.of(true), EditorView.editable.of(false), themeCompartmentB.of(theme)];
 
 			currentMergeView = new MergeView({
 				parent: node,
@@ -48,7 +50,7 @@ export function createMergeHostAttachment(
 					doc: currentParams.value,
 					extensions: [
 						...getLanguageExtension(currentParams.language, { lightweight: true }),
-						theme,
+						themeCompartmentA.of(theme),
 						EditorView.updateListener.of((update) => {
 							if (update.docChanged) {
 								onValueChange(update.state.doc.toString());
@@ -113,6 +115,15 @@ export function createMergeHostAttachment(
 		$effect(() => {
 			const nextParams = getParams();
 			untrack(() => applyParams(nextParams));
+		});
+
+		$effect(() => {
+			const theme = getTheme();
+			untrack(() => {
+				if (!currentMergeView) return;
+				currentMergeView.a.dispatch({ effects: themeCompartmentA.reconfigure(theme) });
+				currentMergeView.b.dispatch({ effects: themeCompartmentB.reconfigure(theme) });
+			});
 		});
 
 		return destroyCurrentMergeView;

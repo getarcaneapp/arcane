@@ -26,7 +26,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
 	import { mode } from 'mode-watcher';
-	import { arcaneDarkInit, arcaneLightInit } from './theme';
+	import { createArcaneTheme } from './theme';
 	import { createDefaultSummary, ENV_SNIPPETS, YAML_SNIPPETS } from './editor-constants';
 	import { createEnterIndentKeymap } from './enter-indentation';
 	import { createMergeHostAttachment, type MergeAttachmentParams } from './merge-editor.svelte.js';
@@ -713,11 +713,7 @@
 		return extensions;
 	}
 
-	const theme = $derived.by(() => {
-		// Re-derive when the user's theme/accent preferences change.
-		userStore.current;
-		return mode.current === 'dark' ? arcaneDarkInit() : arcaneLightInit();
-	});
+	const theme = $derived(createArcaneTheme(mode.current === 'dark'));
 
 	const mergeHostAttachment = createMergeHostAttachment(
 		{
@@ -888,25 +884,11 @@
 	:global(.arcane-code-editor .cm-editor .cm-scroller) {
 		overflow-x: auto;
 	}
-	:global(.dark .arcane-code-editor .cm-editor .cm-gutters) {
-		background-color: #18181b;
+	:global(.arcane-code-editor .cm-editor .cm-gutters) {
 		border-right: none;
-	}
-	:global(.dark .arcane-code-editor .cm-editor .cm-activeLineGutter) {
-		background-color: #2c313a;
-		color: #e5e7eb;
-	}
-	:global(:root:not(.dark) .arcane-code-editor .cm-editor .cm-gutters) {
-		background-color: #ffffff;
-		border-right: none;
-	}
-	:global(:root:not(.dark) .arcane-code-editor .cm-editor .cm-activeLineGutter) {
-		background-color: #f0f1f3;
-		color: #24292f;
 	}
 	:global(.arcane-code-editor .cm-editor:has(.cm-placeholder) .cm-activeLine),
-	:global(.dark .arcane-code-editor .cm-editor:has(.cm-placeholder) .cm-activeLineGutter),
-	:global(:root:not(.dark) .arcane-code-editor .cm-editor:has(.cm-placeholder) .cm-activeLineGutter) {
+	:global(.arcane-code-editor .cm-editor:has(.cm-placeholder) .cm-activeLineGutter) {
 		background-color: transparent;
 	}
 	:global(.arcane-code-editor .cm-mergeView) {
@@ -934,14 +916,14 @@
 		text-align: center;
 	}
 	.merge-pane-label-new {
-		color: #3fb950;
-		background: color-mix(in oklab, #3fb950 18%, transparent);
-		border: 1px solid color-mix(in oklab, #3fb950 45%, transparent);
+		color: var(--success);
+		background: color-mix(in oklab, var(--success) 18%, transparent);
+		border: 1px solid color-mix(in oklab, var(--success) 45%, transparent);
 	}
 	.merge-pane-label-old {
-		color: #f85149;
-		background: color-mix(in oklab, #f85149 18%, transparent);
-		border: 1px solid color-mix(in oklab, #f85149 45%, transparent);
+		color: var(--destructive);
+		background: color-mix(in oklab, var(--destructive) 18%, transparent);
+		border: 1px solid color-mix(in oklab, var(--destructive) 45%, transparent);
 	}
 	.merge-legend {
 		display: flex;
@@ -958,14 +940,14 @@
 		border-radius: 999px;
 	}
 	.merge-badge-add {
-		color: #3fb950;
-		background: color-mix(in oklab, #3fb950 16%, transparent);
-		border: 1px solid color-mix(in oklab, #3fb950 40%, transparent);
+		color: var(--success);
+		background: color-mix(in oklab, var(--success) 16%, transparent);
+		border: 1px solid color-mix(in oklab, var(--success) 40%, transparent);
 	}
 	.merge-badge-del {
-		color: #f85149;
-		background: color-mix(in oklab, #f85149 16%, transparent);
-		border: 1px solid color-mix(in oklab, #f85149 40%, transparent);
+		color: var(--destructive);
+		background: color-mix(in oklab, var(--destructive) 16%, transparent);
+		border: 1px solid color-mix(in oklab, var(--destructive) 40%, transparent);
 	}
 	.merge-host {
 		flex: 1;
@@ -1000,29 +982,35 @@
 	}
 	:global(.arcane-code-editor .merge-host .cm-merge-a .cm-changedLine),
 	:global(.arcane-code-editor .merge-host .cm-merge-a .cm-inlineChangedLine) {
-		background-color: rgba(46, 160, 67, 0.14) !important;
+		background-color: color-mix(in oklab, var(--success) 14%, transparent) !important;
 	}
 	:global(.arcane-code-editor .merge-host .cm-merge-b .cm-changedLine),
 	:global(.arcane-code-editor .merge-host .cm-merge-b .cm-inlineChangedLine),
 	:global(.arcane-code-editor .merge-host .cm-deletedChunk) {
-		background-color: rgba(248, 81, 73, 0.14) !important;
+		background-color: color-mix(in oklab, var(--destructive) 14%, transparent) !important;
 	}
 	:global(.arcane-code-editor .merge-host .cm-merge-a .cm-changedText) {
-		background: linear-gradient(rgba(46, 160, 67, 0.7), rgba(46, 160, 67, 0.7)) bottom/100% 2px no-repeat !important;
+		background: linear-gradient(
+				color-mix(in oklab, var(--success) 70%, transparent),
+				color-mix(in oklab, var(--success) 70%, transparent)
+			)
+			bottom/100% 2px no-repeat !important;
 	}
 	:global(.arcane-code-editor .merge-host .cm-merge-b .cm-changedText),
 	:global(.arcane-code-editor .merge-host .cm-merge-b .cm-deletedText),
 	:global(.arcane-code-editor .merge-host .cm-deletedChunk .cm-deletedText) {
-		background: linear-gradient(rgba(248, 81, 73, 0.75), rgba(248, 81, 73, 0.75)) bottom/100% 2px no-repeat !important;
+		background: linear-gradient(
+				color-mix(in oklab, var(--destructive) 75%, transparent),
+				color-mix(in oklab, var(--destructive) 75%, transparent)
+			)
+			bottom/100% 2px no-repeat !important;
 	}
 	:global(.arcane-code-editor .merge-host .cm-merge-a .cm-changedLineGutter) {
-		background-color: #2ea043 !important;
-		color: #fff !important;
+		background-color: var(--success) !important;
 	}
 	:global(.arcane-code-editor .merge-host .cm-merge-b .cm-changedLineGutter),
 	:global(.arcane-code-editor .merge-host .cm-merge-b .cm-deletedLineGutter) {
-		background-color: #f85149 !important;
-		color: #fff !important;
+		background-color: var(--destructive) !important;
 	}
 	.editor-status {
 		display: flex;

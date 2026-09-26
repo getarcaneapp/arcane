@@ -30,6 +30,12 @@
 	--success: oklch(0.596 0.145 163.225);
 	--warning: oklch(0.666 0.179 58.318);
 	--info: oklch(0.546 0.245 262.881);
+	--syntax-comment: #6e7781;
+	--syntax-keyword: #cf222e;
+	--syntax-property: #8250df;
+	--syntax-string: #0a3069;
+	--syntax-number: #953800;
+	--syntax-operator: #0550ae;
 	--orange: oklch(0.646 0.222 41.116);
 	--lime: oklch(0.648 0.2 131.684);
 	--teal: oklch(0.6 0.118 184.704);
@@ -107,6 +113,12 @@
 	--success: oklch(0.765 0.177 163.223);
 	--warning: oklch(0.828 0.189 84.429);
 	--info: oklch(0.707 0.165 254.624);
+	--syntax-comment: #8b949e;
+	--syntax-keyword: #ff7b72;
+	--syntax-property: #d2a8ff;
+	--syntax-string: #7ee787;
+	--syntax-number: #ffa657;
+	--syntax-operator: #a5d6ff;
 	--orange: oklch(0.75 0.183 55.934);
 	--lime: oklch(0.841 0.238 128.85);
 	--teal: oklch(0.777 0.152 181.912);
