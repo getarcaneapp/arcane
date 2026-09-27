@@ -1,14 +1,12 @@
 package notifications
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-
 	"encoding/base64"
 	"encoding/json/v2"
 	"log/slog"
 
 	"emperror.dev/errors"
-
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"go.getarcane.app/sys/crypto"
 )
 

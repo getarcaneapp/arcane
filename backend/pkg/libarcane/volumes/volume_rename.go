@@ -15,10 +15,10 @@ import (
 	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 type dockerProjectVolumeRenameMigrationInternal struct {
@@ -44,11 +44,17 @@ func NewMigration(dockerClient *client.Client, entries []volumetypes.RenameEntry
 	if len(entries) == 0 {
 		return nil
 	}
-	return &dockerProjectVolumeRenameMigrationInternal{dockerClient: dockerClient, entries: entries, oldComposeName: oldProject, newComposeName: newProject, toolsImage: toolsImage}
+	return &dockerProjectVolumeRenameMigrationInternal{
+		dockerClient:   dockerClient,
+		entries:        entries,
+		oldComposeName: oldProject,
+		newComposeName: newProject,
+		toolsImage:     toolsImage,
+	}
 }
 
 // PlanRename validates and prepares an unused Docker volume for a copy-based rename.
-func PlanRename(ctx context.Context, dockerClient *client.Client, oldName, newName string, toolsImage string) (volumetypes.Migration, error) {
+func PlanRename(ctx context.Context, dockerClient *client.Client, oldName, newName, toolsImage string) (volumetypes.Migration, error) {
 	if dockerClient == nil {
 		return nil, errors.New("docker service unavailable")
 	}
@@ -110,8 +116,9 @@ func (m *dockerProjectVolumeRenameMigrationInternal) Apply(ctx context.Context) 
 		m.createdNew = append(m.createdNew, entry)
 
 		if err := copyProjectVolumeDataInternal(ctx, dockerClient, copyRuntime, entry.OldName, entry.NewName); err != nil {
-			return stderrors.Join(errors.
-				WrapIff(err, "copy volume data from %s to %s", entry.OldName, entry.NewName), m.rollbackCreatedTargetsInternal(ctx, dockerClient),
+			return stderrors.Join(
+				errors.
+					WrapIff(err, "copy volume data from %s to %s", entry.OldName, entry.NewName), m.rollbackCreatedTargetsInternal(ctx, dockerClient),
 			)
 		}
 	}
@@ -305,7 +312,7 @@ func removeProjectVolumeHelperContainersInternal(ctx context.Context, dockerClie
 }
 
 func isProjectVolumeHelperContainerInternal(c container.Summary) bool {
-	if internal, _ := utils.ParseBool(c.Labels[libarcane.InternalResourceLabel]); !internal {
+	if internal, _ := kit.ParseBool(c.Labels[libarcane.InternalResourceLabel]); !internal {
 		return false
 	}
 	if strings.EqualFold(c.Labels[volumehelper.ContainerLabel], "true") {
@@ -560,7 +567,7 @@ func cleanupProjectRenameRollbackTargetVolumeInternal(ctx context.Context, docke
 	return nil
 }
 
-func removeProjectRenameJournalTargetVolumeInternal(ctx context.Context, dockerClient *client.Client, newName string, oldExists bool, newExists bool) error {
+func removeProjectRenameJournalTargetVolumeInternal(ctx context.Context, dockerClient *client.Client, newName string, oldExists, newExists bool) error {
 	if !oldExists || !newExists {
 		return nil
 	}

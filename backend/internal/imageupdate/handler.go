@@ -14,6 +14,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
 	"github.com/getarcaneapp/arcane/types/v2/imageupdate"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 type ImageUpdateHandler struct {
@@ -202,7 +203,7 @@ func (h *ImageUpdateHandler) CheckAllImages(ctx context.Context, input *CheckAll
 }
 
 func (h *ImageUpdateHandler) GetUpdateInfoByRefs(ctx context.Context, input *GetUpdateInfoByRefsInput) (*handlerutil.Out[map[string]*imagetypes.UpdateInfo], error) {
-	imageRefs := utils.UniqueNonEmptyStrings(strings.Split(input.ImageRefs, ","))
+	imageRefs := kit.Unique(kit.TrimNonEmpty(strings.Split(input.ImageRefs, ",")))
 	if len(imageRefs) == 0 {
 		return &handlerutil.Out[map[string]*imagetypes.UpdateInfo]{
 			Body: base.ApiResponse[map[string]*imagetypes.UpdateInfo]{

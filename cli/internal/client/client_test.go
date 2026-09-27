@@ -42,7 +42,6 @@ func TestClient_UsesAPIKeyHeader(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, resp.StatusCode,
 		"unexpected status: %d", resp.StatusCode)
-
 }
 
 func TestClient_UsesBearerTokenHeader(t *testing.T) {
@@ -76,7 +75,6 @@ func TestClient_UsesBearerTokenHeader(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, resp.StatusCode,
 		"unexpected status: %d", resp.StatusCode)
-
 }
 
 func TestClient_NewUnauthenticated_DoesNotSendAuthHeaders(t *testing.T) {
@@ -106,7 +104,6 @@ func TestClient_NewUnauthenticated_DoesNotSendAuthHeaders(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, resp.StatusCode,
 		"unexpected status: %d", resp.StatusCode)
-
 }
 
 func TestClient_Request_DoesNotDoubleMarshalBytes(t *testing.T) {
@@ -151,5 +148,4 @@ func TestClient_Request_DoesNotDoubleMarshalBytes(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, resp.StatusCode,
 		"unexpected status: %d", resp.StatusCode)
-
 }

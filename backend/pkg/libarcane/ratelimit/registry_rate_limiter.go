@@ -5,6 +5,7 @@ import (
 	"strings"
 	"sync"
 
+	kit "go.getarcane.app/kit/pkg"
 	"golang.org/x/sync/semaphore"
 )
 
@@ -82,8 +83,5 @@ func (r *RegistryRateLimiter) limitForRegistryInternal(registry string) int64 {
 
 func normalizeRegistryKeyInternal(registry string) string {
 	normalized := strings.ToLower(strings.TrimSpace(registry))
-	if normalized == "registry-1.docker.io" || normalized == "index.docker.io" {
-		return "docker.io"
-	}
-	return normalized
+	return kit.Ternary(normalized == "registry-1.docker.io" || normalized == "index.docker.io", "docker.io", normalized)
 }

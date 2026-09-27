@@ -916,7 +916,8 @@ func TestContainerRegistryService_InspectImageDigest_UsesStoredCredentialsInstea
 				if options.EncodedRegistryAuth == "" {
 					anonymousCalls++
 					return client.DistributionInspectResult{}, errors.New(
-						"Error response from daemon: toomanyrequests: retry-after: 1.246809ms, allowed: 44000/minute")
+						"Error response from daemon: toomanyrequests: retry-after: 1.246809ms, allowed: 44000/minute",
+					)
 				}
 
 				return client.DistributionInspectResult{
@@ -980,7 +981,8 @@ func TestContainerRegistryService_InspectImageDigest_DoesNotFallBackToAnonymousO
 					anonymousCalls++
 				}
 				return client.DistributionInspectResult{}, errors.New(
-					"Error response from daemon: toomanyrequests: retry-after: 1.246809ms, allowed: 44000/minute")
+					"Error response from daemon: toomanyrequests: retry-after: 1.246809ms, allowed: 44000/minute",
+				)
 			},
 		}, nil
 	}, nil)

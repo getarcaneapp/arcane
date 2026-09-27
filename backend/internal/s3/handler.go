@@ -6,7 +6,6 @@ import (
 	"net/http"
 
 	"emperror.dev/errors"
-
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"

@@ -9,6 +9,7 @@ import (
 
 	"github.com/samber/mo"
 	"github.com/stretchr/testify/require"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 func TestLoadRuntimeIdentityRequest(t *testing.T) {
@@ -99,10 +100,7 @@ func TestRunningInContainerInternal(t *testing.T) {
 	t.Run("explicit arcane env enables container mode", func(t *testing.T) {
 		inContainer := runningInContainerInternal(
 			func(key string) string {
-				if key == "ARCANE_IN_CONTAINER" {
-					return "true"
-				}
-				return ""
+				return kit.Ternary(key == "ARCANE_IN_CONTAINER", "true", "")
 			},
 			func(string) (os.FileInfo, error) {
 				return nil, os.ErrNotExist
@@ -115,10 +113,7 @@ func TestRunningInContainerInternal(t *testing.T) {
 	t.Run("container env enables container mode", func(t *testing.T) {
 		inContainer := runningInContainerInternal(
 			func(key string) string {
-				if key == "container" {
-					return "podman"
-				}
-				return ""
+				return kit.Ternary(key == "container", "podman", "")
 			},
 			func(string) (os.FileInfo, error) {
 				return nil, os.ErrNotExist
@@ -132,10 +127,7 @@ func TestRunningInContainerInternal(t *testing.T) {
 		inContainer := runningInContainerInternal(
 			func(string) string { return "" },
 			func(path string) (os.FileInfo, error) {
-				if path == "/run/.containerenv" {
-					return nil, nil
-				}
-				return nil, os.ErrNotExist
+				return nil, kit.Ternary(path == "/run/.containerenv", nil, os.ErrNotExist)
 			},
 		)
 
@@ -161,7 +153,7 @@ func TestConfigureRuntimeDockerConfigEnv(t *testing.T) {
 
 		configDir, err := configureRuntimeDockerConfigEnvInternal(
 			cfg,
-			func(key string, value string) error {
+			func(key, value string) error {
 				env[key] = value
 				return nil
 			},
@@ -183,7 +175,7 @@ func TestConfigureRuntimeDockerConfigEnv(t *testing.T) {
 
 		configDir, err := configureRuntimeDockerConfigEnvInternal(
 			cfg,
-			func(key string, value string) error {
+			func(key, value string) error {
 				setCalled = true
 				env[key] = value
 				return nil
@@ -207,7 +199,7 @@ func TestConfigureRuntimeDockerConfigEnv(t *testing.T) {
 
 		configDir, err := configureRuntimeDockerConfigEnvInternal(
 			cfg,
-			func(key string, value string) error {
+			func(key, value string) error {
 				setCalled = true
 				env[key] = value
 				return nil
@@ -231,7 +223,7 @@ func TestConfigureRuntimeDockerConfigEnv(t *testing.T) {
 
 		configDir, err := configureRuntimeDockerConfigEnvInternal(
 			cfg,
-			func(key string, value string) error {
+			func(key, value string) error {
 				setCalled = true
 				env[key] = value
 				return nil
@@ -254,7 +246,7 @@ func TestConfigureRuntimeDockerConfigEnv(t *testing.T) {
 
 		configDir, err := configureRuntimeDockerConfigEnvInternal(
 			cfg,
-			func(key string, value string) error {
+			func(key, value string) error {
 				env[key] = value
 				return nil
 			},
@@ -438,14 +430,14 @@ func TestChownRecursiveInternalSkipsProjects(t *testing.T) {
 	keepFile := filepath.Join(demoDir, "keep.txt")
 	databaseDir := filepath.Join(tempDir, "database")
 
-	require.NoError(t, os.MkdirAll(demoDir, 0755))
-	require.NoError(t, os.WriteFile(keepFile, []byte("keep"), 0644))
-	require.NoError(t, os.MkdirAll(databaseDir, 0755))
+	require.NoError(t, os.MkdirAll(demoDir, 0o755))
+	require.NoError(t, os.WriteFile(keepFile, []byte("keep"), 0o644))
+	require.NoError(t, os.MkdirAll(databaseDir, 0o755))
 
 	// Track visited paths using mocked lchownFn
 	visited := make(map[string]bool)
 	oldLchownFn := lchownFn
-	lchownFn = func(path string, uid int, gid int) error {
+	lchownFn = func(path string, uid, gid int) error {
 		visited[filepath.Clean(path)] = true
 		return nil
 	}
@@ -484,13 +476,13 @@ func TestPrepareWritablePathsInternalChownsTopLevelProjectsShallowly(t *testing.
 	keepFile := filepath.Join(demoDir, "keep.txt")
 	databaseDir := filepath.Join(dataDir, "database")
 
-	require.NoError(t, os.MkdirAll(demoDir, 0755))
-	require.NoError(t, os.WriteFile(keepFile, []byte("keep"), 0644))
-	require.NoError(t, os.MkdirAll(databaseDir, 0755))
+	require.NoError(t, os.MkdirAll(demoDir, 0o755))
+	require.NoError(t, os.WriteFile(keepFile, []byte("keep"), 0o644))
+	require.NoError(t, os.MkdirAll(databaseDir, 0o755))
 
 	visited := make(map[string]bool)
 	oldLchownFn := lchownFn
-	lchownFn = func(path string, uid int, gid int) error {
+	lchownFn = func(path string, uid, gid int) error {
 		visited[filepath.Clean(path)] = true
 		return nil
 	}

@@ -90,45 +90,59 @@ func EnvironmentVersion(envID string) string {
 // Container endpoints
 
 func Containers(envID string) string { return pathf("/api/environments/%s/containers", envID) }
+
 func Container(envID, containerID string) string {
 	return pathf("/api/environments/%s/containers/%s", envID, containerID)
 }
+
 func ContainerStart(envID, containerID string) string {
 	return pathf("/api/environments/%s/containers/%s/start", envID, containerID)
 }
+
 func ContainerStop(envID, containerID string) string {
 	return pathf("/api/environments/%s/containers/%s/stop", envID, containerID)
 }
+
 func ContainerRestart(envID, containerID string) string {
 	return pathf("/api/environments/%s/containers/%s/restart", envID, containerID)
 }
+
 func ContainerKill(envID, containerID string) string {
 	return pathf("/api/environments/%s/containers/%s/kill", envID, containerID)
 }
+
 func ContainerPause(envID, containerID string) string {
 	return pathf("/api/environments/%s/containers/%s/pause", envID, containerID)
 }
+
 func ContainerUnpause(envID, containerID string) string {
 	return pathf("/api/environments/%s/containers/%s/unpause", envID, containerID)
 }
+
 func ContainerCommit(envID, containerID string) string {
 	return pathf("/api/environments/%s/containers/%s/commit", envID, containerID)
 }
+
 func ContainerUpdate(envID, containerID string) string {
 	return pathf("/api/environments/%s/containers/%s/update", envID, containerID)
 }
+
 func ContainerRedeploy(envID, containerID string) string {
 	return pathf("/api/environments/%s/containers/%s/redeploy", envID, containerID)
 }
+
 func ContainerEditConfig(envID, containerID string) string {
 	return pathf("/api/environments/%s/containers/%s/edit-config", envID, containerID)
 }
+
 func ContainerEdit(envID, containerID string) string {
 	return pathf("/api/environments/%s/containers/%s/edit", envID, containerID)
 }
+
 func ContainerAutoUpdate(envID, containerID string) string {
 	return pathf("/api/environments/%s/containers/%s/auto-update", envID, containerID)
 }
+
 func ContainersCounts(envID string) string {
 	return pathf("/api/environments/%s/containers/counts", envID)
 }
@@ -136,6 +150,7 @@ func ContainersCounts(envID string) string {
 // Image endpoints
 
 func Images(envID string) string { return pathf("/api/environments/%s/images", envID) }
+
 func Image(envID, imageID string) string {
 	return pathf("/api/environments/%s/images/%s", envID, imageID)
 }
@@ -147,12 +162,15 @@ func ImagesSearch(envID string) string { return pathf("/api/environments/%s/imag
 func ImageHistory(envID, name string) string {
 	return pathf("/api/environments/%s/images/%s/history", envID, name)
 }
+
 func ImageTag(envID, name string) string {
 	return pathf("/api/environments/%s/images/%s/tag", envID, name)
 }
+
 func ImageExport(envID, name string) string {
 	return pathf("/api/environments/%s/images/%s/export", envID, name)
 }
+
 func ImageAttestations(envID, name string) string {
 	return pathf("/api/environments/%s/images/%s/attestations", envID, name)
 }
@@ -167,9 +185,11 @@ func ImageBuild(envID, buildID string) string {
 func UploadSessions(envID, kind string) string {
 	return pathf("/api/environments/%s/uploads/%s", envID, kind)
 }
+
 func UploadSession(envID, kind, uploadID string) string {
 	return pathf("/api/environments/%s/uploads/%s/%s", envID, kind, uploadID)
 }
+
 func UploadSessionChunk(envID, kind, uploadID string, index int) string {
 	return pathf("/api/environments/%s/uploads/%s/%s/chunks/%d", envID, kind, uploadID, index)
 }
@@ -181,15 +201,19 @@ func ImageUpdatesCheck(envID, imageRef string) string {
 	query.Set("imageRef", imageRef)
 	return pathf("/api/environments/%s/image-updates/check", envID) + "?" + query.Encode()
 }
+
 func ImageUpdatesCheckAll(envID string) string {
 	return pathf("/api/environments/%s/image-updates/check-all", envID)
 }
+
 func ImageUpdatesCheckById(envID, imageID string) string {
 	return pathf("/api/environments/%s/image-updates/check/%s", envID, imageID)
 }
+
 func ImageUpdatesCheckBatch(envID string) string {
 	return pathf("/api/environments/%s/image-updates/check-batch", envID)
 }
+
 func ImageUpdatesSummary(envID string) string {
 	return pathf("/api/environments/%s/image-updates/summary", envID)
 }
@@ -197,19 +221,25 @@ func ImageUpdatesSummary(envID string) string {
 // Network endpoints
 
 func Networks(envID string) string { return pathf("/api/environments/%s/networks", envID) }
+
 func Network(envID, networkID string) string {
 	return pathf("/api/environments/%s/networks/%s", envID, networkID)
 }
+
 func NetworksCounts(envID string) string {
 	return pathf("/api/environments/%s/networks/counts", envID)
 }
+
 func NetworksPrune(envID string) string { return pathf("/api/environments/%s/networks/prune", envID) }
+
 func NetworksTopology(envID string) string {
 	return pathf("/api/environments/%s/networks/topology", envID)
 }
+
 func NetworkConnect(envID, networkID string) string {
 	return pathf("/api/environments/%s/networks/%s/connect", envID, networkID)
 }
+
 func NetworkDisconnect(envID, networkID string) string {
 	return pathf("/api/environments/%s/networks/%s/disconnect", envID, networkID)
 }
@@ -217,15 +247,21 @@ func NetworkDisconnect(envID, networkID string) string {
 // Volume endpoints
 
 func Volumes(envID string) string { return pathf("/api/environments/%s/volumes", envID) }
+
 func Volume(envID, volumeName string) string {
 	return pathf("/api/environments/%s/volumes/%s", envID, volumeName)
 }
+
 func VolumesCounts(envID string) string { return pathf("/api/environments/%s/volumes/counts", envID) }
-func VolumesPrune(envID string) string  { return pathf("/api/environments/%s/volumes/prune", envID) }
-func VolumesSizes(envID string) string  { return pathf("/api/environments/%s/volumes/sizes", envID) }
+
+func VolumesPrune(envID string) string { return pathf("/api/environments/%s/volumes/prune", envID) }
+
+func VolumesSizes(envID string) string { return pathf("/api/environments/%s/volumes/sizes", envID) }
+
 func VolumeUsage(envID, volumeName string) string {
 	return pathf("/api/environments/%s/volumes/%s/usage", envID, volumeName)
 }
+
 func VolumeRename(envID, volumeName string) string {
 	return pathf("/api/environments/%s/volumes/%s/rename", envID, volumeName)
 }
@@ -235,27 +271,35 @@ func VolumeRename(envID, volumeName string) string {
 func VolumeBackupPolicy(envID, volumeName string) string {
 	return pathf("/api/environments/%s/volumes/%s/backup-policy", envID, volumeName)
 }
+
 func VolumeBackups(envID, volumeName string) string {
 	return pathf("/api/environments/%s/volumes/%s/backups", envID, volumeName)
 }
+
 func VolumeBackup(envID, backupID string) string {
 	return pathf("/api/environments/%s/volumes/backups/%s", envID, backupID)
 }
+
 func VolumeBackupRestore(envID, volumeName, backupID string) string {
 	return pathf("/api/environments/%s/volumes/%s/backups/%s/restore", envID, volumeName, backupID)
 }
+
 func VolumeBackupRestoreFiles(envID, volumeName, backupID string) string {
 	return pathf("/api/environments/%s/volumes/%s/backups/%s/restore-files", envID, volumeName, backupID)
 }
+
 func VolumeBackupUpload(envID, backupID string) string {
 	return pathf("/api/environments/%s/volumes/backups/%s/upload", envID, backupID)
 }
+
 func VolumeBackupDownload(envID, backupID string) string {
 	return pathf("/api/environments/%s/volumes/backups/%s/download", envID, backupID)
 }
+
 func VolumeBackupFiles(envID, backupID string) string {
 	return pathf("/api/environments/%s/volumes/backups/%s/files", envID, backupID)
 }
+
 func VolumeBackupUploadRestore(envID, volumeName string) string {
 	return pathf("/api/environments/%s/volumes/%s/backups/upload", envID, volumeName)
 }
@@ -265,9 +309,11 @@ func VolumeBackupUploadRestore(envID, volumeName string) string {
 func VolumeWorkspace(envID, volumeName string) string {
 	return pathf("/api/environments/%s/volumes/%s/workspace", envID, volumeName)
 }
+
 func VolumeWorkspaceFile(envID, volumeName string) string {
 	return pathf("/api/environments/%s/volumes/%s/workspace/file", envID, volumeName)
 }
+
 func VolumeWorkspaceFileDownload(envID, volumeName string) string {
 	return pathf("/api/environments/%s/volumes/%s/workspace/file/download", envID, volumeName)
 }
@@ -275,9 +321,11 @@ func VolumeWorkspaceFileDownload(envID, volumeName string) string {
 // Project endpoints
 
 func Projects(envID string) string { return pathf("/api/environments/%s/projects", envID) }
+
 func Project(envID, projectID string) string {
 	return pathf("/api/environments/%s/projects/%s", envID, projectID)
 }
+
 func ProjectsCounts(envID string) string {
 	return pathf("/api/environments/%s/projects/counts", envID)
 }
@@ -285,42 +333,55 @@ func ProjectsTags(envID string) string { return pathf("/api/environments/%s/proj
 func ProjectTags(envID, projectID string) string {
 	return pathf("/api/environments/%s/projects/%s/tags", envID, projectID)
 }
+
 func ProjectDestroy(envID, projectID string) string {
 	return pathf("/api/environments/%s/projects/%s/destroy", envID, projectID)
 }
+
 func ProjectUp(envID, projectID string) string {
 	return pathf("/api/environments/%s/projects/%s/up", envID, projectID)
 }
+
 func ProjectDown(envID, projectID string) string {
 	return pathf("/api/environments/%s/projects/%s/down", envID, projectID)
 }
+
 func ProjectRestart(envID, projectID string) string {
 	return pathf("/api/environments/%s/projects/%s/restart", envID, projectID)
 }
+
 func ProjectRedeploy(envID, projectID string) string {
 	return pathf("/api/environments/%s/projects/%s/redeploy", envID, projectID)
 }
+
 func ProjectPull(envID, projectID string) string {
 	return pathf("/api/environments/%s/projects/%s/pull", envID, projectID)
 }
+
 func ProjectBuild(envID, projectID string) string {
 	return pathf("/api/environments/%s/projects/%s/build", envID, projectID)
 }
+
 func ProjectArchive(envID, projectID string) string {
 	return pathf("/api/environments/%s/projects/%s/archive", envID, projectID)
 }
+
 func ProjectUnarchive(envID, projectID string) string {
 	return pathf("/api/environments/%s/projects/%s/unarchive", envID, projectID)
 }
+
 func ProjectUpdateServices(envID, projectID string) string {
 	return pathf("/api/environments/%s/projects/%s/update-services", envID, projectID)
 }
+
 func ProjectWorkspace(envID, projectID string) string {
 	return pathf("/api/environments/%s/projects/%s/workspace", envID, projectID)
 }
+
 func ProjectWorkspaceFile(envID, projectID string) string {
 	return pathf("/api/environments/%s/projects/%s/workspace/file", envID, projectID)
 }
+
 func ProjectWorkspaceFileDownload(envID, projectID string) string {
 	return pathf("/api/environments/%s/projects/%s/workspace/file/download", envID, projectID)
 }
@@ -328,26 +389,35 @@ func ProjectWorkspaceFileDownload(envID, projectID string) string {
 // System endpoints
 
 func SystemPrune(envID string) string { return pathf("/api/environments/%s/system/prune", envID) }
+
 func SystemDockerInfo(envID string) string {
 	return pathf("/api/environments/%s/system/docker/info", envID)
 }
+
 func SystemContainersStartAll(envID string) string {
 	return pathf("/api/environments/%s/system/containers/start-all", envID)
 }
+
 func SystemContainersStopAll(envID string) string {
 	return pathf("/api/environments/%s/system/containers/stop-all", envID)
 }
+
 func SystemStartStopped(envID string) string {
 	return pathf("/api/environments/%s/system/containers/start-stopped", envID)
 }
+
 func SystemConvert(envID string) string { return pathf("/api/environments/%s/system/convert", envID) }
+
 func SystemUpgrade(envID string) string { return pathf("/api/environments/%s/system/upgrade", envID) }
+
 func SystemUpgradeCheck(envID string) string {
 	return pathf("/api/environments/%s/system/upgrade/check", envID)
 }
+
 func SystemUpgradeAll(envID string) string {
 	return pathf("/api/environments/%s/system/upgrade/all", envID)
 }
+
 func SystemUpgradeAllStatus(envID string) string {
 	return pathf("/api/environments/%s/system/upgrade/all/status", envID)
 }
@@ -371,6 +441,7 @@ func JobRun(envID, jobID string) string {
 // Settings endpoints
 
 func Settings(envID string) string { return pathf("/api/environments/%s/settings", envID) }
+
 func SettingsPublic(envID string) string {
 	return pathf("/api/environments/%s/settings/public", envID)
 }
@@ -380,9 +451,11 @@ func SettingsPublic(envID string) string {
 func NotificationsSettings(envID string) string {
 	return pathf("/api/environments/%s/notifications/settings", envID)
 }
+
 func NotificationSettingsProvider(envID, provider string) string {
 	return pathf("/api/environments/%s/notifications/settings/%s", envID, provider)
 }
+
 func NotificationsTestProvider(envID, provider string) string {
 	return pathf("/api/environments/%s/notifications/test/%s", envID, provider)
 }
@@ -448,6 +521,7 @@ func BackupsS3Test() string { return "/api/backups/s3/test" }
 func BackupsS3DestinationTest(id string) string {
 	return pathf("/api/backups/s3/%s/test", id)
 }
+
 func BackupsS3DestinationInUse(id string) string {
 	return pathf("/api/backups/s3/%s/in-use", id)
 }
@@ -457,33 +531,43 @@ func BackupsS3DestinationInUse(id string) string {
 func ImageVulnerabilitiesScan(envID, imageID string) string {
 	return pathf("/api/environments/%s/images/%s/vulnerabilities/scan", envID, imageID)
 }
+
 func ImageVulnerabilities(envID, imageID string) string {
 	return pathf("/api/environments/%s/images/%s/vulnerabilities", envID, imageID)
 }
+
 func ImageVulnerabilitiesSummary(envID, imageID string) string {
 	return pathf("/api/environments/%s/images/%s/vulnerabilities/summary", envID, imageID)
 }
+
 func ImageVulnerabilitiesList(envID, imageID string) string {
 	return pathf("/api/environments/%s/images/%s/vulnerabilities/list", envID, imageID)
 }
+
 func ImagesVulnerabilitiesSummaries(envID string) string {
 	return pathf("/api/environments/%s/images/vulnerabilities/summaries", envID)
 }
+
 func VulnerabilitiesScannerStatus(envID string) string {
 	return pathf("/api/environments/%s/vulnerabilities/scanner-status", envID)
 }
+
 func VulnerabilitiesSummary(envID string) string {
 	return pathf("/api/environments/%s/vulnerabilities/summary", envID)
 }
+
 func VulnerabilitiesAll(envID string) string {
 	return pathf("/api/environments/%s/vulnerabilities/all", envID)
 }
+
 func VulnerabilitiesIgnored(envID string) string {
 	return pathf("/api/environments/%s/vulnerabilities/ignored", envID)
 }
+
 func VulnerabilitiesIgnore(envID string) string {
 	return pathf("/api/environments/%s/vulnerabilities/ignore", envID)
 }
+
 func VulnerabilityIgnore(envID, ignoreID string) string {
 	return pathf("/api/environments/%s/vulnerabilities/ignore/%s", envID, ignoreID)
 }
@@ -491,12 +575,15 @@ func VulnerabilityIgnore(envID, ignoreID string) string {
 // Activity endpoints
 
 func Activities(envID string) string { return pathf("/api/environments/%s/activities", envID) }
+
 func Activity(envID, activityID string) string {
 	return pathf("/api/environments/%s/activities/%s", envID, activityID)
 }
+
 func ActivityCancel(envID, activityID string) string {
 	return pathf("/api/environments/%s/activities/%s/cancel", envID, activityID)
 }
+
 func ActivitiesHistory(envID string) string {
 	return pathf("/api/environments/%s/activities/history", envID)
 }
@@ -504,6 +591,7 @@ func ActivitiesHistory(envID string) string {
 // Webhook endpoints
 
 func Webhooks(envID string) string { return pathf("/api/environments/%s/webhooks", envID) }
+
 func Webhook(envID, webhookID string) string {
 	return pathf("/api/environments/%s/webhooks/%s", envID, webhookID)
 }
@@ -512,18 +600,23 @@ func WebhookTrigger(token string) string { return pathf("/api/webhooks/trigger/%
 // GitOps sync endpoints
 
 func GitOpsSyncs(envID string) string { return pathf("/api/environments/%s/gitops-syncs", envID) }
+
 func GitOpsSync(envID, syncID string) string {
 	return pathf("/api/environments/%s/gitops-syncs/%s", envID, syncID)
 }
+
 func GitOpsSyncStatus(envID, syncID string) string {
 	return pathf("/api/environments/%s/gitops-syncs/%s/status", envID, syncID)
 }
+
 func GitOpsSyncTrigger(envID, syncID string) string {
 	return pathf("/api/environments/%s/gitops-syncs/%s/sync", envID, syncID)
 }
+
 func GitOpsSyncFiles(envID, syncID string) string {
 	return pathf("/api/environments/%s/gitops-syncs/%s/files", envID, syncID)
 }
+
 func GitOpsSyncsImport(envID string) string {
 	return pathf("/api/environments/%s/gitops-syncs/import", envID)
 }
@@ -535,9 +628,11 @@ func GitRepository(id string) string { return pathf("/api/customize/git-reposito
 func GitRepositoryTest(id string) string {
 	return pathf("/api/customize/git-repositories/%s/test", id)
 }
+
 func GitRepositoryBranches(id string) string {
 	return pathf("/api/customize/git-repositories/%s/branches", id)
 }
+
 func GitRepositoryFiles(id string) string {
 	return pathf("/api/customize/git-repositories/%s/files", id)
 }

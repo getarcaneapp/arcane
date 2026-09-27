@@ -1,13 +1,15 @@
 package registryauth
 
 import (
-	"sort"
+	"maps"
+	"slices"
 	"strings"
 
 	"emperror.dev/errors"
 	ref "github.com/distribution/reference"
 	dockerauthconfig "github.com/moby/moby/api/pkg/authconfig"
 	dockerregistry "github.com/moby/moby/api/types/registry"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 func GetRegistryAddress(imageRef string) (string, error) {
@@ -16,10 +18,7 @@ func GetRegistryAddress(imageRef string) (string, error) {
 		return "", err
 	}
 	addr := ref.Domain(named)
-	if addr == DefaultRegistryDomain {
-		return DefaultRegistryHost, nil
-	}
-	return addr, nil
+	return kit.Ternary(addr == DefaultRegistryDomain, DefaultRegistryHost, addr), nil
 }
 
 func ExtractRegistryHost(imageRef string) string {
@@ -32,10 +31,7 @@ func ExtractRegistryHost(imageRef string) string {
 		return "docker.io"
 	}
 
-	if !strings.Contains(hostCandidate, ".") && !strings.Contains(hostCandidate, ":") {
-		return "docker.io"
-	}
-	return hostCandidate
+	return kit.Ternary(!strings.Contains(hostCandidate, ".") && !strings.Contains(hostCandidate, ":"), "docker.io", hostCandidate)
 }
 
 // SplitRegistryURL separates a registry URL into its comparison host and an
@@ -66,10 +62,7 @@ func NormalizeRegistryURL(url string) string {
 	if host == "docker.io" {
 		return "https://index.docker.io/v1/"
 	}
-	if namespace != "" {
-		return host + "/" + namespace
-	}
-	return host
+	return kit.Ternary(namespace != "", host+"/"+namespace, host)
 }
 
 func IsRegistryMatch(left, right string) bool {
@@ -113,10 +106,6 @@ func LookupKeys(url string) []string {
 		keys["index.docker.io"] = struct{}{}
 	}
 
-	out := make([]string, 0, len(keys))
-	for key := range keys {
-		out = append(out, key)
-	}
-	sort.Strings(out)
+	out := slices.Sorted(maps.Keys(keys))
 	return out
 }

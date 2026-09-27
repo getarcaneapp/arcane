@@ -98,7 +98,7 @@ func buildWebSocketHeaders(req *http.Request) map[string]string {
 	return headers
 }
 
-func forwardClientToAgent(ctx context.Context, streamCtx context.Context, clientWS *websocket.Conn, tunnel *AgentTunnel, streamID string, doneCh chan<- struct{}) {
+func forwardClientToAgent(ctx, streamCtx context.Context, clientWS *websocket.Conn, tunnel *AgentTunnel, streamID string, doneCh chan<- struct{}) {
 	defer close(doneCh)
 	for {
 		msgType, data, err := clientWS.Read(streamCtx)
@@ -121,7 +121,7 @@ func forwardClientToAgent(ctx context.Context, streamCtx context.Context, client
 	}
 }
 
-func forwardAgentToClient(ctx context.Context, streamCtx context.Context, clientWS *websocket.Conn, tunnel *AgentTunnel, pending *PendingRequest, streamID string, clientDoneCh <-chan struct{}) {
+func forwardAgentToClient(ctx, streamCtx context.Context, clientWS *websocket.Conn, tunnel *AgentTunnel, pending *PendingRequest, streamID string, clientDoneCh <-chan struct{}) {
 	pingTicker := time.NewTicker(tunnelWSPingPeriod)
 	defer pingTicker.Stop()
 
@@ -159,7 +159,7 @@ func forwardAgentToClient(ctx context.Context, streamCtx context.Context, client
 	}
 }
 
-func handleAgentMessage(ctx context.Context, streamCtx context.Context, clientWS *websocket.Conn, msg *TunnelMessage, streamID string) (bool, error) {
+func handleAgentMessage(ctx, streamCtx context.Context, clientWS *websocket.Conn, msg *TunnelMessage, streamID string) (bool, error) {
 	switch msg.Type {
 	case MessageTypeWebSocketData, MessageTypeStreamData:
 		return false, writeWebSocketData(streamCtx, clientWS, msg)

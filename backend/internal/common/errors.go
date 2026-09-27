@@ -16,11 +16,11 @@ const (
 	ErrConflict     = errors.Sentinel("kind: conflict")
 	ErrTimeout      = errors.Sentinel("kind: timeout")
 	ErrUnavailable  = errors.Sentinel("kind: service unavailable")
-)
 
-// ConfigurationErrorCodeEnvFileUnreadable is the ConfigurationError code reported
-// alongside ErrProjectEnvUnreadable.
-const ConfigurationErrorCodeEnvFileUnreadable = "env_file_unreadable"
+	// ConfigurationErrorCodeEnvFileUnreadable is the ConfigurationError code reported
+	// alongside ErrProjectEnvUnreadable.
+	ConfigurationErrorCodeEnvFileUnreadable = "env_file_unreadable"
+)
 
 type classified struct {
 	kind error

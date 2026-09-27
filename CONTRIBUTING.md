@@ -17,9 +17,17 @@ Thanks for helping make Arcane better! We've built a modern, streamlined develop
 
 ### Prerequisites
 
-- **Docker & Docker Compose** (that's it! 🎉)
+- **Docker & Docker Compose**
 - **VS Code** based IDE (recommended for the best developer experience)
 - **[Vite+](https://viteplus.dev)** (`curl -fsSL https://vite.plus | bash`) — manages the Node toolchain, formatting, linting, and pre-commit hooks when working outside Docker
+- **[goimports-reviser](https://github.com/incu6us/goimports-reviser) and [gofumpt](https://github.com/mvdan/gofumpt)** — required for Go import grouping and code formatting. Install both with Go:
+
+  ```bash
+  go install github.com/incu6us/goimports-reviser/v3@latest
+  go install mvdan.cc/gofumpt@latest
+  ```
+
+  Make sure your Go binary directory is on `PATH`.
 
 > **💡 Working Directory**: Unless otherwise specified, all commands in this guide should be run from the project root directory (`arcane/`).
 

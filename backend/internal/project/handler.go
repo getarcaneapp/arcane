@@ -23,15 +23,14 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/mapper"
 	workspacepkg "github.com/getarcaneapp/arcane/backend/v2/pkg/workspace"
 	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
-
 	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
 	workspacetypes "github.com/getarcaneapp/arcane/types/v2/workspace"
 	"github.com/samber/mo"
+	"go.getarcane.app/kit/pkg/mapping"
 	"gorm.io/gorm"
 )
 
@@ -702,7 +701,7 @@ func (h *ProjectHandler) CreateProject(ctx context.Context, input *CreateProject
 	}
 
 	var response projecttypes.CreateReponse
-	if err := mapper.MapStruct(proj, &response); err != nil {
+	if err := mapping.MapStruct(proj, &response); err != nil {
 		return nil, huma.Error500InternalServerError("failed to map response")
 	}
 	response.Status = string(proj.Status)

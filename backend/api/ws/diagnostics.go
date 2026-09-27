@@ -8,10 +8,9 @@ import (
 	"net/http/pprof"
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/diagnostics"
-
 	"github.com/coder/websocket"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/auth"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/diagnostics"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	wshub "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/ws"
@@ -20,13 +19,13 @@ import (
 	"go.getarcane.app/streams/logs"
 )
 
-// diagnosticsStreamInterval is how often the live diagnostics stream pushes a snapshot.
-const diagnosticsStreamInterval = 2 * time.Second
-
-// Keepalive/liveness bounds for the diagnostics sockets, mirroring the system
-// stats stream. Without them a silently dead peer wedges the writer forever,
-// which also strands the writer's deferred cleanup (log subscription, conn).
 const (
+	// diagnosticsStreamInterval is how often the live diagnostics stream pushes a snapshot.
+	diagnosticsStreamInterval = 2 * time.Second
+
+	// Keepalive/liveness bounds for the diagnostics sockets, mirroring the system
+	// stats stream. Without them a silently dead peer wedges the writer forever,
+	// which also strands the writer's deferred cleanup (log subscription, conn).
 	diagnosticsReadLimit  = 512
 	diagnosticsWriteWait  = 10 * time.Second
 	diagnosticsPingWait   = 10 * time.Second

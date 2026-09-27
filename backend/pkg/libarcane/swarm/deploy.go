@@ -1,6 +1,7 @@
 package swarm
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"maps"
@@ -8,7 +9,6 @@ import (
 	"strings"
 
 	"emperror.dev/errors"
-
 	composegotypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
@@ -170,9 +170,7 @@ func reconcileStackServicesInternal(
 
 	for _, key := range slices.Sorted(maps.Keys(project.Services)) {
 		service := project.Services[key]
-		if service.Name == "" {
-			service.Name = key
-		}
+		service.Name = cmp.Or(service.Name, key)
 		spec, err := buildServiceSpecInternal(service, ns, stackLabels, networkNameByKey, configMetaByKey, secretMetaByKey, project.Volumes)
 		if err != nil {
 			return nil, invalidStackErrorInternal(errors.WrapIff(err, "service %s", service.Name))
@@ -226,9 +224,7 @@ func createSwarmServiceInternal(
 		Spec:          spec,
 		QueryRegistry: queryRegistry,
 	}
-	if encodedRegistryAuth != "" {
-		opts.EncodedRegistryAuth = encodedRegistryAuth
-	}
+	opts.EncodedRegistryAuth = cmp.Or(encodedRegistryAuth, opts.EncodedRegistryAuth)
 	if _, err := dockerClient.ServiceCreate(ctx, opts); err != nil {
 		return errors.WrapIff(err, "failed to create swarm service %s", spec.Name)
 	}

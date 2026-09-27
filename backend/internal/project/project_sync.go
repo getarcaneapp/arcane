@@ -1,18 +1,20 @@
 package project
 
 import (
+	"cmp"
 	"context"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
 	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/samber/mo"
+	kit "go.getarcane.app/kit/pkg"
 	"gorm.io/gorm"
 )
 
@@ -53,10 +55,7 @@ func (s *ProjectService) refreshProjectImageRefsInternal(ctx context.Context, pr
 		return
 	}
 	imageRefsJSON := projects.MarshalImageRefsJSON(refs)
-	buildImageRefsJSON := projects.MarshalImageRefsJSON(buildRefs)
-	if buildImageRefsJSON == "" {
-		buildImageRefsJSON = "[]"
-	}
+	buildImageRefsJSON := cmp.Or(projects.MarshalImageRefsJSON(buildRefs), "[]")
 	if err := s.db.WithContext(ctx).
 		Model(&Project{}).
 		Where("id = ?", proj.ID).
@@ -186,10 +185,7 @@ func (s *ProjectService) upsertProjectForDir(ctx context.Context, dirName, dirPa
 		First(&existing).Error
 
 	composeMetadata, serviceCountErr := s.loadComposeMetadataForSyncInternal(ctx, dirPath, dirName)
-	serviceCountLogLevel := slog.LevelWarn
-	if errors.Is(serviceCountErr, common.ErrProjectEnvUnreadable) {
-		serviceCountLogLevel = slog.LevelDebug
-	}
+	serviceCountLogLevel := kit.Ternary(errors.Is(serviceCountErr, common.ErrProjectEnvUnreadable), slog.LevelDebug, slog.LevelWarn)
 
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		// Create a minimal project entry
@@ -476,7 +472,7 @@ func (s *ProjectService) loadComposeMetadataForSyncInternal(ctx context.Context,
 
 	pathMapper := s.projectPathMapperInternal(ctx)
 
-	autoInjectEnv := utils.BoolOrDefault(cfg.AutoInjectEnv.Value, false)
+	autoInjectEnv := kit.ParseOrDefault(cfg.AutoInjectEnv.Value, false, strconv.ParseBool)
 
 	// First, try loading without forcing a project name so compose-go can
 	// resolve COMPOSE_PROJECT_NAME from the .env file. If this fails (e.g.

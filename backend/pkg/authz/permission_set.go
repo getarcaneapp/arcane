@@ -160,8 +160,5 @@ func EnvIDFromPath(path string) string {
 		return ""
 	}
 	id := before
-	if id == "" {
-		return ""
-	}
 	return id
 }

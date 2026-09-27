@@ -3,7 +3,6 @@ package image
 
 import (
 	"github.com/danielgtaylor/huma/v2"
-
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/build"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"

@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"emperror.dev/errors"
-
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"

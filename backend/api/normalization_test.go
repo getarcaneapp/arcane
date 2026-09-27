@@ -233,7 +233,8 @@ func TestNormalizationRejectsInvalidTagsAtRegistration(t *testing.T) {
 			Body struct {
 				Name string `json:"name" unorm:"invalid"`
 			}
-		}) (*struct{}, error) {
+		},
+		) (*struct{}, error) {
 			return nil, nil
 		})
 	})

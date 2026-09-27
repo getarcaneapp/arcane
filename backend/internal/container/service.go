@@ -1,10 +1,7 @@
 package container
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-
+	"cmp"
 	"context"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
@@ -18,12 +15,8 @@ import (
 	"time"
 
 	"emperror.dev/errors"
-
-	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/api/types/mount"
-	"github.com/moby/moby/api/types/network"
-	"github.com/moby/moby/client"
-
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
@@ -34,12 +27,17 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/iconcatalog"
 	containertypes "github.com/getarcaneapp/arcane/types/v2/container"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/mount"
+	"github.com/moby/moby/api/types/network"
+	"github.com/moby/moby/client"
 	"github.com/samber/hot"
+	"go.getarcane.app/docker/compat"
+	kit "go.getarcane.app/kit/pkg"
 	containerstats "go.getarcane.app/streams/stats"
 	"go.getarcane.app/sys/cgroup"
 	"go.getarcane.app/updater"
@@ -97,7 +95,7 @@ func buildCleanNetworkingConfigInternal(containerInspect container.InspectRespon
 		return nil
 	}
 
-	endpointsConfig := libarcane.SanitizeContainerCreateEndpointSettingsForDockerAPI(containerInspect.NetworkSettings.Networks, apiVersion)
+	endpointsConfig := compat.SanitizeContainerCreateEndpointSettingsForDockerAPI(containerInspect.NetworkSettings.Networks, apiVersion)
 	for networkName, endpoint := range endpointsConfig {
 		if endpoint == nil {
 			continue
@@ -152,7 +150,8 @@ func (s *ContainerService) pullRedeployImageInternal(ctx context.Context, docker
 
 	pullOptions, authErr := s.imageService.PullOptionsWithAuth(ctx, imageName, credentials)
 	if authErr != nil {
-		slog.WarnContext(ctx, "failed to get registry authentication for container recreate pull; proceeding without auth",
+		slog.WarnContext(
+			ctx, "failed to get registry authentication for container recreate pull; proceeding without auth",
 			"image", imageName,
 			"error", authErr.Error(),
 		)
@@ -162,7 +161,8 @@ func (s *ContainerService) pullRedeployImageInternal(ctx context.Context, docker
 	defer s.eventService.BeginDockerResourceSuppressionWindow("image", "", imageName)()
 	reader, pullErr := dockerClient.ImagePull(pullCtx, imageName, pullOptions)
 	if pullErr != nil && image.ShouldRetryAnonymousPull(pullOptions, pullErr) {
-		slog.WarnContext(ctx, "container recreate image pull failed with registry auth; retrying anonymously",
+		slog.WarnContext(
+			ctx, "container recreate image pull failed with registry auth; retrying anonymously",
 			"image", imageName,
 			"error", pullErr.Error(),
 		)
@@ -285,7 +285,7 @@ func (s *ContainerService) restoreAutoRemoveContainerAfterStartFailureInternal(c
 	}
 
 	defer s.eventService.BeginDockerResourceSuppressionWindow("container", "", containerName)()
-	createResp, err := libarcane.ContainerCreateWithCompatibilityForAPIVersion(ctx, dockerClient, client.ContainerCreateOptions{
+	createResp, err := compat.ContainerCreateWithCompatibilityForAPIVersion(ctx, dockerClient, client.ContainerCreateOptions{
 		Config:           &originalConfig,
 		HostConfig:       containerInfo.HostConfig,
 		NetworkingConfig: buildCleanNetworkingConfigInternal(containerInfo, apiVersion),
@@ -308,7 +308,8 @@ func (s *ContainerService) restoreAutoRemoveContainerAfterStartFailureInternal(c
 		return errors.WrapIf(err, "failed to restart original auto-remove container")
 	}
 
-	slog.InfoContext(ctx, "restored auto-remove container after failed recreate",
+	slog.InfoContext(
+		ctx, "restored auto-remove container after failed recreate",
 		"oldContainerId", containerID,
 		"restoredContainerId", createResp.ID,
 		"containerName", containerName,
@@ -472,10 +473,7 @@ func (s *ContainerService) CommitContainer(ctx context.Context, containerID stri
 
 	repository := strings.TrimSpace(req.Repository)
 	tag := strings.TrimSpace(req.Tag)
-	reference := repository
-	if repository != "" && tag != "" {
-		reference = repository + ":" + tag
-	}
+	reference := kit.Ternary(repository != "" && tag != "", repository+":"+tag, repository)
 
 	result, err := dockerClient.ContainerCommit(ctx, containerID, client.ContainerCommitOptions{
 		Reference: reference,
@@ -537,7 +535,8 @@ func (s *ContainerService) tryRedeployViaComposeProjectInternal(ctx context.Cont
 		// errors (should surface so a transient failure doesn't silently recreate
 		// the container from stale cached config).
 		if strings.Contains(err.Error(), "not found") {
-			slog.WarnContext(ctx, "RedeployContainer: compose project not registered, falling back to standalone redeploy",
+			slog.WarnContext(
+				ctx, "RedeployContainer: compose project not registered, falling back to standalone redeploy",
 				"containerId", containerID,
 				"project", projectName,
 				"service", serviceName,
@@ -547,7 +546,8 @@ func (s *ContainerService) tryRedeployViaComposeProjectInternal(ctx context.Cont
 		return "", true, errors.WrapIff(err, "failed to look up compose project %s", projectName)
 	}
 	if proj == nil {
-		slog.WarnContext(ctx, "RedeployContainer: compose project not registered, falling back to standalone redeploy",
+		slog.WarnContext(
+			ctx, "RedeployContainer: compose project not registered, falling back to standalone redeploy",
 			"containerId", containerID,
 			"project", projectName,
 			"service", serviceName,
@@ -555,7 +555,8 @@ func (s *ContainerService) tryRedeployViaComposeProjectInternal(ctx context.Cont
 		return "", false, nil
 	}
 
-	slog.InfoContext(ctx, "RedeployContainer: detected compose container, using project-based redeploy",
+	slog.InfoContext(
+		ctx, "RedeployContainer: detected compose container, using project-based redeploy",
 		"containerId", containerID,
 		"project", projectName,
 		"service", serviceName,
@@ -608,7 +609,7 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 		return "", errors.WrapIf(err, "failed to connect to Docker")
 	}
 
-	containerJSON, err := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, client.ContainerInspectOptions{})
+	containerJSON, err := compat.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, client.ContainerInspectOptions{})
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", containerID, "", user.ID, user.Username, "0", err, database.JSON{
 			"action": "redeploy",
@@ -629,7 +630,7 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 
 	containerName := strings.TrimPrefix(containerInfo.Name, "/")
 	imageName := containerInfo.Config.Image
-	apiVersion := libarcane.DetectDockerAPIVersion(ctx, dockerClient)
+	apiVersion := compat.DetectDockerAPIVersion(ctx, dockerClient)
 
 	currentContainerID, currentContainerErr := cgroup.CurrentContainerID()
 	if labels.ShouldDisableArcaneServerRedeploy(containerInfo.Config.Labels, containerInfo.ID, currentContainerID, currentContainerErr) {
@@ -692,7 +693,7 @@ func (s *ContainerService) recreateContainerInternal(ctx context.Context, docker
 	}
 
 	defer s.eventService.BeginDockerResourceSuppressionWindow("container", "", newName)()
-	createResp, err := libarcane.ContainerCreateWithCompatibilityForAPIVersion(ctx, dockerClient, client.ContainerCreateOptions{
+	createResp, err := compat.ContainerCreateWithCompatibilityForAPIVersion(ctx, dockerClient, client.ContainerCreateOptions{
 		Config:           newConfig,
 		HostConfig:       newHostConfig,
 		NetworkingConfig: networkingConfig,
@@ -740,7 +741,8 @@ func (s *ContainerService) recreateContainerInternal(ctx context.Context, docker
 		}
 	}
 
-	slog.InfoContext(ctx, "container recreated successfully",
+	slog.InfoContext(
+		ctx, "container recreated successfully",
 		"action", action,
 		"oldContainerId", containerID,
 		"newContainerId", createResp.ID,
@@ -755,7 +757,8 @@ func (s *ContainerService) recreateContainerInternal(ctx context.Context, docker
 			RemoveVolumes: false,
 			RemoveLinks:   false,
 		}); err != nil {
-			slog.WarnContext(ctx, "failed to remove old container after successful recreate",
+			slog.WarnContext(
+				ctx, "failed to remove old container after successful recreate",
 				"containerId", containerID,
 				"backupName", backupName,
 				"error", err,
@@ -1014,7 +1017,7 @@ func buildEditNetworkingConfigInternal(containerInspect container.InspectRespons
 
 	var existing map[string]*network.EndpointSettings
 	if containerInspect.NetworkSettings != nil {
-		existing = libarcane.SanitizeContainerCreateEndpointSettingsForDockerAPI(containerInspect.NetworkSettings.Networks, apiVersion)
+		existing = compat.SanitizeContainerCreateEndpointSettingsForDockerAPI(containerInspect.NetworkSettings.Networks, apiVersion)
 	}
 
 	endpoints := make(map[string]*network.EndpointSettings, len(req.EndpointsConfig))
@@ -1037,7 +1040,6 @@ func buildEditNetworkingConfigInternal(containerInspect container.InspectRespons
 	if len(endpoints) == 0 {
 		return nil, nil
 	}
-
 	return &network.NetworkingConfig{EndpointsConfig: endpoints}, nil
 }
 
@@ -1049,7 +1051,7 @@ func (s *ContainerService) GetContainerEditConfig(ctx context.Context, container
 		return containertypes.EditConfig{}, errors.WrapIf(err, "failed to connect to Docker")
 	}
 
-	containerJSON, err := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, client.ContainerInspectOptions{})
+	containerJSON, err := compat.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, client.ContainerInspectOptions{})
 	if err != nil {
 		return containertypes.EditConfig{}, errors.WrapIf(err, "failed to inspect container")
 	}
@@ -1080,7 +1082,7 @@ func (s *ContainerService) EditContainer(ctx context.Context, containerID string
 		return "", errors.WrapIf(err, "failed to connect to Docker")
 	}
 
-	containerJSON, err := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, client.ContainerInspectOptions{})
+	containerJSON, err := compat.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, client.ContainerInspectOptions{})
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", containerID, "", user.ID, user.Username, "0", err, database.JSON{
 			"action": "edit",
@@ -1117,12 +1119,12 @@ func (s *ContainerService) EditContainer(ctx context.Context, containerID string
 		}
 	}
 	if newName != containerName {
-		if _, inspectErr := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, newName, client.ContainerInspectOptions{}); inspectErr == nil {
+		if _, inspectErr := compat.ContainerInspectWithCompatibility(ctx, dockerClient, newName, client.ContainerInspectOptions{}); inspectErr == nil {
 			return "", errors.WrapIff(common.ErrContainerNameTaken, "container name %s", newName)
 		}
 	}
 
-	apiVersion := libarcane.DetectDockerAPIVersion(ctx, dockerClient)
+	apiVersion := compat.DetectDockerAPIVersion(ctx, dockerClient)
 
 	newConfig := *containerInfo.Config
 	var newHostConfig container.HostConfig
@@ -1161,7 +1163,7 @@ func (s *ContainerService) GetContainerByReference(ctx context.Context, ref stri
 		return nil, errors.WrapIf(err, "failed to connect to Docker")
 	}
 
-	containerInspect, err := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, ref, client.ContainerInspectOptions{})
+	containerInspect, err := compat.ContainerInspectWithCompatibility(ctx, dockerClient, ref, client.ContainerInspectOptions{})
 	if err != nil {
 		return nil, errors.WrapIf(err, "container not found")
 	}
@@ -1240,7 +1242,7 @@ func (s *ContainerService) GetContainerNameByID(ctx context.Context, id string) 
 	return s.GetContainerNameByReference(ctx, id)
 }
 
-func (s *ContainerService) DeleteContainer(ctx context.Context, containerID string, force bool, removeVolumes bool, user common.User) error {
+func (s *ContainerService) DeleteContainer(ctx context.Context, containerID string, force, removeVolumes bool, user common.User) error {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", containerID, "", user.ID, user.Username, "0", err, database.JSON{"action": "delete", "force": force, "removeVolumes": removeVolumes})
@@ -1250,7 +1252,7 @@ func (s *ContainerService) DeleteContainer(ctx context.Context, containerID stri
 	// Get container mounts before deletion if we need to remove volumes
 	var volumesToRemove []string
 	if removeVolumes {
-		containerJSON, inspectErr := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, client.ContainerInspectOptions{})
+		containerJSON, inspectErr := compat.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, client.ContainerInspectOptions{})
 		if inspectErr == nil {
 			for _, mount := range containerJSON.Container.Mounts {
 				// Only collect named volumes (not bind mounts or tmpfs)
@@ -1343,7 +1345,7 @@ func (s *ContainerService) CreateContainer(ctx context.Context, config *containe
 	}
 
 	defer s.eventService.BeginDockerResourceSuppressionWindow("container", "", containerName)()
-	resp, err := libarcane.ContainerCreateWithCompatibility(ctx, dockerClient, client.ContainerCreateOptions{
+	resp, err := compat.ContainerCreateWithCompatibility(ctx, dockerClient, client.ContainerCreateOptions{
 		Config:           config,
 		HostConfig:       hostConfig,
 		NetworkingConfig: networkingConfig,
@@ -1370,7 +1372,7 @@ func (s *ContainerService) CreateContainer(ctx context.Context, config *containe
 		return nil, errors.WrapIf(err, "failed to start container")
 	}
 
-	containerJSON, err := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, resp.ID, client.ContainerInspectOptions{})
+	containerJSON, err := compat.ContainerInspectWithCompatibility(ctx, dockerClient, resp.ID, client.ContainerInspectOptions{})
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", resp.ID, containerName, user.ID, user.Username, "0", err, database.JSON{"action": "create", "image": config.Image, "step": "inspect"})
 		return nil, errors.WrapIf(err, "failed to inspect created container")
@@ -1591,11 +1593,7 @@ func getContainerProjectNameInternal(container containertypes.Summary) string {
 	}
 
 	projectName := dockerutils.ComposeProjectLabel(container.Labels)
-	if projectName == "" {
-		return containerNoProjectGroup
-	}
-
-	return projectName
+	return kit.Ternary(projectName == "", containerNoProjectGroup, projectName)
 }
 
 // FilterExcludedContainers removes internal and hidden containers unless their corresponding inclusion flags are enabled.
@@ -1606,8 +1604,8 @@ func FilterExcludedContainers(containers []container.Summary, includeInternal, i
 
 	filtered := make([]container.Summary, 0, len(containers))
 	for _, dc := range containers {
-		internal, _ := utils.ParseBool(dc.Labels[libarcane.InternalResourceLabel])
-		hidden, _ := utils.ParseBool(dc.Labels[libarcane.HiddenResourceLabel])
+		internal, _ := kit.ParseBool(dc.Labels[libarcane.InternalResourceLabel])
+		hidden, _ := kit.ParseBool(dc.Labels[libarcane.HiddenResourceLabel])
 		if (!includeInternal && internal) || (!includeHidden && hidden) {
 			continue
 		}
@@ -1642,15 +1640,12 @@ func (s *ContainerService) BuildSummaries(ctx context.Context, containers []cont
 		resolved, policyErr := tagpolicy.Resolve(dc.Image, policy)
 		summary.UpdateStrategy = resolved.Strategy
 		if policyErr != nil {
-			summary.UpdateStrategy = policy.Strategy
-			if summary.UpdateStrategy == "" {
-				summary.UpdateStrategy = "auto"
-			}
+			summary.UpdateStrategy = cmp.Or(policy.Strategy, "auto")
 		}
 		summary.UpdateInfo = updateInfoMap[dc.ID]
 		summary.RedeployDisabled = labels.ShouldDisableArcaneServerRedeploy(summary.Labels, summary.ID, currentContainerID, currentContainerErr)
 		summary.AutoUpdateEnabled = !labels.IsUpdateDisabled(dc.Labels) && !dockerutils.ContainerNameExcluded(dc.Names, excluded)
-		summary.Hidden, _ = utils.ParseBool(dc.Labels[libarcane.HiddenResourceLabel])
+		summary.Hidden, _ = kit.ParseBool(dc.Labels[libarcane.HiddenResourceLabel])
 		items = append(items, summary)
 	}
 	return items
@@ -1700,7 +1695,7 @@ func (s *ContainerService) resolveContainerIconInternal(ctx context.Context, lab
 	meta := s.getCachedProjectIconMetadataInternal(ctx, projectName, metadataByProject)
 
 	serviceName := dockerutils.ComposeServiceLabel(labels)
-	return iconcatalog.Resolve(project.IconCatalogForContext(ctx), iconcatalog.FirstNonEmpty(
+	return iconcatalog.Resolve(project.IconCatalogForContext(ctx), cmp.Or(
 		explicitIcon,
 		meta.ServiceIconSets[serviceName],
 		meta.ProjectIcon,
@@ -1799,10 +1794,7 @@ func (s *ContainerService) buildContainerSortBindings() []pagination.SortBinding
 				if a.Created < b.Created {
 					return -1
 				}
-				if a.Created > b.Created {
-					return 1
-				}
-				return 0
+				return kit.Ternary(a.Created > b.Created, 1, 0)
 			},
 		},
 		{
@@ -1924,7 +1916,7 @@ func (s *ContainerService) buildContainerFilterAccessors() []pagination.FilterAc
 			Key: "standalone",
 			Fn: func(c containertypes.Summary, filterValue string) bool {
 				isStandalone := dockerutils.ComposeProjectLabel(c.Labels) == ""
-				value, valid := utils.ParseBool(filterValue)
+				value, valid := kit.ParseBool(filterValue)
 				return !valid || isStandalone == value
 			},
 		},

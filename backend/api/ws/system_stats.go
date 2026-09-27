@@ -11,15 +11,15 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	httputil "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
+	systemtypes "github.com/getarcaneapp/arcane/types/v2/system"
 	"github.com/labstack/echo/v5"
 	"github.com/samber/hot"
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/disk"
 	"github.com/shirou/gopsutil/v4/host"
 	"github.com/shirou/gopsutil/v4/mem"
-
-	httputil "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
-	systemtypes "github.com/getarcaneapp/arcane/types/v2/system"
+	kit "go.getarcane.app/kit/pkg"
 	"go.getarcane.app/sys/cgroup"
 )
 
@@ -515,8 +515,5 @@ func (h *WebSocketHandler) getDiskUsagePath(ctx context.Context) string {
 		}
 		return map[struct{}]string{{}: path}, nil
 	})
-	if err != nil || !found {
-		return "/"
-	}
-	return path
+	return kit.Ternary(err != nil || !found, "/", path)
 }

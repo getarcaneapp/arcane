@@ -13,7 +13,6 @@ import (
 	"unicode"
 
 	"emperror.dev/errors"
-
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
@@ -22,6 +21,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/getarcaneapp/arcane/types/v2/template"
 	"github.com/spf13/cobra"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 var (
@@ -401,14 +401,8 @@ func selectTemplateCandidateInternal(matches []template.Template, identifier str
 }
 
 func templateOptionLabelInternal(candidate template.Template) string {
-	source := "local"
-	if candidate.IsRemote {
-		source = "remote"
-	}
-	custom := "builtin"
-	if candidate.IsCustom {
-		custom = "custom"
-	}
+	source := kit.Ternary(candidate.IsRemote, "remote", "local")
+	custom := kit.Ternary(candidate.IsCustom, "custom", "builtin")
 	return fmt.Sprintf("%s (id: %s, %s, %s)", candidate.Name, candidate.ID, source, custom)
 }
 
@@ -431,10 +425,7 @@ func rankFuzzyTemplateMatchesInternal(query string, candidates []template.Templa
 		matched := false
 		switch {
 		case nameMatches && idMatches:
-			score = nameScore
-			if idScore < nameScore {
-				score = idScore + 10
-			}
+			score = kit.Ternary(idScore < nameScore, idScore+10, nameScore)
 			matched = true
 		case nameMatches:
 			score = nameScore
@@ -536,10 +527,7 @@ func levenshteinDistanceInternal(left, right string) int {
 		current := make([]int, len(rightRunes)+1)
 		current[0] = leftIndex
 		for rightIndex := 1; rightIndex <= len(rightRunes); rightIndex++ {
-			cost := 0
-			if leftRunes[leftIndex-1] != rightRunes[rightIndex-1] {
-				cost = 1
-			}
+			cost := kit.Ternary(leftRunes[leftIndex-1] != rightRunes[rightIndex-1], 1, 0)
 			current[rightIndex] = min(
 				current[rightIndex-1]+1,
 				previous[rightIndex]+1,
@@ -575,10 +563,7 @@ func topTemplatesFromRankedMatchesInternal(matches []rankedTemplateMatchInternal
 }
 
 func absIntInternal(value int) int {
-	if value < 0 {
-		return -value
-	}
-	return value
+	return kit.Ternary(value < 0, -value, value)
 }
 
 func formatTemplateCandidatesInternal(matches []template.Template) string {

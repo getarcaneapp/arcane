@@ -45,7 +45,6 @@ func TestContainerStartSurfacesServerError(t *testing.T) {
 
 	require.NotContains(t, outBuf, "successfully",
 		"expected no success message on a denied start, got stdout=%s", outBuf)
-
 }
 
 // TestSystemContainersStartAllSurfacesServerError verifies the same guard for a
@@ -77,5 +76,4 @@ func TestSystemContainersStartAllSurfacesServerError(t *testing.T) {
 
 	require.NotContains(t, outBuf, "Started all containers",
 		"expected no success message on a denied start-all, got stdout=%s", outBuf)
-
 }

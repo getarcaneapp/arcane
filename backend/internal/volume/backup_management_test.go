@@ -13,6 +13,7 @@ import (
 	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
+	kit "go.getarcane.app/kit/pkg"
 	"go.getarcane.app/sys/crypto"
 	"gorm.io/gorm"
 )
@@ -48,6 +49,7 @@ func TestListBackupsPaginatedByManagementTypeInternal(t *testing.T) {
 		require.Equal(t, backuptypes.ManagementTypeVolume, entry.Type)
 	}
 }
+
 func TestVolumeBackupPasswordPrefersRecoveryKey(t *testing.T) {
 	gormDB, err := gorm.Open(sqlite.Open("file:volume-backup-password?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
@@ -62,7 +64,7 @@ func TestVolumeBackupPasswordPrefersRecoveryKey(t *testing.T) {
 
 	password, err := service.volumeBackupPasswordInternal(t.Context(), nil)
 	require.NoError(t, err)
-	require.Equal(t, service.legacyVolumePasswordInternal(), password)
+	require.Equal(t, kit.SHA256Hex(legacyVolumePasswordSaltInternal+service.encryptionKey), password)
 
 	recoveryKey := "QWERTY-ABCDEF-234567-GHIJKL-MNOPQR-STUVWX-YZ2345-ZXCVBN"
 	require.NoError(t, recoveryKeys.Set(t.Context(), recoveryKey))

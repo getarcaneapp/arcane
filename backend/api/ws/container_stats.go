@@ -10,10 +10,9 @@ import (
 	"time"
 
 	"emperror.dev/errors"
-	"github.com/labstack/echo/v5"
-
 	wshub "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/ws"
 	systemtypes "github.com/getarcaneapp/arcane/types/v2/system"
+	"github.com/labstack/echo/v5"
 )
 
 // ============================================================================

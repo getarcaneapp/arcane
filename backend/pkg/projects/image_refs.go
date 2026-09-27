@@ -1,17 +1,19 @@
 package projects
 
 import (
+	"cmp"
 	"encoding/json/v2"
-	"sort"
+	"maps"
+	"slices"
 	"strings"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/containerd/platforms"
 	composeapi "github.com/docker/compose/v5/pkg/api"
-
 	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
 	"github.com/moby/moby/api/types/image"
 	"github.com/moby/moby/client"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 // ParseImageRefsJSON parses a JSON array of image references, returning nil
@@ -35,20 +37,13 @@ func MarshalImageRefsJSON(refs []string) string {
 		return ""
 	}
 	data, err := json.Marshal(refs)
-	if err != nil {
-		return ""
-	}
-	return string(data)
+	return kit.Ternary(err != nil, "", string(data))
 }
 
 // ImageRefsFromComposeServices returns unique, non-empty image references from
 // a compose service map in stable service-name order.
 func ImageRefsFromComposeServices(services composetypes.Services) []string {
-	serviceNames := make([]string, 0, len(services))
-	for name := range services {
-		serviceNames = append(serviceNames, name)
-	}
-	sort.Strings(serviceNames)
+	serviceNames := slices.Sorted(maps.Keys(services))
 
 	serviceConfigs := make([]composetypes.ServiceConfig, 0, len(services))
 	for _, name := range serviceNames {
@@ -66,11 +61,7 @@ func BuildImageRefsFromComposeProject(project *composetypes.Project) []string {
 		return nil
 	}
 
-	serviceNames := make([]string, 0, len(project.Services))
-	for name := range project.Services {
-		serviceNames = append(serviceNames, name)
-	}
-	sort.Strings(serviceNames)
+	serviceNames := slices.Sorted(maps.Keys(project.Services))
 
 	return uniqueImageRefsInternal(len(serviceNames), func(yield func(string)) {
 		for _, name := range serviceNames {
@@ -78,9 +69,7 @@ func BuildImageRefsFromComposeProject(project *composetypes.Project) []string {
 			if svc.Build == nil {
 				continue
 			}
-			if svc.Name == "" {
-				svc.Name = name
-			}
+			svc.Name = cmp.Or(svc.Name, name)
 			yield(composeapi.GetImageNameOrDefault(svc, project.Name))
 		}
 	})
@@ -108,21 +97,8 @@ func ImageRefsFromRuntimeServices(services []projecttypes.RuntimeService) []stri
 
 func uniqueImageRefsInternal(size int, collect func(yield func(string))) []string {
 	refs := make([]string, 0, size)
-	seen := make(map[string]struct{}, size)
-
-	collect(func(image string) {
-		ref := strings.TrimSpace(image)
-		if ref == "" {
-			return
-		}
-		if _, exists := seen[ref]; exists {
-			return
-		}
-		seen[ref] = struct{}{}
-		refs = append(refs, ref)
-	})
-
-	return refs
+	collect(func(image string) { refs = append(refs, image) })
+	return kit.Unique(kit.TrimNonEmpty(refs))
 }
 
 // PullableImageRefs includes service images and registry-only hook and volume images.

@@ -41,7 +41,6 @@ require (
 	github.com/gofrs/flock v0.13.1
 	github.com/google/go-containerregistry v0.22.1
 	github.com/google/uuid v1.6.0
-	github.com/jinzhu/copier v0.4.0
 	github.com/jwx-go/jwkfetch/v4 v4.0.4
 	github.com/klauspost/compress v1.20.1
 	github.com/labstack/echo/v5 v5.3.1
@@ -71,8 +70,9 @@ require (
 	github.com/wneessen/go-mail v0.8.1
 	go.getarcane.app/acfs v0.6.1
 	go.getarcane.app/builds v0.4.2
+	go.getarcane.app/docker/compat v0.1.0
 	go.getarcane.app/docker/convert v0.3.2
-	go.getarcane.app/kit v0.2.0
+	go.getarcane.app/kit v0.3.1
 	go.getarcane.app/streams v0.4.3
 	go.getarcane.app/sys/cgroup v0.2.3
 	go.getarcane.app/sys/crypto v0.2.2
@@ -190,6 +190,7 @@ require (
 	github.com/jackc/pgx/v5 v5.10.0 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 // indirect
+	github.com/jinzhu/copier v0.4.0 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
 	github.com/jonboulle/clockwork v0.5.0 // indirect

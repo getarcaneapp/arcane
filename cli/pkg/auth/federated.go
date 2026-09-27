@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"emperror.dev/errors"
-
 	"github.com/getarcaneapp/arcane/cli/v2/internal/ci"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
@@ -20,6 +19,7 @@ import (
 	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
 	federatedtypes "github.com/getarcaneapp/arcane/types/v2/federated"
 	"github.com/spf13/cobra"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 const (
@@ -136,7 +136,7 @@ func init() {
 	federatedCmd.Flags().Bool("json", false, "Output in JSON format")
 }
 
-func resolveFederatedSubjectTokenInternal(cmd *cobra.Command, provider string, audience string) (string, string, error) {
+func resolveFederatedSubjectTokenInternal(cmd *cobra.Command, provider, audience string) (string, string, error) {
 	token, _ := cmd.Flags().GetString("token")
 	if strings.TrimSpace(token) != "" {
 		return strings.TrimSpace(token), "flag", nil
@@ -171,7 +171,7 @@ func resolveFederatedSubjectTokenInternal(cmd *cobra.Command, provider string, a
 	return ci.DetectToken(cmd.Context(), provider, audience, os.Getenv, &http.Client{Timeout: 10 * time.Second})
 }
 
-func exchangeFederatedTokenInternal(cmd *cobra.Command, c *client.Client, subjectToken string, audience string) (*federatedtypes.FederatedTokenResponse, error) {
+func exchangeFederatedTokenInternal(cmd *cobra.Command, c *client.Client, subjectToken, audience string) (*federatedtypes.FederatedTokenResponse, error) {
 	form := url.Values{}
 	form.Set("grant_type", federatedtypes.TokenExchangeGrantType)
 	form.Set("subject_token", subjectToken)
@@ -220,10 +220,7 @@ func redactedFederatedExchangeMessageInternal(body []byte) string {
 		}
 	}
 	msg := strings.TrimSpace(string(body))
-	if msg == "" {
-		return "request rejected"
-	}
-	return msg
+	return kit.Ternary(msg == "", "request rejected", msg)
 }
 
 func stdinHasDataInternal() bool {

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"maps"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -18,7 +19,6 @@ import (
 	"time"
 
 	"emperror.dev/errors"
-
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
@@ -28,6 +28,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/types/v2/env"
 	"go.getarcane.app/acfs"
+	kit "go.getarcane.app/kit/pkg"
 	"go.getarcane.app/sys/crypto"
 	"gorm.io/gorm"
 )
@@ -299,11 +300,7 @@ func (s *VariableService) resolveEffectiveVariablesInternal(ctx context.Context,
 		}
 	}
 
-	keys := make([]string, 0, len(effective))
-	for key := range effective {
-		keys = append(keys, key)
-	}
-	slices.Sort(keys)
+	keys := slices.Sorted(maps.Keys(effective))
 
 	result := make([]env.Variable, 0, len(effective))
 	for _, key := range keys {
@@ -747,7 +744,7 @@ func (s *VariableService) normalizeScopeInternal(ctx context.Context, allEnviron
 // validateScopeConflictInternal enforces the duplicate-key rule: a key may
 // exist once per overlapping scope. The same key as both an all-environments
 // variable and an env-scoped variable is allowed (that is the override).
-func (s *VariableService) validateScopeConflictInternal(tx *gorm.DB, key string, excludeID string, allEnvironments bool, envIDs []string) error {
+func (s *VariableService) validateScopeConflictInternal(tx *gorm.DB, key, excludeID string, allEnvironments bool, envIDs []string) error {
 	var others []GlobalVariable
 	query := tx.Preload("Environments").Where("key = ?", key)
 	if excludeID != "" {
@@ -815,10 +812,7 @@ func environmentsFromIDsInternal(envIDs []string) []environment.Environment {
 }
 
 func globalVariableToDTOInternal(variable GlobalVariable) env.GlobalVariable {
-	value := variable.Value
-	if variable.IsSecret {
-		value = ""
-	}
+	value := kit.Ternary(variable.IsSecret, "", variable.Value)
 	return env.GlobalVariable{
 		ID:              variable.ID,
 		Key:             variable.Key,

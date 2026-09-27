@@ -1,11 +1,16 @@
 package environment
 
-import "strings"
+import (
+	"strings"
+
+	kit "go.getarcane.app/kit/pkg"
+)
 
 // LocalEnvironmentID is the reserved ID of the environment Arcane manages directly.
-const LocalEnvironmentID = "0"
-
-const localEnvironmentFallbackNameInternal = "Local"
+const (
+	LocalEnvironmentID                   = "0"
+	localEnvironmentFallbackNameInternal = "Local"
+)
 
 // DisplayName returns the stored environment name or its readable fallback.
 func DisplayName(environmentID, storedName string) string {
@@ -13,8 +18,5 @@ func DisplayName(environmentID, storedName string) string {
 		return name
 	}
 	id := strings.TrimSpace(environmentID)
-	if id == "" || id == LocalEnvironmentID {
-		return localEnvironmentFallbackNameInternal
-	}
-	return id
+	return kit.Ternary(id == "" || id == LocalEnvironmentID, localEnvironmentFallbackNameInternal, id)
 }

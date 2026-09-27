@@ -3,9 +3,8 @@ package ws
 import (
 	"net/http"
 
-	"github.com/labstack/echo/v5"
-
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
+	"github.com/labstack/echo/v5"
 )
 
 // proxiedWSRoute couples a proxied WebSocket route (relative to the

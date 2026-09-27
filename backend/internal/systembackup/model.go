@@ -13,15 +13,13 @@ const (
 	SystemBackupStatusRunning   SystemBackupStatus = "running"
 	SystemBackupStatusSucceeded SystemBackupStatus = "succeeded"
 	SystemBackupStatusFailed    SystemBackupStatus = "failed"
-)
 
-type SystemBackupTrigger string
-
-const (
 	SystemBackupTriggerManual    SystemBackupTrigger = "manual"
 	SystemBackupTriggerScheduled SystemBackupTrigger = "scheduled"
 	SystemBackupTriggerSafety    SystemBackupTrigger = "safety"
 )
+
+type SystemBackupTrigger string
 
 type SystemBackupRun struct {
 	database.BaseModel

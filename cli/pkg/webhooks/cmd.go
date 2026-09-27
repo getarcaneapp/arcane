@@ -3,12 +3,12 @@
 package webhooks
 
 import (
+	"cmp"
 	"fmt"
 	"net/http"
 	"time"
 
 	"emperror.dev/errors"
-
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
@@ -247,10 +247,7 @@ func init() {
 }
 
 func webhookTarget(item webhook.Summary) string {
-	name := item.TargetName
-	if name == "" {
-		name = item.TargetID
-	}
+	name := cmp.Or(item.TargetName, item.TargetID)
 	if name == "" {
 		return item.TargetType
 	}

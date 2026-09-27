@@ -14,13 +14,13 @@ import (
 	"time"
 
 	"emperror.dev/errors"
-
 	composegotypes "github.com/compose-spec/compose-go/v2/types"
 	dockeropts "github.com/docker/cli/opts"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/api/types/swarm"
 	"github.com/samber/mo"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 func buildServiceSpecInternal(
@@ -76,8 +76,8 @@ func buildServiceSpecInternal(
 		TaskTemplate: swarm.TaskSpec{
 			ContainerSpec: &swarm.ContainerSpec{
 				Image:           service.Image,
-				Command:         toStringSliceInternal(service.Entrypoint),
-				Args:            toStringSliceInternal(service.Command),
+				Command:         kit.Ternary(len(service.Entrypoint) == 0, nil, service.Entrypoint),
+				Args:            kit.Ternary(len(service.Command) == 0, nil, service.Command),
 				Env:             convertEnvInternal(service.Environment),
 				Dir:             service.WorkingDir,
 				User:            service.User,
@@ -204,10 +204,7 @@ func convertPrivilegesInternal(
 		}
 	}
 
-	if !hasPrivileges {
-		return nil, runtimeConfigRef, nil
-	}
-	return privileges, runtimeConfigRef, nil
+	return kit.Ternary(!hasPrivileges, nil, privileges), runtimeConfigRef, nil
 }
 
 func convertCredentialSpecInternal(
@@ -659,10 +656,7 @@ func parsePrefixInternal(value string) netip.Prefix {
 		return netip.Prefix{}
 	}
 	prefix, err := netip.ParsePrefix(value)
-	if err != nil {
-		return netip.Prefix{}
-	}
-	return prefix
+	return kit.Ternary(err != nil, netip.Prefix{}, prefix)
 }
 
 func parseAuxAddressesInternal(values map[string]string) map[string]netip.Addr {
@@ -692,13 +686,6 @@ func convertEnvInternal(env composegotypes.MappingWithEquals) []string {
 	}
 	slices.Sort(result)
 	return result
-}
-
-func toStringSliceInternal(command composegotypes.ShellCommand) []string {
-	if len(command) == 0 {
-		return nil
-	}
-	return command
 }
 
 func convertDurationPtrInternal(duration *composegotypes.Duration) *time.Duration {

@@ -1,8 +1,6 @@
 package webhook
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
@@ -14,16 +12,17 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/types/v2"
 	"github.com/labstack/echo/v5"
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	kit "go.getarcane.app/kit/pkg"
 	libcrypto "go.getarcane.app/sys/crypto"
 	"gorm.io/gorm"
-
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 )
 
 // setupWebhookServiceTestDB creates an isolated in-memory SQLite DB for each test.
@@ -104,8 +103,8 @@ func TestWebhookTokenFormat(t *testing.T) {
 
 func TestHashWebhookTokenIsDeterministic(t *testing.T) {
 	raw := "arc_wh_0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
-	first := hashWebhookTokenInternal(raw)
-	second := hashWebhookTokenInternal(raw)
+	first := kit.SHA256Hex(raw)
+	second := kit.SHA256Hex(raw)
 	assert.Equal(t, first, second)
 }
 
@@ -249,7 +248,7 @@ func TestCreateWebhook_TokenNotStoredInPlaintext(t *testing.T) {
 
 	stored := fetchWebhook(t, db, wh.ID)
 	assert.NotEqual(t, rawToken, stored.TokenHash, "raw token must not be stored as-is")
-	assert.Equal(t, hashWebhookTokenInternal(rawToken), stored.TokenHash, "stored hash must match SHA-256 of raw token")
+	assert.Equal(t, kit.SHA256Hex(rawToken), stored.TokenHash, "stored hash must match SHA-256 of raw token")
 }
 
 func TestCreateWebhook_PrefixMatchesToken(t *testing.T) {
@@ -656,7 +655,7 @@ func TestTriggerByToken_UnknownTargetType_ReturnsInvalidType(t *testing.T) {
 	svc := newTestWebhookService(db)
 
 	rawToken := "arc_wh_aabbccdd0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c"
-	hash := hashWebhookTokenInternal(rawToken)
+	hash := kit.SHA256Hex(rawToken)
 	hexPart := strings.TrimPrefix(rawToken, webhookTokenPrefix)
 	prefix := webhookTokenPrefix + hexPart[:webhookTokenPrefixLen]
 
@@ -679,7 +678,7 @@ func TestTriggerByToken_UnknownTargetType_ReturnsInvalidType(t *testing.T) {
 // so dispatch tests can use known target types without needing real service dependencies.
 func insertWebhookDirect(t *testing.T, ctx context.Context, db *database.DB, rawToken, targetType, actionType, targetID, envID string) *Webhook {
 	t.Helper()
-	hash := hashWebhookTokenInternal(rawToken)
+	hash := kit.SHA256Hex(rawToken)
 	hexPart := strings.TrimPrefix(rawToken, webhookTokenPrefix)
 	wh := &Webhook{
 		Name:          "test-hook",

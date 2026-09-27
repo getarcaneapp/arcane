@@ -1,6 +1,7 @@
 package imagepatch
 
 import (
+	"cmp"
 	"context"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
@@ -11,23 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/features"
-
 	"emperror.dev/errors"
 	"github.com/containerd/platforms"
 	"github.com/distribution/reference"
-	"github.com/google/go-containerregistry/pkg/authn"
-	"github.com/google/go-containerregistry/pkg/name"
-	"github.com/google/go-containerregistry/pkg/v1/remote"
-	"github.com/moby/buildkit/util/progress/progressui"
-	"github.com/moby/moby/client"
-	ispec "github.com/opencontainers/image-spec/specs-go/v1"
-	copacommon "github.com/project-copacetic/copacetic/pkg/common"
-	copapatch "github.com/project-copacetic/copacetic/pkg/patch"
-	copatypes "github.com/project-copacetic/copacetic/pkg/types"
-	"github.com/samber/mo"
-	"go.getarcane.app/acfs"
-
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
@@ -41,7 +28,19 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/logging"
 	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
+	"github.com/getarcaneapp/arcane/types/v2/features"
 	"github.com/getarcaneapp/arcane/types/v2/imagepatch"
+	"github.com/google/go-containerregistry/pkg/authn"
+	"github.com/google/go-containerregistry/pkg/name"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/moby/buildkit/util/progress/progressui"
+	"github.com/moby/moby/client"
+	ispec "github.com/opencontainers/image-spec/specs-go/v1"
+	copacommon "github.com/project-copacetic/copacetic/pkg/common"
+	copapatch "github.com/project-copacetic/copacetic/pkg/patch"
+	copatypes "github.com/project-copacetic/copacetic/pkg/types"
+	"github.com/samber/mo"
+	"go.getarcane.app/acfs"
 )
 
 // ImagePatchService patches image OS packages in place using the Copacetic
@@ -140,9 +139,7 @@ func (s *ImagePatchService) PatchImage(ctx context.Context, envID, imageID strin
 	if suffix == "" {
 		suffix = strings.TrimSpace(s.settingsService.GetSettingsConfig().ImagePatchSuffix.Value)
 	}
-	if suffix == "" {
-		suffix = "patched"
-	}
+	suffix = cmp.Or(suffix, "patched")
 	patchedRef, err := resolvePatchedRef(imageRef, opts.PatchedTag, suffix)
 	if err != nil {
 		return nil, err
@@ -488,9 +485,7 @@ func (s *ImagePatchService) ListPatches(ctx context.Context, envID string, param
 	}
 	q = pagination.ApplyFilter(q, "status", params.Filters["status"])
 
-	if params.Sort == "" {
-		params.Sort = "createdAt"
-	}
+	params.Sort = cmp.Or(params.Sort, "createdAt")
 
 	paginationResp, err := pagination.PaginateAndSortDB(params, q, &records)
 	if err != nil {
@@ -560,9 +555,7 @@ func (s *ImagePatchService) ListPatchTargets(ctx context.Context, envID string, 
 	}
 	q = pagination.ApplyLikeSearch(q, params.Search, "image_name LIKE ?")
 
-	if params.Sort == "" {
-		params.Sort = "scanTime"
-	}
+	params.Sort = cmp.Or(params.Sort, "scanTime")
 	var scans []vulnerability.VulnerabilityScanRecord
 	paginationResp, err := pagination.PaginateAndSortDB(params, q, &scans)
 	if err != nil {

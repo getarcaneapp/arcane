@@ -8,8 +8,10 @@ import (
 	"emperror.dev/errors"
 )
 
-var _ emperror.ErrorHandler = (*SlogErrorHandler)(nil)
-var _ emperror.ErrorHandlerContext = (*SlogErrorHandler)(nil)
+var (
+	_ emperror.ErrorHandler        = (*SlogErrorHandler)(nil)
+	_ emperror.ErrorHandlerContext = (*SlogErrorHandler)(nil)
+)
 
 // SlogErrorHandler reports handled errors through the process slog logger.
 type SlogErrorHandler struct{}

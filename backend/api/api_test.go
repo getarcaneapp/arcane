@@ -87,7 +87,6 @@ func TestCustomSchemaNamer_PrefixesArcaneTypesByPackage(t *testing.T) {
 
 	require.Equal(t, "EnvSummary", envName,
 		"expected EnvSummary, got %q", envName)
-
 }
 
 func TestCustomSchemaNamer_PointerMatchesValue(t *testing.T) {
@@ -102,7 +101,6 @@ func TestCustomSchemaNamer_PointerMatchesValue(t *testing.T) {
 
 	require.Equal(t, genericPointerName, genericValueName,
 		"expected generic pointer and value names to match, got %q and %q", genericValueName, genericPointerName)
-
 }
 
 func TestCustomSchemaNamer_PrefixesDockerTypes(t *testing.T) {
@@ -110,7 +108,6 @@ func TestCustomSchemaNamer_PrefixesDockerTypes(t *testing.T) {
 
 	require.True(t, strings.HasPrefix(name, "DockerNetwork"),
 		"expected DockerNetwork prefix, got %q", name)
-
 }
 
 func TestCustomSchemaNamer_DisambiguatesGenericDomainTypes(t *testing.T) {
@@ -152,7 +149,6 @@ func TestCustomSchemaNamer_DisambiguatesGenericDomainTypes(t *testing.T) {
 
 	require.Equal(t, "BasePaginatedWithCountsSummaryImageSummary", mixedPackages,
 		"expected only the Arcane argument to be qualified in place, got %q", mixedPackages)
-
 }
 
 func TestHandlerDeps_ZeroValue(t *testing.T) {
@@ -172,7 +168,6 @@ func TestSetupAPIForSpec_DefaultSecurity(t *testing.T) {
 
 	require.True(t, reflect.DeepEqual(api.OpenAPI().Security, expectedSecurity),
 		"expected default API security %v, got %v", expectedSecurity, api.OpenAPI().Security)
-
 }
 
 func TestSetupAPIForSpecUsesV2JSONFormats(t *testing.T) {
@@ -196,7 +191,6 @@ func TestSetupAPIForSpecUsesV2JSONFormats(t *testing.T) {
 				require.Equal(t, want, got,
 					"marshal %s = %s, want %s", contentType, got, want)
 			}
-
 		})
 	}
 }
@@ -219,7 +213,6 @@ func TestSetupAPIForSpecPreservesDurationNanoseconds(t *testing.T) {
 		require.Equal(t, want, got,
 			"marshal duration = %s, want %s", got, want)
 	}
-
 }
 
 func TestSetupAPIForSpec_PublicRoutesOverrideSecurity(t *testing.T) {
@@ -282,7 +275,6 @@ func TestSetupAPIForSpec_PublicRoutesOverrideSecurity(t *testing.T) {
 
 			require.Empty(t, operation.Security,
 				"expected operation %s %s to be public, got security %v", testCase.method, testCase.path, operation.Security)
-
 		})
 	}
 }
@@ -316,7 +308,6 @@ func TestSetupAPIForSpec_TemplateReadRoutesProtected(t *testing.T) {
 
 			require.True(t, reflect.DeepEqual(api.OpenAPI().Security, expectedSecurity),
 				"expected API security %v, got %v", expectedSecurity, api.OpenAPI().Security)
-
 		})
 	}
 }
@@ -331,7 +322,6 @@ func TestSetupAPIForSpec_DoesNotRegisterPublicCreateEvent(t *testing.T) {
 
 	require.Nil(t, pathItem.Post,
 		"expected POST /events to be absent from the public API")
-
 }
 
 func TestVariableMaterializationRoutesAreAgentOnly(t *testing.T) {

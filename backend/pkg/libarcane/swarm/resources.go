@@ -1,13 +1,13 @@
 package swarm
 
 import (
+	"cmp"
 	"context"
 	"maps"
 	"slices"
 	"strings"
 
 	"emperror.dev/errors"
-
 	composegotypes "github.com/compose-spec/compose-go/v2/types"
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/moby/moby/api/types/swarm"
@@ -148,10 +148,7 @@ func ensureSwarmNetworksInternal(ctx context.Context, dockerClient *dockerclient
 			return nil, errors.WrapIff(err, "failed to inspect network %s", networkName)
 		}
 
-		driver := strings.TrimSpace(cfg.Driver)
-		if driver == "" {
-			driver = "overlay"
-		}
+		driver := cmp.Or(strings.TrimSpace(cfg.Driver), "overlay")
 
 		labels := mergeLabelsInternal(cfg.Labels, stackLabels)
 		createOpts := dockerclient.NetworkCreateOptions{
@@ -201,10 +198,7 @@ func ensureSwarmVolumesInternal(ctx context.Context, dockerClient *dockerclient.
 			return errors.WrapIff(err, "failed to inspect volume %s", name)
 		}
 
-		driver := cfg.Driver
-		if driver == "" {
-			driver = "local"
-		}
+		driver := cmp.Or(cfg.Driver, "local")
 		labels := mergeLabelsInternal(cfg.Labels, stackLabels)
 		if _, err := dockerClient.VolumeCreate(ctx, dockerclient.VolumeCreateOptions{
 			Name:       name,

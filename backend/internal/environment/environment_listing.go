@@ -5,12 +5,11 @@ import (
 	"strings"
 
 	"emperror.dev/errors"
-
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/mapper"
 	"github.com/getarcaneapp/arcane/types/v2/environment"
+	kit "go.getarcane.app/kit/pkg"
+	"go.getarcane.app/kit/pkg/mapping"
 )
 
 func (s *EnvironmentService) ListEnvironmentsPaginated(ctx context.Context, params pagination.QueryParams, accessibleEnvIDs []string) ([]environment.Environment, pagination.Response, error) {
@@ -47,7 +46,7 @@ func (s *EnvironmentService) ListEnvironmentsPaginated(ctx context.Context, para
 		return nil, pagination.Response{}, errors.WrapIf(err, "failed to paginate environments")
 	}
 
-	out, mapErr := mapper.MapSlice[Environment, environment.Environment](envs)
+	out, mapErr := mapping.MapSlice[Environment, environment.Environment](envs)
 	if mapErr != nil {
 		return nil, pagination.Response{}, errors.WrapIf(mapErr, "failed to map environments")
 	}
@@ -81,7 +80,7 @@ func (s *EnvironmentService) listEnvironmentsPaginatedWithRuntimeFiltersInternal
 		return nil, pagination.Response{}, errors.WrapIf(err, "failed to list environments")
 	}
 
-	items, mapErr := mapper.MapSlice[Environment, environment.Environment](envs)
+	items, mapErr := mapping.MapSlice[Environment, environment.Environment](envs)
 	if mapErr != nil {
 		return nil, pagination.Response{}, errors.WrapIf(mapErr, "failed to map environments")
 	}
@@ -125,10 +124,7 @@ func (s *EnvironmentService) listEnvironmentsPaginatedWithRuntimeFiltersInternal
 					if a.Enabled == b.Enabled {
 						return 0
 					}
-					if a.Enabled {
-						return 1
-					}
-					return -1
+					return kit.Ternary(a.Enabled, 1, -1)
 				},
 			},
 			{
@@ -148,7 +144,7 @@ func (s *EnvironmentService) listEnvironmentsPaginatedWithRuntimeFiltersInternal
 			{
 				Key: "enabled",
 				Fn: func(item environment.Environment, filterValue string) bool {
-					value, valid := utils.ParseBool(filterValue)
+					value, valid := kit.ParseBool(filterValue)
 					return !valid || item.Enabled == value
 				},
 			},
@@ -201,7 +197,7 @@ func (s *EnvironmentService) ListVisibleEnvironments(ctx context.Context) ([]env
 		return nil, errors.WrapIf(err, "failed to list visible environments")
 	}
 
-	out, mapErr := mapper.MapSlice[Environment, environment.Environment](envs)
+	out, mapErr := mapping.MapSlice[Environment, environment.Environment](envs)
 	if mapErr != nil {
 		return nil, errors.WrapIf(mapErr, "failed to map environments")
 	}

@@ -23,6 +23,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 const (
@@ -196,10 +197,7 @@ func (s *smtpTestServer) ClientTLSConfig() *tls.Config {
 func (s *smtpTestServer) Wait() error {
 	select {
 	case err := <-s.done:
-		if err != nil && (isUseOfClosedNetworkConnInternal(err) || isConnectionTimeoutInternal(err)) {
-			return nil
-		}
-		return err
+		return kit.Ternary(err != nil && (isUseOfClosedNetworkConnInternal(err) || isConnectionTimeoutInternal(err)), nil, err)
 	case <-time.After(4 * time.Second):
 		return fmt.Errorf("timed out waiting for SMTP test server")
 	}
@@ -272,10 +270,7 @@ func (s *smtpTestServer) handleConnection(conn net.Conn) error {
 	for {
 		line, err := reader.ReadLine()
 		if err != nil {
-			if err == io.EOF {
-				return nil
-			}
-			return err
+			return kit.Ternary(err == io.EOF, nil, err)
 		}
 
 		verb, rest, _ := strings.Cut(line, " ")

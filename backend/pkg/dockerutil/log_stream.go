@@ -9,13 +9,13 @@ import (
 	"sync"
 
 	"emperror.dev/errors"
-
 	"github.com/moby/moby/api/pkg/stdcopy"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 // StreamContainerLogs streams Docker container logs, handling TTY raw streams
 // and non-TTY multiplexed stdout/stderr streams.
-func StreamContainerLogs(ctx context.Context, logs io.ReadCloser, logsChan chan<- string, follow bool, isTTY bool) error {
+func StreamContainerLogs(ctx context.Context, logs io.ReadCloser, logsChan chan<- string, follow, isTTY bool) error {
 	if isTTY {
 		return readLogLinesInternal(ctx, logs, logsChan, "")
 	}
@@ -161,10 +161,7 @@ func readLogLinesInternal(ctx context.Context, reader io.Reader, logsChan chan<-
 		}
 
 		if err != nil {
-			if errors.Is(err, io.EOF) {
-				return nil
-			}
-			return err
+			return kit.Ternary(errors.Is(err, io.EOF), nil, err)
 		}
 	}
 }

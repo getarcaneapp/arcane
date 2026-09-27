@@ -1,10 +1,10 @@
 package system
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-
 	"database/sql/driver"
 	"time"
+
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 )
 
 // EnvironmentUpdateJobStatus is the lifecycle status of a fleet-wide "update all
@@ -22,12 +22,7 @@ const (
 	EnvironmentUpdateJobStatusCompleted EnvironmentUpdateJobStatus = "completed"
 	// EnvironmentUpdateJobStatusFailed means the job stopped before completing.
 	EnvironmentUpdateJobStatusFailed EnvironmentUpdateJobStatus = "failed"
-)
 
-// EnvironmentUpdateResultStatus is the per-environment outcome within a job.
-type EnvironmentUpdateResultStatus string
-
-const (
 	// EnvironmentUpdateResultStatusPending is the initial state recorded for an
 	// environment that is seeded into the job but not yet being processed (and for
 	// the manager entry while its self-upgrade is in flight).
@@ -49,6 +44,9 @@ const (
 	// EnvironmentUpdateResultStatusFailed means the upgrade trigger failed.
 	EnvironmentUpdateResultStatusFailed EnvironmentUpdateResultStatus = "failed"
 )
+
+// EnvironmentUpdateResultStatus is the per-environment outcome within a job.
+type EnvironmentUpdateResultStatus string
 
 // EnvironmentUpdateResult is the outcome for a single environment within a job.
 // The manager appears as the first entry with EnvironmentID "0".

@@ -1,10 +1,11 @@
 package edge
 
 import (
-	"github.com/samber/mo"
-
 	"net/http"
 	"strings"
+
+	"github.com/samber/mo"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 var commandRoutes = []commandRoute{
@@ -293,10 +294,7 @@ func normalizeCommandPathInternal(requestPath string) string {
 	if requestPath == "" {
 		return "/"
 	}
-	if requestPath[0] != '/' {
-		return "/" + requestPath
-	}
-	return requestPath
+	return kit.Ternary(requestPath[0] != '/', "/"+requestPath, requestPath)
 }
 
 func splitCommandPathInternal(p string) []string {
@@ -361,7 +359,7 @@ func (n *commandRouteNode) insertInternal(route *commandRoute) {
 	current.route = route
 }
 
-func (i commandRouteIndexInternal) resolveInternal(method string, requestPath string, stream bool) mo.Option[*commandRoute] {
+func (i commandRouteIndexInternal) resolveInternal(method, requestPath string, stream bool) mo.Option[*commandRoute] {
 	root := i.roots[commandRouteLookupKeyInternal(method, stream)]
 	if root == nil {
 		return mo.None[*commandRoute]()

@@ -1,8 +1,7 @@
 package swarm
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-
+	"cmp"
 	"context"
 	"log/slog"
 	"maps"
@@ -15,6 +14,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
@@ -1615,10 +1615,7 @@ func (h *SwarmHandler) auditSwarmMutation(ctx context.Context, environmentID, ac
 		resourceNamePtr = new(resourceName)
 	}
 
-	env := strings.TrimSpace(environmentID)
-	if env == "" {
-		env = "0"
-	}
+	env := cmp.Or(strings.TrimSpace(environmentID), "0")
 	envPtr := &env
 
 	meta := database.JSON{"action": action}

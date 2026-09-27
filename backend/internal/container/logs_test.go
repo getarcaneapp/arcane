@@ -11,10 +11,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/stretchr/testify/require"
-
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
+	"github.com/stretchr/testify/require"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 func newLogsTestServiceInternal(t *testing.T, tty bool, logsBody []byte, gotQuery *url.Values) *ContainerService {
@@ -22,10 +22,7 @@ func newLogsTestServiceInternal(t *testing.T, tty bool, logsBody []byte, gotQuer
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch dockerTestPathInternal(r.URL.Path) {
 		case "/containers/container-1/json":
-			ttyJSON := "false"
-			if tty {
-				ttyJSON = "true"
-			}
+			ttyJSON := kit.Ternary(tty, "true", "false")
 			_, _ = io.WriteString(w, `{"Id":"0123456789abcdef0123456789abcdef","Config":{"Tty":`+ttyJSON+`}}`)
 		case "/containers/container-1/logs":
 			*gotQuery = r.URL.Query()

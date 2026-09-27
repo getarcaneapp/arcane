@@ -1739,7 +1739,7 @@ type EditConfig struct {
 }
 
 // NewEditConfigFromInspect builds an EditConfig from a docker inspect response.
-func NewEditConfigFromInspect(c *container.InspectResponse, isCompose bool, editDisabled bool) EditConfig {
+func NewEditConfigFromInspect(c *container.InspectResponse, isCompose, editDisabled bool) EditConfig {
 	cfg := EditConfig{
 		ID:           c.ID,
 		Name:         strings.TrimPrefix(c.Name, "/"),

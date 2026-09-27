@@ -12,12 +12,14 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/system"
 )
 
-// recentGCPauseSamples is the number of recent GC pause durations reported.
-const recentGCPauseSamples = 16
+const (
+	// recentGCPauseSamples is the number of recent GC pause durations reported.
+	recentGCPauseSamples = 16
 
-// goroutineLeakProfileName is the runtime/pprof profile that reports goroutines
-// blocked on concurrency primitives that cannot be unblocked.
-const goroutineLeakProfileName = "goroutineleak"
+	// goroutineLeakProfileName is the runtime/pprof profile that reports goroutines
+	// blocked on concurrency primitives that cannot be unblocked.
+	goroutineLeakProfileName = "goroutineleak"
+)
 
 // DiagnosticsService gathers Go runtime, memory, and garbage-collector
 // statistics for the diagnostics endpoints. It holds no external dependencies;

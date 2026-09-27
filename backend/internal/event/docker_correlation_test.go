@@ -1,11 +1,13 @@
 package event
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/stretchr/testify/require"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+	"github.com/stretchr/testify/require"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 func TestDockerExpectationIdentityAndExpiry(t *testing.T) {
@@ -44,10 +46,7 @@ func TestDockerExpectationIdentityAndExpiry(t *testing.T) {
 func TestDockerSuppressionWindowsOverlapAndGrace(t *testing.T) {
 	t.Parallel()
 	for _, compose := range []bool{false, true} {
-		name := "resource"
-		if compose {
-			name = "compose"
-		}
+		name := kit.Ternary(compose, "compose", "resource")
 		t.Run(name, func(t *testing.T) {
 			svc := NewEventService(nil, nil, nil)
 			now := time.Now()

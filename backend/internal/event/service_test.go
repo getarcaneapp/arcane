@@ -11,8 +11,8 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/api/types/events"
 	"github.com/stretchr/testify/assert"
@@ -192,7 +192,7 @@ func TestEventService_CreateEvent_ForwardsToManagerAPIInAgentMode(t *testing.T) 
 		if !assert.Equal(t, "/api/events", r.URL.Path) {
 			return
 		}
-		if !assert.Equal(t, "test-agent-token", r.Header.Get(utils.HeaderAgentToken)) {
+		if !assert.Equal(t, "test-agent-token", r.Header.Get(middleware.HeaderAgentToken)) {
 			return
 		}
 
@@ -422,5 +422,4 @@ func TestDaemonEventForwardingPreservesMetadata(t *testing.T) {
 	}
 	require.Never(t, func() bool { return len(requests) != 0 }, 50*time.Millisecond, time.Millisecond)
 	requireDaemonCountInternal(t, db, 1)
-
 }

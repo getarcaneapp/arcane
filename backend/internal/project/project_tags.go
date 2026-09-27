@@ -1,17 +1,14 @@
 package project
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-
 	"context"
 	"sort"
 	"strings"
 
 	"emperror.dev/errors"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	projectpkg "github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	gitopstypes "github.com/getarcaneapp/arcane/types/v2/gitops"
 	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"

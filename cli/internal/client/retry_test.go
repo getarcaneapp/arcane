@@ -48,7 +48,6 @@ func TestClient_RetriesIdempotentRequests(t *testing.T) {
 		require.Equal(t, int32(2), got,
 			"expected 2 attempts, got %d", got)
 	}
-
 }
 
 func TestClient_DoesNotRetryNonIdempotentRequests(t *testing.T) {
@@ -81,7 +80,6 @@ func TestClient_DoesNotRetryNonIdempotentRequests(t *testing.T) {
 		require.Equal(t, int32(1), got,
 			"expected 1 attempt, got %d", got)
 	}
-
 }
 
 func TestClient_DoJSON_StrictStatus(t *testing.T) {
@@ -104,7 +102,6 @@ func TestClient_DoJSON_StrictStatus(t *testing.T) {
 		require.Error(t, err,
 			"expected strict status error")
 	}
-
 }
 
 func TestDecodeResponseStrict_RequiresSuccessEnvelope(t *testing.T) {
@@ -120,7 +117,6 @@ func TestDecodeResponseStrict_RequiresSuccessEnvelope(t *testing.T) {
 		require.Error(t, err,
 			"expected envelope failure")
 	}
-
 }
 
 func TestClient_DoRaw_Success(t *testing.T) {
@@ -145,5 +141,4 @@ func TestClient_DoRaw_Success(t *testing.T) {
 
 	require.NotEmpty(t, b,
 		"expected response payload")
-
 }

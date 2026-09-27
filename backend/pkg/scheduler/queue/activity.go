@@ -5,15 +5,16 @@ import (
 	"log/slog"
 	"time"
 
-	st "github.com/getarcaneapp/arcane/types/v2/scheduler"
+	"github.com/getarcaneapp/arcane/types/v2/scheduler"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 // SetObserver connects activity projection before the queue starts accepting work.
-func (q *Queue) SetObserver(observer st.RunObserver) {
+func (q *Queue) SetObserver(observer scheduler.RunObserver) {
 	q.observer = observer
 }
 
-func (q *Queue) associateActivityInternal(run *st.Run) {
+func (q *Queue) associateActivityInternal(run *scheduler.Run) {
 	if q.observer != nil && run.ActivityID == "" {
 		run.ActivityID = q.observer.ActivityID(*run)
 	}
@@ -22,7 +23,7 @@ func (q *Queue) associateActivityInternal(run *st.Run) {
 	}
 }
 
-func (q *Queue) observeRunInternal(ctx context.Context, run st.Run) {
+func (q *Queue) observeRunInternal(ctx context.Context, run scheduler.Run) {
 	if q.observer == nil {
 		return
 	}
@@ -36,13 +37,13 @@ func (q *Queue) observeRunInternal(ctx context.Context, run st.Run) {
 	}
 }
 
-func (q *Queue) syncActivityInternal(ctx context.Context, run st.Run) {
+func (q *Queue) syncActivityInternal(ctx context.Context, run scheduler.Run) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	key := queueKeyInternal(run.EnvironmentID, run.JobID) + "/" + run.ID
+	key := queuePrefixInternal + kit.SHA256Hex(run.EnvironmentID+"\x00"+run.JobID) + "/" + run.ID
 	if err := q.observer.SyncRunActivity(ctx, run); err != nil {
 		if q.pendingSync == nil {
-			q.pendingSync = make(map[string]st.Run)
+			q.pendingSync = make(map[string]scheduler.Run)
 		}
 		q.pendingSync[key] = run
 		slog.ErrorContext(ctx, "Job activity synchronization failed; will retry", "runId", run.ID, "error", err)

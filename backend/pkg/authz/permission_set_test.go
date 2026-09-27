@@ -19,7 +19,6 @@ func TestPermissionSetAllowsGlobal(t *testing.T) {
 
 	require.False(t, ps.Allows(PermContainersStart, "env-1"),
 		"unrelated perm should be denied")
-
 }
 
 func TestPermissionSetEnvScopedDoesNotLeak(t *testing.T) {
@@ -34,7 +33,6 @@ func TestPermissionSetEnvScopedDoesNotLeak(t *testing.T) {
 
 	require.False(t, ps.Allows(PermContainersStart, ""),
 		"env perm must not satisfy an org-level check")
-
 }
 
 func TestPermissionSetAllowsAnyEffectiveScope(t *testing.T) {
@@ -70,7 +68,6 @@ func TestPermissionSetAllowsAnyEffectiveScope(t *testing.T) {
 				require.Equal(t, tt.want, got,
 					"AllowsAny() = %v, want %v", got, tt.want)
 			}
-
 		})
 	}
 }
@@ -88,7 +85,6 @@ func TestPermissionSetIsGlobalAdminRejectsUnknownPermissions(t *testing.T) {
 
 	require.False(t, ps.IsGlobalAdmin(),
 		"global admin should reject injected unknown permissions")
-
 }
 
 func TestPermissionSetIsGlobalAdminRequiresExactKnownSet(t *testing.T) {
@@ -101,7 +97,6 @@ func TestPermissionSetIsGlobalAdminRequiresExactKnownSet(t *testing.T) {
 
 	require.False(t, ps.IsGlobalAdmin(),
 		"global admin should require the complete known permission set")
-
 }
 
 func TestPermissionSetIsGlobalAdmin(t *testing.T) {
@@ -112,7 +107,6 @@ func TestPermissionSetIsGlobalAdmin(t *testing.T) {
 
 	require.True(t, ps.IsGlobalAdmin(),
 		"complete known permission set should be global admin")
-
 }
 
 func TestSudoAllowsEverything(t *testing.T) {
@@ -126,7 +120,6 @@ func TestSudoAllowsEverything(t *testing.T) {
 
 	require.True(t, ps.IsGlobalAdmin(),
 		"sudo should report as global admin")
-
 }
 
 func TestEnvironmentPermissionSetScopesToOwnEnvironment(t *testing.T) {
@@ -148,7 +141,6 @@ func TestEnvironmentPermissionSetScopesToOwnEnvironment(t *testing.T) {
 
 	require.False(t, empty.Allows(PermContainersStart, "env-A"),
 		"environment token with empty env id must deny env-scoped permissions")
-
 }
 
 func TestEnvIDFromPath(t *testing.T) {
@@ -166,12 +158,10 @@ func TestEnvIDFromPath(t *testing.T) {
 			assert.Equal(t, want, got,
 				"EnvIDFromPath(%q) = %q, want %q", input, got, want)
 		}
-
 	}
 }
 
 func TestIsOrgLevelAndEnvScoped(t *testing.T) {
-
 	require.True(t, IsOrgLevel(PermUsersList),
 		"users:list should be org-level")
 
@@ -183,7 +173,6 @@ func TestIsOrgLevelAndEnvScoped(t *testing.T) {
 
 	require.True(t, IsEnvScoped(PermContainersStart),
 		"containers:start should be env-scoped")
-
 }
 
 func TestIsKnownPermissionRejectsSyntheticPrefixMatches(t *testing.T) {
@@ -203,22 +192,16 @@ func TestIsKnownPermissionRejectsSyntheticPrefixMatches(t *testing.T) {
 
 func TestBuiltInRolesOnlyReferenceKnownPermissions(t *testing.T) {
 	for _, p := range BuiltInEditorPermissions() {
-
 		assert.True(t, IsKnownPermission(p),
 			"editor references unknown perm %q", p)
-
 	}
 	for _, p := range BuiltInDeployerPermissions() {
-
 		assert.True(t, IsKnownPermission(p),
 			"deployer references unknown perm %q", p)
-
 	}
 	for _, p := range BuiltInViewerPermissions() {
-
 		assert.True(t, IsKnownPermission(p),
 			"viewer references unknown perm %q", p)
-
 	}
 }
 
@@ -250,10 +233,8 @@ func TestVariablePermissionsAreSeparateGlobalGrantsWithBuiltInAccess(t *testing.
 		"No-Shell Editor": BuiltInNoShellEditorPermissions(),
 	} {
 		for _, permission := range variablePermissions {
-
 			require.Contains(t, permissions, permission,
 				"%s must receive %q", name, permission)
-
 		}
 	}
 
@@ -266,20 +247,16 @@ func TestVariablePermissionsAreSeparateGlobalGrantsWithBuiltInAccess(t *testing.
 			"%s must receive %q", name, PermVariablesRead)
 
 		for _, permission := range variablePermissions[1:] {
-
 			require.NotContains(t, permissions, permission,
 				"%s must not receive %q", name, permission)
-
 		}
 	}
 
 	templatesOnly := NewPermissionSet()
 	templatesOnly.AddGlobal(PermTemplatesRead, PermTemplatesCreate, PermTemplatesUpdate, PermTemplatesDelete)
 	for _, permission := range variablePermissions {
-
 		require.False(t, templatesOnly.Allows(permission, ""),
 			"template grants must not satisfy %q", permission)
-
 	}
 }
 
@@ -345,20 +322,16 @@ func TestS3DestinationPermissionsAreSeparateGlobalGrantsWithBuiltInAccess(t *tes
 			"%s must receive %q", name, PermS3DestinationsRead)
 
 		for _, permission := range s3Permissions[2:] {
-
 			require.NotContains(t, permissions, permission,
 				"%s must not receive %q", name, permission)
-
 		}
 	}
 
 	settingsOnly := NewPermissionSet()
 	settingsOnly.AddGlobal(PermSettingsRead, PermSettingsWrite)
 	for _, permission := range s3Permissions {
-
 		require.False(t, settingsOnly.Allows(permission, ""),
 			"settings grants must not satisfy %q", permission)
-
 	}
 }
 
@@ -416,7 +389,6 @@ func TestPermissionCatalogDerivesKnownPermissionsAndScopes(t *testing.T) {
 			require.True(t, exists,
 				"AllPermissions includes %q outside catalog", permission)
 		}
-
 	}
 }
 
@@ -428,7 +400,6 @@ func TestVolumeRenamePermissionIsEditorOnlyByDefault(t *testing.T) {
 }
 
 func TestNotificationsManageRequiresGlobalScope(t *testing.T) {
-
 	require.True(t, IsOrgLevel(PermNotificationsManage),
 		"notifications:manage must be org-level for manager-global notification settings")
 
@@ -445,5 +416,4 @@ func TestNotificationsManageRequiresGlobalScope(t *testing.T) {
 
 	require.True(t, ps.Allows(PermNotificationsManage, ""),
 		"a global notification grant must authorize the global resource")
-
 }

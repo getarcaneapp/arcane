@@ -1,19 +1,19 @@
 package scheduler
 
 import (
+	"cmp"
 	"context"
 	"log/slog"
 
 	"emperror.dev/errors"
-	"github.com/getarcaneapp/arcane/types/v2/features"
-
-	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
-
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/imagepatch"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	scheduleutil "github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/schedule"
 	"github.com/getarcaneapp/arcane/types/v2"
+	"github.com/getarcaneapp/arcane/types/v2/features"
+	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 const AutoPatchJobName = "auto-patch"
@@ -48,10 +48,7 @@ func (j *AutoPatchJob) ShouldSchedule(ctx context.Context) bool {
 
 // Schedule returns the cron expression for the job. Defaults to daily at 3 AM.
 func (j *AutoPatchJob) Schedule(ctx context.Context) string {
-	schedule := j.settingsService.GetStringSetting(ctx, "imageAutoPatchInterval", "0 0 3 * * *")
-	if schedule == "" {
-		schedule = "0 0 3 * * *"
-	}
+	schedule := cmp.Or(j.settingsService.GetStringSetting(ctx, "imageAutoPatchInterval", "0 0 3 * * *"), "0 0 3 * * *")
 
 	parser := scheduleutil.Parser()
 	if _, err := parser.Parse(schedule); err != nil {
@@ -72,10 +69,7 @@ func (j *AutoPatchJob) Run(ctx context.Context) (schedulertypes.Outcome, error) 
 
 	patched, skipped, err := j.imagePatchService.PatchFlaggedImages(ctx, types.LocalDockerEnvironmentID, autoPatchSystemUser)
 	if errors.Is(err, common.ErrFeatureDisabled) {
-		status := schedulertypes.Skipped
-		if patched > 0 {
-			status = schedulertypes.Partial
-		}
+		status := kit.Ternary(patched > 0, schedulertypes.Partial, schedulertypes.Skipped)
 		return schedulertypes.Outcome{Status: status, Message: err.Error()}, nil
 	}
 	if err != nil {

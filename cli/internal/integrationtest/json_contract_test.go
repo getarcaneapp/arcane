@@ -51,6 +51,5 @@ func TestContainersListJSONContract(t *testing.T) {
 			require.True(t, ok,
 				"missing key %q in output: %v", key, got)
 		}
-
 	}
 }

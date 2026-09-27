@@ -1,8 +1,6 @@
 package settings
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-
 	"context"
 	"fmt"
 	"net/http"
@@ -11,8 +9,8 @@ import (
 	"strings"
 
 	"emperror.dev/errors"
-
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/search"
@@ -20,12 +18,13 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/mapper"
 	workspacepkg "github.com/getarcaneapp/arcane/backend/v2/pkg/workspace"
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/getarcaneapp/arcane/types/v2/category"
 	searchtypes "github.com/getarcaneapp/arcane/types/v2/search"
 	settingstypes "github.com/getarcaneapp/arcane/types/v2/settings"
+	kit "go.getarcane.app/kit/pkg"
+	"go.getarcane.app/kit/pkg/mapping"
 	"go.yaml.in/yaml/v4"
 )
 
@@ -283,8 +282,8 @@ func (h *SettingsHandler) GetPublicSettings(ctx context.Context, input *GetPubli
 
 	settingsList := h.settingsService.ListSettings(SettingVisibilityPublic)
 
-	var settingsDto []settingstypes.PublicSetting
-	if err := mapper.MapStructList(settingsList, &settingsDto); err != nil {
+	settingsDto, err := mapping.MapSlice[SettingVariable, settingstypes.PublicSetting](settingsList)
+	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to map settings")
 	}
 
@@ -295,10 +294,7 @@ func (h *SettingsHandler) GetPublicSettings(ctx context.Context, input *GetPubli
 func (h *SettingsHandler) GetSettings(ctx context.Context, input *GetSettingsInput) (*GetSettingsOutput, error) {
 	ps, _ := middleware.PermissionsFromContext(ctx)
 	isAdmin := ps.IsGlobalAdmin()
-	visibility := SettingVisibilityNonAdmin
-	if isAdmin {
-		visibility = SettingVisibilityAll
-	}
+	visibility := kit.Ternary(isAdmin, SettingVisibilityAll, SettingVisibilityNonAdmin)
 
 	if input.EnvironmentID != "0" {
 		settingsDto, err := h.proxyRemoteJSON.JSON[[]settingstypes.PublicSetting](ctx, input.EnvironmentID, http.MethodGet, "/api/environments/0/settings", nil)
@@ -325,8 +321,8 @@ func (h *SettingsHandler) GetSettings(ctx context.Context, input *GetSettingsInp
 
 	settingsList := h.settingsService.ListSettings(visibility)
 
-	var settingsDto []settingstypes.PublicSetting
-	if err := mapper.MapStructList(settingsList, &settingsDto); err != nil {
+	settingsDto, err := mapping.MapSlice[SettingVariable, settingstypes.PublicSetting](settingsList)
+	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to map settings")
 	}
 

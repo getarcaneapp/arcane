@@ -8,6 +8,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
 	"github.com/samber/lo"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 // remoteActivityPageCeiling mirrors the agent's page clamp in PaginateAndSortDB.
@@ -25,16 +26,6 @@ func normalizeRemoteActivityParamsInternal(params pagination.QueryParams) pagina
 		params.Limit = remoteActivityPageCeiling
 	}
 	return params
-}
-
-// remoteActivityWindowInternal is how many newest rows each source must supply
-// for the merged page to be exact: every row in the global top start+limit is
-// in its own source's top start+limit under the shared sort order.
-func remoteActivityWindowInternal(params pagination.QueryParams) int {
-	if params.Limit == -1 {
-		return -1
-	}
-	return params.Start + params.Limit
 }
 
 // collectActivityWindowInternal reads window rows from a source in pages the
@@ -65,7 +56,8 @@ func collectActivityWindowInternal(window int, fetchPage func(start, limit int) 
 // and be the agent's newest window; remoteTotal is the agent's filtered count.
 func (s *ActivityService) ListRemoteActivities(ctx context.Context, environmentID string, remote []activitytypes.Activity, remoteTotal int64, params pagination.QueryParams) ([]activitytypes.Activity, pagination.Response, error) {
 	params = normalizeRemoteActivityParamsInternal(params)
-	activities, localTotal, err := collectActivityWindowInternal(remoteActivityWindowInternal(params), func(start, limit int) ([]activitytypes.Activity, int64, error) {
+	window := kit.Ternary(params.Limit == -1, -1, params.Start+params.Limit)
+	activities, localTotal, err := collectActivityWindowInternal(window, func(start, limit int) ([]activitytypes.Activity, int64, error) {
 		local := params
 		local.Start, local.Limit = start, limit
 		rows, page, err := s.ListActivitiesPaginated(ctx, environmentID, local)
@@ -96,10 +88,7 @@ func compareActivitiesInternal(a, b activitytypes.Activity, params pagination.Qu
 		aActive := a.Status == activitytypes.StatusQueued || a.Status == activitytypes.StatusRunning
 		bActive := b.Status == activitytypes.StatusQueued || b.Status == activitytypes.StatusRunning
 		if aActive != bActive {
-			if aActive {
-				return -1
-			}
-			return 1
+			return kit.Ternary(aActive, -1, 1)
 		}
 		aTime, bTime := a.CreatedAt, b.CreatedAt
 		if a.EndedAt != nil {

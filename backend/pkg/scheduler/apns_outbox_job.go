@@ -3,10 +3,9 @@ package scheduler
 import (
 	"context"
 
-	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
-
 	"github.com/getarcaneapp/arcane/backend/v2/internal/apns"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
+	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 )
 
 const ApnsOutboxJobName = "apns-outbox"

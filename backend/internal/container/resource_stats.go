@@ -10,16 +10,16 @@ import (
 	"time"
 
 	"emperror.dev/errors"
-	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/client"
-	"github.com/samber/hot"
-	containerstats "go.getarcane.app/streams/stats"
-	"golang.org/x/sync/errgroup"
-
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	containertypes "github.com/getarcaneapp/arcane/types/v2/container"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/client"
+	"github.com/samber/hot"
+	kit "go.getarcane.app/kit/pkg"
+	containerstats "go.getarcane.app/streams/stats"
+	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -208,12 +208,11 @@ func (s *ContainerService) collectResourceSampleInternal(ctx context.Context, co
 // breaking ties by name, then ID. Valid zero values sort as zero, not as
 // unavailable.
 func containerResourceSampleSortInternal(sort string, descending bool) pagination.SortOption[containertypes.Summary] {
-	var value func(*containertypes.ResourceSample) float64
-	if sort == containertypes.SortCPUUsage {
-		value = func(sample *containertypes.ResourceSample) float64 { return sample.CPUPercent }
-	} else {
-		value = func(sample *containertypes.ResourceSample) float64 { return float64(sample.MemoryUsageBytes) }
-	}
+	value := kit.Ternary(
+		sort == containertypes.SortCPUUsage,
+		func(sample *containertypes.ResourceSample) float64 { return sample.CPUPercent },
+		func(sample *containertypes.ResourceSample) float64 { return float64(sample.MemoryUsageBytes) },
+	)
 
 	tieBreak := func(a, b containertypes.Summary) int {
 		if c := compareContainerNamesForSortInternal(a, b); c != 0 {
@@ -241,9 +240,6 @@ func containerResourceSampleSortInternal(sort string, descending bool) paginatio
 		if descending {
 			less = !less
 		}
-		if less {
-			return -1
-		}
-		return 1
+		return kit.Ternary(less, -1, 1)
 	}
 }

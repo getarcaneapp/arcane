@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"emperror.dev/errors"
-
 	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
@@ -15,6 +14,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/environment"
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	"github.com/moby/moby/client"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 const (
@@ -38,10 +38,7 @@ func (s *EnvironmentService) registerHealthJobInternal(ctx context.Context, envI
 	s.jobs.Register(ctx, envID,
 		func(ctx context.Context) string {
 			sched := s.settingsService.GetStringSetting(ctx, "environmentHealthInterval", defaultEnvironmentHealthInterval)
-			if sched == "" {
-				return defaultEnvironmentHealthInterval
-			}
-			return sched
+			return kit.Ternary(sched == "", defaultEnvironmentHealthInterval, sched)
 		},
 		func(ctx context.Context) (schedulertypes.Outcome, error) { return s.runHealthCheckInternal(ctx, envID) },
 		func(context.Context, schedulertypes.Run) (schedulertypes.Outcome, error) {

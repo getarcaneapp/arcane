@@ -6,6 +6,7 @@ import (
 	"unicode/utf8"
 
 	"emperror.dev/errors"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 const DefaultMaxFileSizeMB = 10
@@ -17,10 +18,7 @@ type UploadReference struct {
 }
 
 func EffectiveMaxFileSizeMB(configured int) int {
-	if configured <= 0 {
-		return DefaultMaxFileSizeMB
-	}
-	return configured
+	return kit.Ternary(configured <= 0, DefaultMaxFileSizeMB, configured)
 }
 
 func MaxFileSizeBytes(configuredMB int) int64 {

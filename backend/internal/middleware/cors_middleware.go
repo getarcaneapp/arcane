@@ -8,6 +8,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/labstack/echo/v5"
 	echomiddleware "github.com/labstack/echo/v5/middleware"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 type CORSMiddleware struct {
@@ -44,7 +45,7 @@ func (m *CORSMiddleware) Add() echo.MiddlewareFunc {
 			"Cache-Control",
 			"Origin",
 			"Referer",
-			"X-Arcane-Agent-Token",
+			HeaderAgentToken,
 			"X-API-Key",
 		},
 		ExposeHeaders: []string{
@@ -60,7 +61,7 @@ func (m *CORSMiddleware) Add() echo.MiddlewareFunc {
 
 func deriveAllowedOriginsInternal(cfg *config.Config, custom []string) []string {
 	if len(custom) > 0 {
-		return dedupeInternal(custom)
+		return kit.Unique(custom)
 	}
 
 	var origins []string
@@ -85,7 +86,7 @@ func deriveAllowedOriginsInternal(cfg *config.Config, custom []string) []string 
 		)
 	}
 
-	origins = dedupeInternal(origins)
+	origins = kit.Unique(origins)
 
 	if len(origins) == 0 {
 		if cfg != nil && cfg.Environment == "production" {
@@ -96,17 +97,4 @@ func deriveAllowedOriginsInternal(cfg *config.Config, custom []string) []string 
 	}
 
 	return origins
-}
-
-func dedupeInternal(in []string) []string {
-	seen := make(map[string]struct{}, len(in))
-	out := make([]string, 0, len(in))
-	for _, v := range in {
-		if _, ok := seen[v]; ok {
-			continue
-		}
-		seen[v] = struct{}{}
-		out = append(out, v)
-	}
-	return out
 }

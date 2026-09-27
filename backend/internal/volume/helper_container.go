@@ -1,9 +1,8 @@
 package volume
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json/v2"
 	"io"
@@ -12,16 +11,17 @@ import (
 	"time"
 
 	"emperror.dev/errors"
-
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 	"github.com/samber/mo"
 	acfstypes "go.getarcane.app/acfs/types"
+	"go.getarcane.app/docker/compat"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 // volumeHelper tracks a reused helper container and the last
@@ -73,7 +73,7 @@ func (s *VolumeService) toolsImageInternal() string {
 }
 
 func isUnlabeledVolumeHelperContainerInternal(c container.Summary) bool {
-	if internal, _ := utils.ParseBool(c.Labels[libarcane.InternalResourceLabel]); !internal {
+	if internal, _ := kit.ParseBool(c.Labels[libarcane.InternalResourceLabel]); !internal {
 		return false
 	}
 
@@ -95,7 +95,7 @@ func isVolumeHelperContainerInternal(c container.Summary) bool {
 	if isUnlabeledVolumeHelperContainerInternal(c) {
 		return true
 	}
-	if internal, _ := utils.ParseBool(c.Labels[libarcane.InternalResourceLabel]); !internal {
+	if internal, _ := kit.ParseBool(c.Labels[libarcane.InternalResourceLabel]); !internal {
 		return false
 	}
 
@@ -292,7 +292,7 @@ func (s *VolumeService) getReusableHelperInternal(ctx context.Context, dockerCli
 		return mo.None[string]()
 	}
 
-	inspect, err := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, helper.id, client.ContainerInspectOptions{})
+	inspect, err := compat.ContainerInspectWithCompatibility(ctx, dockerClient, helper.id, client.ContainerInspectOptions{})
 	if err != nil || inspect.Container.State == nil || !inspect.Container.State.Running {
 		s.helperMu.Lock()
 		delete(s.helperByVolume, volumeName)
@@ -454,7 +454,8 @@ func (s *VolumeService) CleanupOrphanedVolumeHelpers(ctx context.Context) (int, 
 		}
 
 		if _, err := dockerClient.ContainerRemove(ctx, c.ID, volumehelper.RemoveOptions()); err != nil {
-			slog.WarnContext(ctx,
+			slog.WarnContext(
+				ctx,
 				"volume service: failed to remove orphaned volume helper container",
 				"container_id", c.ID,
 				"container_names", c.Names,
@@ -497,10 +498,7 @@ func (s *VolumeService) execInContainerInternal(ctx context.Context, containerID
 	}
 
 	if exitCode != 0 {
-		execErr := strings.TrimSpace(stderr.String())
-		if execErr == "" {
-			execErr = strings.TrimSpace(stdout.String())
-		}
+		execErr := cmp.Or(strings.TrimSpace(stderr.String()), strings.TrimSpace(stdout.String()))
 		if execErr != "" {
 			return stdout.String(), stderr.String(), errors.Errorf("command exited with code %d: %s", exitCode, execErr)
 		}

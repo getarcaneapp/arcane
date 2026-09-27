@@ -147,7 +147,6 @@ func TestSystemBackupPoliciesRegisterIndependentJobs(t *testing.T) {
 		require.Equal(t, !local, policy.S3Enabled)
 		require.Equal(t, local, scheduler.HasJob(service.jobs.JobName(policy.ID)))
 	}
-
 }
 
 func TestSystemBackupPolicyRequiresConfiguredRecoveryKeyWhenEnabled(t *testing.T) {

@@ -1,8 +1,7 @@
 package network
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-
+	"cmp"
 	"context"
 	"fmt"
 	"log/slog"
@@ -12,19 +11,20 @@ import (
 	"strings"
 
 	"emperror.dev/errors"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/mapper"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/netutils"
 	networktypes "github.com/getarcaneapp/arcane/types/v2/network"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
+	"go.getarcane.app/docker/compat"
+	kit "go.getarcane.app/kit/pkg"
+	"go.getarcane.app/kit/pkg/mapping"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -48,7 +48,7 @@ func (s *NetworkService) GetNetworkByID(ctx context.Context, id string) (*networ
 		return nil, errors.WrapIf(err, "failed to connect to Docker")
 	}
 
-	networkInspect, err := libarcane.NetworkInspectWithCompatibility(ctx, dockerClient, id, client.NetworkInspectOptions{})
+	networkInspect, err := compat.NetworkInspectWithCompatibility(ctx, dockerClient, id, client.NetworkInspectOptions{})
 	if err != nil {
 		return nil, errors.WrapIf(err, "network not found")
 	}
@@ -69,7 +69,7 @@ func (s *NetworkService) GetNetworkTopology(ctx context.Context) (*networktypes.
 
 	containerInfoByID := buildTopologyContainerInfoInternal(containers)
 
-	networkList, err := libarcane.NetworkListWithCompatibility(ctx, dockerClient, client.NetworkListOptions{})
+	networkList, err := compat.NetworkListWithCompatibility(ctx, dockerClient, client.NetworkListOptions{})
 	if err != nil {
 		return nil, errors.WrapIf(err, "failed to list Docker networks")
 	}
@@ -92,7 +92,7 @@ func (s *NetworkService) GetNetworkTopology(ctx context.Context) (*networktypes.
 		g.Go(func() (workerErr error) {
 			defer utils.RecoverToError(&workerErr, "network worker")
 
-			inspected, err := libarcane.NetworkInspectWithCompatibility(groupCtx, dockerClient, rawNetwork.ID, client.NetworkInspectOptions{})
+			inspected, err := compat.NetworkInspectWithCompatibility(groupCtx, dockerClient, rawNetwork.ID, client.NetworkInspectOptions{})
 			if err != nil {
 				return errors.WrapIff(err, "failed to inspect network %s", rawNetwork.Name)
 			}
@@ -130,9 +130,7 @@ func (s *NetworkService) GetNetworkTopology(ctx context.Context) (*networktypes.
 			if !ok {
 				info = topologyContainerInfo{Name: endpoint.Name}
 			}
-			if info.Name == "" {
-				info.Name = endpoint.Name
-			}
+			info.Name = cmp.Or(info.Name, endpoint.Name)
 
 			if _, exists := containerNodeIDs[containerID]; !exists {
 				topology.Nodes = append(topology.Nodes, networktypes.TopologyNode{
@@ -172,10 +170,7 @@ func (s *NetworkService) GetNetworkTopology(ctx context.Context) (*networktypes.
 	})
 	sort.Slice(topology.Edges, func(i, j int) bool {
 		left, right := topology.Edges[i], topology.Edges[j]
-		if left.Source != right.Source {
-			return left.Source < right.Source
-		}
-		return left.Target < right.Target
+		return kit.Ternary(left.Source != right.Source, left.Source < right.Source, left.Target < right.Target)
 	})
 
 	return topology, nil
@@ -224,13 +219,8 @@ func (s *NetworkService) RemoveNetwork(ctx context.Context, id string, user comm
 		return errors.WrapIf(err, "failed to connect to Docker")
 	}
 
-	networkInfo, err := libarcane.NetworkInspectWithCompatibility(ctx, dockerClient, id, client.NetworkInspectOptions{})
-	var networkName string
-	if err == nil {
-		networkName = networkInfo.Network.Name
-	} else {
-		networkName = id
-	}
+	networkInfo, err := compat.NetworkInspectWithCompatibility(ctx, dockerClient, id, client.NetworkInspectOptions{})
+	networkName := kit.Ternary(err == nil, networkInfo.Network.Name, id)
 
 	defer s.eventService.BeginDockerResourceSuppressionWindow("network", id, networkName)()
 	if _, err := dockerClient.NetworkRemove(ctx, id, client.NetworkRemoveOptions{}); err != nil {
@@ -366,7 +356,7 @@ func (s *NetworkService) ListNetworksPaginated(ctx context.Context, params pagin
 
 	inUseByID, inUseByName := dockerutil.BuildNetworkUsageMaps(containers)
 
-	networkList, err := libarcane.NetworkListWithCompatibility(ctx, dockerClient, client.NetworkListOptions{})
+	networkList, err := compat.NetworkListWithCompatibility(ctx, dockerClient, client.NetworkListOptions{})
 	if err != nil {
 		return nil, pagination.Response{}, networktypes.UsageCounts{}, errors.WrapIf(err, "failed to list Docker networks")
 	}
@@ -409,7 +399,7 @@ func buildTopologyContainerInfoInternal(containers []container.Summary) map[stri
 func (s *NetworkService) convertToNetworkSummaries(rawNets []network.Summary, inUseByID, inUseByName map[string]bool) ([]networktypes.Summary, error) {
 	items := make([]networktypes.Summary, 0, len(rawNets))
 	for _, n := range rawNets {
-		netDto, err := mapper.MapOne[network.Summary, networktypes.Summary](n)
+		netDto, err := mapping.MapOne[network.Summary, networktypes.Summary](n)
 		if err != nil {
 			return nil, errors.WrapIf(err, "failed to map network")
 		}
@@ -471,7 +461,7 @@ func (s *NetworkService) buildNetworkSortBindings() []pagination.SortBinding[net
 			Fn: func(a, b networktypes.Summary) int {
 				subnetsA, _ := ipamValuesInternal(a)
 				subnetsB, _ := ipamValuesInternal(b)
-				return compareIPAMListsInternal(subnetsA, subnetsB, netutils.CompareSubnets)
+				return compareIPAMListsInternal(subnetsA, subnetsB, kit.CompareSubnets)
 			},
 		},
 		{
@@ -479,7 +469,7 @@ func (s *NetworkService) buildNetworkSortBindings() []pagination.SortBinding[net
 			Fn: func(a, b networktypes.Summary) int {
 				_, gatewaysA := ipamValuesInternal(a)
 				_, gatewaysB := ipamValuesInternal(b)
-				return compareIPAMListsInternal(gatewaysA, gatewaysB, netutils.CompareAddresses)
+				return compareIPAMListsInternal(gatewaysA, gatewaysB, kit.CompareAddresses)
 			},
 		},
 	}
@@ -509,10 +499,7 @@ func (s *NetworkService) compareNetworkCreated(a, b networktypes.Summary) int {
 	if a.Created.Before(b.Created) {
 		return -1
 	}
-	if a.Created.After(b.Created) {
-		return 1
-	}
-	return 0
+	return kit.Ternary(a.Created.After(b.Created), 1, 0)
 }
 
 func (s *NetworkService) compareNetworkInUse(a, b networktypes.Summary) int {
@@ -523,10 +510,7 @@ func (s *NetworkService) compareNetworkInUse(a, b networktypes.Summary) int {
 		// Use name as secondary sort key for consistent ordering
 		return strings.Compare(a.Name, b.Name)
 	}
-	if aInUse {
-		return -1
-	}
-	return 1
+	return kit.Ternary(aInUse, -1, 1)
 }
 
 func (s *NetworkService) buildNetworkFilterAccessors() []pagination.FilterAccessor[networktypes.Summary] {
@@ -534,13 +518,7 @@ func (s *NetworkService) buildNetworkFilterAccessors() []pagination.FilterAccess
 		{
 			Key: "inUse",
 			Fn: func(n networktypes.Summary, filterValue string) bool {
-				if filterValue == "true" {
-					return n.InUse || n.IsDefault
-				}
-				if filterValue == "false" {
-					return !n.InUse && !n.IsDefault
-				}
-				return true
+				return kit.Ternary(filterValue == "true", n.InUse || n.IsDefault, filterValue != "false" || (!n.InUse && !n.IsDefault))
 			},
 		},
 	}

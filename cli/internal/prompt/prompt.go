@@ -4,10 +4,9 @@ import (
 	"fmt"
 	"os"
 
-	"emperror.dev/errors"
-
 	"charm.land/bubbles/v2/list"
 	tea "charm.land/bubbletea/v2"
+	"emperror.dev/errors"
 	"github.com/charmbracelet/x/term"
 )
 

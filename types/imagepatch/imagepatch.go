@@ -11,16 +11,14 @@ const (
 	PatchModeUpdateAll PatchMode = "update-all"
 	// PatchModeReport patches only packages flagged by a vulnerability scan report.
 	PatchModeReport PatchMode = "report"
-)
 
-// PatchStatus is the lifecycle state of a patch run.
-type PatchStatus string
-
-const (
 	PatchStatusPatching  PatchStatus = "patching"
 	PatchStatusCompleted PatchStatus = "completed"
 	PatchStatusFailed    PatchStatus = "failed"
 )
+
+// PatchStatus is the lifecycle state of a patch run.
+type PatchStatus string
 
 // PatchOptions are the caller-provided options for patching an image.
 type PatchOptions struct {

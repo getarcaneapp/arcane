@@ -3,18 +3,11 @@ package gitrepo
 import (
 	"context"
 	"fmt"
-	"github.com/getarcaneapp/arcane/types/v2/gitops"
 	"strings"
 	"testing"
 	"time"
 
 	"emperror.dev/errors"
-	"github.com/libtnb/sqlite"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-	"go.uber.org/fx/fxtest"
-	"gorm.io/gorm"
-
 	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
@@ -22,8 +15,14 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/mapper"
+	"github.com/getarcaneapp/arcane/types/v2/gitops"
+	"github.com/libtnb/sqlite"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"go.getarcane.app/kit/pkg/mapping"
 	"go.getarcane.app/sys/crypto"
+	"go.uber.org/fx/fxtest"
+	"gorm.io/gorm"
 )
 
 func setupGitRepositoryServiceTestInternal(t *testing.T) (*GitRepositoryService, *database.DB) {
@@ -87,7 +86,7 @@ func createGitRepositoryServiceTestRepoInternal(t *testing.T, svc *GitRepository
 		Username: "admin",
 	})
 	require.NoError(t, err)
-	mapped, err := mapper.MapOne[*GitRepository, gitops.GitRepository](repo)
+	mapped, err := mapping.MapOne[*GitRepository, gitops.GitRepository](repo)
 	require.NoError(t, err)
 	assert.Equal(t, req.Token != "", mapped.HasToken)
 	assert.Equal(t, req.SSHKey != "", mapped.HasSshKey)
@@ -191,7 +190,7 @@ func TestGitRepositoryService_UpdateRepository_AllowsURLChangeWhenTokenIsResuppl
 	decryptedToken, decryptErr := crypto.Decrypt(updated.Token)
 	require.NoError(t, decryptErr)
 	assert.Equal(t, "ghp_new_token", decryptedToken)
-	mapped, err := mapper.MapOne[*GitRepository, gitops.GitRepository](updated)
+	mapped, err := mapping.MapOne[*GitRepository, gitops.GitRepository](updated)
 	require.NoError(t, err)
 	assert.True(t, mapped.HasToken)
 	assert.False(t, mapped.HasSshKey)
@@ -215,7 +214,7 @@ func TestGitRepositoryService_UpdateRepository_AllowsURLChangeWhenTokenIsCleared
 
 	assert.Equal(t, "https://github.com/acme/public.git", updated.URL)
 	assert.Empty(t, updated.Token)
-	mapped, err := mapper.MapOne[*GitRepository, gitops.GitRepository](updated)
+	mapped, err := mapping.MapOne[*GitRepository, gitops.GitRepository](updated)
 	require.NoError(t, err)
 	assert.False(t, mapped.HasToken)
 	assert.False(t, mapped.HasSshKey)

@@ -2,22 +2,27 @@
 package imageref
 
 import (
+	"cmp"
 	"fmt"
 	"strings"
 
+	ref "github.com/distribution/reference"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/registryauth"
+	kit "go.getarcane.app/kit/pkg"
 	"go.getarcane.app/updater"
 	"go.getarcane.app/updater/pkg/utils/tagpolicy"
 	"go.getarcane.app/updater/refs"
-
-	ref "github.com/distribution/reference"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/registryauth"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 )
 
-// UpdateCheckLabel opts a container or service out of update checks and
-// notifications. Automatic installation is governed separately by the
-// updater label and the UI exclusion list.
-const UpdateCheckLabel = "com.getarcaneapp.arcane.update-check"
+const (
+	// UpdateCheckLabel opts a container or service out of update checks and
+	// notifications. Automatic installation is governed separately by the
+	// updater label and the UI exclusion list.
+	UpdateCheckLabel = "com.getarcaneapp.arcane.update-check"
+
+	// LocalBuildRegistry is Arcane's reserved registry host for locally built image tags.
+	LocalBuildRegistry = "arcane.local"
+)
 
 // IsUpdateCheckDisabled reports whether labels opt the resource out of update
 // monitoring. Checks stay enabled unless the value parses as false.
@@ -36,12 +41,9 @@ func IsUpdateCheckDisabled(labels map[string]string) bool {
 	if !ok {
 		return false
 	}
-	enabled, parsed := utils.ParseBool(value)
+	enabled, parsed := kit.ParseBool(value)
 	return parsed && !enabled
 }
-
-// LocalBuildRegistry is Arcane's reserved registry host for locally built image tags.
-const LocalBuildRegistry = "arcane.local"
 
 // ParseUpdateLookup normalizes an image reference into the repository and tag
 // candidates used to match persisted update records.
@@ -60,9 +62,7 @@ func ParseUpdateLookup(imageRef string) (originalRef, tag string, repositoryCand
 	if tagged, taggedOK := named.(ref.NamedTagged); taggedOK {
 		tag = strings.TrimSpace(tagged.Tag())
 	}
-	if tag == "" {
-		tag = "latest"
-	}
+	tag = cmp.Or(tag, "latest")
 
 	registryHost := registryauth.NormalizeRegistryForComparison(ref.Domain(named))
 	repositoryPath := strings.TrimSpace(ref.Path(named))

@@ -132,7 +132,6 @@ func TestRefreshRecreatedImageLabelsInternalKeepsNilWhenNoLabelsExist(t *testing
 
 func TestRefreshRecreatedContainerLabelsInternalPreservesLabelsWhenTargetInspectFails(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-
 		assert.Contains(t, r.URL.Path, "/images/target:latest/json",
 			"unexpected Docker API request: %s %s", r.Method, r.URL.Path)
 

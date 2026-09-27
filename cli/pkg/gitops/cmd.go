@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"emperror.dev/errors"
-
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
@@ -555,10 +554,7 @@ func gitOpsSyncMatches(item gitops.GitOpsSync, identifierLower, original string)
 	if strings.Contains(strings.ToLower(item.Name), identifierLower) {
 		return true
 	}
-	if strings.EqualFold(item.Name, original) {
-		return true
-	}
-	return false
+	return strings.EqualFold(item.Name, original)
 }
 
 func flattenFileTree(nodes []gitops.FileTreeNode, depth int) [][]string {

@@ -14,7 +14,6 @@ import (
 	"time"
 
 	sqliteutil "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/sqlite"
-
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

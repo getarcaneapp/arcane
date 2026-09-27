@@ -1,10 +1,6 @@
 package version
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
-
-	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-
 	"context"
 	"encoding/json"
 	"fmt"
@@ -19,7 +15,9 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
 	"github.com/google/go-containerregistry/pkg/name"
 	ggcrregistry "github.com/google/go-containerregistry/pkg/registry"

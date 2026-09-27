@@ -1,8 +1,6 @@
 package handlerutil
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-
 	"context"
 	"encoding/json/v2"
 	"fmt"
@@ -12,11 +10,12 @@ import (
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/mapper"
 	"github.com/getarcaneapp/arcane/types/v2/auth"
 	"github.com/getarcaneapp/arcane/types/v2/base"
+	"go.getarcane.app/kit/pkg/mapping"
 )
 
 // Out is the huma response envelope for endpoints returning base.ApiResponse[T].
@@ -173,8 +172,8 @@ func CurrentActor(ctx context.Context) common.User {
 	return actor
 }
 
-func MapOneAPIResponse[S any, D any](source S, mappingMessage func(error) string) (base.ApiResponse[D], error) {
-	out, err := mapper.MapOne[S, D](source)
+func MapOneAPIResponse[S, D any](source S, mappingMessage func(error) string) (base.ApiResponse[D], error) {
+	out, err := mapping.MapOne[S, D](source)
 	if err != nil {
 		return base.ApiResponse[D]{}, huma.Error500InternalServerError(mappingMessage(err))
 	}

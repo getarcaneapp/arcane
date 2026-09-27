@@ -8,12 +8,10 @@ import (
 	"strings"
 
 	"emperror.dev/errors"
-
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
-
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 )
 
 // MountForCurrentContainerSubpath inspects the current container, finds the
@@ -56,7 +54,7 @@ func MountForCurrentContainerSubpath(ctx context.Context, dockerCli *client.Clie
 //
 // Returns nil if no mount destination is a prefix of containerPath or if
 // the matching mount is of an unsupported type.
-func MountForSubpath(mounts []container.MountPoint, containerPath string, target string) *mount.Mount {
+func MountForSubpath(mounts []container.MountPoint, containerPath, target string) *mount.Mount {
 	if strings.TrimSpace(containerPath) == "" {
 		return nil
 	}
@@ -112,7 +110,7 @@ func MountForSubpath(mounts []container.MountPoint, containerPath string, target
 // mounted whole at target, plus containerPath's path relative to that mount.
 // Unlike MountForSubpath the subpath need not exist yet, so restores can create
 // it. Returns nil when no bind or volume mount covers containerPath.
-func MountForEnclosingPath(mounts []container.MountPoint, containerPath string, target string) (*mount.Mount, string) {
+func MountForEnclosingPath(mounts []container.MountPoint, containerPath, target string) (*mount.Mount, string) {
 	if strings.TrimSpace(containerPath) == "" {
 		return nil, ""
 	}
@@ -140,7 +138,7 @@ func MountForEnclosingPath(mounts []container.MountPoint, containerPath string, 
 // strictly below containerPath, re-targeted beneath target, so a helper
 // container sees the same tree the current container does. Parents precede
 // their children; unsupported mount types are skipped.
-func NestedMounts(mounts []container.MountPoint, containerPath string, target string) []mount.Mount {
+func NestedMounts(mounts []container.MountPoint, containerPath, target string) []mount.Mount {
 	containerPath = strings.TrimRight(containerPath, "/")
 	if containerPath == "" {
 		return nil
@@ -175,7 +173,7 @@ func pathHasPrefixInternal(containerPath, prefix string) bool {
 //
 // It currently supports bind and named volume mounts. If target is empty, destination
 // is used as the target.
-func MountForDestination(mounts []container.MountPoint, destination string, target string) *mount.Mount {
+func MountForDestination(mounts []container.MountPoint, destination, target string) *mount.Mount {
 	if strings.TrimSpace(destination) == "" {
 		return nil
 	}

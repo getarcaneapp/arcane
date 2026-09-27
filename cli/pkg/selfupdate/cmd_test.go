@@ -17,7 +17,6 @@ func TestFindChecksumMatchesNextDistPath(t *testing.T) {
 
 	require.Equal(t, "abc123", got,
 		"findChecksum = %q, want abc123", got)
-
 }
 
 func TestFindChecksumMatchesArchiveBasename(t *testing.T) {
@@ -30,7 +29,6 @@ func TestFindChecksumMatchesArchiveBasename(t *testing.T) {
 
 	require.Equal(t, "def456", got,
 		"findChecksum = %q, want def456", got)
-
 }
 
 func TestChecksumEntryNames(t *testing.T) {
@@ -43,10 +41,8 @@ func TestChecksumEntryNames(t *testing.T) {
 			"checksumEntryNames length = %d, want %d (%v)", len(got), len(want), got)
 	}
 	for i := range want {
-
 		require.Equal(t, want[i], got[i],
 			"checksumEntryNames[%d] = %q, want %q", i, got[i], want[i])
-
 	}
 }
 
@@ -66,5 +62,4 @@ func TestCLIArtifactNamesUseFlatR2BinaryNames(t *testing.T) {
 
 	require.Equal(t, "arcane-cli_"+platformName, artifactName,
 		"artifactName = %q, want %q", artifactName, "arcane-cli_"+platformName)
-
 }

@@ -8,10 +8,9 @@ import (
 	"testing"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
-	updaterlabels "go.getarcane.app/updater/labels"
-
 	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
 	"github.com/stretchr/testify/require"
+	updaterlabels "go.getarcane.app/updater/labels"
 )
 
 func TestParseArcaneComposeMetadata_InterpolationAndAnchor(t *testing.T) {

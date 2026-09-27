@@ -1,16 +1,11 @@
 package admin
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-
 	"context"
 	"testing"
 	"time"
 
-	"github.com/libtnb/sqlite"
-	"github.com/stretchr/testify/require"
-	"gorm.io/gorm"
-
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
@@ -19,6 +14,9 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/validation"
 	"github.com/getarcaneapp/arcane/types/v2/auth"
+	"github.com/libtnb/sqlite"
+	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
 
 func newResetPasswordTestDBInternal(t *testing.T) *database.DB {

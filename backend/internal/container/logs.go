@@ -5,11 +5,10 @@ import (
 	"io"
 
 	"emperror.dev/errors"
+	dockerutils "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/client"
-
-	dockerutils "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
+	"go.getarcane.app/docker/compat"
 )
 
 type demuxedLogsInternal struct {
@@ -29,7 +28,7 @@ func (s *ContainerService) openLogsInternal(ctx context.Context, containerID str
 		return nil, client.ContainerInspectResult{}, errors.WrapIf(err, "failed to connect to Docker")
 	}
 
-	containerInspect, err := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, client.ContainerInspectOptions{})
+	containerInspect, err := compat.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, client.ContainerInspectOptions{})
 	if err != nil {
 		return nil, client.ContainerInspectResult{}, errors.WrapIf(err, "failed to inspect container for logs")
 	}

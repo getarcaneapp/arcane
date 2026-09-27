@@ -10,7 +10,6 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	eventtypes "github.com/getarcaneapp/arcane/types/v2/event"
@@ -75,7 +74,7 @@ func RegisterAgentEventIngestion(g *echo.Group, eventService *EventService, reso
 				Data:    base.MessageResponse{Message: "agent event ingestion is not configured"},
 			})
 		}
-		environmentID, err := resolveEnvironment(c.Request().Context(), c.Request().Header.Get(utils.HeaderAgentToken))
+		environmentID, err := resolveEnvironment(c.Request().Context(), c.Request().Header.Get(middleware.HeaderAgentToken))
 		if err != nil || environmentID == "" || environmentID == "0" {
 			return c.JSON(http.StatusUnauthorized, base.ApiResponse[base.MessageResponse]{
 				Success: false,

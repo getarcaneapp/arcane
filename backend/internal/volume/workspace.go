@@ -1,10 +1,6 @@
 package volume
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-
 	"archive/tar"
 	"bytes"
 	"context"
@@ -26,12 +22,11 @@ import (
 
 	"emperror.dev/errors"
 	cerrdefs "github.com/containerd/errdefs"
-
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	acfsutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/acfs"
 	workspacepkg "github.com/getarcaneapp/arcane/backend/v2/pkg/workspace"
 	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
@@ -41,6 +36,8 @@ import (
 	"github.com/moby/moby/client"
 	"go.getarcane.app/acfs"
 	acfstypes "go.getarcane.app/acfs/types"
+	"go.getarcane.app/docker/compat"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 func (s *VolumeService) GetVolumeWorkspace(ctx context.Context, volumeName string) (*workspacetypes.Workspace, error) {
@@ -176,14 +173,11 @@ func decodeVolumeWorkspaceWalkInternal(source io.Reader, maxEntries int, maxFile
 	})
 	h := sha256.New()
 	for _, entry := range revisionEntries {
-		utils.WriteFileTreeRevisionEntry(h, entry.RelativePath, classifications[entry.RelativePath], entry.Size, entry.ModTime.UnixNano(), entry.Mode, false)
+		kit.WriteRecord(h, entry.RelativePath, classifications[entry.RelativePath], entry.Size, entry.ModTime.UnixNano(), entry.Mode)
 	}
 	slices.SortFunc(files, func(a, b workspacetypes.FileEntry) int {
 		if a.IsDirectory != b.IsDirectory {
-			if a.IsDirectory {
-				return -1
-			}
-			return 1
+			return kit.Ternary(a.IsDirectory, -1, 1)
 		}
 		return strings.Compare(a.RelativePath, b.RelativePath)
 	})
@@ -231,7 +225,7 @@ func (s *VolumeService) GetVolumeWorkspaceFile(ctx context.Context, volumeName, 
 	if err := s.validateVolumeHelperSupportInternal(ctx, volumeName); err != nil {
 		return nil, classifyVolumeWorkspaceHelperSupportErrorInternal(err)
 	}
-	rel, err := utils.NormalizeRelativePath(relativePath)
+	rel, err := kit.NormalizeRelativePath(relativePath)
 	if err != nil {
 		return nil, common.Classify(common.ErrVolumeWorkspaceForbidden, errors.WrapIf(err, "invalid volume workspace path"))
 	}
@@ -299,7 +293,7 @@ func (s *VolumeService) DownloadVolumeWorkspaceFile(ctx context.Context, volumeN
 		unlock()
 		return nil, 0, classifyVolumeWorkspaceHelperSupportErrorInternal(err)
 	}
-	rel, err := utils.NormalizeRelativePath(relativePath)
+	rel, err := kit.NormalizeRelativePath(relativePath)
 	if err != nil {
 		unlock()
 		return nil, 0, common.Classify(common.ErrVolumeWorkspaceForbidden, errors.WrapIf(err, "invalid volume workspace path"))
@@ -340,10 +334,7 @@ func (r *volumeWorkspaceReadStreamInternal) Read(buffer []byte) (int, error) {
 		if closeErr != nil {
 			return 0, closeErr
 		}
-		if readErr != nil && !stderrors.Is(readErr, io.EOF) {
-			return 0, readErr
-		}
-		return 0, io.EOF
+		return 0, kit.Ternary(readErr != nil && !stderrors.Is(readErr, io.EOF), readErr, io.EOF)
 	}
 	if int64(len(buffer)) > r.remaining {
 		buffer = buffer[:r.remaining]
@@ -520,10 +511,7 @@ func classifyVolumeWorkspaceHelperSupportErrorInternal(err error) error {
 }
 
 func (s *VolumeService) validateVolumeWorkspacePathInternal(ctx context.Context, containerID, relativePath string, allowMissing bool) error {
-	allowMissingValue := "0"
-	if allowMissing {
-		allowMissingValue = "1"
-	}
+	allowMissingValue := kit.Ternary(allowMissing, "1", "0")
 	_, stderr, err := s.execInContainerInternal(ctx, containerID, "", []string{"sh", "-c", volumeWorkspaceValidatePathScriptInternal, "sh", relativePath, allowMissingValue})
 	if err != nil {
 		return classifyVolumeWorkspaceExecErrorInternal(err, stderr, "validate volume workspace path")
@@ -531,7 +519,8 @@ func (s *VolumeService) validateVolumeWorkspacePathInternal(ctx context.Context,
 	return nil
 }
 
-const volumeWorkspaceValidatePathScriptInternal = `set -e
+const (
+	volumeWorkspaceValidatePathScriptInternal = `set -e
 rel="$1"
 allow_missing="$2"
 cur=/volume
@@ -555,6 +544,40 @@ while :; do
     *) case "$mode" in d*) ;; *) echo ARCANE_NOT_DIRECTORY >&2; exit 47 ;; esac ;;
   esac
 done`
+
+	volumeWorkspaceBackupCreateScriptInternal = `set -e
+rel="$1"
+archive="$2"
+cur=/volume
+current=
+remaining=$rel
+while :; do
+  case "$remaining" in '') break ;; esac
+  case "$remaining" in
+    */*) segment=${remaining%%/*}; remaining=${remaining#*/} ;;
+    *) segment=$remaining; remaining= ;;
+  esac
+  case "$current" in '') current=$segment ;; *) current="$current/$segment" ;; esac
+  cur="$cur/$segment"
+  if mode=$(stat -c '%A' -- "$cur" 2>/dev/null); then
+    case "$mode" in l*) echo ARCANE_SYMLINK >&2; exit 42 ;; esac
+  else
+    printf 'absent\0%s\0' "$current"
+    exit 0
+  fi
+  case "$remaining" in
+    '') ;;
+    *) case "$mode" in d*) ;; *) echo ARCANE_NOT_DIRECTORY >&2; exit 47 ;; esac ;;
+  esac
+done
+case "$rel" in
+  */*) parent="/volume/${rel%/*}"; entry=${rel##*/} ;;
+  *) parent=/volume; entry=$rel ;;
+esac
+cd "$parent"
+tar -cf "$archive" "./$entry"
+printf 'present\0'`
+)
 
 func (s *VolumeService) UpdateVolumeWorkspace(ctx context.Context, volumeName string, manifest volumetypes.WorkspaceUpdateManifest, uploads map[int][]byte, user common.User) (*workspacetypes.Workspace, error) {
 	totalStartedAt := time.Now()
@@ -702,7 +725,7 @@ func (s *VolumeService) resolveVolumeWorkspaceWriteIdentityInternal(ctx context.
 	identity := volumeWorkspaceWriteIdentityInternal{}
 	identitySource := ""
 	for _, consumerID := range consumerIDs {
-		inspect, inspectErr := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, consumerID, client.ContainerInspectOptions{})
+		inspect, inspectErr := compat.ContainerInspectWithCompatibility(ctx, dockerClient, consumerID, client.ContainerInspectOptions{})
 		if inspectErr != nil || inspect.Container.Config == nil {
 			// An uninspectable consumer could declare a conflicting user, so the identity is
 			// indeterminate; defer to the volume root's owner.
@@ -811,7 +834,7 @@ func (s *VolumeService) applyVolumeWorkspaceChangesInternal(
 
 	for index := 0; index < len(changes); {
 		if changes[index].Operation == volumetypes.FileOpRestoreFile {
-			rel, _ := utils.NormalizeRelativePath(changes[index].RelativePath)
+			rel, _ := kit.NormalizeRelativePath(changes[index].RelativePath)
 			if err := s.restoreVolumeWorkspaceFileInternal(ctx, containerID, volumeName, changes[index].BackupID, rel); err != nil {
 				return rollbackFailureInternal(err)
 			}
@@ -882,7 +905,7 @@ func (s *VolumeService) executeVolumeWorkspaceACFSBatchInternal(
 }
 
 func mapVolumeWorkspaceChangeToACFSInternal(change volumetypes.WorkspaceFileChange, staged volumeWorkspaceStagedFileInternal) (acfstypes.ApplyChange, error) {
-	relativePath, err := utils.NormalizeRelativePath(change.RelativePath)
+	relativePath, err := kit.NormalizeRelativePath(change.RelativePath)
 	if err != nil {
 		return acfstypes.ApplyChange{}, err
 	}
@@ -900,7 +923,7 @@ func mapVolumeWorkspaceChangeToACFSInternal(change volumetypes.WorkspaceFileChan
 		result.Operation = acfstypes.ApplyCreateFolder
 		result.Recursive = false
 	case volumetypes.FileOpRename:
-		newName, nameErr := utils.ValidateFileName(change.NewName)
+		newName, nameErr := kit.ValidateFileName(change.NewName)
 		if nameErr != nil {
 			return acfstypes.ApplyChange{}, nameErr
 		}
@@ -910,7 +933,7 @@ func mapVolumeWorkspaceChangeToACFSInternal(change volumetypes.WorkspaceFileChan
 	case volumetypes.FileOpMove:
 		parent := ""
 		if strings.TrimSpace(change.NewParentPath) != "" {
-			parent, err = utils.NormalizeRelativePath(change.NewParentPath)
+			parent, err = kit.NormalizeRelativePath(change.NewParentPath)
 			if err != nil {
 				return acfstypes.ApplyChange{}, err
 			}
@@ -927,7 +950,7 @@ func mapVolumeWorkspaceChangeToACFSInternal(change volumetypes.WorkspaceFileChan
 }
 
 func validateVolumeWorkspaceFileChangeInternal(change volumetypes.WorkspaceFileChange) error {
-	if _, err := utils.NormalizeRelativePath(change.RelativePath); err != nil {
+	if _, err := kit.NormalizeRelativePath(change.RelativePath); err != nil {
 		return errors.WrapIf(err, "invalid volume workspace path")
 	}
 	hasUpload := change.UploadIndex != nil
@@ -944,7 +967,7 @@ func validateVolumeWorkspaceFileChangeInternal(change volumetypes.WorkspaceFileC
 		if hasUpload {
 			return errors.New("rename does not accept file content")
 		}
-		if _, err := utils.ValidateFileName(change.NewName); err != nil {
+		if _, err := kit.ValidateFileName(change.NewName); err != nil {
 			return errors.WrapIf(err, "invalid volume workspace file name")
 		}
 	case volumetypes.FileOpMove:
@@ -952,7 +975,7 @@ func validateVolumeWorkspaceFileChangeInternal(change volumetypes.WorkspaceFileC
 			return errors.New("move does not accept file content")
 		}
 		if strings.TrimSpace(change.NewParentPath) != "" {
-			if _, err := utils.NormalizeRelativePath(change.NewParentPath); err != nil {
+			if _, err := kit.NormalizeRelativePath(change.NewParentPath); err != nil {
 				return errors.WrapIf(err, "invalid destination folder")
 			}
 		}
@@ -1038,14 +1061,14 @@ func (s *VolumeService) createVolumeWorkspaceMutationContainerInternal(ctx conte
 func volumeWorkspaceBackupScopeInternal(changes []volumetypes.WorkspaceFileChange) ([]string, error) {
 	paths := make([]string, 0, len(changes)*2)
 	for _, change := range changes {
-		rel, err := utils.NormalizeRelativePath(change.RelativePath)
+		rel, err := kit.NormalizeRelativePath(change.RelativePath)
 		if err != nil {
 			return nil, err
 		}
 		paths = append(paths, rel)
 		switch change.Operation {
 		case volumetypes.FileOpRename:
-			newName, err := utils.ValidateFileName(change.NewName)
+			newName, err := kit.ValidateFileName(change.NewName)
 			if err != nil {
 				return nil, err
 			}
@@ -1053,7 +1076,7 @@ func volumeWorkspaceBackupScopeInternal(changes []volumetypes.WorkspaceFileChang
 		case volumetypes.FileOpMove:
 			parent := ""
 			if strings.TrimSpace(change.NewParentPath) != "" {
-				parent, err = utils.NormalizeRelativePath(change.NewParentPath)
+				parent, err = kit.NormalizeRelativePath(change.NewParentPath)
 				if err != nil {
 					return nil, err
 				}
@@ -1073,7 +1096,7 @@ func normalizeVolumeWorkspaceScopeInternal(paths []string) []string {
 		if candidate == "." || candidate == "" {
 			continue
 		}
-		if slices.ContainsFunc(result, func(parent string) bool { return utils.FilePathMatches(candidate, parent) }) {
+		if slices.ContainsFunc(result, func(parent string) bool { return kit.FilePathMatches(candidate, parent) }) {
 			continue
 		}
 		result = append(result, candidate)
@@ -1090,39 +1113,6 @@ type volumeWorkspaceBackupInternal struct {
 	archives      []volumeWorkspaceBackupArchiveInternal
 	absentEntries []string
 }
-
-const volumeWorkspaceBackupCreateScriptInternal = `set -e
-rel="$1"
-archive="$2"
-cur=/volume
-current=
-remaining=$rel
-while :; do
-  case "$remaining" in '') break ;; esac
-  case "$remaining" in
-    */*) segment=${remaining%%/*}; remaining=${remaining#*/} ;;
-    *) segment=$remaining; remaining= ;;
-  esac
-  case "$current" in '') current=$segment ;; *) current="$current/$segment" ;; esac
-  cur="$cur/$segment"
-  if mode=$(stat -c '%A' -- "$cur" 2>/dev/null); then
-    case "$mode" in l*) echo ARCANE_SYMLINK >&2; exit 42 ;; esac
-  else
-    printf 'absent\0%s\0' "$current"
-    exit 0
-  fi
-  case "$remaining" in
-    '') ;;
-    *) case "$mode" in d*) ;; *) echo ARCANE_NOT_DIRECTORY >&2; exit 47 ;; esac ;;
-  esac
-done
-case "$rel" in
-  */*) parent="/volume/${rel%/*}"; entry=${rel##*/} ;;
-  *) parent=/volume; entry=$rel ;;
-esac
-cd "$parent"
-tar -cf "$archive" "./$entry"
-printf 'present\0'`
 
 func (s *VolumeService) backupVolumeWorkspaceScopeInternal(ctx context.Context, containerID string, scope []string) (*volumeWorkspaceBackupInternal, error) {
 	if _, _, err := s.execInContainerInternal(ctx, containerID, "", []string{"mkdir", "-p", "/tmp/arcane-workspace"}); err != nil {

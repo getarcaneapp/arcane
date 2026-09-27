@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"emperror.dev/errors"
-
 	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
 	"gorm.io/gorm"
 )

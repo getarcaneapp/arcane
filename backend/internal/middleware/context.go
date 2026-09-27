@@ -6,10 +6,25 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 )
 
-// ContextKey is a type for context keys used by Huma handlers.
-type ContextKey string
-
 const (
+	// Auth header names and path prefixes shared between the Echo middleware
+	// (WebSocket/diagnostics) and the Huma auth bridge (REST). Keep these in one
+	// place so a change to a header name applies to every route type at once.
+
+	HeaderAgentBootstrap             = "X-Arcane-Agent-Bootstrap"
+	HeaderAgentToken                 = "X-Arcane-Agent-Token" // #nosec G101: header name, not a credential
+	HeaderApiKey                     = "X-Api-Key"            // #nosec G101: header name, not a credential
+	HeaderActivityBatchID            = "X-Arcane-Batch-Id"
+	HeaderUpdateInitiatorID          = "X-Arcane-Update-Initiator-Id"
+	HeaderUpdateInitiatorName        = "X-Arcane-Update-Initiator-Name"
+	HeaderUpdateInitiatorDisplayName = "X-Arcane-Update-Initiator-Display-Name"
+	// HeaderIconCatalog carries the requesting user's icon catalog preference to
+	// remote environments. Agents authenticate proxied calls as a synthetic user
+	// with no preferences, so without it every remote environment would resolve
+	// container/project icons against the default catalog.
+	HeaderIconCatalog  = "X-Arcane-Icon-Catalog"
+	AgentPairingPrefix = "/api/environments/0/agent/pair"
+
 	ContextKeyApiKeyID ContextKey = "apiKeyID"
 	// ContextKeyUserID is the context key for the authenticated user's ID.
 	ContextKeyUserID ContextKey = "userID"
@@ -25,6 +40,9 @@ const (
 	// ContextKeyAuthMethod is the Echo context key for the authentication method.
 	ContextKeyAuthMethod ContextKey = "authMethod"
 )
+
+// ContextKey is a type for context keys used by Huma handlers.
+type ContextKey string
 
 // GetUserIDFromContext retrieves the user ID from the context.
 func GetUserIDFromContext(ctx context.Context) (string, bool) {

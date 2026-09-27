@@ -423,7 +423,7 @@ func TestTunnelServer_HandleMTLSEnroll_AllowsRepeatAfterCooldownAndMarksReenroll
 	server.SetConfig(cfg)
 
 	reenrolled := make(chan bool, 2)
-	server.SetEnrollmentCallback(func(ctx context.Context, environmentID, remoteAddr string, certIssued bool, caGenerated bool, wasReenrolled bool) {
+	server.SetEnrollmentCallback(func(ctx context.Context, environmentID, remoteAddr string, certIssued, caGenerated, wasReenrolled bool) {
 		require.Equal(t, "env-repeat-old", environmentID)
 		reenrolled <- wasReenrolled
 	})

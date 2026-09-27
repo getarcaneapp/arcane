@@ -2,7 +2,8 @@ package updates
 
 import (
 	"fmt"
-	"sort"
+	"maps"
+	"slices"
 	"strconv"
 
 	"emperror.dev/errors"
@@ -187,11 +188,7 @@ func printBatchResultsInternal(result imageupdate.BatchResponse) error {
 		return cmdutil.PrintJSON(result)
 	}
 
-	refs := make([]string, 0, len(result))
-	for imageRef := range result {
-		refs = append(refs, imageRef)
-	}
-	sort.Strings(refs)
+	refs := slices.Sorted(maps.Keys(result))
 
 	headers := []string{"IMAGE", "UPDATE", "CURRENT", "LATEST", "TYPE"}
 	rows := make([][]string, 0, len(refs))

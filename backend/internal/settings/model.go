@@ -9,9 +9,14 @@ import (
 	"time"
 
 	"emperror.dev/errors"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 const (
+	SettingVisibilityPublic   SettingVisibility = 0
+	SettingVisibilityNonAdmin SettingVisibility = 1
+	SettingVisibilityAll      SettingVisibility = 2
+
 	redactionMask = "XXXXXXXXXX"
 )
 
@@ -21,12 +26,6 @@ type SettingVariable struct {
 }
 
 type SettingVisibility int
-
-const (
-	SettingVisibilityPublic SettingVisibility = iota
-	SettingVisibilityNonAdmin
-	SettingVisibilityAll
-)
 
 type settingFieldMeta struct {
 	index               int
@@ -58,10 +57,7 @@ func (s SettingVariable) AsInt() int {
 // AsDurationSeconds returns the value as a time.Duration in seconds
 func (s SettingVariable) AsDurationSeconds() time.Duration {
 	val, err := strconv.Atoi(s.Value)
-	if err != nil {
-		return 0
-	}
-	return time.Duration(val) * time.Second
+	return kit.Ternary(err != nil, 0, time.Duration(val)*time.Second)
 }
 
 type Settings struct {
@@ -277,7 +273,7 @@ func (s *Settings) ToSettingVariableSlice(visibility SettingVisibility, redactSe
 		}
 
 		value := cfgValue.Field(field.index).FieldByName("Value").String()
-		value = redactSettingValue(value, field.attrs, redactSensitiveValues)
+		value = kit.Ternary(value == "" || !redactSensitiveValues || !strings.Contains(field.attrs, "sensitive"), value, redactionMask)
 
 		settingVariable := SettingVariable{
 			Key:   field.key,
@@ -302,7 +298,7 @@ func fieldVisibleForSettingVisibilityInternal(field settingFieldMeta, visibility
 	}
 }
 
-func (s *Settings) FieldByKey(key string) (defaultValue string, isPublic bool, isSensitive bool, err error) {
+func (s *Settings) FieldByKey(key string) (defaultValue string, isPublic, isSensitive bool, err error) {
 	rv := reflect.ValueOf(s).Elem()
 	_, byKey := getSettingsFieldCacheInternal()
 
@@ -315,7 +311,7 @@ func (s *Settings) FieldByKey(key string) (defaultValue string, isPublic bool, i
 	return valueField.String(), field.isPublic, field.isSensitive, nil
 }
 
-func (s *Settings) UpdateField(key string, value string, noSensitive bool) error {
+func (s *Settings) UpdateField(key, value string, noSensitive bool) error {
 	rv := reflect.ValueOf(s).Elem()
 	_, byKey := getSettingsFieldCacheInternal()
 
@@ -335,15 +331,6 @@ func (s *Settings) UpdateField(key string, value string, noSensitive bool) error
 
 	valueField.SetString(value)
 	return nil
-}
-
-// helper keeps redaction logic in one place; behavior unchanged
-func redactSettingValue(value, attrs string, redact bool) string {
-	if value == "" || !redact || !strings.Contains(attrs, "sensitive") {
-		return value
-	}
-
-	return redactionMask
 }
 
 type SettingKeyNotFoundError struct {

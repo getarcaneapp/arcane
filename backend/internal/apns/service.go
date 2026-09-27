@@ -19,12 +19,7 @@ import (
 	"time"
 	"uuid"
 
-	"go.getarcane.app/kit/normalization"
-
 	"emperror.dev/errors"
-	"go.getarcane.app/sys/crypto"
-	"gorm.io/gorm"
-
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
@@ -35,6 +30,9 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/notifications"
 	apnstypes "github.com/getarcaneapp/arcane/types/v2/apns"
+	"go.getarcane.app/kit/normalization"
+	"go.getarcane.app/sys/crypto"
+	"gorm.io/gorm"
 )
 
 const (

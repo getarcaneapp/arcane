@@ -1,6 +1,7 @@
 package projects
 
 import (
+	"cmp"
 	"fmt"
 	"maps"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
 	"go.getarcane.app/builds/pkg/contextsource"
 	buildtypes "go.getarcane.app/builds/types"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 // ResolveBuildContext resolves a service build context against workingDir.
@@ -37,10 +39,7 @@ func ResolveBuildContext(workingDir string, svc composetypes.ServiceConfig, serv
 // ResolveDockerfilePath returns the configured Dockerfile path or Dockerfile.
 // The service config must have a non-nil Build field.
 func ResolveDockerfilePath(svc composetypes.ServiceConfig) string {
-	dockerfilePath := strings.TrimSpace(svc.Build.Dockerfile)
-	if dockerfilePath == "" {
-		dockerfilePath = "Dockerfile"
-	}
+	dockerfilePath := cmp.Or(strings.TrimSpace(svc.Build.Dockerfile), "Dockerfile")
 
 	return dockerfilePath
 }
@@ -89,51 +88,19 @@ func UlimitsFromCompose(ulimits map[string]*composetypes.UlimitsConfig) map[stri
 		}
 	}
 
-	if len(out) == 0 {
-		return nil
-	}
-
-	return out
+	return kit.Ternary(len(out) == 0, nil, out)
 }
 
 // MergeBuildTags combines a primary image tag with compose tags, trimming blanks
 // and de-duplicating while preserving order (primary first).
 func MergeBuildTags(primaryImage string, composeTags []string) []string {
-	seen := map[string]struct{}{}
-	merged := make([]string, 0, len(composeTags)+1)
-
-	appendTag := func(tag string) {
-		tag = strings.TrimSpace(tag)
-		if tag == "" {
-			return
-		}
-		if _, ok := seen[tag]; ok {
-			return
-		}
-		seen[tag] = struct{}{}
-		merged = append(merged, tag)
-	}
-
-	appendTag(primaryImage)
-	for _, tag := range composeTags {
-		appendTag(tag)
-	}
-
-	return merged
+	return kit.Unique(kit.TrimNonEmpty(append([]string{primaryImage}, composeTags...)))
 }
 
 // BuildPlatformsFromCompose returns the build platforms for a service, falling
 // back to the service platform when no build platforms are declared.
 func BuildPlatformsFromCompose(svc composetypes.ServiceConfig) []string {
-	platforms := make([]string, 0, len(svc.Build.Platforms)+1)
-	for _, platform := range svc.Build.Platforms {
-		platform = strings.TrimSpace(platform)
-		if platform == "" {
-			continue
-		}
-		platforms = append(platforms, platform)
-	}
-
+	platforms := kit.TrimNonEmpty(svc.Build.Platforms)
 	if len(platforms) == 0 {
 		if servicePlatform := strings.TrimSpace(svc.Platform); servicePlatform != "" {
 			platforms = append(platforms, servicePlatform)
@@ -149,14 +116,8 @@ func BuildLocalImageTag(projectID, projectName, serviceName string) string {
 	if len(shortID) > 8 {
 		shortID = shortID[:8]
 	}
-	projectPart := SanitizeImageComponent(projectName)
-	if projectPart == "" {
-		projectPart = "project"
-	}
-	servicePart := SanitizeImageComponent(serviceName)
-	if servicePart == "" {
-		servicePart = "service"
-	}
+	projectPart := cmp.Or(SanitizeImageComponent(projectName), "project")
+	servicePart := cmp.Or(SanitizeImageComponent(serviceName), "service")
 
 	return fmt.Sprintf("%s/%s-%s/%s:latest", imageref.LocalBuildRegistry, projectPart, shortID, servicePart)
 }
@@ -188,11 +149,7 @@ func resolveEffectiveBuildProviderInternal(override, defaultProvider string) str
 		return provider
 	}
 
-	provider = strings.ToLower(strings.TrimSpace(defaultProvider))
-
-	if provider == "" {
-		provider = "local"
-	}
+	provider = cmp.Or(strings.ToLower(strings.TrimSpace(defaultProvider)), "local")
 
 	return provider
 }

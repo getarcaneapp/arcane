@@ -1,19 +1,20 @@
 package scheduler
 
 import (
+	"cmp"
 	"context"
 	"log/slog"
 
-	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
-
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	scheduleutil "github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/schedule"
+	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 )
 
-const DockerClientRefreshJobName = "docker-client-refresh"
-const dockerClientRefreshDefaultSchedule = "0 */5 * * * *"
+const (
+	DockerClientRefreshJobName         = "docker-client-refresh"
+	dockerClientRefreshDefaultSchedule = "0 */5 * * * *"
+)
 
 // DockerClientRefreshJob keeps the cached Docker client aligned with the daemon
 // API version after daemon restarts or upgrades.
@@ -35,10 +36,7 @@ func (j *DockerClientRefreshJob) Name() string {
 }
 
 func (j *DockerClientRefreshJob) Schedule(ctx context.Context) string {
-	schedule := j.settingsService.GetStringSetting(ctx, "dockerClientRefreshInterval", dockerClientRefreshDefaultSchedule)
-	if schedule == "" {
-		schedule = dockerClientRefreshDefaultSchedule
-	}
+	schedule := cmp.Or(j.settingsService.GetStringSetting(ctx, "dockerClientRefreshInterval", dockerClientRefreshDefaultSchedule), dockerClientRefreshDefaultSchedule)
 
 	parser := scheduleutil.Parser()
 	if _, err := parser.Parse(schedule); err != nil {

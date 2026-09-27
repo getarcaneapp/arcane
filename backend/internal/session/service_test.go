@@ -1,19 +1,18 @@
 package session
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
-
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-
 	"context"
 	"testing"
 	"time"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/types/v2/auth"
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
+	kit "go.getarcane.app/kit/pkg"
 	"gorm.io/gorm"
 )
 
@@ -33,7 +32,7 @@ func TestSessionService_RotateRefreshTokenRequiresCurrentHash(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, newJTI)
 	require.NotEqual(t, refreshJTI, newJTI)
-	require.Equal(t, hashRefreshJTIInternal(newJTI), rotated.RefreshTokenHash)
+	require.Equal(t, kit.SHA256Hex(newJTI), rotated.RefreshTokenHash)
 
 	_, _, err = sessionSvc.RotateRefreshToken(ctx, session.ID, refreshJTI, auth.SessionMeta{})
 	require.ErrorIs(t, err, common.ErrInvalidToken)

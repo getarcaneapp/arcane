@@ -1,16 +1,14 @@
 package middleware
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-
 	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/labstack/echo/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -351,9 +349,9 @@ func TestEnvironmentMiddleware_ForwardsResolvedIconCatalogHeaderOnly(t *testing.
 			var forwardedInitiator string
 			var forwardedName string
 			backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				forwarded = r.Header.Get(utils.HeaderIconCatalog)
-				forwardedInitiator = r.Header.Get(utils.HeaderUpdateInitiatorID)
-				forwardedName = r.Header.Get(utils.HeaderUpdateInitiatorName)
+				forwarded = r.Header.Get(HeaderIconCatalog)
+				forwardedInitiator = r.Header.Get(HeaderUpdateInitiatorID)
+				forwardedName = r.Header.Get(HeaderUpdateInitiatorName)
 				w.WriteHeader(http.StatusOK)
 			}))
 			defer backend.Close()
@@ -384,10 +382,10 @@ func TestEnvironmentMiddleware_ForwardsResolvedIconCatalogHeaderOnly(t *testing.
 			})
 
 			req := httptest.NewRequest(http.MethodPost, "/api/environments/env-remote/containers/container-1/update", nil)
-			req.Header.Set(utils.HeaderUpdateInitiatorID, "spoofed")
-			req.Header.Set(utils.HeaderUpdateInitiatorName, "spoofed")
+			req.Header.Set(HeaderUpdateInitiatorID, "spoofed")
+			req.Header.Set(HeaderUpdateInitiatorName, "spoofed")
 			if tt.clientSupplied != "" {
-				req.Header.Set(utils.HeaderIconCatalog, tt.clientSupplied)
+				req.Header.Set(HeaderIconCatalog, tt.clientSupplied)
 			}
 			recorder := httptest.NewRecorder()
 			router.ServeHTTP(recorder, req)

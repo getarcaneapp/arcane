@@ -3,21 +3,20 @@
 package federated
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
-
 	"context"
 	"strings"
 	"uuid"
 
 	"emperror.dev/errors"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
 	"gorm.io/gorm"
 )
 
 // CreatePlaywrightCredential creates the service identity, credential, and role
 // assignment required by the federated-auth end-to-end flow in one transaction.
-func (s *FederatedCredentialService) CreatePlaywrightCredential(ctx context.Context, issuerURL string, audiences []string, subject string, roleID string, tokenTTLSeconds int) (string, error) {
+func (s *FederatedCredentialService) CreatePlaywrightCredential(ctx context.Context, issuerURL string, audiences []string, subject, roleID string, tokenTTLSeconds int) (string, error) {
 	if s == nil || s.db == nil {
 		return "", errors.New("federated credential service is not available")
 	}

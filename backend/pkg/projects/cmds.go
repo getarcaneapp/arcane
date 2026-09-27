@@ -1,6 +1,7 @@
 package projects
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"io"
@@ -8,7 +9,6 @@ import (
 	"time"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
-
 	"github.com/docker/compose/v5/pkg/api"
 	"github.com/docker/compose/v5/pkg/compose"
 	docker "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
@@ -17,6 +17,7 @@ import (
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/registry"
 	"github.com/moby/moby/client"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 // defaultComposeTimeout is applied to compose operations that have been
@@ -67,7 +68,7 @@ func ComposeStop(ctx context.Context, proj *composetypes.Project, services []str
 	return c.svc.Stop(stopCtx, proj.Name, api.StopOptions{Services: services})
 }
 
-func ComposeUp(ctx context.Context, proj *composetypes.Project, services []string, removeOrphans bool, forceRecreate bool, recreateVolumes bool, authConfigs map[string]registry.AuthConfig, waitTimeout time.Duration) error {
+func ComposeUp(ctx context.Context, proj *composetypes.Project, services []string, removeOrphans, forceRecreate, recreateVolumes bool, authConfigs map[string]registry.AuthConfig, waitTimeout time.Duration) error {
 	selected, err := SelectServices(proj, services)
 	if err != nil {
 		return err
@@ -134,11 +135,8 @@ func ComposeCreate(ctx context.Context, proj *composetypes.Project, services []s
 	return c.svc.Create(createCtx, selected, api.CreateOptions{Services: services, Recreate: api.RecreateForce, RecreateDependencies: api.RecreateDiverged})
 }
 
-func composeUpOptionsInternal(proj *composetypes.Project, services []string, removeOrphans bool, forceRecreate bool, waitTimeout time.Duration, envOpts ComposeEnvOptions) (api.CreateOptions, api.StartOptions) {
-	recreatePolicy := api.RecreateDiverged
-	if forceRecreate {
-		recreatePolicy = api.RecreateForce
-	}
+func composeUpOptionsInternal(proj *composetypes.Project, services []string, removeOrphans, forceRecreate bool, waitTimeout time.Duration, envOpts ComposeEnvOptions) (api.CreateOptions, api.StartOptions) {
+	recreatePolicy := kit.Ternary(forceRecreate, api.RecreateForce, api.RecreateDiverged)
 
 	upOptions := api.CreateOptions{
 		Services:             services,
@@ -264,9 +262,7 @@ func FindComposeServiceContainerID(ctx context.Context, dockerHost, projectName,
 		if c.Service != serviceName {
 			continue
 		}
-		if firstMatch == "" {
-			firstMatch = c.ID
-		}
+		firstMatch = cmp.Or(firstMatch, c.ID)
 		if c.State == "running" {
 			return c.ID, nil
 		}

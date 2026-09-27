@@ -8,7 +8,6 @@ import (
 	"net/http"
 
 	"emperror.dev/errors"
-
 	"github.com/labstack/echo/v5"
 	"go.getarcane.app/kit/normalization"
 )

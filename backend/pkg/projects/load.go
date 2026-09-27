@@ -1,6 +1,7 @@
 package projects
 
 import (
+	"cmp"
 	"context"
 	"log/slog"
 	"maps"
@@ -549,15 +550,11 @@ func harvestRawSourcesInternal(ctx context.Context, cfg composetypes.ConfigDetai
 	}
 
 	for name, secret := range project.Secrets {
-		if secret.File != "" {
-			rawSources["secret:"+name] = secret.File
-		}
+		rawSources["secret:"+name] = cmp.Or(secret.File, rawSources["secret:"+name])
 	}
 
 	for name, config := range project.Configs {
-		if config.File != "" {
-			rawSources["config:"+name] = config.File
-		}
+		rawSources["config:"+name] = cmp.Or(config.File, rawSources["config:"+name])
 	}
 
 	return rawSources
@@ -584,7 +581,7 @@ func recoverComposeLoadPanicInternal(ctx context.Context, source string, project
 	}
 }
 
-func applyCustomLabelsInternal(projectName string, serviceName string, workingDirectory string, composeFiles []string) composetypes.Labels {
+func applyCustomLabelsInternal(projectName, serviceName, workingDirectory string, composeFiles []string) composetypes.Labels {
 	return composetypes.Labels{
 		api.ProjectLabel:     projectName,
 		api.ServiceLabel:     serviceName,
@@ -686,7 +683,7 @@ func recordComposeDependenciesInternal(project *composetypes.Project, dependenci
 
 // ValidateComposeContentForUpdate validates proposed editor content without persisting it.
 // Missing includes are tolerated here; deployment uses strict executable loading.
-func ValidateComposeContentForUpdate(ctx context.Context, projectsDirectory, projectPath, projectName, composeContent string, effectiveEnvContent *string, overrideContent *string, overrideFileName string, lenient bool) (err error) {
+func ValidateComposeContentForUpdate(ctx context.Context, projectsDirectory, projectPath, projectName, composeContent string, effectiveEnvContent, overrideContent *string, overrideFileName string, lenient bool) (err error) {
 	defer func() {
 		if panicErr := emperror.Recover(recover()); panicErr != nil {
 			err = errors.WrapIf(panicErr, "compose file contains invalid syntax")
@@ -715,10 +712,7 @@ func ValidateComposeContentForUpdate(ctx context.Context, projectsDirectory, pro
 		// that exact path is listed in the selection (docker skips auto-overrides
 		// for an explicit file set); a same-named file in a subdirectory is not
 		// the managed override.
-		overrideName := strings.TrimSpace(overrideFileName)
-		if overrideName == "" {
-			overrideName = DefaultComposeOverrideFileName
-		}
+		overrideName := cmp.Or(strings.TrimSpace(overrideFileName), DefaultComposeOverrideFileName)
 		overridePath := ""
 		if absProjectPath, absErr := filepath.Abs(filepath.Clean(projectPath)); absErr == nil {
 			overridePath = filepath.Join(absProjectPath, overrideName)
@@ -741,10 +735,7 @@ func ValidateComposeContentForUpdate(ctx context.Context, projectsDirectory, pro
 		// compose` would deploy it. Overrides can add services and are layered on
 		// top (listed after the base so the override wins).
 		if overrideContent != nil {
-			overrideName := strings.TrimSpace(overrideFileName)
-			if overrideName == "" {
-				overrideName = DefaultComposeOverrideFileName
-			}
+			overrideName := cmp.Or(strings.TrimSpace(overrideFileName), DefaultComposeOverrideFileName)
 			configFiles = append(configFiles, composetypes.ConfigFile{
 				Filename: filepath.Join(projectPath, overrideName),
 				Content:  []byte(*overrideContent),

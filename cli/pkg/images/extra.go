@@ -2,6 +2,7 @@ package images
 
 import (
 	"bufio"
+	"cmp"
 	"encoding/json/v2"
 	"fmt"
 	"io"
@@ -13,7 +14,6 @@ import (
 	"time"
 
 	"emperror.dev/errors"
-
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/logger"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
@@ -644,10 +644,7 @@ func splitImageRef(ref string) (string, string) {
 // reference, replacing separators with underscores.
 func exportFileName(imageName string) string {
 	name := strings.NewReplacer("/", "_", ":", "_", "@", "_").Replace(strings.TrimSpace(imageName))
-	name = strings.Trim(name, "._-")
-	if name == "" {
-		name = "image"
-	}
+	name = cmp.Or(strings.Trim(name, "._-"), "image")
 	return name + ".tar"
 }
 

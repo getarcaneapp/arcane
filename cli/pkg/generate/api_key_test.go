@@ -28,7 +28,6 @@ func TestAPIKeyDefaultOutput(t *testing.T) {
 
 	require.NotContains(t, out, "ADMIN_STATIC_API_KEY",
 		"expected raw arc_ key in output, got: %q", out)
-
 }
 
 func TestGenerateAPIKeyProducesArcanePrefix(t *testing.T) {
@@ -42,5 +41,4 @@ func TestGenerateAPIKeyProducesArcanePrefix(t *testing.T) {
 
 	require.Len(t, apiKey, 68,
 		"expected 68-character key, got %d (%q)", len(apiKey), apiKey)
-
 }

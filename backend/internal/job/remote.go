@@ -2,8 +2,6 @@ package job
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json/v2"
 	"net/http"
 	"net/url"
@@ -16,11 +14,14 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/jobschedule"
 	"github.com/getarcaneapp/arcane/types/v2/meta"
 	st "github.com/getarcaneapp/arcane/types/v2/scheduler"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 func remoteFailureInternal(err error) (st.Outcome, error) {
 	var status *remenv.StatusError
-	if errors.As(err, &status) && status.StatusCode >= 400 && status.StatusCode < 500 && status.StatusCode != http.StatusRequestTimeout && status.StatusCode != http.StatusTooManyRequests {
+	rejected := errors.As(err, &status) && status.StatusCode >= 400 && status.StatusCode < 500 &&
+		status.StatusCode != http.StatusRequestTimeout && status.StatusCode != http.StatusTooManyRequests
+	if rejected {
 		return st.Outcome{Status: st.NeedsAttention, Message: "Remote agent rejected the request; check configuration and permissions"}, err
 	}
 	return st.Outcome{Status: st.Waiting, Message: "Waiting for environment"}, err
@@ -124,8 +125,7 @@ func (s *JobService) ListRemoteJobs(ctx context.Context, environmentID string) (
 	if _, err := s.environment.GetEnvironmentByID(ctx, environmentID); err != nil {
 		return nil, err
 	}
-	digest := sha256.Sum256([]byte(environmentID))
-	key := "jobs-catalog/" + hex.EncodeToString(digest[:])
+	key := "jobs-catalog/" + kit.SHA256Hex(environmentID)
 	var catalog jobschedule.JobListResponse
 	remoteErr := s.environment.ProxyJSONRequest(ctx, environmentID, http.MethodGet, "/api/environments/0/jobs", nil, &catalog)
 	if remoteErr == nil {

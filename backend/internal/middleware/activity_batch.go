@@ -4,7 +4,6 @@ import (
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
-
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 )
 
@@ -14,7 +13,7 @@ import (
 // ignored by utils.WithActivityBatchID.
 func NewActivityBatchID() func(ctx huma.Context, next func(huma.Context)) {
 	return func(ctx huma.Context, next func(huma.Context)) {
-		if batchID := strings.TrimSpace(ctx.Header(utils.HeaderActivityBatchID)); batchID != "" {
+		if batchID := strings.TrimSpace(ctx.Header(HeaderActivityBatchID)); batchID != "" {
 			ctx = huma.WithContext(ctx, utils.WithActivityBatchID(ctx.Context(), batchID))
 		}
 		next(ctx)

@@ -9,10 +9,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/labstack/echo/v5"
-
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
+	"github.com/labstack/echo/v5"
 	"github.com/stretchr/testify/require"
 )
 
@@ -45,7 +44,6 @@ func TestProxyPermissionDeniedBlocksWriteForReadOnlyUser(t *testing.T) {
 
 	require.True(t, m.proxyPermissionDenied(c, ps, proxyTestEnvID),
 		"expected restart to be denied for a read-only user")
-
 }
 
 func TestProxyPermissionDeniedAllowsWriteForPermittedUser(t *testing.T) {
@@ -57,7 +55,6 @@ func TestProxyPermissionDeniedAllowsWriteForPermittedUser(t *testing.T) {
 
 	require.False(t, m.proxyPermissionDenied(c, ps, proxyTestEnvID),
 		"expected restart to be allowed for a user with containers:restart")
-
 }
 
 func TestProxyPermissionDeniedAllowsRead(t *testing.T) {
@@ -69,7 +66,6 @@ func TestProxyPermissionDeniedAllowsRead(t *testing.T) {
 
 	require.False(t, m.proxyPermissionDenied(c, ps, proxyTestEnvID),
 		"expected list to be allowed for a user with containers:list")
-
 }
 
 func TestProxyPermissionDeniedDeniesPermissionFromDifferentEnv(t *testing.T) {
@@ -82,7 +78,6 @@ func TestProxyPermissionDeniedDeniesPermissionFromDifferentEnv(t *testing.T) {
 
 	require.True(t, m.proxyPermissionDenied(c, ps, proxyTestEnvID),
 		"expected denial: permission is scoped to a different environment")
-
 }
 
 func TestProxyPermissionDeniedSudoBypasses(t *testing.T) {
@@ -91,7 +86,6 @@ func TestProxyPermissionDeniedSudoBypasses(t *testing.T) {
 
 	require.False(t, m.proxyPermissionDenied(c, authz.SudoPermissionSet(), proxyTestEnvID),
 		"expected sudo permission set to bypass the permission check")
-
 }
 
 func TestProxyPermissionDeniedDefaultDeniesUnmappedRoute(t *testing.T) {
@@ -103,7 +97,6 @@ func TestProxyPermissionDeniedDefaultDeniesUnmappedRoute(t *testing.T) {
 
 	require.True(t, m.proxyPermissionDenied(c, ps, proxyTestEnvID),
 		"expected an unmapped proxied route to be denied by default")
-
 }
 
 func TestProxyPermissionDeniedAllowsPublicRoute(t *testing.T) {
@@ -114,7 +107,6 @@ func TestProxyPermissionDeniedAllowsPublicRoute(t *testing.T) {
 
 	require.False(t, m.proxyPermissionDenied(c, ps, proxyTestEnvID),
 		"expected an explicitly public route to be allowed for any authenticated caller")
-
 }
 
 func volumeWorkspaceMatcher() *authz.PermissionMatcher {
@@ -237,7 +229,6 @@ func TestProxyPermissionDeniedWSTerminalRequiresExec(t *testing.T) {
 
 	require.False(t, m.proxyPermissionDenied(c, ps, proxyTestEnvID),
 		"expected WS terminal to be allowed with containers:exec")
-
 }
 
 func TestProxyPermissionDeniedResourceSortRequiresRead(t *testing.T) {

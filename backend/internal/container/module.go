@@ -4,7 +4,6 @@ package container
 
 import (
 	"github.com/danielgtaylor/huma/v2"
-
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"

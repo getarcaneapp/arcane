@@ -16,7 +16,6 @@ func TestConfigLimitForRepos(t *testing.T) {
 			require.Equal(t, 42, got,
 				"LimitFor(%q) = %d, want 42", resource, got)
 		}
-
 	}
 }
 
@@ -33,6 +32,5 @@ func TestNormalizePaginatedResourceGitOpsSyncAliases(t *testing.T) {
 			require.Equal(t, "gitops-syncs", got,
 				"NormalizePaginatedResource(%q) = %q, want %q", resource, got, "gitops-syncs")
 		}
-
 	}
 }

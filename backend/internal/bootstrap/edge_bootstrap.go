@@ -1,17 +1,15 @@
 package bootstrap
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-
 	"context"
 	"encoding/json/v2"
 	"fmt"
 	"log/slog"
 
 	"emperror.dev/errors"
-
 	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
@@ -19,6 +17,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	notificationdto "github.com/getarcaneapp/arcane/types/v2/notification"
 	"github.com/labstack/echo/v5"
+	kit "go.getarcane.app/kit/pkg"
 	"go.uber.org/fx"
 )
 
@@ -76,11 +75,11 @@ func registerEdgeTunnelRoutes(
 			Severity:      event.EventSeverity(evt.Severity),
 			Title:         evt.Title,
 			Description:   evt.Description,
-			ResourceType:  optionalStringPtr(evt.ResourceType),
-			ResourceID:    optionalStringPtr(evt.ResourceID),
-			ResourceName:  optionalStringPtr(evt.ResourceName),
-			UserID:        optionalStringPtr(evt.UserID),
-			Username:      optionalStringPtr(evt.Username),
+			ResourceType:  new(evt.ResourceType),
+			ResourceID:    new(evt.ResourceID),
+			ResourceName:  new(evt.ResourceName),
+			UserID:        new(evt.UserID),
+			Username:      new(evt.Username),
 			EnvironmentID: &envID,
 			Metadata:      metadata,
 		}
@@ -113,7 +112,7 @@ func registerEdgeTunnelRoutes(
 		return env.Name, nil
 	})
 	server.SetEventCallback(eventCallback)
-	server.SetEnrollmentCallback(func(ctx context.Context, envID, remoteAddr string, certIssued bool, caGenerated bool, reenrolled bool) {
+	server.SetEnrollmentCallback(func(ctx context.Context, envID, remoteAddr string, certIssued, caGenerated, reenrolled bool) {
 		if eventService == nil {
 			return
 		}
@@ -125,7 +124,7 @@ func registerEdgeTunnelRoutes(
 		envNameCopy := envName
 		_, _ = eventService.CreateEvent(ctx, event.CreateEventRequest{
 			Type:          event.EventTypeEnvironmentMTLSEnroll,
-			Severity:      edgeMTLSEnrollmentSeverityInternal(reenrolled),
+			Severity:      kit.Ternary(reenrolled, event.EventSeverityWarning, event.EventSeverityInfo),
 			Title:         "Edge mTLS enrollment",
 			Description:   "Edge agent completed mTLS enrollment from " + remoteAddr,
 			ResourceType:  new("environment"),
@@ -164,7 +163,7 @@ func registerEdgeTunnelRoutes(
 	return server
 }
 
-func createEdgeMTLSIssueEventsInternal(ctx context.Context, eventService *event.EventService, envID string, envName string, remoteAddr string, certIssued bool, caGenerated bool, reenrolled bool) {
+func createEdgeMTLSIssueEventsInternal(ctx context.Context, eventService *event.EventService, envID, envName, remoteAddr string, certIssued, caGenerated, reenrolled bool) {
 	if eventService == nil {
 		return
 	}
@@ -180,7 +179,7 @@ func createEdgeMTLSIssueEventsInternal(ctx context.Context, eventService *event.
 	if certIssued {
 		_, _ = eventService.CreateEvent(ctx, event.CreateEventRequest{
 			Type:          event.EventTypeEnvironmentMTLSCertIssued,
-			Severity:      edgeMTLSCertIssuedSeverityInternal(reenrolled),
+			Severity:      kit.Ternary(reenrolled, event.EventSeverityWarning, event.EventSeverityInfo),
 			Title:         "Edge mTLS certificate issued",
 			Description:   fmt.Sprintf("Arcane issued an edge mTLS client certificate for environment '%s'", envName),
 			ResourceType:  new("environment"),
@@ -190,27 +189,6 @@ func createEdgeMTLSIssueEventsInternal(ctx context.Context, eventService *event.
 			Metadata:      database.JSON{"remoteAddr": remoteAddr, "kind": "client", "reenrollment": reenrolled},
 		})
 	}
-}
-
-func edgeMTLSEnrollmentSeverityInternal(reenrolled bool) event.EventSeverity {
-	if reenrolled {
-		return event.EventSeverityWarning
-	}
-	return event.EventSeverityInfo
-}
-
-func edgeMTLSCertIssuedSeverityInternal(reenrolled bool) event.EventSeverity {
-	if reenrolled {
-		return event.EventSeverityWarning
-	}
-	return event.EventSeverityInfo
-}
-
-func optionalStringPtr(value string) *string {
-	if value == "" {
-		return nil
-	}
-	return &value
 }
 
 // handleEdgeStatusChange records a tunnel up/down transition: it updates the

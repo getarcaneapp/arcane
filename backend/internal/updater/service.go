@@ -1,6 +1,7 @@
 package updater
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"io"
@@ -11,13 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
-	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
-
-	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
-
 	"emperror.dev/errors"
-
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
@@ -31,16 +26,20 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	projectspkg "github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/notifications"
+	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
+	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	arcaneupdater "github.com/getarcaneapp/arcane/types/v2/updater"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 	"github.com/samber/mo"
+	"go.getarcane.app/docker/compat"
+	kit "go.getarcane.app/kit/pkg"
 	"go.getarcane.app/sys/cgroup"
 	"go.getarcane.app/updater"
 	"go.getarcane.app/updater/labels"
@@ -145,10 +144,7 @@ func (s *UpdaterService) configInternal() updater.Config {
 // container is missing the Arcane labels. Empty when not running in Docker.
 func selfContainerIDInternal() string {
 	id, err := cgroup.CurrentContainerID()
-	if err != nil {
-		return ""
-	}
-	return id
+	return kit.Ternary(err != nil, "", id)
 }
 
 func (s *UpdaterService) engineInternal() *updater.Service {
@@ -331,12 +327,7 @@ func (s *UpdaterService) applyScopedUpdatesInternal(ctx context.Context, options
 // resolveScopedContainerIDsInternal maps a scoped options payload to the
 // container IDs it covers.
 func (s *UpdaterService) resolveScopedContainerIDsInternal(ctx context.Context, options arcaneupdater.Options) ([]string, error) {
-	requested := make([]string, 0, len(options.ResourceIds))
-	for _, id := range options.ResourceIds {
-		if trimmed := strings.TrimSpace(id); trimmed != "" {
-			requested = append(requested, trimmed)
-		}
-	}
+	requested := kit.TrimNonEmpty(options.ResourceIds)
 	if len(requested) == 0 {
 		return nil, nil
 	}
@@ -538,7 +529,7 @@ func (s *UpdaterService) GetHistory(ctx context.Context, limit int) ([]AutoUpdat
 }
 
 // RestartContainersUsingOldIDs restarts containers matching old image IDs or refs.
-func (s *UpdaterService) RestartContainersUsingOldIDs(ctx context.Context, oldIDToNewRef map[string]string, oldRefToNewRef map[string]string) ([]arcaneupdater.ResourceResult, error) {
+func (s *UpdaterService) RestartContainersUsingOldIDs(ctx context.Context, oldIDToNewRef, oldRefToNewRef map[string]string) ([]arcaneupdater.ResourceResult, error) {
 	results, err := s.engineInternal().RestartContainersUsingOldImages(ctx, oldIDToNewRef, oldRefToNewRef)
 	return resourceResultsFromModuleInternal(results), err
 }
@@ -551,7 +542,7 @@ func (s *UpdaterService) TriggerSelfUpdateViaCLI(ctx context.Context, source, co
 	return s.TriggerSelfUpdate(ctx, updater.SelfUpdateTarget{
 		ContainerID:   containerID,
 		ContainerName: containerName,
-		InstanceType:  instanceTypeFromLabelsInternal(labelMap),
+		InstanceType:  kit.Ternary(labels.IsArcaneAgentContainer(labelMap), "agent", "server"),
 		Labels:        labelMap,
 	})
 }
@@ -585,60 +576,26 @@ func (s *UpdaterService) recordAutoUpdateEventInternal(ctx context.Context, seve
 	}
 }
 
-func instanceTypeFromLabelsInternal(labelMap map[string]string) string {
-	if labels.IsArcaneAgentContainer(labelMap) {
-		return "agent"
-	}
-	return "server"
-}
-
 func autoUpdateEventTitleInternal(phase string, metadata database.JSON) string {
 	switch phase {
 	case "start":
 		return "Auto-update run started"
 	case "image_pull", "image":
-		image := strings.TrimSpace(fmt.Sprint(metadata["imageNew"]))
-		if image == "" {
-			image = strings.TrimSpace(fmt.Sprint(metadata["imageOld"]))
-		}
-		if image != "" {
-			return "Auto-update: image pull " + image
-		}
-		return "Auto-update: image pull"
+		image := cmp.Or(kit.ToString(metadata["imageNew"]), kit.ToString(metadata["imageOld"]))
+		return kit.Ternary(image != "", "Auto-update: image pull "+image, "Auto-update: image pull")
 	case "image_prune":
-		imageID := strings.TrimSpace(fmt.Sprint(metadata["imageId"]))
-		if imageID != "" {
-			return "Auto-update: image prune " + imageID
-		}
-		return "Auto-update: image prune"
+		imageID := kit.ToString(metadata["imageId"])
+		return kit.Ternary(imageID != "", "Auto-update: image prune "+imageID, "Auto-update: image prune")
 	case "container":
-		name := strings.TrimSpace(fmt.Sprint(metadata["resourceName"]))
-		if name == "" {
-			name = strings.TrimSpace(fmt.Sprint(metadata["container"]))
-		}
-		if name == "" {
-			name = strings.TrimSpace(fmt.Sprint(metadata["containerId"]))
-		}
-		if name != "" {
-			return "Auto-update: container " + name
-		}
-		return "Auto-update: container"
+		name := cmp.Or(kit.ToString(metadata["resourceName"]), kit.ToString(metadata["container"]), kit.ToString(metadata["containerId"]))
+		return kit.Ternary(name != "", "Auto-update: container "+name, "Auto-update: container")
 	case "project":
-		name := strings.TrimSpace(fmt.Sprint(metadata["projectName"]))
-		if name == "" {
-			name = strings.TrimSpace(fmt.Sprint(metadata["projectId"]))
-		}
-		if name != "" {
-			return "Auto-update: project " + name
-		}
-		return "Auto-update: project"
+		name := cmp.Or(kit.ToString(metadata["projectName"]), kit.ToString(metadata["projectId"]))
+		return kit.Ternary(name != "", "Auto-update: project "+name, "Auto-update: project")
 	case "complete":
 		return "Auto-update run completed"
 	default:
-		if phase != "" {
-			return "Auto-update: " + phase
-		}
-		return "Auto-update"
+		return kit.Ternary(phase != "", "Auto-update: "+phase, "Auto-update")
 	}
 }
 
@@ -727,7 +684,7 @@ func (s *UpdaterService) ExcludedContainers(ctx context.Context) ([]string, erro
 	if s.deps.Settings == nil {
 		return nil, nil
 	}
-	return utils.UniqueNonEmptyStrings(strings.Split(s.deps.Settings.GetStringSetting(ctx, "autoUpdateExcludedContainers", ""), ",")), nil
+	return kit.Unique(kit.TrimNonEmpty(strings.Split(s.deps.Settings.GetStringSetting(ctx, "autoUpdateExcludedContainers", ""), ","))), nil
 }
 
 // ProjectByComposeName resolves an Arcane project from a Docker Compose project name.
@@ -756,10 +713,7 @@ func (s *UpdaterService) UpdateServices(ctx context.Context, projectID string, s
 // TriggerSelfUpdate runs Arcane's CLI-backed self-update hook.
 func (s *UpdaterService) TriggerSelfUpdate(ctx context.Context, target updater.SelfUpdateTarget) error {
 	if s == nil || s.deps.SelfUpgrade == nil {
-		instanceType := strings.TrimSpace(target.InstanceType)
-		if instanceType == "" {
-			instanceType = "server"
-		}
+		instanceType := cmp.Or(strings.TrimSpace(target.InstanceType), "server")
 		return errors.Errorf("%s self-update requires CLI upgrade service", instanceType)
 	}
 
@@ -881,10 +835,7 @@ func (s *UpdaterService) RecordEvent(ctx context.Context, evt updater.Event) err
 		)
 	}
 
-	severity := event.EventSeverityInfo
-	if strings.EqualFold(evt.Severity, "error") {
-		severity = event.EventSeverityError
-	}
+	severity := kit.Ternary(strings.EqualFold(evt.Severity, "error"), event.EventSeverityError, event.EventSeverityInfo)
 	s.recordAutoUpdateEventInternal(ctx, severity, database.JSON{
 		"phase":        evt.Phase,
 		"resourceId":   evt.ResourceID,
@@ -958,7 +909,7 @@ func (s *UpdaterService) startSingleContainerUpdateActivityInternal(ctx context.
 	name := containerID
 	lookupCtx, cancelLookup := context.WithTimeout(ctx, 2*time.Second)
 	if dockerClient, dockerErr := s.DockerClient(lookupCtx); dockerErr == nil && dockerClient != nil {
-		if inspected, inspectErr := libarcane.ContainerInspectWithCompatibility(lookupCtx, dockerClient, containerID, client.ContainerInspectOptions{}); inspectErr == nil {
+		if inspected, inspectErr := compat.ContainerInspectWithCompatibility(lookupCtx, dockerClient, containerID, client.ContainerInspectOptions{}); inspectErr == nil {
 			if actualName := strings.TrimPrefix(strings.TrimSpace(inspected.Container.Name), "/"); actualName != "" {
 				name = actualName
 			}
@@ -1184,6 +1135,12 @@ func resourceResultsFromModuleInternal(results []updater.ResourceResult) []arcan
 // type. The engine now reports a single old/new image; Arcane's API carries
 // maps, which only ever held the "main" entry, so that shape is rebuilt here.
 func resourceResultFromModuleInternal(result updater.ResourceResult) arcaneupdater.ResourceResult {
+	mainImage := func(ref string) map[string]string {
+		if ref == "" {
+			return nil
+		}
+		return map[string]string{"main": ref}
+	}
 	return arcaneupdater.ResourceResult{
 		ResourceID:      result.ResourceID,
 		ResourceName:    result.ResourceName,
@@ -1191,18 +1148,11 @@ func resourceResultFromModuleInternal(result updater.ResourceResult) arcaneupdat
 		Status:          string(result.Status),
 		UpdateAvailable: result.UpdateAvailable,
 		UpdateApplied:   result.UpdateApplied,
-		OldImages:       mainImageMapInternal(result.OldImage),
-		NewImages:       mainImageMapInternal(result.NewImage),
+		OldImages:       mainImage(result.OldImage),
+		NewImages:       mainImage(result.NewImage),
 		Error:           result.Error,
 		Details:         result.Details,
 	}
-}
-
-func mainImageMapInternal(imageRef string) map[string]string {
-	if imageRef == "" {
-		return nil
-	}
-	return map[string]string{"main": imageRef}
 }
 
 func statusFromModuleInternal(status updater.Status) arcaneupdater.Status {
@@ -1368,7 +1318,7 @@ func (s *UpdaterService) collectUsedImagesFromContainersInternal(ctx context.Con
 			continue
 		}
 
-		inspectResult, inspectErr := libarcane.ContainerInspectWithCompatibility(ctx, dcli, summary.ID, client.ContainerInspectOptions{})
+		inspectResult, inspectErr := compat.ContainerInspectWithCompatibility(ctx, dcli, summary.ID, client.ContainerInspectOptions{})
 		if inspectErr != nil {
 			s.loggerInternal().DebugContext(ctx, "collectUsedImagesFromContainers: container inspect failed", "containerId", summary.ID, "error", inspectErr)
 			continue
@@ -1385,7 +1335,7 @@ func (s *UpdaterService) collectUsedImagesFromContainersInternal(ctx context.Con
 	return nil
 }
 
-func (s *UpdaterService) collectUsedImagesFromComposeContainersInternal(ctx context.Context, composeContainers []container.Summary, activeProjectNames map[string]struct{}, out map[string]struct{}) {
+func (s *UpdaterService) collectUsedImagesFromComposeContainersInternal(ctx context.Context, composeContainers []container.Summary, activeProjectNames, out map[string]struct{}) {
 	for _, summary := range composeContainers {
 		projectName := dockerutil.ComposeProjectLabel(summary.Labels)
 		if projectName == "" {
@@ -1424,10 +1374,7 @@ func (s *UpdaterService) normalizedTagsForContainerInternal(ctx context.Context,
 		addNormalizedImageUpdateRefInternal(ctx, seen, inspect.Config.Image, "normalizedTagsForContainer: skipping invalid config image reference", "imageId", inspect.Image)
 	}
 
-	out := make([]string, 0, len(seen))
-	for tag := range seen {
-		out = append(out, tag)
-	}
+	out := slices.Collect(maps.Keys(seen))
 	return out
 }
 

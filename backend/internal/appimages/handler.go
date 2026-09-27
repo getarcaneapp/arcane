@@ -8,6 +8,7 @@ import (
 
 	"emperror.dev/errors"
 	"github.com/danielgtaylor/huma/v2"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 // AppImagesHandler provides Huma-based application image endpoints.
@@ -105,10 +106,7 @@ func RegisterAppImages(api huma.API, appImagesService *ApplicationImagesService)
 
 // GetLogo returns the application logo image.
 func (h *AppImagesHandler) GetLogo(ctx context.Context, input *GetLogoInput) (*GetAppImageOutput, error) {
-	name := "logo"
-	if input.Full {
-		name = "logo-full"
-	}
+	name := kit.Ternary(input.Full, "logo-full", "logo")
 	if input.Animated {
 		name += "-animated"
 	}
@@ -149,7 +147,7 @@ func (h *AppImagesHandler) getImageByFilenameInternal(filename string) (*GetAppI
 	return h.getImage(name)
 }
 
-func (h *AppImagesHandler) getImageWithColor(name string, colorOverride string, loop bool) (*GetAppImageOutput, error) {
+func (h *AppImagesHandler) getImageWithColor(name, colorOverride string, loop bool) (*GetAppImageOutput, error) {
 	imageData, mimeType, err := h.appImagesService.GetImageWithColor(name, colorOverride, loop)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to retrieve image").Error())
@@ -157,10 +155,11 @@ func (h *AppImagesHandler) getImageWithColor(name string, colorOverride string, 
 
 	// Always disable logo caching so theme/logo updates are reflected immediately.
 	// Keep cache for static app images that do not change at runtime.
-	cacheControl := "public, max-age=900, stale-while-revalidate=86400"
-	if IsLogoVariant(name) || colorOverride != "" {
-		cacheControl = "no-cache, no-store, must-revalidate"
-	}
+	cacheControl := kit.Ternary(
+		IsLogoVariant(name) || colorOverride != "",
+		"no-cache, no-store, must-revalidate",
+		"public, max-age=900, stale-while-revalidate=86400",
+	)
 
 	return &GetAppImageOutput{
 		ContentType:         mimeType,

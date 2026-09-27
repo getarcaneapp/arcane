@@ -1,6 +1,7 @@
 package oidc
 
 import (
+	"cmp"
 	"context"
 	"crypto/tls"
 	"encoding/base64"
@@ -14,20 +15,17 @@ import (
 	"sync"
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/auth"
-
 	"emperror.dev/errors"
-
 	"github.com/coreos/go-oidc/v3/oidc"
-	"github.com/samber/hot"
-	"golang.org/x/oauth2"
-
+	"github.com/getarcaneapp/arcane/backend/v2/internal/auth"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/jwtclaims"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/oidcjwk"
 	authtypes "github.com/getarcaneapp/arcane/types/v2/auth"
+	"github.com/samber/hot"
+	kit "go.getarcane.app/kit/pkg"
+	"golang.org/x/oauth2"
 )
 
 type OidcService struct {
@@ -205,15 +203,7 @@ func (s *OidcService) GetMobileRedirectAllowlist(ctx context.Context) []string {
 	if s.settingsService != nil {
 		raw = s.settingsService.GetStringSetting(ctx, "oidcMobileRedirectUris", raw)
 	}
-	parts := strings.Split(raw, ",")
-	allowlist := make([]string, 0, len(parts))
-	for _, p := range parts {
-		trimmed := strings.TrimSpace(p)
-		if trimmed != "" {
-			allowlist = append(allowlist, trimmed)
-		}
-	}
-	return allowlist
+	return kit.TrimNonEmpty(strings.Split(raw, ","))
 }
 
 // ValidateMobileRedirectURI returns nil if uri exactly matches one of the
@@ -229,7 +219,7 @@ func (s *OidcService) ValidateMobileRedirectURI(ctx context.Context, uri string)
 	return errors.Errorf("mobile redirect URI %q is not in the configured allowlist", uri)
 }
 
-func (s *OidcService) GenerateAuthURL(ctx context.Context, redirectTo string, origin string, mobileRedirectURI string) (string, string, error) {
+func (s *OidcService) GenerateAuthURL(ctx context.Context, redirectTo, origin, mobileRedirectURI string) (string, string, error) {
 	oidcConfig, err := s.getEffectiveConfigInternal(ctx)
 	if err != nil {
 		slog.Error("GenerateAuthURL: failed to get OIDC config", "error", err)
@@ -246,9 +236,9 @@ func (s *OidcService) GenerateAuthURL(ctx context.Context, redirectTo string, or
 		}
 	}
 
-	state := utils.GenerateRandomString(32)
-	nonce := utils.GenerateRandomString(32)
-	codeVerifier := utils.GenerateRandomString(128)
+	state := kit.RandomString(32)
+	nonce := kit.RandomString(32)
+	codeVerifier := kit.RandomString(128)
 
 	oauth2Config, err := s.getOauth2ConfigInternal(oidcConfig, provider, origin, mobileRedirectURI)
 	if err != nil {
@@ -339,7 +329,7 @@ func (s *OidcService) discoverProviderInternal(ctx context.Context, issuer strin
 	return nil, issuer, err
 }
 
-func (s *OidcService) exchangeTokenInternal(ctx context.Context, cfg *settings.OidcConfig, provider *oidc.Provider, code string, verifier string, origin string, mobileRedirectURI string) (*oauth2.Token, error) {
+func (s *OidcService) exchangeTokenInternal(ctx context.Context, cfg *settings.OidcConfig, provider *oidc.Provider, code, verifier, origin, mobileRedirectURI string) (*oauth2.Token, error) {
 	oauth2Config, err := s.getOauth2ConfigInternal(cfg, provider, origin, mobileRedirectURI)
 	if err != nil {
 		return nil, err
@@ -429,10 +419,7 @@ func (s *OidcService) fetchUserInfoClaimsInternal(ctx context.Context, cfg *sett
 		return nil, err
 	}
 
-	tokenType := token.TokenType
-	if tokenType == "" {
-		tokenType = "Bearer"
-	}
+	tokenType := cmp.Or(token.TokenType, "Bearer")
 	request.Header.Set("Authorization", fmt.Sprintf("%s %s", tokenType, token.AccessToken))
 	request.Header.Set("Accept", "application/json")
 
@@ -602,10 +589,7 @@ func (s *OidcService) buildUserInfoInternal(ctx context.Context, provider *oidc.
 		Extra:             claims,
 	}
 
-	tokenType := token.TokenType
-	if tokenType == "" {
-		tokenType = "Bearer"
-	}
+	tokenType := cmp.Or(token.TokenType, "Bearer")
 
 	tokenResp := &authtypes.OidcTokenResponse{
 		AccessToken:  token.AccessToken,
@@ -817,7 +801,7 @@ func (s *OidcService) ExchangeDeviceToken(ctx context.Context, deviceCode string
 
 	token := &oauth2.Token{
 		AccessToken: accessToken,
-		TokenType:   utils.GetStringOrDefault(tokenResp, "token_type", "Bearer"),
+		TokenType:   kit.As(tokenResp["token_type"], "Bearer"),
 	}
 	if refreshToken, ok := tokenResp["refresh_token"].(string); ok {
 		token.RefreshToken = refreshToken

@@ -1,11 +1,9 @@
 package activity
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-
+	"cmp"
 	"context"
 	"fmt"
-	"hash/fnv"
 	"maps"
 	"net/http"
 	"net/url"
@@ -14,8 +12,8 @@ import (
 	"time"
 
 	"emperror.dev/errors"
-
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
@@ -25,6 +23,7 @@ import (
 	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/samber/mo"
+	kit "go.getarcane.app/kit/pkg"
 	"go.getarcane.app/streams/agg"
 	"gorm.io/gorm"
 )
@@ -369,34 +368,6 @@ func activityStreamEnvironmentVersionInternal(environment environment.Environmen
 	return environment.ID + ":" + environment.UpdatedAt.UTC().Format(time.RFC3339Nano)
 }
 
-// activitySnapshotFingerprintInternal hashes the fields that affect what the
-// client renders, so a poller can skip re-sending a snapshot identical to the
-// previous one.
-func activitySnapshotFingerprintInternal(items []activitytypes.Activity) string {
-	hash := fnv.New64a()
-	writeField := func(value string) {
-		_, _ = hash.Write([]byte(value))
-		_, _ = hash.Write([]byte{0})
-	}
-	for _, item := range items {
-		writeField(item.ID)
-		writeField(string(item.Status))
-		if item.Progress != nil {
-			writeField(strconv.Itoa(*item.Progress))
-		}
-		writeField(item.Step)
-		writeField(item.LatestMessage)
-		if item.UpdatedAt != nil {
-			writeField(item.UpdatedAt.UTC().Format(time.RFC3339Nano))
-		}
-		if item.EndedAt != nil {
-			writeField(item.EndedAt.UTC().Format(time.RFC3339Nano))
-		}
-		writeField("|")
-	}
-	return strconv.FormatUint(hash.Sum64(), 16)
-}
-
 func (h *ActivityHandler) runRemoteActivityStreamPollerInternal(ctx context.Context, environment environment.Environment, limit int, publish func(activitytypes.StreamEvent)) {
 	environmentID := environment.ID
 	lastError := ""
@@ -422,7 +393,7 @@ func (h *ActivityHandler) runRemoteActivityStreamPollerInternal(ctx context.Cont
 				return
 			}
 			if output != nil {
-				fingerprint := activitySnapshotFingerprintInternal(output.Body.Data)
+				fingerprint := strconv.FormatUint(kit.Fingerprint(output.Body.Data), 16)
 				if fingerprint != lastFingerprint {
 					publish(activitytypes.StreamEvent{
 						Type:          "snapshot",
@@ -451,7 +422,7 @@ func (h *ActivityHandler) runRemoteActivityStreamPollerInternal(ctx context.Cont
 			lastFingerprint = ""
 		}
 		lastError = ""
-		fingerprint := activitySnapshotFingerprintInternal(output.Body.Data)
+		fingerprint := strconv.FormatUint(kit.Fingerprint(output.Body.Data), 16)
 		if fingerprint == lastFingerprint {
 			return
 		}
@@ -530,17 +501,12 @@ func applyActivitySourceLabelsForEnvironmentInternal(environmentModel environmen
 }
 
 func activitySourceFromEnvironmentInternal(environmentModel environment.Environment) (string, string) {
-	environmentID := environmentModel.ID
-	if environmentID == "" {
-		environmentID = environment.LocalEnvironmentID
-	}
+	environmentID := cmp.Or(environmentModel.ID, environment.LocalEnvironmentID)
 	return environmentID, environment.DisplayName(environmentID, environmentModel.Name)
 }
 
 func (h *ActivityHandler) resolveActivitySourceInternal(ctx context.Context, environmentID string) (string, string) {
-	if environmentID == "" {
-		environmentID = environment.LocalEnvironmentID
-	}
+	environmentID = cmp.Or(environmentID, environment.LocalEnvironmentID)
 	if h.environment.ResolveEnvironmentName != nil {
 		return environmentID, h.environment.ResolveEnvironmentName(ctx, environmentID)
 	}
@@ -589,10 +555,7 @@ func resolveActivityStreamLimitInternal(limit int) int {
 	if limit <= 0 {
 		return 50
 	}
-	if limit > 100 {
-		return 100
-	}
-	return limit
+	return kit.Ternary(limit > 100, 100, limit)
 }
 
 func activityListParamsInternal(input *ListActivitiesInput) pagination.QueryParams {
@@ -649,7 +612,8 @@ func (h *ActivityHandler) listRemoteActivitiesInternal(ctx context.Context, inpu
 	params := normalizeRemoteActivityParamsInternal(activityListParamsInternal(input))
 	// The agent only ships the newest window the merged page can use, not its
 	// whole history; the stream poller repeats this every few seconds.
-	remoteActivities, remoteTotal, remoteErr := collectActivityWindowInternal(remoteActivityWindowInternal(params), func(start, limit int) ([]activitytypes.Activity, int64, error) {
+	window := kit.Ternary(params.Limit == -1, -1, params.Start+params.Limit)
+	remoteActivities, remoteTotal, remoteErr := collectActivityWindowInternal(window, func(start, limit int) ([]activitytypes.Activity, int64, error) {
 		page := *input
 		page.Start, page.Limit = start, limit
 		remote, err := fetch("/api/environments/0/activities?" + activityListQueryInternal(&page).Encode())

@@ -65,7 +65,6 @@ func TestContainersListSendsLimitAndStart(t *testing.T) {
 		require.True(t, ok,
 			"expected pagination in output: %v", got)
 	}
-
 }
 
 func TestContainersListExplicitStartZeroSendsStartZero(t *testing.T) {
@@ -107,7 +106,6 @@ func TestContainersListExplicitStartZeroSendsStartZero(t *testing.T) {
 
 	require.True(t, strings.Contains(gotQuery, "start=0") && strings.Contains(gotQuery, "limit=20"),
 		"query = %q, want start=0 and limit=20", gotQuery)
-
 }
 
 func TestContainersListTextShowsShowingSummary(t *testing.T) {
@@ -134,7 +132,6 @@ func TestContainersListTextShowsShowingSummary(t *testing.T) {
 
 	require.Contains(t, outBuf, "Showing: 1/26 containers",
 		"expected showing summary in output, got:\n%s", outBuf)
-
 }
 
 // TestContainersListAllRequestsEveryItem pins the wire form of --all. The API
@@ -180,7 +177,6 @@ func TestContainersListAllRequestsEveryItem(t *testing.T) {
 
 	require.Equal(t, "limit=-1", gotQuery,
 		"query = %q, want %q", gotQuery, "limit=-1")
-
 }
 
 // TestProjectsListAllIncludesArchived covers the one resource where "everything"
@@ -220,7 +216,6 @@ func TestProjectsListAllIncludesArchived(t *testing.T) {
 
 	require.Equal(t, "archived=all&limit=-1", gotQuery,
 		"query = %q, want %q", gotQuery, "archived=all&limit=-1")
-
 }
 
 func TestAdminEventsListEnvSendsLimitAndStart(t *testing.T) {
@@ -271,7 +266,6 @@ func TestAdminEventsListEnvSendsLimitAndStart(t *testing.T) {
 
 	require.True(t, strings.Contains(gotQuery, "limit=3") && strings.Contains(gotQuery, "start=6"),
 		"query = %q, want limit=3 and start=6", gotQuery)
-
 }
 
 func TestTemplatesListJSONIncludesPaginatedEnvelope(t *testing.T) {
@@ -342,7 +336,6 @@ func TestTemplatesListJSONIncludesPaginatedEnvelope(t *testing.T) {
 		require.True(t, ok,
 			"expected pagination key in output: %v", got)
 	}
-
 }
 
 func TestTemplatesListAllRejectsExplicitPaginationFlags(t *testing.T) {
@@ -380,5 +373,4 @@ func TestTemplatesListAllRejectsExplicitPaginationFlags(t *testing.T) {
 
 	require.False(t, called,
 		"expected command to fail before issuing HTTP request")
-
 }

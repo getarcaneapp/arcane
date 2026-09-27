@@ -6,7 +6,6 @@ import (
 
 	"emperror.dev/errors"
 	"github.com/danielgtaylor/huma/v2"
-
 	"github.com/getarcaneapp/arcane/backend/v2/api/ws"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/diagnostics"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"

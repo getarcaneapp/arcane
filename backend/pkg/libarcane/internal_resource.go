@@ -1,6 +1,7 @@
 package libarcane
 
 import (
+	"cmp"
 	"context"
 	"log/slog"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"emperror.dev/errors"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
+	"go.getarcane.app/docker/compat"
 	"go.getarcane.app/sys/cgroup"
 	"go.getarcane.app/updater/labels"
 )
@@ -48,9 +50,7 @@ func FindArcaneContainerIDByLabel(ctx context.Context, dockerClient *client.Clie
 		if c.State == container.StateRunning {
 			return c.ID
 		}
-		if fallbackID == "" {
-			fallbackID = c.ID
-		}
+		fallbackID = cmp.Or(fallbackID, c.ID)
 	}
 
 	slog.DebugContext(ctx, "find arcane container by label", "candidates", len(list.Items), "selected", fallbackID)
@@ -74,7 +74,7 @@ func InspectCurrentArcaneContainer(ctx context.Context, dockerClient *client.Cli
 	// behind a sidecar stay undetectable and must carry the label themselves.
 	var unlabeled *container.InspectResponse
 	if target, err := CurrentContainerInspectTarget(cgroup.CurrentContainerID, os.Hostname); err == nil && target != "" {
-		if inspect, inspectErr := ContainerInspectWithCompatibility(ctx, dockerClient, target, client.ContainerInspectOptions{}); inspectErr == nil {
+		if inspect, inspectErr := compat.ContainerInspectWithCompatibility(ctx, dockerClient, target, client.ContainerInspectOptions{}); inspectErr == nil {
 			if inspect.Container.Config != nil && strings.EqualFold(strings.TrimSpace(inspect.Container.Config.Labels[labels.LabelArcane]), "true") {
 				return &inspect.Container, nil
 			}
@@ -83,7 +83,7 @@ func InspectCurrentArcaneContainer(ctx context.Context, dockerClient *client.Cli
 	}
 
 	if containerID := FindArcaneContainerIDByLabel(ctx, dockerClient); containerID != "" {
-		inspect, err := ContainerInspectWithCompatibility(ctx, dockerClient, containerID, client.ContainerInspectOptions{})
+		inspect, err := compat.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, client.ContainerInspectOptions{})
 		if err != nil {
 			return nil, errors.WrapIf(err, "inspect Arcane container")
 		}
@@ -123,7 +123,7 @@ func sharesNetworkNamespaceInternal(candidate, owner *container.InspectResponse)
 // otherwise. Neither source is authoritative — under network_mode:
 // container:<sidecar> both can resolve the netns-owning sidecar — so callers
 // must validate the inspected container (see InspectCurrentArcaneContainer).
-func CurrentContainerInspectTarget(currentContainerID func() (string, error), hostname func() (string, error)) (string, error) {
+func CurrentContainerInspectTarget(currentContainerID, hostname func() (string, error)) (string, error) {
 	if currentContainerID != nil {
 		if containerID, err := currentContainerID(); err == nil {
 			if containerID = strings.TrimSpace(containerID); containerID != "" {

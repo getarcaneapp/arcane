@@ -7,13 +7,13 @@ import (
 	"time"
 
 	"emperror.dev/errors"
-
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/api/types/volume"
 	"github.com/moby/moby/client"
 	"github.com/samber/hot"
 	"github.com/samber/mo"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 var volumeUsageCache = hot.NewHotCache[string, []volume.Volume](hot.LRU, 16).
@@ -100,10 +100,7 @@ func GetVolumeUsageDataStaleWhileRevalidate(ctx context.Context, dockerClient *c
 		)
 		return mo.Some(fresh)
 	}
-	cacheState := "miss"
-	if found {
-		cacheState = "stale"
-	}
+	cacheState := kit.Ternary(found, "stale", "miss")
 	slog.DebugContext(ctx, "volume usage cache lookup",
 		"docker_host", key,
 		"cache_state", cacheState,

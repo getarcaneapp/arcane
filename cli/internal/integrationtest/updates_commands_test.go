@@ -65,7 +65,6 @@ func TestContainersListUpdatesJSONContract(t *testing.T) {
 			require.True(t, ok,
 				"missing key %q in output: %v", key, got)
 		}
-
 	}
 }
 
@@ -112,7 +111,6 @@ func TestContainersUpdatesCommandUsesHasUpdateFilter(t *testing.T) {
 
 	require.NotEmpty(t, strings.TrimSpace(outBuf),
 		"expected output from containers updates command")
-
 }
 
 func TestProjectsListUpdatesJSONContract(t *testing.T) {
@@ -172,7 +170,6 @@ func TestProjectsListUpdatesJSONContract(t *testing.T) {
 			require.True(t, ok,
 				"missing key %q in output: %v", key, got)
 		}
-
 	}
 }
 
@@ -222,7 +219,6 @@ func TestProjectsUpdatesCommandUsesHasUpdateFilter(t *testing.T) {
 
 	require.NotEmpty(t, strings.TrimSpace(outBuf),
 		"expected output from projects updates command")
-
 }
 
 func TestImagesUpdatesCheckEncodesImageRefAndDecodesSingleResponse(t *testing.T) {
@@ -281,7 +277,6 @@ func TestImagesUpdatesCheckEncodesImageRefAndDecodesSingleResponse(t *testing.T)
 
 	require.False(t, !result.HasUpdate || result.CurrentVersion != "1.0.0" || result.LatestVersion != "1.1.0",
 		"unexpected single image update response: %+v", result)
-
 }
 
 func TestImagesUpdatesCheckRequiresImageRef(t *testing.T) {
@@ -292,7 +287,6 @@ func TestImagesUpdatesCheckRequiresImageRef(t *testing.T) {
 
 	require.Contains(t, err.Error(), "at least one image reference",
 		"unexpected argument error: %v", err)
-
 }
 
 func TestImageUpdateCommandsDecodeExpectedResponseTypes(t *testing.T) {
@@ -395,7 +389,6 @@ func TestImageUpdateCommandsDecodeExpectedResponseTypes(t *testing.T) {
 
 	require.False(t, summary.TotalImages != 4 || summary.ImagesWithUpdates != 2 || summary.DigestUpdates != 1,
 		"unexpected summary response: %+v", summary)
-
 }
 
 func TestImageUpdateCommandsRejectHTTPAndEnvelopeFailures(t *testing.T) {
@@ -451,7 +444,6 @@ func TestImageUpdateCommandsRejectHTTPAndEnvelopeFailures(t *testing.T) {
 
 					require.Empty(t, strings.TrimSpace(outBuf),
 						"failed response produced success output: %q", outBuf)
-
 				})
 			}
 		})

@@ -13,14 +13,6 @@ import (
 	"time"
 
 	"emperror.dev/errors"
-	"github.com/lestrrat-go/jwx/v4/jwa"
-	"github.com/lestrrat-go/jwx/v4/jws"
-	"github.com/lestrrat-go/jwx/v4/jwt"
-	"github.com/libtnb/sqlite"
-	"github.com/stretchr/testify/require"
-	"go.uber.org/fx/fxtest"
-	"gorm.io/gorm"
-
 	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/auth"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
@@ -34,7 +26,14 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/oidcjwk"
 	federatedtypes "github.com/getarcaneapp/arcane/types/v2/federated"
+	"github.com/lestrrat-go/jwx/v4/jwa"
+	"github.com/lestrrat-go/jwx/v4/jws"
+	"github.com/lestrrat-go/jwx/v4/jwt"
+	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/fx/fxtest"
+	"gorm.io/gorm"
 )
 
 type federatedTestIssuerInternal struct {

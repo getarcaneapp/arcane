@@ -5,10 +5,10 @@ import (
 	"log/slog"
 	"time"
 
-	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
-
 	"github.com/getarcaneapp/arcane/backend/v2/internal/session"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
+	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 const ExpiredSessionsCleanupJobName = "expired-sessions-cleanup"
@@ -31,10 +31,7 @@ func (j *ExpiredSessionsCleanupJob) Name() string {
 
 func (j *ExpiredSessionsCleanupJob) Schedule(ctx context.Context) string {
 	s := j.settingsService.GetStringSetting(ctx, "expiredSessionsCleanupInterval", "0 0 0 * * *")
-	if s == "" {
-		return "0 0 0 * * *"
-	}
-	return s
+	return kit.Ternary(s == "", "0 0 0 * * *", s)
 }
 
 func (j *ExpiredSessionsCleanupJob) Run(ctx context.Context) (schedulertypes.Outcome, error) {

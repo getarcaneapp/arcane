@@ -2,7 +2,6 @@ package cmdutil
 
 import (
 	"emperror.dev/errors"
-
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	runtimectx "github.com/getarcaneapp/arcane/cli/v2/internal/runtime"
 	"github.com/spf13/cobra"

@@ -41,7 +41,6 @@ func TestContainerNameFromNames(t *testing.T) {
 				assert.Equal(t, tt.want, got,
 					"ContainerNameFromNames() = %v, want %v", got, tt.want)
 			}
-
 		})
 	}
 }

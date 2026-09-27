@@ -1,11 +1,6 @@
 package imageupdate
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/imageref"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/notifications"
-
-	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
-
 	"context"
 	"encoding/json"
 	"errors"
@@ -18,19 +13,20 @@ import (
 	"testing"
 	"time"
 
-	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
-
-	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
-
 	ref "github.com/distribution/reference"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/notification"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/imageref"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/notifications"
+	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	"github.com/getarcaneapp/arcane/types/v2/imageupdate"
 	"github.com/libtnb/sqlite"
@@ -44,6 +40,7 @@ import (
 	"github.com/samber/mo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	kit "go.getarcane.app/kit/pkg"
 	"go.getarcane.app/sys/crypto"
 	"go.getarcane.app/updater/labels"
 	"go.uber.org/fx/fxtest"
@@ -1496,11 +1493,7 @@ func TestImageUpdateService_NotificationSentReset(t *testing.T) {
 			digestChanged := mo.PointerToOption(existingRecord.LatestDigest).OrEmpty() != mo.PointerToOption(updateRecord.LatestDigest).OrEmpty()
 			versionChanged := mo.PointerToOption(existingRecord.LatestVersion).OrEmpty() != mo.PointerToOption(updateRecord.LatestVersion).OrEmpty()
 
-			if stateChanged || (updateRecord.HasUpdate && (digestChanged || versionChanged)) {
-				updateRecord.NotificationSent = false
-			} else {
-				updateRecord.NotificationSent = existingRecord.NotificationSent
-			}
+			updateRecord.NotificationSent = !stateChanged && !(updateRecord.HasUpdate && (digestChanged || versionChanged)) && existingRecord.NotificationSent
 
 			// Save the updated record
 			err = db.Save(updateRecord).Error
@@ -2522,10 +2515,7 @@ func TestContainerTagChecksPersistIndependentPoliciesInternal(t *testing.T) {
 		case strings.Contains(r.URL.Path, "/images/"):
 			require.NoError(t, json.NewEncoder(w).Encode(dockertypesimage.InspectResponse{ID: imageID, RepoTags: []string{imageRef}, RepoDigests: []string{registryURL.Host + "/team/app@" + imageID}}))
 		case strings.Contains(r.URL.Path, "/containers/"):
-			id := "one"
-			if strings.Contains(r.URL.Path, "/two/") {
-				id = "two"
-			}
+			id := kit.Ternary(strings.Contains(r.URL.Path, "/two/"), "two", "one")
 			require.NoError(t, json.NewEncoder(w).Encode(dockertypescontainer.InspectResponse{ID: id, Image: imageID, Config: &dockertypescontainer.Config{Image: imageRef, Labels: values[id]}}))
 		default:
 			t.Errorf("unexpected Docker request %s", r.URL.Path)
@@ -2587,7 +2577,6 @@ func TestContainerTagChecksPersistIndependentPoliciesInternal(t *testing.T) {
 	require.False(t, retained.HasUpdate, "a changed policy cannot inherit the previous candidate")
 	require.Equal(t, imageref.UpdatePolicyKey(imageRef, current.Labels), retained.PolicyKey)
 	require.Equal(t, limited.Error, *retained.LastError)
-
 }
 
 // TestContainerTagChecksSeparateMonitoringFromInstallationInternal covers
@@ -2626,10 +2615,7 @@ func TestContainerTagChecksSeparateMonitoringFromInstallationInternal(t *testing
 				{ID: "unmonitored", Names: []string{"/unmonitored"}, Image: imageRef, ImageID: imageID, Labels: values["unmonitored"]},
 			}))
 		case strings.Contains(r.URL.Path, "/containers/"):
-			id := "install-excluded"
-			if strings.Contains(r.URL.Path, "/unmonitored/") {
-				id = "unmonitored"
-			}
+			id := kit.Ternary(strings.Contains(r.URL.Path, "/unmonitored/"), "unmonitored", "install-excluded")
 			inspected = append(inspected, id)
 			require.NoError(t, json.NewEncoder(w).Encode(dockertypescontainer.InspectResponse{ID: id, Name: "/" + id, Image: imageID, Config: &dockertypescontainer.Config{Image: imageRef, Labels: values[id]}}))
 		default:
@@ -2776,10 +2762,7 @@ func TestContainerTagChecksPersistResultsFinishedBeforeScanDeadlineInternal(t *t
 	imageRefs := map[string]string{"fast": registryURL.Host + "/team/fast:1.0.0", "slow": registryURL.Host + "/team/slow:1.0.0"}
 	imageIDs := map[string]string{"fast": digest.FromString("fast").String(), "slow": digest.FromString("slow").String()}
 	nameFor := func(path string) string {
-		if strings.Contains(path, "slow") {
-			return "slow"
-		}
-		return "fast"
+		return kit.Ternary(strings.Contains(path, "slow"), "slow", "fast")
 	}
 	dockerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

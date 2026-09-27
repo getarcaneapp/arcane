@@ -1,6 +1,7 @@
 package volume
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"io"
@@ -10,14 +11,13 @@ import (
 	"strconv"
 	"strings"
 
+	"emperror.dev/errors"
+	"github.com/danielgtaylor/huma/v2"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
-
-	"emperror.dev/errors"
-	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/upload"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
@@ -596,9 +596,7 @@ func (h *VolumeHandler) ListVolumes(ctx context.Context, input *ListVolumesInput
 		params.Filters["inUse"] = input.InUse
 	}
 
-	if params.Limit == 0 {
-		params.Limit = 20
-	}
+	params.Limit = cmp.Or(params.Limit, 20)
 
 	volumes, paginationResp, counts, err := h.volumeService.ListVolumesPaginated(ctx, params, input.IncludeInternal)
 	if err != nil {
@@ -898,9 +896,7 @@ func (h *VolumeHandler) ListBackups(ctx context.Context, input *ListBackupsInput
 		},
 	}
 
-	if params.Limit == 0 {
-		params.Limit = 20
-	}
+	params.Limit = cmp.Or(params.Limit, 20)
 
 	backups, paginationResp, err := h.volumeService.ListBackupsPaginated(ctx, input.VolumeName, params)
 	if err != nil {

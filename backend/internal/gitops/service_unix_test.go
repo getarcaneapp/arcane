@@ -3,15 +3,14 @@
 package gitops
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	projectpkg "github.com/getarcaneapp/arcane/backend/v2/internal/project"
-
 	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+	projectpkg "github.com/getarcaneapp/arcane/backend/v2/internal/project"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

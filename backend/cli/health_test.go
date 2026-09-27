@@ -28,7 +28,6 @@ func TestBuildHealthURLInternalDefaults(t *testing.T) {
 
 		require.True(t, strings.HasSuffix(healthURL, "/api/health"),
 			"expected health URL path /api/health, got: %s", healthURL)
-
 	})
 
 	t.Run("explicit_port", func(t *testing.T) {
@@ -40,7 +39,6 @@ func TestBuildHealthURLInternalDefaults(t *testing.T) {
 
 		require.True(t, strings.HasPrefix(healthURL, "http://127.0.0.1:8443"),
 			"unexpected health URL: %s", healthURL)
-
 	})
 }
 
@@ -50,7 +48,6 @@ func TestBuildHealthURLInternalInvalidPort(t *testing.T) {
 
 	require.Error(t, err,
 		"expected invalid health URL port to fail")
-
 }
 
 func TestRunHealthCommandInternal(t *testing.T) {
@@ -88,7 +85,6 @@ func TestRunHealthCommandInternal(t *testing.T) {
 		require.NoError(t, err,
 			"health command failed: %v", err)
 	}
-
 }
 
 func TestRunHealthCommandInternalNon2xx(t *testing.T) {
@@ -114,7 +110,6 @@ func TestRunHealthCommandInternalNon2xx(t *testing.T) {
 
 	require.Contains(t, err.Error(), "health check failed with status",
 		"unexpected error: %v", err)
-
 }
 
 func TestRunHealthCommandInternalConnectionFailure(t *testing.T) {
@@ -122,7 +117,6 @@ func TestRunHealthCommandInternalConnectionFailure(t *testing.T) {
 
 	require.Error(t, err,
 		"expected connection failure")
-
 }
 
 func TestRunHealthCommandInternalDefaultTimeoutFallback(t *testing.T) {
@@ -138,5 +132,4 @@ func TestRunHealthCommandInternalDefaultTimeoutFallback(t *testing.T) {
 
 	require.Contains(t, fmt.Sprint(defaultHealthTimeout), "5s",
 		"unexpected default timeout: %s", defaultHealthTimeout)
-
 }

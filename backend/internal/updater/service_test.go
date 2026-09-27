@@ -1,28 +1,13 @@
 package updater
 
 import (
-	"fmt"
-
-	composetypes "github.com/compose-spec/compose-go/v2/types"
-	projectspkg "github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/notifications"
-	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
-	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
-
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-
-	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
-	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
-
 	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -33,6 +18,10 @@ import (
 	"testing"
 	"time"
 
+	composetypes "github.com/compose-spec/compose-go/v2/types"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
@@ -44,7 +33,15 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/notification"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
+	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
+	projectspkg "github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/notifications"
+	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
+	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
+	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	arcaneupdater "github.com/getarcaneapp/arcane/types/v2/updater"
 	"github.com/libtnb/sqlite"
 	dockerauthconfig "github.com/moby/moby/api/pkg/authconfig"
@@ -54,6 +51,7 @@ import (
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	kit "go.getarcane.app/kit/pkg"
 	"go.getarcane.app/sys/crypto"
 	"go.getarcane.app/updater"
 	"go.getarcane.app/updater/labels"
@@ -138,11 +136,7 @@ func (f *fakeProjectUpdaterInternal) UpdateServiceImages(_ context.Context, proj
 		f.imageChanges = map[string]map[string]updatertypes.ServiceImageChange{}
 	}
 	f.imageChanges[projectID] = changes
-	services := make([]string, 0, len(changes))
-	for service := range changes {
-		services = append(services, service)
-	}
-	slices.Sort(services)
+	services := slices.Sorted(maps.Keys(changes))
 	f.calls = append(f.calls, projectID+":"+strings.Join(services, ","))
 	return f.updateErrs[projectID]
 }
@@ -492,7 +486,7 @@ func TestUpdaterService_PullImageAdapterInternal(t *testing.T) {
 
 		imageRef := "registry.example.com/team/app:latest"
 		var gotAuth string
-		server := newImagePullServerWithObserverInternal(t, nil, func(fullRef string, authHeader string) {
+		server := newImagePullServerWithObserverInternal(t, nil, func(fullRef, authHeader string) {
 			if fullRef == imageRef {
 				gotAuth = authHeader
 			}
@@ -778,10 +772,7 @@ func TestUpdaterService_RecordUpdateRunAppendsActivityMessageInternal(t *testing
 
 func TestUpdaterService_AcceptSingleContainerUpdateUsesQueuedActivityInternal(t *testing.T) {
 	for _, cancelActivity := range []bool{false, true} {
-		name := "request disconnect"
-		if cancelActivity {
-			name = "activity cancellation while queued"
-		}
+		name := kit.Ternary(cancelActivity, "activity cancellation while queued", "request disconnect")
 		t.Run(name, func(t *testing.T) {
 			db := setupProjectTestDBInternal(t)
 			require.NoError(t, db.AutoMigrate(&activity.Activity{}, &activity.ActivityMessage{}))
@@ -843,10 +834,7 @@ func TestUpdaterService_AcceptSingleContainerUpdateUsesQueuedActivityInternal(t 
 			}
 			releaseOnce.Do(func() { close(release) })
 
-			wantStatus := activitytypes.StatusFailed
-			if cancelActivity {
-				wantStatus = activitytypes.StatusCancelled
-			}
+			wantStatus := kit.Ternary(cancelActivity, activitytypes.StatusCancelled, activitytypes.StatusFailed)
 			require.Eventually(t, func() bool {
 				var saved activity.Activity
 				return db.First(&saved, "id = ?", item.ID).Error == nil && saved.Status == wantStatus
@@ -1282,7 +1270,7 @@ func newTestDockerClientInternal(t *testing.T, server *httptest.Server) *client.
 }
 
 // newImagePullServerWithObserverInternal is NewImagePullServer with a pull callback.
-func newImagePullServerWithObserverInternal(t *testing.T, inspectByRef map[string]dockertypesimage.InspectResponse, onPull func(fullRef string, authHeader string)) *httptest.Server {
+func newImagePullServerWithObserverInternal(t *testing.T, inspectByRef map[string]dockertypesimage.InspectResponse, onPull func(fullRef, authHeader string)) *httptest.Server {
 	t.Helper()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

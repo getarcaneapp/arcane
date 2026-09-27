@@ -14,22 +14,18 @@ const (
 	VolumeBackupStatusRunning   VolumeBackupStatus = "running"
 	VolumeBackupStatusSucceeded VolumeBackupStatus = "succeeded"
 	VolumeBackupStatusFailed    VolumeBackupStatus = "failed"
+
+	VolumeBackupTriggerManual    VolumeBackupTrigger = "manual"
+	VolumeBackupTriggerScheduled VolumeBackupTrigger = "scheduled"
+	VolumeBackupTriggerSafety    VolumeBackupTrigger = "safety"
+
+	VolumeBackupFormatArchive VolumeBackupFormat = "archive"
+	VolumeBackupFormatRustic  VolumeBackupFormat = "rustic"
 )
 
 type VolumeBackupTrigger string
 
-const (
-	VolumeBackupTriggerManual    VolumeBackupTrigger = "manual"
-	VolumeBackupTriggerScheduled VolumeBackupTrigger = "scheduled"
-	VolumeBackupTriggerSafety    VolumeBackupTrigger = "safety"
-)
-
 type VolumeBackupFormat string
-
-const (
-	VolumeBackupFormatArchive VolumeBackupFormat = "archive"
-	VolumeBackupFormatRustic  VolumeBackupFormat = "rustic"
-)
 
 type VolumeBackup struct {
 	database.BaseModel

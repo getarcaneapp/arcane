@@ -1,16 +1,16 @@
 package schema
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-
 	"reflect"
 	"slices"
 	"sort"
 	"strings"
 	"testing"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 func TestGenerate_EnvConfigIncludesTaggedFields(t *testing.T) {
@@ -180,7 +180,7 @@ func countDocumentedSettingOverrides() int {
 			continue
 		}
 
-		tagParts := splitTagListInternal(keyTag)
+		tagParts := kit.TrimNonEmpty(strings.Split(keyTag, ","))
 		if len(tagParts) == 0 {
 			continue
 		}

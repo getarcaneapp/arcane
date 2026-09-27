@@ -10,13 +10,7 @@ import (
 	"time"
 
 	"emperror.dev/errors"
-
 	ref "github.com/distribution/reference"
-	containertypes "github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/client"
-	"github.com/samber/mo"
-	"golang.org/x/mod/semver"
-
 	"github.com/getarcaneapp/arcane/backend/v2/buildables"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/apns"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
@@ -25,11 +19,16 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/types/v2/version"
+	containertypes "github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/client"
 	"github.com/samber/hot"
+	"github.com/samber/mo"
+	"go.getarcane.app/docker/compat"
+	kit "go.getarcane.app/kit/pkg"
 	"go.getarcane.app/streams/agg"
 	"go.getarcane.app/sys/cgroup"
+	"golang.org/x/mod/semver"
 )
 
 const (
@@ -57,7 +56,7 @@ type VersionService struct {
 	streamHub                *agg.Hub[version.StreamEvent]
 }
 
-func NewVersionService(httpClient *http.Client, disabled bool, appVersion string, revision string, containerRegistryService *registry.ContainerRegistryService, dockerService *docker.DockerClientService, imageUpdateService *imageupdate.ImageUpdateService, settingsService *settings.SettingsService) *VersionService {
+func NewVersionService(httpClient *http.Client, disabled bool, appVersion, revision string, containerRegistryService *registry.ContainerRegistryService, dockerService *docker.DockerClientService, imageUpdateService *imageupdate.ImageUpdateService, settingsService *settings.SettingsService) *VersionService {
 	if httpClient == nil {
 		httpClient = http.DefaultClient
 	}
@@ -163,9 +162,7 @@ func (s *VersionService) normalizeVersion(ver string) string {
 	if trimmed == "" || trimmed[0] < '0' || trimmed[0] > '9' {
 		return ver
 	}
-	if !strings.HasPrefix(ver, "v") {
-		ver = "v" + ver
-	}
+	ver = kit.EnsurePrefix(ver, "v")
 	// If not valid semver, try to make it valid
 	if !semver.IsValid(ver) {
 		// Extract just the numeric part before any suffix
@@ -187,11 +184,7 @@ func (s *VersionService) ReleaseURL(version string) string {
 		return "https://github.com/getarcaneapp/arcane/releases/latest"
 	}
 
-	v := strings.TrimSpace(version)
-	if !strings.HasPrefix(v, "v") {
-		v = "v" + v
-	}
-	return "https://github.com/getarcaneapp/arcane/releases/tag/" + v
+	return "https://github.com/getarcaneapp/arcane/releases/tag/" + kit.EnsurePrefix(version, "v")
 }
 
 func (s *VersionService) GetVersionInformation(ctx context.Context, currentVersion string) (*version.Check, error) {
@@ -268,21 +261,14 @@ func (s *VersionService) resolveNextVersionInternal(ctx context.Context, imageRe
 
 // isSemverVersion checks if a version string is semver-based (e.g., v1.0.0)
 func (s *VersionService) isSemverVersion() bool {
-	versionValue := strings.TrimSpace(s.version)
-	if !strings.HasPrefix(versionValue, "v") {
-		versionValue = "v" + versionValue
-	}
-	return semver.IsValid(versionValue)
+	return semver.IsValid(kit.EnsurePrefix(s.version, "v"))
 }
 
 // getDisplayVersion formats the version for display purposes
 // Semver versions (including prereleases like 2.4.0-next.1) display as v<version>
 func (s *VersionService) getDisplayVersion() string {
 	versionValue := strings.TrimPrefix(strings.TrimSpace(s.version), "v")
-	if s.isSemverVersion() {
-		return "v" + versionValue
-	}
-	return versionValue
+	return kit.Ternary(s.isSemverVersion(), "v"+versionValue, versionValue)
 }
 
 // updateCheckImageRefInternal points the digest lookup at the configured registry; "auto" keeps the running reference.
@@ -310,10 +296,7 @@ func (s *VersionService) updateCheckImageRefInternal(currentImageRef string) str
 			repoPath = "getarcaneapp/agent"
 		}
 	}
-	if host == ref.Domain(named) && repoPath == ref.Path(named) {
-		return currentImageRef
-	}
-	return host + "/" + repoPath
+	return kit.Ternary(host == ref.Domain(named) && repoPath == ref.Path(named), currentImageRef, host+"/"+repoPath)
 }
 
 // GetAppVersionInfo returns application version information including display version
@@ -335,7 +318,7 @@ func (s *VersionService) GetAppVersionInfo(ctx context.Context) *version.Info {
 		GoVersion:        config.GoVersion(),
 		NodeVersion:      config.NodeVersion,
 		SvelteKitVersion: config.SvelteKitVersion,
-		EnabledFeatures:  append(utils.UniqueNonEmptyStrings(strings.Split(strings.ToLower(buildables.EnabledFeatures), ",")), apns.FeatureName),
+		EnabledFeatures:  append(kit.Unique(kit.TrimNonEmpty(strings.Split(strings.ToLower(buildables.EnabledFeatures), ","))), apns.FeatureName),
 		BuildTime:        config.BuildTime,
 		IsSemverVersion:  isSemver,
 		UpdateAvailable:  false,
@@ -404,7 +387,7 @@ func (s *VersionService) storedOrDigestBasedUpdateInternal(ctx context.Context, 
 }
 
 // detectCurrentImageInfo attempts to detect the current container's image tag and digest
-func (s *VersionService) detectCurrentImageInfo(ctx context.Context) (tag string, digest string, imageRef string, imageID string) {
+func (s *VersionService) detectCurrentImageInfo(ctx context.Context) (tag, digest, imageRef, imageID string) {
 	if s.dockerService == nil {
 		slog.Debug("detectCurrentImageInfo: dockerService is nil")
 		return "", "", "", ""
@@ -423,7 +406,7 @@ func (s *VersionService) detectCurrentImageInfo(ctx context.Context) (tag string
 	}
 	slog.Debug("detectCurrentImageInfo: detected container", "containerId", containerId)
 
-	inspectResult, err := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, containerId, client.ContainerInspectOptions{})
+	inspectResult, err := compat.ContainerInspectWithCompatibility(ctx, dockerClient, containerId, client.ContainerInspectOptions{})
 	if err != nil {
 		slog.Debug("detectCurrentImageInfo: failed to inspect container", "containerId", containerId, "error", err)
 		return "", "", "", ""

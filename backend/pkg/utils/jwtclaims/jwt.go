@@ -5,9 +5,9 @@ import (
 	"maps"
 	"strings"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/lestrrat-go/jwx/v4/jwt"
 	"github.com/samber/mo"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 // GetStringClaim extracts a string claim from a map
@@ -43,23 +43,6 @@ func GetBoolClaim(m map[string]any, key string) bool {
 	return false
 }
 
-// StringSliceFromValue flattens a claim value into a slice of strings.
-// Accepts string (trimmed, single element), []string, []any (string elements
-// only), or nil. Unlike GetStringSliceClaim it never splits a single string
-// into multiple values, so it is safe for claims whose values may legally
-// contain separators (e.g. aud URIs).
-func StringSliceFromValue(v any) []string {
-	switch t := v.(type) {
-	case []string:
-		return stringSliceFromStringsInternal(t)
-	case []any:
-		return stringSliceFromInterfacesInternal(t)
-	case string:
-		return stringSliceFromStringsInternal([]string{t})
-	}
-	return nil
-}
-
 // GetStringSliceClaim extracts a string slice claim from a map. A single
 // string value is split on commas or spaces (group/role claims are commonly
 // delivered that way).
@@ -74,43 +57,12 @@ func GetStringSliceClaim(m map[string]any, key string) []string {
 			return nil
 		}
 		// Support comma or space separated strings
-		if strings.Contains(s, ",") {
-			parts := strings.Split(s, ",")
-			out := make([]string, 0, len(parts))
-			for _, p := range parts {
-				if ps := strings.TrimSpace(p); ps != "" {
-					out = append(out, ps)
-				}
-			}
-			if len(out) > 0 {
-				return out
-			}
+		if out := kit.TrimNonEmpty(strings.Split(s, ",")); strings.Contains(s, ",") && len(out) > 0 {
+			return out
 		}
 		return strings.Fields(s)
 	}
-	return StringSliceFromValue(v)
-}
-
-func stringSliceFromStringsInternal[S ~string](items []S) []string {
-	out := make([]string, 0, len(items))
-	for _, item := range items {
-		if s := strings.TrimSpace(string(item)); s != "" {
-			out = append(out, s)
-		}
-	}
-	return utils.UniqueNonEmptyStrings(out)
-}
-
-func stringSliceFromInterfacesInternal[T any](items []T) []string {
-	out := make([]string, 0, len(items))
-	for _, item := range items {
-		if s, ok := any(item).(string); ok {
-			if trimmed := strings.TrimSpace(s); trimmed != "" {
-				out = append(out, trimmed)
-			}
-		}
-	}
-	return utils.UniqueNonEmptyStrings(out)
+	return kit.Unique(kit.TrimNonEmpty(kit.Collect(v, func(item any) string { return kit.As(item, "") })))
 }
 
 // ParseJWTClaims parses unverified JWT metadata for pre-verification routing.

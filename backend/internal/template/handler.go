@@ -1,6 +1,7 @@
 package template
 
 import (
+	"cmp"
 	"context"
 	"encoding/json/v2"
 
@@ -10,9 +11,9 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/mapper"
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	templatetypes "github.com/getarcaneapp/arcane/types/v2/template"
+	"go.getarcane.app/kit/pkg/mapping"
 )
 
 // TemplateHandler handles template management endpoints.
@@ -264,9 +265,7 @@ func RegisterTemplates(api huma.API, templateService *TemplateService) {
 // ListTemplates returns a paginated list of templates.
 func (h *TemplateHandler) ListTemplates(ctx context.Context, input *ListTemplatesInput) (*handlerutil.Page[templatetypes.Template], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
-	if params.Limit == 0 {
-		params.Limit = 20
-	}
+	params.Limit = cmp.Or(params.Limit, 20)
 	if input.Type != "" {
 		params.Filters["type"] = input.Type
 	}
@@ -292,7 +291,7 @@ func (h *TemplateHandler) GetAllTemplates(ctx context.Context, _ *GetAllTemplate
 		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to get templates").Error())
 	}
 
-	out, mapErr := mapper.MapSlice[ComposeTemplate, templatetypes.Template](templates)
+	out, mapErr := mapping.MapSlice[ComposeTemplate, templatetypes.Template](templates)
 	if mapErr != nil {
 		return nil, huma.Error500InternalServerError(errors.WithMessage(mapErr, "Failed to map templates").Error())
 	}
@@ -320,7 +319,7 @@ func (h *TemplateHandler) GetTemplate(ctx context.Context, input *GetTemplateInp
 	}
 
 	var out templatetypes.Template
-	if mapErr := mapper.MapStruct(tmpl, &out); mapErr != nil {
+	if mapErr := mapping.MapStruct(tmpl, &out); mapErr != nil {
 		return nil, huma.Error500InternalServerError(errors.WithMessage(mapErr, "Failed to map templates").Error())
 	}
 
@@ -372,7 +371,7 @@ func (h *TemplateHandler) CreateTemplate(ctx context.Context, input *CreateTempl
 	}
 
 	var out templatetypes.Template
-	if mapErr := mapper.MapStruct(tmpl, &out); mapErr != nil {
+	if mapErr := mapping.MapStruct(tmpl, &out); mapErr != nil {
 		return nil, huma.Error500InternalServerError(errors.WithMessage(mapErr, "Failed to map templates").Error())
 	}
 
@@ -414,7 +413,7 @@ func (h *TemplateHandler) UpdateTemplate(ctx context.Context, input *UpdateTempl
 	}
 
 	var out templatetypes.Template
-	if mapErr := mapper.MapStruct(updated, &out); mapErr != nil {
+	if mapErr := mapping.MapStruct(updated, &out); mapErr != nil {
 		return nil, huma.Error500InternalServerError(errors.WithMessage(mapErr, "Failed to map templates").Error())
 	}
 
@@ -472,7 +471,7 @@ func (h *TemplateHandler) DownloadTemplate(ctx context.Context, input *DownloadT
 	}
 
 	var out templatetypes.Template
-	if mapErr := mapper.MapStruct(localTemplate, &out); mapErr != nil {
+	if mapErr := mapping.MapStruct(localTemplate, &out); mapErr != nil {
 		return nil, huma.Error500InternalServerError(errors.WithMessage(mapErr, "Failed to map templates").Error())
 	}
 
@@ -531,7 +530,7 @@ func (h *TemplateHandler) GetRegistries(ctx context.Context, _ *GetTemplateRegis
 		return nil, huma.Error500InternalServerError("Failed to fetch registry")
 	}
 
-	out, mapErr := mapper.MapSlice[TemplateRegistry, templatetypes.TemplateRegistry](registries)
+	out, mapErr := mapping.MapSlice[TemplateRegistry, templatetypes.TemplateRegistry](registries)
 	if mapErr != nil {
 		return nil, huma.Error500InternalServerError("Failed to fetch registry")
 	}
@@ -567,7 +566,7 @@ func (h *TemplateHandler) CreateRegistry(ctx context.Context, input *CreateTempl
 	}
 
 	var out templatetypes.TemplateRegistry
-	if mapErr := mapper.MapStruct(registry, &out); mapErr != nil {
+	if mapErr := mapping.MapStruct(registry, &out); mapErr != nil {
 		return nil, huma.Error500InternalServerError(errors.WithMessage(mapErr, "Failed to map registry").Error())
 	}
 

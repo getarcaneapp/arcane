@@ -7,6 +7,7 @@ import (
 	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/types/v2/features"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 // IsFeatureEnabled resolves feature availability on this environment.
@@ -24,10 +25,7 @@ func (s *SettingsService) IsFeatureEnabled(ctx context.Context, id features.ID) 
 		return definition.DefaultEnabled
 	}
 	enabled, err := strconv.ParseBool(value)
-	if err != nil {
-		return definition.DefaultEnabled
-	}
-	return enabled
+	return kit.Ternary(err != nil, definition.DefaultEnabled, enabled)
 }
 
 // RequireFeature rejects operations when their runtime feature is disabled.

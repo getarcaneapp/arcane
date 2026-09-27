@@ -1,19 +1,19 @@
 package registry
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-
 	"context"
 	"log/slog"
 	"strings"
 
 	"emperror.dev/errors"
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
+	kit "go.getarcane.app/kit/pkg"
 	"go.getarcane.app/sys/crypto"
 )
 
@@ -309,10 +309,8 @@ func (h *ContainerRegistryHandler) TestRegistry(ctx context.Context, input *Test
 		return nil, huma.Error400BadRequest(errors.WithMessage(err, "Registry test failed").Error())
 	}
 
-	msg := "Authentication succeeded"
-	if strings.TrimSpace(reg.Username) == "" && strings.TrimSpace(decryptedToken) == "" {
-		msg = "Registry saved (no credentials to test)"
-	}
+	noCredentials := strings.TrimSpace(reg.Username) == "" && strings.TrimSpace(decryptedToken) == ""
+	msg := kit.Ternary(noCredentials, "Registry saved (no credentials to test)", "Authentication succeeded")
 
 	return &handlerutil.Out[base.MessageResponse]{
 		Body: base.ApiResponse[base.MessageResponse]{

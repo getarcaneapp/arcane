@@ -1,11 +1,10 @@
 package notifications
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-
 	"context"
 	"testing"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/stretchr/testify/require"
 )
 

@@ -7,6 +7,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	swarmtypes "github.com/getarcaneapp/arcane/types/v2/swarm"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 // GetJoinCandidates lists environments available to join the selected manager.
@@ -51,10 +52,7 @@ func (s *SwarmService) GetJoinCandidates(ctx context.Context, environmentID stri
 		if _, bound := boundEnvironmentIDs[candidate.ID]; bound {
 			continue
 		}
-		environmentType := "direct"
-		if candidate.IsEdge {
-			environmentType = "edge"
-		}
+		environmentType := kit.Ternary(candidate.IsEdge, "edge", "direct")
 		candidates = append(candidates, swarmtypes.SwarmJoinCandidate{
 			EnvironmentID:   candidate.ID,
 			EnvironmentName: candidate.Name,

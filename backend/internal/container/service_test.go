@@ -1,14 +1,7 @@
 package container
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
-
-	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
-
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-
+	"cmp"
 	"context"
 	"encoding/json"
 	"io"
@@ -22,9 +15,13 @@ import (
 	"time"
 
 	"github.com/containerd/errdefs"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	containertypes "github.com/getarcaneapp/arcane/types/v2/container"
@@ -355,11 +352,9 @@ func TestContainerServiceCommitContainerOmitsReferenceWhenRepositoryEmptyInterna
 	}, gotRequest)
 }
 
-func newGroupedContainerSummary(name string, project string) containertypes.Summary {
+func newGroupedContainerSummary(name, project string) containertypes.Summary {
 	labels := map[string]string{}
-	if project != "" {
-		labels["com.docker.compose.project"] = project
-	}
+	labels["com.docker.compose.project"] = cmp.Or(project, labels["com.docker.compose.project"])
 
 	return containertypes.Summary{
 		ID:     name,
@@ -631,7 +626,6 @@ func TestBuildSummariesUsesContainerTagPolicyUpdates(t *testing.T) {
 	encoded, err := json.Marshal(items[4])
 	require.NoError(t, err)
 	require.Contains(t, string(encoded), `"autoUpdateEnabled":false`, "false status must stay serialized")
-
 }
 
 func TestContainerServiceGetContainerProcessesInternal(t *testing.T) {

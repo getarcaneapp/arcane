@@ -24,6 +24,7 @@ package client
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
@@ -90,10 +91,7 @@ func New(cfg *types.Config) (*Client, error) {
 		return nil, errors.WrapIf(err, "invalid server_url")
 	}
 
-	envID := cfg.DefaultEnvironment
-	if envID == "" {
-		envID = defaultEnvID
-	}
+	envID := cmp.Or(cfg.DefaultEnvironment, defaultEnvID)
 
 	return &Client{
 		baseURL:       cfg.ServerURL,
@@ -120,10 +118,7 @@ func NewUnauthenticated(cfg *types.Config) (*Client, error) {
 		return nil, errors.WrapIf(err, "invalid server_url")
 	}
 
-	envID := cfg.DefaultEnvironment
-	if envID == "" {
-		envID = defaultEnvID
-	}
+	envID := cmp.Or(cfg.DefaultEnvironment, defaultEnvID)
 
 	return &Client{
 		baseURL:       cfg.ServerURL,

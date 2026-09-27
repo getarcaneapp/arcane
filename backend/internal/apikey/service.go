@@ -7,17 +7,14 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"log/slog"
+	"maps"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"go.getarcane.app/kit/normalization"
-
 	"emperror.dev/errors"
-
-	"github.com/samber/hot"
-
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
@@ -26,6 +23,8 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/dbutil"
 	"github.com/getarcaneapp/arcane/types/v2/apikey"
+	"github.com/samber/hot"
+	"go.getarcane.app/kit/normalization"
 	"gorm.io/gorm"
 )
 
@@ -34,9 +33,7 @@ const (
 	ErrApiKeyExpired   = errors.Sentinel("API key has expired")
 	ErrApiKeyInvalid   = errors.Sentinel("invalid API key")
 	ErrApiKeyProtected = errors.Sentinel("API key is protected")
-)
 
-const (
 	apiKeyPrefix              = "arc_"
 	apiKeyLength              = 32
 	apiKeyPrefixLen           = 8
@@ -45,6 +42,15 @@ const (
 	managedByAdminBootstrap = "admin_account_default_api_key"
 	defaultAdminUsername    = "arcane"
 	defaultAdminAPIKeyName  = "Static Admin API Key"
+
+	// ErrApiKeyPermissionEscalation is returned when a caller attempts to grant an
+	// API key permissions they themselves do not hold.
+	ErrApiKeyPermissionEscalation = errors.Sentinel("cannot grant a permission you do not have")
+
+	// ErrApiKeyPersonalNoGrants is returned when a caller attempts to attach
+	// permission grants to a personal key, which has none of its own — it inherits
+	// the owner's role permissions at authentication time.
+	ErrApiKeyPersonalNoGrants = errors.Sentinel("personal API keys inherit the owner's permissions and cannot carry grants")
 )
 
 var defaultAdminAPIKeyDescription = func() *string {
@@ -203,10 +209,7 @@ func (s *ApiKeyService) backfillPermsForKeyInternal(ctx context.Context, tx *gor
 			}
 		}
 	}
-	out := make([]string, 0, len(seen))
-	for p := range seen {
-		out = append(out, p)
-	}
+	out := slices.Collect(maps.Keys(seen))
 	return out, nil
 }
 
@@ -363,15 +366,6 @@ func (s *ApiKeyService) CreateApiKey(ctx context.Context, userID string, callerP
 	}
 	return created, nil
 }
-
-// ErrApiKeyPermissionEscalation is returned when a caller attempts to grant an
-// API key permissions they themselves do not hold.
-const ErrApiKeyPermissionEscalation = errors.Sentinel("cannot grant a permission you do not have")
-
-// ErrApiKeyPersonalNoGrants is returned when a caller attempts to attach
-// permission grants to a personal key, which has none of its own — it inherits
-// the owner's role permissions at authentication time.
-const ErrApiKeyPersonalNoGrants = errors.Sentinel("personal API keys inherit the owner's permissions and cannot carry grants")
 
 // validateGrantsAgainstOwnerInternal caps grants at the key owner's role
 // permissions, so no holder of apikeys:create/update — sudo included — can
@@ -679,7 +673,7 @@ func (s *ApiKeyService) createManagedDefaultAdminAPIKey(tx *gorm.DB, userID, raw
 // the transaction commits. Invalidating pre-commit is ineffective: a concurrent
 // validation can still read the old committed row, snapshot the already-bumped
 // generation, and republish the entry so it survives the commit.
-func (s *ApiKeyService) reconcileManagedAPIKeys(tx *gorm.DB, userID string, rawKey string) ([]string, error) {
+func (s *ApiKeyService) reconcileManagedAPIKeys(tx *gorm.DB, userID, rawKey string) ([]string, error) {
 	managedKeys, err := s.listManagedAPIKeys(tx, userID)
 	if err != nil {
 		return nil, err

@@ -9,12 +9,18 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/danielgtaylor/huma/v2"
+	"github.com/danielgtaylor/huma/v2/adapters/humaecho"
+	"github.com/getarcaneapp/arcane/backend/v2/api/handlers"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/apns"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/appimages"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/auth"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/build"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/container"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/dashboard"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/diagnostics"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
@@ -27,6 +33,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/imagepatch"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/job"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/network"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/notification"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/oidc"
@@ -39,33 +46,49 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/search"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/swarm"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/system"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/systembackup"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/template"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/updater"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/upload"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/user"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/variable"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/version"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/vulnerability"
-
-	"github.com/danielgtaylor/huma/v2"
-	"github.com/danielgtaylor/huma/v2/adapters/humaecho"
-	"github.com/getarcaneapp/arcane/backend/v2/api/handlers"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/container"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/dashboard"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/system"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/updater"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/upload"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/volume"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/vulnerability"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/webhook"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
 	"github.com/labstack/echo/v5"
+	kit "go.getarcane.app/kit/pkg"
 	"go.uber.org/fx"
 )
 
 const (
 	arcaneTypesPrefix = "github.com/getarcaneapp/arcane/types/v2/"
 	dockerSDKPrefix   = "github.com/moby/moby"
+
+	// scalarDocsHTML returns the HTML template for Scalar API documentation.
+	scalarDocsHTML = `<!doctype html>
+<html>
+  <head>
+    <title>Arcane API Reference</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+  </head>
+  <body>
+    <script
+      id="api-reference"
+      data-url="/api/openapi.json"
+      data-configuration='{
+        "theme": "purple",
+        "darkMode": true,
+        "layout": "modern",
+        "hiddenClients": ["unirest"],
+        "defaultHttpClient": { "targetKey": "shell", "clientKey": "curl" }
+      }'></script>
+    <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
+  </body>
+</html>`
 )
 
 var dockerSchemaPrefixes = map[string]string{
@@ -120,11 +143,7 @@ func packagePathForType(t reflect.Type) string {
 
 func shortPackageFromTypeString(typeStr string) string {
 	before, _, ok := strings.Cut(typeStr, ".")
-	if !ok {
-		return ""
-	}
-
-	return before
+	return kit.Ternary(!ok, "", before)
 }
 
 func arcanePackageName(pkgPath string) (string, bool) {
@@ -142,7 +161,7 @@ func arcanePackageName(pkgPath string) (string, bool) {
 		return "", false
 	}
 
-	return strings.ToUpper(pkg[:1]) + pkg[1:], true
+	return kit.Capitalize(pkg), true
 }
 
 func dockerSchemaPrefix(pkgPath, shortPkg string) (string, bool) {
@@ -201,7 +220,7 @@ func qualifyGenericArcaneArgumentsInternal(pkgPath, typeName, schemaName string)
 
 		replacement := ""
 		if innerPackage != outerPackage {
-			replacement = strings.ToUpper(innerPackage[:1]) + innerPackage[1:]
+			replacement = kit.Capitalize(innerPackage)
 		}
 
 		argumentTypeIndex := prefixIndex + len(arcaneTypesPrefix) + separator + 1
@@ -329,29 +348,6 @@ func SetupAPI(e *echo.Echo, apiGroup *echo.Group, appCtx handlerutil.ActivityApp
 
 	return api
 }
-
-// scalarDocsHTML returns the HTML template for Scalar API documentation.
-const scalarDocsHTML = `<!doctype html>
-<html>
-  <head>
-    <title>Arcane API Reference</title>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-  </head>
-  <body>
-    <script
-      id="api-reference"
-      data-url="/api/openapi.json"
-      data-configuration='{
-        "theme": "purple",
-        "darkMode": true,
-        "layout": "modern",
-        "hiddenClients": ["unirest"],
-        "defaultHttpClient": { "targetKey": "shell", "clientKey": "curl" }
-      }'></script>
-    <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
-  </body>
-</html>`
 
 // registerScalarDocs adds the Scalar API documentation endpoint.
 func registerScalarDocs(apiGroup *echo.Group) {

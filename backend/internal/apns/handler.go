@@ -6,7 +6,6 @@ import (
 
 	"emperror.dev/errors"
 	"github.com/danielgtaylor/huma/v2"
-
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
 	apnstypes "github.com/getarcaneapp/arcane/types/v2/apns"

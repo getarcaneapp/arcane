@@ -86,16 +86,14 @@ type SwarmJoinEnvironmentRole string
 const (
 	SwarmJoinEnvironmentRoleWorker  SwarmJoinEnvironmentRole = "worker"
 	SwarmJoinEnvironmentRoleManager SwarmJoinEnvironmentRole = "manager"
-)
 
-type SwarmJoinEnvironmentResultState string
-
-const (
 	SwarmJoinEnvironmentResultJoined           SwarmJoinEnvironmentResultState = "joined"
 	SwarmJoinEnvironmentResultAlreadyMember    SwarmJoinEnvironmentResultState = "already_member"
 	SwarmJoinEnvironmentResultJoinedUnverified SwarmJoinEnvironmentResultState = "joined_unverified"
 	SwarmJoinEnvironmentResultFailed           SwarmJoinEnvironmentResultState = "failed"
 )
+
+type SwarmJoinEnvironmentResultState string
 
 type SwarmJoinCandidate struct {
 	EnvironmentID   string `json:"environmentId"`

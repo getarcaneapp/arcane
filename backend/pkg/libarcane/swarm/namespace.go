@@ -10,8 +10,8 @@ import (
 	"strings"
 
 	"emperror.dev/errors"
-
 	composegotypes "github.com/compose-spec/compose-go/v2/types"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 const (
@@ -25,10 +25,12 @@ const (
 	resourceNameMaxHash     = 12
 )
 
-var stackNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
+var (
+	stackNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
 
-// ErrInvalidStack identifies invalid stack source or conversion input.
-var ErrInvalidStack = errors.Sentinel("invalid swarm stack")
+	// ErrInvalidStack identifies invalid stack source or conversion input.
+	ErrInvalidStack = errors.Sentinel("invalid swarm stack")
+)
 
 type namespace struct {
 	name string
@@ -45,7 +47,7 @@ func (n namespace) Resolve(key, configuredName string) string {
 	return n.Scope(key)
 }
 
-func mergeLabelsInternal(primary map[string]string, secondary map[string]string) map[string]string {
+func mergeLabelsInternal(primary, secondary map[string]string) map[string]string {
 	out := map[string]string{}
 	maps.Copy(out, primary)
 	maps.Copy(out, secondary)
@@ -70,14 +72,9 @@ func invalidStackErrorInternal(err error) error {
 	return fmt.Errorf("%w: %w", ErrInvalidStack, err)
 }
 
-func hashManagedResourceInternal(data []byte) string {
-	sum := sha256.Sum256(data)
-	return hex.EncodeToString(sum[:])
-}
-
 func hashManagedFileResourceInternal(config composegotypes.FileObjectConfig, data []byte) string {
 	if config.Driver == "" && config.TemplateDriver == "" && len(config.DriverOpts) == 0 {
-		return hashManagedResourceInternal(data)
+		return kit.SHA256Hex(data)
 	}
 
 	hasher := sha256.New()

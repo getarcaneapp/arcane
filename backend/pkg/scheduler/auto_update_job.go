@@ -1,19 +1,19 @@
 package scheduler
 
 import (
+	"cmp"
 	"context"
 	"log/slog"
 	"strings"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
-	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
-
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/updater"
-
 	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/updater"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
+	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	updatertypes "github.com/getarcaneapp/arcane/types/v2/updater"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 const autoUpdateAdmissionScopeInternal = "auto-update"
@@ -53,10 +53,7 @@ func (j *AutoUpdateJob) ShouldSchedule(ctx context.Context) bool {
 
 func (j *AutoUpdateJob) Schedule(ctx context.Context) string {
 	s := j.settingsService.GetStringSetting(ctx, "autoUpdateInterval", "0 0 0 * * *")
-	if s == "" {
-		return "0 0 0 * * *"
-	}
-	return s
+	return kit.Ternary(s == "", "0 0 0 * * *", s)
 }
 
 func (j *AutoUpdateJob) Run(ctx context.Context) (schedulertypes.Outcome, error) {
@@ -66,9 +63,7 @@ func (j *AutoUpdateJob) Run(ctx context.Context) (schedulertypes.Outcome, error)
 		var priorOutcome schedulertypes.Outcome
 		options, priorOutcome, unresolvedTargets = autoUpdateRetryOptionsInternal(previous)
 		if priorOutcome.Status != "" {
-			if priorOutcome.ActivityID == "" {
-				priorOutcome.ActivityID = previous.Outcome.ActivityID
-			}
+			priorOutcome.ActivityID = cmp.Or(priorOutcome.ActivityID, previous.Outcome.ActivityID)
 			if priorOutcome.Status == schedulertypes.NeedsAttention && previous.Outcome.Message != "" {
 				priorOutcome.Message += ": " + previous.Outcome.Message
 			}
@@ -197,10 +192,7 @@ func autoUpdateOutcomeInternal(ctx context.Context, result *updatertypes.Result,
 		outcome.ActivityID = *result.ActivityID
 	}
 	for _, item := range result.Items {
-		status := schedulertypes.Succeeded
-		if item.Status == "failed" {
-			status = schedulertypes.Failed
-		}
+		status := kit.Ternary(item.Status == "failed", schedulertypes.Failed, schedulertypes.Succeeded)
 		if item.Status == "skipped" {
 			status = schedulertypes.Skipped
 		}

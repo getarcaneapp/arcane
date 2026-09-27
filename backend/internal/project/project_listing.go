@@ -1,8 +1,7 @@
 package project
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-
+	"cmp"
 	"context"
 	"fmt"
 	"log/slog"
@@ -15,7 +14,7 @@ import (
 
 	"emperror.dev/errors"
 	composeapi "github.com/docker/compose/v5/pkg/api"
-
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
 	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
@@ -23,12 +22,13 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/iconcatalog"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/mapper"
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
 	"github.com/getarcaneapp/arcane/types/v2/project"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 	"github.com/samber/mo"
+	kit "go.getarcane.app/kit/pkg"
+	"go.getarcane.app/kit/pkg/mapping"
 	"go.getarcane.app/sys/cgroup"
 	"go.getarcane.app/updater/labels"
 	"golang.org/x/sync/errgroup"
@@ -128,7 +128,7 @@ func projectServiceInfoFromContainerInternal(ctx context.Context, c container.Su
 // resolveServiceIconInternal picks a service icon from its container labels,
 // then the compose metadata's per-service and project-level icon sets.
 func resolveServiceIconInternal(catalog string, containerLabels map[string]string, serviceName string, meta projects.ArcaneComposeMetadata) iconcatalog.ResolvedIconSet {
-	return iconcatalog.Resolve(catalog, iconcatalog.FirstNonEmpty(
+	return iconcatalog.Resolve(catalog, cmp.Or(
 		projects.FindArcaneIconSet(containerLabels),
 		meta.ServiceIconSets[serviceName],
 		meta.ProjectIcon,
@@ -312,7 +312,7 @@ func applyProjectArchivedDBFilterInternal(query *gorm.DB, filterValue string) *g
 	if strings.EqualFold(strings.TrimSpace(filterValue), "all") {
 		return query
 	}
-	archived, _ := utils.ParseBool(filterValue)
+	archived, _ := kit.ParseBool(filterValue)
 	return query.Where("is_archived = ?", archived)
 }
 
@@ -325,20 +325,13 @@ func applyProjectTagsDBFilterInternal(query *gorm.DB, filterValue string) *gorm.
 }
 
 func normalizeTagFilterValuesInternal(filterValue string) []string {
-	seen := map[string]struct{}{}
 	result := make([]string, 0)
 	for value := range strings.SplitSeq(filterValue, ",") {
-		normalized, err := projects.NormalizeProjectTag(value)
-		if err != nil {
-			continue
+		if normalized, err := projects.NormalizeProjectTag(value); err == nil {
+			result = append(result, normalized)
 		}
-		if _, exists := seen[normalized]; exists {
-			continue
-		}
-		seen[normalized] = struct{}{}
-		result = append(result, normalized)
 	}
-	return result
+	return kit.Unique(result)
 }
 
 func applyProjectSearchDBFilterInternal(query *gorm.DB, term string) *gorm.DB {
@@ -615,10 +608,7 @@ func buildDiscoveredRuntimeServicesInternal(containers []container.Summary, icon
 			continue
 		}
 
-		serviceName := dockerutil.ComposeServiceLabel(c.Labels)
-		if serviceName == "" {
-			serviceName = c.ID
-		}
+		serviceName := cmp.Or(dockerutil.ComposeServiceLabel(c.Labels), c.ID)
 		key := serviceName + "\x00" + imageRef
 		if _, exists := seenServices[key]; exists {
 			continue
@@ -645,7 +635,7 @@ func buildDiscoveredRuntimeServicesInternal(containers []container.Summary, icon
 	return runtimeServices
 }
 
-func resolveDiscoveredProjectStatusInternal(serviceCount int, runningCount int) string {
+func resolveDiscoveredProjectStatusInternal(serviceCount, runningCount int) string {
 	switch {
 	case serviceCount == 0:
 		return string(ProjectStatusUnknown)
@@ -693,10 +683,7 @@ func (s *ProjectService) buildProjectDerivedPaginationConfigInternal() paginatio
 					if a.ServiceCount < b.ServiceCount {
 						return -1
 					}
-					if a.ServiceCount > b.ServiceCount {
-						return 1
-					}
-					return 0
+					return kit.Ternary(a.ServiceCount > b.ServiceCount, 1, 0)
 				},
 			},
 			{
@@ -716,10 +703,7 @@ func (s *ProjectService) buildProjectDerivedPaginationConfigInternal() paginatio
 					if at.Before(bt) {
 						return -1
 					}
-					if at.After(bt) {
-						return 1
-					}
-					return 0
+					return kit.Ternary(at.After(bt), 1, 0)
 				},
 			},
 		},
@@ -777,7 +761,7 @@ func buildProjectArchivedFilterAccessorInternal() pagination.FilterAccessor[proj
 			if strings.EqualFold(strings.TrimSpace(filterValue), "all") {
 				return true
 			}
-			archived, _ := utils.ParseBool(filterValue)
+			archived, _ := kit.ParseBool(filterValue)
 			return p.IsArchived == archived
 		},
 	}
@@ -848,7 +832,7 @@ func (s *ProjectService) CountProjectsWithPendingUpdates(ctx context.Context, al
 
 	visibleContainers := make([]container.Summary, 0, len(allContainers))
 	for _, c := range allContainers {
-		hidden, _ := utils.ParseBool(c.Labels[libarcane.HiddenResourceLabel])
+		hidden, _ := kit.ParseBool(c.Labels[libarcane.HiddenResourceLabel])
 		if !hidden {
 			visibleContainers = append(visibleContainers, c)
 		}
@@ -987,10 +971,7 @@ func (s *ProjectService) persistInferredServiceCountsInternal(ctx context.Contex
 	if len(counts) == 0 || s.db == nil {
 		return
 	}
-	ids := make([]string, 0, len(counts))
-	for id := range counts {
-		ids = append(ids, id)
-	}
+	ids := slices.Collect(maps.Keys(counts))
 	for chunk := range slices.Chunk(ids, inferredServiceCountBatchSizeInternal) {
 		var caseExpr strings.Builder
 		args := make([]any, 0, 2*len(chunk))
@@ -1020,7 +1001,7 @@ const inferredServiceCountBatchSizeInternal = 200
 // the container listing failed the row reports an unknown status.
 func projectListRowInternal(ctx context.Context, projectsDir string, p Project, snapshot projectContainerSnapshotInternal) project.Details {
 	var resp project.Details
-	_ = mapper.MapStruct(p, &resp)
+	_ = mapping.MapStruct(p, &resp)
 
 	resp.CreatedAt = p.CreatedAt.Format(time.RFC3339)
 	resp.UpdatedAt = p.UpdatedAt.Format(time.RFC3339)

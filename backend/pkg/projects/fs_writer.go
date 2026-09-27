@@ -17,11 +17,23 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"go.getarcane.app/acfs"
 	"go.getarcane.app/acfs/atomic"
+	kit "go.getarcane.app/kit/pkg"
 )
 
-// DefaultComposeFileName is the compose filename Arcane writes when a project
-// has no existing compose file.
-const DefaultComposeFileName = "compose.yaml"
+const (
+	// DefaultComposeFileName is the compose filename Arcane writes when a project
+	// has no existing compose file.
+	DefaultComposeFileName = "compose.yaml"
+
+	// DefaultComposeOverrideFileName is the override filename Arcane writes when a
+	// project gains an override but has none on disk. It is deliberately
+	// composeOverrideFileCandidates[1] ("compose.override.yaml"), NOT [0]
+	// ("compose.override.yml"), so the default override extension matches Arcane's
+	// ".yaml" base default (DefaultComposeFileName = "compose.yaml"). Do not "fix"
+	// this to [0]: `docker compose` has no preference between the two, and keeping
+	// ".yaml" avoids a mismatched base/override extension pair.
+	DefaultComposeOverrideFileName = "compose.override.yaml"
+)
 
 // composeFileCandidates lists supported base compose filenames in Arcane's
 // detection order. This order is intentionally explicit rather than sourced
@@ -46,10 +58,7 @@ func ComposeFileCandidates() []string {
 // detectExistingComposeFileInternal finds an existing compose file in the directory
 func detectExistingComposeFileInternal(ctx context.Context, projectsRoot, dir string) string {
 	composePath, err := DetectComposeFile(ctx, projectsRoot, dir)
-	if err == nil {
-		return composePath
-	}
-	return ""
+	return kit.Ternary(err == nil, composePath, "")
 }
 
 // WriteComposeFile writes a compose file to the specified directory.
@@ -378,10 +387,7 @@ func WriteSyncedDirectory(ctx context.Context, projectsRoot, projectPath string,
 
 		// Write the file. Honor the source's executable bit so scripts arrive
 		// runnable for lifecycle hooks and similar consumers.
-		perm := utils.FilePerm
-		if file.Executable {
-			perm = 0o755
-		}
+		perm := kit.Ternary(file.Executable, 0o755, utils.FilePerm)
 		if err := acfs.Write(ctx, projectPath, logicalPath, file.Content, acfs.WriteOptions{Mode: perm, InPlace: true}); err != nil {
 			return nil, errors.WrapIff(err, "failed to write file %s", file.RelativePath)
 		}
@@ -457,15 +463,6 @@ func cleanupEmptyDirs(ctx context.Context, projectPath, startLogical string) {
 // detection order, sourced from compose-go.
 var composeOverrideFileCandidates = slices.Clone(cli.DefaultOverrideFileNames)
 
-// DefaultComposeOverrideFileName is the override filename Arcane writes when a
-// project gains an override but has none on disk. It is deliberately
-// composeOverrideFileCandidates[1] ("compose.override.yaml"), NOT [0]
-// ("compose.override.yml"), so the default override extension matches Arcane's
-// ".yaml" base default (DefaultComposeFileName = "compose.yaml"). Do not "fix"
-// this to [0]: `docker compose` has no preference between the two, and keeping
-// ".yaml" avoids a mismatched base/override extension pair.
-const DefaultComposeOverrideFileName = "compose.override.yaml"
-
 // ComposeOverrideFileCandidates returns the supported compose override filenames
 // in detection order. A copy is returned so callers can't mutate package state.
 func ComposeOverrideFileCandidates() []string {
@@ -524,10 +521,7 @@ func ReadComposeOverrideContent(dir string) string {
 		return ""
 	}
 	content, err := os.ReadFile(overridePath)
-	if err != nil {
-		return ""
-	}
-	return string(content)
+	return kit.Ternary(err != nil, "", string(content))
 }
 
 // ResolveComposeOverride finds the highest-preference compose override file among
@@ -537,7 +531,7 @@ func ReadComposeOverrideContent(dir string) string {
 // When multiple candidates exist it warns and uses the highest-preference match,
 // mirroring DetectComposeOverrideFile. found is false (with empty name/content)
 // when no candidate exists.
-func ResolveComposeOverride(exists func(name string) bool, read func(name string) (string, error)) (fileName string, content string, found bool, err error) {
+func ResolveComposeOverride(exists func(name string) bool, read func(name string) (string, error)) (fileName, content string, found bool, err error) {
 	matches := findComposeOverrideCandidatesInternal(exists)
 	if len(matches) == 0 {
 		return "", "", false, nil

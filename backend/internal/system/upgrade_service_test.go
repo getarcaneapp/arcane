@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"emperror.dev/errors"
-
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
 	versiontypes "github.com/getarcaneapp/arcane/types/v2/version"
@@ -14,7 +13,6 @@ import (
 	mounttypes "github.com/moby/moby/api/types/mount"
 	networktypes "github.com/moby/moby/api/types/network"
 	"github.com/stretchr/testify/require"
-	"go.getarcane.app/updater/labels"
 )
 
 // TestSystemUpgradeService_UpgradeFlag tests the upgrading flag behavior
@@ -51,10 +49,10 @@ func TestSystemUpgradeService_ErrorVariables(t *testing.T) {
 	require.Error(t, errors.New("docker socket is not accessible"))
 
 	// Test error messages
-	require.Equal(t, "arcane is not running in a Docker container", (errors.New("arcane is not running in a Docker container")).Error())
-	require.Equal(t, "could not find Arcane container", (common.Classify(common.ErrNotFound, errors.New("could not find Arcane container"))).Error())
-	require.Equal(t, "an upgrade is already in progress", (common.Classify(common.ErrUpgradeInProgress, errors.New("an upgrade is already in progress"))).Error())
-	require.Equal(t, "docker socket is not accessible", (errors.New("docker socket is not accessible")).Error())
+	require.Equal(t, "arcane is not running in a Docker container", errors.New("arcane is not running in a Docker container").Error())
+	require.Equal(t, "could not find Arcane container", common.Classify(common.ErrNotFound, errors.New("could not find Arcane container")).Error())
+	require.Equal(t, "an upgrade is already in progress", common.Classify(common.ErrUpgradeInProgress, errors.New("an upgrade is already in progress")).Error())
+	require.Equal(t, "docker socket is not accessible", errors.New("docker socket is not accessible").Error())
 }
 
 // TestSystemUpgradeService_UpgradingFlag_ConcurrentAccess tests upgrading flag
@@ -160,39 +158,6 @@ func TestSystemUpgradeService_AtomicOperations(t *testing.T) {
 	old := s.upgrading.Swap(true)
 	require.False(t, old)
 	require.True(t, s.upgrading.Load())
-}
-
-func TestDetermineUpgradeBinaryPath(t *testing.T) {
-	tests := []struct {
-		name   string
-		labels map[string]string
-		want   string
-	}{
-		{
-			name: "agent container uses agent binary",
-			labels: map[string]string{
-				labels.LabelArcaneAgent: "true",
-			},
-			want: "/app/arcane-agent",
-		},
-		{
-			name: "main container uses main binary",
-			labels: map[string]string{
-				labels.LabelArcane: "true",
-			},
-			want: "/app/arcane",
-		},
-		{
-			name: "no labels defaults to main binary",
-			want: "/app/arcane",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, tt.want, determineUpgradeBinaryPathInternal(tt.labels))
-		})
-	}
 }
 
 func TestResolveSystemUpgraderRuntimeOptionsInternal_TCPDockerHost(t *testing.T) {

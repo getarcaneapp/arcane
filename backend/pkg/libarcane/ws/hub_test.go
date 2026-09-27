@@ -18,7 +18,7 @@ import (
 )
 
 // newTestWSPair creates a connected client/server WebSocket pair using httptest.
-func newTestWSPair(t *testing.T) (clientConn *websocket.Conn, serverConn *websocket.Conn, cleanup func()) {
+func newTestWSPair(t *testing.T) (clientConn, serverConn *websocket.Conn, cleanup func()) {
 	t.Helper()
 	serverReady := make(chan *websocket.Conn, 1)
 

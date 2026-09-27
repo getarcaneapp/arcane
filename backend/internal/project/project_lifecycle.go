@@ -24,9 +24,9 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
-
 	"go.getarcane.app/acfs"
 	buildtypes "go.getarcane.app/builds/types"
+	kit "go.getarcane.app/kit/pkg"
 	"go.getarcane.app/sys/cgroup"
 	"go.getarcane.app/updater/labels"
 	"gorm.io/gorm"
@@ -244,10 +244,7 @@ func prepareProjectBindDirectoriesInternal(projectPath string) projects.PrepareP
 func ensureProjectBindDirectoryInternal(ctx context.Context, projectPath, source string) error {
 	logicalPath, err := acfs.LogicalPath(projectPath, source)
 	if err != nil {
-		if errors.Is(err, acfs.ErrOutsideRoot) {
-			return nil
-		}
-		return err
+		return kit.Ternary(errors.Is(err, acfs.ErrOutsideRoot), nil, err)
 	}
 	if logicalPath == "/" {
 		return nil
@@ -262,10 +259,7 @@ func ensureProjectBindDirectoryInternal(ctx context.Context, projectPath, source
 	}
 
 	if err := acfs.MkdirAll(ctx, projectPath, logicalPath, utils.DirPerm); err != nil {
-		if errors.Is(err, acfs.ErrOutsideRoot) {
-			return nil
-		}
-		return err
+		return kit.Ternary(errors.Is(err, acfs.ErrOutsideRoot), nil, err)
 	}
 	slog.InfoContext(ctx, "created missing bind directory for project deployment", "projectPath", projectPath, "source", source)
 	return nil
@@ -560,7 +554,7 @@ func (s *ProjectService) CreateProject(ctx context.Context, name, composeContent
 	return proj, nil
 }
 
-func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, removeFiles bool, removeVolumes bool, user common.User) error {
+func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, removeFiles, removeVolumes bool, user common.User) error {
 	slog.DebugContext(ctx, "DestroyProject service called",
 		"projectID", projectID,
 		"removeFiles", removeFiles,

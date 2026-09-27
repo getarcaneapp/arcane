@@ -1,6 +1,7 @@
 package projects
 
 import (
+	"cmp"
 	"context"
 	"log/slog"
 	"path"
@@ -14,6 +15,7 @@ import (
 	mounttypes "github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
 	"github.com/samber/mo"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 // HostMount is one container→host mount (bind or named volume) from Arcane's own
@@ -72,10 +74,7 @@ func NewPathMapperFromMounts(mounts []HostMount) *PathMapper {
 // directory mapping and falls back to Docker mount discovery when no explicit
 // host path is configured.
 func NewPathMapperForConfiguredDirectory(ctx context.Context, configuredPath, defaultDir string, dockerClient *client.Client) *PathMapper {
-	configuredPath = strings.TrimSpace(configuredPath)
-	if configuredPath == "" {
-		configuredPath = defaultDir
-	}
+	configuredPath = cmp.Or(strings.TrimSpace(configuredPath), defaultDir)
 
 	containerDir := configuredPath
 	hostDir := ""
@@ -94,10 +93,7 @@ func NewPathMapperForConfiguredDirectory(ctx context.Context, configuredPath, de
 
 	if strings.TrimSpace(hostDir) != "" {
 		pathMapper := NewPathMapper(containerDir, filepath.Clean(strings.TrimSpace(hostDir)))
-		if pathMapper.IsNonMatchingMount() {
-			return pathMapper
-		}
-		return nil
+		return kit.Ternary(pathMapper.IsNonMatchingMount(), pathMapper, nil)
 	}
 
 	mounts, err := GetCurrentContainerMounts(ctx, dockerClient)
@@ -106,10 +102,7 @@ func NewPathMapperForConfiguredDirectory(ctx context.Context, configuredPath, de
 	}
 
 	pathMapper := NewPathMapperFromMounts(mounts)
-	if pathMapper.IsNonMatchingMount() {
-		return pathMapper
-	}
-	return nil
+	return kit.Ternary(pathMapper.IsNonMatchingMount(), pathMapper, nil)
 }
 
 // ResolveHostPath returns the host-side path for containerPath by selecting the

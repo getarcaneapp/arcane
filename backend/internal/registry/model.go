@@ -1,9 +1,9 @@
 package registry
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-
 	"time"
+
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 )
 
 type ContainerRegistry struct {

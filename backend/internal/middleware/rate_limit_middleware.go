@@ -1,8 +1,7 @@
 package middleware
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
+	"cmp"
 	"net"
 	"net/http"
 	"sort"
@@ -11,6 +10,7 @@ import (
 	"time"
 
 	"github.com/labstack/echo/v5"
+	kit "go.getarcane.app/kit/pkg"
 	"golang.org/x/time/rate"
 )
 
@@ -109,7 +109,7 @@ func (l *ipRateLimiter) evictOldestEntriesInternal(count int, protectedKey strin
 
 // PerIPRateLimit returns an Echo middleware that limits requests per client IP
 // to the given rate and burst. It responds with 429 when the limit is exceeded.
-func PerIPRateLimit(perMinute int, burst int) echo.MiddlewareFunc {
+func PerIPRateLimit(perMinute, burst int) echo.MiddlewareFunc {
 	if perMinute <= 0 {
 		perMinute = 10
 	}
@@ -132,7 +132,7 @@ func PerIPRateLimit(perMinute int, burst int) echo.MiddlewareFunc {
 
 // PerAgentTokenRateLimit returns an Echo middleware that limits requests per
 // edge agent token to the given rate and burst.
-func PerAgentTokenRateLimit(perMinute int, burst int) echo.MiddlewareFunc {
+func PerAgentTokenRateLimit(perMinute, burst int) echo.MiddlewareFunc {
 	if perMinute <= 0 {
 		perMinute = 10
 	}
@@ -144,25 +144,17 @@ func PerAgentTokenRateLimit(perMinute int, burst int) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c *echo.Context) error {
 			req := c.Request()
-			key := strings.TrimSpace(req.Header.Get("X-Arcane-Agent-Token"))
-			if key == "" {
-				key = strings.TrimSpace(req.Header.Get("X-Api-Key"))
-			}
+			key := cmp.Or(strings.TrimSpace(req.Header.Get(HeaderAgentToken)), strings.TrimSpace(req.Header.Get(HeaderApiKey)))
 			if key == "" {
 				return next(c)
 			}
-			if !limiter.allow(agentTokenRateLimitKeyInternal(key)) {
+			if !limiter.allow(kit.SHA256Hex(key)) {
 				c.Response().Header().Set("Retry-After", "60")
 				return c.JSON(http.StatusTooManyRequests, map[string]any{"error": "rate limit exceeded"})
 			}
 			return next(c)
 		}
 	}
-}
-
-func agentTokenRateLimitKeyInternal(token string) string {
-	sum := sha256.Sum256([]byte(token))
-	return hex.EncodeToString(sum[:])
 }
 
 // PerTokenRateLimitForPaths gives known tokens independent budgets and limits others per IP.
@@ -196,7 +188,7 @@ func PerTokenRateLimitForPaths(
 
 			token := c.Param("token")
 			if token != "" && isKnown != nil && isKnown(token) {
-				if !tokenLimiter.allow(agentTokenRateLimitKeyInternal(token)) {
+				if !tokenLimiter.allow(kit.SHA256Hex(token)) {
 					c.Response().Header().Set("Retry-After", "60")
 					return c.JSON(http.StatusTooManyRequests, map[string]any{"error": "rate limit exceeded"})
 				}
@@ -217,7 +209,7 @@ func PerTokenRateLimitForPaths(
 // Each path gets its own independent token bucket, so traffic on one path
 // does not deplete the budget for another (e.g. a login burst will not
 // block a concurrent token refresh).
-func PerIPRateLimitForPaths(paths []string, perMinute int, burst int) echo.MiddlewareFunc {
+func PerIPRateLimitForPaths(paths []string, perMinute, burst int) echo.MiddlewareFunc {
 	limiters := make(map[string]echo.MiddlewareFunc, len(paths))
 	for _, p := range paths {
 		limiters[p] = PerIPRateLimit(perMinute, burst)

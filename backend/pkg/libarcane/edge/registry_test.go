@@ -25,6 +25,7 @@ func (c *controlledCloseTunnelConn) Send(*TunnelMessage) error         { return 
 func (c *controlledCloseTunnelConn) Receive() (*TunnelMessage, error)  { return nil, nil }
 func (c *controlledCloseTunnelConn) IsExpectedReceiveError(error) bool { return false }
 func (c *controlledCloseTunnelConn) Transport() string                 { return EdgeTransportWebSocket }
+
 func (c *controlledCloseTunnelConn) IsClosed() bool {
 	select {
 	case <-c.closed:
@@ -33,6 +34,7 @@ func (c *controlledCloseTunnelConn) IsClosed() bool {
 		return false
 	}
 }
+
 func (c *controlledCloseTunnelConn) Close() error {
 	select {
 	case <-c.closeStarted:

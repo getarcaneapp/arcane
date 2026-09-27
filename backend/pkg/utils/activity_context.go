@@ -11,8 +11,10 @@ import (
 
 type appLifecycleContextKey struct{}
 
-type activityBatchIDContextKey struct{}
-type updateInitiatorContextKeyInternal struct{}
+type (
+	activityBatchIDContextKey         struct{}
+	updateInitiatorContextKeyInternal struct{}
+)
 
 // WithUpdateInitiator carries manager-authenticated attribution through an
 // agent request without changing the authenticated agent identity.
@@ -81,7 +83,7 @@ func IsAppLifecycleContext(ctx context.Context) bool {
 }
 
 // ActivityRuntimeContext returns a context suitable for activity-backed work.
-func ActivityRuntimeContext(requestCtx context.Context, appCtx context.Context) context.Context {
+func ActivityRuntimeContext(requestCtx, appCtx context.Context) context.Context {
 	if appCtx != nil {
 		if requestCtx == nil || requestCtx == appCtx {
 			return appCtx

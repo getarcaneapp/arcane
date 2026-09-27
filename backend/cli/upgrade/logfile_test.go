@@ -33,5 +33,4 @@ func TestSetupMessageOnlyLogFile(t *testing.T) {
 
 	require.False(t, !strings.Contains(got, "container updated") || !strings.Contains(got, `container="web"`),
 		"log file content = %q, want message-only entry with attrs", got)
-
 }

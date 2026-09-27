@@ -1,6 +1,7 @@
 package config
 
 import (
+	"cmp"
 	"fmt"
 	"log/slog"
 	"net"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 type AppEnvironment string
@@ -224,7 +226,7 @@ func loadFromEnv(cfg *Config) {
 			envValue, _, fromFile = utils.LookupEnvOrFile(envTag)
 		}
 		if !fromFile {
-			envValue = utils.TrimQuotes(envValue)
+			envValue = kit.TrimQuotes(envValue)
 			if envValue == "" {
 				envValue = fieldType.Tag.Get("default")
 			}
@@ -409,10 +411,7 @@ func (a AppEnvironment) IsTestEnvironment() bool {
 // It uses LISTEN as the host (if set) and PORT for the port.
 func (c *Config) ListenAddr() string {
 	host := strings.TrimSpace(c.Listen)
-	port := c.Port
-	if port == "" {
-		port = "3552"
-	}
+	port := cmp.Or(c.Port, "3552")
 	if host == "" {
 		return ":" + port
 	}
@@ -466,10 +465,7 @@ func (c *Config) MaskSensitive() map[string]any {
 		field := v.Field(i)
 		fieldType := t.Field(i)
 
-		envTag := fieldType.Tag.Get("env")
-		if envTag == "" {
-			envTag = fieldType.Name
-		}
+		envTag := cmp.Or(fieldType.Tag.Get("env"), fieldType.Name)
 
 		// Fields with "file" option are considered sensitive
 		optionsTag := fieldType.Tag.Get("options")
@@ -478,11 +474,7 @@ func (c *Config) MaskSensitive() map[string]any {
 		if isSensitive {
 			// Mask sensitive values
 			strVal := fmt.Sprintf("%v", field.Interface())
-			if len(strVal) > 0 {
-				result[envTag] = "****"
-			} else {
-				result[envTag] = "(empty)"
-			}
+			result[envTag] = kit.Ternary(len(strVal) > 0, "****", "(empty)")
 		} else {
 			result[envTag] = field.Interface()
 		}

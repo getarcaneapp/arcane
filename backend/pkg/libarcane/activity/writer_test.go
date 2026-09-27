@@ -140,8 +140,10 @@ func TestWriterReturnsWrappedWriteErrorWithoutActivityInternal(t *testing.T) {
 	require.ErrorContains(t, err, "client disconnected")
 }
 
-var _ MessageAppender = (*recordingAppender)(nil)
-var _ io.Writer = failingWriter{}
+var (
+	_ MessageAppender = (*recordingAppender)(nil)
+	_ io.Writer       = failingWriter{}
+)
 
 // TestWriterPersistsQueuedLinesAfterCancelInternal verifies that cancelling
 // the work context does not abandon lines the writer already accepted:

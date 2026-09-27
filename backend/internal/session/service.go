@@ -1,21 +1,20 @@
 package session
 
 import (
+	"cmp"
 	"context"
-	"crypto/sha256"
 	"crypto/subtle"
-	"encoding/hex"
 	"strings"
 	"time"
 	"uuid"
 
 	"emperror.dev/errors"
-
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/dbutil"
 	"github.com/getarcaneapp/arcane/types/v2/auth"
 	"github.com/samber/mo"
+	kit "go.getarcane.app/kit/pkg"
 	"gorm.io/gorm"
 )
 
@@ -29,13 +28,10 @@ func NewSessionService(db *database.DB) *SessionService {
 
 func (s *SessionService) CreateSession(ctx context.Context, userID string, expiresAt time.Time, meta auth.SessionMeta) (*UserSession, string, error) {
 	refreshJTI := uuid.New().String()
-	refreshHash := hashRefreshJTIInternal(refreshJTI)
+	refreshHash := kit.SHA256Hex(refreshJTI)
 
 	now := time.Now()
-	source := strings.TrimSpace(meta.Source)
-	if source == "" {
-		source = UserSessionSourceLocal
-	}
+	source := cmp.Or(strings.TrimSpace(meta.Source), UserSessionSourceLocal)
 	session := &UserSession{
 		UserID:           userID,
 		RefreshTokenHash: refreshHash,
@@ -56,7 +52,7 @@ func (s *SessionService) CreateSession(ctx context.Context, userID string, expir
 }
 
 func (s *SessionService) CreateFederatedSession(ctx context.Context, userID string, expiresAt time.Time, credentialID string) (*UserSession, error) {
-	refreshHash := hashRefreshJTIInternal(uuid.New().String())
+	refreshHash := kit.SHA256Hex(uuid.New().String())
 	now := time.Now()
 
 	session := &UserSession{
@@ -90,13 +86,13 @@ func (s *SessionService) GetSessionByID(ctx context.Context, sessionID string) (
 	return &session, nil
 }
 
-func (s *SessionService) RotateRefreshToken(ctx context.Context, sessionID string, refreshJTI string, meta auth.SessionMeta) (*UserSession, string, error) {
+func (s *SessionService) RotateRefreshToken(ctx context.Context, sessionID, refreshJTI string, meta auth.SessionMeta) (*UserSession, string, error) {
 	if strings.TrimSpace(sessionID) == "" || strings.TrimSpace(refreshJTI) == "" {
 		return nil, "", common.ErrInvalidToken
 	}
 
 	newRefreshJTI := uuid.New().String()
-	newHash := hashRefreshJTIInternal(newRefreshJTI)
+	newHash := kit.SHA256Hex(newRefreshJTI)
 
 	now := time.Now()
 	var rotated UserSession
@@ -112,7 +108,7 @@ func (s *SessionService) RotateRefreshToken(ctx context.Context, sessionID strin
 		if err := ValidateActive(&session); err != nil {
 			return err
 		}
-		if subtle.ConstantTimeCompare([]byte(session.RefreshTokenHash), []byte(hashRefreshJTIInternal(refreshJTI))) != 1 {
+		if subtle.ConstantTimeCompare([]byte(session.RefreshTokenHash), []byte(kit.SHA256Hex(refreshJTI))) != 1 {
 			return common.ErrInvalidToken
 		}
 
@@ -174,11 +170,6 @@ func (s *SessionService) DeleteExpiredSessions(ctx context.Context, revokedReten
 	return result.RowsAffected, nil
 }
 
-func hashRefreshJTIInternal(jti string) string {
-	sum := sha256.Sum256([]byte(jti))
-	return hex.EncodeToString(sum[:])
-}
-
 // RevokeAllUserSessionsExcept revokes every active session for userID, leaving
 // exceptSessionID active. Pass "" to revoke all sessions.
 func (s *SessionService) RevokeAllUserSessionsExcept(ctx context.Context, userID, exceptSessionID string) error {
@@ -211,8 +202,5 @@ func ValidateActive(userSession *UserSession) error {
 	if userSession.RevokedAt != nil {
 		return common.Classify(common.ErrSessionRevoked, errors.New("Session has been revoked"))
 	}
-	if time.Now().After(userSession.ExpiresAt) {
-		return common.ErrExpiredToken
-	}
-	return nil
+	return kit.Ternary[error](time.Now().After(userSession.ExpiresAt), common.ErrExpiredToken, nil)
 }

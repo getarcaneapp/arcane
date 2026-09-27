@@ -1,20 +1,18 @@
 package environment
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-
 	"archive/zip"
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json/v2"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net/http"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -22,7 +20,9 @@ import (
 	"emperror.dev/errors"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
@@ -32,17 +32,18 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/mapper"
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/getarcaneapp/arcane/types/v2/environment"
 	"github.com/getarcaneapp/arcane/types/v2/version"
 	"github.com/samber/mo"
+	kit "go.getarcane.app/kit/pkg"
+	"go.getarcane.app/kit/pkg/mapping"
 	"go.getarcane.app/streams/agg"
 )
 
-const localDockerEnvironmentID = "0"
-
 const (
+	localDockerEnvironmentID = "0"
+
 	// Only covers poll-mode TTL expiry; tunnel and health-check changes arrive
 	// on the service's runtime-change signal instead.
 	environmentStreamPollInterval   = 5 * time.Second
@@ -383,11 +384,7 @@ func accessibleEnvironmentIDsInternal(ps *authz.PermissionSet) []string {
 	if ps == nil {
 		return []string{}
 	}
-	ids := make([]string, 0, len(ps.PerEnv))
-	for envID := range ps.PerEnv {
-		ids = append(ids, envID)
-	}
-	sort.Strings(ids)
+	ids := slices.Sorted(maps.Keys(ps.PerEnv))
 	return ids
 }
 
@@ -415,45 +412,6 @@ func visibleEnvironmentsForInternal(envs []environment.Environment, ps *authz.Pe
 	return filtered
 }
 
-// fingerprintEnvironmentsInternal hashes every field of the visible environment
-// list. This runs on every stream tick for every connected client, so it hashes
-// the fields directly rather than marshalling the payload to JSON and retaining
-// the bytes for comparison — most ticks change nothing and the encoded snapshot
-// was thrown away immediately.
-func fingerprintEnvironmentsInternal(envs []environment.Environment) uint64 {
-	return utils.NewFingerprint().Slice(envs, func(f *utils.Fingerprint, env *environment.Environment) {
-		f.String(env.ID).
-			String(env.Name).
-			String(env.ApiUrl).
-			String(env.Status).
-			Bool(env.Enabled).
-			Bool(env.IsEdge).
-			OptTime(env.LastSeen).
-			OptString(env.EdgeTransport).
-			OptString(env.LastEdgeTransport).
-			OptString(env.EdgeSecurityMode).
-			OptString(env.EdgeSessionID).
-			OptString(env.EdgeAgentInstance).
-			Strings(env.EdgeCapabilities).
-			OptBool(env.Connected).
-			OptTime(env.ConnectedAt).
-			OptTime(env.LastHeartbeat).
-			OptTime(env.LastPollAt).
-			OptString(env.ApiKey)
-
-		cert := env.EdgeMTLSCertificate
-		f.Present(cert != nil)
-		if cert == nil {
-			return
-		}
-		f.OptString(cert.CommonName).
-			OptTime(cert.ExpiresAt).
-			OptInt(cert.DaysRemaining).
-			Bool(cert.Expired).
-			Bool(cert.ExpiringSoon)
-	}).Sum()
-}
-
 func (h *EnvironmentHandler) RunStreamProducer(ctx context.Context, ps *authz.PermissionSet, events chan<- environment.StreamEvent) {
 	var lastFingerprint uint64
 	var haveFingerprint bool
@@ -461,7 +419,7 @@ func (h *EnvironmentHandler) RunStreamProducer(ctx context.Context, ps *authz.Pe
 
 	h.streamHub.Subscribe(ctx, environmentStreamHubKeyInternal, h.runEnvironmentStreamListerInternal, func(all []environment.Environment) bool {
 		envs := visibleEnvironmentsForInternal(all, ps)
-		fingerprint := fingerprintEnvironmentsInternal(envs)
+		fingerprint := kit.Fingerprint(envs)
 		// Re-send unchanged state on a floor so relative timestamps in the UI
 		// ("last seen 2 minutes ago") keep advancing.
 		if haveFingerprint && fingerprint == lastFingerprint && time.Since(lastSentAt) < environmentStreamRefreshFloor {
@@ -582,7 +540,7 @@ func (h *EnvironmentHandler) createEnvironmentWithApiKeyInternal(ctx context.Con
 	}
 	created = updated
 
-	out, mapErr := mapper.MapOne[*Environment, environment.Environment](created)
+	out, mapErr := mapping.MapOne[*Environment, environment.Environment](created)
 	if mapErr != nil {
 		return nil, huma.Error500InternalServerError("Failed to map environment")
 	}
@@ -614,7 +572,7 @@ func (h *EnvironmentHandler) createEnvironmentLegacyInternal(ctx context.Context
 		h.triggerEnvironmentResourceSyncInternal(ctx, created.ID, created.Name, "environment creation")
 	}
 
-	out, mapErr := mapper.MapOne[*Environment, environment.Environment](created)
+	out, mapErr := mapping.MapOne[*Environment, environment.Environment](created)
 	if mapErr != nil {
 		return nil, huma.Error500InternalServerError("Failed to map environment")
 	}
@@ -637,7 +595,7 @@ func (h *EnvironmentHandler) GetEnvironment(ctx context.Context, input *GetEnvir
 		return nil, huma.Error404NotFound("Environment not found")
 	}
 
-	out, mapErr := mapper.MapOne[*Environment, environment.Environment](env)
+	out, mapErr := mapping.MapOne[*Environment, environment.Environment](env)
 	if mapErr != nil {
 		return nil, huma.Error500InternalServerError("Failed to map environment")
 	}
@@ -680,7 +638,7 @@ func (h *EnvironmentHandler) UpdateEnvironment(ctx context.Context, input *Updat
 
 	h.triggerPostUpdateTasksInternal(ctx, input.ID, updated, &input.Body)
 
-	out, mapErr := mapper.MapOne[*Environment, environment.Environment](updated)
+	out, mapErr := mapping.MapOne[*Environment, environment.Environment](updated)
 	if mapErr != nil {
 		return nil, huma.Error500InternalServerError("Failed to map environment")
 	}
@@ -736,7 +694,7 @@ func (h *EnvironmentHandler) UpdateEnvironment(ctx context.Context, input *Updat
 		}
 
 		// Re-map with updated environment data
-		out, mapErr = mapper.MapOne[*Environment, environment.Environment](updated)
+		out, mapErr = mapping.MapOne[*Environment, environment.Environment](updated)
 		if mapErr != nil {
 			return nil, huma.Error500InternalServerError("Failed to map environment")
 		}
@@ -848,7 +806,7 @@ func (h *EnvironmentHandler) PairAgent(ctx context.Context, input *PairAgentInpu
 
 	shouldRotate := input.Body != nil && input.Body.Rotate != nil && *input.Body.Rotate
 	if h.cfg.AgentToken == "" || shouldRotate {
-		h.cfg.AgentToken = utils.GenerateRandomString(48)
+		h.cfg.AgentToken = kit.RandomString(48)
 	}
 
 	if err := h.settingsService.SetStringSetting(ctx, "agentToken", h.cfg.AgentToken); err != nil {
@@ -927,7 +885,7 @@ func (h *EnvironmentHandler) handleEnvironmentPairingInternal(ctx context.Contex
 func (h *EnvironmentHandler) triggerPostUpdateTasksInternal(ctx context.Context, environmentID string, updated *Environment, req *environment.Update) {
 	if updated.Enabled {
 		detachedCtx := context.WithoutCancel(ctx)
-		go func(syncCtx context.Context, envID string, envName string) {
+		go func(syncCtx context.Context, envID, envName string) {
 			status, err := h.environmentService.TestConnection(syncCtx, envID, nil)
 			if err != nil {
 				slog.WarnContext(syncCtx, "Failed to test connection after environment update",
@@ -941,11 +899,11 @@ func (h *EnvironmentHandler) triggerPostUpdateTasksInternal(ctx context.Context,
 	}
 }
 
-func (h *EnvironmentHandler) triggerEnvironmentResourceSyncInternal(ctx context.Context, environmentID string, environmentName string, reason string) {
+func (h *EnvironmentHandler) triggerEnvironmentResourceSyncInternal(ctx context.Context, environmentID, environmentName, reason string) {
 	h.environmentService.ForgetSyncState(environmentID)
 	detachedCtx := context.WithoutCancel(ctx)
 
-	go func(syncCtx context.Context, envID string, envName string, syncReason string) {
+	go func(syncCtx context.Context, envID, envName, syncReason string) {
 		syncCtx, cancel := context.WithTimeout(syncCtx, edge.DefaultProxyTimeout)
 		defer cancel()
 		if err := h.environmentService.SyncRegistriesToEnvironment(syncCtx, envID); err != nil {
@@ -957,7 +915,7 @@ func (h *EnvironmentHandler) triggerEnvironmentResourceSyncInternal(ctx context.
 		}
 	}(detachedCtx, environmentID, environmentName, reason)
 
-	go func(syncCtx context.Context, envID string, envName string, syncReason string) {
+	go func(syncCtx context.Context, envID, envName, syncReason string) {
 		syncCtx, cancel := context.WithTimeout(syncCtx, edge.DefaultProxyTimeout)
 		defer cancel()
 		if err := h.environmentService.SyncS3DestinationsToEnvironment(syncCtx, envID); err != nil {
@@ -969,7 +927,7 @@ func (h *EnvironmentHandler) triggerEnvironmentResourceSyncInternal(ctx context.
 		}
 	}(detachedCtx, environmentID, environmentName, reason)
 
-	go func(syncCtx context.Context, envID string, envName string, syncReason string) {
+	go func(syncCtx context.Context, envID, envName, syncReason string) {
 		syncCtx, cancel := context.WithTimeout(syncCtx, edge.DefaultProxyTimeout)
 		defer cancel()
 		if err := h.environmentService.SyncRepositoriesToEnvironment(syncCtx, envID); err != nil {
@@ -1360,7 +1318,7 @@ func (h *EnvironmentHandler) loadEnvironmentMTLSFilesInternal(ctx context.Contex
 	return env, snippets.MTLS.Files, nil
 }
 
-func (h *EnvironmentHandler) loadEnvironmentMTLSFileInternal(ctx context.Context, environmentID string, fileName string) (*Environment, DeploymentSnippetFile, error) {
+func (h *EnvironmentHandler) loadEnvironmentMTLSFileInternal(ctx context.Context, environmentID, fileName string) (*Environment, DeploymentSnippetFile, error) {
 	env, files, err := h.loadEnvironmentMTLSFilesInternal(ctx, environmentID)
 	if err != nil {
 		return nil, DeploymentSnippetFile{}, err
@@ -1385,10 +1343,7 @@ func isSensitiveMTLSAssetNameInternal(fileName string) bool {
 }
 
 func environmentMTLSDownloadBaseNameInternal(env *Environment) string {
-	baseName := strings.TrimSpace(env.Name)
-	if baseName == "" {
-		baseName = "environment"
-	}
+	baseName := cmp.Or(strings.TrimSpace(env.Name), "environment")
 
 	baseName = strings.Map(func(r rune) rune {
 		switch {
@@ -1403,10 +1358,7 @@ func environmentMTLSDownloadBaseNameInternal(env *Environment) string {
 		}
 	}, baseName)
 
-	baseName = strings.Trim(baseName, "-")
-	if baseName == "" {
-		baseName = "environment"
-	}
+	baseName = cmp.Or(strings.Trim(baseName, "-"), "environment")
 
 	return baseName + "-" + env.ID
 }
@@ -1428,10 +1380,7 @@ func environmentMTLSAssetFileModeInternal(file DeploymentSnippetFile) os.FileMod
 	if parsed, err := strconv.ParseUint(strings.TrimSpace(file.Permissions), 8, 32); err == nil && parsed != 0 {
 		return os.FileMode(parsed)
 	}
-	if isSensitiveMTLSAssetNameInternal(file.Name) {
-		return 0o600
-	}
-	return 0o644
+	return kit.Ternary[os.FileMode](isSensitiveMTLSAssetNameInternal(file.Name), 0o600, 0o644)
 }
 
 // logMTLSAuditEventInternal records an audit event for administrator-triggered

@@ -2,10 +2,9 @@ package volume
 
 import (
 	"archive/tar"
+	"cmp"
 	"compress/gzip"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"log/slog"
@@ -15,12 +14,7 @@ import (
 	"time"
 	"uuid"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
-	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
-
 	"emperror.dev/errors"
-	"gorm.io/gorm"
-
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/backup"
@@ -33,16 +27,20 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/backupbrowser"
 	s3utils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/s3"
 	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
 	backuptypes "github.com/getarcaneapp/arcane/types/v2/backup"
+	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
 	"github.com/samber/mo"
+	kit "go.getarcane.app/kit/pkg"
+	"gorm.io/gorm"
 )
 
 type backupStorageMode string
@@ -55,13 +53,29 @@ const (
 	// backupStorageModeNamedVolumeFallback means no suitable Arcane container
 	// mount was found, so Arcane's dedicated named backup volume is used.
 	backupStorageModeNamedVolumeFallback backupStorageMode = "named_volume_fallback"
-)
 
-const backupMountMissingWarning = "No volume is mounted at /backups in the Arcane container. Backups will only live inside Docker unless you mount a host path."
+	backupMountMissingWarning = "No volume is mounted at /backups in the Arcane container. Backups will only live inside Docker unless you mount a host path."
 
-const (
 	volumeBackupContainerRecoveryTimeout  = 30 * time.Second
 	volumeBackupContainerRecoveryInterval = 500 * time.Millisecond
+
+	volumeRusticRepositoryPath       = "/repository/volumes"
+	localVolumeRepositoryID          = "volumes:local"
+	legacyVolumePasswordSaltInternal = "arcane-volume-backups:"
+
+	restoreBackupFilesScriptInternal = `set -e
+archive="$1"
+shift
+archive_mode=$(stat -c '%A' -- "$archive" 2>/dev/null) || { echo ARCANE_NOT_FOUND >&2; exit 44; }
+case "$archive_mode" in -*) ;; *) echo ARCANE_NOT_FOUND >&2; exit 44 ;; esac
+for member do
+  if ! tar -tzf "$archive" -- "$member" >/dev/null 2>&1; then echo ARCANE_NOT_FOUND >&2; exit 44; fi
+done
+tar -xzf "$archive" -C /volume -- "$@"`
+
+	defaultVolumeBackupSchedule = "0 0 2 * * *"
+
+	systemRecoverySnapshotLabel = "arcane-system-recovery"
 )
 
 type backupStorageMountInternal struct {
@@ -121,10 +135,7 @@ func (s *VolumeService) resolveUsableBackupStorageMountInternal(ctx context.Cont
 }
 
 func backupMountWarningForStorageInternal(storage backupStorageMountInternal) string {
-	if storage.mode == backupStorageModeArcaneMount {
-		return ""
-	}
-	return backupMountMissingWarning
+	return kit.Ternary(storage.mode == backupStorageModeArcaneMount, "", backupMountMissingWarning)
 }
 
 func backupMountWarningFromArcaneMountsInternal(mounts []container.MountPoint) string {
@@ -351,11 +362,7 @@ func (s *VolumeService) ListBackupsPaginated(ctx context.Context, volumeName str
 			sortCol = "created_at"
 		}
 
-		if params.Order == pagination.SortDesc {
-			sortOrder = "DESC"
-		} else {
-			sortOrder = "ASC"
-		}
+		sortOrder = kit.Ternary(params.Order == pagination.SortDesc, "DESC", "ASC")
 	}
 	query = query.Order(fmt.Sprintf("%s %s", sortCol, sortOrder))
 
@@ -390,7 +397,11 @@ func (s *VolumeService) ListBackupsPaginated(ctx context.Context, volumeName str
 	}
 	remoteAvailable := backup.RemoteSnapshotChecker(ctx, s.s3Destinations, root)
 	for i := range backups {
-		backups[i].Type = volumeBackupManagementTypeInternal(backups[i].PolicyID)
+		backups[i].Type = kit.Ternary(
+			strings.HasPrefix(backups[i].PolicyID, backuptypes.SystemVolumePolicyPrefix),
+			backuptypes.ManagementTypeSystem,
+			backuptypes.ManagementTypeVolume,
+		)
 		backups[i].RemoteAvailable = remoteAvailable(backups[i].S3DestinationID, backups[i].RemoteSnapshotID)
 	}
 
@@ -415,13 +426,6 @@ func applyBackupManagementFilterInternal(query *gorm.DB, typeFilter string) *gor
 		return query.Where("policy_id LIKE ?", backuptypes.SystemVolumePolicyPrefix+"%")
 	}
 	return query.Where("policy_id NOT LIKE ? OR policy_id IS NULL", backuptypes.SystemVolumePolicyPrefix+"%")
-}
-
-func volumeBackupManagementTypeInternal(policyID string) backuptypes.ManagementType {
-	if strings.HasPrefix(policyID, backuptypes.SystemVolumePolicyPrefix) {
-		return backuptypes.ManagementTypeSystem
-	}
-	return backuptypes.ManagementTypeVolume
 }
 
 func (s *VolumeService) ListBackups(ctx context.Context, volumeName string) ([]VolumeBackup, error) {
@@ -468,24 +472,14 @@ func (s *VolumeService) backupArchiveFilenameInternal(backupID string) (string, 
 	return sanitizedBackupID + ".tar.gz", nil
 }
 
-const (
-	volumeRusticRepositoryPath = "/repository/volumes"
-	localVolumeRepositoryID    = "volumes:local"
-)
-
-func (s *VolumeService) legacyVolumePasswordInternal() string {
-	sum := sha256.Sum256([]byte("arcane-volume-backups:" + s.encryptionKey))
-	return hex.EncodeToString(sum[:])
-}
-
 // volumeBackupPasswordInternal returns the recovery key once one is stored, re-keying the given repositories off the legacy derivation first.
 func (s *VolumeService) volumeBackupPasswordInternal(ctx context.Context, dockerClient *client.Client, repositories ...backup.Repository) (string, error) {
 	if s.recoveryKeys == nil {
-		return s.legacyVolumePasswordInternal(), nil
+		return kit.SHA256Hex(legacyVolumePasswordSaltInternal + s.encryptionKey), nil
 	}
 	key, err := s.recoveryKeys.Get(ctx)
 	if errors.Is(err, backup.ErrRecoveryKeyNotConfigured) {
-		return s.legacyVolumePasswordInternal(), nil
+		return kit.SHA256Hex(legacyVolumePasswordSaltInternal + s.encryptionKey), nil
 	}
 	if err != nil {
 		return "", err
@@ -516,7 +510,7 @@ func (s *VolumeService) rekeyRepositoryInternal(ctx context.Context, dockerClien
 		}
 		repository = writable
 	}
-	if err := s.engine.ChangeRepositoryPassword(ctx, dockerClient, repository, s.legacyVolumePasswordInternal(), recoveryKey); err != nil {
+	if err := s.engine.ChangeRepositoryPassword(ctx, dockerClient, repository, kit.SHA256Hex(legacyVolumePasswordSaltInternal+s.encryptionKey), recoveryKey); err != nil {
 		slog.DebugContext(ctx, "volume backup repository was not re-keyed", "repository", repository.ID, "error", err.Error())
 		return
 	}
@@ -642,9 +636,7 @@ func (s *VolumeService) resolveBackupPlanInternal(ctx context.Context, volumeNam
 }
 
 func (s *VolumeService) CreateBackup(ctx context.Context, volumeName string, user common.User, trigger VolumeBackupTrigger, request volumetypes.CreateBackupRequest) (_ *VolumeBackup, err error) {
-	if trigger == "" {
-		trigger = VolumeBackupTriggerManual
-	}
+	trigger = cmp.Or(trigger, VolumeBackupTriggerManual)
 	plan, err := s.resolveBackupPlanInternal(ctx, volumeName, trigger, request, nil)
 	if err != nil {
 		return nil, err
@@ -657,9 +649,7 @@ func (s *VolumeService) CreateSystemManagedBackup(ctx context.Context, volumeNam
 	if !strings.HasPrefix(policyID, backuptypes.SystemVolumePolicyPrefix) {
 		return nil, errors.New("invalid system-managed volume backup policy id")
 	}
-	if trigger == "" {
-		trigger = VolumeBackupTriggerManual
-	}
+	trigger = cmp.Or(trigger, VolumeBackupTriggerManual)
 	transient := &VolumeBackupPolicy{
 		VolumeName: volumeName, Enabled: true, Schedule: policy.Schedule, RetentionCount: policy.RetentionCount,
 		StopContainers: policy.StopContainers, LocalEnabled: policy.LocalEnabled, S3Enabled: policy.S3Enabled,
@@ -695,7 +685,12 @@ func (s *VolumeService) prepareBackupInternal(ctx context.Context, volumeName st
 	entry := &VolumeBackup{
 		VolumeName: volumeName, CreatedAt: time.Now(), Status: VolumeBackupStatusRunning,
 		Trigger: trigger, Destination: plan.destination, Format: VolumeBackupFormatRustic,
-		S3DestinationID: plan.s3DestinationID, PolicyID: policyID, Type: volumeBackupManagementTypeInternal(policyID),
+		S3DestinationID: plan.s3DestinationID, PolicyID: policyID,
+		Type: kit.Ternary(
+			strings.HasPrefix(policyID, backuptypes.SystemVolumePolicyPrefix),
+			backuptypes.ManagementTypeSystem,
+			backuptypes.ManagementTypeVolume,
+		),
 	}
 	entry.ID = fmt.Sprintf("%s-%d-%s", volumeName, time.Now().UnixNano(), uuid.New().String()[:8])
 	if err := s.db.WithContext(ctx).Create(entry).Error; err != nil {
@@ -1619,23 +1614,12 @@ func (s *VolumeService) listArchiveBackupPathsInternal(ctx context.Context, back
 	}
 	lines := strings.Split(strings.TrimSpace(stdout), "\n")
 	files := make([]string, 0, len(lines))
-	seen := make(map[string]struct{})
 	for _, line := range lines {
-		clean := strings.TrimSpace(line)
-		if clean == "" {
-			continue
+		if clean := strings.TrimPrefix(strings.TrimSpace(line), "./"); clean != "" {
+			files = append(files, clean)
 		}
-		clean = strings.TrimPrefix(clean, "./")
-		if clean == "" {
-			continue
-		}
-		if _, ok := seen[clean]; ok {
-			continue
-		}
-		seen[clean] = struct{}{}
-		files = append(files, clean)
 	}
-	return files, nil
+	return kit.Unique(files), nil
 }
 
 func (s *VolumeService) restoreBackupFilesInContainerInternal(ctx context.Context, containerID, filename string, cleanedPaths []string) (string, error) {
@@ -1647,16 +1631,6 @@ func (s *VolumeService) restoreBackupFilesInContainerInternal(ctx context.Contex
 	_, stderr, err := s.execInContainerInternal(ctx, containerID, "", args)
 	return stderr, errors.WrapIf(err, "failed to restore files")
 }
-
-const restoreBackupFilesScriptInternal = `set -e
-archive="$1"
-shift
-archive_mode=$(stat -c '%A' -- "$archive" 2>/dev/null) || { echo ARCANE_NOT_FOUND >&2; exit 44; }
-case "$archive_mode" in -*) ;; *) echo ARCANE_NOT_FOUND >&2; exit 44 ;; esac
-for member do
-  if ! tar -tzf "$archive" -- "$member" >/dev/null 2>&1; then echo ARCANE_NOT_FOUND >&2; exit 44; fi
-done
-tar -xzf "$archive" -C /volume -- "$@"`
 
 func (s *VolumeService) restoreArchiveBackupFilesInternal(ctx context.Context, dockerClient *client.Client, volumeName, backupID string, cleanedPaths []string) error {
 	filename, err := s.backupArchiveFilenameInternal(backupID)
@@ -1794,8 +1768,6 @@ func (s *VolumeService) UploadAndRestore(ctx context.Context, volumeName string,
 
 	return nil
 }
-
-const defaultVolumeBackupSchedule = "0 0 2 * * *"
 
 func (s *VolumeService) loadVolumeBackupPoliciesInternal(ctx context.Context, volumeName string) ([]VolumeBackupPolicy, error) {
 	var policies []VolumeBackupPolicy
@@ -2025,10 +1997,7 @@ func (s *VolumeService) disableMissingS3Internal(ctx context.Context, policy *Vo
 	if !errors.Is(err, backup.ErrRemoteRepositoryMissing) {
 		return false, nil
 	}
-	column := "enabled"
-	if policy.LocalEnabled {
-		column = "s3_enabled"
-	}
+	column := kit.Ternary(policy.LocalEnabled, "s3_enabled", "enabled")
 	result := s.db.WithContext(ctx).Model(&VolumeBackupPolicy{}).
 		Where("id = ? AND s3_destination_id = ? AND enabled = ? AND s3_enabled = ? AND local_enabled = ?", policy.ID, policy.S3DestinationID, true, true, policy.LocalEnabled).
 		Update(column, false)
@@ -2043,8 +2012,6 @@ func (s *VolumeService) disableMissingS3Internal(ctx context.Context, policy *Vo
 	s.rescheduleVolumeBackupPolicyInternal(ctx, policy)
 	return true, nil
 }
-
-const systemRecoverySnapshotLabel = "arcane-system-recovery"
 
 type remoteRepositoryKeyInternal struct {
 	destinationID string

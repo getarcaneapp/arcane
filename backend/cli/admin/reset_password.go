@@ -1,8 +1,6 @@
 package admin
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-
 	"context"
 	"fmt"
 	"io"
@@ -11,15 +9,16 @@ import (
 	"strings"
 
 	"emperror.dev/errors"
-	"github.com/spf13/cobra"
-	"golang.org/x/term"
-
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/user"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/validation"
+	"github.com/spf13/cobra"
+	kit "go.getarcane.app/kit/pkg"
+	"golang.org/x/term"
 )
 
 const defaultAdminUsername = "arcane"
@@ -141,10 +140,7 @@ func validatePasswordPairInternal(password, confirmation, policy string) error {
 func passwordPolicyFromDBInternal(ctx context.Context, db *database.DB) string {
 	var setting settings.SettingVariable
 	err := db.WithContext(ctx).First(&setting, "key = ?", "authPasswordPolicy").Error
-	if err != nil || strings.TrimSpace(setting.Value) == "" {
-		return validation.PasswordPolicyStrong
-	}
-	return setting.Value
+	return kit.Ternary(err != nil || strings.TrimSpace(setting.Value) == "", validation.PasswordPolicyStrong, setting.Value)
 }
 
 func resetPasswordInternal(ctx context.Context, db *database.DB, username, password, policy string) error {

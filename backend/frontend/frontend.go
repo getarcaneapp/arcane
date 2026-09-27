@@ -3,6 +3,7 @@
 package frontend
 
 import (
+	"cmp"
 	"embed"
 	"io/fs"
 	"mime"
@@ -10,7 +11,6 @@ import (
 	"strings"
 
 	"emperror.dev/errors"
-
 	"github.com/labstack/echo/v5"
 	"github.com/labstack/echo/v5/middleware"
 )
@@ -59,10 +59,7 @@ func RegisterFrontend(e *echo.Echo) error {
 				return next(c)
 			}
 
-			p := strings.TrimPrefix(c.Request().URL.Path, "/")
-			if p == "" {
-				p = indexHtmlFileConstant
-			}
+			p := cmp.Or(strings.TrimPrefix(c.Request().URL.Path, "/"), indexHtmlFileConstant)
 			if _, statErr := fs.Stat(distFS, p); statErr != nil && !strings.HasPrefix(p, "_app/") {
 				p = indexHtmlFileConstant
 			}

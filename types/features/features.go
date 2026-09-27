@@ -4,11 +4,13 @@ package features
 // ID identifies a feature independently of permissions and build options.
 type ID string
 
-// VulnerabilityManagement identifies scanning, reports, and scan-based patching.
-const VulnerabilityManagement ID = "vulnerabilityManagement"
+const (
+	// VulnerabilityManagement identifies scanning, reports, and scan-based patching.
+	VulnerabilityManagement ID = "vulnerabilityManagement"
 
-// VulnerabilityManagementSettingKey is the persisted toggle for vulnerability management.
-const VulnerabilityManagementSettingKey = "featureVulnerabilityManagementEnabled"
+	// VulnerabilityManagementSettingKey is the persisted toggle for vulnerability management.
+	VulnerabilityManagementSettingKey = "featureVulnerabilityManagementEnabled"
+)
 
 // Definition connects a runtime feature to its persisted setting and default.
 type Definition struct {

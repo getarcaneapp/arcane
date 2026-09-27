@@ -24,10 +24,8 @@ import (
 // "invalid reset option: object not found" (#3168).
 
 func TestInitAllowsMultiAckCapabilities(t *testing.T) {
-
 	assert.False(t, len(transport.UnsupportedCapabilities) != 1 || transport.UnsupportedCapabilities[0] != capability.ThinPack,
 		"expected UnsupportedCapabilities to contain only thin-pack, got %v", transport.UnsupportedCapabilities)
-
 }
 
 func TestGetKnownHostsPath(t *testing.T) {
@@ -42,7 +40,6 @@ func TestGetKnownHostsPath(t *testing.T) {
 
 		assert.Equal(t, customPath, result,
 			"expected %s, got %s", customPath, result)
-
 	})
 
 	t.Run("returns Arcane data path when data directory exists", func(t *testing.T) {
@@ -61,7 +58,6 @@ func TestGetKnownHostsPath(t *testing.T) {
 
 		assert.Equal(t, expected, result,
 			"expected %s, got %s", expected, result)
-
 	})
 
 	t.Run("falls back to home directory when Arcane data directory is unavailable", func(t *testing.T) {
@@ -76,7 +72,6 @@ func TestGetKnownHostsPath(t *testing.T) {
 
 		assert.Equal(t, expected, result,
 			"expected %s, got %s", expected, result)
-
 	})
 
 	t.Run("falls back to temp dir when data directory and home are unavailable", func(t *testing.T) {
@@ -90,7 +85,6 @@ func TestGetKnownHostsPath(t *testing.T) {
 
 		assert.Equal(t, expected, result,
 			"expected %s, got %s", expected, result)
-
 	})
 }
 
@@ -122,7 +116,6 @@ func TestGetSSHHostKeyCallback(t *testing.T) {
 
 		assert.NoError(t, err,
 			"skip mode should not return error, got: %v", err)
-
 	})
 
 	t.Run("empty mode defaults to accept_new", func(t *testing.T) {
@@ -137,7 +130,6 @@ func TestGetSSHHostKeyCallback(t *testing.T) {
 
 		require.NotNil(t, callback,
 			"expected non-nil callback")
-
 	})
 
 	t.Run("accept_new mode creates callback", func(t *testing.T) {
@@ -152,7 +144,6 @@ func TestGetSSHHostKeyCallback(t *testing.T) {
 
 		require.NotNil(t, callback,
 			"expected non-nil callback")
-
 	})
 }
 
@@ -177,7 +168,6 @@ func TestAddHostKey(t *testing.T) {
 
 		assert.NotEmpty(t, content,
 			"expected non-empty known_hosts file")
-
 	})
 
 	t.Run("concurrent writes don't corrupt file", func(t *testing.T) {
@@ -216,7 +206,6 @@ func TestAddHostKey(t *testing.T) {
 
 		assert.NotEmpty(t, content,
 			"expected non-empty known_hosts file after concurrent writes")
-
 	})
 }
 
@@ -241,7 +230,6 @@ func TestCreateAcceptNewHostKeyCallback(t *testing.T) {
 			assert.False(t, os.IsNotExist(err),
 				"expected known_hosts directory to be created")
 		}
-
 	})
 
 	t.Run("callback adds new host keys", func(t *testing.T) {
@@ -271,7 +259,6 @@ func TestCreateAcceptNewHostKeyCallback(t *testing.T) {
 
 		assert.NotEmpty(t, content,
 			"expected host key to be added to known_hosts")
-
 	})
 
 	t.Run("callback accepts known host", func(t *testing.T) {
@@ -299,7 +286,6 @@ func TestCreateAcceptNewHostKeyCallback(t *testing.T) {
 
 		assert.NoError(t, err,
 			"second callback returned error for known host: %v", err)
-
 	})
 
 	t.Run("callback detects host key mismatch", func(t *testing.T) {
@@ -341,7 +327,6 @@ func TestValidatePath(t *testing.T) {
 
 		assert.NoError(t, err,
 			"expected valid path to be allowed: %v", err)
-
 	})
 
 	t.Run("rejects path traversal", func(t *testing.T) {
@@ -350,7 +335,6 @@ func TestValidatePath(t *testing.T) {
 
 		assert.Error(t, err,
 			"expected path traversal to be rejected")
-
 	})
 
 	t.Run("rejects absolute path escape", func(t *testing.T) {
@@ -359,7 +343,6 @@ func TestValidatePath(t *testing.T) {
 
 		assert.Error(t, err,
 			"expected path escape to be rejected")
-
 	})
 }
 
@@ -369,7 +352,6 @@ func TestNewClient(t *testing.T) {
 
 		assert.Equal(t, "/tmp/test", client.workDir,
 			"expected workDir /tmp/test, got %s", client.workDir)
-
 	})
 
 	t.Run("creates client with empty work dir", func(t *testing.T) {
@@ -377,7 +359,6 @@ func TestNewClient(t *testing.T) {
 
 		assert.Empty(t, client.workDir,
 			"expected empty workDir, got %s", client.workDir)
-
 	})
 }
 
@@ -391,11 +372,10 @@ func writeFileInternal(t *testing.T, dir, name string, content []byte) {
 	}
 	{
 
-		err := os.WriteFile(targetPath, content, 0644)
+		err := os.WriteFile(targetPath, content, 0o644)
 		require.NoError(t, err,
 			"failed to write file %s: %v", name, err)
 	}
-
 }
 
 func minimalCompose() []byte {
@@ -419,7 +399,6 @@ func TestWalkDirectory_BasicWalk(t *testing.T) {
 
 	assert.Len(t, result.Files, 3,
 		"expected 3 entries in Files, got %d", len(result.Files))
-
 }
 
 func TestWalkDirectory_PreservesExecutableBit(t *testing.T) {
@@ -457,7 +436,6 @@ func TestWalkDirectory_PreservesExecutableBit(t *testing.T) {
 		assert.False(t, ok && readme.Executable,
 			"expected README.md to not be Executable")
 	}
-
 }
 
 func TestWalkDirectory_MaxFilesLimit(t *testing.T) {
@@ -476,7 +454,6 @@ func TestWalkDirectory_MaxFilesLimit(t *testing.T) {
 
 	assert.Contains(t, err.Error(), "file count limit exceeded",
 		"expected 'file count limit exceeded' error, got: %v", err)
-
 }
 
 func TestWalkDirectory_MaxFilesUnlimited(t *testing.T) {
@@ -495,7 +472,6 @@ func TestWalkDirectory_MaxFilesUnlimited(t *testing.T) {
 
 	assert.Equal(t, 5, result.TotalFiles,
 		"expected 5 files, got %d", result.TotalFiles)
-
 }
 
 func TestWalkDirectory_MaxTotalSizeLimit(t *testing.T) {
@@ -512,7 +488,6 @@ func TestWalkDirectory_MaxTotalSizeLimit(t *testing.T) {
 
 	assert.Contains(t, err.Error(), "total size limit exceeded",
 		"expected 'total size limit exceeded' error, got: %v", err)
-
 }
 
 func TestWalkDirectory_MaxTotalSizeUnlimited(t *testing.T) {
@@ -529,7 +504,6 @@ func TestWalkDirectory_MaxTotalSizeUnlimited(t *testing.T) {
 
 	assert.Equal(t, 3, result.TotalFiles,
 		"expected 3 files, got %d", result.TotalFiles)
-
 }
 
 func TestWalkDirectory_MaxBinarySizeSkips(t *testing.T) {
@@ -547,7 +521,6 @@ func TestWalkDirectory_MaxBinarySizeSkips(t *testing.T) {
 
 	assert.NotEqual(t, 0, result.SkippedBinaries,
 		"expected at least one skipped binary file, got 0")
-
 }
 
 func TestWalkDirectory_MaxBinarySizeUnlimited(t *testing.T) {
@@ -567,7 +540,6 @@ func TestWalkDirectory_MaxBinarySizeUnlimited(t *testing.T) {
 
 	assert.Equal(t, 2, result.TotalFiles,
 		"expected 2 files (compose + binary), got %d", result.TotalFiles)
-
 }
 
 func TestWalkDirectory_LargeTextFileNotSkippedByBinaryLimit(t *testing.T) {
@@ -586,7 +558,6 @@ func TestWalkDirectory_LargeTextFileNotSkippedByBinaryLimit(t *testing.T) {
 
 	assert.Equal(t, 2, result.TotalFiles,
 		"expected 2 files (compose + text), got %d", result.TotalFiles)
-
 }
 
 func TestWalkDirectory_ComposeInSubdirectory(t *testing.T) {
@@ -808,7 +779,6 @@ func TestNormalizeURL(t *testing.T) {
 
 			assert.Equal(t, tc.want, got,
 				"expected %q, got %q", tc.want, got)
-
 		})
 	}
 }

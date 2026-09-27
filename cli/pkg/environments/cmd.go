@@ -1,15 +1,15 @@
 package environments
 
 import (
+	"cmp"
 	"fmt"
 	"net/http"
 	"sort"
 	"strconv"
 	"strings"
 
-	"emperror.dev/errors"
-
 	"charm.land/lipgloss/v2"
+	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/config"
@@ -229,10 +229,7 @@ var switchCmd = &cobra.Command{
 
 		options := make([]string, len(envs))
 		for i, env := range envs {
-			displayName := strings.TrimSpace(env.Name)
-			if displayName == "" {
-				displayName = env.ID
-			}
+			displayName := cmp.Or(strings.TrimSpace(env.Name), env.ID)
 			status := strings.TrimSpace(env.Status)
 			if status == "" {
 				status = "unknown"

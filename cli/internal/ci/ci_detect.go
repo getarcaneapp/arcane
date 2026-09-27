@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"emperror.dev/errors"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 const (
@@ -20,7 +21,7 @@ const (
 )
 
 // DetectToken resolves a CI-issued OIDC token from the requested provider.
-func DetectToken(ctx context.Context, provider string, audience string, getenv func(string) string, httpClient *http.Client) (string, string, error) {
+func DetectToken(ctx context.Context, provider, audience string, getenv func(string) string, httpClient *http.Client) (string, string, error) {
 	provider = normalizeFederatedProviderInternal(provider)
 	if getenv == nil {
 		getenv = func(string) string { return "" }
@@ -110,8 +111,5 @@ func mintGitHubActionsTokenInternal(ctx context.Context, audience string, getenv
 
 func normalizeFederatedProviderInternal(provider string) string {
 	provider = strings.ToLower(strings.TrimSpace(provider))
-	if provider == "" {
-		return ProviderAuto
-	}
-	return provider
+	return kit.Ternary(provider == "", ProviderAuto, provider)
 }

@@ -9,9 +9,6 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
-	"github.com/labstack/echo/v5"
-	"github.com/samber/hot"
-
 	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/auth"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
@@ -25,6 +22,8 @@ import (
 	wshub "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/ws"
 	httputil "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	systemtypes "github.com/getarcaneapp/arcane/types/v2/system"
+	"github.com/labstack/echo/v5"
+	"github.com/samber/hot"
 	"go.getarcane.app/sys/cgroup"
 )
 

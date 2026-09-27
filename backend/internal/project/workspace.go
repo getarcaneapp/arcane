@@ -1,10 +1,6 @@
 package project
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-
 	"context"
 	"encoding/json/v2"
 	"io"
@@ -14,16 +10,17 @@ import (
 	"strings"
 
 	"emperror.dev/errors"
-
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	acfsutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/acfs"
 	workspacepkg "github.com/getarcaneapp/arcane/backend/v2/pkg/workspace"
 	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
 	workspacetypes "github.com/getarcaneapp/arcane/types/v2/workspace"
 	"go.getarcane.app/acfs"
 	acfstypes "go.getarcane.app/acfs/types"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 func (s *ProjectService) GetProjectWorkspace(ctx context.Context, projectID string) (*workspacetypes.Workspace, error) {
@@ -190,7 +187,7 @@ func (s *ProjectService) resolveProjectWorkspacePathInternal(ctx context.Context
 	if err != nil {
 		return nil, "", "", acfstypes.Entry{}, err
 	}
-	rel, err := utils.NormalizeRelativePath(relativePath)
+	rel, err := kit.NormalizeRelativePath(relativePath)
 	if err != nil {
 		return nil, "", "", acfstypes.Entry{}, common.Classify(common.ErrProjectWorkspaceForbidden, errors.WrapIf(err, "invalid project workspace path"))
 	}
@@ -278,7 +275,7 @@ func (s *ProjectService) gitOpsOwnedWorkspacePathsInternal(ctx context.Context, 
 
 	owned := make(map[string]struct{})
 	add := func(p string) {
-		if rel, err := utils.NormalizeRelativePath(p); err == nil {
+		if rel, err := kit.NormalizeRelativePath(p); err == nil {
 			owned[rel] = struct{}{}
 		}
 	}
@@ -303,14 +300,14 @@ func (s *ProjectService) gitOpsOwnedWorkspacePathsInternal(ctx context.Context, 
 // path a workspace file change can create, overwrite or delete. Shared by the
 // backup scope and the GitOps ownership check so the two cannot diverge.
 func workspaceChangeTargetPathsInternal(change projecttypes.WorkspaceFileChange) []string {
-	rel, err := utils.NormalizeRelativePath(change.RelativePath)
+	rel, err := kit.NormalizeRelativePath(change.RelativePath)
 	if err != nil {
 		return nil
 	}
 	paths := []string{rel}
 	switch change.Operation {
 	case projecttypes.FileOpRename:
-		if newName, nameErr := utils.ValidateFileName(change.NewName); nameErr == nil {
+		if newName, nameErr := kit.ValidateFileName(change.NewName); nameErr == nil {
 			paths = append(paths, filepath.ToSlash(filepath.Join(filepath.Dir(rel), newName)))
 		}
 	case projecttypes.FileOpMove:

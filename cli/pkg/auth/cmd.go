@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"emperror.dev/errors"
-
 	"github.com/charmbracelet/x/term"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/config"

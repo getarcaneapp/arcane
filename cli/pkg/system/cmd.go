@@ -1,6 +1,7 @@
 package system
 
 import (
+	"cmp"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -314,14 +315,8 @@ func printUpdateAllJobInternal(job environmentUpdateJob) {
 	headers := []string{"ENVIRONMENT", "STATUS", "FROM", "TO", "ERROR"}
 	rows := make([][]string, len(job.Results))
 	for i, res := range job.Results {
-		name := res.EnvironmentName
-		if name == "" {
-			name = res.EnvironmentID
-		}
-		resErr := res.Error
-		if resErr == "" {
-			resErr = "-"
-		}
+		name := cmp.Or(res.EnvironmentName, res.EnvironmentID)
+		resErr := cmp.Or(res.Error, "-")
 		rows[i] = []string{name, res.Status, res.FromVersion, res.ToVersion, resErr}
 	}
 	fmt.Println()

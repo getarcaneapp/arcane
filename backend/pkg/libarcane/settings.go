@@ -5,21 +5,19 @@ import (
 	"strings"
 
 	"github.com/robfig/cron/v3"
+	kit "go.getarcane.app/kit/pkg"
 )
 
-const DepotTokenSettingKey = "depotToken"
-
 const (
+	DepotTokenSettingKey = "depotToken"
+
 	GHCRRegistryHost      = "ghcr.io"
 	DockerHubRegistryHost = "docker.io"
 )
 
 // ArcaneRegistryHost normalizes a registry setting to a host that mirrors the getarcaneapp images, defaulting to GHCR.
 func ArcaneRegistryHost(registry string) string {
-	if strings.TrimSpace(registry) == DockerHubRegistryHost {
-		return DockerHubRegistryHost
-	}
-	return GHCRRegistryHost
+	return kit.Ternary(strings.TrimSpace(registry) == DockerHubRegistryHost, DockerHubRegistryHost, GHCRRegistryHost)
 }
 
 type SettingUpdate struct {

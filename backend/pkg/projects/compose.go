@@ -15,11 +15,11 @@ import (
 	"github.com/docker/compose/v5/cmd/display"
 	"github.com/docker/compose/v5/pkg/api"
 	"github.com/docker/compose/v5/pkg/compose"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
+	dockerutils "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/moby/moby/api/types/registry"
 	"github.com/moby/moby/client"
-
-	dockerutils "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
+	"go.getarcane.app/docker/compat"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 type Client struct {
@@ -177,11 +177,7 @@ func buildComposeAuthConfigsInternal(authConfigs map[string]registry.AuthConfig)
 			RegistryToken: authConfig.RegistryToken,
 		}
 	}
-	if len(composeAuthConfigs) == 0 {
-		return nil
-	}
-
-	return composeAuthConfigs
+	return kit.Ternary(len(composeAuthConfigs) == 0, nil, composeAuthConfigs)
 }
 
 type inspectCompatibleDockerCli struct {
@@ -201,7 +197,7 @@ func wrapDockerCLIWithInspectCompatibilityInternal(cli command.Cli) command.Cli 
 
 	return &inspectCompatibleDockerCli{
 		Cli:       cli,
-		apiClient: libarcane.WrapDockerAPIClientForInspectCompatibility(cli.Client()),
+		apiClient: compat.WrapDockerAPIClientForInspectCompatibility(cli.Client()),
 	}
 }
 
@@ -253,10 +249,7 @@ func (w *writerConsumer) write(container, msg string) {
 	if w.out == nil {
 		return
 	}
-	output := msg
-	if container != "" {
-		output = container + " | " + msg
-	}
+	output := kit.Ternary(container != "", container+" | "+msg, msg)
 	if !strings.HasSuffix(output, "\n") {
 		output += "\n"
 	}

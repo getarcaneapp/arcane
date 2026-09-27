@@ -14,6 +14,22 @@ const (
 	NotificationProviderMatrix     NotificationProvider = "matrix"
 	NotificationProviderGoogleChat NotificationProvider = "googlechat"
 	NotificationProviderGeneric    NotificationProvider = "generic"
+
+	NotificationEventImageUpdate        NotificationEventType = "image_update"
+	NotificationEventContainerUpdate    NotificationEventType = "container_update"
+	NotificationEventVulnerabilityFound NotificationEventType = "vulnerability_found"
+	NotificationEventPruneReport        NotificationEventType = "prune_report"
+	NotificationEventAutoHeal           NotificationEventType = "auto_heal"
+
+	EmailTLSModeNone     EmailTLSMode = "none"
+	EmailTLSModeStartTLS EmailTLSMode = "starttls"
+	EmailTLSModeSSL      EmailTLSMode = "ssl"
+
+	EmailAuthModeNone    EmailAuthMode = "none"
+	EmailAuthModeAuto    EmailAuthMode = "auto"
+	EmailAuthModePlain   EmailAuthMode = "plain"
+	EmailAuthModeLogin   EmailAuthMode = "login"
+	EmailAuthModeCRAMMD5 EmailAuthMode = "crammd5"
 )
 
 var validNotificationProviders = map[NotificationProvider]struct{}{
@@ -37,14 +53,6 @@ func IsValidNotificationProvider(provider NotificationProvider) bool {
 
 type NotificationEventType string
 
-const (
-	NotificationEventImageUpdate        NotificationEventType = "image_update"
-	NotificationEventContainerUpdate    NotificationEventType = "container_update"
-	NotificationEventVulnerabilityFound NotificationEventType = "vulnerability_found"
-	NotificationEventPruneReport        NotificationEventType = "prune_report"
-	NotificationEventAutoHeal           NotificationEventType = "auto_heal"
-)
-
 var AllNotificationEventTypes = []NotificationEventType{
 	NotificationEventImageUpdate,
 	NotificationEventContainerUpdate,
@@ -55,21 +63,7 @@ var AllNotificationEventTypes = []NotificationEventType{
 
 type EmailTLSMode string
 
-const (
-	EmailTLSModeNone     EmailTLSMode = "none"
-	EmailTLSModeStartTLS EmailTLSMode = "starttls"
-	EmailTLSModeSSL      EmailTLSMode = "ssl"
-)
-
 type EmailAuthMode string
-
-const (
-	EmailAuthModeNone    EmailAuthMode = "none"
-	EmailAuthModeAuto    EmailAuthMode = "auto"
-	EmailAuthModePlain   EmailAuthMode = "plain"
-	EmailAuthModeLogin   EmailAuthMode = "login"
-	EmailAuthModeCRAMMD5 EmailAuthMode = "crammd5"
-)
 
 type DiscordConfig struct {
 	WebhookID string                         `json:"webhookId"`

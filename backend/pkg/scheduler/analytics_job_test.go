@@ -11,15 +11,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/libtnb/sqlite"
-	"github.com/stretchr/testify/require"
-	"gorm.io/gorm"
-
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
+	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
 
 func setupAnalyticsStateServicesInternal(t *testing.T) (*database.DB, *settings.SettingsService, *kv.KVService) {
@@ -68,9 +67,7 @@ func TestAnalyticsJob_Run_ManagerPayload(t *testing.T) {
 	job.heartbeatURL = server.URL
 
 	if _, err := job.Run(ctx); !assert.NoError(t, err) {
-
 		return
-
 	}
 
 	var body []byte
@@ -98,9 +95,7 @@ func TestAnalyticsJob_Run_AgentPayload(t *testing.T) {
 	job.heartbeatURL = server.URL
 
 	if _, err := job.Run(ctx); !assert.NoError(t, err) {
-
 		return
-
 	}
 
 	var body []byte
@@ -126,9 +121,7 @@ func TestAnalyticsJob_Run_SkipsWhenDisabled(t *testing.T) {
 	job.heartbeatURL = server.URL
 
 	if _, err := job.Run(ctx); !assert.NoError(t, err) {
-
 		return
-
 	}
 
 	select {
@@ -149,9 +142,7 @@ func TestAnalyticsJob_Run_SkipsWhenTestEnv(t *testing.T) {
 	job.heartbeatURL = server.URL
 
 	if _, err := job.Run(ctx); !assert.NoError(t, err) {
-
 		return
-
 	}
 
 	select {

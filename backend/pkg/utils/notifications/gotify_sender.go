@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"emperror.dev/errors"
-
 	shoutrrrTypes "github.com/nicholas-fedor/shoutrrr/pkg/types"
 )
 

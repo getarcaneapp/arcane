@@ -1,14 +1,12 @@
 package federated
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
+	"time"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
-
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-
-	"time"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
 )
 
 const (

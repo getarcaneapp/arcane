@@ -1,6 +1,7 @@
 package git
 
 import (
+	"cmp"
 	"context"
 	stderrors "errors"
 	"io"
@@ -30,15 +31,28 @@ import (
 	"github.com/gofrs/flock"
 	"go.getarcane.app/acfs"
 	acfstypes "go.getarcane.app/acfs/types"
+	kit "go.getarcane.app/kit/pkg"
 	gossh "golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/knownhosts"
 )
 
-// binarySniffBytes is how much of a file is inspected to classify it as binary.
-const binarySniffBytes = 512
+const (
+	// binarySniffBytes is how much of a file is inspected to classify it as binary.
+	binarySniffBytes = 512
 
-// cloneScratchPrefix names the per-run clone scratch dirs created by Clone.
-const cloneScratchPrefix = "gitops-"
+	// cloneScratchPrefix names the per-run clone scratch dirs created by Clone.
+	cloneScratchPrefix = "gitops-"
+
+	errUnsupportedURL = "repository URL must use http(s)://, ssh://, git://, or git@host:path"
+
+	// SSH host key verification modes
+
+	SSHHostKeyVerificationStrict    = "strict"     // Require host key in known_hosts
+	SSHHostKeyVerificationAcceptNew = "accept_new" // Auto-add unknown host keys
+	SSHHostKeyVerificationSkip      = "skip"       // Skip host key verification (insecure)
+	defaultKnownHostsDataDir        = "/app/data"
+	defaultKnownHostsPath           = "/app/data/.ssh/known_hosts"
+)
 
 // go-git's file transport execs the git binary, which doesn't exist in the
 // distroless image. Unregister it so a repository URL can never reach it.
@@ -61,8 +75,6 @@ type Client struct {
 }
 
 var scpLikeURLPattern = regexp.MustCompile(`^[^@/]+@[^:/]+:`)
-
-const errUnsupportedURL = "repository URL must use http(s)://, ssh://, git://, or git@host:path"
 
 // normalizeURL coerces a repository URL into a form go-git resolves to a
 // network transport, never the file transport (which execs the git binary).
@@ -100,15 +112,6 @@ func NewClient(workDir string) *Client {
 	}
 }
 
-// SSH host key verification modes
-const (
-	SSHHostKeyVerificationStrict    = "strict"     // Require host key in known_hosts
-	SSHHostKeyVerificationAcceptNew = "accept_new" // Auto-add unknown host keys
-	SSHHostKeyVerificationSkip      = "skip"       // Skip host key verification (insecure)
-	defaultKnownHostsDataDir        = "/app/data"
-	defaultKnownHostsPath           = "/app/data/.ssh/known_hosts"
-)
-
 // AuthConfig holds authentication configuration
 type AuthConfig struct {
 	AuthType               string
@@ -135,10 +138,7 @@ func (c *Client) getAuthInternal(url string, config AuthConfig) (transport.AuthM
 			if err != nil {
 				return nil, errors.WrapIf(err, "failed to parse SSH repository URL")
 			}
-			username := endpoint.User
-			if username == "" {
-				username = "git"
-			}
+			username := cmp.Or(endpoint.User, "git")
 			publicKeys, err := ssh.NewPublicKeys(username, []byte(config.SSHKey), "")
 			if err != nil {
 				return nil, errors.WrapIf(err, "failed to create ssh auth")
@@ -448,11 +448,7 @@ func (c *Client) ProbeRemote(ctx context.Context, url string, auth AuthConfig) e
 	}
 
 	_, err := c.listRemoteReferences(ctx, url, auth)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return err
 }
 
 func (c *Client) listRemoteReferences(ctx context.Context, url string, auth AuthConfig) ([]*plumbing.Reference, error) {
@@ -538,10 +534,7 @@ func (c *Client) BrowseTree(ctx context.Context, repoPath, targetPath string) ([
 			continue
 		}
 
-		nodeType := gitops.FileTreeNodeTypeFile
-		if child.IsDirectory {
-			nodeType = gitops.FileTreeNodeTypeDirectory
-		}
+		nodeType := kit.Ternary(child.IsDirectory, gitops.FileTreeNodeTypeDirectory, gitops.FileTreeNodeTypeFile)
 
 		nodes = append(nodes, gitops.FileTreeNode{
 			Name: child.Name,
@@ -689,7 +682,8 @@ type syncWalkLimits struct {
 // The composePath is the path to the compose file within the repo - the directory
 // containing this file will be walked.
 func (c *Client) WalkDirectory(ctx context.Context, repoPath, composePath string,
-	maxFiles int, maxTotalSize, maxBinarySize int64) (*DirectoryWalkResult, error) {
+	maxFiles int, maxTotalSize, maxBinarySize int64,
+) (*DirectoryWalkResult, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -714,7 +708,6 @@ func (c *Client) WalkDirectory(ctx context.Context, repoPath, composePath string
 	err := acfs.Walk(ctx, syncDir, "/", func(entry acfstypes.Entry) error {
 		return c.walkSyncEntry(ctx, syncDir, entry, result, limits)
 	})
-
 	if err != nil {
 		return nil, err
 	}
@@ -735,10 +728,7 @@ func (c *Client) walkSyncEntry(ctx context.Context, syncDir string, entry acfsty
 		return nil
 	}
 	if entry.IsDirectory {
-		if entry.Name == ".git" {
-			return fs.SkipDir
-		}
-		return nil
+		return kit.Ternary(entry.Name == ".git", fs.SkipDir, nil)
 	}
 
 	return c.appendSyncFile(ctx, syncDir, entry, result, limits)

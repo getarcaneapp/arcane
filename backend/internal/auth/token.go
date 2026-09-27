@@ -6,11 +6,11 @@ import (
 	"time"
 
 	"emperror.dev/errors"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/lestrrat-go/jwx/v4/jwa"
 	"github.com/lestrrat-go/jwx/v4/jws"
 	"github.com/lestrrat-go/jwx/v4/jwt"
-
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 const (
@@ -133,10 +133,8 @@ func signedTokenAlgorithmInternal(rawToken string) (string, bool) {
 func parseRefreshTokenInternal(ctx context.Context, rawToken string, key *mldsa.PublicKey) (*refreshTokenClaims, error) {
 	token, err := jwt.ParseString(rawToken, append(tokenParseOptions, jwt.WithKey(jwa.MLDSA87(), key), jwt.WithContext(ctx))...)
 	if err != nil {
-		if errors.Is(err, jwt.MissingRequiredClaimError{}) || errors.Is(err, jwt.ClaimValidationError{}) {
-			return nil, common.ErrTokenValidation
-		}
-		return nil, common.ErrInvalidToken
+		claimErr := errors.Is(err, jwt.MissingRequiredClaimError{}) || errors.Is(err, jwt.ClaimValidationError{})
+		return nil, kit.Ternary[error](claimErr, common.ErrTokenValidation, common.ErrInvalidToken)
 	}
 
 	subject, _ := token.Subject()

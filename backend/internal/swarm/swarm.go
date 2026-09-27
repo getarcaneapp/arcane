@@ -2,29 +2,31 @@ package swarm
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	stdjson "encoding/json"
 	"encoding/json/v2"
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/netip"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
-
 	"emperror.dev/errors"
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
@@ -41,6 +43,7 @@ import (
 	"github.com/samber/hot"
 	"go.getarcane.app/acfs"
 	acfstypes "go.getarcane.app/acfs/types"
+	kit "go.getarcane.app/kit/pkg"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -49,6 +52,11 @@ const (
 	swarmNodeIdentityCacheTTL         = 30 * time.Second
 	KVKeySwarmEnabled                 = "swarm.enabled"
 	defaultSwarmListenAddr            = "0.0.0.0:2377"
+
+	defaultSwarmStackSourceRootDir = "/app/data/swarm/sources"
+	swarmStackComposeFilename      = "compose.yaml"
+	swarmStackOverrideFilename     = "compose.override.yaml"
+	swarmStackEnvFilename          = ".env"
 )
 
 // SwarmService provides Docker Swarm related operations.
@@ -246,11 +254,7 @@ func (s *SwarmService) resolveServiceNodeNamesInternal(ctx context.Context, dock
 		}
 	}
 
-	nodeNames := make([]string, 0, len(nodeSet))
-	for name := range nodeSet {
-		nodeNames = append(nodeNames, name)
-	}
-	sort.Strings(nodeNames)
+	nodeNames := slices.Sorted(maps.Keys(nodeSet))
 	return nodeNames
 }
 
@@ -285,9 +289,7 @@ func (s *SwarmService) enrichServiceNetworkDetailsInternal(
 			ConfigOnly: networkInfo.ConfigOnly,
 			Options:    networkInfo.Options,
 		}
-		if networkInfo.ConfigFrom.Network != "" {
-			detail.ConfigFrom = networkInfo.ConfigFrom.Network
-		}
+		detail.ConfigFrom = cmp.Or(networkInfo.ConfigFrom.Network, detail.ConfigFrom)
 
 		for _, ipamCfg := range networkInfo.IPAM.Config {
 			detail.IPAMConfigs = append(detail.IPAMConfigs, toServiceNetworkIPAMConfigInternal(ipamCfg))
@@ -651,11 +653,7 @@ func (s *SwarmService) GetLocalNodeIdentity(ctx context.Context) (*SwarmNodeIden
 	swarmActive := swarmInfo.Swarm.LocalNodeState == swarm.LocalNodeStateActive && strings.TrimSpace(swarmInfo.Swarm.NodeID) != ""
 	role := ""
 	if swarmActive {
-		if swarmInfo.Swarm.ControlAvailable {
-			role = "manager"
-		} else {
-			role = "worker"
-		}
+		role = kit.Ternary(swarmInfo.Swarm.ControlAvailable, "manager", "worker")
 	}
 
 	return &SwarmNodeIdentity{
@@ -812,10 +810,7 @@ func preferredNodeAgentEnvironmentInternal(environments []environment.Environmen
 func buildNodeAgentCandidatesInternal(environments []environment.Environment) []swarmtypes.NodeAgentCandidate {
 	candidates := make([]swarmtypes.NodeAgentCandidate, 0, len(environments))
 	for _, environment := range environments {
-		environmentType := "direct"
-		if environment.IsEdge {
-			environmentType = "edge"
-		}
+		environmentType := kit.Ternary(environment.IsEdge, "edge", "direct")
 		candidates = append(candidates, swarmtypes.NodeAgentCandidate{
 			EnvironmentID:   environment.ID,
 			EnvironmentName: environment.Name,
@@ -942,12 +937,7 @@ func (s *SwarmService) JoinEnvironments(ctx context.Context, managerEnvironmentI
 // selectSwarmManagerAddressesInternal prefers explicit manager addresses and
 // otherwise uses the addresses advertised by the cluster's manager nodes.
 func selectSwarmManagerAddressesInternal(explicit []string, nodes []swarmtypes.NodeSummary) ([]string, error) {
-	addrs := make([]string, 0, len(explicit))
-	for _, addr := range explicit {
-		if trimmed := strings.TrimSpace(addr); trimmed != "" {
-			addrs = append(addrs, trimmed)
-		}
-	}
+	addrs := kit.TrimNonEmpty(explicit)
 	if len(addrs) > 0 {
 		return addrs, nil
 	}
@@ -1146,16 +1136,11 @@ func (s *SwarmService) buildNodeAgentStatusInternal(nodeID string, env *environm
 		LastHeartbeat: runtime.lastHeartbeat,
 		LastPollAt:    runtime.lastPollAt,
 
-		EnvironmentName: &env.Name}
-	environmentType := "direct"
-	if env.IsEdge {
-		environmentType = "edge"
+		EnvironmentName: &env.Name,
 	}
+	environmentType := kit.Ternary(env.IsEdge, "edge", "direct")
 	status.EnvironmentType = &environmentType
-	bindingKind := swarmtypes.NodeAgentBindingKindEnvironment
-	if env.Hidden {
-		bindingKind = swarmtypes.NodeAgentBindingKindDedicated
-	}
+	bindingKind := kit.Ternary(env.Hidden, swarmtypes.NodeAgentBindingKindDedicated, swarmtypes.NodeAgentBindingKindEnvironment)
 	status.BindingKind = &bindingKind
 
 	if runtime.identity != nil {
@@ -1697,10 +1682,7 @@ func (s *SwarmService) UpdateNode(ctx context.Context, nodeID string, req swarmt
 		return errors.WrapIf(err, "failed to inspect swarm node")
 	}
 
-	version := req.Version
-	if version == 0 {
-		version = nodeResult.Node.Version.Index
-	}
+	version := cmp.Or(req.Version, nodeResult.Node.Version.Index)
 
 	spec := nodeResult.Node.Spec
 	if req.Name != nil {
@@ -1778,10 +1760,7 @@ func (s *SwarmService) GetStack(ctx context.Context, environmentID, stackName st
 	if len(services) == 0 {
 		persisted, err := s.getPersistedStackSourceSummaryInternal(ctx, environmentID, stackName)
 		if err != nil {
-			if cerrdefs.IsNotFound(err) {
-				return nil, cerrdefs.ErrNotFound
-			}
-			return nil, err
+			return nil, kit.Ternary[error](cerrdefs.IsNotFound(err), cerrdefs.ErrNotFound, err)
 		}
 
 		return &swarmtypes.StackInspect{
@@ -2038,10 +2017,7 @@ func (s *SwarmService) RemoveStack(ctx context.Context, environmentID, stackName
 	}
 	if len(services) == 0 {
 		if _, err := s.getPersistedStackSourceSummaryInternal(ctx, environmentID, stackName); err != nil {
-			if cerrdefs.IsNotFound(err) {
-				return cerrdefs.ErrNotFound
-			}
-			return err
+			return kit.Ternary[error](cerrdefs.IsNotFound(err), cerrdefs.ErrNotFound, err)
 		}
 	} else {
 		if err := s.removeStackServicesInternal(ctx, dockerClient, services); err != nil {
@@ -2569,11 +2545,7 @@ func decodeSwarmSpecInternal(raw stdjson.RawMessage) (swarm.Spec, error) {
 
 func defaultSwarmListenAddrInternal(listenAddr string) string {
 	trimmed := strings.TrimSpace(listenAddr)
-	if trimmed == "" {
-		return defaultSwarmListenAddr
-	}
-
-	return trimmed
+	return kit.Ternary(trimmed == "", defaultSwarmListenAddr, trimmed)
 }
 
 func decodeSecretSpecInternal(raw stdjson.RawMessage) (swarm.SecretSpec, error) {
@@ -2694,18 +2666,8 @@ func (s *SwarmService) deleteStackSourceInternal(ctx context.Context, environmen
 
 func normalizeSwarmEnvironmentIDInternal(environmentID string) string {
 	envID := strings.TrimSpace(environmentID)
-	if envID == "" {
-		return "0"
-	}
-	return envID
+	return kit.Ternary(envID == "", "0", envID)
 }
-
-const (
-	defaultSwarmStackSourceRootDir = "/app/data/swarm/sources"
-	swarmStackComposeFilename      = "compose.yaml"
-	swarmStackOverrideFilename     = "compose.override.yaml"
-	swarmStackEnvFilename          = ".env"
-)
 
 func (s *SwarmService) resolveSwarmStackSourceDirInternal(ctx context.Context, environmentID, stackName string) (string, string, error) {
 	normalizedStackName := appfs.SanitizeProjectName(strings.TrimSpace(stackName))
@@ -2920,30 +2882,21 @@ func compareTimeInternal(a, b time.Time) int {
 	if a.Before(b) {
 		return -1
 	}
-	if a.After(b) {
-		return 1
-	}
-	return 0
+	return kit.Ternary(a.After(b), 1, 0)
 }
 
 func compareUint64Internal(a, b uint64) int {
 	if a < b {
 		return -1
 	}
-	if a > b {
-		return 1
-	}
-	return 0
+	return kit.Ternary(a > b, 1, 0)
 }
 
 func compareIntInternal(a, b int) int {
 	if a < b {
 		return -1
 	}
-	if a > b {
-		return 1
-	}
-	return 0
+	return kit.Ternary(a > b, 1, 0)
 }
 
 func sanitizeServiceSpecInternal(spec *swarm.ServiceSpec) {

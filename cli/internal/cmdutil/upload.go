@@ -10,12 +10,12 @@ import (
 	"strings"
 
 	"emperror.dev/errors"
-
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/logger"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
 	uploadtypes "github.com/getarcaneapp/arcane/types/v2/upload"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 const uploadChunkAttempts = 3
@@ -63,10 +63,7 @@ func UploadFileInChunks(ctx context.Context, c *client.Client, kind, filePath st
 
 	buf := make([]byte, session.ChunkSize)
 	for index := range session.TotalChunks {
-		expected := session.ChunkSize
-		if index == session.TotalChunks-1 {
-			expected = session.Size - int64(index)*session.ChunkSize
-		}
+		expected := kit.Ternary(index == session.TotalChunks-1, session.Size-int64(index)*session.ChunkSize, session.ChunkSize)
 		if _, err := io.ReadFull(file, buf[:expected]); err != nil {
 			deleteSession()
 			return "", errors.WrapIf(err, "failed to read file")

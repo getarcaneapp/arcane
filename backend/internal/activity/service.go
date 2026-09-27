@@ -1,6 +1,7 @@
 package activity
 
 import (
+	"cmp"
 	"context"
 	stderrors "errors"
 	"hash/fnv"
@@ -35,6 +36,24 @@ const (
 	// must be before the periodic sweep fails it. It covers the window between
 	// StartActivity's row creation and the worker's Track call.
 	abandonedActivityGrace = 2 * time.Minute
+
+	// terminalPublishRetention bounds how long a terminal publish suppresses
+	// stale non-terminal snapshots for the same activity. Stale publishers are
+	// goroutines already past their commit, so they publish within moments; the
+	// retention only has to outlive that gap while keeping the latch map small.
+	terminalPublishRetention = 10 * time.Minute
+
+	// ErrActivityNotCancelable indicates the activity has already reached a terminal
+	// state and can no longer be cancelled.
+	ErrActivityNotCancelable = errors.Sentinel("activity is not cancelable")
+
+	// subscriberMessageQueueLimit bounds the per-subscriber backlog of "message"
+	// events; the oldest message is dropped (and flagged as missed) on overflow.
+	subscriberMessageQueueLimit = 256
+
+	cancelledMessageInternal = "Cancelled by user"
+
+	deleteActivitiesBatchSize = 500
 )
 
 type ActivityService struct {
@@ -73,20 +92,6 @@ type ActivityService struct {
 	// ID hash so no per-activity lifecycle management is needed.
 	publishLocks [64]sync.Mutex
 }
-
-// terminalPublishRetention bounds how long a terminal publish suppresses
-// stale non-terminal snapshots for the same activity. Stale publishers are
-// goroutines already past their commit, so they publish within moments; the
-// retention only has to outlive that gap while keeping the latch map small.
-const terminalPublishRetention = 10 * time.Minute
-
-// ErrActivityNotCancelable indicates the activity has already reached a terminal
-// state and can no longer be cancelled.
-const ErrActivityNotCancelable = errors.Sentinel("activity is not cancelable")
-
-// subscriberMessageQueueLimit bounds the per-subscriber backlog of "message"
-// events; the oldest message is dropped (and flagged as missed) on overflow.
-const subscriberMessageQueueLimit = 256
 
 // activitySubscriber buffers stream events between publishers and one stream
 // consumer. "activity" events are coalesced in place per activity ID (only the
@@ -204,9 +209,11 @@ func (sub *activitySubscriber) pump() {
 	}
 }
 
-type StartActivityRequest = activitylib.StartRequest
-type UpdateActivityRequest = activitylib.UpdateRequest
-type AppendActivityMessageRequest = activitylib.AppendMessageRequest
+type (
+	StartActivityRequest         = activitylib.StartRequest
+	UpdateActivityRequest        = activitylib.UpdateRequest
+	AppendActivityMessageRequest = activitylib.AppendMessageRequest
+)
 
 func NewActivityService(db *database.DB, settingsService *settings.SettingsService) *ActivityService {
 	return &ActivityService{
@@ -295,10 +302,7 @@ func (s *ActivityService) StartActivity(ctx context.Context, req StartActivityRe
 	}
 
 	now := time.Now()
-	environmentID := strings.TrimSpace(req.EnvironmentID)
-	if environmentID == "" {
-		environmentID = "0"
-	}
+	environmentID := cmp.Or(strings.TrimSpace(req.EnvironmentID), "0")
 
 	var startedByUserID, startedByUsername, startedByDisplayName *string
 	if req.StartedBy != nil {
@@ -425,10 +429,7 @@ func (s *ActivityService) AwaitActivitySlot(ctx context.Context, activityID, env
 	if activityID == "" {
 		return errors.New("activity id is required")
 	}
-	environmentID = strings.TrimSpace(environmentID)
-	if environmentID == "" {
-		environmentID = "0"
-	}
+	environmentID = cmp.Or(strings.TrimSpace(environmentID), "0")
 
 	s.slotMu.Lock()
 	_, held := s.slotReleases[activityID]
@@ -600,10 +601,7 @@ func buildAppendBatchInternal(activityID string, reqs []AppendActivityMessageReq
 			messageText = messageText[:8192]
 		}
 
-		level := req.Level
-		if level == "" {
-			level = activitytypes.MessageLevelInfo
-		}
+		level := cmp.Or(req.Level, activitytypes.MessageLevelInfo)
 
 		messages = append(messages, &ActivityMessage{
 			ActivityID: activityID,
@@ -690,9 +688,7 @@ func (s *ActivityService) CompleteActivity(ctx context.Context, activityID strin
 	if err := s.checkInitInternal(); err != nil {
 		return nil, err
 	}
-	if status == "" {
-		status = activitytypes.StatusSuccess
-	}
+	status = cmp.Or(status, activitytypes.StatusSuccess)
 	if status != activitytypes.StatusSuccess && status != activitytypes.StatusFailed && status != activitytypes.StatusCancelled {
 		status = activitytypes.StatusSuccess
 	}
@@ -806,10 +802,7 @@ func (s *ActivityService) CancelActivity(ctx context.Context, environmentID, act
 	if activityID == "" {
 		return nil, errors.New("activity id is required")
 	}
-	environmentID = strings.TrimSpace(environmentID)
-	if environmentID == "" {
-		environmentID = "0"
-	}
+	environmentID = cmp.Or(strings.TrimSpace(environmentID), "0")
 
 	var model Activity
 	if err := s.db.WithContext(ctx).Where("id = ? AND environment_id = ?", activityID, environmentID).First(&model).Error; err != nil {
@@ -825,10 +818,7 @@ func (s *ActivityService) CancelActivity(ctx context.Context, environmentID, act
 		// Active states — cancellation can proceed.
 	}
 
-	requestedBy = strings.TrimSpace(requestedBy)
-	if requestedBy == "" {
-		requestedBy = "a user"
-	}
+	requestedBy = cmp.Or(strings.TrimSpace(requestedBy), "a user")
 	writeCtx := utils.ActivityRuntimeContext(ctx, nil)
 	if _, err := s.AppendMessage(writeCtx, activityID, AppendActivityMessageRequest{
 		Level:   activitytypes.MessageLevelWarning,
@@ -875,8 +865,6 @@ func (s *ActivityService) CancelActivity(ctx context.Context, environmentID, act
 	dto := s.publishTerminalSnapshotInternal(writeCtx, &finalized)
 	return &dto, nil
 }
-
-const cancelledMessageInternal = "Cancelled by user"
 
 // FailStaleImageUpdateChecks marks image update checks that were left running
 // across a prior process lifetime as failed. It intentionally scopes cleanup to
@@ -1120,10 +1108,7 @@ func (s *ActivityService) ListActivitiesPaginated(ctx context.Context, environme
 		return nil, pagination.Response{}, err
 	}
 
-	environmentID = strings.TrimSpace(environmentID)
-	if environmentID == "" {
-		environmentID = "0"
-	}
+	environmentID = cmp.Or(strings.TrimSpace(environmentID), "0")
 
 	var activities []Activity
 	q := s.db.WithContext(ctx).Model(&Activity{}).Where("environment_id = ?", environmentID)
@@ -1250,10 +1235,7 @@ func (s *ActivityService) DeleteHistory(ctx context.Context, environmentID strin
 		return 0, nil
 	}
 
-	environmentID = strings.TrimSpace(environmentID)
-	if environmentID == "" {
-		environmentID = "0"
-	}
+	environmentID = cmp.Or(strings.TrimSpace(environmentID), "0")
 
 	var deleted int64
 	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -1281,10 +1263,7 @@ func (s *ActivityService) Subscribe(environmentID string) (<-chan activitytypes.
 		return ch, func() bool { return false }, func() {}
 	}
 
-	environmentID = strings.TrimSpace(environmentID)
-	if environmentID == "" {
-		environmentID = "0"
-	}
+	environmentID = cmp.Or(strings.TrimSpace(environmentID), "0")
 
 	sub := newActivitySubscriberInternal(environmentID, ch)
 	s.subscribersMu.Lock()
@@ -1528,8 +1507,6 @@ func findActivityIDsBeyondHistoryLimitInternal(tx *gorm.DB, maxEntries int) ([]s
 	}
 	return activityIDs, nil
 }
-
-const deleteActivitiesBatchSize = 500
 
 func deleteActivitiesByIDInternal(tx *gorm.DB, activityIDs []string) (int64, error) {
 	if len(activityIDs) == 0 {

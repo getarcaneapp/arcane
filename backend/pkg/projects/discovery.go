@@ -12,6 +12,7 @@ import (
 	"emperror.dev/errors"
 	"github.com/compose-spec/compose-go/v2/loader"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+	kit "go.getarcane.app/kit/pkg"
 	"go.yaml.in/yaml/v4"
 )
 
@@ -102,7 +103,7 @@ func DiscoverProjectDirectories(ctx context.Context, root string, followSymlinks
 	return discovered, nil
 }
 
-func walkProjectDirectoriesInternal(ctx context.Context, root, path string, isRoot bool, currentDepth int, maxDepth int, followSymlinks bool, ancestors map[string]struct{}, discovered *[]DiscoveredProjectDir) error {
+func walkProjectDirectoriesInternal(ctx context.Context, root, path string, isRoot bool, currentDepth, maxDepth int, followSymlinks bool, ancestors map[string]struct{}, discovered *[]DiscoveredProjectDir) error {
 	if !isRoot {
 		name := filepath.Base(path)
 		if IsIgnoredProjectDirName(name) {
@@ -304,10 +305,7 @@ func NormalizeProjectName(name string) string {
 		return ""
 	}
 	normalized := loader.NormalizeProjectName(name)
-	if normalized == "" {
-		return name
-	}
-	return normalized
+	return kit.Ternary(normalized == "", name, normalized)
 }
 
 // ResolveDirectoryIdentityInternal stays on os.*: it resolves symlinks that

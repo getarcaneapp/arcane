@@ -1,6 +1,7 @@
 package job
 
 import (
+	"cmp"
 	"context"
 	"log/slog"
 	"sort"
@@ -300,9 +301,7 @@ func (s *JobService) ListJobs(ctx context.Context) (*jobschedule.JobListResponse
 
 		if s.scheduler != nil && jobMeta.SettingsKey != "" && jobMeta.ID != "environment-health" {
 			if runtimeState, ok := s.scheduler.GetJobRuntimeState(jobMeta.ID); ok {
-				if runtimeState.Schedule != "" {
-					schedule = runtimeState.Schedule
-				}
+				schedule = cmp.Or(runtimeState.Schedule, schedule)
 				nextRun = runtimeState.NextRun
 			}
 		}

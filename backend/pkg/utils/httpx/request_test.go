@@ -36,7 +36,6 @@ func TestIsWebSocketUpgradeRequest(t *testing.T) {
 				assert.Equal(t, tt.want, got,
 					"IsWebSocketUpgradeRequest() = %v, want %v", got, tt.want)
 			}
-
 		})
 	}
 }

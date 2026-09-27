@@ -5,21 +5,20 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/spf13/cobra"
-
 	"github.com/getarcaneapp/arcane/backend/v2/cli/admin"
 	"github.com/getarcaneapp/arcane/backend/v2/cli/generate"
 	"github.com/getarcaneapp/arcane/backend/v2/cli/recovery"
 	"github.com/getarcaneapp/arcane/backend/v2/cli/upgrade"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/bootstrap"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/signals"
+	"github.com/spf13/cobra"
+	"go.getarcane.app/kit/pkg/signals"
 )
 
 var rootCmd = &cobra.Command{
 	Use:     "arcane",
 	Long:    "Arcane - Modern Docker Management, Designed for Everyone.",
-	Version: getVersion(),
+	Version: config.Version,
 	Run: func(cmd *cobra.Command, args []string) {
 		err := bootstrap.Bootstrap(cmd.Context())
 		if err != nil {
@@ -44,8 +43,4 @@ func init() {
 	rootCmd.AddCommand(upgrade.UpgradeCmd)
 	rootCmd.AddCommand(recovery.RestoreCmd)
 	rootCmd.AddCommand(generate.GenerateCmd)
-}
-
-func getVersion() string {
-	return config.Version
 }

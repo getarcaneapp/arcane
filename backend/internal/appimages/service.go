@@ -9,8 +9,8 @@ import (
 
 	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/image"
 	settingstypes "github.com/getarcaneapp/arcane/types/v2/settings"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 type ApplicationImagesService struct {
@@ -48,7 +48,7 @@ func NewApplicationImagesService(embeddedFS embed.FS, settingsService *settings.
 		}
 
 		extWithoutDot := strings.TrimPrefix(ext, ".")
-		mimeType := image.GetImageMimeType(extWithoutDot)
+		mimeType := kit.GetImageMimeType(extWithoutDot)
 		if mimeType == "" {
 			continue
 		}
@@ -60,7 +60,7 @@ func NewApplicationImagesService(embeddedFS embed.FS, settingsService *settings.
 	return service
 }
 
-func (s *ApplicationImagesService) GetImageWithColor(name string, colorOverride string, loop bool) ([]byte, string, error) {
+func (s *ApplicationImagesService) GetImageWithColor(name, colorOverride string, loop bool) ([]byte, string, error) {
 	s.mu.RLock()
 	data, ok := s.imageData[name]
 	mimeType := s.mimeTypes[name]

@@ -5,21 +5,22 @@ import (
 	"log/slog"
 	"time"
 
-	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
-
 	"github.com/getarcaneapp/arcane/backend/v2/internal/gitrepo"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
+	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 )
 
-// GitCloneCleanupJobName identifies the hourly purge of leaked git clone
-// scratch directories.
-const GitCloneCleanupJobName = "git-clone-scratch-cleanup"
+const (
+	// GitCloneCleanupJobName identifies the hourly purge of leaked git clone
+	// scratch directories.
+	GitCloneCleanupJobName = "git-clone-scratch-cleanup"
 
-// gitCloneScratchMinAge is the base mtime cutoff for purging clone scratch dirs.
-const gitCloneScratchMinAge = 2 * time.Hour
+	// gitCloneScratchMinAge is the base mtime cutoff for purging clone scratch dirs.
+	gitCloneScratchMinAge = 2 * time.Hour
 
-// gitCloneScratchBuildHold pads the configured build timeout.
-const gitCloneScratchBuildHold = 30 * time.Minute
+	// gitCloneScratchBuildHold pads the configured build timeout.
+	gitCloneScratchBuildHold = 30 * time.Minute
+)
 
 // GitCloneCleanupJob purges orphaned "gitops-*" clone dirs under the git work
 // dir. Internal job: no job_metadata entry, invisible in the Jobs UI.

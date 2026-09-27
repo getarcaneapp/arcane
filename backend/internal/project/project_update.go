@@ -1,20 +1,19 @@
 package project
 
 import (
+	"bytes"
 	"context"
 	"encoding/json/v2"
 	stderrors "errors"
+	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
-
-	"bytes"
-	"fmt"
-	"io"
-	"slices"
 
 	"emperror.dev/errors"
 	composetypes "github.com/compose-spec/compose-go/v2/types"
@@ -36,7 +35,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, name *string, composeContent, envContent, overrideContent *string, user common.User) (*Project, error) {
+func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, name, composeContent, envContent, overrideContent *string, user common.User) (*Project, error) {
 	proj, projectsDirectory, err := s.getProjectForUpdate(ctx, projectID)
 	if err != nil {
 		return nil, err
@@ -117,7 +116,7 @@ func ensureProjectEnvReadableInternal(ctx context.Context, projectsDirectory, pr
 // the compose file is authoritative over the submitted project name. For
 // name-only renames, it checks the compose file on disk so the lock can't be
 // bypassed via the API.
-func resolveAuthoritativeProjectNameInternal(ctx context.Context, proj *Project, name *string, composeContent *string) *string {
+func resolveAuthoritativeProjectNameInternal(ctx context.Context, proj *Project, name, composeContent *string) *string {
 	if composeContent != nil {
 		if yamlName := projects.ComposeContentProjectName(*composeContent); yamlName != "" {
 			return &yamlName
@@ -147,7 +146,7 @@ func (s *ProjectService) prepareProjectUpdateBackupInternal(ctx context.Context,
 	return projects.BackupProjectDirectory(ctx, projectsDirectory, projectPath, ".project-update-backup-*", scope)
 }
 
-func (s *ProjectService) applyProjectUpdateWithRenameJournalInternal(ctx context.Context, proj *Project, name *string, projectsDirectory string, composeContent, envContent, overrideContent *string, volumeMigration volumetypes.Migration, renameJournal *projecttypes.RenameJournal, journalActive *bool, projectStateCommitted *bool) (err error) {
+func (s *ProjectService) applyProjectUpdateWithRenameJournalInternal(ctx context.Context, proj *Project, name *string, projectsDirectory string, composeContent, envContent, overrideContent *string, volumeMigration volumetypes.Migration, renameJournal *projecttypes.RenameJournal, journalActive, projectStateCommitted *bool) (err error) {
 	volumeMigrationApplied := false
 	defer func() {
 		stateCommitted := projectStateCommitted != nil && *projectStateCommitted
@@ -253,7 +252,7 @@ func (s *ProjectService) refreshProjectAfterContentUpdateInternal(ctx context.Co
 	}
 }
 
-func (s *ProjectService) ApplyGitSyncProjectFiles(ctx context.Context, projectID string, composeContent string, gitEnvContent *string, gitOverrideContent *string, gitOverrideFileName string, user common.User) (*Project, bool, error) {
+func (s *ProjectService) ApplyGitSyncProjectFiles(ctx context.Context, projectID, composeContent string, gitEnvContent, gitOverrideContent *string, gitOverrideFileName string, user common.User) (*Project, bool, error) {
 	proj, projectsDirectory, err := s.getProjectForUpdate(ctx, projectID)
 	if err != nil {
 		return nil, false, err

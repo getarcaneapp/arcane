@@ -1,10 +1,6 @@
 package gitops
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
-
-	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
-
 	"context"
 	"encoding/json"
 	"os"
@@ -18,8 +14,10 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/gitrepo"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
 	projectpkg "github.com/getarcaneapp/arcane/backend/v2/internal/project"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	git "github.com/getarcaneapp/arcane/backend/v2/pkg/gitutil"

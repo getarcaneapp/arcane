@@ -22,7 +22,6 @@ func TestPermissionMatcherLookupExactAndWildcard(t *testing.T) {
 		require.False(t, !ok || perm != "containers:read",
 			"expected containers:read, got %q ok=%v", perm, ok)
 	}
-
 }
 
 func TestPermissionMatcherStaticBeatsWildcard(t *testing.T) {
@@ -43,7 +42,6 @@ func TestPermissionMatcherStaticBeatsWildcard(t *testing.T) {
 		require.False(t, !ok || perm != "containers:read",
 			"expected wildcard route containers:read, got %q ok=%v", perm, ok)
 	}
-
 }
 
 func TestPermissionMatcherMethodAndLengthMismatch(t *testing.T) {
@@ -67,7 +65,6 @@ func TestPermissionMatcherMethodAndLengthMismatch(t *testing.T) {
 		require.False(t, ok,
 			"expected no match for shorter path")
 	}
-
 }
 
 func TestPermissionMatcherNormalizesEchoParamsAndStripsQuery(t *testing.T) {
@@ -79,7 +76,6 @@ func TestPermissionMatcherNormalizesEchoParamsAndStripsQuery(t *testing.T) {
 		require.False(t, !ok || perm != "volumes:read",
 			"expected volumes:read with echo param + query string, got %q ok=%v", perm, ok)
 	}
-
 }
 
 func TestPermissionMatcherPublicRoute(t *testing.T) {
@@ -93,7 +89,6 @@ func TestPermissionMatcherPublicRoute(t *testing.T) {
 
 	require.Empty(t, perm,
 		"expected empty permission for public route, got %q", perm)
-
 }
 
 func TestPermissionMatcherUnmappedReturnsNotFound(t *testing.T) {
@@ -105,5 +100,4 @@ func TestPermissionMatcherUnmappedReturnsNotFound(t *testing.T) {
 		require.False(t, ok,
 			"expected unmapped path to return not found")
 	}
-
 }

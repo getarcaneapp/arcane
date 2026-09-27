@@ -1,6 +1,7 @@
 package upgrade
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"log/slog"
@@ -10,15 +11,14 @@ import (
 	"time"
 
 	"emperror.dev/errors"
-
+	docker "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
 	"github.com/spf13/cobra"
-
-	docker "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
+	"go.getarcane.app/docker/compat"
+	kit "go.getarcane.app/kit/pkg"
 	"go.getarcane.app/sys/cgroup"
 	"go.getarcane.app/updater/labels"
 )
@@ -85,7 +85,7 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 		containerName = strings.TrimPrefix(targetContainer.Name, "/")
 		slog.Info("Found Arcane container", "name", containerName, "id", targetContainer.ID[:12])
 	} else {
-		inspectResult, inspectErr := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, containerName, client.ContainerInspectOptions{})
+		inspectResult, inspectErr := compat.ContainerInspectWithCompatibility(ctx, dockerClient, containerName, client.ContainerInspectOptions{})
 		if inspectErr != nil {
 			return errors.WrapIff(inspectErr, "failed to inspect container %s", containerName)
 		}
@@ -144,7 +144,7 @@ func findArcaneContainer(ctx context.Context, dockerClient *client.Client) (cont
 			continue
 		}
 
-		inspectResult, err := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, c.ID, client.ContainerInspectOptions{})
+		inspectResult, err := compat.ContainerInspectWithCompatibility(ctx, dockerClient, c.ID, client.ContainerInspectOptions{})
 		if err != nil {
 			continue
 		}
@@ -356,7 +356,7 @@ func determineImageName(ctx context.Context, dockerClient *client.Client, cont c
 
 	// Default to :latest if still no tag
 	if !hasExplicitTag(imageName) {
-		imageName = ensureDefaultTag(imageName)
+		imageName = kit.Ternary(imageName == "", "ghcr.io/getarcaneapp/arcane:latest", imageName+":latest")
 	}
 
 	return imageName
@@ -406,9 +406,7 @@ func inferImageNameFromDocker(ctx context.Context, dockerClient *client.Client, 
 		t = stripDigest(t)
 
 		if strings.Contains(t, "arcane") {
-			if arcaneAny == "" {
-				arcaneAny = t
-			}
+			arcaneAny = cmp.Or(arcaneAny, t)
 			if !strings.HasSuffix(t, ":latest") && arcaneNonLatest == "" {
 				arcaneNonLatest = t
 			}
@@ -416,18 +414,7 @@ func inferImageNameFromDocker(ctx context.Context, dockerClient *client.Client, 
 	}
 
 	// Prefer non-latest tags
-	if arcaneNonLatest != "" {
-		return arcaneNonLatest
-	}
-	return arcaneAny
-}
-
-// ensureDefaultTag adds :latest tag if no tag is present
-func ensureDefaultTag(imageName string) string {
-	if imageName == "" {
-		return "ghcr.io/getarcaneapp/arcane:latest"
-	}
-	return imageName + ":latest"
+	return kit.Ternary(arcaneNonLatest != "", arcaneNonLatest, arcaneAny)
 }
 
 // pulledImageAlreadyRunning reports whether the freshly pulled reference resolves to
@@ -477,7 +464,7 @@ func UpgradeContainer(ctx context.Context, dockerClient *client.Client, oldConta
 
 	config.Labels = refreshRecreatedContainerLabelsInternal(ctx, dockerClient, config.Labels, oldContainer.Image, newImage)
 
-	hostConfig, sanitizedMemorySwappiness, engineInfo, err := libarcane.PrepareRecreateHostConfigForEngine(ctx, dockerClient, oldContainer.HostConfig)
+	hostConfig, sanitizedMemorySwappiness, engineInfo, err := compat.PrepareRecreateHostConfigForEngine(ctx, dockerClient, oldContainer.HostConfig)
 	if err != nil {
 		return errors.WrapIf(err, "prepare host config")
 	}
@@ -530,11 +517,11 @@ func UpgradeContainer(ctx context.Context, dockerClient *client.Client, oldConta
 		networkConfig *network.NetworkingConfig
 	)
 	if !nm.IsContainer() {
-		apiVersion = libarcane.DetectDockerAPIVersion(ctx, dockerClient)
-		if apiVersion != "" && !libarcane.IsDockerAPIVersionAtLeast(apiVersion, libarcane.NetworkScopedMacAddressMinAPIVersion) {
+		apiVersion = compat.DetectDockerAPIVersion(ctx, dockerClient)
+		if apiVersion != "" && !compat.IsDockerAPIVersionAtLeast(apiVersion, compat.NetworkScopedMacAddressMinAPIVersion) {
 			slog.Info("daemon API does not support per-network mac-address on create; stripping endpoint mac addresses",
 				"dockerAPIVersion", apiVersion,
-				"minimumRequiredAPIVersion", libarcane.NetworkScopedMacAddressMinAPIVersion,
+				"minimumRequiredAPIVersion", compat.NetworkScopedMacAddressMinAPIVersion,
 			)
 		}
 
@@ -544,7 +531,7 @@ func UpgradeContainer(ctx context.Context, dockerClient *client.Client, oldConta
 		}
 
 		networkConfig = &network.NetworkingConfig{
-			EndpointsConfig: libarcane.SanitizeContainerCreateEndpointSettingsForDockerAPI(endpoints, apiVersion),
+			EndpointsConfig: compat.SanitizeContainerCreateEndpointSettingsForDockerAPI(endpoints, apiVersion),
 		}
 	}
 
@@ -563,7 +550,7 @@ func UpgradeContainer(ctx context.Context, dockerClient *client.Client, oldConta
 
 	fmt.Println("PROGRESS:75:Creating new container")
 	slog.Info("Creating new container", "name", originalName)
-	resp, err := libarcane.ContainerCreateWithCompatibilityForAPIVersion(ctx, dockerClient, client.ContainerCreateOptions{
+	resp, err := compat.ContainerCreateWithCompatibilityForAPIVersion(ctx, dockerClient, client.ContainerCreateOptions{
 		Config:           &config,
 		HostConfig:       hostConfig,
 		NetworkingConfig: networkConfig,

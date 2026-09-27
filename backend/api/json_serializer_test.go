@@ -32,7 +32,6 @@ func TestJSONV2SerializerUsesV2ResponseSemantics(t *testing.T) {
 		require.Equal(t, want, got,
 			"serialized response = %s, want %s", got, want)
 	}
-
 }
 
 func TestJSONV2SerializerPreservesDurationNanoseconds(t *testing.T) {
@@ -54,7 +53,6 @@ func TestJSONV2SerializerPreservesDurationNanoseconds(t *testing.T) {
 		require.Equal(t, want, got,
 			"serialized response = %s, want %s", got, want)
 	}
-
 }
 
 func TestJSONV2SerializerUsesStrictV2Decoding(t *testing.T) {
@@ -74,7 +72,6 @@ func TestJSONV2SerializerUsesStrictV2Decoding(t *testing.T) {
 
 		require.Empty(t, body.Name,
 			"case-variant field populated Name with %q", body.Name)
-
 	})
 
 	for _, test := range []struct {
@@ -98,7 +95,6 @@ func TestJSONV2SerializerUsesStrictV2Decoding(t *testing.T) {
 
 			require.Equal(t, http.StatusBadRequest, httpErr.StatusCode(),
 				"HTTP status = %d, want %d", httpErr.StatusCode(), http.StatusBadRequest)
-
 		})
 	}
 }

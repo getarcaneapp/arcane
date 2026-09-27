@@ -9,9 +9,7 @@ const (
 	FileOpRename       = "rename"
 	FileOpMove         = "move"
 	FileOpDelete       = "delete"
-)
 
-const (
 	FileReadOnlyBinary        = "binary"
 	FileReadOnlyTooLarge      = "too_large"
 	FileReadOnlySymlink       = "symlink"

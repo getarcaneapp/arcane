@@ -99,10 +99,8 @@ func TestSecretAllFormatContainsSections(t *testing.T) {
 		"HEX",
 	}
 	for _, s := range mustContain {
-
 		require.Contains(t, out, s,
 			"expected section %q not found in output:\n%s", s, out)
-
 	}
 
 	// verify the hex value decodes to 32 bytes

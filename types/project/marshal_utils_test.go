@@ -39,7 +39,6 @@ func TestDetailsUnmarshalJSONAcceptsUnitBytesStringsAndNumbers(t *testing.T) {
 				require.Equal(t, want, got,
 					"mem_limit = %d, want %d", got, want)
 			}
-
 		})
 	}
 }

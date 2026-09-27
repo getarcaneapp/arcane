@@ -1,25 +1,23 @@
 package image
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-
 	"cmp"
 	"context"
 	"io"
 	"log/slog"
-	"sort"
+	"maps"
+	"slices"
 	"strings"
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
-
 	"emperror.dev/errors"
-
 	ref "github.com/distribution/reference"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/vulnerability"
 	dockerutils "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	utilsregistry "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/registryauth"
@@ -35,6 +33,7 @@ import (
 	"github.com/moby/moby/client"
 	"github.com/samber/hot"
 	"github.com/samber/mo"
+	kit "go.getarcane.app/kit/pkg"
 	"go.getarcane.app/updater"
 	"go.getarcane.app/updater/pkg/utils/tagpolicy"
 	"golang.org/x/sync/errgroup"
@@ -305,10 +304,7 @@ func (s *ImageService) TagImage(ctx context.Context, source string, req imagetyp
 		return errors.New("repository is required")
 	}
 
-	target := repository
-	if tag != "" {
-		target = repository + ":" + tag
-	}
+	target := kit.Ternary(tag != "", repository+":"+tag, repository)
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
@@ -937,10 +933,7 @@ func convertLabels(labels map[string]string) map[string]any {
 	if labels == nil {
 		return nil
 	}
-	result := make(map[string]any, len(labels))
-	for k, v := range labels {
-		result[k] = v
-	}
+	result, _ := kit.AsStringMap(labels)
 	return result
 }
 
@@ -972,15 +965,9 @@ func (s *ImageService) loadProjectIDByNameCachedInternal(ctx context.Context) ma
 	})
 	if err != nil {
 		slog.WarnContext(ctx, "failed to load project ID map", "error", err)
-		if staleFound {
-			return stale
-		}
-		return map[string]string{}
+		return kit.Ternary(staleFound, stale, map[string]string{})
 	}
-	if !found {
-		return map[string]string{}
-	}
-	return byName
+	return kit.Ternary(!found, map[string]string{}, byName)
 }
 
 // BuildProjectIDMap returns a map of compose project name → project ID for any
@@ -1036,19 +1023,14 @@ func BuildVolumeUsageMap(containers []container.Summary, projectIDByName map[str
 					Type: "project",
 					Name: projectName,
 				}
-				if projectID != "" {
-					usedBy.ID = projectID
-				}
+				usedBy.ID = cmp.Or(projectID, usedBy.ID)
 				usageMap[c.ImageID] = append(usageMap[c.ImageID], usedBy)
 				projectSeen[c.ImageID][projectName] = true
 			}
 			continue
 		}
 
-		containerName := dockerutils.ContainerNameFromNames(c.Names)
-		if containerName == "" {
-			containerName = c.ID
-		}
+		containerName := cmp.Or(dockerutils.ContainerNameFromNames(c.Names), c.ID)
 
 		if containerSeen[c.ImageID] == nil {
 			containerSeen[c.ImageID] = make(map[string]bool)
@@ -1166,11 +1148,7 @@ func collectPinnedReferencesByImageIDInternal(containers []container.Summary) ma
 
 	result := make(map[string][]string, len(seen))
 	for imageID, refsMap := range seen {
-		refs := make([]string, 0, len(refsMap))
-		for r := range refsMap {
-			refs = append(refs, r)
-		}
-		sort.Strings(refs)
+		refs := slices.Sorted(maps.Keys(refsMap))
 		result[imageID] = refs
 	}
 
@@ -1263,10 +1241,7 @@ func (s *ImageService) getImagePaginationConfig() pagination.Config[imagetypes.S
 					if a.Size < b.Size {
 						return -1
 					}
-					if a.Size > b.Size {
-						return 1
-					}
-					return 0
+					return kit.Ternary(a.Size > b.Size, 1, 0)
 				},
 			},
 			{
@@ -1275,10 +1250,7 @@ func (s *ImageService) getImagePaginationConfig() pagination.Config[imagetypes.S
 					if a.Created < b.Created {
 						return -1
 					}
-					if a.Created > b.Created {
-						return 1
-					}
-					return 0
+					return kit.Ternary(a.Created > b.Created, 1, 0)
 				},
 			},
 			{
@@ -1287,10 +1259,7 @@ func (s *ImageService) getImagePaginationConfig() pagination.Config[imagetypes.S
 					if a.InUse == b.InUse {
 						return 0
 					}
-					if a.InUse {
-						return -1
-					}
-					return 1
+					return kit.Ternary(a.InUse, -1, 1)
 				},
 			},
 			{
@@ -1309,13 +1278,7 @@ func (s *ImageService) getImagePaginationConfig() pagination.Config[imagetypes.S
 			{
 				Key: "inUse",
 				Fn: func(i imagetypes.Summary, filterValue string) bool {
-					if filterValue == "true" {
-						return i.InUse
-					}
-					if filterValue == "false" {
-						return !i.InUse
-					}
-					return true
+					return kit.Ternary(filterValue == "true", i.InUse, filterValue != "false" || !i.InUse)
 				},
 			},
 			{
@@ -1331,7 +1294,7 @@ func (s *ImageService) getImagePaginationConfig() pagination.Config[imagetypes.S
 					case "unknown":
 						return i.UpdateInfo == nil
 					default:
-						value, valid := utils.ParseBool(filterValue)
+						value, valid := kit.ParseBool(filterValue)
 						hasUpdate := i.UpdateInfo != nil && i.UpdateInfo.HasUpdate
 						return !valid || hasUpdate == value
 					}

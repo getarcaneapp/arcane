@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"emperror.dev/errors"
-
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
@@ -415,8 +414,5 @@ func volumeMatches(item volume.Volume, identifierLower, original string) bool {
 		return true
 	}
 	idLower := strings.ToLower(item.ID)
-	if idLower == identifierLower || (len(identifierLower) >= 4 && strings.HasPrefix(idLower, identifierLower)) {
-		return true
-	}
-	return false
+	return idLower == identifierLower || (len(identifierLower) >= 4 && strings.HasPrefix(idLower, identifierLower))
 }

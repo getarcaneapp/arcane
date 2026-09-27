@@ -1,6 +1,7 @@
 package volume
 
 import (
+	"cmp"
 	"context"
 	"log/slog"
 	"regexp"
@@ -8,12 +9,10 @@ import (
 	"time"
 
 	"emperror.dev/errors"
-
 	docker "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	backuptypes "github.com/getarcaneapp/arcane/types/v2/backup"
 	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
 	"github.com/moby/moby/api/types/container"
@@ -21,6 +20,7 @@ import (
 	"github.com/moby/moby/api/types/volume"
 	"github.com/moby/moby/client"
 	"github.com/samber/mo"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 func (s *VolumeService) GetVolumeUsage(ctx context.Context, name string) (bool, []string, error) {
@@ -81,7 +81,7 @@ func (s *VolumeService) GetVolumeSizes(ctx context.Context) (map[string]VolumeSi
 	return result, nil
 }
 
-func enrichVolumesWithUsageDataInternal(volumes []volume.Volume, usageVolumes []volume.Volume) []volume.Volume {
+func enrichVolumesWithUsageDataInternal(volumes, usageVolumes []volume.Volume) []volume.Volume {
 	usageByName := make(map[string]*volume.UsageData, len(usageVolumes))
 	for _, uv := range usageVolumes {
 		if uv.Name == "" || uv.UsageData == nil {
@@ -169,10 +169,7 @@ func (s *VolumeService) buildVolumeSortBindingsInternal() []pagination.SortBindi
 				if a.InUse == b.InUse {
 					return 0
 				}
-				if a.InUse {
-					return -1
-				}
-				return 1
+				return kit.Ternary(a.InUse, -1, 1)
 			},
 		},
 		{
@@ -196,10 +193,7 @@ func compareVolumeSizesInternal(a, b volumetypes.Volume) int {
 	if aSize == bSize {
 		return strings.Compare(a.Name, b.Name)
 	}
-	if aSize < bSize {
-		return -1
-	}
-	return 1
+	return kit.Ternary(aSize < bSize, -1, 1)
 }
 
 func (s *VolumeService) compareVolumeCreatedInternal(a, b volumetypes.Volume) int {
@@ -209,10 +203,7 @@ func (s *VolumeService) compareVolumeCreatedInternal(a, b volumetypes.Volume) in
 		if aTime.Before(bTime) {
 			return -1
 		}
-		if aTime.After(bTime) {
-			return 1
-		}
-		return 0
+		return kit.Ternary(aTime.After(bTime), 1, 0)
 	}
 	return strings.Compare(a.CreatedAt, b.CreatedAt)
 }
@@ -235,13 +226,7 @@ func buildVolumeFilterAccessorsInternal() []pagination.FilterAccessor[volumetype
 		{
 			Key: "inUse",
 			Fn: func(v volumetypes.Volume, filterValue string) bool {
-				if filterValue == "true" {
-					return v.InUse
-				}
-				if filterValue == "false" {
-					return !v.InUse
-				}
-				return true
+				return kit.Ternary(filterValue == "true", v.InUse, filterValue != "false" || !v.InUse)
 			},
 		},
 	}
@@ -296,7 +281,7 @@ func (s *VolumeService) isInternalVolumeInternal(v volumetypes.Volume) bool {
 		return true
 	}
 
-	internal, _ := utils.ParseBool(v.Labels[libarcane.InternalResourceLabel])
+	internal, _ := kit.ParseBool(v.Labels[libarcane.InternalResourceLabel])
 	return internal
 }
 
@@ -315,10 +300,7 @@ func mountedVolumeNamesInternal(mounts []container.MountPoint) map[string]struct
 		if item.Type != mount.TypeVolume {
 			continue
 		}
-		name := strings.TrimSpace(item.Name)
-		if name == "" {
-			name = strings.TrimSpace(item.Source)
-		}
+		name := cmp.Or(strings.TrimSpace(item.Name), strings.TrimSpace(item.Source))
 		if name != "" {
 			names[name] = struct{}{}
 		}
@@ -443,7 +425,8 @@ func (s *VolumeService) ListVolumesPaginated(ctx context.Context, params paginat
 	result := config.SearchOrderAndPaginate(items, effectiveParams)
 	counts := calculateVolumeUsageCountsInternal(items)
 	paginationResp := pagination.BuildResponse(result.TotalCount, result.TotalAvailable, effectiveParams)
-	slog.DebugContext(ctx, "volume service: listed volumes",
+	slog.DebugContext(
+		ctx, "volume service: listed volumes",
 		"docker_host", dockerClient.DaemonHost(),
 		"requested_sort", params.Sort,
 		"requested_order", params.Order,

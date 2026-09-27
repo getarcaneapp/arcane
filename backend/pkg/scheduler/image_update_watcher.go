@@ -7,16 +7,14 @@ import (
 	"sync/atomic"
 	"time"
 
+	"emperror.dev/errors"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
-
-	"emperror.dev/errors"
-
-	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	imageupdatetypes "github.com/getarcaneapp/arcane/types/v2/imageupdate"
@@ -26,6 +24,15 @@ import (
 )
 
 const (
+	imageUpdateTriggerMessageInternal             imageUpdateMessageKindInternal = 0
+	imageUpdateScheduleRefreshMessageInternal     imageUpdateMessageKindInternal = 1
+	imageUpdateBackfillCompletedMessageInternal   imageUpdateMessageKindInternal = 2
+	imageUpdateDebounceElapsedMessageInternal     imageUpdateMessageKindInternal = 3
+	imageUpdateScheduledPollMessageInternal       imageUpdateMessageKindInternal = 4
+	imageUpdateScanCompletedMessageInternal       imageUpdateMessageKindInternal = 5
+	imageUpdateManualScanRequestMessageInternal   imageUpdateMessageKindInternal = 6
+	imageUpdateManualScanAdmissionMessageInternal imageUpdateMessageKindInternal = 7
+
 	imageUpdateWatcherDebounce        = 2 * time.Second
 	imageUpdateWatcherBackfillRetry   = 5 * time.Second
 	imageUpdateWatcherDefaultSchedule = "0 0 * * * *"
@@ -55,17 +62,6 @@ type projectImageRefsBackfillerInternal interface {
 }
 
 type imageUpdateMessageKindInternal uint8
-
-const (
-	imageUpdateTriggerMessageInternal imageUpdateMessageKindInternal = iota
-	imageUpdateScheduleRefreshMessageInternal
-	imageUpdateBackfillCompletedMessageInternal
-	imageUpdateDebounceElapsedMessageInternal
-	imageUpdateScheduledPollMessageInternal
-	imageUpdateScanCompletedMessageInternal
-	imageUpdateManualScanRequestMessageInternal
-	imageUpdateManualScanAdmissionMessageInternal
-)
 
 type imageUpdateScanCompletionInternal struct {
 	automatic         bool

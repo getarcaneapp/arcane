@@ -4,9 +4,8 @@ import (
 	"fmt"
 	"runtime"
 
-	"github.com/spf13/cobra"
-
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
+	"github.com/spf13/cobra"
 )
 
 var versionCmd = &cobra.Command{

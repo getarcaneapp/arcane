@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"emperror.dev/errors"
-
 	"github.com/coder/websocket"
 )
 

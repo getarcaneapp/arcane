@@ -1,12 +1,9 @@
 package webhook
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"go.getarcane.app/kit/normalization"
-
+	"cmp"
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
@@ -19,7 +16,7 @@ import (
 
 	"emperror.dev/emperror"
 	"emperror.dev/errors"
-
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/container"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
@@ -32,6 +29,8 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	updatertypes "github.com/getarcaneapp/arcane/types/v2/updater"
 	webhooktypes "github.com/getarcaneapp/arcane/types/v2/webhook"
+	"go.getarcane.app/kit/normalization"
+	kit "go.getarcane.app/kit/pkg"
 	libcrypto "go.getarcane.app/sys/crypto"
 	"gorm.io/gorm"
 )
@@ -43,9 +42,7 @@ const (
 	ErrWebhookInvalidType   = errors.Sentinel("invalid webhook target type")
 	ErrWebhookInvalidAction = errors.Sentinel("invalid webhook action type")
 	ErrWebhookMissingTarget = errors.Sentinel("target ID is required for container, project, and gitops webhook types")
-)
 
-const (
 	webhookTokenPrefix    = "arc_wh_"
 	webhookTokenLength    = 32 // raw bytes → 64 hex chars
 	webhookTokenPrefixLen = 8  // chars of the hex portion used as lookup prefix
@@ -106,15 +103,9 @@ func generateWebhookTokenInternal() (raw, hash, prefix string, err error) {
 	}
 	tokenHex := hex.EncodeToString(encryptedBytes)
 	raw = webhookTokenPrefix + tokenHex
-	sum := sha256.Sum256([]byte(raw))
-	hash = hex.EncodeToString(sum[:])
+	hash = kit.SHA256Hex(raw)
 	prefix = webhookTokenPrefix + tokenHex[:webhookTokenPrefixLen]
 	return raw, hash, prefix, nil
-}
-
-func hashWebhookTokenInternal(raw string) string {
-	sum := sha256.Sum256([]byte(raw))
-	return hex.EncodeToString(sum[:])
 }
 
 func parseWebhookPrefixInternal(raw string) (string, error) {
@@ -150,7 +141,7 @@ func (s *WebhookService) IsKnownToken(raw string) bool {
 	if s == nil || len(raw) > len(webhookTokenPrefix)+webhookTokenHexLen || !strings.HasPrefix(raw, webhookTokenPrefix) {
 		return false
 	}
-	hash := hashWebhookTokenInternal(raw)
+	hash := kit.SHA256Hex(raw)
 	s.tokenMu.RLock()
 	defer s.tokenMu.RUnlock()
 	_, ok := s.tokenHashes[hash]
@@ -359,10 +350,7 @@ func (s *WebhookService) resolveWebhookTargetNameInternal(ctx context.Context, w
 			return ""
 		}
 		name, err := s.containerService.GetContainerNameByID(ctx, wh.TargetID)
-		if err != nil {
-			return ""
-		}
-		return name
+		return kit.Ternary(err != nil, "", name)
 	case WebhookTargetTypeProject:
 		var project project.Project
 		if err := s.db.WithContext(ctx).
@@ -497,7 +485,7 @@ func (s *WebhookService) TriggerByToken(ctx context.Context, rawToken string) er
 		return errors.WrapIf(err, "failed to look up webhook")
 	}
 
-	hash := hashWebhookTokenInternal(rawToken)
+	hash := kit.SHA256Hex(rawToken)
 	var wh *Webhook
 	for i := range candidates {
 		if candidates[i].TokenHash == hash {
@@ -575,10 +563,7 @@ func remoteWebhookRequestInternal(wh *Webhook, actionType string) (method, path 
 
 	switch wh.TargetType {
 	case WebhookTargetTypeContainer:
-		ref := strings.TrimSpace(wh.TargetRef)
-		if ref == "" {
-			ref = strings.TrimSpace(wh.TargetID)
-		}
+		ref := cmp.Or(strings.TrimSpace(wh.TargetRef), strings.TrimSpace(wh.TargetID))
 		if ref == "" {
 			return "", "", false, ErrWebhookMissingTarget
 		}
@@ -718,11 +703,7 @@ func (s *WebhookService) resolveContainerWebhookTargetIDInternal(ctx context.Con
 		return containerInfo.ID, nil
 	}
 
-	if lastErr != nil {
-		return "", lastErr
-	}
-
-	return "", ErrWebhookMissingTarget
+	return "", kit.Ternary[error](lastErr != nil, lastErr, ErrWebhookMissingTarget)
 }
 
 func (s *WebhookService) syncWebhookContainerTargetInternal(ctx context.Context, wh *Webhook, containerID, containerName string) {
@@ -814,9 +795,7 @@ func (s *WebhookService) logWebhookEventInternal(ctx context.Context, wh *Webhoo
 		title = "Webhook trigger failed: " + wh.Name
 	}
 	description := fmt.Sprintf("Target type: %s, action: %s", wh.TargetType, actionType)
-	if errMsg != "" {
-		description = errMsg
-	}
+	description = cmp.Or(errMsg, description)
 	_, _ = s.eventService.CreateEvent(ctx, event.CreateEventRequest{
 		Type:          event.EventTypeWebhookTrigger,
 		Severity:      severity,

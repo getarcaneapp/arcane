@@ -4,6 +4,7 @@
 package backup
 
 import (
+	"cmp"
 	"context"
 	"crypto/rand"
 	"encoding/base32"
@@ -31,15 +32,20 @@ import (
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
+	kit "go.getarcane.app/kit/pkg"
 	"go.getarcane.app/sys/crypto"
 	"gorm.io/gorm"
 )
 
-// Admission scopes shared by the backup engine and the per-policy job
-// registries so scheduled and manual runs contend on the same leases.
 const (
+	// Admission scopes shared by the backup engine and the per-policy job
+	// registries so scheduled and manual runs contend on the same leases.
+
 	VolumeAdmissionScope = "volume-backup"
 	SystemAdmissionScope = "system-backup"
+
+	// RecoveryKeyConfigID is the singleton row holding the instance-wide backup recovery key.
+	RecoveryKeyConfigID = "system-recovery"
 )
 
 // Repository addresses one Rustic repository. ID is the stable serialization
@@ -190,10 +196,7 @@ func (e *Engine) RestoreSnapshot(ctx context.Context, dockerClient *client.Clien
 	if options.SourcePath != "" {
 		source = snapshotID + ":/" + strings.TrimPrefix(options.SourcePath, "/")
 	}
-	destination := options.DestinationPath
-	if destination == "" {
-		destination = target.Target
-	}
+	destination := cmp.Or(options.DestinationPath, target.Target)
 	command = append(command, "--", source, destination)
 	mounts := append([]mount.Mount{target}, options.ExtraMounts...)
 	_, err := e.runInternal(ctx, dockerClient, repository, password, command, mounts...)
@@ -398,17 +401,13 @@ func (e *Engine) ForgetSnapshots(ctx context.Context, dockerClient *client.Clien
 		return errors.New("at least one snapshot ID is required")
 	}
 	requested := make([]string, 0, len(snapshotIDs))
-	seen := make(map[string]struct{}, len(snapshotIDs))
 	for _, id := range snapshotIDs {
 		if !fullSnapshotIDInternal(id) {
 			return errors.New("a full snapshot ID is required")
 		}
-		canonicalID := strings.ToLower(id)
-		if _, exists := seen[canonicalID]; !exists {
-			seen[canonicalID] = struct{}{}
-			requested = append(requested, canonicalID)
-		}
+		requested = append(requested, strings.ToLower(id))
 	}
+	requested = kit.Unique(requested)
 	if e == nil {
 		return errors.New("backup engine is unavailable")
 	}
@@ -538,6 +537,7 @@ func (e *Engine) ensureImageInternal(ctx context.Context, dockerClient *client.C
 	}
 	return nil
 }
+
 func arcaneNetworkModeInternal(ctx context.Context, dockerClient *client.Client) container.NetworkMode {
 	arcane, err := libarcane.InspectCurrentArcaneContainer(ctx, dockerClient)
 	if err != nil || arcane == nil || arcane.ID == "" {
@@ -555,9 +555,6 @@ func (e *Engine) runContainerInternal(ctx context.Context, dockerClient *client.
 	mounts = append(mounts, extraMounts...)
 	return rusticruntime.Run(ctx, dockerClient, password, command, repository.Environment, mounts, arcaneNetworkModeInternal(ctx, dockerClient))
 }
-
-// RecoveryKeyConfigID is the singleton row holding the instance-wide backup recovery key.
-const RecoveryKeyConfigID = "system-recovery"
 
 var (
 	ErrRecoveryKeyNotConfigured = errors.New("recovery key is not configured")

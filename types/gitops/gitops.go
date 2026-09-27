@@ -7,9 +7,7 @@ const (
 	SyncModeDeploy = "deploy"
 	// SyncModeBackup commits saved project configuration to the repository.
 	SyncModeBackup = "backup"
-)
 
-const (
 	BackupStateNever          = "never"
 	BackupStatePending        = "pending"
 	BackupStateBackingUp      = "backing_up"
@@ -17,9 +15,7 @@ const (
 	BackupStatePaused         = "paused"
 	BackupStateFailed         = "failed"
 	BackupStateNeedsAttention = "needs_attention"
-)
 
-const (
 	BackupFailureRepository          = "repository"
 	BackupFailureAuth                = "auth"
 	BackupFailureProjectMissing      = "project_missing"
@@ -29,11 +25,14 @@ const (
 	BackupFailureConflict            = "conflict"
 	BackupFailureDestinationOccupied = "destination_occupied"
 	BackupFailurePushRejected        = "push_rejected"
-)
 
-const (
 	// BackupConflictUseArcane replaces the remote backup files with Arcane's current files.
 	BackupConflictUseArcane = "use_arcane"
+
+	// FileTreeNodeTypeFile represents a file node.
+	FileTreeNodeTypeFile FileTreeNodeType = "file"
+	// FileTreeNodeTypeDirectory represents a directory node.
+	FileTreeNodeTypeDirectory FileTreeNodeType = "directory"
 )
 
 // GitRepository represents a reusable Git repository with credentials.
@@ -110,7 +109,6 @@ type GitRepository struct {
 
 // GitOpsSync represents a GitOps sync configuration.
 type GitOpsSync struct {
-
 	// CreatedAt is the date and time at which the sync was created.
 	//
 	// Required: true
@@ -833,13 +831,6 @@ type SyncResult struct {
 
 // FileTreeNodeType represents the type of a file tree node.
 type FileTreeNodeType string
-
-const (
-	// FileTreeNodeTypeFile represents a file node.
-	FileTreeNodeTypeFile FileTreeNodeType = "file"
-	// FileTreeNodeTypeDirectory represents a directory node.
-	FileTreeNodeTypeDirectory FileTreeNodeType = "directory"
-)
 
 // FileTreeNode represents a file or directory in the repository.
 type FileTreeNode struct {

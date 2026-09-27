@@ -3,6 +3,7 @@ package vuln
 import (
 	"archive/tar"
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
@@ -20,13 +21,13 @@ import (
 	"emperror.dev/errors"
 	cerrdefs "github.com/containerd/errdefs"
 	dockerutils "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
+	"github.com/getarcaneapp/arcane/types/v2/vulnerability"
 	"github.com/moby/moby/api/pkg/stdcopy"
 	containertypes "github.com/moby/moby/api/types/container"
 	mounttypes "github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
-
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
-	"github.com/getarcaneapp/arcane/types/v2/vulnerability"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 const (
@@ -149,10 +150,7 @@ func BuildHostConfig(
 
 func SelectDefaultNetworkMode(networkMode string) string {
 	networkMode = strings.TrimSpace(networkMode)
-	if networkMode == "" {
-		return DefaultNetworkMode
-	}
-	return networkMode
+	return kit.Ternary(networkMode == "", DefaultNetworkMode, networkMode)
 }
 
 func ApplyRuntimeSecurity(hostConfig *containertypes.HostConfig, securityOpts []string, privileged bool) {
@@ -233,10 +231,7 @@ func MountSummaries(hostConfig *containertypes.HostConfig) []string {
 
 	summaries := make([]string, 0, len(hostConfig.Mounts))
 	for _, mount := range hostConfig.Mounts {
-		source := mount.Source
-		if source == "" {
-			source = string(mount.Type)
-		}
+		source := cmp.Or(mount.Source, string(mount.Type))
 		summaries = append(summaries, fmt.Sprintf("%s:%s", source, mount.Target))
 	}
 
@@ -389,11 +384,7 @@ func ParseCPULimit(raw string, fallback float64) float64 {
 		return fallback
 	}
 
-	if limit < 0 {
-		return 0
-	}
-
-	return limit
+	return kit.Ternary(limit < 0, 0, limit)
 }
 
 func ParseMemoryLimitMB(raw string, fallback int64) int64 {
@@ -407,11 +398,7 @@ func ParseMemoryLimitMB(raw string, fallback int64) int64 {
 		return fallback
 	}
 
-	if limit < 0 {
-		return 0
-	}
-
-	return limit
+	return kit.Ternary(limit < 0, 0, limit)
 }
 
 func ContainerWaitTimeout(trivyTimeoutArg string) time.Duration {
@@ -424,7 +411,6 @@ func ContainerWaitTimeout(trivyTimeoutArg string) time.Duration {
 	if err != nil || timeout <= 0 {
 		return timeouts.DefaultTrivyScan + timeouts.DefaultDockerAPI
 	}
-
 	return timeout + timeouts.DefaultDockerAPI
 }
 

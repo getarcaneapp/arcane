@@ -1,6 +1,10 @@
 package version
 
-import "time"
+import (
+	"cmp"
+	"strings"
+	"time"
+)
 
 // Info contains detailed version information about the application.
 type Info struct {
@@ -134,4 +138,26 @@ type StreamEvent struct {
 	//
 	// Required: true
 	Timestamp time.Time `json:"timestamp"`
+}
+
+// AlreadyOnNewest reports whether the check is confident the environment already
+// runs the newest image. Anything unresolved or contradictory reports false.
+func (i *Info) AlreadyOnNewest() bool {
+	if i == nil || i.UpdateAvailable {
+		return false
+	}
+
+	currentDigest := strings.TrimSpace(i.CurrentDigest)
+	newestDigest := strings.TrimSpace(i.NewestDigest)
+
+	// Digests alone catch a mutable tag rebuilt at the same version. Once either side
+	// resolves, both must resolve and agree; a matching version tag is not enough.
+	switch {
+	case cmp.Or(currentDigest, newestDigest) != "":
+		return currentDigest == newestDigest
+	case i.NewestVersion != "":
+		return strings.TrimPrefix(i.NewestVersion, "v") == strings.TrimPrefix(i.CurrentVersion, "v")
+	default:
+		return false
+	}
 }

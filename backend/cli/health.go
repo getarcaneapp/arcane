@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"cmp"
 	"context"
 	"net"
 	"net/http"
@@ -10,7 +11,6 @@ import (
 	"time"
 
 	"emperror.dev/errors"
-
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -47,10 +47,7 @@ func buildHealthURLInternal(cfg *config.Config) (string, error) {
 		return "", errors.New("health config is nil")
 	}
 
-	port := strings.TrimSpace(cfg.Port)
-	if port == "" {
-		port = defaultHealthPort
-	}
+	port := cmp.Or(strings.TrimSpace(cfg.Port), defaultHealthPort)
 	if _, err := strconv.Atoi(port); err != nil {
 		return "", errors.WrapIff(err, "invalid health port %q", port)
 	}

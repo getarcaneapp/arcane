@@ -1,6 +1,7 @@
 package projects
 
 import (
+	"cmp"
 	"context"
 	"io"
 	"log/slog"
@@ -13,6 +14,7 @@ import (
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
 	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 type composeCoordinatorInternal struct {
@@ -62,9 +64,7 @@ func (c *composeCoordinatorInternal) Deploy(ctx context.Context, request project
 	if pullPolicy == "" {
 		pullPolicy = NormalizeDeployPullPolicy(request.DefaultPullPolicy)
 	}
-	if pullPolicy == "" {
-		pullPolicy = "missing"
-	}
+	pullPolicy = cmp.Or(pullPolicy, "missing")
 	if err := c.PrepareImagesForDeploy(ctx, request.ProjectID, model, request.Progress, operations, pullPolicy); err != nil {
 		return nil, errors.WrapIf(err, "failed to prepare project images for deploy")
 	}
@@ -498,24 +498,10 @@ func SelectedImageRefs(compProj *composetypes.Project, servicesToUpdate []string
 
 	selected := NormalizeBuildSelections(servicesToUpdate)
 	refs := make([]string, 0, len(compProj.Services))
-	seen := make(map[string]struct{}, len(compProj.Services))
-
 	for name, svc := range compProj.Services {
-		if !ServiceSelected(selected, name) || svc.Build != nil {
-			continue
+		if ServiceSelected(selected, name) && svc.Build == nil {
+			refs = append(refs, svc.Image)
 		}
-
-		imageRef := strings.TrimSpace(svc.Image)
-		if imageRef == "" {
-			continue
-		}
-		if _, exists := seen[imageRef]; exists {
-			continue
-		}
-
-		seen[imageRef] = struct{}{}
-		refs = append(refs, imageRef)
 	}
-
-	return refs
+	return kit.Unique(kit.TrimNonEmpty(refs))
 }

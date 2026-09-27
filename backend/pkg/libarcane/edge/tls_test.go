@@ -23,6 +23,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	certgen "github.com/getarcaneapp/arcane/cli/v2/pkg/generate"
 	"github.com/stretchr/testify/require"
+	kit "go.getarcane.app/kit/pkg"
 	libcrypto "go.getarcane.app/sys/crypto"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/peer"
@@ -196,10 +197,7 @@ func TestEnsureAgentMTLSAssets_UsesDownloadedCAPathWhenPresent(t *testing.T) {
 	require.NotNil(t, generated)
 	for _, file := range generated.Files {
 		targetPath := filepath.Join(assetsDir, filepath.Base(file.Name))
-		perm := utils.FilePerm
-		if file.Permissions == "0600" {
-			perm = 0o600
-		}
+		perm := kit.Ternary(file.Permissions == "0600", 0o600, utils.FilePerm)
 		require.NoError(t, os.WriteFile(targetPath, []byte(file.Content), perm))
 	}
 
@@ -436,10 +434,7 @@ func TestAgentMTLSAssetsNeedEnrollmentInternal_RenewsExpiredCertificate(t *testi
 
 	for _, file := range assets.Files {
 		targetPath := filepath.Join(assetsDir, filepath.Base(file.Name))
-		perm := utils.FilePerm
-		if file.Permissions == "0600" {
-			perm = 0o600
-		}
+		perm := kit.Ternary(file.Permissions == "0600", 0o600, utils.FilePerm)
 		require.NoError(t, os.WriteFile(targetPath, []byte(file.Content), perm))
 	}
 

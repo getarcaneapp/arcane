@@ -35,5 +35,4 @@ func TestComposeLabels(t *testing.T) {
 		assert.Empty(t, got,
 			"ComposeServiceLabel(empty) = %q, want %q", got, "")
 	}
-
 }

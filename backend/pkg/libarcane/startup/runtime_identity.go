@@ -1,16 +1,19 @@
 package startup
 
 import (
+	"cmp"
 	"context"
 	"log/slog"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/samber/mo"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 const (
@@ -126,10 +129,12 @@ func loadRuntimeIdentityRequestInternal(cfg *RuntimeIdentityConfig, inContainer 
 
 	if puid == "" || pgid == "" {
 		req := defaultRuntimeIdentityRequestInternal(cfg.DockerHost, inContainer)
-		if inContainer {
-			return req, "PUID and PGID must both be set to override the default non-root runtime user; continuing with the default non-root runtime user", nil
-		}
-		return req, "PUID and PGID must both be set to enable runtime identity outside containers; continuing without runtime identity", nil
+		warning := kit.Ternary(
+			inContainer,
+			"PUID and PGID must both be set to override the default non-root runtime user; continuing with the default non-root runtime user",
+			"PUID and PGID must both be set to enable runtime identity outside containers; continuing without runtime identity",
+		)
+		return req, warning, nil
 	}
 
 	uid, credentialUID, err := parseRuntimeIdentityValueInternal(puid, "PUID")
@@ -171,7 +176,7 @@ func defaultRuntimeIdentityRequestInternal(dockerHost string, inContainer bool) 
 }
 
 func runningInContainerInternal(getenv func(string) string, stat func(string) (os.FileInfo, error)) bool {
-	if utils.BoolOrDefault(strings.TrimSpace(getenv("ARCANE_IN_CONTAINER")), false) {
+	if kit.ParseOrDefault(strings.TrimSpace(getenv("ARCANE_IN_CONTAINER")), false, strconv.ParseBool) {
 		return true
 	}
 
@@ -188,7 +193,7 @@ func runningInContainerInternal(getenv func(string) string, stat func(string) (o
 	return false
 }
 
-func ensureRuntimeDockerConfigInternal(cfg *RuntimeIdentityConfig, setenv func(string, string) error, uid int, gid int, inContainer bool) error {
+func ensureRuntimeDockerConfigInternal(cfg *RuntimeIdentityConfig, setenv func(string, string) error, uid, gid int, inContainer bool) error {
 	configDir, err := configureRuntimeDockerConfigEnvInternal(cfg, setenv, uid, gid, inContainer)
 	if err != nil {
 		return err
@@ -210,7 +215,7 @@ func ensureRuntimeDockerConfigInternal(cfg *RuntimeIdentityConfig, setenv func(s
 	return nil
 }
 
-func configureRuntimeDockerConfigEnvInternal(cfg *RuntimeIdentityConfig, setenv func(string, string) error, uid int, gid int, inContainer bool) (string, error) {
+func configureRuntimeDockerConfigEnvInternal(cfg *RuntimeIdentityConfig, setenv func(string, string) error, uid, gid int, inContainer bool) (string, error) {
 	if cfg == nil {
 		cfg = &RuntimeIdentityConfig{}
 	}
@@ -248,7 +253,6 @@ func runtimeIdentitySupplementaryGroupsInternal(dockerHost string, resolveSocket
 	if !ok {
 		return nil
 	}
-
 	return []uint32{socketGID}
 }
 
@@ -283,7 +287,7 @@ func dockerSocketPathInternal(raw string) mo.Option[string] {
 	return mo.Some(filepath.Clean(socketPath))
 }
 
-func prepareWritablePathsWithRootsInternal(uid int, gid int, mountpoints map[string]struct{}, projectsDir string, dataDirectory string, buildsDirectory string) error {
+func prepareWritablePathsWithRootsInternal(uid, gid int, mountpoints map[string]struct{}, projectsDir, dataDirectory, buildsDirectory string) error {
 	if err := os.MkdirAll(dataDirectory, utils.DirPerm); err != nil {
 		return errors.WrapIf(err, "create data directory")
 	}
@@ -368,10 +372,7 @@ func ensureSQLiteFilesExistInternal(databaseURL string) error {
 }
 
 func sqliteDatabasePathInternal(databaseURL string) (string, bool, error) {
-	value := strings.TrimSpace(databaseURL)
-	if value == "" {
-		value = defaultDatabaseURL
-	}
+	value := cmp.Or(strings.TrimSpace(databaseURL), defaultDatabaseURL)
 	if !strings.HasPrefix(value, "file:") {
 		return "", false, nil
 	}
@@ -399,7 +400,7 @@ func sqliteDatabasePathInternal(databaseURL string) (string, bool, error) {
 	return filepath.Clean(pathPart), true, nil
 }
 
-func chownRecursiveInternal(path string, uid int, gid int, mountpoints map[string]struct{}, projectsDir string) error {
+func chownRecursiveInternal(path string, uid, gid int, mountpoints map[string]struct{}, projectsDir string) error {
 	return filepath.Walk(path, func(currentPath string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err

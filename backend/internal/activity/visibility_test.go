@@ -52,5 +52,4 @@ func TestJobActivityVisibilityFiltersBeforePagination(t *testing.T) {
 	var retained Activity
 	require.NoError(t, db.First(&retained, "id = ?", "private").Error)
 	require.NoError(t, db.First(&Activity{}, "id = ?", "allowed").Error)
-
 }

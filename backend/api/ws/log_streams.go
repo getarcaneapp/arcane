@@ -12,10 +12,9 @@ import (
 	"time"
 
 	"emperror.dev/errors"
-	"github.com/labstack/echo/v5"
-
 	wshub "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/ws"
 	systemtypes "github.com/getarcaneapp/arcane/types/v2/system"
+	"github.com/labstack/echo/v5"
 )
 
 // ============================================================================
@@ -171,7 +170,7 @@ func (h *WebSocketHandler) serveLogStreamInternal(
 // broadcastLogStreamErrorInternal emits an error message to every client of a log stream.
 // resourceLabel is the human-readable noun used in slog/error text (e.g. "project log stream").
 // errorPrefix is the user-facing message prefix (e.g. "Failed to stream project logs: ").
-func broadcastLogStreamErrorInternal(resourceLabel, errorPrefix string, resourceID string, format string, err error, ls *wsLogStream) {
+func broadcastLogStreamErrorInternal(resourceLabel, errorPrefix, resourceID, format string, err error, ls *wsLogStream) {
 	slog.Warn(resourceLabel+" failed", "resourceID", resourceID, "error", err)
 
 	if format == "json" {

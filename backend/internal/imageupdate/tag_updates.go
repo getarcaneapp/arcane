@@ -20,22 +20,22 @@ import (
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 	"go.getarcane.app/updater"
-
 	"go.getarcane.app/updater/pkg/utils/tagpolicy"
 	"go.getarcane.app/updater/refs"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/singleflight"
-
 	"gorm.io/gorm"
 )
 
-// tagCheckWorkers bounds concurrent container policy evaluations per scan; the
-// registry limiter still caps concurrent requests per registry host.
-const tagCheckWorkers = 10
+const (
+	// tagCheckWorkers bounds concurrent container policy evaluations per scan; the
+	// registry limiter still caps concurrent requests per registry host.
+	tagCheckWorkers = 10
 
-// staleDigestRecordDeleteChunk bounds the IN list used to clear container
-// records whose policy switched to digest tracking.
-const staleDigestRecordDeleteChunk = 500
+	// staleDigestRecordDeleteChunk bounds the IN list used to clear container
+	// records whose policy switched to digest tracking.
+	staleDigestRecordDeleteChunk = 500
+)
 
 // tagRegistryInternal adapts the registry service for one container tag scan.
 // Successful tag listings are shared per repository and digest lookups per
@@ -325,7 +325,7 @@ func (s *ImageUpdateService) saveContainerTagResultInternal(ctx context.Context,
 // taken before the first container result is attached so it stays untouched.
 // A container candidate promotes the image result to its version update when
 // the image itself has none.
-func attachContainerUpdatesInternal(results map[string]*imageupdatetypes.Response, containerUpdates map[string]*imageupdatetypes.Response) {
+func attachContainerUpdatesInternal(results, containerUpdates map[string]*imageupdatetypes.Response) {
 	containerIDsByRef := make(map[string][]string, len(containerUpdates))
 	for id, update := range containerUpdates {
 		normalized := refs.NormalizeImageUpdateRef(update.ImageRef)

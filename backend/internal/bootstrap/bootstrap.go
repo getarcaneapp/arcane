@@ -1,6 +1,7 @@
 package bootstrap
 
 import (
+	"cmp"
 	"context"
 	"io"
 	"log/slog"
@@ -10,10 +11,6 @@ import (
 	"time"
 
 	"emperror.dev/errors"
-
-	"github.com/moby/moby/client"
-	"github.com/subosito/gotenv"
-
 	"github.com/getarcaneapp/arcane/backend/v2/api/ws"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
@@ -37,6 +34,8 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	httpxtypes "github.com/getarcaneapp/arcane/types/v2/httpx"
 	"github.com/labstack/echo/v5"
+	"github.com/moby/moby/client"
+	"github.com/subosito/gotenv"
 	"go.getarcane.app/streams/logs"
 	libcrypto "go.getarcane.app/sys/crypto"
 	"go.uber.org/fx"
@@ -272,10 +271,7 @@ func initializeStartupState(p initializeStartupStateParams) {
 			return err
 		}
 
-		effectiveAPIVersion := strings.TrimSpace(dockerClient.ClientVersion())
-		if effectiveAPIVersion == "" {
-			effectiveAPIVersion = strings.TrimSpace(version.APIVersion)
-		}
+		effectiveAPIVersion := cmp.Or(strings.TrimSpace(dockerClient.ClientVersion()), strings.TrimSpace(version.APIVersion))
 		slog.InfoContext(ctx, "Docker API versions detected", "client_api_version", dockerClient.ClientVersion(), "server_api_version", version.APIVersion, "effective_api_version", effectiveAPIVersion)
 		return nil
 	})

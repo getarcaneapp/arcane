@@ -28,7 +28,6 @@ func TestNodeAgentStatusLegacyJSONCompatibility(t *testing.T) {
 
 	require.Empty(t, status.Candidates,
 		"candidates = %v, want empty", status.Candidates)
-
 }
 
 func TestNodeAgentStatusAmbiguousJSON(t *testing.T) {
@@ -61,7 +60,6 @@ func TestNodeAgentStatusAmbiguousJSON(t *testing.T) {
 
 	require.True(t, reflect.DeepEqual(actual, expected),
 		"JSON = %s, want ambiguous candidate payload", encoded)
-
 }
 
 func TestSwarmJoinEnvironmentResultDoesNotExposeToken(t *testing.T) {
@@ -73,5 +71,4 @@ func TestSwarmJoinEnvironmentResultDoesNotExposeToken(t *testing.T) {
 
 	require.False(t, string(encoded) == "" || strings.Contains(string(encoded), "token"),
 		"join result unexpectedly exposes a token field: %s", encoded)
-
 }

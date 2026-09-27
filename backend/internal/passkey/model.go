@@ -1,11 +1,10 @@
 package passkey
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-
 	"time"
+
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 )
 
 // Passkey stores the WebAuthn credential record required to validate future

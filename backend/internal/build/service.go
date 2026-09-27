@@ -1,8 +1,7 @@
 package build
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-
+	"cmp"
 	"context"
 	"fmt"
 	"io"
@@ -13,14 +12,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
-
 	"emperror.dev/errors"
-
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/gitrepo"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	dockerutils "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	buildgit "github.com/getarcaneapp/arcane/backend/v2/pkg/gitutil"
@@ -29,8 +27,9 @@ import (
 	buildapi "go.getarcane.app/builds/api"
 	"go.getarcane.app/builds/pkg/contextsource"
 	buildtypes "go.getarcane.app/builds/types"
+	kit "go.getarcane.app/kit/pkg"
 	"go.getarcane.app/kit/pkg/capture"
-	arcanekit "go.getarcane.app/kit/pkg/git"
+	gitkit "go.getarcane.app/kit/pkg/git"
 	"gorm.io/gorm"
 )
 
@@ -184,7 +183,7 @@ func (s *BuildService) logBuildFailureEventInternal(ctx context.Context, environ
 		return
 	}
 
-	resourceName := firstNonEmptyStringInternal(req.Tags...)
+	resourceName := cmp.Or(kit.TrimNonEmpty(req.Tags)...)
 	if resourceName == "" {
 		resourceName = strings.TrimSpace(serviceName)
 	}
@@ -225,10 +224,7 @@ func sanitizeBuildContextForEventInternal(raw string) string {
 	base, fragment, hasFragment := strings.Cut(trimmed, "#")
 	parsed, err := url.Parse(base)
 	if err != nil {
-		if strings.Contains(base, "@") {
-			return "[unparseable URL]"
-		}
-		return trimmed
+		return kit.Ternary(strings.Contains(base, "@"), "[unparseable URL]", trimmed)
 	}
 	if parsed.User == nil {
 		return trimmed
@@ -250,19 +246,7 @@ func (s *BuildService) effectiveBuildProviderInternal(provider string) string {
 	if s.settings != nil {
 		provider = strings.ToLower(strings.TrimSpace(s.settings.GetSettingsConfig().BuildProvider.Value))
 	}
-	if provider == "" {
-		return "local"
-	}
-	return provider
-}
-
-func firstNonEmptyStringInternal(values ...string) string {
-	for _, value := range values {
-		if trimmed := strings.TrimSpace(value); trimmed != "" {
-			return trimmed
-		}
-	}
-	return ""
+	return kit.Ternary(provider == "", "local", provider)
 }
 
 func (s *BuildService) resolveBuildRequestInternal(
@@ -291,7 +275,7 @@ func (s *BuildService) resolveBuildRequestInternal(
 	if matchedRepository {
 		writeBuildProgressStatusInternal(progressWriter, serviceName, "using saved git credentials for "+source.RepositoryURL)
 	}
-	if arcanekit.RequiresRemoteProbe(source.RepositoryURL) {
+	if gitkit.RequiresRemoteProbe(source.RepositoryURL) {
 		writeBuildProgressStatusInternal(progressWriter, serviceName, "verifying remote git repository "+source.RepositoryURL)
 		if err := s.probeGitContextInternal(ctx, source.RepositoryURL, authConfig); err != nil {
 			return buildtypes.BuildRequest{}, func() error { return nil }, errors.WrapIff(err, "failed to verify remote git repository %q", source.RepositoryURL)
@@ -425,9 +409,7 @@ func (s *BuildService) ListImageBuildsByEnvironmentPaginated(ctx context.Context
 	q = pagination.ApplyFilter(q, "status", params.Filters["status"])
 	q = pagination.ApplyFilter(q, "provider", params.Filters["provider"])
 
-	if params.Sort == "" {
-		params.Sort = "createdAt"
-	}
+	params.Sort = cmp.Or(params.Sort, "createdAt")
 
 	paginationResp, err := pagination.PaginateAndSortDB(params, q, &builds)
 	if err != nil {
@@ -599,11 +581,7 @@ func mapToJSON(input map[string]string) database.JSON {
 		out[key] = value
 	}
 
-	if len(out) == 0 {
-		return nil
-	}
-
-	return out
+	return kit.Ternary(len(out) == 0, nil, out)
 }
 
 func jsonToStringMap(input database.JSON) map[string]string {
@@ -612,9 +590,5 @@ func jsonToStringMap(input database.JSON) map[string]string {
 		out[key] = fmt.Sprint(value)
 	}
 
-	if len(out) == 0 {
-		return nil
-	}
-
-	return out
+	return kit.Ternary(len(out) == 0, nil, out)
 }

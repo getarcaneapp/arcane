@@ -9,11 +9,11 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/volume"
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 func newTestDockerClientInternal(t *testing.T, server *httptest.Server) *client.Client {
@@ -82,7 +82,7 @@ func TestContainerSummaryMountsVolumeInternal(t *testing.T) {
 		},
 	}
 
-	internal, valid := utils.ParseBool(summary.Labels[libarcane.InternalResourceLabel])
+	internal, valid := kit.ParseBool(summary.Labels[libarcane.InternalResourceLabel])
 	require.True(t, valid)
 	require.True(t, internal)
 	require.True(t, containerSummaryMountsVolumeInternal(summary, "web_data"))

@@ -4,16 +4,12 @@ import (
 	"context"
 	"encoding/json/v2"
 	"log/slog"
+	"maps"
+	"slices"
 	"strings"
 	"time"
 
-	"go.getarcane.app/kit/normalization"
-
 	"emperror.dev/errors"
-
-	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
-
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
@@ -23,12 +19,20 @@ import (
 	roletypes "github.com/getarcaneapp/arcane/types/v2/role"
 	"github.com/samber/hot"
 	"github.com/samber/mo"
+	"go.getarcane.app/kit/normalization"
+	kit "go.getarcane.app/kit/pkg"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
-// permissionCacheTTL bounds how long a resolved PermissionSet is reused
-// before re-querying the DB. The service also invalidates entries explicitly
-// on mutation paths, so this TTL is a safety net.
-const permissionCacheTTL = 60 * time.Second
+const (
+	// permissionCacheTTL bounds how long a resolved PermissionSet is reused
+	// before re-querying the DB. The service also invalidates entries explicitly
+	// on mutation paths, so this TTL is a safety net.
+	permissionCacheTTL = 60 * time.Second
+
+	legacyRoleBackfillCompletedKey = "migration.legacy_user_roles.v1.completed"
+)
 
 // RoleService owns role definitions, user role assignments, OIDC role
 // mappings, and API key permissions. It resolves a caller's effective
@@ -89,8 +93,6 @@ func (s *RoleService) EnsureBuiltInRoles(ctx context.Context) error {
 	})
 }
 
-const legacyRoleBackfillCompletedKey = "migration.legacy_user_roles.v1.completed"
-
 // BackfillLegacyRoleAssignments converts pre-RBAC users.roles into global assignments once, gated by a kv marker committed with the rows.
 func (s *RoleService) BackfillLegacyRoleAssignments(ctx context.Context) error {
 	migrator := s.db.WithContext(ctx).Migrator()
@@ -119,10 +121,7 @@ func (s *RoleService) BackfillLegacyRoleAssignments(ctx context.Context) error {
 			return errors.WrapIf(err, "failed to read legacy users.roles for backfill")
 		}
 		for _, u := range rows {
-			roleID := authz.BuiltInRoleViewer
-			if legacyRolesContainsAdminInternal(u.Roles) {
-				roleID = authz.BuiltInRoleAdmin
-			}
+			roleID := kit.Ternary(legacyRolesContainsAdminInternal(u.Roles), authz.BuiltInRoleAdmin, authz.BuiltInRoleViewer)
 			assignment := UserRoleAssignment{
 				UserID: u.ID,
 				RoleID: roleID,
@@ -449,10 +448,7 @@ func validateAssignmentsExistInternal(tx *gorm.DB, desired []UserRoleAssignment)
 	}
 
 	if len(roleIDSet) > 0 {
-		roleIDs := make([]string, 0, len(roleIDSet))
-		for id := range roleIDSet {
-			roleIDs = append(roleIDs, id)
-		}
+		roleIDs := slices.Collect(maps.Keys(roleIDSet))
 		var found []string
 		if err := tx.Model(&Role{}).Where("id IN ?", roleIDs).Pluck("id", &found).Error; err != nil {
 			return errors.WrapIf(err, "failed to verify role ids")
@@ -469,10 +465,7 @@ func validateAssignmentsExistInternal(tx *gorm.DB, desired []UserRoleAssignment)
 	}
 
 	if len(envIDSet) > 0 {
-		envIDs := make([]string, 0, len(envIDSet))
-		for id := range envIDSet {
-			envIDs = append(envIDs, id)
-		}
+		envIDs := slices.Collect(maps.Keys(envIDSet))
 		var found []string
 		if err := tx.Table("environments").Where("id IN ?", envIDs).Pluck("id", &found).Error; err != nil {
 			return errors.WrapIf(err, "failed to verify environment ids")
@@ -762,10 +755,7 @@ func validateRoleIDsExistInternal(tx *gorm.DB, roleIDs []string) error {
 		roleIDSet[roleID] = struct{}{}
 	}
 
-	normalized := make([]string, 0, len(roleIDSet))
-	for roleID := range roleIDSet {
-		normalized = append(normalized, roleID)
-	}
+	normalized := slices.Collect(maps.Keys(roleIDSet))
 	var found []string
 	if err := tx.Model(&Role{}).Where("id IN ?", normalized).Pluck("id", &found).Error; err != nil {
 		return errors.WrapIf(err, "failed to verify role ids")

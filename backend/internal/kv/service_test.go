@@ -1,12 +1,11 @@
 package kv
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-
 	"context"
 	"testing"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"

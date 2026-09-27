@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"emperror.dev/errors"
-
 	"github.com/wneessen/go-mail"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 const (
@@ -21,11 +21,7 @@ type smtpBuildOptions struct {
 }
 
 func smtpTimeoutFromOptionsInternal(options smtpBuildOptions) time.Duration {
-	if options.timeout > 0 {
-		return options.timeout
-	}
-
-	return defaultSMTPTimeout
+	return kit.Ternary(options.timeout > 0, options.timeout, defaultSMTPTimeout)
 }
 
 func smtpBuildOptionsFromContextInternal(ctx context.Context) smtpBuildOptions {

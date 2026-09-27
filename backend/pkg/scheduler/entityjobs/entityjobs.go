@@ -9,9 +9,8 @@ import (
 	"log/slog"
 
 	"emperror.dev/errors"
-	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
-
 	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
+	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 )
 
 // GitOpsSyncJobPrefix is shared by the GitOps registry and environment cleanup.

@@ -4,31 +4,27 @@ import (
 	"strings"
 
 	"emperror.dev/errors"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/mapper"
+	kit "go.getarcane.app/kit/pkg"
+	"go.getarcane.app/kit/pkg/mapping"
 	"gorm.io/gorm"
 )
 
 // ApplyFilter adds a WHERE clause to the GORM query.
 // It detects comma-separated values and uses IN (?) for multiple values,
 // or = ? for single values.
-func ApplyFilter(q *gorm.DB, column string, value string) *gorm.DB {
+func ApplyFilter(q *gorm.DB, column, value string) *gorm.DB {
 	if value == "" {
 		return q
 	}
 	if strings.Contains(value, ",") {
-		values := strings.Split(value, ",")
-		for i := range values {
-			values[i] = strings.TrimSpace(values[i])
-		}
-		return q.Where(column+" IN ?", values)
+		return q.Where(column+" IN ?", kit.TrimNonEmpty(strings.Split(value, ",")))
 	}
 	return q.Where(column+" = ?", value)
 }
 
 // ApplyLikeSearch adds a LIKE search condition using the same wildcard pattern
 // for every placeholder in condition.
-func ApplyLikeSearch(q *gorm.DB, search string, condition string) *gorm.DB {
+func ApplyLikeSearch(q *gorm.DB, search, condition string) *gorm.DB {
 	term := strings.TrimSpace(search)
 	if term == "" {
 		return q
@@ -44,13 +40,13 @@ func ApplyLikeSearch(q *gorm.DB, search string, condition string) *gorm.DB {
 }
 
 // PaginateSortAndMapDB paginates DB records and maps them to API DTOs.
-func (params QueryParams) PaginateSortAndMapDB[M any, D any](query *gorm.DB, records *[]M) ([]D, Response, error) {
+func (params QueryParams) PaginateSortAndMapDB[M, D any](query *gorm.DB, records *[]M) ([]D, Response, error) {
 	paginationResp, err := PaginateAndSortDB(params, query, records)
 	if err != nil {
 		return nil, Response{}, errors.WrapIf(err, "paginate db records")
 	}
 
-	out, err := mapper.MapSlice[M, D](*records)
+	out, err := mapping.MapSlice[M, D](*records)
 	if err != nil {
 		return nil, Response{}, errors.WrapIf(err, "map db records")
 	}
@@ -60,7 +56,7 @@ func (params QueryParams) PaginateSortAndMapDB[M any, D any](query *gorm.DB, rec
 
 // ApplyBooleanFilter adds a WHERE clause for boolean columns.
 // It detects comma-separated values and maps "true"/"1" to true and "false"/"0" to false.
-func ApplyBooleanFilter(q *gorm.DB, column string, value string) *gorm.DB {
+func ApplyBooleanFilter(q *gorm.DB, column, value string) *gorm.DB {
 	if value == "" {
 		return q
 	}
@@ -69,7 +65,7 @@ func ApplyBooleanFilter(q *gorm.DB, column string, value string) *gorm.DB {
 	var boolValues []bool
 
 	for _, part := range parts {
-		if value, valid := utils.ParseBool(part); valid {
+		if value, valid := kit.ParseBool(part); valid {
 			boolValues = append(boolValues, value)
 		}
 	}

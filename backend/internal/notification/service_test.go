@@ -15,10 +15,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/libtnb/sqlite"
-	"github.com/stretchr/testify/require"
-	"gorm.io/gorm"
-
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
@@ -29,8 +25,11 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/imageupdate"
 	notificationdto "github.com/getarcaneapp/arcane/types/v2/notification"
 	"github.com/getarcaneapp/arcane/types/v2/system"
+	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.getarcane.app/sys/crypto"
+	"gorm.io/gorm"
 )
 
 func setupNotificationTestDB(t *testing.T) *database.DB {
@@ -172,7 +171,7 @@ func TestNotificationService_DispatchNotification_UnsupportedKindReturnsSentinel
 
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrUnsupportedDispatchKind)
-	var unsupportedErr = ErrUnsupportedDispatchKind
+	unsupportedErr := ErrUnsupportedDispatchKind
 	require.ErrorIs(t, err, unsupportedErr)
 	require.Contains(t, err.Error(), "bogus_kind")
 }

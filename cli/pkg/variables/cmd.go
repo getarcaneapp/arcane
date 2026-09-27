@@ -1,13 +1,13 @@
 package variables
 
 import (
+	"cmp"
 	"fmt"
 	"strconv"
 	"strings"
 	"time"
 
 	"emperror.dev/errors"
-
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
@@ -59,10 +59,7 @@ func printSyncStatuses(statuses []env.EnvironmentSyncStatus) {
 		if status.LastSyncedAt != nil {
 			lastSynced = status.LastSyncedAt.Format(time.RFC3339)
 		}
-		syncError := status.Error
-		if syncError == "" {
-			syncError = "-"
-		}
+		syncError := cmp.Or(status.Error, "-")
 		rows[i] = []string{
 			status.EnvironmentID,
 			status.EnvironmentName,

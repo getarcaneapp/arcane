@@ -5,7 +5,6 @@ import (
 	"math"
 
 	"emperror.dev/errors"
-
 	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/proto/tunnel/v1"
 )
 

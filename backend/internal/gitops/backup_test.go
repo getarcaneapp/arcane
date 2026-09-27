@@ -1,6 +1,7 @@
 package gitops
 
 import (
+	"cmp"
 	"context"
 	"os"
 	"path/filepath"
@@ -24,6 +25,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/transport/server"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 var installBackupTestTransportOnceInternal sync.Once
@@ -166,24 +168,14 @@ func writeBackupProjectFileInternal(t *testing.T, root, relative, content string
 
 func (e *backupTestEnvInternal) createBackupInternal(t *testing.T, req gitops.CreateSyncRequest) *projectpkg.GitOpsSync {
 	t.Helper()
-	if req.Name == "" {
-		req.Name = "demo-backup"
-	}
-	if req.RepositoryID == "" {
-		req.RepositoryID = "repo-backup"
-	}
-	if req.Branch == "" {
-		req.Branch = "main"
-	}
-	if req.Mode == "" {
-		req.Mode = gitops.SyncModeBackup
-	}
+	req.Name = cmp.Or(req.Name, "demo-backup")
+	req.RepositoryID = cmp.Or(req.RepositoryID, "repo-backup")
+	req.Branch = cmp.Or(req.Branch, "main")
+	req.Mode = cmp.Or(req.Mode, gitops.SyncModeBackup)
 	if req.ProjectID == "" {
 		req.ProjectID = e.project.ID
 	}
-	if req.BackupDirectory == "" {
-		req.BackupDirectory = "backups/demo"
-	}
+	req.BackupDirectory = cmp.Or(req.BackupDirectory, "backups/demo")
 	syncRecord, err := e.service.CreateSync(t.Context(), "0", req, common.SystemUser)
 	require.NoError(t, err)
 	return syncRecord
@@ -260,7 +252,7 @@ func TestGitOpsBackup_FirstRunPushesSelectedFiles(t *testing.T) {
 
 	snapshot := parseBackupSnapshotInternal(stored.LastBackupSnapshot)
 	assert.Len(t, snapshot, 2)
-	assert.Equal(t, hashBackupContentInternal(composeBytes), snapshot["compose.yaml"])
+	assert.Equal(t, kit.SHA256Hex(composeBytes), snapshot["compose.yaml"])
 }
 
 func TestGitOpsBackup_UnchangedContentMakesNoNewCommit(t *testing.T) {
@@ -501,15 +493,11 @@ func TestGitOpsBackup_CreateValidation(t *testing.T) {
 			}
 			request := test.request
 			request.Mode = gitops.SyncModeBackup
-			if request.Name == "" {
-				request.Name = "demo-backup"
-			}
+			request.Name = cmp.Or(request.Name, "demo-backup")
 			request.RepositoryID = "repo-backup"
 			request.Branch = "main"
 			request.ProjectID = env.project.ID
-			if request.BackupDirectory == "" {
-				request.BackupDirectory = "backups/demo"
-			}
+			request.BackupDirectory = cmp.Or(request.BackupDirectory, "backups/demo")
 
 			_, err := env.service.CreateSync(t.Context(), "0", request, common.SystemUser)
 			require.Error(t, err)

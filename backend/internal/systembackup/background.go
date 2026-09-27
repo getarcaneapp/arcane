@@ -6,7 +6,6 @@ import (
 	"log/slog"
 
 	"emperror.dev/errors"
-
 	"github.com/getarcaneapp/arcane/backend/v2/internal/backup"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
@@ -103,7 +102,7 @@ func (s *SystemBackupService) StartSystemVolumeBackups(ctx context.Context, user
 	return &backuptypes.BackupRunAccepted{ActivityID: activityID, Status: "running"}, nil
 }
 
-func (s *SystemBackupService) updateSystemVolumeProgressInternal(ctx context.Context, activityID string, policyID string, candidates []backuptypes.SystemVolumeBackupOption, result *backuptypes.SystemVolumeBackupRunResult) {
+func (s *SystemBackupService) updateSystemVolumeProgressInternal(ctx context.Context, activityID, policyID string, candidates []backuptypes.SystemVolumeBackupOption, result *backuptypes.SystemVolumeBackupRunResult) {
 	if activityID == "" {
 		return
 	}

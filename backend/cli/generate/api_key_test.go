@@ -27,5 +27,4 @@ func TestAPIKeyCommandAvailableInBackendCLI(t *testing.T) {
 
 	require.NotContains(t, out, "ADMIN_STATIC_API_KEY",
 		"expected raw arc_ key in output, got: %q", out)
-
 }

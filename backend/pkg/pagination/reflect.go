@@ -1,33 +1,30 @@
 package pagination
 
 import (
+	"cmp"
 	"reflect"
 	"strconv"
 
-	stringutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	kit "go.getarcane.app/kit/pkg"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
 func PaginateAndSortDB[M any](params QueryParams, query *gorm.DB, result *[]M) (Response, error) {
 	sortColumn := params.Sort
-	sortDirection := string(params.Order)
-
-	if sortDirection == "" {
-		sortDirection = "asc"
-	}
+	sortDirection := cmp.Or(string(params.Order), "asc")
 
 	modelType := reflect.TypeFor[M]()
-	capitalizedSortColumn := stringutils.CapitalizeFirstLetter(sortColumn)
+	capitalizedSortColumn := kit.Capitalize(sortColumn)
 	sortField, sortFieldFound := modelType.FieldByName(capitalizedSortColumn)
 	isSortable, _ := strconv.ParseBool(sortField.Tag.Get("sortable"))
 
-	sortDirection = normalizeSortDirection(sortDirection)
+	sortDirection = kit.Ternary(sortDirection != "asc" && sortDirection != "desc", "asc", sortDirection)
 
 	var orderColumns []clause.OrderByColumn
 	columnName := ""
 	if sortFieldFound && isSortable {
-		columnName = stringutils.CamelCaseToSnakeCase(sortColumn)
+		columnName = kit.SnakeCase(sortColumn)
 		orderColumns = append(orderColumns, clause.OrderByColumn{
 			Column: clause.Column{Name: columnName},
 			Desc:   sortDirection == "desc",
@@ -99,7 +96,7 @@ func paginateDBAll[M any](query *gorm.DB, result *[]M, skipCount bool) (Response
 // paginateDB applies offset/limit pagination. When skipCount is true the COUNT(*) is elided
 // and TotalItems/TotalPages are returned as UnknownTotal.
 // Count runs before Find so it sees a clean session (Find sets Statement.Dest in GORM v2).
-func paginateDB[M any](offset int, pageSize int, query *gorm.DB, result *[]M, skipCount bool) (Response, error) {
+func paginateDB[M any](offset, pageSize int, query *gorm.DB, result *[]M, skipCount bool) (Response, error) {
 	if offset < 0 {
 		offset = 0
 	}
@@ -143,11 +140,4 @@ func paginateDB[M any](offset int, pageSize int, query *gorm.DB, result *[]M, sk
 		CurrentPage:  page,
 		ItemsPerPage: pageSize,
 	}, nil
-}
-
-func normalizeSortDirection(direction string) string {
-	if direction != "asc" && direction != "desc" {
-		return "asc"
-	}
-	return direction
 }

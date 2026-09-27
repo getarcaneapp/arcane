@@ -278,7 +278,6 @@ func TestComposeContentProjectName(t *testing.T) {
 				assert.Equal(t, tt.want, got,
 					"ComposeContentProjectName() = %q, want %q", got, tt.want)
 			}
-
 		})
 	}
 }
@@ -312,7 +311,6 @@ func TestNormalizeProjectName(t *testing.T) {
 
 			require.Equal(t, tt.expected, got,
 				"NormalizeProjectName() = %q, want %q", got, tt.expected)
-
 		})
 	}
 }

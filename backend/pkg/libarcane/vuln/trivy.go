@@ -6,6 +6,7 @@
 package vuln
 
 import (
+	"cmp"
 	"encoding/base64"
 	"encoding/json/v2"
 	"net/url"
@@ -16,6 +17,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	containertypes "github.com/moby/moby/api/types/container"
 	dockerregistry "github.com/moby/moby/api/types/registry"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 const (
@@ -57,31 +59,14 @@ func ParseSecurityOpts(value string) []string {
 	parts := strings.FieldsFunc(value, func(r rune) bool {
 		return r == ',' || r == '\n'
 	})
-	if len(parts) == 0 {
-		return nil
-	}
-
-	opts := make([]string, 0, len(parts))
-	for _, part := range parts {
-		if opt := strings.TrimSpace(part); opt != "" {
-			opts = append(opts, opt)
-		}
-	}
-
-	if len(opts) == 0 {
-		return nil
-	}
-
-	return opts
+	opts := kit.TrimNonEmpty(parts)
+	return kit.Ternary(len(opts) == 0, nil, opts)
 }
 
 // ParseDockerHost validates and decomposes a Docker host URI into its scheme and,
 // for unix sockets, the socket path. An empty host falls back to DefaultDockerHostURI.
-func ParseDockerHost(dockerHost string) (scheme string, socketPath string, err error) {
-	dockerHost = strings.TrimSpace(dockerHost)
-	if dockerHost == "" {
-		dockerHost = DefaultDockerHostURI
-	}
+func ParseDockerHost(dockerHost string) (scheme, socketPath string, err error) {
+	dockerHost = cmp.Or(strings.TrimSpace(dockerHost), DefaultDockerHostURI)
 
 	if strings.HasPrefix(dockerHost, "/") {
 		return "unix", dockerHost, nil
@@ -113,7 +98,6 @@ func BuildDockerHostEnv(dockerHost string) []string {
 	if dockerHost == "" {
 		return nil
 	}
-
 	return []string{"DOCKER_HOST=" + dockerHost}
 }
 
@@ -127,10 +111,7 @@ func ProxyEnv(httpProxy, httpsProxy, noProxy string) []string {
 			env = append(env, kv[0]+"="+value)
 		}
 	}
-	if len(env) == 0 {
-		return nil
-	}
-	return env
+	return kit.Ternary(len(env) == 0, nil, env)
 }
 
 // ScanCacheBackendArgsForArch returns the Trivy cache-backend flags for a GOARCH.
@@ -167,7 +148,7 @@ func RepositoryArgs(registry string) []string {
 // memory-mapped. With an empty serverURL it falls back to the standalone
 // local-database flags. The server token is passed via ServerTokenEnv rather than
 // a flag so it is not exposed in the process arguments.
-func ScanSourceArgs(serverURL string, registry string) []string {
+func ScanSourceArgs(serverURL, registry string) []string {
 	serverURL = strings.TrimSpace(serverURL)
 	if serverURL == "" {
 		return append(ScanCacheBackendArgs(), RepositoryArgs(registry)...)
@@ -184,7 +165,6 @@ func ServerTokenEnv(token string) []string {
 	if token == "" {
 		return nil
 	}
-
 	return []string{"TRIVY_TOKEN=" + token}
 }
 
@@ -231,7 +211,7 @@ func BuildDockerConfigJSON(authConfigs map[string]dockerregistry.AuthConfig) ([]
 }
 
 // BuildContainerConfig assembles the container.Config for a Trivy scan container.
-func BuildContainerConfig(scannerImage string, cmdArgs []string, env []string) *containertypes.Config {
+func BuildContainerConfig(scannerImage string, cmdArgs, env []string) *containertypes.Config {
 	return &containertypes.Config{
 		Image:      scannerImage,
 		Entrypoint: []string{"trivy"},

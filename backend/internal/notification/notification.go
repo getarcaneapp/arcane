@@ -2,6 +2,7 @@ package notification
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json/v2"
 	"fmt"
@@ -15,13 +16,13 @@ import (
 	"time"
 
 	"emperror.dev/errors"
-
 	"github.com/getarcaneapp/arcane/backend/v2/internal/apns"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
@@ -30,6 +31,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/imageupdate"
 	notificationdto "github.com/getarcaneapp/arcane/types/v2/notification"
 	"github.com/getarcaneapp/arcane/types/v2/system"
+	kit "go.getarcane.app/kit/pkg"
 	"go.getarcane.app/sys/crypto"
 	"golang.org/x/sync/errgroup"
 )
@@ -57,8 +59,21 @@ var notificationTargetFieldByProviderInternal = map[notifications.NotificationPr
 	notifications.NotificationProviderMatrix: "host",
 }
 
-const ErrUnauthorizedNotificationDispatch = errors.Sentinel("unauthorized notification dispatch")
-const ErrUnsupportedDispatchKind = errors.Sentinel("unsupported notification dispatch kind")
+const (
+	ErrUnauthorizedNotificationDispatch = errors.Sentinel("unauthorized notification dispatch")
+	ErrUnsupportedDispatchKind          = errors.Sentinel("unsupported notification dispatch kind")
+
+	notificationDispatchConcurrencyInternal = 4
+
+	notificationTestTypeSimple           = "simple"
+	notificationTestTypeImageUpdate      = "image-update"
+	notificationTestTypeBatchImageUpdate = "batch-image-update"
+	notificationTestTypeVulnerability    = "vulnerability-found"
+	notificationTestTypePruneReport      = "prune-report"
+	notificationTestTypeAutoHeal         = "auto-heal"
+
+	logoURLPath = "/api/app-images/logo-email"
+)
 
 type NotificationService struct {
 	db             *database.DB
@@ -99,10 +114,7 @@ func NewNotificationService(db *database.DB, cfg *config.Config, environmentSvc 
 }
 
 func (s *NotificationService) resolveNotificationTargetInternal(ctx context.Context, environmentID string) (NotificationTarget, error) {
-	trimmedEnvironmentID := strings.TrimSpace(environmentID)
-	if trimmedEnvironmentID == "" {
-		trimmedEnvironmentID = "0"
-	}
+	trimmedEnvironmentID := cmp.Or(strings.TrimSpace(environmentID), "0")
 
 	if s.environmentSvc != nil {
 		env, err := s.environmentSvc.GetEnvironmentByID(ctx, trimmedEnvironmentID)
@@ -184,7 +196,7 @@ func (s *NotificationService) dispatchNotificationToManagerInternal(ctx context.
 		return notificationdto.DispatchResponse{}, errors.WrapIf(err, "failed to create notification dispatch request")
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Api-Key", s.config.AgentToken)
+	req.Header.Set(middleware.HeaderApiKey, s.config.AgentToken)
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
@@ -350,10 +362,7 @@ func (s *NotificationService) CreateOrUpdateSettings(ctx context.Context, provid
 	var setting NotificationSettings
 
 	err := s.db.WithContext(ctx).Where("provider = ?", provider).First(&setting).Error
-	existingConfig := database.JSON(nil)
-	if err == nil {
-		existingConfig = setting.Config
-	}
+	existingConfig := kit.Ternary(err == nil, setting.Config, database.JSON(nil))
 
 	encryptedConfig, encryptErr := encryptNotificationConfigCredentialsInternal(provider, config, existingConfig)
 	if encryptErr != nil {
@@ -403,7 +412,7 @@ func RedactNotificationConfigCredentials(provider notifications.NotificationProv
 	return redacted
 }
 
-func encryptNotificationConfigCredentialsInternal(provider notifications.NotificationProvider, config database.JSON, existingConfig database.JSON) (database.JSON, error) {
+func encryptNotificationConfigCredentialsInternal(provider notifications.NotificationProvider, config, existingConfig database.JSON) (database.JSON, error) {
 	encryptedConfig := cloneNotificationConfigInternal(config)
 	preserveConfig := existingConfig
 	if provider == notifications.NotificationProviderSignal {
@@ -460,7 +469,7 @@ func encryptNotificationConfigCredentialsInternal(provider notifications.Notific
 	return encryptedConfig, nil
 }
 
-func signalCredentialPreservationConfigInternal(config database.JSON, existingConfig database.JSON) database.JSON {
+func signalCredentialPreservationConfigInternal(config, existingConfig database.JSON) database.JSON {
 	preserveConfig := cloneNotificationConfigInternal(existingConfig)
 	user, _ := config["user"].(string)
 	password, _ := config["password"].(string)
@@ -476,7 +485,7 @@ func signalCredentialPreservationConfigInternal(config database.JSON, existingCo
 	return preserveConfig
 }
 
-func emailCredentialPreservationConfigInternal(config database.JSON, existingConfig database.JSON) database.JSON {
+func emailCredentialPreservationConfigInternal(config, existingConfig database.JSON) database.JSON {
 	preserveConfig := cloneNotificationConfigInternal(existingConfig)
 	if authMode, _ := config["authMode"].(string); authMode == string(notifications.EmailAuthModeNone) {
 		delete(preserveConfig, "smtpPassword")
@@ -647,8 +656,6 @@ func (s *NotificationService) notifyEnabledProvidersInternal(
 	return delivered, nil
 }
 
-const notificationDispatchConcurrencyInternal = 4
-
 func collectNotificationSendResultInternal(errors *[]string, provider notifications.NotificationProvider, sendErr error) (string, *string) {
 	if sendErr == nil {
 		return "success", nil
@@ -658,15 +665,6 @@ func collectNotificationSendResultInternal(errors *[]string, provider notificati
 	*errors = append(*errors, fmt.Sprintf("%s: %s", provider, msg))
 	return "failed", &msg
 }
-
-const (
-	notificationTestTypeSimple           = "simple"
-	notificationTestTypeImageUpdate      = "image-update"
-	notificationTestTypeBatchImageUpdate = "batch-image-update"
-	notificationTestTypeVulnerability    = "vulnerability-found"
-	notificationTestTypePruneReport      = "prune-report"
-	notificationTestTypeAutoHeal         = "auto-heal"
-)
 
 var supportedNotificationTestTypes = map[string]struct{}{
 	notificationTestTypeSimple:           {},
@@ -770,10 +768,7 @@ func (s *NotificationService) batchImageUpdateNotificationContentInternal(enviro
 				return "", "", errors.WrapIf(err, "failed to render email template")
 			}
 			updateCount := len(updates)
-			plural := ""
-			if updateCount > 1 {
-				plural = "s"
-			}
+			plural := kit.Ternary(updateCount > 1, "s", "")
 			subject := notifications.BuildEmailSubject(environmentName, fmt.Sprintf("%d Image Update%s Available", updateCount, plural))
 			return subject, htmlBody, nil
 		},
@@ -844,10 +839,7 @@ func (s *NotificationService) batchContainerUpdateNotificationContentInternal(en
 				return "", "", errors.WrapIf(err, "failed to render email template")
 			}
 			updateCount := len(entries)
-			plural := ""
-			if updateCount > 1 {
-				plural = "s"
-			}
+			plural := kit.Ternary(updateCount > 1, "s", "")
 			subject := notifications.BuildEmailSubject(environmentName, fmt.Sprintf("%d Container%s Updated", updateCount, plural))
 			return subject, htmlBody, nil
 		},
@@ -1077,10 +1069,7 @@ func (s *NotificationService) sendBatchImageUpdateNotificationForTargetInternal(
 		return 0, nil
 	}
 
-	imageRefs := make([]string, 0, len(updatesWithChanges))
-	for ref := range updatesWithChanges {
-		imageRefs = append(imageRefs, ref)
-	}
+	imageRefs := slices.Collect(maps.Keys(updatesWithChanges))
 
 	metadata := database.JSON{
 		"updateCount": len(updatesWithChanges),
@@ -1289,10 +1278,7 @@ func (s *NotificationService) testNotificationContentInternal(environmentName, t
 			},
 		})
 	default: // simple and image-update
-		imageRef := "nginx:latest"
-		if testType == notificationTestTypeSimple {
-			imageRef = "test/image:latest"
-		}
+		imageRef := kit.Ternary(testType == notificationTestTypeSimple, "test/image:latest", "nginx:latest")
 		return s.imageUpdateNotificationContentInternal(environmentName, imageRef, &imageupdate.Response{
 			HasUpdate:      true,
 			UpdateType:     "digest",
@@ -1312,10 +1298,7 @@ func (s *NotificationService) TestNotification(ctx context.Context, environmentI
 	if err != nil {
 		return "", errors.Errorf("please save your %s settings before testing", provider)
 	}
-	testType = strings.TrimSpace(testType)
-	if testType == "" {
-		testType = notificationTestTypeSimple
-	}
+	testType = cmp.Or(strings.TrimSpace(testType), notificationTestTypeSimple)
 	if _, ok := supportedNotificationTestTypes[testType]; !ok {
 		return "", errors.Errorf("unsupported notification test type: %s", testType)
 	}
@@ -1334,10 +1317,7 @@ func (s *NotificationService) TestNotification(ctx context.Context, environmentI
 	// Stamp the event vars so the Test button exercises a configured generic
 	// payload template. The simple test renders image-update content, so it
 	// reports that event type.
-	testEventType := notificationEventTypeForTestTypeInternal(testType)
-	if testEventType == "" {
-		testEventType = notifications.NotificationEventImageUpdate
-	}
+	testEventType := cmp.Or(notificationEventTypeForTestTypeInternal(testType), notifications.NotificationEventImageUpdate)
 	content.Vars = notifications.EventVars(target.EnvironmentName, target.EnvironmentID, testEventType)
 	handled, sendErr := notifications.Deliver(ctx, provider, setting.Config, content)
 	if !handled {
@@ -1345,8 +1325,6 @@ func (s *NotificationService) TestNotification(ctx context.Context, environmentI
 	}
 	return warning, sendErr
 }
-
-const logoURLPath = "/api/app-images/logo-email"
 
 func (s *NotificationService) sendTestEmailInternal(ctx context.Context, environmentName string, config database.JSON) error {
 	_, err := notifications.Deliver(ctx, notifications.NotificationProviderEmail, config, notifications.Content{

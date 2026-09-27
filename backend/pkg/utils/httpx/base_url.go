@@ -4,6 +4,8 @@ import (
 	"net"
 	"net/url"
 	"strings"
+
+	kit "go.getarcane.app/kit/pkg"
 )
 
 // NormalizeBaseURL validates an outbound HTTP URL and strips endpoint-specific components.
@@ -49,11 +51,7 @@ func ManagerGRPCAddr(rawURL string) string {
 
 	port := parsed.Port()
 	if port == "" {
-		if strings.EqualFold(parsed.Scheme, "https") {
-			port = "443"
-		} else {
-			port = "80"
-		}
+		port = kit.Ternary(strings.EqualFold(parsed.Scheme, "https"), "443", "80")
 	}
 
 	return net.JoinHostPort(host, port)

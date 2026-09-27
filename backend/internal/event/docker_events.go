@@ -1,6 +1,7 @@
 package event
 
 import (
+	"cmp"
 	"context"
 	"encoding/json/v2"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/google/uuid"
 	"github.com/moby/moby/api/types/events"
+	kit "go.getarcane.app/kit/pkg"
 	"go.getarcane.app/streams/bus"
 )
 
@@ -141,21 +143,13 @@ func mapDaemonEventInternal(msg events.Message) (CreateEventRequest, bool) {
 	if eventType == "" || (msg.Actor.ID == "" && msg.Action != events.ActionPrune) {
 		return CreateEventRequest{}, false
 	}
-	severity := EventSeverityInfo
-	if eventType == EventTypeContainerDie && msg.Actor.Attributes["exitCode"] != "0" || eventType == EventTypeContainerUnhealthy {
-		severity = EventSeverityWarning
-	}
+	abnormalExit := eventType == EventTypeContainerDie && msg.Actor.Attributes["exitCode"] != "0"
+	severity := kit.Ternary(abnormalExit || eventType == EventTypeContainerUnhealthy, EventSeverityWarning, EventSeverityInfo)
 	if eventType == EventTypeContainerOOM {
 		severity = EventSeverityError
 	}
 
-	name := msg.Actor.Attributes["name"]
-	if name == "" {
-		name = msg.Actor.ID
-	}
-	if name == "" {
-		name = "prune"
-	}
+	name := cmp.Or(msg.Actor.Attributes["name"], msg.Actor.ID, "prune")
 	metadata := database.JSON{"source": "docker", "action": string(msg.Action), "scope": msg.Scope}
 	for _, key := range []string{"name", "image", "exitCode", "signal"} {
 		if value, ok := msg.Actor.Attributes[key]; ok {

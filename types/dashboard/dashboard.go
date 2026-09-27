@@ -21,14 +21,15 @@ const (
 	ActionItemKindImageUpdates              ActionItemKind = "image_updates"
 	ActionItemKindActionableVulnerabilities ActionItemKind = "actionable_vulnerabilities"
 	ActionItemKindExpiringKeys              ActionItemKind = "expiring_keys"
+
+	ActionItemSeverityWarning  ActionItemSeverity = "warning"
+	ActionItemSeverityCritical ActionItemSeverity = "critical"
+
+	StreamErrorCodeAgentIncompatible = "agent_incompatible"
+	StreamErrorCodeUnreachable       = "unreachable"
 )
 
 type ActionItemSeverity string
-
-const (
-	ActionItemSeverityWarning  ActionItemSeverity = "warning"
-	ActionItemSeverityCritical ActionItemSeverity = "critical"
-)
 
 type ActionItem struct {
 	// Kind identifies the type of dashboard action item.
@@ -130,11 +131,6 @@ type Snapshot struct {
 	// Required: false
 	VersionInfo *versiontypes.Info `json:"versionInfo,omitempty"`
 }
-
-const (
-	StreamErrorCodeAgentIncompatible = "agent_incompatible"
-	StreamErrorCodeUnreachable       = "unreachable"
-)
 
 type StreamEvent struct {
 	Type          string    `json:"type"`

@@ -1,8 +1,6 @@
 package auth
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/session"
-
 	"bytes"
 	"context"
 	"fmt"
@@ -18,10 +16,10 @@ import (
 	"time"
 
 	"emperror.dev/errors"
-
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/session"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/user"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cookie"
@@ -31,6 +29,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	settingstypes "github.com/getarcaneapp/arcane/types/v2/settings"
 	usertypes "github.com/getarcaneapp/arcane/types/v2/user"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 type AuthHandler struct {
@@ -579,10 +578,7 @@ func (h *AuthHandler) avatarMaxUploadSizeMbInternal(ctx context.Context) int {
 		return defaultAvatarMaxUploadSizeMb
 	}
 	maxSizeMb := h.settingsService.GetIntSetting(ctx, "avatarMaxUploadSizeMb", defaultAvatarMaxUploadSizeMb)
-	if maxSizeMb <= 0 {
-		return defaultAvatarMaxUploadSizeMb
-	}
-	return maxSizeMb
+	return kit.Ternary(maxSizeMb <= 0, defaultAvatarMaxUploadSizeMb, maxSizeMb)
 }
 
 // DeleteMyAvatar removes the current user's custom profile picture.

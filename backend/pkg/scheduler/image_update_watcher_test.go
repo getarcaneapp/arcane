@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	"log/slog"
 	"sync"
 	"testing"
@@ -16,6 +15,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	"github.com/getarcaneapp/arcane/types/v2/imageupdate"
+	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	"github.com/moby/moby/api/types/events"
 	"github.com/stretchr/testify/require"
 	"go.getarcane.app/streams/bus"
@@ -105,7 +105,7 @@ func (s *pollingSettingReaderFakeInternal) GetBoolSetting(_ context.Context, key
 	}
 }
 
-func (s *pollingSettingReaderFakeInternal) GetStringSetting(_ context.Context, _ string, defaultValue string) string {
+func (s *pollingSettingReaderFakeInternal) GetStringSetting(_ context.Context, _, defaultValue string) string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if s.schedule == "" {

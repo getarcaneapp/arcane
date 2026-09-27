@@ -1,34 +1,34 @@
 package project
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
-	"github.com/moby/moby/api/types/container"
-
 	"bufio"
+	"cmp"
 	"context"
 	"io"
 	"log/slog"
 	"maps"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"emperror.dev/errors"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-
 	composetypes "github.com/compose-spec/compose-go/v2/types"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
 	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/iconcatalog"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/imageref"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/mapper"
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
 	"github.com/getarcaneapp/arcane/types/v2/project"
+	"github.com/moby/moby/api/types/container"
 	"github.com/samber/mo"
+	kit "go.getarcane.app/kit/pkg"
+	"go.getarcane.app/kit/pkg/mapping"
 	"go.getarcane.app/sys/cgroup"
 	"go.getarcane.app/updater"
 	"go.getarcane.app/updater/labels"
@@ -52,7 +52,7 @@ type ProjectServiceInfo struct {
 	ImageID string `json:"-"`
 }
 
-func getServiceCounts(services []ProjectServiceInfo) (total int, running int) {
+func getServiceCounts(services []ProjectServiceInfo) (total, running int) {
 	total = len(services)
 	for _, service := range services {
 		st := strings.ToLower(strings.TrimSpace(service.Status))
@@ -151,7 +151,7 @@ func (s *ProjectService) GetProjectServices(ctx context.Context, projectID strin
 			svcConfig = &cfg
 		}
 
-		resolvedIcon := iconcatalog.Resolve(IconCatalogForContext(ctx), iconcatalog.FirstNonEmpty(
+		resolvedIcon := iconcatalog.Resolve(IconCatalogForContext(ctx), cmp.Or(
 			projects.FindArcaneIconSet(c.Labels),
 			meta.ServiceIconSets[c.Service],
 			meta.ProjectIcon,
@@ -176,7 +176,7 @@ func (s *ProjectService) GetProjectServices(ctx context.Context, projectID strin
 
 	for _, svc := range composeProject.Services {
 		if !have[svc.Name] {
-			resolvedIcon := iconcatalog.Resolve(IconCatalogForContext(ctx), iconcatalog.FirstNonEmpty(
+			resolvedIcon := iconcatalog.Resolve(IconCatalogForContext(ctx), cmp.Or(
 				meta.ServiceIconSets[svc.Name],
 				meta.ProjectIcon,
 			))
@@ -272,7 +272,7 @@ func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string
 	}
 
 	var resp project.Details
-	if err := mapper.MapStruct(proj, &resp); err != nil {
+	if err := mapping.MapStruct(proj, &resp); err != nil {
 		return project.Details{}, errors.WrapIf(err, "failed to map project")
 	}
 
@@ -304,10 +304,7 @@ func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string
 	// configuration problem is diagnosable.
 	composeSelection, selErr := projects.ComposeFileEnvSelection(ctx, projectsDir, proj.Path)
 	if selErr != nil {
-		selLogLevel := slog.LevelWarn
-		if errors.Is(selErr, common.ErrProjectEnvUnreadable) {
-			selLogLevel = slog.LevelDebug
-		}
+		selLogLevel := kit.Ternary(errors.Is(selErr, common.ErrProjectEnvUnreadable), slog.LevelDebug, slog.LevelWarn)
 		slog.Log(ctx, selLogLevel, "failed to resolve COMPOSE_FILE selection for project details", "projectID", proj.ID, "path", proj.Path, "error", selErr)
 		composeSelection = nil
 	}
@@ -451,7 +448,7 @@ func (s *ProjectService) enrichWithIncludeFiles(ctx context.Context, composeFile
 	// Load environment variables so that include paths with ${VAR} references are expanded
 	cfg := s.settingsService.GetSettingsOrDefaults(ctx)
 	projectsDirectory, _ := projects.GetProjectsDirectory(ctx, strings.TrimSpace(cfg.ProjectsDirectory.Value))
-	envLoader := projects.NewEnvLoader(projectsDirectory, filepath.Dir(composeFile), utils.BoolOrDefault(cfg.AutoInjectEnv.Value, false))
+	envLoader := projects.NewEnvLoader(projectsDirectory, filepath.Dir(composeFile), kit.ParseOrDefault(cfg.AutoInjectEnv.Value, false, strconv.ParseBool))
 	envMap, _, _ := envLoader.LoadEnvironment(ctx)
 
 	includes, parseErr := projects.ParseIncludes(composeFile, envMap, false)
@@ -506,7 +503,7 @@ func excludeHiddenRuntimeServicesInternal(details []project.Details) (map[string
 		hiddenRefs := make(map[string]bool)
 		visibleServices := make([]project.RuntimeService, 0, len(details[i].RuntimeServices))
 		for _, service := range details[i].RuntimeServices {
-			hidden, _ := utils.ParseBool(service.ContainerLabels[libarcane.HiddenResourceLabel])
+			hidden, _ := kit.ParseBool(service.ContainerLabels[libarcane.HiddenResourceLabel])
 			if hidden {
 				hiddenServices[service.Name] = true
 				hiddenRefs[service.Image] = true
@@ -621,7 +618,7 @@ func (s *ProjectService) resolveProjectUpdateServicesInternal(ctx context.Contex
 	}
 	services := make([]composetypes.ServiceConfig, 0, len(composeProject.Services))
 	for _, service := range composeProject.Services {
-		hidden, _ := utils.ParseBool(service.Labels[libarcane.HiddenResourceLabel])
+		hidden, _ := kit.ParseBool(service.Labels[libarcane.HiddenResourceLabel])
 		if !includeHidden && (hidden || hiddenRuntimeServices[service.Name]) {
 			continue
 		}
@@ -1021,8 +1018,5 @@ func calculateProjectStatus(services []ProjectServiceInfo) ProjectStatus {
 	if runningCount > 0 {
 		return ProjectStatusPartiallyRunning
 	}
-	if stoppedCount > 0 {
-		return ProjectStatusStopped
-	}
-	return ProjectStatusUnknown
+	return kit.Ternary(stoppedCount > 0, ProjectStatusStopped, ProjectStatusUnknown)
 }

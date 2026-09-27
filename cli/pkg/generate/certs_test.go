@@ -36,7 +36,6 @@ func TestGenerateMTLSCommandWritesMLDSA87Assets(t *testing.T) {
 
 	require.False(t, len(cert.URIs) == 0 || cert.URIs[0].String() != "spiffe://manager.example.com/edge/env-123",
 		"expected edge SPIFFE URI SAN, got %v", cert.URIs)
-
 }
 
 func TestGenerateTLSCommandWritesECDSAP384ServerCert(t *testing.T) {
@@ -61,7 +60,6 @@ func TestGenerateTLSCommandWritesECDSAP384ServerCert(t *testing.T) {
 
 	require.False(t, len(cert.IPAddresses) == 0 || !cert.IPAddresses[0].Equal(net.ParseIP("127.0.0.1")),
 		"expected 127.0.0.1 IP SAN, got %v", cert.IPAddresses)
-
 }
 
 func TestGenerateTLSCommandOverwritesCertificateAtomically(t *testing.T) {
@@ -111,7 +109,6 @@ func TestGenerateTLSCommandOverwritesCertificateAtomically(t *testing.T) {
 
 	require.Empty(t, tmpFiles,
 		"expected atomic write temp files to be cleaned up, got %v", tmpFiles)
-
 }
 
 func assertECDSAP384PrivateKey(t *testing.T, path string) {
@@ -142,7 +139,6 @@ func assertECDSAP384PrivateKey(t *testing.T, path string) {
 
 	require.Equal(t, elliptic.P384(), key.Curve,
 		"expected P-384 private key for %s", path)
-
 }
 
 func assertMLDSA87PrivateKey(t *testing.T, path string) {
@@ -173,7 +169,6 @@ func assertMLDSA87PrivateKey(t *testing.T, path string) {
 
 	require.Equal(t, mldsa.MLDSA87(), key.PublicKey().Parameters(),
 		"expected ML-DSA-87 private key for %s", path)
-
 }
 
 func assertMLDSA87Certificate(t *testing.T, path string) *x509.Certificate {

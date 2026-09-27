@@ -14,12 +14,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/libtnb/sqlite"
-	"github.com/samber/mo"
-	"github.com/stretchr/testify/require"
-	"go.uber.org/fx/fxtest"
-	"gorm.io/gorm"
-
 	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
@@ -27,6 +21,11 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	httputils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	tmpl "github.com/getarcaneapp/arcane/types/v2/template"
+	"github.com/libtnb/sqlite"
+	"github.com/samber/mo"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/fx/fxtest"
+	"gorm.io/gorm"
 )
 
 func setupTemplateServiceTestDB(t *testing.T) *database.DB {

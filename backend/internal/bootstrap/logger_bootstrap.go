@@ -9,10 +9,9 @@ import (
 	"time"
 
 	"emperror.dev/errors"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/lmittmann/tint"
 	slogGorm "github.com/orandin/slog-gorm"
-
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )

@@ -17,6 +17,7 @@ import (
 	backuptypes "github.com/getarcaneapp/arcane/types/v2/backup"
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
+	kit "go.getarcane.app/kit/pkg"
 	"go.getarcane.app/sys/crypto"
 	"gorm.io/gorm"
 )
@@ -320,10 +321,7 @@ func TestS3DestinationService_TestS3DestinationRoundTrip(t *testing.T) {
 				Name: "Metadata destination", Endpoint: metadataServer.URL, Bucket: "arcane-backups",
 				AccessKeyID: "test-access", SecretAccessKey: "test-secret", Prefix: "production", ForcePathStyle: true,
 			}
-			requestedID := snapshotID
-			if scenario.configOnly {
-				requestedID = ""
-			}
+			requestedID := kit.Ternary(scenario.configOnly, "", snapshotID)
 			observation, checkErr := s3config.CheckRepository(t.Context(), configuration, "repository", requestedID)
 			if scenario.wantError {
 				require.Error(t, checkErr)

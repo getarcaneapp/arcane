@@ -69,7 +69,7 @@ func (c *edgeTokenCacheInternal) environmentID(token string) mo.Option[string] {
 	return mo.None[string]()
 }
 
-func (c *edgeTokenCacheInternal) put(envID string, token string) {
+func (c *edgeTokenCacheInternal) put(envID, token string) {
 	if c == nil || c.byToken == nil || envID == "" || token == "" {
 		return
 	}
@@ -103,7 +103,7 @@ func (c *edgeTokenCacheInternal) invalidate(envID string) {
 
 // sync replaces an environment's cached token, dropping the entry entirely when
 // the new token is blank.
-func (c *edgeTokenCacheInternal) sync(envID string, token string) {
+func (c *edgeTokenCacheInternal) sync(envID, token string) {
 	if c == nil || envID == "" {
 		return
 	}

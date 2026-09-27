@@ -1,9 +1,9 @@
 package edge
 
 import (
-	"github.com/samber/mo"
-
 	"strings"
+
+	"github.com/samber/mo"
 )
 
 const (

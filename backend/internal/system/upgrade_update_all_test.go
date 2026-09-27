@@ -5,10 +5,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/version"
-
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	versiontypes "github.com/getarcaneapp/arcane/types/v2/version"
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
@@ -85,7 +84,6 @@ func TestUpdateAllResolveResumeAction(t *testing.T) {
 
 			require.False(t, !tt.wantStale && got.managerSucceeded != tt.wantManagerOK,
 				"managerSucceeded = %v, want %v", got.managerSucceeded, tt.wantManagerOK)
-
 		})
 	}
 }
@@ -134,7 +132,6 @@ func TestUpsertPendingResult(t *testing.T) {
 
 	require.Equal(t, EnvironmentUpdateResultStatusPending, got.Status,
 		"appended row status = %q, want pending", got.Status)
-
 }
 
 func TestUpdateAllFailedJobMarksUpdatingResultsFailed(t *testing.T) {
@@ -282,7 +279,7 @@ func TestAgentAlreadyOnTarget(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, tt.want, agentAlreadyOnTargetInternal(&tt.info))
+			require.Equal(t, tt.want, tt.info.AlreadyOnNewest())
 		})
 	}
 }

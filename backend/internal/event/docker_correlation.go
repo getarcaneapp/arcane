@@ -1,9 +1,12 @@
 package event
 
 import (
+	"slices"
 	"strings"
 	"sync"
 	"time"
+
+	kit "go.getarcane.app/kit/pkg"
 )
 
 const (
@@ -184,10 +187,10 @@ func (exp dockerExpectationInternal) matchesInternal(resourceType, actorID, acto
 	if exp.resourceType != resourceType {
 		return false
 	}
-	if exp.resourceID != "" && (exp.resourceID == actorID || exp.resourceID == actorName || dockerIDMatchesInternal(resourceType, exp.resourceID, actorID)) {
-		return true
-	}
-	return exp.resourceName != "" && (exp.resourceName == actorName || exp.resourceName == actorID)
+	actors := kit.TrimNonEmpty([]string{actorID, actorName})
+	return slices.Contains(actors, exp.resourceID) ||
+		slices.Contains(actors, exp.resourceName) ||
+		dockerIDMatchesInternal(resourceType, exp.resourceID, actorID)
 }
 
 func dockerIDMatchesInternal(resourceType, expected, actual string) bool {

@@ -5,6 +5,7 @@ package s3
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"fmt"
 	"io"
@@ -14,7 +15,6 @@ import (
 	"strings"
 
 	"emperror.dev/errors"
-
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
@@ -22,14 +22,14 @@ import (
 	"github.com/aws/smithy-go"
 	backuptypes "github.com/getarcaneapp/arcane/types/v2/backup"
 	"github.com/google/uuid"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 const (
 	RepositoryReasonMissingBucket     = "missing_bucket"
 	RepositoryReasonMissingRepository = "missing_repository"
+	connectionTestPayload             = "arcane-s3-connection-test"
 )
-
-const connectionTestPayload = "arcane-s3-connection-test"
 
 // Configuration contains the credentials and addressing options for an S3 destination.
 type Configuration struct {
@@ -132,10 +132,7 @@ func (c Configuration) EndpointURL() string {
 		return ""
 	}
 	endpoint = strings.TrimPrefix(strings.TrimPrefix(endpoint, "https://"), "http://")
-	scheme := "http://"
-	if c.UseSSL {
-		scheme = "https://"
-	}
+	scheme := kit.Ternary(c.UseSSL, "https://", "http://")
 	return scheme + strings.TrimRight(endpoint, "/")
 }
 
@@ -143,10 +140,7 @@ func (c Configuration) EndpointURL() string {
 func (c Configuration) RusticEnvironment(rootParts ...string) []string {
 	c = c.Normalized()
 	repositoryParts := append([]string{"/", c.Prefix}, rootParts...)
-	region := c.Region
-	if region == "" {
-		region = "auto"
-	}
+	region := cmp.Or(c.Region, "auto")
 	environment := []string{
 		"RUSTIC_REPOSITORY=opendal:s3",
 		"RUSTIC_REPO_OPT_BUCKET=" + c.Bucket,
@@ -158,7 +152,8 @@ func (c Configuration) RusticEnvironment(rootParts ...string) []string {
 	if endpoint := c.EndpointURL(); endpoint != "" {
 		environment = append(environment, "RUSTIC_REPO_OPT_ENDPOINT="+endpoint)
 	}
-	environment = append(environment,
+	environment = append(
+		environment,
 		"RUSTIC_REPO_OPT_REGION="+region,
 		"AWS_REGION="+region,
 	)
@@ -299,11 +294,9 @@ func isMissingResourceInternal(err error, codes ...string) bool {
 }
 
 func newClientInternal(ctx context.Context, configuration Configuration) (*awss3.Client, error) {
-	region := configuration.Region
-	if region == "" {
-		region = "us-east-1"
-	}
-	awsConfiguration, err := awsconfig.LoadDefaultConfig(ctx,
+	region := cmp.Or(configuration.Region, "us-east-1")
+	awsConfiguration, err := awsconfig.LoadDefaultConfig(
+		ctx,
 		awsconfig.WithRegion(region),
 		awsconfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(configuration.AccessKeyID, configuration.SecretAccessKey, "")),
 	)

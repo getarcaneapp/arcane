@@ -2,28 +2,25 @@ package systembackup
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json/v2"
 	"fmt"
 	"log/slog"
 	"slices"
 	"strings"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
-	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
-
 	"emperror.dev/errors"
-
 	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/backup"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	s3domain "github.com/getarcaneapp/arcane/backend/v2/internal/s3"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/volume"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	backuptypes "github.com/getarcaneapp/arcane/types/v2/backup"
+	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	"github.com/google/uuid"
+	kit "go.getarcane.app/kit/pkg"
 	"gorm.io/gorm"
 )
 
@@ -31,6 +28,8 @@ const (
 	systemVolumeBackupConfigKey = "systemVolumeBackupConfig"
 	systemVolumeBackupJobPrefix = "volumes:"
 	defaultSystemVolumeSchedule = "0 0 2 * * *"
+
+	backupHistoryUnionInternal = `SELECT id, size, created_at, status, trigger, destination, '' AS format, local_snapshot_id, remote_snapshot_id, s3_destination_id, policy_id, error, 'system' AS type, 'system' AS resource_type, 'Arcane' AS resource_name FROM system_backup_runs UNION ALL SELECT id, size, created_at, status, trigger, destination, format, local_snapshot_id, remote_snapshot_id, s3_destination_id, policy_id, error, CASE WHEN policy_id LIKE 'system-volume:%' THEN 'system' ELSE 'volume' END AS type, 'volume' AS resource_type, volume_name AS resource_name FROM volume_backups`
 )
 
 func (s *SystemBackupService) loadSystemVolumeBackupPoliciesInternal() (*backuptypes.SystemVolumeBackupPolicyCollection, error) {
@@ -116,7 +115,7 @@ func (s *SystemBackupService) normalizeSystemVolumePolicyUpdateInternal(ctx cont
 	if err != nil {
 		return backuptypes.SystemVolumeBackupPolicy{}, err
 	}
-	names := utils.UniqueNonEmptyStrings(input.VolumeNames)
+	names := kit.Unique(kit.TrimNonEmpty(input.VolumeNames))
 	slices.Sort(names)
 	if input.SelectionMode == backuptypes.SystemVolumeSelectionAll || names == nil {
 		names = []string{}
@@ -219,13 +218,11 @@ func selectSystemVolumeBackupCandidatesInternal(policy backuptypes.SystemVolumeB
 }
 
 func systemVolumePolicyIDInternal(policyID, volumeName string) string {
-	sum := sha256.Sum256([]byte(volumeName))
-	return backuptypes.SystemVolumePolicyPrefix + policyID + ":" + hex.EncodeToString(sum[:8])
+	return backuptypes.SystemVolumePolicyPrefix + policyID + ":" + kit.SHA256Hex(volumeName)[:16]
 }
 
 func systemVolumeManualPolicyIDInternal(volumeName string) string {
-	sum := sha256.Sum256([]byte(volumeName))
-	return backuptypes.SystemVolumePolicyPrefix + "manual:" + hex.EncodeToString(sum[:8])
+	return backuptypes.SystemVolumePolicyPrefix + "manual:" + kit.SHA256Hex(volumeName)[:16]
 }
 
 func customSystemVolumePolicyInternal(custom *backuptypes.SystemVolumeBackupCustomRun) backuptypes.UpdateSystemVolumeBackupPolicy {
@@ -437,8 +434,6 @@ func (s *SystemBackupService) rescheduleSystemVolumeBackupInternal(ctx context.C
 	})
 }
 
-const backupHistoryUnionInternal = `SELECT id, size, created_at, status, trigger, destination, '' AS format, local_snapshot_id, remote_snapshot_id, s3_destination_id, policy_id, error, 'system' AS type, 'system' AS resource_type, 'Arcane' AS resource_name FROM system_backup_runs UNION ALL SELECT id, size, created_at, status, trigger, destination, format, local_snapshot_id, remote_snapshot_id, s3_destination_id, policy_id, error, CASE WHEN policy_id LIKE 'system-volume:%' THEN 'system' ELSE 'volume' END AS type, 'volume' AS resource_type, volume_name AS resource_name FROM volume_backups`
-
 // ListBackupHistory returns a unified, server-paginated view of local backup records.
 func (s *SystemBackupService) ListBackupHistory(ctx context.Context, params pagination.QueryParams) ([]backuptypes.HistoryEntry, pagination.Response, error) {
 	query := s.db.WithContext(ctx).Table("(?) AS backup_history", s.db.Raw(backupHistoryUnionInternal))
@@ -464,10 +459,7 @@ func (s *SystemBackupService) ListBackupHistory(ctx context.Context, params pagi
 	}
 	volumeAvailable := backup.RemoteSnapshotChecker(ctx, s.s3Destinations, volumeRoot)
 	for i := range history {
-		check := systemAvailable
-		if history[i].ResourceType == "volume" {
-			check = volumeAvailable
-		}
+		check := kit.Ternary(history[i].ResourceType == "volume", volumeAvailable, systemAvailable)
 		history[i].RemoteAvailable = check(history[i].S3DestinationID, history[i].RemoteSnapshotID)
 	}
 

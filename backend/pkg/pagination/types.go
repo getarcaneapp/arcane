@@ -1,5 +1,7 @@
 package pagination
 
+import "cmp"
+
 type Response struct {
 	TotalPages      int64 `json:"totalPages"`
 	TotalItems      int64 `json:"totalItems"`
@@ -10,7 +12,7 @@ type Response struct {
 
 // BuildResponse creates a pagination Response from raw counts.
 // Handles the special case where limit = -1 means "show all".
-func BuildResponse(totalCount int64, totalAvailable int64, params QueryParams) Response {
+func BuildResponse(totalCount, totalAvailable int64, params QueryParams) Response {
 	limit := params.Limit
 
 	var totalPages int64
@@ -34,9 +36,7 @@ func BuildResponse(totalCount int64, totalAvailable int64, params QueryParams) R
 		itemsPerPage = int(totalCount)
 	}
 
-	if totalPages == 0 {
-		totalPages = 1
-	}
+	totalPages = cmp.Or(totalPages, 1)
 
 	return Response{
 		TotalPages:      totalPages,

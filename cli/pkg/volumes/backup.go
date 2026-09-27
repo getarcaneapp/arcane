@@ -1,6 +1,7 @@
 package volumes
 
 import (
+	"cmp"
 	"encoding/json/v2"
 	"fmt"
 	"io"
@@ -11,7 +12,6 @@ import (
 	"time"
 
 	"emperror.dev/errors"
-
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
@@ -21,6 +21,7 @@ import (
 	uploadtypes "github.com/getarcaneapp/arcane/types/v2/upload"
 	"github.com/getarcaneapp/arcane/types/v2/volume"
 	"github.com/spf13/cobra"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 var (
@@ -252,10 +253,7 @@ func printBackupPolicies(volumeName string, collection volume.BackupPolicyCollec
 	headers := []string{"ID", "ENABLED", "SCHEDULE", "RETENTION", "STOP CONTAINERS", "LOCAL", "S3", "S3 DESTINATION"}
 	rows := make([][]string, len(collection.Policies))
 	for i, p := range collection.Policies {
-		s3Destination := p.S3DestinationName
-		if s3Destination == "" {
-			s3Destination = p.S3DestinationID
-		}
+		s3Destination := cmp.Or(p.S3DestinationName, p.S3DestinationID)
 		rows[i] = []string{
 			p.ID,
 			output.TintEnabled(yesNo(p.Enabled)),
@@ -271,10 +269,7 @@ func printBackupPolicies(volumeName string, collection volume.BackupPolicyCollec
 }
 
 func yesNo(v bool) string {
-	if v {
-		return "Yes"
-	}
-	return "No"
+	return kit.Ternary(v, "Yes", "No")
 }
 
 var backupsCmd = &cobra.Command{

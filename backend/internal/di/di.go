@@ -3,7 +3,6 @@ package di
 
 import (
 	"emperror.dev/emperror"
-
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"

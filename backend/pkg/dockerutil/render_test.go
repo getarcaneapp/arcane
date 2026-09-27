@@ -13,7 +13,8 @@ func TestRenderJSONMessageStream(t *testing.T) {
 		stream := strings.NewReader(
 			`{"status":"Pulling from library/nginx","id":"stable-alpine"}` + "\n" +
 				`{"status":"Pull complete","id":"abc123"}` + "\n" +
-				`{"status":"Status: Downloaded newer image for nginx:stable-alpine"}` + "\n")
+				`{"status":"Status: Downloaded newer image for nginx:stable-alpine"}` + "\n",
+		)
 		var out strings.Builder
 		{
 
@@ -28,7 +29,6 @@ func TestRenderJSONMessageStream(t *testing.T) {
 
 		require.Equal(t, want, out.String(),
 			"expected CLI-parity output %q, got %q", want, out.String())
-
 	})
 
 	t.Run("returns daemon errorDetail verbatim", func(t *testing.T) {
@@ -37,7 +37,6 @@ func TestRenderJSONMessageStream(t *testing.T) {
 
 		require.False(t, err == nil || !strings.Contains(err.Error(), "unauthorized"),
 			"expected unauthorized error, got %v", err)
-
 	})
 }
 
@@ -96,5 +95,4 @@ func TestLogLineWriter(t *testing.T) {
 
 	require.Equal(t, want, out.String(),
 		"expected framed lines %q, got %q", want, out.String())
-
 }

@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
-
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

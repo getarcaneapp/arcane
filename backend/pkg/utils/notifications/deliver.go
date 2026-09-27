@@ -1,12 +1,12 @@
 package notifications
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-
+	"cmp"
 	"context"
 	"net/mail"
 
 	"emperror.dev/errors"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 )
 
 // Content is the provider-independent description of one notification: the
@@ -132,9 +132,7 @@ func deliverTelegram(ctx context.Context, config database.JSON, c Content) error
 	if err := DecryptStringCredential(&telegramConfig.BotToken); err != nil {
 		return err
 	}
-	if telegramConfig.ParseMode == "" {
-		telegramConfig.ParseMode = "HTML"
-	}
+	telegramConfig.ParseMode = cmp.Or(telegramConfig.ParseMode, "HTML")
 	if err := SendTelegram(ctx, telegramConfig, c.Text[MessageFormatHTML]); err != nil {
 		return errors.WrapIf(err, "failed to send Telegram notification")
 	}

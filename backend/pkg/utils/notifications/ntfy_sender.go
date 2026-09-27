@@ -1,13 +1,13 @@
 package notifications
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"net/url"
 	"strings"
 
 	"emperror.dev/errors"
-
 	shoutrrrTypes "github.com/nicholas-fedor/shoutrrr/pkg/types"
 )
 
@@ -19,10 +19,7 @@ func BuildNtfyURL(config NtfyConfig) (string, error) {
 	}
 
 	// Default host to ntfy.sh if not specified
-	host := config.Host
-	if host == "" {
-		host = "ntfy.sh"
-	}
+	host := cmp.Or(config.Host, "ntfy.sh")
 
 	// Build the base URL
 	u := &url.URL{

@@ -9,6 +9,7 @@ import (
 	"emperror.dev/errors"
 	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/client"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 // IsExpectedStreamEndError reports whether err is the ordinary way a Docker
@@ -44,10 +45,7 @@ func StartStdCopy(stream io.Reader, stdout, stderr io.Writer) <-chan error {
 // end as success.
 func WaitStdCopy(done <-chan error) error {
 	err := <-done
-	if err == nil || IsExpectedStreamEndError(err) {
-		return nil
-	}
-	return err
+	return kit.Ternary(err == nil || IsExpectedStreamEndError(err), nil, err)
 }
 
 // ExecInContainer runs an exec in containerID, demultiplexing its output into

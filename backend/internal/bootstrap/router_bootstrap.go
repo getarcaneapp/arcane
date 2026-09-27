@@ -1,10 +1,6 @@
 package bootstrap
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
-
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-
 	"context"
 	"log/slog"
 	"net"
@@ -13,16 +9,13 @@ import (
 	"strings"
 
 	"emperror.dev/errors"
-
-	"github.com/labstack/echo/v5"
-	echomiddleware "github.com/labstack/echo/v5/middleware"
-	slogecho "github.com/samber/slog-echo/v2"
-
 	"github.com/getarcaneapp/arcane/backend/v2/api"
 	"github.com/getarcaneapp/arcane/backend/v2/api/ws"
 	"github.com/getarcaneapp/arcane/backend/v2/frontend"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/auth"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/federated"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
@@ -32,6 +25,9 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	"github.com/getarcaneapp/arcane/types/v2"
+	"github.com/labstack/echo/v5"
+	echomiddleware "github.com/labstack/echo/v5/middleware"
+	slogecho "github.com/samber/slog-echo/v2"
 	"go.uber.org/fx"
 )
 
@@ -128,7 +124,7 @@ func createAuthValidatorInternal(deps api.HandlerDeps) middleware.AuthValidator 
 	return func(ctx context.Context, c *echo.Context) (*authz.PermissionSet, *common.User, bool) {
 		req := c.Request()
 		// Check for API key authentication
-		if apiKey := req.Header.Get("X-Api-Key"); apiKey != "" {
+		if apiKey := req.Header.Get(middleware.HeaderApiKey); apiKey != "" {
 			// User-owned API key: personal keys inherit the owner's role
 			// permissions; scoped keys are limited to their own grants.
 			if user, key, err := deps.ApiKey.Service().ValidateApiKeyWithID(ctx, apiKey); err == nil && user != nil {

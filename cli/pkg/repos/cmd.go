@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"emperror.dev/errors"
-
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
@@ -492,14 +491,14 @@ var repoRef = cmdutil.ResourceRef[gitops.GitRepository, gitops.GitRepository]{
 	Plural:   "repositories",
 	IDHint:   "the repository ID",
 	ListCmd:  "arcane repos list",
-	GetPath:  func(_ string, identifier string) string { return types.GitRepository(identifier) },
+	GetPath:  func(_, identifier string) string { return types.GitRepository(identifier) },
 	ListPath: func(string) string { return types.GitRepositories() },
 	Matches:  repoMatches,
 	Label: func(match gitops.GitRepository) string {
 		return fmt.Sprintf("%s (%s)", match.Name, match.ID)
 	},
 	Promote: func(match gitops.GitRepository) *gitops.GitRepository { return &match },
-	Exact: func(item gitops.GitRepository, _ string, original string) bool {
+	Exact: func(item gitops.GitRepository, _, original string) bool {
 		return strings.EqualFold(item.Name, original) || strings.EqualFold(item.ID, original)
 	},
 }

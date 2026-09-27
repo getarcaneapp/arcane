@@ -1,6 +1,7 @@
 package activity
 
 import (
+	"cmp"
 	"context"
 	"time"
 
@@ -82,10 +83,7 @@ func jobActivityInternal(run st.Run, name string) Activity {
 		status = activitytypes.StatusCancelled
 	case st.Queued, st.Waiting, st.Retrying:
 	}
-	message := run.Outcome.Message
-	if message == "" {
-		message = name + ": " + string(run.Status)
-	}
+	message := cmp.Or(run.Outcome.Message, name+": "+string(run.Status))
 	model := Activity{
 		ID: run.ActivityID, CreatedAt: run.CreatedAt, UpdatedAt: new(run.UpdatedAt),
 		EnvironmentID: run.EnvironmentID, BatchID: new(run.ID), Type: activitytypes.TypeJobRun, Status: status,

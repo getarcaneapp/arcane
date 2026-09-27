@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"emperror.dev/errors"
-
 	cerrdefs "github.com/containerd/errdefs"
 	ref "github.com/distribution/reference"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
@@ -37,6 +36,8 @@ import (
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
 	"github.com/opencontainers/go-digest"
+	"go.getarcane.app/docker/compat"
+	kit "go.getarcane.app/kit/pkg"
 	"go.getarcane.app/sys/cgroup"
 	"go.getarcane.app/updater"
 	"go.getarcane.app/updater/labels"
@@ -97,10 +98,7 @@ func (s *SystemUpgradeService) CanUpgrade(ctx context.Context) (bool, error) {
 // find nothing to swap in and skip the recreate — so callers can use this to stop
 // waiting for a restart that is not coming.
 func (s *SystemUpgradeService) AlreadyOnNewestImage(ctx context.Context) bool {
-	if s.versionService == nil {
-		return false
-	}
-	return agentAlreadyOnTargetInternal(s.versionService.GetAppVersionInfo(ctx))
+	return s.versionService.GetAppVersionInfo(ctx).AlreadyOnNewest()
 }
 
 // TriggerUpgradeViaCLI spawns the upgrade CLI command in a separate container and
@@ -174,7 +172,7 @@ func (s *SystemUpgradeService) prepareUpgradeInternal(ctx context.Context, user 
 	// Determine binary path based on container type (agent vs main)
 	binaryPath := "/app/arcane"
 	if currentContainer.Config != nil {
-		binaryPath = determineUpgradeBinaryPathInternal(currentContainer.Config.Labels)
+		binaryPath = kit.Ternary(labels.IsArcaneAgentContainer(currentContainer.Config.Labels), "/app/arcane-agent", "/app/arcane")
 	}
 
 	targetImage, err := s.resolveUpgradeTargetImageInternal(ctx, currentContainer, target.NewImageRef, targetVersion)
@@ -361,19 +359,11 @@ func daemonHasSELinuxEnabledInternal(ctx context.Context, dockerClient *client.C
 	return slices.Contains(infoResult.Info.SecurityOptions, "name=selinux")
 }
 
-func determineUpgradeBinaryPathInternal(containerLabels map[string]string) string {
-	if labels.IsArcaneAgentContainer(containerLabels) {
-		return "/app/arcane-agent"
-	}
-
-	return "/app/arcane"
-}
-
 // resolveUpgradeTargetImageInternal picks the image the upgrade should move to.
 // Explicit targets from the updater engine are authoritative. A blank target
 // (manual trigger, update-all) resolves against the version check so a
 // version-pinned install actually moves to the newest release (#3687).
-func (s *SystemUpgradeService) resolveUpgradeTargetImageInternal(ctx context.Context, currentContainer container.InspectResponse, explicitImageRef string, targetVersion string) (string, error) {
+func (s *SystemUpgradeService) resolveUpgradeTargetImageInternal(ctx context.Context, currentContainer container.InspectResponse, explicitImageRef, targetVersion string) (string, error) {
 	if targetImage := strings.TrimSpace(explicitImageRef); targetImage != "" {
 		return targetImage, nil
 	}
@@ -382,10 +372,7 @@ func (s *SystemUpgradeService) resolveUpgradeTargetImageInternal(ctx context.Con
 	if currentContainer.Config != nil {
 		currentImageRef = strings.TrimSpace(currentContainer.Config.Image)
 	}
-	var info *versiontypes.Info
-	if s.versionService != nil {
-		info = s.versionService.GetAppVersionInfo(ctx)
-	}
+	info := s.versionService.GetAppVersionInfo(ctx)
 	// A manager-supplied target version outranks this instance's own version check.
 	if targetVersion = strings.TrimSpace(targetVersion); targetVersion != "" {
 		merged := versiontypes.Info{}
@@ -452,11 +439,11 @@ func resolveSelfUpgradeTargetImageInternal(currentImageRef string, info *version
 	if newestVersion == "" {
 		return "", errors.Errorf("running exact release %q but the newest release could not be resolved", tagged.Tag())
 	}
-	newest := utils.EnsureVPrefix(newestVersion)
+	newest := kit.EnsurePrefix(newestVersion, "v")
 	if !semver.IsValid(newest) {
 		return "", errors.Errorf("resolved newest version %q is not a valid semver release", newestVersion)
 	}
-	if semver.Compare(newest, utils.EnsureVPrefix(tagged.Tag())) < 0 {
+	if semver.Compare(newest, kit.EnsurePrefix(tagged.Tag(), "v")) < 0 {
 		return "", errors.Errorf("newest release %q is older than the running %q; refusing to downgrade", newestVersion, tagged.Tag())
 	}
 
@@ -571,7 +558,7 @@ func (s *SystemUpgradeService) findArcaneContainerInternal(ctx context.Context, 
 	}
 
 	// Try to inspect the container directly
-	inspectResult, err := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, containerId, client.ContainerInspectOptions{})
+	inspectResult, err := compat.ContainerInspectWithCompatibility(ctx, dockerClient, containerId, client.ContainerInspectOptions{})
 	if err == nil {
 		return inspectResult.Container, nil
 	}
@@ -590,7 +577,7 @@ func (s *SystemUpgradeService) findArcaneContainerInternal(ctx context.Context, 
 
 	for _, c := range containers.Items {
 		if strings.HasPrefix(c.ID, containerId) {
-			inspect, inspectErr := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, c.ID, client.ContainerInspectOptions{})
+			inspect, inspectErr := compat.ContainerInspectWithCompatibility(ctx, dockerClient, c.ID, client.ContainerInspectOptions{})
 			if inspectErr != nil {
 				return container.InspectResponse{}, inspectErr
 			}
@@ -606,7 +593,7 @@ func (s *SystemUpgradeService) findArcaneContainerInternal(ctx context.Context, 
 
 	for _, c := range allContainers.Items {
 		if strings.HasPrefix(c.ID, containerId) || c.ID == containerId {
-			inspect, inspectErr := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, c.ID, client.ContainerInspectOptions{})
+			inspect, inspectErr := compat.ContainerInspectWithCompatibility(ctx, dockerClient, c.ID, client.ContainerInspectOptions{})
 			if inspectErr != nil {
 				return container.InspectResponse{}, inspectErr
 			}
@@ -630,6 +617,16 @@ func (s *SystemUpgradeService) findArcaneContainerInternal(ctx context.Context, 
 }
 
 const (
+	// The run never finished observably: nothing may be concluded from it.
+	upgraderExitUnobservedInternal upgraderExitInternal = 0
+	// The upgrader exited 0.
+	upgraderExitSucceededInternal upgraderExitInternal = 1
+	// The upgrader exited non-zero.
+	upgraderExitFailedInternal upgraderExitInternal = 2
+	// The upgrader is gone, but its exit code was lost with it — success and failure
+	// are indistinguishable.
+	upgraderExitCodeLostInternal upgraderExitInternal = 3
+
 	updateAllStaleThresholdInternal      = time.Hour
 	updateAllAgentRequestTimeoutInternal = 15 * time.Second
 	updateAllConfirmPollIntervalInternal = 10 * time.Second
@@ -741,10 +738,7 @@ func (s *SystemUpgradeService) ResumeUpdateAllOnStartup(ctx context.Context) {
 
 	// The agents phase already ran before the restart. Finalize the manager's own
 	// result and close the job — do not re-run the agents phase.
-	managerStatus := EnvironmentUpdateResultStatusFailed
-	if action.managerSucceeded {
-		managerStatus = EnvironmentUpdateResultStatusUpdated
-	}
+	managerStatus := kit.Ternary(action.managerSucceeded, EnvironmentUpdateResultStatusUpdated, EnvironmentUpdateResultStatusFailed)
 	s.recordManagerResultInternal(job, managerStatus, info.CurrentVersion)
 	s.finalizeUpdateAllJobInternal(ctx, job)
 
@@ -896,7 +890,7 @@ func (s *SystemUpgradeService) watchManagerUpgraderInternal(ctx context.Context,
 	// image) into a green row and zero logged failures, leaving a broken upgrade with no
 	// retry path. Anything less is a failure; the job closes either way, since no restart
 	// is coming.
-	if exit == upgraderExitCodeLostInternal && (!wasAlreadyNewest || !agentAlreadyOnTargetInternal(info)) {
+	if exit == upgraderExitCodeLostInternal && (!wasAlreadyNewest || !info.AlreadyOnNewest()) {
 		s.markUpdateAllFailedInternal(ctx, job, "manager upgrade could not be confirmed: the upgrader exited without a readable status and this manager was not a confirmed no-op upgrade")
 		return
 	}
@@ -947,18 +941,6 @@ func (s *SystemUpgradeService) closeOutUnobservedUpgradeInternal(ctx context.Con
 
 // upgraderExitInternal is how much the watcher managed to learn about an upgrader run.
 type upgraderExitInternal int
-
-const (
-	// The run never finished observably: nothing may be concluded from it.
-	upgraderExitUnobservedInternal upgraderExitInternal = iota
-	// The upgrader exited 0.
-	upgraderExitSucceededInternal
-	// The upgrader exited non-zero.
-	upgraderExitFailedInternal
-	// The upgrader is gone, but its exit code was lost with it — success and failure
-	// are indistinguishable.
-	upgraderExitCodeLostInternal
-)
 
 // waitForUpgraderExitInternal blocks until the upgrader container stops, reporting what
 // could be learned about how it ended along with its exit code when one was observed.
@@ -1065,16 +1047,14 @@ func (s *SystemUpgradeService) upgradeAgentInternal(ctx context.Context, env *en
 	// The manager's newest release outranks the agent's own check, mirrored into info
 	// so the recorded target, up-to-date check and confirm poll track what was sent.
 	var triggerBody []byte
-	if s.versionService != nil {
-		if managerInfo := s.versionService.GetAppVersionInfo(ctx); managerInfo != nil {
-			if newest := strings.TrimSpace(managerInfo.NewestVersion); newest != "" {
-				body, err := json.Marshal(TriggerUpgradeBody{TargetVersion: newest})
-				if err != nil {
-					slog.WarnContext(ctx, "update-all: failed to marshal trigger body", "environmentId", envID, "error", err)
-				} else {
-					info.NewestVersion = newest
-					triggerBody = body
-				}
+	if managerInfo := s.versionService.GetAppVersionInfo(ctx); managerInfo != nil {
+		if newest := strings.TrimSpace(managerInfo.NewestVersion); newest != "" {
+			body, err := json.Marshal(TriggerUpgradeBody{TargetVersion: newest})
+			if err != nil {
+				slog.WarnContext(ctx, "update-all: failed to marshal trigger body", "environmentId", envID, "error", err)
+			} else {
+				info.NewestVersion = newest
+				triggerBody = body
 			}
 		}
 	}
@@ -1099,7 +1079,7 @@ func (s *SystemUpgradeService) upgradeAgentInternal(ctx context.Context, env *en
 	// nothing to swap in: its upgrader pulls, finds the same image and skips the
 	// recreate. Confirming that would only burn the poll window waiting for a version
 	// change that cannot come, so record it directly.
-	if agentAlreadyOnTargetInternal(&info) {
+	if info.AlreadyOnNewest() {
 		result.Status = EnvironmentUpdateResultStatusUpToDate
 		result.ToVersion = info.CurrentVersion
 		return
@@ -1111,34 +1091,6 @@ func (s *SystemUpgradeService) upgradeAgentInternal(ctx context.Context, env *en
 		// Upgrade fired but the new version was not confirmed within the wait window.
 		result.Status = EnvironmentUpdateResultStatusTriggered
 	}
-}
-
-// agentAlreadyOnTargetInternal reports whether a version check is confident that the
-// environment already runs the newest image. Only a positive answer is actionable:
-// anything unresolved or contradictory reports false, which keeps the full
-// trigger-and-confirm flow rather than claiming there was nothing to do.
-func agentAlreadyOnTargetInternal(info *versiontypes.Info) bool {
-	if info == nil || info.UpdateAvailable {
-		return false
-	}
-
-	currentDigest := strings.TrimSpace(info.CurrentDigest)
-	newestDigest := strings.TrimSpace(info.NewestDigest)
-
-	// Digests are the only thing that catches a mutable tag rebuilt at the same version,
-	// since the semver track's UpdateAvailable ignores them entirely. Once either side
-	// resolves, both must resolve and agree: with only one in hand there is no way to
-	// rule out that the pull is about to replace the image, so a matching version tag
-	// must not be trusted on its own.
-	if currentDigest != "" || newestDigest != "" {
-		return currentDigest == newestDigest
-	}
-
-	// No digest information at all — the resolved version tag is all there is to go on.
-	if info.NewestVersion != "" {
-		return strings.TrimPrefix(info.NewestVersion, "v") == strings.TrimPrefix(info.CurrentVersion, "v")
-	}
-	return false
 }
 
 // updateAllAgentFailureStatusInternal classifies a failed agent pre-check. An

@@ -1,9 +1,6 @@
 package environment
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/gitrepo"
-	s3domain "github.com/getarcaneapp/arcane/backend/v2/internal/s3"
-
 	"context"
 	"encoding/json/v2"
 	"fmt"
@@ -14,10 +11,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
-
 	"emperror.dev/errors"
-
+	"github.com/getarcaneapp/arcane/backend/v2/internal/gitrepo"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
+	s3domain "github.com/getarcaneapp/arcane/backend/v2/internal/s3"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
@@ -206,7 +204,7 @@ func (s *EnvironmentService) buildRemoteRequestInternal(
 	}, nil
 }
 
-func (s *EnvironmentService) ExecuteRemoteRequest(ctx context.Context, envID string, method string, path string, body []byte) (*remenv.Response, error) {
+func (s *EnvironmentService) ExecuteRemoteRequest(ctx context.Context, envID, method, path string, body []byte) (*remenv.Response, error) {
 	target, err := s.resolveRemoteEnvironmentTargetInternal(ctx, envID)
 	if err != nil {
 		return nil, err
@@ -226,7 +224,7 @@ func (s *EnvironmentService) executeRemoteRequestForTargetInternal(
 	// environment group the same way they do locally.
 	var headers map[string]string
 	if batchID := utils.ActivityBatchIDFromContext(ctx); batchID != "" {
-		headers = map[string]string{utils.HeaderActivityBatchID: batchID}
+		headers = map[string]string{middleware.HeaderActivityBatchID: batchID}
 	}
 	request, err := s.buildRemoteRequestInternal(target, method, path, body, headers)
 	if err != nil {
@@ -241,7 +239,7 @@ func (s *EnvironmentService) executeRemoteRequestForTargetInternal(
 	return resp, nil
 }
 
-func (s *EnvironmentService) ProxyJSONRequest(ctx context.Context, envID string, method string, path string, body []byte, out any) error {
+func (s *EnvironmentService) ProxyJSONRequest(ctx context.Context, envID, method, path string, body []byte, out any) error {
 	proxyCtx, cancel := s.getProxyRequestContextInternal(ctx)
 	defer cancel()
 
@@ -255,7 +253,7 @@ func (s *EnvironmentService) ProxyJSONRequest(ctx context.Context, envID string,
 
 // ProxyJSONRequestForEnvironment sends a JSON request using an already-loaded
 // environment row, avoiding an extra environment lookup on hot stream paths.
-func (s *EnvironmentService) ProxyJSONRequestForEnvironment(ctx context.Context, environment Environment, method string, path string, body []byte, out any) error {
+func (s *EnvironmentService) ProxyJSONRequestForEnvironment(ctx context.Context, environment Environment, method, path string, body []byte, out any) error {
 	proxyCtx, cancel := s.getProxyRequestContextInternal(ctx)
 	defer cancel()
 
@@ -466,7 +464,7 @@ func (s *EnvironmentService) SyncRepositoriesToEnvironment(ctx context.Context, 
 // manager to one remote environment. toSyncItem maps a row to its wire form and
 // reports whether to keep it. Mapping errors abort before sending the snapshot.
 // wrap builds the request envelope the target endpoint expects.
-func (s *EnvironmentService) fanOutSyncToEnvironment[Model any, Item any, Request any](
+func (s *EnvironmentService) fanOutSyncToEnvironment[Model, Item, Request any](
 	ctx context.Context,
 	environmentID string,
 	kind string,
@@ -538,7 +536,7 @@ func (s *EnvironmentService) fanOutSyncToEnvironment[Model any, Item any, Reques
 }
 
 // ProxyRequest sends a request to a remote environment's API.
-func (s *EnvironmentService) ProxyRequest(ctx context.Context, envID string, method string, path string, body []byte) ([]byte, int, error) {
+func (s *EnvironmentService) ProxyRequest(ctx context.Context, envID, method, path string, body []byte) ([]byte, int, error) {
 	proxyCtx, cancel := s.getProxyRequestContextInternal(ctx)
 	defer cancel()
 

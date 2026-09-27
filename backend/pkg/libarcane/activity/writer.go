@@ -1,8 +1,6 @@
 package activity
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-
 	"bytes"
 	"context"
 	"encoding/json/v2"
@@ -12,10 +10,10 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
-
 	"github.com/samber/mo"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 type Writer struct {
@@ -57,10 +55,7 @@ type writerQueueItem struct {
 
 func NewWriter(ctx context.Context, activityService MessageAppender, activityID string, writer io.Writer, defaultStep string) io.Writer {
 	if activityService == nil || strings.TrimSpace(activityID) == "" {
-		if writer == nil {
-			return io.Discard
-		}
-		return writer
+		return kit.Ternary(writer == nil, io.Discard, writer)
 	}
 	if existing, ok := writer.(*Writer); ok {
 		return existing
@@ -150,14 +145,14 @@ func (w *Writer) processLineInternal(line string) mo.Option[writerAppendMessage]
 	if errorValue, ok := payload["error"]; ok && errorValue != nil {
 		return mo.Some(writerAppendMessage{
 			level:   activitytypes.MessageLevelError,
-			message: utils.ToString(errorValue),
+			message: kit.ToString(errorValue),
 			payload: payload,
 			step:    w.defaultStep,
 		})
 	}
 
 	if logValue, ok := payload["log"]; ok {
-		message := utils.ToString(logValue)
+		message := kit.ToString(logValue)
 		if strings.TrimSpace(message) == "" {
 			return mo.None[writerAppendMessage]()
 		}

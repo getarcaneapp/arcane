@@ -1,6 +1,7 @@
 package gitops
 
 import (
+	"cmp"
 	"context"
 	"encoding/json/v2"
 	"fmt"
@@ -11,10 +12,9 @@ import (
 	"path"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
-
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
 
 	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
@@ -28,13 +28,15 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/entityjobs"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/mapper"
 	"github.com/getarcaneapp/arcane/types/v2/gitops"
 	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	swarmtypes "github.com/getarcaneapp/arcane/types/v2/swarm"
 	"go.getarcane.app/acfs"
+	kit "go.getarcane.app/kit/pkg"
+	"go.getarcane.app/kit/pkg/mapping"
 	"gorm.io/gorm"
 )
 
@@ -53,14 +55,16 @@ type GitOpsSyncService struct {
 	backups *backupRuntimeInternal
 }
 
-const defaultGitSyncTimeout = 5 * time.Minute
-
 const (
+	defaultGitSyncTimeout = 5 * time.Minute
+
 	defaultMaxSyncFiles        = 500
 	defaultMaxSyncTotalSizeMB  = 50
 	defaultMaxSyncBinarySizeMB = 10
 	defaultMaxSyncTotalSize    = defaultMaxSyncTotalSizeMB * 1024 * 1024
 	defaultMaxSyncBinarySize   = defaultMaxSyncBinarySizeMB * 1024 * 1024
+
+	gitOpsSyncAdmissionScopeInternal = "gitops-sync"
 )
 
 // preparedSyncSource captures the repository data needed by the sync execution
@@ -311,10 +315,7 @@ func normalizeLifecycleNetworkModeInternal(p *string) string {
 		return "none"
 	}
 	trimmed := strings.TrimSpace(*p)
-	if trimmed == "" {
-		return "none"
-	}
-	return trimmed
+	return kit.Ternary(trimmed == "", "none", trimmed)
 }
 
 func nullableTrimmedStringInternal(p *string) *string {
@@ -333,17 +334,11 @@ func nullableUpdateStringValueInternal(p *string) any {
 		return nil
 	}
 	trimmed := strings.TrimSpace(*p)
-	if trimmed == "" {
-		return nil
-	}
-	return trimmed
+	return kit.Ternary[any](trimmed == "", nil, trimmed)
 }
 
 func normalizeSyncLimitSetting(value, defaultValue int) int {
-	if value < 0 {
-		return defaultValue
-	}
-	return value
+	return kit.Ternary(value < 0, defaultValue, value)
 }
 
 func megabytesToBytes(value int) int64 {
@@ -366,8 +361,6 @@ func NewGitOpsSyncService(db *database.DB, repoService *gitrepo.GitRepositorySer
 		backups:         newBackupRuntimeInternal(),
 	}
 }
-
-const gitOpsSyncAdmissionScopeInternal = "gitops-sync"
 
 // SetScheduler injects the job scheduler and the app lifecycle context. It must be
 // called during bootstrap (after the service graph is built) before any per-sync
@@ -489,9 +482,9 @@ func (s *GitOpsSyncService) getEnvironmentSyncLimits(ctx context.Context) (int, 
 	}
 
 	cfg := s.settingsService.GetSettingsOrDefaults(ctx)
-	maxFiles := normalizeSyncLimitSetting(utils.IntOrDefault(cfg.GitSyncMaxFiles.Value, defaultMaxSyncFiles), defaultMaxSyncFiles)
-	maxTotalSizeMB := normalizeSyncLimitSetting(utils.IntOrDefault(cfg.GitSyncMaxTotalSizeMb.Value, defaultMaxSyncTotalSizeMB), defaultMaxSyncTotalSizeMB)
-	maxBinarySizeMB := normalizeSyncLimitSetting(utils.IntOrDefault(cfg.GitSyncMaxBinarySizeMb.Value, defaultMaxSyncBinarySizeMB), defaultMaxSyncBinarySizeMB)
+	maxFiles := normalizeSyncLimitSetting(kit.ParseOrDefault(cfg.GitSyncMaxFiles.Value, defaultMaxSyncFiles, strconv.Atoi), defaultMaxSyncFiles)
+	maxTotalSizeMB := normalizeSyncLimitSetting(kit.ParseOrDefault(cfg.GitSyncMaxTotalSizeMb.Value, defaultMaxSyncTotalSizeMB, strconv.Atoi), defaultMaxSyncTotalSizeMB)
+	maxBinarySizeMB := normalizeSyncLimitSetting(kit.ParseOrDefault(cfg.GitSyncMaxBinarySizeMb.Value, defaultMaxSyncBinarySizeMB, strconv.Atoi), defaultMaxSyncBinarySizeMB)
 
 	return maxFiles, megabytesToBytes(maxTotalSizeMB), megabytesToBytes(maxBinarySizeMB)
 }
@@ -552,7 +545,7 @@ func (s *GitOpsSyncService) GetSyncsPaginated(ctx context.Context, environmentID
 		return nil, pagination.Response{}, gitops.SyncCounts{}, errors.WrapIf(err, "failed to paginate gitops syncs")
 	}
 
-	out, mapErr := mapper.MapSlice[projectpkg.GitOpsSync, gitops.GitOpsSync](syncs)
+	out, mapErr := mapping.MapSlice[projectpkg.GitOpsSync, gitops.GitOpsSync](syncs)
 	if mapErr != nil {
 		return nil, pagination.Response{}, gitops.SyncCounts{}, errors.WrapIf(mapErr, "failed to map syncs")
 	}
@@ -648,10 +641,7 @@ func (s *GitOpsSyncService) CreateSync(ctx context.Context, environmentID string
 	slog.InfoContext(ctx, "Found repository for GitOps sync", "repositoryID", req.RepositoryID, "repositoryName", repo.Name)
 
 	// Store the project name - use sync name if project name not provided
-	projectName := req.ProjectName
-	if projectName == "" {
-		projectName = req.Name
-	}
+	projectName := cmp.Or(req.ProjectName, req.Name)
 
 	defaultMaxFiles, defaultMaxTotalSize, defaultMaxBinarySize := s.getEnvironmentSyncLimits(ctx)
 
@@ -1275,7 +1265,7 @@ func (s *GitOpsSyncService) performSingleFileSyncInternal(ctx context.Context, s
 // credentials the same way a direct stack deploy does. Resolution happens per image at deploy
 // time and yields nothing unless a configured container registry matches that image's host, so
 // stacks built only from public images are unaffected.
-func buildSwarmStackDeployRequestInternal(sync *projectpkg.GitOpsSync, source *preparedSyncSource, overrideContent string, envContent string, swarmFiles []swarmtypes.SyncFile) swarmtypes.StackDeployRequest {
+func buildSwarmStackDeployRequestInternal(sync *projectpkg.GitOpsSync, source *preparedSyncSource, overrideContent, envContent string, swarmFiles []swarmtypes.SyncFile) swarmtypes.StackDeployRequest {
 	return swarmtypes.StackDeployRequest{
 		Name:             sync.ProjectName,
 		ComposeContent:   source.composeContent,
@@ -1432,11 +1422,7 @@ func (s *GitOpsSyncService) updateSyncStatus(ctx context.Context, id, status, er
 		"last_sync_status": status,
 	}
 
-	if errorMsg != "" {
-		updates["last_sync_error"] = errorMsg
-	} else {
-		updates["last_sync_error"] = nil
-	}
+	updates["last_sync_error"] = kit.Ternary[any](errorMsg != "", errorMsg, nil)
 
 	if commitHash != "" {
 		updates["last_sync_commit"] = commitHash
@@ -1591,7 +1577,7 @@ func (s *GitOpsSyncService) ReconcileDirectorySyncProjectsOnStartup(ctx context.
 	return nil
 }
 
-func (s *GitOpsSyncService) BrowseFiles(ctx context.Context, environmentID, id string, path string) (*gitops.BrowseResponse, error) {
+func (s *GitOpsSyncService) BrowseFiles(ctx context.Context, environmentID, id, path string) (*gitops.BrowseResponse, error) {
 	browseCtx, cancel := context.WithTimeout(ctx, defaultGitSyncTimeout)
 	defer cancel()
 
@@ -1742,7 +1728,7 @@ func (s *GitOpsSyncService) recordBrokenProjectBindingInternal(ctx context.Conte
 	s.disableAutoSyncForBrokenBindingInternal(ctx, sync)
 }
 
-func (s *GitOpsSyncService) createProjectForSyncInternal(ctx context.Context, sync *projectpkg.GitOpsSync, id string, composeContent string, envContent *string, overrideContent *string, overrideFileName string, result *gitops.SyncResult, actor common.User) (*projectpkg.Project, error) {
+func (s *GitOpsSyncService) createProjectForSyncInternal(ctx context.Context, sync *projectpkg.GitOpsSync, id, composeContent string, envContent, overrideContent *string, overrideFileName string, result *gitops.SyncResult, actor common.User) (*projectpkg.Project, error) {
 	// Use the non-suffixing create: a GitOps sync must never mint a "-N" duplicate.
 	// A name collision means a project directory already exists for this name, so the
 	// binding is broken — fail loudly and disable auto-sync instead of duplicating.
@@ -1791,7 +1777,7 @@ func (s *GitOpsSyncService) createProjectForSyncInternal(ctx context.Context, sy
 	return project, nil
 }
 
-func (s *GitOpsSyncService) getOrCreateProjectInternal(ctx context.Context, sync *projectpkg.GitOpsSync, id string, composeContent string, envContent *string, overrideContent *string, overrideFileName string, result *gitops.SyncResult, actor common.User) (*projectpkg.Project, error) {
+func (s *GitOpsSyncService) getOrCreateProjectInternal(ctx context.Context, sync *projectpkg.GitOpsSync, id, composeContent string, envContent, overrideContent *string, overrideFileName string, result *gitops.SyncResult, actor common.User) (*projectpkg.Project, error) {
 	var project *projectpkg.Project
 
 	if sync.ProjectID != nil && *sync.ProjectID != "" {
@@ -1819,7 +1805,7 @@ func (s *GitOpsSyncService) getOrCreateProjectInternal(ctx context.Context, sync
 	return project, nil
 }
 
-func (s *GitOpsSyncService) updateProjectForSyncInternal(ctx context.Context, sync *projectpkg.GitOpsSync, id string, project *projectpkg.Project, composeContent string, envContent *string, overrideContent *string, overrideFileName string, result *gitops.SyncResult, actor common.User) error {
+func (s *GitOpsSyncService) updateProjectForSyncInternal(ctx context.Context, sync *projectpkg.GitOpsSync, id string, project *projectpkg.Project, composeContent string, envContent, overrideContent *string, overrideFileName string, result *gitops.SyncResult, actor common.User) error {
 	_, changed, err := s.projectService.ApplyGitSyncProjectFiles(ctx, project.ID, composeContent, envContent, overrideContent, overrideFileName, actor)
 	if err != nil {
 		return s.failSync(ctx, id, result, sync, actor, "Failed to update project files", err.Error())
@@ -2070,10 +2056,7 @@ func linkProjectIntoStageInternal(livePath, stagePath string, scopePaths []strin
 	link = func(rel string) error {
 		entries, err := os.ReadDir(filepath.Join(livePath, filepath.FromSlash(rel)))
 		if err != nil {
-			if rel == "" && errors.Is(err, fs.ErrNotExist) {
-				return nil
-			}
-			return err
+			return kit.Ternary(rel == "" && errors.Is(err, fs.ErrNotExist), nil, err)
 		}
 		for _, entry := range entries {
 			entryRel := path.Join(rel, entry.Name())
@@ -2595,11 +2578,7 @@ func (s *GitOpsSyncService) updateSyncStatusWithFiles(ctx context.Context, id, s
 		"synced_files":     marshalSyncedFiles(syncedFiles),
 	}
 
-	if errorMsg != "" {
-		updates["last_sync_error"] = errorMsg
-	} else {
-		updates["last_sync_error"] = nil
-	}
+	updates["last_sync_error"] = kit.Ternary[any](errorMsg != "", errorMsg, nil)
 
 	if commitHash != "" {
 		updates["last_sync_commit"] = commitHash

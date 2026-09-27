@@ -22,7 +22,7 @@ import (
 	"go.yaml.in/yaml/v4"
 )
 
-func PlanVolumeMigration(ctx context.Context, dockerClient *client.Client, composeProject *composetypes.Project, oldComposeName, newComposeName string, toolsImage string) (volumetypes.Migration, error) {
+func PlanVolumeMigration(ctx context.Context, dockerClient *client.Client, composeProject *composetypes.Project, oldComposeName, newComposeName, toolsImage string) (volumetypes.Migration, error) {
 	if dockerClient == nil {
 		return nil, errors.New("docker service unavailable")
 	}

@@ -18,6 +18,7 @@ import (
 	containertypes "github.com/getarcaneapp/arcane/types/v2/container"
 	"github.com/moby/moby/api/types/container"
 	"github.com/stretchr/testify/require"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 type resourceStatsServerInternal struct {
@@ -121,10 +122,7 @@ func (f *resourceStatsServerInternal) handler() http.Handler {
 			slow := f.slowIDs[id]
 			f.mu.Unlock()
 
-			wait := delay
-			if slow {
-				wait = time.Second
-			}
+			wait := kit.Ternary(slow, time.Second, delay)
 			if wait > 0 {
 				select {
 				case <-time.After(wait):

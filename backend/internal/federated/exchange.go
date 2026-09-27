@@ -1,9 +1,8 @@
 package federated
 
 import (
+	"cmp"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"log/slog"
 	"regexp"
 	"strings"
@@ -11,15 +10,14 @@ import (
 
 	"emperror.dev/errors"
 	"github.com/coreos/go-oidc/v3/oidc"
-	"github.com/samber/mo"
-
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/jwtclaims"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/oidcjwk"
 	federatedtypes "github.com/getarcaneapp/arcane/types/v2/federated"
+	"github.com/samber/mo"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 func (s *FederatedCredentialService) ExchangeToken(ctx context.Context, req federatedtypes.TokenExchangeRequest) (*federatedtypes.FederatedTokenResponse, error) {
@@ -28,9 +26,9 @@ func (s *FederatedCredentialService) ExchangeToken(ctx context.Context, req fede
 	subject := ""
 	var audiences []string
 	if claims != nil {
-		issuer = utils.ToString(jwtclaims.GetByPath(claims, "iss").OrEmpty())
-		subject = utils.ToString(jwtclaims.GetByPath(claims, "sub").OrEmpty())
-		audiences = utils.UniqueNonEmptyStrings(jwtclaims.StringSliceFromValue(jwtclaims.GetByPath(claims, "aud").OrEmpty()))
+		issuer = kit.ToString(jwtclaims.GetByPath(claims, "iss").OrEmpty())
+		subject = kit.ToString(jwtclaims.GetByPath(claims, "sub").OrEmpty())
+		audiences = kit.Unique(kit.TrimNonEmpty(kit.Collect(jwtclaims.GetByPath(claims, "aud").OrEmpty(), func(item any) string { return kit.As(item, "") })))
 	}
 
 	logResult := "failure"
@@ -88,7 +86,7 @@ func (s *FederatedCredentialService) ExchangeToken(ctx context.Context, req fede
 		return nil, common.Classify(common.ErrFederatedCredentialInvalidGrant, errors.WrapIf(err, "invalid federated token grant"))
 	}
 	if subject == "" {
-		subject = utils.ToString(jwtclaims.GetByPath(verifiedClaims, defaultFederatedSubjectClaim).OrEmpty())
+		subject = kit.ToString(jwtclaims.GetByPath(verifiedClaims, defaultFederatedSubjectClaim).OrEmpty())
 	}
 	if len(audiences) == 0 {
 		audiences = append([]string{}, verifiedToken.Audience...)
@@ -175,15 +173,14 @@ func (s *FederatedCredentialService) recordTokenReplayGuardInternal(ctx context.
 		return errors.WrapIf(err, "failed to prune federated token replay records")
 	}
 
-	tokenID := strings.TrimSpace(utils.ToString(jwtclaims.GetByPath(claims, "jti").OrEmpty()))
+	tokenID := strings.TrimSpace(kit.ToString(jwtclaims.GetByPath(claims, "jti").OrEmpty()))
 	tokenKind := "jti"
 	if tokenID == "" {
 		tokenID = rawToken
 		tokenKind = "token"
 	}
-	sum := sha256.Sum256([]byte(issuer + "\x00" + tokenKind + "\x00" + tokenID))
 	replay := FederatedTokenReplay{
-		TokenHash: hex.EncodeToString(sum[:]),
+		TokenHash: kit.SHA256Hex(issuer + "\x00" + tokenKind + "\x00" + tokenID),
 		IssuerURL: issuer,
 		ExpiresAt: expiresAt,
 	}
@@ -272,15 +269,12 @@ func credentialMatchesTokenInternal(credential *FederatedCredential, tokenAudien
 		return false
 	}
 
-	subjectClaim := strings.TrimSpace(credential.SubjectClaim)
-	if subjectClaim == "" {
-		subjectClaim = defaultFederatedSubjectClaim
-	}
-	subject := utils.ToString(jwtclaims.GetByPath(claims, subjectClaim).OrEmpty())
+	subjectClaim := cmp.Or(strings.TrimSpace(credential.SubjectClaim), defaultFederatedSubjectClaim)
+	subject := kit.ToString(jwtclaims.GetByPath(claims, subjectClaim).OrEmpty())
 	if subject == "" {
 		return false
 	}
-	if normalizeMatchTypeInternal(credential.MatchType) != federatedtypes.MatchTypeGlob {
+	if !strings.EqualFold(strings.TrimSpace(credential.MatchType), federatedtypes.MatchTypeGlob) {
 		return subject == credential.SubjectMatch
 	}
 

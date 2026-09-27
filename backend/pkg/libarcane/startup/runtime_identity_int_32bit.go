@@ -8,7 +8,7 @@ import (
 	"emperror.dev/errors"
 )
 
-func parseRuntimeIdentityValueInternal(raw string, key string) (int, uint32, error) {
+func parseRuntimeIdentityValueInternal(raw, key string) (int, uint32, error) {
 	value, err := strconv.ParseInt(raw, 10, 32)
 	if err != nil {
 		return 0, 0, errors.WrapIff(err, "parse %s", key)

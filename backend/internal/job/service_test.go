@@ -2,10 +2,10 @@ package job
 
 import (
 	"context"
-	"emperror.dev/errors"
 	"testing"
 	"time"
 
+	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"

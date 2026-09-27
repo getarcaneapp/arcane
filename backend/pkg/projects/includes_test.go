@@ -21,7 +21,6 @@ func TestParseIncludes_NormalizesRelativePaths(t *testing.T) {
 
 		require.NoError(t, err,
 			"unexpected error: %v", err)
-
 	}
 
 	requireNoError(os.MkdirAll(filepath.Dir(includePath), 0o755))
@@ -36,7 +35,6 @@ func TestParseIncludes_NormalizesRelativePaths(t *testing.T) {
 
 	require.Equal(t, "includes/config.yaml", includes[0].RelativePath,
 		"unexpected relative path: got %q, want %q", includes[0].RelativePath, "includes/config.yaml")
-
 }
 
 func TestParseIncludes_ExpandsArrayPathForm(t *testing.T) {
@@ -50,7 +48,6 @@ func TestParseIncludes_ExpandsArrayPathForm(t *testing.T) {
 
 		require.NoError(t, err,
 			"unexpected error: %v", err)
-
 	}
 
 	requireNoError(os.WriteFile(composePath, []byte("include:\n  - path:\n      - ./base.yaml\n      - ./override.yaml\n"), 0o600))
@@ -63,7 +60,6 @@ func TestParseIncludes_ExpandsArrayPathForm(t *testing.T) {
 
 	require.False(t, includes[0].RelativePath != "base.yaml" || includes[1].RelativePath != "override.yaml",
 		"unexpected relative paths: %q, %q", includes[0].RelativePath, includes[1].RelativePath)
-
 }
 
 func TestValidateIncludePathForWriteRejectsSymlinkEscape(t *testing.T) {

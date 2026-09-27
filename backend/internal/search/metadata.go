@@ -1,6 +1,7 @@
 package search
 
 import (
+	"cmp"
 	"reflect"
 	"slices"
 	"sort"
@@ -10,6 +11,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/category"
 	"github.com/getarcaneapp/arcane/types/v2/meta"
 	searchtypes "github.com/getarcaneapp/arcane/types/v2/search"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 // BuildCategories extracts searchable metadata in model field order.
@@ -28,14 +30,8 @@ func BuildCategories[T any](profile searchtypes.Profile) []category.Category {
 		}
 
 		metaTag := utils.ParseMetaTag(field.Tag.Get("meta"))
-		label := metaTag["label"]
-		if label == "" {
-			label = key
-		}
-		typ := metaTag["type"]
-		if typ == "" {
-			typ = "text"
-		}
+		label := cmp.Or(metaTag["label"], key)
+		typ := cmp.Or(metaTag["type"], "text")
 		desc := metaTag["description"]
 		keywords := utils.ParseKeywords(metaTag["keywords"])
 		categoryID := metaTag["category"]
@@ -44,10 +40,7 @@ func BuildCategories[T any](profile searchtypes.Profile) []category.Category {
 			categoryID = catMeta["id"]
 		}
 		if categoryID == "" {
-			categoryID = "defaults"
-			if profile == searchtypes.SettingsProfile {
-				categoryID = "jobs"
-			}
+			categoryID = kit.Ternary(profile == searchtypes.SettingsProfile, "jobs", "defaults")
 		}
 
 		if categoryID == "internal" && profile == searchtypes.SettingsProfile {

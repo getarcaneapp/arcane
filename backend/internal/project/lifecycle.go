@@ -1,9 +1,8 @@
 package project
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-
 	"bufio"
+	"cmp"
 	"context"
 	"fmt"
 	"io"
@@ -15,18 +14,9 @@ import (
 	"strings"
 	"time"
 
-	lifecycletype "github.com/getarcaneapp/arcane/types/v2/lifecycle"
-
 	"emperror.dev/errors"
-
 	cerrdefs "github.com/containerd/errdefs"
-	"github.com/moby/moby/api/pkg/stdcopy"
-	containertypes "github.com/moby/moby/api/types/container"
-	mounttypes "github.com/moby/moby/api/types/mount"
-	"github.com/moby/moby/client"
-	"github.com/samber/mo"
-	"gorm.io/gorm"
-
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
@@ -36,12 +26,20 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
+	lifecycletype "github.com/getarcaneapp/arcane/types/v2/lifecycle"
+	"github.com/moby/moby/api/pkg/stdcopy"
+	containertypes "github.com/moby/moby/api/types/container"
+	mounttypes "github.com/moby/moby/api/types/mount"
+	"github.com/moby/moby/client"
+	"github.com/samber/mo"
 	"go.getarcane.app/acfs"
+	kit "go.getarcane.app/kit/pkg"
 	"go.getarcane.app/kit/pkg/capture"
+	"gorm.io/gorm"
 )
 
-// Lifecycle hook configuration limits and conventions.
 const (
+	// Lifecycle hook configuration limits and conventions.
 	// lifecycleWorkspaceMount is the in-container path the project dir is
 	// bind-mounted to. Scripts run with this as their working dir.
 	lifecycleWorkspaceMount = "/workspace"
@@ -58,10 +56,8 @@ const (
 	// goroutine to drain after the container exits, before force-closing.
 	// Mirrors the value used by vulnerability scanning for the same purpose.
 	lifecycleStreamDrainTimeout = 30 * time.Second
-)
 
-// Last-run status values written to GitOpsSync.PreDeployLastRunStatus.
-const (
+	// Last-run status values written to GitOpsSync.PreDeployLastRunStatus.
 	lifecycleStatusSuccess = "success"
 	lifecycleStatusFailed  = "failed"
 	lifecycleStatusTimeout = "timeout"
@@ -219,7 +215,7 @@ func (s *LifecycleService) runScriptInContainerInternal(
 	networkMode string,
 	timeout time.Duration,
 	actor common.User,
-) (stdoutContent string, stderrContent string, exitCode int64, err error) {
+) (stdoutContent, stderrContent string, exitCode int64, err error) {
 	dockerClient, dErr := s.dockerService.GetClient(ctx)
 	if dErr != nil {
 		return "", "", 0, errors.WrapIf(dErr, "failed to connect to Docker")
@@ -666,24 +662,15 @@ func buildLifecycleMountsInternal(workspace *mounttypes.Mount, extras []lifecycl
 // An empty stored value is treated as "none" so scripts never accidentally
 // run on the default bridge network.
 func resolveLifecycleNetworkModeInternal(mode string) containertypes.NetworkMode {
-	trimmed := strings.TrimSpace(mode)
-	if trimmed == "" {
-		trimmed = "none"
-	}
+	trimmed := cmp.Or(strings.TrimSpace(mode), "none")
 	return containertypes.NetworkMode(trimmed)
 }
 
 func lifecycleStatusForResultInternal(exitCode int64, runErr error) string {
 	if runErr != nil {
-		if errors.Is(runErr, context.DeadlineExceeded) {
-			return lifecycleStatusTimeout
-		}
-		return lifecycleStatusFailed
+		return kit.Ternary(errors.Is(runErr, context.DeadlineExceeded), lifecycleStatusTimeout, lifecycleStatusFailed)
 	}
-	if exitCode != 0 {
-		return lifecycleStatusFailed
-	}
-	return lifecycleStatusSuccess
+	return kit.Ternary(exitCode != 0, lifecycleStatusFailed, lifecycleStatusSuccess)
 }
 
 func combineLifecycleOutputInternal(stdout, stderr string) string {

@@ -1,12 +1,8 @@
 package auth
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-
 	"context"
 	"crypto/mldsa"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"maps"
@@ -18,9 +14,9 @@ import (
 
 	"emperror.dev/emperror"
 	"emperror.dev/errors"
-
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/session"
@@ -33,6 +29,7 @@ import (
 	"github.com/lestrrat-go/jwx/v4/jwt"
 	"github.com/samber/hot"
 	"go.getarcane.app/kit/normalization"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 const (
@@ -430,10 +427,7 @@ func (s *AuthService) tryMergeOidcUser(ctx context.Context, userInfo auth.OidcUs
 
 	existingUser, emailErr := s.userService.GetUserByEmail(ctx, userInfo.Email)
 	if emailErr != nil {
-		if errors.Is(emailErr, common.ErrUserNotFound) {
-			return nil, false, nil
-		}
-		return nil, false, emailErr
+		return nil, false, kit.Ternary(errors.Is(emailErr, common.ErrUserNotFound), nil, emailErr)
 	}
 	if existingUser == nil {
 		return nil, false, nil
@@ -672,10 +666,7 @@ func (s *AuthService) oidcGroupsClaim(ctx context.Context) string {
 		return "groups"
 	}
 	v := strings.TrimSpace(settings.OidcGroupsClaim.Value)
-	if v == "" {
-		return "groups"
-	}
-	return v
+	return kit.Ternary(v == "", "groups", v)
 }
 
 func (s *AuthService) persistOidcTokens(user *common.User, tokenResp *auth.OidcTokenResponse) {
@@ -778,7 +769,7 @@ func (s *AuthService) RefreshToken(ctx context.Context, refreshToken string, met
 }
 
 func (s *AuthService) VerifyToken(ctx context.Context, accessToken string) (*common.User, string, error) {
-	tokenHash := hashTokenInternal(accessToken)
+	tokenHash := kit.SHA256Hex(accessToken)
 	if user, sessionID, ok := s.cachedVerificationInternal(tokenHash); ok {
 		return user, sessionID, nil
 	}
@@ -794,7 +785,7 @@ func (s *AuthService) VerifyToken(ctx context.Context, accessToken string) (*com
 }
 
 func (s *AuthService) VerifyBrowserToken(ctx context.Context, browserToken string) (*common.User, string, error) {
-	tokenHash := "browser:" + hashTokenInternal(browserToken)
+	tokenHash := "browser:" + kit.SHA256Hex(browserToken)
 	if user, sessionID, ok := s.cachedVerificationInternal(tokenHash); ok {
 		return user, sessionID, nil
 	}
@@ -847,10 +838,7 @@ func (s *AuthService) verifyTokenClaimsInternal(ctx context.Context, tokenHash s
 	// even if the JWT signature is still valid (e.g. same signing key).
 	dbUser, err := s.userService.GetUserByID(ctx, claims.UserID)
 	if err != nil {
-		if errors.Is(err, common.ErrUserNotFound) {
-			return nil, "", common.ErrInvalidToken
-		}
-		return nil, "", err
+		return nil, "", kit.Ternary[error](errors.Is(err, common.ErrUserNotFound), common.ErrInvalidToken, err)
 	}
 
 	userSession, err := s.sessionService.GetSessionByID(ctx, claims.SessionID)
@@ -867,11 +855,6 @@ func (s *AuthService) verifyTokenClaimsInternal(ctx context.Context, tokenHash s
 	s.tokenCache.Set(tokenHash, verifiedTokenEntry{User: *dbUser, SessionID: userSession.ID, TokenExpiresAt: claims.ExpiresAt, SessionExpiresAt: userSession.ExpiresAt})
 
 	return dbUser, userSession.ID, nil
-}
-
-func hashTokenInternal(token string) string {
-	sum := sha256.Sum256([]byte(token))
-	return hex.EncodeToString(sum[:])
 }
 
 func (s *AuthService) ChangePassword(ctx context.Context, userID, currentPassword, newPassword, currentSessionID string) error {
@@ -1182,8 +1165,5 @@ func ClampFederatedTokenTTLSeconds(ttlSeconds int) int {
 	if ttlSeconds < 60 {
 		return 60
 	}
-	if ttlSeconds > 3600 {
-		return 3600
-	}
-	return ttlSeconds
+	return kit.Ternary(ttlSeconds > 3600, 3600, ttlSeconds)
 }

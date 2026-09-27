@@ -3,7 +3,7 @@ package docker
 import (
 	"strings"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 // ContainerNameFromNames returns Docker's first container name without the
@@ -19,7 +19,7 @@ func ContainerNameFromNames(names []string) string {
 // ExcludedContainerNameSet parses a comma-separated exclusion setting into a
 // name lookup. Returns nil when the setting names no containers.
 func ExcludedContainerNameSet(raw string) map[string]bool {
-	names := utils.UniqueNonEmptyStrings(strings.Split(raw, ","))
+	names := kit.Unique(kit.TrimNonEmpty(strings.Split(raw, ",")))
 	if len(names) == 0 {
 		return nil
 	}

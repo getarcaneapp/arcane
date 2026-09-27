@@ -8,21 +8,23 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// ShowAllLimit is the sentinel the Arcane API uses for "return everything".
-// The backend honours it on every list path: DB-backed lists short-circuit to
-// paginateDBAll (bypassing the 100-item clamp), in-memory Docker lists return
-// the full slice, and the handlers that coerce a zero limit to 20 test for
-// exactly 0 so they leave it alone.
-const ShowAllLimit = -1
+const (
+	// ShowAllLimit is the sentinel the Arcane API uses for "return everything".
+	// The backend honours it on every list path: DB-backed lists short-circuit to
+	// paginateDBAll (bypassing the 100-item clamp), in-memory Docker lists return
+	// the full slice, and the handlers that coerce a zero limit to 20 test for
+	// exactly 0 so they leave it alone.
+	ShowAllLimit = -1
 
-// AllFlagUsage is the shared help text for the --all flag on list commands.
-const AllFlagUsage = "Return every item, ignoring pagination"
+	// AllFlagUsage is the shared help text for the --all flag on list commands.
+	AllFlagUsage = "Return every item, ignoring pagination"
 
-// StartFlagUsage is the shared help text for the --start flag on list commands.
-// Database-backed resources (projects, repos, gitops-syncs, environments,
-// registries, users, events, api-keys, roles) derive a page number from
-// start/limit, so an offset that is not a multiple of --limit is rounded down.
-const StartFlagUsage = "Offset for pagination (rounded down to a multiple of --limit on database-backed resources)"
+	// StartFlagUsage is the shared help text for the --start flag on list commands.
+	// Database-backed resources (projects, repos, gitops-syncs, environments,
+	// registries, users, events, api-keys, roles) derive a page number from
+	// start/limit, so an offset that is not a multiple of --limit is rounded down.
+	StartFlagUsage = "Offset for pagination (rounded down to a multiple of --limit on database-backed resources)"
+)
 
 // AppendQuery merges extra query parameters into a path, preserving any that
 // are already present.

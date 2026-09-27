@@ -1,8 +1,6 @@
 package middleware
 
 import (
-	"github.com/samber/mo"
-
 	"bytes"
 	"context"
 	"encoding/json/v2"
@@ -22,12 +20,13 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	wsutil "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/ws"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	httputils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	containertypes "github.com/getarcaneapp/arcane/types/v2/container"
 	"github.com/getarcaneapp/arcane/types/v2/gitops"
 	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
 	"github.com/labstack/echo/v5"
+	"github.com/samber/mo"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 const (
@@ -157,7 +156,7 @@ func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) e
 	if !enabled {
 		return c.JSON(http.StatusBadRequest, map[string]any{
 			"success": false,
-			"data":    map[string]any{"error": (errors.New("Environment is disabled")).Error()},
+			"data":    map[string]any{"error": errors.New("Environment is disabled").Error()},
 		})
 	}
 
@@ -204,18 +203,18 @@ func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) e
 // SECURITY: the header is always cleared first, so a browser-supplied value
 // never rides through; only the server-resolved preference is forwarded.
 func (m *EnvironmentMiddleware) setIconCatalogHeaderInternal(c *echo.Context, user *common.User) {
-	c.Request().Header.Del(utils.HeaderIconCatalog)
+	c.Request().Header.Del(HeaderIconCatalog)
 	if user == nil || user.Preferences.IconCatalog == nil || *user.Preferences.IconCatalog == "" {
 		return
 	}
-	c.Request().Header.Set(utils.HeaderIconCatalog, *user.Preferences.IconCatalog)
+	c.Request().Header.Set(HeaderIconCatalog, *user.Preferences.IconCatalog)
 }
 
 func (m *EnvironmentMiddleware) setUpdateInitiatorHeadersInternal(c *echo.Context, user *common.User) {
 	headers := c.Request().Header
-	headers.Del(utils.HeaderUpdateInitiatorID)
-	headers.Del(utils.HeaderUpdateInitiatorName)
-	headers.Del(utils.HeaderUpdateInitiatorDisplayName)
+	headers.Del(HeaderUpdateInitiatorID)
+	headers.Del(HeaderUpdateInitiatorName)
+	headers.Del(HeaderUpdateInitiatorDisplayName)
 	updatePath := strings.Contains(c.Request().URL.Path, "/containers/") && strings.HasSuffix(c.Request().URL.Path, "/update")
 	if c.Request().Method != http.MethodPost || !updatePath {
 		return
@@ -223,10 +222,10 @@ func (m *EnvironmentMiddleware) setUpdateInitiatorHeadersInternal(c *echo.Contex
 	if user == nil || user.ID == "" {
 		return
 	}
-	headers.Set(utils.HeaderUpdateInitiatorID, user.ID)
-	headers.Set(utils.HeaderUpdateInitiatorName, user.Username)
+	headers.Set(HeaderUpdateInitiatorID, user.ID)
+	headers.Set(HeaderUpdateInitiatorName, user.Username)
 	if user.DisplayName != nil {
-		headers.Set(utils.HeaderUpdateInitiatorDisplayName, *user.DisplayName)
+		headers.Set(HeaderUpdateInitiatorDisplayName, *user.DisplayName)
 	}
 }
 
@@ -273,10 +272,7 @@ func (m *EnvironmentMiddleware) proxyPermissionDenied(c *echo.Context, ps *authz
 		return false
 	}
 
-	scopeEnvID := ""
-	if authz.IsEnvScoped(perm) {
-		scopeEnvID = envID
-	}
+	scopeEnvID := kit.Ternary(authz.IsEnvScoped(perm), envID, "")
 	if !ps.Allows(perm, scopeEnvID) {
 		slog.DebugContext(c.Request().Context(), "Denying proxied request: permission denied",
 			"method", method, "path", suffix, "permission", perm, "environment_id", envID)

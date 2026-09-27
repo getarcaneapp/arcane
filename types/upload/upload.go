@@ -4,17 +4,17 @@ package upload
 
 import "time"
 
-// Session kinds tie an upload session to the domain endpoint allowed to
-// consume it.
 const (
+	// Session kinds tie an upload session to the domain endpoint allowed to
+	// consume it.
+
 	KindImage          = "image"
 	KindVolumeBackup   = "volume-backup"
 	KindBuildWorkspace = "build-workspace"
-)
 
-// Chunk size bounds keep every chunk request safely under common reverse-proxy
-// and WAF body limits (~100 MB).
-const (
+	// Chunk size bounds keep every chunk request safely under common reverse-proxy
+	// and WAF body limits (~100 MB).
+
 	DefaultChunkSize int64 = 10 * 1024 * 1024
 	MinChunkSize     int64 = 1 * 1024 * 1024
 	MaxChunkSize     int64 = 50 * 1024 * 1024

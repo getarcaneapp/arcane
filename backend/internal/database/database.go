@@ -14,19 +14,16 @@ import (
 	"strings"
 	"time"
 
-	sqliteutil "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/sqlite"
-
 	"emperror.dev/errors"
-
+	sqliteutil "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/sqlite"
+	"github.com/getarcaneapp/arcane/backend/v2/resources"
 	"github.com/libtnb/sqlite"
 	"github.com/pressly/goose/v3"
 	"github.com/pressly/goose/v3/lock"
+	kit "go.getarcane.app/kit/pkg"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
-
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v2/resources"
 )
 
 type DB struct {
@@ -42,17 +39,15 @@ const (
 	dbProviderPostgres = "postgres"
 	gooseVersionTable  = "goose_db_version"
 	legacyVersionTable = "schema_migrations"
-)
 
-// Prepared-statement cache bounds. GORM's PrepareStmt cache is a global LRU keyed
-// by SQL text. When PrepareStmtMaxSize/PrepareStmtTTL are left at zero, GORM falls
-// back to math.MaxInt entries with a 24h TTL, i.e. effectively unbounded. Because
-// this codebase emits highly variable SQL (dynamic filter/sort/pagination and
-// GORM's IN (?,?,...) slice expansion, whose placeholder count changes the query
-// text), the cache — and the modernc.org/sqlite compiled statements it retains on
-// the Go heap — grows steadily under normal use. Bounding size and TTL keeps hot
-// queries prepared while evicting the long tail (evicted statements are closed).
-const (
+	// Prepared-statement cache bounds. GORM's PrepareStmt cache is a global LRU keyed
+	// by SQL text. When PrepareStmtMaxSize/PrepareStmtTTL are left at zero, GORM falls
+	// back to math.MaxInt entries with a 24h TTL, i.e. effectively unbounded. Because
+	// this codebase emits highly variable SQL (dynamic filter/sort/pagination and
+	// GORM's IN (?,?,...) slice expansion, whose placeholder count changes the query
+	// text), the cache — and the modernc.org/sqlite compiled statements it retains on
+	// the Go heap — grows steadily under normal use. Bounding size and TTL keeps hot
+	// queries prepared while evicting the long tail (evicted statements are closed).
 	preparedStmtMaxSize = 256
 	preparedStmtTTL     = 15 * time.Minute
 )
@@ -423,7 +418,8 @@ func gooseVersionTableHasAppliedMigrationsInternal(ctx context.Context, db *sql.
 	}
 
 	var version int64
-	if err := db.QueryRowContext(ctx, fmt.Sprintf("SELECT COALESCE(MAX(version_id), 0) FROM %s WHERE is_applied = %s", gooseVersionTable, appliedLiteralInternal(dbProvider))).Scan(&version); err != nil {
+	applied := kit.Ternary(dbProvider == dbProviderPostgres, "true", "1")
+	if err := db.QueryRowContext(ctx, fmt.Sprintf("SELECT COALESCE(MAX(version_id), 0) FROM %s WHERE is_applied = %s", gooseVersionTable, applied)).Scan(&version); err != nil {
 		return false, errors.WrapIff(err, "failed to read Goose migration state for %s", dbProvider)
 	}
 	return version > 0, nil
@@ -513,13 +509,6 @@ func sqlWithProviderPlaceholderInternal(dbProvider, queryFormat string, arg any)
 	}
 }
 
-func appliedLiteralInternal(dbProvider string) string {
-	if dbProvider == dbProviderPostgres {
-		return "true"
-	}
-	return "1"
-}
-
 func getHighestEmbeddedMigrationVersionInternal(dbProvider string) (int64, error) {
 	versions, err := getEmbeddedMigrationVersionsInternal(dbProvider)
 	if err != nil {
@@ -582,7 +571,7 @@ func missingEmbeddedDowngradeMigrationsInternal(ctx context.Context, db *sql.DB,
 	}
 
 	queryFormat := "SELECT DISTINCT version_id FROM " + gooseVersionTable +
-		" WHERE is_applied = " + appliedLiteralInternal(dbProvider) +
+		" WHERE is_applied = " + kit.Ternary(dbProvider == dbProviderPostgres, "true", "1") +
 		" AND version_id > %s ORDER BY version_id"
 	query, args, err := sqlWithProviderPlaceholderInternal(dbProvider, queryFormat, requiredVersion)
 	if err != nil {
@@ -689,7 +678,7 @@ func ensureSQLiteDirectoryInternal(connString string) error {
 	if !strings.HasPrefix(connString, "file:") {
 		return nil
 	}
-	pathPart, err := utils.SQLitePathFromDSN(connString)
+	pathPart, err := kit.SQLitePathFromDSN(connString)
 	if err != nil {
 		return errors.WrapIf(err, "failed to parse SQLite DSN")
 	}

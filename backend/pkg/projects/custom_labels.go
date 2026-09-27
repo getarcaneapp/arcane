@@ -1,6 +1,7 @@
 package projects
 
 import (
+	"cmp"
 	"context"
 	stderrors "errors"
 	"fmt"
@@ -13,15 +14,14 @@ import (
 	"strings"
 	"unicode"
 
-	updaterlabels "go.getarcane.app/updater/labels"
-
 	"emperror.dev/errors"
 	"github.com/compose-spec/compose-go/v2/loader"
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/iconcatalog"
 	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
+	kit "go.getarcane.app/kit/pkg"
+	updaterlabels "go.getarcane.app/updater/labels"
 	"go.yaml.in/yaml/v4"
 )
 
@@ -40,6 +40,11 @@ const (
 	arcaneIconDarkKey  = "icon-dark"
 	arcaneURLsKey      = "urls"
 	arcaneTagsKey      = "tags"
+
+	// ProjectTagMaxLength is the maximum number of Unicode characters in a tag name.
+	ProjectTagMaxLength = 64
+	// ProjectTagsPerSourceLimit is the maximum number of UI or Compose tags on one project.
+	ProjectTagsPerSourceLimit = 50
 )
 
 type IconSet = iconcatalog.IconSet
@@ -87,9 +92,9 @@ func ParseArcaneComposeMetadata(ctx context.Context, composeFilePath, projectsDi
 	if err != nil {
 		return meta, err
 	}
-	meta.ComposeFiles = utils.UniqueNonEmptyStrings(append(meta.ComposeFiles, slices.Collect(maps.Keys(visited))...))
+	meta.ComposeFiles = kit.Unique(kit.TrimNonEmpty(append(meta.ComposeFiles, slices.Collect(maps.Keys(visited))...)))
 	slices.Sort(meta.ComposeFiles)
-	meta.EnvFiles = utils.UniqueNonEmptyStrings(append(meta.EnvFiles, resolveComposeEnvFilesInternal(workdir, envMap)...))
+	meta.EnvFiles = kit.Unique(kit.TrimNonEmpty(append(meta.EnvFiles, resolveComposeEnvFilesInternal(workdir, envMap)...)))
 	return meta, nil
 }
 
@@ -191,19 +196,19 @@ func extractArcaneComposeMetadata(project *composetypes.Project) ArcaneComposeMe
 }
 
 func parseArcaneBlockInternal(block any) (IconSet, []string, []projecttypes.TagOption, bool) {
-	arcaneBlock, ok := utils.AsStringMap(block).Get()
+	arcaneBlock, ok := kit.AsStringMap(block)
 	if !ok {
 		return IconSet{}, nil, nil, false
 	}
 	icon := IconSet{
-		Icon: utils.FirstNonEmpty(
-			utils.FirstNonEmpty(utils.Collect(arcaneBlock[arcaneIconKey], utils.ToString)...),
-			utils.FirstNonEmpty(utils.Collect(arcaneBlock[arcaneIconsKey], utils.ToString)...),
+		Icon: cmp.Or(
+			cmp.Or(kit.Collect(arcaneBlock[arcaneIconKey], kit.ToString)...),
+			cmp.Or(kit.Collect(arcaneBlock[arcaneIconsKey], kit.ToString)...),
 		),
-		Light: utils.FirstNonEmpty(utils.Collect(arcaneBlock[arcaneIconLightKey], utils.ToString)...),
-		Dark:  utils.FirstNonEmpty(utils.Collect(arcaneBlock[arcaneIconDarkKey], utils.ToString)...),
+		Light: cmp.Or(kit.Collect(arcaneBlock[arcaneIconLightKey], kit.ToString)...),
+		Dark:  cmp.Or(kit.Collect(arcaneBlock[arcaneIconDarkKey], kit.ToString)...),
 	}
-	urls := utils.UniqueNonEmptyStrings(utils.Collect(arcaneBlock[arcaneURLsKey], utils.ToString))
+	urls := kit.Unique(kit.TrimNonEmpty(kit.Collect(arcaneBlock[arcaneURLsKey], kit.ToString)))
 	tags, tagsAuthoritative := parseComposeTagsInternal(arcaneBlock[arcaneTagsKey])
 	return icon, urls, tags, tagsAuthoritative
 }
@@ -222,14 +227,14 @@ func parseComposeTagsInternal(value any) ([]projecttypes.TagOption, bool) {
 	seen := make(map[string]struct{}, len(values))
 	authoritative := true
 	for index, value := range values {
-		definition, ok := utils.AsStringMap(value).Get()
+		definition, ok := kit.AsStringMap(value)
 		if !ok {
 			slog.Warn("skipping invalid x-arcane tag; expected a name/color object", "index", index)
 			authoritative = false
 			continue
 		}
-		nameValue := utils.ToString(definition["name"])
-		colorValue := utils.ToString(definition["color"])
+		nameValue := kit.ToString(definition["name"])
+		colorValue := kit.ToString(definition["color"])
 		if nameValue == "" || colorValue == "" {
 			slog.Warn("skipping invalid x-arcane tag; name and color are required", "index", index)
 			authoritative = false
@@ -285,7 +290,7 @@ func mergeArcaneComposeMetadata(target *ArcaneComposeMetadata, source ArcaneComp
 
 	target.ProjectIcon = mergeIconSetFieldsInternal(target.ProjectIcon, source.ProjectIcon)
 
-	target.ProjectURLS = utils.UniqueNonEmptyStrings(append(target.ProjectURLS, source.ProjectURLS...))
+	target.ProjectURLS = kit.Unique(kit.TrimNonEmpty(append(target.ProjectURLS, source.ProjectURLS...)))
 	target.ProjectTags = mergeComposeTagsInternal(target.ProjectTags, source.ProjectTags)
 	target.ProjectTagsAuthoritative = target.ProjectTagsAuthoritative && source.ProjectTagsAuthoritative
 	target.ComposeFiles = append(target.ComposeFiles, source.ComposeFiles...)
@@ -460,14 +465,14 @@ func parseIncludePaths(composeFilePath string) ([]string, error) {
 // It supports both map[string]string and []string label formats.
 func FindArcaneIconSet(labels any) IconSet {
 	iconSet := IconSet{}
-	if labelMap, ok := utils.AsStringMap(labels).Get(); ok {
+	if labelMap, ok := kit.AsStringMap(labels); ok {
 		for key, value := range labelMap {
-			assignArcaneIconValueInternal(&iconSet, key, utils.ToString(value))
+			assignArcaneIconValueInternal(&iconSet, key, kit.ToString(value))
 		}
 		return iconSet
 	}
 
-	for _, s := range utils.Collect(labels, utils.ToString) {
+	for _, s := range kit.Collect(labels, kit.ToString) {
 		if key, value, ok := parseLabelPair(s); ok {
 			assignArcaneIconValueInternal(&iconSet, key, value)
 		}
@@ -476,7 +481,7 @@ func FindArcaneIconSet(labels any) IconSet {
 	return iconSet
 }
 
-func assignArcaneIconValueInternal(iconSet *IconSet, key string, value string) {
+func assignArcaneIconValueInternal(iconSet *IconSet, key, value string) {
 	if iconSet == nil {
 		return
 	}
@@ -513,13 +518,6 @@ func parseLabelPair(raw string) (string, string, bool) {
 	}
 	return strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1]), true
 }
-
-const (
-	// ProjectTagMaxLength is the maximum number of Unicode characters in a tag name.
-	ProjectTagMaxLength = 64
-	// ProjectTagsPerSourceLimit is the maximum number of UI or Compose tags on one project.
-	ProjectTagsPerSourceLimit = 50
-)
 
 var projectTagColorsInternal = map[projecttypes.TagColor]struct{}{
 	projecttypes.TagColorGray:   {},
@@ -630,7 +628,7 @@ func applyServiceLabelMetadataInternal(project *composetypes.Project) error {
 }
 
 func updaterMetadataLabelsInternal(block any) (map[string]string, error) {
-	arcane, ok := utils.AsStringMap(block).Get()
+	arcane, ok := kit.AsStringMap(block)
 	if !ok {
 		return nil, nil
 	}
@@ -638,7 +636,7 @@ func updaterMetadataLabelsInternal(block any) (map[string]string, error) {
 	if !present {
 		return nil, nil
 	}
-	config, ok := utils.AsStringMap(raw).Get()
+	config, ok := kit.AsStringMap(raw)
 	if !ok {
 		return nil, errors.New("expected an updater mapping")
 	}
@@ -677,7 +675,7 @@ func updaterMetadataLabelsInternal(block any) (map[string]string, error) {
 }
 
 func hiddenMetadataLabelInternal(block any) (map[string]string, error) {
-	arcane, ok := utils.AsStringMap(block).Get()
+	arcane, ok := kit.AsStringMap(block)
 	if !ok {
 		return nil, nil
 	}

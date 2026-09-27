@@ -1,6 +1,7 @@
 package httpx
 
 import (
+	"cmp"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -11,7 +12,7 @@ import (
 )
 
 type HeaderSetter interface {
-	SetHeader(key string, value string)
+	SetHeader(key, value string)
 }
 
 func SetJSONStreamHeaders(headers HeaderSetter) {
@@ -54,11 +55,7 @@ func ValidateWebSocketOrigin(appURL string) func(r *http.Request) bool {
 			return true
 		}
 
-		if isLocalhost(originURL.Host) && isLocalhost(r.Host) {
-			return true
-		}
-
-		return false
+		return isLocalhost(originURL.Host) && isLocalhost(r.Host)
 	}
 }
 
@@ -124,9 +121,7 @@ func GetClientBaseURL(origin, forwardedHost, forwardedProto, host, appURL string
 		scheme = u.Scheme
 	}
 
-	if forwardedProto != "" {
-		scheme = forwardedProto
-	}
+	scheme = cmp.Or(forwardedProto, scheme)
 
 	// 2. Check X-Forwarded-Host
 	if forwardedHost != "" {

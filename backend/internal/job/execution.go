@@ -1,13 +1,12 @@
 package job
 
 import (
+	"cmp"
 	"context"
 	"log/slog"
 	"net"
 	"strings"
 	"time"
-
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/queue"
 
 	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
@@ -16,19 +15,19 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/queue"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
 	"github.com/getarcaneapp/arcane/types/v2/meta"
 	st "github.com/getarcaneapp/arcane/types/v2/scheduler"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 // Submit validates job eligibility and persists acceptance before execution.
 // Managers may accept requests for offline environments. Reusing a run ID
 // deduplicates admission within the same job and environment.
 func (s *JobService) Submit(ctx context.Context, request st.Request) (st.Run, error) {
-	if request.EnvironmentID == "" {
-		request.EnvironmentID = "0"
-	}
+	request.EnvironmentID = cmp.Or(request.EnvironmentID, "0")
 	if request.EnvironmentID != "0" {
 		if s.cfg.AgentMode {
 			return st.Run{}, errors.New("agents cannot queue work for another environment")
@@ -136,10 +135,7 @@ func (s *JobService) executeRunInternal(ctx context.Context, run st.Run) (st.Out
 		err := s.scheduler.RunBusWatcherNow(ctx, run.JobID)
 		return classifyOutcomeInternal(run.JobID, st.Outcome{}, err)
 	}
-	unavailableStatus := st.Canceled
-	if run.JobID == "auto-update" && run.AttemptCount > 1 {
-		unavailableStatus = st.NeedsAttention
-	}
+	unavailableStatus := kit.Ternary(run.JobID == "auto-update" && run.AttemptCount > 1, st.NeedsAttention, st.Canceled)
 	job, ok := s.scheduler.GetJob(run.JobID)
 	if !ok {
 		return st.Outcome{Status: unavailableStatus, Message: "Job or target no longer exists"}, nil
@@ -157,9 +153,7 @@ func classifyOutcomeInternal(jobID string, outcome st.Outcome, err error) (st.Ou
 		return resultErr.Outcome, err
 	}
 	if err == nil {
-		if outcome.Status == "" {
-			outcome.Status = st.Succeeded
-		}
+		outcome.Status = cmp.Or(outcome.Status, st.Succeeded)
 		return outcome, nil
 	}
 	if outcome.Status == st.Waiting || outcome.Status == st.Retrying {

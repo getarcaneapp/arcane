@@ -13,6 +13,7 @@ import (
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/api/types/swarm"
 	"github.com/stretchr/testify/require"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 func TestConvertServiceMountsResolvesComposeResourceNames(t *testing.T) {
@@ -90,7 +91,7 @@ configs:
 	plans, err := planConfigsInternal(project, namespace{name: "stack"})
 	require.NoError(t, err)
 	require.Empty(t, plans["app_config"].Data)
-	require.Equal(t, managedResourceNameInternal("stack_app_config", hashManagedResourceInternal(nil)), plans["app_config"].Meta.Name)
+	require.Equal(t, managedResourceNameInternal("stack_app_config", kit.SHA256Hex[[]byte](nil)), plans["app_config"].Meta.Name)
 }
 
 func TestBuildServiceSpecConformance(t *testing.T) {

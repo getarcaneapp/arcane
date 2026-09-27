@@ -7,6 +7,7 @@ import (
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	composeapi "github.com/docker/compose/v5/pkg/api"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 // ImagePullMode describes when Arcane should pull an image for a project.
@@ -81,15 +82,6 @@ func ResolveServiceImagePullMode(svc composetypes.ServiceConfig) ImagePullStep {
 	}
 }
 
-// morePullEagerInternal reports whether a beats b in a pull plan: a higher
-// mode wins, and between two refresh policies the shorter window does.
-func morePullEagerInternal(a, b ImagePullStep) bool {
-	if a.Mode != b.Mode {
-		return a.Mode > b.Mode
-	}
-	return a.Mode == ImagePullModeRefresh && a.RefreshAfter < b.RefreshAfter
-}
-
 // BuildImagePullPlan builds a deduplicated image pull plan covering non-build
 // service images, pre_start hook images, and type:image volume sources.
 func BuildImagePullPlan(project *composetypes.Project) map[string]ImagePullStep {
@@ -99,7 +91,14 @@ func BuildImagePullPlan(project *composetypes.Project) map[string]ImagePullStep 
 		if img == "" {
 			return
 		}
-		if existing, exists := plan[img]; !exists || morePullEagerInternal(step, existing) {
+		existing, exists := plan[img]
+		// A higher mode wins; between two refresh policies the shorter window does.
+		moreEager := kit.Ternary(
+			step.Mode != existing.Mode,
+			step.Mode > existing.Mode,
+			step.Mode == ImagePullModeRefresh && step.RefreshAfter < existing.RefreshAfter,
+		)
+		if !exists || moreEager {
 			plan[img] = step
 		}
 	}
@@ -127,10 +126,7 @@ func BuildImagePullPlan(project *composetypes.Project) map[string]ImagePullStep 
 // NormalizePullPolicy normalizes compose pull policy aliases.
 func NormalizePullPolicy(policy string) string {
 	policy = strings.ToLower(strings.TrimSpace(policy))
-	if policy == "if_not_present" {
-		return "missing"
-	}
-	return policy
+	return kit.Ternary(policy == "if_not_present", "missing", policy)
 }
 
 // NormalizeDeployPullPolicy returns a supported deploy pull policy or empty string.

@@ -1,10 +1,9 @@
 package activity
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-
 	"time"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
 )
 

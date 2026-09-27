@@ -2,7 +2,6 @@ package imagepatch
 
 import (
 	"context"
-	"github.com/moby/moby/client"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -20,6 +19,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/features"
 	"github.com/getarcaneapp/arcane/types/v2/imagepatch"
 	"github.com/libtnb/sqlite"
+	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/fx/fxtest"
 	"gorm.io/gorm"

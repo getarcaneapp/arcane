@@ -2,6 +2,7 @@ package schema
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"go/ast"
@@ -17,9 +18,9 @@ import (
 	"strings"
 
 	"emperror.dev/errors"
-
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 const (
@@ -251,16 +252,13 @@ func parseStructEnvFieldsInternal(filename, structName string, opts envFieldOpti
 			continue
 		}
 
-		options := splitTagListInternal(structTag.Get("options"))
+		options := kit.TrimNonEmpty(strings.Split(structTag.Get("options"), ","))
 		typeName, err := exprStringInternal(field.Type)
 		if err != nil {
 			return nil, errors.WrapIff(err, "render type for %s.%s", structName, field.Names[0].Name)
 		}
 
-		description := strings.TrimSpace(strings.Join(strings.Fields(field.Doc.Text()), " "))
-		if description == "" {
-			description = strings.TrimSpace(strings.Join(strings.Fields(field.Comment.Text()), " "))
-		}
+		description := cmp.Or(strings.Join(strings.Fields(field.Doc.Text()), " "), strings.Join(strings.Fields(field.Comment.Text()), " "))
 
 		for _, name := range field.Names {
 			entries = append(entries, ConfigEntry{
@@ -295,7 +293,7 @@ func collectSettingEnvOverridesInternal() ([]SettingOverrideEntry, error) {
 			continue
 		}
 
-		tagParts := splitTagListInternal(keyTag)
+		tagParts := kit.TrimNonEmpty(strings.Split(keyTag, ","))
 		if len(tagParts) == 0 {
 			continue
 		}
@@ -320,18 +318,15 @@ func collectSettingEnvOverridesInternal() ([]SettingOverrideEntry, error) {
 		rule := overrideDocRules[key]
 		requires := rule.requires
 		if !hasEnvOverride {
-			requires = joinRequirementsInternal(
-				"AGENT_MODE=true or UI_CONFIGURATION_DISABLED=true to manage this setting via env.",
-				requires,
-			)
+			requires = strings.Join(kit.TrimNonEmpty([]string{"AGENT_MODE=true or UI_CONFIGURATION_DISABLED=true to manage this setting via env.", requires}), " ")
 		}
 
 		entries = append(entries, SettingOverrideEntry{
-			Env:          strings.ToUpper(utils.CamelCaseToSnakeCase(key)),
+			Env:          strings.ToUpper(kit.SnakeCase(key)),
 			SettingKey:   key,
 			Description:  meta["description"],
 			DefaultValue: defaultValue,
-			Type:         defaultStringInternal(meta["type"], "text"),
+			Type:         kit.Ternary(strings.TrimSpace(meta["type"]) == "", "text", meta["type"]),
 			Sensitive:    isSensitive,
 			Deprecated:   rule.deprecated || slices.Contains(attrs, "deprecated"),
 			Category:     meta["category"],
@@ -385,44 +380,6 @@ func exprStringInternal(expr ast.Expr) (string, error) {
 		return "", err
 	}
 	return buf.String(), nil
-}
-
-func splitTagListInternal(value string) []string {
-	if value == "" {
-		return nil
-	}
-
-	parts := strings.Split(value, ",")
-	result := make([]string, 0, len(parts))
-	for _, part := range parts {
-		trimmed := strings.TrimSpace(part)
-		if trimmed == "" {
-			continue
-		}
-		result = append(result, trimmed)
-	}
-
-	return result
-}
-
-func joinRequirementsInternal(parts ...string) string {
-	filtered := make([]string, 0, len(parts))
-	for _, part := range parts {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			continue
-		}
-		filtered = append(filtered, part)
-	}
-
-	return strings.Join(filtered, " ")
-}
-
-func defaultStringInternal(value, fallback string) string {
-	if strings.TrimSpace(value) == "" {
-		return fallback
-	}
-	return value
 }
 
 func resolveSourceRootInternal(sourceRoot string) (string, error) {

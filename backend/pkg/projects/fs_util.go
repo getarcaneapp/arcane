@@ -2,6 +2,7 @@ package projects
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"fmt"
 	"io/fs"
@@ -12,20 +13,17 @@ import (
 	"strings"
 
 	"emperror.dev/errors"
-
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/samber/mo"
 	"go.getarcane.app/acfs"
+	kit "go.getarcane.app/kit/pkg"
 	"go.yaml.in/yaml/v4"
 )
 
 func ResolveConfiguredContainerDirectory(configuredPath, defaultPath string) string {
-	directory := strings.TrimSpace(configuredPath)
-	if directory == "" {
-		directory = defaultPath
-	}
+	directory := cmp.Or(strings.TrimSpace(configuredPath), defaultPath)
 
 	// Handle mapping format: "container_path:host_path"
 	if parts := strings.SplitN(directory, ":", 2); len(parts) == 2 {
@@ -184,10 +182,7 @@ func syncedProjectFileMatchesInternal(ctx context.Context, projectPath string, f
 	logicalPath := "/" + filepath.ToSlash(file.RelativePath)
 	entry, err := acfs.Stat(ctx, projectPath, logicalPath, false)
 	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return false, nil
-		}
-		return false, err
+		return false, kit.Ternary(errors.Is(err, fs.ErrNotExist), nil, err)
 	}
 	if entry.IsDirectory {
 		return false, nil
@@ -195,10 +190,7 @@ func syncedProjectFileMatchesInternal(ctx context.Context, projectPath string, f
 
 	existingContent, err := acfs.ReadFile(ctx, projectPath, logicalPath)
 	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return false, nil
-		}
-		return false, err
+		return false, kit.Ternary(errors.Is(err, fs.ErrNotExist), nil, err)
 	}
 
 	return bytes.Equal(existingContent, file.Content), nil
@@ -211,10 +203,7 @@ func pathExistsInternal(path string) (bool, error) {
 	if err == nil {
 		return true, nil
 	}
-	if os.IsNotExist(err) {
-		return false, nil
-	}
-	return false, err
+	return false, kit.Ternary(os.IsNotExist(err), nil, err)
 }
 
 func DirectorySyncContentsChanged(ctx context.Context, projectPath string, syncFiles []SyncFile, oldSyncedFiles []string, composeFileName string) (bool, error) {
@@ -285,10 +274,7 @@ func StaleComposeFiles(ctx context.Context, projectPath, composeFileName string,
 
 	entries, err := acfs.List(ctx, projectPath, "/")
 	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return nil, nil
-		}
-		return nil, err
+		return nil, kit.Ternary(errors.Is(err, fs.ErrNotExist), nil, err)
 	}
 
 	var stale []string
@@ -386,10 +372,7 @@ func CreateExactDir(ctx context.Context, projectsRoot, basePath, name string, pe
 	}
 
 	if err := acfs.Mkdir(ctx, projectsRoot, logicalPath, perm); err != nil {
-		if errors.Is(err, os.ErrExist) {
-			return "", "", ErrProjectDirExists
-		}
-		return "", "", err
+		return "", "", kit.Ternary[error](errors.Is(err, os.ErrExist), ErrProjectDirExists, err)
 	}
 
 	return basePath, sanitized, nil

@@ -95,7 +95,7 @@ func TestCoordinatorUpdateServicesScopesDependents(t *testing.T) {
 			calls = append(calls, "stop")
 			return nil
 		},
-		Up: func(_ context.Context, selected *composetypes.Project, services []string, _ bool, force bool, _ bool, _ map[string]registry.AuthConfig, _ time.Duration) error {
+		Up: func(_ context.Context, selected *composetypes.Project, services []string, _, force, _ bool, _ map[string]registry.AuthConfig, _ time.Duration) error {
 			upped = services
 			selectedNames = selected.ServiceNames()
 			forceRecreate = force

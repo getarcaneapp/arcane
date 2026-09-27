@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -23,13 +24,13 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
 	dockerregistry "github.com/moby/moby/api/types/registry"
 	"github.com/moby/moby/client"
 	"github.com/samber/mo"
 	buildtypes "go.getarcane.app/builds/types"
+	kit "go.getarcane.app/kit/pkg"
 	"gorm.io/gorm"
 )
 
@@ -757,7 +758,7 @@ func (s *ProjectService) loadComposeProjectForProjectInternal(ctx context.Contex
 
 	pathMapper := s.projectPathMapperInternal(ctx)
 
-	composeProject, loadErr := projects.LoadComposeProject(ctx, composeFileFullPath, projects.NormalizeProjectName(proj.Name), projectsDirectory, utils.BoolOrDefault(cfg.AutoInjectEnv.Value, false), pathMapper, nil, nil, false, nil, services, prepare)
+	composeProject, loadErr := projects.LoadComposeProject(ctx, composeFileFullPath, projects.NormalizeProjectName(proj.Name), projectsDirectory, kit.ParseOrDefault(cfg.AutoInjectEnv.Value, false, strconv.ParseBool), pathMapper, nil, nil, false, nil, services, prepare)
 	if loadErr != nil {
 		return nil, "", loadErr
 	}
@@ -780,7 +781,7 @@ func (s *ProjectService) getCachedComposeProjectInternal(ctx context.Context, pr
 	if err != nil {
 		return nil, err
 	}
-	return projects.LoadCachedComposeProject(ctx, s.parsedCompose, proj.ID, proj.Path, composePath, projects.NormalizeProjectName(proj.Name), getProjectsDirectoryOrDefaultInternal(ctx, cfg), utils.BoolOrDefault(cfg.AutoInjectEnv.Value, false), s.projectPathMapperInternal(ctx))
+	return projects.LoadCachedComposeProject(ctx, s.parsedCompose, proj.ID, proj.Path, composePath, projects.NormalizeProjectName(proj.Name), getProjectsDirectoryOrDefaultInternal(ctx, cfg), kit.ParseOrDefault(cfg.AutoInjectEnv.Value, false, strconv.ParseBool), s.projectPathMapperInternal(ctx))
 }
 
 func (s *ProjectService) refreshComposeProjectNameInternal(ctx context.Context, proj *Project) {

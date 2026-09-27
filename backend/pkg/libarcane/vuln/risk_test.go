@@ -5,9 +5,8 @@ import (
 	"math"
 	"testing"
 
-	"github.com/stretchr/testify/require"
-
 	"github.com/getarcaneapp/arcane/types/v2/vulnerability"
+	"github.com/stretchr/testify/require"
 )
 
 func TestBuildScanInsights(t *testing.T) {

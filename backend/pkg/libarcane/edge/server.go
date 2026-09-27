@@ -13,13 +13,13 @@ import (
 
 	"emperror.dev/emperror"
 	"emperror.dev/errors"
-
 	wshub "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/ws"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
 	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/proto/tunnel/v1"
 	certgen "github.com/getarcaneapp/arcane/cli/v2/pkg/generate"
 	"github.com/labstack/echo/v5"
 	"github.com/samber/mo"
+	kit "go.getarcane.app/kit/pkg"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
@@ -58,7 +58,7 @@ type EventCallback func(ctx context.Context, environmentID string, event *Tunnel
 // remoteAddr is the client socket address as seen by the manager.
 // reenrolled is true when an environment that had already enrolled receives
 // assets again after the enrollment cooldown.
-type EnrollmentCallback func(ctx context.Context, environmentID, remoteAddr string, certIssued bool, caGenerated bool, reenrolled bool)
+type EnrollmentCallback func(ctx context.Context, environmentID, remoteAddr string, certIssued, caGenerated, reenrolled bool)
 
 // NewTunnelServerWithRegistry creates a new tunnel server using an injected tunnel registry.
 func NewTunnelServerWithRegistry(registry *TunnelRegistry, resolver EnvironmentResolver, statusCallback StatusUpdateCallback) *TunnelServer {
@@ -377,7 +377,7 @@ func tokenFromHeadersWithSourceInternal(req *http.Request) (string, string) {
 	return "", ""
 }
 
-func (s *TunnelServer) manageConnectedTunnel(ctx context.Context, callbackCtx context.Context, tunnel *AgentTunnel) {
+func (s *TunnelServer) manageConnectedTunnel(ctx, callbackCtx context.Context, tunnel *AgentTunnel) {
 	accepted, drainPrevious, rejectReason, err := s.registry.RegisterSession(callbackCtx, tunnel, TunnelStaleTimeout)
 	if err != nil {
 		slog.ErrorContext(ctx, "Failed to register edge agent session",
@@ -412,12 +412,7 @@ func (s *TunnelServer) manageConnectedTunnel(ctx context.Context, callbackCtx co
 
 	// Echo the agent's capabilities and append the manager's own so the agent
 	// learns what this manager supports (older agents ignore extra strings).
-	capabilities := append([]string(nil), tunnel.Capabilities...)
-	for _, capability := range []string{tunnelCapabilityProtoParity, tunnelCapabilityChunkedRequest} {
-		if !slices.Contains(capabilities, capability) {
-			capabilities = append(capabilities, capability)
-		}
-	}
+	capabilities := kit.Unique(append(slices.Clone(tunnel.Capabilities), tunnelCapabilityProtoParity, tunnelCapabilityChunkedRequest))
 
 	if err := tunnel.Conn.Send(&TunnelMessage{
 		Type:          MessageTypeRegisterResponse,

@@ -4,6 +4,7 @@
 package fswatch
 
 import (
+	"cmp"
 	"context"
 	"log/slog"
 	"os"
@@ -14,7 +15,6 @@ import (
 	"time"
 
 	"emperror.dev/errors"
-
 	"github.com/fsnotify/fsnotify"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 )
@@ -52,9 +52,7 @@ func NewWatcher(watchPath string, opts WatcherOptions) (*Watcher, error) {
 		return nil, err
 	}
 
-	if opts.Debounce == 0 {
-		opts.Debounce = 2 * time.Second
-	}
+	opts.Debounce = cmp.Or(opts.Debounce, 2*time.Second)
 
 	if opts.MaxDepth < 0 {
 		opts.MaxDepth = 0
@@ -296,7 +294,7 @@ func (fw *Watcher) addExistingDirectories(root string) error {
 	return fw.addExistingDirectoriesRecursiveInternal(root, root, map[string]struct{}{})
 }
 
-func (fw *Watcher) addExistingDirectoriesRecursiveInternal(path string, logicalPath string, ancestors map[string]struct{}) error {
+func (fw *Watcher) addExistingDirectoriesRecursiveInternal(path, logicalPath string, ancestors map[string]struct{}) error {
 	identity, err := projects.ResolveDirectoryIdentityInternal(path)
 	if err != nil {
 		if path != fw.watchedPath && errors.Is(err, os.ErrPermission) {
@@ -383,7 +381,7 @@ func (fw *Watcher) logicalPathForWatchEventInternal(path string) string {
 	return filepath.Join(bestLogicalPath, rel)
 }
 
-func (fw *Watcher) addWatchPathInternal(path string, logicalPath string) {
+func (fw *Watcher) addWatchPathInternal(path, logicalPath string) {
 	watchPaths := []string{path}
 	if fw.followSymlinks {
 		if info, err := os.Lstat(path); err == nil && info.Mode()&os.ModeSymlink != 0 {

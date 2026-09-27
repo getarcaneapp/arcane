@@ -5,11 +5,11 @@ import (
 	"log/slog"
 	"time"
 
-	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
-
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
+	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 const EventCleanupJobName = "event-cleanup"
@@ -34,10 +34,7 @@ func (j *EventCleanupJob) Name() string {
 
 func (j *EventCleanupJob) Schedule(ctx context.Context) string {
 	s := j.settingsService.GetStringSetting(ctx, "eventCleanupInterval", "0 0 */6 * * *")
-	if s == "" {
-		return "0 0 */6 * * *"
-	}
-	return s
+	return kit.Ternary(s == "", "0 0 */6 * * *", s)
 }
 
 func (j *EventCleanupJob) Run(ctx context.Context) (schedulertypes.Outcome, error) {

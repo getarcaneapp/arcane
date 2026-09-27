@@ -1,21 +1,19 @@
 package image
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-
+	"cmp"
 	"context"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
 
-	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
-
 	"emperror.dev/errors"
 	"github.com/containerd/platforms"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/build"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
@@ -26,11 +24,13 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
+	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/getarcaneapp/arcane/types/v2/image"
 	"github.com/getarcaneapp/arcane/types/v2/system"
 	uploadtypes "github.com/getarcaneapp/arcane/types/v2/upload"
 	buildtypes "go.getarcane.app/builds/types"
+	kit "go.getarcane.app/kit/pkg"
 	"gorm.io/gorm"
 )
 
@@ -325,9 +325,7 @@ func (h *ImageHandler) ListImages(ctx context.Context, input *ListImagesInput) (
 		params.Filters["updates"] = input.Updates
 	}
 
-	if params.Limit == 0 {
-		params.Limit = 20
-	}
+	params.Limit = cmp.Or(params.Limit, 20)
 
 	images, paginationResp, err := h.imageService.ListImagesPaginated(ctx, params)
 	if err != nil {
@@ -498,10 +496,7 @@ func validateImageNameInternal(raw string) (string, error) {
 
 func imageExportFileNameInternal(imageName string) string {
 	name := strings.NewReplacer("/", "_", ":", "_", "@", "_").Replace(imageName)
-	name = strings.Trim(name, "._-")
-	if name == "" {
-		name = "image"
-	}
+	name = cmp.Or(strings.Trim(name, "._-"), "image")
 	return name + ".tar"
 }
 
@@ -724,7 +719,7 @@ func (h *ImageHandler) PruneImages(ctx context.Context, input *PruneImagesInput)
 }
 
 func resolvePruneImageModeInternal(input *PruneImagesInput) string {
-	mode := resolveLegacyPruneImageModeInternal(input.Dangling)
+	mode := kit.Ternary(input.Dangling, "dangling", "all")
 	if input.Body == nil {
 		return mode
 	}
@@ -734,16 +729,13 @@ func resolvePruneImageModeInternal(input *PruneImagesInput) string {
 	}
 
 	if input.Body.Dangling != nil {
-		return resolveLegacyPruneImageModeInternal(*input.Body.Dangling)
+		return kit.Ternary(*input.Body.Dangling, "dangling", "all")
 	}
 
 	if vals, ok := input.Body.Filters["dangling"]; ok {
 		for _, value := range vals {
-			if dangling, valid := utils.ParseBool(value); valid {
-				if dangling {
-					return "dangling"
-				}
-				return "all"
+			if dangling, valid := kit.ParseBool(value); valid {
+				return kit.Ternary(dangling, "dangling", "all")
 			}
 		}
 	}
@@ -765,14 +757,6 @@ func resolvePruneImageUntilInternal(input *PruneImagesInput) string {
 	}
 
 	return ""
-}
-
-func resolveLegacyPruneImageModeInternal(dangling bool) string {
-	if dangling {
-		return "dangling"
-	}
-
-	return "all"
 }
 
 // GetImageUsageCounts returns counts of images by usage status.

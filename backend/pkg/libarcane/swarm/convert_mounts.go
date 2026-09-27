@@ -1,16 +1,15 @@
 package swarm
 
 import (
+	"cmp"
 	"math"
 	"os"
 	"sort"
 	"strings"
 
 	"emperror.dev/errors"
-
 	composegotypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/api/types/swarm"
 )
@@ -116,10 +115,7 @@ func resolveServiceFileReferencesInternal(
 		if !ok {
 			return nil, errors.Errorf("undefined %s %q", resourceType, reference.Source)
 		}
-		target := reference.Target
-		if target == "" {
-			target = reference.Source
-		}
+		target := cmp.Or(reference.Target, reference.Source)
 		mode, err := fileModeOrDefaultInternal(reference.Mode)
 		if err != nil {
 			return nil, errors.WrapIff(err, "invalid %s %q mode", resourceType, reference.Source)
@@ -127,8 +123,8 @@ func resolveServiceFileReferencesInternal(
 		resolved = append(resolved, resolvedFileReferenceInternal{
 			meta:   meta,
 			target: target,
-			uid:    utils.StringOrDefault(reference.UID, "0"),
-			gid:    utils.StringOrDefault(reference.GID, "0"),
+			uid:    cmp.Or(strings.TrimSpace(reference.UID), "0"),
+			gid:    cmp.Or(strings.TrimSpace(reference.GID), "0"),
 			mode:   mode,
 		})
 	}
@@ -217,7 +213,7 @@ func resolveFileObjectContentInternal(
 
 func fileModeOrDefaultInternal(mode *composegotypes.FileMode) (os.FileMode, error) {
 	if mode == nil {
-		return 0444, nil
+		return 0o444, nil
 	}
 	if *mode < 0 || *mode > composegotypes.FileMode(math.MaxUint32) {
 		return 0, errors.Errorf("file mode %d is outside the uint32 range", *mode)

@@ -12,8 +12,8 @@ import (
 
 	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	backuptypes "github.com/getarcaneapp/arcane/types/v2/backup"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 // NormalizePath validates and normalizes a path relative to a backup root.
@@ -29,7 +29,7 @@ func NormalizePath(value string, allowEmpty bool) (string, error) {
 	if slices.Contains(strings.Split(trimmed, "/"), "..") {
 		return "", errors.New("backup path must stay within the restore root")
 	}
-	cleaned, err := utils.NormalizeRelativePath(trimmed)
+	cleaned, err := kit.NormalizeRelativePath(trimmed)
 	if err != nil {
 		return "", errors.New("backup path must stay within the restore root")
 	}
@@ -65,7 +65,7 @@ func BuildEntries(paths []string, browsePath string, recursive bool) []backuptyp
 		}
 		relative := candidate
 		if root != "" {
-			if candidate == root || !utils.FilePathMatches(candidate, root) {
+			if candidate == root || !kit.FilePathMatches(candidate, root) {
 				continue
 			}
 			relative = strings.TrimPrefix(candidate, root+"/")
@@ -95,10 +95,7 @@ func BuildEntries(paths []string, browsePath string, recursive bool) []backuptyp
 
 func compareEntriesInternal(left, right backuptypes.BackupFileEntry) int {
 	if left.IsDirectory != right.IsDirectory {
-		if left.IsDirectory {
-			return -1
-		}
-		return 1
+		return kit.Ternary(left.IsDirectory, -1, 1)
 	}
 	if result := cmp.Compare(strings.ToLower(left.Name), strings.ToLower(right.Name)); result != 0 {
 		return result

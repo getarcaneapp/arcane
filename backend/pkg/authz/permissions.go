@@ -5,19 +5,19 @@
 // from the request path).
 package authz
 
-// Built-in role IDs. Stable across migrations so other code may reference them
-// safely. All six built-in roles are seeded by migration 054_add_rbac.
 const (
+	// Built-in role IDs. Stable across migrations so other code may reference them
+	// safely. All six built-in roles are seeded by migration 054_add_rbac.
+
 	BuiltInRoleAdmin         = "role_admin"
 	BuiltInRoleEditor        = "role_editor"
 	BuiltInRoleNoShellEditor = "role_no_shell_editor"
 	BuiltInRoleDeployer      = "role_deployer"
 	BuiltInRoleMonitor       = "role_monitor"
 	BuiltInRoleViewer        = "role_viewer"
-)
 
-// Org-level permissions (require a global-scope role assignment).
-const (
+	// Org-level permissions (require a global-scope role assignment).
+
 	PermUsersList   = "users:list"
 	PermUsersRead   = "users:read"
 	PermUsersCreate = "users:create"
@@ -117,10 +117,9 @@ const (
 	// (runtime/memory/GC stats, WebSocket metrics, pprof profiles, and the live
 	// backend log tail). Global-scoped; seeded only into the Admin role.
 	PermDiagnosticsRead = "diagnostics:read"
-)
 
-// Env-scoped permissions (resolved against the {id} env ID in the path).
-const (
+	// Env-scoped permissions (resolved against the {id} env ID in the path).
+
 	PermContainersList       = "containers:list"
 	PermContainersRead       = "containers:read"
 	PermContainersLogs       = "containers:logs"

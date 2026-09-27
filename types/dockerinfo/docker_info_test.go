@@ -38,12 +38,10 @@ func TestInfoMarshalsEmbeddedDockerFieldsAtTopLevel(t *testing.T) {
 			require.Equal(t, want, got,
 				"payload[%q] = %#v, want %#v; payload: %s", name, got, want, data)
 		}
-
 	}
 	{
 		_, nested := payload["Info"]
 		require.False(t, nested,
 			"Docker fields were nested under Info: %s", data)
 	}
-
 }

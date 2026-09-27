@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"emperror.dev/errors"
-
 	systemtypes "github.com/getarcaneapp/arcane/types/v2/system"
 	"github.com/samber/hot"
 )

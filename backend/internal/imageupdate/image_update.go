@@ -1,33 +1,27 @@
 package imageupdate
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/notifications"
-
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-
 	"cmp"
 	"context"
 	"fmt"
 	"log/slog"
 	"maps"
+	"slices"
 	"strings"
 	"sync"
 	"time"
 
-	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
-
-	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
-
 	"emperror.dev/emperror"
 	"emperror.dev/errors"
-
 	cerrdefs "github.com/containerd/errdefs"
 	ref "github.com/distribution/reference"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/notification"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/ratelimit"
@@ -36,12 +30,15 @@ import (
 	projectspkg "github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/imageref"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/notifications"
+	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	"github.com/getarcaneapp/arcane/types/v2/imageupdate"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/image"
 	"github.com/moby/moby/client"
 	"github.com/samber/mo"
+	kit "go.getarcane.app/kit/pkg"
 	"go.getarcane.app/sys/crypto"
 	"go.getarcane.app/updater/digest"
 	"go.getarcane.app/updater/refs"
@@ -171,10 +168,7 @@ func (s *ImageUpdateService) startImageUpdateActivityInternal(ctx context.Contex
 	if s.activityService == nil {
 		return ""
 	}
-	resourceType := "image"
-	if count > 1 {
-		resourceType = "images"
-	}
+	resourceType := kit.Ternary(count > 1, "images", "image")
 	activity, err := s.activityService.StartActivity(ctx, activity.StartActivityRequest{
 		EnvironmentID: "0",
 		Type:          activitytypes.TypeImageUpdateCheck,
@@ -198,9 +192,7 @@ func (s *ImageUpdateService) appendImageUpdateActivityMessageInternal(ctx contex
 	if s.activityService == nil || activityID == "" || strings.TrimSpace(message) == "" {
 		return
 	}
-	if level == "" {
-		level = activitytypes.MessageLevelInfo
-	}
+	level = cmp.Or(level, activitytypes.MessageLevelInfo)
 	if _, err := s.activityService.AppendMessage(ctx, activityID, activity.AppendActivityMessageRequest{
 		Level:    level,
 		Message:  message,
@@ -226,9 +218,7 @@ func (s *ImageUpdateService) completeImageUpdateActivityInternal(ctx context.Con
 			message = "Image update check cancelled"
 		}
 	}
-	if message == "" {
-		message = "Image update check completed"
-	}
+	message = cmp.Or(message, "Image update check completed")
 	step := "Image update check complete"
 	if _, err := s.activityService.CompleteActivity(utils.ActivityRuntimeContext(ctx, nil), activityID, status, message, errMessage, step); err != nil {
 		// A lost terminal write strands the activity in running forever, so it
@@ -355,10 +345,7 @@ func (s *ImageUpdateService) CheckImageUpdate(ctx context.Context, imageRef stri
 		_ = s.SendBatchUpdateNotifications(ctx)
 	}
 
-	finalMessage := "Image update check completed"
-	if digestResult.HasUpdate {
-		finalMessage = "Image update available"
-	}
+	finalMessage := kit.Ternary(digestResult.HasUpdate, "Image update available", "Image update check completed")
 	s.completeImageUpdateActivityInternal(ctx, activityID, true, finalMessage)
 	return digestResult, nil
 }
@@ -885,9 +872,7 @@ func (s *ImageUpdateService) inspectLocalImageSnapshotInternal(ctx context.Conte
 			allDigests = append(allDigests, digestValue)
 
 			// Use first digest as primary if not yet set
-			if primaryDigest == "" {
-				primaryDigest = digestValue
-			}
+			primaryDigest = cmp.Or(primaryDigest, digestValue)
 		}
 	}
 
@@ -1062,10 +1047,7 @@ func extractRepoAndTagFromImage(dockerImage image.InspectResponse) (repo, tag st
 }
 
 func buildImageUpdateRecord(imageID, repo, tag string, result *imageupdate.Response) *ImageUpdateRecord {
-	currentVersion := result.CurrentVersion
-	if currentVersion == "" {
-		currentVersion = tag
-	}
+	currentVersion := cmp.Or(result.CurrentVersion, tag)
 
 	return &ImageUpdateRecord{
 		ID:             imageID,
@@ -1092,10 +1074,7 @@ func repositoryCandidatesSliceInternal(candidates map[string]struct{}) []string 
 		return nil
 	}
 
-	repositories := make([]string, 0, len(candidates))
-	for repository := range candidates {
-		repositories = append(repositories, repository)
-	}
+	repositories := slices.Collect(maps.Keys(candidates))
 	return repositories
 }
 

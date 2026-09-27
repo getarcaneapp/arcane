@@ -1,10 +1,7 @@
 package scheduler
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
-	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
-
+	"cmp"
 	"context"
 	"log/slog"
 	"slices"
@@ -12,28 +9,33 @@ import (
 	"sync"
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/notification"
-
 	"emperror.dev/errors"
-	scheduleutil "github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/schedule"
-	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/client"
-	"golang.org/x/sync/errgroup"
-
 	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/notification"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
+	scheduleutil "github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/schedule"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/client"
+	"go.getarcane.app/docker/compat"
+	kit "go.getarcane.app/kit/pkg"
 	"go.getarcane.app/sys/cgroup"
+	"golang.org/x/sync/errgroup"
 )
 
-const AutoHealJobName = "auto-heal"
-const autoHealDefaultSchedule = "0 */5 * * * *"
-const autoHealInspectConcurrency = 4
-const autoHealAdmissionScopeInternal = "auto-heal"
+const (
+	AutoHealJobName                = "auto-heal"
+	autoHealDefaultSchedule        = "0 */5 * * * *"
+	autoHealInspectConcurrency     = 4
+	autoHealAdmissionScopeInternal = "auto-heal"
+)
 
 // restartRecord tracks restart timestamps for a single container.
 type restartRecord struct {
@@ -89,10 +91,7 @@ func (j *AutoHealJob) ShouldSchedule(ctx context.Context) bool {
 }
 
 func (j *AutoHealJob) Schedule(ctx context.Context) string {
-	schedule := j.settingsService.GetStringSetting(ctx, "autoHealInterval", autoHealDefaultSchedule)
-	if schedule == "" {
-		schedule = autoHealDefaultSchedule
-	}
+	schedule := cmp.Or(j.settingsService.GetStringSetting(ctx, "autoHealInterval", autoHealDefaultSchedule), autoHealDefaultSchedule)
 
 	parser := scheduleutil.Parser()
 	if _, err := parser.Parse(schedule); err != nil {
@@ -200,7 +199,7 @@ func (j *AutoHealJob) filterCandidatesInternal(containers []container.Summary, e
 			continue
 		}
 
-		if internal, _ := utils.ParseBool(c.Labels[libarcane.InternalResourceLabel]); internal {
+		if internal, _ := kit.ParseBool(c.Labels[libarcane.InternalResourceLabel]); internal {
 			continue
 		}
 
@@ -254,7 +253,8 @@ func (j *AutoHealJob) processCandidateInternal(
 
 	releaseSlot, reserved := j.reserveRestartSlotInternal(containerID, maxRestarts, restartWindow)
 	if !reserved {
-		slog.WarnContext(ctx, "auto-heal restart-loop protection: skipping container",
+		slog.WarnContext(
+			ctx, "auto-heal restart-loop protection: skipping container",
 			"container", containerName,
 			"max_restarts", maxRestarts,
 			"window_minutes", restartWindowMinutes,
@@ -435,7 +435,7 @@ func (j *AutoHealJob) inspectContainerInternal(ctx context.Context, dockerClient
 		return j.inspectContainer(ctx, dockerClient, containerID)
 	}
 
-	inspect, err := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, client.ContainerInspectOptions{})
+	inspect, err := compat.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, client.ContainerInspectOptions{})
 	if err != nil {
 		return container.InspectResponse{}, err
 	}

@@ -1,4 +1,4 @@
-version: '2'
+version: "2"
 run:
   tests: false
   timeout: 5m
@@ -88,6 +88,8 @@ linters:
     - whitespace
     - zerologlint
   settings:
+    grouper:
+      const-require-single-const: true
     custom:
       shimbad:
         type: module
@@ -117,13 +119,13 @@ linters:
     rules:
       - linters:
           - revive
-        text: 'var-naming:'
+        text: "var-naming:"
       - linters:
           - revive
-        text: 'unused-parameter:'
+        text: "unused-parameter:"
       - linters:
           - revive
-        text: 'exported:'
+        text: "exported:"
       - linters:
           - forbidigo
         path: cli/
@@ -131,22 +133,11 @@ linters:
       - linters:
           - shimbad
         path: internal/types/endpoints\.go
-    paths:
-      - '.*\.pb\.go$'
-      - third_party$
-      - builtin$
-      - examples$
 issues:
   max-issues-per-linter: 0
   max-same-issues: 0
 formatters:
   enable:
-    - gofmt
-    - goimports
+    - gofumpt
   exclusions:
     generated: lax
-    paths:
-      - '.*\.pb\.go$'
-      - third_party$
-      - builtin$
-      - examples$

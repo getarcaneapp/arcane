@@ -11,6 +11,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/moby/moby/api/types/events"
 	"github.com/stretchr/testify/require"
+	kit "go.getarcane.app/kit/pkg"
 	"go.getarcane.app/streams/bus"
 	"gorm.io/gorm"
 )
@@ -60,10 +61,7 @@ func TestMapDaemonEventInternal(t *testing.T) {
 			require.Nil(t, req.UserID)
 			require.Nil(t, req.Username)
 			require.Equal(t, database.JSON{"source": "docker", "action": string(tc.action), "scope": "local", "name": "web", "image": "alpine", "exitCode": "0", "signal": "15", "composeProject": "demo", "composeService": "web"}, req.Metadata)
-			severity := EventSeverityInfo
-			if tc.action == events.ActionOOM {
-				severity = EventSeverityError
-			}
+			severity := kit.Ternary(tc.action == events.ActionOOM, EventSeverityError, EventSeverityInfo)
 			if tc.action == events.ActionHealthStatusUnhealthy {
 				severity = EventSeverityWarning
 			}
@@ -122,10 +120,7 @@ func TestDaemonEventsPersistEveryOccurrenceImmediately(t *testing.T) {
 
 func TestDaemonSuppressionAndFailureAllowLaterObservations(t *testing.T) {
 	for _, failure := range []bool{false, true} {
-		name := "suppression"
-		if failure {
-			name = "persistence failure"
-		}
+		name := kit.Ternary(failure, "persistence failure", "suppression")
 		t.Run(name, func(t *testing.T) {
 			db := setupEventServiceTestDB(t)
 			svc := NewEventService(db, nil, nil)
@@ -152,10 +147,7 @@ func TestDaemonSuppressionAndFailureAllowLaterObservations(t *testing.T) {
 
 func TestDockerEventSubscriptionsReadyAndStop(t *testing.T) {
 	for _, closeBus := range []bool{false, true} {
-		name := "cancellation"
-		if closeBus {
-			name = "closed bus"
-		}
+		name := kit.Ternary(closeBus, "closed bus", "cancellation")
 		t.Run(name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				db := setupEventServiceTestDB(t)
@@ -181,10 +173,7 @@ func TestDockerEventSubscriptionsReadyAndStop(t *testing.T) {
 				publishBurst := func(offset int64) {
 					for occurrence := range occurrences {
 						for _, kind := range []events.Type{events.ContainerEventType, events.ImageEventType, events.VolumeEventType, events.NetworkEventType} {
-							action := events.ActionCreate
-							if kind == events.ImageEventType {
-								action = events.ActionPull
-							}
+							action := kit.Ternary(kind == events.ImageEventType, events.ActionPull, events.ActionCreate)
 							eventBus.Publish(events.Message{Type: kind, Action: action, TimeNano: offset + int64(occurrence+1), Actor: events.Actor{ID: "resource"}})
 						}
 					}

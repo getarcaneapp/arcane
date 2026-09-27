@@ -2,6 +2,8 @@ package timeouts
 
 import (
 	"time"
+
+	kit "go.getarcane.app/kit/pkg"
 )
 
 const (
@@ -34,8 +36,5 @@ const (
 )
 
 func GetDuration(settingSeconds int, defaultDuration time.Duration) time.Duration {
-	if settingSeconds > 0 {
-		return time.Duration(settingSeconds) * time.Second
-	}
-	return defaultDuration
+	return kit.Ternary(settingSeconds > 0, time.Duration(settingSeconds)*time.Second, defaultDuration)
 }

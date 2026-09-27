@@ -9,7 +9,6 @@ import (
 	"strconv"
 
 	"emperror.dev/errors"
-
 	"github.com/charmbracelet/x/term"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
@@ -19,6 +18,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/backup"
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/spf13/cobra"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 var (
@@ -371,10 +371,7 @@ var policiesCmd = &cobra.Command{
 
 func printPolicies(result backup.SystemBackupPolicyCollection) {
 	output.Header("System Backup Policies")
-	recoveryKey := "Not configured"
-	if result.RecoveryKeyStored {
-		recoveryKey = "Configured"
-	}
+	recoveryKey := kit.Ternary(result.RecoveryKeyStored, "Configured", "Not configured")
 	output.KeyValue("Recovery Key", recoveryKey)
 
 	headers := []string{"ID", "ENABLED", "SCHEDULE", "RETENTION", "LOCAL", "S3", "S3 DESTINATION", "LAST RUN"}

@@ -9,16 +9,10 @@ import (
 	"strings"
 	"time"
 
-	"go.getarcane.app/kit/normalization"
-
-	"github.com/cenkalti/backoff/v5"
-	ref "github.com/distribution/reference"
-	"github.com/samber/hot"
-	"github.com/samber/mo"
-	"golang.org/x/sync/singleflight"
-
 	"emperror.dev/errors"
+	"github.com/cenkalti/backoff/v5"
 	cerrdefs "github.com/containerd/errdefs"
+	ref "github.com/distribution/reference"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
@@ -33,10 +27,15 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	dockerregistry "github.com/moby/moby/api/types/registry"
 	"github.com/moby/moby/client"
+	"github.com/samber/hot"
+	"github.com/samber/mo"
+	"go.getarcane.app/kit/normalization"
+	kit "go.getarcane.app/kit/pkg"
 	"go.getarcane.app/sys/crypto"
 	"go.getarcane.app/updater/digest"
 	"go.getarcane.app/updater/refs"
 	"go.getarcane.app/updater/registry"
+	"golang.org/x/sync/singleflight"
 	"gorm.io/gorm"
 )
 
@@ -521,11 +520,7 @@ func (s *ContainerRegistryService) GetAllRegistryAuthConfigs(ctx context.Context
 		}
 	}
 
-	if len(authConfigs) == 0 {
-		return nil, nil
-	}
-
-	return authConfigs, nil
+	return kit.Ternary(len(authConfigs) == 0, nil, authConfigs), nil
 }
 
 // RecordImagePull increments Arcane's observed successful pull counter for an image registry.
@@ -760,10 +755,7 @@ func registryProviderInternal(registryHost, registryType string) string {
 	if registryType == RegistryTypeECR {
 		return "ecr"
 	}
-	if registryHost == "docker.io" {
-		return "dockerhub"
-	}
-	return "generic"
+	return kit.Ternary(registryHost == "docker.io", "dockerhub", "generic")
 }
 
 func registryDisplayNameInternal(registryHost, registryType string) string {
@@ -1299,7 +1291,7 @@ func NormalizeRegistryType(value string) (string, error) {
 // entries (preserving first-occurrence order) and validates what remains. It
 // returns a non-nil slice so that GORM always serializes to a JSON array.
 func normalizeRepositoryNamesInternal(raw []string) (database.StringSlice, error) {
-	names := utils.UniqueNonEmptyStrings(raw)
+	names := kit.Unique(kit.TrimNonEmpty(raw))
 	result := make(database.StringSlice, 0, len(names))
 	for _, name := range names {
 		// A repository name is only a path, so pair it with placeholder domain

@@ -1,12 +1,6 @@
 package auth
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
-
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-
 	"bytes"
 	"context"
 	"crypto/mldsa"
@@ -17,13 +11,15 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humaecho"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/session"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/user"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cookie"
 	authtypes "github.com/getarcaneapp/arcane/types/v2/auth"
 	"github.com/labstack/echo/v5"
@@ -145,7 +141,8 @@ func TestNewHumaMiddleware_UsesBearerWhenLoopbackProxySendsEnvironmentAccessToke
 	}, func(ctx context.Context, _ *struct {
 		ID  string `path:"id"`
 		CID string `path:"cid"`
-	}) (*secureOutput, error) {
+	},
+	) (*secureOutput, error) {
 		user, ok := common.CurrentUserFromContext(ctx)
 		require.True(t, ok)
 		require.Equal(t, "u-loopback", user.ID)
@@ -471,8 +468,8 @@ func TestNewHumaMiddleware_AgentAuthAppliesForwardedIconCatalog(t *testing.T) {
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/secure-agent-icon-catalog", nil)
-	req.Header.Set(utils.HeaderAgentToken, agentToken)
-	req.Header.Set(utils.HeaderIconCatalog, "dashboard-icons")
+	req.Header.Set(middleware.HeaderAgentToken, agentToken)
+	req.Header.Set(middleware.HeaderIconCatalog, "dashboard-icons")
 	rec := httptest.NewRecorder()
 
 	router.ServeHTTP(rec, req)

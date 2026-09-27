@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"emperror.dev/errors"
-
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
@@ -83,11 +82,13 @@ type GenerateSystemBackupRecoveryKeyOutput struct {
 type CreateSystemBackupInput struct {
 	Body backuptypes.CreateSystemBackupRequest
 }
-type SystemBackupOutput struct{ Body backuptypes.SystemBackupRun }
-type RestoreSystemBackupInput struct {
-	ID   string `path:"id"`
-	Body backuptypes.RestoreSystemBackupRequest
-}
+type (
+	SystemBackupOutput       struct{ Body backuptypes.SystemBackupRun }
+	RestoreSystemBackupInput struct {
+		ID   string `path:"id"`
+		Body backuptypes.RestoreSystemBackupRequest
+	}
+)
 
 // BrowseSystemBackupFilesInput selects one page of a system backup tree.
 type BrowseSystemBackupFilesInput struct {

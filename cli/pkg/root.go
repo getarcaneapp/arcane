@@ -33,6 +33,7 @@
 package cli
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"os"
@@ -219,10 +220,7 @@ func instrumentCommandTreeInternal(cmd *cobra.Command) {
 	}
 	cmd.Annotations["arcane:logging-wrapped"] = "true"
 
-	action := strings.TrimSpace(cmd.Short)
-	if action == "" {
-		action = "Running command"
-	}
+	action := cmp.Or(strings.TrimSpace(cmd.Short), "Running command")
 
 	if cmd.RunE != nil {
 		originalRunE := cmd.RunE

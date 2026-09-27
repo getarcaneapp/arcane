@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"fmt"
 	"html/template"
+	"maps"
+	"slices"
 	"sort"
 	"time"
 
@@ -95,10 +97,7 @@ func (s *NotificationService) renderTestEmailTemplateInternal(environmentName st
 
 func (s *NotificationService) renderBatchEmailTemplateInternal(environmentName string, updates map[string]*imageupdate.Response) (string, string, error) {
 	// Build list of image names
-	imageList := make([]string, 0, len(updates))
-	for imageRef := range updates {
-		imageList = append(imageList, imageRef)
-	}
+	imageList := slices.Collect(maps.Keys(updates))
 
 	appURL := s.config.GetAppURL()
 	logoURL := appURL + logoURLPath

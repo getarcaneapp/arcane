@@ -1,6 +1,7 @@
 package containers
 
 import (
+	"cmp"
 	"encoding/json/v2"
 	"fmt"
 	"net/url"
@@ -10,7 +11,6 @@ import (
 	"time"
 
 	"emperror.dev/errors"
-
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
@@ -664,13 +664,7 @@ func formatContainerOption(item container.Summary) string {
 	if name == "" {
 		name = shortID(item.ID)
 	}
-	image := item.Image
-	if image == "" {
-		image = "<unknown>"
-	}
-	state := item.State
-	if state == "" {
-		state = "unknown"
-	}
+	image := cmp.Or(item.Image, "<unknown>")
+	state := cmp.Or(item.State, "unknown")
 	return fmt.Sprintf("%s (%s, %s)", name, shortID(item.ID), image+" / "+state)
 }

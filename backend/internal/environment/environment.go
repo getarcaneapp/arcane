@@ -1,9 +1,6 @@
 package environment
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
-	"go.getarcane.app/kit/normalization"
-
 	"context"
 	"fmt"
 	"log/slog"
@@ -13,12 +10,12 @@ import (
 	"uuid"
 
 	"emperror.dev/errors"
-
 	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
@@ -28,6 +25,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/validation"
 	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
+	"go.getarcane.app/kit/normalization"
 	"go.getarcane.app/sys/crypto"
 	"gorm.io/gorm"
 )
@@ -62,10 +60,15 @@ type EnvironmentService struct {
 	syncGate utils.SyncGate
 }
 
-// SyncDeliveryExpiry bounds how long an accepted config push is trusted. An
-// agent rebuilt with a fresh data volume while its status stayed online gets
-// everything again within this window without operator action.
-const SyncDeliveryExpiry = time.Hour
+const (
+	// SyncDeliveryExpiry bounds how long an accepted config push is trusted. An
+	// agent rebuilt with a fresh data volume while its status stayed online gets
+	// everything again within this window without operator action.
+	SyncDeliveryExpiry = time.Hour
+
+	ErrEnvironmentAccessTokenRequired = errors.Sentinel("environment access token required")
+	ErrInvalidEnvironmentAccessToken  = errors.Sentinel("invalid environment access token")
+)
 
 // VariableSyncer pushes the effective global-variable set to one environment.
 // Implemented by variable.VariableService.
@@ -82,11 +85,6 @@ func (s *EnvironmentService) ForgetSyncState(environmentID string) {
 		s.variableSyncer.ForgetSyncState(environmentID)
 	}
 }
-
-const (
-	ErrEnvironmentAccessTokenRequired = errors.Sentinel("environment access token required")
-	ErrInvalidEnvironmentAccessToken  = errors.Sentinel("invalid environment access token")
-)
 
 func NewEnvironmentService(db *database.DB, httpClient *http.Client, dockerService *docker.DockerClientService, eventService *event.EventService, settingsService *settings.SettingsService, apiKeyService *apikey.ApiKeyService) *EnvironmentService {
 	if httpClient == nil {
@@ -424,7 +422,7 @@ func (s *EnvironmentService) createEnvironmentEvent(ctx context.Context, envID, 
 	})
 }
 
-func (s *EnvironmentService) RegenerateEnvironmentApiKey(ctx context.Context, envID string, newApiKeyID string, apiKey string, userID, username string, envName string) error {
+func (s *EnvironmentService) RegenerateEnvironmentApiKey(ctx context.Context, envID, newApiKeyID, apiKey, userID, username, envName string) error {
 	// Trim once at the boundary so the value persisted, the value cached,
 	// and the value returned by callers (which already TrimSpace before
 	// returning) all stay byte-identical. Any divergence here would surface

@@ -5,6 +5,7 @@
 set working-directory := './'
 
 edge_proto_dir := 'backend/proto'
+modules := './backend ./cli ./types'
 
 _default:
     @just --list
@@ -233,7 +234,7 @@ test target="all":
 # Quality: format, lint, and fixes
 # -----------------------------------------------------------------------------
 
-# Format frontend/test/email TypeScript with vp fmt (Vite+) and Go modules with gofmt
+# Format frontend/test/email TypeScript with vp fmt (Vite+) and Go modules with goimports-reviser and gofumpt
 [group('quality')]
 _format-frontend:
     vp fmt frontend
@@ -245,9 +246,13 @@ _format-js:
 
 [group('quality')]
 _format-go:
-    cd backend && gofmt -s -w .
-    cd cli && gofmt -s -w .
-    cd types && gofmt -s -w .
+    #!/usr/bin/env bash
+    set -euo pipefail
+    for module in {{ modules }}; do
+        # A non-matching project name keeps all non-stdlib imports in one group.
+        (cd "$module" && goimports-reviser -project-name . ./...)
+        gofumpt -w -extra "$module"
+    done
 
 [group('quality')]
 _format-just:
@@ -267,7 +272,7 @@ _format-check-go:
     #!/usr/bin/env bash
     set -euo pipefail
 
-    unformatted=$(gofmt -l backend cli types)
+    unformatted=$(gofumpt -l -extra {{ modules }})
     if [ -n "$unformatted" ]; then
         echo "Unformatted Go files:"
         echo "$unformatted"
@@ -277,7 +282,7 @@ _format-check-go:
 [group('quality')]
 _format-all:
     #!/usr/bin/env bash
-    # Run every formatter even if one fails, so e.g. a vp/pnpm hiccup can't skip gofmt
+    # Run every formatter even if one fails, so e.g. a vp/pnpm hiccup can't skip gofumpt
     failed=0
     for target in frontend js go just; do
         just "_format-${target}" || failed=1

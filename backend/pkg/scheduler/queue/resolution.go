@@ -6,13 +6,14 @@ import (
 
 	"emperror.dev/errors"
 	st "github.com/getarcaneapp/arcane/types/v2/scheduler"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 // Resolve releases reviewed, inactive work without discarding its execution evidence.
 func (q *Queue) Resolve(ctx context.Context, environmentID, jobID, runID, resolvedBy string) (st.Run, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	if q.active[queueKeyInternal(environmentID, jobID)] {
+	if q.active[queuePrefixInternal+kit.SHA256Hex(environmentID+"\x00"+jobID)] {
 		return st.Run{}, errors.New("job is still active")
 	}
 	run, err := q.Get(ctx, environmentID, jobID, runID)

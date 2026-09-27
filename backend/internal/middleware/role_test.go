@@ -8,10 +8,9 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humaecho"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/labstack/echo/v5"
 	"github.com/stretchr/testify/require"
-
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 )
 
 func TestRequirePermission_RejectsCallerMissingPermission(t *testing.T) {
@@ -33,7 +32,8 @@ func TestRequirePermission_RejectsCallerMissingPermission(t *testing.T) {
 	}, func(_ context.Context, _ *struct {
 		ID  string `path:"id"`
 		CID string `path:"cid"`
-	}) (*struct{}, error) {
+	},
+	) (*struct{}, error) {
 		require.FailNow(t, "handler must not run when permission is missing")
 		return nil, nil
 	})
@@ -70,7 +70,8 @@ func TestRequirePermission_AllowsCallerWithPermissionOnEnv(t *testing.T) {
 	}, func(_ context.Context, _ *struct {
 		ID  string `path:"id"`
 		CID string `path:"cid"`
-	}) (*out, error) {
+	},
+	) (*out, error) {
 		handlerRan = true
 		return &out{Body: struct {
 			Success bool `json:"success"`
@@ -104,7 +105,8 @@ func TestRequirePermission_EnvScopedDoesNotLeakAcrossEnvs(t *testing.T) {
 	}, func(_ context.Context, _ *struct {
 		ID  string `path:"id"`
 		CID string `path:"cid"`
-	}) (*struct{}, error) {
+	},
+	) (*struct{}, error) {
 		require.FailNow(t, "handler must not run when permission is scoped to a different env")
 		return nil, nil
 	})
@@ -133,7 +135,8 @@ func TestRequirePermissionEnvironmentGrantCannotManageGlobalNotificationsInterna
 		Middlewares: RequirePermission(api, authz.PermNotificationsManage),
 	}, func(_ context.Context, _ *struct {
 		ID string `path:"id"`
-	}) (*struct{}, error) {
+	},
+	) (*struct{}, error) {
 		require.FailNow(t, "handler must not run for an environment-scoped grant on global notification settings")
 		return nil, nil
 	})
@@ -161,7 +164,8 @@ func TestRequirePermission_SudoCallerAllowed(t *testing.T) {
 		Middlewares: RequirePermission(api, authz.PermUsersDelete),
 	}, func(_ context.Context, _ *struct {
 		UserID string `path:"userId"`
-	}) (*struct{}, error) {
+	},
+	) (*struct{}, error) {
 		handlerRan = true
 		return &struct{}{}, nil
 	})
@@ -205,7 +209,8 @@ func TestRequireSudoRejectsHumanAdminAndAllowsAgent(t *testing.T) {
 				Middlewares: RequireSudo(api),
 			}, func(_ context.Context, _ *struct {
 				ID string `path:"id"`
-			}) (*struct{}, error) {
+			},
+			) (*struct{}, error) {
 				handlerRan = true
 				return &struct{}{}, nil
 			})

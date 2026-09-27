@@ -11,41 +11,33 @@ const (
 	PruneContainerModeNone      PruneContainerMode = "none"
 	PruneContainerModeStopped   PruneContainerMode = "stopped"
 	PruneContainerModeOlderThan PruneContainerMode = "olderThan"
-)
 
-type PruneImageMode string
-
-const (
 	PruneImageModeNone      PruneImageMode = "none"
 	PruneImageModeDangling  PruneImageMode = "dangling"
 	PruneImageModeAll       PruneImageMode = "all"
 	PruneImageModeOlderThan PruneImageMode = "olderThan"
-)
 
-type PruneVolumeMode string
-
-const (
 	PruneVolumeModeNone      PruneVolumeMode = "none"
 	PruneVolumeModeAnonymous PruneVolumeMode = "anonymous"
 	PruneVolumeModeAll       PruneVolumeMode = "all"
-)
 
-type PruneNetworkMode string
-
-const (
 	PruneNetworkModeNone      PruneNetworkMode = "none"
 	PruneNetworkModeUnused    PruneNetworkMode = "unused"
 	PruneNetworkModeOlderThan PruneNetworkMode = "olderThan"
-)
 
-type PruneBuildCacheMode string
-
-const (
 	PruneBuildCacheModeNone      PruneBuildCacheMode = "none"
 	PruneBuildCacheModeUnused    PruneBuildCacheMode = "unused"
 	PruneBuildCacheModeAll       PruneBuildCacheMode = "all"
 	PruneBuildCacheModeOlderThan PruneBuildCacheMode = "olderThan"
 )
+
+type PruneImageMode string
+
+type PruneVolumeMode string
+
+type PruneNetworkMode string
+
+type PruneBuildCacheMode string
 
 type PruneContainersOptions struct {
 	Mode  PruneContainerMode `json:"mode"`

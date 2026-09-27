@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"cmp"
 	"context"
 	"strings"
 	"sync"
@@ -14,16 +15,16 @@ import (
 
 type contextKey string
 
-// AppContextKey is the context key under which the CLI's AppContext is stored;
-// set it with context.WithValue and read it back with From.
-const AppContextKey contextKey = "arcane_app_context"
-
-type OutputMode string
-
 const (
+	// AppContextKey is the context key under which the CLI's AppContext is stored;
+	// set it with context.WithValue and read it back with From.
+	AppContextKey contextKey = "arcane_app_context"
+
 	OutputModeText OutputMode = "text"
 	OutputModeJSON OutputMode = "json"
 )
+
+type OutputMode string
 
 type Options struct {
 	EnvOverride    string
@@ -56,10 +57,7 @@ func New(opts Options) (*AppContext, error) {
 		return nil, errors.WrapIf(err, "failed to load config")
 	}
 
-	mode := opts.OutputMode
-	if mode == "" {
-		mode = OutputModeText
-	}
+	mode := cmp.Or(opts.OutputMode, OutputModeText)
 	switch mode {
 	case OutputModeText, OutputModeJSON:
 	default:

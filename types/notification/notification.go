@@ -42,6 +42,14 @@ const (
 
 	// NotificationProviderGeneric is the builtin Generic webhook notification provider.
 	NotificationProviderGeneric Provider = "generic"
+
+	DispatchKindImageUpdate          DispatchKind = "image_update"
+	DispatchKindBatchImageUpdate     DispatchKind = "batch_image_update"
+	DispatchKindContainerUpdate      DispatchKind = "container_update"
+	DispatchKindBatchContainerUpdate DispatchKind = "batch_container_update"
+	DispatchKindVulnerabilityFound   DispatchKind = "vulnerability_found"
+	DispatchKindPruneReport          DispatchKind = "prune_report"
+	DispatchKindAutoHeal             DispatchKind = "auto_heal"
 )
 
 type Update struct {
@@ -94,16 +102,6 @@ type TestResponse struct {
 }
 
 type DispatchKind string
-
-const (
-	DispatchKindImageUpdate          DispatchKind = "image_update"
-	DispatchKindBatchImageUpdate     DispatchKind = "batch_image_update"
-	DispatchKindContainerUpdate      DispatchKind = "container_update"
-	DispatchKindBatchContainerUpdate DispatchKind = "batch_container_update"
-	DispatchKindVulnerabilityFound   DispatchKind = "vulnerability_found"
-	DispatchKindPruneReport          DispatchKind = "prune_report"
-	DispatchKindAutoHeal             DispatchKind = "auto_heal"
-)
 
 type DispatchImageUpdate struct {
 	ImageRef   string               `json:"imageRef"`

@@ -1,12 +1,6 @@
 package auth
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
-
-	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
-
-	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
-
 	"bytes"
 	"context"
 	"crypto/mldsa"
@@ -15,23 +9,25 @@ import (
 	"testing"
 	"time"
 
-	"github.com/libtnb/sqlite"
-	"github.com/stretchr/testify/require"
-	"go.uber.org/fx/fxtest"
-	"gorm.io/gorm"
-
 	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/session"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/user"
 	"github.com/getarcaneapp/arcane/types/v2/auth"
 	"github.com/lestrrat-go/jwx/v4/jwa"
 	"github.com/lestrrat-go/jwx/v4/jwt"
+	"github.com/libtnb/sqlite"
 	"github.com/samber/hot"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/fx/fxtest"
+	"gorm.io/gorm"
 )
 
 func setupAuthServiceTestDB(t *testing.T) *database.DB {
@@ -131,7 +127,7 @@ func signUnsignedTokenInternal(t testing.TB, claims map[string]any) string {
 	return string(signed)
 }
 
-func makeAccessToken(t *testing.T, key *mldsa.PrivateKey, subject string, id string, username string, _ []string, email, displayName string, exp time.Time, sessionIDs ...string) string {
+func makeAccessToken(t *testing.T, key *mldsa.PrivateKey, subject, id, username string, _ []string, email, displayName string, exp time.Time, sessionIDs ...string) string {
 	t.Helper()
 	sessionID := ""
 	if len(sessionIDs) > 0 {
@@ -152,7 +148,7 @@ func makeAccessToken(t *testing.T, key *mldsa.PrivateKey, subject string, id str
 	return signLegacyTokenInternal(t, key, claims)
 }
 
-func makeRefreshToken(t *testing.T, key *mldsa.PrivateKey, subject string, id string, exp time.Time, userIDAndSessionID ...string) string {
+func makeRefreshToken(t *testing.T, key *mldsa.PrivateKey, subject, id string, exp time.Time, userIDAndSessionID ...string) string {
 	t.Helper()
 	userID := id
 	sessionID := ""
@@ -227,7 +223,6 @@ func TestVerifyToken_ValidClaims(t *testing.T) {
 
 	assert.False(t, verifiedUser.DisplayName == nil || *verifiedUser.DisplayName != "Alice",
 		"displayName %v", verifiedUser.DisplayName)
-
 }
 
 func TestVerifyToken_RejectsNonMLDSAAlg(t *testing.T) {
@@ -252,7 +247,6 @@ func TestVerifyToken_RejectsNonMLDSAAlg(t *testing.T) {
 
 	assert.ErrorIs(t, err, common.ErrInvalidToken,
 		"want common.ErrInvalidToken, got %v", err)
-
 }
 
 func TestVerifyToken_Expired(t *testing.T) {
@@ -277,7 +271,6 @@ func TestVerifyToken_Expired(t *testing.T) {
 
 	assert.ErrorIs(t, err, common.ErrExpiredToken,
 		"want ErrExpiredToken, got %v", err)
-
 }
 
 func TestVerifyToken_InvalidSubject(t *testing.T) {
@@ -300,7 +293,6 @@ func TestVerifyToken_InvalidSignature(t *testing.T) {
 
 	assert.ErrorIs(t, err, common.ErrInvalidToken,
 		"want common.ErrInvalidToken, got %v", err)
-
 }
 
 func TestVerifyToken_MissingUserID(t *testing.T) {
@@ -327,7 +319,6 @@ func TestGenerateUsernameFromEmail(t *testing.T) {
 
 	assert.Equal(t, "user_short", u3,
 		"short subject username %q", u3)
-
 }
 
 func TestUniqueOidcUsernameInternal(t *testing.T) {
@@ -369,7 +360,6 @@ func TestPersistOidcTokens_SetsFields(t *testing.T) {
 
 	assert.False(t, user.OidcAccessTokenExpiresAt.Before(earliest) || user.OidcAccessTokenExpiresAt.After(latest),
 		"expiresAt %v not in [%v,%v]", user.OidcAccessTokenExpiresAt, earliest, latest)
-
 }
 
 func TestVerifyToken_VersionMismatch(t *testing.T) {
@@ -726,7 +716,6 @@ func TestRefreshToken_RejectsNonHMACAlg(t *testing.T) {
 
 	assert.ErrorIs(t, err, common.ErrInvalidToken,
 		"want common.ErrInvalidToken, got %v", err)
-
 }
 
 func TestGetOidcConfigurationStatus(t *testing.T) {
@@ -789,7 +778,6 @@ func TestGetOidcConfigurationStatus(t *testing.T) {
 
 	assert.False(t, !status.EnvForced || !status.EnvConfigured,
 		"expected enabled and configured, got forced=%v configured=%v", status.EnvForced, status.EnvConfigured)
-
 }
 
 func TestFindOrCreateOidcUser_MergeEnabled_EmailNotVerified_NoExistingUser_CreatesNewUser(t *testing.T) {
@@ -844,7 +832,6 @@ func TestFindOrCreateOidcUser_MergeEnabled_EmailNotVerified_NoExistingUser_Creat
 	require.True(t, isNew)
 	require.NotEqual(t, created.ID, other.ID)
 	require.NotEqual(t, created.Username, other.Username)
-
 }
 
 func TestFindOrCreateOidcUser_MergeEnabled_EmailNotVerified_WithExistingUser_ReturnsError(t *testing.T) {

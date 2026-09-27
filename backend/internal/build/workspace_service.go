@@ -1,8 +1,10 @@
 package build
 
 import (
+	"cmp"
 	"context"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"path"
@@ -10,14 +12,11 @@ import (
 	"strings"
 
 	"emperror.dev/errors"
-
-	"log/slog"
-
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	acfsutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/acfs"
 	workspacetypes "github.com/getarcaneapp/arcane/types/v2/workspace"
 	"go.getarcane.app/acfs"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 const defaultBuildsDirectory = "/builds"
@@ -38,7 +37,7 @@ func (s *BuildWorkspaceService) ListDirectory(ctx context.Context, dirPath strin
 		return nil, err
 	}
 
-	cleaned, err := utils.SanitizeBrowsePath(dirPath)
+	cleaned, err := kit.SanitizeBrowsePath(dirPath)
 	if err != nil {
 		return nil, errors.WrapIf(err, "invalid path")
 	}
@@ -63,7 +62,7 @@ func (s *BuildWorkspaceService) GetFileContent(ctx context.Context, filePath str
 		return nil, "", err
 	}
 
-	cleaned, err := utils.SanitizeBrowsePath(filePath)
+	cleaned, err := kit.SanitizeBrowsePath(filePath)
 	if err != nil {
 		return nil, "", errors.WrapIf(err, "invalid path")
 	}
@@ -94,7 +93,7 @@ func (s *BuildWorkspaceService) DownloadFile(ctx context.Context, filePath strin
 		return nil, 0, err
 	}
 
-	cleaned, err := utils.SanitizeBrowsePath(filePath)
+	cleaned, err := kit.SanitizeBrowsePath(filePath)
 	if err != nil {
 		return nil, 0, errors.WrapIf(err, "invalid path")
 	}
@@ -119,7 +118,7 @@ func (s *BuildWorkspaceService) UploadFile(ctx context.Context, destPath string,
 		return err
 	}
 
-	cleaned, err := utils.SanitizeBrowsePath(destPath)
+	cleaned, err := kit.SanitizeBrowsePath(destPath)
 	if err != nil {
 		return errors.WrapIf(err, "invalid path")
 	}
@@ -143,7 +142,7 @@ func (s *BuildWorkspaceService) CreateDirectory(ctx context.Context, dirPath str
 		return err
 	}
 
-	cleaned, err := utils.SanitizeBrowsePath(dirPath)
+	cleaned, err := kit.SanitizeBrowsePath(dirPath)
 	if err != nil {
 		return errors.WrapIf(err, "invalid path")
 	}
@@ -166,7 +165,7 @@ func (s *BuildWorkspaceService) DeleteFile(ctx context.Context, filePath string)
 		return err
 	}
 
-	cleaned, err := utils.SanitizeBrowsePath(filePath)
+	cleaned, err := kit.SanitizeBrowsePath(filePath)
 	if err != nil {
 		return errors.WrapIf(err, "invalid path")
 	}
@@ -187,10 +186,7 @@ func (s *BuildWorkspaceService) resolveRoot() (string, error) {
 		return "", errors.New("settings service not available")
 	}
 
-	root := strings.TrimSpace(s.settings.GetSettingsConfig().BuildsDirectory.Value)
-	if root == "" {
-		root = defaultBuildsDirectory
-	}
+	root := cmp.Or(strings.TrimSpace(s.settings.GetSettingsConfig().BuildsDirectory.Value), defaultBuildsDirectory)
 
 	if !filepath.IsAbs(root) {
 		return "", errors.New("builds directory must be an absolute path")

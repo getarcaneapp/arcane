@@ -15,10 +15,7 @@ import (
 	"time"
 	"uuid"
 
-	"go.getarcane.app/kit/normalization"
-
 	"emperror.dev/errors"
-
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
@@ -26,12 +23,14 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	httputils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/mapper"
 	"github.com/getarcaneapp/arcane/types/v2/env"
 	tmpl "github.com/getarcaneapp/arcane/types/v2/template"
 	"github.com/samber/hot"
 	"github.com/samber/mo"
 	"go.getarcane.app/acfs"
+	"go.getarcane.app/kit/normalization"
+	kit "go.getarcane.app/kit/pkg"
+	"go.getarcane.app/kit/pkg/mapping"
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
 )
@@ -62,9 +61,9 @@ const (
 	remoteCacheDuration    = 5 * time.Minute
 	fsSyncInterval         = 1 * time.Minute
 	remoteIconResolveLimit = 4
-)
 
-const remoteIDPrefix = "remote"
+	remoteIDPrefix = "remote"
+)
 
 var errNoRemoteTemplates = errors.New("remote template registries returned no templates")
 
@@ -134,10 +133,7 @@ func (s *TemplateService) ensureRemoteTemplatesLoaded(_ context.Context) error {
 	if err != nil {
 		return errors.WrapIf(err, "failed to load remote templates")
 	}
-	if !found || len(templates) == 0 {
-		return errNoRemoteTemplates
-	}
-	return nil
+	return kit.Ternary(!found || len(templates) == 0, errNoRemoteTemplates, nil)
 }
 
 func (s *TemplateService) refreshRemoteTemplates(ctx context.Context) error {
@@ -169,7 +165,7 @@ func (s *TemplateService) GetAllTemplatesPaginated(ctx context.Context, params p
 	items := make([]tmpl.Template, 0, len(templates))
 	for _, t := range templates {
 		var dtoItem tmpl.Template
-		if err := mapper.MapStruct(&t, &dtoItem); err != nil {
+		if err := mapping.MapStruct(&t, &dtoItem); err != nil {
 			slog.WarnContext(ctx, "failed to map template to DTO", "error", err, "templateID", t.ID)
 			continue
 		}
@@ -206,10 +202,7 @@ func (s *TemplateService) GetAllTemplatesPaginated(ctx context.Context, params p
 					if a.IsRemote == b.IsRemote {
 						return 0
 					}
-					if a.IsRemote {
-						return 1
-					}
-					return -1
+					return kit.Ternary(a.IsRemote, 1, -1)
 				},
 			},
 		},
@@ -217,7 +210,7 @@ func (s *TemplateService) GetAllTemplatesPaginated(ctx context.Context, params p
 			{
 				Key: "type",
 				Fn: func(item tmpl.Template, filterValue string) bool {
-					value, valid := utils.ParseBool(filterValue)
+					value, valid := kit.ParseBool(filterValue)
 					return !valid || item.IsRemote == value
 				},
 			},
@@ -1166,7 +1159,7 @@ func (s *TemplateService) GetTemplateContentWithParsedData(ctx context.Context, 
 	setTemplateIconURL(composeTemplate, projects.ResolveTemplateIconURL(ctx, composeContent, envContent))
 
 	var outTemplate tmpl.Template
-	if mapErr := mapper.MapStruct(composeTemplate, &outTemplate); mapErr != nil {
+	if mapErr := mapping.MapStruct(composeTemplate, &outTemplate); mapErr != nil {
 		return nil, errors.WrapIf(mapErr, "failed to map template")
 	}
 

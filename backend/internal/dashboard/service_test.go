@@ -1,14 +1,6 @@
 package dashboard
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
-
-	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
-
-	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
-
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-
 	"context"
 	"encoding/json"
 	"net/http"
@@ -20,11 +12,15 @@ import (
 	"time"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/container"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/volume"

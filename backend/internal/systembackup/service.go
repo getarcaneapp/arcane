@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"emperror.dev/errors"
-
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/backup"
@@ -46,6 +45,8 @@ import (
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
 	"go.getarcane.app/acfs"
+	"go.getarcane.app/docker/compat"
+	kit "go.getarcane.app/kit/pkg"
 	"go.getarcane.app/sys/cgroup"
 	"gorm.io/gorm"
 )
@@ -56,6 +57,13 @@ const (
 	systemRecoveryRequestName   = ".arcane-recovery-request.json"
 	systemRecoveryHelperPath    = "/app/arcane-recovery-helper"
 	systemAdmissionID           = "system"
+
+	snapshotDataPath     = "/data"
+	snapshotProjectsPath = "/projects"
+
+	recoveryDataRestoreTarget      = "/restore"
+	recoveryProjectsRestoreTarget  = "/restore-projects"
+	selectiveProjectsRestoreTarget = "/arcane-projects"
 )
 
 var ErrSystemBackupAlreadyRunning = errors.New("an Arcane system backup is already running")
@@ -149,7 +157,7 @@ func (s *SystemBackupService) recoveryEnvironmentInternal(ctx context.Context) m
 // databaseFileInternal resolves the SQLite database file: under /app/data in
 // the container, the local data directory in host development.
 func (s *SystemBackupService) databaseFileInternal() (string, error) {
-	databasePath, err := utils.SQLitePathFromDSN(s.config.DatabaseURL)
+	databasePath, err := kit.SQLitePathFromDSN(s.config.DatabaseURL)
 	if err != nil {
 		return "", fmt.Errorf("failed to parse database URL: %w", err)
 	}
@@ -643,13 +651,6 @@ func snapshotRelativePathInternal(filePath, snapshotPath string) (string, bool) 
 	return strings.TrimPrefix(cleanedFile, prefix), true
 }
 
-func protectedSystemBackupPathInternal(candidate, databasePath string) bool {
-	if candidate == systemRecoveryManifestName || candidate == systemRecoveryRequestName {
-		return true
-	}
-	return candidate == databasePath || candidate == databasePath+"-wal" || candidate == databasePath+"-shm" || candidate == databasePath+"-journal"
-}
-
 // projectEntriesFromSnapshotInternal maps a snapshot listing to entries
 // relative to the projects root, dropping protected Arcane data files.
 func projectEntriesFromSnapshotInternal(files []string, layout snapshotLayoutInternal, browsePath string, recursive bool) []backuptypes.BackupFileEntry {
@@ -659,7 +660,7 @@ func projectEntriesFromSnapshotInternal(files []string, layout snapshotLayoutInt
 		if !ok || layout.protectedInternal(projectRelative) {
 			continue
 		}
-		normalized, err := utils.NormalizeRelativePath(projectRelative)
+		normalized, err := kit.NormalizeRelativePath(projectRelative)
 		if err != nil {
 			continue
 		}
@@ -1137,7 +1138,7 @@ func (s *SystemBackupService) RestoreBackup(ctx context.Context, id, recoveryKey
 	if err != nil {
 		return errors.New("arcane system restore requires Arcane to run in Docker")
 	}
-	inspectResult, err := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, client.ContainerInspectOptions{})
+	inspectResult, err := compat.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, client.ContainerInspectOptions{})
 	if err != nil {
 		return fmt.Errorf("inspect Arcane container: %w", err)
 	}
@@ -1460,9 +1461,11 @@ func (s *SystemBackupService) runScheduledBackupInternal(ctx context.Context, po
 		ResourceID: policy.ID, ResourceName: "Arcane", User: &common.SystemUser,
 		Step: "Creating scheduled system backup", Message: "Creating scheduled Arcane system backup",
 		SuccessMessage: "Scheduled Arcane system backup created successfully",
-		Metadata: database.JSON{"action": "scheduled_system_backup", "policyId": policy.ID, "schedule": policy.Schedule,
+		Metadata: database.JSON{
+			"action": "scheduled_system_backup", "policyId": policy.ID, "schedule": policy.Schedule,
 			"retentionCount": policy.RetentionCount, "localEnabled": policy.LocalEnabled,
-			"s3Enabled": policy.S3Enabled, "s3DestinationId": policy.S3DestinationID},
+			"s3Enabled": policy.S3Enabled, "s3DestinationId": policy.S3DestinationID,
+		},
 	}, func(activityCtx context.Context) error {
 		var backupErr error
 		run, backupErr = s.CreateBackup(activityCtx, common.SystemUser, SystemBackupTriggerScheduled,
@@ -1580,10 +1583,7 @@ func (s *SystemBackupService) disableMissingS3Internal(ctx context.Context, poli
 	if !errors.Is(err, backup.ErrRemoteRepositoryMissing) {
 		return false, nil
 	}
-	column := "enabled"
-	if policy.LocalEnabled {
-		column = "s3_enabled"
-	}
+	column := kit.Ternary(policy.LocalEnabled, "s3_enabled", "enabled")
 	result := s.db.WithContext(ctx).Model(&SystemBackupPolicy{}).
 		Where("id = ? AND s3_destination_id = ? AND enabled = ? AND s3_enabled = ? AND local_enabled = ?", policy.ID, policy.S3DestinationID, true, true, policy.LocalEnabled).
 		Update(column, false)
@@ -1598,11 +1598,6 @@ func (s *SystemBackupService) disableMissingS3Internal(ctx context.Context, poli
 	s.rescheduleSystemBackupPolicyInternal(ctx, policy)
 	return true, nil
 }
-
-const (
-	snapshotDataPath     = "/data"
-	snapshotProjectsPath = "/projects"
-)
 
 // backupSourceLayoutInternal is what one system backup snapshots and where
 // each source appears inside the snapshot.
@@ -1628,9 +1623,9 @@ func projectsSnapshotPathInternal(dataDirectory, projectsDirectory string) (proj
 	switch {
 	case projectsDir == data:
 		return snapshotDataPath, false, nil
-	case utils.FilePathMatches(projectsDir, data):
+	case kit.FilePathMatches(projectsDir, data):
 		return path.Join(snapshotDataPath, strings.TrimPrefix(projectsDir, data+"/")), false, nil
-	case utils.FilePathMatches(data, projectsDir):
+	case kit.FilePathMatches(data, projectsDir):
 		return "", false, fmt.Errorf("the projects directory %s contains Arcane's data directory %s; move it inside or outside the data directory before creating system backups", projectsDir, data)
 	default:
 		return snapshotProjectsPath, true, nil
@@ -1725,12 +1720,6 @@ func (s *SystemBackupService) backupSourceLayoutInternal(ctx context.Context, do
 	return layout, nil
 }
 
-const (
-	recoveryDataRestoreTarget      = "/restore"
-	recoveryProjectsRestoreTarget  = "/restore-projects"
-	selectiveProjectsRestoreTarget = "/arcane-projects"
-)
-
 var (
 	errProjectsOutsideDataInternal = errors.New("the backup-time projects directory is outside Arcane's system backup data")
 	errProjectsNotInBackupInternal = errors.New("this system backup does not include the projects directory because it was created before Arcane backed up separately mounted projects; create a new system backup to restore project files")
@@ -1767,7 +1756,13 @@ func (layout snapshotLayoutInternal) protectedInternal(projectRelative string) b
 	if !inside {
 		return false
 	}
-	return protectedSystemBackupPathInternal(path.Join(relative, projectRelative), layout.databaseName)
+	candidate := path.Join(relative, projectRelative)
+	switch candidate {
+	case systemRecoveryManifestName, systemRecoveryRequestName, layout.databaseName, layout.databaseName + "-wal", layout.databaseName + "-shm", layout.databaseName + "-journal":
+		return true
+	default:
+		return false
+	}
 }
 
 // projectsCoveredByDataInternal reports whether restoring the data root already
@@ -1822,7 +1817,7 @@ func snapshotLayoutFromManifestInternal(manifest recoverytypes.Manifest, manifes
 		if err != nil {
 			return snapshotLayoutInternal{}, fmt.Errorf("invalid projects path: %w", err)
 		}
-		databaseName, err := utils.NormalizeRelativePath(manifest.DatabasePath)
+		databaseName, err := kit.NormalizeRelativePath(manifest.DatabasePath)
 		if err != nil {
 			return snapshotLayoutInternal{}, fmt.Errorf("invalid database path: %w", err)
 		}
@@ -1835,7 +1830,7 @@ func snapshotLayoutFromManifestInternal(manifest recoverytypes.Manifest, manifes
 // confinedSnapshotPathInternal validates a recorded snapshot path and returns
 // it in absolute form.
 func confinedSnapshotPathInternal(value string) (string, error) {
-	relative, err := utils.NormalizeRelativePath(strings.TrimPrefix(strings.TrimSpace(value), "/"))
+	relative, err := kit.NormalizeRelativePath(strings.TrimPrefix(strings.TrimSpace(value), "/"))
 	if err != nil {
 		return "", err
 	}
@@ -1866,7 +1861,7 @@ func recoveryManifestDatabasePathInternal(manifest recoverytypes.Manifest) (stri
 	if databaseURL == "" {
 		return "", errors.New("system recovery manifest does not record the database path")
 	}
-	databasePath, err := utils.SQLitePathFromDSN(databaseURL)
+	databasePath, err := kit.SQLitePathFromDSN(databaseURL)
 	if err != nil {
 		return "", fmt.Errorf("parse database URL from system recovery manifest: %w", err)
 	}
@@ -1923,7 +1918,7 @@ func projectsRelativePathFromManifestInternal(manifest recoverytypes.Manifest) (
 	if projectsPath == dataPath {
 		return "", nil
 	}
-	if !utils.FilePathMatches(projectsPath, dataPath) {
+	if !kit.FilePathMatches(projectsPath, dataPath) {
 		return "", errProjectsOutsideDataInternal
 	}
 	return strings.TrimPrefix(projectsPath, dataPath+"/"), nil
@@ -1943,7 +1938,7 @@ func restoreTargetInternal(mounts []containertypes.MountPoint, containerPath, ta
 	}
 	destination := path.Join(target, relative)
 	candidates := slices.DeleteFunc(slices.Clone(mounts), func(m containertypes.MountPoint) bool {
-		return exclude != "" && utils.FilePathMatches(m.Destination, exclude)
+		return exclude != "" && kit.FilePathMatches(m.Destination, exclude)
 	})
 	result := recoverytypes.RestoreTarget{Mounts: []mount.Mount{*enclosing}, Path: destination}
 	result.Mounts = append(result.Mounts, dockerutil.NestedMounts(candidates, containerPath, destination)...)
@@ -1986,10 +1981,7 @@ func restoreStagesInternal(mounts []containertypes.MountPoint, dataDirectory, pr
 	if separate && layout.projectsPath == layout.dataPath {
 		return nil, fmt.Errorf("the backup keeps projects in Arcane's data directory; set the projects directory to %s before a full restore, or restore individual project files instead", dataDirectory)
 	}
-	exclude := ""
-	if separate {
-		exclude = projectsDirectory
-	}
+	exclude := kit.Ternary(separate, projectsDirectory, "")
 	dataTarget, err := restoreTargetInternal(mounts, dataDirectory, recoveryDataRestoreTarget, exclude)
 	if err != nil {
 		return nil, err

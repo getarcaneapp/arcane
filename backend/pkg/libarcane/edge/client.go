@@ -13,16 +13,15 @@ import (
 	"time"
 	"uuid"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
-
 	"emperror.dev/errors"
-
 	"github.com/cenkalti/backoff/v5"
 	"github.com/coder/websocket"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	wshub "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/ws"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	"github.com/samber/mo"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 const (
@@ -165,15 +164,13 @@ func StartupLogAttrs(cfg *Config) []any {
 	if cfg == nil {
 		return []any{
 			"control_plane", "unknown",
-			"managed_session_transports", []string{},
+			"managed_session_transports",
+			[]string{},
 			"security_mode", NormalizeEdgeMTLSMode(""),
 		}
 	}
 
-	controlPlane := "managed"
-	if UsePollEdgeTransport(cfg) {
-		controlPlane = EdgeTransportPoll
-	}
+	controlPlane := kit.Ternary(UsePollEdgeTransport(cfg), EdgeTransportPoll, "managed")
 
 	managedSessionTransports := make([]string, 0, 2)
 	if UseGRPCEdgeTransport(cfg) || (UsePollEdgeTransport(cfg) && strings.TrimSpace(httpx.ManagerGRPCAddr(cfg.ManagerApiUrl)) != "") {
@@ -1035,7 +1032,7 @@ func (c *TunnelClient) closeAllStreams() {
 	})
 }
 
-func (c *TunnelClient) startLocalWebSocketReadLoop(ctx context.Context, streamCtx context.Context, streamID string, ws *websocket.Conn, stream *activeWSStream) {
+func (c *TunnelClient) startLocalWebSocketReadLoop(ctx, streamCtx context.Context, streamID string, ws *websocket.Conn, stream *activeWSStream) {
 	defer func() {
 		c.closeWebSocketStream(streamID, stream)
 	}()
@@ -1057,7 +1054,7 @@ func (c *TunnelClient) startLocalWebSocketReadLoop(ctx context.Context, streamCt
 	}
 }
 
-func (c *TunnelClient) startLocalWebSocketWriteLoop(ctx context.Context, streamCtx context.Context, ws *websocket.Conn, stream *activeWSStream, cancel context.CancelFunc) {
+func (c *TunnelClient) startLocalWebSocketWriteLoop(ctx, streamCtx context.Context, ws *websocket.Conn, stream *activeWSStream, cancel context.CancelFunc) {
 	for {
 		select {
 		case <-streamCtx.Done():
@@ -1097,7 +1094,7 @@ func (c *TunnelClient) sendWebSocketClose(conn TunnelConnection, streamID string
 	c.sendStreamCloseMessage(conn, streamID, "")
 }
 
-func (c *TunnelClient) sendStreamCloseMessage(conn TunnelConnection, streamID string, message string) {
+func (c *TunnelClient) sendStreamCloseMessage(conn TunnelConnection, streamID, message string) {
 	if conn == nil {
 		return
 	}

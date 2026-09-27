@@ -5,16 +5,17 @@ import (
 	"log/slog"
 	"time"
 
-	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
-
 	"github.com/getarcaneapp/arcane/backend/v2/internal/upload"
+	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 )
 
-// UploadSessionsCleanupJobName identifies the hourly purge of idle chunked
-// upload sessions.
-const UploadSessionsCleanupJobName = "upload-sessions-cleanup"
+const (
+	// UploadSessionsCleanupJobName identifies the hourly purge of idle chunked
+	// upload sessions.
+	UploadSessionsCleanupJobName = "upload-sessions-cleanup"
 
-const uploadSessionMaxAge = 24 * time.Hour
+	uploadSessionMaxAge = 24 * time.Hour
+)
 
 // UploadSessionsCleanupJob purges upload sessions that have been idle for
 // longer than uploadSessionMaxAge. It runs on managers and agents alike,

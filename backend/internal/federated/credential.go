@@ -1,19 +1,19 @@
 package federated
 
 import (
+	"cmp"
 	"context"
 	"net/url"
 	"strings"
 
-	"go.getarcane.app/kit/normalization"
-
 	"emperror.dev/errors"
-	"github.com/samber/mo"
-
 	"github.com/getarcaneapp/arcane/backend/v2/internal/auth"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	federatedtypes "github.com/getarcaneapp/arcane/types/v2/federated"
+	"github.com/samber/mo"
+	"go.getarcane.app/kit/normalization"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 func normalizeCreateFederatedCredentialInternal(req federatedtypes.CreateFederatedCredential) (federatedtypes.CreateFederatedCredential, error) {
@@ -23,14 +23,16 @@ func normalizeCreateFederatedCredentialInternal(req federatedtypes.CreateFederat
 	req.IssuerURL = strings.TrimRight(strings.TrimSpace(req.IssuerURL), "/")
 	req.SubjectClaim = strings.TrimSpace(req.SubjectClaim)
 	req.SubjectMatch = strings.TrimSpace(req.SubjectMatch)
-	req.MatchType = normalizeMatchTypeInternal(req.MatchType)
-	req.Audiences = utils.UniqueNonEmptyStrings(req.Audiences)
+	req.MatchType = kit.Ternary(
+		strings.EqualFold(strings.TrimSpace(req.MatchType), federatedtypes.MatchTypeGlob),
+		federatedtypes.MatchTypeGlob,
+		federatedtypes.MatchTypeExact,
+	)
+	req.Audiences = kit.Unique(kit.TrimNonEmpty(req.Audiences))
 	req.EnvironmentID = mo.EmptyableToOption(strings.TrimSpace(mo.PointerToOption(req.EnvironmentID).OrEmpty())).ToPointer()
 	req.TokenTTLSeconds = auth.ClampFederatedTokenTTLSeconds(req.TokenTTLSeconds)
 
-	if req.SubjectClaim == "" {
-		req.SubjectClaim = defaultFederatedSubjectClaim
-	}
+	req.SubjectClaim = cmp.Or(req.SubjectClaim, defaultFederatedSubjectClaim)
 	if req.SubjectMatch == "" || req.RoleID == "" || len(req.Audiences) == 0 {
 		return req, common.Classify(common.ErrFederatedCredentialInvalid, errors.New("invalid federated credential"))
 	}
@@ -62,17 +64,14 @@ func applyFederatedCredentialUpdateInternal(existing FederatedCredential, req fe
 		existing.IssuerURL = issuerURL
 	}
 	if req.Audiences != nil {
-		audiences := utils.UniqueNonEmptyStrings(req.Audiences)
+		audiences := kit.Unique(kit.TrimNonEmpty(req.Audiences))
 		if len(audiences) == 0 {
 			return existing, false, common.Classify(common.ErrFederatedCredentialInvalid, errors.New("invalid federated credential"))
 		}
 		existing.Audiences = audiences
 	}
 	if req.SubjectClaim != nil {
-		subjectClaim := strings.TrimSpace(*req.SubjectClaim)
-		if subjectClaim == "" {
-			subjectClaim = defaultFederatedSubjectClaim
-		}
+		subjectClaim := cmp.Or(strings.TrimSpace(*req.SubjectClaim), defaultFederatedSubjectClaim)
 		existing.SubjectClaim = subjectClaim
 	}
 	if req.SubjectMatch != nil {
@@ -83,7 +82,11 @@ func applyFederatedCredentialUpdateInternal(existing FederatedCredential, req fe
 		existing.SubjectMatch = subjectMatch
 	}
 	if req.MatchType != nil {
-		existing.MatchType = normalizeMatchTypeInternal(*req.MatchType)
+		existing.MatchType = kit.Ternary(
+			strings.EqualFold(strings.TrimSpace(*req.MatchType), federatedtypes.MatchTypeGlob),
+			federatedtypes.MatchTypeGlob,
+			federatedtypes.MatchTypeExact,
+		)
 	}
 	if err := validateSubjectMatchInternal(existing.MatchType, existing.SubjectMatch); err != nil {
 		return existing, false, err
@@ -112,13 +115,6 @@ func applyFederatedCredentialUpdateInternal(existing FederatedCredential, req fe
 	return existing, roleChanged, nil
 }
 
-func normalizeMatchTypeInternal(matchType string) string {
-	if strings.EqualFold(strings.TrimSpace(matchType), federatedtypes.MatchTypeGlob) {
-		return federatedtypes.MatchTypeGlob
-	}
-	return federatedtypes.MatchTypeExact
-}
-
 func validateIssuerURLInternal(rawURL string) error {
 	parsed, err := url.Parse(rawURL)
 	if err != nil || parsed == nil || parsed.Host == "" || parsed.Scheme != "https" {
@@ -128,7 +124,7 @@ func validateIssuerURLInternal(rawURL string) error {
 }
 
 func validateSubjectMatchInternal(matchType, subjectMatch string) error {
-	if strings.TrimSpace(subjectMatch) == "" || normalizeMatchTypeInternal(matchType) == federatedtypes.MatchTypeGlob && strings.TrimSpace(subjectMatch) == "*" {
+	if strings.TrimSpace(subjectMatch) == "" || strings.EqualFold(strings.TrimSpace(matchType), federatedtypes.MatchTypeGlob) && strings.TrimSpace(subjectMatch) == "*" {
 		return common.Classify(common.ErrFederatedCredentialInvalid, errors.New("invalid federated credential"))
 	}
 	return nil

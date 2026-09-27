@@ -1,22 +1,20 @@
 package auth
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
-
 	"context"
 	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cookie"
 	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
 )
@@ -93,7 +91,7 @@ func tryBearerAuthInternal(ctx huma.Context, authService *AuthService) (*common.
 // through. Returns the resolved user plus the API key record so the caller
 // can resolve permissions according to the key's kind.
 func tryApiKeyAuthInternal(ctx huma.Context, apiKeyService *apikey.ApiKeyService) (*common.User, *apikey.ApiKey, bool) {
-	apiKey := ctx.Header(utils.HeaderApiKey)
+	apiKey := ctx.Header(middleware.HeaderApiKey)
 	if apiKey == "" {
 		return nil, nil, false
 	}
@@ -129,18 +127,18 @@ func tryAgentAuthInternal(ctx huma.Context, cfg *config.Config) (*common.User, b
 	path := ctx.URL().Path
 
 	// Check for agent bootstrap pairing
-	if strings.HasPrefix(path, utils.AgentPairingPrefix) &&
-		AgentTokenMatches(ctx.Header(utils.HeaderAgentBootstrap), cfg.AgentToken) {
+	if strings.HasPrefix(path, middleware.AgentPairingPrefix) &&
+		AgentTokenMatches(ctx.Header(middleware.HeaderAgentBootstrap), cfg.AgentToken) {
 		return createAgentSudoUserInternal(), true
 	}
 
 	// Check for agent token
-	if AgentTokenMatches(ctx.Header(utils.HeaderAgentToken), cfg.AgentToken) {
+	if AgentTokenMatches(ctx.Header(middleware.HeaderAgentToken), cfg.AgentToken) {
 		return createAgentSudoUserInternal(), true
 	}
 
 	// Check for API key as agent token
-	if AgentTokenMatches(ctx.Header(utils.HeaderApiKey), cfg.AgentToken) {
+	if AgentTokenMatches(ctx.Header(middleware.HeaderApiKey), cfg.AgentToken) {
 		return createAgentSudoUserInternal(), true
 	}
 
@@ -170,7 +168,7 @@ func applyProxiedIconCatalogInternal(ctx huma.Context, user *common.User) {
 	if user == nil {
 		return
 	}
-	catalog := strings.TrimSpace(ctx.Header(utils.HeaderIconCatalog))
+	catalog := strings.TrimSpace(ctx.Header(middleware.HeaderIconCatalog))
 	if catalog == "" {
 		return
 	}
@@ -207,12 +205,12 @@ func NewHumaMiddleware(api huma.API, authService *AuthService, apiKeyService *ap
 			return
 		}
 
-		if reqs.apiKeyAuth && ctx.Header(utils.HeaderApiKey) != "" {
+		if reqs.apiKeyAuth && ctx.Header(middleware.HeaderApiKey) != "" {
 			handleApiKeyAuthInternal(api, ctx, authService, apiKeyService, permResolver, envTokenResolver, reqs.bearerAuth, next)
 			return
 		}
 
-		if user, env, ok := tryEnvironmentAccessTokenAuthInternal(ctx, envTokenResolver, ctx.Header(utils.HeaderAgentToken)); ok {
+		if user, env, ok := tryEnvironmentAccessTokenAuthInternal(ctx, envTokenResolver, ctx.Header(middleware.HeaderAgentToken)); ok {
 			applyProxiedIconCatalogInternal(ctx, user)
 			newCtx := setUserInContextInternal(ctx.Context(), user, authz.EnvironmentPermissionSet(env.ID))
 			next(huma.WithContext(ctx, newCtx))
@@ -245,11 +243,11 @@ func tryAgentAuthCtxInternal(ctx huma.Context, cfg *config.Config) (huma.Context
 	authCtx := setUserInContextInternal(ctx.Context(), user, authz.SudoPermissionSet())
 	updatePath := strings.Contains(ctx.URL().Path, "/containers/") && strings.HasSuffix(ctx.URL().Path, "/update")
 	if ctx.Method() == http.MethodPost && updatePath {
-		if initiatorID := strings.TrimSpace(ctx.Header(utils.HeaderUpdateInitiatorID)); initiatorID != "" {
+		if initiatorID := strings.TrimSpace(ctx.Header(middleware.HeaderUpdateInitiatorID)); initiatorID != "" {
 			initiator := activitytypes.StartedBy{
 				UserID:      initiatorID,
-				Username:    strings.TrimSpace(ctx.Header(utils.HeaderUpdateInitiatorName)),
-				DisplayName: strings.TrimSpace(ctx.Header(utils.HeaderUpdateInitiatorDisplayName)),
+				Username:    strings.TrimSpace(ctx.Header(middleware.HeaderUpdateInitiatorName)),
+				DisplayName: strings.TrimSpace(ctx.Header(middleware.HeaderUpdateInitiatorDisplayName)),
 			}
 			authCtx = utils.WithUpdateInitiator(authCtx, initiator)
 		}
@@ -293,7 +291,7 @@ func handleApiKeyAuthInternal(api huma.API, ctx huma.Context, authService *AuthS
 		next(huma.WithContext(ctx, newCtx))
 		return
 	}
-	if user, env, ok := tryEnvironmentAccessTokenAuthInternal(ctx, envTokenResolver, ctx.Header(utils.HeaderApiKey)); ok {
+	if user, env, ok := tryEnvironmentAccessTokenAuthInternal(ctx, envTokenResolver, ctx.Header(middleware.HeaderApiKey)); ok {
 		if token, _ := extractBearerTokenInternal(ctx); allowBearerFallback && token != "" {
 			nextCtx, handled := handleBearerAuthInternal(api, ctx, authService, permResolver)
 			if handled {

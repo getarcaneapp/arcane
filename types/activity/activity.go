@@ -11,11 +11,7 @@ const (
 	StatusSuccess   Status = "success"
 	StatusFailed    Status = "failed"
 	StatusCancelled Status = "cancelled"
-)
 
-type Type string
-
-const (
 	TypeImagePull         Type = "image_pull"
 	TypeImageBuild        Type = "image_build"
 	TypeImageUpdateCheck  Type = "image_update_check"
@@ -40,16 +36,16 @@ const (
 	TypeAutoUpdate        Type = "auto_update"
 	TypeSystemPrune       Type = "system_prune"
 	TypeResourceAction    Type = "resource_action"
-)
 
-type MessageLevel string
-
-const (
 	MessageLevelInfo    MessageLevel = "info"
 	MessageLevelWarning MessageLevel = "warning"
 	MessageLevelError   MessageLevel = "error"
 	MessageLevelSuccess MessageLevel = "success"
 )
+
+type Type string
+
+type MessageLevel string
 
 type Activity struct {
 	ID                    string         `json:"id"`

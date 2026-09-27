@@ -1,8 +1,6 @@
 package build
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-
 	"bytes"
 	"context"
 	"encoding/json/v2"
@@ -14,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
@@ -239,7 +238,7 @@ func TestBuildService_ResolveBuildRequest_UsesSavedGitCredentials(t *testing.T) 
 				require.FailNow(t, "git remote probe should not run for ssh URLs")
 				return nil
 			},
-			gitCloneFn: func(_ context.Context, _ string, _ string, auth buildgit.AuthConfig) (string, error) {
+			gitCloneFn: func(_ context.Context, _, _ string, auth buildgit.AuthConfig) (string, error) {
 				assert.Equal(t, "ssh", auth.AuthType)
 				assert.Equal(t, "ssh-private-key", auth.SSHKey)
 				assert.Equal(t, "strict", auth.SSHHostKeyVerification)
@@ -274,7 +273,7 @@ func TestBuildService_BuildImage_PreservesRemoteSourceInHistory(t *testing.T) {
 				captured = req
 			},
 		},
-		gitCloneFn: func(_ context.Context, _ string, _ string, _ buildgit.AuthConfig) (string, error) {
+		gitCloneFn: func(_ context.Context, _, _ string, _ buildgit.AuthConfig) (string, error) {
 			return repoPath, nil
 		},
 		gitCleanupFn: func(string) error { return nil },

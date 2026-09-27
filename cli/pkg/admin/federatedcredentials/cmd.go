@@ -5,6 +5,7 @@
 package federatedcredentials
 
 import (
+	"cmp"
 	"fmt"
 	"time"
 
@@ -289,10 +290,7 @@ func printCredentialInternal(cred federatedtypes.FederatedCredential) {
 	output.KeyValue("Subject claim", cred.SubjectClaim)
 	output.KeyValue("Subject match", cred.SubjectMatch)
 	output.KeyValue("Match type", cred.MatchType)
-	role := cred.RoleName
-	if role == "" {
-		role = cred.RoleID
-	}
+	role := cmp.Or(cred.RoleName, cred.RoleID)
 	output.KeyValue("Role", role)
 	scope := "global"
 	if cred.EnvironmentID != nil {

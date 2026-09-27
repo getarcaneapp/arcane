@@ -1,6 +1,7 @@
 package recovery
 
 import (
+	"cmp"
 	"context"
 	"encoding/json/v2"
 	"fmt"
@@ -10,16 +11,12 @@ import (
 	"time"
 
 	"emperror.dev/errors"
-	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
-
 	"github.com/getarcaneapp/arcane/backend/v2/cli/upgrade"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/systembackup"
 	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	rusticruntime "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/rustic"
 	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
 	backuptypes "github.com/getarcaneapp/arcane/types/v2/backup"
@@ -29,6 +26,9 @@ import (
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
 	"github.com/spf13/cobra"
+	"go.getarcane.app/docker/compat"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const rusticImage = rusticruntime.DefaultImage
@@ -65,7 +65,7 @@ func runRestoreInternal(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("connect to Docker: %w", err)
 	}
 	defer func() { _ = dockerClient.Close() }()
-	inspect, err := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, request.ContainerID, client.ContainerInspectOptions{})
+	inspect, err := compat.ContainerInspectWithCompatibility(ctx, dockerClient, request.ContainerID, client.ContainerInspectOptions{})
 	if err != nil {
 		return fmt.Errorf("inspect Arcane container: %w", err)
 	}
@@ -117,9 +117,7 @@ func runRestoreInternal(_ *cobra.Command, _ []string) error {
 	}
 	// Projects were restored into the current directory, so the recovered
 	// configuration must keep pointing there rather than at the backup-time path.
-	if request.ProjectsSetting != "" {
-		manifest.Environment["PROJECTS_DIRECTORY"] = request.ProjectsSetting
-	}
+	manifest.Environment["PROJECTS_DIRECTORY"] = cmp.Or(request.ProjectsSetting, manifest.Environment["PROJECTS_DIRECTORY"])
 	if err := finalizeRestoredBackupInternal(ctx, manifest.Environment["DATABASE_URL"], manifest.BackupID, manifest.ActivityID, request); err != nil {
 		restart()
 		return fmt.Errorf("finalize restored system backup: %w", err)

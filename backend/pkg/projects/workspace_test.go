@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/types/v2/project"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 func TestReadProjectWorkspace_ExcludesProtectedFilesAndReturnsFolders(t *testing.T) {
@@ -342,7 +342,7 @@ func TestApplyProjectWorkspaceChangesRejectsUnusedUploadsForEmptyManifest(t *tes
 func TestValidateProjectWorkspaceFileName_RejectsPathSeparators(t *testing.T) {
 	t.Parallel()
 
-	_, err := utils.ValidateFileName(strings.Join([]string{"folder", "name"}, string(filepath.Separator)))
+	_, err := kit.ValidateFileName(strings.Join([]string{"folder", "name"}, string(filepath.Separator)))
 	require.Error(t, err)
 }
 

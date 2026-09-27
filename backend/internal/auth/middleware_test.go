@@ -1,19 +1,16 @@
 package auth
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
-
-	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
-
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-
 	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/session"
 	usersvc "github.com/getarcaneapp/arcane/backend/v2/internal/user"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"

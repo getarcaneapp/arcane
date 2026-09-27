@@ -1,10 +1,6 @@
 package container
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-
 	"context"
 	"fmt"
 	"io"
@@ -13,12 +9,12 @@ import (
 	"net/netip"
 	"strings"
 
-	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
-
 	"emperror.dev/errors"
 	"github.com/containerd/errdefs"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
@@ -28,11 +24,13 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	containertypes "github.com/getarcaneapp/arcane/types/v2/container"
 	dockercontainer "github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/network"
 	"github.com/samber/mo"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 type ContainerHandler struct {
@@ -400,22 +398,6 @@ func parsePortSpec(spec string) (network.Port, error) {
 	return network.ParsePort(spec + "/tcp")
 }
 
-func resolveCreateCommand(body containertypes.Create) []string {
-	if len(body.Command) > 0 {
-		return body.Command
-	}
-
-	return body.Cmd
-}
-
-func resolveCreateEnv(body containertypes.Create) []string {
-	if len(body.Environment) > 0 {
-		return body.Environment
-	}
-
-	return body.Env
-}
-
 func buildCreateLabels(body containertypes.Create) map[string]string {
 	labels := map[string]string{
 		"com.arcane.created": "true",
@@ -428,11 +410,11 @@ func buildCreateLabels(body containertypes.Create) map[string]string {
 func buildContainerConfig(body containertypes.Create) *dockercontainer.Config {
 	return &dockercontainer.Config{
 		Image:           body.Image,
-		Cmd:             resolveCreateCommand(body),
+		Cmd:             kit.Ternary(len(body.Command) > 0, body.Command, body.Cmd),
 		Entrypoint:      body.Entrypoint,
 		WorkingDir:      body.WorkingDir,
 		User:            body.User,
-		Env:             resolveCreateEnv(body),
+		Env:             kit.Ternary(len(body.Environment) > 0, body.Environment, body.Env),
 		ExposedPorts:    network.PortSet{},
 		Labels:          buildCreateLabels(body),
 		Healthcheck:     healthConfigFromCreateInternal(body.Healthcheck),
@@ -1020,10 +1002,7 @@ func (h *ContainerHandler) SetAutoUpdate(ctx context.Context, input *SetAutoUpda
 		return nil, huma.Error500InternalServerError("failed to update auto-update setting")
 	}
 
-	msg := "Auto-update enabled"
-	if excluded {
-		msg = "Auto-update disabled"
-	}
+	msg := kit.Ternary(excluded, "Auto-update disabled", "Auto-update enabled")
 
 	return &handlerutil.Out[base.MessageResponse]{
 		Body: base.ApiResponse[base.MessageResponse]{

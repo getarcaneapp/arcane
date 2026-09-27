@@ -2,7 +2,6 @@ package output
 
 import (
 	"fmt"
-	"io"
 	"sync"
 
 	"charm.land/bubbles/v2/progress"
@@ -144,22 +143,15 @@ func (m progressModel) View() tea.View {
 
 	bar := m.progress.ViewAs(percent)
 	if m.total > 0 {
-		return tea.NewView(fmt.Sprintf("%s\n%s %s/%s", m.label, bar, safeCapacity(m.current), safeCapacity(m.total)))
+		return tea.NewView(fmt.Sprintf("%s\n%s %s/%s", m.label, bar, bytes.Capacity(uint64(max(m.current, 0))), bytes.Capacity(uint64(max(m.total, 0)))))
 	}
 	return tea.NewView(fmt.Sprintf("%s\n%s", m.label, bar))
-}
-
-func safeCapacity(value int64) bytes.Capacity {
-	if value < 0 {
-		return bytes.Capacity(0)
-	}
-	return bytes.Capacity(uint64(value))
 }
 
 // Bytes renders a signed byte count in human-readable form. Negative values,
 // which bytes.Capacity would otherwise wrap into the exabyte range, render as 0.
 func Bytes(value int64) string {
-	return safeCapacity(value).String()
+	return bytes.Capacity(uint64(max(value, 0))).String()
 }
 
 // UnsignedBytes renders an unsigned byte count in human-readable form.
@@ -245,25 +237,4 @@ func (p *Progress) Stop() {
 	p.program.Send(progressDoneMsg{})
 	<-p.done
 	fmt.Println()
-}
-
-// NewProgressReader wraps a reader to report progress updates.
-func NewProgressReader(r io.Reader, progress *Progress) io.Reader {
-	if progress == nil {
-		return r
-	}
-	return &progressReader{reader: r, progress: progress}
-}
-
-type progressReader struct {
-	reader   io.Reader
-	progress *Progress
-}
-
-func (p *progressReader) Read(buf []byte) (int, error) {
-	n, err := p.reader.Read(buf)
-	if n > 0 {
-		p.progress.Add(int64(n))
-	}
-	return n, err
 }

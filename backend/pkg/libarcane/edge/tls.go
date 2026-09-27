@@ -2,6 +2,7 @@ package edge
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"crypto"
 	"crypto/ecdsa"
@@ -27,14 +28,13 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
-
 	"emperror.dev/errors"
-
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	certgen "github.com/getarcaneapp/arcane/cli/v2/pkg/generate"
 	"go.getarcane.app/acfs"
 	"go.getarcane.app/acfs/atomic"
+	kit "go.getarcane.app/kit/pkg"
 	libcrypto "go.getarcane.app/sys/crypto"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/peer"
@@ -56,6 +56,11 @@ const (
 	maxEnrollResponseBytes      = 1 << 20
 	managerCALockTimeout        = 2 * time.Minute
 	managerCALockPollInterval   = 100 * time.Millisecond
+
+	// caKeyEncryptedPrefix marks files written with libcrypto envelope encryption.
+	// The payload after the prefix is the base64 ciphertext returned by
+	// libcrypto.Encrypt of the plain PEM-encoded CA private key.
+	caKeyEncryptedPrefix = "ARCANE-ENC-V1:"
 )
 
 var generatedAssetNameSanitizer = regexp.MustCompile(`[^a-zA-Z0-9._-]+`)
@@ -168,7 +173,7 @@ func AvailableManagerMTLSCAPath(cfg *Config) (string, error) {
 }
 
 // GenerateManagerClientMTLSAssetsWithContext creates or loads the generated CA and per-environment client certificate bundle.
-func GenerateManagerClientMTLSAssetsWithContext(ctx context.Context, cfg *Config, envID string, envName string) (*GeneratedMTLSAssets, error) {
+func GenerateManagerClientMTLSAssetsWithContext(ctx context.Context, cfg *Config, envID, envName string) (*GeneratedMTLSAssets, error) {
 	if !shouldUseGeneratedManagerCAInternal(cfg) {
 		return nil, nil
 	}
@@ -232,10 +237,7 @@ func managerMTLSEnrollmentStateInternal(cfg *Config, envID string, now time.Time
 	}
 	enrolledAt, err := readMTLSEnrollmentMarkerInternal(markerPath)
 	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return false, false, nil
-		}
-		return false, false, err
+		return false, false, kit.Ternary(errors.Is(err, fs.ErrNotExist), nil, err)
 	}
 	if now.IsZero() {
 		now = time.Now()
@@ -392,10 +394,7 @@ func enrollAgentMTLSAssetsInternal(ctx context.Context, cfg *Config, assetsDir, 
 		return errors.WrapIf(err, "failed to create edge mTLS asset dir")
 	}
 	for _, file := range enrollResp.Files {
-		perm := utils.FilePerm
-		if strings.TrimSpace(file.Permissions) == "0600" {
-			perm = 0o600
-		}
+		perm := kit.Ternary(strings.TrimSpace(file.Permissions) == "0600", 0o600, utils.FilePerm)
 		if err := acfs.Write(ctx, assetsDir, "/"+filepath.Base(file.Name), []byte(file.Content), acfs.WriteOptions{Mode: perm}); err != nil {
 			return errors.WrapIff(err, "failed to write edge mTLS asset %s", file.Name)
 		}
@@ -622,10 +621,7 @@ func setAgentMTLSAssetPathsInternal(cfg *Config, assetsDir string) {
 }
 
 func requestSecurityModeInternal(req *http.Request) string {
-	if hasVerifiedEdgeMTLSRequestInternal(req) {
-		return "mtls"
-	}
-	return "token"
+	return kit.Ternary(hasVerifiedEdgeMTLSRequestInternal(req), "mtls", "token")
 }
 
 func hasVerifiedEdgeMTLSRequestInternal(req *http.Request) bool {
@@ -649,7 +645,7 @@ func hasVerifiedPeerCertificateInternal(state *tls.ConnectionState) bool {
 	return len(state.PeerCertificates) > 0 && len(state.VerifiedChains) > 0
 }
 
-func verifiedPeerCertificateEnvironmentIDMatchesInternal(state *tls.ConnectionState, envID string, trustDomain string) error {
+func verifiedPeerCertificateEnvironmentIDMatchesInternal(state *tls.ConnectionState, envID, trustDomain string) error {
 	if !hasVerifiedPeerCertificateInternal(state) {
 		return nil
 	}
@@ -685,10 +681,7 @@ func edgeMTLSAppURLInternal(cfg *Config) string {
 
 func expectedEdgeMTLSURIPathInternal(envID string) string {
 	safeEnvID := generatedAssetNameSanitizer.ReplaceAllString(strings.TrimSpace(envID), "_")
-	if safeEnvID == "" {
-		return ""
-	}
-	return "/edge/" + safeEnvID
+	return kit.Ternary(safeEnvID == "", "", "/edge/"+safeEnvID)
 }
 
 func edgeMTLSAssetsDirInternal(cfg *Config) (string, error) {
@@ -785,7 +778,7 @@ func ensureManagerCAInternal(ctx context.Context, assetsDir string) (string, str
 	return caCertPath, caKeyPath, true, nil
 }
 
-func generatedCAReadyInternal(caCertPath string, caKeyPath string) bool {
+func generatedCAReadyInternal(caCertPath, caKeyPath string) bool {
 	if !fileExistsInternal(caCertPath) || !fileExistsInternal(caKeyPath) {
 		return false
 	}
@@ -795,7 +788,7 @@ func generatedCAReadyInternal(caCertPath string, caKeyPath string) bool {
 	return true
 }
 
-func ensureClientCertificateInternal(ctx context.Context, assetsDir string, envID string, envName string, appURL string) (string, string, bool, error) {
+func ensureClientCertificateInternal(ctx context.Context, assetsDir, envID, envName, appURL string) (string, string, bool, error) {
 	caCertPath, caKeyPath, _, err := ensureManagerCAInternal(ctx, assetsDir)
 	if err != nil {
 		return "", "", false, err
@@ -887,7 +880,7 @@ func ensureClientCertificateInternal(ctx context.Context, assetsDir string, envI
 	return clientCertPath, clientKeyPath, true, nil
 }
 
-func buildGeneratedClientCommonNameInternal(envName string, safeEnvID string) string {
+func buildGeneratedClientCommonNameInternal(envName, safeEnvID string) string {
 	safeEnvID = strings.TrimSpace(safeEnvID)
 	if safeEnvID == "" {
 		return ""
@@ -919,7 +912,7 @@ func buildGeneratedClientCommonNameInternal(envName string, safeEnvID string) st
 // Names to embed in a generated edge agent client certificate. The URI SAN
 // provides a stable machine-readable identity; DNS SANs improve interop with
 // stricter verifiers. Returns a nil URI if safeEnvID is empty.
-func buildGeneratedClientSANsInternal(envName string, safeEnvID string, appURL string) (*url.URL, []string) {
+func buildGeneratedClientSANsInternal(envName, safeEnvID, appURL string) (*url.URL, []string) {
 	safeEnvID = strings.TrimSpace(safeEnvID)
 	if safeEnvID == "" {
 		return nil, nil
@@ -963,7 +956,7 @@ func validateGeneratedCAInternal(certPath, keyPath string) error {
 	return nil
 }
 
-func validateGeneratedClientCertificateInternal(certPath, keyPath string, expectedCommonName string, expectedURISAN *url.URL) error {
+func validateGeneratedClientCertificateInternal(certPath, keyPath, expectedCommonName string, expectedURISAN *url.URL) error {
 	cert, err := readCertificateInternal(certPath)
 	if err != nil {
 		return err
@@ -1008,7 +1001,7 @@ func certificateHasURISANInternal(cert *x509.Certificate, expected *url.URL) boo
 	return false
 }
 
-func agentMTLSAssetsNeedEnrollmentInternal(certPath string, keyPath string, now time.Time) (bool, string) {
+func agentMTLSAssetsNeedEnrollmentInternal(certPath, keyPath string, now time.Time) (bool, string) {
 	if !fileExistsInternal(certPath) || !fileExistsInternal(keyPath) {
 		return true, "certificate or key is missing"
 	}
@@ -1129,15 +1122,12 @@ func readPrivateKeyInternal(path string) (crypto.Signer, error) {
 	return parsePrivateKeyPEMInternal(pemBytes, path)
 }
 
-func lockEdgeMTLSPathInternal(ctx context.Context, dir string, lockName string) (func(), error) {
+func lockEdgeMTLSPathInternal(ctx context.Context, dir, lockName string) (func(), error) {
 	absDir, err := filepath.Abs(dir)
 	if err != nil {
 		return nil, errors.WrapIf(err, "failed to resolve edge mTLS lock dir")
 	}
-	lockName = strings.TrimSpace(lockName)
-	if lockName == "" {
-		lockName = ".lock"
-	}
+	lockName = cmp.Or(strings.TrimSpace(lockName), ".lock")
 
 	lockPath := filepath.Join(absDir, lockName)
 
@@ -1252,18 +1242,13 @@ func edgeMTLSLockPIDAliveInternal(pid int) bool {
 	return err == nil || errors.Is(err, syscall.EPERM)
 }
 
-func writePEMFileInternal(path string, blockType string, bytes []byte, perm os.FileMode) error {
+func writePEMFileInternal(path, blockType string, bytes []byte, perm os.FileMode) error {
 	pemBytes := pem.EncodeToMemory(&pem.Block{Type: blockType, Bytes: bytes})
 	if pemBytes == nil {
 		return errors.Errorf("failed to encode PEM file %s", path)
 	}
 	return atomic.WriteFile(path, pemBytes, perm)
 }
-
-// caKeyEncryptedPrefix marks files written with libcrypto envelope encryption.
-// The payload after the prefix is the base64 ciphertext returned by
-// libcrypto.Encrypt of the plain PEM-encoded CA private key.
-const caKeyEncryptedPrefix = "ARCANE-ENC-V1:"
 
 var caKeyEncryptInternal = libcrypto.Encrypt
 

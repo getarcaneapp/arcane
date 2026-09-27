@@ -1,15 +1,13 @@
 package gitrepo
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"go.getarcane.app/kit/normalization"
-
+	"cmp"
 	"context"
 	"fmt"
 	"strings"
 
 	"emperror.dev/errors"
-
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
@@ -21,6 +19,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/gitops"
 	"github.com/samber/mo"
 	"go.getarcane.app/builds/pkg/contextsource"
+	"go.getarcane.app/kit/normalization"
 	"go.getarcane.app/sys/crypto"
 	"gorm.io/gorm"
 )
@@ -137,9 +136,7 @@ func (s *GitRepositoryService) CreateRepository(ctx context.Context, req gitops.
 	}
 
 	// Default to accept_new if not specified
-	if repository.SSHHostKeyVerification == "" {
-		repository.SSHHostKeyVerification = "accept_new"
-	}
+	repository.SSHHostKeyVerification = cmp.Or(repository.SSHHostKeyVerification, "accept_new")
 
 	if req.Enabled != nil {
 		repository.Enabled = *req.Enabled
@@ -334,7 +331,7 @@ func (s *GitRepositoryService) DeleteRepository(ctx context.Context, id string, 
 	return nil
 }
 
-func (s *GitRepositoryService) TestConnection(ctx context.Context, id string, branch string, actor common.User) error {
+func (s *GitRepositoryService) TestConnection(ctx context.Context, id, branch string, actor common.User) error {
 	settings := s.settingsService.GetSettingsConfig()
 	ctx, cancel := context.WithTimeout(ctx, timeouts.GetDuration(settings.GitOperationTimeout.AsInt(), timeouts.DefaultGitOperation))
 	defer cancel()
@@ -412,12 +409,8 @@ func (s *GitRepositoryService) GetAuthConfig(ctx context.Context, repository *Gi
 // repository, with the signing key unlocked when one is stored.
 func (s *GitRepositoryService) GetCommitIdentity(ctx context.Context, repository *GitRepository) (git.CommitIdentity, error) {
 	identity := git.CommitIdentity{Name: repository.CommitAuthorName, Email: repository.CommitAuthorEmail}
-	if identity.Name == "" {
-		identity.Name = defaultCommitAuthorName
-	}
-	if identity.Email == "" {
-		identity.Email = defaultCommitAuthorEmail
-	}
+	identity.Name = cmp.Or(identity.Name, defaultCommitAuthorName)
+	identity.Email = cmp.Or(identity.Email, defaultCommitAuthorEmail)
 	if repository.SigningKey == "" {
 		return identity, nil
 	}
@@ -432,10 +425,7 @@ func (s *GitRepositoryService) GetCommitIdentity(ctx context.Context, repository
 		}
 	}
 	identity.SignKey, err = git.ParseSigningKey(armored, passphrase)
-	if err != nil {
-		return identity, err
-	}
-	return identity, nil
+	return identity, err
 }
 
 // encryptSigningKeyInternal validates that armored unlocks with passphrase and
@@ -689,10 +679,7 @@ func (s *GitRepositoryService) createNewRepository(ctx context.Context, item git
 		}
 	}
 
-	sshHostKeyVerification := item.SSHHostKeyVerification
-	if sshHostKeyVerification == "" {
-		sshHostKeyVerification = "accept_new"
-	}
+	sshHostKeyVerification := cmp.Or(item.SSHHostKeyVerification, "accept_new")
 
 	repo := GitRepository{
 		Name:                   item.Name,

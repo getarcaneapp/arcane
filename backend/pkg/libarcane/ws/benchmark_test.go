@@ -48,7 +48,7 @@ func benchWSServer(b *testing.B) (url string, cleanup func()) {
 
 // benchHub creates a hub with N connected clients whose send channels are drained.
 // Returns the hub, a context cancel func, and a cleanup func.
-func benchHub(b *testing.B, numClients int, hubBuf int) (*Hub, context.CancelFunc, func()) {
+func benchHub(b *testing.B, numClients, hubBuf int) (*Hub, context.CancelFunc, func()) {
 	b.Helper()
 
 	h := NewHub(hubBuf)

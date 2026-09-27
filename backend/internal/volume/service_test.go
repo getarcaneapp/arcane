@@ -254,7 +254,6 @@ func TestIsVolumeHelperContainerInternal_UsesExplicitHelperLabel(t *testing.T) {
 }
 
 func TestEnrichVolumesWithUsageDataInternal(t *testing.T) {
-
 	tests := []struct {
 		name         string
 		volumes      []volume.Volume

@@ -27,7 +27,8 @@ func TestNewEchoInternal_DecodesPathParams(t *testing.T) {
 	}, func(_ context.Context, input *struct {
 		ID      string `path:"id"`
 		ImageID string `path:"imageId"`
-	}) (*struct{}, error) {
+	},
+	) (*struct{}, error) {
 		got = input.ImageID
 		return nil, nil
 	})

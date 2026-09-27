@@ -2,14 +2,12 @@ package projects
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"log/slog"
 	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -22,6 +20,7 @@ import (
 	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
 	"github.com/samber/hot"
 	"go.getarcane.app/acfs"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 const (
@@ -31,6 +30,15 @@ const (
 	OverrideEnvFileName                   = "project.env"
 	ProjectEnvModeDirect   ProjectEnvMode = "direct"
 	ProjectEnvModeOverride ProjectEnvMode = "override"
+
+	// Docker Compose pre-defined variable names that compose-go's consts package
+	// does not export. See https://docs.docker.com/compose/how-tos/environment-variables/envvars.
+	composeEnvFilesKey      = "COMPOSE_ENV_FILES"
+	composeRemoveOrphansKey = "COMPOSE_REMOVE_ORPHANS"
+	composeIgnoreOrphansKey = "COMPOSE_IGNORE_ORPHANS"
+	composeParallelLimitKey = "COMPOSE_PARALLEL_LIMIT"
+
+	defaultComposePathSeparator = ":"
 )
 
 type EnvMap = map[string]string
@@ -110,7 +118,7 @@ func allowedProcessEnvInternal() EnvMap {
 // 3. Project-specific .env file (from workdir)
 // The rest of the Arcane process environment is intentionally excluded so its
 // own variables never leak into compose interpolation of managed projects.
-func (l *EnvLoader) LoadEnvironment(ctx context.Context) (envMap EnvMap, injectionVars EnvMap, err error) {
+func (l *EnvLoader) LoadEnvironment(ctx context.Context) (envMap, injectionVars EnvMap, err error) {
 	envMap = allowedProcessEnvInternal()
 	injectionVars = make(EnvMap)
 
@@ -150,15 +158,12 @@ func (l *EnvLoader) LoadEnvironment(ctx context.Context) (envMap EnvMap, injecti
 
 func (l *EnvLoader) mergeComposeEnvFilesInternal(ctx context.Context, envMap, injectionVars EnvMap) {
 	parse := func(path string, contextEnv EnvMap) (EnvMap, error) {
-		key := strings.Join([]string{path, l.projectsDir, strconv.FormatBool(l.autoInjectEnv), envContextFingerprintInternal(contextEnv)}, "\x00")
+		key := strings.Join([]string{path, l.projectsDir, strconv.FormatBool(l.autoInjectEnv), strconv.FormatUint(kit.Fingerprint(contextEnv), 16)}, "\x00")
 		entry, err := loadCachedEnvFileInternal(ctx, projectEnvFileCache, key, path, contextEnv)
 		if err != nil {
 			return nil, err
 		}
-		if !entry.exists {
-			return nil, nil
-		}
-		return entry.values, nil
+		return kit.Ternary(!entry.exists, nil, entry.values), nil
 	}
 	onMerged := func(values EnvMap) {
 		if l.autoInjectEnv {
@@ -187,7 +192,7 @@ func (l *EnvLoader) loadAndMergeGlobalEnv(ctx context.Context, path string, envM
 }
 
 func (l *EnvLoader) loadAndMergeProjectEnv(ctx context.Context, path string, envMap, injectionVars EnvMap) error {
-	key := strings.Join([]string{path, l.projectsDir, strconv.FormatBool(l.autoInjectEnv), envContextFingerprintInternal(envMap)}, "\x00")
+	key := strings.Join([]string{path, l.projectsDir, strconv.FormatBool(l.autoInjectEnv), strconv.FormatUint(kit.Fingerprint(envMap), 16)}, "\x00")
 	entry, err := loadCachedEnvFileInternal(ctx, projectEnvFileCache, key, path, envMap)
 	if err != nil {
 		return err
@@ -246,26 +251,6 @@ func loadCachedEnvFileInternal(_ context.Context, envCache *hot.HotCache[string,
 		return envFileCacheEntry{}, errors.New("environment file cache loader returned no entry")
 	}
 	return entry, nil
-}
-
-func envContextFingerprintInternal(envMap EnvMap) string {
-	if len(envMap) == 0 {
-		return ""
-	}
-	keys := make([]string, 0, len(envMap))
-	for key := range envMap {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	var b strings.Builder
-	for _, key := range keys {
-		b.WriteString(key)
-		b.WriteByte('=')
-		b.WriteString(envMap[key])
-		b.WriteByte('\n')
-	}
-	sum := sha256.Sum256([]byte(b.String()))
-	return hex.EncodeToString(sum[:])
 }
 
 func validEnvFileCacheEntryInternal(entry envFileCacheEntry) bool {
@@ -414,10 +399,8 @@ func BuildEffectiveEnvContent(gitContent, overrideContent string) (string, error
 		return gitContent, nil
 	}
 
-	concatenated := gitContent + "\n" + overrideContent
-	if strings.HasSuffix(gitContent, "\n") || strings.HasPrefix(overrideContent, "\n") {
-		concatenated = gitContent + overrideContent
-	}
+	separated := strings.HasSuffix(gitContent, "\n") || strings.HasPrefix(overrideContent, "\n")
+	concatenated := kit.Ternary(separated, gitContent+overrideContent, gitContent+"\n"+overrideContent)
 
 	candidate, ok := mergeEnvOverridesInPlaceInternal(gitContent, overrideContent, overrideEnv)
 	if !ok {
@@ -429,7 +412,6 @@ func BuildEffectiveEnvContent(gitContent, overrideContent string) (string, error
 	if candidateErr == nil && expectedErr == nil && maps.Equal(candidateEnv, expectedEnv) {
 		return candidate, nil
 	}
-
 	return concatenated, nil
 }
 
@@ -748,11 +730,7 @@ func formatEnvMapInternal(envMap EnvMap) string {
 		return ""
 	}
 
-	keys := make([]string, 0, len(envMap))
-	for key := range envMap {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
+	keys := slices.Sorted(maps.Keys(envMap))
 
 	var builder strings.Builder
 	for _, key := range keys {
@@ -786,17 +764,6 @@ func formatEnvValueInternal(value string) string {
 
 	return `"` + escaped + `"`
 }
-
-// Docker Compose pre-defined variable names that compose-go's consts package
-// does not export. See https://docs.docker.com/compose/how-tos/environment-variables/envvars.
-const (
-	composeEnvFilesKey      = "COMPOSE_ENV_FILES"
-	composeRemoveOrphansKey = "COMPOSE_REMOVE_ORPHANS"
-	composeIgnoreOrphansKey = "COMPOSE_IGNORE_ORPHANS"
-	composeParallelLimitKey = "COMPOSE_PARALLEL_LIMIT"
-
-	defaultComposePathSeparator = ":"
-)
 
 // ComposeEnvOptions holds the deployment-relevant Docker Compose pre-defined
 // environment variables parsed from a project's merged environment.
@@ -834,7 +801,7 @@ func ParseComposeEnvOptions(workdir string, env EnvMap) (ComposeEnvOptions, erro
 	opts.ConfigFiles = files
 
 	if raw := strings.TrimSpace(env[consts.ComposeProfiles]); raw != "" {
-		opts.Profiles = splitAndTrimInternal(raw, ",")
+		opts.Profiles = kit.TrimNonEmpty(strings.Split(raw, ","))
 	}
 
 	for _, entry := range ComposeEnvFileEntriesFromEnv(env) {
@@ -910,7 +877,7 @@ func ComposeFileEntriesFromEnv(env EnvMap) []string {
 		separator = custom
 	}
 
-	return splitAndTrimInternal(raw, separator)
+	return kit.TrimNonEmpty(strings.Split(raw, separator))
 }
 
 // ComposeEnvFileEntriesFromEnv returns the raw COMPOSE_ENV_FILES entries
@@ -921,7 +888,7 @@ func ComposeEnvFileEntriesFromEnv(env EnvMap) []string {
 	if raw == "" {
 		return nil
 	}
-	return splitAndTrimInternal(raw, ",")
+	return kit.TrimNonEmpty(strings.Split(raw, ","))
 }
 
 // resolveComposeFileSelectionInternal parses COMPOSE_FILE from env into an
@@ -1002,17 +969,6 @@ func mergeComposeEnvFilesInternal(ctx context.Context, workdir string, envMap En
 			onMerged(values)
 		}
 	}
-}
-
-func splitAndTrimInternal(raw, sep string) []string {
-	parts := strings.Split(raw, sep)
-	out := make([]string, 0, len(parts))
-	for _, p := range parts {
-		if trimmed := strings.TrimSpace(p); trimmed != "" {
-			out = append(out, trimmed)
-		}
-	}
-	return out
 }
 
 func parseComposeBoolInternal(env EnvMap, key string) bool {

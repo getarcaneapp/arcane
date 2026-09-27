@@ -22,6 +22,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"go.getarcane.app/acfs"
 	acfstypes "go.getarcane.app/acfs/types"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 var (
@@ -331,10 +332,7 @@ func stageCommitFilesInternal(ctx context.Context, checkout *WriteCheckout, work
 		if err := acfs.MkdirAll(ctx, checkout.RepoPath, path.Dir(logical), 0o755); err != nil {
 			return errors.WrapIff(err, "failed to create directory for %s", file.Path)
 		}
-		mode := os.FileMode(0o644)
-		if file.Executable {
-			mode = 0o755
-		}
+		mode := kit.Ternary(file.Executable, 0o755, os.FileMode(0o644))
 		if _, err := acfs.WriteFrom(ctx, checkout.RepoPath, logical, bytes.NewReader(file.Content), int64(len(file.Content)), mode); err != nil {
 			return errors.WrapIff(err, "failed to write %s", file.Path)
 		}
@@ -403,10 +401,7 @@ func isPushRejectedInternal(err error) bool {
 func (c *Client) RemoteBranchHead(ctx context.Context, url, branch string, auth AuthConfig) (string, bool, error) {
 	refs, err := c.listRemoteReferences(ctx, url, auth)
 	if err != nil {
-		if errors.Is(err, transport.ErrEmptyRemoteRepository) {
-			return "", false, nil
-		}
-		return "", false, err
+		return "", false, kit.Ternary(errors.Is(err, transport.ErrEmptyRemoteRepository), nil, err)
 	}
 	refName := plumbing.NewBranchReferenceName(branch)
 	for _, ref := range refs {
@@ -509,10 +504,7 @@ func (c *Client) CommitDiff(ctx context.Context, repoPath, commitHash, directory
 
 func directoryPrefixInternal(directory string) string {
 	cleaned := strings.Trim(path.Clean(filepath.ToSlash(directory)), "/")
-	if cleaned == "" || cleaned == "." {
-		return ""
-	}
-	return cleaned + "/"
+	return kit.Ternary(cleaned == "" || cleaned == ".", "", cleaned+"/")
 }
 
 func historyEntryInternal(commit *object.Commit, files []string) HistoryEntry {

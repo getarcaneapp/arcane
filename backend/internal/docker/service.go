@@ -9,13 +9,11 @@ import (
 	"time"
 
 	"emperror.dev/errors"
-
 	"github.com/cenkalti/backoff/v5"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	docker "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	dashboardtypes "github.com/getarcaneapp/arcane/types/v2/dashboard"
@@ -27,12 +25,20 @@ import (
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/api/types/volume"
 	"github.com/moby/moby/client"
+	"go.getarcane.app/docker/compat"
+	kit "go.getarcane.app/kit/pkg"
 	"go.getarcane.app/streams/bus"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/singleflight"
 )
 
-const dockerClientNegotiationTimeout = 5 * time.Second
+const (
+	dockerClientNegotiationTimeout = 5 * time.Second
+
+	// dockerEventStreamHealthyAfter is how long an event stream must survive before
+	// the reconnect backoff is considered recovered and reset.
+	dockerEventStreamHealthyAfter = 30 * time.Second
+)
 
 type DockerClientService struct {
 	*client.Client
@@ -114,7 +120,7 @@ func detectDockerAPIVersionInternal(ctx context.Context, host string) (string, e
 	return apiVersion, nil
 }
 
-func newDockerClientWithAPIVersionInternal(host string, apiVersion string) (*client.Client, error) {
+func newDockerClientWithAPIVersionInternal(host, apiVersion string) (*client.Client, error) {
 	configuredClient, err := client.New(
 		client.WithHost(host),
 		client.WithAPIVersion(apiVersion),
@@ -235,10 +241,6 @@ func (s *DockerClientService) EventBus() *bus.DockerEventBus {
 	return s.eventBus
 }
 
-// dockerEventStreamHealthyAfter is how long an event stream must survive before
-// the reconnect backoff is considered recovered and reset.
-const dockerEventStreamHealthyAfter = 30 * time.Second
-
 func (s *DockerClientService) WatchEvents(ctx context.Context) {
 	eventBackoff := backoff.NewExponentialBackOff()
 	eventBackoff.InitialInterval = 500 * time.Millisecond
@@ -290,10 +292,7 @@ func (s *DockerClientService) consumeEventsInternal(ctx context.Context, message
 			}
 			s.EventBus().Publish(msg)
 		case err, ok := <-errs:
-			if !ok {
-				return nil
-			}
-			return err
+			return kit.Ternary(!ok, nil, err)
 		}
 	}
 }
@@ -392,7 +391,7 @@ func (s *DockerClientService) listNetworksInternal(ctx context.Context) ([]netwo
 	apiCtx, cancel := context.WithTimeout(ctx, s.apiTimeoutInternal())
 	defer cancel()
 
-	networkList, err := libarcane.NetworkListWithCompatibility(apiCtx, dockerClient, client.NetworkListOptions{})
+	networkList, err := compat.NetworkListWithCompatibility(apiCtx, dockerClient, client.NetworkListOptions{})
 	if err != nil {
 		return nil, errors.WrapIf(err, "failed to list Docker networks")
 	}

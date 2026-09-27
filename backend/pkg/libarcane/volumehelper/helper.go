@@ -9,12 +9,13 @@ import (
 
 	"emperror.dev/errors"
 	ref "github.com/distribution/reference"
-
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
 	"github.com/samber/mo"
+	"go.getarcane.app/docker/compat"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 // RuntimeImage describes the Arcane runtime image that can run internal helper
@@ -103,7 +104,7 @@ func ResolveHelperImage(ctx context.Context, dockerClient *client.Client, toolsI
 func ResolveArcaneRuntimeImage(ctx context.Context, dockerClient *client.Client) mo.Option[RuntimeImage] {
 	hostname, _ := os.Hostname()
 	if hostname != "" {
-		if inspect, err := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, hostname, client.ContainerInspectOptions{}); err == nil && inspect.Container.Config != nil && strings.TrimSpace(inspect.Container.Config.Image) != "" {
+		if inspect, err := compat.ContainerInspectWithCompatibility(ctx, dockerClient, hostname, client.ContainerInspectOptions{}); err == nil && inspect.Container.Config != nil && strings.TrimSpace(inspect.Container.Config.Image) != "" {
 			return mo.Some(buildRuntimeImageInternal(inspect.Container.Config.Image, inspect.Container.Config.Entrypoint, inspect.Container.Config.Cmd, "hostname"))
 		}
 	}
@@ -128,10 +129,7 @@ func ResolveArcaneRuntimeImage(ctx context.Context, dockerClient *client.Client)
 }
 
 func resolveRuntimeImageFromContainersInternal(ctx context.Context, dockerClient *client.Client, containers []container.Summary, label string, runningOnly bool) mo.Option[RuntimeImage] {
-	source := "arcane-label"
-	if strings.Contains(label, ".agent=") {
-		source = "arcane-agent-label"
-	}
+	source := kit.Ternary(strings.Contains(label, ".agent="), "arcane-agent-label", "arcane-label")
 
 	for _, c := range containers {
 		if runningOnly && c.State != container.StateRunning {
@@ -140,7 +138,7 @@ func resolveRuntimeImageFromContainersInternal(ctx context.Context, dockerClient
 		if !runningOnly && c.State == container.StateRunning {
 			continue
 		}
-		inspect, err := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, c.ID, client.ContainerInspectOptions{})
+		inspect, err := compat.ContainerInspectWithCompatibility(ctx, dockerClient, c.ID, client.ContainerInspectOptions{})
 		if err == nil && inspect.Container.Config != nil && strings.TrimSpace(inspect.Container.Config.Image) != "" {
 			return mo.Some(buildRuntimeImageInternal(inspect.Container.Config.Image, inspect.Container.Config.Entrypoint, inspect.Container.Config.Cmd, source))
 		}
@@ -152,7 +150,7 @@ func resolveRuntimeImageFromContainersInternal(ctx context.Context, dockerClient
 	return mo.None[RuntimeImage]()
 }
 
-func buildRuntimeImageInternal(image string, entrypoint []string, command []string, source string) RuntimeImage {
+func buildRuntimeImageInternal(image string, entrypoint, command []string, source string) RuntimeImage {
 	return RuntimeImage{
 		Image:      strings.TrimSpace(image),
 		Entrypoint: append([]string(nil), entrypoint...),

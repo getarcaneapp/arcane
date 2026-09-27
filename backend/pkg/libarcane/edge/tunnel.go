@@ -8,7 +8,6 @@ import (
 	"net"
 
 	"emperror.dev/errors"
-
 	"github.com/coder/websocket"
 	wshub "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/ws"
 	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/proto/tunnel/v1"
@@ -19,23 +18,17 @@ import (
 // TunnelMessageType represents the type of message sent over the tunnel.
 type TunnelMessageType string
 
-const maxGRPCTunnelMessageSize = 16 * 1024 * 1024
-
-// maxWebSocketTunnelMessageSize caps inbound websocket tunnel frames at 2x the
-// gRPC limit, since JSON base64-encodes binary bodies a gRPC peer would accept.
-const maxWebSocketTunnelMessageSize = 2 * maxGRPCTunnelMessageSize
-
-// ErrTunnelConnectionClosed is returned by Send and Receive on every transport
-// once the tunnel connection is closed.
-const ErrTunnelConnectionClosed = errors.Sentinel("edge tunnel connection is closed")
-
-// tunnelReadWait bounds how long a websocket tunnel read may sit idle. Both
-// peers see traffic at least every DefaultHeartbeatInterval (agent heartbeat,
-// manager heartbeat_ack), so 3x tolerates transient stalls while still
-// detecting a silently dead peer. Variable so tests can shorten it.
-var tunnelReadWait = 3 * DefaultHeartbeatInterval
-
 const (
+	maxGRPCTunnelMessageSize = 16 * 1024 * 1024
+
+	// maxWebSocketTunnelMessageSize caps inbound websocket tunnel frames at 2x the
+	// gRPC limit, since JSON base64-encodes binary bodies a gRPC peer would accept.
+	maxWebSocketTunnelMessageSize = 2 * maxGRPCTunnelMessageSize
+
+	// ErrTunnelConnectionClosed is returned by Send and Receive on every transport
+	// once the tunnel connection is closed.
+	ErrTunnelConnectionClosed = errors.Sentinel("edge tunnel connection is closed")
+
 	// MessageTypeRequest is sent from manager to agent to initiate a request.
 	MessageTypeRequest TunnelMessageType = "request"
 	// MessageTypeResponse is sent from agent to manager with the response.
@@ -77,6 +70,12 @@ const (
 	// MessageTypeCancelRequest requests cancellation of an in-flight command.
 	MessageTypeCancelRequest TunnelMessageType = "cancel_request"
 )
+
+// tunnelReadWait bounds how long a websocket tunnel read may sit idle. Both
+// peers see traffic at least every DefaultHeartbeatInterval (agent heartbeat,
+// manager heartbeat_ack), so 3x tolerates transient stalls while still
+// detecting a silently dead peer. Variable so tests can shorten it.
+var tunnelReadWait = 3 * DefaultHeartbeatInterval
 
 // TunnelConnection is the transport contract shared by WebSocket and gRPC wrappers.
 type TunnelConnection interface {

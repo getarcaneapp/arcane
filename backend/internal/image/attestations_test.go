@@ -35,7 +35,6 @@ func TestReadAttestationLayerBytesInternalDecompressesGzip(t *testing.T) {
 
 	require.True(t, bytes.Equal(got, statement),
 		"expected decompressed statement %q, got %q", statement, got)
-
 }
 
 func TestReadAttestationLayerBytesInternalPassesThroughRawJSON(t *testing.T) {
@@ -49,7 +48,6 @@ func TestReadAttestationLayerBytesInternalPassesThroughRawJSON(t *testing.T) {
 
 	require.True(t, bytes.Equal(got, statement),
 		"expected raw statement unchanged %q, got %q", statement, got)
-
 }
 
 func TestReadAttestationLayerBytesInternalDecompressesZstd(t *testing.T) {
@@ -75,5 +73,4 @@ func TestReadAttestationLayerBytesInternalDecompressesZstd(t *testing.T) {
 
 	require.True(t, bytes.Equal(got, statement),
 		"expected decompressed statement %q, got %q", statement, got)
-
 }

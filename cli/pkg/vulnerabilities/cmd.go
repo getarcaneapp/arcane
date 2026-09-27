@@ -8,6 +8,7 @@
 package vulnerabilities
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"net/url"
@@ -15,7 +16,6 @@ import (
 	"time"
 
 	"emperror.dev/errors"
-
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
@@ -139,7 +139,7 @@ var listCmd = &cobra.Command{
 					item.ImageName,
 					item.PkgName,
 					item.InstalledVersion,
-					orDash(item.FixedVersion),
+					cmp.Or(item.FixedVersion, "-"),
 				}
 			},
 		})
@@ -229,7 +229,7 @@ var imageCmd = &cobra.Command{
 					string(item.Severity),
 					item.PkgName,
 					item.InstalledVersion,
-					orDash(item.FixedVersion),
+					cmp.Or(item.FixedVersion, "-"),
 				}
 			},
 		})
@@ -327,7 +327,7 @@ var ignoredCmd = &cobra.Command{
 					item.VulnerabilityID,
 					shortImageID(item.ImageID),
 					item.PkgName,
-					orDash(reason),
+					cmp.Or(reason, "-"),
 					item.CreatedAt.Format(time.RFC3339),
 				}
 			},
@@ -422,13 +422,6 @@ func printSeveritySummary(s *vulnerability.SeveritySummary) {
 	output.KeyValue("Low", s.Low)
 	output.KeyValue("Unknown", s.Unknown)
 	output.KeyValue("Total", s.Total)
-}
-
-func orDash(value string) string {
-	if value == "" {
-		return "-"
-	}
-	return value
 }
 
 func shortImageID(id string) string {

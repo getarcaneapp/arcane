@@ -2,6 +2,7 @@ package image
 
 import (
 	"bytes"
+	"cmp"
 	"compress/gzip"
 	"context"
 	"encoding/json/v2"
@@ -11,7 +12,6 @@ import (
 	"strings"
 
 	"emperror.dev/errors"
-
 	"github.com/containerd/platforms"
 	utilsregistry "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/registryauth"
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
@@ -443,10 +443,8 @@ func firstSubjectInternal(subjects []imageAttestationSubjectInternal) imageAttes
 }
 
 func isInlineAttestationDescriptorInternal(descriptor v1.Descriptor) bool {
-	if descriptor.Annotations[attestationTypes.DockerAnnotationReferenceType] == attestationTypes.DockerAnnotationReferenceTypeDefault {
-		return true
-	}
-	return descriptor.ArtifactType == dockerAttestationManifestArtifactTypeInternal
+	return descriptor.Annotations[attestationTypes.DockerAnnotationReferenceType] == attestationTypes.DockerAnnotationReferenceTypeDefault ||
+		descriptor.ArtifactType == dockerAttestationManifestArtifactTypeInternal
 }
 
 func readAttestationImageInternal(ctx context.Context, attestationImage v1.Image, artifactDescriptor v1.Descriptor, platform string, query ImageAttestationQuery) ([]imagetypes.Attestation, error) {
@@ -500,17 +498,12 @@ func readAttestationLayerInternal(ctx context.Context, attestationImage v1.Image
 	if err != nil {
 		return imagetypes.Attestation{}, false, errors.WrapIff(err, "parse attestation statement %s", layerDescriptor.Digest.String())
 	}
-	if statement.PredicateType == "" {
-		statement.PredicateType = annotationPredicate
-	}
+	statement.PredicateType = cmp.Or(statement.PredicateType, annotationPredicate)
 	if query.PredicateType != "" && statement.PredicateType != query.PredicateType {
 		return imagetypes.Attestation{}, false, nil
 	}
 
-	size := layerDescriptor.Size
-	if size == 0 {
-		size = int64(len(rawStatement))
-	}
+	size := cmp.Or(layerDescriptor.Size, int64(len(rawStatement)))
 
 	attestation := imagetypes.Attestation{
 		Digest:        layerDescriptor.Digest.String(),

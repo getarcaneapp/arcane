@@ -1,24 +1,22 @@
 package activity
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-
 	"context"
 	"testing"
 	"time"
 
-	"github.com/libtnb/sqlite"
-	"github.com/stretchr/testify/require"
-	"go.uber.org/fx/fxtest"
-	"gorm.io/gorm"
-
 	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
+	"github.com/libtnb/sqlite"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/fx/fxtest"
+	"gorm.io/gorm"
 )
 
 func setupActivityServiceTestDBInternal(t *testing.T) *database.DB {
@@ -137,7 +135,6 @@ func TestActivityServiceStreamFanoutInternal(t *testing.T) {
 	require.Nil(t, messageEvent.Activity)
 	require.Nil(t, messageEvent.Activities)
 	require.Equal(t, messageEvent, receiveActivityEventInternal(t, otherEvents))
-
 }
 
 func TestActivityServiceRetentionCleanupInternal(t *testing.T) {

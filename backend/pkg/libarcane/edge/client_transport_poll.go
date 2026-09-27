@@ -10,11 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
-
 	"emperror.dev/errors"
-
 	"github.com/cenkalti/backoff/v5"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 )
 
 const defaultTunnelPollRequestTimeout = 15 * time.Second

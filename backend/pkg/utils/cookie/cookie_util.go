@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+
+	kit "go.getarcane.app/kit/pkg"
 )
 
 var (
@@ -97,10 +99,7 @@ func BuildTokenCookieStringFor(maxAgeInSeconds int, token string, secure bool) [
 	if maxAgeInSeconds < 0 {
 		maxAgeInSeconds = 0
 	}
-	base := InsecureTokenCookieName
-	if secure {
-		base = TokenCookieName
-	}
+	base := kit.Ternary(secure, TokenCookieName, InsecureTokenCookieName)
 
 	var chunks []string
 	for len(token) > tokenCookieChunkSize {

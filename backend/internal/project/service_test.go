@@ -1,6 +1,7 @@
 package project
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -18,13 +19,12 @@ import (
 	"testing"
 	"time"
 
-	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
-
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	composeapi "github.com/docker/compose/v5/pkg/api"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
@@ -41,6 +41,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
 	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
+	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
 	"github.com/libtnb/sqlite"
 	dockerauthconfig "github.com/moby/moby/api/pkg/authconfig"
 	"github.com/moby/moby/api/types/container"
@@ -55,11 +56,9 @@ import (
 	"go.getarcane.app/acfs"
 	buildtypes "go.getarcane.app/builds/types"
 	"go.getarcane.app/updater/labels"
+	updatertypes "go.getarcane.app/updater/types"
 	"go.uber.org/fx/fxtest"
 	"gorm.io/gorm"
-
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	updatertypes "go.getarcane.app/updater/types"
 )
 
 type testBuildBuilder struct {
@@ -158,7 +157,7 @@ func decodeRegistryAuthInternal(t *testing.T, encoded string) dockerregistry.Aut
 	return *cfg
 }
 
-func newImagePullServerWithObserverInternal(t *testing.T, inspectByRef map[string]dockertypesimage.InspectResponse, onPull func(fullRef string, authHeader string)) *httptest.Server {
+func newImagePullServerWithObserverInternal(t *testing.T, inspectByRef map[string]dockertypesimage.InspectResponse, onPull func(fullRef, authHeader string)) *httptest.Server {
 	t.Helper()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -875,7 +874,7 @@ func TestProjectService_ComposePullSelectedServicesInternal_ReconcilesOnlyOnSucc
 			RepoTags:    []string{publicImageRef},
 			RepoDigests: []string{publicRepository + "@" + publicImageDigest},
 		},
-	}, func(fullRef string, authHeader string) {
+	}, func(fullRef, authHeader string) {
 		pullsByRef[fullRef]++
 		authHeadersByRef[fullRef] = authHeader
 	})
@@ -1114,7 +1113,7 @@ func TestProjectService_UpdateProjectServicesForcesRecreateInternal(t *testing.T
 			RepoTags:    []string{imageRef},
 			RepoDigests: []string{repository + "@" + imageDigest},
 		},
-	}, func(fullRef string, _ string) {
+	}, func(fullRef, _ string) {
 		assert.Equal(t, imageRef, fullRef, "namespace dependents must not be pulled")
 	})
 
@@ -1163,7 +1162,7 @@ func TestProjectService_UpdateProjectServicesForcesRecreateInternal(t *testing.T
 	}
 	upCalled := false
 	forceRecreate := false
-	composeUpProjectServicesInternal = func(_ context.Context, selected *composetypes.Project, services []string, removeOrphans bool, force bool, _ bool, _ map[string]dockerregistry.AuthConfig, _ time.Duration) error {
+	composeUpProjectServicesInternal = func(_ context.Context, selected *composetypes.Project, services []string, removeOrphans, force, _ bool, _ map[string]dockerregistry.AuthConfig, _ time.Duration) error {
 		assert.True(t, eventService.ShouldSuppressDaemonEvent("container", "replacement", "app", selected.Name))
 		assert.False(t, eventService.ShouldSuppressDaemonEvent("image", "pulled-image", "", ""))
 		upCalled = true
@@ -2287,7 +2286,6 @@ services:
 	require.NoError(t, err)
 	require.Len(t, details.IncludeFiles, 1)
 	assert.Equal(t, "metadata.yaml", details.IncludeFiles[0].RelativePath)
-
 }
 
 func TestProjectService_CreateProject_AllowsExternalInclude(t *testing.T) {
@@ -7539,7 +7537,6 @@ func TestDiscoveredProjectTagUpdatesRemainScoped(t *testing.T) {
 		service.enrichProjectUpdateInfoInternal(t.Context(), &detail)
 		require.False(t, detail.UpdateInfo.HasUpdate, "runtime fallback must not apply a stale policy")
 	}
-
 }
 
 func TestProjectTagSummaryDoesNotMutateSharedReferenceResults(t *testing.T) {
@@ -7712,7 +7709,6 @@ func TestProjectServiceManualUpdateRejectsUnsafeTagPolicies(t *testing.T) {
 	changes, err := (&ProjectService{}).projectServiceImageChangesInternal(t.Context(), &Project{}, &composetypes.Project{Services: composetypes.Services{"app": local}})
 	require.NoError(t, err)
 	require.Empty(t, changes, "automatic inference must preserve local-build handling")
-
 }
 
 func TestConfiguredProjectTagChecksMatchCurrentServicePolicy(t *testing.T) {
@@ -7812,9 +7808,7 @@ func TestConfiguredProjectUsesScheduledRuntimeChecks(t *testing.T) {
 			target := "3.2.0"
 			require.NoError(t, db.Create(&imageupdate.ImageUpdateRecord{ID: "container::scheduled", ContainerID: "scheduled", ImageID: "shared", PolicyKey: imageref.UpdatePolicyKey("example:3.1.0", map[string]string{labels.LabelUpdateStrategy: "auto"}), Repository: "docker.io/library/example", Tag: "3.1.0", LatestVersion: &target, HasUpdate: true, UpdateType: "tag", CheckTime: time.Now()}).Error)
 			runtimeLabels := map[string]string{"com.docker.compose.project": "scheduled-project", "com.docker.compose.service": "web", labels.LabelUpdateStrategy: "auto"}
-			if tt.runtimeConstraint != "" {
-				runtimeLabels[labels.LabelUpdateConstraint] = tt.runtimeConstraint
-			}
+			runtimeLabels[labels.LabelUpdateConstraint] = cmp.Or(tt.runtimeConstraint, runtimeLabels[labels.LabelUpdateConstraint])
 			runtime := []projecttypes.RuntimeService{{Name: "web", ContainerID: "scheduled", Image: "example:3.1.0", ContainerLabels: runtimeLabels}}
 			service := &ProjectService{db: db, settingsService: settingsService, imageService: image.NewImageService(db, nil, nil, nil, nil, nil)}
 			detail := projecttypes.Details{ID: proj.ID, Services: []composetypes.ServiceConfig{{Name: "web", Image: tt.sourceRef, Labels: sourceLabels}}, RuntimeServices: runtime}

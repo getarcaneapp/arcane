@@ -9,10 +9,10 @@ import (
 	"time"
 
 	"emperror.dev/errors"
-
 	cerrdefs "github.com/containerd/errdefs"
 	swarmtypes "github.com/getarcaneapp/arcane/types/v2/swarm"
 	dockerclient "github.com/moby/moby/client"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 // Swarm tears tasks down asynchronously, so a config, secret, or network can
@@ -129,10 +129,7 @@ func cleanupStaleManagedResourcesInternal(
 // otherwise the stack is being deleted and a lingering resource must surface as an error
 // instead of being silently orphaned.
 func removeStaleSwarmResourceInternal(ctx context.Context, tolerateInUse bool, remove func(context.Context) error) error {
-	attempts := staleSwarmResourceRemoveAttemptsInternal
-	if tolerateInUse {
-		attempts = 1
-	}
+	attempts := kit.Ternary(tolerateInUse, 1, staleSwarmResourceRemoveAttemptsInternal)
 
 	var err error
 	for attempt := range attempts {
@@ -153,10 +150,7 @@ func removeStaleSwarmResourceInternal(ctx context.Context, tolerateInUse bool, r
 		}
 	}
 
-	if tolerateInUse {
-		return nil
-	}
-	return err
+	return kit.Ternary(tolerateInUse, nil, err)
 }
 
 // RemoveStackResources removes configs, secrets, and networks owned by a stack.

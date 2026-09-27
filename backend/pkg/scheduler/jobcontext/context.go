@@ -7,8 +7,10 @@ import (
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 )
 
-type progressKeyInternal struct{}
-type runKeyInternal struct{}
+type (
+	progressKeyInternal struct{}
+	runKeyInternal      struct{}
+)
 
 func WithExecution(ctx context.Context, run schedulertypes.Run, persist func(schedulertypes.TargetOutcome) error) context.Context {
 	ctx = context.WithValue(ctx, runKeyInternal{}, run)

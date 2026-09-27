@@ -1,6 +1,7 @@
 package config
 
 import (
+	"cmp"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,7 +12,6 @@ import (
 	"time"
 
 	"emperror.dev/errors"
-
 	"github.com/getarcaneapp/arcane/cli/v2/internal/config"
 	clitypes "github.com/getarcaneapp/arcane/cli/v2/internal/types"
 	"github.com/spf13/cobra"
@@ -45,15 +45,15 @@ var configShowCmd = &cobra.Command{
 
 		path, _ := config.ConfigPath()
 		fmt.Printf("Config file: %s\n\n", path)
-		fmt.Printf("Server URL:          %s\n", maskIfEmpty(cfg.ServerURL, "(not set)"))
+		fmt.Printf("Server URL:          %s\n", cmp.Or(cfg.ServerURL, "(not set)"))
 		fmt.Printf("API Key:             %s\n", maskAPIKey(cfg.APIKey))
 		fmt.Printf("JWT Token:           %s\n", maskAPIKey(cfg.JWTToken))
 		fmt.Printf("Refresh Token:       %s\n", maskAPIKey(cfg.RefreshToken))
-		fmt.Printf("Default Environment: %s\n", maskIfEmpty(cfg.DefaultEnvironment, "0 (local)"))
-		fmt.Printf("Federated Audience:  %s\n", maskIfEmpty(cfg.FederatedAudience, "(not set)"))
-		fmt.Printf("Log Level:           %s\n", maskIfEmpty(cfg.LogLevel, "info (default)"))
-		fmt.Printf("CLI Update Channel:  %s\n", maskIfEmpty(cfg.CLIUpdateChannel, "(auto)"))
-		fmt.Printf("Pagination Default:  %s\n", maskIfEmpty(intToString(cfg.Pagination.Default.Limit), "(not set)"))
+		fmt.Printf("Default Environment: %s\n", cmp.Or(cfg.DefaultEnvironment, "0 (local)"))
+		fmt.Printf("Federated Audience:  %s\n", cmp.Or(cfg.FederatedAudience, "(not set)"))
+		fmt.Printf("Log Level:           %s\n", cmp.Or(cfg.LogLevel, "info (default)"))
+		fmt.Printf("CLI Update Channel:  %s\n", cmp.Or(cfg.CLIUpdateChannel, "(auto)"))
+		fmt.Printf("Pagination Default:  %s\n", cmp.Or(intToString(cfg.Pagination.Default.Limit), "(not set)"))
 
 		fmt.Println("\nPagination Resources:")
 		printed := 0
@@ -281,13 +281,6 @@ func init() {
 	configSetCmd.Flags().StringVar(&setLogLevel, "log-level", "", "Default log level (debug, info, warn, error)")
 	configSetCmd.Flags().IntVar(&setDefaultLimit, "default-limit", 0, "Global default list limit for paginated resources (0 clears)")
 	configSetCmd.Flags().StringSliceVar(&setResourceLimit, "resource-limit", nil, "Per-resource list limit in the form resource=limit (repeatable, 0 clears)")
-}
-
-func maskIfEmpty(value, fallback string) string {
-	if value == "" {
-		return fallback
-	}
-	return value
 }
 
 func maskAPIKey(key string) string {

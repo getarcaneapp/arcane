@@ -1,15 +1,14 @@
 package gitops
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
-
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-
+	"cmp"
 	"context"
 
 	"emperror.dev/errors"
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
 	"github.com/getarcaneapp/arcane/types/v2/base"
@@ -184,9 +183,7 @@ func (h *GitOpsSyncHandler) requireBackupSyncPermissionInternal(ctx context.Cont
 func (h *GitOpsSyncHandler) ListSyncs(ctx context.Context, input *ListGitOpsSyncsInput) (*ListGitOpsSyncsOutput, error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	for key, value := range map[string]string{"mode": input.Mode, "projectId": input.ProjectID, "repositoryId": input.RepositoryID, "autoSync": input.AutoSync} {
-		if value != "" {
-			params.Filters[key] = value
-		}
+		params.Filters[key] = cmp.Or(value, params.Filters[key])
 	}
 
 	syncs, paginationResp, counts, err := h.syncService.GetSyncsPaginated(ctx, input.EnvironmentID, params)

@@ -17,8 +17,10 @@ type RunInput struct {
 	JobID string `path:"jobId" minLength:"1"`
 	RunID string `path:"runId" format:"uuid"`
 }
-type RunOutput struct{ Body st.Run }
-type ListRunsOutput struct{ Body st.RunList }
+type (
+	RunOutput      struct{ Body st.Run }
+	ListRunsOutput struct{ Body st.RunList }
+)
 
 // ResolveRunInput accepts the original operator identity only from trusted agent transport.
 type ResolveRunInput struct {

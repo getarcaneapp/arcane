@@ -7,15 +7,14 @@ import (
 	"time"
 
 	"emperror.dev/errors"
-
 	"github.com/getarcaneapp/arcane/backend/v2/buildables"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/auth"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cookie"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/mapper"
 	authtypes "github.com/getarcaneapp/arcane/types/v2/auth"
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/getarcaneapp/arcane/types/v2/user"
 	"github.com/labstack/echo/v5"
+	"go.getarcane.app/kit/pkg/mapping"
 )
 
 // SetupBuildablesRoutes registers buildable feature routes based on EnabledFeatures.
@@ -81,7 +80,7 @@ func registerAutoLoginRoutes(apiGroup *echo.Group, authService *auth.AuthService
 		}
 
 		var userResp user.User
-		if mapErr := mapper.MapStruct(userModel, &userResp); mapErr != nil {
+		if mapErr := mapping.MapStruct(userModel, &userResp); mapErr != nil {
 			return c.JSON(http.StatusInternalServerError, base.ErrorResponse{Error: "Failed to map user"})
 		}
 

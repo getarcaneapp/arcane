@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"go.getarcane.app/acfs/atomic"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 const logFilePerm = 0o644
@@ -59,7 +60,7 @@ func (w *LogWriter) Name() string { return w.path }
 // output to a timestamped file under dataDir. Every entry is persisted as it is
 // logged, so the returned writer needs no closing -- it is returned so the
 // caller can report where the log landed.
-func SetupMessageOnlyLogFile(dataDir string, filePrefix string, minLevel slog.Level) (*LogWriter, error) {
+func SetupMessageOnlyLogFile(dataDir, filePrefix string, minLevel slog.Level) (*LogWriter, error) {
 	if strings.TrimSpace(dataDir) == "" {
 		return nil, errors.New("dataDir is required")
 	}
@@ -171,10 +172,7 @@ func formatSlogValue(v slog.Value) string {
 	case slog.KindDuration:
 		return strconv.Quote(v.Duration().String())
 	case slog.KindBool:
-		if v.Bool() {
-			return "true"
-		}
-		return "false"
+		return kit.Ternary(v.Bool(), "true", "false")
 	case slog.KindGroup:
 		return strconv.Quote(fmt.Sprint(v.Group()))
 	case slog.KindLogValuer:

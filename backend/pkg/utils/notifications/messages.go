@@ -2,11 +2,14 @@ package notifications
 
 import (
 	"fmt"
+	"maps"
+	"slices"
 	"sort"
 	"strings"
 
 	"github.com/getarcaneapp/arcane/types/v2/imageupdate"
 	"github.com/getarcaneapp/arcane/types/v2/system"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 type MessageFormat string
@@ -62,10 +65,7 @@ func formatNotificationCodeInternal(format MessageFormat, value string) string {
 }
 
 func BuildImageUpdateNotificationMessage(format MessageFormat, environmentName, imageRef string, updateInfo *imageupdate.Response) string {
-	updateStatus := "No Update"
-	if updateInfo != nil && updateInfo.HasUpdate {
-		updateStatus = "Update Available"
-	}
+	updateStatus := kit.Ternary(updateInfo != nil && updateInfo.HasUpdate, "Update Available", "No Update")
 	if format != MessageFormatPlain && updateStatus == "Update Available" {
 		updateStatus = "⚠️ Update Available"
 	}
@@ -89,10 +89,7 @@ func BuildImageUpdateNotificationMessage(format MessageFormat, environmentName, 
 }
 
 func BuildContainerUpdateNotificationMessage(format MessageFormat, environmentName, containerName, imageRef, oldDigest, newDigest string) string {
-	status := "Updated Successfully"
-	if format != MessageFormatPlain {
-		status = "✅ Updated Successfully"
-	}
+	status := kit.Ternary(format != MessageFormatPlain, "✅ Updated Successfully", "Updated Successfully")
 
 	var message strings.Builder
 	fmt.Fprintf(&message, "%s\n\n", formatNotificationTitleInternal(format, "✅ Container Successfully Updated"))
@@ -118,11 +115,7 @@ func BuildBatchImageUpdateNotificationMessage(format MessageFormat, environmentN
 		description = "1 container image has an update available."
 	}
 
-	imageRefs := make([]string, 0, len(updates))
-	for imageRef := range updates {
-		imageRefs = append(imageRefs, imageRef)
-	}
-	sort.Strings(imageRefs)
+	imageRefs := slices.Sorted(maps.Keys(updates))
 
 	var message strings.Builder
 	fmt.Fprintf(&message, "%s\n\n%s\n", formatNotificationTitleInternal(format, title), description)

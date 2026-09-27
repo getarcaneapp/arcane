@@ -2,6 +2,7 @@ package notifications
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
@@ -14,9 +15,9 @@ import (
 	"time"
 
 	"emperror.dev/errors"
-
 	"github.com/nicholas-fedor/shoutrrr"
 	shoutrrrTypes "github.com/nicholas-fedor/shoutrrr/pkg/types"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 // genericPayloadTemplateID is the Shoutrrr template ID under which a user's
@@ -45,10 +46,7 @@ func resolveWebhookURLInternal(config GenericConfig) (*url.URL, error) {
 
 	hasScheme := strings.Contains(config.WebhookURL, "://")
 	if parsed.Host == "" && !hasScheme {
-		scheme := "https"
-		if config.DisableTLS {
-			scheme = "http"
-		}
+		scheme := kit.Ternary(config.DisableTLS, "http", "https")
 		normalized := strings.TrimPrefix(config.WebhookURL, "//")
 		parsed, err = url.Parse(fmt.Sprintf("%s://%s", scheme, normalized))
 		if err != nil {
@@ -177,14 +175,8 @@ func jsonEscapeString(value string) string {
 // under the configured titlekey/messagekey — mirroring how Shoutrrr's
 // createSendParams keys the send params — plus the escaped per-event vars.
 func genericTemplateDataInternal(config GenericConfig, title, message string, vars map[string]string) map[string]string {
-	titleKey := config.TitleKey
-	if titleKey == "" {
-		titleKey = "title"
-	}
-	messageKey := config.MessageKey
-	if messageKey == "" {
-		messageKey = "message"
-	}
+	titleKey := cmp.Or(config.TitleKey, "title")
+	messageKey := cmp.Or(config.MessageKey, "message")
 
 	data := make(map[string]string, len(vars)+2)
 	for key, value := range vars {
@@ -288,9 +280,7 @@ func SendGenericWithTitle(ctx context.Context, config GenericConfig, title, mess
 	// Build params with title. Always use "title" as the param key — Shoutrrr's
 	// generic service maps it to the configured titlekey in the JSON payload.
 	params := shoutrrrTypes.Params{}
-	if title != "" {
-		params["title"] = title
-	}
+	params["title"] = cmp.Or(title, params["title"])
 
 	errs := sender.Send(message, &params)
 	for _, err := range errs {
@@ -372,19 +362,11 @@ func sendGenericDirectInternal(ctx context.Context, config GenericConfig, title,
 		body = []byte(rendered)
 	} else {
 		// Build JSON payload using the configured message/title keys.
-		msgKey := config.MessageKey
-		if msgKey == "" {
-			msgKey = "message"
-		}
-		titleKey := config.TitleKey
-		if titleKey == "" {
-			titleKey = "title"
-		}
+		msgKey := cmp.Or(config.MessageKey, "message")
+		titleKey := cmp.Or(config.TitleKey, "title")
 
 		payload := map[string]string{msgKey: message}
-		if title != "" {
-			payload[titleKey] = title
-		}
+		payload[titleKey] = cmp.Or(title, payload[titleKey])
 
 		body, err = json.Marshal(payload)
 		if err != nil {
@@ -392,20 +374,14 @@ func sendGenericDirectInternal(ctx context.Context, config GenericConfig, title,
 		}
 	}
 
-	method := strings.ToUpper(config.Method)
-	if method == "" {
-		method = http.MethodPost
-	}
+	method := cmp.Or(strings.ToUpper(config.Method), http.MethodPost)
 
 	req, err := http.NewRequestWithContext(ctx, method, webhookURL.String(), bytes.NewReader(body))
 	if err != nil {
 		return errors.WrapIf(err, "failed to create webhook request")
 	}
 
-	contentType := config.ContentType
-	if contentType == "" {
-		contentType = "application/json"
-	}
+	contentType := cmp.Or(config.ContentType, "application/json")
 	req.Header.Set("Content-Type", contentType)
 
 	for k, v := range config.CustomHeaders {

@@ -64,12 +64,16 @@ func TestKeySetVerifySignature(t *testing.T) {
 					if tc.initialFailure == "http" {
 						w.WriteHeader(http.StatusServiceUnavailable)
 					} else {
-						fmt.Fprint(w, `{"keys":`)
+						if _, err := fmt.Fprint(w, `{"keys":`); err != nil {
+							t.Errorf("write malformed JWKS response: %v", err)
+						}
 					}
 					return
 				}
 				w.Header().Set("Content-Type", "application/json")
-				fmt.Fprint(w, jwks)
+				if _, err := fmt.Fprint(w, jwks); err != nil {
+					t.Errorf("write JWKS response: %v", err)
+				}
 			}))
 			defer srv.Close()
 

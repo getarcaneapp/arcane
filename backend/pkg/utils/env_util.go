@@ -10,7 +10,7 @@ import (
 // or NAME_FILE (checked in that order) names a readable file, its trimmed
 // contents stand in for NAME. An unreadable file falls back to NAME.
 // The booleans report whether a value was found and whether it came from a file.
-func LookupEnvOrFile(name string) (value string, found bool, fromFile bool) {
+func LookupEnvOrFile(name string) (value string, found, fromFile bool) {
 	for _, suffix := range []string{"__FILE", "_FILE"} {
 		filePath := os.Getenv(name + suffix)
 		if filePath == "" {

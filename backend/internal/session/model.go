@@ -1,11 +1,10 @@
 package session
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-
 	"time"
+
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 )
 
 const (
@@ -13,6 +12,11 @@ const (
 	UserSessionSourceOidc      = "oidc"
 	UserSessionSourceFederated = "federated"
 	UserSessionSourcePasskey   = "passkey"
+
+	// PasskeyMFAMethod and RecoveryCodeMFAMethod name the second factor a login
+	// completed with, recorded on the session for auditing.
+	PasskeyMFAMethod      = "passkey"
+	RecoveryCodeMFAMethod = "recovery_code"
 )
 
 type UserSession struct {
@@ -37,10 +41,3 @@ type UserSession struct {
 func (UserSession) TableName() string {
 	return "user_sessions"
 }
-
-const (
-	// PasskeyMFAMethod and RecoveryCodeMFAMethod name the second factor a login
-	// completed with, recorded on the session for auditing.
-	PasskeyMFAMethod      = "passkey"
-	RecoveryCodeMFAMethod = "recovery_code"
-)

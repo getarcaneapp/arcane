@@ -8,10 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
-
 	"emperror.dev/errors"
-
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/proto/tunnel/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"

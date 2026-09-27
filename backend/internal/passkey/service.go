@@ -1,10 +1,6 @@
 package passkey
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/session"
-
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -22,13 +18,16 @@ import (
 	"uuid"
 
 	"emperror.dev/errors"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/session"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/resources"
 	"github.com/getarcaneapp/arcane/types/v2/auth"
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
+	kit "go.getarcane.app/kit/pkg"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -134,26 +133,20 @@ type AuthenticationCompletion struct {
 	Source string
 }
 
-type passkeyService struct {
+// PasskeyService owns WebAuthn ceremonies, passkey persistence, MFA
+// transactions, recovery codes, and step-up grants. It intentionally does not
+// issue JWTs; auth.AuthService remains the single token/session issuer.
+type PasskeyService struct {
 	db       *database.DB
 	webAuthn *webauthn.WebAuthn
 	rpID     string
 	initErr  error
 }
 
-// PasskeyService owns WebAuthn ceremonies, passkey persistence, MFA
-// transactions, recovery codes, and step-up grants. It intentionally does not
-// issue JWTs; auth.AuthService remains the single token/session issuer.
-type PasskeyService = passkeyService
-
 func NewPasskeyService(db *database.DB, cfg *config.Config) *PasskeyService {
-	s := &passkeyService{db: db}
+	s := &PasskeyService{db: db}
 
-	appURL := "http://localhost:3552"
-	if cfg != nil {
-		appURL = cfg.GetAppURL()
-	}
-	parsedURL, err := url.Parse(strings.TrimSpace(appURL))
+	parsedURL, err := url.Parse(strings.TrimSpace(cfg.GetAppURL()))
 	if err != nil || parsedURL.Scheme == "" || parsedURL.Host == "" {
 		s.initErr = errors.WrapIf(err, "invalid APP_URL for WebAuthn")
 		if err == nil {
@@ -189,11 +182,9 @@ func NewPasskeyService(db *database.DB, cfg *config.Config) *PasskeyService {
 	return s
 }
 
-func (s *passkeyService) readyInternal() error {
-	if s == nil || s.db == nil || s.webAuthn == nil || s.initErr != nil {
-		return ErrPasskeyServiceUnavailable
-	}
-	return nil
+// readyInternal reports whether WebAuthn initialised; every constructor failure sets initErr.
+func (s *PasskeyService) readyInternal() error {
+	return kit.Ternary[error](s.initErr != nil, ErrPasskeyServiceUnavailable, nil)
 }
 
 type webAuthnUser struct {
@@ -221,7 +212,7 @@ func (u *webAuthnUser) WebAuthnCredentials() []webauthn.Credential {
 	return u.credentials
 }
 
-func (s *passkeyService) loadWebAuthnUserInternal(ctx context.Context, userID string) (*webAuthnUser, error) {
+func (s *PasskeyService) loadWebAuthnUserInternal(ctx context.Context, userID string) (*webAuthnUser, error) {
 	if strings.TrimSpace(userID) == "" {
 		return nil, ErrPasskeyTransaction
 	}
@@ -285,7 +276,7 @@ func credentialFromModelInternal(row Passkey) webauthn.Credential {
 }
 
 // LoginAvailable reports whether a registered passkey can be used on this instance.
-func (s *passkeyService) LoginAvailable(ctx context.Context) (bool, error) {
+func (s *PasskeyService) LoginAvailable(ctx context.Context) (bool, error) {
 	if errors.Is(s.readyInternal(), ErrPasskeyServiceUnavailable) {
 		return false, nil
 	}
@@ -300,7 +291,7 @@ func (s *passkeyService) LoginAvailable(ctx context.Context) (bool, error) {
 	return available, nil
 }
 
-func (s *passkeyService) BeginPasskeyLogin(ctx context.Context) (*PasskeyChallenge, error) {
+func (s *PasskeyService) BeginPasskeyLogin(ctx context.Context) (*PasskeyChallenge, error) {
 	if err := s.readyInternal(); err != nil {
 		return nil, err
 	}
@@ -325,7 +316,7 @@ func (s *passkeyService) BeginPasskeyLogin(ctx context.Context) (*PasskeyChallen
 	}, nil
 }
 
-func (s *passkeyService) BeginMFAAuthentication(ctx context.Context, userID string, meta auth.SessionMeta, source string) (*auth.MFAChallenge, error) {
+func (s *PasskeyService) BeginMFAAuthentication(ctx context.Context, userID string, meta auth.SessionMeta, source string) (*auth.MFAChallenge, error) {
 	if err := s.readyInternal(); err != nil {
 		return nil, err
 	}
@@ -355,7 +346,7 @@ func (s *passkeyService) BeginMFAAuthentication(ctx context.Context, userID stri
 // BeginMFAForTransaction starts a passkey assertion for an already-created
 // pending MFA transaction. This is useful to clients that separate primary
 // authentication from challenge retrieval.
-func (s *passkeyService) BeginMFAForTransaction(ctx context.Context, transactionID string) (*auth.MFAChallenge, error) {
+func (s *PasskeyService) BeginMFAForTransaction(ctx context.Context, transactionID string) (*auth.MFAChallenge, error) {
 	if err := s.readyInternal(); err != nil {
 		return nil, err
 	}
@@ -369,7 +360,7 @@ func (s *passkeyService) BeginMFAForTransaction(ctx context.Context, transaction
 	return s.beginMFAForTransactionInternal(ctx, transaction)
 }
 
-func (s *passkeyService) beginMFAForTransactionInternal(ctx context.Context, transaction *AuthTransaction) (*auth.MFAChallenge, error) {
+func (s *PasskeyService) beginMFAForTransactionInternal(ctx context.Context, transaction *AuthTransaction) (*auth.MFAChallenge, error) {
 	if transaction == nil {
 		return nil, ErrPasskeyTransaction
 	}
@@ -408,7 +399,7 @@ func (s *passkeyService) beginMFAForTransactionInternal(ctx context.Context, tra
 	}, nil
 }
 
-func (s *passkeyService) BeginStepUp(ctx context.Context, userID, sessionID string, meta auth.SessionMeta) (*PasskeyChallenge, error) {
+func (s *PasskeyService) BeginStepUp(ctx context.Context, userID, sessionID string, meta auth.SessionMeta) (*PasskeyChallenge, error) {
 	if err := s.readyInternal(); err != nil {
 		return nil, err
 	}
@@ -454,7 +445,7 @@ func (s *passkeyService) BeginStepUp(ctx context.Context, userID, sessionID stri
 	}, nil
 }
 
-func (s *passkeyService) BeginRegistration(ctx context.Context, userID, sessionID, stepUpToken string) (*PasskeyChallenge, error) {
+func (s *PasskeyService) BeginRegistration(ctx context.Context, userID, sessionID, stepUpToken string) (*PasskeyChallenge, error) {
 	if err := s.readyInternal(); err != nil {
 		return nil, err
 	}
@@ -490,7 +481,7 @@ func (s *passkeyService) BeginRegistration(ctx context.Context, userID, sessionI
 	return &PasskeyChallenge{CeremonyID: ceremony.ID, Options: creation.Response, ExpiresAt: ceremony.ExpiresAt}, nil
 }
 
-func (s *passkeyService) FinishRegistration(ctx context.Context, userID, sessionID, ceremonyID string, payload []byte, name string) (*PasskeySummary, error) {
+func (s *PasskeyService) FinishRegistration(ctx context.Context, userID, sessionID, ceremonyID string, payload []byte, name string) (*PasskeySummary, error) {
 	if err := s.readyInternal(); err != nil {
 		return nil, err
 	}
@@ -541,7 +532,7 @@ func (s *passkeyService) FinishRegistration(ctx context.Context, userID, session
 	return &summary, nil
 }
 
-func (s *passkeyService) FinishPasskeyLogin(ctx context.Context, ceremonyID string, payload []byte) (*common.User, error) {
+func (s *PasskeyService) FinishPasskeyLogin(ctx context.Context, ceremonyID string, payload []byte) (*common.User, error) {
 	if err := s.readyInternal(); err != nil {
 		return nil, err
 	}
@@ -565,7 +556,7 @@ func (s *passkeyService) FinishPasskeyLogin(ctx context.Context, ceremonyID stri
 	utils.NormalizePasskeyAssertionExtensions(session.Extensions, parsed)
 
 	var resolved *webAuthnUser
-	user, credential, err := s.webAuthn.ValidatePasskeyLogin(func(_ []byte, userHandle []byte) (webauthn.User, error) {
+	user, credential, err := s.webAuthn.ValidatePasskeyLogin(func(_, userHandle []byte) (webauthn.User, error) {
 		adapter, lookupErr := s.loadWebAuthnUserInternal(ctx, string(userHandle))
 		if lookupErr != nil {
 			return nil, lookupErr
@@ -584,7 +575,7 @@ func (s *passkeyService) FinishPasskeyLogin(ctx context.Context, ceremonyID stri
 	return &resolved.model, nil
 }
 
-func (s *passkeyService) FinishMobilePasskeyLogin(ctx context.Context, ceremonyID string, payload []byte, codeChallenge string) (*auth.MobilePasskeyCompletion, error) {
+func (s *PasskeyService) FinishMobilePasskeyLogin(ctx context.Context, ceremonyID string, payload []byte, codeChallenge string) (*auth.MobilePasskeyCompletion, error) {
 	codeChallenge, err := normalizeMobilePasskeyCodeChallengeInternal(codeChallenge)
 	if err != nil {
 		return nil, err
@@ -602,7 +593,7 @@ func (s *passkeyService) FinishMobilePasskeyLogin(ctx context.Context, ceremonyI
 	return &auth.MobilePasskeyCompletion{TransactionID: transaction.ID, ExpiresAt: transaction.ExpiresAt}, nil
 }
 
-func (s *passkeyService) ExchangeMobilePasskeyLogin(ctx context.Context, transactionID, codeVerifier string) (*common.User, error) {
+func (s *PasskeyService) ExchangeMobilePasskeyLogin(ctx context.Context, transactionID, codeVerifier string) (*common.User, error) {
 	if err := s.readyInternal(); err != nil {
 		return nil, err
 	}
@@ -627,10 +618,7 @@ func (s *passkeyService) ExchangeMobilePasskeyLogin(ctx context.Context, transac
 		if result.Error != nil {
 			return errors.WrapIf(result.Error, "failed to complete mobile passkey transaction")
 		}
-		if result.RowsAffected != 1 {
-			return ErrPasskeyTransaction
-		}
-		return nil
+		return kit.Ternary[error](result.RowsAffected != 1, ErrPasskeyTransaction, nil)
 	})
 	if err != nil {
 		return nil, err
@@ -638,7 +626,7 @@ func (s *passkeyService) ExchangeMobilePasskeyLogin(ctx context.Context, transac
 	return s.loadUserModelInternal(ctx, transaction.UserID)
 }
 
-func (s *passkeyService) FinishMFA(ctx context.Context, transactionID string, payload []byte) (*AuthenticationCompletion, error) {
+func (s *PasskeyService) FinishMFA(ctx context.Context, transactionID string, payload []byte) (*AuthenticationCompletion, error) {
 	transaction, err := s.loadPendingTransactionInternal(ctx, transactionID, authTransactionKindMFA)
 	if err != nil {
 		return nil, err
@@ -659,7 +647,7 @@ func (s *passkeyService) FinishMFA(ctx context.Context, transactionID string, pa
 	}, nil
 }
 
-func (s *passkeyService) FinishRecoveryCode(ctx context.Context, transactionID, code string) (*AuthenticationCompletion, error) {
+func (s *PasskeyService) FinishRecoveryCode(ctx context.Context, transactionID, code string) (*AuthenticationCompletion, error) {
 	if err := s.readyInternal(); err != nil {
 		return nil, err
 	}
@@ -668,7 +656,7 @@ func (s *passkeyService) FinishRecoveryCode(ctx context.Context, transactionID, 
 		return nil, ErrPasskeyRecoveryCode
 	}
 
-	hash := hashSecretInternal(normalized)
+	hash := kit.SHA256Hex(normalized)
 	var transaction AuthTransaction
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND kind = ? AND status = ? AND expires_at > ?", transactionID, authTransactionKindMFA, authTransactionPending, time.Now()).First(&transaction).Error; err != nil {
@@ -709,10 +697,7 @@ func (s *passkeyService) FinishRecoveryCode(ctx context.Context, transactionID, 
 		if result.Error != nil {
 			return errors.WrapIf(result.Error, "failed to complete MFA transaction")
 		}
-		if result.RowsAffected != 1 {
-			return ErrPasskeyTransaction
-		}
-		return nil
+		return kit.Ternary[error](result.RowsAffected != 1, ErrPasskeyTransaction, nil)
 	})
 	if err != nil {
 		return nil, err
@@ -729,7 +714,7 @@ func (s *passkeyService) FinishRecoveryCode(ctx context.Context, transactionID, 
 	}, nil
 }
 
-func (s *passkeyService) FinishStepUp(ctx context.Context, transactionID, sessionID string, payload []byte) (*StepUpGrant, error) {
+func (s *PasskeyService) FinishStepUp(ctx context.Context, transactionID, sessionID string, payload []byte) (*StepUpGrant, error) {
 	transaction, err := s.loadPendingTransactionInternal(ctx, transactionID, authTransactionKindStepUp)
 	if err != nil {
 		return nil, err
@@ -746,7 +731,7 @@ func (s *passkeyService) FinishStepUp(ctx context.Context, transactionID, sessio
 	return s.issueStepUpGrantInternal(ctx, transaction.ID)
 }
 
-func (s *passkeyService) CreatePasswordStepUpGrant(ctx context.Context, userID, sessionID string) (*StepUpGrant, error) {
+func (s *PasskeyService) CreatePasswordStepUpGrant(ctx context.Context, userID, sessionID string) (*StepUpGrant, error) {
 	if err := s.readyInternal(); err != nil {
 		return nil, err
 	}
@@ -763,7 +748,7 @@ func (s *passkeyService) CreatePasswordStepUpGrant(ctx context.Context, userID, 
 // VerifyStepUpToken accepts a grant repeatedly until it expires, so a single
 // re-authentication covers a short run of management actions instead of one.
 // The grant stays bound to the issuing user and session.
-func (s *passkeyService) VerifyStepUpToken(ctx context.Context, userID, sessionID, token string) error {
+func (s *PasskeyService) VerifyStepUpToken(ctx context.Context, userID, sessionID, token string) error {
 	if err := s.readyInternal(); err != nil {
 		return err
 	}
@@ -774,20 +759,17 @@ func (s *passkeyService) VerifyStepUpToken(ctx context.Context, userID, sessionI
 	if err := s.ensureActiveSessionInternal(ctx, userID, sessionID); err != nil {
 		return err
 	}
-	hash := hashSecretInternal(token)
+	hash := kit.SHA256Hex(token)
 	var count int64
 	if err := s.db.WithContext(ctx).Model(&AuthTransaction{}).
 		Where("user_id = ? AND session_id = ? AND kind = ? AND status = ? AND secret_hash = ? AND expires_at > ?", userID, sessionID, authTransactionKindStepUp, authTransactionCompleted, hash, time.Now()).
 		Count(&count).Error; err != nil {
 		return errors.WrapIf(err, "failed to verify step-up grant")
 	}
-	if count != 1 {
-		return ErrPasskeyStepUpRequired
-	}
-	return nil
+	return kit.Ternary[error](count != 1, ErrPasskeyStepUpRequired, nil)
 }
 
-func (s *passkeyService) ListPasskeys(ctx context.Context, userID string) ([]PasskeySummary, error) {
+func (s *PasskeyService) ListPasskeys(ctx context.Context, userID string) ([]PasskeySummary, error) {
 	if err := s.readyInternal(); err != nil {
 		return nil, err
 	}
@@ -802,7 +784,7 @@ func (s *passkeyService) ListPasskeys(ctx context.Context, userID string) ([]Pas
 	return result, nil
 }
 
-func (s *passkeyService) GetCapabilities(ctx context.Context, userID string, oidcEnabled bool) (*PasskeyCapabilities, error) {
+func (s *PasskeyService) GetCapabilities(ctx context.Context, userID string, oidcEnabled bool) (*PasskeyCapabilities, error) {
 	if err := s.readyInternal(); err != nil {
 		return nil, err
 	}
@@ -827,7 +809,7 @@ func (s *passkeyService) GetCapabilities(ctx context.Context, userID string, oid
 	}, nil
 }
 
-func (s *passkeyService) RenamePasskey(ctx context.Context, userID, passkeyID, name, sessionID, stepUpToken string) (*PasskeySummary, error) {
+func (s *PasskeyService) RenamePasskey(ctx context.Context, userID, passkeyID, name, sessionID, stepUpToken string) (*PasskeySummary, error) {
 	if err := s.readyInternal(); err != nil {
 		return nil, err
 	}
@@ -856,7 +838,7 @@ func (s *passkeyService) RenamePasskey(ctx context.Context, userID, passkeyID, n
 	return &summary, nil
 }
 
-func (s *passkeyService) DeletePasskey(ctx context.Context, userID, passkeyID, sessionID, stepUpToken string, oidcFallbackAllowed bool) error {
+func (s *PasskeyService) DeletePasskey(ctx context.Context, userID, passkeyID, sessionID, stepUpToken string, oidcFallbackAllowed bool) error {
 	if err := s.readyInternal(); err != nil {
 		return err
 	}
@@ -886,14 +868,11 @@ func (s *passkeyService) DeletePasskey(ctx context.Context, userID, passkeyID, s
 		if result.Error != nil {
 			return errors.WrapIf(result.Error, "failed to delete passkey")
 		}
-		if result.RowsAffected != 1 {
-			return ErrPasskeyNotFound
-		}
-		return nil
+		return kit.Ternary[error](result.RowsAffected != 1, ErrPasskeyNotFound, nil)
 	})
 }
 
-func (s *passkeyService) GetMFAStatus(ctx context.Context, userID string) (*MFAStatus, error) {
+func (s *PasskeyService) GetMFAStatus(ctx context.Context, userID string) (*MFAStatus, error) {
 	if err := s.readyInternal(); err != nil {
 		return nil, err
 	}
@@ -912,7 +891,7 @@ func (s *passkeyService) GetMFAStatus(ctx context.Context, userID string) (*MFAS
 	return &MFAStatus{Enabled: user.PasskeyMFAEnabled, PasskeyCount: passkeyCount, RecoveryCodesRemaining: int(recoveryCodes)}, nil
 }
 
-func (s *passkeyService) EnableMFA(ctx context.Context, userID, sessionID, stepUpToken string) ([]string, error) {
+func (s *PasskeyService) EnableMFA(ctx context.Context, userID, sessionID, stepUpToken string) ([]string, error) {
 	if err := s.readyInternal(); err != nil {
 		return nil, err
 	}
@@ -955,7 +934,7 @@ func (s *passkeyService) EnableMFA(ctx context.Context, userID, sessionID, stepU
 	return codes, nil
 }
 
-func (s *passkeyService) DisableMFA(ctx context.Context, userID, sessionID, stepUpToken string) error {
+func (s *PasskeyService) DisableMFA(ctx context.Context, userID, sessionID, stepUpToken string) error {
 	if err := s.readyInternal(); err != nil {
 		return err
 	}
@@ -989,7 +968,7 @@ func (s *passkeyService) DisableMFA(ctx context.Context, userID, sessionID, step
 	return err
 }
 
-func (s *passkeyService) RegenerateRecoveryCodes(ctx context.Context, userID, sessionID, stepUpToken string) ([]string, error) {
+func (s *PasskeyService) RegenerateRecoveryCodes(ctx context.Context, userID, sessionID, stepUpToken string) ([]string, error) {
 	if err := s.readyInternal(); err != nil {
 		return nil, err
 	}
@@ -1021,7 +1000,7 @@ func (s *passkeyService) RegenerateRecoveryCodes(ctx context.Context, userID, se
 
 // ResetMFAForUser is intentionally separate from self-service operations. It
 // is used only by the explicitly gated embedded admin recovery command.
-func (s *passkeyService) ResetMFAForUser(ctx context.Context, userID string) error {
+func (s *PasskeyService) ResetMFAForUser(ctx context.Context, userID string) error {
 	if err := s.readyInternal(); err != nil {
 		return err
 	}
@@ -1053,7 +1032,7 @@ func (s *passkeyService) ResetMFAForUser(ctx context.Context, userID string) err
 	})
 }
 
-func (s *passkeyService) createCeremonyInternal(ctx context.Context, purpose string, userID, sessionID, transactionID *string, session *webauthn.SessionData) (*PasskeyCeremony, error) {
+func (s *PasskeyService) createCeremonyInternal(ctx context.Context, purpose string, userID, sessionID, transactionID *string, session *webauthn.SessionData) (*PasskeyCeremony, error) {
 	if session == nil {
 		return nil, ErrPasskeyCeremony
 	}
@@ -1081,7 +1060,7 @@ func (s *passkeyService) createCeremonyInternal(ctx context.Context, purpose str
 	return ceremony, nil
 }
 
-func (s *passkeyService) sweepCeremoniesInternal(ctx context.Context) error {
+func (s *PasskeyService) sweepCeremoniesInternal(ctx context.Context) error {
 	now := time.Now()
 	if err := s.db.WithContext(ctx).
 		Where("expires_at <= ? OR consumed_at IS NOT NULL", now).
@@ -1091,7 +1070,7 @@ func (s *passkeyService) sweepCeremoniesInternal(ctx context.Context) error {
 	return nil
 }
 
-func (s *passkeyService) consumeCeremonyInternal(ctx context.Context, ceremonyID, purpose string) (*PasskeyCeremony, error) {
+func (s *PasskeyService) consumeCeremonyInternal(ctx context.Context, ceremonyID, purpose string) (*PasskeyCeremony, error) {
 	if strings.TrimSpace(ceremonyID) == "" {
 		return nil, ErrPasskeyCeremony
 	}
@@ -1116,7 +1095,7 @@ func (s *passkeyService) consumeCeremonyInternal(ctx context.Context, ceremonyID
 	return &ceremony, nil
 }
 
-func (s *passkeyService) loadPendingTransactionInternal(ctx context.Context, transactionID, kind string) (*AuthTransaction, error) {
+func (s *PasskeyService) loadPendingTransactionInternal(ctx context.Context, transactionID, kind string) (*AuthTransaction, error) {
 	if strings.TrimSpace(transactionID) == "" {
 		return nil, ErrPasskeyTransaction
 	}
@@ -1130,11 +1109,11 @@ func (s *passkeyService) loadPendingTransactionInternal(ctx context.Context, tra
 	return &transaction, nil
 }
 
-func (s *passkeyService) finishKnownUserAssertionInternal(ctx context.Context, transaction *AuthTransaction, purpose string, payload []byte) (*common.User, error) {
+func (s *PasskeyService) finishKnownUserAssertionInternal(ctx context.Context, transaction *AuthTransaction, purpose string, payload []byte) (*common.User, error) {
 	if transaction == nil || len(payload) == 0 || len(payload) > maxPasskeyPayloadBytes {
 		return nil, ErrPasskeyResponse
 	}
-	ceremony, err := s.consumeCeremonyInternal(ctx, ceremonyIDForTransactionInternal(ctx, s.db, transaction.ID, purpose), purpose)
+	ceremony, err := s.consumeCeremonyInternal(ctx, s.ceremonyIDForTransactionInternal(ctx, transaction.ID, purpose), purpose)
 	if err != nil {
 		return nil, err
 	}
@@ -1164,15 +1143,16 @@ func (s *passkeyService) finishKnownUserAssertionInternal(ctx context.Context, t
 	return &adapter.model, nil
 }
 
-func ceremonyIDForTransactionInternal(ctx context.Context, db *database.DB, transactionID, purpose string) string {
+func (s *PasskeyService) ceremonyIDForTransactionInternal(ctx context.Context, transactionID, purpose string) string {
 	var ceremony PasskeyCeremony
-	if db == nil || db.WithContext(ctx).Where("auth_transaction_id = ? AND purpose = ? AND consumed_at IS NULL", transactionID, purpose).Order("created_at DESC").First(&ceremony).Error != nil {
-		return ""
-	}
-	return ceremony.ID
+	err := s.db.WithContext(ctx).
+		Where("auth_transaction_id = ? AND purpose = ? AND consumed_at IS NULL", transactionID, purpose).
+		Order("created_at DESC").
+		First(&ceremony).Error
+	return kit.Ternary(err != nil, "", ceremony.ID)
 }
 
-func (s *passkeyService) completeTransactionInternal(ctx context.Context, transactionID string) error {
+func (s *PasskeyService) completeTransactionInternal(ctx context.Context, transactionID string) error {
 	now := time.Now()
 	result := s.db.WithContext(ctx).Model(&AuthTransaction{}).
 		Where("id = ? AND status = ? AND expires_at > ?", transactionID, authTransactionPending, now).
@@ -1180,23 +1160,17 @@ func (s *passkeyService) completeTransactionInternal(ctx context.Context, transa
 	if result.Error != nil {
 		return errors.WrapIf(result.Error, "failed to complete authentication transaction")
 	}
-	if result.RowsAffected != 1 {
-		return ErrPasskeyTransaction
-	}
-	return nil
+	return kit.Ternary[error](result.RowsAffected != 1, ErrPasskeyTransaction, nil)
 }
 
-func (s *passkeyService) issueStepUpGrantInternal(ctx context.Context, transactionID string) (*StepUpGrant, error) {
-	token, err := randomSecretInternal()
-	if err != nil {
-		return nil, errors.WrapIf(err, "failed to create step-up grant")
-	}
+func (s *PasskeyService) issueStepUpGrantInternal(ctx context.Context, transactionID string) (*StepUpGrant, error) {
+	token := kit.RandomString(43)
 	now := time.Now()
 	result := s.db.WithContext(ctx).Model(&AuthTransaction{}).
 		Where("id = ? AND kind = ? AND status = ? AND expires_at > ?", transactionID, authTransactionKindStepUp, authTransactionPending, now).
 		Updates(map[string]any{
 			"status":       authTransactionCompleted,
-			"secret_hash":  hashSecretInternal(token),
+			"secret_hash":  kit.SHA256Hex(token),
 			"completed_at": now,
 			"updated_at":   now,
 		})
@@ -1213,7 +1187,7 @@ func (s *passkeyService) issueStepUpGrantInternal(ctx context.Context, transacti
 	return &StepUpGrant{Token: token, ExpiresAt: transaction.ExpiresAt}, nil
 }
 
-func (s *passkeyService) authorizeManagementInternal(ctx context.Context, userID, sessionID, stepUpToken string, allowFirstEnrollment bool) error {
+func (s *PasskeyService) authorizeManagementInternal(ctx context.Context, userID, sessionID, stepUpToken string, allowFirstEnrollment bool) error {
 	if strings.TrimSpace(sessionID) == "" {
 		return ErrPasskeyStepUpRequired
 	}
@@ -1227,7 +1201,7 @@ func (s *passkeyService) authorizeManagementInternal(ctx context.Context, userID
 	return s.VerifyStepUpToken(ctx, userID, sessionID, stepUpToken)
 }
 
-func (s *passkeyService) loadUserModelInternal(ctx context.Context, userID string) (*common.User, error) {
+func (s *PasskeyService) loadUserModelInternal(ctx context.Context, userID string) (*common.User, error) {
 	var user common.User
 	if err := s.db.WithContext(ctx).Where("id = ?", userID).First(&user).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -1238,7 +1212,7 @@ func (s *passkeyService) loadUserModelInternal(ctx context.Context, userID strin
 	return &user, nil
 }
 
-func (s *passkeyService) ensureActiveSessionInternal(ctx context.Context, userID, sessionID string) error {
+func (s *PasskeyService) ensureActiveSessionInternal(ctx context.Context, userID, sessionID string) error {
 	if strings.TrimSpace(userID) == "" || strings.TrimSpace(sessionID) == "" {
 		return ErrPasskeyStepUpRequired
 	}
@@ -1254,7 +1228,7 @@ func (s *passkeyService) ensureActiveSessionInternal(ctx context.Context, userID
 	return nil
 }
 
-func (s *passkeyService) countPasskeysInternal(ctx context.Context, userID string) (int, error) {
+func (s *PasskeyService) countPasskeysInternal(ctx context.Context, userID string) (int, error) {
 	var count int64
 	if err := s.db.WithContext(ctx).Model(&Passkey{}).Where("user_id = ? AND rp_id = ?", userID, s.rpID).Count(&count).Error; err != nil {
 		return 0, errors.WrapIf(err, "failed to count passkeys")
@@ -1262,7 +1236,7 @@ func (s *passkeyService) countPasskeysInternal(ctx context.Context, userID strin
 	return int(count), nil
 }
 
-func (s *passkeyService) persistCredentialInternal(ctx context.Context, userID string, credential *webauthn.Credential, name string) (*Passkey, error) {
+func (s *PasskeyService) persistCredentialInternal(ctx context.Context, userID string, credential *webauthn.Credential, name string) (*Passkey, error) {
 	if credential == nil || len(credential.ID) == 0 || len(credential.PublicKey) == 0 {
 		return nil, ErrPasskeyResponse
 	}
@@ -1309,7 +1283,7 @@ func (s *passkeyService) persistCredentialInternal(ctx context.Context, userID s
 	return row, nil
 }
 
-func (s *passkeyService) updateCredentialAfterAssertionInternal(ctx context.Context, adapter *webAuthnUser, credential *webauthn.Credential) error {
+func (s *PasskeyService) updateCredentialAfterAssertionInternal(ctx context.Context, adapter *webAuthnUser, credential *webauthn.Credential) error {
 	if adapter == nil || credential == nil || len(credential.ID) == 0 {
 		return ErrPasskeyResponse
 	}
@@ -1331,10 +1305,7 @@ func (s *passkeyService) updateCredentialAfterAssertionInternal(ctx context.Cont
 	if result.Error != nil {
 		return errors.WrapIf(result.Error, "failed to update passkey counter")
 	}
-	if result.RowsAffected != 1 {
-		return ErrPasskeyResponse
-	}
-	return nil
+	return kit.Ternary[error](result.RowsAffected != 1, ErrPasskeyResponse, nil)
 }
 
 func newAuthTransactionInternal(userID, kind, source string, meta auth.SessionMeta, sessionID *string) *AuthTransaction {
@@ -1438,7 +1409,7 @@ func generateRecoveryCodeRowsInternal(userID string) ([]string, []PasskeyRecover
 		}
 		encoded := strings.TrimRight(base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(raw), "=")
 		codes[i] = groupRecoveryCodeInternal(encoded)
-		hash := hashSecretInternal(strings.ToUpper(strings.ReplaceAll(codes[i], "-", "")))
+		hash := kit.SHA256Hex(strings.ToUpper(strings.ReplaceAll(codes[i], "-", "")))
 		rows[i] = PasskeyRecoveryCode{ID: uuid.New().String(), UserID: userID, CodeHash: hash}
 	}
 	return codes, rows, nil
@@ -1454,11 +1425,6 @@ func groupRecoveryCodeInternal(code string) string {
 		groups = append(groups, code)
 	}
 	return strings.Join(groups, "-")
-}
-
-func hashSecretInternal(secret string) string {
-	sum := sha256.Sum256([]byte(secret))
-	return hex.EncodeToString(sum[:])
 }
 
 func normalizeMobilePasskeyCodeChallengeInternal(codeChallenge string) (string, error) {
@@ -1478,14 +1444,6 @@ func mobilePasskeyCodeChallengeInternal(codeVerifier string) (string, error) {
 	}
 	sum := sha256.Sum256([]byte(codeVerifier))
 	return base64.RawURLEncoding.EncodeToString(sum[:]), nil
-}
-
-func randomSecretInternal() (string, error) {
-	raw := make([]byte, 32)
-	if _, err := rand.Read(raw); err != nil {
-		return "", err
-	}
-	return base64.RawURLEncoding.EncodeToString(raw), nil
 }
 
 func optionalStringInternal(value string) *string {

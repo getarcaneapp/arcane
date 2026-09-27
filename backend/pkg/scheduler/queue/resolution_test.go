@@ -9,6 +9,7 @@ import (
 	st "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
+	kit "go.getarcane.app/kit/pkg"
 	"gorm.io/gorm"
 )
 
@@ -92,7 +93,7 @@ func TestResolveRejectsUnsafeStates(t *testing.T) {
 				current.RemoteDeliveryAttempted = test.delivered
 				return nil
 			}))
-			q.active[queueKeyInternal(test.environment, "auto-update")] = test.active
+			q.active[queuePrefixInternal+kit.SHA256Hex(test.environment+"\x00"+"auto-update")] = test.active
 			_, err = q.Resolve(context.Background(), test.environment, "auto-update", run.ID, "operator")
 			require.Error(t, err)
 			stored, err := q.Get(t.Context(), test.environment, "auto-update", run.ID)

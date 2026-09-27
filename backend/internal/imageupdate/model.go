@@ -1,11 +1,11 @@
 package imageupdate
 
 import (
+	"time"
+
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
 	"github.com/samber/mo"
-
-	"time"
 )
 
 type ImageUpdateRecord struct {

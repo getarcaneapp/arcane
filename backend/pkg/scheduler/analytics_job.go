@@ -11,14 +11,13 @@ import (
 	"sync"
 	"time"
 
-	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
-
 	"emperror.dev/errors"
-
 	"github.com/cenkalti/backoff/v5"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
+	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 const (
@@ -49,10 +48,7 @@ func NewAnalyticsJob(
 	if httpClient == nil {
 		httpClient = &http.Client{Timeout: 30 * time.Second}
 	}
-	heartbeatURL := defaultHeartbeatEndpoint
-	if !cfg.Environment.IsProdEnvironment() {
-		heartbeatURL = devHeartbeatEndpoint
-	}
+	heartbeatURL := kit.Ternary(!cfg.Environment.IsProdEnvironment(), devHeartbeatEndpoint, defaultHeartbeatEndpoint)
 	return &AnalyticsJob{
 		settingsService: settingsService,
 		kvService:       kvService,
@@ -99,7 +95,7 @@ func (j *AnalyticsJob) Run(ctx context.Context) (schedulertypes.Outcome, error) 
 	}{
 		Version:    getAnalyticsVersion(),
 		InstanceID: instanceID,
-		ServerType: j.getServerType(),
+		ServerType: kit.Ternary(j.cfg.AgentMode, "agent", "manager"),
 	}
 
 	body, err := json.Marshal(payload)
@@ -249,13 +245,6 @@ func (j *AnalyticsJob) claimHeartbeatAttemptWindowInternal(ctx context.Context) 
 	}
 
 	return true, nil
-}
-
-func (j *AnalyticsJob) getServerType() string {
-	if j.cfg.AgentMode {
-		return "agent"
-	}
-	return "manager"
 }
 
 func getAnalyticsVersion() string {

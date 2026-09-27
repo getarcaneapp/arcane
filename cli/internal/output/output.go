@@ -23,6 +23,7 @@ import (
 	"charm.land/lipgloss/v2/table"
 	"github.com/charmbracelet/x/term"
 	"github.com/mattn/go-runewidth"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 var (
@@ -264,10 +265,7 @@ func Table(headers []string, rows [][]string) {
 			})
 	} else {
 		t = t.StyleFunc(func(row, col int) lipgloss.Style {
-			if row == table.HeaderRow {
-				return tablePlainHead
-			}
-			return tablePlainCell
+			return kit.Ternary(row == table.HeaderRow, tablePlainHead, tablePlainCell)
 		})
 	}
 
@@ -309,12 +307,12 @@ func fitTableToTerminal(headers []string, rows [][]string) ([]string, [][]string
 
 	columnWidths := make([]int, columnCount)
 	for i, header := range displayHeaders {
-		columnWidths[i] = maxInt(1, visibleWidth(header))
+		columnWidths[i] = max(1, visibleWidth(header))
 	}
 
 	for _, row := range displayRows {
 		for col := range columnCount {
-			columnWidths[col] = maxInt(columnWidths[col], visibleWidth(row[col]))
+			columnWidths[col] = max(columnWidths[col], visibleWidth(row[col]))
 		}
 	}
 
@@ -424,13 +422,6 @@ func sumInts(values []int) int {
 		total += value
 	}
 	return total
-}
-
-func maxInt(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }
 
 func normalizeTableRows(rows [][]string, width int) [][]string {

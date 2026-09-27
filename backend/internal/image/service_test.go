@@ -1,13 +1,6 @@
 package image
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/imageref"
-
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-
 	"context"
 	"encoding/json"
 	"errors"
@@ -20,28 +13,30 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
-
-	"github.com/libtnb/sqlite"
-	dockerauthconfig "github.com/moby/moby/api/pkg/authconfig"
-	"github.com/stretchr/testify/require"
-	"gorm.io/gorm"
-
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/imageref"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
+	"github.com/libtnb/sqlite"
+	dockerauthconfig "github.com/moby/moby/api/pkg/authconfig"
 	"github.com/moby/moby/api/types/container"
 	dockercontainer "github.com/moby/moby/api/types/container"
 	dockertypesimage "github.com/moby/moby/api/types/image"
 	dockerregistry "github.com/moby/moby/api/types/registry"
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.getarcane.app/sys/crypto"
+	"gorm.io/gorm"
 )
 
 var imageDockerAPIVersionPrefixInternal = regexp.MustCompile(`^/v[0-9]+\.[0-9]+`)
@@ -591,7 +586,7 @@ func newTestDockerClientInternal(t *testing.T, server *httptest.Server) *client.
 }
 
 // newImagePullServerWithObserverInternal is NewImagePullServer with a pull callback.
-func newImagePullServerWithObserverInternal(t *testing.T, inspectByRef map[string]dockertypesimage.InspectResponse, onPull func(fullRef string, authHeader string)) *httptest.Server {
+func newImagePullServerWithObserverInternal(t *testing.T, inspectByRef map[string]dockertypesimage.InspectResponse, onPull func(fullRef, authHeader string)) *httptest.Server {
 	t.Helper()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

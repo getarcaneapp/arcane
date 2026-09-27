@@ -12,6 +12,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	containertypes "github.com/getarcaneapp/arcane/types/v2/container"
 	porttypes "github.com/getarcaneapp/arcane/types/v2/port"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 type PortService struct {
@@ -84,10 +85,7 @@ func (s *PortService) buildPortSortBindings() []pagination.SortBinding[porttypes
 			Key: "containerPort",
 			Fn: func(a, b porttypes.PortMapping) int {
 				if a.ContainerPort != b.ContainerPort {
-					if a.ContainerPort < b.ContainerPort {
-						return -1
-					}
-					return 1
+					return kit.Ternary(a.ContainerPort < b.ContainerPort, -1, 1)
 				}
 				return strings.Compare(a.ContainerName, b.ContainerName)
 			},
@@ -120,10 +118,7 @@ func (s *PortService) buildPortSortBindings() []pagination.SortBinding[porttypes
 			Key: "isPublished",
 			Fn: func(a, b porttypes.PortMapping) int {
 				if a.IsPublished != b.IsPublished {
-					if a.IsPublished {
-						return -1
-					}
-					return 1
+					return kit.Ternary(a.IsPublished, -1, 1)
 				}
 				return strings.Compare(a.ContainerName, b.ContainerName)
 			},
@@ -218,8 +213,5 @@ func compareOptionalStringDescInternal(a, b, fallbackA, fallbackB string) int {
 }
 
 func normalizeOptionalStringSortValueInternal(value string) string {
-	if strings.EqualFold(strings.TrimSpace(value), "invalid IP") {
-		return ""
-	}
-	return value
+	return kit.Ternary(strings.EqualFold(strings.TrimSpace(value), "invalid IP"), "", value)
 }

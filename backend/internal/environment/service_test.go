@@ -1,10 +1,7 @@
 package environment
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-
-	"github.com/getarcaneapp/arcane/backend/v2/internal/gitrepo"
-
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -17,18 +14,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/libtnb/sqlite"
-	"github.com/stretchr/testify/require"
-	"gorm.io/gorm"
-
 	"github.com/coder/websocket"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/gitrepo"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
 	s3domain "github.com/getarcaneapp/arcane/backend/v2/internal/s3"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/user"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
@@ -38,9 +33,12 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/environment"
 	"github.com/getarcaneapp/arcane/types/v2/gitops"
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
+	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.getarcane.app/sys/crypto"
 	"go.uber.org/fx/fxtest"
+	"gorm.io/gorm"
 )
 
 func TestEnvironmentService_OverlappingHealthCheckIsSkippedInternal(t *testing.T) {
@@ -174,7 +172,7 @@ func createTestEnvironmentServiceUser(t *testing.T, ctx context.Context, userSer
 	return created
 }
 
-func createTestEnvironment(t *testing.T, db *database.DB, id string, apiURL string, accessToken *string) {
+func createTestEnvironment(t *testing.T, db *database.DB, id, apiURL string, accessToken *string) {
 	t.Helper()
 	createNamedTestEnvironmentInternal(t, db, id, "env-"+id, apiURL, accessToken)
 }
@@ -1076,7 +1074,6 @@ func TestEnvironmentService_EnsureSwarmNodeAgentEnvironment_ReusesLegacyHiddenRe
 
 	require.Len(t, environments, 1,
 		"environment count = %d, want 1", len(environments))
-
 }
 
 // TestEnvironmentService_EnsureSwarmNodeAgentEnvironment_TokenResolvesEndToEnd
@@ -1225,9 +1222,7 @@ func TestEnvironmentService_ListEnvironmentsPaginated_FiltersByAccessibleEnvIDs(
 
 	newParams := func(typeFilter string) pagination.QueryParams {
 		filters := map[string]string{}
-		if typeFilter != "" {
-			filters["type"] = typeFilter
-		}
+		filters["type"] = cmp.Or(typeFilter, filters["type"])
 		return pagination.QueryParams{
 			Start: 0, Limit: 20,
 			Filters: filters,

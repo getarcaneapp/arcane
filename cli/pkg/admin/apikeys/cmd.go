@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"emperror.dev/errors"
-
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
@@ -24,9 +23,7 @@ var (
 	jsonOutput bool
 )
 
-var (
-	apikeyCreatePermissions []string
-)
+var apikeyCreatePermissions []string
 
 var (
 	apikeyUpdateName        string

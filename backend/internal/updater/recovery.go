@@ -1,6 +1,7 @@
 package updater
 
 import (
+	"cmp"
 	"context"
 	"log/slog"
 	"strings"
@@ -15,13 +16,15 @@ import (
 	"go.getarcane.app/updater"
 )
 
-type updateProgressKeyInternal struct{}
-type updateProgressInternal struct {
-	mu            sync.Mutex
-	err           error
-	selfTriggered bool
-	selfID        string
-}
+type (
+	updateProgressKeyInternal struct{}
+	updateProgressInternal    struct {
+		mu            sync.Mutex
+		err           error
+		selfTriggered bool
+		selfID        string
+	}
+)
 
 // RecordUpdateRun persists one updater resource result into Arcane history.
 func (s *UpdaterService) RecordUpdateRun(ctx context.Context, result updater.ResourceResult) error {
@@ -29,10 +32,7 @@ func (s *UpdaterService) RecordUpdateRun(ctx context.Context, result updater.Res
 	if s != nil && s.deps.DB != nil {
 		recordErr = s.recordRunInternal(ctx, resourceResultFromModuleInternal(result))
 	}
-	name := strings.TrimSpace(result.ResourceName)
-	if name == "" {
-		name = result.ResourceID
-	}
+	name := cmp.Or(strings.TrimSpace(result.ResourceName), result.ResourceID)
 	message := name + ": " + string(result.Status)
 	level := activitytypes.MessageLevelInfo
 	status := schedulertypes.NeedsAttention

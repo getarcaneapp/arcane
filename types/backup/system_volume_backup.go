@@ -8,19 +8,17 @@ type ManagementType string
 const (
 	ManagementTypeSystem ManagementType = "system"
 	ManagementTypeVolume ManagementType = "volume"
-)
 
-// SystemVolumePolicyPrefix marks volume-backup records created by the centralized system policy.
-const SystemVolumePolicyPrefix = "system-volume:"
+	// SystemVolumePolicyPrefix marks volume-backup records created by the centralized system policy.
+	SystemVolumePolicyPrefix = "system-volume:"
 
-// SystemVolumeSelectionMode controls how configured volume names affect live Docker volumes.
-type SystemVolumeSelectionMode string
-
-const (
 	SystemVolumeSelectionAll       SystemVolumeSelectionMode = "all"
 	SystemVolumeSelectionAllowlist SystemVolumeSelectionMode = "allowlist"
 	SystemVolumeSelectionBlocklist SystemVolumeSelectionMode = "blocklist"
 )
+
+// SystemVolumeSelectionMode controls how configured volume names affect live Docker volumes.
+type SystemVolumeSelectionMode string
 
 // SystemVolumeBackupPolicy is one manager-owned policy for local Docker volumes.
 type SystemVolumeBackupPolicy struct {

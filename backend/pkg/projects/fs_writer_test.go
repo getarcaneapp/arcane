@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.getarcane.app/acfs"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 func TestWriteFilesPermissions(t *testing.T) {
@@ -189,10 +190,7 @@ func TestWriteProjectFile_StillRejectsNonEnvSymlink(t *testing.T) {
 
 			targetPath := filepath.Join(t.TempDir(), "compose.yaml")
 			require.NoError(t, os.WriteFile(targetPath, []byte("services: {}\n"), 0o600))
-			fileName := DefaultComposeFileName
-			if writer == "project" {
-				fileName = OverrideEnvFileName
-			}
+			fileName := kit.Ternary(writer == "project", OverrideEnvFileName, DefaultComposeFileName)
 			linkPath := filepath.Join(projectDir, fileName)
 			if err := os.Symlink(targetPath, linkPath); err != nil {
 				t.Skipf("symlink creation is unavailable: %v", err)

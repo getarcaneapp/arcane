@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"emperror.dev/errors"
-
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	typesenvironment "github.com/getarcaneapp/arcane/types/v2/environment"
@@ -82,7 +81,7 @@ func readGeneratedEdgeMTLSCertificateInfoInternal(cfg *config.Config, envID stri
 	return info, nil
 }
 
-func edgeMTLSCertificateDaysRemainingInternal(now time.Time, expiresAt time.Time) int {
+func edgeMTLSCertificateDaysRemainingInternal(now, expiresAt time.Time) int {
 	remaining := expiresAt.Sub(now)
 	if remaining <= 0 {
 		return 0

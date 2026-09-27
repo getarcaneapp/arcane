@@ -2,7 +2,6 @@ package scheduler
 
 import (
 	"context"
-	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	"sync"
 	"testing"
 	"time"
@@ -10,6 +9,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
+	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/fx/fxtest"
 )
@@ -88,6 +88,7 @@ func (d *testDispatcherInternal) Submit(ctx context.Context, request schedulerty
 	defer lock.Unlock()
 	return schedulertypes.Run{JobID: request.JobID}, d.run(ctx, request)
 }
+
 func (*testDispatcherInternal) Checkpoint(context.Context, string, string, time.Time) error {
 	return nil
 }

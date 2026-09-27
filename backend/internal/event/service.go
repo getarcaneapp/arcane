@@ -2,6 +2,7 @@ package event
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json/v2"
 	"fmt"
@@ -12,20 +13,18 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
-
 	"emperror.dev/errors"
-
 	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/mapper"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	eventtypes "github.com/getarcaneapp/arcane/types/v2/event"
 	"github.com/samber/mo"
 	"github.com/samber/mo/option"
+	"go.getarcane.app/kit/pkg/mapping"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
 	"gorm.io/gorm"
@@ -72,10 +71,7 @@ type CreateEventRequest struct {
 }
 
 func (s *EventService) CreateEvent(ctx context.Context, req CreateEventRequest) (*Event, error) {
-	severity := req.Severity
-	if severity == "" {
-		severity = EventSeverityInfo
-	}
+	severity := cmp.Or(req.Severity, EventSeverityInfo)
 	userID, username := normalizeEventActor(req.UserID, req.Username)
 
 	eventRecord := &Event{
@@ -236,7 +232,7 @@ func (s *EventService) forwardEventToManagerHTTP(ctx context.Context, eventModel
 		return errors.WrapIf(err, "failed to create manager event request")
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set(utils.HeaderAgentToken, s.cfg.AgentToken)
+	req.Header.Set(middleware.HeaderAgentToken, s.cfg.AgentToken)
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
@@ -283,10 +279,10 @@ func normalizeEventActor(userID, username *string) (*string, *string) {
 	normalizedUsername := normalizeOptionalStringPtr(username)
 
 	if normalizedUsername == nil && normalizedUserID != nil {
-		normalizedUsername = copyOptionalStringPtr(normalizedUserID)
+		normalizedUsername = new(*normalizedUserID)
 	}
 	if normalizedUserID == nil && normalizedUsername != nil {
-		normalizedUserID = copyOptionalStringPtr(normalizedUsername)
+		normalizedUserID = new(*normalizedUsername)
 	}
 	if normalizedUserID == nil && normalizedUsername == nil {
 		normalizedUserID = new("system")
@@ -305,13 +301,6 @@ func normalizeOptionalStringPtr(value *string) *string {
 		return nil
 	}
 	return &trimmed
-}
-
-func copyOptionalStringPtr(value *string) *string {
-	if value == nil {
-		return nil
-	}
-	return new(*value)
 }
 
 func (s *EventService) ListEventsPaginated(ctx context.Context, params pagination.QueryParams) ([]eventtypes.Event, pagination.Response, error) {
@@ -337,7 +326,7 @@ func (s *EventService) ListEventsPaginated(ctx context.Context, params paginatio
 		return nil, pagination.Response{}, errors.WrapIf(err, "failed to paginate events")
 	}
 
-	eventDtos, mapErr := mapper.MapSlice[Event, eventtypes.Event](events)
+	eventDtos, mapErr := mapping.MapSlice[Event, eventtypes.Event](events)
 	if mapErr != nil {
 		return nil, pagination.Response{}, errors.WrapIf(mapErr, "failed to map events")
 	}
@@ -367,7 +356,7 @@ func (s *EventService) GetEventsByEnvironmentPaginated(ctx context.Context, envi
 		return nil, pagination.Response{}, errors.WrapIf(err, "failed to paginate events")
 	}
 
-	eventDtos, mapErr := mapper.MapSlice[Event, eventtypes.Event](events)
+	eventDtos, mapErr := mapping.MapSlice[Event, eventtypes.Event](events)
 	if mapErr != nil {
 		return nil, pagination.Response{}, errors.WrapIf(mapErr, "failed to map events")
 	}

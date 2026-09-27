@@ -19,7 +19,6 @@ import (
 	"time"
 
 	"emperror.dev/errors"
-
 	"github.com/spf13/cobra"
 	"go.getarcane.app/acfs/atomic"
 )
@@ -129,7 +128,7 @@ type serverTLSPaths struct {
 	KeyPath  string
 }
 
-func generateEdgeMTLSBundleInternal(outDir, envID string, appURL string) (*edgeMTLSPaths, error) {
+func generateEdgeMTLSBundleInternal(outDir, envID, appURL string) (*edgeMTLSPaths, error) {
 	if envID == "" {
 		return nil, errors.New("env ID is required")
 	}
@@ -190,7 +189,7 @@ func generateEdgeMTLSBundleInternal(outDir, envID string, appURL string) (*edgeM
 	return paths, nil
 }
 
-func generateServerTLSBundleInternal(outDir, commonName string, hosts []string, certName string, keyName string) (*serverTLSPaths, error) {
+func generateServerTLSBundleInternal(outDir, commonName string, hosts []string, certName, keyName string) (*serverTLSPaths, error) {
 	if commonName == "" {
 		return nil, errors.New("common name is required")
 	}
@@ -335,7 +334,7 @@ func EdgeMTLSTrustDomain(appURL string) string {
 }
 
 // BuildEdgeMTLSURISAN returns the SPIFFE URI SAN for an edge environment ID.
-func BuildEdgeMTLSURISAN(appURL string, envID string) *url.URL {
+func BuildEdgeMTLSURISAN(appURL, envID string) *url.URL {
 	trustDomain := EdgeMTLSTrustDomain(appURL)
 	envID = strings.TrimSpace(envID)
 	if trustDomain == "" || envID == "" {

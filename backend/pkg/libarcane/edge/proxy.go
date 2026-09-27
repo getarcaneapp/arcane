@@ -1,8 +1,6 @@
 package edge
 
 import (
-	"github.com/samber/mo"
-
 	"bytes"
 	"context"
 	"io"
@@ -11,8 +9,8 @@ import (
 	"time"
 
 	"emperror.dev/errors"
-
 	"github.com/labstack/echo/v5"
+	"github.com/samber/mo"
 )
 
 const (

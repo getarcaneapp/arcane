@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"emperror.dev/errors"
-
 	"github.com/nicholas-fedor/shoutrrr/pkg/services/chat/slack"
 )
 

@@ -7,14 +7,11 @@ import (
 	"encoding/base64"
 	"fmt"
 	"log/slog"
+	"maps"
+	"slices"
 	"strings"
 
 	"emperror.dev/errors"
-
-	"golang.org/x/crypto/argon2"
-	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
-
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
@@ -24,6 +21,10 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/dbutil"
 	"github.com/getarcaneapp/arcane/types/v2/user"
 	"go.getarcane.app/kit/normalization"
+	kit "go.getarcane.app/kit/pkg"
+	"golang.org/x/crypto/argon2"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type Argon2Params struct {
@@ -268,10 +269,7 @@ func (s *UserService) checkTargetPrivilegeInternal(ctx context.Context, tx *gorm
 	if err != nil {
 		return errors.WrapIf(err, "failed to resolve target permissions")
 	}
-	if targetPerms != nil && targetPerms.IsGlobalAdmin() {
-		return ErrInsufficientPrivilege
-	}
-	return nil
+	return kit.Ternary[error](targetPerms != nil && targetPerms.IsGlobalAdmin(), ErrInsufficientPrivilege, nil)
 }
 
 // UpdateUser persists the given user. actorPerms identifies the caller
@@ -383,7 +381,7 @@ func (s *UserService) SetPasswordAndRevokeSessionsExcept(ctx context.Context, us
 //
 // Note: The clause.Locking{Strength: "UPDATE"} statement is used to acquire a row-level lock.
 // This MUST be done inside a transaction to ensure the lock is held until the update is committed.
-func (s *UserService) AttachOidcSubjectTransactional(ctx context.Context, userID string, subject string, updateFn func(u *common.User)) (*common.User, error) {
+func (s *UserService) AttachOidcSubjectTransactional(ctx context.Context, userID, subject string, updateFn func(u *common.User)) (*common.User, error) {
 	var out *common.User
 	err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
 		var u common.User
@@ -681,17 +679,11 @@ func permissionSetToMap(ps *authz.PermissionSet) map[string][]string {
 		return out
 	}
 	if len(ps.Global) > 0 {
-		globals := make([]string, 0, len(ps.Global))
-		for p := range ps.Global {
-			globals = append(globals, p)
-		}
+		globals := slices.Collect(maps.Keys(ps.Global))
 		out["global"] = globals
 	}
 	for envID, perms := range ps.PerEnv {
-		list := make([]string, 0, len(perms))
-		for p := range perms {
-			list = append(list, p)
-		}
+		list := slices.Collect(maps.Keys(perms))
 		out[envID] = list
 	}
 	return out
@@ -767,10 +759,7 @@ func (s *UserService) GetAvatar(ctx context.Context, userID string) ([]byte, str
 	}
 	var avatar UserAvatar
 	if err := s.db.DB.WithContext(ctx).Where("user_id = ?", userID).First(&avatar).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, "", nil
-		}
-		return nil, "", err
+		return nil, "", kit.Ternary(errors.Is(err, gorm.ErrRecordNotFound), nil, err)
 	}
 	return avatar.Data, avatar.MimeType, nil
 }

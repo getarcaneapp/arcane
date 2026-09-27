@@ -42,7 +42,6 @@ func TestValidateMobileRedirectURI(t *testing.T) {
 
 			require.Equal(t, tc.wantErr, err != nil,
 				"ValidateMobileRedirectURI(%q): wantErr=%v got err=%v", tc.uri, tc.wantErr, err)
-
 		})
 	}
 }
@@ -62,10 +61,8 @@ func TestGetMobileRedirectAllowlistTrimsWhitespace(t *testing.T) {
 			"got %d entries (%v), want %d (%v)", len(got), got, len(want), want)
 	}
 	for i, w := range want {
-
 		require.Equal(t, w, got[i],
 			"entry %d: got %q, want %q", i, got[i], w)
-
 	}
 }
 
@@ -101,7 +98,6 @@ func TestGetMobileRedirectAllowlistUsesSettings(t *testing.T) {
 		require.Error(t, err,
 			"ValidateMobileRedirectURI config fallback should fail when DB setting is configured")
 	}
-
 }
 
 // Test fixtures shared by this package's tests.

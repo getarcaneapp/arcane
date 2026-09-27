@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"log/slog"
+	"maps"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -18,15 +19,7 @@ import (
 	"time"
 	"uuid"
 
-	"go.getarcane.app/kit/normalization"
-
 	"emperror.dev/errors"
-
-	"github.com/samber/mo"
-	"gorm.io/gorm"
-
-	libcrypto "go.getarcane.app/sys/crypto"
-
 	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
@@ -37,6 +30,11 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/validation"
 	settingstypes "github.com/getarcaneapp/arcane/types/v2/settings"
+	"github.com/samber/mo"
+	"go.getarcane.app/kit/normalization"
+	kit "go.getarcane.app/kit/pkg"
+	libcrypto "go.getarcane.app/sys/crypto"
+	"gorm.io/gorm"
 )
 
 const (
@@ -376,7 +374,7 @@ func (s *SettingsService) loadDatabaseConfigFromEnv(ctx context.Context, db *dat
 			continue
 		}
 
-		envVarName := strings.ToUpper(utils.CamelCaseToSnakeCase(key))
+		envVarName := strings.ToUpper(kit.SnakeCase(key))
 
 		// debug: log each env name checked and whether a value exists
 		if val, ok, _ := utils.LookupEnvOrFile(envVarName); ok {
@@ -385,7 +383,7 @@ func (s *SettingsService) loadDatabaseConfigFromEnv(ctx context.Context, db *dat
 				mask = fmt.Sprintf("%d chars", len(val))
 			}
 			slog.DebugContext(ctx, "loadDatabaseConfigFromEnv: env override found", "key", key, "env", envVarName, "valueMasked", mask)
-			rv.Field(i).FieldByName("Value").SetString(utils.TrimQuotes(val))
+			rv.Field(i).FieldByName("Value").SetString(kit.TrimQuotes(val))
 			continue
 		}
 		if val, ok := settingsMap[key]; ok {
@@ -439,13 +437,13 @@ func resolveSettingsEnvOverridesInternal() []settingsEnvOverride {
 			continue
 		}
 
-		envVarName := strings.ToUpper(utils.CamelCaseToSnakeCase(key))
+		envVarName := strings.ToUpper(kit.SnakeCase(key))
 		if val, ok, _ := utils.LookupEnvOrFile(envVarName); ok && val != "" {
 			overrides = append(overrides, settingsEnvOverride{
 				fieldIndex: i,
 				key:        key,
 				envVarName: envVarName,
-				value:      utils.TrimQuotes(val),
+				value:      kit.TrimQuotes(val),
 			})
 		}
 	}
@@ -476,16 +474,13 @@ func (s *SettingsService) GetSettings(ctx context.Context) (*Settings, error) {
 // GetSettingsOrDefaults is a convenience for hot paths that need a snapshot but cannot
 // meaningfully recover from a settings load failure. It logs any error and guarantees a
 // non-nil *Settings (defaults: a zero-valued struct, which the SettingVariable helpers
-// like utils.BoolOrDefault treat as "use the caller's default").
+// like kit.ParseOrDefault treat as "use the caller's default").
 func (s *SettingsService) GetSettingsOrDefaults(ctx context.Context) *Settings {
 	cfg, err := s.GetSettings(ctx)
 	if err != nil {
 		slog.WarnContext(ctx, "failed to load settings, falling back to defaults", "error", err)
 	}
-	if cfg == nil {
-		return &Settings{}
-	}
-	return cfg
+	return kit.Ternary(cfg == nil, &Settings{}, cfg)
 }
 
 func (s *SettingsService) getEffectiveSettingsConfigInternal(ctx context.Context) *Settings {
@@ -810,10 +805,7 @@ func (s *SettingsService) PruneUnknownSettings(ctx context.Context) error {
 			return actors.NoPayload{}, nil
 		}
 
-		keys := make([]string, 0, len(allowedKeys))
-		for key := range allowedKeys {
-			keys = append(keys, key)
-		}
+		keys := slices.Collect(maps.Keys(allowedKeys))
 
 		result := s.db.WithContext(writeCtx).Where("key NOT IN ?", keys).Delete(&SettingVariable{})
 		if result.Error != nil {
@@ -873,12 +865,12 @@ func (s *SettingsService) processEnvField(ctx context.Context, tx *gorm.DB, fiel
 		return nil
 	}
 
-	envVarName := strings.ToUpper(utils.CamelCaseToSnakeCase(key))
+	envVarName := strings.ToUpper(kit.SnakeCase(key))
 	envVal, ok, _ := utils.LookupEnvOrFile(envVarName)
 	if !ok {
 		return nil
 	}
-	envVal = utils.TrimQuotes(envVal)
+	envVal = kit.TrimQuotes(envVal)
 
 	return s.upsertEnvSetting(ctx, tx, key, envVal)
 }
@@ -889,11 +881,7 @@ func (s *SettingsService) shouldProcessField(key, attrs string, isEnvOnlyMode bo
 	}
 
 	// If not in env-only mode, only persist if it's explicitly marked as envOverride
-	if !isEnvOnlyMode && !strings.Contains(attrs, "envOverride") {
-		return false
-	}
-
-	return true
+	return isEnvOnlyMode || strings.Contains(attrs, "envOverride")
 }
 
 func (s *SettingsService) upsertEnvSetting(ctx context.Context, tx *gorm.DB, key, envVal string) error {
@@ -1002,12 +990,10 @@ func (s *SettingsService) SetStringSetting(ctx context.Context, key, value strin
 // is added to the list; when false it is removed.
 func (s *SettingsService) SetContainerAutoUpdateExclusionInternal(ctx context.Context, containerName string, excluded bool) error {
 	_, err := s.writes.Execute(ctx, "update container auto-update exclusion", func(writeCtx context.Context) (actors.NoPayload, error) {
-		ordered := utils.UniqueNonEmptyStrings(strings.Split(s.GetStringSetting(writeCtx, "autoUpdateExcludedContainers", ""), ","))
+		ordered := kit.Unique(kit.TrimNonEmpty(strings.Split(s.GetStringSetting(writeCtx, "autoUpdateExcludedContainers", ""), ",")))
 
 		if excluded {
-			if !slices.Contains(ordered, containerName) {
-				ordered = append(ordered, containerName)
-			}
+			ordered = kit.Unique(append(ordered, containerName))
 		} else {
 			filtered := ordered[:0]
 			for _, name := range ordered {
@@ -1182,7 +1168,7 @@ func (s *SettingsService) NormalizeProjectsDirectory(ctx context.Context, projec
 
 func (s *SettingsService) NormalizeBuildsDirectory(ctx context.Context) error {
 	const buildsKey = "buildsDirectory"
-	envVarName := strings.ToUpper(utils.CamelCaseToSnakeCase(buildsKey))
+	envVarName := strings.ToUpper(kit.SnakeCase(buildsKey))
 	if envVal, ok, _ := utils.LookupEnvOrFile(envVarName); ok && strings.TrimSpace(envVal) != "" {
 		slog.DebugContext(ctx, "BUILDS_DIRECTORY environment variable is set, skipping normalization", "value", envVal)
 		return nil

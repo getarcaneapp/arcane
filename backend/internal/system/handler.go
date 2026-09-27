@@ -1,17 +1,14 @@
 package system
 
 import (
+	"cmp"
 	"context"
 	"log/slog"
 	"net/http"
 	"strings"
 
 	"emperror.dev/errors"
-
 	"github.com/danielgtaylor/huma/v2"
-	dockersystem "github.com/moby/moby/api/types/system"
-	"github.com/moby/moby/client"
-
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
@@ -25,8 +22,11 @@ import (
 	containertypes "github.com/getarcaneapp/arcane/types/v2/container"
 	"github.com/getarcaneapp/arcane/types/v2/dockerinfo"
 	"github.com/getarcaneapp/arcane/types/v2/system"
+	dockersystem "github.com/moby/moby/api/types/system"
+	"github.com/moby/moby/client"
 	"go.getarcane.app/docker/convert"
 	converttypes "go.getarcane.app/docker/convert/types"
+	kit "go.getarcane.app/kit/pkg"
 	"go.getarcane.app/sys/cgroup"
 )
 
@@ -341,17 +341,11 @@ func extractVersionDetailsFromComponents(components []dockersystem.ComponentVers
 		for key, value := range component.Details {
 			switch strings.ToLower(key) {
 			case "gitcommit":
-				if gitCommit == "" {
-					gitCommit = value
-				}
+				gitCommit = cmp.Or(gitCommit, value)
 			case "goversion":
-				if goVersion == "" {
-					goVersion = value
-				}
+				goVersion = cmp.Or(goVersion, value)
 			case "buildtime":
-				if buildTime == "" {
-					buildTime = value
-				}
+				buildTime = cmp.Or(buildTime, value)
 			}
 		}
 	}
@@ -506,10 +500,11 @@ func (h *SystemHandler) TriggerUpgrade(ctx context.Context, input *TriggerUpgrad
 		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to initiate upgrade").Error())
 	}
 
-	message := "Upgrade initiated successfully. A new container is being created and will replace this one shortly."
-	if upToDate {
-		message = "Already running the newest image. The upgrade pulls it again and leaves the container in place."
-	}
+	message := kit.Ternary(
+		upToDate,
+		"Already running the newest image. The upgrade pulls it again and leaves the container in place.",
+		"Upgrade initiated successfully. A new container is being created and will replace this one shortly.",
+	)
 
 	return &handlerutil.Out[TriggerUpgradeData]{
 		Body: base.ApiResponse[TriggerUpgradeData]{

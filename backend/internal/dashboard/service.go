@@ -1,8 +1,6 @@
 package dashboard
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
-
 	"context"
 	"sort"
 	"strconv"
@@ -10,11 +8,7 @@ import (
 	"time"
 
 	"emperror.dev/errors"
-
-	dockercontainer "github.com/moby/moby/api/types/container"
-	"golang.org/x/sync/errgroup"
-	"golang.org/x/sync/singleflight"
-
+	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/container"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
@@ -34,8 +28,12 @@ import (
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
 	versiontypes "github.com/getarcaneapp/arcane/types/v2/version"
 	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
+	dockercontainer "github.com/moby/moby/api/types/container"
+	kit "go.getarcane.app/kit/pkg"
 	"go.getarcane.app/sys/cgroup"
 	"go.getarcane.app/updater/labels"
+	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/singleflight"
 )
 
 const (
@@ -71,13 +69,6 @@ type DashboardService struct {
 type dashboardSnapshotCacheEntryInternal struct {
 	snapshot *dashboardtypes.Snapshot
 	builtAt  time.Time
-}
-
-func dashboardCacheIndexInternal(flag bool) int {
-	if flag {
-		return 1
-	}
-	return 0
 }
 
 type DashboardActionItemsOptions struct {
@@ -125,7 +116,10 @@ func (s *DashboardService) GetSnapshot(ctx context.Context, options DashboardAct
 		catalog = iconcatalog.Normalize(project.IconCatalogForContext(ctx))
 	}
 
-	slot := &s.snapshotCache[dashboardCacheIndexInternal(includeTables)][dashboardCacheIndexInternal(options.DebugAllGood)][dashboardCacheIndexInternal(catalog == iconcatalog.CatalogDashboardIcons)]
+	tables := kit.Ternary(includeTables, 1, 0)
+	debug := kit.Ternary(options.DebugAllGood, 1, 0)
+	icons := kit.Ternary(catalog == iconcatalog.CatalogDashboardIcons, 1, 0)
+	slot := &s.snapshotCache[tables][debug][icons]
 	if entry := slot.Load(); entry != nil && time.Since(entry.builtAt) < dashboardSnapshotCacheTTL {
 		return entry.snapshot, nil
 	}
@@ -447,6 +441,7 @@ func (s *DashboardService) getPendingProjectUpdatesCountInternal(ctx context.Con
 
 	return count, nil
 }
+
 func (s *DashboardService) getActionableVulnerabilitiesCountInternal(ctx context.Context) (int, error) {
 	if s.vulnerabilityService == nil {
 		return 0, nil
@@ -473,7 +468,7 @@ func (s *DashboardService) getExpiringAPIKeysCountInternal(ctx context.Context) 
 	return int(count), nil
 }
 
-func buildDashboardPaginationResponseInternal(totalItems int, limit int) base.PaginationResponse {
+func buildDashboardPaginationResponseInternal(totalItems, limit int) base.PaginationResponse {
 	if limit <= 0 {
 		limit = dashboardSnapshotPreloadLimit
 	}

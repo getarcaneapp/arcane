@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"emperror.dev/errors"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/moby/moby/client"
+	"go.getarcane.app/docker/compat"
 	"go.getarcane.app/sys/cgroup"
 )
 
@@ -59,7 +59,7 @@ func (s *SystemService) loadDockerHostMemoryInternal(ctx context.Context) (docke
 	if err != nil {
 		return dockerHostMemoryInfo{}, err
 	}
-	inspect, err := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, client.ContainerInspectOptions{})
+	inspect, err := compat.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, client.ContainerInspectOptions{})
 	if err != nil {
 		return dockerHostMemoryInfo{}, err
 	}

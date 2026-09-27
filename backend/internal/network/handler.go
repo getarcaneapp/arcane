@@ -1,32 +1,31 @@
 package network
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-
+	"cmp"
 	"context"
 	"net/http"
 	"sort"
 	"strings"
 
-	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
-
 	"emperror.dev/errors"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/mapper"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/netutils"
+	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	networktypes "github.com/getarcaneapp/arcane/types/v2/network"
 	dockernetwork "github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
 	"github.com/samber/mo"
+	kit "go.getarcane.app/kit/pkg"
+	"go.getarcane.app/kit/pkg/mapping"
 )
 
 type NetworkHandler struct {
@@ -227,7 +226,7 @@ func (h *NetworkHandler) CreateNetwork(ctx context.Context, input *CreateNetwork
 		return nil, err
 	}
 
-	dockerOptions, err := mapper.MapOne[networktypes.CreateOptions, client.NetworkCreateOptions](input.Body.Options)
+	dockerOptions, err := mapping.MapOne[networktypes.CreateOptions, client.NetworkCreateOptions](input.Body.Options)
 	if err != nil {
 		return nil, huma.Error400BadRequest(errors.WithMessage(err, "Invalid network options").Error())
 	}
@@ -260,7 +259,7 @@ func (h *NetworkHandler) CreateNetwork(ctx context.Context, input *CreateNetwork
 		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to create network").Error())
 	}
 
-	out, err := mapper.MapOne[dockernetwork.CreateResponse, networktypes.CreateResponse](*response)
+	out, err := mapping.MapOne[dockernetwork.CreateResponse, networktypes.CreateResponse](*response)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to map network").Error())
 	}
@@ -280,7 +279,7 @@ func (h *NetworkHandler) GetNetwork(ctx context.Context, input *GetNetworkInput)
 		return nil, huma.Error404NotFound(errors.WithMessage(err, "Network not found").Error())
 	}
 
-	out, err := mapper.MapOne[dockernetwork.Inspect, networktypes.Inspect](*networkInspect)
+	out, err := mapping.MapOne[dockernetwork.Inspect, networktypes.Inspect](*networkInspect)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to map network").Error())
 	}
@@ -316,20 +315,11 @@ func (h *NetworkHandler) GetNetwork(ctx context.Context, input *GetNetworkInput)
 		a, b := out.ContainersList[i], out.ContainersList[j]
 
 		if input.Sort == "ip" {
-			valA := a.IPv4Address
-			if valA == "" {
-				valA = a.IPv6Address
-			}
-			valB := b.IPv4Address
-			if valB == "" {
-				valB = b.IPv6Address
-			}
+			valA := cmp.Or(a.IPv4Address, a.IPv6Address)
+			valB := cmp.Or(b.IPv4Address, b.IPv6Address)
 
-			cmp := netutils.CompareAddresses(valA, valB)
-			if input.Order == "desc" {
-				return cmp > 0
-			}
-			return cmp < 0
+			cmp := kit.CompareAddresses(valA, valB)
+			return kit.Ternary(input.Order == "desc", cmp > 0, cmp < 0)
 		}
 
 		// Default to Name
@@ -492,7 +482,7 @@ func (h *NetworkHandler) PruneNetworks(ctx context.Context, input *PruneNetworks
 		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to prune networks").Error())
 	}
 
-	out, err := mapper.MapOne[dockernetwork.PruneReport, networktypes.PruneReport](*report)
+	out, err := mapping.MapOne[dockernetwork.PruneReport, networktypes.PruneReport](*report)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to map network").Error())
 	}

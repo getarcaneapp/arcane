@@ -21,7 +21,7 @@ const (
 	ConnectionUpgradeToken = "upgrade"
 )
 
-func CopyRequestHeaders(from http.Header, to http.Header, skip map[string]struct{}) {
+func CopyRequestHeaders(from, to http.Header, skip map[string]struct{}) {
 	for k, vs := range from {
 		ck := http.CanonicalHeaderKey(k)
 		if _, ok := skip[ck]; ok || ck == http.CanonicalHeaderKey(HeaderAuthorization) || ck == http.CanonicalHeaderKey(HeaderAPIKey) {
@@ -149,7 +149,7 @@ func BuildHopByHopHeaders(respHeader http.Header) map[string]struct{} {
 	return hop
 }
 
-func CopyResponseHeaders(from http.Header, to http.Header, hop map[string]struct{}) {
+func CopyResponseHeaders(from, to http.Header, hop map[string]struct{}) {
 	for k, vs := range from {
 		ck := http.CanonicalHeaderKey(k)
 		if _, ok := hop[ck]; ok {

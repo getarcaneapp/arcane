@@ -2,8 +2,6 @@ package gitops
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json/v2"
 	"fmt"
 	"io/fs"
@@ -23,10 +21,10 @@ import (
 	projectpkg "github.com/getarcaneapp/arcane/backend/v2/internal/project"
 	git "github.com/getarcaneapp/arcane/backend/v2/pkg/gitutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/types/v2/gitops"
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	"go.getarcane.app/acfs"
+	kit "go.getarcane.app/kit/pkg"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -38,6 +36,18 @@ const (
 	backupStatusRunning          = "running"
 	backupStatusConflict         = "conflict"
 	backupCommitFileLines        = 20
+
+	backupSnapshotMaxRetry               = 3
+	legacyBackupManifestFileNameInternal = ".arcane-backup.json"
+	backupPreviewClean                   = "clean"
+	backupPreviewChanges                 = "changes"
+	backupPreviewConflict                = "conflict"
+	backupPreviewOccupied                = "destination_occupied"
+	backupChangeAdded                    = "added"
+	backupChangeModified                 = "modified"
+	backupChangeRemoved                  = "removed"
+
+	defaultBackupHistoryLimit = 20
 )
 
 // backupRuntimeInternal holds the in-memory coordination for backup syncs
@@ -136,7 +146,7 @@ func (s *GitOpsSyncService) prepareBackupCreateInternal(ctx context.Context, tx 
 		return nil, common.Classify(common.ErrConflict, errors.New("project already has a Git backup; disconnect it first"))
 	}
 
-	directory, err := utils.NormalizeRelativePath(req.BackupDirectory)
+	directory, err := kit.NormalizeRelativePath(req.BackupDirectory)
 	if err == nil && slices.Contains(strings.Split(directory, "/"), ".git") {
 		err = errors.New("backup directory must not contain a .git segment")
 	}
@@ -392,8 +402,10 @@ func backupFailureReasonInternal(err error) string {
 		return gitops.BackupFailureSnapshot
 	}
 	message := strings.ToLower(err.Error())
-	if strings.Contains(message, "authentication") || strings.Contains(message, "authorization") || strings.Contains(message, "ssh") || strings.Contains(message, "credential") {
-		return gitops.BackupFailureAuth
+	for _, marker := range []string{"authentication", "authorization", "ssh", "credential"} {
+		if strings.Contains(message, marker) {
+			return gitops.BackupFailureAuth
+		}
 	}
 	return gitops.BackupFailureRepository
 }
@@ -439,10 +451,7 @@ func (s *GitOpsSyncService) failBackupInternal(ctx context.Context, sync *projec
 	errMsg := failure.Error()
 	result.Message = message
 	result.Error = new(errMsg)
-	status := "failed"
-	if needsAttention {
-		status = backupStatusConflict
-	}
+	status := kit.Ternary(needsAttention, backupStatusConflict, "failed")
 	updates := map[string]any{
 		"last_sync_at":          time.Now(),
 		"last_sync_status":      status,
@@ -583,18 +592,6 @@ func (s *GitOpsSyncService) ReconcileInterruptedBackupsOnStartup(ctx context.Con
 	return nil
 }
 
-const (
-	backupSnapshotMaxRetry               = 3
-	legacyBackupManifestFileNameInternal = ".arcane-backup.json"
-	backupPreviewClean                   = "clean"
-	backupPreviewChanges                 = "changes"
-	backupPreviewConflict                = "conflict"
-	backupPreviewOccupied                = "destination_occupied"
-	backupChangeAdded                    = "added"
-	backupChangeModified                 = "modified"
-	backupChangeRemoved                  = "removed"
-)
-
 // backupSnapshotInternal is the set of project files a backup run commits.
 type backupSnapshotInternal struct {
 	files  []git.CommitFile
@@ -609,16 +606,10 @@ type backupAnalysisInternal struct {
 	remove    []string
 }
 
-func hashBackupContentInternal(content []byte) string {
-	sum := sha256.Sum256(content)
-	return hex.EncodeToString(sum[:])
-}
-
 func normalizeBackupPathsInternal(raw []string) ([]string, error) {
-	seen := make(map[string]struct{}, len(raw))
 	normalized := make([]string, 0, len(raw))
 	for _, entry := range raw {
-		cleaned, err := utils.NormalizeRelativePath(entry)
+		cleaned, err := kit.NormalizeRelativePath(entry)
 		if err != nil {
 			return nil, errors.WrapIff(err, "invalid backup path %q", entry)
 		}
@@ -626,12 +617,9 @@ func normalizeBackupPathsInternal(raw []string) ([]string, error) {
 		if base == projects.GitSourceEnvFileName || base == projects.GlobalEnvFileName || slices.Contains(strings.Split(cleaned, "/"), ".git") {
 			return nil, errors.Errorf("backup path %q is reserved", entry)
 		}
-		if _, ok := seen[cleaned]; ok {
-			continue
-		}
-		seen[cleaned] = struct{}{}
 		normalized = append(normalized, cleaned)
 	}
+	normalized = kit.Unique(normalized)
 	sort.Strings(normalized)
 	return normalized, nil
 }
@@ -697,7 +685,7 @@ func (s *GitOpsSyncService) buildBackupSnapshotInternal(ctx context.Context, syn
 		}
 		snapshot := &backupSnapshotInternal{files: files, hashes: make(map[string]string, len(files))}
 		for _, file := range files {
-			snapshot.hashes[file.Path] = hashBackupContentInternal(file.Content)
+			snapshot.hashes[file.Path] = kit.SHA256Hex(file.Content)
 		}
 
 		stable := true
@@ -706,7 +694,7 @@ func (s *GitOpsSyncService) buildBackupSnapshotInternal(ctx context.Context, syn
 			if err != nil {
 				return nil, errors.WrapIff(git.ErrSelectionUnreadable, "cannot re-read %s: %v", file.Path, err)
 			}
-			if hashBackupContentInternal(content) != snapshot.hashes[file.Path] {
+			if kit.SHA256Hex(content) != snapshot.hashes[file.Path] {
 				stable = false
 				break
 			}
@@ -740,7 +728,7 @@ func analyzeBackupInternal(ctx context.Context, repoPath, directory string, snap
 					}
 					return analysis, errors.WrapIff(readErr, "failed to read remote backup file %s", file)
 				}
-				remote[file] = hashBackupContentInternal(content)
+				remote[file] = kit.SHA256Hex(content)
 			}
 		}
 	}
@@ -805,8 +793,6 @@ func parseBackupSnapshotInternal(raw *string) map[string]string {
 	}
 	return hashes
 }
-
-const defaultBackupHistoryLimit = 20
 
 func (s *GitOpsSyncService) getBackupSyncInternal(ctx context.Context, environmentID, id string) (*projectpkg.GitOpsSync, error) {
 	syncRecord, err := s.GetSyncByID(ctx, environmentID, id)

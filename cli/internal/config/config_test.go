@@ -25,7 +25,6 @@ func setTempConfigPath(t *testing.T) string {
 			assert.NoError(t, err,
 				"SetConfigPath(reset) failed: %v", err)
 		}
-
 	})
 	return path
 }
@@ -61,7 +60,6 @@ func TestLoadReturnsDefaultsWhenFileMissing(t *testing.T) {
 
 	require.Equal(t, "http://localhost:3552", cfg2.ServerURL,
 		"cached config was mutated, ServerURL=%q", cfg2.ServerURL)
-
 }
 
 func TestSaveAndLoadRoundTripPagination(t *testing.T) {
@@ -126,7 +124,6 @@ func TestSaveAndLoadRoundTripPagination(t *testing.T) {
 
 	require.Equal(t, "next", loaded.CLIUpdateChannel,
 		"CLIUpdateChannel=%q, want next", loaded.CLIUpdateChannel)
-
 }
 
 func TestLoadCanonicalPaginationBlock(t *testing.T) {
@@ -176,7 +173,6 @@ pagination:
 		require.Equal(t, 9, got,
 			"registries limit=%d, want 9", got)
 	}
-
 }
 
 func TestInitDefaultFileCreatesTemplate(t *testing.T) {
@@ -207,16 +203,12 @@ func TestInitDefaultFileCreatesTemplate(t *testing.T) {
 		"pagination:",
 	}
 	for _, key := range requiredKeys {
-
 		require.Contains(t, text, key,
 			"expected generated config to contain %q:\n%s", key, text)
-
 	}
 	for _, resource := range []string{"containers", "images", "volumes", "networks", "projects", "environments", "registries", "templates", "users", "events", "apikeys"} {
-
 		require.Contains(t, text, resource+":",
 			"expected generated config to contain resource key %q:\n%s", resource, text)
-
 	}
 
 	cfg, err := Load()
@@ -233,7 +225,6 @@ func TestInitDefaultFileCreatesTemplate(t *testing.T) {
 			require.Equal(t, defaultPaginationInitLimit, got,
 				"LimitFor(%s)=%d, want %d", resource, got, defaultPaginationInitLimit)
 		}
-
 	}
 }
 
@@ -261,7 +252,6 @@ func TestInitDefaultFileDoesNotOverwriteExistingFile(t *testing.T) {
 
 	require.Equal(t, original, string(raw),
 		"existing file was modified:\nwant:\n%s\ngot:\n%s", original, string(raw))
-
 }
 
 func TestBackupFileMovesConfig(t *testing.T) {
@@ -297,7 +287,6 @@ func TestBackupFileMovesConfig(t *testing.T) {
 
 	require.Equal(t, original, string(raw),
 		"backup content mismatch:\nwant:\n%s\ngot:\n%s", original, string(raw))
-
 }
 
 func TestBackupFileNoConfig(t *testing.T) {
@@ -318,7 +307,6 @@ func TestBackupFileNoConfig(t *testing.T) {
 
 	require.Equal(t, path+".bak", backupPath,
 		"backup path = %q, want %q", backupPath, path+".bak")
-
 }
 
 func TestBackupFileRotatesExistingBak(t *testing.T) {
@@ -363,5 +351,4 @@ func TestBackupFileRotatesExistingBak(t *testing.T) {
 
 	require.NotEmpty(t, rotated,
 		"expected rotated backup matching %q", backupPath+".*")
-
 }

@@ -8,6 +8,9 @@ const (
 	BackupDestinationLocal   BackupDestination = "local"
 	BackupDestinationS3      BackupDestination = "s3"
 	BackupDestinationLocalS3 BackupDestination = "local_s3"
+
+	BackupFormatArchive BackupFormat = "archive"
+	BackupFormatRustic  BackupFormat = "rustic"
 )
 
 type CreateBackupRequest struct {
@@ -30,11 +33,6 @@ type DiscoverBackupsResponse struct {
 }
 
 type BackupFormat string
-
-const (
-	BackupFormatArchive BackupFormat = "archive"
-	BackupFormatRustic  BackupFormat = "rustic"
-)
 
 type BackupEntry struct {
 	RemoteAvailable   *bool                 `json:"remoteAvailable,omitempty"`

@@ -1,25 +1,22 @@
 package notification
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/notifications"
-
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-
 	"context"
 	"net/http"
 	"strings"
 
 	"emperror.dev/errors"
-
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/notifications"
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/getarcaneapp/arcane/types/v2/notification"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 type NotificationHandler struct {
@@ -71,10 +68,7 @@ type DispatchNotificationInput struct {
 
 func normalizeNotificationTestType(testType string) string {
 	normalized := strings.TrimSpace(testType)
-	if normalized == "" {
-		return notificationTestTypeSimple
-	}
-	return normalized
+	return kit.Ternary(normalized == "", notificationTestTypeSimple, normalized)
 }
 
 func isSupportedNotificationTestType(testType string) bool {

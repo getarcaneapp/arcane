@@ -15,17 +15,17 @@ import (
 	"strings"
 
 	"emperror.dev/errors"
-
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	workspacepkg "github.com/getarcaneapp/arcane/backend/v2/pkg/workspace"
 	"github.com/getarcaneapp/arcane/types/v2/project"
 	workspacetypes "github.com/getarcaneapp/arcane/types/v2/workspace"
+	kit "go.getarcane.app/kit/pkg"
 )
 
-const ProjectWorkspaceUseScanDepth = -1
-
 const (
+	ProjectWorkspaceUseScanDepth = -1
+
 	ErrProjectWorkspaceRevisionConflict        = errors.Sentinel("project workspace changed; refresh it and try again")
 	ErrProjectWorkspaceOutsideProjectDirectory = errors.Sentinel("path is outside project directory")
 	ErrProjectWorkspaceProtectedPath           = errors.Sentinel("protected project configuration cannot be modified through the workspace")
@@ -85,10 +85,7 @@ func ReadProjectWorkspace(projectPath string, maxDepth int, skipDirectories, com
 
 	slices.SortFunc(walker.files, func(a, b workspacetypes.FileEntry) int {
 		if a.IsDirectory != b.IsDirectory {
-			if a.IsDirectory {
-				return -1
-			}
-			return 1
+			return kit.Ternary(a.IsDirectory, -1, 1)
 		}
 		return strings.Compare(a.RelativePath, b.RelativePath)
 	})
@@ -137,10 +134,7 @@ func (w *projectWorkspaceTreeWalkerInternal) visit(rel string, entry fs.DirEntry
 
 	depth := strings.Count(rel, "/") + 1
 	if depth > w.maxDepth {
-		if entry.IsDir() {
-			return fs.SkipDir
-		}
-		return nil
+		return kit.Ternary(entry.IsDir(), fs.SkipDir, nil)
 	}
 
 	if entry.IsDir() && w.skipDirs[entry.Name()] {
@@ -157,10 +151,7 @@ func (w *projectWorkspaceTreeWalkerInternal) visit(rel string, entry fs.DirEntry
 			return err
 		}
 		slog.Debug("Skipping unreadable project workspace entry", "relativePath", rel, "error", err)
-		if entry.IsDir() {
-			return fs.SkipDir
-		}
-		return nil
+		return kit.Ternary(entry.IsDir(), fs.SkipDir, nil)
 	}
 
 	isProtected := w.protected[rel]
@@ -185,7 +176,7 @@ func (w *projectWorkspaceTreeWalkerInternal) visit(rel string, entry fs.DirEntry
 	// so keying on mtime/size would invalidate every workspace draft for a
 	// live project and make saves 409 forever (#3199). Structural changes —
 	// files appearing, disappearing, or changing kind — still conflict.
-	utils.WriteFileTreeRevisionEntry(w.revisionHash, rel, kind, 0, 0, "", false)
+	kit.WriteRecord(w.revisionHash, rel, kind)
 	w.entryCount++
 
 	size := info.Size()
@@ -311,7 +302,7 @@ func ProtectedProjectFilePaths(composeFileName string) map[string]bool {
 }
 
 func applyWorkspaceFileChangeInternal(root *os.Root, protected map[string]bool, change project.WorkspaceFileChange, uploads map[int][]byte, maxFileSizeBytes int64) error {
-	rel, err := utils.NormalizeRelativePath(change.RelativePath)
+	rel, err := kit.NormalizeRelativePath(change.RelativePath)
 	if err != nil {
 		return errors.WrapIf(err, "invalid project workspace path")
 	}
@@ -328,7 +319,7 @@ func applyWorkspaceFileChangeInternal(root *os.Root, protected map[string]bool, 
 		}
 		return updateProjectWorkspaceFileInternal(root, protected, rel, uploads[*change.UploadIndex], baseline, change.BaselineIndex != nil, maxFileSizeBytes)
 	case project.FileOpRename:
-		newName, err := utils.ValidateFileName(change.NewName)
+		newName, err := kit.ValidateFileName(change.NewName)
 		if err != nil {
 			return errors.WrapIf(err, "invalid project workspace file name")
 		}
@@ -494,7 +485,7 @@ func normalizeOptionalProjectParentPathInternal(input string) (string, error) {
 	if strings.TrimSpace(input) == "" {
 		return "", nil
 	}
-	return utils.NormalizeRelativePath(input)
+	return kit.NormalizeRelativePath(input)
 }
 
 func moveProjectWorkspacePathInternal(root *os.Root, protected map[string]bool, rel, newParentPath string) error {
@@ -525,7 +516,7 @@ func moveProjectWorkspacePathInternal(root *os.Root, protected map[string]bool, 
 	if sourceInfo.Mode()&os.ModeSymlink != 0 {
 		return errors.WrapIf(ErrProjectWorkspaceSymlinkPath, "symlink paths are not supported")
 	}
-	if sourceInfo.IsDir() && parentRel != "" && utils.FilePathMatches(parentRel, rel) {
+	if sourceInfo.IsDir() && parentRel != "" && kit.FilePathMatches(parentRel, rel) {
 		return errors.New("folder cannot be moved into itself or a descendant")
 	}
 

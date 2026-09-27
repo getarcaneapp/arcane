@@ -8,14 +8,16 @@ import (
 	"github.com/samber/mo"
 )
 
-// MetaRequiredPermission is the huma.Operation.Metadata key under which the
-// environment-scoped registration helper records the permission an operation
-// requires. The remote environment proxy reads this metadata (via the OpenAPI
-// document) to enforce the same permission locally before forwarding a request
-// to an agent.
-const MetaRequiredPermission = "arcane:requiredPermission"
+const (
+	// MetaRequiredPermission is the huma.Operation.Metadata key under which the
+	// environment-scoped registration helper records the permission an operation
+	// requires. The remote environment proxy reads this metadata (via the OpenAPI
+	// document) to enforce the same permission locally before forwarding a request
+	// to an agent.
+	MetaRequiredPermission = "arcane:requiredPermission"
 
-const envPathPrefixInternal = "/environments/{id}"
+	envPathPrefixInternal = "/environments/{id}"
+)
 
 // CollectFromHumaAPI walks every operation registered on humaAPI and records,
 // for each environment-scoped operation, the permission it requires. The

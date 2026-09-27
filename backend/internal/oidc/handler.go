@@ -1,25 +1,22 @@
 package oidc
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/session"
-
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-
 	"context"
 	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/auth"
-
 	"emperror.dev/errors"
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/auth"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/passkey"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/session"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/user"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cookie"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"

@@ -32,6 +32,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.getarcane.app/acfs"
 	acfstypes "go.getarcane.app/acfs/types"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 func newVolumeWorkspaceTestDockerClientInternal(t *testing.T, server *httptest.Server) *client.Client {
@@ -580,10 +581,11 @@ func TestUpdateVolumeWorkspaceRejectsStaleRevisionBeforeStaging(t *testing.T) {
 			_ = json.NewEncoder(w).Encode(map[string]string{"Id": fmt.Sprintf("workspace-exec-%d", len(execCommands)-1)})
 		case r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/exec/workspace-exec-") && strings.HasSuffix(r.URL.Path, "/start"):
 			_, _ = io.Copy(io.Discard, r.Body)
-			output := "{\"version\":\"0.2.0\",\"revision\":\"test\",\"buildTime\":\"test\",\"protocol\":2}\n"
-			if strings.Contains(r.URL.Path, "workspace-exec-1") {
-				output = "{\"end\":true,\"version\":2}\n"
-			}
+			output := kit.Ternary(
+				strings.Contains(r.URL.Path, "workspace-exec-1"),
+				"{\"end\":true,\"version\":2}\n",
+				"{\"version\":\"0.2.0\",\"revision\":\"test\",\"buildTime\":\"test\",\"protocol\":2}\n",
+			)
 			writeDockerExecAttachResponseInternal(t, w, output)
 		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/exec/workspace-exec-") && strings.HasSuffix(r.URL.Path, "/json"):
 			w.Header().Set("Content-Type", "application/json")

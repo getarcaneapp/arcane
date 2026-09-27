@@ -3,10 +3,12 @@ package libarcane
 import (
 	"context"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"emperror.dev/errors"
+	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -100,4 +102,20 @@ func TestInspectCurrentArcaneContainer_KeepsUnlabeledHitOverUnrelatedLabeledInst
 	got, err := InspectCurrentArcaneContainer(context.Background(), dockerClient)
 	require.NoError(t, err)
 	assert.Equal(t, "custom123", got.ID)
+}
+
+func newTestDockerClient(t *testing.T, handler http.HandlerFunc) *client.Client {
+	t.Helper()
+
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+
+	dockerClient, err := client.New(
+		client.WithHost("tcp://"+strings.TrimPrefix(server.URL, "http://")),
+		client.WithAPIVersion("1.41"),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = dockerClient.Close() })
+
+	return dockerClient
 }

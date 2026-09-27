@@ -2,8 +2,6 @@ package queue
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json/v2"
 	"slices"
 	"sort"
@@ -13,17 +11,13 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
 	st "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	"github.com/google/uuid"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 const queuePrefixInternal = "jobs."
 
-func queueKeyInternal(environmentID, jobID string) string {
-	sum := sha256.Sum256([]byte(environmentID + "\x00" + jobID))
-	return queuePrefixInternal + hex.EncodeToString(sum[:])
-}
-
 func (q *Queue) mutateInternal(ctx context.Context, environmentID, jobID string, change func(*st.QueueRecord) error) error {
-	key := queueKeyInternal(environmentID, jobID)
+	key := queuePrefixInternal + kit.SHA256Hex(environmentID+"\x00"+jobID)
 	for range 20 {
 		previous, found, err := q.store.Get(ctx, key)
 		if err != nil {
@@ -88,7 +82,7 @@ func (q *Queue) Records(ctx context.Context) ([]st.QueueRecord, error) {
 // Get retrieves a run by environment, job, and run ID, including compacted
 // idempotency receipts. It returns ErrRunNotFound when no matching record exists.
 func (q *Queue) Get(ctx context.Context, environmentID, jobID, runID string) (st.Run, error) {
-	raw, found, err := q.store.Get(ctx, queueKeyInternal(environmentID, jobID))
+	raw, found, err := q.store.Get(ctx, queuePrefixInternal+kit.SHA256Hex(environmentID+"\x00"+jobID))
 	if err != nil {
 		return st.Run{}, err
 	}

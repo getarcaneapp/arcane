@@ -22,7 +22,6 @@ func TestIsValidUserEmail_AllowsReportedFormats(t *testing.T) {
 
 			require.True(t, IsValidUserEmail(email),
 				"expected %q to be valid", email)
-
 		})
 	}
 }
@@ -51,7 +50,6 @@ func TestIsValidUserEmail_RejectsMalformedAddresses(t *testing.T) {
 
 			require.False(t, IsValidUserEmail(email),
 				"expected %q to be invalid", email)
-
 		})
 	}
 }

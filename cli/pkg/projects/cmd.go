@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"emperror.dev/errors"
-
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
@@ -737,8 +736,5 @@ func projectMatches(item project.Details, identifierLower, original string) bool
 	if strings.EqualFold(item.Name, original) {
 		return true
 	}
-	if strings.Contains(strings.ToLower(item.Path), identifierLower) {
-		return true
-	}
-	return false
+	return strings.Contains(strings.ToLower(item.Path), identifierLower)
 }

@@ -6,9 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
-
 	systemtypes "github.com/getarcaneapp/arcane/types/v2/system"
+	"github.com/stretchr/testify/require"
 )
 
 func TestApplyCPUAffinityLimitInternal(t *testing.T) {

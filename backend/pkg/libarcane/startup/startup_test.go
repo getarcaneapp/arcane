@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 type mockSettingsManager struct {
@@ -50,11 +51,8 @@ func TestLoadAgentToken(t *testing.T) {
 			AgentMode:  true,
 			AgentToken: "",
 		}
-		getSettingFunc := func(ctx context.Context, key string, def string) string {
-			if key == "agentToken" {
-				return "loaded-token"
-			}
-			return def
+		getSettingFunc := func(ctx context.Context, key, def string) string {
+			return kit.Ternary(key == "agentToken", "loaded-token", def)
 		}
 
 		LoadAgentToken(ctx, cfg, getSettingFunc)
@@ -68,7 +66,7 @@ func TestLoadAgentToken(t *testing.T) {
 			AgentToken: "",
 		}
 		called := false
-		getSettingFunc := func(ctx context.Context, key string, def string) string {
+		getSettingFunc := func(ctx context.Context, key, def string) string {
 			called = true
 			return ""
 		}
@@ -85,7 +83,7 @@ func TestLoadAgentToken(t *testing.T) {
 			AgentToken: "existing-token",
 		}
 		called := false
-		getSettingFunc := func(ctx context.Context, key string, def string) string {
+		getSettingFunc := func(ctx context.Context, key, def string) string {
 			called = true
 			return ""
 		}

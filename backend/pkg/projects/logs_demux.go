@@ -12,8 +12,8 @@ import (
 	"github.com/docker/cli/cli/command"
 	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/client"
-
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
+	"go.getarcane.app/docker/compat"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 // logsDemuxCompatibleDockerCliInternal exposes an API client that keeps
@@ -35,7 +35,7 @@ func wrapDockerCLIWithLogsDemuxInternal(cli command.Cli) command.Cli {
 	}
 	return &logsDemuxCompatibleDockerCliInternal{
 		Cli:       cli,
-		apiClient: &logsDemuxDockerClientInternal{APIClient: libarcane.WrapDockerAPIClientForInspectCompatibility(cli.Client())},
+		apiClient: &logsDemuxDockerClientInternal{APIClient: compat.WrapDockerAPIClientForInspectCompatibility(cli.Client())},
 	}
 }
 
@@ -85,7 +85,7 @@ func (c *logsDemuxDockerClientInternal) recordContainerTTYInternal(containerID s
 	c.containerTty[key] = tty
 }
 
-func (c *logsDemuxDockerClientInternal) containerTTYInternal(containerID string) (tty bool, known bool) {
+func (c *logsDemuxDockerClientInternal) containerTTYInternal(containerID string) (tty, known bool) {
 	key := strings.ToLower(strings.TrimSpace(containerID))
 	c.ttyMu.RLock()
 	defer c.ttyMu.RUnlock()
@@ -137,10 +137,7 @@ func (s *stderrMarkedDemuxedStreamInternal) ingestFrameInternal() {
 		return
 	}
 
-	stream := 0
-	if header[0] == byte(stdcopy.Stderr) {
-		stream = 1
-	}
+	stream := kit.Ternary(header[0] == byte(stdcopy.Stderr), 1, 0)
 	s.pending[stream] = append(s.pending[stream], payload...)
 	buf := s.pending[stream]
 	for len(buf) > 0 {

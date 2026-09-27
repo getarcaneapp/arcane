@@ -6,10 +6,9 @@ import (
 	"slices"
 	"strings"
 
-	"golang.org/x/mod/semver"
-
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/types/v2/vulnerability"
+	kit "go.getarcane.app/kit/pkg"
+	"golang.org/x/mod/semver"
 )
 
 const (
@@ -155,10 +154,7 @@ func (r *RiskScore) AddFinding(vulnerabilityID string, fixable bool, base float6
 	if !fixable || (priority <= 0 && !IsCVE(vulnerabilityID)) {
 		return priority
 	}
-	status := vulnerability.ScoreStatusComplete
-	if priority <= 0 {
-		status = vulnerability.ScoreStatusUnavailable
-	}
+	status := kit.Ternary(priority <= 0, vulnerability.ScoreStatusUnavailable, vulnerability.ScoreStatusComplete)
 	r.addScoreInternal(vulnerabilityID, priority, 1, status)
 	if intel.KnownExploited && (exposure == vulnerability.ImageExposureRunning || exposure == vulnerability.ImageExposureUnknown) {
 		r.exploitedRunning = true
@@ -272,7 +268,7 @@ func isNewerFixedVersionInternal(candidate, current string) bool {
 	if current == "" {
 		return true
 	}
-	a, b := utils.EnsureVPrefix(candidate), utils.EnsureVPrefix(current)
+	a, b := kit.EnsurePrefix(candidate, "v"), kit.EnsurePrefix(current, "v")
 	return semver.IsValid(a) && semver.IsValid(b) && semver.Compare(a, b) > 0
 }
 

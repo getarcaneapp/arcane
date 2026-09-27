@@ -2,9 +2,12 @@
 package iconcatalog
 
 import (
+	"cmp"
 	"fmt"
 	"net/url"
 	"strings"
+
+	kit "go.getarcane.app/kit/pkg"
 )
 
 const (
@@ -30,18 +33,6 @@ func (s IconSet) IsEmpty() bool {
 		strings.TrimSpace(s.Dark) == ""
 }
 
-// FirstNonEmpty returns the first set that defines any icon value. Levels are
-// isolated: a set that defines one variant never inherits the others from
-// lower-precedence sets.
-func FirstNonEmpty(sets ...IconSet) IconSet {
-	for _, set := range sets {
-		if !set.IsEmpty() {
-			return set
-		}
-	}
-	return IconSet{}
-}
-
 func Resolve(catalog string, set IconSet) ResolvedIconSet {
 	selectedCatalog := Normalize(catalog)
 	if strings.TrimSpace(set.Light) == "" && strings.TrimSpace(set.Dark) == "" {
@@ -52,22 +43,13 @@ func Resolve(catalog string, set IconSet) ResolvedIconSet {
 		}
 	}
 
-	light := firstNonEmptyValueInternal(set.Light, set.Icon, set.Dark)
-	dark := firstNonEmptyValueInternal(set.Dark, set.Icon, set.Light)
+	light := cmp.Or(kit.TrimNonEmpty([]string{set.Light, set.Icon, set.Dark})...)
+	dark := cmp.Or(kit.TrimNonEmpty([]string{set.Dark, set.Icon, set.Light})...)
 
 	return ResolvedIconSet{
 		IconLightURL: resolveValueInternal(selectedCatalog, light, "light"),
 		IconDarkURL:  resolveValueInternal(selectedCatalog, dark, "dark"),
 	}
-}
-
-func firstNonEmptyValueInternal(values ...string) string {
-	for _, v := range values {
-		if trimmed := strings.TrimSpace(v); trimmed != "" {
-			return trimmed
-		}
-	}
-	return ""
 }
 
 // Normalize maps a raw catalog preference onto one of the known catalog

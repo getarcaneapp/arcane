@@ -1,8 +1,6 @@
 package bootstrap
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
-
 	"context"
 	"slices"
 	"testing"
@@ -10,6 +8,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler"
 	"github.com/getarcaneapp/arcane/types/v2/features"
@@ -65,7 +64,7 @@ func (s *timeoutSyncEnvironmentStubInternal) ListRemoteEnvironments(context.Cont
 	}}, nil
 }
 
-func (s *timeoutSyncEnvironmentStubInternal) ProxyRequest(ctx context.Context, _ string, _ string, _ string, _ []byte) ([]byte, int, error) {
+func (s *timeoutSyncEnvironmentStubInternal) ProxyRequest(ctx context.Context, _, _, _ string, _ []byte) ([]byte, int, error) {
 	select {
 	case <-s.started:
 	default:

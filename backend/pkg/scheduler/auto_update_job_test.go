@@ -119,5 +119,4 @@ func TestAutoUpdateJob_OverlappingRunIsSkippedInternal(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, schedulertypes.NeedsAttention, outcome.Status)
 	require.Equal(t, int32(2), applier.calls.Load())
-
 }

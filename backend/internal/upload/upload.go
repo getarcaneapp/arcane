@@ -4,6 +4,7 @@
 package upload
 
 import (
+	"cmp"
 	"context"
 	"encoding/json/v2"
 	"fmt"
@@ -16,12 +17,11 @@ import (
 	"strings"
 	"time"
 
-	uploadtypes "github.com/getarcaneapp/arcane/types/v2/upload"
-	"go.getarcane.app/acfs"
-
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	uploadtypes "github.com/getarcaneapp/arcane/types/v2/upload"
+	"go.getarcane.app/acfs"
 )
 
 const (
@@ -85,10 +85,7 @@ func (s *UploadService) CreateSession(ctx context.Context, kind string, request 
 			return nil, fmt.Errorf("%w: file size exceeds maximum allowed size of %d MB", common.ErrUploadSessionInvalid, maxSizeMB)
 		}
 	}
-	chunkSize := request.ChunkSize
-	if chunkSize == 0 {
-		chunkSize = uploadtypes.DefaultChunkSize
-	}
+	chunkSize := cmp.Or(request.ChunkSize, uploadtypes.DefaultChunkSize)
 	if chunkSize < uploadtypes.MinChunkSize || chunkSize > uploadtypes.MaxChunkSize {
 		return nil, fmt.Errorf("%w: chunk size must be between %d and %d bytes", common.ErrUploadSessionInvalid, uploadtypes.MinChunkSize, uploadtypes.MaxChunkSize)
 	}

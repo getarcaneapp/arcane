@@ -1,6 +1,7 @@
 package ws
 
 import (
+	"cmp"
 	"regexp"
 	"strings"
 	"time"
@@ -55,16 +56,14 @@ func trimTrailingNewlinesInternal(raw string) string {
 
 // NormalizeContainerLine parses a raw container log line into level + cleaned message.
 // It extracts Docker's timestamp if present (when timestamps=true in Docker API).
-func NormalizeContainerLine(raw string) (level string, msg string, timestamp string) {
+func NormalizeContainerLine(raw string) (level, msg, timestamp string) {
 	level = "stdout"
 
 	line, sawStderr, ts := stripStreamMetadataInternal(trimTrailingNewlinesInternal(raw), true)
 	if sawStderr {
 		level = "stderr"
 	}
-	if ts != "" {
-		timestamp = ts
-	}
+	timestamp = cmp.Or(ts, timestamp)
 
 	return level, strings.TrimSpace(line), timestamp
 }
@@ -90,9 +89,7 @@ func NormalizeProjectLine(raw string) (level, service, msg, timestamp string) {
 		if sawMessageStderr || sawHeadStderr {
 			level = "stderr"
 		}
-		if messageTS != "" {
-			timestamp = messageTS
-		}
+		timestamp = cmp.Or(messageTS, timestamp)
 		base = message
 	} else if sawHeadStderr {
 		level = "stderr"

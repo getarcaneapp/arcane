@@ -47,7 +47,6 @@ func TestApplyConfigSetArgs(t *testing.T) {
 		require.Equal(t, 40, got,
 			"LimitFor(volumes) = %d, want 40", got)
 	}
-
 }
 
 func TestApplyConfigSetArgs_OddArgs(t *testing.T) {
@@ -59,7 +58,6 @@ func TestApplyConfigSetArgs_OddArgs(t *testing.T) {
 
 	require.False(t, changed,
 		"changed = true, want false")
-
 }
 
 func TestApplyConfigSetArg_UnknownKey(t *testing.T) {
@@ -74,7 +72,6 @@ func TestApplyConfigSetArg_UnknownKey(t *testing.T) {
 
 	require.Contains(t, err.Error(), "unknown config key",
 		"unexpected error: %v", err)
-
 }
 
 func TestApplyConfigSetArg_ResourceLimitPair(t *testing.T) {
@@ -92,5 +89,4 @@ func TestApplyConfigSetArg_ResourceLimitPair(t *testing.T) {
 		require.Equal(t, 55, got,
 			"LimitFor(containers) = %d, want 55", got)
 	}
-
 }

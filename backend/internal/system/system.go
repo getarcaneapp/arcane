@@ -1,35 +1,30 @@
 package system
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
-	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
-
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-
+	"cmp"
 	"context"
 	"fmt"
 	"log/slog"
 	"strings"
 	"sync"
 
-	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
-
+	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/container"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/network"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-
-	"github.com/getarcaneapp/arcane/backend/v2/internal/container"
-
-	"emperror.dev/errors"
-
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/volume"
 	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
 	containertypes "github.com/getarcaneapp/arcane/types/v2/container"
+	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	"github.com/getarcaneapp/arcane/types/v2/system"
 	mobycontainer "github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
@@ -651,9 +646,6 @@ func (s *SystemService) GetDiskUsagePath(ctx context.Context) string {
 		return "/"
 	}
 
-	path := cfg.DiskUsagePath.Value
-	if path == "" {
-		path = "/"
-	}
+	path := cmp.Or(cfg.DiskUsagePath.Value, "/")
 	return path
 }

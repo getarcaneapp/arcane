@@ -1,12 +1,6 @@
 package activity
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
-	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
-
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-
 	"context"
 	"encoding/json/v2"
 	"fmt"
@@ -15,18 +9,25 @@ import (
 	"net/http"
 	"strings"
 
-	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
-
 	"emperror.dev/errors"
-
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
+	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	"github.com/samber/mo"
 )
 
-// ErrCanceled is the cancellation cause set on an activity's work context when a
-// user requests cancellation. Completion paths read context.Cause to record a
-// cancelled (rather than failed) terminal status.
-const ErrCanceled = errors.Sentinel("activity cancelled by user")
+const (
+	// ErrCanceled is the cancellation cause set on an activity's work context when a
+	// user requests cancellation. Completion paths read context.Cause to record a
+	// cancelled (rather than failed) terminal status.
+	ErrCanceled = errors.Sentinel("activity cancelled by user")
+
+	// cancelledMessage is the latest-message recorded when work is cancelled.
+	cancelledMessage = "Cancelled by user"
+)
 
 type handlerActivityIDContextKey struct{}
 
@@ -37,9 +38,6 @@ func IDFromContext(ctx context.Context) string {
 	activityID, _ := ctx.Value(handlerActivityIDContextKey{}).(string)
 	return strings.TrimSpace(activityID)
 }
-
-// cancelledMessage is the latest-message recorded when work is cancelled.
-const cancelledMessage = "Cancelled by user"
 
 // CancelledByContext reports whether ctx was cancelled by a user cancellation
 // request (as opposed to app shutdown or a deadline). Callers that finalize an
@@ -141,7 +139,7 @@ func StartHandlerActivity(
 	return activity.ID, workCtx
 }
 
-func CompleteHandlerActivity(ctx context.Context, activityService Service, activityID string, successMessage string, err error) {
+func CompleteHandlerActivity(ctx context.Context, activityService Service, activityID, successMessage string, err error) {
 	if activityService == nil || strings.TrimSpace(activityID) == "" {
 		return
 	}

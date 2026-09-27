@@ -2,6 +2,7 @@ package rustic
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"fmt"
 	"strings"
@@ -73,10 +74,7 @@ func Run(ctx context.Context, dockerClient *client.Client, password string, comm
 		return "", fmt.Errorf("failed to decode Rustic output: %w", err)
 	}
 	if status.StatusCode != 0 {
-		message := strings.TrimSpace(stderr.String())
-		if message == "" {
-			message = strings.TrimSpace(stdout.String())
-		}
+		message := cmp.Or(strings.TrimSpace(stderr.String()), strings.TrimSpace(stdout.String()))
 		return "", fmt.Errorf("rustic exited with code %d: %s", status.StatusCode, message)
 	}
 	return strings.TrimSpace(stdout.String()), nil

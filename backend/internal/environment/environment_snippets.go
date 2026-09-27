@@ -89,7 +89,7 @@ func (s *EnvironmentService) GenerateDeploymentSnippets(ctx context.Context, env
 
 // GenerateEdgeDeploymentSnippets generates Docker deployment snippets for an edge agent.
 // Edge agents connect outbound to the manager and don't require exposed ports.
-func (s *EnvironmentService) GenerateEdgeDeploymentSnippets(ctx context.Context, envID string, managerURL string, apiKey string, edgeCfg *edge.Config) (*DeploymentSnippets, error) {
+func (s *EnvironmentService) GenerateEdgeDeploymentSnippets(ctx context.Context, envID, managerURL, apiKey string, edgeCfg *edge.Config) (*DeploymentSnippets, error) {
 	managerURL = strings.TrimRight(managerURL, "/")
 
 	dockerRun := strings.Join([]string{
@@ -154,7 +154,7 @@ func (s *EnvironmentService) GenerateEdgeDeploymentSnippets(ctx context.Context,
 	return snippets, nil
 }
 
-func (s *EnvironmentService) logGeneratedMTLSEventsInternal(ctx context.Context, envID string, envName string, assets *edge.GeneratedMTLSAssets) {
+func (s *EnvironmentService) logGeneratedMTLSEventsInternal(ctx context.Context, envID, envName string, assets *edge.GeneratedMTLSAssets) {
 	if s == nil || s.eventService == nil || assets == nil {
 		return
 	}
@@ -187,7 +187,7 @@ func (s *EnvironmentService) logGeneratedMTLSEventsInternal(ctx context.Context,
 	}
 }
 
-func buildMTLSDeploymentSnippetInternal(managerURL string, apiKey string, generatedAssets *edge.GeneratedMTLSAssets) *DeploymentSnippetMTLS {
+func buildMTLSDeploymentSnippetInternal(managerURL, apiKey string, generatedAssets *edge.GeneratedMTLSAssets) *DeploymentSnippetMTLS {
 	if generatedAssets == nil {
 		return nil
 	}

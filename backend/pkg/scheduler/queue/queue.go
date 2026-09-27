@@ -2,6 +2,7 @@
 package queue
 
 import (
+	"cmp"
 	"context"
 	"crypto/rand"
 	"io"
@@ -14,6 +15,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
 	st "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	"github.com/google/uuid"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 // Queue persists work before dispatching it to the owning domain.
@@ -48,15 +50,11 @@ func (q *Queue) Submit(ctx context.Context, request st.Request) (st.Run, error) 
 	if q.stopping {
 		return st.Run{}, errors.New("job queue is stopping")
 	}
-	if request.EnvironmentID == "" {
-		request.EnvironmentID = "0"
-	}
+	request.EnvironmentID = cmp.Or(request.EnvironmentID, "0")
 	if request.JobID == "" {
 		return st.Run{}, errors.New("job ID required")
 	}
-	if request.Trigger == "" {
-		request.Trigger = "manual"
-	}
+	request.Trigger = cmp.Or(request.Trigger, "manual")
 	if request.RunID == "" {
 		request.RunID = uuid.NewString()
 	}
@@ -236,7 +234,7 @@ func (q *Queue) dispatchReadyInternal(ctx context.Context) (time.Time, error) {
 	}
 	var nextRetry time.Time
 	for _, record := range records {
-		key := queueKeyInternal(record.EnvironmentID, record.JobID)
+		key := queuePrefixInternal + kit.SHA256Hex(record.EnvironmentID+"\x00"+record.JobID)
 		reserved := strings.HasPrefix(record.JobID, "environment-health") || record.JobID == "docker-client-refresh" || record.JobID == "activity-sweep"
 		q.mu.Lock()
 		if q.active[key] || q.stopping || (!reserved && q.ordinary >= 4) || (reserved && q.health >= 2) {
@@ -304,11 +302,7 @@ func (q *Queue) executeInternal(ctx context.Context, key string, run st.Run, res
 	}()
 	outcome, err := q.invokeInternal(ctx, run, reconcile)
 	if outcome.Status == "" {
-		if err != nil {
-			outcome.Status = st.Failed
-		} else {
-			outcome.Status = st.Succeeded
-		}
+		outcome.Status = kit.Ternary(err != nil, st.Failed, st.Succeeded)
 	}
 	if err != nil && outcome.Message == "" {
 		outcome.Message = err.Error()
@@ -479,8 +473,6 @@ func mergeTargetProgressInternal(previous, outcome st.Outcome) st.Outcome {
 			outcome.Targets = append(outcome.Targets, target)
 		}
 	}
-	if outcome.ActivityID == "" {
-		outcome.ActivityID = previous.ActivityID
-	}
+	outcome.ActivityID = cmp.Or(outcome.ActivityID, previous.ActivityID)
 	return outcome
 }

@@ -1,13 +1,13 @@
 package swarm
 
 import (
+	"cmp"
 	"context"
 	"maps"
 	"slices"
 	"strings"
 
 	"emperror.dev/errors"
-
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
 )
@@ -83,10 +83,7 @@ func RenderStackConfig(ctx context.Context, opts StackRenderOptions) (*StackRend
 	serviceNames := make([]string, 0, len(project.Services))
 	for _, key := range slices.Sorted(maps.Keys(project.Services)) {
 		service := project.Services[key]
-		name := service.Name
-		if name == "" {
-			name = key
-		}
+		name := cmp.Or(service.Name, key)
 		serviceNames = append(serviceNames, ns.Scope(name))
 	}
 

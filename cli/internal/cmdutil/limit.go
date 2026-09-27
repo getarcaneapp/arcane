@@ -7,6 +7,7 @@ import (
 	runtimectx "github.com/getarcaneapp/arcane/cli/v2/internal/runtime"
 	clitypes "github.com/getarcaneapp/arcane/cli/v2/internal/types"
 	"github.com/spf13/cobra"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 // EffectiveLimit resolves the final list limit with precedence:
@@ -16,10 +17,7 @@ import (
 func EffectiveLimit(cmd *cobra.Command, resource, flagName string, flagValue, fallbackDefault int) int {
 	if cmd != nil {
 		if flag := cmd.Flags().Lookup(flagName); flag != nil && flag.Changed {
-			if flagValue > 0 || flagValue == ShowAllLimit {
-				return flagValue
-			}
-			return 0
+			return kit.Ternary(flagValue > 0 || flagValue == ShowAllLimit, flagValue, 0)
 		}
 	}
 
@@ -44,8 +42,5 @@ func EffectiveLimit(cmd *cobra.Command, resource, flagName string, flagValue, fa
 	if fallbackDefault > 0 {
 		return fallbackDefault
 	}
-	if flagValue > 0 {
-		return flagValue
-	}
-	return 0
+	return kit.Ternary(flagValue > 0, flagValue, 0)
 }

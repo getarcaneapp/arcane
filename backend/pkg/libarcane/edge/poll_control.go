@@ -1,8 +1,6 @@
 package edge
 
 import (
-	"github.com/samber/mo"
-
 	"encoding/json/v2"
 	"io"
 	"log/slog"
@@ -11,9 +9,10 @@ import (
 	"time"
 
 	"emperror.dev/errors"
-
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
 	"github.com/labstack/echo/v5"
+	"github.com/samber/mo"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 const (
@@ -77,10 +76,7 @@ func (r *TunnelDemandRegistry) Touch(envID string, ttl time.Duration) time.Time 
 // DesiredStatus returns the desired manager-side tunnel state for an environment.
 func (r *TunnelDemandRegistry) DesiredStatus(envID string, hasActiveTunnel bool, now time.Time) string {
 	if r == nil || strings.TrimSpace(envID) == "" {
-		if hasActiveTunnel {
-			return TunnelStatusActive
-		}
-		return TunnelStatusIdle
+		return kit.Ternary(hasActiveTunnel, TunnelStatusActive, TunnelStatusIdle)
 	}
 	if now.IsZero() {
 		now = time.Now()
@@ -103,10 +99,7 @@ func (r *TunnelDemandRegistry) DesiredStatus(envID string, hasActiveTunnel bool,
 	if !ok {
 		return TunnelStatusIdle
 	}
-	if hasActiveTunnel {
-		return TunnelStatusActive
-	}
-	return TunnelStatusRequired
+	return kit.Ternary(hasActiveTunnel, TunnelStatusActive, TunnelStatusRequired)
 }
 
 var (

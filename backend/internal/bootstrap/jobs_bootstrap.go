@@ -7,10 +7,7 @@ import (
 	"net/http"
 	"slices"
 
-	"github.com/getarcaneapp/arcane/types/v2/features"
-
 	"emperror.dev/errors"
-
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/apns"
@@ -24,6 +21,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/volume"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler"
+	"github.com/getarcaneapp/arcane/types/v2/features"
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	"go.uber.org/fx"
 )
@@ -304,7 +302,7 @@ type settingsEffectsSchedulerInternal interface {
 
 type timeoutSettingsEnvironmentInternal interface {
 	ListRemoteEnvironments(ctx context.Context) ([]environment.Environment, error)
-	ProxyRequest(ctx context.Context, envID string, method string, path string, body []byte) ([]byte, int, error)
+	ProxyRequest(ctx context.Context, envID, method, path string, body []byte) ([]byte, int, error)
 }
 
 func setupSettingsSubscriptionsInternal(params settingsSubscriptionsParams) error {

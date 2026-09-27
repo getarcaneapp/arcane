@@ -32,10 +32,14 @@ type UserRoleAssignment struct {
 
 func (UserRoleAssignment) TableName() string { return "user_role_assignments" }
 
-// Assignment source values stored in UserRoleAssignment.Source.
 const (
+	// Assignment source values stored in UserRoleAssignment.Source.
+
 	RoleAssignmentSourceManual = "manual"
 	RoleAssignmentSourceOidc   = "oidc"
+
+	OidcMappingSourceManual = "manual"
+	OidcMappingSourceEnv    = "env"
 )
 
 // ApiKeyPermission is one permission grant on an API key, optionally scoped to
@@ -71,8 +75,3 @@ type OidcRoleMapping struct {
 }
 
 func (OidcRoleMapping) TableName() string { return "oidc_role_mappings" }
-
-const (
-	OidcMappingSourceManual = "manual"
-	OidcMappingSourceEnv    = "env"
-)
