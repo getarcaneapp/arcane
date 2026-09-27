@@ -2,6 +2,7 @@ package projects
 
 import (
 	"context"
+	"log/slog"
 	"os"
 	"path"
 	"path/filepath"
@@ -9,6 +10,7 @@ import (
 	"strings"
 
 	"emperror.dev/errors"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"go.getarcane.app/acfs"
 	"go.getarcane.app/acfs/atomic"
 	acfstypes "go.getarcane.app/acfs/types"
@@ -166,8 +168,12 @@ func backupScopePathInternal(ctx context.Context, projRoot, backupRoot *os.Root,
 		if err := copyBackupFileInternal(projRoot, backupRoot, rel, backup); err != nil {
 			return err
 		}
+	case rel == EffectiveEnvFileName && info.Mode()&os.ModeSymlink != 0:
+		if err := copyBackupEnvSymlinkInternal(projRoot, backupRoot, rel, backup); err != nil {
+			return err
+		}
 	default:
-		// Symlinks and other special files: the apply operations reject them
+		// Other symlinks and special files: the apply operations reject them
 		// before mutating anything, so there is nothing to back up.
 	}
 	return nil
@@ -227,6 +233,10 @@ func copyBackupEnvSymlinkInternal(projRoot, backupRoot *os.Root, rel string, bac
 	if err != nil {
 		if errors.Is(err, os.ErrPermission) {
 			backup.Skipped = append(backup.Skipped, rel)
+			return nil
+		}
+		if errors.Is(err, os.ErrNotExist) {
+			// Dangling link: env writes leave it untouched, so there is nothing to restore.
 			return nil
 		}
 		return errors.WrapIff(err, "resolve project env symlink %s", rel)
@@ -290,8 +300,14 @@ func RestoreProjectUpdateBackup(ctx context.Context, projectDir string, backup *
 		return err
 	}
 
-	// 3. Mirror backed-up directories back in place.
+	// 3. Mirror backed-up directories back in place, clearing a file the
+	// failed update may have put where the directory was.
 	for _, rel := range backup.DirEntries {
+		if live, err := projRoot.Lstat(rel); err == nil && !live.IsDir() {
+			if err := projRoot.Remove(rel); err != nil {
+				return errors.WrapIff(err, "remove conflicting file %s", rel)
+			}
+		}
 		if err := projRoot.MkdirAll(rel, 0o755); err != nil {
 			return errors.WrapIff(err, "recreate project directory %s", rel)
 		}
@@ -311,7 +327,7 @@ func RestoreProjectUpdateBackup(ctx context.Context, projectDir string, backup *
 
 	// 4. Restore individual files in place.
 	for _, rel := range backup.FileEntries {
-		if err := restoreBackupFileInternal(backupRoot, projRoot, backup, rel); err != nil {
+		if err := restoreBackupFileInternal(ctx, backupRoot, projRoot, backup, rel); err != nil {
 			return err
 		}
 	}
@@ -321,7 +337,7 @@ func RestoreProjectUpdateBackup(ctx context.Context, projectDir string, backup *
 	// then copy every top-level backup file back. Top-level directories and
 	// symlinks are never touched.
 	if backup.TopLevelFiles {
-		if err := restoreTopLevelFilesInternal(backupRoot, projRoot, backup); err != nil {
+		if err := restoreTopLevelFilesInternal(ctx, backupRoot, projRoot, backup); err != nil {
 			return err
 		}
 	}
@@ -382,7 +398,7 @@ func skippedUnderInternal(skipped []string, rel string) []string {
 	return under
 }
 
-func restoreBackupFileInternal(backupRoot, projRoot *os.Root, backup *ProjectUpdateBackup, rel string) error {
+func restoreBackupFileInternal(ctx context.Context, backupRoot, projRoot *os.Root, backup *ProjectUpdateBackup, rel string) error {
 	info, err := backupRoot.Lstat(rel)
 	if err != nil {
 		return errors.WrapIff(err, "inspect backup file %s", rel)
@@ -394,7 +410,15 @@ func restoreBackupFileInternal(backupRoot, projRoot *os.Root, backup *ProjectUpd
 	if backup.envSymlink != nil && backup.envSymlink.relativePath == rel {
 		return restoreBackupEnvSymlinkInternal(projRoot, backup.envSymlink, content, info.Mode().Perm())
 	}
-	if live, err := projRoot.Lstat(rel); err == nil && live.IsDir() {
+	live, liveErr := projRoot.Lstat(rel)
+	if liveErr == nil && live.Mode().IsRegular() {
+		// In place: the inode survives so container bind mounts of the file stay valid.
+		if err := acfs.Write(ctx, projRoot.Name(), "/"+rel, content, acfs.WriteOptions{Mode: info.Mode().Perm(), InPlace: true}); err != nil {
+			return errors.WrapIff(err, "restore project file %s", rel)
+		}
+		return nil
+	}
+	if liveErr == nil && live.IsDir() {
 		if err := projRoot.RemoveAll(rel); err != nil {
 			return errors.WrapIff(err, "remove conflicting directory %s", rel)
 		}
@@ -404,8 +428,8 @@ func restoreBackupFileInternal(backupRoot, projRoot *os.Root, backup *ProjectUpd
 			return errors.WrapIff(err, "recreate parent directory of %s", rel)
 		}
 	}
-	// Atomic write: a crash mid-restore leaves either the failed-update
-	// content or the fully restored file, never a torn write.
+	// Atomic create: a crash mid-restore leaves either nothing or the fully
+	// restored file, never a torn write.
 	if err := atomic.WriteFile(filepath.Join(projRoot.Name(), filepath.FromSlash(rel)), content, info.Mode().Perm()); err != nil {
 		return errors.WrapIff(err, "restore project file %s", rel)
 	}
@@ -444,7 +468,7 @@ func restoreBackupEnvSymlinkInternal(projRoot *os.Root, envBackup *projectUpdate
 	return nil
 }
 
-func restoreTopLevelFilesInternal(backupRoot, projRoot *os.Root, backup *ProjectUpdateBackup) error {
+func restoreTopLevelFilesInternal(ctx context.Context, backupRoot, projRoot *os.Root, backup *ProjectUpdateBackup) error {
 	backupEntries, err := os.ReadDir(backupRoot.Name())
 	if err != nil {
 		return errors.WrapIf(err, "read backup directory")
@@ -482,9 +506,82 @@ func restoreTopLevelFilesInternal(backupRoot, projRoot *os.Root, backup *Project
 		if !entry.Type().IsRegular() {
 			continue
 		}
-		if err := restoreBackupFileInternal(backupRoot, projRoot, backup, entry.Name()); err != nil {
+		if err := restoreBackupFileInternal(ctx, backupRoot, projRoot, backup, entry.Name()); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// BackupProjectDirectory creates a scratch backup directory named by pattern
+// beside projectPath and backs up scope into it. The returned cleanup removes
+// the backup directory and runs even after ctx was cancelled, since acfs
+// refuses work on a cancelled context.
+func BackupProjectDirectory(ctx context.Context, projectsDirectory, projectPath, pattern string, scope ProjectUpdateBackupScope) (*ProjectUpdateBackup, func(), error) {
+	projectAbs, rootAbs, err := resolveProjectUnderRootInternal(projectsDirectory, projectPath)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	backupLogical, err := acfs.MkdirTemp(ctx, rootAbs, "/", pattern)
+	if err != nil {
+		return nil, nil, errors.WrapIf(err, "failed to create project backup directory")
+	}
+	backupPath := filepath.Join(rootAbs, filepath.FromSlash(strings.TrimPrefix(backupLogical, "/")))
+	cleanupCtx := context.WithoutCancel(ctx)
+	cleanup := func() { _ = acfs.RemoveAll(cleanupCtx, rootAbs, backupLogical) }
+
+	// Tolerate files Arcane cannot read (e.g. foreign-owned secrets): skip them
+	// in the backup so an unrelated unreadable file can't block the whole save.
+	// The skipped paths are recorded so the rollback restore can preserve them.
+	backup, err := BackupProjectUpdateScope(ctx, projectAbs, backupPath, scope)
+	if err != nil {
+		cleanup()
+		return nil, nil, errors.WrapIf(err, "failed to backup project files")
+	}
+	if len(backup.Skipped) > 0 {
+		slog.WarnContext(ctx, "skipped unreadable files while backing up project; they will be left untouched on rollback", "projectPath", projectAbs, "skipped", backup.Skipped)
+	}
+	return backup, cleanup, nil
+}
+
+// RestoreProjectDirectoryBackup recreates projectPath if needed and restores
+// the scoped backup into it in place.
+func RestoreProjectDirectoryBackup(ctx context.Context, projectsDirectory, projectPath string, backup *ProjectUpdateBackup) error {
+	projectAbs, rootAbs, err := resolveProjectUnderRootInternal(projectsDirectory, projectPath)
+	if err != nil {
+		return err
+	}
+
+	projectLogical, err := acfs.LogicalPath(rootAbs, projectAbs)
+	if err != nil {
+		return errors.WrapIf(err, "failed to resolve project directory")
+	}
+
+	slog.DebugContext(ctx, "restoring project directory backup", "path", projectAbs, "backup", backup.BackupDir)
+	if err := acfs.MkdirAll(ctx, rootAbs, projectLogical, utils.DirPerm); err != nil {
+		return errors.WrapIf(err, "failed to recreate project directory")
+	}
+	if err := RestoreProjectUpdateBackup(ctx, projectAbs, backup); err != nil {
+		return errors.WrapIf(err, "failed to restore project backup")
+	}
+	return nil
+}
+
+func resolveProjectUnderRootInternal(projectsDirectory, projectPath string) (projectAbs, rootAbs string, err error) {
+	projectAbs, err = filepath.Abs(projectPath)
+	if err != nil {
+		return "", "", errors.WrapIf(err, "failed to resolve project path")
+	}
+	projectAbs = filepath.Clean(projectAbs)
+
+	rootAbs, err = filepath.Abs(projectsDirectory)
+	if err != nil {
+		return "", "", errors.WrapIf(err, "failed to resolve projects directory")
+	}
+	rootAbs = filepath.Clean(rootAbs)
+	if !IsSafeSubdirectory(rootAbs, projectAbs) || projectAbs == rootAbs {
+		return "", "", errors.New("project path is outside projects directory")
+	}
+	return projectAbs, rootAbs, nil
 }

@@ -251,15 +251,7 @@ func (s *ProjectService) prepareProjectWorkspaceBackupInternal(ctx context.Conte
 	for _, change := range changes {
 		scope.Paths = append(scope.Paths, workspaceChangeTargetPathsInternal(change)...)
 	}
-	backup, err := backupProjectDirectoryInternal(ctx, projectsDirectory, projectPath, scope)
-	if err != nil {
-		return nil, nil, err
-	}
-	backupLogical, err := acfs.LogicalPath(projectsDirectory, backup.BackupDir)
-	if err != nil {
-		return nil, nil, errors.WrapIf(err, "failed to resolve project backup directory")
-	}
-	return backup, func() { _ = acfs.RemoveAll(ctx, projectsDirectory, backupLogical) }, nil
+	return projects.BackupProjectDirectory(ctx, projectsDirectory, projectPath, ".project-update-backup-*", scope)
 }
 
 func isGitOpsManagedProjectInternal(proj *Project) bool {

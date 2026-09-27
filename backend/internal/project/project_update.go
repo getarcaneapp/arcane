@@ -23,7 +23,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
 	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
 	"github.com/moby/moby/client"
@@ -145,19 +144,7 @@ func (s *ProjectService) prepareProjectUpdateBackupInternal(ctx context.Context,
 		return nil, func() {}, nil
 	}
 
-	backup, err := backupProjectDirectoryInternal(ctx, projectsDirectory, projectPath, scope)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	backupLogical, err := acfs.LogicalPath(projectsDirectory, backup.BackupDir)
-	if err != nil {
-		return nil, nil, errors.WrapIf(err, "failed to resolve project backup directory")
-	}
-	// The cleanup must run even when the update was cancelled, or the backup
-	// directory leaks: acfs refuses operations on an already-cancelled context.
-	cleanupCtx := context.WithoutCancel(ctx)
-	return backup, func() { _ = acfs.RemoveAll(cleanupCtx, projectsDirectory, backupLogical) }, nil
+	return projects.BackupProjectDirectory(ctx, projectsDirectory, projectPath, ".project-update-backup-*", scope)
 }
 
 func (s *ProjectService) applyProjectUpdateWithRenameJournalInternal(ctx context.Context, proj *Project, name *string, projectsDirectory string, composeContent, envContent, overrideContent *string, volumeMigration volumetypes.Migration, renameJournal *projecttypes.RenameJournal, journalActive *bool, projectStateCommitted *bool) (err error) {
@@ -219,7 +206,7 @@ func (s *ProjectService) handleProjectUpdateFailureInternal(ctx context.Context,
 	}
 
 	if backup != nil {
-		if restoreErr := restoreProjectDirectoryBackupInternal(ctx, projectsDirectory, proj.Path, backup); restoreErr != nil {
+		if restoreErr := projects.RestoreProjectDirectoryBackup(ctx, projectsDirectory, proj.Path, backup); restoreErr != nil {
 			err = stderrors.Join(err, errors.WrapIf(restoreErr, "failed to restore project files after update failure"))
 		}
 	}
@@ -495,77 +482,6 @@ func isProjectRenameRequestedInternal(proj *Project, name *string) bool {
 	}
 	newName := strings.TrimSpace(*name)
 	return newName != "" && proj.Name != newName
-}
-
-func backupProjectDirectoryInternal(ctx context.Context, projectsDirectory, projectPath string, scope projects.ProjectUpdateBackupScope) (*projects.ProjectUpdateBackup, error) {
-	projectAbs, err := filepath.Abs(projectPath)
-	if err != nil {
-		return nil, errors.WrapIf(err, "failed to resolve project path")
-	}
-	projectAbs = filepath.Clean(projectAbs)
-
-	rootAbs, err := filepath.Abs(projectsDirectory)
-	if err != nil {
-		return nil, errors.WrapIf(err, "failed to resolve projects directory")
-	}
-	rootAbs = filepath.Clean(rootAbs)
-	if !projects.IsSafeSubdirectory(rootAbs, projectAbs) || projectAbs == rootAbs {
-		return nil, errors.New("project path is outside projects directory")
-	}
-
-	backupLogical, err := acfs.MkdirTemp(ctx, projectsDirectory, "/", ".project-update-backup-*")
-	if err != nil {
-		return nil, errors.WrapIf(err, "failed to create project backup directory")
-	}
-	backupPath := filepath.Join(projectsDirectory, filepath.FromSlash(strings.TrimPrefix(backupLogical, "/")))
-	// Tolerate files Arcane cannot read (e.g. foreign-owned secrets): skip them
-	// in the backup so an unrelated unreadable file can't block the whole save.
-	// The skipped paths are recorded so the rollback restore can preserve them.
-	backup, err := projects.BackupProjectUpdateScope(ctx, projectAbs, backupPath, scope)
-	if err != nil {
-		// The unwind must run even when the backup failed because ctx was
-		// cancelled, or the fresh backup directory leaks.
-		_ = acfs.RemoveAll(context.WithoutCancel(ctx), projectsDirectory, backupLogical)
-		return nil, errors.WrapIf(err, "failed to backup project files")
-	}
-	if len(backup.Skipped) > 0 {
-		slog.WarnContext(ctx, "skipped unreadable files while backing up project; they will be left untouched on rollback", "projectPath", projectAbs, "skipped", backup.Skipped)
-	}
-	return backup, nil
-}
-
-func restoreProjectDirectoryBackupInternal(ctx context.Context, projectsDirectory, projectPath string, backup *projects.ProjectUpdateBackup) error {
-	projectAbs, err := filepath.Abs(projectPath)
-	if err != nil {
-		return errors.WrapIf(err, "failed to resolve project path")
-	}
-	projectAbs = filepath.Clean(projectAbs)
-
-	rootAbs, err := filepath.Abs(projectsDirectory)
-	if err != nil {
-		return errors.WrapIf(err, "failed to resolve projects directory")
-	}
-	rootAbs = filepath.Clean(rootAbs)
-	if !projects.IsSafeSubdirectory(rootAbs, projectAbs) || projectAbs == rootAbs {
-		return errors.New("project path is outside projects directory")
-	}
-
-	projectLogical, err := acfs.LogicalPath(rootAbs, projectAbs)
-	if err != nil {
-		return errors.WrapIf(err, "failed to resolve project directory")
-	}
-
-	slog.DebugContext(ctx, "restoring project directory backup", "path", projectAbs, "backup", backup.BackupDir)
-	if err := acfs.MkdirAll(ctx, rootAbs, projectLogical, utils.DirPerm); err != nil {
-		return errors.WrapIf(err, "failed to recreate project directory")
-	}
-	// Restore only the paths the update could have mutated, in place: files
-	// that were skipped during backup (unreadable, e.g. foreign-owned secrets)
-	// are preserved, and out-of-scope files are never touched.
-	if err := projects.RestoreProjectUpdateBackup(ctx, projectAbs, backup); err != nil {
-		return errors.WrapIf(err, "failed to restore project backup")
-	}
-	return nil
 }
 
 func (s *ProjectService) persistUpdatedProjectFiles(ctx context.Context, proj *Project, projectsDirectory string, composeContent, envContent, overrideContent *string) error {

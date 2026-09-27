@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -645,6 +646,9 @@ services:
 		},
 	}
 
+	keepBefore, err := os.Stat(filepath.Join(projectPath, "keep.txt"))
+	require.NoError(t, err)
+
 	updatedProject, syncedFiles, created, changed, err := svc.syncProjectDirectoryInternal(ctx, sync, syncFiles, common.User{})
 	require.NoError(t, err)
 	require.NotNil(t, updatedProject)
@@ -662,6 +666,11 @@ services:
 	_, statErr = os.Stat(filepath.Join(updatedProject.Path, "compose.yaml"))
 	require.ErrorIs(t, statErr, os.ErrNotExist)
 
+	// An untracked sibling is outside the sync's scope: never copied, rewritten or pruned.
+	keepAfter, err := os.Stat(filepath.Join(updatedProject.Path, "keep.txt"))
+	require.NoError(t, err)
+	assert.True(t, os.SameFile(keepBefore, keepAfter))
+	assert.Equal(t, keepBefore.ModTime(), keepAfter.ModTime())
 	keepBytes, err := os.ReadFile(filepath.Join(updatedProject.Path, "keep.txt"))
 	require.NoError(t, err)
 	assert.Equal(t, "keep me\n", string(keepBytes))
@@ -1096,6 +1105,148 @@ func TestGitOpsSyncService_CreateDirectorySyncProjectInternal_RollsBackProjectOn
 
 	_, statErr := os.Stat(filepath.Join(projectsDir, "demo-project"))
 	assert.ErrorIs(t, statErr, os.ErrNotExist)
+}
+
+// TestGitOpsSyncService_UpdateDirectorySyncProjectInternal_RollsBackScopedChangesOnUpdateFailure
+// forces the project metadata update to fail after the synced files were written
+// to the live project, and verifies the scoped rollback restores exactly what the
+// sync touched (in place, keeping inodes) while unrelated files are never copied,
+// rewritten or pruned.
+func TestGitOpsSyncService_UpdateDirectorySyncProjectInternal_RollsBackScopedChangesOnUpdateFailure(t *testing.T) {
+	ctx := context.Background()
+	svc, db, projectsDir := setupGitOpsSyncDirectoryTestService(t)
+
+	projectPath := filepath.Join(projectsDir, "demo-project")
+	writeFileInternal(t, projectPath, "docker-compose.yaml", []byte("services:\n  app:\n    image: nginx:1.26-alpine\n"))
+	writeFileInternal(t, projectPath, "old.txt", []byte("remove me\n"))
+	writeFileInternal(t, projectPath, "keep.txt", []byte("keep me\n"))
+	writeFileInternal(t, projectPath, ".env", []byte("A=1\n"))
+	writeFileInternal(t, projectPath, "data/blob.bin", []byte("bind-mount data\n"))
+	// A directory sits where git now ships a file.
+	require.NoError(t, os.MkdirAll(filepath.Join(projectPath, "config", "dynamic.yml"), 0o755))
+
+	// Pre-linked, so the only projects-table update during the sync is the
+	// metadata write that follows promotion.
+	const syncID = "sync-directory-update-rollback"
+	project := &projectpkg.Project{
+		ID:              "proj-directory-update-rollback",
+		Name:            "demo-project",
+		DirName:         new("demo-project"),
+		Path:            projectPath,
+		Status:          projectpkg.ProjectStatusStopped,
+		GitOpsManagedBy: new(syncID),
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	oldSyncedFilesJSON, err := json.Marshal([]string{"docker-compose.yaml", "old.txt"})
+	require.NoError(t, err)
+	sync := &projectpkg.GitOpsSync{
+		ID:            syncID,
+		Name:          "demo-sync",
+		EnvironmentID: "0",
+		RepositoryID:  "repo-1",
+		ComposePath:   "apps/demo/docker-compose.yaml",
+		ProjectName:   "demo-project",
+		ProjectID:     &project.ID,
+		SyncDirectory: true,
+		SyncedFiles:   new(string(oldSyncedFilesJSON)),
+	}
+	require.NoError(t, db.Create(sync).Error)
+
+	syncFiles := []projects.SyncFile{
+		{RelativePath: "docker-compose.yaml", Content: []byte("services:\n  app:\n    image: nginx:1.27-alpine\n")},
+		{RelativePath: "config/dynamic.yml", Content: []byte("http: {}\n")},
+		{RelativePath: ".env", Content: []byte("A=1\nB=2\n")},
+	}
+
+	composeBefore, err := os.Stat(filepath.Join(projectPath, "docker-compose.yaml"))
+	require.NoError(t, err)
+	keepBefore, err := os.Stat(filepath.Join(projectPath, "keep.txt"))
+	require.NoError(t, err)
+	blobBefore, err := os.Stat(filepath.Join(projectPath, "data", "blob.bin"))
+	require.NoError(t, err)
+
+	// Fail after promotion wrote the live files. While the failure fires, the
+	// scoped backup still exists: record the live compose content and what the
+	// backup captured.
+	var composeAtFailure string
+	var backupContents []string
+	callbackName := "test:fail_project_gitops_directory_update"
+	require.NoError(t, db.Callback().Update().Before("gorm:update").Register(callbackName, func(tx *gorm.DB) {
+		if tx.Statement == nil || tx.Statement.Table != "projects" {
+			return
+		}
+		liveCompose, readErr := os.ReadFile(filepath.Join(projectPath, "docker-compose.yaml"))
+		require.NoError(t, readErr)
+		composeAtFailure = string(liveCompose)
+		entries, readErr := os.ReadDir(projectsDir)
+		require.NoError(t, readErr)
+		for _, entry := range entries {
+			if !strings.HasPrefix(entry.Name(), ".gitops-backup-") {
+				continue
+			}
+			backupDir := filepath.Join(projectsDir, entry.Name())
+			_ = filepath.WalkDir(backupDir, func(p string, _ os.DirEntry, _ error) error {
+				rel, _ := filepath.Rel(backupDir, p)
+				backupContents = append(backupContents, filepath.ToSlash(rel))
+				return nil
+			})
+		}
+		_ = tx.AddError(errors.New("forced project update failure"))
+	}))
+	defer func() {
+		_ = db.Callback().Update().Remove(callbackName)
+	}()
+
+	updatedProject, _, _, _, err := svc.syncProjectDirectoryInternal(ctx, sync, syncFiles, common.User{})
+	require.Error(t, err)
+	require.Nil(t, updatedProject)
+	assert.Contains(t, err.Error(), "forced project update failure")
+	assert.NotContains(t, err.Error(), "rollback project directory")
+
+	// Promotion had already applied the new files when the failure fired, and
+	// the backup held only the paths the sync touches, never unrelated data.
+	assert.Contains(t, composeAtFailure, "nginx:1.27-alpine")
+	assert.ElementsMatch(t, []string{".", ".env", "config", "config/dynamic.yml", "docker-compose.yaml", "old.txt"}, backupContents)
+
+	// Changed paths are back exactly as they were, in place.
+	composeAfter, err := os.Stat(filepath.Join(projectPath, "docker-compose.yaml"))
+	require.NoError(t, err)
+	assert.True(t, os.SameFile(composeBefore, composeAfter))
+	composeBytes, err := os.ReadFile(filepath.Join(projectPath, "docker-compose.yaml"))
+	require.NoError(t, err)
+	assert.Contains(t, string(composeBytes), "nginx:1.26-alpine")
+
+	oldBytes, err := os.ReadFile(filepath.Join(projectPath, "old.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "remove me\n", string(oldBytes))
+
+	configInfo, err := os.Stat(filepath.Join(projectPath, "config", "dynamic.yml"))
+	require.NoError(t, err)
+	assert.True(t, configInfo.IsDir())
+
+	envBytes, err := os.ReadFile(filepath.Join(projectPath, ".env"))
+	require.NoError(t, err)
+	assert.Equal(t, "A=1\n", string(envBytes))
+	_, statErr := os.Lstat(filepath.Join(projectPath, projects.GitSourceEnvFileName))
+	assert.ErrorIs(t, statErr, os.ErrNotExist)
+
+	// Unrelated files were left alone.
+	keepAfter, err := os.Stat(filepath.Join(projectPath, "keep.txt"))
+	require.NoError(t, err)
+	assert.True(t, os.SameFile(keepBefore, keepAfter))
+	assert.Equal(t, keepBefore.ModTime(), keepAfter.ModTime())
+	blobAfter, err := os.Stat(filepath.Join(projectPath, "data", "blob.bin"))
+	require.NoError(t, err)
+	assert.True(t, os.SameFile(blobBefore, blobAfter))
+	assert.Equal(t, blobBefore.ModTime(), blobAfter.ModTime())
+
+	// Both scratch directories were removed.
+	entries, err := os.ReadDir(projectsDir)
+	require.NoError(t, err)
+	for _, entry := range entries {
+		assert.False(t, projects.IsGitOpsScratchDirName(entry.Name()), "leaked scratch directory %s", entry.Name())
+	}
 }
 
 func TestProjectsRemoveStaleComposeFiles_RemovesStaleCustomComposeFiles(t *testing.T) {

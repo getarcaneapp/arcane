@@ -20,9 +20,8 @@ import (
 // TestGitOpsSyncService_SyncProjectDirectory_PreservesUnreadableBindMountData verifies
 // that re-syncing an existing GitOps project tolerates a foreign-owned unreadable file
 // inside the project directory (e.g. data a container wrote through a relative bind
-// mount, owned by another UID with restrictive perms). The sync must succeed instead
-// of aborting on the permission error while staging/backing up, and the unreadable
-// file must be left untouched rather than pruned when the staged tree is promoted.
+// mount, owned by another UID with restrictive perms). The file is outside the sync's
+// scope, so staging, backup and promotion must never read, copy or prune it.
 func TestGitOpsSyncService_SyncProjectDirectory_PreservesUnreadableBindMountData(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("permission bits are ignored when running as root")

@@ -273,42 +273,38 @@ func DirectorySyncContentsChanged(ctx context.Context, projectPath string, syncF
 	return false, nil
 }
 
-func RemoveStaleComposeFiles(ctx context.Context, projectPath, composeFileName string, syncedFiles []string) error {
+// StaleComposeFiles lists project-root compose files a directory sync no longer
+// manages: other standard compose names, plus custom YAML files with compose
+// root keys that are not part of the synced set. A missing project directory
+// has nothing stale.
+func StaleComposeFiles(ctx context.Context, projectPath, composeFileName string, syncedFiles []string) ([]string, error) {
 	syncedFileSet := make(map[string]struct{}, len(syncedFiles))
 	for _, file := range syncedFiles {
 		syncedFileSet[file] = struct{}{}
 	}
 
-	for _, candidate := range ComposeFileCandidates() {
-		if candidate == composeFileName {
-			continue
-		}
-		if _, exists := syncedFileSet[candidate]; exists {
-			continue
-		}
-		if err := acfs.Remove(ctx, projectPath, "/"+candidate); err != nil && !errors.Is(err, fs.ErrNotExist) {
-			return err
-		}
-	}
-
 	entries, err := acfs.List(ctx, projectPath, "/")
 	if err != nil {
-		return err
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, err
 	}
 
+	var stale []string
 	for _, entry := range entries {
-		if entry.IsDirectory {
-			continue
-		}
-
 		name := entry.Name
-		if name == composeFileName {
+		if entry.IsDirectory || name == composeFileName {
 			continue
 		}
 		if _, exists := syncedFileSet[name]; exists {
 			continue
 		}
-		if slices.Contains(ComposeFileCandidates(), name) || !IsProjectFile(name) {
+		if slices.Contains(ComposeFileCandidates(), name) {
+			stale = append(stale, name)
+			continue
+		}
+		if !IsProjectFile(name) {
 			continue
 		}
 
@@ -316,8 +312,20 @@ func RemoveStaleComposeFiles(ctx context.Context, projectPath, composeFileName s
 		if rootKeysErr != nil || !hasComposeRootKeys {
 			continue
 		}
+		stale = append(stale, name)
+	}
 
-		if err := acfs.Remove(ctx, projectPath, entry.Path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+	return stale, nil
+}
+
+func RemoveStaleComposeFiles(ctx context.Context, projectPath, composeFileName string, syncedFiles []string) error {
+	stale, err := StaleComposeFiles(ctx, projectPath, composeFileName, syncedFiles)
+	if err != nil {
+		return err
+	}
+
+	for _, name := range stale {
+		if err := acfs.Remove(ctx, projectPath, "/"+name); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return err
 		}
 	}
