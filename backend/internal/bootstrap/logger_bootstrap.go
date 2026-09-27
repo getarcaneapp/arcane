@@ -13,6 +13,7 @@ import (
 	slogGorm "github.com/orandin/slog-gorm"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
+	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
 
@@ -25,9 +26,23 @@ type attrFilterHandler struct {
 	dropKeys map[string]struct{}
 }
 
-// gormLogger drops traces for queries interrupted by a canceled request context.
+// gormLogger omits SQL parameters and drops traces for canceled requests.
 type gormLogger struct {
 	logger.Interface
+}
+
+var (
+	_ logger.Interface  = gormLogger{}
+	_ gorm.ParamsFilter = gormLogger{}
+)
+
+func (l gormLogger) LogMode(level logger.LogLevel) logger.Interface {
+	l.Interface = l.Interface.LogMode(level)
+	return l
+}
+
+func (l gormLogger) ParamsFilter(_ context.Context, sql string, _ ...any) (string, []any) {
+	return sql, nil
 }
 
 func (l gormLogger) Trace(ctx context.Context, begin time.Time, fc func() (string, int64), err error) {
