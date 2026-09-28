@@ -243,9 +243,9 @@
 		</div>
 		<div class="order-3 shrink-0 md:hidden">
 			{#if mobileFields.length > 0 && onToggleMobileField}
-				<DataTableViewOptions fields={mobileFields} onToggleField={onToggleMobileField} {customViewOptions} />
+				<DataTableViewOptions {table} fields={mobileFields} onToggleField={onToggleMobileField} {customViewOptions} showSorting />
 			{:else}
-				<DataTableViewOptions {table} {customViewOptions} />
+				<DataTableViewOptions {table} {customViewOptions} showSorting />
 			{/if}
 		</div>
 	</div>
