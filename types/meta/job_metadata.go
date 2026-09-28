@@ -59,6 +59,16 @@ var jobMetadataRegistry = map[string]JobMetadata{
 		CanRunManually: true,
 		Prerequisites:  []JobPrerequisiteMetadata{},
 	},
+	"upgrade-log-cleanup": {
+		ID:             "upgrade-log-cleanup",
+		Name:           "Upgrade Log Cleanup",
+		Description:    "Removes upgrade logs older than the configured retention period",
+		Category:       "maintenance",
+		ManagerOnly:    false,
+		IsContinuous:   false,
+		CanRunManually: true,
+		Prerequisites:  []JobPrerequisiteMetadata{},
+	},
 	"expired-sessions-cleanup": {
 		ID:             "expired-sessions-cleanup",
 		Name:           "Expired Sessions Cleanup",

@@ -12,6 +12,7 @@ import (
 
 	"emperror.dev/errors"
 	docker "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/network"
@@ -60,7 +61,7 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	// This prevents interruption when stopping the target container
 	ctx := context.Background()
 
-	logFile, err := SetupMessageOnlyLogFile("/app/data", "arcane-upgrade", slog.LevelInfo)
+	logFile, err := SetupMessageOnlyLogFile(libarcane.UpgradeLogDirectory, "arcane-upgrade", slog.LevelInfo)
 	if err != nil {
 		slog.Warn("Failed to setup file logging", "error", err)
 	} else {

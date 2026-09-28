@@ -6,9 +6,11 @@ import (
 	stderrors "errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"os"
+	"regexp"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -43,6 +45,8 @@ import (
 	"go.getarcane.app/updater/labels"
 	"golang.org/x/mod/semver"
 )
+
+var upgradeLogNameInternal = regexp.MustCompile(`^arcane-upgrade-[0-9]+\.log$`)
 
 type SystemUpgradeService struct {
 	upgrading       atomic.Bool
@@ -242,7 +246,7 @@ func (s *SystemUpgradeService) runPreparedUpgradeInternal(ctx context.Context, p
 	slog.Info("Upgrader image pulled successfully", "image", upgraderImage)
 
 	// Try to get the /app/data mount from current container so upgrade logs persist.
-	appDataMount := dockerutils.MountForDestination(prepared.current.Mounts, "/app/data", "/app/data")
+	appDataMount := dockerutils.MountForDestination(prepared.current.Mounts, libarcane.UpgradeLogDirectory, libarcane.UpgradeLogDirectory)
 	if appDataMount == nil {
 		slog.Warn("Could not detect /app/data mount; upgrader logs may not persist")
 	} else {
@@ -1345,4 +1349,62 @@ func truncateUpdateAllErrorInternal(err error) string {
 		return msg[:updateAllErrorMaxLenInternal]
 	}
 	return msg
+}
+
+// PruneUpgradeLogs removes expired upgrade logs from this instance's data directory.
+func (s *SystemUpgradeService) PruneUpgradeLogs(ctx context.Context, dataDir string, now time.Time) (int, error) {
+	retentionDays := s.settingsService.GetIntSetting(ctx, "upgradeLogRetentionDays", 3)
+	if retentionDays == 0 {
+		return 0, nil
+	}
+	if retentionDays < 0 || retentionDays > 3650 {
+		return 0, errors.New("upgrade log retention must be between 0 and 3650 days")
+	}
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
+
+	root, err := os.OpenRoot(dataDir)
+	if errors.Is(err, os.ErrNotExist) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, errors.WrapIf(err, "open upgrade log directory")
+	}
+	defer root.Close()
+	entries, err := fs.ReadDir(root.FS(), ".")
+	if err != nil {
+		return 0, errors.WrapIf(err, "read upgrade log directory")
+	}
+
+	cutoff := now.Add(-time.Duration(retentionDays) * 24 * time.Hour)
+	removed := 0
+	var failures []error
+	for _, entry := range entries {
+		if err := ctx.Err(); err != nil {
+			return removed, stderrors.Join(append(failures, err)...)
+		}
+		if !upgradeLogNameInternal.MatchString(entry.Name()) {
+			continue
+		}
+		info, err := root.Lstat(entry.Name())
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			failures = append(failures, errors.WrapIff(err, "inspect upgrade log %s", entry.Name()))
+			continue
+		}
+		if !info.Mode().IsRegular() || !info.ModTime().Before(cutoff) {
+			continue
+		}
+		if err := root.Remove(entry.Name()); err != nil {
+			if !errors.Is(err, os.ErrNotExist) {
+				failures = append(failures, errors.WrapIff(err, "remove upgrade log %s", entry.Name()))
+			}
+			continue
+		}
+		removed++
+	}
+	return removed, stderrors.Join(failures...)
 }

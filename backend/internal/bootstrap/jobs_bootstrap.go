@@ -96,6 +96,7 @@ type registerJobsParams struct {
 	ImageUpdateWatcher     *scheduler.ImageUpdateWatcher
 	DockerClientRefresh    *scheduler.DockerClientRefreshJob
 	Analytics              *scheduler.AnalyticsJob
+	UpgradeLogCleanup      schedulertypes.Job `name:"upgrade-log-cleanup"`
 	EventCleanup           *scheduler.EventCleanupJob
 	PruningVolumeHelper    *scheduler.PruningVolumeHelperJob
 	ExpiredSessionsCleanup *scheduler.ExpiredSessionsCleanupJob
@@ -156,6 +157,7 @@ func registerJobs(params registerJobsParams) error {
 		params.ActivitySweep,
 		params.UploadSessionsCleanup,
 		params.GitCloneCleanup,
+		params.UpgradeLogCleanup,
 		params.ApnsOutbox,
 	} {
 		if err := params.Scheduler.RegisterJob(job); err != nil {

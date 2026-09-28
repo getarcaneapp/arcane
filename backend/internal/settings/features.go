@@ -35,12 +35,3 @@ func (s *SettingsService) RequireFeature(ctx context.Context, id features.ID) er
 	}
 	return errors.WrapIff(common.ErrFeatureDisabled, "feature %s is disabled", id)
 }
-
-func validateFeatureSettingInternal(key, value string) error {
-	for _, definition := range features.All() {
-		if definition.SettingKey == key && value != "true" && value != "false" {
-			return common.Classify(common.ErrValidation, errors.Errorf("%s must be true or false", key))
-		}
-	}
-	return nil
-}

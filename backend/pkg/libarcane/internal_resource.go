@@ -16,6 +16,8 @@ import (
 )
 
 const (
+	// UpgradeLogDirectory is mounted into the upgrader to persist its logs.
+	UpgradeLogDirectory = "/app/data"
 	// InternalResourceLabel marks containers used for Arcane utilities.
 	InternalResourceLabel = "com.getarcaneapp.internal.resource"
 	// HiddenResourceLabel hides containers from container lists and dashboard counts.

@@ -13,6 +13,7 @@
 
 	const formSchema = z.object({
 		activityHistoryRetentionDays: z.coerce.number().int().min(0).max(3650),
+		upgradeLogRetentionDays: z.coerce.number().int().min(0).max(3650),
 		activityHistoryMaxEntries: z.coerce.number().int().min(0).max(100000),
 		maxConcurrentActivities: z.coerce.number().int().min(0).max(1000)
 	});
@@ -21,6 +22,7 @@
 		const settings = settingsStore.current || data.settings!;
 		return {
 			activityHistoryRetentionDays: settings.activityHistoryRetentionDays,
+			upgradeLogRetentionDays: settings.upgradeLogRetentionDays ?? 3,
 			activityHistoryMaxEntries: settings.activityHistoryMaxEntries,
 			maxConcurrentActivities: settings.maxConcurrentActivities
 		};
@@ -71,6 +73,19 @@
 						description={m.activity_max_concurrent_description()}
 						placeholder={m.activity_max_concurrent_placeholder()}
 						helpText={m.activity_max_concurrent_help()}
+						type="number"
+					/>
+				</div>
+			</div>
+			<div class="space-y-4">
+				<h3 class="text-base font-semibold">{m.upgrade_logs_section_title()}</h3>
+				<div class="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+					<TextInputWithLabel
+						bind:value={formInputs.upgradeLogRetentionDays.value}
+						error={formInputs.upgradeLogRetentionDays.error}
+						label={m.upgrade_log_retention_days()}
+						description={m.upgrade_log_retention_days_description()}
+						helpText={m.upgrade_log_retention_days_help()}
 						type="number"
 					/>
 				</div>

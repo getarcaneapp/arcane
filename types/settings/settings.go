@@ -104,6 +104,11 @@ type Update struct {
 	// Required: false
 	ActivityHistoryRetentionDays *string `json:"activityHistoryRetentionDays,omitzero"`
 
+	// UpgradeLogRetentionDays is the upgrade log retention in days. Zero disables cleanup.
+	//
+	// Required: false
+	UpgradeLogRetentionDays *string `json:"upgradeLogRetentionDays,omitzero"`
+
 	// ActivityHistoryMaxEntries is the maximum completed Activity Center entries to retain per environment.
 	//
 	// Required: false

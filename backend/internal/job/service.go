@@ -299,7 +299,7 @@ func (s *JobService) ListJobs(ctx context.Context) (*jobschedule.JobListResponse
 		enabled := s.isJobEnabledInternal(ctx, jobMeta)
 		prerequisites := s.evaluatePrerequisitesInternal(ctx, jobMeta)
 
-		if s.scheduler != nil && jobMeta.SettingsKey != "" && jobMeta.ID != "environment-health" {
+		if s.scheduler != nil && (jobMeta.SettingsKey != "" || jobMeta.ID == "upgrade-log-cleanup") && jobMeta.ID != "environment-health" {
 			if runtimeState, ok := s.scheduler.GetJobRuntimeState(jobMeta.ID); ok {
 				schedule = cmp.Or(runtimeState.Schedule, schedule)
 				nextRun = runtimeState.NextRun

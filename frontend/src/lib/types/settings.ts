@@ -30,6 +30,7 @@ export type Settings = {
 	dockerClientRefreshInterval?: string;
 	environmentHealthInterval: number;
 	activityHistoryRetentionDays: number;
+	upgradeLogRetentionDays: number;
 	activityHistoryMaxEntries: number;
 	maxConcurrentActivities: number;
 	defaultDeployPullPolicy: 'missing' | 'always' | 'never';
