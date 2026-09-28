@@ -24,6 +24,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
+	transfertypes "github.com/getarcaneapp/arcane/types/v2/transfer"
 	"go.getarcane.app/acfs"
 	buildtypes "go.getarcane.app/builds/types"
 	kit "go.getarcane.app/kit/pkg"
@@ -265,9 +266,17 @@ func ensureProjectBindDirectoryInternal(ctx context.Context, projectPath, source
 	return nil
 }
 
-func ensureProjectMutableInternal(proj *Project) error {
-	if proj != nil && proj.IsArchived {
+// ensureProjectMutableInternal rejects archived projects and projects held by
+// a transfer the context does not act for.
+func (s *ProjectService) ensureProjectMutableInternal(ctx context.Context, proj *Project) error {
+	if proj == nil {
+		return nil
+	}
+	if proj.IsArchived {
 		return common.Classify(common.ErrProjectArchived, errors.New("project is archived and must be unarchived before this action"))
+	}
+	if err := s.holds.Guard(ctx, transfertypes.KindProject, proj.ID); err != nil {
+		return common.Classify(common.ErrResourceHeldByTransfer, err)
 	}
 	return nil
 }
@@ -342,7 +351,7 @@ func (s *ProjectService) DeployProject(ctx context.Context, projectID string, us
 	if err != nil {
 		return errors.WrapIf(err, "failed to get project")
 	}
-	if err := ensureProjectMutableInternal(projectFromDb); err != nil {
+	if err := s.ensureProjectMutableInternal(ctx, projectFromDb); err != nil {
 		return err
 	}
 	if _, err := s.ResolveProjectComposeFile(ctx, projectFromDb); err != nil {
@@ -512,46 +521,48 @@ func (s *ProjectService) CreateProject(ctx context.Context, name, composeContent
 		_ = acfs.RemoveAll(context.WithoutCancel(ctx), projectsDirectory, projectLogical)
 		return nil, errors.WrapIf(err, "failed to save project files")
 	}
-	composeMeta, err := projects.ParseArcaneComposeMetadata(
-		ctx,
-		filepath.Join(projectPath, projects.DefaultComposeFileName),
-		projectsDirectory,
-		s.settingsService.GetBoolSetting(ctx, "autoInjectEnv", false),
-	)
-	if err != nil {
-		slog.WarnContext(ctx, "failed to read Compose project tags during creation", "projectName", name, "error", err)
-		composeMeta = projects.ArcaneComposeMetadata{}
-	}
-	normalizedUITags = excludeComposeOwnedUITagsInternal(normalizedUITags, composeMeta.ProjectTags)
-
-	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(proj).Error; err != nil {
-			return err
-		}
-		return createUIProjectTagsInternal(tx, proj.ID, normalizedUITags, normalizedTagColors)
-	}); err != nil {
-		_ = acfs.RemoveAll(context.WithoutCancel(ctx), projectsDirectory, projectLogical)
-		return nil, errors.WrapIf(err, "failed to create project")
-	}
-	s.refreshComposeProjectNameInternal(ctx, proj)
-	s.refreshProjectImageRefsInternal(ctx, proj)
-	if err := s.reconcileComposeProjectTagsInternal(ctx, proj.ID, composeMeta.ProjectTags); err != nil {
-		cleanupCtx := context.WithoutCancel(ctx)
-		databaseCleanupErr := s.db.WithContext(cleanupCtx).Transaction(func(tx *gorm.DB) error {
-			return deleteProjectWithTagsInternal(tx, proj.ID)
-		})
-		fileCleanupErr := acfs.RemoveAll(cleanupCtx, projectsDirectory, projectLogical)
-		return nil, stderrors.Join(
-			errors.WrapIf(err, "reconcile Compose project tags"),
-			errors.WrapIf(databaseCleanupErr, "rollback project database state after tag reconciliation failure"),
-			errors.WrapIf(fileCleanupErr, "rollback project files after tag reconciliation failure"),
-		)
+	if err := s.registerProjectDirectoryInternal(ctx, projectsDirectory, filepath.Join(projectPath, projects.DefaultComposeFileName), proj, normalizedUITags, normalizedTagColors); err != nil {
+		fileCleanupErr := acfs.RemoveAll(context.WithoutCancel(ctx), projectsDirectory, projectLogical)
+		return nil, stderrors.Join(err, errors.WrapIf(fileCleanupErr, "rollback project files after registration failure"))
 	}
 
 	metadata := database.JSON{"action": "create", "projectID": proj.ID, "projectName": proj.Name, "path": projectPath}
 	s.logProjectEventInternal(ctx, event.EventTypeProjectCreate, proj.ID, proj.Name, user, metadata, "could not log project creation")
 
 	return proj, nil
+}
+
+// registerProjectDirectoryInternal records an on-disk project as a DB row with
+// its UI tags, refreshes derived fields, and reconciles Compose-owned tags.
+// Database state is rolled back on failure; files are left to the caller.
+func (s *ProjectService) registerProjectDirectoryInternal(ctx context.Context, projectsDirectory, composeFile string, proj *Project, uiTags []string, uiTagColors map[string]projecttypes.TagColor) error {
+	composeMeta, err := projects.ParseArcaneComposeMetadata(ctx, composeFile, projectsDirectory, s.settingsService.GetBoolSetting(ctx, "autoInjectEnv", false))
+	if err != nil {
+		slog.WarnContext(ctx, "failed to read Compose project tags during creation", "projectName", proj.Name, "error", err)
+		composeMeta = projects.ArcaneComposeMetadata{}
+	}
+	uiTags = excludeComposeOwnedUITagsInternal(uiTags, composeMeta.ProjectTags)
+
+	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(proj).Error; err != nil {
+			return err
+		}
+		return createUIProjectTagsInternal(tx, proj.ID, uiTags, uiTagColors)
+	}); err != nil {
+		return errors.WrapIf(err, "failed to create project")
+	}
+	s.refreshComposeProjectNameInternal(ctx, proj)
+	s.refreshProjectImageRefsInternal(ctx, proj)
+	if err := s.reconcileComposeProjectTagsInternal(ctx, proj.ID, composeMeta.ProjectTags); err != nil {
+		databaseCleanupErr := s.db.WithContext(context.WithoutCancel(ctx)).Transaction(func(tx *gorm.DB) error {
+			return deleteProjectWithTagsInternal(tx, proj.ID)
+		})
+		return stderrors.Join(
+			errors.WrapIf(err, "reconcile Compose project tags"),
+			errors.WrapIf(databaseCleanupErr, "rollback project database state after tag reconciliation failure"),
+		)
+	}
+	return nil
 }
 
 func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, removeFiles, removeVolumes bool, user common.User) error {
@@ -570,6 +581,11 @@ func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, r
 	slog.DebugContext(ctx, "Found project to destroy",
 		"projectName", proj.Name,
 		"projectPath", proj.Path)
+
+	// DownProject only warns on failure, so a foreign transfer hold is enforced here.
+	if err := s.holds.Guard(ctx, transfertypes.KindProject, proj.ID); err != nil {
+		return common.Classify(common.ErrResourceHeldByTransfer, err)
+	}
 
 	if err := s.DownProject(ctx, projectID, common.SystemUser); err != nil {
 		slog.WarnContext(ctx, "failed to bring down project", "error", err)

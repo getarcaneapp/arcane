@@ -532,6 +532,12 @@ func isManagementPathInternal(method, suffix string) bool {
 		return true
 	}
 
+	// Transfers are coordinated by the manager between two environments; the
+	// per-node data plane lives under the singular /transfer prefix instead.
+	if suffix == "/transfers" || strings.HasPrefix(suffix, "/transfers/") {
+		return true
+	}
+
 	if strings.HasPrefix(suffix, "/notifications") {
 		return true
 	}

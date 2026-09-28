@@ -375,3 +375,29 @@ type testApiKeyRow struct {
 }
 
 func (testApiKeyRow) TableName() string { return "api_keys" }
+
+// A custom role holding the entire catalog keeps holding it when the catalog
+// grows; a partial role is left alone.
+func TestEnsureBuiltInRolesExtendsFullCatalogCustomRoles(t *testing.T) {
+	ctx := context.Background()
+	_, roleSvc := setupUserAndRoleServices(t)
+	require.NoError(t, roleSvc.EnsureBuiltInRoles(ctx))
+
+	previousCatalog := slices.DeleteFunc(authz.AllPermissions(), func(permission string) bool {
+		return permission == authz.PermProjectsTransfer || permission == authz.PermVolumesTransfer
+	})
+	fullRole, err := roleSvc.CreateRole(ctx, "Everything", nil, previousCatalog)
+	require.NoError(t, err)
+	partialRole, err := roleSvc.CreateRole(ctx, "Some", nil, []string{authz.PermProjectsRead})
+	require.NoError(t, err)
+	require.NoError(t, roleSvc.db.WithContext(ctx).Model(&Role{}).Where("id = ?", authz.BuiltInRoleAdmin).Update("permissions", database.StringSlice(previousCatalog)).Error)
+
+	require.NoError(t, roleSvc.EnsureBuiltInRoles(ctx))
+
+	extended, err := roleSvc.GetRole(ctx, fullRole.ID)
+	require.NoError(t, err)
+	require.ElementsMatch(t, authz.AllPermissions(), []string(extended.Permissions))
+	untouched, err := roleSvc.GetRole(ctx, partialRole.ID)
+	require.NoError(t, err)
+	require.Equal(t, []string{authz.PermProjectsRead}, []string(untouched.Permissions))
+}

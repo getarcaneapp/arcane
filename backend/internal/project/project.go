@@ -23,6 +23,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
+	transferlib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/transfer"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
@@ -52,6 +53,7 @@ type ProjectService struct {
 	containerRegistryService    *registry.ContainerRegistryService
 	config                      *config.Config
 	registryCredentialsProvider registryCredentialsProviderInternal
+	holds                       *transferlib.Holds
 
 	// syncMu serializes SyncProjectsFromFileSystem: its discovery walk and its
 	// cleanup pass must not interleave with another run's.
@@ -346,6 +348,23 @@ func (s *ProjectService) WithKVService(kvService *kv.KVService) *ProjectService 
 	return s
 }
 
+// WithTransferHolds injects the node's transfer hold registry.
+func (s *ProjectService) WithTransferHolds(holds *transferlib.Holds) *ProjectService {
+	if s == nil {
+		return nil
+	}
+	s.holds = holds
+	return s
+}
+
+// Holds exposes the node's transfer hold registry.
+func (s *ProjectService) Holds() *transferlib.Holds {
+	if s == nil {
+		return nil
+	}
+	return s.holds
+}
+
 func (s *ProjectService) ResolveRegistryCredentials(ctx context.Context) ([]containerregistry.Credential, error) {
 	if s == nil || s.registryCredentialsProvider == nil {
 		return nil, nil
@@ -397,7 +416,7 @@ func (s *ProjectService) getMutableProjectInternal(ctx context.Context, projectI
 	if err != nil {
 		return nil, err
 	}
-	if err := ensureProjectMutableInternal(proj); err != nil {
+	if err := s.ensureProjectMutableInternal(ctx, proj); err != nil {
 		return nil, err
 	}
 	return proj, nil

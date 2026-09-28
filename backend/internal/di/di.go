@@ -36,6 +36,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/system"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/systembackup"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/template"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/transfer"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/upload"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/variable"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/volume"
@@ -119,6 +120,8 @@ var ServiceOptions = fx.Options(
 		backup.NewRecoveryKeyStore,
 		upload.NewUploadService,
 		upload.New,
+		provideTransferModuleInternal,
+		(*transfer.Module).Service,
 
 		// Adapters for scalar config fields, unexported parameters, builders, and lifecycle hooks.
 		provideVersionServiceInternal,

@@ -77,6 +77,18 @@ func (s *RoleService) EnsureBuiltInRoles(ctx context.Context) error {
 	}
 
 	return dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+		// The stored Admin row is the catalog as of the previous boot; anything
+		// the code adds since then is granted to every custom role that already
+		// held the whole old catalog, so "all permissions" keeps meaning all.
+		var previousAdmin Role
+		previousCatalog := map[string]struct{}{}
+		if err := tx.First(&previousAdmin, "id = ?", authz.BuiltInRoleAdmin).Error; err == nil {
+			for _, permission := range previousAdmin.Permissions {
+				previousCatalog[permission] = struct{}{}
+			}
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return errors.WrapIf(err, "failed to load the built-in admin role")
+		}
 		for id, spec := range builtIns {
 			role := Role{
 				ID:          id,
@@ -89,8 +101,49 @@ func (s *RoleService) EnsureBuiltInRoles(ctx context.Context) error {
 				return errors.WrapIff(err, "failed to upsert built-in role %s", id)
 			}
 		}
-		return nil
+		return extendFullCatalogRolesInternal(ctx, tx, previousCatalog)
 	})
+}
+
+// extendFullCatalogRolesInternal grants permissions added since the previous
+// boot to every custom role that held the entire previous catalog, so a role
+// meant as "all permissions" survives catalog growth.
+func extendFullCatalogRolesInternal(ctx context.Context, tx *gorm.DB, previousCatalog map[string]struct{}) error {
+	var added []string
+	for _, permission := range authz.AllPermissions() {
+		if _, known := previousCatalog[permission]; !known {
+			added = append(added, permission)
+		}
+	}
+	if len(previousCatalog) == 0 || len(added) == 0 {
+		return nil
+	}
+	var customRoles []Role
+	if err := tx.Where("built_in = ?", false).Find(&customRoles).Error; err != nil {
+		return errors.WrapIf(err, "failed to load custom roles")
+	}
+	for i := range customRoles {
+		held := map[string]struct{}{}
+		for _, permission := range customRoles[i].Permissions {
+			held[permission] = struct{}{}
+		}
+		complete := true
+		for permission := range previousCatalog {
+			if _, ok := held[permission]; !ok {
+				complete = false
+				break
+			}
+		}
+		if !complete {
+			continue
+		}
+		customRoles[i].Permissions = kit.Unique(append(customRoles[i].Permissions, added...))
+		if err := tx.Save(&customRoles[i]).Error; err != nil {
+			return errors.WrapIff(err, "failed to extend custom role %s with new permissions", customRoles[i].Name)
+		}
+		slog.InfoContext(ctx, "Granted new catalog permissions to a role that held every permission", "role", customRoles[i].Name, "added", added)
+	}
+	return nil
 }
 
 // BackfillLegacyRoleAssignments converts pre-RBAC users.roles into global assignments once, gated by a kv marker committed with the rows.

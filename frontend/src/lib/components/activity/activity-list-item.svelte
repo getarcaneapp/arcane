@@ -29,7 +29,7 @@
 	const IconComponent = $derived(activityTypeIcon(activity.type));
 	const isActive = $derived(activity.status === 'running' || activity.status === 'queued');
 	const resourceLabel = $derived(activity.resourceName || activity.resourceId || '');
-	const subtitle = $derived(activity.latestMessage || m.activity_no_message());
+	const subtitle = $derived(activity.latestMessage || activity.step || m.activity_no_message());
 	const sourceEnvironmentName = $derived(
 		activity.sourceEnvironmentName || activity.sourceEnvironmentId || activity.environmentId
 	);
@@ -139,7 +139,9 @@
 		{#if !expanded}
 			<div class="flex flex-col gap-1.5">
 				<div class="line-clamp-2 text-xs leading-relaxed text-muted-foreground">{subtitle}</div>
-				{#if isActive}
+				{#if isActive && typeof activity.progress === 'number'}
+					<Progress value={activity.progress} class="h-1.5" />
+				{:else if isActive}
 					<Progress value={100} indeterminate class="h-1.5" />
 				{/if}
 			</div>

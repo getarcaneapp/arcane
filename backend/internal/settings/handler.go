@@ -195,11 +195,11 @@ func canAccessSettingsCategoryAtAnyScopeInternal(ps *authz.PermissionSet, catego
 	if ps == nil {
 		return false
 	}
-	if authz.CanAccessSettingsCategory(ps, categoryID, "") {
+	if authz.CanAccessSurface(ps, "settings.category."+categoryID, "") {
 		return true
 	}
 	for envID := range ps.PerEnv {
-		if authz.CanAccessSettingsCategory(ps, categoryID, envID) {
+		if authz.CanAccessSurface(ps, "settings.category."+categoryID, envID) {
 			return true
 		}
 	}

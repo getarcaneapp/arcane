@@ -13,6 +13,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
 	s3domain "github.com/getarcaneapp/arcane/backend/v2/internal/s3"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/upload"
@@ -34,6 +35,7 @@ type Dependencies struct {
 	Config       *config.Config
 	Upload       *upload.UploadService
 	RecoveryKeys *backup.RecoveryKeyStore
+	KV           *kv.KVService
 }
 
 // Module wires the volume domain and mounts its routes.
@@ -45,7 +47,7 @@ type Module struct {
 // New builds the volume domain from its dependencies.
 func New(deps Dependencies) *Module {
 	return &Module{
-		service: NewVolumeService(deps.DB, deps.Docker, deps.Event, deps.Activity, deps.Settings, deps.Container, deps.Image, deps.Engine, deps.S3, deps.Config, deps.RecoveryKeys),
+		service: NewVolumeService(deps.DB, deps.Docker, deps.Event, deps.Activity, deps.Settings, deps.Container, deps.Image, deps.Engine, deps.S3, deps.Config, deps.RecoveryKeys, deps.KV),
 		deps:    deps,
 	}
 }

@@ -14,7 +14,7 @@
 		FileTextIcon,
 		AlertIcon
 	} from '#lib/icons/index.js';
-	import { afterNavigate, goto } from '$app/navigation';
+	import { afterNavigate, goto, invalidateAll } from '$app/navigation';
 	import { onMount, tick } from 'svelte';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { formatDateTimeShort, truncateString } from '#lib/utils/formatting.js';
@@ -63,6 +63,7 @@
 	import { volumeBackupService } from '#lib/services/volume-backup-service.js';
 	import type { BackupEntry } from '#lib/types/shared.js';
 	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
+	import TransferDialog from '#lib/components/dialogs/transfer-dialog.svelte';
 	import * as Select from '#lib/components/ui/select/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import * as Alert from '#lib/components/ui/alert/index.js';
@@ -84,6 +85,12 @@
 	const canReadVolume = $derived(hasPermission('volumes:read', currentEnvId));
 	const canUploadVolume = $derived(hasPermission('volumes:upload', currentEnvId));
 	const canBackupVolume = $derived(hasPermission('volumes:backup', currentEnvId));
+	const canTransferVolume = $derived(
+		settingsStore.current?.experimentalFeaturesEnabled === true &&
+			hasPermission('volumes:transfer', currentEnvId) &&
+			environmentStore.available.length >= 2
+	);
+	let transferDialogOpen = $state(false);
 	const volumeWorkspaceMaxFileSizeMb = $derived(settingsStore.current?.volumeWorkspaceMaxFileSizeMb ?? 10);
 
 	let isLoading = $state({ remove: false, save: false });
@@ -790,6 +797,15 @@
 				onclick: handleSaveVolumeWorkspace
 			});
 		}
+		if (canTransferVolume) {
+			items.push({
+				id: 'transfer',
+				action: 'transfer',
+				label: m.transfer_action(),
+				disabled: isBackupVolume,
+				onclick: () => (transferDialogOpen = true)
+			});
+		}
 		if (canDeleteVolume) {
 			items.push({
 				id: 'remove',
@@ -1094,6 +1110,13 @@
 
 		{#snippet headerActions()}
 			<ActionButtonGroup buttons={actions} />
+			<TransferDialog
+				bind:open={transferDialogOpen}
+				kind="volume"
+				resourceId={volume.name}
+				resourceName={volume.name}
+				onCompleted={() => invalidateAll()}
+			/>
 		{/snippet}
 
 		{#snippet tabContent(tab)}

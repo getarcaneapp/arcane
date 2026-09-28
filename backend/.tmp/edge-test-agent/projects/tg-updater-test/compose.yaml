@@ -1,0 +1,25 @@
+x-arcane:
+  updater:
+    strategy: auto
+
+services:
+  first:
+    image: alpine:3.20.0
+    command: ["sleep", "infinity"]
+    labels:
+      com.getarcaneapp.arcane.updater.strategy: tag
+      com.getarcaneapp.arcane.updater.constraint: "=3.20.1"
+
+  second:
+    image: alpine:3.20.0
+    command: ["sleep", "infinity"]
+    labels:
+      com.getarcaneapp.arcane.updater.strategy: tag
+      com.getarcaneapp.arcane.updater.constraint: "=3.20.2"
+
+  control:
+    image: alpine:3.20.0
+    command: ["sleep", "infinity"]
+    labels:
+      com.getarcaneapp.arcane.updater.strategy: tag
+      com.getarcaneapp.arcane.updater.constraint: "=3.20.0"

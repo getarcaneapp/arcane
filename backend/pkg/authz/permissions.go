@@ -135,16 +135,17 @@ const (
 	PermContainersExec       = "containers:exec"
 	PermContainersAutoUpdate = "containers:autoupdate"
 
-	PermProjectsList    = "projects:list"
-	PermProjectsRead    = "projects:read"
-	PermProjectsLogs    = "projects:logs"
-	PermProjectsCreate  = "projects:create"
-	PermProjectsUpdate  = "projects:update"
-	PermProjectsDeploy  = "projects:deploy"
-	PermProjectsDown    = "projects:down"
-	PermProjectsRestart = "projects:restart"
-	PermProjectsDelete  = "projects:delete"
-	PermProjectsArchive = "projects:archive"
+	PermProjectsList     = "projects:list"
+	PermProjectsRead     = "projects:read"
+	PermProjectsLogs     = "projects:logs"
+	PermProjectsCreate   = "projects:create"
+	PermProjectsUpdate   = "projects:update"
+	PermProjectsDeploy   = "projects:deploy"
+	PermProjectsDown     = "projects:down"
+	PermProjectsRestart  = "projects:restart"
+	PermProjectsDelete   = "projects:delete"
+	PermProjectsArchive  = "projects:archive"
+	PermProjectsTransfer = "projects:transfer"
 
 	PermImagesList   = "images:list"
 	PermImagesRead   = "images:read"
@@ -158,14 +159,15 @@ const (
 	PermImagesUpload = "images:upload"
 	PermImagesPatch  = "images:patch"
 
-	PermVolumesList   = "volumes:list"
-	PermVolumesRead   = "volumes:read"
-	PermVolumesCreate = "volumes:create"
-	PermVolumesRename = "volumes:rename"
-	PermVolumesDelete = "volumes:delete"
-	PermVolumesPrune  = "volumes:prune"
-	PermVolumesUpload = "volumes:upload"
-	PermVolumesBackup = "volumes:backup"
+	PermVolumesList     = "volumes:list"
+	PermVolumesRead     = "volumes:read"
+	PermVolumesCreate   = "volumes:create"
+	PermVolumesRename   = "volumes:rename"
+	PermVolumesDelete   = "volumes:delete"
+	PermVolumesPrune    = "volumes:prune"
+	PermVolumesUpload   = "volumes:upload"
+	PermVolumesBackup   = "volumes:backup"
+	PermVolumesTransfer = "volumes:transfer"
 
 	PermNetworksList       = "networks:list"
 	PermNetworksRead       = "networks:read"
@@ -333,9 +335,9 @@ func BuiltInEditorPermissions() []string {
 		PermEventsRead,
 		// Full env-scoped Docker management
 		PermContainersList, PermContainersRead, PermContainersLogs, PermContainersCreate, PermContainersStart, PermContainersStop, PermContainersRestart, PermContainersRedeploy, PermContainersEdit, PermContainersKill, PermContainersPause, PermContainersDelete, PermContainersExec, PermContainersAutoUpdate,
-		PermProjectsList, PermProjectsRead, PermProjectsLogs, PermProjectsCreate, PermProjectsUpdate, PermProjectsDeploy, PermProjectsDown, PermProjectsRestart, PermProjectsDelete, PermProjectsArchive,
+		PermProjectsList, PermProjectsRead, PermProjectsLogs, PermProjectsCreate, PermProjectsUpdate, PermProjectsDeploy, PermProjectsDown, PermProjectsRestart, PermProjectsDelete, PermProjectsArchive, PermProjectsTransfer,
 		PermImagesList, PermImagesRead, PermImagesPull, PermImagesPush, PermImagesBuild, PermImagesTag, PermImagesCommit, PermImagesPrune, PermImagesDelete, PermImagesUpload, PermImagesPatch,
-		PermVolumesList, PermVolumesRead, PermVolumesCreate, PermVolumesRename, PermVolumesDelete, PermVolumesPrune, PermVolumesUpload, PermVolumesBackup,
+		PermVolumesList, PermVolumesRead, PermVolumesCreate, PermVolumesRename, PermVolumesDelete, PermVolumesPrune, PermVolumesUpload, PermVolumesBackup, PermVolumesTransfer,
 		PermNetworksList, PermNetworksRead, PermNetworksCreate, PermNetworksDelete, PermNetworksPrune, PermNetworksConnect, PermNetworksDisconnect,
 		PermSwarmRead, PermSwarmSpec, PermSwarmNodes, PermSwarmServices, PermSwarmServicesLogs, PermSwarmStacks, PermSwarmConfigs, PermSwarmSecrets,
 		PermGitOpsList, PermGitOpsRead, PermGitOpsCreate, PermGitOpsUpdate, PermGitOpsDelete, PermGitOpsSync, PermGitOpsBackup,
@@ -360,7 +362,7 @@ func BuiltInDeployerPermissions() []string {
 		PermVariablesRead,
 		PermEventsRead,
 		PermContainersList, PermContainersRead, PermContainersLogs, PermContainersStart, PermContainersStop, PermContainersRestart, PermContainersRedeploy, PermContainersEdit, PermContainersKill, PermContainersPause,
-		PermProjectsList, PermProjectsRead, PermProjectsLogs, PermProjectsDeploy, PermProjectsDown, PermProjectsRestart,
+		PermProjectsList, PermProjectsRead, PermProjectsLogs, PermProjectsDeploy, PermProjectsDown, PermProjectsRestart, PermProjectsTransfer,
 		PermImagesList, PermImagesRead, PermImagesPull, PermImagesTag, PermImagesCommit,
 		PermVolumesList, PermVolumesRead,
 		PermNetworksList, PermNetworksRead,

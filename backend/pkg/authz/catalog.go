@@ -147,6 +147,7 @@ var permissionCatalog = []PermissionCatalogResource{
 		{"restart", PermProjectsRestart, "Restart", ""},
 		{"delete", PermProjectsDelete, "Delete", ""},
 		{"archive", PermProjectsArchive, "Archive / unarchive", ""},
+		{"transfer", PermProjectsTransfer, "Transfer to another environment", ""},
 	}},
 	{"images", "Images", PermissionScopeEnv, []PermissionCatalogAction{
 		{"list", PermImagesList, "List", ""},
@@ -170,6 +171,7 @@ var permissionCatalog = []PermissionCatalogResource{
 		{"prune", PermVolumesPrune, "Prune", ""},
 		{"upload", PermVolumesUpload, "Upload", ""},
 		{"backup", PermVolumesBackup, "Backup / restore", ""},
+		{"transfer", PermVolumesTransfer, "Transfer to another environment", ""},
 	}},
 	{"networks", "Networks", PermissionScopeEnv, []PermissionCatalogAction{
 		{"list", PermNetworksList, "List", ""},

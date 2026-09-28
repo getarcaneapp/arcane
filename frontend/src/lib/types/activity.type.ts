@@ -21,7 +21,8 @@ export type ActivityType =
 	| 'vulnerability_scan'
 	| 'auto_update'
 	| 'system_prune'
-	| 'resource_action';
+	| 'resource_action'
+	| 'resource_transfer';
 
 export type ActivityMessageLevel = 'info' | 'warning' | 'error' | 'success';
 
@@ -37,6 +38,9 @@ export interface Activity {
 	resourceId?: string;
 	resourceName?: string;
 	latestMessage?: string;
+	/** Percent complete when the operation reports determinate progress. */
+	progress?: number;
+	step?: string;
 	startedBy?: ActivityStartedBy;
 	startedAt: string;
 	endedAt?: string;

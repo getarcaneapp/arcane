@@ -67,6 +67,7 @@
 	import ProjectUpdateItem from '#lib/components/project-update-item.svelte';
 	import ProjectTagEditor from '#lib/components/project-tag-editor.svelte';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
+	import TransferDialog from '#lib/components/dialogs/transfer-dialog.svelte';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { globalVariablesToMap } from '#lib/utils/template-load.js';
 	import {
@@ -118,6 +119,12 @@
 	const envId = $derived(environmentStore.selected?.id || '0');
 	const canUpdateProject = $derived(hasPermission('projects:update', envId));
 	const canArchiveProject = $derived(hasPermission('projects:archive', envId));
+	const canTransferProject = $derived(
+		settingsStore.current?.experimentalFeaturesEnabled === true &&
+			hasPermission('projects:transfer', envId) &&
+			environmentStore.available.length >= 2
+	);
+	let transferDialogOpen = $state(false);
 	const canViewProjectLogs = $derived(hasPermission('projects:logs', envId));
 	// Project lifecycle permissions are evaluated per-button inside
 	// <ActionButtons/> directly; no need to derive them here.
@@ -2239,6 +2246,15 @@
 							customLabel={project?.isArchived ? m.projects_unarchive() : m.projects_archive()}
 						/>
 					</IfPermitted>
+					{#if canTransferProject}
+						<ArcaneButton
+							action="transfer"
+							{size}
+							{showLabel}
+							onclick={() => (transferDialogOpen = true)}
+							customLabel={m.transfer_action()}
+						/>
+					{/if}
 				{/snippet}
 
 				{#snippet leadingMenuItems()}
@@ -2256,11 +2272,21 @@
 							{project?.isArchived ? m.projects_unarchive() : m.projects_archive()}
 						</DropdownMenu.Item>
 					{/if}
-					{#if canUpdateProject || canArchiveProject}
+					{#if canTransferProject}
+						<DropdownMenu.Item onclick={() => (transferDialogOpen = true)}>{m.transfer_menu_item()}</DropdownMenu.Item>
+					{/if}
+					{#if canUpdateProject || canArchiveProject || canTransferProject}
 						<DropdownMenu.Separator />
 					{/if}
 				{/snippet}
 			</ActionButtons>
+			<TransferDialog
+				bind:open={transferDialogOpen}
+				kind="project"
+				resourceId={project.id}
+				resourceName={project.name}
+				onCompleted={() => refreshProjectDetails()}
+			/>
 		{/snippet}
 
 		{#snippet tabContent()}

@@ -184,6 +184,10 @@ export const queryKeys = {
 		backupHasPath: (environmentId: string, volumeName: string, backupId: string, path: string) =>
 			['volume-backups', environmentId, volumeName, backupId, 'has-path', path] as const
 	},
+	transfers: {
+		list: (environmentId: string) => ['transfers', environmentId] as const,
+		detail: (environmentId: string, transferId: string) => ['transfer', environmentId, transferId] as const
+	},
 	vulnerabilities: {
 		overviewByEnvironment: (environmentId: string) => ['vulnerabilities', 'overview', environmentId] as const,
 		scanResult: (environmentId: string, imageId: string) => ['vulnerabilities', 'scan-result', environmentId, imageId] as const,

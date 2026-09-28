@@ -84,22 +84,33 @@ func (s *VolumeService) readVolumeWorkspaceFromContainerInternal(ctx context.Con
 		maxEntries = 10000
 	}
 
-	pipeReader, pipeWriter := io.Pipe()
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return nil, err
 	}
+	var workspace *workspacetypes.Workspace
+	err = s.streamACFSWalkInternal(ctx, dockerClient, containerID, []string{"--max-depth", strconv.Itoa(maxDepth), "--max-entries", strconv.Itoa(maxEntries)}, "read volume workspace", func(source io.Reader) error {
+		var parseErr error
+		workspace, parseErr = decodeVolumeWorkspaceWalkInternal(source, maxEntries, s.volumeWorkspaceMaxFileSizeBytesInternal())
+		return errors.WrapIf(parseErr, "parse volume workspace")
+	})
+	if err != nil {
+		return nil, err
+	}
+	return workspace, nil
+}
+
+// streamACFSWalkInternal runs acfs walk over /volume with extra args, feeding
+// stdout to decode while it runs; exec failures are classified from stderr.
+func (s *VolumeService) streamACFSWalkInternal(ctx context.Context, dockerClient *client.Client, containerID string, args []string, fallbackContext string, decode func(io.Reader) error) error {
+	pipeReader, pipeWriter := io.Pipe()
 	var stderr bytes.Buffer
 	done := make(chan error, 1)
 	go func() {
-		cmd := []string{
-			"acfs", "walk", "--root", "/volume", "--path", "/",
-			"--max-depth", strconv.Itoa(maxDepth), "--max-entries", strconv.Itoa(maxEntries),
-		}
 		exitCode, execErr := dockerutil.ExecInContainer(ctx, dockerClient, containerID, client.ExecCreateOptions{
 			AttachStdout: true,
 			AttachStderr: true,
-			Cmd:          cmd,
+			Cmd:          append([]string{"acfs", "walk", "--root", "/volume", "--path", "/"}, args...),
 		}, pipeWriter, &stderr)
 		if execErr == nil && exitCode != 0 {
 			execErr = errors.Errorf("acfs walk exited with code %d", exitCode)
@@ -108,28 +119,25 @@ func (s *VolumeService) readVolumeWorkspaceFromContainerInternal(ctx context.Con
 		done <- execErr
 	}()
 
-	workspace, parseErr := decodeVolumeWorkspaceWalkInternal(pipeReader, maxEntries, s.volumeWorkspaceMaxFileSizeBytesInternal())
+	parseErr := decode(pipeReader)
 	if parseErr != nil {
 		_ = pipeReader.CloseWithError(parseErr)
 	}
 	execErr := <-done
 	_ = pipeReader.Close()
 	if execErr != nil {
-		return nil, classifyVolumeWorkspaceExecErrorInternal(execErr, stderr.String(), "read volume workspace")
+		return classifyVolumeWorkspaceExecErrorInternal(execErr, stderr.String(), fallbackContext)
 	}
-	if parseErr != nil {
-		return nil, errors.WrapIf(parseErr, "parse volume workspace")
-	}
-
-	return workspace, nil
+	return parseErr
 }
 
-func decodeVolumeWorkspaceWalkInternal(source io.Reader, maxEntries int, maxFileSizeBytes int64) (*workspacetypes.Workspace, error) {
+// decodeACFSWalkInternal streams acfs walk records into visit and returns the
+// trailer record once the stream ended cleanly.
+func decodeACFSWalkInternal(source io.Reader, visit func(acfstypes.Entry) error) (acfstypes.WalkRecord, error) {
 	decoder := jsontext.NewDecoder(source)
-	files := make([]workspacetypes.FileEntry, 0, min(maxEntries, 256))
-	classifications := make(map[string]string, min(maxEntries, 256))
+	var trailer acfstypes.WalkRecord
 	trailerSeen := false
-	truncated := false
+	count := 0
 	for {
 		var record acfstypes.WalkRecord
 		err := json.UnmarshalDecode(decoder, &record)
@@ -137,35 +145,52 @@ func decodeVolumeWorkspaceWalkInternal(source io.Reader, maxEntries int, maxFile
 			break
 		}
 		if err != nil {
-			return nil, err
+			return trailer, err
 		}
 		if record.Version != acfstypes.ProtocolVersion {
-			return nil, errors.Errorf("unsupported acfs protocol %d", record.Version)
+			return trailer, errors.Errorf("unsupported acfs protocol %d", record.Version)
 		}
 		if trailerSeen {
-			return nil, errors.New("acfs walk emitted a record after its trailer")
+			return trailer, errors.New("acfs walk emitted a record after its trailer")
 		}
 		if record.End {
 			trailerSeen = true
-			truncated = record.Truncated
-			if record.Count != len(files) {
-				return nil, errors.New("acfs walk trailer count does not match emitted entries")
+			if record.Count != count {
+				return trailer, errors.New("acfs walk trailer count does not match emitted entries")
 			}
+			trailer = record
 			continue
 		}
 		if record.Entry == nil {
-			return nil, errors.New("acfs walk emitted an empty record")
+			return trailer, errors.New("acfs walk emitted an empty record")
 		}
-		if len(files) >= maxEntries {
-			return nil, errors.New("acfs walk exceeded the requested entry limit")
+		if err := visit(*record.Entry); err != nil {
+			return trailer, err
 		}
-		fileEntry, classification := volumeWorkspaceEntryFromACFSInternal(*record.Entry, maxFileSizeBytes)
-		classifications[fileEntry.RelativePath] = classification
-		files = append(files, fileEntry)
+		count++
 	}
 	if !trailerSeen {
-		return nil, errors.New("acfs walk ended without a trailer")
+		return trailer, errors.New("acfs walk ended without a trailer")
 	}
+	return trailer, nil
+}
+
+func decodeVolumeWorkspaceWalkInternal(source io.Reader, maxEntries int, maxFileSizeBytes int64) (*workspacetypes.Workspace, error) {
+	files := make([]workspacetypes.FileEntry, 0, min(maxEntries, 256))
+	classifications := make(map[string]string, min(maxEntries, 256))
+	trailer, err := decodeACFSWalkInternal(source, func(entry acfstypes.Entry) error {
+		if len(files) >= maxEntries {
+			return errors.New("acfs walk exceeded the requested entry limit")
+		}
+		fileEntry, classification := volumeWorkspaceEntryFromACFSInternal(entry, maxFileSizeBytes)
+		classifications[fileEntry.RelativePath] = classification
+		files = append(files, fileEntry)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	truncated := trailer.Truncated
 
 	revisionEntries := slices.Clone(files)
 	slices.SortFunc(revisionEntries, func(a, b workspacetypes.FileEntry) int {
@@ -585,6 +610,9 @@ func (s *VolumeService) UpdateVolumeWorkspace(ctx context.Context, volumeName st
 		slog.DebugContext(ctx, "volume workspace update completed", "volume", volumeName, "file_change_count", len(manifest.FileChanges), "total_duration", time.Since(totalStartedAt))
 	}()
 
+	if err := s.ensureVolumeMutableInternal(ctx, volumeName); err != nil {
+		return nil, err
+	}
 	if err := workspacepkg.ValidateUpdateManifest(manifest.FileTreeRevision, len(manifest.FileChanges), 500); err != nil {
 		return nil, common.Classify(common.ErrVolumeWorkspaceBadRequest, err)
 	}

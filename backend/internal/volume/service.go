@@ -17,15 +17,18 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
 	s3domain "github.com/getarcaneapp/arcane/backend/v2/internal/s3"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
+	transferlib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/transfer"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/entityjobs"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	workspacepkg "github.com/getarcaneapp/arcane/backend/v2/pkg/workspace"
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
+	transfertypes "github.com/getarcaneapp/arcane/types/v2/transfer"
 	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
 	"github.com/moby/moby/client"
 	"golang.org/x/sync/singleflight"
@@ -57,6 +60,7 @@ type VolumeService struct {
 	// container that pins the volume until restart.
 	helperGroup singleflight.Group
 	jobs        *entityjobs.Registry
+	holds       *transferlib.Holds
 }
 
 // SetScheduler injects the dynamic scheduler and admission gate for per-policy
@@ -74,7 +78,7 @@ type volumeWorkspaceLockContextInternal struct {
 
 const internalVolumePruneFilterValue = libarcane.InternalResourceLabel + "=true"
 
-func NewVolumeService(db *database.DB, dockerService *docker.DockerClientService, eventService *event.EventService, activityService *activity.ActivityService, settingsService *settings.SettingsService, containerService *container.ContainerService, imageService *image.ImageService, engine *backup.Engine, s3Destinations *s3domain.S3DestinationService, cfg *config.Config, recoveryKeys *backup.RecoveryKeyStore) *VolumeService {
+func NewVolumeService(db *database.DB, dockerService *docker.DockerClientService, eventService *event.EventService, activityService *activity.ActivityService, settingsService *settings.SettingsService, containerService *container.ContainerService, imageService *image.ImageService, engine *backup.Engine, s3Destinations *s3domain.S3DestinationService, cfg *config.Config, recoveryKeys *backup.RecoveryKeyStore, kvService *kv.KVService) *VolumeService {
 	slog.Debug("volume service: new")
 	backupVolumeName := ""
 	encryptionKey := ""
@@ -109,6 +113,7 @@ func NewVolumeService(db *database.DB, dockerService *docker.DockerClientService
 		workspaceMaxFileSizeBytes: workspacepkg.MaxFileSizeBytes(workspaceMaxFileSizeMB),
 		helperByVolume:            make(map[string]*volumeHelper),
 		jobs:                      entityjobs.New("volume-backup:", backup.VolumeAdmissionScope),
+		holds:                     transferlib.NewHolds(kvService),
 	}
 }
 
@@ -189,8 +194,35 @@ func (s *VolumeService) CreateVolume(ctx context.Context, options client.VolumeC
 	return new(volumetypes.NewSummary(vol.Volume)), nil
 }
 
+// ensureVolumeMutableInternal rejects mutations of a volume reserved by a
+// transfer unless the context acts for that transfer.
+func (s *VolumeService) ensureVolumeMutableInternal(ctx context.Context, volumeName string) error {
+	if err := s.holds.Guard(ctx, transfertypes.KindVolume, volumeName); err != nil {
+		return common.Classify(common.ErrResourceHeldByTransfer, err)
+	}
+	return nil
+}
+
+// ensureNoVolumeHoldsInternal refuses bulk pruning while any volume is
+// reserved, since VolumePrune cannot exclude volumes by name.
+func (s *VolumeService) ensureNoVolumeHoldsInternal(ctx context.Context) error {
+	holds, err := s.holds.List(ctx)
+	if err != nil {
+		return errors.WrapIf(err, "list transfer holds")
+	}
+	for _, hold := range holds {
+		if hold.Kind == transfertypes.KindVolume {
+			return common.Classify(common.ErrResourceHeldByTransfer, errors.Errorf("volume %s is reserved by transfer %s; prune volumes after it finishes", hold.Resource, hold.TransferID))
+		}
+	}
+	return nil
+}
+
 func (s *VolumeService) DeleteVolume(ctx context.Context, name string, force bool, user common.User) error {
 	slog.DebugContext(ctx, "volume service: delete volume", "volume", name, "force", force, "user", user.ID)
+	if err := s.ensureVolumeMutableInternal(ctx, name); err != nil {
+		return err
+	}
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, event.EventTypeVolumeError, "volume", name, name, user.ID, user.Username, "0", err, database.JSON{"action": "delete", "force": force})
@@ -232,6 +264,9 @@ func (s *VolumeService) PruneVolumes(ctx context.Context) (*volumetypes.PruneRep
 
 func (s *VolumeService) PruneVolumesWithOptions(ctx context.Context, all bool) (*volumetypes.PruneReport, error) {
 	slog.DebugContext(ctx, "volume service: prune volumes with options", "all", all)
+	if err := s.ensureNoVolumeHoldsInternal(ctx); err != nil {
+		return nil, err
+	}
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return nil, errors.WrapIf(err, "failed to connect to Docker")

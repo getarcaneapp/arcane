@@ -28,6 +28,11 @@ func (s *VolumeService) RenameVolume(ctx context.Context, oldName, newName strin
 	if strings.EqualFold(oldName, s.backupVolumeName) || strings.EqualFold(newName, s.backupVolumeName) {
 		return nil, common.ErrVolumeRenameProtected
 	}
+	for _, name := range []string{oldName, newName} {
+		if err := s.ensureVolumeMutableInternal(ctx, name); err != nil {
+			return nil, err
+		}
+	}
 
 	defer s.workspaceLocks.Lock(oldName)()
 

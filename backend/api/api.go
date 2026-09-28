@@ -49,6 +49,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/system"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/systembackup"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/template"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/transfer"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/updater"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/upload"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/user"
@@ -282,6 +283,7 @@ type HandlerDeps struct {
 	Role              *role.Module
 	Variable          *variable.Module
 	Upload            *upload.Module
+	Transfer          *transfer.Module
 }
 
 // SetupAPI creates and configures the Huma API attached to the Echo router.
@@ -422,6 +424,7 @@ func registerHandlersInternal(api huma.API, deps HandlerDeps, handlerAppCtx hand
 	deps.Variable.RegisterRoutes(api, cfg)
 	deps.Image.RegisterRoutes(api, handlerAppCtx)
 	deps.Upload.RegisterRoutes(api)
+	deps.Transfer.RegisterRoutes(api)
 	build.RegisterBuildWorkspaces(api, deps.BuildWorkspace, deps.Upload.Service())
 	deps.ImageUpdate.RegisterRoutes(api, handlerAppCtx)
 	deps.ImagePatch.RegisterRoutes(api, handlerAppCtx)

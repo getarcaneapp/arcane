@@ -204,13 +204,15 @@ func (s *EnvironmentService) buildRemoteRequestInternal(
 	}, nil
 }
 
-func (s *EnvironmentService) ExecuteRemoteRequest(ctx context.Context, envID, method, path string, body []byte) (*remenv.Response, error) {
+// ExecuteRemoteRequest sends one request to a remote environment. Extra
+// headers (for example a non-JSON Content-Type) are merged into the request.
+func (s *EnvironmentService) ExecuteRemoteRequest(ctx context.Context, envID, method, path string, body []byte, extraHeaders ...map[string]string) (*remenv.Response, error) {
 	target, err := s.resolveRemoteEnvironmentTargetInternal(ctx, envID)
 	if err != nil {
 		return nil, err
 	}
 
-	return s.executeRemoteRequestForTargetInternal(ctx, target, method, path, body)
+	return s.executeRemoteRequestForTargetInternal(ctx, target, method, path, body, extraHeaders...)
 }
 
 func (s *EnvironmentService) executeRemoteRequestForTargetInternal(
@@ -219,12 +221,16 @@ func (s *EnvironmentService) executeRemoteRequestForTargetInternal(
 	method string,
 	path string,
 	body []byte,
+	extraHeaders ...map[string]string,
 ) (*remenv.Response, error) {
 	// Forward the activity batch ID so bulk actions proxied to a remote
 	// environment group the same way they do locally.
-	var headers map[string]string
+	headers := map[string]string{}
 	if batchID := utils.ActivityBatchIDFromContext(ctx); batchID != "" {
-		headers = map[string]string{middleware.HeaderActivityBatchID: batchID}
+		headers[middleware.HeaderActivityBatchID] = batchID
+	}
+	for _, extra := range extraHeaders {
+		maps.Copy(headers, extra)
 	}
 	request, err := s.buildRemoteRequestInternal(target, method, path, body, headers)
 	if err != nil {

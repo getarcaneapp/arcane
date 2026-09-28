@@ -871,12 +871,12 @@ func setupVolumeBackupLifecycleTestInternal(t *testing.T, handler http.Handler) 
 
 	gormDB, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, gormDB.AutoMigrate(&event.Event{}))
+	require.NoError(t, gormDB.AutoMigrate(&event.Event{}, &VolumeBackupPolicy{}))
 	db := &database.DB{DB: gormDB}
 	dockerService := docker.NewDockerClientService(t.Context(), db, &config.Config{}, nil).WithClient(dockerClient)
 	eventService := event.NewEventService(db, &config.Config{}, nil)
 	containerService := containerdomain.NewContainerService(eventService, dockerService, nil, nil, nil)
-	return &VolumeService{containerService: containerService}, dockerClient
+	return &VolumeService{dockerService: dockerService, eventService: eventService, containerService: containerService, db: db}, dockerClient
 }
 
 func TestVolumeBackupContainerLifecycleStopsAndRestartsOnlyRunningContainersUsingVolume(t *testing.T) {

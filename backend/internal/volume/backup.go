@@ -198,6 +198,12 @@ func (s *VolumeService) ensureBackupVolumeInternal(ctx context.Context) error {
 	return nil
 }
 
+// isArcaneOwnedContainerInternal reports the Arcane instance or agent
+// container itself, which volume lifecycle passes never stop.
+func isArcaneOwnedContainerInternal(labels map[string]string) bool {
+	return strings.EqualFold(labels["com.getarcaneapp.arcane"], "true") || strings.EqualFold(labels["com.getarcaneapp.arcane.agent"], "true")
+}
+
 func (s *VolumeService) stopRunningContainersForBackupInternal(ctx context.Context, dockerClient *client.Client, volumeName string, user common.User, refuseArcaneWriters bool) ([]container.Summary, error) {
 	if s.containerService == nil {
 		return nil, errors.New("container service is unavailable")
@@ -210,7 +216,7 @@ func (s *VolumeService) stopRunningContainersForBackupInternal(ctx context.Conte
 	eligible := make([]container.Summary, 0, len(containers.Items))
 	arcaneOwned := make([]container.Summary, 0, 2)
 	for _, candidate := range containers.Items {
-		if strings.EqualFold(candidate.Labels["com.getarcaneapp.arcane"], "true") || strings.EqualFold(candidate.Labels["com.getarcaneapp.arcane.agent"], "true") {
+		if isArcaneOwnedContainerInternal(candidate.Labels) {
 			arcaneOwned = append(arcaneOwned, candidate)
 			continue
 		}
@@ -1018,6 +1024,9 @@ func (s *VolumeService) logBackupDeleteEventInternal(ctx context.Context, volume
 }
 
 func (s *VolumeService) RestoreBackup(ctx context.Context, volumeName, backupID string, user common.User) (err error) {
+	if err := s.ensureVolumeMutableInternal(ctx, volumeName); err != nil {
+		return err
+	}
 	var entry VolumeBackup
 	if err := s.db.WithContext(ctx).Where("id = ?", backupID).First(&entry).Error; err != nil {
 		return err
@@ -1256,6 +1265,9 @@ func (s *VolumeService) restoreVolumeBackupSelectionInternal(ctx context.Context
 }
 
 func (s *VolumeService) RestoreBackupFiles(ctx context.Context, volumeName, backupID string, selection backuptypes.RestoreSelection, user common.User) (err error) {
+	if err := s.ensureVolumeMutableInternal(ctx, volumeName); err != nil {
+		return err
+	}
 	var entry VolumeBackup
 	if err := s.db.WithContext(ctx).Where("id = ?", backupID).First(&entry).Error; err != nil {
 		return err
@@ -1679,6 +1691,9 @@ func (s *VolumeService) restoreArchiveBackupFilesInternal(ctx context.Context, d
 
 func (s *VolumeService) UploadAndRestore(ctx context.Context, volumeName string, archive io.ReadSeeker, filename string, user common.User) error {
 	slog.DebugContext(ctx, "volume service: upload and restore", "volume", volumeName, "filename", filename, "user", user.ID)
+	if err := s.ensureVolumeMutableInternal(ctx, volumeName); err != nil {
+		return err
+	}
 
 	gzr, err := gzip.NewReader(archive)
 	if err != nil {

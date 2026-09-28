@@ -31,7 +31,8 @@ import {
 	ShieldCheckIcon,
 	ImagesIcon,
 	TestIcon,
-	BoxIcon
+	BoxIcon,
+	TransferIcon
 } from '#lib/icons/index.js';
 
 export const arcaneButtonVariants = tv({
@@ -256,6 +257,12 @@ export const actionConfigs = {
 		defaultLabel: m.projects_archive(),
 		IconComponent: BoxIcon,
 		tone: 'outline-archive',
+		loadingLabel: m.common_processing()
+	},
+	transfer: {
+		defaultLabel: m.transfer_action(),
+		IconComponent: TransferIcon,
+		tone: 'outline-primary',
 		loadingLabel: m.common_processing()
 	},
 	commit: {

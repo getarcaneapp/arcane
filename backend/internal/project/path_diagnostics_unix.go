@@ -4,6 +4,7 @@ package project
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -95,4 +96,18 @@ func lifecycleFileTypeInternal(info os.FileInfo) string {
 	default:
 		return "other"
 	}
+}
+
+// directoryFreeBytesInternal reports the free space of the filesystem holding
+// path, or -1 when it cannot be determined.
+func directoryFreeBytesInternal(path string) int64 {
+	var stat syscall.Statfs_t
+	if err := syscall.Statfs(path, &stat); err != nil {
+		return -1
+	}
+	blockSize := max(int64(stat.Bsize), 0)
+	if blockSize == 0 || stat.Bavail > uint64(math.MaxInt64)/uint64(blockSize) {
+		return math.MaxInt64
+	}
+	return int64(stat.Bavail) * blockSize //nolint:gosec // bounded by the MaxInt64/blockSize guard above
 }

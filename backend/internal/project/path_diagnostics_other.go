@@ -13,3 +13,8 @@ func describeLifecyclePathAccessInternal(projectPath, resolvedScriptPath string)
 		resolvedScriptPath,
 	)
 }
+
+// directoryFreeBytesInternal is unknown (-1) on platforms without statfs.
+func directoryFreeBytesInternal(string) int64 {
+	return -1
+}

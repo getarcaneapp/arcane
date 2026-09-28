@@ -19,14 +19,32 @@ headless agent modes, and a Cobra CLI.
   splits, unnecessary abstractions, and unrelated restructuring.
 - Avoid nested or chained ternary expressions unless absolutely necessary. Prefer
   `if`/`else` or `switch` blocks for conditional logic with multiple branches.
+- Inline logic where it is used. Do not create a named function per action, per
+  route, per path string, or per field copy. A helper must remove real
+  repetition; when several call sites differ only by type, write one generic
+  function and pass the varying behavior as a closure instead of a function each.
+- Never add an adapter layer between routes and services (client interfaces,
+  "endpoint" services, dispatch tables). Add the collaborating services to the
+  owning domain's dependencies and call them directly; branch inline for the
+  local environment versus a proxied one.
+- Before writing an engine, check the SDKs and pipelines already in the module
+  graph: `moby/go-archive` for tar, the Docker copy API, `compose-go` for compose
+  models, the upload sessions, the backup engine, `kit/pkg/mapping` for DTOs.
+  Reimplementing any of these is rejected in review. Never exec shell commands
+  in helper containers or on the host when the Docker SDK or the Go standard
+  library can do the job; drop the capability rather than shell out.
+- Keep diffs small. Prefer a smaller first release over a complete one; reviewers
+  judge by diff size before anything else.
 - Keep comments short. If code needs a paragraph to explain its structure, simplify it.
 - Never run state-changing Git commands. Do not stage, commit, push, tag, stash,
   create branches, or create worktrees.
 - Name every unexported Go function with an `Internal` suffix.
 - Put public/shared Go types in the top-level `types/` module.
 - Put reusable helper utilities under `backend/pkg/utils/` in the appropriate package.
-- Add tests only for new functionality. For bug fixes and refactors, update existing
-  tests when necessary and run relevant existing coverage; do not add regression tests.
+- Add tests only for new functionality, and only a few: cover the riskiest
+  behavior, not every function. Do not build fakes or test doubles for whole
+  interfaces. For bug fixes and refactors, update existing tests when necessary
+  and run relevant existing coverage; do not add regression tests.
 - Never add handler tests. Test new business behavior at the service layer or in its
   owning logic package. Preserve existing handler tests; this rule does not authorize
   deleting them.

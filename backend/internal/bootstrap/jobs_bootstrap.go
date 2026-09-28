@@ -18,6 +18,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/system"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/systembackup"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/transfer"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/volume"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler"
@@ -89,6 +90,7 @@ type registerJobsParams struct {
 	Settings     *settings.SettingsService
 	Volume       *volume.VolumeService
 	SystemBackup *systembackup.SystemBackupService
+	Transfer     *transfer.Module
 	Admission    *actors.Gate[actors.AdmissionKey]
 	Apns         *apns.ApnsService
 
@@ -180,6 +182,7 @@ func registerJobs(params registerJobsParams) error {
 		JobSchedule:  params.JobSchedule,
 		Volume:       params.Volume,
 		SystemBackup: params.SystemBackup,
+		Transfer:     params.Transfer,
 		Admission:    params.Admission,
 	}); err != nil {
 		return err
@@ -218,6 +221,7 @@ type dynamicJobsParams struct {
 	JobSchedule  *job.JobService
 	Volume       *volume.VolumeService
 	SystemBackup *systembackup.SystemBackupService
+	Transfer     *transfer.Module
 	Admission    *actors.Gate[actors.AdmissionKey]
 }
 
@@ -245,6 +249,12 @@ func registerDynamicJobs(params dynamicJobsParams) error {
 			return err
 		}
 		params.SystemBackup.RegisterBackupJobOnStartup(params.AppCtx)
+	}
+	// Transfers: one durable job per transfer, coordinated by the manager.
+	if !params.Config.AgentMode && params.Transfer != nil {
+		if err := params.Transfer.SetScheduler(params.AppCtx, params.Scheduler, params.Admission); err != nil {
+			return err
+		}
 	}
 	// GitOps: one job per auto-sync-enabled sync (runs on manager and agents).
 	if params.GitOpsSync != nil {

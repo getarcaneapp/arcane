@@ -406,6 +406,28 @@ func (s *ContainerService) StopContainer(ctx context.Context, containerID string
 	})
 }
 
+// StopContainerGracefully sends the container's configured stop signal and
+// waits up to gracePeriod for it to exit. Unlike StopContainer it never
+// escalates to SIGKILL: a timeout is reported as ErrGracefulStopTimeout.
+func (s *ContainerService) StopContainerGracefully(ctx context.Context, containerID string, gracePeriod time.Duration, user common.User) error {
+	return s.runContainerLifecycleActionInternal(ctx, containerID, user, containerLifecycleActionInternal{
+		action:         "stop",
+		eventType:      event.EventTypeContainerStop,
+		metadata:       database.JSON{"graceful": true, "gracePeriodSeconds": int(gracePeriod.Seconds())},
+		warnOnLogError: true,
+		runContainerAction: func(dockerClient *client.Client) error {
+			if gracePeriod <= 0 {
+				gracePeriod = timeouts.DefaultDockerAPI
+			}
+			err := dockerutils.StopContainerGracefully(ctx, dockerClient, containerID, gracePeriod)
+			if errors.Is(err, dockerutils.ErrGracefulStopTimeout) {
+				return common.ErrGracefulStopTimeout
+			}
+			return err
+		},
+	})
+}
+
 func (s *ContainerService) RestartContainer(ctx context.Context, containerID string, user common.User) error {
 	return s.runContainerLifecycleActionInternal(ctx, containerID, user, containerLifecycleActionInternal{
 		action:    "restart",

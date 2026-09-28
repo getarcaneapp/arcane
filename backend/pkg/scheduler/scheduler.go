@@ -336,8 +336,9 @@ func (js *jobSchedulerInternal) upsertJobInternal(ctx context.Context, state *sc
 	previousEntryID, hadPreviousEntry := state.entryIDs[jobName]
 	schedule := job.Schedule(ctx)
 
-	shouldSchedule := true
-	if conditionalJob, ok := job.(schedulertypes.ConditionalJob); ok {
+	// An empty schedule registers an on-demand job that only runs when submitted.
+	shouldSchedule := schedule != ""
+	if conditionalJob, ok := job.(schedulertypes.ConditionalJob); ok && shouldSchedule {
 		shouldSchedule = conditionalJob.ShouldSchedule(ctx)
 	}
 

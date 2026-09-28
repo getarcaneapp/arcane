@@ -36,6 +36,7 @@ const (
 	TypeAutoUpdate        Type = "auto_update"
 	TypeSystemPrune       Type = "system_prune"
 	TypeResourceAction    Type = "resource_action"
+	TypeResourceTransfer  Type = "resource_transfer"
 
 	MessageLevelInfo    MessageLevel = "info"
 	MessageLevelWarning MessageLevel = "warning"

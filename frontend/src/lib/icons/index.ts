@@ -89,6 +89,7 @@ export { default as FileTextIcon } from 'virtual:icons/solar/file-text-linear';
 export { default as CreateFileIcon } from 'virtual:icons/lucide/file-plus';
 export { default as CreateFolderIcon } from 'virtual:icons/solar/add-folder-linear';
 export { default as FolderMoveIcon } from 'virtual:icons/lucide/folder-input';
+export { default as TransferIcon } from 'virtual:icons/lucide/arrow-right-left';
 export { default as TemplateIcon } from 'virtual:icons/tabler/template';
 export { default as TerminalIcon } from 'virtual:icons/solar/programming-linear';
 export { default as StatsIcon } from 'virtual:icons/solar/station-minimalistic-linear';

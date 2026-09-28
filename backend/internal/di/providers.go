@@ -39,6 +39,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/swarm"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/system"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/template"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/transfer"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/updater"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/upload"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/user"
@@ -47,6 +48,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/vulnerability"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/webhook"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
+	transferlib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/transfer"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/oidcjwk"
 	"github.com/getarcaneapp/arcane/backend/v2/resources"
@@ -230,7 +232,7 @@ func provideS3ModuleInternal(db *database.DB, environmentService *environment.En
 	})
 }
 
-func provideVolumeModuleInternal(lc fx.Lifecycle, db *database.DB, dockerService *docker.DockerClientService, eventService *event.EventService, settingsService *settings.SettingsService, imageService *image.ImageService, activityService *activity.ActivityService, containerModule *container.Module, engine *backup.Engine, s3Service *s3domain.S3DestinationService, environmentService *environment.EnvironmentService, cfg *config.Config, uploadService *upload.UploadService, recoveryKeys *backup.RecoveryKeyStore) *volume.Module {
+func provideVolumeModuleInternal(lc fx.Lifecycle, db *database.DB, dockerService *docker.DockerClientService, eventService *event.EventService, settingsService *settings.SettingsService, imageService *image.ImageService, activityService *activity.ActivityService, containerModule *container.Module, engine *backup.Engine, s3Service *s3domain.S3DestinationService, environmentService *environment.EnvironmentService, cfg *config.Config, uploadService *upload.UploadService, recoveryKeys *backup.RecoveryKeyStore, kvService *kv.KVService) *volume.Module {
 	module := volume.New(volume.Dependencies{
 		DB:           db,
 		Docker:       dockerService,
@@ -245,6 +247,7 @@ func provideVolumeModuleInternal(lc fx.Lifecycle, db *database.DB, dockerService
 		Config:       cfg,
 		Upload:       uploadService,
 		RecoveryKeys: recoveryKeys,
+		KV:           kvService,
 	})
 	lc.Append(fx.Hook{
 		OnStop: func(ctx context.Context) error {
@@ -282,6 +285,7 @@ func provideContainerRegistryModuleInternal(db *database.DB, dockerService *dock
 func provideProjectServiceInternal(db *database.DB, settings *settings.SettingsService, event *event.EventService, image *image.ImageService, docker *docker.DockerClientService, build *build.BuildService, lifecycleService *project.LifecycleService, kv *kv.KVService, registry *registry.ContainerRegistryService, environment *environment.EnvironmentService, cfg *config.Config) *project.ProjectService {
 	return project.NewProjectService(db, settings, event, image, docker, build, lifecycleService, registry, cfg).
 		WithKVService(kv).
+		WithTransferHolds(transferlib.NewHolds(kv)).
 		WithRegistryCredentialsProvider(environment.GetEnabledRegistryCredentials)
 }
 
@@ -466,5 +470,23 @@ func provideWebhookModuleInternal(lc fx.Lifecycle, db *database.DB, containerMod
 			return nil
 		},
 	})
+	return module
+}
+
+func provideTransferModuleInternal(ctx context.Context, db *database.DB, cfg *config.Config, dockerService *docker.DockerClientService, kvService *kv.KVService, volumeModule *volume.Module, projectService *project.ProjectService, environmentService *environment.EnvironmentService, activityService *activity.ActivityService, roleService *role.RoleService, uploadService *upload.UploadService, settingsService *settings.SettingsService) *transfer.Module {
+	module := transfer.New(transfer.Dependencies{
+		DB:          db,
+		Config:      cfg,
+		Docker:      dockerService,
+		KV:          kvService,
+		Volume:      volumeModule.Service(),
+		Project:     projectService,
+		Environment: environmentService,
+		Activity:    activityService,
+		Role:        roleService,
+		Upload:      uploadService,
+		Settings:    settingsService,
+	})
+	module.Start(ctx)
 	return module
 }

@@ -33,7 +33,7 @@ func PlanVolumeMigration(ctx context.Context, dockerClient *client.Client, compo
 		return nil, nil
 	}
 
-	explicitVolumeNames, err := composeVolumeKeysWithExplicitNameInternal(composeProject.ComposeFiles)
+	explicitVolumeNames, err := ComposeVolumeKeysWithExplicitName(composeProject.ComposeFiles)
 	if err != nil {
 		return nil, errors.WrapIf(err, "failed to parse compose volume names")
 	}
@@ -128,7 +128,9 @@ func renamedVolumeCreateOptionsInternal(config composetypes.VolumeConfig, oldLab
 	return client.VolumeCreateOptions{Name: config.Name, Driver: config.Driver, DriverOpts: config.DriverOpts, Labels: labels}, nil
 }
 
-func composeVolumeKeysWithExplicitNameInternal(composeFiles []string) (map[string]struct{}, error) {
+// ComposeVolumeKeysWithExplicitName returns the top-level volume keys whose
+// `name:` is a literal (non-interpolated) string in any of the compose files.
+func ComposeVolumeKeysWithExplicitName(composeFiles []string) (map[string]struct{}, error) {
 	explicit := make(map[string]struct{})
 	for _, composeFile := range composeFiles {
 		composeFile = strings.TrimSpace(composeFile)

@@ -56,7 +56,7 @@ func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, na
 		name = resolveAuthoritativeProjectNameInternal(ctx, &proj, name, composeContent)
 	}
 
-	if err := ensureProjectMutableInternal(&proj); err != nil {
+	if err := s.ensureProjectMutableInternal(ctx, &proj); err != nil {
 		return nil, err
 	}
 	if err := ensureProjectEnvReadableInternal(ctx, projectsDirectory, proj.Path); err != nil {
@@ -257,7 +257,7 @@ func (s *ProjectService) ApplyGitSyncProjectFiles(ctx context.Context, projectID
 	if err != nil {
 		return nil, false, err
 	}
-	if err := ensureProjectMutableInternal(&proj); err != nil {
+	if err := s.ensureProjectMutableInternal(ctx, &proj); err != nil {
 		return nil, false, err
 	}
 	before := s.readGitSyncProjectContentInternal(ctx, proj.ID)

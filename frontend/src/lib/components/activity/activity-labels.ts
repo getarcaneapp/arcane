@@ -14,7 +14,8 @@ import {
 	ShieldCheckIcon,
 	StartIcon,
 	StopIcon,
-	TrashIcon
+	TrashIcon,
+	TransferIcon
 } from '#lib/icons/index.js';
 
 export type ActivityBadgeVariant = 'red' | 'green' | 'blue' | 'gray' | 'amber' | 'purple';
@@ -51,7 +52,8 @@ const typeDisplay = new Map(
 		vulnerability_scan: { label: m.activity_type_vulnerability_scan, icon: ScanIcon },
 		auto_update: { label: m.auto_update, icon: RefreshIcon },
 		system_prune: { label: m.activity_type_system_prune, icon: TrashIcon },
-		resource_action: { label: m.activity_type_resource_action, icon: ActivityIcon }
+		resource_action: { label: m.activity_type_resource_action, icon: ActivityIcon },
+		resource_transfer: { label: m.activity_type_resource_transfer, icon: TransferIcon }
 	} satisfies Record<ActivityType, { label: () => string; icon: IconType }>)
 );
 
