@@ -37,7 +37,7 @@
 	import { DetailMetaStrip, DetailSection, KeyValueCard, KeyValueGrid } from '#lib/components/resource-detail/index.js';
 	import InUseStatus from '#lib/components/arcane-table/cells/in-use-status.svelte';
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';
-	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
+	import { createQuery, skipToken, useQueryClient } from '@tanstack/svelte-query';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import WorkspaceFileTreePanel from '#lib/components/workspace-file-tree-panel.svelte';
 	import EditorTabStrip from '#lib/components/editor-tab-strip.svelte';
@@ -73,6 +73,7 @@
 
 	let { data } = $props();
 	let volume = $derived(data.volume);
+	let active = true;
 	let containersDetailed = $derived<{ id: string; name: string }[]>(data.containersDetailed ?? []);
 
 	const backupVolumeName = $derived.by(() => settingsStore.current?.backupVolumeName || 'arcane-backups');
@@ -86,7 +87,7 @@
 	const volumeWorkspaceMaxFileSizeMb = $derived(settingsStore.current?.volumeWorkspaceMaxFileSizeMb ?? 10);
 
 	let isLoading = $state({ remove: false, save: false });
-	const createdDate = $derived(volume.createdAt ? formatDateTimeShort(volume.createdAt) : m.common_unknown());
+	const createdDate = $derived(volume?.createdAt ? formatDateTimeShort(volume.createdAt) : m.common_unknown());
 
 	const tabItems = $derived([
 		{ value: 'overview', label: m.common_overview() },
@@ -125,13 +126,13 @@
 	let loadingWorkspaceBackups = $state(false);
 	const workspaceBackupPathQuery = createQuery(() => {
 		const environmentId = currentEnvId;
-		const volumeName = volume.name;
+		const volumeName = volume?.name;
 		const backupId = selectedWorkspaceBackupId;
 		const path = workspaceRestorePath;
 		return {
-			queryKey: queryKeys.volumes.backupHasPath(environmentId, volumeName, backupId, path),
-			queryFn: () => volumeBackupService.backupHasPath(backupId, `/${path}`),
-			enabled: showWorkspaceRestore && !!backupId && !!path && canReadVolume && canBackupVolume,
+			queryKey: queryKeys.volumes.backupHasPath(environmentId, volumeName ?? '', backupId, path),
+			queryFn: volumeName ? () => volumeBackupService.backupHasPath(backupId, `/${path}`, environmentId) : skipToken,
+			enabled: !!volumeName && showWorkspaceRestore && !!backupId && !!path && canReadVolume && canBackupVolume,
 			retry: false
 		};
 	});
@@ -141,12 +142,16 @@
 		return workspaceBackupPathQuery.data ?? null;
 	});
 
-	const workspaceQuery = createQuery(() => ({
-		queryKey: queryKeys.volumes.workspace(currentEnvId, volume.name),
-		queryFn: () => volumeWorkspaceService.getWorkspace(volume.name, currentEnvId),
-		enabled: workspaceRequested && canReadVolume,
-		refetchOnMount: false
-	}));
+	const workspaceQuery = createQuery(() => {
+		const environmentId = currentEnvId;
+		const volumeName = volume?.name;
+		return {
+			queryKey: queryKeys.volumes.workspace(environmentId, volumeName ?? ''),
+			queryFn: volumeName ? () => volumeWorkspaceService.getWorkspace(volumeName, environmentId) : skipToken,
+			enabled: !!volumeName && workspaceRequested && canReadVolume,
+			refetchOnMount: false
+		};
+	});
 
 	const visibleWorkspaceFiles = $derived.by(() =>
 		applyWorkspaceFileChangesForDisplay(workspaceQuery.data?.files ?? [], workspaceFileChanges).map((file) => {
@@ -228,6 +233,7 @@
 	});
 
 	function initializeVolumePreferences() {
+		if (!active || !volume?.name) return;
 		const key = `arcane.volume.workspace.ui:${currentEnvId}:${volume.name}`;
 		if (lastWorkspacePrefsKey === key) return;
 		lastWorkspacePrefsKey = key;
@@ -281,6 +287,7 @@
 	}
 
 	async function loadWorkspaceFile(relativePath: string) {
+		if (!active || !volume?.name) return;
 		if (!relativePath || workspaceFileMetadata[relativePath] || workspaceFileLoading[relativePath]) return;
 		const entry = visibleWorkspaceFiles.find((file) => file.relativePath === relativePath);
 		if (!entry || entry.isDirectory) return;
@@ -325,8 +332,9 @@
 				(async () => {
 					const file = await volumeWorkspaceService.getWorkspaceFile(requestedVolumeName, relativePath, requestedEnvId);
 					if (
+						!active ||
 						requestedEnvId !== currentEnvId ||
-						requestedVolumeName !== volume.name ||
+						requestedVolumeName !== volume?.name ||
 						loadVersion !== (workspaceFileLoadVersions.get(relativePath) ?? 0)
 					)
 						return;
@@ -343,8 +351,9 @@
 			if (operationResult.error !== null) {
 				const error = operationResult.error;
 				if (
+					!active ||
 					requestedEnvId !== currentEnvId ||
-					requestedVolumeName !== volume.name ||
+					requestedVolumeName !== volume?.name ||
 					loadVersion !== (workspaceFileLoadVersions.get(relativePath) ?? 0)
 				)
 					return;
@@ -355,8 +364,9 @@
 			}
 		} finally {
 			if (
+				active &&
 				requestedEnvId === currentEnvId &&
-				requestedVolumeName === volume.name &&
+				requestedVolumeName === volume?.name &&
 				loadVersion === (workspaceFileLoadVersions.get(relativePath) ?? 0)
 			) {
 				workspaceFileLoading = removeWorkspaceFileRecord(workspaceFileLoading, relativePath);
@@ -371,24 +381,28 @@
 	}
 
 	onMount(() => {
-		let active = true;
 		const cache = queryClient.getQueryCache();
 		const loadAfterUpdate = async () => {
+			const environmentId = currentEnvId;
+			const volumeName = volume?.name;
 			await tick();
-			if (!active) return;
+			if (!active || !volumeName || environmentId !== currentEnvId || volumeName !== volume?.name) return;
 			initializeVolumePreferences();
 			loadSelectedWorkspaceFile();
 		};
 		const unsubscribe = cache.subscribe((event) => {
+			if (!active || (event.type !== 'updated' && event.type !== 'observerResultsUpdated')) return;
+			const volumeName = volume?.name;
+			if (!volumeName) return;
 			const backupPath = cache.find({
-				queryKey: queryKeys.volumes.backupHasPath(currentEnvId, volume.name, selectedWorkspaceBackupId, workspaceRestorePath),
+				queryKey: queryKeys.volumes.backupHasPath(currentEnvId, volumeName, selectedWorkspaceBackupId, workspaceRestorePath),
 				exact: true
 			});
-			if (event.query === backupPath && (event.type === 'updated' || event.type === 'observerResultsUpdated')) {
+			if (event.query === backupPath) {
 				notifyWorkspaceBackupError(event.query.state.error);
 			}
 			if (event.type !== 'updated' || event.action.type !== 'success') return;
-			if (event.query === cache.find({ queryKey: queryKeys.volumes.workspace(currentEnvId, volume.name), exact: true })) {
+			if (event.query === cache.find({ queryKey: queryKeys.volumes.workspace(currentEnvId, volumeName), exact: true })) {
 				void loadAfterUpdate();
 			}
 		});
@@ -511,10 +525,14 @@
 	}
 
 	async function stageVolumeUpload(parentPath: string, file: File, overwrite: boolean) {
+		const environmentId = currentEnvId;
+		const volumeName = volume?.name;
+		if (!active || !volumeName) return;
 		const relativePath = joinWorkspaceFilePath(parentPath, file.name);
 		const existing = visibleWorkspaceFiles.find((entry) => entry.relativePath === relativePath);
 		if (existing?.isDirectory) return;
 		const upload = await readWorkspaceUpload(file, volumeWorkspaceMaxFileSizeMb);
+		if (!active || environmentId !== currentEnvId || volumeName !== volume?.name) return;
 		if (upload.error) return upload.error;
 		if (upload.binary) {
 			workspaceFileChanges = [...workspaceFileChanges, { operation: overwrite ? 'update_file' : 'create_file', relativePath }];
@@ -608,13 +626,19 @@
 	}
 
 	async function refreshRestoredVolumeWorkspace() {
-		await queryClient.cancelQueries({ queryKey: queryKeys.volumes.workspace(currentEnvId, volume.name) });
+		const environmentId = currentEnvId;
+		const volumeName = volume?.name;
+		if (!active || !volumeName) return;
+		await queryClient.cancelQueries({ queryKey: queryKeys.volumes.workspace(environmentId, volumeName) });
+		if (!active || environmentId !== currentEnvId || volumeName !== volume?.name) return;
 		clearVolumeWorkspaceDrafts();
 		await workspaceQuery.refetch();
 	}
 
 	async function handleSaveVolumeWorkspace() {
-		if (!workspaceQuery.data || !canSaveWorkspace) return;
+		const environmentId = currentEnvId;
+		const volumeName = volume?.name;
+		if (!active || !volumeName || !workspaceQuery.data || !canSaveWorkspace) return;
 		const update = buildWorkspaceMultipartUpdate(
 			workspaceFileChanges,
 			workspaceFileContents,
@@ -623,22 +647,24 @@
 			workspaceStagedUploadedText
 		);
 		isLoading.save = true;
+		const result = await tryCatch(
+			volumeWorkspaceService.updateWorkspace(
+				volumeName,
+				{
+					fileTreeRevision: workspaceQuery.data.fileTreeRevision,
+					fileChanges: update.fileChanges
+				},
+				update.files,
+				environmentId
+			)
+		);
+		if (!active || environmentId !== currentEnvId || volumeName !== volume?.name) return;
 		await handleApiResultWithCallbacks({
-			result: await tryCatch(
-				volumeWorkspaceService.updateWorkspace(
-					volume.name,
-					{
-						fileTreeRevision: workspaceQuery.data.fileTreeRevision,
-						fileChanges: update.fileChanges
-					},
-					update.files,
-					currentEnvId
-				)
-			),
+			result,
 			message: m.common_save_failed(),
 			setLoadingState: (value) => (isLoading.save = value),
 			onSuccess: async (workspace) => {
-				queryClient.setQueryData(queryKeys.volumes.workspace(currentEnvId, volume.name), workspace);
+				queryClient.setQueryData(queryKeys.volumes.workspace(environmentId, volumeName), workspace);
 				clearVolumeWorkspaceDrafts();
 				toast.success(m.volumes_workspace_save_success(), activityToastOptions(workspace.activityId));
 			}
@@ -647,7 +673,8 @@
 
 	async function openWorkspaceRestoreDialog(relativePath: string) {
 		const environmentId = currentEnvId;
-		const name = volume.name;
+		const name = volume?.name;
+		if (!active || !name) return;
 		workspaceRestorePath = relativePath;
 		workspaceBackups = [];
 		selectedWorkspaceBackupId = '';
@@ -656,32 +683,36 @@
 		try {
 			const operationResult = await tryCatch(
 				(async () => {
-					const response = await volumeBackupService.listBackups(name, { pagination: { page: 1, limit: 100 } });
-					if (environmentId !== currentEnvId || name !== volume.name || workspaceRestorePath !== relativePath) return;
+					const response = await volumeBackupService.listBackups(name, { pagination: { page: 1, limit: 100 } }, environmentId);
+					if (!active || environmentId !== currentEnvId || name !== volume?.name || workspaceRestorePath !== relativePath) return;
 					workspaceBackups = response.data;
 					selectedWorkspaceBackupId = response.data[0]?.id ?? '';
 				})()
 			);
+			if (!active || environmentId !== currentEnvId || name !== volume?.name || workspaceRestorePath !== relativePath) return;
 			if (operationResult.error !== null) {
 				const error = operationResult.error;
 
 				toast.error(error instanceof Error ? error.message : m.common_failed());
 			}
 		} finally {
-			loadingWorkspaceBackups = false;
+			if (active && environmentId === currentEnvId && name === volume?.name && workspaceRestorePath === relativePath) {
+				loadingWorkspaceBackups = false;
+			}
 		}
 	}
 
 	let lastWorkspaceBackupError: unknown;
 	function notifyWorkspaceBackupError(error: unknown) {
-		if (!showWorkspaceRestore || !error || error === lastWorkspaceBackupError) return;
+		if (!active || !volume?.name || !showWorkspaceRestore || !error || error === lastWorkspaceBackupError) return;
 		lastWorkspaceBackupError = error;
 		if (error instanceof Error) toast.error(error.message);
 		else toast.error(m.common_failed());
 	}
 
 	function stageWorkspaceRestore() {
-		if (!workspaceRestorePath || !selectedWorkspaceBackupId || workspaceBackupHasPath !== true) return;
+		if (!active || !volume?.name || !workspaceRestorePath || !selectedWorkspaceBackupId || workspaceBackupHasPath !== true)
+			return;
 		workspaceFileChanges = [
 			...workspaceFileChanges,
 			{
@@ -701,11 +732,15 @@
 	}
 
 	async function downloadVolumeWorkspaceFile(relativePath: string) {
+		const environmentId = currentEnvId;
+		const volumeName = volume?.name;
+		if (!active || !volumeName) return;
 		const operationResult = await tryCatch(
 			(async () => {
-				await volumeWorkspaceService.downloadWorkspaceFile(volume.name, relativePath, currentEnvId);
+				await volumeWorkspaceService.downloadWorkspaceFile(volumeName, relativePath, environmentId);
 			})()
 		);
+		if (!active || environmentId !== currentEnvId || volumeName !== volume?.name) return;
 		if (operationResult.error !== null) {
 			const error = operationResult.error;
 
@@ -714,6 +749,7 @@
 	}
 
 	async function handleRemoveVolumeConfirm(volumeName: string) {
+		if (!active || !volume) return;
 		const safeName = volumeName?.trim() || m.common_unknown();
 		if (safeName === backupVolumeName) return;
 		const message = volume.inUse
@@ -1094,7 +1130,7 @@
 {/if}
 
 <ResponsiveDialog
-	open={showWorkspaceRestore}
+	open={!!volume && showWorkspaceRestore}
 	onOpenChange={(open) => (showWorkspaceRestore = open)}
 	title={m.volumes_workspace_restore()}
 	description={m.volumes_workspace_backup_restore_desc()}

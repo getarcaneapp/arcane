@@ -69,8 +69,8 @@ class VolumeBackupService extends BaseAPIService {
 		return response.data;
 	}
 
-	async backupHasPath(backupId: string, filePath: string): Promise<boolean> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+	async backupHasPath(backupId: string, filePath: string, environmentId?: string): Promise<boolean> {
+		const envId = environmentId ?? (await environmentStore.getCurrentEnvironmentId());
 		const res = await this.api.get(`/environments/${envId}/volumes/backups/${backupId}/has-path`, {
 			params: { path: filePath }
 		});
