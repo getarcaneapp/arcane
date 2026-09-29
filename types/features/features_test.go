@@ -16,6 +16,7 @@ func TestRegistry(t *testing.T) {
 	}{
 		{name: "known feature", id: features.VulnerabilityManagement, wantFound: true, want: features.Definition{ID: features.VulnerabilityManagement, SettingKey: "featureVulnerabilityManagementEnabled", DefaultEnabled: true}},
 		{name: "returned definitions are independent", id: features.VulnerabilityManagement, mutateCopy: true, wantFound: true, want: features.Definition{ID: features.VulnerabilityManagement, SettingKey: "featureVulnerabilityManagementEnabled", DefaultEnabled: true}},
+		{name: "swarm defaults off", id: features.Swarm, wantFound: true, want: features.Definition{ID: features.Swarm, SettingKey: "featureSwarmEnabled", DefaultEnabled: false}},
 		{name: "unknown feature", id: features.ID("unknown")},
 	}
 	for _, tt := range tests {

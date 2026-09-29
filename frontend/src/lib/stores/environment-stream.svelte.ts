@@ -135,11 +135,12 @@ export function createEnvironmentStreamStore<TState extends StreamEnvStateBase, 
 	}
 
 	async function refresh(generation = lifecycleGeneration) {
-		reconcileEnvironments();
+		// The Promise.all below fetches every environment, including new ones.
+		reconcileEnvironments(false);
 		await Promise.all(Object.keys(_environmentStates).map((environmentId) => config.fetchSnapshot(environmentId, generation)));
 	}
 
-	function reconcileEnvironments() {
+	function reconcileEnvironments(fetchNew = true) {
 		if (!browser || !started) {
 			return;
 		}
@@ -161,10 +162,10 @@ export function createEnvironmentStreamStore<TState extends StreamEnvStateBase, 
 			}
 		}
 
-		for (const environment of environments) reconcileEnvironment(environment);
+		for (const environment of environments) reconcileEnvironment(environment, fetchNew);
 	}
 
-	function reconcileEnvironment(environment: Pick<Environment, 'id' | 'name'>) {
+	function reconcileEnvironment(environment: Pick<Environment, 'id' | 'name'>, fetchNew: boolean) {
 		const environmentId = environment.id || LOCAL_DOCKER_ENVIRONMENT_ID;
 		const existing = environmentState(environmentId);
 		if (!existing) {
@@ -175,7 +176,7 @@ export function createEnvironmentStreamStore<TState extends StreamEnvStateBase, 
 			// An already-open aggregated stream only picks new environments
 			// up on its server-side reconcile tick; fetch once so the first
 			// snapshot doesn't take up to that interval to appear.
-			if (clientStream.hasActiveStream) {
+			if (fetchNew && clientStream.hasActiveStream) {
 				void config.fetchSnapshot(environmentId, lifecycleGeneration);
 			}
 			return;
@@ -231,11 +232,13 @@ export function createEnvironmentStreamStore<TState extends StreamEnvStateBase, 
 				return;
 			}
 			config.onSelectedEnvironment?.(environmentStore.selected);
-			reconcileEnvironments();
-			unsubscribeChannel = clientStream.subscribe(config.channel, channelHandlers);
+			// refresh reconciles synchronously, so states exist before the channel subscribes.
 			if (config.refreshOnStart) {
 				void refresh(generation);
+			} else {
+				reconcileEnvironments();
 			}
+			unsubscribeChannel = clientStream.subscribe(config.channel, channelHandlers);
 			unsubscribeEnvironment = environmentStore.subscribeSelected((environment) => {
 				config.onSelectedEnvironment?.(environment);
 				reconcileEnvironments();

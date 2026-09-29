@@ -33,7 +33,7 @@
 	const user = $derived(data.user);
 	const permissionsManifest = $derived(data.permissionsManifest);
 	const permissionsManifestLoadFailed = $derived(data.permissionsManifestLoadFailed);
-	const swarmEnabled = $derived(data.swarmEnabled === true);
+	const swarmEnabled = $derived(data.swarmEnabled);
 	const canReadActivities = $derived(userHasPermissionInAnyEnvironment(user, 'activities:read'));
 
 	const isMobile = new IsMobile();

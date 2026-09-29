@@ -16,11 +16,9 @@ import (
 func TestJobActivityVisibilityFiltersBeforePagination(t *testing.T) {
 	db := setupActivityServiceTestDBInternal(t)
 	service := NewActivityService(db, nil)
-	for _, target := range []string{"0", "allowed", "private"} {
-		require.NoError(t, db.Create(&Activity{BaseModel: database.BaseModel{ID: target}, EnvironmentID: "0", Type: activitytypes.TypeJobRun, Status: activitytypes.StatusQueued, StartedAt: time.Now(), Metadata: database.JSON{"environmentId": target}}).Error)
-	}
-	for _, metadata := range []database.JSON{nil, {"environmentId": 0}} {
-		require.NoError(t, db.Create(&Activity{EnvironmentID: "0", Type: activitytypes.TypeJobRun, Status: activitytypes.StatusQueued, StartedAt: time.Now(), Metadata: metadata}).Error)
+	for _, environmentID := range []string{"0", "private"} {
+		require.NoError(t, db.Create(&Activity{BaseModel: database.BaseModel{ID: environmentID + "-job"}, EnvironmentID: environmentID, Type: activitytypes.TypeJobRun, Status: activitytypes.StatusSuccess, StartedAt: time.Now(), Metadata: database.JSON{"environmentId": environmentID}}).Error)
+		require.NoError(t, db.Create(&Activity{BaseModel: database.BaseModel{ID: environmentID + "-pull"}, EnvironmentID: environmentID, Type: activitytypes.TypeImagePull, Status: activitytypes.StatusSuccess, StartedAt: time.Now()}).Error)
 	}
 	permissions := authz.NewPermissionSet()
 	permissions.PerEnv["0"] = map[string]struct{}{authz.PermActivitiesRead: {}}
@@ -32,24 +30,29 @@ func TestJobActivityVisibilityFiltersBeforePagination(t *testing.T) {
 		require.NoError(t, err)
 		require.EqualValues(t, 2, response.TotalItems)
 		require.Len(t, activities, 1)
-		require.NotEqual(t, "private", activities[0].ID)
 		require.True(t, canReadJobActivityInternal(ctx, activities[0]))
 		seen[activities[0].ID] = true
 	}
 	require.Len(t, seen, 2)
-	require.False(t, canReadJobActivityInternal(ctx, activitytypes.Activity{Type: activitytypes.TypeJobRun, EnvironmentID: "0", Metadata: map[string]any{"environmentId": "private"}}))
-	privileged := context.WithValue(t.Context(), middleware.ContextKeyUserPermissions, authz.SudoPermissionSet())
-	activities, response, err := service.ListActivitiesPaginated(privileged, "0", pagination.QueryParams{Limit: 10})
+	activities, response, err := service.ListActivitiesPaginated(ctx, "private", pagination.QueryParams{Limit: 10})
 	require.NoError(t, err)
-	require.Len(t, activities, 3)
-	require.EqualValues(t, 3, response.TotalItems)
-	require.False(t, canReadJobActivityInternal(privileged, activitytypes.Activity{Type: activitytypes.TypeJobRun, EnvironmentID: "0"}))
-	require.NoError(t, db.Model(&Activity{}).Where("type = ?", activitytypes.TypeJobRun).Update("status", activitytypes.StatusSuccess).Error)
+	require.EqualValues(t, 1, response.TotalItems)
+	require.Len(t, activities, 1)
+	require.Equal(t, "private-pull", activities[0].ID)
+	require.False(t, canReadJobActivityInternal(ctx, activitytypes.Activity{Type: activitytypes.TypeJobRun, EnvironmentID: "private", Metadata: map[string]any{"environmentId": "allowed"}}))
+	require.True(t, canReadJobActivityInternal(ctx, activitytypes.Activity{Type: activitytypes.TypeJobRun, Metadata: map[string]any{"environmentId": "allowed"}}))
+	privileged := context.WithValue(t.Context(), middleware.ContextKeyUserPermissions, authz.SudoPermissionSet())
+	activities, response, err = service.ListActivitiesPaginated(privileged, "private", pagination.QueryParams{Limit: 10})
+	require.NoError(t, err)
+	require.Len(t, activities, 2)
+	require.EqualValues(t, 2, response.TotalItems)
+	require.False(t, canReadJobActivityInternal(privileged, activitytypes.Activity{Type: activitytypes.TypeJobRun}))
 	permissions.PerEnv["0"][authz.PermActivitiesDelete] = struct{}{}
-	deleted, err := service.DeleteHistory(ctx, "0")
+	deleted, err := service.DeleteHistory(ctx, "private")
 	require.NoError(t, err)
 	require.EqualValues(t, 1, deleted)
-	var retained Activity
-	require.NoError(t, db.First(&retained, "id = ?", "private").Error)
-	require.NoError(t, db.First(&Activity{}, "id = ?", "allowed").Error)
+	require.NoError(t, db.First(&Activity{}, "id = ?", "private-job").Error)
+	deleted, err = service.DeleteHistory(ctx, "0")
+	require.NoError(t, err)
+	require.EqualValues(t, 2, deleted)
 }

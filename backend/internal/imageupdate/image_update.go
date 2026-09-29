@@ -1784,58 +1784,63 @@ func (s *ImageUpdateService) CheckAllImages(ctx context.Context, limit int, exte
 	return results, nil
 }
 
+// DeleteRecordsForImages removes image-level rows (keyed by id) and
+// container/project rows (keyed by image_id) for the given images.
+func (s *ImageUpdateService) DeleteRecordsForImages(ctx context.Context, imageIDs []string) error {
+	if s == nil || s.db == nil || len(imageIDs) == 0 {
+		return nil
+	}
+	if err := s.db.WithContext(ctx).Where("id IN ? OR image_id IN ?", imageIDs, imageIDs).Delete(&ImageUpdateRecord{}).Error; err != nil {
+		return errors.WrapIf(err, "failed to delete image update records")
+	}
+	return nil
+}
+
 func (s *ImageUpdateService) CleanupOrphanedRecords(ctx context.Context) error {
 	if s.db == nil {
 		return nil
 	}
+	if s.dockerService == nil {
+		return errors.New("docker service unavailable")
+	}
 
-	dockerClient, err := s.dockerClientInternal(ctx)
+	dockerImages, err := s.dockerService.ListImages(ctx)
 	if err != nil {
 		return err
 	}
-
-	// Get all image IDs from Docker
-	apiCtx, cancel := s.dockerAPIContextInternal(ctx)
-	defer cancel()
-
-	dockerImagesResult, err := dockerClient.ImageList(apiCtx, client.ImageListOptions{})
-	if err != nil {
-		return errors.WrapIf(err, "failed to list Docker images")
-	}
-	dockerImages := dockerImagesResult.Items
-
 	dockerImageIDs := make([]string, 0, len(dockerImages))
 	for _, img := range dockerImages {
 		dockerImageIDs = append(dockerImageIDs, img.ID)
 	}
 
-	var result *gorm.DB
-	if len(dockerImageIDs) == 0 {
-		result = s.db.WithContext(ctx).Where("container_id = ? AND project_id = ?", "", "").Delete(&ImageUpdateRecord{})
-	} else {
-		result = s.db.WithContext(ctx).Where("container_id = ? AND project_id = ? AND id NOT IN ?", "", "", dockerImageIDs).Delete(&ImageUpdateRecord{})
+	imageScoped := s.db.WithContext(ctx).Where("container_id = ? AND project_id = ?", "", "")
+	if len(dockerImageIDs) > 0 {
+		imageScoped = imageScoped.Where("id NOT IN ?", dockerImageIDs)
 	}
-	if result.Error != nil {
-		return errors.WrapIf(result.Error, "failed to delete orphaned records")
+	imageResult := imageScoped.Delete(&ImageUpdateRecord{})
+	if imageResult.Error != nil {
+		return errors.WrapIf(imageResult.Error, "failed to delete orphaned records")
 	}
 
-	containers, listErr := dockerClient.ContainerList(apiCtx, client.ContainerListOptions{All: true})
-	if listErr != nil {
-		return listErr
-	}
-	ids := make([]string, 0, len(containers.Items))
-	for _, cnt := range containers.Items {
-		ids = append(ids, cnt.ID)
-	}
-	scoped := s.db.WithContext(ctx).Where("container_id <> ?", "")
-	if len(ids) > 0 {
-		scoped = scoped.Where("container_id NOT IN ?", ids)
-	}
-	if err := scoped.Delete(&ImageUpdateRecord{}).Error; err != nil {
+	containers, err := s.dockerService.ListContainers(ctx)
+	if err != nil {
 		return err
 	}
-	if result.RowsAffected > 0 {
-		slog.InfoContext(ctx, "Cleaned up orphaned image update records", "deletedCount", result.RowsAffected)
+	containerIDs := make([]string, 0, len(containers))
+	for _, cnt := range containers {
+		containerIDs = append(containerIDs, cnt.ID)
+	}
+	containerScoped := s.db.WithContext(ctx).Where("container_id <> ?", "")
+	if len(containerIDs) > 0 {
+		containerScoped = containerScoped.Where("container_id NOT IN ?", containerIDs)
+	}
+	containerResult := containerScoped.Delete(&ImageUpdateRecord{})
+	if containerResult.Error != nil {
+		return errors.WrapIf(containerResult.Error, "failed to delete orphaned container records")
+	}
+
+	if deleted := imageResult.RowsAffected + containerResult.RowsAffected; deleted > 0 {
+		slog.InfoContext(ctx, "Cleaned up orphaned image update records", "deletedCount", deleted)
 	} else {
 		slog.InfoContext(ctx, "No orphaned image update records found")
 	}

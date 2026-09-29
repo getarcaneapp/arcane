@@ -168,7 +168,7 @@ func (h *DashboardHandler) RunLocalStreamProducer(ctx context.Context, debugAllG
 func (h *DashboardHandler) RunRemoteStreamPollers(ctx context.Context, ps *authz.PermissionSet, debugAllGood bool, events chan<- dashboardtypes.StreamEvent) {
 	agg.ReconcilePollersByKey(ctx,
 		func(ctx context.Context) ([]environment.Environment, error) {
-			environments, err := h.environmentService.ListRemoteEnvironments(ctx)
+			environments, err := h.environmentService.ListActiveRemoteEnvironments(ctx)
 			if err != nil {
 				return nil, err
 			}

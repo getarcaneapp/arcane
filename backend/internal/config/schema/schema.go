@@ -130,6 +130,9 @@ var overrideDocRules = map[string]overrideDocRule{
 	"featureVulnerabilityManagementEnabled": {
 		note: "Disabling retains existing reports and scanner settings, allows active work to finish, and leaves standalone image patching available.",
 	},
+	"featureSwarmEnabled": {
+		note: "An active swarm cluster keeps Swarm enabled regardless of this value.",
+	},
 	"vulnerabilityScanInterval": {
 		requires: "FEATURE_VULNERABILITY_MANAGEMENT_ENABLED=true and VULNERABILITY_SCAN_ENABLED=true to have effect at runtime.",
 	},

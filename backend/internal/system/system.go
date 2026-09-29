@@ -39,6 +39,7 @@ type SystemService struct {
 	dockerService         *docker.DockerClientService
 	containerService      *container.ContainerService
 	imageService          *image.ImageService
+	imageUpdateService    *imageupdate.ImageUpdateService
 	volumeService         *volume.VolumeService
 	networkService        *network.NetworkService
 	settingsService       *settings.SettingsService
@@ -53,21 +54,23 @@ func NewSystemService(
 	dockerService *docker.DockerClientService,
 	containerService *container.ContainerService,
 	imageService *image.ImageService,
+	imageUpdateService *imageupdate.ImageUpdateService,
 	volumeService *volume.VolumeService,
 	networkService *network.NetworkService,
 	settingsService *settings.SettingsService,
 	activityService *activity.ActivityService,
 ) *SystemService {
 	return &SystemService{
-		db:               db,
-		dockerService:    dockerService,
-		containerService: containerService,
-		imageService:     imageService,
-		volumeService:    volumeService,
-		networkService:   networkService,
-		settingsService:  settingsService,
-		activityService:  activityService,
-		runningPrunes:    make(map[string]string),
+		db:                 db,
+		dockerService:      dockerService,
+		containerService:   containerService,
+		imageService:       imageService,
+		imageUpdateService: imageUpdateService,
+		volumeService:      volumeService,
+		networkService:     networkService,
+		settingsService:    settingsService,
+		activityService:    activityService,
+		runningPrunes:      make(map[string]string),
 		dockerHostMemoryCache: hot.NewHotCache[struct{}, dockerHostMemoryInfo](hot.LRU, 1).
 			WithTTL(dockerHostMemoryCacheTTL).
 			Build(),
@@ -553,11 +556,8 @@ func (s *SystemService) pruneImagesInternal(ctx context.Context, options system.
 		}
 	}
 
-	// Batch delete update records
-	if len(idsToDelete) > 0 && s.db != nil {
-		if err := s.db.WithContext(ctx).Where("id IN ?", idsToDelete).Delete(&imageupdate.ImageUpdateRecord{}).Error; err != nil {
-			slog.WarnContext(ctx, "Failed to delete image update records", "count", len(idsToDelete), "error", err.Error())
-		}
+	if err := s.imageUpdateService.DeleteRecordsForImages(ctx, idsToDelete); err != nil {
+		slog.WarnContext(ctx, "Failed to delete image update records", "count", len(idsToDelete), "error", err.Error())
 	}
 
 	result.ImagesDeleted = idsToDelete

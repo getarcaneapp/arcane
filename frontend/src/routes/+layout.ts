@@ -28,9 +28,11 @@ const queryClient = new QueryClient({
 	defaultOptions: {
 		queries: {
 			enabled: browser,
-			staleTime: 0,
+			// Covers the gap between a page loader's fetch and the component's
+			// mount so the same query isn't fetched twice in one navigation.
+			staleTime: 2_000,
 			gcTime: 60 * 1000,
-			refetchOnMount: 'always',
+			refetchOnMount: true,
 			refetchOnWindowFocus: 'always',
 			refetchOnReconnect: 'always'
 		}
@@ -92,7 +94,7 @@ export const load: LayoutLoad = async ({ url }) => {
 	}
 
 	let settings = null;
-	let swarmEnabled = false;
+	let swarmEnabled: boolean | undefined;
 	let permissionsManifest: PermissionsManifest | null = null;
 	let permissionsManifestLoadFailed = false;
 	if (user) {
@@ -100,7 +102,7 @@ export const load: LayoutLoad = async ({ url }) => {
 		const environmentRequestOptions: SearchPaginationSortRequest = {
 			pagination: {
 				page: 1,
-				limit: 1000
+				limit: -1
 			}
 		};
 
@@ -138,7 +140,7 @@ export const load: LayoutLoad = async ({ url }) => {
 			loadedSettings ??
 			(await tryCatch(settingsService.getPublicSettings()).then((result) => (result.error ? null : result.data)));
 		await featuresRequest;
-		swarmEnabled = loadedSwarmStatus?.enabled === true;
+		swarmEnabled = loadedSwarmStatus?.enabled;
 		permissionsManifest = loadedPermissionsManifest;
 		permissionsManifestLoadFailed = loadedPermissionsManifest === null;
 	} else {

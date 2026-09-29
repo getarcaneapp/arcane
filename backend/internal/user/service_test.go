@@ -163,6 +163,19 @@ func TestListUsersPaginatedSetsCanDeleteFromGlobalAdminCount(t *testing.T) {
 
 	require.False(t, canDeleteByID[lastAdmin.ID])
 	require.True(t, canDeleteByID[nonAdmin.ID])
+
+	adminDTO, err := userSvc.ToUserResponseDto(ctx, *lastAdmin)
+	require.NoError(t, err)
+	require.False(t, adminDTO.CanDelete)
+	userDTO, err := userSvc.ToUserResponseDto(ctx, *nonAdmin)
+	require.NoError(t, err)
+	require.True(t, userDTO.CanDelete)
+
+	backup := createTestUser(t, userSvc, "admin-2", "backup")
+	grantGlobalAdmin(t, roleSvc, backup.ID)
+	adminDTO, err = userSvc.ToUserResponseDto(ctx, *lastAdmin)
+	require.NoError(t, err)
+	require.True(t, adminDTO.CanDelete)
 }
 
 func TestDeleteUserRejectsDeletingOnlyCustomAllPermissionsAdmin(t *testing.T) {
@@ -188,6 +201,9 @@ func TestDeleteUserRejectsDeletingOnlyCustomAllPermissionsAdmin(t *testing.T) {
 	require.Len(t, users, 1)
 	require.False(t, users[0].CanDelete)
 	require.True(t, users[0].IsGlobalAdmin)
+	dto, err := userSvc.ToUserResponseDto(ctx, *customAdmin)
+	require.NoError(t, err)
+	require.False(t, dto.CanDelete)
 }
 
 func TestUserProfileValidationAndPersistence(t *testing.T) {

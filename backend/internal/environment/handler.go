@@ -44,9 +44,11 @@ import (
 const (
 	localDockerEnvironmentID = "0"
 
-	// Only covers poll-mode TTL expiry; tunnel and health-check changes arrive
-	// on the service's runtime-change signal instead.
-	environmentStreamPollInterval   = 5 * time.Second
+	// Re-applies in-memory runtime state to cached rows, covering poll-mode TTL
+	// expiry; CRUD, tunnel and health-check changes arrive on the runtime-change signal.
+	environmentStreamRuntimeInterval = 5 * time.Second
+	// Safety net for writes that bypass the runtime-change signal.
+	environmentStreamReloadInterval = 60 * time.Second
 	environmentStreamRefreshFloor   = 30 * time.Second
 	environmentStreamHubKeyInternal = "environments"
 )
@@ -441,31 +443,53 @@ func (h *EnvironmentHandler) runEnvironmentStreamListerInternal(ctx context.Cont
 	changes, unsubscribe := h.environmentService.SubscribeRuntimeChanges()
 	defer unsubscribe()
 
-	list := func() {
+	var rows []environment.Environment
+	loaded := false
+	publishRuntime := func() {
+		if !loaded {
+			return
+		}
+		envs := slices.Clone(rows)
+		for i := range envs {
+			ApplyEnvironmentRuntimeState(&envs[i])
+		}
+		publish(envs)
+	}
+	reload := func() {
 		envs, err := h.environmentService.ListVisibleEnvironments(ctx)
 		if err != nil {
-			// A failed read must not end the stream; the next tick retries.
+			// A failed read must not end the stream; the next wake-up retries.
 			if ctx.Err() == nil {
 				slog.WarnContext(ctx, "environment stream failed to list environments", "error", err)
 			}
 			return
 		}
-		publish(envs)
+		rows = envs
+		loaded = true
+		publishRuntime()
 	}
 
-	list()
+	reload()
 
-	ticker := time.NewTicker(environmentStreamPollInterval)
-	defer ticker.Stop()
+	runtimeTicker := time.NewTicker(environmentStreamRuntimeInterval)
+	defer runtimeTicker.Stop()
+	reloadTicker := time.NewTicker(environmentStreamReloadInterval)
+	defer reloadTicker.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-changes:
-			list()
-		case <-ticker.C:
-			list()
+			reload()
+		case <-reloadTicker.C:
+			reload()
+		case <-runtimeTicker.C:
+			if !loaded {
+				reload()
+				continue
+			}
+			publishRuntime()
 		}
 	}
 }

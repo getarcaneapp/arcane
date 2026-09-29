@@ -37,7 +37,6 @@ import (
 	"go.getarcane.app/updater"
 	"go.getarcane.app/updater/pkg/utils/tagpolicy"
 	"golang.org/x/sync/errgroup"
-	"gorm.io/gorm"
 )
 
 type ImageService struct {
@@ -165,25 +164,14 @@ func (s *ImageService) RemoveImage(ctx context.Context, id string, force bool, u
 			defer s.eventService.BeginDockerResourceSuppressionWindow("image", "", tag)()
 		}
 	}
-	_, err = dockerClient.ImageRemove(ctx, id, options)
+	removed, err := dockerClient.ImageRemove(ctx, id, options)
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, event.EventTypeImageError, "image", id, imageName, user.ID, user.Username, "0", err, database.JSON{"action": "delete", "force": force})
 		return errors.WrapIf(err, "failed to remove image")
 	}
 
-	if s.db != nil {
-		if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-			return tx.Delete(&imageupdate.ImageUpdateRecord{}, "id = ? OR image_id = ?", id, id).Error
-		}); err != nil {
-			slog.WarnContext(ctx, "failed to delete image update record", "id", id, "error", err)
-		}
-	}
-
-	if s.imageUpdateService != nil {
-		if err := s.imageUpdateService.CleanupOrphanedRecords(ctx); err != nil {
-			slog.WarnContext(ctx, "failed to cleanup orphaned image update records after image remove", "id", id, "error", err)
-		}
-	}
+	idsToDelete := append(getDeletedImageIDsInternal(removed.Items), id)
+	s.cleanupImageUpdateRecordsInternal(ctx, idsToDelete)
 
 	// Clean up vulnerability scan records for the deleted image
 	if s.vulnerabilityService != nil {
@@ -570,10 +558,9 @@ func (s *ImageService) PruneImages(ctx context.Context, options systemtypes.Prun
 	}
 	pruneReport := report.Report
 
-	idsToDelete := getPrunedImageIDsInternal(pruneReport)
-	s.cleanupImageUpdateRecordsAfterPruneInternal(ctx, idsToDelete)
+	idsToDelete := getDeletedImageIDsInternal(pruneReport.ImagesDeleted)
+	s.cleanupImageUpdateRecordsInternal(ctx, idsToDelete)
 	s.cleanupVulnerabilityRecordsAfterPruneInternal(ctx, idsToDelete)
-	s.cleanupOrphanedImageUpdatesAfterPruneInternal(ctx)
 
 	metadata := database.JSON{
 		"action":         "prune",
@@ -589,13 +576,13 @@ func (s *ImageService) PruneImages(ctx context.Context, options systemtypes.Prun
 	return &pruneReport, nil
 }
 
-func getPrunedImageIDsInternal(report image.PruneReport) []string {
-	if len(report.ImagesDeleted) == 0 {
+func getDeletedImageIDsInternal(deletedImages []image.DeleteResponse) []string {
+	if len(deletedImages) == 0 {
 		return nil
 	}
 
-	idsToDelete := make([]string, 0, len(report.ImagesDeleted))
-	for _, img := range report.ImagesDeleted {
+	idsToDelete := make([]string, 0, len(deletedImages))
+	for _, img := range deletedImages {
 		if img.Deleted != "" {
 			idsToDelete = append(idsToDelete, img.Deleted)
 			continue
@@ -605,18 +592,6 @@ func getPrunedImageIDsInternal(report image.PruneReport) []string {
 		}
 	}
 	return idsToDelete
-}
-
-func (s *ImageService) cleanupImageUpdateRecordsAfterPruneInternal(ctx context.Context, idsToDelete []string) {
-	if s.db == nil || len(idsToDelete) == 0 {
-		return
-	}
-
-	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		return tx.Where("id IN ? OR image_id IN ?", idsToDelete, idsToDelete).Delete(&imageupdate.ImageUpdateRecord{}).Error
-	}); err != nil {
-		slog.WarnContext(ctx, "failed to clean up image update records after prune", "error", err)
-	}
 }
 
 func (s *ImageService) cleanupVulnerabilityRecordsAfterPruneInternal(ctx context.Context, idsToDelete []string) {
@@ -629,13 +604,16 @@ func (s *ImageService) cleanupVulnerabilityRecordsAfterPruneInternal(ctx context
 	}
 }
 
-func (s *ImageService) cleanupOrphanedImageUpdatesAfterPruneInternal(ctx context.Context) {
+func (s *ImageService) cleanupImageUpdateRecordsInternal(ctx context.Context, idsToDelete []string) {
 	if s.imageUpdateService == nil {
 		return
 	}
 
+	if err := s.imageUpdateService.DeleteRecordsForImages(ctx, idsToDelete); err != nil {
+		slog.WarnContext(ctx, "failed to clean up image update records", "error", err)
+	}
 	if err := s.imageUpdateService.CleanupOrphanedRecords(ctx); err != nil {
-		slog.WarnContext(ctx, "failed to cleanup orphaned image update records after prune", "error", err)
+		slog.WarnContext(ctx, "failed to clean up orphaned image update records", "error", err)
 	}
 }
 

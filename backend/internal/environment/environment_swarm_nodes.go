@@ -97,6 +97,8 @@ func (s *EnvironmentService) BindSwarmNodeEnvironment(
 	}
 
 	s.remoteEnvs.put(envRecord)
+	s.invalidateEnvironmentCacheInternal(envRecord.ID)
+	s.NotifyRuntimeStateChanged()
 	return &envRecord, nil
 }
 
@@ -108,6 +110,7 @@ func (s *EnvironmentService) DetachSwarmNodeEnvironment(ctx context.Context, par
 		Updates(map[string]any{"parent_environment_id": nil, "swarm_node_id": nil, "updated_at": &now}).Error; err != nil {
 		return errors.WrapIf(err, "failed to detach swarm node environment")
 	}
+	s.NotifyRuntimeStateChanged()
 
 	return nil
 }
@@ -260,6 +263,7 @@ func (s *EnvironmentService) UpdateSwarmNodeIdentity(ctx context.Context, envID,
 	if err := s.db.WithContext(ctx).Model(&Environment{}).Where("id = ?", envID).Updates(updates).Error; err != nil {
 		return errors.WrapIf(err, "failed to update swarm node identity")
 	}
+	s.NotifyRuntimeStateChanged()
 
 	return nil
 }

@@ -30,7 +30,8 @@ type ChannelSubscriber = {
  * nothing alike: environments is a single local query, while dashboard proxies
  * a request to every remote agent on every tick. Subscribing or unsubscribing
  * changes the URL, so the connection is reopened — the same mechanism the
- * dashboard already used when its debug flag changed.
+ * dashboard already used when its debug flag changed. Changes within one task
+ * are coalesced into a single reopen.
  */
 function createClientStreamInternal() {
 	const subscribers = new Set<ChannelSubscriber>();
@@ -61,25 +62,32 @@ function createClientStreamInternal() {
 		}
 	});
 
-	function reopen() {
-		if (!transport.isStarted) {
-			return;
-		}
-		if (activeChannels().length === 0) {
-			// Nothing left to carry; drop the connection rather than hold an
-			// idle one open with no channels.
-			transport.stop();
-			return;
-		}
-		transport.restart();
-	}
+	let syncPending = false;
 
-	function ensureStarted() {
-		if (transport.isStarted || activeChannels().length === 0) {
+	// Deferred to the next macrotask so back-to-back subscribes (the layout
+	// starts several stores at once) open the connection once, not per channel.
+	function scheduleSync() {
+		if (syncPending) {
 			return;
 		}
-		transport.markStarted();
-		transport.connect(transport.nextGeneration());
+		syncPending = true;
+		setTimeout(() => {
+			syncPending = false;
+			if (activeChannels().length === 0) {
+				// Nothing left to carry; drop the connection rather than hold an
+				// idle one open with no channels.
+				if (transport.isStarted) {
+					transport.stop();
+				}
+				return;
+			}
+			if (!transport.isStarted) {
+				transport.markStarted();
+				transport.connect(transport.nextGeneration());
+				return;
+			}
+			transport.restart();
+		}, 0);
 	}
 
 	return {
@@ -102,16 +110,14 @@ function createClientStreamInternal() {
 			const hadChannel = activeChannels().includes(channel);
 			subscribers.add(subscriber);
 
-			if (!transport.isStarted) {
-				ensureStarted();
-			} else if (!hadChannel) {
-				reopen();
+			if (!transport.isStarted || !hadChannel) {
+				scheduleSync();
 			}
 
 			return () => {
 				subscribers.delete(subscriber);
 				if (!activeChannels().includes(channel)) {
-					reopen();
+					scheduleSync();
 				}
 			};
 		},
@@ -119,8 +125,8 @@ function createClientStreamInternal() {
 		setParams(next: Record<string, string>) {
 			const changed = JSON.stringify(next) !== JSON.stringify(params);
 			params = next;
-			if (changed) {
-				reopen();
+			if (changed && transport.isStarted) {
+				scheduleSync();
 			}
 		},
 		/** Reopens the connection, clearing a give-up state so it retries. */

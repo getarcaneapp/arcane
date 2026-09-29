@@ -16,6 +16,7 @@ function stableSerialize(value: unknown): string {
 export const queryKeys = {
 	swarm: {
 		info: (environmentId: string) => ['swarm', environmentId, 'info'] as const,
+		status: (environmentId: string) => ['swarm', environmentId, 'status'] as const,
 		joinTokens: (environmentId: string) => ['swarm', environmentId, 'join-tokens'] as const,
 		unlockKey: (environmentId: string) => ['swarm', environmentId, 'unlock-key'] as const,
 		joinCandidates: (environmentId: string | null, user: Pick<User, 'id' | 'permissionsByEnv'> | null) =>

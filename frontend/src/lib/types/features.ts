@@ -1,8 +1,8 @@
-export type FeatureID = 'vulnerabilityManagement';
+export type FeatureID = 'vulnerabilityManagement' | 'swarm';
 
 export type FeatureDefinition = {
 	id: FeatureID;
-	settingKey: 'featureVulnerabilityManagementEnabled';
+	settingKey: 'featureVulnerabilityManagementEnabled' | 'featureSwarmEnabled';
 	defaultEnabled: boolean;
 };
 

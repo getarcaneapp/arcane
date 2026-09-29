@@ -65,8 +65,8 @@ func TestPaginateAndSortDB_SkipCountShowAll(t *testing.T) {
 	}, db.Model(&widget{}), &got)
 	require.NoError(t, err)
 	require.Len(t, got, 5)
-	require.Equal(t, UnknownTotal, resp.TotalItems)
-	require.Equal(t, UnknownTotal, resp.TotalPages)
+	require.Equal(t, int64(5), resp.TotalItems)
+	require.Equal(t, int64(1), resp.TotalPages)
 }
 
 // A start that does not land on a page boundary used to be rounded down to the

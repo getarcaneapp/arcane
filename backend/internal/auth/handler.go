@@ -295,16 +295,15 @@ func (h *AuthHandler) Logout(ctx context.Context, input *struct{}) (*LogoutOutpu
 	}, nil
 }
 
-// GetCurrentUser returns the currently authenticated user's information.
-// Uses ToUserResponseDto (not the generic struct mapper) so the RBAC fields
+// GetCurrentUser reads the current user from the database. Uses
+// ToUserResponseDto (not the generic struct mapper) so the RBAC fields
 // (RoleAssignments, PermissionsByEnv) are resolved via RoleService.
 func (h *AuthHandler) GetCurrentUser(ctx context.Context, input *struct{}) (*handlerutil.Out[usertypes.User], error) {
-	userID, exists := middleware.GetUserIDFromContext(ctx)
-	if !exists {
-		return nil, huma.Error401Unauthorized("Not authenticated")
+	currentUser, err := handlerutil.RequireUser(ctx)
+	if err != nil {
+		return nil, err
 	}
-
-	userModel, err := h.userService.GetUser(ctx, userID)
+	userModel, err := h.userService.GetUser(ctx, currentUser.ID)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to get user information")
 	}
@@ -490,6 +489,7 @@ func (h *AuthHandler) UpdateMyProfile(ctx context.Context, input *UpdateMyProfil
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to update user")
 	}
+	h.authService.InvalidateUserTokenCache(updated.ID)
 
 	out, err := h.userService.ToUserResponseDto(ctx, *updated)
 	if err != nil {
@@ -552,6 +552,7 @@ func (h *AuthHandler) UploadMyAvatar(ctx context.Context, input *UploadMyAvatarI
 		slog.ErrorContext(ctx, "Failed to save avatar", "user_id", currentUser.ID, "error", err)
 		return nil, huma.Error500InternalServerError("failed to save avatar")
 	}
+	h.authService.InvalidateUserTokenCache(currentUser.ID)
 
 	// Reload user so the response reflects the new AvatarURL
 	updatedUser, err := h.userService.GetUser(ctx, currentUser.ID)
@@ -592,6 +593,7 @@ func (h *AuthHandler) DeleteMyAvatar(ctx context.Context, input *struct{}) (*han
 		slog.ErrorContext(ctx, "Failed to delete avatar", "user_id", currentUser.ID, "error", err)
 		return nil, huma.Error500InternalServerError("failed to delete avatar")
 	}
+	h.authService.InvalidateUserTokenCache(currentUser.ID)
 
 	updatedUser, err := h.userService.GetUser(ctx, currentUser.ID)
 	if err != nil {

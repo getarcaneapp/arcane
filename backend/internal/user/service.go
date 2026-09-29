@@ -599,20 +599,39 @@ func (s *UserService) ListUsersPaginated(ctx context.Context, params pagination.
 }
 
 func (s *UserService) ToUserResponseDto(ctx context.Context, u common.User) (user.User, error) {
-	return s.toUserResponseDtoInternal(ctx, u), nil
+	dto := s.toUserResponseDtoInternal(ctx, u)
+	if dto.IsGlobalAdmin && s.roleService != nil {
+		remaining, err := s.roleService.CountGlobalAdminsExcludingUser(ctx, u.ID)
+		if err != nil {
+			return user.User{}, errors.WrapIf(err, "failed to check whether user can be deleted")
+		}
+		dto.CanDelete = remaining > 0
+	}
+	return dto, nil
 }
 
+// toUserResponseDtosInternal maps a user list. CanDelete is false on the only
+// effective global admin.
 func (s *UserService) toUserResponseDtosInternal(ctx context.Context, users []common.User) []user.User {
 	result := make([]user.User, len(users))
 	for i, u := range users {
 		result[i] = s.toUserResponseDtoInternal(ctx, u)
 	}
+	if s.roleService == nil {
+		return result
+	}
+	if total, err := s.roleService.CountGlobalAdminsExcludingUser(ctx, ""); err == nil && total == 1 {
+		for i := range result {
+			if result[i].IsGlobalAdmin {
+				result[i].CanDelete = false
+			}
+		}
+	}
 	return result
 }
 
 // toUserResponseDtoInternal builds the public User DTO. RoleAssignments and
-// PermissionsByEnv come from the RBAC service. CanDelete is false when this
-// user is the only effective global admin.
+// PermissionsByEnv come from the RBAC service. Callers apply the last-admin guard.
 func (s *UserService) toUserResponseDtoInternal(ctx context.Context, u common.User) user.User {
 	dto := user.User{
 		ID:                     u.ID,
@@ -656,11 +675,6 @@ func (s *UserService) toUserResponseDtoInternal(ctx context.Context, u common.Us
 	if ps, err := s.roleService.ResolvePermissions(ctx, &u); err == nil && ps != nil {
 		dto.IsGlobalAdmin = ps.IsGlobalAdmin()
 		dto.PermissionsByEnv = permissionSetToMap(ps)
-		if dto.IsGlobalAdmin {
-			if remaining, cerr := s.roleService.CountGlobalAdminsExcludingUser(ctx, u.ID); cerr == nil && remaining == 0 {
-				dto.CanDelete = false
-			}
-		}
 	}
 	return dto
 }

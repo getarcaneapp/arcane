@@ -25,21 +25,23 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/validation"
 	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
+	"github.com/samber/hot"
 	"go.getarcane.app/kit/normalization"
 	"go.getarcane.app/sys/crypto"
 	"gorm.io/gorm"
 )
 
 type EnvironmentService struct {
-	db              *database.DB
-	httpClient      *http.Client
-	dockerService   *docker.DockerClientService
-	eventService    *event.EventService
-	settingsService *settings.SettingsService
-	apiKeyService   *apikey.ApiKeyService
-	remoteClient    *remenv.Client
-	edgeTokens      *edgeTokenCacheInternal
-	remoteEnvs      *remoteEnvSnapshotCacheInternal
+	db               *database.DB
+	httpClient       *http.Client
+	dockerService    *docker.DockerClientService
+	eventService     *event.EventService
+	settingsService  *settings.SettingsService
+	apiKeyService    *apikey.ApiKeyService
+	remoteClient     *remenv.Client
+	edgeTokens       *edgeTokenCacheInternal
+	remoteEnvs       *remoteEnvSnapshotCacheInternal
+	environmentCache *hot.HotCache[string, Environment]
 
 	// jobs carries the scheduler and app lifecycle context, injected
 	// post-construction via SetScheduler (manager-only). Each enabled environment
@@ -68,6 +70,7 @@ const (
 
 	ErrEnvironmentAccessTokenRequired = errors.Sentinel("environment access token required")
 	ErrInvalidEnvironmentAccessToken  = errors.Sentinel("invalid environment access token")
+	ErrEnvironmentNotFound            = errors.Sentinel("environment not found")
 )
 
 // VariableSyncer pushes the effective global-variable set to one environment.
@@ -102,9 +105,10 @@ func NewEnvironmentService(db *database.DB, httpClient *http.Client, dockerServi
 			EnsureAvailableFunc: ensureRemoteEnvironmentTunnelAvailableInternal,
 			DoFunc:              doRemoteEnvironmentTunnelRequestInternal,
 		}),
-		edgeTokens: newEdgeTokenCacheInternal(),
-		remoteEnvs: newRemoteEnvSnapshotCacheInternal(),
-		jobs:       entityjobs.New(environmentHealthJobPrefix, environmentHealthAdmissionScopeInternal),
+		edgeTokens:       newEdgeTokenCacheInternal(),
+		remoteEnvs:       newRemoteEnvSnapshotCacheInternal(),
+		environmentCache: newEnvironmentCacheInternal(),
+		jobs:             entityjobs.New(environmentHealthJobPrefix, environmentHealthAdmissionScopeInternal),
 	}
 }
 
@@ -184,7 +188,7 @@ func (s *EnvironmentService) ResolveEnvironmentName(ctx context.Context, environ
 	if strings.TrimSpace(environmentID) == "" {
 		environmentID = LocalEnvironmentID
 	}
-	env, err := s.GetEnvironmentByID(ctx, environmentID)
+	env, err := s.GetEnvironmentByIDCached(ctx, environmentID)
 	if err != nil || env == nil {
 		if !errors.Is(err, context.Canceled) {
 			slog.WarnContext(ctx, "failed to resolve environment name", "environmentID", environmentID, "error", err)
@@ -204,6 +208,7 @@ func (s *EnvironmentService) EnsureLocalEnvironment(ctx context.Context, appUrl 
 			if err := s.db.WithContext(ctx).Model(&existingEnv).Update("api_url", appUrl).Error; err != nil {
 				return errors.WrapIf(err, "failed to update local environment api url")
 			}
+			s.invalidateEnvironmentCacheInternal(LocalEnvironmentID)
 			slog.InfoContext(ctx, "updated local environment api url", "id", LocalEnvironmentID, "url", appUrl)
 		}
 		return nil
@@ -259,6 +264,8 @@ func (s *EnvironmentService) CreateEnvironment(ctx context.Context, environment 
 		s.registerHealthJobInternal(ctx, environment.ID)
 	}
 	s.remoteEnvs.put(*environment)
+	s.invalidateEnvironmentCacheInternal(environment.ID)
+	s.NotifyRuntimeStateChanged()
 
 	return environment, nil
 }
@@ -267,7 +274,7 @@ func (s *EnvironmentService) GetEnvironmentByID(ctx context.Context, id string) 
 	var envRecord Environment
 	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&envRecord).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New("environment not found")
+			return nil, ErrEnvironmentNotFound
 		}
 		return nil, errors.WrapIf(err, "failed to get environment")
 	}
@@ -312,6 +319,8 @@ func (s *EnvironmentService) UpdateEnvironment(ctx context.Context, id string, u
 	if err := s.db.WithContext(ctx).Model(&Environment{}).Where("id = ?", id).Updates(updates).Error; err != nil {
 		return nil, errors.WrapIf(err, "failed to update environment")
 	}
+	s.invalidateEnvironmentCacheInternal(id)
+	s.NotifyRuntimeStateChanged()
 
 	updated, err := s.GetEnvironmentByID(ctx, id)
 	if err != nil {
@@ -396,6 +405,8 @@ func (s *EnvironmentService) DeleteEnvironment(ctx context.Context, id string, u
 	s.edgeTokens.invalidate(id)
 	s.ForgetSyncState(id)
 	s.remoteEnvs.remove(id)
+	s.invalidateEnvironmentCacheInternal(id)
+	s.NotifyRuntimeStateChanged()
 
 	// Create event in background
 	go s.createEnvironmentEvent(context.WithoutCancel(ctx), id, env.Name, event.EventTypeEnvironmentDelete, "Environment Deleted", fmt.Sprintf("Environment '%s' was deleted", env.Name), event.EventSeverityWarning, userID, username)
@@ -443,8 +454,10 @@ func (s *EnvironmentService) RegenerateEnvironmentApiKey(ctx context.Context, en
 	if result.RowsAffected == 0 {
 		// A zero-row update would otherwise report a successful rotation while
 		// the new key was never linked to anything.
-		return errors.New("environment not found")
+		return ErrEnvironmentNotFound
 	}
+	s.invalidateEnvironmentCacheInternal(envID)
+	s.NotifyRuntimeStateChanged()
 
 	s.edgeTokens.sync(envID, apiKey)
 	now := time.Now()

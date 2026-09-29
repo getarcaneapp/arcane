@@ -250,7 +250,7 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 	handlerAppCtx := handlerutil.NewActivityAppContext(ctx)
 
 	envResolver := func(ctx context.Context, id string) (string, *string, bool, error) {
-		env, err := deps.Environment.Service().GetEnvironmentByID(ctx, id)
+		env, err := deps.Environment.Service().GetEnvironmentByIDCached(ctx, id)
 		if err != nil || env == nil {
 			return "", nil, false, err
 		}

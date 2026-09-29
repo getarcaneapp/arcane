@@ -69,7 +69,7 @@ func provideActivityModuleInternal(db *database.DB, settingsService *settings.Se
 		Settings: settingsService,
 		Environment: activity.EnvironmentDependencies{
 			ProxyJSONRequest:               environment.ProxyJSONRequest,
-			ListRemoteEnvironments:         environment.ListRemoteEnvironments,
+			ListActiveRemoteEnvironments:   environment.ListActiveRemoteEnvironments,
 			GetActiveRemoteEnvironment:     environment.GetActiveRemoteEnvironmentSnapshot,
 			ProxyJSONRequestForEnvironment: environment.ProxyJSONRequestForEnvironment,
 			ResolveEnvironmentName:         environment.ResolveEnvironmentName,
@@ -428,13 +428,14 @@ func provideDashboardModuleInternal(db *database.DB, docker *docker.DockerClient
 	})
 }
 
-func provideSystemModuleInternal(db *database.DB, cfg *config.Config, docker *docker.DockerClientService, containerModule *container.Module, image *image.ImageService, volumeModule *volume.Module, network *network.NetworkService, settings *settings.SettingsService, activity *activity.ActivityService, upgrade *system.SystemUpgradeService, environment *environment.EnvironmentService) *system.Module {
+func provideSystemModuleInternal(db *database.DB, cfg *config.Config, docker *docker.DockerClientService, containerModule *container.Module, image *image.ImageService, imageUpdate *imageupdate.ImageUpdateService, volumeModule *volume.Module, network *network.NetworkService, settings *settings.SettingsService, activity *activity.ActivityService, upgrade *system.SystemUpgradeService, environment *environment.EnvironmentService) *system.Module {
 	return system.New(system.Dependencies{
 		DB:            db,
 		Config:        cfg,
 		Docker:        docker,
 		Container:     containerModule.Service(),
 		Image:         image,
+		ImageUpdate:   imageUpdate,
 		Volume:        volumeModule.Service(),
 		Network:       network,
 		Settings:      settings,

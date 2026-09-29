@@ -194,6 +194,9 @@ type Update struct {
 	// FeatureVulnerabilityManagementEnabled controls vulnerability management for this environment.
 	FeatureVulnerabilityManagementEnabled *string `json:"featureVulnerabilityManagementEnabled,omitzero" enum:"true,false"`
 
+	// FeatureSwarmEnabled controls Docker Swarm for this environment. An active swarm cluster keeps it enabled.
+	FeatureSwarmEnabled *string `json:"featureSwarmEnabled,omitzero" enum:"true,false"`
+
 	// VulnerabilityScanEnabled indicates if scheduled vulnerability scanning is enabled.
 	//
 	// Required: false

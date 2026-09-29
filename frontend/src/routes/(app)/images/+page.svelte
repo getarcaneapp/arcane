@@ -159,10 +159,10 @@
 		imageUsageCountsQuery.data?.envId === envId ? imageUsageCountsQuery.data.value : imageUsageFallback
 	);
 
-	// Intentionally a manual flag, not $derived(query.isFetching): these queries use
-	// aggressive background refetching (staleTime: 0 + refetchOnMount/WindowFocus:
-	// 'always'), so deriving from isFetching leaves the manual refresh button spinning
-	// constantly. Mirrors the containers page — reflects only user-initiated refreshes.
+	// Intentionally a manual flag, not $derived(query.isFetching): these queries also
+	// refetch in the background (on mount once stale, and always on window focus), so
+	// deriving from isFetching would spin the manual refresh button on every background
+	// fetch. Mirrors the containers page — reflects only user-initiated refreshes.
 	const isUploading = $derived(uploadImagesMutation.isPending);
 	const isPruning = $derived(pruneImagesMutation.isPending);
 	const isChecking = $derived(checkUpdatesMutation.isPending);

@@ -1,15 +1,22 @@
 package environment
 
 import (
+	"cmp"
+	"context"
+	"slices"
 	"strings"
 	"sync"
 	"time"
 
+	"emperror.dev/errors"
 	"github.com/samber/hot"
 	"github.com/samber/mo"
 )
 
-const edgeTokenCacheTTL = time.Minute
+const (
+	edgeTokenCacheTTL   = time.Minute
+	environmentCacheTTL = 30 * time.Second
+)
 
 // edgeTokenCacheInternal maps an edge agent token to its environment ID. The
 // reverse index lets an environment's entry be dropped when its token rotates,
@@ -23,8 +30,10 @@ type edgeTokenCacheInternal struct {
 // remoteEnvSnapshotCacheInternal holds the latest in-process copy of every
 // enabled, visible, non-local environment, so hot paths avoid a DB round trip.
 type remoteEnvSnapshotCacheInternal struct {
-	mu   sync.RWMutex
-	envs map[string]Environment
+	mu       sync.RWMutex
+	envs     map[string]Environment
+	seeded   bool
+	revision uint64
 }
 
 // runtimeWatchersInternal fans a coalesced wake-up out to everyone watching for
@@ -43,6 +52,16 @@ func newEdgeTokenCacheInternal() *edgeTokenCacheInternal {
 			Build(),
 		byEnvID: make(map[string]string),
 	}
+}
+
+// newEnvironmentCacheInternal caches environment records by ID, including
+// misses, for hot paths that only read CRUD-managed fields.
+func newEnvironmentCacheInternal() *hot.HotCache[string, Environment] {
+	return hot.NewHotCache[string, Environment](hot.LRU, 256).
+		WithTTL(environmentCacheTTL).
+		WithMissingSharedCache().
+		WithJanitor().
+		Build()
 }
 
 func newRemoteEnvSnapshotCacheInternal() *remoteEnvSnapshotCacheInternal {
@@ -133,23 +152,6 @@ func (c *remoteEnvSnapshotCacheInternal) get(environmentID string) mo.Option[Env
 	return mo.Some(envRecord)
 }
 
-func (c *remoteEnvSnapshotCacheInternal) replace(environments []Environment) {
-	if c == nil {
-		return
-	}
-
-	next := make(map[string]Environment, len(environments))
-	for _, envRecord := range environments {
-		if isActiveRemoteEnvironmentInternal(envRecord) {
-			next[envRecord.ID] = envRecord
-		}
-	}
-
-	c.mu.Lock()
-	c.envs = next
-	c.mu.Unlock()
-}
-
 func (c *remoteEnvSnapshotCacheInternal) put(environment Environment) {
 	if c == nil {
 		return
@@ -162,6 +164,7 @@ func (c *remoteEnvSnapshotCacheInternal) put(environment Environment) {
 
 	c.mu.Lock()
 	c.envs[environment.ID] = environment
+	c.revision++
 	c.mu.Unlock()
 }
 
@@ -172,6 +175,7 @@ func (c *remoteEnvSnapshotCacheInternal) remove(environmentID string) {
 
 	c.mu.Lock()
 	delete(c.envs, environmentID)
+	c.revision++
 	c.mu.Unlock()
 }
 
@@ -182,6 +186,7 @@ func (c *remoteEnvSnapshotCacheInternal) update(environmentID string, update fun
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	c.revision++
 
 	envRecord, ok := c.envs[environmentID]
 	if !ok {
@@ -202,4 +207,63 @@ func (s *EnvironmentService) GetActiveRemoteEnvironmentSnapshot(environmentID st
 		return mo.None[Environment]()
 	}
 	return s.remoteEnvs.get(environmentID)
+}
+
+// ListActiveRemoteEnvironments returns every enabled, visible, non-local
+// environment from memory, sorted by ID. The first call loads them from the
+// database.
+func (s *EnvironmentService) ListActiveRemoteEnvironments(ctx context.Context) ([]Environment, error) {
+	s.remoteEnvs.mu.RLock()
+	seeded := s.remoteEnvs.seeded
+	environments := make([]Environment, 0, len(s.remoteEnvs.envs))
+	for _, envRecord := range s.remoteEnvs.envs {
+		environments = append(environments, envRecord)
+	}
+	s.remoteEnvs.mu.RUnlock()
+
+	if !seeded {
+		var err error
+		if environments, err = s.ListRemoteEnvironments(ctx); err != nil {
+			return nil, err
+		}
+	}
+
+	slices.SortFunc(environments, func(a, b Environment) int {
+		return cmp.Compare(a.ID, b.ID)
+	})
+	return environments, nil
+}
+
+// GetEnvironmentByIDCached is GetEnvironmentByID behind a short TTL cache that
+// also remembers unknown IDs. Status and heartbeat fields may be stale.
+func (s *EnvironmentService) GetEnvironmentByIDCached(ctx context.Context, id string) (*Environment, error) {
+	envRecord, found, err := s.environmentCache.GetWithLoaders(id, func(ids []string) (map[string]Environment, error) {
+		found := make(map[string]Environment, len(ids))
+		for _, environmentID := range ids {
+			loaded, loadErr := s.GetEnvironmentByID(ctx, environmentID)
+			if errors.Is(loadErr, ErrEnvironmentNotFound) {
+				continue
+			}
+			if loadErr != nil {
+				return nil, loadErr
+			}
+			found[environmentID] = *loaded
+		}
+		return found, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, ErrEnvironmentNotFound
+	}
+	return &envRecord, nil
+}
+
+// invalidateEnvironmentCacheInternal drops a cached record after a CRUD write.
+func (s *EnvironmentService) invalidateEnvironmentCacheInternal(id string) {
+	if s == nil || s.environmentCache == nil || id == "" {
+		return
+	}
+	s.environmentCache.Delete(id)
 }

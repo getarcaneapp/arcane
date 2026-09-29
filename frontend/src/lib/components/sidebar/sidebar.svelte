@@ -33,7 +33,7 @@
 		variant = 'floating',
 		user,
 		versionInformation,
-		swarmEnabled = false,
+		swarmEnabled,
 		permissionsManifest = null,
 		...restProps
 	}: ComponentProps<typeof Sidebar.Root> & {
@@ -57,7 +57,7 @@
 
 	const currentEnvId = $derived(environmentStore.selected?.id || '0');
 	const managementItemsRaw = $derived(getManagementItems(currentEnvId));
-	const swarmItemsRaw = $derived(getSwarmNavigationItems(swarmEnabled));
+	const swarmItemsRaw = $derived(getSwarmNavigationItems(swarmEnabled, currentEnvId));
 
 	const managementItems = $derived(
 		filterByPermissions(managementItemsRaw, effectiveUser ?? null, currentEnvId, permissionsManifest)

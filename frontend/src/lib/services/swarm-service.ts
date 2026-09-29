@@ -216,8 +216,8 @@ class SwarmService extends BaseAPIService {
 		return this.handleResponse(this.api.get(`/environments/${envId}/swarm/info`));
 	}
 
-	async getSwarmStatus(): Promise<SwarmRuntimeStatus> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+	async getSwarmStatus(environmentId?: string): Promise<SwarmRuntimeStatus> {
+		const envId = environmentId ?? (await environmentStore.getCurrentEnvironmentId());
 		return this.handleResponse(this.api.get(`/environments/${envId}/swarm/status`));
 	}
 

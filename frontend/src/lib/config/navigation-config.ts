@@ -345,9 +345,12 @@ const defaultMobilePinnedItems: NavigationItem[] = [...navigationItems.managemen
 	(item) => ['/dashboard', '/projects', '/containers', '/images'].includes(item.url)
 );
 
-export function getSwarmNavigationItems(swarmEnabled: boolean): NavigationItem[] {
+export function getSwarmNavigationItems(swarmEnabled: boolean | undefined, currentEnvId: string): NavigationItem[] {
 	if (swarmEnabled) {
 		return navigationItems.swarmItems;
+	}
+	if (swarmEnabled === false && !featureStore.isSwarmEnabled(currentEnvId, false)) {
+		return [];
 	}
 
 	return navigationItems.swarmItems.filter((item) => item.url === '/swarm/cluster');
@@ -387,7 +390,7 @@ export function getAvailableMobileNavItems(options?: {
 		flatItems.push(...navigationItems.resourceItems);
 	}
 
-	const swarmItems = getSwarmNavigationItems(!!options?.swarmEnabled);
+	const swarmItems = getSwarmNavigationItems(options?.swarmEnabled, options?.currentEnvId ?? '0');
 	if (swarmItems.length > 0) {
 		flatItems.push(...swarmItems);
 	}

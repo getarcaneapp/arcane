@@ -247,6 +247,7 @@ func DefaultSettingsConfig() *Settings {
 		AuthSessionTimeout:                    SettingVariable{Value: "1440"},
 		AuthPasswordPolicy:                    SettingVariable{Value: "strong"},
 		FeatureVulnerabilityManagementEnabled: SettingVariable{Value: "true"},
+		FeatureSwarmEnabled:                   SettingVariable{Value: "false"},
 		VulnerabilityScanEnabled:              SettingVariable{Value: "false"},
 		VulnerabilityScanInterval:             SettingVariable{Value: "0 0 0 * * *"},
 		VulnerabilityThreatIntelEnabled:       SettingVariable{Value: "true"},

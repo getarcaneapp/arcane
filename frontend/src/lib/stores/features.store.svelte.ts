@@ -1,7 +1,7 @@
 import type { QueryClient } from '@tanstack/svelte-query';
 import { settingsService } from '#lib/services/settings-service.js';
 import type { EnvironmentFeatures, FeatureID } from '#lib/types/features.js';
-import { isFeatureEnabled, isVulnerabilityQuery, resolveFeatures } from '#lib/utils/features.js';
+import { isFeatureEnabled, isSwarmFeatureEnabled, isVulnerabilityQuery, resolveFeatures } from '#lib/utils/features.js';
 
 let environments = $state.raw<Record<string, EnvironmentFeatures>>({});
 const requests = new Map<string, Promise<void>>();
@@ -68,6 +68,8 @@ export const featureStore = {
 	refreshKnown: () => Promise.all(Object.keys(environments).map((id) => load(id, true))),
 	status: (environmentId: string) => environments[environmentId]?.status ?? 'loading',
 	isEnabled: (id: FeatureID, environmentId: string) => isFeatureEnabled(environments[environmentId], id),
+	isSwarmEnabled: (environmentId: string, swarmActive: boolean) =>
+		isSwarmFeatureEnabled(environments[environmentId], swarmActive),
 	isSupported: (id: FeatureID, environmentId: string) =>
 		environments[environmentId]?.status === 'ready' && environments[environmentId]?.features[id]?.supported === true,
 	connect(client: QueryClient) {

@@ -11,6 +11,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/network"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/volume"
@@ -24,6 +25,7 @@ type Dependencies struct {
 	Docker        *docker.DockerClientService
 	Container     *container.ContainerService
 	Image         *image.ImageService
+	ImageUpdate   *imageupdate.ImageUpdateService
 	Volume        *volume.VolumeService
 	Network       *network.NetworkService
 	Settings      *settings.SettingsService
@@ -46,6 +48,7 @@ func New(deps Dependencies) *Module {
 			deps.Docker,
 			deps.Container,
 			deps.Image,
+			deps.ImageUpdate,
 			deps.Volume,
 			deps.Network,
 			deps.Settings,

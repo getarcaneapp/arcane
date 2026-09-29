@@ -307,6 +307,7 @@ var expectedSettingOverrideKeys = []string{
 	"eventCleanupInterval",
 	"experimentalFeaturesEnabled",
 	"expiredSessionsCleanupInterval",
+	"featureSwarmEnabled",
 	"featureVulnerabilityManagementEnabled",
 	"followProjectSymlinks",
 	"gitOperationTimeout",

@@ -4,6 +4,8 @@
 	import LabeledSwitch from '#lib/components/form/labeled-switch.svelte';
 	import TextInputWithLabel from '#lib/components/form/text-input-with-label.svelte';
 	import { featureStore } from '#lib/stores/features.store.svelte.js';
+	import { featureDefinitions } from '#lib/config/features.js';
+	import type { FeatureID } from '#lib/types/features.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import { onMount } from 'svelte';
@@ -65,6 +67,7 @@
 
 	let { data } = $props();
 	let { settings, versionInformation } = $derived(data);
+	const swarmActive = $derived(data.swarmActive === true);
 	let lastEnvironment: Environment | undefined;
 	let loadedEnvironment = $derived((lastEnvironment = data.environment ?? lastEnvironment));
 	let environment = $derived(loadedEnvironment);
@@ -326,6 +329,7 @@
 		pruneBuildCacheMode: settings?.pruneBuildCacheMode ?? 'none',
 		pruneBuildCacheUntil: settings?.pruneBuildCacheUntil ?? '',
 		featureVulnerabilityManagementEnabled: settings?.featureVulnerabilityManagementEnabled ?? true,
+		featureSwarmEnabled: settings?.featureSwarmEnabled ?? false,
 		vulnerabilityScanEnabled: settings?.vulnerabilityScanEnabled ?? false,
 		toolsImageRegistry: settings?.toolsImageRegistry ?? 'ghcr.io',
 		updateCheckRegistry: settings?.updateCheckRegistry ?? 'auto',
@@ -363,11 +367,13 @@
 		const environmentId = environment.id;
 		const submittedInputs = formInputs;
 		const apiUrlChanged = formData.apiUrl !== environment.apiUrl;
-		const featureChanged =
-			formData.featureVulnerabilityManagementEnabled !== currentSettings.featureVulnerabilityManagementEnabled;
+		const changedFeatures = featureDefinitions.filter(
+			(feature) => formData[feature.settingKey] !== currentSettings[feature.settingKey]
+		);
 		if (
-			featureChanged &&
-			(!hasPermission('settings:write', environmentId) || !featureStore.isSupported('vulnerabilityManagement', environmentId))
+			changedFeatures.length > 0 &&
+			(!hasPermission('settings:write', environmentId) ||
+				changedFeatures.some((feature) => !featureStore.isSupported(feature.id, environmentId)))
 		) {
 			throw new Error(m.features_unavailable());
 		}
@@ -388,10 +394,15 @@
 		}
 		const parsedCurrentSettings = formSchema.safeParse(currentSettings);
 		const savedFormValues = parsedCurrentSettings.success ? parsedCurrentSettings.data : currentSettings;
+		const separatelySavedKeys: string[] = [
+			'name',
+			'enabled',
+			'apiUrl',
+			'accessToken',
+			...featureDefinitions.map((feature) => feature.settingKey)
+		];
 		const otherSettingsChanged = (Object.keys(formData) as (keyof EnvironmentFormValues)[]).some(
-			(key) =>
-				!['name', 'enabled', 'apiUrl', 'accessToken', 'featureVulnerabilityManagementEnabled'].includes(key) &&
-				formData[key] !== savedFormValues[key]
+			(key) => !separatelySavedKeys.includes(key) && formData[key] !== savedFormValues[key]
 		);
 		let updates: Partial<Settings> = {};
 
@@ -456,14 +467,15 @@
 				autoHealRestartWindow: formData.autoHealRestartWindow
 			};
 		}
-		if (featureChanged) updates.featureVulnerabilityManagementEnabled = formData.featureVulnerabilityManagementEnabled;
+		for (const feature of changedFeatures) updates[feature.settingKey] = formData[feature.settingKey];
 		if (Object.keys(updates).length > 0) await settingsService.updateSettingsForEnvironment(environmentId, updates);
-		if (featureChanged) {
+		if (changedFeatures.length > 0) {
 			await featureStore.refresh(environmentId);
 			if (featureStore.status(environmentId) !== 'ready') throw new Error(m.features_unavailable());
-			if (featureStore.isEnabled('vulnerabilityManagement', environmentId) !== formData.featureVulnerabilityManagementEnabled) {
-				throw new Error(m.features_environment_override());
-			}
+			const overridden = changedFeatures.find(
+				(feature) => featureStore.isEnabled(feature.id, environmentId) !== formData[feature.settingKey]
+			);
+			if (overridden) throw new Error(featureOverrideMessage(overridden.id));
 		}
 
 		await refreshEnvironment();
@@ -478,6 +490,25 @@
 				).data
 			);
 		}
+	}
+
+	function featureOverrideMessage(id: FeatureID): string {
+		switch (id) {
+			case 'swarm':
+				return m.features_swarm_environment_override();
+			case 'vulnerabilityManagement':
+				return m.features_environment_override();
+		}
+	}
+
+	function featureSwitchDisabled(id: FeatureID): boolean {
+		return (
+			!isCurrentlyOnline ||
+			!settings ||
+			settings.uiConfigDisabled ||
+			!hasPermission('settings:write', environment.id) ||
+			!featureStore.isSupported(id, environment.id)
+		);
 	}
 
 	function clearAccessToken(): void {
@@ -862,19 +893,30 @@
 			<section id="features">
 				<SectionCard title={m.features_title()} icon={SettingsIcon} variant="transparent">
 					{#if featureStore.status(environment.id) === 'ready'}
-						<LabeledSwitch
-							id="vulnerability-management"
-							bind:checked={formInputs.featureVulnerabilityManagementEnabled.value}
-							label={m.features_vulnerability_management()}
-							description={m.features_vulnerability_description()}
-							error={formInputs.featureVulnerabilityManagementEnabled.error}
-							disabled={!isCurrentlyOnline ||
-								!settings ||
-								settings.uiConfigDisabled ||
-								!hasPermission('settings:write', environment.id) ||
-								!featureStore.isSupported('vulnerabilityManagement', environment.id)}
-						/>
-						{#if !featureStore.isSupported('vulnerabilityManagement', environment.id)}
+						<div class="space-y-6">
+							<LabeledSwitch
+								id="vulnerability-management"
+								bind:checked={formInputs.featureVulnerabilityManagementEnabled.value}
+								label={m.features_vulnerability_management()}
+								description={m.features_vulnerability_description()}
+								error={formInputs.featureVulnerabilityManagementEnabled.error}
+								disabled={featureSwitchDisabled('vulnerabilityManagement')}
+							/>
+							{#if swarmActive}
+								<!-- An active cluster keeps Swarm on, so the stored toggle is shown locked. -->
+								<LabeledSwitch id="swarm" checked={true} label={m.swarm()} description={m.features_swarm_locked()} disabled />
+							{:else}
+								<LabeledSwitch
+									id="swarm"
+									bind:checked={formInputs.featureSwarmEnabled.value}
+									label={m.swarm()}
+									description={m.features_swarm_description()}
+									error={formInputs.featureSwarmEnabled.error}
+									disabled={featureSwitchDisabled('swarm')}
+								/>
+							{/if}
+						</div>
+						{#if featureDefinitions.some((feature) => !featureStore.isSupported(feature.id, environment.id))}
 							<p role="status" class="mt-4 text-sm text-muted-foreground">{m.features_unsupported()}</p>
 						{/if}
 					{:else}

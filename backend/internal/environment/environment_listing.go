@@ -187,6 +187,7 @@ func environmentTypeKeyInternal(env environment.Environment) string {
 	}
 }
 
+// ListVisibleEnvironments returns persisted rows; callers apply ApplyEnvironmentRuntimeState.
 func (s *EnvironmentService) ListVisibleEnvironments(ctx context.Context) ([]environment.Environment, error) {
 	var envs []Environment
 	if err := s.db.WithContext(ctx).
@@ -200,10 +201,6 @@ func (s *EnvironmentService) ListVisibleEnvironments(ctx context.Context) ([]env
 	out, mapErr := mapping.MapSlice[Environment, environment.Environment](envs)
 	if mapErr != nil {
 		return nil, errors.WrapIf(mapErr, "failed to map environments")
-	}
-
-	for i := range out {
-		ApplyEnvironmentRuntimeState(&out[i])
 	}
 
 	return out, nil
@@ -225,16 +222,35 @@ func (s *EnvironmentService) ListRemoteEnvironmentIDs(ctx context.Context) ([]st
 
 // ListRemoteEnvironments returns all non-local, enabled environments for syncing purposes.
 func (s *EnvironmentService) ListRemoteEnvironments(ctx context.Context) ([]Environment, error) {
-	var envs []Environment
-	err := s.db.WithContext(ctx).
-		Model(&Environment{}).
-		Where("id != ?", "0").
-		Where("enabled = ?", true).
-		Where("hidden = ?", false).
-		Find(&envs).Error
-	if err != nil {
-		return nil, errors.WrapIf(err, "failed to list remote environments")
+	for {
+		s.remoteEnvs.mu.RLock()
+		revision := s.remoteEnvs.revision
+		s.remoteEnvs.mu.RUnlock()
+
+		var envs []Environment
+		err := s.db.WithContext(ctx).
+			Model(&Environment{}).
+			Where("id != ?", "0").
+			Where("enabled = ?", true).
+			Where("hidden = ?", false).
+			Find(&envs).Error
+		if err != nil {
+			return nil, errors.WrapIf(err, "failed to list remote environments")
+		}
+
+		s.remoteEnvs.mu.Lock()
+		// Retry if a cache mutation or another refresh overtook the database read.
+		if s.remoteEnvs.revision != revision {
+			s.remoteEnvs.mu.Unlock()
+			continue
+		}
+		s.remoteEnvs.envs = make(map[string]Environment, len(envs))
+		for _, envRecord := range envs {
+			s.remoteEnvs.envs[envRecord.ID] = envRecord
+		}
+		s.remoteEnvs.seeded = true
+		s.remoteEnvs.revision++
+		s.remoteEnvs.mu.Unlock()
+		return envs, nil
 	}
-	s.remoteEnvs.replace(envs)
-	return envs, nil
 }

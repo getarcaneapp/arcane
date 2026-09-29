@@ -1,6 +1,7 @@
 package activity
 
 import (
+	"cmp"
 	"context"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
@@ -9,41 +10,21 @@ import (
 	"gorm.io/gorm"
 )
 
-// Job summaries are stored on the manager but belong to their execution environment.
-func scopeJobActivityVisibilityInternal(ctx context.Context, query *gorm.DB, permission string) *gorm.DB {
+// Job summaries live in their target environment's environment_id column.
+func scopeJobActivityVisibilityInternal(ctx context.Context, query *gorm.DB, environmentID, permission string) *gorm.DB {
 	permissions, present := middleware.PermissionsFromContext(ctx)
-	if !present {
+	if !present || permissions.Allows(permission, environmentID) {
 		return query
 	}
-	target := "json_extract(metadata, '$.environmentId')"
-	valid := "json_type(metadata, '$.environmentId') = 'text' AND " + target + " <> ''"
-	if query.Name() == "postgres" {
-		target = "CAST(metadata AS jsonb)->>'environmentId'"
-		valid = "jsonb_typeof(CAST(metadata AS jsonb)->'environmentId') = 'string' AND " + target + " <> ''"
-	}
-	if permissions.Allows(permission, "") {
-		return query.Where("(type <> ? OR ("+valid+"))", activitytypes.TypeJobRun)
-	}
-	if permissions == nil {
-		return query.Where("type <> ?", activitytypes.TypeJobRun)
-	}
-	allowed := make([]string, 0, len(permissions.PerEnv))
-	for environmentID := range permissions.PerEnv {
-		if permissions.Allows(permission, environmentID) {
-			allowed = append(allowed, environmentID)
-		}
-	}
-	if len(allowed) == 0 {
-		return query.Where("type <> ?", activitytypes.TypeJobRun)
-	}
-	return query.Where("(type <> ? OR ("+valid+" AND "+target+" IN ?))", activitytypes.TypeJobRun, allowed)
+	return query.Where("type <> ?", activitytypes.TypeJobRun)
 }
 
 func canReadJobActivityInternal(ctx context.Context, item activitytypes.Activity) bool {
 	if item.Type != activitytypes.TypeJobRun {
 		return true
 	}
-	environmentID, _ := item.Metadata["environmentId"].(string)
+	metadataEnvironmentID, _ := item.Metadata["environmentId"].(string)
+	environmentID := cmp.Or(item.EnvironmentID, metadataEnvironmentID)
 	if environmentID == "" {
 		return false
 	}

@@ -54,6 +54,7 @@ export type Settings = {
 	pruneBuildCacheUntil?: string;
 	vulnerabilityScanEnabled?: boolean;
 	featureVulnerabilityManagementEnabled?: boolean;
+	featureSwarmEnabled?: boolean;
 	vulnerabilityScanInterval?: number;
 	autoHealEnabled?: boolean;
 	autoHealExcludedContainers?: string;

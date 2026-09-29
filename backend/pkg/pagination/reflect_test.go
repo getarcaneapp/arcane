@@ -56,3 +56,17 @@ func TestPaginateAndSortDB_SortTiesBrokenByID(t *testing.T) {
 
 	require.Equal(t, []string{"a", "b", "c", "d", "e"}, walkWidgetPages(t, db, "name"))
 }
+
+func TestPaginateAndSortDB_CallerIDOrderSkipsTieBreak(t *testing.T) {
+	db := newTieBreakTestDB(t)
+
+	require.True(t, orderedByIDInternal(db.Model(&widget{}).Order("name").Order("widgets.id DESC")))
+	require.True(t, orderedByIDInternal(db.Model(&widget{}).Order("`id` DESC")))
+	require.False(t, orderedByIDInternal(db.Model(&widget{}).Order("name DESC")))
+	require.False(t, orderedByIDInternal(db.Model(&widget{})))
+
+	var got []widget
+	_, err := PaginateAndSortDB(QueryParams{Limit: 5}, db.Model(&widget{}).Order("id DESC"), &got)
+	require.NoError(t, err)
+	require.Equal(t, "e", got[0].ID)
+}

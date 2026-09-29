@@ -39,7 +39,7 @@ type ActivityHandler struct {
 
 type EnvironmentDependencies struct {
 	ProxyJSONRequest               handlerutil.RemoteJSONProxy
-	ListRemoteEnvironments         func(context.Context) ([]environment.Environment, error)
+	ListActiveRemoteEnvironments   func(context.Context) ([]environment.Environment, error)
 	GetActiveRemoteEnvironment     func(string) mo.Option[environment.Environment]
 	ProxyJSONRequestForEnvironment func(context.Context, environment.Environment, string, string, []byte, any) error
 	ResolveEnvironmentName         func(context.Context, string) string
@@ -268,7 +268,8 @@ func (h *ActivityHandler) cancelRequestedByInternal(ctx context.Context, forward
 func (h *ActivityHandler) RunLocalStreamProducer(ctx context.Context, limit int, events chan<- activitytypes.StreamEvent) {
 	sendSnapshot := func() bool {
 		activities, _, err := h.activityService.ListActivitiesPaginated(ctx, "0", pagination.QueryParams{
-			Limit: resolveActivityStreamLimitInternal(limit),
+			Limit:     resolveActivityStreamLimitInternal(limit),
+			SkipCount: true,
 		})
 		if err != nil {
 			if ctx.Err() == nil {
@@ -328,7 +329,7 @@ func (h *ActivityHandler) RunLocalStreamProducer(ctx context.Context, limit int,
 func (h *ActivityHandler) RunRemoteStreamPollers(ctx context.Context, ps *authz.PermissionSet, limit int, events chan<- activitytypes.StreamEvent) {
 	agg.ReconcilePollersByKey(ctx,
 		func(ctx context.Context) ([]environment.Environment, error) {
-			environments, err := h.environment.ListRemoteEnvironments(ctx)
+			environments, err := h.environment.ListActiveRemoteEnvironments(ctx)
 			if err != nil {
 				return nil, err
 			}

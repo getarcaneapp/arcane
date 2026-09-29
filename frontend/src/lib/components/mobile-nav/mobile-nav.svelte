@@ -16,7 +16,7 @@
 	let {
 		user = null,
 		versionInformation,
-		swarmEnabled = false,
+		swarmEnabled,
 		permissionsManifest = null,
 		class: className = ''
 	}: {
@@ -29,8 +29,8 @@
 
 	const navigation = getMobileNavigation();
 	const navigationSettings = $derived(navigation.settings);
-	const swarmItems = $derived(getSwarmNavigationItems(swarmEnabled));
 	const currentEnvId = $derived(environmentStore.selected?.id || '0');
+	const swarmItems = $derived(getSwarmNavigationItems(swarmEnabled, currentEnvId));
 
 	const pinnedItems = $derived.by(() => {
 		if (!navigationSettings?.pinnedItems) return [];

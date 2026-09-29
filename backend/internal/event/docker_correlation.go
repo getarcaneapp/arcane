@@ -103,6 +103,14 @@ func (s *EventService) BeginDockerResourceSuppressionWindow(resourceType, resour
 	return s.beginDockerWindowsInternal([]dockerWindowKeyInternal{{kind: "resource", resource: dockerExpectationInternal{resourceType, resourceID, resourceName}}})
 }
 
+// BeginDockerTypeSuppressionWindow covers bulk daemon operations whose per-item IDs are unknown until they finish.
+func (s *EventService) BeginDockerTypeSuppressionWindow(resourceType string) func() {
+	if resourceType == "" {
+		return func() {}
+	}
+	return s.beginDockerWindowsInternal([]dockerWindowKeyInternal{{kind: "type", name: resourceType}})
+}
+
 func (s *EventService) beginDockerWindowsInternal(keys []dockerWindowKeyInternal) func() {
 	if s == nil {
 		return func() {}
@@ -175,6 +183,10 @@ func (s *EventService) ShouldSuppressDaemonEvent(resourceType, actorID, actorNam
 			}
 		case "compose":
 			if composeProject == key.name {
+				return true
+			}
+		case "type":
+			if key.name == resourceType {
 				return true
 			}
 		}

@@ -881,14 +881,8 @@ func (s *AuthService) ChangePassword(ctx context.Context, userID, currentPasswor
 	if _, err = s.userService.SetPasswordAndRevokeSessionsExcept(ctx, user, newPassword, currentSessionID); err != nil {
 		return err
 	}
-	keys := make([]string, 0)
-	s.tokenCache.Range(func(key string, entry verifiedTokenEntry) bool {
-		if entry.User.ID == userID && entry.SessionID != currentSessionID {
-			keys = append(keys, key)
-		}
-		return true
-	})
-	s.tokenCache.DeleteMany(keys)
+	// The current session's cached user still carries the old password flags.
+	s.InvalidateUserTokenCache(userID)
 	return nil
 }
 

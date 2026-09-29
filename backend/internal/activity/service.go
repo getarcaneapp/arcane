@@ -1112,7 +1112,7 @@ func (s *ActivityService) ListActivitiesPaginated(ctx context.Context, environme
 
 	var activities []Activity
 	q := s.db.WithContext(ctx).Model(&Activity{}).Where("environment_id = ?", environmentID)
-	q = scopeJobActivityVisibilityInternal(ctx, q, authz.PermActivitiesRead)
+	q = scopeJobActivityVisibilityInternal(ctx, q, environmentID, authz.PermActivitiesRead)
 
 	if term := strings.TrimSpace(params.Search); term != "" {
 		escaped := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(term)
@@ -1239,7 +1239,7 @@ func (s *ActivityService) DeleteHistory(ctx context.Context, environmentID strin
 
 	var deleted int64
 	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		ids, err := findTerminalActivityIDsInternal(scopeJobActivityVisibilityInternal(ctx, tx.Where("environment_id = ?", environmentID), authz.PermActivitiesDelete))
+		ids, err := findTerminalActivityIDsInternal(scopeJobActivityVisibilityInternal(ctx, tx.Where("environment_id = ?", environmentID), environmentID, authz.PermActivitiesDelete))
 		if err != nil {
 			return errors.WrapIf(err, "failed to find activity history")
 		}

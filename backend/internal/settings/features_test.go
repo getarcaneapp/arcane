@@ -99,3 +99,22 @@ func TestSettingsService_RejectInvalidFeatureBoolean(t *testing.T) {
 		})
 	}
 }
+
+func TestSettingsService_SwarmFeatureDefaultsOffAndPersists(t *testing.T) {
+	var nilService *SettingsService
+	require.False(t, nilService.IsFeatureEnabled(t.Context(), features.Swarm))
+
+	svc, err := newSettingsServiceForTestInternal(t, t.Context(), setupSettingsTestDB(t))
+	require.NoError(t, err)
+	require.False(t, svc.IsFeatureEnabled(t.Context(), features.Swarm))
+	require.Contains(t, svc.ListSettings(SettingVisibilityPublic), SettingVariable{Key: features.SwarmSettingKey, Value: "false"})
+
+	enabled := "true"
+	_, err = svc.UpdateSettings(t.Context(), settingstypes.Update{FeatureSwarmEnabled: &enabled})
+	require.NoError(t, err)
+	require.True(t, svc.IsFeatureEnabled(t.Context(), features.Swarm))
+
+	invalid := "yes"
+	_, err = svc.UpdateSettings(t.Context(), settingstypes.Update{FeatureSwarmEnabled: &invalid})
+	require.ErrorIs(t, err, common.ErrValidation)
+}
