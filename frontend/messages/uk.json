@@ -1996,6 +1996,7 @@
   "registries_type_label": "Тип реєстру",
   "registries_type_generic": "Загальні (Docker / OCI)",
   "amazon_ecr": "Amazon ECR",
+  "registry_amazon_ecr_public": "Amazon ECR (публічний)",
   "registries_username_key_label": "Ім'я користувача/ключ",
   "registries_token_required": "Потрібен токен",
   "registries_aws_access_key_id_required": "Потрібен ідентифікатор ключа доступу до AWS",
