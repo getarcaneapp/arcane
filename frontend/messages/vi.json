@@ -1996,6 +1996,7 @@
   "registries_type_label": "Loại sổ đăng ký",
   "registries_type_generic": "Chung (Docker / OCI)",
   "amazon_ecr": "Amazon ECR",
+  "registry_amazon_ecr_public": "Amazon ECR Công khai",
   "registries_username_key_label": "Tên người dùng/Mật khẩu",
   "registries_token_required": "Yêu cầu phải có mã xác thực",
   "registries_aws_access_key_id_required": "Yêu cầu có ID khóa truy cập AWS",
