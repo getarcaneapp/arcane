@@ -1996,6 +1996,7 @@
   "registries_type_label": "Тип реестра",
   "registries_type_generic": "Generic (Docker / OCI)",
   "amazon_ecr": "Amazon ECR",
+  "registry_amazon_ecr_public": "Amazon ECR — общедоступный",
   "registries_username_key_label": "Имя пользователя/ключ",
   "registries_token_required": "Требуется токен",
   "registries_aws_access_key_id_required": "Требуется идентификатор ключа доступа AWS",
