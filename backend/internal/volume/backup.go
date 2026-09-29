@@ -999,6 +999,24 @@ func (s *VolumeService) forgetRemoteSnapshotsInternal(ctx context.Context, docke
 	return nil
 }
 
+// PruneLocalRepository removes data that deleted volume backups left in the
+// local repository once rustic's keep-delete window has passed.
+func (s *VolumeService) PruneLocalRepository(ctx context.Context) error {
+	dockerClient, err := s.dockerService.GetClient(ctx)
+	if err != nil {
+		return err
+	}
+	repository, err := s.localRusticRepositoryInternal(ctx, dockerClient, false)
+	if err != nil {
+		return err
+	}
+	password, err := s.volumeBackupPasswordInternal(ctx, dockerClient, repository)
+	if err != nil {
+		return err
+	}
+	return s.engine.PruneRepository(ctx, dockerClient, repository, password)
+}
+
 func (s *VolumeService) forgetSnapshotsInternal(ctx context.Context, dockerClient *client.Client, repository backup.Repository, snapshotIDs []string) error {
 	password, err := s.volumeBackupPasswordInternal(ctx, dockerClient, repository)
 	if err != nil {

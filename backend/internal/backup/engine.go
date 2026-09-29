@@ -38,6 +38,10 @@ import (
 )
 
 const (
+	// rusticRepositoryMissingMessage is how rustic reports a repository that was
+	// never initialized.
+	rusticRepositoryMissingMessage = "No repository config file found"
+
 	// Admission scopes shared by the backup engine and the per-policy job
 	// registries so scheduled and manual runs contend on the same leases.
 
@@ -449,6 +453,18 @@ func (e *Engine) ForgetSnapshots(ctx context.Context, dockerClient *client.Clien
 		return err
 	}
 	_, err = task.Wait(context.WithoutCancel(ctx))
+	return err
+}
+
+// PruneRepository runs a plain prune so packs an earlier forget marked for
+// deletion are removed once rustic's keep-delete window has passed. The delay
+// keeps it safe when another Arcane instance shares the repository. A
+// repository that was never initialized has nothing to prune.
+func (e *Engine) PruneRepository(ctx context.Context, dockerClient *client.Client, repository Repository, password string) error {
+	_, err := e.runInternal(ctx, dockerClient, repository, password, []string{"prune"})
+	if err != nil && strings.Contains(err.Error(), rusticRepositoryMissingMessage) {
+		return nil
+	}
 	return err
 }
 
