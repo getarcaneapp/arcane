@@ -4,7 +4,6 @@
 	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import * as Alert from '#lib/components/ui/alert/index.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import {
 		ArrowLeftIcon,
 		ArrowDownIcon,
@@ -20,11 +19,14 @@
 		CodeIcon,
 		ArrowsUpDownIcon,
 		ExternalLinkIcon,
-		SearchIcon
+		SearchIcon,
+		ResetIcon,
+		GitBranchIcon
 	} from '#lib/icons/index.js';
 	import { type TabItem } from '#lib/components/tab-bar/index.js';
 	import TabbedPageLayout from '#lib/layouts/tabbed-page-layout.svelte';
 	import ActionButtons from '#lib/components/action-buttons.svelte';
+	import type { ActionButton } from '#lib/components/action-button-group/types.js';
 	import ProjectGitBackupSummary from '#lib/components/gitops/project-git-backup-summary.svelte';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import * as ArcaneTooltip from '#lib/components/arcane-tooltip/index.js';
@@ -62,11 +64,11 @@
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { RefreshIcon } from '#lib/icons/index.js';
+	import { cn } from '#lib/utils.js';
 	import IconImage from '#lib/components/icon-image.svelte';
 	import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import ProjectUpdateItem from '#lib/components/project-update-item.svelte';
 	import ProjectTagEditor from '#lib/components/project-tag-editor.svelte';
-	import IfPermitted from '#lib/components/if-permitted.svelte';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { globalVariablesToMap } from '#lib/utils/template-load.js';
 	import {
@@ -346,7 +348,7 @@
 
 	let autoScrollStackLogs = $state(true);
 
-	type ProjectTab = 'services' | 'compose' | 'logs';
+	type ProjectTab = 'services' | 'compose' | 'backup' | 'logs';
 	let selectedTab = $state<ProjectTab>('compose');
 	let userSelectedTabProjectId: string | null = null;
 	let composeOpen = $state(true);
@@ -478,13 +480,14 @@
 			value: 'compose',
 			label: m.common_configuration(),
 			icon: SettingsIcon
-		}
+		},
+		...(isGitOpsManaged ? [] : [{ value: 'backup', label: m.git_backup(), icon: GitBranchIcon }])
 	]);
 
 	let nameInputRef = $state<HTMLInputElement | null>(null);
 
 	type ComposeUIPrefs = {
-		tab: 'services' | 'compose' | 'logs';
+		tab: 'services' | 'compose' | 'backup' | 'logs';
 		composeOpen: boolean;
 		overrideOpen: boolean;
 		envOpen: boolean;
@@ -691,7 +694,7 @@
 			selectedTab = urlTabValue ?? cur.tab ?? defaultComposeUIPrefs.tab;
 			// Logs merged into the services tab (#3367): honor legacy ?tab=logs deep
 			// links and stored prefs by landing on services (logs render alongside).
-			if (requestedTab === 'logs' || selectedTab === 'logs') {
+			if (requestedTab === 'logs' || !tabItems.some((tab) => tab.value === selectedTab)) {
 				selectedTab = 'services';
 			}
 		}
@@ -1474,6 +1477,23 @@
 			editorContext: codeEditorContext
 		} as const;
 	}
+
+	const projectExtraActions = $derived.by((): ActionButton[] => {
+		const list: ActionButton[] = [];
+		if (canArchiveProject) {
+			list.push({
+				id: 'archive',
+				action: 'archive',
+				label: project?.isArchived ? m.projects_unarchive() : m.projects_archive(),
+				group: 'manage',
+				loading: isLoading.archiving,
+				disabled: archiveRequiresStopped,
+				disabledReason: archiveRequiresStopped ? m.projects_archive_requires_stopped() : undefined,
+				onclick: handleArchiveToggle
+			});
+		}
+		return list;
+	});
 </script>
 
 {#snippet projectComposeTab(project: Project)}
@@ -1481,32 +1501,59 @@
 		<div class="flex h-full min-h-0 flex-col">
 			{@render configurationErrorNotice()}
 			{@render gitSourceNotice()}
-			{#if !isGitOpsManaged}
-				<ProjectGitBackupSummary environmentId={envId} projectId={project.id} projectName={project.name} />
-			{/if}
 			{@render composeFilesNotice()}
 			{#if lastPrefsProjectId === project.id}
-				<div class="mb-2 flex shrink-0 items-center justify-end gap-2">
-					<label
-						for="layout-mode-toggle"
-						class="cursor-pointer text-xs text-muted-foreground"
-						title={m.project_view_description()}
-					>
-						{m.workspace()}
-					</label>
-					<Switch
-						id="layout-mode-toggle"
-						checked={layoutMode === 'tree'}
-						aria-label={m.project_view_description()}
-						onCheckedChange={(checked) => {
-							layoutMode = checked ? 'tree' : 'classic';
-							if (checked) {
-								openFileTab('compose');
-								selectedIncludeTabPreference = null;
-							}
-							persistPrefs();
-						}}
-					/>
+				<div class="mb-2 flex shrink-0 flex-wrap items-center justify-between gap-2">
+					<div class="flex items-center gap-2">
+						<label
+							for="layout-mode-toggle"
+							class="cursor-pointer text-xs text-muted-foreground"
+							title={m.project_view_description()}
+						>
+							{m.workspace()}
+						</label>
+						<Switch
+							id="layout-mode-toggle"
+							checked={layoutMode === 'tree'}
+							aria-label={m.project_view_description()}
+							onCheckedChange={(checked) => {
+								layoutMode = checked ? 'tree' : 'classic';
+								if (checked) {
+									openFileTab('compose');
+									selectedIncludeTabPreference = null;
+								}
+								persistPrefs();
+							}}
+						/>
+					</div>
+
+					{#if canUpdateProject}
+						<div class="flex items-center gap-2">
+							<span class={cn('text-xs', hasChanges ? 'text-warning' : 'text-success')}>
+								{hasChanges ? m.common_unsaved_changes() : m.common_all_changes_saved()}
+							</span>
+							{#if hasChanges}
+								<ArcaneButton
+									action="base"
+									tone="outline"
+									size="sm"
+									icon={ResetIcon}
+									customLabel={m.common_reset()}
+									disabled={isLoading.saving}
+									onclick={() => rebaseEditorDraft(project)}
+								/>
+							{/if}
+							<ArcaneButton
+								action="save"
+								size="sm"
+								class="min-w-20"
+								disabled={!canSave}
+								loading={isLoading.saving}
+								loadingLabel={m.common_saving()}
+								onclick={handleSaveChanges}
+							/>
+						</div>
+					{/if}
 				</div>
 
 				<div class="min-h-0 flex-1">
@@ -1746,6 +1793,14 @@
 			</button>
 		{/if}
 	</div>
+{/snippet}
+
+{#snippet projectBackupTab(project: Project)}
+	<Tabs.Content value="backup" class="h-full min-h-0">
+		{#if !isGitOpsManaged}
+			<ProjectGitBackupSummary environmentId={envId} projectId={project.id} projectName={project.name} />
+		{/if}
+	</Tabs.Content>
 {/snippet}
 
 {#snippet projectServicesTab(project: Project)}
@@ -2213,60 +2268,16 @@
 					void refreshProjectDetails();
 				}}
 				onRefresh={() => refreshProjectDetails()}
-			>
-				{#snippet leadingActions(size, showLabel)}
-					{#if canUpdateProject}
-						<ArcaneButton
-							action="save"
-							{size}
-							{showLabel}
-							loading={isLoading.saving}
-							onclick={handleSaveChanges}
-							disabled={!canSave}
-							customLabel={m.common_save()}
-							loadingLabel={m.common_saving()}
-						/>
-					{/if}
-					<IfPermitted perm="projects:archive">
-						<ArcaneButton
-							action="archive"
-							{size}
-							{showLabel}
-							loading={isLoading.archiving}
-							onclick={handleArchiveToggle}
-							disabled={archiveRequiresStopped}
-							title={archiveRequiresStopped ? m.projects_archive_requires_stopped() : undefined}
-							customLabel={project?.isArchived ? m.projects_unarchive() : m.projects_archive()}
-						/>
-					</IfPermitted>
-				{/snippet}
-
-				{#snippet leadingMenuItems()}
-					{#if canUpdateProject}
-						<DropdownMenu.Item onclick={handleSaveChanges} disabled={!canSave || isLoading.saving}>
-							{isLoading.saving ? m.common_saving() : m.common_save()}
-						</DropdownMenu.Item>
-					{/if}
-					{#if canArchiveProject}
-						<DropdownMenu.Item
-							onclick={handleArchiveToggle}
-							disabled={archiveRequiresStopped || isLoading.archiving}
-							title={archiveRequiresStopped ? m.projects_archive_requires_stopped() : undefined}
-						>
-							{project?.isArchived ? m.projects_unarchive() : m.projects_archive()}
-						</DropdownMenu.Item>
-					{/if}
-					{#if canUpdateProject || canArchiveProject}
-						<DropdownMenu.Separator />
-					{/if}
-				{/snippet}
-			</ActionButtons>
+				extraActions={projectExtraActions}
+			/>
 		{/snippet}
 
 		{#snippet tabContent()}
 			{@render projectServicesTab(project)}
 
 			{@render projectComposeTab(project)}
+
+			{@render projectBackupTab(project)}
 		{/snippet}
 	</TabbedPageLayout>
 {:else}

@@ -5,7 +5,8 @@
 	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { roleService } from '#lib/services/role-service.js';
-	import { SettingsPageLayout, type SettingsActionButton } from '#lib/layouts/index.js';
+	import { SettingsPageLayout } from '#lib/layouts/index.js';
+	import type { ActionButton } from '#lib/components/action-button-group/types.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
 
 	let { data } = $props();
@@ -20,13 +21,14 @@
 		roles = await roleService.getRoles(requestOptions);
 	}
 
-	const actionButtons: SettingsActionButton[] = $derived.by(() =>
+	const actionButtons: ActionButton[] = $derived.by(() =>
 		!isAdmin
 			? []
 			: [
 					{
 						id: 'create',
 						action: 'create',
+						placement: 'primary',
 						label: m.common_create_button({ resource: m.common_role() }),
 						onclick: () => goto('/settings/roles/new')
 					}

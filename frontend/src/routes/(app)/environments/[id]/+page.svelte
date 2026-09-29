@@ -129,7 +129,8 @@
 		if (settingsForm.hasChanges) {
 			actions.push({
 				id: 'reset',
-				action: 'restart',
+				action: 'base',
+				placement: 'secondary',
 				label: m.common_reset(),
 				onclick: resetForm,
 				disabled: settingsForm.isLoading,
@@ -139,6 +140,7 @@
 		actions.push({
 			id: 'save',
 			action: 'save',
+			placement: 'primary',
 			label: m.common_save(),
 			loadingLabel: m.common_saving(),
 			onclick: onSubmit,
@@ -156,6 +158,8 @@
 		actions.push({
 			id: 'refresh',
 			action: 'refresh',
+			placement: 'secondary',
+			iconOnly: true,
 			label: m.common_refresh(),
 			onclick: refreshEnvironment,
 			disabled: isRefreshing,
@@ -666,6 +670,23 @@
 	}
 </script>
 
+{#snippet enabledIndicator()}
+	<div class="flex shrink-0 items-center gap-2.5 rounded-lg border border-border/60 bg-card/40 px-3 py-1.5">
+		<div class="flex items-center gap-2">
+			<div
+				class={cn(
+					'size-2 rounded-full transition-colors',
+					formInputs.enabled.value ? 'bg-success shadow-glow shadow-success' : 'bg-muted-foreground/40'
+				)}
+			></div>
+			<span class="text-sm font-medium">
+				{formInputs.enabled.value ? m.common_enabled() : m.common_disabled()}
+			</span>
+		</div>
+		<Switch id="env-enabled-header" bind:checked={formInputs.enabled.value} />
+	</div>
+{/snippet}
+
 <div class="container mx-auto max-w-full space-y-6 overflow-hidden p-2 sm:p-6">
 	<div class="space-y-3 sm:space-y-4">
 		<ArcaneButton
@@ -690,33 +711,6 @@
 							placeholder={m.environments_name_placeholder()}
 							class="max-w-56 min-w-0 sm:max-w-80 md:max-w-104"
 						/>
-
-						<!-- Enable/Disable indicator -->
-						<div class="flex shrink-0 items-center gap-2.5 rounded-lg border border-border/60 bg-card/40 px-3 py-1.5">
-							<div class="flex items-center gap-2">
-								<div
-									class={cn(
-										'size-2 rounded-full transition-colors',
-										formInputs.enabled.value ? 'bg-success shadow-glow shadow-success' : 'bg-muted-foreground/40'
-									)}
-								></div>
-								<span class="text-sm font-medium">
-									{formInputs.enabled.value ? m.common_enabled() : m.common_disabled()}
-								</span>
-							</div>
-							{#if environment.id === '0'}
-								<ArcaneTooltip.Root>
-									<ArcaneTooltip.Trigger>
-										<Switch id="env-enabled-header" disabled={true} bind:checked={formInputs.enabled.value} />
-									</ArcaneTooltip.Trigger>
-									<ArcaneTooltip.Content>
-										<p>{m.environments_local_setting_disabled()}</p>
-									</ArcaneTooltip.Content>
-								</ArcaneTooltip.Root>
-							{:else}
-								<Switch id="env-enabled-header" bind:checked={formInputs.enabled.value} />
-							{/if}
-						</div>
 					</div>
 					<div class="mt-1 flex min-w-0 items-center gap-1">
 						{#if isEditingApiUrl}
@@ -784,14 +778,15 @@
 				</div>
 			</div>
 
-			<!-- ActionButtonGroup measures its own width to decide what overflows, so it
-			     needs a row that actually spans the header, not a shrink-to-fit column. -->
-			<div class="flex w-full min-w-0 shrink-0 flex-col items-start gap-2 sm:w-auto sm:min-w-md sm:items-end">
+			<div class="flex w-full min-w-0 shrink-0 flex-col items-start gap-2 sm:w-auto sm:items-end">
 				<span class={cn('text-xs', settingsForm.hasChanges ? 'text-warning' : 'text-success')}>
 					{settingsForm.hasChanges ? m.common_unsaved_changes() : m.common_all_changes_saved()}
 				</span>
-				<div class="flex w-full">
-					<ActionButtonGroup buttons={headerActions} class="justify-end" />
+				<div class="flex w-full items-center justify-end gap-2">
+					{#if environment.id !== '0'}
+						{@render enabledIndicator()}
+					{/if}
+					<ActionButtonGroup buttons={headerActions} />
 				</div>
 			</div>
 		</div>

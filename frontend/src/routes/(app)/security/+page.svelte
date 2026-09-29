@@ -359,6 +359,7 @@
 			buttons.push({
 				id: 'scan-all',
 				action: 'base',
+				placement: 'primary',
 				label: isLoading.scanningAll ? `${m.scanning()} (${scanProgress.current}/${scanProgress.total})` : m.security_scan_all(),
 				onclick: scanAllImages,
 				loading: isLoading.scanningAll,
@@ -368,7 +369,9 @@
 		}
 		buttons.push({
 			id: 'refresh',
-			action: 'restart',
+			action: 'refresh',
+			placement: 'secondary',
+			iconOnly: true,
 			label: m.common_refresh(),
 			onclick: () => refreshAll(),
 			loading: isLoading.refreshing,

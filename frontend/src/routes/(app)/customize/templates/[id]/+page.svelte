@@ -7,7 +7,8 @@
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import CodeEditor from '#lib/components/code-editor/editor.svelte';
 	import TemplateEditorWorkspace from '../components/template-editor-workspace.svelte';
-	import { ResourceDetailLayout, type DetailAction } from '#lib/layouts/index.js';
+	import { ResourceDetailLayout } from '#lib/layouts/index.js';
+	import type { ActionButton } from '#lib/components/action-button-group/types.js';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
 	import { goto, refreshAll } from '$app/navigation';
 	import { m } from '#lib/paraglide/messages.js';
@@ -199,10 +200,11 @@
 	}
 
 	const remoteActions = $derived.by(() => {
-		const actions: DetailAction[] = [
+		const actions: ActionButton[] = [
 			{
 				id: 'create-project',
 				action: 'create',
+				placement: 'primary',
 				label: m.compose_create_project(),
 				onclick: () => goto(`/projects/new?templateId=${template.id}`)
 			}
@@ -211,6 +213,7 @@
 			actions.push({
 				id: 'download',
 				action: 'base',
+				placement: 'secondary',
 				label: m.templates_download(),
 				loadingLabel: m.common_action_downloading(),
 				loading: status.isDownloading,
@@ -221,6 +224,7 @@
 			actions.push({
 				id: 'view-local',
 				action: 'base',
+				placement: 'secondary',
 				label: m.templates_view_local_version(),
 				onclick: () => goto(`/customize/templates/${localVersionOfRemote?.id}`)
 			});

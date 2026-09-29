@@ -169,6 +169,7 @@
 			buttons.push({
 				id: 'create',
 				action: 'create',
+				placement: 'primary',
 				label: m.templates_create_template(),
 				onclick: () => goto('/customize/templates/create')
 			});
@@ -183,7 +184,9 @@
 		}
 		buttons.push({
 			id: 'refresh',
-			action: 'restart',
+			action: 'refresh',
+			placement: 'secondary',
+			iconOnly: true,
 			label: m.common_refresh(),
 			onclick: refreshTemplates
 		});

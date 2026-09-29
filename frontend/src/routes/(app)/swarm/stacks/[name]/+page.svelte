@@ -209,6 +209,7 @@
 					{
 						id: 'edit',
 						action: 'base' as const,
+						placement: 'primary' as const,
 						label: m.common_edit(),
 						icon: EditIcon,
 						onclick: () => goto(`/swarm/stacks/new?fromStack=${encodeURIComponent(stackName)}`),
@@ -217,6 +218,8 @@
 					{
 						id: 'remove',
 						action: 'remove' as const,
+						group: 'danger' as const,
+						destructive: true,
 						label: m.common_delete(),
 						icon: TrashIcon,
 						onclick: handleDelete,
@@ -227,7 +230,9 @@
 			: []),
 		{
 			id: 'refresh',
-			action: 'restart',
+			action: 'refresh',
+			placement: 'secondary',
+			iconOnly: true,
 			label: m.common_refresh(),
 			onclick: refresh,
 			loading: isLoading.refresh,

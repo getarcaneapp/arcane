@@ -1,5 +1,5 @@
 <script module lang="ts">
-	export type MetricRingVariant = 'cpu' | 'memory' | 'disk';
+	export type MetricRingVariant = 'cpu' | 'memory' | 'disk' | 'backup';
 
 	let uidCounter = 0;
 	function nextUid() {
@@ -9,7 +9,8 @@
 	const gradientStops: Record<MetricRingVariant, [string, string]> = {
 		cpu: ['oklch(0.75 0.18 35)', 'oklch(0.65 0.24 25)'],
 		memory: ['oklch(0.72 0.18 300)', 'oklch(0.58 0.25 290)'],
-		disk: ['oklch(0.78 0.15 195)', 'oklch(0.62 0.16 220)']
+		disk: ['oklch(0.78 0.15 195)', 'oklch(0.62 0.16 220)'],
+		backup: ['oklch(0.72 0.17 150)', 'oklch(0.6 0.19 160)']
 	};
 </script>
 

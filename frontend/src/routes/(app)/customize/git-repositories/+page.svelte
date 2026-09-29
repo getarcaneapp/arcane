@@ -104,13 +104,16 @@
 			buttons.push({
 				id: 'create',
 				action: 'create',
+				placement: 'primary',
 				label: m.common_add_button({ resource: m.resource_repository_cap() }),
 				onclick: openCreateRepositoryDialog
 			});
 		}
 		buttons.push({
 			id: 'refresh',
-			action: 'restart',
+			action: 'refresh',
+			placement: 'secondary',
+			iconOnly: true,
 			label: m.common_refresh(),
 			onclick: refreshRepositories,
 			loading: isLoading.refresh,

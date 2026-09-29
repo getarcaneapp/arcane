@@ -1,7 +1,5 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
 	import { NetworksIcon, ConnectionIcon } from '#lib/icons/index.js';
-	import { GitBranchIcon } from '#lib/icons/index.js';
 	import { toast } from 'svelte-sonner';
 	import type { NetworkCreateOptions, NetworkUsageCounts } from '#lib/types/docker.js';
 	import CreateNetworkSheet from '#lib/components/sheets/create-network-sheet.svelte';
@@ -93,6 +91,7 @@
 		{
 			id: 'create',
 			action: 'create',
+			placement: 'primary',
 			label: m.common_create_button({ resource: m.resource_network_cap() }),
 			onclick: () => (pageState.isCreateDialogOpen = true),
 			loading: createNetworkMutation.isPending,
@@ -100,19 +99,13 @@
 		},
 		{
 			id: 'refresh',
-			action: 'restart',
+			action: 'refresh',
+			placement: 'secondary',
+			iconOnly: true,
 			label: m.common_refresh(),
 			onclick: refresh,
 			loading: isRefreshing,
 			disabled: networksQuery.isFetching
-		},
-		{
-			id: 'topology',
-			action: 'inspect',
-			label: m.networks_topology_button(),
-			icon: GitBranchIcon,
-			onclick: () => void goto('/networks/topology'),
-			disabled: !resourcesReady
 		}
 	]);
 

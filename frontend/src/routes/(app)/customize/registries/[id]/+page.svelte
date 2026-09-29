@@ -12,7 +12,8 @@
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import * as InputGroup from '#lib/components/ui/input-group/index.js';
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
-	import { ResourceDetailLayout, type DetailAction } from '#lib/layouts/index.js';
+	import { ResourceDetailLayout } from '#lib/layouts/index.js';
+	import type { ActionButton } from '#lib/components/action-button-group/types.js';
 	import { AlertTriangleIcon, ArrowRightIcon, RegistryIcon, SearchIcon, TagIcon, TrashIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { containerRegistryService } from '#lib/services/container-registry-service.js';
@@ -156,10 +157,12 @@
 		});
 	}
 
-	const actions: DetailAction[] = $derived([
+	const actions: ActionButton[] = $derived([
 		{
 			id: 'refresh',
 			action: 'refresh',
+			placement: 'secondary',
+			iconOnly: true,
 			label: m.common_refresh(),
 			loading: refreshing,
 			disabled: refreshing,

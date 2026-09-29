@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
-	import { ArcaneButton, type ArcaneButtonSize } from '#lib/components/arcane-button/index.js';
 	import { goto, refreshAll } from '$app/navigation';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import ActionButtons from '#lib/components/action-buttons.svelte';
@@ -50,8 +49,8 @@
 	import { projectWorkspaceService } from '#lib/services/project-workspace-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { hasPermission } from '#lib/utils/auth.js';
-	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
-	import { EditIcon, ImagesIcon, PauseIcon, PlayIcon, ProjectsIcon, UpdateIcon, ZapIcon } from '#lib/icons/index.js';
+	import type { ActionButton } from '#lib/components/action-button-group/types.js';
+	import { EditIcon, ProjectsIcon } from '#lib/icons/index.js';
 	import { runContainerLifecycleAction, confirmAndUpdateContainer } from '#lib/utils/container-actions.js';
 	import { useQueryClient } from '@tanstack/svelte-query';
 	import { queryKeys } from '#lib/query/query-keys.js';
@@ -376,6 +375,73 @@
 
 		return '/containers';
 	});
+
+	const containerExtraActions = $derived.by((): ActionButton[] => {
+		if (!container) return [];
+		const list: ActionButton[] = [];
+		if (canEditContainer) {
+			list.push({
+				id: 'edit',
+				action: 'edit',
+				label: m.common_edit(),
+				icon: EditIcon,
+				group: 'manage',
+				href: `/containers/${container.id}/edit`
+			});
+		}
+		if (canConvertToCompose) {
+			list.push({
+				id: 'convert',
+				action: 'base',
+				label: m.compose_convert_action(),
+				icon: ProjectsIcon,
+				group: 'manage',
+				href: `/projects/new?fromContainers=${container.id}&fromEnv=${encodeURIComponent(currentEnvId)}`
+			});
+		}
+		if (canUpdateContainer && updateInfo?.hasUpdate) {
+			list.push({
+				id: 'update',
+				action: 'update',
+				label: m.update_container(),
+				group: 'manage',
+				loading: updateLoading,
+				onclick: handleUpdateContainer
+			});
+		}
+		if (canPauseContainer && (isContainerPaused || isContainerRunning)) {
+			list.push({
+				id: 'pause',
+				action: isContainerPaused ? 'unpause' : 'pause',
+				label: isContainerPaused ? m.common_unpause() : m.common_pause(),
+				group: 'lifecycle',
+				loading: lifecycleStatus !== '',
+				disabled: isLifecycleActionPending,
+				onclick: isContainerPaused ? handleUnpauseContainer : handlePauseContainer
+			});
+		}
+		if (canCommitImage) {
+			list.push({
+				id: 'commit',
+				action: 'commit',
+				label: m.commit(),
+				group: 'manage',
+				onclick: () => (commitDialogOpen = true)
+			});
+		}
+		if (canKillContainer && (isContainerRunning || isContainerPaused)) {
+			list.push({
+				id: 'kill',
+				action: 'kill',
+				label: m.common_kill(),
+				group: 'danger',
+				destructive: true,
+				disabled: isLifecycleActionPending,
+				onclick: () => (killDialogOpen = true)
+			});
+		}
+		return list;
+	});
 </script>
 
 {#snippet containerHeader(container: ContainerDetailsDto)}
@@ -424,120 +490,6 @@
 			</Tabs.Content>
 		{/if}
 	{/await}
-{/snippet}
-
-{#snippet containerLifecycleButtons(
-	container: ContainerDetailsDto,
-	size: ArcaneButtonSize,
-	showLabel: boolean,
-	actionButtonsLifecyclePending: boolean
-)}
-	{#if canEditContainer}
-		<ArcaneButton
-			action="base"
-			{size}
-			{showLabel}
-			customLabel={m.common_edit()}
-			icon={EditIcon}
-			disabled={actionButtonsLifecyclePending}
-			href={`/containers/${container.id}/edit`}
-		/>
-	{/if}
-	{#if canConvertToCompose}
-		<ArcaneButton
-			action="base"
-			{size}
-			{showLabel}
-			customLabel={m.compose_convert_action()}
-			icon={ProjectsIcon}
-			disabled={actionButtonsLifecyclePending}
-			href={`/projects/new?fromContainers=${container.id}&fromEnv=${encodeURIComponent(currentEnvId)}`}
-		/>
-	{/if}
-	{#if canUpdateContainer && updateInfo?.hasUpdate}
-		<ArcaneButton
-			action="base"
-			{size}
-			{showLabel}
-			customLabel={m.update_container()}
-			icon={UpdateIcon}
-			loading={updateLoading}
-			disabled={updateLoading || actionButtonsLifecyclePending}
-			onclick={handleUpdateContainer}
-		/>
-	{/if}
-	{#if canPauseContainer && (isContainerPaused || isContainerRunning)}
-		<ArcaneButton
-			action={isContainerPaused ? 'unpause' : 'pause'}
-			{size}
-			{showLabel}
-			loading={lifecycleStatus === (isContainerPaused ? 'unpausing' : 'pausing')}
-			disabled={isLifecycleActionPending || actionButtonsLifecyclePending}
-			onclick={isContainerPaused ? handleUnpauseContainer : handlePauseContainer}
-		/>
-	{/if}
-	{#if canCommitImage}
-		<ArcaneButton
-			action="commit"
-			{size}
-			{showLabel}
-			disabled={actionButtonsLifecyclePending}
-			onclick={() => (commitDialogOpen = true)}
-		/>
-	{/if}
-	{#if canKillContainer && (isContainerRunning || isContainerPaused)}
-		<ArcaneButton
-			action="kill"
-			{size}
-			{showLabel}
-			disabled={isLifecycleActionPending || actionButtonsLifecyclePending}
-			onclick={() => (killDialogOpen = true)}
-		/>
-	{/if}
-{/snippet}
-
-{#snippet containerLifecycleMenu(container: ContainerDetailsDto, actionButtonsLifecyclePending: boolean)}
-	{#if canConvertToCompose}
-		<DropdownMenu.Item
-			disabled={actionButtonsLifecyclePending}
-			onclick={() => goto(`/projects/new?fromContainers=${container.id}&fromEnv=${encodeURIComponent(currentEnvId)}`)}
-		>
-			<ProjectsIcon class="size-4" />
-			{m.compose_convert_action()}
-		</DropdownMenu.Item>
-	{/if}
-	{#if canUpdateContainer && updateInfo?.hasUpdate}
-		<DropdownMenu.Item disabled={updateLoading || actionButtonsLifecyclePending} onclick={handleUpdateContainer}>
-			<UpdateIcon class="size-4" />
-			{m.update_container()}
-		</DropdownMenu.Item>
-	{/if}
-	{#if canPauseContainer && isContainerPaused}
-		<DropdownMenu.Item disabled={isLifecycleActionPending || actionButtonsLifecyclePending} onclick={handleUnpauseContainer}>
-			<PlayIcon class="size-4" />
-			{m.common_unpause()}
-		</DropdownMenu.Item>
-	{:else if canPauseContainer && isContainerRunning}
-		<DropdownMenu.Item disabled={isLifecycleActionPending || actionButtonsLifecyclePending} onclick={handlePauseContainer}>
-			<PauseIcon class="size-4" />
-			{m.common_pause()}
-		</DropdownMenu.Item>
-	{/if}
-	{#if canCommitImage}
-		<DropdownMenu.Item disabled={actionButtonsLifecyclePending} onclick={() => (commitDialogOpen = true)}>
-			<ImagesIcon class="size-4" />
-			{m.commit()}
-		</DropdownMenu.Item>
-	{/if}
-	{#if canKillContainer && (isContainerRunning || isContainerPaused)}
-		<DropdownMenu.Item
-			disabled={isLifecycleActionPending || actionButtonsLifecyclePending}
-			onclick={() => (killDialogOpen = true)}
-		>
-			<ZapIcon class="size-4" />
-			{m.common_kill()}
-		</DropdownMenu.Item>
-	{/if}
 {/snippet}
 
 {#snippet containerTabs(container: ContainerDetailsDto, activeTab: string)}
@@ -656,15 +608,8 @@
 				type="container"
 				itemState={container.state?.running ? 'running' : 'stopped'}
 				disableRedeploy={!!container.redeployDisabled}
-			>
-				{#snippet beforeRemoveActions(size, showLabel, actionButtonsLifecyclePending)}
-					{@render containerLifecycleButtons(container, size, showLabel, actionButtonsLifecyclePending)}
-				{/snippet}
-
-				{#snippet beforeRemoveMenuItems(actionButtonsLifecyclePending)}
-					{@render containerLifecycleMenu(container, actionButtonsLifecyclePending)}
-				{/snippet}
-			</ActionButtons>
+				extraActions={containerExtraActions}
+			/>
 		{/snippet}
 
 		{#snippet tabContent(activeTab)}

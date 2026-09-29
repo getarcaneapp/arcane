@@ -8,7 +8,8 @@
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
 	import { toast } from 'svelte-sonner';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
-	import { SettingsPageLayout, type SettingsActionButton } from '#lib/layouts/index.js';
+	import { SettingsPageLayout } from '#lib/layouts/index.js';
+	import type { ActionButton } from '#lib/components/action-button-group/types.js';
 	import { AlertIcon, BackupIcon, CloudStorageIcon, InfoIcon, LockIcon, ResetIcon, UploadIcon } from '#lib/icons/index.js';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 	import * as Alert from '#lib/components/ui/alert/index.js';
@@ -523,15 +524,17 @@
 		}
 	}
 
-	const actionButtons: SettingsActionButton[] = $derived.by(() => [
+	const actionButtons: ActionButton[] = $derived.by(() => [
 		{
 			id: 'create',
 			action: 'create',
+			placement: 'primary',
 			label: m.common_create(),
 			disabled: isReadOnly,
-			options: [
-				{ label: m.jobs_schedule(), onclick: () => openSchedule() },
+			menuItems: [
+				{ id: 'schedule', label: m.jobs_schedule(), onclick: () => openSchedule() },
 				{
+					id: 'workspace-backup',
 					label: m.volumes_workspace_backup(),
 					onclick: () => openAction('create'),
 					disabled: backupActivity.activeIds.length > 0
@@ -543,7 +546,7 @@
 			action: 'edit',
 			icon: CloudStorageIcon,
 			label: m.s3_destinations_title(),
-			onclick: () => goto('/settings/backups/s3')
+			href: '/settings/backups/s3'
 		},
 		...(!policyCollection.recoveryKeyStored
 			? [
@@ -553,7 +556,7 @@
 						label: m.system_backups_discover(),
 						onclick: () => openAction('discover'),
 						disabled: isReadOnly || data.destinations.length === 0
-					} satisfies SettingsActionButton
+					} satisfies ActionButton
 				]
 			: []),
 		...(canManageRecoveryKey
@@ -564,8 +567,9 @@
 						icon: LockIcon,
 						label: m.system_backups_recovery_key(),
 						disabled: isReadOnly,
-						options: [
+						menuItems: [
 							{
+								id: 'recovery-key-set',
 								label: policyCollection.recoveryKeyStored
 									? m.system_backups_reset_recovery_key()
 									: m.system_backups_create_recovery_key(),
@@ -573,12 +577,13 @@
 								onclick: () => openRecoveryKey()
 							},
 							{
+								id: 'recovery-key-import',
 								label: m.system_backups_import_recovery_key(),
 								icon: UploadIcon,
 								onclick: () => openImportKey()
 							}
 						]
-					} satisfies SettingsActionButton
+					} satisfies ActionButton
 				]
 			: [])
 	]);

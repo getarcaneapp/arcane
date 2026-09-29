@@ -1,17 +1,13 @@
 <script lang="ts">
-	import { flushSync } from 'svelte';
-	import type { Snippet } from 'svelte';
 	import { openConfirmDialog } from './confirm-dialog';
 	import { goto, refreshAll } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
-	import { ArcaneButton, type ArcaneButtonSize } from '#lib/components/arcane-button/index.js';
-	import DeploySplitButton from '#lib/components/deploy-split-button/deploy-split-button.svelte';
+	import ActionButtonGroup from '#lib/components/action-button-group/action-button-group.svelte';
+	import type { ActionButton } from '#lib/components/action-button-group/types.js';
 	import DeployOptionsMenuItems from '#lib/components/deploy-split-button/deploy-options-menu-items.svelte';
-	import * as ButtonGroup from '#lib/components/ui/button-group/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
-	import { cn } from '#lib/utils.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { deployOptionsStore } from '#lib/stores/deploy-options.store.svelte.js';
@@ -23,7 +19,7 @@
 	import { attachProjectLogsToWatch } from '#lib/utils/watch-logs.js';
 	import type { Project } from '#lib/types/swarm.js';
 	import type { ContainerDetailsDto } from '#lib/types/docker.js';
-	import { ArrowDownIcon, EllipsisIcon, TerminalIcon } from '#lib/icons/index.js';
+	import { TerminalIcon } from '#lib/icons/index.js';
 	import { createMutation } from '@tanstack/svelte-query';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { isDepotBuildAvailable } from '#lib/utils/build-provider.js';
@@ -40,7 +36,6 @@
 		redeploy?: boolean;
 		build?: boolean;
 		remove?: boolean;
-		validating?: boolean;
 		refresh?: boolean;
 	};
 
@@ -49,45 +44,35 @@
 		name,
 		type = 'container',
 		itemState = 'stopped',
-		loading = $bindable<LoadingStates>({}),
-		onActionComplete = $bindable<(status?: string) => void>(() => {}),
+		onActionComplete = () => {},
 		startLoading = $bindable(false),
 		stopLoading = $bindable(false),
 		restartLoading = $bindable(false),
 		removeLoading = $bindable(false),
 		redeployLoading = $bindable(false),
-		refreshLoading = $bindable(false),
 		hasBuildDirective = false,
 		disableRedeploy = false,
 		disabled = false,
 		disabledReason,
 		onRefresh,
-		leadingActions,
-		leadingMenuItems,
-		beforeRemoveActions,
-		beforeRemoveMenuItems
+		extraActions = []
 	}: {
 		id: string;
 		name?: string;
 		type?: TargetType;
 		itemState?: string;
-		loading?: LoadingStates;
 		onActionComplete?: (status?: string) => void;
 		startLoading?: boolean;
 		stopLoading?: boolean;
 		restartLoading?: boolean;
 		removeLoading?: boolean;
 		redeployLoading?: boolean;
-		refreshLoading?: boolean;
 		hasBuildDirective?: boolean;
 		disableRedeploy?: boolean;
 		disabled?: boolean;
 		disabledReason?: string;
 		onRefresh?: () => void | Promise<void>;
-		leadingActions?: Snippet<[ArcaneButtonSize, boolean, boolean]>;
-		leadingMenuItems?: Snippet<[boolean]>;
-		beforeRemoveActions?: Snippet<[ArcaneButtonSize, boolean, boolean]>;
-		beforeRemoveMenuItems?: Snippet<[boolean]>;
+		extraActions?: ActionButton[];
 	} = $props();
 
 	let isLoading = $state<LoadingStates>({
@@ -98,36 +83,29 @@
 		pull: false,
 		build: false,
 		redeploy: false,
-		validating: false,
 		refresh: false
 	});
 
 	function setLoading<K extends keyof LoadingStates>(key: K, value: boolean) {
 		isLoading[key] = value;
-		loading = { ...loading, [key]: value };
 
 		if (key === 'start') startLoading = value;
 		if (key === 'stop') stopLoading = value;
 		if (key === 'restart') restartLoading = value;
 		if (key === 'remove') removeLoading = value;
 		if (key === 'redeploy') redeployLoading = value;
-		if (key === 'refresh') refreshLoading = value;
 	}
 
 	const uiLoading = $derived({
-		start: !!(isLoading.start || loading?.start || startLoading),
-		stop: !!(isLoading.stop || loading?.stop || stopLoading),
-		restart: !!(isLoading.restart || loading?.restart || restartLoading),
-		remove: !!(isLoading.remove || loading?.remove || removeLoading),
-		pull: !!(isLoading.pull || loading?.pull),
-		build: !!(isLoading.build || loading?.build),
-		redeploy: !!(isLoading.redeploy || loading?.redeploy || redeployLoading),
-		validating: !!(isLoading.validating || loading?.validating),
-		refresh: !!(isLoading.refresh || loading?.refresh || refreshLoading)
+		start: !!(isLoading.start || startLoading),
+		stop: !!(isLoading.stop || stopLoading),
+		restart: !!(isLoading.restart || restartLoading),
+		remove: !!(isLoading.remove || removeLoading),
+		pull: !!isLoading.pull,
+		build: !!isLoading.build,
+		redeploy: !!(isLoading.redeploy || redeployLoading),
+		refresh: !!isLoading.refresh
 	});
-	const isLifecycleActionPending = $derived(
-		!!(uiLoading.start || uiLoading.stop || uiLoading.restart || uiLoading.redeploy || uiLoading.remove)
-	);
 
 	const startMutation = createMutation(() => ({
 		mutationKey: ['action', 'start', type, id],
@@ -205,6 +183,9 @@
 		onSettled: () => setLoading('refresh', false)
 	}));
 
+	const isLifecycleActionPending = $derived(
+		!!(uiLoading.start || uiLoading.stop || uiLoading.restart || uiLoading.redeploy || uiLoading.remove)
+	);
 	const isRunning = $derived(itemState === 'running' || (type === 'project' && itemState === 'partially running'));
 	const projectHasBuildDirective = $derived(type === 'project' && hasBuildDirective);
 
@@ -228,9 +209,6 @@
 	const canRemove = $derived(
 		type === 'container' ? hasPermission('containers:delete', currentEnvId) : hasPermission('projects:delete', currentEnvId)
 	);
-	// Whether the start/stop/restart block above the deploy options renders anything,
-	// so its leading separator never lands next to a caller-provided one.
-	const hasLifecycleMenuItems = $derived((!isRunning && canStart) || (isRunning && (canStop || canRestart)));
 	const canPull = $derived(type === 'project' && hasPermission('projects:deploy', currentEnvId));
 	const canBuild = $derived(type === 'project' && hasPermission('projects:deploy', currentEnvId));
 	const deployButtonLabel = $derived(projectHasBuildDirective ? m.compose_build_and_deploy() : m.common_up());
@@ -242,70 +220,6 @@
 		}
 		return configuredProvider;
 	});
-
-	// The header gives this component a spanning column whose width does not depend on
-	// its content (flex-1 basis-0). We measure the rendered row against that column and
-	// step labels -> icons -> menu until it fits, then probe back up when space returns.
-	// Measuring the real row (instead of an invisible mirror) keeps root font size and
-	// locale label widths in the equation and never mounts the actions twice.
-	type Tier = 'labels' | 'icons' | 'menu';
-	const TIERS: Tier[] = ['labels', 'icons', 'menu'];
-	let tier = $state<Tier>('labels');
-	let rootEl: HTMLElement | undefined;
-	let rowEl: HTMLElement | undefined;
-
-	function fits() {
-		// Commit the current `tier` to the DOM before reading layout.
-		flushSync();
-		if (!rootEl || !rowEl) return true;
-		return rowEl.getBoundingClientRect().width <= rootEl.getBoundingClientRect().width + 0.5;
-	}
-
-	// Step down until the row fits, then probe upward while the larger tier still fits.
-	// `mayLeaveMenu` is false for row-content triggers (label or loading changes) so an
-	// open ellipsis menu is never unmounted underneath the user.
-	function resolveTier(mayLeaveMenu: boolean) {
-		let i = TIERS.indexOf(tier);
-		while (!fits() && i < TIERS.length - 1) {
-			i++;
-			tier = TIERS[i] ?? 'menu';
-		}
-		while (i > 0 && (tier !== 'menu' || mayLeaveMenu)) {
-			const larger = TIERS[i - 1] ?? 'labels';
-			tier = larger;
-			if (fits()) {
-				i--;
-			} else {
-				tier = TIERS[i] ?? 'menu';
-				break;
-			}
-		}
-	}
-
-	function observeRoot(node: HTMLElement) {
-		rootEl = node;
-		const ro = new ResizeObserver(() => resolveTier(true));
-		ro.observe(node);
-		// The floating header bubble is shrink-to-fit, so its column does not grow when the
-		// viewport does; listen to the window as well so we can probe back up.
-		const onResize = () => resolveTier(true);
-		window.addEventListener('resize', onResize);
-		return () => {
-			ro.disconnect();
-			window.removeEventListener('resize', onResize);
-			rootEl = undefined;
-		};
-	}
-
-	function observeRow(node: HTMLElement) {
-		rowEl = node;
-		const ro = new ResizeObserver(() => resolveTier(false));
-		ro.observe(node);
-		return () => {
-			ro.disconnect();
-			if (rowEl === node) rowEl = undefined;
-		};
-	}
 
 	async function handleRefresh() {
 		if (!onRefresh) return;
@@ -570,299 +484,166 @@
 			setLoading('build', false);
 		}
 	}
+
+	const redeployDisabledReason = $derived(disableRedeploy ? m.common_redeploy_disabled_arcane_self() : disabledReason);
+
+	const buttons = $derived.by((): ActionButton[] => {
+		// Page-provided actions pause while a lifecycle operation is in flight.
+		const list: ActionButton[] = extraActions.map((action) => ({
+			...action,
+			disabled: action.disabled || isLifecycleActionPending
+		}));
+
+		if (!isRunning && canStart) {
+			if (type === 'container') {
+				list.push({
+					id: 'start',
+					action: 'start',
+					label: m.common_start(),
+					placement: 'primary',
+					group: 'lifecycle',
+					loading: uiLoading.start,
+					disabled,
+					disabledReason,
+					onclick: () => handleStart()
+				});
+			} else {
+				list.push({
+					id: 'deploy',
+					action: 'deploy',
+					label: deployButtonLabel,
+					placement: 'primary',
+					group: 'lifecycle',
+					loading: uiLoading.start,
+					disabled,
+					disabledReason,
+					onclick: () => handleDeploy(),
+					menuContent: upMenu
+				});
+			}
+		}
+
+		if (isRunning && canStop) {
+			list.push({
+				id: 'stop',
+				action: 'stop',
+				label: type === 'project' ? m.common_down() : m.common_stop(),
+				placement: 'primary',
+				group: 'lifecycle',
+				destructive: true,
+				loading: uiLoading.stop,
+				disabled,
+				disabledReason,
+				onclick: () => handleStop()
+			});
+		}
+
+		if (isRunning && canRestart) {
+			list.push({
+				id: 'restart',
+				action: 'restart',
+				label: m.common_restart(),
+				placement: 'secondary',
+				group: 'lifecycle',
+				loading: uiLoading.restart,
+				disabled,
+				disabledReason,
+				onclick: () => handleRestart()
+			});
+		}
+
+		if (canRedeploy) {
+			list.push({
+				id: 'redeploy',
+				action: 'redeploy',
+				label: m.common_redeploy(),
+				placement: type === 'project' ? 'secondary' : 'menu',
+				group: 'deploy',
+				loading: uiLoading.redeploy,
+				disabled: disabled || disableRedeploy,
+				disabledReason: redeployDisabledReason,
+				onclick: () => confirmAction('redeploy'),
+				menuContent: type === 'project' ? redeployMenu : undefined
+			});
+		}
+
+		if (projectHasBuildDirective && canBuild) {
+			list.push({
+				id: 'build',
+				action: 'build',
+				label: m.build(),
+				group: 'deploy',
+				loading: uiLoading.build,
+				disabled,
+				disabledReason,
+				onclick: () => handleProjectBuild()
+			});
+		}
+
+		if (canPull) {
+			list.push({
+				id: 'pull',
+				action: 'pull',
+				label: m.pull(),
+				group: 'deploy',
+				loading: uiLoading.pull,
+				disabled,
+				disabledReason,
+				onclick: () => handleProjectPull(),
+				menuContent: pullMenu
+			});
+		}
+
+		if (onRefresh) {
+			list.push({
+				id: 'refresh',
+				action: 'refresh',
+				placement: 'secondary',
+				iconOnly: true,
+				label: m.common_refresh(),
+				group: 'manage',
+				loading: uiLoading.refresh,
+				onclick: () => handleRefresh()
+			});
+		}
+
+		if (canRemove) {
+			list.push({
+				id: 'remove',
+				action: 'remove',
+				label: type === 'project' ? m.compose_destroy() : m.common_remove(),
+				group: 'danger',
+				destructive: true,
+				loading: uiLoading.remove,
+				onclick: () => confirmAction('remove')
+			});
+		}
+
+		return list;
+	});
 </script>
 
-{#snippet WatchDropdown(onWatch: () => void, disabled: boolean, size: 'default' | 'icon' = 'default', withDeployOptions = false)}
-	<DropdownMenu.Root>
-		<DropdownMenu.Trigger
-			{disabled}
-			onclick={(event) => event.stopPropagation()}
-			onpointerdown={(event) => event.stopPropagation()}
-		>
-			{#snippet child({ props })}
-				<ArcaneButton
-					{...props}
-					action="base"
-					tone="outline-primary"
-					size="icon"
-					icon={ArrowDownIcon}
-					class={cn(size === 'icon' && 'size-9 rounded-md')}
-					aria-label={m.common_open_menu()}
-				/>
-			{/snippet}
-		</DropdownMenu.Trigger>
-		<DropdownMenu.Content align="end" class={cn(withDeployOptions && 'w-72')}>
-			{#if withDeployOptions}
-				<DeployOptionsMenuItems />
-				<DropdownMenu.Separator />
-			{/if}
-			<DropdownMenu.Item onclick={() => onWatch()}>
-				<TerminalIcon class="size-4" />
-				{m.watch_output()}
-			</DropdownMenu.Item>
-		</DropdownMenu.Content>
-	</DropdownMenu.Root>
+{#snippet watchItem(onWatch: () => void, disabled: boolean, label = m.watch_output())}
+	<DropdownMenu.Item onclick={onWatch} {disabled}>
+		<TerminalIcon class="size-4" />
+		{label}
+	</DropdownMenu.Item>
 {/snippet}
 
-{#snippet RedeployActionButton(size: 'default' | 'icon' = 'default', showLabel = true)}
-	{#if canRedeploy}
-		{#if disabled}
-			<ArcaneButton action="redeploy" {size} {showLabel} disabled title={disabledReason} />
-		{:else if disableRedeploy}
-			<span class="inline-flex" title={m.common_redeploy_disabled_arcane_self()}>
-				<ArcaneButton action="redeploy" {size} {showLabel} disabled />
-			</span>
-		{:else if type === 'project'}
-			<ButtonGroup.Root>
-				<ArcaneButton
-					action="redeploy"
-					{size}
-					{showLabel}
-					{disabled}
-					title={disabledReason}
-					onclick={() => confirmAction('redeploy')}
-					loading={uiLoading.redeploy}
-				/>
-				{@render WatchDropdown(() => confirmRedeploy(true), disabled || !!uiLoading.redeploy, size, true)}
-			</ButtonGroup.Root>
-		{:else}
-			<ArcaneButton
-				action="redeploy"
-				{size}
-				{showLabel}
-				{disabled}
-				title={disabledReason}
-				onclick={() => confirmAction('redeploy')}
-				loading={uiLoading.redeploy}
-			/>
-		{/if}
-	{/if}
+{#snippet upMenu(disabled: boolean)}
+	<DeployOptionsMenuItems />
+	<DropdownMenu.Separator />
+	{@render watchItem(() => handleDeploy(undefined, true), disabled)}
 {/snippet}
 
-{#snippet RedeployMenuItem()}
-	{#if canRedeploy}
-		{#if disabled}
-			<DropdownMenu.Item disabled title={disabledReason}>
-				{m.common_redeploy()}
-			</DropdownMenu.Item>
-		{:else if disableRedeploy}
-			<DropdownMenu.Item disabled title={m.common_redeploy_disabled_arcane_self()}>
-				{m.common_redeploy()}
-			</DropdownMenu.Item>
-		{:else}
-			<DropdownMenu.Item onclick={() => confirmAction('redeploy')} disabled={uiLoading.redeploy}>
-				{m.common_redeploy()}
-			</DropdownMenu.Item>
-		{/if}
-	{/if}
+{#snippet redeployMenu(disabled: boolean)}
+	<DeployOptionsMenuItems />
+	<DropdownMenu.Separator />
+	{@render watchItem(() => confirmRedeploy(true), disabled)}
 {/snippet}
 
-{#snippet DesktopActions(size: 'default' | 'icon', showLabel: boolean)}
-	{@render leadingActions?.(size, showLabel, isLifecycleActionPending)}
-
-	{#if !isRunning && canStart}
-		{#if type === 'container'}
-			<ArcaneButton
-				action="start"
-				{size}
-				{showLabel}
-				{disabled}
-				title={disabledReason}
-				onclick={() => handleStart()}
-				loading={uiLoading.start}
-			/>
-		{:else}
-			<DeploySplitButton
-				{size}
-				{showLabel}
-				{disabled}
-				customLabel={deployButtonLabel}
-				onDeploy={() => handleDeploy()}
-				onDeployWatch={() => handleDeploy(undefined, true)}
-				loading={uiLoading.start}
-			/>
-		{/if}
-	{/if}
-
-	{#if isRunning}
-		{#if canStop}
-			<ArcaneButton
-				action="stop"
-				{size}
-				{showLabel}
-				{disabled}
-				title={disabledReason}
-				customLabel={type === 'project' ? m.common_down() : undefined}
-				onclick={() => handleStop()}
-				loading={uiLoading.stop}
-			/>
-		{/if}
-		{#if canRestart}
-			<ArcaneButton
-				action="restart"
-				{size}
-				{showLabel}
-				{disabled}
-				title={disabledReason}
-				onclick={() => handleRestart()}
-				loading={uiLoading.restart}
-			/>
-		{/if}
-	{/if}
-
-	{#if type === 'container'}
-		{@render RedeployActionButton(size, showLabel)}
-		{@render beforeRemoveActions?.(size, showLabel, isLifecycleActionPending)}
-		{#if canRemove}
-			<ArcaneButton action="remove" {size} {showLabel} onclick={() => confirmAction('remove')} loading={uiLoading.remove} />
-		{/if}
-	{:else}
-		{@render RedeployActionButton(size, showLabel)}
-
-		{#if type === 'project'}
-			{#if projectHasBuildDirective && canBuild}
-				<ArcaneButton
-					action="build"
-					{size}
-					{showLabel}
-					{disabled}
-					title={disabledReason}
-					onclick={() => handleProjectBuild()}
-					loading={uiLoading.build}
-				/>
-			{/if}
-
-			{#if canPull}
-				<ButtonGroup.Root>
-					<ArcaneButton
-						action="pull"
-						{size}
-						{showLabel}
-						{disabled}
-						title={disabledReason}
-						onclick={() => handleProjectPull()}
-						loading={uiLoading.pull}
-					/>
-					{@render WatchDropdown(() => handleProjectPull(true), disabled || !!uiLoading.pull, size)}
-				</ButtonGroup.Root>
-			{/if}
-		{/if}
-
-		{#if onRefresh}
-			<ArcaneButton action="refresh" {size} {showLabel} onclick={() => handleRefresh()} loading={uiLoading.refresh} />
-		{/if}
-
-		{#if canRemove}
-			<ArcaneButton
-				customLabel={type === 'project' ? m.compose_destroy() : m.common_remove()}
-				action="remove"
-				{size}
-				{showLabel}
-				onclick={() => confirmAction('remove')}
-				loading={uiLoading.remove}
-			/>
-		{/if}
-	{/if}
+{#snippet pullMenu(disabled: boolean)}
+	{@render watchItem(() => handleProjectPull(true), disabled, m.pull_and_watch_output())}
 {/snippet}
 
-{#snippet ActionsMenu()}
-	<DropdownMenu.Root>
-		<DropdownMenu.Trigger>
-			{#snippet child({ props })}
-				<button
-					{...props}
-					type="button"
-					class="inline-flex size-9 items-center justify-center rounded-lg border bg-background/70"
-				>
-					<span class="sr-only">{m.common_open_menu()}</span>
-					<EllipsisIcon />
-				</button>
-			{/snippet}
-		</DropdownMenu.Trigger>
-
-		<DropdownMenu.Content align="end" class="z-(--arcane-z-surface) min-w-45">
-			<DropdownMenu.Group>
-				{@render leadingMenuItems?.(isLifecycleActionPending)}
-				{#if !isRunning && canStart}
-					{#if type === 'container'}
-						<DropdownMenu.Item onclick={handleStart} disabled={disabled || uiLoading.start} title={disabledReason}>
-							{m.common_start()}
-						</DropdownMenu.Item>
-					{:else}
-						<DropdownMenu.Item onclick={() => handleDeploy()} disabled={disabled || uiLoading.start} title={disabledReason}>
-							{deployButtonLabel}
-						</DropdownMenu.Item>
-					{/if}
-				{:else if isRunning}
-					{#if canStop}
-						<DropdownMenu.Item onclick={handleStop} disabled={disabled || uiLoading.stop} title={disabledReason}>
-							{type === 'project' ? m.common_down() : m.common_stop()}
-						</DropdownMenu.Item>
-					{/if}
-					{#if canRestart}
-						<DropdownMenu.Item onclick={handleRestart} disabled={disabled || uiLoading.restart} title={disabledReason}>
-							{m.common_restart()}
-						</DropdownMenu.Item>
-					{/if}
-				{/if}
-
-				{#if type === 'project' && (canStart || canRedeploy)}
-					{#if hasLifecycleMenuItems}
-						<DropdownMenu.Separator />
-					{/if}
-					<DeployOptionsMenuItems />
-					<DropdownMenu.Separator />
-				{/if}
-
-				{#if type === 'container'}
-					{@render RedeployMenuItem()}
-					{@render beforeRemoveMenuItems?.(isLifecycleActionPending)}
-					{#if canRemove}
-						<DropdownMenu.Item onclick={() => confirmAction('remove')} disabled={uiLoading.remove}>
-							{m.common_remove()}
-						</DropdownMenu.Item>
-					{/if}
-				{:else}
-					{@render RedeployMenuItem()}
-
-					{#if type === 'project'}
-						{#if projectHasBuildDirective && canBuild}
-							<DropdownMenu.Item onclick={handleProjectBuild} disabled={disabled || uiLoading.build} title={disabledReason}>
-								{m.build()}
-							</DropdownMenu.Item>
-						{/if}
-						{#if canPull}
-							<DropdownMenu.Item onclick={() => handleProjectPull()} disabled={disabled || uiLoading.pull} title={disabledReason}>
-								{m.pull()}
-							</DropdownMenu.Item>
-						{/if}
-					{/if}
-
-					{#if onRefresh}
-						<DropdownMenu.Item onclick={handleRefresh} disabled={uiLoading.refresh}>
-							{m.common_refresh()}
-						</DropdownMenu.Item>
-					{/if}
-
-					{#if canRemove}
-						<DropdownMenu.Item onclick={() => confirmAction('remove')} disabled={uiLoading.remove}>
-							{type === 'project' ? m.compose_destroy() : m.common_remove()}
-						</DropdownMenu.Item>
-					{/if}
-				{/if}
-			</DropdownMenu.Group>
-		</DropdownMenu.Content>
-	</DropdownMenu.Root>
-{/snippet}
-
-<div class="flex min-w-0 flex-1 justify-end" {@attach observeRoot}>
-	{#if tier === 'menu'}
-		<div class="flex shrink-0 items-center" {@attach observeRow}>
-			{@render ActionsMenu()}
-		</div>
-	{:else}
-		<div class="flex shrink-0 items-center gap-2" {@attach observeRow}>
-			{@render DesktopActions(tier === 'labels' ? 'default' : 'icon', tier === 'labels')}
-		</div>
-	{/if}
-</div>
+<ActionButtonGroup {buttons} class="flex-1" />

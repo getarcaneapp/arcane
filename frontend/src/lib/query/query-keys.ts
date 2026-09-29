@@ -168,7 +168,8 @@ export const queryKeys = {
 		projectBackup: (environmentId: string, projectId: string) =>
 			['gitops-syncs', environmentId, 'project-backup', projectId] as const,
 		backupPreview: (environmentId: string, syncId: string) => ['gitops-syncs', environmentId, syncId, 'backup-preview'] as const,
-		backupHistory: (environmentId: string, syncId: string) => ['gitops-syncs', environmentId, syncId, 'backup-history'] as const,
+		backupHistory: (environmentId: string, syncId: string, limit?: number) =>
+			['gitops-syncs', environmentId, syncId, 'backup-history', limit ?? 'all'] as const,
 		backupRevision: (environmentId: string, syncId: string, commit: string) =>
 			['gitops-syncs', environmentId, syncId, 'backup-revision', commit] as const
 	},

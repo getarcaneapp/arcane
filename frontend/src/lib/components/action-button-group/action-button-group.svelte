@@ -1,303 +1,359 @@
 <script lang="ts">
+	import { flushSync } from 'svelte';
+	import { goto } from '$app/navigation';
 	import * as ButtonGroup from '#lib/components/ui/button-group/index.js';
-	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
-	import type { ArcaneButtonSize } from '#lib/components/arcane-button/index.js';
-	import { EllipsisIcon } from '#lib/icons/index.js';
+	import * as ArcaneTooltip from '#lib/components/arcane-tooltip/index.js';
+	import { Spinner } from '#lib/components/ui/spinner/index.js';
+	import {
+		ArcaneButton,
+		actionConfigs,
+		type ActionConfig,
+		type ArcaneButtonSize,
+		type ArcaneButtonTone
+	} from '#lib/components/arcane-button/index.js';
+	import { ArrowDownIcon, EllipsisIcon } from '#lib/icons/index.js';
 	import { cn } from '#lib/utils.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { ArrowDownIcon } from '#lib/icons/index.js';
-	import type { ActionButton, ActionButtonMenuItem } from './types.js';
+	import type { ActionButton, ActionGroup } from './types.js';
 
 	interface Props {
 		buttons?: ActionButton[];
 		size?: ArcaneButtonSize;
 		class?: string;
-		inlineClass?: string;
-		menuClass?: string;
 	}
 
-	let { buttons = [], size = 'default', class: className = '', inlineClass = '', menuClass = '' }: Props = $props();
+	let { buttons = [], size = 'default', class: className = '' }: Props = $props();
 
-	const DROPDOWN_WIDTH = $derived(size === 'sm' ? 44 : 48);
-	const GAP = 8;
+	const GROUP_ORDER: ActionGroup[] = ['lifecycle', 'deploy', 'manage', 'danger'];
 
-	let containerWidth = $state(0);
-	let buttonWidths = $state<number[]>([]);
-
-	const visibleCount = $derived.by(() => {
-		const total = buttons.length;
-		if (total === 0 || buttonWidths.length === 0 || containerWidth === 0) {
-			return total;
-		}
-
-		const totalWidth = buttonWidths.reduce((sum, w, i) => sum + w + (i > 0 ? GAP : 0), 0);
-		if (totalWidth <= containerWidth) {
-			return total;
-		}
-
-		let usedWidth = DROPDOWN_WIDTH;
-		for (let i = 0; i < total; i++) {
-			const needed = (buttonWidths[i] ?? 0) + (i > 0 ? GAP : 0);
-			if (usedWidth + needed > containerWidth) {
-				return i;
-			}
-			usedWidth += needed;
-		}
-		return total;
+	const groupLabels = $derived<Record<ActionGroup, string>>({
+		lifecycle: m.lifecycle(),
+		deploy: m.deploy(),
+		manage: m.manage(),
+		danger: m.danger_zone()
 	});
 
-	const visibleButtons = $derived(buttons.slice(0, visibleCount));
-	const overflowButtons = $derived(buttons.slice(visibleCount));
+	// Compact mode drops inline labels when the natural row is wider than the host column.
+	// The host column's width never depends on this content, so measuring it cannot loop.
+	let compact = $state(false);
 
-	function handleOverflowAction(button: ActionButton) {
-		if (button.disabled || button.loading) return;
-		if (button.href) {
-			window.location.assign(button.href);
-			return;
-		}
-		button.onclick?.();
+	const primary = $derived(buttons.filter((b) => b.placement === 'primary'));
+	const menuOnly = $derived(buttons.filter((b) => (b.placement ?? 'menu') === 'menu'));
+	// A lone menu item is promoted inline rather than hiding behind a one-entry menu.
+	const promoted = $derived(menuOnly.length === 1 ? menuOnly : []);
+	const secondary = $derived([...buttons.filter((b) => b.placement === 'secondary'), ...promoted]);
+	// Icon-only secondaries (Refresh) sit after the Actions menu at the far right.
+	const secondaryLabelled = $derived(secondary.filter((b) => !b.iconOnly));
+	const secondaryIcons = $derived(secondary.filter((b) => b.iconOnly));
+	const menuGroups = $derived(
+		GROUP_ORDER.map((key) => ({
+			key,
+			items: promoted.length > 0 ? [] : menuOnly.filter((b) => (b.group ?? 'manage') === key)
+		})).filter((g) => g.items.length > 0)
+	);
+	const showMenu = $derived(secondary.length > 0 || menuGroups.length > 0);
+	// With no menu-only items the trigger exists solely to fold secondaries on narrow screens.
+	const menuIsMobileOnly = $derived(menuGroups.length === 0);
+	const foldBreakpoint = $derived(secondaryLabelled.length > 0 ? 'lg' : 'sm');
+	// Labelled secondaries fold into the menu below lg, or whenever the row is compact.
+	const secondariesInline = $derived(!compact);
+	const iconSize = $derived(size === 'sm' ? 'size-8' : 'size-9');
+
+	let rootEl: HTMLElement | undefined;
+	let rowEl: HTMLElement | undefined;
+
+	function overflows() {
+		if (!rootEl || !rowEl) return false;
+		return rowEl.scrollWidth > rootEl.clientWidth + 0.5;
 	}
 
-	function handleMenuItemAction(item: ActionButtonMenuItem) {
-		if (item.disabled) return;
-		if (item.href) {
-			window.location.assign(item.href);
-			return;
-		}
-		item.onclick?.();
+	function remeasure() {
+		compact = false;
+		flushSync();
+		compact = overflows();
 	}
 
-	function measureButtons(actionButtons: ActionButton[], currentSize: ArcaneButtonSize) {
-		void currentSize;
-		return (node: HTMLElement) => {
-			if (actionButtons.length === 0) {
-				buttonWidths = [];
-				return;
-			}
-
-			let rafId: number | null = null;
-			const timeoutId = setTimeout(() => {
-				rafId = requestAnimationFrame(() => {
-					const widths: number[] = [];
-					for (const child of node.children) {
-						widths.push((child as HTMLElement).offsetWidth);
-					}
-					if (widths.length > 0 && widths.length === actionButtons.length) {
-						buttonWidths = widths;
-					}
-				});
-			}, 0);
-
-			return () => {
-				clearTimeout(timeoutId);
-				if (rafId) cancelAnimationFrame(rafId);
-			};
+	function observeRoot(node: HTMLElement) {
+		rootEl = node;
+		const ro = new ResizeObserver(remeasure);
+		ro.observe(node);
+		return () => {
+			ro.disconnect();
+			rootEl = undefined;
 		};
 	}
 
-	function observeWidth(node: HTMLElement) {
-		let rafId: number | null = null;
-		const ro = new ResizeObserver((entries) => {
-			if (rafId) cancelAnimationFrame(rafId);
-			rafId = requestAnimationFrame(() => {
-				const width = entries[0]?.contentRect.width ?? 0;
-				if (width > 0 && width !== containerWidth) {
-					containerWidth = width;
-				}
-			});
+	// Content growth (loading labels, new items) may only tighten, never re-expand.
+	function observeRow(node: HTMLElement) {
+		rowEl = node;
+		const ro = new ResizeObserver(() => {
+			if (!compact && overflows()) compact = true;
 		});
 		ro.observe(node);
 		return () => {
-			if (rafId) cancelAnimationFrame(rafId);
 			ro.disconnect();
+			rowEl = undefined;
 		};
+	}
+
+	function hasMenu(button: ActionButton) {
+		return (button.menuItems?.length ?? 0) > 0 || !!button.menuContent;
+	}
+
+	function toneFor(button: ActionButton): ArcaneButtonTone {
+		if (button.destructive) return 'outline-destructive';
+		return (actionConfigs[button.action] as ActionConfig).tone;
+	}
+
+	function iconFor(button: ActionButton) {
+		if (button.icon === null) return null;
+		return button.icon ?? (actionConfigs[button.action] as ActionConfig).IconComponent;
+	}
+
+	function activate(target: { onclick?: () => void; href?: string }) {
+		if (target.href) {
+			void goto(target.href);
+			return;
+		}
+		target.onclick?.();
 	}
 </script>
 
-{#snippet menuItemsList(items: ActionButtonMenuItem[])}
-	{#each items as item (item.id)}
-		<DropdownMenu.Item onclick={() => handleMenuItemAction(item)} disabled={item.disabled}>
-			{item.label}
-		</DropdownMenu.Item>
-	{/each}
-{/snippet}
-
-{#snippet ellipsisTrigger(srLabel: string)}
-	<DropdownMenu.Trigger>
-		{#snippet child({ props })}
-			<ArcaneButton
-				{...props}
-				action="base"
-				tone="outline"
-				size="icon"
-				class={cn('shrink-0', size === 'sm' ? 'size-8' : 'size-9')}
-			>
-				<span class="sr-only">{srLabel}</span>
-				<EllipsisIcon class="size-4" />
-			</ArcaneButton>
-		{/snippet}
-	</DropdownMenu.Trigger>
-{/snippet}
-
-{#snippet menuButtonLabel(button: ActionButton)}
-	<div class="flex w-full items-center justify-between gap-2">
-		<span>{button.loading ? button.loadingLabel || button.label : button.label}</span>
-		{#if button.badge !== undefined}
-			<span class="text-3xs text-muted-foreground">({button.badge})</span>
-		{/if}
-	</div>
-{/snippet}
-
-{#snippet menuButtons(list: ActionButton[])}
-	<DropdownMenu.Group>
-		{#each list as button (button.id)}
-			{#if button.menuItems && button.menuItems.length > 0}
-				<DropdownMenu.Sub>
-					<DropdownMenu.SubTrigger disabled={button.disabled || button.loading}>
-						{@render menuButtonLabel(button)}
-					</DropdownMenu.SubTrigger>
-					<DropdownMenu.SubContent class="min-w-45">
-						<DropdownMenu.Item onclick={() => handleOverflowAction(button)} disabled={button.disabled || button.loading}>
-							{button.label}
-						</DropdownMenu.Item>
-						<DropdownMenu.Separator />
-						{@render menuItemsList(button.menuItems)}
-					</DropdownMenu.SubContent>
-				</DropdownMenu.Sub>
-			{:else}
-				<DropdownMenu.Item onclick={() => handleOverflowAction(button)} disabled={button.disabled || button.loading}>
-					{@render menuButtonLabel(button)}
-				</DropdownMenu.Item>
-			{/if}
-		{/each}
-	</DropdownMenu.Group>
-{/snippet}
-
-{#snippet buttonContent(button: ActionButton)}
+{#snippet itemBody(button: ActionButton)}
+	{@const Icon = iconFor(button)}
+	{#if button.loading}
+		<Spinner class="size-4" />
+	{:else if Icon}
+		<Icon class="size-4" />
+	{/if}
+	<span class="flex-1">{button.loading ? (button.loadingLabel ?? button.label) : button.label}</span>
 	{#if button.badge !== undefined}
-		<span class="rounded-full border px-1 py-0.5 text-3xs text-muted-foreground">
-			{button.badge}
-		</span>
+		<span class="text-3xs text-muted-foreground">({button.badge})</span>
 	{/if}
 {/snippet}
 
-{#snippet splitButton(button: ActionButton, inert: boolean)}
-	<ButtonGroup.Root>
-		<ArcaneButton
-			action={button.action}
-			customLabel={button.label}
-			loadingLabel={button.loadingLabel}
-			loading={button.loading}
-			disabled={button.disabled}
-			onclick={inert ? () => {} : button.onclick}
-			href={button.href}
-			rel={button.rel}
-			{size}
-			icon={button.icon}
+{#snippet menuEntries(button: ActionButton)}
+	{@const parentDisabled = !!(button.disabled || button.loading)}
+	{#each button.menuItems ?? [] as item (item.id)}
+		{@const ItemIcon = item.icon}
+		<DropdownMenu.Item
+			variant={item.destructive ? 'destructive' : 'default'}
+			disabled={parentDisabled || item.disabled}
+			onclick={() => activate(item)}
 		>
-			{@render buttonContent(button)}
-		</ArcaneButton>
+			{#if ItemIcon}
+				<ItemIcon class="size-4" />
+			{/if}
+			{item.label}
+		</DropdownMenu.Item>
+	{/each}
+	{@render button.menuContent?.(parentDisabled)}
+{/snippet}
 
-		{#if inert}
-			<ArcaneButton action="base" tone="outline" size="icon" onclick={() => {}} class={cn(size === 'sm' ? 'size-8' : 'size-9')}>
-				<ArrowDownIcon class="size-4" />
-			</ArcaneButton>
-		{:else}
+{#snippet menuItem(button: ActionButton)}
+	{#if button.onclick || button.href}
+		<DropdownMenu.Item
+			variant={button.destructive ? 'destructive' : 'default'}
+			disabled={button.disabled || button.loading}
+			title={button.disabledReason}
+			onclick={() => activate(button)}
+		>
+			{@render itemBody(button)}
+		</DropdownMenu.Item>
+	{/if}
+	{#if hasMenu(button)}
+		{@render menuEntries(button)}
+	{/if}
+{/snippet}
+
+{#snippet plainButton(button: ActionButton)}
+	<ArcaneButton
+		action={button.action}
+		tone={toneFor(button)}
+		{size}
+		showLabel={!compact}
+		aria-label={button.label}
+		customLabel={button.label}
+		loadingLabel={button.loadingLabel}
+		loading={button.loading}
+		disabled={button.disabled}
+		title={button.disabledReason}
+		onclick={button.onclick}
+		href={button.href}
+		rel={button.rel}
+		icon={button.icon}
+	>
+		{#if button.badge !== undefined}
+			<span class="rounded-full border px-1 py-0.5 text-3xs text-muted-foreground">{button.badge}</span>
+		{/if}
+	</ArcaneButton>
+{/snippet}
+
+{#snippet dropdownContent(button: ActionButton)}
+	<DropdownMenu.Content align="end" class={cn('z-(--arcane-z-surface)', button.menuContent ? 'w-72' : 'min-w-45')}>
+		{@render menuEntries(button)}
+	</DropdownMenu.Content>
+{/snippet}
+
+{#snippet inlineButton(button: ActionButton)}
+	{#if button.iconOnly}
+		<ArcaneTooltip.Root>
+			<ArcaneTooltip.Trigger>
+				{#snippet child({ props })}
+					<ArcaneButton
+						{...props}
+						action={button.action}
+						tone={toneFor(button)}
+						size="icon"
+						class={iconSize}
+						customLabel={button.label}
+						loadingLabel={button.loadingLabel}
+						loading={button.loading}
+						disabled={button.disabled}
+						title={button.disabledReason}
+						onclick={button.onclick}
+						href={button.href}
+						rel={button.rel}
+						icon={button.icon}
+					/>
+				{/snippet}
+			</ArcaneTooltip.Trigger>
+			<ArcaneTooltip.Content>{button.label}</ArcaneTooltip.Content>
+		</ArcaneTooltip.Root>
+	{:else if hasMenu(button) && (button.onclick || button.href)}
+		<ButtonGroup.Root>
+			{@render plainButton(button)}
 			<DropdownMenu.Root>
-				<DropdownMenu.Trigger>
+				<DropdownMenu.Trigger disabled={button.disabled || button.loading}>
 					{#snippet child({ props })}
 						<ArcaneButton
 							{...props}
 							action="base"
-							tone="outline"
+							tone={toneFor(button)}
 							size="icon"
+							class={cn(iconSize, size === 'sm' && 'rounded-lg')}
 							icon={ArrowDownIcon}
-							class={size === 'sm' ? 'size-8 rounded-lg' : undefined}
 							aria-label={m.common_open_menu()}
 						/>
 					{/snippet}
 				</DropdownMenu.Trigger>
-
-				<DropdownMenu.Content align="end" class="min-w-45">
-					{@render menuItemsList(button.menuItems ?? [])}
-				</DropdownMenu.Content>
+				{@render dropdownContent(button)}
 			</DropdownMenu.Root>
-		{/if}
-	</ButtonGroup.Root>
+		</ButtonGroup.Root>
+	{:else if hasMenu(button)}
+		<DropdownMenu.Root>
+			<DropdownMenu.Trigger disabled={button.disabled || button.loading}>
+				{#snippet child({ props })}
+					<ArcaneButton
+						{...props}
+						action={button.action}
+						tone={toneFor(button)}
+						{size}
+						showLabel={!compact}
+						aria-label={button.label}
+						customLabel={button.label}
+						loading={button.loading}
+						icon={button.icon}
+					>
+						<ArrowDownIcon class="size-3.5 opacity-60" />
+					</ArcaneButton>
+				{/snippet}
+			</DropdownMenu.Trigger>
+			{@render dropdownContent(button)}
+		</DropdownMenu.Root>
+	{:else}
+		{@render plainButton(button)}
+	{/if}
 {/snippet}
 
 {#if buttons.length > 0}
-	<div class={cn('relative flex min-w-0 flex-1 items-center justify-end gap-2', className)} {@attach observeWidth}>
-		<div
-			{@attach measureButtons(buttons, size)}
-			class="pointer-events-none invisible absolute top-0 left-0 flex items-center gap-2"
-			aria-hidden="true"
-			inert
-		>
-			{#each buttons as button (button.id)}
-				{#if button.menuItems && button.menuItems.length > 0}
-					{@render splitButton(button, true)}
-				{:else}
-					<ArcaneButton
-						action={button.action}
-						customLabel={button.label}
-						loadingLabel={button.loadingLabel}
-						loading={button.loading}
-						disabled={button.disabled}
-						onclick={() => {}}
-						href={button.href}
-						rel={button.rel}
-						{size}
-						icon={button.icon}
-					>
-						{@render buttonContent(button)}
-					</ArcaneButton>
-				{/if}
-			{/each}
-		</div>
-
-		<div class={cn('hidden items-center gap-2 lg:flex', inlineClass)}>
-			{#each visibleButtons as button (button.id)}
-				{#if button.menuItems && button.menuItems.length > 0}
-					{@render splitButton(button, false)}
-				{:else}
-					<ArcaneButton
-						action={button.action}
-						customLabel={button.label}
-						loadingLabel={button.loadingLabel}
-						loading={button.loading}
-						disabled={button.disabled}
-						onclick={button.onclick}
-						href={button.href}
-						rel={button.rel}
-						{size}
-						icon={button.icon}
-					>
-						{@render buttonContent(button)}
-					</ArcaneButton>
-				{/if}
+	<div class={cn('flex min-w-0 items-center justify-end', className)} {@attach observeRoot}>
+		<div class="flex shrink-0 items-center gap-2" {@attach observeRow}>
+			{#each primary as button (button.id)}
+				{@render inlineButton(button)}
 			{/each}
 
-			{#if overflowButtons.length > 0}
+			{#if secondaryLabelled.length > 0 && secondariesInline}
+				<div class="hidden items-center gap-2 lg:flex">
+					{#each secondaryLabelled as button (button.id)}
+						{@render inlineButton(button)}
+					{/each}
+				</div>
+			{/if}
+
+			{#if showMenu}
 				<DropdownMenu.Root>
-					{@render ellipsisTrigger(m.common_more_actions())}
+					<DropdownMenu.Trigger>
+						{#snippet child({ props })}
+							<ArcaneButton
+								{...props}
+								action="base"
+								tone="outline-primary"
+								{size}
+								class={cn(
+									'max-sm:size-9 max-sm:p-0',
+									compact && 'size-9 p-0',
+									menuIsMobileOnly && !compact && `${foldBreakpoint}:hidden`
+								)}
+								aria-label={m.common_more_actions()}
+							>
+								{#if compact}
+									<EllipsisIcon class="size-4" />
+								{:else}
+									<span class="hidden sm:inline">{m.common_actions()}</span>
+									<ArrowDownIcon class="hidden size-4 sm:block" />
+									<EllipsisIcon class="size-4 sm:hidden" />
+								{/if}
+							</ArcaneButton>
+						{/snippet}
+					</DropdownMenu.Trigger>
 
-					<DropdownMenu.Content align="end" class="min-w-40">
-						{@render menuButtons(overflowButtons)}
+					<DropdownMenu.Content align="end" class="z-(--arcane-z-surface) min-w-52">
+						{#if secondaryLabelled.length > 0}
+							<DropdownMenu.Group class={secondariesInline ? 'lg:hidden' : undefined}>
+								{#each secondaryLabelled as button (button.id)}
+									{@render menuItem(button)}
+								{/each}
+							</DropdownMenu.Group>
+						{/if}
+						{#if secondaryIcons.length > 0}
+							<DropdownMenu.Group class="sm:hidden">
+								{#each secondaryIcons as button (button.id)}
+									{@render menuItem(button)}
+								{/each}
+							</DropdownMenu.Group>
+						{/if}
+						{#if secondary.length > 0 && menuGroups.length > 0}
+							<DropdownMenu.Separator class={secondaryLabelled.length > 0 && secondariesInline ? 'lg:hidden' : 'sm:hidden'} />
+						{/if}
+
+						{#each menuGroups as group, i (group.key)}
+							{#if i > 0}
+								<DropdownMenu.Separator />
+							{/if}
+							<DropdownMenu.Group>
+								{#if menuGroups.length > 1}
+									<DropdownMenu.GroupHeading>
+										{groupLabels[group.key]}
+									</DropdownMenu.GroupHeading>
+								{/if}
+								{#each group.items as button (button.id)}
+									{@render menuItem(button)}
+								{/each}
+							</DropdownMenu.Group>
+						{/each}
 					</DropdownMenu.Content>
 				</DropdownMenu.Root>
 			{/if}
-		</div>
 
-		<div class={cn('flex items-center gap-2 lg:hidden', menuClass)}>
-			<DropdownMenu.Root>
-				{@render ellipsisTrigger('More actions')}
-
-				<DropdownMenu.Content align="end" class="min-w-40">
-					{@render menuButtons(buttons)}
-				</DropdownMenu.Content>
-			</DropdownMenu.Root>
+			{#if secondaryIcons.length > 0}
+				<div class="hidden items-center gap-2 sm:flex">
+					{#each secondaryIcons as button (button.id)}
+						{@render inlineButton(button)}
+					{/each}
+				</div>
+			{/if}
 		</div>
 	</div>
 {/if}

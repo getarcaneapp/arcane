@@ -233,6 +233,7 @@
 			buttons.push({
 				id: 'pull',
 				action: 'pull',
+				placement: 'primary',
 				label: m.images_pull_image(),
 				onclick: () => (isPullDialogOpen = true),
 				disabled: !resourcesReady
@@ -268,7 +269,9 @@
 		}
 		buttons.push({
 			id: 'refresh',
-			action: 'restart',
+			action: 'refresh',
+			placement: 'secondary',
+			iconOnly: true,
 			label: m.common_refresh(),
 			onclick: refresh,
 			loading: isRefreshing,
@@ -278,6 +281,8 @@
 			buttons.push({
 				id: 'prune',
 				action: 'remove',
+				group: 'danger',
+				destructive: true,
 				label: m.images_prune_unused(),
 				loadingLabel: m.common_action_pruning(),
 				onclick: () => (isConfirmPruneDialogOpen = true),

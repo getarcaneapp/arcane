@@ -111,13 +111,16 @@
 			buttons.push({
 				id: 'create',
 				action: 'create',
+				placement: 'primary',
 				label: m.common_add_button({ resource: m.common_registry() }),
 				onclick: openCreateRegistryDialog
 			});
 		}
 		buttons.push({
 			id: 'refresh',
-			action: 'restart',
+			action: 'refresh',
+			placement: 'secondary',
+			iconOnly: true,
 			label: m.common_refresh(),
 			onclick: refreshRegistries,
 			loading: isLoading.refresh,

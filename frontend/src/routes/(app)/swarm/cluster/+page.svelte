@@ -303,6 +303,7 @@
 					{
 						id: 'easy-join',
 						action: 'create' as const,
+						placement: 'primary' as const,
 						label: m.swarm_easy_join_action(),
 						onclick: () => {
 							easyJoinSession += 1;
@@ -313,7 +314,9 @@
 			: []),
 		{
 			id: 'refresh',
-			action: 'restart',
+			action: 'refresh',
+			placement: 'secondary',
+			iconOnly: true,
 			label: m.common_refresh(),
 			onclick: refresh,
 			loading: isLoading.refresh,

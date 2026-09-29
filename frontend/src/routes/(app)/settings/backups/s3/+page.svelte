@@ -3,7 +3,8 @@
 
 	import { toast } from 'svelte-sonner';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
-	import { SettingsPageLayout, type SettingsActionButton } from '#lib/layouts/index.js';
+	import { SettingsPageLayout } from '#lib/layouts/index.js';
+	import type { ActionButton } from '#lib/components/action-button-group/types.js';
 	import { RemoteEnvironmentIcon } from '#lib/icons/index.js';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 	import { s3DestinationService } from '#lib/services/s3-destination-service.js';
@@ -89,10 +90,11 @@
 		});
 	}
 
-	const actionButtons: SettingsActionButton[] = $derived.by(() => [
+	const actionButtons: ActionButton[] = $derived.by(() => [
 		{
 			id: 'create',
 			action: 'create',
+			placement: 'primary',
 			label: m.s3_destination_add(),
 			onclick: openCreate,
 			disabled: isReadOnly

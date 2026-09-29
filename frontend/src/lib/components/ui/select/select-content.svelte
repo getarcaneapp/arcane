@@ -8,7 +8,7 @@
 		ref = $bindable(null),
 		class: className,
 		sideOffset = 4,
-		align = 'center',
+		align = 'end',
 		portalProps,
 		children,
 		...restProps

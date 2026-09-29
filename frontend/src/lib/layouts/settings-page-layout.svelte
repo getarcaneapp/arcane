@@ -4,11 +4,12 @@
 	import { UiConfigDisabledTag } from '#lib/components/badges/index.js';
 	import StatCard from '#lib/components/stat-card.svelte';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
+	import ActionButtonGroup from '#lib/components/action-button-group/action-button-group.svelte';
+	import type { ActionButton } from '#lib/components/action-button-group/types.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { EllipsisIcon, ResetIcon, type IconType, ArrowDownIcon } from '#lib/icons/index.js';
+	import { ResetIcon, type IconType } from '#lib/icons/index.js';
 	import { cn } from '#lib/utils.js';
-	import type { SettingsActionButton, SettingsActionOption, SettingsPageType, SettingsStatCard } from './types.js';
+	import type { SettingsPageType, SettingsStatCard } from './types.js';
 
 	interface Props {
 		title: string;
@@ -16,7 +17,7 @@
 		icon: IconType;
 		pageType?: SettingsPageType;
 		showReadOnlyTag?: boolean;
-		actionButtons?: SettingsActionButton[];
+		actionButtons?: ActionButton[];
 		statCards?: SettingsStatCard[];
 		mainContent: Snippet;
 		additionalContent?: Snippet;
@@ -36,63 +37,9 @@
 		class: className = ''
 	}: Props = $props();
 
-	const mobileVisibleButtons = $derived(actionButtons.filter((btn) => btn.showOnMobile));
-	const mobileDropdownButtons = $derived(actionButtons.filter((btn) => !btn.showOnMobile));
-
 	const formContext = hasSettingsFormContext() ? getSettingsFormContext() : undefined;
 	const formState = $derived(formContext?.activeForm);
 </script>
-
-{#snippet ActionOptions(options: SettingsActionOption[], disabled = false, showIcons = true)}
-	{#each options as option (option)}
-		<DropdownMenu.Item onclick={option.onclick} disabled={disabled || option.disabled}>
-			{#if showIcons && option.icon}
-				{@const OptionIcon = option.icon}
-				<OptionIcon class="size-4" />
-			{/if}
-			{option.label}
-		</DropdownMenu.Item>
-	{/each}
-{/snippet}
-
-{#snippet ActionButtonList(buttons: SettingsActionButton[])}
-	{#each buttons as button (button.id)}
-		{#if button.options?.length}
-			<DropdownMenu.Root>
-				<DropdownMenu.Trigger>
-					{#snippet child({ props })}
-						<ArcaneButton
-							{...props}
-							action={button.action}
-							icon={button.icon}
-							customLabel={button.label}
-							disabled={button.disabled}
-							size={button.size ?? 'default'}
-						>
-							<ArrowDownIcon class="size-3.5 opacity-60" />
-						</ArcaneButton>
-					{/snippet}
-				</DropdownMenu.Trigger>
-				<DropdownMenu.Content align="end" class="z-(--arcane-z-surface) min-w-40">
-					<DropdownMenu.Group>
-						{@render ActionOptions(button.options)}
-					</DropdownMenu.Group>
-				</DropdownMenu.Content>
-			</DropdownMenu.Root>
-		{:else}
-			<ArcaneButton
-				action={button.action}
-				icon={button.icon}
-				customLabel={button.label}
-				loadingLabel={button.loadingLabel}
-				loading={button.loading}
-				disabled={button.disabled}
-				onclick={button.onclick}
-				size={button.size ?? 'default'}
-			/>
-		{/if}
-	{/each}
-{/snippet}
 
 <div class={cn('px-2 py-4 pb-5 sm:px-6 sm:py-6 sm:pb-10 lg:px-8', className)}>
 	<div class="border-b border-border/50 pb-4 sm:pb-6">
@@ -168,41 +115,7 @@
 				{/if}
 
 				{#if pageType === 'management' && actionButtons.length > 0}
-					<div class="hidden items-center gap-2 sm:flex">
-						{@render ActionButtonList(actionButtons)}
-					</div>
-
-					<div class="flex items-center gap-2 sm:hidden">
-						{@render ActionButtonList(mobileVisibleButtons)}
-
-						{#if mobileDropdownButtons.length > 0}
-							<DropdownMenu.Root>
-								<DropdownMenu.Trigger>
-									{#snippet child({ props })}
-										<ArcaneButton {...props} action="base" tone="ghost" size="icon" class="size-8 border bg-background/70">
-											<span class="sr-only">{m.common_open_menu()}</span>
-											<EllipsisIcon class="size-4" />
-										</ArcaneButton>
-									{/snippet}
-								</DropdownMenu.Trigger>
-
-								<DropdownMenu.Content align="end" class="z-(--arcane-z-surface) min-w-40">
-									<DropdownMenu.Group>
-										{#each mobileDropdownButtons as button (button.id)}
-											{#if button.options?.length}
-												<DropdownMenu.Label>{button.label}</DropdownMenu.Label>
-												{@render ActionOptions(button.options, button.disabled, false)}
-											{:else}
-												<DropdownMenu.Item onclick={button.onclick} disabled={button.disabled || button.loading}>
-													{button.loading ? button.loadingLabel || button.label : button.label}
-												</DropdownMenu.Item>
-											{/if}
-										{/each}
-									</DropdownMenu.Group>
-								</DropdownMenu.Content>
-							</DropdownMenu.Root>
-						{/if}
-					</div>
+					<ActionButtonGroup buttons={actionButtons} />
 				{/if}
 			</div>
 		</div>

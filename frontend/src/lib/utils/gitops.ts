@@ -6,7 +6,7 @@ function composeDirectory(sync: GitOpsSync): string {
 }
 
 // Mirrors the backend's workspace lock, which deliberately omits the project-root .env.
-function syncedPaths(sync: GitOpsSync): string[] {
+export function syncedPaths(sync: GitOpsSync): string[] {
 	try {
 		const parsed: unknown = JSON.parse(sync.syncedFiles ?? '[]');
 		return Array.isArray(parsed) ? parsed.filter((entry) => typeof entry === 'string' && entry) : [];

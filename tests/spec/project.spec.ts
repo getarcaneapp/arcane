@@ -175,12 +175,10 @@ async function destroyCurrentProjectViaUI(page: Page) {
 		return;
 	}
 
-	const destroyButton = page.getByRole('button', {
-		name: 'Destroy',
-		exact: true
-	});
-	await expect(destroyButton).toBeVisible();
-	await destroyButton.click();
+	await page.getByRole('button', { name: 'More actions', exact: true }).click();
+	const destroyItem = page.getByRole('menuitem', { name: 'Destroy', exact: true });
+	await expect(destroyItem).toBeVisible();
+	await destroyItem.click();
 
 	const dialog = page.getByRole('dialog');
 	await expect(dialog).toBeVisible();
@@ -372,7 +370,8 @@ test.describe('Projects Page', () => {
 		try {
 			projectId = await createProjectViaUI(page, projectName);
 
-			await page.getByRole('button', { name: 'Archive', exact: true }).click();
+			await page.getByRole('button', { name: 'More actions', exact: true }).click();
+			await page.getByRole('menuitem', { name: 'Archive', exact: true }).click();
 			await expect(page.getByText('Project archived successfully.')).toBeVisible({
 				timeout: 10000
 			});

@@ -1,4 +1,4 @@
-import type { ActionButton } from '#lib/layouts/index.js';
+import type { ActionButton } from '#lib/components/action-button-group/types.js';
 
 type CreateRefreshActionOptions = {
 	create?: {
@@ -22,13 +22,16 @@ export function createRefreshActionButtons({
 		buttons.push({
 			id: 'create',
 			action: 'create',
+			placement: 'primary',
 			label: create.label,
 			onclick: create.onclick
 		});
 	}
 	buttons.push({
 		id: 'refresh',
-		action: 'restart',
+		action: 'refresh',
+		placement: 'secondary',
+		iconOnly: true,
 		label: refreshLabel,
 		onclick: onRefresh,
 		loading: refreshing,

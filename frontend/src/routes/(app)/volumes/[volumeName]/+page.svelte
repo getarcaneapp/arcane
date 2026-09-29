@@ -26,7 +26,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { volumeService } from '#lib/services/volume-service.js';
 	import { volumeWorkspaceService } from '#lib/services/volume-workspace-service.js';
-	import { type DetailAction } from '#lib/layouts/index.js';
+	import type { ActionButton } from '#lib/components/action-button-group/types.js';
 	import TabbedPageLayout from '#lib/layouts/tabbed-page-layout.svelte';
 	import { ActionButtonGroup } from '#lib/components/action-button-group/index.js';
 	import BackupList from '../components/volume-backup-table.svelte';
@@ -778,12 +778,13 @@
 		});
 	}
 
-	const actions: DetailAction[] = $derived.by(() => {
-		const items: DetailAction[] = [];
+	const actions: ActionButton[] = $derived.by(() => {
+		const items: ActionButton[] = [];
 		if (hasWorkspaceChanges) {
 			items.push({
 				id: 'save-workspace',
 				action: 'save',
+				placement: 'primary',
 				label: m.common_save_changes(),
 				loading: isLoading.save,
 				disabled: !canSaveWorkspace,
@@ -794,6 +795,9 @@
 			items.push({
 				id: 'remove',
 				action: 'remove',
+				group: 'danger',
+				destructive: true,
+				placement: 'secondary',
 				label: m.common_remove(),
 				loading: isLoading.remove,
 				disabled: isLoading.remove || isBackupVolume,

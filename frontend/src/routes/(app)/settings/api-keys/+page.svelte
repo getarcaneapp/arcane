@@ -7,7 +7,8 @@
 	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import type { ApiKey, ApiKeyCreated, CreateApiKey } from '#lib/types/auth.js';
 	import { apiKeyService } from '#lib/services/api-key-service.js';
-	import { SettingsPageLayout, type SettingsActionButton } from '#lib/layouts/index.js';
+	import { SettingsPageLayout } from '#lib/layouts/index.js';
+	import type { ActionButton } from '#lib/components/action-button-group/types.js';
 	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { Snippet } from '#lib/components/ui/snippet/index.js';
@@ -96,10 +97,11 @@
 		}
 	}
 
-	const actionButtons: SettingsActionButton[] = $derived.by(() => [
+	const actionButtons: ActionButton[] = $derived.by(() => [
 		{
 			id: 'create',
 			action: 'create',
+			placement: 'primary',
 			label: m.create_api_key(),
 			onclick: openCreateDialog,
 			loading: isLoading.creating,

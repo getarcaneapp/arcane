@@ -203,6 +203,7 @@
 		{
 			id: 'create',
 			action: 'create',
+			placement: 'primary',
 			label: m.common_add_button({ resource: m.resource_sync_cap() }),
 			onclick: () => openCreateSyncDialog()
 		},
@@ -222,7 +223,9 @@
 		},
 		{
 			id: 'refresh',
-			action: 'restart',
+			action: 'refresh',
+			placement: 'secondary',
+			iconOnly: true,
 			label: m.common_refresh(),
 			onclick: refreshSyncs,
 			loading: isLoading.refresh,

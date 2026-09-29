@@ -161,6 +161,30 @@ async function expectActivitySucceeded(page: Page, activityId: string, expectedT
 	expect(detail.activity.error).toBeFalsy();
 }
 
+// Header actions render inline or inside the "More actions" menu depending on placement.
+async function clickHeaderAction(page: Page, name: string) {
+	const header = page.locator('[data-tabs-root] > :not([inert])');
+	const inline = header
+		.getByRole('button', { name, exact: true })
+		.or(header.getByRole('link', { name, exact: true }))
+		.filter({ visible: true })
+		.first();
+	const menuTrigger = header
+		.getByRole('button', { name: 'More actions', exact: true })
+		.filter({ visible: true })
+		.first();
+	const inlineVisible = await inline
+		.waitFor({ state: 'visible', timeout: 5_000 })
+		.then(() => true)
+		.catch(() => false);
+	if (inlineVisible) {
+		await inline.click();
+		return;
+	}
+	await menuTrigger.click();
+	await page.getByRole('menuitem', { name, exact: true }).click();
+}
+
 async function runSimpleContainerAction(
 	page: Page,
 	containerId: string,
@@ -182,12 +206,7 @@ async function runSimpleContainerAction(
 			(response) => matchesActionRequest(response.url(), response.request().method()),
 			{ timeout: responseTimeout }
 		);
-		await page
-			.locator('[data-tabs-root] > :not([inert])')
-			.getByRole('button', { name: buttonName, exact: true })
-			.filter({ visible: true })
-			.first()
-			.click();
+		await clickHeaderAction(page, buttonName);
 		await requestPromise;
 		const result = await readApiData<ActionResult>(
 			await responsePromise,
@@ -392,12 +411,7 @@ async function commitContainer(
 	imageIds: Set<string>
 ) {
 	return test.step('Commit image', async () => {
-		await page
-			.locator('[data-tabs-root] > :not([inert])')
-			.getByRole('button', { name: 'Commit', exact: true })
-			.filter({ visible: true })
-			.first()
-			.click();
+		await clickHeaderAction(page, 'Commit');
 		const dialog = page.getByRole('dialog', { name: `Commit "${containerName}"` });
 		await waitForDialogReady(dialog);
 		await expect(dialog.locator('#repository')).toBeFocused();
@@ -448,12 +462,7 @@ async function editContainerThroughUI(
 	containerIds: Set<string>
 ) {
 	return test.step('Edit and recreate container', async () => {
-		await page
-			.locator('[data-tabs-root] > :not([inert])')
-			.getByRole('link', { name: 'Edit', exact: true })
-			.filter({ visible: true })
-			.first()
-			.click();
+		await clickHeaderAction(page, 'Edit');
 		await expect(page).toHaveURL(`/containers/${containerId}/edit`);
 		await expect(page.getByText('Applying changes recreates this container.')).toBeVisible();
 		await expect(page.getByLabel('Container Name *', { exact: true })).toHaveValue(
@@ -501,12 +510,7 @@ async function redeployContainerThroughUI(
 	containerIds: Set<string>
 ) {
 	return test.step('Redeploy container', async () => {
-		await page
-			.locator('[data-tabs-root] > :not([inert])')
-			.getByRole('button', { name: 'Redeploy', exact: true })
-			.filter({ visible: true })
-			.first()
-			.click();
+		await clickHeaderAction(page, 'Redeploy');
 		const dialog = page.getByRole('dialog');
 		const responsePromise = page.waitForResponse(
 			(response) =>
@@ -541,12 +545,7 @@ async function convertContainerToProject(
 				response.request().method() === 'POST' &&
 				new URL(response.url()).pathname === '/api/environments/0/containers/generate-compose'
 		);
-		await page
-			.locator('[data-tabs-root] > :not([inert])')
-			.getByRole('link', { name: 'Convert to Compose', exact: true })
-			.filter({ visible: true })
-			.first()
-			.click();
+		await clickHeaderAction(page, 'Convert to Compose');
 		const generated = await readApiData<{ composeContent: string }>(
 			await generateResponsePromise,
 			`Generate Compose for ${containerId}`
@@ -580,12 +579,7 @@ async function convertContainerToProject(
 
 async function killContainerThroughUI(page: Page, containerId: string, containerName: string) {
 	return test.step('Kill container', async () => {
-		await page
-			.locator('[data-tabs-root] > :not([inert])')
-			.getByRole('button', { name: 'Kill', exact: true })
-			.filter({ visible: true })
-			.first()
-			.click();
+		await clickHeaderAction(page, 'Kill');
 		const dialog = page.getByRole('dialog', { name: `Kill "${containerName}"` });
 		const responsePromise = page.waitForResponse(
 			(response) =>
@@ -604,12 +598,7 @@ async function killContainerThroughUI(page: Page, containerId: string, container
 
 async function removeContainerThroughUI(page: Page, containerId: string) {
 	return test.step('Remove container', async () => {
-		await page
-			.locator('[data-tabs-root] > :not([inert])')
-			.getByRole('button', { name: 'Remove', exact: true })
-			.filter({ visible: true })
-			.first()
-			.click();
+		await clickHeaderAction(page, 'Remove');
 		const responsePromise = page.waitForResponse(
 			(response) =>
 				response.request().method() === 'DELETE' &&

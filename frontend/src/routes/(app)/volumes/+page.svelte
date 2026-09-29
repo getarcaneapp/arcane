@@ -96,6 +96,7 @@
 			buttons.push({
 				id: 'create',
 				action: 'create',
+				placement: 'primary',
 				label: m.common_create_button({ resource: m.resource_volume_cap() }),
 				onclick: () => (pageState.isCreateDialogOpen = true),
 				loading: createVolumeMutation.isPending,
@@ -104,7 +105,9 @@
 		}
 		buttons.push({
 			id: 'refresh',
-			action: 'restart',
+			action: 'refresh',
+			placement: 'secondary',
+			iconOnly: true,
 			label: m.common_refresh(),
 			onclick: refresh,
 			loading: isRefreshing,

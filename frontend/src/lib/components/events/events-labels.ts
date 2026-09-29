@@ -76,7 +76,7 @@ const categoryLabels: Record<string, () => string> = {
 	system: m.system,
 	webhook: m.events_category_webhook,
 	notification: m.events_category_notification,
-	lifecycle: m.security_lifecycle_tab
+	lifecycle: m.lifecycle
 };
 
 function eventTypeCategoryLabel(category: string): string {

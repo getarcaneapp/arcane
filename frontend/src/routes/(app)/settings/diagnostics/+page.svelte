@@ -11,7 +11,8 @@
 	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import { TabBar, type TabItem } from '#lib/components/tab-bar/index.js';
 	import { SettingsPageLayout } from '#lib/layouts/index.js';
-	import type { SettingsActionButton, SettingsStatCard } from '#lib/layouts/types.js';
+	import type { SettingsStatCard } from '#lib/layouts/types.js';
+	import type { ActionButton } from '#lib/components/action-button-group/types.js';
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';
 	import { createDiagnosticsWebSocket, ReconnectingWebSocket } from '#lib/utils/ws.js';
 	import { diagnosticsService } from '#lib/services/diagnostics-service.js';
@@ -190,20 +191,21 @@
 		];
 	});
 
-	const actionButtons = $derived.by((): SettingsActionButton[] => [
+	const actionButtons = $derived.by((): ActionButton[] => [
 		{
 			id: 'pause',
 			action: paused ? 'unpause' : 'pause',
 			label: paused ? m.diagnostics_resume() : m.common_pause(),
-			onclick: togglePause,
-			showOnMobile: true
+			placement: 'secondary',
+			onclick: togglePause
 		},
 		{
 			id: 'refresh',
 			action: 'refresh',
+			placement: 'secondary',
+			iconOnly: true,
 			label: m.common_refresh(),
-			onclick: refresh,
-			showOnMobile: true
+			onclick: refresh
 		}
 	]);
 

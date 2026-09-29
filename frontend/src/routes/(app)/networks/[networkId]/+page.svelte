@@ -26,7 +26,8 @@
 	import { tryCatch } from '#lib/utils/try-catch.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { networkService } from '#lib/services/network-service.js';
-	import { ResourceDetailLayout, type DetailAction } from '#lib/layouts/index.js';
+	import { ResourceDetailLayout } from '#lib/layouts/index.js';
+	import type { ActionButton } from '#lib/components/action-button-group/types.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { DetailMetaStrip, DetailSection, KeyValueCard, KeyValueGrid } from '#lib/components/resource-detail/index.js';
 
@@ -113,10 +114,13 @@
 		});
 	}
 
-	const actions: DetailAction[] = $derived([
+	const actions: ActionButton[] = $derived([
 		{
 			id: 'remove',
 			action: 'remove',
+			group: 'danger',
+			destructive: true,
+			placement: 'secondary',
 			label: m.common_remove(),
 			loading: isRemoving,
 			disabled: isRemoving || isPredefined,

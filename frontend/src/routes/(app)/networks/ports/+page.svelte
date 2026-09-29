@@ -39,7 +39,9 @@
 	const actionButtons: ActionButton[] = $derived([
 		{
 			id: 'refresh',
-			action: 'restart',
+			action: 'refresh',
+			placement: 'secondary',
+			iconOnly: true,
 			label: m.common_refresh(),
 			onclick: refresh,
 			loading: isRefreshing,

@@ -87,6 +87,8 @@
 					{
 						id: 'remove-selected',
 						action: 'remove' as const,
+						group: 'danger' as const,
+						destructive: true,
 						label: m.common_remove_selected(),
 						onclick: handleBulkDelete,
 						loading: isLoading.deleting,
@@ -99,6 +101,7 @@
 					{
 						id: 'create',
 						action: 'create' as const,
+						placement: 'primary' as const,
 						label: m.common_add_button({ resource: m.resource_environment_cap() }),
 						onclick: () => {
 							environmentSession += 1;
@@ -132,7 +135,9 @@
 			: []),
 		{
 			id: 'refresh',
-			action: 'restart' as const,
+			action: 'refresh' as const,
+			placement: 'secondary',
+			iconOnly: true,
 			label: m.common_refresh(),
 			onclick: refresh,
 			loading: isLoading.refresh,

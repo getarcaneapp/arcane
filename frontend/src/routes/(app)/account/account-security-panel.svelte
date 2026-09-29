@@ -117,7 +117,7 @@
 		<div class="flex items-center gap-2">
 			<ShieldAlertIcon class="size-4 text-destructive" />
 			<div>
-				<h2 class="text-base font-semibold tracking-tight sm:text-lg">{m.account_danger_zone()}</h2>
+				<h2 class="text-base font-semibold tracking-tight sm:text-lg">{m.danger_zone()}</h2>
 				<p class="mt-1 text-xs text-muted-foreground sm:text-sm">{m.account_danger_zone_desc()}</p>
 			</div>
 		</div>

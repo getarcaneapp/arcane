@@ -15,7 +15,8 @@
 	import { settingsService } from '#lib/services/settings-service.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
-	import { SettingsPageLayout, type SettingsActionButton } from '#lib/layouts/index.js';
+	import { SettingsPageLayout } from '#lib/layouts/index.js';
+	import type { ActionButton } from '#lib/components/action-button-group/types.js';
 	import SettingsRow from '#lib/components/settings/settings-row.svelte';
 	import { Switch } from '#lib/components/ui/switch/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
@@ -213,10 +214,11 @@
 		void saveAvatarSettings({ avatarMaxUploadSizeMb: parsed });
 	}
 
-	const actionButtons: SettingsActionButton[] = $derived.by(() => [
+	const actionButtons: ActionButton[] = $derived.by(() => [
 		{
 			id: 'create',
 			action: 'create',
+			placement: 'primary',
 			label: m.common_create_button({ resource: m.common_user() }),
 			onclick: openCreateDialog,
 			loading: isLoading.creating,

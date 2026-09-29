@@ -136,6 +136,8 @@
 					{
 						id: 'remove-selected',
 						action: 'remove' as const,
+						group: 'danger' as const,
+						destructive: true,
 						label: m.common_remove_selected(),
 						onclick: handleDeleteSelected,
 						loading: isDeleting,
@@ -145,7 +147,9 @@
 			: []),
 		{
 			id: 'refresh',
-			action: 'restart' as const,
+			action: 'refresh' as const,
+			placement: 'secondary',
+			iconOnly: true,
 			label: m.common_refresh(),
 			onclick: refresh,
 			loading: isRefreshing,

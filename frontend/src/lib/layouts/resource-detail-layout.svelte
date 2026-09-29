@@ -1,17 +1,17 @@
 <script lang="ts">
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
+	import ActionButtonGroup from '#lib/components/action-button-group/action-button-group.svelte';
+	import type { ActionButton } from '#lib/components/action-button-group/types.js';
 	import { cn } from '#lib/utils.js';
-	import { ArrowLeftIcon, EllipsisIcon } from '#lib/icons/index.js';
+	import { ArrowLeftIcon } from '#lib/icons/index.js';
 	import type { Snippet } from 'svelte';
-	import type { DetailAction } from './types.js';
 
 	interface Props {
 		backUrl?: string;
 		backLabel?: string;
 		title: string;
 		subtitle?: string;
-		actions?: DetailAction[];
+		actions?: ActionButton[];
 		badges?: Snippet;
 		headerExtra?: Snippet;
 		children: Snippet;
@@ -32,33 +32,9 @@
 
 	let scrollY = $state(0);
 	const showFloatingHeader = $derived(scrollY > 120);
-
-	const primaryAction = $derived(actions[0]);
-	const secondaryActions = $derived(actions.slice(1));
 </script>
 
 <svelte:window bind:scrollY />
-
-{#snippet ActionMenu(items: DetailAction[], tone: 'ghost' | 'outline')}
-	{#if items.length > 0}
-		<DropdownMenu.Root>
-			<DropdownMenu.Trigger>
-				{#snippet child({ props })}
-					<ArcaneButton {...props} action="base" {tone} size="icon" class={tone === 'ghost' ? 'size-8' : 'size-9'}>
-						<EllipsisIcon class="size-4" />
-					</ArcaneButton>
-				{/snippet}
-			</DropdownMenu.Trigger>
-			<DropdownMenu.Content align="end" class={tone === 'ghost' ? 'min-w-35' : 'min-w-40'}>
-				{#each items as act (act.id)}
-					<DropdownMenu.Item onclick={act.onclick} disabled={act.disabled || act.loading}>
-						{act.loading ? act.loadingLabel || act.label : act.label}
-					</DropdownMenu.Item>
-				{/each}
-			</DropdownMenu.Content>
-		</DropdownMenu.Root>
-	{/if}
-{/snippet}
 
 {#if showFloatingHeader}
 	<div
@@ -77,18 +53,9 @@
 
 			<span class="max-w-50 truncate text-sm font-semibold">{title}</span>
 
-			{#if primaryAction}
+			{#if actions.length > 0}
 				<div class="h-4 w-px bg-border/60"></div>
-				<div class="flex items-center gap-1.5">
-					<ArcaneButton
-						action={primaryAction.action}
-						customLabel={primaryAction.label}
-						loading={primaryAction.loading}
-						disabled={primaryAction.disabled}
-						onclick={primaryAction.onclick}
-					/>
-					{@render ActionMenu(secondaryActions, 'ghost')}
-				</div>
+				<ActionButtonGroup buttons={actions} size="sm" />
 			{/if}
 		</div>
 	</div>
@@ -96,32 +63,16 @@
 
 <div class={cn('space-y-6 pb-8', className)}>
 	<div class="space-y-4">
-		<div class="flex items-center justify-between">
-			{#if backUrl}
+		{#if backUrl}
+			<div>
 				<ArcaneButton action="base" tone="ghost" href={backUrl} class="-ml-2">
 					<ArrowLeftIcon class="size-4" />
 					{backLabel}
 				</ArcaneButton>
-			{:else}
-				<span></span>
-			{/if}
-
-			<div class="flex items-center gap-2 sm:hidden">
-				{#if actions.length === 1 && primaryAction}
-					<ArcaneButton
-						action={primaryAction.action}
-						customLabel={primaryAction.label}
-						loading={primaryAction.loading}
-						disabled={primaryAction.disabled}
-						onclick={primaryAction.onclick}
-					/>
-				{:else}
-					{@render ActionMenu(actions, 'outline')}
-				{/if}
 			</div>
-		</div>
+		{/if}
 
-		<div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+		<div class="flex items-start justify-between gap-4">
 			<div class="min-w-0 flex-1 space-y-2">
 				<h1 class="text-xl font-semibold tracking-tight break-all sm:text-2xl">{title}</h1>
 				{#if subtitle}
@@ -134,18 +85,7 @@
 				{/if}
 			</div>
 
-			<div class="hidden shrink-0 items-center gap-2 sm:flex">
-				{#each actions as act (act.id)}
-					<ArcaneButton
-						action={act.action}
-						customLabel={act.label}
-						loadingLabel={act.loadingLabel}
-						loading={act.loading}
-						disabled={act.disabled}
-						onclick={act.onclick}
-					/>
-				{/each}
-			</div>
+			<ActionButtonGroup buttons={actions} class="shrink-0" />
 		</div>
 
 		{@render headerExtra?.()}

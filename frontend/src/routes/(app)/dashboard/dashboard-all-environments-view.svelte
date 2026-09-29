@@ -6,6 +6,7 @@
 	import { type ActionButton } from '#lib/components/action-button-group/index.js';
 	import { cn } from '#lib/utils.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import * as ArcaneTooltip from '#lib/components/arcane-tooltip/index.js';
 	import PruneConfirmationDialog from '#lib/components/dialogs/prune-confirmation-dialog.svelte';
 	import DockerInfoDialog from '#lib/components/dialogs/docker-info-dialog.svelte';
 	import { Skeleton } from '#lib/components/ui/skeleton/index.js';
@@ -40,7 +41,6 @@
 		ImagesIcon,
 		InfoIcon,
 		InspectIcon,
-		RefreshIcon,
 		TrashIcon,
 		UpdateIcon,
 		VolumesIcon,
@@ -702,14 +702,22 @@
 				{/each}
 			</div>
 
-			<ArcaneButton
-				action="restart"
-				size="sm"
-				customLabel={m.common_refresh()}
-				icon={RefreshIcon}
-				loading={isRefreshing}
-				onclick={refreshOverview}
-			/>
+			<ArcaneTooltip.Root>
+				<ArcaneTooltip.Trigger>
+					{#snippet child({ props })}
+						<ArcaneButton
+							{...props}
+							action="refresh"
+							size="icon"
+							class="size-8"
+							customLabel={m.common_refresh()}
+							loading={isRefreshing}
+							onclick={refreshOverview}
+						/>
+					{/snippet}
+				</ArcaneTooltip.Trigger>
+				<ArcaneTooltip.Content>{m.common_refresh()}</ArcaneTooltip.Content>
+			</ArcaneTooltip.Root>
 		</div>
 	</header>
 

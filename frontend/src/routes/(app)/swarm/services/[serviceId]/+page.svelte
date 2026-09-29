@@ -179,14 +179,13 @@
 	const canManageServices = $derived(hasPermission('swarm:services', envId));
 	const canScaleService = $derived(canManageServices && showsReplicas);
 
-	// Scaling lives behind a dialog so the header keeps a single measured action group;
-	// inline controls could not collapse and overflowed into the service info.
 	const serviceActions = $derived<ActionButton[]>([
 		...(canScaleService
 			? [
 					{
 						id: 'scale',
 						action: 'base' as const,
+						placement: 'primary' as const,
 						label: m.swarm_service_scale(),
 						icon: LayersIcon,
 						disabled: isLoading.scale,
@@ -197,6 +196,7 @@
 		{
 			id: 'edit',
 			action: 'edit',
+			placement: canScaleService ? ('secondary' as const) : ('primary' as const),
 			label: m.common_edit(),
 			icon: EditIcon,
 			disabled: isLoading.update,
@@ -205,6 +205,7 @@
 		{
 			id: 'rollback',
 			action: 'redeploy',
+			group: 'deploy' as const,
 			label: m.swarm_service_rollback(),
 			icon: RedeployIcon,
 			disabled: isLoading.rollback,
@@ -213,6 +214,8 @@
 		{
 			id: 'delete',
 			action: 'remove',
+			group: 'danger' as const,
+			destructive: true,
 			label: m.common_delete(),
 			icon: TrashIcon,
 			disabled: isLoading.remove,

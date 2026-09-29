@@ -281,7 +281,8 @@ test.describe('Environment switch isolation', () => {
 			'true'
 		);
 
-		await page.getByRole('button', { name: 'Redeploy', exact: true }).click();
+		await page.getByRole('button', { name: 'More actions', exact: true }).click();
+		await page.getByRole('menuitem', { name: 'Redeploy', exact: true }).click();
 		const dialog = page.getByRole('dialog');
 		await dialog.getByRole('button', { name: 'Redeploy', exact: true }).click();
 		await expect(page).toHaveURL('/containers/route-redeployed?tab=overview');

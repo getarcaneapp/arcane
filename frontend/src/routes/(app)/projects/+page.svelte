@@ -199,6 +199,7 @@
 			buttons.push({
 				id: 'create',
 				action: 'create',
+				placement: 'primary',
 				label: m.compose_create_project(),
 				onclick: () => goto('/projects/new')
 			});
@@ -215,7 +216,9 @@
 		}
 		buttons.push({
 			id: 'refresh',
-			action: 'restart',
+			action: 'refresh',
+			placement: 'secondary',
+			iconOnly: true,
 			label: m.common_refresh(),
 			onclick: refreshCompose,
 			loading: isManualRefreshing,

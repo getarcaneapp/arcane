@@ -6,7 +6,8 @@
 	import WebhookFormSheet from '#lib/components/sheets/webhook-form-sheet.svelte';
 	import type { Webhook, WebhookCreated, CreateWebhook } from '#lib/types/environment.js';
 	import { webhookService } from '#lib/services/webhook-service.js';
-	import { SettingsPageLayout, type SettingsActionButton } from '#lib/layouts/index.js';
+	import { SettingsPageLayout } from '#lib/layouts/index.js';
+	import type { ActionButton } from '#lib/components/action-button-group/types.js';
 	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { Snippet } from '#lib/components/ui/snippet/index.js';
@@ -52,10 +53,11 @@
 		});
 	}
 
-	const actionButtons: SettingsActionButton[] = $derived.by(() => [
+	const actionButtons: ActionButton[] = $derived.by(() => [
 		{
 			id: 'create',
 			action: 'create',
+			placement: 'primary',
 			label: m.create_webhook(),
 			onclick: () => (isDialogOpen.create = true),
 			loading: isLoading.creating,

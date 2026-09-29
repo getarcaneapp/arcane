@@ -61,8 +61,6 @@
 						</div>
 					</div>
 					{#if headerActions}
-						<!-- basis-0: the column's width never depends on its content, so the
-						     self-measuring actions inside cannot feed back into their own space. -->
 						<div class="flex min-w-9 flex-1 basis-0 items-center justify-end gap-2">
 							{@render headerActions()}
 						</div>

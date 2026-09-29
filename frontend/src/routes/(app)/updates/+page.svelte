@@ -178,6 +178,7 @@
 		{
 			id: 'update-all',
 			action: 'update',
+			placement: 'primary',
 			label: m.update_all(),
 			loadingLabel: m.common_action_updating(),
 			onclick: updateAll,
@@ -186,7 +187,9 @@
 		},
 		{
 			id: 'refresh',
-			action: 'restart',
+			action: 'refresh',
+			placement: 'secondary',
+			iconOnly: true,
 			label: m.common_refresh(),
 			onclick: refresh,
 			loading: isRefreshing,

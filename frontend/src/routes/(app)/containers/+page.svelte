@@ -128,6 +128,7 @@
 				? {
 						id: 'create',
 						action: 'create',
+						placement: 'primary',
 						label: m.common_create_button({ resource: m.container() }),
 						onclick: () => goto('/containers/new'),
 						disabled: !resourcesReady
@@ -145,7 +146,9 @@
 				: null,
 			{
 				id: 'refresh',
-				action: 'restart',
+				action: 'refresh',
+				placement: 'secondary',
+				iconOnly: true,
 				label: m.common_refresh(),
 				onclick: refresh,
 				loading: isRefreshing,

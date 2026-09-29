@@ -22,7 +22,8 @@
 		stabilizeFailedVulnerabilitySummary,
 		isVulnerabilityScanInProgress
 	} from '#lib/utils/docker.js';
-	import { ResourceDetailLayout, type DetailAction } from '#lib/layouts/index.js';
+	import { ResourceDetailLayout } from '#lib/layouts/index.js';
+	import type { ActionButton } from '#lib/components/action-button-group/types.js';
 	import { TabBar, type TabItem } from '#lib/components/tab-bar/index.js';
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';
 	import { DetailMetaStrip, DetailSection, KeyValueCard } from '#lib/components/resource-detail/index.js';
@@ -353,12 +354,13 @@
 		}
 	}
 
-	const actions: DetailAction[] = $derived.by(() => {
-		const list: DetailAction[] = [];
+	const actions: ActionButton[] = $derived.by(() => {
+		const list: ActionButton[] = [];
 		if (canTagImage) {
 			list.push({
 				id: 'tag',
 				action: 'tag',
+				placement: 'secondary',
 				label: m.images_tag_image(),
 				onclick: () => (tagDialogOpen = true)
 			});
@@ -399,6 +401,8 @@
 			list.push({
 				id: 'remove',
 				action: 'remove',
+				group: 'danger',
+				destructive: true,
 				label: m.common_remove(),
 				loading: isLoading.removing,
 				disabled: isLoading.removing,
