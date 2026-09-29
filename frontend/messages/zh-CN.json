@@ -1996,6 +1996,7 @@
   "registries_type_label": "Registry 类型",
   "registries_type_generic": "Generic (Docker / OCI)",
   "amazon_ecr": "Amazon ECR",
+  "registry_amazon_ecr_public": "亚马逊 ECR 公有存储",
   "registries_username_key_label": "用户名/密钥",
   "registries_token_required": "令牌不能为空",
   "registries_aws_access_key_id_required": "AWS Access Key ID 不能为空",
