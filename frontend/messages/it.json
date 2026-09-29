@@ -1996,6 +1996,7 @@
   "registries_type_label": "Tipo di registro",
   "registries_type_generic": "Generico (Docker / OCI)",
   "amazon_ecr": "Amazon ECR",
+  "registry_amazon_ecr_public": "Amazon ECR Pubblico",
   "registries_username_key_label": "Nome utente/Chiave",
   "registries_token_required": "Il gettone è necessario",
   "registries_aws_access_key_id_required": "È necessario l'ID della chiave di accesso AWS",
