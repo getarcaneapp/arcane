@@ -1996,6 +1996,7 @@
   "registries_type_label": "Typ registru",
   "registries_type_generic": "Obecné (Docker / OCI)",
   "amazon_ecr": "Amazon ECR",
+  "registry_amazon_ecr_public": "Amazon ECR – veřejná služba",
   "registries_username_key_label": "Uživatelské jméno/Klíč",
   "registries_token_required": "Token je povinný",
   "registries_aws_access_key_id_required": "ID přístupového klíče AWS je povinné",
