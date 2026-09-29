@@ -1996,6 +1996,7 @@
   "registries_type_label": "Type register",
   "registries_type_generic": "Algemeen (Docker / OCI)",
   "amazon_ecr": "Amazon ECR",
+  "registry_amazon_ecr_public": "Amazon ECR Public",
   "registries_username_key_label": "Gebruikersnaam/Sleutel",
   "registries_token_required": "Token is vereist",
   "registries_aws_access_key_id_required": "AWS Access Key ID is vereist",
