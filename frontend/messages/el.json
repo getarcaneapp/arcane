@@ -1996,6 +1996,7 @@
   "registries_type_label": "Τύπος μητρώου",
   "registries_type_generic": "Γενικά (Docker / OCI)",
   "amazon_ecr": "Amazon ECR",
+  "registry_amazon_ecr_public": "Amazon ECR Δημόσιο",
   "registries_username_key_label": "Όνομα χρήστη/κλειδί",
   "registries_token_required": "Απαιτείται Token",
   "registries_aws_access_key_id_required": "Απαιτείται αναγνωριστικό κλειδιού πρόσβασης AWS",
