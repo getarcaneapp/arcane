@@ -1996,6 +1996,7 @@
   "registries_type_label": "レジストリ・タイプ",
   "registries_type_generic": "ジェネリック（Docker / OCI）",
   "amazon_ecr": "アマゾンECR",
+  "registry_amazon_ecr_public": "Amazon ECR パブリック",
   "registries_username_key_label": "ユーザー名/キー",
   "registries_token_required": "トークンが必要",
   "registries_aws_access_key_id_required": "AWSアクセスキーIDが必要",
