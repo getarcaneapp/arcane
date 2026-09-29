@@ -1996,6 +1996,7 @@
   "registries_type_label": "儲存庫類型",
   "registries_type_generic": "通用 (Docker / OCI)",
   "amazon_ecr": "Amazon ECR",
+  "registry_amazon_ecr_public": "Amazon ECR 公開儲存庫",
   "registries_username_key_label": "使用者名稱/金鑰",
   "registries_token_required": "金鑰為必填欄位",
   "registries_aws_access_key_id_required": "需要 AWS 存取金鑰 ID",
