@@ -1996,6 +1996,7 @@
   "registries_type_label": "Typ av register",
   "registries_type_generic": "Generisk (Docker / OCI)",
   "amazon_ecr": "Amazon ECR",
+  "registry_amazon_ecr_public": "Amazon ECR Public",
   "registries_username_key_label": "Användarnamn/nyckel",
   "registries_token_required": "Token krävs",
   "registries_aws_access_key_id_required": "AWS Access Key ID krävs",
