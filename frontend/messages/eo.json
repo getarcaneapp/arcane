@@ -1996,6 +1996,7 @@
   "registries_type_label": "Tipo de registro",
   "registries_type_generic": "Ĝenerika (Docker / OCI)",
   "amazon_ecr": "Amazon ECR",
+  "registry_amazon_ecr_public": "Amazon ECR Publika",
   "registries_username_key_label": "Uzantnomo/Ŝlosilo",
   "registries_token_required": "Tokeno estas bezonata",
   "registries_aws_access_key_id_required": "AWS-alirklaŭa ID estas postulata.",
