@@ -1996,6 +1996,7 @@
   "registries_type_label": "Kayıt Defteri Türü",
   "registries_type_generic": "Genel (Docker / OCI)",
   "amazon_ecr": "Amazon ECR",
+  "registry_amazon_ecr_public": "Amazon ECR Genel Erişimli",
   "registries_username_key_label": "Kullanıcı Adı/Anahtar",
   "registries_token_required": "Jeton gereklidir",
   "registries_aws_access_key_id_required": "AWS Erişim Anahtarı Kimliği gereklidir",
