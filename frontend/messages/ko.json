@@ -1996,6 +1996,7 @@
   "registries_type_label": "레지스트리 유형",
   "registries_type_generic": "일반 (Docker / OCI)",
   "amazon_ecr": "Amazon ECR",
+  "registry_amazon_ecr_public": "아마존 ECR 퍼블릭",
   "registries_username_key_label": "사용자명 / 키 (Key)",
   "registries_token_required": "토큰은 필수 입력 항목입니다.",
   "registries_aws_access_key_id_required": "AWS 액세스 키 ID는 필수 입력 항목입니다.",
