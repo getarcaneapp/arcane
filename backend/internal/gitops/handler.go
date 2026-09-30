@@ -172,7 +172,7 @@ func (h *GitOpsSyncHandler) requireBackupSyncPermissionInternal(ctx context.Cont
 		apiErr := common.ToAPIError(err)
 		return huma.NewError(apiErr.HTTPStatus(), "Failed to retrieve GitOps sync")
 	}
-	return requireBackupPermissionInternal(ctx, environmentID, sync.IsBackup())
+	return requireBackupPermissionInternal(ctx, environmentID, sync.Mode == gitops.SyncModeBackup)
 }
 
 // ============================================================================

@@ -4,6 +4,7 @@ package project
 
 import (
 	"context"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
@@ -80,22 +81,80 @@ func TestPrepareProjectBindDirectoriesInternal_PermissionFailure(t *testing.T) {
 		t.Skip("permission bits are ignored when running as root")
 	}
 
-	projectPath := t.TempDir()
-	locked := filepath.Join(projectPath, "locked")
-	require.NoError(t, os.Mkdir(locked, 0o500))
-	t.Cleanup(func() { assert.NoError(t, os.Chmod(locked, 0o755)) })
+	for _, tc := range []struct {
+		name       string
+		dirMode    os.FileMode
+		fileMode   os.FileMode
+		createFile bool
+		wantError  bool
+	}{
+		{name: "missing directory in unwritable parent", dirMode: 0o500, wantError: true},
+		{name: "missing directory in non-searchable parent", dirMode: 0o600},
+		{name: "existing file in non-searchable parent", dirMode: 0o600, fileMode: 0o640, createFile: true},
+		{name: "unreadable file in searchable parent", dirMode: 0o700, fileMode: 0o000, createFile: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			projectPath := t.TempDir()
+			locked := filepath.Join(projectPath, "locked")
+			require.NoError(t, os.Mkdir(locked, 0o700))
+			t.Cleanup(func() { assert.NoError(t, os.Chmod(locked, 0o700)) })
+			source := filepath.Join(locked, "conf")
+			var originalInfo os.FileInfo
+			if tc.createFile {
+				require.NoError(t, os.WriteFile(source, []byte("config"), tc.fileMode))
+				var err error
+				originalInfo, err = os.Stat(source)
+				require.NoError(t, err)
+			}
+			require.NoError(t, os.Chmod(locked, tc.dirMode))
+			if tc.createFile {
+				_, err := os.ReadFile(source)
+				require.ErrorIs(t, err, fs.ErrPermission)
+			}
+			_, statErr := os.Lstat(source)
+			switch {
+			case tc.dirMode&0o100 == 0:
+				require.ErrorIs(t, statErr, fs.ErrPermission)
+			case tc.createFile:
+				require.NoError(t, statErr)
+			default:
+				require.ErrorIs(t, statErr, fs.ErrNotExist)
+			}
 
-	project := &composetypes.Project{Services: composetypes.Services{
-		"app": {Name: "app", Volumes: []composetypes.ServiceVolumeConfig{{
-			Type: composetypes.VolumeTypeBind, Source: filepath.Join(locked, "conf"), Target: "/etc/caddy",
-		}}},
-	}}
+			project := &composetypes.Project{Services: composetypes.Services{
+				"app": {Name: "app", Volumes: []composetypes.ServiceVolumeConfig{{
+					Type: composetypes.VolumeTypeBind, Source: source, Target: "/etc/caddy",
+				}}},
+			}}
 
-	err := prepareProjectBindDirectoriesInternal(projectPath)(context.Background(), project)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), filepath.Join(locked, "conf"))
-	assert.Contains(t, err.Error(), "service app")
-	assert.NoDirExists(t, filepath.Join(locked, "conf"))
+			err := prepareProjectBindDirectoriesInternal(projectPath)(context.Background(), project)
+			if tc.wantError {
+				require.ErrorIs(t, err, fs.ErrPermission)
+				assert.Contains(t, err.Error(), source)
+				assert.Contains(t, err.Error(), "service app")
+			} else {
+				require.NoError(t, err)
+			}
+			dirInfo, err := os.Stat(locked)
+			require.NoError(t, err)
+			assert.Equal(t, tc.dirMode, dirInfo.Mode().Perm())
+			require.NoError(t, os.Chmod(locked, 0o700))
+			if !tc.createFile {
+				_, err := os.Lstat(source)
+				require.ErrorIs(t, err, fs.ErrNotExist)
+				return
+			}
+			info, err := os.Stat(source)
+			require.NoError(t, err)
+			assert.True(t, os.SameFile(originalInfo, info))
+			assert.Equal(t, originalInfo.Mode(), info.Mode())
+			assert.Equal(t, originalInfo.ModTime(), info.ModTime())
+			require.NoError(t, os.Chmod(source, 0o600))
+			content, err := os.ReadFile(source)
+			require.NoError(t, err)
+			assert.Equal(t, "config", string(content))
+		})
+	}
 }
 
 func newEnvDirectoryProjectInternal(t *testing.T, id string) (*ProjectService, *Project, string, context.Context) {

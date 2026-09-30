@@ -749,7 +749,11 @@ func buildProjectUpdatesFilterAccessorInternal() pagination.FilterAccessor[proje
 	return pagination.FilterAccessor[project.Details]{
 		Key: "updates",
 		Fn: func(p project.Details, filterValue string) bool {
-			return strings.EqualFold(strings.TrimSpace(getProjectUpdateStatusInternal(p.UpdateInfo)), strings.TrimSpace(filterValue))
+			status := "unknown"
+			if p.UpdateInfo != nil && strings.TrimSpace(p.UpdateInfo.Status) != "" {
+				status = p.UpdateInfo.Status
+			}
+			return strings.EqualFold(strings.TrimSpace(status), strings.TrimSpace(filterValue))
 		},
 	}
 }
@@ -765,14 +769,6 @@ func buildProjectArchivedFilterAccessorInternal() pagination.FilterAccessor[proj
 			return p.IsArchived == archived
 		},
 	}
-}
-
-func getProjectUpdateStatusInternal(updateInfo *project.UpdateInfo) string {
-	if updateInfo == nil || strings.TrimSpace(updateInfo.Status) == "" {
-		return "unknown"
-	}
-
-	return updateInfo.Status
 }
 
 // CountProjectsWithPendingUpdates counts non-archived projects with at
@@ -934,7 +930,8 @@ func (s *ProjectService) applyProjectPresentationInternal(ctx context.Context, p
 	catalog := IconCatalogForContext(ctx)
 	for i := range projectsList {
 		resp := &details[i]
-		applyResolvedProjectIconInternal(resp, iconcatalog.Resolve(catalog, metas[i].ProjectIcon))
+		icon := iconcatalog.Resolve(catalog, metas[i].ProjectIcon)
+		resp.IconLightURL, resp.IconDarkURL = icon.IconLightURL, icon.IconDarkURL
 		resp.URLs = metas[i].ProjectURLS
 		resp.ConfigurationError = projects.CheckProjectEnvAccess(ctx, metaEnv.projectsDirectory, projectsList[i].Path)
 		for k := range resp.RuntimeServices {
@@ -1114,12 +1111,4 @@ func IconCatalogForContext(ctx context.Context) string {
 		return *u.Preferences.IconCatalog
 	}
 	return iconcatalog.DefaultCatalog
-}
-
-func applyResolvedProjectIconInternal(resp *project.Details, icon iconcatalog.ResolvedIconSet) {
-	if resp == nil {
-		return
-	}
-	resp.IconLightURL = icon.IconLightURL
-	resp.IconDarkURL = icon.IconDarkURL
 }

@@ -208,7 +208,7 @@ func ensureBackupDestinationFreeInternal(tx *gorm.DB, excludeSyncID, repositoryI
 
 // applyModeUpdatesInternal validates mode-specific update fields and appends the column updates.
 func (s *GitOpsSyncService) applyModeUpdatesInternal(ctx context.Context, current *projectpkg.GitOpsSync, req gitops.UpdateSyncRequest, updates map[string]any) error {
-	if !current.IsBackup() {
+	if current.Mode != gitops.SyncModeBackup {
 		if req.HasBackupOptions() {
 			return common.Classify(common.ErrValidation, errors.WithDetails(errors.New("backup options cannot be set on a deployment sync"), "field", "mode"))
 		}
@@ -539,7 +539,7 @@ func (s *GitOpsSyncService) SubscribeProjectFileChanges(ctx context.Context) {
 		return
 	}
 	runCtx := s.jobs.Context(ctx)
-	s.projectService.FilesChanged().Subscribe(func(projectID string) {
+	s.projectService.FilesChanged.Subscribe(func(projectID string) {
 		var syncs []projectpkg.GitOpsSync
 		if err := s.db.WithContext(runCtx).
 			Where("mode = ? AND project_id = ?", gitops.SyncModeBackup, projectID).
@@ -799,7 +799,7 @@ func (s *GitOpsSyncService) getBackupSyncInternal(ctx context.Context, environme
 	if err != nil {
 		return nil, err
 	}
-	if !syncRecord.IsBackup() {
+	if syncRecord.Mode != gitops.SyncModeBackup {
 		return nil, common.Classify(common.ErrBadRequest, errors.New("sync does not back up to Git"))
 	}
 	if syncRecord.Repository == nil {

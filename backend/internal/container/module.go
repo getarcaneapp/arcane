@@ -25,24 +25,16 @@ type Dependencies struct {
 
 // Module wires the container domain and mounts its routes.
 type Module struct {
-	service *ContainerService
+	Service *ContainerService
 	deps    Dependencies
 }
 
 // New builds the container domain from its dependencies.
 func New(deps Dependencies) *Module {
 	return &Module{
-		service: NewContainerService(deps.Event, deps.Docker, deps.Image, deps.Settings, deps.Project),
+		Service: NewContainerService(deps.Event, deps.Docker, deps.Image, deps.Settings, deps.Project),
 		deps:    deps,
 	}
-}
-
-// Service exposes the container service to collaborators that use it directly.
-func (m *Module) Service() *ContainerService {
-	if m == nil {
-		return nil
-	}
-	return m.service
 }
 
 // RegisterRoutes mounts the container endpoints. A nil module still registers,
@@ -52,5 +44,5 @@ func (m *Module) RegisterRoutes(api huma.API, appCtx handlerutil.ActivityAppCont
 		RegisterContainers(api, nil, nil, nil, nil, appCtx)
 		return
 	}
-	RegisterContainers(api, m.service, m.deps.Docker, m.deps.Settings, m.deps.Activity, appCtx)
+	RegisterContainers(api, m.Service, m.deps.Docker, m.deps.Settings, m.deps.Activity, appCtx)
 }

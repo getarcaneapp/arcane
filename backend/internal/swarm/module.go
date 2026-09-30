@@ -15,19 +15,12 @@ type Dependencies struct {
 }
 
 type Module struct {
-	service *SwarmService
+	Service *SwarmService
 	deps    Dependencies
 }
 
 func New(service *SwarmService, deps Dependencies) *Module {
-	return &Module{service: service, deps: deps}
-}
-
-func (m *Module) Service() *SwarmService {
-	if m == nil {
-		return nil
-	}
-	return m.service
+	return &Module{Service: service, deps: deps}
 }
 
 func (m *Module) RegisterRoutes(api huma.API) {
@@ -35,5 +28,5 @@ func (m *Module) RegisterRoutes(api huma.API) {
 		RegisterSwarm(api, nil, nil, nil, nil)
 		return
 	}
-	RegisterSwarm(api, m.service, m.deps.Environment, m.deps.Event, m.deps.Config)
+	RegisterSwarm(api, m.Service, m.deps.Environment, m.deps.Event, m.deps.Config)
 }

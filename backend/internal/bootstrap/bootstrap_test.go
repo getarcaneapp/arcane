@@ -15,9 +15,13 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/auth"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/container"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/job"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/swarm"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/system"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/proto/tunnel/v1"
@@ -186,9 +190,14 @@ func TestHTTP2APIResponsesDoNotUseAPIGzipInternal(t *testing.T) {
 		Environment: config.AppEnvironmentTest,
 	}
 	router, _ := newRouter(RouterParams{
-		Context:        context.Background(),
-		Config:         cfg,
-		HandlerDeps:    api.HandlerDeps{},
+		Context: context.Background(),
+		Config:  cfg,
+		HandlerDeps: api.HandlerDeps{
+			Project:   &project.Module{Service: &project.ProjectService{}},
+			Container: &container.Module{Service: &container.ContainerService{}},
+			Swarm:     &swarm.Module{Service: &swarm.SwarmService{}},
+			System:    &system.Module{Service: &system.SystemService{}},
+		},
 		AuthMiddleware: auth.NewAuthMiddleware(nil, cfg),
 		TunnelRegistry: edge.NewTunnelRegistry(),
 	})

@@ -5,6 +5,7 @@ import (
 	stderrors "errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"maps"
 	"path/filepath"
@@ -139,7 +140,7 @@ func (s *ProjectService) updateProjectServicesInternal(ctx context.Context, proj
 	if err := s.composeCoordinator.UpdateServices(ctx, projecttypes.ComposeServiceUpdate{
 		Project: compProj, Services: servicesToUpdate, Dependents: dependents, StoppedDependents: stoppedDependents,
 		Images: s.composeImageOperationsInternal(&user, credentials), Progress: progressWriter,
-		AuthConfigs: s.composeRegistryAuthConfigsInternal(ctx), WaitTimeout: s.deployWaitTimeoutInternal(),
+		AuthConfigs: s.composeRegistryAuthConfigsInternal(ctx), WaitTimeout: timeouts.GetDuration(s.settingsService.GetSettingsConfig().DeployWaitTimeout.AsInt(), timeouts.DefaultDeployWait),
 		RestoreBeforeMutation: func(ctx context.Context) {
 			if statusErr := s.updateProjectStatusInternal(ctx, projectID, previousStatus); statusErr != nil {
 				slog.ErrorContext(ctx, "failed to restore project status before service update", "projectID", projectID, "error", statusErr)
@@ -209,16 +210,16 @@ func (s *ProjectService) existingNamespaceDependentsInternal(ctx context.Context
 }
 
 // prepareProjectBindDirectoriesInternal returns the load-time preparation for
-// deployments: missing bind-mount sources inside projectPath are created as
-// Arcane's runtime user before any container is stopped or created. Left to
-// the Docker daemon, those directories would be created as root (#4132).
+// deployments: bind-mount sources confirmed missing inside projectPath are
+// created as Arcane's runtime user before containers are stopped or created.
+// Left to Docker, those directories would be created as root (#4132).
 //
 // Only bind sources with Compose's automatic host path creation enabled are
 // considered (short syntax, or long syntax without create_host_path: false),
 // mirroring what the daemon would otherwise do. Existing files, directories,
 // and symlinks are left untouched, as are sources outside the project
-// directory or reached through a symlink escaping it (#4195); those are left
-// to Docker.
+// directory or reached through a symlink escaping it (#4195). Those sources
+// and sources Arcane cannot inspect are left to Docker, even if missing.
 func prepareProjectBindDirectoriesInternal(projectPath string) projects.PrepareProjectFunc {
 	return func(ctx context.Context, project *composetypes.Project) error {
 		for _, serviceName := range slices.Sorted(maps.Keys(project.Services)) {
@@ -254,6 +255,10 @@ func ensureProjectBindDirectoryInternal(ctx context.Context, projectPath, source
 	if errors.Is(err, acfs.ErrOutsideRoot) || exists {
 		return nil
 	}
+	if errors.Is(err, fs.ErrPermission) {
+		// Leave sources Arcane cannot inspect to the Docker daemon.
+		return nil
+	}
 	if err != nil {
 		return err
 	}
@@ -262,13 +267,6 @@ func ensureProjectBindDirectoryInternal(ctx context.Context, projectPath, source
 		return kit.Ternary(errors.Is(err, acfs.ErrOutsideRoot), nil, err)
 	}
 	slog.InfoContext(ctx, "created missing bind directory for project deployment", "projectPath", projectPath, "source", source)
-	return nil
-}
-
-func ensureProjectMutableInternal(proj *Project) error {
-	if proj != nil && proj.IsArchived {
-		return common.Classify(common.ErrProjectArchived, errors.New("project is archived and must be unarchived before this action"))
-	}
 	return nil
 }
 
@@ -331,19 +329,13 @@ func (s *ProjectService) UnarchiveProject(ctx context.Context, projectID string,
 	return nil
 }
 
-// deployWaitTimeoutInternal resolves how long compose up waits for depends_on
-// health/completion conditions, from the deployWaitTimeout setting.
-func (s *ProjectService) deployWaitTimeoutInternal() time.Duration {
-	return timeouts.GetDuration(s.settingsService.GetSettingsConfig().DeployWaitTimeout.AsInt(), timeouts.DefaultDeployWait)
-}
-
 func (s *ProjectService) DeployProject(ctx context.Context, projectID string, user common.User, options *projecttypes.DeployOptions) error {
 	projectFromDb, err := s.GetProjectFromDatabaseByID(ctx, projectID)
 	if err != nil {
 		return errors.WrapIf(err, "failed to get project")
 	}
-	if err := ensureProjectMutableInternal(projectFromDb); err != nil {
-		return err
+	if projectFromDb != nil && projectFromDb.IsArchived {
+		return common.Classify(common.ErrProjectArchived, errors.New("project is archived and must be unarchived before this action"))
 	}
 	if _, err := s.ResolveProjectComposeFile(ctx, projectFromDb); err != nil {
 		return err
@@ -364,7 +356,7 @@ func (s *ProjectService) DeployProject(ctx context.Context, projectID string, us
 		ProjectID: projectID, ProjectPath: projectFromDb.Path, Options: options,
 		DefaultPullPolicy: s.settingsService.GetStringSetting(ctx, "defaultDeployPullPolicy", "missing"),
 		GitOpsManaged:     projectFromDb.GitOpsManagedBy != nil && *projectFromDb.GitOpsManagedBy != "",
-		WaitTimeout:       s.deployWaitTimeoutInternal(), AuthConfigs: s.composeRegistryAuthConfigsInternal(ctx), Progress: progressWriter,
+		WaitTimeout:       timeouts.GetDuration(s.settingsService.GetSettingsConfig().DeployWaitTimeout.AsInt(), timeouts.DefaultDeployWait), AuthConfigs: s.composeRegistryAuthConfigsInternal(ctx), Progress: progressWriter,
 		PreDeploy: func(ctx context.Context) error {
 			if s.lifecycleService == nil {
 				return nil

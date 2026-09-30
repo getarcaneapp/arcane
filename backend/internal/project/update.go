@@ -56,8 +56,8 @@ func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, na
 		name = resolveAuthoritativeProjectNameInternal(ctx, &proj, name, composeContent)
 	}
 
-	if err := ensureProjectMutableInternal(&proj); err != nil {
-		return nil, err
+	if proj.IsArchived {
+		return nil, common.Classify(common.ErrProjectArchived, errors.New("project is archived and must be unarchived before this action"))
 	}
 	if err := ensureProjectEnvReadableInternal(ctx, projectsDirectory, proj.Path); err != nil {
 		return nil, err
@@ -79,9 +79,11 @@ func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, na
 	}
 	defer cleanupBackup()
 
-	journalActive, err := s.startProjectRenameJournalInternal(ctx, renameJournal)
-	if err != nil {
-		return nil, err
+	journalActive := renameJournal != nil
+	if journalActive {
+		if err := s.writeProjectRenameJournalInternal(ctx, renameJournal, projecttypes.RenameJournalPhaseStarted); err != nil {
+			return nil, err
+		}
 	}
 
 	projectStateCommitted := false
@@ -95,7 +97,7 @@ func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, na
 	s.refreshProjectAfterContentUpdateInternal(ctx, &proj, composeContent, overrideContent)
 	s.logProjectUpdateEventInternal(ctx, &proj, composeContent, envContent, overrideContent, user)
 	if composeContent != nil || envContent != nil || overrideContent != nil {
-		s.filesChanged.Publish(proj.ID)
+		s.FilesChanged.Publish(proj.ID)
 	}
 
 	slog.InfoContext(ctx, "project updated", "projectID", proj.ID, "name", proj.Name)
@@ -257,8 +259,8 @@ func (s *ProjectService) ApplyGitSyncProjectFiles(ctx context.Context, projectID
 	if err != nil {
 		return nil, false, err
 	}
-	if err := ensureProjectMutableInternal(&proj); err != nil {
-		return nil, false, err
+	if proj.IsArchived {
+		return nil, false, common.Classify(common.ErrProjectArchived, errors.New("project is archived and must be unarchived before this action"))
 	}
 	before := s.readGitSyncProjectContentInternal(ctx, proj.ID)
 
@@ -649,11 +651,11 @@ func (s *ProjectService) activeProjectRenameSyncStateInternal(ctx context.Contex
 		skipDiscoveredPaths: make(map[string]struct{}),
 		protectSeenPaths:    make(map[string]struct{}),
 	}
-	if s == nil || s.kvService == nil {
+	if s == nil || s.KVService == nil {
 		return state
 	}
 
-	entries, err := s.kvService.ListByPrefix(ctx, projecttypes.RenameJournalKeyPrefix)
+	entries, err := s.KVService.ListByPrefix(ctx, projecttypes.RenameJournalKeyPrefix)
 	if err != nil {
 		slog.WarnContext(ctx, "failed to list project rename journals during filesystem sync", "error", err)
 		return state
@@ -688,16 +690,6 @@ func (s activeProjectRenameSyncStateInternal) markProtectedPathsSeenInternal(see
 	for seenPath := range s.protectSeenPaths {
 		seen[seenPath] = struct{}{}
 	}
-}
-
-func (s *ProjectService) startProjectRenameJournalInternal(ctx context.Context, journal *projecttypes.RenameJournal) (bool, error) {
-	if journal == nil {
-		return false, nil
-	}
-	if err := s.writeProjectRenameJournalInternal(ctx, journal, projecttypes.RenameJournalPhaseStarted); err != nil {
-		return false, err
-	}
-	return true, nil
 }
 
 func withProjectRenameRollbackInternal(ctx context.Context, proj *Project, projectStateCommitted *bool, run func() error) error {
@@ -737,7 +729,7 @@ func withProjectRenameRollbackInternal(ctx context.Context, proj *Project, proje
 }
 
 func (s *ProjectService) prepareProjectRenameJournalInternal(proj *Project, name *string, projectsDirectory string, migration volumetypes.Migration) *projecttypes.RenameJournal {
-	if s == nil || s.kvService == nil || proj == nil || name == nil {
+	if s == nil || s.KVService == nil || proj == nil || name == nil {
 		return nil
 	}
 
@@ -757,9 +749,11 @@ func (s *ProjectService) prepareProjectRenameJournalInternal(proj *Project, name
 		NewName:    newName,
 		OldPath:    filepath.Clean(proj.Path),
 		NewPath:    filepath.Clean(filepath.Join(projectsDirectory, newDirName)),
-		OldDirName: cloneStringPtrInternal(proj.DirName),
 		NewDirName: newDirName,
 		Phase:      projecttypes.RenameJournalPhaseStarted,
+	}
+	if proj.DirName != nil {
+		journal.OldDirName = new(*proj.DirName)
 	}
 
 	if source, ok := migration.(volumetypes.JournalSource); ok {
@@ -770,7 +764,7 @@ func (s *ProjectService) prepareProjectRenameJournalInternal(proj *Project, name
 }
 
 func (s *ProjectService) writeProjectRenameJournalInternal(ctx context.Context, journal *projecttypes.RenameJournal, phase string) error {
-	if s == nil || s.kvService == nil || journal == nil {
+	if s == nil || s.KVService == nil || journal == nil {
 		return nil
 	}
 	journal.Phase = phase
@@ -781,21 +775,21 @@ func (s *ProjectService) writeProjectRenameJournalInternal(ctx context.Context, 
 		return errors.WrapIf(err, "marshal project rename journal")
 	}
 
-	if err := s.kvService.Set(ctx, projecttypes.RenameJournalKeyPrefix+journal.ProjectID, string(payload)); err != nil {
+	if err := s.KVService.Set(ctx, projecttypes.RenameJournalKeyPrefix+journal.ProjectID, string(payload)); err != nil {
 		return errors.WrapIf(err, "write project rename journal")
 	}
 	return nil
 }
 
 func (s *ProjectService) clearProjectRenameJournalInternal(ctx context.Context, projectID string) error {
-	if s == nil || s.kvService == nil || strings.TrimSpace(projectID) == "" {
+	if s == nil || s.KVService == nil || strings.TrimSpace(projectID) == "" {
 		return nil
 	}
-	return s.kvService.Delete(ctx, projecttypes.RenameJournalKeyPrefix+projectID)
+	return s.KVService.Delete(ctx, projecttypes.RenameJournalKeyPrefix+projectID)
 }
 
 func (s *ProjectService) writeProjectRenameRollbackCleanupInternal(ctx context.Context, journal *projecttypes.RenameJournal) error {
-	if s == nil || s.kvService == nil || journal == nil || strings.TrimSpace(journal.ProjectID) == "" || len(journal.Volumes) == 0 {
+	if s == nil || s.KVService == nil || journal == nil || strings.TrimSpace(journal.ProjectID) == "" || len(journal.Volumes) == 0 {
 		return nil
 	}
 
@@ -812,25 +806,25 @@ func (s *ProjectService) writeProjectRenameRollbackCleanupInternal(ctx context.C
 	if err != nil {
 		return errors.WrapIf(err, "marshal project rename rollback cleanup")
 	}
-	if err := s.kvService.Set(ctx, projecttypes.RenameRollbackCleanupKeyPrefix+journal.ProjectID, string(payload)); err != nil {
+	if err := s.KVService.Set(ctx, projecttypes.RenameRollbackCleanupKeyPrefix+journal.ProjectID, string(payload)); err != nil {
 		return errors.WrapIf(err, "write project rename rollback cleanup")
 	}
 	return nil
 }
 
 func (s *ProjectService) clearProjectRenameRollbackCleanupInternal(ctx context.Context, projectID string) error {
-	if s == nil || s.kvService == nil || strings.TrimSpace(projectID) == "" {
+	if s == nil || s.KVService == nil || strings.TrimSpace(projectID) == "" {
 		return nil
 	}
-	return s.kvService.Delete(ctx, projecttypes.RenameRollbackCleanupKeyPrefix+projectID)
+	return s.KVService.Delete(ctx, projecttypes.RenameRollbackCleanupKeyPrefix+projectID)
 }
 
 func (s *ProjectService) RecoverProjectRenameJournals(ctx context.Context) error {
-	if s == nil || s.kvService == nil {
+	if s == nil || s.KVService == nil {
 		return nil
 	}
 
-	entries, err := s.kvService.ListByPrefix(ctx, projecttypes.RenameJournalKeyPrefix)
+	entries, err := s.KVService.ListByPrefix(ctx, projecttypes.RenameJournalKeyPrefix)
 	if err != nil {
 		return err
 	}
@@ -851,11 +845,11 @@ func (s *ProjectService) RecoverProjectRenameJournals(ctx context.Context) error
 }
 
 func (s *ProjectService) recoverProjectRenameJournalForProjectInternal(ctx context.Context, projectID string) error {
-	if s == nil || s.kvService == nil || strings.TrimSpace(projectID) == "" {
+	if s == nil || s.KVService == nil || strings.TrimSpace(projectID) == "" {
 		return nil
 	}
 
-	raw, ok, err := s.kvService.Get(ctx, projecttypes.RenameJournalKeyPrefix+projectID)
+	raw, ok, err := s.KVService.Get(ctx, projecttypes.RenameJournalKeyPrefix+projectID)
 	if err != nil || !ok {
 		return err
 	}
@@ -883,11 +877,11 @@ func (s *ProjectService) recoverProjectRenameJournalInternal(ctx context.Context
 }
 
 func (s *ProjectService) recoverProjectRenameRollbackCleanupsInternal(ctx context.Context) error {
-	if s == nil || s.kvService == nil {
+	if s == nil || s.KVService == nil {
 		return nil
 	}
 
-	entries, err := s.kvService.ListByPrefix(ctx, projecttypes.RenameRollbackCleanupKeyPrefix)
+	entries, err := s.KVService.ListByPrefix(ctx, projecttypes.RenameRollbackCleanupKeyPrefix)
 	if err != nil {
 		return err
 	}
@@ -947,14 +941,6 @@ func (s *ProjectService) projectRenameRecoveryDockerInternal(ctx context.Context
 	}
 
 	return dockerClient, nil
-}
-
-func cloneStringPtrInternal(value *string) *string {
-	if value == nil {
-		return nil
-	}
-	cloned := *value
-	return &cloned
 }
 
 func (s *ProjectService) renameRecoveryOperationsInternal() projecttypes.RenameRecoveryOperations {

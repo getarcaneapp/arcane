@@ -239,7 +239,7 @@ func provideVolumeModuleInternal(lc fx.Lifecycle, db *database.DB, dockerService
 		Image:        imageService,
 		Activity:     activityService,
 		Environment:  environmentService,
-		Container:    containerModule.Service(),
+		Container:    containerModule.Service,
 		Engine:       engine,
 		S3:           s3Service,
 		Config:       cfg,
@@ -280,9 +280,10 @@ func provideContainerRegistryModuleInternal(db *database.DB, dockerService *dock
 }
 
 func provideProjectServiceInternal(db *database.DB, settings *settings.SettingsService, event *event.EventService, image *image.ImageService, docker *docker.DockerClientService, build *build.BuildService, lifecycleService *project.LifecycleService, kv *kv.KVService, registry *registry.ContainerRegistryService, environment *environment.EnvironmentService, cfg *config.Config) *project.ProjectService {
-	return project.NewProjectService(db, settings, event, image, docker, build, lifecycleService, registry, cfg).
-		WithKVService(kv).
-		WithRegistryCredentialsProvider(environment.GetEnabledRegistryCredentials)
+	service := project.NewProjectService(db, settings, event, image, docker, build, lifecycleService, registry, cfg)
+	service.KVService = kv
+	service.RegistryCredentialsProvider = environment.GetEnabledRegistryCredentials
+	return service
 }
 
 // updaterServiceParams collects the updater's dependencies. The dedicated
@@ -417,7 +418,7 @@ func provideDashboardModuleInternal(db *database.DB, docker *docker.DockerClient
 	return dashboard.New(dashboard.Dependencies{
 		DB:            db,
 		Docker:        docker,
-		Container:     containerModule.Service(),
+		Container:     containerModule.Service,
 		Project:       project,
 		Image:         image,
 		Settings:      settings,
@@ -433,7 +434,7 @@ func provideSystemModuleInternal(db *database.DB, cfg *config.Config, docker *do
 		DB:            db,
 		Config:        cfg,
 		Docker:        docker,
-		Container:     containerModule.Service(),
+		Container:     containerModule.Service,
 		Image:         image,
 		ImageUpdate:   imageUpdate,
 		Volume:        volumeModule.Service(),
@@ -448,7 +449,7 @@ func provideSystemModuleInternal(db *database.DB, cfg *config.Config, docker *do
 func provideWebhookModuleInternal(lc fx.Lifecycle, db *database.DB, containerModule *container.Module, updaterModule *updater.Module, project *project.ProjectService, gitOpsSync *gitops.GitOpsSyncService, event *event.EventService, environment *environment.EnvironmentService) *webhook.Module {
 	module := webhook.New(webhook.Dependencies{
 		DB:          db,
-		Container:   containerModule.Service(),
+		Container:   containerModule.Service,
 		Updater:     updaterModule.Service(),
 		Project:     project,
 		GitOpsSync:  gitOpsSync,

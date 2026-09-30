@@ -48,10 +48,10 @@ type ProjectService struct {
 	dockerService               *docker.DockerClientService
 	buildService                buildServiceInternal
 	lifecycleService            *LifecycleService
-	kvService                   *kv.KVService
+	KVService                   *kv.KVService
 	containerRegistryService    *registry.ContainerRegistryService
 	config                      *config.Config
-	registryCredentialsProvider registryCredentialsProviderInternal
+	RegistryCredentialsProvider func(context.Context) ([]containerregistry.Credential, error)
 
 	// syncMu serializes SyncProjectsFromFileSystem: its discovery walk and its
 	// cleanup pass must not interleave with another run's.
@@ -65,17 +65,9 @@ type ProjectService struct {
 	// Entries are validated by compose/include/env file mtimes rather than a TTL.
 	metaCache projecttypes.ComposeCache[projects.ArcaneComposeMetadata]
 
-	// filesChanged fires with the project ID after project files are saved
+	// FilesChanged fires with the project ID after project files are saved
 	// through Arcane, so Git backups can react without polling.
-	filesChanged *actors.Signal[string]
-}
-
-// FilesChanged exposes the project-file-change signal for subscribers.
-func (s *ProjectService) FilesChanged() *actors.Signal[string] {
-	if s == nil {
-		return nil
-	}
-	return s.filesChanged
+	FilesChanged *actors.Signal[string]
 }
 
 // EnsureGitOpsProjectLinked persists the bidirectional GitOps/project binding
@@ -310,8 +302,6 @@ func (env *projectMetadataEnvInternal) composeFileInternal(projectID string, res
 	return path, nil
 }
 
-type registryCredentialsProviderInternal func(context.Context) ([]containerregistry.Credential, error)
-
 func NewProjectService(db *database.DB, settingsService *settings.SettingsService, eventService *event.EventService, imageService *image.ImageService, dockerService *docker.DockerClientService, buildService buildServiceInternal, lifecycleService *LifecycleService, containerRegistryService *registry.ContainerRegistryService, cfg *config.Config) *ProjectService {
 	return &ProjectService{
 		composeCoordinator:       projects.NewCoordinator(projecttypes.ComposeCommands{Stop: composeStopProjectServicesInternal, Up: composeUpProjectServicesInternal, Create: projects.ComposeCreate}),
@@ -326,32 +316,16 @@ func NewProjectService(db *database.DB, settingsService *settings.SettingsServic
 		config:                   cfg,
 		parsedCompose:            projects.NewParsedComposeCache(),
 		metaCache:                projects.NewComposeCache[projects.ArcaneComposeMetadata](1024, nil),
-		filesChanged:             actors.NewSignal[string](),
+		FilesChanged:             actors.NewSignal[string](),
 	}
-}
-
-func (s *ProjectService) WithRegistryCredentialsProvider(provider func(context.Context) ([]containerregistry.Credential, error)) *ProjectService {
-	if s == nil {
-		return nil
-	}
-	s.registryCredentialsProvider = provider
-	return s
-}
-
-func (s *ProjectService) WithKVService(kvService *kv.KVService) *ProjectService {
-	if s == nil {
-		return nil
-	}
-	s.kvService = kvService
-	return s
 }
 
 func (s *ProjectService) ResolveRegistryCredentials(ctx context.Context) ([]containerregistry.Credential, error) {
-	if s == nil || s.registryCredentialsProvider == nil {
+	if s == nil || s.RegistryCredentialsProvider == nil {
 		return nil, nil
 	}
 
-	credentials, err := s.registryCredentialsProvider(ctx)
+	credentials, err := s.RegistryCredentialsProvider(ctx)
 	if err != nil {
 		return nil, errors.WrapIf(err, "get enabled registry credentials")
 	}
@@ -397,8 +371,8 @@ func (s *ProjectService) getMutableProjectInternal(ctx context.Context, projectI
 	if err != nil {
 		return nil, err
 	}
-	if err := ensureProjectMutableInternal(proj); err != nil {
-		return nil, err
+	if proj != nil && proj.IsArchived {
+		return nil, common.Classify(common.ErrProjectArchived, errors.New("project is archived and must be unarchived before this action"))
 	}
 	return proj, nil
 }

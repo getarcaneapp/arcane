@@ -273,9 +273,6 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 		createAuthValidatorInternal(deps),
 		permissionMatcher,
 		p.TunnelRegistry,
-		// Proxied WebSocket upgrades enforce the same Origin policy as the local
-		// endpoints, so a cross-origin page cannot ride a session cookie into a
-		// remote environment.
 		httpx.ValidateWebSocketOrigin(cfg.GetAppURL()),
 	)
 	apiGroup.Use(envProxyMiddleware)
@@ -294,7 +291,7 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 	}
 
 	// Remaining echo handlers (WebSocket/streaming)
-	ws.NewWebSocketHandler(apiGroup, deps.Project.Service(), deps.Container.Service(), deps.Swarm.Service(), deps.System.Service(), deps.Diagnostics, authMiddleware, cfg)
+	ws.NewWebSocketHandler(apiGroup, deps.Project.Service, deps.Container.Service, deps.Swarm.Service, deps.System.Service, deps.Diagnostics, authMiddleware, cfg)
 
 	// Register edge tunnel endpoint for manager to accept agent connections
 	// This is only registered when NOT in agent mode (i.e., running as manager)
@@ -309,11 +306,6 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 		}
 	}
 
-	// Unknown API endpoints respond with JSON 404. This must be registered
-	// after every apiGroup.Use call: each Use re-registers the group's
-	// auto-404 routes, which would overwrite these. Without an explicit
-	// handler those auto-404 routes return echo v5's unexported sentinel
-	// error, which slog-echo rewrites into a 500.
 	apiNotFound := func(c *echo.Context) error {
 		return c.JSON(http.StatusNotFound, map[string]any{
 			"success": false,

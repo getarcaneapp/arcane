@@ -116,14 +116,9 @@ type GitOpsSync struct {
 	LastBackupSnapshot  *string              `json:"-" gorm:"column:last_backup_snapshot"`
 }
 
-// IsBackup reports whether the sync commits project files to Git.
-func (s GitOpsSync) IsBackup() bool {
-	return s.Mode == gitopstypes.SyncModeBackup
-}
-
 // BackupState derives the persisted backup lifecycle state.
 func (s GitOpsSync) BackupState() string {
-	if !s.IsBackup() {
+	if s.Mode != gitopstypes.SyncModeBackup {
 		return ""
 	}
 	status := ""

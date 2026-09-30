@@ -156,7 +156,11 @@ func (s *ProjectService) UpdateProjectWorkspace(ctx context.Context, projectID s
 	if err := ensureProjectEnvReadableInternal(ctx, projectsDirectory, proj.Path); err != nil {
 		return nil, err
 	}
-	backup, cleanup, err := s.prepareProjectWorkspaceBackupInternal(ctx, projectsDirectory, proj.Path, manifest.FileChanges)
+	scope := projects.ProjectUpdateBackupScope{}
+	for _, change := range manifest.FileChanges {
+		scope.Paths = append(scope.Paths, workspaceChangeTargetPathsInternal(change)...)
+	}
+	backup, cleanup, err := projects.BackupProjectDirectory(ctx, projectsDirectory, proj.Path, ".project-update-backup-*", scope)
 	if err != nil {
 		return nil, err
 	}
@@ -178,7 +182,7 @@ func (s *ProjectService) UpdateProjectWorkspace(ctx context.Context, projectID s
 		"action":          "update_project_workspace",
 		"fileChangeCount": len(manifest.FileChanges),
 	}, "could not log project workspace update")
-	s.filesChanged.Publish(proj.ID)
+	s.FilesChanged.Publish(proj.ID)
 	return s.GetProjectWorkspace(ctx, projectID)
 }
 
@@ -243,18 +247,6 @@ func (s *ProjectService) projectWorkspaceApplyOptionsInternal(ctx context.Contex
 	}
 }
 
-func (s *ProjectService) prepareProjectWorkspaceBackupInternal(ctx context.Context, projectsDirectory, projectPath string, changes []projecttypes.WorkspaceFileChange) (*projects.ProjectUpdateBackup, func(), error) {
-	scope := projects.ProjectUpdateBackupScope{}
-	for _, change := range changes {
-		scope.Paths = append(scope.Paths, workspaceChangeTargetPathsInternal(change)...)
-	}
-	return projects.BackupProjectDirectory(ctx, projectsDirectory, projectPath, ".project-update-backup-*", scope)
-}
-
-func isGitOpsManagedProjectInternal(proj *Project) bool {
-	return proj != nil && proj.GitOpsManagedBy != nil && strings.TrimSpace(*proj.GitOpsManagedBy) != ""
-}
-
 // gitOpsOwnedWorkspacePathsInternal returns the workspace-relative paths owned
 // by the project's GitOps sync — the files git writes on every sync. Only
 // these are locked for workspace editing; anything else in the directory is
@@ -262,7 +254,7 @@ func isGitOpsManagedProjectInternal(proj *Project) bool {
 // sync engine deliberately never prunes (#3634). Returns nil for projects
 // without a live sync, including a stale gitops_managed_by marker.
 func (s *ProjectService) gitOpsOwnedWorkspacePathsInternal(ctx context.Context, proj *Project) (map[string]struct{}, error) {
-	if !isGitOpsManagedProjectInternal(proj) {
+	if gitOpsSyncIDInternal(proj) == "" {
 		return nil, nil
 	}
 	sync, err := loadGitOpsSyncForProjectInternal(ctx, s.db, proj.ID)

@@ -24,7 +24,7 @@ type ScheduledPruneJob struct {
 
 func NewScheduledPruneJob(systemModule *system.Module, settingsService *settings.SettingsService, notificationService *notification.NotificationService) *ScheduledPruneJob {
 	return &ScheduledPruneJob{
-		systemService:       systemModule.Service(),
+		systemService:       systemModule.Service,
 		settingsService:     settingsService,
 		notificationService: notificationService,
 	}

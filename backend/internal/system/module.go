@@ -36,14 +36,14 @@ type Dependencies struct {
 
 // Module wires the system domain and mounts its routes.
 type Module struct {
-	service *SystemService
+	Service *SystemService
 	deps    Dependencies
 }
 
 // New builds the system domain from its dependencies.
 func New(deps Dependencies) *Module {
 	return &Module{
-		service: NewSystemService(
+		Service: NewSystemService(
 			deps.DB,
 			deps.Docker,
 			deps.Container,
@@ -58,15 +58,6 @@ func New(deps Dependencies) *Module {
 	}
 }
 
-// Service exposes the system service to collaborators that need it directly,
-// such as the scheduled prune job.
-func (m *Module) Service() *SystemService {
-	if m == nil {
-		return nil
-	}
-	return m.service
-}
-
 // RegisterRoutes mounts the system endpoints. A nil module still registers, so
 // OpenAPI spec generation can discover the routes without a service graph.
 func (m *Module) RegisterRoutes(api huma.API, appCtx handlerutil.ActivityAppContext) {
@@ -74,5 +65,5 @@ func (m *Module) RegisterRoutes(api huma.API, appCtx handlerutil.ActivityAppCont
 		RegisterSystem(api, nil, nil, nil, nil, nil, nil, appCtx)
 		return
 	}
-	RegisterSystem(api, m.deps.Docker, m.service, m.deps.SystemUpgrade, m.deps.Environment, m.deps.Config, m.deps.Activity, appCtx)
+	RegisterSystem(api, m.deps.Docker, m.Service, m.deps.SystemUpgrade, m.deps.Environment, m.deps.Config, m.deps.Activity, appCtx)
 }

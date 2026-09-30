@@ -285,7 +285,8 @@ func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string
 	resp.RelativePath = getProjectRelativePathInternal(projectsDir, proj.Path)
 	resp.GitOpsManagedBy = proj.GitOpsManagedBy
 	meta := s.ProjectMetadata(ctx, *proj, nil)
-	applyResolvedProjectIconInternal(&resp, iconcatalog.Resolve(IconCatalogForContext(ctx), meta.ProjectIcon))
+	icon := iconcatalog.Resolve(IconCatalogForContext(ctx), meta.ProjectIcon)
+	resp.IconLightURL, resp.IconDarkURL = icon.IconLightURL, icon.IconDarkURL
 	resp.URLs = meta.ProjectURLS
 	resp.Tags, err = s.GetProjectTags(ctx, projectID)
 	if err != nil {

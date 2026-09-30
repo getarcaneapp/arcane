@@ -1561,7 +1561,8 @@ func TestProjectService_UpdateProject_ClearsJournalForNonRenameWhenRecoveryDocke
 
 	eventService := event.NewEventService(db, nil, nil)
 	kvService := kv.NewKVService(db)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load()).WithKVService(kvService)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load())
+	svc.KVService = kvService
 
 	oldDir := "nginx"
 	projectPath := createComposeProjectDir(t, projectsDir, oldDir)
@@ -1613,7 +1614,7 @@ func TestProjectService_UpdateProject_ClearsJournalForNonRenameWhenRecoveryDocke
 	require.False(t, ok)
 }
 
-func TestProjectService_UpdateProject_AllowsRenameAfterJournalRecoveryDockerUnavailable(t *testing.T) {
+func TestProjectService_UpdateProject_AllowsRenameAfterJournalRecoveryWithoutDockerService(t *testing.T) {
 	db := setupProjectTestDB(t)
 	require.NoError(t, db.AutoMigrate(&kv.KVEntry{}))
 	ctx := context.Background()
@@ -1627,7 +1628,9 @@ func TestProjectService_UpdateProject_AllowsRenameAfterJournalRecoveryDockerUnav
 
 	eventService := event.NewEventService(db, nil, nil)
 	kvService := kv.NewKVService(db)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load()).WithKVService(kvService)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load())
+	svc.KVService = kvService
+	configureProjectRuntimeDockerInternal(t, nil)
 
 	oldDir := "nginx"
 	projectPath := createComposeProjectDir(t, projectsDir, oldDir)
@@ -4375,6 +4378,7 @@ func TestProjectService_ListProjects_WithDerivedStatusFilter_AllowsAllPageSizeSe
 	}
 
 	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load())
+	configureProjectRuntimeDockerInternal(t, nil)
 
 	items, page, err := svc.ListProjects(ctx, pagination.QueryParams{
 		Filters: map[string]string{
@@ -5553,7 +5557,8 @@ func TestProjectService_RecoverProjectRenameJournals_RollsBackUncommittedDirecto
 	require.NoError(t, db.Create(project).Error)
 
 	kvService := kv.NewKVService(db)
-	svc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, config.Load()).WithKVService(kvService)
+	svc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, config.Load())
+	svc.KVService = kvService
 	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
 		OldName:    "nginx",
@@ -5607,7 +5612,8 @@ func TestProjectService_RecoverProjectRenameJournals_StartedPhaseSkipsVolumeRoll
 	require.NoError(t, db.Create(project).Error)
 
 	kvService := kv.NewKVService(db)
-	svc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, config.Load()).WithKVService(kvService)
+	svc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, config.Load())
+	svc.KVService = kvService
 	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
 		OldName:    "nginx",
@@ -5670,7 +5676,8 @@ func TestProjectService_RecoverProjectRenameJournals_RelocatesTargetWhenBothPath
 	require.NoError(t, db.Create(project).Error)
 
 	kvService := kv.NewKVService(db)
-	svc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, config.Load()).WithKVService(kvService)
+	svc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, config.Load())
+	svc.KVService = kvService
 	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
 		OldName:    "nginx",
@@ -5733,7 +5740,8 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsStartedJournalWhenDir
 	require.NoError(t, db.Create(project).Error)
 
 	kvService := kv.NewKVService(db)
-	svc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, config.Load()).WithKVService(kvService)
+	svc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, config.Load())
+	svc.KVService = kvService
 	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
 		OldName:    "nginx",
@@ -5798,7 +5806,8 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsPreservedTargetJourna
 	t.Cleanup(server.Close)
 
 	kvService := kv.NewKVService(db)
-	svc := NewProjectService(db, nil, nil, nil, &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}, nil, nil, nil, config.Load()).WithKVService(kvService)
+	svc := NewProjectService(db, nil, nil, nil, &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}, nil, nil, nil, config.Load())
+	svc.KVService = kvService
 	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
 		OldName:    "nginx",
@@ -5851,7 +5860,8 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsCommittedJournal(t *t
 	require.NoError(t, db.Create(project).Error)
 
 	kvService := kv.NewKVService(db)
-	svc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, config.Load()).WithKVService(kvService)
+	svc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, config.Load())
+	svc.KVService = kvService
 	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
 		OldName:    "nginx",
@@ -5891,7 +5901,8 @@ func TestProjectService_FinalizeProjectRenameAfterCommit_ClearsJournalAfterSourc
 	require.NoError(t, db.Create(project).Error)
 
 	kvService := kv.NewKVService(db)
-	svc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, config.Load()).WithKVService(kvService)
+	svc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, config.Load())
+	svc.KVService = kvService
 	journal := &projecttypes.RenameJournal{
 		ProjectID:  project.ID,
 		OldName:    "nginx",
@@ -5932,7 +5943,8 @@ func TestProjectService_FinalizeProjectRenameAfterCommit_KeepsJournalWhenSourceC
 	require.NoError(t, db.Create(project).Error)
 
 	kvService := kv.NewKVService(db)
-	svc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, config.Load()).WithKVService(kvService)
+	svc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, config.Load())
+	svc.KVService = kvService
 	journal := &projecttypes.RenameJournal{
 		ProjectID:  project.ID,
 		OldName:    "nginx",
@@ -6017,7 +6029,8 @@ func TestProjectService_RecoverProjectRenameJournals_KeepsJournalWhenDirectoryRo
 
 	kvService := kv.NewKVService(db)
 	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}
-	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load()).WithKVService(kvService)
+	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load())
+	svc.KVService = kvService
 	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
 		OldName:    "nginx",
@@ -6111,7 +6124,8 @@ func TestProjectService_RecoverProjectRenameJournals_CompletesCommittedVolumeJou
 
 	kvService := kv.NewKVService(db)
 	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}
-	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load()).WithKVService(kvService)
+	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load())
+	svc.KVService = kvService
 	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
 		OldName:    "nginx",
@@ -6184,7 +6198,8 @@ func TestProjectService_RecoverProjectRenameJournals_RollsBackCommittedJournalWh
 
 	kvService := kv.NewKVService(db)
 	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}
-	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load()).WithKVService(kvService)
+	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load())
+	svc.KVService = kvService
 	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
 		OldName:    "nginx",
@@ -6294,7 +6309,8 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalAfterDBRestore
 
 	kvService := kv.NewKVService(db)
 	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}
-	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load()).WithKVService(kvService)
+	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load())
+	svc.KVService = kvService
 	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
 		OldName:    "nginx",
@@ -6371,7 +6387,8 @@ func TestProjectService_RecoverProjectRenameJournals_KeepsRollbackCleanupWhenDoc
 	require.NoError(t, db.Create(project).Error)
 
 	kvService := kv.NewKVService(db)
-	svc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, config.Load()).WithKVService(kvService)
+	svc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, config.Load())
+	svc.KVService = kvService
 	cleanup := projecttypes.RenameRollbackCleanup{
 		ProjectID: project.ID,
 		OldName:   "nginx",
@@ -6434,7 +6451,8 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsCommittedJournalWhenS
 
 	kvService := kv.NewKVService(db)
 	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}
-	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load()).WithKVService(kvService)
+	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load())
+	svc.KVService = kvService
 	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
 		OldName:    "nginx",
@@ -6520,7 +6538,8 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsCommittedJournalAndCl
 
 	kvService := kv.NewKVService(db)
 	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}
-	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load()).WithKVService(kvService)
+	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load())
+	svc.KVService = kvService
 	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
 		OldName:    "nginx",
@@ -6603,7 +6622,8 @@ func TestProjectService_RecoverProjectRenameJournals_MarksSourceCleanupPendingWh
 
 	kvService := kv.NewKVService(db)
 	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}
-	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load()).WithKVService(kvService)
+	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load())
+	svc.KVService = kvService
 	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
 		OldName:    "nginx",
@@ -6688,7 +6708,8 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsSourceCleanupPendingJ
 
 	kvService := kv.NewKVService(db)
 	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}
-	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load()).WithKVService(kvService)
+	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load())
+	svc.KVService = kvService
 	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
 		OldName:    "nginx",
@@ -6787,7 +6808,8 @@ func TestProjectService_RecoverProjectRenameJournals_RollsBackSourceCleanupPendi
 
 	kvService := kv.NewKVService(db)
 	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}
-	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load()).WithKVService(kvService)
+	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load())
+	svc.KVService = kvService
 	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
 		OldName:    "nginx",
@@ -6877,7 +6899,8 @@ func TestProjectService_RecoverProjectRenameJournals_KeepsSourceCleanupPendingJo
 
 	kvService := kv.NewKVService(db)
 	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}
-	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load()).WithKVService(kvService)
+	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load())
+	svc.KVService = kvService
 	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
 		OldName:    "nginx",
@@ -6943,7 +6966,8 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsStartedJournalWhenDir
 	require.NoError(t, db.Create(project).Error)
 
 	kvService := kv.NewKVService(db)
-	svc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, config.Load()).WithKVService(kvService)
+	svc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, config.Load())
+	svc.KVService = kvService
 	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
 		OldName:    "nginx",
@@ -7013,7 +7037,8 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsMissingPathJournalWhe
 
 	kvService := kv.NewKVService(db)
 	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}
-	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load()).WithKVService(kvService)
+	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load())
+	svc.KVService = kvService
 	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
 		OldName:    "nginx",
@@ -7087,7 +7112,8 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalWhenRollbackSo
 
 	kvService := kv.NewKVService(db)
 	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}
-	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load()).WithKVService(kvService)
+	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load())
+	svc.KVService = kvService
 	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
 		OldName:    "nginx",
@@ -7166,7 +7192,8 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalWhenRollbackTa
 
 	kvService := kv.NewKVService(db)
 	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}
-	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load()).WithKVService(kvService)
+	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load())
+	svc.KVService = kvService
 	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
 		OldName:    "nginx",
@@ -7251,7 +7278,8 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalWhenTargetPres
 
 	kvService := kv.NewKVService(db)
 	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}
-	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load()).WithKVService(kvService)
+	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load())
+	svc.KVService = kvService
 	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
 		OldName:    "nginx",

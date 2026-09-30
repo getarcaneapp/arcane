@@ -530,7 +530,7 @@ func TestGitOpsBackup_SaveSignalMarksPendingAndRunsAfterDebounce(t *testing.T) {
 	env.service.SubscribeProjectFileChanges(t.Context())
 
 	writeBackupProjectFileInternal(t, env.projectPath, "compose.yaml", "services:\n  app:\n    image: nginx:1.29-alpine\n")
-	env.service.projectService.FilesChanged().Publish(env.project.ID)
+	env.service.projectService.FilesChanged.Publish(env.project.ID)
 
 	require.Eventually(t, func() bool {
 		head, exists, err := env.remote.RemoteBranchHead(t.Context(), env.repoURL, "main", git.AuthConfig{AuthType: "none"})
@@ -558,7 +558,7 @@ func TestGitOpsBackup_SaveSignalOnlyMarksPendingWhenAutoSyncIsOff(t *testing.T) 
 	env.service.SubscribeProjectFileChanges(t.Context())
 
 	writeBackupProjectFileInternal(t, env.projectPath, "compose.yaml", "services:\n  app:\n    image: nginx:1.29-alpine\n")
-	env.service.projectService.FilesChanged().Publish(env.project.ID)
+	env.service.projectService.FilesChanged.Publish(env.project.ID)
 
 	require.Eventually(t, func() bool {
 		return env.reloadInternal(t, syncRecord.ID).BackupPending

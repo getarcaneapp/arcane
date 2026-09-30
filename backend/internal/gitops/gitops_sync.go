@@ -462,7 +462,7 @@ func (s *GitOpsSyncService) RegisterAutoSyncJobsOnStartup(ctx context.Context) {
 	for i := range syncs {
 		syncRecord := syncs[i]
 		s.registerSyncJobInternal(ctx, syncRecord.ID, syncRecord.EnvironmentID, syncRecord.SyncInterval)
-		if isGitOpsSyncOverdueInternal(&syncRecord) || (syncRecord.IsBackup() && syncRecord.BackupPending) {
+		if isGitOpsSyncOverdueInternal(&syncRecord) || (syncRecord.Mode == gitops.SyncModeBackup && syncRecord.BackupPending) {
 			s.kickSyncInternal(ctx, syncRecord.ID)
 		}
 	}
@@ -1071,7 +1071,7 @@ func (s *GitOpsSyncService) performSyncAdmittedInternal(ctx context.Context, env
 		SyncedAt: time.Now(),
 	}
 
-	if syncRecord.IsBackup() {
+	if syncRecord.Mode == gitops.SyncModeBackup {
 		return s.performBackupInternal(syncCtx, syncRecord, actor, result, backupAdopt)
 	}
 
