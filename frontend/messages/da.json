@@ -8,7 +8,7 @@
   "accent_color_description": "Vælg en accentfarve for at tilpasse udseendet af Arcane",
   "font_size": "Skriftstørrelse",
   "font_size_description": "Juster tekststørrelsen og brugergrænsefladen",
-  "layout_mode": "Opfyldning",
+  "layout_mode": "Layout",
   "layout_mode_description": "Sådan indretter Arcane brugergrænsefladen på denne enhed. Indstillingen »Automatisk« tilpasser sig skærmens bredde.",
   "layout_mode_auto_description": "Mobilversion på smalle skærme, ellers desktop-version.",
   "layout_mode_mobile": "Mobil",
