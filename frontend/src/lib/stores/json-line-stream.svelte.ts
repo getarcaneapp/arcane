@@ -118,7 +118,7 @@ export function createJSONLineStream<TEvent extends JSONLineEventBase>(config: J
 			const operationResult = await tryCatch(
 				(async () => {
 					const response = await config.openStream(controller.signal);
-					if (!isCurrentGeneration(generation) || !response.body) {
+					if (controller.signal.aborted || !isCurrentGeneration(generation) || !response.body) {
 						// The response body is live even though nobody will read it;
 						// dropping it on the floor leaves the server streaming into a
 						// connection that stays open until its TCP timers expire.
@@ -133,7 +133,7 @@ export function createJSONLineStream<TEvent extends JSONLineEventBase>(config: J
 					_streamFailed = false;
 					reconnectAttempt = 0;
 					config.onConnected?.();
-					await readJSONLines(response.body, generation);
+					await readJSONLines(response.body, generation, controller.signal);
 				})()
 			);
 			if (operationResult.error !== null) {
@@ -160,14 +160,15 @@ export function createJSONLineStream<TEvent extends JSONLineEventBase>(config: J
 		}
 	}
 
-	async function readJSONLines(stream: ReadableStream<Uint8Array>, generation: number) {
+	async function readJSONLines(stream: ReadableStream<Uint8Array>, generation: number, signal: AbortSignal) {
 		const reader = stream.getReader();
 		const decoder = new TextDecoder();
 		let buffer = '';
 
 		try {
-			while (isCurrentGeneration(generation)) {
+			while (!signal.aborted && isCurrentGeneration(generation)) {
 				const { done, value } = await reader.read();
+				if (signal.aborted || !isCurrentGeneration(generation)) return;
 				if (done) {
 					break;
 				}
@@ -176,13 +177,14 @@ export function createJSONLineStream<TEvent extends JSONLineEventBase>(config: J
 				const lines = buffer.split('\n');
 				buffer = lines.pop() ?? '';
 				for (const line of lines) {
-					handleStreamLine(line);
+					handleStreamLine(line, generation, signal);
 				}
 			}
 
+			if (signal.aborted || !isCurrentGeneration(generation)) return;
 			buffer += decoder.decode();
 			if (buffer.trim()) {
-				handleStreamLine(buffer);
+				handleStreamLine(buffer, generation, signal);
 			}
 		} finally {
 			// The loop also exits when the generation advances, with the stream
@@ -193,7 +195,8 @@ export function createJSONLineStream<TEvent extends JSONLineEventBase>(config: J
 		}
 	}
 
-	function handleStreamLine(line: string) {
+	function handleStreamLine(line: string, generation: number, signal: AbortSignal) {
+		if (signal.aborted || !isCurrentGeneration(generation)) return;
 		const trimmed = line.trim();
 		if (!trimmed) {
 			return;
