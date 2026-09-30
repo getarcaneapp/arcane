@@ -38,6 +38,7 @@ import (
 	kit "go.getarcane.app/kit/pkg"
 	"go.getarcane.app/kit/pkg/mapping"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type GitOpsSyncService struct {
@@ -943,7 +944,8 @@ func (s *GitOpsSyncService) UpdateSync(ctx context.Context, environmentID, id st
 	addLifecycleUpdatesInternal(updates, lifecycleCfg)
 
 	if len(updates) > 0 {
-		if err := s.db.WithContext(ctx).Model(syncRecord).Updates(updates).Error; err != nil {
+		// Loaded associations must not overwrite explicitly updated foreign keys.
+		if err := s.db.WithContext(ctx).Model(syncRecord).Omit(clause.Associations).Updates(updates).Error; err != nil {
 			return nil, errors.WrapIf(err, "failed to update sync")
 		}
 
