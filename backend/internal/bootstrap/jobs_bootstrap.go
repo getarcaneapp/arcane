@@ -109,6 +109,7 @@ type registerJobsParams struct {
 	ActivitySweep          *scheduler.ActivitySweepJob
 	UploadSessionsCleanup  *scheduler.UploadSessionsCleanupJob
 	GitCloneCleanup        *scheduler.GitCloneCleanupJob
+	BackupRepositoryPrune  *scheduler.BackupRepositoryPruneJob
 	ApnsOutbox             *scheduler.ApnsOutboxJob
 }
 
@@ -157,6 +158,7 @@ func registerJobs(params registerJobsParams) error {
 		params.ActivitySweep,
 		params.UploadSessionsCleanup,
 		params.GitCloneCleanup,
+		params.BackupRepositoryPrune,
 		params.UpgradeLogCleanup,
 		params.ApnsOutbox,
 	} {
