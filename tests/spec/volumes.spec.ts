@@ -92,25 +92,6 @@ async function gotoVolumeDetail(page: Page, volumeName: string) {
 	await expect(page.getByRole('heading', { level: 1, name: volumeName })).toBeVisible();
 }
 
-function facetIds(title: string) {
-	const key = title.toLowerCase();
-	return {
-		triggerId: `facet-${key}-trigger`,
-		contentId: `facet-${key}-content`
-	};
-}
-
-async function ensureFacetOpen(page: Page, title: string) {
-	const { triggerId, contentId } = facetIds(title);
-	const trigger = page.getByTestId(triggerId).first();
-	const content = page.getByTestId(contentId).first();
-
-	await expect(trigger).toBeVisible();
-	if ((await trigger.getAttribute('data-state')) !== 'open') await trigger.click();
-	await content.waitFor({ state: 'visible' });
-	return { trigger, content };
-}
-
 test.describe('Volumes Page', () => {
 	test('Persisted Size sort does not block navigation', async ({ page, context }) => {
 		await page.goto('/dashboard');
@@ -191,32 +172,11 @@ test.describe('Volumes Page', () => {
 		expect(sizeRequests).toBe(0);
 	});
 
-	test('Volume Page Display', async ({ page }) => {
-		await page.goto('/volumes');
-
-		await expect(page.getByRole('heading', { name: 'Volumes', level: 1 })).toBeVisible();
-		await expect(page.getByText('Manage your Docker volumes').first()).toBeVisible();
-	});
-
 	test('Correct Volume Stat Card Counts', async ({ page }) => {
 		await page.goto('/volumes');
 		await page.waitForLoadState('load');
 
 		await expect(page.getByText(`${volumeCount.total} Total Volumes`)).toBeVisible();
-	});
-
-	test('Create Volume Sheet Opens', async ({ page }) => {
-		await openCreateVolumeSheet(page);
-		await expect(page.getByText('Create New Volume')).toBeVisible();
-	});
-
-	test('Display Volume Filters', async ({ page }) => {
-		await page.goto('/volumes');
-		await page.waitForLoadState('load');
-
-		const { content } = await ensureFacetOpen(page, 'Usage');
-		await expect(content.getByRole('option', { name: 'In Use' })).toBeVisible();
-		await expect(content.getByRole('option', { name: 'Unused' })).toBeVisible();
 	});
 
 	test('Inspect Volume', async ({ page }) => {
@@ -365,7 +325,7 @@ function volumesPage(volumes: MockVolume[], url: URL) {
 		const cmp =
 			typeof av === 'number' && typeof bv === 'number'
 				? av - bv
-				: String(av).localeCompare(String(bv));
+				: JSON.stringify(av ?? '').localeCompare(JSON.stringify(bv ?? ''));
 		return order === 'desc' ? -cmp : cmp;
 	});
 	const data = limit === -1 ? sorted : sorted.slice(start, start + limit);

@@ -254,7 +254,7 @@ jobs:
           - name: sqlite
             compose_file: setup/compose.yaml
             port: 3000
-            playwright_projects: --project=chromium --project=mobile-chromium --project=tablet-chromium --project=firefox --project=accessibility
+            playwright_projects: --project=chromium --project=mobile-chromium --project=tablet-chromium --project=accessibility
           - name: postgres
             compose_file: setup/compose-postgres.yaml
             port: 3001

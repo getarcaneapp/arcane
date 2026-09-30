@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json/v2"
 	stderrors "errors"
+	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
@@ -51,6 +52,9 @@ func TranslateRemoteProxyError(err error) error {
 	}
 
 	if statusErr, ok := stderrors.AsType[*remenv.StatusError](err); ok {
+		if statusErr.StatusCode == http.StatusUnauthorized {
+			return huma.Error502BadGateway("Remote environment rejected the manager's credentials")
+		}
 		return huma.NewError(statusErr.StatusCode, "environment returned error: "+string(statusErr.Body), nil)
 	}
 

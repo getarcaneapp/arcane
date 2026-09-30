@@ -105,12 +105,10 @@ test('signed-in OIDC callbacks reach the callback exchange', async ({ page }) =>
 });
 
 test.describe('Token refresh behaviour', () => {
-	test('@cross-browser shows useful login errors and accepts the configured admin password', async ({
-		page
-	}, testInfo) => {
-		// Keep each browser's login attempts in its own rate-limit bucket.
+	test('shows useful login errors and accepts the configured admin password', async ({ page }) => {
+		// Keep login error checks in their own rate-limit bucket.
 		await page.setExtraHTTPHeaders({
-			'X-Forwarded-For': testInfo.project.name === 'firefox' ? '198.18.0.2' : '198.18.0.3'
+			'X-Forwarded-For': '198.18.0.3'
 		});
 		await page.context().clearCookies();
 		let gatewayFailurePending = true;

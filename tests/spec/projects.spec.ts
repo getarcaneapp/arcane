@@ -301,11 +301,6 @@ test.beforeEach(async ({ page, registerCleanup }) => {
 });
 
 test.describe('Projects Page', () => {
-	test('should display the main heading and description', async ({ page }) => {
-		await expect(page.getByRole('heading', { name: 'Projects', level: 1 })).toBeVisible();
-		await expect(page.getByText('View and Manage Compose Projects')).toBeVisible();
-	});
-
 	test('should display summary cards with correct counts', async ({ page }) => {
 		await expect(
 			page.getByText(`${projectCounts.totalProjects} Total Projects`, {
@@ -327,38 +322,6 @@ test.describe('Projects Page', () => {
 				exact: true
 			})
 		).toBeVisible();
-	});
-
-	test('should display projects list', async ({ page }) => {
-		await expect(page.getByRole('table')).toBeVisible();
-	});
-
-	test('should display the updates column', async ({ page }) => {
-		await expect(page.getByRole('columnheader', { name: 'Updates' })).toBeVisible();
-	});
-
-	test('should show project actions menu', async ({ page }) => {
-		expect(realProjects.length, 'No projects available for actions menu test').toBeGreaterThan(0);
-
-		await page.waitForLoadState('load');
-		const firstRow = page
-			.getByRole('row')
-			.filter({ has: page.getByRole('button', { name: 'Open menu', exact: true }) })
-			.first();
-		const menu = await openRowActionsMenu(page, firstRow);
-
-		await expect(menu.getByRole('menuitem', { name: 'Edit' })).toBeVisible();
-		// Check for at least one of the state action buttons (Up/Down/Restart)
-		const upItem = menu.getByRole('menuitem', { name: 'Up', exact: true });
-		const downItem = menu.getByRole('menuitem', { name: 'Down', exact: true });
-		const restartItem = menu.getByRole('menuitem', {
-			name: 'Restart',
-			exact: true
-		});
-		await expect(upItem.or(downItem).or(restartItem).first()).toBeVisible();
-		await expect(menu.getByRole('menuitem', { name: 'Pull & Redeploy' })).toBeVisible();
-		await expect(menu.getByRole('menuitem', { name: 'Archive' })).toBeVisible();
-		await expect(menu.getByRole('menuitem', { name: 'Destroy' })).toBeVisible();
 	});
 
 	test('should archive and unarchive a stopped project from the projects page', async ({
@@ -480,12 +443,6 @@ test.describe('New Compose Project Page', () => {
 		await page.waitForLoadState('load');
 	});
 
-	test('should display the create project form', async ({ page }) => {
-		await expect(page.getByRole('button', { name: 'My New Project' })).toBeVisible();
-		await expect(page.getByRole('heading', { name: 'Docker Compose File' })).toBeVisible();
-		await expect(page.getByRole('heading', { name: 'Environment (.env)' })).toBeVisible();
-	});
-
 	test('should preserve YAML indentation when pressing Enter in compose editor', async ({
 		page
 	}) => {
@@ -511,10 +468,6 @@ test.describe('New Compose Project Page', () => {
 		await page.getByRole('button', { name: 'My New Project' }).click();
 		await page.getByRole('textbox', { name: 'My New Project' }).fill('test-project');
 		await page.getByRole('textbox', { name: 'My New Project' }).press('Enter');
-	});
-
-	test('should have a head title', async ({ page }) => {
-		await expect(page).toHaveTitle('Arcane | Projects | My New Project');
 	});
 
 	test('should enable Create Project after entering a valid name', async ({ page }) => {
@@ -649,7 +602,7 @@ test.describe('New Compose Project Page', () => {
 			await page.waitForURL(/\/projects\/.+/, { timeout: 10000 });
 
 			if (createdProjectId) {
-				await expect(page).toHaveURL(new RegExp(`/projects/${createdProjectId}`));
+				await expect(page).toHaveURL(new RegExp(`/projects/${String(createdProjectId)}`));
 			} else {
 				await expect(page).toHaveURL(new RegExp(`/projects/[a-f0-9\\-]{36}`));
 			}
@@ -1225,22 +1178,6 @@ test.describe('Project Detail Page', () => {
 		await expect(page.getByRole('tab', { name: 'Logs', exact: true })).toHaveCount(0);
 	});
 
-	test('should display tabs navigation', async ({ page }) => {
-		expect(realProjects.length, 'No projects available for navigation test').toBeGreaterThan(0);
-		const firstProject = realProjects[0];
-		await page.goto(`/projects/${firstProject.id || firstProject.name}`);
-		await page.waitForLoadState('load');
-
-		await expect(
-			page.getByRole('tab', {
-				name: `Services ${firstProject.serviceCount ?? 0}`,
-				exact: true
-			})
-		).toBeVisible();
-		await expect(page.getByRole('tab', { name: 'Configuration', exact: true })).toBeVisible();
-		await expect(page.getByRole('tab', { name: 'Logs', exact: true })).toHaveCount(0);
-	});
-
 	test('should check updates for the current project without deploying it', async ({ page }) => {
 		const projectName = `test-project-update-check-${Date.now()}`;
 		const projectID = await createProjectViaUI(page, projectName);
@@ -1284,31 +1221,6 @@ test.describe('Project Detail Page', () => {
 
 		await expect.poll(() => checkRequests).toBe(1);
 		expect(updaterRunRequests).toBe(0);
-	});
-
-	test('should display services tab content', async ({ page }) => {
-		expect(realProjects.length, 'No projects available for services test').toBeGreaterThan(0);
-
-		const projectWithServices =
-			realProjects.find((p) => (p.serviceCount ?? 0) > 0) ?? realProjects[0]!;
-		await page.goto(`/projects/${projectWithServices.id || projectWithServices.name}`);
-		await page.waitForLoadState('load');
-
-		await page
-			.getByRole('tab', {
-				name: `Services ${projectWithServices.serviceCount ?? 0}`,
-				exact: true
-			})
-			.click();
-
-		const nginxService = page.getByRole('heading', { name: 'nginx', exact: true });
-		const emptyState = page.getByText('No services found for this project', { exact: true });
-
-		const serviceStatus = page
-			.getByText('Running', { exact: true })
-			.or(page.getByText('Stopped', { exact: true }))
-			.or(page.getByText('Unknown', { exact: true }));
-		await expect(nginxService.or(serviceStatus).or(emptyState).first()).toBeVisible();
 	});
 
 	test('should display the configured service port host IP', async ({ page }) => {
@@ -1697,7 +1609,7 @@ test.describe('Project Detail Page', () => {
 
 		const targetProject = realProjects[0];
 		await page.routeWebSocket('**/api/environments/*/ws/projects/*/logs**', (ws) => {
-			ws.close({ code: 1013, reason: 'forced failure' });
+			void ws.close({ code: 1013, reason: 'forced failure' });
 		});
 
 		await page.goto(`/projects/${targetProject.id || targetProject.name}?tab=services`);

@@ -12,6 +12,8 @@
 	import IfPermitted from '#lib/components/if-permitted.svelte';
 	import { goto, refreshAll } from '$app/navigation';
 	import { m } from '#lib/paraglide/messages.js';
+	import { useQueryClient } from '@tanstack/svelte-query';
+	import { queryKeys } from '#lib/query/query-keys.js';
 	import { templateService } from '#lib/services/template-service.js';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 	import { toast } from 'svelte-sonner';
@@ -38,6 +40,7 @@
 	} from '#lib/icons/index.js';
 
 	let { data } = $props();
+	const queryClient = useQueryClient();
 
 	let template = $derived(data.templateData.template);
 	let services = $derived(data.templateData.services);
@@ -106,6 +109,10 @@
 				originalDescription = validated.description ?? '';
 				originalCompose = validated.composeContent;
 				originalEnv = validated.envContent ?? '';
+				await Promise.all([
+					queryClient.invalidateQueries({ queryKey: queryKeys.templates.content(template.id) }),
+					queryClient.invalidateQueries({ queryKey: queryKeys.templates.all })
+				]);
 				await refreshAll();
 			}
 		});
@@ -151,6 +158,10 @@
 					if (downloadedTemplate?.id) {
 						await goto(`/customize/templates/${downloadedTemplate.id}`, { replaceState: true });
 					} else {
+						await Promise.all([
+							queryClient.invalidateQueries({ queryKey: queryKeys.templates.content(template.id) }),
+							queryClient.invalidateQueries({ queryKey: queryKeys.templates.all })
+						]);
 						await refreshAll();
 					}
 				})()

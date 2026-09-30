@@ -1,6 +1,6 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import { ContainerSummary } from 'types/containers.type';
-import { ImageUsageCounts } from 'types/image.type';
+import { ImageSummary, ImageUsageCounts } from 'types/image.type';
 import { NetworkSummary, NetworkUsageCounts } from 'types/networks.type';
 import { Project, ProjectStatusCounts } from 'types/project.type';
 import { VolumeUsageCounts } from 'types/volumes.type';
@@ -141,14 +141,11 @@ export async function fetchNetworksWithRetry(
 	);
 }
 
-export async function fetchImagesWithRetry(
-	page: Page,
-	maxRetries = 3
-): Promise<Record<string, unknown>[]> {
+export async function fetchImagesWithRetry(page: Page, maxRetries = 3): Promise<ImageSummary[]> {
 	return retry(
 		async () =>
 			(
-				await readList<Record<string, unknown>>(
+				await readList<ImageSummary>(
 					await page.request.get('/api/environments/0/images'),
 					'List images'
 				)
@@ -291,5 +288,34 @@ export async function removeApiResource(
 		expect.soft(false, detail).toBe(true);
 	} catch (error) {
 		expect.soft(false, `DELETE ${path}: ${String(error)}`).toBe(true);
+	}
+}
+
+export async function removeCreatedEnvironments(
+	page: Page,
+	environmentIds: Set<string>,
+	environmentName: string
+) {
+	// Find the resource by name if the test timed out before receiving its ID.
+	if (environmentIds.size === 0) {
+		const response = await page.request.get('/api/environments?start=0&limit=1000', {
+			timeout: 5_000
+		});
+		expect(response.ok(), 'Find environments left by interrupted creation').toBe(true);
+		const { data }: { data: Array<{ id: string; name: string }> } = await response.json();
+		for (const env of data) if (env.name.startsWith(environmentName)) environmentIds.add(env.id);
+	}
+	for (const id of environmentIds) {
+		await removeApiResource(page, `/api/environments/${id}`, { timeout: 5_000 });
+		await expect
+			.poll(
+				async () =>
+					(await page.request.get(`/api/environments/${id}`, { timeout: 5_000 })).status(),
+				{
+					message: `Environment ${id} must be removed`,
+					timeout: 10_000
+				}
+			)
+			.toBe(404);
 	}
 }

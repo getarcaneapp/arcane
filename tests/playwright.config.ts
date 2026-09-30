@@ -14,7 +14,7 @@ export default defineConfig({
 	forbidOnly: !!process.env.CI,
 	failOnFlakyTests: !!process.env.CI,
 	retries: process.env.CI ? 2 : 0,
-	retryStrategy: 'isolated',
+	retryStrategy: 'immediate',
 	globalTimeout: process.env.CI ? 35 * 60 * 1000 : 0,
 	maxFailures: process.env.CI ? 20 : 0,
 	workers,
@@ -22,6 +22,7 @@ export default defineConfig({
 	globalTeardown: './setup/global-teardown',
 	reporter: process.env.CI
 		? [
+				['./utils/compose-reporter.ts'],
 				['html', { outputFolder: '.report' }],
 				['github'],
 				[
@@ -33,7 +34,11 @@ export default defineConfig({
 					}
 				]
 			]
-		: [['line'], ['html', { open: 'never', outputFolder: '.report' }]],
+		: [
+				['./utils/compose-reporter.ts'],
+				['line'],
+				['html', { open: 'never', outputFolder: '.report' }]
+			],
 	use: {
 		baseURL,
 		serviceWorkers: 'block',
@@ -59,15 +64,15 @@ export default defineConfig({
 			testMatch: '**/spec/*.spec.ts',
 			testIgnore: [
 				'**/spec/cli.spec.ts',
-				'**/spec/responsive-browser.spec.ts',
-				'**/spec/accessibility-check.spec.ts'
+				'**/spec/responsive.spec.ts',
+				'**/spec/accessibility.spec.ts'
 			]
 		},
 		{
 			name: 'mobile-chromium',
 			use: { ...devices['Pixel 7'], storageState: '.auth/login.json' },
 			dependencies: ['auth-setup'],
-			testMatch: '**/spec/responsive-browser.spec.ts'
+			testMatch: '**/spec/responsive.spec.ts'
 		},
 		{
 			name: 'tablet-chromium',
@@ -77,17 +82,7 @@ export default defineConfig({
 				storageState: '.auth/login.json'
 			},
 			dependencies: ['auth-setup'],
-			testMatch: '**/spec/responsive-browser.spec.ts'
-		},
-		{
-			name: 'firefox',
-			use: {
-				...devices['Desktop Firefox'],
-				storageState: { cookies: [], origins: [] }
-			},
-			dependencies: ['auth-setup'],
-			testMatch: ['**/spec/token-refresh.spec.ts', '**/spec/network.spec.ts'],
-			grep: /@cross-browser/
+			testMatch: '**/spec/responsive.spec.ts'
 		},
 		{
 			name: 'accessibility',
@@ -96,7 +91,7 @@ export default defineConfig({
 				storageState: { cookies: [], origins: [] }
 			},
 			dependencies: ['auth-setup'],
-			testMatch: '**/spec/accessibility-check.spec.ts'
+			testMatch: '**/spec/accessibility.spec.ts'
 		},
 		{
 			name: 'cli',

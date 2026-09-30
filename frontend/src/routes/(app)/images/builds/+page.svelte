@@ -55,10 +55,18 @@
 
 	const providerOptions = $derived.by<BuildProviderOption[]>(() => {
 		const options: BuildProviderOption[] = [
-			{ label: m.local_docker(), value: 'local', description: m.local_docker_description() }
+			{
+				label: m.local_docker(),
+				value: 'local',
+				description: m.local_docker_description()
+			}
 		];
 		if (depotAvailable) {
-			options.push({ label: m.depot(), value: 'depot', description: m.depot_description() });
+			options.push({
+				label: m.depot(),
+				value: 'depot',
+				description: m.depot_description()
+			});
 		}
 		return options;
 	});
@@ -163,6 +171,7 @@
 	const registriesQuery = createQuery(() => ({
 		queryKey: queryKeys.containerRegistries.list(registryRequestOptions),
 		enabled: isPushMode,
+		staleTime: 0,
 		queryFn: () => containerRegistryService.getRegistries(registryRequestOptions)
 	}));
 
@@ -184,7 +193,10 @@
 	const selectedRegistry = $derived(registries.find((registry) => registry.id === inputs.registryId.value));
 
 	const repositoryOptions = $derived<SelectOption[]>(
-		(selectedRegistry?.repositoryNames ?? []).map((name) => ({ label: name, value: name }))
+		(selectedRegistry?.repositoryNames ?? []).map((name) => ({
+			label: name,
+			value: name
+		}))
 	);
 
 	const fullImageReference = $derived(
@@ -193,7 +205,10 @@
 			: ''
 	);
 
-	type ImageBuildRequest = { envId: string; provider: 'local' | 'depot' } & Pick<
+	type ImageBuildRequest = {
+		envId: string;
+		provider: 'local' | 'depot';
+	} & Pick<
 		ImageBuildRecord,
 		| 'contextDir'
 		| 'dockerfile'
@@ -312,7 +327,9 @@
 			appendLog(m.build_completed());
 		},
 		onSettled: async (_data, _error, variables) => {
-			await queryClient.invalidateQueries({ queryKey: queryKeys.images.builds(variables.envId) });
+			await queryClient.invalidateQueries({
+				queryKey: queryKeys.images.builds(variables.envId)
+			});
 		}
 	}));
 
@@ -572,7 +589,10 @@
 			const operationResult = await tryCatch(
 				(async () => {
 					const resolvedEnvId = await environmentStore.getCurrentEnvironmentId();
-					await buildMutation.mutateAsync({ envId: resolvedEnvId, ...payload });
+					await buildMutation.mutateAsync({
+						envId: resolvedEnvId,
+						...payload
+					});
 					toast.success(m.build_completed());
 				})()
 			);
@@ -702,59 +722,69 @@
 
 {#if isDesktop}
 	<ResourceDetailLayout title={m.build_workspace()} subtitle={m.manual_build_workspace_subtitle()}>
-		<Tabs.Root value={mainTab} onValueChange={mainUrlTab.select} class="flex h-(--height-screen-inset-12) flex-col">
-			<Tabs.List class="mb-3 flex w-fit">
-				<Tabs.Trigger value="build">
-					{m.build_workspace()}
-				</Tabs.Trigger>
-				<Tabs.Trigger value="history">
-					{m.build_history()}
-				</Tabs.Trigger>
-			</Tabs.List>
+		<div class="h-screen-inset-12">
+			<Tabs.Root value={mainTab} onValueChange={mainUrlTab.select} class="flex h-full flex-col">
+				<Tabs.List class="mb-3 flex w-fit">
+					<Tabs.Trigger value="build">
+						{m.build_workspace()}
+					</Tabs.Trigger>
+					<Tabs.Trigger value="history">
+						{m.build_history()}
+					</Tabs.Trigger>
+				</Tabs.List>
 
-			<Tabs.Content value="build" class="min-h-0 flex-1">
-				<div class="relative flex h-full">
-					<ResizableSplit
-						class="flex h-full w-full gap-3"
-						firstClass="h-full"
-						secondClass="h-full"
-						minSize={300}
-						minSecondSize={520}
-						defaultRatio={0.28}
-						handleSize={10}
-						handleClass="bg-muted-foreground/50 rounded-full"
-						allowCollapse={true}
-						persistKey="arcane.build.workspace.split"
-					>
-						{#snippet first()}
-							{@render workspaceCard()}
-						{/snippet}
-						{#snippet second()}
-							<Card.Root class="flex h-full flex-col overflow-hidden">
-								{@render rightPanel()}
-							</Card.Root>
-						{/snippet}
-					</ResizableSplit>
-				</div>
-			</Tabs.Content>
+				<Tabs.Content value="build" class="min-h-0 flex-1">
+					<div class="relative flex h-full">
+						<ResizableSplit
+							class="flex h-full w-full gap-3"
+							firstClass="h-full"
+							secondClass="h-full"
+							minSize={300}
+							minSecondSize={520}
+							defaultRatio={0.28}
+							handleSize={10}
+							handleClass="bg-muted-foreground/50 rounded-full"
+							allowCollapse={true}
+							persistKey="arcane.build.workspace.split"
+						>
+							{#snippet first()}
+								{@render workspaceCard()}
+							{/snippet}
+							{#snippet second()}
+								<Card.Root class="flex h-full flex-col overflow-hidden">
+									{@render rightPanel()}
+								</Card.Root>
+							{/snippet}
+						</ResizableSplit>
+					</div>
+				</Tabs.Content>
 
-			<Tabs.Content value="history" class="min-h-0 flex-1">
-				<Card.Root class="flex h-full flex-col overflow-hidden">
-					{@render historyContent()}
-				</Card.Root>
-			</Tabs.Content>
-		</Tabs.Root>
+				<Tabs.Content value="history" class="min-h-0 flex-1">
+					<Card.Root class="flex h-full flex-col overflow-hidden">
+						{@render historyContent()}
+					</Card.Root>
+				</Tabs.Content>
+			</Tabs.Root>
+		</div>
 	</ResourceDetailLayout>
 {:else}
 	<TabbedPageLayout tabItems={mainTabItems} selectedTab={mainTab} onTabChange={onMainTabChange} class="min-h-screen-inset-10">
 		{#snippet headerInfo()}
 			<div class="flex flex-col gap-1">
 				{#if mainTab === 'history'}
-					<h1 class="text-2xl font-semibold tracking-tight">{m.builds()}</h1>
-					<p class="text-sm text-muted-foreground">{m.build_output()}</p>
+					<h1 class="text-2xl font-semibold tracking-tight">
+						{m.builds()}
+					</h1>
+					<p class="text-sm text-muted-foreground">
+						{m.build_output()}
+					</p>
 				{:else}
-					<h1 class="text-2xl font-semibold tracking-tight">{m.build_workspace()}</h1>
-					<p class="text-sm text-muted-foreground">{m.manual_build_workspace_subtitle()}</p>
+					<h1 class="text-2xl font-semibold tracking-tight">
+						{m.build_workspace()}
+					</h1>
+					<p class="text-sm text-muted-foreground">
+						{m.manual_build_workspace_subtitle()}
+					</p>
 				{/if}
 			</div>
 		{/snippet}
@@ -776,8 +806,12 @@
 					>
 						{#snippet headerInfo()}
 							<div class="flex flex-col gap-1">
-								<h2 class="text-lg font-semibold">{m.build_workspace()}</h2>
-								<p class="text-xs text-muted-foreground">{m.manual_build_workspace_subtitle()}</p>
+								<h2 class="text-lg font-semibold">
+									{m.build_workspace()}
+								</h2>
+								<p class="text-xs text-muted-foreground">
+									{m.manual_build_workspace_subtitle()}
+								</p>
 							</div>
 						{/snippet}
 						{#snippet headerActions()}

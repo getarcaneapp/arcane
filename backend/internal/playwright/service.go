@@ -9,6 +9,9 @@ import (
 
 	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/gitops"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/gitrepo"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/user"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
@@ -16,14 +19,20 @@ import (
 )
 
 type PlaywrightService struct {
-	apiKeyService *apikey.ApiKeyService
-	userService   *user.UserService
+	apiKeyService     *apikey.ApiKeyService
+	userService       *user.UserService
+	repositoryService *gitrepo.GitRepositoryService
+	syncService       *gitops.GitOpsSyncService
+	projectService    *project.ProjectService
 }
 
-func NewPlaywrightService(apiKeyService *apikey.ApiKeyService, userService *user.UserService) *PlaywrightService {
+func NewPlaywrightService(apiKeyService *apikey.ApiKeyService, userService *user.UserService, repositoryService *gitrepo.GitRepositoryService, syncService *gitops.GitOpsSyncService, projectService *project.ProjectService) *PlaywrightService {
 	return &PlaywrightService{
-		apiKeyService: apiKeyService,
-		userService:   userService,
+		apiKeyService:     apiKeyService,
+		userService:       userService,
+		repositoryService: repositoryService,
+		syncService:       syncService,
+		projectService:    projectService,
 	}
 }
 
@@ -71,13 +80,9 @@ func (ps *PlaywrightService) DeleteAllTestApiKeys(ctx context.Context) error {
 
 	// Get all API keys with test prefix
 	params := pagination.QueryParams{
-		SearchQuery: pagination.SearchQuery{
-			Search: "test-api-key",
-		},
-		Params: pagination.Params{
-			Start: 0,
-			Limit: 1000,
-		},
+		Search: "test-api-key",
+		Start:  0,
+		Limit:  1000,
 	}
 
 	apiKeys, _, err := ps.apiKeyService.ListApiKeys(ctx, params)

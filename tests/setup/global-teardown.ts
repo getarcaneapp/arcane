@@ -20,7 +20,10 @@ async function globalTeardown() {
 	// 1. Stop and remove Docker containers
 	try {
 		console.log('Stopping Docker containers...');
-		execFileSync('docker', ['compose', '-f', composeFile, 'down', '-v'], { stdio: 'inherit' });
+		execFileSync('docker', ['compose', '-f', composeFile, 'down', '-v'], {
+			stdio: 'inherit',
+			timeout: 60_000
+		});
 		console.log('Docker containers stopped and volumes removed.');
 	} catch (error) {
 		failures.push(error);
@@ -42,8 +45,12 @@ async function globalTeardown() {
 				if (fs.lstatSync(itemPath).isDirectory()) {
 					try {
 						fs.rmSync(itemPath, { recursive: true, force: true });
-					} catch (err: any) {
-						if (err.code === 'EACCES' || err.code === 'EPERM') {
+					} catch (err) {
+						if (
+							err instanceof Error &&
+							'code' in err &&
+							(err.code === 'EACCES' || err.code === 'EPERM')
+						) {
 							// Arcane container creates files as root, fallback to docker to remove them
 							execFileSync(
 								'docker',
@@ -59,7 +66,7 @@ async function globalTeardown() {
 									'--',
 									item
 								],
-								{ stdio: 'inherit' }
+								{ stdio: 'inherit', timeout: 30_000 }
 							);
 						} else {
 							throw err;

@@ -73,7 +73,8 @@
 		pageState.requestOptions = options;
 		await queryClient.query({
 			queryKey: queryKeys.networks.list(requestedEnvId, options),
-			queryFn: () => networkService.getNetworksForEnvironment(requestedEnvId, options)
+			queryFn: () => networkService.getNetworksForEnvironment(requestedEnvId, options),
+			staleTime: 0
 		});
 	}
 

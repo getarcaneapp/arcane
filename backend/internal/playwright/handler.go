@@ -31,6 +31,7 @@ func SetupRoutes(api *echo.Group, service *PlaywrightService, federatedService *
 	group := api.Group("/playwright")
 	handler := &playwrightHandlerInternal{service: service, federated: federatedService}
 
+	group.POST("/create-test-gitops-project", handler.createTestGitOpsProjectInternal)
 	group.POST("/create-test-api-keys", handler.createTestAPIKeysInternal)
 	group.POST("/delete-test-api-keys", handler.deleteTestAPIKeysInternal)
 	group.POST("/create-test-federated-credential", handler.createTestFederatedCredentialInternal)
@@ -77,4 +78,11 @@ func (h *playwrightHandlerInternal) createTestFederatedCredentialInternal(c *ech
 	}
 
 	return c.JSON(http.StatusCreated, map[string]any{"credential": map[string]string{"id": credentialID}})
+}
+
+func (h *playwrightHandlerInternal) createTestGitOpsProjectInternal(c *echo.Context) error {
+	if err := h.service.CreateTestGitOpsProject(c.Request().Context()); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]any{"error": err.Error()})
+	}
+	return c.NoContent(http.StatusNoContent)
 }

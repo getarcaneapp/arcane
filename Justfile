@@ -420,7 +420,7 @@ _deps-install-frontend:
 [group('deps')]
 _deps-install-tests:
     vp -C tests install
-    vp -C tests exec playwright install --with-deps chromium firefox
+    vp -C tests exec playwright install --with-deps chromium
 
 # Install backend Go dependencies
 [group('deps')]

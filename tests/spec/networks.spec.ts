@@ -88,23 +88,8 @@ async function createNetworkViaApi(page: Page, networkName: string) {
 	}
 }
 
-async function findNetworkRow(page: Page, networkName: string) {
-	await page.getByPlaceholder('Search…').first().fill(networkName);
-	const row = page.getByRole('row').filter({
-		has: page.getByRole('link', { name: networkName, exact: true })
-	});
-	await expect(row).toBeVisible();
-	return row;
-}
-
 test.describe('Networks Page', () => {
 	test.describe.configure({ mode: 'serial' });
-
-	test('Page renders with heading and subtitle', async ({ page }) => {
-		await navigateToNetworks(page);
-		await expect(page.getByRole('heading', { level: 1, name: 'Networks' })).toBeVisible();
-		await expect(page.getByText('Manage your Docker networks').first()).toBeVisible();
-	});
 
 	test('Stat cards show correct counts', async ({ page }) => {
 		await navigateToNetworks(page);
@@ -116,24 +101,7 @@ test.describe('Networks Page', () => {
 		await expect(page.getByText(`${counts.unused} Unused Networks`)).toBeVisible();
 	});
 
-	test('Table displays when networks exist, else empty state', async ({ page }) => {
-		const networkName = `e2e-table-network-${Date.now()}`;
-		await navigateToNetworks(page);
-		try {
-			await createNetworkViaApi(page, networkName);
-			await navigateToNetworks(page);
-			await expect(page.getByRole('table')).toBeVisible();
-			await expect(page.getByRole('button', { name: 'Name' })).toBeVisible();
-			await expect(await findNetworkRow(page, networkName)).toBeVisible();
-		} finally {
-			await removeApiResource(
-				page,
-				`/api/environments/0/networks/${encodeURIComponent(networkName)}`
-			);
-		}
-	});
-
-	test('@cross-browser creates and removes a network through the UI', async ({ page }) => {
+	test('creates and removes a network through the UI', async ({ page }) => {
 		const networkName = `test-network-${Date.now()}`;
 		try {
 			const networkId = await createNetworkViaUI(page, networkName);

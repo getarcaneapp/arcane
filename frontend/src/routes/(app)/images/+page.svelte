@@ -202,11 +202,13 @@
 		await Promise.all([
 			queryClient.query({
 				queryKey: queryKeys.images.list(requestedEnvId, options),
-				queryFn: () => imageService.getImagesForEnvironment(requestedEnvId, options)
+				queryFn: () => imageService.getImagesForEnvironment(requestedEnvId, options),
+				staleTime: 0
 			}),
 			queryClient.query({
 				queryKey: queryKeys.images.usageCounts(requestedEnvId),
-				queryFn: () => imageService.getImageUsageCountsForEnvironment(requestedEnvId)
+				queryFn: () => imageService.getImageUsageCountsForEnvironment(requestedEnvId),
+				staleTime: 0
 			})
 		]);
 	}

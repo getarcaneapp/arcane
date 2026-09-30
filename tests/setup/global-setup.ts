@@ -16,7 +16,8 @@ export function captureComposeDiagnostics(composeFile: string) {
 		try {
 			const output = execFileSync('docker', ['compose', '-f', composeFile, ...args], {
 				encoding: 'utf8',
-				maxBuffer: 32 * 1024 * 1024
+				maxBuffer: 32 * 1024 * 1024,
+				timeout: 10_000
 			});
 			fs.writeFileSync(path.join(directory, `${name}.txt`), output);
 		} catch (error) {
@@ -57,6 +58,9 @@ function ensureProjectsDirIsContainerWritable(projectsDir: string) {
 }
 
 async function globalSetup() {
+	process.env.ARCANE_E2E_COMPOSE_FILE = process.env.COMPOSE_FILE
+		? path.resolve(__dirname, '..', process.env.COMPOSE_FILE)
+		: path.resolve(__dirname, 'compose.yaml');
 	console.log('\nStarting global setup...');
 
 	const composeFile = process.env.COMPOSE_FILE
@@ -111,7 +115,7 @@ async function globalSetup() {
 				console.log('Server is ready!');
 				break;
 			}
-		} catch (e) {
+		} catch {
 			// Ignore connection errors
 		}
 		attempts++;
