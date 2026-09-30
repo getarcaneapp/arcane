@@ -77,7 +77,7 @@
 		"@typescript-eslint/parser": "^8.70.1",
 		"@typescript/native": "npm:typescript@^7.0.2",
 		"eslint": "^10.11.0",
-		"fallow": "^3.28.0",
+		"fallow": "^3.30.0",
 		"isomorphic-dompurify": "^4.3.0",
 		"paneforge": "^1.0.2",
 		"shadcn-svelte": "^1.7.0",
