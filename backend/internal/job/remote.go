@@ -10,7 +10,7 @@ import (
 
 	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/queue"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
 	"github.com/getarcaneapp/arcane/types/v2/jobschedule"
 	"github.com/getarcaneapp/arcane/types/v2/meta"
 	st "github.com/getarcaneapp/arcane/types/v2/scheduler"
@@ -85,7 +85,7 @@ func (s *JobService) confirmRemoteRunInternal(ctx context.Context, run, remoteRu
 	now := time.Now().UTC()
 	outcome := remoteRun.Outcome
 	outcome.Status = remoteRun.Status
-	if err := s.Queue.UpdateRun(ctx, run, func(current *st.Run) error {
+	if err := s.runs.UpdateRun(ctx, run, func(current *st.Run) error {
 		current.RemoteAccepted = true
 		current.RemoteDeliveryAttempted = true
 		current.LastConfirmedAt = &now
@@ -114,7 +114,7 @@ func (s *JobService) acknowledgeRemoteInternal(ctx context.Context, run st.Run, 
 	if response.ID != run.ID || !response.RemoteSettled {
 		return st.Outcome{Status: st.Waiting, Message: "Remote operation completed; acknowledgement not confirmed"}, nil
 	}
-	if err := s.Queue.UpdateRun(ctx, run, func(current *st.Run) error { current.RemoteSettled = true; return nil }); err != nil {
+	if err := s.runs.UpdateRun(ctx, run, func(current *st.Run) error { current.RemoteSettled = true; return nil }); err != nil {
 		return st.Outcome{Status: st.Retrying}, err
 	}
 	return outcome, nil
@@ -170,8 +170,8 @@ func (s *JobService) ListRemoteJobs(ctx context.Context, environmentID string) (
 
 // RetryRemoteRun queues one explicit retry while retaining the agent's target progress.
 func (s *JobService) RetryRemoteRun(ctx context.Context, environmentID, jobID, runID string) (st.Run, error) {
-	run, err := s.Queue.Get(ctx, environmentID, jobID, runID)
-	if errors.Is(err, queue.ErrRunNotFound) {
+	run, err := s.runs.Get(ctx, environmentID, jobID, runID)
+	if errors.Is(err, runs.ErrRunNotFound) {
 		return s.mutateAgentRunInternal(ctx, environmentID, jobID, runID, "retry")
 	}
 	if err != nil {
@@ -180,7 +180,7 @@ func (s *JobService) RetryRemoteRun(ctx context.Context, environmentID, jobID, r
 	if err := s.authorizeRunInternal(ctx, run); err != nil {
 		return run, err
 	}
-	err = s.Queue.UpdateRun(ctx, run, func(current *st.Run) error {
+	err = s.runs.UpdateRun(ctx, run, func(current *st.Run) error {
 		if current.Status != st.Failed && current.Status != st.Partial && current.Status != st.NeedsAttention {
 			return errors.New("run is not eligible for retry")
 		}
@@ -242,7 +242,7 @@ func (s *JobService) admitRemoteInternal(ctx context.Context, run st.Run, catalo
 		return st.Run{}, errRemoteIneligibleInternal
 	}
 	// A confirmed 404 permits another delivery of the same deduplicated ID.
-	if err := s.Queue.UpdateRun(ctx, run, func(current *st.Run) error {
+	if err := s.runs.UpdateRun(ctx, run, func(current *st.Run) error {
 		current.RemoteDeliveryAttempted = true
 		return nil
 	}); err != nil {
@@ -267,7 +267,7 @@ func (s *JobService) retryDeliveryInternal(ctx context.Context, run st.Run, path
 	if run.RemoteRetryAttempted {
 		return st.Run{}, errRemoteRetryUncertainInternal
 	}
-	if err := s.Queue.UpdateRun(ctx, run, func(current *st.Run) error {
+	if err := s.runs.UpdateRun(ctx, run, func(current *st.Run) error {
 		current.RemoteRetryAttempted = true
 		return nil
 	}); err != nil {

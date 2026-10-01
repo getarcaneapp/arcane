@@ -20,6 +20,7 @@ import (
 )
 
 type Watcher struct {
+	callbacks      sync.WaitGroup
 	watcher        *fsnotify.Watcher
 	watchedPath    string
 	maxDepth       int
@@ -111,7 +112,15 @@ func (fw *Watcher) Start(ctx context.Context) error {
 	return nil
 }
 
+// Stop closes the watcher and waits for accepted callbacks.
 func (fw *Watcher) Stop() error {
+	err := fw.StopWatching()
+	fw.callbacks.Wait()
+	return err
+}
+
+// StopWatching closes the watch loop before its owner joins callbacks.
+func (fw *Watcher) StopWatching() error {
 	fw.stopOnce.Do(func() {
 		fw.mu.Lock()
 		fw.stopped = true
@@ -213,12 +222,12 @@ func (fw *Watcher) fireDebounceInternal(ctx context.Context, debouncePending *bo
 		*lastGoroutineLog = time.Now()
 	}
 	if fw.onChange != nil {
-		go fw.onChange(ctx)
+		fw.callbacks.Go(func() { fw.onChange(ctx) })
 	}
 	if fw.onChangePaths != nil {
 		paths := fw.drainPendingPathsInternal()
 		if len(paths) > 0 {
-			go fw.onChangePaths(ctx, paths)
+			fw.callbacks.Go(func() { fw.onChangePaths(ctx, paths) })
 		}
 	}
 	return false
@@ -478,10 +487,10 @@ func (fw *Watcher) reconnectInternal(ctx context.Context) bool {
 				}
 				// Changes while disconnected need a full reconciliation.
 				if fw.onChange != nil {
-					fw.onChange(ctx)
+					fw.callbacks.Go(func() { fw.onChange(ctx) })
 				}
 				if fw.onChangePaths != nil {
-					fw.onChangePaths(ctx, []string{fw.watchedPath})
+					fw.callbacks.Go(func() { fw.onChangePaths(ctx, []string{fw.watchedPath}) })
 				}
 				return true
 			}

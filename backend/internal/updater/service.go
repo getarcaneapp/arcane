@@ -14,8 +14,8 @@ import (
 
 	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
@@ -24,17 +24,20 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/notification"
 	projectpkg "github.com/getarcaneapp/arcane/backend/v2/internal/project"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	projectspkg "github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/notifications"
 	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	arcaneupdater "github.com/getarcaneapp/arcane/types/v2/updater"
+	"github.com/italypaleale/francis/actor"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 	"github.com/samber/mo"
@@ -48,9 +51,19 @@ import (
 
 // UpdaterService is Arcane's handler-facing service for the standalone updater engine.
 type UpdaterService struct {
-	deps          updaterDependenciesInternal
-	engine        *updater.Service
-	singleUpdates *actors.Executor
+	admission      *runs.Admission
+	config         *config.Config
+	coordinator    *runs.Coordinator
+	roles          *role.RoleService
+	deps           updaterDependenciesInternal
+	engine         *updater.Service
+	singleUpdates  *actor.Service
+	singleMu       sync.Mutex
+	singleContext  context.Context
+	singleCancel   context.CancelFunc
+	singleWorkers  sync.WaitGroup
+	singleDone     chan struct{}
+	singleStopping bool
 	// updateMu serializes per-container updates. docker compose's recreate
 	// pipeline is not concurrency-safe for sibling containers sharing a
 	// namespace. ponytail: global lock ceiling — all updates serialize; fine
@@ -93,8 +106,13 @@ func NewUpdaterService(
 	notifications *notification.NotificationService,
 	upgrade selfUpgradeServiceInternal,
 	activityService *activity.ActivityService,
+	cfg *config.Config,
+	coordinator *runs.Coordinator,
+	admission *runs.Admission,
+	roles *role.RoleService,
 ) (*UpdaterService, error) {
 	service := &UpdaterService{
+		config: cfg, coordinator: coordinator, admission: admission, roles: roles,
 		deps: updaterDependenciesInternal{
 			DB:                     db,
 			Docker:                 docker,
@@ -171,6 +189,12 @@ func (s *UpdaterService) registryDigestResolverInternal() updater.RegistryDigest
 // to concrete containers and go through the engine's single-container path
 // instead — same activity, events, and cleanup either way.
 func (s *UpdaterService) ApplyPending(ctx context.Context, options arcaneupdater.Options) (out *arcaneupdater.Result, err error) {
+	var release func()
+	ctx, release, err = s.acquireUpdateInternal(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 	start := time.Now()
 	batchCompleted := false
 	activityID := s.startAutoUpdateActivityInternal(ctx, options.DryRun)
@@ -195,7 +219,8 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, options arcaneupdater
 		s.completeAutoUpdateActivityInternal(ctx, activityID, out, err)
 	}()
 
-	if err = jobcontext.Progress(ctx, schedulertypes.TargetOutcome{ID: "auto-update", Status: schedulertypes.Running, ActivityID: activityID}); err != nil {
+	ctx, err = s.freezePendingInternal(ctx)
+	if err != nil {
 		return out, err
 	}
 
@@ -431,7 +456,7 @@ func (s *UpdaterService) containerIDsForImagesInternal(ctx context.Context, imag
 
 // UpdateSingleContainer updates a single container by ID to the latest available image.
 func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID string) (out *arcaneupdater.Result, err error) {
-	activity, workCtx, err := s.startSingleContainerUpdateActivityInternal(ctx, containerID)
+	activity, workCtx, err := s.startSingleContainerUpdateActivityInternal(ctx, containerID, true)
 	if err != nil {
 		return nil, err
 	}
@@ -451,24 +476,29 @@ func (s *UpdaterService) AcceptSingleContainerUpdate(ctx context.Context, contai
 	if s.deps.Activity == nil || s.singleUpdates == nil {
 		return nil, errors.New("asynchronous container updates unavailable")
 	}
-	activity, workCtx, err := s.startSingleContainerUpdateActivityInternal(ctx, containerID)
+	activity, workCtx, err := s.startSingleContainerUpdateActivityInternal(ctx, containerID, false)
 	if err != nil {
 		return nil, err
 	}
-	_, err = s.singleUpdates.Submit(workCtx, "update container", func(actorCtx context.Context) (*arcaneupdater.Result, error) {
-		runCtx := utils.ActivityRuntimeContext(workCtx, actorCtx)
-		return s.runSingleContainerUpdateInternal(runCtx, containerID, activity.ID)
-	}, func(result *arcaneupdater.Result, runErr error) {
-		s.finishSingleContainerUpdateInternal(workCtx, activity.ID, result, runErr)
-	})
-	if err != nil {
+	command := singleUpdateCommandInternal(ctx, containerID, activity.ID)
+	state := arcaneupdater.SingleUpdateState{Command: command, Status: "queued"}
+	if err := s.singleUpdates.SetState(workCtx, singleUpdateStateTypeInternal, activity.ID, state, nil); err != nil {
 		s.finishSingleContainerUpdateInternal(workCtx, activity.ID, nil, err)
-		return nil, errors.WrapIf(err, "submit container update")
+		return nil, errors.WrapIf(err, "persist container update")
+	}
+	if err := s.dispatchSingleInternal(workCtx, state); err != nil {
+		s.loggerInternal().WarnContext(workCtx, "container update dispatch deferred", "activityId", activity.ID, "error", err)
 	}
 	return activity, nil
 }
 
 func (s *UpdaterService) runSingleContainerUpdateInternal(ctx context.Context, containerID, activityID string) (out *arcaneupdater.Result, err error) {
+	var release func()
+	ctx, release, err = s.acquireUpdateInternal(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 	start := time.Now()
 	out = &arcaneupdater.Result{Items: []arcaneupdater.ResourceResult{}, ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()}
 	ctx = contextWithActivityIDInternal(ctx, activityID)
@@ -615,6 +645,10 @@ func (s *UpdaterService) PullImage(ctx context.Context, imageRef string, progres
 	if s == nil || s.deps.ImagePuller == nil {
 		return common.Classify(common.ErrUnavailable, errors.New("image service unavailable"))
 	}
+	pulledRef, err := s.prepareFrozenPullInternal(ctx, imageRef)
+	if err != nil {
+		return err
+	}
 	activityID := activityIDFromContextInternal(ctx)
 	writer := activitylib.NewWriter(ctx, s.deps.Activity, activityID, progress, "Pulling updated images")
 	defer activitylib.FlushWriter(writer)
@@ -631,14 +665,23 @@ func (s *UpdaterService) PullImage(ctx context.Context, imageRef string, progres
 		if err != nil {
 			return errors.WrapIf(err, "resolve registry credentials")
 		}
-		return s.deps.ImagePuller.PullImage(pullCtx, imageRef, writer, s.deps.SystemUser, resolved)
+		if err := s.deps.ImagePuller.PullImage(pullCtx, pulledRef, writer, s.deps.SystemUser, resolved); err != nil {
+			return err
+		}
+		return s.tagFrozenPullInternal(pullCtx, pulledRef, imageRef)
 	}
 
-	return s.deps.ImagePuller.PullImage(pullCtx, imageRef, writer, s.deps.SystemUser, nil)
+	if err := s.deps.ImagePuller.PullImage(pullCtx, pulledRef, writer, s.deps.SystemUser, nil); err != nil {
+		return err
+	}
+	return s.tagFrozenPullInternal(pullCtx, pulledRef, imageRef)
 }
 
 // PendingImageUpdates returns pending image update records from Arcane's database.
 func (s *UpdaterService) PendingImageUpdates(ctx context.Context) ([]updater.ImageUpdateRecord, error) {
+	if frozen, ok := ctx.Value(frozenPendingKeyInternal{}).(*frozenUpdatePlanInternal); ok {
+		return slices.Clone(frozen.Records), nil
+	}
 	if s == nil || s.deps.DB == nil {
 		return nil, common.Classify(common.ErrUnavailable, errors.New("database unavailable"))
 	}
@@ -712,6 +755,13 @@ func (s *UpdaterService) UpdateServices(ctx context.Context, projectID string, s
 
 // TriggerSelfUpdate runs Arcane's CLI-backed self-update hook.
 func (s *UpdaterService) TriggerSelfUpdate(ctx context.Context, target updater.SelfUpdateTarget) error {
+	if target.NewImageRef != "" {
+		pinned, err := s.prepareFrozenPullInternal(ctx, target.NewImageRef)
+		if err != nil {
+			return err
+		}
+		target.NewImageRef = pinned
+	}
 	if s == nil || s.deps.SelfUpgrade == nil {
 		instanceType := cmp.Or(strings.TrimSpace(target.InstanceType), "server")
 		return errors.Errorf("%s self-update requires CLI upgrade service", instanceType)
@@ -902,7 +952,7 @@ func (s *UpdaterService) startAutoUpdateActivityInternal(ctx context.Context, dr
 	return activity.ID
 }
 
-func (s *UpdaterService) startSingleContainerUpdateActivityInternal(ctx context.Context, containerID string) (*activitytypes.Activity, context.Context, error) {
+func (s *UpdaterService) startSingleContainerUpdateActivityInternal(ctx context.Context, containerID string, tracked bool) (*activitytypes.Activity, context.Context, error) {
 	if s.deps.Activity == nil {
 		return nil, ctx, nil
 	}
@@ -924,7 +974,7 @@ func (s *UpdaterService) startSingleContainerUpdateActivityInternal(ctx context.
 			user.DisplayName = &initiator.DisplayName
 		}
 	}
-	activity, workCtx, err := s.deps.Activity.StartTrackedActivity(ctx, activitylib.StartRequest{
+	request := activitylib.StartRequest{
 		EnvironmentID: "0",
 		Type:          activitytypes.TypeAutoUpdate,
 		Queue:         true,
@@ -936,11 +986,19 @@ func (s *UpdaterService) startSingleContainerUpdateActivityInternal(ctx context.
 		Step:          "Updating container",
 		LatestMessage: "Container update started",
 		Metadata:      database.JSON{"containerID": containerID},
-	})
+	}
+	var item *activitytypes.Activity
+	workCtx := ctx
+	var err error
+	if tracked {
+		item, workCtx, err = s.deps.Activity.StartTrackedActivity(ctx, request)
+	} else {
+		item, err = s.deps.Activity.StartActivity(ctx, request)
+	}
 	if err != nil {
 		return nil, nil, errors.WrapIf(err, "start container update activity")
 	}
-	return activity, workCtx, nil
+	return item, workCtx, nil
 }
 
 func (s *UpdaterService) finishSingleContainerUpdateInternal(ctx context.Context, activityID string, result *arcaneupdater.Result, runErr error) {
@@ -1453,4 +1511,16 @@ func addNormalizedImageUpdateRefInternal(ctx context.Context, out map[string]str
 		return
 	}
 	slog.Debug(logMessage, args...)
+}
+
+func (s *UpdaterService) tagFrozenPullInternal(ctx context.Context, pulledRef, imageRef string) error {
+	if pulledRef == imageRef {
+		return nil
+	}
+	dockerClient, err := s.DockerClient(ctx)
+	if err != nil {
+		return err
+	}
+	_, err = dockerClient.ImageTag(ctx, client.ImageTagOptions{Source: pulledRef, Target: imageRef})
+	return err
 }

@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/concurrency"
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/events"
@@ -19,7 +19,6 @@ import (
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/fx/fxtest"
 )
 
 func TestNewDockerClient_PinsEffectiveAPIVersion(t *testing.T) {
@@ -212,15 +211,12 @@ func TestDockerClientService_EventActorStopCancelsAndJoinsStreamInternal(t *test
 		}
 	})
 
-	lifecycle := fxtest.NewLifecycle(t)
-	actorRuntime, err := actors.NewRuntime(t.Context(), lifecycle)
-	require.NoError(t, err)
 	service := newDockerClientServiceForTestInternal(server.URL)
 	t.Cleanup(service.Close)
 
 	eventsCh, unsubscribe := service.EventBus().Subscribe(events.ImageEventType)
 	t.Cleanup(unsubscribe)
-	runner, err := actors.NewRunner(t.Context(), actorRuntime, "docker-events-test", "stream", "Docker event watcher", 3, func(ctx context.Context) error {
+	stop, err := concurrency.StartSupervised(t.Context(), "Docker event watcher", func(ctx context.Context) error {
 		service.WatchEvents(ctx)
 		return nil
 	})
@@ -239,7 +235,7 @@ func TestDockerClientService_EventActorStopCancelsAndJoinsStreamInternal(t *test
 
 	stopCtx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	require.NoError(t, runner.Stop(stopCtx))
+	require.NoError(t, stop(stopCtx))
 	require.Eventually(t, func() bool {
 		select {
 		case <-streamStopped:
@@ -248,7 +244,6 @@ func TestDockerClientService_EventActorStopCancelsAndJoinsStreamInternal(t *test
 			return false
 		}
 	}, time.Second, time.Millisecond)
-	require.NoError(t, lifecycle.Stop(stopCtx))
 }
 
 func TestCountImageUsage_UsesContainerImageIDs(t *testing.T) {

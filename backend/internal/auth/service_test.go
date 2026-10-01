@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
@@ -26,7 +25,6 @@ import (
 	"github.com/samber/hot"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/fx/fxtest"
 	"gorm.io/gorm"
 )
 
@@ -55,21 +53,11 @@ func setupAuthServiceTestDB(t *testing.T) *database.DB {
 
 func newSettingsServiceForAuthTestInternal(t testing.TB, ctx context.Context, db *database.DB) (*settings.SettingsService, error) {
 	t.Helper()
-	lifecycle := fxtest.NewLifecycle(t)
-	runtime, err := actors.NewRuntime(t.Context(), lifecycle)
-	require.NoError(t, err)
-	writes, err := actors.NewExecutor(t.Context(), runtime, "auth-settings-test", t.Name(), 3)
-	require.NoError(t, err)
-	effects, err := actors.NewExecutor(t.Context(), runtime, "auth-settings-effects-test", t.Name(), 3)
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		stopCtx, cancel := context.WithTimeout(context.Background(), time.Second)
-		defer cancel()
-		require.NoError(t, writes.Stop(stopCtx))
-		require.NoError(t, effects.Stop(stopCtx))
-		require.NoError(t, lifecycle.Stop(stopCtx))
-	})
-	return settings.NewSettingsService(ctx, db, writes, effects)
+	svc, err := settings.NewSettingsService(ctx, db)
+	if err == nil {
+		t.Cleanup(func() { require.NoError(t, svc.Stop(context.Background())) })
+	}
+	return svc, err
 }
 
 func newTestSigningKeyInternal() *mldsa.PrivateKey {
@@ -188,7 +176,7 @@ func makeUnsignedToken(t *testing.T, claims map[string]any) string {
 
 func TestVerifyToken_ValidClaims(t *testing.T) {
 	db := setupAuthServiceTestDB(t)
-	userSvc := user.NewUserService(db)
+	userSvc := user.NewUserService(db, nil)
 	s := newTestAuthService()
 	s.userService = userSvc
 	s.sessionService = session.NewSessionService(db)
@@ -251,7 +239,7 @@ func TestVerifyToken_RejectsNonMLDSAAlg(t *testing.T) {
 
 func TestVerifyToken_Expired(t *testing.T) {
 	db := setupAuthServiceTestDB(t)
-	userSvc := user.NewUserService(db)
+	userSvc := user.NewUserService(db, nil)
 	s := newTestAuthService()
 	s.userService = userSvc
 	s.sessionService = session.NewSessionService(db)
@@ -381,7 +369,7 @@ func TestVerifyToken_VersionMismatch(t *testing.T) {
 
 func TestRefreshToken_Valid(t *testing.T) {
 	db := setupAuthServiceTestDB(t)
-	userSvc := user.NewUserService(db)
+	userSvc := user.NewUserService(db, nil)
 	settingsSvc, err := newSettingsServiceForAuthTestInternal(t, context.Background(), db)
 	require.NoError(t, err)
 	s := newTestAuthService()
@@ -424,7 +412,7 @@ func TestRefreshToken_Valid(t *testing.T) {
 // users logged in across backend releases — see plans/how-can-we-make-compiled-quilt.md.
 func TestRefreshToken_VersionMismatchRotates(t *testing.T) {
 	db := setupAuthServiceTestDB(t)
-	userSvc := user.NewUserService(db)
+	userSvc := user.NewUserService(db, nil)
 	settingsSvc, err := newSettingsServiceForAuthTestInternal(t, context.Background(), db)
 	require.NoError(t, err)
 	s := newTestAuthService()
@@ -484,7 +472,7 @@ func TestRefreshToken_VersionMismatchRotates(t *testing.T) {
 
 func TestVerifyToken_RejectsRevokedSession(t *testing.T) {
 	db := setupAuthServiceTestDB(t)
-	userSvc := user.NewUserService(db)
+	userSvc := user.NewUserService(db, nil)
 	s := newTestAuthService()
 	s.userService = userSvc
 	s.sessionService = session.NewSessionService(db)
@@ -520,7 +508,7 @@ func TestVerifyToken_RejectsRevokedSession(t *testing.T) {
 
 func TestVerifyToken_RejectsMissingSessionID(t *testing.T) {
 	db := setupAuthServiceTestDB(t)
-	userSvc := user.NewUserService(db)
+	userSvc := user.NewUserService(db, nil)
 	s := newTestAuthService()
 	s.userService = userSvc
 	s.sessionService = session.NewSessionService(db)
@@ -540,7 +528,7 @@ func TestVerifyToken_RejectsMissingSessionID(t *testing.T) {
 
 func TestRevokeSessionThenVerifyTokenFails(t *testing.T) {
 	db := setupAuthServiceTestDB(t)
-	userSvc := user.NewUserService(db)
+	userSvc := user.NewUserService(db, nil)
 	s := newTestAuthService()
 	s.userService = userSvc
 	s.sessionService = session.NewSessionService(db)
@@ -563,7 +551,7 @@ func TestRevokeSessionThenVerifyTokenFails(t *testing.T) {
 
 func TestVerifyToken_RejectsRevokedCachedSession(t *testing.T) {
 	db := setupAuthServiceTestDB(t)
-	userSvc := user.NewUserService(db)
+	userSvc := user.NewUserService(db, nil)
 	s := newTestAuthService()
 	s.userService = userSvc
 	s.sessionService = session.NewSessionService(db)
@@ -589,7 +577,7 @@ func TestVerifyToken_RejectsRevokedCachedSession(t *testing.T) {
 
 func TestRefreshToken_RotatesJTI(t *testing.T) {
 	db := setupAuthServiceTestDB(t)
-	userSvc := user.NewUserService(db)
+	userSvc := user.NewUserService(db, nil)
 	settingsSvc, err := newSettingsServiceForAuthTestInternal(t, context.Background(), db)
 	require.NoError(t, err)
 	s := newTestAuthService()
@@ -618,7 +606,7 @@ func TestRefreshToken_RotatesJTI(t *testing.T) {
 
 func TestRefreshToken_RejectsRevokedSession(t *testing.T) {
 	db := setupAuthServiceTestDB(t)
-	userSvc := user.NewUserService(db)
+	userSvc := user.NewUserService(db, nil)
 	settingsSvc, err := newSettingsServiceForAuthTestInternal(t, context.Background(), db)
 	require.NoError(t, err)
 	s := newTestAuthService()
@@ -644,7 +632,7 @@ func TestRefreshToken_RejectsRevokedSession(t *testing.T) {
 
 func TestChangePassword_RevokesAllSessions(t *testing.T) {
 	db := setupAuthServiceTestDB(t)
-	userSvc := user.NewUserService(db)
+	userSvc := user.NewUserService(db, nil)
 	s := newTestAuthService()
 	s.userService = userSvc
 	s.sessionService = session.NewSessionService(db)
@@ -674,7 +662,7 @@ func TestChangePassword_RevokesAllSessions(t *testing.T) {
 
 func TestChangePassword_KeepsCurrentSessionAlive(t *testing.T) {
 	db := setupAuthServiceTestDB(t)
-	userSvc := user.NewUserService(db)
+	userSvc := user.NewUserService(db, nil)
 	s := newTestAuthService()
 	s.userService = userSvc
 	s.sessionService = session.NewSessionService(db)
@@ -789,7 +777,7 @@ func TestFindOrCreateOidcUser_MergeEnabled_EmailNotVerified_NoExistingUser_Creat
 	require.NoError(t, settingsSvc.EnsureDefaultSettings(ctx))
 	require.NoError(t, settingsSvc.SetBoolSetting(ctx, "oidcMergeAccounts", true))
 
-	userSvc := user.NewUserService(db)
+	userSvc := user.NewUserService(db, nil)
 	authSvc := newTestAuthService()
 	authSvc.userService = userSvc
 	authSvc.settingsService = settingsSvc
@@ -843,7 +831,7 @@ func TestFindOrCreateOidcUser_MergeEnabled_EmailNotVerified_WithExistingUser_Ret
 	require.NoError(t, settingsSvc.EnsureDefaultSettings(ctx))
 	require.NoError(t, settingsSvc.SetBoolSetting(ctx, "oidcMergeAccounts", true))
 
-	userSvc := user.NewUserService(db)
+	userSvc := user.NewUserService(db, nil)
 	// Seed an existing local user with matching email
 	email := "existing@example.com"
 	existing := &common.User{
@@ -885,7 +873,7 @@ func TestFindOrCreateOidcUser_MergeEnabled_EmailVerificationMissing_WithExisting
 	require.NoError(t, settingsSvc.EnsureDefaultSettings(ctx))
 	require.NoError(t, settingsSvc.SetBoolSetting(ctx, "oidcMergeAccounts", true))
 
-	userSvc := user.NewUserService(db)
+	userSvc := user.NewUserService(db, nil)
 	// Seed an existing local user with matching email
 	email := "existing@example.com"
 	existing := &common.User{
@@ -922,7 +910,7 @@ func TestFindOrCreateOidcUser_MergeEnabled_EmailVerificationMissing_WithExisting
 
 func TestAuthenticateLocalPrimary_EmailFallback(t *testing.T) {
 	db := setupAuthServiceTestDB(t)
-	userSvc := user.NewUserService(db)
+	userSvc := user.NewUserService(db, nil)
 	settingsSvc, err := newSettingsServiceForAuthTestInternal(t, context.Background(), db)
 	require.NoError(t, err)
 	s := newTestAuthService()

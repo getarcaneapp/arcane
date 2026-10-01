@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"emperror.dev/errors"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/auth"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
@@ -32,7 +31,6 @@ import (
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/fx/fxtest"
 	"gorm.io/gorm"
 )
 
@@ -142,7 +140,7 @@ func setupFederatedCredentialServiceInternal(t *testing.T, issuer *federatedTest
 	ctx := context.Background()
 	db := setupFederatedCredentialServiceTestDBInternal(t)
 	roleSvc := role.NewRoleService(db)
-	userSvc := user.NewUserService(db).WithRoleService(roleSvc)
+	userSvc := user.NewUserService(db, roleSvc)
 	sessionSvc := session.NewSessionService(db)
 	settingsSvc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
@@ -159,7 +157,7 @@ func setupFederatedCredentialServiceInternal(t *testing.T, issuer *federatedTest
 		defer cancel()
 		require.NoError(t, keySetManager.Shutdown(shutdownCtx))
 	})
-	service := NewFederatedCredentialService(db, authSvc, userSvc, settingsSvc, eventSvc, issuer.server.Client(), keySetManager).WithRoleService(roleSvc)
+	service := NewFederatedCredentialService(db, authSvc, userSvc, settingsSvc, eventSvc, issuer.server.Client(), keySetManager, roleSvc)
 
 	viewerRole := role.Role{
 		ID:          "role-federated-viewer",
@@ -385,19 +383,9 @@ func TestFederatedCredentialServiceCreateRejectsBareWildcardGlob(t *testing.T) {
 
 func newSettingsServiceForTestInternal(t testing.TB, ctx context.Context, db *database.DB) (*settings.SettingsService, error) {
 	t.Helper()
-	lifecycle := fxtest.NewLifecycle(t)
-	runtime, err := actors.NewRuntime(t.Context(), lifecycle)
-	require.NoError(t, err)
-	executor, err := actors.NewExecutor(t.Context(), runtime, "settings-test", t.Name(), 3)
-	require.NoError(t, err)
-	effects, err := actors.NewExecutor(t.Context(), runtime, "settings-effects-test", t.Name(), 3)
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		stopCtx, cancel := context.WithTimeout(context.Background(), time.Second)
-		defer cancel()
-		require.NoError(t, executor.Stop(stopCtx))
-		require.NoError(t, effects.Stop(stopCtx))
-		require.NoError(t, lifecycle.Stop(stopCtx))
-	})
-	return settings.NewSettingsService(ctx, db, executor, effects)
+	svc, err := settings.NewSettingsService(ctx, db)
+	if err == nil {
+		t.Cleanup(func() { require.NoError(t, svc.Stop(context.Background())) })
+	}
+	return svc, err
 }

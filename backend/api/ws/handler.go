@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/auth"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/container"
@@ -20,7 +19,8 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/system"
 	systemlib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/system"
 	wshub "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/ws"
-	httputil "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/concurrency"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	systemtypes "github.com/getarcaneapp/arcane/types/v2/system"
 	"github.com/labstack/echo/v5"
 	"github.com/samber/hot"
@@ -28,10 +28,6 @@ import (
 )
 
 var defaultWebSocketMetrics = wshub.NewWebSocketMetrics()
-
-// ============================================================================
-// WebSocket Handler
-// ============================================================================
 
 // WebSocketHandler consolidates all WebSocket and streaming endpoints.
 // REST endpoints are handled by Huma handlers.
@@ -46,29 +42,22 @@ type WebSocketHandler struct {
 	activeConnections  sync.Map
 	logStreamsMu       sync.Mutex
 	logStreams         map[string]*wsLogStream
-	cpuCache           actors.Snapshot[float64]
+	cpuCache           concurrency.Snapshot[float64]
 	systemStaticInfo   struct {
 		once     sync.Once
 		cpuCount int
 		hostname string
 	}
 	systemStatsSampler struct {
-		latest      actors.Snapshot[systemtypes.SystemStats]
-		lifecycleMu sync.Mutex
-		clients     int
-		// intervals counts subscribers per requested interval; the sampler
-		// ticks at the smallest one (in effectiveInterval) rather than a
-		// fixed 1Hz, so samples are never produced faster than the fastest
-		// consumer reads them.
+		latest            concurrency.Snapshot[systemtypes.SystemStats]
+		lifecycleMu       sync.Mutex
+		clients           int
 		intervals         map[time.Duration]int
 		effectiveInterval atomic.Int64
 		cancel            context.CancelFunc
 		ready             chan struct{}
-		// wake nudges the running sampler when effectiveInterval changes,
-		// so a newly joined faster subscriber doesn't wait out a slower
-		// tick already in flight.
-		wake    chan struct{}
-		running bool
+		wake              chan struct{}
+		running           bool
 	}
 	containerStatsHubs sync.Map
 	cgroupCache        *cgroup.Cache
@@ -104,7 +93,7 @@ func NewWebSocketHandler(
 		diskUsagePathCache: hot.NewHotCache[struct{}, string](hot.LRU, 1).
 			WithTTL(5 * time.Minute).
 			Build(),
-		checkWSOrigin: httputil.ValidateWebSocketOrigin(cfg.GetAppURL()),
+		checkWSOrigin: httpx.ValidateWebSocketOrigin(cfg.GetAppURL()),
 	}
 	wsGroup := group.Group("/environments/:id/ws", authMiddleware.WithAdminNotRequired().Add())
 	for _, r := range handler.proxiedRoutes() {
@@ -136,12 +125,6 @@ func (h *WebSocketHandler) acceptWSInternal(c *echo.Context, kind, resourceID st
 	}
 	connID := h.wsMetrics.RegisterConnection(buildWSConnectionInfoInternal(c, kind, resourceID))
 	return conn, func() { h.wsMetrics.UnregisterConnection(connID) }, true
-}
-
-// wsErrorJSONInternal replies with the {"success":false,"error":...} body
-// shared by every WS endpoint's pre-upgrade error path.
-func wsErrorJSONInternal(c *echo.Context, status int, msg string) error {
-	return c.JSON(status, map[string]any{"success": false, "error": msg})
 }
 
 // keepWSConnAliveInternal pings the peer every period. Ping round-trips (the

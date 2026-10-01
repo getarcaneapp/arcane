@@ -56,7 +56,7 @@ func TestContainerRegistryService_ImageVersionLabelInternal(t *testing.T) {
 		ociImageVersionLabel: "v2.8.0-next.66",
 	})
 
-	svc := NewContainerRegistryService(nil, nil, nil)
+	svc := NewContainerRegistryService(nil, nil, nil, nil)
 
 	label, err := svc.ImageVersionLabel(context.Background(), imageRef)
 	require.NoError(t, err)
@@ -75,7 +75,7 @@ func TestContainerRegistryService_ImageVersionLabelMissingLabelInternal(t *testi
 	imageRef := host + "/getarcaneapp/arcane:next"
 	pushLabeledImageInternal(t, imageRef, nil)
 
-	svc := NewContainerRegistryService(nil, nil, nil)
+	svc := NewContainerRegistryService(nil, nil, nil, nil)
 	_, err := svc.ImageVersionLabel(context.Background(), imageRef)
 	assert.ErrorIs(t, err, ErrNoVersionLabel)
 }
@@ -84,7 +84,7 @@ func TestContainerRegistryService_ImageVersionLabelErrorNotCachedInternal(t *tes
 	host := newLabelTestRegistryInternal(t)
 	imageRef := host + "/getarcaneapp/arcane:next"
 
-	svc := NewContainerRegistryService(nil, nil, nil)
+	svc := NewContainerRegistryService(nil, nil, nil, nil)
 
 	// The image does not exist yet: the lookup must fail...
 	_, err := svc.ImageVersionLabel(context.Background(), imageRef)

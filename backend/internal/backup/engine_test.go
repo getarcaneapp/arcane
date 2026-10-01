@@ -115,9 +115,9 @@ func TestSnapshotCommandInternal(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"backup", "--init", "--json", "--host", "arcane", "--label", "volume", "--as-path", "/", "--", "/volume"}, single)
 
-	multi, err := snapshotCommandInternal("arcane-system-recovery", CreateSnapshotInput{Sources: []string{"/data", "/projects"}})
+	multi, err := snapshotCommandInternal("arcane-system-recovery", CreateSnapshotInput{Sources: []string{"/data", "/projects"}, Globs: []string{"!/data/arcane.db-wal"}})
 	require.NoError(t, err)
-	require.Equal(t, []string{"backup", "--init", "--json", "--host", "arcane", "--label", "arcane-system-recovery", "--", "/data", "/projects"}, multi)
+	require.Equal(t, []string{"backup", "--init", "--json", "--host", "arcane", "--label", "arcane-system-recovery", "--glob", "!/data/arcane.db-wal", "--", "/data", "/projects"}, multi)
 
 	_, err = snapshotCommandInternal("x", CreateSnapshotInput{Sources: []string{"/data", "/projects"}, AsPath: "/"})
 	require.ErrorContains(t, err, "single source")

@@ -7,22 +7,17 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
 )
 
-// Dependencies are the handler-side collaborators for the settings domain.
-type Dependencies struct {
-	Search          *SettingsSearchService
-	ProxyRemoteJSON handlerutil.RemoteJSONProxy
-	Config          *config.Config
-}
-
 // Module joins the settings service with its route dependencies.
 type Module struct {
-	service *SettingsService
-	deps    Dependencies
+	service         *SettingsService
+	search          *SettingsSearchService
+	proxyRemoteJSON handlerutil.RemoteJSONProxy
+	config          *config.Config
 }
 
-// New builds the settings domain around its initialized actor-backed service.
-func New(service *SettingsService, deps Dependencies) *Module {
-	return &Module{service: service, deps: deps}
+// New builds the settings domain around its initialized service.
+func New(service *SettingsService, search *SettingsSearchService, proxyRemoteJSON handlerutil.RemoteJSONProxy, cfg *config.Config) *Module {
+	return &Module{service: service, search: search, proxyRemoteJSON: proxyRemoteJSON, config: cfg}
 }
 
 // Service exposes settings operations to collaborating domains.
@@ -39,5 +34,5 @@ func (m *Module) RegisterRoutes(api huma.API) {
 		RegisterSettings(api, nil, nil, nil, nil)
 		return
 	}
-	RegisterSettings(api, m.service, m.deps.Search, m.deps.ProxyRemoteJSON, m.deps.Config)
+	RegisterSettings(api, m.service, m.search, m.proxyRemoteJSON, m.config)
 }

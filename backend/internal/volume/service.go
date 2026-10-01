@@ -8,7 +8,6 @@ import (
 
 	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/backup"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
@@ -23,6 +22,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/entityjobs"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	workspacepkg "github.com/getarcaneapp/arcane/backend/v2/pkg/workspace"
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
@@ -61,7 +61,7 @@ type VolumeService struct {
 
 // SetScheduler injects the dynamic scheduler and admission gate for per-policy
 // backup jobs. Agent mode passes them too: agents run their own volume backups.
-func (s *VolumeService) SetScheduler(ctx context.Context, scheduler schedulertypes.DynamicScheduler, admissionGate *actors.Gate[actors.AdmissionKey]) error {
+func (s *VolumeService) SetScheduler(ctx context.Context, scheduler schedulertypes.DynamicScheduler, admissionGate *runs.Admission) error {
 	return s.jobs.SetScheduler(ctx, scheduler, admissionGate)
 }
 
@@ -91,7 +91,7 @@ func NewVolumeService(db *database.DB, dockerService *docker.DockerClientService
 	if strings.TrimSpace(backupVolumeName) == "" {
 		backupVolumeName = "arcane-backups"
 	}
-	return &VolumeService{
+	service := &VolumeService{
 		db:                        db,
 		dockerService:             dockerService,
 		eventService:              eventService,
@@ -110,6 +110,10 @@ func NewVolumeService(db *database.DB, dockerService *docker.DockerClientService
 		helperByVolume:            make(map[string]*volumeHelper),
 		jobs:                      entityjobs.New("volume-backup:", backup.VolumeAdmissionScope),
 	}
+	if engine != nil {
+		engine.RegisterRunKind("volume", service.executeDurableBackupInternal, service.failDurableBackupInternal)
+	}
+	return service
 }
 
 func (s *VolumeService) GetVolumeByName(ctx context.Context, name string) (*volumetypes.Volume, error) {

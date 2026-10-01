@@ -66,9 +66,25 @@ _dev-agent:
 [group('dev')]
 _dev-all:
     #!/usr/bin/env bash
-    trap 'kill 0' EXIT
-    (cd backend && air) &
-    vp -C frontend run dev
+    set -euo pipefail
+
+    shutdown() {
+        status=$?
+        trap - EXIT
+        trap '' INT TERM
+        kill -TERM "$backend_pid" "$frontend_pid" 2>/dev/null || true
+        wait "$backend_pid" "$frontend_pid" 2>/dev/null || true
+        exit "$status"
+    }
+
+    (cd backend && exec air) &
+    backend_pid=$!
+    vp -C frontend run dev &
+    frontend_pid=$!
+    trap shutdown EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+    wait "$frontend_pid"
 
 # Rebuild Docker dev environment
 [group('dev')]

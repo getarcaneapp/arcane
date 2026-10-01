@@ -7,19 +7,19 @@ import (
 	"log/slog"
 	"slices"
 	"strings"
+	"uuid"
 
 	"emperror.dev/errors"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/backup"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	s3domain "github.com/getarcaneapp/arcane/backend/v2/internal/s3"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/volume"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	backuptypes "github.com/getarcaneapp/arcane/types/v2/backup"
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
-	"github.com/google/uuid"
 	kit "go.getarcane.app/kit/pkg"
 	"gorm.io/gorm"
 )
@@ -142,7 +142,7 @@ func (s *SystemBackupService) UpdateSystemVolumeBackupConfig(ctx context.Context
 		ID:       func(policy *backuptypes.SystemVolumeBackupPolicy) string { return policy.ID },
 		UpdateID: func(update backuptypes.UpdateSystemVolumeBackupPolicy) string { return update.ID },
 		New: func() backuptypes.SystemVolumeBackupPolicy {
-			return backuptypes.SystemVolumeBackupPolicy{ID: uuid.NewString()}
+			return backuptypes.SystemVolumeBackupPolicy{ID: uuid.New().String()}
 		},
 		Build: func(ctx context.Context, policy *backuptypes.SystemVolumeBackupPolicy, update backuptypes.UpdateSystemVolumeBackupPolicy) error {
 			normalized, normalizeErr := s.normalizeSystemVolumePolicyUpdateInternal(ctx, update)
@@ -267,7 +267,7 @@ type preparedSystemVolumeBackupInternal struct {
 	policy       backuptypes.SystemVolumeBackupPolicy
 	manualPolicy bool
 	candidates   []backuptypes.SystemVolumeBackupOption
-	lease        *actors.Lease[actors.AdmissionKey]
+	lease        *runs.Lease
 }
 
 func (s *SystemBackupService) runSystemVolumeBackupsInternal(ctx context.Context, request backuptypes.RunSystemVolumeBackupsRequest, trigger volume.VolumeBackupTrigger) (*backuptypes.SystemVolumeBackupRunResult, error) {
@@ -275,7 +275,14 @@ func (s *SystemBackupService) runSystemVolumeBackupsInternal(ctx context.Context
 	if err != nil {
 		return nil, err
 	}
-	defer prepared.lease.Release()
+	defer prepared.lease.Release(ctx)
+	frozen, err := json.Marshal(manualSystemVolumesInternal{Policy: prepared.policy, ManualPolicy: prepared.manualPolicy, Candidates: prepared.candidates})
+	if err != nil {
+		return nil, err
+	}
+	if err := jobcontext.Progress(ctx, schedulertypes.TargetOutcome{ResourceType: "backup_plan", ID: "system-volume-plan", Status: schedulertypes.Succeeded, RecoveryData: frozen}); err != nil {
+		return nil, err
+	}
 	return s.executeSystemVolumeBackupsInternal(ctx, prepared.policy, prepared.manualPolicy, prepared.candidates, trigger, "")
 }
 
@@ -296,7 +303,7 @@ func (s *SystemBackupService) prepareSystemVolumeBackupsInternal(ctx context.Con
 	}
 	options, err := s.volumeService.ListBackupVolumeOptions(ctx)
 	if err != nil {
-		lease.Release()
+		lease.Release(ctx)
 		return nil, err
 	}
 	candidates := selectSystemVolumeBackupCandidatesInternal(policyConfig, options)
@@ -316,18 +323,14 @@ func (s *SystemBackupService) executeSystemVolumeBackupsInternal(ctx context.Con
 		S3DestinationID: policyConfig.S3DestinationID,
 	}
 	for _, candidate := range candidates {
-		if previous, ok := jobcontext.Run(ctx); ok {
-			completed := false
-			for _, target := range previous.Outcome.Targets {
-				if target.ID == candidate.Name && target.Status == schedulertypes.Succeeded {
-					completed = true
-					break
-				}
-			}
-			if completed {
-				result.Succeeded++
-				continue
-			}
+		status := completedVolumeBackupStatusInternal(ctx, candidate.Name)
+		if status == schedulertypes.Succeeded {
+			result.Succeeded++
+			continue
+		}
+		if status == schedulertypes.Skipped {
+			result.Skipped++
+			continue
 		}
 		if err := ctx.Err(); err != nil {
 			return result, err
@@ -340,15 +343,15 @@ func (s *SystemBackupService) executeSystemVolumeBackupsInternal(ctx context.Con
 			continue
 		}
 		if overridden {
+			if err := jobcontext.Progress(ctx, schedulertypes.TargetOutcome{ID: candidate.Name, Status: schedulertypes.Skipped}); err != nil {
+				return result, err
+			}
 			result.Skipped++
 			continue
 		}
 		seriesID := systemVolumePolicyIDInternal(policyConfig.ID, candidate.Name)
 		if manualPolicy {
 			seriesID = systemVolumeManualPolicyIDInternal(candidate.Name)
-		}
-		if progressErr := jobcontext.Progress(ctx, schedulertypes.TargetOutcome{ID: candidate.Name, Status: schedulertypes.Running}); progressErr != nil {
-			return result, progressErr
 		}
 		_, backupErr := s.volumeService.CreateSystemManagedBackup(ctx, candidate.Name, common.SystemUser, trigger, seriesID, policy)
 		if errors.Is(backupErr, volume.ErrVolumeBackupAlreadyRunning) {
@@ -366,6 +369,19 @@ func (s *SystemBackupService) executeSystemVolumeBackupsInternal(ctx context.Con
 		result.Succeeded++
 	}
 	return result, nil
+}
+
+func completedVolumeBackupStatusInternal(ctx context.Context, volumeName string) schedulertypes.RunStatus {
+	previous, ok := jobcontext.Run(ctx)
+	if !ok {
+		return ""
+	}
+	for _, target := range previous.Outcome.Targets {
+		if target.ID == volumeName && (target.Status == schedulertypes.Succeeded || target.Status == schedulertypes.Skipped) {
+			return target.Status
+		}
+	}
+	return ""
 }
 
 func (s *SystemBackupService) runScheduledSystemVolumeBackupInternal(ctx context.Context, policyID string) (schedulertypes.Outcome, error) {
@@ -426,11 +442,15 @@ func (s *SystemBackupService) rescheduleSystemVolumeBackupInternal(ctx context.C
 		return s.runScheduledSystemVolumeBackupInternal(ctx, policyID)
 	}, func(ctx context.Context, previous schedulertypes.Run) (schedulertypes.Outcome, error) {
 		for _, target := range previous.Outcome.Targets {
-			if target.Status != schedulertypes.Succeeded && target.Status != schedulertypes.Skipped {
-				return schedulertypes.Outcome{Status: schedulertypes.NeedsAttention, Targets: previous.Outcome.Targets, Message: "A volume backup has an unconfirmed outcome"}, nil
+			if target.ID != "system-volume-plan" || len(target.RecoveryData) == 0 {
+				continue
 			}
+			if err := s.executeDurableVolumeBackupsInternal(ctx, previous.ID, target.RecoveryData, true); err != nil {
+				return schedulertypes.Outcome{Status: schedulertypes.NeedsAttention, Message: err.Error()}, err
+			}
+			return schedulertypes.Outcome{Status: schedulertypes.Succeeded}, nil
 		}
-		return s.runScheduledSystemVolumeBackupInternal(jobcontext.WithExecution(ctx, previous, nil), policyID)
+		return schedulertypes.Outcome{Status: schedulertypes.NeedsAttention, Message: "The interrupted volume backup has no frozen selection"}, nil
 	})
 }
 

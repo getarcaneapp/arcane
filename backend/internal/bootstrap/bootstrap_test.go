@@ -12,13 +12,18 @@ import (
 	"time"
 
 	"github.com/getarcaneapp/arcane/backend/v2/api"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/auth"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/container"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/job"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/swarm"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/system"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
+	francistest "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/francis/testing"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/proto/tunnel/v1"
 	"github.com/labstack/echo/v5"
@@ -186,9 +191,14 @@ func TestHTTP2APIResponsesDoNotUseAPIGzipInternal(t *testing.T) {
 		Environment: config.AppEnvironmentTest,
 	}
 	router, _ := newRouter(RouterParams{
-		Context:        context.Background(),
-		Config:         cfg,
-		HandlerDeps:    api.HandlerDeps{},
+		Context: context.Background(),
+		Config:  cfg,
+		HandlerDeps: api.HandlerDeps{
+			Project:   project.New(&project.ProjectService{}, nil),
+			Container: container.New(&container.ContainerService{}, nil, nil, nil),
+			Swarm:     swarm.New(&swarm.SwarmService{}, nil, nil, nil),
+			System:    system.New(&system.SystemService{}, nil, nil, nil, nil, nil),
+		},
 		AuthMiddleware: auth.NewAuthMiddleware(nil, cfg),
 		TunnelRegistry: edge.NewTunnelRegistry(),
 	})
@@ -383,8 +393,7 @@ func TestJobSchedulerStopCancelsItsPrivateContextInternal(t *testing.T) {
 	appCtx := t.Context()
 
 	lifecycle := fxtest.NewLifecycle(t)
-	runtime, err := actors.NewRuntime(appCtx, lifecycle)
-	require.NoError(t, err)
+	runtime := francistest.New(t)
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&kv.KVEntry{}))
@@ -392,8 +401,11 @@ func TestJobSchedulerStopCancelsItsPrivateContextInternal(t *testing.T) {
 	require.NoError(t, err)
 	sqlDB.SetMaxOpenConns(1)
 	t.Cleanup(func() { _ = sqlDB.Close() })
-	jobService := job.NewJobService(&database.DB{DB: db}, nil, &config.Config{})
-	jobScheduler, err := newJobScheduler(appCtx, lifecycle, &config.Config{}, runtime, nil, nil, nil, nil, jobService)
+	coordinator := runs.New(kv.NewKVService(&database.DB{DB: db}), runtime.Service(), time.UTC)
+	require.NoError(t, coordinator.Register(runtime))
+	francistest.Start(t, runtime)
+	jobService := job.NewJobService(&database.DB{DB: db}, nil, &config.Config{}, coordinator, nil, nil, nil)
+	jobScheduler, err := newJobScheduler(appCtx, lifecycle, &config.Config{}, coordinator, nil, nil, nil, nil, jobService, nil, nil, nil, nil, nil)
 	require.NoError(t, err)
 	watcher := &blockingBusWatcherInternal{
 		started: make(chan struct{}),

@@ -12,23 +12,15 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
 )
 
-type Dependencies struct {
-	Settings *settings.SettingsService
-	ApiKey   *apikey.ApiKeyService
-	Event    *event.EventService
-	Config   *config.Config
-	Activity activitylib.Service
-}
-
 type Module struct {
 	service *EnvironmentService
 	handler *EnvironmentHandler
 }
 
-func New(service *EnvironmentService, deps Dependencies) *Module {
+func New(service *EnvironmentService, settingsService *settings.SettingsService, apiKey *apikey.ApiKeyService, eventService *event.EventService, cfg *config.Config, activityService activitylib.Service) *Module {
 	return &Module{
 		service: service,
-		handler: NewHandler(service, deps.Settings, deps.ApiKey, deps.Event, deps.Config, deps.Activity),
+		handler: NewHandler(service, settingsService, apiKey, eventService, cfg, activityService),
 	}
 }
 

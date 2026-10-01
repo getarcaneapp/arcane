@@ -7,25 +7,21 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 )
 
-type Dependencies struct {
-	Service                  *UserService
-	InvalidateUserTokenCache func(string)
-	Settings                 *settings.SettingsService
-}
-
 type Module struct {
-	deps Dependencies
+	service                  *UserService
+	invalidateUserTokenCache func(string)
+	settings                 *settings.SettingsService
 }
 
-func New(deps Dependencies) *Module {
-	return &Module{deps: deps}
+func New(service *UserService, invalidateUserTokenCache func(string), settingsService *settings.SettingsService) *Module {
+	return &Module{service: service, invalidateUserTokenCache: invalidateUserTokenCache, settings: settingsService}
 }
 
 func (m *Module) Service() *UserService {
 	if m == nil {
 		return nil
 	}
-	return m.deps.Service
+	return m.service
 }
 
 func (m *Module) RegisterRoutes(api huma.API) {
@@ -33,5 +29,5 @@ func (m *Module) RegisterRoutes(api huma.API) {
 		RegisterUsers(api, nil, nil, nil)
 		return
 	}
-	RegisterUsers(api, m.deps.Service, m.deps.InvalidateUserTokenCache, m.deps.Settings)
+	RegisterUsers(api, m.service, m.invalidateUserTokenCache, m.settings)
 }

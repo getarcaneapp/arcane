@@ -335,7 +335,7 @@ func setupImageServiceAuthTest(t *testing.T) (*ImageService, *database.DB) {
 
 	dbWrap := &database.DB{DB: db}
 	svc := &ImageService{
-		registryService: registry.NewContainerRegistryService(dbWrap, nil, kv.NewKVService(dbWrap)),
+		registryService: registry.NewContainerRegistryService(dbWrap, nil, kv.NewKVService(dbWrap), nil),
 	}
 
 	return svc, dbWrap

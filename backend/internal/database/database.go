@@ -17,6 +17,7 @@ import (
 	"emperror.dev/errors"
 	sqliteutil "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/sqlite"
 	"github.com/getarcaneapp/arcane/backend/v2/resources"
+	dbtypes "github.com/getarcaneapp/arcane/types/v2/database"
 	"github.com/libtnb/sqlite"
 	"github.com/pressly/goose/v3"
 	"github.com/pressly/goose/v3/lock"
@@ -121,7 +122,7 @@ func connectDatabaseInternal(ctx context.Context, databaseURL string) (*DB, erro
 		if err := sqliteutil.RegisterFunctions(); err != nil {
 			return nil, errors.WrapIf(err, "failed to register SQLite functions")
 		}
-		connString, err := ParseSQLiteConnectionString(databaseURL)
+		connString, err := ParseSQLiteConnectionString(databaseURL, dbtypes.SQLiteConnectionOptions{})
 		if err != nil {
 			return nil, errors.WrapIf(err, "failed to parse SQLite connection string")
 		}
@@ -603,7 +604,7 @@ func missingEmbeddedDowngradeMigrationsInternal(ctx context.Context, db *sql.DB,
 	return missing, nil
 }
 
-func ParseSQLiteConnectionString(connString string) (string, error) {
+func ParseSQLiteConnectionString(connString string, options dbtypes.SQLiteConnectionOptions) (string, error) {
 	if !strings.HasPrefix(connString, "file:") {
 		connString = "file:" + connString
 	}
@@ -634,9 +635,40 @@ func ParseSQLiteConnectionString(connString string) (string, error) {
 			qs.Add("_pragma", "journal_mode("+v[0]+")")
 		case "_txlock":
 			qs.Add("_txlock", v[0])
+		case "_pragma":
+			qs["_pragma"] = append(qs["_pragma"], v...)
 		default:
 			qs[k] = v
 		}
+	}
+
+	pragmas := make([]string, 0, len(qs["_pragma"])+2)
+	journalMode, busyTimeout := false, false
+	for _, pragma := range qs["_pragma"] {
+		name, _, _ := strings.Cut(pragma, "(")
+		name, _, _ = strings.Cut(name, "=")
+		switch strings.ToLower(strings.TrimSpace(name)) {
+		case "foreign_keys":
+			if options.IgnoreForeignKeys {
+				continue
+			}
+		case "journal_mode":
+			journalMode = true
+		case "busy_timeout":
+			busyTimeout = true
+		}
+		pragmas = append(pragmas, pragma)
+	}
+	if !journalMode && options.JournalMode != "" {
+		pragmas = append(pragmas, "journal_mode("+options.JournalMode+")")
+	}
+	if !busyTimeout && options.BusyTimeout > 0 {
+		pragmas = append(pragmas, "busy_timeout("+strconv.FormatInt(options.BusyTimeout.Milliseconds(), 10)+")")
+	}
+	if len(pragmas) > 0 {
+		qs["_pragma"] = pragmas
+	} else {
+		qs.Del("_pragma")
 	}
 
 	connStringUrl.RawQuery = qs.Encode()

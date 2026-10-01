@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
@@ -28,6 +27,8 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/entityjobs"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
+	francistest "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/francis/testing"
 	backuptypes "github.com/getarcaneapp/arcane/types/v2/backup"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	"github.com/getarcaneapp/arcane/types/v2/environment"
@@ -37,18 +38,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.getarcane.app/sys/crypto"
-	"go.uber.org/fx/fxtest"
 	"gorm.io/gorm"
 )
 
 func TestEnvironmentService_OverlappingHealthCheckIsSkippedInternal(t *testing.T) {
-	lifecycle := fxtest.NewLifecycle(t)
-	actorRuntime, err := actors.NewRuntime(t.Context(), lifecycle)
-	require.NoError(t, err)
-	gate, err := actors.NewGate[actors.AdmissionKey](t.Context(), actorRuntime, "environment-test-admission", "overlap")
-	require.NoError(t, err)
+	gate := newAdmissionGateForEnvironmentTestInternal(t)
 
-	key := actors.AdmissionKey{Scope: environmentHealthAdmissionScopeInternal, ID: "environment-id"}
+	key := schedulertypes.AdmissionKey{Scope: environmentHealthAdmissionScopeInternal, ID: "environment-id"}
 	lease, admitted, err := gate.TryAcquire(t.Context(), key)
 	require.NoError(t, err)
 	require.True(t, admitted)
@@ -56,12 +52,7 @@ func TestEnvironmentService_OverlappingHealthCheckIsSkippedInternal(t *testing.T
 	service := &EnvironmentService{jobs: entityjobs.New(environmentHealthJobPrefix, environmentHealthAdmissionScopeInternal)}
 	require.NoError(t, service.SetScheduler(t.Context(), &environmentTestSchedulerInternal{}, gate))
 	service.runHealthCheckInternal(t.Context(), "environment-id")
-	lease.Release()
-
-	stopCtx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	require.NoError(t, gate.Stop(stopCtx))
-	require.NoError(t, lifecycle.Stop(stopCtx))
+	lease.Release(t.Context())
 }
 
 type environmentTestSchedulerInternal struct {
@@ -83,25 +74,16 @@ func (s *environmentTestSchedulerInternal) HasJob(_ string) bool {
 	return false
 }
 
-func newAdmissionGateForEnvironmentTestInternal(t testing.TB) *actors.Gate[actors.AdmissionKey] {
+func newAdmissionGateForEnvironmentTestInternal(t testing.TB) *runs.Admission {
 	t.Helper()
-	lifecycle := fxtest.NewLifecycle(t)
-	runtime, err := actors.NewRuntime(t.Context(), lifecycle)
-	require.NoError(t, err)
-	gate, err := actors.NewGate[actors.AdmissionKey](t.Context(), runtime, "environment-test-admission", t.Name())
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		stopCtx, cancel := context.WithTimeout(context.Background(), time.Second)
-		defer cancel()
-		require.NoError(t, gate.Stop(stopCtx))
-		require.NoError(t, lifecycle.Stop(stopCtx))
-	})
+	runtime := francistest.New(t)
+	gate := runs.NewAdmission(runtime.Service(), t.Name())
+	require.NoError(t, gate.Register(runtime))
+	francistest.Start(t, runtime)
 	return gate
 }
 
-// testProjectRow / testGitOpsSyncRow are minimal stand-ins for the project
-// domain's models: the project package imports environment, so this in-package
-// test cannot import it. Only the columns the cascade path touches are declared.
+// Project imports environment, so these rows avoid an import cycle in tests.
 type testProjectRow struct {
 	database.BaseModel
 	Name            string
@@ -947,8 +929,8 @@ func TestAgentHostPortInternal(t *testing.T) {
 func TestEnvironmentService_EnsureSwarmNodeAgentEnvironment_CreatesVisibleEnvironmentAndReusesToken(t *testing.T) {
 	ctx := context.Background()
 	db := setupEnvironmentServiceTestDB(t)
-	userService := user.NewUserService(db)
-	apiKeyService := apikey.NewApiKeyService(db, userService)
+	userService := user.NewUserService(db, nil)
+	apiKeyService := apikey.NewApiKeyService(db, userService, nil)
 	svc := NewEnvironmentService(db, nil, nil, nil, nil, apiKeyService)
 	user := createTestEnvironmentServiceUser(t, ctx, userService, "swarm-admin")
 
@@ -1087,8 +1069,8 @@ func TestEnvironmentService_EnsureSwarmNodeAgentEnvironment_ReusesLegacyHiddenRe
 func TestEnvironmentService_EnsureSwarmNodeAgentEnvironment_TokenResolvesEndToEnd(t *testing.T) {
 	ctx := context.Background()
 	db := setupEnvironmentServiceTestDB(t)
-	userService := user.NewUserService(db)
-	apiKeyService := apikey.NewApiKeyService(db, userService)
+	userService := user.NewUserService(db, nil)
+	apiKeyService := apikey.NewApiKeyService(db, userService, nil)
 	svc := NewEnvironmentService(db, nil, nil, nil, nil, apiKeyService)
 	user := createTestEnvironmentServiceUser(t, ctx, userService, "swarm-resolve-admin")
 

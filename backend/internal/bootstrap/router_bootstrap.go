@@ -12,7 +12,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/api"
 	"github.com/getarcaneapp/arcane/backend/v2/api/ws"
 	"github.com/getarcaneapp/arcane/backend/v2/frontend"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/auth"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
@@ -161,7 +160,6 @@ type RouterParams struct {
 
 	Context        context.Context
 	Lifecycle      fx.Lifecycle
-	ActorRuntime   *actors.Runtime
 	Config         *config.Config
 	HandlerDeps    api.HandlerDeps
 	AuthMiddleware *auth.AuthMiddleware
@@ -273,9 +271,6 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 		createAuthValidatorInternal(deps),
 		permissionMatcher,
 		p.TunnelRegistry,
-		// Proxied WebSocket upgrades enforce the same Origin policy as the local
-		// endpoints, so a cross-origin page cannot ride a session cookie into a
-		// remote environment.
 		httpx.ValidateWebSocketOrigin(cfg.GetAppURL()),
 	)
 	apiGroup.Use(envProxyMiddleware)
@@ -300,7 +295,7 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 	// This is only registered when NOT in agent mode (i.e., running as manager)
 	var tunnelServer *edge.TunnelServer
 	if !cfg.AgentMode {
-		tunnelServer = registerEdgeTunnelRoutes(ctx, p.Lifecycle, p.ActorRuntime, cfg, apiGroup, deps.Environment.Service(), deps.Event.Service(), deps.Notification.Service(), p.TunnelRegistry)
+		tunnelServer = registerEdgeTunnelRoutes(ctx, p.Lifecycle, cfg, apiGroup, deps.Environment.Service(), deps.Event.Service(), deps.Notification.Service(), p.TunnelRegistry)
 	}
 
 	if cfg.Environment != "production" {
@@ -309,11 +304,6 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 		}
 	}
 
-	// Unknown API endpoints respond with JSON 404. This must be registered
-	// after every apiGroup.Use call: each Use re-registers the group's
-	// auto-404 routes, which would overwrite these. Without an explicit
-	// handler those auto-404 routes return echo v5's unexported sentinel
-	// error, which slog-echo rewrites into a 500.
 	apiNotFound := func(c *echo.Context) error {
 		return c.JSON(http.StatusNotFound, map[string]any{
 			"success": false,

@@ -15,7 +15,6 @@ import (
 
 	ref "github.com/distribution/reference"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
@@ -43,7 +42,6 @@ import (
 	kit "go.getarcane.app/kit/pkg"
 	"go.getarcane.app/sys/crypto"
 	"go.getarcane.app/updater/labels"
-	"go.uber.org/fx/fxtest"
 	"gorm.io/gorm"
 )
 
@@ -383,7 +381,7 @@ func newComposeBuildImageUpdateServiceInternal(t *testing.T) (*ImageUpdateServic
 				}, nil
 			},
 		}, nil
-	}, nil)
+	}, nil, nil)
 
 	dockerService := &docker.DockerClientService{Client: newImageUpdateTestDockerClientInternal(t, dockerServer)}
 	eventService := event.NewEventService(db, nil, nil)
@@ -454,7 +452,7 @@ func TestImageUpdateService_CheckMultipleImages_ComposeBuildMissingLocallySkipsR
 				return client.DistributionInspectResult{}, nil
 			},
 		}, nil
-	}, nil)
+	}, nil, nil)
 
 	dockerService := &docker.DockerClientService{Client: newImageUpdateTestDockerClientInternal(t, dockerServer)}
 	eventService := event.NewEventService(db, nil, nil)
@@ -505,7 +503,7 @@ func newArcaneLocalImageUpdateServiceInternal(t *testing.T, imageExists bool) (*
 				}, nil
 			},
 		}, nil
-	}, nil)
+	}, nil, nil)
 
 	dockerService := &docker.DockerClientService{Client: newImageUpdateTestDockerClientInternal(t, dockerServer)}
 	eventService := event.NewEventService(db, nil, nil)
@@ -898,7 +896,7 @@ func TestImageUpdateService_CheckImageUpdate_UsesRegistryFallback(t *testing.T) 
 				return client.DistributionInspectResult{}, errors.New("error response from daemon: Not Found")
 			},
 		}, nil
-	}, nil, server.Client())
+	}, nil, nil, server.Client())
 
 	dockerService := &docker.DockerClientService{Client: newImageUpdateTestDockerClientInternal(t, server)}
 	eventService := event.NewEventService(db, nil, nil)
@@ -937,7 +935,7 @@ func TestImageUpdateService_CheckMultipleImages_UsesRegistryFallback(t *testing.
 				return client.DistributionInspectResult{}, errors.New("error response from daemon: <html><body><h1>403 Forbidden</h1> Request forbidden by administrative rules. </body></html>")
 			},
 		}, nil
-	}, nil, server.Client())
+	}, nil, nil, server.Client())
 
 	dockerService := &docker.DockerClientService{Client: newImageUpdateTestDockerClientInternal(t, server)}
 	eventService := event.NewEventService(db, nil, nil)
@@ -1022,7 +1020,7 @@ func TestImageUpdateService_CheckMultipleImagesTimesOutStalledRegistryCheckInter
 				return client.DistributionInspectResult{}, ctx.Err()
 			},
 		}, nil
-	}, nil)
+	}, nil, nil)
 
 	parentCtx, cancel := context.WithTimeout(context.Background(), 2500*time.Millisecond)
 	defer cancel()
@@ -1062,7 +1060,7 @@ func TestImageUpdateService_CheckMultipleImagesPanicMarksActivityFailedInternal(
 				panic("registry check exploded")
 			},
 		}, nil
-	}, nil)
+	}, nil, nil)
 
 	svc := NewImageUpdateService(db, settingsService, registryService, &docker.DockerClientService{Client: newImageUpdateTestDockerClientInternal(t, dockerServer)}, nil, nil, activityService)
 
@@ -1144,7 +1142,7 @@ func TestImageUpdateService_CheckMultipleImages_UsesDockerHubCredentialsOnFirstA
 				}, nil
 			},
 		}, nil
-	}, nil)
+	}, nil, nil)
 
 	dockerService := &docker.DockerClientService{Client: newImageUpdateTestDockerClientInternal(t, server)}
 	eventService := event.NewEventService(db, nil, nil)
@@ -1183,7 +1181,7 @@ func TestImageUpdateService_CheckMultipleImages_ReportsNotPulledWhenLocalImageMi
 				return client.DistributionInspectResult{}, errors.New("error response from daemon: Not Found")
 			},
 		}, nil
-	}, nil, server.Client())
+	}, nil, nil, server.Client())
 
 	dockerService := &docker.DockerClientService{Client: newImageUpdateTestDockerClientInternal(t, server)}
 	eventService := event.NewEventService(db, nil, nil)
@@ -2029,21 +2027,10 @@ func newImageUpdateTestSettingsServiceInternal(t *testing.T, registryTimeout, do
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&settings.SettingVariable{}))
 	dbWrap := &database.DB{DB: db}
-	lifecycle := fxtest.NewLifecycle(t)
-	runtime, err := actors.NewRuntime(t.Context(), lifecycle)
-	require.NoError(t, err)
-	writes, err := actors.NewExecutor(t.Context(), runtime, "image-update-settings-test", t.Name(), 3)
-	require.NoError(t, err)
-	effects, err := actors.NewExecutor(t.Context(), runtime, "image-update-settings-effects-test", t.Name(), 3)
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		stopCtx, cancel := context.WithTimeout(context.Background(), time.Second)
-		defer cancel()
-		require.NoError(t, writes.Stop(stopCtx))
-		require.NoError(t, effects.Stop(stopCtx))
-		require.NoError(t, lifecycle.Stop(stopCtx))
-	})
-	service, err := settings.NewSettingsService(ctx, dbWrap, writes, effects)
+	service, err := settings.NewSettingsService(ctx, dbWrap)
+	if err == nil {
+		t.Cleanup(func() { require.NoError(t, service.Stop(context.Background())) })
+	}
 	require.NoError(t, err)
 	return service
 }
@@ -2527,7 +2514,7 @@ func TestContainerTagChecksPersistIndependentPoliciesInternal(t *testing.T) {
 		return &fakeRegistryDaemonClient{distributionInspectFn: func(context.Context, string, client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
 			return client.DistributionInspectResult{}, errors.New("manifest not found")
 		}}, nil
-	}, nil, registryServer.Client())
+	}, nil, nil, registryServer.Client())
 	svc := NewImageUpdateService(db, nil, registryService, &docker.DockerClientService{Client: newImageUpdateTestDockerClientInternal(t, dockerServer)}, nil, nil, nil)
 	checks, err := svc.checkContainerTagUpdatesInternal(t.Context(), []string{imageRef}, nil)
 	require.NoError(t, err)
@@ -2626,7 +2613,7 @@ func TestContainerTagChecksSeparateMonitoringFromInstallationInternal(t *testing
 	defer dockerServer.Close()
 	registryService := registry.NewContainerRegistryService(db, func(context.Context) (registry.RegistryDaemonClient, error) {
 		return &fakeRegistryDaemonClient{}, nil
-	}, nil, registryServer.Client())
+	}, nil, nil, registryServer.Client())
 	settingsService := newImageUpdateTestSettingsServiceInternal(t, "5", "5")
 	// The UI exclusion governs installation only; it must not reach the checker.
 	require.NoError(t, settingsService.SetStringSetting(t.Context(), "autoUpdateExcludedContainers", "install-excluded"))
@@ -2719,7 +2706,7 @@ func TestContainerTagChecksUseRegistryTagTimeoutInternal(t *testing.T) {
 				return &fakeRegistryDaemonClient{distributionInspectFn: func(context.Context, string, client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
 					return client.DistributionInspectResult{}, errors.New("manifest not found")
 				}}, nil
-			}, nil, registryServer.Client()).WithSettingsService(settingsService)
+			}, nil, settingsService, registryServer.Client())
 			svc := NewImageUpdateService(db, settingsService, registryService, &docker.DockerClientService{Client: newImageUpdateTestDockerClientInternal(t, dockerServer)}, nil, nil, nil)
 
 			start := time.Now()
@@ -2786,7 +2773,7 @@ func TestContainerTagChecksPersistResultsFinishedBeforeScanDeadlineInternal(t *t
 		return &fakeRegistryDaemonClient{distributionInspectFn: func(context.Context, string, client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
 			return client.DistributionInspectResult{}, errors.New("manifest not found")
 		}}, nil
-	}, nil, registryServer.Client()).WithSettingsService(settingsService)
+	}, nil, settingsService, registryServer.Client())
 	svc := NewImageUpdateService(db, settingsService, registryService, &docker.DockerClientService{Client: newImageUpdateTestDockerClientInternal(t, dockerServer)}, nil, nil, nil)
 
 	scanCtx, cancel := context.WithTimeout(t.Context(), time.Second)

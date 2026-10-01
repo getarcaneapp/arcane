@@ -7,10 +7,10 @@ import (
 	"time"
 
 	"emperror.dev/errors"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
 	"github.com/getarcaneapp/arcane/types/v2/environment"
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	"github.com/moby/moby/client"
@@ -27,7 +27,7 @@ const (
 // SetScheduler injects the job scheduler and app lifecycle context. Called during
 // bootstrap on the manager only (agent mode leaves scheduler nil, so all health-job
 // registration becomes a no-op).
-func (s *EnvironmentService) SetScheduler(ctx context.Context, scheduler schedulertypes.DynamicScheduler, admissionGate *actors.Gate[actors.AdmissionKey]) error {
+func (s *EnvironmentService) SetScheduler(ctx context.Context, scheduler schedulertypes.DynamicScheduler, admissionGate *runs.Admission) error {
 	return s.jobs.SetScheduler(ctx, scheduler, admissionGate)
 }
 
@@ -131,7 +131,7 @@ func (s *EnvironmentService) runHealthCheckInternal(ctx context.Context, envID s
 		slog.WarnContext(ctx, "environment health check skipped; previous run still in progress", "environment_id", envID)
 		return schedulertypes.Outcome{Status: schedulertypes.Skipped}, nil
 	}
-	defer lease.Release()
+	defer lease.Release(ctx)
 
 	environment, err := s.GetEnvironmentByID(ctx, envID)
 	if err != nil {

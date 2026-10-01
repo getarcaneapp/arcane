@@ -9,19 +9,19 @@ import (
 
 	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/queue"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
 	st "github.com/getarcaneapp/arcane/types/v2/scheduler"
 )
 
 // ListRuns merges agent history with requests accepted by this manager.
 func (s *JobService) ListRuns(ctx context.Context, environmentID, jobID string, page, limit int) (st.RunList, error) {
 	if environmentID == "0" {
-		return s.Queue.List(ctx, environmentID, jobID, page, limit)
+		return s.runs.List(ctx, environmentID, jobID, page, limit)
 	}
 	if _, err := s.environment.GetEnvironmentByID(ctx, environmentID); err != nil {
 		return st.RunList{}, err
 	}
-	records, err := s.Queue.Records(ctx)
+	records, err := s.runs.Records(ctx)
 	if err != nil {
 		return st.RunList{}, err
 	}
@@ -84,8 +84,8 @@ func (s *JobService) remoteHistoryInternal(ctx context.Context, environmentID, j
 
 // GetRun prefers the manager's durable delivery record, then queries agent-owned history.
 func (s *JobService) GetRun(ctx context.Context, environmentID, jobID, runID string) (st.Run, error) {
-	run, err := s.Queue.Get(ctx, environmentID, jobID, runID)
-	if environmentID == "0" || !errors.Is(err, queue.ErrRunNotFound) {
+	run, err := s.runs.Get(ctx, environmentID, jobID, runID)
+	if environmentID == "0" || !errors.Is(err, runs.ErrRunNotFound) {
 		return run, err
 	}
 	path := "/api/environments/0/jobs/" + url.PathEscape(jobID) + "/runs/" + url.PathEscape(runID)
@@ -104,14 +104,14 @@ func (s *JobService) GetRun(ctx context.Context, environmentID, jobID, runID str
 
 // CancelRun cancels manager admission or explicitly forwards an agent-owned cancellation.
 func (s *JobService) CancelRun(ctx context.Context, environmentID, jobID, runID string) (st.Run, error) {
-	_, err := s.Queue.Get(ctx, environmentID, jobID, runID)
-	if environmentID != "0" && errors.Is(err, queue.ErrRunNotFound) {
+	_, err := s.runs.Get(ctx, environmentID, jobID, runID)
+	if environmentID != "0" && errors.Is(err, runs.ErrRunNotFound) {
 		return s.mutateAgentRunInternal(ctx, environmentID, jobID, runID, "cancel")
 	}
 	if err != nil {
 		return st.Run{}, err
 	}
-	return s.Queue.Cancel(ctx, environmentID, jobID, runID)
+	return s.runs.Cancel(ctx, environmentID, jobID, runID)
 }
 
 func (s *JobService) mutateAgentRunInternal(ctx context.Context, environmentID, jobID, runID, action string) (st.Run, error) {

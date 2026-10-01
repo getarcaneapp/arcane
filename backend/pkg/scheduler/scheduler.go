@@ -3,407 +3,215 @@ package scheduler
 import (
 	"context"
 	"log/slog"
-	"maps"
-	"slices"
 	"sync"
 	"time"
 
 	"emperror.dev/errors"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
 	scheduleutil "github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/schedule"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
-	"github.com/robfig/cron/v3"
+	st "github.com/getarcaneapp/arcane/types/v2/scheduler"
 )
 
-// cronScheduleParser is the shared parser for all cron settings: six fields
-// with seconds, plus @-descriptors. The image update watcher parses its poll
-// schedule with the same spec so Jobs-UI cron values behave identically.
-var cronScheduleParser = scheduleutil.Parser()
-
-var errJobSchedulerStoppedInternal = errors.Sentinel("job scheduler stopped")
-
-type schedulerStateInternal struct {
-	jobs        []schedulertypes.Job
-	jobsByID    map[string]schedulertypes.Job
-	watchers    map[string]schedulertypes.BusWatcher
-	allWatchers map[string]schedulertypes.BusWatcher
-	runners     map[string]*actors.Runner
-	entryIDs    map[string]cron.EntryID
-	schedules   map[string]string
-	supervisors map[string]*watcherSupervisorInternal
-	stopping    bool
-}
+var (
+	cronScheduleParser             = scheduleutil.Parser()
+	errJobSchedulerStoppedInternal = errors.Sentinel("job scheduler stopped")
+)
 
 type watcherRegistrationInternal struct {
-	watcher schedulertypes.BusWatcher
-	runner  *actors.Runner
+	watcher st.BusWatcher
+	done    chan struct{}
 }
-
-type schedulerShutdownInternal struct {
-	cronDone <-chan struct{}
-	watchers []watcherRegistrationInternal
-}
-
-// jobSchedulerInternal serializes its control plane through one shared actor executor.
-// robfig/cron remains the timing engine and invokes job bodies outside the actor.
 type jobSchedulerInternal struct {
-	cron       *cron.Cron
-	parser     cron.Parser
-	context    context.Context
-	location   *time.Location
-	runtime    *actors.Runtime
-	state      *actors.State[schedulerStateInternal]
-	cancel     context.CancelFunc
-	dispatchMu sync.RWMutex
-	dispatcher schedulertypes.Dispatcher
+	mu          sync.RWMutex
+	jobsByID    map[string]st.Job
+	watchers    map[string]st.BusWatcher
+	allWatchers map[string]watcherRegistrationInternal
+	supervisors map[string]*watcherSupervisorInternal
+	context     context.Context
+	cancel      context.CancelFunc
+	location    *time.Location
+	coordinator *runs.Coordinator
+	stopping    bool
+	started     bool
 }
 
-// NewJobScheduler creates an actor-owned scheduler control plane.
-func NewJobScheduler(ctx context.Context, runtime *actors.Runtime, location *time.Location) (schedulertypes.JobScheduler, error) {
-	if ctx == nil {
-		return nil, errors.New("job scheduler context unavailable")
-	}
-	if runtime == nil {
-		return nil, errors.New("actor runtime unavailable")
+func NewJobScheduler(ctx context.Context, coordinator *runs.Coordinator, location *time.Location) (st.JobScheduler, error) {
+	if ctx == nil || coordinator == nil {
+		return nil, errors.New("scheduler dependencies unavailable")
 	}
 	if location == nil {
 		location = time.UTC
 	}
-	initial := schedulerStateInternal{
-		jobs:        []schedulertypes.Job{},
-		jobsByID:    make(map[string]schedulertypes.Job),
-		watchers:    make(map[string]schedulertypes.BusWatcher),
-		allWatchers: make(map[string]schedulertypes.BusWatcher),
-		runners:     make(map[string]*actors.Runner),
-		entryIDs:    make(map[string]cron.EntryID),
-		schedules:   make(map[string]string),
-		supervisors: make(map[string]*watcherSupervisorInternal),
-	}
-	state, err := actors.NewState(ctx, runtime, "scheduler", "control-plane", 3, initial, func(value schedulerStateInternal) schedulerStateInternal {
-		value.jobs = slices.Clone(value.jobs)
-		value.jobsByID = maps.Clone(value.jobsByID)
-		value.watchers = maps.Clone(value.watchers)
-		value.allWatchers = maps.Clone(value.allWatchers)
-		value.runners = maps.Clone(value.runners)
-		value.entryIDs = maps.Clone(value.entryIDs)
-		value.schedules = maps.Clone(value.schedules)
-		value.supervisors = maps.Clone(value.supervisors)
-		return value
-	})
-	if err != nil {
-		return nil, err
-	}
 	lifetime, cancel := context.WithCancel(ctx)
-	parser := cronScheduleParser
-	scheduler := &jobSchedulerInternal{
-		cron:     cron.New(cron.WithParser(parser), cron.WithLocation(location)),
-		parser:   parser,
-		context:  lifetime,
-		cancel:   cancel,
-		location: location,
-		runtime:  runtime,
-		state:    state,
-	}
-	slog.InfoContext(ctx, "Initializing job scheduler", "timezone", location.String())
-	return scheduler, nil
+	return &jobSchedulerInternal{context: lifetime, cancel: cancel, location: location, coordinator: coordinator, jobsByID: map[string]st.Job{}, watchers: map[string]st.BusWatcher{}, allWatchers: map[string]watcherRegistrationInternal{}, supervisors: map[string]*watcherSupervisorInternal{}}, nil
 }
 
-// RegisterJob records a static job to be scheduled when StartScheduler runs.
-func (js *jobSchedulerInternal) RegisterJob(job schedulertypes.Job) error {
+func (js *jobSchedulerInternal) RegisterJob(job st.Job) error {
 	if job == nil {
 		return errors.New("scheduler job unavailable")
 	}
-	return js.state.Apply(js.context, "register scheduler job", func(_ context.Context, state *schedulerStateInternal) error {
-		if state.stopping {
-			return errJobSchedulerStoppedInternal
-		}
-		state.jobs = append(state.jobs, job)
-		state.jobsByID[job.Name()] = job
-		return nil
-	})
+	js.mu.Lock()
+	defer js.mu.Unlock()
+	if js.stopping {
+		return errJobSchedulerStoppedInternal
+	}
+	js.jobsByID[job.Name()] = job
+	return nil
 }
 
-// RegisterBusWatcher starts a continuous watcher through a shared actor runner.
-func (js *jobSchedulerInternal) RegisterBusWatcher(watcher schedulertypes.BusWatcher, canRunManually bool) error {
-	if watcher == nil {
-		return errors.New("scheduler bus watcher unavailable")
+func (js *jobSchedulerInternal) RegisterBusWatcher(watcher st.BusWatcher, manual bool) error {
+	js.mu.Lock()
+	defer js.mu.Unlock()
+	if js.stopping {
+		return errJobSchedulerStoppedInternal
 	}
-	return js.state.Apply(js.context, "register scheduler bus watcher", func(_ context.Context, state *schedulerStateInternal) error {
-		if state.stopping {
-			return errJobSchedulerStoppedInternal
+	if _, found := js.allWatchers[watcher.Name()]; found {
+		return errors.New("watcher already registered")
+	}
+	supervisor := newWatcherSupervisorInternal(watcher)
+	done := make(chan struct{})
+	js.supervisors[watcher.Name()] = supervisor
+	js.allWatchers[watcher.Name()] = watcherRegistrationInternal{watcher: watcher, done: done}
+	if manual {
+		js.watchers[watcher.Name()] = watcher
+	}
+	go func() {
+		defer close(done)
+		if err := supervisor.runInternal(js.context); err != nil && js.context.Err() == nil {
+			slog.ErrorContext(js.context, "Watcher stopped", "name", watcher.Name(), "error", err)
 		}
-		if _, exists := state.allWatchers[watcher.Name()]; exists {
-			return errors.New("watcher already registered")
-		}
-		supervisor := newWatcherSupervisorInternal(watcher)
-		runner, err := actors.NewRunner(js.context, js.runtime, "scheduler-watchers", watcher.Name(), "bus watcher "+watcher.Name(), 3, supervisor.runInternal) //nolint:contextcheck // watcher lifetime belongs to the scheduler, not one state-actor receiver incarnation.
-		if err != nil {
-			return err
-		}
-		state.runners[watcher.Name()] = runner
-		state.supervisors[watcher.Name()] = supervisor
-		state.allWatchers[watcher.Name()] = watcher
-		if canRunManually {
-			state.watchers[watcher.Name()] = watcher
-		}
-		return nil
-	})
+	}()
+	return nil
 }
 
-// RunBusWatcherNow runs a watcher through its serialized manual path.
-func (js *jobSchedulerInternal) RunBusWatcherNow(ctx context.Context, watcherID string) error {
-	snapshot, ok := js.state.Load()
-	if !ok {
-		return errors.New("job scheduler state unavailable")
-	}
-	watcher, ok := snapshot.watchers[watcherID]
-	if !ok {
-		return errors.Errorf("bus watcher %s is not manually runnable", watcherID)
+func (js *jobSchedulerInternal) RunBusWatcherNow(ctx context.Context, id string) error {
+	js.mu.RLock()
+	watcher, found := js.watchers[id]
+	js.mu.RUnlock()
+	if !found {
+		return errors.New("watcher is not manually runnable")
 	}
 	return watcher.RunNow(ctx)
 }
 
-func (js *jobSchedulerInternal) GetJob(jobID string) (schedulertypes.Job, bool) {
-	snapshot, ok := js.state.Load()
-	if !ok {
-		return nil, false
-	}
-	job, ok := snapshot.jobsByID[jobID]
+func (js *jobSchedulerInternal) GetJob(id string) (st.Job, bool) {
+	js.mu.RLock()
+	defer js.mu.RUnlock()
+	job, ok := js.jobsByID[id]
 	return job, ok
 }
-
-// GetJobRuntimeState returns the schedule currently installed for a registered job.
-func (js *jobSchedulerInternal) GetJobRuntimeState(jobID string) (schedulertypes.JobRuntimeState, bool) {
-	snapshot, ok := js.state.Load()
-	if !ok {
-		return schedulertypes.JobRuntimeState{}, false
+func (js *jobSchedulerInternal) HasJob(id string) bool { _, ok := js.GetJob(id); return ok }
+func (js *jobSchedulerInternal) GetJobRuntimeState(id string) (st.JobRuntimeState, bool) {
+	if !js.HasJob(id) {
+		return st.JobRuntimeState{}, false
 	}
-	if _, ok := snapshot.jobsByID[jobID]; !ok {
-		return schedulertypes.JobRuntimeState{}, false
+	record, err := js.coordinator.ScheduleState(js.context, id)
+	if err != nil {
+		return st.JobRuntimeState{}, true
 	}
-
-	state := schedulertypes.JobRuntimeState{Schedule: snapshot.schedules[jobID]}
-	entryID, ok := snapshot.entryIDs[jobID]
-	if !ok {
-		return state, true
-	}
-	entry := js.cron.Entry(entryID)
-	if entry.ID == 0 {
-		return state, true
-	}
-	state.Scheduled = true
-	nextRun := entry.Next
-	if nextRun.IsZero() && entry.Schedule != nil {
-		nextRun = entry.Schedule.Next(time.Now().In(js.location))
-	}
-	if !nextRun.IsZero() {
-		state.NextRun = new(nextRun)
+	state := st.JobRuntimeState{Schedule: record.Schedule, Scheduled: !record.NextRun.IsZero()}
+	if state.Scheduled {
+		state.NextRun = new(record.NextRun)
 	}
 	return state, true
 }
 
-// HasJob reports whether a job with the given name is registered.
-func (js *jobSchedulerInternal) HasJob(jobID string) bool {
-	snapshot, ok := js.state.Load()
-	if !ok {
-		return false
-	}
-	_, ok = snapshot.jobsByID[jobID]
-	return ok
-}
-
-// StartScheduler installs static schedules and starts cron.
 func (js *jobSchedulerInternal) StartScheduler() error {
-	return js.state.Apply(js.context, "start job scheduler", func(actorCtx context.Context, state *schedulerStateInternal) error {
-		if state.stopping {
-			return errJobSchedulerStoppedInternal
-		}
-		for _, job := range state.jobs {
-			if err := js.upsertJobInternal(actorCtx, state, job); err != nil {
-				slog.ErrorContext(actorCtx, "Failed to schedule job; continuing scheduler startup", "name", job.Name(), "error", err)
-			}
-		}
-		js.cron.Start()
-		return nil
-	})
-}
-
-// AddJob registers and schedules a job at runtime.
-func (js *jobSchedulerInternal) AddJob(ctx context.Context, job schedulertypes.Job) error {
-	return js.state.Apply(ctx, "add scheduler job", func(_ context.Context, state *schedulerStateInternal) error {
-		if state.stopping {
-			return errJobSchedulerStoppedInternal
-		}
-		return js.upsertJobInternal(ctx, state, job)
-	})
-}
-
-// RemoveJob unschedules and forgets a job. Actor failures are logged because
-// DynamicScheduler preserves the historical no-result removal contract.
-func (js *jobSchedulerInternal) RemoveJob(ctx context.Context, jobName string) {
-	err := js.state.Apply(ctx, "remove scheduler job", func(_ context.Context, state *schedulerStateInternal) error {
-		if state.stopping {
-			return errJobSchedulerStoppedInternal
-		}
-		if entryID, ok := state.entryIDs[jobName]; ok {
-			js.cron.Remove(entryID)
-			delete(state.entryIDs, jobName)
-		}
-		delete(state.jobsByID, jobName)
-		delete(state.schedules, jobName)
-		for index, job := range state.jobs {
-			if job.Name() == jobName {
-				state.jobs = append(state.jobs[:index], state.jobs[index+1:]...)
-				break
-			}
-		}
-		slog.DebugContext(ctx, "Job removed", "name", jobName)
-		return nil
-	})
-	if err != nil && !errors.Is(err, errJobSchedulerStoppedInternal) {
-		slog.ErrorContext(ctx, "Failed to remove scheduler job", "name", jobName, "error", err)
+	js.mu.Lock()
+	if js.stopping {
+		js.mu.Unlock()
+		return errJobSchedulerStoppedInternal
 	}
-}
-
-func (js *jobSchedulerInternal) RescheduleJob(ctx context.Context, job schedulertypes.Job) error {
-	return js.state.Apply(ctx, "reschedule job", func(_ context.Context, state *schedulerStateInternal) error {
-		if state.stopping {
-			return errJobSchedulerStoppedInternal
-		}
-		return js.upsertJobInternal(ctx, state, job)
-	})
-}
-
-func (js *jobSchedulerInternal) GetLocation() *time.Location {
-	return js.location
-}
-
-// Stop fences the control plane, stops cron, and joins every actor-owned watcher.
-func (js *jobSchedulerInternal) Stop(ctx context.Context) error {
-	var shutdown schedulerShutdownInternal
-	err := js.state.Apply(ctx, "stop job scheduler", func(_ context.Context, state *schedulerStateInternal) error {
-		if state.stopping {
-			return errJobSchedulerStoppedInternal
-		}
-		state.stopping = true
-		registrations := make([]watcherRegistrationInternal, 0, len(state.runners))
-		for name, runner := range state.runners {
-			registrations = append(registrations, watcherRegistrationInternal{watcher: state.allWatchers[name], runner: runner})
-		}
-		shutdown = schedulerShutdownInternal{cronDone: js.cron.Stop().Done(), watchers: registrations}
-		return nil
-	})
-	if errors.Is(err, errJobSchedulerStoppedInternal) {
-		return js.state.Stop(ctx)
-	}
-	var stopErr error
+	js.started = true
+	js.mu.Unlock()
+	records, err := js.coordinator.Records(js.context)
 	if err != nil {
-		if snapshot, ok := js.state.Load(); ok && snapshot.stopping {
-			return nil
-		}
-		stopErr = err
-		shutdown.cronDone = js.cron.Stop().Done()
-		if snapshot, ok := js.state.Load(); ok {
-			shutdown.watchers = make([]watcherRegistrationInternal, 0, len(snapshot.runners))
-			for name, runner := range snapshot.runners {
-				shutdown.watchers = append(shutdown.watchers, watcherRegistrationInternal{watcher: snapshot.allWatchers[name], runner: runner})
+		return err
+	}
+	for _, record := range records {
+		if record.EnvironmentID == "0" && record.Schedule != "" && !js.HasJob(record.JobID) {
+			if err := js.coordinator.Checkpoint(js.context, record.JobID, "", time.Time{}); err != nil {
+				return err
 			}
 		}
 	}
-
-	js.cancel()
-	for _, registration := range shutdown.watchers {
-		stopErr = errors.Combine(stopErr, registration.runner.Stop(ctx))
-		if stopper, ok := registration.watcher.(schedulertypes.StoppableBusWatcher); ok {
-			stopErr = errors.Combine(stopErr, stopper.Stop(ctx))
+	var schedulingErr error
+	for _, job := range js.ListRegisteredJobs() {
+		if err := js.installInternal(js.context, job); err != nil {
+			schedulingErr = errors.Combine(schedulingErr, errors.WrapIf(err, "schedule "+job.Name()))
 		}
 	}
-	select {
-	case <-shutdown.cronDone:
-	case <-ctx.Done():
-		stopErr = errors.Combine(stopErr, ctx.Err())
-	}
-	return errors.Combine(stopErr, js.state.Stop(ctx))
+	return schedulingErr
 }
 
-func (js *jobSchedulerInternal) upsertJobInternal(ctx context.Context, state *schedulerStateInternal, job schedulertypes.Job) error {
-	if job == nil {
-		return errors.New("scheduler job unavailable")
-	}
-	jobName := job.Name()
-	previousSchedule := state.schedules[jobName]
-	previousEntryID, hadPreviousEntry := state.entryIDs[jobName]
+func (js *jobSchedulerInternal) installInternal(ctx context.Context, job st.Job) error {
+	next := time.Time{}
 	schedule := job.Schedule(ctx)
-
-	shouldSchedule := true
-	if conditionalJob, ok := job.(schedulertypes.ConditionalJob); ok {
-		shouldSchedule = conditionalJob.ShouldSchedule(ctx)
+	should := true
+	if conditional, ok := job.(st.ConditionalJob); ok {
+		should = conditional.ShouldSchedule(ctx)
 	}
-
-	var (
-		parsedSchedule cron.Schedule
-		entryID        cron.EntryID
-		nextRun        *time.Time
-	)
-	if shouldSchedule {
-		var err error
-		parsedSchedule, err = js.parser.Parse(schedule)
+	if should {
+		parsed, err := cronScheduleParser.Parse(schedule)
 		if err != nil {
 			return err
 		}
-	} else {
-		slog.DebugContext(ctx, "Job disabled; not scheduling", "name", jobName)
+		next = parsed.Next(time.Now().In(js.location))
 	}
-
-	if shouldSchedule {
-		if err := js.checkpointInternal(ctx, jobName, schedule, parsedSchedule.Next(time.Now().In(js.location))); err != nil {
-			return err
-		}
+	if !should {
+		schedule = ""
 	}
-	if hadPreviousEntry {
-		js.cron.Remove(previousEntryID)
-		delete(state.entryIDs, jobName)
-	}
-	if shouldSchedule {
-		entryID, nextRun = js.addCronEntryInternal(job, schedule, parsedSchedule)
-		state.entryIDs[jobName] = entryID
-	}
-	state.jobsByID[jobName] = job
-	state.schedules[jobName] = schedule
-
-	if previousSchedule == "" && shouldSchedule {
-		slog.InfoContext(ctx, "Starting Job", "name", jobName, "schedule", schedule)
-	} else if previousSchedule != schedule || hadPreviousEntry != shouldSchedule {
-		var nextRunValue any
-		if nextRun != nil {
-			nextRunValue = *nextRun
-		}
-		slog.InfoContext(ctx, "Job rescheduled", "name", jobName, "previousSchedule", previousSchedule, "newSchedule", schedule, "nextRun", nextRunValue)
-	}
-	slog.DebugContext(ctx, "Job scheduled", "name", jobName, "scheduled", shouldSchedule, "contextCanceled", ctx.Err() != nil)
-	return nil
+	return js.coordinator.Checkpoint(ctx, job.Name(), schedule, next)
 }
 
-func (js *jobSchedulerInternal) addCronEntryInternal(job schedulertypes.Job, schedule string, parsedSchedule cron.Schedule) (cron.EntryID, *time.Time) {
-	entryID := js.cron.Schedule(parsedSchedule, cron.FuncJob(func() {
-		defer utils.RecoverToError(nil, "scheduled job admission", "name", job.Name())
-		if _, err := js.Submit(js.context, schedulertypes.Request{JobID: job.Name(), EnvironmentID: "0", Trigger: "scheduled"}); err != nil {
-			slog.ErrorContext(js.context, "Failed to queue scheduled job", "name", job.Name(), "error", err)
-			return
-		}
-		if err := js.checkpointInternal(js.context, job.Name(), schedule, parsedSchedule.Next(time.Now().In(js.location))); err != nil {
-			slog.ErrorContext(js.context, "Failed to checkpoint scheduled job", "name", job.Name(), "error", err)
-		}
-	}))
+func (js *jobSchedulerInternal) AddJob(ctx context.Context, job st.Job) error {
+	if err := js.RegisterJob(job); err != nil {
+		return err
+	}
+	js.mu.RLock()
+	started := js.started
+	js.mu.RUnlock()
+	if !started {
+		return nil
+	}
+	return js.installInternal(ctx, job)
+}
 
-	entry := js.cron.Entry(entryID)
-	nextRun := entry.Next
-	if nextRun.IsZero() && entry.Schedule != nil {
-		nextRun = entry.Schedule.Next(time.Now().In(js.location))
+func (js *jobSchedulerInternal) RescheduleJob(ctx context.Context, job st.Job) error {
+	return js.AddJob(ctx, job)
+}
+
+func (js *jobSchedulerInternal) RemoveJob(ctx context.Context, id string) {
+	js.mu.Lock()
+	delete(js.jobsByID, id)
+	started := js.started
+	js.mu.Unlock()
+	if started {
+		if err := js.coordinator.Checkpoint(ctx, id, "", time.Time{}); err != nil {
+			slog.ErrorContext(ctx, "Unschedule failed", "job", id, "error", err)
+		}
 	}
-	if nextRun.IsZero() {
-		return entryID, nil
+}
+func (js *jobSchedulerInternal) GetLocation() *time.Location { return js.location }
+func (js *jobSchedulerInternal) Stop(ctx context.Context) error {
+	js.mu.Lock()
+	js.stopping = true
+	js.cancel()
+	watchers := make([]watcherRegistrationInternal, 0, len(js.allWatchers))
+	for _, w := range js.allWatchers {
+		watchers = append(watchers, w)
 	}
-	return entryID, new(nextRun)
+	js.mu.Unlock()
+	var err error
+	for _, w := range watchers {
+		select {
+		case <-w.done:
+		case <-ctx.Done():
+			return errors.Combine(err, ctx.Err())
+		}
+		if stop, ok := w.watcher.(st.StoppableBusWatcher); ok {
+			err = errors.Combine(err, stop.Stop(ctx))
+		}
+	}
+	return err
 }

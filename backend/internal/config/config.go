@@ -30,7 +30,6 @@ const (
 // Fields with `options:"file"` support Docker secrets via the _FILE suffix.
 // Available options: file, toLower, trimTrailingSlash, deprecated
 type Config struct {
-	// BuildablesConfig contains feature-specific configuration that can be conditionally compiled
 	BuildablesConfig
 
 	AppUrl                string         `env:"APP_URL" default:"http://localhost:3552"`
@@ -38,6 +37,7 @@ type Config struct {
 	AllowDowngrade        bool           `env:"ALLOW_DOWNGRADE" default:"false"`
 	AllowCLIPasswordReset bool           `env:"ALLOW_CLI_PASSWORD_RESET" default:"false"`
 	AllowCLIMFAReset      bool           `env:"ALLOW_CLI_MFA_RESET" default:"false"`
+	ActorPort             string         `env:"ACTOR_PORT" default:"3551"`
 	Port                  string         `env:"PORT" default:"3552"`
 	Listen                string         `env:"LISTEN" default:""`
 	TLSEnabled            bool           `env:"TLS_ENABLED" default:"false"`
@@ -62,11 +62,7 @@ type Config struct {
 	OidcProviderName           string `env:"OIDC_PROVIDER_NAME" default:""`
 	OidcProviderLogoUrl        string `env:"OIDC_PROVIDER_LOGO_URL" default:""`
 	OidcMobileRedirectUris     string `env:"OIDC_MOBILE_REDIRECT_URIS" default:"arcane-mobile://oidc-callback"`
-	// OidcRoleMappings declaratively defines OIDC group→role mappings as a
-	// JSON array of role.OidcRoleMappingSpec. Reconciled into source='env'
-	// rows on every boot; rows are read-only at runtime. Supports *_FILE for
-	// Docker secrets. Leave empty to manage mappings purely via the UI/API.
-	OidcRoleMappings string `env:"OIDC_ROLE_MAPPINGS" default:"" options:"file"`
+	OidcRoleMappings           string `env:"OIDC_ROLE_MAPPINGS" default:"" options:"file"`
 
 	PUID                          string `env:"PUID" default:""`
 	PGID                          string `env:"PGID" default:""`
@@ -102,23 +98,16 @@ type Config struct {
 	EdgeMTLSServerName            string `env:"EDGE_MTLS_SERVER_NAME" default:""`
 	EdgeMTLSAssetsDir             string `env:"EDGE_MTLS_ASSETS_DIR" default:""`
 
-	TrustedProxies string `env:"TRUSTED_PROXIES" default:""`
-
-	FilePerm   os.FileMode `env:"FILE_PERM" default:"0644"`
-	DirPerm    os.FileMode `env:"DIR_PERM" default:"0755"`
-	GitWorkDir string      `env:"GIT_WORK_DIR" default:"data/git"`
-
-	HTTPClientTimeout int    `env:"HTTP_CLIENT_TIMEOUT" default:"0"`
-	BackupVolumeName  string `env:"ARCANE_BACKUP_VOLUME_NAME" default:"arcane-backups"`
-
-	// HTTPProxy, HTTPSProxy and NoProxy are forwarded to temporary Trivy scan containers.
-	HTTPProxy  string `env:"HTTP_PROXY" default:""`
-	HTTPSProxy string `env:"HTTPS_PROXY" default:""`
-	NoProxy    string `env:"NO_PROXY" default:""`
-
-	// Timezone for cron job scheduling. Uses IANA timezone names (e.g., "America/New_York", "Europe/London").
-	// "Local" uses the system's local timezone, "UTC" for Coordinated Universal Time.
-	Timezone string `env:"TZ" default:"Local"`
+	TrustedProxies    string      `env:"TRUSTED_PROXIES" default:""`
+	FilePerm          os.FileMode `env:"FILE_PERM" default:"0644"`
+	DirPerm           os.FileMode `env:"DIR_PERM" default:"0755"`
+	GitWorkDir        string      `env:"GIT_WORK_DIR" default:"data/git"`
+	HTTPClientTimeout int         `env:"HTTP_CLIENT_TIMEOUT" default:"0"`
+	BackupVolumeName  string      `env:"ARCANE_BACKUP_VOLUME_NAME" default:"arcane-backups"`
+	HTTPProxy         string      `env:"HTTP_PROXY" default:""`
+	HTTPSProxy        string      `env:"HTTPS_PROXY" default:""`
+	NoProxy           string      `env:"NO_PROXY" default:""`
+	Timezone          string      `env:"TZ" default:"Local"`
 }
 
 func Load() *Config {

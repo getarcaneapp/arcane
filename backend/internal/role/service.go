@@ -607,26 +607,90 @@ func decodePermissionsJSONInternal(raw string) ([]string, error) {
 	return out, nil
 }
 
+// ResolveExecutionPermissions revalidates durable work against current users,
+// key ownership, expiry and permissions without using authentication caches.
+func (s *RoleService) ResolveExecutionPermissions(ctx context.Context, userID, keyID string) (*authz.PermissionSet, error) {
+	if userID == "" {
+		return nil, errors.New("requesting user unavailable")
+	}
+	db := s.db.WithContext(ctx)
+	var user common.User
+	if err := db.Select("id").First(&user, "id = ?", userID).Error; err != nil {
+		return nil, errors.WrapIf(err, "failed to load requesting user")
+	}
+	if keyID == "" {
+		return s.ResolveUserPermissionsInDB(ctx, db, userID)
+	}
+	var key struct {
+		ID            string
+		Kind          string
+		UserID        *string
+		EnvironmentID *string
+		ExpiresAt     *time.Time
+	}
+	if err := db.Table("api_keys").Select("id, kind, user_id, environment_id, expires_at").Where("id = ?", keyID).Take(&key).Error; err != nil {
+		return nil, errors.WrapIf(err, "failed to load requesting API key")
+	}
+	if key.UserID == nil || *key.UserID != userID || (key.ExpiresAt != nil && !key.ExpiresAt.After(time.Now())) {
+		return nil, errors.New("requesting API key is no longer valid")
+	}
+	var permissions *authz.PermissionSet
+	var err error
+	switch key.Kind {
+	case "personal":
+		permissions, err = s.ResolveUserPermissionsInDB(ctx, db, userID)
+	case "scoped":
+		permissions, err = s.resolveApiKeyPermissionsInDBInternal(db, keyID)
+	default:
+		return nil, errors.New("requesting API key kind is invalid")
+	}
+	if err != nil {
+		return nil, err
+	}
+	if key.EnvironmentID == nil {
+		return permissions, nil
+	}
+	if *key.EnvironmentID == "" {
+		return nil, errors.New("requesting API key environment scope is invalid")
+	}
+	restricted := authz.NewPermissionSet()
+	for permission := range permissions.Global {
+		restricted.AddEnv(*key.EnvironmentID, permission)
+	}
+	for permission := range permissions.PerEnv[*key.EnvironmentID] {
+		restricted.AddEnv(*key.EnvironmentID, permission)
+	}
+	return restricted, nil
+}
+
 // ResolveApiKeyPermissions returns the PermissionSet for an API key. Caches
 // per-key. Falls back to an empty set (deny-all) if the key has no perms.
 func (s *RoleService) ResolveApiKeyPermissions(ctx context.Context, apiKeyID string) (*authz.PermissionSet, error) {
 	if ps, ok, _ := s.apiKeyCache.Get(apiKeyID); ok {
 		return ps, nil
 	}
-	var perms []ApiKeyPermission
-	if err := s.db.WithContext(ctx).Where("api_key_id = ?", apiKeyID).Find(&perms).Error; err != nil {
+	permissions, err := s.resolveApiKeyPermissionsInDBInternal(s.db.WithContext(ctx), apiKeyID)
+	if err != nil {
+		return nil, err
+	}
+	s.apiKeyCache.Set(apiKeyID, permissions)
+	return permissions, nil
+}
+
+func (s *RoleService) resolveApiKeyPermissionsInDBInternal(db *gorm.DB, apiKeyID string) (*authz.PermissionSet, error) {
+	var grants []ApiKeyPermission
+	if err := db.Where("api_key_id = ?", apiKeyID).Find(&grants).Error; err != nil {
 		return nil, errors.WrapIf(err, "failed to resolve api key permissions")
 	}
-	ps := authz.NewPermissionSet()
-	for _, p := range perms {
-		if p.EnvironmentID == nil {
-			ps.AddGlobal(p.Permission)
+	permissions := authz.NewPermissionSet()
+	for _, grant := range grants {
+		if grant.EnvironmentID == nil {
+			permissions.AddGlobal(grant.Permission)
 		} else {
-			ps.AddEnv(*p.EnvironmentID, p.Permission)
+			permissions.AddEnv(*grant.EnvironmentID, grant.Permission)
 		}
 	}
-	s.apiKeyCache.Set(apiKeyID, ps)
-	return ps, nil
+	return permissions, nil
 }
 
 // SetApiKeyPermissions replaces every permission row on the given API key

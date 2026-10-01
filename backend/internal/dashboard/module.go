@@ -5,31 +5,8 @@ package dashboard
 
 import (
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/container"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/version"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/volume"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/vulnerability"
 )
-
-// Dependencies are the collaborators the dashboard domain needs.
-type Dependencies struct {
-	DB            *database.DB
-	Docker        *docker.DockerClientService
-	Container     *container.ContainerService
-	Project       *project.ProjectService
-	Image         *image.ImageService
-	Settings      *settings.SettingsService
-	Vulnerability *vulnerability.VulnerabilityService
-	Environment   *environment.EnvironmentService
-	Version       *version.VersionService
-	Volume        *volume.VolumeService
-}
 
 // Module is the dashboard domain's wiring seam: it owns the service and the
 // handler, and mounts the domain's routes.
@@ -38,21 +15,9 @@ type Module struct {
 	handler *DashboardHandler
 }
 
-// New builds the dashboard domain from its dependencies.
-func New(deps Dependencies) *Module {
-	service := NewDashboardService(
-		deps.DB,
-		deps.Docker,
-		deps.Container,
-		deps.Project,
-		deps.Image,
-		deps.Settings,
-		deps.Vulnerability,
-		deps.Environment,
-		deps.Version,
-		deps.Volume,
-	)
-	return &Module{service: service, handler: NewHandler(service, deps.Environment)}
+// New wires dashboard routes around an existing service.
+func New(service *DashboardService, environmentService *environment.EnvironmentService) *Module {
+	return &Module{service: service, handler: NewHandler(service, environmentService)}
 }
 
 // Handler exposes the dashboard stream producer.

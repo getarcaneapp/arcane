@@ -107,7 +107,7 @@ func TestAuthMiddleware_ManagerAuthResolvesPermissionsByKeyKind(t *testing.T) {
 	t.Run("browser cookie uses owner role permissions", func(t *testing.T) {
 		ctx := context.Background()
 		db := setupAuthMiddlewareTestDBInternal(t)
-		userSvc := usersvc.NewUserService(db)
+		userSvc := usersvc.NewUserService(db, nil)
 		sessionSvc := session.NewSessionService(db)
 		settingsSvc, err := newSettingsServiceForAuthTestInternal(t, ctx, db)
 		require.NoError(t, err)

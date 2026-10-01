@@ -7,7 +7,6 @@ import (
 	"log/slog"
 
 	"emperror.dev/errors"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
@@ -15,6 +14,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/notification"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/concurrency"
 	notificationdto "github.com/getarcaneapp/arcane/types/v2/notification"
 	"github.com/labstack/echo/v5"
 	kit "go.getarcane.app/kit/pkg"
@@ -27,7 +27,6 @@ import (
 func registerEdgeTunnelRoutes(
 	ctx context.Context,
 	lifecycle fx.Lifecycle,
-	actorRuntime *actors.Runtime,
 	cfg *config.Config,
 	apiGroup *echo.Group,
 	environmentService *environment.EnvironmentService,
@@ -135,18 +134,21 @@ func registerEdgeTunnelRoutes(
 		})
 		createEdgeMTLSIssueEventsInternal(ctx, eventService, envIDCopy, envNameCopy, remoteAddr, certIssued, caGenerated, reenrolled)
 	})
-	var cleanupRunner *actors.Runner
+	var stopCleanup func(context.Context) error
 	lifecycle.Append(fx.Hook{
 		OnStart: func(context.Context) error {
 			var err error
-			cleanupRunner, err = actors.NewRunner(ctx, actorRuntime, "edge-tunnel", "cleanup", "edge tunnel cleanup", 3, func(runCtx context.Context) error {
+			stopCleanup, err = concurrency.StartSupervised(ctx, "edge tunnel cleanup", func(runCtx context.Context) error {
 				server.StartCleanupLoop(runCtx)
 				return nil
 			})
 			return err
 		},
 		OnStop: func(stopCtx context.Context) error {
-			return cleanupRunner.Stop(stopCtx)
+			if stopCleanup == nil {
+				return nil
+			}
+			return stopCleanup(stopCtx)
 		},
 	})
 	apiGroup.POST("/tunnel/poll", server.HandlePoll)

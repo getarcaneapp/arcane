@@ -16,11 +16,9 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/labstack/echo/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/fx/fxtest"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -648,11 +646,7 @@ func TestTunnelServer_ManageConnectedTunnel_RegistersBeforeSendingGRPCRegisterRe
 }
 
 func TestTunnelServer_ManageConnectedTunnel_UnregistersAfterConnectionContextCancellationInternal(t *testing.T) {
-	lifecycle := fxtest.NewLifecycle(t)
-	runtime, err := actors.NewRuntime(t.Context(), lifecycle)
-	require.NoError(t, err)
-	registry, err := NewActorTunnelRegistry(t.Context(), runtime)
-	require.NoError(t, err)
+	registry := NewTunnelRegistry()
 	server := NewTunnelServerWithRegistry(registry, nil, nil)
 	tunnel := NewAgentTunnelWithConn("env-cancelled-disconnect", &registerResponseOrderConn{recvErr: context.Canceled})
 
@@ -666,5 +660,4 @@ func TestTunnelServer_ManageConnectedTunnel_UnregistersAfterConnectionContextCan
 	stopCtx, cancelStop := context.WithTimeout(context.Background(), time.Second)
 	defer cancelStop()
 	require.NoError(t, registry.Stop(stopCtx))
-	require.NoError(t, lifecycle.Stop(stopCtx))
 }

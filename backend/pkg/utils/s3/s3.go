@@ -13,6 +13,7 @@ import (
 	"path"
 	"slices"
 	"strings"
+	"uuid"
 
 	"emperror.dev/errors"
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -21,7 +22,6 @@ import (
 	awss3 "github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/smithy-go"
 	backuptypes "github.com/getarcaneapp/arcane/types/v2/backup"
-	"github.com/google/uuid"
 	kit "go.getarcane.app/kit/pkg"
 )
 
@@ -174,7 +174,7 @@ func TestConnection(ctx context.Context, configuration Configuration) (err error
 		return fmt.Errorf("failed to upload S3 connection test object: %w", err)
 	}
 	payload := []byte(connectionTestPayload)
-	remoteKey := path.Join(configuration.Prefix, ".arcane-connection-test-"+uuid.NewString())
+	remoteKey := path.Join(configuration.Prefix, ".arcane-connection-test-"+uuid.New().String())
 	if err := putObjectInternal(ctx, client, configuration.Bucket, remoteKey, payload); err != nil {
 		return fmt.Errorf("failed to upload S3 connection test object: %w", err)
 	}

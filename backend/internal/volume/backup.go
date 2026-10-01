@@ -5,6 +5,7 @@ import (
 	"cmp"
 	"compress/gzip"
 	"context"
+	"encoding/json/v2"
 	"fmt"
 	"io"
 	"log/slog"
@@ -16,7 +17,6 @@ import (
 
 	"emperror.dev/errors"
 	cerrdefs "github.com/containerd/errdefs"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/backup"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
@@ -28,6 +28,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/backupbrowser"
 	s3utils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/s3"
@@ -668,13 +669,21 @@ func (s *VolumeService) createBackupInternal(ctx context.Context, volumeName str
 	if err != nil {
 		return nil, err
 	}
-	defer lease.Release()
+	defer lease.Release(ctx)
 	err = s.executeBackupInternal(ctx, entry, user, plan)
 	err = s.completeBackupInternal(ctx, entry, err)
 	return entry, err
 }
 
-func (s *VolumeService) prepareBackupInternal(ctx context.Context, volumeName string, trigger VolumeBackupTrigger, policyID string, plan backupPlanInternal) (*VolumeBackup, *actors.Lease[actors.AdmissionKey], error) {
+type volumeBackupRecoveryInternal struct {
+	BackupID        string              `json:"backupId"`
+	LocalEnabled    bool                `json:"localEnabled"`
+	S3Enabled       bool                `json:"s3Enabled"`
+	S3DestinationID string              `json:"s3DestinationId"`
+	Policy          *VolumeBackupPolicy `json:"policy,omitempty"`
+}
+
+func (s *VolumeService) prepareBackupInternal(ctx context.Context, volumeName string, trigger VolumeBackupTrigger, policyID string, plan backupPlanInternal) (*VolumeBackup, *runs.Lease, error) {
 	lease, admitted, err := s.engine.TryAcquireRun(ctx, backup.VolumeAdmissionScope, volumeName)
 	if err != nil {
 		return nil, nil, err
@@ -694,7 +703,15 @@ func (s *VolumeService) prepareBackupInternal(ctx context.Context, volumeName st
 	}
 	entry.ID = fmt.Sprintf("%s-%d-%s", volumeName, time.Now().UnixNano(), uuid.New().String()[:8])
 	if err := s.db.WithContext(ctx).Create(entry).Error; err != nil {
-		lease.Release()
+		lease.Release(ctx)
+		return nil, nil, err
+	}
+	checkpoint, err := json.Marshal(volumeBackupRecoveryInternal{BackupID: entry.ID, LocalEnabled: plan.localEnabled, S3Enabled: plan.s3Enabled, S3DestinationID: plan.s3DestinationID, Policy: plan.policy})
+	if err == nil {
+		err = jobcontext.Progress(ctx, schedulertypes.TargetOutcome{ResourceType: "volume_backup", ID: volumeName, Status: schedulertypes.Running, RecoveryData: checkpoint})
+	}
+	if err != nil {
+		lease.Release(ctx)
 		return nil, nil, err
 	}
 	return entry, lease, nil
@@ -712,10 +729,12 @@ func (s *VolumeService) completeBackupInternal(ctx context.Context, entry *Volum
 	if saveErr := s.db.WithContext(context.WithoutCancel(ctx)).Save(entry).Error; saveErr != nil {
 		return errors.Combine(err, fmt.Errorf("failed to save volume backup result: %w", saveErr))
 	}
+	if err == nil {
+		err = jobcontext.Progress(ctx, schedulertypes.TargetOutcome{ResourceType: "volume_backup", ID: entry.VolumeName, Status: schedulertypes.Succeeded})
+	}
 	return err
 }
 
-//nolint:gocognit // backup execution keeps container recovery with snapshot work
 func (s *VolumeService) executeBackupInternal(ctx context.Context, entry *VolumeBackup, user common.User, plan backupPlanInternal) (err error) {
 	defer utils.RecoverToError(&err, "volume backup")
 	volumeName, trigger := entry.VolumeName, entry.Trigger
@@ -745,50 +764,14 @@ func (s *VolumeService) executeBackupInternal(ctx context.Context, entry *Volume
 			return err
 		}
 	}
-	// The live volume is read once. A local+S3 backup replicates the local
-	// snapshot to S3 instead of scanning the source a second time.
-	var localSnapshot backup.Snapshot
-	if plan.localEnabled {
-		repository, repoErr := s.localRusticRepositoryInternal(ctx, dockerClient, false)
-		if repoErr != nil {
-			return repoErr
+	if plan.localEnabled && entry.LocalSnapshotID == "" {
+		if err := s.createLocalBackupSnapshotInternal(ctx, dockerClient, entry); err != nil {
+			return err
 		}
-		password, passwordErr := s.volumeBackupPasswordInternal(ctx, dockerClient, repository)
-		if passwordErr != nil {
-			return passwordErr
-		}
-		localSnapshot, err = s.engine.CreateSnapshot(ctx, dockerClient, repository, password, volumeName, backup.RootSnapshotInput(volumeSourceMountInternal(volumeName)))
-		if err != nil {
-			return fmt.Errorf("failed to create local Rustic snapshot: %w", err)
-		}
-		entry.LocalSnapshotID = localSnapshot.ID
-		entry.Size = localSnapshot.Size
 	}
-	if plan.s3Enabled {
-		remoteRepository, repoErr := s.remoteRusticRepositoryInternal(ctx, plan.s3DestinationID)
-		if repoErr != nil {
-			return repoErr
-		}
-		password, passwordErr := s.volumeBackupPasswordInternal(ctx, dockerClient, remoteRepository)
-		if passwordErr != nil {
-			return passwordErr
-		}
-		var remoteSnapshot backup.Snapshot
-		if plan.localEnabled {
-			localRepository, localErr := s.localRusticRepositoryInternal(ctx, dockerClient, true)
-			if localErr != nil {
-				return localErr
-			}
-			remoteSnapshot, err = s.engine.Replicate(ctx, dockerClient, localRepository, localSnapshot.ID, remoteRepository, password, volumeName)
-		} else {
-			remoteSnapshot, err = s.engine.CreateSnapshot(ctx, dockerClient, remoteRepository, password, volumeName, backup.RootSnapshotInput(volumeSourceMountInternal(volumeName)))
-		}
-		if err != nil {
-			return fmt.Errorf("failed to create S3 Rustic snapshot: %w", err)
-		}
-		entry.RemoteSnapshotID = remoteSnapshot.ID
-		if entry.Size == 0 {
-			entry.Size = remoteSnapshot.Size
+	if plan.s3Enabled && entry.RemoteSnapshotID == "" {
+		if err := s.createRemoteBackupSnapshotInternal(ctx, dockerClient, entry, plan); err != nil {
+			return err
 		}
 	}
 	if containersStopped {
@@ -813,6 +796,72 @@ func (s *VolumeService) executeBackupInternal(ctx context.Context, entry *Volume
 	return ctx.Err()
 }
 
+func (s *VolumeService) createLocalBackupSnapshotInternal(ctx context.Context, dockerClient *client.Client, entry *VolumeBackup) error {
+	repository, repoErr := s.localRusticRepositoryInternal(ctx, dockerClient, false)
+	if repoErr != nil {
+		return repoErr
+	}
+	password, passwordErr := s.volumeBackupPasswordInternal(ctx, dockerClient, repository)
+	if passwordErr != nil {
+		return passwordErr
+	}
+	if err := jobcontext.Progress(ctx, schedulertypes.TargetOutcome{ResourceType: "backup_destination", ID: entry.ID + ":local", Status: schedulertypes.Running}); err != nil {
+		return err
+	}
+	localSnapshot, err := s.engine.CreateSnapshot(ctx, dockerClient, repository, password, entry.VolumeName, backup.RootSnapshotInput(volumeSourceMountInternal(entry.VolumeName), backup.RunSnapshotTag(entry.ID)))
+	if err != nil {
+		return fmt.Errorf("failed to create local Rustic snapshot: %w", err)
+	}
+	entry.LocalSnapshotID = localSnapshot.ID
+	entry.Size = localSnapshot.Size
+	if err := s.db.WithContext(ctx).Save(entry).Error; err != nil {
+		return err
+	}
+	if err := jobcontext.Progress(ctx, schedulertypes.TargetOutcome{ResourceType: "backup_destination", ID: entry.ID + ":local", Status: schedulertypes.Succeeded, Message: localSnapshot.ID}); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *VolumeService) createRemoteBackupSnapshotInternal(ctx context.Context, dockerClient *client.Client, entry *VolumeBackup, plan backupPlanInternal) error {
+	var err error
+	remoteRepository, repoErr := s.remoteRusticRepositoryInternal(ctx, plan.s3DestinationID)
+	if repoErr != nil {
+		return repoErr
+	}
+	password, passwordErr := s.volumeBackupPasswordInternal(ctx, dockerClient, remoteRepository)
+	if passwordErr != nil {
+		return passwordErr
+	}
+	if err := jobcontext.Progress(ctx, schedulertypes.TargetOutcome{ResourceType: "backup_destination", ID: entry.ID + ":remote", Status: schedulertypes.Running}); err != nil {
+		return err
+	}
+	var remoteSnapshot backup.Snapshot
+	if plan.localEnabled {
+		localRepository, localErr := s.localRusticRepositoryInternal(ctx, dockerClient, true)
+		if localErr != nil {
+			return localErr
+		}
+		remoteSnapshot, err = s.engine.Replicate(ctx, dockerClient, localRepository, entry.LocalSnapshotID, remoteRepository, password, entry.VolumeName, backup.RunSnapshotTag(entry.ID))
+	} else {
+		remoteSnapshot, err = s.engine.CreateSnapshot(ctx, dockerClient, remoteRepository, password, entry.VolumeName, backup.RootSnapshotInput(volumeSourceMountInternal(entry.VolumeName), backup.RunSnapshotTag(entry.ID)))
+	}
+	if err != nil {
+		return fmt.Errorf("failed to create S3 Rustic snapshot: %w", err)
+	}
+	entry.RemoteSnapshotID = remoteSnapshot.ID
+	if entry.Size == 0 {
+		entry.Size = remoteSnapshot.Size
+	}
+	if err := s.db.WithContext(ctx).Save(entry).Error; err != nil {
+		return err
+	}
+	if err := jobcontext.Progress(ctx, schedulertypes.TargetOutcome{ResourceType: "backup_destination", ID: entry.ID + ":remote", Status: schedulertypes.Succeeded, Message: remoteSnapshot.ID}); err != nil {
+		return err
+	}
+	return nil
+}
+
 // HasEnabledBackupPolicy reports whether a volume-level schedule takes precedence over centralized backups.
 func (s *VolumeService) HasEnabledBackupPolicy(ctx context.Context, volumeName string) (bool, error) {
 	var count int64
@@ -835,7 +884,7 @@ func (s *VolumeService) UploadBackup(ctx context.Context, backupID, s3Destinatio
 	if !admitted {
 		return nil, ErrVolumeBackupAlreadyRunning
 	}
-	defer lease.Release()
+	defer lease.Release(ctx)
 	// Reload under the lease: a delete may have raced the first read.
 	if err := s.db.WithContext(ctx).Where("id = ?", backupID).First(&entry).Error; err != nil {
 		return nil, err
@@ -899,7 +948,7 @@ func (s *VolumeService) DeleteBackup(ctx context.Context, backupID string, user 
 	if !admitted {
 		return ErrVolumeBackupAlreadyRunning
 	}
-	defer lease.Release()
+	defer lease.Release(ctx)
 	return s.deleteBackupInternal(ctx, backupID, user)
 }
 
@@ -1955,8 +2004,8 @@ func (s *VolumeService) rescheduleVolumeBackupPolicyInternal(ctx context.Context
 		func(ctx context.Context) (schedulertypes.Outcome, error) {
 			return s.runScheduledBackupInternal(ctx, policyID)
 		},
-		func(_ context.Context, previous schedulertypes.Run) (schedulertypes.Outcome, error) {
-			return jobcontext.ConfirmedTarget(previous, policy.VolumeName), nil
+		func(ctx context.Context, previous schedulertypes.Run) (schedulertypes.Outcome, error) {
+			return s.ReconcileBackup(ctx, previous, policy.VolumeName)
 		},
 	)
 }

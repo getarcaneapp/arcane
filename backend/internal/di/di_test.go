@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/appimages"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/auth"
@@ -128,8 +127,11 @@ type graphParams struct {
 }
 
 func TestOptionsValidate(t *testing.T) {
+	_, cancel := context.WithCancel(t.Context())
+	defer cancel()
 	err := fx.ValidateApp(
 		fx.Supply(
+			cancel,
 			&config.Config{},
 			(*database.DB)(nil),
 			&http.Client{},
@@ -177,10 +179,8 @@ func TestDockerEventLifecycleInternal(t *testing.T) {
 			databaseDB := &database.DB{DB: db}
 			cfg := &config.Config{DockerHost: server.URL, AgentMode: mode != "manager", EdgeAgent: mode == "edge"}
 			lifecycle := fxtest.NewLifecycle(t)
-			runtime, err := actors.NewRuntime(t.Context(), lifecycle)
-			require.NoError(t, err)
 			eventService := event.NewEventService(databaseDB, cfg, nil)
-			provideDockerClientServiceInternal(t.Context(), lifecycle, runtime, databaseDB, cfg, nil, eventService)
+			provideDockerClientServiceInternal(t.Context(), lifecycle, databaseDB, cfg, nil, eventService)
 			t.Cleanup(func() {
 				ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 				defer cancel()

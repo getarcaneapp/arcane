@@ -42,7 +42,7 @@ func TestListImageTagsCredentialsInternal(t *testing.T) {
 				assert.Equal(t, tt.wantPassword, password)
 				return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"name":"library/nginx","tags":["1.2.3","1.2.4"]}`)), Header: http.Header{}}, nil
 			})}
-			svc := NewContainerRegistryService(db, nil, nil, client)
+			svc := NewContainerRegistryService(db, nil, nil, nil, client)
 			tags, err := svc.ListImageTags(t.Context(), "nginx:1.2.3", tt.external)
 			require.NoError(t, err)
 			assert.Equal(t, []string{"1.2.3", "1.2.4"}, tags)
@@ -54,7 +54,7 @@ func TestListImageTagsCredentialsInternal(t *testing.T) {
 func TestListImageTagsDoesNotFallBackOnRateLimitInternal(t *testing.T) {
 	// The registry client retries 429s itself, so count credentialed and anonymous listings rather than requests.
 	credentialed, anonymous := 0, 0
-	svc := NewContainerRegistryService(nil, nil, nil, &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+	svc := NewContainerRegistryService(nil, nil, nil, nil, &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		if req.URL.Path == "/v2/" {
 			return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody, Header: http.Header{}}, nil
 		}
@@ -73,7 +73,7 @@ func TestListImageTagsDoesNotFallBackOnRateLimitInternal(t *testing.T) {
 }
 
 func TestListImageTagsCancellationInternal(t *testing.T) {
-	svc := NewContainerRegistryService(nil, nil, nil)
+	svc := NewContainerRegistryService(nil, nil, nil, nil)
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	_, err := svc.ListImageTags(ctx, "registry.test/team/app:1.0.0", nil)
@@ -94,7 +94,7 @@ func TestListImageTagsRejectedCredentialFallbackInternal(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// The registry challenges at /v2/ and its token endpoint rejects the stored credential but serves anonymous tokens.
 			var tokenAuth []string
-			svc := NewContainerRegistryService(nil, nil, nil, &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			svc := NewContainerRegistryService(nil, nil, nil, nil, &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 				response := &http.Response{StatusCode: http.StatusOK, Body: http.NoBody, Header: http.Header{}}
 				switch req.URL.Path {
 				case "/v2/":

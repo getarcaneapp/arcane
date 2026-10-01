@@ -157,7 +157,7 @@ func resetPasswordInternal(ctx context.Context, db *database.DB, username, passw
 	}
 
 	roleService := role.NewRoleService(db)
-	userService := user.NewUserService(db).WithRoleService(roleService)
+	userService := user.NewUserService(db, roleService)
 	target, err := userService.GetUserByUsername(ctx, username)
 	if err != nil {
 		if errors.Is(err, common.ErrUserNotFound) {

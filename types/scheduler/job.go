@@ -64,7 +64,6 @@ type WorkerController interface {
 // JobScheduler is the shared public contract for the actor-owned scheduler.
 // Concrete cron and actor state remains private to the backend implementation.
 type JobScheduler interface {
-	SetDispatcher(dispatcher Dispatcher)
 	ListRegisteredJobs() []Job
 	WorkerController
 	DynamicScheduler

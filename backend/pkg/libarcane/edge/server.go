@@ -582,7 +582,7 @@ func (s *TunnelServer) handleEvent(ctx context.Context, tunnel *AgentTunnel, msg
 
 // StartCleanupLoop periodically cleans up stale tunnels.
 func (s *TunnelServer) StartCleanupLoop(ctx context.Context) {
-	defer close(s.cleanupDone)
+	defer s.cleanupDoneOnce.Do(func() { close(s.cleanupDone) })
 	ticker := time.NewTicker(tunnelStaleSweepInterval)
 	defer ticker.Stop()
 

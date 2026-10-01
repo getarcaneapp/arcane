@@ -100,7 +100,7 @@ func TestNewHumaMiddleware_AcceptsEnvironmentAccessTokenViaAPIKey(t *testing.T) 
 
 func TestNewHumaMiddleware_UsesBearerWhenLoopbackProxySendsEnvironmentAccessToken(t *testing.T) {
 	db := setupAuthMiddlewareTestDBInternal(t)
-	userSvc := user.NewUserService(db)
+	userSvc := user.NewUserService(db, nil)
 	sessionSvc := session.NewSessionService(db)
 
 	signingKey := newTestSigningKeyInternal()
@@ -263,7 +263,7 @@ func TestParseSecurityRequirements(t *testing.T) {
 
 func TestNewHumaMiddleware_OpportunisticAuthOnPublicRoute(t *testing.T) {
 	db := setupAuthMiddlewareTestDBInternal(t)
-	userSvc := user.NewUserService(db)
+	userSvc := user.NewUserService(db, nil)
 	sessionSvc := session.NewSessionService(db)
 
 	signingKey := newTestSigningKeyInternal()
@@ -350,7 +350,7 @@ func TestNewHumaMiddleware_OpportunisticAuthOnPublicRoute(t *testing.T) {
 // the user is logged out on every update.
 func TestNewHumaMiddleware_VersionMismatchIsRecoverable(t *testing.T) {
 	db := setupAuthMiddlewareTestDBInternal(t)
-	userSvc := user.NewUserService(db)
+	userSvc := user.NewUserService(db, nil)
 	sessionSvc := session.NewSessionService(db)
 
 	signingKey := newTestSigningKeyInternal()

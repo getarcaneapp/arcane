@@ -84,14 +84,9 @@ type ContainerRegistryService struct {
 	settingsService        *settings.SettingsService
 }
 
-func (s *ContainerRegistryService) WithSettingsService(settingsService *settings.SettingsService) *ContainerRegistryService {
-	s.settingsService = settingsService
-	return s
-}
-
 // NewContainerRegistryService creates a registry service. kvService may be nil
 // in tests that do not need pull tracking or rate-limit caching.
-func NewContainerRegistryService(db *database.DB, dockerClient registryDaemonGetter, kvService *kv.KVService, distributionHTTPClients ...*http.Client) *ContainerRegistryService {
+func NewContainerRegistryService(db *database.DB, dockerClient registryDaemonGetter, kvService *kv.KVService, settingsService *settings.SettingsService, distributionHTTPClients ...*http.Client) *ContainerRegistryService {
 	distributionHTTPClient := &http.Client{Timeout: 30 * time.Second}
 	if len(distributionHTTPClients) > 0 && distributionHTTPClients[0] != nil {
 		distributionHTTPClient = distributionHTTPClients[0]
@@ -101,6 +96,7 @@ func NewContainerRegistryService(db *database.DB, dockerClient registryDaemonGet
 		dockerClient:           dockerClient,
 		distributionHTTPClient: distributionHTTPClient,
 		kvService:              kvService,
+		settingsService:        settingsService,
 	}
 	backgroundLoader := func(imageRefs []string) (map[string]string, error) {
 		digests := make(map[string]string, len(imageRefs))

@@ -93,7 +93,7 @@ func TestContainerRegistryService_ListRepositoriesInternal(t *testing.T) {
 	writeImageInternal(t, host+"/other/tool:1.0", img)
 
 	db := setupContainerRegistryTestDBInternal(t)
-	svc := NewContainerRegistryService(db, nil, nil)
+	svc := NewContainerRegistryService(db, nil, nil, nil)
 	ctx := context.Background()
 
 	id := createBrowseTestRegistryInternal(t, db, host, "", "")
@@ -120,7 +120,7 @@ func TestContainerRegistryService_ListRepositoryTagsSingleImageInternal(t *testi
 	writeImageInternal(t, host+"/team/api:2.0", img)
 
 	db := setupContainerRegistryTestDBInternal(t)
-	svc := NewContainerRegistryService(db, nil, nil)
+	svc := NewContainerRegistryService(db, nil, nil, nil)
 	id := createBrowseTestRegistryInternal(t, db, host, "", "")
 
 	tags, page, err := svc.ListRepositoryTags(context.Background(), id, "team/api", pagination.QueryParams{Params: pagination.Params{Start: 0, Limit: 1}})
@@ -164,7 +164,7 @@ func TestContainerRegistryService_ListRepositoryTagsIndexInternal(t *testing.T) 
 	require.NoError(t, remote.WriteIndex(ref, index))
 
 	db := setupContainerRegistryTestDBInternal(t)
-	svc := NewContainerRegistryService(db, nil, nil)
+	svc := NewContainerRegistryService(db, nil, nil, nil)
 	id := createBrowseTestRegistryInternal(t, db, host, "", "")
 
 	tags, _, err := svc.ListRepositoryTags(context.Background(), id, "team/api", browseParamsInternal(""))
@@ -191,7 +191,7 @@ func TestContainerRegistryService_DeleteRepositoryTagInternal(t *testing.T) {
 	writeImageInternal(t, host+"/team/api:2.0", platformImageInternal(t, v1.Platform{OS: "linux", Architecture: "amd64"}, time.Now()))
 
 	db := setupContainerRegistryTestDBInternal(t)
-	svc := NewContainerRegistryService(db, nil, nil)
+	svc := NewContainerRegistryService(db, nil, nil, nil)
 	id := createBrowseTestRegistryInternal(t, db, host, "", "")
 	ctx := context.Background()
 
@@ -227,7 +227,7 @@ func TestContainerRegistryService_BrowseUsesStoredCredentialsInternal(t *testing
 		remote.WithAuth(&authn.Basic{Username: "robot", Password: "secret"}))
 
 	db := setupContainerRegistryTestDBInternal(t)
-	svc := NewContainerRegistryService(db, nil, nil)
+	svc := NewContainerRegistryService(db, nil, nil, nil)
 	ctx := context.Background()
 
 	id := createBrowseTestRegistryInternal(t, db, host, "robot", "secret")
@@ -245,7 +245,7 @@ func TestContainerRegistryService_BrowseErrorsInternal(t *testing.T) {
 	writeImageInternal(t, host+"/team/api:1.0", platformImageInternal(t, v1.Platform{OS: "linux", Architecture: "amd64"}, time.Now()))
 
 	db := setupContainerRegistryTestDBInternal(t)
-	svc := NewContainerRegistryService(db, nil, nil)
+	svc := NewContainerRegistryService(db, nil, nil, nil)
 	id := createBrowseTestRegistryInternal(t, db, host, "", "")
 	namespacedID := createBrowseTestRegistryInternal(t, db, "http://"+host+"/team/", "", "")
 

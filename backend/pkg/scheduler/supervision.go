@@ -105,44 +105,18 @@ func (s *watcherSupervisorInternal) startInternal(ctx context.Context) (panicked
 	return false, s.watcher.Start(ctx)
 }
 
-func (js *jobSchedulerInternal) SetDispatcher(dispatcher schedulertypes.Dispatcher) {
-	js.dispatchMu.Lock()
-	defer js.dispatchMu.Unlock()
-	js.dispatcher = dispatcher
-}
-
-func (js *jobSchedulerInternal) dispatcherInternal() schedulertypes.Dispatcher {
-	js.dispatchMu.RLock()
-	defer js.dispatchMu.RUnlock()
-	return js.dispatcher
-}
-
 func (js *jobSchedulerInternal) Submit(ctx context.Context, request schedulertypes.Request) (schedulertypes.Run, error) {
 	if js.context.Err() != nil {
 		return schedulertypes.Run{}, errJobSchedulerStoppedInternal
 	}
-	dispatcher := js.dispatcherInternal()
-	if dispatcher == nil {
-		return schedulertypes.Run{}, errors.New("durable job dispatcher unavailable")
-	}
-	return dispatcher.Submit(ctx, request)
-}
-
-func (js *jobSchedulerInternal) checkpointInternal(ctx context.Context, jobID, schedule string, next time.Time) error {
-	dispatcher := js.dispatcherInternal()
-	if dispatcher == nil {
-		return errors.New("durable job dispatcher unavailable")
-	}
-	return dispatcher.Checkpoint(ctx, jobID, schedule, next)
+	return js.coordinator.Submit(ctx, request)
 }
 
 func (js *jobSchedulerInternal) ListRegisteredJobs() []schedulertypes.Job {
-	snapshot, ok := js.state.Load()
-	if !ok {
-		return nil
-	}
-	jobs := make([]schedulertypes.Job, 0, len(snapshot.jobsByID))
-	for _, job := range snapshot.jobsByID {
+	js.mu.RLock()
+	defer js.mu.RUnlock()
+	jobs := make([]schedulertypes.Job, 0, len(js.jobsByID))
+	for _, job := range js.jobsByID {
 		jobs = append(jobs, job)
 	}
 	return jobs
@@ -152,11 +126,13 @@ func (js *jobSchedulerInternal) RestartWatcher(ctx context.Context, id string) e
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	snapshot, ok := js.state.Load()
-	if !ok || snapshot.stopping {
+	js.mu.RLock()
+	supervisor, ok := js.supervisors[id]
+	stopping := js.stopping
+	js.mu.RUnlock()
+	if stopping {
 		return errJobSchedulerStoppedInternal
 	}
-	supervisor, ok := snapshot.supervisors[id]
 	if !ok {
 		return errors.New("watcher not found")
 	}
@@ -173,11 +149,9 @@ func (js *jobSchedulerInternal) RestartWatcher(ctx context.Context, id string) e
 }
 
 func (js *jobSchedulerInternal) WatcherHealth(id string) (schedulertypes.WorkerHealth, bool) {
-	snapshot, ok := js.state.Load()
-	if !ok {
-		return schedulertypes.WorkerHealth{}, false
-	}
-	supervisor, ok := snapshot.supervisors[id]
+	js.mu.RLock()
+	supervisor, ok := js.supervisors[id]
+	js.mu.RUnlock()
 	if !ok {
 		return schedulertypes.WorkerHealth{}, false
 	}

@@ -15,7 +15,7 @@ func init() {
 		func(apiGroup *echo.Group, deps api.HandlerDeps) {
 			apiKeyService := deps.ApiKey.Service()
 			userService := deps.User.Service()
-			if apiKeyService == nil || userService == nil || deps.Federated == nil || deps.GitRepository.Service() == nil || deps.GitOpsSync.Service() == nil || deps.Project.Service() == nil {
+			if apiKeyService == nil || userService == nil || deps.Federated == nil || deps.GitRepository.Service() == nil || deps.GitOpsSync.Service() == nil {
 				slog.Warn("Playwright service not available, skipping playwright routes")
 				return
 			}
