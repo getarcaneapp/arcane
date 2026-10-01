@@ -2,8 +2,9 @@ package notifications
 
 import (
 	"context"
+	"errors"
+	"fmt"
 
-	"emperror.dev/errors"
 	"github.com/nicholas-fedor/shoutrrr/pkg/services/chat/slack"
 )
 
@@ -16,7 +17,7 @@ func BuildSlackURL(config SlackConfig) (string, error) {
 	// Parse the token to get the token object
 	token, err := slack.ParseToken(config.Token)
 	if err != nil {
-		return "", errors.WrapIf(err, "invalid Slack token format (expected format: xoxb-... or xoxp-...)")
+		return "", fmt.Errorf("invalid Slack token format (expected format: xoxb-... or xoxp-...): %w", err)
 	}
 
 	slackConfig := &slack.Config{
@@ -41,7 +42,7 @@ func SendSlack(ctx context.Context, config SlackConfig, message string) error {
 
 	shoutrrrURL, err := BuildSlackURL(config)
 	if err != nil {
-		return errors.WrapIf(err, "failed to build shoutrrr Slack URL")
+		return fmt.Errorf("failed to build shoutrrr Slack URL: %w", err)
 	}
 
 	return sendShoutrrrInternal("Slack", shoutrrrURL, message, nil)

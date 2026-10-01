@@ -6,7 +6,6 @@ import (
 	"strconv"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
@@ -39,7 +38,7 @@ var statusCmd = &cobra.Command{
 
 		result, err := c.GetJSON[updater.Status](cmd.Context(), types.UpdaterStatus(c.EnvID()))
 		if err != nil {
-			return errors.WrapIf(err, "failed to get updater status")
+			return fmt.Errorf("failed to get updater status: %w", err)
 		}
 
 		if jsonOutput {
@@ -68,7 +67,7 @@ var runCmd = &cobra.Command{
 
 		result, err := c.PostJSON[updater.Result](cmd.Context(), types.UpdaterRun(c.EnvID()), nil)
 		if err != nil {
-			return errors.WrapIf(err, "failed to run updater")
+			return fmt.Errorf("failed to run updater: %w", err)
 		}
 
 		if jsonOutput {
@@ -119,7 +118,7 @@ var historyCmd = &cobra.Command{
 
 		result, err := c.GetJSON[[]autoUpdateRecord](cmd.Context(), path)
 		if err != nil {
-			return errors.WrapIf(err, "failed to get updater history")
+			return fmt.Errorf("failed to get updater history: %w", err)
 		}
 
 		if jsonOutput {

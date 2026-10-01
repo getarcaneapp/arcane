@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -12,7 +13,6 @@ import (
 	"slices"
 	"strings"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
@@ -115,7 +115,7 @@ func ReadProjectFiles(ctx context.Context, projectPath, composePath string) (com
 	if strings.TrimSpace(composePath) != "" {
 		content, rerr := os.ReadFile(composePath)
 		if rerr != nil {
-			return "", "", errors.WrapIff(rerr, "failed to read compose file %s", composePath)
+			return "", "", fmt.Errorf("failed to read compose file %s: %w", composePath, rerr)
 		}
 		composeContent = string(content)
 	}
@@ -215,7 +215,7 @@ func DirectorySyncContentsChanged(ctx context.Context, projectPath string, syncF
 		}
 		return false, err
 	} else if !info.IsDir() {
-		return false, errors.Errorf("project path is not a directory: %s", projectPath)
+		return false, fmt.Errorf("project path is not a directory: %s", projectPath)
 	}
 
 	newFileSet := make(map[string]struct{}, len(syncFiles))
@@ -335,7 +335,7 @@ func CreateUniqueDir(ctx context.Context, projectsRoot, basePath, name string, p
 	for counter := 1; ; counter++ {
 		logicalPath, logicalErr := acfs.LogicalPath(projectsRoot, candidate)
 		if logicalErr != nil {
-			return "", "", errors.WrapIf(logicalErr, "project directory would be outside allowed projects root")
+			return "", "", fmt.Errorf("project directory would be outside allowed projects root: %w", logicalErr)
 		}
 
 		mkErr := acfs.Mkdir(ctx, projectsRoot, logicalPath, perm)
@@ -355,7 +355,7 @@ func CreateUniqueDir(ctx context.Context, projectsRoot, basePath, name string, p
 // already exists. Callers that must not auto-rename (e.g. GitOps creates, which
 // must never mint "-N" duplicate projects on a broken binding) use this to fail
 // loudly instead of suffixing.
-const ErrProjectDirExists = errors.Sentinel("project directory already exists")
+var ErrProjectDirExists = errors.New("project directory already exists")
 
 // CreateExactDir creates basePath (the sanitized project directory) under
 // projectsRoot WITHOUT any "-N" collision suffixing. It returns ErrProjectDirExists
@@ -368,7 +368,7 @@ func CreateExactDir(ctx context.Context, projectsRoot, basePath, name string, pe
 
 	logicalPath, err := acfs.LogicalPath(projectsRoot, basePath)
 	if err != nil {
-		return "", "", errors.WrapIf(err, "project directory would be outside allowed projects root")
+		return "", "", fmt.Errorf("project directory would be outside allowed projects root: %w", err)
 	}
 
 	if err := acfs.Mkdir(ctx, projectsRoot, logicalPath, perm); err != nil {
@@ -416,7 +416,7 @@ func IsSafeSubdirectory(baseDir, subdir string) bool {
 func ResolvePathWithinDir(baseDir, path string) (string, error) {
 	resolvedBase, err := filepath.Abs(filepath.Clean(baseDir))
 	if err != nil {
-		return "", errors.WrapIff(err, "failed to resolve base directory %q", baseDir)
+		return "", fmt.Errorf("failed to resolve base directory %q: %w", baseDir, err)
 	}
 
 	resolvedPath := path
@@ -425,10 +425,10 @@ func ResolvePathWithinDir(baseDir, path string) (string, error) {
 	}
 	resolvedPath, err = filepath.Abs(filepath.Clean(resolvedPath))
 	if err != nil {
-		return "", errors.WrapIff(err, "failed to resolve path %q", path)
+		return "", fmt.Errorf("failed to resolve path %q: %w", path, err)
 	}
 	if !IsSafeSubdirectory(resolvedBase, resolvedPath) {
-		return "", errors.Errorf("path %q escapes directory %q", path, baseDir)
+		return "", fmt.Errorf("path %q escapes directory %q", path, baseDir)
 	}
 
 	return resolvedPath, nil

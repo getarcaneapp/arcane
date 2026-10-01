@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"emperror.dev/errors"
 	"github.com/danielgtaylor/huma/v2"
 	kit "go.getarcane.app/kit/pkg"
 )
@@ -150,7 +149,7 @@ func (h *AppImagesHandler) getImageByFilenameInternal(filename string) (*GetAppI
 func (h *AppImagesHandler) getImageWithColor(name, colorOverride string, loop bool) (*GetAppImageOutput, error) {
 	imageData, mimeType, err := h.appImagesService.GetImageWithColor(name, colorOverride, loop)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to retrieve image").Error())
+		return nil, huma.Error500InternalServerError("Failed to retrieve image: " + err.Error())
 	}
 
 	// Always disable logo caching so theme/logo updates are reflected immediately.

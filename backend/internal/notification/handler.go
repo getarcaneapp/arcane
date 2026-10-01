@@ -2,10 +2,10 @@ package notification
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 
-	"emperror.dev/errors"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
@@ -153,7 +153,7 @@ func (h *NotificationHandler) GetAllNotificationSettings(ctx context.Context, in
 	}
 	settings, err := h.notificationService.GetAllSettings(ctx)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to list notification settings").Error())
+		return nil, huma.Error500InternalServerError("Failed to list notification settings: " + err.Error())
 	}
 
 	responses := make([]notification.Response, len(settings))
@@ -230,7 +230,7 @@ func (h *NotificationHandler) DeleteNotificationSettings(ctx context.Context, in
 	provider := notifications.NotificationProvider(input.Provider)
 
 	if err := h.notificationService.DeleteSettings(ctx, provider); err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to delete notification settings").Error())
+		return nil, huma.Error500InternalServerError("Failed to delete notification settings: " + err.Error())
 	}
 
 	return &handlerutil.Out[base.MessageResponse]{
@@ -253,7 +253,7 @@ func (h *NotificationHandler) TestNotification(ctx context.Context, input *TestN
 
 	warning, err := h.notificationService.TestNotification(ctx, input.EnvironmentID, provider, testType)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to send test notification").Error())
+		return nil, huma.Error500InternalServerError("Failed to send test notification: " + err.Error())
 	}
 
 	return &handlerutil.Out[notification.TestResponse]{

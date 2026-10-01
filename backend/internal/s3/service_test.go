@@ -68,8 +68,8 @@ func TestS3DestinationService_CRUD(t *testing.T) {
 	require.NotEqual(t, "secret-key", stored.SecretAccessKey)
 
 	listed, page, err := service.ListS3Destinations(ctx, pagination.QueryParams{
-		SearchQuery: pagination.SearchQuery{Search: "arcane-backups"},
-		Params:      pagination.Params{Limit: 20},
+		Search: "arcane-backups",
+		Limit:  20,
 	})
 	require.NoError(t, err)
 	require.EqualValues(t, 1, page.TotalItems)

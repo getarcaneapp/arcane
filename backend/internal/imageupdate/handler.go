@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"strings"
 
-	"emperror.dev/errors"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
@@ -132,7 +131,7 @@ func (h *ImageUpdateHandler) CheckImageUpdate(ctx context.Context, input *CheckI
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	result, err := h.imageUpdateService.CheckImageUpdate(runtimeCtx, input.ImageRef)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to check image update").Error())
+		return nil, huma.Error500InternalServerError("Failed to check image update: " + err.Error())
 	}
 
 	return &handlerutil.Out[imageupdate.Response]{
@@ -151,7 +150,7 @@ func (h *ImageUpdateHandler) CheckImageUpdateByID(ctx context.Context, input *Ch
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	result, err := h.imageUpdateService.CheckImageUpdateByID(runtimeCtx, input.ImageID)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to check image update").Error())
+		return nil, huma.Error500InternalServerError("Failed to check image update: " + err.Error())
 	}
 
 	return &handlerutil.Out[imageupdate.Response]{
@@ -176,7 +175,7 @@ func (h *ImageUpdateHandler) CheckMultipleImages(ctx context.Context, input *Che
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	results, err := h.imageUpdateService.CheckMultipleImages(runtimeCtx, input.Body.ImageRefs, input.Body.Credentials)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to check image updates").Error())
+		return nil, huma.Error500InternalServerError("Failed to check image updates: " + err.Error())
 	}
 
 	return &handlerutil.Out[imageupdate.BatchResponse]{
@@ -191,7 +190,7 @@ func (h *ImageUpdateHandler) CheckAllImages(ctx context.Context, input *CheckAll
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	results, err := h.imageUpdateService.CheckAllImages(runtimeCtx, 0, input.Body.Credentials)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to check all images").Error())
+		return nil, huma.Error500InternalServerError("Failed to check all images: " + err.Error())
 	}
 
 	return &handlerutil.Out[imageupdate.BatchResponse]{
@@ -215,7 +214,7 @@ func (h *ImageUpdateHandler) GetUpdateInfoByRefs(ctx context.Context, input *Get
 
 	result, err := h.getUpdateInfoByImageRefs(ctx, imageRefs)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to check image updates").Error())
+		return nil, huma.Error500InternalServerError("Failed to check image updates: " + err.Error())
 	}
 
 	return &handlerutil.Out[map[string]*imagetypes.UpdateInfo]{
@@ -229,7 +228,7 @@ func (h *ImageUpdateHandler) GetUpdateInfoByRefs(ctx context.Context, input *Get
 func (h *ImageUpdateHandler) GetUpdateSummary(ctx context.Context, input *GetUpdateSummaryInput) (*handlerutil.Out[imageupdate.Summary], error) {
 	summary, err := h.imageUpdateService.GetUpdateSummary(ctx)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to get update summary").Error())
+		return nil, huma.Error500InternalServerError("Failed to get update summary: " + err.Error())
 	}
 
 	return &handlerutil.Out[imageupdate.Summary]{

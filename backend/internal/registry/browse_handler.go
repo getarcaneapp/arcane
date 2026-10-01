@@ -3,7 +3,6 @@ package registry
 import (
 	"context"
 
-	"emperror.dev/errors"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
@@ -80,7 +79,7 @@ func (h *ContainerRegistryHandler) ListRepositories(ctx context.Context, input *
 	repositories, paginationResp, err := h.registryService.ListRepositories(ctx, input.ID, params)
 	if err != nil {
 		apiErr := common.ToAPIError(err)
-		return nil, huma.NewError(apiErr.HTTPStatus(), errors.WithMessage(err, "Failed to list repositories").Error())
+		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to list repositories: "+err.Error())
 	}
 
 	return &handlerutil.Page[containerregistry.Repository]{
@@ -99,7 +98,7 @@ func (h *ContainerRegistryHandler) ListTags(ctx context.Context, input *ListRegi
 	tags, paginationResp, err := h.registryService.ListRepositoryTags(ctx, input.ID, input.Repository, params)
 	if err != nil {
 		apiErr := common.ToAPIError(err)
-		return nil, huma.NewError(apiErr.HTTPStatus(), errors.WithMessage(err, "Failed to list tags").Error())
+		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to list tags: "+err.Error())
 	}
 
 	return &handlerutil.Page[containerregistry.RepositoryTag]{
@@ -116,7 +115,7 @@ func (h *ContainerRegistryHandler) DeleteTag(ctx context.Context, input *DeleteR
 	digest, err := h.registryService.DeleteRepositoryTag(ctx, input.ID, input.Repository, input.Tag)
 	if err != nil {
 		apiErr := common.ToAPIError(err)
-		return nil, huma.NewError(apiErr.HTTPStatus(), errors.WithMessage(err, "Failed to delete tag").Error())
+		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to delete tag: "+err.Error())
 	}
 
 	return &handlerutil.Out[containerregistry.DeleteTagResponse]{

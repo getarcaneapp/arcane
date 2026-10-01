@@ -3,9 +3,10 @@ package notifications
 import (
 	"context"
 	"crypto/tls"
+	"errors"
+	"fmt"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/wneessen/go-mail"
 	kit "go.getarcane.app/kit/pkg"
 )
@@ -62,7 +63,7 @@ func buildMailClientInternal(config EmailConfig, options smtpBuildOptions) (*mai
 		return nil, errors.New("SMTP host is empty")
 	}
 	if config.SMTPPort < 1 || config.SMTPPort > 65535 {
-		return nil, errors.Errorf("invalid SMTP port: %d", config.SMTPPort)
+		return nil, fmt.Errorf("invalid SMTP port: %d", config.SMTPPort)
 	}
 
 	opts := []mail.Option{
@@ -98,7 +99,7 @@ func buildMailClientInternal(config EmailConfig, options smtpBuildOptions) (*mai
 
 	client, err := mail.NewClient(config.SMTPHost, opts...)
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to construct SMTP client")
+		return nil, fmt.Errorf("failed to construct SMTP client: %w", err)
 	}
 
 	return client, nil
@@ -114,7 +115,7 @@ func sendEmailInternal(ctx context.Context, config EmailConfig, subject, htmlBod
 		return errors.New("email send context is required")
 	}
 	if err := ctx.Err(); err != nil {
-		return errors.WrapIf(err, "email send canceled")
+		return fmt.Errorf("email send canceled: %w", err)
 	}
 
 	if config.FromAddress == "" {
@@ -126,21 +127,21 @@ func sendEmailInternal(ctx context.Context, config EmailConfig, subject, htmlBod
 
 	client, err := buildMailClientInternal(config, options)
 	if err != nil {
-		return errors.WrapIf(err, "failed to build SMTP client")
+		return fmt.Errorf("failed to build SMTP client: %w", err)
 	}
 
 	msg := mail.NewMsg()
 	if err := msg.From(config.FromAddress); err != nil {
-		return errors.WrapIff(err, "invalid from address %q", config.FromAddress)
+		return fmt.Errorf("invalid from address %q: %w", config.FromAddress, err)
 	}
 	if err := msg.To(config.ToAddresses...); err != nil {
-		return errors.WrapIf(err, "invalid recipient address(es)")
+		return fmt.Errorf("invalid recipient address(es): %w", err)
 	}
 	msg.Subject(subject)
 	msg.SetBodyString(mail.TypeTextHTML, htmlBody)
 
 	if err := client.DialAndSendWithContext(ctx, msg); err != nil {
-		return errors.WrapIf(err, "failed to send email")
+		return fmt.Errorf("failed to send email: %w", err)
 	}
 
 	return nil

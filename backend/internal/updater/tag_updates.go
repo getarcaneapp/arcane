@@ -3,10 +3,11 @@ package updater
 import (
 	"cmp"
 	"context"
+	"errors"
+	"fmt"
 	"strings"
 	"time"
 
-	"emperror.dev/errors"
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
@@ -143,7 +144,7 @@ func (s *UpdaterService) CheckProjectUpdates(ctx context.Context, projectID stri
 		}
 		return tx.Create(&records).Error
 	}); err != nil {
-		return nil, errors.WrapIf(err, "save project update checks")
+		return nil, fmt.Errorf("save project update checks: %w", err)
 	}
 	return project.BuildConfiguredUpdateInfo(projectID, details.Services, nil, records), nil
 }

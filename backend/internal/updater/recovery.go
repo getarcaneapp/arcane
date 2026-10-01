@@ -4,11 +4,11 @@ import (
 	"cmp"
 	"context"
 	"encoding/json/v2"
+	"errors"
 	"log/slog"
 	"strings"
 	"sync"
 
-	"emperror.dev/errors"
 	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
 	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
@@ -78,10 +78,10 @@ func (s *UpdaterService) RecordUpdateRun(ctx context.Context, result updater.Res
 		progressMessage = evidenceErr.Error()
 	}
 	progressErr := jobcontext.Progress(ctx, schedulertypes.TargetOutcome{ID: result.ResourceID, ResourceType: string(result.ResourceType), Status: status, Message: progressMessage, ActivityID: activityIDFromContextInternal(ctx)})
-	err := errors.Combine(recordErr, progressErr, evidenceErr)
+	err := errors.Join(recordErr, progressErr, evidenceErr)
 	if progress, ok := ctx.Value(updateProgressKeyInternal{}).(*updateProgressInternal); ok && err != nil {
 		progress.mu.Lock()
-		progress.err = errors.Combine(progress.err, err)
+		progress.err = errors.Join(progress.err, err)
 		progress.mu.Unlock()
 	}
 	return err
@@ -111,7 +111,7 @@ func (s *UpdaterService) verifyFrozenResultInternal(ctx context.Context, resourc
 func (p *updateProgressInternal) completeBatchInternal(ctx context.Context, options arcaneupdater.Options, out *arcaneupdater.Result, batchCompleted bool, err error) error {
 	activityID := activityIDFromContextInternal(ctx)
 	p.mu.Lock()
-	err = errors.Combine(err, p.err)
+	err = errors.Join(err, p.err)
 	recordingFailed := p.err != nil
 	_, durableRun := jobcontext.Run(ctx)
 	selfTriggered := p.selfTriggered && durableRun
@@ -129,9 +129,9 @@ func (p *updateProgressInternal) completeBatchInternal(ctx context.Context, opti
 		status = schedulertypes.NeedsAttention
 	}
 	if selfTriggered {
-		err = errors.Combine(err, jobcontext.Progress(ctx, schedulertypes.TargetOutcome{ID: selfID, ResourceType: "container", Status: schedulertypes.NeedsAttention, ActivityID: activityID, Message: "Self-update completion requires review"}))
+		err = errors.Join(err, jobcontext.Progress(ctx, schedulertypes.TargetOutcome{ID: selfID, ResourceType: "container", Status: schedulertypes.NeedsAttention, ActivityID: activityID, Message: "Self-update completion requires review"}))
 		status = schedulertypes.NeedsAttention
-		err = errors.Combine(err, errors.New("self-update was triggered but completion requires review"))
+		err = errors.Join(err, errors.New("self-update was triggered but completion requires review"))
 	}
 	batchType := updateBatchTypeInternal(ctx, options, batchCompleted)
 	checkpoint := schedulertypes.TargetOutcome{ID: "auto-update", ResourceType: batchType, Status: status, ActivityID: activityID}
@@ -139,7 +139,7 @@ func (p *updateProgressInternal) completeBatchInternal(ctx context.Context, opti
 		checkpoint.Message = err.Error()
 	}
 	checkpointErr := jobcontext.Progress(ctx, checkpoint)
-	err = errors.Combine(err, checkpointErr)
+	err = errors.Join(err, checkpointErr)
 	if err != nil {
 		out.Success = false
 	}

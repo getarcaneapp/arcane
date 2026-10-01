@@ -2,6 +2,8 @@ package httpx
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"net/netip"
@@ -9,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 )
 
@@ -52,21 +53,21 @@ func ValidateSafeRemoteURL(ctx context.Context, rawURL string, lookupIP LookupIP
 
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
-		return nil, common.Classify(common.ErrUnsafeRemoteURL, errors.WrapIf(err, "Remote URL is not allowed"))
+		return nil, common.Classify(common.ErrUnsafeRemoteURL, fmt.Errorf("Remote URL is not allowed: %w", err)) //nolint:staticcheck // Preserve the existing error message.
 	}
 
 	scheme := strings.ToLower(parsed.Scheme)
 	if scheme != "http" && scheme != "https" {
-		return nil, common.Classify(common.ErrUnsafeRemoteURL, errors.WrapIf(errors.Errorf("unsupported URL scheme %q", scheme), "Remote URL is not allowed"))
+		return nil, common.Classify(common.ErrUnsafeRemoteURL, fmt.Errorf("Remote URL is not allowed: %w", fmt.Errorf("unsupported URL scheme %q", scheme))) //nolint:staticcheck // Preserve the existing error message.
 	}
 
 	if parsed.User != nil {
-		return nil, common.Classify(common.ErrUnsafeRemoteURL, errors.WrapIf(errors.New("URL credentials are not allowed"), "Remote URL is not allowed"))
+		return nil, common.Classify(common.ErrUnsafeRemoteURL, fmt.Errorf("Remote URL is not allowed: %w", errors.New("URL credentials are not allowed"))) //nolint:staticcheck // Preserve the existing error message.
 	}
 
 	host := parsed.Hostname()
 	if host == "" || isBlockedHostnameInternal(host) {
-		return nil, common.Classify(common.ErrUnsafeRemoteURL, errors.WrapIf(errors.New("missing or blocked hostname"), "Remote URL is not allowed"))
+		return nil, common.Classify(common.ErrUnsafeRemoteURL, fmt.Errorf("Remote URL is not allowed: %w", errors.New("missing or blocked hostname"))) //nolint:staticcheck // Preserve the existing error message.
 	}
 
 	ips, err := resolveAllowedIPsInternal(ctx, host, lookupIP)
@@ -74,7 +75,7 @@ func ValidateSafeRemoteURL(ctx context.Context, rawURL string, lookupIP LookupIP
 		if err == nil {
 			err = errors.New("host did not resolve to an allowed IP")
 		}
-		return nil, common.Classify(common.ErrUnsafeRemoteURL, errors.WrapIf(err, "Remote URL is not allowed"))
+		return nil, common.Classify(common.ErrUnsafeRemoteURL, fmt.Errorf("Remote URL is not allowed: %w", err)) //nolint:staticcheck // Preserve the existing error message.
 	}
 
 	return parsed, nil
@@ -105,7 +106,7 @@ func NewSafeOutboundHTTPClient(base *http.Client, lookupIP LookupIPFunc) (*http.
 	transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
 		host, port, err := net.SplitHostPort(address)
 		if err != nil {
-			return nil, common.Classify(common.ErrUnsafeRemoteURL, errors.WrapIf(err, "Remote URL is not allowed"))
+			return nil, common.Classify(common.ErrUnsafeRemoteURL, fmt.Errorf("Remote URL is not allowed: %w", err)) //nolint:staticcheck // Preserve the existing error message.
 		}
 
 		ips, err := resolveAllowedIPsInternal(ctx, host, lookupIP)
@@ -157,14 +158,14 @@ func cloneHTTPTransportInternal(base http.RoundTripper) (*http.Transport, error)
 	case *http.Transport:
 		return t.Clone(), nil
 	default:
-		return nil, errors.Errorf("unsupported HTTP transport type %T", base)
+		return nil, fmt.Errorf("unsupported HTTP transport type %T", base)
 	}
 }
 
 func resolveAllowedIPsInternal(ctx context.Context, host string, lookupIP LookupIPFunc) ([]net.IP, error) {
 	if parsedIP := parseIPLiteralInternal(host); parsedIP != nil {
 		if isBlockedIPInternal(parsedIP) {
-			return nil, common.Classify(common.ErrUnsafeRemoteURL, errors.WrapIf(errors.Errorf("blocked IP address %s", parsedIP), "Remote URL is not allowed"))
+			return nil, common.Classify(common.ErrUnsafeRemoteURL, fmt.Errorf("Remote URL is not allowed: %w", fmt.Errorf("blocked IP address %s", parsedIP))) //nolint:staticcheck // Preserve the existing error message.
 		}
 		return []net.IP{parsedIP}, nil
 	}
@@ -180,13 +181,13 @@ func resolveAllowedIPsInternal(ctx context.Context, host string, lookupIP Lookup
 			continue
 		}
 		if isBlockedIPInternal(ip) {
-			return nil, common.Classify(common.ErrUnsafeRemoteURL, errors.WrapIf(errors.Errorf("blocked IP address %s", ip), "Remote URL is not allowed"))
+			return nil, common.Classify(common.ErrUnsafeRemoteURL, fmt.Errorf("Remote URL is not allowed: %w", fmt.Errorf("blocked IP address %s", ip))) //nolint:staticcheck // Preserve the existing error message.
 		}
 		allowed = append(allowed, ip)
 	}
 
 	if len(allowed) == 0 {
-		return nil, common.Classify(common.ErrUnsafeRemoteURL, errors.WrapIf(errors.New("host did not resolve to an allowed IP"), "Remote URL is not allowed"))
+		return nil, common.Classify(common.ErrUnsafeRemoteURL, fmt.Errorf("Remote URL is not allowed: %w", errors.New("host did not resolve to an allowed IP"))) //nolint:staticcheck // Preserve the existing error message.
 	}
 
 	return allowed, nil

@@ -2,12 +2,13 @@ package scheduler
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
@@ -378,7 +379,7 @@ func (w *ImageUpdateWatcher) executeScanInternal(ctx context.Context) error {
 
 	results, err := w.imageUpdateService.CheckAllImages(ctx, 0, creds)
 	if err != nil {
-		return errors.WrapIf(err, "image scan failed")
+		return fmt.Errorf("image scan failed: %w", err)
 	}
 
 	updates := 0

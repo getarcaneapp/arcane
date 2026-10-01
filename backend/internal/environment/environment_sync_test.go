@@ -75,7 +75,7 @@ func TestSyncResourcesToEnvironmentOutcomes(t *testing.T) {
 				}
 			}))
 			defer server.Close()
-			require.NoError(t, db.Create(&environment.Environment{BaseModel: database.BaseModel{ID: "remote"}, Name: "Remote", ApiUrl: server.URL, AccessToken: new("agent-token"), Enabled: true}).Error)
+			require.NoError(t, db.Create(&environment.Environment{ID: "remote", Name: "Remote", ApiUrl: server.URL, AccessToken: new("agent-token"), Enabled: true}).Error)
 			service := environment.NewEnvironmentService(db, server.Client(), nil, nil, nil, nil)
 			activityService := activity.NewActivityService(db, nil)
 			id, err := service.SyncResourcesToEnvironment(t.Context(), "remote", &common.User{ID: "operator", Username: "operator"}, activityService)
@@ -116,12 +116,12 @@ func TestSyncCredentialDecryptionAbortsSnapshot(t *testing.T) {
 				_, _ = w.Write([]byte(`{"success":true}`))
 			}))
 			defer server.Close()
-			require.NoError(t, db.Create(&environment.Environment{BaseModel: database.BaseModel{ID: "remote"}, ApiUrl: server.URL, AccessToken: new("agent-token")}).Error)
+			require.NoError(t, db.Create(&environment.Environment{ID: "remote", ApiUrl: server.URL, AccessToken: new("agent-token")}).Error)
 			service := environment.NewEnvironmentService(db, server.Client(), nil, nil, nil, nil)
 			var syncResource func(context.Context, string) error
 			switch kind {
 			case "registry token", "ECR secret":
-				row := registry.ContainerRegistry{BaseModel: database.BaseModel{ID: "bad-credential"}, URL: "registry.example.com", RegistryType: registry.RegistryTypeGeneric, Token: "invalid-ciphertext"}
+				row := registry.ContainerRegistry{ID: "bad-credential", URL: "registry.example.com", RegistryType: registry.RegistryTypeGeneric, Token: "invalid-ciphertext"}
 				if kind == "ECR secret" {
 					row.RegistryType = registry.RegistryTypeECR
 					row.AWSSecretAccessKey = "invalid-ciphertext"
@@ -129,7 +129,7 @@ func TestSyncCredentialDecryptionAbortsSnapshot(t *testing.T) {
 				require.NoError(t, db.Create(&row).Error)
 				syncResource = service.SyncRegistriesToEnvironment
 			case "repository token", "repository SSH key":
-				row := gitrepo.GitRepository{BaseModel: database.BaseModel{ID: "bad-credential"}, Name: "Repository", URL: "https://example.com/repo.git"}
+				row := gitrepo.GitRepository{ID: "bad-credential", Name: "Repository", URL: "https://example.com/repo.git"}
 				if kind == "repository token" {
 					row.Token = "invalid-ciphertext"
 				} else {
@@ -138,7 +138,7 @@ func TestSyncCredentialDecryptionAbortsSnapshot(t *testing.T) {
 				require.NoError(t, db.Create(&row).Error)
 				syncResource = service.SyncRepositoriesToEnvironment
 			case "S3 secret":
-				require.NoError(t, db.Create(&s3domain.S3Destination{BaseModel: database.BaseModel{ID: "bad-credential"}, Name: "Backup", SecretAccessKey: "invalid-ciphertext"}).Error)
+				require.NoError(t, db.Create(&s3domain.S3Destination{ID: "bad-credential", Name: "Backup", SecretAccessKey: "invalid-ciphertext"}).Error)
 				syncResource = service.SyncS3DestinationsToEnvironment
 			}
 			err := syncResource(t.Context(), "remote")
@@ -152,7 +152,7 @@ func TestSyncCredentialDecryptionAbortsSnapshot(t *testing.T) {
 
 func TestSyncRepositoriesPreservesEmptyCredentials(t *testing.T) {
 	db := setupSyncDBInternal(t)
-	require.NoError(t, db.Create(&gitrepo.GitRepository{BaseModel: database.BaseModel{ID: "public-repo"}, Name: "Public", URL: "https://example.com/public.git", AuthType: "none"}).Error)
+	require.NoError(t, db.Create(&gitrepo.GitRepository{ID: "public-repo", Name: "Public", URL: "https://example.com/public.git", AuthType: "none"}).Error)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var payload gitops.RepositorySyncRequest
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
@@ -166,7 +166,7 @@ func TestSyncRepositoriesPreservesEmptyCredentials(t *testing.T) {
 		_, _ = w.Write([]byte(`{"success":true}`))
 	}))
 	defer server.Close()
-	require.NoError(t, db.Create(&environment.Environment{BaseModel: database.BaseModel{ID: "remote"}, ApiUrl: server.URL, AccessToken: new("token")}).Error)
+	require.NoError(t, db.Create(&environment.Environment{ID: "remote", ApiUrl: server.URL, AccessToken: new("token")}).Error)
 	service := environment.NewEnvironmentService(db, server.Client(), nil, nil, nil, nil)
 	require.NoError(t, service.SyncRepositoriesToEnvironment(t.Context(), "remote"))
 }
@@ -188,8 +188,8 @@ func TestSyncSkipsUnchangedPayloadUntilForgotten(t *testing.T) {
 	defer server.Close()
 	token, err := crypto.Encrypt("secret")
 	require.NoError(t, err)
-	require.NoError(t, db.Create(&registry.ContainerRegistry{BaseModel: database.BaseModel{ID: "ghcr"}, URL: "ghcr.io", RegistryType: registry.RegistryTypeGeneric, Username: "user", Token: token}).Error)
-	require.NoError(t, db.Create(&environment.Environment{BaseModel: database.BaseModel{ID: "remote"}, ApiUrl: server.URL, AccessToken: new("agent-token")}).Error)
+	require.NoError(t, db.Create(&registry.ContainerRegistry{ID: "ghcr", URL: "ghcr.io", RegistryType: registry.RegistryTypeGeneric, Username: "user", Token: token}).Error)
+	require.NoError(t, db.Create(&environment.Environment{ID: "remote", ApiUrl: server.URL, AccessToken: new("agent-token")}).Error)
 	service := environment.NewEnvironmentService(db, server.Client(), nil, nil, nil, nil)
 	sync := func() error { return service.SyncRegistriesToEnvironment(t.Context(), "remote") }
 	changeRegistry := func(url string) {

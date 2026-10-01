@@ -3,13 +3,13 @@ package cmdutil
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/logger"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
@@ -30,12 +30,12 @@ func UploadFileInChunks(ctx context.Context, c *client.Client, kind, filePath st
 
 	file, err := os.Open(filePath)
 	if err != nil {
-		return "", errors.WrapIf(err, "failed to open file")
+		return "", fmt.Errorf("failed to open file: %w", err)
 	}
 	defer func() { _ = file.Close() }()
 	fileInfo, err := file.Stat()
 	if err != nil {
-		return "", errors.WrapIf(err, "failed to stat file")
+		return "", fmt.Errorf("failed to stat file: %w", err)
 	}
 
 	created, err := c.PostJSON[uploadtypes.Session](ctx, types.UploadSessions(c.EnvID(), kind), uploadtypes.CreateSessionRequest{
@@ -43,7 +43,7 @@ func UploadFileInChunks(ctx context.Context, c *client.Client, kind, filePath st
 		Size:     fileInfo.Size(),
 	})
 	if err != nil {
-		return "", errors.WrapIf(err, "failed to create upload session")
+		return "", fmt.Errorf("failed to create upload session: %w", err)
 	}
 	session := created.Data
 
@@ -66,7 +66,7 @@ func UploadFileInChunks(ctx context.Context, c *client.Client, kind, filePath st
 		expected := kit.Ternary(index == session.TotalChunks-1, session.Size-int64(index)*session.ChunkSize, session.ChunkSize)
 		if _, err := io.ReadFull(file, buf[:expected]); err != nil {
 			deleteSession()
-			return "", errors.WrapIf(err, "failed to read file")
+			return "", fmt.Errorf("failed to read file: %w", err)
 		}
 
 		chunkPath := types.UploadSessionChunk(c.EnvID(), kind, session.ID, index)
@@ -76,7 +76,7 @@ func UploadFileInChunks(ctx context.Context, c *client.Client, kind, filePath st
 				ok := resp.StatusCode >= 200 && resp.StatusCode < 300
 				if !ok {
 					errorBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-					chunkErr = errors.Errorf("chunk %d failed (status %d): %s", index, resp.StatusCode, strings.TrimSpace(string(errorBody)))
+					chunkErr = fmt.Errorf("chunk %d failed (status %d): %s", index, resp.StatusCode, strings.TrimSpace(string(errorBody)))
 				}
 				_ = resp.Body.Close()
 				if ok {
@@ -85,7 +85,7 @@ func UploadFileInChunks(ctx context.Context, c *client.Client, kind, filePath st
 			}
 			if attempt >= uploadChunkAttempts {
 				deleteSession()
-				return "", errors.WrapIf(chunkErr, "failed to upload file")
+				return "", fmt.Errorf("failed to upload file: %w", chunkErr)
 			}
 			log.Debugf("Retrying chunk %d after error: %v", index, chunkErr)
 		}

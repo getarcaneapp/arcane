@@ -8,7 +8,6 @@ import (
 	"strconv"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
@@ -96,7 +95,7 @@ var getCmd = &cobra.Command{
 		)
 		result, err := c.GetJSON[activitytypes.Detail](cmd.Context(), path)
 		if err != nil {
-			return errors.WrapIf(err, "failed to get activity")
+			return fmt.Errorf("failed to get activity: %w", err)
 		}
 
 		if jsonOutput {
@@ -169,7 +168,7 @@ var cancelCmd = &cobra.Command{
 
 		result, err := c.PostJSON[activitytypes.Activity](cmd.Context(), types.ActivityCancel(c.EnvID(), args[0]), nil)
 		if err != nil {
-			return errors.WrapIf(err, "failed to cancel activity")
+			return fmt.Errorf("failed to cancel activity: %w", err)
 		}
 
 		if jsonOutput {
@@ -204,7 +203,7 @@ var clearCmd = &cobra.Command{
 
 		result, err := c.DeleteJSON[activitytypes.ClearHistoryResult](cmd.Context(), types.ActivitiesHistory(c.EnvID()))
 		if err != nil {
-			return errors.WrapIf(err, "failed to clear activity history")
+			return fmt.Errorf("failed to clear activity history: %w", err)
 		}
 
 		if jsonOutput {

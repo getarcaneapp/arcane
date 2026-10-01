@@ -2,11 +2,11 @@ package volume
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"strings"
 	"sync"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/backup"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
@@ -120,12 +120,12 @@ func (s *VolumeService) GetVolumeByName(ctx context.Context, name string) (*volu
 	slog.DebugContext(ctx, "volume service: get volume", "volume", name)
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to connect to Docker")
+		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	volResult, err := dockerClient.VolumeInspect(ctx, name, client.VolumeInspectOptions{})
 	if err != nil {
-		return nil, errors.WrapIf(err, "volume not found")
+		return nil, fmt.Errorf("volume not found: %w", err)
 	}
 	vol := volResult.Volume
 
@@ -162,21 +162,21 @@ func (s *VolumeService) CreateVolume(ctx context.Context, options client.VolumeC
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, event.EventTypeVolumeError, "volume", "", options.Name, user.ID, user.Username, "0", err, database.JSON{"action": "create", "driver": options.Driver})
-		return nil, errors.WrapIf(err, "failed to connect to Docker")
+		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	defer s.eventService.BeginDockerResourceSuppressionWindow("volume", options.Name, options.Name)()
 	created, err := dockerClient.VolumeCreate(ctx, options)
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, event.EventTypeVolumeError, "volume", "", options.Name, user.ID, user.Username, "0", err, database.JSON{"action": "create", "driver": options.Driver})
-		return nil, errors.WrapIf(err, "failed to create volume")
+		return nil, fmt.Errorf("failed to create volume: %w", err)
 	}
 
 	defer s.eventService.BeginDockerResourceSuppressionWindow("volume", created.Volume.Name, created.Volume.Name)()
 	vol, err := dockerClient.VolumeInspect(ctx, created.Volume.Name, client.VolumeInspectOptions{})
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, event.EventTypeVolumeError, "volume", created.Volume.Name, created.Volume.Name, user.ID, user.Username, "0", err, database.JSON{"action": "create", "driver": options.Driver, "step": "inspect"})
-		return nil, errors.WrapIf(err, "failed to inspect created volume")
+		return nil, fmt.Errorf("failed to inspect created volume: %w", err)
 	}
 
 	metadata := database.JSON{
@@ -198,7 +198,7 @@ func (s *VolumeService) DeleteVolume(ctx context.Context, name string, force boo
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, event.EventTypeVolumeError, "volume", name, name, user.ID, user.Username, "0", err, database.JSON{"action": "delete", "force": force})
-		return errors.WrapIf(err, "failed to connect to Docker")
+		return fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	// Stop any read-only browse helper first; a helper mounting the volume would
@@ -212,7 +212,7 @@ func (s *VolumeService) DeleteVolume(ctx context.Context, name string, force boo
 		Force: force,
 	}); err != nil {
 		s.eventService.LogErrorEvent(ctx, event.EventTypeVolumeError, "volume", name, name, user.ID, user.Username, "0", err, database.JSON{"action": "delete", "force": force})
-		return errors.WrapIf(err, "failed to remove volume")
+		return fmt.Errorf("failed to remove volume: %w", err)
 	}
 
 	metadata := database.JSON{
@@ -238,7 +238,7 @@ func (s *VolumeService) PruneVolumesWithOptions(ctx context.Context, all bool) (
 	slog.DebugContext(ctx, "volume service: prune volumes with options", "all", all)
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to connect to Docker")
+		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	// Stop all read-only browse helpers first; a helper mounting a volume marks it
@@ -252,7 +252,7 @@ func (s *VolumeService) PruneVolumesWithOptions(ctx context.Context, all bool) (
 	// Note: Volumes are considered "in use" if referenced by any container (running or stopped)
 	volumePruneResult, err := dockerClient.VolumePrune(ctx, buildVolumePruneOptionsInternal(all))
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to prune volumes")
+		return nil, fmt.Errorf("failed to prune volumes: %w", err)
 	}
 
 	metadata := buildVolumePruneMetadataInternal(all, len(volumePruneResult.Report.VolumesDeleted), volumePruneResult.Report.SpaceReclaimed)

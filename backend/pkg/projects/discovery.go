@@ -2,6 +2,8 @@ package projects
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -9,7 +11,6 @@ import (
 	"slices"
 	"strings"
 
-	"emperror.dev/errors"
 	"github.com/compose-spec/compose-go/v2/loader"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	kit "go.getarcane.app/kit/pkg"
@@ -77,7 +78,7 @@ func DiscoverProjectDirectories(ctx context.Context, root string, followSymlinks
 
 	isDir, err := IsProjectDirectoryPath(root, followSymlinks)
 	if err == nil && !isDir {
-		return nil, errors.Errorf("project root is not a directory: %s", root)
+		return nil, fmt.Errorf("project root is not a directory: %s", root)
 	}
 
 	discovered := make([]DiscoveredProjectDir, 0)
@@ -91,7 +92,7 @@ func DiscoverProjectDirectories(ctx context.Context, root string, followSymlinks
 		// when the container was started as root, so a root-only projects
 		// directory is genuinely unreadable (#3489).
 		if errors.Is(err, os.ErrPermission) {
-			return nil, errors.WrapIff(err, "projects directory is not readable by the runtime user (uid %d): fix its permissions or set PUID/PGID to an owner that can read it", os.Geteuid())
+			return nil, fmt.Errorf("projects directory is not readable by the runtime user (uid %d): fix its permissions or set PUID/PGID to an owner that can read it: %w", os.Geteuid(), err)
 		}
 		return nil, err
 	}

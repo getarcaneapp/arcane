@@ -3,13 +3,13 @@ package version
 import (
 	"context"
 	"encoding/json/v2"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
-	"emperror.dev/errors"
 	ref "github.com/distribution/reference"
 	"github.com/getarcaneapp/arcane/backend/v2/buildables"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/apns"
@@ -32,9 +32,10 @@ import (
 )
 
 const (
-	versionTTL            = 3 * time.Hour
-	versionCheckURL       = "https://api.github.com/repos/getarcaneapp/arcane/releases/latest"
-	defaultRequestTimeout = 15 * time.Second
+	versionStreamPollInterval = 5 * time.Minute
+	versionTTL                = 3 * time.Hour
+	versionCheckURL           = "https://api.github.com/repos/getarcaneapp/arcane/releases/latest"
+	defaultRequestTimeout     = 15 * time.Second
 )
 
 type latestRelease struct {
@@ -103,17 +104,17 @@ func (s *VersionService) getLatestReleaseInternal(_ context.Context) (latestRele
 func (s *VersionService) fetchLatestReleaseInternal(ctx context.Context) (latestRelease, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, versionCheckURL, nil)
 	if err != nil {
-		return latestRelease{}, errors.WrapIf(err, "create GitHub request")
+		return latestRelease{}, fmt.Errorf("create GitHub request: %w", err)
 	}
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
-		return latestRelease{}, errors.WrapIf(err, "get latest release")
+		return latestRelease{}, fmt.Errorf("get latest release: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return latestRelease{}, errors.Errorf("GitHub API returned status %d", resp.StatusCode)
+		return latestRelease{}, fmt.Errorf("GitHub API returned status %d", resp.StatusCode)
 	}
 
 	var payload struct {
@@ -122,7 +123,7 @@ func (s *VersionService) fetchLatestReleaseInternal(ctx context.Context) (latest
 		PublishedAt string `json:"published_at"`
 	}
 	if err := json.UnmarshalRead(resp.Body, &payload); err != nil {
-		return latestRelease{}, errors.WrapIf(err, "decode payload")
+		return latestRelease{}, fmt.Errorf("decode payload: %w", err)
 	}
 	if payload.TagName == "" {
 		return latestRelease{}, errors.New("GitHub API returned empty tag name")
@@ -524,4 +525,49 @@ func (s *VersionService) checkDigestBasedUpdate(ctx context.Context, currentTag,
 	}
 
 	return updateAvailable, latestDigest
+}
+
+// RunStreamProducer shares one version poll loop across every connected client and emits a snapshot whenever it changes.
+func (s *VersionService) RunStreamProducer(ctx context.Context, events chan<- version.StreamEvent) {
+	s.streamHub.Subscribe(ctx, "local",
+		func(runCtx context.Context, publish func(version.StreamEvent)) {
+			var last *version.Info
+			poll := func() {
+				info := s.GetAppVersionInfo(runCtx)
+				if runCtx.Err() != nil {
+					return
+				}
+				if last != nil {
+					if last.UpdateAvailable == info.UpdateAvailable &&
+						last.NewestVersion == info.NewestVersion &&
+						last.NewestDigest == info.NewestDigest &&
+						last.CurrentTag == info.CurrentTag &&
+						last.CurrentDigest == info.CurrentDigest &&
+						last.ReleaseURL == info.ReleaseURL &&
+						last.ReleaseNotes == info.ReleaseNotes &&
+						last.ReleasedAt == info.ReleasedAt {
+						return
+					}
+				}
+				last = info
+				publish(version.StreamEvent{Type: "snapshot", Info: info, Timestamp: time.Now()})
+			}
+
+			poll()
+
+			ticker := time.NewTicker(versionStreamPollInterval)
+			defer ticker.Stop()
+
+			for {
+				select {
+				case <-runCtx.Done():
+					return
+				case <-ticker.C:
+					poll()
+				}
+			}
+		},
+		func(event version.StreamEvent) bool {
+			return agg.Send(ctx, events, event)
+		})
 }

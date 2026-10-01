@@ -2,10 +2,11 @@ package notifications
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net/url"
 	"strings"
 
-	"emperror.dev/errors"
 	shoutrrrTypes "github.com/nicholas-fedor/shoutrrr/pkg/types"
 )
 
@@ -19,7 +20,7 @@ func BuildGoogleChatURL(config GoogleChatConfig) (string, error) {
 
 	parsed, err := url.Parse(config.WebhookURL)
 	if err != nil {
-		return "", errors.WrapIf(err, "invalid google chat webhook URL")
+		return "", fmt.Errorf("invalid google chat webhook URL: %w", err)
 	}
 
 	// Accept a bare host without scheme, mirroring the generic webhook's URL
@@ -28,7 +29,7 @@ func BuildGoogleChatURL(config GoogleChatConfig) (string, error) {
 		normalized := strings.TrimPrefix(config.WebhookURL, "//")
 		parsed, err = url.Parse("https://" + normalized)
 		if err != nil {
-			return "", errors.WrapIf(err, "invalid google chat webhook URL")
+			return "", fmt.Errorf("invalid google chat webhook URL: %w", err)
 		}
 	}
 
@@ -39,7 +40,7 @@ func BuildGoogleChatURL(config GoogleChatConfig) (string, error) {
 	switch strings.ToLower(parsed.Scheme) {
 	case "http", "https":
 	default:
-		return "", errors.Errorf("invalid google chat webhook URL scheme: %s", parsed.Scheme)
+		return "", fmt.Errorf("invalid google chat webhook URL scheme: %s", parsed.Scheme)
 	}
 
 	shoutrrrURL := &url.URL{
@@ -58,7 +59,7 @@ func BuildGoogleChatURL(config GoogleChatConfig) (string, error) {
 func SendGoogleChat(ctx context.Context, config GoogleChatConfig, message string) error {
 	shoutrrrURL, err := BuildGoogleChatURL(config)
 	if err != nil {
-		return errors.WrapIf(err, "failed to build shoutrrr Google Chat URL")
+		return fmt.Errorf("failed to build shoutrrr Google Chat URL: %w", err)
 	}
 
 	return sendShoutrrrInternal("Google Chat", shoutrrrURL, message, &shoutrrrTypes.Params{})

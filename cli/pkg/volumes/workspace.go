@@ -3,6 +3,7 @@ package volumes
 import (
 	"bytes"
 	"encoding/json/v2"
+	"errors"
 	"fmt"
 	"mime/multipart"
 	"net/http"
@@ -13,7 +14,6 @@ import (
 	"strings"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/prompt"
@@ -43,11 +43,11 @@ var workspaceCmd = &cobra.Command{
 
 		resp, err := c.Get(cmd.Context(), types.VolumeWorkspace(c.EnvID(), resolved.Name))
 		if err != nil {
-			return errors.WrapIf(err, "failed to get volume workspace")
+			return fmt.Errorf("failed to get volume workspace: %w", err)
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to get volume workspace")
+			return fmt.Errorf("failed to get volume workspace: %w", err)
 		}
 
 		var result base.ApiResponse[workspacetypes.Workspace]
@@ -125,11 +125,11 @@ var workspaceCatCmd = &cobra.Command{
 		)
 		resp, err := c.Get(cmd.Context(), filePath)
 		if err != nil {
-			return errors.WrapIf(err, "failed to get workspace file")
+			return fmt.Errorf("failed to get workspace file: %w", err)
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to get workspace file")
+			return fmt.Errorf("failed to get workspace file: %w", err)
 		}
 
 		var result base.ApiResponse[workspacetypes.FileContent]
@@ -142,7 +142,7 @@ var workspaceCatCmd = &cobra.Command{
 		}
 
 		if result.Data.Content == "" && result.Data.ReadOnlyReason != "" {
-			return errors.Errorf("file %s has no printable content (%s); use `arcane volumes workspace download` instead", args[1], result.Data.ReadOnlyReason)
+			return fmt.Errorf("file %s has no printable content (%s); use `arcane volumes workspace download` instead", args[1], result.Data.ReadOnlyReason)
 		}
 
 		fmt.Print(result.Data.Content)
@@ -176,11 +176,11 @@ var workspaceDownloadCmd = &cobra.Command{
 		)
 		resp, err := c.Get(cmd.Context(), downloadPath)
 		if err != nil {
-			return errors.WrapIf(err, "failed to download workspace file")
+			return fmt.Errorf("failed to download workspace file: %w", err)
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to download workspace file")
+			return fmt.Errorf("failed to download workspace file: %w", err)
 		}
 
 		outputFile := ""
@@ -219,7 +219,7 @@ var workspacePutCmd = &cobra.Command{
 
 		content, err := os.ReadFile(args[1])
 		if err != nil {
-			return errors.WrapIf(err, "failed to read local file")
+			return fmt.Errorf("failed to read local file: %w", err)
 		}
 
 		relativePath := strings.Trim(filepath.ToSlash(args[2]), "/")
@@ -240,11 +240,11 @@ var workspacePutCmd = &cobra.Command{
 
 		workspaceResp, err := c.Get(cmd.Context(), types.VolumeWorkspace(c.EnvID(), resolved.Name))
 		if err != nil {
-			return errors.WrapIf(err, "failed to get volume workspace")
+			return fmt.Errorf("failed to get volume workspace: %w", err)
 		}
 		defer func() { _ = workspaceResp.Body.Close() }()
 		if err := cmdutil.EnsureSuccessStatus(workspaceResp); err != nil {
-			return errors.WrapIf(err, "failed to get volume workspace")
+			return fmt.Errorf("failed to get volume workspace: %w", err)
 		}
 		var current base.ApiResponse[workspacetypes.Workspace]
 		if err := cmdutil.DecodeJSON(workspaceResp, &current); err != nil {
@@ -270,32 +270,32 @@ var workspacePutCmd = &cobra.Command{
 		}
 		manifestJSON, err := json.Marshal(manifest)
 		if err != nil {
-			return errors.WrapIf(err, "failed to encode workspace manifest")
+			return fmt.Errorf("failed to encode workspace manifest: %w", err)
 		}
 
 		var requestBody bytes.Buffer
 		writer := multipart.NewWriter(&requestBody)
 		if err := writer.WriteField("manifest", string(manifestJSON)); err != nil {
-			return errors.WrapIf(err, "failed to write workspace manifest")
+			return fmt.Errorf("failed to write workspace manifest: %w", err)
 		}
 		filePart, err := writer.CreateFormFile("files", path.Base(relativePath))
 		if err != nil {
-			return errors.WrapIf(err, "failed to create workspace upload")
+			return fmt.Errorf("failed to create workspace upload: %w", err)
 		}
 		if _, err := filePart.Write(content); err != nil {
-			return errors.WrapIf(err, "failed to write workspace upload")
+			return fmt.Errorf("failed to write workspace upload: %w", err)
 		}
 		if err := writer.Close(); err != nil {
-			return errors.WrapIf(err, "failed to finalize workspace upload")
+			return fmt.Errorf("failed to finalize workspace upload: %w", err)
 		}
 
 		resp, err := c.RequestRaw(cmd.Context(), http.MethodPut, types.VolumeWorkspace(c.EnvID(), resolved.Name), &requestBody, map[string]string{"Content-Type": writer.FormDataContentType()})
 		if err != nil {
-			return errors.WrapIf(err, "failed to update volume workspace")
+			return fmt.Errorf("failed to update volume workspace: %w", err)
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to update volume workspace")
+			return fmt.Errorf("failed to update volume workspace: %w", err)
 		}
 
 		if jsonOutput {

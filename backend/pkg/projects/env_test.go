@@ -2,13 +2,12 @@ package projects
 
 import (
 	"context"
-	stderrors "errors"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
 	"testing"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/stretchr/testify/assert"
@@ -109,7 +108,7 @@ func TestWithTransientValidationEnvFile_PreservesExternalSymlink(t *testing.T) {
 	originalLinkTarget, err := os.Readlink(envPath)
 	require.NoError(t, err)
 
-	validationErr := stderrors.New("validation failed")
+	validationErr := errors.New("validation failed")
 	updatedContent := "VALUE=validation\n"
 	err = WithTransientValidationEnvFile(t.Context(), projectDir, &updatedContent, func() error {
 		content, readErr := os.ReadFile(targetPath)

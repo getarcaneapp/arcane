@@ -2,9 +2,9 @@ package imagepatch
 
 import (
 	"context"
+	"errors"
 	"net/http"
 
-	"emperror.dev/errors"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
@@ -82,7 +82,7 @@ func (h *ImagePatchHandler) PatchImage(ctx context.Context, input *PatchImageInp
 		case errors.Is(err, common.ErrNotFound):
 			return nil, huma.Error404NotFound(err.Error())
 		default:
-			return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to patch image").Error())
+			return nil, huma.Error500InternalServerError("Failed to patch image: " + err.Error())
 		}
 	}
 
@@ -103,7 +103,7 @@ func (h *ImagePatchHandler) ListPatchTargets(ctx context.Context, input *ListPat
 		if errors.Is(err, common.ErrFeatureDisabled) {
 			return nil, handlerutil.FeatureDisabledError(features.VulnerabilityManagement)
 		}
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to list image patch targets").Error())
+		return nil, huma.Error500InternalServerError("Failed to list image patch targets: " + err.Error())
 	}
 	if targets == nil {
 		targets = []imagepatch.PatchTarget{}
@@ -127,7 +127,7 @@ func (h *ImagePatchHandler) ListImagePatches(ctx context.Context, input *ListIma
 
 	records, paginationResp, err := h.imagePatchService.ListPatches(ctx, input.EnvironmentID, params)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to list image patches").Error())
+		return nil, huma.Error500InternalServerError("Failed to list image patches: " + err.Error())
 	}
 	if records == nil {
 		records = []imagepatch.PatchRecord{}

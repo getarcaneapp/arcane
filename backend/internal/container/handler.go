@@ -2,6 +2,7 @@ package container
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"maps"
@@ -9,7 +10,6 @@ import (
 	"net/netip"
 	"strings"
 
-	"emperror.dev/errors"
 	"github.com/containerd/errdefs"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
@@ -345,7 +345,7 @@ func (h *ContainerHandler) ListContainers(ctx context.Context, input *ListContai
 
 	result, err := h.containerService.ListContainersPaginated(ctx, params, true, input.IncludeInternal, input.IncludeHidden, input.GroupBy)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to list containers").Error())
+		return nil, huma.Error500InternalServerError("Failed to list containers: " + err.Error())
 	}
 
 	return &ListContainersOutput{
@@ -363,7 +363,7 @@ func (h *ContainerHandler) ListContainers(ctx context.Context, input *ListContai
 func (h *ContainerHandler) GetContainerStatusCounts(ctx context.Context, input *GetContainerStatusCountsInput) (*handlerutil.Out[containertypes.StatusCounts], error) {
 	containers, _, _, _, err := h.dockerService.GetAllContainers(ctx)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to get container counts").Error())
+		return nil, huma.Error500InternalServerError("Failed to get container counts: " + err.Error())
 	}
 
 	containers = FilterExcludedContainers(containers, input.IncludeInternal, input.IncludeHidden)
@@ -598,26 +598,26 @@ func (h *ContainerHandler) CreateContainer(ctx context.Context, input *CreateCon
 	config := buildContainerConfig(input.Body)
 	portBindings := network.PortMap{}
 	if err := applyLegacyPortBindings(input.Body, config, portBindings); err != nil {
-		return nil, huma.Error400BadRequest(errors.WithMessage(err, "Invalid port format").Error())
+		return nil, huma.Error400BadRequest("Invalid port format: " + err.Error())
 	}
 	if err := applyExposedPorts(input.Body.ExposedPorts, config); err != nil {
-		return nil, huma.Error400BadRequest(errors.WithMessage(err, "Invalid port format").Error())
+		return nil, huma.Error400BadRequest("Invalid port format: " + err.Error())
 	}
 
 	hostConfig := buildHostConfigBase(input.Body, portBindings)
 	if err := applyHostConfigOverrides(input.Body, config, hostConfig, portBindings); err != nil {
-		return nil, huma.Error400BadRequest(errors.WithMessage(err, "Invalid port format").Error())
+		return nil, huma.Error400BadRequest("Invalid port format: " + err.Error())
 	}
 	applyLegacyResourceLimits(input.Body, hostConfig)
 
 	networkingConfig, err := buildNetworkingConfig(input.Body)
 	if err != nil {
-		return nil, huma.Error400BadRequest(errors.WithMessage(err, "Invalid network configuration").Error())
+		return nil, huma.Error400BadRequest("Invalid network configuration: " + err.Error())
 	}
 
 	containerJSON, err := h.containerService.CreateContainer(ctx, config, hostConfig, networkingConfig, input.Body.Name, *user, input.Body.Credentials)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to create container").Error())
+		return nil, huma.Error500InternalServerError("Failed to create container: " + err.Error())
 	}
 
 	out := containertypes.Created{
@@ -639,7 +639,7 @@ func (h *ContainerHandler) CreateContainer(ctx context.Context, input *CreateCon
 func (h *ContainerHandler) GetContainer(ctx context.Context, input *GetContainerInput) (*handlerutil.Out[containertypes.Details], error) {
 	details, err := h.containerService.GetContainerDetails(ctx, input.ContainerID)
 	if err != nil {
-		return nil, huma.Error404NotFound(errors.WithMessage(err, "Failed to retrieve container").Error())
+		return nil, huma.Error404NotFound("Failed to retrieve container: " + err.Error())
 	}
 
 	return &handlerutil.Out[containertypes.Details]{
@@ -653,7 +653,7 @@ func (h *ContainerHandler) GetContainer(ctx context.Context, input *GetContainer
 func (h *ContainerHandler) GetContainerProcesses(ctx context.Context, input *GetContainerInput) (*handlerutil.Out[containertypes.Processes], error) {
 	processes, err := h.containerService.GetContainerProcesses(ctx, input.ContainerID)
 	if err != nil {
-		message := errors.WithMessage(err, "Failed to retrieve container processes").Error()
+		message := "Failed to retrieve container processes: " + err.Error()
 		switch {
 		case errdefs.IsNotFound(err):
 			return nil, huma.Error404NotFound(message)
@@ -678,9 +678,9 @@ func (h *ContainerHandler) DownloadContainerLogs(ctx context.Context, input *Get
 	reader, filename, err := h.containerService.DownloadLogs(ctx, input.ContainerID)
 	if err != nil {
 		if errdefs.IsNotFound(err) {
-			return nil, huma.Error404NotFound(errors.WithMessage(err, "Failed to retrieve container").Error())
+			return nil, huma.Error404NotFound("Failed to retrieve container: " + err.Error())
 		}
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to download container logs").Error())
+		return nil, huma.Error500InternalServerError("Failed to download container logs: " + err.Error())
 	}
 	return handlerutil.DownloadResponse(reader, -1, filename), nil
 }
@@ -688,7 +688,7 @@ func (h *ContainerHandler) DownloadContainerLogs(ctx context.Context, input *Get
 func (h *ContainerHandler) GenerateCompose(ctx context.Context, input *GenerateComposeInput) (*handlerutil.Out[containertypes.GenerateComposeResponse], error) {
 	composeContent, err := projects.ComposeGenerate(ctx, h.dockerService.DockerHost(), "", input.Body.ContainerIDs)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to generate compose file").Error())
+		return nil, huma.Error500InternalServerError("Failed to generate compose file: " + err.Error())
 	}
 
 	return &handlerutil.Out[containertypes.GenerateComposeResponse]{
@@ -710,7 +710,7 @@ func (h *ContainerHandler) StartContainer(ctx context.Context, input *ContainerA
 			return h.containerService.StartContainer(runtimeCtx, containerID, user)
 		},
 		Error: func(err error) error {
-			return huma.Error500InternalServerError(errors.WithMessage(err, "Failed to start container").Error())
+			return huma.Error500InternalServerError("Failed to start container: " + err.Error())
 		},
 	})
 }
@@ -726,7 +726,7 @@ func (h *ContainerHandler) StopContainer(ctx context.Context, input *ContainerAc
 			return h.containerService.StopContainer(runtimeCtx, containerID, user)
 		},
 		Error: func(err error) error {
-			return huma.Error500InternalServerError(errors.WithMessage(err, "Failed to stop container").Error())
+			return huma.Error500InternalServerError("Failed to stop container: " + err.Error())
 		},
 	})
 }
@@ -742,7 +742,7 @@ func (h *ContainerHandler) RestartContainer(ctx context.Context, input *Containe
 			return h.containerService.RestartContainer(runtimeCtx, containerID, user)
 		},
 		Error: func(err error) error {
-			return huma.Error500InternalServerError(errors.WithMessage(err, "Failed to restart container").Error())
+			return huma.Error500InternalServerError("Failed to restart container: " + err.Error())
 		},
 	})
 }
@@ -759,7 +759,7 @@ func (h *ContainerHandler) KillContainer(ctx context.Context, input *KillContain
 			return h.containerService.KillContainer(runtimeCtx, containerID, signal, user)
 		},
 		Error: func(err error) error {
-			return huma.Error500InternalServerError(errors.WithMessage(err, "Failed to kill container").Error())
+			return huma.Error500InternalServerError("Failed to kill container: " + err.Error())
 		},
 	})
 }
@@ -775,7 +775,7 @@ func (h *ContainerHandler) PauseContainer(ctx context.Context, input *ContainerA
 			return h.containerService.PauseContainer(runtimeCtx, containerID, user)
 		},
 		Error: func(err error) error {
-			return huma.Error500InternalServerError(errors.WithMessage(err, "Failed to pause container").Error())
+			return huma.Error500InternalServerError("Failed to pause container: " + err.Error())
 		},
 	})
 }
@@ -791,7 +791,7 @@ func (h *ContainerHandler) UnpauseContainer(ctx context.Context, input *Containe
 			return h.containerService.UnpauseContainer(runtimeCtx, containerID, user)
 		},
 		Error: func(err error) error {
-			return huma.Error500InternalServerError(errors.WithMessage(err, "Failed to unpause container").Error())
+			return huma.Error500InternalServerError("Failed to unpause container: " + err.Error())
 		},
 	})
 }
@@ -866,7 +866,7 @@ func (h *ContainerHandler) RedeployContainer(ctx context.Context, input *Contain
 	if err != nil {
 		activitylib.FlushWriter(activityWriter)
 		activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Container redeploy failed", err)
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to redeploy container").Error())
+		return nil, huma.Error500InternalServerError("Failed to redeploy container: " + err.Error())
 	}
 	activitylib.FlushWriter(activityWriter)
 	activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Container redeployed", nil)
@@ -900,7 +900,7 @@ func (h *ContainerHandler) RedeployContainer(ctx context.Context, input *Contain
 func (h *ContainerHandler) GetContainerEditConfig(ctx context.Context, input *GetContainerEditConfigInput) (*handlerutil.Out[containertypes.EditConfig], error) {
 	editConfig, err := h.containerService.GetContainerEditConfig(ctx, input.ContainerID)
 	if err != nil {
-		return nil, huma.Error404NotFound(errors.WithMessage(err, "Failed to retrieve container").Error())
+		return nil, huma.Error404NotFound("Failed to retrieve container: " + err.Error())
 	}
 
 	return &handlerutil.Out[containertypes.EditConfig]{
@@ -918,7 +918,7 @@ func editContainerHTTPErrorInternal(err error) error {
 	case errors.Is(err, common.ErrValidation):
 		return huma.Error400BadRequest(err.Error())
 	default:
-		return huma.Error500InternalServerError(errors.WithMessage(err, "Failed to edit container").Error())
+		return huma.Error500InternalServerError("Failed to edit container: " + err.Error())
 	}
 }
 
@@ -978,7 +978,7 @@ func (h *ContainerHandler) DeleteContainer(ctx context.Context, input *DeleteCon
 	activityID, runtimeCtx := activitylib.StartHandlerActivity(runtimeCtx, h.activityService, input.EnvironmentID, activitytypes.TypeContainerDelete, "container", input.ContainerID, input.ContainerID, user, "Deleting container", "Container delete requested", database.JSON{"containerID": input.ContainerID, "force": input.Force, "removeVolumes": input.RemoveVolumes}, false)
 	if err := h.containerService.DeleteContainer(runtimeCtx, input.ContainerID, input.Force, input.RemoveVolumes, *user); err != nil {
 		activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Container deleted", err)
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to delete container").Error())
+		return nil, huma.Error500InternalServerError("Failed to delete container: " + err.Error())
 	}
 	activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Container deleted", nil)
 

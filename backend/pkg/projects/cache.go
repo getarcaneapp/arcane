@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"emperror.dev/errors"
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
 	"github.com/samber/hot"
@@ -67,7 +66,7 @@ func (c *composeCacheInternal[T]) Set(projectID, fingerprint, projectPath, proje
 		}
 		info, err := os.Stat(path)
 		if err != nil {
-			return errors.WrapIff(err, "stat compose file %s", path)
+			return fmt.Errorf("stat compose file %s: %w", path, err)
 		}
 		mtimes[path] = info.ModTime()
 	}
@@ -86,7 +85,7 @@ func (c *composeCacheInternal[T]) Set(projectID, fingerprint, projectPath, proje
 			continue
 		}
 		if !os.IsNotExist(err) {
-			return errors.WrapIff(err, "stat compose dependency %s", path)
+			return fmt.Errorf("stat compose dependency %s: %w", path, err)
 		}
 		mtimes[path] = time.Time{}
 	}

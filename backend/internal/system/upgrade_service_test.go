@@ -2,10 +2,10 @@ package system
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
 	versiontypes "github.com/getarcaneapp/arcane/types/v2/version"

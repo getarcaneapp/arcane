@@ -127,11 +127,11 @@ func setupGitOpsBackupTestServiceInternal(t *testing.T) *backupTestEnvInternal {
 	repoURL := "http://localhost" + bare
 
 	require.NoError(t, db.Create(&gitrepo.GitRepository{
-		BaseModel: database.BaseModel{ID: "repo-backup"},
-		Name:      "backup-remote",
-		URL:       repoURL,
-		AuthType:  "none",
-		Enabled:   true,
+		ID:       "repo-backup",
+		Name:     "backup-remote",
+		URL:      repoURL,
+		AuthType: "none",
+		Enabled:  true,
 	}).Error)
 
 	projectPath := filepath.Join(projectsDir, "demo-project")
@@ -139,11 +139,11 @@ func setupGitOpsBackupTestServiceInternal(t *testing.T) *backupTestEnvInternal {
 	writeBackupProjectFileInternal(t, projectPath, "compose.yaml", "services:\n  app:\n    image: nginx:1.27-alpine\n")
 
 	project := &projectpkg.Project{
-		BaseModel: database.BaseModel{ID: "proj-backup"},
-		Name:      "demo-project",
-		DirName:   new("demo-project"),
-		Path:      projectPath,
-		Status:    projectpkg.ProjectStatusStopped,
+		ID:      "proj-backup",
+		Name:    "demo-project",
+		DirName: new("demo-project"),
+		Path:    projectPath,
+		Status:  projectpkg.ProjectStatusStopped,
 	}
 	require.NoError(t, db.Create(project).Error)
 
@@ -458,11 +458,11 @@ func TestGitOpsBackup_CreateValidation(t *testing.T) {
 			mutate: func(t *testing.T, env *backupTestEnvInternal) {
 				t.Helper()
 				other := &projectpkg.Project{
-					BaseModel: database.BaseModel{ID: "proj-other"},
-					Name:      "other-project",
-					DirName:   new("other-project"),
-					Path:      filepath.Join(env.projectsDir, "other-project"),
-					Status:    projectpkg.ProjectStatusStopped,
+					ID:      "proj-other",
+					Name:    "other-project",
+					DirName: new("other-project"),
+					Path:    filepath.Join(env.projectsDir, "other-project"),
+					Status:  projectpkg.ProjectStatusStopped,
 				}
 				writeBackupProjectFileInternal(t, other.Path, "compose.yaml", "services: {}\n")
 				require.NoError(t, env.db.Create(other).Error)
@@ -653,21 +653,19 @@ func TestGitOpsImport_ForwardsDeployAndLifecycleFields(t *testing.T) {
 
 	resp, err := env.service.ImportSyncs(ctx, "0", []gitops.ImportGitOpsSyncRequest{
 		{
-			SyncName:           "Media-Server",
-			GitRepo:            "backup-remote",
-			Branch:             "main",
-			DockerComposePath:  "apps/demo/compose.yaml",
-			SyncDirectory:      new(true),
-			ProjectName:        "media-server",
-			PullImageAfterSync: new(true),
-			RedeployAfterSync:  new(true),
-			PreDeployConfigRequest: gitops.PreDeployConfigRequest{
-				PreDeployScriptPath:  new("scripts/decrypt.sh"),
-				PreDeployRunnerImage: new("alpine:3.20"),
-				PreDeployEnv:         new("SOPS_AGE_KEY=secret\n"),
-				PreDeployTimeoutSec:  new(120),
-				PreDeployNetworkMode: new("bridge"),
-			},
+			SyncName:             "Media-Server",
+			GitRepo:              "backup-remote",
+			Branch:               "main",
+			DockerComposePath:    "apps/demo/compose.yaml",
+			SyncDirectory:        new(true),
+			ProjectName:          "media-server",
+			PullImageAfterSync:   new(true),
+			RedeployAfterSync:    new(true),
+			PreDeployScriptPath:  new("scripts/decrypt.sh"),
+			PreDeployRunnerImage: new("alpine:3.20"),
+			PreDeployEnv:         new("SOPS_AGE_KEY=secret\n"),
+			PreDeployTimeoutSec:  new(120),
+			PreDeployNetworkMode: new("bridge"),
 		},
 		{
 			SyncName:          "plain",

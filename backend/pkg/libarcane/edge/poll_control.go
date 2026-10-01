@@ -2,13 +2,13 @@ package edge
 
 import (
 	"encoding/json/v2"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
 	"github.com/labstack/echo/v5"
 	"github.com/samber/mo"

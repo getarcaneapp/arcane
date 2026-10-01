@@ -4,9 +4,10 @@ package playwright
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
@@ -29,7 +30,7 @@ func (ps *PlaywrightService) CreateTestGitOpsProject(ctx context.Context) error 
 	defer cancel()
 	actor, err := ps.userService.GetUserByUsername(ctx, "arcane")
 	if err != nil {
-		return errors.WrapIf(err, "failed to get arcane user")
+		return fmt.Errorf("failed to get arcane user: %w", err)
 	}
 	repositoryID, err := ps.ensureTestRepositoryInternal(ctx, *actor)
 	if err != nil {
@@ -43,10 +44,10 @@ func (ps *PlaywrightService) CreateTestGitOpsProject(ctx context.Context) error 
 	if !created || sync.LastSyncStatus == nil || *sync.LastSyncStatus != "success" || sync.LastSyncError != nil {
 		result, err := ps.syncService.PerformSync(ctx, "0", sync.ID, *actor)
 		if err != nil {
-			return errors.WrapIf(err, "failed to sync GitOps test project")
+			return fmt.Errorf("failed to sync GitOps test project: %w", err)
 		}
 		if !result.Success {
-			return errors.Errorf("GitOps test sync failed: %s", result.Message)
+			return fmt.Errorf("GitOps test sync failed: %s", result.Message)
 		}
 		sync, err = ps.syncService.GetSyncByID(ctx, "0", sync.ID)
 		if err != nil {
@@ -58,7 +59,7 @@ func (ps *PlaywrightService) CreateTestGitOpsProject(ctx context.Context) error 
 	}
 	details, err := ps.projectService.GetProjectDetails(ctx, *sync.ProjectID, projecttypes.DetailsOptions{})
 	if err != nil {
-		return errors.WrapIf(err, "failed to verify GitOps test project")
+		return fmt.Errorf("failed to verify GitOps test project: %w", err)
 	}
 	if details.Name != testProjectNameInternal || details.GitOpsManagedBy == nil || *details.GitOpsManagedBy != sync.ID || details.LastSyncCommit == nil || *details.LastSyncCommit != *sync.LastSyncCommit {
 		return errors.New("GitOps test project does not match its managed sync")
@@ -96,7 +97,7 @@ func (ps *PlaywrightService) ensureTestRepositoryInternal(ctx context.Context, a
 		repositoryID = created.ID
 	}
 	if err := ps.repositoryService.TestConnection(ctx, repositoryID, testBranchInternal, actor); err != nil {
-		return "", errors.WrapIf(err, "failed to connect to GitOps test repository")
+		return "", fmt.Errorf("failed to connect to GitOps test repository: %w", err)
 	}
 	return repositoryID, nil
 }

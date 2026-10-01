@@ -6,6 +6,8 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
+	"fmt"
 	"log/slog"
 	"maps"
 	"slices"
@@ -14,7 +16,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
@@ -29,11 +30,6 @@ import (
 )
 
 const (
-	ErrApiKeyNotFound  = errors.Sentinel("API key not found")
-	ErrApiKeyExpired   = errors.Sentinel("API key has expired")
-	ErrApiKeyInvalid   = errors.Sentinel("invalid API key")
-	ErrApiKeyProtected = errors.Sentinel("API key is protected")
-
 	apiKeyPrefix              = "arc_"
 	apiKeyLength              = 32
 	apiKeyPrefixLen           = 8
@@ -45,12 +41,22 @@ const (
 
 	// ErrApiKeyPermissionEscalation is returned when a caller attempts to grant an
 	// API key permissions they themselves do not hold.
-	ErrApiKeyPermissionEscalation = errors.Sentinel("cannot grant a permission you do not have")
 
 	// ErrApiKeyPersonalNoGrants is returned when a caller attempts to attach
 	// permission grants to a personal key, which has none of its own — it inherits
 	// the owner's role permissions at authentication time.
-	ErrApiKeyPersonalNoGrants = errors.Sentinel("personal API keys inherit the owner's permissions and cannot carry grants")
+
+)
+
+var (
+	ErrApiKeyNotFound  = errors.New("API key not found")
+	ErrApiKeyExpired   = errors.New("API key has expired")
+	ErrApiKeyInvalid   = errors.New("invalid API key")
+	ErrApiKeyProtected = errors.New("API key is protected")
+
+	ErrApiKeyPermissionEscalation = errors.New("cannot grant a permission you do not have")
+
+	ErrApiKeyPersonalNoGrants = errors.New("personal API keys inherit the owner's permissions and cannot carry grants")
 )
 
 var defaultAdminAPIKeyDescription = func() *string {
@@ -90,7 +96,7 @@ type ApiKeyService struct {
 func NewApiKeyService(db *database.DB, userService *user.UserService, roleService *role.RoleService) *ApiKeyService {
 	pepper := make([]byte, 32)
 	if _, err := rand.Read(pepper); err != nil {
-		panic(errors.WrapIf(err, "failed to generate API key cache pepper"))
+		panic(fmt.Errorf("failed to generate API key cache pepper: %w", err))
 	}
 	return &ApiKeyService{
 		cacheKeyPepper: pepper,
@@ -129,7 +135,7 @@ func (s *ApiKeyService) BackfillApiKeyPermissions(ctx context.Context) error {
 	// those are an intentional "no access" state we must not overwrite.
 	var keys []ApiKey
 	if err := s.db.WithContext(ctx).Where("user_id IS NULL OR managed_by IS NOT NULL").Find(&keys).Error; err != nil {
-		return errors.WrapIf(err, "failed to list bootstrap api keys for backfill")
+		return fmt.Errorf("failed to list bootstrap api keys for backfill: %w", err)
 	}
 	if len(keys) == 0 {
 		return nil
@@ -139,7 +145,7 @@ func (s *ApiKeyService) BackfillApiKeyPermissions(ctx context.Context) error {
 		for _, key := range keys {
 			var existing int64
 			if err := tx.Model(&role.ApiKeyPermission{}).Where("api_key_id = ?", key.ID).Count(&existing).Error; err != nil {
-				return errors.WrapIff(err, "failed to count permissions for api key %s", key.ID)
+				return fmt.Errorf("failed to count permissions for api key %s: %w", key.ID, err)
 			}
 			if existing > 0 {
 				continue
@@ -154,7 +160,7 @@ func (s *ApiKeyService) BackfillApiKeyPermissions(ctx context.Context) error {
 					Permission:    p,
 					EnvironmentID: key.EnvironmentID,
 				}).Error; err != nil {
-					return errors.WrapIf(err, "failed to seed api key permission")
+					return fmt.Errorf("failed to seed api key permission: %w", err)
 				}
 			}
 			slog.InfoContext(ctx, "Backfilled missing permissions for bootstrap api key", "api_key_id", key.ID, "perm_count", len(perms), "env_id", key.EnvironmentID)
@@ -182,7 +188,7 @@ func (s *ApiKeyService) backfillPermsForKeyInternal(ctx context.Context, tx *gor
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}
-		return nil, errors.WrapIf(err, "failed to load api key owner")
+		return nil, fmt.Errorf("failed to load api key owner: %w", err)
 	}
 	ps, err := s.roleService.ResolveUserPermissionsInDB(ctx, tx, owner.ID)
 	if err != nil {
@@ -207,7 +213,7 @@ func (s *ApiKeyService) backfillPermsForKeyInternal(ctx context.Context, tx *gor
 func (s *ApiKeyService) generateApiKey() (string, error) {
 	bytes := make([]byte, apiKeyLength)
 	if _, err := rand.Read(bytes); err != nil {
-		return "", errors.WrapIf(err, "failed to generate API key")
+		return "", fmt.Errorf("failed to generate API key: %w", err)
 	}
 	return apiKeyPrefix + hex.EncodeToString(bytes), nil
 }
@@ -241,7 +247,7 @@ func (s *ApiKeyService) markApiKeyUsedInternal(ctx context.Context, keyID string
 		Model(&ApiKey{}).
 		Where("id = ? AND (last_used_at IS NULL OR last_used_at < ?)", keyID, cutoff).
 		Update("last_used_at", now).Error; err != nil {
-		return errors.WrapIf(err, "failed to update API key last-used timestamp")
+		return fmt.Errorf("failed to update API key last-used timestamp: %w", err)
 	}
 	return nil
 }
@@ -349,7 +355,7 @@ func (s *ApiKeyService) CreateApiKey(ctx context.Context, userID string, callerP
 	if s.roleService != nil {
 		grants := toApiKeyPermissionRowsInternal(created.ID, req.Permissions)
 		if err := s.roleService.SetApiKeyPermissions(ctx, created.ID, grants); err != nil {
-			return nil, errors.WrapIf(err, "failed to persist api key permissions")
+			return nil, fmt.Errorf("failed to persist api key permissions: %w", err)
 		}
 		// Re-load the just-persisted grants into the response DTO so the
 		// frontend doesn't see `"permissions": null` on a successful create.
@@ -370,14 +376,14 @@ func (s *ApiKeyService) validateGrantsAgainstOwnerInternal(ctx context.Context, 
 	}
 	user, err := s.userService.GetUserByID(ctx, ownerID)
 	if err != nil {
-		return errors.WrapIf(err, "load owner for permission validation")
+		return fmt.Errorf("load owner for permission validation: %w", err)
 	}
 	ps, err := s.roleService.ResolvePermissions(ctx, user)
 	if err != nil {
-		return errors.WrapIf(err, "resolve owner permissions")
+		return fmt.Errorf("resolve owner permissions: %w", err)
 	}
 	if err := validateGrantsAgainstPermissionSetInternal(ps, grants); err != nil {
-		return errors.WrapIf(err, "owner's roles do not allow this grant")
+		return fmt.Errorf("owner's roles do not allow this grant: %w", err)
 	}
 	return nil
 }
@@ -393,7 +399,7 @@ func validateGrantsAgainstPermissionSetInternal(callerPerms *authz.PermissionSet
 			envID = *g.EnvironmentID
 		}
 		if !callerPerms.Allows(g.Permission, envID) {
-			return errors.WrapIff(ErrApiKeyPermissionEscalation, "%s (env=%q)", g.Permission, envID)
+			return fmt.Errorf("%s (env=%q): %w", g.Permission, envID, ErrApiKeyPermissionEscalation)
 		}
 	}
 	return nil
@@ -452,7 +458,7 @@ func (s *ApiKeyService) createAPIKeyWithRawKey(
 
 	keyHash, err := s.hashApiKey(rawKey)
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to hash API key")
+		return nil, fmt.Errorf("failed to hash API key: %w", err)
 	}
 
 	ak := &ApiKey{
@@ -466,16 +472,13 @@ func (s *ApiKeyService) createAPIKeyWithRawKey(
 		EnvironmentID: environmentID,
 		ExpiresAt:     req.ExpiresAt,
 	}
-
 	if err := s.db.WithContext(ctx).Create(ak).Error; err != nil {
-		return nil, errors.WrapIf(err, "failed to create API key")
+		return nil, fmt.Errorf("failed to create API key: %w", err)
 	}
-
+	// A just-minted environment key is about to be linked as the
+	// environment's pairing key, so present it as bootstrap already.
 	return &apikey.ApiKeyCreatedDto{
-		// A just-minted environment key is about to be linked as the
-		// environment's pairing key, so present it as bootstrap already.
-		ApiKey: toAPIKeyDTOInternal(ak, environmentID != nil),
-		Key:    rawKey,
+		ApiKey: toAPIKeyDTOInternal(ak, environmentID != nil), Key: rawKey,
 	}, nil
 }
 
@@ -494,7 +497,7 @@ func (s *ApiKeyService) isEnvironmentReferencedApiKeyInternal(ctx context.Contex
 	var count int64
 	if err := s.db.WithContext(ctx).Table("environments").
 		Where("api_key_id = ?", keyID).Count(&count).Error; err != nil {
-		return false, errors.WrapIf(err, "failed to check environment references for API key")
+		return false, fmt.Errorf("failed to check environment references for API key: %w", err)
 	}
 	return count > 0, nil
 }
@@ -506,7 +509,7 @@ func (s *ApiKeyService) environmentReferencedApiKeyIDsInternal(ctx context.Conte
 	var ids []string
 	if err := s.db.WithContext(ctx).Table("environments").
 		Where("api_key_id IS NOT NULL").Pluck("api_key_id", &ids).Error; err != nil {
-		return nil, errors.WrapIf(err, "failed to list environment-referenced API key ids")
+		return nil, fmt.Errorf("failed to list environment-referenced API key ids: %w", err)
 	}
 	set := make(map[string]struct{}, len(ids))
 	for _, id := range ids {
@@ -560,7 +563,7 @@ func (s *ApiKeyService) getDefaultAdminUser(ctx context.Context) (*common.User, 
 			slog.WarnContext(ctx, "Default admin user not found, skipping default admin API key reconciliation", "username", defaultAdminUsername)
 			return nil, nil
 		}
-		return nil, errors.WrapIf(err, "failed to load default admin user")
+		return nil, fmt.Errorf("failed to load default admin user: %w", err)
 	}
 
 	// The username is mutable and not proof of provenance — never mint the
@@ -568,7 +571,7 @@ func (s *ApiKeyService) getDefaultAdminUser(ctx context.Context) (*common.User, 
 	if s.roleService != nil {
 		perms, err := s.roleService.ResolvePermissions(ctx, adminUser)
 		if err != nil {
-			return nil, errors.WrapIf(err, "failed to resolve default admin permissions")
+			return nil, fmt.Errorf("failed to resolve default admin permissions: %w", err)
 		}
 		if !perms.IsGlobalAdmin() {
 			slog.WarnContext(ctx, "User is not a global admin, skipping default admin API key reconciliation", "username", defaultAdminUsername)
@@ -584,9 +587,8 @@ func (s *ApiKeyService) listManagedAPIKeys(tx *gorm.DB, userID string) ([]ApiKey
 	if err := tx.Where("user_id = ? AND managed_by = ?", userID, managedByAdminBootstrap).
 		Order("created_at asc, id asc").
 		Find(&managedKeys).Error; err != nil {
-		return nil, errors.WrapIf(err, "failed to load managed API keys")
+		return nil, fmt.Errorf("failed to load managed API keys: %w", err)
 	}
-
 	return managedKeys, nil
 }
 
@@ -595,7 +597,7 @@ func (s *ApiKeyService) deleteManagedAPIKeysByIDs(tx *gorm.DB, ids []string) err
 		return nil
 	}
 	if err := tx.Delete(&ApiKey{}, "id IN ?", ids).Error; err != nil {
-		return errors.WrapIf(err, "failed to delete managed API keys")
+		return fmt.Errorf("failed to delete managed API keys: %w", err)
 	}
 	return nil
 }
@@ -628,7 +630,7 @@ func (s *ApiKeyService) updateMatchingManagedAPIKey(tx *gorm.DB, apiKeyID string
 			"description": defaultAdminAPIKeyDescription,
 			"managed_by":  managedByAdminBootstrap,
 		}).Error; err != nil {
-		return errors.WrapIf(err, "failed to update managed API key metadata")
+		return fmt.Errorf("failed to update managed API key metadata: %w", err)
 	}
 	return nil
 }
@@ -641,7 +643,7 @@ func (s *ApiKeyService) createManagedDefaultAdminAPIKey(tx *gorm.DB, userID, raw
 
 	keyHash, err := s.hashApiKey(rawKey)
 	if err != nil {
-		return errors.WrapIf(err, "failed to hash API key")
+		return fmt.Errorf("failed to hash API key: %w", err)
 	}
 
 	ak := &ApiKey{
@@ -652,9 +654,8 @@ func (s *ApiKeyService) createManagedDefaultAdminAPIKey(tx *gorm.DB, userID, raw
 		ManagedBy:   new(managedByAdminBootstrap),
 		UserID:      &userID,
 	}
-
 	if err := tx.Create(ak).Error; err != nil {
-		return errors.WrapIf(err, "failed to create managed API key")
+		return fmt.Errorf("failed to create managed API key: %w", err)
 	}
 	return nil
 }
@@ -750,7 +751,7 @@ func (s *ApiKeyService) CreateEnvironmentApiKey(ctx context.Context, environment
 			}
 		}
 		if err := s.roleService.SetApiKeyPermissions(ctx, created.ID, grants); err != nil {
-			return nil, errors.WrapIf(err, "failed to persist environment bootstrap key permissions")
+			return nil, fmt.Errorf("failed to persist environment bootstrap key permissions: %w", err)
 		}
 		// Re-load grants into the response DTO so callers see the seeded
 		// permissions immediately, not null.
@@ -769,7 +770,7 @@ func (s *ApiKeyService) GetApiKey(ctx context.Context, id string) (*apikey.ApiKe
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrApiKeyNotFound
 		}
-		return nil, errors.WrapIf(err, "failed to get API key")
+		return nil, fmt.Errorf("failed to get API key: %w", err)
 	}
 	isBootstrap, err := s.isEnvironmentReferencedApiKeyInternal(ctx, ak.ID)
 	if err != nil {
@@ -795,7 +796,7 @@ func (s *ApiKeyService) ListApiKeys(ctx context.Context, params pagination.Query
 
 	paginationResp, err := pagination.PaginateAndSortDB(params, query, &apiKeys)
 	if err != nil {
-		return nil, pagination.Response{}, errors.WrapIf(err, "failed to paginate API keys")
+		return nil, pagination.Response{}, fmt.Errorf("failed to paginate API keys: %w", err)
 	}
 
 	referenced, err := s.environmentReferencedApiKeyIDsInternal(ctx)
@@ -826,11 +827,10 @@ func (s *ApiKeyService) ListApiKeysByUser(ctx context.Context, userID string) ([
 	if s.roleService != nil {
 		query = query.Preload("PermissionGrants")
 	}
-	if err := query.
-		Where("user_id = ?", userID).
+	if err := query.Where("user_id = ?", userID).
 		Order("created_at DESC").
 		Find(&apiKeys).Error; err != nil {
-		return nil, errors.WrapIf(err, "failed to list user api keys")
+		return nil, fmt.Errorf("failed to list user api keys: %w", err)
 	}
 
 	referenced, err := s.environmentReferencedApiKeyIDsInternal(ctx)
@@ -857,7 +857,7 @@ func (s *ApiKeyService) UpdateApiKey(ctx context.Context, callerPerms *authz.Per
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrApiKeyNotFound
 		}
-		return nil, errors.WrapIf(err, "failed to get API key")
+		return nil, fmt.Errorf("failed to get API key: %w", err)
 	}
 	if isStaticAPIKeyInternal(ak) {
 		return nil, ErrApiKeyProtected
@@ -905,11 +905,11 @@ func (s *ApiKeyService) UpdateApiKey(ctx context.Context, callerPerms *authz.Per
 	permissionsUpdated := false
 	if err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
 		if err := tx.Save(&ak).Error; err != nil {
-			return errors.WrapIf(err, "failed to update API key")
+			return fmt.Errorf("failed to update API key: %w", err)
 		}
 		if req.Permissions != nil && s.roleService != nil {
 			if err := s.roleService.SetApiKeyPermissionsInDB(ctx, tx, ak.ID, toApiKeyPermissionRowsInternal(ak.ID, req.Permissions)); err != nil {
-				return errors.WrapIf(err, "failed to update api key permissions")
+				return fmt.Errorf("failed to update api key permissions: %w", err)
 			}
 			permissionsUpdated = true
 		}
@@ -967,7 +967,7 @@ func (s *ApiKeyService) DeleteApiKey(ctx context.Context, id string) error {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return ErrApiKeyNotFound
 		}
-		return errors.WrapIf(err, "failed to load API key")
+		return fmt.Errorf("failed to load API key: %w", err)
 	}
 	if isStaticAPIKeyInternal(apiKey) {
 		return ErrApiKeyProtected
@@ -980,7 +980,7 @@ func (s *ApiKeyService) DeleteApiKey(ctx context.Context, id string) error {
 
 	result := s.db.WithContext(ctx).Delete(&ApiKey{}, "id = ?", id)
 	if result.Error != nil {
-		return errors.WrapIf(result.Error, "failed to delete API key")
+		return fmt.Errorf("failed to delete API key: %w", result.Error)
 	}
 	if result.RowsAffected == 0 {
 		return ErrApiKeyNotFound
@@ -1008,7 +1008,7 @@ func (s *ApiKeyService) ValidateApiKeyWithID(ctx context.Context, rawKey string)
 
 	user, err := s.userService.GetUserByID(ctx, *apiKey.UserID)
 	if err != nil {
-		return nil, nil, errors.WrapIf(err, "failed to get user for API key")
+		return nil, nil, fmt.Errorf("failed to get user for API key: %w", err)
 	}
 
 	return user, apiKey, nil
@@ -1047,7 +1047,7 @@ func (s *ApiKeyService) validateRawAPIKeyInternal(ctx context.Context, rawKey st
 	gen := s.cacheGen.Load()
 	var apiKeys []ApiKey
 	if err := s.db.WithContext(ctx).Where("key_prefix = ?", keyPrefix).Find(&apiKeys).Error; err != nil {
-		return nil, errors.WrapIf(err, "failed to find API keys")
+		return nil, fmt.Errorf("failed to find API keys: %w", err)
 	}
 
 	for _, apiKey := range apiKeys {

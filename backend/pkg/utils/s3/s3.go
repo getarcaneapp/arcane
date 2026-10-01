@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/url"
@@ -15,7 +16,6 @@ import (
 	"strings"
 	"uuid"
 
-	"emperror.dev/errors"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
@@ -185,7 +185,7 @@ func TestConnection(ctx context.Context, configuration Configuration) (err error
 			return
 		}
 		if cleanupErr := deleteObjectInternal(context.WithoutCancel(ctx), client, configuration.Bucket, remoteKey); cleanupErr != nil {
-			err = errors.Combine(err, fmt.Errorf("failed to clean up S3 connection test object: %w", cleanupErr))
+			err = errors.Join(err, fmt.Errorf("failed to clean up S3 connection test object: %w", cleanupErr))
 		}
 	}()
 
@@ -331,7 +331,7 @@ func getObjectInternal(ctx context.Context, client *awss3.Client, bucket, key st
 	payload, readErr := io.ReadAll(output.Body)
 	closeErr := output.Body.Close()
 	if readErr != nil {
-		return nil, errors.Combine(readErr, closeErr)
+		return nil, errors.Join(readErr, closeErr)
 	}
 	if closeErr != nil {
 		return nil, closeErr

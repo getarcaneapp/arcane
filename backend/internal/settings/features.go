@@ -2,9 +2,9 @@ package settings
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/types/v2/features"
 	kit "go.getarcane.app/kit/pkg"
@@ -33,5 +33,5 @@ func (s *SettingsService) RequireFeature(ctx context.Context, id features.ID) er
 	if s.IsFeatureEnabled(ctx, id) {
 		return nil
 	}
-	return errors.WrapIff(common.ErrFeatureDisabled, "feature %s is disabled", id)
+	return fmt.Errorf("feature %s is disabled: %w", id, common.ErrFeatureDisabled)
 }

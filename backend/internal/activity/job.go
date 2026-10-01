@@ -3,9 +3,10 @@ package activity
 import (
 	"cmp"
 	"context"
+	"errors"
+	"fmt"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
 	st "github.com/getarcaneapp/arcane/types/v2/scheduler"
@@ -57,7 +58,7 @@ func (s *ActivityService) SyncJobRun(ctx context.Context, run st.Run, name strin
 			"metadata": model.Metadata, "updated_at": model.UpdatedAt,
 		}).Error
 	}); err != nil {
-		return errors.WrapIf(err, "synchronize job activity")
+		return fmt.Errorf("synchronize job activity: %w", err)
 	}
 	if changed {
 		// Ordinary activities cannot reopen. Job summaries can, after an explicit

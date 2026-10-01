@@ -3,6 +3,7 @@ package remenv
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"maps"
@@ -10,17 +11,16 @@ import (
 	"net/http"
 	"strings"
 	"time"
-
-	"emperror.dev/errors"
 )
 
 const (
-	ErrEnvironmentUnavailable = errors.Sentinel("edge agent is not connected")
-	HeaderAPIKey              = "X-Api-Key"            // #nosec G101: header name, not a credential
-	HeaderAgentToken          = "X-Arcane-Agent-Token" // #nosec G101: header name, not a credential
-	HeaderAuthorization       = "Authorization"
-	bearerScheme              = "Bearer "
+	HeaderAPIKey        = "X-Api-Key"            // #nosec G101: header name, not a credential
+	HeaderAgentToken    = "X-Arcane-Agent-Token" // #nosec G101: header name, not a credential
+	HeaderAuthorization = "Authorization"
+	bearerScheme        = "Bearer "
 )
+
+var ErrEnvironmentUnavailable = errors.New("edge agent is not connected")
 
 // ExtractBearerToken returns the token portion of an "Authorization: Bearer <token>"
 // header value. It is case-insensitive on the scheme and trims surrounding whitespace.
@@ -136,7 +136,7 @@ func (c *Client) doDirectHTTPInternal(ctx context.Context, req Request) (*Respon
 
 	httpReq, err := http.NewRequestWithContext(ctx, req.Method, req.URL, bodyReader)
 	if err != nil {
-		return nil, &TransportError{Err: errors.WrapIf(err, "failed to create request")}
+		return nil, &TransportError{Err: fmt.Errorf("failed to create request: %w", err)}
 	}
 
 	for key, value := range req.Headers {
@@ -151,7 +151,7 @@ func (c *Client) doDirectHTTPInternal(ctx context.Context, req Request) (*Respon
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, &TransportError{Err: errors.WrapIf(err, "failed to read response body")}
+		return nil, &TransportError{Err: fmt.Errorf("failed to read response body: %w", err)}
 	}
 
 	return &Response{

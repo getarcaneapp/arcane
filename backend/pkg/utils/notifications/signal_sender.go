@@ -2,8 +2,9 @@ package notifications
 
 import (
 	"context"
+	"errors"
+	"fmt"
 
-	"emperror.dev/errors"
 	"github.com/nicholas-fedor/shoutrrr/pkg/services/chat/signal"
 )
 
@@ -51,7 +52,7 @@ func SendSignal(ctx context.Context, config SignalConfig, message string) error 
 
 	shoutrrrURL, err := BuildSignalURL(config)
 	if err != nil {
-		return errors.WrapIf(err, "failed to build shoutrrr Signal URL")
+		return fmt.Errorf("failed to build shoutrrr Signal URL: %w", err)
 	}
 
 	return sendShoutrrrInternal("Signal", shoutrrrURL, message, nil)

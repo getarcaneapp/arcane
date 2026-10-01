@@ -1,12 +1,12 @@
 package volumes
 
 import (
+	"errors"
 	"fmt"
 	"net/url"
 	"strconv"
 	"strings"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
@@ -168,11 +168,11 @@ var deleteCmd = &cobra.Command{
 		)
 		resp, err := c.Delete(cmd.Context(), deletePath)
 		if err != nil {
-			return errors.WrapIf(err, "failed to delete volume")
+			return fmt.Errorf("failed to delete volume: %w", err)
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to delete volume")
+			return fmt.Errorf("failed to delete volume: %w", err)
 		}
 
 		output.Success("Volume %s deleted successfully", resolved.Name)
@@ -253,13 +253,16 @@ func runVolumeDataCommand(cmd *cobra.Command, cfg volumeDataCommandConfig) error
 
 	result, err := c.GetJSON[any](cmd.Context(), cfg.endpoint(c.EnvID()))
 	if err != nil {
-		return errors.WrapIff(err, "%s", cfg.failureMessage)
+		return fmt.Errorf("%s: %w", cfg.failureMessage, err)
 	}
 
 	if !jsonOutput {
 		output.Header("%s", cfg.header)
 	}
-	return errors.WrapIff(cmdutil.PrintJSON(result.Data), "%s", cfg.marshalMessage)
+	if err := cmdutil.PrintJSON(result.Data); err != nil {
+		return fmt.Errorf("%s: %w", cfg.marshalMessage, err)
+	}
+	return nil
 }
 
 var usageCmd = &cobra.Command{
@@ -281,7 +284,7 @@ var usageCmd = &cobra.Command{
 
 		result, err := c.GetJSON[any](cmd.Context(), types.VolumeUsage(c.EnvID(), resolved.Name))
 		if err != nil {
-			return errors.WrapIf(err, "failed to get volume usage")
+			return fmt.Errorf("failed to get volume usage: %w", err)
 		}
 
 		if jsonOutput {
@@ -330,7 +333,7 @@ var createCmd = &cobra.Command{
 
 		result, err := c.PostJSON[volume.Volume](cmd.Context(), types.Volumes(c.EnvID()), req)
 		if err != nil {
-			return errors.WrapIf(err, "failed to create volume")
+			return fmt.Errorf("failed to create volume: %w", err)
 		}
 
 		if jsonOutput {

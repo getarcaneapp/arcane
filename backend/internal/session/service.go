@@ -4,11 +4,12 @@ import (
 	"cmp"
 	"context"
 	"crypto/subtle"
+	"errors"
+	"fmt"
 	"strings"
 	"time"
 	"uuid"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/dbutil"
@@ -43,11 +44,9 @@ func (s *SessionService) CreateSession(ctx context.Context, userID string, expir
 		LastUsedAt:       now,
 		ExpiresAt:        expiresAt,
 	}
-
 	if err := s.db.WithContext(ctx).Create(session).Error; err != nil {
-		return nil, "", errors.WrapIf(err, "failed to create user session")
+		return nil, "", fmt.Errorf("failed to create user session: %w", err)
 	}
-
 	return session, refreshJTI, nil
 }
 
@@ -63,11 +62,9 @@ func (s *SessionService) CreateFederatedSession(ctx context.Context, userID stri
 		LastUsedAt:            now,
 		ExpiresAt:             expiresAt,
 	}
-
 	if err := s.db.WithContext(ctx).Create(session).Error; err != nil {
-		return nil, errors.WrapIf(err, "failed to create federated user session")
+		return nil, fmt.Errorf("failed to create federated user session: %w", err)
 	}
-
 	return session, nil
 }
 
@@ -81,7 +78,7 @@ func (s *SessionService) GetSessionByID(ctx context.Context, sessionID string) (
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, common.ErrInvalidToken
 		}
-		return nil, errors.WrapIf(err, "failed to get user session")
+		return nil, fmt.Errorf("failed to get user session: %w", err)
 	}
 	return &session, nil
 }
@@ -103,7 +100,7 @@ func (s *SessionService) RotateRefreshToken(ctx context.Context, sessionID, refr
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return common.ErrInvalidToken
 			}
-			return errors.WrapIf(err, "failed to get user session for rotation")
+			return fmt.Errorf("failed to get user session for rotation: %w", err)
 		}
 		if err := ValidateActive(&session); err != nil {
 			return err
@@ -123,7 +120,7 @@ func (s *SessionService) RotateRefreshToken(ctx context.Context, sessionID, refr
 			Where("id = ? AND refresh_token_hash = ? AND revoked_at IS NULL", session.ID, session.RefreshTokenHash).
 			Updates(updates)
 		if result.Error != nil {
-			return errors.WrapIf(result.Error, "failed to rotate refresh token")
+			return fmt.Errorf("failed to rotate refresh token: %w", result.Error)
 		}
 		if result.RowsAffected != 1 {
 			return common.ErrInvalidToken
@@ -153,7 +150,7 @@ func (s *SessionService) RevokeSession(ctx context.Context, sessionID string) er
 	if err := s.db.WithContext(ctx).Model(&UserSession{}).
 		Where("id = ? AND revoked_at IS NULL", sessionID).
 		Updates(map[string]any{"revoked_at": now, "updated_at": now}).Error; err != nil {
-		return errors.WrapIf(err, "failed to revoke user session")
+		return fmt.Errorf("failed to revoke user session: %w", err)
 	}
 	return nil
 }
@@ -165,7 +162,7 @@ func (s *SessionService) DeleteExpiredSessions(ctx context.Context, revokedReten
 		Where("expires_at < ? OR (revoked_at IS NOT NULL AND revoked_at < ?)", now, revokedCutoff).
 		Delete(&UserSession{})
 	if result.Error != nil {
-		return 0, errors.WrapIf(result.Error, "failed to delete expired user sessions")
+		return 0, fmt.Errorf("failed to delete expired user sessions: %w", result.Error)
 	}
 	return result.RowsAffected, nil
 }
@@ -189,7 +186,7 @@ func RevokeAllUserSessionsExceptInDB(ctx context.Context, db *gorm.DB, userID, e
 		query = query.Where("id <> ?", exceptSessionID)
 	}
 	if err := query.Updates(map[string]any{"revoked_at": now, "updated_at": now}).Error; err != nil {
-		return errors.WrapIf(err, "failed to revoke user sessions")
+		return fmt.Errorf("failed to revoke user sessions: %w", err)
 	}
 	return nil
 }
@@ -200,7 +197,7 @@ func ValidateActive(userSession *UserSession) error {
 		return common.ErrInvalidToken
 	}
 	if userSession.RevokedAt != nil {
-		return common.Classify(common.ErrSessionRevoked, errors.New("Session has been revoked"))
+		return common.Classify(common.ErrSessionRevoked, errors.New("Session has been revoked")) //nolint:staticcheck // Preserve the existing error message.
 	}
 	return kit.Ternary[error](time.Now().After(userSession.ExpiresAt), common.ErrExpiredToken, nil)
 }

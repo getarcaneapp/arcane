@@ -2,11 +2,11 @@ package volume
 
 import (
 	"context"
-	stderrors "errors"
+	"errors"
+	"fmt"
 	"log/slog"
 	"strings"
 
-	"emperror.dev/errors"
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
@@ -34,7 +34,7 @@ func (s *VolumeService) RenameVolume(ctx context.Context, oldName, newName strin
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		s.logVolumeRenameErrorInternal(ctx, oldName, newName, user, "connect", err)
-		return nil, errors.WrapIf(err, "failed to connect to Docker")
+		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	source, err := dockerClient.VolumeInspect(ctx, oldName, client.VolumeInspectOptions{})
@@ -43,7 +43,7 @@ func (s *VolumeService) RenameVolume(ctx context.Context, oldName, newName strin
 			err = common.Classify(common.ErrNotFound, err)
 		}
 		s.logVolumeRenameErrorInternal(ctx, oldName, newName, user, "inspect", err)
-		return nil, errors.WrapIf(err, "inspect source volume")
+		return nil, fmt.Errorf("inspect source volume: %w", err)
 	}
 	if s.isInternalVolumeInternal(volumetypes.NewSummary(source.Volume)) {
 		return nil, common.ErrVolumeRenameProtected
@@ -70,22 +70,21 @@ func (s *VolumeService) RenameVolume(ctx context.Context, oldName, newName strin
 
 	if err := s.renameVolumeMetadataInternal(ctx, oldName, newName); err != nil {
 		rollbackErr := migration.Rollback(ctx)
-		combinedErr := stderrors.Join(errors.WrapIf(err, "rename volume metadata"), rollbackErr)
+		combinedErr := errors.Join(fmt.Errorf("rename volume metadata: %w", err), rollbackErr)
 		s.logVolumeRenameErrorInternal(ctx, oldName, newName, user, "metadata", combinedErr)
 		return nil, combinedErr
 	}
 
 	if committer, ok := migration.(volumetypes.Committer); ok {
 		if err := committer.Commit(ctx); err != nil {
-			var cleanupErr *volumetypes.SourceCleanupError
-			if errors.As(err, &cleanupErr) {
+			if _, ok := errors.AsType[*volumetypes.SourceCleanupError](err); ok {
 				// The copy and metadata are committed; only removing the source
 				// failed, so the rename itself succeeded.
 				slog.WarnContext(ctx, "volume renamed but source volume could not be removed", "oldVolume", oldName, "newVolume", newName, "error", err.Error())
 			} else {
 				metadataErr := s.renameVolumeMetadataInternal(ctx, newName, oldName)
 				rollbackErr := migration.Rollback(ctx)
-				combinedErr := stderrors.Join(err, metadataErr, rollbackErr)
+				combinedErr := errors.Join(err, metadataErr, rollbackErr)
 				s.logVolumeRenameErrorInternal(ctx, oldName, newName, user, "commit", combinedErr)
 				return nil, combinedErr
 			}
@@ -98,7 +97,7 @@ func (s *VolumeService) RenameVolume(ctx context.Context, oldName, newName strin
 	renamed, err := s.GetVolumeByName(ctx, newName)
 	if err != nil {
 		s.logVolumeRenameErrorInternal(ctx, oldName, newName, user, "inspect-renamed", err)
-		return nil, errors.WrapIf(err, "inspect renamed volume")
+		return nil, fmt.Errorf("inspect renamed volume: %w", err)
 	}
 
 	metadata := database.JSON{"action": "rename", "oldName": oldName, "newName": newName}
@@ -118,10 +117,10 @@ func (s *VolumeService) renameVolumeMetadataInternal(ctx context.Context, oldNam
 
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&VolumeBackup{}).Where("volume_name = ?", oldName).Update("volume_name", newName).Error; err != nil {
-			return errors.WrapIf(err, "rename volume backup history")
+			return fmt.Errorf("rename volume backup history: %w", err)
 		}
 		if err := tx.Model(&VolumeBackupPolicy{}).Where("volume_name = ?", oldName).Update("volume_name", newName).Error; err != nil {
-			return errors.WrapIf(err, "rename volume backup policies")
+			return fmt.Errorf("rename volume backup policies: %w", err)
 		}
 		return nil
 	})

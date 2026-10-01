@@ -3,10 +3,10 @@ package systembackup
 import (
 	"context"
 	"encoding/json/v2"
+	"errors"
 	"fmt"
 	"log/slog"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/backup"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
@@ -42,7 +42,7 @@ func (s *SystemBackupService) StartBackup(ctx context.Context, user common.User,
 		defer lease.Release(ctx)
 		if runErr != nil {
 			if saveErr := s.db.WithContext(context.WithoutCancel(workCtx)).Model(&SystemBackupRun{}).Where("id = ?", prepared.run.ID).Updates(map[string]any{"status": SystemBackupStatusFailed, "error": runErr.Error()}).Error; saveErr != nil {
-				runErr = errors.Combine(runErr, errors.WrapIf(saveErr, "save backup failure"))
+				runErr = errors.Join(runErr, fmt.Errorf("save backup failure: %w", saveErr))
 			}
 		}
 		activitylib.CompleteHandlerActivity(workCtx, s.activityService, activityID, "Arcane system backup created successfully", runErr)
@@ -260,7 +260,7 @@ func (s *SystemBackupService) finishRecoveredDestinationsInternal(ctx context.Co
 	}
 	if checkpoint.S3Enabled && run.RemoteSnapshotID == "" {
 		if staged.ID == "" {
-			return errors.New("System backup has no snapshot to replicate")
+			return errors.New("System backup has no snapshot to replicate") //nolint:staticcheck // Preserve the existing error message.
 		}
 		snapshot, err := s.engine.Replicate(ctx, dockerClient, local, staged.ID, remote, key, "arcane-system-recovery", backup.RunSnapshotTag(run.ID))
 		if err != nil {
@@ -318,7 +318,7 @@ func (s *SystemBackupService) executeDurableBackupInternal(ctx context.Context, 
 		if ctx.Err() == nil {
 			if err != nil {
 				saveErr := s.db.WithContext(ctx).Model(&SystemBackupRun{}).Where("id = ?", command.Checkpoint.BackupID).Updates(map[string]any{"status": SystemBackupStatusFailed, "error": err.Error()}).Error
-				err = errors.Combine(err, saveErr)
+				err = errors.Join(err, saveErr)
 			}
 			activitylib.CompleteHandlerActivity(ctx, s.activityService, command.ActivityID, "Arcane system backup created successfully", err)
 		}

@@ -2,9 +2,10 @@ package container
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"io"
 
-	"emperror.dev/errors"
 	dockerutils "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/client"
@@ -19,23 +20,23 @@ type demuxedLogsInternal struct {
 }
 
 func (d *demuxedLogsInternal) Close() error {
-	return errors.Combine(d.logs.Close(), d.pipe.Close())
+	return errors.Join(d.logs.Close(), d.pipe.Close())
 }
 
 func (s *ContainerService) openLogsInternal(ctx context.Context, containerID string, options client.ContainerLogsOptions) (io.ReadCloser, client.ContainerInspectResult, error) {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return nil, client.ContainerInspectResult{}, errors.WrapIf(err, "failed to connect to Docker")
+		return nil, client.ContainerInspectResult{}, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	containerInspect, err := compat.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, client.ContainerInspectOptions{})
 	if err != nil {
-		return nil, client.ContainerInspectResult{}, errors.WrapIf(err, "failed to inspect container for logs")
+		return nil, client.ContainerInspectResult{}, fmt.Errorf("failed to inspect container for logs: %w", err)
 	}
 
 	logs, err := dockerClient.ContainerLogs(ctx, containerID, options)
 	if err != nil {
-		return nil, client.ContainerInspectResult{}, errors.WrapIf(err, "failed to get container logs")
+		return nil, client.ContainerInspectResult{}, fmt.Errorf("failed to get container logs: %w", err)
 	}
 	return logs, containerInspect, nil
 }

@@ -3,9 +3,10 @@ package notifications
 import (
 	"encoding/base64"
 	"encoding/json/v2"
+	"errors"
+	"fmt"
 	"log/slog"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"go.getarcane.app/sys/crypto"
 )
@@ -15,10 +16,10 @@ func DecodeConfig[T any](config database.JSON, providerName string) (T, error) {
 	var out T
 	configBytes, err := json.Marshal(config)
 	if err != nil {
-		return out, errors.WrapIff(err, "failed to marshal %s config", providerName)
+		return out, fmt.Errorf("failed to marshal %s config: %w", providerName, err)
 	}
 	if err := json.Unmarshal(configBytes, &out); err != nil {
-		return out, errors.WrapIff(err, "failed to unmarshal %s config", providerName)
+		return out, fmt.Errorf("failed to unmarshal %s config: %w", providerName, err)
 	}
 	return out, nil
 }
@@ -33,7 +34,7 @@ func DecryptStringCredential(value *string) error {
 	decrypted, err := crypto.Decrypt(*value)
 	if err != nil {
 		if isPlausibleEncryptedCredentialInternal(*value) {
-			return errors.WrapIf(err, "failed to decrypt notification credential")
+			return fmt.Errorf("failed to decrypt notification credential: %w", err)
 		}
 		slog.Warn("Failed to decrypt notification credential, using raw legacy value", "error", err)
 		return nil

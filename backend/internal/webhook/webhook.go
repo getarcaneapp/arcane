@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -14,8 +15,6 @@ import (
 	"sync"
 	"time"
 
-	"emperror.dev/emperror"
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/container"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
@@ -36,18 +35,20 @@ import (
 )
 
 const (
-	ErrWebhookNotFound      = errors.Sentinel("webhook not found")
-	ErrWebhookInvalid       = errors.Sentinel("invalid webhook token")
-	ErrWebhookDisabled      = errors.Sentinel("webhook is disabled")
-	ErrWebhookInvalidType   = errors.Sentinel("invalid webhook target type")
-	ErrWebhookInvalidAction = errors.Sentinel("invalid webhook action type")
-	ErrWebhookMissingTarget = errors.Sentinel("target ID is required for container, project, and gitops webhook types")
-
 	webhookTokenPrefix    = "arc_wh_"
 	webhookTokenLength    = 32 // raw bytes → 64 hex chars
 	webhookTokenPrefixLen = 8  // chars of the hex portion used as lookup prefix
 	// hex length of a generated token's ciphertext: GCM nonce (12) + encrypted secretHex + GCM tag (16)
 	webhookTokenHexLen = 2 * (12 + webhookTokenLength*2 + 16)
+)
+
+var (
+	ErrWebhookNotFound      = errors.New("webhook not found")
+	ErrWebhookInvalid       = errors.New("invalid webhook token")
+	ErrWebhookDisabled      = errors.New("webhook is disabled")
+	ErrWebhookInvalidType   = errors.New("invalid webhook target type")
+	ErrWebhookInvalidAction = errors.New("invalid webhook action type")
+	ErrWebhookMissingTarget = errors.New("target ID is required for container, project, and gitops webhook types")
 )
 
 type WebhookService struct {
@@ -90,16 +91,16 @@ func isRemoteWebhookEnvironmentInternal(environmentID string) bool {
 func generateWebhookTokenInternal() (raw, hash, prefix string, err error) {
 	b := make([]byte, webhookTokenLength)
 	if _, err = rand.Read(b); err != nil {
-		return "", "", "", errors.WrapIf(err, "failed to generate webhook token")
+		return "", "", "", fmt.Errorf("failed to generate webhook token: %w", err)
 	}
 	secretHex := hex.EncodeToString(b)
 	encrypted, err := libcrypto.Encrypt(secretHex)
 	if err != nil {
-		return "", "", "", errors.WrapIf(err, "failed to encrypt webhook token")
+		return "", "", "", fmt.Errorf("failed to encrypt webhook token: %w", err)
 	}
 	encryptedBytes, err := base64.StdEncoding.DecodeString(encrypted)
 	if err != nil {
-		return "", "", "", errors.WrapIf(err, "failed to decode encrypted webhook token")
+		return "", "", "", fmt.Errorf("failed to decode encrypted webhook token: %w", err)
 	}
 	tokenHex := hex.EncodeToString(encryptedBytes)
 	raw = webhookTokenPrefix + tokenHex
@@ -124,7 +125,7 @@ func (s *WebhookService) LoadTokenHashes(ctx context.Context) error {
 
 	var hashes []string
 	if err := s.db.WithContext(ctx).Model(&Webhook{}).Pluck("token_hash", &hashes).Error; err != nil {
-		return errors.WrapIf(err, "failed to load webhook token hashes")
+		return fmt.Errorf("failed to load webhook token hashes: %w", err)
 	}
 	s.tokenMu.Lock()
 	defer s.tokenMu.Unlock()
@@ -259,7 +260,7 @@ func (s *WebhookService) CreateWebhook(ctx context.Context, name, targetType, ac
 	s.tokenWriteMu.Lock()
 	defer s.tokenWriteMu.Unlock()
 	if err := s.db.WithContext(ctx).Create(wh).Error; err != nil {
-		return nil, "", errors.WrapIf(err, "failed to create webhook")
+		return nil, "", fmt.Errorf("failed to create webhook: %w", err)
 	}
 
 	s.tokenMu.Lock()
@@ -294,7 +295,7 @@ func (s *WebhookService) ListWebhooks(ctx context.Context, environmentID string)
 		Where("environment_id = ?", environmentID).
 		Order("created_at DESC").
 		Find(&webhooks).Error; err != nil {
-		return nil, errors.WrapIf(err, "failed to list webhooks")
+		return nil, fmt.Errorf("failed to list webhooks: %w", err)
 	}
 	return webhooks, nil
 }
@@ -386,7 +387,7 @@ func (s *WebhookService) GetWebhookByID(ctx context.Context, id, environmentID s
 		return nil, ErrWebhookNotFound
 	}
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to get webhook")
+		return nil, fmt.Errorf("failed to get webhook: %w", err)
 	}
 	return &wh, nil
 }
@@ -404,7 +405,7 @@ func (s *WebhookService) DeleteWebhook(ctx context.Context, id, environmentID st
 		Where("id = ? AND environment_id = ?", id, environmentID).
 		Delete(&Webhook{})
 	if result.Error != nil {
-		return errors.WrapIf(result.Error, "failed to delete webhook")
+		return fmt.Errorf("failed to delete webhook: %w", result.Error)
 	}
 	if result.RowsAffected == 0 {
 		return ErrWebhookNotFound
@@ -442,11 +443,11 @@ func (s *WebhookService) UpdateWebhook(ctx context.Context, id, environmentID st
 		return nil, ErrWebhookNotFound
 	}
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to get webhook")
+		return nil, fmt.Errorf("failed to get webhook: %w", err)
 	}
 
 	if err := s.db.WithContext(ctx).Model(&wh).Update("enabled", enabled).Error; err != nil {
-		return nil, errors.WrapIf(err, "failed to update webhook")
+		return nil, fmt.Errorf("failed to update webhook: %w", err)
 	}
 
 	if s.eventService != nil {
@@ -482,7 +483,7 @@ func (s *WebhookService) TriggerByToken(ctx context.Context, rawToken string) er
 	if err := s.db.WithContext(ctx).
 		Where("token_prefix = ?", prefix).
 		Find(&candidates).Error; err != nil {
-		return errors.WrapIf(err, "failed to look up webhook")
+		return fmt.Errorf("failed to look up webhook: %w", err)
 	}
 
 	hash := kit.SHA256Hex(rawToken)
@@ -512,7 +513,7 @@ func (s *WebhookService) TriggerByToken(ctx context.Context, rawToken string) er
 	execCtx := context.WithoutCancel(ctx)
 	s.actions.Go(func() {
 		defer func() {
-			if panicErr := emperror.Recover(recover()); panicErr != nil {
+			if panicErr := utils.PanicToError(recover()); panicErr != nil {
 				slog.ErrorContext(execCtx, "webhook action panicked", "webhookID", wh.ID, "webhookName", wh.Name, "actionType", actionType, "error", panicErr)
 			}
 		}()
@@ -671,7 +672,7 @@ func (s *WebhookService) resolveContainerWebhookTargetRefInternal(ctx context.Co
 
 	containerName, err := s.containerService.GetContainerNameByReference(ctx, targetID)
 	if err != nil {
-		return "", errors.WrapIf(err, "failed to resolve container target reference")
+		return "", fmt.Errorf("failed to resolve container target reference: %w", err)
 	}
 
 	return containerName, nil
@@ -783,7 +784,10 @@ func (s *WebhookService) executeGitOpsWebhookActionInternal(ctx context.Context,
 func (s *WebhookService) wrapWebhookActionErrorInternal(ctx context.Context, wh *Webhook, targetKind, actionType string, err error) error {
 	msg := fmt.Sprintf("%s %s failed: %s", targetKind, actionType, err)
 	s.logWebhookEventInternal(ctx, wh, actionType, event.EventSeverityError, msg)
-	return errors.WrapIff(err, "%s %s failed", targetKind, actionType)
+	if err != nil {
+		return fmt.Errorf("%s %s failed: %w", targetKind, actionType, err)
+	}
+	return nil
 }
 
 func (s *WebhookService) logWebhookEventInternal(ctx context.Context, wh *Webhook, actionType string, severity event.EventSeverity, errMsg string) {

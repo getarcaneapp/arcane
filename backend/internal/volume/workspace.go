@@ -8,7 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
-	stderrors "errors"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -20,7 +20,6 @@ import (
 	"sync"
 	"time"
 
-	"emperror.dev/errors"
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
@@ -102,7 +101,7 @@ func (s *VolumeService) readVolumeWorkspaceFromContainerInternal(ctx context.Con
 			Cmd:          cmd,
 		}, pipeWriter, &stderr)
 		if execErr == nil && exitCode != 0 {
-			execErr = errors.Errorf("acfs walk exited with code %d", exitCode)
+			execErr = fmt.Errorf("acfs walk exited with code %d", exitCode)
 		}
 		_ = pipeWriter.CloseWithError(execErr)
 		done <- execErr
@@ -118,7 +117,7 @@ func (s *VolumeService) readVolumeWorkspaceFromContainerInternal(ctx context.Con
 		return nil, classifyVolumeWorkspaceExecErrorInternal(execErr, stderr.String(), "read volume workspace")
 	}
 	if parseErr != nil {
-		return nil, errors.WrapIf(parseErr, "parse volume workspace")
+		return nil, fmt.Errorf("parse volume workspace: %w", parseErr)
 	}
 
 	return workspace, nil
@@ -133,14 +132,14 @@ func decodeVolumeWorkspaceWalkInternal(source io.Reader, maxEntries int, maxFile
 	for {
 		var record acfstypes.WalkRecord
 		err := json.UnmarshalDecode(decoder, &record)
-		if stderrors.Is(err, io.EOF) {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {
 			return nil, err
 		}
 		if record.Version != acfstypes.ProtocolVersion {
-			return nil, errors.Errorf("unsupported acfs protocol %d", record.Version)
+			return nil, fmt.Errorf("unsupported acfs protocol %d", record.Version)
 		}
 		if trailerSeen {
 			return nil, errors.New("acfs walk emitted a record after its trailer")
@@ -227,7 +226,7 @@ func (s *VolumeService) GetVolumeWorkspaceFile(ctx context.Context, volumeName, 
 	}
 	rel, err := kit.NormalizeRelativePath(relativePath)
 	if err != nil {
-		return nil, common.Classify(common.ErrVolumeWorkspaceForbidden, errors.WrapIf(err, "invalid volume workspace path"))
+		return nil, common.Classify(common.ErrVolumeWorkspaceForbidden, fmt.Errorf("invalid volume workspace path: %w", err))
 	}
 	containerID, cleanup, err := s.acquireVolumeHelperInternal(ctx, volumeName)
 	if err != nil {
@@ -245,10 +244,10 @@ func (s *VolumeService) GetVolumeWorkspaceFile(ctx context.Context, volumeName, 
 	}
 	var statResponse acfstypes.StatResponse
 	if err := json.Unmarshal([]byte(stdout), &statResponse); err != nil {
-		return nil, errors.WrapIf(err, "parse volume workspace stat")
+		return nil, fmt.Errorf("parse volume workspace stat: %w", err)
 	}
 	if statResponse.Version != acfstypes.ProtocolVersion {
-		return nil, errors.Errorf("unsupported acfs protocol %d", statResponse.Version)
+		return nil, fmt.Errorf("unsupported acfs protocol %d", statResponse.Version)
 	}
 	entry := statResponse.Entry
 	if entry.IsSymlink {
@@ -271,15 +270,15 @@ func (s *VolumeService) GetVolumeWorkspaceFile(ctx context.Context, volumeName, 
 	}
 	reader, size, err := s.startVolumeWorkspaceReadInternal(ctx, containerID, rel, previewLimit, func() {})
 	if err != nil {
-		return nil, errors.WrapIf(err, "read volume workspace file")
+		return nil, fmt.Errorf("read volume workspace file: %w", err)
 	}
 	content, readErr := io.ReadAll(reader)
 	closeErr := reader.Close()
 	if readErr != nil {
-		return nil, errors.WrapIf(readErr, "read volume workspace file content")
+		return nil, fmt.Errorf("read volume workspace file content: %w", readErr)
 	}
 	if closeErr != nil {
-		return nil, errors.WrapIf(closeErr, "close volume workspace file content")
+		return nil, fmt.Errorf("close volume workspace file content: %w", closeErr)
 	}
 	if size > maxFileSizeBytes {
 		return volumeWorkspaceFileContentResponseInternal(rel, "regular", size, nil, maxFileSizeBytes)
@@ -296,7 +295,7 @@ func (s *VolumeService) DownloadVolumeWorkspaceFile(ctx context.Context, volumeN
 	rel, err := kit.NormalizeRelativePath(relativePath)
 	if err != nil {
 		unlock()
-		return nil, 0, common.Classify(common.ErrVolumeWorkspaceForbidden, errors.WrapIf(err, "invalid volume workspace path"))
+		return nil, 0, common.Classify(common.ErrVolumeWorkspaceForbidden, fmt.Errorf("invalid volume workspace path: %w", err))
 	}
 	containerID, cleanup, err := s.acquireVolumeHelperInternal(ctx, volumeName)
 	if err != nil {
@@ -334,7 +333,7 @@ func (r *volumeWorkspaceReadStreamInternal) Read(buffer []byte) (int, error) {
 		if closeErr != nil {
 			return 0, closeErr
 		}
-		return 0, kit.Ternary(readErr != nil && !stderrors.Is(readErr, io.EOF), readErr, io.EOF)
+		return 0, kit.Ternary(readErr != nil && !errors.Is(readErr, io.EOF), readErr, io.EOF)
 	}
 	if int64(len(buffer)) > r.remaining {
 		buffer = buffer[:r.remaining]
@@ -344,7 +343,7 @@ func (r *volumeWorkspaceReadStreamInternal) Read(buffer []byte) (int, error) {
 	if err != nil && r.remaining > 0 {
 		closeErr := r.Close()
 		if closeErr != nil {
-			return read, stderrors.Join(err, closeErr)
+			return read, errors.Join(err, closeErr)
 		}
 	}
 	return read, err
@@ -379,7 +378,7 @@ func (s *VolumeService) startVolumeWorkspaceReadInternal(ctx context.Context, co
 			Cmd:          cmd,
 		}, pipeWriter, &stderr)
 		if execErr == nil && exitCode != 0 {
-			execErr = errors.Errorf("acfs read exited with code %d", exitCode)
+			execErr = fmt.Errorf("acfs read exited with code %d", exitCode)
 		}
 		if execErr != nil {
 			execErr = classifyVolumeWorkspaceExecErrorInternal(execErr, stderr.String(), "read volume workspace file")
@@ -396,7 +395,7 @@ func (s *VolumeService) startVolumeWorkspaceReadInternal(ctx context.Context, co
 		if execErr != nil {
 			return nil, 0, execErr
 		}
-		return nil, 0, errors.WrapIf(err, "parse volume workspace read header")
+		return nil, 0, fmt.Errorf("parse volume workspace read header: %w", err)
 	}
 	if payloadSize > uint64(1<<63-1) {
 		_ = pipeReader.Close()
@@ -416,11 +415,11 @@ func (s *VolumeService) startVolumeWorkspaceReadInternal(ctx context.Context, co
 func (s *VolumeService) validateVolumeHelperSupportInternal(ctx context.Context, volumeName string) error {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return errors.WrapIf(err, "failed to connect to Docker")
+		return fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 	result, err := dockerClient.VolumeInspect(ctx, volumeName, client.VolumeInspectOptions{})
 	if err != nil {
-		return errors.WrapIf(err, "failed to inspect volume")
+		return fmt.Errorf("failed to inspect volume: %w", err)
 	}
 	return dockerutil.ValidateVolumeWorkspaceHelperSupport(volumeName, result.Volume.Options)
 }
@@ -474,7 +473,7 @@ func classifyVolumeWorkspaceExecErrorInternal(err error, stderr, fallbackContext
 		case acfstypes.ErrorSizeMismatch, acfstypes.ErrorRootRemoval:
 			return common.Classify(common.ErrVolumeWorkspaceBadRequest, errors.New(response.Message))
 		case acfstypes.ErrorInternal:
-			return errors.WrapIf(err, fallbackContext)
+			return fmt.Errorf("%s: %w", fallbackContext, err)
 		}
 	}
 
@@ -495,7 +494,7 @@ func classifyVolumeWorkspaceExecErrorInternal(err error, stderr, fallbackContext
 	case strings.Contains(message, "ARCANE_DIRECTORY"):
 		return common.Classify(common.ErrVolumeWorkspaceBadRequest, errors.New("path is a directory"))
 	default:
-		return errors.WrapIf(err, fallbackContext)
+		return fmt.Errorf("%s: %w", fallbackContext, err)
 	}
 }
 
@@ -779,7 +778,7 @@ type volumeWorkspaceStagedContentInternal struct {
 
 func (s *VolumeService) stageVolumeWorkspaceChangesInternal(ctx context.Context, dockerClient *client.Client, containerID string, changes []volumetypes.WorkspaceFileChange, uploads map[int][]byte, identity volumeWorkspaceWriteIdentityInternal) (map[int]volumeWorkspaceStagedFileInternal, error) {
 	if _, _, err := s.execInContainerInternal(ctx, containerID, "", []string{"sh", "-c", "rm -rf -- /tmp/arcane-workspace && mkdir -p -- /tmp/arcane-workspace"}); err != nil {
-		return nil, errors.WrapIf(err, "prepare volume workspace staging directory")
+		return nil, fmt.Errorf("prepare volume workspace staging directory: %w", err)
 	}
 
 	stagedFiles := make(map[int]volumeWorkspaceStagedFileInternal)
@@ -827,7 +826,7 @@ func (s *VolumeService) applyVolumeWorkspaceChangesInternal(
 ) error {
 	rollbackFailureInternal := func(applyErr error) error {
 		if rollbackErr := rollback(); rollbackErr != nil {
-			return stderrors.Join(applyErr, errors.WrapIf(rollbackErr, "failed to roll back volume workspace"))
+			return errors.Join(applyErr, fmt.Errorf("failed to roll back volume workspace: %w", rollbackErr))
 		}
 		return applyErr
 	}
@@ -877,7 +876,7 @@ func (s *VolumeService) executeVolumeWorkspaceACFSBatchInternal(
 		Changes: applyChanges,
 	})
 	if err != nil {
-		return errors.WrapIf(err, "encode volume workspace apply manifest")
+		return fmt.Errorf("encode volume workspace apply manifest: %w", err)
 	}
 	manifestName := fmt.Sprintf("manifest-%d.json", startIndex)
 	if err := s.copyVolumeWorkspaceFilesToContainerInternal(ctx, dockerClient, containerID, []volumeWorkspaceStagedContentInternal{{
@@ -896,7 +895,7 @@ func (s *VolumeService) executeVolumeWorkspaceACFSBatchInternal(
 	}
 	var response acfstypes.ApplyResponse
 	if err := json.Unmarshal([]byte(stdout), &response); err != nil {
-		return errors.WrapIf(err, "parse volume workspace apply response")
+		return fmt.Errorf("parse volume workspace apply response: %w", err)
 	}
 	if response.Version != acfstypes.ProtocolVersion || response.Applied != len(applyChanges) {
 		return errors.New("invalid volume workspace apply response")
@@ -944,14 +943,14 @@ func mapVolumeWorkspaceChangeToACFSInternal(change volumetypes.WorkspaceFileChan
 	case volumetypes.FileOpDelete:
 		result.Operation = acfstypes.ApplyDelete
 	default:
-		return acfstypes.ApplyChange{}, errors.Errorf("unsupported volume workspace operation %q", change.Operation)
+		return acfstypes.ApplyChange{}, fmt.Errorf("unsupported volume workspace operation %q", change.Operation)
 	}
 	return result, nil
 }
 
 func validateVolumeWorkspaceFileChangeInternal(change volumetypes.WorkspaceFileChange) error {
 	if _, err := kit.NormalizeRelativePath(change.RelativePath); err != nil {
-		return errors.WrapIf(err, "invalid volume workspace path")
+		return fmt.Errorf("invalid volume workspace path: %w", err)
 	}
 	hasUpload := change.UploadIndex != nil
 	switch change.Operation {
@@ -968,7 +967,7 @@ func validateVolumeWorkspaceFileChangeInternal(change volumetypes.WorkspaceFileC
 			return errors.New("rename does not accept file content")
 		}
 		if _, err := kit.ValidateFileName(change.NewName); err != nil {
-			return errors.WrapIf(err, "invalid volume workspace file name")
+			return fmt.Errorf("invalid volume workspace file name: %w", err)
 		}
 	case volumetypes.FileOpMove:
 		if hasUpload {
@@ -976,7 +975,7 @@ func validateVolumeWorkspaceFileChangeInternal(change volumetypes.WorkspaceFileC
 		}
 		if strings.TrimSpace(change.NewParentPath) != "" {
 			if _, err := kit.NormalizeRelativePath(change.NewParentPath); err != nil {
-				return errors.WrapIf(err, "invalid destination folder")
+				return fmt.Errorf("invalid destination folder: %w", err)
 			}
 		}
 	case volumetypes.FileOpRestoreFile:
@@ -987,7 +986,7 @@ func validateVolumeWorkspaceFileChangeInternal(change volumetypes.WorkspaceFileC
 			return errors.New("restore_file requires backupId")
 		}
 	default:
-		return errors.Errorf("unsupported volume workspace operation %q", change.Operation)
+		return fmt.Errorf("unsupported volume workspace operation %q", change.Operation)
 	}
 	return nil
 }
@@ -1019,10 +1018,10 @@ func (s *VolumeService) copyVolumeWorkspaceFilesToContainerInternal(ctx context.
 		_ = stagedContent.content.Close()
 	}
 	if copyErr != nil {
-		return errors.WrapIf(copyErr, "stage volume workspace files")
+		return fmt.Errorf("stage volume workspace files: %w", copyErr)
 	}
 	if archiveErr != nil {
-		return errors.WrapIf(archiveErr, "create volume workspace staging archive")
+		return fmt.Errorf("create volume workspace staging archive: %w", archiveErr)
 	}
 	return nil
 }
@@ -1047,11 +1046,11 @@ func (s *VolumeService) createVolumeWorkspaceMutationContainerInternal(ctx conte
 	hostConfig := volumehelper.HostConfig(helperImage, []string{volumeName + ":/volume"}, []mount.Mount{backupStorage.mount})
 	resp, err := dockerClient.ContainerCreate(ctx, client.ContainerCreateOptions{Config: config, HostConfig: hostConfig})
 	if err != nil {
-		return "", nil, errors.WrapIf(err, "create volume workspace helper")
+		return "", nil, fmt.Errorf("create volume workspace helper: %w", err)
 	}
 	if _, err := dockerClient.ContainerStart(ctx, resp.ID, client.ContainerStartOptions{}); err != nil {
 		_, _ = dockerClient.ContainerRemove(ctx, resp.ID, volumehelper.RemoveOptions())
-		return "", nil, errors.WrapIf(err, "start volume workspace helper")
+		return "", nil, fmt.Errorf("start volume workspace helper: %w", err)
 	}
 	return resp.ID, func() {
 		_, _ = dockerClient.ContainerRemove(context.WithoutCancel(ctx), resp.ID, volumehelper.RemoveOptions())
@@ -1116,7 +1115,7 @@ type volumeWorkspaceBackupInternal struct {
 
 func (s *VolumeService) backupVolumeWorkspaceScopeInternal(ctx context.Context, containerID string, scope []string) (*volumeWorkspaceBackupInternal, error) {
 	if _, _, err := s.execInContainerInternal(ctx, containerID, "", []string{"mkdir", "-p", "/tmp/arcane-workspace"}); err != nil {
-		return nil, errors.WrapIf(err, "prepare volume workspace backup directory")
+		return nil, fmt.Errorf("prepare volume workspace backup directory: %w", err)
 	}
 	backup := &volumeWorkspaceBackupInternal{
 		archives:      make([]volumeWorkspaceBackupArchiveInternal, 0, len(scope)),

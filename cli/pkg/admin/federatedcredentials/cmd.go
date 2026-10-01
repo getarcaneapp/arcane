@@ -6,10 +6,10 @@ package federatedcredentials
 
 import (
 	"cmp"
+	"errors"
 	"fmt"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
@@ -102,7 +102,7 @@ var getCmd = &cobra.Command{
 
 		result, err := c.GetJSON[federatedtypes.FederatedCredential](cmd.Context(), types.FederatedCredential(args[0]))
 		if err != nil {
-			return errors.WrapIf(err, "failed to get federated credential")
+			return fmt.Errorf("failed to get federated credential: %w", err)
 		}
 
 		if jsonOutput {
@@ -148,14 +148,14 @@ var createCmd = &cobra.Command{
 		if createExpiresAt != "" {
 			parsed, err := time.Parse(time.RFC3339, createExpiresAt)
 			if err != nil {
-				return errors.WrapIf(err, "invalid --expires-at format (use RFC3339)")
+				return fmt.Errorf("invalid --expires-at format (use RFC3339): %w", err)
 			}
 			req.ExpiresAt = &parsed
 		}
 
 		result, err := c.PostJSON[federatedtypes.FederatedCredential](cmd.Context(), types.FederatedCredentials(), req)
 		if err != nil {
-			return errors.WrapIf(err, "failed to create federated credential")
+			return fmt.Errorf("failed to create federated credential: %w", err)
 		}
 
 		if jsonOutput {
@@ -226,14 +226,14 @@ var updateCmd = &cobra.Command{
 		if cmd.Flags().Changed("expires-at") && updateExpiresAt != "" {
 			parsed, err := time.Parse(time.RFC3339, updateExpiresAt)
 			if err != nil {
-				return errors.WrapIf(err, "invalid --expires-at format (use RFC3339)")
+				return fmt.Errorf("invalid --expires-at format (use RFC3339): %w", err)
 			}
 			req.ExpiresAt = &parsed
 		}
 
 		result, err := c.PutJSON[federatedtypes.FederatedCredential](cmd.Context(), types.FederatedCredential(args[0]), req)
 		if err != nil {
-			return errors.WrapIf(err, "failed to update federated credential")
+			return fmt.Errorf("failed to update federated credential: %w", err)
 		}
 
 		if jsonOutput {
@@ -270,7 +270,7 @@ var deleteCmd = &cobra.Command{
 		}
 
 		if _, err := c.DeleteJSON[base.MessageResponse](cmd.Context(), types.FederatedCredential(args[0])); err != nil {
-			return errors.WrapIf(err, "failed to delete federated credential")
+			return fmt.Errorf("failed to delete federated credential: %w", err)
 		}
 
 		output.Success("Federated credential deleted")

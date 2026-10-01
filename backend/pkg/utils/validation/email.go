@@ -8,7 +8,7 @@ import (
 	"golang.org/x/net/idna"
 )
 
-var localPartPattern = regexp.MustCompile(`^[A-Za-z0-9!#$%&'*+/=?^_` + "`" + `{|}~.-]+$`)
+var localPartPattern = regexp.MustCompile("^[A-Za-z0-9!#$%&'*+/=?^_`{|}~.-]+$")
 
 func IsValidUserEmail(email string) bool {
 	trimmedEmail := strings.TrimSpace(email)

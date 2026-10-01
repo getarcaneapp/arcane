@@ -2,17 +2,18 @@ package gitrepo
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
+	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/getarcaneapp/arcane/types/v2/gitops"
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/assert"
@@ -101,7 +102,9 @@ func TestGitRepositoryService_UpdateRepository_RejectsURLChangeWhenStoredTokenWo
 	require.Error(t, err)
 
 	require.ErrorIs(t, err, common.ErrValidation)
-	assert.Contains(t, errors.GetDetails(err), "token")
+	fieldErr, ok := errors.AsType[*base.FieldError](err)
+	require.True(t, ok)
+	assert.Equal(t, "token", fieldErr.Field)
 	assert.Contains(t, err.Error(), "repository URL")
 
 	stored, loadErr := svc.GetRepositoryByID(context.Background(), repo.ID)
@@ -125,7 +128,9 @@ func TestGitRepositoryService_UpdateRepository_RejectsURLChangeWhenStoredSSHKeyW
 	require.Error(t, err)
 
 	require.ErrorIs(t, err, common.ErrValidation)
-	assert.Contains(t, errors.GetDetails(err), "sshKey")
+	fieldErr, ok := errors.AsType[*base.FieldError](err)
+	require.True(t, ok)
+	assert.Equal(t, "sshKey", fieldErr.Field)
 	assert.Contains(t, err.Error(), "repository URL")
 
 	stored, loadErr := svc.GetRepositoryByID(context.Background(), repo.ID)

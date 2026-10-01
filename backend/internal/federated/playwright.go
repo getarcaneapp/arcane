@@ -4,10 +4,11 @@ package federated
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"strings"
 	"uuid"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
@@ -34,7 +35,7 @@ func (s *FederatedCredentialService) CreatePlaywrightCredential(ctx context.Cont
 			IsServiceAccount: true,
 		}
 		if err := tx.Create(&serviceUser).Error; err != nil {
-			return errors.WrapIf(err, "failed to create federated e2e user")
+			return fmt.Errorf("failed to create federated e2e user: %w", err)
 		}
 
 		credential := FederatedCredential{
@@ -50,7 +51,7 @@ func (s *FederatedCredentialService) CreatePlaywrightCredential(ctx context.Cont
 			TokenTTLSeconds: tokenTTLSeconds,
 		}
 		if err := tx.Create(&credential).Error; err != nil {
-			return errors.WrapIf(err, "failed to create federated e2e credential")
+			return fmt.Errorf("failed to create federated e2e credential: %w", err)
 		}
 
 		assignment := role.UserRoleAssignment{
@@ -59,7 +60,7 @@ func (s *FederatedCredentialService) CreatePlaywrightCredential(ctx context.Cont
 			Source: role.RoleAssignmentSourceManual,
 		}
 		if err := tx.Create(&assignment).Error; err != nil {
-			return errors.WrapIf(err, "failed to create federated e2e role assignment")
+			return fmt.Errorf("failed to create federated e2e role assignment: %w", err)
 		}
 
 		credentialID = credential.ID

@@ -3,11 +3,11 @@ package edge
 import (
 	"context"
 	"encoding/json/v2"
+	"errors"
 	"io"
 	"log/slog"
 	"net"
 
-	"emperror.dev/errors"
 	"github.com/coder/websocket"
 	wshub "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/ws"
 	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/proto/tunnel/v1"
@@ -27,7 +27,6 @@ const (
 
 	// ErrTunnelConnectionClosed is returned by Send and Receive on every transport
 	// once the tunnel connection is closed.
-	ErrTunnelConnectionClosed = errors.Sentinel("edge tunnel connection is closed")
 
 	// MessageTypeRequest is sent from manager to agent to initiate a request.
 	MessageTypeRequest TunnelMessageType = "request"
@@ -70,6 +69,8 @@ const (
 	// MessageTypeCancelRequest requests cancellation of an in-flight command.
 	MessageTypeCancelRequest TunnelMessageType = "cancel_request"
 )
+
+var ErrTunnelConnectionClosed = errors.New("edge tunnel connection is closed")
 
 // tunnelReadWait bounds how long a websocket tunnel read may sit idle. Both
 // peers see traffic at least every DefaultHeartbeatInterval (agent heartbeat,

@@ -3,6 +3,7 @@ package auth
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	stdimage "image"
 	"image/jpeg"
@@ -15,7 +16,6 @@ import (
 	"strings"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
@@ -326,7 +326,11 @@ func (h *AuthHandler) RefreshToken(ctx context.Context, input *RefreshTokenInput
 	tokenPair, err := h.authService.RefreshToken(ctx, input.Body.RefreshToken, handlerutil.SessionMetaFromContext(ctx, input.UserAgent))
 	if err != nil {
 		switch {
-		case errors.Is(err, common.ErrInvalidToken), errors.Is(err, common.ErrExpiredToken), errors.Is(err, common.ErrTokenValidation), errors.Is(err, common.ErrSessionRevoked), errors.Is(err, common.ErrTokenVersionMismatch):
+		case errors.Is(err, common.ErrInvalidToken),
+			errors.Is(err, common.ErrExpiredToken),
+			errors.Is(err, common.ErrTokenValidation),
+			errors.Is(err, common.ErrSessionRevoked),
+			errors.Is(err, common.ErrTokenVersionMismatch):
 			return nil, huma.Error401Unauthorized("Invalid or expired refresh token")
 		default:
 			return nil, huma.Error500InternalServerError("Failed to refresh token")

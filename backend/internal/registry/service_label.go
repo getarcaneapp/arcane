@@ -2,11 +2,12 @@ package registry
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"runtime"
 	"strings"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -53,18 +54,18 @@ func (s *ContainerRegistryService) ImageVersionLabel(ctx context.Context, imageR
 func fetchImageVersionLabelInternal(ctx context.Context, imageRef string) (string, error) {
 	parsedRef, err := name.ParseReference(imageRef)
 	if err != nil {
-		return "", errors.WrapIff(err, "invalid image reference %q", imageRef)
+		return "", fmt.Errorf("invalid image reference %q: %w", imageRef, err)
 	}
 
 	img, err := remote.Image(parsedRef,
 		remote.WithContext(ctx),
 		remote.WithPlatform(v1.Platform{OS: "linux", Architecture: runtime.GOARCH}))
 	if err != nil {
-		return "", errors.WrapIff(err, "version label fetch failed for %s", imageRef)
+		return "", fmt.Errorf("version label fetch failed for %s: %w", imageRef, err)
 	}
 	cfg, err := img.ConfigFile()
 	if err != nil {
-		return "", errors.WrapIff(err, "version label fetch failed for %s", imageRef)
+		return "", fmt.Errorf("version label fetch failed for %s: %w", imageRef, err)
 	}
 	if cfg == nil || strings.TrimSpace(cfg.Config.Labels[ociImageVersionLabel]) == "" {
 		return "", ErrNoVersionLabel

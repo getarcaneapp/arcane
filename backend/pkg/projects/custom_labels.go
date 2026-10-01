@@ -3,7 +3,7 @@ package projects
 import (
 	"cmp"
 	"context"
-	stderrors "errors"
+	"errors"
 	"fmt"
 	"log/slog"
 	"maps"
@@ -14,7 +14,6 @@ import (
 	"strings"
 	"unicode"
 
-	"emperror.dev/errors"
 	"github.com/compose-spec/compose-go/v2/loader"
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
@@ -82,7 +81,7 @@ func ParseArcaneComposeMetadata(ctx context.Context, composeFilePath, projectsDi
 		envLoader := NewEnvLoader(projectsDirectory, workdir, autoInjectEnv)
 		loaded, _, err := envLoader.LoadEnvironment(ctx)
 		if err != nil {
-			return emptyArcaneComposeMetadataInternal(), errors.WrapIf(err, "load project environment")
+			return emptyArcaneComposeMetadataInternal(), fmt.Errorf("load project environment: %w", err)
 		}
 		envMap = loaded
 	}
@@ -133,7 +132,7 @@ func parseArcaneComposeMetadataFromFileInternal(ctx context.Context, composeFile
 
 	project, err := loadComposeProjectForMetadataFromFileInternal(ctx, absPath, mergedEnv)
 	if err != nil {
-		return meta, errors.WrapIf(err, "load compose metadata")
+		return meta, fmt.Errorf("load compose metadata: %w", err)
 	}
 
 	meta = extractArcaneComposeMetadata(project)
@@ -159,7 +158,7 @@ func parseArcaneComposeMetadataFromFileInternal(ctx context.Context, composeFile
 		}
 		includedMeta, err := parseArcaneComposeMetadataFromFileInternal(ctx, resolvedPath, mergedEnv, visited)
 		if err != nil {
-			return meta, errors.WrapIff(err, "load included Compose metadata %s", resolvedPath)
+			return meta, fmt.Errorf("load included Compose metadata %s: %w", resolvedPath, err)
 		}
 		mergeArcaneComposeMetadata(&meta, includedMeta)
 	}
@@ -408,12 +407,12 @@ func parseIncludePaths(composeFilePath string) ([]string, error) {
 	// outside any confinement root, including imported projects.
 	content, err := os.ReadFile(composeFilePath)
 	if err != nil {
-		return nil, errors.WrapIf(err, "read compose file")
+		return nil, fmt.Errorf("read compose file: %w", err)
 	}
 
 	composeData := map[string]any{}
 	if err := yaml.Unmarshal(content, &composeData); err != nil {
-		return nil, errors.WrapIf(err, "parse compose file")
+		return nil, fmt.Errorf("parse compose file: %w", err)
 	}
 
 	rawIncludes, ok := composeData["include"]
@@ -534,17 +533,17 @@ var projectTagColorsInternal = map[projecttypes.TagColor]struct{}{
 func NormalizeProjectTag(name string) (string, error) {
 	normalized := strings.ToLower(strings.TrimSpace(name))
 	if normalized == "" {
-		return "", stderrors.New("tag name cannot be empty")
+		return "", errors.New("tag name cannot be empty")
 	}
 	if len([]rune(normalized)) > ProjectTagMaxLength {
 		return "", fmt.Errorf("tag name cannot exceed %d characters", ProjectTagMaxLength)
 	}
 	if strings.ContainsRune(normalized, ',') {
-		return "", stderrors.New("tag name cannot contain commas")
+		return "", errors.New("tag name cannot contain commas")
 	}
 	for _, char := range normalized {
 		if unicode.IsControl(char) {
-			return "", stderrors.New("tag name cannot contain control characters")
+			return "", errors.New("tag name cannot contain control characters")
 		}
 	}
 	return normalized, nil
@@ -588,11 +587,11 @@ func NormalizeProjectTagColor(color projecttypes.TagColor) (projecttypes.TagColo
 func applyServiceLabelMetadataInternal(project *composetypes.Project) error {
 	defaults, err := updaterMetadataLabelsInternal(project.Extensions[arcaneBlockKey])
 	if err != nil {
-		return errors.WrapIf(err, "x-arcane.updater")
+		return fmt.Errorf("x-arcane.updater: %w", err)
 	}
 	hiddenDefaults, err := hiddenMetadataLabelInternal(project.Extensions[arcaneBlockKey])
 	if err != nil {
-		return errors.WrapIf(err, "x-arcane.hidden")
+		return fmt.Errorf("x-arcane.hidden: %w", err)
 	}
 	if defaults == nil {
 		defaults = map[string]string{}
@@ -601,12 +600,12 @@ func applyServiceLabelMetadataInternal(project *composetypes.Project) error {
 	for name, service := range project.Services {
 		overrides, err := updaterMetadataLabelsInternal(service.Extensions[arcaneBlockKey])
 		if err != nil {
-			return errors.WrapIff(err, "service %s x-arcane.updater", name)
+			return fmt.Errorf("service %s x-arcane.updater: %w", name, err)
 		}
 		effective := maps.Clone(defaults)
 		hiddenOverrides, err := hiddenMetadataLabelInternal(service.Extensions[arcaneBlockKey])
 		if err != nil {
-			return errors.WrapIff(err, "service %s x-arcane.hidden", name)
+			return fmt.Errorf("service %s x-arcane.hidden: %w", name, err)
 		}
 		maps.Copy(effective, overrides)
 		maps.Copy(effective, hiddenOverrides)
@@ -659,15 +658,15 @@ func updaterMetadataLabelsInternal(block any) (map[string]string, error) {
 		case "tag-pattern":
 			label = updaterlabels.LabelUpdateTagPattern
 		default:
-			return nil, errors.Errorf("unknown updater option %q", key)
+			return nil, fmt.Errorf("unknown updater option %q", key)
 		}
 		text, ok := value.(string)
 		if !ok {
-			return nil, errors.Errorf("updater %s must be a string", key)
+			return nil, fmt.Errorf("updater %s must be a string", key)
 		}
 		text = strings.TrimSpace(text)
 		if key == "strategy" && text != "auto" && text != "tag" && text != "digest" {
-			return nil, errors.Errorf("unknown updater strategy %q", text)
+			return nil, fmt.Errorf("unknown updater strategy %q", text)
 		}
 		result[label] = text
 	}

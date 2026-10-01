@@ -3,7 +3,6 @@ package gitrepo
 import (
 	"context"
 
-	"emperror.dev/errors"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
@@ -94,7 +93,7 @@ func (h *GitRepositoryHandler) ListRepositories(ctx context.Context, input *List
 
 	repositories, paginationResp, err := h.repoService.GetRepositoriesPaginated(ctx, params)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to list git repositories").Error())
+		return nil, huma.Error500InternalServerError("Failed to list git repositories: " + err.Error())
 	}
 
 	return &handlerutil.Page[gitops.GitRepository]{
@@ -208,7 +207,7 @@ func (h *GitRepositoryHandler) TestRepository(ctx context.Context, input *TestGi
 	actor := handlerutil.CurrentActor(ctx)
 
 	if err := h.repoService.TestConnection(ctx, input.ID, input.Branch, actor); err != nil {
-		return nil, huma.Error400BadRequest(errors.WithMessage(err, "Failed to test git repository connection").Error())
+		return nil, huma.Error400BadRequest("Failed to test git repository connection: " + err.Error())
 	}
 
 	return &handlerutil.Out[base.MessageResponse]{
@@ -225,7 +224,7 @@ func (h *GitRepositoryHandler) TestRepository(ctx context.Context, input *TestGi
 func (h *GitRepositoryHandler) ListBranches(ctx context.Context, input *ListBranchesInput) (*handlerutil.Out[gitops.BranchesResponse], error) {
 	branches, err := h.repoService.ListBranches(ctx, input.ID)
 	if err != nil {
-		return nil, huma.Error400BadRequest(errors.WithMessage(err, "Failed to test git repository connection").Error())
+		return nil, huma.Error400BadRequest("Failed to test git repository connection: " + err.Error())
 	}
 
 	return &handlerutil.Out[gitops.BranchesResponse]{
@@ -246,7 +245,7 @@ func (h *GitRepositoryHandler) BrowseFiles(ctx context.Context, input *BrowseFil
 
 	result, err := h.repoService.BrowseFiles(ctx, input.ID, input.Branch, input.Path)
 	if err != nil {
-		return nil, huma.Error400BadRequest(errors.WithMessage(err, "Failed to test git repository connection").Error())
+		return nil, huma.Error400BadRequest("Failed to test git repository connection: " + err.Error())
 	}
 
 	return &handlerutil.Out[gitops.BrowseResponse]{
@@ -261,7 +260,7 @@ func (h *GitRepositoryHandler) BrowseFiles(ctx context.Context, input *BrowseFil
 func (h *GitRepositoryHandler) SyncRepositories(ctx context.Context, input *SyncGitRepositoriesInput) (*handlerutil.Out[base.MessageResponse], error) {
 	if err := h.repoService.SyncRepositories(ctx, input.Body.Repositories); err != nil {
 		apiErr := common.ToAPIError(err)
-		return nil, huma.NewError(apiErr.HTTPStatus(), errors.WithMessage(err, "Failed to sync git repositories").Error())
+		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to sync git repositories: "+err.Error())
 	}
 
 	return &handlerutil.Out[base.MessageResponse]{

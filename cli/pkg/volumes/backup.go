@@ -3,6 +3,7 @@ package volumes
 import (
 	"cmp"
 	"encoding/json/v2"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
@@ -11,7 +12,6 @@ import (
 	"strconv"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
@@ -81,7 +81,7 @@ var renameCmd = &cobra.Command{
 
 		result, err := c.PostJSON[volume.Volume](cmd.Context(), types.VolumeRename(c.EnvID(), resolved.Name), volume.Rename{Name: args[1]})
 		if err != nil {
-			return errors.WrapIf(err, "failed to rename volume")
+			return fmt.Errorf("failed to rename volume: %w", err)
 		}
 
 		if jsonOutput {
@@ -112,7 +112,7 @@ var backupsPolicyCmd = &cobra.Command{
 
 		result, err := c.GetJSON[volume.BackupPolicyCollection](cmd.Context(), types.VolumeBackupPolicy(c.EnvID(), resolved.Name))
 		if err != nil {
-			return errors.WrapIf(err, "failed to get backup policies")
+			return fmt.Errorf("failed to get backup policies: %w", err)
 		}
 
 		if jsonOutput {
@@ -145,10 +145,10 @@ var backupsPolicyUpdateCmd = &cobra.Command{
 		if policyFile != "" {
 			raw, err := os.ReadFile(policyFile)
 			if err != nil {
-				return errors.WrapIf(err, "failed to read policy file")
+				return fmt.Errorf("failed to read policy file: %w", err)
 			}
 			if err := json.Unmarshal(raw, &payload); err != nil {
-				return errors.WrapIf(err, "failed to parse policy file")
+				return fmt.Errorf("failed to parse policy file: %w", err)
 			}
 		} else {
 			payload, err = buildPolicyUpdate(cmd, c, resolved.Name)
@@ -159,7 +159,7 @@ var backupsPolicyUpdateCmd = &cobra.Command{
 
 		result, err := c.PutJSON[volume.BackupPolicyCollection](cmd.Context(), types.VolumeBackupPolicy(c.EnvID(), resolved.Name), payload)
 		if err != nil {
-			return errors.WrapIf(err, "failed to update backup policies")
+			return fmt.Errorf("failed to update backup policies: %w", err)
 		}
 
 		if jsonOutput {
@@ -180,7 +180,7 @@ func buildPolicyUpdate(cmd *cobra.Command, c *client.Client, volumeName string) 
 
 	current, err := c.GetJSON[volume.BackupPolicyCollection](cmd.Context(), types.VolumeBackupPolicy(c.EnvID(), volumeName))
 	if err != nil {
-		return payload, errors.WrapIf(err, "failed to get current backup policies")
+		return payload, fmt.Errorf("failed to get current backup policies: %w", err)
 	}
 
 	payload.Policies = make([]volume.UpdateBackupPolicy, len(current.Data.Policies))
@@ -203,9 +203,9 @@ func buildPolicyUpdate(cmd *cobra.Command, c *client.Client, volumeName string) 
 
 	switch {
 	case policyID != "" && targetIndex == -1:
-		return payload, errors.Errorf("policy %q not found for volume %q", policyID, volumeName)
+		return payload, fmt.Errorf("policy %q not found for volume %q", policyID, volumeName)
 	case policyID == "" && len(payload.Policies) > 1:
-		return payload, errors.Errorf("volume %q has %d backup policies; select one with --policy-id", volumeName, len(payload.Policies))
+		return payload, fmt.Errorf("volume %q has %d backup policies; select one with --policy-id", volumeName, len(payload.Policies))
 	case policyID == "" && len(payload.Policies) == 1:
 		targetIndex = 0
 	case targetIndex == -1:
@@ -309,12 +309,12 @@ func runListBackups(cmd *cobra.Command, args []string) error {
 		All:             allFlag,
 	})
 	if err != nil {
-		return errors.WrapIf(err, "failed to build pagination query")
+		return fmt.Errorf("failed to build pagination query: %w", err)
 	}
 
 	result, err := c.DoJSON[backupsListResponse](cmd.Context(), http.MethodGet, path, nil)
 	if err != nil {
-		return errors.WrapIf(err, "failed to list backups")
+		return fmt.Errorf("failed to list backups: %w", err)
 	}
 
 	if jsonOutput {
@@ -368,7 +368,7 @@ var backupsCreateCmd = &cobra.Command{
 
 		result, err := c.PostJSON[volume.BackupEntry](cmd.Context(), types.VolumeBackups(c.EnvID(), resolved.Name), req)
 		if err != nil {
-			return errors.WrapIf(err, "failed to create backup")
+			return fmt.Errorf("failed to create backup: %w", err)
 		}
 
 		if jsonOutput {
@@ -440,7 +440,7 @@ and restored instead (no backup ID).`,
 
 		result, err := c.PostJSON[base.MessageResponse](cmd.Context(), types.VolumeBackupRestore(c.EnvID(), resolved.Name, backupID), nil)
 		if err != nil {
-			return errors.WrapIf(err, "failed to restore backup")
+			return fmt.Errorf("failed to restore backup: %w", err)
 		}
 
 		if jsonOutput {
@@ -470,7 +470,7 @@ func runRestorePaths(cmd *cobra.Command, c *client.Client, volumeName, backupID 
 
 	result, err := c.PostJSON[base.MessageResponse](cmd.Context(), types.VolumeBackupRestoreFiles(c.EnvID(), volumeName, backupID), body)
 	if err != nil {
-		return errors.WrapIf(err, "failed to restore backup files")
+		return fmt.Errorf("failed to restore backup files: %w", err)
 	}
 
 	if jsonOutput {
@@ -504,7 +504,7 @@ func runUploadRestore(cmd *cobra.Command, c *client.Client, volumeName string) e
 	respBody, err := c.DoRaw(cmd.Context(), http.MethodPost, types.VolumeBackupUploadRestore(c.EnvID(), volumeName), uploadtypes.ConsumeRequest{UploadID: sessionID})
 	if err != nil {
 		cmdutil.AbortUploadSession(cmd.Context(), c, uploadtypes.KindVolumeBackup, sessionID)
-		return errors.WrapIf(err, "failed to upload and restore backup")
+		return fmt.Errorf("failed to upload and restore backup: %w", err)
 	}
 
 	if jsonOutput {
@@ -540,7 +540,7 @@ var backupsDeleteCmd = &cobra.Command{
 		}
 
 		if _, err := c.DeleteJSON[base.MessageResponse](cmd.Context(), types.VolumeBackup(c.EnvID(), args[0])); err != nil {
-			return errors.WrapIf(err, "failed to delete backup")
+			return fmt.Errorf("failed to delete backup: %w", err)
 		}
 
 		output.Success("Backup %s deleted successfully", args[0])
@@ -565,7 +565,7 @@ var backupsUploadCmd = &cobra.Command{
 		req := volume.UploadBackupRequest{S3DestinationID: backupUploadS3Destination}
 		result, err := c.PostJSON[volume.BackupEntry](cmd.Context(), types.VolumeBackupUpload(c.EnvID(), args[0]), req)
 		if err != nil {
-			return errors.WrapIf(err, "failed to upload backup")
+			return fmt.Errorf("failed to upload backup: %w", err)
 		}
 
 		if jsonOutput {
@@ -593,11 +593,11 @@ var backupsDownloadCmd = &cobra.Command{
 
 		resp, err := c.Get(cmd.Context(), types.VolumeBackupDownload(c.EnvID(), args[0]))
 		if err != nil {
-			return errors.WrapIf(err, "failed to download backup")
+			return fmt.Errorf("failed to download backup: %w", err)
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to download backup")
+			return fmt.Errorf("failed to download backup: %w", err)
 		}
 
 		outputFile := ""
@@ -631,14 +631,14 @@ func downloadFilename(resp *http.Response, fallback string) string {
 func writeResponseToFile(body io.Reader, path string) error {
 	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
-		return errors.WrapIff(err, "failed to create file %s", path)
+		return fmt.Errorf("failed to create file %s: %w", path, err)
 	}
 	if _, err := io.Copy(file, body); err != nil {
 		_ = file.Close()
-		return errors.WrapIff(err, "failed to write file %s", path)
+		return fmt.Errorf("failed to write file %s: %w", path, err)
 	}
 	if err := file.Close(); err != nil {
-		return errors.WrapIff(err, "failed to write file %s", path)
+		return fmt.Errorf("failed to write file %s: %w", path, err)
 	}
 	return nil
 }
@@ -656,7 +656,7 @@ var backupsFilesCmd = &cobra.Command{
 
 		result, err := c.GetJSON[[]string](cmd.Context(), types.VolumeBackupFiles(c.EnvID(), args[0]))
 		if err != nil {
-			return errors.WrapIf(err, "failed to list backup files")
+			return fmt.Errorf("failed to list backup files: %w", err)
 		}
 
 		if jsonOutput {

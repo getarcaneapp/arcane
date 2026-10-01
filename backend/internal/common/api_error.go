@@ -1,10 +1,10 @@
 package common
 
 import (
-	stderrors "errors"
+	"errors"
 	"net/http"
 
-	"emperror.dev/errors"
+	"github.com/getarcaneapp/arcane/types/v2/base"
 )
 
 type APIErrorCode string
@@ -89,25 +89,18 @@ func (e *DockerAPIError) HTTPStatus() int {
 }
 
 func ToAPIError(err error) *APIError {
-	if apiErr, ok := stderrors.AsType[*APIError](err); ok {
+	if apiErr, ok := errors.AsType[*APIError](err); ok {
 		return apiErr
 	}
-	if dockerAPIErr, ok := stderrors.AsType[*DockerAPIError](err); ok {
+	if dockerAPIErr, ok := errors.AsType[*DockerAPIError](err); ok {
 		return NewAPIErrorWithDetails(dockerAPIErr.Message, APIErrorCodeDockerAPIError, dockerAPIErr.HTTPStatus(), dockerAPIErr.Details)
 	}
 
 	switch {
 	case errors.Is(err, ErrValidation):
-		details := make(map[string]any)
-		keyValues := errors.GetDetails(err)
-		for i := 0; i+1 < len(keyValues); i += 2 {
-			key, ok := keyValues[i].(string)
-			if ok {
-				details[key] = keyValues[i+1]
-			}
-		}
-		if len(details) == 0 {
-			details = nil
+		var details map[string]any
+		if fieldErr, ok := errors.AsType[*base.FieldError](err); ok {
+			details = map[string]any{"field": fieldErr.Field}
 		}
 		return NewAPIErrorWithDetails(err.Error(), APIErrorCodeValidationError, http.StatusBadRequest, details)
 	case errors.Is(err, ErrBadRequest):

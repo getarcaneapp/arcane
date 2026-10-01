@@ -2,10 +2,10 @@ package job
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
@@ -109,8 +109,7 @@ func (h *JobSchedulesHandler) RestartWorker(ctx context.Context, input *jobsched
 }
 
 func jobHTTPErrorInternal(err error) error {
-	var status huma.StatusError
-	if errors.As(err, &status) {
+	if _, ok := errors.AsType[huma.StatusError](err); ok {
 		return err
 	}
 	if errors.Is(err, runs.ErrRunNotFound) {

@@ -2,12 +2,12 @@ package scheduler
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"runtime"
 	"sync"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/template"
@@ -54,7 +54,7 @@ func (j *FilesystemWatcherJob) Start(ctx context.Context) error {
 		j.projectsWatcher = nil
 		j.mu.Unlock()
 		if watcher != nil {
-			return errors.Combine(err, watcher.Stop())
+			return errors.Join(err, watcher.Stop())
 		}
 		return err
 	}
@@ -75,10 +75,10 @@ func (j *FilesystemWatcherJob) Stop(ctx context.Context) error {
 		err = projectsWatcher.Stop()
 	}
 	if templatesWatcher != nil {
-		err = errors.Combine(err, templatesWatcher.Stop())
+		err = errors.Join(err, templatesWatcher.Stop())
 	}
 	for _, watcher := range retired {
-		err = errors.Combine(err, watcher.Stop())
+		err = errors.Join(err, watcher.Stop())
 	}
 	return err
 }

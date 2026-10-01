@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"encoding/json/v2"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -11,7 +12,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"emperror.dev/errors"
 	wshub "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/ws"
 	systemtypes "github.com/getarcaneapp/arcane/types/v2/system"
 	"github.com/labstack/echo/v5"

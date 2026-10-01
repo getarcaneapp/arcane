@@ -68,7 +68,7 @@ func TestWriterRecordsLogAndErrorFramesVerbatimInternal(t *testing.T) {
 	appender := &recordingAppender{}
 	writer := NewWriter(context.Background(), appender, "activity-1", io.Discard, "Deploying project")
 
-	_, err := writer.Write([]byte(`{"log":"Container web-1  Created"}` + "\n" + `{"error":"Error response from daemon: conflict"}` + "\n"))
+	_, err := writer.Write([]byte("{\"log\":\"Container web-1  Created\"}\n{\"error\":\"Error response from daemon: conflict\"}\n"))
 	require.NoError(t, err)
 
 	FlushWriter(writer)

@@ -5,7 +5,6 @@ import (
 	"os"
 	"strings"
 
-	"emperror.dev/errors"
 	"github.com/charmbracelet/x/term"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
@@ -41,9 +40,7 @@ var UsersCmd = &cobra.Command{
 	Use:     "users",
 	Aliases: []string{"user", "usr"},
 	Short:   "Manage users",
-	Long: "Manage users. Role assignments are managed separately via " +
-		"`arcane admin roles assign` — the legacy `--role` flag has been " +
-		"removed alongside the binary admin/user model.",
+	Long:    "Manage users. Role assignments are managed separately via `arcane admin roles assign` — the legacy `--role` flag has been removed alongside the binary admin/user model.",
 }
 
 // summarizeRoleAssignments turns a user's role-assignment list into a short
@@ -130,9 +127,8 @@ var listCmd = &cobra.Command{
 var createCmd = &cobra.Command{
 	Use:   "create",
 	Short: "Create a new user",
-	Long: "Create a new user. The user is created without any role " +
-		"assignments — grant them via `arcane admin roles assign <userId>` " +
-		"after creation.",
+	Long:  "Create a new user. The user is created without any role assignments — grant them via `arcane admin roles assign <userId>` after creation.",
+
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		c, err := client.NewFromConfig()
@@ -144,7 +140,7 @@ var createCmd = &cobra.Command{
 			fmt.Print("Password: ")
 			bytePassword, err := term.ReadPassword(os.Stdin.Fd())
 			if err != nil {
-				return errors.WrapIf(err, "failed to read password")
+				return fmt.Errorf("failed to read password: %w", err)
 			}
 			userCreatePassword = string(bytePassword)
 			fmt.Println()
@@ -163,7 +159,7 @@ var createCmd = &cobra.Command{
 
 		result, err := c.PostJSON[user.User](cmd.Context(), types.Users(), req)
 		if err != nil {
-			return errors.WrapIf(err, "failed to create user")
+			return fmt.Errorf("failed to create user: %w", err)
 		}
 
 		if jsonOutput {
@@ -191,7 +187,7 @@ var getCmd = &cobra.Command{
 
 		result, err := c.GetJSON[user.User](cmd.Context(), types.User(args[0]))
 		if err != nil {
-			return errors.WrapIf(err, "failed to get user")
+			return fmt.Errorf("failed to get user: %w", err)
 		}
 
 		if jsonOutput {
@@ -248,7 +244,7 @@ var updateCmd = &cobra.Command{
 
 		result, err := c.PutJSON[user.User](cmd.Context(), types.User(args[0]), req)
 		if err != nil {
-			return errors.WrapIf(err, "failed to update user")
+			return fmt.Errorf("failed to update user: %w", err)
 		}
 
 		if jsonOutput {
@@ -285,11 +281,11 @@ var deleteCmd = &cobra.Command{
 
 		resp, err := c.Delete(cmd.Context(), types.User(args[0]))
 		if err != nil {
-			return errors.WrapIf(err, "failed to delete user")
+			return fmt.Errorf("failed to delete user: %w", err)
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to delete user")
+			return fmt.Errorf("failed to delete user: %w", err)
 		}
 
 		output.Success("User deleted successfully")

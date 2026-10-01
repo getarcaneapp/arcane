@@ -6,6 +6,7 @@ package fswatch
 import (
 	"cmp"
 	"context"
+	"errors"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -14,7 +15,6 @@ import (
 	"sync"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/fsnotify/fsnotify"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 )

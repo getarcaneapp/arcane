@@ -1,30 +1,25 @@
 package common
 
 import (
-	stderrors "errors"
+	"errors"
+	"fmt"
 	"testing"
 
-	"emperror.dev/errors"
+	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/stretchr/testify/require"
 )
 
-func TestClassifyPreservesChainDetailsAndSingleStack(t *testing.T) {
+func TestClassifyPreservesChainAndField(t *testing.T) {
 	cause := errors.New("root cause")
-	err := errors.WithDetails(cause, "field", "name")
+	var err error = &base.FieldError{Field: "name", Err: cause}
 	err = Classify(ErrInvalidEnvKey, err)
-	err = errors.WrapIf(err, "validate input")
+	err = fmt.Errorf("validate input: %w", err)
 
 	require.EqualError(t, err, "validate input: root cause")
 	require.ErrorIs(t, err, ErrInvalidEnvKey)
 	require.ErrorIs(t, err, ErrValidation)
 	require.ErrorIs(t, err, cause)
-	require.Equal(t, []any{"field", "name"}, errors.GetDetails(err))
-
-	stackCount := 0
-	for current := err; current != nil; current = stderrors.Unwrap(current) {
-		if _, ok := current.(interface{ StackTrace() errors.StackTrace }); ok {
-			stackCount++
-		}
-	}
-	require.Equal(t, 1, stackCount)
+	fieldErr, ok := errors.AsType[*base.FieldError](err)
+	require.True(t, ok)
+	require.Equal(t, "name", fieldErr.Field)
 }

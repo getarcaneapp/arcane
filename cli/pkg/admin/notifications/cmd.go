@@ -2,12 +2,12 @@ package notifications
 
 import (
 	"encoding/json/v2"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
 	"strconv"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
@@ -46,7 +46,7 @@ var settingsGetCmd = &cobra.Command{
 
 		result, err := c.DoJSON[[]notification.Response](cmd.Context(), http.MethodGet, types.NotificationsSettings(c.EnvID()), nil)
 		if err != nil {
-			return errors.WrapIf(err, "failed to get settings")
+			return fmt.Errorf("failed to get settings: %w", err)
 		}
 
 		if jsonOutput {
@@ -93,7 +93,7 @@ var settingsDeleteCmd = &cobra.Command{
 
 		result, err := c.DeleteJSON[base.MessageResponse](cmd.Context(), types.NotificationSettingsProvider(c.EnvID(), args[0]))
 		if err != nil {
-			return errors.WrapIf(err, "failed to delete notification settings")
+			return fmt.Errorf("failed to delete notification settings: %w", err)
 		}
 
 		if jsonOutput {
@@ -121,10 +121,10 @@ var settingsSetCmd = &cobra.Command{
 		if setFile != "" {
 			data, err := os.ReadFile(setFile)
 			if err != nil {
-				return errors.WrapIf(err, "failed to read settings file")
+				return fmt.Errorf("failed to read settings file: %w", err)
 			}
 			if err := json.Unmarshal(data, &req); err != nil {
-				return errors.WrapIf(err, "failed to parse settings file")
+				return fmt.Errorf("failed to parse settings file: %w", err)
 			}
 		}
 
@@ -136,7 +136,7 @@ var settingsSetCmd = &cobra.Command{
 		}
 		if cmd.Flags().Changed("config") {
 			if err := json.Unmarshal([]byte(setConfig), &req.Config); err != nil {
-				return errors.WrapIf(err, "failed to parse --config JSON")
+				return fmt.Errorf("failed to parse --config JSON: %w", err)
 			}
 		}
 
@@ -154,7 +154,7 @@ var settingsSetCmd = &cobra.Command{
 
 		result, err := c.DoJSON[notification.Response](cmd.Context(), http.MethodPost, types.NotificationsSettings(c.EnvID()), req)
 		if err != nil {
-			return errors.WrapIf(err, "failed to save notification settings")
+			return fmt.Errorf("failed to save notification settings: %w", err)
 		}
 
 		if jsonOutput {

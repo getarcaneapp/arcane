@@ -3,11 +3,11 @@ package notifications
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"strings"
 
-	"emperror.dev/errors"
 	shoutrrrTypes "github.com/nicholas-fedor/shoutrrr/pkg/types"
 )
 
@@ -93,7 +93,7 @@ func SendNtfy(ctx context.Context, config NtfyConfig, message string) error {
 
 	shoutrrrURL, err := BuildNtfyURL(config)
 	if err != nil {
-		return errors.WrapIf(err, "failed to build shoutrrr Ntfy URL")
+		return fmt.Errorf("failed to build shoutrrr Ntfy URL: %w", err)
 	}
 
 	return sendShoutrrrInternal("Ntfy", shoutrrrURL, message, &shoutrrrTypes.Params{})

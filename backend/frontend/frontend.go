@@ -5,12 +5,12 @@ package frontend
 import (
 	"cmp"
 	"embed"
+	"fmt"
 	"io/fs"
 	"mime"
 	"path"
 	"strings"
 
-	"emperror.dev/errors"
 	"github.com/labstack/echo/v5"
 	"github.com/labstack/echo/v5/middleware"
 )
@@ -24,15 +24,15 @@ const indexHtmlFileConstant = "index.html"
 func RegisterFrontend(e *echo.Echo) error {
 	distFS, err := fs.Sub(frontendFS, "dist")
 	if err != nil {
-		return errors.WrapIf(err, "failed to create sub FS")
+		return fmt.Errorf("failed to create sub FS: %w", err)
 	}
 
 	if err := mime.AddExtensionType(".webmanifest", "application/manifest+json"); err != nil {
-		return errors.WrapIf(err, "failed to register web manifest MIME type")
+		return fmt.Errorf("failed to register web manifest MIME type: %w", err)
 	}
 	appFS, err := fs.Sub(distFS, "_app")
 	if err != nil {
-		return errors.WrapIf(err, "failed to create app sub FS")
+		return fmt.Errorf("failed to create app sub FS: %w", err)
 	}
 
 	skipAPI := func(c *echo.Context) bool {

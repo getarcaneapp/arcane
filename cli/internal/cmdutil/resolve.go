@@ -9,7 +9,6 @@ import (
 	"net/url"
 	"strings"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/prompt"
 	"github.com/getarcaneapp/arcane/types/v2/base"
@@ -69,7 +68,7 @@ type ResourceRef[D any, S any] struct {
 func (ref ResourceRef[D, S]) Resolve(ctx context.Context, c *client.Client, identifier string, allowPrompt bool) (*D, bool, error) {
 	trimmed := strings.TrimSpace(identifier)
 	if trimmed == "" {
-		return nil, false, errors.Errorf("%s identifier is required", ref.Singular)
+		return nil, false, fmt.Errorf("%s identifier is required", ref.Singular)
 	}
 
 	details, found, err := ref.fetchByIdentifierInternal(ctx, c, trimmed)
@@ -128,25 +127,25 @@ func (ref ResourceRef[D, S]) Resolve(ctx context.Context, c *client.Client, iden
 		}
 	}
 
-	return nil, false, errors.Errorf("%s %q not found; use %s or run `%s`", ref.Singular, trimmed, ref.IDHint, ref.ListCmd)
+	return nil, false, fmt.Errorf("%s %q not found; use %s or run `%s`", ref.Singular, trimmed, ref.IDHint, ref.ListCmd)
 }
 
 func (ref ResourceRef[D, S]) fetchByIdentifierInternal(ctx context.Context, c *client.Client, identifier string) (*D, bool, error) {
 	resp, err := c.Get(ctx, ref.GetPath(c.EnvID(), identifier))
 	if err != nil {
-		return nil, false, errors.WrapIff(err, "failed to resolve %s %q", ref.Singular, identifier)
+		return nil, false, fmt.Errorf("failed to resolve %s %q: %w", ref.Singular, identifier, err)
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
 	if err != nil {
-		return nil, false, errors.WrapIff(err, "failed to read %s response", ref.Singular)
+		return nil, false, fmt.Errorf("failed to read %s response: %w", ref.Singular, err)
 	}
 
 	if resp.StatusCode == http.StatusOK {
 		var result base.ApiResponse[D]
 		if err := json.Unmarshal(body, &result); err != nil {
-			return nil, false, errors.WrapIff(err, "failed to parse %s response", ref.Singular)
+			return nil, false, fmt.Errorf("failed to parse %s response: %w", ref.Singular, err)
 		}
 		if ref.Validate != nil {
 			if err := ref.Validate(result.Data, identifier); err != nil {
@@ -157,7 +156,7 @@ func (ref ResourceRef[D, S]) fetchByIdentifierInternal(ctx context.Context, c *c
 	}
 
 	if resp.StatusCode != http.StatusNotFound {
-		return nil, false, errors.Errorf("failed to resolve %s %q (status %d): %s", ref.Singular, identifier, resp.StatusCode, strings.TrimSpace(string(body)))
+		return nil, false, fmt.Errorf("failed to resolve %s %q (status %d): %s", ref.Singular, identifier, resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 
 	return nil, false, nil
@@ -196,10 +195,10 @@ func (ref ResourceRef[D, S]) selectMatchInternal(matches []S, identifier string,
 	}
 
 	if !allowPrompt {
-		return nil, errors.Errorf("multiple %s match %q; use %s or run `%s`", ref.Plural, identifier, ref.IDHint, ref.ListCmd)
+		return nil, fmt.Errorf("multiple %s match %q; use %s or run `%s`", ref.Plural, identifier, ref.IDHint, ref.ListCmd)
 	}
 	if len(matches) > MaxPromptOptions {
-		return nil, errors.Errorf("multiple %s match %q (%d results); refine your query or use %s", ref.Plural, identifier, len(matches), ref.IDHint)
+		return nil, fmt.Errorf("multiple %s match %q (%d results); refine your query or use %s", ref.Plural, identifier, len(matches), ref.IDHint)
 	}
 
 	options := make([]string, 0, len(matches))
@@ -230,22 +229,22 @@ func (ref ResourceRef[D, S]) fallbackByIDPrefixInternal(ctx context.Context, c *
 func (ref ResourceRef[D, S]) listItemsInternal(ctx context.Context, c *client.Client, path string) ([]S, error) {
 	resp, err := c.Get(ctx, path)
 	if err != nil {
-		return nil, errors.WrapIff(err, "failed to search %s", ref.Plural)
+		return nil, fmt.Errorf("failed to search %s: %w", ref.Plural, err)
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
 	if err != nil {
-		return nil, errors.WrapIff(err, "failed to read %s response", ref.Plural)
+		return nil, fmt.Errorf("failed to read %s response: %w", ref.Plural, err)
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, errors.Errorf("failed to search %s (status %d): %s", ref.Plural, resp.StatusCode, strings.TrimSpace(string(body)))
+		return nil, fmt.Errorf("failed to search %s (status %d): %s", ref.Plural, resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 
 	var result base.Paginated[S]
 	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, errors.WrapIff(err, "failed to parse %s response", ref.Plural)
+		return nil, fmt.Errorf("failed to parse %s response: %w", ref.Plural, err)
 	}
 	return result.Data, nil
 }

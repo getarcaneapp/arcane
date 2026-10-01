@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"fmt"
 
-	"emperror.dev/errors"
 	"github.com/spf13/cobra"
 )
 
@@ -33,7 +32,7 @@ func init() {
 func generateSecrets() error {
 	encryptionKey := make([]byte, secretLength)
 	if _, err := rand.Read(encryptionKey); err != nil {
-		return errors.WrapIf(err, "failed to generate encryption key")
+		return fmt.Errorf("failed to generate encryption key: %w", err)
 	}
 
 	switch secretFormat {
@@ -48,7 +47,7 @@ func generateSecrets() error {
 	case "all":
 		printAllFormats(encryptionKey)
 	default:
-		return errors.Errorf("unknown format: %s (supported: base64, hex, env, docker, all)", secretFormat)
+		return fmt.Errorf("unknown format: %s (supported: base64, hex, env, docker, all)", secretFormat)
 	}
 
 	return nil

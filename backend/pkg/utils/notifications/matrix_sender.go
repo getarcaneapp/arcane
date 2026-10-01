@@ -2,11 +2,11 @@ package notifications
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"strings"
 
-	"emperror.dev/errors"
 	shoutrrrTypes "github.com/nicholas-fedor/shoutrrr/pkg/types"
 )
 
@@ -58,7 +58,7 @@ func BuildMatrixURL(config MatrixConfig) (string, error) {
 func SendMatrix(ctx context.Context, config MatrixConfig, message string) error {
 	shoutrrrURL, err := BuildMatrixURL(config)
 	if err != nil {
-		return errors.WrapIf(err, "failed to build shoutrrr Matrix URL")
+		return fmt.Errorf("failed to build shoutrrr Matrix URL: %w", err)
 	}
 
 	return sendShoutrrrInternal("Matrix", shoutrrrURL, message, &shoutrrrTypes.Params{})

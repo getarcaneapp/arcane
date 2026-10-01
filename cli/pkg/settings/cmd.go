@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"os"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
@@ -52,17 +51,17 @@ var updateCmd = &cobra.Command{
 
 		data, err := os.ReadFile(settingsUpdateFile)
 		if err != nil {
-			return errors.WrapIff(err, "failed to read file %s", settingsUpdateFile)
+			return fmt.Errorf("failed to read file %s: %w", settingsUpdateFile, err)
 		}
 
 		var req settings.Update
 		if err := json.Unmarshal(data, &req); err != nil {
-			return errors.WrapIf(err, "failed to parse settings file")
+			return fmt.Errorf("failed to parse settings file: %w", err)
 		}
 
 		result, err := c.PutJSON[[]settings.SettingDto](cmd.Context(), types.Settings(c.EnvID()), req)
 		if err != nil {
-			return errors.WrapIf(err, "failed to update settings")
+			return fmt.Errorf("failed to update settings: %w", err)
 		}
 
 		if jsonOutput {
@@ -101,7 +100,7 @@ func runSettingsList(cmd *cobra.Command, cfg settingsListConfig) error {
 
 	result, err := c.DoJSON[[]settings.PublicSetting](cmd.Context(), http.MethodGet, cfg.endpoint(c.EnvID()), nil)
 	if err != nil {
-		return errors.WrapIff(err, "%s", cfg.failureMessage)
+		return fmt.Errorf("%s: %w", cfg.failureMessage, err)
 	}
 
 	if jsonOutput {

@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/http"
 
-	"emperror.dev/errors"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/api/ws"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/diagnostics"
@@ -87,7 +86,7 @@ func (h *DiagnosticsHandler) GetRecentLogs(_ context.Context, _ *DiagnosticsInpu
 func (h *DiagnosticsHandler) ScanGoroutineLeaks(_ context.Context, _ *ScanGoroutineLeaksInput) (*ScanGoroutineLeaksOutput, error) {
 	report, err := h.diag.ScanGoroutineLeaks()
 	if err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to collect goroutine leak profile").Error())
+		return nil, huma.Error500InternalServerError("Failed to collect goroutine leak profile: " + err.Error())
 	}
 	return &ScanGoroutineLeaksOutput{Body: report}, nil
 }

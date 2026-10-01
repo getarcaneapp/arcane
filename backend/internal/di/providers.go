@@ -2,12 +2,12 @@ package di
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"time"
 	"uuid"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/auth"
@@ -150,7 +150,7 @@ func provideDockerClientServiceInternal(ctx context.Context, lc fx.Lifecycle, db
 				return nil
 			})
 			if err != nil {
-				err = errors.Combine(err, stopLog(startCtx))
+				err = errors.Join(err, stopLog(startCtx))
 				cleanup()
 			}
 			return err
@@ -161,7 +161,7 @@ func provideDockerClientServiceInternal(ctx context.Context, lc fx.Lifecycle, db
 				err = stopStream(stopCtx)
 			}
 			if stopLog != nil {
-				err = errors.Combine(err, stopLog(stopCtx))
+				err = errors.Join(err, stopLog(stopCtx))
 			}
 			if unsubscribe != nil {
 				unsubscribe()
@@ -298,7 +298,7 @@ func provideFilesystemWatcherJobInternal(ctx context.Context, lc fx.Lifecycle, p
 			if stop != nil {
 				err = stop(stopCtx)
 			}
-			return errors.Combine(err, job.Stop(stopCtx))
+			return errors.Join(err, job.Stop(stopCtx))
 		},
 	})
 	return job, nil

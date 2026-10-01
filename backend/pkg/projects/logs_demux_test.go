@@ -44,14 +44,10 @@ func TestDemultiplexedLogStreamWithStderrMarking(t *testing.T) {
 	resp := io.NopCloser(bytes.NewReader(source))
 	stream := &stderrMarkedDemuxedStreamInternal{upstream: resp, src: bufio.NewReader(resp)}
 
-	require.Equal(t,
-		"line-one\n"+
-			"[STDERR] boom\n"+
-			"partial\n"+
-			"[STDERR] "+longRun[:maxLogEntryBytesInternal]+"\n"+
-			"[STDERR] "+longRun[maxLogEntryBytesInternal:]+"\n"+
-			"[STDERR] final\n",
-		decodeDemuxedStreamInternal(t, stream))
+	require.Equal(t, "line-one\n[STDERR] boom\npartial\n[STDERR] "+
+		longRun[:maxLogEntryBytesInternal]+"\n"+
+		"[STDERR] "+longRun[maxLogEntryBytesInternal:]+"\n"+
+		"[STDERR] final\n", decodeDemuxedStreamInternal(t, stream))
 }
 
 type fakeResponseBodyInternal struct {

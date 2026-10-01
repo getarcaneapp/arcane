@@ -3,6 +3,8 @@ package cli
 import (
 	"cmp"
 	"context"
+	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"net/url"
@@ -10,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -49,7 +50,7 @@ func buildHealthURLInternal(cfg *config.Config) (string, error) {
 
 	port := cmp.Or(strings.TrimSpace(cfg.Port), defaultHealthPort)
 	if _, err := strconv.Atoi(port); err != nil {
-		return "", errors.WrapIff(err, "invalid health port %q", port)
+		return "", fmt.Errorf("invalid health port %q: %w", port, err)
 	}
 
 	hostPort := net.JoinHostPort(healthHost, port)
@@ -75,20 +76,20 @@ func runHealthCommandInternal(ctx context.Context, cfg *config.Config, timeout t
 
 	request, err := http.NewRequestWithContext(ctx, http.MethodHead, healthURL, nil)
 	if err != nil {
-		return errors.WrapIf(err, "health check request creation failed")
+		return fmt.Errorf("health check request creation failed: %w", err)
 	}
 
 	client := &http.Client{Timeout: timeout}
 	resp, err := client.Do(request)
 	if err != nil {
-		return errors.WrapIf(err, "health check request failed")
+		return fmt.Errorf("health check request failed: %w", err)
 	}
 	defer func() {
 		_ = resp.Body.Close()
 	}()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return errors.Errorf("health check failed with status %d", resp.StatusCode)
+		return fmt.Errorf("health check failed with status %d", resp.StatusCode)
 	}
 
 	return nil

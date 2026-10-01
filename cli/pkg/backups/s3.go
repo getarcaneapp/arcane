@@ -1,11 +1,11 @@
 package backups
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/prompt"
@@ -99,7 +99,7 @@ var s3GetCmd = &cobra.Command{
 			InUse bool `json:"inUse"`
 		}](cmd.Context(), http.MethodGet, types.BackupsS3DestinationInUse(resolved.ID), nil)
 		if err != nil {
-			return errors.WrapIf(err, "failed to check S3 destination usage")
+			return fmt.Errorf("failed to check S3 destination usage: %w", err)
 		}
 
 		if cmdutil.JSONOutputEnabled(cmd) {
@@ -162,7 +162,7 @@ var s3CreateCmd = &cobra.Command{
 
 		dest, err := c.DoJSON[backup.S3Destination](cmd.Context(), http.MethodPost, types.BackupsS3(), s3DestinationFromFlags())
 		if err != nil {
-			return errors.WrapIf(err, "failed to create S3 destination")
+			return fmt.Errorf("failed to create S3 destination: %w", err)
 		}
 
 		if cmdutil.JSONOutputEnabled(cmd) {
@@ -193,7 +193,7 @@ var s3UpdateCmd = &cobra.Command{
 
 		dest, err := c.DoJSON[backup.S3Destination](cmd.Context(), http.MethodPut, types.BackupsS3Destination(resolved.ID), s3DestinationFromFlags())
 		if err != nil {
-			return errors.WrapIf(err, "failed to update S3 destination")
+			return fmt.Errorf("failed to update S3 destination: %w", err)
 		}
 
 		if cmdutil.JSONOutputEnabled(cmd) {
@@ -236,7 +236,7 @@ var s3DeleteCmd = &cobra.Command{
 
 		result, err := c.DeleteJSON[base.MessageResponse](cmd.Context(), types.BackupsS3Destination(resolved.ID))
 		if err != nil {
-			return errors.WrapIf(err, "failed to delete S3 destination")
+			return fmt.Errorf("failed to delete S3 destination: %w", err)
 		}
 
 		if cmdutil.JSONOutputEnabled(cmd) {
@@ -286,7 +286,7 @@ passing the connection flags (--name, --bucket, --region, ...) with no argument.
 
 		result, err := c.PostJSON[base.MessageResponse](cmd.Context(), testPath, testBody)
 		if err != nil {
-			return errors.WrapIf(err, "failed to test S3 destination")
+			return fmt.Errorf("failed to test S3 destination: %w", err)
 		}
 
 		if cmdutil.JSONOutputEnabled(cmd) {

@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"crypto/mldsa"
+	"errors"
 	"fmt"
 	"log/slog"
 	"maps"
@@ -12,8 +13,6 @@ import (
 	"time"
 	"uuid"
 
-	"emperror.dev/emperror"
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
@@ -22,6 +21,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/session"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/user"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/jwtclaims"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/validation"
 	"github.com/getarcaneapp/arcane/types/v2/auth"
@@ -32,11 +32,11 @@ import (
 	kit "go.getarcane.app/kit/pkg"
 )
 
-const (
-	ErrInvalidCredentials = errors.Sentinel("invalid credentials")
-	ErrLocalAuthDisabled  = errors.Sentinel("local authentication is disabled")
-	ErrOidcAuthDisabled   = errors.Sentinel("OIDC authentication is disabled")
-	ErrMFARequired        = errors.Sentinel("multi-factor authentication is required")
+var (
+	ErrInvalidCredentials = errors.New("invalid credentials")
+	ErrLocalAuthDisabled  = errors.New("local authentication is disabled")
+	ErrOidcAuthDisabled   = errors.New("OIDC authentication is disabled")
+	ErrMFARequired        = errors.New("multi-factor authentication is required")
 )
 
 type TokenPair struct {
@@ -71,7 +71,6 @@ type AuthService struct {
 	browserSigningKey []byte
 	refreshExpiry     time.Duration
 	config            *config.Config
-	errorHandler      emperror.ErrorHandler
 	// tokenCache is a per-process in-memory cache for verified tokens. A hit
 	// skips signature verification and the user/session lookups; revocation in
 	// this process purges entries, revocation by another process is visible
@@ -79,10 +78,7 @@ type AuthService struct {
 	tokenCache *hot.HotCache[string, verifiedTokenEntry]
 }
 
-func NewAuthService(userService *user.UserService, settingsService *settings.SettingsService, eventService *event.EventService, sessionService *session.SessionService, roleService *role.RoleService, cfg *config.Config, errorHandler emperror.ErrorHandler) *AuthService {
-	if errorHandler == nil {
-		errorHandler = emperror.NoopHandler{}
-	}
+func NewAuthService(userService *user.UserService, settingsService *settings.SettingsService, eventService *event.EventService, sessionService *session.SessionService, roleService *role.RoleService, cfg *config.Config) *AuthService {
 	return &AuthService{
 		userService:     userService,
 		settingsService: settingsService,
@@ -91,7 +87,6 @@ func NewAuthService(userService *user.UserService, settingsService *settings.Set
 		roleService:     roleService,
 		refreshExpiry:   cfg.JWTRefreshExpiry,
 		config:          cfg,
-		errorHandler:    errorHandler,
 		tokenCache: hot.NewHotCache[string, verifiedTokenEntry](hot.LRU, 4096).
 			WithTTL(60 * time.Second).
 			WithJanitor().
@@ -102,7 +97,7 @@ func NewAuthService(userService *user.UserService, settingsService *settings.Set
 func (s *AuthService) getAuthSettings(ctx context.Context) (*AuthSettings, error) {
 	appSettings, err := s.settingsService.GetSettings(ctx)
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to get settings")
+		return nil, fmt.Errorf("failed to get settings: %w", err)
 	}
 
 	timeoutMinutes, _ := s.GetSessionTimeout(ctx)
@@ -269,7 +264,7 @@ func (s *AuthService) AuthenticateLocalPrimary(ctx context.Context, username, pa
 	userCopy := new(*user)
 	s.runInBackground(ctx, "update_last_login", func(ctx context.Context) error {
 		if _, err := s.userService.UpdateUser(ctx, userCopy, nil); err != nil {
-			return errors.WrapIf(err, "failed to update user's last login time")
+			return fmt.Errorf("failed to update user's last login time: %w", err)
 		}
 		return nil
 	})
@@ -602,7 +597,7 @@ func (s *AuthService) syncOidcRoleAssignments(ctx context.Context, user *common.
 	groups := s.extractOidcGroups(ctx, userInfo, tokenResp)
 	mappings, err := s.roleService.ListOidcMappings(ctx)
 	if err != nil {
-		return errors.WrapIf(err, "list oidc mappings")
+		return fmt.Errorf("list oidc mappings: %w", err)
 	}
 
 	groupSet := make(map[string]struct{}, len(groups))
@@ -741,7 +736,7 @@ func (s *AuthService) RefreshToken(ctx context.Context, refreshToken string, met
 	}
 
 	if s.sessionService == nil {
-		return nil, common.Classify(common.ErrUnavailable, errors.New("Session service is not configured"))
+		return nil, common.Classify(common.ErrUnavailable, errors.New("Session service is not configured")) //nolint:staticcheck // Preserve the existing error message.
 	}
 
 	userSession, err := s.sessionService.GetSessionByID(ctx, claims.SessionID)
@@ -830,7 +825,7 @@ func (s *AuthService) verifyTokenClaimsInternal(ctx context.Context, tokenHash s
 		return nil, "", common.ErrTokenVersionMismatch
 	}
 	if s.sessionService == nil {
-		return nil, "", common.Classify(common.ErrUnavailable, errors.New("Session service is not configured"))
+		return nil, "", common.Classify(common.ErrUnavailable, errors.New("Session service is not configured")) //nolint:staticcheck // Preserve the existing error message.
 	}
 
 	// Verify user exists in DB
@@ -859,7 +854,7 @@ func (s *AuthService) verifyTokenClaimsInternal(ctx context.Context, tokenHash s
 
 func (s *AuthService) ChangePassword(ctx context.Context, userID, currentPassword, newPassword, currentSessionID string) error {
 	if s.sessionService == nil {
-		return common.Classify(common.ErrUnavailable, errors.New("Session service is not configured"))
+		return common.Classify(common.ErrUnavailable, errors.New("Session service is not configured")) //nolint:staticcheck // Preserve the existing error message.
 	}
 
 	user, err := s.userService.GetUserByID(ctx, userID)
@@ -944,7 +939,7 @@ func (s *AuthService) LogoutAllOtherSessions(ctx context.Context, userID, curren
 
 func (s *AuthService) createSessionAndTokensInternal(ctx context.Context, user *common.User, meta auth.SessionMeta) (*TokenPair, error) {
 	if s.sessionService == nil {
-		return nil, common.Classify(common.ErrUnavailable, errors.New("Session service is not configured"))
+		return nil, common.Classify(common.ErrUnavailable, errors.New("Session service is not configured")) //nolint:staticcheck // Preserve the existing error message.
 	}
 	refreshExpiry := time.Now().Add(s.refreshExpiry)
 	session, refreshJTI, err := s.sessionService.CreateSession(ctx, user.ID, refreshExpiry, meta)
@@ -1044,7 +1039,7 @@ func (s *AuthService) buildTokenPairInternal(ctx context.Context, user *common.U
 
 func (s *AuthService) IssueFederatedToken(ctx context.Context, user *common.User, credentialID string, ttlSeconds int) (*TokenPair, error) {
 	if s.sessionService == nil {
-		return nil, common.Classify(common.ErrUnavailable, errors.New("Session service is not configured"))
+		return nil, common.Classify(common.ErrUnavailable, errors.New("Session service is not configured")) //nolint:staticcheck // Preserve the existing error message.
 	}
 	if user == nil {
 		return nil, common.ErrUserNotFound
@@ -1130,13 +1125,8 @@ func (s *AuthService) runInBackground(ctx context.Context, name string, fn func(
 
 	go func() {
 		defer func() {
-			if panicErr := emperror.Recover(recover()); panicErr != nil {
-				panicErr = errors.WithDetails(errors.WrapIf(panicErr, "Background task panicked"), "task", name)
-				if contextHandler, ok := s.errorHandler.(emperror.ErrorHandlerContext); ok {
-					contextHandler.HandleContext(bgCtx, panicErr)
-				} else {
-					s.errorHandler.Handle(panicErr)
-				}
+			if panicErr := utils.PanicToError(recover()); panicErr != nil {
+				slog.ErrorContext(bgCtx, "Unhandled error", "error", fmt.Errorf("Background task panicked: %w", panicErr), "task", name) //nolint:staticcheck // Preserve the existing error message.
 			}
 		}()
 

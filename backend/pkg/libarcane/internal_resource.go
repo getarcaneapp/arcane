@@ -3,11 +3,12 @@ package libarcane
 import (
 	"cmp"
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"strings"
 
-	"emperror.dev/errors"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 	"go.getarcane.app/docker/compat"
@@ -87,7 +88,7 @@ func InspectCurrentArcaneContainer(ctx context.Context, dockerClient *client.Cli
 	if containerID := FindArcaneContainerIDByLabel(ctx, dockerClient); containerID != "" {
 		inspect, err := compat.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, client.ContainerInspectOptions{})
 		if err != nil {
-			return nil, errors.WrapIf(err, "inspect Arcane container")
+			return nil, fmt.Errorf("inspect Arcane container: %w", err)
 		}
 		// An unlabeled derived hit is only overridden by the labeled match when
 		// that match shares the derived container's network namespace — i.e. the

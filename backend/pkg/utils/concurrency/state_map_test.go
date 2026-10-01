@@ -1,9 +1,9 @@
 package concurrency
 
 import (
+	"errors"
 	"testing"
 
-	"emperror.dev/errors"
 	"github.com/stretchr/testify/require"
 )
 

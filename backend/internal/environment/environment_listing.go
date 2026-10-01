@@ -2,9 +2,9 @@ package environment
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/types/v2/environment"
@@ -43,12 +43,12 @@ func (s *EnvironmentService) ListEnvironmentsPaginated(ctx context.Context, para
 
 	paginationResp, err := pagination.PaginateAndSortDB(params, q, &envs)
 	if err != nil {
-		return nil, pagination.Response{}, errors.WrapIf(err, "failed to paginate environments")
+		return nil, pagination.Response{}, fmt.Errorf("failed to paginate environments: %w", err)
 	}
 
 	out, mapErr := mapping.MapSlice[Environment, environment.Environment](envs)
 	if mapErr != nil {
-		return nil, pagination.Response{}, errors.WrapIf(mapErr, "failed to map environments")
+		return nil, pagination.Response{}, fmt.Errorf("failed to map environments: %w", mapErr)
 	}
 
 	return out, paginationResp, nil
@@ -77,12 +77,12 @@ func (s *EnvironmentService) listEnvironmentsPaginatedWithRuntimeFiltersInternal
 		Model(&Environment{}).
 		Where("hidden = ?", false).
 		Find(&envs).Error; err != nil {
-		return nil, pagination.Response{}, errors.WrapIf(err, "failed to list environments")
+		return nil, pagination.Response{}, fmt.Errorf("failed to list environments: %w", err)
 	}
 
 	items, mapErr := mapping.MapSlice[Environment, environment.Environment](envs)
 	if mapErr != nil {
-		return nil, pagination.Response{}, errors.WrapIf(mapErr, "failed to map environments")
+		return nil, pagination.Response{}, fmt.Errorf("failed to map environments: %w", mapErr)
 	}
 
 	// nil = no restriction; non-nil restricts to the caller's accessible envs.
@@ -195,12 +195,12 @@ func (s *EnvironmentService) ListVisibleEnvironments(ctx context.Context) ([]env
 		Where("hidden = ?", false).
 		Order("created_at asc, id asc").
 		Find(&envs).Error; err != nil {
-		return nil, errors.WrapIf(err, "failed to list visible environments")
+		return nil, fmt.Errorf("failed to list visible environments: %w", err)
 	}
 
 	out, mapErr := mapping.MapSlice[Environment, environment.Environment](envs)
 	if mapErr != nil {
-		return nil, errors.WrapIf(mapErr, "failed to map environments")
+		return nil, fmt.Errorf("failed to map environments: %w", mapErr)
 	}
 
 	return out, nil
@@ -235,7 +235,7 @@ func (s *EnvironmentService) ListRemoteEnvironments(ctx context.Context) ([]Envi
 			Where("hidden = ?", false).
 			Find(&envs).Error
 		if err != nil {
-			return nil, errors.WrapIf(err, "failed to list remote environments")
+			return nil, fmt.Errorf("failed to list remote environments: %w", err)
 		}
 
 		s.remoteEnvs.mu.Lock()

@@ -2,11 +2,12 @@ package docker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/api/types/volume"
@@ -163,7 +164,7 @@ func fetchVolumeUsageDataInternal(ctx context.Context, dockerClient *client.Clie
 		Verbose: true,
 	})
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to get disk usage")
+		return nil, fmt.Errorf("failed to get disk usage: %w", err)
 	}
 
 	slog.DebugContext(ctx, "disk usage returned volumes", "volume_count", len(diskUsage.Volumes.Items))
@@ -191,10 +192,19 @@ func FilterContainersUsingVolume(containers []container.Summary, volumeName stri
 func GetContainersUsingVolume(ctx context.Context, dockerClient *client.Client, volumeName string) ([]string, error) {
 	containerList, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true})
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to list containers")
+		return nil, fmt.Errorf("failed to list containers: %w", err)
 	}
 
 	containerIDs := FilterContainersUsingVolume(containerList.Items, volumeName)
 	slog.DebugContext(ctx, "found containers using volume", "volume", volumeName, "container_count", len(containerIDs))
 	return containerIDs, nil
+}
+
+// ValidateVolumeWorkspaceHelperSupport rejects Docker volume configurations
+// that cannot be mounted safely inside Arcane's reusable workspace helper.
+func ValidateVolumeWorkspaceHelperSupport(volumeName string, options map[string]string) error {
+	if options["type"] == "none" || strings.Contains(options["o"], "bind") {
+		return fmt.Errorf("volume %q uses a custom mount configuration and cannot be accessed through the workspace helper", volumeName)
+	}
+	return nil
 }

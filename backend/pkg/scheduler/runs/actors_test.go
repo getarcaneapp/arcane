@@ -37,7 +37,7 @@ func TestLegacyImportSurvivesRestartAndDeduplicates(t *testing.T) {
 	legacy := st.QueueRecord{JobID: "legacy", EnvironmentID: "0", Runs: []st.Run{{ID: uuid.New().String(), JobID: "legacy", EnvironmentID: "0", Trigger: "manual", Status: st.Succeeded, CreatedAt: time.Now().UTC()}}}
 	encoded, err := json.Marshal(legacy)
 	require.NoError(t, err)
-	key := queuePrefixInternal + kit.SHA256Hex("0"+"\x00"+legacy.JobID)
+	key := queuePrefixInternal + kit.SHA256Hex("0\x00"+legacy.JobID)
 	require.NoError(t, store.Set(t.Context(), key, string(encoded)))
 	databaseURL := "file:" + filepath.ToSlash(filepath.Join(t.TempDir(), "actors.db"))
 	first := francistest.New(t, databaseURL)
@@ -96,7 +96,7 @@ func TestAlarmIgnoresStaleGeneration(t *testing.T) {
 	require.NoError(t, err)
 	q.enabled.Store(true)
 	defer q.enabled.Store(false)
-	coordinator := &coordinatorActorInternal{id: kit.SHA256Hex("0" + "\x00" + "schedule"), q: q}
+	coordinator := &coordinatorActorInternal{id: kit.SHA256Hex("0\x00schedule"), q: q}
 	require.NoError(t, coordinator.Alarm(t.Context(), "old", occurrenceEnvelopeInternal{st.ScheduleOccurrence{Generation: before.Generation - 1, Sequence: before.Sequence}}))
 	after, err := q.ScheduleState(t.Context(), "schedule")
 	require.NoError(t, err)
@@ -121,7 +121,7 @@ func TestDuplicateDispatchAndCanceledDelivery(t *testing.T) {
 			}, nil)
 			run, err := q.Submit(t.Context(), st.Request{JobID: "dispatch", Trigger: "manual"})
 			require.NoError(t, err)
-			id := kit.SHA256Hex("0" + "\x00" + run.JobID)
+			id := kit.SHA256Hex("0\x00" + run.JobID)
 			command := st.ExecutionCommand{EnvironmentID: "0", JobID: run.JobID, RunID: run.ID, Attempt: 1}
 			jobID, created, err := q.service.Dispatch(t.Context(), executorTypeInternal, id, "execute", command, actor.WithIdempotencyKey(run.ID+"-1"))
 			require.NoError(t, err)
@@ -209,7 +209,7 @@ func TestReconciliationRepairsMissingAlarm(t *testing.T) {
 	defer q.enabled.Store(false)
 	record, err := q.ScheduleState(t.Context(), "repair")
 	require.NoError(t, err)
-	id := kit.SHA256Hex("0" + "\x00" + "repair")
+	id := kit.SHA256Hex("0\x00repair")
 	err = q.repairInternal(t.Context())
 	require.NoError(t, err)
 	require.NoError(t, q.service.DeleteAlarm(t.Context(), coordinatorTypeInternal, id, fmt.Sprintf("schedule-%d-%d", record.Generation, record.Sequence)))
@@ -289,7 +289,7 @@ func TestLostDispatchAcknowledgementRetainsOneExecution(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("execution did not start")
 	}
-	id := kit.SHA256Hex("0" + "\x00" + run.JobID)
+	id := kit.SHA256Hex("0\x00" + run.JobID)
 	var state st.CoordinatorState
 	require.NoError(t, q.service.GetState(t.Context(), coordinatorTypeInternal, id, &state))
 	key := run.ID + "-1"

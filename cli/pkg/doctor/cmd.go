@@ -1,13 +1,14 @@
 package doctor
 
 import (
+	"errors"
+	"fmt"
 	"strings"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/config"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
-	runtimectx "github.com/getarcaneapp/arcane/cli/v2/internal/runtime"
+	"github.com/getarcaneapp/arcane/cli/v2/internal/runtime"
 	"github.com/spf13/cobra"
 )
 
@@ -30,9 +31,9 @@ var DoctorCmd = &cobra.Command{
 	Short:        "Run CLI diagnostics",
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		app, ok := runtimectx.From(cmd.Context())
+		app, ok := runtime.From(cmd.Context())
 		if !ok {
-			created, err := runtimectx.New(runtimectx.Options{})
+			created, err := runtime.New(runtime.Options{})
 			if err != nil {
 				return err
 			}
@@ -104,7 +105,7 @@ var DoctorCmd = &cobra.Command{
 
 		if jsonOutput || app.IsJSON() {
 			if err := cmdutil.PrintJSON(rep); err != nil {
-				return errors.WrapIf(err, "failed to marshal doctor output")
+				return fmt.Errorf("failed to marshal doctor output: %w", err)
 			}
 		} else {
 			output.Header("Arcane CLI Diagnostics")

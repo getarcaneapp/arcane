@@ -2,13 +2,13 @@ package projects
 
 import (
 	"cmp"
+	"errors"
 	"fmt"
 	"maps"
 	"path/filepath"
 	"strconv"
 	"strings"
 
-	"emperror.dev/errors"
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/imageref"
 	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
@@ -24,13 +24,13 @@ func ResolveBuildContext(workingDir string, svc composetypes.ServiceConfig, serv
 	if contextDir == "" {
 		contextDir = workingDir
 	} else if _, isGitContext, err := contextsource.ParseGitBuildContextSource(contextDir); err != nil {
-		return "", errors.WrapIff(err, "invalid build context for service %s", serviceName)
+		return "", fmt.Errorf("invalid build context for service %s: %w", serviceName, err)
 	} else if !isGitContext && !filepath.IsAbs(contextDir) {
 		contextDir = filepath.Join(workingDir, contextDir)
 	}
 
 	if contextDir == "" {
-		return "", errors.Errorf("build context not set for service %s", serviceName)
+		return "", fmt.Errorf("build context not set for service %s", serviceName)
 	}
 
 	return contextDir, nil
@@ -170,10 +170,10 @@ func PrepareServiceBuildRequest(
 	effectiveProvider := resolveEffectiveBuildProviderInternal(options.Provider, defaultProvider)
 
 	if updated && effectiveProvider == "depot" {
-		return buildtypes.BuildRequest{}, updatedSvc, updated, errors.Errorf("service %s must define an image when using depot build provider", serviceName)
+		return buildtypes.BuildRequest{}, updatedSvc, updated, fmt.Errorf("service %s must define an image when using depot build provider", serviceName)
 	}
 	if updated && options.Push != nil && *options.Push {
-		return buildtypes.BuildRequest{}, updatedSvc, updated, errors.Errorf("service %s must define an image when push is enabled", serviceName)
+		return buildtypes.BuildRequest{}, updatedSvc, updated, fmt.Errorf("service %s must define an image when push is enabled", serviceName)
 	}
 
 	// Build providers read the context from Arcane's filesystem, so keep
@@ -185,7 +185,7 @@ func PrepareServiceBuildRequest(
 
 	dockerfileInline := updatedSvc.Build.DockerfileInline
 	if strings.TrimSpace(updatedSvc.Build.Dockerfile) != "" && strings.TrimSpace(dockerfileInline) != "" {
-		return buildtypes.BuildRequest{}, updatedSvc, updated, errors.Errorf("service %s cannot define both dockerfile and dockerfile_inline", serviceName)
+		return buildtypes.BuildRequest{}, updatedSvc, updated, fmt.Errorf("service %s cannot define both dockerfile and dockerfile_inline", serviceName)
 	}
 
 	dockerfilePath := ""

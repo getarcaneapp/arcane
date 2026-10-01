@@ -257,9 +257,7 @@ func TestLeak_RepeatedConnectDisconnect(t *testing.T) {
 
 	actual := waitForGoroutineCount(t, baseline, 0, 3*time.Second)
 	leaked := actual - baseline
-	assert.Equal(t, 0, leaked,
-		"after %d connect/disconnect cycles, global goroutine delta must be 0; "+
-			"baseline=%d, final=%d", iterations, baseline, actual)
+	assert.Equal(t, 0, leaked, "after %d connect/disconnect cycles, global goroutine delta must be 0; baseline=%d, final=%d", iterations, baseline, actual)
 	t.Logf("goroutine leak check: baseline=%d, final=%d, delta=%d, ws_workers=%d (after %d cycles)",
 		baseline, actual, leaked, wsWorkers, iterations)
 }
@@ -556,9 +554,7 @@ func TestLeak_RepeatedStatsHubCycles(t *testing.T) {
 
 	actual := waitForGoroutineCount(t, baseline, 0, 3*time.Second)
 	leaked := actual - baseline
-	assert.Equal(t, 0, leaked,
-		"after %d stats hub cycles, global goroutine delta must be 0; "+
-			"baseline=%d, final=%d", iterations, baseline, actual)
+	assert.Equal(t, 0, leaked, "after %d stats hub cycles, global goroutine delta must be 0; baseline=%d, final=%d", iterations, baseline, actual)
 	t.Logf("stats hub leak check: baseline=%d, final=%d, delta=%d, ws_workers=%d (after %d cycles)",
 		baseline, actual, leaked, wsWorkers, iterations)
 }

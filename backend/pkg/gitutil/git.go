@@ -3,7 +3,8 @@ package git
 import (
 	"cmp"
 	"context"
-	stderrors "errors"
+	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"log/slog"
@@ -18,7 +19,6 @@ import (
 	"strings"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/types/v2/gitops"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
@@ -136,18 +136,18 @@ func (c *Client) getAuthInternal(url string, config AuthConfig) (transport.AuthM
 		if config.SSHKey != "" {
 			endpoint, err := transport.NewEndpoint(url)
 			if err != nil {
-				return nil, errors.WrapIf(err, "failed to parse SSH repository URL")
+				return nil, fmt.Errorf("failed to parse SSH repository URL: %w", err)
 			}
 			username := cmp.Or(endpoint.User, "git")
 			publicKeys, err := ssh.NewPublicKeys(username, []byte(config.SSHKey), "")
 			if err != nil {
-				return nil, errors.WrapIf(err, "failed to create ssh auth")
+				return nil, fmt.Errorf("failed to create ssh auth: %w", err)
 			}
 
 			// Configure host key verification based on mode
 			hostKeyCallback, err := c.getSSHHostKeyCallback(config.SSHHostKeyVerification)
 			if err != nil {
-				return nil, errors.WrapIf(err, "failed to configure SSH host key verification")
+				return nil, fmt.Errorf("failed to configure SSH host key verification: %w", err)
 			}
 			publicKeys.HostKeyCallbackHelper = ssh.HostKeyCallbackHelper{
 				HostKeyCallback: hostKeyCallback,
@@ -190,14 +190,14 @@ func (c *Client) createAcceptNewHostKeyCallback() (gossh.HostKeyCallback, error)
 	// confinement root), and acfs has no append/flock API for the writes below.
 	dir := filepath.Dir(knownHostsPath)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return nil, errors.WrapIf(err, "failed to create known_hosts directory")
+		return nil, fmt.Errorf("failed to create known_hosts directory: %w", err)
 	}
 
 	// Create the file if it doesn't exist
 	if _, err := os.Stat(knownHostsPath); os.IsNotExist(err) {
 		file, err := os.OpenFile(knownHostsPath, os.O_CREATE|os.O_WRONLY, 0o600)
 		if err != nil {
-			return nil, errors.WrapIf(err, "failed to create known_hosts file")
+			return nil, fmt.Errorf("failed to create known_hosts file: %w", err)
 		}
 		if err := file.Close(); err != nil {
 			slog.Warn("Failed to close known_hosts file", "path", knownHostsPath, "error", err)
@@ -218,9 +218,9 @@ func (c *Client) createAcceptNewHostKeyCallback() (gossh.HostKeyCallback, error)
 				return nil // Host key matches
 			}
 			// Check if it's a "key mismatch" error vs "unknown host"
-			if keyErr, ok := stderrors.AsType[*knownhosts.KeyError](err); ok && len(keyErr.Want) > 0 {
+			if keyErr, ok := errors.AsType[*knownhosts.KeyError](err); ok && len(keyErr.Want) > 0 {
 				// Host is known but key doesn't match - this is a security concern
-				return errors.WrapIff(err, "host key mismatch for %s (possible MITM attack)", hostname)
+				return fmt.Errorf("host key mismatch for %s (possible MITM attack): %w", hostname, err)
 			}
 			// Otherwise, host is unknown - we'll add it
 		}
@@ -271,11 +271,11 @@ func addHostKey(knownHostsPath, hostname string, key gossh.PublicKey) (err error
 	// Acquire exclusive lock to prevent concurrent writes
 	fileLock := flock.New(knownHostsPath)
 	if err := fileLock.Lock(); err != nil {
-		return errors.WrapIf(err, "failed to acquire lock on known_hosts file")
+		return fmt.Errorf("failed to acquire lock on known_hosts file: %w", err)
 	}
 	defer func() {
 		if unlockErr := fileLock.Unlock(); unlockErr != nil && err == nil {
-			err = errors.WrapIf(unlockErr, "failed to release lock on known_hosts file")
+			err = fmt.Errorf("failed to release lock on known_hosts file: %w", unlockErr)
 		}
 	}()
 
@@ -284,16 +284,16 @@ func addHostKey(knownHostsPath, hostname string, key gossh.PublicKey) (err error
 	// the user home rather than an arcane confinement root.
 	file, err := os.OpenFile(knownHostsPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
-		return errors.WrapIf(err, "failed to open known_hosts file")
+		return fmt.Errorf("failed to open known_hosts file: %w", err)
 	}
 	defer func() {
 		if cerr := file.Close(); cerr != nil && err == nil {
-			err = errors.WrapIf(cerr, "failed to close known_hosts file")
+			err = fmt.Errorf("failed to close known_hosts file: %w", cerr)
 		}
 	}()
 
 	if _, err := file.WriteString(line + "\n"); err != nil {
-		return errors.WrapIf(err, "failed to write to known_hosts file")
+		return fmt.Errorf("failed to write to known_hosts file: %w", err)
 	}
 
 	return nil
@@ -320,11 +320,11 @@ func (c *Client) Clone(ctx context.Context, url, branch string, auth AuthConfig)
 	// os.* rather than acfs: this creates the clone staging root itself (under the
 	// system temp dir by default), which has to exist before acfs could open it.
 	if err := os.MkdirAll(workDir, 0o755); err != nil {
-		return "", errors.WrapIf(err, "failed to create work dir")
+		return "", fmt.Errorf("failed to create work dir: %w", err)
 	}
 	tmpDir, err := os.MkdirTemp(workDir, cloneScratchPrefix+"*")
 	if err != nil {
-		return "", errors.WrapIf(err, "failed to create temp dir")
+		return "", fmt.Errorf("failed to create temp dir: %w", err)
 	}
 
 	url, err = normalizeURL(url)
@@ -356,7 +356,7 @@ func (c *Client) Clone(ctx context.Context, url, branch string, auth AuthConfig)
 	_, err = git.PlainCloneContext(ctx, tmpDir, false, cloneOptions)
 	if err != nil {
 		_ = os.RemoveAll(tmpDir)
-		return "", errors.WrapIf(err, "failed to clone repository")
+		return "", fmt.Errorf("failed to clone repository: %w", err)
 	}
 
 	return tmpDir, nil
@@ -369,12 +369,12 @@ func (c *Client) GetCurrentCommit(ctx context.Context, repoPath string) (string,
 	}
 	repo, err := git.PlainOpen(repoPath)
 	if err != nil {
-		return "", errors.WrapIf(err, "failed to open repository")
+		return "", fmt.Errorf("failed to open repository: %w", err)
 	}
 
 	ref, err := repo.Head()
 	if err != nil {
-		return "", errors.WrapIf(err, "failed to get HEAD")
+		return "", fmt.Errorf("failed to get HEAD: %w", err)
 	}
 
 	return ref.Hash().String(), nil
@@ -478,7 +478,7 @@ func (c *Client) listRemoteReferences(ctx context.Context, url string, auth Auth
 
 	refs, err := rem.ListContext(listCtx, listOptions)
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to list remote references")
+		return nil, fmt.Errorf("failed to list remote references: %w", err)
 	}
 
 	return refs, nil
@@ -493,7 +493,7 @@ func ValidatePath(repoPath, requestedPath string) error {
 	// Check if the requested path is within the repo using relative path validation
 	rel, err := filepath.Rel(cleanRepoPath, cleanRequestedPath)
 	if err != nil {
-		return errors.WrapIf(err, "invalid path")
+		return fmt.Errorf("invalid path: %w", err)
 	}
 	if strings.HasPrefix(rel, "..") || strings.Contains(rel, string(filepath.Separator)+".."+string(filepath.Separator)) {
 		return errors.New("path traversal attempt detected")
@@ -513,7 +513,7 @@ func (c *Client) BrowseTree(ctx context.Context, repoPath, targetPath string) ([
 	logicalPath := path.Join("/", filepath.ToSlash(targetPath))
 	entry, err := acfs.Stat(ctx, repoPath, logicalPath, true)
 	if err != nil {
-		return nil, errors.WrapIf(err, "path not found")
+		return nil, fmt.Errorf("path not found: %w", err)
 	}
 	if !entry.IsDirectory {
 		return nil, errors.New("path is not a directory")
@@ -521,7 +521,7 @@ func (c *Client) BrowseTree(ctx context.Context, repoPath, targetPath string) ([
 
 	entries, err := acfs.List(ctx, repoPath, logicalPath)
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to read directory")
+		return nil, fmt.Errorf("failed to read directory: %w", err)
 	}
 
 	var nodes []gitops.FileTreeNode
@@ -574,7 +574,7 @@ func (c *Client) PurgeScratchDirs(ctx context.Context, maxAge time.Duration) (in
 		if errors.Is(err, fs.ErrNotExist) {
 			return 0, nil
 		}
-		return 0, errors.WrapIff(err, "failed to read git work dir %s", root)
+		return 0, fmt.Errorf("failed to read git work dir %s: %w", root, err)
 	}
 
 	removed := 0
@@ -645,7 +645,7 @@ func (c *Client) ReadFile(ctx context.Context, repoPath, filePath string) (strin
 	}
 	content, err := acfs.ReadFile(ctx, repoPath, path.Join("/", filepath.ToSlash(filePath)))
 	if err != nil {
-		return "", errors.WrapIf(err, "failed to read file")
+		return "", fmt.Errorf("failed to read file: %w", err)
 	}
 	return string(content), nil
 }
@@ -690,7 +690,7 @@ func (c *Client) WalkDirectory(ctx context.Context, repoPath, composePath string
 
 	// Validate compose path
 	if err := ValidatePath(repoPath, composePath); err != nil {
-		return nil, errors.WrapIf(err, "invalid compose path")
+		return nil, fmt.Errorf("invalid compose path: %w", err)
 	}
 
 	// Get the directory containing the compose file
@@ -737,13 +737,13 @@ func (c *Client) walkSyncEntry(ctx context.Context, syncDir string, entry acfsty
 func (c *Client) appendSyncFile(ctx context.Context, syncDir string, entry acfstypes.Entry, result *DirectoryWalkResult, limits syncWalkLimits) error {
 	relativePath := strings.TrimPrefix(entry.Path, "/")
 	if limits.maxFiles > 0 && result.TotalFiles >= limits.maxFiles {
-		return errors.Errorf("file count limit exceeded (max %d files)", limits.maxFiles)
+		return fmt.Errorf("file count limit exceeded (max %d files)", limits.maxFiles)
 	}
 
 	if limits.maxBinarySize > 0 && entry.Size > limits.maxBinarySize {
 		isBinary, err := c.isBinarySyncFile(ctx, syncDir, entry.Path)
 		if err != nil {
-			return errors.WrapIff(err, "failed to inspect file %s", relativePath)
+			return fmt.Errorf("failed to inspect file %s: %w", relativePath, err)
 		}
 		if isBinary {
 			result.SkippedBinaries++
@@ -753,7 +753,7 @@ func (c *Client) appendSyncFile(ctx context.Context, syncDir string, entry acfst
 
 	content, err := acfs.ReadFile(ctx, syncDir, entry.Path)
 	if err != nil {
-		return errors.WrapIff(err, "failed to read file %s", relativePath)
+		return fmt.Errorf("failed to read file %s: %w", relativePath, err)
 	}
 
 	fileSize := int64(len(content))
@@ -765,7 +765,7 @@ func (c *Client) appendSyncFile(ctx context.Context, syncDir string, entry acfst
 	}
 
 	if limits.maxTotalSize > 0 && result.TotalSize+fileSize > limits.maxTotalSize {
-		return errors.Errorf("total size limit exceeded (max %d bytes)", limits.maxTotalSize)
+		return fmt.Errorf("total size limit exceeded (max %d bytes)", limits.maxTotalSize)
 	}
 
 	executable := os.FileMode(entry.UnixMode)&0o111 != 0

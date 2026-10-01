@@ -1,11 +1,11 @@
 package networks
 
 import (
+	"errors"
 	"fmt"
 	"net/url"
 	"strings"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
@@ -129,7 +129,7 @@ var getCmd = &cobra.Command{
 		if !complete {
 			result, err := c.GetJSON[network.Inspect](cmd.Context(), types.Network(c.EnvID(), resolved.ID))
 			if err != nil {
-				return errors.WrapIf(err, "failed to get network")
+				return fmt.Errorf("failed to get network: %w", err)
 			}
 			resolved = &result.Data
 		}
@@ -187,7 +187,7 @@ var deleteCmd = &cobra.Command{
 
 		result, err := c.DeleteJSON[base.MessageResponse](cmd.Context(), types.Network(c.EnvID(), resolved.ID))
 		if err != nil {
-			return errors.WrapIf(err, "failed to delete network")
+			return fmt.Errorf("failed to delete network: %w", err)
 		}
 
 		if jsonOutput {
@@ -211,7 +211,7 @@ var countsCmd = &cobra.Command{
 
 		result, err := c.GetJSON[network.UsageCounts](cmd.Context(), types.NetworksCounts(c.EnvID()))
 		if err != nil {
-			return errors.WrapIf(err, "failed to get network counts")
+			return fmt.Errorf("failed to get network counts: %w", err)
 		}
 
 		if jsonOutput {
@@ -249,7 +249,7 @@ var pruneCmd = &cobra.Command{
 
 		result, err := c.PostJSON[network.PruneReport](cmd.Context(), types.NetworksPrune(c.EnvID()), nil)
 		if err != nil {
-			return errors.WrapIf(err, "failed to prune networks")
+			return fmt.Errorf("failed to prune networks: %w", err)
 		}
 
 		if jsonOutput {
@@ -315,7 +315,7 @@ var createCmd = &cobra.Command{
 
 		result, err := c.PostJSON[network.CreateResponse](cmd.Context(), types.Networks(c.EnvID()), req)
 		if err != nil {
-			return errors.WrapIf(err, "failed to create network")
+			return fmt.Errorf("failed to create network: %w", err)
 		}
 
 		if jsonOutput {
@@ -357,7 +357,7 @@ var connectCmd = &cobra.Command{
 
 		result, err := c.PostJSON[base.MessageResponse](cmd.Context(), types.NetworkConnect(c.EnvID(), resolved.ID), req)
 		if err != nil {
-			return errors.WrapIf(err, "failed to connect container to network")
+			return fmt.Errorf("failed to connect container to network: %w", err)
 		}
 
 		if jsonOutput {
@@ -397,7 +397,7 @@ var disconnectCmd = &cobra.Command{
 
 		result, err := c.PostJSON[base.MessageResponse](cmd.Context(), types.NetworkDisconnect(c.EnvID(), resolved.ID), req)
 		if err != nil {
-			return errors.WrapIf(err, "failed to disconnect container from network")
+			return fmt.Errorf("failed to disconnect container from network: %w", err)
 		}
 
 		if jsonOutput {
@@ -425,7 +425,7 @@ var topologyCmd = &cobra.Command{
 
 		result, err := c.GetJSON[network.Topology](cmd.Context(), types.NetworksTopology(c.EnvID()))
 		if err != nil {
-			return errors.WrapIf(err, "failed to get network topology")
+			return fmt.Errorf("failed to get network topology: %w", err)
 		}
 
 		if jsonOutput {

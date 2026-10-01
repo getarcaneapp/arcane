@@ -4,13 +4,13 @@ import (
 	"cmp"
 	"context"
 	"encoding/json/v2"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"strings"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/cli/upgrade"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
@@ -91,10 +91,10 @@ func runRestoreInternal(_ *cobra.Command, _ []string) error {
 		// stopped rather than running with mismatched data and projects.
 		err = fmt.Errorf("rustic system restore failed: %w", err)
 		if len(request.RollbackStages) == 0 {
-			return errors.Combine(err, errors.New("no pre-restore system backup is available for rollback; Arcane was left stopped"))
+			return errors.Join(err, errors.New("no pre-restore system backup is available for rollback; Arcane was left stopped"))
 		}
 		if rollbackErr := runStagesInternal(context.WithoutCancel(ctx), dockerClient, request, request.RollbackStages); rollbackErr != nil {
-			return errors.Combine(err, fmt.Errorf("restoring the pre-restore system backup failed; Arcane was left stopped: %w", rollbackErr))
+			return errors.Join(err, fmt.Errorf("restoring the pre-restore system backup failed; Arcane was left stopped: %w", rollbackErr))
 		}
 		rollbackManifest, readErr := os.ReadFile("/app/data/.arcane-recovery.json")
 		var rollback recoverytypes.Manifest
@@ -105,7 +105,7 @@ func runRestoreInternal(_ *cobra.Command, _ []string) error {
 			readErr = francis.ClearRestoredHosts(context.WithoutCancel(ctx), rollback.Environment["DATABASE_URL"])
 		}
 		if readErr != nil {
-			return errors.Combine(err, fmt.Errorf("clear restored actor ownership; Arcane was left stopped: %w", readErr))
+			return errors.Join(err, fmt.Errorf("clear restored actor ownership; Arcane was left stopped: %w", readErr))
 		}
 		restart()
 		return fmt.Errorf("%w; the pre-restore system backup was restored", err)

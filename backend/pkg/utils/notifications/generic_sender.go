@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -14,7 +15,6 @@ import (
 	"text/template"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/nicholas-fedor/shoutrrr"
 	shoutrrrTypes "github.com/nicholas-fedor/shoutrrr/pkg/types"
 	kit "go.getarcane.app/kit/pkg"
@@ -41,7 +41,7 @@ func resolveWebhookURLInternal(config GenericConfig) (*url.URL, error) {
 
 	parsed, err := url.Parse(config.WebhookURL)
 	if err != nil {
-		return nil, errors.WrapIf(err, "invalid webhook URL")
+		return nil, fmt.Errorf("invalid webhook URL: %w", err)
 	}
 
 	hasScheme := strings.Contains(config.WebhookURL, "://")
@@ -50,7 +50,7 @@ func resolveWebhookURLInternal(config GenericConfig) (*url.URL, error) {
 		normalized := strings.TrimPrefix(config.WebhookURL, "//")
 		parsed, err = url.Parse(fmt.Sprintf("%s://%s", scheme, normalized))
 		if err != nil {
-			return nil, errors.WrapIf(err, "invalid webhook URL")
+			return nil, fmt.Errorf("invalid webhook URL: %w", err)
 		}
 	}
 
@@ -61,7 +61,7 @@ func resolveWebhookURLInternal(config GenericConfig) (*url.URL, error) {
 	switch strings.ToLower(parsed.Scheme) {
 	case "http", "https":
 	default:
-		return nil, errors.Errorf("invalid webhook URL scheme: %s", parsed.Scheme)
+		return nil, fmt.Errorf("invalid webhook URL scheme: %s", parsed.Scheme)
 	}
 
 	return parsed, nil
@@ -193,12 +193,12 @@ func genericTemplateDataInternal(config GenericConfig, title, message string, va
 func RenderGenericPayloadTemplate(config GenericConfig, title, message string, vars map[string]string) (string, error) {
 	tmpl, err := template.New(genericPayloadTemplateID).Parse(config.PayloadTemplate)
 	if err != nil {
-		return "", errors.WrapIf(err, "invalid webhook payload template")
+		return "", fmt.Errorf("invalid webhook payload template: %w", err)
 	}
 
 	var rendered bytes.Buffer
 	if err := tmpl.Execute(&rendered, genericTemplateDataInternal(config, title, message, vars)); err != nil {
-		return "", errors.WrapIf(err, "failed to render webhook payload template")
+		return "", fmt.Errorf("failed to render webhook payload template: %w", err)
 	}
 	return rendered.String(), nil
 }
@@ -256,7 +256,7 @@ func SendGenericWithTitle(ctx context.Context, config GenericConfig, title, mess
 
 	shoutrrrURL, err := BuildGenericURL(config)
 	if err != nil {
-		return errors.WrapIf(err, "failed to build shoutrrr Generic URL")
+		return fmt.Errorf("failed to build shoutrrr Generic URL: %w", err)
 	}
 
 	senderOptions := shoutrrrTypes.SenderOptions{HTTPClient: genericHTTPClient}
@@ -274,7 +274,7 @@ func SendGenericWithTitle(ctx context.Context, config GenericConfig, title, mess
 
 	sender, err := shoutrrr.CreateSenderWithOptions(senderOptions, shoutrrrURL)
 	if err != nil {
-		return errors.WrapIf(err, "failed to create shoutrrr Generic sender")
+		return fmt.Errorf("failed to create shoutrrr Generic sender: %w", err)
 	}
 
 	// Build params with title. Always use "title" as the param key — Shoutrrr's
@@ -285,7 +285,7 @@ func SendGenericWithTitle(ctx context.Context, config GenericConfig, title, mess
 	errs := sender.Send(message, &params)
 	for _, err := range errs {
 		if err != nil {
-			return errors.WrapIf(err, "failed to send Generic webhook message with title via shoutrrr")
+			return fmt.Errorf("failed to send Generic webhook message with title via shoutrrr: %w", err)
 		}
 	}
 	return nil
@@ -315,16 +315,16 @@ func effectiveGenericTemplateIDInternal(shoutrrrURL string) string {
 func sendGenericTemplatedInternal(config GenericConfig, shoutrrrURL, templateID string, opts shoutrrrTypes.SenderOptions, title, message string, vars map[string]string) error {
 	sender, err := shoutrrr.CreateSenderWithOptions(opts)
 	if err != nil {
-		return errors.WrapIf(err, "failed to create shoutrrr Generic sender")
+		return fmt.Errorf("failed to create shoutrrr Generic sender: %w", err)
 	}
 
 	service, err := sender.Locate(shoutrrrURL)
 	if err != nil {
-		return errors.WrapIf(err, "failed to initialize shoutrrr Generic service")
+		return fmt.Errorf("failed to initialize shoutrrr Generic service: %w", err)
 	}
 
 	if err := service.SetTemplateString(templateID, config.PayloadTemplate); err != nil {
-		return errors.WrapIf(err, "invalid webhook payload template")
+		return fmt.Errorf("invalid webhook payload template: %w", err)
 	}
 
 	// Shoutrrr renders the registered template over the send params, remapping
@@ -338,7 +338,7 @@ func sendGenericTemplatedInternal(config GenericConfig, shoutrrrURL, templateID 
 	}
 
 	if err := service.Send(jsonEscapeString(message), &params); err != nil {
-		return errors.WrapIf(err, "failed to send Generic webhook message via shoutrrr")
+		return fmt.Errorf("failed to send Generic webhook message via shoutrrr: %w", err)
 	}
 	return nil
 }
@@ -370,7 +370,7 @@ func sendGenericDirectInternal(ctx context.Context, config GenericConfig, title,
 
 		body, err = json.Marshal(payload)
 		if err != nil {
-			return errors.WrapIf(err, "failed to marshal webhook payload")
+			return fmt.Errorf("failed to marshal webhook payload: %w", err)
 		}
 	}
 
@@ -378,7 +378,7 @@ func sendGenericDirectInternal(ctx context.Context, config GenericConfig, title,
 
 	req, err := http.NewRequestWithContext(ctx, method, webhookURL.String(), bytes.NewReader(body))
 	if err != nil {
-		return errors.WrapIf(err, "failed to create webhook request")
+		return fmt.Errorf("failed to create webhook request: %w", err)
 	}
 
 	contentType := cmp.Or(config.ContentType, "application/json")
@@ -390,21 +390,21 @@ func sendGenericDirectInternal(ctx context.Context, config GenericConfig, title,
 
 	resp, err := genericHTTPClient.Do(req)
 	if err != nil {
-		return errors.WrapIf(err, "failed to send webhook request")
+		return fmt.Errorf("failed to send webhook request: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return errors.WrapIf(err, "failed to read webhook response body")
+		return fmt.Errorf("failed to read webhook response body: %w", err)
 	}
 
 	if resp.StatusCode >= http.StatusBadRequest {
-		return errors.Errorf("webhook returned HTTP %d: %s", resp.StatusCode, string(respBody))
+		return fmt.Errorf("webhook returned HTTP %d: %s", resp.StatusCode, string(respBody))
 	}
 
 	if !strings.Contains(string(respBody), config.SuccessBodyContains) {
-		return errors.Errorf("webhook response did not contain expected success indicator %q: %s", config.SuccessBodyContains, string(respBody))
+		return fmt.Errorf("webhook response did not contain expected success indicator %q: %s", config.SuccessBodyContains, string(respBody))
 	}
 
 	return nil

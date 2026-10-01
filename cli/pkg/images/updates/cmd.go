@@ -1,12 +1,12 @@
 package updates
 
 import (
+	"errors"
 	"fmt"
 	"maps"
 	"slices"
 	"strconv"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
@@ -44,7 +44,7 @@ var checkCmd = &cobra.Command{
 
 			result, err := c.PostJSON[imageupdate.BatchResponse](cmd.Context(), types.ImageUpdatesCheckAll(c.EnvID()), imageupdate.CheckAllImagesRequest{})
 			if err != nil {
-				return errors.WrapIf(err, "failed to check all updates")
+				return fmt.Errorf("failed to check all updates: %w", err)
 			}
 			return printBatchResultsInternal(result.Data)
 		}
@@ -56,14 +56,14 @@ var checkCmd = &cobra.Command{
 		if len(args) > 1 {
 			result, err := c.PostJSON[imageupdate.BatchResponse](cmd.Context(), types.ImageUpdatesCheckBatch(c.EnvID()), imageupdate.BatchImageUpdateRequest{ImageRefs: args})
 			if err != nil {
-				return errors.WrapIf(err, "failed to check updates")
+				return fmt.Errorf("failed to check updates: %w", err)
 			}
 			return printBatchResultsInternal(result.Data)
 		}
 
 		result, err := c.GetJSON[imageupdate.Response](cmd.Context(), types.ImageUpdatesCheck(c.EnvID(), args[0]))
 		if err != nil {
-			return errors.WrapIf(err, "failed to check updates")
+			return fmt.Errorf("failed to check updates: %w", err)
 		}
 
 		if jsonOutput {
@@ -98,7 +98,7 @@ var checkAllCmd = &cobra.Command{
 		// The handler declares a non-pointer Body, so an empty body is a 400.
 		result, err := c.PostJSON[imageupdate.BatchResponse](cmd.Context(), types.ImageUpdatesCheckAll(c.EnvID()), imageupdate.CheckAllImagesRequest{})
 		if err != nil {
-			return errors.WrapIf(err, "failed to check all updates")
+			return fmt.Errorf("failed to check all updates: %w", err)
 		}
 
 		if jsonOutput {
@@ -133,7 +133,7 @@ var checkImageCmd = &cobra.Command{
 
 		result, err := c.GetJSON[imageupdate.Response](cmd.Context(), types.ImageUpdatesCheckById(c.EnvID(), args[0]))
 		if err != nil {
-			return errors.WrapIf(err, "failed to check image update")
+			return fmt.Errorf("failed to check image update: %w", err)
 		}
 
 		if jsonOutput {
@@ -165,7 +165,7 @@ var summaryCmd = &cobra.Command{
 
 		result, err := c.GetJSON[imageupdate.Summary](cmd.Context(), types.ImageUpdatesSummary(c.EnvID()))
 		if err != nil {
-			return errors.WrapIf(err, "failed to get summary")
+			return fmt.Errorf("failed to get summary: %w", err)
 		}
 
 		if jsonOutput {

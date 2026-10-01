@@ -1,12 +1,12 @@
 package apikeys
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
@@ -61,14 +61,14 @@ func parsePermissionGrantsInternal(tokens []string) ([]apikey.PermissionGrant, e
 		case 3:
 			env := parts[2]
 			if parts[0] == "" || parts[1] == "" || env == "" {
-				return nil, errors.Errorf("invalid --permission value %q (expected `resource:action[:envId]`)", raw)
+				return nil, fmt.Errorf("invalid --permission value %q (expected `resource:action[:envId]`)", raw)
 			}
 			out = append(out, apikey.PermissionGrant{
 				Permission:    parts[0] + ":" + parts[1],
 				EnvironmentID: &env,
 			})
 		default:
-			return nil, errors.Errorf("invalid --permission value %q (expected `resource:action[:envId]`)", raw)
+			return nil, fmt.Errorf("invalid --permission value %q (expected `resource:action[:envId]`)", raw)
 		}
 	}
 	return out, nil
@@ -150,14 +150,14 @@ var createCmd = &cobra.Command{
 		if expiresAtRaw, _ := cmd.Flags().GetString("expires-at"); expiresAtRaw != "" {
 			parsed, err := time.Parse(time.RFC3339, expiresAtRaw)
 			if err != nil {
-				return errors.WrapIf(err, "invalid --expires-at format (use RFC3339)")
+				return fmt.Errorf("invalid --expires-at format (use RFC3339): %w", err)
 			}
 			createReq.ExpiresAt = &parsed
 		}
 
 		result, err := c.PostJSON[apikey.ApiKeyCreatedDto](cmd.Context(), types.ApiKeys(), createReq)
 		if err != nil {
-			return errors.WrapIf(err, "failed to create API key")
+			return fmt.Errorf("failed to create API key: %w", err)
 		}
 
 		if jsonOutput {
@@ -200,7 +200,7 @@ var deleteCmd = &cobra.Command{
 
 		result, err := c.DeleteJSON[base.MessageResponse](cmd.Context(), types.ApiKey(args[0]))
 		if err != nil {
-			return errors.WrapIf(err, "failed to delete API key")
+			return fmt.Errorf("failed to delete API key: %w", err)
 		}
 
 		if jsonOutput {
@@ -225,7 +225,7 @@ var getCmd = &cobra.Command{
 
 		result, err := c.GetJSON[apikey.ApiKey](cmd.Context(), types.ApiKey(args[0]))
 		if err != nil {
-			return errors.WrapIf(err, "failed to get API key")
+			return fmt.Errorf("failed to get API key: %w", err)
 		}
 
 		if jsonOutput {
@@ -283,7 +283,7 @@ var updateCmd = &cobra.Command{
 		if cmd.Flags().Changed("expires-at") && apikeyUpdateExpiresAt != "" {
 			parsedTime, err := time.Parse(time.RFC3339, apikeyUpdateExpiresAt)
 			if err != nil {
-				return errors.WrapIf(err, "invalid expires-at format (use RFC3339)")
+				return fmt.Errorf("invalid expires-at format (use RFC3339): %w", err)
 			}
 			req.ExpiresAt = &parsedTime
 		}
@@ -299,7 +299,7 @@ var updateCmd = &cobra.Command{
 
 		result, err := c.PutJSON[apikey.ApiKey](cmd.Context(), types.ApiKey(args[0]), req)
 		if err != nil {
-			return errors.WrapIf(err, "failed to update API key")
+			return fmt.Errorf("failed to update API key: %w", err)
 		}
 
 		if jsonOutput {

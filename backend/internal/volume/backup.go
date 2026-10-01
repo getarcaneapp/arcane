@@ -6,6 +6,7 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json/v2"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -15,7 +16,6 @@ import (
 	"time"
 	"uuid"
 
-	"emperror.dev/errors"
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/backup"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
@@ -193,7 +193,7 @@ func (s *VolumeService) ensureBackupVolumeInternal(ctx context.Context) error {
 			Name: s.backupVolumeName,
 		})
 		if err != nil {
-			return errors.WrapIf(err, "failed to create backup volume")
+			return fmt.Errorf("failed to create backup volume: %w", err)
 		}
 	}
 	return nil
@@ -241,7 +241,7 @@ func (s *VolumeService) stopRunningContainersForBackupInternal(ctx context.Conte
 		candidate := containersByID[containerID]
 		if err := s.containerService.StopContainer(ctx, containerID, user); err != nil {
 			stillStopped, restartErr := s.startContainersAfterBackupInternal(context.WithoutCancel(ctx), dockerClient, stopped, user)
-			return stillStopped, errors.Combine(fmt.Errorf("failed to stop container %s before volume backup: %w", containerID, err), restartErr)
+			return stillStopped, errors.Join(fmt.Errorf("failed to stop container %s before volume backup: %w", containerID, err), restartErr)
 		}
 		stopped = append(stopped, candidate)
 	}
@@ -313,9 +313,9 @@ func (s *VolumeService) startContainersAfterBackupInternal(ctx context.Context, 
 			var restartErr error
 			for _, stopped := range remaining {
 				if lastErr := lastErrors[stopped.ID]; lastErr != nil {
-					restartErr = errors.Combine(restartErr, fmt.Errorf("failed to restart container %s after volume backup: %w", stopped.ID, lastErr))
+					restartErr = errors.Join(restartErr, fmt.Errorf("failed to restart container %s after volume backup: %w", stopped.ID, lastErr))
 				} else {
-					restartErr = errors.Combine(restartErr, fmt.Errorf("failed to restart container %s after volume backup: replacement did not appear within %s", stopped.ID, volumeBackupContainerRecoveryTimeout))
+					restartErr = errors.Join(restartErr, fmt.Errorf("failed to restart container %s after volume backup: replacement did not appear within %s", stopped.ID, volumeBackupContainerRecoveryTimeout))
 				}
 			}
 			return remaining, restartErr
@@ -443,13 +443,13 @@ func (s *VolumeService) sanitizeBackupPathInternal(input string) (string, error)
 	}
 	cleaned := path.Clean(trimmed)
 	if cleaned == "." || cleaned == "/" {
-		return "", errors.Errorf("invalid path: %s", input)
+		return "", fmt.Errorf("invalid path: %s", input)
 	}
 	if path.IsAbs(cleaned) {
 		cleaned = strings.TrimPrefix(cleaned, "/")
 	}
 	if cleaned == "" || cleaned == "." || cleaned == "/" || strings.HasPrefix(cleaned, "..") || strings.Contains(cleaned, "/../") {
-		return "", errors.Errorf("invalid path: %s", input)
+		return "", fmt.Errorf("invalid path: %s", input)
 	}
 	return cleaned, nil
 }
@@ -457,7 +457,7 @@ func (s *VolumeService) sanitizeBackupPathInternal(input string) (string, error)
 func (s *VolumeService) sanitizeBackupIDInternal(backupID string) (string, error) {
 	cleaned, err := s.sanitizeBackupPathInternal(backupID)
 	if err != nil {
-		return "", errors.WrapIf(err, "invalid backup id")
+		return "", fmt.Errorf("invalid backup id: %w", err)
 	}
 	if strings.Contains(cleaned, "/") {
 		return "", errors.New("invalid backup id: path separators not allowed")
@@ -727,7 +727,7 @@ func (s *VolumeService) completeBackupInternal(ctx context.Context, entry *Volum
 		entry.Status, entry.Error = VolumeBackupStatusSucceeded, ""
 	}
 	if saveErr := s.db.WithContext(context.WithoutCancel(ctx)).Save(entry).Error; saveErr != nil {
-		return errors.Combine(err, fmt.Errorf("failed to save volume backup result: %w", saveErr))
+		return errors.Join(err, fmt.Errorf("failed to save volume backup result: %w", saveErr))
 	}
 	if err == nil {
 		err = jobcontext.Progress(ctx, schedulertypes.TargetOutcome{ResourceType: "volume_backup", ID: entry.VolumeName, Status: schedulertypes.Succeeded})
@@ -757,7 +757,7 @@ func (s *VolumeService) executeBackupInternal(ctx context.Context, entry *Volume
 		defer func() {
 			if containersStopped {
 				_, restartErr := s.startContainersAfterBackupInternal(context.WithoutCancel(ctx), dockerClient, stopped, user)
-				err = errors.Combine(err, restartErr)
+				err = errors.Join(err, restartErr)
 			}
 		}()
 		if err != nil {
@@ -930,7 +930,8 @@ func (s *VolumeService) UploadBackup(ctx context.Context, backupID, s3Destinatio
 	if err := s.db.WithContext(ctx).Save(&entry).Error; err != nil {
 		return nil, fmt.Errorf("failed to save uploaded volume backup: %w", err)
 	}
-	return &entry, nil
+	return &entry,
+		nil
 }
 
 func (s *VolumeService) DeleteBackup(ctx context.Context, backupID string, user *common.User) error {
@@ -982,12 +983,12 @@ func (s *VolumeService) deleteRusticBackupsInternal(ctx context.Context, entries
 	}
 	deleteErr := s.forgetLocalSnapshotsInternal(ctx, dockerClient, localEntries)
 	for key, group := range remoteGroups {
-		deleteErr = errors.Combine(deleteErr, s.forgetRemoteSnapshotsInternal(ctx, dockerClient, key.destinationID, key.instanceID, group))
+		deleteErr = errors.Join(deleteErr, s.forgetRemoteSnapshotsInternal(ctx, dockerClient, key.destinationID, key.instanceID, group))
 	}
 	for _, entry := range entries {
 		if entry.LocalSnapshotID == "" && entry.RemoteSnapshotID == "" {
 			if err := s.db.WithContext(ctx).Delete(entry).Error; err != nil {
-				deleteErr = errors.Combine(deleteErr, fmt.Errorf("failed to delete volume backup record: %w", err))
+				deleteErr = errors.Join(deleteErr, fmt.Errorf("failed to delete volume backup record: %w", err))
 				continue
 			}
 			s.logBackupDeleteEventInternal(ctx, entry.VolumeName, entry.ID, user)
@@ -1002,7 +1003,7 @@ func (s *VolumeService) deleteRusticBackupsInternal(ctx context.Context, entries
 			entry.Destination = volumetypes.BackupDestinationS3
 		}
 		if saveErr := s.db.WithContext(ctx).Save(entry).Error; saveErr != nil {
-			deleteErr = errors.Combine(deleteErr, saveErr)
+			deleteErr = errors.Join(deleteErr, saveErr)
 		}
 	}
 	return deleteErr
@@ -1101,7 +1102,7 @@ func (s *VolumeService) RestoreBackup(ctx context.Context, volumeName, backupID 
 	defer func() {
 		if containersStopped {
 			_, restartErr := s.startContainersAfterBackupInternal(context.WithoutCancel(ctx), dockerClient, stopped, user)
-			err = errors.Combine(err, restartErr)
+			err = errors.Join(err, restartErr)
 		}
 	}()
 	if err != nil {
@@ -1339,7 +1340,7 @@ func (s *VolumeService) RestoreBackupFiles(ctx context.Context, volumeName, back
 	defer func() {
 		if containersStopped {
 			_, restartErr := s.startContainersAfterBackupInternal(context.WithoutCancel(ctx), dockerClient, stopped, user)
-			err = errors.Combine(err, restartErr)
+			err = errors.Join(err, restartErr)
 		}
 	}()
 	if err != nil {
@@ -1498,12 +1499,12 @@ func (s *VolumeService) createBackupTempContainerWithMountInternal(ctx context.C
 		HostConfig: hostConfig,
 	})
 	if err != nil {
-		return "", nil, errors.WrapIf(err, "failed to create backup temp container")
+		return "", nil, fmt.Errorf("failed to create backup temp container: %w", err)
 	}
 
 	if _, err := dockerClient.ContainerStart(ctx, resp.ID, client.ContainerStartOptions{}); err != nil {
 		_, _ = dockerClient.ContainerRemove(ctx, resp.ID, volumehelper.RemoveOptions())
-		return "", nil, errors.WrapIf(err, "failed to start backup temp container")
+		return "", nil, fmt.Errorf("failed to start backup temp container: %w", err)
 	}
 
 	cleanup := func() {
@@ -1602,13 +1603,13 @@ func (s *VolumeService) restoreArchiveBackupInternal(ctx context.Context, docker
 		HostConfig: hostConfig,
 	})
 	if err != nil {
-		return errors.WrapIf(err, "failed to create restore container")
+		return fmt.Errorf("failed to create restore container: %w", err)
 	}
 	defer func() {
 		_, _ = dockerClient.ContainerRemove(context.WithoutCancel(ctx), resp.ID, volumehelper.RemoveOptions())
 	}()
 	if _, err := dockerClient.ContainerStart(ctx, resp.ID, client.ContainerStartOptions{}); err != nil {
-		return errors.WrapIf(err, "failed to start restore container")
+		return fmt.Errorf("failed to start restore container: %w", err)
 	}
 	waitResult := dockerClient.ContainerWait(ctx, resp.ID, client.ContainerWaitOptions{Condition: container.WaitConditionNotRunning})
 	var waitBody container.WaitResponse
@@ -1620,7 +1621,7 @@ func (s *VolumeService) restoreArchiveBackupInternal(ctx context.Context, docker
 	case waitBody = <-waitResult.Result:
 	}
 	if waitBody.StatusCode != 0 {
-		return errors.Errorf("restore container exited with code %d (volume may be partially wiped)", waitBody.StatusCode)
+		return fmt.Errorf("restore container exited with code %d (volume may be partially wiped)", waitBody.StatusCode)
 	}
 	return nil
 }
@@ -1678,7 +1679,10 @@ func (s *VolumeService) restoreBackupFilesInContainerInternal(ctx context.Contex
 		args = append(args, "./"+cleaned)
 	}
 	_, stderr, err := s.execInContainerInternal(ctx, containerID, "", args)
-	return stderr, errors.WrapIf(err, "failed to restore files")
+	if err != nil {
+		return stderr, fmt.Errorf("failed to restore files: %w", err)
+	}
+	return stderr, nil
 }
 
 func (s *VolumeService) restoreArchiveBackupFilesInternal(ctx context.Context, dockerClient *client.Client, volumeName, backupID string, cleanedPaths []string) error {
@@ -1708,17 +1712,17 @@ func (s *VolumeService) restoreArchiveBackupFilesInternal(ctx context.Context, d
 		HostConfig: hostConfig,
 	})
 	if err != nil {
-		return errors.WrapIf(err, "failed to create restore container")
+		return fmt.Errorf("failed to create restore container: %w", err)
 	}
 	defer func() {
 		_, _ = dockerClient.ContainerRemove(context.WithoutCancel(ctx), resp.ID, volumehelper.RemoveOptions())
 	}()
 	if _, err := dockerClient.ContainerStart(ctx, resp.ID, client.ContainerStartOptions{}); err != nil {
-		return errors.WrapIf(err, "failed to start restore container")
+		return fmt.Errorf("failed to start restore container: %w", err)
 	}
 	stderr, err := s.restoreBackupFilesInContainerInternal(ctx, resp.ID, filename, cleanedPaths)
 	if err != nil {
-		return errors.WrapIf(err, "failed to restore files")
+		return fmt.Errorf("failed to restore files: %w", err)
 	}
 	if strings.TrimSpace(stderr) != "" {
 		slog.DebugContext(ctx, "volume service: restore files stderr", "backup_id", backupID, "stderr", strings.TrimSpace(stderr))
@@ -1731,11 +1735,11 @@ func (s *VolumeService) UploadAndRestore(ctx context.Context, volumeName string,
 
 	gzr, err := gzip.NewReader(archive)
 	if err != nil {
-		return errors.WrapIf(err, "invalid archive")
+		return fmt.Errorf("invalid archive: %w", err)
 	}
 	if _, err := tar.NewReader(gzr).Next(); err != nil {
 		_ = gzr.Close()
-		return errors.WrapIf(err, "invalid archive")
+		return fmt.Errorf("invalid archive: %w", err)
 	}
 	_ = gzr.Close()
 
@@ -1747,7 +1751,7 @@ func (s *VolumeService) UploadAndRestore(ctx context.Context, volumeName string,
 	})
 	preBackup, err := s.CreateBackup(ctx, volumeName, user, VolumeBackupTriggerSafety, volumetypes.CreateBackupRequest{Destination: volumetypes.BackupDestinationLocal})
 	if err != nil {
-		return errors.WrapIf(err, "failed to create pre-restore backup")
+		return fmt.Errorf("failed to create pre-restore backup: %w", err)
 	}
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
@@ -1764,26 +1768,26 @@ func (s *VolumeService) UploadAndRestore(ctx context.Context, volumeName string,
 	tmpDir := fmt.Sprintf("/volume/.restore_tmp_%d", time.Now().UnixNano())
 	_, stderr, err := s.execInContainerInternal(ctx, containerID, "", []string{"mkdir", "-p", tmpDir})
 	if err != nil {
-		return errors.WrapIf(err, "failed to create temp restore dir")
+		return fmt.Errorf("failed to create temp restore dir: %w", err)
 	}
 	if strings.TrimSpace(stderr) != "" {
 		slog.DebugContext(ctx, "volume service: restore temp dir stderr", "volume", volumeName, "stderr", strings.TrimSpace(stderr))
 	}
 
 	if _, err := archive.Seek(0, io.SeekStart); err != nil {
-		return errors.WrapIf(err, "failed to read uploaded archive")
+		return fmt.Errorf("failed to read uploaded archive: %w", err)
 	}
 	_, err = dockerClient.CopyToContainer(ctx, containerID, client.CopyToContainerOptions{
 		DestinationPath: tmpDir,
 		Content:         archive,
 	})
 	if err != nil {
-		return errors.WrapIf(err, "failed to restore from uploaded archive")
+		return fmt.Errorf("failed to restore from uploaded archive: %w", err)
 	}
 
 	_, stderr, err = s.execInContainerInternal(ctx, containerID, "", []string{"sh", "-c", fmt.Sprintf("test -n \"$(find %s -mindepth 1 -maxdepth 1 -print -quit)\"", tmpDir)})
 	if err != nil {
-		return errors.WrapIf(err, "uploaded archive appears empty or invalid")
+		return fmt.Errorf("uploaded archive appears empty or invalid: %w", err)
 	}
 	if strings.TrimSpace(stderr) != "" {
 		slog.DebugContext(ctx, "volume service: restore validate stderr", "volume", volumeName, "stderr", strings.TrimSpace(stderr))
@@ -1791,7 +1795,7 @@ func (s *VolumeService) UploadAndRestore(ctx context.Context, volumeName string,
 
 	_, stderr, err = s.execInContainerInternal(ctx, containerID, "", []string{"sh", "-c", "rm -rf /volume/* /volume/.[!.]* /volume/..?* 2>/dev/null || true"})
 	if err != nil {
-		return errors.WrapIf(err, "failed to clear volume before restore")
+		return fmt.Errorf("failed to clear volume before restore: %w", err)
 	}
 	if strings.TrimSpace(stderr) != "" {
 		slog.DebugContext(ctx, "volume service: restore clear stderr", "volume", volumeName, "stderr", strings.TrimSpace(stderr))
@@ -1800,7 +1804,7 @@ func (s *VolumeService) UploadAndRestore(ctx context.Context, volumeName string,
 	moveCmd := fmt.Sprintf("find %s -mindepth 1 -maxdepth 1 -exec mv -- {} /volume/ \\; && rmdir %s", tmpDir, tmpDir)
 	_, stderr, err = s.execInContainerInternal(ctx, containerID, "", []string{"sh", "-c", moveCmd})
 	if err != nil {
-		return errors.WrapIf(err, "failed to move restored files into place")
+		return fmt.Errorf("failed to move restored files into place: %w", err)
 	}
 	if strings.TrimSpace(stderr) != "" {
 		slog.DebugContext(ctx, "volume service: restore move stderr", "volume", volumeName, "stderr", strings.TrimSpace(stderr))
@@ -1823,7 +1827,8 @@ func (s *VolumeService) loadVolumeBackupPoliciesInternal(ctx context.Context, vo
 	if err := s.db.WithContext(ctx).Where("volume_name = ?", volumeName).Order("created_at ASC").Find(&policies).Error; err != nil {
 		return nil, fmt.Errorf("failed to load volume backup policies: %w", err)
 	}
-	return policies, nil
+	return policies,
+		nil
 }
 
 func (s *VolumeService) loadVolumeBackupPolicyInternal(ctx context.Context, volumeName, policyID string) (*VolumeBackupPolicy, error) {

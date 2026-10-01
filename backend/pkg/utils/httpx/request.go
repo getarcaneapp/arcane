@@ -7,8 +7,9 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
-	"emperror.dev/errors"
+	httpxtypes "github.com/getarcaneapp/arcane/types/v2/httpx"
 )
 
 type HeaderSetter interface {
@@ -95,13 +96,13 @@ func GetIntQueryParam(r *http.Request, name string, required bool) (int, error) 
 	q := r.URL.Query()
 	if !q.Has(name) || q.Get(name) == "" {
 		if required {
-			return 0, errors.Errorf("missing numeric query parameter %s", name)
+			return 0, fmt.Errorf("missing numeric query parameter %s", name)
 		}
 		return 0, nil
 	}
 	n, err := strconv.Atoi(q.Get(name))
 	if err != nil {
-		return 0, errors.WrapIff(err, "invalid numeric query parameter %s", name)
+		return 0, fmt.Errorf("invalid numeric query parameter %s: %w", name, err)
 	}
 	return n, nil
 }
@@ -135,4 +136,20 @@ func GetClientBaseURL(origin, forwardedHost, forwardedProto, host, appURL string
 
 	// 4. Fallback
 	return strings.TrimSuffix(appURL, "/")
+}
+
+// NewHTTPClient builds a client with its own transport and the supplied timeouts.
+func NewHTTPClient(options httpxtypes.ClientOptions) *http.Client {
+	transport := &http.Transport{
+		Proxy:                 http.ProxyFromEnvironment,
+		MaxIdleConns:          100,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   options.TLSHandshakeTimeout,
+		ExpectContinueTimeout: 1 * time.Second,
+		ForceAttemptHTTP2:     true,
+	}
+	return &http.Client{
+		Transport: transport,
+		Timeout:   options.Timeout,
+	}
 }

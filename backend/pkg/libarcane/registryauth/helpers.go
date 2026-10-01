@@ -1,11 +1,11 @@
 package registryauth
 
 import (
+	"fmt"
 	"maps"
 	"slices"
 	"strings"
 
-	"emperror.dev/errors"
 	ref "github.com/distribution/reference"
 	dockerauthconfig "github.com/moby/moby/api/pkg/authconfig"
 	dockerregistry "github.com/moby/moby/api/types/registry"
@@ -76,7 +76,7 @@ func EncodeAuthHeader(username, password, serverAddress string) (string, error) 
 		ServerAddress: serverAddress,
 	})
 	if err != nil {
-		return "", errors.WrapIf(err, "encode registry auth header")
+		return "", fmt.Errorf("encode registry auth header: %w", err)
 	}
 	return auth, nil
 }
@@ -84,7 +84,7 @@ func EncodeAuthHeader(username, password, serverAddress string) (string, error) 
 func DecodeAuthHeader(authEncoded string) (dockerregistry.AuthConfig, error) {
 	cfg, err := dockerauthconfig.Decode(strings.TrimSpace(authEncoded))
 	if err != nil {
-		return dockerregistry.AuthConfig{}, errors.WrapIf(err, "decode registry auth header")
+		return dockerregistry.AuthConfig{}, fmt.Errorf("decode registry auth header: %w", err)
 	}
 	if cfg == nil {
 		return dockerregistry.AuthConfig{}, nil

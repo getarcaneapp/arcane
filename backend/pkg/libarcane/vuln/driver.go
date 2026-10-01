@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -18,7 +19,6 @@ import (
 	"strings"
 	"time"
 
-	"emperror.dev/errors"
 	cerrdefs "github.com/containerd/errdefs"
 	dockerutils "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
@@ -78,12 +78,12 @@ func ResolveUnixSocketSource(
 			return strings.TrimSpace(hostPath), nil
 		}
 		if err != nil && (isRunningInDocker == nil || isRunningInDocker()) {
-			return "", errors.WrapIff(err, "failed to resolve socket path %q", socketPath)
+			return "", fmt.Errorf("failed to resolve socket path %q: %w", socketPath, err)
 		}
 	}
 
 	if isRunningInDocker != nil && isRunningInDocker() {
-		return "", errors.Errorf("failed to resolve socket path %q to a daemon-visible host path", socketPath)
+		return "", fmt.Errorf("failed to resolve socket path %q to a daemon-visible host path", socketPath)
 	}
 
 	return socketPath, nil
@@ -189,15 +189,15 @@ func CreateLogTempFile(prefix string) (*os.File, error) {
 	// per-user cache directory so Trivy scans can still run.
 	cacheDir, err := os.UserCacheDir()
 	if err != nil {
-		return nil, errors.WrapIff(err, "failed to create trivy temp file (primary: %s) and user cache dir unavailable", primaryErr.Error())
+		return nil, fmt.Errorf("failed to create trivy temp file (primary: %s) and user cache dir unavailable: %w", primaryErr.Error(), err)
 	}
 	fallbackDir := filepath.Join(cacheDir, "arcane", "trivy-tmp")
 	if err := os.MkdirAll(fallbackDir, 0o700); err != nil {
-		return nil, errors.WrapIff(err, "failed to create trivy fallback temp dir %s (primary: %s)", fallbackDir, primaryErr.Error())
+		return nil, fmt.Errorf("failed to create trivy fallback temp dir %s (primary: %s): %w", fallbackDir, primaryErr.Error(), err)
 	}
 	fallbackFile, err := os.CreateTemp(fallbackDir, prefix)
 	if err != nil {
-		return nil, errors.WrapIff(err, "failed to create trivy temp file in fallback dir %s (primary: %s)", fallbackDir, primaryErr.Error())
+		return nil, fmt.Errorf("failed to create trivy temp file in fallback dir %s (primary: %s): %w", fallbackDir, primaryErr.Error(), err)
 	}
 	return fallbackFile, nil
 }
@@ -491,7 +491,7 @@ func ReadOutputFromContainerFile(ctx context.Context, dockerClient *client.Clien
 
 	copyResult, err := dockerClient.CopyFromContainer(copyCtx, containerID, client.CopyFromContainerOptions{SourcePath: outputPath})
 	if err != nil {
-		return nil, errors.WrapIf(err, "copy trivy output file")
+		return nil, fmt.Errorf("copy trivy output file: %w", err)
 	}
 	archiveReader := copyResult.Content
 	defer func() {
@@ -507,7 +507,7 @@ func ReadOutputFromContainerFile(ctx context.Context, dockerClient *client.Clien
 
 	rawOutput, err := extractFileFromContainerArchiveInternal(archiveReader)
 	if err != nil {
-		return nil, errors.WrapIf(err, "extract trivy output file")
+		return nil, fmt.Errorf("extract trivy output file: %w", err)
 	}
 
 	if len(bytes.TrimSpace(rawOutput)) == 0 {
@@ -561,7 +561,7 @@ func extractFileFromContainerArchiveInternal(archiveReader io.Reader) ([]byte, e
 			break
 		}
 		if err != nil {
-			return nil, errors.WrapIf(err, "read tar header")
+			return nil, fmt.Errorf("read tar header: %w", err)
 		}
 
 		if header == nil || header.Typeflag == tar.TypeDir {
@@ -574,7 +574,7 @@ func extractFileFromContainerArchiveInternal(archiveReader io.Reader) ([]byte, e
 
 		data, err := io.ReadAll(tarReader)
 		if err != nil {
-			return nil, errors.WrapIf(err, "read tar file content")
+			return nil, fmt.Errorf("read tar file content: %w", err)
 		}
 
 		return data, nil
@@ -589,12 +589,12 @@ func DecodeReportFromFile(file *os.File) (*vulnerability.TrivyReport, error) {
 	}
 
 	if _, err := file.Seek(0, io.SeekStart); err != nil {
-		return nil, errors.WrapIf(err, "failed to seek trivy output file")
+		return nil, fmt.Errorf("failed to seek trivy output file: %w", err)
 	}
 
 	rawOutput, err := io.ReadAll(file)
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to read trivy output file")
+		return nil, fmt.Errorf("failed to read trivy output file: %w", err)
 	}
 
 	return DecodeReportFromBytes(rawOutput)
@@ -735,16 +735,16 @@ func FormatExitError(exitCode int64, errMsg, imageName string) error {
 
 	if exitCode == 137 {
 		if errMsg == "" || errMsg == fmt.Sprintf("exit status %d", exitCode) {
-			return errors.Errorf("trivy scan failed: process killed with exit status 137 (likely out of memory while scanning %s)", imageName)
+			return fmt.Errorf("trivy scan failed: process killed with exit status 137 (likely out of memory while scanning %s)", imageName)
 		}
-		return errors.Errorf("trivy scan failed: %s (process killed with exit status 137; likely out of memory)", errMsg)
+		return fmt.Errorf("trivy scan failed: %s (process killed with exit status 137; likely out of memory)", errMsg)
 	}
 
 	if strings.Contains(strings.ToLower(errMsg), "deadline exceeded") {
-		return errors.Errorf("trivy scan timed out for %s (increase TRIVY_SCAN_TIMEOUT or trivyScanTimeout setting)", imageName)
+		return fmt.Errorf("trivy scan timed out for %s (increase TRIVY_SCAN_TIMEOUT or trivyScanTimeout setting)", imageName)
 	}
 
-	return errors.Errorf("trivy scan failed: %s", errMsg)
+	return fmt.Errorf("trivy scan failed: %s", errMsg)
 }
 
 func AwaitContainerWaitResponse(

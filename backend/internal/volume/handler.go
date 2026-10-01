@@ -3,6 +3,7 @@ package volume
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -11,7 +12,6 @@ import (
 	"strconv"
 	"strings"
 
-	"emperror.dev/errors"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
@@ -600,7 +600,7 @@ func (h *VolumeHandler) ListVolumes(ctx context.Context, input *ListVolumesInput
 
 	volumes, paginationResp, counts, err := h.volumeService.ListVolumesPaginated(ctx, params, input.IncludeInternal)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to list volumes").Error())
+		return nil, huma.Error500InternalServerError("Failed to list volumes: " + err.Error())
 	}
 
 	if volumes == nil {
@@ -625,7 +625,7 @@ func (h *VolumeHandler) ListVolumes(ctx context.Context, input *ListVolumesInput
 func (h *VolumeHandler) GetVolume(ctx context.Context, input *GetVolumeInput) (*handlerutil.Out[*volumetypes.Volume], error) {
 	vol, err := h.volumeService.GetVolumeByName(ctx, input.VolumeName)
 	if err != nil {
-		return nil, huma.Error404NotFound(errors.WithMessage(err, "Volume not found").Error())
+		return nil, huma.Error404NotFound("Volume not found: " + err.Error())
 	}
 
 	return &handlerutil.Out[*volumetypes.Volume]{
@@ -672,7 +672,7 @@ func (h *VolumeHandler) CreateVolume(ctx context.Context, input *CreateVolumeInp
 		return createErr
 	})
 	if err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to create volume").Error())
+		return nil, huma.Error500InternalServerError("Failed to create volume: " + err.Error())
 	}
 	response.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
 
@@ -739,7 +739,7 @@ func (h *VolumeHandler) RenameVolume(ctx context.Context, input *RenameVolumeInp
 		case errors.Is(err, common.ErrNotFound):
 			return nil, huma.Error404NotFound(err.Error())
 		default:
-			return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to rename volume").Error())
+			return nil, huma.Error500InternalServerError("Failed to rename volume: " + err.Error())
 		}
 	}
 	response.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
@@ -773,7 +773,7 @@ func (h *VolumeHandler) RemoveVolume(ctx context.Context, input *RemoveVolumeInp
 		return h.volumeService.DeleteVolume(runtimeCtx, input.VolumeName, input.Force, *user)
 	})
 	if err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to delete volume").Error())
+		return nil, huma.Error500InternalServerError("Failed to delete volume: " + err.Error())
 	}
 
 	return &handlerutil.Out[base.MessageResponse]{
@@ -805,7 +805,7 @@ func (h *VolumeHandler) PruneVolumes(ctx context.Context, input *PruneVolumesInp
 		return pruneErr
 	})
 	if err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to prune volumes").Error())
+		return nil, huma.Error500InternalServerError("Failed to prune volumes: " + err.Error())
 	}
 
 	return &handlerutil.Out[VolumePruneReportData]{
@@ -824,7 +824,7 @@ func (h *VolumeHandler) PruneVolumes(ctx context.Context, input *PruneVolumesInp
 func (h *VolumeHandler) GetVolumeUsage(ctx context.Context, input *GetVolumeUsageInput) (*handlerutil.Out[VolumeUsageResponse], error) {
 	inUse, containers, err := h.volumeService.GetVolumeUsage(ctx, input.VolumeName)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to get volume usage").Error())
+		return nil, huma.Error500InternalServerError("Failed to get volume usage: " + err.Error())
 	}
 
 	return &handlerutil.Out[VolumeUsageResponse]{
@@ -842,7 +842,7 @@ func (h *VolumeHandler) GetVolumeUsage(ctx context.Context, input *GetVolumeUsag
 func (h *VolumeHandler) GetVolumeUsageCounts(ctx context.Context, input *GetVolumeUsageCountsInput) (*handlerutil.Out[VolumeUsageCountsData], error) {
 	_, _, counts, err := h.volumeService.ListVolumesPaginated(ctx, pagination.QueryParams{}, input.IncludeInternal)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to get volume counts").Error())
+		return nil, huma.Error500InternalServerError("Failed to get volume counts: " + err.Error())
 	}
 
 	return &handlerutil.Out[VolumeUsageCountsData]{
@@ -1159,7 +1159,7 @@ func (h *VolumeHandler) UploadAndRestore(ctx context.Context, input *UploadAndRe
 		if httpErr := upload.SessionHTTPError(err); httpErr != nil {
 			return nil, httpErr
 		}
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to open upload").Error())
+		return nil, huma.Error500InternalServerError("Failed to open upload: " + err.Error())
 	}
 	defer cleanup()
 

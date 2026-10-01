@@ -2,6 +2,7 @@ package projects
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -12,7 +13,6 @@ import (
 	"strings"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/compose-spec/compose-go/v2/cli"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"go.getarcane.app/acfs"
@@ -67,13 +67,13 @@ func detectExistingComposeFileInternal(ctx context.Context, projectsRoot, dir st
 // projectsRoot is the allowed root directory to prevent path traversal attacks
 func WriteComposeFile(ctx context.Context, projectsRoot, dirPath, content string) error {
 	if _, err := acfs.LogicalPath(projectsRoot, dirPath); err != nil {
-		return errors.WrapIf(err, "refusing to write compose file: path outside projects root")
+		return fmt.Errorf("refusing to write compose file: path outside projects root: %w", err)
 	}
 
 	// The project directory is the confinement root for the write itself, so it
 	// has to exist before acfs can open it.
 	if err := os.MkdirAll(dirPath, utils.DirPerm); err != nil {
-		return errors.WrapIf(err, "failed to create directory")
+		return fmt.Errorf("failed to create directory: %w", err)
 	}
 
 	composeFileName := DefaultComposeFileName
@@ -86,7 +86,7 @@ func WriteComposeFile(ctx context.Context, projectsRoot, dirPath, content string
 	}
 
 	if err := acfs.Write(ctx, dirPath, "/"+composeFileName, []byte(content), acfs.WriteOptions{Mode: mode, InPlace: true}); err != nil {
-		return errors.WrapIf(err, "failed to write compose file")
+		return fmt.Errorf("failed to write compose file: %w", err)
 	}
 
 	return nil
@@ -94,21 +94,21 @@ func WriteComposeFile(ctx context.Context, projectsRoot, dirPath, content string
 
 func WriteProjectFile(ctx context.Context, projectsRoot, dirPath, fileName, content string) error {
 	if _, err := acfs.LogicalPath(projectsRoot, dirPath); err != nil {
-		return errors.WrapIf(err, "refusing to write project file: path outside projects root")
+		return fmt.Errorf("refusing to write project file: path outside projects root: %w", err)
 	}
 
 	if fileName == "" || filepath.Base(fileName) != fileName || strings.Contains(fileName, string(filepath.Separator)) {
-		return errors.Errorf("invalid project file name %q", fileName)
+		return fmt.Errorf("invalid project file name %q", fileName)
 	}
 
 	if err := os.MkdirAll(dirPath, utils.DirPerm); err != nil {
-		return errors.WrapIf(err, "failed to create directory")
+		return fmt.Errorf("failed to create directory: %w", err)
 	}
 
 	if fileName == EffectiveEnvFileName {
 		written, err := writeEnvThroughSymlinkInternal(filepath.Join(dirPath, fileName), content)
 		if err != nil {
-			return errors.WrapIff(err, "failed to write project file %s", fileName)
+			return fmt.Errorf("failed to write project file %s: %w", fileName, err)
 		}
 		if written {
 			return nil
@@ -121,9 +121,9 @@ func WriteProjectFile(ctx context.Context, projectsRoot, dirPath, fileName, cont
 	case statErr == nil && entry.IsSymlink:
 		// Only .env is written through a symlink (handled above); every other
 		// project file refuses one rather than clobbering an unknown target.
-		return errors.Errorf("refusing to write project file %s: destination is a symlink", fileName)
+		return fmt.Errorf("refusing to write project file %s: destination is a symlink", fileName)
 	case statErr != nil && !errors.Is(statErr, fs.ErrNotExist):
-		return errors.WrapIff(statErr, "failed to inspect project file %s", fileName)
+		return fmt.Errorf("failed to inspect project file %s: %w", fileName, statErr)
 	}
 
 	mode := utils.FilePerm
@@ -133,13 +133,13 @@ func WriteProjectFile(ctx context.Context, projectsRoot, dirPath, fileName, cont
 			return nil
 		}
 		if readErr != nil && !errors.Is(readErr, fs.ErrNotExist) {
-			return errors.WrapIff(readErr, "failed to read project file %s", fileName)
+			return fmt.Errorf("failed to read project file %s: %w", fileName, readErr)
 		}
 		mode = os.FileMode(entry.UnixMode).Perm()
 	}
 
 	if err := acfs.Write(ctx, dirPath, logicalPath, []byte(content), acfs.WriteOptions{Mode: mode, InPlace: true}); err != nil {
-		return errors.WrapIff(err, "failed to write project file %s", fileName)
+		return fmt.Errorf("failed to write project file %s: %w", fileName, err)
 	}
 
 	return nil
@@ -155,7 +155,7 @@ func WriteProjectFile(ctx context.Context, projectsRoot, dirPath, fileName, cont
 func writeEnvThroughSymlinkInternal(envPath, content string) (bool, error) {
 	resolvedPath, resolvedPerm, isSymlink, err := resolveEnvFileWriteTargetInternal(envPath)
 	if err != nil {
-		return false, errors.WrapIf(err, "resolve write target")
+		return false, fmt.Errorf("resolve write target: %w", err)
 	}
 	if !isSymlink {
 		return false, nil
@@ -166,7 +166,7 @@ func writeEnvThroughSymlinkInternal(envPath, content string) (bool, error) {
 		return true, nil
 	}
 	if readErr != nil && !errors.Is(readErr, os.ErrNotExist) {
-		return true, errors.WrapIf(readErr, "read existing content")
+		return true, fmt.Errorf("read existing content: %w", readErr)
 	}
 	return true, atomic.WriteFile(resolvedPath, []byte(content), resolvedPerm)
 }
@@ -177,7 +177,7 @@ func resolveEnvFileWriteTargetInternal(envPath string) (writePath string, perm o
 		if errors.Is(err, os.ErrNotExist) {
 			return envPath, utils.FilePerm, false, nil
 		}
-		return "", 0, false, errors.WrapIf(err, "inspect env file")
+		return "", 0, false, fmt.Errorf("inspect env file: %w", err)
 	}
 	if info.Mode()&os.ModeSymlink == 0 {
 		return envPath, utils.FilePerm, false, nil
@@ -185,14 +185,14 @@ func resolveEnvFileWriteTargetInternal(envPath string) (writePath string, perm o
 
 	resolvedPath, err := filepath.EvalSymlinks(envPath)
 	if err != nil {
-		return "", 0, false, errors.WrapIf(err, "resolve env file symlink")
+		return "", 0, false, fmt.Errorf("resolve env file symlink: %w", err)
 	}
 	targetInfo, err := os.Stat(resolvedPath)
 	if err != nil {
-		return "", 0, false, errors.WrapIf(err, "inspect env file symlink target")
+		return "", 0, false, fmt.Errorf("inspect env file symlink target: %w", err)
 	}
 	if !targetInfo.Mode().IsRegular() {
-		return "", 0, false, errors.Errorf("env file symlink target is not a regular file: %s", resolvedPath)
+		return "", 0, false, fmt.Errorf("env file symlink target is not a regular file: %s", resolvedPath)
 	}
 
 	return resolvedPath, targetInfo.Mode().Perm(), true, nil
@@ -200,15 +200,15 @@ func resolveEnvFileWriteTargetInternal(envPath string) (writePath string, perm o
 
 func RemoveProjectFile(ctx context.Context, projectsRoot, dirPath, fileName string) error {
 	if _, err := acfs.LogicalPath(projectsRoot, dirPath); err != nil {
-		return errors.WrapIf(err, "refusing to remove project file: path outside projects root")
+		return fmt.Errorf("refusing to remove project file: path outside projects root: %w", err)
 	}
 
 	if fileName == "" || filepath.Base(fileName) != fileName || strings.Contains(fileName, string(filepath.Separator)) {
-		return errors.Errorf("invalid project file name %q", fileName)
+		return fmt.Errorf("invalid project file name %q", fileName)
 	}
 
 	if err := acfs.Remove(ctx, dirPath, "/"+fileName); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return errors.WrapIff(err, "failed to remove project file %s", fileName)
+		return fmt.Errorf("failed to remove project file %s: %w", fileName, err)
 	}
 
 	return nil
@@ -216,12 +216,12 @@ func RemoveProjectFile(ctx context.Context, projectsRoot, dirPath, fileName stri
 
 func EnsureEnvFile(ctx context.Context, projectsRoot, dirPath string) error {
 	if _, err := acfs.LogicalPath(projectsRoot, dirPath); err != nil {
-		return errors.WrapIf(err, "refusing to create env file: path outside projects root")
+		return fmt.Errorf("refusing to create env file: path outside projects root: %w", err)
 	}
 
 	exists, err := acfs.Exists(ctx, dirPath, "/.env")
 	if err != nil {
-		return errors.WrapIf(err, "failed to stat env file")
+		return fmt.Errorf("failed to stat env file: %w", err)
 	}
 	if exists {
 		return nil
@@ -259,11 +259,11 @@ func WriteProjectFiles(ctx context.Context, projectsRoot, dirPath, composeConten
 func WriteTemplateFile(filePath, content string) error {
 	dir := filepath.Dir(filePath)
 	if err := os.MkdirAll(dir, utils.DirPerm); err != nil {
-		return errors.WrapIf(err, "failed to create template directory")
+		return fmt.Errorf("failed to create template directory: %w", err)
 	}
 
 	if err := atomic.WriteFile(filePath, []byte(content), utils.FilePerm); err != nil {
-		return errors.WrapIf(err, "failed to write template file")
+		return fmt.Errorf("failed to write template file: %w", err)
 	}
 
 	return nil
@@ -273,11 +273,11 @@ func WriteTemplateFile(filePath, content string) error {
 func WriteFileWithPerm(filePath, content string, perm os.FileMode) error {
 	dir := filepath.Dir(filePath)
 	if err := os.MkdirAll(dir, utils.DirPerm); err != nil {
-		return errors.WrapIf(err, "failed to create directory")
+		return fmt.Errorf("failed to create directory: %w", err)
 	}
 
 	if err := atomic.WriteFile(filePath, []byte(content), perm); err != nil {
-		return errors.WrapIf(err, "failed to write file")
+		return fmt.Errorf("failed to write file: %w", err)
 	}
 
 	return nil
@@ -312,7 +312,7 @@ func RollbackRenamedProjectDirectory(ctx context.Context, oldPath, newPath strin
 			renameErr = os.Rename(newPath, oldPath)
 		}
 		if renameErr != nil {
-			return false, errors.WrapIf(renameErr, "rollback project directory rename")
+			return false, fmt.Errorf("rollback project directory rename: %w", renameErr)
 		}
 	case !oldExists:
 		pathsMissing = true
@@ -328,16 +328,16 @@ func relocateRenameConflictDirectoryInternal(ctx context.Context, path string) (
 	for attempt := range 10 {
 		conflictName := fmt.Sprintf(".%s.rename-conflict-%d-%d", base, now, attempt)
 		if exists, err := acfs.Exists(ctx, parent, "/"+conflictName); err != nil {
-			return "", errors.WrapIf(err, "check conflict path")
+			return "", fmt.Errorf("check conflict path: %w", err)
 		} else if exists {
 			continue
 		}
 		if err := acfs.Rename(ctx, parent, "/"+base, "/"+conflictName); err != nil {
-			return "", errors.WrapIf(err, "relocate project rename target path")
+			return "", fmt.Errorf("relocate project rename target path: %w", err)
 		}
 		return filepath.Join(parent, conflictName), nil
 	}
-	return "", errors.Errorf("relocate project rename target path: no available conflict path for %s", path)
+	return "", fmt.Errorf("relocate project rename target path: no available conflict path for %s", path)
 }
 
 // SyncFile represents a file to be written during directory sync
@@ -354,13 +354,13 @@ type SyncFile struct {
 // subdirectories as needed. Returns the list of written file paths.
 func WriteSyncedDirectory(ctx context.Context, projectsRoot, projectPath string, files []SyncFile) ([]string, error) {
 	if _, err := acfs.LogicalPath(projectsRoot, projectPath); err != nil {
-		return nil, errors.WrapIf(err, "project path is outside projects root")
+		return nil, fmt.Errorf("project path is outside projects root: %w", err)
 	}
 
 	// The project directory is the confinement root for every write below, so
 	// it has to exist before acfs can open it.
 	if err := os.MkdirAll(projectPath, utils.DirPerm); err != nil {
-		return nil, errors.WrapIf(err, "failed to create project directory")
+		return nil, fmt.Errorf("failed to create project directory: %w", err)
 	}
 
 	writtenPaths := make([]string, 0, len(files))
@@ -368,28 +368,28 @@ func WriteSyncedDirectory(ctx context.Context, projectsRoot, projectPath string,
 	for _, file := range files {
 		logicalPath, err := acfs.LogicalPath(projectPath, filepath.Join(projectPath, file.RelativePath))
 		if err != nil {
-			return nil, errors.Errorf("file path %s would escape project directory", file.RelativePath)
+			return nil, fmt.Errorf("file path %s would escape project directory", file.RelativePath)
 		}
 
 		if err := acfs.MkdirAll(ctx, projectPath, path.Dir(logicalPath), utils.DirPerm); err != nil {
-			return nil, errors.WrapIff(err, "failed to create directory for %s", file.RelativePath)
+			return nil, fmt.Errorf("failed to create directory for %s: %w", file.RelativePath, err)
 		}
 
 		entry, statErr := acfs.Stat(ctx, projectPath, logicalPath, false)
 		switch {
 		case statErr == nil && entry.IsDirectory:
 			if err := acfs.RemoveAll(ctx, projectPath, logicalPath); err != nil {
-				return nil, errors.WrapIff(err, "failed to replace directory at %s", file.RelativePath)
+				return nil, fmt.Errorf("failed to replace directory at %s: %w", file.RelativePath, err)
 			}
 		case statErr != nil && !errors.Is(statErr, fs.ErrNotExist):
-			return nil, errors.WrapIff(statErr, "failed to inspect target path for %s", file.RelativePath)
+			return nil, fmt.Errorf("failed to inspect target path for %s: %w", file.RelativePath, statErr)
 		}
 
 		// Write the file. Honor the source's executable bit so scripts arrive
 		// runnable for lifecycle hooks and similar consumers.
 		perm := kit.Ternary(file.Executable, 0o755, utils.FilePerm)
 		if err := acfs.Write(ctx, projectPath, logicalPath, file.Content, acfs.WriteOptions{Mode: perm, InPlace: true}); err != nil {
-			return nil, errors.WrapIff(err, "failed to write file %s", file.RelativePath)
+			return nil, fmt.Errorf("failed to write file %s: %w", file.RelativePath, err)
 		}
 
 		writtenPaths = append(writtenPaths, file.RelativePath)
@@ -404,7 +404,7 @@ func WriteSyncedDirectory(ctx context.Context, projectsRoot, projectPath string,
 // This is a best-effort operation - errors are logged but don't cause failure.
 func CleanupRemovedFiles(ctx context.Context, projectsRoot, projectPath string, oldFiles, newFiles []string) error {
 	if _, err := acfs.LogicalPath(projectsRoot, projectPath); err != nil {
-		return errors.WrapIf(err, "project path is outside projects root")
+		return fmt.Errorf("project path is outside projects root: %w", err)
 	}
 
 	// Build set of new files for quick lookup

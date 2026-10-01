@@ -4,12 +4,11 @@ import (
 	"bytes"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
-
-	"emperror.dev/errors"
 )
 
 const maxErrorBodyBytes = 4096
@@ -52,7 +51,7 @@ func DecodeJSON[T any](resp *http.Response, out *T) error {
 		return errors.New("nil decode target")
 	}
 	if err := json.UnmarshalRead(resp.Body, out); err != nil {
-		return errors.WrapIf(err, "failed to parse response")
+		return fmt.Errorf("failed to parse response: %w", err)
 	}
 	return nil
 }
@@ -68,7 +67,7 @@ func ReadJSONBody(resp *http.Response) ([]byte, error) {
 	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to read response")
+		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 	return body, nil
 }
@@ -89,7 +88,7 @@ func PrintRawJSON(body []byte) error {
 func PrintJSON(v any) error {
 	b, err := json.Marshal(v, jsontext.WithIndent("  "))
 	if err != nil {
-		return errors.WrapIf(err, "failed to marshal JSON")
+		return fmt.Errorf("failed to marshal JSON: %w", err)
 	}
 	fmt.Println(string(b))
 	return nil

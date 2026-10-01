@@ -2,12 +2,12 @@ package docker
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"path"
 	"slices"
 	"strings"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
@@ -228,7 +228,7 @@ func PreserveVolumeMounts(binds []string, mounts []mount.Mount, mountPoints []co
 		destination := path.Clean(mp.Destination)
 		volumeName := strings.TrimSpace(mp.Name)
 		if volumeName == "" {
-			return nil, nil, errors.Errorf("volume mounted at %s has no volume name", destination)
+			return nil, nil, fmt.Errorf("volume mounted at %s has no volume name", destination)
 		}
 
 		mountIndex := slices.IndexFunc(mounts, func(m mount.Mount) bool {
@@ -260,7 +260,7 @@ func PreserveVolumeMounts(binds []string, mounts []mount.Mount, mountPoints []co
 
 		explicit := MountForDestination(mountPoints, mp.Destination, mp.Destination)
 		if explicit == nil {
-			return nil, nil, errors.Errorf("cannot build explicit mount for volume %s at %s", volumeName, destination)
+			return nil, nil, fmt.Errorf("cannot build explicit mount for volume %s at %s", volumeName, destination)
 		}
 		mounts = append(mounts, *explicit)
 		slog.Info("Preserving image-declared volume", "destination", destination, "volume", volumeName)

@@ -2,12 +2,12 @@ package job
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/url"
 	"sort"
 	"strconv"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
 	st "github.com/getarcaneapp/arcane/types/v2/scheduler"

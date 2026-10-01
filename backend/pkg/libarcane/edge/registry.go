@@ -2,11 +2,11 @@ package edge
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"sync"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/concurrency"
 	"github.com/samber/mo"
 )
@@ -269,7 +269,7 @@ func (r *TunnelRegistry) Stop(ctx context.Context) error {
 	}
 	for _, tunnel := range removed {
 		if tunnel != nil {
-			err = errors.Combine(err, tunnel.CloseWithReason("edge tunnel registry stopped"))
+			err = errors.Join(err, tunnel.CloseWithReason("edge tunnel registry stopped"))
 		}
 	}
 	return err

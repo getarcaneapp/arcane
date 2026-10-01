@@ -2,9 +2,9 @@ package webhook
 
 import (
 	"context"
+	"errors"
 	"net/http"
 
-	"emperror.dev/errors"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"

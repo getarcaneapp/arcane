@@ -3,6 +3,7 @@ package system
 import (
 	"context"
 	"encoding/json/v2"
+	"errors"
 	"fmt"
 	"regexp"
 	"slices"
@@ -10,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/containerd/errdefs"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"

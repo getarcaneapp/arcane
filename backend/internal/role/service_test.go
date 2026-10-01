@@ -2,12 +2,12 @@ package role
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"slices"
 	"testing"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/session"
@@ -383,7 +383,7 @@ func TestResolveExecutionPermissions(t *testing.T) {
 		user := createTestUser(t, db, "owner", "owner")
 		grantGlobalAdmin(t, service, user.ID)
 		environmentID := "env-1"
-		key := testApiKeyRow{BaseModel: database.BaseModel{ID: "personal"}, Kind: "personal", UserID: &user.ID, EnvironmentID: &environmentID}
+		key := testApiKeyRow{ID: "personal", Kind: "personal", UserID: &user.ID, EnvironmentID: &environmentID}
 		require.NoError(t, db.Create(&key).Error)
 		permissions, err := service.ResolveExecutionPermissions(t.Context(), user.ID, key.ID)
 		require.NoError(t, err)
@@ -403,7 +403,7 @@ func TestResolveExecutionPermissions(t *testing.T) {
 		db, service := setupUserAndRoleServices(t)
 		user := createTestUser(t, db, "owner", "owner")
 		environmentID := "env-1"
-		key := testApiKeyRow{BaseModel: database.BaseModel{ID: "scoped"}, Kind: "scoped", UserID: &user.ID, EnvironmentID: &environmentID}
+		key := testApiKeyRow{ID: "scoped", Kind: "scoped", UserID: &user.ID, EnvironmentID: &environmentID}
 		require.NoError(t, db.Create(&key).Error)
 		require.NoError(t, service.SetApiKeyPermissions(t.Context(), key.ID, []ApiKeyPermission{{Permission: authz.PermJobsManage}}))
 		cached, err := service.ResolveApiKeyPermissions(t.Context(), key.ID)
@@ -427,11 +427,11 @@ func TestResolveExecutionPermissions(t *testing.T) {
 		emptyEnvironment := ""
 		expired := time.Now().Add(-time.Minute)
 		for _, key := range []testApiKeyRow{
-			{BaseModel: database.BaseModel{ID: "expired"}, Kind: "personal", UserID: &user.ID, ExpiresAt: &expired},
-			{BaseModel: database.BaseModel{ID: "other-owner"}, Kind: "personal", UserID: &otherOwner},
-			{BaseModel: database.BaseModel{ID: "ownerless"}, Kind: "scoped"},
-			{BaseModel: database.BaseModel{ID: "invalid-kind"}, Kind: "unknown", UserID: &user.ID},
-			{BaseModel: database.BaseModel{ID: "invalid-scope"}, Kind: "personal", UserID: &user.ID, EnvironmentID: &emptyEnvironment},
+			{ID: "expired", Kind: "personal", UserID: &user.ID, ExpiresAt: &expired},
+			{ID: "other-owner", Kind: "personal", UserID: &otherOwner},
+			{ID: "ownerless", Kind: "scoped"},
+			{ID: "invalid-kind", Kind: "unknown", UserID: &user.ID},
+			{ID: "invalid-scope", Kind: "personal", UserID: &user.ID, EnvironmentID: &emptyEnvironment},
 		} {
 			require.NoError(t, db.Create(&key).Error)
 			_, err := service.ResolveExecutionPermissions(t.Context(), user.ID, key.ID)

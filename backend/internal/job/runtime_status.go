@@ -2,11 +2,11 @@ package job
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"strings"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/types/v2/jobschedule"
 	st "github.com/getarcaneapp/arcane/types/v2/scheduler"
 )
@@ -16,7 +16,7 @@ func (s *JobService) addRuntimeStatusInternal(ctx context.Context, environmentID
 	if s.runs != nil {
 		records, err := s.runs.Records(ctx)
 		if err != nil {
-			return errors.WrapIf(err, "load durable job status")
+			return fmt.Errorf("load durable job status: %w", err)
 		}
 		for _, record := range records {
 			if record.EnvironmentID == environmentID {

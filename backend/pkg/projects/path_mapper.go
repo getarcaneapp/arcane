@@ -3,12 +3,12 @@ package projects
 import (
 	"cmp"
 	"context"
+	"fmt"
 	"log/slog"
 	"path"
 	"path/filepath"
 	"strings"
 
-	"emperror.dev/errors"
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
@@ -184,7 +184,7 @@ func (pm *PathMapper) ContainerToHost(containerPath string) (string, bool, error
 	// Calculate relative path
 	relPath, err := filepath.Rel(pm.containerPrefix, cleaned)
 	if err != nil {
-		return "", false, errors.WrapIf(err, "failed to calculate relative path")
+		return "", false, fmt.Errorf("failed to calculate relative path: %w", err)
 	}
 
 	// Only translate paths within container prefix
@@ -225,7 +225,7 @@ func (pm *PathMapper) TranslateVolumeSources(project *composetypes.Project, tran
 
 			hostPath, _, err := pm.ContainerToHost(volume.Source)
 			if err != nil {
-				return errors.WrapIff(err, "failed to translate volume source %q", volume.Source)
+				return fmt.Errorf("failed to translate volume source %q: %w", volume.Source, err)
 			}
 
 			volume.Source = hostPath
@@ -243,7 +243,7 @@ func (pm *PathMapper) TranslateVolumeSources(project *composetypes.Project, tran
 		if secret.File != "" {
 			hostPath, _, err := pm.ContainerToHost(secret.File)
 			if err != nil {
-				return errors.WrapIff(err, "failed to translate secret file %q", secret.File)
+				return fmt.Errorf("failed to translate secret file %q: %w", secret.File, err)
 			}
 			secret.File = hostPath
 			project.Secrets[name] = secret
@@ -255,7 +255,7 @@ func (pm *PathMapper) TranslateVolumeSources(project *composetypes.Project, tran
 		if config.File != "" {
 			hostPath, _, err := pm.ContainerToHost(config.File)
 			if err != nil {
-				return errors.WrapIff(err, "failed to translate config file %q", config.File)
+				return fmt.Errorf("failed to translate config file %q: %w", config.File, err)
 			}
 			config.File = hostPath
 			project.Configs[name] = config
@@ -275,7 +275,7 @@ func (pm *PathMapper) TranslateVolumeSources(project *composetypes.Project, tran
 
 		hostPath, _, err := pm.ContainerToHost(device)
 		if err != nil {
-			return errors.WrapIff(err, "failed to translate volume device %q", device)
+			return fmt.Errorf("failed to translate volume device %q: %w", device, err)
 		}
 		volume.DriverOpts["device"] = hostPath
 		project.Volumes[name] = volume

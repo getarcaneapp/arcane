@@ -9,6 +9,8 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json/v2"
+	"errors"
+	"fmt"
 	"log/slog"
 	"net/url"
 	"strings"
@@ -17,7 +19,6 @@ import (
 	"unicode/utf8"
 	"uuid"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
@@ -52,20 +53,20 @@ const (
 )
 
 var (
-	ErrPasskeyServiceUnavailable = errors.Sentinel("passkey service is unavailable")
-	ErrPasskeyCeremony           = errors.Sentinel("invalid or expired passkey ceremony")
-	ErrPasskeyTransaction        = errors.Sentinel("invalid or expired authentication transaction")
-	ErrPasskeyResponse           = errors.Sentinel("invalid passkey response")
-	ErrPasskeyNotFound           = errors.Sentinel("passkey not found")
-	ErrPasskeyExists             = errors.Sentinel("passkey already registered")
-	ErrPasskeyStepUpRequired     = errors.Sentinel("fresh step-up authentication is required")
-	ErrPasskeyMFAEnabled         = errors.Sentinel("passkey MFA must be disabled first")
-	ErrPasskeyMFAAlreadyEnabled  = errors.Sentinel("passkey MFA is already enabled")
-	ErrPasskeyMFANotEnabled      = errors.Sentinel("passkey MFA is not enabled")
-	ErrPasskeyNoCredential       = errors.Sentinel("no passkeys are registered")
-	ErrPasskeyLastCredential     = errors.Sentinel("cannot remove the last usable authentication method")
-	ErrPasskeyRecoveryCode       = errors.Sentinel("invalid recovery code")
-	ErrPasskeyName               = errors.Sentinel("invalid passkey name")
+	ErrPasskeyServiceUnavailable = errors.New("passkey service is unavailable")
+	ErrPasskeyCeremony           = errors.New("invalid or expired passkey ceremony")
+	ErrPasskeyTransaction        = errors.New("invalid or expired authentication transaction")
+	ErrPasskeyResponse           = errors.New("invalid passkey response")
+	ErrPasskeyNotFound           = errors.New("passkey not found")
+	ErrPasskeyExists             = errors.New("passkey already registered")
+	ErrPasskeyStepUpRequired     = errors.New("fresh step-up authentication is required")
+	ErrPasskeyMFAEnabled         = errors.New("passkey MFA must be disabled first")
+	ErrPasskeyMFAAlreadyEnabled  = errors.New("passkey MFA is already enabled")
+	ErrPasskeyMFANotEnabled      = errors.New("passkey MFA is not enabled")
+	ErrPasskeyNoCredential       = errors.New("no passkeys are registered")
+	ErrPasskeyLastCredential     = errors.New("cannot remove the last usable authentication method")
+	ErrPasskeyRecoveryCode       = errors.New("invalid recovery code")
+	ErrPasskeyName               = errors.New("invalid passkey name")
 
 	authenticatorNamesOnce sync.Once
 	authenticatorNames     map[string]string
@@ -148,8 +149,9 @@ func NewPasskeyService(db *database.DB, cfg *config.Config) *PasskeyService {
 
 	parsedURL, err := url.Parse(strings.TrimSpace(cfg.GetAppURL()))
 	if err != nil || parsedURL.Scheme == "" || parsedURL.Host == "" {
-		s.initErr = errors.WrapIf(err, "invalid APP_URL for WebAuthn")
-		if err == nil {
+		if err != nil {
+			s.initErr = fmt.Errorf("invalid APP_URL for WebAuthn: %w", err)
+		} else {
 			s.initErr = errors.New("invalid APP_URL for WebAuthn")
 		}
 		return s
@@ -222,12 +224,12 @@ func (s *PasskeyService) loadWebAuthnUserInternal(ctx context.Context, userID st
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrPasskeyTransaction
 		}
-		return nil, errors.WrapIf(err, "failed to load passkey user")
+		return nil, fmt.Errorf("failed to load passkey user: %w", err)
 	}
 
 	var rows []Passkey
 	if err := s.db.WithContext(ctx).Where("user_id = ? AND rp_id = ?", user.ID, s.rpID).Order("created_at ASC").Find(&rows).Error; err != nil {
-		return nil, errors.WrapIf(err, "failed to load passkeys")
+		return nil, fmt.Errorf("failed to load passkeys: %w", err)
 	}
 
 	credentials := make([]webauthn.Credential, len(rows))
@@ -286,7 +288,7 @@ func (s *PasskeyService) LoginAvailable(ctx context.Context) (bool, error) {
 		Where("passkeys.rp_id = ?", s.rpID)
 	var available bool
 	if err := s.db.WithContext(ctx).Raw("SELECT EXISTS (?)", credentials).Scan(&available).Error; err != nil {
-		return false, errors.WrapIf(err, "failed to check passkey login availability")
+		return false, fmt.Errorf("failed to check passkey login availability: %w", err)
 	}
 	return available, nil
 }
@@ -301,7 +303,7 @@ func (s *PasskeyService) BeginPasskeyLogin(ctx context.Context) (*PasskeyChallen
 
 	assertion, session, err := s.webAuthn.BeginDiscoverableLogin(webauthn.WithUserVerification(protocol.VerificationRequired))
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to begin passkey login")
+		return nil, fmt.Errorf("failed to begin passkey login: %w", err)
 	}
 
 	ceremony, err := s.createCeremonyInternal(ctx, passkeyCeremonyPurposeLogin, nil, nil, nil, session)
@@ -333,7 +335,7 @@ func (s *PasskeyService) BeginMFAAuthentication(ctx context.Context, userID stri
 
 	transaction := newAuthTransactionInternal(userID, authTransactionKindMFA, source, meta, nil)
 	if err := s.db.WithContext(ctx).Create(transaction).Error; err != nil {
-		return nil, errors.WrapIf(err, "failed to create MFA transaction")
+		return nil, fmt.Errorf("failed to create MFA transaction: %w", err)
 	}
 	challenge, err := s.beginMFAForTransactionInternal(ctx, transaction)
 	if err != nil {
@@ -376,12 +378,12 @@ func (s *PasskeyService) beginMFAForTransactionInternal(ctx context.Context, tra
 	if err := s.db.WithContext(ctx).
 		Where("auth_transaction_id = ? AND purpose = ? AND consumed_at IS NULL", transaction.ID, passkeyCeremonyPurposeMFA).
 		Delete(&PasskeyCeremony{}).Error; err != nil {
-		return nil, errors.WrapIf(err, "failed to replace MFA ceremony")
+		return nil, fmt.Errorf("failed to replace MFA ceremony: %w", err)
 	}
 
 	assertion, webSession, err := s.webAuthn.BeginLogin(adapter, webauthn.WithUserVerification(protocol.VerificationRequired))
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to begin MFA passkey ceremony")
+		return nil, fmt.Errorf("failed to begin MFA passkey ceremony: %w", err)
 	}
 
 	transactionID := transaction.ID
@@ -420,13 +422,13 @@ func (s *PasskeyService) BeginStepUp(ctx context.Context, userID, sessionID stri
 
 	transaction := newAuthTransactionInternal(userID, authTransactionKindStepUp, session.UserSessionSourceLocal, meta, &sessionID)
 	if err := s.db.WithContext(ctx).Create(transaction).Error; err != nil {
-		return nil, errors.WrapIf(err, "failed to create step-up transaction")
+		return nil, fmt.Errorf("failed to create step-up transaction: %w", err)
 	}
 
 	assertion, session, err := s.webAuthn.BeginLogin(adapter, webauthn.WithUserVerification(protocol.VerificationRequired))
 	if err != nil {
 		_ = s.db.WithContext(ctx).Delete(transaction).Error
-		return nil, errors.WrapIf(err, "failed to begin step-up passkey ceremony")
+		return nil, fmt.Errorf("failed to begin step-up passkey ceremony: %w", err)
 	}
 
 	transactionID := transaction.ID
@@ -469,7 +471,7 @@ func (s *PasskeyService) BeginRegistration(ctx context.Context, userID, sessionI
 		webauthn.WithResidentKeyRequirement(protocol.ResidentKeyRequirementRequired),
 	)
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to begin passkey registration")
+		return nil, fmt.Errorf("failed to begin passkey registration: %w", err)
 	}
 
 	userIDPointer := userID
@@ -588,7 +590,7 @@ func (s *PasskeyService) FinishMobilePasskeyLogin(ctx context.Context, ceremonyI
 	transaction := newAuthTransactionInternal(user.ID, authTransactionKindMobilePasskey, session.UserSessionSourcePasskey, auth.SessionMeta{}, nil)
 	transaction.SecretHash = &codeChallenge
 	if err := s.db.WithContext(ctx).Create(transaction).Error; err != nil {
-		return nil, errors.WrapIf(err, "failed to create mobile passkey transaction")
+		return nil, fmt.Errorf("failed to create mobile passkey transaction: %w", err)
 	}
 	return &auth.MobilePasskeyCompletion{TransactionID: transaction.ID, ExpiresAt: transaction.ExpiresAt}, nil
 }
@@ -608,7 +610,7 @@ func (s *PasskeyService) ExchangeMobilePasskeyLogin(ctx context.Context, transac
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return ErrPasskeyTransaction
 			}
-			return errors.WrapIf(err, "failed to load mobile passkey transaction")
+			return fmt.Errorf("failed to load mobile passkey transaction: %w", err)
 		}
 
 		now := time.Now()
@@ -616,7 +618,7 @@ func (s *PasskeyService) ExchangeMobilePasskeyLogin(ctx context.Context, transac
 			Where("id = ? AND status = ? AND expires_at > ?", transaction.ID, authTransactionPending, now).
 			Updates(map[string]any{"status": authTransactionCompleted, "completed_at": now, "updated_at": now})
 		if result.Error != nil {
-			return errors.WrapIf(result.Error, "failed to complete mobile passkey transaction")
+			return fmt.Errorf("failed to complete mobile passkey transaction: %w", result.Error)
 		}
 		return kit.Ternary[error](result.RowsAffected != 1, ErrPasskeyTransaction, nil)
 	})
@@ -663,11 +665,11 @@ func (s *PasskeyService) FinishRecoveryCode(ctx context.Context, transactionID, 
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return ErrPasskeyTransaction
 			}
-			return errors.WrapIf(err, "failed to lock MFA transaction")
+			return fmt.Errorf("failed to lock MFA transaction: %w", err)
 		}
 		var recoveryCodes []PasskeyRecoveryCode
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_id = ? AND used_at IS NULL", transaction.UserID).Find(&recoveryCodes).Error; err != nil {
-			return errors.WrapIf(err, "failed to load recovery codes")
+			return fmt.Errorf("failed to load recovery codes: %w", err)
 		}
 
 		var matched *PasskeyRecoveryCode
@@ -685,7 +687,7 @@ func (s *PasskeyService) FinishRecoveryCode(ctx context.Context, transactionID, 
 			Where("id = ? AND used_at IS NULL", matched.ID).
 			Updates(map[string]any{"used_at": now, "updated_at": now})
 		if result.Error != nil {
-			return errors.WrapIf(result.Error, "failed to consume recovery code")
+			return fmt.Errorf("failed to consume recovery code: %w", result.Error)
 		}
 		if result.RowsAffected != 1 {
 			return ErrPasskeyRecoveryCode
@@ -695,7 +697,7 @@ func (s *PasskeyService) FinishRecoveryCode(ctx context.Context, transactionID, 
 			Where("id = ? AND status = ? AND expires_at > ?", transaction.ID, authTransactionPending, now).
 			Updates(map[string]any{"status": authTransactionCompleted, "completed_at": now, "updated_at": now})
 		if result.Error != nil {
-			return errors.WrapIf(result.Error, "failed to complete MFA transaction")
+			return fmt.Errorf("failed to complete MFA transaction: %w", result.Error)
 		}
 		return kit.Ternary[error](result.RowsAffected != 1, ErrPasskeyTransaction, nil)
 	})
@@ -740,7 +742,7 @@ func (s *PasskeyService) CreatePasswordStepUpGrant(ctx context.Context, userID, 
 	}
 	transaction := newAuthTransactionInternal(userID, authTransactionKindStepUp, session.UserSessionSourceLocal, auth.SessionMeta{}, &sessionID)
 	if err := s.db.WithContext(ctx).Create(transaction).Error; err != nil {
-		return nil, errors.WrapIf(err, "failed to create password step-up transaction")
+		return nil, fmt.Errorf("failed to create password step-up transaction: %w", err)
 	}
 	return s.issueStepUpGrantInternal(ctx, transaction.ID)
 }
@@ -764,7 +766,7 @@ func (s *PasskeyService) VerifyStepUpToken(ctx context.Context, userID, sessionI
 	if err := s.db.WithContext(ctx).Model(&AuthTransaction{}).
 		Where("user_id = ? AND session_id = ? AND kind = ? AND status = ? AND secret_hash = ? AND expires_at > ?", userID, sessionID, authTransactionKindStepUp, authTransactionCompleted, hash, time.Now()).
 		Count(&count).Error; err != nil {
-		return errors.WrapIf(err, "failed to verify step-up grant")
+		return fmt.Errorf("failed to verify step-up grant: %w", err)
 	}
 	return kit.Ternary[error](count != 1, ErrPasskeyStepUpRequired, nil)
 }
@@ -775,7 +777,7 @@ func (s *PasskeyService) ListPasskeys(ctx context.Context, userID string) ([]Pas
 	}
 	var rows []Passkey
 	if err := s.db.WithContext(ctx).Where("user_id = ? AND rp_id = ?", userID, s.rpID).Order("created_at ASC").Find(&rows).Error; err != nil {
-		return nil, errors.WrapIf(err, "failed to list passkeys")
+		return nil, fmt.Errorf("failed to list passkeys: %w", err)
 	}
 	result := make([]PasskeySummary, len(rows))
 	for i := range rows {
@@ -826,11 +828,11 @@ func (s *PasskeyService) RenamePasskey(ctx context.Context, userID, passkeyID, n
 		return nil, ErrPasskeyNotFound
 	}
 	if result.Error != nil {
-		return nil, errors.WrapIf(result.Error, "failed to load passkey")
+		return nil, fmt.Errorf("failed to load passkey: %w", result.Error)
 	}
 	now := time.Now()
 	if err := s.db.WithContext(ctx).Model(&row).Updates(map[string]any{"name": name, "updated_at": now}).Error; err != nil {
-		return nil, errors.WrapIf(err, "failed to rename passkey")
+		return nil, fmt.Errorf("failed to rename passkey: %w", err)
 	}
 	row.Name = name
 	row.UpdatedAt = &now
@@ -848,11 +850,11 @@ func (s *PasskeyService) DeletePasskey(ctx context.Context, userID, passkeyID, s
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var user common.User
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", userID).First(&user).Error; err != nil {
-			return errors.WrapIf(err, "failed to lock user for passkey deletion")
+			return fmt.Errorf("failed to lock user for passkey deletion: %w", err)
 		}
 		var count int64
 		if err := tx.Model(&Passkey{}).Where("user_id = ? AND rp_id = ?", userID, s.rpID).Count(&count).Error; err != nil {
-			return errors.WrapIf(err, "failed to count passkeys")
+			return fmt.Errorf("failed to count passkeys: %w", err)
 		}
 		if user.PasskeyMFAEnabled && count <= 1 {
 			return ErrPasskeyMFAEnabled
@@ -866,7 +868,7 @@ func (s *PasskeyService) DeletePasskey(ctx context.Context, userID, passkeyID, s
 		}
 		result := tx.Where("id = ? AND user_id = ? AND rp_id = ?", passkeyID, userID, s.rpID).Delete(&Passkey{})
 		if result.Error != nil {
-			return errors.WrapIf(result.Error, "failed to delete passkey")
+			return fmt.Errorf("failed to delete passkey: %w", result.Error)
 		}
 		return kit.Ternary[error](result.RowsAffected != 1, ErrPasskeyNotFound, nil)
 	})
@@ -886,7 +888,7 @@ func (s *PasskeyService) GetMFAStatus(ctx context.Context, userID string) (*MFAS
 	}
 	var recoveryCodes int64
 	if err := s.db.WithContext(ctx).Model(&PasskeyRecoveryCode{}).Where("user_id = ? AND used_at IS NULL", userID).Count(&recoveryCodes).Error; err != nil {
-		return nil, errors.WrapIf(err, "failed to count recovery codes")
+		return nil, fmt.Errorf("failed to count recovery codes: %w", err)
 	}
 	return &MFAStatus{Enabled: user.PasskeyMFAEnabled, PasskeyCount: passkeyCount, RecoveryCodesRemaining: int(recoveryCodes)}, nil
 }
@@ -905,11 +907,11 @@ func (s *PasskeyService) EnableMFA(ctx context.Context, userID, sessionID, stepU
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var user common.User
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", userID).First(&user).Error; err != nil {
-			return errors.WrapIf(err, "failed to lock user for MFA enable")
+			return fmt.Errorf("failed to lock user for MFA enable: %w", err)
 		}
 		var count int64
 		if err := tx.Model(&Passkey{}).Where("user_id = ? AND rp_id = ?", userID, s.rpID).Count(&count).Error; err != nil {
-			return errors.WrapIf(err, "failed to count passkeys for MFA enable")
+			return fmt.Errorf("failed to count passkeys for MFA enable: %w", err)
 		}
 		if count == 0 {
 			return ErrPasskeyNoCredential
@@ -918,13 +920,13 @@ func (s *PasskeyService) EnableMFA(ctx context.Context, userID, sessionID, stepU
 			return ErrPasskeyMFAAlreadyEnabled
 		}
 		if err := tx.Model(&common.User{}).Where("id = ?", userID).Update("passkey_mfa_enabled", true).Error; err != nil {
-			return errors.WrapIf(err, "failed to enable passkey MFA")
+			return fmt.Errorf("failed to enable passkey MFA: %w", err)
 		}
 		if err := tx.Where("user_id = ?", userID).Delete(&PasskeyRecoveryCode{}).Error; err != nil {
-			return errors.WrapIf(err, "failed to replace recovery codes")
+			return fmt.Errorf("failed to replace recovery codes: %w", err)
 		}
 		if err := tx.Create(&rows).Error; err != nil {
-			return errors.WrapIf(err, "failed to create recovery codes")
+			return fmt.Errorf("failed to create recovery codes: %w", err)
 		}
 		return nil
 	})
@@ -944,16 +946,16 @@ func (s *PasskeyService) DisableMFA(ctx context.Context, userID, sessionID, step
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var user common.User
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", userID).First(&user).Error; err != nil {
-			return errors.WrapIf(err, "failed to lock user for MFA disable")
+			return fmt.Errorf("failed to lock user for MFA disable: %w", err)
 		}
 		if !user.PasskeyMFAEnabled {
 			return ErrPasskeyMFANotEnabled
 		}
 		if err := tx.Model(&common.User{}).Where("id = ?", userID).Update("passkey_mfa_enabled", false).Error; err != nil {
-			return errors.WrapIf(err, "failed to disable passkey MFA")
+			return fmt.Errorf("failed to disable passkey MFA: %w", err)
 		}
 		if err := tx.Where("user_id = ?", userID).Delete(&PasskeyRecoveryCode{}).Error; err != nil {
-			return errors.WrapIf(err, "failed to delete recovery codes")
+			return fmt.Errorf("failed to delete recovery codes: %w", err)
 		}
 		now := time.Now()
 		query := tx.Model(&session.UserSession{}).Where("user_id = ? AND revoked_at IS NULL", userID)
@@ -961,7 +963,7 @@ func (s *PasskeyService) DisableMFA(ctx context.Context, userID, sessionID, step
 			query = query.Where("id <> ?", sessionID)
 		}
 		if err := query.Updates(map[string]any{"revoked_at": now, "updated_at": now}).Error; err != nil {
-			return errors.WrapIf(err, "failed to revoke sessions after MFA disable")
+			return fmt.Errorf("failed to revoke sessions after MFA disable: %w", err)
 		}
 		return nil
 	})
@@ -982,15 +984,18 @@ func (s *PasskeyService) RegenerateRecoveryCodes(ctx context.Context, userID, se
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var user common.User
 		if err := tx.Where("id = ?", userID).First(&user).Error; err != nil {
-			return errors.WrapIf(err, "failed to load user for recovery code regeneration")
+			return fmt.Errorf("failed to load user for recovery code regeneration: %w", err)
 		}
 		if !user.PasskeyMFAEnabled {
 			return ErrPasskeyMFANotEnabled
 		}
 		if err := tx.Where("user_id = ?", userID).Delete(&PasskeyRecoveryCode{}).Error; err != nil {
-			return errors.WrapIf(err, "failed to replace recovery codes")
+			return fmt.Errorf("failed to replace recovery codes: %w", err)
 		}
-		return errors.WrapIf(tx.Create(&rows).Error, "failed to create recovery codes")
+		if err := tx.Create(&rows).Error; err != nil {
+			return fmt.Errorf("failed to create recovery codes: %w", err)
+		}
+		return nil
 	})
 	if err != nil {
 		return nil, err
@@ -1010,23 +1015,23 @@ func (s *PasskeyService) ResetMFAForUser(ctx context.Context, userID string) err
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return ErrPasskeyTransaction
 			}
-			return errors.WrapIf(err, "failed to load user for MFA reset")
+			return fmt.Errorf("failed to load user for MFA reset: %w", err)
 		}
 		if err := tx.Model(&common.User{}).Where("id = ?", userID).Update("passkey_mfa_enabled", false).Error; err != nil {
-			return errors.WrapIf(err, "failed to disable passkey MFA")
+			return fmt.Errorf("failed to disable passkey MFA: %w", err)
 		}
 		if err := tx.Where("user_id = ?", userID).Delete(&PasskeyRecoveryCode{}).Error; err != nil {
-			return errors.WrapIf(err, "failed to delete recovery codes")
+			return fmt.Errorf("failed to delete recovery codes: %w", err)
 		}
 		if err := tx.Where("user_id = ?", userID).Delete(&PasskeyCeremony{}).Error; err != nil {
-			return errors.WrapIf(err, "failed to delete passkey ceremonies")
+			return fmt.Errorf("failed to delete passkey ceremonies: %w", err)
 		}
 		if err := tx.Where("user_id = ?", userID).Delete(&AuthTransaction{}).Error; err != nil {
-			return errors.WrapIf(err, "failed to delete authentication transactions")
+			return fmt.Errorf("failed to delete authentication transactions: %w", err)
 		}
 		now := time.Now()
 		if err := tx.Model(&session.UserSession{}).Where("user_id = ? AND revoked_at IS NULL", userID).Updates(map[string]any{"revoked_at": now, "updated_at": now}).Error; err != nil {
-			return errors.WrapIf(err, "failed to revoke sessions after MFA reset")
+			return fmt.Errorf("failed to revoke sessions after MFA reset: %w", err)
 		}
 		return nil
 	})
@@ -1038,7 +1043,7 @@ func (s *PasskeyService) createCeremonyInternal(ctx context.Context, purpose str
 	}
 	serialized, err := json.Marshal(session)
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to serialize WebAuthn session")
+		return nil, fmt.Errorf("failed to serialize WebAuthn session: %w", err)
 	}
 	expiresAt := session.Expires
 	if expiresAt.IsZero() {
@@ -1055,7 +1060,7 @@ func (s *PasskeyService) createCeremonyInternal(ctx context.Context, purpose str
 		ExpiresAt:         expiresAt,
 	}
 	if err := s.db.WithContext(ctx).Create(ceremony).Error; err != nil {
-		return nil, errors.WrapIf(err, "failed to store passkey ceremony")
+		return nil, fmt.Errorf("failed to store passkey ceremony: %w", err)
 	}
 	return ceremony, nil
 }
@@ -1065,7 +1070,7 @@ func (s *PasskeyService) sweepCeremoniesInternal(ctx context.Context) error {
 	if err := s.db.WithContext(ctx).
 		Where("expires_at <= ? OR consumed_at IS NOT NULL", now).
 		Delete(&PasskeyCeremony{}).Error; err != nil {
-		return errors.WrapIf(err, "failed to sweep passkey ceremonies")
+		return fmt.Errorf("failed to sweep passkey ceremonies: %w", err)
 	}
 	return nil
 }
@@ -1080,13 +1085,13 @@ func (s *PasskeyService) consumeCeremonyInternal(ctx context.Context, ceremonyID
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrPasskeyCeremony
 		}
-		return nil, errors.WrapIf(err, "failed to load passkey ceremony")
+		return nil, fmt.Errorf("failed to load passkey ceremony: %w", err)
 	}
 	result := s.db.WithContext(ctx).Model(&PasskeyCeremony{}).
 		Where("id = ? AND purpose = ? AND consumed_at IS NULL AND expires_at > ?", ceremonyID, purpose, now).
 		Updates(map[string]any{"consumed_at": now, "updated_at": now})
 	if result.Error != nil {
-		return nil, errors.WrapIf(result.Error, "failed to consume passkey ceremony")
+		return nil, fmt.Errorf("failed to consume passkey ceremony: %w", result.Error)
 	}
 	if result.RowsAffected != 1 {
 		return nil, ErrPasskeyCeremony
@@ -1104,7 +1109,7 @@ func (s *PasskeyService) loadPendingTransactionInternal(ctx context.Context, tra
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrPasskeyTransaction
 		}
-		return nil, errors.WrapIf(err, "failed to load authentication transaction")
+		return nil, fmt.Errorf("failed to load authentication transaction: %w", err)
 	}
 	return &transaction, nil
 }
@@ -1158,7 +1163,7 @@ func (s *PasskeyService) completeTransactionInternal(ctx context.Context, transa
 		Where("id = ? AND status = ? AND expires_at > ?", transactionID, authTransactionPending, now).
 		Updates(map[string]any{"status": authTransactionCompleted, "completed_at": now, "updated_at": now})
 	if result.Error != nil {
-		return errors.WrapIf(result.Error, "failed to complete authentication transaction")
+		return fmt.Errorf("failed to complete authentication transaction: %w", result.Error)
 	}
 	return kit.Ternary[error](result.RowsAffected != 1, ErrPasskeyTransaction, nil)
 }
@@ -1175,14 +1180,14 @@ func (s *PasskeyService) issueStepUpGrantInternal(ctx context.Context, transacti
 			"updated_at":   now,
 		})
 	if result.Error != nil {
-		return nil, errors.WrapIf(result.Error, "failed to store step-up grant")
+		return nil, fmt.Errorf("failed to store step-up grant: %w", result.Error)
 	}
 	if result.RowsAffected != 1 {
 		return nil, ErrPasskeyTransaction
 	}
 	var transaction AuthTransaction
 	if err := s.db.WithContext(ctx).Where("id = ?", transactionID).First(&transaction).Error; err != nil {
-		return nil, errors.WrapIf(err, "failed to load step-up grant")
+		return nil, fmt.Errorf("failed to load step-up grant: %w", err)
 	}
 	return &StepUpGrant{Token: token, ExpiresAt: transaction.ExpiresAt}, nil
 }
@@ -1207,7 +1212,7 @@ func (s *PasskeyService) loadUserModelInternal(ctx context.Context, userID strin
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrPasskeyTransaction
 		}
-		return nil, errors.WrapIf(err, "failed to load user")
+		return nil, fmt.Errorf("failed to load user: %w", err)
 	}
 	return &user, nil
 }
@@ -1223,7 +1228,7 @@ func (s *PasskeyService) ensureActiveSessionInternal(ctx context.Context, userID
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return ErrPasskeyStepUpRequired
 		}
-		return errors.WrapIf(err, "failed to validate active session")
+		return fmt.Errorf("failed to validate active session: %w", err)
 	}
 	return nil
 }
@@ -1231,7 +1236,7 @@ func (s *PasskeyService) ensureActiveSessionInternal(ctx context.Context, userID
 func (s *PasskeyService) countPasskeysInternal(ctx context.Context, userID string) (int, error) {
 	var count int64
 	if err := s.db.WithContext(ctx).Model(&Passkey{}).Where("user_id = ? AND rp_id = ?", userID, s.rpID).Count(&count).Error; err != nil {
-		return 0, errors.WrapIf(err, "failed to count passkeys")
+		return 0, fmt.Errorf("failed to count passkeys: %w", err)
 	}
 	return int(count), nil
 }
@@ -1246,7 +1251,10 @@ func (s *PasskeyService) persistCredentialInternal(ctx context.Context, userID s
 		return nil, ErrPasskeyExists
 	}
 	if !errors.Is(result.Error, gorm.ErrRecordNotFound) {
-		return nil, errors.WrapIf(result.Error, "failed to check existing passkey")
+		if err := result.Error; err != nil {
+			return nil, fmt.Errorf("failed to check existing passkey: %w", err)
+		}
+		return nil, nil
 	}
 	transports := make(database.StringSlice, len(credential.Transport))
 	for i, transport := range credential.Transport {
@@ -1278,7 +1286,7 @@ func (s *PasskeyService) persistCredentialInternal(ctx context.Context, userID s
 		if strings.Contains(strings.ToLower(err.Error()), "unique") {
 			return nil, ErrPasskeyExists
 		}
-		return nil, errors.WrapIf(err, "failed to store passkey")
+		return nil, fmt.Errorf("failed to store passkey: %w", err)
 	}
 	return row, nil
 }
@@ -1303,7 +1311,7 @@ func (s *PasskeyService) updateCredentialAfterAssertionInternal(ctx context.Cont
 			"updated_at":      now,
 		})
 	if result.Error != nil {
-		return errors.WrapIf(result.Error, "failed to update passkey counter")
+		return fmt.Errorf("failed to update passkey counter: %w", result.Error)
 	}
 	return kit.Ternary[error](result.RowsAffected != 1, ErrPasskeyResponse, nil)
 }
@@ -1360,7 +1368,7 @@ func normalizePasskeyNameInternal(name string) (string, error) {
 		return "", ErrPasskeyName
 	}
 	if utf8.RuneCountInString(name) > maxPasskeyNameRunes {
-		return "", errors.WrapIf(ErrPasskeyName, "passkey name is too long")
+		return "", fmt.Errorf("passkey name is too long: %w", ErrPasskeyName)
 	}
 	return name, nil
 }
@@ -1405,7 +1413,7 @@ func generateRecoveryCodeRowsInternal(userID string) ([]string, []PasskeyRecover
 	for i := range codes {
 		raw := make([]byte, 16)
 		if _, err := rand.Read(raw); err != nil {
-			return nil, nil, errors.WrapIf(err, "failed to generate recovery code")
+			return nil, nil, fmt.Errorf("failed to generate recovery code: %w", err)
 		}
 		encoded := strings.TrimRight(base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(raw), "=")
 		codes[i] = groupRecoveryCodeInternal(encoded)

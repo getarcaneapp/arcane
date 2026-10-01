@@ -2,12 +2,12 @@ package volume
 
 import (
 	"context"
+	"errors"
 	"mime/multipart"
 	"net/http"
 	"path"
 	"strings"
 
-	"emperror.dev/errors"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"

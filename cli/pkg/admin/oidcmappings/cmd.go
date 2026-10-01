@@ -6,7 +6,6 @@ package oidcmappings
 import (
 	"fmt"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
@@ -36,10 +35,7 @@ var OidcMappingsCmd = &cobra.Command{
 	Use:     "oidc",
 	Aliases: []string{"oidc-mappings", "oidc-mapping"},
 	Short:   "Manage OIDC group → role mappings",
-	Long: "Manage OIDC group → role mappings. On every OIDC login, Arcane " +
-		"looks up the user's groups claim and applies the matching mappings " +
-		"as source='oidc' role assignments. The groups claim itself is " +
-		"configured via the oidcGroupsClaim setting (default `groups`).",
+	Long:    "Manage OIDC group → role mappings. On every OIDC login, Arcane looks up the user's groups claim and applies the matching mappings as source='oidc' role assignments. The groups claim itself is configured via the oidcGroupsClaim setting (default `groups`).",
 }
 
 var listCmd = &cobra.Command{
@@ -54,7 +50,7 @@ var listCmd = &cobra.Command{
 		}
 		result, err := c.GetJSON[[]roletypes.OidcRoleMapping](cmd.Context(), types.OidcRoleMappings())
 		if err != nil {
-			return errors.WrapIf(err, "failed to list OIDC mappings")
+			return fmt.Errorf("failed to list OIDC mappings: %w", err)
 		}
 
 		if jsonOutput {
@@ -100,7 +96,7 @@ var createCmd = &cobra.Command{
 
 		result, err := c.PostJSON[roletypes.OidcRoleMapping](cmd.Context(), types.OidcRoleMappings(), req)
 		if err != nil {
-			return errors.WrapIf(err, "failed to create OIDC mapping")
+			return fmt.Errorf("failed to create OIDC mapping: %w", err)
 		}
 
 		if jsonOutput {
@@ -158,11 +154,11 @@ var updateCmd = &cobra.Command{
 
 		resp, err := c.Put(cmd.Context(), types.OidcRoleMapping(args[0]), req)
 		if err != nil {
-			return errors.WrapIf(err, "failed to update OIDC mapping")
+			return fmt.Errorf("failed to update OIDC mapping: %w", err)
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to update OIDC mapping")
+			return fmt.Errorf("failed to update OIDC mapping: %w", err)
 		}
 		output.Success("OIDC mapping updated")
 		return nil
@@ -192,11 +188,11 @@ var deleteCmd = &cobra.Command{
 		}
 		resp, err := c.Delete(cmd.Context(), types.OidcRoleMapping(args[0]))
 		if err != nil {
-			return errors.WrapIf(err, "failed to delete OIDC mapping")
+			return fmt.Errorf("failed to delete OIDC mapping: %w", err)
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to delete OIDC mapping")
+			return fmt.Errorf("failed to delete OIDC mapping: %w", err)
 		}
 		output.Success("OIDC mapping deleted")
 		return nil
@@ -213,14 +209,14 @@ func fetchMappingInternal(cmd *cobra.Command, id string) (*roletypes.OidcRoleMap
 	}
 	result, err := c.GetJSON[[]roletypes.OidcRoleMapping](cmd.Context(), types.OidcRoleMappings())
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to load current mapping")
+		return nil, fmt.Errorf("failed to load current mapping: %w", err)
 	}
 	for i := range result.Data {
 		if result.Data[i].ID == id {
 			return &result.Data[i], nil
 		}
 	}
-	return nil, errors.Errorf("OIDC mapping %q not found", id)
+	return nil, fmt.Errorf("OIDC mapping %q not found", id)
 }
 
 func init() {

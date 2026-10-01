@@ -5,7 +5,6 @@ import (
 	"context"
 	"log/slog"
 
-	"emperror.dev/emperror"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/apns"
@@ -49,7 +48,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/webhook"
 	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/logging"
 	"github.com/getarcaneapp/arcane/backend/v2/resources"
 	"go.uber.org/fx"
 )
@@ -64,7 +62,6 @@ var ActorOptions = fx.Options(
 // ServiceOptions constructs services once and injects them into route modules.
 var ServiceOptions = fx.Options(
 	fx.Supply(
-		fx.Annotate(new(logging.SlogErrorHandler), fx.As(new(emperror.ErrorHandler))),
 		resources.FS,
 	),
 	fx.Provide(

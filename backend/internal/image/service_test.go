@@ -421,7 +421,7 @@ func TestImageServicePullImageRetriesAnonymouslyAfterAuthRejectedInternal(t *tes
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
-		_, _ = w.Write([]byte(`{"status":"Pulled anonymously"}` + "\n"))
+		_, _ = w.Write([]byte("{\"status\":\"Pulled anonymously\"}\n"))
 	}))
 	t.Cleanup(server.Close)
 

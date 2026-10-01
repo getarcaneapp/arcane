@@ -3,13 +3,14 @@ package bootstrap
 import (
 	"context"
 	"encoding/json/v2"
+	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"slices"
 	"sync"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/apns"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/backup"
@@ -95,7 +96,7 @@ func stopJobSchedulerInternal(ctx context.Context, cancelScheduler context.Cance
 			}
 		}
 	}
-	err := errors.Combine(coordinator.Stop(ctx), jobScheduler.Stop(ctx))
+	err := errors.Join(coordinator.Stop(ctx), jobScheduler.Stop(ctx))
 	if err != nil {
 		slog.ErrorContext(ctx, "Job scheduler exited with error", "error", err)
 		return err
@@ -178,7 +179,7 @@ func scheduledBackupProtectionInternal(records []schedulertypes.QueueRecord) ([]
 					BackupID string `json:"backupId"`
 				}
 				if err := json.Unmarshal(target.RecoveryData, &checkpoint); err != nil {
-					return nil, errors.WrapIf(err, "decode startup recovery evidence")
+					return nil, fmt.Errorf("decode startup recovery evidence: %w", err)
 				}
 				if checkpoint.BackupID != "" {
 					ids = append(ids, checkpoint.BackupID)

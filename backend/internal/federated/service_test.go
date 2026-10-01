@@ -5,6 +5,7 @@ import (
 	"crypto/mldsa"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -12,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/auth"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
@@ -149,7 +149,7 @@ func setupFederatedCredentialServiceInternal(t *testing.T, issuer *federatedTest
 	require.NoError(t, err)
 	authSvc := auth.NewAuthService(userSvc, settingsSvc, eventSvc, sessionSvc, roleSvc, &config.Config{
 		JWTRefreshExpiry: 24 * time.Hour,
-	}, nil).WithSigningKey(signingKey)
+	}).WithSigningKey(signingKey)
 
 	keySetManager := oidcjwk.NewKeySetManager(t.Context())
 	t.Cleanup(func() {

@@ -1,16 +1,14 @@
 package edge
 
 import (
+	"errors"
 	"strings"
 	"sync"
 	"uuid"
-
-	"emperror.dev/errors"
 )
 
 const (
 	// ErrNoActiveAgentTunnel is returned when no active agent tunnel exists for outbound event sync.
-	ErrNoActiveAgentTunnel = errors.Sentinel("no active edge agent tunnel")
 
 	// TunnelEventTypeNotificationDispatch marks a tunnel event that carries a
 	// notification dispatch request in MetadataJSON instead of an event-log entry.
@@ -18,6 +16,8 @@ const (
 	// dispatch rides the existing agent-to-manager event channel (#3002).
 	TunnelEventTypeNotificationDispatch = "notification.dispatch"
 )
+
+var ErrNoActiveAgentTunnel = errors.New("no active edge agent tunnel")
 
 var agentTunnelState struct {
 	mu   sync.RWMutex

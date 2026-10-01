@@ -718,10 +718,7 @@ func TestSQLiteMigrations_ColumnAddsAreReversible(t *testing.T) {
 			continue
 		}
 
-		assert.True(t, sectionHasSQLInternal(down),
-			"migration %s adds a column but its '-- +goose Down' has no SQL; add the reversing "+
-				"ALTER TABLE ... DROP COLUMN (modernc SQLite supports it). A no-op Down breaks "+
-				"down/up round-trips with a duplicate-column error.", entry.Name())
+		assert.True(t, sectionHasSQLInternal(down), "migration %s adds a column but its '-- +goose Down' has no SQL; add the reversing ALTER TABLE ... DROP COLUMN (modernc SQLite supports it). A no-op Down breaks down/up round-trips with a duplicate-column error.", entry.Name())
 	}
 }
 

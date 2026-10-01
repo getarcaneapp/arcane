@@ -2,9 +2,9 @@ package variable
 
 import (
 	"context"
+	"errors"
 	"net/http"
 
-	"emperror.dev/errors"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
@@ -249,7 +249,7 @@ func (h *VariableHandler) GetMaterializedVariables(ctx context.Context, input *G
 
 	vars, err := h.variableService.ReadLocalEnvFile(ctx)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to retrieve global variables").Error())
+		return nil, huma.Error500InternalServerError("Failed to retrieve global variables: " + err.Error())
 	}
 
 	return &handlerutil.Out[[]env.Variable]{
@@ -275,7 +275,7 @@ func (h *VariableHandler) UpdateMaterializedVariables(ctx context.Context, input
 		if errors.Is(err, common.ErrInvalidEnvKey) {
 			return nil, huma.Error400BadRequest(err.Error())
 		}
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to update global variables").Error())
+		return nil, huma.Error500InternalServerError("Failed to update global variables: " + err.Error())
 	}
 
 	return &handlerutil.Out[base.MessageResponse]{
@@ -290,7 +290,9 @@ func (h *VariableHandler) UpdateMaterializedVariables(ctx context.Context, input
 
 func variableMutationHTTPErrorInternal(err error) error {
 	switch {
-	case errors.Is(err, common.ErrInvalidEnvKey), errors.Is(err, common.ErrGlobalVariableSecretValueRequired), errors.Is(err, common.ErrGlobalVariableScopeRequired):
+	case errors.Is(err, common.ErrInvalidEnvKey),
+		errors.Is(err, common.ErrGlobalVariableSecretValueRequired),
+		errors.Is(err, common.ErrGlobalVariableScopeRequired):
 		return huma.Error400BadRequest(err.Error())
 	case errors.Is(err, common.ErrGlobalVariableNotFound):
 		return huma.Error404NotFound(err.Error())

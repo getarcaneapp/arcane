@@ -2,12 +2,12 @@ package notifications
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"strconv"
 	"strings"
 
-	"emperror.dev/errors"
 	shoutrrrTypes "github.com/nicholas-fedor/shoutrrr/pkg/types"
 )
 
@@ -65,7 +65,7 @@ func BuildGotifyURL(config GotifyConfig) (string, error) {
 func SendGotify(ctx context.Context, config GotifyConfig, message string) error {
 	shoutrrrURL, err := BuildGotifyURL(config)
 	if err != nil {
-		return errors.WrapIf(err, "failed to build shoutrrr Gotify URL")
+		return fmt.Errorf("failed to build shoutrrr Gotify URL: %w", err)
 	}
 
 	return sendShoutrrrInternal("Gotify", shoutrrrURL, message, &shoutrrrTypes.Params{})

@@ -3,11 +3,11 @@ package network
 import (
 	"cmp"
 	"context"
+	"errors"
 	"net/http"
 	"sort"
 	"strings"
 
-	"emperror.dev/errors"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
@@ -189,7 +189,7 @@ func (h *NetworkHandler) ListNetworks(ctx context.Context, input *ListNetworksIn
 
 	networks, paginationResp, counts, err := h.networkService.ListNetworksPaginated(ctx, params)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to list networks").Error())
+		return nil, huma.Error500InternalServerError("Failed to list networks: " + err.Error())
 	}
 
 	return &ListNetworksOutput{
@@ -205,7 +205,7 @@ func (h *NetworkHandler) ListNetworks(ctx context.Context, input *ListNetworksIn
 func (h *NetworkHandler) GetNetworkCounts(ctx context.Context, input *GetNetworkCountsInput) (*handlerutil.Out[networktypes.UsageCounts], error) {
 	_, inuse, unused, total, err := h.dockerService.GetAllNetworks(ctx)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to get network counts").Error())
+		return nil, huma.Error500InternalServerError("Failed to get network counts: " + err.Error())
 	}
 
 	return &handlerutil.Out[networktypes.UsageCounts]{
@@ -228,7 +228,7 @@ func (h *NetworkHandler) CreateNetwork(ctx context.Context, input *CreateNetwork
 
 	dockerOptions, err := mapping.MapOne[networktypes.CreateOptions, client.NetworkCreateOptions](input.Body.Options)
 	if err != nil {
-		return nil, huma.Error400BadRequest(errors.WithMessage(err, "Invalid network options").Error())
+		return nil, huma.Error400BadRequest("Invalid network options: " + err.Error())
 	}
 	if !input.Body.Options.EnableIPv6 {
 		dockerOptions.EnableIPv6 = nil
@@ -256,12 +256,12 @@ func (h *NetworkHandler) CreateNetwork(ctx context.Context, input *CreateNetwork
 		return createErr
 	})
 	if err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to create network").Error())
+		return nil, huma.Error500InternalServerError("Failed to create network: " + err.Error())
 	}
 
 	out, err := mapping.MapOne[dockernetwork.CreateResponse, networktypes.CreateResponse](*response)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to map network").Error())
+		return nil, huma.Error500InternalServerError("Failed to map network: " + err.Error())
 	}
 	out.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
 
@@ -276,12 +276,12 @@ func (h *NetworkHandler) CreateNetwork(ctx context.Context, input *CreateNetwork
 func (h *NetworkHandler) GetNetwork(ctx context.Context, input *GetNetworkInput) (*handlerutil.Out[networktypes.Inspect], error) {
 	networkInspect, err := h.networkService.GetNetworkByID(ctx, input.NetworkID)
 	if err != nil {
-		return nil, huma.Error404NotFound(errors.WithMessage(err, "Network not found").Error())
+		return nil, huma.Error404NotFound("Network not found: " + err.Error())
 	}
 
 	out, err := mapping.MapOne[dockernetwork.Inspect, networktypes.Inspect](*networkInspect)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to map network").Error())
+		return nil, huma.Error500InternalServerError("Failed to map network: " + err.Error())
 	}
 
 	// Ensure ID is mapped correctly
@@ -375,7 +375,7 @@ func (h *NetworkHandler) DeleteNetwork(ctx context.Context, input *DeleteNetwork
 		return h.networkService.RemoveNetwork(runtimeCtx, input.NetworkID, *user)
 	})
 	if err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to remove network").Error())
+		return nil, huma.Error500InternalServerError("Failed to remove network: " + err.Error())
 	}
 
 	return &handlerutil.Out[base.MessageResponse]{
@@ -414,7 +414,7 @@ func (h *NetworkHandler) ConnectContainer(ctx context.Context, input *ConnectCon
 		if errors.Is(err, common.ErrValidation) {
 			return nil, huma.Error400BadRequest(err.Error())
 		}
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to connect container to network").Error())
+		return nil, huma.Error500InternalServerError("Failed to connect container to network: " + err.Error())
 	}
 
 	return &handlerutil.Out[base.MessageResponse]{
@@ -451,7 +451,7 @@ func (h *NetworkHandler) DisconnectContainer(ctx context.Context, input *Disconn
 		return h.networkService.DisconnectContainer(runtimeCtx, input.NetworkID, input.Body, *user)
 	})
 	if err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to disconnect container from network").Error())
+		return nil, huma.Error500InternalServerError("Failed to disconnect container from network: " + err.Error())
 	}
 
 	return &handlerutil.Out[base.MessageResponse]{
@@ -479,12 +479,12 @@ func (h *NetworkHandler) PruneNetworks(ctx context.Context, input *PruneNetworks
 		return pruneErr
 	})
 	if err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to prune networks").Error())
+		return nil, huma.Error500InternalServerError("Failed to prune networks: " + err.Error())
 	}
 
 	out, err := mapping.MapOne[dockernetwork.PruneReport, networktypes.PruneReport](*report)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to map network").Error())
+		return nil, huma.Error500InternalServerError("Failed to map network: " + err.Error())
 	}
 	out.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
 

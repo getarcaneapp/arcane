@@ -2,12 +2,11 @@ package dashboard
 
 import (
 	"context"
-	stderrors "errors"
+	"errors"
 	"net/http"
 	"net/url"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
@@ -361,7 +360,7 @@ func (h *DashboardHandler) fetchLegacyDashboardSnapshotInternal(ctx context.Cont
 	}
 
 	if len(errs) == attempted {
-		return nil, stderrors.Join(errs...)
+		return nil, errors.Join(errs...)
 	}
 	return snapshot, nil
 }
@@ -370,10 +369,10 @@ func (h *DashboardHandler) fetchLegacyDashboardSnapshotInternal(ctx context.Cont
 // endpoint is absent (404 on older agents) or speaks an incompatible payload
 // shape (decode failure) — the cases the legacy composition can recover from.
 func isDashboardEndpointMissingInternal(err error) bool {
-	if statusErr, ok := stderrors.AsType[*remenv.StatusError](err); ok && statusErr.StatusCode == http.StatusNotFound {
+	if statusErr, ok := errors.AsType[*remenv.StatusError](err); ok && statusErr.StatusCode == http.StatusNotFound {
 		return true
 	}
-	_, ok := stderrors.AsType[*remenv.DecodeError](err)
+	_, ok := errors.AsType[*remenv.DecodeError](err)
 	return ok
 }
 
@@ -385,7 +384,7 @@ func classifyDashboardStreamErrorInternal(err error) (string, string) {
 	if isDashboardEndpointMissingInternal(err) {
 		return "Agent does not provide the dashboard endpoint — the agent is likely running an older Arcane version and should be upgraded", dashboardtypes.StreamErrorCodeAgentIncompatible
 	}
-	if transportErr, ok := stderrors.AsType[*remenv.TransportError](err); ok {
+	if transportErr, ok := errors.AsType[*remenv.TransportError](err); ok {
 		return transportErr.Error(), dashboardtypes.StreamErrorCodeUnreachable
 	}
 	return err.Error(), ""

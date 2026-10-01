@@ -2,12 +2,12 @@ package system
 
 import (
 	"cmp"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
@@ -45,7 +45,7 @@ var pruneCmd = &cobra.Command{
 
 		result, err := c.PostJSON[system.PruneAllResult](cmd.Context(), types.SystemPrune(c.EnvID()), req)
 		if err != nil {
-			return errors.WrapIf(err, "failed to prune")
+			return fmt.Errorf("failed to prune: %w", err)
 		}
 
 		if jsonOutput {
@@ -73,7 +73,7 @@ var dockerInfoCmd = &cobra.Command{
 		// ApiResponse envelope.
 		result, err := c.DoJSON[dockerinfo.Info](cmd.Context(), http.MethodGet, types.SystemDockerInfo(c.EnvID()), nil)
 		if err != nil {
-			return errors.WrapIf(err, "failed to get docker info")
+			return fmt.Errorf("failed to get docker info: %w", err)
 		}
 
 		if jsonOutput {
@@ -163,7 +163,7 @@ var convertCmd = &cobra.Command{
 		req := map[string]string{"dockerRunCommand": args[0]}
 		result, err := c.DoJSON[convertResult](cmd.Context(), http.MethodPost, types.SystemConvert(c.EnvID()), req)
 		if err != nil {
-			return errors.WrapIf(err, "failed to convert command")
+			return fmt.Errorf("failed to convert command: %w", err)
 		}
 
 		if jsonOutput {
@@ -254,7 +254,7 @@ func runUpgradeCheckInternal(cmd *cobra.Command) error {
 	}
 	result, err := c.DoJSON[upgradeCheckResult](cmd.Context(), http.MethodGet, types.SystemUpgradeCheck(c.EnvID()), nil)
 	if err != nil {
-		return errors.WrapIf(err, "failed to check for upgrades")
+		return fmt.Errorf("failed to check for upgrades: %w", err)
 	}
 
 	if jsonOutput {
@@ -337,7 +337,7 @@ func runUpgradeAllInternal(cmd *cobra.Command) error {
 	if upgradeAllStatusFlag {
 		result, err := c.GetJSON[environmentUpdateJob](cmd.Context(), types.SystemUpgradeAllStatus(c.EnvID()))
 		if err != nil {
-			return errors.WrapIf(err, "failed to get update-all status")
+			return fmt.Errorf("failed to get update-all status: %w", err)
 		}
 
 		if jsonOutput {
@@ -362,7 +362,7 @@ func runUpgradeAllInternal(cmd *cobra.Command) error {
 
 	result, err := c.PostJSON[environmentUpdateJob](cmd.Context(), types.SystemUpgradeAll(c.EnvID()), nil)
 	if err != nil {
-		return errors.WrapIf(err, "failed to trigger update-all")
+		return fmt.Errorf("failed to trigger update-all: %w", err)
 	}
 
 	if jsonOutput {

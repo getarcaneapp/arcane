@@ -7,6 +7,7 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -15,6 +16,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/types/v2/auth"
 	"github.com/getarcaneapp/arcane/types/v2/base"
+	"github.com/getarcaneapp/arcane/types/v2/features"
 	"go.getarcane.app/kit/pkg/mapping"
 )
 
@@ -196,5 +198,30 @@ func SessionMetaFromContext(ctx context.Context, userAgent string) auth.SessionM
 	return auth.SessionMeta{
 		UserAgent: userAgent,
 		IPAddress: middleware.GetRemoteAddrFromContext(ctx),
+	}
+}
+
+// DownloadResponse streams an attachment and closes its reader when streaming
+// ends. A negative size means unknown and omits Content-Length.
+func DownloadResponse(reader io.ReadCloser, size int64, filename string) *huma.StreamResponse {
+	return &huma.StreamResponse{Body: func(ctx huma.Context) {
+		defer func() { _ = reader.Close() }()
+		ctx.SetHeader("Content-Type", "application/octet-stream")
+		ctx.SetHeader("Content-Disposition", "attachment; filename="+filename)
+		if size >= 0 {
+			ctx.SetHeader("Content-Length", strconv.FormatInt(size, 10))
+		}
+		_, _ = io.Copy(ctx.BodyWriter(), reader)
+	}}
+}
+
+// FeatureDisabledError identifies a disabled runtime feature in problem details.
+func FeatureDisabledError(id features.ID) *features.DisabledError {
+	return &features.DisabledError{
+		Status:  http.StatusForbidden,
+		Title:   http.StatusText(http.StatusForbidden),
+		Detail:  fmt.Sprintf("feature %s is disabled", id),
+		Code:    string(common.APIErrorCodeFeatureDisabled),
+		Feature: id,
 	}
 }

@@ -161,9 +161,9 @@ func newResourceSortServiceInternal(t *testing.T, fixture *resourceStatsServerIn
 
 func resourceSortParamsInternal(sort, order string, start, limit int) pagination.QueryParams {
 	return pagination.QueryParams{
-		SortParams: pagination.SortParams{Sort: sort, Order: pagination.SortOrder(order)},
-		Params:     pagination.Params{Start: start, Limit: limit},
-		Filters:    map[string]string{},
+		Sort: sort, Order: pagination.SortOrder(order),
+		Start: start, Limit: limit,
+		Filters: map[string]string{},
 	}
 }
 
@@ -344,12 +344,10 @@ func TestResourceSortCoalescesConcurrentFetches(t *testing.T) {
 	var wg sync.WaitGroup
 	errs := make([]error, callers)
 	for i := range callers {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			_, err := svc.fetchResourceSampleInternal(t.Context(), "web")
 			errs[i] = err
-		}()
+		})
 	}
 	wg.Wait()
 	for _, err := range errs {

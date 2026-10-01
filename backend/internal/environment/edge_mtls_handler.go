@@ -3,12 +3,13 @@ package environment
 import (
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
+	"fmt"
 	"math"
 	"os"
 	"strings"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	typesenvironment "github.com/getarcaneapp/arcane/types/v2/environment"
@@ -30,12 +31,12 @@ func generatedEdgeMTLSClientCertPathInternal(cfg *config.Config, envID string) (
 
 	certPath, err := edge.GeneratedManagerClientMTLSCertPath(edgeCfg, envID)
 	if err != nil {
-		return "", errors.WrapIf(err, "resolve generated edge mTLS client certificate path")
+		return "", fmt.Errorf("resolve generated edge mTLS client certificate path: %w", err)
 	}
 	// os.* rather than acfs: the assets dir may be user-configured to anywhere
 	// on the host, so no confinement root exists for this path.
 	if _, err := os.Stat(certPath); err != nil {
-		return "", errors.WrapIf(err, "stat generated edge mTLS client certificate")
+		return "", fmt.Errorf("stat generated edge mTLS client certificate: %w", err)
 	}
 
 	return certPath, nil
@@ -51,7 +52,7 @@ func readGeneratedEdgeMTLSCertificateInfoInternal(cfg *config.Config, envID stri
 	// on the host, so no confinement root exists for this path.
 	certPEM, err := os.ReadFile(certPath)
 	if err != nil {
-		return nil, errors.WrapIf(err, "read generated edge mTLS client certificate")
+		return nil, fmt.Errorf("read generated edge mTLS client certificate: %w", err)
 	}
 
 	block, _ := pem.Decode(certPEM)
@@ -61,7 +62,7 @@ func readGeneratedEdgeMTLSCertificateInfoInternal(cfg *config.Config, envID stri
 
 	cert, err := x509.ParseCertificate(block.Bytes)
 	if err != nil {
-		return nil, errors.WrapIf(err, "parse generated edge mTLS client certificate")
+		return nil, fmt.Errorf("parse generated edge mTLS client certificate: %w", err)
 	}
 
 	expiresAt := cert.NotAfter.UTC()

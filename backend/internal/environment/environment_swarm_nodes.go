@@ -2,11 +2,12 @@ package environment
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
 	"strings"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
 	"gorm.io/gorm"
 )
@@ -17,9 +18,8 @@ func (s *EnvironmentService) ListSwarmNodeAgentEnvironments(ctx context.Context,
 		Model(&Environment{}).
 		Where("parent_environment_id = ?", parentEnvironmentID).
 		Find(&envs).Error; err != nil {
-		return nil, errors.WrapIf(err, "failed to list swarm node agent environments")
+		return nil, fmt.Errorf("failed to list swarm node agent environments: %w", err)
 	}
-
 	return envs, nil
 }
 
@@ -34,9 +34,8 @@ func (s *EnvironmentService) ListSwarmNodeCandidateEnvironments(ctx context.Cont
 		Where("id <> ?", "0").
 		Order("name ASC").
 		Find(&envs).Error; err != nil {
-		return nil, errors.WrapIf(err, "failed to list swarm node candidate environments")
+		return nil, fmt.Errorf("failed to list swarm node candidate environments: %w", err)
 	}
-
 	return envs, nil
 }
 
@@ -50,7 +49,7 @@ func (s *EnvironmentService) BindSwarmNodeEnvironment(
 	var envRecord Environment
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("id = ?", environmentID).First(&envRecord).Error; err != nil {
-			return errors.WrapIf(err, "failed to load environment for swarm node binding")
+			return fmt.Errorf("failed to load environment for swarm node binding: %w", err)
 		}
 		if envRecord.Hidden {
 			return errors.New("dedicated agent environments cannot be attached as visible environments")
@@ -69,7 +68,7 @@ func (s *EnvironmentService) BindSwarmNodeEnvironment(
 		if err := tx.Model(&Environment{}).
 			Where("hidden = ? AND parent_environment_id = ? AND swarm_node_id = ? AND id <> ?", false, parentEnvironmentID, nodeID, environmentID).
 			Count(&existingVisibleBindings).Error; err != nil {
-			return errors.WrapIf(err, "failed to inspect existing swarm node binding")
+			return fmt.Errorf("failed to inspect existing swarm node binding: %w", err)
 		}
 		if existingVisibleBindings > 0 && !rebind {
 			return errors.New("swarm node already has a visible environment binding; explicit rebinding is required")
@@ -78,7 +77,7 @@ func (s *EnvironmentService) BindSwarmNodeEnvironment(
 			if err := tx.Model(&Environment{}).
 				Where("hidden = ? AND parent_environment_id = ? AND swarm_node_id = ? AND id <> ?", false, parentEnvironmentID, nodeID, environmentID).
 				Updates(map[string]any{"parent_environment_id": nil, "swarm_node_id": nil, "updated_at": new(time.Now())}).Error; err != nil {
-				return errors.WrapIf(err, "failed to clear previous swarm node binding")
+				return fmt.Errorf("failed to clear previous swarm node binding: %w", err)
 			}
 		}
 
@@ -87,7 +86,7 @@ func (s *EnvironmentService) BindSwarmNodeEnvironment(
 			"swarm_node_id":         nodeID,
 			"updated_at":            new(time.Now()),
 		}).Error; err != nil {
-			return errors.WrapIf(err, "failed to bind environment to swarm node")
+			return fmt.Errorf("failed to bind environment to swarm node: %w", err)
 		}
 
 		return tx.Where("id = ?", environmentID).First(&envRecord).Error
@@ -108,7 +107,7 @@ func (s *EnvironmentService) DetachSwarmNodeEnvironment(ctx context.Context, par
 	if err := s.db.WithContext(ctx).Model(&Environment{}).
 		Where("hidden = ? AND parent_environment_id = ? AND swarm_node_id = ?", false, parentEnvironmentID, nodeID).
 		Updates(map[string]any{"parent_environment_id": nil, "swarm_node_id": nil, "updated_at": &now}).Error; err != nil {
-		return errors.WrapIf(err, "failed to detach swarm node environment")
+		return fmt.Errorf("failed to detach swarm node environment: %w", err)
 	}
 	s.NotifyRuntimeStateChanged()
 
@@ -125,7 +124,7 @@ func (s *EnvironmentService) DeleteSwarmNodeAgentDeployment(ctx context.Context,
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil
 		}
-		return errors.WrapIf(err, "failed to load swarm node agent deployment")
+		return fmt.Errorf("failed to load swarm node agent deployment: %w", err)
 	}
 
 	return s.DeleteEnvironment(ctx, envRecord.ID, userID, username)
@@ -172,7 +171,7 @@ func (s *EnvironmentService) applySwarmNodeAgentApiKeyInternal(
 
 	apiKeyDto, err := s.apiKeyService.CreateEnvironmentApiKey(ctx, env.ID)
 	if err != nil {
-		return "", errors.WrapIf(err, "failed to create environment API key")
+		return "", fmt.Errorf("failed to create environment API key: %w", err)
 	}
 
 	if err := s.RegenerateEnvironmentApiKey(ctx, env.ID, apiKeyDto.ID, apiKeyDto.Key, userID, username, env.Name); err != nil {
@@ -220,7 +219,7 @@ func (s *EnvironmentService) EnsureSwarmNodeAgentEnvironment(
 		Order("hidden ASC").
 		First(&env).Error
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, "", errors.WrapIf(err, "failed to load swarm node agent environment")
+		return nil, "", fmt.Errorf("failed to load swarm node agent environment: %w", err)
 	}
 
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -236,7 +235,7 @@ func (s *EnvironmentService) EnsureSwarmNodeAgentEnvironment(
 		}
 
 		if _, createErr := s.CreateEnvironment(ctx, createdEnv, new(userID), new(username)); createErr != nil {
-			return nil, "", errors.WrapIf(createErr, "failed to create swarm node agent environment")
+			return nil, "", fmt.Errorf("failed to create swarm node agent environment: %w", createErr)
 		}
 		env = *createdEnv
 	}
@@ -248,7 +247,7 @@ func (s *EnvironmentService) EnsureSwarmNodeAgentEnvironment(
 
 	refreshedEnv, err := s.GetEnvironmentByID(ctx, env.ID)
 	if err != nil {
-		return nil, "", errors.WrapIf(err, "failed to refresh swarm node agent environment")
+		return nil, "", fmt.Errorf("failed to refresh swarm node agent environment: %w", err)
 	}
 
 	return refreshedEnv, apiKey, nil
@@ -261,7 +260,7 @@ func (s *EnvironmentService) UpdateSwarmNodeIdentity(ctx context.Context, envID,
 	}
 
 	if err := s.db.WithContext(ctx).Model(&Environment{}).Where("id = ?", envID).Updates(updates).Error; err != nil {
-		return errors.WrapIf(err, "failed to update swarm node identity")
+		return fmt.Errorf("failed to update swarm node identity: %w", err)
 	}
 	s.NotifyRuntimeStateChanged()
 

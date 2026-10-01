@@ -5,6 +5,8 @@ import (
 	"cmp"
 	"context"
 	"crypto/rand"
+	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"strings"
@@ -13,7 +15,6 @@ import (
 	"time"
 	"uuid"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
 	st "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	"github.com/italypaleale/francis/actor"
@@ -297,7 +298,7 @@ func (q *Coordinator) invokeInternal(ctx context.Context, run st.Run, reconcile 
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			outcome = st.Outcome{Status: st.NeedsAttention, Message: "Job panicked; inspect logs before retrying"}
-			err = errors.Errorf("job panic: %v", recovered)
+			err = fmt.Errorf("job panic: %v", recovered)
 			slog.ErrorContext(ctx, "Job panicked", "runId", run.ID, "error", err)
 		}
 	}()
@@ -421,3 +422,36 @@ func mergeTargetProgressInternal(previous, outcome st.Outcome) st.Outcome {
 }
 
 func (q *Coordinator) Active() bool { return q.enabled.Load() }
+
+// Resolve releases reviewed, inactive work without discarding its execution evidence.
+func (q *Coordinator) Resolve(ctx context.Context, environmentID, jobID, runID, resolvedBy string) (st.Run, error) {
+	run, err := q.Get(ctx, environmentID, jobID, runID)
+	if err != nil {
+		return run, err
+	}
+	err = q.UpdateRun(ctx, run, func(current *st.Run) error {
+		if current.Status == st.Canceled && current.Resolution != nil {
+			run = *current
+			return nil
+		}
+		if current.Status != st.NeedsAttention {
+			return errors.New("only runs needing attention can be resolved")
+		}
+		if current.EnvironmentID != "0" && (current.RemoteDeliveryAttempted || current.RemoteAccepted) && !current.RemoteSettled {
+			return errors.New("remote execution must be confirmed and acknowledged before resolution")
+		}
+		now := time.Now().UTC()
+		current.Status = st.Canceled
+		current.Resolution = &st.RunResolution{ResolvedBy: resolvedBy, ResolvedAt: now, Reason: "resolved_after_review"}
+		current.UpdatedAt = now
+		current.FinishedAt = &now
+		current.NextAttempt = nil
+		current.Owner = ""
+		run = *current
+		return nil
+	})
+	if err == nil {
+		q.signalInternal()
+	}
+	return run, err
+}

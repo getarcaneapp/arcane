@@ -5,12 +5,13 @@ import (
 	"cmp"
 	"context"
 	"encoding/json/v2"
+	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"strings"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
@@ -46,14 +47,14 @@ func (s *VolumeService) requireVolumeHelperACFSInternal(ctx context.Context, vol
 
 	stdout, stderr, err := s.execInContainerInternal(ctx, containerID, "", []string{"acfs", "version"})
 	if err != nil {
-		return errors.WrapIf(err, "volume workspace requires an ACFS-capable tools image: "+strings.TrimSpace(stderr))
+		return fmt.Errorf("%s: %w", "volume workspace requires an ACFS-capable tools image: "+strings.TrimSpace(stderr), err)
 	}
 	var response acfstypes.VersionResponse
 	if err := json.Unmarshal([]byte(stdout), &response); err != nil {
-		return errors.WrapIf(err, "parse ACFS tools-image capability")
+		return fmt.Errorf("parse ACFS tools-image capability: %w", err)
 	}
 	if response.Protocol < acfstypes.ProtocolVersion {
-		return errors.Errorf("volume workspace requires ACFS protocol %d, tools image provides protocol %d", acfstypes.ProtocolVersion, response.Protocol)
+		return fmt.Errorf("volume workspace requires ACFS protocol %d, tools image provides protocol %d", acfstypes.ProtocolVersion, response.Protocol)
 	}
 
 	s.helperMu.Lock()
@@ -111,7 +112,7 @@ func (s *VolumeService) getVolumeHelperImageInternal(ctx context.Context, docker
 		}
 		dockerClient, err = s.dockerService.GetClient(ctx)
 		if err != nil {
-			return "", errors.WrapIf(err, "failed to get docker client")
+			return "", fmt.Errorf("failed to get docker client: %w", err)
 		}
 	}
 
@@ -141,7 +142,7 @@ func (s *VolumeService) getVolumeHelperImageInternal(ctx context.Context, docker
 		return fallback.Image, nil
 	}
 
-	return "", errors.WrapIf(pullErr, "failed to resolve helper image: tools image unavailable and arcane fallback not found")
+	return "", fmt.Errorf("failed to resolve helper image: tools image unavailable and arcane fallback not found: %w", pullErr)
 }
 
 func (s *VolumeService) acquireVolumeHelperInternal(ctx context.Context, volumeName string) (string, func(), error) {
@@ -203,7 +204,7 @@ func (s *VolumeService) resolveHelperInternal(ctx context.Context, dockerClient 
 	var shared any
 	select {
 	case <-ctx.Done():
-		return "", errors.WrapIf(ctx.Err(), "canceled waiting for volume helper container")
+		return "", fmt.Errorf("canceled waiting for volume helper container: %w", ctx.Err())
 	case result := <-resultCh:
 		if result.Err != nil {
 			return "", result.Err
@@ -269,12 +270,12 @@ func (s *VolumeService) startHelperContainerInternal(ctx context.Context, docker
 		HostConfig: hostConfig,
 	})
 	if err != nil {
-		return "", nil, errors.WrapIf(err, "failed to create temp container")
+		return "", nil, fmt.Errorf("failed to create temp container: %w", err)
 	}
 
 	if _, err := dockerClient.ContainerStart(ctx, resp.ID, client.ContainerStartOptions{}); err != nil {
 		_, _ = dockerClient.ContainerRemove(ctx, resp.ID, volumehelper.RemoveOptions())
-		return "", nil, errors.WrapIf(err, "failed to start temp container")
+		return "", nil, fmt.Errorf("failed to start temp container: %w", err)
 	}
 
 	cleanup := func() {
@@ -351,7 +352,7 @@ func (s *VolumeService) ReapIdleHelpers(ctx context.Context, idleTimeout time.Du
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return 0, errors.WrapIf(err, "failed to get docker client for idle helper reap")
+		return 0, fmt.Errorf("failed to get docker client for idle helper reap: %w", err)
 	}
 
 	staleIDs := s.collectStaleHelperIDsInternal(time.Now(), idleTimeout)
@@ -406,7 +407,7 @@ func (s *VolumeService) StopHelper(ctx context.Context, volumeName string) error
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return errors.WrapIf(err, "failed to get docker client for helper stop")
+		return fmt.Errorf("failed to get docker client for helper stop: %w", err)
 	}
 
 	containerID := s.takeHelperIDInternal(volumeName)
@@ -415,7 +416,7 @@ func (s *VolumeService) StopHelper(ctx context.Context, volumeName string) error
 	}
 
 	if _, err := dockerClient.ContainerRemove(ctx, containerID, volumehelper.RemoveOptions()); err != nil {
-		return errors.WrapIf(err, "failed to remove helper container")
+		return fmt.Errorf("failed to remove helper container: %w", err)
 	}
 
 	return nil
@@ -439,12 +440,12 @@ func (s *VolumeService) CleanupOrphanedVolumeHelpers(ctx context.Context) (int, 
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return 0, errors.WrapIf(err, "failed to get docker client for orphan helper cleanup")
+		return 0, fmt.Errorf("failed to get docker client for orphan helper cleanup: %w", err)
 	}
 
 	containers, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true})
 	if err != nil {
-		return 0, errors.WrapIf(err, "failed to list containers for orphan helper cleanup")
+		return 0, fmt.Errorf("failed to list containers for orphan helper cleanup: %w", err)
 	}
 
 	removedCount := 0
@@ -500,9 +501,9 @@ func (s *VolumeService) execInContainerInternal(ctx context.Context, containerID
 	if exitCode != 0 {
 		execErr := cmp.Or(strings.TrimSpace(stderr.String()), strings.TrimSpace(stdout.String()))
 		if execErr != "" {
-			return stdout.String(), stderr.String(), errors.Errorf("command exited with code %d: %s", exitCode, execErr)
+			return stdout.String(), stderr.String(), fmt.Errorf("command exited with code %d: %s", exitCode, execErr)
 		}
-		return stdout.String(), stderr.String(), errors.Errorf("command exited with code %d", exitCode)
+		return stdout.String(), stderr.String(), fmt.Errorf("command exited with code %d", exitCode)
 	}
 
 	return stdout.String(), stderr.String(), nil

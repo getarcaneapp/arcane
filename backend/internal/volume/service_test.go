@@ -896,7 +896,7 @@ func TestVolumeBackupContainerLifecycleStopsAndRestartsOnlyRunningContainersUsin
 	})
 
 	service, dockerClient := setupVolumeBackupLifecycleTestInternal(t, serverHandler)
-	actor := common.User{BaseModel: database.BaseModel{ID: "user-1"}, Username: "tester"}
+	actor := common.User{ID: "user-1", Username: "tester"}
 	stopped, err := service.stopRunningContainersForBackupInternal(context.Background(), dockerClient, "app-data", actor, false)
 	require.NoError(t, err)
 	require.Len(t, stopped, 1)
@@ -940,7 +940,7 @@ func TestVolumeBackupContainerLifecycleRollsBackStoppedContainersOnStopFailure(t
 	})
 
 	service, dockerClient := setupVolumeBackupLifecycleTestInternal(t, serverHandler)
-	actor := common.User{BaseModel: database.BaseModel{ID: "user-1"}, Username: "tester"}
+	actor := common.User{ID: "user-1", Username: "tester"}
 	stillStopped, err := service.stopRunningContainersForBackupInternal(context.Background(), dockerClient, "app-data", actor, false)
 	require.ErrorContains(t, err, "failed to stop container second")
 	require.Empty(t, stillStopped)
@@ -1000,7 +1000,7 @@ func TestVolumeBackupContainerLifecycleWaitsForRunningComposeReplacement(t *test
 	})
 
 	service, dockerClient := setupVolumeBackupLifecycleTestInternal(t, serverHandler)
-	actor := common.User{BaseModel: database.BaseModel{ID: "user-1"}, Username: "tester"}
+	actor := common.User{ID: "user-1", Username: "tester"}
 	stopped, err := service.stopRunningContainersForBackupInternal(context.Background(), dockerClient, "app-data", actor, false)
 	require.NoError(t, err)
 	require.Len(t, stopped, 1)

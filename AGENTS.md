@@ -89,8 +89,9 @@ the environment proxy, and embedded frontend delivery.
 
 Handlers translate typed HTTP data and call services. They do not contain business
 logic. Services receive dependencies through constructors/Fx. Use `slog` for
-structured logging and the existing `emperror.dev/errors` and `internal/common`
-patterns for wrapped or semantic errors.
+structured logging, standard `errors` and `fmt.Errorf("…: %w")` for wrapping,
+`internal/common.Classify` for semantic errors, and `types/base.FieldError` for
+validation fields.
 
 Before adding backend logic, search the owning domain plus:
 

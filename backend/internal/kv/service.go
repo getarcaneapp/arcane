@@ -2,11 +2,12 @@ package kv
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -28,7 +29,7 @@ func (s *KVService) Get(ctx context.Context, key string) (string, bool, error) {
 		return "", false, nil
 	}
 	if err != nil {
-		return "", false, errors.WrapIff(err, "failed to load kv entry %q", key)
+		return "", false, fmt.Errorf("failed to load kv entry %q: %w", key, err)
 	}
 
 	return entry.Value, true, nil
@@ -43,7 +44,7 @@ func (s *KVService) Set(ctx context.Context, key, value string) error {
 		}).
 		Create(&entry).Error
 	if err != nil {
-		return errors.WrapIff(err, "failed to upsert kv entry %q", key)
+		return fmt.Errorf("failed to upsert kv entry %q: %w", key, err)
 	}
 
 	return nil
@@ -51,7 +52,7 @@ func (s *KVService) Set(ctx context.Context, key, value string) error {
 
 func (s *KVService) Delete(ctx context.Context, key string) error {
 	if err := s.db.WithContext(ctx).Delete(&KVEntry{}, "key = ?", key).Error; err != nil {
-		return errors.WrapIff(err, "failed to delete kv entry %q", key)
+		return fmt.Errorf("failed to delete kv entry %q: %w", key, err)
 	}
 	return nil
 }
@@ -60,7 +61,7 @@ func (s *KVService) ListByPrefix(ctx context.Context, prefix string) ([]KVEntry,
 	var entries []KVEntry
 	escapedPrefix := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(prefix)
 	if err := s.db.WithContext(ctx).Where("key LIKE ? ESCAPE '\\'", escapedPrefix+"%").Find(&entries).Error; err != nil {
-		return nil, errors.WrapIff(err, "failed to list kv entries with prefix %q", prefix)
+		return nil, fmt.Errorf("failed to list kv entries with prefix %q: %w", prefix, err)
 	}
 	return entries, nil
 }
@@ -75,7 +76,7 @@ func (s *KVService) GetTyped[T any](ctx context.Context, key string, defaultValu
 
 	parsedValue, err := parse(rawValue)
 	if err != nil {
-		return defaultValue, errors.WrapIff(err, "failed to parse kv entry %q as %T", key, defaultValue)
+		return defaultValue, fmt.Errorf("failed to parse kv entry %q as %T: %w", key, defaultValue, err)
 	}
 
 	return parsedValue, nil
@@ -113,7 +114,7 @@ func (s *KVService) IncrementInt64(ctx context.Context, key string, delta int64)
 
 		currentValue, parseErr := strconv.ParseInt(entry.Value, 10, 64)
 		if parseErr != nil {
-			return errors.WrapIff(parseErr, "failed to parse kv entry %q as int64", key)
+			return fmt.Errorf("failed to parse kv entry %q as int64: %w", key, parseErr)
 		}
 
 		nextValue = currentValue + delta
@@ -121,7 +122,7 @@ func (s *KVService) IncrementInt64(ctx context.Context, key string, delta int64)
 		return tx.Save(&entry).Error
 	})
 	if err != nil {
-		return 0, errors.WrapIff(err, "failed to increment kv entry %q", key)
+		return 0, fmt.Errorf("failed to increment kv entry %q: %w", key, err)
 	}
 
 	return nextValue, nil
@@ -130,11 +131,17 @@ func (s *KVService) IncrementInt64(ctx context.Context, key string, delta int64)
 // CreateIfAbsent atomically creates an entry without replacing an existing value.
 func (s *KVService) CreateIfAbsent(ctx context.Context, key, value string) (bool, error) {
 	result := s.db.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&KVEntry{Key: key, Value: value})
-	return result.RowsAffected == 1, errors.WrapIf(result.Error, "create kv entry")
+	if err := result.Error; err != nil {
+		return result.RowsAffected == 1, fmt.Errorf("create kv entry: %w", err)
+	}
+	return result.RowsAffected == 1, nil
 }
 
 // CompareAndSwap updates only the exact value read by the caller.
 func (s *KVService) CompareAndSwap(ctx context.Context, key, previous, next string) (bool, error) {
 	result := s.db.WithContext(ctx).Model(&KVEntry{}).Where("key = ? AND value = ?", key, previous).Updates(map[string]any{"value": next, "updated_at": time.Now()})
-	return result.RowsAffected == 1, errors.WrapIf(result.Error, "compare and swap kv entry")
+	if err := result.Error; err != nil {
+		return result.RowsAffected == 1, fmt.Errorf("compare and swap kv entry: %w", err)
+	}
+	return result.RowsAffected == 1, nil
 }

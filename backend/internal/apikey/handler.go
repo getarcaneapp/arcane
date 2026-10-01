@@ -2,9 +2,9 @@ package apikey
 
 import (
 	"context"
+	"errors"
 	"net/http"
 
-	"emperror.dev/errors"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
@@ -156,7 +156,7 @@ func (h *ApiKeyHandler) ListApiKeys(ctx context.Context, input *ListApiKeysInput
 
 	apiKeys, paginationResp, err := h.apiKeyService.ListApiKeys(ctx, params)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to list API keys").Error())
+		return nil, huma.Error500InternalServerError("Failed to list API keys: " + err.Error())
 	}
 
 	return &handlerutil.Page[apikeytypes.ApiKey]{
@@ -271,7 +271,7 @@ func (h *ApiKeyHandler) ListMyApiKeys(ctx context.Context, input *struct{}) (*ha
 
 	keys, err := h.apiKeyService.ListApiKeysByUser(ctx, user.ID)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to list API keys").Error())
+		return nil, huma.Error500InternalServerError("Failed to list API keys: " + err.Error())
 	}
 
 	return &handlerutil.Out[[]apikeytypes.ApiKey]{

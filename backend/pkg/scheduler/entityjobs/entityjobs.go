@@ -6,9 +6,9 @@ package entityjobs
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 )
@@ -42,7 +42,7 @@ func New(jobPrefix, admissionScope string) *Registry {
 // so they outlive the request or bootstrap goroutine that registered them.
 func (r *Registry) SetScheduler(ctx context.Context, scheduler schedulertypes.DynamicScheduler, admissionGate *runs.Admission) error { //nolint:contextcheck // scheduled runs must capture the app lifecycle context, not request contexts
 	if scheduler == nil || admissionGate == nil {
-		return errors.Errorf("%s scheduler dependencies unavailable", r.admissionScope)
+		return fmt.Errorf("%s scheduler dependencies unavailable", r.admissionScope)
 	}
 	if ctx == nil {
 		ctx = context.Background()

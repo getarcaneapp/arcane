@@ -5,7 +5,6 @@ import (
 	"log/slog"
 	"strings"
 
-	"emperror.dev/errors"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
@@ -173,7 +172,7 @@ func (h *ContainerRegistryHandler) ListRegistries(ctx context.Context, input *Li
 
 	registries, paginationResp, err := h.registryService.GetRegistriesPaginated(ctx, params)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to list registries").Error())
+		return nil, huma.Error500InternalServerError("Failed to list registries: " + err.Error())
 	}
 
 	return &handlerutil.Page[containerregistry.ContainerRegistry]{
@@ -189,7 +188,7 @@ func (h *ContainerRegistryHandler) ListRegistries(ctx context.Context, input *Li
 func (h *ContainerRegistryHandler) GetPullUsage(ctx context.Context, input *struct{}) (*handlerutil.Out[containerregistry.PullUsageResponse], error) {
 	usage, err := h.registryService.GetRegistryPullUsage(ctx)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to retrieve registry").Error())
+		return nil, huma.Error500InternalServerError("Failed to retrieve registry: " + err.Error())
 	}
 
 	return &handlerutil.Out[containerregistry.PullUsageResponse]{
@@ -205,7 +204,7 @@ func (h *ContainerRegistryHandler) CreateRegistry(ctx context.Context, input *Cr
 	reg, err := h.registryService.CreateRegistry(ctx, input.Body)
 	if err != nil {
 		apiErr := common.ToAPIError(err)
-		return nil, huma.NewError(apiErr.HTTPStatus(), errors.WithMessage(err, "Failed to create registry").Error())
+		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to create registry: "+err.Error())
 	}
 
 	h.triggerRemoteRegistrySync(ctx, "registry creation")
@@ -225,7 +224,7 @@ func (h *ContainerRegistryHandler) GetRegistry(ctx context.Context, input *GetCo
 	reg, err := h.registryService.GetRegistryByID(ctx, input.ID)
 	if err != nil {
 		apiErr := common.ToAPIError(err)
-		return nil, huma.NewError(apiErr.HTTPStatus(), errors.WithMessage(err, "Failed to retrieve registry").Error())
+		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to retrieve registry: "+err.Error())
 	}
 
 	body, mapErr := handlerutil.MapOneAPIResponse[*ContainerRegistry, containerregistry.ContainerRegistry](reg, func(error) string {
@@ -243,7 +242,7 @@ func (h *ContainerRegistryHandler) UpdateRegistry(ctx context.Context, input *Up
 	reg, err := h.registryService.UpdateRegistry(ctx, input.ID, input.Body)
 	if err != nil {
 		apiErr := common.ToAPIError(err)
-		return nil, huma.NewError(apiErr.HTTPStatus(), errors.WithMessage(err, "Failed to update registry").Error())
+		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to update registry: "+err.Error())
 	}
 
 	h.triggerRemoteRegistrySync(ctx, "registry update")
@@ -262,7 +261,7 @@ func (h *ContainerRegistryHandler) UpdateRegistry(ctx context.Context, input *Up
 func (h *ContainerRegistryHandler) DeleteRegistry(ctx context.Context, input *DeleteContainerRegistryInput) (*handlerutil.Out[base.MessageResponse], error) {
 	if err := h.registryService.DeleteRegistry(ctx, input.ID); err != nil {
 		apiErr := common.ToAPIError(err)
-		return nil, huma.NewError(apiErr.HTTPStatus(), errors.WithMessage(err, "Failed to delete registry").Error())
+		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to delete registry: "+err.Error())
 	}
 
 	h.triggerRemoteRegistrySync(ctx, "registry deletion")
@@ -282,13 +281,13 @@ func (h *ContainerRegistryHandler) TestRegistry(ctx context.Context, input *Test
 	reg, err := h.registryService.GetRegistryByID(ctx, input.ID)
 	if err != nil {
 		apiErr := common.ToAPIError(err)
-		return nil, huma.NewError(apiErr.HTTPStatus(), errors.WithMessage(err, "Failed to retrieve registry").Error())
+		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to retrieve registry: "+err.Error())
 	}
 
 	// ECR registries use a different auth flow: generate a temporary token via AWS API.
 	if reg.RegistryType == "ecr" {
 		if err := h.registryService.TestECRRegistry(ctx, reg); err != nil {
-			return nil, huma.Error400BadRequest(errors.WithMessage(err, "Registry test failed").Error())
+			return nil, huma.Error400BadRequest("Registry test failed: " + err.Error())
 		}
 		return &handlerutil.Out[base.MessageResponse]{
 			Body: base.ApiResponse[base.MessageResponse]{
@@ -302,11 +301,11 @@ func (h *ContainerRegistryHandler) TestRegistry(ctx context.Context, input *Test
 
 	decryptedToken, err := crypto.Decrypt(reg.Token)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to decrypt token").Error())
+		return nil, huma.Error500InternalServerError("Failed to decrypt token: " + err.Error())
 	}
 
 	if err := h.registryService.TestRegistry(ctx, reg.URL, reg.Username, decryptedToken); err != nil {
-		return nil, huma.Error400BadRequest(errors.WithMessage(err, "Registry test failed").Error())
+		return nil, huma.Error400BadRequest("Registry test failed: " + err.Error())
 	}
 
 	noCredentials := strings.TrimSpace(reg.Username) == "" && strings.TrimSpace(decryptedToken) == ""
@@ -326,7 +325,7 @@ func (h *ContainerRegistryHandler) TestRegistry(ctx context.Context, input *Test
 func (h *ContainerRegistryHandler) SyncRegistries(ctx context.Context, input *SyncContainerRegistriesInput) (*handlerutil.Out[base.MessageResponse], error) {
 	if err := h.registryService.SyncRegistries(ctx, input.Body.Registries); err != nil {
 		apiErr := common.ToAPIError(err)
-		return nil, huma.NewError(apiErr.HTTPStatus(), errors.WithMessage(err, "Failed to sync registries").Error())
+		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to sync registries: "+err.Error())
 	}
 
 	return &handlerutil.Out[base.MessageResponse]{

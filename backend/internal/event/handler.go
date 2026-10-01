@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"strings"
 
-	"emperror.dev/errors"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
@@ -99,7 +98,7 @@ func RegisterAgentEventIngestion(g *echo.Group, eventService *EventService, reso
 		if _, err := eventService.IngestAgentEvent(c.Request().Context(), environmentID, input); err != nil {
 			return c.JSON(http.StatusInternalServerError, base.ApiResponse[base.MessageResponse]{
 				Success: false,
-				Data:    base.MessageResponse{Message: errors.WithMessage(err, "Failed to create event").Error()},
+				Data:    base.MessageResponse{Message: "Failed to create event: " + err.Error()},
 			})
 		}
 
@@ -178,7 +177,7 @@ func (h *EventHandler) ListEvents(ctx context.Context, input *ListEventsInput) (
 
 	events, paginationResp, err := h.eventService.ListEventsPaginated(ctx, params)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to list events").Error())
+		return nil, huma.Error500InternalServerError("Failed to list events: " + err.Error())
 	}
 
 	return &handlerutil.Page[eventtypes.Event]{
@@ -194,7 +193,7 @@ func (h *EventHandler) ListEvents(ctx context.Context, input *ListEventsInput) (
 func (h *EventHandler) GetEventStats(ctx context.Context, _ *GetEventStatsInput) (*handlerutil.Out[EventSeverityCounts], error) {
 	counts, err := h.eventService.GetEventSeverityCounts(ctx)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to load event statistics").Error())
+		return nil, huma.Error500InternalServerError("Failed to load event statistics: " + err.Error())
 	}
 
 	return &handlerutil.Out[EventSeverityCounts]{
@@ -222,7 +221,7 @@ func (h *EventHandler) GetEventsByEnvironment(ctx context.Context, input *GetEve
 
 	events, paginationResp, err := h.eventService.GetEventsByEnvironmentPaginated(ctx, input.EnvironmentID, params)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to list events").Error())
+		return nil, huma.Error500InternalServerError("Failed to list events: " + err.Error())
 	}
 
 	return &handlerutil.Page[eventtypes.Event]{
@@ -241,7 +240,7 @@ func (h *EventHandler) DeleteEvent(ctx context.Context, input *DeleteEventInput)
 	}
 
 	if err := h.eventService.DeleteEvent(ctx, input.EventID); err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to delete event").Error())
+		return nil, huma.Error500InternalServerError("Failed to delete event: " + err.Error())
 	}
 
 	return &handlerutil.Out[base.MessageResponse]{

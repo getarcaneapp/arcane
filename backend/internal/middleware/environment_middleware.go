@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json/v2"
+	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"mime"
@@ -15,7 +17,6 @@ import (
 	"strings"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
@@ -156,7 +157,7 @@ func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) e
 	if !enabled {
 		return c.JSON(http.StatusBadRequest, map[string]any{
 			"success": false,
-			"data":    map[string]any{"error": errors.New("Environment is disabled").Error()},
+			"data":    map[string]any{"error": errors.New("Environment is disabled").Error()}, //nolint:staticcheck // Preserve the existing error message.
 		})
 	}
 
@@ -341,7 +342,7 @@ func proxiedVolumeWorkspacePermissionsInternal(request *http.Request) ([]string,
 	// System temp scratch for the multipart replay buffer: no acfs root exists for it.
 	captured, err := os.CreateTemp("", "arcane-volume-workspace-manifest-*")
 	if err != nil {
-		return nil, errors.WrapIf(err, "create workspace manifest buffer")
+		return nil, fmt.Errorf("create workspace manifest buffer: %w", err)
 	}
 	defer func() {
 		_, _ = captured.Seek(0, io.SeekStart)
@@ -357,28 +358,28 @@ func proxiedVolumeWorkspacePermissionsInternal(request *http.Request) ([]string,
 	for {
 		part, nextErr := reader.NextPart()
 		if nextErr != nil {
-			return nil, errors.WrapIf(nextErr, "find workspace manifest part")
+			return nil, fmt.Errorf("find workspace manifest part: %w", nextErr)
 		}
 		if part.FormName() != "manifest" || part.FileName() != "" {
 			if closeErr := part.Close(); closeErr != nil {
-				return nil, errors.WrapIf(closeErr, "skip multipart field before workspace manifest")
+				return nil, fmt.Errorf("skip multipart field before workspace manifest: %w", closeErr)
 			}
 			continue
 		}
 		manifestJSON, readErr := io.ReadAll(io.LimitReader(part, maxProxiedWorkspaceManifestBytes+1))
 		closeErr := part.Close()
 		if readErr != nil {
-			return nil, errors.WrapIf(readErr, "read workspace manifest")
+			return nil, fmt.Errorf("read workspace manifest: %w", readErr)
 		}
 		if closeErr != nil {
-			return nil, errors.WrapIf(closeErr, "close workspace manifest part")
+			return nil, fmt.Errorf("close workspace manifest part: %w", closeErr)
 		}
 		if len(manifestJSON) > maxProxiedWorkspaceManifestBytes {
 			return nil, errors.New("workspace manifest is too large")
 		}
 		var manifest volumetypes.WorkspaceUpdateManifest
 		if err := json.Unmarshal(manifestJSON, &manifest); err != nil {
-			return nil, errors.WrapIf(err, "decode workspace manifest")
+			return nil, fmt.Errorf("decode workspace manifest: %w", err)
 		}
 		required, valid := authz.VolumeWorkspaceRequiredPermissions(manifest.FileChanges)
 		if !valid {
@@ -404,8 +405,8 @@ func proxiedGitOpsSyncPermissionsInternal(request *http.Request, method, suffix 
 
 	body, readErr := io.ReadAll(io.LimitReader(request.Body, maxProxiedGitOpsSyncBodyBytes+1))
 	closeErr := request.Body.Close()
-	if err := errors.Combine(readErr, closeErr); err != nil {
-		return nil, errors.WrapIf(err, "read gitops sync body")
+	if err := errors.Join(readErr, closeErr); err != nil {
+		return nil, fmt.Errorf("read gitops sync body: %w", err)
 	}
 	if len(body) > maxProxiedGitOpsSyncBodyBytes {
 		return nil, errors.New("gitops sync body is too large")
@@ -420,12 +421,12 @@ func proxiedGitOpsSyncPermissionsInternal(request *http.Request, method, suffix 
 	var items []syncBodyInternal
 	if isImport {
 		if err := json.Unmarshal(body, &items); err != nil {
-			return nil, errors.WrapIf(err, "decode gitops sync import body")
+			return nil, fmt.Errorf("decode gitops sync import body: %w", err)
 		}
 	} else {
 		var single syncBodyInternal
 		if err := json.Unmarshal(body, &single); err != nil {
-			return nil, errors.WrapIf(err, "decode gitops sync body")
+			return nil, fmt.Errorf("decode gitops sync body: %w", err)
 		}
 		items = []syncBodyInternal{single}
 	}
@@ -467,7 +468,7 @@ func (b *proxiedReplayBodyInternal) Close() error {
 	originalErr := b.original.Close()
 	// System temp scratch: no acfs root exists for it.
 	removeErr := os.Remove(b.path)
-	return errors.Combine(capturedErr, originalErr, removeErr)
+	return errors.Join(capturedErr, originalErr, removeErr)
 }
 
 func (m *EnvironmentMiddleware) proxyActiveEdgeTunnelInternal(c *echo.Context, envID string, accessToken *string) (bool, error) {
@@ -706,7 +707,7 @@ func (m *EnvironmentMiddleware) proxyHTTP(c *echo.Context, target string, access
 
 	req, err := m.createProxyRequest(c, target, accessToken)
 	if err != nil {
-		errMessage := errors.WithMessage(err, "Failed to create proxy request").Error()
+		errMessage := "Failed to create proxy request: " + err.Error()
 		if errors.Is(err, common.ErrEnvironmentInvalidProxyTarget) {
 			errMessage = err.Error()
 		}
@@ -720,7 +721,7 @@ func (m *EnvironmentMiddleware) proxyHTTP(c *echo.Context, target string, access
 	if err != nil {
 		return c.JSON(http.StatusBadGateway, map[string]any{
 			"success": false,
-			"data":    map[string]any{"error": errors.WithMessage(err, "Proxy request failed").Error()},
+			"data":    map[string]any{"error": "Proxy request failed: " + err.Error()},
 		})
 	}
 	defer func() { _ = resp.Body.Close() }()
@@ -733,7 +734,7 @@ func (m *EnvironmentMiddleware) createProxyRequest(c *echo.Context, target strin
 	srcReq := c.Request()
 	validatedTarget, err := httputils.ValidateOutboundHTTPURL(target)
 	if err != nil {
-		return nil, common.Classify(common.ErrEnvironmentInvalidProxyTarget, errors.WrapIf(err, "Invalid proxy target URL"))
+		return nil, common.Classify(common.ErrEnvironmentInvalidProxyTarget, fmt.Errorf("Invalid proxy target URL: %w", err)) //nolint:staticcheck // Preserve the existing error message.
 	}
 
 	// The body is streamed straight through rather than buffered: volume backup

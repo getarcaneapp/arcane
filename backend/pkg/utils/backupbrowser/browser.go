@@ -4,13 +4,13 @@ package backupbrowser
 
 import (
 	"cmp"
+	"errors"
 	"fmt"
 	"path"
 	"slices"
 	"sort"
 	"strings"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	backuptypes "github.com/getarcaneapp/arcane/types/v2/backup"
 	kit "go.getarcane.app/kit/pkg"

@@ -1,9 +1,9 @@
 package ws
 
 import (
+	"errors"
 	"net/http"
 
-	"emperror.dev/errors"
 	"github.com/coder/websocket"
 )
 

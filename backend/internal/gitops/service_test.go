@@ -3,13 +3,14 @@ package gitops
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
@@ -24,6 +25,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/entityjobs"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
 	francistest "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/francis/testing"
+	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/getarcaneapp/arcane/types/v2/gitops"
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	swarmtypes "github.com/getarcaneapp/arcane/types/v2/swarm"
@@ -896,11 +898,7 @@ func TestGitOpsSyncService_DirectorySync_RealWalkWithNestedConfig(t *testing.T) 
       - ./logs:/var/log/traefik
       - ./config/dynamic_config.yml:/etc/traefik/dynamic_config.yml:ro
 `))
-	writeFileInternal(t, repoPath, "traefik (nl10)/config/dynamic_config.yml", []byte(`http:
-  routers:
-    dashboard:
-      rule: Host(`+"`"+`traefik.example.com`+"`"+`)
-`))
+	writeFileInternal(t, repoPath, "traefik (nl10)/config/dynamic_config.yml", []byte("http:\n  routers:\n    dashboard:\n      rule: Host(`traefik.example.com`)\n"))
 
 	sync := &projectpkg.GitOpsSync{
 		ID:            "sync-directory-real-walk",
@@ -962,11 +960,7 @@ func TestGitOpsSyncService_DirectorySync_OverwritesExistingDirectoryAtFilePath(t
       - ./logs:/var/log/traefik
       - ./config/dynamic_config.yml:/etc/traefik/dynamic_config.yml:ro
 `))
-	writeFileInternal(t, repoPath, "traefik (nl10)/config/dynamic_config.yml", []byte(`http:
-  routers:
-    dashboard:
-      rule: Host(`+"`"+`traefik.example.com`+"`"+`)
-`))
+	writeFileInternal(t, repoPath, "traefik (nl10)/config/dynamic_config.yml", []byte("http:\n  routers:\n    dashboard:\n      rule: Host(`traefik.example.com`)\n"))
 
 	projectPath := filepath.Join(projectsDir, "traefik-project")
 	require.NoError(t, os.MkdirAll(filepath.Join(projectPath, "config", "dynamic_config.yml"), 0o755))
@@ -1872,7 +1866,9 @@ func TestValidateLifecycleConfig_RejectsScriptWithoutSyncDirectoryOnCreate(t *te
 	})
 	require.Error(t, err)
 	require.ErrorIs(t, err, common.ErrValidation)
-	require.Contains(t, errors.GetDetails(err), "preDeployScriptPath")
+	fieldErr, ok := errors.AsType[*base.FieldError](err)
+	require.True(t, ok)
+	require.Equal(t, "preDeployScriptPath", fieldErr.Field)
 }
 
 func TestValidateLifecycleConfig_AcceptsScriptWithSyncDirectoryOnCreate(t *testing.T) {
@@ -1895,7 +1891,9 @@ func TestValidateLifecycleConfig_RejectsLifecycleHookForSwarmStack(t *testing.T)
 	})
 	require.Error(t, err)
 	require.ErrorIs(t, err, common.ErrValidation)
-	require.Contains(t, errors.GetDetails(err), "preDeployScriptPath")
+	fieldErr, ok := errors.AsType[*base.FieldError](err)
+	require.True(t, ok)
+	require.Equal(t, "preDeployScriptPath", fieldErr.Field)
 	require.Contains(t, err.Error(), "project syncs")
 }
 
@@ -1909,7 +1907,9 @@ func TestValidateLifecycleConfig_RejectsSwarmTargetChangeWithExistingLifecycleHo
 	})
 	require.Error(t, err)
 	require.ErrorIs(t, err, common.ErrValidation)
-	require.Contains(t, errors.GetDetails(err), "preDeployScriptPath")
+	fieldErr, ok := errors.AsType[*base.FieldError](err)
+	require.True(t, ok)
+	require.Equal(t, "preDeployScriptPath", fieldErr.Field)
 	require.Contains(t, err.Error(), "project syncs")
 }
 
@@ -1933,12 +1933,14 @@ func TestValidateLifecycleConfig_RejectsSyncDirectoryToggleOffWhileScriptStillSe
 	})
 	require.Error(t, err)
 	require.ErrorIs(t, err, common.ErrValidation)
-	require.Contains(t, errors.GetDetails(err), "preDeployScriptPath")
+	fieldErr, ok := errors.AsType[*base.FieldError](err)
+	require.True(t, ok)
+	require.Equal(t, "preDeployScriptPath", fieldErr.Field)
 }
 
 func TestRedeployAfterSyncFailedError_FormatAndUnwrap(t *testing.T) {
 	cause := errors.New("pre-deploy hook bombed")
-	err := common.Classify(common.ErrRedeployAfterSyncFailed, errors.WrapIf(cause, "redeploy failed"))
+	err := common.Classify(common.ErrRedeployAfterSyncFailed, fmt.Errorf("redeploy failed: %w", cause))
 
 	require.Equal(t, "redeploy failed: pre-deploy hook bombed", err.Error())
 	require.True(t, errors.Is(err, cause), "Unwrap should expose the cause for errors.Is")
@@ -1967,7 +1969,7 @@ func TestMarkSyncRedeployFailedInternal_PersistsErrorOnSyncRow(t *testing.T) {
 
 	result := &gitops.SyncResult{Success: true}
 	syncedFiles := []string{"compose.yml", "scripts/pre-deploy.sh"}
-	hookErr := common.Classify(common.ErrRedeployAfterSyncFailed, errors.WrapIf(errors.New("pre-deploy hook failed: exit 1"), "redeploy failed"))
+	hookErr := common.Classify(common.ErrRedeployAfterSyncFailed, fmt.Errorf("redeploy failed: %w", errors.New("pre-deploy hook failed: exit 1")))
 
 	svc.markSyncRedeployFailedInternal(ctx, sync, sync.ID, "abc123", syncedFiles, hookErr, common.User{ID: "user", Username: "tester"}, result)
 

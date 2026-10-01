@@ -1,10 +1,11 @@
 package edge
 
 import (
+	"errors"
+	"fmt"
 	"maps"
 	"math"
 
-	"emperror.dev/errors"
 	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/proto/tunnel/v1"
 )
 
@@ -12,7 +13,7 @@ import (
 // a oneof case added by a newer peer. Receivers skip such messages instead of
 // killing the stream, mirroring how unknown JSON message types are ignored on
 // the websocket transport.
-const errUnknownTunnelPayload = errors.Sentinel("unknown tunnel payload type")
+var errUnknownTunnelPayload = errors.New("unknown tunnel payload type")
 
 // tunnelMessageToManagerProto encodes a manager->agent message. parity is true
 // once the agent advertised tunnelCapabilityProtoParity; without it, legacy
@@ -72,7 +73,7 @@ func tunnelMessageToManagerProto(msg *TunnelMessage, parity bool) (*tunnelpb.Man
 		if parity {
 			return &tunnelpb.ManagerMessage{Payload: &tunnelpb.ManagerMessage_StreamEnd{StreamEnd: &tunnelpb.StreamEnd{RequestId: msg.ID}}}, nil
 		}
-		return nil, errors.Errorf("unsupported manager message type: %s", msg.Type)
+		return nil, fmt.Errorf("unsupported manager message type: %s", msg.Type)
 	case MessageTypeWebSocketClose:
 		return &tunnelpb.ManagerMessage{Payload: &tunnelpb.ManagerMessage_WsClose{WsClose: &tunnelpb.WebSocketClose{StreamId: msg.ID}}}, nil
 	case MessageTypeRegisterResponse:
@@ -133,9 +134,9 @@ func tunnelMessageToManagerProto(msg *TunnelMessage, parity bool) (*tunnelpb.Man
 		MessageTypeCommandAck,
 		MessageTypeCommandOutput,
 		MessageTypeCommandComplete:
-		return nil, errors.Errorf("unsupported manager message type: %s", msg.Type)
+		return nil, fmt.Errorf("unsupported manager message type: %s", msg.Type)
 	default:
-		return nil, errors.Errorf("unsupported manager message type: %s", msg.Type)
+		return nil, fmt.Errorf("unsupported manager message type: %s", msg.Type)
 	}
 }
 
@@ -243,7 +244,7 @@ func managerProtoToTunnelMessage(msg *tunnelpb.ManagerMessage) (*TunnelMessage, 
 	case *tunnelpb.ManagerMessage_StreamEnd:
 		return &TunnelMessage{ID: payload.StreamEnd.GetRequestId(), Type: MessageTypeStreamEnd}, nil
 	default:
-		return nil, errors.WrapIff(errUnknownTunnelPayload, "manager payload %T", payload)
+		return nil, fmt.Errorf("manager payload %T: %w", payload, errUnknownTunnelPayload)
 	}
 }
 
@@ -299,7 +300,7 @@ func tunnelMessageToAgentProto(msg *TunnelMessage) (*tunnelpb.AgentMessage, erro
 		}}}, nil
 	case MessageTypeEvent:
 		if msg.Event == nil {
-			return nil, errors.Errorf("event payload is required for message type: %s", msg.Type)
+			return nil, fmt.Errorf("event payload is required for message type: %s", msg.Type)
 		}
 		return &tunnelpb.AgentMessage{Payload: &tunnelpb.AgentMessage_Event{Event: &tunnelpb.EventLog{
 			Id:           msg.ID,
@@ -362,9 +363,9 @@ func tunnelMessageToAgentProto(msg *TunnelMessage) (*tunnelpb.AgentMessage, erro
 		MessageTypeRegisterResponse,
 		MessageTypeCommandRequest,
 		MessageTypeStreamOpen:
-		return nil, errors.Errorf("unsupported agent message type: %s", msg.Type)
+		return nil, fmt.Errorf("unsupported agent message type: %s", msg.Type)
 	default:
-		return nil, errors.Errorf("unsupported agent message type: %s", msg.Type)
+		return nil, fmt.Errorf("unsupported agent message type: %s", msg.Type)
 	}
 }
 
@@ -467,7 +468,7 @@ func agentProtoToTunnelMessage(msg *tunnelpb.AgentMessage) (*TunnelMessage, erro
 			Type: MessageTypeCancelRequest,
 		}, nil
 	default:
-		return nil, errors.WrapIff(errUnknownTunnelPayload, "agent payload %T", payload)
+		return nil, fmt.Errorf("agent payload %T: %w", payload, errUnknownTunnelPayload)
 	}
 }
 
@@ -482,7 +483,7 @@ func cloneHeaderMap(in map[string]string) map[string]string {
 
 func intToInt32(value int, field string) (int32, error) {
 	if value < math.MinInt32 || value > math.MaxInt32 {
-		return 0, errors.Errorf("%s value %d is out of int32 range", field, value)
+		return 0, fmt.Errorf("%s value %d is out of int32 range", field, value)
 	}
 	return int32(value), nil
 }

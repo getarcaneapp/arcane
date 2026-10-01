@@ -3,13 +3,13 @@ package ws
 import (
 	"context"
 	"encoding/json/v2"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
 
-	"emperror.dev/errors"
 	wshub "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/ws"
 	systemtypes "github.com/getarcaneapp/arcane/types/v2/system"
 	"github.com/labstack/echo/v5"

@@ -2,12 +2,13 @@ package dashboard
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"sort"
 	"strconv"
 	"sync/atomic"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/container"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
@@ -418,7 +419,7 @@ func (s *DashboardService) getPendingContainerUpdatesCountInternal(ctx context.C
 	}
 	updates, err := s.imageService.GetUpdateInfoByContainers(ctx, containers)
 	if err != nil {
-		return 0, errors.WrapIf(err, "failed to resolve pending container updates")
+		return 0, fmt.Errorf("failed to resolve pending container updates: %w", err)
 	}
 	count := 0
 	for _, info := range updates {
@@ -436,7 +437,7 @@ func (s *DashboardService) getPendingProjectUpdatesCountInternal(ctx context.Con
 
 	count, err := s.projectService.CountProjectsWithPendingUpdates(ctx, allContainers)
 	if err != nil {
-		return 0, errors.WrapIf(err, "failed to count projects with updates")
+		return 0, fmt.Errorf("failed to count projects with updates: %w", err)
 	}
 
 	return count, nil
@@ -462,7 +463,7 @@ func (s *DashboardService) getExpiringAPIKeysCountInternal(ctx context.Context) 
 		Where("expires_at <= ?", time.Now().Add(defaultDashboardAPIKeyExpiryWindow)).
 		Count(&count).Error
 	if err != nil {
-		return 0, errors.WrapIf(err, "failed to count expiring API keys")
+		return 0, fmt.Errorf("failed to count expiring API keys: %w", err)
 	}
 
 	return int(count), nil

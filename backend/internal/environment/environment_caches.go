@@ -3,12 +3,12 @@ package environment
 import (
 	"cmp"
 	"context"
+	"errors"
 	"slices"
 	"strings"
 	"sync"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/samber/hot"
 	"github.com/samber/mo"
 )

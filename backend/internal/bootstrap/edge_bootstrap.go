@@ -3,10 +3,10 @@ package bootstrap
 import (
 	"context"
 	"encoding/json/v2"
+	"errors"
 	"fmt"
 	"log/slog"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
@@ -45,48 +45,7 @@ func registerEdgeTunnelRoutes(
 	}
 
 	eventCallback := func(ctx context.Context, envID string, evt *edge.TunnelEvent) error {
-		if evt == nil {
-			return errors.New("event payload is required")
-		}
-
-		if evt.Type == edge.TunnelEventTypeNotificationDispatch {
-			if notificationService == nil {
-				return errors.New("notification service is not available for edge dispatch")
-			}
-			var payload notificationdto.DispatchRequest
-			if err := json.Unmarshal(evt.MetadataJSON, &payload); err != nil {
-				return errors.WrapIf(err, "failed to decode edge notification dispatch payload")
-			}
-			_, err := notificationService.DispatchNotificationForEnvironment(ctx, envID, payload)
-			return errors.WrapIf(err, "failed to dispatch edge notification")
-		}
-
-		var metadata database.JSON
-		if len(evt.MetadataJSON) > 0 {
-			metadata = database.JSON{}
-			if err := json.Unmarshal(evt.MetadataJSON, &metadata); err != nil {
-				return errors.WrapIf(err, "failed to decode event metadata")
-			}
-		}
-
-		req := event.CreateEventRequest{
-			Type:          event.EventType(evt.Type),
-			Severity:      event.EventSeverity(evt.Severity),
-			Title:         evt.Title,
-			Description:   evt.Description,
-			ResourceType:  new(evt.ResourceType),
-			ResourceID:    new(evt.ResourceID),
-			ResourceName:  new(evt.ResourceName),
-			UserID:        new(evt.UserID),
-			Username:      new(evt.Username),
-			EnvironmentID: &envID,
-			Metadata:      metadata,
-		}
-		_, err := eventService.CreateEvent(ctx, req)
-		if err != nil {
-			return errors.WrapIf(err, "failed to persist synced event")
-		}
-		return nil
+		return handleEdgeEventInternal(ctx, envID, evt, eventService, notificationService)
 	}
 
 	server := edge.NewTunnelServerWithRegistry(registry, resolver, statusCallback)
@@ -257,8 +216,56 @@ func createEdgeConnectionEvent(ctx context.Context, eventService *event.EventSer
 		EnvironmentID: &envID,
 	})
 	if err != nil {
-		return errors.WrapIf(err, "failed to create edge lifecycle event")
+		return fmt.Errorf("failed to create edge lifecycle event: %w", err)
 	}
 
+	return nil
+}
+
+func handleEdgeEventInternal(ctx context.Context, envID string, evt *edge.TunnelEvent, eventService *event.EventService, notificationService *notification.NotificationService) error {
+	if evt == nil {
+		return errors.New("event payload is required")
+	}
+
+	if evt.Type == edge.TunnelEventTypeNotificationDispatch {
+		if notificationService == nil {
+			return errors.New("notification service is not available for edge dispatch")
+		}
+		var payload notificationdto.DispatchRequest
+		if err := json.Unmarshal(evt.MetadataJSON, &payload); err != nil {
+			return fmt.Errorf("failed to decode edge notification dispatch payload: %w", err)
+		}
+		_, err := notificationService.DispatchNotificationForEnvironment(ctx, envID, payload)
+		if err != nil {
+			return fmt.Errorf("failed to dispatch edge notification: %w", err)
+		}
+		return nil
+	}
+
+	var metadata database.JSON
+	if len(evt.MetadataJSON) > 0 {
+		metadata = database.JSON{}
+		if err := json.Unmarshal(evt.MetadataJSON, &metadata); err != nil {
+			return fmt.Errorf("failed to decode event metadata: %w", err)
+		}
+	}
+
+	req := event.CreateEventRequest{
+		Type:          event.EventType(evt.Type),
+		Severity:      event.EventSeverity(evt.Severity),
+		Title:         evt.Title,
+		Description:   evt.Description,
+		ResourceType:  new(evt.ResourceType),
+		ResourceID:    new(evt.ResourceID),
+		ResourceName:  new(evt.ResourceName),
+		UserID:        new(evt.UserID),
+		Username:      new(evt.Username),
+		EnvironmentID: &envID,
+		Metadata:      metadata,
+	}
+	_, err := eventService.CreateEvent(ctx, req)
+	if err != nil {
+		return fmt.Errorf("failed to persist synced event: %w", err)
+	}
 	return nil
 }

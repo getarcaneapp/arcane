@@ -3,6 +3,8 @@ package project
 import (
 	"cmp"
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -10,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/samber/mo"
@@ -98,7 +99,7 @@ func (s *ProjectService) BackfillProjectImageRefs(ctx context.Context) (int, err
 	if err := s.db.WithContext(ctx).
 		Where("build_image_refs_json IS NULL").
 		Find(&projectsList).Error; err != nil {
-		return 0, errors.WrapIf(err, "list projects for image ref backfill")
+		return 0, fmt.Errorf("list projects for image ref backfill: %w", err)
 	}
 	for i := range projectsList {
 		if err := ctx.Err(); err != nil {
@@ -112,7 +113,7 @@ func (s *ProjectService) BackfillProjectImageRefs(ctx context.Context) (int, err
 func (s *ProjectService) resolveProjectsByChangedPathsInternal(ctx context.Context, paths []string) ([]Project, error) {
 	var projectsList []Project
 	if err := s.db.WithContext(ctx).Find(&projectsList).Error; err != nil {
-		return nil, errors.WrapIf(err, "list projects for changed paths")
+		return nil, fmt.Errorf("list projects for changed paths: %w", err)
 	}
 
 	seen := make(map[string]struct{})
@@ -154,7 +155,7 @@ func (s *ProjectService) SyncProjectsFromFileSystem(ctx context.Context) error {
 		if os.IsNotExist(discoveryErr) {
 			return nil
 		}
-		return errors.WrapIff(discoveryErr, "Failed to discover projects in %q", projectsDir)
+		return fmt.Errorf("Failed to discover projects in %q: %w", projectsDir, discoveryErr) //nolint:staticcheck // Preserve the existing error message.
 	}
 
 	renameSyncState := s.activeProjectRenameSyncStateInternal(ctx)
@@ -208,13 +209,13 @@ func (s *ProjectService) upsertProjectForDir(ctx context.Context, dirName, dirPa
 			slog.Log(ctx, serviceCountLogLevel, "failed to read compose service count during project discovery", "project", dirName, "path", dirPath, "error", serviceCountErr)
 		}
 		if cerr := s.db.WithContext(ctx).Create(proj).Error; cerr != nil {
-			return errors.WrapIff(cerr, "create project for %q failed", dirPath)
+			return fmt.Errorf("create project for %q failed: %w", dirPath, cerr)
 		}
 		s.warnDuplicateComposeNameForPathInternal(ctx, composeMetadata.resolvedProjectName, dirPath, proj.ID)
 		return s.reconcileComposeTagsForProjectInternal(ctx, proj)
 	}
 	if err != nil {
-		return errors.WrapIff(err, "query existing project for %q failed", dirPath)
+		return fmt.Errorf("query existing project for %q failed: %w", dirPath, err)
 	}
 
 	updates := map[string]any{}
@@ -250,7 +251,7 @@ func (s *ProjectService) upsertProjectForDir(ctx context.Context, dirName, dirPa
 		Model(&Project{}).
 		Where("id = ?", existing.ID).
 		Updates(updates).Error; uerr != nil {
-		return errors.WrapIff(uerr, "update project %s failed", existing.ID)
+		return fmt.Errorf("update project %s failed: %w", existing.ID, uerr)
 	}
 	if serviceCountErr == nil {
 		s.warnDuplicateComposeNameForPathInternal(ctx, composeMetadata.resolvedProjectName, dirPath, existing.ID)
@@ -279,7 +280,7 @@ func (s *ProjectService) warnDuplicateComposeNameForPathInternal(ctx context.Con
 func (s *ProjectService) cleanupDBProjectsInternal(ctx context.Context, seen map[string]struct{}, followProjectSymlinks bool, projectsDir string, maxDepth int) error {
 	var all []Project
 	if err := s.db.WithContext(ctx).Find(&all).Error; err != nil {
-		return errors.WrapIf(err, "list projects for cleanup failed")
+		return fmt.Errorf("list projects for cleanup failed: %w", err)
 	}
 
 	// Decide deletions without performing them. Collecting decisions up front lets
@@ -516,7 +517,7 @@ func (s *ProjectService) resolveEffectiveEnvContentForUpdateInternal(projectPath
 
 	state, err := projects.ReadProjectEnvState(projectPath)
 	if err != nil {
-		return nil, errors.WrapIf(err, "read project env state")
+		return nil, fmt.Errorf("read project env state: %w", err)
 	}
 
 	effectiveContent, err := resolveStoredEffectiveEnvContentInternal(state)
@@ -537,7 +538,7 @@ func resolveStoredEffectiveEnvContentInternal(state projects.ProjectEnvState) (s
 	if state.HasGitSource || state.HasOverride {
 		effectiveContent, err := projects.BuildEffectiveEnvContent(state.GitContent, state.OverrideContent)
 		if err != nil {
-			return "", errors.WrapIf(err, "build effective env content")
+			return "", fmt.Errorf("build effective env content: %w", err)
 		}
 		return effectiveContent, nil
 	}
@@ -547,7 +548,7 @@ func resolveStoredEffectiveEnvContentInternal(state projects.ProjectEnvState) (s
 func persistEffectiveEnvContentInternal(ctx context.Context, projectPath, projectsDirectory, envContent string) error {
 	state, err := projects.ReadProjectEnvState(projectPath)
 	if err != nil {
-		return errors.WrapIf(err, "read project env state")
+		return fmt.Errorf("read project env state: %w", err)
 	}
 
 	// WriteManagedEnvFile skips unreadable paths so git sync keeps working; an
@@ -558,7 +559,7 @@ func persistEffectiveEnvContentInternal(ctx context.Context, projectPath, projec
 	}
 	for _, name := range targets {
 		if info, statErr := os.Stat(filepath.Join(projectPath, name)); statErr == nil && info.IsDir() {
-			return errors.Errorf("cannot save environment: %s is a directory", name)
+			return fmt.Errorf("cannot save environment: %s is a directory", name)
 		}
 	}
 
@@ -580,12 +581,12 @@ func persistEffectiveEnvContentInternal(ctx context.Context, projectPath, projec
 
 	overrideContent, err := projects.BuildOverrideEnvContent(state.GitContent, envContent)
 	if err != nil {
-		return errors.WrapIf(err, "build override env content")
+		return fmt.Errorf("build override env content: %w", err)
 	}
 
 	effectiveContent, err := projects.BuildEffectiveEnvContent(state.GitContent, overrideContent)
 	if err != nil {
-		return errors.WrapIf(err, "build effective env content")
+		return fmt.Errorf("build effective env content: %w", err)
 	}
 
 	if err := projects.WriteManagedEnvFile(ctx, projectsDirectory, projectPath, projects.EffectiveEnvFileName, state.EffectiveUnreadable, effectiveContent); err != nil {
@@ -598,7 +599,7 @@ func persistEffectiveEnvContentInternal(ctx context.Context, projectPath, projec
 func (s *ProjectService) ensureEffectiveEnvFileInternal(ctx context.Context, projectPath, projectsDirectory string) error {
 	state, err := projects.ReadProjectEnvState(projectPath)
 	if err != nil {
-		return errors.WrapIf(err, "read project env state")
+		return fmt.Errorf("read project env state: %w", err)
 	}
 
 	if !state.HasGitSource {
@@ -617,7 +618,7 @@ func (s *ProjectService) ensureEffectiveEnvFileInternal(ctx context.Context, pro
 
 	effectiveContent, err := projects.BuildEffectiveEnvContent(state.GitContent, state.OverrideContent)
 	if err != nil {
-		return errors.WrapIf(err, "build effective env content")
+		return fmt.Errorf("build effective env content: %w", err)
 	}
 
 	return projects.WriteManagedEnvFile(ctx, projectsDirectory, projectPath, projects.EffectiveEnvFileName, state.EffectiveUnreadable, effectiveContent)
@@ -626,7 +627,7 @@ func (s *ProjectService) ensureEffectiveEnvFileInternal(ctx context.Context, pro
 func (s *ProjectService) prepareGitSyncEnvUpdateInternal(projectPath string, gitEnvContent *string) (gitSyncEnvUpdateInternal, error) {
 	state, err := projects.ReadProjectEnvState(projectPath)
 	if err != nil {
-		return gitSyncEnvUpdateInternal{}, errors.WrapIf(err, "read project env state")
+		return gitSyncEnvUpdateInternal{}, fmt.Errorf("read project env state: %w", err)
 	}
 
 	update := gitSyncEnvUpdateInternal{
@@ -654,7 +655,7 @@ func (s *ProjectService) prepareGitSyncEnvUpdateInternal(projectPath string, git
 
 	effectiveContent, err := projects.BuildEffectiveEnvContent(*gitEnvContent, overrideContent)
 	if err != nil {
-		return gitSyncEnvUpdateInternal{}, errors.WrapIf(err, "build effective env content")
+		return gitSyncEnvUpdateInternal{}, fmt.Errorf("build effective env content: %w", err)
 	}
 	update.effectiveContent = &effectiveContent
 
@@ -666,7 +667,7 @@ func (s *ProjectService) resolveOverrideContentForGitSyncInternal(state projects
 	case state.HasGitSource:
 		overrideContent, err := projects.BuildOverrideEnvContent(state.GitContent, state.OverrideContent)
 		if err != nil {
-			return "", errors.WrapIf(err, "build override env content")
+			return "", fmt.Errorf("build override env content: %w", err)
 		}
 		return overrideContent, nil
 	case state.HasOverride:
@@ -676,13 +677,13 @@ func (s *ProjectService) resolveOverrideContentForGitSyncInternal(state projects
 		}
 		overrideContent, err := projects.BuildOverrideEnvContent(gitEnvContent, effectiveContent)
 		if err != nil {
-			return "", errors.WrapIf(err, "build override env content")
+			return "", fmt.Errorf("build override env content: %w", err)
 		}
 		return overrideContent, nil
 	case strings.TrimSpace(state.DirectContent) != "":
 		overrideContent, err := projects.BuildAdditiveOverrideEnvContent(gitEnvContent, state.DirectContent)
 		if err != nil {
-			return "", errors.WrapIf(err, "build override env content")
+			return "", fmt.Errorf("build override env content: %w", err)
 		}
 		return overrideContent, nil
 	default:
@@ -735,14 +736,14 @@ func persistGitSyncEnvFilesInternal(ctx context.Context, projectPath, projectsDi
 func (s *ProjectService) ApplyGitSyncEnvToDirectory(ctx context.Context, projectPath, projectsDirectory string, gitEnvContent *string) (before, after string, err error) {
 	update, err := s.prepareGitSyncEnvUpdateInternal(projectPath, gitEnvContent)
 	if err != nil {
-		return "", "", errors.WrapIf(err, "failed to resolve git env state")
+		return "", "", fmt.Errorf("failed to resolve git env state: %w", err)
 	}
 	before = update.state.DirectContent
 	if update.effectiveContent != nil {
 		after = *update.effectiveContent
 	}
 	if err := persistGitSyncEnvFilesInternal(ctx, projectPath, projectsDirectory, update); err != nil {
-		return "", "", errors.WrapIf(err, "failed to sync git env files")
+		return "", "", fmt.Errorf("failed to sync git env files: %w", err)
 	}
 	return before, after, nil
 }

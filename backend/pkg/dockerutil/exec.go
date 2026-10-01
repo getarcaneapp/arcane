@@ -2,11 +2,12 @@ package docker
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"net"
 	"strings"
 
-	"emperror.dev/errors"
 	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/client"
 	kit "go.getarcane.app/kit/pkg"
@@ -54,22 +55,22 @@ func WaitStdCopy(done <-chan error) error {
 func ExecInContainer(ctx context.Context, dockerClient *client.Client, containerID string, opts client.ExecCreateOptions, stdout, stderr io.Writer) (int, error) {
 	execResp, err := dockerClient.ExecCreate(ctx, containerID, opts)
 	if err != nil {
-		return 0, errors.WrapIf(err, "failed to create exec")
+		return 0, fmt.Errorf("failed to create exec: %w", err)
 	}
 
 	attachResp, err := dockerClient.ExecAttach(ctx, execResp.ID, client.ExecAttachOptions{})
 	if err != nil {
-		return 0, errors.WrapIf(err, "failed to attach to exec")
+		return 0, fmt.Errorf("failed to attach to exec: %w", err)
 	}
 	defer attachResp.Close()
 
 	if err := WaitStdCopy(StartStdCopy(attachResp.Reader, stdout, stderr)); err != nil {
-		return 0, errors.WrapIf(err, "failed to read exec output")
+		return 0, fmt.Errorf("failed to read exec output: %w", err)
 	}
 
 	inspect, err := dockerClient.ExecInspect(ctx, execResp.ID, client.ExecInspectOptions{})
 	if err != nil {
-		return 0, errors.WrapIf(err, "failed to inspect exec")
+		return 0, fmt.Errorf("failed to inspect exec: %w", err)
 	}
 
 	return inspect.ExitCode, nil

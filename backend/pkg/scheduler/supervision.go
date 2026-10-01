@@ -3,11 +3,12 @@ package scheduler
 import (
 	"context"
 	"crypto/rand"
+	"errors"
+	"fmt"
 	"math/big"
 	"sync"
 	"time"
 
-	"emperror.dev/errors"
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 )
 
@@ -76,7 +77,7 @@ func (s *watcherSupervisorInternal) runInternal(ctx context.Context) error {
 		}
 		jitter, jitterErr := rand.Int(rand.Reader, big.NewInt(int64(delay/2)))
 		if jitterErr != nil {
-			return errors.WrapIf(jitterErr, "generate watcher retry delay")
+			return fmt.Errorf("generate watcher retry delay: %w", jitterErr)
 		}
 		next := time.Now().Add(delay/2 + time.Duration(jitter.Int64()))
 		s.setHealthInternal("retrying", err, &next)
@@ -98,7 +99,7 @@ func (s *watcherSupervisorInternal) runInternal(ctx context.Context) error {
 func (s *watcherSupervisorInternal) startInternal(ctx context.Context) (panicked bool, err error) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
-			err = errors.Errorf("worker panic: %v", recovered)
+			err = fmt.Errorf("worker panic: %v", recovered)
 			panicked = true
 		}
 	}()

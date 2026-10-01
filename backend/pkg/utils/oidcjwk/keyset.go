@@ -2,11 +2,12 @@ package oidcjwk
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"slices"
 	"sync/atomic"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/jwx-go/jwkfetch/v4"
 	"github.com/lestrrat-go/jwx/v4/jwk"
 	"github.com/lestrrat-go/jwx/v4/jws"
@@ -15,7 +16,7 @@ import (
 
 const forcedRefreshInterval = 30 * time.Second
 
-var errForcedRefreshThrottled = errors.Sentinel("oidcjwk: forced refresh throttled")
+var errForcedRefreshThrottled = errors.New("oidcjwk: forced refresh throttled")
 
 type keySet struct {
 	cache       *jwkfetch.Cache
@@ -45,7 +46,7 @@ func (k *keySet) VerifySignature(ctx context.Context, rawToken string) ([]byte, 
 		defer cancel()
 		_, refreshErr := k.cache.Refresh(refreshCtx, k.jwksURL)
 		if refreshErr != nil {
-			return nil, errors.WrapIf(refreshErr, "failed to refresh JWKS")
+			return nil, fmt.Errorf("failed to refresh JWKS: %w", refreshErr)
 		}
 		return nil, nil
 	})
@@ -92,7 +93,7 @@ func (k *keySet) reserveForcedRefreshInternal(now time.Time) bool {
 func validateTokenAlgorithmInternal(rawToken string) error {
 	message, err := jws.Parse([]byte(rawToken), jws.WithCompact())
 	if err != nil {
-		return errors.WrapIf(err, "malformed JWT")
+		return fmt.Errorf("malformed JWT: %w", err)
 	}
 	signatures := message.Signatures()
 	if len(signatures) != 1 {

@@ -3,13 +3,14 @@ package project
 import (
 	"context"
 	"encoding/json/v2"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
@@ -44,7 +45,7 @@ func (s *ProjectService) GetProjectWorkspace(ctx context.Context, projectID stri
 		workspacepkg.MaxFileSizeBytes(s.config.ProjectWorkspaceMaxFileSizeMB),
 	)
 	if err != nil {
-		return nil, errors.WrapIf(err, "read project workspace")
+		return nil, fmt.Errorf("read project workspace: %w", err)
 	}
 	if ownedPaths, ownedErr := s.gitOpsOwnedWorkspacePathsInternal(ctx, proj); ownedErr == nil && len(ownedPaths) > 0 {
 		for i := range files {
@@ -92,7 +93,7 @@ func (s *ProjectService) GetProjectWorkspaceFile(ctx context.Context, projectID,
 	defer func() { _ = reader.Close() }()
 	content, err := io.ReadAll(reader)
 	if err != nil {
-		return nil, errors.WrapIf(err, "read project workspace file")
+		return nil, fmt.Errorf("read project workspace file: %w", err)
 	}
 	response.MimeType = http.DetectContentType(content)
 	if !workspacepkg.IsTextContent(content) {
@@ -169,14 +170,14 @@ func (s *ProjectService) UpdateProjectWorkspace(ctx context.Context, projectID s
 	opts := s.projectWorkspaceApplyOptionsInternal(ctx, proj, manifest.FileTreeRevision)
 	if err := projects.ApplyProjectWorkspaceChanges(proj.Path, manifest.FileChanges, uploads, opts); err != nil {
 		if restoreErr := projects.RestoreProjectUpdateBackup(ctx, proj.Path, backup); restoreErr != nil {
-			return nil, errors.Combine(wrapProjectWorkspaceErrorInternal(err), errors.WrapIf(restoreErr, "rollback project workspace"))
+			return nil, errors.Join(wrapProjectWorkspaceErrorInternal(err), fmt.Errorf("rollback project workspace: %w", restoreErr))
 		}
 		return nil, wrapProjectWorkspaceErrorInternal(err)
 	}
 
 	s.refreshProjectImageRefsInternal(ctx, proj)
 	if err := s.updateProjectStatusandCountsInternal(ctx, proj.ID, proj.Status); err != nil {
-		return nil, errors.WrapIf(err, "refresh project after workspace update")
+		return nil, fmt.Errorf("refresh project after workspace update: %w", err)
 	}
 	s.logProjectEventInternal(ctx, event.EventTypeProjectUpdate, proj.ID, proj.Name, user, database.JSON{
 		"action":          "update_project_workspace",
@@ -193,7 +194,7 @@ func (s *ProjectService) resolveProjectWorkspacePathInternal(ctx context.Context
 	}
 	rel, err := kit.NormalizeRelativePath(relativePath)
 	if err != nil {
-		return nil, "", "", acfstypes.Entry{}, common.Classify(common.ErrProjectWorkspaceForbidden, errors.WrapIf(err, "invalid project workspace path"))
+		return nil, "", "", acfstypes.Entry{}, common.Classify(common.ErrProjectWorkspaceForbidden, fmt.Errorf("invalid project workspace path: %w", err))
 	}
 	composeFileName := projects.DefaultComposeFileName
 	if composeFile, resolveErr := s.ResolveProjectComposeFile(ctx, proj); resolveErr == nil {
@@ -216,19 +217,19 @@ func (s *ProjectService) resolveProjectWorkspacePathInternal(ctx context.Context
 }
 
 func classifyProjectWorkspaceACFSErrorInternal(err error, operation string) error {
+	if err == nil {
+		return nil
+	}
+
 	switch {
-	case errors.Is(err, acfs.ErrInvalidPath),
-		errors.Is(err, acfs.ErrOutsideRoot),
-		errors.Is(err, acfs.ErrSymlinkLoop),
-		errors.Is(err, acfs.ErrSymlink):
-		return common.Classify(common.ErrProjectWorkspaceForbidden, errors.WrapIf(err, operation))
-	case errors.Is(err, acfs.ErrAlreadyExists),
-		errors.Is(err, acfs.ErrNotEmpty):
-		return common.Classify(common.ErrProjectWorkspaceConflict, errors.WrapIf(err, operation))
+	case errors.Is(err, acfs.ErrInvalidPath), errors.Is(err, acfs.ErrOutsideRoot), errors.Is(err, acfs.ErrSymlinkLoop), errors.Is(err, acfs.ErrSymlink):
+		return common.Classify(common.ErrProjectWorkspaceForbidden, fmt.Errorf("%s: %w", operation, err))
+	case errors.Is(err, acfs.ErrAlreadyExists), errors.Is(err, acfs.ErrNotEmpty):
+		return common.Classify(common.ErrProjectWorkspaceConflict, fmt.Errorf("%s: %w", operation, err))
 	case os.IsNotExist(err):
 		return common.Classify(common.ErrProjectWorkspaceNotFound, errors.New("project workspace file not found"))
 	default:
-		return errors.WrapIf(err, operation)
+		return fmt.Errorf("%s: %w", operation, err)
 	}
 }
 
@@ -259,7 +260,7 @@ func (s *ProjectService) gitOpsOwnedWorkspacePathsInternal(ctx context.Context, 
 	}
 	sync, err := loadGitOpsSyncForProjectInternal(ctx, s.db, proj.ID)
 	if err != nil {
-		return nil, errors.WrapIf(err, "load gitops sync for workspace")
+		return nil, fmt.Errorf("load gitops sync for workspace: %w", err)
 	}
 	if sync == nil {
 		return nil, nil
@@ -276,7 +277,7 @@ func (s *ProjectService) gitOpsOwnedWorkspacePathsInternal(ctx context.Context, 
 		// Fail closed: an incomplete ownership set would expose synced files
 		// as editable, and the next sync would silently overwrite the edits.
 		if err := json.Unmarshal([]byte(*sync.SyncedFiles), &files); err != nil {
-			return nil, errors.WrapIf(err, "parse gitops synced files for workspace")
+			return nil, fmt.Errorf("parse gitops synced files for workspace: %w", err)
 		}
 		for _, f := range files {
 			add(f)
@@ -330,8 +331,7 @@ func validateWorkspaceChangesAgainstGitOpsInternal(changes []projecttypes.Worksp
 	for _, change := range changes {
 		for _, target := range workspaceChangeTargetPathsInternal(change) {
 			if touchesOwned(target) {
-				return common.Classify(common.ErrProjectWorkspaceForbidden,
-					errors.Errorf("%q is managed by git sync and can only be changed in the git repository", target))
+				return common.Classify(common.ErrProjectWorkspaceForbidden, fmt.Errorf("%q is managed by git sync and can only be changed in the git repository", target))
 			}
 		}
 	}
@@ -339,11 +339,15 @@ func validateWorkspaceChangesAgainstGitOpsInternal(changes []projecttypes.Worksp
 }
 
 func wrapProjectWorkspaceErrorInternal(err error) error {
+	if err == nil {
+		return nil
+	}
+
 	switch {
 	case errors.Is(err, projects.ErrProjectWorkspaceRevisionConflict):
-		return common.Classify(common.ErrProjectWorkspaceConflict, errors.WithStackIf(err))
+		return common.Classify(common.ErrProjectWorkspaceConflict, err)
 	case errors.Is(err, acfs.ErrAlreadyExists), errors.Is(err, acfs.ErrNotEmpty):
-		return common.Classify(common.ErrProjectWorkspaceConflict, errors.WrapIf(err, "conflicting project workspace path"))
+		return common.Classify(common.ErrProjectWorkspaceConflict, fmt.Errorf("conflicting project workspace path: %w", err))
 	case errors.Is(err, projects.ErrProjectWorkspaceOutsideProjectDirectory),
 		errors.Is(err, projects.ErrProjectWorkspaceProtectedPath),
 		errors.Is(err, projects.ErrProjectWorkspaceSymlinkPath),
@@ -351,8 +355,8 @@ func wrapProjectWorkspaceErrorInternal(err error) error {
 		errors.Is(err, acfs.ErrInvalidPath),
 		errors.Is(err, acfs.ErrSymlinkLoop),
 		errors.Is(err, acfs.ErrSymlink):
-		return common.Classify(common.ErrProjectWorkspaceForbidden, errors.WrapIf(err, "forbidden project workspace path"))
+		return common.Classify(common.ErrProjectWorkspaceForbidden, fmt.Errorf("forbidden project workspace path: %w", err))
 	default:
-		return common.Classify(common.ErrProjectWorkspaceBadRequest, errors.WrapIf(err, "invalid project workspace request"))
+		return common.Classify(common.ErrProjectWorkspaceBadRequest, fmt.Errorf("invalid project workspace request: %w", err))
 	}
 }

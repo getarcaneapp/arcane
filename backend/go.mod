@@ -3,16 +3,12 @@ module github.com/getarcaneapp/arcane/backend/v2
 go 1.27.1
 
 replace (
-	// Copacetic v0.14.2 only compiles against the buildx v0.32 imagetools API;
-	// drop this pin once copa supports buildx >= 0.35 and the dependency is bumped.
 	github.com/docker/buildx => github.com/docker/buildx v0.32.1
 	github.com/getarcaneapp/arcane/cli/v2 => ../cli
 	github.com/getarcaneapp/arcane/types/v2 => ../types
 )
 
 require (
-	emperror.dev/emperror v0.33.0
-	emperror.dev/errors v0.8.1
 	github.com/ProtonMail/go-crypto v1.5.2
 	github.com/aws/aws-sdk-go-v2 v1.47.1
 	github.com/aws/aws-sdk-go-v2/config v1.33.6

@@ -790,7 +790,7 @@ func TestUpdaterService_AcceptSingleContainerUpdateUsesQueuedActivityInternal(t 
 			var releaseOnce sync.Once
 			defer releaseOnce.Do(func() { close(release) })
 			require.NoError(t, runtime.RegisterActor(singleUpdateTypeInternal, func(_ string, _ *actor.Service) actor.Actor {
-				return &blockingSingleUpdateActorInternal{singleUpdateActorInternal: singleUpdateActorInternal{service: svc}, started: started, release: release}
+				return &blockingSingleUpdateActorInternal{service: svc, started: started, release: release}
 			}))
 			francistest.Start(t, runtime)
 			go func() {

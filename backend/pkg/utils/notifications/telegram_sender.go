@@ -2,8 +2,9 @@ package notifications
 
 import (
 	"context"
+	"errors"
+	"fmt"
 
-	"emperror.dev/errors"
 	"github.com/nicholas-fedor/shoutrrr/pkg/services/chat/telegram"
 )
 
@@ -28,7 +29,7 @@ func BuildTelegramURL(config TelegramConfig) (string, error) {
 			q.Set("parsemode", config.ParseMode)
 			url.RawQuery = q.Encode()
 		default:
-			return "", errors.Errorf("invalid parse mode: %s (must be Markdown, HTML, MarkdownV2, or None)", config.ParseMode)
+			return "", fmt.Errorf("invalid parse mode: %s (must be Markdown, HTML, MarkdownV2, or None)", config.ParseMode)
 		}
 	}
 
@@ -46,7 +47,7 @@ func SendTelegram(ctx context.Context, config TelegramConfig, message string) er
 
 	shoutrrrURL, err := BuildTelegramURL(config)
 	if err != nil {
-		return errors.WrapIf(err, "failed to build shoutrrr Telegram URL")
+		return fmt.Errorf("failed to build shoutrrr Telegram URL: %w", err)
 	}
 
 	return sendShoutrrrInternal("Telegram", shoutrrrURL, message, nil)

@@ -6,6 +6,7 @@ import (
 	"context"
 	stdjson "encoding/json"
 	"encoding/json/v2"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -20,7 +21,6 @@ import (
 	"sync"
 	"time"
 
-	"emperror.dev/errors"
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
@@ -121,7 +121,7 @@ func (s *SwarmService) IsEnabled(ctx context.Context) (bool, error) {
 
 	enabled, err := s.kvService.GetBool(ctx, KVKeySwarmEnabled, false)
 	if err != nil {
-		return false, errors.WrapIf(err, "failed to read swarm enabled state")
+		return false, fmt.Errorf("failed to read swarm enabled state: %w", err)
 	}
 
 	return enabled, nil
@@ -134,19 +134,19 @@ func (s *SwarmService) ListServicesPaginated(ctx context.Context, params paginat
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return nil, pagination.Response{}, errors.WrapIf(err, "failed to connect to Docker")
+		return nil, pagination.Response{}, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	servicesResult, err := dockerClient.ServiceList(ctx, dockerclient.ServiceListOptions{Status: true})
 	if err != nil {
-		return nil, pagination.Response{}, errors.WrapIf(err, "failed to list swarm services")
+		return nil, pagination.Response{}, fmt.Errorf("failed to list swarm services: %w", err)
 	}
 	services := servicesResult.Items
 
 	// Fetch nodes to resolve node IDs to hostnames
 	nodesResult, err := dockerClient.NodeList(ctx, dockerclient.NodeListOptions{})
 	if err != nil {
-		return nil, pagination.Response{}, errors.WrapIf(err, "failed to list swarm nodes")
+		return nil, pagination.Response{}, fmt.Errorf("failed to list swarm nodes: %w", err)
 	}
 	nodes := nodesResult.Items
 	nodeNameByID := make(map[string]string, len(nodes))
@@ -157,7 +157,7 @@ func (s *SwarmService) ListServicesPaginated(ctx context.Context, params paginat
 	// Fetch networks to resolve network IDs to names
 	networksResult, err := dockerClient.NetworkList(ctx, dockerclient.NetworkListOptions{})
 	if err != nil {
-		return nil, pagination.Response{}, errors.WrapIf(err, "failed to list networks")
+		return nil, pagination.Response{}, fmt.Errorf("failed to list networks: %w", err)
 	}
 	networks := networksResult.Items
 	networkNameByID := make(map[string]string, len(networks))
@@ -168,7 +168,7 @@ func (s *SwarmService) ListServicesPaginated(ctx context.Context, params paginat
 	// Fetch tasks and group running tasks by service ID
 	tasksResult, err := dockerClient.TaskList(ctx, dockerclient.TaskListOptions{})
 	if err != nil {
-		return nil, pagination.Response{}, errors.WrapIf(err, "failed to list swarm tasks")
+		return nil, pagination.Response{}, fmt.Errorf("failed to list swarm tasks: %w", err)
 	}
 	tasks := tasksResult.Items
 	serviceNodes := make(map[string]map[string]struct{})
@@ -211,12 +211,12 @@ func (s *SwarmService) GetService(ctx context.Context, serviceID string) (*swarm
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to connect to Docker")
+		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	serviceResult, err := dockerClient.ServiceInspect(ctx, serviceID, dockerclient.ServiceInspectOptions{})
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to inspect swarm service")
+		return nil, fmt.Errorf("failed to inspect swarm service: %w", err)
 	}
 	service := serviceResult.Service
 
@@ -364,13 +364,13 @@ func (s *SwarmService) CreateService(ctx context.Context, req swarmtypes.Service
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to connect to Docker")
+		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	// Unmarshal spec from JSON
 	var spec swarm.ServiceSpec
 	if err := json.Unmarshal(req.Spec, &spec); err != nil {
-		return nil, errors.WrapIf(err, "failed to parse service spec")
+		return nil, fmt.Errorf("failed to parse service spec: %w", err)
 	}
 
 	optionsPayload := swarmtypes.ServiceCreateOptions{}
@@ -387,7 +387,7 @@ func (s *SwarmService) CreateService(ctx context.Context, req swarmtypes.Service
 		QueryRegistry:       optionsPayload.QueryRegistry,
 	})
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to create swarm service")
+		return nil, fmt.Errorf("failed to create swarm service: %w", err)
 	}
 
 	return &swarmtypes.ServiceCreateResponse{
@@ -403,14 +403,14 @@ func (s *SwarmService) UpdateService(ctx context.Context, serviceID string, req 
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to connect to Docker")
+		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	versionIndex := req.Version
 	if versionIndex == 0 {
 		serviceResult, err := dockerClient.ServiceInspect(ctx, serviceID, dockerclient.ServiceInspectOptions{})
 		if err != nil {
-			return nil, errors.WrapIf(err, "failed to inspect swarm service")
+			return nil, fmt.Errorf("failed to inspect swarm service: %w", err)
 		}
 		versionIndex = serviceResult.Service.Version.Index
 	}
@@ -432,7 +432,7 @@ func (s *SwarmService) UpdateService(ctx context.Context, serviceID string, req 
 		QueryRegistry:       optionsPayload.QueryRegistry,
 	})
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to update swarm service")
+		return nil, fmt.Errorf("failed to update swarm service: %w", err)
 	}
 
 	return &swarmtypes.ServiceUpdateResponse{
@@ -447,11 +447,11 @@ func (s *SwarmService) RemoveService(ctx context.Context, serviceID string) erro
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return errors.WrapIf(err, "failed to connect to Docker")
+		return fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	if _, err := dockerClient.ServiceRemove(ctx, serviceID, dockerclient.ServiceRemoveOptions{}); err != nil {
-		return errors.WrapIf(err, "failed to remove swarm service")
+		return fmt.Errorf("failed to remove swarm service: %w", err)
 	}
 
 	return nil
@@ -464,7 +464,7 @@ func (s *SwarmService) StreamServiceLogs(ctx context.Context, serviceID string, 
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return errors.WrapIf(err, "failed to connect to Docker")
+		return fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	options := dockerclient.ServiceLogsOptions{
@@ -479,7 +479,7 @@ func (s *SwarmService) StreamServiceLogs(ctx context.Context, serviceID string, 
 
 	logs, err := dockerClient.ServiceLogs(ctx, serviceID, options)
 	if err != nil {
-		return errors.WrapIf(err, "failed to get service logs")
+		return fmt.Errorf("failed to get service logs: %w", err)
 	}
 	defer func() { _ = logs.Close() }()
 
@@ -497,7 +497,7 @@ func (s *SwarmService) ListNodesPaginated(ctx context.Context, environmentID str
 			Data    []swarmtypes.NodeSummary `json:"data"`
 		}
 		if err := s.environmentService.ProxyJSONRequest(ctx, environmentID, http.MethodGet, "/api/environments/0/swarm/nodes?limit=-1", nil, &remote); err != nil {
-			return nil, pagination.Response{}, errors.WrapIf(err, "failed to list remote swarm nodes")
+			return nil, pagination.Response{}, fmt.Errorf("failed to list remote swarm nodes: %w", err)
 		}
 		if !remote.Success {
 			return nil, pagination.Response{}, errors.New("remote swarm node listing failed")
@@ -514,12 +514,12 @@ func (s *SwarmService) ListNodesPaginated(ctx context.Context, environmentID str
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return nil, pagination.Response{}, errors.WrapIf(err, "failed to connect to Docker")
+		return nil, pagination.Response{}, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	nodesResult, err := dockerClient.NodeList(ctx, dockerclient.NodeListOptions{})
 	if err != nil {
-		return nil, pagination.Response{}, errors.WrapIf(err, "failed to list swarm nodes")
+		return nil, pagination.Response{}, fmt.Errorf("failed to list swarm nodes: %w", err)
 	}
 	nodes := nodesResult.Items
 
@@ -545,7 +545,7 @@ func (s *SwarmService) GetNode(ctx context.Context, environmentID, nodeID string
 		}
 		remotePath := "/api/environments/0/swarm/nodes/" + nodeID
 		if err := s.environmentService.ProxyJSONRequest(ctx, environmentID, http.MethodGet, remotePath, nil, &remote); err != nil {
-			return nil, errors.WrapIf(err, "failed to inspect remote swarm node")
+			return nil, fmt.Errorf("failed to inspect remote swarm node: %w", err)
 		}
 		if !remote.Success {
 			return nil, errors.New("remote swarm node inspection failed")
@@ -561,12 +561,12 @@ func (s *SwarmService) GetNode(ctx context.Context, environmentID, nodeID string
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to connect to Docker")
+		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	nodeResult, err := dockerClient.NodeInspect(ctx, nodeID, dockerclient.NodeInspectOptions{})
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to inspect swarm node")
+		return nil, fmt.Errorf("failed to inspect swarm node: %w", err)
 	}
 
 	items := []swarmtypes.NodeSummary{swarmtypes.NewNodeSummary(nodeResult.Node)}
@@ -628,7 +628,7 @@ func (s *SwarmService) BindNodeAgent(ctx context.Context, parentEnvironmentID, n
 		return nil, errors.New("environment did not report an active swarm identity")
 	}
 	if strings.TrimSpace(runtime.identity.SwarmNodeID) != strings.TrimSpace(nodeID) {
-		return nil, errors.Errorf("environment reports swarm node %s instead of %s", runtime.identity.SwarmNodeID, nodeID)
+		return nil, fmt.Errorf("environment reports swarm node %s instead of %s", runtime.identity.SwarmNodeID, nodeID)
 	}
 
 	bound, err := s.environmentService.BindSwarmNodeEnvironment(ctx, parentEnvironmentID, nodeID, request.EnvironmentID, request.Rebind)
@@ -641,12 +641,12 @@ func (s *SwarmService) BindNodeAgent(ctx context.Context, parentEnvironmentID, n
 func (s *SwarmService) GetLocalNodeIdentity(ctx context.Context) (*SwarmNodeIdentity, error) {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to connect to Docker")
+		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	infoResult, err := dockerClient.Info(ctx, dockerclient.InfoOptions{})
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to inspect local Docker engine")
+		return nil, fmt.Errorf("failed to inspect local Docker engine: %w", err)
 	}
 
 	swarmInfo := infoResult.Info
@@ -993,7 +993,7 @@ func (s *SwarmService) getSwarmJoinTokensForEnvironmentInternal(ctx context.Cont
 		Data    swarmtypes.SwarmJoinTokensResponse `json:"data"`
 	}
 	if err := s.environmentService.ProxyJSONRequest(ctx, environmentID, http.MethodGet, "/api/environments/0/swarm/join-tokens", nil, &response); err != nil {
-		return nil, errors.WrapIf(err, "failed to get remote swarm join tokens")
+		return nil, fmt.Errorf("failed to get remote swarm join tokens: %w", err)
 	}
 	if !response.Success {
 		return nil, errors.New("remote swarm join-token request failed")
@@ -1189,12 +1189,12 @@ func (s *SwarmService) ListTasksPaginated(ctx context.Context, params pagination
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return nil, pagination.Response{}, errors.WrapIf(err, "failed to connect to Docker")
+		return nil, pagination.Response{}, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	servicesResult, err := dockerClient.ServiceList(ctx, dockerclient.ServiceListOptions{})
 	if err != nil {
-		return nil, pagination.Response{}, errors.WrapIf(err, "failed to list swarm services")
+		return nil, pagination.Response{}, fmt.Errorf("failed to list swarm services: %w", err)
 	}
 	services := servicesResult.Items
 
@@ -1205,7 +1205,7 @@ func (s *SwarmService) ListTasksPaginated(ctx context.Context, params pagination
 
 	nodesResult, err := dockerClient.NodeList(ctx, dockerclient.NodeListOptions{})
 	if err != nil {
-		return nil, pagination.Response{}, errors.WrapIf(err, "failed to list swarm nodes")
+		return nil, pagination.Response{}, fmt.Errorf("failed to list swarm nodes: %w", err)
 	}
 	nodes := nodesResult.Items
 
@@ -1216,7 +1216,7 @@ func (s *SwarmService) ListTasksPaginated(ctx context.Context, params pagination
 
 	tasksResult, err := dockerClient.TaskList(ctx, dockerclient.TaskListOptions{})
 	if err != nil {
-		return nil, pagination.Response{}, errors.WrapIf(err, "failed to list swarm tasks")
+		return nil, pagination.Response{}, fmt.Errorf("failed to list swarm tasks: %w", err)
 	}
 	tasks := tasksResult.Items
 
@@ -1239,12 +1239,12 @@ func (s *SwarmService) ListStacksPaginated(ctx context.Context, environmentID st
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return nil, pagination.Response{}, errors.WrapIf(err, "failed to connect to Docker")
+		return nil, pagination.Response{}, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	servicesResult, err := dockerClient.ServiceList(ctx, dockerclient.ServiceListOptions{})
 	if err != nil {
-		return nil, pagination.Response{}, errors.WrapIf(err, "failed to list swarm services")
+		return nil, pagination.Response{}, fmt.Errorf("failed to list swarm services: %w", err)
 	}
 	services := servicesResult.Items
 
@@ -1312,7 +1312,7 @@ func (s *SwarmService) DeployStack(ctx context.Context, environmentID string, re
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to connect to Docker")
+		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	_, stackSourceDir, err := s.resolveSwarmStackSourceDirInternal(ctx, environmentID, stackName)
@@ -1366,12 +1366,12 @@ func (s *SwarmService) GetSwarmInfo(ctx context.Context) (*swarmtypes.SwarmInfo,
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to connect to Docker")
+		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	infoResult, err := dockerClient.SwarmInspect(ctx, dockerclient.SwarmInspectOptions{})
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to inspect swarm")
+		return nil, fmt.Errorf("failed to inspect swarm: %w", err)
 	}
 
 	return new(swarmtypes.NewSwarmInfo(infoResult.Swarm)), nil
@@ -1380,7 +1380,7 @@ func (s *SwarmService) GetSwarmInfo(ctx context.Context) (*swarmtypes.SwarmInfo,
 func (s *SwarmService) InitSwarm(ctx context.Context, req swarmtypes.SwarmInitRequest) (*swarmtypes.SwarmInitResponse, error) {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to connect to Docker")
+		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	spec, err := decodeSwarmSpecInternal(req.Spec)
@@ -1392,7 +1392,7 @@ func (s *SwarmService) InitSwarm(ctx context.Context, req swarmtypes.SwarmInitRe
 	for _, raw := range req.DefaultAddrPool {
 		prefix, err := netip.ParsePrefix(raw)
 		if err != nil {
-			return nil, errors.WrapIff(err, "failed to parse default address pool %q", raw)
+			return nil, fmt.Errorf("failed to parse default address pool %q: %w", raw, err)
 		}
 		defaultAddrPool = append(defaultAddrPool, prefix.Masked())
 	}
@@ -1410,7 +1410,7 @@ func (s *SwarmService) InitSwarm(ctx context.Context, req swarmtypes.SwarmInitRe
 		SubnetSize:       req.SubnetSize,
 	})
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to initialize swarm")
+		return nil, fmt.Errorf("failed to initialize swarm: %w", err)
 	}
 
 	s.persistSwarmEnabledStateInternal(ctx, true)
@@ -1421,7 +1421,7 @@ func (s *SwarmService) InitSwarm(ctx context.Context, req swarmtypes.SwarmInitRe
 func (s *SwarmService) JoinSwarm(ctx context.Context, req swarmtypes.SwarmJoinRequest) error {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return errors.WrapIf(err, "failed to connect to Docker")
+		return fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	if _, err := dockerClient.SwarmJoin(ctx, dockerclient.SwarmJoinOptions{
@@ -1432,7 +1432,7 @@ func (s *SwarmService) JoinSwarm(ctx context.Context, req swarmtypes.SwarmJoinRe
 		JoinToken:     req.JoinToken,
 		Availability:  req.Availability,
 	}); err != nil {
-		return errors.WrapIf(err, "failed to join swarm")
+		return fmt.Errorf("failed to join swarm: %w", err)
 	}
 
 	s.persistSwarmEnabledStateInternal(ctx, true)
@@ -1447,11 +1447,11 @@ func (s *SwarmService) LeaveSwarm(ctx context.Context, req swarmtypes.SwarmLeave
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return errors.WrapIf(err, "failed to connect to Docker")
+		return fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	if _, err := dockerClient.SwarmLeave(ctx, dockerclient.SwarmLeaveOptions{Force: req.Force}); err != nil {
-		return errors.WrapIf(err, "failed to leave swarm")
+		return fmt.Errorf("failed to leave swarm: %w", err)
 	}
 
 	s.persistSwarmEnabledStateInternal(ctx, false)
@@ -1466,11 +1466,11 @@ func (s *SwarmService) UnlockSwarm(ctx context.Context, req swarmtypes.SwarmUnlo
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return errors.WrapIf(err, "failed to connect to Docker")
+		return fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	if _, err := dockerClient.SwarmUnlock(ctx, dockerclient.SwarmUnlockOptions{Key: req.Key}); err != nil {
-		return errors.WrapIf(err, "failed to unlock swarm")
+		return fmt.Errorf("failed to unlock swarm: %w", err)
 	}
 
 	return nil
@@ -1483,12 +1483,12 @@ func (s *SwarmService) GetSwarmUnlockKey(ctx context.Context) (*swarmtypes.Swarm
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to connect to Docker")
+		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	unlockResult, err := dockerClient.SwarmGetUnlockKey(ctx)
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to get swarm unlock key")
+		return nil, fmt.Errorf("failed to get swarm unlock key: %w", err)
 	}
 
 	return &swarmtypes.SwarmUnlockKeyResponse{UnlockKey: unlockResult.Key}, nil
@@ -1501,12 +1501,12 @@ func (s *SwarmService) GetSwarmJoinTokens(ctx context.Context) (*swarmtypes.Swar
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to connect to Docker")
+		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	infoResult, err := dockerClient.SwarmInspect(ctx, dockerclient.SwarmInspectOptions{})
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to inspect swarm")
+		return nil, fmt.Errorf("failed to inspect swarm: %w", err)
 	}
 
 	return &swarmtypes.SwarmJoinTokensResponse{
@@ -1522,12 +1522,12 @@ func (s *SwarmService) RotateSwarmJoinTokens(ctx context.Context, req swarmtypes
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return errors.WrapIf(err, "failed to connect to Docker")
+		return fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	infoResult, err := dockerClient.SwarmInspect(ctx, dockerclient.SwarmInspectOptions{})
 	if err != nil {
-		return errors.WrapIf(err, "failed to inspect swarm")
+		return fmt.Errorf("failed to inspect swarm: %w", err)
 	}
 
 	rotateWorker := req.RotateWorkerToken
@@ -1543,7 +1543,7 @@ func (s *SwarmService) RotateSwarmJoinTokens(ctx context.Context, req swarmtypes
 		RotateWorkerToken:  rotateWorker,
 		RotateManagerToken: rotateManager,
 	}); err != nil {
-		return errors.WrapIf(err, "failed to rotate swarm join tokens")
+		return fmt.Errorf("failed to rotate swarm join tokens: %w", err)
 	}
 
 	return nil
@@ -1556,14 +1556,14 @@ func (s *SwarmService) UpdateSwarmSpec(ctx context.Context, req swarmtypes.Swarm
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return errors.WrapIf(err, "failed to connect to Docker")
+		return fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	version := req.Version
 	if version == 0 {
 		infoResult, err := dockerClient.SwarmInspect(ctx, dockerclient.SwarmInspectOptions{})
 		if err != nil {
-			return errors.WrapIf(err, "failed to inspect swarm")
+			return fmt.Errorf("failed to inspect swarm: %w", err)
 		}
 		version = infoResult.Swarm.Version.Index
 	}
@@ -1580,7 +1580,7 @@ func (s *SwarmService) UpdateSwarmSpec(ctx context.Context, req swarmtypes.Swarm
 		RotateManagerToken:     req.RotateManagerToken,
 		RotateManagerUnlockKey: req.RotateManagerUnlockKey,
 	}); err != nil {
-		return errors.WrapIf(err, "failed to update swarm spec")
+		return fmt.Errorf("failed to update swarm spec: %w", err)
 	}
 
 	return nil
@@ -1603,12 +1603,12 @@ func (s *SwarmService) RollbackService(ctx context.Context, serviceID string) (*
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to connect to Docker")
+		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	serviceResult, err := dockerClient.ServiceInspect(ctx, serviceID, dockerclient.ServiceInspectOptions{})
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to inspect swarm service")
+		return nil, fmt.Errorf("failed to inspect swarm service: %w", err)
 	}
 
 	updateResult, err := dockerClient.ServiceUpdate(ctx, serviceID, dockerclient.ServiceUpdateOptions{
@@ -1617,7 +1617,7 @@ func (s *SwarmService) RollbackService(ctx context.Context, serviceID string) (*
 		Rollback: "previous",
 	})
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to rollback swarm service")
+		return nil, fmt.Errorf("failed to rollback swarm service: %w", err)
 	}
 
 	return &swarmtypes.ServiceUpdateResponse{Warnings: updateResult.Warnings}, nil
@@ -1630,12 +1630,12 @@ func (s *SwarmService) ScaleService(ctx context.Context, serviceID string, repli
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to connect to Docker")
+		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	serviceResult, err := dockerClient.ServiceInspect(ctx, serviceID, dockerclient.ServiceInspectOptions{})
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to inspect swarm service")
+		return nil, fmt.Errorf("failed to inspect swarm service: %w", err)
 	}
 	service := serviceResult.Service
 
@@ -1648,7 +1648,7 @@ func (s *SwarmService) ScaleService(ctx context.Context, serviceID string, repli
 		Spec:    service.Spec,
 	})
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to scale swarm service")
+		return nil, fmt.Errorf("failed to scale swarm service: %w", err)
 	}
 
 	return &swarmtypes.ServiceUpdateResponse{Warnings: updateResult.Warnings}, nil
@@ -1661,7 +1661,7 @@ func applySwarmServiceScaleInternal(mode *swarm.ServiceMode, replicas uint64) er
 	case mode.ReplicatedJob != nil:
 		mode.ReplicatedJob.TotalCompletions = &replicas
 	default:
-		return errors.WrapIf(cerrdefs.ErrInvalidArgument, "scale can only be used with replicated or replicated-job mode")
+		return fmt.Errorf("scale can only be used with replicated or replicated-job mode: %w", cerrdefs.ErrInvalidArgument)
 	}
 
 	return nil
@@ -1674,12 +1674,12 @@ func (s *SwarmService) UpdateNode(ctx context.Context, nodeID string, req swarmt
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return errors.WrapIf(err, "failed to connect to Docker")
+		return fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	nodeResult, err := dockerClient.NodeInspect(ctx, nodeID, dockerclient.NodeInspectOptions{})
 	if err != nil {
-		return errors.WrapIf(err, "failed to inspect swarm node")
+		return fmt.Errorf("failed to inspect swarm node: %w", err)
 	}
 
 	version := cmp.Or(req.Version, nodeResult.Node.Version.Index)
@@ -1702,7 +1702,7 @@ func (s *SwarmService) UpdateNode(ctx context.Context, nodeID string, req swarmt
 		Version: swarm.Version{Index: version},
 		Spec:    spec,
 	}); err != nil {
-		return errors.WrapIf(err, "failed to update swarm node")
+		return fmt.Errorf("failed to update swarm node: %w", err)
 	}
 
 	return nil
@@ -1715,11 +1715,11 @@ func (s *SwarmService) RemoveNode(ctx context.Context, nodeID string, force bool
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return errors.WrapIf(err, "failed to connect to Docker")
+		return fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	if _, err := dockerClient.NodeRemove(ctx, nodeID, dockerclient.NodeRemoveOptions{Force: force}); err != nil {
-		return errors.WrapIf(err, "failed to remove swarm node")
+		return fmt.Errorf("failed to remove swarm node: %w", err)
 	}
 
 	return nil
@@ -1750,7 +1750,7 @@ func (s *SwarmService) GetStack(ctx context.Context, environmentID, stackName st
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to connect to Docker")
+		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	services, err := s.listStackServicesRawInternal(ctx, dockerClient, stackName)
@@ -1808,7 +1808,7 @@ func (s *SwarmService) GetStackSource(ctx context.Context, environmentID, stackN
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil, cerrdefs.ErrNotFound
 		}
-		return nil, errors.WrapIf(err, "failed to read swarm stack compose source")
+		return nil, fmt.Errorf("failed to read swarm stack compose source: %w", err)
 	}
 
 	overrideContent := ""
@@ -1816,7 +1816,7 @@ func (s *SwarmService) GetStackSource(ctx context.Context, environmentID, stackN
 	if err == nil {
 		overrideContent = string(overrideBytes)
 	} else if !errors.Is(err, fs.ErrNotExist) {
-		return nil, errors.WrapIf(err, "failed to read swarm stack override source")
+		return nil, fmt.Errorf("failed to read swarm stack override source: %w", err)
 	}
 
 	envContent := ""
@@ -1824,7 +1824,7 @@ func (s *SwarmService) GetStackSource(ctx context.Context, environmentID, stackN
 	if err == nil {
 		envContent = string(envBytes)
 	} else if !errors.Is(err, fs.ErrNotExist) {
-		return nil, errors.WrapIf(err, "failed to read swarm stack env source")
+		return nil, fmt.Errorf("failed to read swarm stack env source: %w", err)
 	}
 
 	var files []swarmtypes.SyncFile
@@ -1847,7 +1847,7 @@ func (s *SwarmService) GetStackSource(ctx context.Context, environmentID, stackN
 		return nil
 	})
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return nil, errors.WrapIf(err, "failed to read additional swarm stack source files")
+		return nil, fmt.Errorf("failed to read additional swarm stack source files: %w", err)
 	}
 
 	return &swarmtypes.StackSource{
@@ -1907,7 +1907,7 @@ func (s *SwarmService) UpdateStackSource(ctx context.Context, environmentID, sta
 		if restoreErr != nil {
 			slog.WarnContext(ctx, "failed to restore swarm stack source after deploy failure", "environmentID", normalizeSwarmEnvironmentIDInternal(environmentID), "stackName", stackName, "error", restoreErr)
 		}
-		return nil, errors.WrapIf(err, "failed to redeploy swarm stack from updated source")
+		return nil, fmt.Errorf("failed to redeploy swarm stack from updated source: %w", err)
 	}
 
 	return &swarmtypes.StackSource{
@@ -1930,7 +1930,7 @@ func (s *SwarmService) listPersistedStackSourcesInternal(ctx context.Context, en
 		if errors.Is(err, fs.ErrNotExist) {
 			return map[string]swarmtypes.StackSummary{}, nil
 		}
-		return nil, errors.WrapIf(err, "failed to list swarm stack source directories")
+		return nil, fmt.Errorf("failed to list swarm stack source directories: %w", err)
 	}
 
 	stacks := make(map[string]swarmtypes.StackSummary, len(entries))
@@ -1968,7 +1968,7 @@ func (s *SwarmService) buildPersistedStackSourceSummaryInternal(ctx context.Cont
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil, cerrdefs.ErrNotFound
 		}
-		return nil, errors.WrapIf(err, "failed to stat swarm stack compose source")
+		return nil, fmt.Errorf("failed to stat swarm stack compose source: %w", err)
 	}
 
 	createdAt := composeEntry.ModTime
@@ -1983,7 +1983,7 @@ func (s *SwarmService) buildPersistedStackSourceSummaryInternal(ctx context.Cont
 			updatedAt = envEntry.ModTime
 		}
 	} else if !errors.Is(err, fs.ErrNotExist) {
-		return nil, errors.WrapIf(err, "failed to stat swarm stack env source")
+		return nil, fmt.Errorf("failed to stat swarm stack env source: %w", err)
 	}
 
 	return &swarmtypes.StackSummary{
@@ -2008,7 +2008,7 @@ func (s *SwarmService) RemoveStack(ctx context.Context, environmentID, stackName
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return errors.WrapIf(err, "failed to connect to Docker")
+		return fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	services, err := s.listStackServicesRawInternal(ctx, dockerClient, stackName)
@@ -2041,7 +2041,7 @@ func (s *SwarmService) removeStackServicesInternal(ctx context.Context, dockerCl
 	for _, service := range services {
 		serviceIDs[service.ID] = struct{}{}
 		if _, err := dockerClient.ServiceRemove(ctx, service.ID, dockerclient.ServiceRemoveOptions{}); err != nil && !cerrdefs.IsNotFound(err) {
-			return errors.WrapIff(err, "failed to remove swarm service %s", service.Spec.Name)
+			return fmt.Errorf("failed to remove swarm service %s: %w", service.Spec.Name, err)
 		}
 	}
 
@@ -2059,7 +2059,7 @@ func (s *SwarmService) ListStackServicesPaginated(ctx context.Context, stackName
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return nil, pagination.Response{}, errors.WrapIf(err, "failed to connect to Docker")
+		return nil, pagination.Response{}, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	services, err := s.listStackServicesRawInternal(ctx, dockerClient, stackName)
@@ -2088,7 +2088,7 @@ func (s *SwarmService) ListStackTasksPaginated(ctx context.Context, stackName st
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return nil, pagination.Response{}, errors.WrapIf(err, "failed to connect to Docker")
+		return nil, pagination.Response{}, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	services, err := s.listStackServicesRawInternal(ctx, dockerClient, stackName)
@@ -2118,7 +2118,7 @@ func (s *SwarmService) RenderStackConfig(ctx context.Context, environmentID stri
 	}
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to connect to Docker")
+		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 	pm := appfs.NewPathMapperForConfiguredDirectory(
 		ctx,
@@ -2164,12 +2164,12 @@ func (s *SwarmService) ListConfigs(ctx context.Context) ([]swarmtypes.ConfigSumm
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to connect to Docker")
+		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	configsResult, err := dockerClient.ConfigList(ctx, dockerclient.ConfigListOptions{})
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to list swarm configs")
+		return nil, fmt.Errorf("failed to list swarm configs: %w", err)
 	}
 
 	items := make([]swarmtypes.ConfigSummary, 0, len(configsResult.Items))
@@ -2186,12 +2186,12 @@ func (s *SwarmService) GetConfig(ctx context.Context, configID string) (*swarmty
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to connect to Docker")
+		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	cfgResult, err := dockerClient.ConfigInspect(ctx, configID, dockerclient.ConfigInspectOptions{})
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to inspect swarm config")
+		return nil, fmt.Errorf("failed to inspect swarm config: %w", err)
 	}
 
 	return new(swarmtypes.NewConfigSummary(cfgResult.Config)), nil
@@ -2209,12 +2209,12 @@ func (s *SwarmService) CreateConfig(ctx context.Context, req swarmtypes.ConfigCr
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to connect to Docker")
+		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	createResult, err := dockerClient.ConfigCreate(ctx, dockerclient.ConfigCreateOptions{Spec: spec})
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to create swarm config")
+		return nil, fmt.Errorf("failed to create swarm config: %w", err)
 	}
 
 	return s.GetConfig(ctx, createResult.ID)
@@ -2227,11 +2227,11 @@ func (s *SwarmService) RemoveConfig(ctx context.Context, configID string) error 
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return errors.WrapIf(err, "failed to connect to Docker")
+		return fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	if _, err := dockerClient.ConfigRemove(ctx, configID, dockerclient.ConfigRemoveOptions{}); err != nil {
-		return errors.WrapIf(err, "failed to remove swarm config")
+		return fmt.Errorf("failed to remove swarm config: %w", err)
 	}
 
 	return nil
@@ -2244,12 +2244,12 @@ func (s *SwarmService) ListSecrets(ctx context.Context) ([]swarmtypes.SecretSumm
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to connect to Docker")
+		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	secretsResult, err := dockerClient.SecretList(ctx, dockerclient.SecretListOptions{})
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to list swarm secrets")
+		return nil, fmt.Errorf("failed to list swarm secrets: %w", err)
 	}
 
 	items := make([]swarmtypes.SecretSummary, 0, len(secretsResult.Items))
@@ -2266,12 +2266,12 @@ func (s *SwarmService) GetSecret(ctx context.Context, secretID string) (*swarmty
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to connect to Docker")
+		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	secretResult, err := dockerClient.SecretInspect(ctx, secretID, dockerclient.SecretInspectOptions{})
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to inspect swarm secret")
+		return nil, fmt.Errorf("failed to inspect swarm secret: %w", err)
 	}
 
 	return new(swarmtypes.NewSecretSummary(secretResult.Secret)), nil
@@ -2289,12 +2289,12 @@ func (s *SwarmService) CreateSecret(ctx context.Context, req swarmtypes.SecretCr
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to connect to Docker")
+		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	createResult, err := dockerClient.SecretCreate(ctx, dockerclient.SecretCreateOptions{Spec: spec})
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to create swarm secret")
+		return nil, fmt.Errorf("failed to create swarm secret: %w", err)
 	}
 
 	return s.GetSecret(ctx, createResult.ID)
@@ -2307,11 +2307,11 @@ func (s *SwarmService) RemoveSecret(ctx context.Context, secretID string) error 
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return errors.WrapIf(err, "failed to connect to Docker")
+		return fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	if _, err := dockerClient.SecretRemove(ctx, secretID, dockerclient.SecretRemoveOptions{}); err != nil {
-		return errors.WrapIf(err, "failed to remove swarm secret")
+		return fmt.Errorf("failed to remove swarm secret: %w", err)
 	}
 
 	return nil
@@ -2320,12 +2320,12 @@ func (s *SwarmService) RemoveSecret(ctx context.Context, secretID string) error 
 func (s *SwarmService) listTasksPaginatedWithFiltersInternal(ctx context.Context, filters dockerclient.Filters, params pagination.QueryParams) ([]swarmtypes.TaskSummary, pagination.Response, error) {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return nil, pagination.Response{}, errors.WrapIf(err, "failed to connect to Docker")
+		return nil, pagination.Response{}, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	servicesResult, err := dockerClient.ServiceList(ctx, dockerclient.ServiceListOptions{})
 	if err != nil {
-		return nil, pagination.Response{}, errors.WrapIf(err, "failed to list swarm services")
+		return nil, pagination.Response{}, fmt.Errorf("failed to list swarm services: %w", err)
 	}
 
 	serviceNameByID := make(map[string]string, len(servicesResult.Items))
@@ -2335,7 +2335,7 @@ func (s *SwarmService) listTasksPaginatedWithFiltersInternal(ctx context.Context
 
 	nodesResult, err := dockerClient.NodeList(ctx, dockerclient.NodeListOptions{})
 	if err != nil {
-		return nil, pagination.Response{}, errors.WrapIf(err, "failed to list swarm nodes")
+		return nil, pagination.Response{}, fmt.Errorf("failed to list swarm nodes: %w", err)
 	}
 
 	nodeNameByID := make(map[string]string, len(nodesResult.Items))
@@ -2348,7 +2348,7 @@ func (s *SwarmService) listTasksPaginatedWithFiltersInternal(ctx context.Context
 	}
 	tasksResult, err := dockerClient.TaskList(ctx, dockerclient.TaskListOptions{Filters: filters})
 	if err != nil {
-		return nil, pagination.Response{}, errors.WrapIf(err, "failed to list swarm tasks")
+		return nil, pagination.Response{}, fmt.Errorf("failed to list swarm tasks: %w", err)
 	}
 
 	items := make([]swarmtypes.TaskSummary, 0, len(tasksResult.Items))
@@ -2365,7 +2365,7 @@ func (s *SwarmService) listTasksPaginatedWithFiltersInternal(ctx context.Context
 func (s *SwarmService) summarizeServicesInternal(ctx context.Context, dockerClient *dockerclient.Client, services []swarm.Service) ([]swarmtypes.ServiceSummary, error) {
 	nodesResult, err := dockerClient.NodeList(ctx, dockerclient.NodeListOptions{})
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to list swarm nodes")
+		return nil, fmt.Errorf("failed to list swarm nodes: %w", err)
 	}
 
 	nodeNameByID := make(map[string]string, len(nodesResult.Items))
@@ -2375,7 +2375,7 @@ func (s *SwarmService) summarizeServicesInternal(ctx context.Context, dockerClie
 
 	networksResult, err := dockerClient.NetworkList(ctx, dockerclient.NetworkListOptions{})
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to list networks")
+		return nil, fmt.Errorf("failed to list networks: %w", err)
 	}
 
 	networkNameByID := make(map[string]string, len(networksResult.Items))
@@ -2390,7 +2390,7 @@ func (s *SwarmService) summarizeServicesInternal(ctx context.Context, dockerClie
 
 	tasksResult, err := dockerClient.TaskList(ctx, dockerclient.TaskListOptions{})
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to list swarm tasks")
+		return nil, fmt.Errorf("failed to list swarm tasks: %w", err)
 	}
 
 	serviceNodes := make(map[string]map[string]struct{})
@@ -2437,7 +2437,7 @@ func (s *SwarmService) listStackServicesRawInternal(ctx context.Context, dockerC
 		Status:  true,
 	})
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to list stack services")
+		return nil, fmt.Errorf("failed to list stack services: %w", err)
 	}
 
 	return servicesResult.Items, nil
@@ -2462,7 +2462,7 @@ func (s *SwarmService) waitForRemovedServiceTasksInternal(ctx context.Context, d
 	for {
 		tasksResult, err := dockerClient.TaskList(waitCtx, dockerclient.TaskListOptions{Filters: taskFilters})
 		if err != nil {
-			return errors.WrapIf(err, "failed to list tasks while waiting for stack removal")
+			return fmt.Errorf("failed to list tasks while waiting for stack removal: %w", err)
 		}
 
 		hasActiveTasks := false
@@ -2478,7 +2478,7 @@ func (s *SwarmService) waitForRemovedServiceTasksInternal(ctx context.Context, d
 
 		select {
 		case <-waitCtx.Done():
-			return errors.WrapIf(waitCtx.Err(), "timed out waiting for stack task convergence")
+			return fmt.Errorf("timed out waiting for stack task convergence: %w", waitCtx.Err())
 		case <-ticker.C:
 		}
 	}
@@ -2515,7 +2515,7 @@ func decodeConfigSpecInternal(raw stdjson.RawMessage) (swarm.ConfigSpec, error) 
 
 	var spec swarm.ConfigSpec
 	if err := json.Unmarshal(raw, &spec); err != nil {
-		return swarm.ConfigSpec{}, errors.WrapIf(err, "failed to parse config spec")
+		return swarm.ConfigSpec{}, fmt.Errorf("failed to parse config spec: %w", err)
 	}
 
 	if strings.TrimSpace(spec.Name) == "" {
@@ -2533,7 +2533,7 @@ func decodeSwarmSpecInternal(raw stdjson.RawMessage) (swarm.Spec, error) {
 
 	var spec swarm.Spec
 	if err := json.Unmarshal(trimmed, &spec); err != nil {
-		return swarm.Spec{}, errors.WrapIf(err, "failed to parse swarm spec")
+		return swarm.Spec{}, fmt.Errorf("failed to parse swarm spec: %w", err)
 	}
 
 	if spec.Labels == nil {
@@ -2555,7 +2555,7 @@ func decodeSecretSpecInternal(raw stdjson.RawMessage) (swarm.SecretSpec, error) 
 
 	var spec swarm.SecretSpec
 	if err := json.Unmarshal(raw, &spec); err != nil {
-		return swarm.SecretSpec{}, errors.WrapIf(err, "failed to parse secret spec")
+		return swarm.SecretSpec{}, fmt.Errorf("failed to parse secret spec: %w", err)
 	}
 
 	if strings.TrimSpace(spec.Name) == "" {
@@ -2578,10 +2578,10 @@ func (s *SwarmService) upsertStackSourceInternal(ctx context.Context, environmen
 
 	stackLogical, err := acfs.LogicalPath(rootDir, stackSourceDir)
 	if err != nil {
-		return errors.WrapIf(err, "swarm stack source directory is outside its root")
+		return fmt.Errorf("swarm stack source directory is outside its root: %w", err)
 	}
 	if err := acfs.MkdirAll(ctx, rootDir, stackLogical, utils.DirPerm); err != nil {
-		return errors.WrapIf(err, "failed to create swarm stack source directory")
+		return fmt.Errorf("failed to create swarm stack source directory: %w", err)
 	}
 
 	syncFiles := make([]appfs.SyncFile, 0, len(files)+3)
@@ -2621,15 +2621,15 @@ func (s *SwarmService) upsertStackSourceInternal(ctx context.Context, environmen
 		existingFiles = append(existingFiles, strings.TrimPrefix(entry.Path, "/"))
 		return nil
 	}); err != nil {
-		return errors.WrapIf(err, "failed to inspect existing swarm stack files")
+		return fmt.Errorf("failed to inspect existing swarm stack files: %w", err)
 	}
 
 	writtenFiles, err := appfs.WriteSyncedDirectory(ctx, rootDir, stackSourceDir, syncFiles)
 	if err != nil {
-		return errors.WrapIf(err, "failed to write swarm stack files")
+		return fmt.Errorf("failed to write swarm stack files: %w", err)
 	}
 	if err := appfs.CleanupRemovedFiles(ctx, rootDir, stackSourceDir, existingFiles, writtenFiles); err != nil {
-		return errors.WrapIf(err, "failed to remove stale swarm stack files")
+		return fmt.Errorf("failed to remove stale swarm stack files: %w", err)
 	}
 
 	return nil
@@ -2647,10 +2647,10 @@ func (s *SwarmService) deleteStackSourceInternal(ctx context.Context, environmen
 
 	stackLogical, err := acfs.LogicalPath(rootDir, stackSourceDir)
 	if err != nil {
-		return errors.WrapIf(err, "swarm stack source directory is outside its root")
+		return fmt.Errorf("swarm stack source directory is outside its root: %w", err)
 	}
 	if err := acfs.RemoveAll(ctx, rootDir, stackLogical); err != nil {
-		return errors.WrapIf(err, "failed to remove swarm stack source directory")
+		return fmt.Errorf("failed to remove swarm stack source directory: %w", err)
 	}
 
 	// Best-effort cleanup of now-empty environment directory.
@@ -2715,10 +2715,10 @@ func (s *SwarmService) ensureSwarmManagerInternal(ctx context.Context) error {
 	}
 
 	if info.Swarm.LocalNodeState != swarm.LocalNodeStateActive {
-		return common.Classify(common.ErrSwarmNotEnabled, errors.New("Swarm mode is not enabled"))
+		return common.Classify(common.ErrSwarmNotEnabled, errors.New("Swarm mode is not enabled")) //nolint:staticcheck // Preserve the existing error message.
 	}
 	if !info.Swarm.ControlAvailable {
-		return common.Classify(common.ErrSwarmManagerRequired, errors.New("Swarm manager access required"))
+		return common.Classify(common.ErrSwarmManagerRequired, errors.New("Swarm manager access required")) //nolint:staticcheck // Preserve the existing error message.
 	}
 
 	return nil
@@ -2731,7 +2731,7 @@ func (s *SwarmService) ensureSwarmActiveInternal(ctx context.Context) error {
 	}
 
 	if info.Swarm.LocalNodeState != swarm.LocalNodeStateActive {
-		return common.Classify(common.ErrSwarmNotEnabled, errors.New("Swarm mode is not enabled"))
+		return common.Classify(common.ErrSwarmNotEnabled, errors.New("Swarm mode is not enabled")) //nolint:staticcheck // Preserve the existing error message.
 	}
 
 	return nil
@@ -2740,12 +2740,12 @@ func (s *SwarmService) ensureSwarmActiveInternal(ctx context.Context) error {
 func (s *SwarmService) getDockerInfoInternal(ctx context.Context) (system.Info, error) {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return system.Info{}, errors.WrapIf(err, "failed to connect to Docker")
+		return system.Info{}, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	infoResult, err := dockerClient.Info(ctx, dockerclient.InfoOptions{})
 	if err != nil {
-		return system.Info{}, errors.WrapIf(err, "failed to get Docker info")
+		return system.Info{}, fmt.Errorf("failed to get Docker info: %w", err)
 	}
 
 	return infoResult.Info, nil
@@ -2763,7 +2763,7 @@ func (s *SwarmService) SyncSwarmEnabledState(ctx context.Context) error {
 	}
 
 	if err := s.kvService.SetBool(ctx, KVKeySwarmEnabled, enabled); err != nil {
-		return errors.WrapIf(err, "persist swarm enabled state")
+		return fmt.Errorf("persist swarm enabled state: %w", err)
 	}
 
 	return nil
@@ -2925,4 +2925,57 @@ func sanitizeServiceSpecInternal(spec *swarm.ServiceSpec) {
 			}
 		}
 	}
+}
+
+// GetJoinCandidates lists environments available to join the selected manager.
+func (s *SwarmService) GetJoinCandidates(ctx context.Context, environmentID string) ([]swarmtypes.SwarmJoinCandidate, error) {
+	var identity *SwarmNodeIdentity
+	var err error
+	if environmentID == environment.LocalEnvironmentID {
+		identity, err = s.GetLocalNodeIdentity(ctx)
+	} else {
+		identity, err = s.fetchSwarmNodeIdentityViaEdgeInternal(ctx, environmentID)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to inspect Easy Join manager: %w", err)
+	}
+	if !identity.SwarmActive || identity.Role == "worker" {
+		return []swarmtypes.SwarmJoinCandidate{}, nil
+	}
+	if identity.Role != "manager" {
+		return nil, errors.New("unexpected swarm node role")
+	}
+
+	nodes, _, err := s.ListNodesPaginated(ctx, environmentID, pagination.QueryParams{Limit: -1})
+	if err != nil {
+		return nil, err
+	}
+	boundEnvironmentIDs := make(map[string]struct{}, len(nodes))
+	for _, node := range nodes {
+		if node.Agent.EnvironmentID != nil {
+			boundEnvironmentIDs[*node.Agent.EnvironmentID] = struct{}{}
+		}
+	}
+
+	environments, err := s.environmentService.ListSwarmNodeCandidateEnvironments(ctx)
+	if err != nil {
+		return nil, err
+	}
+	candidates := make([]swarmtypes.SwarmJoinCandidate, 0, len(environments))
+	for _, candidate := range environments {
+		if candidate.ID == environmentID {
+			continue
+		}
+		if _, bound := boundEnvironmentIDs[candidate.ID]; bound {
+			continue
+		}
+		environmentType := kit.Ternary(candidate.IsEdge, "edge", "direct")
+		candidates = append(candidates, swarmtypes.SwarmJoinCandidate{
+			EnvironmentID:   candidate.ID,
+			EnvironmentName: candidate.Name,
+			EnvironmentType: environmentType,
+			Status:          candidate.Status,
+		})
+	}
+	return candidates, nil
 }

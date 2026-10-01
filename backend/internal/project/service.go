@@ -2,6 +2,8 @@ package project
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -11,7 +13,6 @@ import (
 	"sync"
 	"time"
 
-	"emperror.dev/errors"
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
@@ -77,7 +78,7 @@ func (s *ProjectService) EnsureGitOpsProjectLinked(ctx context.Context, sync *Gi
 		return nil
 	}
 	if project.GitOpsManagedBy != nil && *project.GitOpsManagedBy != "" && *project.GitOpsManagedBy != sync.ID {
-		return errors.Errorf("project %s is already managed by a different GitOps sync", project.ID)
+		return fmt.Errorf("project %s is already managed by a different GitOps sync", project.ID)
 	}
 
 	cacheBinding := func() {
@@ -104,12 +105,12 @@ func (s *ProjectService) EnsureGitOpsProjectLinked(ctx context.Context, sync *Gi
 	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if len(updatesSync) > 0 {
 			if err := tx.Model(&GitOpsSync{}).Where("id = ?", sync.ID).Updates(updatesSync).Error; err != nil {
-				return errors.WrapIff(err, "failed to relink GitOps sync %s", sync.ID)
+				return fmt.Errorf("failed to relink GitOps sync %s: %w", sync.ID, err)
 			}
 		}
 		if len(updatesProject) > 0 {
 			if err := tx.Model(&Project{}).Where("id = ?", project.ID).Updates(updatesProject).Error; err != nil {
-				return errors.WrapIff(err, "failed to relink project %s to GitOps sync %s", project.ID, sync.ID)
+				return fmt.Errorf("failed to relink project %s to GitOps sync %s: %w", project.ID, sync.ID, err)
 			}
 		}
 		return nil
@@ -156,13 +157,13 @@ func (s *ProjectService) CreateGitOpsManagedProject(ctx context.Context, sync *G
 	}
 	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(project).Error; err != nil {
-			return errors.WrapIf(err, "failed to create project")
+			return fmt.Errorf("failed to create project: %w", err)
 		}
 		if err := tx.Model(&GitOpsSync{}).Where("id = ?", sync.ID).Update("project_id", project.ID).Error; err != nil {
-			return errors.WrapIf(err, "failed to update sync with project ID")
+			return fmt.Errorf("failed to update sync with project ID: %w", err)
 		}
 		if err := tx.Model(&Project{}).Where("id = ?", project.ID).Update("gitops_managed_by", sync.ID).Error; err != nil {
-			return errors.WrapIf(err, "failed to mark project as GitOps-managed")
+			return fmt.Errorf("failed to mark project as GitOps-managed: %w", err)
 		}
 		return nil
 	}); err != nil {
@@ -329,7 +330,7 @@ func (s *ProjectService) ResolveRegistryCredentials(ctx context.Context) ([]cont
 
 	credentials, err := s.RegistryCredentialsProvider(ctx)
 	if err != nil {
-		return nil, errors.WrapIf(err, "get enabled registry credentials")
+		return nil, fmt.Errorf("get enabled registry credentials: %w", err)
 	}
 
 	return credentials, nil
@@ -425,7 +426,7 @@ func (s *ProjectService) GetProjectFromDatabaseByID(ctx context.Context, id stri
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, errors.New("project not found")
 		}
-		return nil, errors.WrapIf(err, "failed to get project")
+		return nil, fmt.Errorf("failed to get project: %w", err)
 	}
 	return &projectModel, nil
 }
@@ -443,7 +444,7 @@ func (s *ProjectService) GetProjectByComposeName(ctx context.Context, name strin
 		return &proj, nil
 	}
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, errors.WrapIf(err, "failed to get project by name")
+		return nil, fmt.Errorf("failed to get project by name: %w", err)
 	}
 
 	if cachedProject, found, cacheErr := s.lookupProjectByCachedComposeNameInternal(ctx, normalized); cacheErr != nil {
@@ -453,7 +454,7 @@ func (s *ProjectService) GetProjectByComposeName(ctx context.Context, name strin
 	}
 
 	if err := s.rebuildComposeNameCacheInternal(ctx); err != nil {
-		return nil, errors.WrapIf(err, "failed to list projects by compose name")
+		return nil, fmt.Errorf("failed to list projects by compose name: %w", err)
 	}
 
 	if cachedProject, found, cacheErr := s.lookupProjectByCachedComposeNameInternal(ctx, normalized); cacheErr != nil {
@@ -462,7 +463,7 @@ func (s *ProjectService) GetProjectByComposeName(ctx context.Context, name strin
 		return cachedProject, nil
 	}
 
-	return nil, errors.Errorf("project not found: %s", name)
+	return nil, fmt.Errorf("project not found: %s", name)
 }
 
 // EnsureProjectPathUnderRoot validates that the project's path is a safe subdirectory of the configured projects root.
@@ -471,7 +472,7 @@ func (s *ProjectService) GetProjectByComposeName(ctx context.Context, name strin
 func (s *ProjectService) EnsureProjectPathUnderRoot(ctx context.Context, proj *Project, persist bool) error {
 	projectsDirectory, err := projects.GetProjectsDirectory(ctx, s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects"))
 	if err != nil {
-		return errors.WrapIf(err, "failed to get projects directory")
+		return fmt.Errorf("failed to get projects directory: %w", err)
 	}
 
 	rootAbs, _ := filepath.Abs(projectsDirectory)
@@ -593,9 +594,9 @@ func (s *ProjectService) lookupProjectByCachedComposeNameInternal(ctx context.Co
 			return nil, false, nil
 		}
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			return nil, false, errors.WrapIf(err, "request canceled or timed out")
+			return nil, false, fmt.Errorf("request canceled or timed out: %w", err)
 		}
-		return nil, false, errors.WrapIf(err, "failed to get project by cached compose name")
+		return nil, false, fmt.Errorf("failed to get project by cached compose name: %w", err)
 	}
 	if projects.NormalizeProjectName(projectModel.Name) != normalizedName {
 		s.composeNames.invalidateInternal(normalizedName)
@@ -669,7 +670,7 @@ func (s *ProjectService) resolveProjectComposeFileUncachedInternal(ctx context.C
 	if syncID := gitOpsSyncIDInternal(proj); syncID != "" {
 		composePath, found, err := s.gitOpsComposePathInternal(ctx, syncID, env)
 		if err != nil {
-			return "", errors.WrapIff(err, "failed to resolve GitOps compose path for project %s", proj.ID)
+			return "", fmt.Errorf("failed to resolve GitOps compose path for project %s: %w", proj.ID, err)
 		}
 		if found {
 			composeFileName := strings.TrimSpace(filepath.Base(composePath))
@@ -683,7 +684,7 @@ func (s *ProjectService) resolveProjectComposeFileUncachedInternal(ctx context.C
 						return candidate, nil
 					}
 				} else if !os.IsNotExist(statErr) {
-					return "", errors.WrapIff(statErr, "failed to inspect GitOps compose file %s", candidate)
+					return "", fmt.Errorf("failed to inspect GitOps compose file %s: %w", candidate, statErr)
 				}
 			}
 		}
@@ -694,7 +695,7 @@ func (s *ProjectService) resolveProjectComposeFileUncachedInternal(ctx context.C
 		if errors.Is(err, common.ErrProjectEnvUnreadable) {
 			return "", err
 		}
-		return "", common.Classify(common.ErrProjectComposeFileNotFound, errors.WrapIf(err, "Project compose file not found"))
+		return "", common.Classify(common.ErrProjectComposeFileNotFound, fmt.Errorf("Project compose file not found: %w", err))
 	}
 
 	return composeFile, nil

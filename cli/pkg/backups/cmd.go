@@ -2,13 +2,13 @@ package backups
 
 import (
 	"encoding/json/v2"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"strconv"
 
-	"emperror.dev/errors"
 	"github.com/charmbracelet/x/term"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
@@ -130,7 +130,7 @@ alone stores it in S3, and --local together with --s3-destination stores it in b
 			switch destination {
 			case backup.SystemBackupDestinationLocal, backup.SystemBackupDestinationS3, backup.SystemBackupDestinationLocalS3:
 			default:
-				return errors.Errorf("invalid --destination %q: must be local, s3, or local_s3", createDestination)
+				return fmt.Errorf("invalid --destination %q: must be local, s3, or local_s3", createDestination)
 			}
 		} else {
 			switch {
@@ -143,7 +143,7 @@ alone stores it in S3, and --local together with --s3-destination stores it in b
 			}
 		}
 		if (destination == backup.SystemBackupDestinationS3 || destination == backup.SystemBackupDestinationLocalS3) && s3DestinationID == "" {
-			return errors.Errorf("--destination %s requires --s3-destination", destination)
+			return fmt.Errorf("--destination %s requires --s3-destination", destination)
 		}
 
 		req := backup.CreateSystemBackupRequest{
@@ -155,7 +155,7 @@ alone stores it in S3, and --local together with --s3-destination stores it in b
 
 		run, err := c.DoJSON[backup.SystemBackupRun](cmd.Context(), http.MethodPost, types.Backups(), req)
 		if err != nil {
-			return errors.WrapIf(err, "failed to create backup")
+			return fmt.Errorf("failed to create backup: %w", err)
 		}
 
 		if cmdutil.JSONOutputEnabled(cmd) {
@@ -201,7 +201,7 @@ var deleteCmd = &cobra.Command{
 
 		result, err := c.DoJSON[base.ApiResponse[base.MessageResponse]](cmd.Context(), http.MethodDelete, types.Backup(args[0]), backup.DeleteSystemBackupRequest{RecoveryKey: deleteRecoveryKey})
 		if err != nil {
-			return errors.WrapIf(err, "failed to delete backup")
+			return fmt.Errorf("failed to delete backup: %w", err)
 		}
 
 		if cmdutil.JSONOutputEnabled(cmd) {
@@ -240,7 +240,7 @@ var restoreCmd = &cobra.Command{
 			fmt.Print("Recovery key: ")
 			byteKey, err := term.ReadPassword(os.Stdin.Fd())
 			if err != nil {
-				return errors.WrapIf(err, "failed to read recovery key")
+				return fmt.Errorf("failed to read recovery key: %w", err)
 			}
 			key = string(byteKey)
 			fmt.Println()
@@ -256,7 +256,7 @@ var restoreCmd = &cobra.Command{
 
 		result, err := c.PostJSON[base.MessageResponse](cmd.Context(), types.BackupRestore(args[0]), backup.RestoreSystemBackupRequest{RecoveryKey: key})
 		if err != nil {
-			return errors.WrapIf(err, "failed to restore backup")
+			return fmt.Errorf("failed to restore backup: %w", err)
 		}
 
 		if cmdutil.JSONOutputEnabled(cmd) {
@@ -292,7 +292,7 @@ var uploadCmd = &cobra.Command{
 
 		run, err := c.DoJSON[backup.SystemBackupRun](cmd.Context(), http.MethodPost, types.BackupUpload(args[0]), req)
 		if err != nil {
-			return errors.WrapIf(err, "failed to upload backup")
+			return fmt.Errorf("failed to upload backup: %w", err)
 		}
 
 		if cmdutil.JSONOutputEnabled(cmd) {
@@ -332,7 +332,7 @@ var discoverCmd = &cobra.Command{
 
 		result, err := c.PostJSON[int](cmd.Context(), types.BackupsDiscover(), req)
 		if err != nil {
-			return errors.WrapIf(err, "failed to discover backups")
+			return fmt.Errorf("failed to discover backups: %w", err)
 		}
 
 		if cmdutil.JSONOutputEnabled(cmd) {
@@ -357,7 +357,7 @@ var policiesCmd = &cobra.Command{
 
 		result, err := c.DoJSON[backup.SystemBackupPolicyCollection](cmd.Context(), http.MethodGet, types.BackupsPolicies(), nil)
 		if err != nil {
-			return errors.WrapIf(err, "failed to get backup policies")
+			return fmt.Errorf("failed to get backup policies: %w", err)
 		}
 
 		if cmdutil.JSONOutputEnabled(cmd) {
@@ -413,7 +413,7 @@ Alternatively, --file replaces all policies from a raw JSON payload.`,
 		if policiesUpdateFile != "" {
 			for _, name := range []string{"policy-id", "enabled", "disabled", "schedule", "retention", "local", "s3", "s3-destination"} {
 				if cmd.Flags().Changed(name) {
-					return errors.Errorf("--file cannot be combined with --%s", name)
+					return fmt.Errorf("--file cannot be combined with --%s", name)
 				}
 			}
 
@@ -421,21 +421,21 @@ Alternatively, --file replaces all policies from a raw JSON payload.`,
 			if policiesUpdateFile == "-" {
 				data, err = io.ReadAll(os.Stdin)
 				if err != nil {
-					return errors.WrapIf(err, "failed to read policies from stdin")
+					return fmt.Errorf("failed to read policies from stdin: %w", err)
 				}
 			} else {
 				data, err = os.ReadFile(policiesUpdateFile)
 				if err != nil {
-					return errors.WrapIff(err, "failed to read file %s", policiesUpdateFile)
+					return fmt.Errorf("failed to read file %s: %w", policiesUpdateFile, err)
 				}
 			}
 			if err := json.Unmarshal(data, &req); err != nil {
-				return errors.WrapIf(err, "failed to parse policies file")
+				return fmt.Errorf("failed to parse policies file: %w", err)
 			}
 		} else {
 			current, err := c.DoJSON[backup.SystemBackupPolicyCollection](cmd.Context(), http.MethodGet, types.BackupsPolicies(), nil)
 			if err != nil {
-				return errors.WrapIf(err, "failed to get current backup policies")
+				return fmt.Errorf("failed to get current backup policies: %w", err)
 			}
 
 			req.Policies = make([]backup.UpdateSystemBackupPolicy, len(current.Policies))
@@ -457,9 +457,9 @@ Alternatively, --file replaces all policies from a raw JSON payload.`,
 
 			switch {
 			case policiesUpdateID != "" && targetIndex == -1:
-				return errors.Errorf("policy %q not found; run `arcane backups policies`", policiesUpdateID)
+				return fmt.Errorf("policy %q not found; run `arcane backups policies`", policiesUpdateID)
 			case policiesUpdateID == "" && len(req.Policies) > 1:
-				return errors.Errorf("%d backup policies exist; select one with --policy-id", len(req.Policies))
+				return fmt.Errorf("%d backup policies exist; select one with --policy-id", len(req.Policies))
 			case policiesUpdateID == "" && len(req.Policies) == 1:
 				targetIndex = 0
 			case targetIndex == -1:
@@ -504,7 +504,7 @@ Alternatively, --file replaces all policies from a raw JSON payload.`,
 
 		result, err := c.DoJSON[backup.SystemBackupPolicyCollection](cmd.Context(), http.MethodPut, types.BackupsPolicies(), req)
 		if err != nil {
-			return errors.WrapIf(err, "failed to update backup policies")
+			return fmt.Errorf("failed to update backup policies: %w", err)
 		}
 
 		if cmdutil.JSONOutputEnabled(cmd) {
@@ -535,7 +535,7 @@ var recoveryKeyGenerateCmd = &cobra.Command{
 
 		result, err := c.DoJSON[backup.SystemBackupRecoveryKey](cmd.Context(), http.MethodPost, types.BackupsRecoveryKeyGenerate(), nil)
 		if err != nil {
-			return errors.WrapIf(err, "failed to generate recovery key")
+			return fmt.Errorf("failed to generate recovery key: %w", err)
 		}
 
 		if cmdutil.JSONOutputEnabled(cmd) {
@@ -584,7 +584,7 @@ var recoveryKeySetCmd = &cobra.Command{
 			fmt.Print("Recovery key: ")
 			byteKey, err := term.ReadPassword(os.Stdin.Fd())
 			if err != nil {
-				return errors.WrapIf(err, "failed to read recovery key")
+				return fmt.Errorf("failed to read recovery key: %w", err)
 			}
 			key = string(byteKey)
 			fmt.Println()
@@ -600,7 +600,7 @@ var recoveryKeySetCmd = &cobra.Command{
 
 		status, err := c.DoJSON[backup.SystemBackupRecoveryKeyStatus](cmd.Context(), http.MethodPut, types.BackupsRecoveryKey(), backup.SystemBackupRecoveryKey{RecoveryKey: key})
 		if err != nil {
-			return errors.WrapIf(err, "failed to set recovery key")
+			return fmt.Errorf("failed to set recovery key: %w", err)
 		}
 
 		if cmdutil.JSONOutputEnabled(cmd) {
@@ -614,7 +614,10 @@ var recoveryKeySetCmd = &cobra.Command{
 
 func storeRecoveryKey(cmd *cobra.Command, c *client.Client, key string) error {
 	_, err := c.DoJSON[backup.SystemBackupRecoveryKeyStatus](cmd.Context(), http.MethodPut, types.BackupsRecoveryKey(), backup.SystemBackupRecoveryKey{RecoveryKey: key})
-	return errors.WrapIf(err, "failed to store recovery key")
+	if err != nil {
+		return fmt.Errorf("failed to store recovery key: %w", err)
+	}
+	return nil
 }
 
 func init() {

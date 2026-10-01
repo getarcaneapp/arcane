@@ -2,9 +2,9 @@
 package schedule
 
 import (
+	"fmt"
 	"strings"
 
-	"emperror.dev/errors"
 	"github.com/robfig/cron/v3"
 )
 
@@ -12,15 +12,15 @@ import (
 func NormalizeSixField(value, subject string) (string, error) {
 	fields := strings.Fields(value)
 	if len(fields) == 0 {
-		return "", errors.Errorf("%s schedule is required", subject)
+		return "", fmt.Errorf("%s schedule is required", subject)
 	}
 	if len(fields) != 6 {
-		return "", errors.Errorf("invalid %s schedule %q: expected six fields", subject, strings.TrimSpace(value))
+		return "", fmt.Errorf("invalid %s schedule %q: expected six fields", subject, strings.TrimSpace(value))
 	}
 	normalized := strings.Join(fields, " ")
 	parser := Parser()
 	if _, err := parser.Parse(normalized); err != nil {
-		return "", errors.WrapIff(err, "invalid %s schedule %q", subject, normalized)
+		return "", fmt.Errorf("invalid %s schedule %q: %w", subject, normalized, err)
 	}
 	return normalized, nil
 }

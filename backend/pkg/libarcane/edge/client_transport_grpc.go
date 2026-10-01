@@ -3,12 +3,13 @@ package edge
 import (
 	"context"
 	"crypto/tls"
+	"errors"
+	"fmt"
 	"log/slog"
 	"net/url"
 	"strings"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/proto/tunnel/v1"
 	"google.golang.org/grpc"
@@ -50,7 +51,7 @@ func (c *TunnelClient) connectAndServeGRPC(ctx context.Context) error {
 	if c.useTLSForManagerGRPC() {
 		tlsConfig, err := buildManagerClientTLSConfigInternal(c.cfg)
 		if err != nil {
-			return errors.WrapIf(err, "failed to configure edge gRPC TLS")
+			return fmt.Errorf("failed to configure edge gRPC TLS: %w", err)
 		}
 		if tlsConfig == nil {
 			tlsConfig = &tls.Config{MinVersion: tls.VersionTLS12}
@@ -64,12 +65,12 @@ func (c *TunnelClient) connectAndServeGRPC(ctx context.Context) error {
 
 	conn, err := grpc.NewClient(managerAddr, dialOpts...)
 	if err != nil {
-		return errors.WrapIf(err, "failed to dial manager gRPC endpoint")
+		return fmt.Errorf("failed to dial manager gRPC endpoint: %w", err)
 	}
 	defer func() { _ = conn.Close() }()
 
 	if err := c.waitForGRPCReadyInternal(ctx, conn); err != nil {
-		return errors.WrapIf(err, "manager gRPC endpoint is not ready")
+		return fmt.Errorf("manager gRPC endpoint is not ready: %w", err)
 	}
 
 	// metadata.New lowercases the keys itself.
@@ -80,16 +81,14 @@ func (c *TunnelClient) connectAndServeGRPC(ctx context.Context) error {
 	method := c.grpcConnectMethodInternal()
 	stream, err := c.openTunnelConnectStreamInternal(streamCtx, conn, method)
 	if err != nil {
-		return errors.WrapIf(err, "failed to open tunnel stream")
+		return fmt.Errorf("failed to open tunnel stream: %w", err)
 	}
 
 	if err := c.serveTunnelSessionInternal(ctx, NewGRPCAgentTunnelConn(stream, streamCancel), managerAddr); err != nil {
 		if errors.Is(err, errTunnelRegistrationTimeout) {
 			// The channel already reached Ready, so TCP/TLS works but gRPC
 			// framing was never answered end to end.
-			return errors.WrapIf(err,
-				"manager accepted the TCP/TLS connection but never answered gRPC tunnel registration; "+
-					"if a reverse proxy (Traefik/Pangolin/Nginx) fronts the manager, it is likely not forwarding gRPC (HTTP/2 with trailers) on /api/tunnel/connect")
+			return fmt.Errorf("%s: %w", "manager accepted the TCP/TLS connection but never answered gRPC tunnel registration; if a reverse proxy (Traefik/Pangolin/Nginx) fronts the manager, it is likely not forwarding gRPC (HTTP/2 with trailers) on /api/tunnel/connect", err)
 		}
 		return err
 	}
@@ -117,7 +116,7 @@ func (c *TunnelClient) waitForGRPCReadyInternal(ctx context.Context, conn *grpc.
 
 		if !conn.WaitForStateChange(readyCtx, state) {
 			if errors.Is(readyCtx.Err(), context.DeadlineExceeded) {
-				return errors.Errorf("timed out waiting for manager gRPC endpoint after %s", timeout)
+				return fmt.Errorf("timed out waiting for manager gRPC endpoint after %s", timeout)
 			}
 			return readyCtx.Err()
 		}

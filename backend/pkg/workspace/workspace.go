@@ -2,10 +2,11 @@ package workspace
 
 import (
 	"bytes"
+	"errors"
+	"fmt"
 	"strings"
 	"unicode/utf8"
 
-	"emperror.dev/errors"
 	kit "go.getarcane.app/kit/pkg"
 )
 
@@ -30,7 +31,7 @@ func ValidateUpdateManifest(fileTreeRevision string, fileChangeCount, maxFileCha
 		return errors.New("workspace revision is required")
 	}
 	if fileChangeCount == 0 || fileChangeCount > maxFileChanges {
-		return errors.Errorf("fileChanges must contain between 1 and %d changes", maxFileChanges)
+		return fmt.Errorf("fileChanges must contain between 1 and %d changes", maxFileChanges)
 	}
 	return nil
 }
@@ -39,7 +40,7 @@ func ValidateUpdateManifest(fileTreeRevision string, fileChangeCount, maxFileCha
 // may be any bytes: text and binary files are both allowed.
 func ValidateContentSize(content []byte, maxBytes int64) error {
 	if int64(len(content)) > maxBytes {
-		return errors.Errorf("file exceeds %d MiB limit", maxBytes/(1024*1024))
+		return fmt.Errorf("file exceeds %d MiB limit", maxBytes/(1024*1024))
 	}
 	return nil
 }
@@ -53,20 +54,20 @@ func ValidateUploadIndices(changes []UploadReference, uploadCount int, createFil
 	for _, change := range changes {
 		requiresUpload := change.Operation == createFileOperation || change.Operation == updateFileOperation
 		if requiresUpload && change.UploadIndex == nil {
-			return errors.Errorf("uploadIndex is required for %s", change.Operation)
+			return fmt.Errorf("uploadIndex is required for %s", change.Operation)
 		}
 		if !requiresUpload && change.UploadIndex != nil {
-			return errors.Errorf("uploadIndex is not allowed for %s", change.Operation)
+			return fmt.Errorf("uploadIndex is not allowed for %s", change.Operation)
 		}
 		if change.UploadIndex == nil {
 			continue
 		}
 		index := *change.UploadIndex
 		if index < 0 || index >= uploadCount {
-			return errors.Errorf("uploadIndex %d is out of range", index)
+			return fmt.Errorf("uploadIndex %d is out of range", index)
 		}
 		if _, exists := used[index]; exists {
-			return errors.Errorf("uploadIndex %d is duplicated", index)
+			return fmt.Errorf("uploadIndex %d is duplicated", index)
 		}
 		used[index] = struct{}{}
 	}
@@ -75,14 +76,14 @@ func ValidateUploadIndices(changes []UploadReference, uploadCount int, createFil
 			continue
 		}
 		if change.Operation != updateFileOperation {
-			return errors.Errorf("baselineIndex is not allowed for %s", change.Operation)
+			return fmt.Errorf("baselineIndex is not allowed for %s", change.Operation)
 		}
 		index := *change.BaselineIndex
 		if index < 0 || index >= uploadCount {
-			return errors.Errorf("baselineIndex %d is out of range", index)
+			return fmt.Errorf("baselineIndex %d is out of range", index)
 		}
 		if _, exists := used[index]; exists {
-			return errors.Errorf("baselineIndex %d is duplicated", index)
+			return fmt.Errorf("baselineIndex %d is duplicated", index)
 		}
 		used[index] = struct{}{}
 	}

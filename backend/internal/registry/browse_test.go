@@ -80,8 +80,8 @@ func imageSizeInternal(t *testing.T, img v1.Image) int64 {
 
 func browseParamsInternal(search string) pagination.QueryParams {
 	return pagination.QueryParams{
-		SearchQuery: pagination.SearchQuery{Search: search},
-		Params:      pagination.Params{Start: 0, Limit: 20},
+		Search: search,
+		Start:  0, Limit: 20,
 	}
 }
 
@@ -123,7 +123,7 @@ func TestContainerRegistryService_ListRepositoryTagsSingleImageInternal(t *testi
 	svc := NewContainerRegistryService(db, nil, nil, nil)
 	id := createBrowseTestRegistryInternal(t, db, host, "", "")
 
-	tags, page, err := svc.ListRepositoryTags(context.Background(), id, "team/api", pagination.QueryParams{Params: pagination.Params{Start: 0, Limit: 1}})
+	tags, page, err := svc.ListRepositoryTags(context.Background(), id, "team/api", pagination.QueryParams{Start: 0, Limit: 1})
 	require.NoError(t, err)
 	assert.EqualValues(t, 2, page.TotalItems)
 	require.Len(t, tags, 1)
@@ -155,9 +155,9 @@ func TestContainerRegistryService_ListRepositoryTagsIndexInternal(t *testing.T) 
 	require.NoError(t, err)
 
 	index := mutate.AppendManifests(empty.Index,
-		mutate.IndexAddendum{Add: arm64Image, Descriptor: v1.Descriptor{Platform: &arm64}},
-		mutate.IndexAddendum{Add: amd64Image, Descriptor: v1.Descriptor{Platform: &amd64}},
-		mutate.IndexAddendum{Add: attestation, Descriptor: v1.Descriptor{Platform: &v1.Platform{OS: "unknown", Architecture: "unknown"}}},
+		mutate.IndexAddendum{Add: arm64Image, Platform: &arm64},
+		mutate.IndexAddendum{Add: amd64Image, Platform: &amd64},
+		mutate.IndexAddendum{Add: attestation, Platform: &v1.Platform{OS: "unknown", Architecture: "unknown"}},
 	)
 	ref, err := name.ParseReference(host + "/team/api:multi")
 	require.NoError(t, err)

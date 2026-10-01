@@ -5,10 +5,11 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/mldsa"
-	crand "crypto/rand"
+	"crypto/rand"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"math/big"
 	"net"
@@ -18,7 +19,6 @@ import (
 	"strings"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/spf13/cobra"
 	"go.getarcane.app/acfs/atomic"
 )
@@ -74,7 +74,7 @@ func init() {
 func generateMTLSOutputInternal() error {
 	outDir, err := filepath.Abs(strings.TrimSpace(mtlsOutDir))
 	if err != nil {
-		return errors.WrapIf(err, "failed to resolve output directory")
+		return fmt.Errorf("failed to resolve output directory: %w", err)
 	}
 
 	paths, err := generateEdgeMTLSBundleInternal(outDir, strings.TrimSpace(mtlsEnvID), strings.TrimSpace(mtlsAppURL))
@@ -99,7 +99,7 @@ func generateMTLSOutputInternal() error {
 func generateTLSOutputInternal() error {
 	outDir, err := filepath.Abs(strings.TrimSpace(tlsOutDir))
 	if err != nil {
-		return errors.WrapIf(err, "failed to resolve output directory")
+		return fmt.Errorf("failed to resolve output directory: %w", err)
 	}
 
 	paths, err := generateServerTLSBundleInternal(outDir, strings.TrimSpace(tlsCommonName), tlsHosts, strings.TrimSpace(tlsCertName), strings.TrimSpace(tlsKeyName))
@@ -133,26 +133,26 @@ func generateEdgeMTLSBundleInternal(outDir, envID, appURL string) (*edgeMTLSPath
 		return nil, errors.New("env ID is required")
 	}
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
-		return nil, errors.WrapIf(err, "failed to create output directory")
+		return nil, fmt.Errorf("failed to create output directory: %w", err)
 	}
 
 	caKey, err := GenerateMLDSA87PrivateKey()
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to generate CA private key")
+		return nil, fmt.Errorf("failed to generate CA private key: %w", err)
 	}
 	caTemplate, err := NewEdgeMTLSCATemplate()
 	if err != nil {
 		return nil, err
 	}
 
-	caDER, err := x509.CreateCertificate(crand.Reader, caTemplate, caTemplate, caKey.PublicKey(), caKey)
+	caDER, err := x509.CreateCertificate(rand.Reader, caTemplate, caTemplate, caKey.PublicKey(), caKey)
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to create CA certificate")
+		return nil, fmt.Errorf("failed to create CA certificate: %w", err)
 	}
 
 	clientKey, err := GenerateMLDSA87PrivateKey()
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to generate client private key")
+		return nil, fmt.Errorf("failed to generate client private key: %w", err)
 	}
 	trustDomain := EdgeMTLSTrustDomain(appURL)
 	dnsSANs := []string{"arcane-agent"}
@@ -166,11 +166,11 @@ func generateEdgeMTLSBundleInternal(outDir, envID, appURL string) (*edgeMTLSPath
 
 	caCert, err := x509.ParseCertificate(caDER)
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to parse generated CA certificate")
+		return nil, fmt.Errorf("failed to parse generated CA certificate: %w", err)
 	}
-	clientDER, err := x509.CreateCertificate(crand.Reader, clientTemplate, caCert, clientKey.PublicKey(), caKey)
+	clientDER, err := x509.CreateCertificate(rand.Reader, clientTemplate, caCert, clientKey.PublicKey(), caKey)
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to create client certificate")
+		return nil, fmt.Errorf("failed to create client certificate: %w", err)
 	}
 
 	paths := &edgeMTLSPaths{
@@ -202,12 +202,12 @@ func generateServerTLSBundleInternal(outDir, commonName string, hosts []string, 
 		return nil, errors.New("key file name is required")
 	}
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
-		return nil, errors.WrapIf(err, "failed to create output directory")
+		return nil, fmt.Errorf("failed to create output directory: %w", err)
 	}
 
 	privateKey, err := GenerateP384PrivateKey()
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to generate server private key")
+		return nil, fmt.Errorf("failed to generate server private key: %w", err)
 	}
 
 	template, err := NewServerTLSTemplate(commonName, hosts)
@@ -215,9 +215,9 @@ func generateServerTLSBundleInternal(outDir, commonName string, hosts []string, 
 		return nil, err
 	}
 
-	certDER, err := x509.CreateCertificate(crand.Reader, template, template, &privateKey.PublicKey, privateKey)
+	certDER, err := x509.CreateCertificate(rand.Reader, template, template, &privateKey.PublicKey, privateKey)
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to create server certificate")
+		return nil, fmt.Errorf("failed to create server certificate: %w", err)
 	}
 
 	paths := &serverTLSPaths{
@@ -232,7 +232,7 @@ func generateServerTLSBundleInternal(outDir, commonName string, hosts []string, 
 
 // GenerateP384PrivateKey generates an ECDSA P-384 private key.
 func GenerateP384PrivateKey() (*ecdsa.PrivateKey, error) {
-	return ecdsa.GenerateKey(elliptic.P384(), crand.Reader)
+	return ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
 }
 
 // GenerateMLDSA87PrivateKey generates an ML-DSA-87 private key.
@@ -360,9 +360,9 @@ func newCertificateTemplateInternal(commonName string) (*x509.Certificate, error
 
 func randomSerialInternal() (*big.Int, error) {
 	limit := new(big.Int).Lsh(big.NewInt(1), 128)
-	serial, err := crand.Int(crand.Reader, limit)
+	serial, err := rand.Int(rand.Reader, limit)
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to generate certificate serial")
+		return nil, fmt.Errorf("failed to generate certificate serial: %w", err)
 	}
 	return serial, nil
 }
@@ -370,7 +370,7 @@ func randomSerialInternal() (*big.Int, error) {
 func writeCertificateBundleInternal(certPath, keyPath string, certDER []byte, privateKey crypto.PrivateKey) error {
 	keyDER, err := x509.MarshalPKCS8PrivateKey(privateKey)
 	if err != nil {
-		return errors.WrapIf(err, "failed to marshal private key")
+		return fmt.Errorf("failed to marshal private key: %w", err)
 	}
 	if err := writePEMFileInternal(certPath, "CERTIFICATE", certDER, 0o644); err != nil {
 		return err
@@ -384,7 +384,7 @@ func writeCertificateBundleInternal(certPath, keyPath string, certDER []byte, pr
 func writePEMFileInternal(path, blockType string, bytes []byte, perm os.FileMode) error {
 	pemBytes := pem.EncodeToMemory(&pem.Block{Type: blockType, Bytes: bytes})
 	if pemBytes == nil {
-		return errors.Errorf("failed to encode PEM file %s", path)
+		return fmt.Errorf("failed to encode PEM file %s", path)
 	}
 	return atomic.WriteFile(path, pemBytes, perm)
 }

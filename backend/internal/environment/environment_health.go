@@ -2,11 +2,12 @@ package environment
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
@@ -57,7 +58,7 @@ func (s *EnvironmentService) ListEnabledEnvironmentIDs(ctx context.Context) ([]s
 		Table("environments").
 		Where("enabled = ?", true).
 		Pluck("id", &ids).Error; err != nil {
-		return nil, errors.WrapIf(err, "failed to list enabled environments")
+		return nil, fmt.Errorf("failed to list enabled environments: %w", err)
 	}
 	return ids, nil
 }
@@ -182,7 +183,7 @@ func (s *EnvironmentService) runHealthCheckInternal(ctx context.Context, envID s
 			syncErrors = append(syncErrors, err)
 		}
 	}
-	if err := errors.Combine(syncErrors...); err != nil {
+	if err := errors.Join(syncErrors...); err != nil {
 		return schedulertypes.Outcome{Status: schedulertypes.Partial}, err
 	}
 	return schedulertypes.Outcome{Status: schedulertypes.Succeeded}, nil
@@ -221,7 +222,7 @@ func (s *EnvironmentService) TestConnection(ctx context.Context, id string, cust
 		if customApiUrl == nil {
 			_ = s.updateEnvironmentStatusInternal(ctx, id, string(EnvironmentStatusOffline))
 		}
-		return connectionFailure("offline", errors.WrapIf(err, "invalid environment API URL"))
+		return connectionFailure("offline", fmt.Errorf("invalid environment API URL: %w", err))
 	}
 
 	reqCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
@@ -231,14 +232,14 @@ func (s *EnvironmentService) TestConnection(ctx context.Context, id string, cust
 		if customApiUrl == nil {
 			_ = s.updateEnvironmentStatusInternal(ctx, id, string(EnvironmentStatusOffline))
 		}
-		return connectionFailure("offline", errors.WrapIf(err, "failed to create request"))
+		return connectionFailure("offline", fmt.Errorf("failed to create request: %w", err))
 	}
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
 		if customApiUrl == nil {
 			_ = s.updateEnvironmentStatusInternal(ctx, id, string(EnvironmentStatusOffline))
 		}
-		return connectionFailure("offline", errors.WrapIf(err, "connection failed"))
+		return connectionFailure("offline", fmt.Errorf("connection failed: %w", err))
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -252,7 +253,7 @@ func (s *EnvironmentService) TestConnection(ctx context.Context, id string, cust
 	if customApiUrl == nil {
 		_ = s.updateEnvironmentStatusInternal(ctx, id, string(EnvironmentStatusError))
 	}
-	return connectionFailure("error", errors.Errorf("unexpected status code: %d", resp.StatusCode))
+	return connectionFailure("error", fmt.Errorf("unexpected status code: %d", resp.StatusCode))
 }
 
 // testEdgeConnection tests connection to an edge agent via its tunnel
@@ -274,7 +275,7 @@ func (s *EnvironmentService) testEdgeConnection(ctx context.Context, id string) 
 	statusCode, _, err := edge.DoRequest(reqCtx, id, http.MethodGet, "/api/health", nil)
 	if err != nil {
 		_ = s.updateEnvironmentStatusInternal(ctx, id, string(EnvironmentStatusOffline))
-		return "offline", errors.WrapIf(err, "health check via tunnel failed")
+		return "offline", fmt.Errorf("health check via tunnel failed: %w", err)
 	}
 
 	if statusCode == http.StatusOK {
@@ -283,7 +284,7 @@ func (s *EnvironmentService) testEdgeConnection(ctx context.Context, id string) 
 	}
 
 	_ = s.updateEnvironmentStatusInternal(ctx, id, string(EnvironmentStatusError))
-	return "error", errors.Errorf("unexpected status code: %d", statusCode)
+	return "error", fmt.Errorf("unexpected status code: %d", statusCode)
 }
 
 func (s *EnvironmentService) testLocalDockerConnection(ctx context.Context, id string) (string, error) {
@@ -294,13 +295,13 @@ func (s *EnvironmentService) testLocalDockerConnection(ctx context.Context, id s
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		_ = s.updateEnvironmentStatusInternal(ctx, id, string(EnvironmentStatusOffline))
-		return "offline", errors.WrapIf(err, "failed to connect to Docker")
+		return "offline", fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	_, err = dockerClient.Ping(reqCtx, client.PingOptions{})
 	if err != nil {
 		_ = s.updateEnvironmentStatusInternal(ctx, id, string(EnvironmentStatusOffline))
-		return "offline", errors.WrapIf(err, "docker ping failed")
+		return "offline", fmt.Errorf("docker ping failed: %w", err)
 	}
 
 	_ = s.updateEnvironmentStatusInternal(ctx, id, string(EnvironmentStatusOnline))
@@ -310,7 +311,7 @@ func (s *EnvironmentService) testLocalDockerConnection(ctx context.Context, id s
 func (s *EnvironmentService) updateEnvironmentStatusInternal(ctx context.Context, id, status string) error {
 	var currentEnv Environment
 	if err := s.db.WithContext(ctx).Select("status", "is_edge").Where("id = ?", id).First(&currentEnv).Error; err != nil {
-		return errors.WrapIf(err, "failed to check environment status")
+		return fmt.Errorf("failed to check environment status: %w", err)
 	}
 
 	if currentEnv.Status == string(EnvironmentStatusPending) {
@@ -333,7 +334,7 @@ func (s *EnvironmentService) updateEnvironmentStatusInternal(ctx context.Context
 		"updated_at": &now,
 	}
 	if err := s.db.WithContext(ctx).Model(&Environment{}).Where("id = ?", id).Updates(updates).Error; err != nil {
-		return errors.WrapIf(err, "failed to update environment status")
+		return fmt.Errorf("failed to update environment status: %w", err)
 	}
 	// Direct environments have no tunnel callback, so this health-check write is
 	// the only moment their liveness changes.
@@ -354,11 +355,11 @@ func (s *EnvironmentService) UpdateEnvironmentHeartbeat(ctx context.Context, id 
 	`, new(now), string(EnvironmentStatusOnline), new(now), id, now.Add(-30*time.Second))
 
 	if result.Error != nil {
-		return errors.WrapIf(result.Error, "failed to update environment heartbeat")
+		// The 30s throttle above doubles as the notify throttle: a no-op heartbeat
+		// changed nothing worth waking a stream for.
+		return fmt.Errorf("failed to update environment heartbeat: %w", result.Error)
 	}
 
-	// The 30s throttle above doubles as the notify throttle: a no-op heartbeat
-	// changed nothing worth waking a stream for.
 	if result.RowsAffected > 0 {
 		s.NotifyRuntimeStateChanged()
 	}
@@ -387,7 +388,7 @@ func (s *EnvironmentService) UpdateEnvironmentConnectionState(ctx context.Contex
 	}
 
 	if err := s.db.WithContext(ctx).Model(&Environment{}).Where("id = ?", id).Updates(updates).Error; err != nil {
-		return errors.WrapIf(err, "failed to update environment connection state")
+		return fmt.Errorf("failed to update environment connection state: %w", err)
 	}
 
 	s.NotifyRuntimeStateChanged()
@@ -466,7 +467,7 @@ func (s *EnvironmentService) ReconcileEdgeStatusesOnStartup(ctx context.Context)
 			"updated_at": new(time.Now()),
 		})
 	if result.Error != nil {
-		return errors.WrapIf(result.Error, "failed to reconcile edge environment statuses")
+		return fmt.Errorf("failed to reconcile edge environment statuses: %w", result.Error)
 	}
 
 	if result.RowsAffected > 0 {

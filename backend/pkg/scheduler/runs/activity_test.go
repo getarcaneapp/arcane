@@ -2,11 +2,11 @@ package runs
 
 import (
 	"context"
+	"errors"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	"emperror.dev/errors"
 	st "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	"github.com/stretchr/testify/require"
 )

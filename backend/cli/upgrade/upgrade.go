@@ -3,6 +3,7 @@ package upgrade
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"maps"
@@ -10,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"emperror.dev/errors"
 	docker "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
@@ -71,7 +71,7 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	// Connect to Docker
 	dockerClient, err := client.New(client.FromEnv)
 	if err != nil {
-		return errors.WrapIf(err, "failed to connect to Docker")
+		return fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 	defer func() { _ = dockerClient.Close() }()
 
@@ -81,14 +81,14 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 		slog.Info("Auto-detecting Arcane container...")
 		targetContainer, err = findArcaneContainer(ctx, dockerClient)
 		if err != nil {
-			return errors.WrapIf(err, "failed to find Arcane container")
+			return fmt.Errorf("failed to find Arcane container: %w", err)
 		}
 		containerName = strings.TrimPrefix(targetContainer.Name, "/")
 		slog.Info("Found Arcane container", "name", containerName, "id", targetContainer.ID[:12])
 	} else {
 		inspectResult, inspectErr := compat.ContainerInspectWithCompatibility(ctx, dockerClient, containerName, client.ContainerInspectOptions{})
 		if inspectErr != nil {
-			return errors.WrapIff(inspectErr, "failed to inspect container %s", containerName)
+			return fmt.Errorf("failed to inspect container %s: %w", containerName, inspectErr)
 		}
 		targetContainer = inspectResult.Container
 	}
@@ -103,7 +103,7 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	// Pull the new image
 	slog.Info("Pulling new image", "image", imageToPull)
 	if err := pullImage(ctx, dockerClient, imageToPull); err != nil {
-		return errors.WrapIf(err, "failed to pull image")
+		return fmt.Errorf("failed to pull image: %w", err)
 	}
 
 	// The pull always runs so a mutable tag gets re-resolved, but when it lands on
@@ -118,7 +118,7 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	// Perform the upgrade
 	slog.Info("Starting container upgrade", "container", containerName)
 	if err := UpgradeContainer(ctx, dockerClient, targetContainer, imageToPull, nil); err != nil {
-		return errors.WrapIf(err, "failed to upgrade container")
+		return fmt.Errorf("failed to upgrade container: %w", err)
 	}
 
 	slog.Info("Upgrade completed successfully", "container", containerName, "image", imageToPull)
@@ -452,7 +452,7 @@ func UpgradeContainer(ctx context.Context, dockerClient *client.Client, oldConta
 	oldName := fmt.Sprintf("%s-old-%d", originalName, time.Now().UnixNano())
 
 	if oldContainer.Config == nil {
-		return errors.Errorf("container %s inspection has no config; refusing to recreate", originalName)
+		return fmt.Errorf("container %s inspection has no config; refusing to recreate", originalName)
 	}
 
 	// Create new container config
@@ -467,7 +467,7 @@ func UpgradeContainer(ctx context.Context, dockerClient *client.Client, oldConta
 
 	hostConfig, sanitizedMemorySwappiness, engineInfo, err := compat.PrepareRecreateHostConfigForEngine(ctx, dockerClient, oldContainer.HostConfig)
 	if err != nil {
-		return errors.WrapIf(err, "prepare host config")
+		return fmt.Errorf("prepare host config: %w", err)
 	}
 	if sanitizedMemorySwappiness {
 		slog.Info("Stripped unsupported host config field for recreate",
@@ -486,7 +486,7 @@ func UpgradeContainer(ctx context.Context, dockerClient *client.Client, oldConta
 	}
 	hostConfig.Binds, hostConfig.Mounts, err = docker.PreserveVolumeMounts(hostConfig.Binds, hostConfig.Mounts, oldContainer.Mounts)
 	if err != nil {
-		return errors.WrapIff(err, "preserve volumes of container %s", originalName)
+		return fmt.Errorf("preserve volumes of container %s: %w", originalName, err)
 	}
 
 	// Fix for "conflicting options: hostname and the network mode"
@@ -539,14 +539,14 @@ func UpgradeContainer(ctx context.Context, dockerClient *client.Client, oldConta
 	fmt.Println("PROGRESS:65:Renaming old container")
 	slog.Info("Renaming old container", "from", originalName, "to", oldName)
 	if _, err := dockerClient.ContainerRename(ctx, oldContainer.ID, client.ContainerRenameOptions{NewName: oldName}); err != nil {
-		return errors.WrapIf(err, "rename old container")
+		return fmt.Errorf("rename old container: %w", err)
 	}
 
 	fmt.Println("PROGRESS:70:Stopping old container")
 	slog.Info("Stopping old container", "name", oldName)
 	if _, err := dockerClient.ContainerStop(ctx, oldContainer.ID, client.ContainerStopOptions{Timeout: new(10)}); err != nil {
 		_, _ = dockerClient.ContainerRename(ctx, oldContainer.ID, client.ContainerRenameOptions{NewName: originalName})
-		return errors.WrapIf(err, "stop old container")
+		return fmt.Errorf("stop old container: %w", err)
 	}
 
 	fmt.Println("PROGRESS:75:Creating new container")
@@ -561,7 +561,7 @@ func UpgradeContainer(ctx context.Context, dockerClient *client.Client, oldConta
 		// Try to restart and restore old container on failure
 		_, _ = dockerClient.ContainerStart(ctx, oldContainer.ID, client.ContainerStartOptions{})
 		_, _ = dockerClient.ContainerRename(ctx, oldContainer.ID, client.ContainerRenameOptions{NewName: originalName})
-		return errors.WrapIf(err, "create new container")
+		return fmt.Errorf("create new container: %w", err)
 	}
 
 	fmt.Println("PROGRESS:80:Starting new container")
@@ -571,7 +571,7 @@ func UpgradeContainer(ctx context.Context, dockerClient *client.Client, oldConta
 		_, _ = dockerClient.ContainerRemove(ctx, resp.ID, client.ContainerRemoveOptions{Force: true})
 		_, _ = dockerClient.ContainerStart(ctx, oldContainer.ID, client.ContainerStartOptions{})
 		_, _ = dockerClient.ContainerRename(ctx, oldContainer.ID, client.ContainerRenameOptions{NewName: originalName})
-		return errors.WrapIf(err, "start new container")
+		return fmt.Errorf("start new container: %w", err)
 	}
 
 	// Wait a moment for the new container to initialize

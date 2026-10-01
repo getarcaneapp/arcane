@@ -6,6 +6,7 @@ import (
 	"cmp"
 	"context"
 	"encoding/json/v2"
+	"errors"
 	"fmt"
 	"log/slog"
 	"maps"
@@ -17,7 +18,6 @@ import (
 	"strings"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
@@ -531,7 +531,7 @@ func (h *EnvironmentHandler) createEnvironmentWithApiKeyInternal(ctx context.Con
 
 	created, err := h.environmentService.CreateEnvironment(ctx, env, &user.ID, &user.Username)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to create environment").Error())
+		return nil, huma.Error500InternalServerError("Failed to create environment: " + err.Error())
 	}
 
 	// Generate API key for environment
@@ -588,7 +588,7 @@ func (h *EnvironmentHandler) createEnvironmentLegacyInternal(ctx context.Context
 
 	created, err := h.environmentService.CreateEnvironment(ctx, env, &user.ID, &user.Username)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to create environment").Error())
+		return nil, huma.Error500InternalServerError("Failed to create environment: " + err.Error())
 	}
 
 	// Sync registries and git repositories in background (intentionally detached from request context)
@@ -755,7 +755,7 @@ func (h *EnvironmentHandler) DeleteEnvironment(ctx context.Context, input *Delet
 		username = new(user.Username)
 	}
 	if err := h.environmentService.DeleteEnvironment(ctx, input.ID, userID, username); err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to delete environment").Error())
+		return nil, huma.Error500InternalServerError("Failed to delete environment: " + err.Error())
 	}
 
 	return &handlerutil.Out[base.MessageResponse]{

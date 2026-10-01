@@ -3,6 +3,8 @@ package projects
 import (
 	"cmp"
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
 	"maps"
 	"math"
@@ -13,8 +15,6 @@ import (
 	"strconv"
 	"strings"
 
-	"emperror.dev/emperror"
-	"emperror.dev/errors"
 	interp "github.com/compose-spec/compose-go/v2/interpolation"
 	"github.com/compose-spec/compose-go/v2/loader"
 	"github.com/compose-spec/compose-go/v2/template"
@@ -23,6 +23,7 @@ import (
 	"github.com/docker/compose/v5/pkg/api"
 	"github.com/docker/go-units"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
 	"github.com/samber/mo"
 )
@@ -149,20 +150,20 @@ func DetectComposeFile(ctx context.Context, projectsDir, dir string) (string, er
 	case len(dirMatchedCandidates) == 1:
 		return dirMatchedCandidates[0], envErr
 	case len(dirMatchedCandidates) > 1:
-		return "", errors.Errorf("multiple custom compose files found in %q", dir)
+		return "", fmt.Errorf("multiple custom compose files found in %q", dir)
 
 	case len(composeNamedCandidates) == 1:
 		return composeNamedCandidates[0], envErr
 	case len(composeNamedCandidates) > 1:
-		return "", errors.Errorf("multiple custom compose files found in %q", dir)
+		return "", fmt.Errorf("multiple custom compose files found in %q", dir)
 
 	case len(customCandidates) == 1:
 		return customCandidates[0], envErr
 	case len(customCandidates) > 1:
-		return "", errors.Errorf("multiple custom compose files found in %q", dir)
+		return "", fmt.Errorf("multiple custom compose files found in %q", dir)
 
 	default:
-		return "", common.Classify(common.ErrComposeFileNotFound, errors.Errorf("no compose file found in %q", dir))
+		return "", common.Classify(common.ErrComposeFileNotFound, fmt.Errorf("no compose file found in %q", dir))
 	}
 }
 
@@ -187,7 +188,7 @@ func LoadComposeProjectFromContent(ctx context.Context, opts projecttypes.Compos
 	if strings.TrimSpace(opts.EnvContent) != "" {
 		parsedEnv, parseErr := ParseProjectEnvContent(opts.EnvContent, envMap)
 		if parseErr != nil {
-			return nil, errors.WrapIf(parseErr, "failed to parse env content")
+			return nil, fmt.Errorf("failed to parse env content: %w", parseErr)
 		}
 		maps.Copy(envMap, parsedEnv)
 	}
@@ -214,7 +215,7 @@ func LoadComposeProjectFromContent(ctx context.Context, opts projecttypes.Compos
 
 	project, err = loader.LoadWithContext(ctx, configDetails, loaderOptions...)
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to load compose project")
+		return nil, fmt.Errorf("failed to load compose project: %w", err)
 	}
 
 	var rawSources map[string]string
@@ -276,7 +277,7 @@ func lenientCastSizeInternal(value string) (any, error) {
 		n = b
 	}
 	if n > math.MaxInt || n < math.MinInt {
-		return nil, errors.Errorf("size %d out of range for platform int", n)
+		return nil, fmt.Errorf("size %d out of range for platform int", n)
 	}
 	return int(n), nil
 }
@@ -454,7 +455,7 @@ func LoadComposeProject(
 
 	project, err = loader.LoadWithContext(ctx, cfg, loaderOptions...)
 	if err != nil {
-		return nil, errors.WrapIf(err, "load compose project")
+		return nil, fmt.Errorf("load compose project: %w", err)
 	}
 
 	recordComposeDependenciesInternal(project, dependencies)
@@ -488,13 +489,13 @@ func finishLoadedProjectInternal(ctx context.Context, project *composetypes.Proj
 	// them for the Docker daemon and they would no longer be usable locally.
 	if prepare != nil {
 		if err := prepare(ctx, project); err != nil {
-			return nil, errors.WrapIf(err, "prepare compose project")
+			return nil, fmt.Errorf("prepare compose project: %w", err)
 		}
 	}
 
 	if !isNilVolumeSourcePathMapperInternal(pathMapper) {
 		if err := pathMapper.TranslateVolumeSources(project, translateFileResources); err != nil {
-			return nil, errors.WrapIf(err, "failed to translate paths for docker host")
+			return nil, fmt.Errorf("failed to translate paths for docker host: %w", err)
 		}
 		RemapEscapedRelativeSources(ctx, pathMapper, project, workingDir, rawSources, translateFileResources)
 	}
@@ -515,7 +516,7 @@ func finishLoadedProjectInternal(ctx context.Context, project *composetypes.Proj
 // reasons this cannot be fatal.
 func harvestRawSourcesInternal(ctx context.Context, cfg composetypes.ConfigDetails, loaderOptions ...func(*loader.Options)) (rawSources map[string]string) {
 	defer func() {
-		if panicErr := emperror.Recover(recover()); panicErr != nil {
+		if panicErr := utils.PanicToError(recover()); panicErr != nil {
 			slog.DebugContext(ctx, "panic while harvesting raw compose paths", "error", panicErr)
 			rawSources = nil
 		}
@@ -570,13 +571,13 @@ func isNilVolumeSourcePathMapperInternal(pathMapper projecttypes.VolumeSourcePat
 }
 
 func recoverComposeLoadPanicInternal(ctx context.Context, source string, project **composetypes.Project, err *error) {
-	if panicErr := emperror.Recover(recover()); panicErr != nil {
+	if panicErr := utils.PanicToError(recover()); panicErr != nil {
 		slog.WarnContext(ctx,
 			"panic while loading compose project; compose file may contain invalid syntax",
 			"path", source,
 			"error", panicErr,
 		)
-		*err = errors.WrapIff(panicErr, "load compose project panic for %s", source)
+		*err = fmt.Errorf("load compose project panic for %s: %w", source, panicErr)
 		*project = nil
 	}
 }
@@ -685,8 +686,8 @@ func recordComposeDependenciesInternal(project *composetypes.Project, dependenci
 // Missing includes are tolerated here; deployment uses strict executable loading.
 func ValidateComposeContentForUpdate(ctx context.Context, projectsDirectory, projectPath, projectName, composeContent string, effectiveEnvContent, overrideContent *string, overrideFileName string, lenient bool) (err error) {
 	defer func() {
-		if panicErr := emperror.Recover(recover()); panicErr != nil {
-			err = errors.WrapIf(panicErr, "compose file contains invalid syntax")
+		if panicErr := utils.PanicToError(recover()); panicErr != nil {
+			err = fmt.Errorf("compose file contains invalid syntax: %w", panicErr)
 		}
 	}()
 

@@ -2,13 +2,14 @@ package diagnostics
 
 import (
 	"bytes"
+	"errors"
+	"fmt"
 	"runtime"
 	"runtime/debug"
 	"runtime/pprof"
 	"sync"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/types/v2/system"
 )
 
@@ -116,7 +117,7 @@ func (s *DiagnosticsService) ScanGoroutineLeaks() (system.GoroutineLeakReport, e
 
 	var buf bytes.Buffer
 	if err := p.WriteTo(&buf, 1); err != nil {
-		return system.GoroutineLeakReport{}, errors.WrapIf(err, "write goroutineleak profile")
+		return system.GoroutineLeakReport{}, fmt.Errorf("write goroutineleak profile: %w", err)
 	}
 
 	now := time.Now().UTC()

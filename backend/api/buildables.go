@@ -3,10 +3,10 @@
 package api
 
 import (
+	"errors"
 	"net/http"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/buildables"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/auth"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cookie"
@@ -97,8 +97,8 @@ func registerAutoLoginRoutes(apiGroup *echo.Group, authService *auth.AuthService
 				Status:       authtypes.AuthenticationStatusAuthenticated,
 				Token:        tokenPair.AccessToken,
 				RefreshToken: tokenPair.RefreshToken,
-				ExpiresAt:    &expiresAt,
-				User:         &userResp,
+				ExpiresAt:    new(expiresAt),
+				User:         new(userResp),
 			},
 		})
 	})

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"cmp"
 	"encoding/json/v2"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,7 +14,6 @@ import (
 	"strings"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/logger"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
@@ -42,7 +42,7 @@ var imagesSearchCmd = &cobra.Command{
 
 		result, err := c.GetJSON[[]image.SearchResult](cmd.Context(), path)
 		if err != nil {
-			return errors.WrapIf(err, "failed to search images")
+			return fmt.Errorf("failed to search images: %w", err)
 		}
 
 		if cmdutil.JSONOutputEnabled(cmd) {
@@ -92,13 +92,13 @@ var imagesHistoryCmd = &cobra.Command{
 
 		resp, err := c.Get(cmd.Context(), path)
 		if err != nil {
-			return errors.WrapIf(err, "failed to get image history")
+			return fmt.Errorf("failed to get image history: %w", err)
 		}
 		defer func() { _ = resp.Body.Close() }()
 
 		body, err := cmdutil.ReadJSONBody(resp)
 		if err != nil {
-			return errors.WrapIf(err, "failed to get image history")
+			return fmt.Errorf("failed to get image history: %w", err)
 		}
 
 		if jsonOutput {
@@ -110,7 +110,7 @@ var imagesHistoryCmd = &cobra.Command{
 			Data    []image.HistoryItem `json:"data"`
 		}
 		if err := json.Unmarshal(body, &result); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
+			return fmt.Errorf("failed to parse response: %w", err)
 		}
 
 		headers := []string{"CREATED", "CREATED BY", "SIZE", "COMMENT"}
@@ -161,13 +161,13 @@ var imagesTagCmd = &cobra.Command{
 
 		resp, err := c.Post(cmd.Context(), path, image.TagRequest{Repository: repository, Tag: tag})
 		if err != nil {
-			return errors.WrapIf(err, "failed to tag image")
+			return fmt.Errorf("failed to tag image: %w", err)
 		}
 		defer func() { _ = resp.Body.Close() }()
 
 		body, err := cmdutil.ReadJSONBody(resp)
 		if err != nil {
-			return errors.WrapIf(err, "failed to tag image")
+			return fmt.Errorf("failed to tag image: %w", err)
 		}
 
 		if jsonOutput {
@@ -179,7 +179,7 @@ var imagesTagCmd = &cobra.Command{
 			Data    base.MessageResponse `json:"data"`
 		}
 		if err := json.Unmarshal(body, &result); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
+			return fmt.Errorf("failed to parse response: %w", err)
 		}
 
 		output.Success("%s", result.Data.Message)
@@ -222,16 +222,16 @@ var imagesExportCmd = &cobra.Command{
 
 		resp, err := c.RequestRaw(cmd.Context(), http.MethodGet, path, nil, nil)
 		if err != nil {
-			return errors.WrapIf(err, "failed to export image")
+			return fmt.Errorf("failed to export image: %w", err)
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to export image")
+			return fmt.Errorf("failed to export image: %w", err)
 		}
 
 		file, err := os.Create(outputFile)
 		if err != nil {
-			return errors.WrapIf(err, "failed to create output file")
+			return fmt.Errorf("failed to create output file: %w", err)
 		}
 
 		written, err := io.Copy(file, resp.Body)
@@ -240,7 +240,7 @@ var imagesExportCmd = &cobra.Command{
 		}
 		if err != nil {
 			_ = os.Remove(outputFile)
-			return errors.WrapIf(err, "failed to write image archive")
+			return fmt.Errorf("failed to write image archive: %w", err)
 		}
 
 		output.Success("Saved %s (%s)", outputFile, output.Bytes(written))
@@ -291,7 +291,7 @@ var imagesAttestationsCmd = &cobra.Command{
 
 		u, err := url.Parse(types.ImageAttestations(c.EnvID(), imageName))
 		if err != nil {
-			return errors.WrapIf(err, "failed to parse endpoint path")
+			return fmt.Errorf("failed to parse endpoint path: %w", err)
 		}
 		q := u.Query()
 		if attestationsPlatform != "" {
@@ -310,13 +310,13 @@ var imagesAttestationsCmd = &cobra.Command{
 
 		resp, err := c.Get(cmd.Context(), path)
 		if err != nil {
-			return errors.WrapIf(err, "failed to get image attestations")
+			return fmt.Errorf("failed to get image attestations: %w", err)
 		}
 		defer func() { _ = resp.Body.Close() }()
 
 		body, err := cmdutil.ReadJSONBody(resp)
 		if err != nil {
-			return errors.WrapIf(err, "failed to get image attestations")
+			return fmt.Errorf("failed to get image attestations: %w", err)
 		}
 
 		if cmdutil.JSONOutputEnabled(cmd) || attestationsStatement {
@@ -328,7 +328,7 @@ var imagesAttestationsCmd = &cobra.Command{
 			Data    image.AttestationList `json:"data"`
 		}
 		if err := json.Unmarshal(body, &result); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
+			return fmt.Errorf("failed to parse response: %w", err)
 		}
 
 		output.Header("Image Attestations")
@@ -380,7 +380,7 @@ var imagesBuildCmd = &cobra.Command{
 		if buildInlineFile != "" {
 			content, err := os.ReadFile(buildInlineFile)
 			if err != nil {
-				return errors.WrapIf(err, "failed to read Dockerfile")
+				return fmt.Errorf("failed to read Dockerfile: %w", err)
 			}
 			requestBody["dockerfileInline"] = string(content)
 		}
@@ -395,7 +395,7 @@ var imagesBuildCmd = &cobra.Command{
 			for _, arg := range buildArgs {
 				key, value, ok := strings.Cut(arg, "=")
 				if !ok || key == "" {
-					return errors.Errorf("invalid build arg %q; expected KEY=VALUE", arg)
+					return fmt.Errorf("invalid build arg %q; expected KEY=VALUE", arg)
 				}
 				parsed[key] = value
 			}
@@ -429,17 +429,17 @@ var imagesBuildCmd = &cobra.Command{
 
 		resp, err := c.Post(cmd.Context(), path, requestBody)
 		if err != nil {
-			return errors.WrapIf(err, "failed to build image")
+			return fmt.Errorf("failed to build image: %w", err)
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to build image")
+			return fmt.Errorf("failed to build image: %w", err)
 		}
 
 		if cmdutil.JSONOutputEnabled(cmd) {
 			_, err = io.Copy(cmd.OutOrStdout(), resp.Body)
 			if err != nil {
-				return errors.WrapIf(err, "failed to read build stream")
+				return fmt.Errorf("failed to read build stream: %w", err)
 			}
 			return nil
 		}
@@ -471,7 +471,7 @@ func streamBuildOutput(body io.Reader) error {
 			}
 			if json.Unmarshal([]byte(trimmed), &frame) == nil {
 				if frame.Error != "" {
-					return errors.Errorf("build error: %s", frame.Error)
+					return fmt.Errorf("build error: %s", frame.Error)
 				}
 				if frame.Done {
 					done = true
@@ -485,7 +485,7 @@ func streamBuildOutput(body io.Reader) error {
 		fmt.Println(line)
 	}
 	if err := scanner.Err(); err != nil {
-		return errors.WrapIf(err, "failed to read build stream")
+		return fmt.Errorf("failed to read build stream: %w", err)
 	}
 	if !done {
 		return errors.New("build stream ended without completion frame")
@@ -549,13 +549,13 @@ var imagesBuildsGetCmd = &cobra.Command{
 
 		resp, err := c.Get(cmd.Context(), path)
 		if err != nil {
-			return errors.WrapIf(err, "failed to get image build")
+			return fmt.Errorf("failed to get image build: %w", err)
 		}
 		defer func() { _ = resp.Body.Close() }()
 
 		body, err := cmdutil.ReadJSONBody(resp)
 		if err != nil {
-			return errors.WrapIf(err, "failed to get image build")
+			return fmt.Errorf("failed to get image build: %w", err)
 		}
 
 		if cmdutil.JSONOutputEnabled(cmd) {
@@ -567,7 +567,7 @@ var imagesBuildsGetCmd = &cobra.Command{
 			Data    image.BuildRecord `json:"data"`
 		}
 		if err := json.Unmarshal(body, &result); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
+			return fmt.Errorf("failed to parse response: %w", err)
 		}
 
 		record := result.Data

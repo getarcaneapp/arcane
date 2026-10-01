@@ -3,15 +3,15 @@ package project
 import (
 	"encoding/json/jsontext"
 	"encoding/json/v2"
+	"fmt"
 	"strconv"
 	"strings"
 
-	"emperror.dev/errors"
-	composetypes "github.com/compose-spec/compose-go/v2/types"
+	compose "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/go-units"
 )
 
-var unitBytesUnmarshalers = json.UnmarshalFromFunc(func(decoder *jsontext.Decoder, value *composetypes.UnitBytes) error {
+var unitBytesUnmarshalers = json.UnmarshalFromFunc(func(decoder *jsontext.Decoder, value *compose.UnitBytes) error {
 	token, err := decoder.ReadToken()
 	if err != nil {
 		return err
@@ -25,7 +25,7 @@ var unitBytesUnmarshalers = json.UnmarshalFromFunc(func(decoder *jsontext.Decode
 		if err != nil {
 			return err
 		}
-		*value = composetypes.UnitBytes(parsed)
+		*value = compose.UnitBytes(parsed)
 		return nil
 	case jsontext.KindNumber:
 		raw := token.String()
@@ -37,18 +37,18 @@ var unitBytesUnmarshalers = json.UnmarshalFromFunc(func(decoder *jsontext.Decode
 			}
 			parsed = int64(floatValue)
 			if floatValue != float64(parsed) {
-				return errors.Errorf("invalid UnitBytes value %q", raw)
+				return fmt.Errorf("invalid UnitBytes value %q", raw)
 			}
 		}
-		*value = composetypes.UnitBytes(parsed)
+		*value = compose.UnitBytes(parsed)
 		return nil
 	case jsontext.KindInvalid, jsontext.KindFalse, jsontext.KindTrue,
 		jsontext.KindBeginObject, jsontext.KindEndObject,
 		jsontext.KindBeginArray, jsontext.KindEndArray:
-		return errors.Errorf("unsupported JSON kind %s for UnitBytes", token.Kind())
+		return fmt.Errorf("unsupported JSON kind %s for UnitBytes", token.Kind())
 	}
 
-	return errors.Errorf("unsupported JSON kind %s for UnitBytes", token.Kind())
+	return fmt.Errorf("unsupported JSON kind %s for UnitBytes", token.Kind())
 })
 
 type runtimeServiceAlias RuntimeService

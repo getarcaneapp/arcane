@@ -414,8 +414,9 @@ func TestApplyEditPreservesUnmanagedSettingsInternal(t *testing.T) {
 		PortBindings: network.PortMap{network.MustParsePort("80/tcp"): {{HostPort: "8080"}}},
 		Sysctls:      map[string]string{"net.core.somaxconn": "1024"},
 		LogConfig:    container.LogConfig{Type: "json-file", Config: map[string]string{"max-size": "5m"}},
+
+		Ulimits: []*container.Ulimit{{Name: "nofile", Soft: 1024, Hard: 2048}},
 	}
-	hc.Ulimits = []*container.Ulimit{{Name: "nofile", Soft: 1024, Hard: 2048}}
 
 	env := []string{"NEW=1"}
 	req := containertypes.Edit{Environment: &env}

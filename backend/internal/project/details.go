@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"cmp"
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"maps"
@@ -14,7 +16,6 @@ import (
 	"sync"
 	"time"
 
-	"emperror.dev/errors"
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
@@ -71,16 +72,14 @@ func (s *ProjectService) updateProjectStatusandCountsInternal(ctx context.Contex
 	}
 
 	serviceCount, runningCount := getServiceCounts(services)
-
 	if err := s.db.WithContext(ctx).Model(&Project{}).Where("id = ?", projectID).Updates(map[string]any{
 		"status":        status,
 		"service_count": serviceCount,
 		"running_count": runningCount,
 		"updated_at":    time.Now(),
 	}).Error; err != nil {
-		return errors.WrapIf(err, "failed to update project status and counts")
+		return fmt.Errorf("failed to update project status and counts: %w", err)
 	}
-
 	return nil
 }
 
@@ -92,7 +91,7 @@ func (s *ProjectService) updateProjectStatusInternal(ctx context.Context, id str
 	})
 
 	if res.Error != nil {
-		return errors.WrapIf(res.Error, "failed to update project status")
+		return fmt.Errorf("failed to update project status: %w", res.Error)
 	}
 
 	return nil
@@ -109,7 +108,7 @@ func (s *ProjectService) GetProjectServices(ctx context.Context, projectID strin
 		return s.projectServicesFromContainersInternal(ctx, projectFromDb, s.ProjectMetadata(ctx, *projectFromDb, nil))
 	}
 	if derr != nil {
-		return []ProjectServiceInfo{}, errors.WrapIff(derr, "failed to load compose project in %s", projectFromDb.Path)
+		return []ProjectServiceInfo{}, fmt.Errorf("failed to load compose project in %s: %w", projectFromDb.Path, derr)
 	}
 
 	projectsDirectory, projectsDirErr := s.GetProjectsDirectory(ctx)
@@ -126,7 +125,7 @@ func (s *ProjectService) GetProjectServices(ctx context.Context, projectID strin
 	containers, err := projects.ComposePs(ctx, s.dockerService.DockerHost(), composeProject, nil, true)
 	if err != nil {
 		slog.Error("compose ps error", "projectName", composeProject.Name, "error", err)
-		return nil, errors.WrapIf(err, "failed to get compose services status")
+		return nil, fmt.Errorf("failed to get compose services status: %w", err)
 	}
 	imageIDs := s.runtimeImageIDsByContainerInternal(ctx, composeProject.Name)
 	currentContainerID, currentContainerErr := cgroup.CurrentContainerID()
@@ -232,7 +231,7 @@ func (s *ProjectService) GetProjectContent(ctx context.Context, projectID string
 		}
 		composePath, composeErr = projects.DetectComposeFile(ctx, projectsDirectory, proj.Path)
 		if composeErr != nil && (!errors.Is(composeErr, common.ErrProjectEnvUnreadable) || composePath == "") {
-			return "", "", "", errors.WrapIf(composeErr, "failed to identify project compose file")
+			return "", "", "", fmt.Errorf("failed to identify project compose file: %w", composeErr)
 		}
 	default:
 		return "", "", "", composeErr
@@ -252,7 +251,7 @@ func (s *ProjectService) populateDetailsComposeContentInternal(ctx context.Conte
 	}
 	composeContent, _, overrideContent, err := s.GetProjectContent(ctx, proj.ID)
 	if err != nil {
-		return errors.WrapIf(err, "failed to read project compose content")
+		return fmt.Errorf("failed to read project compose content: %w", err)
 	}
 	resp.ComposeContent = composeContent
 	resp.OverrideFileName, resp.OverrideContent = resolveDetailsOverrideInternal(proj.Path, overrideContent, composeSelection)
@@ -273,7 +272,7 @@ func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string
 
 	var resp project.Details
 	if err := mapping.MapStruct(proj, &resp); err != nil {
-		return project.Details{}, errors.WrapIf(err, "failed to map project")
+		return project.Details{}, fmt.Errorf("failed to map project: %w", err)
 	}
 
 	resp.CreatedAt = proj.CreatedAt.Format(time.RFC3339)
@@ -318,7 +317,7 @@ func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string
 	if opts.IncludeEnvState {
 		envState, err := projects.ReadProjectEnvState(proj.Path)
 		if err != nil {
-			return project.Details{}, errors.WrapIf(err, "failed to read project env state")
+			return project.Details{}, fmt.Errorf("failed to read project env state: %w", err)
 		}
 		effectiveEnvContent, err := resolveStoredEffectiveEnvContentInternal(envState)
 		if err != nil {
@@ -796,7 +795,7 @@ func mergeProjectContainerUpdateInfoInternal(base map[string]*imagetypes.UpdateI
 func (s *ProjectService) getProjectImageRefsFromComposeInternal(ctx context.Context, proj Project, env *projectMetadataEnvInternal) ([]string, []string, error) {
 	composeProject, err := s.getCachedComposeProjectInternal(ctx, &proj, env)
 	if err != nil {
-		return nil, nil, errors.WrapIf(err, "load compose project")
+		return nil, nil, fmt.Errorf("load compose project: %w", err)
 	}
 
 	return projects.ImageRefsFromComposeServices(composeProject.Services), projects.BuildImageRefsFromComposeProject(composeProject), nil

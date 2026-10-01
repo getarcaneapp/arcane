@@ -64,7 +64,7 @@ func TestResolveHelperImage_PullsToolsImageWhenMissing(t *testing.T) {
 				return
 			}
 			w.Header().Set("Content-Type", "application/json")
-			_, err := w.Write([]byte(`{"status":"pulled"}` + "\n"))
+			_, err := w.Write([]byte("{\"status\":\"pulled\"}\n"))
 			if !assert.NoError(t, err) {
 				return
 			}

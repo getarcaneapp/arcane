@@ -3,11 +3,11 @@ package swarm
 import (
 	"cmp"
 	"context"
+	"fmt"
 	"maps"
 	"slices"
 	"strings"
 
-	"emperror.dev/errors"
 	composegotypes "github.com/compose-spec/compose-go/v2/types"
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/moby/moby/api/types/swarm"
@@ -101,14 +101,14 @@ func planManagedFileResourcesInternal(
 			continue
 		}
 		if resourceType == "config" && resource.Driver != "" {
-			return nil, errors.Errorf("config driver %q is not supported by the Docker swarm API", resource.Driver)
+			return nil, fmt.Errorf("config driver %q is not supported by the Docker swarm API", resource.Driver)
 		}
 
 		var data []byte
 		if resource.Driver == "" {
 			resolvedData, err := resolveFileObjectContentInternal(resource, workingDir, environment)
 			if err != nil {
-				return nil, errors.WrapIff(err, "failed to load %s %s", resourceType, baseName)
+				return nil, fmt.Errorf("failed to load %s %s: %w", resourceType, baseName, err)
 			}
 			data = resolvedData
 		}
@@ -132,10 +132,10 @@ func ensureSwarmNetworksInternal(ctx context.Context, dockerClient *dockerclient
 			}
 			inspected, err := dockerClient.NetworkInspect(ctx, networkName, dockerclient.NetworkInspectOptions{Scope: "swarm"})
 			if err != nil {
-				return nil, invalidStackErrorInternal(errors.WrapIff(err, "external network %s is unavailable", networkName))
+				return nil, invalidStackErrorInternal(fmt.Errorf("external network %s is unavailable: %w", networkName, err))
 			}
 			if inspected.Network.Scope != "swarm" {
-				return nil, invalidStackErrorInternal(errors.Errorf("external network %q has scope %q, expected swarm", networkName, inspected.Network.Scope))
+				return nil, invalidStackErrorInternal(fmt.Errorf("external network %q has scope %q, expected swarm", networkName, inspected.Network.Scope))
 			}
 			continue
 		}
@@ -145,7 +145,7 @@ func ensureSwarmNetworksInternal(ctx context.Context, dockerClient *dockerclient
 			continue
 		}
 		if !cerrdefs.IsNotFound(err) {
-			return nil, errors.WrapIff(err, "failed to inspect network %s", networkName)
+			return nil, fmt.Errorf("failed to inspect network %s: %w", networkName, err)
 		}
 
 		driver := cmp.Or(strings.TrimSpace(cfg.Driver), "overlay")
@@ -164,7 +164,7 @@ func ensureSwarmNetworksInternal(ctx context.Context, dockerClient *dockerclient
 		}
 
 		if _, err := dockerClient.NetworkCreate(ctx, networkName, createOpts); err != nil {
-			return nil, errors.WrapIff(err, "failed to create network %s", networkName)
+			return nil, fmt.Errorf("failed to create network %s: %w", networkName, err)
 		}
 	}
 
@@ -195,7 +195,7 @@ func ensureSwarmVolumesInternal(ctx context.Context, dockerClient *dockerclient.
 		if _, err := dockerClient.VolumeInspect(ctx, name, dockerclient.VolumeInspectOptions{}); err == nil {
 			continue
 		} else if !cerrdefs.IsNotFound(err) {
-			return errors.WrapIff(err, "failed to inspect volume %s", name)
+			return fmt.Errorf("failed to inspect volume %s: %w", name, err)
 		}
 
 		driver := cmp.Or(cfg.Driver, "local")
@@ -206,7 +206,7 @@ func ensureSwarmVolumesInternal(ctx context.Context, dockerClient *dockerclient.
 			DriverOpts: cfg.DriverOpts,
 			Labels:     labels,
 		}); err != nil {
-			return errors.WrapIff(err, "failed to create volume %s", name)
+			return fmt.Errorf("failed to create volume %s: %w", name, err)
 		}
 	}
 	return nil
@@ -233,14 +233,14 @@ func configFileResourceAdapterInternal(dockerClient *dockerclient.Client) fileRe
 			}
 			response, err := dockerClient.ConfigCreate(ctx, dockerclient.ConfigCreateOptions{Spec: spec})
 			if err != nil {
-				return resourceMeta{}, errors.WrapIff(err, "failed to create config %s", resource.Name)
+				return resourceMeta{}, fmt.Errorf("failed to create config %s: %w", resource.Name, err)
 			}
 			return resourceMeta{ID: response.ID, Name: resource.Name}, nil
 		},
 		List: func(ctx context.Context, filters dockerclient.Filters) ([]staleManagedResourceInternal, error) {
 			configsResult, err := dockerClient.ConfigList(ctx, dockerclient.ConfigListOptions{Filters: filters})
 			if err != nil {
-				return nil, errors.WrapIf(err, "failed to list stack configs")
+				return nil, fmt.Errorf("failed to list stack configs: %w", err)
 			}
 			return collectStaleManagedResourcesInternal(configsResult.Items, func(cfg swarm.Config) staleManagedResourceInternal {
 				return staleManagedResourceInternal{ID: cfg.ID, Name: cfg.Spec.Name}
@@ -277,14 +277,14 @@ func secretFileResourceAdapterInternal(dockerClient *dockerclient.Client) fileRe
 			}
 			response, err := dockerClient.SecretCreate(ctx, dockerclient.SecretCreateOptions{Spec: spec})
 			if err != nil {
-				return resourceMeta{}, errors.WrapIff(err, "failed to create secret %s", resource.Name)
+				return resourceMeta{}, fmt.Errorf("failed to create secret %s: %w", resource.Name, err)
 			}
 			return resourceMeta{ID: response.ID, Name: resource.Name}, nil
 		},
 		List: func(ctx context.Context, filters dockerclient.Filters) ([]staleManagedResourceInternal, error) {
 			secretsResult, err := dockerClient.SecretList(ctx, dockerclient.SecretListOptions{Filters: filters})
 			if err != nil {
-				return nil, errors.WrapIf(err, "failed to list stack secrets")
+				return nil, fmt.Errorf("failed to list stack secrets: %w", err)
 			}
 			return collectStaleManagedResourcesInternal(secretsResult.Items, func(secret swarm.Secret) staleManagedResourceInternal {
 				return staleManagedResourceInternal{ID: secret.ID, Name: secret.Spec.Name}
@@ -309,12 +309,9 @@ func ensurePlannedFileResourcesInternal(
 		if plan.IsExternal {
 			meta, err := adapter.Inspect(ctx, plan.Meta.Name)
 			if err != nil {
-				return nil, invalidStackErrorInternal(errors.WrapIff(
-					err,
-					"external %s %s is unavailable",
-					adapter.ResourceType,
-					plan.Meta.Name,
-				))
+				return nil, invalidStackErrorInternal(fmt.Errorf("external %s %s is unavailable: %w", adapter.ResourceType,
+					plan.Meta.Name, err),
+				)
 			}
 			result[key] = meta
 			continue
@@ -338,7 +335,7 @@ func ensureManagedFileResourceInternal(
 	if meta, err := adapter.Inspect(ctx, plan.Meta.Name); err == nil {
 		return meta, nil
 	} else if !cerrdefs.IsNotFound(err) {
-		return resourceMeta{}, errors.WrapIff(err, "failed to inspect %s %s", adapter.ResourceType, plan.Meta.Name)
+		return resourceMeta{}, fmt.Errorf("failed to inspect %s %s: %w", adapter.ResourceType, plan.Meta.Name, err)
 	}
 
 	resourceLabels := mergeLabelsInternal(plan.Labels, stackLabels)

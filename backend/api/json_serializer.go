@@ -4,10 +4,10 @@ import (
 	jsonv1 "encoding/json"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
+	"errors"
 	"fmt"
 	"net/http"
 
-	"emperror.dev/errors"
 	"github.com/labstack/echo/v5"
 	"go.getarcane.app/kit/normalization"
 )
@@ -34,8 +34,7 @@ func (jsonV2Serializer) Deserialize(c *echo.Context, value any) error {
 		return nil
 	}
 
-	var semanticErr *json.SemanticError
-	if errors.As(err, &semanticErr) {
+	if semanticErr, ok := errors.AsType[*json.SemanticError](err); ok {
 		return echo.NewHTTPError(
 			http.StatusBadRequest,
 			fmt.Sprintf(
@@ -48,8 +47,7 @@ func (jsonV2Serializer) Deserialize(c *echo.Context, value any) error {
 		).Wrap(err)
 	}
 
-	var syntacticErr *jsontext.SyntacticError
-	if errors.As(err, &syntacticErr) {
+	if syntacticErr, ok := errors.AsType[*jsontext.SyntacticError](err); ok {
 		return echo.NewHTTPError(
 			http.StatusBadRequest,
 			fmt.Sprintf("Syntax error: offset=%v, error=%v", syntacticErr.ByteOffset, syntacticErr.Error()),

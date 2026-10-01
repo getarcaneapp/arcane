@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
@@ -25,9 +24,7 @@ var apiKeysCmd = &cobra.Command{
 	Use:     "keys",
 	Aliases: []string{"apikeys", "key"},
 	Short:   "Manage your own API keys",
-	Long: "Manage the current user's personal API keys. Personal keys inherit " +
-		"the owner's role permissions. Creating and deleting them requires a " +
-		"session login (an API key cannot mint or remove other keys).",
+	Long:    "Manage the current user's personal API keys. Personal keys inherit the owner's role permissions. Creating and deleting them requires a session login (an API key cannot mint or remove other keys).",
 }
 
 var apiKeysListCmd = &cobra.Command{
@@ -43,7 +40,7 @@ var apiKeysListCmd = &cobra.Command{
 
 		result, err := c.GetJSON[[]apikeytypes.ApiKey](cmd.Context(), types.AuthMeApiKeys())
 		if err != nil {
-			return errors.WrapIf(err, "failed to list API keys")
+			return fmt.Errorf("failed to list API keys: %w", err)
 		}
 
 		if cmdutil.JSONOutputEnabled(cmd) || jsonOutput {
@@ -99,14 +96,14 @@ var apiKeysCreateCmd = &cobra.Command{
 		if apiKeyCreateExpiresAt != "" {
 			parsed, err := time.Parse(time.RFC3339, apiKeyCreateExpiresAt)
 			if err != nil {
-				return errors.WrapIf(err, "invalid --expires-at format (use RFC3339)")
+				return fmt.Errorf("invalid --expires-at format (use RFC3339): %w", err)
 			}
 			req.ExpiresAt = &parsed
 		}
 
 		result, err := c.PostJSON[apikeytypes.ApiKeyCreatedDto](cmd.Context(), types.AuthMeApiKeys(), req)
 		if err != nil {
-			return errors.WrapIf(err, "failed to create API key")
+			return fmt.Errorf("failed to create API key: %w", err)
 		}
 
 		if cmdutil.JSONOutputEnabled(cmd) || jsonOutput {
@@ -147,11 +144,11 @@ var apiKeysDeleteCmd = &cobra.Command{
 
 		resp, err := c.Delete(cmd.Context(), types.AuthMeApiKey(args[0]))
 		if err != nil {
-			return errors.WrapIf(err, "failed to delete API key")
+			return fmt.Errorf("failed to delete API key: %w", err)
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to delete API key")
+			return fmt.Errorf("failed to delete API key: %w", err)
 		}
 
 		output.Success("API key deleted")

@@ -15,7 +15,6 @@ import (
 	"strings"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
@@ -63,7 +62,7 @@ var statusCmd = &cobra.Command{
 			Version   string `json:"version,omitempty"`
 		}](cmd.Context(), types.VulnerabilitiesScannerStatus(c.EnvID()))
 		if err != nil {
-			return errors.WrapIf(err, "failed to get scanner status")
+			return fmt.Errorf("failed to get scanner status: %w", err)
 		}
 
 		if jsonOutput {
@@ -91,7 +90,7 @@ var summaryCmd = &cobra.Command{
 
 		result, err := c.GetJSON[vulnerability.EnvironmentVulnerabilitySummary](cmd.Context(), types.VulnerabilitiesSummary(c.EnvID()))
 		if err != nil {
-			return errors.WrapIf(err, "failed to get vulnerability summary")
+			return fmt.Errorf("failed to get vulnerability summary: %w", err)
 		}
 
 		if jsonOutput {
@@ -167,7 +166,7 @@ var scanCmd = &cobra.Command{
 
 		result, err := c.PostJSON[vulnerability.ScanResult](cmd.Context(), types.ImageVulnerabilitiesScan(c.EnvID(), imageID), nil)
 		if err != nil {
-			return errors.WrapIf(err, "failed to scan image")
+			return fmt.Errorf("failed to scan image: %w", err)
 		}
 
 		if jsonOutput {
@@ -239,7 +238,7 @@ var imageCmd = &cobra.Command{
 func runImageSummary(cmd *cobra.Command, c *client.Client, imageID string) error {
 	result, err := c.GetJSON[vulnerability.ScanSummary](cmd.Context(), types.ImageVulnerabilitiesSummary(c.EnvID(), imageID))
 	if err != nil {
-		return errors.WrapIf(err, "failed to get image vulnerability summary")
+		return fmt.Errorf("failed to get image vulnerability summary: %w", err)
 	}
 
 	if jsonOutput {
@@ -288,7 +287,7 @@ var ignoreCmd = &cobra.Command{
 
 		result, err := c.PostJSON[vulnerability.IgnoredVulnerability](cmd.Context(), types.VulnerabilitiesIgnore(c.EnvID()), payload)
 		if err != nil {
-			return errors.WrapIf(err, "failed to ignore vulnerability")
+			return fmt.Errorf("failed to ignore vulnerability: %w", err)
 		}
 
 		if jsonOutput {
@@ -358,7 +357,7 @@ var unignoreCmd = &cobra.Command{
 		}
 
 		if _, err := c.DeleteJSON[struct{}](cmd.Context(), types.VulnerabilityIgnore(c.EnvID(), args[0])); err != nil {
-			return errors.WrapIf(err, "failed to remove ignore record")
+			return fmt.Errorf("failed to remove ignore record: %w", err)
 		}
 
 		output.Success("Ignore record %s removed", args[0])

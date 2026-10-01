@@ -3,6 +3,8 @@ package ws
 import (
 	"cmp"
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -10,7 +12,6 @@ import (
 	"sync"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/coder/websocket"
 	wshub "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/ws"
 	systemtypes "github.com/getarcaneapp/arcane/types/v2/system"
@@ -63,15 +64,15 @@ func (h *WebSocketHandler) runContainerExecInternal(ctx context.Context, cancel 
 
 	execID, err := h.containerService.CreateExec(ctx, containerID, []string{shell})
 	if err != nil {
-		h.writeExecErrorInternal(ctx, conn, errors.WithMessage(err, "Error creating exec"))
-		closeExecInternal(ctx, conn, containerID, "", started, errors.WithMessage(err, "create exec"))
+		h.writeExecErrorInternal(ctx, conn, fmt.Errorf("Error creating exec: %w", err)) //nolint:staticcheck // Preserve the existing error message.
+		closeExecInternal(ctx, conn, containerID, "", started, fmt.Errorf("create exec: %w", err))
 		return
 	}
 
 	execSession, err := h.containerService.AttachExec(ctx, containerID, execID)
 	if err != nil {
-		h.writeExecErrorInternal(ctx, conn, errors.WithMessage(err, "Error attaching to exec"))
-		closeExecInternal(ctx, conn, containerID, execID, started, errors.WithMessage(err, "attach exec"))
+		h.writeExecErrorInternal(ctx, conn, fmt.Errorf("Error attaching to exec: %w", err)) //nolint:staticcheck // Preserve the existing error message.
+		closeExecInternal(ctx, conn, containerID, execID, started, fmt.Errorf("attach exec: %w", err))
 		return
 	}
 	// Cleanup must proceed even if the parent ctx is canceled, and must also
@@ -152,13 +153,13 @@ func (h *WebSocketHandler) pipeExecOutputInternal(ctx context.Context, conn *web
 			if errors.Is(err, io.EOF) {
 				done <- nil
 			} else {
-				done <- errors.WithMessage(err, "exec output read")
+				done <- fmt.Errorf("exec output read: %w", err)
 			}
 			return
 		}
 		if n > 0 {
 			if err := conn.Write(ctx, websocket.MessageBinary, buf[:n]); err != nil {
-				done <- errors.WithMessage(err, "websocket write")
+				done <- fmt.Errorf("websocket write: %w", err)
 				return
 			}
 		}
@@ -169,11 +170,11 @@ func (h *WebSocketHandler) pipeExecInputInternal(ctx context.Context, cancel con
 	for {
 		_, data, err := conn.Read(ctx)
 		if err != nil {
-			cancel(errors.WithMessage(err, "websocket read"))
+			cancel(fmt.Errorf("websocket read: %w", err))
 			return
 		}
 		if _, err := stdin.Write(data); err != nil {
-			cancel(errors.WithMessage(err, "exec input write"))
+			cancel(fmt.Errorf("exec input write: %w", err))
 			return
 		}
 	}

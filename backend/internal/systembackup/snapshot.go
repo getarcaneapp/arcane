@@ -3,6 +3,7 @@ package systembackup
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -10,7 +11,6 @@ import (
 	"syscall"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/backup"
 	"github.com/moby/moby/client"
 )
@@ -80,7 +80,7 @@ func (s *SystemBackupService) snapshotWithStagedDatabaseInternal(ctx context.Con
 	if cleanupErr != nil {
 		cleanupErr = fmt.Errorf("remove unconfirmed system snapshot %s: %w", snapshot.ID, cleanupErr)
 	}
-	return backup.Snapshot{}, errors.Combine(err, cleanupErr)
+	return backup.Snapshot{}, errors.Join(err, cleanupErr)
 }
 
 // snapshotSourceFilesInternal records inputs before taking the database snapshot.

@@ -3,10 +3,10 @@ package database
 import (
 	"database/sql/driver"
 	"encoding/json/v2"
+	"fmt"
 	"time"
 	"uuid"
 
-	"emperror.dev/errors"
 	"gorm.io/gorm"
 )
 
@@ -53,7 +53,7 @@ func JSONScan[T any](dest *T, value any) error {
 	case string:
 		return json.Unmarshal([]byte(v), dest)
 	default:
-		return errors.Errorf("unsupported scan type for %T: %T", *dest, value)
+		return fmt.Errorf("unsupported scan type for %T: %T", *dest, value)
 	}
 }
 

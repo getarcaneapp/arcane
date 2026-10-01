@@ -2,6 +2,7 @@ package templates
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -12,7 +13,6 @@ import (
 	"strings"
 	"unicode"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
@@ -93,7 +93,7 @@ var listCmd = &cobra.Command{
 
 			result, err := c.GetJSON[[]template.Template](cmd.Context(), types.TemplatesAll())
 			if err != nil {
-				return errors.WrapIf(err, "failed to list templates")
+				return fmt.Errorf("failed to list templates: %w", err)
 			}
 
 			if jsonOutput {
@@ -132,7 +132,7 @@ var defaultCmd = &cobra.Command{
 
 		result, err := c.GetJSON[template.DefaultTemplatesResponse](cmd.Context(), types.TemplatesDefault())
 		if err != nil {
-			return errors.WrapIf(err, "failed to get default templates")
+			return fmt.Errorf("failed to get default templates: %w", err)
 		}
 
 		if jsonOutput {
@@ -159,7 +159,7 @@ var contentCmd = &cobra.Command{
 
 		result, err := c.GetJSON[template.TemplateContent](cmd.Context(), types.TemplateContent(args[0]))
 		if err != nil {
-			return errors.WrapIf(err, "failed to get template content")
+			return fmt.Errorf("failed to get template content: %w", err)
 		}
 
 		if jsonOutput {
@@ -194,7 +194,7 @@ var registriesCmd = &cobra.Command{
 
 		result, err := c.GetJSON[[]template.TemplateRegistry](cmd.Context(), types.TemplatesRegistries())
 		if err != nil {
-			return errors.WrapIf(err, "failed to list registries")
+			return fmt.Errorf("failed to list registries: %w", err)
 		}
 
 		if jsonOutput {
@@ -241,7 +241,7 @@ func runTemplateDeleteInternal(cmd *cobra.Command, label, path string) error {
 
 	result, err := c.DeleteJSON[base.MessageResponse](cmd.Context(), path)
 	if err != nil {
-		return errors.WrapIff(err, "failed to delete %s", label)
+		return fmt.Errorf("failed to delete %s: %w", label, err)
 	}
 	if jsonOutput {
 		return cmdutil.PrintJSON(result.Data)
@@ -327,7 +327,7 @@ var templateRef = cmdutil.ResourceRef[template.Template, template.Template]{
 func searchTemplateCandidatesInternal(ctx context.Context, c *client.Client, identifier string) ([]template.Template, error) {
 	result, err := c.GetJSON[[]template.Template](ctx, types.TemplatesAll())
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to search templates")
+		return nil, fmt.Errorf("failed to search templates: %w", err)
 	}
 
 	identifierLower := strings.ToLower(identifier)
@@ -376,7 +376,7 @@ func selectTemplateCandidateInternal(matches []template.Template, identifier str
 		return &matches[0], nil
 	}
 	if !allowPrompt || len(matches) > cmdutil.MaxPromptOptions {
-		return nil, errors.Errorf("ambiguous template %q: %s", identifier, formatTemplateCandidatesInternal(matches))
+		return nil, fmt.Errorf("ambiguous template %q: %s", identifier, formatTemplateCandidatesInternal(matches))
 	}
 
 	ordered := slices.Clone(matches)
@@ -589,7 +589,7 @@ var createCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		content, err := os.ReadFile(templateCreateFile)
 		if err != nil {
-			return errors.WrapIff(err, "failed to read file %s", templateCreateFile)
+			return fmt.Errorf("failed to read file %s: %w", templateCreateFile, err)
 		}
 
 		req := template.CreateRequest{
@@ -601,7 +601,7 @@ var createCmd = &cobra.Command{
 		if templateCreateEnvFile != "" {
 			envContent, err := os.ReadFile(templateCreateEnvFile)
 			if err != nil {
-				return errors.WrapIff(err, "failed to read env file %s", templateCreateEnvFile)
+				return fmt.Errorf("failed to read env file %s: %w", templateCreateEnvFile, err)
 			}
 			req.EnvContent = string(envContent)
 		}
@@ -613,7 +613,7 @@ var createCmd = &cobra.Command{
 
 		result, err := c.PostJSON[template.Template](cmd.Context(), types.Templates(), req)
 		if err != nil {
-			return errors.WrapIf(err, "failed to create template")
+			return fmt.Errorf("failed to create template: %w", err)
 		}
 
 		if jsonOutput {
@@ -664,7 +664,7 @@ var updateCmd = &cobra.Command{
 		if templateUpdateFile != "" {
 			content, err := os.ReadFile(templateUpdateFile)
 			if err != nil {
-				return errors.WrapIff(err, "failed to read file %s", templateUpdateFile)
+				return fmt.Errorf("failed to read file %s: %w", templateUpdateFile, err)
 			}
 			req.Content = string(content)
 		}
@@ -672,14 +672,14 @@ var updateCmd = &cobra.Command{
 		if templateUpdateEnvFile != "" {
 			envContent, err := os.ReadFile(templateUpdateEnvFile)
 			if err != nil {
-				return errors.WrapIff(err, "failed to read env file %s", templateUpdateEnvFile)
+				return fmt.Errorf("failed to read env file %s: %w", templateUpdateEnvFile, err)
 			}
 			req.EnvContent = string(envContent)
 		}
 
 		result, err := c.PutJSON[template.Template](cmd.Context(), types.Template(args[0]), req)
 		if err != nil {
-			return errors.WrapIf(err, "failed to update template")
+			return fmt.Errorf("failed to update template: %w", err)
 		}
 
 		if jsonOutput {
@@ -706,16 +706,16 @@ var downloadCmd = &cobra.Command{
 
 		result, err := c.PostJSON[template.Template](cmd.Context(), types.TemplateDownload(args[0]), nil)
 		if err != nil {
-			return errors.WrapIf(err, "failed to download template")
+			return fmt.Errorf("failed to download template: %w", err)
 		}
 
 		if templateDownloadOutput != "" {
 			dir := filepath.Dir(templateDownloadOutput)
 			if err := os.MkdirAll(dir, 0o755); err != nil {
-				return errors.WrapIff(err, "failed to create directory %s", dir)
+				return fmt.Errorf("failed to create directory %s: %w", dir, err)
 			}
 			if err := os.WriteFile(templateDownloadOutput, []byte(result.Data.Content), 0o600); err != nil {
-				return errors.WrapIff(err, "failed to write file %s", templateDownloadOutput)
+				return fmt.Errorf("failed to write file %s: %w", templateDownloadOutput, err)
 			}
 			output.Success("Template downloaded to %s", templateDownloadOutput)
 			return nil
@@ -733,7 +733,7 @@ var defaultsSaveCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		content, err := os.ReadFile(templateDefaultsSaveFile)
 		if err != nil {
-			return errors.WrapIff(err, "failed to read file %s", templateDefaultsSaveFile)
+			return fmt.Errorf("failed to read file %s: %w", templateDefaultsSaveFile, err)
 		}
 
 		req := template.SaveDefaultTemplatesRequest{
@@ -743,7 +743,7 @@ var defaultsSaveCmd = &cobra.Command{
 		if templateDefaultsEnvFile != "" {
 			envContent, err := os.ReadFile(templateDefaultsEnvFile)
 			if err != nil {
-				return errors.WrapIff(err, "failed to read env file %s", templateDefaultsEnvFile)
+				return fmt.Errorf("failed to read env file %s: %w", templateDefaultsEnvFile, err)
 			}
 			req.EnvContent = string(envContent)
 		}
@@ -811,7 +811,7 @@ var registriesUpdateCmd = &cobra.Command{
 		// The handler answers with a plain message, not the updated registry.
 		result, err := c.PutJSON[base.MessageResponse](cmd.Context(), types.TemplateRegistry(args[0]), req)
 		if err != nil {
-			return errors.WrapIf(err, "failed to update registry")
+			return fmt.Errorf("failed to update registry: %w", err)
 		}
 
 		if jsonOutput {
@@ -829,7 +829,7 @@ var registriesUpdateCmd = &cobra.Command{
 func fetchTemplateInternal(cmd *cobra.Command, c *client.Client, id string) (template.Template, error) {
 	result, err := c.GetJSON[template.Template](cmd.Context(), types.Template(id))
 	if err != nil {
-		return template.Template{}, errors.WrapIf(err, "failed to load template")
+		return template.Template{}, fmt.Errorf("failed to load template: %w", err)
 	}
 	return result.Data, nil
 }
@@ -839,7 +839,7 @@ func fetchTemplateInternal(cmd *cobra.Command, c *client.Client, id string) (tem
 func fetchTemplateRegistryInternal(cmd *cobra.Command, c *client.Client, id string) (template.TemplateRegistry, error) {
 	listed, err := c.GetJSON[[]template.TemplateRegistry](cmd.Context(), types.TemplatesRegistries())
 	if err != nil {
-		return template.TemplateRegistry{}, errors.WrapIf(err, "failed to load registry")
+		return template.TemplateRegistry{}, fmt.Errorf("failed to load registry: %w", err)
 	}
 
 	for _, registry := range listed.Data {
@@ -847,7 +847,7 @@ func fetchTemplateRegistryInternal(cmd *cobra.Command, c *client.Client, id stri
 			return registry, nil
 		}
 	}
-	return template.TemplateRegistry{}, errors.Errorf("template registry %q not found", id)
+	return template.TemplateRegistry{}, fmt.Errorf("template registry %q not found", id)
 }
 
 var fetchCmd = &cobra.Command{
@@ -863,7 +863,7 @@ var fetchCmd = &cobra.Command{
 		path := cmdutil.AppendQuery(types.TemplateFetch(), url.Values{"url": []string{templateFetchURL}})
 		result, err := c.GetJSON[template.RemoteRegistry](cmd.Context(), path)
 		if err != nil {
-			return errors.WrapIf(err, "failed to fetch templates")
+			return fmt.Errorf("failed to fetch templates: %w", err)
 		}
 
 		if jsonOutput {

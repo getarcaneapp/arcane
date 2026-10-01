@@ -4,11 +4,11 @@ package webhooks
 
 import (
 	"cmp"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
@@ -47,7 +47,7 @@ var listCmd = &cobra.Command{
 
 		result, err := c.GetJSON[[]webhook.Summary](cmd.Context(), types.Webhooks(c.EnvID()))
 		if err != nil {
-			return errors.WrapIf(err, "failed to list webhooks")
+			return fmt.Errorf("failed to list webhooks: %w", err)
 		}
 
 		if jsonOutput {
@@ -101,7 +101,7 @@ var createCmd = &cobra.Command{
 
 		result, err := c.PostJSON[webhook.Created](cmd.Context(), types.Webhooks(c.EnvID()), req)
 		if err != nil {
-			return errors.WrapIf(err, "failed to create webhook")
+			return fmt.Errorf("failed to create webhook: %w", err)
 		}
 
 		if jsonOutput {
@@ -140,7 +140,7 @@ var updateCmd = &cobra.Command{
 
 		req := webhook.UpdateInput{Enabled: updateEnabled}
 		if _, err := c.DoJSON[base.ApiResponse[any]](cmd.Context(), http.MethodPatch, types.Webhook(c.EnvID(), args[0]), req); err != nil {
-			return errors.WrapIf(err, "failed to update webhook")
+			return fmt.Errorf("failed to update webhook: %w", err)
 		}
 
 		if jsonOutput {
@@ -180,7 +180,7 @@ var deleteCmd = &cobra.Command{
 		}
 
 		if _, err := c.DeleteJSON[any](cmd.Context(), types.Webhook(c.EnvID(), args[0])); err != nil {
-			return errors.WrapIf(err, "failed to delete webhook")
+			return fmt.Errorf("failed to delete webhook: %w", err)
 		}
 
 		output.Success("Webhook %s deleted successfully", args[0])
@@ -202,7 +202,7 @@ var triggerCmd = &cobra.Command{
 
 		body, err := c.DoRaw(cmd.Context(), http.MethodPost, types.WebhookTrigger(args[0]), nil)
 		if err != nil {
-			return errors.WrapIf(err, "failed to trigger webhook")
+			return fmt.Errorf("failed to trigger webhook: %w", err)
 		}
 
 		if jsonOutput {

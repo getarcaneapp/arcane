@@ -2,10 +2,10 @@ package user
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
@@ -150,7 +150,7 @@ func (h *UserHandler) ListUsers(ctx context.Context, input *ListUsersInput) (*ha
 
 	users, paginationResp, err := h.userService.ListUsersPaginated(ctx, params)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to list users").Error())
+		return nil, huma.Error500InternalServerError("Failed to list users: " + err.Error())
 	}
 
 	return &handlerutil.Page[usertypes.User]{

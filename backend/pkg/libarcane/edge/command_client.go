@@ -2,12 +2,12 @@ package edge
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net/http"
 	"slices"
 	"time"
 	"uuid"
-
-	"emperror.dev/errors"
 )
 
 const (
@@ -39,7 +39,7 @@ func (c *CommandClient) Execute(ctx context.Context, tunnel *AgentTunnel, req *C
 	if commandName == "" {
 		resolved, ok := ResolveEdgeCommandName(req.Method, req.Path, false).Get()
 		if !ok {
-			return nil, errors.Errorf("unsupported edge command for %s %s", req.Method, req.Path)
+			return nil, fmt.Errorf("unsupported edge command for %s %s", req.Method, req.Path)
 		}
 		commandName = resolved
 	}
@@ -82,7 +82,7 @@ func (c *CommandClient) Execute(ctx context.Context, tunnel *AgentTunnel, req *C
 	}
 
 	if err := tunnel.Conn.Send(msg); err != nil {
-		return nil, errors.WrapIf(err, "tunnel request failed")
+		return nil, fmt.Errorf("tunnel request failed: %w", err)
 	}
 	if chunkRequestBody {
 		transferID := msg.Metadata[bodyTransferMetadataKey]
@@ -95,7 +95,7 @@ func (c *CommandClient) Execute(ctx context.Context, tunnel *AgentTunnel, req *C
 				Sequence: sequence,
 				EOF:      end == len(req.Body),
 			}); err != nil {
-				return nil, errors.WrapIf(err, "tunnel request body transfer failed")
+				return nil, fmt.Errorf("tunnel request body transfer failed: %w", err)
 			}
 			offset = end
 		}
@@ -131,7 +131,7 @@ func (c *CommandClient) OpenStream(ctx context.Context, tunnel *AgentTunnel, req
 	if commandName == "" {
 		resolved, ok := ResolveEdgeCommandName(http.MethodGet, req.Path, true).Get()
 		if !ok {
-			return errors.Errorf("unsupported edge stream target %q", req.Path)
+			return fmt.Errorf("unsupported edge stream target %q", req.Path)
 		}
 		commandName = resolved
 	}

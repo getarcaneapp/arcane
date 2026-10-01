@@ -3,6 +3,7 @@ package systembackup
 import (
 	"context"
 	"encoding/json/v2"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -10,7 +11,6 @@ import (
 	"slices"
 	"testing"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/backup"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"

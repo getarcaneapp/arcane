@@ -2,13 +2,13 @@ package admin
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"os"
 	"strings"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
@@ -61,7 +61,7 @@ func runResetPasswordCommandInternal(cmd *cobra.Command, _ []string) error {
 		AllowDowngrade: cfg.AllowDowngrade,
 	})
 	if err != nil {
-		return errors.WrapIf(err, "failed to initialize database")
+		return fmt.Errorf("failed to initialize database: %w", err)
 	}
 	defer func() {
 		if closeErr := db.Close(); closeErr != nil {
@@ -81,7 +81,7 @@ func runResetPasswordCommandInternal(cmd *cobra.Command, _ []string) error {
 	}
 
 	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Password reset successfully for global administrator %q\n", username); err != nil {
-		return errors.WrapIf(err, "failed to write password reset result")
+		return fmt.Errorf("failed to write password reset result: %w", err)
 	}
 	return nil
 }
@@ -99,12 +99,12 @@ func ensurePasswordResetEnabledInternal(cfg *config.Config) error {
 func readNewPasswordInternal(out io.Writer, policy string) (string, error) {
 	password, err := readPasswordInternal(out, "New password: ")
 	if err != nil {
-		return "", errors.WrapIf(err, "failed to read new password")
+		return "", fmt.Errorf("failed to read new password: %w", err)
 	}
 
 	confirmation, err := readPasswordInternal(out, "Confirm new password: ")
 	if err != nil {
-		return "", errors.WrapIf(err, "failed to read password confirmation")
+		return "", fmt.Errorf("failed to read password confirmation: %w", err)
 	}
 
 	if err := validatePasswordPairInternal(password, confirmation, policy); err != nil {
@@ -161,21 +161,21 @@ func resetPasswordInternal(ctx context.Context, db *database.DB, username, passw
 	target, err := userService.GetUserByUsername(ctx, username)
 	if err != nil {
 		if errors.Is(err, common.ErrUserNotFound) {
-			return errors.Errorf("global administrator %q not found", username)
+			return fmt.Errorf("global administrator %q not found", username)
 		}
-		return errors.WrapIf(err, "failed to find user")
+		return fmt.Errorf("failed to find user: %w", err)
 	}
 
 	permissions, err := roleService.ResolvePermissions(ctx, target)
 	if err != nil {
-		return errors.WrapIf(err, "failed to resolve user permissions")
+		return fmt.Errorf("failed to resolve user permissions: %w", err)
 	}
 	if permissions == nil || !permissions.IsGlobalAdmin() {
-		return errors.Errorf("user %q does not have effective global administrator permissions", username)
+		return fmt.Errorf("user %q does not have effective global administrator permissions", username)
 	}
 
 	if _, err := userService.SetPasswordAndRevokeSessionsExcept(ctx, target, password, ""); err != nil {
-		return errors.WrapIf(err, "failed to reset password")
+		return fmt.Errorf("failed to reset password: %w", err)
 	}
 
 	return nil

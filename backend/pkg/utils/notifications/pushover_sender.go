@@ -2,11 +2,11 @@ package notifications
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net/url"
 	"strconv"
 	"strings"
-
-	"emperror.dev/errors"
 )
 
 // BuildPushoverURL converts PushoverConfig to Shoutrrr URL format.
@@ -67,7 +67,7 @@ func SendPushover(ctx context.Context, config PushoverConfig, message string) er
 
 	shoutrrrURL, err := BuildPushoverURL(config)
 	if err != nil {
-		return errors.WrapIf(err, "failed to build shoutrrr Pushover URL")
+		return fmt.Errorf("failed to build shoutrrr Pushover URL: %w", err)
 	}
 
 	return sendShoutrrrInternal("Pushover", shoutrrrURL, message, nil)

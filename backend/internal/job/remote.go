@@ -3,12 +3,12 @@ package job
 import (
 	"context"
 	"encoding/json/v2"
+	"errors"
 	"net/http"
 	"net/url"
 	"sort"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
 	"github.com/getarcaneapp/arcane/types/v2/jobschedule"
@@ -208,9 +208,9 @@ func (s *JobService) RetryRemoteRun(ctx context.Context, environmentID, jobID, r
 }
 
 var (
-	errRemoteIneligibleInternal     = errors.Sentinel("Remote job is disabled or no longer eligible")
-	errRemoteReceiptMissingInternal = errors.Sentinel("Agent no longer has the delivery receipt; verify the operation before retrying")
-	errRemoteRetryUncertainInternal = errors.Sentinel("Remote retry acknowledgement was lost; inspect the agent before retrying again")
+	errRemoteIneligibleInternal     = errors.New("Remote job is disabled or no longer eligible")                                   //nolint:staticcheck // Preserve the existing error message.
+	errRemoteReceiptMissingInternal = errors.New("Agent no longer has the delivery receipt; verify the operation before retrying") //nolint:staticcheck // Preserve the existing error message.
+	errRemoteRetryUncertainInternal = errors.New("Remote retry acknowledgement was lost; inspect the agent before retrying again") //nolint:staticcheck // Preserve the existing error message.
 )
 
 func remoteJobEligibleInternal(jobs []jobschedule.JobStatus, id string) bool {
@@ -258,7 +258,7 @@ func (s *JobService) admitRemoteInternal(ctx context.Context, run st.Run, catalo
 		return st.Run{}, err
 	}
 	if accepted.RunID != run.ID {
-		return st.Run{}, errors.New("Agent returned an inconsistent delivery receipt")
+		return st.Run{}, errors.New("Agent returned an inconsistent delivery receipt") //nolint:staticcheck // Preserve the existing error message.
 	}
 	return st.Run{ID: run.ID, JobID: run.JobID, Status: accepted.Status, Outcome: st.Outcome{Status: accepted.Status}}, nil
 }
@@ -278,7 +278,7 @@ func (s *JobService) retryDeliveryInternal(ctx context.Context, run st.Run, path
 		return st.Run{}, err
 	}
 	if retried.ID != run.ID || retried.JobID != run.JobID {
-		return st.Run{}, errors.New("Agent returned an inconsistent retry receipt")
+		return st.Run{}, errors.New("Agent returned an inconsistent retry receipt") //nolint:staticcheck // Preserve the existing error message.
 	}
 	return retried, nil
 }

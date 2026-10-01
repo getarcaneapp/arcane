@@ -6,11 +6,11 @@
 package roles
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
@@ -99,7 +99,7 @@ var getCmd = &cobra.Command{
 		}
 		result, err := c.GetJSON[roletypes.Role](cmd.Context(), types.Role(args[0]))
 		if err != nil {
-			return errors.WrapIf(err, "failed to get role")
+			return fmt.Errorf("failed to get role: %w", err)
 		}
 
 		if jsonOutput {
@@ -152,7 +152,7 @@ var createCmd = &cobra.Command{
 
 		result, err := c.PostJSON[roletypes.Role](cmd.Context(), types.Roles(), req)
 		if err != nil {
-			return errors.WrapIf(err, "failed to create role")
+			return fmt.Errorf("failed to create role: %w", err)
 		}
 
 		if jsonOutput {
@@ -201,11 +201,11 @@ var updateCmd = &cobra.Command{
 
 		resp, err := c.Put(cmd.Context(), types.Role(args[0]), req)
 		if err != nil {
-			return errors.WrapIf(err, "failed to update role")
+			return fmt.Errorf("failed to update role: %w", err)
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to update role")
+			return fmt.Errorf("failed to update role: %w", err)
 		}
 
 		output.Success("Role updated")
@@ -236,11 +236,11 @@ var deleteCmd = &cobra.Command{
 		}
 		resp, err := c.Delete(cmd.Context(), types.Role(args[0]))
 		if err != nil {
-			return errors.WrapIf(err, "failed to delete role")
+			return fmt.Errorf("failed to delete role: %w", err)
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to delete role")
+			return fmt.Errorf("failed to delete role: %w", err)
 		}
 		output.Success("Role deleted")
 		return nil
@@ -261,7 +261,7 @@ var permissionsCmd = &cobra.Command{
 		}
 		result, err := c.GetJSON[roletypes.PermissionsManifest](cmd.Context(), types.RolesAvailablePermissions())
 		if err != nil {
-			return errors.WrapIf(err, "failed to load permission manifest")
+			return fmt.Errorf("failed to load permission manifest: %w", err)
 		}
 
 		if jsonOutput {
@@ -294,7 +294,7 @@ var assignmentsCmd = &cobra.Command{
 		}
 		result, err := c.GetJSON[[]roletypes.RoleAssignment](cmd.Context(), types.UserRoleAssignments(args[0]))
 		if err != nil {
-			return errors.WrapIf(err, "failed to list assignments")
+			return fmt.Errorf("failed to list assignments: %w", err)
 		}
 
 		if jsonOutput {
@@ -321,13 +321,8 @@ var assignmentsCmd = &cobra.Command{
 var assignCmd = &cobra.Command{
 	Use:   "assign <user-id>",
 	Short: "Replace a user's manual role assignments",
-	Long: "Replace every MANUAL role assignment on the user with the set " +
-		"passed via --role. OIDC-sourced assignments are left untouched — " +
-		"manage those via OIDC role mappings.\n\n" +
-		"Each --role flag accepts `<roleId>[:<envId>]`. Omit the env id for " +
-		"a global assignment. Pass --role multiple times to assign more than " +
-		"one role. Pass --role \"\" (empty) once to clear every manual " +
-		"assignment.",
+	Long:  "Replace every MANUAL role assignment on the user with the set passed via --role. OIDC-sourced assignments are left untouched — manage those via OIDC role mappings.\n\nEach --role flag accepts `<roleId>[:<envId>]`. Omit the env id for a global assignment. Pass --role multiple times to assign more than one role. Pass --role \"\" (empty) once to clear every manual assignment.",
+
 	Example: `  arcane admin roles assign u_123 --role role_editor:env_prod --role role_viewer
   arcane admin roles assign u_123 --role role_admin
   arcane admin roles assign u_123 --role ""    # clear all manual assignments`,
@@ -343,7 +338,7 @@ var assignCmd = &cobra.Command{
 		}
 		result, err := c.PutJSON[[]roletypes.RoleAssignment](cmd.Context(), types.UserRoleAssignments(args[0]), req)
 		if err != nil {
-			return errors.WrapIf(err, "failed to set assignments")
+			return fmt.Errorf("failed to set assignments: %w", err)
 		}
 		if jsonOutput {
 			return cmdutil.PrintJSON(result.Data)
@@ -385,7 +380,7 @@ func fetchRoleInternal(cmd *cobra.Command, id string) (*roletypes.Role, error) {
 	}
 	result, err := c.GetJSON[roletypes.Role](cmd.Context(), types.Role(id))
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to load current role")
+		return nil, fmt.Errorf("failed to load current role: %w", err)
 	}
 	return &result.Data, nil
 }

@@ -3,12 +3,12 @@ package volume
 import (
 	"cmp"
 	"context"
+	"fmt"
 	"log/slog"
 	"regexp"
 	"strings"
 	"time"
 
-	"emperror.dev/errors"
 	docker "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
@@ -27,17 +27,17 @@ func (s *VolumeService) GetVolumeUsage(ctx context.Context, name string) (bool, 
 	slog.DebugContext(ctx, "volume service: get volume usage", "volume", name)
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return false, nil, errors.WrapIf(err, "failed to connect to Docker")
+		return false, nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	vol, err := dockerClient.VolumeInspect(ctx, name, client.VolumeInspectOptions{})
 	if err != nil {
-		return false, nil, errors.WrapIf(err, "volume not found")
+		return false, nil, fmt.Errorf("volume not found: %w", err)
 	}
 
 	containerIDs, err := docker.GetContainersUsingVolume(ctx, dockerClient, vol.Volume.Name)
 	if err != nil {
-		return false, nil, errors.WrapIf(err, "failed to get containers using volume")
+		return false, nil, fmt.Errorf("failed to get containers using volume: %w", err)
 	}
 
 	inUse := len(containerIDs) > 0
@@ -60,12 +60,12 @@ func (s *VolumeService) GetVolumeSizes(ctx context.Context) (map[string]VolumeSi
 
 	dockerClient, err := s.dockerService.GetClient(apiCtx)
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to connect to Docker")
+		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	usageVolumes, err := docker.GetVolumeUsageData(apiCtx, dockerClient)
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to get volume usage data")
+		return nil, fmt.Errorf("failed to get volume usage data: %w", err)
 	}
 
 	result := make(map[string]VolumeSizeData, len(usageVolumes))
@@ -107,7 +107,7 @@ func enrichVolumesWithUsageDataInternal(volumes, usageVolumes []volume.Volume) [
 func (s *VolumeService) buildVolumeContainerMapInternal(ctx context.Context) (map[string][]string, error) {
 	containers, err := s.dockerService.ListContainers(ctx)
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to list containers")
+		return nil, fmt.Errorf("failed to list containers: %w", err)
 	}
 
 	volumeContainerMap := make(map[string][]string)
@@ -312,11 +312,11 @@ func mountedVolumeNamesInternal(mounts []container.MountPoint) map[string]struct
 func (s *VolumeService) ListBackupVolumeOptions(ctx context.Context) ([]backuptypes.SystemVolumeBackupOption, error) {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to connect to Docker")
+		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 	result, err := dockerClient.VolumeList(ctx, client.VolumeListOptions{})
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to list Docker volumes")
+		return nil, fmt.Errorf("failed to list Docker volumes: %w", err)
 	}
 	arcaneVolumes := make(map[string]struct{})
 	if inspect, inspectErr := libarcane.InspectCurrentArcaneContainer(ctx, dockerClient); inspectErr == nil && inspect != nil {
@@ -344,7 +344,7 @@ func (s *VolumeService) ListVolumesPaginated(ctx context.Context, params paginat
 	slog.DebugContext(ctx, "volume service: list volumes paginated", "search", params.Search, "sort", params.Sort, "order", params.Order, "start", params.Start, "limit", params.Limit, "include_internal", includeInternal)
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return nil, pagination.Response{}, volumetypes.UsageCounts{}, errors.WrapIf(err, "failed to connect to Docker")
+		return nil, pagination.Response{}, volumetypes.UsageCounts{}, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	// Run volume list and container list in parallel for better performance
@@ -377,7 +377,7 @@ func (s *VolumeService) ListVolumesPaginated(ctx context.Context, params paginat
 	// Wait for both results
 	volResult := <-volChan
 	if volResult.err != nil {
-		return nil, pagination.Response{}, volumetypes.UsageCounts{}, errors.WrapIf(volResult.err, "failed to list Docker volumes")
+		return nil, pagination.Response{}, volumetypes.UsageCounts{}, fmt.Errorf("failed to list Docker volumes: %w", volResult.err)
 	}
 
 	containerResult := <-containerChan

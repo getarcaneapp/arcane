@@ -3,13 +3,13 @@ package runs
 import (
 	"context"
 	"encoding/json/v2"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
 	"time"
 	"uuid"
 
-	"emperror.dev/errors"
 	scheduleutil "github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/schedule"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/francis"
 	st "github.com/getarcaneapp/arcane/types/v2/scheduler"
@@ -118,7 +118,7 @@ func (a *coordinatorActorInternal) Invoke(ctx context.Context, method string, da
 		state.Revision = 1
 		return true, a.q.service.SetState(ctx, coordinatorTypeInternal, a.id, state, nil)
 	default:
-		return nil, errors.Errorf("unknown coordinator command: %s", method)
+		return nil, fmt.Errorf("unknown coordinator command: %s", method)
 	}
 }
 
@@ -369,7 +369,7 @@ func (q *Coordinator) importLegacyInternal(ctx context.Context) error {
 		}
 		var record st.QueueRecord
 		if err := json.Unmarshal([]byte(entry.Value), &record); err != nil {
-			return errors.WrapIf(err, "decode legacy job record")
+			return fmt.Errorf("decode legacy job record: %w", err)
 		}
 		id := kit.SHA256Hex(record.EnvironmentID + "\x00" + record.JobID)
 		if entry.Key != queuePrefixInternal+id {
@@ -417,7 +417,7 @@ func (a *executorActorInternal) Job(ctx context.Context, _ string, data actor.En
 	}
 	var command st.ExecutionCommand
 	if err := data.Decode(&command); err != nil {
-		return errors.Combine(err, actor.ErrJobPermanentFailure)
+		return errors.Join(err, actor.ErrJobPermanentFailure)
 	}
 	claim, err := q.claimExecutionInternal(ctx, command)
 	if err != nil {

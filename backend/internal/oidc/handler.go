@@ -2,12 +2,12 @@ package oidc
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/auth"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
@@ -245,7 +245,7 @@ func RegisterOidc(api huma.API, authService *auth.AuthService, passkeyService *p
 func (h *OidcHandler) GetOidcStatus(ctx context.Context, _ *GetOidcStatusInput) (*GetOidcStatusOutput, error) {
 	status, err := h.authService.GetOidcConfigurationStatus(ctx)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to retrieve OIDC status").Error())
+		return nil, huma.Error500InternalServerError("Failed to retrieve OIDC status: " + err.Error())
 	}
 
 	return &GetOidcStatusOutput{
@@ -306,7 +306,7 @@ func (h *OidcHandler) GetOidcAuthUrl(ctx context.Context, input *GetOidcAuthUrlI
 
 	authUrl, stateCookieValue, err := h.oidcService.GenerateAuthURL(ctx, input.Body.RedirectUri, origin, mobileRedirectURI)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to generate OIDC auth URL").Error())
+		return nil, huma.Error500InternalServerError("Failed to generate OIDC auth URL: " + err.Error())
 	}
 
 	// Build state cookie (600 seconds = 10 minutes). Secure is resolved from the
@@ -347,7 +347,7 @@ func (h *OidcHandler) HandleOidcCallback(ctx context.Context, input *HandleOidcC
 	userInfo, tokenResp, err := h.oidcService.HandleCallback(ctx, input.Body.Code, input.Body.State, input.OidcStateCookie, origin, mobileRedirectURI)
 	if err != nil {
 		slog.WarnContext(ctx, "OIDC callback failed", "error", err, "origin", origin, "state_present", input.Body.State != "", "code_present", input.Body.Code != "")
-		return nil, huma.Error400BadRequest(errors.WithMessage(err, "OIDC callback failed").Error())
+		return nil, huma.Error400BadRequest("OIDC callback failed: " + err.Error())
 	}
 
 	// Reconcile the provider identity first, then require passkey MFA before
@@ -423,7 +423,7 @@ func (h *OidcHandler) InitiateDeviceAuth(ctx context.Context, _ *InitiateDeviceA
 	response, err := h.oidcService.InitiateDeviceAuth(ctx)
 	if err != nil {
 		slog.WarnContext(ctx, "Device authorization initiation failed", "error", err)
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to generate OIDC auth URL").Error())
+		return nil, huma.Error500InternalServerError("Failed to generate OIDC auth URL: " + err.Error())
 	}
 
 	return &InitiateDeviceAuthOutput{
@@ -451,7 +451,7 @@ func (h *OidcHandler) ExchangeDeviceToken(ctx context.Context, input *ExchangeDe
 			return nil, huma.Error403Forbidden("access_denied")
 		default:
 			slog.WarnContext(ctx, "Device token exchange failed", "error", err)
-			return nil, huma.Error400BadRequest(errors.WithMessage(err, "OIDC callback failed").Error())
+			return nil, huma.Error400BadRequest("OIDC callback failed: " + err.Error())
 		}
 	}
 

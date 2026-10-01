@@ -3,11 +3,11 @@ package system
 import (
 	"cmp"
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
 
-	"emperror.dev/errors"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
@@ -260,12 +260,12 @@ func (h *SystemHandler) rejectIfAgentModeInternal() error {
 func (h *SystemHandler) Health(ctx context.Context, input *SystemHealthInput) (*struct{}, error) {
 	dockerClient, err := h.dockerService.GetClient(ctx)
 	if err != nil {
-		return nil, huma.Error503ServiceUnavailable(errors.WithMessage(err, "Failed to connect to Docker").Error())
+		return nil, huma.Error503ServiceUnavailable("Failed to connect to Docker: " + err.Error())
 	}
 
 	_, err = dockerClient.Ping(ctx, client.PingOptions{})
 	if err != nil {
-		return nil, huma.Error503ServiceUnavailable(errors.WithMessage(err, "Docker is not responsive").Error())
+		return nil, huma.Error503ServiceUnavailable("Docker is not responsive: " + err.Error())
 	}
 
 	return nil, nil
@@ -275,17 +275,17 @@ func (h *SystemHandler) Health(ctx context.Context, input *SystemHealthInput) (*
 func (h *SystemHandler) GetDockerInfo(ctx context.Context, input *GetDockerInfoInput) (*GetDockerInfoOutput, error) {
 	dockerClient, err := h.dockerService.GetClient(ctx)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to connect to Docker").Error())
+		return nil, huma.Error500InternalServerError("Failed to connect to Docker: " + err.Error())
 	}
 
 	version, err := dockerClient.ServerVersion(ctx, client.ServerVersionOptions{})
 	if err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to get Docker version").Error())
+		return nil, huma.Error500InternalServerError("Failed to get Docker version: " + err.Error())
 	}
 
 	infoResult, err := dockerClient.Info(ctx, client.InfoOptions{})
 	if err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to get Docker info").Error())
+		return nil, huma.Error500InternalServerError("Failed to get Docker info: " + err.Error())
 	}
 	info := infoResult.Info
 
@@ -380,7 +380,7 @@ func (h *SystemHandler) StartAllContainers(ctx context.Context, input *StartAllC
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	result, err := h.systemService.StartAllContainers(runtimeCtx, input.EnvironmentID)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to start containers").Error())
+		return nil, huma.Error500InternalServerError("Failed to start containers: " + err.Error())
 	}
 
 	return &handlerutil.Out[containertypes.ActionResult]{
@@ -396,7 +396,7 @@ func (h *SystemHandler) StartAllStoppedContainers(ctx context.Context, input *St
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	result, err := h.systemService.StartAllStoppedContainers(runtimeCtx, input.EnvironmentID)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to start stopped containers").Error())
+		return nil, huma.Error500InternalServerError("Failed to start stopped containers: " + err.Error())
 	}
 
 	return &handlerutil.Out[containertypes.ActionResult]{
@@ -412,7 +412,7 @@ func (h *SystemHandler) StopAllContainers(ctx context.Context, input *StopAllCon
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	result, err := h.systemService.StopAllContainers(runtimeCtx, input.EnvironmentID)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to stop containers").Error())
+		return nil, huma.Error500InternalServerError("Failed to stop containers: " + err.Error())
 	}
 
 	return &handlerutil.Out[containertypes.ActionResult]{
@@ -457,7 +457,7 @@ func (h *SystemHandler) CheckUpgradeAvailable(ctx context.Context, input *CheckU
 			Body: UpgradeCheckResultData{
 				CanUpgrade: false,
 				Error:      true,
-				Message:    errors.WithMessage(err, "Failed to check for updates").Error(),
+				Message:    "Failed to check for updates: " + err.Error(),
 			},
 		}, nil
 	}
@@ -494,10 +494,10 @@ func (h *SystemHandler) TriggerUpgrade(ctx context.Context, input *TriggerUpgrad
 		slog.Error("System upgrade failed", "error", err, "user", user.Username)
 
 		if errors.Is(err, common.ErrUpgradeInProgress) {
-			return nil, huma.Error409Conflict(errors.WithMessage(err, "Failed to initiate upgrade").Error())
+			return nil, huma.Error409Conflict("Failed to initiate upgrade: " + err.Error())
 		}
 
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to initiate upgrade").Error())
+		return nil, huma.Error500InternalServerError("Failed to initiate upgrade: " + err.Error())
 	}
 
 	message := kit.Ternary(
@@ -540,7 +540,7 @@ func (h *SystemHandler) TriggerUpdateAll(ctx context.Context, input *TriggerUpda
 		if errors.Is(err, common.ErrUpdateAllInProgress) {
 			return nil, huma.Error409Conflict(err.Error())
 		}
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to initiate upgrade").Error())
+		return nil, huma.Error500InternalServerError("Failed to initiate upgrade: " + err.Error())
 	}
 
 	return &handlerutil.Out[EnvironmentUpdateJob]{

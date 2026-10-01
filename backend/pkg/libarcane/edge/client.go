@@ -3,6 +3,8 @@ package edge
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -13,7 +15,6 @@ import (
 	"time"
 	"uuid"
 
-	"emperror.dev/errors"
 	"github.com/cenkalti/backoff/v5"
 	"github.com/coder/websocket"
 	wshub "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/ws"
@@ -57,10 +58,16 @@ const (
 
 	// errTunnelRegistrationTimeout marks a registration attempt where the manager
 	// accepted the connection but never answered the register message.
-	errTunnelRegistrationTimeout = errors.Sentinel("timed out waiting for tunnel registration response")
+
 	// errEstablishedTunnelSessionEnded marks a session that the manager accepted
 	// and later dropped, as opposed to a transport that never connected.
-	errEstablishedTunnelSessionEnded = errors.Sentinel("established edge tunnel session ended")
+
+)
+
+var (
+	errTunnelRegistrationTimeout = errors.New("timed out waiting for tunnel registration response")
+
+	errEstablishedTunnelSessionEnded = errors.New("established edge tunnel session ended")
 )
 
 func (t *commandRequestTransfer) stopInternal() {
@@ -216,7 +223,7 @@ func (c *TunnelClient) connectAndServeManagedTunnelInternal(ctx context.Context)
 				"grpc_failure_streak", c.grpcFailureStreakInternal(),
 				"manager_ws_url", c.managerWebSocketURLInternal(),
 			)
-			return c.connectAndServeWebSocket(ctx)
+			return c.connectAndServeWebSocketInternal(ctx)
 		}
 
 		sessionStart := time.Now()
@@ -238,7 +245,7 @@ func (c *TunnelClient) connectAndServeManagedTunnelInternal(ctx context.Context)
 					"manager_grpc_addr", c.managerGRPCAddr,
 					"manager_ws_url", managerWSURL,
 				)
-				if wsErr := c.connectAndServeWebSocket(ctx); wsErr != nil {
+				if wsErr := c.connectAndServeWebSocketInternal(ctx); wsErr != nil {
 					// Keep both transport failures in the chain for errors.Is/errors.As traversal.
 					return fmt.Errorf("gRPC edge tunnel failed: %w; websocket fallback failed: %w", err, wsErr)
 				}
@@ -249,7 +256,7 @@ func (c *TunnelClient) connectAndServeManagedTunnelInternal(ctx context.Context)
 		return nil
 	}
 	if transports.websocket {
-		return c.connectAndServeWebSocket(ctx)
+		return c.connectAndServeWebSocketInternal(ctx)
 	}
 	return errors.New("no edge tunnel transport is available")
 }
@@ -435,19 +442,19 @@ func (c *TunnelClient) awaitRegistrationInternal(ctx context.Context, conn Tunne
 		return nil, ctx.Err()
 	case <-timer.C:
 		_ = conn.Close()
-		return nil, errors.WrapIff(errTunnelRegistrationTimeout, "after %s", timeout)
+		return nil, fmt.Errorf("after %s: %w", timeout, errTunnelRegistrationTimeout)
 	case result := <-recvCh:
 		if result.err != nil {
-			return nil, errors.WrapIf(result.err, "failed to receive tunnel registration response")
+			return nil, fmt.Errorf("failed to receive tunnel registration response: %w", result.err)
 		}
 		if result.msg == nil {
 			return nil, errors.New("received empty tunnel registration response")
 		}
 		if result.msg.Type != MessageTypeRegisterResponse {
-			return nil, errors.Errorf("unexpected first tunnel message: %s", result.msg.Type)
+			return nil, fmt.Errorf("unexpected first tunnel message: %s", result.msg.Type)
 		}
 		if !result.msg.Accepted {
-			return nil, errors.Errorf("manager rejected tunnel registration: %s", result.msg.Error)
+			return nil, fmt.Errorf("manager rejected tunnel registration: %s", result.msg.Error)
 		}
 		c.registration.Store(clientRegistrationInternal{sessionID: result.msg.SessionID})
 		return result.msg, nil
@@ -481,7 +488,7 @@ func (c *TunnelClient) serveTunnelSessionInternal(ctx context.Context, conn Tunn
 	if err := conn.Send(c.registerMessageInternal()); err != nil {
 		// A rejected gRPC stream can report EOF from Send; Recv carries the RPC status.
 		if conn.Transport() != EdgeTransportGRPC || !errors.Is(err, io.EOF) {
-			return errors.WrapIff(err, "failed to send %s tunnel register message", conn.Transport())
+			return fmt.Errorf("failed to send %s tunnel register message: %w", conn.Transport(), err)
 		}
 	}
 
@@ -547,7 +554,7 @@ func (c *TunnelClient) messageLoop(ctx context.Context, conn TunnelConnection, w
 		default:
 			msg, err := conn.Receive()
 			if err != nil {
-				return errors.WrapIf(err, "failed to receive message")
+				return fmt.Errorf("failed to receive message: %w", err)
 			}
 
 			switch msg.Type {
@@ -581,7 +588,7 @@ func (c *TunnelClient) messageLoop(ctx context.Context, conn TunnelConnection, w
 				slog.DebugContext(ctx, "Received heartbeat ack")
 			case MessageTypeRegisterResponse:
 				if !msg.Accepted {
-					return errors.Errorf("manager rejected tunnel registration: %s", msg.Error)
+					return fmt.Errorf("manager rejected tunnel registration: %s", msg.Error)
 				}
 				slog.InfoContext(ctx, "Edge tunnel re-registered",
 					"transport", conn.Transport(),
@@ -1481,4 +1488,47 @@ func StartTunnelClient(ctx context.Context, cfg *Config, handler http.Handler) (
 		client.StartWithErrorChan(runCtx, nil)
 		return nil
 	})
+}
+
+func (c *TunnelClient) connectAndServeWebSocketInternal(ctx context.Context) error {
+	managerWSURL := c.managerWebSocketURLInternal()
+	if managerWSURL == "" {
+		return errors.New("manager WebSocket URL is empty")
+	}
+	transport := &http.Transport{Proxy: http.ProxyFromEnvironment}
+	if strings.HasPrefix(strings.ToLower(managerWSURL), "wss://") {
+		tlsConfig, err := buildManagerClientTLSConfigInternal(c.cfg)
+		if err != nil {
+			return fmt.Errorf("failed to configure edge websocket TLS: %w", err)
+		}
+		if tlsConfig == nil {
+			tlsConfig = &tls.Config{MinVersion: tls.VersionTLS12}
+		}
+		transport.TLSClientConfig = tlsConfig
+	}
+
+	headers := http.Header{}
+	for header, value := range agentAuthCredentialsInternal(c.cfg.AgentToken) {
+		headers.Set(header, value)
+	}
+
+	slog.DebugContext(ctx, "Dialing manager for websocket edge tunnel", "url", managerWSURL)
+
+	// The dial context bounds only the handshake; the connection outlives it.
+	dialCtx, dialCancel := context.WithTimeout(ctx, 30*time.Second)
+	defer dialCancel()
+	conn, resp, err := websocket.Dial(dialCtx, managerWSURL, &websocket.DialOptions{
+		HTTPClient: &http.Client{Transport: transport},
+		HTTPHeader: headers,
+	})
+	if err != nil {
+		if resp != nil && resp.Body != nil {
+			defer func() { _ = resp.Body.Close() }()
+			body, _ := io.ReadAll(resp.Body)
+			return fmt.Errorf("failed to connect to manager websocket endpoint (status: %d, body: %s): %w", resp.StatusCode, string(body), err)
+		}
+		return fmt.Errorf("failed to connect to manager websocket endpoint: %w", err)
+	}
+
+	return c.serveTunnelSessionInternal(ctx, NewTunnelConn(conn), managerWSURL)
 }

@@ -2,12 +2,13 @@ package projects
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"os"
 	"path"
 	"path/filepath"
 	"strings"
 
-	"emperror.dev/errors"
 	"github.com/samber/mo"
 	"go.getarcane.app/acfs"
 	"go.yaml.in/yaml/v4"
@@ -58,7 +59,7 @@ func (l *MissingIncludeStubLoader) Accept(path string) bool {
 func (l *MissingIncludeStubLoader) Load(ctx context.Context, filePath string) (string, error) {
 	validatedPath, ok := l.resolveMissingIncludeInternal(filePath).Get()
 	if !ok {
-		return "", errors.Errorf("include file is not eligible for validation stub: %s", filePath)
+		return "", fmt.Errorf("include file is not eligible for validation stub: %s", filePath)
 	}
 
 	if l.stubs == nil {
@@ -72,7 +73,7 @@ func (l *MissingIncludeStubLoader) Load(ctx context.Context, filePath string) (s
 		// System temp scratch dir: no acfs root exists for it.
 		tempDir, err := os.MkdirTemp("", "arcane-compose-include-*")
 		if err != nil {
-			return "", errors.WrapIf(err, "create validation include temp dir")
+			return "", fmt.Errorf("create validation include temp dir: %w", err)
 		}
 		l.tempDir = tempDir
 	}
@@ -84,13 +85,13 @@ func (l *MissingIncludeStubLoader) Load(ctx context.Context, filePath string) (s
 	stubPath := filepath.Join(l.tempDir, relPath)
 	stubLogical, err := acfs.LogicalPath(l.tempDir, stubPath)
 	if err != nil {
-		return "", errors.WrapIf(err, "resolve validation include stub path")
+		return "", fmt.Errorf("resolve validation include stub path: %w", err)
 	}
 	if err := acfs.MkdirAll(ctx, l.tempDir, path.Dir(stubLogical), 0o755); err != nil {
-		return "", errors.WrapIf(err, "create validation include directory")
+		return "", fmt.Errorf("create validation include directory: %w", err)
 	}
 	if err := acfs.Write(ctx, l.tempDir, stubLogical, []byte("services: {}\n"), acfs.WriteOptions{Mode: 0o600}); err != nil {
-		return "", errors.WrapIf(err, "write validation include stub")
+		return "", fmt.Errorf("write validation include stub: %w", err)
 	}
 
 	l.stubs[validatedPath] = stubPath
@@ -133,7 +134,7 @@ func (l *MissingIncludeStubLoader) Cleanup() {
 func ParseIncludes(composeFilePath string, envMap EnvMap, includeContent bool) ([]IncludeFile, error) {
 	content, err := os.ReadFile(composeFilePath)
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to read compose file")
+		return nil, fmt.Errorf("failed to read compose file: %w", err)
 	}
 
 	return ParseIncludesFromContent(composeFilePath, content, envMap, includeContent)
@@ -143,7 +144,7 @@ func ParseIncludes(composeFilePath string, envMap EnvMap, includeContent bool) (
 func ParseIncludesFromContent(composeFilePath string, content []byte, envMap EnvMap, includeContent bool) ([]IncludeFile, error) {
 	var composeData map[string]any
 	if err := yaml.Unmarshal(content, &composeData); err != nil {
-		return nil, errors.WrapIf(err, "failed to parse compose file")
+		return nil, fmt.Errorf("failed to parse compose file: %w", err)
 	}
 
 	// Look for include at root level only (per Docker Compose spec)
@@ -218,13 +219,13 @@ func extractIncludePathsFromMapInternal(v map[string]any) ([]string, error) {
 		for _, entry := range p {
 			s, ok := entry.(string)
 			if !ok {
-				return nil, errors.Errorf("invalid include path entry: expected string, got %T", entry)
+				return nil, fmt.Errorf("invalid include path entry: expected string, got %T", entry)
 			}
 			paths = append(paths, s)
 		}
 		return paths, nil
 	default:
-		return nil, errors.Errorf("invalid include path type: %T", v["path"])
+		return nil, fmt.Errorf("invalid include path type: %T", v["path"])
 	}
 }
 
@@ -281,7 +282,7 @@ func readIncludeContentInternal(fullPath, includePath string, includeContent boo
 		// File doesn't exist yet - return empty content so it can be created
 		return "# This file will be created when you save changes\nservices:\n", nil
 	}
-	return "", errors.WrapIff(err, "failed to read include file %s", includePath)
+	return "", fmt.Errorf("failed to read include file %s: %w", includePath, err)
 }
 
 // ValidateIncludePathForWrite ensures the include path is safe for write operations
@@ -295,7 +296,7 @@ func ValidateIncludePathForWrite(projectDir, includePath string) (string, error)
 	// Resolve project directory to absolute path and evaluate symlinks
 	absProjectDir, err := filepath.Abs(projectDir)
 	if err != nil {
-		return "", errors.WrapIf(err, "invalid project directory")
+		return "", fmt.Errorf("invalid project directory: %w", err)
 	}
 	absProjectDir = filepath.Clean(absProjectDir)
 
@@ -312,7 +313,7 @@ func ValidateIncludePathForWrite(projectDir, includePath string) (string, error)
 
 	absFullPath, err := filepath.Abs(fullPath)
 	if err != nil {
-		return "", errors.WrapIf(err, "invalid include path")
+		return "", fmt.Errorf("invalid include path: %w", err)
 	}
 	absFullPath = filepath.Clean(absFullPath)
 
@@ -323,12 +324,12 @@ func ValidateIncludePathForWrite(projectDir, includePath string) (string, error)
 	case err == nil:
 		evalPath = evalFullPath
 	case !errors.Is(err, os.ErrNotExist):
-		return "", errors.WrapIf(err, "failed to resolve include path")
+		return "", fmt.Errorf("failed to resolve include path: %w", err)
 	default:
 		// File doesn't exist yet - evaluate parent directory symlinks
 		evalDir, dirErr := filepath.EvalSymlinks(filepath.Dir(absFullPath))
 		if dirErr != nil && !errors.Is(dirErr, os.ErrNotExist) {
-			return "", errors.WrapIf(dirErr, "failed to resolve parent directory")
+			return "", fmt.Errorf("failed to resolve parent directory: %w", dirErr)
 		}
 		if dirErr == nil {
 			evalPath = filepath.Join(evalDir, filepath.Base(absFullPath))

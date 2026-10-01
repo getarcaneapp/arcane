@@ -2,12 +2,13 @@ package swarm
 
 import (
 	"cmp"
+	"errors"
+	"fmt"
 	"math"
 	"os"
 	"sort"
 	"strings"
 
-	"emperror.dev/errors"
 	composegotypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/moby/moby/api/types/mount"
@@ -91,7 +92,7 @@ func resolveServiceMountSourceInternal(
 
 	projectVolume, ok := projectVolumes[source]
 	if !ok {
-		return "", composegotypes.VolumeConfig{}, errors.Errorf("undefined volume %q", source)
+		return "", composegotypes.VolumeConfig{}, fmt.Errorf("undefined volume %q", source)
 	}
 	return ns.Resolve(source, projectVolume.Name), projectVolume, nil
 }
@@ -113,12 +114,12 @@ func resolveServiceFileReferencesInternal(
 	for _, reference := range references {
 		meta, ok := metaByKey[reference.Source]
 		if !ok {
-			return nil, errors.Errorf("undefined %s %q", resourceType, reference.Source)
+			return nil, fmt.Errorf("undefined %s %q", resourceType, reference.Source)
 		}
 		target := cmp.Or(reference.Target, reference.Source)
 		mode, err := fileModeOrDefaultInternal(reference.Mode)
 		if err != nil {
-			return nil, errors.WrapIff(err, "invalid %s %q mode", resourceType, reference.Source)
+			return nil, fmt.Errorf("invalid %s %q mode: %w", resourceType, reference.Source, err)
 		}
 		resolved = append(resolved, resolvedFileReferenceInternal{
 			meta:   meta,
@@ -197,7 +198,7 @@ func resolveFileObjectContentInternal(
 	if fileConfig.Environment != "" {
 		value, ok := environment.Resolve(fileConfig.Environment)
 		if !ok {
-			return nil, errors.Errorf("environment variable %s not set", fileConfig.Environment)
+			return nil, fmt.Errorf("environment variable %s not set", fileConfig.Environment)
 		}
 		return []byte(value), nil
 	}
@@ -216,7 +217,7 @@ func fileModeOrDefaultInternal(mode *composegotypes.FileMode) (os.FileMode, erro
 		return 0o444, nil
 	}
 	if *mode < 0 || *mode > composegotypes.FileMode(math.MaxUint32) {
-		return 0, errors.Errorf("file mode %d is outside the uint32 range", *mode)
+		return 0, fmt.Errorf("file mode %d is outside the uint32 range", *mode)
 	}
 	return os.FileMode(uint32(*mode)), nil
 }

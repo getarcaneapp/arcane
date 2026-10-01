@@ -4,9 +4,8 @@ package startup
 
 import (
 	"context"
+	"fmt"
 	"runtime"
-
-	"emperror.dev/errors"
 )
 
 var (
@@ -15,5 +14,5 @@ var (
 )
 
 func reexecWithRuntimeIdentityInternal(_ context.Context, req runtimeIdentityRequest) error {
-	return errors.Errorf("runtime identity switching is only supported on linux, current platform is %s", runtime.GOOS)
+	return fmt.Errorf("runtime identity switching is only supported on linux, current platform is %s", runtime.GOOS)
 }

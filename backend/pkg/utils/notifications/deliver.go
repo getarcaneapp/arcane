@@ -3,9 +3,10 @@ package notifications
 import (
 	"cmp"
 	"context"
+	"errors"
+	"fmt"
 	"net/mail"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 )
 
@@ -78,7 +79,7 @@ func deliverDiscord(ctx context.Context, config database.JSON, c Content) error 
 		return err
 	}
 	if err := SendDiscord(ctx, discordConfig, c.Text[MessageFormatMarkdown]); err != nil {
-		return errors.WrapIf(err, "failed to send Discord notification")
+		return fmt.Errorf("failed to send Discord notification: %w", err)
 	}
 	return nil
 }
@@ -95,11 +96,11 @@ func deliverEmail(ctx context.Context, config database.JSON, c Content) error {
 		return errors.New("no recipient email addresses configured")
 	}
 	if _, err := mail.ParseAddress(emailConfig.FromAddress); err != nil {
-		return errors.WrapIf(err, "invalid from address")
+		return fmt.Errorf("invalid from address: %w", err)
 	}
 	for _, addr := range emailConfig.ToAddresses {
 		if _, err := mail.ParseAddress(addr); err != nil {
-			return errors.WrapIff(err, "invalid to address %s", addr)
+			return fmt.Errorf("invalid to address %s: %w", addr, err)
 		}
 	}
 	if err := DecryptStringCredential(&emailConfig.SMTPPassword); err != nil {
@@ -113,7 +114,7 @@ func deliverEmail(ctx context.Context, config database.JSON, c Content) error {
 		return err
 	}
 	if err := SendEmail(ctx, emailConfig, subject, htmlBody); err != nil {
-		return errors.WrapIf(err, "failed to send email")
+		return fmt.Errorf("failed to send email: %w", err)
 	}
 	return nil
 }
@@ -134,7 +135,7 @@ func deliverTelegram(ctx context.Context, config database.JSON, c Content) error
 	}
 	telegramConfig.ParseMode = cmp.Or(telegramConfig.ParseMode, "HTML")
 	if err := SendTelegram(ctx, telegramConfig, c.Text[MessageFormatHTML]); err != nil {
-		return errors.WrapIf(err, "failed to send Telegram notification")
+		return fmt.Errorf("failed to send Telegram notification: %w", err)
 	}
 	return nil
 }
@@ -162,7 +163,7 @@ func deliverSignal(ctx context.Context, config database.JSON, c Content) error {
 		return err
 	}
 	if err := SendSignal(ctx, signalConfig, c.Text[MessageFormatPlain]); err != nil {
-		return errors.WrapIf(err, "failed to send Signal notification")
+		return fmt.Errorf("failed to send Signal notification: %w", err)
 	}
 	return nil
 }
@@ -173,7 +174,7 @@ func deliverSlack(ctx context.Context, config database.JSON, c Content) error {
 		return err
 	}
 	if err := SendSlack(ctx, slackConfig, c.Text[MessageFormatSlack]); err != nil {
-		return errors.WrapIf(err, "failed to send Slack notification")
+		return fmt.Errorf("failed to send Slack notification: %w", err)
 	}
 	return nil
 }
@@ -184,7 +185,7 @@ func deliverNtfy(ctx context.Context, config database.JSON, c Content) error {
 		return err
 	}
 	if err := SendNtfy(ctx, ntfyConfig, c.Text[MessageFormatPlain]); err != nil {
-		return errors.WrapIf(err, "failed to send Ntfy notification")
+		return fmt.Errorf("failed to send Ntfy notification: %w", err)
 	}
 	return nil
 }
@@ -206,7 +207,7 @@ func deliverPushover(ctx context.Context, config database.JSON, c Content) error
 		pushoverConfig.Title = c.DefaultTitle
 	}
 	if err := SendPushover(ctx, pushoverConfig, c.Text[MessageFormatPlain]); err != nil {
-		return errors.WrapIf(err, "failed to send Pushover notification")
+		return fmt.Errorf("failed to send Pushover notification: %w", err)
 	}
 	return nil
 }
@@ -220,7 +221,7 @@ func deliverGotify(ctx context.Context, config database.JSON, c Content) error {
 		gotifyConfig.Title = c.DefaultTitle
 	}
 	if err := SendGotify(ctx, gotifyConfig, c.Text[MessageFormatPlain]); err != nil {
-		return errors.WrapIf(err, "failed to send Gotify notification")
+		return fmt.Errorf("failed to send Gotify notification: %w", err)
 	}
 	return nil
 }
@@ -231,7 +232,7 @@ func deliverMatrix(ctx context.Context, config database.JSON, c Content) error {
 		return err
 	}
 	if err := SendMatrix(ctx, matrixConfig, c.Text[MessageFormatPlain]); err != nil {
-		return errors.WrapIf(err, "failed to send Matrix notification")
+		return fmt.Errorf("failed to send Matrix notification: %w", err)
 	}
 	return nil
 }
@@ -248,7 +249,7 @@ func deliverGoogleChat(ctx context.Context, config database.JSON, c Content) err
 		return err
 	}
 	if err := SendGoogleChat(ctx, googleChatConfig, c.Text[MessageFormatPlain]); err != nil {
-		return errors.WrapIf(err, "failed to send Google Chat notification")
+		return fmt.Errorf("failed to send Google Chat notification: %w", err)
 	}
 	return nil
 }
@@ -262,7 +263,7 @@ func deliverGeneric(ctx context.Context, config database.JSON, c Content) error 
 		return errors.New("webhook URL not configured")
 	}
 	if err := SendGenericWithTitle(ctx, genericConfig, c.Title, c.Text[MessageFormatPlain], c.Vars); err != nil {
-		return errors.WrapIf(err, "failed to send Generic webhook notification")
+		return fmt.Errorf("failed to send Generic webhook notification: %w", err)
 	}
 	return nil
 }

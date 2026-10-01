@@ -251,8 +251,7 @@ func Table(headers []string, rows [][]string) {
 	t := table.New().Border(lipgloss.NormalBorder()).Headers(headers...)
 
 	if shouldColor() {
-		t = t.
-			BorderStyle(tableBorder).
+		t = t.BorderStyle(tableBorder).
 			StyleFunc(func(row, col int) lipgloss.Style {
 				switch {
 				case row == table.HeaderRow:

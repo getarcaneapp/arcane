@@ -2,13 +2,14 @@ package federated
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
 	"uuid"
 
-	"emperror.dev/errors"
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/auth"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
@@ -92,7 +93,7 @@ func (s *FederatedCredentialService) Create(ctx context.Context, callerUserID st
 			IsServiceAccount: true,
 		}
 		if err := tx.Create(&serviceUser).Error; err != nil {
-			return errors.WrapIf(err, "failed to create federated service user")
+			return fmt.Errorf("failed to create federated service user: %w", err)
 		}
 
 		created = FederatedCredential{
@@ -111,7 +112,7 @@ func (s *FederatedCredentialService) Create(ctx context.Context, callerUserID st
 			ExpiresAt:       normalized.ExpiresAt,
 		}
 		if err := tx.Create(&created).Error; err != nil {
-			return errors.WrapIf(err, "failed to create federated credential")
+			return fmt.Errorf("failed to create federated credential: %w", err)
 		}
 
 		assignment := role.UserRoleAssignment{
@@ -121,7 +122,7 @@ func (s *FederatedCredentialService) Create(ctx context.Context, callerUserID st
 			Source:        role.RoleAssignmentSourceManual,
 		}
 		if err := tx.Create(&assignment).Error; err != nil {
-			return errors.WrapIf(err, "failed to create federated role assignment")
+			return fmt.Errorf("failed to create federated role assignment: %w", err)
 		}
 		return nil
 	})
@@ -154,7 +155,7 @@ func (s *FederatedCredentialService) List(ctx context.Context, params pagination
 
 	resp, err := pagination.PaginateAndSortDB(params, query, &credentials)
 	if err != nil {
-		return nil, pagination.Response{}, errors.WrapIf(err, "failed to paginate federated credentials")
+		return nil, pagination.Response{}, fmt.Errorf("failed to paginate federated credentials: %w", err)
 	}
 
 	result := make([]federatedtypes.FederatedCredential, len(credentials))
@@ -175,7 +176,7 @@ func (s *FederatedCredentialService) Get(ctx context.Context, id string) (*feder
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, common.Classify(common.ErrFederatedCredentialNotFound, errors.New("federated credential not found"))
 		}
-		return nil, errors.WrapIf(err, "failed to get federated credential")
+		return nil, fmt.Errorf("failed to get federated credential: %w", err)
 	}
 	return new(toFederatedCredentialDTOInternal(&credential)), nil
 }
@@ -186,7 +187,7 @@ func (s *FederatedCredentialService) Update(ctx context.Context, callerUserID, i
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, common.Classify(common.ErrFederatedCredentialNotFound, errors.New("federated credential not found"))
 		}
-		return nil, errors.WrapIf(err, "failed to load federated credential")
+		return nil, fmt.Errorf("failed to load federated credential: %w", err)
 	}
 
 	updated, roleChanged, err := applyFederatedCredentialUpdateInternal(credential, req)
@@ -202,20 +203,20 @@ func (s *FederatedCredentialService) Update(ctx context.Context, callerUserID, i
 
 	err = dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
 		if err := tx.Save(&updated).Error; err != nil {
-			return errors.WrapIf(err, "failed to update federated credential")
+			return fmt.Errorf("failed to update federated credential: %w", err)
 		}
 		if revokeActiveSessions {
 			now := time.Now()
 			if err := tx.Model(&session.UserSession{}).
 				Where("federated_credential_id = ? AND revoked_at IS NULL", updated.ID).
 				Updates(map[string]any{"revoked_at": now, "updated_at": now}).Error; err != nil {
-				return errors.WrapIf(err, "failed to revoke federated credential sessions")
+				return fmt.Errorf("failed to revoke federated credential sessions: %w", err)
 			}
 		}
 		if roleChanged {
 			if err := tx.Where("user_id = ? AND source = ?", updated.IdentityUserID, role.RoleAssignmentSourceManual).
 				Delete(&role.UserRoleAssignment{}).Error; err != nil {
-				return errors.WrapIf(err, "failed to clear federated role assignment")
+				return fmt.Errorf("failed to clear federated role assignment: %w", err)
 			}
 			assignment := role.UserRoleAssignment{
 				UserID:        updated.IdentityUserID,
@@ -224,7 +225,7 @@ func (s *FederatedCredentialService) Update(ctx context.Context, callerUserID, i
 				Source:        role.RoleAssignmentSourceManual,
 			}
 			if err := tx.Create(&assignment).Error; err != nil {
-				return errors.WrapIf(err, "failed to update federated role assignment")
+				return fmt.Errorf("failed to update federated role assignment: %w", err)
 			}
 		}
 		return nil
@@ -247,15 +248,15 @@ func (s *FederatedCredentialService) Delete(ctx context.Context, id string) erro
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return common.Classify(common.ErrFederatedCredentialNotFound, errors.New("federated credential not found"))
 		}
-		return errors.WrapIf(err, "failed to load federated credential")
+		return fmt.Errorf("failed to load federated credential: %w", err)
 	}
 
 	err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
 		if err := tx.Delete(&FederatedCredential{}, "id = ?", credential.ID).Error; err != nil {
-			return errors.WrapIf(err, "failed to delete federated credential")
+			return fmt.Errorf("failed to delete federated credential: %w", err)
 		}
 		if err := tx.Delete(&common.User{}, "id = ?", credential.IdentityUserID).Error; err != nil {
-			return errors.WrapIf(err, "failed to delete federated service user")
+			return fmt.Errorf("failed to delete federated service user: %w", err)
 		}
 		return nil
 	})

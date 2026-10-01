@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"log/slog"
 	"maps"
@@ -20,7 +21,6 @@ import (
 	"time"
 	"uuid"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
@@ -30,6 +30,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/concurrency"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/validation"
+	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/getarcaneapp/arcane/types/v2/features"
 	settingstypes "github.com/getarcaneapp/arcane/types/v2/settings"
 	"github.com/samber/mo"
@@ -94,12 +95,12 @@ func NewSettingsService(ctx context.Context, db *database.DB) (*SettingsService,
 
 	err := svc.LoadDatabaseSettings(ctx)
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to load settings")
+		return nil, fmt.Errorf("failed to load settings: %w", err)
 	}
 
 	err = svc.setupInstanceID(ctx)
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to setup instance ID")
+		return nil, fmt.Errorf("failed to setup instance ID: %w", err)
 	}
 
 	go svc.runEffectsInternal()
@@ -145,7 +146,7 @@ func (s *SettingsService) NotifySettingsChanges(ctx context.Context, keys ...str
 	for _, key := range keys {
 		value, _, _, err := cfg.FieldByKey(key)
 		if err != nil {
-			return errors.WrapIff(err, "load changed setting '%s'", key)
+			return fmt.Errorf("load changed setting '%s': %w", key, err)
 		}
 		updates = append(updates, libarcane.SettingUpdate{Key: key, Value: value})
 	}
@@ -179,7 +180,7 @@ func (s *SettingsService) LoadDatabaseSettings(ctx context.Context) (err error) 
 
 func (s *SettingsService) refreshSettingsCacheInternal(ctx context.Context) error {
 	if err := s.LoadDatabaseSettings(ctx); err != nil {
-		return errors.WrapIf(err, "failed to refresh settings cache")
+		return fmt.Errorf("failed to refresh settings cache: %w", err)
 	}
 
 	return nil
@@ -322,18 +323,17 @@ func (s *SettingsService) loadDatabaseSettingsInternal(ctx context.Context, db *
 	var loaded []SettingVariable
 	queryCtx, queryCancel := context.WithTimeout(ctx, 10*time.Second)
 	defer queryCancel()
-	err := db.
-		WithContext(queryCtx).
+	err := db.WithContext(queryCtx).
 		Find(&loaded).Error
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to load configuration from the database")
+		return nil, fmt.Errorf("failed to load configuration from the database: %w", err)
 	}
 
 	for _, v := range loaded {
 		err = dest.UpdateField(v.Key, v.Value, false)
 
 		if err != nil && !errors.Is(err, SettingKeyNotFoundError{}) {
-			return nil, errors.WrapIff(err, "failed to process settings for key '%s'", v.Key)
+			return nil, fmt.Errorf("failed to process settings for key '%s': %w", v.Key, err)
 		}
 	}
 
@@ -349,7 +349,7 @@ func (s *SettingsService) loadDatabaseConfigFromEnv(ctx context.Context, db *dat
 	// Fetch all settings once to avoid N+1 queries for internal keys
 	var allSettings []SettingVariable
 	if err := db.WithContext(ctx).Find(&allSettings).Error; err != nil {
-		return nil, errors.WrapIf(err, "failed to load settings for env config")
+		return nil, fmt.Errorf("failed to load settings for env config: %w", err)
 	}
 	settingsMap := make(map[string]string, len(allSettings))
 	for _, s := range allSettings {
@@ -502,7 +502,7 @@ func validateSettingValueInternal(key, value string) error {
 	}
 	for _, definition := range features.All() {
 		if definition.SettingKey == key && value != "true" && value != "false" {
-			return common.Classify(common.ErrValidation, errors.Errorf("%s must be true or false", key))
+			return common.Classify(common.ErrValidation, fmt.Errorf("%s must be true or false", key))
 		}
 	}
 	return nil
@@ -513,7 +513,7 @@ func (s *SettingsService) UpdateSetting(ctx context.Context, key, value string) 
 		return err
 	}
 	if err := libarcane.ValidateCronSetting(key, value); err != nil {
-		return errors.WrapIff(err, "invalid cron expression for %s", key)
+		return fmt.Errorf("invalid cron expression for %s: %w", key, err)
 	}
 	s.writes.Lock()
 	defer s.writes.Unlock()
@@ -640,7 +640,7 @@ func (s *SettingsService) updateSettingsInternal(ctx context.Context, updates se
 		}
 		for _, field := range required {
 			if strings.TrimSpace(field.value) == "" {
-				return settingsUpdateResultInternal{}, common.Classify(common.ErrValidation, errors.WithDetails(errors.Errorf("Enabling OIDC requires %s", field.key), "field", field.key))
+				return settingsUpdateResultInternal{}, common.Classify(common.ErrValidation, &base.FieldError{Field: field.key, Err: fmt.Errorf("Enabling OIDC requires %s", field.key)}) //nolint:staticcheck // Preserve the existing error message.
 			}
 		}
 	}
@@ -711,7 +711,7 @@ func (s *SettingsService) prepareUpdateValues(updates settingstypes.Update, cfg,
 			}
 
 			if err := cfg.UpdateField(key, value, false); err != nil {
-				return nil, errors.WrapIff(err, "failed to update in-memory config for key '%s'", key)
+				return nil, fmt.Errorf("failed to update in-memory config for key '%s': %w", key, err)
 			}
 
 			valuesToUpdate = append(valuesToUpdate, SettingVariable{Key: key, Value: value})
@@ -720,7 +720,7 @@ func (s *SettingsService) prepareUpdateValues(updates settingstypes.Update, cfg,
 		}
 
 		if err := libarcane.ValidateCronSetting(key, value); err != nil {
-			return nil, errors.WrapIff(err, "invalid cron expression for %s", key)
+			return nil, fmt.Errorf("invalid cron expression for %s: %w", key, err)
 		}
 
 		var valueToSave string
@@ -739,7 +739,7 @@ func (s *SettingsService) prepareUpdateValues(updates settingstypes.Update, cfg,
 			continue
 		}
 		if err != nil {
-			return nil, errors.WrapIff(err, "failed to update in-memory config for key '%s'", key)
+			return nil, fmt.Errorf("failed to update in-memory config for key '%s': %w", key, err)
 		}
 
 		valuesToUpdate = append(valuesToUpdate, SettingVariable{Key: key, Value: valueToSave})
@@ -773,7 +773,7 @@ func (s *SettingsService) persistSettings(ctx context.Context, values []SettingV
 				setting.Value = normalization.Text(setting.Value, true, true)
 			}
 			if err := tx.Save(&setting).Error; err != nil {
-				return errors.WrapIff(err, "failed to update setting %s", setting.Key)
+				return fmt.Errorf("failed to update setting %s: %w", setting.Key, err)
 			}
 		}
 		return nil
@@ -805,13 +805,13 @@ func (s *SettingsService) EnsureDefaultSettings(ctx context.Context) error {
 			switch {
 			case errors.Is(err, gorm.ErrRecordNotFound):
 				if err := tx.Create(&defaultSetting).Error; err != nil {
-					return errors.WrapIff(err, "failed to create default setting %s", defaultSetting.Key)
+					return fmt.Errorf("failed to create default setting %s: %w", defaultSetting.Key, err)
 				}
 			case err != nil:
-				return errors.WrapIff(err, "failed to check for existing setting %s", defaultSetting.Key)
+				return fmt.Errorf("failed to check for existing setting %s: %w", defaultSetting.Key, err)
 			case slices.Contains(retiredSettingValuesInternal[defaultSetting.Key], existing.Value):
 				if err := tx.Model(&SettingVariable{}).Where("key = ?", defaultSetting.Key).Update("value", defaultSetting.Value).Error; err != nil {
-					return errors.WrapIff(err, "failed to replace retired default for setting %s", defaultSetting.Key)
+					return fmt.Errorf("failed to replace retired default for setting %s: %w", defaultSetting.Key, err)
 				}
 			}
 		}
@@ -838,7 +838,7 @@ func (s *SettingsService) PruneUnknownSettings(ctx context.Context) error {
 
 	result := s.db.WithContext(ctx).Where("key NOT IN ?", keys).Delete(&SettingVariable{})
 	if result.Error != nil {
-		return errors.WrapIf(result.Error, "failed to prune unknown settings")
+		return fmt.Errorf("failed to prune unknown settings: %w", result.Error)
 	}
 	if result.RowsAffected > 0 {
 		slog.InfoContext(ctx, "Pruned unknown settings", "count", result.RowsAffected)
@@ -922,15 +922,15 @@ func (s *SettingsService) upsertEnvSetting(ctx context.Context, tx *gorm.DB, key
 	case errors.Is(err, gorm.ErrRecordNotFound):
 		newVar := SettingVariable{Key: key, Value: envVal}
 		if err := tx.Create(&newVar).Error; err != nil {
-			return errors.WrapIff(err, "persist env setting %s", key)
+			return fmt.Errorf("persist env setting %s: %w", key, err)
 		}
 		slog.DebugContext(ctx, "Created setting from environment", "key", key)
 	case err != nil:
-		return errors.WrapIff(err, "check setting %s", key)
+		return fmt.Errorf("check setting %s: %w", key, err)
 	default:
 		if existing.Value != envVal {
 			if err := tx.Model(&existing).Update("value", envVal).Error; err != nil {
-				return errors.WrapIff(err, "update env setting %s", key)
+				return fmt.Errorf("update env setting %s: %w", key, err)
 			}
 			slog.DebugContext(ctx, "Updated setting from environment", "key", key)
 		}
@@ -971,7 +971,7 @@ func (s *SettingsService) setupInstanceID(ctx context.Context) error {
 
 	err := s.UpdateSetting(ctx, "instanceId", uuid.New().String())
 	if err != nil {
-		return errors.WrapIf(err, "failed to set instance ID in database")
+		return fmt.Errorf("failed to set instance ID in database: %w", err)
 	}
 
 	return nil
@@ -1060,7 +1060,7 @@ func (s *SettingsService) EnsureEncryptionKey(ctx context.Context) (string, erro
 		err := tx.Where("key = ?", keyName).First(&sv).Error
 
 		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-			return errors.WrapIf(err, "failed to load encryption key")
+			return fmt.Errorf("failed to load encryption key: %w", err)
 		}
 
 		if sv.Value != "" {
@@ -1075,7 +1075,7 @@ func (s *SettingsService) EnsureEncryptionKey(ctx context.Context) (string, erro
 
 		if notFound {
 			if createErr := tx.Create(&SettingVariable{Key: keyName, Value: generatedKey}).Error; createErr != nil {
-				return errors.WrapIf(createErr, "failed to persist encryption key")
+				return fmt.Errorf("failed to persist encryption key: %w", createErr)
 			}
 			return nil
 		}
@@ -1083,7 +1083,7 @@ func (s *SettingsService) EnsureEncryptionKey(ctx context.Context) (string, erro
 		if updErr := tx.Model(&SettingVariable{}).
 			Where("key = ?", keyName).
 			Update("value", generatedKey).Error; updErr != nil {
-			return errors.WrapIf(updErr, "failed to update encryption key")
+			return fmt.Errorf("failed to update encryption key: %w", updErr)
 		}
 		return nil
 	})
@@ -1100,7 +1100,10 @@ func (s *SettingsService) EnsureJwtSigningKey(ctx context.Context) (*mldsa.Priva
 		return nil, err
 	}
 	key, err := mldsa.NewPrivateKey(mldsa.MLDSA87(), seed)
-	return key, errors.WrapIf(err, "failed to load jwt signing key")
+	if err != nil {
+		return key, fmt.Errorf("failed to load jwt signing key: %w", err)
+	}
+	return key, nil
 }
 
 func (s *SettingsService) EnsureBrowserSessionSigningKey(ctx context.Context) ([]byte, error) {
@@ -1120,39 +1123,45 @@ func (s *SettingsService) ensureEncryptedKeyInternal(ctx context.Context, keyNam
 		var sv SettingVariable
 		err := tx.Where("key = ?", keyName).First(&sv).Error
 		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-			return errors.WrapIf(err, "failed to load signing key")
+			return fmt.Errorf("failed to load signing key: %w", err)
 		}
 
 		if sv.Value != "" {
 			decoded, decErr := libcrypto.Decrypt(sv.Value)
 			if decErr != nil {
-				return errors.WrapIf(decErr, "failed to decrypt signing key")
+				return fmt.Errorf("failed to decrypt signing key: %w", decErr)
 			}
 			key, decErr = base64.StdEncoding.DecodeString(decoded)
 			if decErr != nil {
-				return errors.WrapIf(decErr, "failed to decode signing key")
+				return fmt.Errorf("failed to decode signing key: %w", decErr)
 			}
 			if len(key) != size {
-				return errors.Errorf("invalid signing key length: got %d, want %d", len(key), size)
+				return fmt.Errorf("invalid signing key length: got %d, want %d", len(key), size)
 			}
 			return nil
 		}
 
 		key = make([]byte, size)
 		if _, genErr := rand.Read(key); genErr != nil {
-			return errors.WrapIf(genErr, "failed to generate signing key")
+			return fmt.Errorf("failed to generate signing key: %w", genErr)
 		}
 		encrypted, encErr := libcrypto.Encrypt(base64.StdEncoding.EncodeToString(key))
 		if encErr != nil {
-			return errors.WrapIf(encErr, "failed to encrypt signing key")
+			return fmt.Errorf("failed to encrypt signing key: %w", encErr)
 		}
 
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return errors.WrapIf(tx.Create(&SettingVariable{Key: keyName, Value: encrypted}).Error, "failed to persist signing key")
+			if err := tx.Create(&SettingVariable{Key: keyName, Value: encrypted}).Error; err != nil {
+				return fmt.Errorf("failed to persist signing key: %w", err)
+			}
+			return nil
 		}
-		return errors.WrapIf(tx.Model(&SettingVariable{}).
+		if err := tx.Model(&SettingVariable{}).
 			Where("key = ?", keyName).
-			Update("value", encrypted).Error, "failed to update signing key")
+			Update("value", encrypted).Error; err != nil {
+			return fmt.Errorf("failed to update signing key: %w", err)
+		}
+		return nil
 	})
 	if err != nil {
 		return nil, err
@@ -1180,7 +1189,7 @@ func (s *SettingsService) NormalizeProjectsDirectory(ctx context.Context, projec
 		return nil
 	}
 	if err != nil {
-		return errors.WrapIf(err, "failed to load projectsDirectory setting")
+		return fmt.Errorf("failed to load projectsDirectory setting: %w", err)
 	}
 
 	value := strings.TrimSpace(projectsDirSetting.Value)
@@ -1193,11 +1202,11 @@ func (s *SettingsService) NormalizeProjectsDirectory(ctx context.Context, projec
 	cwd, _ := os.Getwd()
 	absPath, absErr := filepath.Abs(value)
 	if absErr != nil {
-		return errors.WrapIf(absErr, "failed to resolve relative path to absolute")
+		return fmt.Errorf("failed to resolve relative path to absolute: %w", absErr)
 	}
 	slog.InfoContext(ctx, "Normalizing projects directory from relative to absolute path", "from", value, "to", absPath, "base", cwd)
 	if err := s.updateSettingValueNoRefreshInternal(ctx, "projectsDirectory", absPath); err != nil {
-		return errors.WrapIf(err, "failed to update projectsDirectory")
+		return fmt.Errorf("failed to update projectsDirectory: %w", err)
 	}
 	if err := s.refreshSettingsCacheInternal(context.WithoutCancel(ctx)); err != nil {
 		return err
@@ -1228,7 +1237,7 @@ func (s *SettingsService) NormalizeBuildsDirectory(ctx context.Context) error {
 		return nil
 	}
 	if err != nil {
-		return errors.WrapIf(err, "failed to load buildsDirectory setting")
+		return fmt.Errorf("failed to load buildsDirectory setting: %w", err)
 	}
 
 	value := strings.TrimSpace(buildsDirSetting.Value)
@@ -1240,11 +1249,11 @@ func (s *SettingsService) NormalizeBuildsDirectory(ctx context.Context) error {
 	cwd, _ := os.Getwd()
 	absPath, absErr := filepath.Abs(value)
 	if absErr != nil {
-		return errors.WrapIf(absErr, "failed to resolve relative path to absolute")
+		return fmt.Errorf("failed to resolve relative path to absolute: %w", absErr)
 	}
 	slog.InfoContext(ctx, "Normalizing builds directory from relative to absolute path", "from", value, "to", absPath, "base", cwd)
 	if err := s.updateSettingValueNoRefreshInternal(ctx, buildsKey, absPath); err != nil {
-		return errors.WrapIf(err, "failed to update buildsDirectory")
+		return fmt.Errorf("failed to update buildsDirectory: %w", err)
 	}
 	if err := s.refreshSettingsCacheInternal(context.WithoutCancel(ctx)); err != nil {
 		return err

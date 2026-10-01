@@ -2,10 +2,10 @@ package job
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
@@ -355,8 +355,8 @@ func TestJobService_Submit_PersistsImageUpdateWatcherRun(t *testing.T) {
 	jobSvc := newJobServiceForTestInternal(t, db, settingsSvc, &config.Config{})
 	jobSvc.SetScheduler(ctx, scheduler)
 	require.NoError(t, db.AutoMigrate(&common.User{}, &role.Role{}, &role.UserRoleAssignment{}))
-	require.NoError(t, db.Create(&common.User{BaseModel: database.BaseModel{ID: "operator"}, Username: "operator"}).Error)
-	require.NoError(t, db.Create(&role.Role{BaseModel: database.BaseModel{ID: "jobs-manager"}, Name: "Jobs manager", Permissions: database.StringSlice{authz.PermJobsManage}}).Error)
+	require.NoError(t, db.Create(&common.User{ID: "operator", Username: "operator"}).Error)
+	require.NoError(t, db.Create(&role.Role{ID: "jobs-manager", Name: "Jobs manager", Permissions: database.StringSlice{authz.PermJobsManage}}).Error)
 	require.NoError(t, db.Create(&role.UserRoleAssignment{UserID: "operator", RoleID: "jobs-manager"}).Error)
 	jobSvc.roles = role.NewRoleService(db)
 	run, err := jobSvc.Submit(ctx, schedulertypes.Request{JobID: "image-polling", EnvironmentID: "0", Trigger: "manual", RequestedBy: "operator"})

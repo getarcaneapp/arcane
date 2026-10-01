@@ -1,9 +1,9 @@
 package version
 
 import (
+	"fmt"
 	"net/http"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/logger"
@@ -32,7 +32,7 @@ var VersionCmd = &cobra.Command{
 		logger.GetLogger().Debug("Sending request", "endpoint", clitypes.AppVersionEndpoint)
 		result, err := c.DoJSON[version.Info](cmd.Context(), http.MethodGet, clitypes.AppVersionEndpoint, nil)
 		if err != nil {
-			return errors.WrapIf(err, "failed to get version")
+			return fmt.Errorf("failed to get version: %w", err)
 		}
 
 		logger.GetLogger().Debug("Parsed version data", "result", result)

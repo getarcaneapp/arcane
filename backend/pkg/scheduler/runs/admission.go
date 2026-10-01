@@ -2,12 +2,12 @@ package runs
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"sync"
 	"time"
 	"uuid"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/francis"
 	st "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	"github.com/italypaleale/francis/actor"

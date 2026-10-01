@@ -2,13 +2,13 @@ package bootstrap
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net"
 	"net/http"
 	"path"
 	"strings"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/api"
 	"github.com/getarcaneapp/arcane/backend/v2/api/ws"
 	"github.com/getarcaneapp/arcane/backend/v2/frontend"

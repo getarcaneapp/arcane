@@ -1,9 +1,9 @@
 package notifications
 
 import (
+	"fmt"
 	"strings"
 
-	"emperror.dev/errors"
 	"github.com/nicholas-fedor/shoutrrr"
 	shoutrrrTypes "github.com/nicholas-fedor/shoutrrr/pkg/types"
 )
@@ -22,11 +22,11 @@ func SanitizeForEmail(text string) string {
 func sendShoutrrrInternal(provider, destinationURL, message string, params *shoutrrrTypes.Params) error {
 	sender, err := shoutrrr.CreateSenderWithOptions(shoutrrrTypes.SenderOptions{}, destinationURL)
 	if err != nil {
-		return errors.WrapIff(err, "failed to create shoutrrr %s sender", provider)
+		return fmt.Errorf("failed to create shoutrrr %s sender: %w", provider, err)
 	}
 	for _, err := range sender.Send(message, params) {
 		if err != nil {
-			return errors.WrapIff(err, "failed to send %s message via shoutrrr", provider)
+			return fmt.Errorf("failed to send %s message via shoutrrr: %w", provider, err)
 		}
 	}
 	return nil

@@ -2,13 +2,13 @@ package projects
 
 import (
 	"context"
-	stderrors "errors"
+	"errors"
+	"fmt"
 	"log/slog"
 	"maps"
 	"os"
 	"strings"
 
-	"emperror.dev/errors"
 	composetemplate "github.com/compose-spec/compose-go/v2/template"
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	cerrdefs "github.com/containerd/errdefs"
@@ -35,7 +35,7 @@ func PlanVolumeMigration(ctx context.Context, dockerClient *client.Client, compo
 
 	explicitVolumeNames, err := composeVolumeKeysWithExplicitNameInternal(composeProject.ComposeFiles)
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to parse compose volume names")
+		return nil, fmt.Errorf("failed to parse compose volume names: %w", err)
 	}
 
 	entries, err := collectProjectRenameVolumeEntriesInternal(ctx, dockerClient, composeProject.Volumes, explicitVolumeNames, oldComposeName, newComposeName)
@@ -84,7 +84,7 @@ func inspectProjectRenameVolumeEntryInternal(ctx context.Context, dockerClient *
 		if cerrdefs.IsNotFound(err) {
 			return volumetypes.RenameEntry{}, false, nil
 		}
-		return volumetypes.RenameEntry{}, false, errors.WrapIff(err, "inspect source volume %s", oldName)
+		return volumetypes.RenameEntry{}, false, fmt.Errorf("inspect source volume %s: %w", oldName, err)
 	}
 	if err := volumes.EnsureRenameSourceDetached(ctx, dockerClient, oldName); err != nil {
 		return volumetypes.RenameEntry{}, false, err
@@ -122,7 +122,7 @@ func renamedVolumeCreateOptionsInternal(config composetypes.VolumeConfig, oldLab
 	maps.Copy(labels, config.CustomLabels)
 	hash, err := composepkg.VolumeHash(config)
 	if err != nil {
-		return client.VolumeCreateOptions{}, errors.WrapIff(err, "hash target volume %s", config.Name)
+		return client.VolumeCreateOptions{}, fmt.Errorf("hash target volume %s: %w", config.Name, err)
 	}
 	labels[api.ConfigHashLabel] = hash
 	return client.VolumeCreateOptions{Name: config.Name, Driver: config.Driver, DriverOpts: config.DriverOpts, Labels: labels}, nil
@@ -151,12 +151,12 @@ func composeVolumeKeysWithExplicitNameInFileInternal(path string) (map[string]st
 	// directory (e.g. via include), so no single confinement root covers them.
 	content, err := os.ReadFile(path)
 	if err != nil {
-		return nil, errors.WrapIf(err, "read compose file")
+		return nil, fmt.Errorf("read compose file: %w", err)
 	}
 
 	composeData := map[string]any{}
 	if err := yaml.Unmarshal(content, &composeData); err != nil {
-		return nil, errors.WrapIf(err, "parse compose file")
+		return nil, fmt.Errorf("parse compose file: %w", err)
 	}
 
 	rawVolumes, ok := composeData["volumes"]
@@ -197,7 +197,7 @@ func ApplyRenameVolumeMigration(ctx context.Context, operations projecttypes.Ren
 		return nil
 	}
 	if err := volumeMigration.Apply(ctx); err != nil {
-		return errors.WrapIf(err, "failed to rename project volumes")
+		return fmt.Errorf("failed to rename project volumes: %w", err)
 	}
 	*applied = true
 	return operations.WriteJournal(ctx, renameJournal, projecttypes.RenameJournalPhaseTargetsCopied)
@@ -213,8 +213,7 @@ func FinalizeRenameAfterCommit(ctx context.Context, operations projecttypes.Rena
 	if committer, ok := volumeMigration.(volumetypes.Committer); ok {
 		if err := committer.Commit(ctx); err != nil {
 			slog.WarnContext(ctx, "failed to clean up project source volumes after committed rename", "projectID", projectID, "error", err)
-			var cleanupErr *volumetypes.SourceCleanupError
-			if errors.As(err, &cleanupErr) {
+			if _, ok := errors.AsType[*volumetypes.SourceCleanupError](err); ok {
 				if writeErr := operations.WriteJournal(ctx, renameJournal, projecttypes.RenameJournalPhaseSourceCleanupPending); writeErr != nil {
 					slog.WarnContext(ctx, "failed to mark project rename source cleanup pending", "projectID", projectID, "error", writeErr)
 				}
@@ -268,13 +267,11 @@ func cleanupRenameJournalSourcesInternal(ctx context.Context, operations project
 	}
 
 	if err := volumes.EnsureTargetsReadyForCleanup(ctx, dockerClient, journal.Volumes); err != nil {
-		var missingWithSource *volumetypes.TargetMissingWithSourceError
-		if errors.As(err, &missingWithSource) {
+		if missingWithSource, ok := errors.AsType[*volumetypes.TargetMissingWithSourceError](err); ok {
 			slog.WarnContext(ctx, "rolling back project rename because target volume is missing and source volume remains", "projectID", journal.ProjectID, "sourceVolume", missingWithSource.SourceVolume, "targetVolume", missingWithSource.TargetVolume)
 			return rollbackRenameJournalInternal(ctx, operations, journal)
 		}
-		var externallyRemoved *volumetypes.VolumesExternallyRemovedError
-		if errors.As(err, &externallyRemoved) {
+		if externallyRemoved, ok := errors.AsType[*volumetypes.VolumesExternallyRemovedError](err); ok {
 			slog.WarnContext(ctx, "project rename cleanup found source and target volumes externally removed", "projectID", journal.ProjectID, "volumeCount", len(externallyRemoved.Volumes), "error", externallyRemoved)
 		} else {
 			return err
@@ -290,7 +287,7 @@ func rollbackRenameJournalInternal(ctx context.Context, operations projecttypes.
 	volumeErr := rollbackRenameJournalVolumesInternal(ctx, operations, journal)
 
 	if err := operations.RestoreState(ctx, journal); err != nil {
-		return stderrors.Join(directoryErr, volumeErr, errors.WrapIf(err, "restore project database state"))
+		return errors.Join(directoryErr, volumeErr, fmt.Errorf("restore project database state: %w", err))
 	}
 
 	if directoryErr != nil {
@@ -302,7 +299,7 @@ func rollbackRenameJournalInternal(ctx context.Context, operations projecttypes.
 			slog.WarnContext(ctx, "clearing project rename journal after preserving target volume data", "projectID", journal.ProjectID, "pathsMissing", pathsMissing, "error", volumeErr)
 		} else {
 			if cleanupErr := operations.WriteRollbackCleanup(ctx, journal); cleanupErr != nil {
-				return stderrors.Join(directoryErr, volumeErr, cleanupErr)
+				return errors.Join(directoryErr, volumeErr, cleanupErr)
 			}
 			slog.WarnContext(ctx, "queued project rename target volume cleanup after restoring database state despite volume rollback failure", "projectID", journal.ProjectID, "pathsMissing", pathsMissing, "error", volumeErr)
 		}
@@ -333,10 +330,9 @@ func RecoverRenameJournal(ctx context.Context, journal *projecttypes.RenameJourn
 			return operations.ClearJournal(ctx, journal.ProjectID)
 		}
 		if err := cleanupRenameJournalSourcesInternal(ctx, operations, journal); err != nil {
-			var cleanupErr *volumetypes.SourceCleanupError
-			if errors.As(err, &cleanupErr) {
+			if _, ok := errors.AsType[*volumetypes.SourceCleanupError](err); ok {
 				if writeErr := operations.WriteJournal(ctx, journal, projecttypes.RenameJournalPhaseSourceCleanupPending); writeErr != nil {
-					return stderrors.Join(err, writeErr)
+					return errors.Join(err, writeErr)
 				}
 			}
 			return err

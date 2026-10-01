@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
@@ -55,7 +54,7 @@ func TestResolveRemoteRunConfirmsOwnerAfterLostResponse(t *testing.T) {
 		assert.NoError(t, writeErr)
 	}))
 	defer server.Close()
-	require.NoError(t, db.Create(&environment.Environment{BaseModel: database.BaseModel{ID: "remote"}, Name: "agent", ApiUrl: server.URL, Enabled: true}).Error)
+	require.NoError(t, db.Create(&environment.Environment{ID: "remote", Name: "agent", ApiUrl: server.URL, Enabled: true}).Error)
 	svc := &JobService{runs: q, environment: environment.NewEnvironmentService(db, server.Client(), nil, nil, nil, nil)}
 	ctx := context.WithValue(t.Context(), middleware.ContextKeyUserPermissions, authz.EnvironmentPermissionSet("remote"))
 	_, err = svc.ResolveRun(ctx, "remote", local.JobID, local.ID, "operator")

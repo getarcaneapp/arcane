@@ -5,7 +5,6 @@ import (
 	"net/url"
 	"strings"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
@@ -117,7 +116,7 @@ var createCmd = &cobra.Command{
 
 		result, err := c.PostJSON[gitops.GitOpsSync](cmd.Context(), types.GitOpsSyncs(c.EnvID()), req)
 		if err != nil {
-			return errors.WrapIf(err, "failed to create gitops sync")
+			return fmt.Errorf("failed to create gitops sync: %w", err)
 		}
 
 		if jsonOutput {
@@ -149,7 +148,7 @@ var getCmd = &cobra.Command{
 		if !complete {
 			result, err := c.GetJSON[gitops.GitOpsSync](cmd.Context(), types.GitOpsSync(c.EnvID(), resolved.ID))
 			if err != nil {
-				return errors.WrapIf(err, "failed to get gitops sync")
+				return fmt.Errorf("failed to get gitops sync: %w", err)
 			}
 			resolved = &result.Data
 		}
@@ -220,12 +219,12 @@ var updateCmd = &cobra.Command{
 
 		resp, err := c.Put(cmd.Context(), types.GitOpsSync(c.EnvID(), resolved.ID), req)
 		if err != nil {
-			return errors.WrapIf(err, "failed to update gitops sync")
+			return fmt.Errorf("failed to update gitops sync: %w", err)
 		}
 		defer func() { _ = resp.Body.Close() }()
 
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to update gitops sync")
+			return fmt.Errorf("failed to update gitops sync: %w", err)
 		}
 
 		output.Success("GitOps sync %s updated successfully", resolved.Name)
@@ -267,11 +266,11 @@ var deleteCmd = &cobra.Command{
 
 		resp, err := c.Delete(cmd.Context(), types.GitOpsSync(c.EnvID(), resolved.ID))
 		if err != nil {
-			return errors.WrapIf(err, "failed to delete gitops sync")
+			return fmt.Errorf("failed to delete gitops sync: %w", err)
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to delete gitops sync")
+			return fmt.Errorf("failed to delete gitops sync: %w", err)
 		}
 
 		output.Success("GitOps sync %s deleted successfully", resolved.Name)
@@ -297,7 +296,7 @@ var statusCmd = &cobra.Command{
 
 		result, err := c.GetJSON[gitops.SyncStatus](cmd.Context(), types.GitOpsSyncStatus(c.EnvID(), resolved.ID))
 		if err != nil {
-			return errors.WrapIf(err, "failed to get gitops sync status")
+			return fmt.Errorf("failed to get gitops sync status: %w", err)
 		}
 
 		if jsonOutput {
@@ -344,7 +343,7 @@ var syncCmd = &cobra.Command{
 
 		result, err := c.PostJSON[gitops.SyncResult](cmd.Context(), types.GitOpsSyncTrigger(c.EnvID(), resolved.ID), nil)
 		if err != nil {
-			return errors.WrapIf(err, "failed to trigger gitops sync")
+			return fmt.Errorf("failed to trigger gitops sync: %w", err)
 		}
 
 		if jsonOutput {
@@ -360,7 +359,7 @@ var syncCmd = &cobra.Command{
 		if result.Data.Error != nil {
 			errMsg = *result.Data.Error
 		}
-		return errors.Errorf("sync failed: %s %s", result.Data.Message, errMsg)
+		return fmt.Errorf("sync failed: %s %s", result.Data.Message, errMsg)
 	},
 }
 
@@ -387,7 +386,7 @@ var filesCmd = &cobra.Command{
 
 		result, err := c.GetJSON[gitops.BrowseResponse](cmd.Context(), filesPath)
 		if err != nil {
-			return errors.WrapIf(err, "failed to get gitops sync files")
+			return fmt.Errorf("failed to get gitops sync files: %w", err)
 		}
 
 		files := result.Data.Files
@@ -434,7 +433,7 @@ var importCmd = &cobra.Command{
 		// in an array.
 		result, err := c.PostJSON[gitops.ImportGitOpsSyncResponse](cmd.Context(), types.GitOpsSyncsImport(c.EnvID()), []gitops.ImportGitOpsSyncRequest{req})
 		if err != nil {
-			return errors.WrapIf(err, "failed to import gitops sync")
+			return fmt.Errorf("failed to import gitops sync: %w", err)
 		}
 
 		if jsonOutput {

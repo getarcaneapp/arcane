@@ -2,12 +2,12 @@ package variables
 
 import (
 	"cmp"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
@@ -99,7 +99,7 @@ var listCmd = &cobra.Command{
 
 		result, err := c.GetJSON[[]env.GlobalVariable](cmd.Context(), types.Variables())
 		if err != nil {
-			return errors.WrapIf(err, "failed to list variables")
+			return fmt.Errorf("failed to list variables: %w", err)
 		}
 
 		if jsonOutput {
@@ -148,7 +148,7 @@ var createCmd = &cobra.Command{
 
 		result, err := c.PostJSON[env.GlobalVariableMutationResponse](cmd.Context(), types.Variables(), req)
 		if err != nil {
-			return errors.WrapIf(err, "failed to create variable")
+			return fmt.Errorf("failed to create variable: %w", err)
 		}
 
 		return printMutationResult(result.Data, fmt.Sprintf("Variable %s created successfully", createKey))
@@ -189,7 +189,7 @@ var updateCmd = &cobra.Command{
 
 		result, err := c.PutJSON[env.GlobalVariableMutationResponse](cmd.Context(), types.Variable(args[0]), req)
 		if err != nil {
-			return errors.WrapIf(err, "failed to update variable")
+			return fmt.Errorf("failed to update variable: %w", err)
 		}
 
 		return printMutationResult(result.Data, "Variable updated successfully")
@@ -221,7 +221,7 @@ var deleteCmd = &cobra.Command{
 
 		result, err := c.DeleteJSON[env.GlobalVariableMutationResponse](cmd.Context(), types.Variable(args[0]))
 		if err != nil {
-			return errors.WrapIf(err, "failed to delete variable")
+			return fmt.Errorf("failed to delete variable: %w", err)
 		}
 
 		return printMutationResult(result.Data, "Variable deleted successfully")
@@ -247,7 +247,7 @@ var syncCmd = &cobra.Command{
 			result, err = c.PostJSON[[]env.EnvironmentSyncStatus](cmd.Context(), types.VariablesSync(), nil)
 		}
 		if err != nil {
-			return errors.WrapIff(err, "%s", failureMessage)
+			return fmt.Errorf("%s: %w", failureMessage, err)
 		}
 
 		if jsonOutput {

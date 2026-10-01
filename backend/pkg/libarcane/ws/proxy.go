@@ -2,12 +2,12 @@ package ws
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/coder/websocket"
 )
 

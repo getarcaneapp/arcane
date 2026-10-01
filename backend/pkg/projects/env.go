@@ -2,6 +2,8 @@ package projects
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
 	"maps"
 	"os"
@@ -13,7 +15,6 @@ import (
 	"syscall"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/compose-spec/compose-go/v2/consts"
 	"github.com/compose-spec/compose-go/v2/dotenv"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
@@ -142,7 +143,7 @@ func (l *EnvLoader) LoadEnvironment(ctx context.Context) (envMap, injectionVars 
 			case errors.Is(err, os.ErrNotExist):
 				slog.DebugContext(ctx, "Project .env file does not exist", "path", projectEnvPath)
 			case errors.Is(err, os.ErrPermission):
-				return envMap, injectionVars, common.Classify(common.ErrProjectEnvUnreadable, errors.WrapIff(err, "%s is not readable by the runtime user (uid %d, gid %d); fix its ownership/read permission or set PUID/PGID to a user that can read it", projectEnvPath, os.Geteuid(), os.Getegid()))
+				return envMap, injectionVars, common.Classify(common.ErrProjectEnvUnreadable, fmt.Errorf("%s is not readable by the runtime user (uid %d, gid %d); fix its ownership/read permission or set PUID/PGID to a user that can read it: %w", projectEnvPath, os.Geteuid(), os.Getegid(), err))
 			default:
 				slog.WarnContext(ctx, "Failed to load project env", "path", projectEnvPath, "error", err)
 			}
@@ -232,12 +233,12 @@ func loadCachedEnvFileInternal(_ context.Context, envCache *hot.HotCache[string,
 			return nil, err
 		}
 		if info.IsDir() {
-			return nil, errors.Errorf("path is a directory: %s", path)
+			return nil, fmt.Errorf("path is a directory: %s", path)
 		}
 
 		parsed, err := parseProjectEnvFileExistingInternal(path, contextEnv)
 		if err != nil {
-			return nil, errors.WrapIf(err, "parse env file")
+			return nil, fmt.Errorf("parse env file: %w", err)
 		}
 		entry.exists = true
 		entry.mtime = info.ModTime()
@@ -277,7 +278,7 @@ func validEnvFileCacheEntryInternal(entry envFileCacheEntry) bool {
 func parseProjectEnvFileExistingInternal(path string, contextEnv EnvMap) (EnvMap, error) {
 	content, err := os.ReadFile(path)
 	if err != nil {
-		return nil, errors.WrapIf(err, "read file")
+		return nil, fmt.Errorf("read file: %w", err)
 	}
 	return ParseProjectEnvContent(string(content), contextEnv)
 }
@@ -308,7 +309,7 @@ func ParseProjectEnvContent(content string, contextEnv EnvMap) (EnvMap, error) {
 
 	envMap, err := dotenv.ParseWithLookup(strings.NewReader(content), lookupFn)
 	if err != nil {
-		return nil, errors.WrapIf(err, "parse env")
+		return nil, fmt.Errorf("parse env: %w", err)
 	}
 
 	return envMap, nil
@@ -324,7 +325,7 @@ func WithTransientValidationEnvFile(ctx context.Context, projectPath string, eff
 	originalExists := readErr == nil
 	if readErr != nil && !os.IsNotExist(readErr) {
 		if !errors.Is(readErr, os.ErrPermission) && !errors.Is(readErr, syscall.EISDIR) {
-			return errors.WrapIf(readErr, "prepare env file for compose validation")
+			return fmt.Errorf("prepare env file for compose validation: %w", readErr)
 		}
 		// The path exists but is permission-locked (e.g. chmod 000, foreign-owned) or a directory.
 		// Its contents can't be verified or safely overwritten, so leave it
@@ -345,7 +346,7 @@ func WithTransientValidationEnvFile(ctx context.Context, projectPath string, eff
 			content = *effectiveEnvContent
 		}
 		if writeErr := WriteProjectFile(ctx, projectPath, projectPath, ".env", content); writeErr != nil {
-			return errors.WrapIf(writeErr, "prepare env file for compose validation")
+			return fmt.Errorf("prepare env file for compose validation: %w", writeErr)
 		}
 
 		defer func() {
@@ -359,7 +360,7 @@ func WithTransientValidationEnvFile(ctx context.Context, projectPath string, eff
 
 			if restoreErr != nil && !os.IsNotExist(restoreErr) {
 				if err == nil {
-					err = errors.WrapIf(restoreErr, "restore env file after compose validation")
+					err = fmt.Errorf("restore env file after compose validation: %w", restoreErr)
 				}
 			}
 		}()
@@ -383,13 +384,13 @@ func BuildEffectiveEnvContent(gitContent, overrideContent string) (string, error
 
 	gitEnv, err := ParseProjectEnvContent(gitContent, contextEnv)
 	if err != nil {
-		return "", errors.WrapIf(err, "parse git env content")
+		return "", fmt.Errorf("parse git env content: %w", err)
 	}
 	maps.Copy(contextEnv, gitEnv)
 
 	overrideEnv, err := ParseProjectEnvContent(overrideContent, contextEnv)
 	if err != nil {
-		return "", errors.WrapIf(err, "parse override env content")
+		return "", fmt.Errorf("parse override env content: %w", err)
 	}
 
 	switch {
@@ -519,13 +520,13 @@ func BuildAdditiveOverrideEnvContent(gitContent, localContent string) (string, e
 
 	gitEnv, err := ParseProjectEnvContent(gitContent, contextEnv)
 	if err != nil {
-		return "", errors.WrapIf(err, "parse git env content")
+		return "", fmt.Errorf("parse git env content: %w", err)
 	}
 	maps.Copy(contextEnv, gitEnv)
 
 	localEnv, err := ParseProjectEnvContent(localContent, contextEnv)
 	if err != nil {
-		return "", errors.WrapIf(err, "parse local env content")
+		return "", fmt.Errorf("parse local env content: %w", err)
 	}
 
 	override := make(EnvMap)
@@ -546,13 +547,13 @@ func BuildOverrideEnvContent(gitContent, effectiveContent string) (string, error
 
 	gitEnv, err := ParseProjectEnvContent(gitContent, contextEnv)
 	if err != nil {
-		return "", errors.WrapIf(err, "parse git env content")
+		return "", fmt.Errorf("parse git env content: %w", err)
 	}
 	maps.Copy(contextEnv, gitEnv)
 
 	effectiveEnv, err := ParseProjectEnvContent(effectiveContent, contextEnv)
 	if err != nil {
-		return "", errors.WrapIf(err, "parse effective env content")
+		return "", fmt.Errorf("parse effective env content: %w", err)
 	}
 
 	override := make(EnvMap)
@@ -695,7 +696,7 @@ func WriteManagedEnvFile(ctx context.Context, projectsDirectory, projectPath, fi
 		}
 		return WriteProjectFile(ctx, projectsDirectory, projectPath, OverrideEnvFileName, content)
 	default:
-		return errors.Errorf("write managed env file: unsupported file name %q", fileName)
+		return fmt.Errorf("write managed env file: unsupported file name %q", fileName)
 	}
 }
 
@@ -719,7 +720,7 @@ func readOptionalProjectFileInternal(projectPath, fileName string) (content stri
 	if errors.Is(readErr, os.ErrPermission) || errors.Is(readErr, syscall.EISDIR) {
 		return "", false, true, nil
 	}
-	return "", false, false, errors.WrapIff(readErr, "read %s", fileName)
+	return "", false, false, fmt.Errorf("read %s: %w", fileName, readErr)
 }
 
 // formatEnvMapInternal serializes env maps into Arcane's canonical generated
@@ -807,7 +808,7 @@ func ParseComposeEnvOptions(workdir string, env EnvMap) (ComposeEnvOptions, erro
 	for _, entry := range ComposeEnvFileEntriesFromEnv(env) {
 		resolved, resErr := ResolvePathWithinDir(workdir, entry)
 		if resErr != nil {
-			return ComposeEnvOptions{}, common.Classify(common.ErrComposeFileEnvInvalid, errors.WrapIff(resErr, "COMPOSE_ENV_FILES entry %q", entry))
+			return ComposeEnvOptions{}, common.Classify(common.ErrComposeFileEnvInvalid, fmt.Errorf("COMPOSE_ENV_FILES entry %q: %w", entry, resErr))
 		}
 		opts.EnvFiles = append(opts.EnvFiles, resolved)
 	}
@@ -850,7 +851,7 @@ func ComposeFileEnvSelection(ctx context.Context, projectsDir, dir string) ([]st
 		projectEnv, err := ParseProjectEnvFile(projectEnvPath, envMap)
 		if err != nil {
 			if errors.Is(err, os.ErrPermission) {
-				return nil, common.Classify(common.ErrProjectEnvUnreadable, errors.WrapIff(err, "%s is not readable by the runtime user (uid %d, gid %d); fix its ownership/read permission or set PUID/PGID to a user that can read it", projectEnvPath, os.Geteuid(), os.Getegid()))
+				return nil, common.Classify(common.ErrProjectEnvUnreadable, fmt.Errorf("%s is not readable by the runtime user (uid %d, gid %d); fix its ownership/read permission or set PUID/PGID to a user that can read it: %w", projectEnvPath, os.Geteuid(), os.Getegid(), err))
 			}
 			return nil, err
 		}
@@ -903,22 +904,22 @@ func resolveComposeFileSelectionInternal(workdir string, env EnvMap) ([]string, 
 
 	absWorkdir, err := filepath.Abs(filepath.Clean(workdir))
 	if err != nil {
-		return nil, common.Classify(common.ErrComposeFileEnvInvalid, errors.WrapIf(err, "resolve project directory"))
+		return nil, common.Classify(common.ErrComposeFileEnvInvalid, fmt.Errorf("resolve project directory: %w", err))
 	}
 
 	files := make([]string, 0, len(entries))
 	for i, entry := range entries {
 		if filepath.IsAbs(entry) {
-			return nil, common.Classify(common.ErrComposeFileEnvInvalid, errors.Errorf("COMPOSE_FILE entry %q must be relative to the project directory", entry))
+			return nil, common.Classify(common.ErrComposeFileEnvInvalid, fmt.Errorf("COMPOSE_FILE entry %q must be relative to the project directory", entry))
 		}
 
 		resolved, resErr := ResolvePathWithinDir(absWorkdir, entry)
 		if resErr != nil {
-			return nil, common.Classify(common.ErrComposeFileEnvInvalid, errors.WrapIff(resErr, "COMPOSE_FILE entry %q", entry))
+			return nil, common.Classify(common.ErrComposeFileEnvInvalid, fmt.Errorf("COMPOSE_FILE entry %q: %w", entry, resErr))
 		}
 
 		if i == 0 && filepath.Dir(resolved) != absWorkdir {
-			return nil, common.Classify(common.ErrComposeFileEnvInvalid, errors.Errorf("the first COMPOSE_FILE entry %q must be in the project directory", entry))
+			return nil, common.Classify(common.ErrComposeFileEnvInvalid, fmt.Errorf("the first COMPOSE_FILE entry %q must be in the project directory", entry))
 		}
 
 		// os.Stat rather than acfs: compose files may be symlinks resolving
@@ -926,10 +927,10 @@ func resolveComposeFileSelectionInternal(workdir string, env EnvMap) ([]string, 
 		// living outside the projects directory.
 		info, statErr := os.Stat(resolved)
 		if statErr != nil {
-			return nil, common.Classify(common.ErrComposeFileEnvInvalid, errors.WrapIff(statErr, "COMPOSE_FILE entry %q", entry))
+			return nil, common.Classify(common.ErrComposeFileEnvInvalid, fmt.Errorf("COMPOSE_FILE entry %q: %w", entry, statErr))
 		}
 		if info.IsDir() {
-			return nil, common.Classify(common.ErrComposeFileEnvInvalid, errors.Errorf("COMPOSE_FILE entry %q is a directory", entry))
+			return nil, common.Classify(common.ErrComposeFileEnvInvalid, fmt.Errorf("COMPOSE_FILE entry %q is a directory", entry))
 		}
 
 		files = append(files, resolved)

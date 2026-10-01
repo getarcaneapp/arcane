@@ -4,12 +4,13 @@ import (
 	"context"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
+	"errors"
+	"fmt"
 	"log/slog"
 	"strings"
 	"sync"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
@@ -124,7 +125,7 @@ func (s *ContainerService) collectResourceSamplesInternal(ctx context.Context, i
 	}
 
 	if err := g.Wait(); err != nil {
-		return nil, errors.WrapIf(err, "failed to collect container resource samples")
+		return nil, fmt.Errorf("failed to collect container resource samples: %w", err)
 	}
 	return samples, nil
 }
@@ -172,18 +173,18 @@ func (s *ContainerService) fetchResourceSampleInternal(ctx context.Context, cont
 func (s *ContainerService) collectResourceSampleInternal(ctx context.Context, containerID string) (*containertypes.ResourceSample, error) {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to connect to Docker")
+		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	stats, err := dockerClient.ContainerStats(ctx, containerID, client.ContainerStatsOptions{Stream: false, IncludePreviousSample: true})
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to fetch container stats")
+		return nil, fmt.Errorf("failed to fetch container stats: %w", err)
 	}
 	defer func() { _ = stats.Body.Close() }()
 
 	var statsData container.StatsResponse
 	if err := json.UnmarshalDecode(jsontext.NewDecoder(stats.Body), &statsData); err != nil {
-		return nil, errors.WrapIf(err, "failed to decode container stats")
+		return nil, fmt.Errorf("failed to decode container stats: %w", err)
 	}
 
 	built := containerstats.BuildSample(statsData)

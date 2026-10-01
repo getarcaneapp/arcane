@@ -3,12 +3,13 @@ package registry
 import (
 	"cmp"
 	"context"
+	"errors"
+	"fmt"
 	"net/http"
 	"slices"
 	"strings"
 	"sync"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	utilsregistry "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/registryauth"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
@@ -117,7 +118,7 @@ func (s *ContainerRegistryService) DeleteRepositoryTag(ctx context.Context, id, 
 	}
 	tagRef, err := name.NewTag(repo.Name()+":"+strings.TrimSpace(tag), target.nameOptions...)
 	if err != nil {
-		return "", common.Classify(common.ErrValidation, errors.WrapIff(err, "invalid tag %q", tag))
+		return "", common.Classify(common.ErrValidation, fmt.Errorf("invalid tag %q: %w", tag, err))
 	}
 
 	descriptor, err := remote.Head(tagRef, target.options...)
@@ -146,7 +147,7 @@ func (s *ContainerRegistryService) browseTargetInternal(ctx context.Context, id 
 	}
 	registryName, err := name.NewRegistry(host, nameOptions...)
 	if err != nil {
-		return nil, common.Classify(common.ErrValidation, errors.WrapIff(err, "invalid registry URL %q", reg.URL))
+		return nil, common.Classify(common.ErrValidation, fmt.Errorf("invalid registry URL %q: %w", reg.URL, err))
 	}
 
 	credential, err := s.credentialForRegistryInternal(ctx, reg)
@@ -177,11 +178,11 @@ func (t *browseTargetInternal) repositoryInternal(repository string) (name.Repos
 		return name.Repository{}, common.Classify(common.ErrValidation, errors.New("repository is required"))
 	}
 	if t.prefix != "" && !strings.HasPrefix(repository, t.prefix+"/") {
-		return name.Repository{}, common.Classify(common.ErrValidation, errors.Errorf("repository %q is outside the registry namespace %q", repository, t.prefix))
+		return name.Repository{}, common.Classify(common.ErrValidation, fmt.Errorf("repository %q is outside the registry namespace %q", repository, t.prefix))
 	}
 	repo, err := name.NewRepository(t.registry.Name()+"/"+repository, t.nameOptions...)
 	if err != nil {
-		return name.Repository{}, common.Classify(common.ErrValidation, errors.WrapIff(err, "invalid repository %q", repository))
+		return name.Repository{}, common.Classify(common.ErrValidation, fmt.Errorf("invalid repository %q: %w", repository, err))
 	}
 	return repo, nil
 }
@@ -299,22 +300,25 @@ func tagPlatformInternal(img v1.Image, platform *v1.Platform, digest v1.Hash) (c
 
 // classifyBrowseErrorInternal maps distribution API failures to API error kinds.
 func classifyBrowseErrorInternal(err error, message string) error {
+	if err == nil {
+		return nil
+	}
+
 	if errors.Is(err, context.DeadlineExceeded) {
-		return common.Classify(common.ErrTimeout, errors.WrapIf(err, message))
+		return common.Classify(common.ErrTimeout, fmt.Errorf("%s: %w", message, err))
 	}
 	// Upstream auth failures are not Arcane permission failures, so they must not map to 401/403.
 	if isUnauthorizedRegistryErrorInternal(err) {
-		return common.Classify(common.ErrBadRequest, errors.WrapIf(err, message+": the registry denied access with the configured credentials"))
+		return common.Classify(common.ErrBadRequest, fmt.Errorf("%s: %w", message+": the registry denied access with the configured credentials", err))
 	}
 
-	var transportErr *transport.Error
-	if errors.As(err, &transportErr) {
+	if transportErr, ok := errors.AsType[*transport.Error](err); ok {
 		switch transportErr.StatusCode {
 		case http.StatusNotFound:
-			return common.Classify(common.ErrNotFound, errors.WrapIf(err, message))
+			return common.Classify(common.ErrNotFound, fmt.Errorf("%s: %w", message, err))
 		case http.StatusMethodNotAllowed:
-			return common.Classify(common.ErrBadRequest, errors.WrapIf(err, message+": the registry does not allow this operation"))
+			return common.Classify(common.ErrBadRequest, fmt.Errorf("%s: %w", message+": the registry does not allow this operation", err))
 		}
 	}
-	return common.Classify(common.ErrUnavailable, errors.WrapIf(err, message))
+	return common.Classify(common.ErrUnavailable, fmt.Errorf("%s: %w", message, err))
 }

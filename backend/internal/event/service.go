@@ -5,6 +5,7 @@ import (
 	"cmp"
 	"context"
 	"encoding/json/v2"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -13,7 +14,6 @@ import (
 	"strings"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
@@ -25,6 +25,7 @@ import (
 	"github.com/samber/mo"
 	"github.com/samber/mo/option"
 	"go.getarcane.app/kit/pkg/mapping"
+	"go.getarcane.app/streams/agg"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
 	"gorm.io/gorm"
@@ -101,7 +102,7 @@ func (s *EventService) CreateEvent(ctx context.Context, req CreateEventRequest) 
 		}
 		result := tx.Create(eventRecord)
 		if result.Error != nil {
-			return errors.WrapIf(result.Error, "failed to create event")
+			return fmt.Errorf("failed to create event: %w", result.Error)
 		}
 		inserted = result.RowsAffected > 0
 		return nil
@@ -205,7 +206,7 @@ func (s *EventService) forwardEventToManagerHTTP(ctx context.Context, eventModel
 
 	managerEventsURL, err := managerEventEndpointURL(httpx.ManagerBaseURL(s.cfg.ManagerApiUrl))
 	if err != nil {
-		return errors.WrapIf(err, "manager API URL is invalid for manager event sync")
+		return fmt.Errorf("manager API URL is invalid for manager event sync: %w", err)
 	}
 
 	payload := CreateEventRequest{
@@ -227,19 +228,19 @@ func (s *EventService) forwardEventToManagerHTTP(ctx context.Context, eventModel
 
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return errors.WrapIf(err, "failed to marshal event payload")
+		return fmt.Errorf("failed to marshal event payload: %w", err)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, managerEventsURL, bytes.NewReader(body))
 	if err != nil {
-		return errors.WrapIf(err, "failed to create manager event request")
+		return fmt.Errorf("failed to create manager event request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set(middleware.HeaderAgentToken, s.cfg.AgentToken)
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
-		return errors.WrapIf(err, "failed to send event to manager")
+		return fmt.Errorf("failed to send event to manager: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -249,9 +250,9 @@ func (s *EventService) forwardEventToManagerHTTP(ctx context.Context, eventModel
 
 	bodyBytes, readErr := io.ReadAll(io.LimitReader(resp.Body, 8192))
 	if readErr != nil {
-		return errors.Errorf("manager event sync failed with status %d", resp.StatusCode)
+		return fmt.Errorf("manager event sync failed with status %d", resp.StatusCode)
 	}
-	return errors.Errorf("manager event sync failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(bodyBytes)))
+	return fmt.Errorf("manager event sync failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(bodyBytes)))
 }
 
 func managerEventEndpointURL(rawBaseURL string) (string, error) {
@@ -262,10 +263,10 @@ func managerEventEndpointURL(rawBaseURL string) (string, error) {
 
 	baseURL, err := url.Parse(trimmed)
 	if err != nil {
-		return "", errors.WrapIf(err, "failed to parse manager API URL")
+		return "", fmt.Errorf("failed to parse manager API URL: %w", err)
 	}
 	if baseURL.Scheme != "http" && baseURL.Scheme != "https" {
-		return "", errors.Errorf("unsupported scheme %q", baseURL.Scheme)
+		return "", fmt.Errorf("unsupported scheme %q", baseURL.Scheme)
 	}
 	if baseURL.Host == "" {
 		return "", errors.New("manager API URL host is required")
@@ -326,12 +327,12 @@ func (s *EventService) ListEventsPaginated(ctx context.Context, params paginatio
 
 	paginationResp, err := pagination.PaginateAndSortDB(params, q, &events)
 	if err != nil {
-		return nil, pagination.Response{}, errors.WrapIf(err, "failed to paginate events")
+		return nil, pagination.Response{}, fmt.Errorf("failed to paginate events: %w", err)
 	}
 
 	eventDtos, mapErr := mapping.MapSlice[Event, eventtypes.Event](events)
 	if mapErr != nil {
-		return nil, pagination.Response{}, errors.WrapIf(mapErr, "failed to map events")
+		return nil, pagination.Response{}, fmt.Errorf("failed to map events: %w", mapErr)
 	}
 
 	return eventDtos, paginationResp, nil
@@ -356,12 +357,12 @@ func (s *EventService) GetEventsByEnvironmentPaginated(ctx context.Context, envi
 
 	paginationResp, err := pagination.PaginateAndSortDB(params, q, &events)
 	if err != nil {
-		return nil, pagination.Response{}, errors.WrapIf(err, "failed to paginate events")
+		return nil, pagination.Response{}, fmt.Errorf("failed to paginate events: %w", err)
 	}
 
 	eventDtos, mapErr := mapping.MapSlice[Event, eventtypes.Event](events)
 	if mapErr != nil {
-		return nil, pagination.Response{}, errors.WrapIf(mapErr, "failed to map events")
+		return nil, pagination.Response{}, fmt.Errorf("failed to map events: %w", mapErr)
 	}
 
 	return eventDtos, paginationResp, nil
@@ -420,7 +421,7 @@ func (s *EventService) GetEventSeverityCounts(ctx context.Context) (EventSeverit
 		Select("severity, COUNT(*) AS count").
 		Group("severity").
 		Scan(&rows).Error; err != nil {
-		return EventSeverityCounts{}, errors.WrapIf(err, "failed to count events by severity")
+		return EventSeverityCounts{}, fmt.Errorf("failed to count events by severity: %w", err)
 	}
 
 	var counts EventSeverityCounts
@@ -447,7 +448,7 @@ func (s *EventService) DeleteEvent(ctx context.Context, eventID string) error {
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		result := tx.Delete(&Event{}, "id = ?", eventID)
 		if result.Error != nil {
-			return errors.WrapIf(result.Error, "failed to delete event")
+			return fmt.Errorf("failed to delete event: %w", result.Error)
 		}
 		if result.RowsAffected == 0 {
 			return errors.New("event not found")
@@ -466,7 +467,7 @@ func (s *EventService) DeleteOldEvents(ctx context.Context, olderThan time.Durat
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		result := tx.Where("timestamp < ?", cutoff).Delete(&Event{})
 		if result.Error != nil {
-			return errors.WrapIf(result.Error, "failed to delete old events")
+			return fmt.Errorf("failed to delete old events: %w", result.Error)
 		}
 		deleted = result.RowsAffected
 		return nil
@@ -747,4 +748,32 @@ func (s *EventService) getEventSeverity(eventType EventType) EventSeverity {
 	return option.Map(func(def eventDefinition) EventSeverity {
 		return def.Severity
 	})(mo.TupleToOption(definition, ok)).OrElse(EventSeverityInfo)
+}
+
+// RunStreamProducer signals committed event changes so clients can refresh their current query.
+func (s *EventService) RunStreamProducer(ctx context.Context, events chan<- eventtypes.StreamEvent) {
+	changed := make(chan struct{}, 1)
+	unsubscribe := s.changes.Subscribe(func(struct{}) {
+		// One pending invalidation covers all changes, without blocking event persistence.
+		select {
+		case changed <- struct{}{}:
+		default:
+		}
+	})
+	defer unsubscribe()
+
+	// Subscribe first so connecting and reconnecting clients cannot miss a change.
+	if !agg.Send(ctx, events, eventtypes.StreamEvent{Type: "changed", Timestamp: time.Now()}) {
+		return
+	}
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-changed:
+			if !agg.Send(ctx, events, eventtypes.StreamEvent{Type: "changed", Timestamp: time.Now()}) {
+				return
+			}
+		}
+	}
 }

@@ -1,10 +1,10 @@
 package registries
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
@@ -122,7 +122,7 @@ var getCmd = &cobra.Command{
 
 		result, err := c.GetJSON[containerregistry.ContainerRegistry](cmd.Context(), types.ContainerRegistry(args[0]))
 		if err != nil {
-			return errors.WrapIf(err, "failed to get registry")
+			return fmt.Errorf("failed to get registry: %w", err)
 		}
 
 		if jsonOutput {
@@ -170,7 +170,7 @@ var createCmd = &cobra.Command{
 
 		result, err := c.PostJSON[containerregistry.ContainerRegistry](cmd.Context(), types.ContainerRegistries(), req)
 		if err != nil {
-			return errors.WrapIf(err, "failed to create registry")
+			return fmt.Errorf("failed to create registry: %w", err)
 		}
 
 		if jsonOutput {
@@ -247,7 +247,7 @@ var updateCmd = &cobra.Command{
 
 		result, err := c.PutJSON[containerregistry.ContainerRegistry](cmd.Context(), types.ContainerRegistry(args[0]), req)
 		if err != nil {
-			return errors.WrapIf(err, "failed to update registry")
+			return fmt.Errorf("failed to update registry: %w", err)
 		}
 
 		if jsonOutput {
@@ -284,11 +284,11 @@ var deleteCmd = &cobra.Command{
 
 		resp, err := c.Delete(cmd.Context(), types.ContainerRegistry(args[0]))
 		if err != nil {
-			return errors.WrapIf(err, "failed to delete registry")
+			return fmt.Errorf("failed to delete registry: %w", err)
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to delete registry")
+			return fmt.Errorf("failed to delete registry: %w", err)
 		}
 
 		output.Success("Registry deleted successfully")
@@ -309,7 +309,7 @@ var usageCmd = &cobra.Command{
 
 		result, err := c.GetJSON[containerregistry.PullUsageResponse](cmd.Context(), types.ContainerRegistriesPullUsage())
 		if err != nil {
-			return errors.WrapIf(err, "failed to get registry pull usage")
+			return fmt.Errorf("failed to get registry pull usage: %w", err)
 		}
 
 		if jsonOutput {

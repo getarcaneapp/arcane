@@ -3,9 +3,10 @@ package volumehelper
 import (
 	"archive/tar"
 	"context"
+	"errors"
+	"fmt"
 	"io"
 
-	"emperror.dev/errors"
 	"github.com/moby/moby/client"
 )
 
@@ -34,7 +35,7 @@ func DownloadFileFromContainer(
 	})
 	if err != nil {
 		cleanup()
-		return nil, 0, errors.WrapIf(err, "failed to download")
+		return nil, 0, fmt.Errorf("failed to download: %w", err)
 	}
 	reader := copyResult.Content
 
@@ -43,7 +44,7 @@ func DownloadFileFromContainer(
 	if err != nil {
 		_ = reader.Close()
 		cleanup()
-		return nil, 0, errors.WrapIf(err, "failed to read tar stream")
+		return nil, 0, fmt.Errorf("failed to read tar stream: %w", err)
 	}
 	if err := validateDownloadHeaderInternal(hdr); err != nil {
 		_ = reader.Close()

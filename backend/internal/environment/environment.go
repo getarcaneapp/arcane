@@ -2,6 +2,7 @@ package environment
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -9,7 +10,6 @@ import (
 	"time"
 	"uuid"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
@@ -27,6 +27,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	"github.com/samber/hot"
 	"go.getarcane.app/kit/normalization"
+	kit "go.getarcane.app/kit/pkg"
 	"go.getarcane.app/sys/crypto"
 	"gorm.io/gorm"
 )
@@ -63,14 +64,20 @@ type EnvironmentService struct {
 }
 
 const (
+	// LocalEnvironmentID is the reserved ID of the environment Arcane manages directly.
+	LocalEnvironmentID                   = "0"
+	localEnvironmentFallbackNameInternal = "Local"
+
 	// SyncDeliveryExpiry bounds how long an accepted config push is trusted. An
 	// agent rebuilt with a fresh data volume while its status stayed online gets
 	// everything again within this window without operator action.
 	SyncDeliveryExpiry = time.Hour
+)
 
-	ErrEnvironmentAccessTokenRequired = errors.Sentinel("environment access token required")
-	ErrInvalidEnvironmentAccessToken  = errors.Sentinel("invalid environment access token")
-	ErrEnvironmentNotFound            = errors.Sentinel("environment not found")
+var (
+	ErrEnvironmentAccessTokenRequired = errors.New("environment access token required")
+	ErrInvalidEnvironmentAccessToken  = errors.New("invalid environment access token")
+	ErrEnvironmentNotFound            = errors.New("environment not found")
 )
 
 // VariableSyncer pushes the effective global-variable set to one environment.
@@ -138,7 +145,7 @@ func (s *EnvironmentService) ResolveEdgeEnvironmentByToken(ctx context.Context, 
 			s.logEdgeTokenResolveMissInternal(ctx, token)
 			return "", errors.New("invalid agent token")
 		}
-		return "", errors.WrapIf(err, "failed to resolve edge environment by token")
+		return "", fmt.Errorf("failed to resolve edge environment by token: %w", err)
 	}
 
 	s.edgeTokens.put(env.ID, token)
@@ -206,7 +213,7 @@ func (s *EnvironmentService) EnsureLocalEnvironment(ctx context.Context, appUrl 
 		// Local environment already exists, ensure ApiUrl matches current appUrl
 		if existingEnv.ApiUrl != appUrl {
 			if err := s.db.WithContext(ctx).Model(&existingEnv).Update("api_url", appUrl).Error; err != nil {
-				return errors.WrapIf(err, "failed to update local environment api url")
+				return fmt.Errorf("failed to update local environment api url: %w", err)
 			}
 			s.invalidateEnvironmentCacheInternal(LocalEnvironmentID)
 			slog.InfoContext(ctx, "updated local environment api url", "id", LocalEnvironmentID, "url", appUrl)
@@ -215,7 +222,7 @@ func (s *EnvironmentService) EnsureLocalEnvironment(ctx context.Context, appUrl 
 	}
 
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return errors.WrapIf(err, "failed to check for local environment")
+		return fmt.Errorf("failed to check for local environment: %w", err)
 	}
 
 	// Create the local environment
@@ -231,7 +238,7 @@ func (s *EnvironmentService) EnsureLocalEnvironment(ctx context.Context, appUrl 
 	}
 
 	if err := s.db.WithContext(ctx).Create(localEnv).Error; err != nil {
-		return errors.WrapIf(err, "failed to create local environment")
+		return fmt.Errorf("failed to create local environment: %w", err)
 	}
 
 	slog.InfoContext(ctx, "created local environment record", "id", LocalEnvironmentID)
@@ -254,7 +261,7 @@ func (s *EnvironmentService) CreateEnvironment(ctx context.Context, environment 
 	environment.UpdatedAt = new(now)
 
 	if err := s.db.WithContext(ctx).Create(environment).Error; err != nil {
-		return nil, errors.WrapIf(err, "failed to create environment")
+		return nil, fmt.Errorf("failed to create environment: %w", err)
 	}
 
 	// Create event in background
@@ -276,7 +283,7 @@ func (s *EnvironmentService) GetEnvironmentByID(ctx context.Context, id string) 
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrEnvironmentNotFound
 		}
-		return nil, errors.WrapIf(err, "failed to get environment")
+		return nil, fmt.Errorf("failed to get environment: %w", err)
 	}
 	return &envRecord, nil
 }
@@ -317,7 +324,7 @@ func (s *EnvironmentService) UpdateEnvironment(ctx context.Context, id string, u
 	updates["updated_at"] = new(time.Now())
 
 	if err := s.db.WithContext(ctx).Model(&Environment{}).Where("id = ?", id).Updates(updates).Error; err != nil {
-		return nil, errors.WrapIf(err, "failed to update environment")
+		return nil, fmt.Errorf("failed to update environment: %w", err)
 	}
 	s.invalidateEnvironmentCacheInternal(id)
 	s.NotifyRuntimeStateChanged()
@@ -367,24 +374,22 @@ func (s *EnvironmentService) DeleteEnvironment(ctx context.Context, id string, u
 		if err := tx.Table("gitops_syncs").
 			Where("environment_id = ?", id).
 			Pluck("id", &syncIDs).Error; err != nil {
-			return errors.WrapIf(err, "failed to list environment gitops syncs")
+			return fmt.Errorf("failed to list environment gitops syncs: %w", err)
 		}
 
 		if len(syncIDs) > 0 {
 			if err := tx.Table("projects").
 				Where("gitops_managed_by IN ?", syncIDs).
 				Update("gitops_managed_by", nil).Error; err != nil {
-				return errors.WrapIf(err, "failed to clear environment gitops project references")
+				return fmt.Errorf("failed to clear environment gitops project references: %w", err)
 			}
 			if err := tx.Exec("DELETE FROM gitops_syncs WHERE environment_id = ?", id).Error; err != nil {
-				return errors.WrapIf(err, "failed to delete environment gitops syncs")
+				return fmt.Errorf("failed to delete environment gitops syncs: %w", err)
 			}
 		}
-
 		if err := tx.Delete(&Environment{}, "id = ?", id).Error; err != nil {
-			return errors.WrapIf(err, "failed to delete environment")
+			return fmt.Errorf("failed to delete environment: %w", err)
 		}
-
 		return nil
 	}); err != nil {
 		if env.Enabled {
@@ -449,7 +454,7 @@ func (s *EnvironmentService) RegenerateEnvironmentApiKey(ctx context.Context, en
 
 	result := s.db.WithContext(ctx).Model(&Environment{}).Where("id = ?", envID).Updates(updates)
 	if result.Error != nil {
-		return errors.WrapIf(result.Error, "failed to update environment with new API key")
+		return fmt.Errorf("failed to update environment with new API key: %w", result.Error)
 	}
 	if result.RowsAffected == 0 {
 		// A zero-row update would otherwise report a successful rotation while
@@ -492,7 +497,7 @@ func (s *EnvironmentService) ResolveEnvironmentByAccessToken(ctx context.Context
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrInvalidEnvironmentAccessToken
 		}
-		return nil, errors.WrapIf(err, "failed to resolve environment by access token")
+		return nil, fmt.Errorf("failed to resolve environment by access token: %w", err)
 	}
 
 	return &env, nil
@@ -501,7 +506,7 @@ func (s *EnvironmentService) ResolveEnvironmentByAccessToken(ctx context.Context
 func (s *EnvironmentService) GetEnabledRegistryCredentials(ctx context.Context) ([]containerregistry.Credential, error) {
 	var registries []registry.ContainerRegistry
 	if err := s.db.WithContext(ctx).Where("enabled = ?", true).Find(&registries).Error; err != nil {
-		return nil, errors.WrapIf(err, "failed to get enabled container registries")
+		return nil, fmt.Errorf("failed to get enabled container registries: %w", err)
 	}
 
 	var creds []containerregistry.Credential
@@ -565,4 +570,13 @@ func (s *EnvironmentService) SyncResourcesToEnvironment(ctx context.Context, env
 
 		return nil
 	})
+}
+
+// DisplayName returns the stored environment name or its readable fallback.
+func DisplayName(environmentID, storedName string) string {
+	if name := strings.TrimSpace(storedName); name != "" {
+		return name
+	}
+	id := strings.TrimSpace(environmentID)
+	return kit.Ternary(id == "" || id == LocalEnvironmentID, localEnvironmentFallbackNameInternal, id)
 }

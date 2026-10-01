@@ -2,7 +2,7 @@ package project
 
 import (
 	"context"
-	stderrors "errors"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
@@ -402,7 +401,7 @@ func (h *ProjectHandler) ListProjects(ctx context.Context, input *ListProjectsIn
 		if errors.Is(err, context.Canceled) {
 			return nil, huma.Error500InternalServerError("Request was canceled")
 		}
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to list projects").Error())
+		return nil, huma.Error500InternalServerError("Failed to list projects: " + err.Error())
 	}
 
 	if projects == nil {
@@ -422,7 +421,7 @@ func (h *ProjectHandler) ListProjects(ctx context.Context, input *ListProjectsIn
 func (h *ProjectHandler) GetProjectStatusCounts(ctx context.Context, input *GetProjectStatusCountsInput) (*handlerutil.Out[projecttypes.StatusCounts], error) {
 	_, running, stopped, total, archived, err := h.projectService.GetProjectStatusCounts(ctx)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to get project status counts").Error())
+		return nil, huma.Error500InternalServerError("Failed to get project status counts: " + err.Error())
 	}
 
 	return &handlerutil.Out[projecttypes.StatusCounts]{
@@ -442,7 +441,7 @@ func (h *ProjectHandler) GetProjectStatusCounts(ctx context.Context, input *GetP
 func (h *ProjectHandler) ListProjectTags(ctx context.Context, _ *ListProjectTagsInput) (*handlerutil.Out[[]projecttypes.TagOption], error) {
 	options, err := h.projectService.ListProjectTagOptions(ctx)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to list project tags").Error())
+		return nil, huma.Error500InternalServerError("Failed to list project tags: " + err.Error())
 	}
 	if options == nil {
 		options = []projecttypes.TagOption{}
@@ -554,7 +553,7 @@ func (h *ProjectHandler) streamProjectOperationInternal(environmentID, projectID
 			if err := cfg.Action(opCtx, writer); err != nil {
 				activitylib.FlushWriter(writer)
 				activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, cfg.FailureMessage, err)
-				_, _ = fmt.Fprintf(writer, `{"error":%q}`+"\n", err.Error())
+				_, _ = fmt.Fprintf(writer, "{\"error\":%q}\n", err.Error())
 				if f, ok := writer.(http.Flusher); ok {
 					f.Flush()
 				}
@@ -608,7 +607,7 @@ func (h *ProjectHandler) DownProject(ctx context.Context, input *DownProjectInpu
 		if errors.Is(err, common.ErrProjectArchived) || errors.Is(err, common.ErrProjectEnvUnreadable) {
 			return nil, huma.Error400BadRequest(err.Error())
 		}
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to bring down project").Error())
+		return nil, huma.Error500InternalServerError("Failed to bring down project: " + err.Error())
 	}
 	activitylib.FlushWriter(activityWriter)
 	activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Project stopped", nil)
@@ -625,13 +624,13 @@ func (h *ProjectHandler) DownProject(ctx context.Context, input *DownProjectInpu
 }
 
 func projectUpdateHTTPErrorInternal(err error) error {
-	if conflictErr, ok := stderrors.AsType[*volumetypes.ProjectVolumeRenameConflictError](err); ok {
+	if conflictErr, ok := errors.AsType[*volumetypes.ProjectVolumeRenameConflictError](err); ok {
 		return huma.Error409Conflict(conflictErr.Error())
 	}
-	if inUseErr, ok := stderrors.AsType[*volumetypes.ProjectVolumeRenameInUseError](err); ok {
+	if inUseErr, ok := errors.AsType[*volumetypes.ProjectVolumeRenameInUseError](err); ok {
 		return huma.Error409Conflict(inUseErr.Error())
 	}
-	if spaceErr, ok := stderrors.AsType[*volumetypes.ProjectVolumeRenameInsufficientSpaceError](err); ok {
+	if spaceErr, ok := errors.AsType[*volumetypes.ProjectVolumeRenameInsufficientSpaceError](err); ok {
 		return huma.NewError(http.StatusInsufficientStorage, spaceErr.Error())
 	}
 	return projectWorkspaceRequestHTTPErrorInternal(err)
@@ -697,7 +696,7 @@ func (h *ProjectHandler) CreateProject(ctx context.Context, input *CreateProject
 		if httpErr := projectWorkspaceRequestHTTPErrorInternal(err); httpErr != nil {
 			return nil, httpErr
 		}
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to create project").Error())
+		return nil, huma.Error500InternalServerError("Failed to create project: " + err.Error())
 	}
 
 	var response projecttypes.CreateReponse
@@ -716,7 +715,7 @@ func (h *ProjectHandler) CreateProject(ctx context.Context, input *CreateProject
 	response.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
 	response.Tags, err = h.projectService.GetProjectTags(ctx, proj.ID)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to load project tags").Error())
+		return nil, huma.Error500InternalServerError("Failed to load project tags: " + err.Error())
 	}
 
 	return &handlerutil.Out[projecttypes.CreateReponse]{
@@ -735,7 +734,7 @@ func (h *ProjectHandler) GetProject(ctx context.Context, input *GetProjectInput)
 
 	details, err := h.projectService.GetProjectDetails(ctx, input.ProjectID, projecttypes.DetailsOptions{})
 	if err != nil {
-		return nil, huma.Error404NotFound(errors.WithMessage(err, "Failed to get project details").Error())
+		return nil, huma.Error404NotFound("Failed to get project details: " + err.Error())
 	}
 
 	return &handlerutil.Out[projecttypes.Details]{
@@ -753,7 +752,7 @@ func (h *ProjectHandler) getProjectDetailsWithOptionsInternal(ctx context.Contex
 
 	details, err := h.projectService.GetProjectDetails(ctx, input.ProjectID, opts)
 	if err != nil {
-		return nil, huma.Error404NotFound(errors.WithMessage(err, "Failed to get project details").Error())
+		return nil, huma.Error404NotFound("Failed to get project details: " + err.Error())
 	}
 
 	return &handlerutil.Out[projecttypes.Details]{
@@ -842,7 +841,7 @@ func (h *ProjectHandler) DestroyProject(ctx context.Context, input *DestroyProje
 	if err := h.projectService.DestroyProject(destroyCtx, input.ProjectID, removeFiles, removeVolumes, *user); err != nil {
 		activitylib.FlushWriter(activityWriter)
 		activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Project destroyed", err)
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to destroy project").Error())
+		return nil, huma.Error500InternalServerError("Failed to destroy project: " + err.Error())
 	}
 	activitylib.FlushWriter(activityWriter)
 	activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Project destroyed", nil)
@@ -889,7 +888,7 @@ func (h *ProjectHandler) UpdateProject(ctx context.Context, input *UpdateProject
 		if httpErr := projectUpdateHTTPErrorInternal(err); httpErr != nil {
 			return nil, httpErr
 		}
-		return nil, huma.Error400BadRequest(errors.WithMessage(err, "Failed to update project").Error())
+		return nil, huma.Error400BadRequest("Failed to update project: " + err.Error())
 	}
 
 	details, err := h.projectService.GetProjectDetails(runtimeCtx, input.ProjectID, projecttypes.DetailsOptions{
@@ -901,7 +900,7 @@ func (h *ProjectHandler) UpdateProject(ctx context.Context, input *UpdateProject
 		IncludeUpdateInfo:      true,
 	})
 	if err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to get project details").Error())
+		return nil, huma.Error500InternalServerError("Failed to get project details: " + err.Error())
 	}
 	details.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
 
@@ -972,7 +971,7 @@ func (h *ProjectHandler) updateProjectServicesActivityConfigInternal(services []
 			return h.projectService.UpdateProjectServices(runtimeCtx, projectID, services, user, true)
 		},
 		Error: projectArchivedActionErrorInternal(func(err error) error {
-			return huma.Error400BadRequest(errors.WithMessage(err, "Failed to update project").Error())
+			return huma.Error400BadRequest("Failed to update project: " + err.Error())
 		}),
 	}
 }
@@ -990,7 +989,7 @@ func (h *ProjectHandler) restartProjectActivityConfigInternal(services []string)
 			return h.projectService.RestartProject(runtimeCtx, projectID, services, user)
 		},
 		Error: projectArchivedActionErrorInternal(func(err error) error {
-			return huma.Error400BadRequest(errors.WithMessage(err, "Failed to restart project").Error())
+			return huma.Error400BadRequest("Failed to restart project: " + err.Error())
 		}),
 	}
 }
@@ -1069,7 +1068,7 @@ func (h *ProjectHandler) ArchiveProject(ctx context.Context, input *ArchiveProje
 		if errors.Is(err, common.ErrProjectMustBeStopped) {
 			return nil, huma.Error400BadRequest(err.Error())
 		}
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to archive project").Error())
+		return nil, huma.Error500InternalServerError("Failed to archive project: " + err.Error())
 	}
 
 	return &handlerutil.Out[base.MessageResponse]{
@@ -1091,7 +1090,7 @@ func (h *ProjectHandler) UnarchiveProject(ctx context.Context, input *UnarchiveP
 	}
 
 	if err := h.projectService.UnarchiveProject(ctx, input.ProjectID, *user); err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to unarchive project").Error())
+		return nil, huma.Error500InternalServerError("Failed to unarchive project: " + err.Error())
 	}
 
 	return &handlerutil.Out[base.MessageResponse]{

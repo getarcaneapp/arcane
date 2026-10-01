@@ -3,6 +3,7 @@ package updater
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -12,7 +13,6 @@ import (
 	"sync"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
@@ -130,7 +130,7 @@ func NewUpdaterService(
 	}
 	engine, err := updater.New(service.configInternal())
 	if err != nil {
-		return nil, errors.WrapIf(err, "configure updater engine")
+		return nil, fmt.Errorf("configure updater engine: %w", err)
 	}
 	service.engine = engine
 	events.SetDockerUpdatingContainers(func() []string { return engine.Status().ContainerIDs })
@@ -334,19 +334,19 @@ func (s *UpdaterService) applyScopedUpdatesInternal(ctx context.Context, options
 				Status:       arcaneupdater.StatusFailed,
 				Error:        engineErr.Error(),
 			})
-			engineErrs = append(engineErrs, errors.WrapIff(engineErr, "%s", containerID))
+			engineErrs = append(engineErrs, fmt.Errorf("%s: %w", containerID, engineErr))
 			target.Status = schedulertypes.Failed
 			target.Message = engineErr.Error()
 		}
 		if err := jobcontext.Progress(ctx, target); err != nil {
-			return errors.Combine(err, errors.Combine(engineErrs...))
+			return errors.Join(err, errors.Join(engineErrs...))
 		}
 	}
 	s.logResultItemsInternal(ctx, out)
 	out.Success = out.Failed == 0
 	// Engine errors propagate like the unscoped path's engine error does —
 	// the remaining containers were still attempted and recorded above.
-	return errors.Combine(engineErrs...)
+	return errors.Join(engineErrs...)
 }
 
 // resolveScopedContainerIDsInternal maps a scoped options payload to the
@@ -365,7 +365,7 @@ func (s *UpdaterService) resolveScopedContainerIDsInternal(ctx context.Context, 
 	case "image":
 		return s.containerIDsForImagesInternal(ctx, requested)
 	default:
-		return nil, errors.Errorf("unsupported scoped update type %q", options.Type)
+		return nil, fmt.Errorf("unsupported scoped update type %q", options.Type)
 	}
 }
 
@@ -396,7 +396,7 @@ func (s *UpdaterService) containerIDsForProjectsInternal(ctx context.Context, pr
 
 	containers, _, _, _, err := s.deps.Docker.GetAllContainers(ctx)
 	if err != nil {
-		return nil, errors.WrapIf(err, "list containers")
+		return nil, fmt.Errorf("list containers: %w", err)
 	}
 
 	var ids []string
@@ -436,7 +436,7 @@ func (s *UpdaterService) containerIDsForImagesInternal(ctx context.Context, imag
 
 	containers, _, _, _, err := s.deps.Docker.GetAllContainers(ctx)
 	if err != nil {
-		return nil, errors.WrapIf(err, "list containers")
+		return nil, fmt.Errorf("list containers: %w", err)
 	}
 
 	var ids []string
@@ -484,7 +484,7 @@ func (s *UpdaterService) AcceptSingleContainerUpdate(ctx context.Context, contai
 	state := arcaneupdater.SingleUpdateState{Command: command, Status: "queued"}
 	if err := s.singleUpdates.SetState(workCtx, singleUpdateStateTypeInternal, activity.ID, state, nil); err != nil {
 		s.finishSingleContainerUpdateInternal(workCtx, activity.ID, nil, err)
-		return nil, errors.WrapIf(err, "persist container update")
+		return nil, fmt.Errorf("persist container update: %w", err)
 	}
 	if err := s.dispatchSingleInternal(workCtx, state); err != nil {
 		s.loggerInternal().WarnContext(workCtx, "container update dispatch deferred", "activityId", activity.ID, "error", err)
@@ -553,7 +553,7 @@ func (s *UpdaterService) GetHistory(ctx context.Context, limit int) ([]AutoUpdat
 		query = query.Limit(limit)
 	}
 	if err := query.Find(&records).Error; err != nil {
-		return nil, errors.WrapIf(err, "get history")
+		return nil, fmt.Errorf("get history: %w", err)
 	}
 	return records, nil
 }
@@ -567,7 +567,7 @@ func (s *UpdaterService) RestartContainersUsingOldIDs(ctx context.Context, oldID
 // TriggerSelfUpdateViaCLI triggers Arcane's detached CLI self-update path.
 func (s *UpdaterService) TriggerSelfUpdateViaCLI(ctx context.Context, source, containerID, containerName string, labelMap map[string]string) error {
 	if !labels.IsArcaneContainer(labelMap) {
-		return errors.Errorf("%s: container is not an Arcane self-update target", source)
+		return fmt.Errorf("%s: container is not an Arcane self-update target", source)
 	}
 	return s.TriggerSelfUpdate(ctx, updater.SelfUpdateTarget{
 		ContainerID:   containerID,
@@ -663,7 +663,7 @@ func (s *UpdaterService) PullImage(ctx context.Context, imageRef string, progres
 	if s.deps.Projects != nil {
 		resolved, err := s.deps.Projects.ResolveRegistryCredentials(pullCtx)
 		if err != nil {
-			return errors.WrapIf(err, "resolve registry credentials")
+			return fmt.Errorf("resolve registry credentials: %w", err)
 		}
 		if err := s.deps.ImagePuller.PullImage(pullCtx, pulledRef, writer, s.deps.SystemUser, resolved); err != nil {
 			return err
@@ -688,7 +688,7 @@ func (s *UpdaterService) PendingImageUpdates(ctx context.Context) ([]updater.Ima
 
 	var records []imageupdate.ImageUpdateRecord
 	if err := s.deps.DB.WithContext(ctx).Where("has_update = ? AND project_id = ?", true, "").Find(&records).Error; err != nil {
-		return nil, errors.WrapIf(err, "query pending image updates")
+		return nil, fmt.Errorf("query pending image updates: %w", err)
 	}
 
 	// Flush pending "Updates Available" notifications before the engine
@@ -740,7 +740,7 @@ func (s *UpdaterService) ProjectByComposeName(ctx context.Context, composeName s
 		return updater.ComposeProject{}, err
 	}
 	if project == nil {
-		return updater.ComposeProject{}, errors.Errorf("compose project not found: %s", composeName)
+		return updater.ComposeProject{}, fmt.Errorf("compose project not found: %s", composeName)
 	}
 	return updater.ComposeProject{ID: project.ID, Name: project.Name}, nil
 }
@@ -764,7 +764,7 @@ func (s *UpdaterService) TriggerSelfUpdate(ctx context.Context, target updater.S
 	}
 	if s == nil || s.deps.SelfUpgrade == nil {
 		instanceType := cmp.Or(strings.TrimSpace(target.InstanceType), "server")
-		return errors.Errorf("%s self-update requires CLI upgrade service", instanceType)
+		return fmt.Errorf("%s self-update requires CLI upgrade service", instanceType)
 	}
 
 	// A server self-update stops this process before the run can complete its
@@ -775,7 +775,7 @@ func (s *UpdaterService) TriggerSelfUpdate(ctx context.Context, target updater.S
 	}
 
 	if _, err := s.deps.SelfUpgrade.TriggerUpgradeViaCLI(ctx, s.deps.SystemUser, target); err != nil {
-		return errors.WrapIf(err, "CLI upgrade failed")
+		return fmt.Errorf("CLI upgrade failed: %w", err)
 	}
 	if progress, ok := ctx.Value(updateProgressKeyInternal{}).(*updateProgressInternal); ok {
 		progress.mu.Lock()
@@ -996,7 +996,7 @@ func (s *UpdaterService) startSingleContainerUpdateActivityInternal(ctx context.
 		item, err = s.deps.Activity.StartActivity(ctx, request)
 	}
 	if err != nil {
-		return nil, nil, errors.WrapIf(err, "start container update activity")
+		return nil, nil, fmt.Errorf("start container update activity: %w", err)
 	}
 	return item, workCtx, nil
 }
@@ -1341,7 +1341,7 @@ func (s *UpdaterService) CollectUsedImages(ctx context.Context) (map[string]stru
 	}
 
 	if successfulSources == 0 {
-		return nil, errors.Combine(errs...)
+		return nil, errors.Join(errs...)
 	}
 
 	s.loggerInternal().DebugContext(ctx, "collectUsedImages: collected used images", "count", len(out))
@@ -1523,4 +1523,22 @@ func (s *UpdaterService) tagFrozenPullInternal(ctx context.Context, pulledRef, i
 	}
 	_, err = dockerClient.ImageTag(ctx, client.ImageTagOptions{Source: pulledRef, Target: imageRef})
 	return err
+}
+
+type updateAdmissionKeyInternal struct{}
+
+var errUpdateBusyInternal = errors.New("another container update is running")
+
+func (s *UpdaterService) acquireUpdateInternal(ctx context.Context) (context.Context, func(), error) {
+	if s.admission == nil || ctx.Value(updateAdmissionKeyInternal{}) == s {
+		return ctx, func() {}, nil
+	}
+	lease, admitted, err := s.admission.TryAcquire(ctx, schedulertypes.AdmissionKey{Scope: "updater"})
+	if err != nil {
+		return ctx, nil, err
+	}
+	if !admitted {
+		return ctx, nil, errUpdateBusyInternal
+	}
+	return context.WithValue(ctx, updateAdmissionKeyInternal{}, s), func() { lease.Release(ctx) }, nil
 }

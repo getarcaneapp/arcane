@@ -3,6 +3,8 @@ package git
 import (
 	"bytes"
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -12,7 +14,6 @@ import (
 	"strings"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/ProtonMail/go-crypto/openpgp"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
@@ -27,11 +28,11 @@ import (
 
 var (
 	// ErrPushRejected reports that the remote branch advanced between checkout and push.
-	ErrPushRejected        = errors.Sentinel("push rejected: remote branch was updated by another writer")
-	ErrInvalidCommit       = errors.Sentinel("invalid commit hash")
-	ErrSelectionUnreadable = errors.Sentinel("selection is unreadable")
-	ErrSelectionLimits     = errors.Sentinel("selection exceeds limits")
-	ErrSelectionInvalid    = errors.Sentinel("selection is invalid")
+	ErrPushRejected        = errors.New("push rejected: remote branch was updated by another writer")
+	ErrInvalidCommit       = errors.New("invalid commit hash")
+	ErrSelectionUnreadable = errors.New("selection is unreadable")
+	ErrSelectionLimits     = errors.New("selection exceeds limits")
+	ErrSelectionInvalid    = errors.New("selection is invalid")
 )
 
 // WriteCheckout is a scratch clone prepared for committing to one branch.
@@ -78,12 +79,12 @@ func CollectFiles(ctx context.Context, root string, selection []string, opts Col
 		entry, err := acfs.Stat(ctx, root, logical, false)
 		if err != nil {
 			if errors.Is(err, fs.ErrNotExist) {
-				return nil, errors.WrapIff(ErrSelectionUnreadable, "selected path %s does not exist", selected)
+				return nil, fmt.Errorf("selected path %s does not exist: %w", selected, ErrSelectionUnreadable)
 			}
-			return nil, errors.WrapIff(ErrSelectionUnreadable, "cannot inspect %s: %v", selected, err)
+			return nil, fmt.Errorf("cannot inspect %s: %v: %w", selected, err.Error(), ErrSelectionUnreadable)
 		}
 		if entry.IsSymlink {
-			return nil, errors.WrapIff(ErrSelectionInvalid, "%s is a symbolic link", selected)
+			return nil, fmt.Errorf("%s is a symbolic link: %w", selected, ErrSelectionInvalid)
 		}
 		if !entry.IsDirectory {
 			if err := c.addInternal(ctx, entry); err != nil {
@@ -93,14 +94,14 @@ func CollectFiles(ctx context.Context, root string, selection []string, opts Col
 		}
 		err = acfs.Walk(ctx, root, logical, func(child acfstypes.Entry) error { return c.visitInternal(ctx, child) })
 		if err != nil && !errors.Is(err, ErrSelectionUnreadable) && !errors.Is(err, ErrSelectionLimits) && !errors.Is(err, ErrSelectionInvalid) {
-			return nil, errors.WrapIff(ErrSelectionUnreadable, "cannot walk %s: %v", selected, err)
+			return nil, fmt.Errorf("cannot walk %s: %v: %w", selected, err.Error(), ErrSelectionUnreadable)
 		}
 		if err != nil {
 			return nil, err
 		}
 	}
 	if len(c.files) == 0 {
-		return nil, errors.WrapIf(ErrSelectionInvalid, "the selection contains no files")
+		return nil, fmt.Errorf("the selection contains no files: %w", ErrSelectionInvalid)
 	}
 	sort.Slice(c.files, func(i, j int) bool { return c.files[i].Path < c.files[j].Path })
 	return c.files, nil
@@ -122,15 +123,15 @@ func (c *fileCollectorInternal) addInternal(ctx context.Context, entry acfstypes
 		return nil
 	}
 	if c.opts.MaxFiles > 0 && len(c.files) >= c.opts.MaxFiles {
-		return errors.WrapIff(ErrSelectionLimits, "file count limit exceeded (max %d files)", c.opts.MaxFiles)
+		return fmt.Errorf("file count limit exceeded (max %d files): %w", c.opts.MaxFiles, ErrSelectionLimits)
 	}
 	content, err := acfs.ReadFile(ctx, c.root, entry.Path)
 	if err != nil {
-		return errors.WrapIff(ErrSelectionUnreadable, "cannot read %s: %v", relative, err)
+		return fmt.Errorf("cannot read %s: %v: %w", relative, err.Error(), ErrSelectionUnreadable)
 	}
 	c.totalSize += int64(len(content))
 	if c.opts.MaxTotalSize > 0 && c.totalSize > c.opts.MaxTotalSize {
-		return errors.WrapIff(ErrSelectionLimits, "total size limit exceeded (max %d bytes)", c.opts.MaxTotalSize)
+		return fmt.Errorf("total size limit exceeded (max %d bytes): %w", c.opts.MaxTotalSize, ErrSelectionLimits)
 	}
 	c.seen[relative] = struct{}{}
 	c.files = append(c.files, CommitFile{Path: relative, Content: content, Executable: os.FileMode(entry.UnixMode)&0o111 != 0})
@@ -159,7 +160,7 @@ type CommitIdentity struct {
 func ParseSigningKey(armored, passphrase string) (*openpgp.Entity, error) {
 	entities, err := openpgp.ReadArmoredKeyRing(strings.NewReader(armored))
 	if err != nil {
-		return nil, errors.WrapIf(err, "signing key is not an armored OpenPGP key")
+		return nil, fmt.Errorf("signing key is not an armored OpenPGP key: %w", err)
 	}
 	for _, entity := range entities {
 		if entity.PrivateKey == nil {
@@ -170,7 +171,7 @@ func ParseSigningKey(armored, passphrase string) (*openpgp.Entity, error) {
 				return nil, errors.New("signing key is protected by a passphrase")
 			}
 			if err := entity.PrivateKey.Decrypt([]byte(passphrase)); err != nil {
-				return nil, errors.WrapIf(err, "signing key passphrase is incorrect")
+				return nil, fmt.Errorf("signing key passphrase is incorrect: %w", err)
 			}
 		}
 		for _, subkey := range entity.Subkeys {
@@ -178,7 +179,7 @@ func ParseSigningKey(armored, passphrase string) (*openpgp.Entity, error) {
 				continue
 			}
 			if err := subkey.PrivateKey.Decrypt([]byte(passphrase)); err != nil {
-				return nil, errors.WrapIf(err, "signing key passphrase is incorrect")
+				return nil, fmt.Errorf("signing key passphrase is incorrect: %w", err)
 			}
 		}
 		return entity, nil
@@ -219,12 +220,12 @@ func (c *Client) CheckoutForWrite(ctx context.Context, url, branch string, auth 
 		repo, openErr := git.PlainOpen(repoPath)
 		if openErr != nil {
 			_ = c.Cleanup(repoPath)
-			return nil, errors.WrapIf(openErr, "failed to open checkout")
+			return nil, fmt.Errorf("failed to open checkout: %w", openErr)
 		}
 		head, headErr := repo.Head()
 		if headErr != nil {
 			_ = c.Cleanup(repoPath)
-			return nil, errors.WrapIf(headErr, "failed to resolve checkout head")
+			return nil, fmt.Errorf("failed to resolve checkout head: %w", headErr)
 		}
 		return &WriteCheckout{RepoPath: repoPath, Branch: branch, HeadCommit: head.Hash().String(), BranchExists: true, url: normalized, repo: repo}, nil
 	}
@@ -245,24 +246,24 @@ func (c *Client) initEmptyCheckoutInternal(url, branch string) (*WriteCheckout, 
 		workDir = os.TempDir()
 	}
 	if err := os.MkdirAll(workDir, 0o755); err != nil {
-		return nil, errors.WrapIf(err, "failed to create work dir")
+		return nil, fmt.Errorf("failed to create work dir: %w", err)
 	}
 	repoPath, err := os.MkdirTemp(workDir, cloneScratchPrefix+"*")
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to create temp dir")
+		return nil, fmt.Errorf("failed to create temp dir: %w", err)
 	}
 	repo, err := git.PlainInit(repoPath, false)
 	if err != nil {
 		_ = os.RemoveAll(repoPath)
-		return nil, errors.WrapIf(err, "failed to initialize checkout")
+		return nil, fmt.Errorf("failed to initialize checkout: %w", err)
 	}
 	if _, err := repo.CreateRemote(&config.RemoteConfig{Name: "origin", URLs: []string{url}}); err != nil {
 		_ = os.RemoveAll(repoPath)
-		return nil, errors.WrapIf(err, "failed to configure remote")
+		return nil, fmt.Errorf("failed to configure remote: %w", err)
 	}
 	if err := repo.Storer.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, plumbing.NewBranchReferenceName(branch))); err != nil {
 		_ = os.RemoveAll(repoPath)
-		return nil, errors.WrapIf(err, "failed to select branch")
+		return nil, fmt.Errorf("failed to select branch: %w", err)
 	}
 	return &WriteCheckout{RepoPath: repoPath, Branch: branch, url: url, repo: repo}, nil
 }
@@ -275,16 +276,16 @@ func (c *Client) checkoutNewBranchInternal(ctx context.Context, url, branch stri
 	repo, err := git.PlainOpen(repoPath)
 	if err != nil {
 		_ = c.Cleanup(repoPath)
-		return nil, errors.WrapIf(err, "failed to open checkout")
+		return nil, fmt.Errorf("failed to open checkout: %w", err)
 	}
 	worktree, err := repo.Worktree()
 	if err != nil {
 		_ = c.Cleanup(repoPath)
-		return nil, errors.WrapIf(err, "failed to open worktree")
+		return nil, fmt.Errorf("failed to open worktree: %w", err)
 	}
 	if err := worktree.Checkout(&git.CheckoutOptions{Branch: plumbing.NewBranchReferenceName(branch), Create: true}); err != nil {
 		_ = c.Cleanup(repoPath)
-		return nil, errors.WrapIff(err, "failed to create branch %s", branch)
+		return nil, fmt.Errorf("failed to create branch %s: %w", branch, err)
 	}
 	return &WriteCheckout{RepoPath: repoPath, Branch: branch, url: url, repo: repo}, nil
 }
@@ -299,7 +300,7 @@ func (c *Client) CommitAndPush(ctx context.Context, checkout *WriteCheckout, req
 	}
 	worktree, err := checkout.repo.Worktree()
 	if err != nil {
-		return "", false, errors.WrapIf(err, "failed to open worktree")
+		return "", false, fmt.Errorf("failed to open worktree: %w", err)
 	}
 	if err := stageCommitFilesInternal(ctx, checkout, worktree, req); err != nil {
 		return "", false, err
@@ -311,7 +312,7 @@ func (c *Client) CommitAndPush(ctx context.Context, checkout *WriteCheckout, req
 		if errors.Is(err, git.ErrEmptyCommit) {
 			return checkout.HeadCommit, false, nil
 		}
-		return "", false, errors.WrapIf(err, "failed to commit")
+		return "", false, fmt.Errorf("failed to commit: %w", err)
 	}
 	if err := c.pushBranchInternal(ctx, checkout, hash.String(), auth); err != nil {
 		return "", false, err
@@ -330,14 +331,14 @@ func stageCommitFilesInternal(ctx context.Context, checkout *WriteCheckout, work
 		}
 		logical := path.Join("/", filepath.ToSlash(file.Path))
 		if err := acfs.MkdirAll(ctx, checkout.RepoPath, path.Dir(logical), 0o755); err != nil {
-			return errors.WrapIff(err, "failed to create directory for %s", file.Path)
+			return fmt.Errorf("failed to create directory for %s: %w", file.Path, err)
 		}
 		mode := kit.Ternary(file.Executable, 0o755, os.FileMode(0o644))
 		if _, err := acfs.WriteFrom(ctx, checkout.RepoPath, logical, bytes.NewReader(file.Content), int64(len(file.Content)), mode); err != nil {
-			return errors.WrapIff(err, "failed to write %s", file.Path)
+			return fmt.Errorf("failed to write %s: %w", file.Path, err)
 		}
 		if _, err := worktree.Add(file.Path); err != nil {
-			return errors.WrapIff(err, "failed to stage %s", file.Path)
+			return fmt.Errorf("failed to stage %s: %w", file.Path, err)
 		}
 	}
 	for _, removed := range req.Remove {
@@ -348,10 +349,10 @@ func stageCommitFilesInternal(ctx context.Context, checkout *WriteCheckout, work
 			if errors.Is(err, fs.ErrNotExist) {
 				continue
 			}
-			return errors.WrapIff(err, "failed to inspect %s", removed)
+			return fmt.Errorf("failed to inspect %s: %w", removed, err)
 		}
 		if _, err := worktree.Remove(removed); err != nil {
-			return errors.WrapIff(err, "failed to remove %s", removed)
+			return fmt.Errorf("failed to remove %s: %w", removed, err)
 		}
 	}
 	return nil
@@ -374,17 +375,17 @@ func (c *Client) pushBranchInternal(ctx context.Context, checkout *WriteCheckout
 	}
 	if err := checkout.repo.PushContext(ctx, pushOptions); err != nil && !errors.Is(err, git.NoErrAlreadyUpToDate) {
 		if isPushRejectedInternal(err) {
-			return errors.WrapIf(ErrPushRejected, err.Error())
+			return fmt.Errorf("%s: %w", err.Error(), ErrPushRejected)
 		}
-		return errors.WrapIf(err, "failed to push")
+		return fmt.Errorf("failed to push: %w", err)
 	}
 
 	remoteHead, exists, err := c.RemoteBranchHead(ctx, checkout.url, checkout.Branch, auth)
 	if err != nil {
-		return errors.WrapIf(err, "failed to verify pushed commit")
+		return fmt.Errorf("failed to verify pushed commit: %w", err)
 	}
 	if !exists || remoteHead != commit {
-		return errors.WrapIf(ErrPushRejected, "remote branch does not point at the pushed commit")
+		return fmt.Errorf("remote branch does not point at the pushed commit: %w", ErrPushRejected)
 	}
 	return nil
 }
@@ -419,19 +420,19 @@ func (c *Client) DirectoryHistory(ctx context.Context, repoPath, directory strin
 	}
 	repo, err := git.PlainOpen(repoPath)
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to open repository")
+		return nil, fmt.Errorf("failed to open repository: %w", err)
 	}
 	head, err := repo.Head()
 	if err != nil {
 		if errors.Is(err, plumbing.ErrReferenceNotFound) {
 			return nil, nil
 		}
-		return nil, errors.WrapIf(err, "failed to resolve head")
+		return nil, fmt.Errorf("failed to resolve head: %w", err)
 	}
 	prefix := directoryPrefixInternal(directory)
 	iter, err := repo.Log(&git.LogOptions{From: head.Hash(), PathFilter: func(p string) bool { return strings.HasPrefix(p, prefix) }})
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to read history")
+		return nil, fmt.Errorf("failed to read history: %w", err)
 	}
 	defer iter.Close()
 
@@ -445,7 +446,7 @@ func (c *Client) DirectoryHistory(ctx context.Context, repoPath, directory strin
 			if errors.Is(err, io.EOF) {
 				break
 			}
-			return nil, errors.WrapIf(err, "failed to iterate history")
+			return nil, fmt.Errorf("failed to iterate history: %w", err)
 		}
 		files, err := commitDirectoryFilesInternal(commit, prefix)
 		if err != nil {
@@ -469,15 +470,15 @@ func (c *Client) CommitDiff(ctx context.Context, repoPath, commitHash, directory
 	}
 	repo, err := git.PlainOpen(repoPath)
 	if err != nil {
-		return HistoryEntry{}, nil, errors.WrapIf(err, "failed to open repository")
+		return HistoryEntry{}, nil, fmt.Errorf("failed to open repository: %w", err)
 	}
 	hash, err := repo.ResolveRevision(plumbing.Revision(commitHash))
 	if err != nil {
-		return HistoryEntry{}, nil, errors.WrapIf(err, "commit not found")
+		return HistoryEntry{}, nil, fmt.Errorf("commit not found: %w", err)
 	}
 	commit, err := repo.CommitObject(*hash)
 	if err != nil {
-		return HistoryEntry{}, nil, errors.WrapIf(err, "commit not found")
+		return HistoryEntry{}, nil, fmt.Errorf("commit not found: %w", err)
 	}
 	prefix := directoryPrefixInternal(directory)
 	patch, err := commitPatchInternal(commit)
@@ -527,20 +528,20 @@ func commitPatchInternal(commit *object.Commit) (*object.Patch, error) {
 	if commit.NumParents() > 0 {
 		parent, err := commit.Parent(0)
 		if err != nil {
-			return nil, errors.WrapIf(err, "failed to load parent commit")
+			return nil, fmt.Errorf("failed to load parent commit: %w", err)
 		}
 		parentTree, err = parent.Tree()
 		if err != nil {
-			return nil, errors.WrapIf(err, "failed to load parent tree")
+			return nil, fmt.Errorf("failed to load parent tree: %w", err)
 		}
 	}
 	tree, err := commit.Tree()
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to load commit tree")
+		return nil, fmt.Errorf("failed to load commit tree: %w", err)
 	}
 	patch, err := parentTree.Patch(tree)
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to diff commit")
+		return nil, fmt.Errorf("failed to diff commit: %w", err)
 	}
 	return patch, nil
 }
@@ -579,20 +580,20 @@ func commitFilePatchInternal(commit *object.Commit, name string) (string, error)
 	if commit.NumParents() > 0 {
 		parent, err := commit.Parent(0)
 		if err != nil {
-			return "", errors.WrapIf(err, "failed to load parent commit")
+			return "", fmt.Errorf("failed to load parent commit: %w", err)
 		}
 		parentTree, err = parent.Tree()
 		if err != nil {
-			return "", errors.WrapIf(err, "failed to load parent tree")
+			return "", fmt.Errorf("failed to load parent tree: %w", err)
 		}
 	}
 	tree, err := commit.Tree()
 	if err != nil {
-		return "", errors.WrapIf(err, "failed to load commit tree")
+		return "", fmt.Errorf("failed to load commit tree: %w", err)
 	}
 	changes, err := object.DiffTree(parentTree, tree)
 	if err != nil {
-		return "", errors.WrapIf(err, "failed to diff commit")
+		return "", fmt.Errorf("failed to diff commit: %w", err)
 	}
 	for _, change := range changes {
 		if change.From.Name != name && change.To.Name != name {
@@ -600,7 +601,7 @@ func commitFilePatchInternal(commit *object.Commit, name string) (string, error)
 		}
 		patch, err := change.Patch()
 		if err != nil {
-			return "", errors.WrapIff(err, "failed to build patch for %s", name)
+			return "", fmt.Errorf("failed to build patch for %s: %w", name, err)
 		}
 		return patch.String(), nil
 	}

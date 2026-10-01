@@ -1,15 +1,16 @@
 package common
 
 import (
+	"errors"
 	"net/http"
 	"testing"
 
-	"emperror.dev/errors"
+	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/stretchr/testify/require"
 )
 
 func TestToAPIErrorMapsClassifiedValidationDetails(t *testing.T) {
-	err := errors.WithDetails(errors.New("Name is required"), "field", "name")
+	var err error = &base.FieldError{Field: "name", Err: errors.New("Name is required")}
 	err = Classify(ErrValidation, err)
 
 	apiErr := ToAPIError(err)

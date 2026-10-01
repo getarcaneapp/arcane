@@ -2,10 +2,10 @@ package cmdutil
 
 import (
 	"encoding/json/v2"
+	"fmt"
 	"net/url"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
 	"github.com/getarcaneapp/arcane/types/v2/base"
@@ -36,7 +36,7 @@ type ListSpec[T any] struct {
 func RunList[T any](cmd *cobra.Command, c *client.Client, spec ListSpec[T]) error {
 	path, err := ApplyPaginationParams(cmd, spec.Endpoint, spec.Params)
 	if err != nil {
-		return errors.WrapIf(err, "failed to build pagination query")
+		return fmt.Errorf("failed to build pagination query: %w", err)
 	}
 	if len(spec.Query) > 0 {
 		path = AppendQuery(path, spec.Query)
@@ -44,13 +44,13 @@ func RunList[T any](cmd *cobra.Command, c *client.Client, spec ListSpec[T]) erro
 
 	resp, err := c.Get(cmd.Context(), path)
 	if err != nil {
-		return errors.WrapIff(err, "failed to list %s", spec.Resource)
+		return fmt.Errorf("failed to list %s: %w", spec.Resource, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	body, err := ReadJSONBody(resp)
 	if err != nil {
-		return errors.WrapIff(err, "failed to list %s", spec.Resource)
+		return fmt.Errorf("failed to list %s: %w", spec.Resource, err)
 	}
 
 	if spec.JSON {
@@ -59,7 +59,7 @@ func RunList[T any](cmd *cobra.Command, c *client.Client, spec ListSpec[T]) erro
 
 	var result base.Paginated[T]
 	if err := json.Unmarshal(body, &result); err != nil {
-		return errors.WrapIf(err, "failed to parse response")
+		return fmt.Errorf("failed to parse response: %w", err)
 	}
 
 	rows := make([][]string, len(result.Data))
@@ -97,7 +97,7 @@ func RunPostAction[T any](cmd *cobra.Command, c *client.Client, spec PostActionS
 
 	result, err := c.PostJSON[T](cmd.Context(), spec.Path, spec.Body)
 	if err != nil {
-		return errors.WrapIff(err, "%s", spec.FailureMessage)
+		return fmt.Errorf("%s: %w", spec.FailureMessage, err)
 	}
 
 	if spec.JSON {

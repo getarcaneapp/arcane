@@ -3,7 +3,7 @@ package handlerutil
 import (
 	"context"
 	"encoding/json/v2"
-	stderrors "errors"
+	"errors"
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -47,18 +47,18 @@ func marshalRemoteRequestBodyInternal(requestBody any) ([]byte, error) {
 
 // TranslateRemoteProxyError converts environment transport failures into Huma errors.
 func TranslateRemoteProxyError(err error) error {
-	if transportErr, ok := stderrors.AsType[*remenv.TransportError](err); ok {
+	if transportErr, ok := errors.AsType[*remenv.TransportError](err); ok {
 		return huma.Error502BadGateway("failed to proxy request to environment: " + transportErr.Error())
 	}
 
-	if statusErr, ok := stderrors.AsType[*remenv.StatusError](err); ok {
+	if statusErr, ok := errors.AsType[*remenv.StatusError](err); ok {
 		if statusErr.StatusCode == http.StatusUnauthorized {
 			return huma.Error502BadGateway("Remote environment rejected the manager's credentials")
 		}
 		return huma.NewError(statusErr.StatusCode, "environment returned error: "+string(statusErr.Body), nil)
 	}
 
-	if decodeErr, ok := stderrors.AsType[*remenv.DecodeError](err); ok {
+	if decodeErr, ok := errors.AsType[*remenv.DecodeError](err); ok {
 		return huma.Error500InternalServerError("failed to decode environment response: " + decodeErr.Error())
 	}
 

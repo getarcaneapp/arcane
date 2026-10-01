@@ -3,7 +3,6 @@ package events
 import (
 	"fmt"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
@@ -102,7 +101,7 @@ var deleteCmd = &cobra.Command{
 		}
 
 		if _, err := c.DeleteJSON[base.MessageResponse](cmd.Context(), types.Event(args[0])); err != nil {
-			return errors.WrapIf(err, "failed to delete event")
+			return fmt.Errorf("failed to delete event: %w", err)
 		}
 
 		output.Success("Event deleted successfully")
@@ -130,7 +129,7 @@ var statsCmd = &cobra.Command{
 			Error   int64 `json:"error"`
 		}](cmd.Context(), types.EventsStats())
 		if err != nil {
-			return errors.WrapIf(err, "failed to get event stats")
+			return fmt.Errorf("failed to get event stats: %w", err)
 		}
 
 		if jsonOutput {

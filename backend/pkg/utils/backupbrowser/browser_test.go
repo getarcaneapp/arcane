@@ -31,7 +31,7 @@ func TestBrowseWalkReachesEveryEntryInternal(t *testing.T) {
 	var walked []backuptypes.BackupFileEntry
 	start := 0
 	for {
-		items, page := Browse(entries, pagination.QueryParams{Params: pagination.Params{Start: start, Limit: 2}})
+		items, page := Browse(entries, pagination.QueryParams{Start: start, Limit: 2})
 		walked = append(walked, items...)
 		start += len(items)
 		if int64(start) >= page.TotalItems {
@@ -49,8 +49,8 @@ func TestBrowseSearchOrderingAndPaginationInternal(t *testing.T) {
 		{Path: "alpha/first.txt", Name: "first.txt"},
 	}
 	params := pagination.QueryParams{
-		SearchQuery: pagination.SearchQuery{Search: "ALPHA"},
-		Params:      pagination.Params{Start: 1, Limit: 1},
+		Search: "ALPHA",
+		Start:  1, Limit: 1,
 	}
 	items, page := Browse(entries, params)
 	require.Equal(t, []backuptypes.BackupFileEntry{{Path: "alpha/first.txt", Name: "first.txt"}}, items)
@@ -59,7 +59,7 @@ func TestBrowseSearchOrderingAndPaginationInternal(t *testing.T) {
 	require.Equal(t, 2, page.CurrentPage)
 	require.Equal(t, 1, page.ItemsPerPage)
 
-	items, page = Browse(entries, pagination.QueryParams{Params: pagination.Params{Start: 10, Limit: 2}})
+	items, page = Browse(entries, pagination.QueryParams{Start: 10, Limit: 2})
 	require.Empty(t, items)
 	require.Equal(t, int64(4), page.TotalItems)
 }

@@ -3,6 +3,8 @@ package bootstrap
 import (
 	"cmp"
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -10,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/api/ws"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
@@ -43,7 +44,7 @@ import (
 
 func Bootstrap(ctx context.Context) error {
 	if err := gotenv.Load(); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return errors.WrapIf(err, "load .env")
+		return fmt.Errorf("load .env: %w", err)
 	}
 	cfg := config.Load()
 	runtimeIdentityCfg := &startup.RuntimeIdentityConfig{
@@ -55,7 +56,7 @@ func Bootstrap(ctx context.Context) error {
 		ProjectsDirectory: cfg.ProjectsDirectory,
 	}
 	if err := startup.ApplyRequestedRuntimeIdentity(ctx, runtimeIdentityCfg); err != nil {
-		return errors.WrapIf(err, "apply runtime identity")
+		return fmt.Errorf("apply runtime identity: %w", err)
 	}
 	cfg.DockerConfig = runtimeIdentityCfg.DockerConfig
 
@@ -69,10 +70,10 @@ func Bootstrap(ctx context.Context) error {
 	appCtx, cancelApp := context.WithCancel(ctx)
 	appCtx = utils.WithAppLifecycleContext(appCtx)
 
-	db, err := initializeDBAndMigrate(appCtx, cfg)
+	db, err := initializeDBAndMigrateInternal(appCtx, cfg)
 	if err != nil {
 		cancelApp()
-		return errors.WrapIf(err, "failed to initialize database")
+		return fmt.Errorf("failed to initialize database: %w", err)
 	}
 	defer func() {
 		cancelApp()
@@ -86,7 +87,7 @@ func Bootstrap(ctx context.Context) error {
 	startCtx, cancelStart := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancelStart()
 	if err := app.Start(startCtx); err != nil {
-		return errors.WrapIf(err, "start application")
+		return fmt.Errorf("start application: %w", err)
 	}
 
 	select {
@@ -99,7 +100,7 @@ func Bootstrap(ctx context.Context) error {
 	stopCtx, cancelStop := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer cancelStop()
 	if err := app.Stop(stopCtx); err != nil {
-		return errors.WrapIf(err, "stop application")
+		return fmt.Errorf("stop application: %w", err)
 	}
 
 	slog.InfoContext(context.WithoutCancel(appCtx), "Arcane shutdown complete")
@@ -422,7 +423,7 @@ func startEdgeTunnelClientIfConfigured(appCtx context.Context, cfg *config.Confi
 	slog.InfoContext(appCtx, "Starting edge agent session client", edge.StartupLogAttrs(edgeCfg)...)
 	stop, err := edge.StartTunnelClient(appCtx, edgeCfg, router)
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to start edge tunnel client")
+		return nil, fmt.Errorf("failed to start edge tunnel client: %w", err)
 	}
 
 	slog.InfoContext(appCtx, "Edge tunnel client started", "manager_url", cfg.ManagerApiUrl)
@@ -439,7 +440,7 @@ func handleAgentBootstrapPairing(ctx context.Context, cfg *config.Config, httpCl
 
 	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, pairURL, nil)
 	if err != nil {
-		return errors.WrapIf(err, "failed to create pairing request")
+		return fmt.Errorf("failed to create pairing request: %w", err)
 	}
 
 	req.Header.Set("X-Api-Key", cfg.AgentToken)
@@ -455,14 +456,14 @@ func handleAgentBootstrapPairing(ctx context.Context, cfg *config.Config, httpCl
 			EdgeMTLSAssetsDir:  cfg.EdgeMTLSAssetsDir,
 		}, 10*time.Second)
 		if edgeErr != nil {
-			return errors.WrapIf(edgeErr, "failed to configure edge pairing client")
+			return fmt.Errorf("failed to configure edge pairing client: %w", edgeErr)
 		}
 		httpClient = edgeClient
 	}
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return errors.WrapIf(err, "pairing request failed")
+		return fmt.Errorf("pairing request failed: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -478,13 +479,25 @@ func handleAgentBootstrapPairing(ctx context.Context, cfg *config.Config, httpCl
 			slog.InfoContext(ctx, "Agent already paired with manager", "managerUrl", cfg.ManagerApiUrl)
 			return nil
 		}
-		return errors.Errorf("pairing failed with status %d: %s", resp.StatusCode, string(body))
+		return fmt.Errorf("pairing failed with status %d: %s", resp.StatusCode, string(body))
 	case http.StatusUnauthorized:
 		// Invalid API key - could be already paired with a different key, or key was deleted
 		// This is not fatal; the agent can still function if it has a valid token configured
 		slog.DebugContext(ctx, "Pairing skipped - API key not recognized (agent may already be paired)", "managerUrl", cfg.ManagerApiUrl)
 		return nil
 	default:
-		return errors.Errorf("pairing failed with status %d: %s", resp.StatusCode, string(body))
+		return fmt.Errorf("pairing failed with status %d: %s", resp.StatusCode, string(body))
 	}
+}
+
+func initializeDBAndMigrateInternal(ctx context.Context, cfg *config.Config) (*database.DB, error) {
+	db, err := database.Initialize(ctx, cfg.DatabaseURL, database.MigrationOptions{
+		AllowDowngrade: cfg.AllowDowngrade,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize database: %w", err)
+	}
+
+	slog.Info("Database initialized successfully")
+	return db, nil
 }

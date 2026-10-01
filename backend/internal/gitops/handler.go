@@ -4,7 +4,6 @@ import (
 	"cmp"
 	"context"
 
-	"emperror.dev/errors"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
@@ -188,7 +187,7 @@ func (h *GitOpsSyncHandler) ListSyncs(ctx context.Context, input *ListGitOpsSync
 
 	syncs, paginationResp, counts, err := h.syncService.GetSyncsPaginated(ctx, input.EnvironmentID, params)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to list GitOps syncs").Error())
+		return nil, huma.Error500InternalServerError("Failed to list GitOps syncs: " + err.Error())
 	}
 
 	return &ListGitOpsSyncsOutput{
@@ -215,7 +214,7 @@ func (h *GitOpsSyncHandler) CreateSync(ctx context.Context, input *CreateGitOpsS
 	sync, err := h.syncService.CreateSync(ctx, input.EnvironmentID, input.Body, actor)
 	if err != nil {
 		apiErr := common.ToAPIError(err)
-		return nil, huma.NewError(apiErr.HTTPStatus(), errors.WithMessage(err, "Failed to create GitOps sync").Error())
+		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to create GitOps sync: "+err.Error())
 	}
 
 	body, mapErr := handlerutil.MapOneAPIResponse[*project.GitOpsSync, gitops.GitOpsSync](sync, func(err error) string {
@@ -287,7 +286,7 @@ func (h *GitOpsSyncHandler) UpdateSync(ctx context.Context, input *UpdateGitOpsS
 	sync, err := h.syncService.UpdateSync(ctx, input.EnvironmentID, input.SyncID, input.Body, actor)
 	if err != nil {
 		apiErr := common.ToAPIError(err)
-		return nil, huma.NewError(apiErr.HTTPStatus(), errors.WithMessage(err, "Failed to update GitOps sync").Error())
+		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to update GitOps sync: "+err.Error())
 	}
 
 	body, mapErr := handlerutil.MapOneAPIResponse[*project.GitOpsSync, gitops.GitOpsSync](sync, func(err error) string {
@@ -382,7 +381,7 @@ func (h *GitOpsSyncHandler) PreviewBackup(ctx context.Context, input *BackupPrev
 	preview, err := h.syncService.PreviewBackup(ctx, input.EnvironmentID, input.SyncID)
 	if err != nil {
 		apiErr := common.ToAPIError(err)
-		return nil, huma.NewError(apiErr.HTTPStatus(), errors.WithMessage(err, "Failed to preview Git backup").Error())
+		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to preview Git backup: "+err.Error())
 	}
 
 	return &handlerutil.Out[gitops.BackupPreview]{
@@ -398,7 +397,7 @@ func (h *GitOpsSyncHandler) BackupHistory(ctx context.Context, input *BackupHist
 	history, err := h.syncService.GetBackupHistory(ctx, input.EnvironmentID, input.SyncID, min(input.Limit, maxBackupHistoryLimit))
 	if err != nil {
 		apiErr := common.ToAPIError(err)
-		return nil, huma.NewError(apiErr.HTTPStatus(), errors.WithMessage(err, "Failed to load Git backup history").Error())
+		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to load Git backup history: "+err.Error())
 	}
 
 	return &handlerutil.Out[gitops.BackupHistoryResponse]{
@@ -414,7 +413,7 @@ func (h *GitOpsSyncHandler) BackupRevision(ctx context.Context, input *BackupRev
 	revision, err := h.syncService.GetBackupRevision(ctx, input.EnvironmentID, input.SyncID, input.Commit)
 	if err != nil {
 		apiErr := common.ToAPIError(err)
-		return nil, huma.NewError(apiErr.HTTPStatus(), errors.WithMessage(err, "Failed to load Git backup revision").Error())
+		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to load Git backup revision: "+err.Error())
 	}
 
 	return &handlerutil.Out[gitops.BackupRevision]{
@@ -432,7 +431,7 @@ func (h *GitOpsSyncHandler) ResolveBackupConflict(ctx context.Context, input *Re
 	result, err := h.syncService.ResolveBackupConflict(ctx, input.EnvironmentID, input.SyncID, input.Body, actor)
 	if err != nil {
 		apiErr := common.ToAPIError(err)
-		return nil, huma.NewError(apiErr.HTTPStatus(), errors.WithMessage(err, "Failed to resolve Git backup conflict").Error())
+		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to resolve Git backup conflict: "+err.Error())
 	}
 
 	return &handlerutil.Out[gitops.SyncResult]{

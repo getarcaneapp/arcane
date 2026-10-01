@@ -1,6 +1,8 @@
 package settings
 
 import (
+	"errors"
+	"fmt"
 	"reflect"
 	"slices"
 	"strconv"
@@ -8,7 +10,6 @@ import (
 	"sync"
 	"time"
 
-	"emperror.dev/errors"
 	kit "go.getarcane.app/kit/pkg"
 )
 
@@ -328,7 +329,7 @@ func (s *Settings) UpdateField(key, value string, noSensitive bool) error {
 
 	valueField := rv.Field(field.index).FieldByName("Value")
 	if !valueField.CanSet() {
-		return errors.Errorf("field Value in SettingVariable is not settable for config key '%s'", key)
+		return fmt.Errorf("field Value in SettingVariable is not settable for config key '%s'", key)
 	}
 
 	valueField.SetString(value)

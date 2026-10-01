@@ -3,6 +3,8 @@ package image
 import (
 	"cmp"
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"maps"
@@ -10,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"emperror.dev/errors"
 	ref "github.com/distribution/reference"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
@@ -70,7 +71,7 @@ func NewImageService(db *database.DB, dockerService *docker.DockerClientService,
 func (s *ImageService) GetImageDetail(ctx context.Context, id string) (*imagetypes.DetailSummary, error) {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to connect to Docker")
+		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	var (
@@ -87,7 +88,7 @@ func (s *ImageService) GetImageDetail(ctx context.Context, id string) (*imagetyp
 		var err error
 		inspectResult, err := dockerClient.ImageInspect(gctx, id)
 		if err != nil {
-			return errors.WrapIf(err, "inspect not found")
+			return fmt.Errorf("inspect not found: %w", err)
 		}
 		inspect = inspectResult.InspectResponse
 		return nil
@@ -98,7 +99,7 @@ func (s *ImageService) GetImageDetail(ctx context.Context, id string) (*imagetyp
 
 		imageList, err := dockerClient.ImageList(gctx, client.ImageListOptions{})
 		if err != nil {
-			return errors.WrapIf(err, "failed to list images")
+			return fmt.Errorf("failed to list images: %w", err)
 		}
 		for _, img := range imageList.Items {
 			if img.ID == id {
@@ -141,7 +142,7 @@ func (s *ImageService) RemoveImage(ctx context.Context, id string, force bool, u
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, event.EventTypeImageError, "image", id, "", user.ID, user.Username, "0", err, database.JSON{"action": "delete", "force": force})
-		return errors.WrapIf(err, "failed to connect to Docker")
+		return fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	imageDetails, inspectErr := dockerClient.ImageInspect(ctx, id)
@@ -167,7 +168,7 @@ func (s *ImageService) RemoveImage(ctx context.Context, id string, force bool, u
 	removed, err := dockerClient.ImageRemove(ctx, id, options)
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, event.EventTypeImageError, "image", id, imageName, user.ID, user.Username, "0", err, database.JSON{"action": "delete", "force": force})
-		return errors.WrapIf(err, "failed to remove image")
+		return fmt.Errorf("failed to remove image: %w", err)
 	}
 
 	idsToDelete := append(getDeletedImageIDsInternal(removed.Items), id)
@@ -196,7 +197,7 @@ func (s *ImageService) PullImage(ctx context.Context, imageName string, progress
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, event.EventTypeImageError, "image", "", imageName, user.ID, user.Username, "0", err, database.JSON{"action": "pull"})
-		return errors.WrapIf(err, "failed to connect to Docker")
+		return fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	slog.DebugContext(ctx, "Attempting to pull image", "image", imageName, "externalCredCount", len(externalCreds))
@@ -221,7 +222,7 @@ func (s *ImageService) PullImage(ctx context.Context, imageName string, progress
 	if err != nil {
 		slog.ErrorContext(ctx, "Docker ImagePull failed", "image", imageName, "hasAuth", pullOptions.RegistryAuth != "", "initialHasAuth", initialHasAuth, "retriedWithoutAuth", retriedWithoutAuth, "error", err.Error())
 		s.eventService.LogErrorEvent(ctx, event.EventTypeImageError, "image", "", imageName, user.ID, user.Username, "0", err, database.JSON{"action": "pull"})
-		return errors.WrapIff(err, "failed to initiate image pull for %s", imageName)
+		return fmt.Errorf("failed to initiate image pull for %s: %w", imageName, err)
 	}
 	defer func() { _ = reader.Close() }()
 
@@ -232,10 +233,10 @@ func (s *ImageService) PullImage(ctx context.Context, imageName string, progress
 		if errors.Is(streamErr, context.Canceled) || strings.Contains(streamErr.Error(), "context canceled") {
 			slog.Debug("image pull stream canceled", "image", imageName, "err", streamErr)
 			s.eventService.LogErrorEvent(ctx, event.EventTypeImageError, "image", "", imageName, user.ID, user.Username, "0", streamErr, database.JSON{"action": "pull", "step": "canceled"})
-			return errors.WrapIff(streamErr, "image pull stream canceled for %s", imageName)
+			return fmt.Errorf("image pull stream canceled for %s: %w", imageName, streamErr)
 		}
 		s.eventService.LogErrorEvent(ctx, event.EventTypeImageError, "image", "", imageName, user.ID, user.Username, "0", streamErr, database.JSON{"action": "pull", "step": "read_stream"})
-		return errors.WrapIff(streamErr, "error reading image pull stream for %s", imageName)
+		return fmt.Errorf("error reading image pull stream for %s: %w", imageName, streamErr)
 	}
 
 	slog.Debug("image pull stream completed", "image", imageName)
@@ -262,12 +263,12 @@ func (s *ImageService) PullImage(ctx context.Context, imageName string, progress
 func (s *ImageService) ImageLastTagTime(ctx context.Context, imageName string) (time.Time, error) {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return time.Time{}, errors.WrapIf(err, "failed to connect to Docker")
+		return time.Time{}, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	inspect, err := dockerClient.ImageInspect(ctx, imageName)
 	if err != nil {
-		return time.Time{}, errors.WrapIff(err, "failed to inspect image %s", imageName)
+		return time.Time{}, fmt.Errorf("failed to inspect image %s: %w", imageName, err)
 	}
 	return inspect.Metadata.LastTagTime, nil
 }
@@ -297,14 +298,14 @@ func (s *ImageService) TagImage(ctx context.Context, source string, req imagetyp
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, event.EventTypeImageError, "image", "", source, user.ID, user.Username, "0", err, database.JSON{"action": "tag", "target": target})
-		return errors.WrapIf(err, "failed to connect to Docker")
+		return fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	defer s.eventService.BeginDockerResourceSuppressionWindow("image", "", target)()
 	_, err = dockerClient.ImageTag(ctx, client.ImageTagOptions{Source: source, Target: target})
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, event.EventTypeImageError, "image", "", source, user.ID, user.Username, "0", err, database.JSON{"action": "tag", "target": target})
-		return errors.WrapIf(err, "failed to tag image")
+		return fmt.Errorf("failed to tag image: %w", err)
 	}
 
 	metadata := database.JSON{
@@ -330,12 +331,12 @@ func (s *ImageService) GetImageHistory(ctx context.Context, imageName string) ([
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to connect to Docker")
+		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	result, err := dockerClient.ImageHistory(ctx, imageName)
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to get image history")
+		return nil, fmt.Errorf("failed to get image history: %w", err)
 	}
 
 	items := make([]imagetypes.HistoryItem, 0, len(result.Items))
@@ -361,12 +362,12 @@ func (s *ImageService) SearchImages(ctx context.Context, term string) ([]imagety
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to connect to Docker")
+		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	result, err := dockerClient.ImageSearch(ctx, term, client.ImageSearchOptions{})
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to search images")
+		return nil, fmt.Errorf("failed to search images: %w", err)
 	}
 
 	items := make([]imagetypes.SearchResult, 0, len(result.Items))
@@ -390,12 +391,12 @@ func (s *ImageService) ExportImage(ctx context.Context, imageName string) (io.Re
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to connect to Docker")
+		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	reader, err := dockerClient.ImageSave(ctx, []string{imageName})
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to export image")
+		return nil, fmt.Errorf("failed to export image: %w", err)
 	}
 	return reader, nil
 }
@@ -407,7 +408,7 @@ func (s *ImageService) LoadImageFromReader(ctx context.Context, reader io.Reader
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, event.EventTypeImageError, "image", "", fileName, user.ID, user.Username, "0", err, database.JSON{"action": "load"})
-		return nil, errors.WrapIf(err, "failed to connect to Docker")
+		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	// ImageLoad accepts a tar archive reader and optional load options
@@ -415,10 +416,10 @@ func (s *ImageService) LoadImageFromReader(ctx context.Context, reader io.Reader
 	if err != nil {
 		// Check if error is due to size limit being exceeded
 		if err.Error() == "unexpected EOF" || strings.Contains(err.Error(), "unexpected EOF") {
-			return nil, errors.Errorf("file size exceeds maximum allowed size of %d MB", maxSizeBytes/(1024*1024))
+			return nil, fmt.Errorf("file size exceeds maximum allowed size of %d MB", maxSizeBytes/(1024*1024))
 		}
 		s.eventService.LogErrorEvent(ctx, event.EventTypeImageError, "image", "", fileName, user.ID, user.Username, "0", err, database.JSON{"action": "load", "file": fileName})
-		return nil, errors.WrapIf(err, "failed to load image from tar")
+		return nil, fmt.Errorf("failed to load image from tar: %w", err)
 	}
 	defer func() { _ = loadResp.Close() }()
 
@@ -427,7 +428,7 @@ func (s *ImageService) LoadImageFromReader(ctx context.Context, reader io.Reader
 	streamErr := dockerutils.RenderJSONMessageStream(loadResp, &responseBuilder)
 	if streamErr != nil {
 		s.eventService.LogErrorEvent(ctx, event.EventTypeImageError, "image", "", fileName, user.ID, user.Username, "0", streamErr, database.JSON{"action": "load", "file": fileName, "step": "read_response"})
-		return nil, errors.WrapIf(streamErr, "failed to read load response")
+		return nil, fmt.Errorf("failed to read load response: %w", streamErr)
 	}
 
 	result.Stream = responseBuilder.String()
@@ -446,7 +447,7 @@ func (s *ImageService) LoadImageFromReader(ctx context.Context, reader io.Reader
 func (s *ImageService) ImageExistsLocally(ctx context.Context, imageName string) (bool, error) {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return false, errors.WrapIf(err, "failed to connect to Docker")
+		return false, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	_, err = dockerClient.ImageInspect(ctx, imageName)
@@ -458,7 +459,7 @@ func (s *ImageService) ImageExistsLocally(ctx context.Context, imageName string)
 	if strings.Contains(errLower, "no such image") || strings.Contains(errLower, "not found") {
 		return false, nil
 	}
-	return false, errors.WrapIff(err, "failed to inspect image %s", imageName)
+	return false, fmt.Errorf("failed to inspect image %s: %w", imageName, err)
 }
 
 func (s *ImageService) PullOptionsWithAuth(ctx context.Context, imageRef string, externalCreds []containerregistry.Credential) (client.ImagePullOptions, error) {
@@ -475,7 +476,7 @@ func (s *ImageService) PullOptionsWithAuth(ctx context.Context, imageRef string,
 		if utilsregistry.IsRegistryMatch(cred.URL, registryHost) {
 			authStr, err := utilsregistry.EncodeAuthHeader(cred.Username, cred.Token, utilsregistry.NormalizeRegistryURL(cred.URL))
 			if err != nil {
-				return pullOptions, errors.WrapIf(err, "failed to create auth header")
+				return pullOptions, fmt.Errorf("failed to create auth header: %w", err)
 			}
 			pullOptions.RegistryAuth = authStr
 
@@ -490,7 +491,7 @@ func (s *ImageService) PullOptionsWithAuth(ctx context.Context, imageRef string,
 
 	authStr, err := s.registryService.GetRegistryAuthForHost(ctx, registryHost)
 	if err != nil {
-		return pullOptions, errors.WrapIf(err, "failed to get registry credentials")
+		return pullOptions, fmt.Errorf("failed to get registry credentials: %w", err)
 	}
 	if authStr != "" {
 		pullOptions.RegistryAuth = authStr
@@ -532,7 +533,7 @@ func isUnauthorizedPullErrorInternal(err error) bool {
 func (s *ImageService) PruneImages(ctx context.Context, options systemtypes.PruneImagesOptions) (*image.PruneReport, error) {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to connect to Docker")
+		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	filterArgs := make(client.Filters)
@@ -549,12 +550,12 @@ func (s *ImageService) PruneImages(ctx context.Context, options systemtypes.Prun
 		}
 		filterArgs = filterArgs.Add("until", options.Until)
 	default:
-		return nil, errors.Errorf("unsupported image prune mode: %s", options.Mode)
+		return nil, fmt.Errorf("unsupported image prune mode: %s", options.Mode)
 	}
 
 	report, err := dockerClient.ImagePrune(ctx, client.ImagePruneOptions{Filters: filterArgs})
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to prune images")
+		return nil, fmt.Errorf("failed to prune images: %w", err)
 	}
 	pruneReport := report.Report
 
@@ -626,7 +627,7 @@ func (s *ImageService) GetUpdateInfoByImageIDs(ctx context.Context, imageIDs []s
 
 	var updateRecords []imageupdate.ImageUpdateRecord
 	if err := s.db.WithContext(ctx).Where("container_id = ? AND project_id = ? AND id IN ?", "", "", imageIDs).Find(&updateRecords).Error; err != nil {
-		return nil, errors.WrapIf(err, "failed to fetch update records")
+		return nil, fmt.Errorf("failed to fetch update records: %w", err)
 	}
 
 	result := make(map[string]*imagetypes.UpdateInfo, len(updateRecords))
@@ -694,7 +695,7 @@ func (s *ImageService) GetUpdateInfoByContainers(ctx context.Context, containers
 	}
 	var records []imageupdate.ImageUpdateRecord
 	if err := s.db.WithContext(ctx).Where("container_id IN ?", tagContainerIDs).Find(&records).Error; err != nil {
-		return nil, errors.WrapIf(err, "failed to fetch container update records")
+		return nil, fmt.Errorf("failed to fetch container update records: %w", err)
 	}
 	for i := range records {
 		if records[i].PolicyKey == policies[records[i].ContainerID] {
@@ -751,7 +752,7 @@ func (s *ImageService) GetUpdateInfoByImageRefs(ctx context.Context, imageRefs [
 		Where("container_id = ? AND project_id = ? AND tag IN ? AND repository IN ?", "", "", tags, repositoryCandidates).
 		Order("check_time DESC").
 		Find(&updateRecords).Error; err != nil {
-		return nil, errors.WrapIf(err, "failed to fetch update records by image refs")
+		return nil, fmt.Errorf("failed to fetch update records by image refs: %w", err)
 	}
 
 	index := indexLatestImageUpdateRecordsInternal(updateRecords)
@@ -780,7 +781,7 @@ func (s *ImageService) ListImagesPaginated(ctx context.Context, params paginatio
 		var err error
 		imageList, err := s.dockerService.ListImages(groupCtx)
 		if err != nil {
-			return errors.WrapIf(err, "failed to list Docker images")
+			return fmt.Errorf("failed to list Docker images: %w", err)
 		}
 		dockerImages = imageList
 		return nil
@@ -793,7 +794,7 @@ func (s *ImageService) ListImagesPaginated(ctx context.Context, params paginatio
 		var err error
 		containerList, err := s.dockerService.ListContainers(groupCtx)
 		if err != nil {
-			return errors.WrapIf(err, "failed to list containers")
+			return fmt.Errorf("failed to list containers: %w", err)
 		}
 		containers = containerList
 		return nil
@@ -810,7 +811,7 @@ func (s *ImageService) ListImagesPaginated(ctx context.Context, params paginatio
 
 	if s.db != nil && len(imageIDs) > 0 {
 		if err := s.db.WithContext(ctx).Where("id IN ? OR image_id IN ?", imageIDs, imageIDs).Find(&updateRecords).Error; err != nil {
-			return nil, pagination.Response{}, errors.WrapIf(err, "failed to fetch image update records")
+			return nil, pagination.Response{}, fmt.Errorf("failed to fetch image update records: %w", err)
 		}
 	}
 

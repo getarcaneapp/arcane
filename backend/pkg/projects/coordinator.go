@@ -3,6 +3,8 @@ package projects
 import (
 	"cmp"
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"maps"
@@ -10,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"emperror.dev/errors"
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
 	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
@@ -44,16 +45,16 @@ func (c *composeCoordinatorInternal) Deploy(ctx context.Context, request project
 	}()
 	if request.PreDeploy != nil {
 		if err := request.PreDeploy(ctx); err != nil {
-			return nil, errors.WrapIf(err, "pre-deploy lifecycle hook failed")
+			return nil, fmt.Errorf("pre-deploy lifecycle hook failed: %w", err)
 		}
 	}
 	model, err := request.Load(ctx)
 	if err != nil {
-		return nil, errors.WrapIff(err, "failed to load compose project in %s", request.ProjectPath)
+		return nil, fmt.Errorf("failed to load compose project in %s: %w", request.ProjectPath, err)
 	}
 	operations, err := request.ResolveImages(ctx)
 	if err != nil {
-		return nil, errors.WrapIf(err, "resolve registry credentials")
+		return nil, fmt.Errorf("resolve registry credentials: %w", err)
 	}
 	pullPolicy := ""
 	forceRecreate, recreateVolumes := false, false
@@ -66,16 +67,16 @@ func (c *composeCoordinatorInternal) Deploy(ctx context.Context, request project
 	}
 	pullPolicy = cmp.Or(pullPolicy, "missing")
 	if err := c.PrepareImagesForDeploy(ctx, request.ProjectID, model, request.Progress, operations, pullPolicy); err != nil {
-		return nil, errors.WrapIf(err, "failed to prepare project images for deploy")
+		return nil, fmt.Errorf("failed to prepare project images for deploy: %w", err)
 	}
 	removeOrphans := ResolveRemoveOrphans(request.GitOpsManaged, request.Options)
 	slog.InfoContext(ctx, "starting compose up with health check support", "projectID", request.ProjectID, "projectName", model.Name, "services", len(model.Services), "removeOrphans", removeOrphans)
 	if err := c.commands.Up(ctx, model, nil, removeOrphans, forceRecreate, recreateVolumes, request.AuthConfigs, request.WaitTimeout); err != nil {
 		slog.ErrorContext(ctx, "compose up failed", "projectName", model.Name, "projectID", request.ProjectID, "error", err)
 		if strings.Contains(err.Error(), "timeout") || strings.Contains(err.Error(), "context deadline exceeded") {
-			return nil, errors.WrapIf(err, "deployment timed out waiting for services - long-running 'service_healthy'/'service_completed_successfully' dependencies may need a higher Deploy Wait Timeout setting, and 'service_healthy' requires a healthcheck")
+			return nil, fmt.Errorf("deployment timed out waiting for services - long-running 'service_healthy'/'service_completed_successfully' dependencies may need a higher Deploy Wait Timeout setting, and 'service_healthy' requires a healthcheck: %w", err)
 		}
-		return nil, errors.WrapIf(err, "failed to deploy project")
+		return nil, fmt.Errorf("failed to deploy project: %w", err)
 	}
 	slog.InfoContext(ctx, "compose up completed successfully", "projectID", request.ProjectID, "projectName", model.Name)
 	return model, nil
@@ -100,7 +101,7 @@ func (c *composeCoordinatorInternal) UpdateServices(ctx context.Context, request
 		if request.RestoreBeforeMutation != nil {
 			request.RestoreBeforeMutation(ctx)
 		}
-		return errors.WrapIf(err, "pull updated service images")
+		return fmt.Errorf("pull updated service images: %w", err)
 	}
 	if err := c.commands.Stop(ctx, selected, scope); err != nil {
 		slog.WarnContext(ctx, "compose stop failed, continuing", "error", err)
@@ -109,7 +110,7 @@ func (c *composeCoordinatorInternal) UpdateServices(ctx context.Context, request
 		if request.Recover != nil {
 			request.Recover(ctx)
 		}
-		return errors.WrapIf(err, "failed to up services")
+		return fmt.Errorf("failed to up services: %w", err)
 	}
 	// Stopped dependents are recreated after the up so they resolve the new
 	// provider containers, and are left stopped.
@@ -118,7 +119,7 @@ func (c *composeCoordinatorInternal) UpdateServices(ctx context.Context, request
 			if request.Recover != nil {
 				request.Recover(ctx)
 			}
-			return errors.WrapIf(err, "failed to recreate stopped dependents")
+			return fmt.Errorf("failed to recreate stopped dependents: %w", err)
 		}
 	}
 	return nil
@@ -222,7 +223,7 @@ func (c *composeCoordinatorInternal) EnsureImagesPresent(ctx context.Context, mo
 				continue
 			}
 			if !exists {
-				return errors.Errorf("image %s is not available locally and pull_policy is 'never'", img)
+				return fmt.Errorf("image %s is not available locally and pull_policy is 'never'", img)
 			}
 			slog.DebugContext(ctx, "pull_policy is 'never'; using local image without pull", "image", img)
 			continue
@@ -324,7 +325,7 @@ func (c *composeCoordinatorInternal) ensureDeployServiceImageReadyInternal(
 
 	if decision.RequireLocalOnly {
 		if !exists {
-			return errors.Errorf("image %s is not available locally and pull_policy is set to never", imageName)
+			return fmt.Errorf("image %s is not available locally and pull_policy is set to never", imageName)
 		}
 		return nil
 	}
@@ -351,7 +352,7 @@ func (c *composeCoordinatorInternal) ensureDeployServiceImageReadyInternal(
 		slog.WarnContext(ctx, "image pull failed, falling back to build", "service", serviceName, "image", imageName, "error", err)
 		return c.buildServiceImageForDeployInternal(ctx, projectID, project, serviceName, svc, progressWriter, operations)
 	}
-	return errors.WrapIff(err, "failed to pull image %s", imageName)
+	return fmt.Errorf("failed to pull image %s: %w", imageName, err)
 }
 
 func (c *composeCoordinatorInternal) buildServiceImageForDeployInternal(
@@ -364,7 +365,7 @@ func (c *composeCoordinatorInternal) buildServiceImageForDeployInternal(
 	operations projecttypes.ComposeImageOperations,
 ) error {
 	if operations.Build == nil {
-		return errors.Errorf("build service not available for service %s", serviceName)
+		return fmt.Errorf("build service not available for service %s", serviceName)
 	}
 
 	buildReq, updatedSvc, updated, err := PrepareServiceBuildRequest(projectID, project, serviceName, svc, projecttypes.BuildOptions{}, operations.BuildProvider)
@@ -416,7 +417,7 @@ func (c *composeCoordinatorInternal) BuildServices(ctx context.Context, projectI
 	}
 
 	if buildCount == 0 && len(selected) > 0 {
-		return errors.Errorf("no build-enabled services matched: %s", strings.Join(options.Services, ", "))
+		return fmt.Errorf("no build-enabled services matched: %s", strings.Join(options.Services, ", "))
 	}
 
 	return nil

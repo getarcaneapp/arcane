@@ -2,8 +2,9 @@ package notifications
 
 import (
 	"context"
+	"errors"
+	"fmt"
 
-	"emperror.dev/errors"
 	"github.com/nicholas-fedor/shoutrrr/pkg/services/chat/discord"
 )
 
@@ -31,7 +32,7 @@ func SendDiscord(ctx context.Context, config DiscordConfig, message string) erro
 
 	shoutrrrURL, err := BuildDiscordURL(config)
 	if err != nil {
-		return errors.WrapIf(err, "failed to build shoutrrr Discord URL")
+		return fmt.Errorf("failed to build shoutrrr Discord URL: %w", err)
 	}
 
 	return sendShoutrrrInternal("Discord", shoutrrrURL, message, nil)

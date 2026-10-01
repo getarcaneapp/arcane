@@ -2,12 +2,12 @@ package system
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"runtime"
 	"strings"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/moby/moby/client"
 	"go.getarcane.app/docker/compat"
 	"go.getarcane.app/sys/cgroup"
@@ -78,7 +78,7 @@ func (s *SystemService) loadDockerHostMemoryInternal(ctx context.Context) (docke
 		return dockerHostMemoryInfo{}, err
 	}
 	if info.Info.MemTotal <= 0 {
-		return dockerHostMemoryInfo{}, errors.New("Docker host memory total is unavailable")
+		return dockerHostMemoryInfo{}, errors.New("Docker host memory total is unavailable") //nolint:staticcheck // Preserve the existing error message.
 	}
 	return dockerHostMemoryInfo{root: root, total: uint64(info.Info.MemTotal)}, nil
 }

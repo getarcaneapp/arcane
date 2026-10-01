@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
@@ -135,7 +134,7 @@ var containersCommitCmd = &cobra.Command{
 
 		result, err := c.PostJSON[container.CommitResult](cmd.Context(), types.ContainerCommit(c.EnvID(), resolved.ID), body)
 		if err != nil {
-			return errors.WrapIf(err, "failed to commit container")
+			return fmt.Errorf("failed to commit container: %w", err)
 		}
 
 		if jsonOutput {
@@ -168,7 +167,7 @@ var containersEditCmd = &cobra.Command{
 		if editFile == "" {
 			result, err := c.GetJSON[container.EditConfig](cmd.Context(), types.ContainerEditConfig(c.EnvID(), resolved.ID))
 			if err != nil {
-				return errors.WrapIf(err, "failed to get container edit config")
+				return fmt.Errorf("failed to get container edit config: %w", err)
 			}
 
 			return cmdutil.PrintJSON(result.Data)
@@ -176,18 +175,18 @@ var containersEditCmd = &cobra.Command{
 
 		data, err := os.ReadFile(editFile)
 		if err != nil {
-			return errors.WrapIff(err, "failed to read file %s", editFile)
+			return fmt.Errorf("failed to read file %s: %w", editFile, err)
 		}
 		var body container.Edit
 		if err := json.Unmarshal(data, &body); err != nil {
-			return errors.WrapIf(err, "failed to parse edit payload")
+			return fmt.Errorf("failed to parse edit payload: %w", err)
 		}
 
 		c.SetTimeout(30 * time.Minute)
 
 		result, err := c.PostJSON[container.Details](cmd.Context(), types.ContainerEdit(c.EnvID(), resolved.ID), body)
 		if err != nil {
-			return errors.WrapIf(err, "failed to edit container")
+			return fmt.Errorf("failed to edit container: %w", err)
 		}
 
 		if jsonOutput {
@@ -222,7 +221,7 @@ var containersAutoUpdateCmd = &cobra.Command{
 
 		result, err := c.PutJSON[base.MessageResponse](cmd.Context(), types.ContainerAutoUpdate(c.EnvID(), resolved.ID), body)
 		if err != nil {
-			return errors.WrapIf(err, "failed to set container auto-update")
+			return fmt.Errorf("failed to set container auto-update: %w", err)
 		}
 
 		if jsonOutput {

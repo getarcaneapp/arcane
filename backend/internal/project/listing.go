@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"emperror.dev/errors"
 	composeapi "github.com/docker/compose/v5/pkg/api"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
@@ -154,7 +153,7 @@ func (s *ProjectService) projectServicesFromContainersInternal(ctx context.Conte
 func (s *ProjectService) ListAllProjects(ctx context.Context) ([]Project, error) {
 	var items []Project
 	if err := s.db.WithContext(ctx).Find(&items).Error; err != nil {
-		return nil, errors.WrapIf(err, "list projects")
+		return nil, fmt.Errorf("list projects: %w", err)
 	}
 	return items, nil
 }
@@ -163,7 +162,7 @@ func (s *ProjectService) countProjectFolders(ctx context.Context) (int, error) {
 	followProjectSymlinks := s.settingsService.GetBoolSetting(ctx, "followProjectSymlinks", false)
 	projectsDir, err := s.GetProjectsDirectory(ctx)
 	if err != nil {
-		return 0, errors.WrapIf(err, "could not determine projects directory")
+		return 0, fmt.Errorf("could not determine projects directory: %w", err)
 	}
 
 	// os.* rather than acfs: this probes the projects directory itself, which is
@@ -174,7 +173,7 @@ func (s *ProjectService) countProjectFolders(ctx context.Context) (int, error) {
 		return 0, nil
 	}
 	if statErr != nil {
-		return 0, errors.WrapIff(statErr, "unable to access projects directory %s", projectsDir)
+		return 0, fmt.Errorf("unable to access projects directory %s: %w", projectsDir, statErr)
 	}
 	if !info.IsDir() {
 		return 0, nil
@@ -182,7 +181,7 @@ func (s *ProjectService) countProjectFolders(ctx context.Context) (int, error) {
 
 	discoveredProjects, discoveryErr := projects.DiscoverProjectDirectories(ctx, projectsDir, followProjectSymlinks, s.config.ProjectScanMaxDepth)
 	if discoveryErr != nil {
-		return 0, errors.WrapIff(discoveryErr, "failed to discover project directories in %s", projectsDir)
+		return 0, fmt.Errorf("failed to discover project directories in %s: %w", projectsDir, discoveryErr)
 	}
 
 	return len(discoveredProjects), nil
@@ -204,7 +203,7 @@ func (s *ProjectService) GetProjectStatusCounts(ctx context.Context) (folderCoun
 
 	var projectsList []Project
 	if err := s.db.WithContext(ctx).Find(&projectsList).Error; err != nil {
-		return folderCount, 0, 0, 0, 0, errors.WrapIf(err, "failed to list projects")
+		return folderCount, 0, 0, 0, 0, fmt.Errorf("failed to list projects: %w", err)
 	}
 
 	totalProjects = len(projectsList)
@@ -288,7 +287,7 @@ func (s *ProjectService) ListProjects(ctx context.Context, params pagination.Que
 	var projectsArray []Project
 	paginationResp, err := pagination.PaginateAndSortDB(params, query, &projectsArray)
 	if err != nil {
-		return nil, pagination.Response{}, errors.WrapIf(err, "failed to paginate projects")
+		return nil, pagination.Response{}, fmt.Errorf("failed to paginate projects: %w", err)
 	}
 
 	slog.DebugContext(ctx, "Retrieved projects from database",
@@ -377,7 +376,7 @@ func (s *ProjectService) filterProjectsWithDerivedFiltersInternal(
 		query = applyProjectSearchDBFilterInternal(query, term)
 	}
 	if err := query.Find(&projectsArray).Error; err != nil {
-		return pagination.FilterResult[project.Details]{}, errors.WrapIf(err, "failed to list projects")
+		return pagination.FilterResult[project.Details]{}, fmt.Errorf("failed to list projects: %w", err)
 	}
 
 	// Filtering, searching, and sorting only read database columns, tags, and
@@ -789,7 +788,7 @@ func (s *ProjectService) CountProjectsWithPendingUpdates(ctx context.Context, al
 		var err error
 		allContainers, err = s.listGlobalComposeContainersInternal(ctx)
 		if err != nil {
-			return 0, errors.WrapIf(err, "failed to list containers for project update count")
+			return 0, fmt.Errorf("failed to list containers for project update count: %w", err)
 		}
 	}
 
@@ -798,7 +797,7 @@ func (s *ProjectService) CountProjectsWithPendingUpdates(ctx context.Context, al
 	// everything here saves the known-name pass its own table scan.
 	var allProjects []Project
 	if err := s.db.WithContext(ctx).Find(&allProjects).Error; err != nil {
-		return 0, errors.WrapIf(err, "failed to list projects for update count")
+		return 0, fmt.Errorf("failed to list projects for update count: %w", err)
 	}
 
 	activeProjects := make([]Project, 0, len(allProjects))

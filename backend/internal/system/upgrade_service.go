@@ -3,7 +3,7 @@ package system
 import (
 	"context"
 	"encoding/json/v2"
-	stderrors "errors"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -16,7 +16,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"emperror.dev/errors"
 	cerrdefs "github.com/containerd/errdefs"
 	ref "github.com/distribution/reference"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
@@ -162,13 +161,13 @@ func (s *SystemUpgradeService) prepareUpgradeInternal(ctx context.Context, user 
 		// Fall back to the container this process runs in
 		containerId, err = s.getCurrentContainerIDInternal(ctx)
 		if err != nil {
-			return nil, errors.WrapIf(err, "get current container")
+			return nil, fmt.Errorf("get current container: %w", err)
 		}
 	}
 
 	currentContainer, err := s.findArcaneContainerInternal(ctx, containerId)
 	if err != nil {
-		return nil, errors.WrapIf(err, "inspect container")
+		return nil, fmt.Errorf("inspect container: %w", err)
 	}
 
 	containerName := strings.TrimPrefix(currentContainer.Name, "/")
@@ -218,7 +217,7 @@ func (s *SystemUpgradeService) runPreparedUpgradeInternal(ctx context.Context, p
 	// This will run independently of the current container
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return "", errors.WrapIf(err, "failed to connect to Docker")
+		return "", fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	// Pull the upgrader image first to ensure it exists
@@ -231,14 +230,14 @@ func (s *SystemUpgradeService) runPreparedUpgradeInternal(ctx context.Context, p
 	pullReader, err := dockerClient.ImagePull(pullCtx, upgraderImage, client.ImagePullOptions{})
 	if err != nil {
 		if errors.Is(pullCtx.Err(), context.DeadlineExceeded) {
-			return "", errors.Errorf("upgrader image pull timed out for %s (increase DOCKER_IMAGE_PULL_TIMEOUT or setting)", upgraderImage)
+			return "", fmt.Errorf("upgrader image pull timed out for %s (increase DOCKER_IMAGE_PULL_TIMEOUT or setting)", upgraderImage)
 		}
-		return "", errors.WrapIf(err, "pull upgrader image")
+		return "", fmt.Errorf("pull upgrader image: %w", err)
 	}
 	// Drain and validate the JSON stream to complete the pull.
 	if err := dockerutils.RenderJSONMessageStream(pullReader, io.Discard); err != nil {
 		_ = pullReader.Close()
-		return "", errors.WrapIf(err, "failed to complete upgrader image pull")
+		return "", fmt.Errorf("failed to complete upgrader image pull: %w", err)
 	}
 	if closeErr := pullReader.Close(); closeErr != nil {
 		slog.Warn("Failed to close upgrader image pull reader", "error", closeErr)
@@ -270,7 +269,7 @@ func (s *SystemUpgradeService) runPreparedUpgradeInternal(ctx context.Context, p
 		},
 	)
 	if err != nil {
-		return "", errors.WrapIf(err, "resolve upgrader docker runtime")
+		return "", fmt.Errorf("resolve upgrader docker runtime: %w", err)
 	}
 
 	upgradeCmd := []string{prepared.binaryPath, "upgrade", "--container", prepared.containerName}
@@ -329,13 +328,13 @@ func (s *SystemUpgradeService) runPreparedUpgradeInternal(ctx context.Context, p
 		Name:       upgraderName,
 	})
 	if err != nil {
-		return "", errors.WrapIf(err, "create upgrader container")
+		return "", fmt.Errorf("create upgrader container: %w", err)
 	}
 
 	// Start the upgrader container - it will run the upgrade and auto-remove
 	if _, err := dockerClient.ContainerStart(ctx, resp.ID, client.ContainerStartOptions{}); err != nil {
 		_, _ = dockerClient.ContainerRemove(ctx, resp.ID, client.ContainerRemoveOptions{Force: true})
-		return "", errors.WrapIf(err, "start upgrader container")
+		return "", fmt.Errorf("start upgrader container: %w", err)
 	}
 
 	slog.Info("Upgrade container started", "upgraderId", resp.ID[:12], "upgraderName", upgraderName)
@@ -388,7 +387,7 @@ func (s *SystemUpgradeService) resolveUpgradeTargetImageInternal(ctx context.Con
 	}
 	resolved, err := resolveSelfUpgradeTargetImageInternal(currentImageRef, info)
 	if err != nil {
-		return "", errors.WrapIf(err, "resolve upgrade target image")
+		return "", fmt.Errorf("resolve upgrade target image: %w", err)
 	}
 	return resolved, nil
 }
@@ -407,11 +406,11 @@ func resolveSelfUpgradeTargetImageInternal(currentImageRef string, info *version
 
 	parsed, err := ref.Parse(currentImageRef)
 	if err != nil {
-		return "", errors.WrapIff(err, "parse current image reference %q", currentImageRef)
+		return "", fmt.Errorf("parse current image reference %q: %w", currentImageRef, err)
 	}
 	named, ok := parsed.(ref.Named)
 	if !ok {
-		return "", errors.Errorf("current image reference %q is not a named image", currentImageRef)
+		return "", fmt.Errorf("current image reference %q is not a named image", currentImageRef)
 	}
 
 	newestDigest, newestVersion := newestTargetIdentifiersInternal(info)
@@ -424,11 +423,11 @@ func resolveSelfUpgradeTargetImageInternal(currentImageRef string, info *version
 		}
 		targetDigest := digest.Digest(newestDigest)
 		if err := targetDigest.Validate(); err != nil {
-			return "", errors.WrapIff(err, "resolved newest digest %q is not a valid digest", newestDigest)
+			return "", fmt.Errorf("resolved newest digest %q is not a valid digest: %w", newestDigest, err)
 		}
 		withDigest, err := ref.WithDigest(named, targetDigest)
 		if err != nil {
-			return "", errors.WrapIff(err, "build target reference for %q", named.Name())
+			return "", fmt.Errorf("build target reference for %q: %w", named.Name(), err)
 		}
 		return withDigest.String(), nil
 	}
@@ -441,19 +440,19 @@ func resolveSelfUpgradeTargetImageInternal(currentImageRef string, info *version
 	}
 
 	if newestVersion == "" {
-		return "", errors.Errorf("running exact release %q but the newest release could not be resolved", tagged.Tag())
+		return "", fmt.Errorf("running exact release %q but the newest release could not be resolved", tagged.Tag())
 	}
 	newest := kit.EnsurePrefix(newestVersion, "v")
 	if !semver.IsValid(newest) {
-		return "", errors.Errorf("resolved newest version %q is not a valid semver release", newestVersion)
+		return "", fmt.Errorf("resolved newest version %q is not a valid semver release", newestVersion)
 	}
 	if semver.Compare(newest, kit.EnsurePrefix(tagged.Tag(), "v")) < 0 {
-		return "", errors.Errorf("newest release %q is older than the running %q; refusing to downgrade", newestVersion, tagged.Tag())
+		return "", fmt.Errorf("newest release %q is older than the running %q; refusing to downgrade", newestVersion, tagged.Tag())
 	}
 
 	withTag, err := ref.WithTag(named, newest)
 	if err != nil {
-		return "", errors.WrapIff(err, "build target reference for %q", named.Name())
+		return "", fmt.Errorf("build target reference for %q: %w", named.Name(), err)
 	}
 	return withTag.String(), nil
 }
@@ -506,7 +505,7 @@ func ResolveUpgraderRuntimeOptions(
 
 	scheme, socketPath, err := vuln.ParseDockerHost(dockerHost)
 	if err != nil {
-		return nil, nil, "", errors.WrapIff(err, "resolve docker host %q", dockerHost)
+		return nil, nil, "", fmt.Errorf("resolve docker host %q: %w", dockerHost, err)
 	}
 
 	if scheme != "unix" {
@@ -526,7 +525,7 @@ func ResolveUpgraderRuntimeOptions(
 		isRunningInDocker,
 	)
 	if err != nil {
-		return nil, nil, "", errors.WrapIf(err, "resolve unix socket source")
+		return nil, nil, "", fmt.Errorf("resolve unix socket source: %w", err)
 	}
 
 	mounts := []mount.Mount{{
@@ -605,19 +604,7 @@ func (s *SystemUpgradeService) findArcaneContainerInternal(ctx context.Context, 
 		}
 	}
 
-	return container.InspectResponse{}, common.Classify(common.ErrNotFound, errors.
-
-		// --- Fleet-wide "update all environments" orchestration ---
-		//
-		// Remote agents upgrade first, while the manager is still up and can orchestrate
-		// and report live progress. The manager upgrades itself LAST, which recreates its
-		// own container. Updates are unconditional: every environment pulls the latest
-		// image whether or not it reports an update available. Because the browser loses
-		// the backend across that final restart, the orchestration is a persisted
-		// EnvironmentUpdateJob: StartUpdateAll runs the agents phase, triggers the manager
-		// self-upgrade as the last step and leaves the job in pending_restart; on the next
-		// boot ResumeUpdateAllOnStartup finalizes the manager result and closes the job.
-		New("could not find Arcane container"))
+	return container.InspectResponse{}, common.Classify(common.ErrNotFound, errors.New("could not find Arcane container"))
 }
 
 const (
@@ -663,7 +650,7 @@ func (s *SystemUpgradeService) StartUpdateAll(ctx context.Context, user common.U
 
 	active, err := s.activeUpdateAllJobInternal(ctx)
 	if err != nil {
-		return nil, errors.WrapIf(err, "check for active update-all job")
+		return nil, fmt.Errorf("check for active update-all job: %w", err)
 	}
 	if active != nil {
 		return nil, common.Classify(common.ErrUpdateAllInProgress, errors.New("an update-all job is already in progress"))
@@ -702,7 +689,7 @@ func (s *SystemUpgradeService) StartUpdateAll(ctx context.Context, user common.U
 	job.Results = append(EnvironmentUpdateResults{managerResult}, remoteResults...)
 
 	if err := s.db.WithContext(ctx).Create(job).Error; err != nil {
-		return nil, errors.WrapIf(err, "create update-all job")
+		return nil, fmt.Errorf("create update-all job: %w", err)
 	}
 
 	slog.InfoContext(ctx, "Update-all started; upgrading agents first", "jobId", job.ID, "user", user.Username)
@@ -1110,7 +1097,7 @@ func updateAllAgentFailureStatusInternal(err error) EnvironmentUpdateResultStatu
 		return EnvironmentUpdateResultStatusFailed
 	}
 	// The environment answered with a non-success status — reached, not offline.
-	if _, ok := stderrors.AsType[*remenv.StatusError](err); ok {
+	if _, ok := errors.AsType[*remenv.StatusError](err); ok {
 		return EnvironmentUpdateResultStatusFailed
 	}
 	return EnvironmentUpdateResultStatusSkippedOffline
@@ -1369,12 +1356,12 @@ func (s *SystemUpgradeService) PruneUpgradeLogs(ctx context.Context, dataDir str
 		return 0, nil
 	}
 	if err != nil {
-		return 0, errors.WrapIf(err, "open upgrade log directory")
+		return 0, fmt.Errorf("open upgrade log directory: %w", err)
 	}
 	defer root.Close()
 	entries, err := fs.ReadDir(root.FS(), ".")
 	if err != nil {
-		return 0, errors.WrapIf(err, "read upgrade log directory")
+		return 0, fmt.Errorf("read upgrade log directory: %w", err)
 	}
 
 	cutoff := now.Add(-time.Duration(retentionDays) * 24 * time.Hour)
@@ -1382,7 +1369,7 @@ func (s *SystemUpgradeService) PruneUpgradeLogs(ctx context.Context, dataDir str
 	var failures []error
 	for _, entry := range entries {
 		if err := ctx.Err(); err != nil {
-			return removed, stderrors.Join(append(failures, err)...)
+			return removed, errors.Join(append(failures, err)...)
 		}
 		if !upgradeLogNameInternal.MatchString(entry.Name()) {
 			continue
@@ -1392,7 +1379,7 @@ func (s *SystemUpgradeService) PruneUpgradeLogs(ctx context.Context, dataDir str
 			continue
 		}
 		if err != nil {
-			failures = append(failures, errors.WrapIff(err, "inspect upgrade log %s", entry.Name()))
+			failures = append(failures, fmt.Errorf("inspect upgrade log %s: %w", entry.Name(), err))
 			continue
 		}
 		if !info.Mode().IsRegular() || !info.ModTime().Before(cutoff) {
@@ -1400,11 +1387,11 @@ func (s *SystemUpgradeService) PruneUpgradeLogs(ctx context.Context, dataDir str
 		}
 		if err := root.Remove(entry.Name()); err != nil {
 			if !errors.Is(err, os.ErrNotExist) {
-				failures = append(failures, errors.WrapIff(err, "remove upgrade log %s", entry.Name()))
+				failures = append(failures, fmt.Errorf("remove upgrade log %s: %w", entry.Name(), err))
 			}
 			continue
 		}
 		removed++
 	}
-	return removed, stderrors.Join(failures...)
+	return removed, errors.Join(failures...)
 }

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
@@ -4391,11 +4392,8 @@ func TestProjectService_DeployProject_StopsOnBuildPreparationError(t *testing.T)
 	projectsRoot := t.TempDir()
 	projectDir := filepath.Join(projectsRoot, "demo")
 	require.NoError(t, os.MkdirAll(projectDir, 0o755))
-	composeContent := "services:\n" +
-		"  web:\n" +
-		"    pull_policy: build\n" +
-		"    build:\n" +
-		"      context: .\n"
+	composeContent := "services:\n  web:\n    pull_policy: build\n    build:\n      context: .\n"
+
 	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "compose.yaml"), []byte(composeContent), 0o644))
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot+":"+projectsRoot))
 
@@ -4429,15 +4427,8 @@ func TestProjectService_DeployProject_BuildsGeneratedImageWithoutPull(t *testing
 	projectsRoot := t.TempDir()
 	projectDir := filepath.Join(projectsRoot, "demo")
 	require.NoError(t, os.MkdirAll(projectDir, 0o755))
-	composeContent := "services:\n" +
-		"  caddy:\n" +
-		"    build:\n" +
-		"      dockerfile_inline: |\n" +
-		"        FROM caddy:builder AS builder\n" +
-		"        RUN xcaddy build --with github.com/caddyserver/replace-response\n" +
-		"\n" +
-		"        FROM caddy:latest\n" +
-		"        COPY --from=builder /usr/bin/caddy /usr/bin/caddy\n"
+	composeContent := "services:\n  caddy:\n    build:\n      dockerfile_inline: |\n        FROM caddy:builder AS builder\n        RUN xcaddy build --with github.com/caddyserver/replace-response\n\n        FROM caddy:latest\n        COPY --from=builder /usr/bin/caddy /usr/bin/caddy\n"
+
 	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "compose.yaml"), []byte(composeContent), 0o644))
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot+":"+projectsRoot))
 
@@ -7543,9 +7534,7 @@ func TestDiscoveredProjectTagUpdatesRemainScoped(t *testing.T) {
 	require.Len(t, rows, 1, "updater=false containers keep their check results")
 	for _, policy := range []map[string]string{{labels.LabelUpdateStrategy: "digest"}, {labels.LabelUpdateStrategy: "tag", labels.LabelUpdateConstraint: "3.1.x"}, {labels.LabelUpdateStrategy: "tag", labels.LabelUpdateTagPattern: ".*"}, {labels.LabelUpdateStrategy: "tag", imageref.UpdateCheckLabel: "off"}} {
 		current := map[string]string{"com.docker.compose.project": "first-project", "com.docker.compose.service": "web"}
-		for key, value := range policy {
-			current[key] = value
-		}
+		maps.Copy(current, policy)
 		containers[1].Labels = current
 		rows = buildDiscoveredComposeProjectUpdateRowsInternal(t.Context(), containers, nil, imageSvc, "")
 		require.Empty(t, rows, "stale records must not mark discovered projects updated")

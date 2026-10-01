@@ -3,6 +3,8 @@ package edge
 import (
 	"context"
 	"crypto/tls"
+	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -11,10 +13,9 @@ import (
 	"time"
 	"uuid"
 
-	"emperror.dev/emperror"
-	"emperror.dev/errors"
 	wshub "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/ws"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/proto/tunnel/v1"
 	certgen "github.com/getarcaneapp/arcane/cli/v2/pkg/generate"
 	"github.com/labstack/echo/v5"
@@ -517,7 +518,7 @@ func (s *TunnelServer) deliverResponse(ctx context.Context, tunnel *AgentTunnel,
 		select {
 		case pending.ResponseCh <- msg:
 		default:
-			err := errors.Errorf("response delivery failed because pending request %s is not consuming messages", msg.ID)
+			err := fmt.Errorf("response delivery failed because pending request %s is not consuming messages", msg.ID)
 			tunnel.Pending.Delete(msg.ID)
 			pending.failureCh <- err
 			slog.WarnContext(ctx, "Failed pending request with full response channel", "id", msg.ID)
@@ -544,7 +545,7 @@ func (s *TunnelServer) deliverStream(ctx context.Context, tunnel *AgentTunnel, m
 		case <-ctx.Done():
 			return
 		case <-deliveryTimer.C:
-			err := errors.Errorf("stream delivery timed out for pending request %s", msg.ID)
+			err := fmt.Errorf("stream delivery timed out for pending request %s", msg.ID)
 			tunnel.Pending.Delete(msg.ID)
 			pending.failureCh <- err
 			slog.WarnContext(ctx, "Failed slow pending stream consumer",
@@ -667,7 +668,7 @@ func (s *TunnelServer) loggingStreamInterceptorInternal() grpc.StreamServerInter
 func (s *TunnelServer) recoveryStreamInterceptorInternal() grpc.StreamServerInterceptor {
 	return func(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) (err error) {
 		defer func() {
-			if panicErr := emperror.Recover(recover()); panicErr != nil {
+			if panicErr := utils.PanicToError(recover()); panicErr != nil {
 				slog.ErrorContext(ss.Context(), "panic in gRPC tunnel stream",
 					"method", info.FullMethod,
 					"error", panicErr,
@@ -751,4 +752,14 @@ func securityModeFromGRPCContextInternal(ctx context.Context) string {
 		return "token"
 	}
 	return grpcContextSecurityModeInternal(*p)
+}
+
+// IsInternalTunnelRequest reports whether a request is being dispatched by the
+// in-process edge tunnel client instead of a real network listener.
+func IsInternalTunnelRequest(ctx context.Context) bool {
+	if ctx == nil {
+		return false
+	}
+	isInternal, _ := ctx.Value(internalTunnelRequestContextKey{}).(bool)
+	return isInternal
 }

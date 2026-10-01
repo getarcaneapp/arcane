@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json/v2"
-	stderrors "errors"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -15,7 +15,6 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"emperror.dev/errors"
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
@@ -111,7 +110,7 @@ func ensureProjectEnvReadableInternal(ctx context.Context, projectsDirectory, pr
 	if cfgErr == nil || !cfgErr.BlocksOperations {
 		return nil
 	}
-	return common.Classify(common.ErrProjectEnvUnreadable, errors.Errorf("%s is not readable by the runtime user (uid %d, gid %d); fix its ownership/read permission or set PUID/PGID to a user that can read it", cfgErr.Path, cfgErr.UID, cfgErr.GID))
+	return common.Classify(common.ErrProjectEnvUnreadable, fmt.Errorf("%s is not readable by the runtime user (uid %d, gid %d); fix its ownership/read permission or set PUID/PGID to a user that can read it", cfgErr.Path, cfgErr.UID, cfgErr.GID))
 }
 
 // resolveAuthoritativeProjectNameInternal enforces that a top-level `name:` in
@@ -154,7 +153,7 @@ func (s *ProjectService) applyProjectUpdateWithRenameJournalInternal(ctx context
 		stateCommitted := projectStateCommitted != nil && *projectStateCommitted
 		if err != nil && volumeMigrationApplied && !stateCommitted {
 			if rollbackErr := volumeMigration.Rollback(ctx); rollbackErr != nil {
-				err = stderrors.Join(err, errors.WrapIf(rollbackErr, "failed to rollback project volume rename"))
+				err = errors.Join(err, fmt.Errorf("failed to rollback project volume rename: %w", rollbackErr))
 			}
 		}
 	}()
@@ -181,7 +180,7 @@ func (s *ProjectService) applyProjectUpdateWithRenameJournalInternal(ctx context
 func (s *ProjectService) saveProjectUpdateInternal(ctx context.Context, proj *Project) error {
 	tx := s.db.WithContext(ctx).Begin()
 	if tx.Error != nil {
-		return errors.WrapIf(tx.Error, "failed to start project update transaction")
+		return fmt.Errorf("failed to start project update transaction: %w", tx.Error)
 	}
 
 	txCommitted := false
@@ -192,10 +191,10 @@ func (s *ProjectService) saveProjectUpdateInternal(ctx context.Context, proj *Pr
 	}()
 
 	if err := tx.Save(proj).Error; err != nil {
-		return errors.WrapIf(err, "failed to update project")
+		return fmt.Errorf("failed to update project: %w", err)
 	}
 	if err := tx.Commit().Error; err != nil {
-		return errors.WrapIf(err, "failed to commit project update")
+		return fmt.Errorf("failed to commit project update: %w", err)
 	}
 	txCommitted = true
 	return nil
@@ -208,12 +207,12 @@ func (s *ProjectService) handleProjectUpdateFailureInternal(ctx context.Context,
 
 	if backup != nil {
 		if restoreErr := projects.RestoreProjectDirectoryBackup(ctx, projectsDirectory, proj.Path, backup); restoreErr != nil {
-			err = stderrors.Join(err, errors.WrapIf(restoreErr, "failed to restore project files after update failure"))
+			err = errors.Join(err, fmt.Errorf("failed to restore project files after update failure: %w", restoreErr))
 		}
 	}
 	if *journalActive {
 		if recoverErr := s.recoverProjectRenameJournalForProjectInternal(ctx, projectID); recoverErr != nil {
-			err = stderrors.Join(err, errors.WrapIf(recoverErr, "project rename recovery failed"))
+			err = errors.Join(err, fmt.Errorf("project rename recovery failed: %w", recoverErr))
 		} else {
 			*journalActive = false
 		}
@@ -266,11 +265,11 @@ func (s *ProjectService) ApplyGitSyncProjectFiles(ctx context.Context, projectID
 
 	envUpdate, err := s.prepareGitSyncEnvUpdateInternal(proj.Path, gitEnvContent)
 	if err != nil {
-		return nil, false, errors.WrapIf(err, "failed to resolve git env state")
+		return nil, false, fmt.Errorf("failed to resolve git env state: %w", err)
 	}
 
 	if err := projects.ValidateComposeContentForUpdate(ctx, projectsDirectory, proj.Path, proj.Name, composeContent, envUpdate.effectiveContent, gitOverrideContent, gitOverrideFileName, true); err != nil {
-		return nil, false, errors.WrapIf(err, "invalid compose file")
+		return nil, false, fmt.Errorf("invalid compose file: %w", err)
 	}
 
 	backup, cleanupBackup, err := s.prepareProjectUpdateBackupInternal(ctx, projectsDirectory, proj.Path, &composeContent, gitEnvContent, gitOverrideContent)
@@ -356,16 +355,16 @@ func (s *ProjectService) logGitSyncProjectUpdateInternal(ctx context.Context, pr
 // the caller restores the pre-update backup.
 func (s *ProjectService) applyGitSyncProjectFilesInternal(ctx context.Context, proj *Project, projectsDirectory, composeContent string, envUpdate gitSyncEnvUpdateInternal, gitOverrideContent *string, gitOverrideFileName string, projectStateCommitted *bool) error {
 	if err := persistGitSyncEnvFilesInternal(ctx, proj.Path, projectsDirectory, envUpdate); err != nil {
-		return errors.WrapIf(err, "failed to sync git env files")
+		return fmt.Errorf("failed to sync git env files: %w", err)
 	}
 	if err := projects.WriteComposeFile(ctx, projectsDirectory, proj.Path, composeContent); err != nil {
-		return errors.WrapIf(err, "failed to save compose file")
+		return fmt.Errorf("failed to save compose file: %w", err)
 	}
 	if err := projects.WriteComposeOverrideFile(ctx, projectsDirectory, proj.Path, gitOverrideContent, gitOverrideFileName); err != nil {
-		return errors.WrapIf(err, "failed to sync git override file")
+		return fmt.Errorf("failed to sync git override file: %w", err)
 	}
 	if err := s.db.WithContext(ctx).Save(proj).Error; err != nil {
-		return errors.WrapIf(err, "failed to update project")
+		return fmt.Errorf("failed to update project: %w", err)
 	}
 	if projectStateCommitted != nil {
 		*projectStateCommitted = true
@@ -379,12 +378,12 @@ func (s *ProjectService) getProjectForUpdate(ctx context.Context, projectID stri
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return Project{}, "", errors.New("project not found")
 		}
-		return Project{}, "", errors.WrapIf(err, "failed to get project")
+		return Project{}, "", fmt.Errorf("failed to get project: %w", err)
 	}
 
 	projectsDirectory, err := projects.GetProjectsDirectory(ctx, s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects"))
 	if err != nil {
-		return Project{}, "", errors.WrapIf(err, "failed to get projects directory")
+		return Project{}, "", fmt.Errorf("failed to get projects directory: %w", err)
 	}
 
 	if err := s.EnsureProjectPathUnderRoot(ctx, &proj, false); err != nil {
@@ -405,7 +404,7 @@ func (s *ProjectService) prepareProjectRenameVolumeMigrationForUpdateInternal(ct
 
 	previewLogical, err := acfs.MkdirTemp(ctx, projectsDirectory, "/", ".project-update-preview-*")
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to create project update preview")
+		return nil, fmt.Errorf("failed to create project update preview: %w", err)
 	}
 	previewPath := filepath.Join(projectsDirectory, filepath.FromSlash(strings.TrimPrefix(previewLogical, "/")))
 	defer func() {
@@ -419,13 +418,13 @@ func (s *ProjectService) prepareProjectRenameVolumeMigrationForUpdateInternal(ct
 	}()
 
 	if _, err := acfs.CopyDir(ctx, proj.Path, previewPath, acfstypes.CopyOptions{}); err != nil {
-		return nil, errors.WrapIf(err, "failed to prepare project update preview")
+		return nil, fmt.Errorf("failed to prepare project update preview: %w", err)
 	}
 
 	previewProject := *proj
 	previewProject.Path = previewPath
 	if err := s.persistUpdatedProjectFiles(ctx, &previewProject, projectsDirectory, composeContent, envContent, overrideContent); err != nil {
-		return nil, errors.WrapIf(err, "failed to prepare project update preview")
+		return nil, fmt.Errorf("failed to prepare project update preview: %w", err)
 	}
 
 	return s.prepareProjectRenameVolumeMigrationInternal(ctx, &previewProject, name)
@@ -442,12 +441,12 @@ func (s *ProjectService) prepareProjectRenameVolumeMigrationInternal(ctx context
 		if errors.Is(err, common.ErrProjectComposeFileNotFound) {
 			return nil, nil
 		}
-		return nil, errors.WrapIf(err, "failed to load compose project for volume rename")
+		return nil, fmt.Errorf("failed to load compose project for volume rename: %w", err)
 	}
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to connect to Docker for volume rename")
+		return nil, fmt.Errorf("failed to connect to Docker for volume rename: %w", err)
 	}
 
 	registry := ""
@@ -490,11 +489,11 @@ func (s *ProjectService) persistUpdatedProjectFiles(ctx context.Context, proj *P
 	case composeContent != nil:
 		effectiveEnvContent, err := s.resolveEffectiveEnvContentForUpdateInternal(proj.Path, envContent)
 		if err != nil {
-			return errors.WrapIf(err, "invalid compose file")
+			return fmt.Errorf("invalid compose file: %w", err)
 		}
 		valOverride, valOverrideName := projects.ResolveEffectiveOverrideForValidation(proj.Path, overrideContent)
 		if err := projects.ValidateComposeContentForUpdate(ctx, projectsDirectory, proj.Path, proj.Name, *composeContent, effectiveEnvContent, valOverride, valOverrideName, false); err != nil {
-			return errors.WrapIf(err, "invalid compose file")
+			return fmt.Errorf("invalid compose file: %w", err)
 		}
 		// The env is persisted first so WriteComposeFile targets the COMPOSE_FILE
 		// base the updated .env selects, not the one the old .env selected. A
@@ -502,16 +501,16 @@ func (s *ProjectService) persistUpdatedProjectFiles(ctx context.Context, proj *P
 		// clients omit it when the compose editor is unchanged.
 		if envContent != nil {
 			if err := persistEffectiveEnvContentInternal(ctx, proj.Path, projectsDirectory, *envContent); err != nil {
-				return errors.WrapIf(err, "failed to save project files")
+				return fmt.Errorf("failed to save project files: %w", err)
 			}
 		} else if err := s.ensureEffectiveEnvFileInternal(ctx, proj.Path, projectsDirectory); err != nil {
-			return errors.WrapIf(err, "failed to save project files")
+			return fmt.Errorf("failed to save project files: %w", err)
 		}
 		if err := projects.WriteComposeFile(ctx, projectsDirectory, proj.Path, *composeContent); err != nil {
-			return errors.WrapIf(err, "failed to save project files")
+			return fmt.Errorf("failed to save project files: %w", err)
 		}
 		if err := projects.ApplyOverrideFileChange(ctx, projectsDirectory, proj.Path, overrideContent); err != nil {
-			return errors.WrapIf(err, "failed to save project files")
+			return fmt.Errorf("failed to save project files: %w", err)
 		}
 	case overrideContent != nil:
 		if err := s.persistOverrideOnlyUpdateInternal(ctx, proj, projectsDirectory, envContent, overrideContent); err != nil {
@@ -534,23 +533,23 @@ func (s *ProjectService) persistUpdatedProjectFiles(ctx context.Context, proj *P
 func (s *ProjectService) persistOverrideOnlyUpdateInternal(ctx context.Context, proj *Project, projectsDirectory string, envContent, overrideContent *string) error {
 	baseContent, _, err := projects.ReadProjectFiles(ctx, proj.Path, "")
 	if err != nil {
-		return errors.WrapIf(err, "failed to read project files")
+		return fmt.Errorf("failed to read project files: %w", err)
 	}
 	effectiveEnvContent, err := s.resolveEffectiveEnvContentForUpdateInternal(proj.Path, envContent)
 	if err != nil {
-		return errors.WrapIf(err, "invalid compose file")
+		return fmt.Errorf("invalid compose file: %w", err)
 	}
 	valOverride, valOverrideName := projects.ResolveEffectiveOverrideForValidation(proj.Path, overrideContent)
 	if err := projects.ValidateComposeContentForUpdate(ctx, projectsDirectory, proj.Path, proj.Name, baseContent, effectiveEnvContent, valOverride, valOverrideName, false); err != nil {
-		return errors.WrapIf(err, "invalid compose file")
+		return fmt.Errorf("invalid compose file: %w", err)
 	}
 	if envContent != nil {
 		if err := persistEffectiveEnvContentInternal(ctx, proj.Path, projectsDirectory, *envContent); err != nil {
-			return errors.WrapIf(err, "failed to save project files")
+			return fmt.Errorf("failed to save project files: %w", err)
 		}
 	}
 	if err := projects.ApplyOverrideFileChange(ctx, projectsDirectory, proj.Path, overrideContent); err != nil {
-		return errors.WrapIf(err, "failed to save project files")
+		return fmt.Errorf("failed to save project files: %w", err)
 	}
 	return nil
 }
@@ -560,18 +559,18 @@ func (s *ProjectService) ensureProjectStoppedForRenameInternal(ctx context.Conte
 		return nil
 	}
 	if proj.Status != ProjectStatusStopped && proj.Status != ProjectStatusUnknown {
-		return errors.Errorf("project must be stopped before renaming (current status: %s)", proj.Status)
+		return fmt.Errorf("project must be stopped before renaming (current status: %s)", proj.Status)
 	}
 
 	services, err := s.GetProjectServices(ctx, proj.ID)
 	if err != nil {
 		slog.WarnContext(ctx, "failed to resolve project status before rename", "projectID", proj.ID, "error", err)
-		return errors.WrapIff(err, "project must be stopped before renaming (current status: %s): failed to verify live status", proj.Status)
+		return fmt.Errorf("project must be stopped before renaming (current status: %s): failed to verify live status: %w", proj.Status, err)
 	}
 
 	status := calculateProjectStatus(services)
 	if status != ProjectStatusStopped {
-		return errors.Errorf("project must be stopped before renaming (current status: %s)", status)
+		return fmt.Errorf("project must be stopped before renaming (current status: %s)", status)
 	}
 
 	serviceCount, runningCount := getServiceCounts(services)
@@ -593,7 +592,7 @@ func (s *ProjectService) applyProjectRenameIfNeeded(ctx context.Context, proj *P
 	}
 
 	if proj.Status != ProjectStatusStopped {
-		return errors.Errorf("project must be stopped before renaming (current status: %s)", proj.Status)
+		return fmt.Errorf("project must be stopped before renaming (current status: %s)", proj.Status)
 	}
 
 	newDirName := projects.SanitizeProjectName(newName)
@@ -606,14 +605,14 @@ func (s *ProjectService) applyProjectRenameIfNeeded(ctx context.Context, proj *P
 	if currentPath != targetPath {
 		targetLogical, err := acfs.LogicalPath(projectsDirectory, targetPath)
 		if err != nil {
-			return errors.WrapIf(err, "failed to resolve project directory rename target")
+			return fmt.Errorf("failed to resolve project directory rename target: %w", err)
 		}
 		exists, err := acfs.Exists(ctx, projectsDirectory, targetLogical)
 		if err != nil {
-			return errors.WrapIf(err, "failed to check project directory rename target")
+			return fmt.Errorf("failed to check project directory rename target: %w", err)
 		}
 		if exists {
-			return errors.Errorf("project directory already exists: %s", targetPath)
+			return fmt.Errorf("project directory already exists: %s", targetPath)
 		}
 
 		// An imported project can live outside the projects directory, in which
@@ -630,7 +629,7 @@ func (s *ProjectService) applyProjectRenameIfNeeded(ctx context.Context, proj *P
 			err = acfs.Rename(ctx, projectsDirectory, currentLogical, targetLogical)
 		}
 		if err != nil {
-			return errors.WrapIf(err, "failed to rename project directory")
+			return fmt.Errorf("failed to rename project directory: %w", err)
 		}
 
 		proj.Path = targetPath
@@ -772,11 +771,11 @@ func (s *ProjectService) writeProjectRenameJournalInternal(ctx context.Context, 
 
 	payload, err := json.Marshal(journal)
 	if err != nil {
-		return errors.WrapIf(err, "marshal project rename journal")
+		return fmt.Errorf("marshal project rename journal: %w", err)
 	}
 
 	if err := s.KVService.Set(ctx, projecttypes.RenameJournalKeyPrefix+journal.ProjectID, string(payload)); err != nil {
-		return errors.WrapIf(err, "write project rename journal")
+		return fmt.Errorf("write project rename journal: %w", err)
 	}
 	return nil
 }
@@ -804,10 +803,10 @@ func (s *ProjectService) writeProjectRenameRollbackCleanupInternal(ctx context.C
 	}
 	payload, err := json.Marshal(cleanup)
 	if err != nil {
-		return errors.WrapIf(err, "marshal project rename rollback cleanup")
+		return fmt.Errorf("marshal project rename rollback cleanup: %w", err)
 	}
 	if err := s.KVService.Set(ctx, projecttypes.RenameRollbackCleanupKeyPrefix+journal.ProjectID, string(payload)); err != nil {
-		return errors.WrapIf(err, "write project rename rollback cleanup")
+		return fmt.Errorf("write project rename rollback cleanup: %w", err)
 	}
 	return nil
 }
@@ -833,15 +832,15 @@ func (s *ProjectService) RecoverProjectRenameJournals(ctx context.Context) error
 	for _, entry := range entries {
 		var journal projecttypes.RenameJournal
 		if err := json.Unmarshal([]byte(entry.Value), &journal); err != nil {
-			recoverErr = stderrors.Join(recoverErr, errors.WrapIff(err, "decode project rename journal %s", entry.Key))
+			recoverErr = errors.Join(recoverErr, fmt.Errorf("decode project rename journal %s: %w", entry.Key, err))
 			continue
 		}
 		if err := s.recoverProjectRenameJournalInternal(ctx, &journal); err != nil {
-			recoverErr = stderrors.Join(recoverErr, errors.WrapIff(err, "recover project rename journal %s", entry.Key))
+			recoverErr = errors.Join(recoverErr, fmt.Errorf("recover project rename journal %s: %w", entry.Key, err))
 			continue
 		}
 	}
-	return stderrors.Join(recoverErr, s.recoverProjectRenameRollbackCleanupsInternal(ctx))
+	return errors.Join(recoverErr, s.recoverProjectRenameRollbackCleanupsInternal(ctx))
 }
 
 func (s *ProjectService) recoverProjectRenameJournalForProjectInternal(ctx context.Context, projectID string) error {
@@ -856,7 +855,7 @@ func (s *ProjectService) recoverProjectRenameJournalForProjectInternal(ctx conte
 
 	var journal projecttypes.RenameJournal
 	if err := json.Unmarshal([]byte(raw), &journal); err != nil {
-		return errors.WrapIf(err, "decode project rename journal")
+		return fmt.Errorf("decode project rename journal: %w", err)
 	}
 	return s.recoverProjectRenameJournalInternal(ctx, &journal)
 }
@@ -869,7 +868,7 @@ func (s *ProjectService) recoverProjectRenameJournalInternal(ctx context.Context
 	var proj Project
 	dbErr := s.db.WithContext(ctx).First(&proj, "id = ?", journal.ProjectID).Error
 	if dbErr != nil && !errors.Is(dbErr, gorm.ErrRecordNotFound) {
-		return errors.WrapIf(dbErr, "load project for rename recovery")
+		return fmt.Errorf("load project for rename recovery: %w", dbErr)
 	}
 
 	projectCommitted := dbErr == nil && (proj.Name == journal.NewName || filepath.Clean(proj.Path) == filepath.Clean(journal.NewPath))
@@ -890,11 +889,11 @@ func (s *ProjectService) recoverProjectRenameRollbackCleanupsInternal(ctx contex
 	for _, entry := range entries {
 		var cleanup projecttypes.RenameRollbackCleanup
 		if err := json.Unmarshal([]byte(entry.Value), &cleanup); err != nil {
-			recoverErr = stderrors.Join(recoverErr, errors.WrapIff(err, "decode project rename rollback cleanup %s", entry.Key))
+			recoverErr = errors.Join(recoverErr, fmt.Errorf("decode project rename rollback cleanup %s: %w", entry.Key, err))
 			continue
 		}
 		if err := s.recoverProjectRenameRollbackCleanupInternal(ctx, &cleanup); err != nil {
-			recoverErr = stderrors.Join(recoverErr, errors.WrapIff(err, "recover project rename rollback cleanup %s", entry.Key))
+			recoverErr = errors.Join(recoverErr, fmt.Errorf("recover project rename rollback cleanup %s: %w", entry.Key, err))
 			continue
 		}
 	}
@@ -916,7 +915,7 @@ func (s *ProjectService) recoverProjectRenameRollbackCleanupInternal(ctx context
 			slog.WarnContext(ctx, "clearing project rename rollback cleanup because project no longer exists", "projectID", cleanup.ProjectID)
 			return s.clearProjectRenameRollbackCleanupInternal(ctx, cleanup.ProjectID)
 		}
-		return errors.WrapIf(dbErr, "load project for rename rollback cleanup")
+		return fmt.Errorf("load project for rename rollback cleanup: %w", dbErr)
 	}
 
 	if proj.Name != cleanup.OldName || filepath.Clean(proj.Path) != filepath.Clean(cleanup.OldPath) {
@@ -937,7 +936,7 @@ func (s *ProjectService) projectRenameRecoveryDockerInternal(ctx context.Context
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to connect to Docker")
+		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	return dockerClient, nil
@@ -1017,7 +1016,7 @@ func prepareProjectServiceImagesInternal(source []byte, effective *composetypes.
 		return nil, nil, errors.New("tag updates require a single YAML document")
 	}
 	if len(document.Content) != 1 {
-		return nil, nil, errors.New("Compose source must contain a mapping")
+		return nil, nil, errors.New("Compose source must contain a mapping") //nolint:staticcheck // Preserve the existing error message.
 	}
 	if err := validateImageUpdateSourceInternal(document.Content[0]); err != nil {
 		return nil, nil, err
@@ -1027,7 +1026,7 @@ func prepareProjectServiceImagesInternal(source []byte, effective *composetypes.
 	}
 	servicesNode := composeImageFieldInternal(document.Content[0], "services")
 	if servicesNode == nil || servicesNode.Kind != yaml.MappingNode {
-		return nil, nil, errors.New("Compose source has no services mapping")
+		return nil, nil, errors.New("Compose source has no services mapping") //nolint:staticcheck // Preserve the existing error message.
 	}
 	serviceNames := make([]string, 0, len(changes))
 	// Rewrite image scalars in place; re-encoding the node tree drops blank lines and operator formatting.
@@ -1046,7 +1045,7 @@ func prepareProjectServiceImagesInternal(source []byte, effective *composetypes.
 		}
 		serviceNode := composeImageFieldInternal(servicesNode, name)
 		if composeImageFieldInternal(serviceNode, "extends") != nil {
-			return nil, nil, errors.Errorf("tag updates do not rewrite extended service %s; update its source manually", name)
+			return nil, nil, fmt.Errorf("tag updates do not rewrite extended service %s; update its source manually", name)
 		}
 		imageNode := composeImageFieldInternal(serviceNode, "image")
 		if imageNode == nil || imageNode.Kind != yaml.ScalarNode || imageNode.Tag != "!!str" {
@@ -1162,7 +1161,7 @@ func persistProjectServiceImagesInternal(ctx context.Context, projectPath, logic
 		return fmt.Errorf("recheck Compose source: %w", err)
 	}
 	if !bytes.Equal(current, original) {
-		return errors.New("Compose source changed during the image update; check updates again")
+		return errors.New("Compose source changed during the image update; check updates again") //nolint:staticcheck // Preserve the existing error message.
 	}
 	if err := acfs.Write(ctx, projectPath, logical, updated, acfs.WriteOptions{Mode: os.FileMode(entry.UnixMode).Perm()}); err != nil {
 		return fmt.Errorf("persist Compose image changes: %w", err)
@@ -1192,30 +1191,30 @@ func (s *ProjectService) projectServiceImageChangeInternal(ctx context.Context, 
 		return nil, nil
 	}
 	if configuredPolicy.Strategy == "tag" && (refs.IsDigestPinnedReference(service.Image) || refs.IsImageIDLikeReference(service.Image)) {
-		return nil, errors.Errorf("service %s has an immutable image reference", name)
+		return nil, fmt.Errorf("service %s has an immutable image reference", name)
 	}
 	tagPolicy, resolveErr := tagpolicy.Resolve(service.Image, configuredPolicy)
 	if resolveErr != nil {
-		return nil, errors.WrapIff(resolveErr, "resolve service %s update policy", name)
+		return nil, fmt.Errorf("resolve service %s update policy: %w", name, resolveErr)
 	}
 	if tagPolicy.Strategy == "digest" {
 		return nil, nil
 	}
 	if policy.IsUpdateDisabled(service.Labels) {
-		return nil, errors.Errorf("updates are disabled for service %s", name)
+		return nil, fmt.Errorf("updates are disabled for service %s", name)
 	}
 	if service.Build != nil {
-		return nil, errors.Errorf("tag discovery is unsupported for locally built service %s", name)
+		return nil, fmt.Errorf("tag discovery is unsupported for locally built service %s", name)
 	}
 	if proj.GitOpsManagedBy != nil && strings.TrimSpace(*proj.GitOpsManagedBy) != "" {
 		return nil, errors.New("tag updates cannot edit a GitOps-managed project; update image tags in the source repository")
 	}
 	if refs.IsDigestPinnedReference(service.Image) || refs.IsImageIDLikeReference(service.Image) {
-		return nil, errors.Errorf("service %s has an immutable image reference", name)
+		return nil, fmt.Errorf("service %s has an immutable image reference", name)
 	}
 	parsed, err := refs.NormalizeReference(service.Image)
 	if err != nil {
-		return nil, errors.WrapIff(err, "parse service %s image", name)
+		return nil, fmt.Errorf("parse service %s image: %w", name, err)
 	}
 	if s.containerRegistryService == nil {
 		return nil, errors.New("registry service unavailable for tag updates")
@@ -1226,11 +1225,11 @@ func (s *ProjectService) projectServiceImageChangeInternal(ctx context.Context, 
 	}
 	tags, err := s.containerRegistryService.ListImageTags(ctx, service.Image, credentials)
 	if err != nil {
-		return nil, errors.WrapIff(err, "list service %s image tags", name)
+		return nil, fmt.Errorf("list service %s image tags: %w", name, err)
 	}
 	selected, err := tagpolicy.Select(parsed.Tag, tags, tagPolicy)
 	if err != nil {
-		return nil, errors.WrapIff(err, "select service %s image tag", name)
+		return nil, fmt.Errorf("select service %s image tag: %w", name, err)
 	}
 	if selected != parsed.Tag {
 		return &updatertypes.ServiceImageChange{ExpectedRef: service.Image, TargetRef: parsed.RegistryHost + "/" + parsed.Repository + ":" + selected}, nil

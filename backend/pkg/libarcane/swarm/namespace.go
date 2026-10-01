@@ -3,13 +3,13 @@ package swarm
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"maps"
 	"regexp"
 	"slices"
 	"strings"
 
-	"emperror.dev/errors"
 	composegotypes "github.com/compose-spec/compose-go/v2/types"
 	kit "go.getarcane.app/kit/pkg"
 )
@@ -29,7 +29,7 @@ var (
 	stackNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
 
 	// ErrInvalidStack identifies invalid stack source or conversion input.
-	ErrInvalidStack = errors.Sentinel("invalid swarm stack")
+	ErrInvalidStack = errors.New("invalid swarm stack")
 )
 
 type namespace struct {
@@ -59,7 +59,7 @@ func validateStackNameInternal(stackName string) error {
 	case stackName == "":
 		return errors.New("stack name is required")
 	case !stackNamePattern.MatchString(stackName):
-		return errors.Errorf("invalid stack name %q: use lowercase letters, numbers, hyphens, and underscores, starting with a letter or number", stackName)
+		return fmt.Errorf("invalid stack name %q: use lowercase letters, numbers, hyphens, and underscores, starting with a letter or number", stackName)
 	default:
 		return nil
 	}

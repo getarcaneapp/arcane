@@ -3,12 +3,13 @@ package docker
 import (
 	"bufio"
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"strings"
 	"sync"
 
-	"emperror.dev/errors"
 	"github.com/moby/moby/api/pkg/stdcopy"
 	kit "go.getarcane.app/kit/pkg"
 )
@@ -115,7 +116,7 @@ func ReadAllLogs(ctx context.Context, logs io.ReadCloser, logsChan chan<- string
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return ctxErr
 		}
-		return errors.WrapIf(err, "failed to demultiplex logs")
+		return fmt.Errorf("failed to demultiplex logs: %w", err)
 	}
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return ctxErr

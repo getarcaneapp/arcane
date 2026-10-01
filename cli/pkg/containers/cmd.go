@@ -3,6 +3,7 @@ package containers
 import (
 	"cmp"
 	"encoding/json/v2"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -10,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
@@ -189,7 +189,7 @@ var containersGetCmd = &cobra.Command{
 		if !complete {
 			result, err := c.GetJSON[container.Details](cmd.Context(), types.Container(c.EnvID(), resolved.ID))
 			if err != nil {
-				return errors.WrapIf(err, "failed to get container")
+				return fmt.Errorf("failed to get container: %w", err)
 			}
 			resolved = &result.Data
 		}
@@ -373,7 +373,7 @@ var containersDeleteCmd = &cobra.Command{
 		path := types.Container(c.EnvID(), resolved.ID) + "?" + query.Encode()
 		result, err := c.DeleteJSON[base.MessageResponse](cmd.Context(), path)
 		if err != nil {
-			return errors.WrapIf(err, "failed to delete container")
+			return fmt.Errorf("failed to delete container: %w", err)
 		}
 
 		if jsonOutput {
@@ -397,7 +397,7 @@ var containersCountsCmd = &cobra.Command{
 
 		result, err := c.GetJSON[container.StatusCounts](cmd.Context(), types.ContainersCounts(c.EnvID()))
 		if err != nil {
-			return errors.WrapIf(err, "failed to get container counts")
+			return fmt.Errorf("failed to get container counts: %w", err)
 		}
 
 		if jsonOutput {
@@ -430,10 +430,10 @@ var containersCreateCmd = &cobra.Command{
 		if containerCreateFile != "" {
 			data, err := os.ReadFile(containerCreateFile)
 			if err != nil {
-				return errors.WrapIff(err, "failed to read file %s", containerCreateFile)
+				return fmt.Errorf("failed to read file %s: %w", containerCreateFile, err)
 			}
 			if err := json.Unmarshal(data, &req); err != nil {
-				return errors.WrapIf(err, "failed to parse config file")
+				return fmt.Errorf("failed to parse config file: %w", err)
 			}
 		}
 
@@ -510,7 +510,7 @@ var containersCreateCmd = &cobra.Command{
 
 		result, err := c.PostJSON[container.Created](cmd.Context(), types.Containers(c.EnvID()), req)
 		if err != nil {
-			return errors.WrapIf(err, "failed to create container")
+			return fmt.Errorf("failed to create container: %w", err)
 		}
 
 		if jsonOutput {

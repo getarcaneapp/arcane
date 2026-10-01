@@ -2,11 +2,11 @@ package scheduler
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
 
-	"emperror.dev/errors"
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	"github.com/stretchr/testify/require"
 )

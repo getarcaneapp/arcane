@@ -2,13 +2,12 @@ package swarm
 
 import (
 	"context"
-	stderrors "errors"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
 	"time"
 
-	"emperror.dev/errors"
 	cerrdefs "github.com/containerd/errdefs"
 	swarmtypes "github.com/getarcaneapp/arcane/types/v2/swarm"
 	dockerclient "github.com/moby/moby/client"
@@ -116,7 +115,7 @@ func cleanupStaleManagedResourcesInternal(
 		if err := removeStaleSwarmResourceInternal(ctx, tolerateInUse, func(ctx context.Context) error {
 			return adapter.Remove(ctx, resource.ID)
 		}); err != nil {
-			return errors.WrapIff(err, "failed to remove stale stack %s %s", adapter.ResourceType, resource.Name)
+			return fmt.Errorf("failed to remove stale stack %s %s: %w", adapter.ResourceType, resource.Name, err)
 		}
 	}
 
@@ -145,7 +144,7 @@ func removeStaleSwarmResourceInternal(ctx context.Context, tolerateInUse bool, r
 		}
 		select {
 		case <-ctx.Done():
-			return stderrors.Join(ctx.Err(), err)
+			return errors.Join(ctx.Err(), err)
 		case <-time.After(staleSwarmResourceRemoveBackoffInternal):
 		}
 	}
@@ -171,7 +170,7 @@ func RemoveStackResources(ctx context.Context, dockerClient *dockerclient.Client
 	filters := make(dockerclient.Filters).Add("label", fmt.Sprintf("%s=%s", swarmtypes.StackNamespaceLabel, stackName))
 	networksResult, err := dockerClient.NetworkList(ctx, dockerclient.NetworkListOptions{Filters: filters})
 	if err != nil {
-		return errors.WrapIf(err, "failed to list stack networks")
+		return fmt.Errorf("failed to list stack networks: %w", err)
 	}
 	networks := networksResult.Items
 	sort.Slice(networks, func(i, j int) bool {
@@ -185,7 +184,7 @@ func RemoveStackResources(ctx context.Context, dockerClient *dockerclient.Client
 			_, err := dockerClient.NetworkRemove(ctx, stackNetwork.ID, dockerclient.NetworkRemoveOptions{})
 			return err
 		}); err != nil {
-			return errors.WrapIff(err, "failed to remove stack network %s", stackNetwork.Name)
+			return fmt.Errorf("failed to remove stack network %s: %w", stackNetwork.Name, err)
 		}
 	}
 

@@ -3,13 +3,14 @@ package ci
 import (
 	"context"
 	"encoding/json/v2"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
 
-	"emperror.dev/errors"
 	kit "go.getarcane.app/kit/pkg"
 )
 
@@ -54,7 +55,7 @@ func DetectToken(ctx context.Context, provider, audience string, getenv func(str
 	case ProviderGeneric:
 		return "", "", errors.New("generic provider requires --token, --token-file, or --token-stdin")
 	default:
-		return "", "", errors.Errorf("unsupported federated provider %q", provider)
+		return "", "", fmt.Errorf("unsupported federated provider %q", provider)
 	}
 }
 
@@ -67,7 +68,7 @@ func mintGitHubActionsTokenInternal(ctx context.Context, audience string, getenv
 
 	parsedURL, err := url.Parse(requestURL)
 	if err != nil {
-		return "", errors.WrapIf(err, "invalid GitHub Actions OIDC request URL")
+		return "", fmt.Errorf("invalid GitHub Actions OIDC request URL: %w", err)
 	}
 	if strings.TrimSpace(audience) != "" {
 		q := parsedURL.Query()
@@ -77,30 +78,30 @@ func mintGitHubActionsTokenInternal(ctx context.Context, audience string, getenv
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, parsedURL.String(), nil)
 	if err != nil {
-		return "", errors.WrapIf(err, "failed to create GitHub Actions OIDC request")
+		return "", fmt.Errorf("failed to create GitHub Actions OIDC request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+requestToken)
 	req.Header.Set("Accept", "application/json")
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return "", errors.WrapIf(err, "failed to request GitHub Actions OIDC token")
+		return "", fmt.Errorf("failed to request GitHub Actions OIDC token: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 4096))
 	if err != nil {
-		return "", errors.WrapIf(err, "failed to read GitHub Actions OIDC response")
+		return "", fmt.Errorf("failed to read GitHub Actions OIDC response: %w", err)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", errors.Errorf("GitHub Actions OIDC request failed with status %d", resp.StatusCode)
+		return "", fmt.Errorf("GitHub Actions OIDC request failed with status %d", resp.StatusCode)
 	}
 
 	var payload struct {
 		Value string `json:"value"`
 	}
 	if err := json.Unmarshal(body, &payload); err != nil {
-		return "", errors.WrapIf(err, "failed to parse GitHub Actions OIDC response")
+		return "", fmt.Errorf("failed to parse GitHub Actions OIDC response: %w", err)
 	}
 	token := strings.TrimSpace(payload.Value)
 	if token == "" {

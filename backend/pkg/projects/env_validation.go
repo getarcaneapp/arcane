@@ -3,12 +3,12 @@ package projects
 import (
 	"bufio"
 	"context"
+	"fmt"
 	"maps"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"emperror.dev/errors"
 	"github.com/compose-spec/compose-go/v2/consts"
 	"github.com/compose-spec/compose-go/v2/dotenv"
 	"github.com/getarcaneapp/arcane/types/v2/env"
@@ -28,7 +28,7 @@ func BuildValidationEnvironment(ctx context.Context, projectsDirectory, projectP
 	globalEnvPath := filepath.Join(projectsDirectory, GlobalEnvFileName)
 	globalEnv, err := ParseValidationEnvFile(globalEnvPath, fullEnvMap)
 	if err != nil {
-		return nil, errors.WrapIf(err, "parse global env file")
+		return nil, fmt.Errorf("parse global env file: %w", err)
 	}
 	maps.Copy(fullEnvMap, globalEnv)
 
@@ -38,13 +38,13 @@ func BuildValidationEnvironment(ctx context.Context, projectsDirectory, projectP
 		if effectiveEnvContent != nil {
 			projectEnv, err := ParseValidationEnvContent(*effectiveEnvContent, fullEnvMap)
 			if err != nil {
-				return nil, errors.WrapIf(err, "parse provided env content")
+				return nil, fmt.Errorf("parse provided env content: %w", err)
 			}
 			maps.Copy(fullEnvMap, projectEnv)
 		} else {
 			projectEnv, err := ParseValidationEnvFile(filepath.Join(projectPath, ".env"), fullEnvMap)
 			if err != nil {
-				return nil, errors.WrapIf(err, "parse project env file")
+				return nil, fmt.Errorf("parse project env file: %w", err)
 			}
 			maps.Copy(fullEnvMap, projectEnv)
 		}
@@ -66,7 +66,7 @@ func ParseValidationEnvFile(path string, contextEnv EnvMap) (EnvMap, error) {
 		if os.IsNotExist(err) {
 			return nil, nil
 		}
-		return nil, errors.WrapIf(err, "stat file")
+		return nil, fmt.Errorf("stat file: %w", err)
 	}
 	if info.IsDir() {
 		return nil, nil
@@ -74,7 +74,7 @@ func ParseValidationEnvFile(path string, contextEnv EnvMap) (EnvMap, error) {
 
 	content, err := os.ReadFile(path)
 	if err != nil {
-		return nil, errors.WrapIf(err, "read file")
+		return nil, fmt.Errorf("read file: %w", err)
 	}
 
 	return ParseValidationEnvContent(string(content), contextEnv)
@@ -90,7 +90,7 @@ func ParseValidationEnvContent(content string, contextEnv EnvMap) (EnvMap, error
 
 	envMap, err := dotenv.ParseWithLookup(strings.NewReader(content), lookupFn)
 	if err != nil {
-		return nil, errors.WrapIf(err, "parse env")
+		return nil, fmt.Errorf("parse env: %w", err)
 	}
 
 	return envMap, nil

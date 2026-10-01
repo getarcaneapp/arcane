@@ -2,12 +2,12 @@ package jobs
 
 import (
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
@@ -40,7 +40,7 @@ var getCmd = &cobra.Command{
 
 		cfg, err := c.DoJSON[jobschedule.Config](cmd.Context(), http.MethodGet, types.JobSchedules(c.EnvID()), nil)
 		if err != nil {
-			return errors.WrapIf(err, "failed to get job schedules")
+			return fmt.Errorf("failed to get job schedules: %w", err)
 		}
 
 		if jsonOutput {
@@ -88,7 +88,7 @@ var updateCmd = &cobra.Command{
 
 		result, err := c.PutJSON[jobschedule.Config](cmd.Context(), types.JobSchedules(c.EnvID()), req)
 		if err != nil {
-			return errors.WrapIf(err, "failed to update job schedules")
+			return fmt.Errorf("failed to update job schedules: %w", err)
 		}
 
 		if jsonOutput {
@@ -116,7 +116,7 @@ var listCmd = &cobra.Command{
 
 		result, err := c.DoJSON[jobschedule.JobListResponse](cmd.Context(), http.MethodGet, types.Jobs(c.EnvID()), nil)
 		if err != nil {
-			return errors.WrapIf(err, "failed to list jobs")
+			return fmt.Errorf("failed to list jobs: %w", err)
 		}
 
 		if jsonOutput {
@@ -167,7 +167,7 @@ var runCmd = &cobra.Command{
 		}
 		result, err := c.DoJSON[jobschedule.JobRunResponse](cmd.Context(), http.MethodPost, types.JobRun(c.EnvID(), args[0]), nil, http.Header{"Idempotency-Key": []string{id}})
 		if err != nil {
-			return errors.WrapIff(err, "failed to queue job (reuse --request-id %s if delivery is uncertain)", id)
+			return fmt.Errorf("failed to queue job (reuse --request-id %s if delivery is uncertain): %w", id, err)
 		}
 
 		if jsonOutput {
@@ -175,7 +175,7 @@ var runCmd = &cobra.Command{
 		}
 
 		if !result.Success {
-			return errors.Errorf("job %s failed: %s", args[0], result.Message)
+			return fmt.Errorf("job %s failed: %s", args[0], result.Message)
 		}
 		output.Success("%s", result.Message)
 		output.KeyValue("Run ID", result.RunID)

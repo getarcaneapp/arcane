@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
+	"errors"
+	"fmt"
 	"log/slog"
 	"maps"
 	"os"
@@ -12,7 +14,6 @@ import (
 	"strings"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/containerd/platforms"
 	"github.com/distribution/reference"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
@@ -97,7 +98,7 @@ func (s *ImagePatchService) PatchImage(ctx context.Context, envID, imageID strin
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to connect to Docker")
+		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 	if err := requireContainerdImageStoreInternal(runCtx, dockerClient); err != nil {
 		return nil, err
@@ -105,7 +106,7 @@ func (s *ImagePatchService) PatchImage(ctx context.Context, envID, imageID strin
 
 	imageInspect, err := dockerClient.ImageInspect(runCtx, imageID)
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to inspect image")
+		return nil, fmt.Errorf("failed to inspect image: %w", err)
 	}
 	if len(imageInspect.RepoTags) == 0 {
 		return nil, common.ErrImageUntagged
@@ -178,7 +179,7 @@ func (s *ImagePatchService) PatchImage(ctx context.Context, envID, imageID strin
 		ActivityID:      mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer(),
 	}
 	if err := s.db.WithContext(runCtx).Create(record).Error; err != nil {
-		return nil, errors.WrapIf(err, "failed to create image patch record")
+		return nil, fmt.Errorf("failed to create image patch record: %w", err)
 	}
 
 	slog.InfoContext(runCtx, "image patch queued",
@@ -384,11 +385,11 @@ func platformPinnedRefInternal(ctx context.Context, imageRef string, target ispe
 func resolvePatchedRef(imageRef, patchedTag, suffix string) (string, error) {
 	named, err := reference.ParseNormalizedNamed(imageRef)
 	if err != nil {
-		return "", errors.WrapIf(err, "failed to parse image reference")
+		return "", fmt.Errorf("failed to parse image reference: %w", err)
 	}
 	name, tag, err := copacommon.ResolvePatchedImageName(named, patchedTag, suffix)
 	if err != nil {
-		return "", errors.WrapIf(err, "failed to resolve patched image name")
+		return "", fmt.Errorf("failed to resolve patched image name: %w", err)
 	}
 	return name + ":" + tag, nil
 }
@@ -489,7 +490,7 @@ func (s *ImagePatchService) ListPatches(ctx context.Context, envID string, param
 
 	paginationResp, err := pagination.PaginateAndSortDB(params, q, &records)
 	if err != nil {
-		return nil, pagination.Response{}, errors.WrapIf(err, "failed to paginate image patches")
+		return nil, pagination.Response{}, fmt.Errorf("failed to paginate image patches: %w", err)
 	}
 
 	dtos := make([]imagepatch.PatchRecord, 0, len(records))
@@ -508,7 +509,7 @@ func (s *ImagePatchService) PatchedRefs(ctx context.Context, envID string) (map[
 		Where("environment_id = ? AND status = ?", envID, string(imagepatch.PatchStatusCompleted)).
 		Distinct().
 		Pluck("patched_ref", &refs).Error; err != nil {
-		return nil, errors.WrapIf(err, "failed to list patched image refs")
+		return nil, fmt.Errorf("failed to list patched image refs: %w", err)
 	}
 	set := make(map[string]struct{}, len(refs))
 	for _, ref := range refs {
@@ -559,7 +560,7 @@ func (s *ImagePatchService) ListPatchTargets(ctx context.Context, envID string, 
 	var scans []vulnerability.VulnerabilityScanRecord
 	paginationResp, err := pagination.PaginateAndSortDB(params, q, &scans)
 	if err != nil {
-		return nil, pagination.Response{}, errors.WrapIf(err, "failed to list patch targets")
+		return nil, pagination.Response{}, fmt.Errorf("failed to list patch targets: %w", err)
 	}
 
 	if len(scans) == 0 {
@@ -627,7 +628,7 @@ func (s *ImagePatchService) latestPatchesByImageInternal(ctx context.Context, en
 		Where("environment_id = ? AND original_image_id IN ?", envID, imageIDs).
 		Order("original_image_id, created_at DESC, id").
 		Find(&patchRows).Error; err != nil {
-		return nil, nil, errors.WrapIf(err, "failed to load latest image patches")
+		return nil, nil, fmt.Errorf("failed to load latest image patches: %w", err)
 	}
 	lastPatchByImageID := make(map[string]*ImagePatchRecord, len(imageIDs))
 	patchedNamesByImageID := make(map[string][]string, len(imageIDs))
@@ -659,7 +660,7 @@ func (s *ImagePatchService) latestPatchesByImageInternal(ctx context.Context, en
 		Where("image_name IN ?", patchedNames).
 		Order("scan_time DESC").
 		Find(&patchScans).Error; err != nil {
-		return nil, nil, errors.WrapIf(err, "failed to load patched image scans")
+		return nil, nil, fmt.Errorf("failed to load patched image scans: %w", err)
 	}
 	latestScanByName := make(map[string]*vulnerability.VulnerabilityScanRecord, len(patchScans))
 	for i := range patchScans {
@@ -697,7 +698,7 @@ func (s *ImagePatchService) PatchFlaggedImages(ctx context.Context, envID string
 	}
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return 0, 0, errors.WrapIf(err, "failed to connect to Docker")
+		return 0, 0, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 	if err := requireContainerdImageStoreInternal(ctx, dockerClient); err != nil {
 		return 0, 0, err
@@ -708,7 +709,7 @@ func (s *ImagePatchService) PatchFlaggedImages(ctx context.Context, envID string
 		Where("id IN (?)", s.db.Model(&vulnerability.VulnerabilityReportRecord{}).Select("image_id")).
 		Where("image_name NOT LIKE 'sha256:%' AND image_name NOT LIKE '%<none>%' AND image_name <> id").
 		Find(&scans).Error; err != nil {
-		return 0, 0, errors.WrapIf(err, "failed to list vulnerability scans")
+		return 0, 0, fmt.Errorf("failed to list vulnerability scans: %w", err)
 	}
 
 	patchedRefs, err := s.PatchedRefs(ctx, envID)
@@ -718,7 +719,7 @@ func (s *ImagePatchService) PatchFlaggedImages(ctx context.Context, envID string
 
 	for i := range scans {
 		if !s.settingsService.IsFeatureEnabled(ctx, features.VulnerabilityManagement) {
-			return patched, skipped + len(scans) - i, errors.WrapIff(common.ErrFeatureDisabled, "remaining patches stopped because feature %s was disabled", features.VulnerabilityManagement)
+			return patched, skipped + len(scans) - i, fmt.Errorf("remaining patches stopped because feature %s was disabled: %w", features.VulnerabilityManagement, common.ErrFeatureDisabled)
 		}
 		scan := &scans[i]
 
@@ -757,7 +758,7 @@ func (s *ImagePatchService) PatchFlaggedImages(ctx context.Context, envID string
 func requireContainerdImageStoreInternal(ctx context.Context, dockerClient *client.Client) error {
 	info, err := dockerClient.Info(ctx, client.InfoOptions{})
 	if err != nil {
-		return errors.WrapIf(err, "failed to inspect Docker")
+		return fmt.Errorf("failed to inspect Docker: %w", err)
 	}
 	for _, status := range info.Info.DriverStatus {
 		if status[0] == "driver-type" && status[1] == "io.containerd.snapshotter.v1" {

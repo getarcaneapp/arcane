@@ -3,13 +3,13 @@ package activity
 import (
 	"context"
 	"encoding/json/v2"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"strings"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
@@ -23,11 +23,12 @@ const (
 	// ErrCanceled is the cancellation cause set on an activity's work context when a
 	// user requests cancellation. Completion paths read context.Cause to record a
 	// cancelled (rather than failed) terminal status.
-	ErrCanceled = errors.Sentinel("activity cancelled by user")
 
 	// cancelledMessage is the latest-message recorded when work is cancelled.
 	cancelledMessage = "Cancelled by user"
 )
+
+var ErrCanceled = errors.New("activity cancelled by user")
 
 type handlerActivityIDContextKey struct{}
 
@@ -213,7 +214,7 @@ func WriteDoneLine(writer io.Writer) {
 	if writer == nil {
 		return
 	}
-	_, _ = io.WriteString(writer, `{"done":true}`+"\n")
+	_, _ = io.WriteString(writer, "{\"done\":true}\n")
 	if flusher, ok := writer.(http.Flusher); ok {
 		flusher.Flush()
 	}
@@ -229,7 +230,7 @@ func WriteStartedLine(writer io.Writer, activityID string) {
 		"activityId": activityID,
 	}
 	if err := json.MarshalWrite(writer, payload); err != nil {
-		_, _ = fmt.Fprintf(writer, `{"activityId":%q}`+"\n", activityID)
+		_, _ = fmt.Fprintf(writer, "{\"activityId\":%q}\n", activityID)
 		return
 	}
 	_, _ = io.WriteString(writer, "\n")

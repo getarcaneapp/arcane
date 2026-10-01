@@ -3,6 +3,7 @@ package gitops
 import (
 	"context"
 	"encoding/json/v2"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -14,13 +15,13 @@ import (
 	"sync"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	projectpkg "github.com/getarcaneapp/arcane/backend/v2/internal/project"
 	git "github.com/getarcaneapp/arcane/backend/v2/pkg/gitutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
+	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/getarcaneapp/arcane/types/v2/gitops"
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	"go.getarcane.app/acfs"
@@ -108,7 +109,7 @@ func normalizeSyncModeInternal(mode string) (string, error) {
 	case gitops.SyncModeBackup:
 		return gitops.SyncModeBackup, nil
 	default:
-		return "", common.Classify(common.ErrValidation, errors.WithDetails(errors.Errorf("unsupported sync mode %q", mode), "field", "mode"))
+		return "", common.Classify(common.ErrValidation, &base.FieldError{Field: "mode", Err: fmt.Errorf("unsupported sync mode %q", mode)})
 	}
 }
 
@@ -124,10 +125,10 @@ type backupCreateConfigInternal struct {
 // prepareBackupCreateInternal validates a backup create request against the project and other backups on the branch.
 func (s *GitOpsSyncService) prepareBackupCreateInternal(ctx context.Context, tx *gorm.DB, req gitops.CreateSyncRequest) (*backupCreateConfigInternal, error) {
 	if req.HasDeploymentOptions() {
-		return nil, common.Classify(common.ErrValidation, errors.WithDetails(errors.New("deployment options cannot be set on a backup sync"), "field", "mode"))
+		return nil, common.Classify(common.ErrValidation, &base.FieldError{Field: "mode", Err: errors.New("deployment options cannot be set on a backup sync")})
 	}
 	if strings.TrimSpace(req.ProjectID) == "" {
-		return nil, common.Classify(common.ErrValidation, errors.WithDetails(errors.New("a project is required for a backup sync"), "field", "projectId"))
+		return nil, common.Classify(common.ErrValidation, &base.FieldError{Field: "projectId", Err: errors.New("a project is required for a backup sync")})
 	}
 	project, err := lockProjectForSyncInternal(tx, req.ProjectID)
 	if err != nil {
@@ -140,7 +141,7 @@ func (s *GitOpsSyncService) prepareBackupCreateInternal(ctx context.Context, tx 
 	if err := tx.Model(&projectpkg.GitOpsSync{}).
 		Where("mode = ? AND project_id = ?", gitops.SyncModeBackup, project.ID).
 		Count(&existing).Error; err != nil {
-		return nil, errors.WrapIf(err, "failed to check existing backups")
+		return nil, fmt.Errorf("failed to check existing backups: %w", err)
 	}
 	if existing > 0 {
 		return nil, common.Classify(common.ErrConflict, errors.New("project already has a Git backup; disconnect it first"))
@@ -151,7 +152,7 @@ func (s *GitOpsSyncService) prepareBackupCreateInternal(ctx context.Context, tx 
 		err = errors.New("backup directory must not contain a .git segment")
 	}
 	if err != nil {
-		return nil, common.Classify(common.ErrValidation, errors.WithDetails(err, "field", "backupDirectory"))
+		return nil, common.Classify(common.ErrValidation, &base.FieldError{Field: "backupDirectory", Err: err})
 	}
 	if err := ensureBackupDestinationFreeInternal(tx, "", req.RepositoryID, req.Branch, directory); err != nil {
 		return nil, err
@@ -161,11 +162,11 @@ func (s *GitOpsSyncService) prepareBackupCreateInternal(ctx context.Context, tx 
 	}
 	composeFile, _, err := s.backupComposeFilesInternal(ctx, project)
 	if err != nil {
-		return nil, common.Classify(common.ErrValidation, errors.WithDetails(err, "field", "projectId"))
+		return nil, common.Classify(common.ErrValidation, &base.FieldError{Field: "projectId", Err: err})
 	}
 	paths, err := normalizeBackupPathsInternal(req.BackupPaths)
 	if err != nil {
-		return nil, common.Classify(common.ErrValidation, errors.WithDetails(err, "field", "backupPaths"))
+		return nil, common.Classify(common.ErrValidation, &base.FieldError{Field: "backupPaths", Err: err})
 	}
 	config := &backupCreateConfigInternal{project: project, directory: directory, paths: paths, composeFile: composeFile, backupOnSave: true}
 	if req.BackupOnSave != nil {
@@ -181,7 +182,7 @@ func lockProjectForSyncInternal(tx *gorm.DB, projectID string) (*projectpkg.Proj
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, common.ErrProjectNotFound
 		}
-		return nil, errors.WrapIff(err, "failed to get project %s", projectID)
+		return nil, fmt.Errorf("failed to get project %s: %w", projectID, err)
 	}
 	return &project, nil
 }
@@ -189,18 +190,17 @@ func lockProjectForSyncInternal(tx *gorm.DB, projectID string) (*projectpkg.Proj
 // ensureBackupDestinationFreeInternal rejects a destination that overlaps another backup on the same branch.
 func ensureBackupDestinationFreeInternal(tx *gorm.DB, excludeSyncID, repositoryID, branch, directory string) error {
 	var others []projectpkg.GitOpsSync
-	q := tx.
-		Select("id", "backup_directory").
+	q := tx.Select("id", "backup_directory").
 		Where("mode = ? AND repository_id = ? AND branch = ?", gitops.SyncModeBackup, repositoryID, branch)
 	if excludeSyncID != "" {
 		q = q.Where("id <> ?", excludeSyncID)
 	}
 	if err := q.Find(&others).Error; err != nil {
-		return errors.WrapIf(err, "failed to check backup destinations")
+		return fmt.Errorf("failed to check backup destinations: %w", err)
 	}
 	for _, other := range others {
 		if other.BackupDirectory == directory || strings.HasPrefix(other.BackupDirectory, directory+"/") || strings.HasPrefix(directory, other.BackupDirectory+"/") {
-			return common.Classify(common.ErrConflict, errors.Errorf("backup directory %q overlaps with an existing backup at %q on this branch", directory, other.BackupDirectory))
+			return common.Classify(common.ErrConflict, fmt.Errorf("backup directory %q overlaps with an existing backup at %q on this branch", directory, other.BackupDirectory))
 		}
 	}
 	return nil
@@ -210,12 +210,12 @@ func ensureBackupDestinationFreeInternal(tx *gorm.DB, excludeSyncID, repositoryI
 func (s *GitOpsSyncService) applyModeUpdatesInternal(ctx context.Context, current *projectpkg.GitOpsSync, req gitops.UpdateSyncRequest, updates map[string]any) error {
 	if current.Mode != gitops.SyncModeBackup {
 		if req.HasBackupOptions() {
-			return common.Classify(common.ErrValidation, errors.WithDetails(errors.New("backup options cannot be set on a deployment sync"), "field", "mode"))
+			return common.Classify(common.ErrValidation, &base.FieldError{Field: "mode", Err: errors.New("backup options cannot be set on a deployment sync")})
 		}
 		return nil
 	}
 	if req.HasDeploymentOptions() {
-		return common.Classify(common.ErrValidation, errors.WithDetails(errors.New("deployment options cannot be set on a backup sync"), "field", "mode"))
+		return common.Classify(common.ErrValidation, &base.FieldError{Field: "mode", Err: errors.New("deployment options cannot be set on a backup sync")})
 	}
 	repositoryID := current.RepositoryID
 	if req.RepositoryID != nil {
@@ -236,7 +236,7 @@ func (s *GitOpsSyncService) applyModeUpdatesInternal(ctx context.Context, curren
 	if req.BackupPaths != nil {
 		paths, err := normalizeBackupPathsInternal(req.BackupPaths)
 		if err != nil {
-			return common.Classify(common.ErrValidation, errors.WithDetails(err, "field", "backupPaths"))
+			return common.Classify(common.ErrValidation, &base.FieldError{Field: "backupPaths", Err: err})
 		}
 		updates["backup_paths"] = database.StringSlice(paths)
 	}
@@ -259,7 +259,7 @@ func (s *GitOpsSyncService) performBackupInternal(ctx context.Context, sync *pro
 		return result, s.failBackupInternal(ctx, sync, result, actor, gitops.BackupFailureProjectMissing, "Failed to load project", err, false)
 	}
 	if !found {
-		return result, s.failBackupInternal(ctx, sync, result, actor, gitops.BackupFailureProjectMissing, "Project not found", errors.Errorf("project %s no longer exists", *sync.ProjectID), false)
+		return result, s.failBackupInternal(ctx, sync, result, actor, gitops.BackupFailureProjectMissing, "Project not found", fmt.Errorf("project %s no longer exists", *sync.ProjectID), false)
 	}
 	if err := s.projectService.EnsureProjectPathUnderRoot(ctx, project, true); err != nil {
 		return result, s.failBackupInternal(ctx, sync, result, actor, gitops.BackupFailureProjectMissing, "Project directory is unavailable", err, false)
@@ -296,7 +296,7 @@ func (s *GitOpsSyncService) performBackupInternal(ctx context.Context, sync *pro
 		}
 		return result, err
 	}
-	return result, s.failBackupInternal(ctx, sync, result, actor, gitops.BackupFailurePushRejected, "Push rejected by remote", errors.Errorf("another writer kept updating branch %s; giving up after %d attempts", sync.Branch, backupPushAttempts), false)
+	return result, s.failBackupInternal(ctx, sync, result, actor, gitops.BackupFailurePushRejected, "Push rejected by remote", fmt.Errorf("another writer kept updating branch %s; giving up after %d attempts", sync.Branch, backupPushAttempts), false)
 }
 
 // commitBackupInternal runs one checkout-analyze-push attempt; retry reports a rejected push worth repeating.
@@ -327,9 +327,9 @@ func (s *GitOpsSyncService) commitBackupInternal(ctx context.Context, sync *proj
 		if len(analysis.conflicts) > backupCommitFileLines {
 			names = append(names, "...")
 		}
-		return false, s.failBackupInternal(ctx, sync, result, actor, gitops.BackupFailureConflict, "Backup files changed in the repository", errors.Errorf("%d backup file(s) changed in the repository since the last backup: %s", len(analysis.conflicts), strings.Join(names, ", ")), true)
+		return false, s.failBackupInternal(ctx, sync, result, actor, gitops.BackupFailureConflict, "Backup files changed in the repository", fmt.Errorf("%d backup file(s) changed in the repository since the last backup: %s", len(analysis.conflicts), strings.Join(names, ", ")), true)
 	case backupPreviewOccupied:
-		return false, s.failBackupInternal(ctx, sync, result, actor, gitops.BackupFailureDestinationOccupied, "Backup directory already contains unrelated files", errors.Errorf("directory %s on branch %s already contains files that are not an Arcane backup", sync.BackupDirectory, sync.Branch), true)
+		return false, s.failBackupInternal(ctx, sync, result, actor, gitops.BackupFailureDestinationOccupied, "Backup directory already contains unrelated files", fmt.Errorf("directory %s on branch %s already contains files that are not an Arcane backup", sync.BackupDirectory, sync.Branch), true)
 	}
 
 	var message strings.Builder
@@ -418,7 +418,7 @@ func (s *GitOpsSyncService) recordBackupSuccessInternal(ctx context.Context, syn
 	}
 	hashes, err := json.Marshal(snapshot.hashes, json.Deterministic(true))
 	if err != nil {
-		return errors.WrapIf(err, "failed to encode backup snapshot")
+		return fmt.Errorf("failed to encode backup snapshot: %w", err)
 	}
 	updates := map[string]any{
 		"last_sync_at":          now,
@@ -464,9 +464,9 @@ func (s *GitOpsSyncService) failBackupInternal(ctx context.Context, sync *projec
 	}
 	s.logSyncError(ctx, sync, actor, errMsg)
 	if needsAttention {
-		return common.Classify(common.ErrConflict, errors.WithMessage(failure, message))
+		return common.Classify(common.ErrConflict, fmt.Errorf("%s: %w", message, failure))
 	}
-	return errors.WithMessage(failure, message)
+	return fmt.Errorf("%s: %w", message, failure)
 }
 
 // PreviewBackup reports what the next backup run would commit or why it needs attention.
@@ -501,7 +501,7 @@ func (s *GitOpsSyncService) PreviewBackup(ctx context.Context, environmentID, id
 	}
 	checkout, err := s.repoService.CheckoutForWrite(previewCtx, syncRecord.Repository.URL, syncRecord.Branch, authConfig)
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to clone repository")
+		return nil, fmt.Errorf("failed to clone repository: %w", err)
 	}
 	defer s.repoService.Discard(previewCtx, checkout.RepoPath)
 	analysis, err := analyzeBackupInternal(previewCtx, checkout.RepoPath, syncRecord.BackupDirectory, snapshot, parseBackupSnapshotInternal(syncRecord.LastBackupSnapshot), false)
@@ -524,7 +524,7 @@ func (s *GitOpsSyncService) PreviewBackup(ctx context.Context, environmentID, id
 // ResolveBackupConflict applies the chosen strategy to a backup that needs attention.
 func (s *GitOpsSyncService) ResolveBackupConflict(ctx context.Context, environmentID, id string, req gitops.ResolveBackupConflictRequest, actor common.User) (*gitops.SyncResult, error) {
 	if req.Strategy != gitops.BackupConflictUseArcane {
-		return nil, common.Classify(common.ErrValidation, errors.WithDetails(errors.Errorf("unsupported strategy %q", req.Strategy), "field", "strategy"))
+		return nil, common.Classify(common.ErrValidation, &base.FieldError{Field: "strategy", Err: fmt.Errorf("unsupported strategy %q", req.Strategy)})
 	}
 	syncRecord, err := s.getBackupSyncInternal(ctx, environmentID, id)
 	if err != nil {
@@ -589,7 +589,7 @@ func (s *GitOpsSyncService) ReconcileInterruptedBackupsOnStartup(ctx context.Con
 		"backup_pending_since":  time.Now(),
 	}).Error
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		return errors.WrapIf(err, "failed to reconcile interrupted git backups")
+		return fmt.Errorf("failed to reconcile interrupted git backups: %w", err)
 	}
 	return nil
 }
@@ -613,11 +613,11 @@ func normalizeBackupPathsInternal(raw []string) ([]string, error) {
 	for _, entry := range raw {
 		cleaned, err := kit.NormalizeRelativePath(entry)
 		if err != nil {
-			return nil, errors.WrapIff(err, "invalid backup path %q", entry)
+			return nil, fmt.Errorf("invalid backup path %q: %w", entry, err)
 		}
 		base := path.Base(cleaned)
 		if base == projects.GitSourceEnvFileName || base == projects.GlobalEnvFileName || slices.Contains(strings.Split(cleaned, "/"), ".git") {
-			return nil, errors.Errorf("backup path %q is reserved", entry)
+			return nil, fmt.Errorf("backup path %q is reserved", entry)
 		}
 		normalized = append(normalized, cleaned)
 	}
@@ -644,7 +644,7 @@ func (s *GitOpsSyncService) backupComposeFilesInternal(ctx context.Context, proj
 	}
 	relative, err := filepath.Rel(project.Path, composePath)
 	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
-		return "", nil, errors.Errorf("compose file %s is outside the project directory", composePath)
+		return "", nil, fmt.Errorf("compose file %s is outside the project directory", composePath)
 	}
 	primary := filepath.ToSlash(relative)
 	composeFiles := []string{primary}
@@ -662,7 +662,7 @@ func (s *GitOpsSyncService) backupComposeFilesInternal(ctx context.Context, proj
 func (s *GitOpsSyncService) buildBackupSnapshotInternal(ctx context.Context, sync *projectpkg.GitOpsSync, project *projectpkg.Project) (*backupSnapshotInternal, error) {
 	_, composeFiles, err := s.backupComposeFilesInternal(ctx, project)
 	if err != nil {
-		return nil, errors.WrapIf(git.ErrSelectionInvalid, err.Error())
+		return nil, fmt.Errorf("%s: %w", err.Error(), git.ErrSelectionInvalid)
 	}
 	paths := slices.Clone([]string(sync.BackupPaths))
 	for _, composeFile := range composeFiles {
@@ -694,7 +694,7 @@ func (s *GitOpsSyncService) buildBackupSnapshotInternal(ctx context.Context, syn
 		for _, file := range files {
 			content, err := acfs.ReadFile(ctx, project.Path, "/"+file.Path)
 			if err != nil {
-				return nil, errors.WrapIff(git.ErrSelectionUnreadable, "cannot re-read %s: %v", file.Path, err)
+				return nil, fmt.Errorf("cannot re-read %s: %v: %w", file.Path, err.Error(), git.ErrSelectionUnreadable)
 			}
 			if kit.SHA256Hex(content) != snapshot.hashes[file.Path] {
 				stable = false
@@ -705,7 +705,7 @@ func (s *GitOpsSyncService) buildBackupSnapshotInternal(ctx context.Context, syn
 			return snapshot, nil
 		}
 	}
-	return nil, errors.WrapIf(git.ErrSelectionInvalid, "project files changed while the backup snapshot was being taken")
+	return nil, fmt.Errorf("project files changed while the backup snapshot was being taken: %w", git.ErrSelectionInvalid)
 }
 
 // analyzeBackupInternal compares the snapshot with the checkout; baseline is the last push and the only proof the directory is ours.
@@ -713,7 +713,7 @@ func analyzeBackupInternal(ctx context.Context, repoPath, directory string, snap
 	analysis := backupAnalysisInternal{conflicts: []gitops.BackupFileChange{}}
 	entries, err := acfs.List(ctx, repoPath, "/"+directory)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return analysis, errors.WrapIf(err, "failed to inspect remote backup directory")
+		return analysis, fmt.Errorf("failed to inspect remote backup directory: %w", err)
 	}
 	occupied := err == nil && len(entries) > 0
 	remote := make(map[string]string)
@@ -728,7 +728,7 @@ func analyzeBackupInternal(ctx context.Context, repoPath, directory string, snap
 					if errors.Is(readErr, fs.ErrNotExist) {
 						continue
 					}
-					return analysis, errors.WrapIff(readErr, "failed to read remote backup file %s", file)
+					return analysis, fmt.Errorf("failed to read remote backup file %s: %w", file, readErr)
 				}
 				remote[file] = kit.SHA256Hex(content)
 			}
@@ -818,7 +818,7 @@ func (s *GitOpsSyncService) cloneBackupBranchInternal(ctx context.Context, syncR
 	}
 	checkout, err := s.repoService.CheckoutForWrite(ctx, syncRecord.Repository.URL, syncRecord.Branch, authConfig)
 	if err != nil {
-		return "", func() {}, errors.WrapIf(err, "failed to clone repository")
+		return "", func() {}, fmt.Errorf("failed to clone repository: %w", err)
 	}
 	cleanup := func() { s.repoService.Discard(ctx, checkout.RepoPath) }
 	if !checkout.BranchExists {

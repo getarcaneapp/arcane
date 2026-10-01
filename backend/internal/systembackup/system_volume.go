@@ -3,13 +3,13 @@ package systembackup
 import (
 	"context"
 	"encoding/json/v2"
+	"errors"
 	"fmt"
 	"log/slog"
 	"slices"
 	"strings"
 	"uuid"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/backup"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	s3domain "github.com/getarcaneapp/arcane/backend/v2/internal/s3"

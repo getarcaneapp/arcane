@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json/v2"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -15,7 +16,6 @@ import (
 	"strings"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
@@ -191,11 +191,11 @@ var destroyCmd = &cobra.Command{
 			RemoveVolumes: destroyRemoveVolumes,
 		})
 		if err != nil {
-			return errors.WrapIf(err, "failed to destroy project")
+			return fmt.Errorf("failed to destroy project: %w", err)
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to destroy project")
+			return fmt.Errorf("failed to destroy project: %w", err)
 		}
 
 		output.Success("Project %s destroyed successfully", resolved.Name)
@@ -223,7 +223,7 @@ var getCmd = &cobra.Command{
 		if !complete {
 			result, err := c.GetJSON[project.Details](cmd.Context(), types.Project(c.EnvID(), resolved.ID))
 			if err != nil {
-				return errors.WrapIf(err, "failed to get project")
+				return fmt.Errorf("failed to get project: %w", err)
 			}
 			resolved = &result.Data
 		}
@@ -357,15 +357,15 @@ func runProjectStreamAction(cmd *cobra.Command, identifier string, cfg projectSt
 
 	resp, err := c.Post(cmd.Context(), cfg.endpoint(c.EnvID(), resolved.ID), nil)
 	if err != nil {
-		return errors.WrapIff(err, "%s", cfg.failureMessage)
+		return fmt.Errorf("%s: %w", cfg.failureMessage, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-		return errors.WrapIff(err, "%s", cfg.failureMessage)
+		return fmt.Errorf("%s: %w", cfg.failureMessage, err)
 	}
 
 	if err := printOperationStreamInternal(resp.Body); err != nil {
-		return errors.WrapIff(err, "%s", cfg.failureMessage)
+		return fmt.Errorf("%s: %w", cfg.failureMessage, err)
 	}
 
 	output.Success(cfg.successMessage, resolved.Name)
@@ -419,7 +419,7 @@ var createCmd = &cobra.Command{
 
 		composeBytes, err := os.ReadFile(createFile)
 		if err != nil {
-			return errors.WrapIf(err, "failed to read compose file")
+			return fmt.Errorf("failed to read compose file: %w", err)
 		}
 
 		body := project.CreateProject{
@@ -430,7 +430,7 @@ var createCmd = &cobra.Command{
 		if createEnvFile != "" {
 			envBytes, err := os.ReadFile(createEnvFile)
 			if err != nil {
-				return errors.WrapIf(err, "failed to read env file")
+				return fmt.Errorf("failed to read env file: %w", err)
 			}
 			body.EnvContent = new(string(envBytes))
 		}
@@ -440,31 +440,31 @@ var createCmd = &cobra.Command{
 
 		projectJSON, err := json.Marshal(body)
 		if err != nil {
-			return errors.WrapIf(err, "failed to encode project configuration")
+			return fmt.Errorf("failed to encode project configuration: %w", err)
 		}
 		manifestJSON, err := json.Marshal(project.CreateProjectWorkspaceManifest{FileChanges: []project.WorkspaceFileChange{}})
 		if err != nil {
-			return errors.WrapIf(err, "failed to encode project workspace manifest")
+			return fmt.Errorf("failed to encode project workspace manifest: %w", err)
 		}
 		var requestBody bytes.Buffer
 		writer := multipart.NewWriter(&requestBody)
 		if err := writer.WriteField("project", string(projectJSON)); err != nil {
-			return errors.WrapIf(err, "failed to write project configuration")
+			return fmt.Errorf("failed to write project configuration: %w", err)
 		}
 		if err := writer.WriteField("manifest", string(manifestJSON)); err != nil {
-			return errors.WrapIf(err, "failed to write project workspace manifest")
+			return fmt.Errorf("failed to write project workspace manifest: %w", err)
 		}
 		if err := writer.Close(); err != nil {
-			return errors.WrapIf(err, "failed to finalize project request")
+			return fmt.Errorf("failed to finalize project request: %w", err)
 		}
 
 		resp, err := c.RequestRaw(cmd.Context(), http.MethodPost, types.Projects(c.EnvID()), &requestBody, map[string]string{"Content-Type": writer.FormDataContentType()})
 		if err != nil {
-			return errors.WrapIf(err, "failed to create project")
+			return fmt.Errorf("failed to create project: %w", err)
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to create project")
+			return fmt.Errorf("failed to create project: %w", err)
 		}
 
 		var result base.ApiResponse[project.CreateReponse]
@@ -511,7 +511,7 @@ var updateCmd = &cobra.Command{
 		if cmd.Flags().Changed("file") {
 			composeBytes, err := os.ReadFile(updateFile)
 			if err != nil {
-				return errors.WrapIf(err, "failed to read compose file")
+				return fmt.Errorf("failed to read compose file: %w", err)
 			}
 			body.ComposeContent = new(string(composeBytes))
 		}
@@ -519,14 +519,14 @@ var updateCmd = &cobra.Command{
 		if cmd.Flags().Changed("env-file") {
 			envBytes, err := os.ReadFile(updateEnvFile)
 			if err != nil {
-				return errors.WrapIf(err, "failed to read env file")
+				return fmt.Errorf("failed to read env file: %w", err)
 			}
 			body.EnvContent = new(string(envBytes))
 		}
 
 		result, err := c.PutJSON[project.Details](cmd.Context(), types.Project(c.EnvID(), resolved.ID), body)
 		if err != nil {
-			return errors.WrapIf(err, "failed to update project")
+			return fmt.Errorf("failed to update project: %w", err)
 		}
 
 		if jsonOutput {
@@ -557,12 +557,12 @@ var updateIncludesCmd = &cobra.Command{
 
 		content, err := os.ReadFile(includesFile)
 		if err != nil {
-			return errors.WrapIf(err, "failed to read include file")
+			return fmt.Errorf("failed to read include file: %w", err)
 		}
 
 		current, err := c.GetJSON[workspacetypes.Workspace](cmd.Context(), types.ProjectWorkspace(c.EnvID(), resolved.ID))
 		if err != nil {
-			return errors.WrapIf(err, "failed to get project workspace")
+			return fmt.Errorf("failed to get project workspace: %w", err)
 		}
 
 		relativePath := filepath.ToSlash(filepath.Base(includesFile))
@@ -580,31 +580,31 @@ var updateIncludesCmd = &cobra.Command{
 		}
 		manifestJSON, err := json.Marshal(manifest)
 		if err != nil {
-			return errors.WrapIf(err, "failed to encode workspace manifest")
+			return fmt.Errorf("failed to encode workspace manifest: %w", err)
 		}
 		var requestBody bytes.Buffer
 		writer := multipart.NewWriter(&requestBody)
 		if err := writer.WriteField("manifest", string(manifestJSON)); err != nil {
-			return errors.WrapIf(err, "failed to write workspace manifest")
+			return fmt.Errorf("failed to write workspace manifest: %w", err)
 		}
 		filePart, err := writer.CreateFormFile("files", filepath.Base(includesFile))
 		if err != nil {
-			return errors.WrapIf(err, "failed to create workspace upload")
+			return fmt.Errorf("failed to create workspace upload: %w", err)
 		}
 		if _, err := filePart.Write(content); err != nil {
-			return errors.WrapIf(err, "failed to write workspace upload")
+			return fmt.Errorf("failed to write workspace upload: %w", err)
 		}
 		if err := writer.Close(); err != nil {
-			return errors.WrapIf(err, "failed to finalize workspace upload")
+			return fmt.Errorf("failed to finalize workspace upload: %w", err)
 		}
 
 		resp, err := c.RequestRaw(cmd.Context(), http.MethodPut, types.ProjectWorkspace(c.EnvID(), resolved.ID), &requestBody, map[string]string{"Content-Type": writer.FormDataContentType()})
 		if err != nil {
-			return errors.WrapIf(err, "failed to update include file")
+			return fmt.Errorf("failed to update include file: %w", err)
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to update include file")
+			return fmt.Errorf("failed to update include file: %w", err)
 		}
 
 		if jsonOutput {
@@ -632,7 +632,7 @@ var countsCmd = &cobra.Command{
 
 		result, err := c.GetJSON[map[string]any](cmd.Context(), types.ProjectsCounts(c.EnvID()))
 		if err != nil {
-			return errors.WrapIf(err, "failed to get project counts")
+			return fmt.Errorf("failed to get project counts: %w", err)
 		}
 
 		if jsonOutput {

@@ -8,7 +8,6 @@ import (
 	"slices"
 	"strings"
 
-	"emperror.dev/errors"
 	composegotypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
@@ -141,7 +140,7 @@ func DeployStack(ctx context.Context, dockerClient *dockerclient.Client, opts St
 				continue
 			}
 			if _, err := dockerClient.ServiceRemove(ctx, svc.ID, dockerclient.ServiceRemoveOptions{}); err != nil {
-				return errors.WrapIff(err, "failed to remove swarm service %s", name)
+				return fmt.Errorf("failed to remove swarm service %s: %w", name, err)
 			}
 		}
 	}
@@ -173,7 +172,7 @@ func reconcileStackServicesInternal(
 		service.Name = cmp.Or(service.Name, key)
 		spec, err := buildServiceSpecInternal(service, ns, stackLabels, networkNameByKey, configMetaByKey, secretMetaByKey, project.Volumes)
 		if err != nil {
-			return nil, invalidStackErrorInternal(errors.WrapIff(err, "service %s", service.Name))
+			return nil, invalidStackErrorInternal(fmt.Errorf("service %s: %w", service.Name, err))
 		}
 		desiredServices[spec.Name] = struct{}{}
 
@@ -196,7 +195,7 @@ func listStackServicesInternal(ctx context.Context, dockerClient *dockerclient.C
 	filter := make(dockerclient.Filters).Add("label", fmt.Sprintf("%s=%s", swarmtypes.StackNamespaceLabel, stackName))
 	servicesResult, err := dockerClient.ServiceList(ctx, dockerclient.ServiceListOptions{Filters: filter})
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to list swarm services")
+		return nil, fmt.Errorf("failed to list swarm services: %w", err)
 	}
 	services := servicesResult.Items
 
@@ -226,7 +225,7 @@ func createSwarmServiceInternal(
 	}
 	opts.EncodedRegistryAuth = cmp.Or(encodedRegistryAuth, opts.EncodedRegistryAuth)
 	if _, err := dockerClient.ServiceCreate(ctx, opts); err != nil {
-		return errors.WrapIff(err, "failed to create swarm service %s", spec.Name)
+		return fmt.Errorf("failed to create swarm service %s: %w", spec.Name, err)
 	}
 	return nil
 }
@@ -267,11 +266,11 @@ func updateSwarmServiceInternal(
 		if strings.Contains(err.Error(), "service does not have a previous spec") {
 			opts.RegistryAuthFrom = ""
 			if _, retryErr := dockerClient.ServiceUpdate(ctx, existing.ID, opts); retryErr != nil {
-				return errors.WrapIff(retryErr, "failed to update swarm service %s", spec.Name)
+				return fmt.Errorf("failed to update swarm service %s: %w", spec.Name, retryErr)
 			}
 			return nil
 		}
-		return errors.WrapIff(err, "failed to update swarm service %s", spec.Name)
+		return fmt.Errorf("failed to update swarm service %s: %w", spec.Name, err)
 	}
 	return nil
 }
@@ -285,7 +284,7 @@ func normalizeResolveImageModeInternal(value string) (string, error) {
 	case resolveImageAlways, resolveImageChanged, resolveImageNever:
 		return mode, nil
 	default:
-		return "", errors.Errorf("invalid resolve image mode %q: expected always, changed, or never", value)
+		return "", fmt.Errorf("invalid resolve image mode %q: expected always, changed, or never", value)
 	}
 }
 
@@ -344,7 +343,7 @@ func resolveRegistryAuthForSpecInternal(
 
 	encodedRegistryAuth, err := registryAuthForImage(ctx, image)
 	if err != nil {
-		return "", errors.WrapIff(err, "failed to resolve registry auth for image %s", image)
+		return "", fmt.Errorf("failed to resolve registry auth for image %s: %w", image, err)
 	}
 
 	return encodedRegistryAuth, nil

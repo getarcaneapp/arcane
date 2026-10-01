@@ -3,10 +3,10 @@ package scheduler
 import (
 	"cmp"
 	"context"
+	"errors"
 	"log/slog"
 	"strings"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/updater"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
@@ -212,8 +212,7 @@ func autoUpdateOutcomeInternal(ctx context.Context, result *updatertypes.Result,
 		outcome.Status = schedulertypes.NeedsAttention
 		outcome.Message = "Unconfirmed targets remain; review this run's results"
 	}
-	var outcomeErr *schedulertypes.OutcomeError
-	if errors.As(err, &outcomeErr) {
+	if outcomeErr, ok := errors.AsType[*schedulertypes.OutcomeError](err); ok {
 		outcome.Status = outcomeErr.Outcome.Status
 		outcome.Message = outcomeErr.Outcome.Message
 		outcome.Targets = nil

@@ -3,10 +3,12 @@ package backup
 import (
 	"context"
 	"encoding/json/v2"
+	"errors"
+	"fmt"
 	"sync"
 	"time"
 
-	"emperror.dev/errors"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
@@ -176,7 +178,7 @@ func (a *backupRunActorInternal) Job(ctx context.Context, _ string, _ actor.Enve
 		return err
 	}
 	if runErr != nil {
-		return errors.WrapIf(actor.ErrJobPermanentFailure, runErr.Error())
+		return fmt.Errorf("%s: %w", runErr.Error(), actor.ErrJobPermanentFailure)
 	}
 	return nil
 }
@@ -198,7 +200,7 @@ func (a *backupRunActorInternal) executeInternal(ctx context.Context, command ba
 			a.engine.mu.Unlock()
 			defer lease.Release(ctx)
 			if failure != nil {
-				err = errors.Combine(err, failure(ctx, a.id, command.Payload, err))
+				err = errors.Join(err, failure(ctx, a.id, command.Payload, err))
 			}
 			return err
 		}
@@ -306,4 +308,22 @@ func (e *Engine) ReconcileDispatches(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// ExpiredRunIDs returns the IDs of succeeded runs with snapshots that fall
+// outside the newest keep entries for one policy, oldest last. Callers delete
+// each run through their own delete path so snapshots are forgotten too.
+func ExpiredRunIDs(ctx context.Context, db *database.DB, table, policyID string, keep int) ([]string, error) {
+	var ids []string
+	err := db.WithContext(ctx).
+		Table(table).
+		Where(
+			"policy_id = ? AND status = ? AND (COALESCE(local_snapshot_id, '') <> '' OR COALESCE(remote_snapshot_id, '') <> '')",
+			policyID,
+			"succeeded",
+		).
+		Order("created_at DESC").
+		Offset(keep).
+		Pluck("id", &ids).Error
+	return ids, err
 }

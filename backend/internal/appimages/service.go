@@ -2,12 +2,12 @@ package appimages
 
 import (
 	"embed"
+	"fmt"
 	"io/fs"
 	"path/filepath"
 	"strings"
 	"sync"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	settingstypes "github.com/getarcaneapp/arcane/types/v2/settings"
 	kit "go.getarcane.app/kit/pkg"
@@ -67,7 +67,7 @@ func (s *ApplicationImagesService) GetImageWithColor(name, colorOverride string,
 	s.mu.RUnlock()
 
 	if !ok {
-		return nil, "", errors.Errorf("image '%s' not found", name)
+		return nil, "", fmt.Errorf("image '%s' not found", name)
 	}
 
 	// Apply dynamic color replacement for logo SVGs

@@ -2,11 +2,10 @@ package concurrency
 
 import (
 	"context"
+	"errors"
 	"maps"
 	"sync"
 	"sync/atomic"
-
-	"emperror.dev/errors"
 )
 
 // StateMap owns mutable keyed state while publishing immutable snapshots for readers.

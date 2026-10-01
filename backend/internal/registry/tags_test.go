@@ -3,12 +3,12 @@ package registry
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
 	"testing"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

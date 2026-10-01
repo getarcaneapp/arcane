@@ -26,7 +26,6 @@ linters:
     - exhaustive
     - exptostd
     - fatcontext
-    - forbidigo
     - forcetypeassert
     - ginkgolinter
     - gocheckcompilerdirectives
@@ -44,7 +43,6 @@ linters:
     - govet
     - grouper
     - iface
-    - importas
     - inamedparam
     - ineffassign
     - interfacebloat
@@ -95,20 +93,12 @@ linters:
         type: module
         description: Detects suspicious Go function implementations.
         original-url: https://go.ofkm.dev/shimbad
-    forbidigo:
-      forbid:
-        - pattern: ^errors\.(Wrap|Wrapf|WithStack)$
-          msg: use WrapIf, WrapIff, or WithStackIf so an existing stack is preserved
     gomoddirectives:
       replace-local: true
       replace-allow-list:
         # Copacetic v0.14.2 only compiles against the buildx v0.32 imagetools
         # API; drop once copa supports buildx >= 0.35 and the pin is removed.
         - github.com/docker/buildx
-    importas:
-      alias:
-        - pkg: errors
-          alias: stderrors
   exclusions:
     generated: lax
     presets:
@@ -126,9 +116,6 @@ linters:
       - linters:
           - revive
         text: "exported:"
-      - linters:
-          - forbidigo
-        path: cli/
       # Endpoint path builders are intentional one-line functions.
       - linters:
           - shimbad

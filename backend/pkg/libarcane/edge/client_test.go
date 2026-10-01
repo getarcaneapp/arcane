@@ -2411,7 +2411,7 @@ func TestConnectAndServeWebSocket_CancelUnblocksMessageLoop(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan error, 1)
-	go func() { done <- client.connectAndServeWebSocket(ctx) }()
+	go func() { done <- client.connectAndServeWebSocketInternal(ctx) }()
 
 	select {
 	case <-registered:

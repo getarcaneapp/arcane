@@ -3,9 +3,9 @@ package auth
 import (
 	"context"
 	"crypto/mldsa"
+	"errors"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/lestrrat-go/jwx/v4/jwa"
 	"github.com/lestrrat-go/jwx/v4/jws"

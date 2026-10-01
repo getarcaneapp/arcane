@@ -2,10 +2,10 @@ package updater
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"reflect"
 
-	"emperror.dev/errors"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
@@ -121,9 +121,9 @@ func (h *UpdaterHandler) RunUpdater(ctx context.Context, input *RunUpdaterInput)
 	out, err := h.updaterService.ApplyPending(runtimeCtx, options)
 	if err != nil {
 		if errors.Is(err, common.ErrBadRequest) {
-			return nil, huma.Error400BadRequest(errors.WithMessage(err, "Failed to run updater").Error())
+			return nil, huma.Error400BadRequest("Failed to run updater: " + err.Error())
 		}
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to run updater").Error())
+		return nil, huma.Error500InternalServerError("Failed to run updater: " + err.Error())
 	}
 
 	return &handlerutil.Out[*updater.Result]{
@@ -155,7 +155,7 @@ func (h *UpdaterHandler) GetUpdaterHistory(ctx context.Context, input *GetUpdate
 
 	history, err := h.updaterService.GetHistory(ctx, limit)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to get updater history").Error())
+		return nil, huma.Error500InternalServerError("Failed to get updater history: " + err.Error())
 	}
 
 	return &handlerutil.Out[[]AutoUpdateRecord]{
@@ -171,7 +171,7 @@ func (h *UpdaterHandler) updateContainerInternal(ctx context.Context, input *Upd
 	if input.Async {
 		activity, err := h.updaterService.AcceptSingleContainerUpdate(runtimeCtx, input.ContainerID)
 		if err != nil {
-			return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to accept container update").Error())
+			return nil, huma.Error500InternalServerError("Failed to accept container update: " + err.Error())
 		}
 		return &updateContainerOutput{
 			Status: http.StatusAccepted,
@@ -180,7 +180,7 @@ func (h *UpdaterHandler) updateContainerInternal(ctx context.Context, input *Upd
 	}
 	out, err := h.updaterService.UpdateSingleContainer(runtimeCtx, input.ContainerID)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to run updater").Error())
+		return nil, huma.Error500InternalServerError("Failed to run updater: " + err.Error())
 	}
 
 	return &updateContainerOutput{

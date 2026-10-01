@@ -2,10 +2,10 @@ package s3
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
@@ -308,7 +308,7 @@ func (s *S3DestinationService) SyncS3Destinations(ctx context.Context, destinati
 			continue
 		}
 		if err := s.DeleteS3Destination(ctx, existing[i].ID); err != nil {
-			removeErr = errors.Combine(removeErr, fmt.Errorf("failed to remove unsynced S3 destination %s: %w", existing[i].ID, err))
+			removeErr = errors.Join(removeErr, fmt.Errorf("failed to remove unsynced S3 destination %s: %w", existing[i].ID, err))
 		}
 	}
 	return removeErr

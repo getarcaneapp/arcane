@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log/slog"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/gitops"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/gitrepo"
@@ -42,7 +41,7 @@ func (ps *PlaywrightService) CreateTestApiKeys(ctx context.Context, count int) (
 	// Get the arcane user to associate the API keys with
 	user, err := ps.userService.GetUserByUsername(ctx, "arcane")
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to get arcane user")
+		return nil, fmt.Errorf("failed to get arcane user: %w", err)
 	}
 
 	// Grant every recognized permission globally so the test key behaves like
@@ -65,7 +64,7 @@ func (ps *PlaywrightService) CreateTestApiKeys(ctx context.Context, count int) (
 
 		apiKey, err := ps.apiKeyService.CreateApiKey(ctx, user.ID, authz.SudoPermissionSet(), req)
 		if err != nil {
-			return nil, errors.WrapIff(err, "failed to create test API key %d", i+1)
+			return nil, fmt.Errorf("failed to create test API key %d: %w", i+1, err)
 		}
 
 		createdKeys = append(createdKeys, apiKey)
@@ -87,7 +86,7 @@ func (ps *PlaywrightService) DeleteAllTestApiKeys(ctx context.Context) error {
 
 	apiKeys, _, err := ps.apiKeyService.ListApiKeys(ctx, params)
 	if err != nil {
-		return errors.WrapIf(err, "failed to list API keys")
+		return fmt.Errorf("failed to list API keys: %w", err)
 	}
 
 	for _, apiKey := range apiKeys {

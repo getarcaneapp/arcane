@@ -3,11 +3,11 @@ package auth
 import (
 	"context"
 	"crypto/subtle"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"

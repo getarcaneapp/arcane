@@ -1,6 +1,7 @@
 package projects
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -10,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
@@ -43,7 +43,7 @@ var tagsCmd = &cobra.Command{
 
 		result, err := c.GetJSON[[]project.TagOption](cmd.Context(), types.ProjectsTags(c.EnvID()))
 		if err != nil {
-			return errors.WrapIf(err, "failed to list project tags")
+			return fmt.Errorf("failed to list project tags: %w", err)
 		}
 
 		if jsonOutput {
@@ -95,7 +95,7 @@ var tagCmd = &cobra.Command{
 
 		result, err := c.DoJSON[base.ApiResponse[project.UpdateTagResponse]](cmd.Context(), http.MethodPatch, types.ProjectTags(c.EnvID(), resolved.ID), body)
 		if err != nil {
-			return errors.WrapIf(err, "failed to update project tag")
+			return fmt.Errorf("failed to update project tag: %w", err)
 		}
 
 		if jsonOutput {
@@ -191,15 +191,15 @@ var buildCmd = &cobra.Command{
 
 		resp, err := c.Post(cmd.Context(), types.ProjectBuild(c.EnvID(), resolved.ID), body)
 		if err != nil {
-			return errors.WrapIf(err, "failed to build project images")
+			return fmt.Errorf("failed to build project images: %w", err)
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to build project images")
+			return fmt.Errorf("failed to build project images: %w", err)
 		}
 
 		if err := printOperationStreamInternal(resp.Body); err != nil {
-			return errors.WrapIf(err, "failed to build project images")
+			return fmt.Errorf("failed to build project images: %w", err)
 		}
 
 		output.Success("Images built successfully for project %s", resolved.Name)
@@ -231,7 +231,7 @@ var updateServicesCmd = &cobra.Command{
 
 		result, err := c.PostJSON[base.MessageResponse](cmd.Context(), types.ProjectUpdateServices(c.EnvID(), resolved.ID), body)
 		if err != nil {
-			return errors.WrapIf(err, "failed to update project services")
+			return fmt.Errorf("failed to update project services: %w", err)
 		}
 
 		if jsonOutput {
@@ -267,7 +267,7 @@ var workspaceCatCmd = &cobra.Command{
 		reqPath := types.ProjectWorkspaceFile(c.EnvID(), resolved.ID) + "?relativePath=" + url.QueryEscape(args[1])
 		result, err := c.GetJSON[workspacetypes.FileContent](cmd.Context(), reqPath)
 		if err != nil {
-			return errors.WrapIf(err, "failed to get workspace file")
+			return fmt.Errorf("failed to get workspace file: %w", err)
 		}
 
 		if jsonOutput {
@@ -275,7 +275,7 @@ var workspaceCatCmd = &cobra.Command{
 		}
 
 		if result.Data.Content == "" && result.Data.ReadOnlyReason != "" {
-			return errors.Errorf("file %s has no inline content (%s); use `arcane projects workspace download` instead", args[1], result.Data.ReadOnlyReason)
+			return fmt.Errorf("file %s has no inline content (%s); use `arcane projects workspace download` instead", args[1], result.Data.ReadOnlyReason)
 		}
 		fmt.Print(result.Data.Content)
 		return nil
@@ -301,11 +301,11 @@ var workspaceDownloadCmd = &cobra.Command{
 		reqPath := types.ProjectWorkspaceFileDownload(c.EnvID(), resolved.ID) + "?relativePath=" + url.QueryEscape(args[1])
 		resp, err := c.Get(cmd.Context(), reqPath)
 		if err != nil {
-			return errors.WrapIf(err, "failed to download workspace file")
+			return fmt.Errorf("failed to download workspace file: %w", err)
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to download workspace file")
+			return fmt.Errorf("failed to download workspace file: %w", err)
 		}
 
 		outputFile := path.Base(args[1])
@@ -315,15 +315,15 @@ var workspaceDownloadCmd = &cobra.Command{
 
 		file, err := os.Create(outputFile)
 		if err != nil {
-			return errors.WrapIff(err, "failed to create file %s", outputFile)
+			return fmt.Errorf("failed to create file %s: %w", outputFile, err)
 		}
 		written, copyErr := io.Copy(file, resp.Body)
 		closeErr := file.Close()
 		if copyErr != nil {
-			return errors.WrapIf(copyErr, "failed to write workspace file")
+			return fmt.Errorf("failed to write workspace file: %w", copyErr)
 		}
 		if closeErr != nil {
-			return errors.WrapIf(closeErr, "failed to write workspace file")
+			return fmt.Errorf("failed to write workspace file: %w", closeErr)
 		}
 
 		output.Success("Downloaded %s (%d bytes) to %s", args[1], written, outputFile)

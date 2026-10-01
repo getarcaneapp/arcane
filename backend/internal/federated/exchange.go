@@ -3,12 +3,13 @@ package federated
 import (
 	"cmp"
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
 	"regexp"
 	"strings"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
@@ -65,7 +66,7 @@ func (s *FederatedCredentialService) ExchangeToken(ctx context.Context, req fede
 		Order("id ASC").
 		Find(&credentials).Error; err != nil {
 		logReason = "credential_lookup_failed"
-		return nil, errors.WrapIf(err, "failed to list federated credentials for issuer")
+		return nil, fmt.Errorf("failed to list federated credentials for issuer: %w", err)
 	}
 	now := time.Now()
 	active := credentials[:0]
@@ -83,7 +84,7 @@ func (s *FederatedCredentialService) ExchangeToken(ctx context.Context, req fede
 	verifiedToken, verifiedClaims, err := s.verifySubjectTokenInternal(ctx, issuer, req.SubjectToken)
 	if err != nil {
 		logReason = "token_verification_failed"
-		return nil, common.Classify(common.ErrFederatedCredentialInvalidGrant, errors.WrapIf(err, "invalid federated token grant"))
+		return nil, common.Classify(common.ErrFederatedCredentialInvalidGrant, fmt.Errorf("invalid federated token grant: %w", err))
 	}
 	if subject == "" {
 		subject = kit.ToString(jwtclaims.GetByPath(verifiedClaims, defaultFederatedSubjectClaim).OrEmpty())
@@ -106,7 +107,7 @@ func (s *FederatedCredentialService) ExchangeToken(ctx context.Context, req fede
 	user, err := s.userService.GetUserByID(ctx, credential.IdentityUserID)
 	if err != nil {
 		logReason = "identity_user_missing"
-		return nil, common.Classify(common.ErrFederatedCredentialInvalidGrant, errors.WrapIf(err, "invalid federated token grant"))
+		return nil, common.Classify(common.ErrFederatedCredentialInvalidGrant, fmt.Errorf("invalid federated token grant: %w", err))
 	}
 	matchedUser = user
 
@@ -170,7 +171,7 @@ func (s *FederatedCredentialService) recordTokenReplayGuardInternal(ctx context.
 	if err := s.db.WithContext(ctx).
 		Where("expires_at < ?", now).
 		Delete(&FederatedTokenReplay{}).Error; err != nil {
-		return errors.WrapIf(err, "failed to prune federated token replay records")
+		return fmt.Errorf("failed to prune federated token replay records: %w", err)
 	}
 
 	tokenID := strings.TrimSpace(kit.ToString(jwtclaims.GetByPath(claims, "jti").OrEmpty()))
@@ -189,7 +190,7 @@ func (s *FederatedCredentialService) recordTokenReplayGuardInternal(ctx context.
 		if strings.Contains(message, "unique") || strings.Contains(message, "duplicate key") {
 			return common.Classify(common.ErrFederatedCredentialInvalidGrant, errors.New("invalid federated token grant"))
 		}
-		return errors.WrapIf(err, "failed to record federated token replay guard")
+		return fmt.Errorf("failed to record federated token replay guard: %w", err)
 	}
 	return nil
 }
@@ -206,14 +207,14 @@ func (s *FederatedCredentialService) keySetForIssuerInternal(ctx context.Context
 		providerCtx := oidc.ClientContext(context.WithoutCancel(ctx), s.httpClient)
 		provider, err := oidc.NewProvider(providerCtx, issuer)
 		if err != nil {
-			return nil, errors.WrapIf(err, "failed to discover federated issuer")
+			return nil, fmt.Errorf("failed to discover federated issuer: %w", err)
 		}
 
 		var metadata struct {
 			JWKSURL string `json:"jwks_uri"`
 		}
 		if err := provider.Claims(&metadata); err != nil {
-			return nil, errors.WrapIf(err, "failed to read federated issuer metadata")
+			return nil, fmt.Errorf("failed to read federated issuer metadata: %w", err)
 		}
 		if metadata.JWKSURL == "" {
 			return nil, errors.New("federated issuer metadata is missing jwks_uri")
@@ -224,7 +225,7 @@ func (s *FederatedCredentialService) keySetForIssuerInternal(ctx context.Context
 
 		keySet, err := s.keySetManager.KeySet(context.WithoutCancel(ctx), s.httpClient, metadata.JWKSURL)
 		if err != nil {
-			return nil, errors.WrapIf(err, "failed to configure federated issuer JWK set")
+			return nil, fmt.Errorf("failed to configure federated issuer JWK set: %w", err)
 		}
 		s.providerMu.Lock()
 		s.keySets[issuer] = keySet

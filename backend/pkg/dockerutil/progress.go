@@ -6,6 +6,8 @@ import (
 	"io"
 	"strings"
 	"sync"
+
+	"github.com/moby/moby/client/pkg/jsonmessage"
 )
 
 // ProgressWriterKey can be set on a context to stream operation output to the
@@ -79,4 +81,14 @@ func (w *logLineWriter) emitLine(line string) {
 	if f, ok := w.dst.(flusher); ok {
 		f.Flush()
 	}
+}
+
+// RenderJSONMessageStream renders a Docker JSON message stream (image pull,
+// push, build, load) as the raw text the docker CLI prints in non-TTY mode,
+// writing it to out. Any daemon-reported error is returned verbatim.
+func RenderJSONMessageStream(reader io.Reader, out io.Writer) error {
+	if out == nil {
+		out = io.Discard
+	}
+	return jsonmessage.DisplayJSONMessagesStream(reader, out, 0, false, nil)
 }

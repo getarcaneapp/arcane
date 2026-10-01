@@ -3,13 +3,14 @@ package role
 import (
 	"context"
 	"encoding/json/v2"
+	"errors"
+	"fmt"
 	"log/slog"
 	"maps"
 	"slices"
 	"strings"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
@@ -26,18 +27,10 @@ import (
 )
 
 const (
-	// permissionCacheTTL bounds how long a resolved PermissionSet is reused
-	// before re-querying the DB. The service also invalidates entries explicitly
-	// on mutation paths, so this TTL is a safety net.
-	permissionCacheTTL = 60 * time.Second
-
+	permissionCacheTTL             = 60 * time.Second
 	legacyRoleBackfillCompletedKey = "migration.legacy_user_roles.v1.completed"
 )
 
-// RoleService owns role definitions, user role assignments, OIDC role
-// mappings, and API key permissions. It resolves a caller's effective
-// PermissionSet on demand and caches the result per-user / per-key for a
-// short TTL to keep the hot path off the database.
 type RoleService struct {
 	db          *database.DB
 	userCache   *hot.HotCache[string, *authz.PermissionSet]
@@ -58,10 +51,6 @@ func NewRoleService(db *database.DB) *RoleService {
 	}
 }
 
-// ---------- Boot-time reconciliation & safety checks ----------
-
-// EnsureBuiltInRoles overwrites the permission set on every built-in role to
-// match the Go constants. Idempotent. Called at boot after migrations succeed.
 func (s *RoleService) EnsureBuiltInRoles(ctx context.Context) error {
 	builtIns := map[string]struct {
 		name string
@@ -86,7 +75,7 @@ func (s *RoleService) EnsureBuiltInRoles(ctx context.Context) error {
 				BuiltIn:     true,
 			}
 			if err := tx.Save(&role).Error; err != nil {
-				return errors.WrapIff(err, "failed to upsert built-in role %s", id)
+				return fmt.Errorf("failed to upsert built-in role %s: %w", id, err)
 			}
 		}
 		return nil
@@ -109,7 +98,7 @@ func (s *RoleService) BackfillLegacyRoleAssignments(ctx context.Context) error {
 	err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
 		claimed, err := kv.NewKVService(&database.DB{DB: tx}).CreateIfAbsent(ctx, legacyRoleBackfillCompletedKey, time.Now().UTC().Format(time.RFC3339))
 		if err != nil {
-			return errors.WrapIf(err, "failed to claim legacy role backfill marker")
+			return fmt.Errorf("failed to claim legacy role backfill marker: %w", err)
 		}
 		if !claimed {
 			return nil
@@ -118,7 +107,7 @@ func (s *RoleService) BackfillLegacyRoleAssignments(ctx context.Context) error {
 		if err := tx.Table("users").Select("id, roles").
 			Where("NOT EXISTS (SELECT 1 FROM user_role_assignments ura WHERE ura.user_id = users.id)").
 			Scan(&rows).Error; err != nil {
-			return errors.WrapIf(err, "failed to read legacy users.roles for backfill")
+			return fmt.Errorf("failed to read legacy users.roles for backfill: %w", err)
 		}
 		for _, u := range rows {
 			roleID := kit.Ternary(legacyRolesContainsAdminInternal(u.Roles), authz.BuiltInRoleAdmin, authz.BuiltInRoleViewer)
@@ -129,7 +118,7 @@ func (s *RoleService) BackfillLegacyRoleAssignments(ctx context.Context) error {
 			}
 			result := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&assignment)
 			if result.Error != nil {
-				return errors.WrapIff(result.Error, "failed to backfill assignment for user %s", u.ID)
+				return fmt.Errorf("failed to backfill assignment for user %s: %w", u.ID, result.Error)
 			}
 			inserted += result.RowsAffected
 		}
@@ -167,13 +156,10 @@ func (s *RoleService) AssertGlobalAdminExists(ctx context.Context) error {
 		return err
 	}
 	if count == 0 {
-		return common.Classify(common.ErrNoGlobalAdminRemains, errors.
-			New("At least one user must retain a global Admin role assignment"))
+		return common.Classify(common.ErrNoGlobalAdminRemains, errors.New("At least one user must retain a global Admin role assignment")) //nolint:staticcheck // Preserve the existing error message.
 	}
 	return nil
 }
-
-// ---------- Role CRUD ----------
 
 func (s *RoleService) ListRoles(ctx context.Context, params pagination.QueryParams) ([]Role, pagination.Response, error) {
 	var roles []Role
@@ -186,7 +172,7 @@ func (s *RoleService) ListRoles(ctx context.Context, params pagination.QueryPara
 
 	resp, err := pagination.PaginateAndSortDB(params, query, &roles)
 	if err != nil {
-		return nil, pagination.Response{}, errors.WrapIf(err, "failed to paginate roles")
+		return nil, pagination.Response{}, fmt.Errorf("failed to paginate roles: %w", err)
 	}
 	return roles, resp, nil
 }
@@ -194,7 +180,7 @@ func (s *RoleService) ListRoles(ctx context.Context, params pagination.QueryPara
 func (s *RoleService) ListAllRoles(ctx context.Context) ([]Role, error) {
 	var roles []Role
 	if err := s.db.WithContext(ctx).Order("name").Find(&roles).Error; err != nil {
-		return nil, errors.WrapIf(err, "failed to list roles")
+		return nil, fmt.Errorf("failed to list roles: %w", err)
 	}
 	return roles, nil
 }
@@ -220,7 +206,7 @@ func (s *RoleService) CreateRole(ctx context.Context, name string, description *
 	err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
 		var conflict int64
 		if err := tx.Model(&Role{}).Where("name = ?", input.Name).Count(&conflict).Error; err != nil {
-			return errors.WrapIf(err, "failed to check role name uniqueness")
+			return fmt.Errorf("failed to check role name uniqueness: %w", err)
 		}
 		if conflict > 0 {
 			return common.Classify(common.ErrRoleNameTaken, errors.New("Role name already in use"))
@@ -245,7 +231,7 @@ func lockAssignedUserRowsInternal(tx *gorm.DB, roleID string) ([]string, error) 
 		Where("role_id = ?", roleID).
 		Distinct("user_id").
 		Pluck("user_id", &ids).Error; err != nil {
-		return nil, errors.WrapIf(err, "failed to list users assigned to role")
+		return nil, fmt.Errorf("failed to list users assigned to role: %w", err)
 	}
 	if len(ids) == 0 {
 		return ids, nil
@@ -256,7 +242,7 @@ func lockAssignedUserRowsInternal(tx *gorm.DB, roleID string) ([]string, error) 
 		Where("id IN ?", ids).
 		Order("id").
 		Pluck("id", &locked).Error; err != nil {
-		return nil, errors.WrapIf(err, "failed to lock users assigned to role")
+		return nil, fmt.Errorf("failed to lock users assigned to role: %w", err)
 	}
 	return ids, nil
 }
@@ -276,15 +262,15 @@ func (s *RoleService) UpdateRole(ctx context.Context, id, name string, descripti
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return common.Classify(common.ErrRoleNotFound, errors.New("Role not found"))
 			}
-			return errors.WrapIf(err, "failed to load role")
+			return fmt.Errorf("failed to load role: %w", err)
 		}
 		if existing.BuiltIn {
-			return common.Classify(common.ErrRoleBuiltIn, errors.New("Built-in role cannot be modified"))
+			return common.Classify(common.ErrRoleBuiltIn, errors.New("Built-in role cannot be modified")) //nolint:staticcheck // Preserve the existing error message.
 		}
 		if input.Name != existing.Name {
 			var conflict int64
 			if err := tx.Model(&Role{}).Where("name = ? AND id <> ?", input.Name, id).Count(&conflict).Error; err != nil {
-				return errors.WrapIf(err, "failed to check role name uniqueness")
+				return fmt.Errorf("failed to check role name uniqueness: %w", err)
 			}
 			if conflict > 0 {
 				return common.Classify(common.ErrRoleNameTaken, errors.New("Role name already in use"))
@@ -297,7 +283,7 @@ func (s *RoleService) UpdateRole(ctx context.Context, id, name string, descripti
 		existing.Description = input.Description
 		existing.Permissions = permissions
 		if err := tx.Save(&existing).Error; err != nil {
-			return errors.WrapIf(err, "failed to update role")
+			return fmt.Errorf("failed to update role: %w", err)
 		}
 		out = existing
 		return nil
@@ -317,22 +303,20 @@ func (s *RoleService) DeleteRole(ctx context.Context, id string) error {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return common.Classify(common.ErrRoleNotFound, errors.New("Role not found"))
 			}
-			return errors.WrapIf(err, "failed to load role")
+			return fmt.Errorf("failed to load role: %w", err)
 		}
 		if existing.BuiltIn {
-			return common.Classify(common.ErrRoleBuiltIn,
-
-				// Collect users affected before the delete so we can invalidate their caches.
-				errors.New("Built-in role cannot be modified"))
+			return common.Classify(common.ErrRoleBuiltIn, errors.New("Built-in role cannot be modified")) //nolint:staticcheck // Preserve the existing error message.
 		}
 
+		// Collect affected users before deleting the role.
 		ids, err := lockAssignedUserRowsInternal(tx, id)
 		if err != nil {
 			return err
 		}
 		affected = ids
 		if err := tx.Delete(&Role{}, "id = ?", id).Error; err != nil {
-			return errors.WrapIf(err, "failed to delete role")
+			return fmt.Errorf("failed to delete role: %w", err)
 		}
 		return nil
 	})
@@ -357,7 +341,7 @@ func (s *RoleService) CountUsersAssignedToRole(ctx context.Context, roleID strin
 		Distinct("user_id").
 		Where("role_id = ?", roleID).
 		Count(&count).Error; err != nil {
-		return 0, errors.WrapIf(err, "failed to count users assigned to role")
+		return 0, fmt.Errorf("failed to count users assigned to role: %w", err)
 	}
 	return int(count), nil
 }
@@ -370,7 +354,7 @@ func (s *RoleService) ListUserAssignments(ctx context.Context, userID string) ([
 		Where("user_id = ?", userID).
 		Order("source ASC, role_id ASC").
 		Find(&out).Error; err != nil {
-		return nil, errors.WrapIf(err, "failed to list user assignments")
+		return nil, fmt.Errorf("failed to list user assignments: %w", err)
 	}
 	return out, nil
 }
@@ -396,18 +380,18 @@ func (s *RoleService) replaceUserAssignmentsForSourceInternal(ctx context.Contex
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return common.ErrUserNotFound
 			}
-			return errors.WrapIf(err, "failed to lock user for assignment update")
+			return fmt.Errorf("failed to lock user for assignment update: %w", err)
 		}
 		if err := validateAssignmentsExistInternal(tx, desired); err != nil {
 			return err
 		}
 		if err := tx.Where("user_id = ? AND source = ?", userID, source).
 			Delete(&UserRoleAssignment{}).Error; err != nil {
-			return errors.WrapIff(err, "failed to clear %s assignments", source)
+			return fmt.Errorf("failed to clear %s assignments: %w", source, err)
 		}
 		if len(desired) > 0 {
 			if err := tx.Create(&desired).Error; err != nil {
-				return errors.WrapIff(err, "failed to insert %s assignments", source)
+				return fmt.Errorf("failed to insert %s assignments: %w", source, err)
 			}
 		}
 		count, err := s.countEffectiveGlobalAdminsInternal(ctx, tx, "")
@@ -415,7 +399,7 @@ func (s *RoleService) replaceUserAssignmentsForSourceInternal(ctx context.Contex
 			return err
 		}
 		if count == 0 {
-			return common.Classify(common.ErrNoGlobalAdminRemains, errors.New("At least one user must retain a global Admin role assignment"))
+			return common.Classify(common.ErrNoGlobalAdminRemains, errors.New("At least one user must retain a global Admin role assignment")) //nolint:staticcheck // Preserve the existing error message.
 		}
 		return nil
 	})
@@ -451,7 +435,7 @@ func validateAssignmentsExistInternal(tx *gorm.DB, desired []UserRoleAssignment)
 		roleIDs := slices.Collect(maps.Keys(roleIDSet))
 		var found []string
 		if err := tx.Model(&Role{}).Where("id IN ?", roleIDs).Pluck("id", &found).Error; err != nil {
-			return errors.WrapIf(err, "failed to verify role ids")
+			return fmt.Errorf("failed to verify role ids: %w", err)
 		}
 		foundSet := make(map[string]struct{}, len(found))
 		for _, id := range found {
@@ -459,7 +443,7 @@ func validateAssignmentsExistInternal(tx *gorm.DB, desired []UserRoleAssignment)
 		}
 		for id := range roleIDSet {
 			if _, ok := foundSet[id]; !ok {
-				return common.Classify(common.ErrInvalidRoleAssignment, errors.Errorf("invalid role assignment: role %q does not exist", id))
+				return common.Classify(common.ErrInvalidRoleAssignment, fmt.Errorf("invalid role assignment: role %q does not exist", id))
 			}
 		}
 	}
@@ -468,7 +452,7 @@ func validateAssignmentsExistInternal(tx *gorm.DB, desired []UserRoleAssignment)
 		envIDs := slices.Collect(maps.Keys(envIDSet))
 		var found []string
 		if err := tx.Table("environments").Where("id IN ?", envIDs).Pluck("id", &found).Error; err != nil {
-			return errors.WrapIf(err, "failed to verify environment ids")
+			return fmt.Errorf("failed to verify environment ids: %w", err)
 		}
 		foundSet := make(map[string]struct{}, len(found))
 		for _, id := range found {
@@ -476,7 +460,7 @@ func validateAssignmentsExistInternal(tx *gorm.DB, desired []UserRoleAssignment)
 		}
 		for id := range envIDSet {
 			if _, ok := foundSet[id]; !ok {
-				return common.Classify(common.ErrInvalidRoleAssignment, errors.Errorf("invalid role assignment: environment %q does not exist", id))
+				return common.Classify(common.ErrInvalidRoleAssignment, fmt.Errorf("invalid role assignment: environment %q does not exist", id))
 			}
 		}
 	}
@@ -517,7 +501,7 @@ func (s *RoleService) countEffectiveGlobalAdminsInternal(ctx context.Context, tx
 		query = query.Where("u.id <> ?", excludedUserID)
 	}
 	if err := query.Scan(&rows).Error; err != nil {
-		return 0, errors.WrapIf(err, "failed to list global role permissions for admin count")
+		return 0, fmt.Errorf("failed to list global role permissions for admin count: %w", err)
 	}
 
 	permissionsByUser := make(map[string]*authz.PermissionSet, len(rows))
@@ -529,7 +513,7 @@ func (s *RoleService) countEffectiveGlobalAdminsInternal(ctx context.Context, tx
 		}
 		perms, err := decodePermissionsJSONInternal(r.Permissions)
 		if err != nil {
-			return 0, errors.WrapIf(err, "failed to decode role permissions")
+			return 0, fmt.Errorf("failed to decode role permissions: %w", err)
 		}
 		ps.AddGlobal(perms...)
 	}
@@ -577,13 +561,13 @@ func (s *RoleService) ResolveUserPermissionsInDB(_ context.Context, tx *gorm.DB,
 		Joins("INNER JOIN roles r ON r.id = ura.role_id").
 		Where("ura.user_id = ?", userID).
 		Scan(&rows).Error; err != nil {
-		return nil, errors.WrapIf(err, "failed to resolve user permissions")
+		return nil, fmt.Errorf("failed to resolve user permissions: %w", err)
 	}
 	ps := authz.NewPermissionSet()
 	for _, r := range rows {
 		perms, err := decodePermissionsJSONInternal(r.Permissions)
 		if err != nil {
-			return nil, errors.WrapIf(err, "failed to decode role permissions")
+			return nil, fmt.Errorf("failed to decode role permissions: %w", err)
 		}
 		if r.EnvironmentID == nil {
 			ps.AddGlobal(perms...)
@@ -616,7 +600,7 @@ func (s *RoleService) ResolveExecutionPermissions(ctx context.Context, userID, k
 	db := s.db.WithContext(ctx)
 	var user common.User
 	if err := db.Select("id").First(&user, "id = ?", userID).Error; err != nil {
-		return nil, errors.WrapIf(err, "failed to load requesting user")
+		return nil, fmt.Errorf("failed to load requesting user: %w", err)
 	}
 	if keyID == "" {
 		return s.ResolveUserPermissionsInDB(ctx, db, userID)
@@ -629,7 +613,7 @@ func (s *RoleService) ResolveExecutionPermissions(ctx context.Context, userID, k
 		ExpiresAt     *time.Time
 	}
 	if err := db.Table("api_keys").Select("id, kind, user_id, environment_id, expires_at").Where("id = ?", keyID).Take(&key).Error; err != nil {
-		return nil, errors.WrapIf(err, "failed to load requesting API key")
+		return nil, fmt.Errorf("failed to load requesting API key: %w", err)
 	}
 	if key.UserID == nil || *key.UserID != userID || (key.ExpiresAt != nil && !key.ExpiresAt.After(time.Now())) {
 		return nil, errors.New("requesting API key is no longer valid")
@@ -680,7 +664,7 @@ func (s *RoleService) ResolveApiKeyPermissions(ctx context.Context, apiKeyID str
 func (s *RoleService) resolveApiKeyPermissionsInDBInternal(db *gorm.DB, apiKeyID string) (*authz.PermissionSet, error) {
 	var grants []ApiKeyPermission
 	if err := db.Where("api_key_id = ?", apiKeyID).Find(&grants).Error; err != nil {
-		return nil, errors.WrapIf(err, "failed to resolve api key permissions")
+		return nil, fmt.Errorf("failed to resolve api key permissions: %w", err)
 	}
 	permissions := authz.NewPermissionSet()
 	for _, grant := range grants {
@@ -713,11 +697,11 @@ func (s *RoleService) SetApiKeyPermissionsInDB(ctx context.Context, tx *gorm.DB,
 		grants[i].ApiKeyID = apiKeyID
 	}
 	if err := tx.WithContext(ctx).Where("api_key_id = ?", apiKeyID).Delete(&ApiKeyPermission{}).Error; err != nil {
-		return errors.WrapIf(err, "failed to clear api key permissions")
+		return fmt.Errorf("failed to clear api key permissions: %w", err)
 	}
 	if len(grants) > 0 {
 		if err := tx.WithContext(ctx).Create(&grants).Error; err != nil {
-			return errors.WrapIf(err, "failed to insert api key permissions")
+			return fmt.Errorf("failed to insert api key permissions: %w", err)
 		}
 	}
 	return nil
@@ -728,7 +712,7 @@ func (s *RoleService) SetApiKeyPermissionsInDB(ctx context.Context, tx *gorm.DB,
 func (s *RoleService) ListOidcMappings(ctx context.Context) ([]OidcRoleMapping, error) {
 	var out []OidcRoleMapping
 	if err := s.db.WithContext(ctx).Order("claim_value, role_id").Find(&out).Error; err != nil {
-		return nil, errors.WrapIf(err, "failed to list oidc mappings")
+		return nil, fmt.Errorf("failed to list oidc mappings: %w", err)
 	}
 	return out, nil
 }
@@ -758,7 +742,7 @@ func (s *RoleService) CreateOidcMapping(ctx context.Context, claimValue, roleID 
 			Source:        OidcMappingSourceManual,
 		}
 		if err := tx.Create(&mapping).Error; err != nil {
-			return errors.WrapIf(err, "failed to create oidc mapping")
+			return fmt.Errorf("failed to create oidc mapping: %w", err)
 		}
 		return nil
 	})
@@ -784,7 +768,7 @@ func (s *RoleService) UpdateOidcMapping(ctx context.Context, id, claimValue, rol
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return common.Classify(common.ErrOidcMappingNotFound, errors.New("OIDC role mapping not found"))
 			}
-			return errors.WrapIf(err, "failed to load mapping")
+			return fmt.Errorf("failed to load mapping: %w", err)
 		}
 		if existing.Source == OidcMappingSourceEnv {
 			return common.Classify(common.ErrOidcMappingEnvManaged, errors.New("OIDC role mapping is managed by OIDC_ROLE_MAPPINGS and cannot be edited at runtime"))
@@ -796,7 +780,7 @@ func (s *RoleService) UpdateOidcMapping(ctx context.Context, id, claimValue, rol
 		existing.RoleID = roleID
 		existing.EnvironmentID = environmentID
 		if err := tx.Save(&existing).Error; err != nil {
-			return errors.WrapIf(err, "failed to update mapping")
+			return fmt.Errorf("failed to update mapping: %w", err)
 		}
 		out = existing
 		return nil
@@ -822,7 +806,7 @@ func validateRoleIDsExistInternal(tx *gorm.DB, roleIDs []string) error {
 	normalized := slices.Collect(maps.Keys(roleIDSet))
 	var found []string
 	if err := tx.Model(&Role{}).Where("id IN ?", normalized).Pluck("id", &found).Error; err != nil {
-		return errors.WrapIf(err, "failed to verify role ids")
+		return fmt.Errorf("failed to verify role ids: %w", err)
 	}
 	foundSet := make(map[string]struct{}, len(found))
 	for _, id := range found {
@@ -830,7 +814,7 @@ func validateRoleIDsExistInternal(tx *gorm.DB, roleIDs []string) error {
 	}
 	for _, id := range normalized {
 		if _, ok := foundSet[id]; !ok {
-			return common.Classify(common.ErrInvalidRoleAssignment, errors.Errorf("invalid role assignment: role %q does not exist", id))
+			return common.Classify(common.ErrInvalidRoleAssignment, fmt.Errorf("invalid role assignment: role %q does not exist", id))
 		}
 	}
 	return nil
@@ -843,13 +827,13 @@ func (s *RoleService) DeleteOidcMapping(ctx context.Context, id string) error {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return common.Classify(common.ErrOidcMappingNotFound, errors.New("OIDC role mapping not found"))
 			}
-			return errors.WrapIf(err, "failed to load mapping")
+			return fmt.Errorf("failed to load mapping: %w", err)
 		}
 		if existing.Source == OidcMappingSourceEnv {
 			return common.Classify(common.ErrOidcMappingEnvManaged, errors.New("OIDC role mapping is managed by OIDC_ROLE_MAPPINGS and cannot be edited at runtime"))
 		}
 		if err := tx.Delete(&OidcRoleMapping{}, "id = ?", id).Error; err != nil {
-			return errors.WrapIf(err, "failed to delete mapping")
+			return fmt.Errorf("failed to delete mapping: %w", err)
 		}
 		return nil
 	})
@@ -873,14 +857,14 @@ func (s *RoleService) ReconcileEnvOidcMappings(ctx context.Context, rawSpec stri
 	}
 	var specs []roletypes.OidcRoleMappingSpec
 	if err := json.Unmarshal([]byte(rawSpec), &specs); err != nil {
-		return errors.WrapIf(err, "invalid OIDC_ROLE_MAPPINGS JSON")
+		return fmt.Errorf("invalid OIDC_ROLE_MAPPINGS JSON: %w", err)
 	}
 	for i, sp := range specs {
 		if strings.TrimSpace(sp.ClaimValue) == "" {
-			return errors.Errorf("OIDC_ROLE_MAPPINGS[%d]: claimValue is required", i)
+			return fmt.Errorf("OIDC_ROLE_MAPPINGS[%d]: claimValue is required", i)
 		}
 		if strings.TrimSpace(sp.RoleID) == "" {
-			return errors.Errorf("OIDC_ROLE_MAPPINGS[%d]: roleId is required", i)
+			return fmt.Errorf("OIDC_ROLE_MAPPINGS[%d]: roleId is required", i)
 		}
 	}
 
@@ -890,17 +874,17 @@ func (s *RoleService) ReconcileEnvOidcMappings(ctx context.Context, rawSpec stri
 		for i, sp := range specs {
 			var count int64
 			if err := tx.Model(&Role{}).Where("id = ?", sp.RoleID).Count(&count).Error; err != nil {
-				return errors.WrapIff(err, "OIDC_ROLE_MAPPINGS[%d]: failed to verify role", i)
+				return fmt.Errorf("OIDC_ROLE_MAPPINGS[%d]: failed to verify role: %w", i, err)
 			}
 			if count == 0 {
-				return errors.Errorf("OIDC_ROLE_MAPPINGS[%d]: role %q does not exist", i, sp.RoleID)
+				return fmt.Errorf("OIDC_ROLE_MAPPINGS[%d]: role %q does not exist", i, sp.RoleID)
 			}
 		}
 
 		// Declarative replace: drop every env-managed row, then insert the new
 		// set. Manual rows are untouched.
 		if err := tx.Where("source = ?", OidcMappingSourceEnv).Delete(&OidcRoleMapping{}).Error; err != nil {
-			return errors.WrapIf(err, "failed to clear env-managed mappings")
+			return fmt.Errorf("failed to clear env-managed mappings: %w", err)
 		}
 		if len(specs) == 0 {
 			slog.InfoContext(ctx, "OIDC_ROLE_MAPPINGS reconciled (empty)", "envManagedCount", 0)
@@ -916,7 +900,7 @@ func (s *RoleService) ReconcileEnvOidcMappings(ctx context.Context, rawSpec stri
 			}
 		}
 		if err := tx.Create(&rows).Error; err != nil {
-			return errors.WrapIf(err, "failed to insert env-managed mappings")
+			return fmt.Errorf("failed to insert env-managed mappings: %w", err)
 		}
 		slog.InfoContext(ctx, "OIDC_ROLE_MAPPINGS reconciled", "envManagedCount", len(rows))
 		return nil

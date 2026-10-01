@@ -2,12 +2,13 @@ package volumehelper
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"os"
 	"runtime"
 	"strings"
 
-	"emperror.dev/errors"
 	ref "github.com/distribution/reference"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/moby/moby/api/types/container"
@@ -85,7 +86,7 @@ func ResolveHelperImage(ctx context.Context, dockerClient *client.Client, toolsI
 		} else {
 			defer func() { _ = pullReader.Close() }()
 			if _, err := io.Copy(io.Discard, pullReader); err != nil {
-				pullErr = errors.WrapIf(err, "read helper image pull response")
+				pullErr = fmt.Errorf("read helper image pull response: %w", err)
 			} else {
 				return toolsImage, nil
 			}
@@ -96,7 +97,7 @@ func ResolveHelperImage(ctx context.Context, dockerClient *client.Client, toolsI
 		return fallback.Image, nil
 	}
 
-	return "", errors.WrapIf(pullErr, "failed to resolve helper image: tools image unavailable and arcane fallback not found")
+	return "", fmt.Errorf("failed to resolve helper image: tools image unavailable and arcane fallback not found: %w", pullErr)
 }
 
 // ResolveArcaneRuntimeImage resolves the current Arcane or Arcane agent image

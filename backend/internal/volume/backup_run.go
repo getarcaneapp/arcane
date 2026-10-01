@@ -3,8 +3,8 @@ package volume
 import (
 	"context"
 	"encoding/json/v2"
+	"errors"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/backup"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
@@ -204,7 +204,7 @@ func (s *VolumeService) executeDurableBackupInternal(ctx context.Context, runID 
 		if ctx.Err() == nil {
 			if err != nil {
 				saveErr := s.db.WithContext(ctx).Model(&VolumeBackup{}).Where("id = ?", command.Checkpoint.BackupID).Updates(map[string]any{"status": VolumeBackupStatusFailed, "error": err.Error()}).Error
-				err = errors.Combine(err, saveErr)
+				err = errors.Join(err, saveErr)
 			}
 			activitylib.CompleteHandlerActivity(ctx, s.activityService, command.ActivityID, "Volume backup created successfully", err)
 		}

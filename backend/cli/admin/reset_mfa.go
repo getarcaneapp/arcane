@@ -2,12 +2,12 @@ package admin
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"strings"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
@@ -48,7 +48,7 @@ func runResetMFACommandInternal(cmd *cobra.Command, _ []string) error {
 
 	db, err := database.Initialize(cmd.Context(), cfg.DatabaseURL, database.MigrationOptions{AllowDowngrade: cfg.AllowDowngrade})
 	if err != nil {
-		return errors.WrapIf(err, "failed to initialize database")
+		return fmt.Errorf("failed to initialize database: %w", err)
 	}
 	defer func() {
 		if closeErr := db.Close(); closeErr != nil {
@@ -60,18 +60,18 @@ func runResetMFACommandInternal(cmd *cobra.Command, _ []string) error {
 	user, err := userService.GetUserByUsername(cmd.Context(), username)
 	if err != nil {
 		if errors.Is(err, common.ErrUserNotFound) {
-			return errors.Errorf("user %q not found", username)
+			return fmt.Errorf("user %q not found", username)
 		}
-		return errors.WrapIf(err, "failed to find user")
+		return fmt.Errorf("failed to find user: %w", err)
 	}
 
 	passkeyService := passkey.NewPasskeyService(db, cfg)
 	if err := passkeyService.ResetMFAForUser(cmd.Context(), user.ID); err != nil {
-		return errors.WrapIf(err, "failed to reset passkey MFA")
+		return fmt.Errorf("failed to reset passkey MFA: %w", err)
 	}
 
 	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Passkey MFA reset successfully for %q\n", username); err != nil {
-		return errors.WrapIf(err, "failed to write MFA reset result")
+		return fmt.Errorf("failed to write MFA reset result: %w", err)
 	}
 	return nil
 }
@@ -91,11 +91,11 @@ func confirmMFAResetInternal(in io.Reader, out io.Writer, username string) error
 		return errors.New("confirmation input and output are required")
 	}
 	if _, err := fmt.Fprintf(out, "This will disable passkey MFA and revoke all sessions for %q. Type RESET to continue: ", username); err != nil {
-		return errors.WrapIf(err, "failed to write MFA reset confirmation")
+		return fmt.Errorf("failed to write MFA reset confirmation: %w", err)
 	}
 	answer, err := bufio.NewReader(in).ReadString('\n')
 	if err != nil && !errors.Is(err, io.EOF) {
-		return errors.WrapIf(err, "failed to read MFA reset confirmation")
+		return fmt.Errorf("failed to read MFA reset confirmation: %w", err)
 	}
 	if strings.TrimSpace(answer) != "RESET" {
 		return errors.New("MFA reset cancelled")

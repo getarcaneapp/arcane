@@ -442,7 +442,7 @@ func TestEnvironmentService_SyncS3DestinationsToEnvironment(t *testing.T) {
 	encryptedSecret, err := crypto.Encrypt("s3-secret")
 	require.NoError(t, err)
 	require.NoError(t, db.WithContext(ctx).Create(&s3domain.S3Destination{
-		BaseModel:       database.BaseModel{ID: "s3-1"},
+		ID:              "s3-1",
 		Name:            "Offsite",
 		Endpoint:        "https://s3.example.com",
 		Bucket:          "volume-backups",

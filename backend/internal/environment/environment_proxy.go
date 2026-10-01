@@ -3,6 +3,7 @@ package environment
 import (
 	"context"
 	"encoding/json/v2"
+	"errors"
 	"fmt"
 	"log/slog"
 	"maps"
@@ -11,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/gitrepo"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
@@ -32,7 +32,7 @@ import (
 func (s *EnvironmentService) SyncRegistriesToRemoteEnvironments(ctx context.Context) error {
 	envs, err := s.ListRemoteEnvironments(ctx)
 	if err != nil {
-		return errors.WrapIf(err, "failed to list remote environments for registry sync")
+		return fmt.Errorf("failed to list remote environments for registry sync: %w", err)
 	}
 
 	if len(envs) == 0 {
@@ -58,7 +58,7 @@ func (s *EnvironmentService) SyncRegistriesToRemoteEnvironments(ctx context.Cont
 	}
 
 	if failedCount > 0 {
-		return errors.Errorf("failed to sync registries to %d remote environment(s)", failedCount)
+		return fmt.Errorf("failed to sync registries to %d remote environment(s)", failedCount)
 	}
 
 	return nil
@@ -68,7 +68,7 @@ func (s *EnvironmentService) SyncRegistriesToRemoteEnvironments(ctx context.Cont
 func (s *EnvironmentService) SyncS3DestinationsToRemoteEnvironments(ctx context.Context) error {
 	envs, err := s.ListRemoteEnvironments(ctx)
 	if err != nil {
-		return errors.WrapIf(err, "failed to list remote environments for S3 destination sync")
+		return fmt.Errorf("failed to list remote environments for S3 destination sync: %w", err)
 	}
 
 	var failedCount int
@@ -84,7 +84,7 @@ func (s *EnvironmentService) SyncS3DestinationsToRemoteEnvironments(ctx context.
 	}
 
 	if failedCount > 0 {
-		return errors.Errorf("failed to sync S3 destinations to %d remote environment(s)", failedCount)
+		return fmt.Errorf("failed to sync S3 destinations to %d remote environment(s)", failedCount)
 	}
 	return nil
 }
@@ -96,7 +96,7 @@ func (s *EnvironmentService) SyncS3DestinationsToRemoteEnvironments(ctx context.
 func (s *EnvironmentService) CheckS3DestinationReferences(ctx context.Context, destinationID string) error {
 	envs, err := s.ListRemoteEnvironments(ctx)
 	if err != nil {
-		return errors.WrapIf(err, "failed to list remote environments for S3 destination reference check")
+		return fmt.Errorf("failed to list remote environments for S3 destination reference check: %w", err)
 	}
 	for _, env := range envs {
 		if env.AccessToken == nil || strings.TrimSpace(*env.AccessToken) == "" {
@@ -108,10 +108,10 @@ func (s *EnvironmentService) CheckS3DestinationReferences(ctx context.Context, d
 			InUse bool `json:"inUse"`
 		}
 		if err := s.ProxyJSONRequestForEnvironment(ctx, env, http.MethodGet, "/api/backups/s3/"+url.PathEscape(destinationID)+"/in-use", nil, &result); err != nil {
-			return errors.WrapIff(err, "cannot verify S3 destination references on environment %s; restore connectivity before deleting", env.Name)
+			return fmt.Errorf("cannot verify S3 destination references on environment %s; restore connectivity before deleting: %w", env.Name, err)
 		}
 		if result.InUse {
-			return errors.Errorf("still referenced by environment %s", env.Name)
+			return fmt.Errorf("still referenced by environment %s", env.Name)
 		}
 	}
 	return nil
@@ -128,7 +128,7 @@ type remoteEnvironmentTargetInternal struct {
 func (s *EnvironmentService) resolveRemoteEnvironmentTargetInternal(ctx context.Context, envID string) (*remoteEnvironmentTargetInternal, error) {
 	envRecord, err := s.GetEnvironmentByID(ctx, envID)
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to get environment")
+		return nil, fmt.Errorf("failed to get environment: %w", err)
 	}
 
 	return s.remoteEnvironmentTargetFromModelInternal(*envRecord)
@@ -143,7 +143,7 @@ func (s *EnvironmentService) remoteEnvironmentTargetFromModelInternal(environmen
 	if !environment.IsEdge {
 		validatedTargetURL, err := httputils.NormalizeBaseURL(environment.ApiUrl)
 		if err != nil {
-			return nil, errors.WrapIf(err, "invalid environment API URL")
+			return nil, fmt.Errorf("invalid environment API URL: %w", err)
 		}
 		targetURL = validatedTargetURL
 	}
@@ -233,7 +233,7 @@ func (s *EnvironmentService) executeRemoteRequestForTargetInternal(
 
 	resp, err := s.remoteClient.Do(ctx, request)
 	if err != nil {
-		return nil, errors.WrapIff(err, "failed to send request to environment %s", target.Name)
+		return nil, fmt.Errorf("failed to send request to environment %s: %w", target.Name, err)
 	}
 
 	return resp, nil
@@ -314,18 +314,18 @@ func doRemoteEnvironmentTunnelRequestInternal(
 ) (*remenv.Response, error) {
 	tunnel, ok := edge.GetRegistry().Get(envID).Get()
 	if !ok {
-		return nil, errors.WrapIff(remenv.ErrEnvironmentUnavailable, "no active tunnel for environment %s", envID)
+		return nil, fmt.Errorf("no active tunnel for environment %s: %w", envID, remenv.ErrEnvironmentUnavailable)
 	}
 	if tunnel.Conn.IsClosed() {
-		return nil, errors.WrapIff(remenv.ErrEnvironmentUnavailable, "tunnel for environment %s is closed", envID)
+		return nil, fmt.Errorf("tunnel for environment %s is closed: %w", envID, remenv.ErrEnvironmentUnavailable)
 	}
 
 	statusCode, respHeaders, respBody, err := edge.ProxyRequest(ctx, tunnel, method, path, "", headers, body)
 	if err != nil {
 		if errors.Is(err, edge.ErrTunnelConnectionClosed) {
-			err = errors.Combine(remenv.ErrEnvironmentUnavailable, err)
+			err = errors.Join(remenv.ErrEnvironmentUnavailable, err)
 		}
-		return nil, errors.WrapIf(err, "tunnel request failed")
+		return nil, fmt.Errorf("tunnel request failed: %w", err)
 	}
 
 	return &remenv.Response{
@@ -341,7 +341,7 @@ func (s *EnvironmentService) SyncRegistriesToEnvironment(ctx context.Context, en
 		func(reg registry.ContainerRegistry) (containerregistry.Sync, bool, error) {
 			registryType, typeErr := registry.NormalizeRegistryType(reg.RegistryType)
 			if typeErr != nil {
-				return containerregistry.Sync{}, false, errors.WrapIff(typeErr, "normalize registry type for sync %s", reg.ID)
+				return containerregistry.Sync{}, false, fmt.Errorf("normalize registry type for sync %s: %w", reg.ID, typeErr)
 			}
 
 			syncItem := containerregistry.Sync{
@@ -389,7 +389,7 @@ func (s *EnvironmentService) SyncS3DestinationsToEnvironment(ctx context.Context
 		func(destination s3domain.S3Destination) (backuptypes.S3DestinationSync, bool, error) {
 			secret, err := crypto.Decrypt(destination.SecretAccessKey)
 			if err != nil {
-				return backuptypes.S3DestinationSync{}, false, errors.WrapIff(err, "failed to decrypt S3 destination %s for sync", destination.ID)
+				return backuptypes.S3DestinationSync{}, false, fmt.Errorf("failed to decrypt S3 destination %s for sync: %w", destination.ID, err)
 			}
 			return destination.ToSync(secret), true, nil
 		},
@@ -479,7 +479,7 @@ func (s *EnvironmentService) fanOutSyncToEnvironment[Model, Item, Request any](
 
 	var records []Model
 	if err := s.db.WithContext(ctx).Find(&records).Error; err != nil {
-		return errors.WrapIff(err, "failed to get %s", kind)
+		return fmt.Errorf("failed to get %s: %w", kind, err)
 	}
 
 	syncItems := make([]Item, 0, len(records))
@@ -495,11 +495,11 @@ func (s *EnvironmentService) fanOutSyncToEnvironment[Model, Item, Request any](
 
 	reqBody, err := json.Marshal(wrap(syncItems))
 	if err != nil {
-		return errors.WrapIf(err, "failed to marshal sync request")
+		return fmt.Errorf("failed to marshal sync request: %w", err)
 	}
 	unchanged, finishDelivery, err := s.syncGate.Begin(ctx, environmentID, path, reqBody)
 	if err != nil {
-		return errors.WrapIf(err, "sync cancelled while waiting for an in-flight delivery")
+		return fmt.Errorf("sync cancelled while waiting for an in-flight delivery: %w", err)
 	}
 	if unchanged {
 		slog.DebugContext(ctx, "Skipping sync; payload unchanged since last delivery", "kind", kind, "environmentID", environmentID, "environmentName", target.Name)
@@ -522,11 +522,11 @@ func (s *EnvironmentService) fanOutSyncToEnvironment[Model, Item, Request any](
 		} `json:"data"`
 	}
 	if err := s.proxyJSONRequestForTargetInternal(reqCtx, target, http.MethodPost, path, reqBody, &result); err != nil {
-		return errors.WrapIf(err, "failed to send sync request")
+		return fmt.Errorf("failed to send sync request: %w", err)
 	}
 
 	if !result.Success {
-		return errors.Errorf("sync failed: %s", result.Data.Message)
+		return fmt.Errorf("sync failed: %s", result.Data.Message)
 	}
 	delivered = true
 

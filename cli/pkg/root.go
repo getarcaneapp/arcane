@@ -43,7 +43,6 @@ import (
 
 	"charm.land/fang/v2"
 	"charm.land/lipgloss/v2"
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/config"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/logger"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
@@ -110,7 +109,7 @@ var rootCmd = &cobra.Command{
 			outputMode = string(runtimectx.OutputModeText)
 		}
 		if outputMode != string(runtimectx.OutputModeText) && outputMode != string(runtimectx.OutputModeJSON) {
-			return errors.Errorf("invalid --output value %q (expected text or json)", outputMode)
+			return fmt.Errorf("invalid --output value %q (expected text or json)", outputMode)
 		}
 		if outputMode == string(runtimectx.OutputModeJSON) {
 			if flag := cmd.Flags().Lookup("json"); flag != nil && !flag.Changed {

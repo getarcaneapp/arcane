@@ -3,10 +3,11 @@ package federated
 import (
 	"cmp"
 	"context"
+	"errors"
+	"fmt"
 	"net/url"
 	"strings"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/auth"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
@@ -118,7 +119,7 @@ func applyFederatedCredentialUpdateInternal(existing FederatedCredential, req fe
 func validateIssuerURLInternal(rawURL string) error {
 	parsed, err := url.Parse(rawURL)
 	if err != nil || parsed == nil || parsed.Host == "" || parsed.Scheme != "https" {
-		return common.Classify(common.ErrFederatedCredentialInvalid, errors.WithStackIf(errors.New("invalid federated credential: issuerUrl must be an HTTPS URL")))
+		return common.Classify(common.ErrFederatedCredentialInvalid, errors.New("invalid federated credential: issuerUrl must be an HTTPS URL"))
 	}
 	return nil
 }
@@ -137,17 +138,17 @@ func (s *FederatedCredentialService) validateRoleGrantAgainstUserInternal(ctx co
 
 	user, err := s.userService.GetUserByID(ctx, userID)
 	if err != nil {
-		return errors.WrapIf(err, "load user for federated role validation")
+		return fmt.Errorf("load user for federated role validation: %w", err)
 	}
 	permissions, err := s.roleService.ResolvePermissions(ctx, user)
 	if err != nil {
-		return errors.WrapIf(err, "resolve user permissions")
+		return fmt.Errorf("resolve user permissions: %w", err)
 	}
 	if err := s.roleService.ValidateRoleAssignmentAgainstCaller(ctx, permissions, roleID, environmentID); err != nil {
 		if errors.Is(err, common.ErrRolePermissionEscalation) {
-			return common.Classify(common.ErrFederatedCredentialPermissionEscalation, errors.WrapIf(err, "cannot map a federated credential to a role you do not hold"))
+			return common.Classify(common.ErrFederatedCredentialPermissionEscalation, fmt.Errorf("cannot map a federated credential to a role you do not hold: %w", err))
 		}
-		return common.Classify(common.ErrFederatedCredentialInvalid, errors.WrapIf(err, "invalid federated credential"))
+		return common.Classify(common.ErrFederatedCredentialInvalid, fmt.Errorf("invalid federated credential: %w", err))
 	}
 	return nil
 }

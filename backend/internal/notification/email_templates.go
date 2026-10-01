@@ -9,7 +9,6 @@ import (
 	"sort"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/notifications"
 	"github.com/getarcaneapp/arcane/backend/v2/resources"
 	"github.com/getarcaneapp/arcane/types/v2/imageupdate"
@@ -151,37 +150,37 @@ func (s *NotificationService) renderPruneReportEmailTemplateInternal(environment
 func (s *NotificationService) renderTemplatesInternal(name string, data any, textRequired bool) (string, string, error) {
 	htmlContent, err := resources.FS.ReadFile(fmt.Sprintf("email-templates/%s_html.tmpl", name))
 	if err != nil {
-		return "", "", errors.WrapIf(err, "failed to read HTML template")
+		return "", "", fmt.Errorf("failed to read HTML template: %w", err)
 	}
 
 	htmlTmpl, err := template.New("html").Parse(string(htmlContent))
 	if err != nil {
-		return "", "", errors.WrapIf(err, "failed to parse HTML template")
+		return "", "", fmt.Errorf("failed to parse HTML template: %w", err)
 	}
 
 	var htmlBuf bytes.Buffer
 	if err := htmlTmpl.ExecuteTemplate(&htmlBuf, "root", data); err != nil {
-		return "", "", errors.WrapIf(err, "failed to execute HTML template")
+		return "", "", fmt.Errorf("failed to execute HTML template: %w", err)
 	}
 
 	textContent, err := resources.FS.ReadFile(fmt.Sprintf("email-templates/%s_text.tmpl", name))
 	if err != nil {
 		if textRequired {
-			return "", "", errors.WrapIf(err, "failed to read text template")
+			return "", "", fmt.Errorf("failed to read text template: %w", err)
 		}
 		return htmlBuf.String(), "", nil
 	}
 	textTmpl, err := template.New("text").Parse(string(textContent))
 	if err != nil {
 		if textRequired {
-			return "", "", errors.WrapIf(err, "failed to parse text template")
+			return "", "", fmt.Errorf("failed to parse text template: %w", err)
 		}
 		return htmlBuf.String(), "", nil
 	}
 	var textBuf bytes.Buffer
 	if err := textTmpl.ExecuteTemplate(&textBuf, "root", data); err != nil {
 		if textRequired {
-			return "", "", errors.WrapIf(err, "failed to execute text template")
+			return "", "", fmt.Errorf("failed to execute text template: %w", err)
 		}
 		return htmlBuf.String(), "", nil
 	}

@@ -3,11 +3,11 @@ package job
 import (
 	"cmp"
 	"context"
+	"errors"
 	"log/slog"
 	"net"
 	"strings"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
@@ -140,8 +140,7 @@ func (s *JobService) executeRunInternal(ctx context.Context, run st.Run) (st.Out
 }
 
 func classifyOutcomeInternal(jobID string, outcome st.Outcome, err error) (st.Outcome, error) {
-	var resultErr *st.OutcomeError
-	if errors.As(err, &resultErr) {
+	if resultErr, ok := errors.AsType[*st.OutcomeError](err); ok {
 		return resultErr.Outcome, err
 	}
 	if err == nil {

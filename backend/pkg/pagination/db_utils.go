@@ -1,9 +1,9 @@
 package pagination
 
 import (
+	"fmt"
 	"strings"
 
-	"emperror.dev/errors"
 	kit "go.getarcane.app/kit/pkg"
 	"go.getarcane.app/kit/pkg/mapping"
 	"gorm.io/gorm"
@@ -43,12 +43,12 @@ func ApplyLikeSearch(q *gorm.DB, search, condition string) *gorm.DB {
 func (params QueryParams) PaginateSortAndMapDB[M, D any](query *gorm.DB, records *[]M) ([]D, Response, error) {
 	paginationResp, err := PaginateAndSortDB(params, query, records)
 	if err != nil {
-		return nil, Response{}, errors.WrapIf(err, "paginate db records")
+		return nil, Response{}, fmt.Errorf("paginate db records: %w", err)
 	}
 
 	out, err := mapping.MapSlice[M, D](*records)
 	if err != nil {
-		return nil, Response{}, errors.WrapIf(err, "map db records")
+		return nil, Response{}, fmt.Errorf("map db records: %w", err)
 	}
 
 	return out, paginationResp, nil

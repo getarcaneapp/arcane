@@ -3,11 +3,11 @@ package swarm
 import (
 	"cmp"
 	"context"
+	"fmt"
 	"maps"
 	"slices"
 	"strings"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
 )
@@ -77,7 +77,7 @@ func RenderStackConfig(ctx context.Context, opts StackRenderOptions) (*StackRend
 
 	rendered, err := project.MarshalYAML()
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to render compose project")
+		return nil, fmt.Errorf("failed to render compose project: %w", err)
 	}
 
 	serviceNames := make([]string, 0, len(project.Services))

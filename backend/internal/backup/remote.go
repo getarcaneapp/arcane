@@ -2,10 +2,10 @@ package backup
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	s3domain "github.com/getarcaneapp/arcane/backend/v2/internal/s3"
 	s3util "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/s3"

@@ -3,13 +3,13 @@ package vuln
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
 	"testing"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/types/v2/vulnerability"
 	containertypes "github.com/moby/moby/api/types/container"
@@ -122,7 +122,7 @@ func TestDecodeTrivyReportFromFileInternal_SelectsReportFromMultipleJSONObjects(
 	reportBytes, err := json.Marshal(report)
 	require.NoError(t, err)
 
-	_, err = tmpFile.WriteString(`{"action":"vulnerability_scan","success":false}` + "\n")
+	_, err = tmpFile.WriteString("{\"action\":\"vulnerability_scan\",\"success\":false}\n")
 	require.NoError(t, err)
 	_, err = tmpFile.Write(reportBytes)
 	require.NoError(t, err)

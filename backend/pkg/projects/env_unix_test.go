@@ -3,7 +3,7 @@
 package projects
 
 import (
-	stderrors "errors"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -80,7 +80,7 @@ func TestWithTransientValidationEnvFile_LeavesEnvDirectoryUntouched(t *testing.T
 	require.NoError(t, os.WriteFile(nested, []byte("x"), utils.FilePerm))
 
 	content := "FOO=bar\n"
-	runErr := stderrors.New("validation failed")
+	runErr := errors.New("validation failed")
 	called := false
 	err := WithTransientValidationEnvFile(t.Context(), projectDir, &content, func() error {
 		called = true

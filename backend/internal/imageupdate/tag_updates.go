@@ -2,13 +2,13 @@ package imageupdate
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"slices"
 	"sync"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
@@ -166,7 +166,7 @@ func (s *ImageUpdateService) checkContainerTagUpdatesInternal(ctx context.Contex
 	listed, err := dockerClient.ContainerList(apiCtx, client.ContainerListOptions{All: true})
 	cancel()
 	if err != nil {
-		return results, errors.WrapIf(err, "list containers for tag update checks")
+		return results, fmt.Errorf("list containers for tag update checks: %w", err)
 	}
 
 	// This engine only reads. Containers excluded from automatic installation

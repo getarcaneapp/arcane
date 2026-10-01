@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"strings"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
@@ -25,7 +24,7 @@ var s3DestinationRef = cmdutil.ResourceRef[backup.S3Destination, backup.S3Destin
 	SearchCandidates: func(ctx context.Context, c *client.Client, identifier string) ([]backup.S3Destination, error) {
 		destinations, err := c.DoJSON[[]backup.S3Destination](ctx, http.MethodGet, types.BackupsS3Options(), nil)
 		if err != nil {
-			return nil, errors.WrapIf(err, "failed to list S3 destinations")
+			return nil, fmt.Errorf("failed to list S3 destinations: %w", err)
 		}
 		matches := make([]backup.S3Destination, 0)
 		for _, dest := range destinations {

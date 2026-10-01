@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/csv"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -14,7 +15,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"emperror.dev/errors"
 	systemtypes "github.com/getarcaneapp/arcane/types/v2/system"
 	"github.com/samber/hot"
 )
@@ -234,7 +234,7 @@ func getNvidiaStatsInternal(ctx context.Context) ([]systemtypes.GPUStats, error)
 	output, err := cmd.Output()
 	if err != nil {
 		slog.WarnContext(ctx, "Failed to execute nvidia-smi", "error", err)
-		return nil, errors.WrapIf(err, "nvidia-smi execution failed")
+		return nil, fmt.Errorf("nvidia-smi execution failed: %w", err)
 	}
 
 	reader := csv.NewReader(bytes.NewReader(output))
@@ -242,7 +242,7 @@ func getNvidiaStatsInternal(ctx context.Context) ([]systemtypes.GPUStats, error)
 	records, err := reader.ReadAll()
 	if err != nil {
 		slog.WarnContext(ctx, "Failed to parse nvidia-smi CSV output", "error", err)
-		return nil, errors.WrapIf(err, "failed to parse nvidia-smi output")
+		return nil, fmt.Errorf("failed to parse nvidia-smi output: %w", err)
 	}
 
 	var stats []systemtypes.GPUStats
@@ -286,7 +286,7 @@ func getAMDStatsInternal(ctx context.Context) ([]systemtypes.GPUStats, error) {
 	entries, err := os.ReadDir(AMDGPUSysfsPath)
 	if err != nil {
 		slog.WarnContext(ctx, "Failed to read DRM sysfs directory", "error", err)
-		return nil, errors.WrapIf(err, "failed to read sysfs")
+		return nil, fmt.Errorf("failed to read sysfs: %w", err)
 	}
 
 	var stats []systemtypes.GPUStats

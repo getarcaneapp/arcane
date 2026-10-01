@@ -2,6 +2,7 @@ package environments
 
 import (
 	"cmp"
+	"errors"
 	"fmt"
 	"net/http"
 	"sort"
@@ -9,7 +10,6 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/config"
@@ -118,7 +118,7 @@ var deleteCmd = &cobra.Command{
 		}
 
 		if _, err := c.DeleteJSON[base.MessageResponse](cmd.Context(), types.Environment(args[0])); err != nil {
-			return errors.WrapIf(err, "failed to delete environment")
+			return fmt.Errorf("failed to delete environment: %w", err)
 		}
 
 		output.Success("Environment deleted successfully")
@@ -139,7 +139,7 @@ var getCmd = &cobra.Command{
 
 		result, err := c.GetJSON[environment.Environment](cmd.Context(), types.Environment(args[0]))
 		if err != nil {
-			return errors.WrapIf(err, "failed to get environment")
+			return fmt.Errorf("failed to get environment: %w", err)
 		}
 
 		if jsonOutput {
@@ -188,7 +188,7 @@ var switchCmd = &cobra.Command{
 
 		cfg, err := config.Load()
 		if err != nil {
-			return errors.WrapIf(err, "failed to load config")
+			return fmt.Errorf("failed to load config: %w", err)
 		}
 
 		c, err := client.NewFromConfig()
@@ -199,7 +199,7 @@ var switchCmd = &cobra.Command{
 		path := fmt.Sprintf("%s?limit=%d", types.Environments(), cmdutil.ShowAllLimit)
 		result, err := c.DoJSON[base.Paginated[environment.Environment]](cmd.Context(), http.MethodGet, path, nil)
 		if err != nil {
-			return errors.WrapIf(err, "failed to list environments")
+			return fmt.Errorf("failed to list environments: %w", err)
 		}
 
 		if len(result.Data) == 0 {
@@ -268,7 +268,7 @@ var switchCmd = &cobra.Command{
 
 		cfg.DefaultEnvironment = selected.ID
 		if err := config.Save(cfg); err != nil {
-			return errors.WrapIf(err, "failed to save config")
+			return fmt.Errorf("failed to save config: %w", err)
 		}
 
 		output.Success("Default environment set to %s", selected.ID)
@@ -310,7 +310,7 @@ var updateCmd = &cobra.Command{
 
 		result, err := c.PutJSON[environment.Environment](cmd.Context(), types.Environment(args[0]), req)
 		if err != nil {
-			return errors.WrapIf(err, "failed to update environment")
+			return fmt.Errorf("failed to update environment: %w", err)
 		}
 
 		if jsonOutput {
@@ -355,7 +355,7 @@ var createCmd = &cobra.Command{
 
 		result, err := c.PostJSON[environment.Environment](cmd.Context(), types.Environments(), req)
 		if err != nil {
-			return errors.WrapIf(err, "failed to create environment")
+			return fmt.Errorf("failed to create environment: %w", err)
 		}
 
 		if jsonOutput {
@@ -388,7 +388,7 @@ var versionCmd = &cobra.Command{
 
 		result, err := c.GetJSON[version.Info](cmd.Context(), types.EnvironmentVersion(args[0]))
 		if err != nil {
-			return errors.WrapIf(err, "failed to get environment version")
+			return fmt.Errorf("failed to get environment version: %w", err)
 		}
 
 		if jsonOutput {

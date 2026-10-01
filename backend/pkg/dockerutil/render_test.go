@@ -10,11 +10,7 @@ import (
 
 func TestRenderJSONMessageStream(t *testing.T) {
 	t.Run("renders docker CLI text for pull messages", func(t *testing.T) {
-		stream := strings.NewReader(
-			`{"status":"Pulling from library/nginx","id":"stable-alpine"}` + "\n" +
-				`{"status":"Pull complete","id":"abc123"}` + "\n" +
-				`{"status":"Status: Downloaded newer image for nginx:stable-alpine"}` + "\n",
-		)
+		stream := strings.NewReader("{\"status\":\"Pulling from library/nginx\",\"id\":\"stable-alpine\"}\n{\"status\":\"Pull complete\",\"id\":\"abc123\"}\n{\"status\":\"Status: Downloaded newer image for nginx:stable-alpine\"}\n")
 		var out strings.Builder
 		{
 
@@ -23,16 +19,14 @@ func TestRenderJSONMessageStream(t *testing.T) {
 				"expected nil error, got %v", err)
 		}
 
-		want := "stable-alpine: Pulling from library/nginx\n" +
-			"abc123: Pull complete\n" +
-			"Status: Downloaded newer image for nginx:stable-alpine\n"
+		want := "stable-alpine: Pulling from library/nginx\nabc123: Pull complete\nStatus: Downloaded newer image for nginx:stable-alpine\n"
 
 		require.Equal(t, want, out.String(),
 			"expected CLI-parity output %q, got %q", want, out.String())
 	})
 
 	t.Run("returns daemon errorDetail verbatim", func(t *testing.T) {
-		stream := strings.NewReader(`{"errorDetail":{"code":401,"message":"unauthorized"}}` + "\n")
+		stream := strings.NewReader("{\"errorDetail\":{\"code\":401,\"message\":\"unauthorized\"}}\n")
 		err := RenderJSONMessageStream(stream, nil)
 
 		require.False(t, err == nil || !strings.Contains(err.Error(), "unauthorized"),
@@ -89,9 +83,7 @@ func TestLogLineWriter(t *testing.T) {
 	_, _ = w.Write([]byte("-test Created\npartial"))
 	_ = w.Close()
 
-	want := `{"log":"Container arcane-test Creating"}` + "\n" +
-		`{"log":"Container arcane-test Created"}` + "\n" +
-		`{"log":"partial"}` + "\n"
+	want := "{\"log\":\"Container arcane-test Creating\"}\n{\"log\":\"Container arcane-test Created\"}\n{\"log\":\"partial\"}\n"
 
 	require.Equal(t, want, out.String(),
 		"expected framed lines %q, got %q", want, out.String())

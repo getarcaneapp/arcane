@@ -1,9 +1,13 @@
 package utils
 
 import (
+	"fmt"
+	"log/slog"
+	"os"
 	"slices"
+	"strings"
 
-	"emperror.dev/errors"
+	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/samber/mo"
 	"go.getarcane.app/sys/crypto"
 )
@@ -60,8 +64,49 @@ func ApplyEncrypted(field *string, plaintext string) (bool, error) {
 	}
 	encrypted, err := crypto.Encrypt(plaintext)
 	if err != nil {
-		return false, errors.WrapIf(err, "failed to encrypt credential")
+		return false, fmt.Errorf("failed to encrypt credential: %w", err)
 	}
 	*field = encrypted
 	return true, nil
+}
+
+// LookupEnvOrFile is os.LookupEnv with Docker secret support: when NAME__FILE
+// or NAME_FILE (checked in that order) names a readable file, its trimmed
+// contents stand in for NAME. An unreadable file falls back to NAME.
+// The booleans report whether a value was found and whether it came from a file.
+func LookupEnvOrFile(name string) (value string, found, fromFile bool) {
+	for _, suffix := range []string{"__FILE", "_FILE"} {
+		filePath := os.Getenv(name + suffix)
+		if filePath == "" {
+			continue
+		}
+
+		// Secret paths are arbitrary host paths, so there is no acfs root to confine them to.
+		content, err := os.ReadFile(filePath) //nolint:gosec // path intentionally comes from a *_FILE env var
+		if err != nil {
+			slog.Warn("Failed to read secret file, falling back to direct env var", "env", name+suffix, "error", err)
+			break
+		}
+
+		return strings.TrimSpace(string(content)), true, true
+	}
+
+	value, found = os.LookupEnv(name)
+	return value, found, false
+}
+
+// NormalizePasskeyAssertionExtensions drops an unrequested appid=false output, which Safari
+// reports even though it means the legacy AppID was not used.
+func NormalizePasskeyAssertionExtensions(session protocol.SessionExtensions, assertion *protocol.ParsedCredentialAssertionData) {
+	if assertion == nil {
+		return
+	}
+	appID := assertion.ClientExtensionResults.AppID
+	if appID == nil || *appID {
+		return
+	}
+	if session.AppID != "" || slices.Contains(session.Requested, protocol.ExtensionAppID) {
+		return
+	}
+	assertion.ClientExtensionResults.AppID = nil
 }

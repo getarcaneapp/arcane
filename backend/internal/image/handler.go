@@ -3,12 +3,12 @@ package image
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
 
-	"emperror.dev/errors"
 	"github.com/containerd/platforms"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
@@ -329,7 +329,7 @@ func (h *ImageHandler) ListImages(ctx context.Context, input *ListImagesInput) (
 
 	images, paginationResp, err := h.imageService.ListImagesPaginated(ctx, params)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to list images").Error())
+		return nil, huma.Error500InternalServerError("Failed to list images: " + err.Error())
 	}
 
 	if images == nil {
@@ -350,7 +350,7 @@ func (h *ImageHandler) ListImages(ctx context.Context, input *ListImagesInput) (
 func (h *ImageHandler) GetImage(ctx context.Context, input *GetImageInput) (*handlerutil.Out[image.DetailSummary], error) {
 	out, err := h.imageService.GetImageDetail(ctx, input.ImageID)
 	if err != nil {
-		return nil, huma.Error404NotFound(errors.WithMessage(err, "Image not found").Error())
+		return nil, huma.Error404NotFound("Image not found: " + err.Error())
 	}
 
 	return &handlerutil.Out[image.DetailSummary]{
@@ -508,7 +508,7 @@ func (h *ImageHandler) RemoveImage(ctx context.Context, input *RemoveImageInput)
 	}
 
 	if err := h.imageService.RemoveImage(ctx, input.ImageID, input.Force, *user); err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to remove image").Error())
+		return nil, huma.Error500InternalServerError("Failed to remove image: " + err.Error())
 	}
 
 	return &handlerutil.Out[base.MessageResponse]{
@@ -566,7 +566,7 @@ func (h *ImageHandler) PullImage(ctx context.Context, input *PullImageInput) (*h
 			if err := h.imageService.PullImage(runtimeCtx, fullImageName, writer, *user, credentials); err != nil {
 				activitylib.FlushWriter(writer)
 				activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Image pull failed", err)
-				_, _ = fmt.Fprintf(writer, `{"error":%q}`+"\n", err.Error())
+				_, _ = fmt.Fprintf(writer, "{\"error\":%q}\n", err.Error())
 				if f, ok := writer.(http.Flusher); ok {
 					f.Flush()
 				}
@@ -624,7 +624,7 @@ func (h *ImageHandler) BuildImage(ctx context.Context, input *BuildImageInput) (
 			if _, err := h.buildService.BuildImage(runtimeCtx, input.EnvironmentID, input.Body, writer, "", user); err != nil {
 				activitylib.FlushWriter(writer)
 				activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Image build failed", err)
-				_, _ = fmt.Fprintf(writer, `{"error":%q}`+"\n", err.Error())
+				_, _ = fmt.Fprintf(writer, "{\"error\":%q}\n", err.Error())
 				if f, ok := writer.(http.Flusher); ok {
 					f.Flush()
 				}
@@ -653,7 +653,7 @@ func (h *ImageHandler) ListImageBuilds(ctx context.Context, input *ListImageBuil
 
 	builds, paginationResp, err := h.buildService.ListImageBuildsByEnvironmentPaginated(ctx, input.EnvironmentID, params)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to list build history").Error())
+		return nil, huma.Error500InternalServerError("Failed to list build history: " + err.Error())
 	}
 
 	if builds == nil {
@@ -684,7 +684,7 @@ func (h *ImageHandler) GetImageBuild(ctx context.Context, input *GetImageBuildIn
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, huma.Error404NotFound("build not found")
 		}
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to retrieve build history").Error())
+		return nil, huma.Error500InternalServerError("Failed to retrieve build history: " + err.Error())
 	}
 
 	return &handlerutil.Out[image.BuildRecord]{
@@ -705,7 +705,7 @@ func (h *ImageHandler) PruneImages(ctx context.Context, input *PruneImagesInput)
 		Until: until,
 	})
 	if err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to prune images").Error())
+		return nil, huma.Error500InternalServerError("Failed to prune images: " + err.Error())
 	}
 
 	out := image.NewPruneReport(*report)
@@ -763,7 +763,7 @@ func resolvePruneImageUntilInternal(input *PruneImagesInput) string {
 func (h *ImageHandler) GetImageUsageCounts(ctx context.Context, input *GetImageUsageCountsInput) (*handlerutil.Out[image.UsageCounts], error) {
 	_, counts, err := h.dockerService.GetAllImages(ctx)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to get image usage counts").Error())
+		return nil, huma.Error500InternalServerError("Failed to get image usage counts: " + err.Error())
 	}
 
 	return &handlerutil.Out[image.UsageCounts]{
@@ -786,7 +786,7 @@ func (h *ImageHandler) UploadImage(ctx context.Context, input *UploadImageInput)
 		if httpErr := upload.SessionHTTPError(err); httpErr != nil {
 			return nil, httpErr
 		}
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to open upload").Error())
+		return nil, huma.Error500InternalServerError("Failed to open upload: " + err.Error())
 	}
 	defer cleanup()
 
@@ -795,7 +795,7 @@ func (h *ImageHandler) UploadImage(ctx context.Context, input *UploadImageInput)
 
 	result, err := h.imageService.LoadImageFromReader(ctx, file, session.Filename, *user, maxSizeBytes)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to load image").Error())
+		return nil, huma.Error500InternalServerError("Failed to load image: " + err.Error())
 	}
 
 	return &handlerutil.Out[image.LoadResult]{

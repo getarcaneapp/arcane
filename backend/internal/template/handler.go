@@ -4,8 +4,8 @@ import (
 	"cmp"
 	"context"
 	"encoding/json/v2"
+	"errors"
 
-	"emperror.dev/errors"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
@@ -272,7 +272,7 @@ func (h *TemplateHandler) ListTemplates(ctx context.Context, input *ListTemplate
 
 	templates, paginationResp, err := h.templateService.GetAllTemplatesPaginated(ctx, params)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to get templates").Error())
+		return nil, huma.Error500InternalServerError("Failed to get templates: " + err.Error())
 	}
 
 	return &handlerutil.Page[templatetypes.Template]{
@@ -288,12 +288,12 @@ func (h *TemplateHandler) ListTemplates(ctx context.Context, input *ListTemplate
 func (h *TemplateHandler) GetAllTemplates(ctx context.Context, _ *GetAllTemplatesInput) (*handlerutil.Out[[]templatetypes.Template], error) {
 	templates, err := h.templateService.GetAllTemplates(ctx)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to get templates").Error())
+		return nil, huma.Error500InternalServerError("Failed to get templates: " + err.Error())
 	}
 
 	out, mapErr := mapping.MapSlice[ComposeTemplate, templatetypes.Template](templates)
 	if mapErr != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(mapErr, "Failed to map templates").Error())
+		return nil, huma.Error500InternalServerError("Failed to map templates: " + mapErr.Error())
 	}
 
 	return &handlerutil.Out[[]templatetypes.Template]{
@@ -315,12 +315,12 @@ func (h *TemplateHandler) GetTemplate(ctx context.Context, input *GetTemplateInp
 		if errors.Is(err, common.ErrTemplateNotFound) {
 			return nil, huma.Error404NotFound("Template not found")
 		}
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to get template").Error())
+		return nil, huma.Error500InternalServerError("Failed to get template: " + err.Error())
 	}
 
 	var out templatetypes.Template
 	if mapErr := mapping.MapStruct(tmpl, &out); mapErr != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(mapErr, "Failed to map templates").Error())
+		return nil, huma.Error500InternalServerError("Failed to map templates: " + mapErr.Error())
 	}
 
 	return &handlerutil.Out[templatetypes.Template]{
@@ -342,7 +342,7 @@ func (h *TemplateHandler) GetTemplateContent(ctx context.Context, input *GetTemp
 		if errors.Is(err, common.ErrTemplateNotFound) {
 			return nil, huma.Error404NotFound("Template not found")
 		}
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to get template content").Error())
+		return nil, huma.Error500InternalServerError("Failed to get template content: " + err.Error())
 	}
 
 	return &handlerutil.Out[templatetypes.TemplateContent]{
@@ -367,12 +367,12 @@ func (h *TemplateHandler) CreateTemplate(ctx context.Context, input *CreateTempl
 	}
 
 	if err := h.templateService.CreateTemplate(ctx, tmpl); err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to create template").Error())
+		return nil, huma.Error500InternalServerError("Failed to create template: " + err.Error())
 	}
 
 	var out templatetypes.Template
 	if mapErr := mapping.MapStruct(tmpl, &out); mapErr != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(mapErr, "Failed to map templates").Error())
+		return nil, huma.Error500InternalServerError("Failed to map templates: " + mapErr.Error())
 	}
 
 	return &handlerutil.Out[templatetypes.Template]{
@@ -404,17 +404,17 @@ func (h *TemplateHandler) UpdateTemplate(ctx context.Context, input *UpdateTempl
 		if errors.Is(err, common.ErrTemplateNotFound) {
 			return nil, huma.Error404NotFound("Template not found")
 		}
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to update template").Error())
+		return nil, huma.Error500InternalServerError("Failed to update template: " + err.Error())
 	}
 
 	updated, err := h.templateService.GetTemplate(ctx, input.ID)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to get template").Error())
+		return nil, huma.Error500InternalServerError("Failed to get template: " + err.Error())
 	}
 
 	var out templatetypes.Template
 	if mapErr := mapping.MapStruct(updated, &out); mapErr != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(mapErr, "Failed to map templates").Error())
+		return nil, huma.Error500InternalServerError("Failed to map templates: " + mapErr.Error())
 	}
 
 	return &handlerutil.Out[templatetypes.Template]{
@@ -435,7 +435,7 @@ func (h *TemplateHandler) DeleteTemplate(ctx context.Context, input *DeleteTempl
 		if errors.Is(err, common.ErrTemplateNotFound) {
 			return nil, huma.Error404NotFound("Template not found")
 		}
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to delete template").Error())
+		return nil, huma.Error500InternalServerError("Failed to delete template: " + err.Error())
 	}
 
 	return &handlerutil.Out[base.MessageResponse]{
@@ -459,7 +459,7 @@ func (h *TemplateHandler) DownloadTemplate(ctx context.Context, input *DownloadT
 		if errors.Is(err, common.ErrTemplateNotFound) {
 			return nil, huma.Error404NotFound("Template not found")
 		}
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to download template").Error())
+		return nil, huma.Error500InternalServerError("Failed to download template: " + err.Error())
 	}
 	if !tmpl.IsRemote {
 		return nil, huma.Error400BadRequest("Template is already local")
@@ -467,12 +467,12 @@ func (h *TemplateHandler) DownloadTemplate(ctx context.Context, input *DownloadT
 
 	localTemplate, err := h.templateService.DownloadTemplate(ctx, tmpl)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to download template").Error())
+		return nil, huma.Error500InternalServerError("Failed to download template: " + err.Error())
 	}
 
 	var out templatetypes.Template
 	if mapErr := mapping.MapStruct(localTemplate, &out); mapErr != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(mapErr, "Failed to map templates").Error())
+		return nil, huma.Error500InternalServerError("Failed to map templates: " + mapErr.Error())
 	}
 
 	return &handlerutil.Out[templatetypes.Template]{
@@ -506,11 +506,11 @@ func (h *TemplateHandler) GetDefaultTemplates(ctx context.Context, _ *GetDefault
 // SaveDefaultTemplates saves the default compose and env templates.
 func (h *TemplateHandler) SaveDefaultTemplates(ctx context.Context, input *SaveDefaultTemplatesInput) (*handlerutil.Out[base.MessageResponse], error) {
 	if err := h.templateService.SaveComposeTemplate(ctx, input.Body.ComposeContent); err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to save default template").Error())
+		return nil, huma.Error500InternalServerError("Failed to save default template: " + err.Error())
 	}
 
 	if err := h.templateService.SaveEnvTemplate(ctx, input.Body.EnvContent); err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to save default template").Error())
+		return nil, huma.Error500InternalServerError("Failed to save default template: " + err.Error())
 	}
 
 	return &handlerutil.Out[base.MessageResponse]{
@@ -562,12 +562,12 @@ func (h *TemplateHandler) CreateRegistry(ctx context.Context, input *CreateTempl
 		Enabled:     input.Body.Enabled,
 	}
 	if err := h.templateService.CreateRegistry(ctx, registry); err != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to create registry").Error())
+		return nil, huma.Error500InternalServerError("Failed to create registry: " + err.Error())
 	}
 
 	var out templatetypes.TemplateRegistry
 	if mapErr := mapping.MapStruct(registry, &out); mapErr != nil {
-		return nil, huma.Error500InternalServerError(errors.WithMessage(mapErr, "Failed to map registry").Error())
+		return nil, huma.Error500InternalServerError("Failed to map registry: " + mapErr.Error())
 	}
 
 	return &handlerutil.Out[templatetypes.TemplateRegistry]{
@@ -594,7 +594,7 @@ func (h *TemplateHandler) UpdateRegistry(ctx context.Context, input *UpdateTempl
 		if err.Error() == "registry not found" {
 			return nil, huma.Error404NotFound("Registry not found")
 		}
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to update registry").Error())
+		return nil, huma.Error500InternalServerError("Failed to update registry: " + err.Error())
 	}
 
 	return &handlerutil.Out[base.MessageResponse]{
@@ -617,7 +617,7 @@ func (h *TemplateHandler) DeleteRegistry(ctx context.Context, input *DeleteTempl
 		if err.Error() == "registry not found" {
 			return nil, huma.Error404NotFound("Registry not found")
 		}
-		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to delete registry").Error())
+		return nil, huma.Error500InternalServerError("Failed to delete registry: " + err.Error())
 	}
 
 	return &handlerutil.Out[base.MessageResponse]{

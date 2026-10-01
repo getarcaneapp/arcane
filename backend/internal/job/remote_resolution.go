@@ -3,11 +3,11 @@ package job
 import (
 	"context"
 	"encoding/json/v2"
+	"errors"
 	"net/http"
 	"net/url"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
 	st "github.com/getarcaneapp/arcane/types/v2/scheduler"
 )

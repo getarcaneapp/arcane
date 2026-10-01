@@ -4,12 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json/v2"
+	"errors"
 	"slices"
 	"sort"
 	"time"
 	"uuid"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
 	st "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	"github.com/italypaleale/francis/actor"
@@ -264,10 +264,10 @@ func pruneRunsInternal(record *st.QueueRecord, now time.Time) {
 }
 
 // ErrRunNotFound indicates that neither a run nor its receipt exists.
-var ErrRunNotFound = errors.Sentinel("job run not found")
+var ErrRunNotFound = errors.New("job run not found")
 
 // ErrRunConflict indicates that execution ownership or state changed.
-var ErrRunConflict = errors.Sentinel("job run state changed")
+var ErrRunConflict = errors.New("job run state changed")
 
 func New(store *kv.KVService, service *actor.Service, location *time.Location) *Coordinator {
 	if location == nil {
@@ -283,7 +283,7 @@ func (q *Coordinator) SetExecutor(execute, reconcile func(context.Context, st.Ru
 
 func (q *Coordinator) ScheduleState(ctx context.Context, jobID string) (st.QueueRecord, error) {
 	var state st.CoordinatorState
-	err := q.service.GetState(ctx, coordinatorTypeInternal, kit.SHA256Hex("0"+"\x00"+jobID), &state)
+	err := q.service.GetState(ctx, coordinatorTypeInternal, kit.SHA256Hex("0\x00"+jobID), &state)
 	normalizeRecordTimesInternal(&state.Record)
 	return state.Record, err
 }

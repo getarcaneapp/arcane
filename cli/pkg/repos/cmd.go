@@ -7,7 +7,6 @@ import (
 	"strconv"
 	"strings"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
@@ -133,7 +132,7 @@ var createCmd = &cobra.Command{
 		if cmd.Flags().Changed("ssh-key") {
 			sshKeyData, err := os.ReadFile(repoCreateSSHKey)
 			if err != nil {
-				return errors.WrapIf(err, "failed to read SSH key file")
+				return fmt.Errorf("failed to read SSH key file: %w", err)
 			}
 			req.SSHKey = string(sshKeyData)
 		}
@@ -149,7 +148,7 @@ var createCmd = &cobra.Command{
 		if cmd.Flags().Changed("signing-key") {
 			signingKeyData, err := os.ReadFile(repoCreateSigningKey)
 			if err != nil {
-				return errors.WrapIf(err, "failed to read signing key file")
+				return fmt.Errorf("failed to read signing key file: %w", err)
 			}
 			req.SigningKey = string(signingKeyData)
 		}
@@ -165,7 +164,7 @@ var createCmd = &cobra.Command{
 
 		result, err := c.PostJSON[gitops.GitRepository](cmd.Context(), types.GitRepositories(), req)
 		if err != nil {
-			return errors.WrapIf(err, "failed to create repository")
+			return fmt.Errorf("failed to create repository: %w", err)
 		}
 
 		if jsonOutput {
@@ -263,7 +262,7 @@ var updateCmd = &cobra.Command{
 		if cmd.Flags().Changed("ssh-key") {
 			sshKeyData, err := os.ReadFile(repoUpdateSSHKey)
 			if err != nil {
-				return errors.WrapIf(err, "failed to read SSH key file")
+				return fmt.Errorf("failed to read SSH key file: %w", err)
 			}
 			req.SSHKey = new(string(sshKeyData))
 		}
@@ -281,7 +280,7 @@ var updateCmd = &cobra.Command{
 			if repoUpdateSigningKey != "" {
 				signingKeyData, err := os.ReadFile(repoUpdateSigningKey)
 				if err != nil {
-					return errors.WrapIf(err, "failed to read signing key file")
+					return fmt.Errorf("failed to read signing key file: %w", err)
 				}
 				signingKey = string(signingKeyData)
 			}
@@ -299,7 +298,7 @@ var updateCmd = &cobra.Command{
 
 		result, err := c.PutJSON[gitops.GitRepository](cmd.Context(), types.GitRepository(resolved.ID), req)
 		if err != nil {
-			return errors.WrapIf(err, "failed to update repository")
+			return fmt.Errorf("failed to update repository: %w", err)
 		}
 
 		if jsonOutput {
@@ -346,11 +345,11 @@ var deleteCmd = &cobra.Command{
 
 		resp, err := c.Delete(cmd.Context(), types.GitRepository(resolved.ID))
 		if err != nil {
-			return errors.WrapIf(err, "failed to delete repository")
+			return fmt.Errorf("failed to delete repository: %w", err)
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to delete repository")
+			return fmt.Errorf("failed to delete repository: %w", err)
 		}
 
 		output.Success("Repository deleted successfully")
@@ -401,7 +400,7 @@ var branchesCmd = &cobra.Command{
 
 		result, err := c.GetJSON[gitops.BranchesResponse](cmd.Context(), types.GitRepositoryBranches(resolved.ID))
 		if err != nil {
-			return errors.WrapIf(err, "failed to list branches")
+			return fmt.Errorf("failed to list branches: %w", err)
 		}
 
 		if jsonOutput {
@@ -457,7 +456,7 @@ var filesCmd = &cobra.Command{
 
 		result, err := c.GetJSON[gitops.BrowseResponse](cmd.Context(), path)
 		if err != nil {
-			return errors.WrapIf(err, "failed to list files")
+			return fmt.Errorf("failed to list files: %w", err)
 		}
 
 		files := result.Data.Files

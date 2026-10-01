@@ -2,13 +2,13 @@ package oidcjwk
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/jwx-go/jwkfetch/v4"
 	"github.com/lestrrat-go/httprc/v3"
@@ -26,7 +26,7 @@ const (
 	maximumRefreshInterval = time.Hour
 )
 
-var ErrManagerShutdown = errors.Sentinel("oidcjwk: key set manager is shut down")
+var ErrManagerShutdown = errors.New("oidcjwk: key set manager is shut down")
 
 type managedCache struct {
 	cache   *jwkfetch.Cache
@@ -144,7 +144,7 @@ func (m *managedCache) initializeKeySetInternal(ctx context.Context, jwksURL str
 		jwkfetch.WithMinInterval(minimumRefreshInterval),
 		jwkfetch.WithMaxInterval(maximumRefreshInterval),
 	); registerErr != nil {
-		return nil, errors.WrapIf(registerErr, "failed to register JWKS URL")
+		return nil, fmt.Errorf("failed to register JWKS URL: %w", registerErr)
 	}
 	// Refresh returns fetch and parse errors that the background readiness wait hides.
 	if _, refreshErr := m.cache.Refresh(registerCtx, jwksURL); refreshErr != nil {
@@ -153,7 +153,7 @@ func (m *managedCache) initializeKeySetInternal(ctx context.Context, jwksURL str
 
 	set, setErr := m.cache.CachedSet(jwksURL)
 	if setErr != nil {
-		return nil, errors.WrapIf(setErr, "failed to create cached JWK set")
+		return nil, fmt.Errorf("failed to create cached JWK set: %w", setErr)
 	}
 	keySet := &keySet{
 		cache:   m.cache,
@@ -177,7 +177,7 @@ func (m *KeySetManager) createManagedCacheLockedInternal(client *http.Client) (*
 		),
 	)
 	if err != nil {
-		return nil, errors.WrapIf(err, "failed to create JWKS cache")
+		return nil, fmt.Errorf("failed to create JWKS cache: %w", err)
 	}
 	managed := &managedCache{cache: cache, keySets: make(map[string]*keySet)}
 	m.caches.Set(client, managed)
@@ -207,5 +207,5 @@ func (m *KeySetManager) Shutdown(ctx context.Context) error {
 	for _, cache := range caches {
 		shutdownErrors = append(shutdownErrors, cache.Shutdown(ctx))
 	}
-	return errors.Combine(shutdownErrors...)
+	return errors.Join(shutdownErrors...)
 }

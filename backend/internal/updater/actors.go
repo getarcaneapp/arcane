@@ -2,9 +2,9 @@ package updater
 
 import (
 	"context"
+	"errors"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
@@ -181,7 +181,7 @@ func (a *singleUpdateActorInternal) Job(ctx context.Context, _ string, data acto
 	defer release()
 	var command arcaneupdater.SingleUpdateCommand
 	if err := data.Decode(&command); err != nil {
-		return errors.Combine(err, actor.ErrJobPermanentFailure)
+		return errors.Join(err, actor.ErrJobPermanentFailure)
 	}
 	var state arcaneupdater.SingleUpdateState
 	if err := s.singleUpdates.GetState(ctx, singleUpdateStateTypeInternal, command.ActivityID, &state); err != nil {

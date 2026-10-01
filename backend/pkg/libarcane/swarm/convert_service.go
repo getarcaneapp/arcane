@@ -2,6 +2,7 @@ package swarm
 
 import (
 	"cmp"
+	"errors"
 	"fmt"
 	"log/slog"
 	"maps"
@@ -13,7 +14,6 @@ import (
 	"strings"
 	"time"
 
-	"emperror.dev/errors"
 	composegotypes "github.com/compose-spec/compose-go/v2/types"
 	dockeropts "github.com/docker/cli/opts"
 	"github.com/moby/moby/api/types/container"
@@ -169,7 +169,7 @@ func convertHealthcheckInternal(healthcheck *composegotypes.HealthCheckConfig) (
 	}
 	if healthcheck.Retries != nil {
 		if *healthcheck.Retries > uint64(math.MaxInt) {
-			return nil, errors.Errorf("healthcheck retries %d exceeds the platform int range", *healthcheck.Retries)
+			return nil, fmt.Errorf("healthcheck retries %d exceeds the platform int range", *healthcheck.Retries)
 		}
 		result.Retries = int(*healthcheck.Retries)
 	}
@@ -242,7 +242,7 @@ func convertCredentialSpecInternal(
 
 	meta, ok := configMetaByKey[credentialSpec.Config]
 	if !ok {
-		return nil, nil, errors.Errorf("undefined config %q for credential spec", credentialSpec.Config)
+		return nil, nil, fmt.Errorf("undefined config %q for credential spec", credentialSpec.Config)
 	}
 	converted.Config = meta.ID
 	return converted, &swarm.ConfigReference{
@@ -270,7 +270,7 @@ func applySecurityOptionInternal(privileges *swarm.Privileges, securityOption st
 		if found && value != "" {
 			parsed, err := strconv.ParseBool(value)
 			if err != nil {
-				return false, errors.WrapIff(err, "invalid no-new-privileges value %q", value)
+				return false, fmt.Errorf("invalid no-new-privileges value %q: %w", value, err)
 			}
 			enabled = parsed
 		}
@@ -282,7 +282,7 @@ func applySecurityOptionInternal(privileges *swarm.Privileges, securityOption st
 		case "unconfined":
 			privileges.Seccomp = &swarm.SeccompOpts{Mode: swarm.SeccompModeUnconfined}
 		default:
-			return false, errors.Errorf("custom seccomp profile %q is not supported for swarm stacks", value)
+			return false, fmt.Errorf("custom seccomp profile %q is not supported for swarm stacks", value)
 		}
 	case "apparmor":
 		switch strings.ToLower(value) {
@@ -291,14 +291,14 @@ func applySecurityOptionInternal(privileges *swarm.Privileges, securityOption st
 		case "unconfined", "disabled":
 			privileges.AppArmor = &swarm.AppArmorOpts{Mode: swarm.AppArmorModeDisabled}
 		default:
-			return false, errors.Errorf("custom AppArmor profile %q is not supported for swarm stacks", value)
+			return false, fmt.Errorf("custom AppArmor profile %q is not supported for swarm stacks", value)
 		}
 	case "label":
 		if err := applySELinuxOptionInternal(privileges, value, securityOption); err != nil {
 			return false, err
 		}
 	default:
-		return false, errors.Errorf("unsupported swarm security option %q", securityOption)
+		return false, fmt.Errorf("unsupported swarm security option %q", securityOption)
 	}
 	return true, nil
 }
@@ -322,10 +322,10 @@ func applySELinuxOptionInternal(privileges *swarm.Privileges, value, securityOpt
 	case "level":
 		selinux.Level = labelValue
 	default:
-		return errors.Errorf("invalid SELinux security option %q", securityOption)
+		return fmt.Errorf("invalid SELinux security option %q", securityOption)
 	}
 	if strings.ToLower(labelKey) != "disable" && !hasLabelValue {
-		return errors.Errorf("invalid SELinux security option %q", securityOption)
+		return fmt.Errorf("invalid SELinux security option %q", securityOption)
 	}
 	return nil
 }
@@ -472,7 +472,7 @@ func convertRestartPolicyInternal(restart string, deployPolicy *composegotypes.R
 		maxAttempts := uint64(policy.MaximumRetryCount)
 		return &swarm.RestartPolicy{Condition: swarm.RestartPolicyConditionOnFailure, MaxAttempts: &maxAttempts}, nil
 	default:
-		return nil, errors.Errorf("invalid restart policy %q", policy.Name)
+		return nil, fmt.Errorf("invalid restart policy %q", policy.Name)
 	}
 }
 
@@ -506,7 +506,7 @@ func applyServiceModeInternal(spec *swarm.ServiceSpec, mode string, replicas *in
 		}
 		spec.Mode = swarm.ServiceMode{Replicated: &swarm.ReplicatedService{Replicas: &replicaCount}}
 	default:
-		return errors.Errorf("unknown service mode %q", mode)
+		return fmt.Errorf("unknown service mode %q", mode)
 	}
 	return nil
 }
@@ -544,7 +544,7 @@ func applyServicePortsInternal(spec *swarm.ServiceSpec, ports []composegotypes.S
 		if port.Published != "" {
 			published, err := strconv.ParseUint(port.Published, 10, 32)
 			if err != nil {
-				return errors.WrapIff(err, "invalid published port %q", port.Published)
+				return fmt.Errorf("invalid published port %q: %w", port.Published, err)
 			}
 			entry.PublishedPort = uint32(published)
 		}
@@ -573,7 +573,7 @@ func buildServiceNetworksInternal(service composegotypes.ServiceConfig, networkN
 	for name, cfg := range service.Networks {
 		networkName, ok := networkNameByKey[name]
 		if !ok {
-			return nil, errors.Errorf("undefined network %q", name)
+			return nil, fmt.Errorf("undefined network %q", name)
 		}
 		aliases := []string{service.Name}
 		if cfg == nil {

@@ -6,12 +6,13 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json/v2"
+	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"strings"
 
-	"emperror.dev/errors"
 	"github.com/containerd/platforms"
 	utilsregistry "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/registryauth"
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
@@ -79,13 +80,13 @@ func (s *ImageService) GetImageAttestations(ctx context.Context, imageName strin
 
 	ref, err := name.ParseReference(resolution.ImageRef, name.WeakValidation)
 	if err != nil {
-		return nil, errors.WrapIff(err, "parse image reference %q", resolution.ImageRef)
+		return nil, fmt.Errorf("parse image reference %q: %w", resolution.ImageRef, err)
 	}
 
 	remoteOptions := s.remoteOptionsForImageRefInternal(ctx, resolution.ImageRef)
 	remoteDescriptor, err := remote.Get(ref, remoteOptions...)
 	if err != nil {
-		return nil, errors.WrapIff(err, "get image manifest %q", resolution.ImageRef)
+		return nil, fmt.Errorf("get image manifest %q: %w", resolution.ImageRef, err)
 	}
 
 	if out.SubjectDigest == "" {
@@ -146,10 +147,10 @@ func (s *ImageService) resolveImageAttestationReferenceInternal(ctx context.Cont
 	}
 
 	if isLikelyLocalImageIDInternal(imageName) {
-		return imageAttestationReferenceInternal{}, errors.Errorf("image %q does not have a registry reference", imageName)
+		return imageAttestationReferenceInternal{}, fmt.Errorf("image %q does not have a registry reference", imageName)
 	}
 	if _, err := name.ParseReference(imageName, name.WeakValidation); err != nil {
-		return imageAttestationReferenceInternal{}, errors.WrapIff(err, "image %q does not have a registry reference", imageName)
+		return imageAttestationReferenceInternal{}, fmt.Errorf("image %q does not have a registry reference: %w", imageName, err)
 	}
 	return imageAttestationReferenceInternal{
 		ImageRef:      imageName,
@@ -207,7 +208,7 @@ func parseAttestationPlatformInternal(value string) (ocispec.Platform, bool, err
 
 	platform, err := platforms.Parse(value)
 	if err != nil {
-		return ocispec.Platform{}, false, errors.WrapIff(err, "invalid platform %q", value)
+		return ocispec.Platform{}, false, fmt.Errorf("invalid platform %q: %w", value, err)
 	}
 	return platform, true, nil
 }
@@ -264,12 +265,12 @@ func imageAttestationSubjectsInternal(descriptor *remote.Descriptor, platform oc
 
 	index, err := descriptor.ImageIndex()
 	if err != nil {
-		return nil, nil, errors.WrapIff(err, "read image index %s", descriptor.Digest.String())
+		return nil, nil, fmt.Errorf("read image index %s: %w", descriptor.Digest.String(), err)
 	}
 
 	indexManifest, err := index.IndexManifest()
 	if err != nil {
-		return nil, nil, errors.WrapIff(err, "read image index manifest %s", descriptor.Digest.String())
+		return nil, nil, fmt.Errorf("read image index manifest %s: %w", descriptor.Digest.String(), err)
 	}
 
 	subjects := make([]imageAttestationSubjectInternal, 0, len(indexManifest.Manifests)+1)
@@ -347,19 +348,19 @@ func (s *ImageService) readReferrerAttestationsInternal(ctx context.Context, rep
 		if shouldIgnoreReferrersErrorInternal(err) {
 			return nil, nil
 		}
-		return nil, errors.WrapIff(err, "query image referrers for %s", subject.Digest)
+		return nil, fmt.Errorf("query image referrers for %s: %w", subject.Digest, err)
 	}
 
 	manifest, err := referrers.IndexManifest()
 	if err != nil {
-		return nil, errors.WrapIff(err, "read image referrers for %s", subject.Digest)
+		return nil, fmt.Errorf("read image referrers for %s: %w", subject.Digest, err)
 	}
 
 	attestations := make([]imagetypes.Attestation, 0, len(manifest.Manifests))
 	for _, referrer := range manifest.Manifests {
 		referrerDescriptor, err := remote.Get(repository.Digest(referrer.Digest.String()), remoteOptions...)
 		if err != nil {
-			return nil, errors.WrapIff(err, "get image referrer %s", referrer.Digest.String())
+			return nil, fmt.Errorf("get image referrer %s: %w", referrer.Digest.String(), err)
 		}
 
 		referrerImage, err := referrerDescriptor.Image()
@@ -384,8 +385,7 @@ func (s *ImageService) readReferrerAttestationsInternal(ctx context.Context, rep
 }
 
 func shouldIgnoreReferrersErrorInternal(err error) bool {
-	var transportErr *transport.Error
-	if errors.As(err, &transportErr) {
+	if transportErr, ok := errors.AsType[*transport.Error](err); ok {
 		return transportErr.StatusCode == http.StatusNotFound || transportErr.StatusCode == http.StatusMethodNotAllowed
 	}
 	return false
@@ -398,7 +398,7 @@ func readInlineAttestationsInternal(ctx context.Context, index v1.ImageIndex, su
 
 	indexManifest, err := index.IndexManifest()
 	if err != nil {
-		return nil, errors.WrapIf(err, "read image index manifest for inline attestations")
+		return nil, fmt.Errorf("read image index manifest for inline attestations: %w", err)
 	}
 
 	subjectByDigest := make(map[string]imageAttestationSubjectInternal, len(subjects))
@@ -423,7 +423,7 @@ func readInlineAttestationsInternal(ctx context.Context, index v1.ImageIndex, su
 
 		attestationImage, err := index.Image(descriptor.Digest)
 		if err != nil {
-			return nil, errors.WrapIff(err, "read inline attestation image %s", descriptor.Digest.String())
+			return nil, fmt.Errorf("read inline attestation image %s: %w", descriptor.Digest.String(), err)
 		}
 
 		items, err := readAttestationImageInternal(ctx, attestationImage, descriptor, subject.Platform, query)
@@ -450,7 +450,7 @@ func isInlineAttestationDescriptorInternal(descriptor v1.Descriptor) bool {
 func readAttestationImageInternal(ctx context.Context, attestationImage v1.Image, artifactDescriptor v1.Descriptor, platform string, query ImageAttestationQuery) ([]imagetypes.Attestation, error) {
 	manifest, err := attestationImage.Manifest()
 	if err != nil {
-		return nil, errors.WrapIff(err, "read attestation manifest %s", artifactDescriptor.Digest.String())
+		return nil, fmt.Errorf("read attestation manifest %s: %w", artifactDescriptor.Digest.String(), err)
 	}
 
 	artifactType := artifactDescriptor.ArtifactType
@@ -486,7 +486,7 @@ func readAttestationLayerInternal(ctx context.Context, attestationImage v1.Image
 
 	layer, err := attestationImage.LayerByDigest(layerDescriptor.Digest)
 	if err != nil {
-		return imagetypes.Attestation{}, false, errors.WrapIff(err, "read attestation layer %s", layerDescriptor.Digest.String())
+		return imagetypes.Attestation{}, false, fmt.Errorf("read attestation layer %s: %w", layerDescriptor.Digest.String(), err)
 	}
 
 	rawStatement, err := readAttestationLayerBytesInternal(layer, layerDescriptor.Digest.String())
@@ -496,7 +496,7 @@ func readAttestationLayerInternal(ctx context.Context, attestationImage v1.Image
 
 	statement, err := parseAttestationStatementInternal(rawStatement)
 	if err != nil {
-		return imagetypes.Attestation{}, false, errors.WrapIff(err, "parse attestation statement %s", layerDescriptor.Digest.String())
+		return imagetypes.Attestation{}, false, fmt.Errorf("parse attestation statement %s: %w", layerDescriptor.Digest.String(), err)
 	}
 	statement.PredicateType = cmp.Or(statement.PredicateType, annotationPredicate)
 	if query.PredicateType != "" && statement.PredicateType != query.PredicateType {
@@ -527,20 +527,20 @@ func readAttestationLayerInternal(ctx context.Context, attestationImage v1.Image
 func readAttestationLayerBytesInternal(layer v1.Layer, digest string) ([]byte, error) {
 	reader, err := layer.Compressed()
 	if err != nil {
-		return nil, errors.WrapIff(err, "open attestation layer %s", digest)
+		return nil, fmt.Errorf("open attestation layer %s: %w", digest, err)
 	}
 	rawStatement, readErr := io.ReadAll(reader)
 	closeErr := reader.Close()
 	if readErr != nil {
-		return nil, errors.WrapIff(readErr, "read attestation layer %s", digest)
+		return nil, fmt.Errorf("read attestation layer %s: %w", digest, readErr)
 	}
 	if closeErr != nil {
-		return nil, errors.WrapIff(closeErr, "close attestation layer %s", digest)
+		return nil, fmt.Errorf("close attestation layer %s: %w", digest, closeErr)
 	}
 
 	statement, err := decompressAttestationStatementInternal(rawStatement)
 	if err != nil {
-		return nil, errors.WrapIff(err, "decompress attestation layer %s", digest)
+		return nil, fmt.Errorf("decompress attestation layer %s: %w", digest, err)
 	}
 	return statement, nil
 }
