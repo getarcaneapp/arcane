@@ -30,6 +30,7 @@ type Watcher struct {
 	debounce       time.Duration
 	stopCh         chan struct{}
 	stoppedCh      chan struct{}
+	cancel         context.CancelFunc
 	watchAliases   map[string]string
 	pendingPaths   map[string]struct{}
 	mu             sync.Mutex
@@ -105,7 +106,9 @@ func (fw *Watcher) Start(ctx context.Context) error {
 			"error", err)
 	}
 
-	go fw.watchLoop(ctx)
+	watchCtx, cancel := context.WithCancel(ctx)
+	fw.cancel = cancel
+	go fw.watchLoopInternal(watchCtx)
 	fw.started = true
 
 	slog.InfoContext(ctx, "Filesystem watcher started", "path", fw.watchedPath)
@@ -125,9 +128,11 @@ func (fw *Watcher) StopWatching() error {
 		fw.mu.Lock()
 		fw.stopped = true
 		started := fw.started
+		cancel := fw.cancel
 		fw.mu.Unlock()
 
 		if started {
+			cancel()
 			close(fw.stopCh)
 			<-fw.stoppedCh // Wait for watchLoop to finish
 		}
@@ -145,7 +150,7 @@ func (fw *Watcher) StopWatching() error {
 	return fw.stopErr
 }
 
-func (fw *Watcher) watchLoop(ctx context.Context) {
+func (fw *Watcher) watchLoopInternal(ctx context.Context) {
 	defer close(fw.stoppedCh)
 
 	debounceTimer := time.NewTimer(fw.debounce)
@@ -221,16 +226,29 @@ func (fw *Watcher) fireDebounceInternal(ctx context.Context, debouncePending *bo
 			"goroutines", runtime.NumGoroutine())
 		*lastGoroutineLog = time.Now()
 	}
-	if fw.onChange != nil {
-		fw.callbacks.Go(func() { fw.onChange(ctx) })
-	}
+	var paths []string
 	if fw.onChangePaths != nil {
-		paths := fw.drainPendingPathsInternal()
-		if len(paths) > 0 {
-			fw.callbacks.Go(func() { fw.onChangePaths(ctx, paths) })
-		}
+		paths = fw.drainPendingPathsInternal()
 	}
+	fw.notifyChangesInternal(ctx, paths)
 	return false
+}
+
+func (fw *Watcher) notifyChangesInternal(ctx context.Context, paths []string) {
+	if fw.onChange != nil {
+		fw.callbacks.Go(func() {
+			if ctx.Err() == nil {
+				fw.onChange(ctx)
+			}
+		})
+	}
+	if fw.onChangePaths != nil && len(paths) > 0 {
+		fw.callbacks.Go(func() {
+			if ctx.Err() == nil {
+				fw.onChangePaths(ctx, paths)
+			}
+		})
+	}
 }
 
 func (fw *Watcher) recordPendingPathInternal(path string) {
@@ -486,12 +504,7 @@ func (fw *Watcher) reconnectInternal(ctx context.Context) bool {
 					slog.WarnContext(ctx, "Some filesystem subscriptions could not be restored", "error", err)
 				}
 				// Changes while disconnected need a full reconciliation.
-				if fw.onChange != nil {
-					fw.callbacks.Go(func() { fw.onChange(ctx) })
-				}
-				if fw.onChangePaths != nil {
-					fw.callbacks.Go(func() { fw.onChangePaths(ctx, []string{fw.watchedPath}) })
-				}
+				fw.notifyChangesInternal(ctx, []string{fw.watchedPath})
 				return true
 			}
 			if closeErr := watcher.Close(); closeErr != nil {

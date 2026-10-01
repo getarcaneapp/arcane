@@ -32,18 +32,19 @@ var defaultWebSocketMetrics = wshub.NewWebSocketMetrics()
 // WebSocketHandler consolidates all WebSocket and streaming endpoints.
 // REST endpoints are handled by Huma handlers.
 type WebSocketHandler struct {
-	projectService     *project.ProjectService
-	containerService   *container.ContainerService
-	swarmService       *swarm.SwarmService
-	systemService      *system.SystemService
-	diagnosticsService *diagnostics.DiagnosticsService
-	checkWSOrigin      func(*http.Request) bool
-	wsMetrics          *wshub.WebSocketMetrics
-	activeConnections  sync.Map
-	logStreamsMu       sync.Mutex
-	logStreams         map[string]*wsLogStream
-	cpuCache           concurrency.Snapshot[float64]
-	systemStaticInfo   struct {
+	projectService      *project.ProjectService
+	containerService    *container.ContainerService
+	swarmService        *swarm.SwarmService
+	systemService       *system.SystemService
+	diagnosticsService  *diagnostics.DiagnosticsService
+	checkWSOrigin       func(*http.Request) bool
+	wsMetrics           *wshub.WebSocketMetrics
+	activeConnectionsMu sync.Mutex
+	activeConnections   map[string]int
+	logStreamsMu        sync.Mutex
+	logStreams          map[string]*wsLogStream
+	cpuCache            concurrency.Snapshot[float64]
+	systemStaticInfo    struct {
 		once     sync.Once
 		cpuCount int
 		hostname string

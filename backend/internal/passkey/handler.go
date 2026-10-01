@@ -633,6 +633,7 @@ func (h *PasskeyHandler) DisableMFA(ctx context.Context, input *MFASettingsInput
 	if err := h.passkeyService.DisableMFA(ctx, userModel.ID, sessionID, input.StepUpToken); err != nil {
 		return nil, passkeyHTTPErrorInternal(err)
 	}
+	h.authService.InvalidateUserTokenCache(userModel.ID)
 	return &handlerutil.Out[base.MessageResponse]{Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: base.MessageResponse{Message: "Passkey MFA disabled"}}}, nil
 }
 

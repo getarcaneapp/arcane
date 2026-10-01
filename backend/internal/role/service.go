@@ -9,6 +9,8 @@ import (
 	"maps"
 	"slices"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
@@ -32,9 +34,12 @@ const (
 )
 
 type RoleService struct {
-	db          *database.DB
-	userCache   *hot.HotCache[string, *authz.PermissionSet]
-	apiKeyCache *hot.HotCache[string, *authz.PermissionSet]
+	db             *database.DB
+	userCache      *hot.HotCache[string, *authz.PermissionSet]
+	apiKeyCache    *hot.HotCache[string, *authz.PermissionSet]
+	cacheFillMu    sync.Mutex
+	userCacheGen   atomic.Uint64
+	apiKeyCacheGen atomic.Uint64
 }
 
 func NewRoleService(db *database.DB) *RoleService {
@@ -256,6 +261,7 @@ func (s *RoleService) UpdateRole(ctx context.Context, id, name string, descripti
 		return nil, err
 	}
 	var out Role
+	var affected []string
 	err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
 		var existing Role
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", id).First(&existing).Error; err != nil {
@@ -276,9 +282,11 @@ func (s *RoleService) UpdateRole(ctx context.Context, id, name string, descripti
 				return common.Classify(common.ErrRoleNameTaken, errors.New("Role name already in use"))
 			}
 		}
-		if _, err := lockAssignedUserRowsInternal(tx, id); err != nil {
+		ids, err := lockAssignedUserRowsInternal(tx, id)
+		if err != nil {
 			return err
 		}
+		affected = ids
 		existing.Name = input.Name
 		existing.Description = input.Description
 		existing.Permissions = permissions
@@ -291,7 +299,9 @@ func (s *RoleService) UpdateRole(ctx context.Context, id, name string, descripti
 	if err != nil {
 		return nil, err
 	}
-	s.invalidateUsersAssignedToInternal(ctx, id)
+	for _, userID := range affected {
+		s.InvalidateUser(userID)
+	}
 	return &out, nil
 }
 
@@ -327,7 +337,7 @@ func (s *RoleService) DeleteRole(ctx context.Context, id string) error {
 	// cache-miss cannot re-populate with stale data from the not-yet-visible
 	// delete. Consistent with UpdateRole / SetUserAssignments.
 	for _, uid := range affected {
-		s.userCache.Delete(uid)
+		s.InvalidateUser(uid)
 	}
 	return nil
 }
@@ -406,7 +416,7 @@ func (s *RoleService) replaceUserAssignmentsForSourceInternal(ctx context.Contex
 	if err != nil {
 		return err
 	}
-	s.userCache.Delete(userID)
+	s.InvalidateUser(userID)
 	return nil
 }
 
@@ -538,11 +548,16 @@ func (s *RoleService) ResolvePermissions(ctx context.Context, user *common.User)
 	if ps, ok, _ := s.userCache.Get(user.ID); ok {
 		return ps, nil
 	}
+	gen := s.userCacheGen.Load()
 	ps, err := s.ResolveUserPermissionsInDB(ctx, s.db.WithContext(ctx), user.ID)
 	if err != nil {
 		return nil, err
 	}
-	s.userCache.Set(user.ID, ps)
+	s.cacheFillMu.Lock()
+	if s.userCacheGen.Load() == gen {
+		s.userCache.Set(user.ID, ps)
+	}
+	s.cacheFillMu.Unlock()
 	return ps, nil
 }
 
@@ -653,11 +668,16 @@ func (s *RoleService) ResolveApiKeyPermissions(ctx context.Context, apiKeyID str
 	if ps, ok, _ := s.apiKeyCache.Get(apiKeyID); ok {
 		return ps, nil
 	}
+	gen := s.apiKeyCacheGen.Load()
 	permissions, err := s.resolveApiKeyPermissionsInDBInternal(s.db.WithContext(ctx), apiKeyID)
 	if err != nil {
 		return nil, err
 	}
-	s.apiKeyCache.Set(apiKeyID, permissions)
+	s.cacheFillMu.Lock()
+	if s.apiKeyCacheGen.Load() == gen {
+		s.apiKeyCache.Set(apiKeyID, permissions)
+	}
+	s.cacheFillMu.Unlock()
 	return permissions, nil
 }
 
@@ -687,7 +707,7 @@ func (s *RoleService) SetApiKeyPermissions(ctx context.Context, apiKeyID string,
 	if err != nil {
 		return err
 	}
-	s.apiKeyCache.Delete(apiKeyID)
+	s.InvalidateApiKey(apiKeyID)
 	return nil
 }
 
@@ -913,29 +933,18 @@ func (s *RoleService) ReconcileEnvOidcMappings(ctx context.Context, rawSpec stri
 // auth_service after a login that mutates assignments, and from any mutation
 // path that doesn't already invalidate explicitly.
 func (s *RoleService) InvalidateUser(userID string) {
+	s.cacheFillMu.Lock()
+	defer s.cacheFillMu.Unlock()
+	s.userCacheGen.Add(1)
 	s.userCache.Delete(userID)
 }
 
 // InvalidateApiKey drops the cached PermissionSet for one API key.
 func (s *RoleService) InvalidateApiKey(apiKeyID string) {
+	s.cacheFillMu.Lock()
+	defer s.cacheFillMu.Unlock()
+	s.apiKeyCacheGen.Add(1)
 	s.apiKeyCache.Delete(apiKeyID)
-}
-
-// invalidateUsersAssignedToInternal invalidates every user holding an assignment to
-// the given role. Called after a role's permissions change.
-func (s *RoleService) invalidateUsersAssignedToInternal(ctx context.Context, roleID string) {
-	var userIDs []string
-	if err := s.db.WithContext(ctx).
-		Model(&UserRoleAssignment{}).
-		Distinct("user_id").
-		Where("role_id = ?", roleID).
-		Pluck("user_id", &userIDs).Error; err != nil {
-		slog.WarnContext(ctx, "failed to collect users for cache invalidation", "error", err, "role_id", roleID)
-		return
-	}
-	for _, id := range userIDs {
-		s.userCache.Delete(id)
-	}
 }
 
 // ---------- helpers ----------

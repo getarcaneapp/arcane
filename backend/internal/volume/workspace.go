@@ -25,6 +25,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
 	acfsutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/acfs"
 	workspacepkg "github.com/getarcaneapp/arcane/backend/v2/pkg/workspace"
@@ -83,11 +84,16 @@ func (s *VolumeService) readVolumeWorkspaceFromContainerInternal(ctx context.Con
 		maxEntries = 10000
 	}
 
-	pipeReader, pipeWriter := io.Pipe()
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return nil, err
 	}
+	workCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	pipeReader, pipeWriter := io.Pipe()
+	// io.PipeReader.CloseWithError always returns nil.
+	stopClose := context.AfterFunc(workCtx, func() { _ = pipeReader.CloseWithError(workCtx.Err()) })
+	defer stopClose()
 	var stderr bytes.Buffer
 	done := make(chan error, 1)
 	go func() {
@@ -95,7 +101,7 @@ func (s *VolumeService) readVolumeWorkspaceFromContainerInternal(ctx context.Con
 			"acfs", "walk", "--root", "/volume", "--path", "/",
 			"--max-depth", strconv.Itoa(maxDepth), "--max-entries", strconv.Itoa(maxEntries),
 		}
-		exitCode, execErr := dockerutil.ExecInContainer(ctx, dockerClient, containerID, client.ExecCreateOptions{
+		exitCode, execErr := dockerutil.ExecInContainer(workCtx, dockerClient, containerID, client.ExecCreateOptions{
 			AttachStdout: true,
 			AttachStderr: true,
 			Cmd:          cmd,
@@ -109,11 +115,12 @@ func (s *VolumeService) readVolumeWorkspaceFromContainerInternal(ctx context.Con
 
 	workspace, parseErr := decodeVolumeWorkspaceWalkInternal(pipeReader, maxEntries, s.volumeWorkspaceMaxFileSizeBytesInternal())
 	if parseErr != nil {
+		cancel()
 		_ = pipeReader.CloseWithError(parseErr)
 	}
 	execErr := <-done
 	_ = pipeReader.Close()
-	if execErr != nil {
+	if execErr != nil && (parseErr == nil || ctx.Err() != nil || !errors.Is(execErr, context.Canceled)) {
 		return nil, classifyVolumeWorkspaceExecErrorInternal(execErr, stderr.String(), "read volume workspace")
 	}
 	if parseErr != nil {
@@ -314,6 +321,9 @@ func (s *VolumeService) DownloadVolumeWorkspaceFile(ctx context.Context, volumeN
 }
 
 type volumeWorkspaceReadStreamInternal struct {
+	ctx       context.Context
+	cancel    context.CancelFunc
+	stopClose func() bool
 	pipe      *io.PipeReader
 	done      <-chan error
 	cleanup   func()
@@ -351,20 +361,28 @@ func (r *volumeWorkspaceReadStreamInternal) Read(buffer []byte) (int, error) {
 
 func (r *volumeWorkspaceReadStreamInternal) Close() error {
 	r.once.Do(func() {
+		r.stopClose()
+		r.cancel()
 		_ = r.pipe.Close()
 		r.err = <-r.done
+		if r.ctx.Err() == nil && errors.Is(r.err, context.Canceled) {
+			r.err = nil
+		}
 		r.cleanup()
 	})
 	return r.err
 }
 
 func (s *VolumeService) startVolumeWorkspaceReadInternal(ctx context.Context, containerID, relativePath string, limit int64, cleanup func()) (io.ReadCloser, int64, error) {
-	pipeReader, pipeWriter := io.Pipe()
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		cleanup()
 		return nil, 0, err
 	}
+	workCtx, cancel := context.WithCancel(ctx)
+	pipeReader, pipeWriter := io.Pipe()
+	// io.PipeReader.CloseWithError always returns nil.
+	stopClose := context.AfterFunc(workCtx, func() { _ = pipeReader.CloseWithError(workCtx.Err()) })
 	done := make(chan error, 1)
 	cmd := []string{"acfs", "read", "--root", "/volume", "--path", "/" + relativePath}
 	if limit > 0 {
@@ -372,7 +390,7 @@ func (s *VolumeService) startVolumeWorkspaceReadInternal(ctx context.Context, co
 	}
 	go func() {
 		var stderr bytes.Buffer
-		exitCode, execErr := dockerutil.ExecInContainer(ctx, dockerClient, containerID, client.ExecCreateOptions{
+		exitCode, execErr := dockerutil.ExecInContainer(workCtx, dockerClient, containerID, client.ExecCreateOptions{
 			AttachStdout: true,
 			AttachStderr: true,
 			Cmd:          cmd,
@@ -383,21 +401,24 @@ func (s *VolumeService) startVolumeWorkspaceReadInternal(ctx context.Context, co
 		if execErr != nil {
 			execErr = classifyVolumeWorkspaceExecErrorInternal(execErr, stderr.String(), "read volume workspace file")
 		}
+		stopClose()
 		_ = pipeWriter.CloseWithError(execErr)
 		done <- execErr
 	}()
 
 	payloadSize, err := acfs.ReadStreamHeader(pipeReader)
 	if err != nil {
+		cancel()
 		_ = pipeReader.CloseWithError(err)
 		execErr := <-done
 		cleanup()
-		if execErr != nil {
+		if execErr != nil && (ctx.Err() != nil || !errors.Is(execErr, context.Canceled)) {
 			return nil, 0, execErr
 		}
 		return nil, 0, fmt.Errorf("parse volume workspace read header: %w", err)
 	}
 	if payloadSize > uint64(1<<63-1) {
+		cancel()
 		_ = pipeReader.Close()
 		<-done
 		cleanup()
@@ -405,6 +426,9 @@ func (s *VolumeService) startVolumeWorkspaceReadInternal(ctx context.Context, co
 	}
 	size := int64(payloadSize)
 	return &volumeWorkspaceReadStreamInternal{
+		ctx:       ctx,
+		cancel:    cancel,
+		stopClose: stopClose,
 		pipe:      pipeReader,
 		done:      done,
 		cleanup:   cleanup,
@@ -1049,8 +1073,13 @@ func (s *VolumeService) createVolumeWorkspaceMutationContainerInternal(ctx conte
 		return "", nil, fmt.Errorf("create volume workspace helper: %w", err)
 	}
 	if _, err := dockerClient.ContainerStart(ctx, resp.ID, client.ContainerStartOptions{}); err != nil {
-		_, _ = dockerClient.ContainerRemove(ctx, resp.ID, volumehelper.RemoveOptions())
-		return "", nil, fmt.Errorf("start volume workspace helper: %w", err)
+		startErr := fmt.Errorf("start volume workspace helper: %w", err)
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeouts.DefaultDockerAPI)
+		defer cancel()
+		if _, cleanupErr := dockerClient.ContainerRemove(cleanupCtx, resp.ID, volumehelper.RemoveOptions()); cleanupErr != nil && !cerrdefs.IsNotFound(cleanupErr) {
+			return "", nil, errors.Join(startErr, fmt.Errorf("remove volume workspace helper after start failure: %w", cleanupErr))
+		}
+		return "", nil, startErr
 	}
 	return resp.ID, func() {
 		_, _ = dockerClient.ContainerRemove(context.WithoutCancel(ctx), resp.ID, volumehelper.RemoveOptions())

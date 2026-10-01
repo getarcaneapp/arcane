@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"uuid"
 
@@ -75,7 +76,9 @@ type AuthService struct {
 	// skips signature verification and the user/session lookups; revocation in
 	// this process purges entries, revocation by another process is visible
 	// once the TTL lapses.
-	tokenCache *hot.HotCache[string, verifiedTokenEntry]
+	tokenCache  *hot.HotCache[string, verifiedTokenEntry]
+	cacheGen    atomic.Uint64
+	cacheFillMu sync.Mutex
 }
 
 func NewAuthService(userService *user.UserService, settingsService *settings.SettingsService, eventService *event.EventService, sessionService *session.SessionService, roleService *role.RoleService, cfg *config.Config) *AuthService {
@@ -820,6 +823,7 @@ func (s *AuthService) cachedVerificationInternal(tokenHash string) (*common.User
 }
 
 func (s *AuthService) verifyTokenClaimsInternal(ctx context.Context, tokenHash string, claims *accessTokenClaims) (*common.User, string, error) {
+	gen := s.cacheGen.Load()
 	if claims.AppVersion != "" && claims.AppVersion != config.Version {
 		slog.InfoContext(ctx, "Token version mismatch detected", "tokenVersion", claims.AppVersion, "currentVersion", config.Version, "user", claims.Username)
 		return nil, "", common.ErrTokenVersionMismatch
@@ -847,7 +851,11 @@ func (s *AuthService) verifyTokenClaimsInternal(ctx context.Context, tokenHash s
 		return nil, "", err
 	}
 
-	s.tokenCache.Set(tokenHash, verifiedTokenEntry{User: *dbUser, SessionID: userSession.ID, TokenExpiresAt: claims.ExpiresAt, SessionExpiresAt: userSession.ExpiresAt})
+	s.cacheFillMu.Lock()
+	if s.cacheGen.Load() == gen {
+		s.tokenCache.Set(tokenHash, verifiedTokenEntry{User: *dbUser, SessionID: userSession.ID, TokenExpiresAt: claims.ExpiresAt, SessionExpiresAt: userSession.ExpiresAt})
+	}
+	s.cacheFillMu.Unlock()
 
 	return dbUser, userSession.ID, nil
 }
@@ -895,9 +903,16 @@ func (s *AuthService) InvalidateUserTokenCache(userID string) {
 	if s.tokenCache == nil || strings.TrimSpace(userID) == "" {
 		return
 	}
+	s.invalidateTokenCacheInternal(func(entry verifiedTokenEntry) bool { return entry.User.ID == userID })
+}
+
+func (s *AuthService) invalidateTokenCacheInternal(matches func(verifiedTokenEntry) bool) {
+	s.cacheFillMu.Lock()
+	defer s.cacheFillMu.Unlock()
+	s.cacheGen.Add(1)
 	keys := make([]string, 0)
 	s.tokenCache.Range(func(key string, entry verifiedTokenEntry) bool {
-		if entry.User.ID == userID {
+		if matches(entry) {
 			keys = append(keys, key)
 		}
 		return true
@@ -909,15 +924,11 @@ func (s *AuthService) RevokeSession(ctx context.Context, sessionID string) error
 	if s.sessionService == nil {
 		return nil
 	}
-	keys := make([]string, 0)
-	s.tokenCache.Range(func(key string, entry verifiedTokenEntry) bool {
-		if entry.SessionID == sessionID {
-			keys = append(keys, key)
-		}
-		return true
-	})
-	s.tokenCache.DeleteMany(keys)
-	return s.sessionService.RevokeSession(ctx, sessionID)
+	if err := s.sessionService.RevokeSession(ctx, sessionID); err != nil {
+		return err
+	}
+	s.invalidateTokenCacheInternal(func(entry verifiedTokenEntry) bool { return entry.SessionID == sessionID })
+	return nil
 }
 
 // LogoutAllOtherSessions revokes every active session for userID except
@@ -926,15 +937,13 @@ func (s *AuthService) LogoutAllOtherSessions(ctx context.Context, userID, curren
 	if s.sessionService == nil {
 		return nil
 	}
-	keys := make([]string, 0)
-	s.tokenCache.Range(func(key string, entry verifiedTokenEntry) bool {
-		if entry.User.ID == userID && entry.SessionID != currentSessionID {
-			keys = append(keys, key)
-		}
-		return true
+	if err := s.sessionService.RevokeAllUserSessionsExcept(ctx, userID, currentSessionID); err != nil {
+		return err
+	}
+	s.invalidateTokenCacheInternal(func(entry verifiedTokenEntry) bool {
+		return entry.User.ID == userID && entry.SessionID != currentSessionID
 	})
-	s.tokenCache.DeleteMany(keys)
-	return s.sessionService.RevokeAllUserSessionsExcept(ctx, userID, currentSessionID)
+	return nil
 }
 
 func (s *AuthService) createSessionAndTokensInternal(ctx context.Context, user *common.User, meta auth.SessionMeta) (*TokenPair, error) {

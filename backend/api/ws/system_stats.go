@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"runtime"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/coder/websocket"
@@ -37,30 +36,27 @@ const (
 // ============================================================================
 
 // checkRateLimitInternal checks and applies rate limiting for WebSocket connections.
-// Returns the counter and whether the connection should be allowed.
-func (h *WebSocketHandler) checkRateLimitInternal(clientIP string) (*int32, bool) {
-	connCount, _ := h.activeConnections.LoadOrStore(clientIP, new(int32))
-	count, ok := connCount.(*int32)
-	if !ok {
-		return nil, false
+func (h *WebSocketHandler) checkRateLimitInternal(clientIP string) bool {
+	h.activeConnectionsMu.Lock()
+	defer h.activeConnectionsMu.Unlock()
+	if h.activeConnections[clientIP] >= 5 {
+		return false
 	}
-
-	currentCount := atomic.AddInt32(count, 1)
-	if currentCount > 5 {
-		atomic.AddInt32(count, -1)
-		return nil, false
+	if h.activeConnections == nil {
+		h.activeConnections = make(map[string]int)
 	}
-	return count, true
+	h.activeConnections[clientIP]++
+	return true
 }
 
 // releaseRateLimitInternal decrements the connection counter and cleans up if needed.
-func (h *WebSocketHandler) releaseRateLimitInternal(clientIP string, count *int32) {
-	newCount := atomic.AddInt32(count, -1)
-	if newCount <= 0 {
-		// CompareAndDelete, not Delete: a plain delete removed whatever counter
-		// was stored for this IP, which after a racing reconnect is a live one —
-		// wiping its count and letting that IP exceed the limit.
-		h.activeConnections.CompareAndDelete(clientIP, count)
+func (h *WebSocketHandler) releaseRateLimitInternal(clientIP string) {
+	h.activeConnectionsMu.Lock()
+	defer h.activeConnectionsMu.Unlock()
+	if count := h.activeConnections[clientIP]; count > 1 {
+		h.activeConnections[clientIP] = count - 1
+	} else {
+		delete(h.activeConnections, clientIP)
 	}
 }
 
@@ -97,7 +93,7 @@ func (h *WebSocketHandler) acquireSystemStatsSamplerInternal(ctx context.Context
 		closeReady := sync.OnceFunc(func() {
 			close(ready)
 		})
-		if !h.initializeCPUCacheCtx(samplerCtx) {
+		if !h.initializeCPUCacheInternal(samplerCtx) {
 			closeReady()
 			return
 		}
@@ -362,8 +358,8 @@ func (h *WebSocketHandler) getGPUInfo(ctx context.Context) ([]systemtypes.GPUSta
 	return gpuData, len(gpuData)
 }
 
-// initializeCPUCacheCtx performs initial CPU sampling and returns early if the sampler is canceled.
-func (h *WebSocketHandler) initializeCPUCacheCtx(ctx context.Context) bool {
+// initializeCPUCacheInternal permits unavailable CPU samples but stops on cancellation.
+func (h *WebSocketHandler) initializeCPUCacheInternal(ctx context.Context) bool {
 	result := make(chan float64, 1)
 
 	go func() {
@@ -377,10 +373,12 @@ func (h *WebSocketHandler) initializeCPUCacheCtx(ctx context.Context) bool {
 	case <-ctx.Done():
 		return false
 	case val, ok := <-result:
-		if !ok || ctx.Err() != nil {
+		if ctx.Err() != nil {
 			return false
 		}
-		h.cpuCache.Store(val)
+		if ok {
+			h.cpuCache.Store(val)
+		}
 		return true
 	}
 }
@@ -424,11 +422,10 @@ func (h *WebSocketHandler) getCachedCgroupLimitsInternal() *cgroup.Limits {
 func (h *WebSocketHandler) SystemStats(c *echo.Context) error {
 	clientIP := c.RealIP()
 
-	count, allowed := h.checkRateLimitInternal(clientIP)
-	if !allowed {
+	if !h.checkRateLimitInternal(clientIP) {
 		return c.JSON(http.StatusTooManyRequests, map[string]any{"success": false, "error": "Too many concurrent stats connections from this IP"})
 	}
-	defer h.releaseRateLimitInternal(clientIP, count)
+	defer h.releaseRateLimitInternal(clientIP)
 
 	conn, unregister, ok := h.acceptWSInternal(c, systemtypes.WSKindSystemStats, "")
 	if !ok {

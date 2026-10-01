@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	cerrdefs "github.com/containerd/errdefs"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
@@ -175,7 +176,11 @@ func (s *VolumeService) acquireVolumeHelperInternal(ctx context.Context, volumeN
 // creation itself can pull an image, so it must not run under helperMu.
 func (s *VolumeService) resolveHelperInternal(ctx context.Context, dockerClient *client.Client, volumeName string) (string, error) {
 	resultCh := s.helperGroup.DoChan(volumeName, func() (any, error) {
-		if containerID, ok := s.getReusableHelperInternal(ctx, dockerClient, volumeName).Get(); ok {
+		helper, err := s.getReusableHelperInternal(ctx, dockerClient, volumeName)
+		if err != nil {
+			return nil, err
+		}
+		if containerID, ok := helper.Get(); ok {
 			return containerID, nil
 		}
 
@@ -274,8 +279,13 @@ func (s *VolumeService) startHelperContainerInternal(ctx context.Context, docker
 	}
 
 	if _, err := dockerClient.ContainerStart(ctx, resp.ID, client.ContainerStartOptions{}); err != nil {
-		_, _ = dockerClient.ContainerRemove(ctx, resp.ID, volumehelper.RemoveOptions())
-		return "", nil, fmt.Errorf("failed to start temp container: %w", err)
+		startErr := fmt.Errorf("failed to start temp container: %w", err)
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeouts.DefaultDockerAPI)
+		defer cancel()
+		if _, cleanupErr := dockerClient.ContainerRemove(cleanupCtx, resp.ID, volumehelper.RemoveOptions()); cleanupErr != nil && !cerrdefs.IsNotFound(cleanupErr) {
+			return "", nil, errors.Join(startErr, fmt.Errorf("failed to remove temp container after start failure: %w", cleanupErr))
+		}
+		return "", nil, startErr
 	}
 
 	cleanup := func() {
@@ -285,25 +295,38 @@ func (s *VolumeService) startHelperContainerInternal(ctx context.Context, docker
 	return resp.ID, cleanup, nil
 }
 
-func (s *VolumeService) getReusableHelperInternal(ctx context.Context, dockerClient *client.Client, volumeName string) mo.Option[string] {
+func (s *VolumeService) getReusableHelperInternal(ctx context.Context, dockerClient *client.Client, volumeName string) (mo.Option[string], error) {
 	s.helperMu.Lock()
 	helper := s.helperByVolume[volumeName]
 	s.helperMu.Unlock()
 	if helper == nil || helper.id == "" {
-		return mo.None[string]()
+		return mo.None[string](), nil
 	}
 
 	inspect, err := compat.ContainerInspectWithCompatibility(ctx, dockerClient, helper.id, client.ContainerInspectOptions{})
+	if err != nil && !cerrdefs.IsNotFound(err) {
+		return mo.None[string](), fmt.Errorf("failed to inspect volume helper container: %w", err)
+	}
+	if err == nil && (inspect.Container.State == nil || !inspect.Container.State.Running) {
+		removeCtx, cancel := context.WithTimeout(ctx, timeouts.DefaultDockerAPI)
+		_, removeErr := dockerClient.ContainerRemove(removeCtx, helper.id, volumehelper.RemoveOptions())
+		cancel()
+		if removeErr != nil && !cerrdefs.IsNotFound(removeErr) {
+			return mo.None[string](), fmt.Errorf("failed to remove stopped volume helper container: %w", removeErr)
+		}
+	}
 	if err != nil || inspect.Container.State == nil || !inspect.Container.State.Running {
 		s.helperMu.Lock()
-		delete(s.helperByVolume, volumeName)
+		if s.helperByVolume[volumeName] == helper {
+			delete(s.helperByVolume, volumeName)
+		}
 		s.helperMu.Unlock()
-		return mo.None[string]()
+		return mo.None[string](), nil
 	}
 
 	s.touchHelperInternal(volumeName)
 
-	return mo.Some(helper.id)
+	return mo.Some(helper.id), nil
 }
 
 // touchHelperInternal records that the helper for volumeName just serviced a

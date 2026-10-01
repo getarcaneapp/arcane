@@ -151,7 +151,7 @@ services:
 		Enabled: true,
 	}
 
-	templates, err := service.fetchRegistryTemplates(context.Background(), registry)
+	templates, err := service.fetchRegistryTemplatesInternal(context.Background(), registry, service.remoteGeneration.Load())
 	require.NoError(t, err)
 	require.Len(t, templates, 2)
 	require.NotNil(t, templates[0].Metadata)
@@ -160,7 +160,7 @@ services:
 	require.Nil(t, templates[1].Metadata.IconURL)
 	require.EqualValues(t, 1, composeHits.Load())
 
-	cachedTemplates, err := service.fetchRegistryTemplates(context.Background(), registry)
+	cachedTemplates, err := service.fetchRegistryTemplatesInternal(context.Background(), registry, service.remoteGeneration.Load())
 	require.NoError(t, err)
 	require.Len(t, cachedTemplates, 2)
 	require.NotNil(t, cachedTemplates[0].Metadata)
@@ -259,7 +259,7 @@ func TestGetAllTemplatesPaginated_FiltersByType(t *testing.T) {
 	require.NoError(t, db.WithContext(context.Background()).Create(&localTemplates).Error)
 
 	service := NewTemplateService(context.Background(), db, http.DefaultClient, nil)
-	service.remoteCache.Set(struct{}{}, []ComposeTemplate{
+	service.remoteCache.Set(service.remoteGeneration.Load(), []ComposeTemplate{
 		{
 			ID: "remote-one", CreatedAt: now, UpdatedAt: &now,
 			Name:        "Remote One",

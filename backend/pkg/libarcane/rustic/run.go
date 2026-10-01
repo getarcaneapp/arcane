@@ -5,8 +5,12 @@ import (
 	"cmp"
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
+	"time"
 
+	cerrdefs "github.com/containerd/errdefs"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
 	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/api/types/container"
@@ -49,7 +53,19 @@ func Run(ctx context.Context, dockerClient *client.Client, password string, comm
 		return "", fmt.Errorf("failed to create Rustic container: %w", err)
 	}
 	defer func() {
-		_, _ = dockerClient.ContainerRemove(context.WithoutCancel(ctx), created.ID, volumehelper.RemoveOptions())
+		// Keep caller locks and stopped consumers protected until removal is confirmed.
+		// Request cancellation cannot prove that Rustic has stopped writing.
+		cleanupCtx := context.WithoutCancel(ctx)
+		for {
+			attemptCtx, cancel := context.WithTimeout(cleanupCtx, timeouts.DefaultDockerAPI)
+			_, err := dockerClient.ContainerRemove(attemptCtx, created.ID, volumehelper.RemoveOptions())
+			cancel()
+			if err == nil || cerrdefs.IsNotFound(err) {
+				return
+			}
+			slog.WarnContext(cleanupCtx, "failed to remove Rustic container, retrying", "container_id", created.ID, "error", err)
+			time.Sleep(5 * time.Second)
+		}
 	}()
 	if _, err := dockerClient.ContainerStart(ctx, created.ID, client.ContainerStartOptions{}); err != nil {
 		return "", fmt.Errorf("failed to start Rustic container: %w", err)

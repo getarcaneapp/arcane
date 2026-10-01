@@ -383,6 +383,11 @@ cyphar.com/go-pathrs v0.2.4/go.mod h1:y8f1EMG7r+hCuFf/rXsKqMJrJAUoADZGNh5/vZPKcG
 cyphar.com/go-pathrs v0.2.5 h1:SnX9FBvnoyn3lUs1dkMgZ52bAETpirNu3FTRh5HlRik=
 cyphar.com/go-pathrs v0.2.5/go.mod h1:y8f1EMG7r+hCuFf/rXsKqMJrJAUoADZGNh5/vZPKcGc=
 dmitri.shuralyov.com/gpu/mtl v0.0.0-20190408044501-666a987793e9 h1:VpgP7xuJadIUuKccphEpTJnWhS2jkQyMt6Y7pJCD7fY=
+emperror.dev/emperror v0.33.0 h1:urYop6KLYxKVpZbt9ADC4eVG3WDnJFE6Ye3j07wUu/I=
+emperror.dev/emperror v0.33.0/go.mod h1:CeOIKPcppTE8wn+3xBNcdzdHMMIP77sLOHS0Ik56m+w=
+emperror.dev/errors v0.8.0/go.mod h1:YcRvLPh626Ubn2xqtoprejnA5nFha+TJ+2vew48kWuE=
+emperror.dev/errors v0.8.1 h1:UavXZ5cSX/4u9iyvH6aDcuGkVjeexUGJ7Ij7G4VfQT0=
+emperror.dev/errors v0.8.1/go.mod h1:YcRvLPh626Ubn2xqtoprejnA5nFha+TJ+2vew48kWuE=
 filippo.io/edwards25519 v1.1.0 h1:FNf4tywRC1HmFuKW5xopWpigGjJKiJSV0Cqo0cJWDaA=
 filippo.io/edwards25519 v1.1.0/go.mod h1:BxyFTGdWcka3PhytdK4V28tE5sGfRvvvRV7EaN4VDT4=
 filippo.io/edwards25519 v1.2.0 h1:crnVqOiS4jqYleHd9vaKZ+HKtHfllngJIiOpNpoJsjo=
@@ -2763,8 +2768,6 @@ go.getarcane.app/kit v0.1.0 h1:82oO/i1fS4xbzAG4Xc8ALOWOwW4kwQYDdBpVHE19QkI=
 go.getarcane.app/kit v0.1.0/go.mod h1:oiH4hLowxfQYFtmldyk/y79XYBHYfzgd86MrSQS9UEg=
 go.getarcane.app/kit v0.2.0 h1:3PPHo5nHuns1vjqmCMFPFdnmbH/qQOserONCba/gBi4=
 go.getarcane.app/kit v0.2.0/go.mod h1:TGqQCbAJs3ldzkFncXZ93wTVSDhAMQlqyNdVO2CNjIk=
-go.getarcane.app/kit v0.3.2 h1:L7CAvGawDg70K/vVxDeM2xZBCHqwuthc9B5OwQwL0Hc=
-go.getarcane.app/kit v0.3.2/go.mod h1:KTjbXTEeC3i9e1QxZowDJWjFyABlD6UF3ISVtoIZs10=
 go.getarcane.app/streams v0.4.0 h1:MtBX1SVgt3nrcRNr5SYAvckGp9a5qeSjMTw/LAGwlzk=
 go.getarcane.app/streams v0.4.0/go.mod h1:LHMKblQvsL1nqKh/Y+KgQbwFSMI2I7bs9u8ZwZqzjnQ=
 go.getarcane.app/streams v0.4.2 h1:+xrRHiOt25cLbFTDpPLzv7eFkk7biwDz5YjBXkbWUPw=
@@ -2936,6 +2939,7 @@ go.opentelemetry.io/proto/otlp v1.5.0/go.mod h1:keN8WnHxOy8PG0rQZjJJ5A2ebUoafqWp
 go.opentelemetry.io/proto/otlp v1.7.1/go.mod h1:b2rVh6rfI/s2pHWNlB7ILJcRALpcNDzKhACevjI+ZnE=
 go.opentelemetry.io/proto/otlp v1.9.0/go.mod h1:xE+Cx5E/eEHw+ISFkwPLwCZefwVjY+pqKg1qcK03+/4=
 go.opentelemetry.io/proto/otlp v1.10.0/go.mod h1:/CV4QoCR/S9yaPj8utp3lvQPoqMtxXdzn7ozvvozVqk=
+go.uber.org/atomic v1.7.0/go.mod h1:fEN4uk6kAWBTFdckzkM89CLk9XfWZrxpCo0nPH17wJc=
 go.uber.org/atomic v1.9.0 h1:ECmE8Bn/WFTYwEW/bpKD3M8VtR/zQVbavAoalC1PYyE=
 go.uber.org/atomic v1.9.0/go.mod h1:fEN4uk6kAWBTFdckzkM89CLk9XfWZrxpCo0nPH17wJc=
 go.uber.org/atomic v1.11.0 h1:ZvwS0R+56ePWxUNi+Atn9dWONBPp/AUETXlHW0DxSjE=
@@ -2943,6 +2947,7 @@ go.uber.org/atomic v1.11.0/go.mod h1:LUxbIzbOniOlMKjJjyPfpl4v+PKK2cNJn91OQbhoJI0
 go.uber.org/automaxprocs v1.6.0 h1:O3y2/QNTOdbF+e/dpXNNW7Rx2hZ4sTIPyybbxyNqTUs=
 go.uber.org/automaxprocs v1.6.0/go.mod h1:ifeIMSnPZuznNm6jmdzmU3/bfk01Fe2fotchwEFJ8r8=
 go.uber.org/goleak v1.1.12/go.mod h1:cwTWslyiVhfpKIDGSZEM2HlOvcqm+tG4zioyIeLoqMQ=
+go.uber.org/multierr v1.6.0/go.mod h1:cdWPpRnG4AhwMwsgIHip0KRBQjJy5kYEpYjJxpXp9iU=
 go.uber.org/multierr v1.8.0 h1:dg6GjLku4EH+249NNmoIciG9N/jURbDG+pFlTkhzIC8=
 go.uber.org/multierr v1.8.0/go.mod h1:7EAYxJLBy9rStEaz58O2t4Uvip6FSURkq8/ppBp95ak=
 go.uber.org/multierr v1.9.0 h1:7fIwc/ZtS0q++VgcfqFDxSBZVv/Xo49/SYnDFupUwlI=

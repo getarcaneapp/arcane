@@ -63,9 +63,15 @@ func ExecInContainer(ctx context.Context, dockerClient *client.Client, container
 		return 0, fmt.Errorf("failed to attach to exec: %w", err)
 	}
 	defer attachResp.Close()
+	stopClose := context.AfterFunc(ctx, attachResp.Close)
+	defer stopClose()
 
-	if err := WaitStdCopy(StartStdCopy(attachResp.Reader, stdout, stderr)); err != nil {
+	copyErr := WaitStdCopy(StartStdCopy(attachResp.Reader, stdout, stderr))
+	if err := ctx.Err(); err != nil {
 		return 0, fmt.Errorf("failed to read exec output: %w", err)
+	}
+	if copyErr != nil {
+		return 0, fmt.Errorf("failed to read exec output: %w", copyErr)
 	}
 
 	inspect, err := dockerClient.ExecInspect(ctx, execResp.ID, client.ExecInspectOptions{})

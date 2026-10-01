@@ -102,9 +102,7 @@ func (h *WebSocketHandler) runContainerStatsHubInternal(containerID string, hub 
 			if cleanupTimer != timer {
 				return
 			}
-			if existing, ok := h.containerStatsHubs.Load(containerID); ok && existing == hub {
-				h.containerStatsHubs.Delete(containerID)
-			}
+			h.containerStatsHubs.CompareAndDelete(containerID, hub)
 			slog.Debug("container stats hub idle, cleaning up upstream stream", "containerID", containerID)
 			cleanupTimer = nil
 			cancel()
@@ -128,7 +126,9 @@ func (h *WebSocketHandler) runContainerStatsHubInternal(containerID string, hub 
 		defer close(statsChan)
 
 		err := h.containerService.StreamStats(ctx, containerID, statsChan)
+		h.containerStatsHubs.CompareAndDelete(containerID, hub)
 		if err == nil || errors.Is(err, context.Canceled) || ctx.Err() != nil {
+			cancel()
 			return
 		}
 
@@ -143,7 +143,6 @@ func (h *WebSocketHandler) runContainerStatsHubInternal(containerID string, hub 
 		}); marshalErr == nil {
 			hub.Broadcast(b)
 		}
-		h.containerStatsHubs.CompareAndDelete(containerID, hub)
 
 		// Cancelling immediately would race hub.Run between ctx.Done and the
 		// queued error frame, dropping the very message clients need. Give the
