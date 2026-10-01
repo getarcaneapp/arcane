@@ -37,6 +37,7 @@ type Runtime struct {
 	started       bool
 	runError      error
 	address       string
+	actorNames    sync.Map
 }
 
 type registrationInternal struct {
@@ -62,12 +63,15 @@ func New(databaseURL, encryptionKey, instanceID, port string, options ...local.H
 		service: &actor.Service{}, ready: make(chan struct{}), done: make(chan struct{}), address: address,
 		options: []local.HostOption{
 			local.WithAddress(address), providerOption,
-			local.WithLogger(slog.Default().With("scope", "actor-host")),
 			local.WithMaxHosts(1), local.WithHostHealthCheckDeadline(90 * time.Second),
 			local.WithShutdownGracePeriod(10 * time.Second), local.WithAlarmsPollInterval(time.Second),
 			local.WithAlarmsFetchAheadInterval(30 * time.Second), local.WithAlarmsLeaseDuration(180 * time.Second),
 		},
 	}
+	runtime.options = append(runtime.options, local.WithLogger(slog.New(&actorLogHandlerInternal{
+		Handler: slog.Default().With("scope", "actor-host").Handler(),
+		names:   &runtime.actorNames,
+	})))
 	if encryptionKey != "" && instanceID != "" {
 		if err := runtime.ConfigureIdentity(encryptionKey, instanceID); err != nil {
 			return nil, err

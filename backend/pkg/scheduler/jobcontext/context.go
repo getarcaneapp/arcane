@@ -40,5 +40,5 @@ func ConfirmedTarget(run schedulertypes.Run, targetID string) schedulertypes.Out
 			return schedulertypes.Outcome{Status: schedulertypes.Succeeded, ActivityID: target.ActivityID, Targets: run.Outcome.Targets}
 		}
 	}
-	return schedulertypes.Outcome{Status: schedulertypes.NeedsAttention, Message: "The interrupted operation has no confirmed completion", Targets: run.Outcome.Targets}
+	return schedulertypes.Outcome{Status: schedulertypes.Failed, Message: "The interrupted operation has no confirmed completion", Targets: run.Outcome.Targets}
 }

@@ -10,14 +10,15 @@ import (
 type RunStatus string
 
 const (
-	Queued         RunStatus = "queued"
-	Waiting        RunStatus = "waiting"
-	Running        RunStatus = "running"
-	Retrying       RunStatus = "retrying"
-	Succeeded      RunStatus = "succeeded"
-	Partial        RunStatus = "partial"
-	Skipped        RunStatus = "skipped"
-	Failed         RunStatus = "failed"
+	Queued    RunStatus = "queued"
+	Waiting   RunStatus = "waiting"
+	Running   RunStatus = "running"
+	Retrying  RunStatus = "retrying"
+	Succeeded RunStatus = "succeeded"
+	Partial   RunStatus = "partial"
+	Skipped   RunStatus = "skipped"
+	Failed    RunStatus = "failed"
+	// NeedsAttention preserves domain recovery evidence and legacy job outcomes.
 	NeedsAttention RunStatus = "needs_attention"
 	Canceled       RunStatus = "canceled"
 )
@@ -43,6 +44,9 @@ type Outcome struct {
 }
 
 type Request struct {
+	// ObservedAgentRun adopts existing agent work without another submission.
+	// TODO(v3): remove legacy-agent adoption.
+	ObservedAgentRun *Run   `json:"-"`
 	RunID            string `json:"runId,omitempty"`
 	JobID            string `json:"jobId"`
 	EnvironmentID    string `json:"environmentId"`
@@ -58,6 +62,8 @@ type Attempt struct {
 	Outcome    Outcome    `json:"outcome"`
 }
 
+// RunResolution preserves legacy resolution history.
+// TODO(v3): remove this deprecated mixed-version compatibility contract.
 type RunResolution struct {
 	ResolvedBy string    `json:"resolvedBy"`
 	ResolvedAt time.Time `json:"resolvedAt"`

@@ -130,7 +130,10 @@ func (js *jobSchedulerInternal) StartScheduler() error {
 		return err
 	}
 	for _, record := range records {
-		if record.EnvironmentID == "0" && record.Schedule != "" && !js.HasJob(record.JobID) {
+		js.mu.RLock()
+		_, watching := js.watchers[record.JobID]
+		js.mu.RUnlock()
+		if record.EnvironmentID == "0" && record.Schedule != "" && !js.HasJob(record.JobID) && !watching {
 			if err := js.coordinator.Checkpoint(js.context, record.JobID, "", time.Time{}); err != nil {
 				return err
 			}

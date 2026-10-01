@@ -16,6 +16,7 @@ import (
 	"uuid"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/francis"
 	st "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	"github.com/italypaleale/francis/actor"
 	kit "go.getarcane.app/kit/pkg"
@@ -25,6 +26,7 @@ import (
 type Coordinator struct {
 	store        *kv.KVService
 	service      *actor.Service
+	runtime      *francis.Runtime
 	owner        string
 	mu           sync.Mutex
 	checkpointed map[string]bool
@@ -64,18 +66,49 @@ func (q *Coordinator) Submit(ctx context.Context, request st.Request) (st.Run, e
 		return st.Run{}, errors.New("invalid run ID")
 	}
 	now := time.Now().UTC()
-	result := st.Run{ID: request.RunID, JobID: request.JobID, EnvironmentID: request.EnvironmentID, Trigger: request.Trigger, RequestedBy: request.RequestedBy, RequestedWithKey: request.RequestedWithKey, RemoteAccepted: request.Trigger == "remote", Status: st.Queued, CreatedAt: now, UpdatedAt: now}
+	observed := st.Run{CreatedAt: now}
+	var remoteOutcome *st.Outcome
+	if agentRun := request.ObservedAgentRun; agentRun != nil {
+		switch {
+		case request.EnvironmentID == "0":
+			return st.Run{}, errors.New("observed agent run requires a remote environment")
+		case agentRun.EnvironmentID != "0":
+			return st.Run{}, errors.New("observed agent run must belong to the agent's local environment")
+		case agentRun.ID != request.RunID || agentRun.JobID != request.JobID:
+			return st.Run{}, errors.New("observed agent run does not match the requested run and job")
+		case agentRun.Status != st.NeedsAttention:
+			return st.Run{}, errors.New("observed agent run is not awaiting legacy resolution")
+		}
+		observed = *agentRun
+		remoteOutcome = new(observed.Outcome)
+		remoteOutcome.Status = observed.Status
+	}
+	result := st.Run{
+		ID:                      request.RunID,
+		JobID:                   request.JobID,
+		EnvironmentID:           request.EnvironmentID,
+		Trigger:                 request.Trigger,
+		RequestedBy:             request.RequestedBy,
+		RequestedWithKey:        request.RequestedWithKey,
+		Status:                  st.Queued,
+		CreatedAt:               observed.CreatedAt,
+		UpdatedAt:               now,
+		StartedAt:               observed.StartedAt,
+		FinishedAt:              observed.FinishedAt,
+		ActivityID:              observed.ActivityID,
+		Outcome:                 observed.Outcome,
+		RemoteAccepted:          request.Trigger == "remote" || request.ObservedAgentRun != nil,
+		RemoteDeliveryAttempted: request.ObservedAgentRun != nil,
+		RemoteAttemptCount:      observed.AttemptCount,
+		RemoteOutcome:           remoteOutcome,
+	}
 	q.associateActivityInternal(&result)
 	err := q.mutateInternal(ctx, request.EnvironmentID, request.JobID, func(record *st.QueueRecord) error {
 		if request.Trigger == "scheduled" || request.Trigger == "recovery" {
 			record.LastEnqueuedAt = now
 		}
 		for _, existing := range record.Runs {
-			if existing.ID == request.RunID {
-				result = existing
-				return nil
-			}
-			if request.Trigger != "manual" && request.Trigger != "remote" && existing.Trigger != "manual" && existing.Trigger != "remote" && !existing.Status.Terminal() && existing.Status != st.Running && existing.Status != st.NeedsAttention {
+			if existing.ID == request.RunID || coalescesPendingInternal(request, existing) {
 				result = existing
 				return nil
 			}
@@ -99,6 +132,24 @@ func (q *Coordinator) signalInternal() {
 	select {
 	case q.wake <- struct{}{}:
 	default:
+	}
+}
+
+// Manual and remote work never joins another run. Scheduled and recovery work
+// joins an existing run only while it is still waiting to start.
+func coalescesPendingInternal(request st.Request, existing st.Run) bool {
+	if request.ObservedAgentRun != nil || separateTriggerInternal(request.Trigger) || separateTriggerInternal(existing.Trigger) {
+		return false
+	}
+	return existing.Status == st.Queued || existing.Status == st.Waiting || existing.Status == st.Retrying
+}
+
+func separateTriggerInternal(trigger string) bool {
+	switch trigger {
+	case "manual", "remote":
+		return true
+	default:
+		return false
 	}
 }
 
@@ -167,10 +218,11 @@ func (q *Coordinator) Start(ctx context.Context) error {
 	}
 	for _, record := range records {
 		for _, run := range record.Runs {
-			if q.observer != nil {
-				if err := q.UpdateRun(ctx, run, func(*st.Run) error { return nil }); err != nil {
-					return err
-				}
+			if err := q.UpdateRun(ctx, run, func(current *st.Run) error {
+				normalizeLegacyRunInternal(current)
+				return nil
+			}); err != nil {
+				return err
 			}
 		}
 	}
@@ -270,7 +322,7 @@ func (q *Coordinator) persistOutcomeInternal(ctx context.Context, run st.Run, ou
 			} else {
 				current.NextAttempt = nil
 			}
-			if outcome.Status.Terminal() {
+			if outcome.Status.Terminal() && (current.EnvironmentID == "0" || current.FinishedAt == nil) {
 				current.FinishedAt = &now
 			}
 			if len(current.Attempts) > 0 {
@@ -297,7 +349,7 @@ func (q *Coordinator) persistOutcomeInternal(ctx context.Context, run st.Run, ou
 func (q *Coordinator) invokeInternal(ctx context.Context, run st.Run, reconcile bool) (outcome st.Outcome, err error) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
-			outcome = st.Outcome{Status: st.NeedsAttention, Message: "Job panicked; inspect logs before retrying"}
+			outcome = st.Outcome{Status: st.Failed, Message: "Job panicked; inspect logs before retrying"}
 			err = fmt.Errorf("job panic: %v", recovered)
 			slog.ErrorContext(ctx, "Job panicked", "runId", run.ID, "error", err)
 		}
@@ -423,7 +475,8 @@ func mergeTargetProgressInternal(previous, outcome st.Outcome) st.Outcome {
 
 func (q *Coordinator) Active() bool { return q.enabled.Load() }
 
-// Resolve releases reviewed, inactive work without discarding its execution evidence.
+// Resolve releases legacy reviewed work without discarding execution evidence.
+// TODO(v3): remove this deprecated mixed-version compatibility contract.
 func (q *Coordinator) Resolve(ctx context.Context, environmentID, jobID, runID, resolvedBy string) (st.Run, error) {
 	run, err := q.Get(ctx, environmentID, jobID, runID)
 	if err != nil {

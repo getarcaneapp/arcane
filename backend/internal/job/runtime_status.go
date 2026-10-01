@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/types/v2/jobschedule"
 	st "github.com/getarcaneapp/arcane/types/v2/scheduler"
 )
@@ -132,26 +133,52 @@ func dynamicJobStatusInternal(ctx context.Context, runtime st.JobScheduler, job 
 }
 
 func applyRunStatusInternal(status *jobschedule.JobStatus, runs []st.Run) {
-	var errorAt time.Time
-	if status.LastError != "" {
-		for _, run := range []*st.Run{status.CurrentRun, status.LastRun} {
-			if run != nil && run.UpdatedAt.After(errorAt) {
-				errorAt = run.UpdatedAt
+	latest := make(map[string]st.Run, len(runs)+2)
+	for _, run := range []*st.Run{status.CurrentRun, status.LastRun} {
+		if run != nil {
+			if previous, found := latest[run.ID]; !found || !run.UpdatedAt.Before(previous.UpdatedAt) {
+				latest[run.ID] = *run
 			}
 		}
 	}
-	if current := status.CurrentRun; current != nil && current.Status == st.NeedsAttention {
-		status.CurrentRun = nil
-		updateLatestRunInternal(status, *current)
-	}
 	for _, run := range runs {
-		updateLatestRunInternal(status, run)
-		updateLastSuccessInternal(status, run)
-		if run.UpdatedAt.After(errorAt) && run.Outcome.Message != "" && runHasErrorInternal(run.Status) {
-			status.LastError = run.Outcome.Message
-			errorAt = run.UpdatedAt
+		if previous, found := latest[run.ID]; !found || !run.UpdatedAt.Before(previous.UpdatedAt) {
+			latest[run.ID] = run
 		}
 	}
+	status.CurrentRun = nil
+	status.LastRun = nil
+	status.LastError = ""
+	for _, run := range latest {
+		run = projectRunOutcomeInternal(run)
+		updateLatestRunInternal(status, run)
+		updateLastSuccessInternal(status, run)
+	}
+	run := status.CurrentRun
+	if last := status.LastRun; last != nil {
+		if run == nil || runExecutionTimeInternal(*last).After(runExecutionTimeInternal(*run)) {
+			run = last
+		}
+	}
+	if run != nil && runHasErrorInternal(run.Status) {
+		status.LastError = run.Outcome.Message
+	}
+}
+
+func projectRunOutcomeInternal(run st.Run) st.Run {
+	// Delivery reconciliation must not hide a failure already reported by the agent.
+	if run.RemoteOutcome != nil && run.RemoteOutcome.Status == st.NeedsAttention && !run.RemoteRetryRequested {
+		run.Status = st.Failed
+		run.Outcome = *run.RemoteOutcome
+	}
+	automaticResolution := run.Status == st.Canceled && run.Resolution != nil && run.Resolution.ResolvedBy == common.SystemUser.Username
+	if run.Status == st.NeedsAttention || automaticResolution {
+		run.Status = st.Failed
+	}
+	if run.Status == st.Failed {
+		run.Outcome.Status = st.Failed
+	}
+	return run
 }
 
 func updateLatestRunInternal(status *jobschedule.JobStatus, run st.Run) {
@@ -161,20 +188,33 @@ func updateLatestRunInternal(status *jobschedule.JobStatus, run st.Run) {
 		}
 		return
 	}
-	current := status.CurrentRun
-	if current != nil && current.ID == run.ID && !run.UpdatedAt.Before(current.UpdatedAt) && (run.Status == st.NeedsAttention || !run.RemoteAccepted || run.RemoteSettled) {
-		status.CurrentRun = nil
-	}
-	if status.LastRun == nil || run.UpdatedAt.After(status.LastRun.UpdatedAt) {
+	if status.LastRun == nil || runExecutionTimeInternal(run).After(runExecutionTimeInternal(*status.LastRun)) ||
+		(runExecutionTimeInternal(run).Equal(runExecutionTimeInternal(*status.LastRun)) && run.ID > status.LastRun.ID) {
 		status.LastRun = new(run)
 	}
+}
+
+func runExecutionTimeInternal(run st.Run) time.Time {
+	startedAt := run.CreatedAt
+	if run.StartedAt != nil && run.StartedAt.After(startedAt) {
+		startedAt = *run.StartedAt
+	}
+	// Manager delivery attempts poll the agent; they are not job executions.
+	if run.EnvironmentID == "0" || !run.RemoteAccepted {
+		for _, attempt := range run.Attempts {
+			if attempt.StartedAt.After(startedAt) {
+				startedAt = attempt.StartedAt
+			}
+		}
+	}
+	return startedAt
 }
 
 func updateLastSuccessInternal(status *jobschedule.JobStatus, run st.Run) {
 	if run.Status != st.Succeeded {
 		return
 	}
-	succeededAt := run.UpdatedAt
+	succeededAt := runExecutionTimeInternal(run)
 	if run.FinishedAt != nil {
 		succeededAt = *run.FinishedAt
 	}
@@ -185,9 +225,9 @@ func updateLastSuccessInternal(status *jobschedule.JobStatus, run st.Run) {
 
 func runHasErrorInternal(status st.RunStatus) bool {
 	switch status {
-	case st.Failed, st.Partial, st.NeedsAttention, st.Retrying, st.Waiting:
+	case st.Failed, st.Partial, st.NeedsAttention, st.Retrying:
 		return true
-	case st.Queued, st.Running, st.Succeeded, st.Skipped, st.Canceled:
+	case st.Queued, st.Running, st.Waiting, st.Succeeded, st.Skipped, st.Canceled:
 		return false
 	default:
 		return false
@@ -203,7 +243,10 @@ func preferCurrentRunInternal(candidate, current st.Run) bool {
 	if candidatePriority != currentPriority {
 		return candidatePriority < currentPriority
 	}
-	return candidate.CreatedAt.Before(current.CreatedAt)
+	if candidate.CreatedAt.Equal(current.CreatedAt) {
+		return candidate.ID > current.ID
+	}
+	return candidate.CreatedAt.After(current.CreatedAt)
 }
 
 func currentRunPriorityInternal(status st.RunStatus) int {

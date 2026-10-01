@@ -16,6 +16,8 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/container"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/gitops"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/job"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
@@ -26,6 +28,7 @@ import (
 	francistest "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/francis/testing"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/proto/tunnel/v1"
+	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	"github.com/labstack/echo/v5"
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/assert"
@@ -396,17 +399,35 @@ func TestJobSchedulerStopCancelsItsPrivateContextInternal(t *testing.T) {
 	runtime := francistest.New(t)
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&kv.KVEntry{}))
+	require.NoError(t, db.AutoMigrate(&kv.KVEntry{}, &environment.Environment{}, &project.GitOpsSync{}))
 	sqlDB, err := db.DB()
 	require.NoError(t, err)
 	sqlDB.SetMaxOpenConns(1)
 	t.Cleanup(func() { _ = sqlDB.Close() })
 	coordinator := runs.New(kv.NewKVService(&database.DB{DB: db}), runtime.Service(), time.UTC)
 	require.NoError(t, coordinator.Register(runtime))
-	francistest.Start(t, runtime)
+	admission := runs.NewAdmission(runtime.Service(), t.Name())
+	require.NoError(t, admission.Register(runtime))
+	lifecycle.Append(fx.Hook{
+		OnStart: func(ctx context.Context) error { return runtime.Start(ctx, appCtx, nil) },
+		OnStop:  runtime.Stop,
+	})
+	t.Cleanup(func() { lifecycle.RequireStop() })
 	jobService := job.NewJobService(&database.DB{DB: db}, nil, &config.Config{}, coordinator, nil, nil, nil)
-	jobScheduler, err := newJobScheduler(appCtx, lifecycle, &config.Config{}, coordinator, nil, nil, nil, nil, jobService, nil, nil, nil, nil, nil)
+	gitopsSync := gitops.NewGitOpsSyncService(&database.DB{DB: db}, nil, nil, nil, nil, nil)
+	require.NoError(t, db.Create(&environment.Environment{ID: "0", Name: "Local", Enabled: true}).Error)
+	require.NoError(t, db.Create(&project.GitOpsSync{ID: "overdue", EnvironmentID: "0", AutoSync: true, SyncInterval: 1}).Error)
+	jobScheduler, err := newJobScheduler(appCtx, lifecycle, &config.Config{}, coordinator, admission, nil, nil, nil, jobService, nil, nil, nil, nil, gitopsSync)
 	require.NoError(t, err)
+	require.NoError(t, registerDynamicJobs(dynamicJobsParams{
+		AppCtx: appCtx, Config: &config.Config{}, Scheduler: jobScheduler,
+		GitOpsSync: gitopsSync, Admission: admission,
+	}))
+	executed := make(chan schedulertypes.Run, 1)
+	coordinator.SetExecutor(func(_ context.Context, run schedulertypes.Run) (schedulertypes.Outcome, error) {
+		executed <- run
+		return schedulertypes.Outcome{Status: schedulertypes.Succeeded}, nil
+	}, nil)
 	watcher := &blockingBusWatcherInternal{
 		started: make(chan struct{}),
 		stopped: make(chan struct{}),
@@ -414,6 +435,14 @@ func TestJobSchedulerStopCancelsItsPrivateContextInternal(t *testing.T) {
 	require.NoError(t, jobScheduler.RegisterBusWatcher(watcher, false))
 
 	lifecycle.RequireStart()
+	select {
+	case run := <-executed:
+		require.Equal(t, "gitops-sync:overdue", run.JobID)
+		require.Equal(t, "startup", run.Trigger)
+		require.True(t, jobScheduler.HasJob(run.JobID))
+	case <-time.After(5 * time.Second):
+		require.FailNow(t, "overdue GitOps startup job did not execute through Francis")
+	}
 	select {
 	case <-watcher.started:
 	case <-time.After(time.Second):

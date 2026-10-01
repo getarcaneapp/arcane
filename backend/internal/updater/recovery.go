@@ -437,13 +437,13 @@ func (s *UpdaterService) ReconcilePending(ctx context.Context, run schedulertype
 	for _, target := range run.Outcome.Targets {
 		if target.ID == "auto-update" && len(target.RecoveryData) > 0 {
 			if err := json.Unmarshal(target.RecoveryData, &plan); err != nil {
-				return schedulertypes.Outcome{Status: schedulertypes.NeedsAttention}, err
+				return schedulertypes.Outcome{Status: schedulertypes.Failed}, err
 			}
 			found = true
 		}
 	}
 	if !found {
-		return schedulertypes.Outcome{Status: schedulertypes.NeedsAttention, Message: "Interrupted update has no frozen target plan", Targets: run.Outcome.Targets}, nil
+		return schedulertypes.Outcome{Status: schedulertypes.Failed, Message: "Interrupted update has no frozen target plan", Targets: run.Outcome.Targets}, nil
 	}
 	remaining := frozenUpdatePlanInternal{}
 	unresolved := false
@@ -471,14 +471,14 @@ func (s *UpdaterService) ReconcilePending(ctx context.Context, run schedulertype
 	if len(remaining.Records) > 0 {
 		result, err := s.ApplyPending(context.WithValue(ctx, frozenPendingKeyInternal{}, &remaining), arcaneupdater.Options{})
 		if err != nil || result == nil || result.Failed > 0 {
-			return schedulertypes.Outcome{Status: schedulertypes.NeedsAttention, Message: "Frozen update recovery requires review"}, err
+			return schedulertypes.Outcome{Status: schedulertypes.Failed, Message: "Frozen update recovery could not confirm completion"}, err
 		}
 	}
 	status := schedulertypes.Succeeded
 	message := "Frozen update targets confirmed"
 	if unresolved {
-		status = schedulertypes.NeedsAttention
-		message = "Unconfirmed update effects require review"
+		status = schedulertypes.Failed
+		message = "Some update effects could not be confirmed"
 	}
 	return schedulertypes.Outcome{Status: status, Message: message}, nil
 }

@@ -64,7 +64,7 @@ func (j *AutoUpdateJob) Run(ctx context.Context) (schedulertypes.Outcome, error)
 		options, priorOutcome, unresolvedTargets = autoUpdateRetryOptionsInternal(previous)
 		if priorOutcome.Status != "" {
 			priorOutcome.ActivityID = cmp.Or(priorOutcome.ActivityID, previous.Outcome.ActivityID)
-			if priorOutcome.Status == schedulertypes.NeedsAttention && previous.Outcome.Message != "" {
+			if priorOutcome.Status == schedulertypes.Failed && previous.Outcome.Message != "" {
 				priorOutcome.Message += ": " + previous.Outcome.Message
 			}
 			return priorOutcome, nil
@@ -75,7 +75,7 @@ func (j *AutoUpdateJob) Run(ctx context.Context) (schedulertypes.Outcome, error)
 	pollingEnabled := j.settingsService.GetBoolSetting(ctx, "pollingEnabled", true)
 	if !enabled || !pollingEnabled {
 		if len(options.ResourceIds) > 0 {
-			return schedulertypes.Outcome{Status: schedulertypes.NeedsAttention, Message: "Auto-update is disabled; review this run before resolving it or retrying"}, nil
+			return schedulertypes.Outcome{Status: schedulertypes.Failed, Message: "Auto-update is disabled; the remaining targets were not updated"}, nil
 		}
 		slog.DebugContext(ctx, "auto-update disabled or polling disabled; skipping run",
 			"autoUpdate", enabled, "pollingEnabled", pollingEnabled)
@@ -89,7 +89,7 @@ func (j *AutoUpdateJob) Run(ctx context.Context) (schedulertypes.Outcome, error)
 	}
 	if !admitted {
 		if len(options.ResourceIds) > 0 {
-			return schedulertypes.Outcome{Status: schedulertypes.NeedsAttention, Message: "Another update is active; review this run before retrying"}, nil
+			return schedulertypes.Outcome{Status: schedulertypes.Failed, Message: "Another update is active; the remaining targets were not updated"}, nil
 		}
 		slog.WarnContext(ctx, "auto-update run still in progress; skipping overlapping run")
 		return schedulertypes.Outcome{Status: schedulertypes.Skipped}, nil
@@ -106,7 +106,7 @@ func (j *AutoUpdateJob) Run(ctx context.Context) (schedulertypes.Outcome, error)
 		}
 	}
 	if result == nil {
-		return schedulertypes.Outcome{Status: schedulertypes.NeedsAttention, Message: "Updater returned no operation result"}, nil
+		return schedulertypes.Outcome{Status: schedulertypes.Failed, Message: "Updater returned no operation result"}, nil
 	}
 
 	return autoUpdateOutcomeInternal(ctx, result, unresolvedTargets, err)
@@ -123,7 +123,7 @@ func (j *AutoUpdateJob) Reconcile(ctx context.Context, previous schedulertypes.R
 	}
 	confirmed := confirmedAutoUpdateInternal(previous)
 	if confirmed.Status != schedulertypes.Succeeded {
-		confirmed.Message = "Interrupted auto-update has no confirmed full-batch completion; review this run's results"
+		confirmed.Message = "Interrupted auto-update has no confirmed full-batch completion"
 		if previous.Outcome.Message != "" {
 			confirmed.Message += ": " + previous.Outcome.Message
 		}
@@ -160,12 +160,12 @@ func autoUpdateRetryOptionsInternal(previous schedulertypes.Run) (updatertypes.O
 	}
 	if hasResourceTargets && len(options.ResourceIds) == 0 {
 		if unresolvedTargets {
-			return options, schedulertypes.Outcome{Status: schedulertypes.NeedsAttention, Message: "Remaining image or unconfirmed targets need review before retrying", Targets: previous.Outcome.Targets}, true
+			return options, schedulertypes.Outcome{Status: schedulertypes.Failed, Message: "Remaining targets have no confirmed completion or safe retry", Targets: previous.Outcome.Targets}, true
 		}
-		return options, schedulertypes.Outcome{Status: schedulertypes.NeedsAttention, Message: "Target results do not confirm full-batch completion; review and resolve this run", ActivityID: previous.Outcome.ActivityID, Targets: previous.Outcome.Targets}, true
+		return options, schedulertypes.Outcome{Status: schedulertypes.Failed, Message: "Target results do not confirm full-batch completion", ActivityID: previous.Outcome.ActivityID, Targets: previous.Outcome.Targets}, true
 	}
 	if !hasResourceTargets {
-		return options, schedulertypes.Outcome{Status: schedulertypes.NeedsAttention, Message: "The previous update has no confirmed retry targets; review this run's results", ActivityID: previous.Outcome.ActivityID, Targets: previous.Outcome.Targets}, true
+		return options, schedulertypes.Outcome{Status: schedulertypes.Failed, Message: "The previous update has no confirmed retry targets", ActivityID: previous.Outcome.ActivityID, Targets: previous.Outcome.Targets}, true
 	}
 	if len(options.ResourceIds) > 0 {
 		options.Type = "container"
@@ -177,7 +177,7 @@ func autoUpdateRetryOptionsInternal(previous schedulertypes.Run) (updatertypes.O
 func (j *AutoUpdateJob) ValidateRetry(_ context.Context, previous schedulertypes.Run) error {
 	options, outcome, _ := autoUpdateRetryOptionsInternal(previous)
 	if outcome.Status != "" || len(options.ResourceIds) == 0 {
-		return errors.New("auto-update has no safely retryable failed containers; review and resolve the run")
+		return errors.New("auto-update has no safely retryable failed containers")
 	}
 	return nil
 }
@@ -203,14 +203,14 @@ func autoUpdateOutcomeInternal(ctx context.Context, result *updatertypes.Result,
 	}
 	if result.Failed > 0 || err != nil || unresolvedTargets {
 		outcome.Status = schedulertypes.Partial
-		outcome.Message = "Some updates failed; review target outcomes before retrying"
+		outcome.Message = "Some updates failed"
 		if err != nil {
 			outcome.Message += ": " + err.Error()
 		}
 	}
 	if unresolvedTargets {
-		outcome.Status = schedulertypes.NeedsAttention
-		outcome.Message = "Unconfirmed targets remain; review this run's results"
+		outcome.Status = schedulertypes.Failed
+		outcome.Message = "Some target outcomes could not be confirmed"
 	}
 	if outcomeErr, ok := errors.AsType[*schedulertypes.OutcomeError](err); ok {
 		outcome.Status = outcomeErr.Outcome.Status
@@ -224,13 +224,13 @@ func confirmedAutoUpdateInternal(previous schedulertypes.Run) schedulertypes.Out
 	confirmed := jobcontext.ConfirmedTarget(previous, "auto-update")
 	for _, target := range previous.Outcome.Targets {
 		if target.ID == "auto-update" && target.ResourceType != "update-batch" {
-			confirmed.Status = schedulertypes.NeedsAttention
+			confirmed.Status = schedulertypes.Failed
 		}
 	}
 	if confirmed.Status == schedulertypes.Succeeded {
 		for _, target := range previous.Outcome.Targets {
 			if target.Status != schedulertypes.Succeeded && target.Status != schedulertypes.Skipped {
-				confirmed.Status = schedulertypes.NeedsAttention
+				confirmed.Status = schedulertypes.Failed
 				break
 			}
 		}

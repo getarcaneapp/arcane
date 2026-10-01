@@ -1,6 +1,6 @@
 import type { JobStatus } from '#lib/types/settings.js';
 import { m } from '#lib/paraglide/messages.js';
-export function jobStatusLabel(status: string): string {
+export function jobStatusLabel(status: string, isWorker = false): string {
 	const labels: Record<string, () => string> = {
 		queued: m.jobs_status_queued,
 		waiting: m.jobs_status_waiting,
@@ -10,7 +10,7 @@ export function jobStatusLabel(status: string): string {
 		partial: m.jobs_status_partial,
 		skipped: m.jobs_status_skipped,
 		failed: m.jobs_status_failed,
-		needs_attention: m.jobs_status_needs_attention,
+		needs_attention: isWorker ? m.jobs_status_needs_attention : m.jobs_status_failed,
 		canceled: m.jobs_status_canceled,
 		healthy: m.jobs_status_healthy,
 		degraded: m.jobs_status_degraded,

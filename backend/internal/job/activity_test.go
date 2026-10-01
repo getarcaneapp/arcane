@@ -47,7 +47,7 @@ func TestJobActivityLifecycle(t *testing.T) {
 	duplicate, err := svc.runs.Submit(ctx, st.Request{JobID: run.JobID, RunID: run.ID, Trigger: "scheduled"})
 	require.NoError(t, err)
 	require.Equal(t, run.ActivityID, duplicate.ActivityID)
-	for _, status := range []st.RunStatus{st.Running, st.Waiting, st.NeedsAttention} {
+	for _, status := range []st.RunStatus{st.Running, st.Waiting, st.Failed} {
 		require.NoError(t, svc.runs.UpdateRun(ctx, run, func(current *st.Run) error {
 			current.Status = status
 			current.UpdatedAt = time.Now().UTC()
@@ -55,7 +55,22 @@ func TestJobActivityLifecycle(t *testing.T) {
 			return nil
 		}))
 	}
-	check(activitytypes.StatusFailed, st.NeedsAttention)
+	check(activitytypes.StatusFailed, st.Failed)
+	failedDetail, err := activities.GetActivityDetail(ctx, "0", run.ActivityID, 10)
+	require.NoError(t, err)
+	require.NotNil(t, failedDetail.Activity.Error)
+	require.Equal(t, "operation detail", *failedDetail.Activity.Error)
+	later, err := svc.runs.Submit(ctx, st.Request{JobID: run.JobID, Trigger: "scheduled"})
+	require.NoError(t, err)
+	require.NoError(t, svc.runs.UpdateRun(ctx, later, func(current *st.Run) error {
+		current.Status = st.Succeeded
+		current.UpdatedAt = time.Now().UTC()
+		return nil
+	}))
+	failedDetail, err = activities.GetActivityDetail(ctx, "0", run.ActivityID, 10)
+	require.NoError(t, err)
+	require.Equal(t, activitytypes.StatusFailed, failedDetail.Activity.Status)
+	require.Equal(t, "operation detail", *failedDetail.Activity.Error)
 	_, err = svc.runs.Retry(ctx, "0", run.JobID, run.ID)
 	require.NoError(t, err)
 	check(activitytypes.StatusQueued, st.Queued)
@@ -72,7 +87,7 @@ func TestJobActivityLifecycle(t *testing.T) {
 	check(activitytypes.StatusCancelled, st.Canceled)
 	var count int64
 	require.NoError(t, db.Model(&activity.Activity{}).Count(&count).Error)
-	require.Equal(t, int64(1), count)
+	require.Equal(t, int64(2), count)
 }
 
 func TestJobActivityVisibilityAndGrouping(t *testing.T) {
@@ -136,6 +151,9 @@ func TestJobActivityRestartRepairsFailedProjection(t *testing.T) {
 	require.Contains(t, detail.Activity.LatestMessage, "interrupted")
 	persisted, err := restarted.runs.Get(ctx, "0", run.JobID, run.ID)
 	require.NoError(t, err)
-	require.Zero(t, persisted.AttemptCount, "repair must not execute blocked work")
+	require.Zero(t, persisted.AttemptCount, "repair must not execute interrupted work")
+	require.Equal(t, st.Failed, persisted.Status)
+	require.Equal(t, "interrupted before applying updates", persisted.Outcome.Message)
+	require.NotNil(t, persisted.FinishedAt)
 	require.Equal(t, run.ActivityID, persisted.ActivityID)
 }

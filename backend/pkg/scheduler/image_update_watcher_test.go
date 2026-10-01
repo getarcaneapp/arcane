@@ -569,10 +569,34 @@ func TestImageUpdateWatcher_ScheduledPollTriggersScanWithoutEvents(t *testing.T)
 	scanner := &imageUpdateScannerFakeInternal{}
 	settings := &pollingSettingReaderFakeInternal{enabled: true, schedule: "* * * * * *"}
 	watcher := newImageUpdateWatcherForTestInternal(t, scanner, settings, bus.NewDockerEventBus(), nil)
-	startImageUpdateWatcherForTestInternal(t, watcher)
+	jobScheduler, err := NewJobScheduler(t.Context(), watcher.coordinator, time.UTC)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, jobScheduler.Stop(context.WithoutCancel(t.Context()))) })
+	require.NoError(t, jobScheduler.RegisterBusWatcher(watcher, true))
 
 	require.Eventually(t, func() bool { return scanner.countInternal() == 1 }, time.Second, 5*time.Millisecond)
-	require.Eventually(t, func() bool { return scanner.countInternal() >= 2 }, 3*time.Second, 10*time.Millisecond)
+	require.Eventually(t, func() bool {
+		record, err := watcher.coordinator.ScheduleState(t.Context(), watcher.Name())
+		return err == nil && record.Schedule == settings.schedule && !record.NextRun.IsZero()
+	}, time.Second, 5*time.Millisecond)
+	require.NoError(t, jobScheduler.StartScheduler())
+	record, err := watcher.coordinator.ScheduleState(t.Context(), watcher.Name())
+	require.NoError(t, err)
+	require.Equal(t, settings.schedule, record.Schedule)
+	require.False(t, record.NextRun.IsZero())
+	require.Eventually(t, func() bool { return scanner.countInternal() >= 3 }, 5*time.Second, 10*time.Millisecond)
+	require.Eventually(t, func() bool {
+		history, err := watcher.coordinator.List(t.Context(), "0", watcher.Name(), 1, 10)
+		if err != nil {
+			return false
+		}
+		for _, run := range history.Runs {
+			if run.Trigger == "scheduled" && run.Status == schedulertypes.Succeeded {
+				return true
+			}
+		}
+		return false
+	}, time.Second, 5*time.Millisecond)
 }
 
 func TestImageUpdateWatcher_ClosedEventSubscriptionKeepsWatcherRunning(t *testing.T) {

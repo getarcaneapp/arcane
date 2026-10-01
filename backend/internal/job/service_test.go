@@ -153,6 +153,76 @@ func TestJobService_ListJobs_UsesRuntimeScheduleAndNextRun(t *testing.T) {
 	autoUpdateJob := findJobStatusByIDInternal(t, jobs.Jobs, "auto-update")
 	require.Equal(t, "0 0 8 * * *", autoUpdateJob.Schedule)
 	require.Equal(t, nextRun, *autoUpdateJob.NextRun)
+
+	now := time.Now().UTC()
+	failed := schedulertypes.Run{
+		ID: "failed", EnvironmentID: "0", Status: schedulertypes.Failed, CreatedAt: now.Add(-time.Hour), UpdatedAt: now,
+		Outcome: schedulertypes.Outcome{Status: schedulertypes.Failed, Message: "clone failed"},
+	}
+	succeeded := schedulertypes.Run{ID: "succeeded", EnvironmentID: "0", Status: schedulertypes.Succeeded, CreatedAt: now.Add(-time.Minute), UpdatedAt: now.Add(-time.Minute), FinishedAt: new(now.Add(-time.Minute))}
+	for _, history := range [][]schedulertypes.Run{{failed, succeeded}, {succeeded, failed}} {
+		status := jobschedule.JobStatus{LastRun: new(failed), LastError: failed.Outcome.Message}
+		applyRunStatusInternal(&status, history)
+		require.Equal(t, succeeded.ID, status.LastRun.ID)
+		require.Empty(t, status.LastError)
+		require.Equal(t, "clone failed", history[0].Outcome.Message+history[1].Outcome.Message)
+	}
+	// An acknowledgement updates an old failure's revision, not its execution time.
+	failed.UpdatedAt = now.Add(time.Hour)
+	status := jobschedule.JobStatus{LastRun: new(succeeded)}
+	applyRunStatusInternal(&status, []schedulertypes.Run{failed})
+	require.Equal(t, succeeded.ID, status.LastRun.ID)
+	require.Empty(t, status.LastError)
+	// A real retry of the older run becomes the latest execution.
+	failed.StartedAt = new(now.Add(time.Second))
+	failed.Attempts = []schedulertypes.Attempt{{Number: 2, StartedAt: *failed.StartedAt}}
+	applyRunStatusInternal(&status, []schedulertypes.Run{failed})
+	require.Equal(t, failed.ID, status.LastRun.ID)
+	require.Equal(t, "clone failed", status.LastError)
+	// Merge the same run's terminal revision before choosing an active run.
+	status.CurrentRun = new(succeeded)
+	status.CurrentRun.Status = schedulertypes.Running
+	succeeded.UpdatedAt = now.Add(2 * time.Second)
+	applyRunStatusInternal(&status, []schedulertypes.Run{succeeded})
+	require.Nil(t, status.CurrentRun)
+	failed.Status = schedulertypes.Running
+	failed.UpdatedAt = now.Add(2 * time.Hour)
+	applyRunStatusInternal(&status, []schedulertypes.Run{failed})
+	require.Equal(t, failed.ID, status.CurrentRun.ID)
+	require.Empty(t, status.LastError)
+
+	// A later manual failure stays visible while older work waits to retry.
+	retrying := failed
+	retrying.Status = schedulertypes.Retrying
+	retrying.NextAttempt = new(now.Add(time.Hour))
+	manualFailure := failed
+	manualFailure.ID = "manual-failure"
+	manualFailure.Status = schedulertypes.Failed
+	manualFailure.CreatedAt = now.Add(time.Minute)
+	manualFailure.StartedAt = nil
+	manualFailure.Attempts = nil
+	manualFailure.Outcome.Message = "latest manual failure"
+	succeeded.CreatedAt = now.Add(2 * time.Minute)
+	for _, history := range [][]schedulertypes.Run{{retrying, manualFailure}, {manualFailure, retrying}} {
+		status = jobschedule.JobStatus{}
+		applyRunStatusInternal(&status, history)
+		require.Equal(t, retrying.ID, status.CurrentRun.ID)
+		require.Equal(t, manualFailure.ID, status.LastRun.ID)
+		require.Equal(t, manualFailure.Outcome.Message, status.LastError)
+		applyRunStatusInternal(&status, []schedulertypes.Run{succeeded})
+		require.Empty(t, status.LastError)
+	}
+
+	cloneErr := errors.New("failed to clone repository: network is unreachable")
+	outcome, runErr := classifyOutcomeInternal("gitops-sync:project", schedulertypes.Outcome{}, cloneErr)
+	require.ErrorIs(t, runErr, cloneErr)
+	require.Equal(t, schedulertypes.Failed, outcome.Status)
+	outcome, runErr = classifyOutcomeInternal("environment-health:0", schedulertypes.Outcome{}, context.DeadlineExceeded)
+	require.ErrorIs(t, runErr, context.DeadlineExceeded)
+	require.Equal(t, schedulertypes.Retrying, outcome.Status)
+	outcome, runErr = classifyOutcomeInternal("auto-update", schedulertypes.Outcome{Status: schedulertypes.Partial}, cloneErr)
+	require.ErrorIs(t, runErr, cloneErr)
+	require.Equal(t, schedulertypes.Partial, outcome.Status)
 }
 
 func TestJobService_ListJobs_ImageUpdateWatcherIsContinuousAndRespectsEnabled(t *testing.T) {

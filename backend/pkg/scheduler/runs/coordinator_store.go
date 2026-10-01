@@ -10,6 +10,7 @@ import (
 	"time"
 	"uuid"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
 	st "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	"github.com/italypaleale/francis/actor"
@@ -20,6 +21,7 @@ const queuePrefixInternal = "jobs."
 
 func (q *Coordinator) mutateInternal(ctx context.Context, environmentID, jobID string, change func(*st.QueueRecord) error) error {
 	id := kit.SHA256Hex(environmentID + "\x00" + jobID)
+	q.runtime.NameActor(id, jobID+"@"+environmentID)
 	for range 20 {
 		var state st.CoordinatorState
 		err := q.service.GetState(ctx, coordinatorTypeInternal, id, &state)
@@ -129,6 +131,7 @@ func (q *Coordinator) Records(ctx context.Context) ([]st.QueueRecord, error) {
 				return nil, err
 			}
 			normalizeRecordTimesInternal(&state.Record)
+			q.runtime.NameActor(entry.ActorID, state.Record.JobID+"@"+state.Record.EnvironmentID)
 			records = append(records, state.Record)
 		}
 		cursor = page.AfterID()
@@ -251,7 +254,7 @@ func pruneRunsInternal(record *st.QueueRecord, now time.Time) {
 		if terminal <= 100 && now.Sub(run.UpdatedAt) < 7*24*time.Hour {
 			continue
 		}
-		if run.Trigger == "manual" || run.Trigger == "remote" {
+		if separateTriggerInternal(run.Trigger) {
 			if record.Receipts == nil {
 				record.Receipts = make(map[string]st.Run)
 			}
@@ -356,6 +359,26 @@ func normalizeRunTimesInternal(run *st.Run) {
 		run.Attempts[i].StartedAt = run.Attempts[i].StartedAt.UTC()
 		normalizeTimePointerInternal(run.Attempts[i].FinishedAt)
 	}
+}
+
+func normalizeLegacyRunInternal(run *st.Run) {
+	automaticResolution := run.Status == st.Canceled && run.Resolution != nil && run.Resolution.ResolvedBy == common.SystemUser.Username
+	if run.Status != st.NeedsAttention && !automaticResolution {
+		return
+	}
+	run.Owner = ""
+	run.NextAttempt = nil
+	if run.EnvironmentID != "0" && (run.RemoteDeliveryAttempted || run.RemoteAccepted) && !run.RemoteSettled {
+		run.Status = st.Waiting
+		run.FinishedAt = nil
+	} else {
+		run.Status = st.Failed
+		run.Outcome.Status = st.Failed
+		if run.FinishedAt == nil {
+			run.FinishedAt = new(run.UpdatedAt)
+		}
+	}
+	run.UpdatedAt = time.Now().UTC()
 }
 
 func normalizeTimePointerInternal(value *time.Time) {

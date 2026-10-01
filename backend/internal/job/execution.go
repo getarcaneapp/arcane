@@ -104,7 +104,7 @@ func (s *JobService) authorizeRunInternal(ctx context.Context, run st.Run) error
 
 func (s *JobService) executeRunInternal(ctx context.Context, run st.Run) (st.Outcome, error) {
 	if err := s.authorizeRunInternal(ctx, run); err != nil {
-		return st.Outcome{Status: st.NeedsAttention}, err
+		return st.Outcome{Status: st.Failed}, err
 	}
 	if run.EnvironmentID != "0" {
 		return s.deliverRemoteInternal(ctx, run)
@@ -127,7 +127,7 @@ func (s *JobService) executeRunInternal(ctx context.Context, run st.Run) (st.Out
 		err := s.scheduler.RunBusWatcherNow(ctx, run.JobID)
 		return classifyOutcomeInternal(run.JobID, st.Outcome{}, err)
 	}
-	unavailableStatus := kit.Ternary(run.JobID == "auto-update" && run.AttemptCount > 1, st.NeedsAttention, st.Canceled)
+	unavailableStatus := kit.Ternary(run.JobID == "auto-update" && run.AttemptCount > 1, st.Failed, st.Canceled)
 	job, ok := s.scheduler.GetJob(run.JobID)
 	if !ok {
 		return st.Outcome{Status: unavailableStatus, Message: "Job or target no longer exists"}, nil
@@ -141,25 +141,25 @@ func (s *JobService) executeRunInternal(ctx context.Context, run st.Run) (st.Out
 
 func classifyOutcomeInternal(jobID string, outcome st.Outcome, err error) (st.Outcome, error) {
 	if resultErr, ok := errors.AsType[*st.OutcomeError](err); ok {
-		return resultErr.Outcome, err
+		outcome = resultErr.Outcome
 	}
-	if err == nil {
-		outcome.Status = cmp.Or(outcome.Status, st.Succeeded)
-		return outcome, nil
-	}
-	if outcome.Status == st.Waiting || outcome.Status == st.Retrying {
+	switch outcome.Status {
+	case st.NeedsAttention:
+		outcome.Status = st.Failed
 		return outcome, err
-	}
-	if outcome.Status == st.NeedsAttention || outcome.Status == st.Partial || outcome.Status == st.Canceled || outcome.Status == st.Skipped {
+	case st.Waiting, st.Retrying, st.Failed, st.Partial, st.Canceled, st.Skipped:
 		return outcome, err
+	case st.Queued, st.Running, st.Succeeded:
+		// Classify these and unspecified outcomes below.
 	}
+
 	var networkErr net.Error
 	switch {
+	case err == nil:
+		outcome.Status = cmp.Or(outcome.Status, st.Succeeded)
 	case safeJobInternal(jobID) && (errors.As(err, &networkErr) || errors.Is(err, context.DeadlineExceeded)):
 		outcome.Status = st.Retrying
-	case !safeJobInternal(jobID):
-		outcome.Status = st.NeedsAttention
-	case outcome.Status == "":
+	case outcome.Status == "" || outcome.Status == st.Succeeded:
 		outcome.Status = st.Failed
 	}
 
@@ -176,7 +176,7 @@ func safeJobInternal(jobID string) bool {
 
 func (s *JobService) reconcileRunInternal(ctx context.Context, run st.Run) (st.Outcome, error) {
 	if err := s.authorizeRunInternal(ctx, run); err != nil {
-		return st.Outcome{Status: st.NeedsAttention}, err
+		return st.Outcome{Status: st.Failed}, err
 	}
 	if run.EnvironmentID != "0" {
 		return s.executeRunInternal(ctx, run)
@@ -200,14 +200,14 @@ func (s *JobService) reconcileRunInternal(ctx context.Context, run st.Run) (st.O
 			continue
 		}
 		if target.ActivityID == "" {
-			return st.Outcome{Status: st.NeedsAttention, Message: "Interrupted operation has no confirmed outcome", Targets: run.Outcome.Targets}, nil
+			return st.Outcome{Status: st.Failed, Message: "Interrupted operation has no confirmed outcome", Targets: run.Outcome.Targets}, nil
 		}
 		var record activity.Activity
 		if err := s.db.WithContext(ctx).First(&record, "id = ?", target.ActivityID).Error; err != nil {
-			return st.Outcome{Status: st.NeedsAttention}, err
+			return st.Outcome{Status: st.Failed}, err
 		}
 		if record.Status != activitytypes.StatusSuccess {
-			return st.Outcome{Status: st.NeedsAttention, Message: "Interrupted operation requires review", Targets: run.Outcome.Targets}, nil
+			return st.Outcome{Status: st.Failed, Message: "Interrupted operation has no confirmed completion", Targets: run.Outcome.Targets}, nil
 		}
 		run.Outcome.Targets[index].Status = st.Succeeded
 	}
@@ -220,7 +220,7 @@ func (s *JobService) reconcileRunInternal(ctx context.Context, run st.Run) (st.O
 			return outcome, err
 		}
 	}
-	return st.Outcome{Status: st.NeedsAttention, Message: "Interrupted operation requires review before retrying", Targets: run.Outcome.Targets}, nil
+	return st.Outcome{Status: st.Failed, Message: "Interrupted operation has no confirmed completion", Targets: run.Outcome.Targets}, nil
 }
 
 func (s *JobService) runContextInternal(ctx context.Context, run st.Run) context.Context {

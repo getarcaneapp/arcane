@@ -96,7 +96,7 @@
 				id: 'worker-health',
 				visible: job.workerHealth,
 				label: m.jobs_worker_health(),
-				value: jobStatusLabel(job.workerHealth?.status ?? '')
+				value: jobStatusLabel(job.workerHealth?.status ?? '', true)
 			}
 		].filter((item) => item.visible)
 	);
@@ -107,7 +107,7 @@
 			{
 				id: 'last',
 				visible: job.lastError,
-				text: `${m.jobs_last_error()}: ${job.lastError}`,
+				text: job.lastError,
 				class: 'text-xs break-words text-destructive'
 			},
 			{
@@ -189,6 +189,7 @@
 	</div>
 
 	{#each errors as error (error.id)}<p class={error.class}>{error.text}</p>{/each}
+	{#if run?.status === 'waiting' && run.outcome.message}<p class="text-xs text-muted-foreground">{run.outcome.message}</p>{/if}
 	{#if job.workerHealth?.nextRetry}<p class="text-xs text-muted-foreground">
 			{m.jobs_next_retry()}: {formatDateTimeShort(job.workerHealth.nextRetry)}
 		</p>{/if}

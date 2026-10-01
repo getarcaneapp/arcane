@@ -113,5 +113,5 @@ func (g *GenericJob) Reconcile(ctx context.Context, previous Run) (Outcome, erro
 	if g.ReconcileFn != nil {
 		return g.ReconcileFn(ctx, previous)
 	}
-	return Outcome{Status: NeedsAttention, Message: "The interrupted operation has no confirmed result; review its domain records before retrying", Targets: previous.Outcome.Targets}, nil
+	return Outcome{Status: Failed, Message: "The interrupted operation has no confirmed completion", Targets: previous.Outcome.Targets}, nil
 }

@@ -23,6 +23,7 @@ type (
 )
 
 // ResolveRunInput accepts the original operator identity only from trusted agent transport.
+// TODO(v3): remove this deprecated mixed-version compatibility contract.
 type ResolveRunInput struct {
 	RunInput
 

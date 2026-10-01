@@ -11,7 +11,8 @@ import (
 	st "github.com/getarcaneapp/arcane/types/v2/scheduler"
 )
 
-// ResolveRun records operator review and releases the schedule's blocked run.
+// ResolveRun records legacy operator review.
+// TODO(v3): remove this deprecated mixed-version compatibility contract.
 func (h *JobSchedulesHandler) ResolveRun(ctx context.Context, input *jobschedule.ResolveRunInput) (*jobschedule.RunOutput, error) {
 	actor, _ := middleware.GetUserIDFromContext(ctx)
 	permissions, _ := middleware.PermissionsFromContext(ctx)
@@ -29,6 +30,7 @@ func (h *JobSchedulesHandler) ResolveRun(ctx context.Context, input *jobschedule
 }
 
 // ResolveRun authorizes the current operator independently of the original requester.
+// TODO(v3): remove this deprecated mixed-version compatibility contract.
 func (s *JobService) ResolveRun(ctx context.Context, environmentID, jobID, runID, actor string) (st.Run, error) {
 	permissions, _ := middleware.PermissionsFromContext(ctx)
 	if !permissions.Allows(authz.PermJobsManage, environmentID) {

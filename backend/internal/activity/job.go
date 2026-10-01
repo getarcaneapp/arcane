@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
 	st "github.com/getarcaneapp/arcane/types/v2/scheduler"
@@ -102,7 +103,9 @@ func jobActivityInternal(run st.Run, name string) Activity {
 	}
 	if run.Resolution != nil {
 		model.Metadata["resolution"] = run.Resolution
-		model.LatestMessage = "Resolved after review; future scheduled runs may proceed"
+		if run.Resolution.ResolvedBy != common.SystemUser.Username {
+			model.LatestMessage = "Resolved after review"
+		}
 	}
 	if isTerminalActivityStatusInternal(status) {
 		model.EndedAt = new(run.UpdatedAt)

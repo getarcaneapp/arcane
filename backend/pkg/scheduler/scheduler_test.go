@@ -270,10 +270,26 @@ func TestJobScheduler_RescheduleJob_AddsEntryWhenEnabled(t *testing.T) {
 
 func TestJobScheduler_StartScheduler_SchedulesNonConditionalJobs(t *testing.T) {
 	js := newJobSchedulerForTestInternal(t, context.Background(), nil)
+	watcher := &testBusWatcherInternal{
+		name:    "image-polling",
+		started: make(chan struct{}),
+		stopped: make(chan struct{}),
+	}
+	require.NoError(t, js.RegisterBusWatcher(watcher, true))
+	nextPolling := time.Now().UTC().Add(time.Hour)
+	require.NoError(t, js.coordinator.Checkpoint(t.Context(), watcher.Name(), "0 0 * * * *", nextPolling))
+	require.NoError(t, js.coordinator.Checkpoint(t.Context(), "removed-job", "0 0 * * * *", nextPolling))
+	executed := make(chan struct{}, 1)
 
 	job := &testSchedulerJob{
 		name:     "test-non-conditional-startup",
 		schedule: "*/1 * * * * *",
+		run: func(context.Context) {
+			select {
+			case executed <- struct{}{}:
+			default:
+			}
+		},
 	}
 
 	require.NoError(t, js.RegisterJob(job))
@@ -283,6 +299,19 @@ func TestJobScheduler_StartScheduler_SchedulesNonConditionalJobs(t *testing.T) {
 	require.True(t, ok)
 	require.True(t, state.Scheduled)
 	requireScheduledJobInternal(t, js, job.Name())
+	polling, err := js.coordinator.ScheduleState(t.Context(), watcher.Name())
+	require.NoError(t, err)
+	require.Equal(t, "0 0 * * * *", polling.Schedule)
+	require.True(t, nextPolling.Equal(polling.NextRun))
+	removed, err := js.coordinator.ScheduleState(t.Context(), "removed-job")
+	require.NoError(t, err)
+	require.Empty(t, removed.Schedule)
+	require.True(t, removed.NextRun.IsZero())
+	select {
+	case <-executed:
+	case <-time.After(5 * time.Second):
+		require.FailNow(t, "scheduled job did not execute through Francis")
+	}
 }
 
 func TestJobScheduler_RescheduleJob_UsesProvidedContext(t *testing.T) {

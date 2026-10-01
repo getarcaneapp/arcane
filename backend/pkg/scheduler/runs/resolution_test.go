@@ -78,6 +78,43 @@ func TestResolvePreservesEvidenceWithoutBlockingSchedule(t *testing.T) {
 	require.Equal(t, resolved.Outcome, duplicate.Outcome)
 	require.Equal(t, resolved.Resolution.ResolvedBy, duplicate.Resolution.ResolvedBy)
 	require.True(t, resolved.Resolution.ResolvedAt.Equal(duplicate.Resolution.ResolvedAt))
+
+	// Startup closes legacy local failures and reconciles unsettled remote work.
+	localLegacy, err := q.Submit(ctx, st.Request{JobID: "gitops-sync:project", Trigger: "scheduled"})
+	require.NoError(t, err)
+	remoteLegacy, err := q.Submit(ctx, st.Request{JobID: "gitops-sync:project", EnvironmentID: "remote", Trigger: "scheduled"})
+	require.NoError(t, err)
+	for _, legacy := range []st.Run{localLegacy, remoteLegacy} {
+		require.NoError(t, q.UpdateRun(ctx, legacy, func(current *st.Run) error {
+			current.Status = st.NeedsAttention
+			current.Outcome = evidence
+			current.Attempts = []st.Attempt{{Number: 1, Outcome: evidence}}
+			current.RemoteDeliveryAttempted = current.EnvironmentID != "0"
+			return nil
+		}))
+	}
+	q.SetExecutor(func(context.Context, st.Run) (st.Outcome, error) {
+		t.Error("startup must not repeat legacy work")
+		return st.Outcome{Status: st.Failed}, nil
+	}, nil)
+	require.NoError(t, q.Start(ctx))
+	t.Cleanup(func() { require.NoError(t, q.Stop(context.WithoutCancel(ctx))) })
+	localLegacy, err = q.Get(ctx, "0", localLegacy.JobID, localLegacy.ID)
+	require.NoError(t, err)
+	require.Equal(t, st.Failed, localLegacy.Status)
+	require.Equal(t, evidence.Message, localLegacy.Outcome.Message)
+	require.Equal(t, evidence.Targets, localLegacy.Outcome.Targets)
+	require.Equal(t, evidence, localLegacy.Attempts[0].Outcome)
+	require.NotNil(t, localLegacy.FinishedAt)
+	remoteLegacy, err = q.Get(ctx, "remote", remoteLegacy.JobID, remoteLegacy.ID)
+	require.NoError(t, err)
+	require.Equal(t, st.Waiting, remoteLegacy.Status)
+	require.Equal(t, evidence, remoteLegacy.Outcome)
+	require.False(t, remoteLegacy.RemoteSettled)
+	require.Nil(t, remoteLegacy.FinishedAt)
+	future, err := q.Submit(ctx, st.Request{JobID: localLegacy.JobID, Trigger: "scheduled"})
+	require.NoError(t, err)
+	require.NotEqual(t, localLegacy.ID, future.ID)
 }
 
 func TestResolveRejectsUnsafeStates(t *testing.T) {

@@ -117,7 +117,7 @@ func TestDuplicateDispatchAndCanceledDelivery(t *testing.T) {
 			var executed atomic.Int32
 			q.SetExecutor(func(context.Context, st.Run) (st.Outcome, error) {
 				executed.Add(1)
-				return st.Outcome{Status: st.Succeeded}, nil
+				return st.Outcome{Status: st.NeedsAttention, Message: "Completion could not be confirmed", Targets: []st.TargetOutcome{{ID: "target", Status: st.NeedsAttention}}}, nil
 			}, nil)
 			run, err := q.Submit(t.Context(), st.Request{JobID: "dispatch", Trigger: "manual"})
 			require.NoError(t, err)
@@ -148,7 +148,10 @@ func TestDuplicateDispatchAndCanceledDelivery(t *testing.T) {
 				require.Zero(t, executed.Load())
 				require.Zero(t, persisted.AttemptCount)
 			} else {
-				require.Equal(t, st.Succeeded, persisted.Status)
+				require.Equal(t, st.Failed, persisted.Status)
+				require.Equal(t, "Completion could not be confirmed", persisted.Outcome.Message)
+				require.Equal(t, st.NeedsAttention, persisted.Outcome.Targets[0].Status)
+				require.NotNil(t, persisted.FinishedAt)
 				require.Equal(t, int32(1), executed.Load())
 				require.Equal(t, 1, persisted.AttemptCount)
 			}

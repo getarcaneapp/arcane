@@ -51,7 +51,7 @@ func (s *JobService) SyncRunActivity(ctx context.Context, run st.Run) error {
 	if metadata, found := meta.GetJobMetadata(current.JobID); found {
 		name = metadata.Name
 	}
-	return s.activity.SyncJobRun(ctx, current, name)
+	return s.activity.SyncJobRun(ctx, projectRunOutcomeInternal(current), name)
 }
 
 func (s *JobService) ReconcileStartupActivities(ctx context.Context, extraProtectedIDs ...string) error {

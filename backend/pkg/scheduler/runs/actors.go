@@ -34,6 +34,7 @@ type executorActorInternal struct {
 }
 
 func (q *Coordinator) Register(runtime *francis.Runtime) error {
+	q.runtime = runtime
 	if err := runtime.RegisterActor(coordinatorTypeInternal, func(id string, _ *actor.Service) actor.Actor {
 		return &coordinatorActorInternal{id: id, q: q}
 	}); err != nil {
@@ -77,7 +78,7 @@ func (a *coordinatorActorInternal) Invoke(ctx context.Context, method string, da
 		}
 		// Acceptance is persisted; dispatch failures are retried.
 		if err := a.flushInternal(ctx, &next); err != nil {
-			slog.WarnContext(ctx, "Job dispatch requires reconciliation", "actorId", a.id, "error", err)
+			slog.WarnContext(ctx, "Job dispatch requires reconciliation", "jobId", next.Record.JobID, "environmentId", next.Record.EnvironmentID, "error", err)
 			a.q.signalInternal()
 		}
 		return true, nil
@@ -307,7 +308,7 @@ func (a *coordinatorActorInternal) Alarm(ctx context.Context, name string, data 
 	}
 	pending := false
 	for _, run := range record.Runs {
-		if run.Trigger == "manual" || run.Trigger == "remote" {
+		if separateTriggerInternal(run.Trigger) {
 			continue
 		}
 		if run.Status.Terminal() || run.Status == st.NeedsAttention {
@@ -437,6 +438,10 @@ func (a *executorActorInternal) Job(ctx context.Context, _ string, data actor.En
 			outcome.Status = st.Succeeded
 		}
 	}
+	// Domain recovery may still report uncertainty; job runs finish as failures.
+	if outcome.Status == st.NeedsAttention {
+		outcome.Status = st.Failed
+	}
 	if runErr != nil && outcome.Message == "" {
 		outcome.Message = runErr.Error()
 	}
@@ -446,9 +451,6 @@ func (a *executorActorInternal) Job(ctx context.Context, _ string, data actor.En
 	q.persistOutcomeInternal(ctx, claim.Run, outcome)
 	if ctx.Err() != nil {
 		return ctx.Err()
-	}
-	if outcome.Status == st.NeedsAttention {
-		return actor.ErrJobPermanentFailure
 	}
 	return nil
 }
@@ -481,7 +483,10 @@ func (q *Coordinator) claimExecutionInternal(ctx context.Context, command st.Exe
 			current.Status = st.Running
 			current.Owner = q.owner + "/" + uuid.New().String()
 			current.UpdatedAt = now
-			current.StartedAt = &now
+			// Manager claims track delivery; accepted agent runs keep execution timestamps.
+			if current.EnvironmentID == "0" || !current.RemoteAccepted {
+				current.StartedAt = &now
+			}
 			current.NextAttempt = nil
 			current.AttemptCount = command.Attempt
 			current.Attempts = append(current.Attempts, st.Attempt{Number: current.AttemptCount, StartedAt: now})

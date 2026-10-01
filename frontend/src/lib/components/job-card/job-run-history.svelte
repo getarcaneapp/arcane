@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { createQuery, createMutation } from '@tanstack/svelte-query';
@@ -32,7 +31,7 @@
 		refetchInterval: 5000
 	}));
 	const action = createMutation(() => ({
-		mutationFn: ({ runId, action }: { runId: string; action: 'retry' | 'cancel' | 'resolve' }) =>
+		mutationFn: ({ runId, action }: { runId: string; action: 'retry' | 'cancel' }) =>
 			jobScheduleService.updateRun(jobId, runId, action, environmentId),
 		onSuccess: () => {
 			void runs.refetch();
@@ -87,16 +86,6 @@
 			}
 		].filter((item) => item.visible)
 	);
-	function resolveRun(runId: string) {
-		openConfirmDialog({
-			title: m.jobs_resolve_run(),
-			message: m.jobs_resolve_description(),
-			confirm: {
-				label: m.jobs_resolve_run(),
-				action: () => action.mutateAsync({ runId, action: 'resolve' }).then(() => undefined)
-			}
-		});
-	}
 </script>
 
 {#snippet outcomeMessage(message: string | undefined)}
@@ -170,8 +159,7 @@
 				{#each metadata as item (item.id)}<p class={item.class}>{item.label ? `${item.label}: ` : ''}{item.value}</p>{/each}
 				{@render outcomeActivity(run.activityId, m.jobs_activity_summary(), run.activityEnvironmentId ?? environmentId)}
 				{@render outcomeActivity(run.outcome.activityId)}
-				{#if run.status === 'needs_attention'}<p>{m.jobs_attention_schedule_blocked()}</p>{/if}
-				{#if run.resolution}
+				{#if run.resolution && run.resolution.resolvedBy !== 'System'}
 					<p>
 						{m.jobs_resolution_details({ user: run.resolution.resolvedBy, date: formatDateTimeShort(run.resolution.resolvedAt) })}
 					</p>
@@ -196,11 +184,6 @@
 				{/if}
 				{#if action.error}<p class="text-destructive">{action.error.message}</p>{/if}
 				<IfPermitted perm="jobs:manage" envId={environmentId}>
-					{#if run.status === 'needs_attention'}
-						<Button variant="outline" disabled={action.isPending} onclick={() => resolveRun(run.id)}
-							>{m.jobs_resolve_run()}</Button
-						>
-					{/if}
 					{#each availableActions as item (item.id)}
 						<Button
 							variant={item.variant}

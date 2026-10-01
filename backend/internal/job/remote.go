@@ -9,6 +9,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
 	"github.com/getarcaneapp/arcane/types/v2/jobschedule"
@@ -22,7 +23,7 @@ func remoteFailureInternal(err error) (st.Outcome, error) {
 	rejected := errors.As(err, &status) && status.StatusCode >= 400 && status.StatusCode < 500 &&
 		status.StatusCode != http.StatusRequestTimeout && status.StatusCode != http.StatusTooManyRequests
 	if rejected {
-		return st.Outcome{Status: st.NeedsAttention, Message: "Remote agent rejected the request; check configuration and permissions"}, err
+		return st.Outcome{Status: st.Failed, Message: "Remote agent rejected the request; check configuration and permissions"}, err
 	}
 	return st.Outcome{Status: st.Waiting, Message: "Waiting for environment"}, err
 }
@@ -30,10 +31,10 @@ func remoteFailureInternal(err error) (st.Outcome, error) {
 func (s *JobService) deliverRemoteInternal(ctx context.Context, run st.Run) (st.Outcome, error) {
 	env, err := s.environment.GetEnvironmentByID(ctx, run.EnvironmentID)
 	if err != nil {
-		return st.Outcome{Status: st.NeedsAttention}, err
+		return st.Outcome{Status: st.Failed}, err
 	}
 	if !env.Enabled {
-		return st.Outcome{Status: st.NeedsAttention, Message: "Environment is disabled"}, nil
+		return st.Outcome{Status: st.Failed, Message: "Environment is disabled"}, nil
 	}
 	basePath := "/api/environments/0/jobs/" + url.PathEscape(run.JobID)
 	runPath := basePath + "/runs/" + url.PathEscape(run.ID)
@@ -46,7 +47,7 @@ func (s *JobService) deliverRemoteInternal(ctx context.Context, run st.Run) (st.
 		return remoteFailureInternal(err)
 	}
 	if !catalog.DurableRuns {
-		return st.Outcome{Status: st.NeedsAttention, Message: "Upgrade required: agent does not support durable job runs"}, nil
+		return st.Outcome{Status: st.Failed, Message: "Upgrade required: agent does not support durable job runs"}, nil
 	}
 	var remoteRun st.Run
 	err = s.environment.ProxyJSONRequest(ctx, run.EnvironmentID, http.MethodGet, runPath, nil, &remoteRun)
@@ -61,19 +62,19 @@ func (s *JobService) deliverRemoteInternal(ctx context.Context, run st.Run) (st.
 				return st.Outcome{Status: st.Canceled, Message: err.Error()}, nil
 			}
 			if errors.Is(err, errRemoteReceiptMissingInternal) {
-				return st.Outcome{Status: st.NeedsAttention, Message: err.Error()}, nil
+				return st.Outcome{Status: st.Failed, Message: err.Error()}, nil
 			}
 			return remoteFailureInternal(err)
 		}
 	}
 	if remoteRun.ID != run.ID || remoteRun.JobID != run.JobID {
-		return st.Outcome{Status: st.NeedsAttention, Message: "Agent returned an inconsistent run identity"}, nil
+		return st.Outcome{Status: st.Failed, Message: "Agent returned an inconsistent run identity"}, nil
 	}
 	if run.RemoteRetryRequested && (remoteRun.Status.Terminal() || remoteRun.Status == st.NeedsAttention) && remoteRun.AttemptCount <= run.RemoteAttemptCount {
 		remoteRun, err = s.retryDeliveryInternal(ctx, run, runPath)
 		if err != nil {
 			if errors.Is(err, errRemoteRetryUncertainInternal) {
-				return st.Outcome{Status: st.NeedsAttention, Message: err.Error()}, nil
+				return st.Outcome{Status: st.Failed, Message: err.Error()}, nil
 			}
 			return remoteFailureInternal(err)
 		}
@@ -82,6 +83,16 @@ func (s *JobService) deliverRemoteInternal(ctx context.Context, run st.Run) (st.
 }
 
 func (s *JobService) confirmRemoteRunInternal(ctx context.Context, run, remoteRun st.Run, runPath string) (st.Outcome, error) {
+	if remoteRun.Status == st.NeedsAttention || (remoteRun.Status == st.Canceled && remoteRun.Resolution != nil && remoteRun.Resolution.ResolvedBy == common.SystemUser.Username) {
+		settled, err := s.resolveAgentReviewInternal(ctx, run.EnvironmentID, run.JobID, run.ID, common.SystemUser.Username)
+		if err != nil {
+			return st.Outcome{Status: st.Waiting, Message: "Waiting for the agent to acknowledge the failed run", Targets: remoteRun.Outcome.Targets, ActivityID: remoteRun.Outcome.ActivityID}, err
+		}
+		remoteRun = settled
+		if remoteRun.Status == st.Canceled && remoteRun.Resolution != nil && remoteRun.Resolution.ResolvedBy == common.SystemUser.Username {
+			remoteRun.Status = st.Failed
+		}
+	}
 	now := time.Now().UTC()
 	outcome := remoteRun.Outcome
 	outcome.Status = remoteRun.Status
@@ -92,16 +103,20 @@ func (s *JobService) confirmRemoteRunInternal(ctx context.Context, run, remoteRu
 		current.RemoteOutcome = &outcome
 		current.RemoteAttemptCount = remoteRun.AttemptCount
 		current.RemoteRetryRequested = false
+		current.RemoteSettled = remoteRun.RemoteSettled
+		current.Resolution = remoteRun.Resolution
+		current.StartedAt = remoteRun.StartedAt
+		current.FinishedAt = remoteRun.FinishedAt
 		current.Outcome = outcome
 		return nil
 	}); err != nil {
 		return st.Outcome{Status: st.Retrying}, err
 	}
 	if outcome.Status.Terminal() {
+		if remoteRun.RemoteSettled {
+			return outcome, nil
+		}
 		return s.acknowledgeRemoteInternal(ctx, run, runPath, outcome)
-	}
-	if outcome.Status == st.NeedsAttention {
-		return outcome, nil
 	}
 	return st.Outcome{Status: st.Waiting, Message: "Waiting for the agent to complete this run", Targets: outcome.Targets, ActivityID: outcome.ActivityID}, nil
 }
@@ -111,10 +126,19 @@ func (s *JobService) acknowledgeRemoteInternal(ctx context.Context, run st.Run, 
 	if err := s.environment.ProxyJSONRequest(ctx, run.EnvironmentID, http.MethodPost, path+"/ack", nil, &response); err != nil {
 		return st.Outcome{Status: st.Waiting, Message: "Remote operation completed; waiting for delivery acknowledgement", Targets: outcome.Targets, ActivityID: outcome.ActivityID}, err
 	}
-	if response.ID != run.ID || !response.RemoteSettled {
+	status := response.Status
+	if status == st.Canceled && response.Resolution != nil && response.Resolution.ResolvedBy == common.SystemUser.Username {
+		status = st.Failed
+	}
+	if response.ID != run.ID || response.JobID != run.JobID || response.EnvironmentID != "0" || status != outcome.Status || !response.RemoteSettled {
 		return st.Outcome{Status: st.Waiting, Message: "Remote operation completed; acknowledgement not confirmed"}, nil
 	}
-	if err := s.runs.UpdateRun(ctx, run, func(current *st.Run) error { current.RemoteSettled = true; return nil }); err != nil {
+	if err := s.runs.UpdateRun(ctx, run, func(current *st.Run) error {
+		current.RemoteSettled = true
+		current.StartedAt = response.StartedAt
+		current.FinishedAt = response.FinishedAt
+		return nil
+	}); err != nil {
 		return st.Outcome{Status: st.Retrying}, err
 	}
 	return outcome, nil
@@ -131,6 +155,11 @@ func (s *JobService) ListRemoteJobs(ctx context.Context, environmentID string) (
 	if remoteErr == nil {
 		catalog.ObservedAt = time.Now().UTC()
 		catalog.Offline = false
+		if catalog.DurableRuns {
+			if err := s.reconcileLegacyRemoteCatalogInternal(ctx, environmentID, catalog.Jobs); err != nil {
+				return nil, err
+			}
+		}
 		raw, err := json.Marshal(catalog)
 		if err != nil {
 			return nil, err
@@ -179,6 +208,16 @@ func (s *JobService) RetryRemoteRun(ctx context.Context, environmentID, jobID, r
 	}
 	if err := s.authorizeRunInternal(ctx, run); err != nil {
 		return run, err
+	}
+	if run.Resolution != nil && run.Resolution.ResolvedBy == common.SystemUser.Username {
+		var remote st.Run
+		path := "/api/environments/0/jobs/" + url.PathEscape(jobID) + "/runs/" + url.PathEscape(runID)
+		if err := s.environment.ProxyJSONRequest(ctx, environmentID, http.MethodGet, path, nil, &remote); err != nil {
+			return run, err
+		}
+		if remote.ID != runID || remote.JobID != jobID || remote.EnvironmentID != "0" || remote.Status != st.Failed {
+			return run, errors.New("upgrade the agent before retrying a legacy settled run")
+		}
 	}
 	err = s.runs.UpdateRun(ctx, run, func(current *st.Run) error {
 		if current.Status != st.Failed && current.Status != st.Partial && current.Status != st.NeedsAttention {

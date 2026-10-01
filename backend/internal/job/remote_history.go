@@ -43,7 +43,7 @@ func (s *JobService) ListRuns(ctx context.Context, environmentID, jobID string, 
 	}
 	runs := make([]st.Run, 0, len(merged))
 	for _, run := range merged {
-		runs = append(runs, run)
+		runs = append(runs, projectRunOutcomeInternal(run))
 	}
 	sort.Slice(runs, func(i, j int) bool {
 		if runs[i].CreatedAt.Equal(runs[j].CreatedAt) {
@@ -86,7 +86,7 @@ func (s *JobService) remoteHistoryInternal(ctx context.Context, environmentID, j
 func (s *JobService) GetRun(ctx context.Context, environmentID, jobID, runID string) (st.Run, error) {
 	run, err := s.runs.Get(ctx, environmentID, jobID, runID)
 	if environmentID == "0" || !errors.Is(err, runs.ErrRunNotFound) {
-		return run, err
+		return projectRunOutcomeInternal(run), err
 	}
 	path := "/api/environments/0/jobs/" + url.PathEscape(jobID) + "/runs/" + url.PathEscape(runID)
 	if err := s.environment.ProxyJSONRequest(ctx, environmentID, http.MethodGet, path, nil, &run); err != nil {
@@ -99,7 +99,7 @@ func (s *JobService) GetRun(ctx context.Context, environmentID, jobID, runID str
 	if run.ActivityID != "" {
 		run.ActivityEnvironmentID = environmentID
 	}
-	return run, nil
+	return projectRunOutcomeInternal(run), nil
 }
 
 // CancelRun cancels manager admission or explicitly forwards an agent-owned cancellation.

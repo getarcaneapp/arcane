@@ -50,6 +50,10 @@ func newJobScheduler(appCtx context.Context, lc fx.Lifecycle, cfg *config.Config
 			if err := reconcileCoordinatorStartupInternal(schedulerCtx, jobService, backupEngine, updaterService, volumes, systemBackups, gitopsSync); err != nil {
 				return err
 			}
+			if gitopsSync != nil {
+				gitopsSync.RegisterAutoSyncJobsOnStartup(schedulerCtx)
+				gitopsSync.SubscribeProjectFileChanges(schedulerCtx)
+			}
 			if imageUpdateWatcher != nil {
 				imageUpdateWatcher.SetCoordinator(jobService.Coordinator())
 				if err := jobScheduler.RegisterBusWatcher(imageUpdateWatcher, true); err != nil {
@@ -343,13 +347,11 @@ func registerDynamicJobs(params dynamicJobsParams) error {
 		}
 		params.SystemBackup.RegisterBackupJobOnStartup(params.AppCtx)
 	}
-	// GitOps: one job per auto-sync-enabled sync (runs on manager and agents).
+	// GitOps startup submissions wait for Francis in the scheduler start hook.
 	if params.GitOpsSync != nil {
 		if err := params.GitOpsSync.SetScheduler(params.AppCtx, params.Scheduler, params.Admission); err != nil {
 			return err
 		}
-		params.GitOpsSync.RegisterAutoSyncJobsOnStartup(params.AppCtx)
-		params.GitOpsSync.SubscribeProjectFileChanges(params.AppCtx)
 	}
 
 	// Environment health: one job per enabled environment (manager only). The Jobs

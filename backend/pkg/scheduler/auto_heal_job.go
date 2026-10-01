@@ -544,7 +544,7 @@ func (j *AutoHealJob) Reconcile(ctx context.Context, previous schedulertypes.Run
 		return schedulertypes.Outcome{}, err
 	}
 	if !admitted {
-		return schedulertypes.Outcome{Status: schedulertypes.NeedsAttention, Message: "A container healing run already owns admission"}, nil
+		return schedulertypes.Outcome{Status: schedulertypes.Failed, Message: "A container healing run already owns admission"}, nil
 	}
 	defer lease.Release(ctx)
 	var plan autoHealPlanInternal
@@ -568,7 +568,7 @@ func (j *AutoHealJob) Reconcile(ctx context.Context, previous schedulertypes.Run
 		return schedulertypes.Outcome{}, err
 	}
 	if message != "" {
-		return schedulertypes.Outcome{Status: schedulertypes.NeedsAttention, Message: message, Targets: previous.Outcome.Targets}, nil
+		return schedulertypes.Outcome{Status: schedulertypes.Failed, Message: message, Targets: previous.Outcome.Targets}, nil
 	}
 	if !planned {
 		return schedulertypes.Outcome{Status: schedulertypes.Succeeded, Targets: previous.Outcome.Targets}, nil
@@ -621,7 +621,7 @@ func (j *AutoHealJob) resumeHealingPlanInternal(ctx context.Context, dockerClien
 		}
 		previous.Outcome.Targets = append(previous.Outcome.Targets, target)
 		if err != nil {
-			outcome.Status = schedulertypes.NeedsAttention
+			outcome.Status = schedulertypes.Failed
 			outcome.Message = err.Error()
 			break
 		}
