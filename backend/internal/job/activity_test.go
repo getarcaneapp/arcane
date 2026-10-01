@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 	"time"
+	"uuid"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
@@ -19,19 +20,20 @@ func newJobActivityTestServiceInternal(t *testing.T) (*JobService, *activity.Act
 	sqlDB, err := db.DB.DB()
 	require.NoError(t, err)
 	sqlDB.SetMaxOpenConns(1)
-	t.Cleanup(func() { require.NoError(t, sqlDB.Close()) })
 	require.NoError(t, db.AutoMigrate(&activity.Activity{}, &activity.ActivityMessage{}))
 	activities := activity.NewActivityService(db, nil)
-	svc := New(Dependencies{DB: db, Config: &config.Config{}, Activity: activities}).Service()
+	svc := NewJobService(db, nil, &config.Config{}, newJobCoordinatorForTestInternal(t, db), nil, nil, activities)
 	return svc, activities, db
 }
 
 func TestJobActivityLifecycle(t *testing.T) {
 	svc, activities, db := newJobActivityTestServiceInternal(t)
 	ctx := t.Context()
-	run, err := svc.Queue.Submit(ctx, st.Request{JobID: "auto-update", Trigger: "scheduled"})
+	run, err := svc.runs.Submit(ctx, st.Request{JobID: "auto-update", RunID: "b6d679c2-bdf5-4af1-985f-49c468983ba0", Trigger: "scheduled"})
 	require.NoError(t, err)
-	require.NotEmpty(t, run.ActivityID)
+	activityID, err := uuid.Parse(run.ActivityID)
+	require.NoError(t, err)
+	require.NotEqual(t, uuid.Nil(), activityID)
 	require.Equal(t, "0", run.ActivityEnvironmentID)
 	check := func(status activitytypes.Status, precise st.RunStatus) {
 		t.Helper()
@@ -42,11 +44,11 @@ func TestJobActivityLifecycle(t *testing.T) {
 		require.Equal(t, run.ID, *detail.Activity.BatchID)
 	}
 	check(activitytypes.StatusQueued, st.Queued)
-	duplicate, err := svc.Queue.Submit(ctx, st.Request{JobID: run.JobID, RunID: run.ID, Trigger: "scheduled"})
+	duplicate, err := svc.runs.Submit(ctx, st.Request{JobID: run.JobID, RunID: run.ID, Trigger: "scheduled"})
 	require.NoError(t, err)
 	require.Equal(t, run.ActivityID, duplicate.ActivityID)
 	for _, status := range []st.RunStatus{st.Running, st.Waiting, st.NeedsAttention} {
-		require.NoError(t, svc.Queue.UpdateRun(ctx, run, func(current *st.Run) error {
+		require.NoError(t, svc.runs.UpdateRun(ctx, run, func(current *st.Run) error {
 			current.Status = status
 			current.UpdatedAt = time.Now().UTC()
 			current.Outcome = st.Outcome{Status: status, Message: "operation detail"}
@@ -54,18 +56,18 @@ func TestJobActivityLifecycle(t *testing.T) {
 		}))
 	}
 	check(activitytypes.StatusFailed, st.NeedsAttention)
-	_, err = svc.Queue.Retry(ctx, "0", run.JobID, run.ID)
+	_, err = svc.runs.Retry(ctx, "0", run.JobID, run.ID)
 	require.NoError(t, err)
 	check(activitytypes.StatusQueued, st.Queued)
 	_, err = activities.CancelActivity(ctx, "0", run.ActivityID, "operator")
 	require.ErrorIs(t, err, activity.ErrActivityNotCancelable)
 	check(activitytypes.StatusQueued, st.Queued)
-	require.NoError(t, svc.Queue.UpdateRun(ctx, run, func(current *st.Run) error {
+	require.NoError(t, svc.runs.UpdateRun(ctx, run, func(current *st.Run) error {
 		current.Status = st.NeedsAttention
 		current.UpdatedAt = time.Now().UTC()
 		return nil
 	}))
-	_, err = svc.Queue.Resolve(ctx, "0", run.JobID, run.ID, "operator")
+	_, err = svc.runs.Resolve(ctx, "0", run.JobID, run.ID, "operator")
 	require.NoError(t, err)
 	check(activitytypes.StatusCancelled, st.Canceled)
 	var count int64
@@ -91,7 +93,7 @@ func TestJobActivityVisibilityAndGrouping(t *testing.T) {
 		{"activity-sweep", "scheduled", "0", false},
 	} {
 		t.Run(test.job+"/"+test.trigger+"/"+test.environment, func(t *testing.T) {
-			run, err := svc.Queue.Submit(t.Context(), st.Request{JobID: test.job, Trigger: test.trigger, EnvironmentID: test.environment})
+			run, err := svc.runs.Submit(t.Context(), st.Request{JobID: test.job, Trigger: test.trigger, EnvironmentID: test.environment})
 			require.NoError(t, err)
 			require.Equal(t, test.visible, run.ActivityID != "")
 			if test.visible {
@@ -111,28 +113,28 @@ func TestJobActivityRestartRepairsFailedProjection(t *testing.T) {
 	svc, activities, db := newJobActivityTestServiceInternal(t)
 	ctx := t.Context()
 	require.NoError(t, db.Migrator().DropTable(&activity.ActivityMessage{}, &activity.Activity{}))
-	run, err := svc.Queue.Submit(ctx, st.Request{JobID: "auto-update", Trigger: "scheduled"})
+	run, err := svc.runs.Submit(ctx, st.Request{JobID: "auto-update", Trigger: "scheduled"})
 	require.NoError(t, err, "activity failure must not reject accepted work")
 	require.NotEmpty(t, run.ActivityID)
-	require.NoError(t, svc.Queue.UpdateRun(ctx, run, func(current *st.Run) error {
+	require.NoError(t, svc.runs.UpdateRun(ctx, run, func(current *st.Run) error {
 		current.Status = st.NeedsAttention
 		current.Outcome = st.Outcome{Message: "interrupted before applying updates"}
 		current.UpdatedAt = time.Now().UTC()
 		return nil
 	}))
 	require.NoError(t, db.AutoMigrate(&activity.Activity{}, &activity.ActivityMessage{}))
-	restarted := New(Dependencies{DB: db, Config: &config.Config{}, Activity: activities}).Service()
-	require.NoError(t, restarted.Queue.Start(ctx))
+	restarted := NewJobService(db, nil, &config.Config{}, svc.runs, nil, nil, activities)
+	require.NoError(t, restarted.runs.Start(ctx))
 	t.Cleanup(func() {
 		stopCtx, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()
-		require.NoError(t, restarted.Queue.Stop(stopCtx))
+		require.NoError(t, restarted.runs.Stop(stopCtx))
 	})
 	detail, err := activities.GetActivityDetail(ctx, "0", run.ActivityID, 10)
 	require.NoError(t, err)
 	require.Equal(t, activitytypes.StatusFailed, detail.Activity.Status)
 	require.Contains(t, detail.Activity.LatestMessage, "interrupted")
-	persisted, err := restarted.Queue.Get(ctx, "0", run.JobID, run.ID)
+	persisted, err := restarted.runs.Get(ctx, "0", run.JobID, run.ID)
 	require.NoError(t, err)
 	require.Zero(t, persisted.AttemptCount, "repair must not execute blocked work")
 	require.Equal(t, run.ActivityID, persisted.ActivityID)

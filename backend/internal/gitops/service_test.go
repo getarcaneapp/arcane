@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"emperror.dev/errors"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
@@ -23,13 +22,14 @@ import (
 	git "github.com/getarcaneapp/arcane/backend/v2/pkg/gitutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/entityjobs"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
+	francistest "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/francis/testing"
 	"github.com/getarcaneapp/arcane/types/v2/gitops"
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	swarmtypes "github.com/getarcaneapp/arcane/types/v2/swarm"
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/fx/fxtest"
 	"gorm.io/gorm"
 )
 
@@ -37,42 +37,28 @@ func setupGitOpsProjectTestDBInternal(t *testing.T) *database.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	sqlDB.SetMaxOpenConns(1)
 	require.NoError(t, db.AutoMigrate(&projectpkg.Project{}, &settings.SettingVariable{}, &imageupdate.ImageUpdateRecord{}, &event.Event{}))
 	return &database.DB{DB: db}
 }
 
 func newGitOpsSettingsServiceForTestInternal(t testing.TB, ctx context.Context, db *database.DB) (*settings.SettingsService, error) {
 	t.Helper()
-	fxLifecycle := fxtest.NewLifecycle(t)
-	runtime, err := actors.NewRuntime(t.Context(), fxLifecycle)
-	require.NoError(t, err)
-	executor, err := actors.NewExecutor(t.Context(), runtime, "gitops-settings-test", t.Name(), 3)
-	require.NoError(t, err)
-	effects, err := actors.NewExecutor(t.Context(), runtime, "gitops-settings-effects-test", t.Name(), 3)
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		stopCtx, cancel := context.WithTimeout(context.Background(), time.Second)
-		defer cancel()
-		require.NoError(t, executor.Stop(stopCtx))
-		require.NoError(t, effects.Stop(stopCtx))
-		require.NoError(t, fxLifecycle.Stop(stopCtx))
-	})
-	return settings.NewSettingsService(ctx, db, executor, effects)
+	service, err := settings.NewSettingsService(ctx, db)
+	if err == nil {
+		t.Cleanup(func() { require.NoError(t, service.Stop(context.WithoutCancel(t.Context()))) })
+	}
+	return service, err
 }
 
-func newGitOpsAdmissionGateForTestInternal(t testing.TB) *actors.Gate[actors.AdmissionKey] {
+func newGitOpsAdmissionGateForTestInternal(t testing.TB) *runs.Admission {
 	t.Helper()
-	fxLifecycle := fxtest.NewLifecycle(t)
-	runtime, err := actors.NewRuntime(t.Context(), fxLifecycle)
-	require.NoError(t, err)
-	gate, err := actors.NewGate[actors.AdmissionKey](t.Context(), runtime, "gitops-test-admission", t.Name())
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		stopCtx, cancel := context.WithTimeout(context.Background(), time.Second)
-		defer cancel()
-		require.NoError(t, gate.Stop(stopCtx))
-		require.NoError(t, fxLifecycle.Stop(stopCtx))
-	})
+	runtime := francistest.New(t)
+	gate := runs.NewAdmission(runtime.Service(), t.Name())
+	require.NoError(t, gate.Register(runtime))
+	francistest.Start(t, runtime)
 	return gate
 }
 
@@ -90,19 +76,14 @@ func setupGitOpsSyncDirectoryTestService(t *testing.T) (*GitOpsSyncService, *dat
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
 	eventService := event.NewEventService(db, config.Load(), nil)
-	projectService := projectpkg.NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load())
+	projectService := projectpkg.NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 
 	return NewGitOpsSyncService(db, nil, projectService, nil, eventService, settingsService), db, projectsDir
 }
 
 func TestGitOpsSyncService_OverlappingSyncPreservesSuccessShapedSkipInternal(t *testing.T) {
-	lifecycle := fxtest.NewLifecycle(t)
-	actorRuntime, err := actors.NewRuntime(t.Context(), lifecycle)
-	require.NoError(t, err)
-	gate, err := actors.NewGate[actors.AdmissionKey](t.Context(), actorRuntime, "gitops-test-admission", "overlap")
-	require.NoError(t, err)
-
-	key := actors.AdmissionKey{Scope: gitOpsSyncAdmissionScopeInternal, ID: "sync-id"}
+	gate := newGitOpsAdmissionGateForTestInternal(t)
+	key := schedulertypes.AdmissionKey{Scope: gitOpsSyncAdmissionScopeInternal, ID: "sync-id"}
 	lease, admitted, err := gate.TryAcquire(t.Context(), key)
 	require.NoError(t, err)
 	require.True(t, admitted)
@@ -113,12 +94,7 @@ func TestGitOpsSyncService_OverlappingSyncPreservesSuccessShapedSkipInternal(t *
 	require.NoError(t, err)
 	require.False(t, result.Success)
 	require.Equal(t, "sync already in progress", result.Message)
-	lease.Release()
-
-	stopCtx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	require.NoError(t, gate.Stop(stopCtx))
-	require.NoError(t, lifecycle.Stop(stopCtx))
+	lease.Release(t.Context())
 }
 
 type gitOpsSyncTestSchedulerInternal struct {

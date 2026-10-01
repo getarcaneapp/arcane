@@ -62,19 +62,12 @@ const (
 	ErrInsufficientPrivilege = errors.Sentinel("insufficient privilege to modify this user")
 )
 
-func NewUserService(db *database.DB) *UserService {
+func NewUserService(db *database.DB, roleService *role.RoleService) *UserService {
 	return &UserService{
 		db:           db,
+		roleService:  roleService,
 		argon2Params: DefaultArgon2Params(),
 	}
-}
-
-// WithRoleService wires the role.RoleService dependency. Separated from the
-// constructor so the bootstrap can construct UserService first (role.RoleService
-// itself has no UserService dependency).
-func (s *UserService) WithRoleService(roleService *role.RoleService) *UserService {
-	s.roleService = roleService
-	return s
 }
 
 func (s *UserService) HashPassword(password string) (string, error) {

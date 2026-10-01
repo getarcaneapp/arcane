@@ -8,9 +8,9 @@ import (
 )
 
 // FailInterruptedBackups finalizes backup activities before startup admits work.
-func (s *ActivityService) FailInterruptedBackups(ctx context.Context) error {
+func (s *ActivityService) FailInterruptedBackups(ctx context.Context, protectedIDs ...string) error {
 	var pending []Activity
-	if err := s.db.WithContext(ctx).Where("status IN ?", []activitytypes.Status{activitytypes.StatusQueued, activitytypes.StatusRunning}).Find(&pending).Error; err != nil {
+	if err := s.db.WithContext(ctx).Where("status IN ?", []activitytypes.Status{activitytypes.StatusQueued, activitytypes.StatusRunning}).Where("id NOT IN ?", append(protectedIDs, "")).Find(&pending).Error; err != nil {
 		return errors.WrapIf(err, "find interrupted backup activities")
 	}
 	const message = "Backup interrupted by Arcane restart"

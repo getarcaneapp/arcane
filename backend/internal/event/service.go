@@ -14,12 +14,12 @@ import (
 	"time"
 
 	"emperror.dev/errors"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/concurrency"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	eventtypes "github.com/getarcaneapp/arcane/types/v2/event"
 	"github.com/samber/mo"
@@ -32,7 +32,7 @@ import (
 )
 
 type EventService struct {
-	changes           *actors.Signal[struct{}]
+	changes           *concurrency.Signal[struct{}]
 	dockerCorrelation dockerCorrelationInternal
 	db                *database.DB
 	cfg               *config.Config
@@ -46,7 +46,7 @@ func NewEventService(db *database.DB, cfg *config.Config, httpClient *http.Clien
 		}
 	}
 	return &EventService{
-		changes:           actors.NewSignal[struct{}](),
+		changes:           concurrency.NewSignal[struct{}](),
 		dockerCorrelation: dockerCorrelationInternal{now: time.Now},
 		db:                db,
 		cfg:               cfg,
@@ -56,18 +56,18 @@ func NewEventService(db *database.DB, cfg *config.Config, httpClient *http.Clien
 
 type CreateEventRequest struct {
 	// Internal identity for replay-safe daemon delivery; never accepted from API payloads.
-	deduplicationID string
-	Type            EventType     `json:"type"`
-	Severity        EventSeverity `json:"severity,omitempty"`
-	Title           string        `json:"title"`
-	Description     string        `json:"description,omitempty"`
-	ResourceType    *string       `json:"resourceType,omitempty"`
-	ResourceID      *string       `json:"resourceId,omitempty"`
-	ResourceName    *string       `json:"resourceName,omitempty"`
-	UserID          *string       `json:"userId,omitempty"`
-	Username        *string       `json:"username,omitempty"`
-	EnvironmentID   *string       `json:"environmentId,omitempty"`
-	Metadata        database.JSON `json:"metadata,omitempty"`
+	deduplicationKey string
+	Type             EventType     `json:"type"`
+	Severity         EventSeverity `json:"severity,omitempty"`
+	Title            string        `json:"title"`
+	Description      string        `json:"description,omitempty"`
+	ResourceType     *string       `json:"resourceType,omitempty"`
+	ResourceID       *string       `json:"resourceId,omitempty"`
+	ResourceName     *string       `json:"resourceName,omitempty"`
+	UserID           *string       `json:"userId,omitempty"`
+	Username         *string       `json:"username,omitempty"`
+	EnvironmentID    *string       `json:"environmentId,omitempty"`
+	Metadata         database.JSON `json:"metadata,omitempty"`
 }
 
 func (s *EventService) CreateEvent(ctx context.Context, req CreateEventRequest) (*Event, error) {
@@ -75,7 +75,6 @@ func (s *EventService) CreateEvent(ctx context.Context, req CreateEventRequest) 
 	userID, username := normalizeEventActor(req.UserID, req.Username)
 
 	eventRecord := &Event{
-		ID:            req.deduplicationID,
 		CreatedAt:     time.Now(),
 		Type:          req.Type,
 		Severity:      severity,
@@ -91,10 +90,14 @@ func (s *EventService) CreateEvent(ctx context.Context, req CreateEventRequest) 
 		Timestamp:     time.Now(),
 	}
 
+	if req.deduplicationKey != "" {
+		eventRecord.DeduplicationKey = &req.deduplicationKey
+	}
+
 	var inserted bool
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if req.deduplicationID != "" {
-			tx = tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "id"}}, DoNothing: true})
+		if req.deduplicationKey != "" {
+			tx = tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "deduplication_key"}}, DoNothing: true})
 		}
 		result := tx.Create(eventRecord)
 		if result.Error != nil {

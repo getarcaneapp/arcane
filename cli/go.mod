@@ -12,7 +12,7 @@ require (
 	charm.land/log/v2 v2.0.1
 	emperror.dev/errors v0.8.1
 	github.com/charmbracelet/x/term v0.2.2
-	github.com/getarcaneapp/arcane/types/v2 v2.13.1
+	github.com/getarcaneapp/arcane/types/v2 v2.14.0
 	github.com/go-viper/mapstructure/v2 v2.5.0
 	github.com/mattn/go-runewidth v0.0.30
 	github.com/samber/hot v0.13.1
@@ -21,7 +21,7 @@ require (
 	github.com/spf13/viper v1.21.0
 	github.com/stretchr/testify v1.12.1
 	go.getarcane.app/acfs v0.6.1
-	go.getarcane.app/kit v0.3.1
+	go.getarcane.app/kit v0.3.2
 	go.getarcane.app/sys/bytes v0.2.1
 )
 
@@ -92,7 +92,7 @@ require (
 	go.uber.org/multierr v1.11.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	go.yaml.in/yaml/v4 v4.0.0-rc.6 // indirect
-	golang.org/x/exp v0.0.0-20260824195058-e88cd73687aa // indirect
+	golang.org/x/exp v0.0.0-20260908205506-85c1c2202aba // indirect
 	golang.org/x/sync v0.23.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect
 	golang.org/x/text v0.42.0 // indirect

@@ -8,19 +8,15 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 )
 
-type Dependencies struct {
-	Environment *environment.EnvironmentService
-	Event       *event.EventService
-	Config      *config.Config
-}
-
 type Module struct {
-	service *SwarmService
-	deps    Dependencies
+	service     *SwarmService
+	environment *environment.EnvironmentService
+	event       *event.EventService
+	config      *config.Config
 }
 
-func New(service *SwarmService, deps Dependencies) *Module {
-	return &Module{service: service, deps: deps}
+func New(service *SwarmService, environmentService *environment.EnvironmentService, eventService *event.EventService, cfg *config.Config) *Module {
+	return &Module{service: service, environment: environmentService, event: eventService, config: cfg}
 }
 
 func (m *Module) Service() *SwarmService {
@@ -35,5 +31,5 @@ func (m *Module) RegisterRoutes(api huma.API) {
 		RegisterSwarm(api, nil, nil, nil, nil)
 		return
 	}
-	RegisterSwarm(api, m.service, m.deps.Environment, m.deps.Event, m.deps.Config)
+	RegisterSwarm(api, m.service, m.environment, m.event, m.config)
 }

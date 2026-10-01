@@ -7,10 +7,12 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"time"
 
 	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/container"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
@@ -35,6 +37,7 @@ import (
 )
 
 type SystemService struct {
+	location              *time.Location
 	db                    *database.DB
 	dockerService         *docker.DockerClientService
 	containerService      *container.ContainerService
@@ -59,8 +62,14 @@ func NewSystemService(
 	networkService *network.NetworkService,
 	settingsService *settings.SettingsService,
 	activityService *activity.ActivityService,
+	cfg *config.Config,
 ) *SystemService {
+	location := time.UTC
+	if cfg != nil {
+		location = cfg.GetLocation()
+	}
 	return &SystemService{
+		location:           location,
 		db:                 db,
 		dockerService:      dockerService,
 		containerService:   containerService,

@@ -40,5 +40,5 @@ func (s *JobService) ResolveRun(ctx context.Context, environmentID, jobID, runID
 	if environmentID != "0" {
 		return s.resolveRemoteRunInternal(ctx, environmentID, jobID, runID, actor)
 	}
-	return s.Queue.Resolve(ctx, environmentID, jobID, runID, actor)
+	return s.runs.Resolve(ctx, environmentID, jobID, runID, actor)
 }

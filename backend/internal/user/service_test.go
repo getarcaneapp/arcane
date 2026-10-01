@@ -48,7 +48,7 @@ func setupUserAndRoleServices(t *testing.T) (*UserService, *role.RoleService) {
 	db := setupAuthServiceTestDBInternal(t)
 	role := role.NewRoleService(db)
 	require.NoError(t, role.EnsureBuiltInRoles(context.Background()))
-	userRecord := NewUserService(db).WithRoleService(role)
+	userRecord := NewUserService(db, role)
 	return userRecord, role
 }
 
@@ -441,7 +441,7 @@ func TestCreateDefaultAdminRecoversArcaneUserWhenNoGlobalAdminExists(t *testing.
 }
 
 func TestUserDisplayNameNormalization(t *testing.T) {
-	svc := NewUserService(setupAuthServiceTestDBInternal(t))
+	svc := NewUserService(setupAuthServiceTestDBInternal(t), nil)
 	ctx := context.Background()
 	created, err := svc.CreateUser(ctx, &common.User{ID: "normalized", Username: " Jose\u0301 ", Email: new(" Jose\u0301@example.com "), DisplayName: new(" Jose\u0301 ")})
 	require.NoError(t, err)

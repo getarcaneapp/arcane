@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	"encoding/json/jsontext"
 	"time"
 )
 
@@ -26,11 +27,12 @@ func (s RunStatus) Terminal() bool {
 }
 
 type TargetOutcome struct {
-	ResourceType string    `json:"resourceType,omitempty"`
-	ID           string    `json:"id"`
-	Status       RunStatus `json:"status"`
-	Message      string    `json:"message,omitempty"`
-	ActivityID   string    `json:"activityId,omitempty"`
+	RecoveryData jsontext.Value `json:"-" msgpack:"recoveryData,omitempty"`
+	ResourceType string         `json:"resourceType,omitempty"`
+	ID           string         `json:"id"`
+	Status       RunStatus      `json:"status"`
+	Message      string         `json:"message,omitempty"`
+	ActivityID   string         `json:"activityId,omitempty"`
 }
 
 type Outcome struct {
@@ -104,12 +106,6 @@ type WorkerHealth struct {
 	LastError string     `json:"lastError,omitempty"`
 	NextRetry *time.Time `json:"nextRetry,omitempty"`
 	UpdatedAt time.Time  `json:"updatedAt"`
-}
-
-// Dispatcher owns durable admission and execution. Cron only submits work.
-type Dispatcher interface {
-	Submit(ctx context.Context, request Request) (Run, error)
-	Checkpoint(ctx context.Context, jobID, schedule string, nextRun time.Time) error
 }
 
 // Reconciler consults domain state before repeating interrupted work.

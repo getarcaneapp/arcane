@@ -7,7 +7,6 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
-	"github.com/samber/lo"
 	kit "go.getarcane.app/kit/pkg"
 )
 
@@ -109,19 +108,19 @@ func compareActivitiesInternal(a, b activitytypes.Activity, params pagination.Qu
 	case "status":
 		result = cmp.Compare(a.Status, b.Status)
 	case "resourceType":
-		result = strings.Compare(lo.FromPtr(a.ResourceType), lo.FromPtr(b.ResourceType))
+		result = strings.Compare(kit.FromPtr(a.ResourceType), kit.FromPtr(b.ResourceType))
 	case "resourceName":
-		result = strings.Compare(lo.FromPtr(a.ResourceName), lo.FromPtr(b.ResourceName))
+		result = strings.Compare(kit.FromPtr(a.ResourceName), kit.FromPtr(b.ResourceName))
 	case "startedAt":
 		result = a.StartedAt.Compare(b.StartedAt)
 	case "createdAt":
 		result = a.CreatedAt.Compare(b.CreatedAt)
 	case "updatedAt":
-		result = lo.FromPtr(a.UpdatedAt).Compare(lo.FromPtr(b.UpdatedAt))
+		result = kit.FromPtr(a.UpdatedAt).Compare(kit.FromPtr(b.UpdatedAt))
 	case "endedAt":
-		result = lo.FromPtr(a.EndedAt).Compare(lo.FromPtr(b.EndedAt))
+		result = kit.FromPtr(a.EndedAt).Compare(kit.FromPtr(b.EndedAt))
 	case "durationMs":
-		result = cmp.Compare(lo.FromPtr(a.DurationMs), lo.FromPtr(b.DurationMs))
+		result = cmp.Compare(kit.FromPtr(a.DurationMs), kit.FromPtr(b.DurationMs))
 	}
 	if params.Order == pagination.SortDesc {
 		result = -result

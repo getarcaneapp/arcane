@@ -3,6 +3,7 @@ package scheduler
 import (
 	"cmp"
 	"context"
+	"encoding/json/v2"
 	"log/slog"
 	"slices"
 	"strings"
@@ -10,7 +11,6 @@ import (
 	"time"
 
 	"emperror.dev/errors"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
@@ -19,6 +19,7 @@ import (
 	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
 	scheduleutil "github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/schedule"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
@@ -38,6 +39,17 @@ const (
 )
 
 // restartRecord tracks restart timestamps for a single container.
+type autoHealPlanInternal struct {
+	Containers    []container.Summary `json:"containers"`
+	MaxRestarts   int                 `json:"maxRestarts"`
+	WindowMinutes int                 `json:"windowMinutes"`
+}
+
+type autoHealBaselineInternal struct {
+	StartedAt    string `json:"startedAt"`
+	RestartCount int    `json:"restartCount"`
+}
+
 type restartRecord struct {
 	timestamps []time.Time
 }
@@ -47,7 +59,7 @@ type AutoHealJob struct {
 	settingsService     *settings.SettingsService
 	eventService        *event.EventService
 	notificationService *notification.NotificationService
-	admissionGate       *actors.Gate[actors.AdmissionKey]
+	admissionGate       *runs.Admission
 
 	mu       sync.Mutex
 	restarts map[string]*restartRecord
@@ -67,7 +79,7 @@ func NewAutoHealJob(
 	settingsService *settings.SettingsService,
 	eventService *event.EventService,
 	notificationService *notification.NotificationService,
-	admissionGate *actors.Gate[actors.AdmissionKey],
+	admissionGate *runs.Admission,
 ) (*AutoHealJob, error) {
 	if admissionGate == nil {
 		return nil, errors.New("auto-heal admission gate unavailable")
@@ -109,7 +121,7 @@ func (j *AutoHealJob) Run(ctx context.Context) (schedulertypes.Outcome, error) {
 		return schedulertypes.Outcome{Status: schedulertypes.Skipped}, nil
 	}
 
-	lease, admitted, err := j.admissionGate.TryAcquire(ctx, actors.AdmissionKey{Scope: autoHealAdmissionScopeInternal})
+	lease, admitted, err := j.admissionGate.TryAcquire(ctx, schedulertypes.AdmissionKey{Scope: autoHealAdmissionScopeInternal})
 	if err != nil {
 		slog.ErrorContext(ctx, "auto-heal admission failed", "error", err)
 		return schedulertypes.Outcome{}, err
@@ -118,7 +130,7 @@ func (j *AutoHealJob) Run(ctx context.Context) (schedulertypes.Outcome, error) {
 		slog.WarnContext(ctx, "auto-heal run still in progress; skipping overlapping run")
 		return schedulertypes.Outcome{Status: schedulertypes.Skipped}, nil
 	}
-	defer lease.Release()
+	defer lease.Release(ctx)
 
 	dockerClient, err := j.getDockerClientInternal(ctx)
 	if err != nil {
@@ -140,6 +152,13 @@ func (j *AutoHealJob) Run(ctx context.Context) (schedulertypes.Outcome, error) {
 
 	selfID := j.selfContainerIDInternal(ctx)
 	candidates := j.filterCandidatesInternal(containers, excludedContainers, selfID)
+	frozen, err := json.Marshal(autoHealPlanInternal{Containers: candidates, MaxRestarts: maxRestarts, WindowMinutes: restartWindowMinutes})
+	if err != nil {
+		return schedulertypes.Outcome{}, err
+	}
+	if err := jobcontext.Progress(ctx, schedulertypes.TargetOutcome{ResourceType: "heal_plan", ID: "auto-heal-plan", Status: schedulertypes.Succeeded, RecoveryData: frozen}); err != nil {
+		return schedulertypes.Outcome{}, err
+	}
 
 	g, groupCtx := errgroup.WithContext(ctx)
 	var resultMu sync.Mutex
@@ -223,7 +242,7 @@ func (j *AutoHealJob) processCandidateInternal(
 	restartWindowMinutes int,
 ) (schedulertypes.TargetOutcome, error) {
 	containerID := candidate.ID
-	target := schedulertypes.TargetOutcome{ID: containerID, Status: schedulertypes.Skipped}
+	target := schedulertypes.TargetOutcome{ResourceType: "container", ID: containerID, Status: schedulertypes.Skipped}
 	if previous, ok := jobcontext.Run(ctx); ok {
 		for _, completed := range previous.Outcome.Targets {
 			if completed.ID == containerID && completed.Status == schedulertypes.Succeeded {
@@ -262,6 +281,12 @@ func (j *AutoHealJob) processCandidateInternal(
 		return target, nil
 	}
 
+	baseline, err := json.Marshal(autoHealBaselineInternal{StartedAt: inspect.State.StartedAt, RestartCount: inspect.RestartCount})
+	if err != nil {
+		releaseSlot()
+		return target, err
+	}
+	target.RecoveryData = baseline
 	target.Status = schedulertypes.Running
 	if err := jobcontext.Progress(ctx, target); err != nil {
 		releaseSlot()
@@ -514,10 +539,93 @@ func (j *AutoHealJob) RecordRestartAtExported(containerID string, t time.Time) {
 }
 
 func (j *AutoHealJob) Reconcile(ctx context.Context, previous schedulertypes.Run) (schedulertypes.Outcome, error) {
+	lease, admitted, err := j.admissionGate.TryAcquire(ctx, schedulertypes.AdmissionKey{Scope: autoHealAdmissionScopeInternal})
+	if err != nil {
+		return schedulertypes.Outcome{}, err
+	}
+	if !admitted {
+		return schedulertypes.Outcome{Status: schedulertypes.NeedsAttention, Message: "A container healing run already owns admission"}, nil
+	}
+	defer lease.Release(ctx)
+	var plan autoHealPlanInternal
+	planned := false
 	for _, target := range previous.Outcome.Targets {
-		if target.Status != schedulertypes.Succeeded && target.Status != schedulertypes.Skipped {
-			return schedulertypes.Outcome{Status: schedulertypes.NeedsAttention, Message: "A container restart has an unconfirmed outcome", Targets: previous.Outcome.Targets}, nil
+		if target.ID == "auto-heal-plan" && len(target.RecoveryData) > 0 {
+			if err := json.Unmarshal(target.RecoveryData, &plan); err != nil {
+				return schedulertypes.Outcome{}, err
+			}
+			planned = true
+			break
 		}
 	}
-	return j.Run(jobcontext.WithExecution(ctx, previous, nil))
+
+	dockerClient, err := j.getDockerClientInternal(ctx)
+	if err != nil {
+		return schedulertypes.Outcome{}, err
+	}
+	message, err := j.confirmRestartTargetsInternal(ctx, dockerClient, previous.Outcome.Targets)
+	if err != nil {
+		return schedulertypes.Outcome{}, err
+	}
+	if message != "" {
+		return schedulertypes.Outcome{Status: schedulertypes.NeedsAttention, Message: message, Targets: previous.Outcome.Targets}, nil
+	}
+	if !planned {
+		return schedulertypes.Outcome{Status: schedulertypes.Succeeded, Targets: previous.Outcome.Targets}, nil
+	}
+	return j.resumeHealingPlanInternal(ctx, dockerClient, plan, previous)
+}
+
+func (j *AutoHealJob) confirmRestartTargetsInternal(ctx context.Context, dockerClient *client.Client, targets []schedulertypes.TargetOutcome) (string, error) {
+	message := ""
+	for index, target := range targets {
+		if target.Status == schedulertypes.Succeeded || target.Status == schedulertypes.Skipped {
+			continue
+		}
+		var baseline autoHealBaselineInternal
+		if len(target.RecoveryData) == 0 || json.Unmarshal(target.RecoveryData, &baseline) != nil {
+			message = "A container restart has no persisted baseline"
+			break
+		}
+		inspect, inspectErr := j.inspectContainerInternal(ctx, dockerClient, target.ID)
+		if inspectErr != nil || inspect.State == nil || inspect.State.Restarting || (inspect.State.StartedAt == baseline.StartedAt && inspect.RestartCount == baseline.RestartCount) {
+			message = "A container restart has an unconfirmed outcome"
+			break
+		}
+		target.Status = schedulertypes.Succeeded
+		target.Message = "Container restart confirmed after recovery"
+		if err := jobcontext.Progress(ctx, target); err != nil {
+			return "", err
+		}
+		targets[index] = target
+	}
+	return message, nil
+}
+
+func (j *AutoHealJob) resumeHealingPlanInternal(ctx context.Context, dockerClient *client.Client, plan autoHealPlanInternal, previous schedulertypes.Run) (schedulertypes.Outcome, error) {
+	outcome := schedulertypes.Outcome{Status: schedulertypes.Succeeded}
+	for _, candidate := range plan.Containers {
+		attempted := false
+		for _, target := range previous.Outcome.Targets {
+			if target.ID == candidate.ID {
+				attempted = true
+				break
+			}
+		}
+		if attempted {
+			continue
+		}
+		target, err := j.processCandidateInternal(ctx, dockerClient, candidate, plan.MaxRestarts, time.Duration(plan.WindowMinutes)*time.Minute, plan.WindowMinutes)
+		if progressErr := jobcontext.Progress(ctx, target); progressErr != nil {
+			return schedulertypes.Outcome{}, progressErr
+		}
+		previous.Outcome.Targets = append(previous.Outcome.Targets, target)
+		if err != nil {
+			outcome.Status = schedulertypes.NeedsAttention
+			outcome.Message = err.Error()
+			break
+		}
+	}
+	outcome.Targets = previous.Outcome.Targets
+	return outcome, nil
 }

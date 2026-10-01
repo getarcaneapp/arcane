@@ -114,7 +114,7 @@ func setupGitOpsBackupTestServiceInternal(t *testing.T) *backupTestEnvInternal {
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
 	eventService := event.NewEventService(db, config.Load(), nil)
-	projectService := projectpkg.NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load())
+	projectService := projectpkg.NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 	repoService := gitrepo.NewGitRepositoryService(db, t.TempDir(), eventService, settingsService)
 
 	service := NewGitOpsSyncService(db, repoService, projectService, nil, eventService, settingsService)
@@ -530,7 +530,7 @@ func TestGitOpsBackup_SaveSignalMarksPendingAndRunsAfterDebounce(t *testing.T) {
 	env.service.SubscribeProjectFileChanges(t.Context())
 
 	writeBackupProjectFileInternal(t, env.projectPath, "compose.yaml", "services:\n  app:\n    image: nginx:1.29-alpine\n")
-	env.service.projectService.FilesChanged().Publish(env.project.ID)
+	env.service.projectService.FilesChanged.Publish(env.project.ID)
 
 	require.Eventually(t, func() bool {
 		head, exists, err := env.remote.RemoteBranchHead(t.Context(), env.repoURL, "main", git.AuthConfig{AuthType: "none"})
@@ -538,6 +538,11 @@ func TestGitOpsBackup_SaveSignalMarksPendingAndRunsAfterDebounce(t *testing.T) {
 	}, 5*time.Second, 25*time.Millisecond)
 	require.Positive(t, env.scheduler.submitCount())
 	require.NotEqual(t, firstHead, env.remoteHeadInternal(t, "main"))
+
+	require.Eventually(t, func() bool {
+		stored := env.reloadInternal(t, syncRecord.ID)
+		return stored.LastSyncStatus != nil && *stored.LastSyncStatus == "success" && !stored.BackupPending
+	}, 5*time.Second, 25*time.Millisecond)
 
 	stored := env.reloadInternal(t, syncRecord.ID)
 	require.NotNil(t, stored.LastBackupAt)
@@ -558,7 +563,7 @@ func TestGitOpsBackup_SaveSignalOnlyMarksPendingWhenAutoSyncIsOff(t *testing.T) 
 	env.service.SubscribeProjectFileChanges(t.Context())
 
 	writeBackupProjectFileInternal(t, env.projectPath, "compose.yaml", "services:\n  app:\n    image: nginx:1.29-alpine\n")
-	env.service.projectService.FilesChanged().Publish(env.project.ID)
+	env.service.projectService.FilesChanged.Publish(env.project.ID)
 
 	require.Eventually(t, func() bool {
 		return env.reloadInternal(t, syncRecord.ID).BackupPending

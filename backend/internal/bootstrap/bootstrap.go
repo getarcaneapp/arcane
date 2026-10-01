@@ -12,7 +12,6 @@ import (
 
 	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/api/ws"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
@@ -37,7 +36,7 @@ import (
 	"github.com/moby/moby/client"
 	"github.com/subosito/gotenv"
 	"go.getarcane.app/streams/logs"
-	libcrypto "go.getarcane.app/sys/crypto"
+	"go.getarcane.app/sys/crypto"
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxevent"
 )
@@ -61,8 +60,7 @@ func Bootstrap(ctx context.Context) error {
 	cfg.DockerConfig = runtimeIdentityCfg.DockerConfig
 
 	SetupSlogLogger(cfg)
-	// Tee all slog output into the in-memory ring buffer that powers the
-	// diagnostics live log tail.
+	// Tee all slog output into the in-memory ring buffer that powers the diagnostics live log tail.
 	slog.SetDefault(slog.New(logs.NewSlogHandler(slog.Default().Handler(), ws.LogBroadcaster())))
 	database.SetGormLogger(BuildGormLogger(cfg))
 	slog.InfoContext(ctx, "Arcane is starting...", "version", config.Version)
@@ -137,7 +135,7 @@ func applicationOptions(appCtx context.Context, cfg *config.Config, db *database
 
 // isWeakProductionEncryptionKeyInternal reports whether an explicit
 // ENCRYPTION_KEY is an unprefixed passphrase shorter than 32 characters in
-// production. libcrypto derives a key from any non-empty passphrase, so this
+// production. crypto derives a key from any non-empty passphrase, so this
 // preserves the historical fail-fast rejection of low-entropy production keys.
 func isWeakProductionEncryptionKeyInternal(encryptionKey, environment string, agentMode bool) bool {
 	if environment != "production" || agentMode {
@@ -175,7 +173,7 @@ type initializeStartupStateParams struct {
 	Config     *config.Config
 	HTTPClient *http.Client
 
-	Volume        *volume.Module
+	Volume        *volume.VolumeService
 	Settings      *settings.SettingsService
 	Environment   *environment.EnvironmentService
 	GitOpsSync    *gitops.GitOpsSyncService
@@ -194,8 +192,8 @@ func initializeStartupState(p initializeStartupStateParams) {
 	cfg := p.Config
 	httpClient := p.HTTPClient
 
-	if p.Volume.Service() != nil {
-		startup.CleanupOrphanedVolumeHelpers(appCtx, p.Volume.Service().CleanupOrphanedVolumeHelpers)
+	if p.Volume != nil {
+		startup.CleanupOrphanedVolumeHelpers(appCtx, p.Volume.CleanupOrphanedVolumeHelpers)
 	}
 
 	runtimeCfg := &startup.RuntimeConfig{
@@ -218,7 +216,7 @@ func initializeStartupState(p initializeStartupStateParams) {
 		panic("ENCRYPTION_KEY passphrase must be at least 32 characters in production (or use a hex:/base64: encoded 32-byte key)")
 	}
 
-	libcrypto.InitEncryption(&libcrypto.Config{
+	crypto.InitEncryption(&crypto.Config{
 		EncryptionKey: cfg.EncryptionKey,
 		Environment:   string(cfg.Environment),
 		AgentMode:     cfg.AgentMode,
@@ -325,11 +323,7 @@ func initializeGitOpsStartupStateInternal(appCtx context.Context, gitOpsSync *gi
 	if err := gitOpsSync.CleanupOrphanedSyncsOnStartup(appCtx); err != nil {
 		slog.WarnContext(appCtx, "Failed to clean up orphaned GitOps syncs on startup", "error", err)
 	}
-	if err := gitOpsSync.ReconcileInterruptedBackupsOnStartup(appCtx); err != nil {
-		slog.WarnContext(appCtx, "Failed to reconcile interrupted Git backups on startup", "error", err)
-	}
-	// Sweep leaked gitops scratch dirs before the filesystem watcher can import
-	// them as phantom projects and before the directory-sync reconcile runs.
+
 	if err := gitOpsSync.CleanupLeakedScratchDirsOnStartup(appCtx); err != nil {
 		slog.WarnContext(appCtx, "Failed to clean up leaked GitOps scratch directories on startup", "error", err)
 	}
@@ -373,12 +367,12 @@ func runRoleStartupTasks(ctx context.Context, roleService *role.RoleService, api
 	}
 }
 
-func startEdgeTunnelClient(appCtx context.Context, lc fx.Lifecycle, actorRuntime *actors.Runtime, cfg *config.Config, router *echo.Echo, _ *http.Server) {
+func startEdgeTunnelClient(appCtx context.Context, lc fx.Lifecycle, cfg *config.Config, router *echo.Echo, _ *http.Server) {
 	var stop func(context.Context) error
 	lc.Append(fx.Hook{
 		OnStart: func(context.Context) error {
 			var startErr error
-			stop, startErr = startEdgeTunnelClientIfConfigured(appCtx, actorRuntime, cfg, router)
+			stop, startErr = startEdgeTunnelClientIfConfigured(appCtx, cfg, router)
 			if startErr != nil {
 				slog.ErrorContext(appCtx, "Failed to start edge tunnel client", "error", startErr)
 			}
@@ -402,7 +396,7 @@ func registerAppCancelHook(lc fx.Lifecycle, cancelApp context.CancelFunc) {
 	})
 }
 
-func startEdgeTunnelClientIfConfigured(appCtx context.Context, actorRuntime *actors.Runtime, cfg *config.Config, router http.Handler) (func(context.Context) error, error) {
+func startEdgeTunnelClientIfConfigured(appCtx context.Context, cfg *config.Config, router http.Handler) (func(context.Context) error, error) {
 	managerEndpointConfigured := cfg.ManagerApiUrl != ""
 	if !cfg.EdgeAgent || !managerEndpointConfigured || cfg.AgentToken == "" {
 		return nil, nil
@@ -426,7 +420,7 @@ func startEdgeTunnelClientIfConfigured(appCtx context.Context, actorRuntime *act
 	}
 
 	slog.InfoContext(appCtx, "Starting edge agent session client", edge.StartupLogAttrs(edgeCfg)...)
-	stop, err := edge.StartTunnelClient(appCtx, actorRuntime, edgeCfg, router)
+	stop, err := edge.StartTunnelClient(appCtx, edgeCfg, router)
 	if err != nil {
 		return nil, errors.WrapIf(err, "failed to start edge tunnel client")
 	}

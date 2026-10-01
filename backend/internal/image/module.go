@@ -12,22 +12,18 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
 )
 
-type Dependencies struct {
-	Docker      *docker.DockerClientService
-	ImageUpdate *imageupdate.ImageUpdateService
-	Settings    *settings.SettingsService
-	Build       *build.BuildService
-	Activity    *activity.ActivityService
-	Upload      *upload.UploadService
-}
-
 type Module struct {
-	service *ImageService
-	deps    Dependencies
+	service     *ImageService
+	docker      *docker.DockerClientService
+	imageUpdate *imageupdate.ImageUpdateService
+	settings    *settings.SettingsService
+	build       *build.BuildService
+	activity    *activity.ActivityService
+	upload      *upload.UploadService
 }
 
-func New(service *ImageService, deps Dependencies) *Module {
-	return &Module{service: service, deps: deps}
+func New(service *ImageService, dockerService *docker.DockerClientService, imageUpdate *imageupdate.ImageUpdateService, settingsService *settings.SettingsService, buildService *build.BuildService, activityService *activity.ActivityService, uploadService *upload.UploadService) *Module {
+	return &Module{service: service, docker: dockerService, imageUpdate: imageUpdate, settings: settingsService, build: buildService, activity: activityService, upload: uploadService}
 }
 
 func (m *Module) Service() *ImageService {
@@ -42,5 +38,5 @@ func (m *Module) RegisterRoutes(api huma.API, appCtx handlerutil.ActivityAppCont
 		RegisterImages(api, nil, nil, nil, nil, nil, nil, nil, appCtx)
 		return
 	}
-	RegisterImages(api, m.deps.Docker, m.service, m.deps.ImageUpdate, m.deps.Settings, m.deps.Build, m.deps.Activity, m.deps.Upload, appCtx)
+	RegisterImages(api, m.docker, m.service, m.imageUpdate, m.settings, m.build, m.activity, m.upload, appCtx)
 }

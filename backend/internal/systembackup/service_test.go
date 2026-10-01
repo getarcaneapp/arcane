@@ -9,15 +9,15 @@ import (
 	"path/filepath"
 	"slices"
 	"testing"
-	"time"
 
 	"emperror.dev/errors"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/backup"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	s3domain "github.com/getarcaneapp/arcane/backend/v2/internal/s3"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/entityjobs"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
+	francistest "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/francis/testing"
 	backuptypes "github.com/getarcaneapp/arcane/types/v2/backup"
 	recoverytypes "github.com/getarcaneapp/arcane/types/v2/recovery"
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
@@ -26,23 +26,15 @@ import (
 	mounttypes "github.com/moby/moby/api/types/mount"
 	"github.com/stretchr/testify/require"
 	"go.getarcane.app/sys/crypto"
-	"go.uber.org/fx/fxtest"
 	"gorm.io/gorm"
 )
 
-func newSystemBackupAdmissionGateForTestInternal(t testing.TB) *actors.Gate[actors.AdmissionKey] {
+func newSystemBackupAdmissionGateForTestInternal(t testing.TB) *runs.Admission {
 	t.Helper()
-	fxLifecycle := fxtest.NewLifecycle(t)
-	runtime, err := actors.NewRuntime(t.Context(), fxLifecycle)
-	require.NoError(t, err)
-	gate, err := actors.NewGate[actors.AdmissionKey](t.Context(), runtime, "system-backup-test-admission", t.Name())
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		stopCtx, cancel := context.WithTimeout(context.Background(), time.Second)
-		defer cancel()
-		require.NoError(t, gate.Stop(stopCtx))
-		require.NoError(t, fxLifecycle.Stop(stopCtx))
-	})
+	runtime := francistest.New(t)
+	gate := runs.NewAdmission(runtime.Service(), t.Name())
+	require.NoError(t, gate.Register(runtime))
+	francistest.Start(t, runtime)
 	return gate
 }
 
@@ -129,7 +121,7 @@ func TestSystemBackupPoliciesRegisterIndependentJobs(t *testing.T) {
 	}))
 	defer server.Close()
 	require.NoError(t, gormDB.AutoMigrate(&s3domain.S3Destination{}))
-	service.s3Destinations = s3domain.NewS3DestinationService(service.db)
+	service.s3Destinations = s3domain.NewS3DestinationService(service.db, nil)
 	destination, err := service.s3Destinations.CreateS3Destination(t.Context(), backuptypes.CreateS3Destination{
 		Name: "Missing storage", Endpoint: server.URL, Bucket: "backups", AccessKeyID: "test", SecretAccessKey: "test", ForcePathStyle: true,
 	})

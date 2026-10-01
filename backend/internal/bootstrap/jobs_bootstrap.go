@@ -6,11 +6,13 @@ import (
 	"log/slog"
 	"net/http"
 	"slices"
+	"sync"
+	"time"
 
 	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/apns"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/backup"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/gitops"
@@ -18,27 +20,37 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/system"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/systembackup"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/updater"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/volume"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
 	"github.com/getarcaneapp/arcane/types/v2/features"
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	"go.uber.org/fx"
 )
 
-func newJobScheduler(appCtx context.Context, lc fx.Lifecycle, cfg *config.Config, runtime *actors.Runtime, _ *actors.Gate[actors.AdmissionKey], imageUpdateWatcher *scheduler.ImageUpdateWatcher, analytics *scheduler.AnalyticsJob, systemUpgrade *system.SystemUpgradeService, jobService *job.JobService) (schedulertypes.JobScheduler, error) {
+func newJobScheduler(appCtx context.Context, lc fx.Lifecycle, cfg *config.Config, runtime *runs.Coordinator, _ *runs.Admission, imageUpdateWatcher *scheduler.ImageUpdateWatcher, analytics *scheduler.AnalyticsJob, systemUpgrade *system.SystemUpgradeService, jobService *job.JobService, backupEngine *backup.Engine, updaterService *updater.UpdaterService, volumes *volume.VolumeService, systemBackups *systembackup.SystemBackupService, gitopsSync *gitops.GitOpsSyncService) (schedulertypes.JobScheduler, error) {
 	schedulerCtx, cancelScheduler := context.WithCancel(appCtx)
-	jobScheduler, err := scheduler.NewJobScheduler(schedulerCtx, runtime, cfg.GetLocation())
+	jobScheduler, err := scheduler.NewJobScheduler(schedulerCtx, jobService.Coordinator(), cfg.GetLocation())
 	if err != nil {
 		cancelScheduler()
 		return nil, err
 	}
 	jobService.SetScheduler(schedulerCtx, jobScheduler)
+	var repairDone chan struct{}
+	var resumeDone chan struct{}
 	lc.Append(fx.Hook{
 		OnStart: func(context.Context) error {
 			slog.InfoContext(appCtx, "Starting scheduler")
+			if err := jobService.Coordinator().Start(schedulerCtx); err != nil {
+				return err
+			}
+			if err := reconcileCoordinatorStartupInternal(schedulerCtx, jobService, backupEngine, updaterService, volumes, systemBackups, gitopsSync); err != nil {
+				return err
+			}
 			if imageUpdateWatcher != nil {
-				imageUpdateWatcher.SetDispatcher(jobService.Queue)
+				imageUpdateWatcher.SetCoordinator(jobService.Coordinator())
 				if err := jobScheduler.RegisterBusWatcher(imageUpdateWatcher, true); err != nil {
 					return err
 				}
@@ -46,41 +58,159 @@ func newJobScheduler(appCtx context.Context, lc fx.Lifecycle, cfg *config.Config
 			if err := jobScheduler.StartScheduler(); err != nil {
 				return err
 			}
-			if err := jobService.Queue.Start(schedulerCtx); err != nil {
-				return err
+			jobService.Coordinator().Activate()
+			if backupEngine != nil {
+				repairDone = make(chan struct{})
+				go func() {
+					defer close(repairDone)
+					repairBackupDispatchesInternal(schedulerCtx, backupEngine)
+				}()
 			}
 			if analytics != nil {
-				if _, err := jobService.Queue.Submit(schedulerCtx, schedulertypes.Request{JobID: analytics.Name(), EnvironmentID: "0", Trigger: "startup"}); err != nil {
+				if _, err := jobService.Coordinator().Submit(schedulerCtx, schedulertypes.Request{JobID: analytics.Name(), EnvironmentID: "0", Trigger: "startup"}); err != nil {
 					return err
 				}
 			}
 			if !cfg.AgentMode && systemUpgrade != nil {
-				go systemUpgrade.ResumeUpdateAllOnStartup(schedulerCtx)
+				resumeDone = make(chan struct{})
+				go func() { defer close(resumeDone); systemUpgrade.ResumeUpdateAllOnStartup(schedulerCtx) }()
 			}
 			return nil
 		},
 		OnStop: func(ctx context.Context) error {
-			cancelScheduler()
-			err := errors.Combine(jobService.Queue.Stop(ctx), jobScheduler.Stop(ctx))
-			if err != nil {
-				slog.ErrorContext(ctx, "Job scheduler exited with error", "error", err)
-				return err
-			}
-			slog.InfoContext(ctx, "Scheduler stopped")
-			return nil
+			return stopJobSchedulerInternal(ctx, cancelScheduler, []chan struct{}{repairDone, resumeDone}, jobService.Coordinator(), jobScheduler)
 		},
 	})
 	return jobScheduler, nil
 }
 
+func stopJobSchedulerInternal(ctx context.Context, cancelScheduler context.CancelFunc, workers []chan struct{}, coordinator *runs.Coordinator, jobScheduler schedulertypes.JobScheduler) error {
+	cancelScheduler()
+	for _, done := range workers {
+		if done != nil {
+			select {
+			case <-done:
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
+	}
+	err := errors.Combine(coordinator.Stop(ctx), jobScheduler.Stop(ctx))
+	if err != nil {
+		slog.ErrorContext(ctx, "Job scheduler exited with error", "error", err)
+		return err
+	}
+	slog.InfoContext(ctx, "Scheduler stopped")
+	return nil
+}
+
+func reconcileCoordinatorStartupInternal(ctx context.Context, jobs *job.JobService, engine *backup.Engine, updates *updater.UpdaterService, volumes *volume.VolumeService, systemBackups *systembackup.SystemBackupService, syncService *gitops.GitOpsSyncService) error {
+	activities, backups, err := startupProtectionInternal(ctx, jobs, engine, updates)
+	if err != nil {
+		return err
+	}
+	if volumes != nil {
+		if err := volumes.ReconcileInterruptedBackups(ctx, backups...); err != nil {
+			return err
+		}
+	}
+	if systemBackups != nil {
+		if err := systemBackups.ReconcileInterruptedBackups(ctx, backups...); err != nil {
+			return err
+		}
+	}
+	if syncService != nil {
+		if err := syncService.ReconcileInterruptedBackupsOnStartup(ctx, backups...); err != nil {
+			return err
+		}
+	}
+	return jobs.ReconcileStartupActivities(ctx, activities...)
+}
+
+func startupProtectionInternal(ctx context.Context, jobs *job.JobService, engine *backup.Engine, updates *updater.UpdaterService) ([]string, []string, error) {
+	records, err := jobs.Coordinator().Records(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	scheduled, err := scheduledBackupProtectionInternal(records)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	activities := []string{}
+	backups := make([]string, 0, len(scheduled))
+	if engine != nil {
+		var err error
+		activities, err = engine.ActiveActivityIDs(ctx)
+		if err != nil {
+			return nil, nil, err
+		}
+		backups, err = engine.ActiveRunIDs(ctx)
+		if err != nil {
+			return nil, nil, err
+		}
+		if err := engine.ReconcileDispatches(ctx); err != nil {
+			return nil, nil, err
+		}
+	}
+	if updates != nil {
+		ids, err := updates.ActiveUpdateActivityIDs(ctx)
+		if err != nil {
+			return nil, nil, err
+		}
+		activities = append(activities, ids...)
+	}
+	return activities, append(backups, scheduled...), nil
+}
+
+func scheduledBackupProtectionInternal(records []schedulertypes.QueueRecord) ([]string, error) {
+	ids := []string{}
+	for _, record := range records {
+		for _, run := range record.Runs {
+			if run.Status.Terminal() {
+				continue
+			}
+			for _, target := range run.Outcome.Targets {
+				if len(target.RecoveryData) == 0 {
+					continue
+				}
+				var checkpoint struct {
+					BackupID string `json:"backupId"`
+				}
+				if err := json.Unmarshal(target.RecoveryData, &checkpoint); err != nil {
+					return nil, errors.WrapIf(err, "decode startup recovery evidence")
+				}
+				if checkpoint.BackupID != "" {
+					ids = append(ids, checkpoint.BackupID)
+				}
+			}
+		}
+	}
+	return ids, nil
+}
+
+func repairBackupDispatchesInternal(ctx context.Context, engine *backup.Engine) {
+	timer := time.NewTicker(15 * time.Second)
+	defer timer.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-timer.C:
+			if err := engine.ReconcileDispatches(ctx); err != nil && ctx.Err() == nil {
+				slog.ErrorContext(ctx, "Backup dispatch reconciliation failed", "error", err)
+			}
+		}
+	}
+}
+
 type registerJobsParams struct {
 	fx.In
 
-	Lifecycle    fx.Lifecycle
-	AppCtx       context.Context
-	Config       *config.Config
-	Scheduler    schedulertypes.JobScheduler
-	ActorRuntime *actors.Runtime
+	Lifecycle fx.Lifecycle
+	AppCtx    context.Context
+	Config    *config.Config
+	Scheduler schedulertypes.JobScheduler
 
 	Activity     *activity.ActivityService
 	GitOpsSync   *gitops.GitOpsSyncService
@@ -89,7 +219,7 @@ type registerJobsParams struct {
 	Settings     *settings.SettingsService
 	Volume       *volume.VolumeService
 	SystemBackup *systembackup.SystemBackupService
-	Admission    *actors.Gate[actors.AdmissionKey]
+	Admission    *runs.Admission
 	Apns         *apns.ApnsService
 
 	AutoUpdate             *scheduler.AutoUpdateJob
@@ -114,33 +244,6 @@ type registerJobsParams struct {
 
 func registerJobs(params registerJobsParams) error {
 	params.JobSchedule.SetScheduler(params.AppCtx, params.Scheduler)
-
-	// Bootstrap owns registration, agent-mode gating, and settings callbacks.
-	if params.Activity != nil {
-		if err := params.Activity.FailInterruptedBackups(params.AppCtx); err != nil {
-			return err
-		}
-		failed, err := params.Activity.FailStaleImageUpdateChecks(params.AppCtx)
-		if err != nil {
-			slog.WarnContext(params.AppCtx, "Failed to mark stale image update checks as failed", "count", failed, "error", err)
-		} else if failed > 0 {
-			slog.InfoContext(params.AppCtx, "Marked stale image update checks as failed", "count", failed)
-		}
-
-		resolved, err := params.Activity.ResolveStaleAutoUpdateActivities(params.AppCtx)
-		if err != nil {
-			slog.WarnContext(params.AppCtx, "Failed to resolve stale auto-update activities", "count", resolved, "error", err)
-		} else if resolved > 0 {
-			slog.InfoContext(params.AppCtx, "Resolved stale auto-update activities", "count", resolved)
-		}
-
-		orphaned, err := params.Activity.ResolveOrphanedQueuedActivities(params.AppCtx)
-		if err != nil {
-			slog.WarnContext(params.AppCtx, "Failed to resolve orphaned queued activities", "count", orphaned, "error", err)
-		} else if orphaned > 0 {
-			slog.InfoContext(params.AppCtx, "Resolved orphaned queued activities", "count", orphaned)
-		}
-	}
 
 	for _, job := range []schedulertypes.Job{
 		params.AutoUpdate,
@@ -190,7 +293,6 @@ func registerJobs(params registerJobsParams) error {
 		LifecycleCtx:       params.AppCtx,
 		Config:             params.Config,
 		Scheduler:          params.Scheduler,
-		ActorRuntime:       params.ActorRuntime,
 		Settings:           params.Settings,
 		Environment:        params.Environment,
 		AutoUpdate:         params.AutoUpdate,
@@ -218,7 +320,7 @@ type dynamicJobsParams struct {
 	JobSchedule  *job.JobService
 	Volume       *volume.VolumeService
 	SystemBackup *systembackup.SystemBackupService
-	Admission    *actors.Gate[actors.AdmissionKey]
+	Admission    *runs.Admission
 }
 
 // registerDynamicJobs injects the scheduler into the services that own per-entity
@@ -229,18 +331,12 @@ func registerDynamicJobs(params dynamicJobsParams) error {
 	// registered on managers and agents; environment proxying persists each policy
 	// in the correct Arcane database.
 	if params.Volume != nil {
-		if err := params.Volume.ReconcileInterruptedBackups(params.AppCtx); err != nil {
-			return err
-		}
 		if err := params.Volume.SetScheduler(params.AppCtx, params.Scheduler, params.Admission); err != nil {
 			return err
 		}
 		params.Volume.RegisterBackupJobsOnStartup(params.AppCtx)
 	}
 	if !params.Config.AgentMode && params.SystemBackup != nil {
-		if err := params.SystemBackup.ReconcileInterruptedBackups(params.AppCtx); err != nil {
-			return err
-		}
 		if err := params.SystemBackup.SetScheduler(params.AppCtx, params.Scheduler, params.Admission); err != nil {
 			return err
 		}
@@ -278,7 +374,6 @@ type settingsSubscriptionsParams struct {
 	LifecycleCtx context.Context
 	Config       *config.Config
 	Scheduler    settingsEffectsSchedulerInternal
-	ActorRuntime *actors.Runtime
 	Settings     settingsChangeSubscriberInternal
 	Environment  timeoutSettingsEnvironmentInternal
 
@@ -319,10 +414,7 @@ func setupSettingsSubscriptionsInternal(params settingsSubscriptionsParams) erro
 			}
 		})
 	}
-	timeoutSyncExecutor, cancelTimeoutSync, err := setupTimeoutSettingsSubscriptionInternal(params, subscribe)
-	if err != nil {
-		return err
-	}
+	timeoutSyncExecutor, cancelTimeoutSync := setupTimeoutSettingsSubscriptionInternal(params, subscribe)
 
 	subscribe([]string{"pollingEnabled", "pollingInterval"}, func(_ []libarcane.SettingUpdate) {
 		if params.ImageUpdateWatcher != nil {
@@ -381,26 +473,72 @@ func setupSettingsSubscriptionsInternal(params settingsSubscriptionsParams) erro
 	return nil
 }
 
-func setupTimeoutSettingsSubscriptionInternal(params settingsSubscriptionsParams, subscribe func([]string, func([]libarcane.SettingUpdate))) (*actors.Executor, context.CancelFunc, error) {
-	if params.Config.AgentMode {
-		return nil, nil, nil
-	}
+type timeoutSyncWorkerInternal struct {
+	mu      sync.Mutex
+	updates [][]libarcane.SettingUpdate
+	wake    chan struct{}
+	done    chan struct{}
+	ctx     context.Context
+	cancel  context.CancelFunc
+	closed  bool
+}
 
-	timeoutSyncExecutor, err := actors.NewExecutor(params.LifecycleCtx, params.ActorRuntime, "services", "settings-timeout-sync", 3)
-	if err != nil {
-		return nil, nil, err
+func (w *timeoutSyncWorkerInternal) Stop(ctx context.Context) error {
+	if w == nil {
+		return nil
 	}
-	timeoutSyncContext, cancelTimeoutSync := context.WithCancel(params.LifecycleCtx)
+	w.mu.Lock()
+	w.closed = true
+	w.cancel()
+	w.mu.Unlock()
+	select {
+	case <-w.done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func setupTimeoutSettingsSubscriptionInternal(params settingsSubscriptionsParams, subscribe func([]string, func([]libarcane.SettingUpdate))) (*timeoutSyncWorkerInternal, context.CancelFunc) {
+	if params.Config.AgentMode {
+		return nil, nil
+	}
+	ctx, cancel := context.WithCancel(params.LifecycleCtx)
+	worker := &timeoutSyncWorkerInternal{wake: make(chan struct{}, 1), done: make(chan struct{}), ctx: ctx, cancel: cancel}
+	go func() {
+		defer close(worker.done)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-worker.wake:
+			}
+			for {
+				worker.mu.Lock()
+				if len(worker.updates) == 0 {
+					worker.mu.Unlock()
+					break
+				}
+				updates := worker.updates[0]
+				worker.updates = worker.updates[1:]
+				worker.mu.Unlock()
+				syncTimeoutSettingsToAgentsInternal(ctx, params.Environment, updates)
+			}
+		}
+	}()
 	subscribe(libarcane.TimeoutSettingKeys(), func(updates []libarcane.SettingUpdate) {
-		_, err := timeoutSyncExecutor.Submit(timeoutSyncContext, "sync timeout settings to remote environments", func(ctx context.Context) (actors.NoPayload, error) {
-			syncTimeoutSettingsToAgentsInternal(ctx, params.Environment, updates)
-			return actors.NoPayload{}, nil
-		}, nil)
-		if err != nil && timeoutSyncContext.Err() == nil {
-			slog.ErrorContext(timeoutSyncContext, "Failed to queue timeout settings sync", "error", err)
+		worker.mu.Lock()
+		defer worker.mu.Unlock()
+		if worker.closed {
+			return
+		}
+		worker.updates = append(worker.updates, slices.Clone(updates))
+		select {
+		case worker.wake <- struct{}{}:
+		default:
 		}
 	})
-	return timeoutSyncExecutor, cancelTimeoutSync, nil
+	return worker, cancel
 }
 
 // syncTimeoutSettingsToAgentsInternal syncs timeout settings to all connected remote environments

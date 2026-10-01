@@ -14,6 +14,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/proto/tunnel/v1"
+	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	"github.com/labstack/echo/v5"
 	"go.uber.org/fx"
 	"google.golang.org/grpc"
@@ -34,6 +35,7 @@ type HTTPServerParams struct {
 	Config       *config.Config
 	Router       *echo.Echo
 	TunnelServer *edge.TunnelServer
+	Scheduler    schedulertypes.JobScheduler
 }
 
 // NewHTTPServer builds the shared HTTP/gRPC server and registers its lifecycle.

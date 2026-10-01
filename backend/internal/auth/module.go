@@ -11,26 +11,22 @@ import (
 	authtypes "github.com/getarcaneapp/arcane/types/v2/auth"
 )
 
-type Dependencies struct {
-	Service                *AuthService
-	User                   *user.UserService
-	Settings               *settings.SettingsService
-	BeginMFAAuthentication func(context.Context, string, authtypes.SessionMeta, string) (*authtypes.MFAChallenge, error)
-}
-
 type Module struct {
-	deps Dependencies
+	service                *AuthService
+	user                   *user.UserService
+	settings               *settings.SettingsService
+	beginMFAAuthentication func(context.Context, string, authtypes.SessionMeta, string) (*authtypes.MFAChallenge, error)
 }
 
-func New(deps Dependencies) *Module {
-	return &Module{deps: deps}
+func New(service *AuthService, userService *user.UserService, settingsService *settings.SettingsService, beginMFAAuthentication func(context.Context, string, authtypes.SessionMeta, string) (*authtypes.MFAChallenge, error)) *Module {
+	return &Module{service: service, user: userService, settings: settingsService, beginMFAAuthentication: beginMFAAuthentication}
 }
 
 func (m *Module) Service() *AuthService {
 	if m == nil {
 		return nil
 	}
-	return m.deps.Service
+	return m.service
 }
 
 func (m *Module) RegisterRoutes(api huma.API) {
@@ -38,5 +34,5 @@ func (m *Module) RegisterRoutes(api huma.API) {
 		RegisterAuth(api, nil, nil, nil, nil)
 		return
 	}
-	RegisterAuth(api, m.deps.User, m.deps.Service, m.deps.Settings, m.deps.BeginMFAAuthentication)
+	RegisterAuth(api, m.user, m.service, m.settings, m.beginMFAAuthentication)
 }

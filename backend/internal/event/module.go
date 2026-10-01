@@ -3,31 +3,19 @@ package event
 
 import (
 	"context"
-	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/labstack/echo/v5"
 )
-
-// Dependencies are the collaborators the event domain needs.
-type Dependencies struct {
-	DB         *database.DB
-	Config     *config.Config
-	HTTPClient *http.Client
-}
 
 // Module owns event persistence and both of the domain's HTTP surfaces.
 type Module struct {
 	service *EventService
 }
 
-// New builds the event domain from its dependencies.
-func New(deps Dependencies) *Module {
-	return &Module{
-		service: NewEventService(deps.DB, deps.Config, deps.HTTPClient),
-	}
+// New assembles the event routes around its service.
+func New(service *EventService) *Module {
+	return &Module{service: service}
 }
 
 // Service exposes event operations to collaborating domains.

@@ -11,10 +11,8 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/queue"
 	st "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -23,7 +21,7 @@ import (
 func TestResolveRemoteRunConfirmsOwnerAfterLostResponse(t *testing.T) {
 	db := setupSettingsTestDBInternal(t)
 	require.NoError(t, db.AutoMigrate(&environment.Environment{}))
-	q := queue.New(kv.NewKVService(db), nil, nil)
+	q := newJobCoordinatorForTestInternal(t, db)
 	local, err := q.Submit(t.Context(), st.Request{JobID: "auto-update", EnvironmentID: "remote"})
 	require.NoError(t, err)
 	require.NoError(t, q.UpdateRun(t.Context(), local, func(run *st.Run) error {
@@ -58,7 +56,7 @@ func TestResolveRemoteRunConfirmsOwnerAfterLostResponse(t *testing.T) {
 	}))
 	defer server.Close()
 	require.NoError(t, db.Create(&environment.Environment{BaseModel: database.BaseModel{ID: "remote"}, Name: "agent", ApiUrl: server.URL, Enabled: true}).Error)
-	svc := &JobService{Queue: q, environment: environment.NewEnvironmentService(db, server.Client(), nil, nil, nil, nil)}
+	svc := &JobService{runs: q, environment: environment.NewEnvironmentService(db, server.Client(), nil, nil, nil, nil)}
 	ctx := context.WithValue(t.Context(), middleware.ContextKeyUserPermissions, authz.EnvironmentPermissionSet("remote"))
 	_, err = svc.ResolveRun(ctx, "remote", local.JobID, local.ID, "operator")
 	require.ErrorContains(t, err, "agent run must need attention")

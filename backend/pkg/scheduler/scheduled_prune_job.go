@@ -8,7 +8,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/notification"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/system"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
 	scheduleutil "github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/schedule"
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	systemtypes "github.com/getarcaneapp/arcane/types/v2/system"
@@ -22,9 +21,9 @@ type ScheduledPruneJob struct {
 	notificationService *notification.NotificationService
 }
 
-func NewScheduledPruneJob(systemModule *system.Module, settingsService *settings.SettingsService, notificationService *notification.NotificationService) *ScheduledPruneJob {
+func NewScheduledPruneJob(systemService *system.SystemService, settingsService *settings.SettingsService, notificationService *notification.NotificationService) *ScheduledPruneJob {
 	return &ScheduledPruneJob{
-		systemService:       systemModule.Service(),
+		systemService:       systemService,
 		settingsService:     settingsService,
 		notificationService: notificationService,
 	}
@@ -72,7 +71,7 @@ func (j *ScheduledPruneJob) Run(ctx context.Context) (schedulertypes.Outcome, er
 		"build_cache", req.BuildCache,
 	)
 
-	result, started, err := j.systemService.PruneAll(ctx, "0", req)
+	result, started, err := j.systemService.PruneScheduled(ctx, "0", req)
 	if err != nil {
 		slog.ErrorContext(ctx, "scheduled prune run failed", "error", err)
 		return schedulertypes.Outcome{}, err
@@ -185,6 +184,6 @@ func buildScheduledBuildCachePruneOptionsInternal(ctx context.Context, settingsS
 	}
 }
 
-func (j *ScheduledPruneJob) Reconcile(_ context.Context, previous schedulertypes.Run) (schedulertypes.Outcome, error) {
-	return jobcontext.ConfirmedTarget(previous, "scheduled-prune"), nil
+func (j *ScheduledPruneJob) Reconcile(ctx context.Context, previous schedulertypes.Run) (schedulertypes.Outcome, error) {
+	return j.systemService.ReconcileScheduledPrune(ctx, previous)
 }

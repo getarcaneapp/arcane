@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"emperror.dev/errors"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
@@ -29,11 +28,14 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/entityjobs"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/types/v2/gitops"
 	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	swarmtypes "github.com/getarcaneapp/arcane/types/v2/swarm"
+	gogit "github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
 	"go.getarcane.app/acfs"
 	kit "go.getarcane.app/kit/pkg"
 	"go.getarcane.app/kit/pkg/mapping"
@@ -70,6 +72,10 @@ const (
 
 // preparedSyncSource captures the repository data needed by the sync execution
 // paths after the source repository has been cloned and validated.
+type syncRevisionInternal struct {
+	Commit string `json:"commit"`
+}
+
 type preparedSyncSource struct {
 	repoPath         string
 	commitHash       string
@@ -367,7 +373,7 @@ func NewGitOpsSyncService(db *database.DB, repoService *gitrepo.GitRepositorySer
 // called during bootstrap (after the service graph is built) before any per-sync
 // jobs are registered. The lifecycle context is used for background sync kicks so
 // they outlive the request/bootstrap goroutine that triggered them.
-func (s *GitOpsSyncService) SetScheduler(ctx context.Context, scheduler schedulertypes.DynamicScheduler, admissionGate *actors.Gate[actors.AdmissionKey]) error {
+func (s *GitOpsSyncService) SetScheduler(ctx context.Context, scheduler schedulertypes.DynamicScheduler, admissionGate *runs.Admission) error {
 	return s.jobs.SetScheduler(ctx, scheduler, admissionGate)
 }
 
@@ -423,8 +429,32 @@ func (s *GitOpsSyncService) registerSyncJobInternal(ctx context.Context, syncID,
 		func(ctx context.Context) (schedulertypes.Outcome, error) {
 			return s.runScheduledSyncInternal(ctx, environmentID, syncID)
 		},
-		func(_ context.Context, previous schedulertypes.Run) (schedulertypes.Outcome, error) {
-			return jobcontext.ConfirmedTarget(previous, syncID), nil
+		func(ctx context.Context, previous schedulertypes.Run) (schedulertypes.Outcome, error) {
+			outcome := jobcontext.ConfirmedTarget(previous, syncID)
+			if outcome.Status == schedulertypes.Succeeded {
+				return outcome, nil
+			}
+			record, err := s.getSyncRecordByIDInternal(ctx, environmentID, syncID)
+			if err != nil {
+				return outcome, err
+			}
+			for _, target := range previous.Outcome.Targets {
+				if target.ID != syncID || len(target.RecoveryData) == 0 {
+					continue
+				}
+				var revision syncRevisionInternal
+				if err := json.Unmarshal(target.RecoveryData, &revision); err != nil {
+					return outcome, err
+				}
+				if revision.Commit != "" && record.LastSyncCommit != nil && *record.LastSyncCommit == revision.Commit && record.LastSyncStatus != nil && *record.LastSyncStatus == "success" {
+					target.Status = schedulertypes.Succeeded
+					if err := jobcontext.Progress(ctx, target); err != nil {
+						return outcome, err
+					}
+					return schedulertypes.Outcome{Status: schedulertypes.Succeeded, Targets: []schedulertypes.TargetOutcome{target}}, nil
+				}
+			}
+			return outcome, nil
 		},
 	)
 }
@@ -462,7 +492,7 @@ func (s *GitOpsSyncService) RegisterAutoSyncJobsOnStartup(ctx context.Context) {
 	for i := range syncs {
 		syncRecord := syncs[i]
 		s.registerSyncJobInternal(ctx, syncRecord.ID, syncRecord.EnvironmentID, syncRecord.SyncInterval)
-		if isGitOpsSyncOverdueInternal(&syncRecord) || (syncRecord.IsBackup() && syncRecord.BackupPending) {
+		if isGitOpsSyncOverdueInternal(&syncRecord) || (syncRecord.Mode == gitops.SyncModeBackup && syncRecord.BackupPending) {
 			s.kickSyncInternal(ctx, syncRecord.ID)
 		}
 	}
@@ -1056,7 +1086,7 @@ func (s *GitOpsSyncService) performSyncAdmittedInternal(ctx context.Context, env
 		slog.InfoContext(ctx, "GitOps sync already in progress; skipping", "syncId", id)
 		return &gitops.SyncResult{Success: false, Message: "sync already in progress", SyncedAt: time.Now()}, nil
 	}
-	defer lease.Release()
+	defer lease.Release(ctx)
 
 	syncCtx, cancel := context.WithTimeout(ctx, defaultGitSyncTimeout)
 	defer cancel()
@@ -1071,7 +1101,7 @@ func (s *GitOpsSyncService) performSyncAdmittedInternal(ctx context.Context, env
 		SyncedAt: time.Now(),
 	}
 
-	if syncRecord.IsBackup() {
+	if syncRecord.Mode == gitops.SyncModeBackup {
 		return s.performBackupInternal(syncCtx, syncRecord, actor, result, backupAdopt)
 	}
 
@@ -1121,6 +1151,10 @@ func (s *GitOpsSyncService) prepareSyncSource(ctx context.Context, sync *project
 		commitHash = ""
 	}
 
+	commitHash, err = pinSyncRevisionInternal(ctx, sync.ID, repoPath, commitHash)
+	if err != nil {
+		return &preparedSyncSource{repoPath: repoPath}, err
+	}
 	if !s.repoService.FileExists(ctx, repoPath, sync.ComposePath) {
 		errMsg := "compose file not found: " + sync.ComposePath
 		return &preparedSyncSource{repoPath: repoPath, commitHash: commitHash}, s.failSync(ctx, sync.ID, result, sync, actor, "Compose file not found at "+sync.ComposePath, errMsg)
@@ -1175,6 +1209,45 @@ func (s *GitOpsSyncService) prepareSyncSource(ctx context.Context, sync *project
 	}
 
 	return source, nil
+}
+
+func pinSyncRevisionInternal(ctx context.Context, syncID, repoPath, commitHash string) (string, error) {
+	if previous, ok := jobcontext.Run(ctx); ok {
+		for _, target := range previous.Outcome.Targets {
+			if target.ID != syncID || len(target.RecoveryData) == 0 {
+				continue
+			}
+			var revision syncRevisionInternal
+			if err := json.Unmarshal(target.RecoveryData, &revision); err != nil {
+				return "", err
+			}
+			if revision.Commit != "" && revision.Commit != commitHash {
+				repository, err := gogit.PlainOpen(repoPath)
+				if err != nil {
+					return "", err
+				}
+				tree, err := repository.Worktree()
+				if err != nil {
+					return "", err
+				}
+				if err := tree.Checkout(&gogit.CheckoutOptions{Hash: plumbing.NewHash(revision.Commit)}); err != nil {
+					return "", err
+				}
+				commitHash = revision.Commit
+			}
+		}
+	}
+	revision, err := json.Marshal(syncRevisionInternal{Commit: commitHash})
+	if err != nil {
+		return "", err
+	}
+	if commitHash == "" {
+		return "", errors.New("GitOps source revision is unavailable")
+	}
+	if err := jobcontext.Progress(ctx, schedulertypes.TargetOutcome{ResourceType: "gitops_sync", ID: syncID, Status: schedulertypes.Running, RecoveryData: revision}); err != nil {
+		return "", err
+	}
+	return commitHash, nil
 }
 
 // performDirectorySync runs the directory-sync path and only triggers a

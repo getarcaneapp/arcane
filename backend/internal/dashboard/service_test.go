@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
@@ -37,7 +36,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.getarcane.app/updater/labels"
-	"go.uber.org/fx/fxtest"
 	"gorm.io/gorm"
 )
 
@@ -198,7 +196,7 @@ func TestDashboardService_GetSnapshot_ReturnsDashboardSnapshot(t *testing.T) {
 		Status:  project.ProjectStatusStopped,
 	}).Error)
 	imageSvc := image.NewImageService(db, nil, nil, nil, nil, nil)
-	projectSvc := project.NewProjectService(db, settingsSvc, nil, imageSvc, nil, nil, nil, nil, config.Load())
+	projectSvc := project.NewProjectService(db, settingsSvc, nil, imageSvc, nil, nil, nil, nil, config.Load(), nil, nil)
 	svc := NewDashboardService(db, dockerSvc, nil, projectSvc, imageSvc, settingsSvc, nil, nil, nil, volume.NewVolumeService(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil))
 
 	snapshot, err := svc.GetSnapshot(context.Background(), DashboardActionItemsOptions{}, true)
@@ -342,21 +340,11 @@ func createTestRemoteEnvironmentInternal(t *testing.T, db *database.DB, environm
 // stopped when the test ends.
 func newSettingsServiceForTestInternal(ctx context.Context, t testing.TB, db *database.DB) (*settings.SettingsService, error) {
 	t.Helper()
-	lifecycle := fxtest.NewLifecycle(t)
-	runtime, err := actors.NewRuntime(ctx, lifecycle)
-	require.NoError(t, err)
-	executor, err := actors.NewExecutor(ctx, runtime, "settings-test", t.Name(), 3)
-	require.NoError(t, err)
-	effects, err := actors.NewExecutor(ctx, runtime, "settings-effects-test", t.Name(), 3)
-	require.NoError(t, err)
-	t.Cleanup(func() { //nolint:contextcheck // cleanup must outlive ctx to stop the runtime
-		stopCtx, cancel := context.WithTimeout(context.Background(), time.Second)
-		defer cancel()
-		require.NoError(t, executor.Stop(stopCtx))
-		require.NoError(t, effects.Stop(stopCtx))
-		require.NoError(t, lifecycle.Stop(stopCtx))
-	})
-	return settings.NewSettingsService(ctx, db, executor, effects)
+	svc, err := settings.NewSettingsService(ctx, db)
+	if err == nil {
+		t.Cleanup(func() { require.NoError(t, svc.Stop(context.Background())) })
+	}
+	return svc, err
 }
 
 func TestDashboardService_GetSnapshot_TrimmedOmitsTablesAndSharesBuilds(t *testing.T) {

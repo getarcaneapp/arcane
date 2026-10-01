@@ -31,9 +31,6 @@ import (
 type ActivityHandler struct {
 	activityService *ActivityService
 	environment     EnvironmentDependencies
-
-	// remoteStreamHub shares one poller per remote environment across every
-	// connected stream client instead of polling per client × environment.
 	remoteStreamHub *agg.Hub[activitytypes.StreamEvent]
 }
 

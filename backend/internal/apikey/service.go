@@ -87,7 +87,7 @@ type ApiKeyService struct {
 	lastUsedWrites map[string]time.Time
 }
 
-func NewApiKeyService(db *database.DB, userService *user.UserService) *ApiKeyService {
+func NewApiKeyService(db *database.DB, userService *user.UserService, roleService *role.RoleService) *ApiKeyService {
 	pepper := make([]byte, 32)
 	if _, err := rand.Read(pepper); err != nil {
 		panic(errors.WrapIf(err, "failed to generate API key cache pepper"))
@@ -96,6 +96,7 @@ func NewApiKeyService(db *database.DB, userService *user.UserService) *ApiKeySer
 		cacheKeyPepper: pepper,
 		db:             db,
 		userService:    userService,
+		roleService:    roleService,
 		argon2Params:   user.DefaultArgon2Params(),
 		validatedKeyCache: hot.NewHotCache[string, ApiKey](hot.LRU, 4096).
 			WithTTL(15 * time.Second).
@@ -103,16 +104,6 @@ func NewApiKeyService(db *database.DB, userService *user.UserService) *ApiKeySer
 			Build(),
 		lastUsedWrites: make(map[string]time.Time),
 	}
-}
-
-// WithRoleService wires the role.RoleService dependency. Separated from the
-// constructor to break the bootstrap-ordering cycle between ApiKeyService and
-// role.RoleService (role.RoleService.BackfillApiKeyPermissions needs ApiKeyService to
-// exist when it runs, while permission-validated CreateApiKey needs the
-// role.RoleService).
-func (s *ApiKeyService) WithRoleService(roleService *role.RoleService) *ApiKeyService {
-	s.roleService = roleService
-	return s
 }
 
 // BackfillApiKeyPermissions ensures every ownerless (bootstrap) API key has

@@ -13,8 +13,8 @@ import (
 
 func (s *JobService) addRuntimeStatusInternal(ctx context.Context, environmentID string, jobs *[]jobschedule.JobStatus) error {
 	runsByJob := make(map[string][]st.Run)
-	if s.Queue != nil {
-		records, err := s.Queue.Records(ctx)
+	if s.runs != nil {
+		records, err := s.runs.Records(ctx)
 		if err != nil {
 			return errors.WrapIf(err, "load durable job status")
 		}

@@ -195,6 +195,7 @@ func countDocumentedSettingOverrides() int {
 }
 
 var expectedEnvConfigVars = []string{
+	"ACTOR_PORT",
 	"ADMIN_STATIC_API_KEY",
 	"AGENT_MODE",
 	"AGENT_TOKEN",

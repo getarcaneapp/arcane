@@ -16,9 +16,9 @@ import (
 	"emperror.dev/errors"
 	"github.com/cenkalti/backoff/v5"
 	"github.com/coder/websocket"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	wshub "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/ws"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/concurrency"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	"github.com/samber/mo"
 	kit "go.getarcane.app/kit/pkg"
@@ -1445,8 +1445,8 @@ func (r *streamingResponseRecorder) writeHeaderLocked(statusCode int) error {
 	return nil
 }
 
-// StartTunnelClient starts the tunnel client on the shared actor runtime.
-func StartTunnelClient(ctx context.Context, runtime *actors.Runtime, cfg *Config, handler http.Handler) (func(context.Context) error, error) {
+// StartTunnelClient starts the tunnel client with an owned background worker.
+func StartTunnelClient(ctx context.Context, cfg *Config, handler http.Handler) (func(context.Context) error, error) {
 	if !cfg.EdgeAgent {
 		return nil, errors.New("edge tunnel disabled")
 	}
@@ -1477,12 +1477,8 @@ func StartTunnelClient(ctx context.Context, runtime *actors.Runtime, cfg *Config
 	}
 
 	client := NewTunnelClient(cfg, handler)
-	runner, err := actors.NewRunner(ctx, runtime, "edge", "agent-client", "Edge tunnel client", 3, func(runCtx context.Context) error {
+	return concurrency.StartSupervised(ctx, "Edge tunnel client", func(runCtx context.Context) error {
 		client.StartWithErrorChan(runCtx, nil)
 		return nil
 	})
-	if err != nil {
-		return nil, err
-	}
-	return runner.Stop, nil
 }

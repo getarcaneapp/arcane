@@ -18,8 +18,10 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/systembackup"
 	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	rusticruntime "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/rustic"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/francis"
 	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
 	backuptypes "github.com/getarcaneapp/arcane/types/v2/backup"
+	dbtypes "github.com/getarcaneapp/arcane/types/v2/database"
 	recoverytypes "github.com/getarcaneapp/arcane/types/v2/recovery"
 	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/api/types/container"
@@ -94,6 +96,17 @@ func runRestoreInternal(_ *cobra.Command, _ []string) error {
 		if rollbackErr := runStagesInternal(context.WithoutCancel(ctx), dockerClient, request, request.RollbackStages); rollbackErr != nil {
 			return errors.Combine(err, fmt.Errorf("restoring the pre-restore system backup failed; Arcane was left stopped: %w", rollbackErr))
 		}
+		rollbackManifest, readErr := os.ReadFile("/app/data/.arcane-recovery.json")
+		var rollback recoverytypes.Manifest
+		if readErr == nil {
+			readErr = json.Unmarshal(rollbackManifest, &rollback)
+		}
+		if readErr == nil {
+			readErr = francis.ClearRestoredHosts(context.WithoutCancel(ctx), rollback.Environment["DATABASE_URL"])
+		}
+		if readErr != nil {
+			return errors.Combine(err, fmt.Errorf("clear restored actor ownership; Arcane was left stopped: %w", readErr))
+		}
 		restart()
 		return fmt.Errorf("%w; the pre-restore system backup was restored", err)
 	}
@@ -119,7 +132,6 @@ func runRestoreInternal(_ *cobra.Command, _ []string) error {
 	// configuration must keep pointing there rather than at the backup-time path.
 	manifest.Environment["PROJECTS_DIRECTORY"] = cmp.Or(request.ProjectsSetting, manifest.Environment["PROJECTS_DIRECTORY"])
 	if err := finalizeRestoredBackupInternal(ctx, manifest.Environment["DATABASE_URL"], manifest.BackupID, manifest.ActivityID, request); err != nil {
-		restart()
 		return fmt.Errorf("finalize restored system backup: %w", err)
 	}
 	if err := upgrade.UpgradeContainer(ctx, dockerClient, inspect.Container, request.ContainerImage, manifest.Environment); err != nil {
@@ -132,7 +144,7 @@ func finalizeRestoredBackupInternal(ctx context.Context, databaseURL, manifestBa
 	if !strings.HasPrefix(databaseURL, "file:") {
 		return errors.New("restored Arcane database is not SQLite")
 	}
-	dsn, err := database.ParseSQLiteConnectionString(databaseURL)
+	dsn, err := database.ParseSQLiteConnectionString(databaseURL, dbtypes.SQLiteConnectionOptions{})
 	if err != nil {
 		return err
 	}
@@ -161,7 +173,10 @@ func finalizeRestoredBackupInternal(ctx context.Context, databaseURL, manifestBa
 			return err
 		}
 	}
-	return finalizeRestoredActivityInternal(db, manifestActivityID)
+	if err := finalizeRestoredActivityInternal(db, manifestActivityID); err != nil {
+		return err
+	}
+	return francis.ClearRestoredHosts(ctx, databaseURL)
 }
 
 // finalizeRestoredRunInternal marks the restored run succeeded, filling only

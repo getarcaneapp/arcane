@@ -6,16 +6,12 @@ import (
 	"log/slog"
 	"net"
 	"strings"
-	"time"
 
 	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/queue"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
 	"github.com/getarcaneapp/arcane/types/v2/meta"
@@ -47,7 +43,10 @@ func (s *JobService) Submit(ctx context.Context, request st.Request) (st.Run, er
 	} else if err := s.validateLocalJobInternal(ctx, request.JobID); err != nil {
 		return st.Run{}, err
 	}
-	return s.Queue.Submit(ctx, request)
+	if err := s.authorizeRunInternal(ctx, st.Run{Trigger: request.Trigger, RequestedBy: request.RequestedBy, RequestedWithKey: request.RequestedWithKey, EnvironmentID: request.EnvironmentID}); err != nil {
+		return st.Run{}, err
+	}
+	return s.runs.Submit(ctx, request)
 }
 
 func (s *JobService) validateLocalJobInternal(ctx context.Context, jobID string) error {
@@ -93,14 +92,7 @@ func (s *JobService) authorizeRunInternal(ctx context.Context, run st.Run) error
 	if s.roles == nil {
 		return errors.New("permission resolver unavailable")
 	}
-	var user common.User
-	if err := s.db.WithContext(ctx).First(&user, "id = ?", run.RequestedBy).Error; err != nil {
-		return err
-	}
-	if run.RequestedWithKey != "" {
-		return s.authorizeKeyInternal(ctx, run)
-	}
-	permissions, err := s.roles.ResolveUserPermissionsInDB(ctx, s.db.WithContext(ctx), user.ID)
+	permissions, err := s.roles.ResolveExecutionPermissions(ctx, run.RequestedBy, run.RequestedWithKey)
 	if err != nil {
 		return err
 	}
@@ -193,6 +185,13 @@ func (s *JobService) reconcileRunInternal(ctx context.Context, run st.Run) (st.O
 	if safeJobInternal(run.JobID) {
 		return s.executeRunInternal(ctx, run)
 	}
+	if s.scheduler != nil {
+		if job, ok := s.scheduler.GetJob(run.JobID); ok {
+			if reconciler, ok := job.(st.Reconciler); ok {
+				return reconciler.Reconcile(s.runContextInternal(ctx, run), run)
+			}
+		}
+	}
 	// A successful activity proves only that target, never the entire batch.
 	for index, target := range run.Outcome.Targets {
 		if run.JobID == "auto-update" {
@@ -228,12 +227,15 @@ func (s *JobService) reconcileRunInternal(ctx context.Context, run st.Run) (st.O
 func (s *JobService) runContextInternal(ctx context.Context, run st.Run) context.Context {
 	ctx = utils.WithActivityBatchID(ctx, run.ID)
 	ctx = jobcontext.WithExecution(ctx, run, func(target st.TargetOutcome) error {
-		return s.Queue.UpdateRun(ctx, run, func(current *st.Run) error {
+		return s.runs.UpdateRun(ctx, run, func(current *st.Run) error {
 			if current.Status != st.Running || current.Owner != run.Owner {
-				return queue.ErrRunConflict
+				return runs.ErrRunConflict
 			}
 			for index := range current.Outcome.Targets {
 				if current.Outcome.Targets[index].ID == target.ID {
+					if len(target.RecoveryData) == 0 {
+						target.RecoveryData = current.Outcome.Targets[index].RecoveryData
+					}
 					current.Outcome.Targets[index] = target
 					return nil
 				}
@@ -243,42 +245,6 @@ func (s *JobService) runContextInternal(ctx context.Context, run st.Run) context
 		})
 	})
 	return ctx
-}
-
-func (s *JobService) authorizeKeyInternal(ctx context.Context, run st.Run) error {
-	var key apikey.ApiKey
-	if err := s.db.WithContext(ctx).First(&key, "id = ?", run.RequestedWithKey).Error; err != nil {
-		return err
-	}
-	if key.UserID == nil || *key.UserID != run.RequestedBy || (key.ExpiresAt != nil && !key.ExpiresAt.After(time.Now())) {
-		return errors.New("requesting API key is no longer valid")
-	}
-	if key.Kind == apikey.ApiKeyKindPersonal {
-		permissions, err := s.roles.ResolveUserPermissionsInDB(ctx, s.db.WithContext(ctx), run.RequestedBy)
-		if err != nil {
-			return err
-		}
-		if !permissions.Allows(authz.PermJobsManage, run.EnvironmentID) {
-			return errors.New("requesting user no longer has permission to manage jobs")
-		}
-		return nil
-	}
-	var grants []role.ApiKeyPermission
-	if err := s.db.WithContext(ctx).Where("api_key_id = ?", key.ID).Find(&grants).Error; err != nil {
-		return err
-	}
-	permissions := authz.NewPermissionSet()
-	for _, grant := range grants {
-		if grant.EnvironmentID == nil {
-			permissions.AddGlobal(grant.Permission)
-		} else {
-			permissions.AddEnv(*grant.EnvironmentID, grant.Permission)
-		}
-	}
-	if !permissions.Allows(authz.PermJobsManage, run.EnvironmentID) {
-		return errors.New("requesting API key no longer has permission to manage jobs")
-	}
-	return nil
 }
 
 func requiresDockerInternal(jobID string) bool {

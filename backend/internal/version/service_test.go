@@ -308,7 +308,7 @@ func TestVersionService_GetAppVersionInfoNextChannelUsesImageLabelInternal(t *te
 	})}
 	dockerService := docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClientInternal(t, server))
 	imageUpdateService := imageupdate.NewImageUpdateService(db, nil, nil, dockerService, nil, nil, nil)
-	registrySvc := registry.NewContainerRegistryService(nil, nil, nil)
+	registrySvc := registry.NewContainerRegistryService(nil, nil, nil, nil)
 	svc := NewVersionService(httpClient, false, "2.8.0-next.65", "revision", registrySvc, dockerService, imageUpdateService, nil)
 
 	info := svc.GetAppVersionInfo(ctx)
@@ -352,7 +352,7 @@ func TestVersionService_GetAppVersionInfoNextChannelLabelFailureFallsBackToDiges
 
 	dockerService := docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClientInternal(t, server))
 	imageUpdateService := imageupdate.NewImageUpdateService(db, nil, nil, dockerService, nil, nil, nil)
-	registrySvc := registry.NewContainerRegistryService(nil, nil, nil)
+	registrySvc := registry.NewContainerRegistryService(nil, nil, nil, nil)
 	svc := NewVersionService(nil, false, "2.8.0-next.65", "revision", registrySvc, dockerService, imageUpdateService, nil)
 
 	info := svc.GetAppVersionInfo(ctx)

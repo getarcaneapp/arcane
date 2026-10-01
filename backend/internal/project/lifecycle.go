@@ -276,7 +276,7 @@ func (s *LifecycleService) runScriptInContainerInternal(
 	// primitives off the table even if a malicious script gets in.
 	hostConfig := &containertypes.HostConfig{
 		Mounts:      buildLifecycleMountsInternal(workspaceMount, extraMounts),
-		NetworkMode: resolveLifecycleNetworkModeInternal(networkMode),
+		NetworkMode: containertypes.NetworkMode(cmp.Or(strings.TrimSpace(networkMode), "none")),
 		SecurityOpt: []string{"no-new-privileges:true"},
 		CapDrop:     []string{"ALL"},
 		AutoRemove:  false,
@@ -655,15 +655,6 @@ func buildLifecycleMountsInternal(workspace *mounttypes.Mount, extras []lifecycl
 		})
 	}
 	return mounts
-}
-
-// resolveLifecycleNetworkModeInternal maps the stored PreDeployNetworkMode
-// string to the containertypes.NetworkMode value used by the Docker SDK.
-// An empty stored value is treated as "none" so scripts never accidentally
-// run on the default bridge network.
-func resolveLifecycleNetworkModeInternal(mode string) containertypes.NetworkMode {
-	trimmed := cmp.Or(strings.TrimSpace(mode), "none")
-	return containertypes.NetworkMode(trimmed)
 }
 
 func lifecycleStatusForResultInternal(exitCode int64, runErr error) string {

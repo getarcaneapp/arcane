@@ -6,38 +6,24 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
 )
 
-// Dependencies are the collaborators the container domain needs.
-type Dependencies struct {
-	Event    *event.EventService
-	Docker   *docker.DockerClientService
-	Image    *image.ImageService
-	Settings *settings.SettingsService
-	Project  *project.ProjectService
-	Activity *activity.ActivityService
-}
-
 // Module wires the container domain and mounts its routes.
 type Module struct {
-	service *ContainerService
-	deps    Dependencies
+	service         *ContainerService
+	dockerService   *docker.DockerClientService
+	settingsService *settings.SettingsService
+	activityService *activity.ActivityService
 }
 
-// New builds the container domain from its dependencies.
-func New(deps Dependencies) *Module {
-	return &Module{
-		service: NewContainerService(deps.Event, deps.Docker, deps.Image, deps.Settings, deps.Project),
-		deps:    deps,
-	}
+// New wires container routes around an existing service.
+func New(service *ContainerService, dockerService *docker.DockerClientService, settingsService *settings.SettingsService, activityService *activity.ActivityService) *Module {
+	return &Module{service: service, dockerService: dockerService, settingsService: settingsService, activityService: activityService}
 }
 
-// Service exposes the container service to collaborators that use it directly.
+// Service exposes the container service to collaborators.
 func (m *Module) Service() *ContainerService {
 	if m == nil {
 		return nil
@@ -52,5 +38,5 @@ func (m *Module) RegisterRoutes(api huma.API, appCtx handlerutil.ActivityAppCont
 		RegisterContainers(api, nil, nil, nil, nil, appCtx)
 		return
 	}
-	RegisterContainers(api, m.service, m.deps.Docker, m.deps.Settings, m.deps.Activity, appCtx)
+	RegisterContainers(api, m.service, m.dockerService, m.settingsService, m.activityService, appCtx)
 }

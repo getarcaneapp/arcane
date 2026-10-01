@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/backup"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
@@ -24,6 +23,8 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/entityjobs"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
+	francistest "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/francis/testing"
 	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
@@ -34,26 +35,24 @@ import (
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
 	"go.getarcane.app/sys/crypto"
-	"go.uber.org/fx/fxtest"
 	"gorm.io/gorm"
 )
 
 func newVolumeBackupEngineForTestInternal(t testing.TB) *backup.Engine {
 	t.Helper()
-	fxLifecycle := fxtest.NewLifecycle(t)
-	runtime, err := actors.NewRuntime(t.Context(), fxLifecycle)
-	require.NoError(t, err)
-	gate, err := actors.NewGate[actors.AdmissionKey](t.Context(), runtime, "volume-backup-test-admission", t.Name())
-	require.NoError(t, err)
-	engine := backup.NewEngine(t.Context(), runtime, gate, nil)
-	t.Cleanup(func() {
-		stopCtx, cancel := context.WithTimeout(context.Background(), time.Second)
-		defer cancel()
-		require.NoError(t, engine.Stop(stopCtx))
-		require.NoError(t, gate.Stop(stopCtx))
-		require.NoError(t, fxLifecycle.Stop(stopCtx))
-	})
+	gate := newVolumeAdmissionForTestInternal(t)
+	engine := backup.NewEngine(t.Context(), gate, nil)
+	t.Cleanup(func() { require.NoError(t, engine.Stop(context.WithoutCancel(t.Context()))) })
 	return engine
+}
+
+func newVolumeAdmissionForTestInternal(t testing.TB) *runs.Admission {
+	t.Helper()
+	runtime := francistest.New(t)
+	gate := runs.NewAdmission(runtime.Service(), t.Name())
+	require.NoError(t, gate.Register(runtime))
+	francistest.Start(t, runtime)
+	return gate
 }
 
 func newVolumeServiceTestDockerClientInternal(t *testing.T, server *httptest.Server) *client.Client {
@@ -648,17 +647,7 @@ func TestVolumeBackupPolicy_UpdateRegistersIndependentJobsAndSettings(t *testing
 	db := &database.DB{DB: gormDB}
 	scheduler := &volumeBackupPolicySchedulerInternal{jobs: make(map[string]schedulertypes.Job)}
 	service := &VolumeService{db: db, jobs: entityjobs.New("volume-backup:", backup.VolumeAdmissionScope)}
-	fxLifecycle := fxtest.NewLifecycle(t)
-	runtime, err := actors.NewRuntime(t.Context(), fxLifecycle)
-	require.NoError(t, err)
-	gate, err := actors.NewGate[actors.AdmissionKey](t.Context(), runtime, "volume-policy-test-admission", t.Name())
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		stopCtx, cancel := context.WithTimeout(context.Background(), time.Second)
-		defer cancel()
-		require.NoError(t, gate.Stop(stopCtx))
-		require.NoError(t, fxLifecycle.Stop(stopCtx))
-	})
+	gate := newVolumeAdmissionForTestInternal(t)
 	require.NoError(t, service.SetScheduler(context.Background(), scheduler, gate))
 
 	collection, err := service.UpdateBackupPolicies(context.Background(), "app-data", []volumetypes.UpdateBackupPolicy{
@@ -772,7 +761,7 @@ func TestVolumeBackupPolicy_ScheduledRunCreatesActivity(t *testing.T) {
 	lease, admitted, err := engine.TryAcquireRun(context.Background(), backup.VolumeAdmissionScope, policy.VolumeName)
 	require.NoError(t, err)
 	require.True(t, admitted)
-	defer lease.Release()
+	defer lease.Release(t.Context())
 
 	service.runScheduledBackupInternal(context.Background(), policy.ID)
 
@@ -805,7 +794,7 @@ func TestVolumeBackupPolicy_UpdateUsesSelectedS3Destination(t *testing.T) {
 	require.NoError(t, gormDB.Create(destination).Error)
 	service := &VolumeService{
 		db:             db,
-		s3Destinations: s3domain.NewS3DestinationService(db),
+		s3Destinations: s3domain.NewS3DestinationService(db, nil),
 		jobs:           entityjobs.New("volume-backup:", backup.VolumeAdmissionScope),
 	}
 	collection, err := service.UpdateBackupPolicies(context.Background(), "app-data", []volumetypes.UpdateBackupPolicy{{
@@ -852,7 +841,7 @@ func TestVolumeBackup_ListResolvesDestinationName(t *testing.T) {
 		S3DestinationID: destination.ID,
 	}).Error)
 
-	service := &VolumeService{db: db, s3Destinations: s3domain.NewS3DestinationService(db)}
+	service := &VolumeService{db: db, s3Destinations: s3domain.NewS3DestinationService(db, nil)}
 	backups, _, err := service.ListBackupsPaginated(context.Background(), "app-data", pagination.QueryParams{})
 	require.NoError(t, err)
 	require.Len(t, backups, 1)
@@ -1029,7 +1018,7 @@ func TestBackupPolicyDestinationLookupFailureInternal(t *testing.T) {
 	require.NoError(t, db.AutoMigrate(&VolumeBackupPolicy{}, &VolumeBackup{}, &s3domain.S3Destination{}))
 	policy := &VolumeBackupPolicy{VolumeName: "app-data", Schedule: "0 0 2 * * *", S3DestinationID: "missing"}
 	require.NoError(t, db.Create(policy).Error)
-	service := &VolumeService{db: &database.DB{DB: db}, s3Destinations: s3domain.NewS3DestinationService(&database.DB{DB: db})}
+	service := &VolumeService{db: &database.DB{DB: db}, s3Destinations: s3domain.NewS3DestinationService(&database.DB{DB: db}, nil)}
 	for _, drop := range []bool{false, true} {
 		if drop {
 			require.NoError(t, db.Migrator().DropTable(&s3domain.S3Destination{}))
