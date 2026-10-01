@@ -3,6 +3,7 @@ package event
 import (
 	"cmp"
 	"context"
+	"crypto/sha256"
 	"encoding/json/v2"
 	"fmt"
 	"log/slog"
@@ -10,7 +11,6 @@ import (
 	"time"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/google/uuid"
 	"github.com/moby/moby/api/types/events"
 	kit "go.getarcane.app/kit/pkg"
 	"go.getarcane.app/streams/bus"
@@ -94,7 +94,7 @@ func (s *EventService) RecordDockerEvent(ctx context.Context, msg events.Message
 			slog.WarnContext(ctx, "Failed to identify Docker daemon event", "type", req.Type, "resourceId", msg.Actor.ID, "error", err)
 			return
 		}
-		req.deduplicationID = uuid.NewSHA1(uuid.NameSpaceOID, identity).String()
+		req.deduplicationKey = fmt.Sprintf("%x", sha256.Sum256(identity))
 	}
 	if _, err := s.CreateEvent(ctx, req); err != nil {
 		slog.WarnContext(ctx, "Failed to log Docker daemon event", "type", req.Type, "resourceId", msg.Actor.ID, "error", err)

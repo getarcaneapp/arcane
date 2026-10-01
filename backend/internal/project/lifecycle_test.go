@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
@@ -16,7 +15,6 @@ import (
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/fx/fxtest"
 	"gorm.io/gorm"
 )
 
@@ -35,22 +33,9 @@ func setupLifecycleTestDB(t *testing.T) *database.DB {
 
 func newLifecycleTestService(t *testing.T, db *database.DB) (*LifecycleService, *settings.SettingsService) {
 	t.Helper()
-	lifecycle := fxtest.NewLifecycle(t)
-	runtime, err := actors.NewRuntime(t.Context(), lifecycle)
+	settings, err := settings.NewSettingsService(t.Context(), db)
 	require.NoError(t, err)
-	writes, err := actors.NewExecutor(t.Context(), runtime, "lifecycle-settings-test", t.Name(), 3)
-	require.NoError(t, err)
-	effects, err := actors.NewExecutor(t.Context(), runtime, "lifecycle-settings-effects-test", t.Name(), 3)
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		stopCtx, cancel := context.WithTimeout(context.Background(), time.Second)
-		defer cancel()
-		require.NoError(t, writes.Stop(stopCtx))
-		require.NoError(t, effects.Stop(stopCtx))
-		require.NoError(t, lifecycle.Stop(stopCtx))
-	})
-	settings, err := settings.NewSettingsService(context.Background(), db, writes, effects)
-	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, settings.Stop(context.Background())) })
 	events := event.NewEventService(db, nil, nil)
 	return NewLifecycleService(db, settings, events, nil, nil), settings
 }

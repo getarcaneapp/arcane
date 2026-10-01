@@ -7,10 +7,10 @@ import (
 	"strings"
 
 	"emperror.dev/errors"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/updater"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	updatertypes "github.com/getarcaneapp/arcane/types/v2/updater"
 	kit "go.getarcane.app/kit/pkg"
@@ -27,15 +27,15 @@ type pendingUpdateApplierInternal interface {
 type AutoUpdateJob struct {
 	updaterService  pendingUpdateApplierInternal
 	settingsService *settings.SettingsService
-	admissionGate   *actors.Gate[actors.AdmissionKey]
+	admissionGate   *runs.Admission
 }
 
-func NewAutoUpdateJob(updaterModule *updater.Module, settingsService *settings.SettingsService, admissionGate *actors.Gate[actors.AdmissionKey]) (*AutoUpdateJob, error) {
+func NewAutoUpdateJob(updaterService *updater.UpdaterService, settingsService *settings.SettingsService, admissionGate *runs.Admission) (*AutoUpdateJob, error) {
 	if admissionGate == nil {
 		return nil, errors.New("auto-update admission gate unavailable")
 	}
 	return &AutoUpdateJob{
-		updaterService:  updaterModule.Service(),
+		updaterService:  updaterService,
 		settingsService: settingsService,
 		admissionGate:   admissionGate,
 	}, nil
@@ -82,7 +82,7 @@ func (j *AutoUpdateJob) Run(ctx context.Context) (schedulertypes.Outcome, error)
 		return schedulertypes.Outcome{Status: schedulertypes.Skipped}, nil
 	}
 
-	lease, admitted, err := j.admissionGate.TryAcquire(ctx, actors.AdmissionKey{Scope: autoUpdateAdmissionScopeInternal})
+	lease, admitted, err := j.admissionGate.TryAcquire(ctx, schedulertypes.AdmissionKey{Scope: autoUpdateAdmissionScopeInternal})
 	if err != nil {
 		slog.ErrorContext(ctx, "auto-update admission failed", "error", err)
 		return schedulertypes.Outcome{}, err
@@ -94,7 +94,7 @@ func (j *AutoUpdateJob) Run(ctx context.Context) (schedulertypes.Outcome, error)
 		slog.WarnContext(ctx, "auto-update run still in progress; skipping overlapping run")
 		return schedulertypes.Outcome{Status: schedulertypes.Skipped}, nil
 	}
-	defer lease.Release()
+	defer lease.Release(ctx)
 
 	slog.InfoContext(ctx, "auto-update run started")
 
@@ -117,7 +117,10 @@ func (j *AutoUpdateJob) Reschedule(ctx context.Context) error {
 	return nil
 }
 
-func (j *AutoUpdateJob) Reconcile(_ context.Context, previous schedulertypes.Run) (schedulertypes.Outcome, error) {
+func (j *AutoUpdateJob) Reconcile(ctx context.Context, previous schedulertypes.Run) (schedulertypes.Outcome, error) {
+	if service, ok := j.updaterService.(*updater.UpdaterService); ok {
+		return service.ReconcilePending(ctx, previous)
+	}
 	confirmed := confirmedAutoUpdateInternal(previous)
 	if confirmed.Status != schedulertypes.Succeeded {
 		confirmed.Message = "Interrupted auto-update has no confirmed full-batch completion; review this run's results"

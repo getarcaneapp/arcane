@@ -56,7 +56,7 @@ func runResetMFACommandInternal(cmd *cobra.Command, _ []string) error {
 		}
 	}()
 
-	userService := user.NewUserService(db)
+	userService := user.NewUserService(db, nil)
 	user, err := userService.GetUserByUsername(cmd.Context(), username)
 	if err != nil {
 		if errors.Is(err, common.ErrUserNotFound) {

@@ -20,7 +20,7 @@ func init() {
 				return
 			}
 
-			playwrightService := playwright.NewPlaywrightService(apiKeyService, userService, deps.GitRepository.Service(), deps.GitOpsSync.Service(), deps.Project.Service)
+			playwrightService := playwright.NewPlaywrightService(apiKeyService, userService, deps.GitRepository.Service(), deps.GitOpsSync.Service(), deps.Project.Service())
 			playwright.SetupRoutes(apiGroup, playwrightService, deps.Federated)
 			slog.Info("Playwright routes registered for E2E testing")
 		},

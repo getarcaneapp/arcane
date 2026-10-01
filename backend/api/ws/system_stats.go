@@ -426,7 +426,7 @@ func (h *WebSocketHandler) SystemStats(c *echo.Context) error {
 
 	count, allowed := h.checkRateLimitInternal(clientIP)
 	if !allowed {
-		return wsErrorJSONInternal(c, http.StatusTooManyRequests, "Too many concurrent stats connections from this IP")
+		return c.JSON(http.StatusTooManyRequests, map[string]any{"success": false, "error": "Too many concurrent stats connections from this IP"})
 	}
 	defer h.releaseRateLimitInternal(clientIP, count)
 

@@ -2,33 +2,26 @@ package di
 
 import (
 	"context"
-	"embed"
 	"log/slog"
 	"net/http"
 	"time"
+	"uuid"
 
 	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/auth"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/backup"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/build"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/container"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/dashboard"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/federated"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/gitops"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/gitrepo"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/job"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/network"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/notification"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/passkey"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
@@ -36,174 +29,140 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
 	s3domain "github.com/getarcaneapp/arcane/backend/v2/internal/s3"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/swarm"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/system"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/template"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/updater"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/upload"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/user"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/version"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/volume"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/vulnerability"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/webhook"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/concurrency"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/francis"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/oidcjwk"
-	"github.com/getarcaneapp/arcane/backend/v2/resources"
+	backuptypes "github.com/getarcaneapp/arcane/types/v2/backup"
 	"github.com/moby/moby/api/types/events"
 	"go.getarcane.app/streams/bus"
 	"go.uber.org/fx"
 )
 
-func provideResourcesFSInternal() embed.FS {
-	return resources.FS
-}
-
-func provideEventModuleInternal(db *database.DB, cfg *config.Config, httpClient *http.Client) *event.Module {
-	return event.New(event.Dependencies{DB: db, Config: cfg, HTTPClient: httpClient})
-}
-
-func provideActivityModuleInternal(db *database.DB, settingsService *settings.SettingsService, environment *environment.EnvironmentService) *activity.Module {
-	return activity.New(activity.Dependencies{
-		DB:       db,
-		Settings: settingsService,
-		Environment: activity.EnvironmentDependencies{
-			ProxyJSONRequest:               environment.ProxyJSONRequest,
-			ListActiveRemoteEnvironments:   environment.ListActiveRemoteEnvironments,
-			GetActiveRemoteEnvironment:     environment.GetActiveRemoteEnvironmentSnapshot,
-			ProxyJSONRequestForEnvironment: environment.ProxyJSONRequestForEnvironment,
-			ResolveEnvironmentName:         environment.ResolveEnvironmentName,
-		},
-	})
-}
-
-func provideEnvironmentModuleInternal(service *environment.EnvironmentService, settingsService *settings.SettingsService, apiKey *apikey.ApiKeyService, eventService *event.EventService, cfg *config.Config, activityService *activity.ActivityService) *environment.Module {
-	return environment.New(service, environment.Dependencies{
-		Settings: settingsService,
-		ApiKey:   apiKey,
-		Event:    eventService,
-		Config:   cfg,
-		Activity: activityService,
-	})
-}
-
-func provideSwarmModuleInternal(service *swarm.SwarmService, environmentService *environment.EnvironmentService, eventService *event.EventService, cfg *config.Config) *swarm.Module {
-	return swarm.New(service, swarm.Dependencies{
-		Environment: environmentService,
-		Event:       eventService,
-		Config:      cfg,
+func provideActivityModuleInternal(service *activity.ActivityService, environment *environment.EnvironmentService) *activity.Module {
+	return activity.New(service, activity.EnvironmentDependencies{
+		ProxyJSONRequest:               environment.ProxyJSONRequest,
+		ListActiveRemoteEnvironments:   environment.ListActiveRemoteEnvironments,
+		GetActiveRemoteEnvironment:     environment.GetActiveRemoteEnvironmentSnapshot,
+		ProxyJSONRequestForEnvironment: environment.ProxyJSONRequestForEnvironment,
+		ResolveEnvironmentName:         environment.ResolveEnvironmentName,
 	})
 }
 
 func provideImageUpdateModuleInternal(service *imageupdate.ImageUpdateService, imageService *image.ImageService) *imageupdate.Module {
-	return imageupdate.New(service, imageupdate.Dependencies{
-		GetUpdateInfoByImageRefs: imageService.GetUpdateInfoByImageRefs,
-	})
+	return imageupdate.New(service, imageService.GetUpdateInfoByImageRefs)
 }
 
-func provideImageModuleInternal(service *image.ImageService, dockerService *docker.DockerClientService, imageUpdate *imageupdate.ImageUpdateService, settingsService *settings.SettingsService, buildService *build.BuildService, activityService *activity.ActivityService, uploadService *upload.UploadService) *image.Module {
-	return image.New(service, image.Dependencies{
-		Docker:      dockerService,
-		ImageUpdate: imageUpdate,
-		Settings:    settingsService,
-		Build:       buildService,
-		Activity:    activityService,
-		Upload:      uploadService,
-	})
+func provideSettingsModuleInternal(service *settings.SettingsService, search *settings.SettingsSearchService, environment *environment.EnvironmentService, cfg *config.Config) *settings.Module {
+	return settings.New(service, search, environment.ProxyJSONRequest, cfg)
 }
 
-func provideRoleModuleInternal(db *database.DB) *role.Module {
-	return role.New(role.Dependencies{DB: db})
-}
-
-func provideSettingsServiceInternal(ctx context.Context, lc fx.Lifecycle, db *database.DB, runtime *actors.Runtime) (*settings.SettingsService, error) {
-	executor, err := actors.NewExecutor(ctx, runtime, "services", "settings", 3)
-	if err != nil {
+func provideBackupEngineInternal(ctx context.Context, lc fx.Lifecycle, admission *runs.Admission, imageService *image.ImageService, runtime *francis.Runtime, coordinator *runs.Coordinator, roles *role.RoleService, cfg *config.Config) (*backup.Engine, error) {
+	engine := backup.NewEngine(ctx, admission, imageService)
+	if err := engine.Register(runtime); err != nil {
 		return nil, err
 	}
-	effects, err := actors.NewExecutor(ctx, runtime, "services", "settings-effects", 3)
-	if err != nil {
-		return nil, errors.Combine(err, executor.Stop(ctx))
-	}
-	service, err := settings.NewSettingsService(ctx, db, executor, effects)
-	if err != nil {
-		return nil, errors.Combine(err, executor.Stop(ctx), effects.Stop(ctx))
-	}
-	lc.Append(fx.Hook{
-		OnStop: func(ctx context.Context) error {
-			return errors.Combine(executor.Stop(ctx), effects.Stop(ctx))
-		},
+	engine.SetExecutionReady(coordinator.Active)
+	engine.SetAuthorize(func(ctx context.Context, command backuptypes.DurableRunCommand) error {
+		if cfg.AgentMode && command.UserID == "agent" && command.RequestedWithKey == "" {
+			return nil
+		}
+		if command.UserID == "" {
+			return errors.New("requesting user unavailable")
+		}
+		permissions, err := roles.ResolveExecutionPermissions(ctx, command.UserID, command.RequestedWithKey)
+		if err != nil {
+			return err
+		}
+		if !permissions.Allows(command.Permission, command.EnvironmentID) {
+			return errors.New("requesting user no longer has permission for this backup")
+		}
+		if command.Permission == authz.PermSystemBackupsManage && !permissions.IsGlobalAdmin() {
+			return errors.New("system backups require a global administrator")
+		}
+		return nil
 	})
-	return service, nil
-}
-
-func provideSettingsModuleInternal(service *settings.SettingsService, environment *environment.EnvironmentService, cfg *config.Config) *settings.Module {
-	return settings.New(service, settings.Dependencies{
-		Search:          settings.NewSettingsSearchService(),
-		ProxyRemoteJSON: environment.ProxyJSONRequest,
-		Config:          cfg,
-	})
-}
-
-func provideBackupEngineInternal(ctx context.Context, lc fx.Lifecycle, runtime *actors.Runtime, admission *actors.Gate[actors.AdmissionKey], imageService *image.ImageService) *backup.Engine {
-	engine := backup.NewEngine(ctx, runtime, admission, imageService)
 	lc.Append(fx.Hook{OnStop: engine.Stop})
-	return engine
+	return engine, nil
 }
 
-func provideAdmissionGateInternal(ctx context.Context, lc fx.Lifecycle, runtime *actors.Runtime) (*actors.Gate[actors.AdmissionKey], error) {
-	gate, err := actors.NewGate[actors.AdmissionKey](ctx, runtime, "admission", "application")
+func provideActorRuntimeInternal(appCtx context.Context, cfg *config.Config, settingsService *settings.SettingsService, lc fx.Lifecycle, cancelApp context.CancelFunc) (*francis.Runtime, error) {
+	runtime, err := francis.New(cfg.DatabaseURL, "", "", cfg.ActorPort)
 	if err != nil {
 		return nil, err
 	}
-	lc.Append(fx.Hook{OnStop: gate.Stop})
-	return gate, nil
+	lc.Append(fx.Hook{OnStart: func(ctx context.Context) error {
+		if err := runtime.ConfigureIdentity(cfg.EncryptionKey, settingsService.GetSettingsConfig().InstanceID.Value); err != nil {
+			return err
+		}
+		return runtime.Start(ctx, appCtx, func(err error) { slog.ErrorContext(appCtx, "Francis host failed", "error", err); cancelApp() })
+	}, OnStop: runtime.Stop})
+	return runtime, nil
 }
 
-func provideTunnelRegistryInternal(ctx context.Context, lc fx.Lifecycle, runtime *actors.Runtime) (*edge.TunnelRegistry, error) {
-	registry, err := edge.NewActorTunnelRegistry(ctx, runtime)
-	if err != nil {
+func provideRunCoordinatorInternal(runtime *francis.Runtime, store *kv.KVService, cfg *config.Config) (*runs.Coordinator, error) {
+	coordinator := runs.New(store, runtime.Service(), cfg.GetLocation())
+	if err := coordinator.Register(runtime); err != nil {
 		return nil, err
 	}
+	return coordinator, nil
+}
+
+func provideAdmissionGateInternal(runtime *francis.Runtime) (*runs.Admission, error) {
+	admission := runs.NewAdmission(runtime.Service(), uuid.New().String())
+	return admission, admission.Register(runtime)
+}
+
+func provideTunnelRegistryInternal(lc fx.Lifecycle) *edge.TunnelRegistry {
+	registry := edge.NewTunnelRegistry()
 	edge.SetDefaultRegistry(registry)
-	lc.Append(fx.Hook{
-		OnStop: func(ctx context.Context) error {
-			defer edge.ClearDefaultRegistry(registry)
-			return registry.Stop(ctx)
-		},
-	})
-	return registry, nil
+	lc.Append(fx.Hook{OnStop: func(ctx context.Context) error { defer edge.ClearDefaultRegistry(registry); return registry.Stop(ctx) }})
+	return registry
 }
 
-func provideDockerClientServiceInternal(ctx context.Context, lc fx.Lifecycle, actorRuntime *actors.Runtime, db *database.DB, cfg *config.Config, settings *settings.SettingsService, eventService *event.EventService) *docker.DockerClientService {
+func provideDockerClientServiceInternal(ctx context.Context, lc fx.Lifecycle, db *database.DB, cfg *config.Config, settings *settings.SettingsService, eventService *event.EventService) *docker.DockerClientService {
 	service := docker.NewDockerClientService(ctx, db, cfg, settings, bus.WithDroppedEventCallback(func(message events.Message) {
 		// Overflow is recovered synchronously, applying backpressure instead of losing log entries.
 		eventService.RecordDockerEvent(ctx, message)
 	}))
-	var runner, logRunner *actors.Runner
+	var stopStream, stopLog func(context.Context) error
 	var unsubscribe func()
 	lc.Append(fx.Hook{
 		OnStart: func(startCtx context.Context) error {
 			run, cleanup := eventService.SubscribeDockerEvents(service.EventBus())
 			unsubscribe = cleanup
 			var err error
-			logRunner, err = actors.NewRunner(ctx, actorRuntime, "docker-events", "log", "Docker event log", 3, run)
+			stopLog, err = concurrency.StartSupervised(ctx, "Docker event log", run)
 			if err != nil {
 				cleanup()
 				return err
 			}
-			runner, err = actors.NewRunner(ctx, actorRuntime, "docker-events", "stream", "Docker event watcher", 3, func(runCtx context.Context) error {
+			stopStream, err = concurrency.StartSupervised(ctx, "Docker event watcher", func(runCtx context.Context) error {
 				service.WatchEvents(runCtx)
 				return nil
 			})
 			if err != nil {
-				err = errors.Combine(err, logRunner.Stop(startCtx))
+				err = errors.Combine(err, stopLog(startCtx))
 				cleanup()
 			}
 			return err
 		},
 		OnStop: func(stopCtx context.Context) error {
-			err := errors.Combine(runner.Stop(stopCtx), logRunner.Stop(stopCtx))
+			var err error
+			if stopStream != nil {
+				err = stopStream(stopCtx)
+			}
+			if stopLog != nil {
+				err = errors.Combine(err, stopLog(stopCtx))
+			}
 			if unsubscribe != nil {
 				unsubscribe()
 			}
@@ -218,84 +177,45 @@ func provideVersionServiceInternal(httpClient *http.Client, cfg *config.Config, 
 	return version.NewVersionService(httpClient, cfg.UpdateCheckDisabled, config.Version, config.Revision, registry, docker, imageUpdate, settingsService)
 }
 
-func provideGitRepositoryModuleInternal(db *database.DB, cfg *config.Config, eventService *event.EventService, settingsService *settings.SettingsService) *gitrepo.Module {
-	return gitrepo.New(gitrepo.Dependencies{DB: db, WorkDir: cfg.GitWorkDir, Event: eventService, Settings: settingsService})
+func provideGitRepositoryServiceInternal(db *database.DB, cfg *config.Config, eventService *event.EventService, settingsService *settings.SettingsService) *gitrepo.GitRepositoryService {
+	return gitrepo.NewGitRepositoryService(db, cfg.GitWorkDir, eventService, settingsService)
 }
 
-func provideS3ModuleInternal(db *database.DB, environmentService *environment.EnvironmentService) *s3domain.Module {
-	return s3domain.New(s3domain.Dependencies{
-		DB:                     db,
-		SyncRemoteDestinations: environmentService.SyncS3DestinationsToRemoteEnvironments,
-		CheckRemoteReferences:  environmentService.CheckS3DestinationReferences,
-	})
+func provideS3ModuleInternal(service *s3domain.S3DestinationService, environment *environment.EnvironmentService) *s3domain.Module {
+	return s3domain.New(service, environment.SyncS3DestinationsToRemoteEnvironments)
 }
 
-func provideVolumeModuleInternal(lc fx.Lifecycle, db *database.DB, dockerService *docker.DockerClientService, eventService *event.EventService, settingsService *settings.SettingsService, imageService *image.ImageService, activityService *activity.ActivityService, containerModule *container.Module, engine *backup.Engine, s3Service *s3domain.S3DestinationService, environmentService *environment.EnvironmentService, cfg *config.Config, uploadService *upload.UploadService, recoveryKeys *backup.RecoveryKeyStore) *volume.Module {
-	module := volume.New(volume.Dependencies{
-		DB:           db,
-		Docker:       dockerService,
-		Event:        eventService,
-		Settings:     settingsService,
-		Image:        imageService,
-		Activity:     activityService,
-		Environment:  environmentService,
-		Container:    containerModule.Service,
-		Engine:       engine,
-		S3:           s3Service,
-		Config:       cfg,
-		Upload:       uploadService,
-		RecoveryKeys: recoveryKeys,
-	})
-	lc.Append(fx.Hook{
-		OnStop: func(ctx context.Context) error {
-			module.Service().CleanupHelperContainers(ctx)
-			return nil
-		},
-	})
-	return module
-}
-
-func provideContainerModuleInternal(event *event.EventService, docker *docker.DockerClientService, image *image.ImageService, settings *settings.SettingsService, project *project.ProjectService, activity *activity.ActivityService) *container.Module {
-	return container.New(container.Dependencies{
-		Event:    event,
-		Docker:   docker,
-		Image:    image,
-		Settings: settings,
-		Project:  project,
-		Activity: activity,
-	})
+func provideS3ServiceInternal(db *database.DB, environment *environment.EnvironmentService) *s3domain.S3DestinationService {
+	return s3domain.NewS3DestinationService(db, environment.CheckS3DestinationReferences)
 }
 
 func provideAuthModuleInternal(service *auth.AuthService, userService *user.UserService, settingsService *settings.SettingsService, passkeyService *passkey.PasskeyService) *auth.Module {
-	return auth.New(auth.Dependencies{
-		Service:                service,
-		User:                   userService,
-		Settings:               settingsService,
-		BeginMFAAuthentication: passkeyService.BeginMFAAuthentication,
-	})
+	return auth.New(service, userService, settingsService, passkeyService.BeginMFAAuthentication)
 }
 
-func provideContainerRegistryModuleInternal(db *database.DB, dockerService *docker.DockerClientService, kvService *kv.KVService, settingsService *settings.SettingsService, environment *environment.EnvironmentService) *registry.Module {
-	return registry.New(registry.Dependencies{DB: db, Docker: dockerService, KV: kvService, Settings: settingsService, SyncRemoteRegistries: environment.SyncRegistriesToRemoteEnvironments})
+func provideContainerRegistryServiceInternal(db *database.DB, docker *docker.DockerClientService, kv *kv.KVService, settings *settings.SettingsService) *registry.ContainerRegistryService {
+	return registry.NewContainerRegistryService(db, func(ctx context.Context) (registry.RegistryDaemonClient, error) { return docker.GetClient(ctx) }, kv, settings)
+}
+
+func provideContainerRegistryModuleInternal(service *registry.ContainerRegistryService, environment *environment.EnvironmentService) *registry.Module {
+	return registry.New(service, environment.SyncRegistriesToRemoteEnvironments)
 }
 
 func provideProjectServiceInternal(db *database.DB, settings *settings.SettingsService, event *event.EventService, image *image.ImageService, docker *docker.DockerClientService, build *build.BuildService, lifecycleService *project.LifecycleService, kv *kv.KVService, registry *registry.ContainerRegistryService, environment *environment.EnvironmentService, cfg *config.Config) *project.ProjectService {
-	service := project.NewProjectService(db, settings, event, image, docker, build, lifecycleService, registry, cfg)
-	service.KVService = kv
-	service.RegistryCredentialsProvider = environment.GetEnabledRegistryCredentials
-	return service
+	return project.NewProjectService(db, settings, event, image, docker, build, lifecycleService, registry, cfg, kv, environment.GetEnabledRegistryCredentials)
 }
 
-// updaterServiceParams collects the updater's dependencies. The dedicated
-// provider exists because NewUpdaterService takes its self-upgrade dependency
-// as an unexported interface, which fx cannot supply directly; the adapter
-// narrows *SystemUpgradeService to that interface.
+// updaterServiceParams includes actor registration and worker lifecycle dependencies.
 type updaterServiceParams struct {
 	fx.In
 
 	Context       context.Context
+	Config        *config.Config
 	Lifecycle     fx.Lifecycle
-	ActorRuntime  *actors.Runtime
+	ActorRuntime  *francis.Runtime
+	Coordinator   *runs.Coordinator
+	Admission     *runs.Admission
+	Roles         *role.RoleService
 	DB            *database.DB
 	Settings      *settings.SettingsService
 	Docker        *docker.DockerClientService
@@ -309,60 +229,26 @@ type updaterServiceParams struct {
 	Activity      *activity.ActivityService
 }
 
-func provideUpdaterModuleInternal(p updaterServiceParams) (*updater.Module, error) {
-	executor, err := actors.NewExecutor(p.Context, p.ActorRuntime, "updater", "single-container", 3)
+func provideUpdaterServiceInternal(p updaterServiceParams) (*updater.UpdaterService, error) {
+	service, err := updater.NewUpdaterService(p.DB, p.Settings, p.Docker, p.Project, p.ImageUpdate, p.Registry, p.Event, p.Image, p.Notification, p.SystemUpgrade, p.Activity, p.Config, p.Coordinator, p.Admission, p.Roles)
 	if err != nil {
 		return nil, err
 	}
-	module, err := updater.New(updater.Dependencies{
-		DB:            p.DB,
-		Settings:      p.Settings,
-		Docker:        p.Docker,
-		Project:       p.Project,
-		ImageUpdate:   p.ImageUpdate,
-		Registry:      p.Registry,
-		Event:         p.Event,
-		Image:         p.Image,
-		Notification:  p.Notification,
-		SelfUpgrade:   p.SystemUpgrade,
-		Activity:      p.Activity,
-		SingleUpdates: executor,
-	})
-	if err != nil {
-		return nil, errors.Combine(err, executor.Stop(p.Context))
+	if err := service.RegisterActors(p.ActorRuntime); err != nil {
+		return nil, err
 	}
-	p.Lifecycle.Append(fx.Hook{OnStop: executor.Stop})
-	return module, nil
-}
-
-func provideUserServiceInternal(db *database.DB, role *role.RoleService) *user.UserService {
-	return user.NewUserService(db).WithRoleService(role)
+	p.Lifecycle.Append(fx.Hook{OnStart: func(context.Context) error { return service.Start(p.Context) }, OnStop: service.Stop}) //nolint:contextcheck // Workers inherit the application lifetime after startup returns.
+	return service, nil
 }
 
 func provideUserModuleInternal(service *user.UserService, auth *auth.AuthService, settingsService *settings.SettingsService) *user.Module {
-	return user.New(user.Dependencies{Service: service, InvalidateUserTokenCache: auth.InvalidateUserTokenCache, Settings: settingsService})
-}
-
-func provideJobModuleInternal(db *database.DB, settingsService *settings.SettingsService, cfg *config.Config, environment *environment.EnvironmentService, roles *role.RoleService, activityService *activity.ActivityService) *job.Module {
-	return job.New(job.Dependencies{DB: db, Settings: settingsService, Config: cfg, Environment: environment, Roles: roles, Activity: activityService})
-}
-
-func provideTemplateModuleInternal(ctx context.Context, db *database.DB, httpClient *http.Client, settingsService *settings.SettingsService) *template.Module {
-	return template.New(template.Dependencies{Context: ctx, DB: db, HTTPClient: httpClient, Settings: settingsService})
-}
-
-func provideApiKeyModuleInternal(db *database.DB, userService *user.UserService, roleService *role.RoleService) *apikey.Module {
-	return apikey.New(apikey.Dependencies{DB: db, User: userService, Role: roleService})
+	return user.New(service, auth.InvalidateUserTokenCache, settingsService)
 }
 
 func provideJWKSetManagerInternal(ctx context.Context, lc fx.Lifecycle) *oidcjwk.KeySetManager {
 	manager := oidcjwk.NewKeySetManager(ctx)
 	lc.Append(fx.Hook{OnStop: manager.Shutdown})
 	return manager
-}
-
-func provideFederatedCredentialServiceInternal(db *database.DB, auth *auth.AuthService, user *user.UserService, settings *settings.SettingsService, event *event.EventService, httpClient *http.Client, role *role.RoleService, keySetManager *oidcjwk.KeySetManager) *federated.FederatedCredentialService {
-	return federated.NewFederatedCredentialService(db, auth, user, settings, event, httpClient, keySetManager).WithRoleService(role)
 }
 
 func provideAuthMiddlewareInternal(authService *auth.AuthService, apiKey *apikey.ApiKeyService, env *environment.EnvironmentService, role *role.RoleService, cfg *config.Config) *auth.AuthMiddleware {
@@ -372,15 +258,15 @@ func provideAuthMiddlewareInternal(authService *auth.AuthService, apiKey *apikey
 		WithPermissionResolver(role)
 }
 
-func provideFilesystemWatcherJobInternal(ctx context.Context, lc fx.Lifecycle, actorRuntime *actors.Runtime, project *project.ProjectService, template *template.TemplateService, settings *settings.SettingsService, cfg *config.Config) (*scheduler.FilesystemWatcherJob, error) {
-	job, err := scheduler.NewFilesystemWatcherJob(ctx, actorRuntime, project, template, settings, cfg.ProjectScanMaxDepth)
+func provideFilesystemWatcherJobInternal(ctx context.Context, lc fx.Lifecycle, project *project.ProjectService, template *template.TemplateService, settings *settings.SettingsService, cfg *config.Config) (*scheduler.FilesystemWatcherJob, error) {
+	job, err := scheduler.NewFilesystemWatcherJob(ctx, project, template, settings, cfg.ProjectScanMaxDepth)
 	if err != nil {
 		return nil, err
 	}
-	var runner *actors.Runner
+	var stop func(context.Context) error
 	lc.Append(fx.Hook{
 		OnStart: func(context.Context) error {
-			runner, err = actors.NewRunner(ctx, actorRuntime, "filesystem-watcher", "lifecycle", "filesystem watcher", 3, func(runCtx context.Context) error {
+			stop, err = concurrency.StartSupervised(ctx, "filesystem watcher", func(runCtx context.Context) error {
 				delay := 5 * time.Second
 				for runCtx.Err() == nil {
 					startErr := job.Start(runCtx)
@@ -408,65 +294,12 @@ func provideFilesystemWatcherJobInternal(ctx context.Context, lc fx.Lifecycle, a
 			return nil
 		},
 		OnStop: func(stopCtx context.Context) error {
-			return errors.Combine(runner.Stop(stopCtx), job.Stop(stopCtx))
+			var err error
+			if stop != nil {
+				err = stop(stopCtx)
+			}
+			return errors.Combine(err, job.Stop(stopCtx))
 		},
 	})
 	return job, nil
-}
-
-func provideDashboardModuleInternal(db *database.DB, docker *docker.DockerClientService, containerModule *container.Module, project *project.ProjectService, image *image.ImageService, settings *settings.SettingsService, vulnerability *vulnerability.VulnerabilityService, environment *environment.EnvironmentService, version *version.VersionService, volumeModule *volume.Module) *dashboard.Module {
-	return dashboard.New(dashboard.Dependencies{
-		DB:            db,
-		Docker:        docker,
-		Container:     containerModule.Service,
-		Project:       project,
-		Image:         image,
-		Settings:      settings,
-		Vulnerability: vulnerability,
-		Environment:   environment,
-		Version:       version,
-		Volume:        volumeModule.Service(),
-	})
-}
-
-func provideSystemModuleInternal(db *database.DB, cfg *config.Config, docker *docker.DockerClientService, containerModule *container.Module, image *image.ImageService, imageUpdate *imageupdate.ImageUpdateService, volumeModule *volume.Module, network *network.NetworkService, settings *settings.SettingsService, activity *activity.ActivityService, upgrade *system.SystemUpgradeService, environment *environment.EnvironmentService) *system.Module {
-	return system.New(system.Dependencies{
-		DB:            db,
-		Config:        cfg,
-		Docker:        docker,
-		Container:     containerModule.Service,
-		Image:         image,
-		ImageUpdate:   imageUpdate,
-		Volume:        volumeModule.Service(),
-		Network:       network,
-		Settings:      settings,
-		Activity:      activity,
-		SystemUpgrade: upgrade,
-		Environment:   environment,
-	})
-}
-
-func provideWebhookModuleInternal(lc fx.Lifecycle, db *database.DB, containerModule *container.Module, updaterModule *updater.Module, project *project.ProjectService, gitOpsSync *gitops.GitOpsSyncService, event *event.EventService, environment *environment.EnvironmentService) *webhook.Module {
-	module := webhook.New(webhook.Dependencies{
-		DB:          db,
-		Container:   containerModule.Service,
-		Updater:     updaterModule.Service(),
-		Project:     project,
-		GitOpsSync:  gitOpsSync,
-		Event:       event,
-		Environment: environment,
-	})
-	lc.Append(fx.Hook{
-		OnStart: module.Service().LoadTokenHashes,
-		OnStop: func(ctx context.Context) error {
-			// Drain fails only when the stop context expires; fx then skips all
-			// remaining teardown regardless of what is returned here, so an
-			// error would only mark an expected long action as a failed stop.
-			if err := module.Service().DrainActions(ctx); err != nil {
-				slog.WarnContext(ctx, "shutdown proceeding with webhook actions still in flight", "error", err)
-			}
-			return nil
-		},
-	})
-	return module
 }

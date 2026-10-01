@@ -8,12 +8,19 @@ import (
 )
 
 type Module struct {
-	Service  *ProjectService
+	service  *ProjectService
 	activity *activity.ActivityService
 }
 
 func New(service *ProjectService, activityService *activity.ActivityService) *Module {
-	return &Module{Service: service, activity: activityService}
+	return &Module{service: service, activity: activityService}
+}
+
+func (m *Module) Service() *ProjectService {
+	if m == nil {
+		return nil
+	}
+	return m.service
 }
 
 func (m *Module) RegisterRoutes(api huma.API, appCtx handlerutil.ActivityAppContext) {
@@ -21,5 +28,5 @@ func (m *Module) RegisterRoutes(api huma.API, appCtx handlerutil.ActivityAppCont
 		RegisterProjects(api, nil, nil, appCtx)
 		return
 	}
-	RegisterProjects(api, m.Service, m.activity, appCtx)
+	RegisterProjects(api, m.service, m.activity, appCtx)
 }

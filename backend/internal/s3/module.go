@@ -5,24 +5,15 @@ import (
 	"context"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 )
 
-type Dependencies struct {
-	DB                     *database.DB
-	SyncRemoteDestinations func(context.Context) error
-	CheckRemoteReferences  func(ctx context.Context, destinationID string) error
-}
-
 type Module struct {
-	service *S3DestinationService
-	deps    Dependencies
+	service                *S3DestinationService
+	syncRemoteDestinations func(context.Context) error
 }
 
-func New(deps Dependencies) *Module {
-	service := NewS3DestinationService(deps.DB)
-	service.checkRemoteReferences = deps.CheckRemoteReferences
-	return &Module{service: service, deps: deps}
+func New(service *S3DestinationService, syncRemoteDestinations func(context.Context) error) *Module {
+	return &Module{service: service, syncRemoteDestinations: syncRemoteDestinations}
 }
 
 func (m *Module) Service() *S3DestinationService {
@@ -37,5 +28,5 @@ func (m *Module) RegisterRoutes(api huma.API) {
 		RegisterS3Destinations(api, nil, nil)
 		return
 	}
-	RegisterS3Destinations(api, m.service, m.deps.SyncRemoteDestinations)
+	RegisterS3Destinations(api, m.service, m.syncRemoteDestinations)
 }

@@ -9,7 +9,7 @@ import (
 	"log/slog"
 
 	"emperror.dev/errors"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 )
 
@@ -28,7 +28,7 @@ type Registry struct {
 
 	lifecycleCtx  context.Context
 	scheduler     schedulertypes.DynamicScheduler
-	admissionGate *actors.Gate[actors.AdmissionKey]
+	admissionGate *runs.Admission
 }
 
 // New creates a registry whose job names are jobPrefix+entityID and whose
@@ -40,7 +40,7 @@ func New(jobPrefix, admissionScope string) *Registry {
 // SetScheduler injects the job scheduler, the admission gate and the app
 // lifecycle context. The lifecycle context is what scheduled runs execute on,
 // so they outlive the request or bootstrap goroutine that registered them.
-func (r *Registry) SetScheduler(ctx context.Context, scheduler schedulertypes.DynamicScheduler, admissionGate *actors.Gate[actors.AdmissionKey]) error { //nolint:contextcheck // scheduled runs must capture the app lifecycle context, not request contexts
+func (r *Registry) SetScheduler(ctx context.Context, scheduler schedulertypes.DynamicScheduler, admissionGate *runs.Admission) error { //nolint:contextcheck // scheduled runs must capture the app lifecycle context, not request contexts
 	if scheduler == nil || admissionGate == nil {
 		return errors.Errorf("%s scheduler dependencies unavailable", r.admissionScope)
 	}
@@ -104,6 +104,6 @@ func (r *Registry) Unregister(ctx context.Context, entityID string) {
 
 // TryAcquire admits at most one in-flight run per entity ID. It refuses
 // immediately when a run is already active.
-func (r *Registry) TryAcquire(ctx context.Context, entityID string) (*actors.Lease[actors.AdmissionKey], bool, error) {
-	return r.admissionGate.TryAcquire(ctx, actors.AdmissionKey{Scope: r.admissionScope, ID: entityID})
+func (r *Registry) TryAcquire(ctx context.Context, entityID string) (*runs.Lease, bool, error) {
+	return r.admissionGate.TryAcquire(ctx, schedulertypes.AdmissionKey{Scope: r.admissionScope, ID: entityID})
 }

@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
@@ -19,7 +18,6 @@ import (
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
 	libcrypto "go.getarcane.app/sys/crypto"
-	"go.uber.org/fx/fxtest"
 	"gorm.io/gorm"
 )
 
@@ -33,49 +31,25 @@ func setupSettingsTestDB(t *testing.T) *database.DB {
 
 func newSettingsServiceForTestInternal(t testing.TB, ctx context.Context, db *database.DB) (*SettingsService, error) {
 	t.Helper()
-	lifecycle := fxtest.NewLifecycle(t)
-	runtime, err := actors.NewRuntime(t.Context(), lifecycle)
-	require.NoError(t, err)
-	executor, err := actors.NewExecutor(t.Context(), runtime, "settings-test", t.Name(), 3)
-	require.NoError(t, err)
-	effects, err := actors.NewExecutor(t.Context(), runtime, "settings-effects-test", t.Name(), 3)
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		stopCtx, cancel := context.WithTimeout(context.Background(), time.Second)
-		defer cancel()
-		require.NoError(t, executor.Stop(stopCtx))
-		require.NoError(t, effects.Stop(stopCtx))
-		require.NoError(t, lifecycle.Stop(stopCtx))
-	})
-	return NewSettingsService(ctx, db, executor, effects)
-}
-
-func newAdmissionGateForTestInternal(t testing.TB) *actors.Gate[actors.AdmissionKey] {
-	t.Helper()
-	lifecycle := fxtest.NewLifecycle(t)
-	runtime, err := actors.NewRuntime(t.Context(), lifecycle)
-	require.NoError(t, err)
-	gate, err := actors.NewGate[actors.AdmissionKey](t.Context(), runtime, "services-test-admission", t.Name())
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		stopCtx, cancel := context.WithTimeout(context.Background(), time.Second)
-		defer cancel()
-		require.NoError(t, gate.Stop(stopCtx))
-		require.NoError(t, lifecycle.Stop(stopCtx))
-	})
-	return gate
+	svc, err := NewSettingsService(ctx, db)
+	if err == nil {
+		t.Cleanup(func() { require.NoError(t, svc.Stop(context.Background())) })
+	}
+	return svc, err
 }
 
 func waitForSettingsNotificationsInternal(t *testing.T, svc *SettingsService) {
 	t.Helper()
-	_, err := svc.writes.Execute(t.Context(), "wait for settings notification submission", func(context.Context) (actors.NoPayload, error) {
-		return actors.NoPayload{}, nil
-	}, nil)
+	done := make(chan struct{})
+	svc.writes.Lock()
+	err := svc.enqueueEffectInternal(func() { close(done) })
+	svc.writes.Unlock()
 	require.NoError(t, err)
-	_, err = svc.effects.Execute(t.Context(), "wait for settings notifications", func(context.Context) (actors.NoPayload, error) {
-		return actors.NoPayload{}, nil
-	}, nil)
-	require.NoError(t, err)
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("settings effects did not finish")
+	}
 }
 
 func TestSettingsService_EnsureDefaultSettings_ReplacesRetiredDefaults(t *testing.T) {

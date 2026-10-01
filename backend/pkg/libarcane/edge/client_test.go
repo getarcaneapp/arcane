@@ -996,13 +996,13 @@ func TestStartTunnelClient_GRPCValidation(t *testing.T) {
 	ctx := t.Context()
 
 	t.Run("edge mode required", func(t *testing.T) {
-		_, err := StartTunnelClient(ctx, nil, &Config{}, http.NotFoundHandler())
+		_, err := StartTunnelClient(ctx, &Config{}, http.NotFoundHandler())
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "edge tunnel disabled")
 	})
 
 	t.Run("manager url required for grpc transport", func(t *testing.T) {
-		_, err := StartTunnelClient(ctx, nil, &Config{
+		_, err := StartTunnelClient(ctx, &Config{
 			EdgeAgent:     true,
 			EdgeTransport: EdgeTransportGRPC,
 			AgentToken:    "token",
@@ -1012,7 +1012,7 @@ func TestStartTunnelClient_GRPCValidation(t *testing.T) {
 	})
 
 	t.Run("agent token required", func(t *testing.T) {
-		_, err := StartTunnelClient(ctx, nil, &Config{
+		_, err := StartTunnelClient(ctx, &Config{
 			EdgeAgent:     true,
 			EdgeTransport: EdgeTransportGRPC,
 			ManagerApiUrl: "https://manager.example.com/arcane/api",
@@ -1022,7 +1022,7 @@ func TestStartTunnelClient_GRPCValidation(t *testing.T) {
 	})
 
 	t.Run("mtls requires https manager url", func(t *testing.T) {
-		_, err := StartTunnelClient(ctx, nil, &Config{
+		_, err := StartTunnelClient(ctx, &Config{
 			EdgeAgent:     true,
 			EdgeTransport: EdgeTransportGRPC,
 			ManagerApiUrl: "http://manager.example.com/api",
@@ -1034,7 +1034,7 @@ func TestStartTunnelClient_GRPCValidation(t *testing.T) {
 	})
 
 	t.Run("required mtls auto-enrollment failure surfaces", func(t *testing.T) {
-		_, err := StartTunnelClient(ctx, nil, &Config{
+		_, err := StartTunnelClient(ctx, &Config{
 			EdgeAgent:     true,
 			EdgeTransport: EdgeTransportGRPC,
 			ManagerApiUrl: "https://127.0.0.1:1/api",

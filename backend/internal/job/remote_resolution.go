@@ -8,13 +8,13 @@ import (
 	"time"
 
 	"emperror.dev/errors"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/queue"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
 	st "github.com/getarcaneapp/arcane/types/v2/scheduler"
 )
 
 func (s *JobService) resolveRemoteRunInternal(ctx context.Context, environmentID, jobID, runID, actor string) (st.Run, error) {
-	local, localErr := s.Queue.Get(ctx, environmentID, jobID, runID)
-	if localErr != nil && !errors.Is(localErr, queue.ErrRunNotFound) {
+	local, localErr := s.runs.Get(ctx, environmentID, jobID, runID)
+	if localErr != nil && !errors.Is(localErr, runs.ErrRunNotFound) {
 		return st.Run{}, localErr
 	}
 	if localErr == nil {
@@ -25,7 +25,7 @@ func (s *JobService) resolveRemoteRunInternal(ctx context.Context, environmentID
 			return local, errors.New("only runs needing attention can be resolved")
 		}
 		if !local.RemoteDeliveryAttempted && !local.RemoteAccepted {
-			return s.Queue.Resolve(ctx, environmentID, jobID, runID, actor)
+			return s.runs.Resolve(ctx, environmentID, jobID, runID, actor)
 		}
 	}
 	acknowledged, err := s.resolveAgentReviewInternal(ctx, environmentID, jobID, runID, actor)
@@ -40,9 +40,9 @@ func (s *JobService) resolveRemoteRunInternal(ctx context.Context, environmentID
 		return acknowledged, nil
 	}
 	now := time.Now().UTC()
-	if err := s.Queue.UpdateRun(ctx, local, func(current *st.Run) error {
+	if err := s.runs.UpdateRun(ctx, local, func(current *st.Run) error {
 		if current.Status != st.NeedsAttention {
-			return queue.ErrRunConflict
+			return runs.ErrRunConflict
 		}
 		outcome := acknowledged.Outcome
 		outcome.Status = acknowledged.Status
@@ -54,7 +54,7 @@ func (s *JobService) resolveRemoteRunInternal(ctx context.Context, environmentID
 	}); err != nil {
 		return st.Run{}, err
 	}
-	return s.Queue.Resolve(ctx, environmentID, jobID, runID, acknowledged.Resolution.ResolvedBy)
+	return s.runs.Resolve(ctx, environmentID, jobID, runID, acknowledged.Resolution.ResolvedBy)
 }
 
 // resolveAgentReviewInternal confirms ownership, records review, and settles delivery.

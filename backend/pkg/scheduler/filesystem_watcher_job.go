@@ -4,10 +4,10 @@ import (
 	"context"
 	"log/slog"
 	"runtime"
+	"sync"
 	"time"
 
 	"emperror.dev/errors"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/template"
@@ -21,49 +21,66 @@ type FilesystemWatcherJob struct {
 	settingsService  *settings.SettingsService
 	projectScanDepth int
 	lifecycleCtx     context.Context
-	projectsWatcher  *actors.Resource[*fswatch.Watcher]
-	templatesWatcher *actors.Resource[*fswatch.Watcher]
+	projectsWatcher  *fswatch.Watcher
+	templatesWatcher *fswatch.Watcher
+	mu               sync.Mutex
+	stopped          bool
+	retired          []*fswatch.Watcher
 }
 
 func NewFilesystemWatcherJob(
 	ctx context.Context,
-	actorRuntime *actors.Runtime,
 	projectService *project.ProjectService,
 	templateService *template.TemplateService,
 	settingsService *settings.SettingsService,
 	projectScanDepth int,
 ) (*FilesystemWatcherJob, error) {
-	projectsWatcher, err := actors.NewResource(ctx, actorRuntime, "filesystem-watcher", "projects", 3, (*fswatch.Watcher).Stop)
-	if err != nil {
-		return nil, err
-	}
-	templatesWatcher, err := actors.NewResource(ctx, actorRuntime, "filesystem-watcher", "templates", 3, (*fswatch.Watcher).Stop)
-	if err != nil {
-		return nil, errors.Combine(err, projectsWatcher.Stop(ctx))
-	}
 	return &FilesystemWatcherJob{
 		projectService:   projectService,
 		templateService:  templateService,
 		settingsService:  settingsService,
 		projectScanDepth: projectScanDepth,
 		lifecycleCtx:     ctx,
-		projectsWatcher:  projectsWatcher,
-		templatesWatcher: templatesWatcher,
 	}, nil
 }
 
 func (j *FilesystemWatcherJob) Start(ctx context.Context) error {
-	if err := j.projectsWatcher.Restart(ctx, "start projects filesystem watcher", j.startProjectsWatcherInternal); err != nil {
+	if err := j.RestartProjectsWatcher(ctx); err != nil {
 		return err
 	}
-	if err := j.templatesWatcher.Restart(ctx, "start templates filesystem watcher", j.startTemplatesWatcherInternal); err != nil {
-		return errors.Combine(err, j.projectsWatcher.Clear(ctx, "clear projects watcher after template startup failure"))
+	if err := j.RestartTemplatesWatcher(ctx); err != nil {
+		j.mu.Lock()
+		watcher := j.projectsWatcher
+		j.projectsWatcher = nil
+		j.mu.Unlock()
+		if watcher != nil {
+			return errors.Combine(err, watcher.Stop())
+		}
+		return err
 	}
 	return nil
 }
 
 func (j *FilesystemWatcherJob) Stop(ctx context.Context) error {
-	return errors.Combine(j.projectsWatcher.Stop(ctx), j.templatesWatcher.Stop(ctx))
+	j.mu.Lock()
+	j.stopped = true
+	projectsWatcher, templatesWatcher := j.projectsWatcher, j.templatesWatcher
+	j.projectsWatcher = nil
+	j.templatesWatcher = nil
+	retired := j.retired
+	j.retired = nil
+	j.mu.Unlock()
+	var err error
+	if projectsWatcher != nil {
+		err = projectsWatcher.Stop()
+	}
+	if templatesWatcher != nil {
+		err = errors.Combine(err, templatesWatcher.Stop())
+	}
+	for _, watcher := range retired {
+		err = errors.Combine(err, watcher.Stop())
+	}
+	return err
 }
 
 func (j *FilesystemWatcherJob) handleFilesystemChangeInternal(ctx context.Context) {
@@ -81,37 +98,54 @@ func (j *FilesystemWatcherJob) handleProjectFilePathsChangedInternal(ctx context
 	if len(paths) == 0 || j.projectService == nil {
 		return
 	}
-	err := j.projectsWatcher.Do(ctx, "sync changed project files", func(workCtx context.Context, _ *fswatch.Watcher) error {
-		j.handleFilesystemChangeInternal(workCtx)
-		j.projectService.HandleProjectFilesChanged(workCtx, paths)
-		return nil
-	})
-	if err != nil && ctx.Err() == nil && !errors.Is(err, actors.ErrResourceStopped) {
-		slog.ErrorContext(ctx, "Failed to dispatch changed project files", "error", err)
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	if j.stopped || ctx.Err() != nil {
+		return
 	}
+	j.handleFilesystemChangeInternal(ctx)
+	j.projectService.HandleProjectFilesChanged(ctx, paths)
 }
 
 func (j *FilesystemWatcherJob) handleTemplatesChangeInternal(ctx context.Context) {
-	err := j.templatesWatcher.Do(ctx, "sync changed templates", func(workCtx context.Context, _ *fswatch.Watcher) error {
-		slog.InfoContext(workCtx, "Template directory change detected, syncing templates")
-		if j.templateService == nil {
-			return nil
-		}
-		if syncErr := j.templateService.SyncLocalTemplatesFromFilesystem(workCtx); syncErr != nil {
-			slog.ErrorContext(workCtx, "Failed to sync templates after filesystem change", "error", syncErr)
-		} else {
-			slog.InfoContext(workCtx, "Template sync completed after filesystem change")
-		}
-		return nil
-	})
-	if err != nil && ctx.Err() == nil && !errors.Is(err, actors.ErrResourceStopped) {
-		slog.ErrorContext(ctx, "Failed to dispatch template filesystem change", "error", err)
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	if j.stopped || ctx.Err() != nil || j.templateService == nil {
+		return
+	}
+	if err := j.templateService.SyncLocalTemplatesFromFilesystem(ctx); err != nil {
+		slog.ErrorContext(ctx, "Failed to sync templates after filesystem change", "error", err)
 	}
 }
 
 func (j *FilesystemWatcherJob) RestartProjectsWatcher(ctx context.Context) error {
 	slog.InfoContext(ctx, "Restarting projects filesystem watcher")
-	return j.projectsWatcher.Restart(ctx, "restart projects filesystem watcher", j.startProjectsWatcherInternal)
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	if j.stopped {
+		return errors.New("filesystem watcher stopped")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if j.projectsWatcher != nil {
+		previous := j.projectsWatcher
+		j.projectsWatcher = nil
+		j.retired = append(j.retired, previous)
+		// Callbacks need the domain mutex, so stop the watch loop separately from joining them.
+		if err := previous.StopWatching(); err != nil {
+			return err
+		}
+	}
+	watcher, err := j.startProjectsWatcherInternal(ctx)
+	if err != nil {
+		if watcher != nil {
+			_ = watcher.StopWatching()
+		}
+		return err
+	}
+	j.projectsWatcher = watcher
+	return nil
 }
 
 func (j *FilesystemWatcherJob) startProjectsWatcherInternal(ctx context.Context) (*fswatch.Watcher, error) {
@@ -164,7 +198,32 @@ func (j *FilesystemWatcherJob) projectWatcherOptionsInternal(followProjectSymlin
 
 func (j *FilesystemWatcherJob) RestartTemplatesWatcher(ctx context.Context) error {
 	slog.InfoContext(ctx, "Restarting templates filesystem watcher")
-	return j.templatesWatcher.Restart(ctx, "restart templates filesystem watcher", j.startTemplatesWatcherInternal)
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	if j.stopped {
+		return errors.New("filesystem watcher stopped")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if j.templatesWatcher != nil {
+		previous := j.templatesWatcher
+		j.templatesWatcher = nil
+		j.retired = append(j.retired, previous)
+		// Callbacks need the domain mutex, so stop the watch loop separately from joining them.
+		if err := previous.StopWatching(); err != nil {
+			return err
+		}
+	}
+	watcher, err := j.startTemplatesWatcherInternal(ctx)
+	if err != nil {
+		if watcher != nil {
+			_ = watcher.StopWatching()
+		}
+		return err
+	}
+	j.templatesWatcher = watcher
+	return nil
 }
 
 func (j *FilesystemWatcherJob) startTemplatesWatcherInternal(ctx context.Context) (*fswatch.Watcher, error) {

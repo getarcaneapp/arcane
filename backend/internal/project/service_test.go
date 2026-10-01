@@ -21,7 +21,6 @@ import (
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	composeapi "github.com/docker/compose/v5/pkg/api"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
@@ -57,7 +56,6 @@ import (
 	buildtypes "go.getarcane.app/builds/types"
 	"go.getarcane.app/updater/labels"
 	updatertypes "go.getarcane.app/updater/types"
-	"go.uber.org/fx/fxtest"
 	"gorm.io/gorm"
 )
 
@@ -120,21 +118,11 @@ func TestValidateWorkspaceChangesAgainstGitOps(t *testing.T) {
 
 func newSettingsServiceForTestInternal(t *testing.T, ctx context.Context, db *database.DB) (*settings.SettingsService, error) {
 	t.Helper()
-	lifecycle := fxtest.NewLifecycle(t)
-	runtime, err := actors.NewRuntime(t.Context(), lifecycle)
-	require.NoError(t, err)
-	executor, err := actors.NewExecutor(t.Context(), runtime, "project-settings-test", t.Name(), 3)
-	require.NoError(t, err)
-	effects, err := actors.NewExecutor(t.Context(), runtime, "project-settings-effects-test", t.Name(), 3)
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		stopCtx, cancel := context.WithTimeout(context.Background(), time.Second)
-		defer cancel()
-		require.NoError(t, executor.Stop(stopCtx))
-		require.NoError(t, effects.Stop(stopCtx))
-		require.NoError(t, lifecycle.Stop(stopCtx))
-	})
-	return settings.NewSettingsService(ctx, db, executor, effects)
+	svc, err := settings.NewSettingsService(ctx, db)
+	if err == nil {
+		t.Cleanup(func() { require.NoError(t, svc.Stop(context.Background())) })
+	}
+	return svc, err
 }
 
 func newTestDockerClientInternal(t *testing.T, server *httptest.Server) *client.Client {
@@ -229,7 +217,7 @@ func TestProjectService_RefreshProjectImageRefs_PersistsBuildMetadata(t *testing
 	}
 	require.NoError(t, db.Create(proj).Error)
 
-	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 	svc.refreshProjectImageRefsInternal(ctx, proj)
 
 	var saved Project
@@ -266,7 +254,7 @@ func TestProjectService_BackfillProjectImageRefs_RetriesOnlyMissingMetadata(t *t
 	require.NoError(t, db.Create(invalid).Error)
 	require.NoError(t, db.Create(regular).Error)
 
-	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 	count, err := svc.BackfillProjectImageRefs(ctx)
 	require.NoError(t, err)
 	require.Equal(t, 3, count)
@@ -310,7 +298,7 @@ func setupProjectDestroyTestServiceInternal(t *testing.T) (*ProjectService, *dat
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
 	eventService := event.NewEventService(db, config.Load(), nil)
-	return NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load()), db, projectsDir
+	return NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load(), nil, nil), db, projectsDir
 }
 
 func TestProjectService_DestroyProject_RemovesFilesWhenRequested(t *testing.T) {
@@ -375,7 +363,7 @@ func TestProjectService_GetProjectFromDatabaseByID(t *testing.T) {
 
 	// Setup dependencies
 	settingsService, _ := newSettingsServiceForTestInternal(t, ctx, db)
-	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 
 	// Create test project
 	proj := &Project{
@@ -486,7 +474,7 @@ func TestProjectService_CalculateProjectStatus(t *testing.T) {
 func TestProjectService_UpdateProjectStatusInternal(t *testing.T) {
 	db := setupProjectTestDB(t)
 	ctx := context.Background()
-	svc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 
 	proj := &Project{
 		ID:     "p1",
@@ -529,7 +517,7 @@ func TestProjectService_GetProjectByComposeName(t *testing.T) {
 
 	t.Run("exact match", func(t *testing.T) {
 		db := setupProjectTestDB(t)
-		svc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, config.Load())
+		svc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 
 		proj := &Project{
 			ID:   "p1",
@@ -545,7 +533,7 @@ func TestProjectService_GetProjectByComposeName(t *testing.T) {
 
 	t.Run("normalized fallback", func(t *testing.T) {
 		db := setupProjectTestDB(t)
-		svc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, config.Load())
+		svc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 
 		proj := &Project{
 			ID:   "p1",
@@ -561,7 +549,7 @@ func TestProjectService_GetProjectByComposeName(t *testing.T) {
 
 	t.Run("display name in db, normalized compose label input", func(t *testing.T) {
 		db := setupProjectTestDB(t)
-		svc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, config.Load())
+		svc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 
 		display := &Project{
 			ID:   "p2",
@@ -577,7 +565,7 @@ func TestProjectService_GetProjectByComposeName(t *testing.T) {
 
 	t.Run("invalidates stale normalized cache entries after deletion", func(t *testing.T) {
 		db := setupProjectTestDB(t)
-		svc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, config.Load())
+		svc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 
 		original := &Project{
 			ID:   "p3",
@@ -614,7 +602,7 @@ func TestProjectService_GetProjectByComposeName(t *testing.T) {
 
 	t.Run("invalidates stale normalized cache entries after rename", func(t *testing.T) {
 		db := setupProjectTestDB(t)
-		svc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, config.Load())
+		svc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 
 		original := &Project{
 			ID:   "p5",
@@ -674,7 +662,7 @@ func TestProjectService_PullProjectImages_UpdatesCurrentImageRecordAfterPull(t *
 	eventService := event.NewEventService(db, nil, nil)
 	imageUpdateService := imageupdate.NewImageUpdateService(db, nil, nil, dockerService, nil, nil, nil)
 	imageService := image.NewImageService(db, dockerService, nil, imageUpdateService, nil, eventService)
-	svc := NewProjectService(db, settingsService, nil, imageService, dockerService, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, nil, imageService, dockerService, nil, nil, nil, config.Load(), nil, nil)
 
 	projectPath := createComposeProjectDir(t, projectsDir, "compose-pull")
 	composeContent := fmt.Sprintf("services:\n  app:\n    image: %s\n  builder:\n    build: .\n", imageRef)
@@ -770,7 +758,7 @@ func TestProjectService_EnsureImagesPresent_UpdatesCurrentImageRecordAfterPull(t
 	eventService := event.NewEventService(db, nil, nil)
 	imageUpdateService := imageupdate.NewImageUpdateService(db, nil, nil, dockerService, nil, nil, nil)
 	imageService := image.NewImageService(db, dockerService, nil, imageUpdateService, nil, eventService)
-	svc := NewProjectService(db, settingsService, nil, imageService, dockerService, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, nil, imageService, dockerService, nil, nil, nil, config.Load(), nil, nil)
 
 	require.NoError(t, db.Create(&imageupdate.ImageUpdateRecord{
 		ID:             "sha256:old-api",
@@ -820,7 +808,7 @@ func TestProjectService_PullImageForService_UpdatesCurrentImageRecordAfterPull(t
 	eventService := event.NewEventService(db, nil, nil)
 	imageUpdateService := imageupdate.NewImageUpdateService(db, nil, nil, dockerService, nil, nil, nil)
 	imageService := image.NewImageService(db, dockerService, nil, imageUpdateService, nil, eventService)
-	svc := NewProjectService(db, settingsService, nil, imageService, dockerService, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, nil, imageService, dockerService, nil, nil, nil, config.Load(), nil, nil)
 
 	require.NoError(t, db.Create(&imageupdate.ImageUpdateRecord{
 		ID:             "sha256:old-worker",
@@ -883,7 +871,7 @@ func TestProjectService_ComposePullSelectedServicesInternal_ReconcilesOnlyOnSucc
 	eventService := event.NewEventService(db, nil, nil)
 	imageUpdateService := imageupdate.NewImageUpdateService(db, nil, nil, dockerService, nil, nil, nil)
 	imageService := image.NewImageService(db, dockerService, nil, imageUpdateService, nil, eventService)
-	svc := NewProjectService(db, settingsService, nil, imageService, dockerService, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, nil, imageService, dockerService, nil, nil, nil, config.Load(), nil, nil)
 
 	projectDef := &composetypes.Project{
 		Name: "compose-selected",
@@ -987,7 +975,7 @@ func TestProjectService_ComposePullSelectedServicesInternal_LeavesRecordsWhenPul
 	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, failingServer)}
 	imageUpdateService := imageupdate.NewImageUpdateService(db, nil, nil, dockerService, nil, nil, nil)
 	imageService := image.NewImageService(db, dockerService, nil, imageUpdateService, nil, event.NewEventService(db, nil, nil))
-	svc := NewProjectService(db, settingsService, nil, imageService, dockerService, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, nil, imageService, dockerService, nil, nil, nil, config.Load(), nil, nil)
 
 	projectDef := &composetypes.Project{
 		Name: "compose-selected",
@@ -1077,7 +1065,7 @@ func TestProjectService_UpdateProjectServicesHardFailsWhenPullFailsInternal(t *t
 		return errors.New("compose up should not run")
 	}
 
-	svc := NewProjectService(db, settingsService, nil, imageService, dockerService, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, nil, imageService, dockerService, nil, nil, nil, config.Load(), nil, nil)
 	err = svc.UpdateProjectServices(ctx, projectRecord.ID, []string{"app"}, common.SystemUser, true)
 	require.Error(t, err)
 	require.ErrorContains(t, err, "pull updated service images")
@@ -1173,7 +1161,7 @@ func TestProjectService_UpdateProjectServicesForcesRecreateInternal(t *testing.T
 		return errors.New("compose up failed after assertion")
 	}
 
-	svc := NewProjectService(db, settingsService, eventService, imageService, dockerService, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, eventService, imageService, dockerService, nil, nil, nil, config.Load(), nil, nil)
 	err = svc.UpdateProjectServices(ctx, projectRecord.ID, []string{"app"}, common.SystemUser, true)
 	require.Error(t, err)
 	assert.True(t, eventService.ShouldSuppressDaemonEvent("container", "replacement", "app", "compose-update-force"), "failed updates retain correlation through rollback grace")
@@ -1252,7 +1240,7 @@ func TestProjectService_UpdateProject_RenameFailsWhenVolumeMigrationPreparationF
 	t.Setenv("DOCKER_HOST", dockerHostFromProjectRuntimeServerURLInternal(t, dockerServer.URL))
 
 	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, dockerServer)}
-	svc := NewProjectService(db, settingsService, eventService, nil, dockerService, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, eventService, nil, dockerService, nil, nil, nil, config.Load(), nil, nil)
 
 	originalDirName := "Foo"
 	originalPath := createComposeProjectDir(t, projectsDir, originalDirName)
@@ -1294,7 +1282,7 @@ func TestProjectService_ApplyProjectUpdateWithRenameJournal_AppliesVolumeMigrati
 	require.NoError(t, err)
 
 	eventService := event.NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 
 	migration := &fakeProjectVolumeRenameMigrationInternal{}
 
@@ -1369,7 +1357,7 @@ func TestProjectService_PrepareProjectRenameVolumeMigrationForUpdate_UsesCompose
 	t.Cleanup(dockerServer.Close)
 
 	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, dockerServer)}
-	svc := NewProjectService(db, settingsService, nil, nil, dockerService, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, nil, nil, dockerService, nil, nil, nil, config.Load(), nil, nil)
 
 	projectPath := filepath.Join(projectsDir, "nginx")
 	require.NoError(t, os.MkdirAll(projectPath, 0o755))
@@ -1460,7 +1448,7 @@ func TestProjectService_ApplyProjectUpdateWithRenameJournal_RollsBackVolumeMigra
 	require.NoError(t, err)
 
 	eventService := event.NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 
 	migration := &fakeProjectVolumeRenameMigrationInternal{}
 
@@ -1509,7 +1497,7 @@ func TestProjectService_ApplyProjectUpdateWithRenameJournal_SucceedsCommittedRen
 	require.NoError(t, err)
 
 	eventService := event.NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 
 	migration := &fakeProjectVolumeRenameMigrationInternal{
 		commitErr: errors.New("source cleanup failed"),
@@ -1561,7 +1549,7 @@ func TestProjectService_UpdateProject_ClearsJournalForNonRenameWhenRecoveryDocke
 
 	eventService := event.NewEventService(db, nil, nil)
 	kvService := kv.NewKVService(db)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 	svc.KVService = kvService
 
 	oldDir := "nginx"
@@ -1628,7 +1616,7 @@ func TestProjectService_UpdateProject_AllowsRenameAfterJournalRecoveryWithoutDoc
 
 	eventService := event.NewEventService(db, nil, nil)
 	kvService := kv.NewKVService(db)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 	svc.KVService = kvService
 	configureProjectRuntimeDockerInternal(t, nil)
 
@@ -1691,7 +1679,7 @@ func TestProjectService_UpdateProject_RenamesDirectoryWhenNameChanges(t *testing
 	require.NoError(t, err)
 
 	eventService := event.NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 	configureProjectRuntimeDockerInternal(t, nil)
 
 	originalDirName := "Foo"
@@ -1740,7 +1728,7 @@ func TestProjectService_UpdateProject_RenameFailsWhenTargetDirectoryExists(t *te
 	require.NoError(t, err)
 
 	eventService := event.NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 	configureProjectRuntimeDockerInternal(t, nil)
 
 	originalDirName := "Foo"
@@ -1787,7 +1775,7 @@ func TestProjectService_UpdateProject_RenameFailsWhenProjectRunning(t *testing.T
 	require.NoError(t, err)
 
 	eventService := event.NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 
 	originalDirName := "Foo"
 	originalPath := filepath.Join(projectsDir, originalDirName)
@@ -1832,7 +1820,7 @@ func TestProjectService_UpdateProject_RenameRejectsStaleStoppedWhenRuntimeIsRunn
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
 	eventService := event.NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 	configureProjectRuntimeDockerInternal(t, []container.Summary{
 		{
 			ID:     "app-container",
@@ -1890,7 +1878,7 @@ func TestProjectService_UpdateProject_RenameResolvesUnknownStoppedStatusBeforeVo
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
 	eventService := event.NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 
 	server := newProjectRuntimeDockerServerInternal(t, nil)
 	t.Setenv("DOCKER_HOST", dockerHostFromProjectRuntimeServerURLInternal(t, server.URL))
@@ -1948,7 +1936,7 @@ func TestProjectService_UpdateProject_RenameRejectsUnknownWhenRuntimeIsRunning(t
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
 	eventService := event.NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 
 	server := newProjectRuntimeDockerServerInternal(t, []container.Summary{
 		{
@@ -2011,7 +1999,7 @@ func TestProjectService_UpdateProject_ValidatesComposeUsingExistingProjectName(t
 	require.NoError(t, err)
 
 	eventService := event.NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 
 	dirName := "demo"
 	projectPath := filepath.Join(projectsDir, dirName)
@@ -2054,7 +2042,7 @@ func TestProjectService_UpdateProject_AllowsMissingEnvFileDuringComposeValidatio
 	require.NoError(t, err)
 
 	eventService := event.NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 
 	dirName := "env-required"
 	projectPath := filepath.Join(projectsDir, dirName)
@@ -2099,7 +2087,7 @@ func TestProjectService_UpdateProject_EnvRetargetWritesExplicitIdenticalComposeT
 	require.NoError(t, err)
 
 	eventService := event.NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 
 	dirName := "retarget-explicit"
 	projectPath := filepath.Join(projectsDir, dirName)
@@ -2153,7 +2141,7 @@ func TestProjectService_UpdateProject_EnvRetargetWithoutComposePayloadPreservesN
 	require.NoError(t, err)
 
 	eventService := event.NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 
 	dirName := "retarget-omit"
 	projectPath := filepath.Join(projectsDir, dirName)
@@ -2205,7 +2193,7 @@ func TestProjectService_UpdateProject_EnvRetargetWritesEditedComposeToSelectedBa
 	require.NoError(t, err)
 
 	eventService := event.NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 
 	dirName := "retarget-edit"
 	projectPath := filepath.Join(projectsDir, dirName)
@@ -2252,7 +2240,7 @@ func TestProjectService_UpdateProject_AllowsMissingLocalIncludeDuringComposeVali
 	require.NoError(t, err)
 
 	eventService := event.NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 
 	dirName := "include-new"
 	projectPath := filepath.Join(projectsDir, dirName)
@@ -2302,7 +2290,7 @@ func TestProjectService_CreateProject_AllowsExternalInclude(t *testing.T) {
 	require.NoError(t, err)
 
 	eventService := event.NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 	require.NoError(t, os.WriteFile(filepath.Join(projectsDir, "shared.yaml"), []byte("services: {}\n"), 0o644))
 
 	compose := `include:
@@ -2333,7 +2321,7 @@ func TestProjectService_UpdateProject_AllowsExternalInclude(t *testing.T) {
 	require.NoError(t, err)
 
 	eventService := event.NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 
 	dirName := "external-include"
 	projectPath := filepath.Join(projectsDir, dirName)
@@ -2376,7 +2364,7 @@ func TestProjectService_CreateProject_CommitsWorkspaceAndConfigurationTogether(t
 
 	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
-	svc := NewProjectService(db, settingsService, event.NewEventService(db, nil, nil), nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, event.NewEventService(db, nil, nil), nil, nil, nil, nil, nil, config.Load(), nil, nil)
 	uploadIndex := 0
 	manifest := projecttypes.CreateProjectWorkspaceManifest{FileChanges: []projecttypes.WorkspaceFileChange{{
 		Operation: projecttypes.FileOpCreateFile, RelativePath: "config/app.txt", UploadIndex: &uploadIndex,
@@ -2411,7 +2399,7 @@ func TestProjectService_CreateProject_RollsBackInvalidWorkspaceManifest(t *testi
 
 	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
-	svc := NewProjectService(db, settingsService, event.NewEventService(db, nil, nil), nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, event.NewEventService(db, nil, nil), nil, nil, nil, nil, nil, config.Load(), nil, nil)
 	manifest := projecttypes.CreateProjectWorkspaceManifest{FileChanges: []projecttypes.WorkspaceFileChange{{
 		Operation: projecttypes.FileOpDelete, RelativePath: "missing.txt",
 	}}}
@@ -2447,7 +2435,7 @@ func TestProjectService_UpdateProject_UsesExistingEnvFileDuringComposeValidation
 	require.NoError(t, err)
 
 	eventService := event.NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 
 	dirName := "env-existing"
 	projectPath := filepath.Join(projectsDir, dirName)
@@ -2497,7 +2485,7 @@ func newProjectServiceForOverrideTestInternal(t *testing.T, dirName, baseCompose
 	require.NoError(t, err)
 
 	eventService := event.NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 
 	projectPath := filepath.Join(projectsDir, dirName)
 	require.NoError(t, os.MkdirAll(projectPath, 0o755))
@@ -2608,7 +2596,7 @@ func TestProjectService_UpdateProject_UsesProvidedEnvContentDuringComposeValidat
 	require.NoError(t, err)
 
 	eventService := event.NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 
 	dirName := "env-updated"
 	projectPath := filepath.Join(projectsDir, dirName)
@@ -2655,7 +2643,7 @@ func TestProjectService_UpdateProject_ReturnsEnvParseErrorDuringComposeValidatio
 	require.NoError(t, err)
 
 	eventService := event.NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 
 	dirName := "env-invalid"
 	projectPath := filepath.Join(projectsDir, dirName)
@@ -2700,7 +2688,7 @@ func TestProjectService_UpdateProject_UsesGlobalEnvDuringComposeValidation(t *te
 	require.NoError(t, err)
 
 	eventService := event.NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 
 	dirName := "global-env-update"
 	projectPath := filepath.Join(projectsDir, dirName)
@@ -2749,7 +2737,7 @@ func TestProjectService_UpdateProject_DoesNotResolveHostEnvThroughGlobalEnvDurin
 	require.NoError(t, err)
 
 	eventService := event.NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 
 	dirName := "host-env-guard"
 	projectPath := filepath.Join(projectsDir, dirName)
@@ -2793,7 +2781,7 @@ func TestProjectService_UpdateProject_DerivesProjectOverrideEnvWhenGitSourceExis
 	require.NoError(t, err)
 
 	eventService := event.NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 
 	dirName := "override-edit"
 	projectPath := filepath.Join(projectsDir, dirName)
@@ -2840,7 +2828,7 @@ func TestProjectService_UpdateProject_UnchangedGitEnvLeavesFilesUntouched(t *tes
 	require.NoError(t, err)
 
 	eventService := event.NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 
 	dirName := "unchanged-git-env"
 	projectPath := filepath.Join(projectsDir, dirName)
@@ -2937,7 +2925,7 @@ func TestProjectService_UpdateProject_DeletingGitBackedKeyFallsBackToGit(t *test
 	require.NoError(t, err)
 
 	eventService := event.NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 
 	dirName := "override-delete"
 	projectPath := filepath.Join(projectsDir, dirName)
@@ -2987,7 +2975,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_MigratesDirectEnvIntoProjectOve
 	require.NoError(t, err)
 
 	eventService := event.NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 
 	dirName := "git-sync-migrate"
 	projectPath := filepath.Join(projectsDir, dirName)
@@ -3038,7 +3026,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_PreservesGitEnvSyntax(t *testin
 	require.NoError(t, err)
 
 	eventService := event.NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 
 	dirName := "git-sync-env-syntax"
 	projectPath := filepath.Join(projectsDir, dirName)
@@ -3100,7 +3088,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_NormalizesStaleCopiedGitOverrid
 	require.NoError(t, err)
 
 	eventService := event.NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 
 	dirName := "git-sync-normalize"
 	projectPath := filepath.Join(projectsDir, dirName)
@@ -3148,7 +3136,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_RemovesLegacyDeletedGitMasks(t 
 	require.NoError(t, err)
 
 	eventService := event.NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 
 	dirName := "git-sync-delete-mask"
 	projectPath := filepath.Join(projectsDir, dirName)
@@ -3197,7 +3185,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_RemovesGitEnvSource(t *testing.
 	require.NoError(t, err)
 
 	eventService := event.NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 
 	dirName := "git-sync-remove"
 	projectPath := filepath.Join(projectsDir, dirName)
@@ -3241,7 +3229,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_WritesAndRemovesComposeOverride
 	require.NoError(t, err)
 
 	eventService := event.NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 
 	dirName := "git-sync-override"
 	projectPath := filepath.Join(projectsDir, dirName)
@@ -3292,7 +3280,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_UsesGlobalEnvDuringComposeValid
 	require.NoError(t, err)
 
 	eventService := event.NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 
 	dirName := "git-sync-global-env"
 	projectPath := filepath.Join(projectsDir, dirName)
@@ -3343,7 +3331,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_TolerantOfUndefinedComposeVar(t
 	require.NoError(t, err)
 
 	eventService := event.NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 
 	dirName := "git-sync-undefined-var"
 	projectPath := filepath.Join(projectsDir, dirName)
@@ -3391,7 +3379,7 @@ func TestProjectService_PersistGitSyncEnvFiles_UsesPreparedState(t *testing.T) {
 	require.NoError(t, err)
 
 	eventService := event.NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 
 	dirName := "git-sync-prepared-state"
 	projectPath := filepath.Join(projectsDir, dirName)
@@ -3429,7 +3417,7 @@ func TestProjectService_GetProjectDetails_ReturnsEffectiveEnvContent(t *testing.
 	require.NoError(t, err)
 
 	eventService := event.NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 
 	dirName := "details-override"
 	projectPath := filepath.Join(projectsDir, dirName)
@@ -3569,7 +3557,7 @@ func TestProjectService_GetProjectDetails_IncludesUpdateInfo(t *testing.T) {
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
 	imageService := image.NewImageService(db, nil, nil, nil, nil, nil)
-	svc := NewProjectService(db, settingsService, nil, imageService, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, nil, imageService, nil, nil, nil, nil, config.Load(), nil, nil)
 
 	projectPath := createComposeProjectDir(t, projectsDir, "updates-demo")
 	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte("services:\n  app:\n    image: nginx:latest\n"), 0o644))
@@ -3668,7 +3656,7 @@ func TestProjectService_GetProjectDetails_RefreshesRuntimeStatusWithoutRuntimeSe
 	}
 	require.NoError(t, db.Create(projectRecord).Error)
 
-	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 
 	details, err := svc.GetProjectDetails(ctx, projectRecord.ID, projecttypes.DetailsOptions{})
 	require.NoError(t, err)
@@ -3720,7 +3708,7 @@ func TestProjectService_GetProjectDetails_PopulatesRuntimeServicesFromComposePs(
 	}
 	require.NoError(t, db.Create(projectRecord).Error)
 
-	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 
 	details, err := svc.GetProjectDetails(ctx, projectRecord.ID, projecttypes.DetailsOptions{IncludeRuntimeServices: true})
 	require.NoError(t, err)
@@ -3778,7 +3766,7 @@ func TestProjectService_ListProjects_FiltersByUpdateStatus(t *testing.T) {
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
 	imageService := image.NewImageService(db, nil, nil, nil, nil, nil)
-	svc := NewProjectService(db, settingsService, nil, imageService, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, nil, imageService, nil, nil, nil, nil, config.Load(), nil, nil)
 
 	updatedPath := createComposeProjectDir(t, projectsDir, "updated-demo")
 	require.NoError(t, os.WriteFile(filepath.Join(updatedPath, "compose.yaml"), []byte("services:\n  app:\n    image: nginx:latest\n"), 0o644))
@@ -4042,7 +4030,7 @@ func TestProjectService_ListProjects_FiltersArchivedProjects(t *testing.T) {
 		ArchivedAt: new(time.Now().UTC()),
 	}).Error)
 
-	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 
 	items, page, err := svc.ListProjects(ctx, pagination.QueryParams{
 		Limit: -1,
@@ -4110,7 +4098,7 @@ func TestProjectService_ArchiveProject_RequiresStoppedProject(t *testing.T) {
 		},
 	})
 
-	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 	err = svc.ArchiveProject(ctx, "project-running", common.User{ID: "user-1", Username: "tester"})
 	require.Error(t, err)
 	require.ErrorIs(t, err, common.ErrProjectMustBeStopped)
@@ -4141,7 +4129,7 @@ func TestProjectService_ArchiveProject_TogglesArchiveFlag(t *testing.T) {
 
 	configureProjectRuntimeDockerInternal(t, nil)
 
-	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 	user := common.User{ID: "user-1", Username: "tester"}
 
 	require.NoError(t, svc.ArchiveProject(ctx, "project-stopped", user))
@@ -4187,7 +4175,7 @@ func TestProjectService_ArchiveProject_LiveVerificationErrorPolicy(t *testing.T)
 
 	t.Setenv("DOCKER_HOST", "tcp://127.0.0.1:1")
 
-	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 	user := common.User{ID: "user-1", Username: "tester"}
 
 	err = svc.ArchiveProject(ctx, "project-unreachable", user)
@@ -4377,7 +4365,7 @@ func TestProjectService_ListProjects_WithDerivedStatusFilter_AllowsAllPageSizeSe
 		}).Error)
 	}
 
-	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 	configureProjectRuntimeDockerInternal(t, nil)
 
 	items, page, err := svc.ListProjects(ctx, pagination.QueryParams{
@@ -4420,7 +4408,7 @@ func TestProjectService_DeployProject_StopsOnBuildPreparationError(t *testing.T)
 	require.NoError(t, db.Create(proj).Error)
 
 	buildSvc := testBuildBuilder{err: errors.New("boom build")}
-	svc := NewProjectService(db, settingsService, nil, nil, nil, buildSvc, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, nil, nil, nil, buildSvc, nil, nil, config.Load(), nil, nil)
 
 	err = svc.DeployProject(ctx, "p1", common.User{ID: "u1", Username: "tester"}, nil)
 	require.Error(t, err)
@@ -4462,7 +4450,7 @@ func TestProjectService_DeployProject_BuildsGeneratedImageWithoutPull(t *testing
 	require.NoError(t, db.Create(proj).Error)
 
 	buildSvc := testBuildBuilder{err: errors.New("boom build")}
-	svc := NewProjectService(db, settingsService, nil, nil, nil, buildSvc, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, nil, nil, nil, buildSvc, nil, nil, config.Load(), nil, nil)
 
 	err = svc.DeployProject(ctx, proj.ID, common.User{ID: "u1", Username: "tester"}, nil)
 	require.Error(t, err)
@@ -4488,7 +4476,7 @@ func TestProjectService_SyncProjectsFromFileSystem_IgnoresSymlinkedProjectDirsWh
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
 	require.NoError(t, settingsService.SetStringSetting(ctx, "followProjectSymlinks", "false"))
 
-	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
 
 	items, err := svc.ListAllProjects(ctx)
@@ -4514,7 +4502,7 @@ func TestProjectService_SyncProjectsFromFileSystem_DetectsSymlinkedProjectDirsWh
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
 	require.NoError(t, settingsService.SetStringSetting(ctx, "followProjectSymlinks", "true"))
 
-	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
 
 	items, err := svc.ListAllProjects(ctx)
@@ -4539,7 +4527,7 @@ func TestProjectService_CountProjectFolders_RespectsFollowProjectSymlinks(t *tes
 
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
 
-	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 
 	require.NoError(t, settingsService.SetStringSetting(ctx, "followProjectSymlinks", "false"))
 	count, err := svc.countProjectFolders(ctx)
@@ -4565,7 +4553,7 @@ func TestProjectService_SyncProjectsFromFileSystem_DiscoversNestedProjectsAndRel
 
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
 
-	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
 
 	items, page, err := svc.ListProjects(ctx, pagination.QueryParams{
@@ -4599,7 +4587,7 @@ func TestProjectService_SyncProjectsFromFileSystem_RespectsConfiguredScanMaxDept
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
 	t.Setenv("PROJECT_SCAN_MAX_DEPTH", "1")
 
-	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
 
 	items, err := svc.ListAllProjects(ctx)
@@ -4646,7 +4634,7 @@ services:
 
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
 
-	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
 
 	items, page, err := svc.ListProjects(ctx, pagination.QueryParams{
@@ -4674,7 +4662,7 @@ func TestProjectService_CountProjectFolders_RecursivelyCountsNestedProjects(t *t
 
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
 
-	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 
 	count, err := svc.countProjectFolders(ctx)
 	require.NoError(t, err)
@@ -4695,7 +4683,7 @@ func TestProjectService_CountProjectFolders_RespectsConfiguredScanMaxDepth(t *te
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
 	t.Setenv("PROJECT_SCAN_MAX_DEPTH", "1")
 
-	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 
 	count, err := svc.countProjectFolders(ctx)
 	require.NoError(t, err)
@@ -4714,7 +4702,7 @@ func TestProjectService_SyncProjectsFromFileSystem_RemovesDeletedNestedProject(t
 
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
 
-	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
 
 	items, err := svc.ListAllProjects(ctx)
@@ -4754,7 +4742,7 @@ func TestProjectService_SyncProjectsFromFileSystem_PrunesLeakedScratchRow(t *tes
 		Path:    scratchPath,
 	}).Error)
 
-	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
 
 	items, err := svc.ListAllProjects(ctx)
@@ -4790,7 +4778,7 @@ func TestProjectService_SyncProjectsFromFileSystem_PreservesProjectsWhenDirector
 		}).Error)
 	}
 
-	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
 
 	items, err := svc.ListAllProjects(ctx)
@@ -4810,7 +4798,7 @@ func TestProjectService_SyncProjectsFromFileSystem_PreservesProjectWithAmbiguous
 
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
 
-	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
 
 	items, err := svc.ListAllProjects(ctx)
@@ -4849,7 +4837,7 @@ func TestProjectService_SyncProjectsFromFileSystem_RemovesProjectsBeyondReducedS
 
 	// Initial sync at the default scan depth discovers both the top-level and
 	// the nested project, persisting them to the database.
-	defaultSvc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load())
+	defaultSvc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 	require.NoError(t, defaultSvc.SyncProjectsFromFileSystem(ctx))
 
 	items, err := defaultSvc.ListAllProjects(ctx)
@@ -4859,7 +4847,7 @@ func TestProjectService_SyncProjectsFromFileSystem_RemovesProjectsBeyondReducedS
 	// Lowering the scan depth must prune the nested project from the database on
 	// the next sync, even though its compose file still exists on disk.
 	t.Setenv("PROJECT_SCAN_MAX_DEPTH", "1")
-	depthLimitedSvc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load())
+	depthLimitedSvc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 	require.NoError(t, depthLimitedSvc.SyncProjectsFromFileSystem(ctx))
 
 	items, err = depthLimitedSvc.ListAllProjects(ctx)
@@ -4892,7 +4880,7 @@ func TestProjectService_SyncProjectsFromFileSystem_PreservesDBRecordsWhenDirecto
 
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
 
-	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
 
 	before, err := svc.ListAllProjects(ctx)
@@ -4957,7 +4945,7 @@ func TestProjectService_SyncProjectsFromFileSystem_DiscoversReadableProjectsDesp
 
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
 
-	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx), "sync must succeed despite the unreadable nested directory")
 
 	after, err := svc.ListAllProjects(ctx)
@@ -4993,7 +4981,7 @@ func TestProjectService_SyncProjectsFromFileSystem_AllowsDuplicateLeafDirectorie
 
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
 
-	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
 
 	var items []Project
@@ -5024,7 +5012,7 @@ func TestProjectService_SyncProjectsFromFileSystem_DetectsNestedSymlinkedProject
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
 	require.NoError(t, settingsService.SetStringSetting(ctx, "followProjectSymlinks", "true"))
 
-	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
 
 	items, page, err := svc.ListProjects(ctx, pagination.QueryParams{
@@ -5055,7 +5043,7 @@ func TestProjectService_SyncProjectsFromFileSystem_RemovesSymlinkedProjectsWhenD
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
 	require.NoError(t, settingsService.SetStringSetting(ctx, "followProjectSymlinks", "true"))
 
-	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
 
 	items, err := svc.ListAllProjects(ctx)
@@ -5085,7 +5073,7 @@ func TestProjectService_SyncProjectsFromFileSystem_RefreshesServiceCountOnCompos
 
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
 
-	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
 
 	var project Project
@@ -5117,7 +5105,7 @@ services:
     image: nginx:alpine
 `), 0o644))
 
-	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
 
 	var project Project
@@ -5150,7 +5138,7 @@ func TestProjectService_SyncProjectsFromFileSystem_PreservesValidCustomNameWitho
 	}
 	require.NoError(t, db.Create(project).Error)
 
-	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
 
 	var fromDB Project
@@ -5200,7 +5188,7 @@ func TestProjectService_SyncProjectsFromFileSystem_PreservesGitOpsProjectWithCus
 
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
 
-	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
 
 	items, err := svc.ListAllProjects(ctx)
@@ -5250,7 +5238,7 @@ func TestProjectService_GetProjectDetails_UsesGitOpsCustomComposeFilename(t *tes
 
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
 
-	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 
 	composeFromContent, envFromContent, _, err := svc.GetProjectContent(ctx, syncProjectID)
 	require.NoError(t, err)
@@ -5282,7 +5270,7 @@ func TestProjectService_UpdateProject_WritesThroughSymlinkedProjectPath(t *testi
 	require.NoError(t, settingsService.SetStringSetting(ctx, "followProjectSymlinks", "true"))
 
 	eventService := event.NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 
 	project := &Project{
 		ID:      "proj-symlink-update",
@@ -5337,7 +5325,7 @@ func TestProjectService_UpdateProject_WritesThroughExternalEnvSymlink(t *testing
 	require.NoError(t, err)
 
 	eventService := event.NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 	dirName := "demo"
 	project := &Project{
 		ID:      "proj-external-env-symlink-update",
@@ -5396,7 +5384,7 @@ func TestProjectService_UpdateProject_RestoresExternalEnvSymlinkTargetWhenProjec
 	require.NoError(t, err)
 
 	eventService := event.NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 	dirName := "demo"
 	project := &Project{
 		ID:      "proj-external-env-symlink-rollback",
@@ -5557,7 +5545,7 @@ func TestProjectService_RecoverProjectRenameJournals_RollsBackUncommittedDirecto
 	require.NoError(t, db.Create(project).Error)
 
 	kvService := kv.NewKVService(db)
-	svc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 	svc.KVService = kvService
 	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
@@ -5612,7 +5600,7 @@ func TestProjectService_RecoverProjectRenameJournals_StartedPhaseSkipsVolumeRoll
 	require.NoError(t, db.Create(project).Error)
 
 	kvService := kv.NewKVService(db)
-	svc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 	svc.KVService = kvService
 	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
@@ -5676,7 +5664,7 @@ func TestProjectService_RecoverProjectRenameJournals_RelocatesTargetWhenBothPath
 	require.NoError(t, db.Create(project).Error)
 
 	kvService := kv.NewKVService(db)
-	svc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 	svc.KVService = kvService
 	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
@@ -5740,7 +5728,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsStartedJournalWhenDir
 	require.NoError(t, db.Create(project).Error)
 
 	kvService := kv.NewKVService(db)
-	svc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 	svc.KVService = kvService
 	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
@@ -5806,7 +5794,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsPreservedTargetJourna
 	t.Cleanup(server.Close)
 
 	kvService := kv.NewKVService(db)
-	svc := NewProjectService(db, nil, nil, nil, &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, nil, nil, nil, &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}, nil, nil, nil, config.Load(), nil, nil)
 	svc.KVService = kvService
 	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
@@ -5860,7 +5848,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsCommittedJournal(t *t
 	require.NoError(t, db.Create(project).Error)
 
 	kvService := kv.NewKVService(db)
-	svc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 	svc.KVService = kvService
 	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
@@ -5901,7 +5889,7 @@ func TestProjectService_FinalizeProjectRenameAfterCommit_ClearsJournalAfterSourc
 	require.NoError(t, db.Create(project).Error)
 
 	kvService := kv.NewKVService(db)
-	svc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 	svc.KVService = kvService
 	journal := &projecttypes.RenameJournal{
 		ProjectID:  project.ID,
@@ -5943,7 +5931,7 @@ func TestProjectService_FinalizeProjectRenameAfterCommit_KeepsJournalWhenSourceC
 	require.NoError(t, db.Create(project).Error)
 
 	kvService := kv.NewKVService(db)
-	svc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 	svc.KVService = kvService
 	journal := &projecttypes.RenameJournal{
 		ProjectID:  project.ID,
@@ -6029,7 +6017,7 @@ func TestProjectService_RecoverProjectRenameJournals_KeepsJournalWhenDirectoryRo
 
 	kvService := kv.NewKVService(db)
 	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}
-	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load(), nil, nil)
 	svc.KVService = kvService
 	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
@@ -6124,7 +6112,7 @@ func TestProjectService_RecoverProjectRenameJournals_CompletesCommittedVolumeJou
 
 	kvService := kv.NewKVService(db)
 	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}
-	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load(), nil, nil)
 	svc.KVService = kvService
 	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
@@ -6198,7 +6186,7 @@ func TestProjectService_RecoverProjectRenameJournals_RollsBackCommittedJournalWh
 
 	kvService := kv.NewKVService(db)
 	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}
-	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load(), nil, nil)
 	svc.KVService = kvService
 	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
@@ -6309,7 +6297,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalAfterDBRestore
 
 	kvService := kv.NewKVService(db)
 	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}
-	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load(), nil, nil)
 	svc.KVService = kvService
 	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
@@ -6387,7 +6375,7 @@ func TestProjectService_RecoverProjectRenameJournals_KeepsRollbackCleanupWhenDoc
 	require.NoError(t, db.Create(project).Error)
 
 	kvService := kv.NewKVService(db)
-	svc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 	svc.KVService = kvService
 	cleanup := projecttypes.RenameRollbackCleanup{
 		ProjectID: project.ID,
@@ -6451,7 +6439,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsCommittedJournalWhenS
 
 	kvService := kv.NewKVService(db)
 	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}
-	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load(), nil, nil)
 	svc.KVService = kvService
 	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
@@ -6538,7 +6526,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsCommittedJournalAndCl
 
 	kvService := kv.NewKVService(db)
 	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}
-	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load(), nil, nil)
 	svc.KVService = kvService
 	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
@@ -6622,7 +6610,7 @@ func TestProjectService_RecoverProjectRenameJournals_MarksSourceCleanupPendingWh
 
 	kvService := kv.NewKVService(db)
 	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}
-	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load(), nil, nil)
 	svc.KVService = kvService
 	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
@@ -6708,7 +6696,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsSourceCleanupPendingJ
 
 	kvService := kv.NewKVService(db)
 	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}
-	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load(), nil, nil)
 	svc.KVService = kvService
 	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
@@ -6808,7 +6796,7 @@ func TestProjectService_RecoverProjectRenameJournals_RollsBackSourceCleanupPendi
 
 	kvService := kv.NewKVService(db)
 	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}
-	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load(), nil, nil)
 	svc.KVService = kvService
 	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
@@ -6899,7 +6887,7 @@ func TestProjectService_RecoverProjectRenameJournals_KeepsSourceCleanupPendingJo
 
 	kvService := kv.NewKVService(db)
 	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}
-	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load(), nil, nil)
 	svc.KVService = kvService
 	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
@@ -6966,7 +6954,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsStartedJournalWhenDir
 	require.NoError(t, db.Create(project).Error)
 
 	kvService := kv.NewKVService(db)
-	svc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 	svc.KVService = kvService
 	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
@@ -7037,7 +7025,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsMissingPathJournalWhe
 
 	kvService := kv.NewKVService(db)
 	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}
-	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load(), nil, nil)
 	svc.KVService = kvService
 	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
@@ -7112,7 +7100,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalWhenRollbackSo
 
 	kvService := kv.NewKVService(db)
 	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}
-	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load(), nil, nil)
 	svc.KVService = kvService
 	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
@@ -7192,7 +7180,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalWhenRollbackTa
 
 	kvService := kv.NewKVService(db)
 	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}
-	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load(), nil, nil)
 	svc.KVService = kvService
 	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
@@ -7278,7 +7266,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalWhenTargetPres
 
 	kvService := kv.NewKVService(db)
 	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}
-	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load(), nil, nil)
 	svc.KVService = kvService
 	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
@@ -7692,7 +7680,7 @@ func TestProjectServiceManualUpdateDiscoversTags(t *testing.T) {
 			deploymentError := errors.New("deployment reached")
 			coordinator := &serviceImageCoordinatorInternal{err: deploymentError}
 			transport := &serviceTagTransportInternal{tags: tt.tags}
-			registryService := registry.NewContainerRegistryService(db, nil, nil, &http.Client{Transport: transport})
+			registryService := registry.NewContainerRegistryService(db, nil, nil, nil, &http.Client{Transport: transport})
 			service := &ProjectService{db: db, settingsService: settingsService, eventService: event.NewEventService(db, nil, nil), composeCoordinator: coordinator, containerRegistryService: registryService}
 			err = service.UpdateProjectServices(ctx, proj.ID, []string{"app", "selected-digest"}, common.SystemUser, !tt.skipDiscovery)
 			require.ErrorIs(t, err, deploymentError)
@@ -7781,7 +7769,7 @@ func TestStoppedProjectTagPolicyNeverInheritsSharedDigestCheck(t *testing.T) {
 	require.NoError(t, db.Create(projectRecord).Error)
 	require.NoError(t, db.Create(&imageupdate.ImageUpdateRecord{ID: "shared-digest", Repository: "docker.io/library/nginx", Tag: "3.1.0", UpdateType: "digest", CheckTime: time.Now()}).Error)
 	imageService := image.NewImageService(db, nil, nil, nil, nil, nil)
-	service := NewProjectService(db, settingsService, nil, imageService, nil, nil, nil, nil, config.Load())
+	service := NewProjectService(db, settingsService, nil, imageService, nil, nil, nil, nil, config.Load(), nil, nil)
 	detail, err := service.GetProjectDetails(t.Context(), projectRecord.ID, projecttypes.AllDetails())
 	require.NoError(t, err)
 	require.Equal(t, "unknown", detail.UpdateInfo.Status)

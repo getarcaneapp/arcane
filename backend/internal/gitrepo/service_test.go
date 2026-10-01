@@ -5,10 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
-	"time"
 
 	"emperror.dev/errors"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
@@ -21,7 +19,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.getarcane.app/kit/pkg/mapping"
 	"go.getarcane.app/sys/crypto"
-	"go.uber.org/fx/fxtest"
 	"gorm.io/gorm"
 )
 
@@ -61,21 +58,11 @@ func setupGitRepositoryServiceTestInternal(t *testing.T) (*GitRepositoryService,
 
 func newSettingsServiceForTestInternal(t testing.TB, ctx context.Context, db *database.DB) (*settings.SettingsService, error) {
 	t.Helper()
-	lifecycle := fxtest.NewLifecycle(t)
-	runtime, err := actors.NewRuntime(t.Context(), lifecycle)
-	require.NoError(t, err)
-	executor, err := actors.NewExecutor(t.Context(), runtime, "gitrepo-settings-test", t.Name(), 3)
-	require.NoError(t, err)
-	effects, err := actors.NewExecutor(t.Context(), runtime, "gitrepo-settings-effects-test", t.Name(), 3)
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		stopCtx, cancel := context.WithTimeout(context.Background(), time.Second)
-		defer cancel()
-		require.NoError(t, executor.Stop(stopCtx))
-		require.NoError(t, effects.Stop(stopCtx))
-		require.NoError(t, lifecycle.Stop(stopCtx))
-	})
-	return settings.NewSettingsService(ctx, db, executor, effects)
+	svc, err := settings.NewSettingsService(ctx, db)
+	if err == nil {
+		t.Cleanup(func() { require.NoError(t, svc.Stop(context.Background())) })
+	}
+	return svc, err
 }
 
 func createGitRepositoryServiceTestRepoInternal(t *testing.T, svc *GitRepositoryService, req gitops.CreateRepositoryRequest) *GitRepository {

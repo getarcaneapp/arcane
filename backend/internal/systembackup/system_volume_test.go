@@ -105,7 +105,7 @@ func TestHistoryDestinationDecorationInternal(t *testing.T) {
 	require.NoError(t, db.AutoMigrate(&s3domain.S3Destination{}))
 	destination := s3domain.S3Destination{Name: "Offsite", Bucket: "backups"}
 	require.NoError(t, db.Create(&destination).Error)
-	service := s3domain.NewS3DestinationService(&database.DB{DB: db})
+	service := s3domain.NewS3DestinationService(&database.DB{DB: db}, nil)
 	history := []backuptypes.HistoryEntry{{S3DestinationID: destination.ID}, {S3DestinationID: "missing"}}
 	decorateHistoryDestinationsInternal(t.Context(), service, history)
 	require.Equal(t, "Offsite", history[0].S3DestinationName)

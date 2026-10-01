@@ -372,6 +372,75 @@ type testApiKeyRow struct {
 	UserID        *string `gorm:"column:user_id"`
 	EnvironmentID *string `gorm:"column:environment_id"`
 	ManagedBy     *string `gorm:"column:managed_by"`
+	ExpiresAt     *time.Time
 }
 
 func (testApiKeyRow) TableName() string { return "api_keys" }
+
+func TestResolveExecutionPermissions(t *testing.T) {
+	t.Run("personal keys use current user permissions and explicit scope", func(t *testing.T) {
+		db, service := setupUserAndRoleServices(t)
+		user := createTestUser(t, db, "owner", "owner")
+		grantGlobalAdmin(t, service, user.ID)
+		environmentID := "env-1"
+		key := testApiKeyRow{BaseModel: database.BaseModel{ID: "personal"}, Kind: "personal", UserID: &user.ID, EnvironmentID: &environmentID}
+		require.NoError(t, db.Create(&key).Error)
+		permissions, err := service.ResolveExecutionPermissions(t.Context(), user.ID, key.ID)
+		require.NoError(t, err)
+		require.True(t, permissions.Allows(authz.PermJobsManage, environmentID))
+		require.False(t, permissions.Allows(authz.PermJobsManage, "env-2"))
+		require.False(t, permissions.IsGlobalAdmin())
+
+		require.NoError(t, db.Where("user_id = ?", user.ID).Delete(&UserRoleAssignment{}).Error)
+		for _, keyID := range []string{"", key.ID} {
+			permissions, err = service.ResolveExecutionPermissions(t.Context(), user.ID, keyID)
+			require.NoError(t, err)
+			require.False(t, permissions.Allows(authz.PermJobsManage, environmentID))
+		}
+	})
+
+	t.Run("scoped keys bypass cached grants", func(t *testing.T) {
+		db, service := setupUserAndRoleServices(t)
+		user := createTestUser(t, db, "owner", "owner")
+		environmentID := "env-1"
+		key := testApiKeyRow{BaseModel: database.BaseModel{ID: "scoped"}, Kind: "scoped", UserID: &user.ID, EnvironmentID: &environmentID}
+		require.NoError(t, db.Create(&key).Error)
+		require.NoError(t, service.SetApiKeyPermissions(t.Context(), key.ID, []ApiKeyPermission{{Permission: authz.PermJobsManage}}))
+		cached, err := service.ResolveApiKeyPermissions(t.Context(), key.ID)
+		require.NoError(t, err)
+		require.True(t, cached.Allows(authz.PermJobsManage, "env-2"))
+		permissions, err := service.ResolveExecutionPermissions(t.Context(), user.ID, key.ID)
+		require.NoError(t, err)
+		require.True(t, permissions.Allows(authz.PermJobsManage, environmentID))
+		require.False(t, permissions.Allows(authz.PermJobsManage, "env-2"))
+
+		require.NoError(t, db.Where("api_key_id = ?", key.ID).Delete(&ApiKeyPermission{}).Error)
+		permissions, err = service.ResolveExecutionPermissions(t.Context(), user.ID, key.ID)
+		require.NoError(t, err)
+		require.False(t, permissions.Allows(authz.PermJobsManage, environmentID))
+	})
+
+	t.Run("rejects invalid persisted identities", func(t *testing.T) {
+		db, service := setupUserAndRoleServices(t)
+		user := createTestUser(t, db, "owner", "owner")
+		otherOwner := "other"
+		emptyEnvironment := ""
+		expired := time.Now().Add(-time.Minute)
+		for _, key := range []testApiKeyRow{
+			{BaseModel: database.BaseModel{ID: "expired"}, Kind: "personal", UserID: &user.ID, ExpiresAt: &expired},
+			{BaseModel: database.BaseModel{ID: "other-owner"}, Kind: "personal", UserID: &otherOwner},
+			{BaseModel: database.BaseModel{ID: "ownerless"}, Kind: "scoped"},
+			{BaseModel: database.BaseModel{ID: "invalid-kind"}, Kind: "unknown", UserID: &user.ID},
+			{BaseModel: database.BaseModel{ID: "invalid-scope"}, Kind: "personal", UserID: &user.ID, EnvironmentID: &emptyEnvironment},
+		} {
+			require.NoError(t, db.Create(&key).Error)
+			_, err := service.ResolveExecutionPermissions(t.Context(), user.ID, key.ID)
+			require.Error(t, err, key.ID)
+		}
+		_, err := service.ResolveExecutionPermissions(t.Context(), user.ID, "deleted-key")
+		require.Error(t, err)
+		require.NoError(t, db.Delete(user).Error)
+		_, err = service.ResolveExecutionPermissions(t.Context(), user.ID, "")
+		require.Error(t, err)
+	})
+}

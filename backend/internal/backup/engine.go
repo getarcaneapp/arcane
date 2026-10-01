@@ -1,6 +1,6 @@
 // Package backup owns the shared Rustic backup engine used by volume and
 // system backups: typed repository operations, per-repository serialization
-// through the actor runtime, and run admission.
+// and durable run admission.
 package backup
 
 import (
@@ -18,17 +18,21 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"sync"
 	"time"
+	"uuid"
 
 	"emperror.dev/errors"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	rusticruntime "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/rustic"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
-	"github.com/google/uuid"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
+	backuptypes "github.com/getarcaneapp/arcane/types/v2/backup"
+	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
+	"github.com/italypaleale/francis/actor"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
@@ -38,25 +42,17 @@ import (
 )
 
 const (
-	// Admission scopes shared by the backup engine and the per-policy job
-	// registries so scheduled and manual runs contend on the same leases.
-
 	VolumeAdmissionScope = "volume-backup"
 	SystemAdmissionScope = "system-backup"
-
-	// RecoveryKeyConfigID is the singleton row holding the instance-wide backup recovery key.
-	RecoveryKeyConfigID = "system-recovery"
+	RecoveryKeyConfigID  = "system-recovery"
 )
 
-// Repository addresses one Rustic repository. ID is the stable serialization
-// key: operations against the same ID run serially, different IDs concurrently.
 type Repository struct {
 	ID          string
 	Environment []string
 	Mounts      []mount.Mount
 }
 
-// Snapshot is the result of a completed Rustic backup operation.
 type Snapshot struct {
 	ID   string `json:"id"`
 	Size int64  `json:"-"`
@@ -89,11 +85,13 @@ type CreateSnapshotInput struct {
 	Mounts  []mount.Mount
 	Sources []string
 	AsPath  string
+	Tags    []string
+	Globs   []string
 }
 
 // RootSnapshotInput captures one mount with its contents at the snapshot root.
-func RootSnapshotInput(source mount.Mount) CreateSnapshotInput {
-	return CreateSnapshotInput{Mounts: []mount.Mount{source}, Sources: []string{source.Target}, AsPath: "/"}
+func RootSnapshotInput(source mount.Mount, tags ...string) CreateSnapshotInput {
+	return CreateSnapshotInput{Mounts: []mount.Mount{source}, Sources: []string{source.Target}, AsPath: "/", Tags: tags}
 }
 
 func snapshotCommandInternal(label string, input CreateSnapshotInput) ([]string, error) {
@@ -104,6 +102,12 @@ func snapshotCommandInternal(label string, input CreateSnapshotInput) ([]string,
 		return nil, errors.New("a snapshot path rewrite requires a single source")
 	}
 	command := []string{"backup", "--init", "--json", "--host", "arcane", "--label", label}
+	for _, tag := range input.Tags {
+		command = append(command, "--tag", tag)
+	}
+	for _, glob := range input.Globs {
+		command = append(command, "--glob", glob)
+	}
 	if input.AsPath != "" {
 		command = append(command, "--as-path", input.AsPath)
 	}
@@ -111,58 +115,62 @@ func snapshotCommandInternal(label string, input CreateSnapshotInput) ([]string,
 	return append(command, input.Sources...), nil
 }
 
-// Engine executes typed Rustic operations through the official Rustic image.
-// Concurrency is actor-owned: one executor per repository ID plus the shared
-// application admission gate for run exclusivity.
+// Engine owns repository serialization and application-owned backup workers.
 type Engine struct {
-	imageService *image.ImageService
-	runtime      *actors.Runtime
-	admission    *actors.Gate[actors.AdmissionKey]
-	lifecycleCtx context.Context
-	executors    *actors.StateMap[string, *actors.Executor]
-	runs         *actors.StateMap[string, *backupRunInternal]
-	stopping     bool // Accessed inside runs.Apply.
+	imageService   *image.ImageService
+	admission      *runs.Admission
+	lifecycleCtx   context.Context
+	cancel         context.CancelFunc
+	workers        sync.WaitGroup
+	stopping       bool
+	mu             sync.Mutex
+	repositories   map[string]*sync.Mutex
+	service        *actor.Service
+	handlers       map[string]func(context.Context, string, []byte, bool) error
+	failures       map[string]func(context.Context, string, []byte, error) error
+	leases         map[string]*runs.Lease
+	executionReady func() bool
+	authorize      func(context.Context, backuptypes.DurableRunCommand) error
 }
 
-// NewEngine creates the shared backup engine on the actor runtime. ctx is the
-// application lifecycle context repository executors are spawned on.
-func NewEngine(ctx context.Context, runtime *actors.Runtime, admission *actors.Gate[actors.AdmissionKey], imageService *image.ImageService) *Engine {
-	return &Engine{
-		imageService: imageService,
-		runtime:      runtime,
-		admission:    admission,
-		lifecycleCtx: ctx,
-		executors:    actors.NewStateMap[string, *actors.Executor](),
-		runs:         actors.NewStateMap[string, *backupRunInternal](),
-	}
+func NewEngine(ctx context.Context, admission *runs.Admission, imageService *image.ImageService) *Engine {
+	runCtx, cancel := context.WithCancel(ctx)
+	return &Engine{cancel: cancel, imageService: imageService, admission: admission, lifecycleCtx: runCtx, repositories: make(map[string]*sync.Mutex), handlers: make(map[string]func(context.Context, string, []byte, bool) error), failures: make(map[string]func(context.Context, string, []byte, error) error), leases: make(map[string]*runs.Lease)}
 }
 
-// TryAcquireRun admits at most one in-flight backup run per (scope, id),
-// shared between scheduled jobs and manual API triggers.
-func (e *Engine) TryAcquireRun(ctx context.Context, scope, id string) (*actors.Lease[actors.AdmissionKey], bool, error) {
-	if e == nil {
+func (e *Engine) TryAcquireRun(ctx context.Context, scope, id string) (*runs.Lease, bool, error) {
+	if e == nil || e.admission == nil {
 		return nil, false, errors.New("backup engine is unavailable")
 	}
-	return e.admission.TryAcquire(ctx, actors.AdmissionKey{Scope: scope, ID: id})
+	return e.admission.TryAcquire(ctx, schedulertypes.AdmissionKey{Scope: scope, ID: id})
 }
 
-// Stop cancels and joins backup runs before stopping their repository executors.
 func (e *Engine) Stop(ctx context.Context) error {
 	if e == nil {
 		return nil
 	}
-	stopErr := e.stopRunsInternal(ctx)
-	if stopErr != nil {
-		return stopErr
+	e.mu.Lock()
+	e.stopping = true
+	e.cancel()
+	e.mu.Unlock()
+	done := make(chan struct{})
+	go func() {
+		e.workers.Wait()
+		e.mu.Lock()
+		leases := e.leases
+		e.leases = make(map[string]*runs.Lease)
+		e.mu.Unlock()
+		for _, lease := range leases {
+			lease.Release(ctx)
+		}
+		close(done)
+	}()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
 	}
-	executors, err := e.executors.Drain(ctx, "stop backup repository executors")
-	if err != nil {
-		return err
-	}
-	for _, executor := range executors {
-		stopErr = errors.Combine(stopErr, executor.Stop(ctx))
-	}
-	return stopErr
 }
 
 // CreateSnapshot backs the input's sources up into the repository as one
@@ -296,9 +304,59 @@ type DiscoveredSnapshot struct {
 	ID      string    `json:"id"`
 	Time    time.Time `json:"time"`
 	Label   string    `json:"label"`
+	Tags    []string  `json:"tags"`
 	Summary struct {
 		TotalBytesProcessed int64 `json:"total_bytes_processed"`
 	} `json:"summary"`
+}
+
+// RunSnapshotTag links committed snapshots to their durable backup record.
+func RunSnapshotTag(runID string) string { return "arcane-run:" + runID }
+
+// ConfirmRunSnapshot makes a validated snapshot discoverable by run ID.
+func (e *Engine) ConfirmRunSnapshot(ctx context.Context, dockerClient *client.Client, repository Repository, password, runID, snapshotID string) (Snapshot, error) {
+	if !fullSnapshotIDInternal(snapshotID) {
+		return Snapshot{}, errors.New("a full snapshot ID is required")
+	}
+	command := []string{"tag", "--add", RunSnapshotTag(runID), "--", snapshotID}
+	if _, err := e.runInternal(ctx, dockerClient, repository, password, command); err != nil {
+		return Snapshot{}, err
+	}
+	// Tagging rewrites the snapshot and changes its ID.
+	snapshot, found, err := e.FindRunSnapshot(ctx, dockerClient, repository, password, runID, "")
+	if err != nil {
+		return Snapshot{}, err
+	}
+	if !found {
+		return Snapshot{}, errors.New("confirmed backup snapshot is unavailable")
+	}
+	return snapshot, nil
+}
+
+// FindRunSnapshot verifies a known snapshot or recovers its committed response by run tag.
+func (e *Engine) FindRunSnapshot(ctx context.Context, dockerClient *client.Client, repository Repository, password, runID, snapshotID string) (Snapshot, bool, error) {
+	snapshots, err := e.ListSnapshots(ctx, dockerClient, repository, password)
+	if err != nil {
+		return Snapshot{}, false, err
+	}
+	var found Snapshot
+	for _, snapshot := range snapshots {
+		match := snapshotID != "" && snapshot.ID == snapshotID
+		if snapshotID == "" {
+			match = slices.Contains(snapshot.Tags, RunSnapshotTag(runID))
+		}
+		if !match {
+			continue
+		}
+		if found.ID != "" {
+			return Snapshot{}, false, errors.New("multiple snapshots match the backup run")
+		}
+		found = Snapshot{ID: snapshot.ID, Size: snapshot.Summary.TotalBytesProcessed}
+	}
+	if snapshotID != "" && found.ID == "" {
+		return Snapshot{}, false, errors.New("recorded backup snapshot is unavailable")
+	}
+	return found, found.ID != "", nil
 }
 
 // ListSnapshots enumerates every snapshot in the repository.
@@ -414,41 +472,35 @@ func (e *Engine) ForgetSnapshots(ctx context.Context, dockerClient *client.Clien
 	if strings.TrimSpace(repository.ID) == "" {
 		return errors.New("backup repository ID is required")
 	}
-	executor, err := e.executorForInternal(repository.ID) //nolint:contextcheck // Repository executors outlive requests so shutdown cleanup can finish.
+	defer e.lockRepositoryInternal(repository.ID)()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	output, err := e.runContainerInternal(ctx, dockerClient, repository, password, []string{"snapshots", "--json"})
 	if err != nil {
 		return err
 	}
-	task, err := executor.Submit(ctx, "rustic forget", func(workCtx context.Context) (string, error) {
-		output, err := e.runContainerInternal(workCtx, dockerClient, repository, password, []string{"snapshots", "--json"})
-		if err != nil {
-			return "", err
-		}
-		snapshots, err := decodeSnapshotsInternal(output)
-		if err != nil {
-			return "", err
-		}
-		existing := make(map[string]string, len(snapshots))
-		for _, snapshot := range snapshots {
-			existing[strings.ToLower(snapshot.ID)] = snapshot.ID
-		}
-		command := []string{"forget", "--prune"}
-		for _, id := range requested {
-			if listedID, found := existing[id]; found {
-				if len(command) == 2 {
-					command = append(command, "--")
-				}
-				command = append(command, listedID)
+	snapshots, err := decodeSnapshotsInternal(output)
+	if err != nil {
+		return err
+	}
+	existing := make(map[string]string, len(snapshots))
+	for _, snapshot := range snapshots {
+		existing[strings.ToLower(snapshot.ID)] = snapshot.ID
+	}
+	command := []string{"forget", "--prune"}
+	for _, id := range requested {
+		if listedID, found := existing[id]; found {
+			if len(command) == 2 {
+				command = append(command, "--")
 			}
+			command = append(command, listedID)
 		}
-		if len(command) == 2 {
-			command = []string{"prune"}
-		}
-		return e.runContainerInternal(workCtx, dockerClient, repository, password, command)
-	}, nil)
-	if err != nil {
-		return err
 	}
-	_, err = task.Wait(context.WithoutCancel(ctx))
+	if len(command) == 2 {
+		command = []string{"prune"}
+	}
+	_, err = e.runContainerInternal(ctx, dockerClient, repository, password, command)
 	return err
 }
 
@@ -467,8 +519,8 @@ func (e *Engine) ChangeRepositoryPassword(ctx context.Context, dockerClient *cli
 // native `copy` would move only missing packs, but it addresses the target via
 // a TOML config profile, which the env-only Repository cannot express yet —
 // the materialize-and-rebackup here trades disk and I/O for that simplicity.
-func (e *Engine) Replicate(ctx context.Context, dockerClient *client.Client, from Repository, fromSnapshotID string, to Repository, password, label string) (Snapshot, error) {
-	temporaryVolume := "arcane-rustic-copy-" + uuid.NewString()
+func (e *Engine) Replicate(ctx context.Context, dockerClient *client.Client, from Repository, fromSnapshotID string, to Repository, password, label string, tags ...string) (Snapshot, error) {
+	temporaryVolume := "arcane-rustic-copy-" + uuid.New().String()
 	if _, err := dockerClient.VolumeCreate(ctx, client.VolumeCreateOptions{Name: temporaryVolume, Labels: volumehelper.Labels()}); err != nil {
 		return Snapshot{}, fmt.Errorf("failed to create temporary Rustic copy volume: %w", err)
 	}
@@ -480,28 +532,11 @@ func (e *Engine) Replicate(ctx context.Context, dockerClient *client.Client, fro
 		return Snapshot{}, fmt.Errorf("failed to load Rustic snapshot for replication: %w", err)
 	}
 	copyMount.ReadOnly = true
-	snapshot, err := e.CreateSnapshot(ctx, dockerClient, to, password, label, RootSnapshotInput(copyMount))
+	snapshot, err := e.CreateSnapshot(ctx, dockerClient, to, password, label, RootSnapshotInput(copyMount, tags...))
 	if err != nil {
 		return Snapshot{}, fmt.Errorf("failed to replicate Rustic snapshot: %w", err)
 	}
 	return snapshot, nil
-}
-
-func (e *Engine) executorForInternal(repositoryID string) (*actors.Executor, error) {
-	if executor, ok := e.executors.Get(repositoryID); ok {
-		return executor, nil
-	}
-	return e.executors.ApplyTyped(e.lifecycleCtx, "backup repository executor", func(values map[string]*actors.Executor) (*actors.Executor, bool, error) {
-		if executor, ok := values[repositoryID]; ok {
-			return executor, false, nil
-		}
-		executor, err := actors.NewExecutor(context.WithoutCancel(e.lifecycleCtx), e.runtime, "backup-repository", repositoryID, 3)
-		if err != nil {
-			return nil, false, err
-		}
-		values[repositoryID] = executor
-		return executor, true, nil
-	})
 }
 
 func (e *Engine) runInternal(ctx context.Context, dockerClient *client.Client, repository Repository, password string, command []string, extraMounts ...mount.Mount) (string, error) {
@@ -511,18 +546,11 @@ func (e *Engine) runInternal(ctx context.Context, dockerClient *client.Client, r
 	if strings.TrimSpace(repository.ID) == "" {
 		return "", errors.New("backup repository ID is required")
 	}
-	executor, err := e.executorForInternal(repository.ID) //nolint:contextcheck // Repository executors outlive requests so shutdown cleanup can finish.
-	if err != nil {
+	defer e.lockRepositoryInternal(repository.ID)()
+	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	task, err := executor.Submit(ctx, "rustic "+command[0], func(workCtx context.Context) (string, error) {
-		return e.runContainerInternal(workCtx, dockerClient, repository, password, command, extraMounts...)
-	}, nil)
-	if err != nil {
-		return "", err
-	}
-	// Cancellation must finish helper cleanup before callers release source locks.
-	return task.Wait(context.WithoutCancel(ctx))
+	return e.runContainerInternal(ctx, dockerClient, repository, password, command, extraMounts...)
 }
 
 func (e *Engine) ensureImageInternal(ctx context.Context, dockerClient *client.Client) error {
@@ -641,4 +669,16 @@ func (s *RecoveryKeyStore) Set(ctx context.Context, recoveryKey string) error {
 		return fmt.Errorf("failed to save recovery key: %w", err)
 	}
 	return nil
+}
+
+func (e *Engine) lockRepositoryInternal(id string) func() {
+	e.mu.Lock()
+	lock := e.repositories[id]
+	if lock == nil {
+		lock = &sync.Mutex{}
+		e.repositories[id] = lock
+	}
+	e.mu.Unlock()
+	lock.Lock()
+	return lock.Unlock
 }

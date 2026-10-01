@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
@@ -76,8 +75,6 @@ func (s *timeoutSyncEnvironmentStubInternal) ProxyRequest(ctx context.Context, _
 
 func TestSettingsTimeoutSyncDoesNotBlockOtherEffectsInternal(t *testing.T) {
 	lifecycle := fxtest.NewLifecycle(t)
-	runtime, err := actors.NewRuntime(context.Background(), lifecycle)
-	require.NoError(t, err)
 
 	settings := &settingsSubscriptionStubInternal{}
 	scheduler := &settingsSubscriptionSchedulerStubInternal{rescheduled: make(chan struct{})}
@@ -87,7 +84,6 @@ func TestSettingsTimeoutSyncDoesNotBlockOtherEffectsInternal(t *testing.T) {
 		LifecycleCtx: context.Background(),
 		Config:       &config.Config{},
 		Scheduler:    scheduler,
-		ActorRuntime: runtime,
 		Settings:     settings,
 		Environment:  environment,
 	}))
@@ -123,8 +119,6 @@ func TestSettingsTimeoutSyncDoesNotBlockOtherEffectsInternal(t *testing.T) {
 
 func TestFeatureChangeReschedulesScanAndPatchJobsInternal(t *testing.T) {
 	lifecycle := fxtest.NewLifecycle(t)
-	runtime, err := actors.NewRuntime(t.Context(), lifecycle)
-	require.NoError(t, err)
 	settings := &settingsSubscriptionStubInternal{}
 	schedulerStub := &settingsSubscriptionSchedulerStubInternal{rescheduled: make(chan struct{})}
 	require.NoError(t, setupSettingsSubscriptionsInternal(settingsSubscriptionsParams{
@@ -132,7 +126,6 @@ func TestFeatureChangeReschedulesScanAndPatchJobsInternal(t *testing.T) {
 		LifecycleCtx:      t.Context(),
 		Config:            &config.Config{},
 		Scheduler:         schedulerStub,
-		ActorRuntime:      runtime,
 		Settings:          settings,
 		VulnerabilityScan: scheduler.NewVulnerabilityScanJob(nil, nil),
 		VulnerabilityRisk: scheduler.NewVulnerabilityRiskJob(nil, nil),

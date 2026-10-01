@@ -13,7 +13,6 @@ import (
 
 	"emperror.dev/errors"
 	composetypes "github.com/compose-spec/compose-go/v2/types"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
@@ -24,6 +23,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/concurrency"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
 	dockerregistry "github.com/moby/moby/api/types/registry"
@@ -67,7 +67,7 @@ type ProjectService struct {
 
 	// FilesChanged fires with the project ID after project files are saved
 	// through Arcane, so Git backups can react without polling.
-	FilesChanged *actors.Signal[string]
+	FilesChanged *concurrency.Signal[string]
 }
 
 // EnsureGitOpsProjectLinked persists the bidirectional GitOps/project binding
@@ -302,21 +302,23 @@ func (env *projectMetadataEnvInternal) composeFileInternal(projectID string, res
 	return path, nil
 }
 
-func NewProjectService(db *database.DB, settingsService *settings.SettingsService, eventService *event.EventService, imageService *image.ImageService, dockerService *docker.DockerClientService, buildService buildServiceInternal, lifecycleService *LifecycleService, containerRegistryService *registry.ContainerRegistryService, cfg *config.Config) *ProjectService {
+func NewProjectService(db *database.DB, settingsService *settings.SettingsService, eventService *event.EventService, imageService *image.ImageService, dockerService *docker.DockerClientService, buildService buildServiceInternal, lifecycleService *LifecycleService, containerRegistryService *registry.ContainerRegistryService, cfg *config.Config, kvService *kv.KVService, registryCredentialsProvider func(context.Context) ([]containerregistry.Credential, error)) *ProjectService {
 	return &ProjectService{
-		composeCoordinator:       projects.NewCoordinator(projecttypes.ComposeCommands{Stop: composeStopProjectServicesInternal, Up: composeUpProjectServicesInternal, Create: projects.ComposeCreate}),
-		db:                       db,
-		settingsService:          settingsService,
-		eventService:             eventService,
-		imageService:             imageService,
-		dockerService:            dockerService,
-		buildService:             buildService,
-		lifecycleService:         lifecycleService,
-		containerRegistryService: containerRegistryService,
-		config:                   cfg,
-		parsedCompose:            projects.NewParsedComposeCache(),
-		metaCache:                projects.NewComposeCache[projects.ArcaneComposeMetadata](1024, nil),
-		FilesChanged:             actors.NewSignal[string](),
+		KVService:                   kvService,
+		RegistryCredentialsProvider: registryCredentialsProvider,
+		composeCoordinator:          projects.NewCoordinator(projecttypes.ComposeCommands{Stop: composeStopProjectServicesInternal, Up: composeUpProjectServicesInternal, Create: projects.ComposeCreate}),
+		db:                          db,
+		settingsService:             settingsService,
+		eventService:                eventService,
+		imageService:                imageService,
+		dockerService:               dockerService,
+		buildService:                buildService,
+		lifecycleService:            lifecycleService,
+		containerRegistryService:    containerRegistryService,
+		config:                      cfg,
+		parsedCompose:               projects.NewParsedComposeCache(),
+		metaCache:                   projects.NewComposeCache[projects.ArcaneComposeMetadata](1024, nil),
+		FilesChanged:                concurrency.NewSignal[string](),
 	}
 }
 

@@ -6,7 +6,7 @@ import (
 )
 
 // RunObserver projects persisted runs into operator-facing activity records.
-// ActivityID must be deterministic and empty for runs that should stay quiet.
+// ActivityID is persisted before projection and is empty for runs that should stay quiet.
 type RunObserver interface {
 	ActivityID(run Run) string
 	SyncRunActivity(ctx context.Context, run Run) error
@@ -14,6 +14,8 @@ type RunObserver interface {
 
 // QueueRecord holds atomic admission, claims, and checkpoints for one job and target.
 type QueueRecord struct {
+	Generation     uint64         `json:"-"`
+	Sequence       uint64         `json:"-"`
 	JobID          string         `json:"jobId"`
 	EnvironmentID  string         `json:"environmentId"`
 	Schedule       string         `json:"schedule"`

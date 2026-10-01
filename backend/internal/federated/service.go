@@ -56,6 +56,7 @@ func NewFederatedCredentialService(
 	eventService *event.EventService,
 	httpClient *http.Client,
 	keySetManager *oidcjwk.KeySetManager,
+	roleService *role.RoleService,
 ) *FederatedCredentialService {
 	if httpClient == nil {
 		httpClient = httpx.NewHTTPClient(httpxtypes.ClientOptions{Timeout: 15 * time.Second, TLSHandshakeTimeout: 10 * time.Second})
@@ -69,13 +70,9 @@ func NewFederatedCredentialService(
 		eventService:    eventService,
 		httpClient:      httpClient,
 		keySetManager:   keySetManager,
+		roleService:     roleService,
 		keySets:         make(map[string]oidc.KeySet),
 	}
-}
-
-func (s *FederatedCredentialService) WithRoleService(roleService *role.RoleService) *FederatedCredentialService {
-	s.roleService = roleService
-	return s
 }
 
 func (s *FederatedCredentialService) Create(ctx context.Context, callerUserID string, req federatedtypes.CreateFederatedCredential) (*federatedtypes.FederatedCredential, error) {

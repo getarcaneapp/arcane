@@ -9,17 +9,13 @@ import (
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
 )
 
-type Dependencies struct {
-	GetUpdateInfoByImageRefs func(context.Context, []string) (map[string]*imagetypes.UpdateInfo, error)
-}
-
 type Module struct {
-	service *ImageUpdateService
-	deps    Dependencies
+	service                  *ImageUpdateService
+	getUpdateInfoByImageRefs func(context.Context, []string) (map[string]*imagetypes.UpdateInfo, error)
 }
 
-func New(service *ImageUpdateService, deps Dependencies) *Module {
-	return &Module{service: service, deps: deps}
+func New(service *ImageUpdateService, getUpdateInfo func(context.Context, []string) (map[string]*imagetypes.UpdateInfo, error)) *Module {
+	return &Module{service: service, getUpdateInfoByImageRefs: getUpdateInfo}
 }
 
 func (m *Module) Service() *ImageUpdateService {
@@ -34,5 +30,5 @@ func (m *Module) RegisterRoutes(api huma.API, appCtx handlerutil.ActivityAppCont
 		RegisterImageUpdates(api, nil, nil, appCtx)
 		return
 	}
-	RegisterImageUpdates(api, m.service, m.deps.GetUpdateInfoByImageRefs, appCtx)
+	RegisterImageUpdates(api, m.service, m.getUpdateInfoByImageRefs, appCtx)
 }

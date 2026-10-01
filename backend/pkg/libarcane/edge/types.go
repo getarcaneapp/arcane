@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/concurrency"
 	"google.golang.org/grpc"
 )
 
@@ -57,7 +57,7 @@ type TunnelClient struct {
 	preferWebSocketUntil   time.Time
 	grpcFailureStreak      int
 	agentInstanceID        string
-	registration           actors.Snapshot[clientRegistrationInternal]
+	registration           concurrency.Snapshot[clientRegistrationInternal]
 }
 
 type clientRegistrationInternal struct {
@@ -217,7 +217,8 @@ type AgentTunnel struct {
 
 // TunnelRegistry manages active edge agent tunnel connections
 type TunnelRegistry struct {
-	tunnels *actors.StateMap[string, *AgentTunnel]
+	stopped atomic.Bool
+	tunnels *concurrency.StateMap[string, *AgentTunnel]
 }
 
 type internalTunnelRequestContextKey struct{}
@@ -231,6 +232,7 @@ type TunnelServer struct {
 	eventCallback      EventCallback
 	enrollmentCallback EnrollmentCallback
 	cleanupDone        chan struct{}
+	cleanupDoneOnce    sync.Once
 	cfg                *Config
 	statusMu           sync.Mutex
 }

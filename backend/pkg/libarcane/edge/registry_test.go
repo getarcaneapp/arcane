@@ -9,10 +9,8 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/fx/fxtest"
 )
 
 type controlledCloseTunnelConn struct {
@@ -185,12 +183,8 @@ func TestTunnelRegistry_RegisterSessionReplacesSameAgentInstance(t *testing.T) {
 	assert.Equal(t, tunnel2, got)
 }
 
-func TestActorTunnelRegistryPublishesReplacementBeforeClosingPreviousInternal(t *testing.T) {
-	lifecycle := fxtest.NewLifecycle(t)
-	runtime, err := actors.NewRuntime(t.Context(), lifecycle)
-	require.NoError(t, err)
-	registry, err := NewActorTunnelRegistry(t.Context(), runtime)
-	require.NoError(t, err)
+func TestTunnelRegistryPublishesReplacementBeforeClosingPreviousInternal(t *testing.T) {
+	registry := NewTunnelRegistry()
 
 	previousConn := &controlledCloseTunnelConn{
 		closeStarted: make(chan struct{}),
@@ -234,15 +228,10 @@ func TestActorTunnelRegistryPublishesReplacementBeforeClosingPreviousInternal(t 
 	stopCtx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	require.NoError(t, registry.Stop(stopCtx))
-	require.NoError(t, lifecycle.Stop(stopCtx))
 }
 
-func TestActorTunnelRegistryReportsStoppedExecutorAsInfrastructureFailureInternal(t *testing.T) {
-	lifecycle := fxtest.NewLifecycle(t)
-	runtime, err := actors.NewRuntime(t.Context(), lifecycle)
-	require.NoError(t, err)
-	registry, err := NewActorTunnelRegistry(t.Context(), runtime)
-	require.NoError(t, err)
+func TestTunnelRegistryRejectsRegistrationAfterStopInternal(t *testing.T) {
+	registry := NewTunnelRegistry()
 
 	stopCtx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
@@ -258,7 +247,6 @@ func TestActorTunnelRegistryReportsStoppedExecutorAsInfrastructureFailureInterna
 	require.False(t, accepted)
 	require.False(t, drainPrevious)
 	require.Empty(t, reason)
-	require.NoError(t, lifecycle.Stop(stopCtx))
 }
 
 func TestTunnelRegistry_CleanupStale(t *testing.T) {

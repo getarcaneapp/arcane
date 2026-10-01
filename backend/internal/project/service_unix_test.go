@@ -37,7 +37,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_TolerantOfPermissionLockedEnv(t
 	require.NoError(t, err)
 
 	eventService := event.NewEventService(db, nil, nil)
-	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 
 	dirName := "git-sync-locked-env"
 	projectPath := filepath.Join(projectsDir, dirName)
@@ -170,7 +170,7 @@ func newEnvDirectoryProjectInternal(t *testing.T, id string) (*ProjectService, *
 	require.NoError(t, err)
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
-	svc := NewProjectService(db, settingsService, event.NewEventService(db, nil, nil), nil, nil, nil, nil, nil, config.Load())
+	svc := NewProjectService(db, settingsService, event.NewEventService(db, nil, nil), nil, nil, nil, nil, nil, config.Load(), nil, nil)
 
 	projectPath := createComposeProjectDir(t, projectsDir, id)
 	envDir := filepath.Join(projectPath, ".env")

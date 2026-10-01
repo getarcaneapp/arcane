@@ -981,7 +981,7 @@ func (s *ActivityService) FailAbandonedActivities(ctx context.Context) (int64, e
 // ResolveOrphanedQueuedActivities fails any activity still queued at startup.
 // Queued state is owned by a live goroutine blocked on AwaitActivitySlot, so a
 // queued row after a restart can never start running.
-func (s *ActivityService) ResolveOrphanedQueuedActivities(ctx context.Context) (int64, error) {
+func (s *ActivityService) ResolveOrphanedQueuedActivities(ctx context.Context, protectedIDs ...string) (int64, error) {
 	if s == nil || s.db == nil {
 		return 0, nil
 	}
@@ -990,6 +990,7 @@ func (s *ActivityService) ResolveOrphanedQueuedActivities(ctx context.Context) (
 	if err := s.db.WithContext(ctx).
 		Where("status = ?", activitytypes.StatusQueued).
 		Where("type <> ?", activitytypes.TypeJobRun).
+		Where("id NOT IN ?", append(protectedIDs, "")).
 		Find(&queued).Error; err != nil {
 		return 0, errors.WrapIf(err, "find orphaned queued activities")
 	}
@@ -1045,7 +1046,7 @@ func (s *ActivityService) PatchActivityMetadata(ctx context.Context, activityID 
 // running by a prior process lifetime. A run whose metadata marks a triggered
 // self-update completed by restarting Arcane, so it is recorded as success;
 // anything else still running at startup was interrupted and is failed.
-func (s *ActivityService) ResolveStaleAutoUpdateActivities(ctx context.Context) (int64, error) {
+func (s *ActivityService) ResolveStaleAutoUpdateActivities(ctx context.Context, protectedIDs ...string) (int64, error) {
 	if s == nil || s.db == nil {
 		return 0, nil
 	}
@@ -1053,6 +1054,7 @@ func (s *ActivityService) ResolveStaleAutoUpdateActivities(ctx context.Context) 
 	var stale []Activity
 	if err := s.db.WithContext(ctx).
 		Where("type = ? AND status = ?", activitytypes.TypeAutoUpdate, activitytypes.StatusRunning).
+		Where("id NOT IN ?", append(protectedIDs, "")).
 		Find(&stale).Error; err != nil {
 		return 0, errors.WrapIf(err, "find stale auto-update activities")
 	}

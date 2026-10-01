@@ -28,9 +28,9 @@ type PruningVolumeHelperJob struct {
 	settingsService *settings.SettingsService
 }
 
-func NewPruningVolumeHelperJob(volumeModule *volume.Module, settingsService *settings.SettingsService) *PruningVolumeHelperJob {
+func NewPruningVolumeHelperJob(volumeService *volume.VolumeService, settingsService *settings.SettingsService) *PruningVolumeHelperJob {
 	return &PruningVolumeHelperJob{
-		volumeService:   volumeModule.Service(),
+		volumeService:   volumeService,
 		settingsService: settingsService,
 	}
 }

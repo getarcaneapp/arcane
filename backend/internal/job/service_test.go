@@ -6,16 +6,19 @@ import (
 	"time"
 
 	"emperror.dev/errors"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
+	francistest "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/francis/testing"
 	"github.com/getarcaneapp/arcane/types/v2/jobschedule"
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/fx/fxtest"
 	"gorm.io/gorm"
 )
 
@@ -24,26 +27,38 @@ func setupSettingsTestDBInternal(t *testing.T) *database.DB {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&settings.SettingVariable{}, &kv.KVEntry{}))
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	sqlDB.SetMaxOpenConns(1)
+	t.Cleanup(func() { require.NoError(t, sqlDB.Close()) })
 	return &database.DB{DB: db}
 }
 
 func newSettingsServiceForTestInternal(t testing.TB, ctx context.Context, db *database.DB) (*settings.SettingsService, error) {
 	t.Helper()
-	lifecycle := fxtest.NewLifecycle(t)
-	runtime, err := actors.NewRuntime(t.Context(), lifecycle)
-	require.NoError(t, err)
-	executor, err := actors.NewExecutor(t.Context(), runtime, "job-settings-test", t.Name(), 3)
-	require.NoError(t, err)
-	effects, err := actors.NewExecutor(t.Context(), runtime, "job-settings-effects-test", t.Name(), 3)
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		stopCtx, cancel := context.WithTimeout(context.Background(), time.Second)
-		defer cancel()
-		require.NoError(t, executor.Stop(stopCtx))
-		require.NoError(t, effects.Stop(stopCtx))
-		require.NoError(t, lifecycle.Stop(stopCtx))
-	})
-	return settings.NewSettingsService(ctx, db, executor, effects)
+	service, err := settings.NewSettingsService(ctx, db)
+	if err == nil {
+		t.Cleanup(func() {
+			stopCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
+			defer cancel()
+			require.NoError(t, service.Stop(stopCtx))
+		})
+	}
+	return service, err
+}
+
+func newJobCoordinatorForTestInternal(t *testing.T, db *database.DB) *runs.Coordinator {
+	t.Helper()
+	runtime := francistest.New(t)
+	coordinator := runs.New(kv.NewKVService(db), runtime.Service(), time.UTC)
+	require.NoError(t, coordinator.Register(runtime))
+	francistest.Start(t, runtime)
+	return coordinator
+}
+
+func newJobServiceForTestInternal(t *testing.T, db *database.DB, settingsService *settings.SettingsService, cfg *config.Config) *JobService {
+	t.Helper()
+	return NewJobService(db, settingsService, cfg, newJobCoordinatorForTestInternal(t, db), nil, nil, nil)
 }
 
 func TestJobService_GetJobSchedules_DefaultDockerClientRefreshInterval(t *testing.T) {
@@ -53,7 +68,7 @@ func TestJobService_GetJobSchedules_DefaultDockerClientRefreshInterval(t *testin
 	settingsSvc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
-	jobSvc := NewJobService(db, settingsSvc, &config.Config{})
+	jobSvc := newJobServiceForTestInternal(t, db, settingsSvc, &config.Config{})
 	cfg := jobSvc.GetJobSchedules(ctx)
 
 	require.Equal(t, "0 */5 * * * *", cfg.DockerClientRefreshInterval)
@@ -67,7 +82,7 @@ func TestJobService_ListJobs_AnalyticsHeartbeatIsManagedInternally(t *testing.T)
 	settingsSvc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
-	jobSvc := NewJobService(db, settingsSvc, &config.Config{})
+	jobSvc := newJobServiceForTestInternal(t, db, settingsSvc, &config.Config{})
 	jobs, err := jobSvc.ListJobs(ctx)
 	require.NoError(t, err)
 
@@ -87,7 +102,7 @@ func TestJobService_ListJobs_IncludesDisabledAutoHealJob(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, settingsSvc.SetBoolSetting(ctx, "autoHealEnabled", false))
 
-	jobSvc := NewJobService(db, settingsSvc, &config.Config{})
+	jobSvc := newJobServiceForTestInternal(t, db, settingsSvc, &config.Config{})
 	jobs, err := jobSvc.ListJobs(ctx)
 	require.NoError(t, err)
 
@@ -103,7 +118,7 @@ func TestJobService_ListJobs_IncludesDockerClientRefreshJob(t *testing.T) {
 	settingsSvc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
-	jobSvc := NewJobService(db, settingsSvc, &config.Config{})
+	jobSvc := newJobServiceForTestInternal(t, db, settingsSvc, &config.Config{})
 	jobs, err := jobSvc.ListJobs(ctx)
 	require.NoError(t, err)
 
@@ -130,7 +145,7 @@ func TestJobService_ListJobs_UsesRuntimeScheduleAndNextRun(t *testing.T) {
 		Scheduled: true,
 	}
 
-	jobSvc := NewJobService(db, settingsSvc, &config.Config{})
+	jobSvc := newJobServiceForTestInternal(t, db, settingsSvc, &config.Config{})
 	jobSvc.SetScheduler(ctx, scheduler)
 	jobs, err := jobSvc.ListJobs(ctx)
 	require.NoError(t, err)
@@ -148,7 +163,7 @@ func TestJobService_ListJobs_ImageUpdateWatcherIsContinuousAndRespectsEnabled(t 
 	require.NoError(t, err)
 	require.NoError(t, settingsSvc.SetBoolSetting(ctx, "pollingEnabled", false))
 
-	jobSvc := NewJobService(db, settingsSvc, &config.Config{})
+	jobSvc := newJobServiceForTestInternal(t, db, settingsSvc, &config.Config{})
 	jobs, err := jobSvc.ListJobs(ctx)
 	require.NoError(t, err)
 
@@ -169,7 +184,7 @@ func TestJobService_UpdateJobSchedules_ReschedulesChangedJob(t *testing.T) {
 	settingsSvc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
-	jobSvc := NewJobService(db, settingsSvc, &config.Config{})
+	jobSvc := newJobServiceForTestInternal(t, db, settingsSvc, &config.Config{})
 	scheduler := newFakeJobSchedulerInternal("auto-update")
 	jobSvc.SetScheduler(ctx, scheduler)
 
@@ -188,7 +203,7 @@ func TestJobService_UpdateJobSchedules_DeprecatedPollingIntervalDoesNotReschedul
 	settingsSvc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
-	jobSvc := NewJobService(db, settingsSvc, &config.Config{})
+	jobSvc := newJobServiceForTestInternal(t, db, settingsSvc, &config.Config{})
 	scheduler := newFakeJobSchedulerInternal("auto-update")
 	jobSvc.SetScheduler(ctx, scheduler)
 
@@ -211,7 +226,7 @@ func TestJobService_UpdateJobSchedules_UsesLifecycleContextForReschedule(t *test
 	lifecycleCtx := context.WithValue(context.Background(), lifecycleContextKey{}, true)
 	requestCtx, cancelRequest := context.WithCancel(context.Background())
 
-	jobSvc := NewJobService(db, settingsSvc, &config.Config{})
+	jobSvc := newJobServiceForTestInternal(t, db, settingsSvc, &config.Config{})
 	scheduler := newFakeJobSchedulerInternal("auto-update")
 	jobSvc.SetScheduler(lifecycleCtx, scheduler)
 
@@ -236,7 +251,7 @@ func TestJobService_UpdateJobSchedules_RejectsInvalidCronWithoutChangingSetting(
 	require.NoError(t, settingsSvc.EnsureDefaultSettings(ctx))
 	require.NoError(t, settingsSvc.LoadDatabaseSettings(ctx))
 
-	jobSvc := NewJobService(db, settingsSvc, &config.Config{})
+	jobSvc := newJobServiceForTestInternal(t, db, settingsSvc, &config.Config{})
 	scheduler := newFakeJobSchedulerInternal()
 	jobSvc.SetScheduler(ctx, scheduler)
 
@@ -255,7 +270,7 @@ func TestJobService_UpdateJobSchedules_UnchangedScheduleDoesNotReschedule(t *tes
 	settingsSvc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
-	jobSvc := NewJobService(db, settingsSvc, &config.Config{})
+	jobSvc := newJobServiceForTestInternal(t, db, settingsSvc, &config.Config{})
 	updated, err := jobSvc.UpdateJobSchedules(ctx, jobschedule.Update{
 		PollingInterval: new("0 0 * * * *"),
 	})
@@ -272,7 +287,7 @@ func TestJobService_UpdateJobSchedules_RestoresPreviousScheduleWhenRescheduleFai
 	require.NoError(t, settingsSvc.EnsureDefaultSettings(ctx))
 	require.NoError(t, settingsSvc.LoadDatabaseSettings(ctx))
 
-	jobSvc := NewJobService(db, settingsSvc, &config.Config{})
+	jobSvc := newJobServiceForTestInternal(t, db, settingsSvc, &config.Config{})
 	scheduler := newFakeJobSchedulerInternal("auto-update")
 	scheduler.rescheduleErr = errors.New("scheduler unavailable")
 	jobSvc.SetScheduler(ctx, scheduler)
@@ -295,7 +310,7 @@ func TestJobService_UpdateJobSchedules_SkipsManagerOnlyJobsInAgentMode(t *testin
 	settingsSvc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
-	jobSvc := NewJobService(db, settingsSvc, &config.Config{AgentMode: true})
+	jobSvc := newJobServiceForTestInternal(t, db, settingsSvc, &config.Config{AgentMode: true})
 	scheduler := newFakeJobSchedulerInternal("environment-health")
 	jobSvc.SetScheduler(ctx, scheduler)
 
@@ -314,7 +329,7 @@ func TestJobService_UpdateJobSchedules_DelegatesEnvironmentHealthReschedule(t *t
 	settingsSvc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
-	jobSvc := NewJobService(db, settingsSvc, &config.Config{})
+	jobSvc := newJobServiceForTestInternal(t, db, settingsSvc, &config.Config{})
 	scheduler := newFakeJobSchedulerInternal()
 	jobSvc.SetScheduler(ctx, scheduler)
 
@@ -337,12 +352,17 @@ func TestJobService_Submit_PersistsImageUpdateWatcherRun(t *testing.T) {
 	settingsSvc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	scheduler := newFakeJobSchedulerInternal()
-	jobSvc := NewJobService(db, settingsSvc, &config.Config{})
+	jobSvc := newJobServiceForTestInternal(t, db, settingsSvc, &config.Config{})
 	jobSvc.SetScheduler(ctx, scheduler)
-	run, err := jobSvc.Submit(ctx, schedulertypes.Request{JobID: "image-polling", EnvironmentID: "0", Trigger: "manual"})
+	require.NoError(t, db.AutoMigrate(&common.User{}, &role.Role{}, &role.UserRoleAssignment{}))
+	require.NoError(t, db.Create(&common.User{BaseModel: database.BaseModel{ID: "operator"}, Username: "operator"}).Error)
+	require.NoError(t, db.Create(&role.Role{BaseModel: database.BaseModel{ID: "jobs-manager"}, Name: "Jobs manager", Permissions: database.StringSlice{authz.PermJobsManage}}).Error)
+	require.NoError(t, db.Create(&role.UserRoleAssignment{UserID: "operator", RoleID: "jobs-manager"}).Error)
+	jobSvc.roles = role.NewRoleService(db)
+	run, err := jobSvc.Submit(ctx, schedulertypes.Request{JobID: "image-polling", EnvironmentID: "0", Trigger: "manual", RequestedBy: "operator"})
 	require.NoError(t, err)
 	require.Equal(t, schedulertypes.Queued, run.Status)
-	persisted, err := jobSvc.Queue.Get(ctx, "0", "image-polling", run.ID)
+	persisted, err := jobSvc.runs.Get(ctx, "0", "image-polling", run.ID)
 	require.NoError(t, err)
 	require.Equal(t, run.ID, persisted.ID)
 	require.Empty(t, scheduler.busWatcherRuns)

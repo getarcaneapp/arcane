@@ -39,7 +39,7 @@ func setupS3DestinationServiceTestInternal(t *testing.T) (*S3DestinationService,
 		EncryptionKey: "test-encryption-key-for-s3-destination-32bytes",
 		Environment:   "test",
 	})
-	return NewS3DestinationService(&database.DB{DB: gormDB}), gormDB
+	return NewS3DestinationService(&database.DB{DB: gormDB}, nil), gormDB
 }
 
 func TestS3DestinationService_CRUD(t *testing.T) {

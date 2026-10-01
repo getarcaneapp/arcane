@@ -6,89 +6,88 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/francis"
+	francistest "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/francis/testing"
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
+	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/fx/fxtest"
+	"gorm.io/gorm"
 )
 
-func newTestAdmissionGateInternal(t *testing.T) *actors.Gate[actors.AdmissionKey] {
+var schedulerTestRuntimesInternal sync.Map
+
+func newTestAdmissionGateInternal(t *testing.T) *runs.Admission {
 	t.Helper()
-	lifecycle := fxtest.NewLifecycle(t)
-	runtime, err := actors.NewRuntime(t.Context(), lifecycle)
+	runtime := francistest.New(t)
+	admission := runs.NewAdmission(runtime.Service(), t.Name())
+	require.NoError(t, admission.Register(runtime))
+	francistest.Start(t, runtime)
+	return admission
+}
+
+func newTestCoordinatorInternal(t testing.TB, ctx context.Context, location *time.Location, execute func(context.Context, schedulertypes.Run) (schedulertypes.Outcome, error)) (*runs.Coordinator, *francis.Runtime) {
+	t.Helper()
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	gate, err := actors.NewGate[actors.AdmissionKey](t.Context(), runtime, "scheduler-test-admission", t.Name())
+	require.NoError(t, db.AutoMigrate(&kv.KVEntry{}))
+	sqlDB, err := db.DB()
 	require.NoError(t, err)
-	t.Cleanup(func() {
-		stopCtx, cancel := context.WithTimeout(context.Background(), time.Second)
-		defer cancel()
-		require.NoError(t, gate.Stop(stopCtx))
-		require.NoError(t, lifecycle.Stop(stopCtx))
-	})
-	return gate
+	sqlDB.SetMaxOpenConns(1)
+	t.Cleanup(func() { require.NoError(t, sqlDB.Close()) })
+	runtime := francistest.New(t)
+	coordinator := runs.New(kv.NewKVService(&database.DB{DB: db}), runtime.Service(), location)
+	coordinator.SetExecutor(execute, nil)
+	require.NoError(t, coordinator.Register(runtime))
+	require.NoError(t, runtime.Start(t.Context(), ctx, nil))
+	t.Cleanup(func() { require.NoError(t, runtime.Stop(context.Background())) })
+	require.NoError(t, coordinator.Start(ctx))
+	coordinator.Activate()
+	t.Cleanup(func() { require.NoError(t, coordinator.Stop(context.Background())) })
+	return coordinator, runtime
 }
 
 func newJobSchedulerForTestInternal(t testing.TB, ctx context.Context, location *time.Location) *jobSchedulerInternal {
 	t.Helper()
-	lifecycle := fxtest.NewLifecycle(t)
-	runtime, err := actors.NewRuntime(t.Context(), lifecycle)
-	require.NoError(t, err)
-	created, err := NewJobScheduler(ctx, runtime, location)
-	require.NoError(t, err)
-	scheduler := created.(*jobSchedulerInternal)
-	scheduler.SetDispatcher(&testDispatcherInternal{run: func(ctx context.Context, request schedulertypes.Request) error {
-		job, ok := scheduler.GetJob(request.JobID)
+	var scheduler *jobSchedulerInternal
+	coordinator, runtime := newTestCoordinatorInternal(t, ctx, location, func(ctx context.Context, run schedulertypes.Run) (schedulertypes.Outcome, error) {
+		job, ok := scheduler.GetJob(run.JobID)
 		if !ok {
-			return nil
+			return schedulertypes.Outcome{Status: schedulertypes.Skipped}, nil
 		}
-		_, err := job.Run(ctx)
-		return err
-	}})
+		return job.Run(jobcontext.WithExecution(ctx, run, nil))
+	})
+	created, err := NewJobScheduler(ctx, coordinator, location)
+	require.NoError(t, err)
+	scheduler = created.(*jobSchedulerInternal)
+	schedulerTestRuntimesInternal.Store(scheduler, runtime)
 	t.Cleanup(func() {
-		stopCtx, cancel := context.WithTimeout(context.Background(), time.Second)
-		defer cancel()
-		require.NoError(t, scheduler.Stop(stopCtx))
-		require.NoError(t, lifecycle.Stop(stopCtx))
+		require.NoError(t, scheduler.Stop(context.Background()))
+		schedulerTestRuntimesInternal.Delete(scheduler)
 	})
 	return scheduler
 }
 
+func stopJobSchedulerForTestInternal(ctx context.Context, scheduler *jobSchedulerInternal) error {
+	if err := scheduler.Stop(ctx); err != nil {
+		return err
+	}
+	if err := scheduler.coordinator.Stop(ctx); err != nil {
+		return err
+	}
+	runtime, _ := schedulerTestRuntimesInternal.Load(scheduler)
+	return runtime.(*francis.Runtime).Stop(ctx)
+}
+
 func newSettingsServiceForTestInternal(t testing.TB, ctx context.Context, db *database.DB) (*settings.SettingsService, error) {
 	t.Helper()
-	lifecycle := fxtest.NewLifecycle(t)
-	runtime, err := actors.NewRuntime(t.Context(), lifecycle)
-	require.NoError(t, err)
-	executor, err := actors.NewExecutor(t.Context(), runtime, "settings-test", t.Name(), 3)
-	require.NoError(t, err)
-	effects, err := actors.NewExecutor(t.Context(), runtime, "settings-effects-test", t.Name(), 3)
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		stopCtx, cancel := context.WithTimeout(context.Background(), time.Second)
-		defer cancel()
-		require.NoError(t, executor.Stop(stopCtx))
-		require.NoError(t, effects.Stop(stopCtx))
-		require.NoError(t, lifecycle.Stop(stopCtx))
-	})
-	return settings.NewSettingsService(ctx, db, executor, effects)
-}
-
-type testDispatcherInternal struct {
-	run   func(context.Context, schedulertypes.Request) error
-	locks sync.Map
-}
-
-func (d *testDispatcherInternal) Submit(ctx context.Context, request schedulertypes.Request) (schedulertypes.Run, error) {
-	value, _ := d.locks.LoadOrStore(request.JobID, &sync.Mutex{})
-	lock := value.(*sync.Mutex)
-	if !lock.TryLock() {
-		return schedulertypes.Run{}, nil
+	svc, err := settings.NewSettingsService(ctx, db)
+	if err == nil {
+		t.Cleanup(func() { require.NoError(t, svc.Stop(context.Background())) })
 	}
-	defer lock.Unlock()
-	return schedulertypes.Run{JobID: request.JobID}, d.run(ctx, request)
-}
-
-func (*testDispatcherInternal) Checkpoint(context.Context, string, string, time.Time) error {
-	return nil
+	return svc, err
 }

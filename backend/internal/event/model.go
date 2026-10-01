@@ -130,18 +130,19 @@ const (
 type Event struct {
 	database.BaseModel
 
-	Type          EventType     `json:"type" sortable:"true"`
-	Severity      EventSeverity `json:"severity" sortable:"true"`
-	Title         string        `json:"title" sortable:"true"`
-	Description   string        `json:"description"`
-	ResourceType  *string       `json:"resourceType,omitempty" sortable:"true"`
-	ResourceID    *string       `json:"resourceId,omitempty" sortable:"true"`
-	ResourceName  *string       `json:"resourceName,omitempty" sortable:"true"`
-	UserID        *string       `json:"userId,omitempty" sortable:"true"`
-	Username      *string       `json:"username,omitempty" sortable:"true"`
-	EnvironmentID *string       `json:"environmentId,omitempty"`
-	Metadata      database.JSON `json:"metadata,omitempty" gorm:"type:text"`
-	Timestamp     time.Time     `json:"timestamp" sortable:"true"`
+	DeduplicationKey *string       `json:"-" gorm:"uniqueIndex:idx_events_deduplication_key"`
+	Type             EventType     `json:"type" sortable:"true"`
+	Severity         EventSeverity `json:"severity" sortable:"true"`
+	Title            string        `json:"title" sortable:"true"`
+	Description      string        `json:"description"`
+	ResourceType     *string       `json:"resourceType,omitempty" sortable:"true"`
+	ResourceID       *string       `json:"resourceId,omitempty" sortable:"true"`
+	ResourceName     *string       `json:"resourceName,omitempty" sortable:"true"`
+	UserID           *string       `json:"userId,omitempty" sortable:"true"`
+	Username         *string       `json:"username,omitempty" sortable:"true"`
+	EnvironmentID    *string       `json:"environmentId,omitempty"`
+	Metadata         database.JSON `json:"metadata,omitempty" gorm:"type:text"`
+	Timestamp        time.Time     `json:"timestamp" sortable:"true"`
 }
 
 func (Event) TableName() string {

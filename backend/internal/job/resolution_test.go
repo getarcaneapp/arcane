@@ -4,20 +4,18 @@ import (
 	"context"
 	"testing"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/queue"
 	st "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	"github.com/stretchr/testify/require"
 )
 
 func TestResolveRunChecksCurrentOperatorPermission(t *testing.T) {
 	db := setupSettingsTestDBInternal(t)
-	svc := &JobService{Queue: queue.New(kv.NewKVService(db), nil, nil)}
-	run, err := svc.Queue.Submit(t.Context(), st.Request{JobID: "auto-update", Trigger: "scheduled"})
+	svc := &JobService{runs: newJobCoordinatorForTestInternal(t, db)}
+	run, err := svc.runs.Submit(t.Context(), st.Request{JobID: "auto-update", Trigger: "scheduled"})
 	require.NoError(t, err)
-	require.NoError(t, svc.Queue.UpdateRun(t.Context(), run, func(current *st.Run) error {
+	require.NoError(t, svc.runs.UpdateRun(t.Context(), run, func(current *st.Run) error {
 		current.Status = st.NeedsAttention
 		current.Outcome = st.Outcome{Status: st.NeedsAttention, Message: "interrupted"}
 		return nil

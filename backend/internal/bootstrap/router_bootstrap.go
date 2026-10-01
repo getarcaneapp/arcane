@@ -12,7 +12,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/api"
 	"github.com/getarcaneapp/arcane/backend/v2/api/ws"
 	"github.com/getarcaneapp/arcane/backend/v2/frontend"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/auth"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
@@ -161,7 +160,6 @@ type RouterParams struct {
 
 	Context        context.Context
 	Lifecycle      fx.Lifecycle
-	ActorRuntime   *actors.Runtime
 	Config         *config.Config
 	HandlerDeps    api.HandlerDeps
 	AuthMiddleware *auth.AuthMiddleware
@@ -291,13 +289,13 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 	}
 
 	// Remaining echo handlers (WebSocket/streaming)
-	ws.NewWebSocketHandler(apiGroup, deps.Project.Service, deps.Container.Service, deps.Swarm.Service, deps.System.Service, deps.Diagnostics, authMiddleware, cfg)
+	ws.NewWebSocketHandler(apiGroup, deps.Project.Service(), deps.Container.Service(), deps.Swarm.Service(), deps.System.Service(), deps.Diagnostics, authMiddleware, cfg)
 
 	// Register edge tunnel endpoint for manager to accept agent connections
 	// This is only registered when NOT in agent mode (i.e., running as manager)
 	var tunnelServer *edge.TunnelServer
 	if !cfg.AgentMode {
-		tunnelServer = registerEdgeTunnelRoutes(ctx, p.Lifecycle, p.ActorRuntime, cfg, apiGroup, deps.Environment.Service(), deps.Event.Service(), deps.Notification.Service(), p.TunnelRegistry)
+		tunnelServer = registerEdgeTunnelRoutes(ctx, p.Lifecycle, cfg, apiGroup, deps.Environment.Service(), deps.Event.Service(), deps.Notification.Service(), p.TunnelRegistry)
 	}
 
 	if cfg.Environment != "production" {

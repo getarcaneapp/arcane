@@ -6,30 +6,15 @@ import (
 	"context"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 )
-
-type Dependencies struct {
-	DB                   *database.DB
-	Docker               *docker.DockerClientService
-	KV                   *kv.KVService
-	Settings             *settings.SettingsService
-	SyncRemoteRegistries func(context.Context) error
-}
 
 type Module struct {
 	service *ContainerRegistryService
 	handler *ContainerRegistryHandler
 }
 
-func New(deps Dependencies) *Module {
-	service := NewContainerRegistryService(deps.DB, func(ctx context.Context) (RegistryDaemonClient, error) {
-		return deps.Docker.GetClient(ctx)
-	}, deps.KV).WithSettingsService(deps.Settings)
-	return &Module{service: service, handler: NewHandler(service, deps.SyncRemoteRegistries)}
+func New(service *ContainerRegistryService, syncRemoteRegistries func(context.Context) error) *Module {
+	return &Module{service: service, handler: NewHandler(service, syncRemoteRegistries)}
 }
 
 func (m *Module) Handler() *ContainerRegistryHandler {

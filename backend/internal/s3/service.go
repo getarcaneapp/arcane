@@ -33,8 +33,8 @@ type S3DestinationService struct {
 	checkRemoteReferences func(ctx context.Context, destinationID string) error
 }
 
-func NewS3DestinationService(db *database.DB) *S3DestinationService {
-	return &S3DestinationService{db: db}
+func NewS3DestinationService(db *database.DB, checkRemoteReferences func(context.Context, string) error) *S3DestinationService {
+	return &S3DestinationService{db: db, checkRemoteReferences: checkRemoteReferences}
 }
 
 func destinationConfigurationInternal(id string, input backuptypes.CreateS3Destination) s3config.Configuration {

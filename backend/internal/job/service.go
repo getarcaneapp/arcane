@@ -17,7 +17,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/queue"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
 	scheduleutil "github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/schedule"
 	"github.com/getarcaneapp/arcane/types/v2/jobschedule"
 	"github.com/getarcaneapp/arcane/types/v2/meta"
@@ -36,7 +36,7 @@ import (
 type JobService struct {
 	activity     *activity.ActivityService
 	activityMu   sync.Mutex
-	Queue        *queue.Queue
+	runs         *runs.Coordinator
 	store        *kv.KVService
 	environment  *environment.EnvironmentService
 	roles        *role.RoleService
@@ -55,15 +55,25 @@ type JobService struct {
 	RunEnvironmentHealthNow       func(ctx context.Context) error
 }
 
-func NewJobService(db *database.DB, settings *settings.SettingsService, cfg *config.Config) *JobService {
+func NewJobService(db *database.DB, settings *settings.SettingsService, cfg *config.Config, coordinator *runs.Coordinator, roles *role.RoleService, environment *environment.EnvironmentService, activity *activity.ActivityService) *JobService {
 	service := &JobService{
-		store:    kv.NewKVService(db),
-		db:       db,
-		settings: settings,
-		cfg:      cfg,
-		location: cfg.GetLocation(),
+		roles:       roles,
+		environment: environment,
+		activity:    activity,
+		store:       kv.NewKVService(db),
+		runs:        coordinator,
+		db:          db,
+		settings:    settings,
+		cfg:         cfg,
+		location:    cfg.GetLocation(),
 	}
-	service.Queue = queue.New(service.store, service.executeRunInternal, service.reconcileRunInternal)
+
+	if coordinator != nil {
+		coordinator.SetExecutor(service.executeRunInternal, service.reconcileRunInternal)
+		if activity != nil {
+			coordinator.SetObserver(service)
+		}
+	}
 	return service
 }
 
@@ -73,9 +83,6 @@ func (s *JobService) SetScheduler(ctx context.Context, scheduler schedulertypes.
 	}
 	s.lifecycleCtx = ctx
 	s.scheduler = scheduler
-	if runtime, ok := scheduler.(schedulertypes.JobScheduler); ok {
-		runtime.SetDispatcher(s.Queue)
-	}
 }
 
 func (s *JobService) GetJobSchedules(ctx context.Context) jobschedule.Config {
@@ -404,3 +411,5 @@ func (s *JobService) calculateNextRunInternal(schedule string) *time.Time {
 	now := time.Now().In(location)
 	return new(sched.Next(now))
 }
+
+func (s *JobService) Coordinator() *runs.Coordinator { return s.runs }

@@ -3,24 +3,14 @@ package gitrepo
 
 import (
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 )
-
-type Dependencies struct {
-	DB       *database.DB
-	WorkDir  string
-	Event    *event.EventService
-	Settings *settings.SettingsService
-}
 
 type Module struct {
 	service *GitRepositoryService
 }
 
-func New(deps Dependencies) *Module {
-	return &Module{service: NewGitRepositoryService(deps.DB, deps.WorkDir, deps.Event, deps.Settings)}
+func New(service *GitRepositoryService) *Module {
+	return &Module{service: service}
 }
 
 func (m *Module) Service() *GitRepositoryService {

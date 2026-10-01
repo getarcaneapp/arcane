@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"emperror.dev/errors"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/concurrency"
 	"github.com/samber/mo"
 )
 
@@ -97,17 +97,8 @@ func (t *AgentTunnel) CloseWithReason(reason string) error {
 // NewTunnelRegistry creates a new tunnel registry
 func NewTunnelRegistry() *TunnelRegistry {
 	return &TunnelRegistry{
-		tunnels: actors.NewStateMap[string, *AgentTunnel](),
+		tunnels: concurrency.NewStateMap[string, *AgentTunnel](),
 	}
-}
-
-// NewActorTunnelRegistry creates a registry owned by the shared actor runtime.
-func NewActorTunnelRegistry(ctx context.Context, runtime *actors.Runtime) (*TunnelRegistry, error) {
-	tunnels, err := actors.NewActorStateMap[string, *AgentTunnel](ctx, runtime, "edge", "tunnel-registry", 3)
-	if err != nil {
-		return nil, err
-	}
-	return &TunnelRegistry{tunnels: tunnels}, nil
 }
 
 // Get retrieves a tunnel by environment ID
@@ -122,12 +113,19 @@ func (r *TunnelRegistry) Register(envID string, tunnel *AgentTunnel) {
 		slog.Error("Failed to register edge agent tunnel", "environment_id", envID, "error", "tunnel is required")
 		return
 	}
-	previous, replaced, err := r.tunnels.Store(context.Background(), "register edge tunnel", envID, tunnel)
+	previous, err := r.tunnels.ApplyTyped(context.Background(), "register edge tunnel", func(tunnels map[string]*AgentTunnel) (*AgentTunnel, bool, error) {
+		if r.stopped.Load() {
+			return nil, false, errors.New("edge tunnel registry stopped")
+		}
+		previous := tunnels[envID]
+		tunnels[envID] = tunnel
+		return previous, true, nil
+	})
 	if err != nil {
 		slog.Error("Failed to register edge agent tunnel", "environment_id", envID, "error", err)
 		return
 	}
-	if replaced && previous != tunnel {
+	if previous != nil && previous != tunnel {
 		slog.Info("Replacing existing edge tunnel")
 		_ = previous.CloseWithReason("")
 	}
@@ -154,6 +152,9 @@ func (r *TunnelRegistry) RegisterSession(ctx context.Context, tunnel *AgentTunne
 
 	result, err := r.tunnels.ApplyTyped(ctx, "register edge tunnel session", func(tunnels map[string]*AgentTunnel) (registerSessionResultInternal, bool, error) {
 		var result registerSessionResultInternal
+		if r.stopped.Load() {
+			return result, false, errors.New("edge tunnel registry stopped")
+		}
 		if existing := tunnels[envID]; existing != nil {
 			if existing == tunnel {
 				result.accepted = true
@@ -258,8 +259,9 @@ func (r *TunnelRegistry) CleanupStale(ctx context.Context, maxAge time.Duration)
 	return removed
 }
 
-// Stop drains registry mutations, closes active tunnels, and joins its actor.
+// Stop drains registry mutations and closes active tunnels.
 func (r *TunnelRegistry) Stop(ctx context.Context) error {
+	r.stopped.Store(true)
 	fallback := r.tunnels.Values()
 	removed, err := r.tunnels.Drain(ctx, "stop edge tunnel registry")
 	if err != nil {
@@ -270,7 +272,7 @@ func (r *TunnelRegistry) Stop(ctx context.Context) error {
 			err = errors.Combine(err, tunnel.CloseWithReason("edge tunnel registry stopped"))
 		}
 	}
-	return errors.Combine(err, r.tunnels.Stop(ctx))
+	return err
 }
 
 var (

@@ -576,16 +576,18 @@ func (s *GitOpsSyncService) SubscribeProjectFileChanges(ctx context.Context) {
 }
 
 // ReconcileInterruptedBackupsOnStartup turns backups left running by a restart into pending failures.
-func (s *GitOpsSyncService) ReconcileInterruptedBackupsOnStartup(ctx context.Context) error {
-	err := s.db.WithContext(ctx).Model(&projectpkg.GitOpsSync{}).
-		Where("mode = ? AND last_sync_status = ?", gitops.SyncModeBackup, backupStatusRunning).
-		Updates(map[string]any{
-			"last_sync_status":      "failed",
-			"last_sync_error":       "backup was interrupted by a restart",
-			"backup_failure_reason": gitops.BackupFailureRepository,
-			"backup_pending":        true,
-			"backup_pending_since":  time.Now(),
-		}).Error
+func (s *GitOpsSyncService) ReconcileInterruptedBackupsOnStartup(ctx context.Context, protectedIDs ...string) error {
+	query := s.db.WithContext(ctx).Model(&projectpkg.GitOpsSync{}).Where("mode = ? AND last_sync_status = ?", gitops.SyncModeBackup, backupStatusRunning)
+	if len(protectedIDs) > 0 {
+		query = query.Where("id NOT IN ?", protectedIDs)
+	}
+	err := query.Updates(map[string]any{
+		"last_sync_status":      "failed",
+		"last_sync_error":       "backup was interrupted by a restart",
+		"backup_failure_reason": gitops.BackupFailureRepository,
+		"backup_pending":        true,
+		"backup_pending_since":  time.Now(),
+	}).Error
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return errors.WrapIf(err, "failed to reconcile interrupted git backups")
 	}

@@ -9,7 +9,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/queue"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
 	"github.com/getarcaneapp/arcane/types/v2/jobschedule"
 	st "github.com/getarcaneapp/arcane/types/v2/scheduler"
@@ -73,7 +73,7 @@ func (h *JobSchedulesHandler) AcknowledgeRun(ctx context.Context, input *jobsche
 	if err != nil {
 		return nil, jobHTTPErrorInternal(err)
 	}
-	err = h.jobService.Queue.UpdateRun(ctx, result, func(current *st.Run) error {
+	err = h.jobService.runs.UpdateRun(ctx, result, func(current *st.Run) error {
 		if !current.Status.Terminal() {
 			return errors.New("run is not terminal")
 		}
@@ -113,10 +113,10 @@ func jobHTTPErrorInternal(err error) error {
 	if errors.As(err, &status) {
 		return err
 	}
-	if errors.Is(err, queue.ErrRunNotFound) {
+	if errors.Is(err, runs.ErrRunNotFound) {
 		return huma.Error404NotFound("Job run not found")
 	}
-	if errors.Is(err, queue.ErrRunConflict) {
+	if errors.Is(err, runs.ErrRunConflict) {
 		return huma.Error409Conflict("Job run state changed")
 	}
 	return huma.Error400BadRequest(err.Error())
@@ -133,7 +133,7 @@ func (s *JobService) RetryRun(ctx context.Context, environmentID, jobID, runID s
 			return st.Run{}, err
 		}
 	}
-	run, err := s.Queue.Get(ctx, environmentID, jobID, runID)
+	run, err := s.runs.Get(ctx, environmentID, jobID, runID)
 	if err != nil {
 		return st.Run{}, err
 	}
@@ -146,5 +146,5 @@ func (s *JobService) RetryRun(ctx context.Context, environmentID, jobID, runID s
 			}
 		}
 	}
-	return s.Queue.Retry(ctx, environmentID, jobID, runID)
+	return s.runs.Retry(ctx, environmentID, jobID, runID)
 }
