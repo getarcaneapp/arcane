@@ -7,7 +7,14 @@
 	import { containerService } from '#lib/services/container-service.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 	import { hasPermission } from '#lib/utils/auth.js';
-	import JobCard from '#lib/components/job-card/job-card.svelte';
+	import JobRow from '#lib/components/job-card/job-row.svelte';
+	import JobDetailPanel from '#lib/components/job-card/job-detail-panel.svelte';
+	import { jobNameLabel, type JobPanelSection } from '#lib/components/job-card/job-status.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { EmptyState } from '#lib/components/states/index.js';
+	import SettingsSection from '#lib/components/settings/settings-section.svelte';
+	import { extractApiErrorMessage } from '#lib/utils/api.js';
+	import { formatRelativeTime, parseInstant } from '#lib/utils/formatting.js';
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import * as Alert from '#lib/components/ui/alert/index.js';
@@ -16,7 +23,7 @@
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
 	import * as ScrollArea from '#lib/components/ui/scroll-area/index.js';
-	import { AlertTriangleIcon, JobsIcon } from '#lib/icons/index.js';
+	import { AlertTriangleIcon, InfoIcon, JobsIcon } from '#lib/icons/index.js';
 	import type { JobStatus, JobPrerequisite } from '#lib/types/settings.js';
 	import type { ContainerSummaryDto } from '#lib/types/docker.js';
 	import type { JobsTabProps } from './tab-props';
@@ -88,13 +95,13 @@
 		switch (prereq.settingKey) {
 			case 'pollingEnabled':
 			case 'autoUpdate':
-				return `${envBase}?tab=jobs`;
 			case 'scheduledPruneEnabled':
+			case 'autoHealEnabled':
 				return `${envBase}?tab=jobs`;
 			case 'vulnerabilityScanEnabled':
 				return undefined;
-			case 'autoHealEnabled':
-				return `${envBase}?tab=jobs`;
+			case 'imageAutoPatchEnabled':
+				return `${envBase}?tab=security`;
 			default:
 				return prereq.settingsUrl;
 		}
@@ -130,6 +137,56 @@
 		};
 	}
 
+	// The selected job stays set after close so the sheet can animate out before unmounting.
+	let selectedJobId = $state<string | null>(null);
+	let panelOpen = $state(false);
+	let panelSection = $state<JobPanelSection>('overview');
+	const visibleJobs = $derived((jobsResponse?.jobs ?? []).filter((job) => !job.managerOnly || environmentId === '0'));
+	const selectedJob = $derived(visibleJobs.find((job) => job.id === selectedJobId));
+
+	// Only these jobs have extra settings, and only once they are switched on.
+	function jobHasSettings(job: JobStatus): boolean {
+		switch (job.id) {
+			case 'image-polling':
+				return true;
+			case 'auto-update':
+				return formInputs.autoUpdate.value;
+			case 'auto-heal':
+				return formInputs.autoHealEnabled.value;
+			default:
+				return false;
+		}
+	}
+
+	function selectJob(job: JobStatus, section: JobPanelSection) {
+		selectedJobId = job.id;
+		panelSection = section;
+		panelOpen = true;
+	}
+
+	function isJobEnabled(job: JobStatus): boolean {
+		return capabilityUnknown ? job.enabled : (getEnabledOverride(job) ?? job.enabled);
+	}
+
+	const summary = $derived.by(() => {
+		const enabled = visibleJobs.filter(isJobEnabled);
+		const failing = enabled.filter((job) => {
+			const run = job.currentRun ?? job.lastRun;
+			return (
+				['failed', 'needs_attention', 'partial'].includes(run?.status ?? '') ||
+				['degraded', 'stopped'].includes(job.workerHealth?.status ?? '')
+			);
+		});
+		const running = enabled.filter((job) => ['running', 'retrying', 'queued'].includes(job.currentRun?.status ?? ''));
+		let next: { job: JobStatus; at: ReturnType<typeof parseInstant> } | null = null;
+		for (const job of enabled) {
+			const at = parseInstant(job.nextRun);
+			if (!at) continue;
+			if (!next || at.epochMilliseconds < next.at!.epochMilliseconds) next = { job, at };
+		}
+		return { total: visibleJobs.length, enabled: enabled.length, failing: failing.length, running: running.length, next };
+	});
+
 	const categories = [
 		{ id: 'updates', label: m.updates() },
 		{ id: 'monitoring', label: m.jobs_monitoring_heading() },
@@ -139,13 +196,12 @@
 		{ id: 'telemetry', label: m.jobs_telemetry_heading() }
 	];
 
-	function getJobsByCategory(categoryId: string, jobs: JobStatus[]): JobStatus[] {
-		return jobs.filter((j) => {
-			if (j.category !== categoryId) return false;
-			// Only show manager-only jobs on the local environment (ID "0")
-			if (j.managerOnly && environmentId !== '0') return false;
-			return true;
-		});
+	// Jobs with prerequisites can be turned on or off; the rest are built-in and always run.
+	const configurableJobs = $derived(visibleJobs.filter((job) => job.prerequisites.length > 0));
+	const systemJobs = $derived(visibleJobs.filter((job) => job.prerequisites.length === 0));
+
+	function getJobsByCategory(categoryId: string): JobStatus[] {
+		return configurableJobs.filter((job) => job.category === categoryId);
 	}
 
 	function getEnabledOverride(job: JobStatus): boolean | undefined {
@@ -185,26 +241,9 @@
 	}
 </script>
 
-{#snippet jobCategory(label: string, categoryJobs: JobStatus[], isAgent: boolean, durableRuns: boolean)}
-	{#if categoryJobs.length > 0}
-		<div
-			class="grid min-w-0 gap-x-6 gap-y-2 rounded-xl border border-border bg-transparent px-4 py-2 sm:px-5 lg:grid-cols-aside-28"
-		>
-			<h3 class="flex min-h-9 items-center text-sm font-semibold text-foreground lg:mt-5 lg:self-start">
-				{label}
-			</h3>
-			<div class="min-w-0 divide-y divide-border/50">
-				{#each categoryJobs as job (job.id)}
-					{@render environmentJob(job, isAgent, durableRuns)}
-				{/each}
-			</div>
-		</div>
-	{/if}
-{/snippet}
-
 {#snippet autoUpdateSettings(job: JobStatus)}
-	{#if job.id === 'auto-update' && formInputs.autoUpdate.value}
-		<div class="space-y-3 border-t border-border/20 pt-3">
+	{#if job.id === 'auto-update'}
+		<div class="space-y-3">
 			<div class="space-y-1">
 				<Label>
 					{m.excluded_containers()}
@@ -235,7 +274,7 @@
 
 {#snippet imagePollingSettings(job: JobStatus)}
 	{#if job.id === 'image-polling'}
-		<div class="space-y-3 border-t border-border/20 pt-3">
+		<div class="space-y-3">
 			<div class="flex items-center justify-between gap-3">
 				<div class="space-y-1">
 					<Label>{m.jobs_image_event_watcher_label()}</Label>
@@ -252,8 +291,8 @@
 {/snippet}
 
 {#snippet autoHealSettings(job: JobStatus)}
-	{#if job.id === 'auto-heal' && formInputs.autoHealEnabled.value}
-		<div class="space-y-3 border-t border-border/20 pt-3">
+	{#if job.id === 'auto-heal'}
+		<div class="space-y-3">
 			<div class="grid gap-3 sm:grid-cols-2">
 				<div class="space-y-1">
 					<Label for="auto-heal-max-restarts">{m.auto_heal_max_restarts_label()}</Label>
@@ -322,47 +361,34 @@
 	{/if}
 {/snippet}
 
-{#snippet environmentJob(job: JobStatus, isAgent: boolean, durableRuns: boolean)}
-	<JobCard
-		{job}
-		{environmentId}
-		{isAgent}
-		durableRuns={durableRuns || capabilityUnknown}
-		onScheduleUpdate={loadJobs}
-		enabledOverride={capabilityUnknown ? undefined : getEnabledOverride(job)}
-		collapsibleSettings={job.id === 'image-polling' ||
-			(job.id === 'auto-update' && formInputs.autoUpdate.value) ||
-			(job.id === 'auto-heal' && formInputs.autoHealEnabled.value)}
-	>
-		{#snippet headerAccessory()}
-			{@render jobEnableControl(job)}
-		{/snippet}
+{#snippet jobGroup(label: string, jobs: JobStatus[], description?: string)}
+	<SettingsSection title={label} {description}>
+		{#each jobs as job (job.id)}
+			<JobRow
+				{job}
+				{environmentId}
+				isAgent={jobsResponse?.isAgent ?? false}
+				durableRuns={(jobsResponse?.durableRuns ?? false) || capabilityUnknown}
+				enabledOverride={capabilityUnknown ? undefined : getEnabledOverride(job)}
+				onSelect={selectJob}
+				onScheduleUpdate={loadJobs}
+			>
+				{#snippet headerAccessory()}
+					{@render jobEnableControl(job)}
+				{/snippet}
+			</JobRow>
+		{/each}
+	</SettingsSection>
+{/snippet}
 
-		{@render autoUpdateSettings(job)}
+{#snippet selectedEnableControl()}
+	{#if selectedJob}{@render jobEnableControl(selectedJob)}{/if}
+{/snippet}
 
-		{@render imagePollingSettings(job)}
-
-		{@render autoHealSettings(job)}
-		{#if job.children?.length}
-			<details class="mt-1">
-				<summary
-					class="w-fit cursor-pointer rounded-sm text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-					>{m.jobs_target_runs({ count: job.children.length })}</summary
-				>
-				<div class="mt-3 divide-y divide-border border-l border-border pl-4 sm:pl-6">
-					{#each job.children ?? [] as child (child.id)}
-						<JobCard
-							job={child}
-							{environmentId}
-							{isAgent}
-							durableRuns={durableRuns || capabilityUnknown}
-							onScheduleUpdate={loadJobs}
-						/>
-					{/each}
-				</div>
-			</details>
-		{/if}
-	</JobCard>
+{#snippet jobSettings(job: JobStatus)}
+	{@render autoUpdateSettings(job)}
+	{@render imagePollingSettings(job)}
+	{@render autoHealSettings(job)}
 {/snippet}
 
 {#snippet ContainerExclusionList(config: {
@@ -429,36 +455,87 @@
 {/snippet}
 
 <section class="flex w-full min-w-0 flex-col gap-6">
-	<header class="flex items-start gap-3">
-		<JobsIcon class="mt-0.5 size-5 text-muted-foreground" />
-		<div class="flex flex-col gap-1.5">
-			<h2 class="text-lg font-semibold">{m.automations()}</h2>
-			<p class="text-sm text-muted-foreground">{m.jobs_environment_scope_description()}</p>
-		</div>
-	</header>
-	<div>
-		{#if jobsQuery.isPending}
-			<div class="flex h-32 items-center justify-center">
-				<Spinner class="size-8" />
+	<header class="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
+		<div class="flex items-start gap-3">
+			<JobsIcon class="mt-0.5 size-5 text-muted-foreground" />
+			<div class="flex flex-col gap-1.5">
+				<h2 class="text-lg font-semibold">{m.automations()}</h2>
+				<p class="text-sm text-muted-foreground">{m.jobs_environment_scope_description()}</p>
 			</div>
-		{:else}
-			{#if jobsResponse}
-				{#if capabilityUnknown}<p class="mb-4 text-sm text-muted-foreground">{m.jobs_capability_unknown()}</p>
-				{:else if !jobsResponse.durableRuns}<p class="mb-4 text-sm text-muted-foreground">{m.jobs_upgrade_required()}</p>{/if}
-				{#if jobsResponse.offline}<p class="mb-4 text-sm text-muted-foreground">
+		</div>
+		{#if jobsResponse}
+			<div class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+				<Badge variant="gray">{summary.enabled} / {summary.total} {m.common_enabled().toLowerCase()}</Badge>
+				{#if summary.failing > 0}
+					<Badge variant="red">{summary.failing} {m.jobs_summary_failing().toLowerCase()}</Badge>
+				{/if}
+				{#if summary.running > 0}
+					<Badge variant="blue"
+						><Spinner class="size-2.5" />{summary.running} {m.health_next_check_running_now().toLowerCase()}</Badge
+					>
+				{/if}
+				{#if summary.next}
+					<span class="tabular-nums">
+						{m.jobs_next_run()}: {jobNameLabel(summary.next.job)} · {formatRelativeTime(summary.next.at)}
+					</span>
+				{/if}
+			</div>
+		{/if}
+	</header>
+
+	{#if jobsResponse}
+		{#if capabilityUnknown || !jobsResponse.durableRuns || jobsResponse.offline}
+			<Alert.Root variant={jobsResponse.offline ? 'warning-subtle' : 'default'} size="sm">
+				<InfoIcon class="size-4" />
+				<Alert.Description>
+					{#if capabilityUnknown}{m.jobs_capability_unknown()}
+					{:else if !jobsResponse.durableRuns}{m.jobs_upgrade_required()}{/if}
+					{#if jobsResponse.offline}
 						{m.jobs_offline_status()}
 						{#if !capabilityUnknown}{m.jobs_last_confirmed()}: {jobsResponse.observedAt}{/if}
-					</p>{/if}
-				<div class="grid items-start gap-x-12 gap-y-10 2xl:grid-cols-2">
-					{#each categories as category (category.id)}
-						{@const categoryJobs = getJobsByCategory(category.id, jobsResponse.jobs)}
-						{@render jobCategory(category.label, categoryJobs, jobsResponse.isAgent, jobsResponse.durableRuns)}
-					{/each}
-				</div>
-			{/if}
+					{/if}
+				</Alert.Description>
+			</Alert.Root>
 		{/if}
-		{#if jobsQuery.error}<div class="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-destructive">
-				{jobsQuery.error.message}
-			</div>{/if}
-	</div>
+	{/if}
+
+	{#if jobsQuery.error}
+		<Alert.Root variant="destructive-subtle" size="sm">
+			<AlertTriangleIcon class="size-4" />
+			<Alert.Description>{extractApiErrorMessage(jobsQuery.error)}</Alert.Description>
+		</Alert.Root>
+	{:else if jobsQuery.isPending}
+		<div class="flex h-32 items-center justify-center">
+			<Spinner class="size-8" />
+		</div>
+	{:else if jobsResponse && visibleJobs.length === 0}
+		<EmptyState icon={JobsIcon} title={m.jobs_empty_title()} />
+	{:else if jobsResponse}
+		<div class="flex flex-col gap-8">
+			{#each categories as category (category.id)}
+				{@const categoryJobs = getJobsByCategory(category.id)}
+				{#if categoryJobs.length > 0}
+					{@render jobGroup(category.label, categoryJobs)}
+				{/if}
+			{/each}
+			{#if systemJobs.length > 0}
+				{@render jobGroup(m.system(), systemJobs, m.jobs_system_description())}
+			{/if}
+		</div>
+	{/if}
 </section>
+
+{#if selectedJob && jobsResponse}
+	<JobDetailPanel
+		job={selectedJob}
+		{environmentId}
+		isAgent={jobsResponse.isAgent}
+		durableRuns={jobsResponse.durableRuns || capabilityUnknown}
+		enabledOverride={capabilityUnknown ? undefined : getEnabledOverride(selectedJob)}
+		bind:open={panelOpen}
+		bind:section={panelSection}
+		settings={jobHasSettings(selectedJob) ? jobSettings : undefined}
+		enableControl={selectedEnableControl}
+		onScheduleUpdate={loadJobs}
+	/>
+{/if}

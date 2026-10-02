@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { Input } from '#lib/components/ui/input/index.js';
 	import * as Tabs from '#lib/components/ui/tabs/index.js';
+	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
 	import { m } from '#lib/paraglide/messages.js';
+	import { useId } from 'bits-ui';
 
 	export type PruneModeOption = {
 		value: string;
@@ -11,9 +13,8 @@
 
 	type DurationUnit = 'minutes' | 'hours' | 'days';
 
+	// Segmented prune-mode choice with an optional "older than" duration; the host row supplies the label.
 	interface Props {
-		title: string;
-		description: string;
 		modeOptions: PruneModeOption[];
 		value?: string;
 		untilValue?: string;
@@ -24,8 +25,6 @@
 	}
 
 	let {
-		title,
-		description,
 		modeOptions,
 		value = $bindable<string>(),
 		untilValue = $bindable(''),
@@ -43,17 +42,10 @@
 		{ value: 'days', label: m.prune_duration_unit_days() }
 	];
 
-	function hasOlderThanInternal(): boolean {
-		return modeOptions.some((option) => option.value === olderThanMode);
-	}
-
-	function getSelectedOptionInternal(): PruneModeOption | undefined {
-		return modeOptions.find((option) => option.value === value);
-	}
-
-	let parsedDurationInternal = $derived.by(() => parsePruneDurationInternal(untilValue));
-	let durationAmountInternal = $derived(parsedDurationInternal.amount);
-	let durationUnitInternal = $derived(parsedDurationInternal.unit);
+	const durationUnitId = `prune-duration-unit-${useId()}`;
+	const hasOlderThan = $derived(modeOptions.some((option) => option.value === olderThanMode));
+	const selectedOption = $derived(modeOptions.find((option) => option.value === value));
+	const parsedDuration = $derived(parsePruneDurationInternal(untilValue));
 
 	function handleModeChange(nextMode: string) {
 		if (disabled) return;
@@ -63,57 +55,30 @@
 		}
 	}
 
-	function updateDurationAmountInternal(nextAmount: string) {
-		untilValue = serializePruneDurationInternal(nextAmount, durationUnitInternal);
-	}
-
-	function updateDurationUnitInternal(nextUnit: DurationUnit) {
-		untilValue = serializePruneDurationInternal(durationAmountInternal, nextUnit);
-	}
-
 	function handleDurationAmountInputInternal(event: Event) {
-		updateDurationAmountInternal((event.currentTarget as HTMLInputElement).value);
+		untilValue = serializePruneDurationInternal((event.currentTarget as HTMLInputElement).value, parsedDuration.unit);
 	}
 
-	function handleDurationUnitChangeInternal(event: Event) {
-		updateDurationUnitInternal((event.currentTarget as HTMLSelectElement).value as DurationUnit);
+	function handleDurationUnitChangeInternal(nextUnit: string) {
+		untilValue = serializePruneDurationInternal(parsedDuration.amount, nextUnit as DurationUnit);
 	}
 
 	function parsePruneDurationInternal(valueToParse: string): { amount: string; unit: DurationUnit } {
 		const trimmed = valueToParse.trim();
 		if (!trimmed) {
-			return {
-				amount: defaultDurationAmountInternal,
-				unit: defaultDurationUnitInternal
-			};
+			return { amount: defaultDurationAmountInternal, unit: defaultDurationUnitInternal };
 		}
-
 		if (trimmed.endsWith('m')) {
-			return {
-				amount: trimmed.slice(0, -1) || defaultDurationAmountInternal,
-				unit: 'minutes'
-			};
+			return { amount: trimmed.slice(0, -1) || defaultDurationAmountInternal, unit: 'minutes' };
 		}
-
 		if (trimmed.endsWith('h')) {
 			const rawHours = Number(trimmed.slice(0, -1));
 			if (Number.isFinite(rawHours) && rawHours > 0 && rawHours % 24 === 0) {
-				return {
-					amount: String(rawHours / 24),
-					unit: 'days'
-				};
+				return { amount: String(rawHours / 24), unit: 'days' };
 			}
-
-			return {
-				amount: trimmed.slice(0, -1) || defaultDurationAmountInternal,
-				unit: 'hours'
-			};
+			return { amount: trimmed.slice(0, -1) || defaultDurationAmountInternal, unit: 'hours' };
 		}
-
-		return {
-			amount: defaultDurationAmountInternal,
-			unit: defaultDurationUnitInternal
-		};
+		return { amount: defaultDurationAmountInternal, unit: defaultDurationUnitInternal };
 	}
 
 	function serializePruneDurationInternal(amount: string, unit: DurationUnit): string {
@@ -129,21 +94,16 @@
 	}
 </script>
 
-<div class="flex h-full flex-col gap-2.5 rounded-lg bg-muted/20 p-3 ring-1 ring-border/20">
-	<div class="space-y-0.5">
-		<p class="text-xs font-medium">{title}</p>
-		<p class="text-2xs leading-tight text-muted-foreground">{description}</p>
-	</div>
-
+<div class="flex flex-col gap-2.5">
 	<Tabs.Root {value} onValueChange={handleModeChange}>
-		<Tabs.List class="min-h-8 w-full">
+		<Tabs.List class="min-h-8 w-full sm:w-fit">
 			{#each modeOptions as option (option.value)}
 				<Tabs.Trigger
 					value={option.value}
 					{disabled}
 					size="sm"
 					variant={option.destructive ? 'destructive' : 'default'}
-					class="h-6 flex-1"
+					class="h-7 flex-1 sm:flex-none"
 				>
 					{option.label}
 				</Tabs.Trigger>
@@ -151,34 +111,36 @@
 		</Tabs.List>
 	</Tabs.Root>
 
-	{#if hasOlderThanInternal() && value === olderThanMode}
-		<div class="grid gap-1.5 sm:grid-cols-content-action">
+	{#if hasOlderThan && value === olderThanMode}
+		<div class="flex flex-wrap items-center gap-2">
 			<Input
 				type="number"
 				min="1"
-				value={durationAmountInternal}
+				value={parsedDuration.amount}
 				oninput={handleDurationAmountInputInternal}
 				{disabled}
 				size="sm"
-				class="h-8"
+				class="h-8 w-24"
 				placeholder={m.prune_duration_placeholder()}
+				aria-label={m.prune_duration_help()}
 			/>
-			<select
-				class="h-8 rounded-md border border-input bg-background px-2.5 py-1 text-xs ring-offset-background placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
-				value={durationUnitInternal}
-				onchange={handleDurationUnitChangeInternal}
+			<SelectWithLabel
+				id={durationUnitId}
+				label={m.prune_duration_help()}
+				hideLabel
+				compact
+				triggerSize="sm"
+				value={parsedDuration.unit}
+				options={durationUnitOptionsInternal}
+				onValueChange={handleDurationUnitChangeInternal}
 				{disabled}
-			>
-				{#each durationUnitOptionsInternal as option (option.value)}
-					<option value={option.value}>{option.label}</option>
-				{/each}
-			</select>
+			/>
 		</div>
 		<p class="text-xs text-muted-foreground">{m.prune_duration_help()}</p>
 	{/if}
 
-	{#if warningDescription && getSelectedOptionInternal()?.destructive}
-		<div class="mt-auto rounded-md border border-warning/30 bg-warning/10 p-2 text-xs text-warning">
+	{#if warningDescription && selectedOption?.destructive}
+		<div class="rounded-md border border-warning/30 bg-warning/10 p-2 text-xs text-warning">
 			{#if warningTitle}
 				<p class="font-medium">{warningTitle}</p>
 			{/if}

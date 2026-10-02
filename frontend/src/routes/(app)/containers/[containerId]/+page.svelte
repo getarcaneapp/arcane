@@ -78,7 +78,7 @@
 	const autoUpdateStatusAvailable = $derived(typeof container?.autoUpdateEnabled === 'boolean');
 	const autoUpdateEnabled = $derived(container?.autoUpdateEnabled === true);
 
-	async function handleAutoUpdateChanged() {
+	async function refreshContainerDetails() {
 		await Promise.all([
 			queryClient.invalidateQueries({ queryKey: queryKeys.containers.all }),
 			queryClient.invalidateQueries({ queryKey: queryKeys.containers.detail(currentEnvId, container.id) })
@@ -242,7 +242,7 @@
 			setStatus: (status) => {
 				lifecycleStatus = status === 'pausing' ? status : '';
 			},
-			onRefresh: () => refreshAll()
+			onRefresh: refreshContainerDetails
 		});
 	}
 
@@ -254,7 +254,7 @@
 			setStatus: (status) => {
 				lifecycleStatus = status === 'unpausing' ? status : '';
 			},
-			onRefresh: () => refreshAll()
+			onRefresh: refreshContainerDetails
 		});
 	}
 	const showStats = $derived(!!container?.state?.running);
@@ -500,7 +500,7 @@
 			{autoUpdateEnabled}
 			{autoUpdateLabelControlled}
 			{autoUpdateStatusAvailable}
-			onAutoUpdateChange={handleAutoUpdateChanged}
+			onAutoUpdateChange={refreshContainerDetails}
 			onViewPortMappings={showNetworkTab ? navigateToNetworkPortMappings : undefined}
 			onViewStorage={hasMounts ? () => onTabChange('storage') : undefined}
 			onViewNetworks={showNetworkTab ? () => onTabChange('network') : undefined}
@@ -609,6 +609,7 @@
 				itemState={container.state?.running ? 'running' : 'stopped'}
 				disableRedeploy={!!container.redeployDisabled}
 				extraActions={containerExtraActions}
+				onActionComplete={refreshContainerDetails}
 			/>
 		{/snippet}
 
@@ -622,7 +623,10 @@
 			containerId={container.id}
 			containerName={containerDisplayName}
 			onClose={() => (killDialogOpen = false)}
-			onComplete={() => refreshAll()}
+			onComplete={() => {
+				killDialogOpen = false;
+				return refreshContainerDetails();
+			}}
 		/>
 	{/if}
 	{#if commitDialogOpen && canCommitImage}
@@ -630,7 +634,7 @@
 			bind:open={commitDialogOpen}
 			containerId={container.id}
 			containerName={containerDisplayName}
-			onCommitted={() => refreshAll()}
+			onCommitted={refreshContainerDetails}
 		/>
 	{/if}
 {:else}

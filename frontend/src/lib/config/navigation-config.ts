@@ -271,9 +271,8 @@ export const navigationItems: NavigationSections = {
 };
 
 // Keep the settings sub-navigation alphabetical regardless of the order
-// entries are declared in the literal above. Sidebar, mobile nav, and the
-// settings landing page all read from navigationItems.settingsItems, so a
-// single sort here propagates everywhere.
+// entries are declared in the literal above. The sidebar and mobile nav render it;
+// the settings landing page uses it for card order and for Roles/Diagnostics cards.
 {
 	const settingsParent = navigationItems.settingsItems.find((item) => item.url === '/settings');
 	if (settingsParent?.items) {
@@ -329,6 +328,24 @@ function canSeeItem(
 	if (!item.accessSurfaceId) return true;
 	if (!accessManifest?.accessSurfaces?.length) return true;
 	return canReachAccessSurface(accessManifest, item.accessSurfaceId, user, currentEnvId);
+}
+
+/** Returns the title of the navigation item whose URL is the longest prefix of `pathname`. */
+export function getNavigationTitleForPath(pathname: string): string | undefined {
+	let title: string | undefined;
+	let bestLength = 0;
+	const visit = (items: NavigationItem[]) => {
+		for (const item of items) {
+			const url = item.url.split('?')[0] ?? item.url;
+			if (url.length > bestLength && (pathname === url || pathname.startsWith(`${url}/`))) {
+				title = item.title;
+				bestLength = url.length;
+			}
+			if (item.items) visit(item.items);
+		}
+	};
+	visit(Object.values(navigationItems).flat());
+	return title;
 }
 
 export function getSettingsSubpageUrlsInNavOrder(): string[] {

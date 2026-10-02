@@ -18,6 +18,7 @@
 	import { SettingsPageLayout } from '#lib/layouts/index.js';
 	import type { ActionButton } from '#lib/components/action-button-group/types.js';
 	import SettingsRow from '#lib/components/settings/settings-row.svelte';
+	import SettingsSection from '#lib/components/settings/settings-section.svelte';
 	import { Switch } from '#lib/components/ui/switch/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 
@@ -235,11 +236,12 @@
 	{actionButtons}
 >
 	{#snippet mainContent()}
-		<div class="mb-6 divide-y divide-border/40 border-b border-border/50 pb-6 [&>*]:py-5 [&>*:first-child]:pt-0">
+		<SettingsSection title={m.settings_section_avatars()} description={m.settings_section_avatars_description()} class="mb-8">
 			<SettingsRow
+				for="enableGravatar"
 				label={m.general_enable_gravatar_label()}
 				description={m.general_enable_gravatar_description()}
-				layout="inline"
+				layout="switch"
 			>
 				<Switch
 					id="enableGravatar"
@@ -248,31 +250,26 @@
 					onCheckedChange={(checked) => void saveAvatarSettings({ enableGravatar: checked })}
 				/>
 			</SettingsRow>
-
 			<SettingsRow
+				for="avatarMaxUploadSizeMb"
 				label={m.general_avatar_upload_size_label()}
 				description={m.general_avatar_upload_size_description()}
 				helpText={m.general_avatar_upload_size_help()}
-				layout="inline"
+				error={avatarSizeError}
 			>
-				<div class="flex w-24 flex-col gap-1">
-					<Input
-						id="avatarMaxUploadSizeMb"
-						type="number"
-						min="1"
-						max="50"
-						bind:value={avatarSizeInput}
-						placeholder="2"
-						disabled={isReadOnly}
-						aria-invalid={Boolean(avatarSizeError)}
-						onblur={handleAvatarSizeCommit}
-					/>
-					{#if avatarSizeError}
-						<p class="text-xs font-medium text-destructive">{avatarSizeError}</p>
-					{/if}
-				</div>
+				<Input
+					id="avatarMaxUploadSizeMb"
+					type="number"
+					min="1"
+					max="50"
+					bind:value={avatarSizeInput}
+					placeholder="2"
+					disabled={isReadOnly}
+					aria-invalid={Boolean(avatarSizeError)}
+					onblur={handleAvatarSizeCommit}
+				/>
 			</SettingsRow>
-		</div>
+		</SettingsSection>
 
 		<UserTable
 			bind:users

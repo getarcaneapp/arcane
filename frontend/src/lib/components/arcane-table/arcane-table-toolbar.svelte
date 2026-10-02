@@ -34,7 +34,9 @@
 		class: className,
 		imageNameFilterOptions = [],
 		wrapText = false,
-		onToggleWrapText
+		onToggleWrapText,
+		isFiltered = false,
+		onResetFilters
 	}: {
 		table: ArcaneSvelteTable<TData>;
 		selectedIds?: string[];
@@ -49,6 +51,8 @@
 		imageNameFilterOptions?: string[];
 		wrapText?: boolean;
 		onToggleWrapText?: () => void;
+		isFiltered?: boolean;
+		onResetFilters?: () => void;
 	} = $props();
 	const buttonActions = $derived(
 		bulkActions.map((item) => ({
@@ -57,12 +61,6 @@
 		}))
 	);
 
-	// With `withoutFilters` the column filters aren't user-controlled — the page bakes
-	// in its own scoping filter (e.g. /updates pins `updates`), which would otherwise
-	// light up Reset on first paint and let a click wipe the page's own scope.
-	const isFiltered = $derived(
-		!!table.atoms.globalFilter.get() || (!withoutFilters && table.atoms.columnFilters.get().length > 0)
-	);
 	const usageColumn = $derived(table.getAllColumns().some((col) => col.id === 'inUse') ? table.getColumn('inUse') : undefined);
 	const updatesColumn = $derived(
 		table.getAllColumns().some((col) => col.id === 'updates') ? table.getColumn('updates') : undefined
@@ -220,10 +218,7 @@
 				size="sm"
 				icon={ResetIcon}
 				customLabel={m.common_reset()}
-				onclick={() => {
-					if (!withoutFilters) table.setColumnFilters([]);
-					table.setGlobalFilter('');
-				}}
+				onclick={onResetFilters}
 				class="h-9 shrink-0"
 			/>
 		{/if}

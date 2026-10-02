@@ -53,9 +53,17 @@
 						</p>
 					</div>
 				</div>
-				<ArcaneButton action="base" tone="ghost" size="sm" onclick={() => goto('/settings/builds')} class="hover:bg-white/5">
-					<SettingsIcon class="size-4" />
-				</ArcaneButton>
+				<ArcaneButton
+					action="base"
+					tone="ghost"
+					size="sm"
+					icon={SettingsIcon}
+					showLabel={false}
+					customLabel={m.build_workspace_open_settings()}
+					title={m.build_workspace_open_settings()}
+					onclick={() => goto('/settings/builds')}
+					class="hover:bg-white/5"
+				/>
 			</div>
 
 			<div class="flex items-center gap-2 rounded-lg border border-border/70 bg-muted/50 p-1">

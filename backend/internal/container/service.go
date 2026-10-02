@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/containerd/errdefs"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
@@ -1196,10 +1197,12 @@ func (s *ContainerService) GetContainerDetails(ctx context.Context, id string) (
 	return details, nil
 }
 
-// GetContainerNameByReference resolves a container's clean name from a Docker ID or name.
-
-// containerProcessesPsArgs asks ps for per-process CPU and memory; Windows daemons ignore it.
-var containerProcessesPsArgs = []string{"-eo", "pid,user,%cpu,%mem,etime,cmd"}
+// containerProcessesPsArgs lists ps argument sets in preference order: procps first, then
+// BusyBox, which rejects %cpu/%mem. Windows daemons ignore the arguments.
+var containerProcessesPsArgs = [][]string{
+	{"-eo", "pid,user,%cpu,%mem,etime,cmd"},
+	{"-o", "pid,user,etime,args"},
+}
 
 // GetContainerProcesses returns Docker's `top` snapshot for a container.
 func (s *ContainerService) GetContainerProcesses(ctx context.Context, containerID string) (containertypes.Processes, error) {
@@ -1215,7 +1218,13 @@ func (s *ContainerService) GetContainerProcesses(ctx context.Context, containerI
 	topCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	result, err := dockerClient.ContainerTop(topCtx, containerID, client.ContainerTopOptions{Arguments: containerProcessesPsArgs})
+	var result client.ContainerTopResult
+	for _, args := range containerProcessesPsArgs {
+		result, err = dockerClient.ContainerTop(topCtx, containerID, client.ContainerTopOptions{Arguments: args})
+		if err == nil || errdefs.IsNotFound(err) || errdefs.IsConflict(err) || topCtx.Err() != nil {
+			break
+		}
+	}
 	if err != nil {
 		return containertypes.Processes{}, fmt.Errorf("failed to list container processes: %w", err)
 	}
@@ -1229,6 +1238,7 @@ func (s *ContainerService) GetContainerProcesses(ctx context.Context, containerI
 	return processes, nil
 }
 
+// GetContainerNameByReference resolves a container's clean name from a Docker ID or name.
 func (s *ContainerService) GetContainerNameByReference(ctx context.Context, ref string) (string, error) {
 	info, err := s.GetContainerByReference(ctx, ref)
 	if err != nil {

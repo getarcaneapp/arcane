@@ -2,9 +2,9 @@
 	import { getSettingsFormContext, hasSettingsFormContext } from '#lib/hooks/settings-form-context.js';
 	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
-	import * as Alert from '#lib/components/ui/alert/index.js';
 	import { Switch } from '#lib/components/ui/switch/index.js';
 	import SettingsRow from '#lib/components/settings/settings-row.svelte';
+	import SettingsSection from '#lib/components/settings/settings-section.svelte';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { toast } from 'svelte-sonner';
 	import { onDestroy, onMount } from 'svelte';
@@ -15,7 +15,7 @@
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';
 	import { notificationService } from '#lib/services/notification-service.js';
 	import { type NotificationProviderKey, NOTIFICATION_PROVIDER_KEYS } from '#lib/types/notifications.js';
-	import { AlertIcon, NotificationsIcon } from '#lib/icons/index.js';
+	import { NotificationsIcon } from '#lib/icons/index.js';
 	import { settingsService } from '#lib/services/settings-service.js';
 	import type { Settings } from '#lib/types/settings.js';
 	import { hasPermission } from '#lib/utils/auth.js';
@@ -282,11 +282,13 @@
 					</Tabs.Content>
 				{/each}
 				<Tabs.Content value="mobile" class="mt-4">
-					<div class="space-y-4">
+					<SettingsSection>
 						<SettingsRow
+							for="apnsEnabled"
 							label={m.notifications_mobile_push_label()}
 							description={m.notifications_mobile_push_description()}
-							layout="inline"
+							warningText={m.notifications_mobile_push_external_warning()}
+							layout="switch"
 						>
 							<Switch
 								id="apnsEnabled"
@@ -296,8 +298,7 @@
 							/>
 						</SettingsRow>
 						{#if mobilePushEnabled}
-							<div class="space-y-2">
-								<p class="text-sm font-medium">{m.notifications_mobile_devices()}</p>
+							<SettingsRow label={m.notifications_mobile_devices()} layout="wide">
 								{#if mobileDevices.length === 0}
 									<p class="text-xs text-muted-foreground">{m.notifications_mobile_devices_empty()}</p>
 								{:else}
@@ -323,13 +324,9 @@
 										{/each}
 									</ul>
 								{/if}
-							</div>
+							</SettingsRow>
 						{/if}
-						<Alert.Root variant="warning" size="sm">
-							<AlertIcon class="size-4" />
-							<Alert.Description>{m.notifications_mobile_push_external_warning()}</Alert.Description>
-						</Alert.Root>
-					</div>
+					</SettingsSection>
 				</Tabs.Content>
 			</Tabs.Root>
 		</fieldset>

@@ -37,8 +37,8 @@
 				return m.api_key_page_title();
 			case 'webhooks':
 				return m.webhook_page_title();
-			case 'build':
-				return m.build();
+			case 'builds':
+				return m.builds();
 			case 'diagnostics':
 				return m.diagnostics();
 			default:

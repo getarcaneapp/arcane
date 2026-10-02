@@ -186,7 +186,7 @@ test.describe('Security Page', () => {
 			}
 		);
 
-		await page.getByRole('button', { name: 'Scan all images', exact: true }).click();
+		await page.getByRole('button', { name: 'Scan all images', exact: true }).first().click();
 
 		await expect(
 			page.getByText('Started 1 scans; 1 failed to start', { exact: true })

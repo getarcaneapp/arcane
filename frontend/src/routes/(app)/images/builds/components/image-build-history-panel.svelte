@@ -16,12 +16,14 @@
 		ArrowDownIcon,
 		ClockIcon,
 		EllipsisIcon,
+		HammerIcon,
 		InfoIcon,
 		RedeployIcon,
 		SettingsIcon,
 		TagIcon,
 		TerminalIcon
 	} from '#lib/icons/index.js';
+	import { EmptyState } from '#lib/components/states/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { imageService } from '#lib/services/image-service.js';
@@ -286,7 +288,16 @@
 		{mobileFields}
 		rowActions={BuildHistoryRowActions}
 		mobileCard={BuildHistoryMobileCard}
-	/>
+	>
+		{#snippet emptyState()}
+			<EmptyState
+				variant="plain"
+				icon={HammerIcon}
+				title={m.image_build_history_empty_title()}
+				description={m.image_build_history_empty_description()}
+			/>
+		{/snippet}
+	</ArcaneTable>
 
 	<ResponsiveDialog
 		bind:open={detailsOpen}

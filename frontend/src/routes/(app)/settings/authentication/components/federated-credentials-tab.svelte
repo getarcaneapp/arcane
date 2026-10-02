@@ -121,9 +121,9 @@ steps:
 <IfPermitted perm="federated:list">
 	<div class="space-y-4">
 		<div class="flex items-start justify-between gap-4">
-			<div>
-				<h3 class="text-base font-semibold">{m.federated_credential_page_title()}</h3>
-				<p class="mt-1 text-sm text-muted-foreground">{m.federated_credential_page_description()}</p>
+			<div class="px-1">
+				<h3 class="text-sm font-semibold">{m.federated_credential_page_title()}</h3>
+				<p class="text-xs text-muted-foreground">{m.federated_credential_page_description()}</p>
 			</div>
 			<IfPermitted adminOnly>
 				<ArcaneButton

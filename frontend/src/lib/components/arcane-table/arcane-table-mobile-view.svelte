@@ -2,7 +2,6 @@
 	import type { ArcaneRow, ArcaneSvelteTable } from './table-features';
 	import Skeleton from '#lib/components/ui/skeleton/skeleton.svelte';
 	import DropdownCard from '#lib/components/dropdown-card.svelte';
-	import TableEmpty from './table-empty.svelte';
 	import { m } from '#lib/paraglide/messages.js';
 	import { cn } from '#lib/utils.js';
 	import type { Snippet, Component } from 'svelte';
@@ -19,11 +18,11 @@
 		mobileFieldVisibility,
 		groupedRows = null,
 		groupIcon,
-		unstyled = false,
 		expandedRowContent,
 		expandedRows,
 		onToggleRowExpanded,
-		loading = false
+		loading = false,
+		empty
 	}: {
 		table: ArcaneSvelteTable<TData>;
 		rowIndex: ReadonlyMap<string, { row: ArcaneRow<TData>; index: number }>;
@@ -31,12 +30,13 @@
 		mobileFieldVisibility: Record<string, boolean>;
 		groupedRows?: GroupedData<TData>[] | null;
 		groupIcon?: (groupName: string) => Component;
-		unstyled?: boolean;
 		expandedRowContent?: Snippet<[{ row: ArcaneRow<TData>; item: TData }]>;
 		expandedRows?: Set<string>;
 		onToggleRowExpanded?: (rowId: string) => void;
 		/** First-load flag — when set and there's no data, render skeleton cards. */
 		loading?: boolean;
+		/** Renders the empty state; receives an optional wrapper class. */
+		empty: Snippet;
 	} = $props();
 
 	const hasExpand = $derived(!!expandedRowContent);
@@ -80,8 +80,8 @@
 {/snippet}
 
 {#snippet emptyState()}
-	<div class="p-4">
-		<TableEmpty {unstyled} class="min-h-48" />
+	<div class="min-h-48 p-4">
+		{@render empty()}
 	</div>
 {/snippet}
 

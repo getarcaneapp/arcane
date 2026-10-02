@@ -1,7 +1,8 @@
 <script lang="ts">
-	import * as Card from '#lib/components/ui/card/index.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import FormInput from '#lib/components/form/form-input.svelte';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import SettingsRow from '#lib/components/settings/settings-row.svelte';
+	import SettingsSection from '#lib/components/settings/settings-section.svelte';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import PermissionPicker from './permission-picker.svelte';
 	import type { Role, PermissionsManifest } from '#lib/types/auth.js';
@@ -55,76 +56,63 @@
 </script>
 
 <form onsubmit={preventDefault(handleSubmit)} novalidate class="grid grid-cols-1 gap-6 lg:grid-cols-aside-80">
-	<div class="space-y-4">
-		<Card.Root>
-			<Card.Header>
-				<Card.Title>
-					<span class="text-base">{role ? m.roles_edit_title() : m.roles_create_title()}</span>
-				</Card.Title>
-			</Card.Header>
-			<Card.Content>
-				<div class="flex flex-col gap-4">
-					<div class="flex items-center gap-2">
-						<Badge variant={isBuiltIn ? 'blue' : 'green'} size="sm">{isBuiltIn ? m.roles_built_in() : m.custom()}</Badge>
-					</div>
-
-					<FormInput
-						label={m.common_name()}
-						type="text"
-						placeholder={m.roles_name_placeholder()}
-						disabled={isBuiltIn || isLoading}
-						bind:input={inputs.name}
-					/>
-
-					<FormInput
-						label={m.common_description()}
-						type="text"
-						placeholder={m.roles_description_placeholder()}
-						disabled={isBuiltIn || isLoading}
-						bind:input={inputs.description}
-					/>
-
-					<div>
-						<div class="text-xs text-muted-foreground">
-							{m.roles_permissions_count({ count: selectedCount, total: totalPermissions })}
-						</div>
-						{#if inputs.permissions?.error}
-							<p class="mt-1 text-sm text-destructive">{inputs.permissions.error}</p>
-						{/if}
-					</div>
-
-					{#if isBuiltIn}
-						<p class="text-xs text-muted-foreground">{m.roles_built_in_note()}</p>
-					{/if}
-
-					{#if isBuiltIn && onClone}
-						<ArcaneButton
-							action="base"
-							tone="outline"
-							type="button"
-							class="w-full"
-							icon={CopyIcon}
-							onclick={onClone}
-							customLabel={m.roles_clone_button()}
-							disabled={isLoading}
-						/>
-					{/if}
-
-					{#if !isBuiltIn}
-						<ArcaneButton
-							action="save"
-							type="submit"
-							class="w-full"
-							disabled={isLoading}
-							loading={isLoading}
-							onclick={handleSubmit}
-							customLabel={role ? m.roles_save_changes() : m.common_create_button({ resource: m.roles_title() })}
-						/>
-					{/if}
-				</div>
-			</Card.Content>
-		</Card.Root>
-	</div>
+	<SettingsSection title={m.roles_details_section()}>
+		{#snippet actions()}
+			<Badge variant={isBuiltIn ? 'blue' : 'green'} size="sm">{isBuiltIn ? m.roles_built_in() : m.custom()}</Badge>
+		{/snippet}
+		<SettingsRow for="role-name" label={m.common_name()} error={inputs.name.error}>
+			<Input
+				id="role-name"
+				placeholder={m.roles_name_placeholder()}
+				disabled={isBuiltIn || isLoading}
+				bind:value={inputs.name.value}
+				aria-invalid={!!inputs.name.error}
+			/>
+		</SettingsRow>
+		<SettingsRow for="role-description" label={m.common_description()} error={inputs.description.error}>
+			<Input
+				id="role-description"
+				placeholder={m.roles_description_placeholder()}
+				disabled={isBuiltIn || isLoading}
+				bind:value={inputs.description.value}
+				aria-invalid={!!inputs.description.error}
+			/>
+		</SettingsRow>
+		<div class="flex flex-col gap-3 px-5 py-4">
+			<p class="text-xs text-muted-foreground">
+				{m.roles_permissions_count({ count: selectedCount, total: totalPermissions })}
+			</p>
+			{#if inputs.permissions?.error}
+				<p class="text-xs font-medium text-destructive">{inputs.permissions.error}</p>
+			{/if}
+			{#if isBuiltIn}
+				<p class="text-xs text-muted-foreground">{m.roles_built_in_note()}</p>
+			{/if}
+			{#if isBuiltIn && onClone}
+				<ArcaneButton
+					action="base"
+					tone="outline"
+					type="button"
+					class="w-full"
+					icon={CopyIcon}
+					onclick={onClone}
+					customLabel={m.roles_clone_button()}
+					disabled={isLoading}
+				/>
+			{/if}
+			{#if !isBuiltIn}
+				<ArcaneButton
+					action="save"
+					type="submit"
+					class="w-full"
+					disabled={isLoading}
+					loading={isLoading}
+					onclick={handleSubmit}
+					customLabel={role ? m.roles_save_changes() : m.common_create_button({ resource: m.roles_title() })}
+				/>
+			{/if}
+		</div>
+	</SettingsSection>
 
 	<div>
 		<PermissionPicker {manifest} bind:selected={inputs.permissions.value} disabled={isBuiltIn || isLoading} />

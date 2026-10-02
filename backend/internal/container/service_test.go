@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
-	"net/url"
 	"regexp"
 	"strings"
 	"testing"
@@ -631,9 +630,13 @@ func TestBuildSummariesUsesContainerTagPolicyUpdates(t *testing.T) {
 
 func TestContainerServiceGetContainerProcessesInternal(t *testing.T) {
 	tests := []struct {
-		name       string
-		status     int
-		body       string
+		name     string
+		status   int
+		body     string
+		fallback *struct {
+			status int
+			body   string
+		}
 		wantTitles []string
 		wantRows   [][]string
 		wantErr    func(error) bool
@@ -648,19 +651,34 @@ func TestContainerServiceGetContainerProcessesInternal(t *testing.T) {
 		{name: "empty", status: http.StatusOK, body: `{}`, wantTitles: []string{}, wantRows: [][]string{}},
 		{name: "not found", status: http.StatusNotFound, body: `{"message":"No such container: container-1"}`, wantErr: errdefs.IsNotFound},
 		{name: "not running", status: http.StatusConflict, body: `{"message":"container container-1 is not running"}`, wantErr: errdefs.IsConflict},
+		{
+			name:   "busybox ps falls back",
+			status: http.StatusInternalServerError,
+			body:   `{"message":"ps: bad -o argument '%cpu', supported arguments: user,group,comm,args,pid,ppid,pgid,etime,nice,rgroup,ruser,time,tty,vsz,stat,rss"}`,
+			fallback: &struct {
+				status int
+				body   string
+			}{http.StatusOK, `{"Titles":["PID","USER","ELAPSED","COMMAND"],"Processes":[["1","root","01:02:03","nginx: master process nginx -g daemon off;"]]}`},
+			wantTitles: []string{"PID", "USER", "ELAPSED", "COMMAND"},
+			wantRows:   [][]string{{"1", "root", "01:02:03", "nginx: master process nginx -g daemon off;"}},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var gotQuery url.Values
+			var gotArgs []string
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.Method != http.MethodGet || dockerTestPathInternal(r.URL.Path) != "/containers/container-1/top" {
 					http.NotFound(w, r)
 					return
 				}
-				gotQuery = r.URL.Query()
+				gotArgs = append(gotArgs, r.URL.Query().Get("ps_args"))
+				status, body := tt.status, tt.body
+				if tt.fallback != nil && len(gotArgs) > 1 {
+					status, body = tt.fallback.status, tt.fallback.body
+				}
 				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(tt.status)
-				if _, err := io.WriteString(w, tt.body); err != nil {
+				w.WriteHeader(status)
+				if _, err := io.WriteString(w, body); err != nil {
 					t.Error(err)
 				}
 			}))
@@ -668,7 +686,11 @@ func TestContainerServiceGetContainerProcessesInternal(t *testing.T) {
 			svc := NewContainerService(nil, docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClientInternal(t, server)), nil, nil, nil)
 
 			processes, err := svc.GetContainerProcesses(context.Background(), "container-1")
-			require.Equal(t, strings.Join(containerProcessesPsArgs, " "), gotQuery.Get("ps_args"))
+			wantArgs := []string{strings.Join(containerProcessesPsArgs[0], " ")}
+			if tt.fallback != nil {
+				wantArgs = append(wantArgs, strings.Join(containerProcessesPsArgs[1], " "))
+			}
+			require.Equal(t, wantArgs, gotArgs)
 			if tt.wantErr != nil {
 				require.True(t, tt.wantErr(err), "unexpected error: %v", err)
 				return

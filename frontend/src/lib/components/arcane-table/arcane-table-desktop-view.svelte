@@ -14,7 +14,6 @@
 		type SelectionModifiers
 	} from './arcane-table.types.svelte';
 	import TableCheckbox from './arcane-table-checkbox.svelte';
-	import TableEmpty from './table-empty.svelte';
 	import { untrack, type Component, type Snippet } from 'svelte';
 	import type { Attachment } from 'svelte/attachments';
 	import { slide } from 'svelte/transition';
@@ -42,6 +41,7 @@
 		onToggleRowExpanded,
 		scrollElement,
 		loading = false,
+		empty,
 		wrapText = false
 	}: {
 		table: ArcaneSvelteTable<TData>;
@@ -65,6 +65,8 @@
 		scrollElement?: HTMLElement;
 		/** First-load flag — when set and there's no data, render skeleton rows. */
 		loading?: boolean;
+		/** Renders the empty state; receives an optional wrapper class. */
+		empty: Snippet;
 		/** Wrap cell content instead of truncating (disables virtualization: rows lose their fixed height). */
 		wrapText?: boolean;
 	} = $props();
@@ -293,7 +295,7 @@
 {#snippet emptyState()}
 	<Table.Row>
 		<Table.Cell colspan={columnsCount} class="h-48">
-			<TableEmpty {unstyled} />
+			{@render empty()}
 		</Table.Cell>
 	</Table.Row>
 {/snippet}

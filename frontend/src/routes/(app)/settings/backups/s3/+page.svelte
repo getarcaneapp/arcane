@@ -5,7 +5,8 @@
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { SettingsPageLayout } from '#lib/layouts/index.js';
 	import type { ActionButton } from '#lib/components/action-button-group/types.js';
-	import { RemoteEnvironmentIcon } from '#lib/icons/index.js';
+	import { CloudStorageIcon, RemoteEnvironmentIcon } from '#lib/icons/index.js';
+	import { EmptyState } from '#lib/components/states/index.js';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 	import { s3DestinationService } from '#lib/services/s3-destination-service.js';
 	import { discoverDestinationBackups } from '#lib/utils/backups.js';
@@ -102,6 +103,17 @@
 	]);
 </script>
 
+{#snippet destinationsEmptyState()}
+	<EmptyState
+		variant="plain"
+		icon={CloudStorageIcon}
+		title={m.s3_destinations_empty_title()}
+		description={m.s3_destinations_empty_description()}
+		actionLabel={isReadOnly ? undefined : m.s3_destination_add()}
+		onAction={openCreate}
+	/>
+{/snippet}
+
 <SettingsPageLayout
 	title={m.s3_destinations_title()}
 	description={m.s3_destinations_description()}
@@ -112,6 +124,7 @@
 >
 	{#snippet mainContent()}
 		<S3DestinationTable
+			emptyState={destinationsEmptyState}
 			bind:destinations
 			bind:requestOptions
 			onDestinationsChanged={(options) => s3DestinationService.list(options)}

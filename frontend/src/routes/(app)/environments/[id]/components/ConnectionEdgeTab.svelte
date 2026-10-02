@@ -1,10 +1,11 @@
 <script lang="ts">
-	import * as Card from '#lib/components/ui/card/index.js';
+	import SettingsRow from '#lib/components/settings/settings-row.svelte';
+	import SettingsSection from '#lib/components/settings/settings-section.svelte';
 	import { Badge, type BadgeVariant } from '#lib/components/ui/badge/index.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import EnvironmentConnectionDetails from './EnvironmentConnectionDetails.svelte';
 	import { m } from '#lib/paraglide/messages.js';
-	import { ConnectionIcon, DownloadIcon, ResetIcon, SecurityIcon } from '#lib/icons/index.js';
+	import { DownloadIcon, ResetIcon } from '#lib/icons/index.js';
 	import { formatDateTimeShort } from '#lib/utils/formatting.js';
 	import type { ConnectionEdgeTabProps } from './tab-props';
 
@@ -47,113 +48,92 @@
 	</div>
 {/snippet}
 
-<div class="space-y-6">
-	<Card.Root variant="transparent" class="flex flex-col">
-		<Card.Header icon={ConnectionIcon}>
-			<div class="flex flex-col space-y-1.5">
-				<Card.Title>
-					<h2>{m.connection_edge()}</h2>
-				</Card.Title>
-				<Card.Description>{m.connection_edge_description()}</Card.Description>
-			</div>
-		</Card.Header>
-		<Card.Content>
-			<EnvironmentConnectionDetails {environment} {currentStatus} />
-		</Card.Content>
-	</Card.Root>
+<div class="space-y-8">
+	<SettingsSection title={m.connection_edge()} description={m.connection_edge_description()} variant="plain">
+		<EnvironmentConnectionDetails {environment} {currentStatus} />
+	</SettingsSection>
 
 	{#if showAgentSecurity}
-		<Card.Root variant="transparent" class="flex flex-col">
-			<Card.Header icon={SecurityIcon}>
-				<div class="flex flex-col space-y-1.5">
-					<Card.Title>
-						<h2>{m.environments_agent_mtls_section_title()}</h2>
-					</Card.Title>
-					<Card.Description>{m.environments_agent_mtls_description()}</Card.Description>
+		<SettingsSection title={m.environments_agent_mtls_section_title()} description={m.environments_agent_mtls_description()}>
+			{#if mtlsCertificateBadge && environment.edgeMTLSCertificate}
+				<div class="grid grid-cols-1 gap-3 p-5 sm:grid-cols-2 lg:grid-cols-3">
+					{@render badgeTile(
+						m.environments_edge_mtls_certificate_status_label(),
+						mtlsCertificateBadge.text,
+						mtlsCertificateBadge.variant
+					)}
+					{@render tile(
+						m.environments_edge_mtls_certificate_expires_label(),
+						environment.edgeMTLSCertificate.expiresAt
+							? formatDateTimeShort(environment.edgeMTLSCertificate.expiresAt) || m.common_unknown()
+							: '—',
+						{
+							subtext:
+								environment.edgeMTLSCertificate.daysRemaining !== undefined
+									? m.environments_edge_mtls_certificate_days_remaining({
+											count: environment.edgeMTLSCertificate.daysRemaining
+										})
+									: undefined
+						}
+					)}
+					{#if environment.edgeMTLSCertificate.commonName}
+						{@render tile(m.environments_edge_mtls_certificate_common_name_label(), environment.edgeMTLSCertificate.commonName, {
+							mono: true
+						})}
+					{/if}
 				</div>
-			</Card.Header>
-			<Card.Content>
-				<div class="flex flex-col gap-6">
-					{#if mtlsCertificateBadge && environment.edgeMTLSCertificate}
-						<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-							{@render badgeTile(
-								m.environments_edge_mtls_certificate_status_label(),
-								mtlsCertificateBadge.text,
-								mtlsCertificateBadge.variant
-							)}
-							{@render tile(
-								m.environments_edge_mtls_certificate_expires_label(),
-								environment.edgeMTLSCertificate.expiresAt
-									? formatDateTimeShort(environment.edgeMTLSCertificate.expiresAt) || m.common_unknown()
-									: '—',
-								{
-									subtext:
-										environment.edgeMTLSCertificate.daysRemaining !== undefined
-											? m.environments_edge_mtls_certificate_days_remaining({
-													count: environment.edgeMTLSCertificate.daysRemaining
-												})
-											: undefined
-								}
-							)}
-							{#if environment.edgeMTLSCertificate.commonName}
-								{@render tile(
-									m.environments_edge_mtls_certificate_common_name_label(),
-									environment.edgeMTLSCertificate.commonName,
-									{ mono: true }
-								)}
-							{/if}
-						</div>
-					{/if}
+			{/if}
 
-					{#if showMTLSDownloads}
-						<div class="flex flex-wrap items-center gap-2">
-							<ArcaneButton
-								action="base"
-								tone="outline"
-								href={mtlsBundleDownloadHref}
-								rel="external"
-								icon={DownloadIcon}
-								customLabel={m.environments_agent_mtls_download_bundle()}
-							/>
-							<ArcaneButton
-								action="base"
-								tone="outline"
-								href={mtlsCertificateDownloadHref}
-								rel="external"
-								icon={DownloadIcon}
-								customLabel={m.environments_agent_mtls_download_certificate()}
-							/>
-							<ArcaneButton
-								action="base"
-								tone="outline"
-								href={mtlsKeyDownloadHref}
-								rel="external"
-								icon={DownloadIcon}
-								customLabel={m.environments_agent_mtls_download_key()}
-							/>
-						</div>
-					{/if}
-
-					<div class={showMTLSDownloads || mtlsCertificateBadge ? 'border-t pt-6' : ''}>
-						<div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-							<div class="space-y-0.5">
-								<h3 class="text-sm font-medium">{m.environments_regenerate_api_key()}</h3>
-								<p class="text-xs text-muted-foreground">{m.environments_regenerate_dialog_message()}</p>
-							</div>
-							<ArcaneButton
-								action="base"
-								tone="outline"
-								onclick={onRegenerateApiKey}
-								disabled={isRegeneratingKey}
-								loading={isRegeneratingKey}
-								icon={ResetIcon}
-								customLabel={m.environments_regenerate_api_key()}
-								class="shrink-0"
-							/>
-						</div>
+			{#if showMTLSDownloads}
+				<SettingsRow
+					label={m.environments_agent_mtls_downloads_label()}
+					description={m.environments_agent_mtls_downloads_description()}
+					layout="wide"
+				>
+					<div class="flex flex-wrap items-center gap-2">
+						<ArcaneButton
+							action="base"
+							tone="outline"
+							href={mtlsBundleDownloadHref}
+							rel="external"
+							icon={DownloadIcon}
+							customLabel={m.environments_agent_mtls_download_bundle()}
+						/>
+						<ArcaneButton
+							action="base"
+							tone="outline"
+							href={mtlsCertificateDownloadHref}
+							rel="external"
+							icon={DownloadIcon}
+							customLabel={m.environments_agent_mtls_download_certificate()}
+						/>
+						<ArcaneButton
+							action="base"
+							tone="outline"
+							href={mtlsKeyDownloadHref}
+							rel="external"
+							icon={DownloadIcon}
+							customLabel={m.environments_agent_mtls_download_key()}
+						/>
 					</div>
-				</div>
-			</Card.Content>
-		</Card.Root>
+				</SettingsRow>
+			{/if}
+
+			<SettingsRow
+				label={m.environments_regenerate_api_key()}
+				description={m.environments_regenerate_dialog_message()}
+				layout="switch"
+			>
+				<ArcaneButton
+					action="base"
+					tone="outline"
+					onclick={onRegenerateApiKey}
+					disabled={isRegeneratingKey}
+					loading={isRegeneratingKey}
+					icon={ResetIcon}
+					customLabel={m.environments_regenerate_api_key()}
+				/>
+			</SettingsRow>
+		</SettingsSection>
 	{/if}
 </div>

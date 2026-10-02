@@ -1,9 +1,9 @@
 <script lang="ts" generics="T extends object">
-	import { Label } from '#lib/components/ui/label/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
 	import Textarea from '#lib/components/ui/textarea/textarea.svelte';
+	import { Switch } from '#lib/components/ui/switch/index.js';
 	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
-	import SwitchWithLabel from '#lib/components/form/labeled-switch.svelte';
-	import TextInputWithLabel from '#lib/components/form/text-input-with-label.svelte';
+	import SettingsRow from '#lib/components/settings/settings-row.svelte';
 	import type {
 		ProviderFieldKey,
 		ProviderFormField,
@@ -83,22 +83,21 @@
 
 {#snippet renderField(field: ProviderFormField<T>)}
 	{#if field.kind === 'input'}
-		<TextInputWithLabel
-			id={getFieldId(field)}
-			value={getInputValue(field.key)}
-			onChange={(value) => setInputValue(field, value)}
-			{disabled}
-			label={field.label}
-			placeholder={field.placeholder ?? ''}
-			type={field.inputType ?? 'text'}
-			autocomplete={field.autocomplete ?? 'off'}
-			helpText={field.helpText}
-			error={getFieldError(field)}
-			required={field.required ?? false}
-		/>
+		<SettingsRow for={getFieldId(field)} label={field.label} helpText={field.helpText} error={getFieldError(field)}>
+			<Input
+				id={getFieldId(field)}
+				value={getInputValue(field.key)}
+				oninput={(event) => setInputValue(field, (event.currentTarget as HTMLInputElement).value)}
+				{disabled}
+				placeholder={field.placeholder ?? ''}
+				type={field.inputType ?? 'text'}
+				autocomplete={field.autocomplete ?? 'off'}
+				required={field.required ?? false}
+				aria-invalid={!!getFieldError(field)}
+			/>
+		</SettingsRow>
 	{:else if field.kind === 'textarea'}
-		<div class="space-y-2">
-			<Label for={getFieldId(field)}>{field.label}</Label>
+		<SettingsRow for={getFieldId(field)} label={field.label} helpText={field.helpText} error={getFieldError(field)} layout="wide">
 			<Textarea
 				id={getFieldId(field)}
 				value={getStringValue(field.key)}
@@ -107,71 +106,45 @@
 				autocomplete={field.autocomplete ?? 'off'}
 				placeholder={field.placeholder ?? ''}
 				rows={field.rows ?? 2}
+				aria-invalid={!!getFieldError(field)}
 			/>
-			{#if getFieldError(field)}
-				<p class="text-sm text-destructive">{getFieldError(field)}</p>
-			{:else if field.helpText}
-				<p class="text-sm text-muted-foreground">{field.helpText}</p>
-			{/if}
-		</div>
+		</SettingsRow>
 	{:else if field.kind === 'switch'}
-		<SwitchWithLabel
-			id={getFieldId(field)}
-			checked={getBooleanValue(field.key)}
-			onCheckedChange={(value) => setBooleanValue(field.key, value)}
-			{disabled}
+		<SettingsRow
+			for={getFieldId(field)}
 			label={field.label}
 			description={field.description}
 			error={getFieldError(field)}
-		/>
-	{:else if field.kind === 'select'}
-		<SelectWithLabel
-			id={getFieldId(field)}
-			value={getStringValue(field.key)}
-			onValueChange={(value) => setSelectValue(field, value)}
-			{disabled}
-			label={field.label}
-			placeholder={field.placeholder}
-			description={field.description}
-			error={getFieldError(field)}
-			options={field.options}
-		/>
-	{:else if field.kind === 'native-select'}
-		<div class="space-y-2">
-			<Label for={getFieldId(field)}>{field.label}</Label>
-			<select
+			layout="switch"
+		>
+			<Switch
 				id={getFieldId(field)}
-				value={getStringValue(field.key)}
-				onchange={(event) => setSelectValue(field, (event.target as HTMLSelectElement).value)}
+				checked={getBooleanValue(field.key)}
+				onCheckedChange={(value) => setBooleanValue(field.key, value)}
 				{disabled}
-				class="flex h-10 rounded-md border border-input bg-background px-3 py-2 text-base ring-offset-background placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 md:text-sm"
-			>
-				{#each field.options as option (option.value)}
-					<option value={option.value}>{option.label}</option>
-				{/each}
-			</select>
-			{#if getFieldError(field)}
-				<p class="text-sm text-destructive">{getFieldError(field)}</p>
-			{:else if field.description}
-				<p class="text-sm text-muted-foreground">{field.description}</p>
-			{/if}
-		</div>
+			/>
+		</SettingsRow>
+	{:else if field.kind === 'select' || field.kind === 'native-select'}
+		<SettingsRow for={getFieldId(field)} label={field.label} description={field.description} error={getFieldError(field)}>
+			<SelectWithLabel
+				id={getFieldId(field)}
+				hideLabel
+				value={getStringValue(field.key)}
+				onValueChange={(value) => setSelectValue(field, value)}
+				{disabled}
+				label={field.label}
+				placeholder={field.kind === 'select' ? field.placeholder : undefined}
+				options={field.options.map((option) => ({ ...option, value: String(option.value) }))}
+			/>
+		</SettingsRow>
 	{/if}
 {/snippet}
 
 {#each schema as node, index (`${index}-${node.kind}`)}
 	{#if node.kind === 'row'}
-		<div class={node.className ?? 'grid grid-cols-2 gap-4'}>
-			{#each node.fields as field, fieldIndex (`${fieldIndex}-${field.key}`)}
-				<div class={field.wrapperClass ?? ''}>
-					{@render renderField(field)}
-				</div>
-			{/each}
-		</div>
-	{:else if node.wrapperClass}
-		<div class={node.wrapperClass}>
-			{@render renderField(node)}
-		</div>
+		{#each node.fields as field, fieldIndex (`${fieldIndex}-${field.key}`)}
+			{@render renderField(field)}
+		{/each}
 	{:else}
 		{@render renderField(node)}
 	{/if}

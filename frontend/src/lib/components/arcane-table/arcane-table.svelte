@@ -39,6 +39,7 @@
 	import ArcaneTableCell from './arcane-table-cell.svelte';
 	import ArcaneTableDesktopView from './arcane-table-desktop-view.svelte';
 	import ArcaneTableMobileView from './arcane-table-mobile-view.svelte';
+	import TableEmpty from './table-empty.svelte';
 
 	let {
 		items,
@@ -73,7 +74,8 @@
 		onGroupToggle,
 		imageNameFilterOptions,
 		// Expandable row props
-		expandedRowContent
+		expandedRowContent,
+		emptyState
 	}: {
 		items: Paginated<TData>;
 		requestOptions: SearchPaginationSortRequest;
@@ -118,6 +120,8 @@
 		imageNameFilterOptions?: string[];
 		// Expandable row props
 		expandedRowContent?: Snippet<[{ row: ArcaneRow<TData>; item: TData }]>;
+		/** First-use empty state, shown when the collection is empty and no search or filter is active. */
+		emptyState?: Snippet;
 	} = $props();
 
 	// Default page size constant
@@ -706,6 +710,17 @@
 
 	onDestroy(() => clearTimeout(persistTimeout));
 
+	// With `withoutFilters` the column filters aren't user-controlled — the page bakes
+	// in its own scoping filter (e.g. /updates pins `updates`), which must not count as filtering.
+	const isFiltered = $derived(
+		!!table.atoms.globalFilter.get() || (!withoutFilters && table.atoms.columnFilters.get().length > 0)
+	);
+
+	function resetFilters() {
+		if (!withoutFilters) table.setColumnFilters([]);
+		table.setGlobalFilter('');
+	}
+
 	// Styled/unstyled differ only in wrapper chrome; the inner table/mobile/pagination tree is shared.
 	const shellClass = $derived(
 		unstyled ? 'flex h-full min-h-0 flex-col' : 'bg-background/60 flex h-full min-h-0 flex-col overflow-hidden rounded-xl border'
@@ -717,6 +732,14 @@
 	<ArcaneTablePagination {items} {currentPage} {totalPages} {totalItems} {pageSize} {canPrev} {canNext} {setPage} {setPageSize} />
 {/snippet}
 
+{#snippet EmptySnippet()}
+	{#if !isFiltered && emptyState}
+		{@render emptyState()}
+	{:else}
+		<TableEmpty onClear={isFiltered ? resetFilters : undefined} />
+	{/if}
+{/snippet}
+
 {#snippet MobileViewSnippet()}
 	<ArcaneTableMobileView
 		{rowIndex}
@@ -725,11 +748,11 @@
 		{mobileFieldVisibility}
 		groupedRows={effectiveGroupedRows}
 		{groupIcon}
-		{unstyled}
 		{expandedRowContent}
 		{expandedRows}
 		onToggleRowExpanded={toggleRowExpanded}
 		{loading}
+		empty={EmptySnippet}
 	/>
 {/snippet}
 
@@ -752,6 +775,8 @@
 					{imageNameFilterOptions}
 					{wrapText}
 					onToggleWrapText={toggleWrapText}
+					{isFiltered}
+					onResetFilters={resetFilters}
 				/>
 			</div>
 		{/if}
@@ -783,6 +808,7 @@
 					scrollElement={desktopScrollEl}
 					{loading}
 					{wrapText}
+					empty={EmptySnippet}
 				/>
 			</div>
 		{:else}

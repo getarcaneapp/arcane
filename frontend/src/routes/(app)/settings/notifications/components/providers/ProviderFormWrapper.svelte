@@ -1,5 +1,6 @@
 <script lang="ts">
 	import SettingsRow from '#lib/components/settings/settings-row.svelte';
+	import SettingsSection from '#lib/components/settings/settings-section.svelte';
 	import { Switch } from '#lib/components/ui/switch/index.js';
 
 	interface Props {
@@ -14,14 +15,12 @@
 	let { id, title, description, enabled = $bindable(), disabled = false, children }: Props = $props();
 </script>
 
-<div class="space-y-4">
-	<SettingsRow label={title} {description} layout="inline">
+<!-- The tab bar names the provider, so the enable row carries the title. -->
+<SettingsSection>
+	<SettingsRow for="{id}-enabled" label={title} {description} layout="switch">
 		<Switch id="{id}-enabled" bind:checked={enabled} {disabled} />
 	</SettingsRow>
-
 	{#if enabled && children}
-		<div class="space-y-4 border-l-2 border-border/60 pl-5">
-			{@render children()}
-		</div>
+		{@render children()}
 	{/if}
-</div>
+</SettingsSection>

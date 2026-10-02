@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { EmptyState } from '#lib/components/states/index.js';
+	import { RegistryIcon } from '#lib/icons/index.js';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import { toast } from 'svelte-sonner';
 	import type { ContainerRegistry, ContainerRegistryPullUsage } from '#lib/types/docker.js';
@@ -130,9 +132,21 @@
 	});
 </script>
 
+{#snippet registriesEmptyState()}
+	<EmptyState
+		variant="plain"
+		icon={RegistryIcon}
+		title={m.registries_empty_title()}
+		description={m.registries_empty_description()}
+		actionLabel={canCreateRegistry ? m.common_add_button({ resource: m.common_registry() }) : undefined}
+		onAction={openCreateRegistryDialog}
+	/>
+{/snippet}
+
 <ResourcePageLayout title={m.registries_title()} subtitle={m.registries_subtitle()} {actionButtons}>
 	{#snippet mainContent()}
 		<RegistryTable
+			emptyState={registriesEmptyState}
 			bind:registries
 			bind:selectedIds
 			bind:requestOptions

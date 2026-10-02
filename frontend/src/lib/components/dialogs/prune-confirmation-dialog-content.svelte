@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import PruneModeCard from '#lib/components/prune/prune-mode-card.svelte';
+	import PruneModePicker from '#lib/components/prune/prune-mode-picker.svelte';
+	import SettingsRow from '#lib/components/settings/settings-row.svelte';
+	import SettingsSection from '#lib/components/settings/settings-section.svelte';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { SystemPruneRequest } from '#lib/types/automation.js';
 	import type { Settings } from '#lib/types/settings.js';
@@ -117,53 +119,41 @@
 </script>
 
 <div class="space-y-4">
-	<div class="grid gap-2 md:grid-cols-2">
-		<PruneModeCard
-			title={m.containers()}
-			description={m.scheduled_prune_containers_description()}
-			modeOptions={containerModes}
-			bind:value={containerMode}
-			bind:untilValue={containerUntil}
-			disabled={isPruning}
-		/>
-		<PruneModeCard
-			title={m.images()}
-			description={m.prune_images_dialog_description()}
-			modeOptions={imageModes}
-			bind:value={imageMode}
-			bind:untilValue={imageUntil}
-			disabled={isPruning}
-		/>
-		<PruneModeCard
-			title={m.resource_networks_cap()}
-			description={m.scheduled_prune_networks_description()}
-			modeOptions={networkModes}
-			bind:value={networkMode}
-			bind:untilValue={networkUntil}
-			disabled={isPruning}
-		/>
-		<PruneModeCard
-			title={m.resource_volumes_cap()}
-			description={m.prune_volumes_guidance()}
-			modeOptions={volumeModes}
-			bind:value={volumeMode}
-			disabled={isPruning}
-			warningTitle={m.prune_volumes_warning_title()}
-			warningDescription={volumeMode === 'all'
-				? m.prune_volumes_warning_description_all()
-				: m.prune_volumes_warning_description()}
-		/>
-		<div class="md:col-span-2">
-			<PruneModeCard
-				title={m.build_cache()}
-				description={m.scheduled_prune_build_cache_description()}
+	<SettingsSection>
+		<SettingsRow label={m.containers()} description={m.scheduled_prune_containers_description()} layout="wide">
+			<PruneModePicker
+				modeOptions={containerModes}
+				bind:value={containerMode}
+				bind:untilValue={containerUntil}
+				disabled={isPruning}
+			/>
+		</SettingsRow>
+		<SettingsRow label={m.images()} description={m.prune_images_dialog_description()} layout="wide">
+			<PruneModePicker modeOptions={imageModes} bind:value={imageMode} bind:untilValue={imageUntil} disabled={isPruning} />
+		</SettingsRow>
+		<SettingsRow label={m.resource_networks_cap()} description={m.scheduled_prune_networks_description()} layout="wide">
+			<PruneModePicker modeOptions={networkModes} bind:value={networkMode} bind:untilValue={networkUntil} disabled={isPruning} />
+		</SettingsRow>
+		<SettingsRow label={m.resource_volumes_cap()} description={m.prune_volumes_guidance()} layout="wide">
+			<PruneModePicker
+				modeOptions={volumeModes}
+				bind:value={volumeMode}
+				disabled={isPruning}
+				warningTitle={m.prune_volumes_warning_title()}
+				warningDescription={volumeMode === 'all'
+					? m.prune_volumes_warning_description_all()
+					: m.prune_volumes_warning_description()}
+			/>
+		</SettingsRow>
+		<SettingsRow label={m.build_cache()} description={m.scheduled_prune_build_cache_description()} layout="wide">
+			<PruneModePicker
 				modeOptions={buildCacheModes}
 				bind:value={buildCacheMode}
 				bind:untilValue={buildCacheUntil}
 				disabled={isPruning}
 			/>
-		</div>
-	</div>
+		</SettingsRow>
+	</SettingsSection>
 
 	<div class="grid grid-cols-2 gap-3">
 		<ArcaneButton action="cancel" onclick={handleCancelInternal} disabled={isPruning} class="w-full" />

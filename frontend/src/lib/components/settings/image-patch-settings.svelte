@@ -2,12 +2,10 @@
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { featureStore } from '#lib/stores/features.store.svelte.js';
 	import { Switch } from '#lib/components/ui/switch/index.js';
-	import TextInputWithLabel from '#lib/components/form/text-input-with-label.svelte';
+	import { Input } from '#lib/components/ui/input/index.js';
 	import SettingsRow from '#lib/components/settings/settings-row.svelte';
-	import { SecurityIcon } from '#lib/icons/index.js';
+	import SettingsSection from '#lib/components/settings/settings-section.svelte';
 	import { m } from '#lib/paraglide/messages.js';
-
-	import SectionCard from '#lib/components/section-card.svelte';
 
 	type ImagePatchFormValues = {
 		imagePatchSuffix: string;
@@ -30,11 +28,12 @@
 	const vulnerabilityManagementEnabled = $derived(featureStore.isEnabled('vulnerabilityManagement', targetEnvironmentId));
 </script>
 
-<SectionCard variant="transparent" title={m.security_image_patching_heading()} icon={SecurityIcon} class="flex flex-col" divided>
+<SettingsSection title={m.security_image_patching_heading()}>
 	<SettingsRow
+		for="imageAutoPatchEnabledSwitch"
 		label={m.security_image_auto_patch_enabled_label()}
 		description={m.security_image_auto_patch_enabled_description()}
-		layout="inline"
+		layout="switch"
 	>
 		<Switch
 			id="imageAutoPatchEnabledSwitch"
@@ -44,32 +43,40 @@
 	</SettingsRow>
 
 	<SettingsRow
+		for="imagePatchAllPlatformsSwitch"
 		label={m.security_image_patch_all_platforms_label()}
 		description={m.security_image_patch_all_platforms_description()}
-		layout="inline"
+		layout="switch"
 	>
 		<Switch id="imagePatchAllPlatformsSwitch" bind:checked={formInputs.imagePatchAllPlatforms.value} />
 	</SettingsRow>
 
-	<div class="max-w-xl">
-		<TextInputWithLabel
+	<SettingsRow
+		for="imagePatchSuffix"
+		label={m.security_image_patch_suffix_label()}
+		description={m.security_image_patch_suffix_description()}
+		error={formInputs.imagePatchSuffix.error}
+	>
+		<Input
+			id="imagePatchSuffix"
 			bind:value={formInputs.imagePatchSuffix.value}
-			error={formInputs.imagePatchSuffix.error}
-			label={m.security_image_patch_suffix_label()}
-			description={m.security_image_patch_suffix_description()}
 			placeholder="patched"
-			type="text"
+			aria-invalid={!!formInputs.imagePatchSuffix.error}
 		/>
-	</div>
+	</SettingsRow>
 
-	<div class="max-w-xs">
-		<TextInputWithLabel
-			bind:value={formInputs.imagePatchTimeoutSec.value}
-			error={formInputs.imagePatchTimeoutSec.error}
-			label={m.security_image_patch_timeout_label()}
-			description={m.security_image_patch_timeout_description()}
-			placeholder="600"
+	<SettingsRow
+		for="imagePatchTimeoutSec"
+		label={m.security_image_patch_timeout_label()}
+		description={m.security_image_patch_timeout_description()}
+		error={formInputs.imagePatchTimeoutSec.error}
+	>
+		<Input
+			id="imagePatchTimeoutSec"
 			type="number"
+			bind:value={formInputs.imagePatchTimeoutSec.value}
+			placeholder="600"
+			aria-invalid={!!formInputs.imagePatchTimeoutSec.error}
 		/>
-	</div>
-</SectionCard>
+	</SettingsRow>
+</SettingsSection>

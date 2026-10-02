@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { Snippet } from 'svelte';
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
@@ -26,13 +27,15 @@
 		selectedIds = $bindable(),
 		requestOptions = $bindable(),
 		pullUsageByRegistry = {},
-		onEditRegistry
+		onEditRegistry,
+		emptyState
 	}: {
 		registries: Paginated<ContainerRegistry>;
 		selectedIds: string[];
 		requestOptions: SearchPaginationSortRequest;
 		pullUsageByRegistry?: Record<string, ContainerRegistryPullUsage>;
 		onEditRegistry: (registry: ContainerRegistry) => void;
+		emptyState?: Snippet;
 	} = $props();
 
 	let removingId = $state<string | null>(null);
@@ -307,6 +310,7 @@
 
 <div>
 	<ArcaneTable
+		{emptyState}
 		persistKey="arcane-registries-table"
 		items={registries}
 		bind:requestOptions

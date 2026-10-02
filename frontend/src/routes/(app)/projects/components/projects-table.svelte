@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { Snippet } from 'svelte';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import type { Project, ProjectTagColor, ProjectTagOption } from '#lib/types/swarm.js';
@@ -46,7 +47,8 @@
 		showArchived = false,
 		onToggleArchived,
 		onRefreshData,
-		availableTags = []
+		availableTags = [],
+		emptyState
 	}: {
 		projects: Paginated<Project>;
 		selectedIds: string[];
@@ -56,6 +58,7 @@
 		onToggleArchived?: (checked: boolean) => void | Promise<void>;
 		onRefreshData?: (options: SearchPaginationSortRequest) => Promise<void>;
 		availableTags?: ProjectTagOption[];
+		emptyState?: Snippet;
 	} = $props();
 
 	let actionStatus = $state<Record<string, ActionStatus>>({});
@@ -594,6 +597,7 @@
 {/snippet}
 
 <ArcaneTable
+	{emptyState}
 	persistKey="arcane-project-table"
 	items={projects}
 	bind:requestOptions

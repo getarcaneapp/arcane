@@ -1,10 +1,11 @@
 <script lang="ts">
-	import LabeledSwitch from '#lib/components/form/labeled-switch.svelte';
 	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { ScrollArea } from '#lib/components/ui/scroll-area/index.js';
 	import * as Checkbox from '#lib/components/ui/checkbox/index.js';
-	import { Label } from '#lib/components/ui/label/index.js';
+	import SettingsRow from '#lib/components/settings/settings-row.svelte';
+	import SettingsSection from '#lib/components/settings/settings-section.svelte';
+	import { Switch } from '#lib/components/ui/switch/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { LoadingSpinnerIcon } from '#lib/icons/index.js';
 	import type { SystemVolumeBackupOption, SystemVolumeBackupSelectionMode } from '#lib/types/system-backup.js';
@@ -64,63 +65,74 @@
 	}
 </script>
 
-<div class="space-y-5 border-t pt-5">
-	<SelectWithLabel
-		id={`${idPrefix}-selection-mode`}
-		value={selectionMode}
-		onValueChange={(value) => onChange({ selectionMode: value as SystemVolumeBackupSelectionMode })}
+<SettingsSection class="pt-2">
+	<SettingsRow
+		for={`${idPrefix}-selection-mode`}
 		label={m.system_volume_backups_selection_mode()}
 		description={m.system_volume_backups_selection_description()}
-		options={selectionOptions}
-	/>
+	>
+		<SelectWithLabel
+			id={`${idPrefix}-selection-mode`}
+			hideLabel
+			value={selectionMode}
+			onValueChange={(value) => onChange({ selectionMode: value as SystemVolumeBackupSelectionMode })}
+			label={m.system_volume_backups_selection_mode()}
+			options={selectionOptions}
+		/>
+	</SettingsRow>
 
 	{#if selectionMode !== 'all'}
-		<div class="space-y-2">
-			<div>
-				<Label>
-					{selectionMode === 'allowlist'
-						? m.system_volume_backups_included_volumes()
-						: m.system_volume_backups_excluded_volumes()}
-				</Label>
-				<p class="mt-0.5 text-xs text-muted-foreground">
-					{selectionMode === 'allowlist' ? m.system_volume_backups_allowlist_help() : m.system_volume_backups_blocklist_help()}
-				</p>
+		<SettingsRow
+			label={selectionMode === 'allowlist'
+				? m.system_volume_backups_included_volumes()
+				: m.system_volume_backups_excluded_volumes()}
+			description={selectionMode === 'allowlist'
+				? m.system_volume_backups_allowlist_help()
+				: m.system_volume_backups_blocklist_help()}
+			layout="wide"
+		>
+			<div class="space-y-2">
+				<Input bind:value={search} placeholder={m.system_volume_backups_search_volumes()} />
+				<div class="h-56 overflow-hidden rounded-md border">
+					<ScrollArea class="h-full">
+						{#if loading}
+							<div class="flex h-24 items-center justify-center"><LoadingSpinnerIcon class="size-5 animate-spin" /></div>
+						{:else}
+							<div class="divide-y divide-border/50">
+								{#each filteredOptions as option (option.name)}
+									<label class="flex cursor-pointer items-center gap-3 px-3 py-2.5 hover:bg-muted/40">
+										<Checkbox.Root
+											checked={volumeNames.includes(option.name)}
+											onCheckedChange={(value) => toggleVolume(option.name, value === true)}
+										/>
+										<span class="min-w-0 flex-1 truncate text-sm">{option.name}</span>
+										{#if option.anonymous}<Badge variant="amber" size="sm">{m.system_volume_backups_anonymous()}</Badge>{/if}
+										{#if !option.available}<Badge variant="gray" size="sm">{m.system_volume_backups_unavailable()}</Badge>{/if}
+									</label>
+								{/each}
+								{#if filteredOptions.length === 0}
+									<p class="px-3 py-8 text-center text-sm text-muted-foreground">
+										{m.system_volume_backups_no_matching_volumes()}
+									</p>
+								{/if}
+							</div>
+						{/if}
+					</ScrollArea>
+				</div>
 			</div>
-			<Input bind:value={search} placeholder={m.system_volume_backups_search_volumes()} />
-			<div class="h-56 overflow-hidden rounded-md border">
-				<ScrollArea class="h-full">
-					{#if loading}
-						<div class="flex h-24 items-center justify-center"><LoadingSpinnerIcon class="size-5 animate-spin" /></div>
-					{:else}
-						<div class="divide-y divide-border/50">
-							{#each filteredOptions as option (option.name)}
-								<label class="flex cursor-pointer items-center gap-3 px-3 py-2.5 hover:bg-muted/40">
-									<Checkbox.Root
-										checked={volumeNames.includes(option.name)}
-										onCheckedChange={(value) => toggleVolume(option.name, value === true)}
-									/>
-									<span class="min-w-0 flex-1 truncate text-sm">{option.name}</span>
-									{#if option.anonymous}<Badge variant="amber" size="sm">{m.system_volume_backups_anonymous()}</Badge>{/if}
-									{#if !option.available}<Badge variant="gray" size="sm">{m.system_volume_backups_unavailable()}</Badge>{/if}
-								</label>
-							{/each}
-							{#if filteredOptions.length === 0}
-								<p class="px-3 py-8 text-center text-sm text-muted-foreground">
-									{m.system_volume_backups_no_matching_volumes()}
-								</p>
-							{/if}
-						</div>
-					{/if}
-				</ScrollArea>
-			</div>
-		</div>
+		</SettingsRow>
 	{/if}
 
-	<LabeledSwitch
-		id={`${idPrefix}-ignore-anonymous`}
-		checked={ignoreAnonymous}
-		onCheckedChange={(value) => onChange({ ignoreAnonymous: value })}
+	<SettingsRow
+		for={`${idPrefix}-ignore-anonymous`}
 		label={m.system_volume_backups_ignore_anonymous()}
 		description={m.system_volume_backups_ignore_anonymous_description()}
-	/>
-</div>
+		layout="switch"
+	>
+		<Switch
+			id={`${idPrefix}-ignore-anonymous`}
+			checked={ignoreAnonymous}
+			onCheckedChange={(value) => onChange({ ignoreAnonymous: value })}
+		/>
+	</SettingsRow>
+</SettingsSection>

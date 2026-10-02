@@ -15,6 +15,7 @@
 	import type { ProjectStatusCounts } from '#lib/types/swarm.js';
 	import { untrack } from 'svelte';
 	import { createMutation, createQuery, keepPreviousData } from '@tanstack/svelte-query';
+	import { EmptyState } from '#lib/components/states/index.js';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 
@@ -255,11 +256,23 @@
 	]);
 </script>
 
+{#snippet projectsEmptyState()}
+	<EmptyState
+		variant="plain"
+		icon={ProjectsIcon}
+		title={m.projects_empty_title()}
+		description={m.projects_empty_description()}
+		actionLabel={canCreateProject ? m.compose_create_project() : undefined}
+		actionHref="/projects/new"
+	/>
+{/snippet}
+
 <ResourcePageLayout title={m.projects_title()} subtitle={m.compose_subtitle()} {actionButtons} {statCards}>
 	{#snippet mainContent()}
 		{#if projects}
 			<ProjectsTable
 				{projects}
+				emptyState={projectsEmptyState}
 				bind:selectedIds
 				requestOptions={projectRequestOptions}
 				{showArchived}

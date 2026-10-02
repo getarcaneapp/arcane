@@ -62,27 +62,23 @@
 {/if}
 
 <div class={cn('space-y-6 pb-8', className)}>
-	<div class="space-y-4">
-		{#if backUrl}
-			<div>
-				<ArcaneButton action="base" tone="ghost" href={backUrl} class="-ml-2">
-					<ArrowLeftIcon class="size-4" />
-					{backLabel}
-				</ArcaneButton>
-			</div>
-		{/if}
-
-		<div class="flex items-start justify-between gap-4">
-			<div class="min-w-0 flex-1 space-y-2">
-				<h1 class="text-xl font-semibold tracking-tight break-all sm:text-2xl">{title}</h1>
-				{#if subtitle}
-					<p class="text-sm text-muted-foreground">{subtitle}</p>
+	<div class="space-y-3">
+		<div class="flex items-start gap-3">
+			<div class="flex min-w-0 flex-1 items-start gap-2">
+				{#if backUrl}
+					<ArcaneButton action="base" tone="ghost" size="icon" href={backUrl} class="size-8 shrink-0" title={backLabel}>
+						<ArrowLeftIcon class="size-4" />
+					</ArcaneButton>
 				{/if}
-				{#if badges}
-					<div class="flex flex-wrap items-center gap-2 pt-1">
-						{@render badges()}
+				<div class="min-w-0 flex-1">
+					<div class="flex min-h-8 min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+						<h1 class="truncate text-lg font-semibold tracking-tight" {title}>{title}</h1>
+						{@render badges?.()}
 					</div>
-				{/if}
+					{#if subtitle}
+						<p class="mt-0.5 text-sm text-muted-foreground">{subtitle}</p>
+					{/if}
+				</div>
 			</div>
 
 			<ActionButtonGroup buttons={actions} class="shrink-0" />

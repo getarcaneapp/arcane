@@ -62,7 +62,7 @@ const projectActionConfigs: Record<ProjectActionKind, ProjectActionConfig> = {
 	stop: {
 		status: 'stopping',
 		run: (id) => projectService.downProject(id),
-		success: () => m.compose_stop_success(),
+		success: () => m.compose_down_success(),
 		failure: () => m.compose_stop_failed()
 	},
 	restart: {

@@ -69,12 +69,13 @@ async function fetchProjectDetail(page: Page, projectId: string): Promise<Projec
 
 async function fetchLatestProjectDeployActivity(
 	page: Page,
-	projectId: string
+	projectId: string,
+	projectName: string
 ): Promise<Activity | null> {
 	const params = new URLSearchParams({
 		type: 'project_deploy',
 		resourceType: 'project',
-		search: projectId,
+		search: projectName,
 		limit: '10'
 	});
 	const activities = await readApiData<Activity[]>(
@@ -87,15 +88,20 @@ async function fetchLatestProjectDeployActivity(
 			(activity) =>
 				activity.type === 'project_deploy' &&
 				activity.resourceType === 'project' &&
-				(activity.resourceId === projectId || activity.resourceName === projectId)
+				activity.resourceId === projectId
 		) ?? null
 	);
 }
 
-async function expectProjectDeployActivitySucceeded(page: Page, projectId: string) {
+async function expectProjectDeployActivitySucceeded(
+	page: Page,
+	projectId: string,
+	projectName: string
+) {
 	await expect
 		.poll(
-			async () => (await fetchLatestProjectDeployActivity(page, projectId))?.status ?? 'missing',
+			async () =>
+				(await fetchLatestProjectDeployActivity(page, projectId, projectName))?.status ?? 'missing',
 			{
 				message: 'Expected project deploy activity to complete before reload',
 				timeout: 60000
@@ -656,7 +662,7 @@ test.describe('New Compose Project Page', () => {
 					timeout: 60000
 				})
 				.toBe('running');
-			await expectProjectDeployActivitySucceeded(page, projectId);
+			await expectProjectDeployActivitySucceeded(page, projectId, projectName);
 
 			expect(projectPullRequestCount).toBe(0);
 			await expect(page.getByRole('button', { name: 'Down', exact: true })).toBeVisible({

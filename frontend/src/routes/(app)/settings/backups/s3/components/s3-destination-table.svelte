@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { Snippet } from 'svelte';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import RemoveMenuItem from '#lib/components/arcane-table/cells/remove-menu-item.svelte';
@@ -22,13 +23,15 @@
 		requestOptions = $bindable(),
 		onDestinationsChanged,
 		onEdit,
-		onDelete
+		onDelete,
+		emptyState
 	}: {
 		destinations: Paginated<S3Destination>;
 		requestOptions: SearchPaginationSortRequest;
 		onDestinationsChanged: (options: SearchPaginationSortRequest) => Promise<Paginated<S3Destination>>;
 		onEdit: (destination: S3Destination) => void;
 		onDelete: (destination: S3Destination) => void;
+		emptyState?: Snippet;
 	} = $props();
 
 	const columns = [
@@ -154,6 +157,7 @@
 {/snippet}
 
 <ArcaneTable
+	{emptyState}
 	persistKey="arcane-s3-destinations-table"
 	items={destinations}
 	bind:requestOptions

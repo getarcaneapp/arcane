@@ -1,7 +1,8 @@
 <script lang="ts">
 	import type { Settings } from '#lib/types/settings.js';
-	import SectionCard from '#lib/components/section-card.svelte';
-	import LabeledSwitch from '#lib/components/form/labeled-switch.svelte';
+	import SettingsRow from '#lib/components/settings/settings-row.svelte';
+	import SettingsSection from '#lib/components/settings/settings-section.svelte';
+	import { EmptyState } from '#lib/components/states/index.js';
 	import TextInputWithLabel from '#lib/components/form/text-input-with-label.svelte';
 	import { featureStore } from '#lib/stores/features.store.svelte.js';
 	import { featureDefinitions } from '#lib/config/features.js';
@@ -10,6 +11,7 @@
 
 	import { onMount } from 'svelte';
 	import * as Tabs from '#lib/components/ui/tabs/index.js';
+	import TabbedPageLayout from '#lib/layouts/tabbed-page-layout.svelte';
 	import { TabBar, type TabItem } from '#lib/components/tab-bar/index.js';
 	import { ActionButtonGroup, type ActionButton } from '#lib/components/action-button-group/index.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
@@ -29,8 +31,8 @@
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import type { Environment, EnvironmentStatus } from '#lib/types/environment.js';
 	import { hasPermission } from '#lib/utils/auth.js';
+	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { isEnvironmentOnline, resolveEnvironmentStatus } from '#lib/utils/docker.js';
-	import MobileFloatingFormActions from '#lib/components/form/mobile-floating-form-actions.svelte';
 	import { createSettingsForm } from '#lib/utils/settings-form.js';
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';
 	import EnvironmentStatusSummary from './components/EnvironmentStatusSummary.svelte';
@@ -50,7 +52,6 @@
 	import { useEasyJoinCandidates } from '#lib/hooks/use-easy-join-candidates.svelte.js';
 	import EasyJoinDialog from '../../swarm/cluster/components/easy-join-dialog.svelte';
 	import {
-		ArrowLeftIcon,
 		AlertIcon,
 		DockerBrandIcon,
 		SecurityIcon,
@@ -109,9 +110,9 @@
 	const isLoadingVersion = $derived(versionQuery.isFetching);
 
 	let isCurrentlyStandby = $derived(currentStatus === 'standby');
-	let showSettingsTabs = $derived(
-		runtimeEnvironment.enabled && isCurrentlyOnline && settings !== null && hasPermission('settings:read', environment.id)
-	);
+	// Settings tabs stay listed while offline so the selected tab survives a temporary outage.
+	let showSettingsTabs = $derived(runtimeEnvironment.enabled && hasPermission('settings:read', environment.id));
+	let settingsAvailable = $derived(isCurrentlyOnline && settings !== null);
 	let showJobsTab = $derived(showSettingsTabs && hasPermission('jobs:manage', environment.id));
 	let hasMTLSAssets = $derived(Boolean(runtimeEnvironment.edgeMTLSCertificate));
 	let canPairEnvironments = $derived(hasPermission('environments:pair'));
@@ -133,7 +134,7 @@
 			actions.push({
 				id: 'reset',
 				action: 'base',
-				placement: 'secondary',
+				placement: 'primary',
 				label: m.common_reset(),
 				onclick: resetForm,
 				disabled: settingsForm.isLoading,
@@ -660,8 +661,7 @@
 				const error = operationResult.error;
 
 				statusOverride = environment.isEdge ? null : 'offline';
-				toast.error(m.environments_test_connection_failed());
-				console.error(error);
+				toast.error(m.environments_test_connection_failed(), { description: extractApiErrorMessage(error) });
 			}
 		} finally {
 			isTestingConnection = false;
@@ -701,164 +701,158 @@
 	}
 </script>
 
+{#snippet settingsOffline()}
+	<EmptyState
+		icon={ConnectionIcon}
+		title={m.environments_settings_offline_title()}
+		description={m.environments_settings_offline_description()}
+		actionLabel={isTestingConnection ? undefined : m.test_connection()}
+		onAction={testConnection}
+	/>
+{/snippet}
+
 {#snippet enabledIndicator()}
-	<div class="flex shrink-0 items-center gap-2.5 rounded-lg border border-border/60 bg-card/40 px-3 py-1.5">
-		<div class="flex items-center gap-2">
-			<div
-				class={cn(
-					'size-2 rounded-full transition-colors',
-					formInputs.enabled.value ? 'bg-success shadow-glow shadow-success' : 'bg-muted-foreground/40'
-				)}
-			></div>
-			<span class="text-sm font-medium">
-				{formInputs.enabled.value ? m.common_enabled() : m.common_disabled()}
-			</span>
-		</div>
+	<label for="env-enabled-header" class="flex shrink-0 cursor-pointer items-center gap-2 text-sm">
+		<span
+			class={cn(
+				'size-2 rounded-full transition-colors',
+				formInputs.enabled.value ? 'bg-success shadow-glow shadow-success' : 'bg-muted-foreground/40'
+			)}
+		></span>
+		<span class="hidden sm:inline">{formInputs.enabled.value ? m.common_enabled() : m.common_disabled()}</span>
 		<Switch id="env-enabled-header" bind:checked={formInputs.enabled.value} />
+	</label>
+{/snippet}
+
+{#snippet environmentHeader()}
+	<div class="flex min-w-0 flex-col gap-1">
+		<div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+			<EditableName
+				bind:value={formInputs.name.value}
+				bind:ref={nameInputRef}
+				variant="inline"
+				error={formInputs.name.error ?? undefined}
+				originalValue={environment.name}
+				placeholder={m.environments_name_placeholder()}
+				class="max-w-56 min-w-0 sm:max-w-80 md:max-w-104"
+			/>
+			<EnvironmentStatusSummary
+				environment={runtimeEnvironment}
+				{currentStatus}
+				{isLoadingVersion}
+				{remoteVersion}
+				{versionInformation}
+			/>
+		</div>
+		{@render apiUrlLine()}
 	</div>
 {/snippet}
 
-<div class="container mx-auto max-w-full space-y-6 overflow-hidden p-2 sm:p-6">
-	<div class="space-y-3 sm:space-y-4">
-		<ArcaneButton
-			action="base"
-			tone="ghost"
-			onclick={() => goto('/environments')}
-			class="w-fit gap-2"
-			icon={ArrowLeftIcon}
-			customLabel={m.common_back_to({ resource: m.environments_title() })}
-		/>
+{#snippet apiUrlLine()}
+	<div class="flex min-w-0 items-center gap-1">
+		{#if isEditingApiUrl}
+			<Input
+				id="api-url"
+				type="url"
+				bind:value={formInputs.apiUrl.value}
+				oninput={clearAccessToken}
+				mono
+				size="sm"
+				class="h-7 w-full max-w-md"
+				aria-invalid={!!formInputs.apiUrl.error}
+				placeholder={m.environments_api_url_placeholder()}
+				autofocus
+				onkeydown={(e) => {
+					if (e.key === 'Enter') {
+						e.preventDefault();
+						isEditingApiUrl = false;
+					}
+					if (e.key === 'Escape') {
+						formInputs.apiUrl.value = environment.apiUrl;
+						clearAccessToken();
+						isEditingApiUrl = false;
+					}
+				}}
+				onblur={() => (isEditingApiUrl = false)}
+			/>
+		{:else if environment.id === '0'}
+			<ArcaneTooltip.Root>
+				<ArcaneTooltip.Trigger class="min-w-0">
+					<span class="block truncate px-1 font-mono text-xs text-muted-foreground">{formInputs.apiUrl.value}</span>
+				</ArcaneTooltip.Trigger>
+				<ArcaneTooltip.Content>
+					<p>{m.environments_local_setting_disabled()}</p>
+				</ArcaneTooltip.Content>
+			</ArcaneTooltip.Root>
+		{:else}
+			<button
+				type="button"
+				class="min-w-0 truncate rounded px-1 py-0.5 text-left font-mono text-xs text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+				title={m.environments_api_url()}
+				onclick={() => (isEditingApiUrl = true)}
+			>
+				{formInputs.apiUrl.value || m.environments_api_url_placeholder()}
+			</button>
+		{/if}
+		<CopyButton text={formInputs.apiUrl.value} size="icon" class="size-6 shrink-0" />
+		<span class="shrink-0 font-mono text-xs text-muted-foreground/70">#{environment.id}</span>
+	</div>
+	{#if formInputs.apiUrl.error}
+		<p class="mt-1 text-xs text-destructive">{formInputs.apiUrl.error}</p>
+	{/if}
+	{#if directRemoteUrlChanged}
+		<div class="mt-3 max-w-md">
+			<TextInputWithLabel
+				id="agent-access-token-for-url"
+				type="password"
+				autocomplete="off"
+				label={m.environments_access_token_for_url_label()}
+				description={m.environments_access_token_for_url_help()}
+				bind:value={formInputs.accessToken.value}
+				disabled={settingsForm.isLoading}
+			/>
+		</div>
+	{/if}
+{/snippet}
 
-		<div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-			<div class="flex flex-1 items-start gap-4">
-				<div class="min-w-0 flex-1">
-					<div class="flex min-h-9 min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-						<EditableName
-							bind:value={formInputs.name.value}
-							bind:ref={nameInputRef}
-							variant="inline"
-							error={formInputs.name.error ?? undefined}
-							originalValue={environment.name}
-							placeholder={m.environments_name_placeholder()}
-							class="max-w-56 min-w-0 sm:max-w-80 md:max-w-104"
-						/>
-					</div>
-					<div class="mt-1 flex min-w-0 items-center gap-1">
-						{#if isEditingApiUrl}
-							<Input
-								id="api-url"
-								type="url"
-								bind:value={formInputs.apiUrl.value}
-								oninput={clearAccessToken}
-								mono
-								size="sm"
-								class="h-7 w-full max-w-md"
-								aria-invalid={!!formInputs.apiUrl.error}
-								placeholder={m.environments_api_url_placeholder()}
-								autofocus
-								onkeydown={(e) => {
-									if (e.key === 'Enter') {
-										e.preventDefault();
-										isEditingApiUrl = false;
-									}
-									if (e.key === 'Escape') {
-										formInputs.apiUrl.value = environment.apiUrl;
-										clearAccessToken();
-										isEditingApiUrl = false;
-									}
-								}}
-								onblur={() => (isEditingApiUrl = false)}
-							/>
-						{:else if environment.id === '0'}
-							<ArcaneTooltip.Root>
-								<ArcaneTooltip.Trigger class="min-w-0">
-									<span class="block truncate px-1 font-mono text-xs text-muted-foreground">{formInputs.apiUrl.value}</span>
-								</ArcaneTooltip.Trigger>
-								<ArcaneTooltip.Content>
-									<p>{m.environments_local_setting_disabled()}</p>
-								</ArcaneTooltip.Content>
-							</ArcaneTooltip.Root>
-						{:else}
-							<button
-								type="button"
-								class="min-w-0 truncate rounded px-1 py-0.5 text-left font-mono text-xs text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
-								title={m.environments_api_url()}
-								onclick={() => (isEditingApiUrl = true)}
-							>
-								{formInputs.apiUrl.value || m.environments_api_url_placeholder()}
-							</button>
-						{/if}
-						<CopyButton text={formInputs.apiUrl.value} size="icon" class="size-6 shrink-0" />
-					</div>
-					{#if formInputs.apiUrl.error}
-						<p class="mt-1 text-xs text-destructive">{formInputs.apiUrl.error}</p>
-					{/if}
-					{#if directRemoteUrlChanged}
-						<div class="mt-3 max-w-md">
-							<TextInputWithLabel
-								id="agent-access-token-for-url"
-								type="password"
-								autocomplete="off"
-								label={m.environments_access_token_for_url_label()}
-								description={m.environments_access_token_for_url_help()}
-								bind:value={formInputs.accessToken.value}
-								disabled={settingsForm.isLoading}
-							/>
-						</div>
-					{/if}
-				</div>
-			</div>
+{#snippet environmentHeaderActions()}
+	{#if settingsForm.hasChanges}
+		<span class="hidden text-xs text-warning md:inline">{m.common_unsaved_changes()}</span>
+	{/if}
+	{#if environment.id !== '0'}
+		{@render enabledIndicator()}
+	{/if}
+	<ActionButtonGroup buttons={headerActions} />
+{/snippet}
 
-			<div class="flex w-full min-w-0 shrink-0 flex-col items-start gap-2 sm:w-auto sm:items-end">
-				<span class={cn('text-xs', settingsForm.hasChanges ? 'text-warning' : 'text-success')}>
-					{settingsForm.hasChanges ? m.common_unsaved_changes() : m.common_all_changes_saved()}
-				</span>
-				<div class="flex w-full items-center justify-end gap-2">
-					{#if environment.id !== '0'}
-						{@render enabledIndicator()}
-					{/if}
-					<ActionButtonGroup buttons={headerActions} />
-				</div>
+{#snippet environmentSubHeader()}
+	{#if environment.enabled && settings && isCurrentlyStandby}
+		<div class="flex items-start gap-3 rounded-lg border border-info/30 bg-info/10 p-4 text-info">
+			<AlertIcon class="mt-0.5 size-5 shrink-0 text-info" />
+			<div class="flex-1 space-y-1">
+				<p class="text-sm font-medium">{m.common_status()}: {m.common_standby()}</p>
 			</div>
 		</div>
-
-		<EnvironmentStatusSummary
-			environment={runtimeEnvironment}
-			{currentStatus}
-			{isLoadingVersion}
-			{remoteVersion}
-			{versionInformation}
-		/>
-
-		{#if environment.enabled && settings && isCurrentlyStandby}
-			<div class="flex items-start gap-3 rounded-lg border border-info/30 bg-info/10 p-4 text-info">
-				<AlertIcon class="mt-0.5 size-5 shrink-0 text-info" />
-				<div class="flex-1 space-y-1">
-					<p class="text-sm font-medium">{m.common_status()}: {m.common_standby()}</p>
-				</div>
+	{:else if !environment.enabled || !isCurrentlyOnline || !settings}
+		<div class="flex items-start gap-3 rounded-lg border border-warning/30 bg-warning/10 p-4 text-warning">
+			<AlertIcon class="mt-0.5 size-5 shrink-0 text-warning" />
+			<div class="flex-1 space-y-1">
+				<p class="text-sm font-medium">
+					{#if !environment.enabled}
+						{m.environments_warning_disabled()}
+					{:else if !isCurrentlyOnline}
+						{m.common_status()}: {currentStatus === 'pending'
+							? m.common_pending()
+							: currentStatus === 'error'
+								? m.common_error()
+								: m.common_offline()}
+					{:else if !settings}
+						{m.environments_warning_no_settings()}
+					{/if}
+				</p>
 			</div>
-		{:else if !environment.enabled || !isCurrentlyOnline || !settings}
-			<div class="flex items-start gap-3 rounded-lg border border-warning/30 bg-warning/10 p-4 text-warning">
-				<AlertIcon class="mt-0.5 size-5 shrink-0 text-warning" />
-				<div class="flex-1 space-y-1">
-					<p class="text-sm font-medium">
-						{#if !environment.enabled}
-							{m.environments_warning_disabled()}
-						{:else if !isCurrentlyOnline}
-							{m.common_status()}: {currentStatus === 'pending'
-								? m.common_pending()
-								: currentStatus === 'error'
-									? m.common_error()
-									: m.common_offline()}
-						{:else if !settings}
-							{m.environments_warning_no_settings()}
-						{/if}
-					</p>
-				</div>
-			</div>
-		{/if}
-	</div>
-
+		</div>
+	{/if}
 	{#if regeneratedApiKey}
 		<div class="rounded-lg border border-success/30 bg-success/10 p-4 text-success">
 			<div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -883,48 +877,75 @@
 			</div>
 		</div>
 	{/if}
+{/snippet}
 
-	<Tabs.Root value={activeTab} class="w-full">
-		<div class="my-4">
-			<TabBar items={tabItems} value={activeTab} onValueChange={handleTabChange} />
-		</div>
+<!-- The compact header stays sticky; the floating pill would leave an empty band in its place. -->
+<TabbedPageLayout
+	backUrl="/environments"
+	backLabel={m.common_back()}
+	{tabItems}
+	selectedTab={activeTab}
+	onTabChange={handleTabChange}
+	showFloatingHeader={false}
+>
+	{#snippet headerInfo()}
+		{@render environmentHeader()}
+	{/snippet}
 
+	{#snippet headerActions()}
+		{@render environmentHeaderActions()}
+	{/snippet}
+
+	{#snippet subHeader()}
+		{@render environmentSubHeader()}
+	{/snippet}
+
+	{#snippet tabContent()}
 		<Tabs.Content value="features">
-			<section id="features">
-				<SectionCard title={m.features_title()} icon={SettingsIcon} variant="transparent">
-					{#if featureStore.status(environment.id) === 'ready'}
-						<div class="space-y-6">
-							<LabeledSwitch
-								id="vulnerability-management"
-								bind:checked={formInputs.featureVulnerabilityManagementEnabled.value}
-								label={m.features_vulnerability_management()}
-								description={m.features_vulnerability_description()}
-								error={formInputs.featureVulnerabilityManagementEnabled.error}
-								disabled={featureSwitchDisabled('vulnerabilityManagement')}
-							/>
-							{#if swarmActive}
-								<!-- An active cluster keeps Swarm on, so the stored toggle is shown locked. -->
-								<LabeledSwitch id="swarm" checked={true} label={m.swarm()} description={m.features_swarm_locked()} disabled />
-							{:else}
-								<LabeledSwitch
-									id="swarm"
-									bind:checked={formInputs.featureSwarmEnabled.value}
-									label={m.swarm()}
-									description={m.features_swarm_description()}
-									error={formInputs.featureSwarmEnabled.error}
-									disabled={featureSwitchDisabled('swarm')}
-								/>
-							{/if}
-						</div>
-						{#if featureDefinitions.some((feature) => !featureStore.isSupported(feature.id, environment.id))}
-							<p role="status" class="mt-4 text-sm text-muted-foreground">{m.features_unsupported()}</p>
-						{/if}
+			<SettingsSection
+				id="features"
+				title={m.features_title()}
+				description={featureDefinitions.some((feature) => !featureStore.isSupported(feature.id, environment.id))
+					? m.features_unsupported()
+					: undefined}
+			>
+				{#if featureStore.status(environment.id) === 'ready'}
+					<SettingsRow
+						for="vulnerability-management"
+						label={m.features_vulnerability_management()}
+						description={m.features_vulnerability_description()}
+						error={formInputs.featureVulnerabilityManagementEnabled.error}
+						layout="switch"
+					>
+						<Switch
+							id="vulnerability-management"
+							bind:checked={formInputs.featureVulnerabilityManagementEnabled.value}
+							disabled={featureSwitchDisabled('vulnerabilityManagement')}
+						/>
+					</SettingsRow>
+					{#if swarmActive}
+						<!-- An active cluster keeps Swarm on, so the stored toggle is shown locked. -->
+						<SettingsRow for="swarm" label={m.swarm()} description={m.features_swarm_locked()} layout="switch">
+							<Switch id="swarm" checked={true} disabled />
+						</SettingsRow>
 					{:else}
-						<p role="status">{m.features_unavailable()}</p>
-						<ArcaneButton action="base" customLabel={m.common_retry()} onclick={refreshEnvironment} />
+						<SettingsRow
+							for="swarm"
+							label={m.swarm()}
+							description={m.features_swarm_description()}
+							error={formInputs.featureSwarmEnabled.error}
+							layout="switch"
+						>
+							<Switch id="swarm" bind:checked={formInputs.featureSwarmEnabled.value} disabled={featureSwitchDisabled('swarm')} />
+						</SettingsRow>
 					{/if}
-				</SectionCard>
-			</section>
+				{:else}
+					<div class="flex flex-col items-start gap-3 px-5 py-4">
+						<p role="status" class="text-sm text-muted-foreground">{m.features_unavailable()}</p>
+						<ArcaneButton action="base" customLabel={m.common_retry()} onclick={refreshEnvironment} />
+					</div>
+				{/if}
+			</SettingsSection>
 		</Tabs.Content>
 
 		{#if runtimeEnvironment.isEdge}
@@ -939,7 +960,7 @@
 			</Tabs.Content>
 		{/if}
 
-		{#if showSettingsTabs}
+		{#if showSettingsTabs && settingsAvailable}
 			<Tabs.Content value="storage">
 				<StorageTab bind:formInputs />
 			</Tabs.Content>
@@ -970,35 +991,44 @@
 					</Tabs.Content>
 				</Tabs.Root>
 			</Tabs.Content>
+		{:else if showSettingsTabs}
+			{#each ['storage', 'docker', 'security'] as tab (tab)}
+				<Tabs.Content value={tab}>
+					{@render settingsOffline()}
+				</Tabs.Content>
+			{/each}
 		{/if}
 
-		{#if showJobsTab}
+		{#if showJobsTab && settingsAvailable}
 			<Tabs.Content value="jobs">
 				<JobsTab bind:formInputs environmentId={environment.id} />
+			</Tabs.Content>
+		{:else if showJobsTab}
+			<Tabs.Content value="jobs">
+				{@render settingsOffline()}
 			</Tabs.Content>
 		{/if}
 
 		<Tabs.Content value="gitops" />
-	</Tabs.Root>
+	{/snippet}
+</TabbedPageLayout>
 
-	<AlertDialog.Root bind:open={showRegenerateDialog}>
-		<AlertDialog.Content>
-			<AlertDialog.Header>
-				<AlertDialog.Title>{m.environments_regenerate_dialog_title()}</AlertDialog.Title>
-				<AlertDialog.Description>
-					{m.environments_regenerate_dialog_message()}
-				</AlertDialog.Description>
-			</AlertDialog.Header>
-			<AlertDialog.Footer>
-				<AlertDialog.Cancel>{m.common_cancel()}</AlertDialog.Cancel>
-				<AlertDialog.Action onclick={handleRegenerateApiKey}>
-					{m.environments_regenerate_api_key()}
-				</AlertDialog.Action>
-			</AlertDialog.Footer>
-		</AlertDialog.Content>
-	</AlertDialog.Root>
-</div>
-
+<AlertDialog.Root bind:open={showRegenerateDialog}>
+	<AlertDialog.Content>
+		<AlertDialog.Header>
+			<AlertDialog.Title>{m.environments_regenerate_dialog_title()}</AlertDialog.Title>
+			<AlertDialog.Description>
+				{m.environments_regenerate_dialog_message()}
+			</AlertDialog.Description>
+		</AlertDialog.Header>
+		<AlertDialog.Footer>
+			<AlertDialog.Cancel>{m.common_cancel()}</AlertDialog.Cancel>
+			<AlertDialog.Action onclick={handleRegenerateApiKey}>
+				{m.environments_regenerate_api_key()}
+			</AlertDialog.Action>
+		</AlertDialog.Footer>
+	</AlertDialog.Content>
+</AlertDialog.Root>
 {#key `${easyJoinSession}:${easyJoinCandidates.managerEnvironmentId}`}
 	<EasyJoinDialog
 		bind:open={easyJoinDialogOpen}
@@ -1007,10 +1037,3 @@
 		onComplete={easyJoinCandidates.refresh}
 	/>
 {/key}
-
-<MobileFloatingFormActions
-	hasChanges={settingsForm.hasChanges}
-	isLoading={settingsForm.isLoading}
-	onSave={onSubmit}
-	onReset={resetForm}
-/>

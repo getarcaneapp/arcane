@@ -1,10 +1,15 @@
 import { tryCatch } from '#lib/utils/try-catch.js';
-import { redirect } from '@sveltejs/kit';
+import { error as httpError, redirect } from '@sveltejs/kit';
 import { browser } from '$app/env';
 import { getEffectiveLandingPage } from '#lib/utils/navigation.js';
 import { passkeyService } from '#lib/services/passkey-service.js';
+import type { PageLoad } from './$types';
 
-export const load = async ({ parent, url }) => {
+export const load: PageLoad = async ({ parent, url, params }) => {
+	if (params.mode !== undefined && params.mode !== 'backup') {
+		httpError(404);
+	}
+
 	const data = await parent();
 
 	// Only an explicit `redirect` param produces a target here. The account-level
@@ -32,6 +37,7 @@ export const load = async ({ parent, url }) => {
 		storedErrorMessage;
 
 	return {
+		isBackupLogin: params.mode === 'backup',
 		passkeyLoginAvailable: passkeyAvailability?.available === true,
 		settings: data.settings,
 		redirectTo,

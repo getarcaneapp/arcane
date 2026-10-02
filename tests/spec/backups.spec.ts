@@ -1092,7 +1092,7 @@ test.describe('S3 storage', () => {
 
 			try {
 				await page.goto('/settings/backups/s3');
-				await page.getByRole('button', { name: 'Add destination', exact: true }).click();
+				await page.getByRole('button', { name: 'Add destination', exact: true }).first().click();
 
 				let dialog = page.getByRole('dialog');
 				await expect(dialog.getByRole('heading', { name: 'Add S3 destination' })).toBeVisible();
@@ -1541,7 +1541,7 @@ test.describe('System and volume restore', () => {
 			await expect(dialog).toBeHidden();
 			expect(mock.savedCollection().policies[0]?.volumeNames).toEqual([unavailableName, liveName]);
 
-			await page.getByRole('button', { name: 'Create', exact: true }).click();
+			await page.getByRole('button', { name: 'Create', exact: true }).first().click();
 			await page.getByRole('menuitem', { name: 'Schedule' }).click();
 			const createSchedule = page.getByRole('dialog', { name: 'Create schedule' });
 			await createSchedule.getByLabel('Backup type').click();
@@ -1552,7 +1552,7 @@ test.describe('System and volume restore', () => {
 			expect(mock.savedCollection().policies).toHaveLength(2);
 			await expect(page.getByText('Volume', { exact: true })).toHaveCount(2);
 
-			await page.getByRole('button', { name: 'Create', exact: true }).click();
+			await page.getByRole('button', { name: 'Create', exact: true }).first().click();
 			await page.getByRole('menuitem', { name: 'Backup' }).click();
 			const createBackup = page.getByRole('dialog', { name: 'Create Backup' });
 			const runningBackup = page.getByRole('alert').filter({ hasText: 'Backup in progress' });
@@ -1564,7 +1564,7 @@ test.describe('System and volume restore', () => {
 			await expect(createBackup).toBeHidden();
 			await expect(page.getByText('Backup started', { exact: true })).toBeVisible();
 			await expect(runningBackup).toBeVisible();
-			await page.getByRole('button', { name: 'Create', exact: true }).click();
+			await page.getByRole('button', { name: 'Create', exact: true }).first().click();
 			await expect(page.getByRole('menuitem', { name: 'Backup', exact: true })).toBeDisabled();
 			await page.keyboard.press('Escape');
 			await page.reload();
@@ -1576,7 +1576,7 @@ test.describe('System and volume restore', () => {
 			await expect(page.getByRole('table').getByText('completed-batch-volume')).toBeVisible();
 			expect(mock.runRequests()).toContainEqual({ policyId: 'volume-nightly' });
 
-			await page.getByRole('button', { name: 'Create', exact: true }).click();
+			await page.getByRole('button', { name: 'Create', exact: true }).first().click();
 			await page.getByRole('menuitem', { name: 'Backup' }).click();
 			const customBackup = page.getByRole('dialog', { name: 'Create Backup' });
 			await customBackup.getByLabel('Backup type').click();

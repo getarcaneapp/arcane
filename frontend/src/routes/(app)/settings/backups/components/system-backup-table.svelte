@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { Snippet } from 'svelte';
 	import RemoveMenuItem from '#lib/components/arcane-table/cells/remove-menu-item.svelte';
 	import { backupRunColumns, backupRunMobileFields } from '#lib/components/arcane-table/backup-columns.js';
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
@@ -33,7 +34,8 @@
 		onRestoreVolume,
 		onUpload,
 		onDelete,
-		onOpenVolume
+		onOpenVolume,
+		emptyState
 	}: {
 		backups: Paginated<BackupHistoryEntry>;
 		requestOptions: SearchPaginationSortRequest;
@@ -44,6 +46,7 @@
 		onUpload: (backup: BackupHistoryEntry) => void;
 		onDelete: (backup: BackupHistoryEntry) => void;
 		onOpenVolume: (backup: BackupHistoryEntry) => void;
+		emptyState?: Snippet;
 	} = $props();
 
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
@@ -140,6 +143,7 @@
 {/snippet}
 
 <ArcaneTable
+	{emptyState}
 	persistKey="arcane-system-backups-table"
 	items={backups}
 	bind:requestOptions

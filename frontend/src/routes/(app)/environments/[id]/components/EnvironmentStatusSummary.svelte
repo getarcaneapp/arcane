@@ -4,8 +4,7 @@
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { cn } from '#lib/utils.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { HashIcon, HealthIcon, TagIcon } from '#lib/icons/index.js';
-	import { DetailMetaStrip } from '#lib/components/resource-detail/index.js';
+	import { HealthIcon, TagIcon } from '#lib/icons/index.js';
 	import type { Environment, EnvironmentStatus } from '#lib/types/environment.js';
 	import type { AppVersionInformation } from '#lib/types/settings.js';
 	import { formatRelativeTime } from '#lib/utils/formatting.js';
@@ -95,32 +94,33 @@
 	});
 </script>
 
-<DetailMetaStrip>
-	<div class="flex items-center gap-2">
-		<span class={cn('size-2.5 rounded-full transition-colors', statusDotClass)}></span>
-		<span class="text-sm font-semibold">{statusBadge.text}</span>
-	</div>
+<!-- Inline header chips: status, transport, version, and (edge) heartbeat. -->
+<div class="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+	<Badge variant={statusBadge.variant} minWidth="20">
+		<span class={cn('size-1.5 rounded-full', statusDotClass)}></span>
+		{statusBadge.text}
+	</Badge>
 	<Badge variant={transportBadge.variant} minWidth="20">{transportBadge.text}</Badge>
-	<div class="flex items-center gap-1.5 text-sm text-muted-foreground">
-		<TagIcon class="size-4 shrink-0" />
+	<div class="flex items-center gap-1.5 text-xs text-muted-foreground">
+		<TagIcon class="size-3.5 shrink-0" />
 		{#if environment.id === '0'}
 			<span class="font-mono">{localDisplayVersion}</span>
 			{#if versionInformation?.updateAvailable}
-				<Badge variant="amber">
+				<Badge variant="amber" size="sm">
 					{m.sidebar_update_available()}: {versionInformation.newestVersion}
 				</Badge>
 			{/if}
 		{:else if isLoadingVersion}
-			<Spinner class="size-4" />
+			<Spinner class="size-3.5" />
 			<span>{m.common_action_checking()}</span>
 		{:else if remoteVersion}
 			<span class="font-mono">{remoteDisplayVersion}</span>
 			{#if remoteVersion.updateAvailable}
-				<Badge variant="amber">
+				<Badge variant="amber" size="sm">
 					{m.sidebar_update_available()}: {remoteVersion.newestVersion}
 				</Badge>
 				{#if remoteVersion.releaseUrl}
-					<a href={remoteVersion.releaseUrl} target="_blank" rel="noopener noreferrer" class="text-xs text-info hover:underline">
+					<a href={remoteVersion.releaseUrl} target="_blank" rel="noopener noreferrer" class="text-info hover:underline">
 						{m.version_info_view_release()}
 					</a>
 				{/if}
@@ -132,13 +132,9 @@
 		{/if}
 	</div>
 	{#if environment.isEdge && environment.lastHeartbeat}
-		<div class="flex items-center gap-1.5 text-sm text-muted-foreground">
-			<HealthIcon class="size-4 shrink-0" />
+		<div class="flex items-center gap-1.5 text-xs text-muted-foreground" title={m.environments_edge_last_heartbeat_label()}>
+			<HealthIcon class="size-3.5 shrink-0" />
 			<span>{heartbeatRelative}</span>
 		</div>
 	{/if}
-	<div class="flex items-center gap-1.5 text-sm text-muted-foreground sm:ml-auto">
-		<HashIcon class="size-4 shrink-0" />
-		<span class="font-mono">{environment.id}</span>
-	</div>
-</DetailMetaStrip>
+</div>

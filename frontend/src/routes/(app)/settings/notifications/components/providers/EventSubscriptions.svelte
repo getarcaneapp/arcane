@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { Label } from '#lib/components/ui/label/index.js';
-	import SwitchWithLabel from '#lib/components/form/labeled-switch.svelte';
+	import SettingsRow from '#lib/components/settings/settings-row.svelte';
+	import { Switch } from '#lib/components/ui/switch/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 
 	interface Props {
@@ -24,44 +24,44 @@
 	}: Props = $props();
 </script>
 
-<div class="space-y-3 pt-2">
-	<Label>{m.notifications_events_title()}</Label>
-	<p class="text-xs text-muted-foreground">{m.notifications_events_description()}</p>
-	<div class="space-y-2">
-		<SwitchWithLabel
-			id="{providerId}-event-image-update"
-			bind:checked={eventImageUpdate}
-			{disabled}
-			label={m.notifications_event_image_update_label()}
-			description={m.notifications_event_image_update_description()}
-		/>
-		<SwitchWithLabel
-			id="{providerId}-event-container-update"
-			bind:checked={eventContainerUpdate}
-			{disabled}
-			label={m.notifications_event_container_update_label()}
-			description={m.notifications_event_container_update_description()}
-		/>
-		<SwitchWithLabel
-			id="{providerId}-event-prune-report"
-			bind:checked={eventPruneReport}
-			{disabled}
-			label={m.notifications_event_prune_report_label()}
-			description={m.notifications_event_prune_report_description()}
-		/>
-		<SwitchWithLabel
-			id="{providerId}-event-vulnerability-found"
-			bind:checked={eventVulnerabilityFound}
-			{disabled}
-			label={m.notifications_event_vulnerability_found_label()}
-			description={m.notifications_event_vulnerability_found_description()}
-		/>
-		<SwitchWithLabel
-			id="{providerId}-event-auto-heal"
-			bind:checked={eventAutoHeal}
-			{disabled}
-			label={m.notifications_event_auto_heal_label()}
-			description={m.notifications_event_auto_heal_description()}
-		/>
-	</div>
-</div>
+<!-- Rendered inside the provider section, so each event is its own row. -->
+<SettingsRow
+	for="{providerId}-event-image-update"
+	label={m.notifications_event_image_update_label()}
+	description={m.notifications_event_image_update_description()}
+	layout="switch"
+>
+	<Switch id="{providerId}-event-image-update" bind:checked={eventImageUpdate} {disabled} />
+</SettingsRow>
+<SettingsRow
+	for="{providerId}-event-container-update"
+	label={m.notifications_event_container_update_label()}
+	description={m.notifications_event_container_update_description()}
+	layout="switch"
+>
+	<Switch id="{providerId}-event-container-update" bind:checked={eventContainerUpdate} {disabled} />
+</SettingsRow>
+<SettingsRow
+	for="{providerId}-event-prune-report"
+	label={m.notifications_event_prune_report_label()}
+	description={m.notifications_event_prune_report_description()}
+	layout="switch"
+>
+	<Switch id="{providerId}-event-prune-report" bind:checked={eventPruneReport} {disabled} />
+</SettingsRow>
+<SettingsRow
+	for="{providerId}-event-vulnerability-found"
+	label={m.notifications_event_vulnerability_found_label()}
+	description={m.notifications_event_vulnerability_found_description()}
+	layout="switch"
+>
+	<Switch id="{providerId}-event-vulnerability-found" bind:checked={eventVulnerabilityFound} {disabled} />
+</SettingsRow>
+<SettingsRow
+	for="{providerId}-event-auto-heal"
+	label={m.notifications_event_auto_heal_label()}
+	description={m.notifications_event_auto_heal_description()}
+	layout="switch"
+>
+	<Switch id="{providerId}-event-auto-heal" bind:checked={eventAutoHeal} {disabled} />
+</SettingsRow>

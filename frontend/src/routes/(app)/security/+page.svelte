@@ -17,7 +17,8 @@
 	import SecurityOverview from './components/security-overview.svelte';
 	import type { ImagePatchTargetDto } from '#lib/types/docker.js';
 	import { toast } from 'svelte-sonner';
-	import { ActivityIcon, InspectIcon, ShieldAlertIcon, ShieldCheckIcon } from '#lib/icons/index.js';
+	import { ActivityIcon, ImagesIcon, InspectIcon, ScanIcon, ShieldAlertIcon, ShieldCheckIcon } from '#lib/icons/index.js';
+	import { EmptyState } from '#lib/components/states/index.js';
 	import { TabBar, type TabItem } from '#lib/components/tab-bar/index.js';
 	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
@@ -381,6 +382,37 @@
 	});
 </script>
 
+{#snippet vulnerabilitiesEmptyState()}
+	{#if overview?.drivers.imagesTotal === 0}
+		<EmptyState
+			variant="plain"
+			icon={ImagesIcon}
+			title={m.security_no_images_to_scan()}
+			description={m.security_no_images_description()}
+			actionLabel={hasPermission('images:pull', currentEnvId) ? m.images_pull_image() : undefined}
+			actionHref="/images"
+		/>
+	{:else if overview?.drivers.imagesScanned === 0}
+		<EmptyState
+			variant="plain"
+			icon={ScanIcon}
+			title={m.security_not_scanned_title()}
+			description={m.security_not_scanned_description()}
+			actionLabel={canScanVuln && !isLoading.scanningAll ? m.security_scan_all() : undefined}
+			onAction={scanAllImages}
+		/>
+	{:else if !showIgnored && !fixAvailable && vulnerabilities.pagination.totalItems === 0}
+		<EmptyState
+			variant="plain"
+			icon={ShieldCheckIcon}
+			title={m.vuln_no_vulnerabilities()}
+			description={m.security_no_findings_description()}
+		/>
+	{:else}
+		<EmptyState variant="plain" title={m.common_no_results_found()} description={m.common_no_results_hint()} />
+	{/if}
+{/snippet}
+
 <ResourcePageLayout
 	title={m.security()}
 	subtitle={m.security_subtitle()}
@@ -417,6 +449,7 @@
 					{/if}
 					<div class="rounded-xl border border-border/60">
 						<SecurityVulnerabilityTable
+							emptyState={vulnerabilitiesEmptyState}
 							bind:vulnerabilities
 							bind:requestOptions
 							bind:selectedIds={selectedVulnerabilityIds}

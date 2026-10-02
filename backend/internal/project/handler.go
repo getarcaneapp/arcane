@@ -463,7 +463,7 @@ func (h *ProjectHandler) UpdateProjectTag(ctx context.Context, input *UpdateProj
 		Type:           activitytypes.TypeResourceAction,
 		ResourceType:   "project",
 		ResourceID:     input.ProjectID,
-		ResourceName:   input.ProjectID,
+		ResourceName:   h.projectActivityNameInternal(runtimeCtx, input.ProjectID),
 		User:           user,
 		Step:           "Updating project tags",
 		Message:        "Updating project tags",
@@ -512,6 +512,15 @@ type projectStreamOperationConfigInternal struct {
 	Action func(ctx context.Context, writer io.Writer) error
 }
 
+// projectActivityNameInternal returns the project's name for activity records, falling back to its ID.
+func (h *ProjectHandler) projectActivityNameInternal(ctx context.Context, projectID string) string {
+	proj, err := h.projectService.GetProjectFromDatabaseByID(ctx, projectID)
+	if err != nil || proj.Name == "" {
+		return projectID
+	}
+	return proj.Name
+}
+
 // streamProjectOperationInternal is the shared scaffold for the streamed
 // project endpoints: NDJSON headers, activity lifecycle (started frame, queue
 // slot, completion), the activity-teeing writer, and the terminal done/error
@@ -534,7 +543,7 @@ func (h *ProjectHandler) streamProjectOperationInternal(environmentID, projectID
 				cfg.ActivityType,
 				"project",
 				projectID,
-				projectID,
+				h.projectActivityNameInternal(runtimeCtx, projectID),
 				user,
 				cfg.Step,
 				cfg.StartMessage,
@@ -598,7 +607,7 @@ func (h *ProjectHandler) DownProject(ctx context.Context, input *DownProjectInpu
 	}
 
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-	activityID, runtimeCtx := activitylib.StartHandlerActivity(runtimeCtx, h.activityService, input.EnvironmentID, activitytypes.TypeProjectDown, "project", input.ProjectID, input.ProjectID, user, "Stopping project", "Project stop requested", database.JSON{"projectID": input.ProjectID}, false)
+	activityID, runtimeCtx := activitylib.StartHandlerActivity(runtimeCtx, h.activityService, input.EnvironmentID, activitytypes.TypeProjectDown, "project", input.ProjectID, h.projectActivityNameInternal(runtimeCtx, input.ProjectID), user, "Stopping project", "Project stop requested", database.JSON{"projectID": input.ProjectID}, false)
 	activityWriter := activitylib.NewWriter(runtimeCtx, h.activityService, activityID, io.Discard, "Stopping project")
 	downCtx := context.WithValue(runtimeCtx, dockerutils.ProgressWriterKey{}, activityWriter)
 	if err := h.projectService.DownProject(downCtx, input.ProjectID, *user); err != nil {
@@ -835,7 +844,7 @@ func (h *ProjectHandler) DestroyProject(ctx context.Context, input *DestroyProje
 	}
 
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-	activityID, runtimeCtx := activitylib.StartHandlerActivity(runtimeCtx, h.activityService, input.EnvironmentID, activitytypes.TypeProjectDestroy, "project", input.ProjectID, input.ProjectID, user, "Destroying project", "Project destroy requested", database.JSON{"projectID": input.ProjectID, "removeFiles": removeFiles, "removeVolumes": removeVolumes}, false)
+	activityID, runtimeCtx := activitylib.StartHandlerActivity(runtimeCtx, h.activityService, input.EnvironmentID, activitytypes.TypeProjectDestroy, "project", input.ProjectID, h.projectActivityNameInternal(runtimeCtx, input.ProjectID), user, "Destroying project", "Project destroy requested", database.JSON{"projectID": input.ProjectID, "removeFiles": removeFiles, "removeVolumes": removeVolumes}, false)
 	activityWriter := activitylib.NewWriter(runtimeCtx, h.activityService, activityID, io.Discard, "Destroying project")
 	destroyCtx := context.WithValue(runtimeCtx, dockerutils.ProgressWriterKey{}, activityWriter)
 	if err := h.projectService.DestroyProject(destroyCtx, input.ProjectID, removeFiles, removeVolumes, *user); err != nil {
@@ -1031,12 +1040,13 @@ func (h *ProjectHandler) runProjectActivityActionInternal(ctx context.Context, e
 	}
 
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
+	projectName := h.projectActivityNameInternal(runtimeCtx, projectID)
 	var activityID string
 	if cfg.Queue {
-		activityID, runtimeCtx = activitylib.StartHandlerActivity(runtimeCtx, h.activityService, environmentID, cfg.ActivityType, "project", projectID, projectID, user, cfg.Step, cfg.StartMessage, database.JSON{"projectID": projectID}, true)
+		activityID, runtimeCtx = activitylib.StartHandlerActivity(runtimeCtx, h.activityService, environmentID, cfg.ActivityType, "project", projectID, projectName, user, cfg.Step, cfg.StartMessage, database.JSON{"projectID": projectID}, true)
 		activitylib.AwaitHandlerActivitySlot(runtimeCtx, h.activityService, activityID, environmentID)
 	} else {
-		activityID, runtimeCtx = activitylib.StartHandlerActivity(runtimeCtx, h.activityService, environmentID, cfg.ActivityType, "project", projectID, projectID, user, cfg.Step, cfg.StartMessage, database.JSON{"projectID": projectID}, false)
+		activityID, runtimeCtx = activitylib.StartHandlerActivity(runtimeCtx, h.activityService, environmentID, cfg.ActivityType, "project", projectID, projectName, user, cfg.Step, cfg.StartMessage, database.JSON{"projectID": projectID}, false)
 	}
 	activityWriter := activitylib.NewWriter(runtimeCtx, h.activityService, activityID, io.Discard, cfg.WriterStep)
 	actionCtx := context.WithValue(runtimeCtx, dockerutils.ProgressWriterKey{}, activityWriter)
@@ -1247,7 +1257,7 @@ func (h *ProjectHandler) UpdateProjectWorkspace(ctx context.Context, input *Upda
 	var result *workspacetypes.Workspace
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
-		EnvironmentID: input.EnvironmentID, Type: activitytypes.TypeResourceAction, ResourceType: "project", ResourceID: input.ProjectID, ResourceName: input.ProjectID, User: user,
+		EnvironmentID: input.EnvironmentID, Type: activitytypes.TypeResourceAction, ResourceType: "project", ResourceID: input.ProjectID, ResourceName: h.projectActivityNameInternal(runtimeCtx, input.ProjectID), User: user,
 		Step: "Updating project workspace", Message: "Updating project workspace", SuccessMessage: "Project workspace updated successfully",
 		Metadata: database.JSON{"action": "update_project_workspace", "fileChangeCount": len(manifest.FileChanges)},
 	}, func(runtimeCtx context.Context) error {

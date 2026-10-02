@@ -3,7 +3,9 @@
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { SettingsPageLayout } from '#lib/layouts/index.js';
 	import { CodeIcon } from '#lib/icons/index.js';
-	import TextInputWithLabel from '#lib/components/form/text-input-with-label.svelte';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import SettingsRow from '#lib/components/settings/settings-row.svelte';
+	import SettingsSection from '#lib/components/settings/settings-section.svelte';
 	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
 	import { m } from '#lib/paraglide/messages.js';
 	import { createSettingsForm } from '#lib/utils/settings-form.js';
@@ -83,7 +85,7 @@
 </script>
 
 <SettingsPageLayout
-	title={m.build()}
+	title={m.builds()}
 	description={m.build_settings_page_description()}
 	icon={CodeIcon}
 	pageType="form"
@@ -91,59 +93,73 @@
 >
 	{#snippet mainContent()}
 		<fieldset disabled={isReadOnly} class="relative space-y-8">
-			<div class="space-y-4">
-				<h3 class="text-base font-semibold">{m.build_workspace()}</h3>
-				<div class="max-w-xl">
-					<TextInputWithLabel
-						bind:value={formInputs.buildsDirectory.value}
-						error={formInputs.buildsDirectory.error}
-						label={m.build_settings_directory_label()}
-						description={m.build_settings_directory_description()}
+			<SettingsSection title={m.build_workspace()}>
+				<SettingsRow
+					for="builds-directory"
+					label={m.build_settings_directory_label()}
+					description={m.build_settings_directory_description()}
+					helpText={m.build_settings_directory_help()}
+					error={formInputs.buildsDirectory.error}
+				>
+					<Input
+						id="builds-directory"
 						placeholder={m.build_settings_directory_placeholder()}
-						helpText={m.build_settings_directory_help()}
+						bind:value={formInputs.buildsDirectory.value}
+						aria-invalid={!!formInputs.buildsDirectory.error}
 					/>
-				</div>
-			</div>
+				</SettingsRow>
+			</SettingsSection>
 
-			<div class="space-y-4">
-				<h3 class="text-base font-semibold">{m.build_provider()}</h3>
-				<div class="grid gap-5 sm:grid-cols-2">
-					<div>
-						<SelectWithLabel
-							id="build-provider"
-							name="buildProvider"
-							bind:value={
-								() => resolvedProvider,
-								(value) => {
-									if (value === 'depot' && depotCredentialsPresent) formInputs.buildProvider.value = 'depot';
-									else formInputs.buildProvider.value = 'local';
-								}
+			<SettingsSection title={m.build_provider()}>
+				<SettingsRow
+					for="build-provider"
+					label={m.build_settings_default_provider_label()}
+					description={m.build_settings_default_provider_description()}
+					error={formInputs.buildProvider.error}
+					helpText={!depotCredentialsPresent && !depotConfigured ? m.build_settings_depot_enable_hint() : undefined}
+				>
+					<SelectWithLabel
+						id="build-provider"
+						name="buildProvider"
+						hideLabel
+						bind:value={
+							() => resolvedProvider,
+							(value) => {
+								if (value === 'depot' && depotCredentialsPresent) formInputs.buildProvider.value = 'depot';
+								else formInputs.buildProvider.value = 'local';
 							}
-							error={formInputs.buildProvider.error}
-							label={m.build_settings_default_provider_label()}
-							description={m.build_settings_default_provider_description()}
-							options={providerOptions}
-						/>
-						{#if !depotCredentialsPresent && !depotConfigured}
-							<p class="mt-2 text-xs text-muted-foreground">{m.build_settings_depot_enable_hint()}</p>
-						{/if}
-					</div>
-					<TextInputWithLabel
-						bind:value={formInputs.buildTimeout.value}
-						error={formInputs.buildTimeout.error}
-						label={m.build_settings_timeout_label()}
-						description={m.build_settings_timeout_description()}
-						placeholder={m.build_settings_timeout_placeholder()}
-						helpText={m.build_settings_timeout_help()}
-						type="number"
+						}
+						label={m.build_settings_default_provider_label()}
+						options={providerOptions}
 					/>
-				</div>
-			</div>
+				</SettingsRow>
+				<SettingsRow
+					for="build-timeout"
+					label={m.build_settings_timeout_label()}
+					description={m.build_settings_timeout_description()}
+					helpText={m.build_settings_timeout_help()}
+					error={formInputs.buildTimeout.error}
+				>
+					<Input
+						id="build-timeout"
+						type="number"
+						placeholder={m.build_settings_timeout_placeholder()}
+						bind:value={formInputs.buildTimeout.value}
+						aria-invalid={!!formInputs.buildTimeout.error}
+					/>
+				</SettingsRow>
+			</SettingsSection>
 
-			<div class="space-y-4">
-				<h3 class="text-base font-semibold">{m.depot()}</h3>
-				<div class="grid gap-5 sm:grid-cols-2">
-					<TextInputWithLabel
+			<SettingsSection title={m.depot()}>
+				<SettingsRow
+					for="depot-project-id"
+					label={m.build_settings_depot_project_id_label()}
+					description={m.build_settings_depot_project_id_description()}
+					error={formInputs.depotProjectId.error}
+				>
+					<Input
+						id="depot-project-id"
+						placeholder={m.build_settings_depot_project_id_placeholder()}
 						bind:value={
 							() => formInputs.depotProjectId.value,
 							(value) => {
@@ -151,12 +167,20 @@
 								if (!depotCredentialsPresent) formInputs.buildProvider.value = 'local';
 							}
 						}
-						error={formInputs.depotProjectId.error}
-						label={m.build_settings_depot_project_id_label()}
-						description={m.build_settings_depot_project_id_description()}
-						placeholder={m.build_settings_depot_project_id_placeholder()}
+						aria-invalid={!!formInputs.depotProjectId.error}
 					/>
-					<TextInputWithLabel
+				</SettingsRow>
+				<SettingsRow
+					for="depot-token"
+					label={m.build_settings_depot_token_label()}
+					description={m.build_settings_depot_token_description()}
+					helpText={m.build_settings_depot_token_help()}
+					error={formInputs.depotToken.error}
+				>
+					<Input
+						id="depot-token"
+						type="password"
+						placeholder={m.build_settings_depot_token_placeholder()}
 						bind:value={
 							() => formInputs.depotToken.value,
 							(value) => {
@@ -164,15 +188,10 @@
 								if (!depotCredentialsPresent) formInputs.buildProvider.value = 'local';
 							}
 						}
-						error={formInputs.depotToken.error}
-						label={m.build_settings_depot_token_label()}
-						description={m.build_settings_depot_token_description()}
-						placeholder={m.build_settings_depot_token_placeholder()}
-						type="password"
-						helpText={m.build_settings_depot_token_help()}
+						aria-invalid={!!formInputs.depotToken.error}
 					/>
-				</div>
-			</div>
+				</SettingsRow>
+			</SettingsSection>
 		</fieldset>
 	{/snippet}
 </SettingsPageLayout>

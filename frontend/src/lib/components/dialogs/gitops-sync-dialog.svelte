@@ -597,7 +597,7 @@
 <ResponsiveDialog
 	bind:open
 	title={isEditMode ? m.git_sync_edit_title() : m.git_sync_add_title()}
-	description={isEditMode ? m.common_edit_description() : m.common_add_description()}
+	description={isEditMode ? m.common_edit_description() : m.git_sync_add_description()}
 	contentClass="sm:max-w-3xl"
 >
 	{#snippet children()}

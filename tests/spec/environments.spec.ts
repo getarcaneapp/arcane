@@ -453,7 +453,7 @@ test.describe('Settings', () => {
 			await page.locator('#api-url').press('Tab');
 			await expect(tokenInput).toHaveValue('');
 			await tokenInput.fill(apiKey);
-			await page.getByRole('button', { name: 'Back to Environments', exact: true }).click();
+			await page.getByRole('link', { name: 'Back', exact: true }).first().click();
 			await expect(page).toHaveURL(/\/environments$/);
 			await expect(page.getByRole('heading', { name: 'Environments', exact: true })).toBeVisible();
 			await page.getByRole('button', { name: envName, exact: true }).click();

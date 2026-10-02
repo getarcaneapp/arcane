@@ -485,7 +485,7 @@ test.describe('Registries', () => {
 		});
 
 		test('should open Add Registry dialog and validate required fields', async ({ page }) => {
-			await page.getByRole('button', { name: 'Add Registry' }).click();
+			await page.getByRole('button', { name: 'Add Registry' }).first().click();
 
 			const dialog = page.getByRole('dialog');
 			await expect(dialog).toBeVisible();
@@ -527,7 +527,7 @@ test.describe('Registries', () => {
 
 		test('should create, test, edit, and delete a registry', async ({ page }) => {
 			// Create
-			await page.getByRole('button', { name: 'Add Registry' }).click();
+			await page.getByRole('button', { name: 'Add Registry' }).first().click();
 			const dialog = page.getByRole('dialog');
 			await waitForDialogReady(dialog);
 

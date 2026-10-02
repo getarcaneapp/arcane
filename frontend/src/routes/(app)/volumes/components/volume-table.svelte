@@ -285,9 +285,13 @@
 	{:else if item.size > 0}
 		<span class="text-sm tabular-nums">{bytes.format(item.size)}</span>
 	{:else if sizesEnabled && sizesQuery.isError}
-		<span class="text-sm text-muted-foreground" title={extractApiErrorMessage(sizesQuery.error)}>{m.common_unavailable()}</span>
+		<span
+			class="text-sm text-muted-foreground"
+			title={m.volumes_size_calculation_failed({ error: extractApiErrorMessage(sizesQuery.error) })}
+			>{m.common_unavailable()}</span
+		>
 	{:else}
-		<span class="text-sm text-muted-foreground">-</span>
+		<span class="text-sm text-muted-foreground" title={sizesEnabled ? m.volumes_size_not_reported() : undefined}>-</span>
 	{/if}
 {/snippet}
 

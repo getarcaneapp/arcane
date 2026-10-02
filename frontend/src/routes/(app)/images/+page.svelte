@@ -23,7 +23,9 @@
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { CloseIcon, VolumesIcon, LocalFolderComputerIcon, SearchIcon } from '#lib/icons/index.js';
 	import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
-	import PruneModeCard from '#lib/components/prune/prune-mode-card.svelte';
+	import PruneModePicker from '#lib/components/prune/prune-mode-picker.svelte';
+	import SettingsRow from '#lib/components/settings/settings-row.svelte';
+	import SettingsSection from '#lib/components/settings/settings-section.svelte';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 
 	let { data } = $props();
@@ -424,16 +426,16 @@
 					<Dialog.Title>{m.images_prune_confirm_title()}</Dialog.Title>
 					<Dialog.Description>{m.images_prune_confirm_description({ mode: imagePruneMode })}</Dialog.Description>
 				</Dialog.Header>
-				<div class="py-4">
-					<PruneModeCard
-						title={m.images()}
-						description={m.prune_images_dialog_description()}
-						modeOptions={imagePruneModes}
-						bind:value={imagePruneMode}
-						bind:untilValue={imagePruneUntil}
-						disabled={isPruning}
-					/>
-				</div>
+				<SettingsSection class="py-4">
+					<SettingsRow label={m.images()} description={m.prune_images_dialog_description()} layout="wide">
+						<PruneModePicker
+							modeOptions={imagePruneModes}
+							bind:value={imagePruneMode}
+							bind:untilValue={imagePruneUntil}
+							disabled={isPruning}
+						/>
+					</SettingsRow>
+				</SettingsSection>
 				<div class="flex justify-end gap-3 pt-6">
 					<ArcaneButton action="cancel" onclick={() => (isConfirmPruneDialogOpen = false)} disabled={isPruning} />
 					<ArcaneButton

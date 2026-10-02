@@ -99,45 +99,80 @@ func WriteTemplateFiles(composePath, envPath, composeContent, envContent string)
 	return &envContent, nil
 }
 
+// Previous built-in templates; unedited on-disk copies are upgraded to the current defaults.
+const (
+	retiredDefaultComposeTemplate = `services:
+  nginx:
+    image: nginx:alpine
+    container_name: nginx_service
+    env_file:
+      - .env
+    ports:
+      - "8080:80"
+    volumes:
+      - nginx_data:/usr/share/nginx/html
+    restart: unless-stopped
+
+volumes:
+  nginx_data:
+    driver: local
+`
+
+	retiredDefaultEnvTemplate = `# Environment Variables
+# These variables will be available to your project services
+# Format: VARIABLE_NAME=value
+
+# Web Server Configuration
+NGINX_HOST=localhost
+NGINX_PORT=80
+
+# Database Configuration
+POSTGRES_DB=myapp
+POSTGRES_USER=myuser
+POSTGRES_PASSWORD=mypassword
+POSTGRES_PORT=5432
+
+# Example Additional Variables
+# API_KEY=your_api_key_here
+# SECRET_KEY=your_secret_key_here
+# DEBUG=false
+`
+)
+
+// EnsureDefaultTemplates writes missing default templates and upgrades unedited retired defaults.
 func EnsureDefaultTemplates(ctx context.Context, configuredTemplatesDir string) error {
 	templatesDir, err := GetTemplatesDirectory(ctx, configuredTemplatesDir)
 	if err != nil {
 		return fmt.Errorf("get templates directory: %w", err)
 	}
 
-	// Write default compose template if it doesn't exist
-	if exists, err := acfs.Exists(ctx, templatesDir, "/.compose.template"); err != nil {
-		return fmt.Errorf("write default compose template: %w", err)
-	} else if !exists {
-		if err := acfs.Write(ctx, templatesDir, "/.compose.template", []byte(getDefaultComposeTemplate()), acfs.WriteOptions{Mode: utils.FilePerm}); err != nil {
-			return fmt.Errorf("write default compose template: %w", err)
-		}
+	defaults := []struct {
+		path, name, content, retired string
+	}{
+		{"/.compose.template", "compose", getDefaultComposeTemplate(), retiredDefaultComposeTemplate},
+		{"/.swarm-stack.template", "swarm stack", DefaultSwarmStackTemplate(), ""},
+		{"/.swarm-stack.env.template", "swarm stack env", DefaultSwarmStackEnvTemplate(), ""},
+		{"/.env.template", "env", getDefaultEnvTemplate(), retiredDefaultEnvTemplate},
 	}
-
-	// Write default swarm stack template if it doesn't exist
-	if exists, err := acfs.Exists(ctx, templatesDir, "/.swarm-stack.template"); err != nil {
-		return fmt.Errorf("write default swarm stack template: %w", err)
-	} else if !exists {
-		if err := acfs.Write(ctx, templatesDir, "/.swarm-stack.template", []byte(DefaultSwarmStackTemplate()), acfs.WriteOptions{Mode: utils.FilePerm}); err != nil {
-			return fmt.Errorf("write default swarm stack template: %w", err)
+	for _, tmpl := range defaults {
+		exists, err := acfs.Exists(ctx, templatesDir, tmpl.path)
+		if err != nil {
+			return fmt.Errorf("write default %s template: %w", tmpl.name, err)
 		}
-	}
-
-	// Write default swarm stack env template if it doesn't exist
-	if exists, err := acfs.Exists(ctx, templatesDir, "/.swarm-stack.env.template"); err != nil {
-		return fmt.Errorf("write default swarm stack env template: %w", err)
-	} else if !exists {
-		if err := acfs.Write(ctx, templatesDir, "/.swarm-stack.env.template", []byte(DefaultSwarmStackEnvTemplate()), acfs.WriteOptions{Mode: utils.FilePerm}); err != nil {
-			return fmt.Errorf("write default swarm stack env template: %w", err)
+		if exists {
+			if tmpl.retired == "" {
+				continue
+			}
+			current, err := acfs.ReadFile(ctx, templatesDir, tmpl.path)
+			if err != nil {
+				return fmt.Errorf("read default %s template: %w", tmpl.name, err)
+			}
+			if string(current) != tmpl.retired {
+				continue
+			}
 		}
-	}
-
-	// Write default env template if it doesn't exist
-	if exists, err := acfs.Exists(ctx, templatesDir, "/.env.template"); err != nil {
-		return fmt.Errorf("write default env template: %w", err)
-	} else if !exists {
-		if err := acfs.Write(ctx, templatesDir, "/.env.template", []byte(getDefaultEnvTemplate()), acfs.WriteOptions{Mode: utils.FilePerm}); err != nil {
-			return fmt.Errorf("write default env template: %w", err)
+		if err := acfs.Write(ctx, templatesDir, tmpl.path, []byte(tmpl.content), acfs.WriteOptions{Mode: utils.FilePerm}); err != nil {
+			return fmt.Errorf("write default %s template: %w", tmpl.name, err)
 		}
 	}
 
@@ -152,7 +187,7 @@ func getDefaultComposeTemplate() string {
     env_file:
       - .env
     ports:
-      - "8080:80"
+      - "${NGINX_HOST_PORT:-8080}:80"
     volumes:
       - nginx_data:/usr/share/nginx/html
     restart: unless-stopped
@@ -230,24 +265,14 @@ STACK_RESTART_DELAY=5s
 }
 
 func getDefaultEnvTemplate() string {
-	return `# Environment Variables
-# These variables will be available to your project services
-# Format: VARIABLE_NAME=value
+	return `# Project variables
+# These values are interpolated into compose.yaml and passed to services via env_file.
+# Example syntax in compose.yaml:
+#   ports:
+#     - "${NGINX_HOST_PORT:-8080}:80"
 
-# Web Server Configuration
-NGINX_HOST=localhost
-NGINX_PORT=80
-
-# Database Configuration
-POSTGRES_DB=myapp
-POSTGRES_USER=myuser
-POSTGRES_PASSWORD=mypassword
-POSTGRES_PORT=5432
-
-# Example Additional Variables
-# API_KEY=your_api_key_here
-# SECRET_KEY=your_secret_key_here
-# DEBUG=false
+# Host port that serves the nginx container
+NGINX_HOST_PORT=8080
 `
 }
 

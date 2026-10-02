@@ -338,10 +338,10 @@
 {/snippet}
 
 {#snippet sectionHeading(title: string, description?: string)}
-	<div class="space-y-1">
-		<h3 class="text-base font-semibold">{title}</h3>
+	<div class="space-y-0.5 px-1">
+		<h3 class="text-sm font-semibold">{title}</h3>
 		{#if description}
-			<p class="text-sm text-muted-foreground">{description}</p>
+			<p class="text-xs text-muted-foreground">{description}</p>
 		{/if}
 	</div>
 {/snippet}

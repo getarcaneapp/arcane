@@ -12,6 +12,7 @@
 	import { IsMobile } from '#lib/hooks/is-mobile.svelte.js';
 	import { IsTablet } from '#lib/hooks/is-tablet.svelte.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { getNavigationTitleForPath } from '#lib/config/navigation-config.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { cn } from '#lib/utils.js';
@@ -58,12 +59,36 @@
 		refreshAll();
 	}
 
+	const resourceName = $derived.by((): string | undefined => {
+		switch (page.route.id) {
+			case '/(app)/projects/[projectId]':
+				return page.data['project']?.name;
+			case '/(app)/containers/[containerId]':
+				return page.data['container']?.name?.replace(/^\/+/, '');
+			case '/(app)/volumes/[volumeName]':
+				return page.params['volumeName'];
+			case '/(app)/networks/[networkId]':
+				return page.data['network']?.name;
+			case '/(app)/images/[imageId]':
+				return page.data['image']?.repo;
+			default:
+				return undefined;
+		}
+	});
+
+	// Root layout owns the document title; nested <title> tags are never restored on unmount.
 	const pageTitle = $derived(
-		environmentStore.selected ? `${m.layout_title()} | ${environmentStore.selected.name}` : m.layout_title()
+		[m.layout_title(), getNavigationTitleForPath(page.url.pathname), resourceName, environmentStore.selected?.name]
+			.filter(Boolean)
+			.join(' | ')
 	);
 </script>
 
-<svelte:head><title>{pageTitle}</title></svelte:head>
+<svelte:head>
+	{#if !isAuthPage}
+		<title>{pageTitle}</title>
+	{/if}
+</svelte:head>
 
 <QueryClientProvider client={data.queryClient}>
 	<div class={cn('flex min-h-dvh flex-col', 'bg-transparent')}>

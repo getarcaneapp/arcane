@@ -34,7 +34,7 @@
 </script>
 
 {#if onTest}
-	<div class="pt-2">
+	<div class="flex justify-end px-5 py-4">
 		<DropdownMenu.Root>
 			<DropdownMenu.Trigger>
 				<ArcaneButton

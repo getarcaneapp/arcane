@@ -1,12 +1,11 @@
 <script lang="ts">
 	import * as Alert from '#lib/components/ui/alert/index.js';
 	import { Switch } from '#lib/components/ui/switch/index.js';
-	import TextInputWithLabel from '#lib/components/form/text-input-with-label.svelte';
+	import { Input } from '#lib/components/ui/input/index.js';
 	import SettingsRow from '#lib/components/settings/settings-row.svelte';
-	import { AlertIcon, CodeIcon } from '#lib/icons/index.js';
+	import SettingsSection from '#lib/components/settings/settings-section.svelte';
+	import { AlertIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-
-	import SectionCard from '#lib/components/section-card.svelte';
 
 	type LifecycleSecurityFormValues = {
 		lifecycleEnabled: boolean;
@@ -26,44 +25,50 @@
 	let { formInputs = $bindable() }: { formInputs: LifecycleSecurityFormInputs } = $props();
 </script>
 
-<SectionCard variant="transparent" title={m.security_lifecycle_hooks_heading()} icon={CodeIcon} class="flex flex-col" divided>
+<SettingsSection title={m.security_lifecycle_hooks_heading()}>
+	{#snippet actions()}
+		<Alert.Root variant="warning" size="sm" class="max-w-xl">
+			<AlertIcon class="size-4" />
+			<Alert.Description>{m.security_lifecycle_hooks_note()}</Alert.Description>
+		</Alert.Root>
+	{/snippet}
+
 	<SettingsRow
+		for="lifecycleEnabledSwitch"
 		label={m.security_lifecycle_enabled_label()}
 		description={m.security_lifecycle_enabled_description()}
-		layout="inline"
+		layout="switch"
 	>
 		<Switch id="lifecycleEnabledSwitch" bind:checked={formInputs.lifecycleEnabled.value} />
 	</SettingsRow>
 
-	<div class="max-w-xl">
-		<TextInputWithLabel
+	<SettingsRow
+		for="lifecycleDefaultRunnerImage"
+		label={m.security_lifecycle_runner_image_label()}
+		description={m.security_lifecycle_runner_image_description()}
+		helpText={m.security_lifecycle_runner_image_help()}
+		error={formInputs.lifecycleDefaultRunnerImage.error}
+	>
+		<Input
+			id="lifecycleDefaultRunnerImage"
 			bind:value={formInputs.lifecycleDefaultRunnerImage.value}
-			error={formInputs.lifecycleDefaultRunnerImage.error}
-			label={m.security_lifecycle_runner_image_label()}
-			description={m.security_lifecycle_runner_image_description()}
-			helpText={m.security_lifecycle_runner_image_help()}
 			placeholder="alpine:latest"
-			type="text"
+			aria-invalid={!!formInputs.lifecycleDefaultRunnerImage.error}
 		/>
-	</div>
+	</SettingsRow>
 
-	<div class="max-w-xs">
-		<TextInputWithLabel
-			bind:value={formInputs.lifecycleMaxTimeoutSec.value}
-			error={formInputs.lifecycleMaxTimeoutSec.error}
-			label={m.security_lifecycle_max_timeout_label()}
-			description={m.security_lifecycle_max_timeout_description()}
-			helpText={m.security_lifecycle_max_timeout_help()}
+	<SettingsRow
+		for="lifecycleMaxTimeoutSec"
+		label={m.security_lifecycle_max_timeout_label()}
+		description={m.security_lifecycle_max_timeout_description()}
+		helpText={m.security_lifecycle_max_timeout_help()}
+		error={formInputs.lifecycleMaxTimeoutSec.error}
+	>
+		<Input
+			id="lifecycleMaxTimeoutSec"
 			type="number"
+			bind:value={formInputs.lifecycleMaxTimeoutSec.value}
+			aria-invalid={!!formInputs.lifecycleMaxTimeoutSec.error}
 		/>
-	</div>
-
-	<div>
-		<Alert.Root variant="warning" size="sm">
-			<AlertIcon class="size-4" />
-			<Alert.Description>
-				{m.security_lifecycle_hooks_note()}
-			</Alert.Description>
-		</Alert.Root>
-	</div>
-</SectionCard>
+	</SettingsRow>
+</SettingsSection>

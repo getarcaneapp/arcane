@@ -123,3 +123,21 @@ services:
 		})
 	}
 }
+
+func TestEnsureDefaultTemplates_UpgradesOnlyUneditedRetiredDefaults(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	customCompose := "services:\n  app:\n    image: custom\n"
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".compose.template"), []byte(customCompose), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".env.template"), []byte(retiredDefaultEnvTemplate), 0o600))
+
+	require.NoError(t, EnsureDefaultTemplates(t.Context(), dir))
+
+	compose, err := os.ReadFile(filepath.Join(dir, ".compose.template"))
+	require.NoError(t, err)
+	assert.Equal(t, customCompose, string(compose))
+	env, err := os.ReadFile(filepath.Join(dir, ".env.template"))
+	require.NoError(t, err)
+	assert.Equal(t, getDefaultEnvTemplate(), string(env))
+}

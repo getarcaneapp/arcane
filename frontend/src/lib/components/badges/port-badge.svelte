@@ -136,6 +136,9 @@
 							{m.published()}: {ip.includes(':') ? `[${ip}]` : ip}:{p.hostPort} → {p.containerPort}{p.proto ? `/${p.proto}` : ''}
 						</p>
 					{/each}
+					<p class="mt-1 text-xs text-muted-foreground">
+						{m.port_link_base_server_url_hint({ url: toPortHref(p.hostPort!, baseServerUrl) })}
+					</p>
 				</ArcaneTooltip.Content>
 			</ArcaneTooltip.Root>
 		{/each}

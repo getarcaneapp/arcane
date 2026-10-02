@@ -6,7 +6,9 @@
 	import CreateFolderDialog from '#lib/components/file-browser/CreateFolderDialog.svelte';
 	import FileUploadDialog from '#lib/components/file-browser/FileUploadDialog.svelte';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import { UploadIcon, MoveToFolderIcon, EllipsisIcon, CopyIcon } from '#lib/icons/index.js';
+	import { UploadIcon, MoveToFolderIcon, EllipsisIcon, CopyIcon, AlertTriangleIcon } from '#lib/icons/index.js';
+	import { EmptyState } from '#lib/components/states/index.js';
+	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
@@ -53,11 +55,8 @@
 	});
 
 	const loading = $derived(filesQuery.isPending);
-	const error = $derived.by(() => {
-		const err = filesQuery.error as any;
-		if (!err) return null;
-		return err.message || 'Failed to load files';
-	});
+	const error = $derived(filesQuery.error ? extractApiErrorMessage(filesQuery.error) : null);
+	const canOpenBuildSettings = $derived(hasPermission('settings:read'));
 
 	let showCreateFolder = $state(false);
 	let showUpload = $state(false);
@@ -240,9 +239,21 @@
 			<Spinner tone="muted" class="size-8" />
 		</div>
 	{:else if error}
-		<div class="rounded-lg border border-destructive/20 bg-destructive/10 p-6 text-sm text-destructive">
-			{error}
-		</div>
+		<EmptyState
+			icon={AlertTriangleIcon}
+			title={m.build_workspace_unavailable_title()}
+			description={m.build_workspace_unavailable_description()}
+		>
+			<p class="max-w-md text-xs break-words text-muted-foreground">{error}</p>
+			<div class="flex flex-wrap justify-center gap-2">
+				<ArcaneButton action="refresh" customLabel={m.common_retry()} onclick={() => filesQuery.refetch()} />
+				{#if canOpenBuildSettings}
+					<ArcaneButton action="base" tone="outline" customLabel={m.build_workspace_open_settings()} href="/settings/builds" />
+				{:else}
+					<p class="text-xs text-muted-foreground">{m.build_workspace_ask_admin()}</p>
+				{/if}
+			</div>
+		</EmptyState>
 	{:else}
 		<div class="min-h-0 flex-1 overflow-hidden">
 			<FileList

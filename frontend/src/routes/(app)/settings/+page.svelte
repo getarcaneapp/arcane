@@ -25,7 +25,7 @@
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { SettingsCategory } from '#lib/types/shared.js';
 	import { canReachAccessSurfaceUrl } from '#lib/utils/access-policy.js';
-	import { getSettingsSubpageUrlsInNavOrder } from '#lib/config/navigation-config.js';
+	import { filterByPermissions, getSettingsSubpageUrlsInNavOrder, navigationItems } from '#lib/config/navigation-config.js';
 	import { useCategorySearch } from '#lib/hooks/use-category-search.svelte.js';
 	import { getCategoryIcon, orderCategoriesByNav } from '#lib/utils/category-page.js';
 	import CategoryIndexPage from '#lib/components/category-index-page.svelte';
@@ -147,7 +147,25 @@
 		href: '/account?tab=preferences'
 	};
 
-	const normalizedCategories = $derived([...settingsCategories.map(normalize), accountPreferencesCategory]);
+	// Roles and Diagnostics have no backend settings fields, so their cards reuse the gated sidebar entries.
+	const navOnlyCardDescriptions: Record<string, () => string> = {
+		'/settings/roles': m.roles_subtitle,
+		'/settings/diagnostics': m.diagnostics_description
+	};
+	const navOnlyCategories = $derived(
+		filterByPermissions(
+			navigationItems.settingsItems.find((item) => item.url === '/settings')?.items,
+			user ?? null,
+			environmentStore.selected?.id,
+			permissionsManifest
+		).flatMap((item): NormalizedCategory[] => {
+			const description = navOnlyCardDescriptions[item.url];
+			if (!description) return [];
+			return [{ id: item.url, title: item.title, description: description(), icon: item.icon, href: item.url }];
+		})
+	);
+
+	const normalizedCategories = $derived([...settingsCategories.map(normalize), ...navOnlyCategories, accountPreferencesCategory]);
 	const searchAdapter = {
 		get searchQuery() {
 			return categorySearch.searchQuery;

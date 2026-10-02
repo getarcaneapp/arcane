@@ -1,5 +1,7 @@
 <script lang="ts">
 	import JobRunHistory from '#lib/components/job-card/job-run-history.svelte';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
 	import { CopyButton } from '#lib/components/ui/copy-button/index.js';
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
@@ -9,6 +11,7 @@
 	import ActivityOutput from './activity-output.svelte';
 
 	let { activity }: { activity: Activity } = $props();
+	let historyOpen = $state(false);
 
 	// Prefer the freshest activity data from the store (messages stream may update it).
 	const liveActivity = $derived(activityStore.getActivity(activity.id) ?? activity);
@@ -29,7 +32,20 @@
 <div class="border-b border-border/50 bg-muted/25">
 	{#if liveActivity.type === 'job_run' && jobId && runId}
 		<IfPermitted perm="jobs:manage" envId={environmentId}>
-			<div class="px-4 py-2"><JobRunHistory {jobId} {environmentId} initialRunId={runId} /></div>
+			<div class="px-4 py-2">
+				<Button variant="ghost" size="sm" onclick={() => (historyOpen = true)}>{m.jobs_run_history()}</Button>
+				<Dialog.Root bind:open={historyOpen}>
+					<Dialog.Content class="max-h-(--max-height-screen-85) overflow-y-auto sm:max-w-2xl">
+						<Dialog.Header>
+							<Dialog.Title>{m.jobs_run_history()}</Dialog.Title>
+							<Dialog.Description>{jobId}</Dialog.Description>
+						</Dialog.Header>
+						{#if historyOpen}
+							<JobRunHistory {jobId} {environmentId} initialRunId={runId} />
+						{/if}
+					</Dialog.Content>
+				</Dialog.Root>
+			</div>
 		</IfPermitted>
 	{/if}
 	{#if liveActivity.type === 'job_run' && liveActivity.latestMessage && liveActivity.latestMessage !== liveActivity.error}

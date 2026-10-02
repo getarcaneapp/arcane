@@ -24,7 +24,7 @@
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import AuthAmbient from '#lib/components/auth/auth-ambient.svelte';
 	import MFAChallenge from '#lib/components/auth/mfa-challenge.svelte';
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import { createMutation, useQueryClient } from '@tanstack/svelte-query';
 
 	let { data }: PageProps = $props();
@@ -48,6 +48,7 @@
 	const showLocalLoginForm = $derived(localAuthEnabledBySettings);
 
 	const oidcAutoRedirect = $derived(data.settings?.oidcAutoRedirectToProvider === true);
+	const shouldAutoRedirect = $derived(oidcAutoRedirect && oidcEnabledBySettings && !data.error && !data.isBackupLogin);
 
 	const oidcProviderName = $derived(data.settings?.oidcProviderName || '');
 	const oidcProviderLogoUrl = $derived(data.settings?.oidcProviderLogoUrl || '');
@@ -117,8 +118,11 @@
 
 	onMount(() => {
 		passkeySupported = browserSupportsWebAuthn();
-		if (oidcAutoRedirect && oidcEnabledBySettings && !data.error) {
-			oidcLoginMutation.mutate();
+	});
+
+	$effect(() => {
+		if (shouldAutoRedirect) {
+			untrack(handleOidcLogin);
 		}
 	});
 

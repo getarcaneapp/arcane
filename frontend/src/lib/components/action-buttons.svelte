@@ -396,7 +396,7 @@
 				const activityId = extractActivityId(data);
 				if (activityId) {
 					toast.success(
-						type === 'project' ? m.compose_stop_success() : m.containers_stop_success(),
+						type === 'project' ? m.compose_down_success() : m.containers_stop_success(),
 						activityToastOptions(activityId)
 					);
 				}

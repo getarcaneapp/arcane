@@ -265,6 +265,7 @@ html.reduce-effects *::after {
 	--shadow-button-hover: var(--button-shadow-hover);
 
 	--grid-template-columns-content-action: minmax(0, 1fr) auto;
+	--grid-template-columns-settings-row: minmax(0, 1fr) minmax(16rem, 22rem);
 	--grid-template-columns-content-actions: minmax(0, 1fr) auto auto;
 	--grid-template-columns-index-content-action: 1.25rem minmax(0, 1fr) auto;
 	--grid-template-columns-icon-content-action: auto minmax(0, 1fr) auto;

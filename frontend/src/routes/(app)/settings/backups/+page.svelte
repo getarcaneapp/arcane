@@ -10,6 +10,8 @@
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { SettingsPageLayout } from '#lib/layouts/index.js';
 	import type { ActionButton } from '#lib/components/action-button-group/types.js';
+	import { EmptyState } from '#lib/components/states/index.js';
+	import SettingsSection from '#lib/components/settings/settings-section.svelte';
 	import { AlertIcon, BackupIcon, CloudStorageIcon, InfoIcon, LockIcon, ResetIcon, UploadIcon } from '#lib/icons/index.js';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 	import * as Alert from '#lib/components/ui/alert/index.js';
@@ -589,6 +591,17 @@
 	]);
 </script>
 
+{#snippet backupsEmptyState()}
+	<EmptyState
+		variant="plain"
+		icon={BackupIcon}
+		title={m.system_backups_empty_title()}
+		description={m.system_backups_empty_description()}
+		actionLabel={isReadOnly ? undefined : m.common_create()}
+		onAction={() => openAction('create')}
+	/>
+{/snippet}
+
 {#snippet recoveryKeySummary()}
 	{#if !policyCollection.recoveryKeyStored}
 		<div class="flex items-center justify-between gap-3 rounded-md border border-warning/40 bg-warning/5 px-3 py-2">
@@ -868,11 +881,10 @@
 	{actionButtons}
 >
 	{#snippet mainContent()}
-		<div class="space-y-4">
+		<div class="space-y-8">
 			{@render recoveryKeySummary()}
 
-			<div class="space-y-2">
-				<h2 class="text-lg font-semibold">{m.system_backups_schedules()}</h2>
+			<SettingsSection title={m.system_backups_schedules()} variant="plain">
 				{#if policyCollection.policies.length || systemVolumePolicyCollection.policies.length}
 					<div class="grid grid-cols-1 gap-1.5 text-xs text-muted-foreground sm:grid-cols-2 xl:grid-cols-3">
 						{#each policyCollection.policies as policy (policy.id)}
@@ -896,7 +908,7 @@
 				{:else}
 					<p class="text-sm text-muted-foreground">{m.system_backups_no_schedules()}</p>
 				{/if}
-			</div>
+			</SettingsSection>
 
 			{#each backupActivity.activeIds as activityId (activityId)}
 				<Alert.Root
@@ -913,6 +925,7 @@
 			{/each}
 
 			<SystemBackupTable
+				emptyState={backupsEmptyState}
 				bind:backups
 				bind:requestOptions
 				onChanged={(options) => systemBackupService.listHistory(options)}

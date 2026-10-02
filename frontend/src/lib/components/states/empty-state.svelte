@@ -15,14 +15,26 @@
 		onAction?: () => void;
 		actionHref?: string;
 		class?: ClassValue;
+		/** Use `plain` when the surrounding container already draws the frame (e.g. tables). */
+		variant?: 'default' | 'card' | 'plain';
 		/** Custom action content; overrides the actionLabel button when present. */
 		children?: Snippet;
 	}
 
-	let { icon: Icon, title, description, actionLabel, onAction, actionHref, class: className, children }: Props = $props();
+	let {
+		icon: Icon,
+		title,
+		description,
+		actionLabel,
+		onAction,
+		actionHref,
+		class: className,
+		variant,
+		children
+	}: Props = $props();
 </script>
 
-<Empty.Root class={className}>
+<Empty.Root class={className} {variant}>
 	<Empty.Header>
 		{#if Icon}
 			<Empty.Media variant="icon">

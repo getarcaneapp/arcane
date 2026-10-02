@@ -32,3 +32,31 @@ export function jobNameLabel(job: JobStatus): string {
 	if (!label) return job.name;
 	return target.length ? m.jobs_dynamic_job_name({ name: label, target: target.join(':') }) : label;
 }
+
+export type JobPanelSection = 'overview' | 'history';
+
+export type JobStatusTone = 'green' | 'red' | 'amber' | 'blue' | 'gray';
+
+/** Badge tone for a run or worker status. */
+export function jobStatusTone(status: string | undefined): JobStatusTone {
+	switch (status) {
+		case 'succeeded':
+		case 'healthy':
+			return 'green';
+		case 'failed':
+		case 'needs_attention':
+		case 'stopped':
+			return 'red';
+		case 'partial':
+		case 'degraded':
+		case 'retrying':
+		case 'waiting':
+			return 'amber';
+		case 'running':
+		case 'queued':
+		case 'starting':
+			return 'blue';
+		default:
+			return 'gray';
+	}
+}

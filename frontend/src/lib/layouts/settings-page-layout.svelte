@@ -83,7 +83,7 @@
 				{/if}
 
 				{#if pageType === 'form' && formState?.saveFunction && !showReadOnlyTag}
-					<div class="hidden items-center gap-2 sm:flex">
+					<div class="hidden items-center gap-2 md:flex">
 						{#if formState.hasChanges}
 							<span class="mr-2 text-xs text-warning">{m.common_unsaved_changes()}</span>
 						{:else}

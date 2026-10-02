@@ -4,7 +4,9 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { SettingsPageLayout } from '#lib/layouts/index.js';
 	import { ActivityIcon } from '#lib/icons/index.js';
-	import TextInputWithLabel from '#lib/components/form/text-input-with-label.svelte';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import SettingsRow from '#lib/components/settings/settings-row.svelte';
+	import SettingsSection from '#lib/components/settings/settings-section.svelte';
 	import { createSettingsForm } from '#lib/utils/settings-form.js';
 
 	let { data } = $props();
@@ -45,51 +47,69 @@
 >
 	{#snippet mainContent()}
 		<fieldset disabled={isReadOnly} class="relative space-y-8">
-			<div class="space-y-4">
-				<h3 class="text-base font-semibold">{m.activity_history_section_title()}</h3>
-				<div class="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-					<TextInputWithLabel
-						bind:value={formInputs.activityHistoryRetentionDays.value}
-						error={formInputs.activityHistoryRetentionDays.error}
-						label={m.activity_history_retention_days()}
-						description={m.activity_history_retention_days_description()}
+			<SettingsSection title={m.activity_history_section_title()}>
+				<SettingsRow
+					for="activity-history-retention-days"
+					label={m.activity_history_retention_days()}
+					description={m.activity_history_retention_days_description()}
+					helpText={m.activity_history_retention_days_help()}
+					error={formInputs.activityHistoryRetentionDays.error}
+				>
+					<Input
+						id="activity-history-retention-days"
+						type="number"
 						placeholder={m.activity_history_retention_days_placeholder()}
-						helpText={m.activity_history_retention_days_help()}
-						type="number"
+						bind:value={formInputs.activityHistoryRetentionDays.value}
+						aria-invalid={!!formInputs.activityHistoryRetentionDays.error}
 					/>
-					<TextInputWithLabel
-						bind:value={formInputs.activityHistoryMaxEntries.value}
-						error={formInputs.activityHistoryMaxEntries.error}
-						label={m.activity_history_max_entries()}
-						description={m.activity_history_max_entries_description()}
+				</SettingsRow>
+				<SettingsRow
+					for="activity-history-max-entries"
+					label={m.activity_history_max_entries()}
+					description={m.activity_history_max_entries_description()}
+					helpText={m.activity_history_max_entries_help()}
+					error={formInputs.activityHistoryMaxEntries.error}
+				>
+					<Input
+						id="activity-history-max-entries"
+						type="number"
 						placeholder={m.activity_history_max_entries_placeholder()}
-						helpText={m.activity_history_max_entries_help()}
-						type="number"
+						bind:value={formInputs.activityHistoryMaxEntries.value}
+						aria-invalid={!!formInputs.activityHistoryMaxEntries.error}
 					/>
-					<TextInputWithLabel
-						bind:value={formInputs.maxConcurrentActivities.value}
-						error={formInputs.maxConcurrentActivities.error}
-						label={m.activity_max_concurrent()}
-						description={m.activity_max_concurrent_description()}
+				</SettingsRow>
+				<SettingsRow
+					for="activity-max-concurrent"
+					label={m.activity_max_concurrent()}
+					description={m.activity_max_concurrent_description()}
+					helpText={m.activity_max_concurrent_help()}
+					error={formInputs.maxConcurrentActivities.error}
+				>
+					<Input
+						id="activity-max-concurrent"
+						type="number"
 						placeholder={m.activity_max_concurrent_placeholder()}
-						helpText={m.activity_max_concurrent_help()}
-						type="number"
+						bind:value={formInputs.maxConcurrentActivities.value}
+						aria-invalid={!!formInputs.maxConcurrentActivities.error}
 					/>
-				</div>
-			</div>
-			<div class="space-y-4">
-				<h3 class="text-base font-semibold">{m.upgrade_logs_section_title()}</h3>
-				<div class="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-					<TextInputWithLabel
+				</SettingsRow>
+			</SettingsSection>
+			<SettingsSection title={m.upgrade_logs_section_title()}>
+				<SettingsRow
+					for="upgrade-log-retention-days"
+					label={m.upgrade_log_retention_days()}
+					description={m.upgrade_log_retention_days_description()}
+					helpText={m.upgrade_log_retention_days_help()}
+					error={formInputs.upgradeLogRetentionDays.error}
+				>
+					<Input
+						id="upgrade-log-retention-days"
+						type="number"
 						bind:value={formInputs.upgradeLogRetentionDays.value}
-						error={formInputs.upgradeLogRetentionDays.error}
-						label={m.upgrade_log_retention_days()}
-						description={m.upgrade_log_retention_days_description()}
-						helpText={m.upgrade_log_retention_days_help()}
-						type="number"
+						aria-invalid={!!formInputs.upgradeLogRetentionDays.error}
 					/>
-				</div>
-			</div>
+				</SettingsRow>
+			</SettingsSection>
 		</fieldset>
 	{/snippet}
 </SettingsPageLayout>

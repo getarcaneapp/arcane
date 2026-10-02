@@ -174,6 +174,9 @@
 			: tag || m.common_unknown()
 	);
 
+	const currentDigest = $derived(effectiveUpdateInfo?.currentDigest?.trim() ?? '');
+	const latestDigest = $derived(effectiveUpdateInfo?.latestDigest?.trim() ?? '');
+
 	const latestVersion = $derived.by((): string | null => {
 		if (hasError) return null;
 		if (effectiveUpdateInfo?.latestVersion && effectiveUpdateInfo.latestVersion.trim() !== '') {
@@ -409,6 +412,22 @@
 					{@render versionDisplay(latestLabel, latestVersion, latestBg, latestText)}
 				{/if}
 			</div>
+			{#if effectiveUpdateInfo?.updateType === 'digest' || effectiveUpdateInfo?.updateType === 'not_pulled'}
+				<div class="space-y-2 text-xs">
+					{#if effectiveUpdateInfo.updateType === 'digest' && currentDigest}
+						<div class="space-y-1">
+							<div class="text-muted-foreground">{m.image_update_current_digest_label()}</div>
+							<div class="font-mono break-all whitespace-normal">{currentDigest}</div>
+						</div>
+					{/if}
+					{#if latestDigest}
+						<div class="space-y-1">
+							<div class="text-muted-foreground">{m.image_update_latest_digest_label()}</div>
+							<div class="font-mono break-all whitespace-normal">{latestDigest}</div>
+						</div>
+					{/if}
+				</div>
+			{/if}
 			{#if updatePriority}
 				<div class="rounded-lg {boxBg} p-3">
 					<div class="text-center text-xs leading-relaxed font-medium {boxText}">
@@ -431,7 +450,7 @@
 			</div>
 		</div>
 	</div>
-	{@render updateDetails(m.image_update_latest_digest_label(), 'bg-info/10', 'text-info', 'bg-info/10', 'text-info')}
+	{@render updateDetails(m.image_update_latest_label(), 'bg-info/10', 'text-info', 'bg-info/10', 'text-info')}
 	{@render recheckButton()}
 {/snippet}
 
