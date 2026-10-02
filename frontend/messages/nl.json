@@ -1036,7 +1036,7 @@
   "security_exposure_breakdown_help": "De resultaten van images die door actieve containers worden gebruikt, tellen volledig mee; images die alleen door gestopte containers worden gebruikt, of door geen enkele container, tellen minder mee.",
   "security_exposure_running": "Hardlopen",
   "security_driver_images_scanned_help": "Actuele images met een voltooide kwetsbaarheidsscan.",
-  "security_driver_of_images": "van {count} afbeeldingen",
+  "security_driver_of_images": "van {count} images",
   "security_top_vulnerabilities": "Belangrijkste kwetsbaarheden",
   "security_top_vulnerabilities_risk_help": "Gerangschikt op prioriteit: ernst gewogen naar bekende misbruikgevallen, de waarschijnlijkheid van misbruik en het gebruik in containers. Bevindingen waarvoor nog geen oplossing is, blijven hier vermeld, maar worden niet opgenomen in de patchprioriteit.",
   "security_top_vulnerabilities_prevalence_help": "Gerangschikt op basis van het aantal images waarin de CVE voorkomt, en vervolgens op basis van het risico.",
