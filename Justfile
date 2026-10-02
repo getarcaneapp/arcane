@@ -478,6 +478,42 @@ _deps-update-frontend:
 _deps-update-backend:
     cd backend && go get -u ./... && go mod tidy
 
+# Update direct Go dependencies in all modules, then sync the workspace (requires jq).
+[group('deps')]
+_deps-update-go *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    version=upgrade
+    set -- {{ args }}
+    case "$#:$*" in
+        0:) ;;
+        1:--patch) version=patch ;;
+        *) echo 'Usage: just deps go update [--patch]' >&2; exit 1 ;;
+    esac
+    command -v jq >/dev/null || { echo 'jq is required.' >&2; exit 1; }
+    for module in {{ modules }}; do
+        (
+            cd "$module"
+            export GOWORK=off
+            echo "Updating direct dependencies in $module..."
+            direct=$(go list -mod=mod -m -json all | jq -r '
+                select(.Main != true and .Indirect != true)
+                | select(.Replace == null or .Replace.Version != null)
+                | .Path')
+            dependencies=()
+            while IFS= read -r dependency; do
+                if [ -n "$dependency" ]; then
+                    dependencies+=("$dependency@$version")
+                fi
+            done <<<"$direct"
+            if [ "${#dependencies[@]}" -gt 0 ]; then
+                go get "${dependencies[@]}"
+            fi
+            go mod tidy
+        )
+        go work sync
+    done
+
 # Update pnpm version via corepack
 [group('deps')]
 _deps-update-pnpm:
@@ -494,10 +530,20 @@ _deps-dedupe-node:
 [group('deps')]
 _deps-dedupe-all: _deps-dedupe-node
 
-# Deps targets. Valid: "install [frontend|tests|backend|cli|types|go|node|all]", "update [frontend|backend|pnpm|all]", "dedupe [node|go|all]"
+# Deps targets. Also supports "go update [--patch]" for direct Go dependency updates.
 [group('deps')]
-deps action="update" target="all":
-    @just "_deps-{{ action }}-{{ target }}"
+deps action="update" target="all" *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ "{{ action }}" = "go" ]; then
+        if [ "{{ target }}" != "update" ]; then
+            echo 'Usage: just deps go update [--patch]' >&2
+            exit 1
+        fi
+        just _deps-update-go {{ args }}
+    else
+        just "_deps-{{ action }}-{{ target }}" {{ args }}
+    fi
 
 # -----------------------------------------------------------------------------
 # Code generation and docs

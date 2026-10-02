@@ -71,7 +71,7 @@ type JobScheduler interface {
 
 	RegisterJob(job Job) error
 	RegisterBusWatcher(watcher BusWatcher, canRunManually bool) error
-	StartScheduler() error
+	StartScheduler(ctx context.Context) error
 	GetLocation() *time.Location
 	Stop(ctx context.Context) error
 }

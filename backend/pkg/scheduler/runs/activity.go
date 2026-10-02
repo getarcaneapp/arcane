@@ -60,8 +60,6 @@ func (q *Coordinator) retryActivitySyncInternal(ctx context.Context) {
 	if q.observer == nil {
 		return
 	}
-	q.observerMu.Lock()
-	defer q.observerMu.Unlock()
 	cursor := ""
 	for {
 		page, err := q.service.ListStates(ctx, coordinatorTypeInternal, &actor.ListStatesOpts{IncludeData: true, After: cursor, Limit: 100})
@@ -79,7 +77,9 @@ func (q *Coordinator) retryActivitySyncInternal(ctx context.Context) {
 				if ctx.Err() != nil {
 					return
 				}
+				q.observerMu.Lock()
 				q.syncActivityInternal(ctx, scheduler.Run{ID: runID, EnvironmentID: state.Record.EnvironmentID, JobID: state.Record.JobID})
+				q.observerMu.Unlock()
 			}
 		}
 		cursor = page.AfterID()

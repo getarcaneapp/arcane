@@ -139,12 +139,16 @@ func TestJobActivityRestartRepairsFailedProjection(t *testing.T) {
 	}))
 	require.NoError(t, db.AutoMigrate(&activity.Activity{}, &activity.ActivityMessage{}))
 	restarted := NewJobService(db, nil, &config.Config{}, svc.runs, nil, nil, activities)
-	require.NoError(t, restarted.runs.Start(ctx))
+	require.NoError(t, restarted.runs.Start(ctx, ctx))
 	t.Cleanup(func() {
 		stopCtx, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()
 		require.NoError(t, restarted.runs.Stop(stopCtx))
 	})
+	require.Eventually(t, func() bool {
+		detail, getErr := activities.GetActivityDetail(ctx, "0", run.ActivityID, 10)
+		return getErr == nil && detail.Activity.Status == activitytypes.StatusFailed
+	}, 5*time.Second, 10*time.Millisecond)
 	detail, err := activities.GetActivityDetail(ctx, "0", run.ActivityID, 10)
 	require.NoError(t, err)
 	require.Equal(t, activitytypes.StatusFailed, detail.Activity.Status)

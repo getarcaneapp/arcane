@@ -197,37 +197,62 @@ func (q *Coordinator) Checkpoint(ctx context.Context, jobID, schedule string, ne
 	return err
 }
 
-// Start validates persisted state and starts dispatching on ctx. Repeated calls
+// Start validates persisted state on ctx and starts dispatching on appCtx. Repeated calls
 // are harmless, but a stopped queue cannot be restarted; create a new instance.
-func (q *Coordinator) Start(ctx context.Context) error {
+func (q *Coordinator) Start(ctx, appCtx context.Context) error {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	if q.started {
 		return nil
 	}
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("initialize job coordinator: %w", err)
+	}
+	if q.stopping {
+		return errors.New("job queue is stopping")
+	}
 	if q.execute == nil {
 		return errors.New("job executor unavailable")
 	}
 	if err := q.importLegacyInternal(ctx); err != nil {
-		return err
+		return fmt.Errorf("import legacy job history: %w", err)
 	}
 	// Fail startup if persisted state cannot be read. Never replace it with empty state.
 	records, err := q.Records(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("read startup job history: %w", err)
 	}
 	for _, record := range records {
+		changed := false
 		for _, run := range record.Runs {
-			if err := q.UpdateRun(ctx, run, func(current *st.Run) error {
-				normalizeLegacyRunInternal(current)
-				return nil
-			}); err != nil {
-				return err
+			if normalizeLegacyRunInternal(&run) {
+				changed = true
+				break
 			}
 		}
+		if !changed {
+			continue
+		}
+		if err := q.mutateInternal(ctx, record.EnvironmentID, record.JobID, func(current *st.QueueRecord) error {
+			for i := range current.Runs {
+				normalizeLegacyRunInternal(&current.Runs[i])
+			}
+			return nil
+		}); err != nil {
+			return fmt.Errorf("normalize startup job %q in environment %q: %w", record.JobID, record.EnvironmentID, err)
+		}
+	}
+	if err := q.pruneInternal(ctx); err != nil {
+		return fmt.Errorf("prune startup job history: %w", err)
+	}
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("initialize job coordinator: %w", err)
+	}
+	if err := appCtx.Err(); err != nil {
+		return fmt.Errorf("start job dispatcher: %w", err)
 	}
 
-	runCtx, cancel := context.WithCancel(ctx)
+	runCtx, cancel := context.WithCancel(appCtx)
 	q.cancel = cancel
 	q.lifecycleCtx = runCtx
 	q.started = true
@@ -260,12 +285,17 @@ func (q *Coordinator) Stop(ctx context.Context) error {
 func (q *Coordinator) dispatchInternal(ctx context.Context) {
 	defer close(q.done)
 
-	nextRetention := time.Now().Add(time.Hour)
+	initialRetention := true
+	nextRetention := time.Now()
 	for ctx.Err() == nil {
 		q.retryActivitySyncInternal(ctx)
-		if !time.Now().Before(nextRetention) {
-			if err := q.pruneInternal(ctx); err != nil && ctx.Err() == nil {
-				slog.ErrorContext(ctx, "Job retention failed", "error", err)
+		if initialRetention || !time.Now().Before(nextRetention) {
+			if err := q.pruneInternal(ctx); err != nil {
+				if ctx.Err() == nil {
+					slog.ErrorContext(ctx, "Job retention failed", "error", err)
+				}
+			} else {
+				initialRetention = q.hasPendingActivitySyncInternal(ctx)
 			}
 			nextRetention = time.Now().Add(time.Hour)
 		}

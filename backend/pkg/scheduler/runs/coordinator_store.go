@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json/v2"
 	"errors"
+	"fmt"
 	"slices"
 	"sort"
 	"time"
@@ -92,16 +93,43 @@ func snapshotRunsInternal(record st.QueueRecord) (map[string][]byte, map[string]
 }
 
 func preserveUnsyncedRunsInternal(state *st.CoordinatorState, previous []st.Run) {
-	retained := make(map[string]bool, len(state.Record.Runs))
+	retained := make(map[string]st.Run, len(state.Record.Runs))
 	for _, run := range state.Record.Runs {
-		retained[run.ID] = true
+		retained[run.ID] = run
 	}
+	restore := false
 	for _, run := range previous {
-		if _, pending := state.PendingActivitySync[run.ID]; pending && !retained[run.ID] {
-			state.Record.Runs = append(state.Record.Runs, run)
+		_, exists := retained[run.ID]
+		if _, pending := state.PendingActivitySync[run.ID]; pending && !exists {
+			// Activity projection must not extend completed run retention.
+			if run.Status.Terminal() {
+				if _, archived := state.Record.Receipts[run.ID]; !archived {
+					delete(state.PendingActivitySync, run.ID)
+				}
+				continue
+			}
+			retained[run.ID] = run
 			delete(state.Record.Receipts, run.ID)
+			restore = true
 		}
 	}
+	if !restore {
+		return
+	}
+	// Keep history chronological when pending activity updates prevent pruning.
+	runs := make([]st.Run, 0, len(retained))
+	for _, run := range previous {
+		if current, exists := retained[run.ID]; exists {
+			runs = append(runs, current)
+			delete(retained, run.ID)
+		}
+	}
+	for _, run := range state.Record.Runs {
+		if _, exists := retained[run.ID]; exists {
+			runs = append(runs, run)
+		}
+	}
+	state.Record.Runs = runs
 }
 
 func pruneDispatchesInternal(state *st.CoordinatorState) {
@@ -123,12 +151,12 @@ func (q *Coordinator) Records(ctx context.Context) ([]st.QueueRecord, error) {
 	for {
 		page, err := q.service.ListStates(ctx, coordinatorTypeInternal, &actor.ListStatesOpts{IncludeData: true, After: cursor, Limit: 100})
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("list job coordinator states: %w", err)
 		}
 		for _, entry := range page.States {
 			var state st.CoordinatorState
 			if err := entry.Data.Decode(&state); err != nil {
-				return nil, err
+				return nil, fmt.Errorf("decode job coordinator %q: %w", entry.ActorID, err)
 			}
 			normalizeRecordTimesInternal(&state.Record)
 			q.runtime.NameActor(entry.ActorID, state.Record.JobID+"@"+state.Record.EnvironmentID)
@@ -234,17 +262,21 @@ func (q *Coordinator) pruneInternal(ctx context.Context) error {
 	}
 	now := time.Now().UTC()
 	for _, record := range records {
+		if !pruneRunsInternal(&record, now) {
+			continue
+		}
 		if err := q.mutateInternal(ctx, record.EnvironmentID, record.JobID, func(current *st.QueueRecord) error {
 			pruneRunsInternal(current, now)
 			return nil
 		}); err != nil {
-			return err
+			return fmt.Errorf("prune job %q in environment %q: %w", record.JobID, record.EnvironmentID, err)
 		}
 	}
 	return nil
 }
 
-func pruneRunsInternal(record *st.QueueRecord, now time.Time) {
+func pruneRunsInternal(record *st.QueueRecord, now time.Time) bool {
+	changed := false
 	terminal := 0
 	for index, run := range slices.Backward(record.Runs) {
 		if !run.Status.Terminal() || ((run.RemoteDeliveryAttempted || run.RemoteAccepted) && !run.RemoteSettled) {
@@ -263,7 +295,9 @@ func pruneRunsInternal(record *st.QueueRecord, now time.Time) {
 			record.Receipts[run.ID] = run
 		}
 		record.Runs = append(record.Runs[:index], record.Runs[index+1:]...)
+		changed = true
 	}
+	return changed
 }
 
 // ErrRunNotFound indicates that neither a run nor its receipt exists.
@@ -361,10 +395,10 @@ func normalizeRunTimesInternal(run *st.Run) {
 	}
 }
 
-func normalizeLegacyRunInternal(run *st.Run) {
+func normalizeLegacyRunInternal(run *st.Run) bool {
 	automaticResolution := run.Status == st.Canceled && run.Resolution != nil && run.Resolution.ResolvedBy == common.SystemUser.Username
 	if run.Status != st.NeedsAttention && !automaticResolution {
-		return
+		return false
 	}
 	run.Owner = ""
 	run.NextAttempt = nil
@@ -379,6 +413,7 @@ func normalizeLegacyRunInternal(run *st.Run) {
 		}
 	}
 	run.UpdatedAt = time.Now().UTC()
+	return true
 }
 
 func normalizeTimePointerInternal(value *time.Time) {

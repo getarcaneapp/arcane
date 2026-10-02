@@ -28,7 +28,7 @@ func TestDeprecatedImagePollingSchedulePersistsWithoutRuntimeJob(t *testing.T) {
 
 	jobService := job.NewJobService(db, settingsService, appConfig, jobScheduler.coordinator, nil, nil, nil)
 	jobService.SetScheduler(lifecycleCtx, jobScheduler)
-	require.NoError(t, jobScheduler.StartScheduler())
+	require.NoError(t, jobScheduler.StartScheduler(t.Context()))
 
 	_, ok := jobScheduler.GetJobRuntimeState("image-polling")
 	require.False(t, ok)
@@ -67,7 +67,7 @@ func TestDeprecatedImagePollingSchedulePersistsWithoutRuntimeJob(t *testing.T) {
 	restartScheduler := newJobSchedulerForTestInternal(t, restartLifecycleCtx, appConfig.GetLocation())
 	restartJobService := job.NewJobService(restartDB, restartSettingsService, appConfig, restartScheduler.coordinator, nil, nil, nil)
 	restartJobService.SetScheduler(restartLifecycleCtx, restartScheduler)
-	require.NoError(t, restartScheduler.StartScheduler())
+	require.NoError(t, restartScheduler.StartScheduler(t.Context()))
 	t.Cleanup(func() {
 		cancelRestartLifecycle()
 		waitForSchedulerStopInternal(restartScheduler)

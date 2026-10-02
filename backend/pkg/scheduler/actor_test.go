@@ -45,7 +45,7 @@ func newTestCoordinatorInternal(t testing.TB, ctx context.Context, location *tim
 	require.NoError(t, coordinator.Register(runtime))
 	require.NoError(t, runtime.Start(t.Context(), ctx, nil))
 	t.Cleanup(func() { require.NoError(t, runtime.Stop(context.Background())) })
-	require.NoError(t, coordinator.Start(ctx))
+	require.NoError(t, coordinator.Start(t.Context(), ctx))
 	coordinator.Activate()
 	t.Cleanup(func() { require.NoError(t, coordinator.Stop(context.Background())) })
 	return coordinator, runtime

@@ -117,7 +117,7 @@ func (js *jobSchedulerInternal) GetJobRuntimeState(id string) (st.JobRuntimeStat
 	return state, true
 }
 
-func (js *jobSchedulerInternal) StartScheduler() error {
+func (js *jobSchedulerInternal) StartScheduler(ctx context.Context) error {
 	js.mu.Lock()
 	if js.stopping {
 		js.mu.Unlock()
@@ -125,7 +125,7 @@ func (js *jobSchedulerInternal) StartScheduler() error {
 	}
 	js.started = true
 	js.mu.Unlock()
-	records, err := js.coordinator.Records(js.context)
+	records, err := js.coordinator.Records(ctx)
 	if err != nil {
 		return err
 	}
@@ -134,14 +134,14 @@ func (js *jobSchedulerInternal) StartScheduler() error {
 		_, watching := js.watchers[record.JobID]
 		js.mu.RUnlock()
 		if record.EnvironmentID == "0" && record.Schedule != "" && !js.HasJob(record.JobID) && !watching {
-			if err := js.coordinator.Checkpoint(js.context, record.JobID, "", time.Time{}); err != nil {
+			if err := js.coordinator.Checkpoint(ctx, record.JobID, "", time.Time{}); err != nil {
 				return err
 			}
 		}
 	}
 	var schedulingErr error
 	for _, job := range js.ListRegisteredJobs() {
-		if err := js.installInternal(js.context, job); err != nil {
+		if err := js.installInternal(ctx, job); err != nil {
 			schedulingErr = errors.Join(schedulingErr, fmt.Errorf("%s: %w", "schedule "+job.Name(), err))
 		}
 	}

@@ -42,16 +42,22 @@ func newJobScheduler(appCtx context.Context, lc fx.Lifecycle, cfg *config.Config
 	var repairDone chan struct{}
 	var resumeDone chan struct{}
 	lc.Append(fx.Hook{
-		OnStart: func(context.Context) error {
+		OnStart: func(ctx context.Context) error {
+			started := false
+			defer func() {
+				if !started {
+					cancelScheduler()
+				}
+			}()
 			slog.InfoContext(appCtx, "Starting scheduler")
-			if err := jobService.Coordinator().Start(schedulerCtx); err != nil {
-				return err
+			if err := jobService.Coordinator().Start(ctx, schedulerCtx); err != nil {
+				return fmt.Errorf("initialize scheduler: %w", err)
 			}
-			if err := reconcileCoordinatorStartupInternal(schedulerCtx, jobService, backupEngine, updaterService, volumes, systemBackups, gitopsSync); err != nil {
-				return err
+			if err := reconcileCoordinatorStartupInternal(ctx, jobService, backupEngine, updaterService, volumes, systemBackups, gitopsSync); err != nil {
+				return fmt.Errorf("reconcile scheduler startup: %w", err)
 			}
 			if gitopsSync != nil {
-				gitopsSync.RegisterAutoSyncJobsOnStartup(schedulerCtx)
+				gitopsSync.RegisterAutoSyncJobsOnStartup(ctx)
 				gitopsSync.SubscribeProjectFileChanges(schedulerCtx)
 			}
 			if imageUpdateWatcher != nil {
@@ -60,8 +66,8 @@ func newJobScheduler(appCtx context.Context, lc fx.Lifecycle, cfg *config.Config
 					return err
 				}
 			}
-			if err := jobScheduler.StartScheduler(); err != nil {
-				return err
+			if err := jobScheduler.StartScheduler(ctx); err != nil {
+				return fmt.Errorf("start scheduler: %w", err)
 			}
 			jobService.Coordinator().Activate()
 			if backupEngine != nil {
@@ -72,14 +78,18 @@ func newJobScheduler(appCtx context.Context, lc fx.Lifecycle, cfg *config.Config
 				}()
 			}
 			if analytics != nil {
-				if _, err := jobService.Coordinator().Submit(schedulerCtx, schedulertypes.Request{JobID: analytics.Name(), EnvironmentID: "0", Trigger: "startup"}); err != nil {
-					return err
+				if _, err := jobService.Coordinator().Submit(ctx, schedulertypes.Request{JobID: analytics.Name(), EnvironmentID: "0", Trigger: "startup"}); err != nil {
+					return fmt.Errorf("submit startup job %q: %w", analytics.Name(), err)
 				}
 			}
 			if !cfg.AgentMode && systemUpgrade != nil {
 				resumeDone = make(chan struct{})
 				go func() { defer close(resumeDone); systemUpgrade.ResumeUpdateAllOnStartup(schedulerCtx) }()
 			}
+			if err := ctx.Err(); err != nil {
+				return fmt.Errorf("complete scheduler startup: %w", err)
+			}
+			started = true
 			return nil
 		},
 		OnStop: func(ctx context.Context) error {

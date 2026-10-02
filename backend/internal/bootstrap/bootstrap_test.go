@@ -434,7 +434,10 @@ func TestJobSchedulerStopCancelsItsPrivateContextInternal(t *testing.T) {
 	}
 	require.NoError(t, jobScheduler.RegisterBusWatcher(watcher, false))
 
-	lifecycle.RequireStart()
+	startCtx, cancelStart := context.WithTimeout(appCtx, 5*time.Second)
+	defer cancelStart()
+	require.NoError(t, lifecycle.Start(startCtx))
+	cancelStart()
 	select {
 	case run := <-executed:
 		require.Equal(t, "gitops-sync:overdue", run.JobID)

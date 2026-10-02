@@ -12,11 +12,17 @@ import (
 )
 
 type activityObserverFakeInternal struct {
-	unavailable atomic.Bool
-	observed    atomic.Int32
+	unavailable  atomic.Bool
+	observed     atomic.Int32
+	existingOnly bool
 }
 
-func (o *activityObserverFakeInternal) ActivityID(run st.Run) string { return run.ID }
+func (o *activityObserverFakeInternal) ActivityID(run st.Run) string {
+	if o.existingOnly {
+		return run.ActivityID
+	}
+	return run.ID
+}
 
 func (o *activityObserverFakeInternal) SyncRunActivity(context.Context, st.Run) error {
 	if o.unavailable.Load() {
@@ -39,7 +45,7 @@ func TestActivityFailureNeverReplaysAcceptedExecution(t *testing.T) {
 	run, err := q.Submit(t.Context(), st.Request{JobID: "test-job", Trigger: "manual"})
 	require.NoError(t, err)
 	require.Equal(t, run.ID, run.ActivityID)
-	require.NoError(t, q.Start(t.Context()))
+	require.NoError(t, q.Start(t.Context(), t.Context()))
 	q.Activate()
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)

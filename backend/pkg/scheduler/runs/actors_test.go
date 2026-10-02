@@ -34,7 +34,18 @@ func TestLegacyImportSurvivesRestartAndDeduplicates(t *testing.T) {
 	sqlDB.SetMaxOpenConns(1)
 	t.Cleanup(func() { require.NoError(t, sqlDB.Close()) })
 	store := kv.NewKVService(&database.DB{DB: db})
-	legacy := st.QueueRecord{JobID: "legacy", EnvironmentID: "0", Runs: []st.Run{{ID: uuid.New().String(), JobID: "legacy", EnvironmentID: "0", Trigger: "manual", Status: st.Succeeded, CreatedAt: time.Now().UTC()}}}
+	legacy := st.QueueRecord{JobID: "legacy", EnvironmentID: "0", Runs: []st.Run{{ID: uuid.New().String(), JobID: "legacy", EnvironmentID: "0", Trigger: "manual", Status: st.Succeeded, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}}}
+	legacy.Runs[0].ActivityID = legacy.Runs[0].ID
+	for _, jobID := range []string{"gitops-sync:first", "gitops-sync:second"} {
+		record := st.QueueRecord{JobID: jobID, EnvironmentID: "0", Schedule: "@every 5m", NextRun: time.Now().UTC().Add(time.Hour)}
+		for i := range 1600 {
+			created := time.Now().UTC().Add(-time.Duration(1600-i) * 5 * time.Minute)
+			record.Runs = append(record.Runs, st.Run{ID: uuid.New().String(), ActivityID: uuid.New().String(), JobID: jobID, EnvironmentID: "0", Trigger: "scheduled", Status: st.NeedsAttention, CreatedAt: created, UpdatedAt: created})
+		}
+		data, marshalErr := json.Marshal(record)
+		require.NoError(t, marshalErr)
+		require.NoError(t, store.Set(t.Context(), queuePrefixInternal+kit.SHA256Hex("0\x00"+jobID), string(data)))
+	}
 	encoded, err := json.Marshal(legacy)
 	require.NoError(t, err)
 	key := queuePrefixInternal + kit.SHA256Hex("0\x00"+legacy.JobID)
@@ -46,7 +57,7 @@ func TestLegacyImportSurvivesRestartAndDeduplicates(t *testing.T) {
 	francistest.Start(t, first)
 	require.NoError(t, q.importLegacyInternal(t.Context()))
 	require.NoError(t, q.importLegacyInternal(t.Context()))
-	observer := &activityObserverFakeInternal{}
+	observer := &activityObserverFakeInternal{existingOnly: true}
 	observer.unavailable.Store(true)
 	q.SetObserver(observer)
 	_, err = q.Submit(t.Context(), st.Request{JobID: legacy.JobID, RunID: legacy.Runs[0].ID, Trigger: "manual"})
@@ -56,13 +67,33 @@ func TestLegacyImportSurvivesRestartAndDeduplicates(t *testing.T) {
 		return nil
 	}))
 	require.True(t, q.hasPendingActivitySyncInternal(t.Context()))
+	q.SetExecutor(func(context.Context, st.Run) (st.Outcome, error) {
+		t.Error("startup must not execute jobs before activation")
+		return st.Outcome{Status: st.Failed}, nil
+	}, nil)
+	require.NoError(t, q.Start(t.Context(), t.Context()))
+	require.NoError(t, q.Stop(t.Context()))
 	require.NoError(t, first.Stop(t.Context()))
 
 	second := francistest.New(t, databaseURL)
 	restored := New(store, second.Service(), time.UTC)
+	restored.SetObserver(observer)
+	restored.SetExecutor(q.execute, nil)
 	require.NoError(t, restored.Register(second))
 	francistest.Start(t, second)
 	require.NoError(t, restored.importLegacyInternal(t.Context()))
+	require.NoError(t, restored.Start(t.Context(), t.Context()))
+	t.Cleanup(func() { require.NoError(t, restored.Stop(context.WithoutCancel(t.Context()))) })
+	for _, jobID := range []string{"gitops-sync:first", "gitops-sync:second"} {
+		history, listErr := restored.List(t.Context(), "0", jobID, 1, 100)
+		require.NoError(t, listErr)
+		require.Equal(t, 100, history.Total)
+		require.Equal(t, st.Failed, history.Runs[0].Status)
+		state, stateErr := restored.ScheduleState(t.Context(), jobID)
+		require.NoError(t, stateErr)
+		require.Equal(t, "@every 5m", state.Schedule)
+		require.True(t, state.NextRun.After(time.Now()))
+	}
 	duplicate, err := restored.Submit(t.Context(), st.Request{JobID: legacy.JobID, RunID: legacy.Runs[0].ID, Trigger: "manual"})
 	require.NoError(t, err)
 	require.Equal(t, st.Succeeded, duplicate.Status)
@@ -72,7 +103,6 @@ func TestLegacyImportSurvivesRestartAndDeduplicates(t *testing.T) {
 	require.Equal(t, 1, history.Total)
 	require.Equal(t, time.UTC, history.Runs[0].CreatedAt.Location())
 	observer.unavailable.Store(false)
-	restored.SetObserver(observer)
 	restored.retryActivitySyncInternal(t.Context())
 	require.False(t, restored.hasPendingActivitySyncInternal(t.Context()))
 	require.Positive(t, observer.observed.Load())
@@ -134,7 +164,7 @@ func TestDuplicateDispatchAndCanceledDelivery(t *testing.T) {
 				_, err = q.Cancel(t.Context(), "0", run.JobID, run.ID)
 				require.NoError(t, err)
 			}
-			require.NoError(t, q.Start(t.Context()))
+			require.NoError(t, q.Start(t.Context(), t.Context()))
 			q.Activate()
 			t.Cleanup(func() { require.NoError(t, q.Stop(context.WithoutCancel(t.Context()))) })
 			require.Eventually(t, func() bool {
@@ -183,7 +213,7 @@ func TestCapacityGroupsReserveHealthSlots(t *testing.T) {
 		_, err := q.Submit(t.Context(), st.Request{JobID: job, Trigger: "manual"})
 		require.NoError(t, err)
 	}
-	require.NoError(t, q.Start(t.Context()))
+	require.NoError(t, q.Start(t.Context(), t.Context()))
 	q.Activate()
 	t.Cleanup(func() {
 		once.Do(func() { close(release) })
@@ -281,7 +311,7 @@ func TestLostDispatchAcknowledgementRetainsOneExecution(t *testing.T) {
 	}, nil)
 	run, err := q.Submit(t.Context(), st.Request{JobID: "lost-ack"})
 	require.NoError(t, err)
-	require.NoError(t, q.Start(t.Context()))
+	require.NoError(t, q.Start(t.Context(), t.Context()))
 	q.Activate()
 	t.Cleanup(func() {
 		once.Do(func() { close(finish) })

@@ -357,42 +357,42 @@ func (q *Coordinator) repairInternal(ctx context.Context) error {
 func (q *Coordinator) importLegacyInternal(ctx context.Context) error {
 	entries, err := q.store.ListByPrefix(ctx, queuePrefixInternal)
 	if err != nil {
-		return err
+		return fmt.Errorf("list legacy job records: %w", err)
 	}
 	for _, entry := range entries {
 		marker := "francis-import/" + entry.Key
 		_, done, err := q.store.Get(ctx, marker)
 		if err != nil {
-			return err
+			return fmt.Errorf("import legacy job record %q: %w", entry.Key, err)
 		}
 		if done {
 			continue
 		}
 		var record st.QueueRecord
 		if err := json.Unmarshal([]byte(entry.Value), &record); err != nil {
-			return fmt.Errorf("decode legacy job record: %w", err)
+			return fmt.Errorf("decode legacy job record %q: %w", entry.Key, err)
 		}
 		id := kit.SHA256Hex(record.EnvironmentID + "\x00" + record.JobID)
 		if entry.Key != queuePrefixInternal+id {
-			return errors.New("invalid legacy job key")
+			return fmt.Errorf("invalid legacy job key %q for job %q in environment %q", entry.Key, record.JobID, record.EnvironmentID)
 		}
 		sourceHash := kit.SHA256Hex(entry.Value)
 		command := st.CoordinatorImport{Record: record, SourceHash: sourceHash}
 		if _, err := q.service.Invoke(ctx, coordinatorTypeInternal, id, "import", command); err != nil {
-			return err
+			return fmt.Errorf("import legacy job record %q: %w", entry.Key, err)
 		}
 		var imported st.CoordinatorState
 		if err := q.service.GetState(ctx, coordinatorTypeInternal, id, &imported); err != nil {
-			return err
+			return fmt.Errorf("import legacy job record %q: %w", entry.Key, err)
 		}
 		if !imported.Imported || imported.ImportHash != sourceHash {
-			return errors.New("legacy import verification failed")
+			return fmt.Errorf("legacy import verification failed for job %q in environment %q", record.JobID, record.EnvironmentID)
 		}
 		if imported.Record.EnvironmentID != record.EnvironmentID || imported.Record.JobID != record.JobID {
-			return errors.New("legacy import identity mismatch")
+			return fmt.Errorf("legacy import identity mismatch for record %q", entry.Key)
 		}
 		if err := q.store.Set(ctx, marker, "complete"); err != nil {
-			return err
+			return fmt.Errorf("import legacy job record %q: %w", entry.Key, err)
 		}
 	}
 	return nil

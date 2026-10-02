@@ -106,7 +106,7 @@ func TestJobScheduler_StartScheduler_SkipsDisabledConditionalJobs(t *testing.T) 
 	}
 
 	require.NoError(t, js.RegisterJob(job))
-	require.NoError(t, js.StartScheduler())
+	require.NoError(t, js.StartScheduler(t.Context()))
 
 	state, ok := js.GetJobRuntimeState(job.Name())
 	require.True(t, ok)
@@ -123,7 +123,7 @@ func TestJobScheduler_StartScheduler_ReportsInvalidJobSchedule(t *testing.T) {
 
 	require.NoError(t, js.RegisterJob(invalid))
 	require.NoError(t, js.RegisterJob(valid))
-	require.Error(t, js.StartScheduler())
+	require.Error(t, js.StartScheduler(t.Context()))
 
 	invalidState, ok := js.GetJobRuntimeState(invalid.Name())
 	require.True(t, ok)
@@ -145,7 +145,7 @@ func TestJobScheduler_StopWaitsForBusWatchers(t *testing.T) {
 	}
 
 	require.NoError(t, js.RegisterBusWatcher(watcher, true))
-	require.NoError(t, js.StartScheduler())
+	require.NoError(t, js.StartScheduler(t.Context()))
 
 	select {
 	case <-watcher.started:
@@ -214,7 +214,7 @@ func TestJobScheduler_RegisterBusWatcherManualRunOption(t *testing.T) {
 
 func TestJobScheduler_RescheduleJob_RemovesEntryWhenDisabled(t *testing.T) {
 	js := newJobSchedulerForTestInternal(t, context.Background(), nil)
-	require.NoError(t, js.StartScheduler())
+	require.NoError(t, js.StartScheduler(t.Context()))
 	enabled := true
 
 	job := &conditionalTestSchedulerJob{
@@ -243,7 +243,7 @@ func TestJobScheduler_RescheduleJob_RemovesEntryWhenDisabled(t *testing.T) {
 
 func TestJobScheduler_RescheduleJob_AddsEntryWhenEnabled(t *testing.T) {
 	js := newJobSchedulerForTestInternal(t, context.Background(), nil)
-	require.NoError(t, js.StartScheduler())
+	require.NoError(t, js.StartScheduler(t.Context()))
 	enabled := false
 
 	job := &conditionalTestSchedulerJob{
@@ -293,7 +293,7 @@ func TestJobScheduler_StartScheduler_SchedulesNonConditionalJobs(t *testing.T) {
 	}
 
 	require.NoError(t, js.RegisterJob(job))
-	require.NoError(t, js.StartScheduler())
+	require.NoError(t, js.StartScheduler(t.Context()))
 
 	state, ok := js.GetJobRuntimeState(job.Name())
 	require.True(t, ok)
@@ -330,7 +330,7 @@ func TestJobScheduler_RescheduleJob_UsesProvidedContext(t *testing.T) {
 	}
 
 	require.NoError(t, js.RescheduleJob(runCtx, job))
-	require.NoError(t, js.StartScheduler())
+	require.NoError(t, js.StartScheduler(t.Context()))
 
 	select {
 	case err := <-runErrCh:
@@ -363,7 +363,7 @@ func TestJobScheduler_RescheduleJob_UsesLifecycleContextForShutdown(t *testing.T
 	}
 
 	require.NoError(t, js.RescheduleJob(lifecycleCtx, job))
-	require.NoError(t, js.StartScheduler())
+	require.NoError(t, js.StartScheduler(t.Context()))
 
 	select {
 	case <-startedCh:
@@ -382,7 +382,7 @@ func TestJobScheduler_RescheduleJob_UsesLifecycleContextForShutdown(t *testing.T
 
 func TestJobScheduler_AddJob_UpsertReplacesEntryWithoutLeaking(t *testing.T) {
 	js := newJobSchedulerForTestInternal(t, context.Background(), nil)
-	require.NoError(t, js.StartScheduler())
+	require.NoError(t, js.StartScheduler(t.Context()))
 
 	job := &testSchedulerJob{name: "dyn-upsert", schedule: "*/5 * * * * *"}
 	require.NoError(t, js.AddJob(context.Background(), job))
@@ -409,7 +409,7 @@ func TestJobScheduler_AddJob_UpsertReplacesEntryWithoutLeaking(t *testing.T) {
 
 func TestJobScheduler_AddJob_InvalidRescheduleKeepsExistingEntry(t *testing.T) {
 	js := newJobSchedulerForTestInternal(t, context.Background(), nil)
-	require.NoError(t, js.StartScheduler())
+	require.NoError(t, js.StartScheduler(t.Context()))
 
 	job := &testSchedulerJob{name: "dyn-invalid-reschedule", schedule: "*/5 * * * * *"}
 	require.NoError(t, js.AddJob(context.Background(), job))
@@ -434,7 +434,7 @@ func TestJobScheduler_AddJob_InvalidRescheduleKeepsExistingEntry(t *testing.T) {
 
 func TestJobScheduler_RemoveJob_RemovesEntryAndIsNoopWhenAbsent(t *testing.T) {
 	js := newJobSchedulerForTestInternal(t, context.Background(), nil)
-	require.NoError(t, js.StartScheduler())
+	require.NoError(t, js.StartScheduler(t.Context()))
 
 	// Removing an unknown job must be a safe no-op (e.g. deleting a sync that never
 	// had auto-sync enabled).
@@ -454,7 +454,7 @@ func TestJobScheduler_RemoveJob_RemovesEntryAndIsNoopWhenAbsent(t *testing.T) {
 
 func TestJobScheduler_AddJob_GenericJobWithoutShouldRunIsScheduled(t *testing.T) {
 	js := newJobSchedulerForTestInternal(t, context.Background(), nil)
-	require.NoError(t, js.StartScheduler())
+	require.NoError(t, js.StartScheduler(t.Context()))
 
 	job := &schedulertypes.GenericJob{
 		JobName:    "generic-dyn",
@@ -488,7 +488,7 @@ func TestJobScheduler_StopWaitsForCanceledJobToFinish(t *testing.T) {
 			})
 		},
 	}))
-	require.NoError(t, js.StartScheduler())
+	require.NoError(t, js.StartScheduler(t.Context()))
 	t.Cleanup(func() {
 		cancelLifecycle()
 		select {
