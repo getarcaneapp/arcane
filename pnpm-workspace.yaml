@@ -13,15 +13,11 @@ packageExtensions:
     dependencies:
       '@codemirror/autocomplete': ^6.20.3
       '@codemirror/search': ^6.7.0
-  '@sveltejs/kit':
-    dependencies:
-      rolldown: 1.2.3
 
 overrides:
   devalue: '>=5.8.1'
   valibot: ^1.2.0
   validator: ^13.15.22
-  cookie: ^1.0.2
   undici: ^6.23.0
   ajv: '>=8.18.0'
   eslint>ajv: ^6.14.0
@@ -36,8 +32,8 @@ overrides:
   uuid: '>=11.1.1'
   fast-uri: '>=3.1.5'
   ws: '>=8.20.1'
-  '@sveltejs/kit': '^3.0.0-next.29'
-  '@sveltejs/adapter-static': '>=4.0.0-next.4'
+  '@sveltejs/kit': ^3.0.0
+  '@sveltejs/adapter-static': ^4.0.0
   dompurify: '>=3.4.11'
   ts-deepmerge: '>=8.0.0'
   joi: '>=17.13.4'
@@ -51,10 +47,13 @@ allowBuilds:
 catalog:
   vite: npm:@voidzero-dev/vite-plus-core@1.0.0
   vite-plus: 1.0.0
+
 peerDependencyRules:
   allowAny:
     - vite
   allowedVersions:
     vite: '*'
+
 minimumReleaseAgeExclude:
-  - '@sveltejs/kit@3.0.0-next.29'
+  - '@sveltejs/kit@3.0.0'
+  - '@sveltejs/adapter-static@4.0.0'

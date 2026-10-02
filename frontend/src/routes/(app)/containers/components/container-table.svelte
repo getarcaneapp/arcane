@@ -29,10 +29,10 @@
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
 	import { createContainerUpdateActivityTracker } from '#lib/utils/container-update-activities.js';
 	import { mode } from 'mode-watcher';
-	import { ContainerStatsManager } from './components/container-stats-manager.svelte';
-	import ContainerStatsSync from './components/container-stats-sync.svelte';
-	import ContainerStatsCell from './components/container-stats-cell.svelte';
-	import { ContainerResourcePoller } from './components/container-resource-poller.svelte';
+	import { ContainerStatsManager } from './container-stats-manager.svelte';
+	import ContainerStatsSync from './container-stats-sync.svelte';
+	import ContainerStatsCell from './container-stats-cell.svelte';
+	import { ContainerResourcePoller } from './container-resource-poller.svelte';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import * as Alert from '#lib/components/ui/alert/index.js';
@@ -40,7 +40,7 @@
 	import { COMPOSE_PROJECT_LABEL, getContainerIpAddresses, getThemedIconUrl, parseImageRef } from '#lib/utils/docker.js';
 	import { hasAnyLoadingState } from '#lib/utils/bulk-actions.js';
 	import { Temporal } from 'temporal-polyfill';
-	import { createContainerActions } from './container-table.actions';
+	import { createContainerActions } from '../container-table.actions';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import {
 		getActionStatusMessage,
@@ -49,7 +49,7 @@
 		getStateBadgeVariant,
 		getContainerStatusLabel,
 		type ActionStatus
-	} from './container-table.helpers';
+	} from '../container-table.helpers';
 	import {
 		StartIcon,
 		StopIcon,
@@ -70,7 +70,7 @@
 		AlertTriangleIcon,
 		InfoIcon
 	} from '#lib/icons/index.js';
-	import KillContainerDialog from './components/kill-container-dialog.svelte';
+	import KillContainerDialog from './kill-container-dialog.svelte';
 
 	type FieldVisibility = Record<string, boolean>;
 

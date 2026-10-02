@@ -25,8 +25,8 @@
 	import { hasAnyLoadingState } from '#lib/utils/bulk-actions.js';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
 	import IconImage from '#lib/components/icon-image.svelte';
-	import type { ActionStatus } from './projects-table.helpers';
-	import { createProjectActions } from './projects-table.actions';
+	import type { ActionStatus } from '../projects-table.helpers';
+	import { createProjectActions } from '../projects-table.actions';
 	import ProjectUpdateItem from '#lib/components/project-update-item.svelte';
 	import ProjectTagEditor from '#lib/components/project-tag-editor.svelte';
 	import { Label } from '#lib/components/ui/label/index.js';

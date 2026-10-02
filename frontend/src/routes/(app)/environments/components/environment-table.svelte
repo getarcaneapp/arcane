@@ -36,7 +36,7 @@
 		ConnectionIcon
 	} from '#lib/icons/index.js';
 	import { useEasyJoinCandidates } from '#lib/hooks/use-easy-join-candidates.svelte.js';
-	import EasyJoinDialog from '../swarm/cluster/easy-join-dialog.svelte';
+	import EasyJoinDialog from '../../swarm/cluster/components/easy-join-dialog.svelte';
 
 	let {
 		environments = $bindable(),

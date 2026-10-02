@@ -4,6 +4,7 @@
 	import RiskGauge from '#lib/components/vulnerability/risk-gauge.svelte';
 	import RiskTrendChart from '#lib/components/vulnerability/risk-trend-chart.svelte';
 	import ShareBar from '#lib/components/vulnerability/share-bar.svelte';
+	import * as StatStrip from '#lib/components/stat-strip/index.js';
 	import { ArrowDownIcon, ArrowUpIcon, InfoIcon, ScanIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { VulnerabilityRiskDrivers, VulnerabilityRiskImage, VulnerabilityRiskOverview } from '#lib/types/environment.js';
@@ -247,30 +248,22 @@
 			</div>
 		</section>
 
-		<dl
-			class="grid grid-cols-2 gap-y-6 border-y border-border/50 py-6 sm:grid-cols-3 lg:grid-cols-5 lg:divide-x lg:divide-border/50"
-		>
+		<StatStrip.Root class="sm:grid-cols-3 lg:grid-cols-5">
 			{#each drivers as driver (driver.key)}
-				<div class="flex flex-col items-center px-4 text-center">
-					<dt class="flex items-center justify-center gap-1.5 text-sm text-muted-foreground">
-						{driver.label}
-						{@render HelpTip(driver.label, driver.help)}
-					</dt>
-					<dd class="mt-2 flex items-baseline justify-center gap-2">
-						{#if driver.unavailable}
-							<span class="text-3xl font-semibold text-muted-foreground" aria-label={m.security_driver_unavailable()}>–</span>
-						{:else}
-							<span class="text-3xl font-semibold tabular-nums">{overview.drivers[driver.key]}</span>
-							{#if driver.trackDelta}
-								{@render Delta(driverDelta(driver.key))}
-							{:else if driver.context}
-								<span class="text-xs text-muted-foreground tabular-nums">{driver.context}</span>
-							{/if}
-						{/if}
-					</dd>
-				</div>
+				<StatStrip.Item
+					label={driver.label}
+					help={driver.help}
+					value={driver.unavailable ? null : overview.drivers[driver.key]}
+					unavailableLabel={m.security_driver_unavailable()}
+				>
+					{#if driver.trackDelta && !driver.unavailable}
+						{@render Delta(driverDelta(driver.key))}
+					{:else if driver.context}
+						{driver.context}
+					{/if}
+				</StatStrip.Item>
 			{/each}
-		</dl>
+		</StatStrip.Root>
 
 		<div class="grid gap-12 lg:grid-cols-2">
 			<section class="min-w-0">

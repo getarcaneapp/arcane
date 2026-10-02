@@ -25,7 +25,7 @@
 	import { containerService } from '#lib/services/container-service.js';
 	import type { ContainersPaginatedResponse, ContainerListRequestOptions } from '#lib/services/container-service.js';
 	import { ContainersIcon, UpdateIcon, EyeOffIcon, EyeOnIcon } from '#lib/icons/index.js';
-	import { getContainerDisplayName } from '../containers/container-table.helpers';
+	import { getContainerDisplayName } from '../../containers/container-table.helpers';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { confirmAndUpdateContainer } from '#lib/utils/container-actions.js';

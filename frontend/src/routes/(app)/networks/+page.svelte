@@ -3,7 +3,7 @@
 	import { toast } from 'svelte-sonner';
 	import type { NetworkCreateOptions, NetworkUsageCounts } from '#lib/types/docker.js';
 	import CreateNetworkSheet from '#lib/components/sheets/create-network-sheet.svelte';
-	import NetworkTable from './network-table.svelte';
+	import NetworkTable from './components/network-table.svelte';
 	import { m } from '#lib/paraglide/messages.js';
 	import { networkService } from '#lib/services/network-service.js';
 	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';

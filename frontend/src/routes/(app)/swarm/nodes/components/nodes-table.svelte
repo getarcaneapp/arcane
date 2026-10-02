@@ -29,7 +29,7 @@
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import SwarmNodeAgentDialog from './swarm-node-agent-dialog.svelte';
 	import SwarmNodeLabelDialog from './swarm-node-label-dialog.svelte';
-	import { getSwarmNodeAgentActionLabel, getSwarmNodeAgentLabel, getSwarmNodeAgentVariant } from './agent-status';
+	import { getSwarmNodeAgentActionLabel, getSwarmNodeAgentLabel, getSwarmNodeAgentVariant } from '../agent-status';
 
 	let {
 		nodes = $bindable(),

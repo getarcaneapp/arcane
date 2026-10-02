@@ -6,7 +6,7 @@
 	import { cn } from '#lib/utils.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { TrashIcon } from '#lib/icons/index.js';
-	import { attrsText } from './diagnostic-log-formatting';
+	import { attrsText } from '../diagnostic-log-formatting';
 	import { formatTime } from '#lib/utils/formatting.js';
 
 	interface Props {

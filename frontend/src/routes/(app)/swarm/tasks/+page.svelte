@@ -5,7 +5,7 @@
 	import { ResourcePageLayout, type StatCardConfig } from '#lib/layouts/index.js';
 	import { useEnvironmentRefresh } from '#lib/hooks/use-environment-refresh.svelte.js';
 	import { simpleRefresh } from '#lib/utils/api.js';
-	import SwarmTasksTable from './tasks-table.svelte';
+	import SwarmTasksTable from './components/tasks-table.svelte';
 	import { createRefreshActionButtons } from '#lib/utils/resource-actions.js';
 
 	let { data } = $props();

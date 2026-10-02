@@ -18,7 +18,7 @@
 	import ImageUpdateItem from '#lib/components/image-update-item.svelte';
 	import VulnerabilityScanItem from '#lib/components/vulnerability/vulnerability-scan-item.svelte';
 	import UniversalMobileCard from '#lib/components/arcane-table/cards/universal-mobile-card.svelte';
-	import ImageTagDialog from './components/image-tag-dialog.svelte';
+	import ImageTagDialog from './image-tag-dialog.svelte';
 	import * as Tooltip from '#lib/components/ui/tooltip/index.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import type { ImageSummaryDto, ImageUpdateInfoDto } from '#lib/types/docker.js';

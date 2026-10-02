@@ -9,7 +9,7 @@
 	import { bytes } from '#lib/utils/formatting.js';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import { displaySize, FileDropZone, MEGABYTE, type FileDropZoneProps } from '#lib/components/ui/file-drop-zone/index.js';
-	import ImageTable from './image-table.svelte';
+	import ImageTable from './components/image-table.svelte';
 	import { m } from '#lib/paraglide/messages.js';
 	import { Progress } from '#lib/components/ui/progress/index.js';
 	import { imageService } from '#lib/services/image-service.js';

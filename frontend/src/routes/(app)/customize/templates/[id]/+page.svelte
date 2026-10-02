@@ -156,7 +156,7 @@
 					const downloadedTemplate = await templateService.download(template.id);
 					toast.success(m.templates_downloaded_success({ name: template.name }));
 					if (downloadedTemplate?.id) {
-						await goto(`/customize/templates/${downloadedTemplate.id}`, { replaceState: true });
+						await goto(`/customize/templates/${downloadedTemplate.id}`, { replace: true });
 					} else {
 						await Promise.all([
 							queryClient.invalidateQueries({ queryKey: queryKeys.templates.content(template.id) }),

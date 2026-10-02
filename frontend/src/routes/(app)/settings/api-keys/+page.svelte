@@ -2,7 +2,7 @@
 	import { toast } from 'svelte-sonner';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
-	import ApiKeyTable from './api-key-table.svelte';
+	import ApiKeyTable from './components/api-key-table.svelte';
 	import ApiKeyFormSheet from '#lib/components/sheets/api-key-form-sheet.svelte';
 	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import type { ApiKey, ApiKeyCreated, CreateApiKey } from '#lib/types/auth.js';

@@ -24,8 +24,8 @@
 	import { cn } from '#lib/utils.js';
 	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import { TabBar, type TabItem } from '#lib/components/tab-bar/index.js';
-	import OidcMappingTable from './oidc-mapping-table.svelte';
-	import FederatedCredentialsTab from './federated-credentials-tab.svelte';
+	import OidcMappingTable from './components/oidc-mapping-table.svelte';
+	import FederatedCredentialsTab from './components/federated-credentials-tab.svelte';
 	import OidcMappingFormSheet from '#lib/components/sheets/oidc-mapping-form-sheet.svelte';
 	import type { OidcRoleMapping, CreateOidcRoleMapping, UpdateOidcRoleMapping } from '#lib/types/auth.js';
 	import { oidcMappingService } from '#lib/services/oidc-mapping-service.js';

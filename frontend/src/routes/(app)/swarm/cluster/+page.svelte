@@ -21,7 +21,7 @@
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 	import { toast } from 'svelte-sonner';
-	import EasyJoinDialog from './easy-join-dialog.svelte';
+	import EasyJoinDialog from './components/easy-join-dialog.svelte';
 
 	const currentEnvId = $derived(environmentStore.selected?.id);
 	const canManageSwarm = $derived(hasPermission('swarm:nodes', currentEnvId));

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { PageProps } from './$types';
 
-	import DashboardAllEnvironmentsView from './dashboard-all-environments-view.svelte';
+	import AllEnvironmentsView from './components/all-environments-view.svelte';
 	import userStore from '#lib/stores/user-store.svelte.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { Temporal } from 'temporal-polyfill';
@@ -27,4 +27,4 @@
 	);
 </script>
 
-<DashboardAllEnvironmentsView heroGreeting={dashboardHeroGreeting} {debugAllGood} />
+<AllEnvironmentsView heroGreeting={dashboardHeroGreeting} {debugAllGood} />

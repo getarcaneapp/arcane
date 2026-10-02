@@ -6,7 +6,7 @@
 	import type { UpdateRole, CreateRole } from '#lib/types/auth.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { roleService } from '#lib/services/role-service.js';
-	import RoleEditorPage from '../role-editor-page.svelte';
+	import RoleEditorPage from '../components/role-editor-page.svelte';
 
 	let { data } = $props();
 

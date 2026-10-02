@@ -10,7 +10,7 @@
 	import { simpleRefresh } from '#lib/utils/api.js';
 	import { createRefreshActionButtons } from '#lib/utils/resource-actions.js';
 	import type { SwarmServiceCreateSpec } from '#lib/types/swarm.js';
-	import SwarmServicesTable from './services-table.svelte';
+	import SwarmServicesTable from './components/services-table.svelte';
 	import ServiceEditorDialog from '#lib/components/dialogs/service-editor-dialog.svelte';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';

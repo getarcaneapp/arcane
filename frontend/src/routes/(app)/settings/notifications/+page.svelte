@@ -20,7 +20,7 @@
 	import type { Settings } from '#lib/types/settings.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { TabBar, type TabItem } from '#lib/components/tab-bar/index.js';
-	import { BuiltInProviderForm } from './providers';
+	import { BuiltInProviderForm } from './components/providers';
 	import {
 		cloneNotificationProviderFormState,
 		createNotificationProviderFormState,

@@ -4,7 +4,7 @@
 	import type { ContainerRegistry, ContainerRegistryPullUsage } from '#lib/types/docker.js';
 	import type { ContainerRegistryCreateDto, ContainerRegistryUpdateDto } from '#lib/types/docker.js';
 	import ContainerRegistryFormSheet from '#lib/components/sheets/container-registry-sheet.svelte';
-	import RegistryTable from './registry-table.svelte';
+	import RegistryTable from './components/registry-table.svelte';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 	import { m } from '#lib/paraglide/messages.js';

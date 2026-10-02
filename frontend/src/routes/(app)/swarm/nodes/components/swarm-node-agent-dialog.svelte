@@ -8,7 +8,7 @@
 	import { AlertTriangleIcon, EdgeConnectionIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { SwarmNodeAgentDeployment, SwarmNodeSummary } from '#lib/types/swarm.js';
-	import { getSwarmNodeAgentLabel, getSwarmNodeAgentVariant } from './agent-status';
+	import { getSwarmNodeAgentLabel, getSwarmNodeAgentVariant } from '../agent-status';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { hasAnyPermission } from '#lib/utils/auth.js';
 	import { goto } from '$app/navigation';

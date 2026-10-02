@@ -71,7 +71,7 @@
 			await userStore.setUser(user);
 			await queryClient.invalidateQueries({ queryKey: queryKeys.auth.all });
 			const redirectTo = data.redirectTo || getEffectiveLandingPage();
-			await goto(redirectTo, { replaceState: true });
+			await goto(redirectTo, { replace: true });
 		},
 		onError: (err) => {
 			if (err instanceof MFARequiredError) {
@@ -99,7 +99,7 @@
 			await authService.completeAuthentication(response);
 			await refreshAll();
 			await queryClient.invalidateQueries({ queryKey: queryKeys.auth.all });
-			await goto(data.redirectTo || getEffectiveLandingPage(), { replaceState: true });
+			await goto(data.redirectTo || getEffectiveLandingPage(), { replace: true });
 		},
 		onError: (err) => {
 			if (err instanceof Error && err.name === 'NotAllowedError') {
@@ -147,7 +147,7 @@
 		await authService.completeAuthentication(response);
 		await refreshAll();
 		await queryClient.invalidateQueries({ queryKey: queryKeys.auth.all });
-		await goto(data.redirectTo || getEffectiveLandingPage(), { replaceState: true });
+		await goto(data.redirectTo || getEffectiveLandingPage(), { replace: true });
 	}
 
 	const showProviderRow = $derived(showOidcLoginButton || showPasskeyLoginButton);

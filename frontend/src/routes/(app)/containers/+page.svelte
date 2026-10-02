@@ -2,7 +2,7 @@
 	import { toast } from 'svelte-sonner';
 	import { goto } from '$app/navigation';
 	import { containerService } from '#lib/services/container-service.js';
-	import ContainerTable from './container-table.svelte';
+	import ContainerTable from './components/container-table.svelte';
 	import { m } from '#lib/paraglide/messages.js';
 	import { imageService } from '#lib/services/image-service.js';
 	import { untrack } from 'svelte';

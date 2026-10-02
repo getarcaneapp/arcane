@@ -6,7 +6,7 @@
 	import { useEnvironmentRefresh } from '#lib/hooks/use-environment-refresh.svelte.js';
 	import { simpleRefresh } from '#lib/utils/api.js';
 	import { createRefreshActionButtons } from '#lib/utils/resource-actions.js';
-	import SwarmStacksTable from './stacks-table.svelte';
+	import SwarmStacksTable from './components/stacks-table.svelte';
 	import { goto } from '$app/navigation';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';

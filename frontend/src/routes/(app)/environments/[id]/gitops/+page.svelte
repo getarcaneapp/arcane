@@ -17,7 +17,7 @@
 	import { page } from '$app/state';
 	import { afterNavigate, goto } from '$app/navigation';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
-	import SyncTable from './sync-table.svelte';
+	import SyncTable from './components/sync-table.svelte';
 	import { RefreshIcon, ClockIcon, SuccessIcon, GitBranchIcon, UploadIcon } from '#lib/icons/index.js';
 
 	let { data } = $props();
@@ -75,7 +75,7 @@
 		for (const param of ['action', 'targetType', 'mode', 'projectId', 'syncId']) {
 			newUrl.searchParams.delete(param);
 		}
-		void goto(newUrl.toString(), { replaceState: true, reset: false });
+		void goto(newUrl.toString(), { replace: true, reset: false });
 	});
 
 	async function refreshSyncs() {

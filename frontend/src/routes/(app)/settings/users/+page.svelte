@@ -3,7 +3,7 @@
 	import { toast } from 'svelte-sonner';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
-	import UserTable from './user-table.svelte';
+	import UserTable from './components/user-table.svelte';
 	import UserFormSheet from '#lib/components/sheets/user-form-sheet.svelte';
 	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import type { Settings } from '#lib/types/settings.js';

@@ -5,7 +5,7 @@
 	import { ResourcePageLayout, type ActionButton } from '#lib/layouts/index.js';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 	import VariableFormSheet from '#lib/components/sheets/variable-form-sheet.svelte';
-	import VariableTable from './variable-table.svelte';
+	import VariableTable from './components/variable-table.svelte';
 	import { variableService } from '#lib/services/variable-service.js';
 	import type {
 		GlobalVariable,

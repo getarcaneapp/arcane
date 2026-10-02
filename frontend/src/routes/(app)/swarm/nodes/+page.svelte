@@ -10,7 +10,7 @@
 	import { ResourcePageLayout, type StatCardConfig } from '#lib/layouts/index.js';
 	import { useEnvironmentRefresh } from '#lib/hooks/use-environment-refresh.svelte.js';
 	import { simpleRefresh } from '#lib/utils/api.js';
-	import SwarmNodesTable from './nodes-table.svelte';
+	import SwarmNodesTable from './components/nodes-table.svelte';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { createRefreshActionButtons } from '#lib/utils/resource-actions.js';

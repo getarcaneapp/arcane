@@ -4,7 +4,7 @@
 	import { toast } from 'svelte-sonner';
 	import CreateVolumeSheet from '#lib/components/sheets/create-volume-sheet.svelte';
 	import type { VolumeCreateRequest, VolumeUsageCounts } from '#lib/types/docker.js';
-	import VolumeTable from './volume-table.svelte';
+	import VolumeTable from './components/volume-table.svelte';
 	import { m } from '#lib/paraglide/messages.js';
 	import { volumeService } from '#lib/services/volume-service.js';
 	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';

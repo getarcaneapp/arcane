@@ -2,7 +2,7 @@
 	import { toast } from 'svelte-sonner';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
-	import WebhookTable from './webhook-table.svelte';
+	import WebhookTable from './components/webhook-table.svelte';
 	import WebhookFormSheet from '#lib/components/sheets/webhook-form-sheet.svelte';
 	import type { Webhook, WebhookCreated, CreateWebhook } from '#lib/types/environment.js';
 	import { webhookService } from '#lib/services/webhook-service.js';

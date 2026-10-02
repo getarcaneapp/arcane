@@ -27,8 +27,8 @@
 		DownloadIcon,
 		ArrowDownIcon
 	} from '#lib/icons/index.js';
-	import DiagnosticLogPanel from './diagnostic-log-panel.svelte';
-	import DiagnosticLeakPanel from './diagnostic-leak-panel.svelte';
+	import DiagnosticLogPanel from './components/diagnostic-log-panel.svelte';
+	import DiagnosticLeakPanel from './components/diagnostic-leak-panel.svelte';
 	import { formatTime } from '#lib/utils/formatting.js';
 
 	type DiagnosticsTab = 'overview' | 'connections' | 'logs' | 'profiling';

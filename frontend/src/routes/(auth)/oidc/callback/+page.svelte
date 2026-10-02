@@ -85,7 +85,7 @@
 				page.data['permissionsManifestLoadFailed'] ?? false,
 				landingPage
 			) ?? requestedTarget;
-		await goto(target, { replaceState: true });
+		await goto(target, { replace: true });
 	}
 
 	async function completeMFA(response: AuthenticationResponse) {

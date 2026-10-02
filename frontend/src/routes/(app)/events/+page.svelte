@@ -1,5 +1,5 @@
 <script lang="ts">
-	import EventTable from './event-table.svelte';
+	import EventTable from './components/event-table.svelte';
 	import { m } from '#lib/paraglide/messages.js';
 	import { eventService } from '#lib/services/event-service.js';
 	import { queryKeys } from '#lib/query/query-keys.js';

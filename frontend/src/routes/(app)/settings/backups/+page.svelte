@@ -38,10 +38,10 @@
 	} from '#lib/types/system-backup.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import * as m from '#lib/paraglide/messages.js';
-	import SystemBackupTable from './system-backup-table.svelte';
+	import SystemBackupTable from './components/system-backup-table.svelte';
 	import BackupPolicyCard from '#lib/components/backup-policy-card.svelte';
-	import SystemBackupScheduleDialog from './system-backup-schedule-dialog.svelte';
-	import SystemVolumeScopeFields from './system-volume-scope-fields.svelte';
+	import SystemBackupScheduleDialog from './components/system-backup-schedule-dialog.svelte';
+	import SystemVolumeScopeFields from './components/system-volume-scope-fields.svelte';
 	import BackupFilePicker from '#lib/components/backup-file-picker.svelte';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import type { BackupFileProvider, BackupFileRootLoadState } from '#lib/types/backup.js';

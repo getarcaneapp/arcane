@@ -8,8 +8,8 @@
 	import EmptyState from '#lib/components/states/empty-state.svelte';
 	import Spinner from '#lib/components/ui/spinner/spinner.svelte';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
-	import ContainerUpdatesTable from './container-updates-table.svelte';
-	import ProjectUpdatesTable from './project-updates-table.svelte';
+	import ContainerUpdatesTable from './components/container-updates-table.svelte';
+	import ProjectUpdatesTable from './components/project-updates-table.svelte';
 	import { imageService } from '#lib/services/image-service.js';
 	import { containerService, type ContainerListRequestOptions } from '#lib/services/container-service.js';
 	import { projectService } from '#lib/services/project-service.js';

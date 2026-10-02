@@ -6,7 +6,7 @@
 	import { portService } from '#lib/services/port-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
-	import PortTable from './port-table.svelte';
+	import PortTable from './components/port-table.svelte';
 
 	let { data } = $props();
 

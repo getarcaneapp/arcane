@@ -17,8 +17,8 @@
 	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
-	import SwarmServicesTable from '../../services/services-table.svelte';
-	import SwarmTasksTable from '../../tasks/tasks-table.svelte';
+	import SwarmServicesTable from '../../services/components/services-table.svelte';
+	import SwarmTasksTable from '../../tasks/components/tasks-table.svelte';
 	import type { SwarmStackSource } from '#lib/types/swarm.js';
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';
 	import { hasPermission } from '#lib/utils/auth.js';

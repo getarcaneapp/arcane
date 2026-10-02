@@ -7,9 +7,9 @@
 	import { cn } from '#lib/utils.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import * as ArcaneTooltip from '#lib/components/arcane-tooltip/index.js';
+	import * as StatStrip from '#lib/components/stat-strip/index.js';
 	import PruneConfirmationDialog from '#lib/components/dialogs/prune-confirmation-dialog.svelte';
 	import DockerInfoDialog from '#lib/components/dialogs/docker-info-dialog.svelte';
-	import { Skeleton } from '#lib/components/ui/skeleton/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { settingsService } from '#lib/services/settings-service.js';
 	import { systemService } from '#lib/services/system-service.js';
@@ -44,12 +44,11 @@
 		TrashIcon,
 		UpdateIcon,
 		VolumesIcon,
-		VerifiedCheckIcon,
 		LayoutGridIcon,
 		LayoutListIcon
 	} from '#lib/icons/index.js';
-	import DashboardEnvironmentsTable, { type EnvironmentTableRow } from './dashboard-environments-table.svelte';
-	import DashboardEnvironmentCard from './dashboard-environment-card.svelte';
+	import EnvironmentsTable, { type EnvironmentTableRow } from './environments-table.svelte';
+	import EnvironmentCard from './environment-card.svelte';
 	import { PersistedState } from 'runed';
 	import {
 		buildOverviewSummary,
@@ -61,7 +60,7 @@
 		getDiskMetric,
 		getMemoryMetric,
 		shouldLoadEnvironment
-	} from './dashboard-overview';
+	} from '../overview.helpers';
 
 	let {
 		heroGreeting,
@@ -586,6 +585,53 @@
 		return { pending, checking };
 	});
 
+	const summaryTiles = $derived.by(() => {
+		const summary = boardState.summary;
+		let updatesContext: string;
+		if (updatesOverview.pending === 0 && !updatesOverview.checking) {
+			updatesContext = m.dashboard_updates_up_to_date();
+		} else if (updatesOverview.checking) {
+			updatesContext = m.dashboard_updates_checking();
+		} else {
+			updatesContext = m.dashboard_updates_available_label();
+		}
+
+		return [
+			{
+				key: 'updates',
+				href: '/updates',
+				icon: UpdateIcon,
+				label: m.updates(),
+				value: updatesOverview.pending,
+				context: updatesContext
+			},
+			{
+				key: 'containers',
+				href: '/containers',
+				icon: ContainersIcon,
+				label: m.containers(),
+				value: summary.totalContainers,
+				context: formatContainerOverviewLabel(summary)
+			},
+			{
+				key: 'images',
+				href: '/images',
+				icon: ImagesIcon,
+				label: m.images(),
+				value: summary.totalImages,
+				context: formatImageOverviewLabel(summary)
+			},
+			{
+				key: 'volumes',
+				href: '/volumes',
+				icon: VolumesIcon,
+				label: m.resource_volumes_cap(),
+				value: summary.totalVolumes,
+				context: formatVolumeOverviewLabel(summary)
+			}
+		];
+	});
+
 	async function openPruneDialog(item: DashboardEnvironmentOverview) {
 		if (!canPruneEnvironment(item) || pruneDefaultsLoadingId) {
 			return;
@@ -722,102 +768,23 @@
 	</header>
 
 	<section class="shrink-0">
-		{#if boardSummaryLoading}
-			<div class="grid grid-cols-2 gap-x-6 gap-y-4 lg:grid-cols-4">
-				{#each [{ icon: UpdateIcon, label: m.updates() }, { icon: ContainersIcon, label: m.containers() }, { icon: ImagesIcon, label: m.images() }, { icon: VolumesIcon, label: m.resource_volumes_cap() }] as tile (tile.label)}
-					<div class="min-w-0">
-						<div class="flex items-center gap-1.5 text-2xs font-semibold tracking-wide text-muted-foreground uppercase">
-							<tile.icon class="size-3.5" />
-							<span>{tile.label}</span>
-						</div>
-						<Skeleton class="mt-1.5 h-7 w-12" />
-						<Skeleton class="mt-1.5 h-3.5 w-28" />
-					</div>
-				{/each}
-			</div>
-		{:else}
-			{@const summary = boardState.summary}
-			<div class="grid grid-cols-2 gap-x-6 gap-y-4 lg:grid-cols-4">
-				<button
-					type="button"
-					onclick={() => goto('/updates')}
-					class="group min-w-0 cursor-pointer rounded-sm text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring"
-				>
-					<div
-						class="flex items-center gap-1.5 text-2xs font-semibold tracking-wide text-muted-foreground uppercase transition-colors group-hover:text-foreground"
-					>
-						<UpdateIcon class="size-3.5" />
-						<span>{m.updates()}</span>
-					</div>
-					<div class="mt-1 text-2xl font-semibold tracking-tight tabular-nums">{updatesOverview.pending}</div>
-					<div class="mt-0.5 flex h-4 items-center gap-1.5 truncate text-xs text-muted-foreground">
-						{#if updatesOverview.pending === 0 && !updatesOverview.checking}
-							<VerifiedCheckIcon class="size-3.5 shrink-0 text-success" />
-							<span class="truncate">{m.dashboard_updates_up_to_date()}</span>
-						{:else if updatesOverview.checking}
-							<span class="truncate">{m.dashboard_updates_checking()}</span>
-						{:else}
-							<span class="truncate">{m.dashboard_updates_available_label()}</span>
-						{/if}
-					</div>
-				</button>
-
-				<button
-					type="button"
-					onclick={() => goto('/containers')}
-					class="group min-w-0 cursor-pointer rounded-sm border-border/60 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring max-lg:border-l max-lg:pl-6 lg:border-l lg:pl-6"
-				>
-					<div
-						class="flex items-center gap-1.5 text-2xs font-semibold tracking-wide text-muted-foreground uppercase transition-colors group-hover:text-foreground"
-					>
-						<ContainersIcon class="size-3.5" />
-						<span>{m.containers()}</span>
-					</div>
-					<div class="mt-1 text-2xl font-semibold tracking-tight tabular-nums">{summary.totalContainers}</div>
-					<div class="mt-0.5 truncate text-xs text-muted-foreground">{formatContainerOverviewLabel(summary)}</div>
-				</button>
-
-				<button
-					type="button"
-					onclick={() => goto('/images')}
-					class="group min-w-0 cursor-pointer rounded-sm border-border/60 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring lg:border-l lg:pl-6"
-				>
-					<div
-						class="flex items-center gap-1.5 text-2xs font-semibold tracking-wide text-muted-foreground uppercase transition-colors group-hover:text-foreground"
-					>
-						<ImagesIcon class="size-3.5" />
-						<span>{m.images()}</span>
-					</div>
-					<div class="mt-1 text-2xl font-semibold tracking-tight tabular-nums">{summary.totalImages}</div>
-					<div class="mt-0.5 truncate text-xs text-muted-foreground">{formatImageOverviewLabel(summary)}</div>
-				</button>
-
-				<button
-					type="button"
-					onclick={() => goto('/volumes')}
-					class="group min-w-0 cursor-pointer rounded-sm border-border/60 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring max-lg:border-l max-lg:pl-6 lg:border-l lg:pl-6"
-				>
-					<div
-						class="flex items-center gap-1.5 text-2xs font-semibold tracking-wide text-muted-foreground uppercase transition-colors group-hover:text-foreground"
-					>
-						<VolumesIcon class="size-3.5" />
-						<span>{m.resource_volumes_cap()}</span>
-					</div>
-					<div class="mt-1 text-2xl font-semibold tracking-tight tabular-nums">{summary.totalVolumes}</div>
-					<div class="mt-0.5 truncate text-xs text-muted-foreground">{formatVolumeOverviewLabel(summary)}</div>
-				</button>
-			</div>
-		{/if}
+		<StatStrip.Root class="lg:grid-cols-4">
+			{#each summaryTiles as tile (tile.key)}
+				<StatStrip.Item label={tile.label} value={tile.value} icon={tile.icon} href={tile.href} loading={boardSummaryLoading}>
+					{tile.context}
+				</StatStrip.Item>
+			{/each}
+		</StatStrip.Root>
 	</section>
 
-	<section class="flex min-h-0 flex-1 flex-col overflow-hidden border-t border-border/60 pt-3">
+	<section class="flex min-h-0 flex-1 flex-col overflow-hidden pt-3">
 		{#if environmentCards.length === 0}
 			<div class="rounded-xl border border-dashed border-border/60 px-4 py-8 text-center">
 				<p class="text-sm text-muted-foreground">{m.dashboard_all_no_visible_environments()}</p>
 			</div>
 		{:else if boardView === 'table'}
 			<div class="min-h-0 flex-1 overflow-y-auto pb-2">
-				<DashboardEnvironmentsTable rows={environmentTableRows} />
+				<EnvironmentsTable rows={environmentTableRows} />
 			</div>
 		{:else}
 			<div class="min-h-0 flex-1 overflow-y-auto pb-2">
@@ -830,7 +797,7 @@
 						{@const systemStats = getLiveStatsState(environment.id)?.stats ?? null}
 						{@const liveStatsStatus = getLiveStatsStatus(environment)}
 						{@const [useButton, ...menuButtons] = getEnvironmentActionButtons(overview, isCurrent)}
-						<DashboardEnvironmentCard
+						<EnvironmentCard
 							{overview}
 							{isCurrent}
 							{systemStats}

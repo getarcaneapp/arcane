@@ -27,8 +27,8 @@
 	import { TabBar, type TabItem } from '#lib/components/tab-bar/index.js';
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';
 	import { DetailMetaStrip, DetailSection, KeyValueCard } from '#lib/components/resource-detail/index.js';
-	import ImageAttestationsPanel from './image-attestations-panel.svelte';
-	import ImageHistoryPanel from './image-history-panel.svelte';
+	import ImageAttestationsPanel from './components/image-attestations-panel.svelte';
+	import ImageHistoryPanel from './components/image-history-panel.svelte';
 	import ImageTagDialog from '../components/image-tag-dialog.svelte';
 	import VulnerabilityScanPanel from '#lib/components/vulnerability/vulnerability-scan-panel.svelte';
 	import { CopyButton } from '#lib/components/ui/copy-button/index.js';

@@ -2,8 +2,8 @@
 	import type { ActionButton } from '#lib/components/action-button-group/index.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
-	import DashboardEnvironmentUpgradeAction from './dashboard-environment-upgrade-action.svelte';
-	import DashboardMetricTile from './dash-metric-tile.svelte';
+	import EnvironmentUpgradeAction from './environment-upgrade-action.svelte';
+	import MetricTile from './metric-tile.svelte';
 	import * as ArcaneTooltip from '#lib/components/arcane-tooltip/index.js';
 	import { Badge, badgeVariants } from '#lib/components/ui/badge/index.js';
 	import * as Card from '#lib/components/ui/card/index.js';
@@ -27,7 +27,7 @@
 		getMemoryMetric,
 		getRoleBadge,
 		shouldLoadEnvironment
-	} from './dashboard-overview';
+	} from '../overview.helpers';
 
 	// These bindings target record entries that start undefined; Svelte rejects a bindable fallback here.
 	let {
@@ -97,7 +97,7 @@
 												<span
 													>{m.sidebar_update_available()}{#if newestVersionLabel}: {newestVersionLabel}{/if}</span
 												>
-												<DashboardEnvironmentUpgradeAction
+												<EnvironmentUpgradeAction
 													{environment}
 													{versionInfo}
 													{canUpgrade}
@@ -117,7 +117,7 @@
 								{/if}
 							</div>
 							{#if versionInfo.updateAvailable || debugUpgrade}
-								<DashboardEnvironmentUpgradeAction
+								<EnvironmentUpgradeAction
 									{environment}
 									{versionInfo}
 									{canUpgrade}
@@ -223,14 +223,14 @@
 									</div>
 								{/each}
 							{:else}
-								<DashboardMetricTile
+								<MetricTile
 									title={m.cpu_usage()}
 									icon={CpuIcon}
 									value={formatPercent(cpuMetric)}
 									label={getCpuMetricLabel(systemStats)}
 									meterValue={cpuMetric}
 								/>
-								<DashboardMetricTile
+								<MetricTile
 									title={m.memory_usage()}
 									icon={MemoryStickIcon}
 									value={formatPercent(memoryMetric)}
@@ -238,7 +238,7 @@
 									labelClass="truncate"
 									meterValue={memoryMetric}
 								/>
-								<DashboardMetricTile
+								<MetricTile
 									title={m.dashboard_meter_disk()}
 									icon={VolumesIcon}
 									value={formatPercent(diskMetric)}
@@ -247,7 +247,7 @@
 									meterValue={diskMetric}
 								/>
 								{#if gpuMetric !== null}
-									<DashboardMetricTile
+									<MetricTile
 										title={m.dashboard_meter_gpu()}
 										icon={GpuIcon}
 										value={formatPercent(gpuMetric)}

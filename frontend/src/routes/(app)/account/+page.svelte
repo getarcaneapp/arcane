@@ -20,9 +20,9 @@
 	import { GLOBAL_SCOPE } from '#lib/types/auth.js';
 	import { Temporal } from 'temporal-polyfill';
 	import { UserIcon, SettingsIcon } from '#lib/icons/index.js';
-	import AccountPreferencesPanel from './account-preferences-panel.svelte';
-	import AccountApiKeysPanel from './account-api-keys-panel.svelte';
-	import AccountSecurityPanel from './account-security-panel.svelte';
+	import AccountPreferencesPanel from './components/account-preferences-panel.svelte';
+	import AccountApiKeysPanel from './components/account-api-keys-panel.svelte';
+	import AccountSecurityPanel from './components/account-security-panel.svelte';
 
 	type AccountTab = 'account' | 'preferences';
 

@@ -4,7 +4,7 @@
 	import { page } from '$app/state';
 	import { afterNavigate } from '$app/navigation';
 	import NewEnvironmentSheet from '#lib/components/sheets/new-environment-sheet.svelte';
-	import EnvironmentTable from './environment-table.svelte';
+	import EnvironmentTable from './components/environment-table.svelte';
 	import { m } from '#lib/paraglide/messages.js';
 	import { environmentManagementService } from '#lib/services/env-mgmt-service.js';
 	import { ResourcePageLayout, type ActionButton } from '#lib/layouts/index.js';

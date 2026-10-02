@@ -2,7 +2,7 @@
 	import { useEnvironmentRefresh } from '#lib/hooks/use-environment-refresh.svelte.js';
 	import { BoxIcon, ProjectsIcon, StartIcon, StopIcon } from '#lib/icons/index.js';
 	import { toast } from 'svelte-sonner';
-	import ProjectsTable from './projects-table.svelte';
+	import ProjectsTable from './components/projects-table.svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { m } from '#lib/paraglide/messages.js';
@@ -187,7 +187,7 @@
 		} else {
 			url.searchParams.delete('archived');
 		}
-		await goto(`${url.pathname}${url.search}`, { reset: false, replaceState: true });
+		await goto(`${url.pathname}${url.search}`, { reset: false, replace: true });
 	}
 
 	const canCreateProject = $derived(hasPermission('projects:create', envId));

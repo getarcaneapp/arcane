@@ -12,8 +12,8 @@
 	import type { CreateS3Destination, S3Destination } from '#lib/types/s3-destination.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import * as m from '#lib/paraglide/messages.js';
-	import S3DestinationDialog from './s3-destination-dialog.svelte';
-	import S3DestinationTable from './s3-destination-table.svelte';
+	import S3DestinationDialog from './components/s3-destination-dialog.svelte';
+	import S3DestinationTable from './components/s3-destination-table.svelte';
 
 	let { data } = $props();
 	let destinations = $derived(data.destinations);

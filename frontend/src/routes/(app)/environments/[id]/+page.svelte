@@ -48,7 +48,7 @@
 	import ImagePatchSettings from '#lib/components/settings/image-patch-settings.svelte';
 	import LifecycleSecuritySettings from '#lib/components/settings/lifecycle-security-settings.svelte';
 	import { useEasyJoinCandidates } from '#lib/hooks/use-easy-join-candidates.svelte.js';
-	import EasyJoinDialog from '../../swarm/cluster/easy-join-dialog.svelte';
+	import EasyJoinDialog from '../../swarm/cluster/components/easy-join-dialog.svelte';
 	import {
 		ArrowLeftIcon,
 		AlertIcon,

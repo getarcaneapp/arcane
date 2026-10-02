@@ -29,7 +29,7 @@
 	import userStore from '#lib/stores/user-store.svelte.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { bulkConfirmAndRun } from '#lib/utils/bulk-actions.js';
-	import RenameVolumeDialog from './components/rename-volume-dialog.svelte';
+	import RenameVolumeDialog from './rename-volume-dialog.svelte';
 
 	let {
 		volumes = $bindable(),

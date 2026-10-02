@@ -12,9 +12,9 @@
 	import type { VulnerabilityRiskOverview, VulnerabilityWithImage } from '#lib/types/environment.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { onMount, onDestroy, untrack } from 'svelte';
-	import SecurityVulnerabilityTable from './security-vulnerability-table.svelte';
-	import SecurityPatchTable from './security-patch-table.svelte';
-	import SecurityOverview from './security-overview.svelte';
+	import SecurityVulnerabilityTable from './components/security-vulnerability-table.svelte';
+	import SecurityPatchTable from './components/security-patch-table.svelte';
+	import SecurityOverview from './components/security-overview.svelte';
 	import type { ImagePatchTargetDto } from '#lib/types/docker.js';
 	import { toast } from 'svelte-sonner';
 	import { ActivityIcon, InspectIcon, ShieldAlertIcon, ShieldCheckIcon } from '#lib/icons/index.js';
