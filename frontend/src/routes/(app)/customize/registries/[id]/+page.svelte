@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto, refreshAll } from '$app/navigation';
+	import { useQueryClient } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 
 	import type { ActionButton } from '#lib/components/action-button-group/types.js';
@@ -17,9 +18,11 @@
 	import { AlertTriangleIcon, ArrowRightIcon, RegistryIcon, SearchIcon, TagIcon, TrashIcon } from '#lib/icons/index.js';
 	import { ResourceDetailLayout } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
 	import { containerRegistryService } from '#lib/services/container-registry-service.js';
 	import type { RegistryTag } from '#lib/types/docker.js';
 	import { cn } from '#lib/utils.js';
+	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { bulkConfirmAndRun, confirmAndRun } from '#lib/utils/bulk-actions.js';
 	import { bytes, formatRelativeTime } from '#lib/utils/formatting.js';
@@ -27,6 +30,8 @@
 	import { debounced } from '#lib/utils/ws.js';
 
 	let { data } = $props();
+
+	const queryClient = useQueryClient();
 
 	const registry = $derived(data.registry);
 	const registryLabel = $derived(registry.url || 'docker.io');
@@ -97,10 +102,22 @@
 		}
 	}
 
+	// Loader queries outlive their stale windows only until invalidated, so
+	// drop every cached page and search variant before rerunning loaders.
 	async function refresh() {
 		refreshing = true;
-		await refreshAll();
-		refreshing = false;
+		try {
+			const registries = queryKeys.containerRegistries;
+			await queryClient.invalidateQueries({ queryKey: registries.repositoriesPrefix(registry.id), refetchType: 'none' });
+			if (repository) {
+				await queryClient.invalidateQueries({ queryKey: registries.tagsPrefix(registry.id, repository), refetchType: 'none' });
+			}
+			await refreshAll();
+		} catch (err) {
+			toast.error(m.common_refresh_failed({ resource: m.common_registry() }), { description: extractApiErrorMessage(err) });
+		} finally {
+			refreshing = false;
+		}
 	}
 
 	function handleDeleteOne(tag: string) {
@@ -115,7 +132,7 @@
 			failureMessage: m.registries_delete_tag_failed({ reference }),
 			onSuccess: async () => {
 				toast.success(m.registries_delete_tag_success({ reference }));
-				await refreshAll();
+				await refresh();
 			}
 		});
 	}
@@ -148,7 +165,7 @@
 			},
 			setLoading: (loading) => (bulkDeleting = loading),
 			onComplete: async ({ success }) => {
-				if (success > 0) await refreshAll();
+				if (success > 0) await refresh();
 			},
 			clearSelection: () => {
 				selected = [];

@@ -15,6 +15,7 @@ require (
 	github.com/charmbracelet/x/term v0.2.2
 	github.com/getarcaneapp/arcane/types/v2 v2.14.0
 	github.com/mattn/go-runewidth v0.0.30
+	github.com/muesli/cancelreader v0.2.2
 	github.com/samber/hot v0.13.1
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
@@ -56,7 +57,6 @@ require (
 	github.com/moby/docker-image-spec v1.3.1 // indirect
 	github.com/moby/moby/api v1.56.1 // indirect
 	github.com/moby/moby/client v0.6.1 // indirect
-	github.com/muesli/cancelreader v0.2.2 // indirect
 	github.com/muesli/mango v0.2.0 // indirect
 	github.com/muesli/mango-cobra v1.3.0 // indirect
 	github.com/muesli/mango-pflag v0.2.0 // indirect

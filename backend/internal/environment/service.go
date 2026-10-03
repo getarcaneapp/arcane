@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"time"
 	"uuid"
 
@@ -57,7 +58,8 @@ type EnvironmentService struct {
 	settingsService  *settings.SettingsService
 	edgeTokens       *edgeTokenCacheInternal
 	remoteEnvs       *remoteEnvSnapshotCacheInternal
-	environmentCache *hot.HotCache[string, Environment]
+	environmentCache *hot.HotCache[environmentCacheKeyInternal, Environment]
+	environmentGens  [environmentCacheStripes]atomic.Uint64
 
 	// jobs carries the scheduler and app lifecycle context, injected
 	// post-construction via SetScheduler (manager-only). Each enabled environment
@@ -267,6 +269,7 @@ func (s *EnvironmentService) EnsureLocalEnvironment(ctx context.Context, appUrl 
 	if createLocalEnvironmentErr := s.db.WithContext(ctx).Create(localEnv).Error; createLocalEnvironmentErr != nil {
 		return fmt.Errorf("failed to create local environment: %w", createLocalEnvironmentErr)
 	}
+	s.invalidateEnvironmentCacheInternal(LocalEnvironmentID)
 
 	slog.InfoContext(ctx, "created local environment record", "id", LocalEnvironmentID)
 	return nil
@@ -731,17 +734,18 @@ func (s *EnvironmentService) ListActiveRemoteEnvironments(ctx context.Context) (
 // GetEnvironmentByIDCached is GetEnvironmentByID behind a short TTL cache that
 // also remembers unknown IDs. Status and heartbeat fields may be stale.
 func (s *EnvironmentService) GetEnvironmentByIDCached(ctx context.Context, id string) (*Environment, error) {
-	envRecord, found, err := s.environmentCache.GetWithLoaders(id, func(ids []string) (map[string]Environment, error) {
-		found := make(map[string]Environment, len(ids))
-		for _, environmentID := range ids {
-			loaded, loadErr := s.GetEnvironmentByID(ctx, environmentID)
+	key := environmentCacheKeyInternal{gen: s.environmentGens[environmentCacheStripeInternal(id)].Load(), id: id}
+	envRecord, found, err := s.environmentCache.GetWithLoaders(key, func(keys []environmentCacheKeyInternal) (map[environmentCacheKeyInternal]Environment, error) {
+		found := make(map[environmentCacheKeyInternal]Environment, len(keys))
+		for _, k := range keys {
+			loaded, loadErr := s.GetEnvironmentByID(ctx, k.id)
 			if errors.Is(loadErr, ErrEnvironmentNotFound) {
 				continue
 			}
 			if loadErr != nil {
 				return nil, loadErr
 			}
-			found[environmentID] = *loaded
+			found[k] = *loaded
 		}
 		return found, nil
 	})
@@ -754,12 +758,25 @@ func (s *EnvironmentService) GetEnvironmentByIDCached(ctx context.Context, id st
 	return &envRecord, nil
 }
 
-// invalidateEnvironmentCacheInternal drops a cached record after a CRUD write.
+// invalidateEnvironmentCacheInternal starts a new generation for id's stripe
+// after a committed write, orphaning its cached record and in-flight loads.
 func (s *EnvironmentService) invalidateEnvironmentCacheInternal(id string) {
-	if s == nil || s.environmentCache == nil || id == "" {
+	if s == nil || s.environmentCache == nil {
 		return
 	}
-	s.environmentCache.Delete(id)
+	previous := s.environmentGens[environmentCacheStripeInternal(id)].Add(1) - 1
+	s.environmentCache.Delete(environmentCacheKeyInternal{gen: previous, id: id})
+}
+
+// invalidateAllEnvironmentCacheInternal covers writes whose affected IDs are unknown.
+func (s *EnvironmentService) invalidateAllEnvironmentCacheInternal() {
+	if s == nil || s.environmentCache == nil {
+		return
+	}
+	for i := range s.environmentGens {
+		s.environmentGens[i].Add(1)
+	}
+	s.environmentCache.Purge()
 }
 
 func (s *EnvironmentService) ListEnvironmentsPaginated(ctx context.Context, params pagination.QueryParams, accessibleEnvIDs []string) ([]environment.Environment, pagination.Response, error) {
@@ -1682,7 +1699,12 @@ func (s *EnvironmentService) BindSwarmNodeEnvironment(
 	}
 
 	s.remoteEnvs.put(envRecord)
-	s.invalidateEnvironmentCacheInternal(envRecord.ID)
+	// A rebind also clears the binding on other environments.
+	if rebind {
+		s.invalidateAllEnvironmentCacheInternal()
+	} else {
+		s.invalidateEnvironmentCacheInternal(envRecord.ID)
+	}
 	s.NotifyRuntimeStateChanged()
 	return &envRecord, nil
 }
@@ -1695,6 +1717,7 @@ func (s *EnvironmentService) DetachSwarmNodeEnvironment(ctx context.Context, par
 		Updates(map[string]any{"parent_environment_id": nil, "swarm_node_id": nil, "updated_at": &now}).Error; err != nil {
 		return fmt.Errorf("failed to detach swarm node environment: %w", err)
 	}
+	s.invalidateAllEnvironmentCacheInternal()
 	s.NotifyRuntimeStateChanged()
 
 	return nil
@@ -1781,6 +1804,7 @@ func (s *EnvironmentService) UpdateSwarmNodeIdentity(ctx context.Context, envID,
 	if err := s.db.WithContext(ctx).Model(&Environment{}).Where("id = ?", envID).Updates(updates).Error; err != nil {
 		return fmt.Errorf("failed to update swarm node identity: %w", err)
 	}
+	s.invalidateEnvironmentCacheInternal(envID)
 	s.NotifyRuntimeStateChanged()
 
 	return nil

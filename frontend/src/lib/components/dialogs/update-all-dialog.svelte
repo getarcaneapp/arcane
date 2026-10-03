@@ -6,8 +6,9 @@
 	import ReleaseNotes from '#lib/components/release-notes.svelte';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
+	import * as Popover from '#lib/components/ui/popover/index.js';
 	import Spinner from '#lib/components/ui/spinner/spinner.svelte';
-	import { SuccessIcon, ClockIcon, AlertIcon, AlertTriangleIcon, ExternalLinkIcon } from '#lib/icons/index.js';
+	import { SuccessIcon, ClockIcon, AlertIcon, AlertTriangleIcon, ExternalLinkIcon, InfoIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { APIError } from '#lib/services/api-service.js';
 	import systemUpgradeService from '#lib/services/api/system-upgrade-service.js';
@@ -481,11 +482,30 @@
 							{/if}
 							<Dialog.Title><span class="block min-w-0 truncate">{title}</span></Dialog.Title>
 						</div>
-						{#if totalCount > 0}
-							<span class="shrink-0 text-xs text-muted-foreground tabular-nums">
-								{m.environments_update_all_progress({ done: doneCount, total: totalCount })}
-							</span>
-						{/if}
+						<div class="flex shrink-0 items-center gap-1 pr-6">
+							{#if totalCount > 0}
+								<span class="text-xs text-muted-foreground tabular-nums">
+									{m.environments_update_all_progress({ done: doneCount, total: totalCount })}
+								</span>
+							{/if}
+							{#if phase === 'running'}
+								<Popover.Root>
+									<Popover.Trigger>
+										{#snippet child({ props })}
+											<Button {...props} variant="ghost" size="icon" class="size-7" aria-label={m.info()}>
+												<InfoIcon class="size-4" />
+											</Button>
+										{/snippet}
+									</Popover.Trigger>
+									<Popover.Content align="end" class="w-80">
+										<div class="space-y-2 text-xs leading-relaxed text-muted-foreground">
+											<p>{m.environments_update_all_manager_note()}</p>
+											<p>{m.environments_update_all_reconnection_note()}</p>
+										</div>
+									</Popover.Content>
+								</Popover.Root>
+							{/if}
+						</div>
 					</div>
 				</Dialog.Header>
 
@@ -586,13 +606,6 @@
 				<div class="flex items-center gap-2 border-t border-border/60 px-6 py-4 text-sm text-muted-foreground">
 					<Spinner class="size-4" />
 					<span>{job ? m.environments_update_all_in_progress() : m.environments_update_all_loading_status()}</span>
-				</div>
-			{/if}
-
-			{#if phase === 'running'}
-				<div class="border-t border-border/60 bg-muted/30 px-6 py-3">
-					<p class="text-xs leading-relaxed text-muted-foreground">{m.environments_update_all_manager_note()}</p>
-					<p class="mt-1 text-xs leading-relaxed text-muted-foreground">{m.environments_update_all_reconnection_note()}</p>
 				</div>
 			{/if}
 		{/if}

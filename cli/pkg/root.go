@@ -169,6 +169,8 @@ var rootCmd = &cobra.Command{
 
 func Execute() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt) //nolint:forbidigo // CLI process context.
+	// Restore default handling after the first interrupt so a second one exits.
+	context.AfterFunc(ctx, cancel)
 	if err := fang.Execute(
 		ctx,
 		rootCmd,

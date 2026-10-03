@@ -6,12 +6,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/x/term"
 	"github.com/getarcaneapp/arcane/types/v2/auth"
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/getarcaneapp/arcane/types/v2/user"
@@ -239,29 +237,17 @@ var passwordCmd = &cobra.Command{
 		newPassword, _ := cmd.Flags().GetString("new")
 
 		if currentPassword == "" {
-			resume := output.SuspendProgress()
-			defer resume()
-			_, _ = fmt.Fprint(cmd.ErrOrStderr(), "Current password: ")
-			bytePassword, err := term.ReadPassword(os.Stdin.Fd())
-			if err != nil {
+			var err error
+			if currentPassword, err = output.Secret(cmd.Context(), cmd.InOrStdin(), cmd.ErrOrStderr(), "Current password", "current"); err != nil {
 				return fmt.Errorf("failed to read current password: %w", err)
 			}
-			currentPassword = string(bytePassword)
-			_, _ = fmt.Fprintln(cmd.ErrOrStderr())
-			resume()
 		}
 
 		if newPassword == "" {
-			resume := output.SuspendProgress()
-			defer resume()
-			_, _ = fmt.Fprint(cmd.ErrOrStderr(), "New password: ")
-			bytePassword, err := term.ReadPassword(os.Stdin.Fd())
-			if err != nil {
+			var err error
+			if newPassword, err = output.Secret(cmd.Context(), cmd.InOrStdin(), cmd.ErrOrStderr(), "New password", "new"); err != nil {
 				return fmt.Errorf("failed to read new password: %w", err)
 			}
-			newPassword = string(bytePassword)
-			_, _ = fmt.Fprintln(cmd.ErrOrStderr())
-			resume()
 		}
 
 		c, err := cmdutil.ClientFromCommand(cmd)
@@ -309,11 +295,8 @@ var refreshCmd = &cobra.Command{
 			refreshToken = cfg.RefreshToken
 		}
 		if refreshToken == "" {
-			resume := output.SuspendProgress()
-			defer resume()
-			_, _ = fmt.Fprint(cmd.ErrOrStderr(), "Refresh token: ")
-			if _, scanlnErr := fmt.Fscanln(cmd.InOrStdin(), &refreshToken); scanlnErr != nil {
-				return fmt.Errorf("failed to read refresh token: %w", scanlnErr)
+			if refreshToken, err = output.Secret(cmd.Context(), cmd.InOrStdin(), cmd.ErrOrStderr(), "Refresh token", "refresh-token"); err != nil {
+				return fmt.Errorf("failed to read refresh token: %w", err)
 			}
 		}
 
