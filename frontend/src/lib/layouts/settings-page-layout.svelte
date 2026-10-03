@@ -6,6 +6,7 @@
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { UiConfigDisabledTag } from '#lib/components/badges/index.js';
 	import StatCard from '#lib/components/stat-card.svelte';
+	import { IsMobile } from '#lib/hooks/is-mobile.svelte.js';
 	import { getSettingsFormContext, hasSettingsFormContext } from '#lib/hooks/settings-form-context.js';
 	import { ResetIcon, type IconType } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
@@ -41,11 +42,12 @@
 
 	const formContext = hasSettingsFormContext() ? getSettingsFormContext() : undefined;
 	const formState = $derived(formContext?.activeForm);
+	const isMobile = new IsMobile();
 </script>
 
 <div class={cn('px-2 py-4 pb-5 sm:px-6 sm:py-6 sm:pb-10 lg:px-8', className)}>
 	<div class="border-b border-border/50 pb-4 sm:pb-6">
-		<div class="flex items-center justify-between gap-4">
+		<div class="flex flex-wrap items-center justify-between gap-4">
 			<div class="flex flex-1 items-start gap-3 sm:gap-4">
 				{#if Icon}
 					<div
@@ -84,8 +86,8 @@
 					<UiConfigDisabledTag />
 				{/if}
 
-				{#if pageType === 'form' && formState?.saveFunction && !showReadOnlyTag}
-					<div class="hidden items-center gap-2 md:flex">
+				{#if pageType === 'form' && formState?.saveFunction && !showReadOnlyTag && !isMobile.current}
+					<div class="flex flex-wrap items-center justify-end gap-2">
 						{#if formState.hasChanges}
 							<span class="mr-2 text-xs text-warning">{m.common_unsaved_changes()}</span>
 						{:else}
