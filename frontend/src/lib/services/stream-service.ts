@@ -3,7 +3,6 @@ import { tryCatch } from '#lib/utils/try-catch.js';
 
 import BaseAPIService, { handleUnauthorizedResponseInternal } from './api-service';
 
-/** Channels the multiplexed client stream can carry. Must match types/stream. */
 export const STREAM_CHANNEL_ENVIRONMENTS = 'environments';
 export const STREAM_CHANNEL_DASHBOARD = 'dashboard';
 export const STREAM_CHANNEL_ACTIVITIES = 'activities';
@@ -26,26 +25,26 @@ class StreamService extends BaseAPIService {
 	): Promise<Response> {
 		const response = await fetch(this.getClientStreamUrl(channels, params), {
 			credentials: 'include',
-			headers: { Accept: 'application/x-json-stream' },
+			headers: { Accept: 'text/event-stream' },
 			signal
 		});
 		if (response.status === 401) {
-			// Nothing reads this body, so release its connection before deciding
-			// what to do next.
 			if (response.body) await tryCatch(response.body.cancel());
 			const action = await handleUnauthorizedResponseInternal('/stream', retry);
 			if (action === 'retry') {
 				return this.openClientStream(signal, channels, params, true);
 			}
-			// The document is being replaced (login redirect, or the reload that
-			// follows a backend self-update). Never settling stops the caller
-			// from opening a fresh stream against a page that is going away.
 			if (action === 'redirect' || action === 'reload') {
 				return new Promise<Response>(() => {});
 			}
 		}
 		if (!response.ok) {
 			throw new Error(`Client stream failed with status ${response.status}`);
+		}
+		const contentType = response.headers.get('Content-Type')?.split(';')[0]?.trim().toLowerCase();
+		if (contentType !== 'text/event-stream') {
+			if (response.body) await tryCatch(response.body.cancel());
+			throw new Error('Client stream returned an unexpected content type');
 		}
 		return response;
 	}

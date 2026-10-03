@@ -18,6 +18,10 @@ type HeaderSetter interface {
 
 func SetJSONStreamHeaders(headers HeaderSetter) {
 	headers.SetHeader("Content-Type", "application/x-json-stream")
+	SetStreamHeaders(headers)
+}
+
+func SetStreamHeaders(headers HeaderSetter) {
 	// no-store keeps proxies from caching or collapsing identical concurrent
 	// stream requests (e.g. two browser tabs), which would otherwise leave only
 	// the first connection attached to the live upstream stream.

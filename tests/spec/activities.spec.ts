@@ -159,7 +159,7 @@ function aggregatedActivityStreamBody(
 			})
 		);
 	}
-	return events.join('\n') + '\n';
+	return events.map((event) => `data: ${event}\n\n`).join('');
 }
 
 async function mockActivityReads(
@@ -173,7 +173,7 @@ async function mockActivityReads(
 		const channels = new URL(route.request().url()).searchParams.get('channels')?.split(',') ?? [];
 		await route.fulfill({
 			status: 200,
-			contentType: 'application/x-json-stream',
+			contentType: 'text/event-stream',
 			body: channels.includes('activities')
 				? aggregatedActivityStreamBody(activitiesByEnvironment, failedEnvironmentIds)
 				: ''
@@ -461,7 +461,7 @@ test.describe('Activity Center', () => {
 			const resourceName = requestedBy === 'user-a' ? 'user-a-private-activity' : 'user-b-activity';
 			await route.fulfill({
 				status: 200,
-				contentType: 'application/x-json-stream',
+				contentType: 'text/event-stream',
 				body: channels.includes('activities')
 					? aggregatedActivityStreamBody(
 							{ '0': [activity(`${requestedBy}-activity`, '0', 'Local', resourceName, 1)] },

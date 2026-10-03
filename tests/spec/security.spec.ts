@@ -478,9 +478,9 @@ test.describe('Security Page', () => {
 			const timestamp = new Date().toISOString();
 			await route.fulfill({
 				status: 200,
-				contentType: 'application/x-json-stream',
+				contentType: 'text/event-stream',
 				body: channels.includes('environments')
-					? `${JSON.stringify({
+					? `data: ${JSON.stringify({
 							channel: 'environments',
 							environment: {
 								type: 'snapshot',
@@ -488,7 +488,7 @@ test.describe('Security Page', () => {
 								timestamp
 							},
 							timestamp
-						})}\n`
+						})}\n\n`
 					: ''
 			});
 		});

@@ -28,9 +28,8 @@ const (
 	ChannelVersion      = "version"
 )
 
-// Event is one line of the multiplexed stream. Exactly one payload is set, and
-// each payload keeps its own channel's event type rather than being flattened
-// here, so a channel can add a field without this envelope changing.
+// Event is the JSON data of one message in the multiplexed SSE stream.
+// Exactly one payload is set, retaining its channel's event type.
 type Event struct {
 	// Channel identifies which feed produced this event. Empty on a heartbeat.
 	//

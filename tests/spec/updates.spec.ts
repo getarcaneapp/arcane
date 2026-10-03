@@ -699,13 +699,13 @@ test.describe('Arcane upgrades', () => {
 				const timestamp = new Date().toISOString();
 				await route.fulfill({
 					status: 200,
-					contentType: 'application/x-json-stream',
+					contentType: 'text/event-stream',
 					body: channels.includes('dashboard')
-						? `${JSON.stringify({
+						? `data: ${JSON.stringify({
 								channel: 'dashboard',
 								dashboard: { type: 'snapshot', environmentId: '0', snapshot, timestamp },
 								timestamp
-							})}\n`
+							})}\n\n`
 						: ''
 				});
 			});
@@ -782,7 +782,7 @@ test.describe('Arcane upgrades', () => {
 				if (!channels.includes('activities')) {
 					await route.fulfill({
 						status: 200,
-						contentType: 'application/x-json-stream',
+						contentType: 'text/event-stream',
 						body: ''
 					});
 					return;
@@ -792,12 +792,12 @@ test.describe('Arcane upgrades', () => {
 					const timestamp = new Date().toISOString();
 					await route.fulfill({
 						status: 200,
-						contentType: 'application/x-json-stream',
-						body: `${JSON.stringify({
+						contentType: 'text/event-stream',
+						body: `data: ${JSON.stringify({
 							channel: 'activities',
 							activity: { type: 'snapshot', environmentId: '0', activities: [], timestamp },
 							timestamp
-						})}\n`
+						})}\n\n`
 					});
 					return;
 				}

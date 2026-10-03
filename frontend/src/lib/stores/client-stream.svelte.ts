@@ -1,8 +1,8 @@
 import { streamService } from '#lib/services/stream-service.js';
-import { createJSONLineStream } from '#lib/stores/json-line-stream.svelte.js';
+import { createSSEStream } from '#lib/stores/sse-stream.svelte.js';
 
 type StreamEnvelope = {
-	type: string;
+	type?: string;
 	channel?: string;
 	dashboard?: unknown;
 	activity?: unknown;
@@ -17,22 +17,6 @@ type ChannelSubscriber = {
 	onConnected?(): void;
 };
 
-/**
- * The app's single server stream. Every live feed — environments, dashboard,
- * activities — is multiplexed over one connection.
- *
- * Browsers allow only six concurrent HTTP/1.1 requests per origin, and each
- * long-lived stream holds one for the life of the page. One connection also
- * means one reconnect and one heartbeat to reason about instead of three that
- * can disagree about whether the server is reachable.
- *
- * Channels are opened on demand rather than always-on because their costs are
- * nothing alike: environments is a single local query, while dashboard proxies
- * a request to every remote agent on every tick. Subscribing or unsubscribing
- * changes the URL, so the connection is reopened — the same mechanism the
- * dashboard already used when its debug flag changed. Changes within one task
- * are coalesced into a single reopen.
- */
 function createClientStreamInternal() {
 	const subscribers = new Set<ChannelSubscriber>();
 	let params: Record<string, string> = {};
@@ -41,7 +25,7 @@ function createClientStreamInternal() {
 		return [...new Set([...subscribers].map((subscriber) => subscriber.channel))].sort();
 	}
 
-	const transport = createJSONLineStream<StreamEnvelope>({
+	const transport = createSSEStream<StreamEnvelope>({
 		label: 'Client',
 		openStream: (signal) => streamService.openClientStream(signal, activeChannels(), params),
 		onConnected: () => {
@@ -64,8 +48,6 @@ function createClientStreamInternal() {
 
 	let syncPending = false;
 
-	// Deferred to the next macrotask so back-to-back subscribes (the layout
-	// starts several stores at once) open the connection once, not per channel.
 	function scheduleSync() {
 		if (syncPending) {
 			return;
@@ -74,8 +56,6 @@ function createClientStreamInternal() {
 		setTimeout(() => {
 			syncPending = false;
 			if (activeChannels().length === 0) {
-				// Nothing left to carry; drop the connection rather than hold an
-				// idle one open with no channels.
 				if (transport.isStarted) {
 					transport.stop();
 				}
@@ -104,7 +84,6 @@ function createClientStreamInternal() {
 			return transport.hasActiveStream;
 		},
 		isCurrentGeneration: transport.isCurrentGeneration,
-		/** Subscribes to a channel, (re)opening the connection to include it. */
 		subscribe(channel: string, handlers: { onEvent(event: unknown): void; onConnected?(): void }): () => void {
 			const subscriber: ChannelSubscriber = { channel, ...handlers };
 			const hadChannel = activeChannels().includes(channel);
@@ -121,7 +100,6 @@ function createClientStreamInternal() {
 				}
 			};
 		},
-		/** Sets query params shared by the stream URL (e.g. the dashboard debug flag). */
 		setParams(next: Record<string, string>) {
 			const changed = JSON.stringify(next) !== JSON.stringify(params);
 			params = next;
@@ -129,7 +107,6 @@ function createClientStreamInternal() {
 				scheduleSync();
 			}
 		},
-		/** Reopens the connection, clearing a give-up state so it retries. */
 		retry() {
 			transport.restart({ clearFailure: true });
 		},

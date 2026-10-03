@@ -581,9 +581,9 @@ test.describe('Volumes shift-select', () => {
 			const timestamp = new Date().toISOString();
 			await route.fulfill({
 				status: 200,
-				contentType: 'application/x-json-stream',
+				contentType: 'text/event-stream',
 				body: channels.includes('environments')
-					? `${JSON.stringify({ channel: 'environments', environment: { type: 'snapshot', environments, timestamp }, timestamp })}\n`
+					? `data: ${JSON.stringify({ channel: 'environments', environment: { type: 'snapshot', environments, timestamp }, timestamp })}\n\n`
 					: ''
 			});
 		});

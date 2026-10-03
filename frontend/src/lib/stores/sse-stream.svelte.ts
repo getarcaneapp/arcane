@@ -1,36 +1,13 @@
 import { browser } from '$app/env';
 
+import type { SSEEventBase, SSEStreamConfig } from '#lib/types/stream.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
 const MAX_RECONNECT_DELAY = 15_000;
 const MAX_RECONNECT_ATTEMPTS = 20;
 
-export type JSONLineEventBase = {
-	type: string;
-};
-
-export interface JSONLineStreamConfig<TEvent extends JSONLineEventBase> {
-	/** Used in console warnings, e.g. 'Dashboard' / 'Activity' / 'Environment'. */
-	label: string;
-	openStream(signal: AbortSignal): Promise<Response>;
-	/** Receives every event except 'heartbeat', which is connection state the transport owns. */
-	onEvent(event: TEvent): void;
-	/** Runs on each successful (re)connect, before any event is delivered. */
-	onConnected?(): void;
-}
-
-/**
- * The NDJSON transport shared by every aggregate stream: connect, read lines,
- * reconnect with backoff, and tear down explicitly on page hide.
- *
- * It is deliberately free of domain state so the environment, dashboard and
- * activity streams cannot drift apart in how they handle a dropped connection.
- */
-export function createJSONLineStream<TEvent extends JSONLineEventBase>(config: JSONLineStreamConfig<TEvent>) {
+export function createSSEStream<TEvent extends SSEEventBase>(config: SSEStreamConfig<TEvent>) {
 	let started = false;
-	// A single aggregated stream carries every environment's events; per-env
-	// connections would multiply requests and exhaust the browser's
-	// 6-per-origin HTTP/1.1 limit.
 	let streamAbortController: AbortController | null = null;
 	let removePageLifecycleListeners: (() => void) | null = null;
 	let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -62,18 +39,12 @@ export function createJSONLineStream<TEvent extends JSONLineEventBase>(config: J
 		_streamConnected = false;
 	}
 
-	// Closing a tab leaves teardown to whenever the browser gets around to
-	// dropping the socket. Until it does, the server keeps writing heartbeats
-	// into a connection nobody is reading — so tear down explicitly instead.
-	// A hidden tab is torn down the same way: every open stream makes the
-	// manager poll each remote agent, which nobody is looking at.
 	function watchPageLifecycle() {
 		if (!browser || removePageLifecycleListeners) {
 			return;
 		}
 
 		const onPageHide = () => abortStream();
-		// A bfcache restore comes back with the stream already torn down.
 		const onPageShow = (event: PageTransitionEvent) => {
 			if (event.persisted && started && !streamAbortController) {
 				void connectStream(nextGeneration());
@@ -108,9 +79,6 @@ export function createJSONLineStream<TEvent extends JSONLineEventBase>(config: J
 			return;
 		}
 
-		// Overlapping connects would otherwise strand the previous controller:
-		// abortStream() only ever reaches the newest one, so the older request
-		// would keep an open connection the server has no way to notice.
 		streamAbortController?.abort();
 
 		const controller = new AbortController();
@@ -120,9 +88,6 @@ export function createJSONLineStream<TEvent extends JSONLineEventBase>(config: J
 				(async () => {
 					const response = await config.openStream(controller.signal);
 					if (controller.signal.aborted || !isCurrentGeneration(generation) || !response.body) {
-						// The response body is live even though nobody will read it;
-						// dropping it on the floor leaves the server streaming into a
-						// connection that stays open until its TCP timers expire.
 						controller.abort();
 						if (streamAbortController === controller) {
 							streamAbortController = null;
@@ -134,7 +99,7 @@ export function createJSONLineStream<TEvent extends JSONLineEventBase>(config: J
 					_streamFailed = false;
 					reconnectAttempt = 0;
 					config.onConnected?.();
-					await readJSONLines(response.body, generation, controller.signal);
+					await readSSEFrames(response.body, generation, controller.signal);
 				})()
 			);
 			if (operationResult.error !== null) {
@@ -155,48 +120,67 @@ export function createJSONLineStream<TEvent extends JSONLineEventBase>(config: J
 					scheduleReconnect(generation);
 				}
 			} else if (!controller.signal.aborted) {
-				// A superseded generation has no owner left to abort it.
 				controller.abort();
 			}
 		}
 	}
 
-	async function readJSONLines(stream: ReadableStream<Uint8Array>, generation: number, signal: AbortSignal) {
+	async function readSSEFrames(stream: ReadableStream<Uint8Array>, generation: number, signal: AbortSignal) {
 		const reader = stream.getReader();
 		const decoder = new TextDecoder();
-		let buffer = '';
+		let line = '';
+		let data: string[] = [];
+		let skipLF = false;
+
+		function consumeLine() {
+			if (line === '') {
+				if (data.length > 0) {
+					handleStreamData(data.join('\n'), generation, signal);
+				}
+				data = [];
+			} else if (line === 'data') {
+				data.push('');
+			} else if (line.startsWith('data:')) {
+				let value = line.slice(5);
+				if (value.startsWith(' ')) value = value.slice(1);
+				data.push(value);
+			}
+			line = '';
+		}
+
+		function consumeText(text: string) {
+			for (const character of text) {
+				if (signal.aborted || !isCurrentGeneration(generation)) return;
+				if (skipLF && character === '\n') {
+					skipLF = false;
+					continue;
+				}
+				skipLF = character === '\r';
+				if (character === '\r' || character === '\n') {
+					consumeLine();
+				} else {
+					line += character;
+				}
+			}
+		}
 
 		try {
 			while (!signal.aborted && isCurrentGeneration(generation)) {
 				const { done, value } = await reader.read();
 				if (signal.aborted || !isCurrentGeneration(generation)) return;
-				if (done) {
-					break;
-				}
-
-				buffer += decoder.decode(value, { stream: true });
-				const lines = buffer.split('\n');
-				buffer = lines.pop() ?? '';
-				for (const line of lines) {
-					handleStreamLine(line, generation, signal);
-				}
+				if (done) break;
+				consumeText(decoder.decode(value, { stream: true }));
 			}
-
-			if (signal.aborted || !isCurrentGeneration(generation)) return;
-			buffer += decoder.decode();
-			if (buffer.trim()) {
-				handleStreamLine(buffer, generation, signal);
+			if (!signal.aborted && isCurrentGeneration(generation)) {
+				consumeText(decoder.decode());
 			}
 		} finally {
-			// The loop also exits when the generation advances, with the stream
-			// still open. Cancelling is what actually closes the fetch and lets
-			// the server see the disconnect; releaseLock alone does not.
 			await tryCatch(reader.cancel());
 			reader.releaseLock();
 		}
 	}
 
-	function handleStreamLine(line: string, generation: number, signal: AbortSignal) {
+	function handleStreamData(line: string, generation: number, signal: AbortSignal) {
 		if (signal.aborted || !isCurrentGeneration(generation)) return;
 		const trimmed = line.trim();
 		if (!trimmed) {
@@ -211,7 +195,7 @@ export function createJSONLineStream<TEvent extends JSONLineEventBase>(config: J
 			}
 			config.onEvent(event);
 		} catch (error) {
-			console.warn(`Failed to parse ${config.label.toLowerCase()} stream line:`, error);
+			console.warn(`Failed to parse ${config.label.toLowerCase()} stream data:`, error);
 		}
 	}
 
@@ -254,7 +238,6 @@ export function createJSONLineStream<TEvent extends JSONLineEventBase>(config: J
 		},
 		isCurrentGeneration,
 		nextGeneration,
-		/** Opens the stream. Callers that need a generation for their own guards should call nextGeneration() first and pass it. */
 		connect(generation: number) {
 			void connectStream(generation);
 		},
@@ -275,7 +258,6 @@ export function createJSONLineStream<TEvent extends JSONLineEventBase>(config: J
 			}
 			return wasStarted;
 		},
-		/** Tears the connection down and opens a fresh one under a new generation. */
 		restart({ clearFailure = false }: { clearFailure?: boolean } = {}) {
 			if (clearFailure) {
 				_streamFailed = false;

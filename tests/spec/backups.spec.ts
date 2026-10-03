@@ -102,7 +102,7 @@ test.describe('Workspace restore', () => {
 			});
 		});
 		await page.route(/\/api\/stream(?:\?.*)?$/, async (route) => {
-			await route.fulfill({ contentType: 'application/x-json-stream', body: '' });
+			await route.fulfill({ contentType: 'text/event-stream', body: '' });
 		});
 		await page.route(/\/api\/backups\/s3(?:\?.*)?$/, async (route) => {
 			await route.fulfill({ json: response([]) });

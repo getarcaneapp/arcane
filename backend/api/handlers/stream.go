@@ -2,13 +2,14 @@ package handlers
 
 import (
 	"context"
-	"io"
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/danielgtaylor/huma/v2/sse"
 	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
 	dashboardtypes "github.com/getarcaneapp/arcane/types/v2/dashboard"
 	environmenttypes "github.com/getarcaneapp/arcane/types/v2/environment"
@@ -73,55 +74,66 @@ func RegisterStream(
 		version:     versionService,
 	}
 
-	huma.Register(api, huma.Operation{
+	sse.Register(api, huma.Operation{
 		OperationID: "streamClient",
 		Method:      http.MethodGet,
 		Path:        "/stream",
 		Summary:     "Multiplexed client stream",
-		Description: "Streams the requested channels (environments, dashboard, activities, events, version) over a single JSON-lines connection",
+		Description: "Streams the requested channels (environments, dashboard, activities, events, version) as JSON envelopes over a single Server-Sent Events connection",
 		Tags:        []string{"Stream"},
 		Security:    handlerutil.DefaultOperationSecurity(),
+		Middlewares: huma.Middlewares{func(ctx huma.Context, next func(huma.Context)) {
+			httpx.SetStreamHeaders(ctx)
+			next(ctx)
+		}},
 		// Ungated: each channel applies its own permission check below, and a
 		// caller with access to none simply gets a heartbeat-only stream.
-	}, h.StreamClient)
+	}, map[string]any{"message": streamtypes.Event{}}, h.StreamClient)
 }
 
-func (h *StreamHandler) StreamClient(ctx context.Context, input *StreamClientInput) (*huma.StreamResponse, error) {
-	return &huma.StreamResponse{
-		Body: func(humaCtx huma.Context) { //nolint:contextcheck // streaming work must use humaCtx.Context()
-			httpx.SetJSONStreamHeaders(humaCtx)
-
-			writer := humaCtx.BodyWriter()
-			flush := func() {
-				if f, ok := writer.(http.Flusher); ok {
-					f.Flush()
-				}
-			}
-
-			ps, _ := middleware.PermissionsFromContext(humaCtx.Context())
-			h.streamClientInternal(humaCtx.Context(), ps, input, writer, flush)
-		},
-	}, nil
+func (h *StreamHandler) StreamClient(ctx context.Context, input *StreamClientInput, send sse.Sender) {
+	ps, _ := middleware.PermissionsFromContext(ctx)
+	h.streamClientInternal(ctx, ps, input, send)
 }
 
-func (h *StreamHandler) streamClientInternal(ctx context.Context, ps *authz.PermissionSet, input *StreamClientInput, writer io.Writer, flush func()) {
+func (h *StreamHandler) streamClientInternal(ctx context.Context, ps *authz.PermissionSet, input *StreamClientInput, send sse.Sender) {
 	releaseDeadPeerTimeout, timeoutErr := httpx.AcquireDeadPeerTimeout(ctx, clientStreamDeadPeerTimeout)
 	if timeoutErr != nil {
 		slog.DebugContext(ctx, "could not bound client stream dead-peer timeout", "error", timeoutErr)
 	}
 	defer releaseDeadPeerTimeout()
 
-	// Nothing can be reported to a client whose headers were sent long ago.
-	_ = agg.Run(ctx, agg.Config[streamtypes.Event]{
-		Writer:            writer,
-		Flush:             flush,
-		Buffer:            clientStreamEventBuffer,
-		HeartbeatInterval: clientStreamHeartbeatInterval,
-		MakeHeartbeat: func() streamtypes.Event {
-			return streamtypes.Event{Type: "heartbeat", Timestamp: time.Now()}
-		},
-		Producers: h.producersForInternal(ps, input),
-	})
+	streamCtx, cancel := context.WithCancel(ctx)
+	events := make(chan streamtypes.Event, clientStreamEventBuffer)
+	var producers sync.WaitGroup
+	for _, producer := range h.producersForInternal(ps, input) {
+		producers.Go(func() {
+			producer(streamCtx, events)
+		})
+	}
+	defer producers.Wait()
+	defer cancel()
+
+	heartbeat := time.NewTicker(clientStreamHeartbeatInterval)
+	defer heartbeat.Stop()
+
+	for {
+		var envelope streamtypes.Event
+		select {
+		case <-streamCtx.Done():
+			return
+		case envelope = <-events:
+		case <-heartbeat.C:
+			envelope = streamtypes.Event{Type: "heartbeat", Timestamp: time.Now()}
+		}
+		if streamCtx.Err() != nil {
+			return
+		}
+		if err := send.Data(envelope); err != nil {
+			slog.DebugContext(ctx, "client stream disconnected", "error", err)
+			return
+		}
+	}
 }
 
 // producersForInternal selects the producers for the requested channels,
@@ -232,10 +244,12 @@ func forwardStreamChannelInternal[T any](
 	return func(ctx context.Context, out chan<- streamtypes.Event) {
 		inner := make(chan T, clientStreamChannelBuffer)
 
-		go func() {
+		var worker sync.WaitGroup
+		worker.Go(func() {
 			defer close(inner)
 			producer(ctx, inner)
-		}()
+		})
+		defer worker.Wait()
 
 		for event := range inner {
 			if !agg.Send(ctx, out, wrap(channel, event)) {
