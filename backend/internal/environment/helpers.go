@@ -29,6 +29,13 @@ type remoteEnvSnapshotCacheInternal struct {
 	revision uint64
 }
 
+// environmentCacheKeyInternal scopes cached records to a cache generation so
+// loads that started before a write can never be served after it.
+type environmentCacheKeyInternal struct {
+	gen uint64
+	id  string
+}
+
 // runtimeWatchersInternal fans a coalesced wake-up out to everyone watching for
 // environment liveness changes.
 type runtimeWatchersInternal struct {
@@ -49,8 +56,8 @@ func newEdgeTokenCacheInternal() *edgeTokenCacheInternal {
 
 // newEnvironmentCacheInternal caches environment records by ID, including
 // misses, for hot paths that only read CRUD-managed fields.
-func newEnvironmentCacheInternal() *hot.HotCache[string, Environment] {
-	return hot.NewHotCache[string, Environment](hot.LRU, 256).
+func newEnvironmentCacheInternal() *hot.HotCache[environmentCacheKeyInternal, Environment] {
+	return hot.NewHotCache[environmentCacheKeyInternal, Environment](hot.LRU, 256).
 		WithTTL(environmentCacheTTL).
 		WithMissingSharedCache().
 		WithJanitor().

@@ -38,8 +38,12 @@ func ExtractRegistryHost(imageRef string) string {
 // optional repository namespace: "https://ghcr.io/acme/" yields ("ghcr.io", "acme").
 func SplitRegistryURL(url string) (host, namespace string) {
 	url = strings.TrimSpace(url)
-	url = strings.TrimPrefix(url, "https://")
-	url = strings.TrimPrefix(url, "http://")
+	for _, scheme := range []string{"https://", "http://"} {
+		if len(url) >= len(scheme) && strings.EqualFold(url[:len(scheme)], scheme) {
+			url = url[len(scheme):]
+			break
+		}
+	}
 	host, namespace, _ = strings.Cut(strings.Trim(url, "/"), "/")
 	host = strings.ToLower(host)
 	if host == "registry-1.docker.io" || host == "index.docker.io" {

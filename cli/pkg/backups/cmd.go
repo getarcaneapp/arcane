@@ -9,7 +9,6 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/charmbracelet/x/term"
 	"github.com/getarcaneapp/arcane/types/v2/backup"
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/spf13/cobra"
@@ -235,19 +234,10 @@ var restoreCmd = &cobra.Command{
 
 		key := restoreRecoveryKey
 		if key == "" {
-			if !prompt.IsInteractive() {
-				return errors.New("recovery key is required; pass --recovery-key")
-			}
-			resume := output.SuspendProgress()
-			defer resume()
-			_, _ = fmt.Fprint(cmd.ErrOrStderr(), "Recovery key: ")
-			byteKey, err := term.ReadPassword(os.Stdin.Fd())
-			resume()
-			if err != nil {
+			var err error
+			if key, err = output.Secret(cmd.Context(), cmd.InOrStdin(), cmd.ErrOrStderr(), "Recovery key", "recovery-key"); err != nil {
 				return fmt.Errorf("failed to read recovery key: %w", err)
 			}
-			key = string(byteKey)
-			_, _ = fmt.Fprintln(output.Stdout())
 			if key == "" {
 				return errors.New("recovery key is required")
 			}
@@ -580,19 +570,10 @@ var recoveryKeySetCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		key := setRecoveryKey
 		if key == "" {
-			if !prompt.IsInteractive() {
-				return errors.New("recovery key is required; pass --recovery-key")
-			}
-			resume := output.SuspendProgress()
-			defer resume()
-			_, _ = fmt.Fprint(cmd.ErrOrStderr(), "Recovery key: ")
-			byteKey, err := term.ReadPassword(os.Stdin.Fd())
-			resume()
-			if err != nil {
+			var err error
+			if key, err = output.Secret(cmd.Context(), cmd.InOrStdin(), cmd.ErrOrStderr(), "Recovery key", "recovery-key"); err != nil {
 				return fmt.Errorf("failed to read recovery key: %w", err)
 			}
-			key = string(byteKey)
-			_, _ = fmt.Fprintln(output.Stdout())
 		}
 		if key == "" {
 			return errors.New("recovery key is required; use --recovery-key")

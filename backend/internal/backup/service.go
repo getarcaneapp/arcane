@@ -4,6 +4,7 @@
 package backup
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"crypto/rand"
@@ -15,6 +16,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"path"
 	"regexp"
 	"slices"
@@ -137,6 +139,7 @@ type Engine struct {
 	handlers       map[string]func(context.Context, string, []byte, bool) error
 	failures       map[string]func(context.Context, string, []byte, error) error
 	leases         map[string]*runs.Lease
+	unresolved     map[string]backup.DurableRunCommand
 	executionReady func() bool
 	authorize      func(context.Context, backup.DurableRunCommand) error
 }
@@ -170,6 +173,7 @@ func NewEngine(ctx context.Context, admission *runs.Admission, imageService *ima
 		leases: make(
 			map[string]*runs.Lease,
 		),
+		unresolved: make(map[string]backup.DurableRunCommand),
 	}
 }
 
@@ -933,6 +937,8 @@ func (e *Engine) Register(runtime *francis.Runtime) error {
 }
 
 // SubmitDurableRun persists the accepted command before dispatching its work.
+// A nil error means the run was accepted or its outcome is still unresolved;
+// an error means the intent was confirmed absent and admission is the caller's.
 func (e *Engine) SubmitDurableRun(ctx context.Context, command backup.DurableRunCommand, lease *runs.Lease) error {
 	if e == nil || e.service == nil {
 		return errors.New("backup actor host is unavailable")
@@ -949,13 +955,30 @@ func (e *Engine) SubmitDurableRun(ctx context.Context, command backup.DurableRun
 	}
 	e.leases[command.RunID] = lease
 	e.mu.Unlock()
-	_, err := e.service.Invoke(context.WithoutCancel(ctx), backupRunTypeInternal, command.RunID, "submit", command)
-	if err != nil {
+	ctx = context.WithoutCancel(ctx)
+	_, err := e.service.Invoke(ctx, backupRunTypeInternal, command.RunID, "submit", command)
+	if err == nil {
+		return nil
+	}
+	var state backup.DurableRunState
+	readErr := e.service.GetState(ctx, backupRunTypeInternal, command.RunID, &state)
+	switch {
+	case readErr == nil && sameDurableCommandInternal(state.Command, command):
+		slog.WarnContext(ctx, "backup run accepted after submit error", "runID", command.RunID, "error", err)
+		return nil
+	case readErr == nil || errors.Is(readErr, actor.ErrStateNotFound):
 		e.mu.Lock()
 		delete(e.leases, command.RunID)
 		e.mu.Unlock()
+		return err
+	default:
+		// Keep admission parked until reconciliation can read the intent back.
+		slog.WarnContext(ctx, "backup run outcome unresolved", "runID", command.RunID, "error", err, "readError", readErr)
+		e.mu.Lock()
+		e.unresolved[command.RunID] = command
+		e.mu.Unlock()
+		return nil
 	}
-	return err
 }
 
 // AcquireDurableRun keeps the original admission, or reacquires it after a restart.
@@ -977,19 +1000,36 @@ func (a *backupRunActorInternal) Invoke(ctx context.Context, _ string, data acto
 	}
 	var state backup.DurableRunState
 	err := a.service.GetState(ctx, backupRunTypeInternal, a.id, &state)
-	if errors.Is(err, actor.ErrStateNotFound) {
+	switch {
+	case errors.Is(err, actor.ErrStateNotFound):
 		state = backup.DurableRunState{Command: command, Status: scheduler.Queued}
 		if setStateErr := a.service.SetState(ctx, backupRunTypeInternal, a.id, state, nil); setStateErr != nil {
 			return nil, setStateErr
 		}
-	} else if err != nil {
+	case err != nil:
 		return nil, err
+	case !sameDurableCommandInternal(state.Command, command):
+		return nil, errors.New("backup run already exists with a different command")
 	}
 	if state.Status == scheduler.Succeeded || state.Status == scheduler.Failed || state.Status == scheduler.NeedsAttention {
 		return nil, nil
 	}
-	_, _, err = a.service.Dispatch(ctx, backupRunTypeInternal, a.id, "execute", nil, actor.WithIdempotencyKey(a.id))
-	return nil, err
+	// The intent is persisted, so ReconcileDispatches repairs a failed dispatch.
+	if _, _, dispatchErr := a.service.Dispatch(ctx, backupRunTypeInternal, a.id, "execute", nil, actor.WithIdempotencyKey(a.id)); dispatchErr != nil {
+		slog.WarnContext(ctx, "dispatch accepted backup run", "runID", a.id, "error", dispatchErr)
+	}
+	return nil, nil
+}
+
+func sameDurableCommandInternal(a, b backup.DurableRunCommand) bool {
+	return a.UserID == b.UserID &&
+		a.EnvironmentID == b.EnvironmentID &&
+		a.Permission == b.Permission &&
+		a.RequestedWithKey == b.RequestedWithKey &&
+		a.Kind == b.Kind &&
+		a.RunID == b.RunID &&
+		a.ActivityID == b.ActivityID &&
+		bytes.Equal(a.Payload, b.Payload)
 }
 
 func (a *backupRunActorInternal) Job(ctx context.Context, _ string, _ actor.Envelope) error {
@@ -1151,45 +1191,80 @@ func (e *Engine) ActiveActivityIDs(ctx context.Context) ([]string, error) {
 	return ids, nil
 }
 
-// ReconcileDispatches repairs accepted commands whose dispatch was interrupted.
+// ReconcileDispatches resolves unresolved submissions and repairs accepted
+// commands whose dispatch was interrupted.
 func (e *Engine) ReconcileDispatches(ctx context.Context) error {
+	failures := e.resolveUnresolvedRunsInternal(ctx)
 	states, err := e.activeRunsInternal(ctx)
 	if err != nil {
-		return err
+		return errors.Join(append(failures, err)...)
 	}
 	for _, state := range states {
 		if state.Status == scheduler.NeedsAttention {
 			continue
 		}
-		jobs, listJobsErr := e.service.ListJobs(ctx, backupRunTypeInternal, state.Command.RunID)
-		if listJobsErr != nil {
-			return listJobsErr
-		}
-		live := false
-		for _, job := range jobs {
-			if !job.Status.IsTerminal() {
-				live = true
-				break
-			}
-			if job.Status == actor.JobStatusDeadLettered {
-				if _, retryJobErr := e.service.RetryJob(ctx, job.JobID); retryJobErr != nil {
-					return retryJobErr
-				}
-				live = true
-				break
-			}
-			if deleteJobErr := e.service.DeleteJob(ctx, backupRunTypeInternal, state.Command.RunID, job.JobID); deleteJobErr != nil && !errors.Is(deleteJobErr, actor.ErrJobNotFound) {
-				return deleteJobErr
-			}
-		}
-		if live {
-			continue
-		}
-		if _, _, dispatchErr := e.service.Dispatch(ctx, backupRunTypeInternal, state.Command.RunID, "execute", nil, actor.WithIdempotencyKey(state.Command.RunID)); dispatchErr != nil {
-			return dispatchErr
+		if repairErr := e.repairDispatchInternal(ctx, state.Command.RunID); repairErr != nil {
+			failures = append(failures, fmt.Errorf("repair backup run %s: %w", state.Command.RunID, repairErr))
 		}
 	}
-	return nil
+	return errors.Join(failures...)
+}
+
+func (e *Engine) repairDispatchInternal(ctx context.Context, runID string) error {
+	jobs, err := e.service.ListJobs(ctx, backupRunTypeInternal, runID)
+	if err != nil {
+		return err
+	}
+	for _, job := range jobs {
+		if !job.Status.IsTerminal() {
+			return nil
+		}
+		if job.Status == actor.JobStatusDeadLettered {
+			_, retryJobErr := e.service.RetryJob(ctx, job.JobID)
+			return retryJobErr
+		}
+		if deleteJobErr := e.service.DeleteJob(ctx, backupRunTypeInternal, runID, job.JobID); deleteJobErr != nil && !errors.Is(deleteJobErr, actor.ErrJobNotFound) {
+			return deleteJobErr
+		}
+	}
+	_, _, err = e.service.Dispatch(ctx, backupRunTypeInternal, runID, "execute", nil, actor.WithIdempotencyKey(runID))
+	return err
+}
+
+// resolveUnresolvedRunsInternal reads back submissions whose outcome was
+// unknown. Found intents continue as accepted; confirmed absence releases
+// admission and fails the run through its kind's failure handler.
+func (e *Engine) resolveUnresolvedRunsInternal(ctx context.Context) []error {
+	e.mu.Lock()
+	pending := maps.Clone(e.unresolved)
+	e.mu.Unlock()
+	var failures []error
+	for runID, command := range pending {
+		var state backup.DurableRunState
+		readErr := e.service.GetState(ctx, backupRunTypeInternal, runID, &state)
+		if readErr != nil && !errors.Is(readErr, actor.ErrStateNotFound) {
+			failures = append(failures, fmt.Errorf("read back backup run %s: %w", runID, readErr))
+			continue
+		}
+		e.mu.Lock()
+		delete(e.unresolved, runID)
+		lease := e.leases[runID]
+		if readErr != nil {
+			delete(e.leases, runID)
+		}
+		failure := e.failures[command.Kind]
+		e.mu.Unlock()
+		if readErr == nil {
+			continue
+		}
+		lease.Release(ctx)
+		if failure != nil {
+			if failErr := failure(ctx, runID, command.Payload, errors.New("backup run was not accepted")); failErr != nil {
+				failures = append(failures, fmt.Errorf("fail backup run %s: %w", runID, failErr))
+			}
+		}
+	}
+	return failures
 }
 
 // ExpiredRunIDs returns the IDs of succeeded runs with snapshots that fall

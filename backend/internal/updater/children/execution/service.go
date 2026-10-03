@@ -12,6 +12,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/updater"
 	"github.com/italypaleale/francis/actor"
 	"github.com/italypaleale/francis/host/local"
+	"gorm.io/gorm"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
@@ -214,24 +215,30 @@ func (s *Service) dispatchSingleInternal(ctx context.Context, state updater.Sing
 	return err
 }
 
+// repairSinglesInternal scans every persisted update, collecting per-entry
+// failures so one bad entry cannot block repair of the rest.
 func (s *Service) repairSinglesInternal(ctx context.Context) error {
+	var failures []error
 	for cursor := ""; ; {
 		page, err := s.singleUpdates.ListStates(ctx, StateType, &actor.ListStatesOpts{IncludeData: true, After: cursor, Limit: 100})
 		if err != nil {
-			return err
+			return errors.Join(append(failures, err)...)
 		}
 		for _, entry := range page.States {
-			var state updater.SingleUpdateState
-			if decodeErr := entry.Data.Decode(&state); decodeErr != nil {
-				return decodeErr
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return errors.Join(append(failures, ctxErr)...)
 			}
-			if repairSingleErr := s.repairSingleInternal(ctx, state); repairSingleErr != nil {
-				return repairSingleErr
+			state, decodeErr := decodeSingleStateInternal(entry)
+			if decodeErr == nil {
+				decodeErr = s.repairSingleInternal(ctx, state)
+			}
+			if decodeErr != nil {
+				failures = append(failures, fmt.Errorf("repair container update %s: %w", entry.ActorID, decodeErr))
 			}
 		}
 		cursor = page.AfterID()
 		if cursor == "" {
-			return nil
+			return errors.Join(failures...)
 		}
 	}
 }
@@ -244,6 +251,10 @@ func (s *Service) repairSingleInternal(ctx context.Context, state updater.Single
 		return nil
 	}
 	detail, err := s.activity.GetActivityDetail(ctx, "0", state.Command.ActivityID, 1)
+	// Pruned or deleted history needs no projection repair.
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil
+	}
 	if err != nil {
 		return err
 	}
@@ -256,6 +267,15 @@ func (s *Service) repairSingleInternal(ctx context.Context, state updater.Single
 	}
 	s.finishUpdate(ctx, state.Command.ActivityID, state.Result, outcomeErr)
 	return nil
+}
+
+func decodeSingleStateInternal(entry actor.StateInfo) (updater.SingleUpdateState, error) {
+	var state updater.SingleUpdateState
+	if entry.Data == nil {
+		return state, errors.New("empty update state")
+	}
+	err := entry.Data.Decode(&state)
+	return state, err
 }
 
 func (a *singleUpdateActorInternal) Job(ctx context.Context, _ string, data actor.Envelope) error {
@@ -451,11 +471,11 @@ func (s *Service) ActiveUpdateActivityIDs(ctx context.Context) ([]string, error)
 			return nil, err
 		}
 		for _, entry := range page.States {
-			var state updater.SingleUpdateState
-			if decodeErr := entry.Data.Decode(&state); decodeErr != nil {
-				return nil, decodeErr
+			// States are keyed by activity ID, so an undecodable entry is still protected.
+			if _, decodeErr := decodeSingleStateInternal(entry); decodeErr != nil {
+				s.logger().WarnContext(ctx, "decode container update state", "activityID", entry.ActorID, "error", decodeErr)
 			}
-			ids = append(ids, state.Command.ActivityID)
+			ids = append(ids, entry.ActorID)
 		}
 		cursor = page.AfterID()
 		if cursor == "" {

@@ -158,7 +158,7 @@ func resolveFederatedSubjectTokenInternal(cmd *cobra.Command, provider, audience
 
 	tokenStdin, _ := cmd.Flags().GetBool("token-stdin")
 	if tokenStdin || stdinHasDataInternal() {
-		data, err := io.ReadAll(os.Stdin)
+		data, err := output.ReadWithContext(cmd.Context(), func() ([]byte, error) { return io.ReadAll(cmd.InOrStdin()) })
 		if err != nil {
 			return "", "", fmt.Errorf("failed to read token from stdin: %w", err)
 		}

@@ -2,10 +2,8 @@ package users
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
-	"github.com/charmbracelet/x/term"
 	"github.com/getarcaneapp/arcane/types/v2/user"
 	"github.com/spf13/cobra"
 
@@ -138,16 +136,9 @@ var createCmd = &cobra.Command{
 		}
 
 		if userCreatePassword == "" {
-			resume := output.SuspendProgress()
-			defer resume()
-			_, _ = fmt.Fprint(cmd.ErrOrStderr(), "Password: ")
-			bytePassword, readPasswordErr := term.ReadPassword(os.Stdin.Fd())
-			resume()
-			if readPasswordErr != nil {
-				return fmt.Errorf("failed to read password: %w", readPasswordErr)
+			if userCreatePassword, err = output.Secret(cmd.Context(), cmd.InOrStdin(), cmd.ErrOrStderr(), "Password", "password"); err != nil {
+				return fmt.Errorf("failed to read password: %w", err)
 			}
-			userCreatePassword = string(bytePassword)
-			_, _ = fmt.Fprintln(output.Stdout())
 		}
 
 		req := user.CreateUser{
