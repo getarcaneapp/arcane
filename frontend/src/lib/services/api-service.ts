@@ -219,7 +219,10 @@ let tokenRefreshHandler: (() => Promise<string | null>) | null = null;
 // window the backend briefly restarts and returns version-mismatch 401s; we must not
 // bounce the user to /login — the session is recoverable once the backend is back.
 let upgradeInProgressInternal = false;
+// A confirmed manager restart still needs document recovery after polling ends.
+let upgradeReloadPendingInternal = false;
 let upgradeReloadStartedInternal = false;
+let unauthorizedRedirectStartedInternal = false;
 const skipAuthPathsInternal = [
 	'/auth/login',
 	'/auth/logout',
@@ -257,6 +260,7 @@ export async function handleUnauthorizedResponseInternal(
 	if (isAuthApi || isOnAuthPage) {
 		return 'none';
 	}
+	if (unauthorizedRedirectStartedInternal) return 'redirect';
 
 	// During a server self-update the backend briefly returns version-mismatch 401s.
 	// Refresh first so the new backend rotates both tokens, then replace the stale
@@ -269,7 +273,7 @@ export async function handleUnauthorizedResponseInternal(
 	const operationResult = await tryCatch(
 		(async () => {
 			await tokenRefreshHandler();
-			if (!isVersionMismatch || !upgradeInProgressInternal) return 'retry';
+			if (!isVersionMismatch || (!upgradeInProgressInternal && !upgradeReloadPendingInternal)) return 'retry';
 			if (!upgradeReloadStartedInternal) {
 				upgradeReloadStartedInternal = true;
 				window.location.reload();
@@ -282,7 +286,10 @@ export async function handleUnauthorizedResponseInternal(
 		const isTransientRefreshFailure =
 			error instanceof APIError && (error.name === 'NetworkError' || error.name === 'TimeoutError');
 		if (recoverable && isTransientRefreshFailure) return 'none';
-		window.location.replace(`/login?redirect=${encodeURIComponent(pathname)}`);
+		if (!unauthorizedRedirectStartedInternal) {
+			unauthorizedRedirectStartedInternal = true;
+			window.location.replace(`/login?redirect=${encodeURIComponent(pathname)}`);
+		}
 		return 'redirect';
 	} else {
 		return operationResult.data;
@@ -494,13 +501,14 @@ abstract class BaseAPIService {
 	// Toggled by the update flows (Update All / local update center) so an in-progress
 	// self-update restart is treated as a recoverable reconnect, not a logout.
 	static setUpgradeInProgress(value: boolean) {
-		if (value && !upgradeInProgressInternal) {
-			upgradeReloadStartedInternal = false;
-		}
-		if (!value) {
+		if (!upgradeReloadPendingInternal && (!value || !upgradeInProgressInternal)) {
 			upgradeReloadStartedInternal = false;
 		}
 		upgradeInProgressInternal = value;
+	}
+
+	static confirmUpgradeRestart() {
+		upgradeReloadPendingInternal = true;
 	}
 
 	protected async handleResponse<T>(promise: Promise<APIResponse>): Promise<T> {

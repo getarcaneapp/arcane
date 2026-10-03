@@ -48,6 +48,16 @@ const (
 // EnvironmentUpdateResultStatus is the per-environment outcome within a job.
 type EnvironmentUpdateResultStatus string
 
+// EnvironmentUpdateStage is the live step an updating environment is in.
+type EnvironmentUpdateStage string
+
+const (
+	EnvironmentUpdateStageChecking     EnvironmentUpdateStage = "checking"
+	EnvironmentUpdateStageStarting     EnvironmentUpdateStage = "starting"
+	EnvironmentUpdateStageReconnecting EnvironmentUpdateStage = "reconnecting"
+	EnvironmentUpdateStageVerifying    EnvironmentUpdateStage = "verifying"
+)
+
 // EnvironmentUpdateResult is the outcome for a single environment within a job.
 // The manager appears as the first entry with EnvironmentID "0".
 type EnvironmentUpdateResult struct {
@@ -56,7 +66,15 @@ type EnvironmentUpdateResult struct {
 	Status          EnvironmentUpdateResultStatus `json:"status"`
 	FromVersion     string                        `json:"fromVersion,omitempty"`
 	ToVersion       string                        `json:"toVersion,omitempty"`
+	Stage           EnvironmentUpdateStage        `json:"stage,omitempty"`
+	StageStartedAt  *time.Time                    `json:"stageStartedAt,omitempty"`
 	Error           string                        `json:"error,omitempty"`
+}
+
+// clearStageInternal drops live-progress fields once the row leaves updating.
+func (r *EnvironmentUpdateResult) clearStageInternal() {
+	r.Stage = ""
+	r.StageStartedAt = nil
 }
 
 // EnvironmentUpdateResults is a JSON-serialized slice of per-environment results,

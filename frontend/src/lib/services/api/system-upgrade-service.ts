@@ -1,7 +1,14 @@
 import type { AppVersionInformation } from '#lib/types/settings.js';
+import type { UpdateAllJob } from '#lib/types/system-upgrade.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
-import { apiClient } from '../api-service';
+import BaseAPIService, { APIError, apiClient } from '../api-service';
+
+const UPDATE_ALL_RECOVERY_POLL_MS = 3000;
+const UPDATE_ALL_RECOVERY_MAX_UNAVAILABLE_MS = 5 * 60 * 1000;
+let updateAllRecovery: Promise<void> | null = null;
+let updateAllRecoveryAttempt = 0;
+let updateAllRecoveryJobId: string | undefined;
 
 export interface UpgradeCheckResponse {
 	canUpgrade: boolean;
@@ -22,35 +29,6 @@ export interface UpgradeResponse {
 
 export interface HealthCheckResult {
 	healthy: boolean;
-}
-
-export type UpdateAllEnvironmentStatus =
-	| 'pending'
-	| 'updating'
-	| 'updated'
-	| 'up_to_date'
-	| 'triggered'
-	| 'skipped_offline'
-	| 'failed';
-
-export interface UpdateAllEnvironmentResult {
-	environmentId: string;
-	environmentName: string;
-	status: UpdateAllEnvironmentStatus;
-	fromVersion?: string;
-	toVersion?: string;
-	error?: string;
-}
-
-export type UpdateAllJobStatus = 'pending_restart' | 'running' | 'completed' | 'failed';
-
-export interface UpdateAllJob {
-	id: string;
-	status: UpdateAllJobStatus;
-	results?: UpdateAllEnvironmentResult[];
-	error?: string;
-	createdAt: string;
-	completedAt?: string;
 }
 
 type ApiResponse<T> = {
@@ -89,8 +67,24 @@ async function triggerUpgrade(environmentId: string = '0'): Promise<UpgradeRespo
  * No client timeout is set: the manager pulls the upgrader image before responding.
  */
 async function triggerUpdateAll(): Promise<UpdateAllJob> {
-	const res = await apiClient.post<ApiResponse<UpdateAllJob>>('/environments/0/system/upgrade/all');
-	return res.data.data;
+	BaseAPIService.setUpgradeInProgress(true);
+	const result = await tryCatch(apiClient.post<ApiResponse<UpdateAllJob>>('/environments/0/system/upgrade/all'));
+	if (result.error !== null) {
+		const error = result.error;
+		const uncertain = !(error instanceof APIError) || !error.status || error.status >= 500 || [408, 409].includes(error.status);
+		if (!updateAllRecovery) {
+			BaseAPIService.setUpgradeInProgress(false);
+			const active = uncertain ? (await tryCatch(getUpdateAllStatus())).data : null;
+			// A concurrent successful start may have established recovery during this lookup.
+			if (!updateAllRecovery && active && (active.status === 'running' || active.status === 'pending_restart')) {
+				monitorUpdateAllRecovery(active);
+			}
+		}
+		throw error;
+	}
+	const job = result.data.data.data;
+	monitorUpdateAllRecovery(job);
+	return job;
 }
 
 /**
@@ -101,6 +95,42 @@ async function getUpdateAllStatus(): Promise<UpdateAllJob> {
 		timeout: 5000
 	});
 	return res.data.data;
+}
+
+// Recovery follows the job even after its dialog closes or unmounts.
+function monitorUpdateAllRecovery(job: UpdateAllJob): void {
+	if (typeof window === 'undefined') return;
+	if (updateAllRecovery && job.id === updateAllRecoveryJobId) return;
+	const attempt = ++updateAllRecoveryAttempt;
+	updateAllRecoveryJobId = job.id;
+	BaseAPIService.setUpgradeInProgress(true);
+	updateAllRecovery = (async () => {
+		let deadline = Date.now() + UPDATE_ALL_RECOVERY_MAX_UNAVAILABLE_MS;
+		for (;;) {
+			await new Promise((resolve) => setTimeout(resolve, UPDATE_ALL_RECOVERY_POLL_MS));
+			if (attempt !== updateAllRecoveryAttempt) return;
+			// An authenticated status read also drives refresh-and-reload after restart.
+			const result = await tryCatch(getUpdateAllStatus());
+			if (attempt !== updateAllRecoveryAttempt) return;
+			if (result.error === null) {
+				if (result.data.id !== job.id) break;
+				if (result.data.status !== 'running' && result.data.status !== 'pending_restart') {
+					if (result.data.results?.some((item) => item.environmentId === '0' && item.status === 'updated')) {
+						BaseAPIService.confirmUpgradeRestart();
+					}
+					break;
+				}
+				deadline = Date.now() + UPDATE_ALL_RECOVERY_MAX_UNAVAILABLE_MS;
+			} else if (Date.now() >= deadline) {
+				break;
+			}
+		}
+	})().finally(() => {
+		if (attempt !== updateAllRecoveryAttempt) return;
+		BaseAPIService.setUpgradeInProgress(false);
+		updateAllRecovery = null;
+		updateAllRecoveryJobId = undefined;
+	});
 }
 
 /**
@@ -146,6 +176,7 @@ export default {
 	triggerUpgrade,
 	triggerUpdateAll,
 	getUpdateAllStatus,
+	monitorUpdateAllRecovery,
 	checkHealth,
 	getVersionInfo
 };

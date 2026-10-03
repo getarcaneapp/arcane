@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { refreshAll } from '$app/navigation';
 	import { onDestroy } from 'svelte';
+	import type { Attachment } from 'svelte/attachments';
 
 	import ReleaseNotes from '#lib/components/release-notes.svelte';
 	import { Button } from '#lib/components/ui/button/index.js';
@@ -8,16 +9,18 @@
 	import Spinner from '#lib/components/ui/spinner/spinner.svelte';
 	import { SuccessIcon, ClockIcon, AlertIcon, AlertTriangleIcon, ExternalLinkIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import BaseAPIService, { APIError } from '#lib/services/api-service.js';
-	import systemUpgradeService, {
-		type UpdateAllJob,
-		type UpdateAllEnvironmentResult,
-		type UpdateAllEnvironmentStatus
-	} from '#lib/services/api/system-upgrade-service.js';
+	import { APIError } from '#lib/services/api-service.js';
+	import systemUpgradeService from '#lib/services/api/system-upgrade-service.js';
 	import type { AppVersionInformation } from '#lib/types/settings.js';
+	import type {
+		UpdateAllJob,
+		UpdateAllEnvironmentResult,
+		UpdateAllEnvironmentStatus,
+		UpdateAllStage
+	} from '#lib/types/system-upgrade.js';
 	import { cn } from '#lib/utils.js';
-	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
-	import { formatRelativeTime, nowInstantString } from '#lib/utils/formatting.js';
+	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '#lib/utils/api.js';
+	import { formatElapsedTime, formatRelativeTime, nowInstantString } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import VersionUpdateSummary from './version-update-summary.svelte';
@@ -51,6 +54,9 @@
 	let phase = $state<Phase>('confirm');
 	let job = $state<UpdateAllJob | null>(null);
 	let reconnecting = $state(false);
+	let progressError = $state('');
+	// Ticks once a second while the dialog is open so elapsed stage times advance.
+	let clock = $state<string>();
 	let pollActive = false;
 	let pollTimer: ReturnType<typeof setTimeout> | null = null;
 	// Bumped on every confirm and reset so a startup/status response that lands after
@@ -66,16 +72,14 @@
 		}
 	}
 
-	// Reset on close (not on open) so a reopened dialog always starts at the confirm
-	// step, without mutating $state from inside an $effect. The confirm step never
-	// renders job/reconnecting, so clearing them here is safe.
+	// Closing stops observing; the backend job and restart recovery keep running.
 	function resetState() {
 		startAttempt++;
 		stopPolling();
-		BaseAPIService.setUpgradeInProgress(false);
 		phase = 'confirm';
 		job = null;
 		reconnecting = false;
+		progressError = '';
 	}
 
 	function schedulePoll() {
@@ -83,55 +87,97 @@
 		pollTimer = setTimeout(poll, POLL_INTERVAL_MS);
 	}
 
-	function finishTerminalJob(terminalJob: UpdateAllJob) {
-		const managerRestarted =
-			terminalJob.results?.some((result) => result.environmentId === MANAGER_ENVIRONMENT_ID && result.status === 'updated') ??
-			false;
-		// Keep the upgrade flag armed when the manager actually restarted: the refresh in
-		// handleClose may hit the new backend with a stale token, and api-service only
-		// recovers that version-mismatch 401 while the flag is set.
-		if (!managerRestarted) {
-			BaseAPIService.setUpgradeInProgress(false);
+	function isActiveJob(candidate: UpdateAllJob | null | undefined): candidate is UpdateAllJob {
+		return candidate?.status === 'running' || candidate?.status === 'pending_restart';
+	}
+
+	function followJob(next: UpdateAllJob) {
+		job = next;
+		reconnecting = false;
+		progressError = '';
+		if (!isActiveJob(next)) {
+			stopPolling();
+			phase = 'finished';
+			return;
 		}
-		phase = 'finished';
+		phase = 'running';
+		if (!debugDemo) systemUpgradeService.monitorUpdateAllRecovery(next);
+		pollActive = true;
+		schedulePoll();
+	}
+
+	// A status read that never reached the backend, or hit a gateway with no backend
+	// behind it, is what a manager restart looks like from the browser.
+	function isConnectionLost(error: unknown): boolean {
+		if (error instanceof TypeError) return true;
+		if (!(error instanceof APIError)) return false;
+		return !error.status || [502, 503, 504].includes(error.status);
+	}
+
+	function handleStatusError(error: unknown) {
+		// No job has ever run: nothing to follow.
+		if (!job && error instanceof APIError && error.status === 404) {
+			stopPolling();
+			phase = 'confirm';
+			progressError = '';
+			return;
+		}
+		reconnecting = job?.status === 'pending_restart' && isConnectionLost(error);
+		progressError = reconnecting ? '' : extractApiErrorMessage(error);
+		pollActive = true;
+		schedulePoll();
 	}
 
 	async function poll() {
 		if (!pollActive) return;
-
-		const requestResult1 = await tryCatch(
-			(async () => {
-				const next = await systemUpgradeService.getUpdateAllStatus();
-				reconnecting = false;
-				job = next;
-				if (next.status === 'completed' || next.status === 'failed') {
-					stopPolling();
-					finishTerminalJob(next);
-					return true;
-				}
-			})()
-		);
-		if (requestResult1.error !== null) {
-			// The manager is likely restarting after its own upgrade — keep retrying
-			// until the backend answers again.
-			reconnecting = true;
+		const attempt = startAttempt;
+		const response = await tryCatch(systemUpgradeService.getUpdateAllStatus());
+		if (!pollActive || attempt !== startAttempt) return;
+		if (response.error !== null) {
+			handleStatusError(response.error);
+			return;
 		}
-		if (requestResult1.data) return;
-
-		schedulePoll();
+		followJob(response.data);
 	}
+
+	// Reopening the dialog picks up an update that is still running on the backend.
+	async function restoreActiveJob() {
+		const attempt = ++startAttempt;
+		phase = 'running';
+		const response = await tryCatch(systemUpgradeService.getUpdateAllStatus());
+		if (attempt !== startAttempt) return;
+		if (response.error !== null) {
+			handleStatusError(response.error);
+			return;
+		}
+		if (isActiveJob(response.data)) {
+			followJob(response.data);
+		} else {
+			phase = 'confirm';
+		}
+	}
+
+	// Dialog.Content only exists while the dialog is open, so this runs once per
+	// opening and its cleanup once per close.
+	const observeUpdate: Attachment = () => {
+		if (!debugDemo) void restoreActiveJob();
+		const ticker = setInterval(() => (clock = nowInstantString()), 1000);
+		return () => {
+			clearInterval(ticker);
+			resetState();
+		};
+	};
 
 	async function handleConfirm() {
 		const attempt = ++startAttempt;
 		phase = 'running';
 		reconnecting = false;
+		progressError = '';
 
 		if (debugDemo) {
 			void runDebugDemo();
 			return;
 		}
-
-		BaseAPIService.setUpgradeInProgress(true);
 
 		const startResult = await tryCatch(systemUpgradeService.triggerUpdateAll());
 		let next = startResult.data;
@@ -143,7 +189,7 @@
 			for (let read = 0; read < CONFLICT_STATUS_READS && attempt === startAttempt; read++) {
 				if (read > 0) await new Promise((resolve) => setTimeout(resolve, CONFLICT_STATUS_RETRY_MS));
 				const active = (await tryCatch(systemUpgradeService.getUpdateAllStatus())).data;
-				if (active?.status === 'running' || active?.status === 'pending_restart') {
+				if (isActiveJob(active)) {
 					next = active;
 					break;
 				}
@@ -158,17 +204,11 @@
 			return;
 		}
 
-		job = next;
-		if (job.status === 'completed' || job.status === 'failed') {
-			finishTerminalJob(job);
-			return;
-		}
-
-		pollActive = true;
-		schedulePoll();
+		followJob(next);
 	}
 
 	async function handleClose() {
+		const attempt = ++startAttempt;
 		stopPolling();
 		// Refresh through SvelteKit instead of reloading the document: a hard reload
 		// lands while agents are still reconnecting after the fleet restart, which
@@ -183,6 +223,7 @@
 				// A failed refresh must not trap the dialog open.
 			}
 		}
+		if (attempt !== startAttempt) return;
 		resetState();
 		open = false;
 		await onFinished?.();
@@ -191,7 +232,6 @@
 	onDestroy(() => {
 		startAttempt++;
 		stopPolling();
-		BaseAPIService.setUpgradeInProgress(false);
 	});
 
 	// Version/release presentation for the confirm step, rendered when the caller
@@ -203,20 +243,30 @@
 		return at ? formatRelativeTime(at) : '';
 	});
 
-	const title = $derived.by(() => {
-		if (phase === 'confirm') return m.environments_update_all_title();
-		if (phase === 'finished') {
-			return job?.status === 'failed' ? m.environments_update_all_failed() : m.environments_update_all_completed();
-		}
-		return m.environments_update_all_in_progress();
-	});
-
 	// "Done" is every environment that has reached a terminal state — i.e. anything
 	// that isn't still queued (pending) or actively being worked on (updating).
 	const results = $derived(job?.results ?? []);
+	const managerResult = $derived(results.find((r) => r.environmentId === MANAGER_ENVIRONMENT_ID));
 	const totalCount = $derived(results.length);
 	const doneCount = $derived(results.filter((r) => r.status !== 'pending' && r.status !== 'updating').length);
-	const failed = $derived(job?.status === 'failed');
+	const outcomeCounts = $derived({
+		updated: results.filter((r) => r.status === 'updated').length,
+		current: results.filter((r) => r.status === 'up_to_date').length,
+		skipped: results.filter((r) => r.status === 'skipped_offline').length,
+		failed: results.filter((r) => r.status === 'failed').length,
+		unconfirmed: results.filter((r) => r.status === 'triggered').length
+	});
+	const hasIssues = $derived(outcomeCounts.failed > 0 || outcomeCounts.unconfirmed > 0);
+	const failed = $derived(job?.status === 'failed' || hasIssues);
+
+	const title = $derived.by(() => {
+		if (phase === 'confirm') return m.environments_update_all_title();
+		if (phase === 'finished') {
+			if (job?.status === 'failed') return m.environments_update_all_failed();
+			return hasIssues ? m.environments_update_all_finished_with_issues() : m.environments_update_all_completed();
+		}
+		return m.environments_update_all_in_progress();
+	});
 
 	const completedColors = {
 		segment: 'bg-success',
@@ -240,7 +290,12 @@
 			},
 			updated: { label: m.common_updated, ...completedColors },
 			up_to_date: { label: m.image_update_up_to_date_title, ...completedColors },
-			triggered: { label: m.environments_update_all_status_triggered, ...completedColors },
+			triggered: {
+				label: m.environments_update_all_status_triggered,
+				segment: 'bg-warning',
+				badge: 'border-warning/40 bg-warning/10 text-warning',
+				text: 'text-warning'
+			},
 			skipped_offline: {
 				label: m.environments_update_all_status_skipped_offline,
 				segment: 'bg-warning',
@@ -260,6 +315,23 @@
 		return environmentStatusDisplay.get(status) ?? pendingDisplay;
 	}
 
+	const stageLabels: Record<UpdateAllStage, () => string> = {
+		checking: m.environments_update_all_stage_checking,
+		starting: m.environments_update_all_stage_starting,
+		reconnecting: m.environments_update_all_stage_reconnecting,
+		verifying: m.environments_update_all_stage_verifying
+	};
+
+	// While a row is updating its stage replaces the generic status label.
+	function rowLabel(result: UpdateAllEnvironmentResult): string {
+		const statusLabel = statusPresentation(result.status).label;
+		if (result.status !== 'updating' || !result.stage) return statusLabel();
+		if (result.stage === 'reconnecting' && result.environmentId === MANAGER_ENVIRONMENT_ID) {
+			return m.environments_update_all_stage_manager_restart();
+		}
+		return (stageLabels[result.stage] ?? statusLabel)();
+	}
+
 	// An environment that was already current reports the same version twice; show it
 	// once rather than as a "v1.0.0 → v1.0.0" no-op transition.
 	function versionLine(result: UpdateAllEnvironmentResult): string {
@@ -273,7 +345,17 @@
 	// designed and reviewed without triggering a real fleet update. Only ever enabled
 	// from a dev-guarded callsite.
 	async function runDebugDemo() {
-		const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+		const attempt = startAttempt;
+		const live = () => attempt === startAttempt && phase === 'running';
+		// Sleeps, then reports whether the demo is still the one being watched.
+		const pause = async (ms: number) => {
+			await new Promise((resolve) => setTimeout(resolve, ms));
+			return live();
+		};
+		const enterStage = (row: UpdateAllEnvironmentResult, stage: UpdateAllStage) => {
+			row.stage = stage;
+			row.stageStartedAt = nowInstantString();
+		};
 		// Big enough fleet (10) to exercise the scrolling list (#3655).
 		const demo: Array<{ name: string; outcome: UpdateAllEnvironmentStatus; to: string; error?: string }> = [
 			{ name: 'Local Docker', outcome: 'updated', to: 'v0.9.2' },
@@ -303,50 +385,49 @@
 		// Remotes first, manager last — the real processing order.
 		const steps = [...demo.entries()].map(([index, entry]) => ({ index, entry }));
 		for (const { index, entry } of [...steps.slice(1), ...steps.slice(0, 1)]) {
-			const starting = job?.results?.[index];
-			if (phase !== 'running' || !starting) return;
-			starting.status = 'updating';
-			await wait(700);
-
+			const row = job?.results?.[index];
+			if (!live() || !row) return;
+			row.status = 'updating';
+			enterStage(row, 'checking');
+			if (!(await pause(700))) return;
+			enterStage(row, 'starting');
+			if (!(await pause(700))) return;
+			enterStage(row, 'reconnecting');
+			// One slow reconnect and one status-read outage, to exercise both displays.
+			if (index === 1 && !(await pause(5000))) return;
+			if (index === 2) {
+				progressError = m.environments_update_all_progress_unavailable();
+				if (!(await pause(2000))) return;
+				progressError = '';
+			}
 			// The manager restart is the one moment the reconnecting banner shows.
-			if (index === 0) {
+			if (index === 0 && job) {
+				job.status = 'pending_restart';
 				reconnecting = true;
-				await wait(1600);
+				if (!(await pause(3000))) return;
 				reconnecting = false;
 			}
-
-			const row = job?.results?.[index];
-			if (phase !== 'running' || !row) return;
+			enterStage(row, 'verifying');
+			if (!(await pause(700))) return;
 			row.status = entry.outcome;
+			row.stage = undefined;
+			row.stageStartedAt = undefined;
 			row.toVersion = entry.to;
 			if (entry.error) row.error = entry.error;
 		}
 
-		if (phase !== 'running' || !job) return;
+		if (!live() || !job) return;
 		job.status = 'completed';
 		job.completedAt = nowInstantString();
 		phase = 'finished';
 	}
 </script>
 
-<Dialog.Root
-	{open}
-	onOpenChange={(next) => {
-		if (!next) {
-			resetState();
-		}
-		open = next;
-	}}
->
+<Dialog.Root {open} onOpenChange={(next) => (open = next)}>
 	<Dialog.Content
+		{@attach observeUpdate}
 		sectioned
-		class={cn(
-			'flex max-h-(--max-height-dscreen-90) flex-col overflow-hidden sm:max-w-130',
-			phase === 'running' && '[&>button]:hidden'
-		)}
-		onInteractOutside={(e: Event) => {
-			if (phase === 'running') e.preventDefault();
-		}}
+		class="flex max-h-(--max-height-dscreen-90) flex-col overflow-hidden sm:max-w-130"
 	>
 		{#if phase === 'confirm'}
 			<div class="px-6 pt-6 pb-4">
@@ -416,12 +497,30 @@
 					</div>
 				{/if}
 
+				{#if phase === 'finished'}
+					<p class="mt-3 text-sm text-muted-foreground">{m.environments_update_all_summary(outcomeCounts)}</p>
+					{#if job?.error}<p class="mt-2 text-sm text-destructive">{job.error}</p>{/if}
+				{/if}
+				{#if progressError}
+					<div role="status" class="mt-4 rounded-lg border border-warning/20 bg-warning/5 px-3 py-2.5 text-sm">
+						<p class="font-medium">{m.environments_update_all_progress_unavailable()}</p>
+						<p class="mt-1 break-words text-muted-foreground">{progressError}</p>
+					</div>
+				{/if}
+
 				{#if reconnecting}
 					<div
 						class="mt-4 flex items-center gap-2 rounded-lg border border-warning/20 bg-warning/5 px-3 py-2.5 text-sm text-warning"
 					>
 						<Spinner class="size-4" />
-						<span>{m.environments_update_all_manager_restarting()}</span>
+						<div>
+							<span>{m.environments_update_all_manager_restarting()}</span>
+							<span class="block text-xs">
+								{m.environments_update_all_elapsed({
+									duration: formatElapsedTime(managerResult?.stageStartedAt ?? job?.createdAt, { base: clock })
+								})}
+							</span>
+						</div>
 					</div>
 				{/if}
 			</div>
@@ -441,11 +540,11 @@
 											statusPresentation(result.status).badge
 										)}
 									>
-										{#if result.status === 'updated' || result.status === 'triggered' || result.status === 'up_to_date'}
+										{#if result.status === 'updated' || result.status === 'up_to_date'}
 											<SuccessIcon class="size-3.5" />
 										{:else if result.status === 'updating'}
 											<Spinner class="size-3.5" />
-										{:else if result.status === 'skipped_offline'}
+										{:else if result.status === 'skipped_offline' || result.status === 'triggered'}
 											<AlertIcon class="size-3.5" />
 										{:else if result.status === 'failed'}
 											<AlertTriangleIcon class="size-3.5" />
@@ -468,9 +567,16 @@
 										{/if}
 									</div>
 
-									<span class={cn('shrink-0 text-xs', statusPresentation(result.status).text)}>
-										{statusPresentation(result.status).label()}
-									</span>
+									<div class={cn('max-w-48 shrink-0 text-right text-xs', statusPresentation(result.status).text)}>
+										<span>{rowLabel(result)}</span>
+										{#if result.status === 'updating' && result.stageStartedAt}
+											<span class="block text-muted-foreground">
+												{m.environments_update_all_elapsed({
+													duration: formatElapsedTime(result.stageStartedAt, { base: clock })
+												})}
+											</span>
+										{/if}
+									</div>
 								</li>
 							{/each}
 						</ul>
@@ -479,13 +585,14 @@
 			{:else}
 				<div class="flex items-center gap-2 border-t border-border/60 px-6 py-4 text-sm text-muted-foreground">
 					<Spinner class="size-4" />
-					<span>{m.environments_update_all_in_progress()}</span>
+					<span>{job ? m.environments_update_all_in_progress() : m.environments_update_all_loading_status()}</span>
 				</div>
 			{/if}
 
 			{#if phase === 'running'}
 				<div class="border-t border-border/60 bg-muted/30 px-6 py-3">
 					<p class="text-xs leading-relaxed text-muted-foreground">{m.environments_update_all_manager_note()}</p>
+					<p class="mt-1 text-xs leading-relaxed text-muted-foreground">{m.environments_update_all_reconnection_note()}</p>
 				</div>
 			{/if}
 		{/if}

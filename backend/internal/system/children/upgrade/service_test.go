@@ -448,7 +448,10 @@ func TestUpdateAllFinalizesUpToDateManagerWithoutRestart(t *testing.T) {
 		Username:              "arcane",
 		ManagerVersionAtStart: "v1.0.0",
 		Results: EnvironmentUpdateResults{
-			{EnvironmentID: "0", EnvironmentName: "Local", Status: EnvironmentUpdateResultStatusUpdating, FromVersion: "v1.0.0"},
+			{
+				EnvironmentID: "0", EnvironmentName: "Local", Status: EnvironmentUpdateResultStatusUpdating, FromVersion: "v1.0.0",
+				Stage: EnvironmentUpdateStageReconnecting, StageStartedAt: new(time.Now()),
+			},
 			{EnvironmentID: "remote-1", EnvironmentName: "palladium", Status: EnvironmentUpdateResultStatusUpToDate},
 		},
 	}
@@ -470,6 +473,43 @@ func TestUpdateAllFinalizesUpToDateManagerWithoutRestart(t *testing.T) {
 	require.Equal(t, "v1.0.0", got.Results[0].ToVersion)
 	require.Empty(t, got.Results[0].Error)
 	require.Equal(t, EnvironmentUpdateResultStatusUpToDate, got.Results[1].Status)
+	require.Empty(t, got.Results[0].Stage)
+	require.Nil(t, got.Results[0].StageStartedAt)
+}
+
+// Each stage change is persisted immediately so the status endpoint shows live
+// progress; re-entering the current stage must not restart its clock.
+func TestUpdateAllStageChangesPersist(t *testing.T) {
+	ctx := t.Context()
+	gormDB, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+
+	db := &database.DB{DB: gormDB}
+	require.NoError(t, db.AutoMigrate(&EnvironmentUpdateJob{}))
+
+	svc := NewService(db, nil, nil, nil, nil, nil)
+	job := &EnvironmentUpdateJob{
+		Status: EnvironmentUpdateJobStatusRunning,
+		Results: EnvironmentUpdateResults{
+			{EnvironmentID: "remote-1", EnvironmentName: "palladium", Status: EnvironmentUpdateResultStatusUpdating},
+		},
+	}
+	require.NoError(t, db.WithContext(ctx).Create(job).Error)
+
+	svc.setUpdateStageInternal(ctx, job, &job.Results[0], EnvironmentUpdateStageChecking)
+	started := job.Results[0].StageStartedAt
+	require.NotNil(t, started)
+	require.WithinDuration(t, time.Now(), *started, time.Second)
+
+	svc.setUpdateStageInternal(ctx, job, &job.Results[0], EnvironmentUpdateStageChecking)
+	require.Same(t, started, job.Results[0].StageStartedAt)
+
+	svc.setUpdateStageInternal(ctx, job, &job.Results[0], EnvironmentUpdateStageStarting)
+	var got EnvironmentUpdateJob
+	require.NoError(t, db.WithContext(ctx).First(&got, "id = ?", job.ID).Error)
+	require.Equal(t, EnvironmentUpdateStageStarting, got.Results[0].Stage)
+	require.NotNil(t, got.Results[0].StageStartedAt)
+	require.NotSame(t, started, job.Results[0].StageStartedAt)
 }
 
 // The up-to-date short-circuit must only fire when the version check is conclusive:

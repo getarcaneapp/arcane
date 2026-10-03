@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"os/signal"
 	"syscall"
 
 	"github.com/samber/mo"
@@ -23,6 +22,8 @@ func reexecWithRuntimeIdentityInternal(ctx context.Context, req runtimeIdentityR
 	groups := runtimeIdentitySupplementaryGroupsInternal(req.DockerHost, resolveSocketGroupInternal)
 
 	cmd := exec.CommandContext(ctx, executable, os.Args[1:]...) //nolint:gosec // re-executing our own binary with the same args under a different UID/GID
+	// Forward shutdown instead of the default SIGKILL so the child can unregister its actor host.
+	cmd.Cancel = func() error { return cmd.Process.Signal(syscall.SIGTERM) }
 	cmd.Env = os.Environ()
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
@@ -39,39 +40,23 @@ func reexecWithRuntimeIdentityInternal(ctx context.Context, req runtimeIdentityR
 		return fmt.Errorf("start runtime identity child: %w", startErr)
 	}
 
-	sigCh := make(chan os.Signal, 2)
-	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
-
-	done := make(chan error, 1)
-	go func() {
-		done <- cmd.Wait()
-	}()
-
-	for {
-		select {
-		case sig := <-sigCh:
-			if cmd.Process != nil {
-				_ = cmd.Process.Signal(sig)
-			}
-		case waitErr := <-done:
-			signal.Stop(sigCh)
-			if waitErr == nil {
-				os.Exit(0)
-			}
-
-			if exitErr, ok := errors.AsType[*exec.ExitError](waitErr); ok {
-				if status, hasStatus := exitErr.Sys().(syscall.WaitStatus); hasStatus {
-					if status.Signaled() {
-						os.Exit(128 + int(status.Signal()))
-					}
-					os.Exit(status.ExitStatus())
-				}
-				os.Exit(exitErr.ExitCode())
-			}
-
-			return fmt.Errorf("wait for runtime identity child: %w", waitErr)
-		}
+	waitErr := cmd.Wait()
+	// After a forwarded shutdown Wait reports ctx.Err() even when the child exited cleanly.
+	if cmd.ProcessState != nil && cmd.ProcessState.Success() {
+		os.Exit(0)
 	}
+
+	if exitErr, ok := errors.AsType[*exec.ExitError](waitErr); ok {
+		if status, hasStatus := exitErr.Sys().(syscall.WaitStatus); hasStatus {
+			if status.Signaled() {
+				os.Exit(128 + int(status.Signal()))
+			}
+			os.Exit(status.ExitStatus())
+		}
+		os.Exit(exitErr.ExitCode())
+	}
+
+	return fmt.Errorf("wait for runtime identity child: %w", waitErr)
 }
 
 func resolveSocketGroupInternal(socketPath string) mo.Option[uint32] {

@@ -545,7 +545,12 @@ func UpgradeContainer(ctx context.Context, dockerClient *client.Client, oldConta
 
 	fmt.Println("PROGRESS:70:Stopping old container")
 	slog.Info("Stopping old container", "name", oldName)
-	if _, containerStopErr := dockerClient.ContainerStop(ctx, oldContainer.ID, client.ContainerStopOptions{Timeout: new(10)}); containerStopErr != nil {
+	// Allow graceful shutdown and longer finite timeouts, but never wait forever.
+	stopTimeout := 40
+	if configured := oldContainer.Config.StopTimeout; configured != nil && *configured > stopTimeout {
+		stopTimeout = *configured
+	}
+	if _, containerStopErr := dockerClient.ContainerStop(ctx, oldContainer.ID, client.ContainerStopOptions{Timeout: &stopTimeout}); containerStopErr != nil {
 		_, _ = dockerClient.ContainerRename(ctx, oldContainer.ID, client.ContainerRenameOptions{NewName: originalName})
 		return fmt.Errorf("stop old container: %w", containerStopErr)
 	}

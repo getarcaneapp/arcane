@@ -764,9 +764,7 @@ func (s *Service) runAgentsPhaseInternal(ctx context.Context, jobID string, env 
 			slog.WarnContext(ctx, "update-all: failed to persist updating status", "jobId", job.ID, "environmentId", remote.ID, "error", persistUpdateAllJobErr)
 		}
 
-		result := job.Results[idx]
-		s.upgradeAgentInternal(ctx, env, remote.ID, &result)
-		job.Results[idx] = result
+		s.upgradeAgentInternal(ctx, env, remote.ID, job, &job.Results[idx])
 
 		if saveRemoteProgressErr := s.persistUpdateAllJobInternal(ctx, job); saveRemoteProgressErr != nil {
 			slog.WarnContext(ctx, "update-all: failed to persist progress", "jobId", job.ID, "environmentId", remote.ID, "error", saveRemoteProgressErr)
@@ -777,11 +775,11 @@ func (s *Service) runAgentsPhaseInternal(ctx context.Context, jobID string, env 
 	// updating and move the job to pending_restart, persisting BEFORE the trigger so
 	// that if the manager dies the instant the upgrader starts, the next boot sees
 	// pending_restart and finalizes it.
-	for i := range job.Results {
-		if job.Results[i].EnvironmentID == environment.LocalEnvironmentID {
-			job.Results[i].Status = EnvironmentUpdateResultStatusUpdating
-			break
-		}
+	manager := managerResultInternal(job)
+	if manager != nil {
+		manager.Status = EnvironmentUpdateResultStatusUpdating
+		manager.Stage = EnvironmentUpdateStageStarting
+		manager.StageStartedAt = new(time.Now())
 	}
 	job.Status = EnvironmentUpdateJobStatusPendingRestart
 	if savePendingRestartErr := s.persistUpdateAllJobInternal(ctx, job); savePendingRestartErr != nil {
@@ -799,6 +797,10 @@ func (s *Service) runAgentsPhaseInternal(ctx context.Context, jobID string, env 
 		// the manager's updating row to failed with the reason.
 		s.markUpdateAllFailedInternal(ctx, job, fmt.Sprintf("manager upgrade trigger failed: %v", err))
 		return
+	}
+
+	if manager != nil {
+		s.setUpdateStageInternal(ctx, job, manager, EnvironmentUpdateStageReconnecting)
 	}
 
 	slog.InfoContext(ctx, "Update-all: agents done, manager self-upgrade triggered", "jobId", job.ID, "upgraderId", upgraderID)
@@ -983,10 +985,8 @@ func (s *Service) seedRemoteResultsInternal(ctx context.Context, env *environmen
 // appending a new pending row when seeding missed it (e.g. the seed list failed, or a
 // new environment was registered after the job started).
 func upsertPendingResultInternal(job *EnvironmentUpdateJob, envID, envName string) int {
-	for i := range job.Results {
-		if job.Results[i].EnvironmentID == envID {
-			return i
-		}
+	if idx := slices.IndexFunc(job.Results, func(r EnvironmentUpdateResult) bool { return r.EnvironmentID == envID }); idx >= 0 {
+		return idx
 	}
 	job.Results = append(job.Results, EnvironmentUpdateResult{
 		EnvironmentID:   envID,
@@ -996,10 +996,21 @@ func upsertPendingResultInternal(job *EnvironmentUpdateJob, envID, envName strin
 	return len(job.Results) - 1
 }
 
+// managerResultInternal returns the manager's (env "0") row, or nil when the job has none.
+func managerResultInternal(job *EnvironmentUpdateJob) *EnvironmentUpdateResult {
+	idx := slices.IndexFunc(job.Results, func(r EnvironmentUpdateResult) bool { return r.EnvironmentID == environment.LocalEnvironmentID })
+	if idx < 0 {
+		return nil
+	}
+	return &job.Results[idx]
+}
+
 // upgradeAgentInternal triggers and confirms a single remote environment's
 // self-upgrade, recording the outcome on result. The upgrade always runs — the
 // agent pulls the latest image even when it reports no update available.
-func (s *Service) upgradeAgentInternal(ctx context.Context, env *environment.EnvironmentService, envID string, result *EnvironmentUpdateResult) {
+func (s *Service) upgradeAgentInternal(ctx context.Context, env *environment.EnvironmentService, envID string, job *EnvironmentUpdateJob, result *EnvironmentUpdateResult) {
+	defer result.clearStageInternal()
+	s.setUpdateStageInternal(ctx, job, result, EnvironmentUpdateStageChecking)
 	versionCtx, cancel := context.WithTimeout(ctx, updateAllAgentRequestTimeoutInternal)
 	var info versiontypes.Info
 	err := env.ProxyJSONRequest(versionCtx, envID, http.MethodGet, "/api/app-version", nil, &info)
@@ -1026,6 +1037,7 @@ func (s *Service) upgradeAgentInternal(ctx context.Context, env *environment.Env
 	result.FromVersion = info.CurrentVersion
 	result.ToVersion = updateAllTargetVersionInternal(&info)
 
+	s.setUpdateStageInternal(ctx, job, result, EnvironmentUpdateStageStarting)
 	triggerCtx, cancel := context.WithTimeout(ctx, updateAllAgentRequestTimeoutInternal)
 	resp, err := env.ExecuteRemoteRequest(triggerCtx, envID, http.MethodPost, "/api/environments/0/system/upgrade", triggerBody)
 	cancel()
@@ -1050,7 +1062,8 @@ func (s *Service) upgradeAgentInternal(ctx context.Context, env *environment.Env
 		return
 	}
 
-	if s.confirmAgentUpgradedInternal(ctx, env, envID, info) {
+	s.setUpdateStageInternal(ctx, job, result, EnvironmentUpdateStageReconnecting)
+	if s.confirmAgentUpgradedInternal(ctx, env, envID, info, job, result) {
 		result.Status = EnvironmentUpdateResultStatusUpdated
 	} else {
 		// Upgrade fired but the new version was not confirmed within the wait window.
@@ -1083,7 +1096,10 @@ func updateAllAgentFailureStatusInternal(err error) EnvironmentUpdateResultStatu
 // force-update of an already-latest agent — including one whose version check
 // could not determine the latest release — confirms on a same-image recreation
 // instead of timing out to triggered.
-func (s *Service) confirmAgentUpgradedInternal(ctx context.Context, env *environment.EnvironmentService, envID string, baseline versiontypes.Info) bool {
+func (s *Service) confirmAgentUpgradedInternal(
+	ctx context.Context, env *environment.EnvironmentService, envID string,
+	baseline versiontypes.Info, job *EnvironmentUpdateJob, result *EnvironmentUpdateResult,
+) bool {
 	target := updateAllTargetVersionInternal(&baseline)
 	deadline := time.Now().Add(updateAllConfirmTimeoutInternal)
 	ticker := time.NewTicker(updateAllConfirmPollIntervalInternal)
@@ -1099,6 +1115,7 @@ func (s *Service) confirmAgentUpgradedInternal(ctx context.Context, env *environ
 			err := env.ProxyJSONRequest(reqCtx, envID, http.MethodGet, "/api/app-version", nil, &info)
 			cancel()
 			if err == nil {
+				s.setUpdateStageInternal(ctx, job, result, EnvironmentUpdateStageVerifying)
 				versionChanged := baseline.CurrentVersion != "" && info.CurrentVersion != baseline.CurrentVersion
 				digestChanged := baseline.CurrentDigest != "" && info.CurrentDigest != baseline.CurrentDigest
 				onTarget := target != "" &&
@@ -1107,11 +1124,26 @@ func (s *Service) confirmAgentUpgradedInternal(ctx context.Context, env *environ
 				if versionChanged || digestChanged || onTarget {
 					return true
 				}
+			} else {
+				s.setUpdateStageInternal(ctx, job, result, EnvironmentUpdateStageReconnecting)
 			}
 			if time.Now().After(deadline) {
 				return false
 			}
 		}
+	}
+}
+
+// setUpdateStageInternal records which step result is in and persists the job so
+// the status endpoint reflects it; re-entering the current stage keeps its start time.
+func (s *Service) setUpdateStageInternal(ctx context.Context, job *EnvironmentUpdateJob, result *EnvironmentUpdateResult, stage EnvironmentUpdateStage) {
+	if result.Stage == stage {
+		return
+	}
+	result.Stage = stage
+	result.StageStartedAt = new(time.Now())
+	if err := s.persistUpdateAllJobInternal(ctx, job); err != nil {
+		slog.WarnContext(ctx, "update-all: failed to persist stage", "jobId", job.ID, "environmentId", result.EnvironmentID, "stage", stage, "error", err)
 	}
 }
 
@@ -1171,6 +1203,7 @@ func (s *Service) markUpdateAllFailedInternal(ctx context.Context, job *Environm
 	job.Error = &reason
 	job.CompletedAt = new(time.Now())
 	for i := range job.Results {
+		job.Results[i].clearStageInternal()
 		if job.Results[i].Status == EnvironmentUpdateResultStatusUpdating {
 			job.Results[i].Status = EnvironmentUpdateResultStatusFailed
 			job.Results[i].Error = reason
@@ -1207,24 +1240,22 @@ func (s *Service) markUpdateAllFailedInternal(ctx context.Context, job *Environm
 // updated after a confirmed restart, up_to_date when the pull found nothing to swap
 // in, or failed otherwise.
 func (s *Service) recordManagerResultInternal(job *EnvironmentUpdateJob, status EnvironmentUpdateResultStatus, currentVersion string) {
-	for i := range job.Results {
-		if job.Results[i].EnvironmentID != environment.LocalEnvironmentID {
-			continue
-		}
-		job.Results[i].Status = status
-		switch status {
-		case EnvironmentUpdateResultStatusUpdated, EnvironmentUpdateResultStatusUpToDate:
-			job.Results[i].ToVersion = currentVersion
-		case EnvironmentUpdateResultStatusFailed:
-			job.Results[i].Error = "manager version did not change after upgrade"
-		case EnvironmentUpdateResultStatusPending,
-			EnvironmentUpdateResultStatusUpdating,
-			EnvironmentUpdateResultStatusTriggered,
-			EnvironmentUpdateResultStatusSkippedOffline:
-			// Nothing more to record: the row keeps the target version it was seeded
-			// with, since none of these outcomes establishes what it ended up running.
-		}
+	manager := managerResultInternal(job)
+	if manager == nil {
 		return
+	}
+	manager.Status = status
+	switch status {
+	case EnvironmentUpdateResultStatusUpdated, EnvironmentUpdateResultStatusUpToDate:
+		manager.ToVersion = currentVersion
+	case EnvironmentUpdateResultStatusFailed:
+		manager.Error = "manager version did not change after upgrade"
+	case EnvironmentUpdateResultStatusPending,
+		EnvironmentUpdateResultStatusUpdating,
+		EnvironmentUpdateResultStatusTriggered,
+		EnvironmentUpdateResultStatusSkippedOffline:
+		// Nothing more to record: the row keeps the target version it was seeded
+		// with, since none of these outcomes establishes what it ended up running.
 	}
 }
 
@@ -1233,6 +1264,9 @@ func (s *Service) recordManagerResultInternal(job *EnvironmentUpdateJob, status 
 func (s *Service) finalizeUpdateAllJobInternal(ctx context.Context, job *EnvironmentUpdateJob) {
 	job.Status = EnvironmentUpdateJobStatusCompleted
 	job.CompletedAt = new(time.Now())
+	for i := range job.Results {
+		job.Results[i].clearStageInternal()
+	}
 	if err := s.persistUpdateAllJobInternal(ctx, job); err != nil {
 		slog.WarnContext(ctx, "update-all: failed to finalize job", "jobId", job.ID, "error", err)
 		return
