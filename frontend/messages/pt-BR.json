@@ -1547,7 +1547,6 @@
   "environments_update_all_stage_verifying": "Verificando a versão",
   "environments_update_all_stage_manager_restart": "Aguardando a reinicialização do gerenciador",
   "environments_update_all_elapsed": "Transcorrido {duration}",
-  "environments_update_all_progress_unavailable": "Progresso indisponível",
   "environments_update_all_loading_status": "Verificando o status da atualização…",
   "environments_update_all_finished_with_issues": "Sem mais problemas",
   "environments_update_all_reconnection_note": "É esperado que ocorra uma desconexão temporária durante a reinicialização. Os agentes têm até cinco minutos para se reconectar e confirmar sua versão. O progresso é atualizado automaticamente.",
