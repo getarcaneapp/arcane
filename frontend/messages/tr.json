@@ -1547,7 +1547,6 @@
   "environments_update_all_stage_verifying": "Sürümün doğrulanması",
   "environments_update_all_stage_manager_restart": "Yöneticinin yeniden başlatılmasını bekliyorum",
   "environments_update_all_elapsed": "Geçen süre {duration}",
-  "environments_update_all_progress_unavailable": "İlerleme bilgisi mevcut değil",
   "environments_update_all_loading_status": "… adresindeki güncelleme durumunu kontrol ediyorum",
   "environments_update_all_finished_with_issues": "Sorunlar çözüldü",
   "environments_update_all_reconnection_note": "Yeniden başlatma sırasında geçici bir bağlantı kesintisi yaşanması beklenmektedir. Ajanların yeniden bağlanıp sürümlerini onaylamak için en fazla beş dakikaları vardır. İlerleme durumu otomatik olarak güncellenir.",
