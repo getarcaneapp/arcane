@@ -1547,7 +1547,6 @@
   "environments_update_all_stage_verifying": "Comprobación de la versión",
   "environments_update_all_stage_manager_restart": "A la espera de que el gestor se reinicie",
   "environments_update_all_elapsed": "Transcurrido {duration}",
-  "environments_update_all_progress_unavailable": "No hay datos disponibles sobre el progreso",
   "environments_update_all_loading_status": "Comprobación del estado de la actualización…",
   "environments_update_all_finished_with_issues": "Se acabaron los problemas",
   "environments_update_all_reconnection_note": "Se prevé una desconexión temporal durante el reinicio. Los agentes disponen de hasta cinco minutos para volver a conectarse y confirmar su versión. El progreso se actualiza automáticamente.",
