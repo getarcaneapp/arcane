@@ -1547,7 +1547,6 @@
   "environments_update_all_stage_verifying": "Version überprüfen",
   "environments_update_all_stage_manager_restart": "Warten auf den Neustart des Managers",
   "environments_update_all_elapsed": "Verstrichen {duration}",
-  "environments_update_all_progress_unavailable": "Fortschritt nicht verfügbar",
   "environments_update_all_loading_status": "Aktualisierungsstatus prüfen…",
   "environments_update_all_finished_with_issues": "Die Probleme sind behoben",
   "environments_update_all_reconnection_note": "Während des Neustarts ist mit einer vorübergehenden Unterbrechung der Verbindung zu rechnen. Die Agenten haben bis zu fünf Minuten Zeit, um die Verbindung wiederherzustellen und ihre Version zu bestätigen. Der Fortschritt wird automatisch aktualisiert.",
