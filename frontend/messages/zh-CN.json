@@ -1547,7 +1547,6 @@
   "environments_update_all_stage_verifying": "验证版本",
   "environments_update_all_stage_manager_restart": "正在等待管理器重启",
   "environments_update_all_elapsed": "已过去 {duration}",
-  "environments_update_all_progress_unavailable": "无法获取进度",
   "environments_update_all_loading_status": "检查更新状态…",
   "environments_update_all_finished_with_issues": "问题已解决",
   "environments_update_all_reconnection_note": "重启期间预计会出现短暂断开连接的情况。代理有最多五分钟的时间重新连接并确认其版本。进度会自动刷新。",
