@@ -9,7 +9,7 @@
   "font_size": "Schriftgröße",
   "font_size_description": "Größe der Texte und Benutzeroberfläche anpassen",
   "layout_mode": "Layout",
-  "layout_mode_description": "So gestaltet Arcane die Benutzeroberfläche auf diesem Gerät. Folgt der Displaygröße",
+  "layout_mode_description": "So gestaltet Arcane die Benutzeroberfläche auf diesem Gerät. Folgt der Displaygröße.",
   "layout_mode_auto_description": "Auf schmalen Bildschirmen wird das mobile Layout angezeigt, andernfalls das Desktop-Layout.",
   "layout_mode_mobile": "Mobil",
   "layout_mode_mobile_description": "Kartenlisten und Navigation am unteren Rand.",
