@@ -1547,7 +1547,6 @@
   "environments_update_all_stage_verifying": "Проверка версии",
   "environments_update_all_stage_manager_restart": "Ожидание перезапуска менеджера",
   "environments_update_all_elapsed": "Прошло {duration}",
-  "environments_update_all_progress_unavailable": "Данные о прогрессе недоступны",
   "environments_update_all_loading_status": "Проверка статуса обновления…",
   "environments_update_all_finished_with_issues": "Проблемы решены",
   "environments_update_all_reconnection_note": "Во время перезапуска возможно временное прерывание связи. У агентов есть до пяти минут, чтобы восстановить соединение и подтвердить свою версию. Индикатор хода обновляется автоматически.",
