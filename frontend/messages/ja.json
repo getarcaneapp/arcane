@@ -1547,7 +1547,6 @@
   "environments_update_all_stage_verifying": "バージョンの確認",
   "environments_update_all_stage_manager_restart": "マネージャーの再起動を待機中",
   "environments_update_all_elapsed": "経過時間 {duration}",
-  "environments_update_all_progress_unavailable": "進捗状況は確認できません",
   "environments_update_all_loading_status": "更新状況の確認…",
   "environments_update_all_finished_with_issues": "問題はすべて解決しました",
   "environments_update_all_reconnection_note": "再起動中は一時的に接続が切断される見込みです。エージェントは、最大5分以内に再接続し、バージョンを確認する必要があります。進行状況は自動的に更新されます。",
