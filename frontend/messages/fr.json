@@ -1547,7 +1547,6 @@
   "environments_update_all_stage_verifying": "Vérification de la version",
   "environments_update_all_stage_manager_restart": "En attente du redémarrage du gestionnaire",
   "environments_update_all_elapsed": "Temps écoulé {duration}",
-  "environments_update_all_progress_unavailable": "Données de progression indisponibles",
   "environments_update_all_loading_status": "Vérification de l'état de la mise à jour…",
   "environments_update_all_finished_with_issues": "En fin de problèmes",
   "environments_update_all_reconnection_note": "Une déconnexion temporaire est prévue pendant le redémarrage. Les agents disposent d'un délai maximal de cinq minutes pour se reconnecter et confirmer leur version. La progression s'actualise automatiquement.",
