@@ -1547,7 +1547,6 @@
   "environments_update_all_stage_verifying": "Xác minh phiên bản",
   "environments_update_all_stage_manager_restart": "Đang chờ quản lý khởi động lại",
   "environments_update_all_elapsed": "Đã trôi qua {duration}",
-  "environments_update_all_progress_unavailable": "Không có thông tin về tiến độ",
   "environments_update_all_loading_status": "Kiểm tra trạng thái cập nhật…",
   "environments_update_all_finished_with_issues": "Đã giải quyết xong các vấn đề",
   "environments_update_all_reconnection_note": "Dự kiến sẽ xảy ra tình trạng ngắt kết nối tạm thời trong quá trình khởi động lại. Các đại lý có tối đa năm phút để kết nối lại và xác nhận phiên bản của mình. Tiến trình sẽ được làm mới tự động.",
