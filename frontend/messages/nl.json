@@ -1547,7 +1547,6 @@
   "environments_update_all_stage_verifying": "Versie controleren",
   "environments_update_all_stage_manager_restart": "Wachten tot de manager opnieuw is opgestart",
   "environments_update_all_elapsed": "Verstreken {duration}",
-  "environments_update_all_progress_unavailable": "Geen voortgang beschikbaar",
   "environments_update_all_loading_status": "De updatestatus controleren…",
   "environments_update_all_finished_with_issues": "Geen problemen meer",
   "environments_update_all_reconnection_note": "Tijdens het opnieuw opstarten zal de verbinding tijdelijk worden verbroken. Agenten hebben maximaal vijf minuten de tijd om opnieuw verbinding te maken en hun versie te bevestigen. De voortgang wordt automatisch bijgewerkt.",
