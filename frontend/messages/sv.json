@@ -1547,7 +1547,6 @@
   "environments_update_all_stage_verifying": "Kontrollera versionen",
   "environments_update_all_stage_manager_restart": "Väntar på att programmet ska startas om",
   "environments_update_all_elapsed": "Förfluten tid {duration}",
-  "environments_update_all_progress_unavailable": "Inga framsteg tillgängliga",
   "environments_update_all_loading_status": "Kontrollerar uppdateringsstatus…",
   "environments_update_all_finished_with_issues": "Inga problem längre",
   "environments_update_all_reconnection_note": "Det kan förekomma tillfälliga avbrott under omstarten. Agenterna har upp till fem minuter på sig att återansluta sig och bekräfta sin version. Förloppet uppdateras automatiskt.",
