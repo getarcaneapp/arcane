@@ -1547,7 +1547,6 @@
   "environments_update_all_stage_verifying": "Verzió ellenőrzése",
   "environments_update_all_stage_manager_restart": "Várakozás a rendszergazda újraindítására",
   "environments_update_all_elapsed": "Elmúlt {duration}",
-  "environments_update_all_progress_unavailable": "Az előrehaladás nem elérhető",
   "environments_update_all_loading_status": "A frissítés állapotának ellenőrzése:…",
   "environments_update_all_finished_with_issues": "A problémák megoldódtak",
   "environments_update_all_reconnection_note": "Az újraindítás során ideiglenes kapcsolatmegszakadás várható. Az ügynököknek legfeljebb öt percük van arra, hogy újra csatlakozzanak és megerősítsék a verziójukat. Az előrehaladás automatikusan frissül.",
