@@ -610,6 +610,11 @@ export type ProjectConfigurationError = {
 	blocksOperations: boolean;
 };
 
+export interface ProjectLink {
+	url: string;
+	label?: string;
+}
+
 export interface Project {
 	id: string;
 	name: string;
@@ -618,6 +623,8 @@ export interface Project {
 	path: string;
 	iconLightUrl?: string;
 	iconDarkUrl?: string;
+	links?: ProjectLink[];
+	/** @deprecated Use links instead. Will be removed in v3. */
 	urls?: string[];
 	tags?: ProjectTag[];
 	runningCount: string;

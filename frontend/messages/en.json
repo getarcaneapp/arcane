@@ -3891,5 +3891,11 @@
 	"settings_section_avatars_description": "How user avatars are sourced and uploaded.",
 	"roles_details_section": "Role details",
 	"security_trivy_server_section": "Remote server",
-	"security_trivy_resource_section": "Resource limits"
+	"security_trivy_resource_section": "Resource limits",
+	"editor_compose_urls_detail": "Project links",
+	"editor_compose_urls_info": "Additional project links. Use URL strings or objects with a url and an optional label.",
+	"editor_compose_url_detail": "Link URL",
+	"editor_compose_url_info": "The destination URL for this project link.",
+	"editor_compose_url_label_detail": "Link label",
+	"editor_compose_url_label_info": "Optional display text. When blank or omitted, the link displays its hostname."
 }

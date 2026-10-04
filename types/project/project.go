@@ -564,10 +564,13 @@ type Details struct {
 	// Required: false
 	Services []composetypes.ServiceConfig `json:"services,omitempty"`
 
+	// Links are optional labeled project URLs from Compose metadata.
+	Links []Link `json:"links,omitempty"`
+
 	// URLs are optional custom stack URLs from compose metadata.
 	//
-	// Required: false
-	URLs []string `json:"urls,omitempty"`
+	// Deprecated: use links instead. Will be removed in v3.
+	URLs []string `json:"urls,omitempty" deprecated:"true" doc:"Deprecated: use links instead. Will be removed in v3."`
 
 	// IncludeFiles is a list of included files in the project.
 	//

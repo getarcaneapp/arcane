@@ -57,7 +57,7 @@
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { ProjectEditorLayout } from '#lib/types/auth.js';
 	import type { ProjectWorkspaceFileChange, ProjectWorkspaceFileContent } from '#lib/types/project-workspace.js';
-	import type { IncludeFile, Project, ProjectTagColor, ProjectTagOption } from '#lib/types/swarm.js';
+	import type { IncludeFile, Project, ProjectLink, ProjectTagColor, ProjectTagOption } from '#lib/types/swarm.js';
 	import { cn } from '#lib/utils.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
@@ -235,6 +235,7 @@
 		if (!detail) return null;
 		return withLoadedProjectIncludeContent(detail);
 	});
+	const projectLinks: ProjectLink[] = $derived(project?.links ?? project?.urls?.map((url) => ({ url })) ?? []);
 	const serverName = $derived(project?.name ?? '');
 	const serverComposeContent = $derived(project?.composeContent ?? '');
 	const serverEnvContent = $derived(project?.envContent ?? '');
@@ -2159,18 +2160,18 @@
 				/>
 			</div>
 
-			{#if project.urls && project.urls.length > 0}
+			{#if projectLinks.length > 0}
 				<div class="mt-1 flex min-w-0 flex-wrap items-center gap-1.5">
-					{#each project.urls as url (url)}
+					{#each projectLinks as link (link.url)}
 						<a
 							class="inline-flex h-6 max-w-40 min-w-0 items-center gap-1.5 rounded-lg border border-info/20 bg-background/70 px-2.5 text-xs font-semibold ring-offset-background transition-colors hover:border-info/40 hover:bg-info/10 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none sm:max-w-56 md:max-w-72 dark:bg-info/20 dark:hover:bg-info/30"
-							href={toSafeHref(url)}
+							href={toSafeHref(link.url)}
 							target="_blank"
 							rel="noopener noreferrer"
-							title={url}
+							title={link.url}
 						>
 							<GlobeIcon class="size-3 text-info" />
-							<span class="truncate">{formatUrlLabel(url)}</span>
+							<span class="truncate">{link.label?.trim() || formatUrlLabel(link.url)}</span>
 						</a>
 					{/each}
 				</div>

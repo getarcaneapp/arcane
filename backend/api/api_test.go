@@ -439,3 +439,16 @@ func envScopedTestOperationsInternal(item *humav2.PathItem) map[string]*humav2.O
 		http.MethodOptions: item.Options,
 	}
 }
+
+func TestProjectDetailsSchema_DeprecatedURLs(t *testing.T) {
+	api := SetupAPIForSpec()
+	registry := api.OpenAPI().Components.Schemas
+	registry.Schema(reflect.TypeFor[projecttypes.Details](), true, "")
+	schema := registry.Map()[customSchemaNamer(reflect.TypeFor[projecttypes.Details](), "")]
+	require.NotNil(t, schema)
+	require.NotNil(t, schema.Properties["urls"])
+	assert.True(t, schema.Properties["urls"].Deprecated)
+	assert.Equal(t, "Deprecated: use links instead. Will be removed in v3.", schema.Properties["urls"].Description)
+	require.NotNil(t, schema.Properties["links"])
+	assert.False(t, schema.Properties["links"].Deprecated)
+}

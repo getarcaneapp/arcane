@@ -15,7 +15,7 @@ import (
 func TestParseArcaneComposeMetadata_InterpolationAndAnchor(t *testing.T) {
 	tempDir := t.TempDir()
 
-	envContent := "ARCANE_TEST_DOMAIN=example.com\nARCANE_TEST_ICONS_CDN=https://cdn.jsdelivr.net/gh/homarr-labs\n"
+	envContent := "ARCANE_TEST_DOMAIN=example.com\nARCANE_TEST_LABEL=Source\nARCANE_TEST_ICONS_CDN=https://cdn.jsdelivr.net/gh/homarr-labs\n"
 	require.NoError(t, os.WriteFile(filepath.Join(tempDir, ".env"), []byte(envContent), 0o600))
 
 	composeContent := `services:
@@ -27,6 +27,19 @@ x-arcane:
   icon-dark: *arcane-icon
   urls:
     - https://www.${ARCANE_TEST_DOMAIN}
+    - url: " https://${ARCANE_TEST_DOMAIN}/source "
+      label: " ${ARCANE_TEST_LABEL} "
+    - url: https://${ARCANE_TEST_DOMAIN}/docs
+      label: "   "
+    - url: https://www.${ARCANE_TEST_DOMAIN}
+      label: Duplicate
+    - " "
+    - url: " "
+    - label: Missing URL
+    - url: 42
+    - url: https://example.com/invalid-label
+      label: [invalid]
+    - 42
 `
 
 	composePath := filepath.Join(tempDir, "compose.yaml")
@@ -36,7 +49,7 @@ x-arcane:
 	require.NoError(t, err)
 	require.Equal(t, "https://cdn.jsdelivr.net/gh/homarr-labs/webp/raspberry-pi.webp", meta.ProjectIcon.Light)
 	require.Equal(t, "https://cdn.jsdelivr.net/gh/homarr-labs/webp/raspberry-pi.webp", meta.ProjectIcon.Dark)
-	require.Equal(t, []string{"https://www.example.com"}, meta.ProjectURLS)
+	require.Equal(t, []projecttypes.Link{{URL: "https://www.example.com"}, {URL: "https://example.com/source", Label: "Source"}, {URL: "https://example.com/docs"}}, meta.ProjectLinks)
 }
 
 func TestParseArcaneComposeMetadata_ServiceLabelIconsOutrankProjectIcon(t *testing.T) {
@@ -68,6 +81,10 @@ func TestParseArcaneComposeMetadata_IncludeSupport(t *testing.T) {
 
 	composeContent := `include:
   - meta.yaml
+x-arcane:
+  urls:
+    - url: https://example.com/docs
+      label: Root docs
 services:
   app:
     image: nginx:alpine
@@ -79,7 +96,10 @@ services:
   icon-light: https://example.com/icon-light.png
   icon-dark: https://example.com/icon-dark.png
   urls:
-    - https://example.com/docs
+    - url: https://example.com/docs
+      label: Included docs
+    - url: https://example.com/help
+      label: Help
 `
 	require.NoError(t, os.WriteFile(filepath.Join(tempDir, "meta.yaml"), []byte(metaContent), 0o600))
 
@@ -87,7 +107,7 @@ services:
 	require.NoError(t, err)
 	require.Equal(t, "https://example.com/icon-light.png", meta.ProjectIcon.Light)
 	require.Equal(t, "https://example.com/icon-dark.png", meta.ProjectIcon.Dark)
-	require.Equal(t, []string{"https://example.com/docs"}, meta.ProjectURLS)
+	require.Equal(t, []projecttypes.Link{{URL: "https://example.com/docs", Label: "Root docs"}, {URL: "https://example.com/help", Label: "Help"}}, meta.ProjectLinks)
 }
 
 func TestParseArcaneComposeMetadata_TagNamesColorsInterpolationAndIncludes(t *testing.T) {

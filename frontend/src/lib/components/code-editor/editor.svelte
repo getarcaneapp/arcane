@@ -427,8 +427,20 @@
 		const yamlContext = analysisModule.findYamlPositionContext(source, context.pos);
 		if (!yamlContext) return null;
 
+		const startingProjectLink =
+			!yamlContext.atKey &&
+			yamlContext.path.length === 3 &&
+			yamlContext.path[0] === 'x-arcane' &&
+			yamlContext.path[1] === 'urls' &&
+			typeof yamlContext.path[2] === 'number' &&
+			/^\s*-\s+[\w.-]*$/.test(context.state.doc.lineAt(context.pos).text);
+		if (startingProjectLink) {
+			yamlContext.atKey = true;
+			yamlContext.parentPath = yamlContext.path;
+		}
+
 		const before = context.matchBefore(/[\w.-]*/);
-		if (!context.explicit && (!before || before.from === before.to)) return null;
+		if (!context.explicit && (!before || before.from === before.to) && !startingProjectLink) return null;
 
 		const options = await schemaCompletions(context, yamlContext);
 		if (options.length === 0) return null;

@@ -3356,7 +3356,15 @@ func TestProjectService_GetProjectDetails_ReturnsEffectiveEnvContent(t *testing.
 	dirName := "details-override"
 	projectPath := filepath.Join(projectsDir, dirName)
 	require.NoError(t, os.MkdirAll(projectPath, 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte("services:\n  app:\n    image: nginx:alpine\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte(`services:
+  app:
+    image: nginx:alpine
+x-arcane:
+  urls:
+    - https://example.com
+    - url: https://example.com/docs
+      label: Documentation
+`), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(projectPath, ".env"), []byte("BASE=git\nTOKEN=secret\n"), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(projectPath, ".env.git"), []byte("BASE=git\n"), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "project.env"), []byte("TOKEN=secret\n"), 0o600))
@@ -3373,6 +3381,8 @@ func TestProjectService_GetProjectDetails_ReturnsEffectiveEnvContent(t *testing.
 	details, err := svc.GetProjectDetails(ctx, project.ID, projecttypes.AllDetails())
 	require.NoError(t, err)
 	assert.Equal(t, "BASE=git\nTOKEN=secret\n", details.EnvContent)
+	assert.Equal(t, []projecttypes.Link{{URL: "https://example.com"}, {URL: "https://example.com/docs", Label: "Documentation"}}, details.Links)
+	assert.Equal(t, []string{"https://example.com", "https://example.com/docs"}, details.URLs) //nolint:staticcheck // Preserve the deprecated URLs field for v2 clients.
 }
 
 func TestBuildProjectUpdateInfoSummaryInternal(t *testing.T) {

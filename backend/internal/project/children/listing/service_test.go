@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.getarcane.app/updater/labels"
 
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/iconcatalog"
 )
 
@@ -251,4 +252,14 @@ func TestServiceCounts(t *testing.T) {
 			assert.Equal(t, tt.wantRunning, running)
 		})
 	}
+}
+
+func TestApplyPresentation_ProjectLinks(t *testing.T) {
+	links := []project.Link{{URL: "https://example.com"}, {URL: "https://example.com/docs", Label: "Documentation"}}
+	details := []project.Details{{URLs: []string{"https://stale.example.com"}}}
+	ApplyPresentation(t.Context(), t.TempDir(), iconcatalog.DefaultCatalog,
+		[]project.Record{{Path: t.TempDir()}}, details,
+		[]projects.ArcaneComposeMetadata{{ProjectLinks: links}})
+	assert.Equal(t, links, details[0].Links)
+	assert.Equal(t, []string{"https://example.com", "https://example.com/docs"}, details[0].URLs) //nolint:staticcheck // Preserve the deprecated URLs field for v2 clients.
 }

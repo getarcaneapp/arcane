@@ -53,8 +53,8 @@ type IconSet = iconcatalog.IconSet
 type ArcaneComposeMetadata struct {
 	// ProjectIcon contains fallback, light, and dark icon values for the project.
 	ProjectIcon IconSet
-	// ProjectURLS are additional URLs related to the project (e.g., documentation, homepage).
-	ProjectURLS []string
+	// ProjectLinks are additional labeled URLs related to the project.
+	ProjectLinks []projecttypes.Link
 	// ProjectTags are normalized tags managed by Compose metadata.
 	ProjectTags []projecttypes.TagOption
 	// ProjectTagsAuthoritative reports whether every Compose tag was parsed successfully.
@@ -174,7 +174,7 @@ func extractArcaneComposeMetadata(project *composetypes.Project) ArcaneComposeMe
 	}
 
 	if arcaneBlock, ok := project.Extensions[arcaneBlockKey]; ok {
-		meta.ProjectIcon, meta.ProjectURLS, meta.ProjectTags, meta.ProjectTagsAuthoritative = parseArcaneBlockInternal(arcaneBlock)
+		meta.ProjectIcon, meta.ProjectLinks, meta.ProjectTags, meta.ProjectTagsAuthoritative = parseArcaneBlockInternal(arcaneBlock)
 	}
 
 	for name, svc := range project.Services {
@@ -195,7 +195,7 @@ func extractArcaneComposeMetadata(project *composetypes.Project) ArcaneComposeMe
 	return meta
 }
 
-func parseArcaneBlockInternal(block any) (IconSet, []string, []projecttypes.TagOption, bool) {
+func parseArcaneBlockInternal(block any) (IconSet, []projecttypes.Link, []projecttypes.TagOption, bool) {
 	arcaneBlock, ok := kit.AsStringMap(block)
 	if !ok {
 		return IconSet{}, nil, nil, false
@@ -208,9 +208,49 @@ func parseArcaneBlockInternal(block any) (IconSet, []string, []projecttypes.TagO
 		Light: cmp.Or(kit.Collect(arcaneBlock[arcaneIconLightKey], kit.ToString)...),
 		Dark:  cmp.Or(kit.Collect(arcaneBlock[arcaneIconDarkKey], kit.ToString)...),
 	}
-	urls := kit.Unique(kit.TrimNonEmpty(kit.Collect(arcaneBlock[arcaneURLsKey], kit.ToString)))
+	links := parseProjectLinksInternal(arcaneBlock[arcaneURLsKey])
 	tags, tagsAuthoritative := parseComposeTagsInternal(arcaneBlock[arcaneTagsKey])
-	return icon, urls, tags, tagsAuthoritative
+	return icon, links, tags, tagsAuthoritative
+}
+
+func parseProjectLinksInternal(value any) []projecttypes.Link {
+	links := kit.Collect(value, func(entry any) projecttypes.Link {
+		if url, ok := entry.(string); ok {
+			return projecttypes.Link{URL: strings.TrimSpace(url)}
+		}
+		fields, ok := kit.AsStringMap(entry)
+		if !ok {
+			slog.Warn("skipping invalid x-arcane URL; expected a string or URL object")
+			return projecttypes.Link{}
+		}
+		url, validURL := fields["url"].(string)
+		label, validLabel := fields["label"].(string)
+		if !validURL || (fields["label"] != nil && !validLabel) {
+			slog.Warn("skipping invalid x-arcane URL; url and label must be strings")
+			return projecttypes.Link{}
+		}
+		return projecttypes.Link{URL: strings.TrimSpace(url), Label: strings.TrimSpace(label)}
+	})
+	return mergeProjectLinksInternal(nil, links)
+}
+
+func mergeProjectLinksInternal(target, source []projecttypes.Link) []projecttypes.Link {
+	seen := make(map[string]struct{}, len(target)+len(source))
+	for _, link := range target {
+		seen[link.URL] = struct{}{}
+	}
+	for _, link := range source {
+		if link.URL == "" {
+			slog.Warn("skipping empty x-arcane URL")
+			continue
+		}
+		if _, exists := seen[link.URL]; exists {
+			continue
+		}
+		seen[link.URL] = struct{}{}
+		target = append(target, link)
+	}
+	return target
 }
 
 func parseComposeTagsInternal(value any) ([]projecttypes.TagOption, bool) {
@@ -290,7 +330,7 @@ func mergeArcaneComposeMetadata(target *ArcaneComposeMetadata, source ArcaneComp
 
 	target.ProjectIcon = mergeIconSetFieldsInternal(target.ProjectIcon, source.ProjectIcon)
 
-	target.ProjectURLS = kit.Unique(kit.TrimNonEmpty(append(target.ProjectURLS, source.ProjectURLS...)))
+	target.ProjectLinks = mergeProjectLinksInternal(target.ProjectLinks, source.ProjectLinks)
 	target.ProjectTags = mergeComposeTagsInternal(target.ProjectTags, source.ProjectTags)
 	target.ProjectTagsAuthoritative = target.ProjectTagsAuthoritative && source.ProjectTagsAuthoritative
 	target.ComposeFiles = append(target.ComposeFiles, source.ComposeFiles...)

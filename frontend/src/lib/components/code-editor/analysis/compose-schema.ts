@@ -65,8 +65,12 @@ const ARCANE_BLOCK_COMPLETIONS: ArcaneCompletionSpec[] = [
 	},
 	{
 		label: 'urls',
-		detail: 'Arcane project URLs',
-		info: 'Additional project URLs (for example docs or homepage links).'
+		get detail() {
+			return m.editor_compose_urls_detail();
+		},
+		get info() {
+			return m.editor_compose_urls_info();
+		}
 	},
 	{
 		label: 'tags',
@@ -107,6 +111,27 @@ const ARCANE_SERVICE_BLOCK_COMPLETIONS: ArcaneCompletionSpec[] = [
 		label: 'icon-dark',
 		detail: 'Arcane service icon for light theme',
 		info: 'Dark service icon URL or catalog slug used in light theme.'
+	}
+];
+
+const ARCANE_URL_COMPLETIONS: ArcaneCompletionSpec[] = [
+	{
+		label: 'url',
+		get detail() {
+			return m.editor_compose_url_detail();
+		},
+		get info() {
+			return m.editor_compose_url_info();
+		}
+	},
+	{
+		label: 'label',
+		get detail() {
+			return m.editor_compose_url_label_detail();
+		},
+		get info() {
+			return m.editor_compose_url_label_info();
+		}
 	}
 ];
 
@@ -345,6 +370,8 @@ function getArcaneCompletionOptionsForPath(path: Array<string | number>, prefix 
 		specs = ARCANE_SERVICE_BLOCK_COMPLETIONS;
 	} else if (path.length === 3 && path[0] === 'x-arcane' && path[1] === 'tags' && typeof path[2] === 'number') {
 		specs = ARCANE_TAG_COMPLETIONS;
+	} else if (path.length === 3 && path[0] === 'x-arcane' && path[1] === 'urls' && typeof path[2] === 'number') {
+		specs = ARCANE_URL_COMPLETIONS;
 	}
 
 	if (isRootArcanePath(path) || isServiceArcanePath(path)) {
@@ -382,7 +409,21 @@ const ARCANE_SCHEMA_DOCS: Record<string, SchemaDoc> = {
 	},
 	'x-arcane.urls': {
 		title: 'x-arcane.urls',
-		description: 'Additional project URLs (for example docs, homepage, or dashboards).'
+		get description() {
+			return m.editor_compose_urls_info();
+		}
+	},
+	'x-arcane.urls[].url': {
+		title: 'x-arcane.urls[].url',
+		get description() {
+			return m.editor_compose_url_info();
+		}
+	},
+	'x-arcane.urls[].label': {
+		title: 'x-arcane.urls[].label',
+		get description() {
+			return m.editor_compose_url_label_info();
+		}
 	},
 	'x-arcane.tags': {
 		title: 'x-arcane.tags',
@@ -441,8 +482,8 @@ function getArcaneSchemaDocForPath(path: Array<string | number>): SchemaDoc | nu
 	if (path.length === 1) return ARCANE_SCHEMA_DOCS['x-arcane'] ?? null;
 	if (path.length === 2 && ['icon', 'icon-light', 'icon-dark', 'urls', 'tags', 'hidden'].includes(String(path[1])))
 		return ARCANE_SCHEMA_DOCS[`x-arcane.${path[1]}`] ?? null;
-	if (path.length === 4 && path[1] === 'tags' && typeof path[2] === 'number') {
-		return ARCANE_SCHEMA_DOCS[`x-arcane.tags[].${String(path[3])}`] ?? null;
+	if (path.length === 4 && ['tags', 'urls'].includes(String(path[1])) && typeof path[2] === 'number') {
+		return ARCANE_SCHEMA_DOCS[`x-arcane.${String(path[1])}[].${String(path[3])}`] ?? null;
 	}
 	return null;
 }
