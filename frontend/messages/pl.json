@@ -1547,7 +1547,6 @@
   "environments_update_all_stage_verifying": "Sprawdzanie wersji",
   "environments_update_all_stage_manager_restart": "Oczekiwanie na ponowne uruchomienie menedżera",
   "environments_update_all_elapsed": "Upłynął {duration}",
-  "environments_update_all_progress_unavailable": "Brak informacji o postępach",
   "environments_update_all_loading_status": "Sprawdzanie stanu aktualizacji…",
   "environments_update_all_finished_with_issues": "Koniec z problemami",
   "environments_update_all_reconnection_note": "Podczas ponownego uruchamiania może dojść do chwilowego rozłączenia. Agenci mają maksymalnie pięć minut na ponowne połączenie się i potwierdzenie swojej wersji. Postęp jest odświeżany automatycznie.",
