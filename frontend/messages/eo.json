@@ -1547,7 +1547,6 @@
   "environments_update_all_stage_verifying": "Verifiki version",
   "environments_update_all_stage_manager_restart": "Atendante la restartigon de la administranto",
   "environments_update_all_elapsed": "Pasis {duration}",
-  "environments_update_all_progress_unavailable": "Progreso ne disponeblas",
   "environments_update_all_loading_status": "Kontrolante la ĝisdatigan staton…",
   "environments_update_all_finished_with_issues": "Finiĝis kun problemoj",
   "environments_update_all_reconnection_note": "Dum rekomenco oni atendas provizoran malkonekton. Agentoj havas ĝis kvin minutoj por rekonektiĝi kaj konfirmi sian version. Progresoj aŭtomate refreŝiĝas.",
