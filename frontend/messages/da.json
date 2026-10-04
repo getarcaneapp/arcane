@@ -1547,7 +1547,6 @@
   "environments_update_all_stage_verifying": "Kontrol af version",
   "environments_update_all_stage_manager_restart": "Venter på, at manager genstarter",
   "environments_update_all_elapsed": "Forløbet {duration}",
-  "environments_update_all_progress_unavailable": "Der er ingen fremskridt",
   "environments_update_all_loading_status": "Kontrol af opdateringsstatus…",
   "environments_update_all_finished_with_issues": "Problemerne er løst",
   "environments_update_all_reconnection_note": "Der forventes en midlertidig afbrydelse under genstart. Agenterne har op til fem minutter til at oprette forbindelse igen og bekræfte deres version. Status opdateres automatisk.",
