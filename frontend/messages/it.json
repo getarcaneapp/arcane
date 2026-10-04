@@ -1547,7 +1547,6 @@
   "environments_update_all_stage_verifying": "Verifica della versione",
   "environments_update_all_stage_manager_restart": "In attesa del riavvio del manager",
   "environments_update_all_elapsed": "Trascorso {duration}",
-  "environments_update_all_progress_unavailable": "Progresso non disponibile",
   "environments_update_all_loading_status": "Verifica dello stato dell'aggiornamento…",
   "environments_update_all_finished_with_issues": "Problemi risolti",
   "environments_update_all_reconnection_note": "Durante il riavvio è prevista un'interruzione temporanea della connessione. Gli agenti hanno a disposizione fino a cinque minuti per riconnettersi e confermare la propria versione. Lo stato di avanzamento viene aggiornato automaticamente.",
