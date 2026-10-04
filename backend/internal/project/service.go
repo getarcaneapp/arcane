@@ -32,6 +32,8 @@ import (
 	"github.com/samber/mo"
 	"go.getarcane.app/acfs"
 	acfstypes "go.getarcane.app/acfs/types"
+	"go.getarcane.app/docker"
+	dockertypes "go.getarcane.app/docker/types"
 	"go.getarcane.app/kit/pkg"
 	"go.getarcane.app/kit/pkg/mapping"
 	"go.getarcane.app/sys/cgroup"
@@ -46,7 +48,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
+	dockerInternal "github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
@@ -61,7 +63,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/project/children/workspace"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
@@ -81,7 +82,7 @@ type ProjectService struct {
 	settingsService             *settings.SettingsService
 	eventService                *event.EventService
 	imageService                *image.ImageService
-	dockerService               *docker.DockerClientService
+	dockerService               *dockerInternal.DockerClientService
 	lifecycleService            *LifecycleService
 	workspace                   *workspace.Service
 	details                     *projectdetails.Service
@@ -286,7 +287,7 @@ func NewProjectService(
 	settingsService *settings.SettingsService,
 	eventService *event.EventService,
 	imageService *image.ImageService,
-	dockerService *docker.DockerClientService,
+	dockerService *dockerInternal.DockerClientService,
 	buildService buildServiceInternal,
 	lifecycleService *LifecycleService,
 	containerRegistryService *registry.ContainerRegistryService,
@@ -837,7 +838,7 @@ func NewLifecycleService(
 	db *database.DB,
 	settingsService *settings.SettingsService,
 	eventService *event.EventService,
-	dockerService *docker.DockerClientService,
+	dockerService *dockerInternal.DockerClientService,
 	imageService *image.ImageService,
 ) *LifecycleService {
 	return &LifecycleService{
@@ -1139,7 +1140,7 @@ func (s *ProjectService) updateProjectServicesInternal(ctx context.Context, proj
 		return fmt.Errorf("resolve registry credentials: %w", err)
 	}
 
-	progressWriter, _ := ctx.Value(dockerutil.ProgressWriterKey{}).(io.Writer)
+	progressWriter, _ := ctx.Value(dockertypes.ProgressWriterKey{}).(io.Writer)
 	if updateServicesErr := s.composeCoordinator.UpdateServices(ctx, projecttypes.ComposeServiceUpdate{
 		Project: compProj, Services: servicesToUpdate, Dependents: dependents, StoppedDependents: stoppedDependents,
 		Images: s.deployment.ImageOperations(&user, credentials), Progress: progressWriter,
@@ -1257,7 +1258,7 @@ func (s *ProjectService) DeployProject(ctx context.Context, projectID string, us
 		}
 	}()
 
-	progressWriter, _ := ctx.Value(dockerutil.ProgressWriterKey{}).(io.Writer)
+	progressWriter, _ := ctx.Value(dockertypes.ProgressWriterKey{}).(io.Writer)
 	projectModel, err := s.composeCoordinator.Deploy(ctx, projecttypes.ComposeDeployment{
 		ProjectID: projectID, ProjectPath: projectFromDb.Path, Options: options,
 		DefaultPullPolicy: s.settingsService.GetStringSetting(ctx, "defaultDeployPullPolicy", "missing"),
@@ -1569,7 +1570,7 @@ func (s *ProjectService) RedeployProject(ctx context.Context, projectID string, 
 		return errors.New("arcane cannot redeploy itself; use the system upgrade flow (Settings -> Updates) instead")
 	}
 
-	progressWriter, _ := ctx.Value(dockerutil.ProgressWriterKey{}).(io.Writer)
+	progressWriter, _ := ctx.Value(dockertypes.ProgressWriterKey{}).(io.Writer)
 	if progressWriter == nil {
 		progressWriter = io.Discard
 	}
@@ -2495,7 +2496,7 @@ func (s *ProjectService) CountProjectsWithPendingUpdates(ctx context.Context, al
 			details[i].RuntimeServices = append(
 				details[i].RuntimeServices,
 				projecttypes.RuntimeService{
-					Name: dockerutil.ComposeServiceLabel(
+					Name: docker.ComposeServiceLabel(
 						c.Labels,
 					),
 					ContainerID:     c.ID,

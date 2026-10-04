@@ -15,9 +15,9 @@ import (
 	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
+	"go.getarcane.app/docker"
 	kit "go.getarcane.app/kit/pkg"
 
-	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
 )
@@ -121,7 +121,7 @@ func (m *dockerProjectVolumeRenameMigrationInternal) Apply(ctx context.Context) 
 		}
 	}
 
-	dockerutil.InvalidateVolumeUsageCache(dockerClient)
+	docker.InvalidateVolumeUsageCache(dockerClient)
 	slog.InfoContext(ctx, "copied project compose volumes for rename", "oldProject", m.oldComposeName, "newProject", m.newComposeName, "count", len(m.entries))
 	return nil
 }
@@ -147,7 +147,7 @@ func (m *dockerProjectVolumeRenameMigrationInternal) Commit(ctx context.Context)
 		m.removedOld = append(m.removedOld, entry)
 	}
 
-	dockerutil.InvalidateVolumeUsageCache(dockerClient)
+	docker.InvalidateVolumeUsageCache(dockerClient)
 	slog.InfoContext(ctx, "renamed project compose volumes", "oldProject", m.oldComposeName, "newProject", m.newComposeName, "count", len(m.entries))
 	return nil
 }
@@ -230,7 +230,7 @@ func (m *dockerProjectVolumeRenameMigrationInternal) Rollback(ctx context.Contex
 
 	rollbackErr = errors.Join(rollbackErr, m.rollbackCreatedTargetsPreservingInternal(ctx, dockerClient, preservedTargets))
 	if rollbackErr == nil {
-		dockerutil.InvalidateVolumeUsageCache(dockerClient)
+		docker.InvalidateVolumeUsageCache(dockerClient)
 	}
 	return rollbackErr
 }
@@ -274,7 +274,7 @@ func EnsureRenameTargetAbsent(ctx context.Context, dockerClient *client.Client, 
 }
 
 func EnsureRenameSourceDetached(ctx context.Context, dockerClient *client.Client, oldName string) error {
-	containerIDs, err := dockerutil.GetContainersUsingVolume(ctx, dockerClient, oldName)
+	containerIDs, err := docker.GetContainersUsingVolume(ctx, dockerClient, oldName)
 	if err != nil {
 		return fmt.Errorf("inspect containers using source volume %s: %w", oldName, err)
 	}
@@ -503,7 +503,7 @@ func RemoveSourceVolumes(ctx context.Context, dockerClient *client.Client, volum
 			return NewSourceCleanupError(vol.OldName, err)
 		}
 	}
-	dockerutil.InvalidateVolumeUsageCache(dockerClient)
+	docker.InvalidateVolumeUsageCache(dockerClient)
 	return nil
 }
 
@@ -515,7 +515,7 @@ func RollbackVolumes(ctx context.Context, dockerClient *client.Client, volumes [
 		}
 	}
 	if len(volumes) > 0 {
-		dockerutil.InvalidateVolumeUsageCache(dockerClient)
+		docker.InvalidateVolumeUsageCache(dockerClient)
 	}
 	return rollbackErr
 }

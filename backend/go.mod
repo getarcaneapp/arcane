@@ -31,7 +31,7 @@ require (
 	github.com/getarcaneapp/arcane/cli/v2 v2.14.0
 	github.com/getarcaneapp/arcane/types/v2 v2.14.0
 	github.com/go-git/go-billy/v5 v5.9.2
-	github.com/go-git/go-git/v5 v5.19.2
+	github.com/go-git/go-git/v5 v5.19.3
 	github.com/go-webauthn/webauthn v0.18.2
 	github.com/gofrs/flock v0.13.1
 	github.com/google/go-containerregistry v0.22.1
@@ -64,14 +64,15 @@ require (
 	github.com/subosito/gotenv v1.6.0
 	github.com/wneessen/go-mail v0.8.1
 	go.getarcane.app/acfs v0.6.2
-	go.getarcane.app/builds v0.4.3
-	go.getarcane.app/docker/compat v0.1.1
-	go.getarcane.app/docker/convert v0.3.3
-	go.getarcane.app/kit v0.3.2
-	go.getarcane.app/streams v0.4.4
+	go.getarcane.app/builds v0.4.4
+	go.getarcane.app/docker v0.1.0
+	go.getarcane.app/docker/compat v0.1.2
+	go.getarcane.app/docker/convert v0.3.4
+	go.getarcane.app/kit v0.4.0
+	go.getarcane.app/streams v0.4.5
 	go.getarcane.app/sys/cgroup v0.2.4
-	go.getarcane.app/sys/crypto v0.2.2
-	go.getarcane.app/updater v0.11.2
+	go.getarcane.app/sys/crypto v0.3.0
+	go.getarcane.app/updater v0.11.3
 	go.uber.org/fx v1.24.0
 	go.yaml.in/yaml/v4 v4.0.0-rc.6
 	golang.org/x/crypto v0.57.0
@@ -196,7 +197,6 @@ require (
 	github.com/jinzhu/now v1.1.5 // indirect
 	github.com/jonboulle/clockwork v0.5.0 // indirect
 	github.com/kevinburke/ssh_config v1.6.0 // indirect
-	github.com/klauspost/cpuid/v2 v2.4.0 // indirect
 	github.com/knqyf263/go-apk-version v0.0.0-20200609155635-041fdbb8563f // indirect
 	github.com/knqyf263/go-deb-version v0.0.0-20241115132648-6f4aee6ccd23 // indirect
 	github.com/knqyf263/go-rpm-version v0.0.0-20220614171824-631e686d1075 // indirect
@@ -240,7 +240,7 @@ require (
 	github.com/package-url/packageurl-go v0.1.6 // indirect
 	github.com/parthivsaikia/go-pacman-version v0.0.0-20260212091406-8640ae78daee // indirect
 	github.com/philhofer/fwd v1.2.0 // indirect
-	github.com/pjbgf/sha1cd v0.6.0 // indirect
+	github.com/pjbgf/sha1cd v0.7.0 // indirect
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 // indirect

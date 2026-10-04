@@ -26,13 +26,13 @@ import (
 	"github.com/moby/moby/client"
 	"github.com/samber/mo"
 	"go.getarcane.app/acfs"
+	"go.getarcane.app/docker"
 	"go.getarcane.app/kit/pkg"
 	"go.getarcane.app/kit/pkg/capture"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
+	dockerInternal "github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	dockerutils "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
@@ -41,11 +41,11 @@ import (
 // Service runs pre-deploy scripts in throwaway runner containers.
 type Service struct {
 	settingsService *settings.SettingsService
-	dockerService   *docker.DockerClientService
+	dockerService   *dockerInternal.DockerClientService
 	imageService    *image.ImageService
 }
 
-func New(settingsService *settings.SettingsService, dockerService *docker.DockerClientService, imageService *image.ImageService) *Service {
+func New(settingsService *settings.SettingsService, dockerService *dockerInternal.DockerClientService, imageService *image.ImageService) *Service {
 	return &Service{settingsService: settingsService, dockerService: dockerService, imageService: imageService}
 }
 
@@ -141,7 +141,7 @@ func BuildLifecycleMounts(workspace *mount.Mount, extras []lifecycletype.ExtraMo
 	// The project directory is mounted read-write so scripts can write
 	// artifacts the deploy then consumes — e.g. `sops -d secrets.enc.env > .env`.
 	// Anything written persists on the host until the next sync overwrites it.
-	// The workspace mount itself is built by MountForCurrentContainerSubpath
+	// The workspace mount itself is built by MountForSubpath
 	// so it carries the right Type (bind or volume) and any required
 	// VolumeOptions.Subpath.
 	mounts = append(mounts, *workspace)
@@ -250,9 +250,11 @@ func (s *Service) RunScript(
 	// plain bind that points at the right host subdir. If Arcane is running
 	// on the host (no container inspect available), fall back to a bind on
 	// the project path as-is.
-	workspaceMount, mountErr := dockerutils.MountForCurrentContainerSubpath(ctx, dockerClient, projectPath, LifecycleWorkspaceMount)
-	if mountErr != nil {
-		slog.WarnContext(ctx, "failed to derive workspace mount; falling back to bind on project path", "projectPath", projectPath, "error", mountErr)
+	var workspaceMount *mount.Mount
+	if inspect, inspectErr := libarcane.InspectCurrentArcaneContainer(ctx, dockerClient); inspectErr != nil {
+		slog.WarnContext(ctx, "failed to derive workspace mount; falling back to bind on project path", "projectPath", projectPath, "error", inspectErr)
+	} else {
+		workspaceMount = docker.MountForSubpath(inspect.Mounts, projectPath, LifecycleWorkspaceMount)
 	}
 	if workspaceMount == nil {
 		workspaceMount = &mount.Mount{Type: mount.TypeBind, Source: projectPath, Target: LifecycleWorkspaceMount}

@@ -8,7 +8,7 @@ require (
 	github.com/moby/moby/api v1.56.1
 	github.com/moby/moby/client v0.6.1
 	github.com/stretchr/testify v1.12.1
-	go.getarcane.app/builds v0.4.3
+	go.getarcane.app/builds v0.4.4
 )
 
 require (

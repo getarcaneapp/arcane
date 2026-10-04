@@ -25,9 +25,9 @@ import (
 	containertypes "github.com/moby/moby/api/types/container"
 	mounttypes "github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
+	"go.getarcane.app/docker"
 	kit "go.getarcane.app/kit/pkg"
 
-	dockerutils "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 )
 
@@ -316,7 +316,7 @@ func ReadStartupLogs(ctx context.Context, dockerClient *client.Client, container
 
 	var stdoutBuf bytes.Buffer
 	var stderrBuf bytes.Buffer
-	if _, stdCopyErr := stdcopy.StdCopy(&stdoutBuf, &stderrBuf, logs); stdCopyErr != nil && !dockerutils.IsExpectedStreamEndError(stdCopyErr) {
+	if _, stdCopyErr := stdcopy.StdCopy(&stdoutBuf, &stderrBuf, logs); stdCopyErr != nil && !docker.IsExpectedStreamEndError(stdCopyErr) {
 		slog.DebugContext(ctx, "failed to decode trivy startup logs", "containerId", containerID, "error", stdCopyErr)
 	}
 
@@ -496,7 +496,7 @@ func ReadOutputFromContainerFile(ctx context.Context, dockerClient *client.Clien
 	}
 	archiveReader := copyResult.Content
 	defer func() {
-		if closeErr := archiveReader.Close(); closeErr != nil && !dockerutils.IsExpectedStreamEndError(closeErr) {
+		if closeErr := archiveReader.Close(); closeErr != nil && !docker.IsExpectedStreamEndError(closeErr) {
 			slog.WarnContext(ctx,
 				"failed to close trivy output archive stream",
 				"containerId", containerID,

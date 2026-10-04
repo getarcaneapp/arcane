@@ -14,17 +14,17 @@ import (
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
+	"go.getarcane.app/docker"
 	"go.getarcane.app/docker/compat"
 	kit "go.getarcane.app/kit/pkg"
 	"go.getarcane.app/sys/cgroup"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
+	dockerInternal "github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/notification"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
@@ -56,7 +56,7 @@ type restartRecord struct {
 }
 
 type AutoHealJob struct {
-	dockerClientService *docker.DockerClientService
+	dockerClientService *dockerInternal.DockerClientService
 	settingsService     *settings.SettingsService
 	eventService        *event.EventService
 	notificationService *notification.NotificationService
@@ -76,7 +76,7 @@ type AutoHealJob struct {
 }
 
 func NewAutoHealJob(
-	dockerClientService *docker.DockerClientService,
+	dockerClientService *dockerInternal.DockerClientService,
 	settingsService *settings.SettingsService,
 	eventService *event.EventService,
 	notificationService *notification.NotificationService,
@@ -223,7 +223,7 @@ func (j *AutoHealJob) filterCandidatesInternal(containers []container.Summary, e
 			continue
 		}
 
-		containerName := dockerutil.ContainerNameFromNames(c.Names)
+		containerName := docker.ContainerNameFromNames(c.Names)
 		if j.isExcluded(containerName, excludedContainers) {
 			continue
 		}
@@ -251,7 +251,7 @@ func (j *AutoHealJob) processCandidateInternal(
 			}
 		}
 	}
-	containerName := dockerutil.ContainerNameFromNames(candidate.Names)
+	containerName := docker.ContainerNameFromNames(candidate.Names)
 
 	// The daemon-side health filter already selected unhealthy containers; the
 	// inspect re-confirms right before restarting so a container that recovered

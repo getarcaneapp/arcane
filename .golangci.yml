@@ -47,6 +47,7 @@ linters:
     - gocritic
     - gomodguard_v2
     - govet
+    - importas
     - ineffassign
     - lll
     - misspell
@@ -104,6 +105,13 @@ linters:
 
     gocognit:
       min-complexity: 40
+
+    importas:
+      alias:
+        - pkg: go.getarcane.app/docker
+          alias: docker
+        - pkg: github.com/getarcaneapp/arcane/backend/v2/internal/docker
+          alias: dockerInternal
 
     lll:
       line-length: 200

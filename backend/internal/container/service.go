@@ -24,7 +24,9 @@ import (
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
 	"github.com/samber/hot"
+	"go.getarcane.app/docker"
 	"go.getarcane.app/docker/compat"
+	"go.getarcane.app/docker/types"
 	"go.getarcane.app/kit/pkg"
 	"go.getarcane.app/sys/cgroup"
 	"go.getarcane.app/updater"
@@ -34,12 +36,11 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/container/children/stats"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
+	dockerInternal "github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	dockerutils "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
@@ -48,7 +49,7 @@ import (
 )
 
 type ContainerService struct {
-	dockerService   *docker.DockerClientService
+	dockerService   *dockerInternal.DockerClientService
 	eventService    *event.EventService
 	imageService    *image.ImageService
 	settingsService *settings.SettingsService
@@ -72,7 +73,7 @@ type ContainerListResult struct {
 
 func NewContainerService(
 	eventService *event.EventService,
-	dockerService *docker.DockerClientService,
+	dockerService *dockerInternal.DockerClientService,
 	imageService *image.ImageService,
 	settingsService *settings.SettingsService,
 	projectService *project.ProjectService,
@@ -197,11 +198,11 @@ func (
 	}
 	defer func() { _ = reader.Close() }()
 
-	progressWriter, _ := ctx.Value(dockerutils.ProgressWriterKey{}).(io.Writer)
-	logWriter := dockerutils.NewLogLineWriter(progressWriter)
+	progressWriter, _ := ctx.Value(types.ProgressWriterKey{}).(io.Writer)
+	logWriter := docker.NewLogLineWriter(progressWriter)
 	defer func() { _ = logWriter.Close() }()
 
-	streamErr := dockerutils.RenderJSONMessageStream(reader, logWriter)
+	streamErr := docker.RenderJSONMessageStream(reader, logWriter)
 	if streamErr != nil {
 		s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", containerID, containerName, user.ID, user.Username, "0", streamErr, database.JSON{
 			"action": action,
@@ -578,8 +579,8 @@ func (
 		return "", false, nil
 	}
 	containerLabels := containerInfo.Config.Labels
-	projectName := dockerutils.ComposeProjectLabel(containerLabels)
-	serviceName := dockerutils.ComposeServiceLabel(containerLabels)
+	projectName := docker.ComposeProjectLabel(containerLabels)
+	serviceName := docker.ComposeServiceLabel(containerLabels)
 	if projectName == "" || serviceName == "" {
 		return "", false, nil
 	}
@@ -1145,7 +1146,7 @@ func (s *ContainerService) GetContainerEditConfig(ctx context.Context, container
 		containerLabels = containerInfo.Config.Labels
 	}
 
-	isCompose := dockerutils.ComposeProjectLabel(containerLabels) != ""
+	isCompose := docker.ComposeProjectLabel(containerLabels) != ""
 	currentContainerID, currentContainerErr := cgroup.CurrentContainerID()
 	editDisabled := labels.ShouldDisableArcaneServerRedeploy(containerLabels, containerInfo.ID, currentContainerID, currentContainerErr)
 
@@ -1181,7 +1182,7 @@ func (s *ContainerService) EditContainer(ctx context.Context, containerID string
 
 	containerName := strings.TrimPrefix(containerInfo.Name, "/")
 
-	if localProject := dockerutils.ComposeProjectLabel(containerInfo.Config.Labels); localProject != "" {
+	if localProject := docker.ComposeProjectLabel(containerInfo.Config.Labels); localProject != "" {
 		return "", fmt.Errorf("compose project %s: %w", localProject, common.ErrContainerComposeManaged)
 	}
 
@@ -1269,9 +1270,9 @@ func (s *ContainerService) GetContainerDetails(ctx context.Context, id string) (
 	details.RedeployDisabled = labels.ShouldDisableArcaneServerRedeploy(details.Labels, details.ID, currentContainerID, currentContainerErr)
 	var excluded map[string]bool
 	if s.settingsService != nil {
-		excluded = dockerutils.ExcludedContainerNameSet(s.settingsService.GetStringSetting(ctx, "autoUpdateExcludedContainers", ""))
+		excluded = docker.ExcludedContainerNameSet(s.settingsService.GetStringSetting(ctx, "autoUpdateExcludedContainers", ""))
 	}
-	details.AutoUpdateEnabled = !labels.IsUpdateDisabled(details.Labels) && !dockerutils.ContainerNameExcluded([]string{details.Name}, excluded)
+	details.AutoUpdateEnabled = !labels.IsUpdateDisabled(details.Labels) && !docker.ContainerNameExcluded([]string{details.Name}, excluded)
 	updates := s.lookupContainerUpdateInfoInternal(ctx, []container.Summary{{ID: details.ID, Image: details.Image, ImageID: details.ImageID, Labels: details.Labels}})
 	details.UpdateInfo = updates[details.ID]
 	s.applyContainerDetailsIconInternal(ctx, &details)
@@ -1505,9 +1506,9 @@ func (
 		}
 		defer func() { _ = reader.Close() }()
 
-		progressWriter, _ := ctx.Value(dockerutils.ProgressWriterKey{}).(io.Writer)
-		logWriter := dockerutils.NewLogLineWriter(progressWriter)
-		streamErr := dockerutils.RenderJSONMessageStream(reader, logWriter)
+		progressWriter, _ := ctx.Value(types.ProgressWriterKey{}).(io.Writer)
+		logWriter := docker.NewLogLineWriter(progressWriter)
+		streamErr := docker.RenderJSONMessageStream(reader, logWriter)
 		_ = logWriter.Close()
 		if streamErr != nil {
 			s.eventService.LogErrorEvent(
@@ -1805,7 +1806,7 @@ func getContainerProjectNameInternal(localContainer containertypes.Summary) stri
 		return containerNoProjectGroup
 	}
 
-	projectName := dockerutils.ComposeProjectLabel(localContainer.Labels)
+	projectName := docker.ComposeProjectLabel(localContainer.Labels)
 	return kit.Ternary(projectName == "", containerNoProjectGroup, projectName)
 }
 
@@ -1853,7 +1854,7 @@ func (
 	items := make([]containertypes.Summary, 0, len(containers))
 	var excluded map[string]bool
 	if s.settingsService != nil {
-		excluded = dockerutils.ExcludedContainerNameSet(s.settingsService.GetStringSetting(ctx, "autoUpdateExcludedContainers", ""))
+		excluded = docker.ExcludedContainerNameSet(s.settingsService.GetStringSetting(ctx, "autoUpdateExcludedContainers", ""))
 	}
 	for _, dc := range containers {
 		summary := containertypes.NewSummary(dc)
@@ -1865,7 +1866,7 @@ func (
 		}
 		summary.UpdateInfo = updateInfoMap[dc.ID]
 		summary.RedeployDisabled = labels.ShouldDisableArcaneServerRedeploy(summary.Labels, summary.ID, currentContainerID, currentContainerErr)
-		summary.AutoUpdateEnabled = !labels.IsUpdateDisabled(dc.Labels) && !dockerutils.ContainerNameExcluded(dc.Names, excluded)
+		summary.AutoUpdateEnabled = !labels.IsUpdateDisabled(dc.Labels) && !docker.ContainerNameExcluded(dc.Names, excluded)
 		summary.Hidden, _ = kit.ParseBool(dc.Labels[libarcane.HiddenResourceLabel])
 		items = append(items, summary)
 	}
@@ -1908,14 +1909,14 @@ func (s *ContainerService) resolveContainerIconInternal(ctx context.Context, loc
 		return iconcatalog.Resolve(project.IconCatalogForContext(ctx), explicitIcon)
 	}
 
-	projectName := dockerutils.ComposeProjectLabel(localLabels)
+	projectName := docker.ComposeProjectLabel(localLabels)
 	if projectName == "" || s == nil || s.projectService == nil {
 		return iconcatalog.Resolve(project.IconCatalogForContext(ctx), explicitIcon)
 	}
 
 	meta := s.getCachedProjectIconMetadataInternal(ctx, projectName, metadataByProject)
 
-	serviceName := dockerutils.ComposeServiceLabel(localLabels)
+	serviceName := docker.ComposeServiceLabel(localLabels)
 	return iconcatalog.Resolve(project.IconCatalogForContext(ctx), cmp.Or(
 		explicitIcon,
 		meta.ServiceIconSets[serviceName],
@@ -2125,7 +2126,7 @@ func (s *ContainerService) buildContainerFilterAccessors() []pagination.FilterAc
 		{
 			Key: "standalone",
 			Fn: func(c containertypes.Summary, filterValue string) bool {
-				isStandalone := dockerutils.ComposeProjectLabel(c.Labels) == ""
+				isStandalone := docker.ComposeProjectLabel(c.Labels) == ""
 				value, valid := kit.ParseBool(filterValue)
 				return !valid || isStandalone == value
 			},
@@ -2280,7 +2281,7 @@ func (s *ContainerService) StreamLogs(ctx context.Context, containerID string, l
 	defer func() { _ = logs.Close() }()
 
 	isTTY := containerInspect.Container.Config != nil && containerInspect.Container.Config.Tty
-	return dockerutils.StreamContainerLogs(ctx, logs, logsChan, follow, isTTY)
+	return docker.StreamContainerLogs(ctx, logs, logsChan, follow, isTTY)
 }
 
 // DownloadLogs returns every log line Docker retains for the container as a
@@ -2304,7 +2305,7 @@ func (s *ContainerService) DownloadLogs(ctx context.Context, containerID string)
 	pr, pw := io.Pipe()
 	go func() {
 		_, copyErr := stdcopy.StdCopy(pw, pw, logs)
-		if dockerutils.IsExpectedStreamEndError(copyErr) {
+		if docker.IsExpectedStreamEndError(copyErr) {
 			copyErr = nil
 		}
 		_ = pw.CloseWithError(copyErr)

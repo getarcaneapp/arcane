@@ -20,6 +20,7 @@ import (
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
 	"github.com/spf13/cobra"
+	"go.getarcane.app/docker"
 	"go.getarcane.app/docker/compat"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -29,7 +30,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/system"
-	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	rusticruntime "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/rustic"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/francis"
 )
@@ -77,7 +77,7 @@ func runRestoreInternal(cmd *cobra.Command, _ []string) error {
 		if pullErr != nil {
 			return fmt.Errorf("pull Arcane tools image for Rustic: %w", pullErr)
 		}
-		if pullErr = dockerutil.RenderJSONMessageStream(reader, nil); pullErr != nil {
+		if pullErr = docker.RenderJSONMessageStream(reader, nil); pullErr != nil {
 			_ = reader.Close()
 			return fmt.Errorf("pull Arcane tools image for Rustic: %w", pullErr)
 		}

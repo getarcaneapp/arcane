@@ -18,6 +18,7 @@ import (
 	dockercontainer "github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/network"
 	"github.com/samber/mo"
+	"go.getarcane.app/docker/types"
 	"go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
@@ -28,7 +29,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	dockerutils "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
@@ -717,7 +717,7 @@ func (h *ContainerHandler) RedeployContainer(ctx context.Context, input *Contain
 	)
 	activitylib.AwaitHandlerActivitySlot(runtimeCtx, h.activityService, activityID, input.EnvironmentID)
 	activityWriter := activitylib.NewWriter(runtimeCtx, h.activityService, activityID, io.Discard, "Redeploying container")
-	redeployCtx := context.WithValue(runtimeCtx, dockerutils.ProgressWriterKey{}, activityWriter)
+	redeployCtx := context.WithValue(runtimeCtx, types.ProgressWriterKey{}, activityWriter)
 	newContainerID, err := h.containerService.RedeployContainer(redeployCtx, input.ContainerID, *user)
 	if err != nil {
 		activitylib.FlushWriter(activityWriter)
@@ -806,7 +806,7 @@ func (h *ContainerHandler) EditContainer(ctx context.Context, input *EditContain
 	)
 	activitylib.AwaitHandlerActivitySlot(runtimeCtx, h.activityService, activityID, input.EnvironmentID)
 	activityWriter := activitylib.NewWriter(runtimeCtx, h.activityService, activityID, io.Discard, "Editing container")
-	editCtx := context.WithValue(runtimeCtx, dockerutils.ProgressWriterKey{}, activityWriter)
+	editCtx := context.WithValue(runtimeCtx, types.ProgressWriterKey{}, activityWriter)
 	newContainerID, err := h.containerService.EditContainer(editCtx, input.ContainerID, input.Body, *user)
 	if err != nil {
 		activitylib.FlushWriter(activityWriter)

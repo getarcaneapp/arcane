@@ -24,6 +24,7 @@ import (
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 	"github.com/samber/mo"
+	"go.getarcane.app/docker"
 	"go.getarcane.app/docker/compat"
 	"go.getarcane.app/kit/pkg"
 	"go.getarcane.app/sys/cgroup"
@@ -38,7 +39,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
+	dockerInternal "github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
@@ -49,7 +50,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/updater/children/execution"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/updater/children/recovery"
-	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
@@ -81,7 +81,7 @@ type UpdaterService struct {
 
 type updaterDependenciesInternal struct {
 	DB                     *database.DB
-	Docker                 *docker.DockerClientService
+	Docker                 *dockerInternal.DockerClientService
 	Settings               *settings.SettingsService
 	Projects               *projectpkg.ProjectService
 	ImagePuller            *image.ImageService
@@ -105,7 +105,7 @@ type selfUpgradeServiceInternal interface {
 func NewUpdaterService(
 	db *database.DB,
 	localSettings *settings.SettingsService,
-	localDocker *docker.DockerClientService,
+	localDocker *dockerInternal.DockerClientService,
 	projectService *projectpkg.ProjectService,
 	imageUpdates *imageupdate.ImageUpdateService,
 	registries *registry.ContainerRegistryService,
@@ -432,10 +432,10 @@ func (s *UpdaterService) containerIDsForProjectsInternal(ctx context.Context, pr
 
 	var ids []string
 	for _, summary := range containers {
-		if dockerutil.ComposeServiceLabel(summary.Labels) == "" {
+		if docker.ComposeServiceLabel(summary.Labels) == "" {
 			continue
 		}
-		project := strings.ToLower(strings.TrimSpace(dockerutil.ComposeProjectLabel(summary.Labels)))
+		project := strings.ToLower(strings.TrimSpace(docker.ComposeProjectLabel(summary.Labels)))
 		if project == "" {
 			continue
 		}
@@ -1390,7 +1390,7 @@ func (s *UpdaterService) collectUsedImagesFromContainersInternal(ctx context.Con
 			continue
 		}
 
-		if dockerutil.ContainerNameExcluded(summary.Names, excludedContainers) {
+		if docker.ContainerNameExcluded(summary.Names, excludedContainers) {
 			s.loggerInternal().DebugContext(ctx, "collectUsedImagesFromContainers: skipping excluded container", "containerId", summary.ID, "names", summary.Names)
 			continue
 		}
@@ -1420,7 +1420,7 @@ func (s *UpdaterService) collectUsedImagesFromContainersInternal(ctx context.Con
 
 func (s *UpdaterService) collectUsedImagesFromComposeContainersInternal(ctx context.Context, composeContainers []container.Summary, activeProjectNames, out map[string]struct{}) {
 	for _, summary := range composeContainers {
-		projectName := dockerutil.ComposeProjectLabel(summary.Labels)
+		projectName := docker.ComposeProjectLabel(summary.Labels)
 		if projectName == "" {
 			continue
 		}
@@ -1465,7 +1465,7 @@ func (s *UpdaterService) buildExcludedContainerSetInternal(ctx context.Context) 
 	if s.deps.Settings == nil {
 		return nil
 	}
-	return dockerutil.ExcludedContainerNameSet(s.deps.Settings.GetStringSetting(ctx, "autoUpdateExcludedContainers", ""))
+	return docker.ExcludedContainerNameSet(s.deps.Settings.GetStringSetting(ctx, "autoUpdateExcludedContainers", ""))
 }
 
 func (s *UpdaterService) collectUsedImagesFromProjectsInternal(ctx context.Context, out map[string]struct{}) error {

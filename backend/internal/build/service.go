@@ -18,6 +18,7 @@ import (
 	"go.getarcane.app/builds/api"
 	"go.getarcane.app/builds/pkg/contextsource"
 	"go.getarcane.app/builds/types"
+	"go.getarcane.app/docker"
 	"go.getarcane.app/kit/pkg"
 	"go.getarcane.app/kit/pkg/capture"
 	gitkit "go.getarcane.app/kit/pkg/git"
@@ -25,12 +26,11 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/build/children/workspace"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
+	dockerInternal "github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/gitrepo"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	dockerutils "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/gitutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 )
@@ -38,7 +38,7 @@ import (
 type BuildService struct {
 	db              *database.DB
 	settings        *settings.SettingsService
-	dockerService   *docker.DockerClientService
+	dockerService   *dockerInternal.DockerClientService
 	registryService *registry.ContainerRegistryService
 	gitRepository   *gitrepo.GitRepositoryService
 	eventService    *event.EventService
@@ -54,7 +54,7 @@ const buildHistoryOutputLimitBytes = 2 * 1024 * 1024
 func NewBuildService(
 	db *database.DB,
 	localSettings *settings.SettingsService,
-	dockerService *docker.DockerClientService,
+	dockerService *dockerInternal.DockerClientService,
 	registryService *registry.ContainerRegistryService,
 	gitRepository *gitrepo.GitRepositoryService,
 	eventService *event.EventService,
@@ -124,7 +124,7 @@ func (
 	writer := io.Writer(logCapture)
 	var logWriter io.WriteCloser
 	if progressWriter != nil {
-		logWriter = dockerutils.NewLogLineWriter(progressWriter)
+		logWriter = docker.NewLogLineWriter(progressWriter)
 		writer = io.MultiWriter(logWriter, logCapture)
 	}
 

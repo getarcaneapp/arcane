@@ -148,7 +148,7 @@ Use:
 
 Before adding backend logic, search the owning domain and the relevant shared packages:
 
-- `backend/pkg/dockerutil`: Docker names, labels, clients, logs, and stream helpers
+- `go.getarcane.app/docker` (Kit): Docker names, labels, clients, logs, and stream helpers
 - `backend/pkg/projects`: Compose parsing, discovery, and image references
 - `backend/pkg/pagination`: in-memory and database pagination
 - `backend/pkg/libarcane`: reusable Arcane engines and transport behavior

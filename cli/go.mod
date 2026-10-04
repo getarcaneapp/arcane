@@ -21,8 +21,8 @@ require (
 	github.com/spf13/pflag v1.0.10
 	github.com/stretchr/testify v1.12.1
 	go.getarcane.app/acfs v0.6.2
-	go.getarcane.app/kit v0.3.2
-	go.getarcane.app/sys/bytes v0.2.1
+	go.getarcane.app/kit v0.4.0
+	go.getarcane.app/sys/bytes v0.3.0
 	go.yaml.in/yaml/v4 v4.0.0-rc.6
 )
 
@@ -74,7 +74,7 @@ require (
 	github.com/sirupsen/logrus v1.10.2 // indirect
 	github.com/xhit/go-str2duration/v2 v2.1.0 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
-	go.getarcane.app/builds v0.4.3 // indirect
+	go.getarcane.app/builds v0.4.4 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.71.0 // indirect
 	go.opentelemetry.io/otel v1.46.0 // indirect

@@ -23,6 +23,7 @@ import (
 	"github.com/moby/moby/client"
 	"github.com/samber/hot"
 	"github.com/samber/mo"
+	"go.getarcane.app/docker"
 	"go.getarcane.app/docker/compat"
 	"go.getarcane.app/sys/cgroup"
 	"go.getarcane.app/updater"
@@ -35,7 +36,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/container"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
+	dockerInternal "github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/network"
@@ -46,7 +47,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/system/children/upgrade"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/version"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/volume"
-	dockerutils "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/vuln"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
@@ -57,7 +57,7 @@ import (
 // and self-upgrade features.
 type SystemService struct {
 	db                    *database.DB
-	dockerService         *docker.DockerClientService
+	dockerService         *dockerInternal.DockerClientService
 	containerService      *container.ContainerService
 	settingsService       *settings.SettingsService
 	activityService       *activity.ActivityService
@@ -70,7 +70,7 @@ type SystemService struct {
 
 func NewSystemService(
 	db *database.DB,
-	dockerService *docker.DockerClientService,
+	dockerService *dockerInternal.DockerClientService,
 	containerService *container.ContainerService,
 	imageUpdateService *imageupdate.ImageUpdateService,
 	volumeService *volume.VolumeService,
@@ -435,7 +435,7 @@ func resolveUpgraderRuntimeOptionsInternal(
 	if scheme != "unix" {
 		// The upgrader must reach the tcp DOCKER_HOST, so prefer a network the
 		// daemon proxy is actually on over the plain auto heuristic (#3533).
-		networkMode := dockerutils.SelectAutoNetworkMode(currentContainer)
+		networkMode := docker.SelectAutoNetworkMode(currentContainer)
 		if selectReachableNetwork != nil {
 			networkMode = selectReachableNetwork(ctx, currentContainer, dockerHost)
 		}

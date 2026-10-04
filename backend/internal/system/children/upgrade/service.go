@@ -24,6 +24,7 @@ import (
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
 	"github.com/opencontainers/go-digest"
+	"go.getarcane.app/docker"
 	"go.getarcane.app/docker/compat"
 	"go.getarcane.app/kit/pkg"
 	"go.getarcane.app/sys/cgroup"
@@ -33,12 +34,11 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
+	dockerInternal "github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/version"
-	dockerutils "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
@@ -52,7 +52,7 @@ type Service struct {
 	upgrading       atomic.Bool
 	updatingAll     atomic.Bool
 	db              *database.DB
-	dockerService   *docker.DockerClientService
+	dockerService   *dockerInternal.DockerClientService
 	versionService  *version.VersionService
 	eventService    *event.EventService
 	settingsService *settings.SettingsService
@@ -69,7 +69,7 @@ type Service struct {
 
 func NewService(
 	db *database.DB,
-	dockerService *docker.DockerClientService,
+	dockerService *dockerInternal.DockerClientService,
 	versionService *version.VersionService,
 	eventService *event.EventService,
 	settingsService *settings.SettingsService,
@@ -254,7 +254,7 @@ func (s *Service) runPreparedUpgradeInternal(ctx context.Context, prepared *prep
 		return "", fmt.Errorf("pull upgrader image: %w", err)
 	}
 	// Drain and validate the JSON stream to complete the pull.
-	if renderJSONMessageStreamErr := dockerutils.RenderJSONMessageStream(pullReader, io.Discard); renderJSONMessageStreamErr != nil {
+	if renderJSONMessageStreamErr := docker.RenderJSONMessageStream(pullReader, io.Discard); renderJSONMessageStreamErr != nil {
 		_ = pullReader.Close()
 		return "", fmt.Errorf("failed to complete upgrader image pull: %w", renderJSONMessageStreamErr)
 	}
@@ -264,7 +264,7 @@ func (s *Service) runPreparedUpgradeInternal(ctx context.Context, prepared *prep
 	slog.InfoContext(ctx, "Upgrader image pulled successfully", "image", upgraderImage)
 
 	// Try to get the /app/data mount from current container so upgrade logs persist.
-	appDataMount := dockerutils.MountForDestination(prepared.current.Mounts, libarcane.UpgradeLogDirectory, libarcane.UpgradeLogDirectory)
+	appDataMount := docker.MountForDestination(prepared.current.Mounts, libarcane.UpgradeLogDirectory, libarcane.UpgradeLogDirectory)
 	if appDataMount == nil {
 		slog.WarnContext(ctx, "Could not detect /app/data mount; upgrader logs may not persist")
 	} else {
@@ -284,7 +284,7 @@ func (s *Service) runPreparedUpgradeInternal(ctx context.Context, prepared *prep
 			return currentContainerIDErr == nil
 		},
 		func(ctx context.Context, inspect *container.InspectResponse, dockerHost string) string {
-			return dockerutils.SelectDockerHostReachableNetworkMode(ctx, dockerClient, inspect, dockerHost)
+			return docker.SelectDockerHostReachableNetworkMode(ctx, dockerClient, inspect, dockerHost)
 		},
 	)
 	if err != nil {

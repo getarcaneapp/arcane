@@ -23,6 +23,7 @@ import (
 	"github.com/moby/moby/client"
 	"github.com/samber/hot"
 	"github.com/samber/mo"
+	"go.getarcane.app/docker"
 	"go.getarcane.app/kit/pkg"
 	"go.getarcane.app/updater"
 	"go.getarcane.app/updater/pkg/utils/tagpolicy"
@@ -30,7 +31,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
+	dockerInternal "github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/image/children/attestations"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/image/children/patch"
@@ -38,7 +39,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/vulnerability"
-	dockerutils "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/registryauth"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
@@ -47,7 +47,7 @@ import (
 
 type ImageService struct {
 	db                   *database.DB
-	dockerService        *docker.DockerClientService
+	dockerService        *dockerInternal.DockerClientService
 	imageUpdateService   *imageupdate.ImageUpdateService
 	registryService      *registry.ContainerRegistryService
 	vulnerabilityService *vulnerability.VulnerabilityService
@@ -59,7 +59,7 @@ type ImageService struct {
 
 func NewImageService(
 	db *database.DB,
-	dockerService *docker.DockerClientService,
+	dockerService *dockerInternal.DockerClientService,
 	registryService *registry.ContainerRegistryService,
 	imageUpdateService *imageupdate.ImageUpdateService,
 	vulnerabilityService *vulnerability.VulnerabilityService,
@@ -280,8 +280,8 @@ func (s *ImageService) PullImage(ctx context.Context, imageName string, progress
 	}
 	defer func() { _ = reader.Close() }()
 
-	logWriter := dockerutils.NewLogLineWriter(progressWriter)
-	streamErr := dockerutils.RenderJSONMessageStream(reader, logWriter)
+	logWriter := docker.NewLogLineWriter(progressWriter)
+	streamErr := docker.RenderJSONMessageStream(reader, logWriter)
 	_ = logWriter.Close()
 	if streamErr != nil {
 		if errors.Is(streamErr, context.Canceled) || strings.Contains(streamErr.Error(), "context canceled") {
@@ -479,7 +479,7 @@ func (s *ImageService) LoadImageFromReader(ctx context.Context, reader io.Reader
 
 	var result imagetypes.LoadResult
 	var responseBuilder strings.Builder
-	streamErr := dockerutils.RenderJSONMessageStream(loadResp, &responseBuilder)
+	streamErr := docker.RenderJSONMessageStream(loadResp, &responseBuilder)
 	if streamErr != nil {
 		s.eventService.LogErrorEvent(
 			ctx,
@@ -1032,7 +1032,7 @@ func (s *ImageService) BuildProjectIDMap(ctx context.Context, containers []conta
 		if c.Labels == nil {
 			continue
 		}
-		if projectName := dockerutils.ComposeProjectLabel(c.Labels); projectName != "" {
+		if projectName := docker.ComposeProjectLabel(c.Labels); projectName != "" {
 			projectNameSet[projectName] = struct{}{}
 		}
 	}
@@ -1059,7 +1059,7 @@ func BuildVolumeUsageMap(containers []container.Summary, projectIDByName map[str
 			continue
 		}
 
-		projectName := dockerutils.ComposeProjectLabel(c.Labels)
+		projectName := docker.ComposeProjectLabel(c.Labels)
 
 		if projectName != "" {
 			projectID := projectIDByName[projectName]
@@ -1078,7 +1078,7 @@ func BuildVolumeUsageMap(containers []container.Summary, projectIDByName map[str
 			continue
 		}
 
-		containerName := cmp.Or(dockerutils.ContainerNameFromNames(c.Names), c.ID)
+		containerName := cmp.Or(docker.ContainerNameFromNames(c.Names), c.ID)
 
 		if containerSeen[c.ImageID] == nil {
 			containerSeen[c.ImageID] = make(map[string]bool)

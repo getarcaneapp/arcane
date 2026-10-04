@@ -21,16 +21,16 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/project"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
+	"go.getarcane.app/docker"
 	"go.getarcane.app/kit/pkg"
 	"go.getarcane.app/sys/cgroup"
 	"go.getarcane.app/updater/labels"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
+	dockerInternal "github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/iconcatalog"
@@ -40,12 +40,12 @@ import (
 // Service reads project runtime state, include files and update checks.
 type Service struct {
 	db              *database.DB
-	dockerService   *docker.DockerClientService
+	dockerService   *dockerInternal.DockerClientService
 	imageService    *image.ImageService
 	settingsService *settings.SettingsService
 }
 
-func New(db *database.DB, dockerService *docker.DockerClientService, imageService *image.ImageService, settingsService *settings.SettingsService) *Service {
+func New(db *database.DB, dockerService *dockerInternal.DockerClientService, imageService *image.ImageService, settingsService *settings.SettingsService) *Service {
 	return &Service{db: db, dockerService: dockerService, imageService: imageService, settingsService: settingsService}
 }
 
@@ -78,7 +78,7 @@ func (s *Service) runtimeImageIDsByContainerInternal(ctx context.Context, projec
 		return imageIDs
 	}
 	for _, c := range containers {
-		if dockerutil.ComposeProjectLabel(c.Labels) == projectName && c.ImageID != "" {
+		if docker.ComposeProjectLabel(c.Labels) == projectName && c.ImageID != "" {
 			imageIDs[c.ID] = c.ImageID
 		}
 	}
@@ -339,7 +339,7 @@ func ConfiguredRuntimeServiceUpdateInfo(services []types.ServiceConfig, runtime 
 	for _, service := range runtime {
 		name := service.Name
 		if name == "" {
-			name = dockerutil.ComposeServiceLabel(service.ContainerLabels)
+			name = docker.ComposeServiceLabel(service.ContainerLabels)
 		}
 		config, ok := configs[name]
 		if !ok || scoped[service.ContainerID] == nil {

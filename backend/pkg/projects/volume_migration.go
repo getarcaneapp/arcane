@@ -17,9 +17,9 @@ import (
 	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
 	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
 	"github.com/moby/moby/client"
+	"go.getarcane.app/docker"
 	"go.yaml.in/yaml/v4"
 
-	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumes"
 )
 
@@ -419,6 +419,6 @@ func CleanupRenameRollbackTargets(ctx context.Context, cleanup *projecttypes.Ren
 		return cleanupRollbackTargetVolumesErr
 	}
 
-	dockerutil.InvalidateVolumeUsageCache(dockerClient)
+	docker.InvalidateVolumeUsageCache(dockerClient)
 	return operations.ClearRollbackCleanup(ctx, cleanup.ProjectID)
 }

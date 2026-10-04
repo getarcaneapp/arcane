@@ -19,6 +19,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/volume"
 	workspacetypes "github.com/getarcaneapp/arcane/types/v2/workspace"
 	"github.com/samber/mo"
+	"go.getarcane.app/docker/types"
 	"go.getarcane.app/kit/pkg/mapping"
 	"gorm.io/gorm"
 
@@ -26,7 +27,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/project/children/tags"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
@@ -275,7 +275,7 @@ type projectStreamOperationConfigInternal struct {
 	SuccessMessage string
 	Metadata       database.JSON
 	// Action runs the operation. ctx carries the stream writer under
-	// dockerutils.ProgressWriterKey; it is also passed directly for actions
+	// types.ProgressWriterKey; it is also passed directly for actions
 	// that take a writer parameter.
 	Action func(ctx context.Context, writer io.Writer) error
 }
@@ -326,7 +326,7 @@ func (h *ProjectHandler) streamProjectOperationInternal(environmentID, projectID
 
 			writer := activitylib.NewWriter(runtimeCtx, h.activityService, activityID, rawWriter, cfg.WriterStep)
 
-			opCtx := context.WithValue(runtimeCtx, docker.ProgressWriterKey{}, writer)
+			opCtx := context.WithValue(runtimeCtx, types.ProgressWriterKey{}, writer)
 			if err := cfg.Action(opCtx, writer); err != nil {
 				activitylib.FlushWriter(writer)
 				activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, cfg.FailureMessage, err)
@@ -396,7 +396,7 @@ func (h *ProjectHandler) DownProject(ctx context.Context, input *DownProjectInpu
 		false,
 	)
 	activityWriter := activitylib.NewWriter(runtimeCtx, h.activityService, activityID, io.Discard, "Stopping project")
-	downCtx := context.WithValue(runtimeCtx, docker.ProgressWriterKey{}, activityWriter)
+	downCtx := context.WithValue(runtimeCtx, types.ProgressWriterKey{}, activityWriter)
 	if downProjectErr := h.projectService.DownProject(downCtx, input.ProjectID, *user); downProjectErr != nil {
 		activitylib.FlushWriter(activityWriter)
 		activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Project stopped", downProjectErr)
@@ -664,7 +664,7 @@ func (h *ProjectHandler) DestroyProject(ctx context.Context, input *DestroyProje
 		false,
 	)
 	activityWriter := activitylib.NewWriter(runtimeCtx, h.activityService, activityID, io.Discard, "Destroying project")
-	destroyCtx := context.WithValue(runtimeCtx, docker.ProgressWriterKey{}, activityWriter)
+	destroyCtx := context.WithValue(runtimeCtx, types.ProgressWriterKey{}, activityWriter)
 	if destroyProjectErr := h.projectService.DestroyProject(destroyCtx, input.ProjectID, removeFiles, removeVolumes, *user); destroyProjectErr != nil {
 		activitylib.FlushWriter(activityWriter)
 		activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Project destroyed", destroyProjectErr)
@@ -897,7 +897,7 @@ func (h *ProjectHandler) runProjectActivityActionInternal(ctx context.Context, e
 		)
 	}
 	activityWriter := activitylib.NewWriter(runtimeCtx, h.activityService, activityID, io.Discard, cfg.WriterStep)
-	actionCtx := context.WithValue(runtimeCtx, docker.ProgressWriterKey{}, activityWriter)
+	actionCtx := context.WithValue(runtimeCtx, types.ProgressWriterKey{}, activityWriter)
 	if actionErr := cfg.Action(actionCtx, projectID, *user); actionErr != nil {
 		activitylib.FlushWriter(activityWriter)
 		activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, cfg.FailureMessage, actionErr)

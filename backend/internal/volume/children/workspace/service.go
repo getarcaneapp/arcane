@@ -29,14 +29,14 @@ import (
 	"github.com/moby/moby/client"
 	"go.getarcane.app/acfs"
 	"go.getarcane.app/acfs/types"
+	"go.getarcane.app/docker"
 	"go.getarcane.app/docker/compat"
 	"go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
+	dockerInternal "github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
@@ -46,7 +46,7 @@ import (
 
 // Dependencies are the helper-container, lock, and backup operations the workspace runs through.
 type Dependencies struct {
-	Docker                *docker.DockerClientService
+	Docker                *dockerInternal.DockerClientService
 	Events                *event.EventService
 	Locks                 *utils.KeyedMutex
 	AcquireHelper         func(ctx context.Context, volumeName string) (string, func(), error)
@@ -151,7 +151,7 @@ func (s *Service) readVolumeWorkspaceFromContainerInternal(ctx context.Context, 
 			"acfs", "walk", "--root", "/volume", "--path", "/",
 			"--max-depth", strconv.Itoa(maxDepth), "--max-entries", strconv.Itoa(maxEntries),
 		}
-		exitCode, execErr := dockerutil.ExecInContainer(workCtx, dockerClient, containerID, client.ExecCreateOptions{
+		exitCode, execErr := docker.ExecInContainer(workCtx, dockerClient, containerID, client.ExecCreateOptions{
 			AttachStdout: true,
 			AttachStderr: true,
 			Cmd:          cmd,
@@ -352,7 +352,7 @@ func (s *Service) startVolumeWorkspaceReadInternal(ctx context.Context, containe
 	}
 	go func() {
 		var stderr bytes.Buffer
-		exitCode, execErr := dockerutil.ExecInContainer(workCtx, dockerClient, containerID, client.ExecCreateOptions{
+		exitCode, execErr := docker.ExecInContainer(workCtx, dockerClient, containerID, client.ExecCreateOptions{
 			AttachStdout: true,
 			AttachStderr: true,
 			Cmd:          cmd,
@@ -407,7 +407,10 @@ func (s *Service) validateVolumeHelperSupportInternal(ctx context.Context, volum
 	if err != nil {
 		return fmt.Errorf("failed to inspect volume: %w", err)
 	}
-	return dockerutil.ValidateVolumeWorkspaceHelperSupport(volumeName, result.Volume.Options)
+	if options := result.Volume.Options; options["type"] == "none" || strings.Contains(options["o"], "bind") {
+		return fmt.Errorf("volume %q uses a custom mount configuration and cannot be accessed through the workspace helper", volumeName)
+	}
+	return nil
 }
 
 func (s *Service) validateVolumeWorkspacePathInternal(ctx context.Context, containerID, relativePath string, allowMissing bool) error {
@@ -659,7 +662,7 @@ func volumeWorkspaceWriteIdentityFromConfigUserInternal(configUser string) volum
 }
 
 func (s *Service) resolveVolumeWorkspaceWriteIdentityInternal(ctx context.Context, dockerClient *client.Client, containerID, volumeName string) volumeWorkspaceWriteIdentityInternal {
-	consumerIDs, err := dockerutil.GetContainersUsingVolume(ctx, dockerClient, volumeName)
+	consumerIDs, err := docker.GetContainersUsingVolume(ctx, dockerClient, volumeName)
 	if err != nil {
 		slog.WarnContext(ctx, "could not list containers for volume workspace write identity", "volume", volumeName, "error", err.Error())
 	}

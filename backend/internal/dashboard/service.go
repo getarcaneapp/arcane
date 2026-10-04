@@ -16,6 +16,7 @@ import (
 	versiontypes "github.com/getarcaneapp/arcane/types/v2/version"
 	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
 	dockercontainer "github.com/moby/moby/api/types/container"
+	"go.getarcane.app/docker"
 	"go.getarcane.app/kit/pkg"
 	"go.getarcane.app/sys/cgroup"
 	"go.getarcane.app/updater/labels"
@@ -25,7 +26,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/container"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
+	dockerInternal "github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
@@ -33,7 +34,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/version"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/volume"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/vulnerability"
-	dockerutils "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/iconcatalog"
 )
@@ -47,7 +47,7 @@ const (
 
 type DashboardService struct {
 	db                   *database.DB
-	dockerService        *docker.DockerClientService
+	dockerService        *dockerInternal.DockerClientService
 	containerService     *container.ContainerService
 	projectService       *project.ProjectService
 	imageService         *image.ImageService
@@ -79,7 +79,7 @@ type DashboardActionItemsOptions struct {
 
 func NewDashboardService(
 	db *database.DB,
-	dockerService *docker.DockerClientService,
+	dockerService *dockerInternal.DockerClientService,
 	containerService *container.ContainerService,
 	projectService *project.ProjectService,
 	imageService *image.ImageService,
@@ -188,12 +188,12 @@ func (s *DashboardService) buildSnapshotInternal(ctx context.Context, options Da
 		} else {
 			var excluded map[string]bool
 			if s.settingsService != nil {
-				excluded = dockerutils.ExcludedContainerNameSet(s.settingsService.GetStringSetting(ctx, "autoUpdateExcludedContainers", ""))
+				excluded = docker.ExcludedContainerNameSet(s.settingsService.GetStringSetting(ctx, "autoUpdateExcludedContainers", ""))
 			}
 			for _, container := range filteredContainers {
 				summary := containertypes.NewSummary(container)
 				summary.RedeployDisabled = labels.ShouldDisableArcaneServerRedeploy(summary.Labels, summary.ID, currentContainerID, currentContainerErr)
-				summary.AutoUpdateEnabled = !labels.IsUpdateDisabled(container.Labels) && !dockerutils.ContainerNameExcluded(container.Names, excluded)
+				summary.AutoUpdateEnabled = !labels.IsUpdateDisabled(container.Labels) && !docker.ContainerNameExcluded(container.Names, excluded)
 				containerItems = append(containerItems, summary)
 			}
 		}
@@ -226,7 +226,7 @@ func (s *DashboardService) buildSnapshotInternal(ctx context.Context, options Da
 		imagePage = imageItems[:min(dashboardSnapshotPreloadLimit, len(imageItems))]
 	}
 
-	imageUsageCounts := docker.CountImageUsage(dockerImages, imageConsumers)
+	imageUsageCounts := dockerInternal.CountImageUsage(dockerImages, imageConsumers)
 
 	// Uses the unfiltered container list so a volume mounted only by an internal
 	// container still counts as in use, matching the volumes page.
@@ -403,7 +403,7 @@ func (s *DashboardService) getPendingResourceUpdatesCountInternal(ctx context.Co
 func filterStandaloneDockerContainersInternal(containers []dockercontainer.Summary) []dockercontainer.Summary {
 	filtered := make([]dockercontainer.Summary, 0, len(containers))
 	for _, c := range containers {
-		if dockerutils.ComposeProjectLabel(c.Labels) != "" {
+		if docker.ComposeProjectLabel(c.Labels) != "" {
 			continue
 		}
 		filtered = append(filtered, c)

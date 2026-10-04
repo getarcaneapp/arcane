@@ -26,6 +26,7 @@ import (
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
+	"go.getarcane.app/docker"
 	"go.getarcane.app/docker/compat"
 	"go.getarcane.app/kit/pkg"
 	"go.getarcane.app/sys/cgroup"
@@ -36,7 +37,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
+	dockerInternal "github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/s3"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
@@ -44,7 +45,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/system/children/backup/children/volumes"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/volume"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
@@ -107,7 +107,7 @@ type Dependencies struct {
 	Store                 Store
 	DB                    *database.DB
 	SQLDB                 func() (*sql.DB, error)
-	Docker                *docker.DockerClientService
+	Docker                *dockerInternal.DockerClientService
 	Volumes               *volume.VolumeService
 	Engine                *backup.Engine
 	S3Destinations        *s3.S3DestinationService
@@ -122,7 +122,7 @@ type Dependencies struct {
 // schedules, replication, retention, and restore.
 type Service struct {
 	store                 Store
-	dockerService         *docker.DockerClientService
+	dockerService         *dockerInternal.DockerClientService
 	volumeService         *volume.VolumeService
 	engine                *backup.Engine
 	s3Destinations        *s3.S3DestinationService
@@ -206,7 +206,7 @@ func recoveryHelperExecutableInternal(mounts []container.MountPoint, executableP
 	if executablePath == "" {
 		return "", nil, errors.New("arcane executable path is empty")
 	}
-	executableMount := dockerutil.MountForSubpath(mounts, executablePath, systemRecoveryHelperPath)
+	executableMount := docker.MountForSubpath(mounts, executablePath, systemRecoveryHelperPath)
 	if executableMount == nil {
 		return executablePath, nil, nil
 	}
@@ -915,7 +915,7 @@ func (s *Service) RestoreBackup(ctx context.Context, id, recoveryKey string, use
 	}
 	current := inspectResult.Container
 	// The helper reads the restored manifest and database through /app/data.
-	appDataMount := dockerutil.MountForDestination(current.Mounts, "/app/data", "/app/data")
+	appDataMount := docker.MountForDestination(current.Mounts, "/app/data", "/app/data")
 	if appDataMount == nil {
 		return errors.New("arcane system restore requires /app/data to be mounted")
 	}
@@ -975,7 +975,7 @@ func (s *Service) RestoreBackup(ctx context.Context, id, recoveryKey string, use
 			return currentContainerIDErr == nil
 		},
 		func(ctx context.Context, inspect *container.InspectResponse, dockerHost string) string {
-			return dockerutil.SelectDockerHostReachableNetworkMode(ctx, dockerClient, inspect, dockerHost)
+			return docker.SelectDockerHostReachableNetworkMode(ctx, dockerClient, inspect, dockerHost)
 		},
 	)
 	if err != nil {
