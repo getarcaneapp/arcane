@@ -1547,7 +1547,6 @@
   "environments_update_all_stage_verifying": "驗證版本",
   "environments_update_all_stage_manager_restart": "等待管理員重新啟動",
   "environments_update_all_elapsed": "已過 {duration}",
-  "environments_update_all_progress_unavailable": "無法取得進度資訊",
   "environments_update_all_loading_status": "檢查更新狀態…",
   "environments_update_all_finished_with_issues": "問題已解決",
   "environments_update_all_reconnection_note": "重新啟動期間，預計會出現暫時斷線的情況。代理程式有最多五分鐘的時間重新連線並確認其版本。進度會自動更新。",
