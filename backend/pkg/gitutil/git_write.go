@@ -210,7 +210,7 @@ func (c *Client) CheckoutForWrite(ctx context.Context, url, branch string, auth 
 	if strings.TrimSpace(branch) == "" {
 		return nil, errors.New("branch is required")
 	}
-	normalized, err := normalizeURL(url)
+	normalized, err := normalizeURLInternal(url)
 	if err != nil {
 		return nil, err
 	}
@@ -400,7 +400,7 @@ func isPushRejectedInternal(err error) bool {
 
 // RemoteBranchHead resolves the remote head of branch without cloning.
 func (c *Client) RemoteBranchHead(ctx context.Context, url, branch string, auth AuthConfig) (string, bool, error) {
-	refs, err := c.listRemoteReferences(ctx, url, auth)
+	refs, err := c.listRemoteReferencesInternal(ctx, url, auth)
 	if err != nil {
 		return "", false, kit.Ternary(errors.Is(err, transport.ErrEmptyRemoteRepository), nil, err)
 	}

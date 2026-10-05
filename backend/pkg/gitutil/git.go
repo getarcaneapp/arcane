@@ -76,10 +76,10 @@ type Client struct {
 
 var scpLikeURLPattern = regexp.MustCompile(`^[^@/]+@[^:/]+:`)
 
-// normalizeURL coerces a repository URL into a form go-git resolves to a
+// normalizeURLInternal coerces a repository URL into a form go-git resolves to a
 // network transport, never the file transport (which execs the git binary).
 // Schemeless host-style URLs (e.g. github.com/org/repo.git) get https://.
-func normalizeURL(raw string) (string, error) {
+func normalizeURLInternal(raw string) (string, error) {
 	url := strings.TrimSpace(raw)
 	if url == "" {
 		return "", errors.New("repository URL is empty")
@@ -145,7 +145,7 @@ func (c *Client) getAuthInternal(ctx context.Context, url string, localConfig Au
 			}
 
 			// Configure host key verification based on mode
-			hostKeyCallback, err := c.getSSHHostKeyCallback(ctx, localConfig.SSHHostKeyVerification)
+			hostKeyCallback, err := c.getSSHHostKeyCallbackInternal(ctx, localConfig.SSHHostKeyVerification)
 			if err != nil {
 				return nil, fmt.Errorf("failed to configure SSH host key verification: %w", err)
 			}
@@ -163,31 +163,30 @@ func (c *Client) getAuthInternal(ctx context.Context, url string, localConfig Au
 	}
 }
 
-// getSSHHostKeyCallback returns the appropriate SSH host key callback based on verification mode
-func (c *Client) getSSHHostKeyCallback(ctx context.Context, mode string) (gossh.HostKeyCallback, error) {
-	switch mode {
-	case SSHHostKeyVerificationStrict:
-		// Use known_hosts verification respecting SSH_KNOWN_HOSTS env var
-		return knownhosts.New(getKnownHostsPath())
-	case SSHHostKeyVerificationSkip:
+// getSSHHostKeyCallbackInternal returns the SSH host key callback for the verification mode.
+func (c *Client) getSSHHostKeyCallbackInternal(ctx context.Context, mode string) (gossh.HostKeyCallback, error) {
+	if mode == SSHHostKeyVerificationSkip {
 		// Skip host key verification - intentionally insecure, user explicitly opted in via UI
 		return gossh.InsecureIgnoreHostKey(), nil //nolint:gosec // User explicitly chose to skip verification
-	case SSHHostKeyVerificationAcceptNew, "":
-		// Default: accept and remember new host keys
-		return c.createAcceptNewHostKeyCallback(ctx)
-	default:
-		// Fall back to accept_new for unknown modes
-		return c.createAcceptNewHostKeyCallback(ctx)
 	}
-}
 
-// createAcceptNewHostKeyCallback creates a callback that accepts new host keys and saves them
-func (c *Client) createAcceptNewHostKeyCallback(ctx context.Context) (gossh.HostKeyCallback, error) {
-	knownHostsPath := getKnownHostsPath()
+	knownHostsPaths, pathErr := getKnownHostsPathsInternal(
+		c.workDir,
+		os.Getenv,
+		os.Stat,
+		os.UserHomeDir,
+	)
+	if pathErr != nil {
+		return nil, pathErr
+	}
+	if mode == SSHHostKeyVerificationStrict {
+		return knownhosts.New(knownHostsPaths...)
+	}
 
+	// Other modes default to accepting and remembering new host keys.
 	// Ensure the directory exists
-	// os.* rather than acfs: known_hosts lives under the user home (not an arcane
-	// confinement root), and acfs has no append/flock API for the writes below.
+	// os.* supports home and override paths outside acfs roots, plus append/flock.
+	knownHostsPath := knownHostsPaths[0]
 	dir := filepath.Dir(knownHostsPath)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("failed to create known_hosts directory: %w", err)
@@ -205,98 +204,119 @@ func (c *Client) createAcceptNewHostKeyCallback(ctx context.Context) (gossh.Host
 	}
 
 	return func(hostname string, remote net.Addr, key gossh.PublicKey) error {
-		// Re-read known_hosts on each call to handle concurrent modifications
-		existingCallback, err := knownhosts.New(knownHostsPath)
+		// Re-read known_hosts on each call to handle concurrent modifications.
+		// Unreadable trust must fail closed so changed keys are never accepted.
+		existingCallback, err := knownhosts.New(knownHostsPaths...)
 		if err != nil {
-			existingCallback = nil
+			return fmt.Errorf("failed to read known_hosts: %w", err)
 		}
 
-		// Check if the host is already known
-		if existingCallback != nil {
-			existingCallbackErr := existingCallback(hostname, remote, key)
-			if existingCallbackErr == nil {
-				return nil // Host key matches
+		existingCallbackErr := existingCallback(hostname, remote, key)
+		if existingCallbackErr == nil {
+			return nil // Host key matches
+		}
+		// Check if it's a "key mismatch" error vs "unknown host"
+		if keyErr, ok := errors.AsType[*knownhosts.KeyError](existingCallbackErr); ok && len(keyErr.Want) > 0 {
+			// Host is known but key doesn't match - this is a security concern
+			return fmt.Errorf("host key mismatch for %s (possible MITM attack): %w", hostname, existingCallbackErr)
+		}
+		// Otherwise, host is unknown - we'll add it
+
+		// Log persistence failures after closing the file and releasing its lock.
+		var saveErr error
+		defer func() {
+			if saveErr != nil {
+				slog.WarnContext(ctx, "Failed to save host key", "hostname", hostname, "error", saveErr)
 			}
-			// Check if it's a "key mismatch" error vs "unknown host"
-			if keyErr, ok := errors.AsType[*knownhosts.KeyError](existingCallbackErr); ok && len(keyErr.Want) > 0 {
-				// Host is known but key doesn't match - this is a security concern
-				return fmt.Errorf("host key mismatch for %s (possible MITM attack): %w", hostname, existingCallbackErr)
+		}()
+
+		fileLock := flock.New(knownHostsPath)
+		if lockErr := fileLock.Lock(); lockErr != nil {
+			saveErr = fmt.Errorf("failed to acquire lock on known_hosts file: %w", lockErr)
+			return nil
+		}
+		defer func() {
+			if unlockErr := fileLock.Unlock(); unlockErr != nil && saveErr == nil {
+				saveErr = fmt.Errorf("failed to release lock on known_hosts file: %w", unlockErr)
 			}
-			// Otherwise, host is unknown - we'll add it
-		}
+		}()
 
-		// Add the new host key to known_hosts
-		if addHostKeyErr := addHostKey(knownHostsPath, hostname, key); addHostKeyErr != nil {
-			// Log the error but don't fail - still allow the connection
-			// The host key just won't be remembered for next time
-			slog.WarnContext(ctx, "Failed to save host key", "hostname", hostname, "error", addHostKeyErr)
+		// acfs has no append API, and override paths can be outside its roots.
+		file, openErr := os.OpenFile(knownHostsPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+		if openErr != nil {
+			saveErr = fmt.Errorf("failed to open known_hosts file: %w", openErr)
+			return nil
 		}
-
+		defer func() {
+			if closeErr := file.Close(); closeErr != nil && saveErr == nil {
+				saveErr = fmt.Errorf("failed to close known_hosts file: %w", closeErr)
+			}
+		}()
+		line := knownhosts.Line([]string{hostname}, key)
+		if _, writeErr := file.WriteString(line + "\n"); writeErr != nil {
+			saveErr = fmt.Errorf("failed to write to known_hosts file: %w", writeErr)
+		}
 		return nil
 	}, nil
 }
 
-// getKnownHostsPath returns the path to the known_hosts file
-func getKnownHostsPath() string {
-	return getKnownHostsPathInternal(os.Getenv, os.Stat, os.UserHomeDir)
-}
-
-func getKnownHostsPathInternal(getenv func(string) string, stat func(string) (os.FileInfo, error), userHomeDir func() (string, error)) string {
+// getKnownHostsPathsInternal returns trusted known_hosts files; new keys are saved to the first.
+func getKnownHostsPathsInternal(
+	workDir string,
+	getenv func(string) string,
+	stat func(string) (os.FileInfo, error),
+	userHomeDir func() (string, error),
+) ([]string, error) {
 	// Check environment variable first
 	if localPath := getenv("SSH_KNOWN_HOSTS"); localPath != "" {
-		return localPath
+		return []string{localPath}, nil
 	}
 
 	// Prefer Arcane's writable persistent data directory when it is available,
 	// which is the case for published container images and PUID/PGID setups.
 	if info, err := stat(defaultKnownHostsDataDir); err == nil && info.IsDir() {
-		return defaultKnownHostsPath
+		return []string{defaultKnownHostsPath}, nil
 	}
 
-	// Fall back to the user's home directory for local development and CI.
+	var homePath string
+	homeExists := false
 	homeDir, err := userHomeDir()
 	if err == nil && homeDir != "" {
-		return filepath.Join(homeDir, ".ssh", "known_hosts")
-	}
-
-	// Last resort for environments without a resolvable home directory.
-	return filepath.Join(os.TempDir(), ".ssh", "known_hosts")
-}
-
-// addHostKey adds a host key to the known_hosts file
-func addHostKey(knownHostsPath, hostname string, key gossh.PublicKey) (err error) {
-	// Format the known_hosts line
-	line := knownhosts.Line([]string{hostname}, key)
-
-	// Acquire exclusive lock to prevent concurrent writes
-	fileLock := flock.New(knownHostsPath)
-	if lockErr := fileLock.Lock(); lockErr != nil {
-		return fmt.Errorf("failed to acquire lock on known_hosts file: %w", lockErr)
-	}
-	defer func() {
-		if unlockErr := fileLock.Unlock(); unlockErr != nil && err == nil {
-			err = fmt.Errorf("failed to release lock on known_hosts file: %w", unlockErr)
+		homePath = filepath.Join(homeDir, ".ssh", "known_hosts")
+		_, statErr := stat(homePath)
+		switch {
+		case statErr == nil:
+			homeExists = true
+		case errors.Is(statErr, fs.ErrNotExist):
+		case workDir != "" && errors.Is(statErr, fs.ErrPermission):
+			// Inaccessible home trust falls back to native storage.
+		default:
+			return nil, fmt.Errorf("failed to check existing known_hosts file %s: %w", homePath, statErr)
 		}
-	}()
-
-	// Append to the file
-	// os.* rather than acfs: acfs has no append API, and known_hosts lives under
-	// the user home rather than an arcane confinement root.
-	file, err := os.OpenFile(knownHostsPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
-	if err != nil {
-		return fmt.Errorf("failed to open known_hosts file: %w", err)
 	}
-	defer func() {
-		if cerr := file.Close(); cerr != nil && err == nil {
-			err = fmt.Errorf("failed to close known_hosts file: %w", cerr)
+
+	if workDir == "" {
+		if homePath != "" {
+			return []string{homePath}, nil
 		}
-	}()
-
-	if _, writeStringErr := file.WriteString(line + "\n"); writeStringErr != nil {
-		return fmt.Errorf("failed to write to known_hosts file: %w", writeStringErr)
+		// Last resort for environments without a resolvable home directory.
+		return []string{filepath.Join(os.TempDir(), ".ssh", "known_hosts")}, nil
 	}
 
-	return nil
+	// Native storage keeps saved keys while honoring every readable trust file.
+	workPath := filepath.Join(workDir, ".ssh", "known_hosts")
+	_, workErr := stat(workPath)
+	if workErr != nil && !errors.Is(workErr, fs.ErrNotExist) {
+		return nil, fmt.Errorf("failed to check git known_hosts file %s: %w", workPath, workErr)
+	}
+	switch {
+	case workErr == nil && homeExists:
+		return []string{workPath, homePath}, nil
+	case homeExists:
+		return []string{homePath}, nil
+	default:
+		return []string{workPath}, nil
+	}
 }
 
 // Clone clones a repository to a temporary directory
@@ -327,7 +347,7 @@ func (c *Client) Clone(ctx context.Context, url, branch string, auth AuthConfig)
 		return "", fmt.Errorf("failed to create temp dir: %w", err)
 	}
 
-	url, err = normalizeURL(url)
+	url, err = normalizeURLInternal(url)
 	if err != nil {
 		_ = os.RemoveAll(tmpDir)
 		return "", err
@@ -391,7 +411,7 @@ func (c *Client) ListBranches(ctx context.Context, url string, auth AuthConfig) 
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	refs, err := c.listRemoteReferences(ctx, url, auth)
+	refs, err := c.listRemoteReferencesInternal(ctx, url, auth)
 	if err != nil {
 		return nil, err
 	}
@@ -447,12 +467,12 @@ func (c *Client) ProbeRemote(ctx context.Context, url string, auth AuthConfig) e
 		return err
 	}
 
-	_, err := c.listRemoteReferences(ctx, url, auth)
+	_, err := c.listRemoteReferencesInternal(ctx, url, auth)
 	return err
 }
 
-func (c *Client) listRemoteReferences(ctx context.Context, url string, auth AuthConfig) ([]*plumbing.Reference, error) {
-	url, err := normalizeURL(url)
+func (c *Client) listRemoteReferencesInternal(ctx context.Context, url string, auth AuthConfig) ([]*plumbing.Reference, error) {
+	url, err := normalizeURLInternal(url)
 	if err != nil {
 		return nil, err
 	}
@@ -671,12 +691,6 @@ type DirectoryWalkResult struct {
 	SkippedBinaries int
 }
 
-type syncWalkLimits struct {
-	maxFiles      int
-	maxTotalSize  int64
-	maxBinarySize int64
-}
-
 // WalkDirectory walks the directory containing the compose file and returns all files.
 // It enforces limits on file count, total size, and skips large binary files.
 // The composePath is the path to the compose file within the repo - the directory
@@ -699,103 +713,79 @@ func (c *Client) WalkDirectory(ctx context.Context, repoPath, composePath string
 	result := &DirectoryWalkResult{
 		Files: make([]SyncFileInfo, 0),
 	}
-	limits := syncWalkLimits{
-		maxFiles:      maxFiles,
-		maxTotalSize:  maxTotalSize,
-		maxBinarySize: maxBinarySize,
-	}
-
 	err := acfs.Walk(ctx, syncDir, "/", func(entry acfstypes.Entry) error {
-		return c.walkSyncEntry(ctx, syncDir, entry, result, limits)
-	})
-	if err != nil {
-		return nil, err
-	}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if entry.IsSymlink {
+			return nil
+		}
+		if entry.IsDirectory {
+			if entry.Name == ".git" {
+				return fs.SkipDir
+			}
+			return nil
+		}
 
-	// Validate we found at least one file
-	if len(result.Files) == 0 {
+		relativePath := strings.TrimPrefix(entry.Path, "/")
+		if maxFiles > 0 && result.TotalFiles >= maxFiles {
+			return fmt.Errorf("file count limit exceeded (max %d files)", maxFiles)
+		}
+
+		if maxBinarySize > 0 && entry.Size > maxBinarySize {
+			reader, _, openErr := acfs.OpenRead(ctx, syncDir, entry.Path, binarySniffBytes)
+			if openErr != nil {
+				return fmt.Errorf("failed to inspect file %s: %w", relativePath, openErr)
+			}
+			buf := make([]byte, binarySniffBytes)
+			n, readErr := reader.Read(buf)
+			closeErr := reader.Close()
+			if readErr != nil && !errors.Is(readErr, io.EOF) {
+				return fmt.Errorf("failed to inspect file %s: %w", relativePath, errors.Join(readErr, closeErr))
+			}
+			if closeErr != nil {
+				return fmt.Errorf("failed to close file %s after inspection: %w", relativePath, closeErr)
+			}
+			if IsBinaryContent(buf[:n]) {
+				result.SkippedBinaries++
+				return nil
+			}
+		}
+
+		content, readErr := acfs.ReadFile(ctx, syncDir, entry.Path)
+		if readErr != nil {
+			return fmt.Errorf("failed to read file %s: %w", relativePath, readErr)
+		}
+
+		fileSize := int64(len(content))
+		isBinary := IsBinaryContent(content)
+		if isBinary && maxBinarySize > 0 && fileSize > maxBinarySize {
+			result.SkippedBinaries++
+			return nil
+		}
+		if maxTotalSize > 0 && result.TotalSize+fileSize > maxTotalSize {
+			return fmt.Errorf("total size limit exceeded (max %d bytes)", maxTotalSize)
+		}
+
+		result.Files = append(result.Files, SyncFileInfo{
+			RelativePath: relativePath,
+			Content:      content,
+			Size:         fileSize,
+			IsBinary:     isBinary,
+			Executable:   os.FileMode(entry.UnixMode)&0o111 != 0,
+		})
+		result.TotalFiles++
+		result.TotalSize += fileSize
+		return nil
+	})
+	switch {
+	case err != nil:
+		return nil, err
+	case len(result.Files) == 0:
 		return nil, errors.New("no files found in sync directory (directory may be empty or all files were skipped)")
 	}
 
 	return result, nil
-}
-
-func (c *Client) walkSyncEntry(ctx context.Context, syncDir string, entry acfstypes.Entry, result *DirectoryWalkResult, limits syncWalkLimits) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	if entry.IsSymlink {
-		return nil
-	}
-	if entry.IsDirectory {
-		return kit.Ternary(entry.Name == ".git", fs.SkipDir, nil)
-	}
-
-	return c.appendSyncFile(ctx, syncDir, entry, result, limits)
-}
-
-func (c *Client) appendSyncFile(ctx context.Context, syncDir string, entry acfstypes.Entry, result *DirectoryWalkResult, limits syncWalkLimits) error {
-	relativePath := strings.TrimPrefix(entry.Path, "/")
-	if limits.maxFiles > 0 && result.TotalFiles >= limits.maxFiles {
-		return fmt.Errorf("file count limit exceeded (max %d files)", limits.maxFiles)
-	}
-
-	if limits.maxBinarySize > 0 && entry.Size > limits.maxBinarySize {
-		isBinary, err := c.isBinarySyncFile(ctx, syncDir, entry.Path)
-		if err != nil {
-			return fmt.Errorf("failed to inspect file %s: %w", relativePath, err)
-		}
-		if isBinary {
-			result.SkippedBinaries++
-			return nil
-		}
-	}
-
-	content, err := acfs.ReadFile(ctx, syncDir, entry.Path)
-	if err != nil {
-		return fmt.Errorf("failed to read file %s: %w", relativePath, err)
-	}
-
-	fileSize := int64(len(content))
-	isBinary := IsBinaryContent(content)
-
-	if isBinary && limits.maxBinarySize > 0 && fileSize > limits.maxBinarySize {
-		result.SkippedBinaries++
-		return nil
-	}
-
-	if limits.maxTotalSize > 0 && result.TotalSize+fileSize > limits.maxTotalSize {
-		return fmt.Errorf("total size limit exceeded (max %d bytes)", limits.maxTotalSize)
-	}
-
-	executable := os.FileMode(entry.UnixMode)&0o111 != 0
-	result.Files = append(result.Files, SyncFileInfo{
-		RelativePath: relativePath,
-		Content:      content,
-		Size:         fileSize,
-		IsBinary:     isBinary,
-		Executable:   executable,
-	})
-	result.TotalFiles++
-	result.TotalSize += fileSize
-
-	return nil
-}
-
-func (c *Client) isBinarySyncFile(ctx context.Context, syncDir, logicalPath string) (bool, error) {
-	reader, _, err := acfs.OpenRead(ctx, syncDir, logicalPath, binarySniffBytes)
-	if err != nil {
-		return false, err
-	}
-	defer func() { _ = reader.Close() }()
-
-	buf := make([]byte, binarySniffBytes)
-	n, err := reader.Read(buf)
-	if err != nil && !errors.Is(err, io.EOF) {
-		return false, err
-	}
-
-	return IsBinaryContent(buf[:n]), nil
 }
 
 // IsBinaryContent reports whether content looks binary rather than text.
