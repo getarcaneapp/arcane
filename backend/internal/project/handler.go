@@ -64,6 +64,11 @@ type ListProjectTagsInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 }
 
+// ListProjectReferencesInput identifies the environment whose project references are requested.
+type ListProjectReferencesInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+}
+
 // UpdateProjectTagInput identifies a project and the UI tag mutation to apply.
 type UpdateProjectTagInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
@@ -215,6 +220,15 @@ func (h *ProjectHandler) ListProjectTags(ctx context.Context, _ *ListProjectTags
 		options = []project.TagOption{}
 	}
 	return &handlerutil.Out[[]project.TagOption]{Body: base.ApiResponse[[]project.TagOption]{Success: true, Data: options}}, nil
+}
+
+// ListProjectReferences returns the ID and name of every project in an environment.
+func (h *ProjectHandler) ListProjectReferences(ctx context.Context, _ *ListProjectReferencesInput) (*handlerutil.Out[[]project.Reference], error) {
+	references, err := h.projectService.ListProjectReferences(ctx)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("Failed to list project references: " + err.Error())
+	}
+	return &handlerutil.Out[[]project.Reference]{Body: base.ApiResponse[[]project.Reference]{Success: true, Data: references}}, nil
 }
 
 // UpdateProjectTag applies one UI-managed project tag association change.

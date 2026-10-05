@@ -8703,3 +8703,17 @@ func discoveryListingForTestInternal(imageService *image.ImageService) *listing.
 	service.initChildrenInternal(nil, nil)
 	return service.listing
 }
+
+func TestListProjectReferencesIncludesArchivedProjects(t *testing.T) {
+	db := setupProjectTestDB(t)
+	service := &ProjectService{db: db}
+	require.NoError(t, db.Create(&Project{ID: "project-active", Name: "active", Path: "/projects/active", Status: ProjectStatusStopped}).Error)
+	require.NoError(t, db.Create(&Project{ID: "project-archived", Name: "archived", Path: "/projects/archived", Status: ProjectStatusStopped, IsArchived: true}).Error)
+
+	references, err := service.ListProjectReferences(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, []projecttypes.Reference{
+		{ID: "project-active", Name: "active"},
+		{ID: "project-archived", Name: "archived"},
+	}, references)
+}

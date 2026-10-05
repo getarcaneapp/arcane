@@ -77,6 +77,16 @@ func RegisterProjects(api huma.API, projectService *ProjectService, activityServ
 	}, authz.PermProjectsList, h.ListProjectTags)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "list-project-references",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/projects/references",
+		Summary:     "List project references",
+		Description: "Get the ID and name of every project, including archived projects, without runtime state",
+		Tags:        []string{"Projects"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}, authz.PermProjectsList, h.ListProjectReferences)
+
+	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "update-project-tag",
 		Method:      http.MethodPatch,
 		Path:        "/environments/{id}/projects/{projectId}/tags",

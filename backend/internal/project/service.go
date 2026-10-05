@@ -3996,6 +3996,15 @@ func (s *ProjectService) ListProjectTagOptions(ctx context.Context) ([]projectty
 	return tags.Options(tagAssignmentsInternal(rows)), nil
 }
 
+// ListProjectReferences returns the ID and name of every project, including archived ones, without runtime state.
+func (s *ProjectService) ListProjectReferences(ctx context.Context) ([]projecttypes.Reference, error) {
+	references := []projecttypes.Reference{}
+	if err := s.db.WithContext(ctx).Model(&Project{}).Select("id", "name").Order("name").Find(&references).Error; err != nil {
+		return nil, fmt.Errorf("list project references: %w", err)
+	}
+	return references, nil
+}
+
 // UpdateProjectTag attaches or detaches a UI-managed tag and rejects Compose-owned names.
 func (s *ProjectService) UpdateProjectTag(ctx context.Context, projectID, name string, color projecttypes.TagColor, attached bool, user usertypes.Actor) ([]projecttypes.Tag, error) {
 	normalized, normalizedColor, err := tags.NormalizeUpdate(name, color, attached)
