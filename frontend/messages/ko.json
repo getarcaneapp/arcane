@@ -2665,6 +2665,8 @@
   "notifications_signal_recipients_help": "수신자 전화번호(+ 포함) 또는 Signal 그룹 ID 목록 (쉼표로 구분)",
   "notifications_signal_recipients_required": "Signal 알림을 사용하려면 최소 1명의 수신자가 필요합니다.",
   "notifications_signal_disable_tls_description": "Signal REST API 연결 시 TLS/SSL을 비활성화합니다. (프로덕션 환경 권장 안 함)",
+  "notifications_signal_notify_self_label": "본인에게 알림",
+  "notifications_signal_notify_self_description": "그룹이나 본인에게 알림을 보낼 때 발신자의 기기에 알림을 전송합니다.",
   "notifications_slack_title": "슬랙",
   "notifications_slack_description": "Slack 채널 또는 DM으로 알림을 보냅니다.",
   "notifications_slack_token_label": "Slack 토큰",
