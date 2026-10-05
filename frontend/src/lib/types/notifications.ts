@@ -99,6 +99,7 @@ export interface SignalFormValues extends BaseProviderFormValues {
 	source: string;
 	recipients: string;
 	disableTls: boolean;
+	notifySelf: boolean;
 }
 
 export interface SlackFormValues extends BaseProviderFormValues {
@@ -326,6 +327,7 @@ export function signalSettingsToFormValues(settings?: NotificationSettings): Sig
 		source: getString(cfg, 'source'),
 		recipients: getStringArray(cfg, 'recipients').join(', '),
 		disableTls: getBoolean(cfg, 'disableTls', false),
+		notifySelf: getBoolean(cfg, 'notifySelf', true),
 		...eventFlagsToFormValues(events)
 	};
 }
@@ -412,6 +414,7 @@ export function signalFormValuesToSettings(values: SignalFormValues): Notificati
 				.map((recipient) => recipient.trim())
 				.filter((recipient) => recipient.length > 0),
 			disableTls: values.disableTls,
+			notifySelf: values.notifySelf,
 			events: formValuesToEventFlags(values)
 		}
 	};

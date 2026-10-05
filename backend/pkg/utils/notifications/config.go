@@ -104,6 +104,7 @@ type SignalConfig struct {
 	Source     string                         `json:"source"`
 	Recipients []string                       `json:"recipients"`
 	DisableTLS bool                           `json:"disableTls"`
+	NotifySelf *bool                          `json:"notifySelf,omitempty"`
 	Events     map[NotificationEventType]bool `json:"events,omitempty"`
 }
 
