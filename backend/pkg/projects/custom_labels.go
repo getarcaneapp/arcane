@@ -19,7 +19,6 @@ import (
 	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
 	kit "go.getarcane.app/kit/pkg"
 	updaterlabels "go.getarcane.app/updater/labels"
-	"go.yaml.in/yaml/v4"
 
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/iconcatalog"
@@ -144,22 +143,16 @@ func parseArcaneComposeMetadataFromFileInternal(ctx context.Context, composeFile
 	// it declares, even where the inherited environment overrides those values.
 	meta.EnvFiles = append([]string{filepath.Join(workdir, EffectiveEnvFileName)}, resolveComposeEnvFilesInternal(workdir, siblingEnv)...)
 
-	includePaths, err := parseIncludePaths(absPath)
+	// Resolve include paths with the environment the loader interpolated, including COMPOSE_ENV_FILES.
+	includes, err := ParseIncludes(absPath, project.Environment, false)
 	if err != nil {
 		return meta, err
 	}
 
-	for _, includePath := range includePaths {
-		if includePath == "" {
-			continue
-		}
-		resolvedPath := includePath
-		if !filepath.IsAbs(resolvedPath) {
-			resolvedPath = filepath.Join(workdir, resolvedPath)
-		}
-		includedMeta, parseArcaneComposeMetadataFromFileErr := parseArcaneComposeMetadataFromFileInternal(ctx, resolvedPath, mergedEnv, visited)
+	for _, include := range includes {
+		includedMeta, parseArcaneComposeMetadataFromFileErr := parseArcaneComposeMetadataFromFileInternal(ctx, include.Path, mergedEnv, visited)
 		if parseArcaneComposeMetadataFromFileErr != nil {
-			return meta, fmt.Errorf("load included Compose metadata %s: %w", resolvedPath, parseArcaneComposeMetadataFromFileErr)
+			return meta, fmt.Errorf("load included Compose metadata %s: %w", include.Path, parseArcaneComposeMetadataFromFileErr)
 		}
 		mergeArcaneComposeMetadata(ctx, &meta, includedMeta)
 	}
@@ -401,64 +394,6 @@ func mergeEnvFromDotEnv(envMap map[string]string, workdir string) (map[string]st
 	}
 
 	return merged, fileEnv
-}
-
-func parseIncludePaths(composeFilePath string) ([]string, error) {
-	// os.ReadFile rather than acfs: compose files may be symlinks resolving
-	// outside any confinement root, including imported projects.
-	content, err := os.ReadFile(composeFilePath)
-	if err != nil {
-		return nil, fmt.Errorf("read compose file: %w", err)
-	}
-
-	composeData := map[string]any{}
-	if unmarshalErr := yaml.Unmarshal(content, &composeData); unmarshalErr != nil {
-		return nil, fmt.Errorf("parse compose file: %w", unmarshalErr)
-	}
-
-	rawIncludes, ok := composeData["include"]
-	if !ok {
-		return nil, nil
-	}
-
-	var includeItems []any
-	switch v := rawIncludes.(type) {
-	case []any:
-		includeItems = v
-	case []string:
-		for _, item := range v {
-			includeItems = append(includeItems, item)
-		}
-	case string:
-		includeItems = []any{v}
-	default:
-		return nil, nil
-	}
-
-	paths := make([]string, 0, len(includeItems))
-	for _, item := range includeItems {
-		switch v := item.(type) {
-		case string:
-			paths = append(paths, v)
-		case map[string]any:
-			if p, localOk := v["path"]; localOk {
-				switch pathValue := p.(type) {
-				case string:
-					paths = append(paths, pathValue)
-				case []any:
-					for _, entry := range pathValue {
-						if s, localOk2 := entry.(string); localOk2 {
-							paths = append(paths, s)
-						}
-					}
-				case []string:
-					paths = append(paths, pathValue...)
-				}
-			}
-		}
-	}
-
-	return paths, nil
 }
 
 // FindArcaneIconSet attempts to locate Arcane icon labels within service labels.
