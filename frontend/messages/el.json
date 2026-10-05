@@ -2665,6 +2665,8 @@
   "notifications_signal_recipients_help": "Λίστα διαχωρισμένη με κόμματα αριθμών τηλεφώνου (με +) ή αναγνωριστικά ομάδας σημάτων",
   "notifications_signal_recipients_required": "Απαιτείται τουλάχιστον ένας παραλήπτης όταν είναι ενεργοποιημένο το Σήμα",
   "notifications_signal_disable_tls_description": "Απενεργοποίηση TLS/SSL για τη σύνδεση API του Signal REST (δεν συνιστάται για την παραγωγή)",
+  "notifications_signal_notify_self_label": "Ειδοποίηση στον εαυτό μου",
+  "notifications_signal_notify_self_description": "Ειδοποίηση στις συσκευές του ίδιου του αποστολέα κατά την αποστολή ειδοποιήσεων σε ομάδες ή στον εαυτό του",
   "notifications_slack_title": "Slack",
   "notifications_slack_description": "Αποστολή ειδοποιήσεων σε κανάλια Slack ή απευθείας μηνύματα",
   "notifications_slack_token_label": "Slack Token",
