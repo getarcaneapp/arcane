@@ -2665,6 +2665,8 @@
   "notifications_signal_recipients_help": "Kommaseparerad lista med telefonnummer (med +) eller Signalgrupps-ID",
   "notifications_signal_recipients_required": "Minst en mottagare krävs när Signal är aktiverad",
   "notifications_signal_disable_tls_description": "Inaktivera TLS/SSL för Signal REST API-anslutning (rekommenderas inte för produktion)",
+  "notifications_signal_notify_self_label": "Meddela mig själv",
+  "notifications_signal_notify_self_description": "Skicka en avisering till avsändarens egna enheter när meddelanden skickas till grupper eller till sig själv",
   "notifications_slack_title": "Slack",
   "notifications_slack_description": "Skicka notifieringar till Slack kanaler eller direkta meddelanden",
   "notifications_slack_token_label": "Slack-token",
