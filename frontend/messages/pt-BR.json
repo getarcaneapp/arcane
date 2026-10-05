@@ -2665,6 +2665,8 @@
   "notifications_signal_recipients_help": "Lista de números de telefone separados por vírgula (com +) ou IDs de grupo de sinal",
   "notifications_signal_recipients_required": "Pelo menos um destinatário é necessário quando o sinal é ativado",
   "notifications_signal_disable_tls_description": "Desativar conexão TLS/SSL para conexão de API REST de sinal (não recomendado para produção)",
+  "notifications_signal_notify_self_label": "Notificar a si mesmo",
+  "notifications_signal_notify_self_description": "Notificar os próprios dispositivos do remetente ao enviar notificações para grupos ou para si mesmo",
   "notifications_slack_title": "Slack",
   "notifications_slack_description": "Enviar notificações para canais Slack ou mensagens diretas",
   "notifications_slack_token_label": "Token do Slack",
