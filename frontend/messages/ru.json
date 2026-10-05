@@ -2665,6 +2665,8 @@
   "notifications_signal_recipients_help": "Список телефонных номеров через запятую (+ ) или групп сигналов",
   "notifications_signal_recipients_required": "Требуется хотя бы один получатель при включенном сигнале",
   "notifications_signal_disable_tls_description": "Отключить TLS/SSL для сигнала REST API соединения (не рекомендуется для производства)",
+  "notifications_signal_notify_self_label": "Уведомить себя",
+  "notifications_signal_notify_self_description": "При отправке уведомлений в группы или самому себе оповещать устройства самого отправителя",
   "notifications_slack_title": "Slack",
   "notifications_slack_description": "Отправлять уведомления в каналы Slack или личные сообщения",
   "notifications_slack_token_label": "Slack Token",
