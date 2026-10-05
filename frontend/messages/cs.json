@@ -2665,6 +2665,8 @@
   "notifications_signal_recipients_help": "Seznam telefonních čísel oddělených čárkami (s +) nebo ID skupin v aplikaci Signal",
   "notifications_signal_recipients_required": "Je vyžadován alespoň jeden příjemce, když je Signal povolen",
   "notifications_signal_disable_tls_description": "Zakázat TLS/SSL pro připojení k REST API služby Signal (nedoporučuje se pro produkční prostředí)",
+  "notifications_signal_notify_self_label": "Oznámit sobě",
+  "notifications_signal_notify_self_description": "Při odesílání oznámení skupinám nebo sobě samému upozornit zařízení odesílatele",
   "notifications_slack_title": "Slack",
   "notifications_slack_description": "Odesílat oznámení do kanálů Slacku nebo jako přímé zprávy",
   "notifications_slack_token_label": "Token Slacku",
