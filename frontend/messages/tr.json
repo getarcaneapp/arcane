@@ -2665,6 +2665,8 @@
   "notifications_signal_recipients_help": "Telefon numaralarının (artı işareti ile birlikte) veya Signal grup kimliklerinin virgülle ayrılmış listesi",
   "notifications_signal_recipients_required": "Signal etkinleştirildiğinde en az bir alıcı olması gerekir",
   "notifications_signal_disable_tls_description": "Signal REST API bağlantısı için TLS/SSL'yi devre dışı bırak (üretim ortamında kullanılması önerilmez)",
+  "notifications_signal_notify_self_label": "Kendime Bildir",
+  "notifications_signal_notify_self_description": "Gruplara veya kendine bildirim gönderirken gönderenin kendi cihazlarını uyar",
   "notifications_slack_title": "Slack",
   "notifications_slack_description": "Slack kanallarına veya doğrudan mesajlara bildirimler gönder",
   "notifications_slack_token_label": "Slack Jetonu",
