@@ -2665,6 +2665,8 @@
   "notifications_signal_recipients_help": "以逗号分隔的电话号码（带 +）或 Signal 群组 ID",
   "notifications_signal_recipients_required": "启用 Signal 时至少需要一个收件人",
   "notifications_signal_disable_tls_description": "禁用 Signal REST API 连接的 TLS/SSL（不建议在生产环境中使用）",
+  "notifications_signal_notify_self_label": "通知自己",
+  "notifications_signal_notify_self_description": "向群组或自己发送通知时，同时向发件人本人的设备发送提醒",
   "notifications_slack_title": "Slack",
   "notifications_slack_description": "向 Slack 频道或私信发送通知",
   "notifications_slack_token_label": "Slack 令牌",
