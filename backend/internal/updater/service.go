@@ -685,21 +685,28 @@ func (s *UpdaterService) PullImage(ctx context.Context, imageRef string, progres
 	pullCtx, cancelPull := context.WithTimeout(ctx, timeouts.GetDuration(pullTimeoutSeconds, timeouts.DefaultDockerImagePull))
 	defer cancelPull()
 
+	var credentials []containerregistry.Credential
 	if s.deps.Projects != nil {
 		resolved, resolveRegistryCredentialsErr := s.deps.Projects.ResolveRegistryCredentials(pullCtx)
 		if resolveRegistryCredentialsErr != nil {
 			return fmt.Errorf("resolve registry credentials: %w", resolveRegistryCredentialsErr)
 		}
-		if pullImageErr := s.deps.ImagePuller.PullImage(pullCtx, pulledRef, writer, s.deps.SystemUser, resolved); pullImageErr != nil {
-			return pullImageErr
-		}
-		return s.tagFrozenPullInternal(pullCtx, pulledRef, imageRef)
+		credentials = resolved
 	}
-
-	if pullImageErr2 := s.deps.ImagePuller.PullImage(pullCtx, pulledRef, writer, s.deps.SystemUser, nil); pullImageErr2 != nil {
-		return pullImageErr2
+	if pullImageErr := s.deps.ImagePuller.PullImage(pullCtx, pulledRef, writer, s.deps.SystemUser, credentials); pullImageErr != nil {
+		return pullImageErr
 	}
-	return s.tagFrozenPullInternal(pullCtx, pulledRef, imageRef)
+	if tagErr := s.tagFrozenPullInternal(pullCtx, pulledRef, imageRef); tagErr != nil {
+		return tagErr
+	}
+	// Reconcile by tag so the new image's record and any project preview rows
+	// for this reference stop reporting the update just installed (#4306).
+	// This runs on the run context, not the pull deadline, so a pull that
+	// finished late still records its result.
+	if reconcileErr := s.deps.ImagePuller.ReconcilePulledImageUpdate(ctx, imageRef); reconcileErr != nil {
+		slog.WarnContext(ctx, "failed to reconcile pulled image update state", "image", imageRef, "error", reconcileErr)
+	}
+	return nil
 }
 
 // PendingImageUpdates returns pending image update records from Arcane's database.
@@ -780,12 +787,14 @@ func (s *UpdaterService) UpdateServices(ctx context.Context, projectID string, s
 
 // TriggerSelfUpdate runs Arcane's CLI-backed self-update hook.
 func (s *UpdaterService) TriggerSelfUpdate(ctx context.Context, target updater.SelfUpdateTarget) error {
+	// The frozen digest is only what gets pulled; the recreated container keeps
+	// the selected tag so later runs do not treat it as an immutable reference.
 	if target.NewImageRef != "" {
 		pinned, err := s.recovery.PreparePull(ctx, target.NewImageRef)
 		if err != nil {
 			return err
 		}
-		target.NewImageRef = pinned
+		target.PullImageRef = pinned
 	}
 	if s == nil || s.deps.SelfUpgrade == nil {
 		instanceType := cmp.Or(strings.TrimSpace(target.InstanceType), "server")
@@ -796,7 +805,7 @@ func (s *UpdaterService) TriggerSelfUpdate(ctx context.Context, target updater.S
 	// activity, so annotate the activity first; startup reconciliation uses
 	// the metadata flag to finalize it after the restart.
 	if target.InstanceType != "agent" {
-		s.markSelfUpdateTriggeredInternal(ctx, target)
+		s.markSelfUpdateTriggeredInternal(ctx, target.NewImageRef)
 	}
 
 	if _, err := s.deps.SelfUpgrade.TriggerUpgradeViaCLI(ctx, s.deps.SystemUser, target); err != nil {
@@ -811,13 +820,13 @@ func (s *UpdaterService) TriggerSelfUpdate(ctx context.Context, target updater.S
 	return nil
 }
 
-func (s *UpdaterService) markSelfUpdateTriggeredInternal(ctx context.Context, target updater.SelfUpdateTarget) {
+func (s *UpdaterService) markSelfUpdateTriggeredInternal(ctx context.Context, imageRef string) {
 	activityID := activityIDFromContextInternal(ctx)
 	if s.deps.Activity == nil || activityID == "" {
 		return
 	}
 	message := "Self-update initiated — Arcane will restart"
-	if ref := strings.TrimSpace(target.NewImageRef); ref != "" {
+	if ref := strings.TrimSpace(imageRef); ref != "" {
 		message = "Self-update initiated — Arcane will restart with " + ref
 	}
 	s.appendAutoUpdateActivityMessageInternal(ctx, activityID, message, "Self-update", 90)

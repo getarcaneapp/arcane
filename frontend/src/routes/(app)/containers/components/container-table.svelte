@@ -114,6 +114,8 @@
 			if (!updateTableMounted || environmentId !== environmentStore.selected?.id) return;
 			void queryClient.invalidateQueries({ queryKey: ['containers', environmentId] });
 			void queryClient.invalidateQueries({ queryKey: ['container', environmentId] });
+			void queryClient.invalidateQueries({ queryKey: ['projects', environmentId] });
+			void queryClient.invalidateQueries({ queryKey: ['project', environmentId] });
 			void refreshContainers(requestOptions);
 		}
 	);

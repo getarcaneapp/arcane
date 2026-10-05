@@ -1,6 +1,7 @@
 package upgrade
 
 import (
+	"cmp"
 	"context"
 	"encoding/json/v2"
 	"errors"
@@ -161,7 +162,10 @@ type preparedUpgradeInternal struct {
 	current       container.InspectResponse
 	containerName string
 	binaryPath    string
-	targetImage   string
+	// targetImage is the reference the recreated container runs as; pullImage
+	// is the immutable reference actually pulled (the same unless frozen).
+	targetImage string
+	pullImage   string
 }
 
 // prepareUpgradeInternal takes the upgrading guard, released by runPreparedUpgradeInternal (or here on error).
@@ -201,6 +205,7 @@ func (s *Service) prepareUpgradeInternal(ctx context.Context, user usertypes.Act
 	if err != nil {
 		return nil, err
 	}
+	pullImage := cmp.Or(strings.TrimSpace(target.PullImageRef), targetImage)
 
 	// Log upgrade event
 	metadata := database.JSON{
@@ -209,6 +214,7 @@ func (s *Service) prepareUpgradeInternal(ctx context.Context, user usertypes.Act
 		"containerName": containerName,
 		"method":        "cli",
 		"targetImage":   targetImage,
+		"pullImage":     pullImage,
 	}
 	if logUserEventErr := s.eventService.LogUserEvent(ctx, event.EventTypeSystemUpgrade, user.ID, user.Username, metadata); logUserEventErr != nil {
 		slog.WarnContext(ctx, "Failed to log upgrade event", "error", logUserEventErr)
@@ -219,6 +225,7 @@ func (s *Service) prepareUpgradeInternal(ctx context.Context, user usertypes.Act
 		containerName: containerName,
 		binaryPath:    binaryPath,
 		targetImage:   targetImage,
+		pullImage:     pullImage,
 	}, nil
 }
 
@@ -227,7 +234,7 @@ func (s *Service) runPreparedUpgradeInternal(ctx context.Context, prepared *prep
 
 	// Run the upgrader from the image we are upgrading to, so the upgrade CLI
 	// is the new version.
-	upgraderImage := prepared.targetImage
+	upgraderImage := prepared.pullImage
 	slog.DebugContext(ctx, "Using upgrader image", "image", upgraderImage)
 
 	slog.InfoContext(ctx, "Spawning upgrade CLI command", "containerName", prepared.containerName, "upgraderImage", upgraderImage)
@@ -294,6 +301,9 @@ func (s *Service) runPreparedUpgradeInternal(ctx context.Context, prepared *prep
 	upgradeCmd := []string{prepared.binaryPath, "upgrade", "--container", prepared.containerName}
 	if prepared.targetImage != "" {
 		upgradeCmd = append(upgradeCmd, "--image", prepared.targetImage)
+	}
+	if prepared.pullImage != prepared.targetImage {
+		upgradeCmd = append(upgradeCmd, "--pull-image", prepared.pullImage)
 	}
 
 	config := &container.Config{

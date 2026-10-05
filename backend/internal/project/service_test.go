@@ -7863,6 +7863,24 @@ func TestConfiguredProjectAggregatesReplicaAndPreviewChecks(t *testing.T) {
 	require.True(t, summary.HasUpdate)
 	require.True(t, summary.ServiceUpdates["web"].UpdateInfo.HasUpdate)
 	require.Equal(t, "3.2.0", scoped["two"].LatestVersion)
+
+	// A stale preview still advertising an update is superseded by a runtime
+	// check at least as recent that found nothing; a newer preview still wins.
+	previewTime := time.Now().Add(-time.Hour)
+	records[0].HasUpdate = true
+	records[0].LatestVersion = &previewTarget
+	records[0].CheckTime = previewTime
+	current := map[string]*imagetypes.UpdateInfo{"web": {HasUpdate: false, UpdateType: "digest", CheckTime: previewTime.Add(time.Minute)}}
+	byRef := map[string]*imagetypes.UpdateInfo{"example:3.1.0": current["web"]}
+	summary = BuildConfiguredUpdateInfo("project", configs, byRef, records, current)
+	require.False(t, summary.HasUpdate)
+	require.False(t, summary.ServiceUpdates["web"].UpdateInfo.HasUpdate)
+	require.Equal(t, "up_to_date", summary.Status)
+
+	current["web"].CheckTime = previewTime.Add(-time.Minute)
+	summary = BuildConfiguredUpdateInfo("project", configs, byRef, records, current)
+	require.True(t, summary.HasUpdate)
+	require.True(t, summary.ServiceUpdates["web"].UpdateInfo.HasUpdate)
 }
 
 func TestPrepareProjectBindDirectoriesInternal(t *testing.T) {

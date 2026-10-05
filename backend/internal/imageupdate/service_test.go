@@ -1324,9 +1324,83 @@ func TestImageUpdateService_MarkImageRefUpToDateAfterPull_ClearsMatchingRecordsA
 		CheckTime:      now,
 	}).Error)
 
+	// Project preview rows for the same source reference: a digest preview is
+	// satisfied by the pull, a pending tag move is not.
+	oldDigest := "sha256:old-project"
+	require.NoError(t, db.Create(&ImageUpdateRecord{
+		ID:             "project::proj::web",
+		ProjectID:      "proj",
+		ServiceName:    "web",
+		Repository:     repository,
+		Tag:            "1.2.3",
+		HasUpdate:      true,
+		UpdateType:     UpdateTypeDigest,
+		CurrentVersion: "1.2.3",
+		LatestVersion:  new("1.2.3"),
+		CurrentDigest:  &oldDigest,
+		LatestDigest:   &localDigest,
+		CheckTime:      now,
+	}).Error)
+	require.NoError(t, db.Create(&ImageUpdateRecord{
+		ID:             "project::proj::api",
+		ProjectID:      "proj",
+		ServiceName:    "api",
+		Repository:     repository,
+		Tag:            "1.2.3",
+		HasUpdate:      true,
+		UpdateType:     "tag",
+		CurrentVersion: "1.2.3",
+		LatestVersion:  new("1.3.0"),
+		CheckTime:      now,
+	}).Error)
+	newerDigest := digest.FromString("mark-up-to-date-newer").String()
+	require.NoError(t, db.Create(&ImageUpdateRecord{
+		ID:             "project::proj::worker",
+		ProjectID:      "proj",
+		ServiceName:    "worker",
+		Repository:     repository,
+		Tag:            "1.2.3",
+		HasUpdate:      true,
+		UpdateType:     UpdateTypeDigest,
+		CurrentVersion: "1.2.3",
+		CurrentDigest:  &oldDigest,
+		LatestDigest:   &newerDigest,
+		CheckTime:      now,
+	}).Error)
+	require.NoError(t, db.Create(&ImageUpdateRecord{
+		ID:          "project::proj::broken",
+		ProjectID:   "proj",
+		ServiceName: "broken",
+		Repository:  repository,
+		Tag:         "1.2.3",
+		LastError:   new("registry unreachable"),
+		CheckTime:   now,
+	}).Error)
+
 	svc := NewImageUpdateService(db, nil, nil, &docker.DockerClientService{Client: newImageUpdateTestDockerClientInternal(t, server)}, nil, nil, nil)
 
 	require.NoError(t, svc.MarkImageRefUpToDateAfterPull(t.Context(), imageRef))
+
+	var projectDigestRecord ImageUpdateRecord
+	require.NoError(t, db.WithContext(t.Context()).Where("id = ?", "project::proj::web").First(&projectDigestRecord).Error)
+	assert.False(t, projectDigestRecord.HasUpdate, "project digest preview must be refreshed after pull")
+	assert.Equal(t, localDigest, mo.PointerToOption(projectDigestRecord.CurrentDigest).OrEmpty())
+	assert.Equal(t, localDigest, mo.PointerToOption(projectDigestRecord.LatestDigest).OrEmpty())
+	assert.True(t, projectDigestRecord.CheckTime.After(now))
+
+	var projectTagRecord ImageUpdateRecord
+	require.NoError(t, db.WithContext(t.Context()).Where("id = ?", "project::proj::api").First(&projectTagRecord).Error)
+	assert.True(t, projectTagRecord.HasUpdate, "project tag preview is not satisfied by pulling the same tag")
+	assert.Equal(t, "1.3.0", mo.PointerToOption(projectTagRecord.LatestVersion).OrEmpty())
+
+	var projectNewerRecord ImageUpdateRecord
+	require.NoError(t, db.WithContext(t.Context()).Where("id = ?", "project::proj::worker").First(&projectNewerRecord).Error)
+	assert.True(t, projectNewerRecord.HasUpdate, "a preview targeting a digest other than the pulled one is kept")
+	assert.Equal(t, newerDigest, mo.PointerToOption(projectNewerRecord.LatestDigest).OrEmpty())
+
+	var projectFailedRecord ImageUpdateRecord
+	require.NoError(t, db.WithContext(t.Context()).Where("id = ?", "project::proj::broken").First(&projectFailedRecord).Error)
+	assert.Equal(t, "registry unreachable", mo.PointerToOption(projectFailedRecord.LastError).OrEmpty(), "a failed preview check is not cleared by a pull")
 
 	// Sha256 records for old images that other containers are still running must stay HasUpdate=true.
 	var fullRecord ImageUpdateRecord

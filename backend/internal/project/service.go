@@ -2090,6 +2090,19 @@ func BuildConfiguredUpdateInfo(
 		}
 
 		if len(runtimeUpdates) > 0 && runtimeUpdates[0][service.Name] != nil {
+			// A runtime check at least as recent as the stored preview that
+			// found nothing supersedes a preview still advertising an update;
+			// the preview is only rewritten by a manual project check (#4306).
+			// Digest checks share image IDs across references. Require a matching
+			// check for the configured reference before clearing its preview.
+			runtime := runtimeUpdates[0][service.Name]
+			attributed := policyErr == nil && policy.Strategy != "digest"
+			if stored := byRef[imageRef]; policyErr == nil && !attributed && stored != nil && !stored.HasUpdate && stored.Error == "" && stored.CheckTime.Equal(runtime.CheckTime) {
+				attributed = stored.CurrentDigest == runtime.CurrentDigest && stored.LatestDigest == runtime.LatestDigest
+			}
+			if attributed && info != nil && info.HasUpdate && !runtime.HasUpdate && runtime.Error == "" && !runtime.CheckTime.Before(info.CheckTime) {
+				info = nil
+			}
 			info = projectdetails.MergeProjectContainerUpdateInfo(
 				nil,
 				[]projecttypes.RuntimeService{

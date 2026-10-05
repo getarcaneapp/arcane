@@ -134,7 +134,7 @@ func runRestoreInternal(cmd *cobra.Command, _ []string) error {
 	if finalizeRestoredBackupErr := finalizeRestoredBackupInternal(ctx, manifest.Environment["DATABASE_URL"], manifest.BackupID, manifest.ActivityID, request); finalizeRestoredBackupErr != nil {
 		return fmt.Errorf("finalize restored system backup: %w", finalizeRestoredBackupErr)
 	}
-	if upgradeContainerErr := upgrade.UpgradeContainer(ctx, dockerClient, inspect.Container, request.ContainerImage, manifest.Environment); upgradeContainerErr != nil {
+	if upgradeContainerErr := upgrade.UpgradeContainer(ctx, dockerClient, inspect.Container, request.ContainerImage, "", manifest.Environment); upgradeContainerErr != nil {
 		return fmt.Errorf("recreate Arcane container with recovered configuration: %w", upgradeContainerErr)
 	}
 	return nil

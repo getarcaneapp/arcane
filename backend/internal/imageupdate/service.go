@@ -67,12 +67,13 @@ type ImageParts struct {
 }
 
 type localImageSnapshot struct {
-	ImageID       string
-	Repository    string
-	Tag           string
-	PrimaryDigest string
-	AllDigests    []string
-	IsLocalBuild  bool
+	ImageID           string
+	Repository        string
+	Tag               string
+	PrimaryDigest     string
+	AllDigests        []string
+	RepositoryDigests []string
+	IsLocalBuild      bool
 }
 
 func NewImageUpdateService(
@@ -866,9 +867,10 @@ func (s *ImageUpdateService) inspectLocalImageSnapshotInternal(ctx context.Conte
 		return nil, fmt.Errorf("failed to inspect image: %w", err)
 	}
 
-	var allDigests []string
+	var allDigests, repositoryDigests []string
 	var primaryDigest string
 	isLocalBuild := false
+	requested, referenceErr := refs.NormalizeReference(imageRef)
 
 	// Extract all digests from RepoDigests
 	if len(inspectResponse.RepoDigests) > 0 {
@@ -879,10 +881,18 @@ func (s *ImageUpdateService) inspectLocalImageSnapshotInternal(ctx context.Conte
 			}
 
 			allDigests = append(allDigests, digestValue)
+			repositoryRef, parseErr := refs.NormalizeReference(repoDigest)
+			if referenceErr == nil && parseErr == nil && repositoryRef.RegistryHost == requested.RegistryHost && repositoryRef.Repository == requested.Repository {
+				repositoryDigests = append(repositoryDigests, digestValue)
+			}
 
 			// Use first digest as primary if not yet set
 			primaryDigest = cmp.Or(primaryDigest, digestValue)
 		}
+	}
+
+	if len(repositoryDigests) > 0 {
+		primaryDigest = repositoryDigests[0]
 	}
 
 	// Fallback to image ID if no repo digests available
@@ -897,12 +907,13 @@ func (s *ImageUpdateService) inspectLocalImageSnapshotInternal(ctx context.Conte
 	tag = tagWithFallbackInternal(tag, s.parseImageReference(imageRef))
 
 	return &localImageSnapshot{
-		ImageID:       inspectResponse.ID,
-		Repository:    repo,
-		Tag:           tag,
-		PrimaryDigest: primaryDigest,
-		AllDigests:    allDigests,
-		IsLocalBuild:  isLocalBuild,
+		ImageID:           inspectResponse.ID,
+		Repository:        repo,
+		Tag:               tag,
+		PrimaryDigest:     primaryDigest,
+		AllDigests:        allDigests,
+		RepositoryDigests: repositoryDigests,
+		IsLocalBuild:      isLocalBuild,
 	}, nil
 }
 
@@ -1197,6 +1208,10 @@ func (s *ImageUpdateService) MarkImageRefUpToDateAfterPull(ctx context.Context, 
 	}
 
 	_, tag, repositoryCandidates, hasLookup := imageref.ParseUpdateLookup(imageRef)
+	projectChecks, confirmedDigest, err := s.projectChecksAfterPull(ctx, imageRef, tag, repositoryCandidatesSliceInternal(repositoryCandidates), snapshot.RepositoryDigests)
+	if err != nil {
+		return err
+	}
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if hasLookup {
 			repositories := repositoryCandidatesSliceInternal(repositoryCandidates)
@@ -1211,6 +1226,31 @@ func (s *ImageUpdateService) MarkImageRefUpToDateAfterPull(ctx context.Context, 
 				}
 			}
 		}
+		for _, record := range projectChecks {
+			// Record the local digest the preview targeted when the pull carries it.
+			pulledDigest := cmp.Or(confirmedDigest, snapshot.RepositoryDigests[0])
+			if previewDigest := mo.PointerToOption(record.LatestDigest).OrEmpty(); confirmedDigest == "" && slices.Contains(snapshot.RepositoryDigests, previewDigest) {
+				pulledDigest = previewDigest
+			}
+			// Preserve any preview replaced while the registry lookup was in flight.
+			if refreshProjectChecksErr := tx.Model(&ImageUpdateRecord{}).
+				Where(map[string]any{
+					"id": record.ID, "check_time": record.CheckTime, "policy_key": record.PolicyKey,
+					"latest_digest": record.LatestDigest, "latest_version": record.LatestVersion,
+					"current_digest": record.CurrentDigest, "last_error": record.LastError, "has_update": record.HasUpdate,
+				}).
+				Updates(map[string]any{
+					"has_update":      false,
+					"update_type":     UpdateTypeDigest,
+					"current_version": tag,
+					"latest_version":  tag,
+					"current_digest":  pulledDigest,
+					"latest_digest":   pulledDigest,
+					"check_time":      checkTime,
+				}).Error; refreshProjectChecksErr != nil {
+				return fmt.Errorf("refresh project update checks: %w", refreshProjectChecksErr)
+			}
+		}
 
 		if savePreparedUpdateResultWithTxErr := savePreparedUpdateResultWithTxInternal(tx, snapshot.ImageID, snapshot.Repository, snapshot.Tag, result); savePreparedUpdateResultWithTxErr != nil {
 			return fmt.Errorf("save pulled image update state: %w", savePreparedUpdateResultWithTxErr)
@@ -1218,6 +1258,44 @@ func (s *ImageUpdateService) MarkImageRefUpToDateAfterPull(ctx context.Context, 
 
 		return nil
 	})
+}
+
+// projectChecksAfterPull returns the digest previews a pull of imageRef
+// satisfies. Previews that were disabled, local, or not pulled carry no digest
+// result and are left for the next project check.
+func (s *ImageUpdateService) projectChecksAfterPull(ctx context.Context, imageRef, tag string, repositories, localDigests []string) ([]ImageUpdateRecord, string, error) {
+	if len(repositories) == 0 || len(localDigests) == 0 {
+		return nil, "", nil
+	}
+	var records []ImageUpdateRecord
+	if err := s.db.WithContext(ctx).
+		Where("project_id <> '' AND update_type = ? AND tag = ? AND repository IN ?", UpdateTypeDigest, tag, repositories).
+		Where("latest_version IS NULL OR latest_version = '' OR latest_version = tag").
+		Where("last_error IS NULL OR last_error = ''").Find(&records).Error; err != nil {
+		return nil, "", fmt.Errorf("load project update checks after pull: %w", err)
+	}
+	digestMismatch := func(record ImageUpdateRecord) bool {
+		latestDigest := mo.PointerToOption(record.LatestDigest).OrEmpty()
+		return latestDigest != "" && !slices.Contains(localDigests, latestDigest)
+	}
+	if !slices.ContainsFunc(records, digestMismatch) {
+		return records, "", nil
+	}
+
+	// Digests have no ordering. Confirm a moved tag without using the digest cache.
+	// A registry failure leaves the differing previews untouched rather than
+	// blocking the reconciliation of the pulled image state.
+	if s.registryService != nil {
+		registryCtx, cancel := s.registryContextInternal(ctx)
+		defer cancel()
+		latest, err := s.registryService.InspectImageDigest(registryCtx, imageRef, nil)
+		if err != nil {
+			slog.WarnContext(ctx, "Failed to verify pulled image against project previews", "imageRef", imageRef, "error", err.Error())
+		} else if latest != nil && slices.Contains(localDigests, latest.Digest) {
+			return records, latest.Digest, nil
+		}
+	}
+	return slices.DeleteFunc(records, digestMismatch), "", nil
 }
 
 func (s *ImageUpdateService) StoredUpdateByImageID(ctx context.Context, imageID string) (*ImageUpdateRecord, bool, error) {

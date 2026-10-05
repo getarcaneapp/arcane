@@ -342,6 +342,31 @@ func TestUpdaterService_TriggerSelfUpdateViaCLIInternal(t *testing.T) {
 		require.NotNil(t, mockUpgrade.capturedTarget)
 		assert.Equal(t, "container-1", mockUpgrade.capturedTarget.ContainerID)
 		assert.Equal(t, "arcane", mockUpgrade.capturedTarget.ContainerName)
+		assert.Empty(t, mockUpgrade.capturedTarget.NewImageRef)
+		assert.Empty(t, mockUpgrade.capturedTarget.PullImageRef)
+	})
+
+	t.Run("engine target keeps the selected tag and pulls the frozen digest", func(t *testing.T) {
+		mockUpgrade := &mockSystemUpgradeServiceInternal{}
+		svc, svcErr := NewUpdaterService(nil, nil, nil, nil, nil, nil, nil, nil, nil, mockUpgrade, nil, nil, nil, nil, nil)
+		require.NoError(t, svcErr)
+
+		frozen := svc.recovery.WithSingleTarget(ctx, &arcaneupdater.FrozenUpdateTarget{
+			ContainerID:     "container-1",
+			DesiredImageRef: "ghcr.io/getarcaneapp/arcane:next",
+			DesiredDigest:   "sha256:frozen",
+		}, func() error { return nil })
+		err := svc.TriggerSelfUpdate(frozen, updater.SelfUpdateTarget{
+			ContainerID:   "container-1",
+			ContainerName: "arcane",
+			InstanceType:  "agent",
+			NewImageRef:   "ghcr.io/getarcaneapp/arcane:next",
+		})
+
+		require.NoError(t, err)
+		require.NotNil(t, mockUpgrade.capturedTarget)
+		assert.Equal(t, "ghcr.io/getarcaneapp/arcane:next", mockUpgrade.capturedTarget.NewImageRef)
+		assert.Equal(t, "ghcr.io/getarcaneapp/arcane@sha256:frozen", mockUpgrade.capturedTarget.PullImageRef)
 	})
 
 	t.Run("agent label triggers upgrade", func(t *testing.T) {
