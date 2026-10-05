@@ -6,7 +6,6 @@ import (
 	"time"
 
 	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
-	dbtypes "github.com/getarcaneapp/arcane/types/v2/database"
 	recoverytypes "github.com/getarcaneapp/arcane/types/v2/recovery"
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
@@ -21,7 +20,7 @@ import (
 func newRestoredDatabaseForTestInternal(t *testing.T, runIDs ...string) (string, string) {
 	t.Helper()
 	databaseURL := "file:" + filepath.Join(t.TempDir(), "arcane.db")
-	dsn, err := database.ParseSQLiteConnectionString(databaseURL, dbtypes.SQLiteConnectionOptions{})
+	dsn, err := database.ParseSQLiteConnectionString(databaseURL)
 	require.NoError(t, err)
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	require.NoError(t, err)

@@ -107,12 +107,26 @@ func provideBackupEngineInternal(
 	return engine, nil
 }
 
-func provideActorRuntimeInternal(appCtx context.Context, cfg *config.Config, settingsService *settings.SettingsService, lc fx.Lifecycle, cancelApp context.CancelFunc) (*francis.Runtime, error) {
+func provideActorRuntimeInternal(
+	appCtx context.Context,
+	cfg *config.Config,
+	db *database.DB,
+	settingsService *settings.SettingsService,
+	lc fx.Lifecycle,
+	cancelApp context.CancelFunc,
+) (*francis.Runtime, error) {
 	runtime, err := francis.New(cfg.DatabaseURL, "", "", cfg.ActorPort)
 	if err != nil {
 		return nil, err
 	}
 	lc.Append(fx.Hook{OnStart: func(ctx context.Context) error {
+		sqlDB, sqlDBErr := db.SQLDB()
+		if sqlDBErr != nil {
+			return sqlDBErr
+		}
+		if migrateErr := francis.MigrateLegacyStore(ctx, sqlDB, cfg.DatabaseURL); migrateErr != nil {
+			return migrateErr
+		}
 		if configureIdentityErr := runtime.ConfigureIdentity(cfg.EncryptionKey, settingsService.GetSettingsConfig().InstanceID.Value); configureIdentityErr != nil {
 			return configureIdentityErr
 		}

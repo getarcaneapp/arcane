@@ -13,7 +13,6 @@ import (
 
 	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
 	backuptypes "github.com/getarcaneapp/arcane/types/v2/backup"
-	dbtypes "github.com/getarcaneapp/arcane/types/v2/database"
 	recoverytypes "github.com/getarcaneapp/arcane/types/v2/recovery"
 	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/api/types/container"
@@ -145,7 +144,7 @@ func finalizeRestoredBackupInternal(ctx context.Context, databaseURL, manifestBa
 	if !strings.HasPrefix(databaseURL, "file:") {
 		return errors.New("restored Arcane database is not SQLite")
 	}
-	dsn, err := database.ParseSQLiteConnectionString(databaseURL, dbtypes.SQLiteConnectionOptions{})
+	dsn, err := database.ParseSQLiteConnectionString(databaseURL)
 	if err != nil {
 		return err
 	}

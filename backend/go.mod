@@ -52,7 +52,6 @@ require (
 	github.com/orandin/slog-gorm v1.4.0
 	github.com/pressly/goose/v3 v3.28.0
 	github.com/project-copacetic/copacetic v0.15.0
-	github.com/quic-go/quic-go v0.63.0
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/samber/hot v0.13.1
 	github.com/samber/mo v1.17.0
@@ -250,6 +249,7 @@ require (
 	github.com/prometheus/common v0.71.0 // indirect
 	github.com/prometheus/procfs v0.22.0 // indirect
 	github.com/quic-go/qpack v0.6.0 // indirect
+	github.com/quic-go/quic-go v0.63.0 // indirect
 	github.com/quic-go/webtransport-go v0.13.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect

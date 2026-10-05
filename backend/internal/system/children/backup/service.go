@@ -31,6 +31,7 @@ import (
 	"go.getarcane.app/kit/pkg"
 	"go.getarcane.app/sys/cgroup"
 	"go.getarcane.app/sys/crypto"
+	"gorm.io/gorm"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/backup"
@@ -107,6 +108,7 @@ type Dependencies struct {
 	Store                 Store
 	DB                    *database.DB
 	SQLDB                 func() (*sql.DB, error)
+	ActorStore            func() (*gorm.DB, error)
 	Docker                *dockerInternal.DockerClientService
 	Volumes               *volume.VolumeService
 	Engine                *backup.Engine
@@ -146,6 +148,7 @@ func NewService(deps Dependencies) *Service {
 	service.snapshots = snapshots.NewService(
 		deps.Engine,
 		deps.SQLDB,
+		deps.ActorStore,
 		service.localRepositoryInternal,
 		service.remoteRepositoryInternal,
 		service.databaseFileInternal,

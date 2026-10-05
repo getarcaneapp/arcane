@@ -15,7 +15,6 @@ import (
 	"strings"
 	"time"
 
-	dbtypes "github.com/getarcaneapp/arcane/types/v2/database"
 	"github.com/libtnb/sqlite"
 	"github.com/pressly/goose/v3"
 	"github.com/pressly/goose/v3/lock"
@@ -123,7 +122,7 @@ func connectDatabaseInternal(ctx context.Context, databaseURL string) (*DB, erro
 		if err := sqliteutil.RegisterFunctions(); err != nil {
 			return nil, fmt.Errorf("failed to register SQLite functions: %w", err)
 		}
-		connString, err := ParseSQLiteConnectionString(databaseURL, dbtypes.SQLiteConnectionOptions{})
+		connString, err := ParseSQLiteConnectionString(databaseURL)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse SQLite connection string: %w", err)
 		}
@@ -624,7 +623,7 @@ func missingEmbeddedDowngradeMigrationsInternal(ctx context.Context, db *sql.DB,
 	return missing, nil
 }
 
-func ParseSQLiteConnectionString(connString string, options dbtypes.SQLiteConnectionOptions) (string, error) {
+func ParseSQLiteConnectionString(connString string) (string, error) {
 	if !strings.HasPrefix(connString, "file:") {
 		connString = "file:" + connString
 	}
@@ -660,35 +659,6 @@ func ParseSQLiteConnectionString(connString string, options dbtypes.SQLiteConnec
 		default:
 			qs[k] = v
 		}
-	}
-
-	pragmas := make([]string, 0, len(qs["_pragma"])+2)
-	journalMode, busyTimeout := false, false
-	for _, pragma := range qs["_pragma"] {
-		name, _, _ := strings.Cut(pragma, "(")
-		name, _, _ = strings.Cut(name, "=")
-		switch strings.ToLower(strings.TrimSpace(name)) {
-		case "foreign_keys":
-			if options.IgnoreForeignKeys {
-				continue
-			}
-		case "journal_mode":
-			journalMode = true
-		case "busy_timeout":
-			busyTimeout = true
-		}
-		pragmas = append(pragmas, pragma)
-	}
-	if !journalMode && options.JournalMode != "" {
-		pragmas = append(pragmas, "journal_mode("+options.JournalMode+")")
-	}
-	if !busyTimeout && options.BusyTimeout > 0 {
-		pragmas = append(pragmas, "busy_timeout("+strconv.FormatInt(options.BusyTimeout.Milliseconds(), 10)+")")
-	}
-	if len(pragmas) > 0 {
-		qs["_pragma"] = pragmas
-	} else {
-		qs.Del("_pragma")
 	}
 
 	connStringUrl.RawQuery = qs.Encode()

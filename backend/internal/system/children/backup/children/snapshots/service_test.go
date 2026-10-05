@@ -20,7 +20,7 @@ func TestSnapshotSourceFilesSkipLiveAndProjectFiles(t *testing.T) {
 	root := t.TempDir()
 	stage := filepath.Join(root, ".arcane-snapshot-stage")
 	require.NoError(t, os.Mkdir(stage, 0o700))
-	for _, name := range []string{RecoveryRequestName, "settings.txt"} {
+	for _, name := range []string{RecoveryRequestName, "settings.txt", "arcane.francis.db"} {
 		require.NoError(t, os.WriteFile(filepath.Join(root, name), []byte("data"), 0o600))
 	}
 	require.NoError(t, os.Symlink("settings.txt", filepath.Join(root, "link")))
@@ -39,7 +39,7 @@ func TestSnapshotSourceFilesSkipLiveAndProjectFiles(t *testing.T) {
 		databaseName:      "arcane.db",
 		projectsDirectory: projects,
 		projectsPath:      snapshotDataPath + "/projects",
-		excludes:          []string{".arcane-snapshot-*", RecoveryRequestName, "arcane.db-wal", "arcane.db-shm", "arcane.db-journal"},
+		excludes:          []string{".arcane-snapshot-*", RecoveryRequestName, "arcane.db-wal", "arcane.db-shm", "arcane.db-journal", "arcane.francis.db-wal"},
 	}
 	type attributes struct {
 		size    int64
@@ -59,10 +59,12 @@ func TestSnapshotSourceFilesSkipLiveAndProjectFiles(t *testing.T) {
 	require.NotContains(t, before, projects)
 	require.NotContains(t, before, filepath.Join(root, "arcane.db"))
 	require.NotContains(t, before, filepath.Join(root, "arcane.db-wal"))
+	require.NotContains(t, before, filepath.Join(root, "arcane.francis.db"))
 	require.NotContains(t, before, stage)
 	require.Contains(t, before, filepath.Join(root, "settings.txt"))
 	require.NoError(t, os.WriteFile(composePath, []byte("services: {app: {image: nginx}}"), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(projects, "app.log"), []byte("live"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "arcane.francis.db"), []byte("health check"), 0o600))
 	require.NoError(t, stageDatabase(t.Context(), db, filepath.Join(root, "arcane.db"), filepath.Join(stage, "arcane.db")))
 	require.Equal(t, before, walk())
 	require.NoError(t, os.WriteFile(filepath.Join(root, "settings.txt"), []byte("changed"), 0o600))
@@ -281,6 +283,8 @@ func TestSnapshotLayoutFromManifest(t *testing.T) {
 func TestSnapshotLayoutProtectsDataFiles(t *testing.T) {
 	overlapping := snapshotLayout{dataPath: "/data", projectsPath: "/data", databaseName: "arcane.db"}
 	require.True(t, overlapping.protected("arcane.db-wal"))
+	require.True(t, overlapping.protected("arcane.francis.db"))
+	require.True(t, overlapping.protected("arcane.francis.db-shm"))
 	require.True(t, overlapping.protected(".arcane-recovery.json"))
 	require.False(t, overlapping.protected("demo/arcane.db"))
 	nested := snapshotLayout{dataPath: "/data", projectsPath: "/data/projects", databaseName: "arcane.db"}

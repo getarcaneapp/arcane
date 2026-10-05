@@ -18,7 +18,6 @@ import (
 	kit "go.getarcane.app/kit/pkg"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/francis"
@@ -38,7 +37,6 @@ const (
 // layer to avoid an import cycle with the api/ws package.
 type DiagnosticsService struct {
 	startedAt    time.Time
-	db           *database.DB
 	actors       *francis.Runtime
 	coordinator  *runs.Coordinator
 	environments *environment.EnvironmentService
@@ -47,8 +45,8 @@ type DiagnosticsService struct {
 	leakScannedAt time.Time
 }
 
-func NewDiagnosticsService(db *database.DB, actors *francis.Runtime, coordinator *runs.Coordinator, environments *environment.EnvironmentService) *DiagnosticsService {
-	return &DiagnosticsService{startedAt: time.Now(), db: db, actors: actors, coordinator: coordinator, environments: environments}
+func NewDiagnosticsService(actors *francis.Runtime, coordinator *runs.Coordinator, environments *environment.EnvironmentService) *DiagnosticsService {
+	return &DiagnosticsService{startedAt: time.Now(), actors: actors, coordinator: coordinator, environments: environments}
 }
 
 func (s *DiagnosticsService) Collect() (system.RuntimeInfo, system.MemoryInfo, system.GCInfo) {
@@ -197,9 +195,13 @@ func (s *DiagnosticsService) CollectActors(ctx context.Context) (system.ActorDia
 		return d, nil
 	}
 
-	db := s.db.WithContext(ctx)
+	store, err := s.actors.Store()
+	if err != nil {
+		return d, err
+	}
+	db := store.WithContext(ctx)
 	var hosts []actorHostModel
-	if err := db.Order("host_id").Find(&hosts).Error; err != nil {
+	if err = db.Order("host_id").Find(&hosts).Error; err != nil {
 		return d, fmt.Errorf("list actor hosts: %w", err)
 	}
 	for _, host := range hosts {

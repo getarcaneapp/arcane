@@ -12,7 +12,7 @@ import (
 )
 
 func TestDiagnosticsServiceCollect(t *testing.T) {
-	s := NewDiagnosticsService(nil, nil, nil, nil)
+	s := NewDiagnosticsService(nil, nil, nil)
 
 	rt, mem, _ := s.Collect()
 
@@ -43,7 +43,7 @@ func TestGoroutineLeakProfileAvailable(t *testing.T) {
 }
 
 func TestDiagnosticsServiceScanGoroutineLeaks(t *testing.T) {
-	s := NewDiagnosticsService(nil, nil, nil, nil)
+	s := NewDiagnosticsService(nil, nil, nil)
 
 	report, err := s.ScanGoroutineLeaks()
 	require.NoError(t, err)
@@ -58,7 +58,7 @@ func TestDiagnosticsServiceScanGoroutineLeaks(t *testing.T) {
 }
 
 func TestDiagnosticsServiceScanGoroutineLeaksDetectsLeak(t *testing.T) {
-	s := NewDiagnosticsService(nil, nil, nil, nil)
+	s := NewDiagnosticsService(nil, nil, nil)
 	leakUnbufferedChannelInternal()
 
 	deadline := time.Now().Add(5 * time.Second)

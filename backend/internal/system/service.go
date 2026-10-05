@@ -51,6 +51,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/francis"
 )
 
 // SystemService owns Docker system-wide operations and coordinates the prune
@@ -82,6 +83,7 @@ func NewSystemService(
 	backupEngine *backup.Engine,
 	s3Destinations *s3.S3DestinationService,
 	recoveryKeys *backup.RecoveryKeyStore,
+	actors *francis.Runtime,
 	cfg *config.Config,
 ) *SystemService {
 	location := time.UTC
@@ -108,6 +110,7 @@ func NewSystemService(
 		Store:                 s.backupStoreInternal(s3Destinations),
 		DB:                    db,
 		SQLDB:                 sqlDB,
+		ActorStore:            actors.Store,
 		Docker:                dockerService,
 		Volumes:               volumeService,
 		Engine:                backupEngine,

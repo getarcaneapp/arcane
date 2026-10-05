@@ -26,6 +26,7 @@ import (
 	"go.getarcane.app/docker"
 	"go.getarcane.app/kit/pkg"
 	"go.getarcane.app/sys/cgroup"
+	"gorm.io/gorm"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/backup"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
@@ -34,6 +35,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/backupbrowser"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/francis"
 )
 
 const (
@@ -54,6 +56,7 @@ const (
 type Service struct {
 	engine              *backup.Engine
 	sqlDB               func() (*sql.DB, error)
+	actorStore          func() (*gorm.DB, error)
 	localRepository     func(ctx context.Context, dockerClient *client.Client, readOnly bool) (backup.Repository, error)
 	remoteRepository    func(ctx context.Context, destinationID string) (backup.Repository, error)
 	databaseFile        func() (string, error)
@@ -64,6 +67,7 @@ type Service struct {
 func NewService(
 	engine *backup.Engine,
 	sqlDB func() (*sql.DB, error),
+	actorStore func() (*gorm.DB, error),
 	localRepository func(ctx context.Context, dockerClient *client.Client, readOnly bool) (backup.Repository, error),
 	remoteRepository func(ctx context.Context, destinationID string) (backup.Repository, error),
 	databaseFile func() (string, error),
@@ -73,6 +77,7 @@ func NewService(
 	return &Service{
 		engine:              engine,
 		sqlDB:               sqlDB,
+		actorStore:          actorStore,
 		localRepository:     localRepository,
 		remoteRepository:    remoteRepository,
 		databaseFile:        databaseFile,
@@ -721,6 +726,7 @@ var (
 			"backed up separately mounted projects; create a new system backup to restore project files",
 	)
 	manifestCandidateRoots = []string{snapshotDataPath, "/", "/app/data"}
+	sqliteSidecars         = []string{"-wal", "-shm", "-journal"}
 )
 
 // snapshotLayout locates Arcane data and projects inside one snapshot.
@@ -754,12 +760,13 @@ func (layout snapshotLayout) protected(projectRelative string) bool {
 		return false
 	}
 	candidate := path.Join(relative, projectRelative)
-	switch candidate {
-	case RecoveryManifestName, RecoveryRequestName, layout.databaseName, layout.databaseName + "-wal", layout.databaseName + "-shm", layout.databaseName + "-journal":
+	if candidate == RecoveryManifestName || candidate == RecoveryRequestName {
 		return true
-	default:
-		return false
 	}
+	return slices.ContainsFunc([]string{layout.databaseName, francis.StorePath(layout.databaseName)}, func(database string) bool {
+		sidecar, found := strings.CutPrefix(candidate, database)
+		return found && (sidecar == "" || slices.Contains(sqliteSidecars, sidecar))
+	})
 }
 
 // projectsCoveredByData reports whether restoring the data root already
@@ -1034,9 +1041,15 @@ func (s *Service) Create(
 	if err != nil {
 		return backup.Snapshot{}, err
 	}
-	databasePath := filepath.Join(layout.dataDirectory, layout.databaseName)
-	stagedDatabase := filepath.Join(stage, layout.databaseName)
-	snapshotDatabase := filepath.Join(snapshotDataPath, layout.databaseName)
+	actorStore, err := s.actorStore()
+	if err != nil {
+		return backup.Snapshot{}, err
+	}
+	actorSQLDB, err := actorStore.DB()
+	if err != nil {
+		return backup.Snapshot{}, err
+	}
+	databases := map[string]*sql.DB{layout.databaseName: sqlDB, francis.StorePath(layout.databaseName): actorSQLDB}
 	manifest := recovery.Manifest{
 		FormatVersion: recovery.ManifestFormatVersion, ArcaneVersion: config.Version, BackupID: backupID,
 		ActivityID: activity.IDFromContext(ctx), CreatedAt: time.Now().UTC(),
@@ -1052,26 +1065,32 @@ func (s *Service) Create(
 		return backup.Snapshot{}, fmt.Errorf("failed to write recovery manifest: %w", err)
 	}
 	defer func() { _ = os.Remove(manifestPath) }()
-	layout.excludes = []string{
-		".arcane-snapshot-*", RecoveryRequestName,
-		layout.databaseName + "-wal", layout.databaseName + "-shm", layout.databaseName + "-journal",
+	layout.excludes = []string{".arcane-snapshot-*", RecoveryRequestName}
+	for name := range databases {
+		for _, sidecar := range sqliteSidecars {
+			layout.excludes = append(layout.excludes, name+sidecar)
+		}
 	}
 	files, err := snapshotSourceFiles(ctx, layout)
 	if err != nil {
 		return backup.Snapshot{}, err
 	}
-	if stageErr := stageDatabase(ctx, sqlDB, databasePath, stagedDatabase); stageErr != nil {
-		return backup.Snapshot{}, stageErr
-	}
 	mounts, inContainer, err := currentMounts(ctx, dockerClient)
 	if err != nil {
 		return backup.Snapshot{}, err
 	}
-	stagedMounts, err := sourceMounts(mounts, inContainer, stagedDatabase, snapshotDatabase)
-	if err != nil {
-		return backup.Snapshot{}, err
+	// Mount VACUUM INTO copies over the live databases so the snapshot is consistent.
+	for name, db := range databases {
+		stagedDatabase := filepath.Join(stage, name)
+		if stageErr := stageDatabase(ctx, db, filepath.Join(layout.dataDirectory, name), stagedDatabase); stageErr != nil {
+			return backup.Snapshot{}, stageErr
+		}
+		stagedMounts, mountErr := sourceMounts(mounts, inContainer, stagedDatabase, filepath.Join(snapshotDataPath, name))
+		if mountErr != nil {
+			return backup.Snapshot{}, mountErr
+		}
+		layout.mounts = append(layout.mounts, stagedMounts...)
 	}
-	layout.mounts = append(layout.mounts, stagedMounts...)
 	input := backup.CreateSnapshotInput{Mounts: layout.mounts, Sources: layout.sources}
 	for _, excluded := range layout.excludes {
 		input.Globs = append(input.Globs, "!"+snapshotDataPath+"/"+excluded)
@@ -1126,6 +1145,7 @@ func snapshotSourceFiles(ctx context.Context, layout backupSourceLayout) (map[st
 	if statErr != nil {
 		projectsInfo = nil
 	}
+	actorDatabase := francis.StorePath(layout.databaseName)
 	files := make(map[string]os.FileInfo)
 	visit := func(filePath string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -1138,7 +1158,7 @@ func snapshotSourceFiles(ctx context.Context, layout backupSourceLayout) (map[st
 		if err != nil {
 			return err
 		}
-		if relative == layout.databaseName {
+		if relative == layout.databaseName || relative == actorDatabase {
 			return nil
 		}
 		for _, excluded := range layout.excludes {

@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	dbtypes "github.com/getarcaneapp/arcane/types/v2/database"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -1011,16 +1010,11 @@ func TestIdentityNormalizationPostgresUpgrade(t *testing.T) {
 
 func TestSQLiteDSN(t *testing.T) {
 	original := "file:arcane.db?_fk=0&_pragma=foreign_keys%3D1&_pragma=synchronous(NORMAL)&_txlock=immediate"
-	dsn, err := ParseSQLiteConnectionString(original, dbtypes.SQLiteConnectionOptions{
-		IgnoreForeignKeys: true,
-		JournalMode:       "WAL",
-		BusyTimeout:       2500 * time.Millisecond,
-	})
+	dsn, err := ParseSQLiteConnectionString(original)
 	require.NoError(t, err)
 	parsed, err := url.Parse(dsn)
 	require.NoError(t, err)
 	require.Equal(t, "immediate", parsed.Query().Get("_txlock"))
-	require.ElementsMatch(t, []string{"synchronous(NORMAL)", "journal_mode(WAL)", "busy_timeout(2500)"}, parsed.Query()["_pragma"])
+	require.ElementsMatch(t, []string{"foreign_keys(0)", "foreign_keys=1", "synchronous(NORMAL)"}, parsed.Query()["_pragma"])
 	require.Empty(t, parsed.Query().Get("_fk"))
-	require.Contains(t, original, "_fk=0")
 }
