@@ -2665,6 +2665,8 @@
   "notifications_signal_recipients_help": "Danh sách các số điện thoại được phân tách bằng dấu phẩy (kèm theo dấu +) hoặc ID nhóm Signal.",
   "notifications_signal_recipients_required": "Khi tính năng Signal được kích hoạt, ít nhất phải có một người nhận.",
   "notifications_signal_disable_tls_description": "Vô hiệu hóa TLS/SSL cho kết nối API REST của Signal (không được khuyến nghị cho môi trường sản xuất)",
+  "notifications_signal_notify_self_label": "Thông báo cho chính mình",
+  "notifications_signal_notify_self_description": "Khi gửi thông báo đến các nhóm hoặc cho chính mình, hãy thông báo cho các thiết bị của người gửi",
   "notifications_slack_title": "Slack",
   "notifications_slack_description": "Gửi thông báo đến các kênh Slack hoặc tin nhắn trực tiếp.",
   "notifications_slack_token_label": "Token Slack",
