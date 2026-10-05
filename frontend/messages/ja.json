@@ -2665,6 +2665,8 @@
   "notifications_signal_recipients_help": "カンマ区切りの電話番号のリスト (+) またはシグナルグループ ID",
   "notifications_signal_recipients_required": "シグナルが有効になっている場合、少なくとも1人の受信者が必要です",
   "notifications_signal_disable_tls_description": "シグナルREST API 接続の TLS/SSL を無効にする (プロダクションでは推奨されません)",
+  "notifications_signal_notify_self_label": "自分に通知する",
+  "notifications_signal_notify_self_description": "グループや自分自身に通知を送信する際、送信者自身のデバイスに通知を送信する",
   "notifications_slack_title": "Slack",
   "notifications_slack_description": "Slack チャンネルやダイレクトメッセージに通知を送信する",
   "notifications_slack_token_label": "Slack Token",
