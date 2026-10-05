@@ -2665,6 +2665,8 @@
   "notifications_signal_recipients_help": "Kommagetrennte Liste von Telefonnummern (mit +) oder Signal-Gruppen-IDs",
   "notifications_signal_recipients_required": "Mindestens ein Empfänger ist erforderlich, wenn Signal aktiviert ist",
   "notifications_signal_disable_tls_description": "TLS/SSL für die Signal-REST-API-Verbindung deaktivieren (für Produktion nicht empfohlen)",
+  "notifications_signal_notify_self_label": "Sich selbst benachrichtigen",
+  "notifications_signal_notify_self_description": "Beim Versenden von Benachrichtigungen an Gruppen oder an sich selbst die eigenen Geräte des Absenders benachrichtigen",
   "notifications_slack_title": "Slack",
   "notifications_slack_description": "Benachrichtigungen an Slack-Channels oder Direktnachrichten senden",
   "notifications_slack_token_label": "Slack-Token",
