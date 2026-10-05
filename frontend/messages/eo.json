@@ -2665,6 +2665,8 @@
   "notifications_signal_recipients_help": "Komoseparita listo de telefonnumeroj (kun +) aŭ Signal-grupaj ID-oj",
   "notifications_signal_recipients_required": "Almenaŭ unu ricevanto estas postulata kiam Signal estas aktivigita.",
   "notifications_signal_disable_tls_description": "Malŝalti TLS/SSL por la Signal REST API-konekto (ne rekomendata por produktado)",
+  "notifications_signal_notify_self_label": "Mem sciigi",
+  "notifications_signal_notify_self_description": "Alarmu la proprajn aparatojn de la sendinto kiam oni sendas sciigojn al grupoj aŭ al si mem.",
   "notifications_slack_title": "Malstreĉiĝo",
   "notifications_slack_description": "Sendu sciigojn al Slack-kanaloj aŭ rektaj mesaĝoj.",
   "notifications_slack_token_label": "Slack-jetono",
