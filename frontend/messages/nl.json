@@ -2665,6 +2665,8 @@
   "notifications_signal_recipients_help": "Kommagescheiden lijst van telefoonnummers (met +) of signaalgroep ID's",
   "notifications_signal_recipients_required": "Tenminste één ontvanger is vereist wanneer Signaal is ingeschakeld",
   "notifications_signal_disable_tls_description": "Schakel TLS/SSL uit voor Signal REST API verbinding (niet aanbevolen voor productie)",
+  "notifications_signal_notify_self_label": "Zelf op de hoogte stellen",
+  "notifications_signal_notify_self_description": "Geef een melding op de apparaten van de afzender zelf wanneer er meldingen naar groepen of naar zichzelf worden verzonden",
   "notifications_slack_title": "Slack",
   "notifications_slack_description": "Stuur meldingen naar Slack kanalen of direct berichten",
   "notifications_slack_token_label": "Slack Token",
