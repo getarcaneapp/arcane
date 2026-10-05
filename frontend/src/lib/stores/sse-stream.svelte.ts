@@ -1,5 +1,6 @@
 import { browser } from '$app/env';
 
+import { currentSessionSignal } from '#lib/services/api-service.js';
 import type { SSEEventBase, SSEStreamConfig } from '#lib/types/stream.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -104,7 +105,7 @@ export function createSSEStream<TEvent extends SSEEventBase>(config: SSEStreamCo
 			);
 			if (operationResult.error !== null) {
 				const error = operationResult.error;
-				if (!controller.signal.aborted && isCurrentGeneration(generation)) {
+				if (!controller.signal.aborted && !currentSessionSignal().aborted && isCurrentGeneration(generation)) {
 					console.warn(`${config.label} stream disconnected:`, error);
 				}
 			} else {
@@ -116,7 +117,8 @@ export function createSSEStream<TEvent extends SSEEventBase>(config: SSEStreamCo
 			}
 			if (isCurrentGeneration(generation)) {
 				_streamConnected = false;
-				if (!controller.signal.aborted) {
+				// After logout, the next sign-in restarts streams through their stores.
+				if (!controller.signal.aborted && !currentSessionSignal().aborted) {
 					scheduleReconnect(generation);
 				}
 			} else if (!controller.signal.aborted) {

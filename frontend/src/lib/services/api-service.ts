@@ -28,6 +28,20 @@ export interface APIResponse<T = any> {
 	status: number;
 }
 
+// Thrown for work belonging to a session that ended through logout.
+export class SessionCancelledError extends Error {
+	constructor() {
+		super('Session ended');
+		this.name = 'SessionCancelledError';
+	}
+}
+
+// Browsers may surface a logout abort as a plain AbortError instead of the abort reason.
+export function isSessionCancelledError(error: unknown): boolean {
+	if (error instanceof SessionCancelledError) return true;
+	return error instanceof Error && error.name === 'AbortError' && sessionControllerInternal.signal.aborted;
+}
+
 export class APIError extends Error {
 	config: InternalRequestConfig & { method?: string; url?: string };
 	request?: { url: string };
@@ -237,6 +251,31 @@ const skipAuthPathsInternal = [
 	'/settings/public'
 ];
 
+// Each session owns one controller; logout aborts it and keeps it aborted until
+// the next sign-in, so protected requests fail fast in between.
+let sessionControllerInternal = new AbortController();
+
+// Requests needed to sign in again, which must work after logout.
+function isSessionFreePathInternal(path: string): boolean {
+	if (path.startsWith('/auth/refresh')) return false;
+	return (
+		skipAuthPathsInternal.some((prefix) => path.startsWith(prefix)) ||
+		['/oidc/url', '/oidc/callback', '/oidc/status'].includes(path) ||
+		path.startsWith('/app-version') ||
+		path.endsWith('/settings/public')
+	);
+}
+
+/** Combines a caller signal with the current session, so logout cancels the request. */
+export function withSessionSignal(signal?: AbortSignal | null): AbortSignal {
+	const session = sessionControllerInternal.signal;
+	return signal ? AbortSignal.any([signal, session]) : session;
+}
+
+export function currentSessionSignal(): AbortSignal {
+	return sessionControllerInternal.signal;
+}
+
 type UnauthorizedActionInternal = 'none' | 'redirect' | 'reload' | 'retry';
 
 function isAuthPagePathInternal(pathname: string): boolean {
@@ -248,7 +287,8 @@ export async function handleUnauthorizedResponseInternal(
 	retry = false,
 	serverMsg?: string | null
 ): Promise<UnauthorizedActionInternal> {
-	if (typeof window === 'undefined' || retry) {
+	const session = sessionControllerInternal.signal;
+	if (typeof window === 'undefined' || retry || session.aborted) {
 		return 'none';
 	}
 
@@ -281,6 +321,7 @@ export async function handleUnauthorizedResponseInternal(
 			return 'reload';
 		})()
 	);
+	if (session.aborted) return 'none';
 	if (operationResult.error !== null) {
 		const error = operationResult.error;
 		const isTransientRefreshFailure =
@@ -355,14 +396,17 @@ class APIClient {
 			method,
 			url
 		};
+		const session = isSessionFreePathInternal(getRequestPath(url, baseURL)) ? undefined : sessionControllerInternal.signal;
+		const signal = session ? withSessionSignal(config.signal) : config.signal;
 
 		const operationResult = await tryCatch(
 			(async () => {
-				const options = buildRequestOptionsInternal(method, data, config);
+				const options = buildRequestOptionsInternal(method, data, { ...config, signal });
 
 				const response = await this.client(requestUrl, options);
 				const parsed =
 					method.toUpperCase() === 'HEAD' ? undefined : await parseResponseBody(response.clone(), config.responseType);
+				if (session?.aborted) throw new SessionCancelledError();
 				return {
 					data: parsed as T,
 					headers: response.headers,
@@ -373,8 +417,11 @@ class APIClient {
 		);
 		if (operationResult.error !== null) {
 			const error = operationResult.error;
+			if (session?.aborted) {
+				throw new SessionCancelledError();
+			}
 			if (error instanceof KyHTTPError) {
-				return this.handleHttpError<T>(error, method, url, data, config, requestConfig, requestUrl);
+				return this.handleHttpError<T>(error, method, url, data, config, requestConfig, requestUrl, session);
 			}
 
 			if (error instanceof TimeoutError) {
@@ -421,10 +468,12 @@ class APIClient {
 		data: unknown,
 		config: InternalRequestConfig,
 		requestConfig: InternalRequestConfig & { baseURL: string; method: string; url: string },
-		requestUrl: string
+		requestUrl: string,
+		session: AbortSignal | undefined
 	): Promise<APIResponse<T>> {
 		const errorResponse = error.response;
 		const parsed = await parseErrorResponseBody(error);
+		if (session?.aborted) throw new SessionCancelledError();
 		const response: APIResponse = {
 			data: parsed,
 			headers: errorResponse.headers,
@@ -438,6 +487,7 @@ class APIClient {
 				!!config._retry,
 				extractServerMessage(parsed)
 			);
+			if (session?.aborted) throw new SessionCancelledError();
 			if (action === 'retry') {
 				return this.performRequest<T>(method, url, data, {
 					...config,
@@ -505,6 +555,17 @@ abstract class BaseAPIService {
 			upgradeReloadStartedInternal = false;
 		}
 		upgradeInProgressInternal = value;
+	}
+
+	/** Cancels the current session's work and blocks protected requests until beginSession. */
+	static endSession() {
+		sessionControllerInternal.abort(new SessionCancelledError());
+	}
+
+	static beginSession() {
+		if (sessionControllerInternal.signal.aborted) {
+			sessionControllerInternal = new AbortController();
+		}
 	}
 
 	static confirmUpgradeRestart() {

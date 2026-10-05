@@ -21,13 +21,15 @@ import { readNdjsonStream } from '#lib/utils/streaming.js';
 import { transformPaginationParams } from '#lib/utils/tables.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
-import BaseAPIService from './api-service';
+import BaseAPIService, { isSessionCancelledError, withSessionSignal } from './api-service';
 import { uploadService, type UploadProgressCallback } from './upload-service';
 
 export type ImagePullResult = {
 	success: boolean;
 	imageName: string;
 	error?: string;
+	/** The pull was abandoned because the user signed out. */
+	cancelled?: boolean;
 };
 
 /** Image list page plus the upload limit (MB) the environment enforces; absent on older agents. */
@@ -115,7 +117,8 @@ class ImageService extends BaseAPIService {
 				const response = await fetch(`/api/environments/${envId}/images/pull`, {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({ imageName })
+					body: JSON.stringify({ imageName }),
+					signal: withSessionSignal()
 				});
 
 				if (!response.ok || !response.body) {
@@ -151,6 +154,9 @@ class ImageService extends BaseAPIService {
 		);
 		if (operationResult.error !== null) {
 			const error = operationResult.error;
+			if (isSessionCancelledError(error)) {
+				return { success: false, imageName, cancelled: true };
+			}
 			return {
 				success: false,
 				imageName,

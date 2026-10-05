@@ -88,6 +88,7 @@
 
 		const result = await imageService.pullImageStream(imageRef);
 		pullingImageName = null;
+		if (result.cancelled) return;
 		if (!result.success) {
 			const message = result.error || m.images_pull_failed();
 			toast.error(message);

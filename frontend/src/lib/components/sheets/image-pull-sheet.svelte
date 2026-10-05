@@ -57,6 +57,7 @@
 
 	async function drainPullStream(fullImageName: string) {
 		const result = await imageService.pullImageStream(fullImageName);
+		if (result.cancelled) return;
 		if (!result.success) {
 			const message = result.error || m.images_pull_unexpected_error();
 			toast.error(message);

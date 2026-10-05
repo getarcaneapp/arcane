@@ -15,7 +15,7 @@ import { parseInstant } from '#lib/utils/formatting.js';
 import { getEffectiveLandingPage } from '#lib/utils/navigation.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
-import BaseAPIService, { APIError } from './api-service';
+import BaseAPIService, { APIError, SessionCancelledError, currentSessionSignal } from './api-service';
 
 const REFRESH_TOKEN_KEY = 'arcane_refresh_token';
 const TOKEN_EXPIRY_KEY = 'arcane_token_expiry';
@@ -32,6 +32,7 @@ class AuthService extends BaseAPIService {
 	private refreshTimer: ReturnType<typeof setTimeout> | null = null;
 	private isRefreshing = false;
 	private refreshSubscribers: Array<(token: string | null, error?: Error) => void> = [];
+	private logoutRequest: Promise<boolean> | null = null;
 
 	constructor() {
 		super();
@@ -115,6 +116,7 @@ class AuthService extends BaseAPIService {
 		}
 
 		this.isRefreshing = true;
+		const session = currentSessionSignal();
 
 		const operationResult = await tryCatch(
 			(async () => {
@@ -124,6 +126,8 @@ class AuthService extends BaseAPIService {
 					expiresAt?: string;
 				}>(this.api.post('/auth/refresh', { refreshToken }));
 
+				// Logout already reset the refresh state; a later login may own it now.
+				if (session.aborted) throw new SessionCancelledError();
 				if (response.refreshToken && response.expiresAt) {
 					this.storeTokenData(response.refreshToken, response.expiresAt);
 				}
@@ -138,6 +142,7 @@ class AuthService extends BaseAPIService {
 		);
 		if (operationResult.error !== null) {
 			const error = operationResult.error;
+			if (session.aborted) throw new SessionCancelledError();
 			const err = error instanceof Error ? error : new Error('Token refresh failed');
 			console.error('Token refresh failed:', err);
 			// Only drop the stored refresh token when the server definitively rejects it
@@ -176,6 +181,7 @@ class AuthService extends BaseAPIService {
 			throw new Error('Authentication did not complete');
 		}
 
+		BaseAPIService.beginSession();
 		if (data.refreshToken && data.expiresAt) {
 			this.storeTokenData(data.refreshToken, data.expiresAt);
 		}
@@ -244,9 +250,24 @@ class AuthService extends BaseAPIService {
 		}
 	}
 
-	logout(queryClient: QueryClient): void {
+	/** Ends the local session, then revokes the server session. Resolves false when revocation is unconfirmed. */
+	logout(queryClient: QueryClient): Promise<boolean> {
+		// Reuse the pending request only while it still belongs to the current session.
+		if (this.logoutRequest && currentSessionSignal().aborted) return this.logoutRequest;
+
+		BaseAPIService.endSession();
 		this.clearTokenData();
+		this.refreshSubscribers.forEach((callback) => callback(null, new SessionCancelledError()));
+		this.refreshSubscribers = [];
+		this.isRefreshing = false;
 		this.resetAuthenticatedState(queryClient);
+
+		const request: Promise<boolean> = tryCatch(this.api.post('/auth/logout', undefined, { timeout: 10_000 })).then((result) => {
+			if (this.logoutRequest === request) this.logoutRequest = null;
+			return result.error === null;
+		});
+		this.logoutRequest = request;
+		return request;
 	}
 
 	/**

@@ -482,11 +482,22 @@ test.describe('Activity Center', () => {
 			});
 		});
 		await page.context().route(/\/api\/auth\/logout$/, async (route) => {
-			activeUserId = 'user-b';
 			await route.fulfill({
 				status: 200,
 				contentType: 'application/json',
 				body: JSON.stringify({ success: true })
+			});
+		});
+		await page.context().route(/\/api\/auth\/login$/, async (route) => {
+			activeUserId = 'user-b';
+			await route.fulfill({
+				status: 200,
+				contentType: 'application/json',
+				body: JSON.stringify({
+					success: true,
+					status: 'authenticated',
+					user: user(activeUserId, permissions)
+				})
 			});
 		});
 
@@ -495,6 +506,10 @@ test.describe('Activity Center', () => {
 		await expect(activityRow(activityCenter, 'user-a-private-activity')).toBeVisible();
 
 		await page.goto('/logout');
+		await page.waitForURL(/\/login/);
+		await page.getByLabel('Username').fill('user-b');
+		await page.getByLabel('Password').fill('password');
+		await page.getByRole('button', { name: 'Sign in to Arcane', exact: true }).click();
 		await page.waitForURL('/dashboard');
 		await expect.poll(() => streamedUsers).toContain('user-b');
 		activityCenter = await openActivityCenter(page);

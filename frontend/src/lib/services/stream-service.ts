@@ -1,7 +1,7 @@
 import { streamCacheBuster } from '#lib/utils/streaming.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
-import BaseAPIService, { handleUnauthorizedResponseInternal } from './api-service';
+import BaseAPIService, { handleUnauthorizedResponseInternal, withSessionSignal } from './api-service';
 
 export const STREAM_CHANNEL_ENVIRONMENTS = 'environments';
 export const STREAM_CHANNEL_DASHBOARD = 'dashboard';
@@ -26,7 +26,7 @@ class StreamService extends BaseAPIService {
 		const response = await fetch(this.getClientStreamUrl(channels, params), {
 			credentials: 'include',
 			headers: { Accept: 'text/event-stream' },
-			signal
+			signal: withSessionSignal(signal)
 		});
 		if (response.status === 401) {
 			if (response.body) await tryCatch(response.body.cancel());

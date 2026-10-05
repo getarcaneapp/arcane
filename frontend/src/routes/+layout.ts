@@ -3,13 +3,14 @@ import { redirect } from '@sveltejs/kit';
 import { QueryClient } from '@tanstack/svelte-query';
 
 import { queryKeys } from '#lib/query/query-keys.js';
+import { isSessionCancelledError } from '#lib/services/api-service.js';
 import { authService } from '#lib/services/auth-service.js';
 import { environmentManagementService } from '#lib/services/env-mgmt-service.js';
 import { roleService } from '#lib/services/role-service.js';
 import { settingsService } from '#lib/services/settings-service.js';
 import { swarmService } from '#lib/services/swarm-service.js';
 import { userService } from '#lib/services/user-service.js';
-import versionService from '#lib/services/version-service.js';
+import versionService, { toAppVersionInformation } from '#lib/services/version-service.js';
 import settingsStore from '#lib/stores/config-store.svelte.js';
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import { featureStore } from '#lib/stores/features.store.svelte.js';
@@ -49,11 +50,24 @@ let authenticatedUserId: string | null | undefined;
 // lands on the landing page. Only an explicit rejection means the session is
 // gone; anything else keeps the user we already know about.
 function resolveUserAfterLoadFailureInternal(error: unknown): User | null {
-	if (isAuthRejectionError(error)) return null;
+	if (isAuthRejectionError(error) || isSessionCancelledError(error)) return null;
 	return userStore.current;
 }
 
 export const load: LayoutLoad = async ({ url }) => {
+	// Logout must not wait on, or be triggered by, authenticated requests; preloading runs this too.
+	if (url.pathname === '/logout') {
+		return {
+			user: null,
+			settings: settingsStore.current ?? null,
+			permissionsManifest: null,
+			permissionsManifestLoadFailed: false,
+			versionInformation: versionStore.current ?? toAppVersionInformation({}),
+			queryClient,
+			swarmEnabled: undefined
+		};
+	}
+
 	const versionInformationRequest = versionService.getVersionInformation();
 	const autoLoginConfigRequest = browser
 		? queryClient.query({
@@ -131,10 +145,17 @@ export const load: LayoutLoad = async ({ url }) => {
 					result.error ? null : result.data
 				);
 		featureStore.connect(queryClient);
-		const featuresRequest = featureStore.refresh(await environmentStore.getCurrentEnvironmentId());
+		const currentEnvironmentId = await environmentStore.getCurrentEnvironmentId();
+		const featuresRequest = featureStore.refresh(currentEnvironmentId);
+		// Optional discovery: skip it without swarm:read and never toast a denial.
+		const swarmStatusRequest = userHasPermission(user, 'swarm:read', currentEnvironmentId)
+			? tryCatch(swarmService.getSwarmStatus(currentEnvironmentId, { suppressAccessDeniedToast: true })).then((result) =>
+					result.error ? null : result.data
+				)
+			: Promise.resolve(null);
 		const [loadedSettings, loadedSwarmStatus, loadedPermissionsManifest] = await Promise.all([
 			settingsRequest,
-			tryCatch(swarmService.getSwarmStatus()).then((result) => (result.error ? null : result.data)),
+			swarmStatusRequest,
 			permissionsManifestRequest
 		]);
 		// Keep recovery/settings pages reachable while a selected agent is offline.

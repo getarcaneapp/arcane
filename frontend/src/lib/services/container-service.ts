@@ -17,7 +17,7 @@ import { downloadFromUrl } from '#lib/utils/browser-download.js';
 import { transformPaginationParams } from '#lib/utils/tables.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
-import BaseAPIService, { extractServerMessage, handleUnauthorizedResponseInternal } from './api-service';
+import BaseAPIService, { extractServerMessage, handleUnauthorizedResponseInternal, withSessionSignal } from './api-service';
 
 export type ContainersPaginatedResponse = Paginated<ContainerSummaryDto, ContainerStatusCounts> & {
 	groups?: ContainerSummaryGroupDto[];
@@ -171,7 +171,7 @@ class ContainerService extends BaseAPIService {
 
 	private async probeDownloadInternal(url: string, retry = false): Promise<boolean> {
 		const probe = new AbortController();
-		const response = await fetch(url, { credentials: 'include', signal: probe.signal });
+		const response = await fetch(url, { credentials: 'include', signal: withSessionSignal(probe.signal) });
 		if (response.ok) {
 			probe.abort();
 			return true;

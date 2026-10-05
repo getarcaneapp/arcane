@@ -1,4 +1,5 @@
 import { m } from '#lib/paraglide/messages.js';
+import { currentSessionSignal } from '#lib/services/api-service.js';
 import type {
 	ActorDiagnostics,
 	Diagnostics,
@@ -119,7 +120,7 @@ export class ReconnectingWebSocket<T = unknown> {
 	}
 
 	private scheduleReconnect() {
-		if (this.opts.shouldReconnect && !this.opts.shouldReconnect()) {
+		if (currentSessionSignal().aborted || (this.opts.shouldReconnect && !this.opts.shouldReconnect())) {
 			return;
 		}
 
