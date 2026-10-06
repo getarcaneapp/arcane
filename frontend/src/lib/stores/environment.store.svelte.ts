@@ -170,9 +170,21 @@ function createEnvironmentManagementStore() {
 				const listPage = getResourceListPage();
 				if (listPage) {
 					await goto(listPage);
-				} else {
-					await refreshAll();
+					return;
 				}
+
+				// Environment-scoped routes read params.id in load(), so a refresh keeps the old environment.
+				const routeEnvironmentId = page.params?.id;
+				if (routeEnvironmentId && page.route?.id?.includes('/environments/[id]')) {
+					const pathname = page.url.pathname.replace(
+						`/environments/${encodeURIComponent(routeEnvironmentId)}`,
+						`/environments/${encodeURIComponent(environment.id)}`
+					);
+					await goto(`${pathname}${page.url.search}${page.url.hash}`, { refreshAll: true });
+					return;
+				}
+
+				await refreshAll();
 			}
 		},
 		subscribeSelected: (subscriber: (environment: Environment | null) => void) => {
