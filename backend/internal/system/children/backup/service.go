@@ -748,6 +748,14 @@ func (s *Service) deleteRunsInternal(ctx context.Context, localRuns2 []*backupty
 			}
 			continue
 		}
+		switch {
+		case run.LocalSnapshotID != "" && run.RemoteSnapshotID != "":
+			run.Destination = backuptypes.SystemBackupDestinationLocalS3
+		case run.LocalSnapshotID != "":
+			run.Destination = backuptypes.SystemBackupDestinationLocal
+		default:
+			run.Destination = backuptypes.SystemBackupDestinationS3
+		}
 		if saveErr := s.store.SaveRun(ctx, run); saveErr != nil {
 			deleteErr = errors.Join(deleteErr, saveErr)
 		}
@@ -783,7 +791,16 @@ func (s *Service) forgetRemoteSnapshotsInternal(ctx context.Context, dockerClien
 	}
 	repository, repoErr := s.remoteRepositoryInternal(ctx, destinationID)
 	if repoErr == nil {
-		repoErr = s.engine.ForgetSnapshots(ctx, dockerClient, repository, key, snapshotIDs)
+		var observation backuptypes.RepositoryObservation
+		observation, repoErr = backup.CheckRemoteRepository(ctx, s.s3Destinations, destinationID, "arcane-system-recovery")
+		switch {
+		case repoErr != nil:
+		case !observation.Available:
+			// Nothing remains to forget; drop the references so the run can be removed.
+			slog.WarnContext(ctx, "S3 repository is missing; dropping remote snapshot references", "destinationId", destinationID, "snapshots", len(snapshotIDs))
+		default:
+			repoErr = s.engine.ForgetSnapshots(ctx, dockerClient, repository, key, snapshotIDs)
+		}
 	}
 	if repoErr != nil {
 		return fmt.Errorf("failed to delete S3 snapshots: %w", repoErr)

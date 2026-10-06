@@ -876,18 +876,24 @@ func RemoteSnapshotChecker(ctx context.Context, destinations *s3.S3DestinationSe
 	}
 }
 
-// CheckScheduledRemote permits first-use initialization, but detects lost repositories.
-func CheckScheduledRemote(ctx context.Context, db *database.DB, destinations *s3.S3DestinationService, table, destinationID, root string) error {
+// CheckRemoteRepository probes the destination's repository config within a bounded budget.
+// Transport and credential failures are returned as errors so callers never forget snapshots blindly.
+func CheckRemoteRepository(ctx context.Context, destinations *s3.S3DestinationService, destinationID, root string) (backup.RepositoryObservation, error) {
 	if destinations == nil {
-		return errors.New("S3 destinations are unavailable")
+		return backup.RepositoryObservation{}, errors.New("S3 destinations are unavailable")
 	}
 	configuration, err := destinations.Configuration(ctx, destinationID)
 	if err != nil {
-		return err
+		return backup.RepositoryObservation{}, err
 	}
 	checkCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	result, err := s3util.CheckRepository(checkCtx, configuration, root, "")
+	return s3util.CheckRepository(checkCtx, configuration, root, "")
+}
+
+// CheckScheduledRemote permits first-use initialization, but detects lost repositories.
+func CheckScheduledRemote(ctx context.Context, db *database.DB, destinations *s3.S3DestinationService, table, destinationID, root string) error {
+	result, err := CheckRemoteRepository(ctx, destinations, destinationID, root)
 	if err != nil || result.Available {
 		return err
 	}

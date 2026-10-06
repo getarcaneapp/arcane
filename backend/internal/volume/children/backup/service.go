@@ -794,7 +794,21 @@ func (s *Service) forgetRemoteSnapshotsInternal(ctx context.Context, dockerClien
 	}
 	repository, repoErr := s.remoteRusticRepositoryForInstanceInternal(ctx, destinationID, instanceID)
 	if repoErr == nil {
-		repoErr = s.forgetSnapshotsInternal(ctx, dockerClient, repository, snapshotIDs)
+		// Mirror remoteRusticRepositoryForInstanceInternal so the check targets the Rustic root.
+		root := instanceID
+		if strings.TrimSpace(root) == "" {
+			root = strings.TrimSpace(s.deps.Settings.GetSettingsConfig().InstanceID.Value)
+		}
+		var observation backuptypes.RepositoryObservation
+		observation, repoErr = backup.CheckRemoteRepository(ctx, s.deps.S3Destinations, destinationID, path.Join("arcane-volume-backups", root))
+		switch {
+		case repoErr != nil:
+		case !observation.Available:
+			// Nothing remains to forget; drop the references so the entry can be removed.
+			slog.WarnContext(ctx, "S3 repository is missing; dropping remote snapshot references", "destinationId", destinationID, "snapshots", len(snapshotIDs))
+		default:
+			repoErr = s.forgetSnapshotsInternal(ctx, dockerClient, repository, snapshotIDs)
+		}
 	}
 	if repoErr != nil {
 		return fmt.Errorf("failed to delete S3 Rustic snapshots: %w", repoErr)
