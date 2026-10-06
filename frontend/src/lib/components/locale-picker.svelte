@@ -44,6 +44,7 @@
 		nl: 'Nederlands',
 		pl: 'Polski',
 		'pt-BR': 'Português brasileiro',
+		'pt-PT': 'Português (Portugal)',
 		ru: 'Русский',
 		sv: 'Svenska',
 		tr: 'Türkçe',
