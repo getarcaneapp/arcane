@@ -27,6 +27,15 @@ function getResourceListPage(): string | null {
 	return null;
 }
 
+// Pages under /environments/[id]/ (e.g. Git syncs) carry the environment in
+// the URL, so a refresh would keep showing the old one.
+function getEnvironmentScopedPage(environmentId: string): string | null {
+	const routeId = page.route?.id;
+	const currentId = page.params.id;
+	if (!routeId?.includes('/environments/[id]/') || !currentId) return null;
+	return page.url.pathname.replace(`/environments/${currentId}/`, `/environments/${environmentId}/`);
+}
+
 function createEnvironmentManagementStore() {
 	const selectedEnvironmentId = new PersistedState<string | null>('selectedEnvironmentId', null);
 
@@ -167,7 +176,7 @@ function createEnvironmentManagementStore() {
 				// Check if we're on a resource detail page (e.g., /containers/abc123)
 				// These pages show environment-specific resources that won't exist in the new environment
 				// Navigate to the corresponding list page to avoid 500 errors
-				const listPage = getResourceListPage();
+				const listPage = getResourceListPage() ?? getEnvironmentScopedPage(environment.id);
 				if (listPage) {
 					await goto(listPage);
 				} else {

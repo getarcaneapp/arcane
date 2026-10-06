@@ -57,7 +57,9 @@
 		return value === 'deploy' || value === 'backup' ? value : undefined;
 	}
 
-	afterNavigate(() => {
+	afterNavigate(({ from, to }) => {
+		// The page is reused when the environment switcher changes [id].
+		if (from?.params?.id !== to?.params?.id) selectedIds = [];
 		const action = page.url.searchParams.get('action');
 		if (action === 'create') {
 			openCreateSyncDialog(
