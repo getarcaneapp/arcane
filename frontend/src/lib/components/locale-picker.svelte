@@ -44,6 +44,7 @@
 		nl: 'Nederlands',
 		pl: 'Polski',
 		'pt-BR': 'Português brasileiro',
+		'pt-PT': 'Português (Portugal)',
 		ru: 'Русский',
 		sv: 'Svenska',
 		tr: 'Türkçe',
@@ -68,11 +69,15 @@
 		},
 		onSuccess: async (locale) => {
 			currentLocale = locale;
-			await queryClient.invalidateQueries({ queryKey: queryKeys.users.all });
+			await queryClient.invalidateQueries({
+				queryKey: queryKeys.users.all
+			});
 		},
 		onError: (err, _locale, context) => {
 			currentLocale = context?.previousLocale ?? getLocale();
-			toast.error(m.common_update_failed({ resource: m.language() }), { description: extractApiErrorMessage(err) });
+			toast.error(m.common_update_failed({ resource: m.language() }), {
+				description: extractApiErrorMessage(err)
+			});
 		}
 	}));
 
