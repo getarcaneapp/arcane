@@ -637,6 +637,112 @@ func TestContainerRegistryService_UpdateRegistryRejectsECRTargetChangeWithStored
 	require.Equal(t, "new-secret-key", decryptedSecret)
 }
 
+func TestContainerRegistryService_CreateRegistry_AcceptsECRWithoutKeysForIAMRole(t *testing.T) {
+	db := setupContainerRegistryTestDBInternal(t)
+	svc := NewContainerRegistryService(db, nil, nil, nil)
+
+	reg, err := svc.CreateRegistry(t.Context(), containerregistry.CreateContainerRegistryRequest{
+		URL:          "123456789012.dkr.ecr.us-east-1.amazonaws.com",
+		RegistryType: RegistryTypeECR,
+		AWSRegion:    "us-east-1",
+	})
+	require.NoError(t, err)
+	assert.Empty(t, reg.AWSAccessKeyID)
+	assert.Empty(t, reg.AWSSecretAccessKey)
+	assert.Equal(t, "us-east-1", reg.AWSRegion)
+}
+
+func TestContainerRegistryService_CreateRegistry_RejectsIncompleteECRKeyPair(t *testing.T) {
+	tests := []struct {
+		name  string
+		keyID string
+		key   string
+		field string
+	}{
+		{name: "key id without secret", keyID: "access-key", field: "awsSecretAccessKey"},
+		{name: "secret without key id", key: "secret-key", field: "awsAccessKeyId"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db := setupContainerRegistryTestDBInternal(t)
+			svc := NewContainerRegistryService(db, nil, nil, nil)
+
+			_, err := svc.CreateRegistry(t.Context(), containerregistry.CreateContainerRegistryRequest{
+				URL:                "123456789012.dkr.ecr.us-east-1.amazonaws.com",
+				RegistryType:       RegistryTypeECR,
+				AWSAccessKeyID:     tt.keyID,
+				AWSSecretAccessKey: tt.key,
+				AWSRegion:          "us-east-1",
+			})
+			require.ErrorIs(t, err, common.ErrValidation)
+			fieldErr, ok := errors.AsType[*base.FieldError](err)
+			require.True(t, ok)
+			assert.Equal(t, tt.field, fieldErr.Field)
+		})
+	}
+}
+
+func TestContainerRegistryService_UpdateRegistry_ClearingECRKeysSwitchesToIAMRole(t *testing.T) {
+	db := setupContainerRegistryTestDBInternal(t)
+	svc := NewContainerRegistryService(db, nil, nil, nil)
+
+	reg, err := svc.CreateRegistry(t.Context(), containerregistry.CreateContainerRegistryRequest{
+		URL:                "123456789012.dkr.ecr.us-east-1.amazonaws.com",
+		RegistryType:       RegistryTypeECR,
+		AWSAccessKeyID:     "access-key",
+		AWSSecretAccessKey: "secret-key",
+		AWSRegion:          "us-east-1",
+	})
+	require.NoError(t, err)
+
+	cachedAt := time.Now().UTC()
+	reg.ECRToken = "cached-token"
+	reg.ECRTokenGeneratedAt = &cachedAt
+	require.NoError(t, db.WithContext(t.Context()).Save(reg).Error)
+
+	updated, err := svc.UpdateRegistry(t.Context(), reg.ID, containerregistry.UpdateContainerRegistryRequest{
+		AWSAccessKeyID: new(""),
+	})
+	require.NoError(t, err)
+	assert.Empty(t, updated.AWSAccessKeyID)
+	assert.Empty(t, updated.AWSSecretAccessKey)
+	assert.Empty(t, updated.ECRToken)
+	assert.Nil(t, updated.ECRTokenGeneratedAt)
+}
+
+func TestContainerRegistryService_SyncRegistries_ClearsECRSecretWhenManagerSendsNoKeys(t *testing.T) {
+	db := setupContainerRegistryTestDBInternal(t)
+	svc := NewContainerRegistryService(db, nil, nil, nil)
+
+	existing, err := svc.CreateRegistry(t.Context(), containerregistry.CreateContainerRegistryRequest{
+		URL:                "123456789012.dkr.ecr.us-east-1.amazonaws.com",
+		RegistryType:       RegistryTypeECR,
+		AWSAccessKeyID:     "access-key",
+		AWSSecretAccessKey: "secret-key",
+		AWSRegion:          "us-east-1",
+	})
+	require.NoError(t, err)
+
+	err = svc.SyncRegistries(t.Context(), []containerregistry.Sync{
+		{
+			ID:           existing.ID,
+			URL:          existing.URL,
+			Enabled:      true,
+			RegistryType: RegistryTypeECR,
+			AWSRegion:    "us-east-1",
+			CreatedAt:    existing.CreatedAt,
+			UpdatedAt:    existing.UpdatedAt,
+		},
+	})
+	require.NoError(t, err)
+
+	var updated ContainerRegistry
+	require.NoError(t, db.WithContext(t.Context()).First(&updated, "id = ?", existing.ID).Error)
+	assert.Empty(t, updated.AWSAccessKeyID)
+	assert.Empty(t, updated.AWSSecretAccessKey)
+}
+
 func TestContainerRegistryService_UpdateRegistry_RejectsChangingRegistryType(t *testing.T) {
 	db := setupContainerRegistryTestDBInternal(t)
 	svc := NewContainerRegistryService(db, nil, nil, nil)

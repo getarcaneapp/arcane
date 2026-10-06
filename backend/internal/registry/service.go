@@ -222,21 +222,27 @@ func (s *ContainerRegistryService) CreateRegistry(ctx context.Context, req conta
 	}
 
 	if registryType == RegistryTypeECR {
-		if strings.TrimSpace(req.AWSAccessKeyID) == "" {
-			return nil, common.Classify(common.ErrValidation, &base.FieldError{Field: "awsAccessKeyId", Err: errors.New("AWS Access Key ID is required")})
-		}
 		if strings.TrimSpace(req.AWSRegion) == "" {
 			return nil, common.Classify(common.ErrValidation, &base.FieldError{Field: "awsRegion", Err: errors.New("AWS Region is required")})
 		}
-		if strings.TrimSpace(req.AWSSecretAccessKey) == "" {
+		// Static keys are optional, but must be supplied as a pair. With neither,
+		// the default AWS credential chain (e.g. an EC2 instance profile) is used.
+		hasKeyID := strings.TrimSpace(req.AWSAccessKeyID) != ""
+		hasSecret := strings.TrimSpace(req.AWSSecretAccessKey) != ""
+		if hasSecret && !hasKeyID {
+			return nil, common.Classify(common.ErrValidation, &base.FieldError{Field: "awsAccessKeyId", Err: errors.New("AWS Access Key ID is required")})
+		}
+		if hasKeyID && !hasSecret {
 			return nil, common.Classify(common.ErrValidation, &base.FieldError{Field: "awsSecretAccessKey", Err: errors.New("AWS Secret Access Key is required")})
 		}
-		encryptedSecret, encryptErr := crypto.Encrypt(req.AWSSecretAccessKey)
-		if encryptErr != nil {
-			return nil, fmt.Errorf("failed to encrypt AWS secret access key: %w", encryptErr)
+		if hasSecret {
+			encryptedSecret, encryptErr := crypto.Encrypt(req.AWSSecretAccessKey)
+			if encryptErr != nil {
+				return nil, fmt.Errorf("failed to encrypt AWS secret access key: %w", encryptErr)
+			}
+			registryRecord.AWSSecretAccessKey = encryptedSecret
 		}
 		registryRecord.AWSAccessKeyID = req.AWSAccessKeyID
-		registryRecord.AWSSecretAccessKey = encryptedSecret
 		registryRecord.AWSRegion = req.AWSRegion
 	} else {
 		if strings.TrimSpace(req.Username) == "" {
@@ -354,7 +360,16 @@ func (s *ContainerRegistryService) updateECRRegistryFieldsInternal(localRegistry
 	utils.ApplyChanged(&localRegistry.AWSAccessKeyID, mo.PointerToOption(req.AWSAccessKeyID))
 	utils.ApplyChanged(&localRegistry.AWSRegion, mo.PointerToOption(req.AWSRegion))
 
-	if req.AWSSecretAccessKey != nil && *req.AWSSecretAccessKey != "" {
+	hasKeyID := strings.TrimSpace(localRegistry.AWSAccessKeyID) != ""
+	providedSecret := req.AWSSecretAccessKey != nil && *req.AWSSecretAccessKey != ""
+
+	switch {
+	case !hasKeyID && providedSecret:
+		return common.Classify(common.ErrValidation, &base.FieldError{Field: "awsAccessKeyId", Err: errors.New("AWS Access Key ID is required")})
+	case !hasKeyID:
+		// No static key: the default AWS credential chain applies, so drop any stored secret.
+		localRegistry.AWSSecretAccessKey = ""
+	case providedSecret:
 		encryptedSecret, err := crypto.Encrypt(*req.AWSSecretAccessKey)
 		if err != nil {
 			return fmt.Errorf("failed to encrypt AWS secret access key: %w", err)
@@ -362,13 +377,10 @@ func (s *ContainerRegistryService) updateECRRegistryFieldsInternal(localRegistry
 		utils.ApplyChanged(&localRegistry.AWSSecretAccessKey, mo.Some(encryptedSecret))
 	}
 
-	if strings.TrimSpace(localRegistry.AWSAccessKeyID) == "" {
-		return common.Classify(common.ErrValidation, &base.FieldError{Field: "awsAccessKeyId", Err: errors.New("AWS Access Key ID is required")})
-	}
 	if strings.TrimSpace(localRegistry.AWSRegion) == "" {
 		return common.Classify(common.ErrValidation, &base.FieldError{Field: "awsRegion", Err: errors.New("AWS Region is required")})
 	}
-	if strings.TrimSpace(localRegistry.AWSSecretAccessKey) == "" {
+	if hasKeyID && strings.TrimSpace(localRegistry.AWSSecretAccessKey) == "" {
 		return common.Classify(common.ErrValidation, &base.FieldError{Field: "awsSecretAccessKey", Err: errors.New("AWS Secret Access Key is required")})
 	}
 
@@ -1285,14 +1297,12 @@ func (s *ContainerRegistryService) checkRegistryNeedsUpdateInternal(item contain
 	credChanged := utils.ApplyChanged(&existing.AWSAccessKeyID, mo.Some(item.AWSAccessKeyID))
 	credChanged = utils.ApplyChanged(&existing.AWSRegion, mo.Some(item.AWSRegion)) || credChanged
 
-	// Update the AWS secret only when the manager sent one that differs.
-	if item.AWSSecretAccessKey != "" {
-		secretChanged, encryptAWSSecretErr := utils.ApplyEncrypted(&existing.AWSSecretAccessKey, item.AWSSecretAccessKey)
-		if encryptAWSSecretErr != nil {
-			return false, fmt.Errorf("failed to apply AWS secret for registry %s: %w", existing.ID, encryptAWSSecretErr)
-		}
-		credChanged = secretChanged || credChanged
+	// An empty secret means the manager has no static keys, so the agent's stored one is cleared.
+	secretChanged, encryptAWSSecretErr := utils.ApplyEncrypted(&existing.AWSSecretAccessKey, item.AWSSecretAccessKey)
+	if encryptAWSSecretErr != nil {
+		return false, fmt.Errorf("failed to apply AWS secret for registry %s: %w", existing.ID, encryptAWSSecretErr)
 	}
+	credChanged = secretChanged || credChanged
 
 	// Invalidate cached ECR token when credentials change
 	if credChanged {
@@ -1594,25 +1604,28 @@ func (s *ContainerRegistryService) GetOrRefreshECRToken(ctx context.Context, reg
 }
 
 func (s *ContainerRegistryService) refreshECRTokenInternal(ctx context.Context, reg *ContainerRegistry) (*ecrTokenResult, error) {
-	// Decrypt the stored AWS secret access key.
-	secretKey, decErr := crypto.Decrypt(reg.AWSSecretAccessKey)
-	if decErr != nil {
-		return nil, fmt.Errorf("failed to decrypt AWS secret key for registry %s: %w", reg.URL, decErr)
-	}
-	secretKey = strings.TrimSpace(secretKey)
-	if secretKey == "" {
-		return nil, fmt.Errorf("AWS secret access key is empty for registry %s", reg.URL)
-	}
+	configOptions := []func(*config.LoadOptions) error{config.WithRegion(reg.AWSRegion)}
 
-	// Call AWS ECR GetAuthorizationToken.
-	cfg, cfgErr := config.LoadDefaultConfig(ctx,
-		config.WithRegion(reg.AWSRegion),
-		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
+	// Without a static access key, the default AWS credential chain applies
+	// (env, shared config, ECS task role, EC2 instance profile).
+	if strings.TrimSpace(reg.AWSAccessKeyID) != "" {
+		secretKey, decErr := crypto.Decrypt(reg.AWSSecretAccessKey)
+		if decErr != nil {
+			return nil, fmt.Errorf("failed to decrypt AWS secret key for registry %s: %w", reg.URL, decErr)
+		}
+		secretKey = strings.TrimSpace(secretKey)
+		if secretKey == "" {
+			return nil, fmt.Errorf("AWS secret access key is empty for registry %s", reg.URL)
+		}
+		configOptions = append(configOptions, config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
 			reg.AWSAccessKeyID,
 			secretKey,
 			"",
-		)),
-	)
+		)))
+	}
+
+	// Call AWS ECR GetAuthorizationToken.
+	cfg, cfgErr := config.LoadDefaultConfig(ctx, configOptions...)
 	if cfgErr != nil {
 		return nil, fmt.Errorf("failed to load AWS config for registry %s: %w", reg.URL, cfgErr)
 	}
