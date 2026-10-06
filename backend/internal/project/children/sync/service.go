@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/getarcaneapp/arcane/types/v2/project"
+	"go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 )
@@ -88,31 +89,6 @@ func ResolveStoredEffectiveEnvContent(state projects.ProjectEnvState) (string, e
 	return state.DirectContent, nil
 }
 
-// cleanupWouldMassWipeInternal reports whether the pending deletions look like an
-// accidental mass wipe rather than legitimate removals. It engages when a single
-// pass would prune more than one project AND more than half of the cleanup
-// candidates — so the table cannot be near-emptied at once (e.g. when the projects
-// directory is unmounted or mis-mapped and every path goes missing), no matter how
-// few projects the deployment has. A single removal is always allowed: it is
-// indistinguishable from a legitimate "deleted my only project" and is not a mass
-// wipe. When the guard engages it logs a WARN pointing the operator at the likely
-// volume/mount misconfiguration and the caller skips every deletion in the pass.
-func CleanupWouldMassWipe(ctx context.Context, candidates, deleteCount int, projectsDir string) bool {
-	if deleteCount <= 1 || deleteCount*2 <= candidates {
-		return false
-	}
-
-	slog.WarnContext(ctx,
-		"skipping project cleanup: this reconcile would delete most projects in a single pass, which usually "+
-			"means the projects directory is empty, unmounted, or mis-mapped; preserving DB records — check the "+
-			"projects volume is mounted and mapped correctly",
-		"wouldDelete", deleteCount,
-		"cleanupCandidates", candidates,
-		"projectsDir", projectsDir,
-	)
-	return true
-}
-
 // EffectiveEnvContentForUpdate returns the env content a project update keeps
 // when the caller supplied none.
 func EffectiveEnvContentForUpdate(projectPath string, envContent *string) (*string, error) {
@@ -120,20 +96,12 @@ func EffectiveEnvContentForUpdate(projectPath string, envContent *string) (*stri
 		return envContent, nil
 	}
 
-	state, err := projects.ReadProjectEnvState(projectPath)
-	if err != nil {
-		return nil, fmt.Errorf("read project env state: %w", err)
-	}
-
-	effectiveContent, err := ResolveStoredEffectiveEnvContent(state)
+	// A sync without git env content resolves exactly the stored effective content.
+	update, err := PrepareGitSyncEnvUpdate(projectPath, nil)
 	if err != nil {
 		return nil, err
 	}
-	if effectiveContent == "" && !state.HasEffective && !state.HasGitSource && !state.HasOverride {
-		return nil, nil
-	}
-
-	return &effectiveContent, nil
+	return update.EffectiveContent, nil
 }
 
 // EnsureEffectiveEnvFile rebuilds .env from the managed env sources.
@@ -173,7 +141,7 @@ func PrepareGitSyncEnvUpdate(projectPath string, gitEnvContent *string) (GitSync
 	}
 
 	update := GitSyncEnvUpdate{
-		state:         state,
+		State:         state,
 		gitEnvContent: gitEnvContent,
 	}
 
@@ -185,107 +153,82 @@ func PrepareGitSyncEnvUpdate(projectPath string, gitEnvContent *string) (GitSync
 		if effectiveContent == "" && !state.HasEffective && !state.HasGitSource && !state.HasOverride {
 			return update, nil
 		}
-		update.effectiveContent = &effectiveContent
+		update.EffectiveContent = &effectiveContent
 		return update, nil
 	}
 
-	overrideContent, err := resolveOverrideContentForGitSyncInternal(state, *gitEnvContent)
-	if err != nil {
-		return GitSyncEnvUpdate{}, err
+	switch {
+	case state.HasGitSource:
+		update.overrideContent, err = projects.BuildOverrideEnvContent(state.GitContent, state.OverrideContent)
+	case state.HasOverride:
+		storedContent, resolveErr := ResolveStoredEffectiveEnvContent(state)
+		if resolveErr != nil {
+			return GitSyncEnvUpdate{}, resolveErr
+		}
+		update.overrideContent, err = projects.BuildOverrideEnvContent(*gitEnvContent, storedContent)
+	case strings.TrimSpace(state.DirectContent) != "":
+		update.overrideContent, err = projects.BuildAdditiveOverrideEnvContent(*gitEnvContent, state.DirectContent)
 	}
-	update.overrideContent = overrideContent
+	if err != nil {
+		return GitSyncEnvUpdate{}, fmt.Errorf("build override env content: %w", err)
+	}
 
-	effectiveContent, err := projects.BuildEffectiveEnvContent(*gitEnvContent, overrideContent)
+	effectiveContent, err := projects.BuildEffectiveEnvContent(*gitEnvContent, update.overrideContent)
 	if err != nil {
 		return GitSyncEnvUpdate{}, fmt.Errorf("build effective env content: %w", err)
 	}
-	update.effectiveContent = &effectiveContent
+	update.EffectiveContent = &effectiveContent
 
 	return update, nil
 }
 
-func resolveOverrideContentForGitSyncInternal(state projects.ProjectEnvState, gitEnvContent string) (string, error) {
-	switch {
-	case state.HasGitSource:
-		overrideContent, err := projects.BuildOverrideEnvContent(state.GitContent, state.OverrideContent)
-		if err != nil {
-			return "", fmt.Errorf("build override env content: %w", err)
-		}
-		return overrideContent, nil
-	case state.HasOverride:
-		effectiveContent, err := ResolveStoredEffectiveEnvContent(state)
-		if err != nil {
-			return "", err
-		}
-		overrideContent, err := projects.BuildOverrideEnvContent(gitEnvContent, effectiveContent)
-		if err != nil {
-			return "", fmt.Errorf("build override env content: %w", err)
-		}
-		return overrideContent, nil
-	case strings.TrimSpace(state.DirectContent) != "":
-		overrideContent, err := projects.BuildAdditiveOverrideEnvContent(gitEnvContent, state.DirectContent)
-		if err != nil {
-			return "", fmt.Errorf("build override env content: %w", err)
-		}
-		return overrideContent, nil
-	default:
-		return "", nil
-	}
-}
-
 // GitSyncEnvUpdate is the resolved three-file env change for one git sync.
 type GitSyncEnvUpdate struct {
-	state            projects.ProjectEnvState
+	State            projects.ProjectEnvState
 	gitEnvContent    *string
 	overrideContent  string
-	effectiveContent *string
+	EffectiveContent *string
 }
 
 // PersistGitSyncEnvFiles writes a prepared env merge.
 func PersistGitSyncEnvFiles(ctx context.Context, projectPath, projectsDirectory string, update GitSyncEnvUpdate) error {
 	if update.gitEnvContent == nil {
-		if update.state.HasGitSource {
+		if update.State.HasGitSource {
 			if err := projects.RemoveProjectFile(ctx, projectsDirectory, projectPath, projects.GitSourceEnvFileName); err != nil {
 				return err
 			}
 		}
-		if update.state.HasOverride {
+		if update.State.HasOverride {
 			if err := projects.RemoveProjectFile(ctx, projectsDirectory, projectPath, projects.OverrideEnvFileName); err != nil {
 				return err
 			}
 		}
-		if update.effectiveContent != nil || update.state.HasEffective || update.state.HasGitSource || update.state.HasOverride {
-			effectiveContent := ""
-			if update.effectiveContent != nil {
-				effectiveContent = *update.effectiveContent
-			}
-			return projects.WriteManagedEnvFile(ctx, projectsDirectory, projectPath, projects.EffectiveEnvFileName, update.state.EffectiveUnreadable, effectiveContent)
+		if update.EffectiveContent != nil || update.State.HasEffective || update.State.HasGitSource || update.State.HasOverride {
+			return projects.WriteManagedEnvFile(ctx, projectsDirectory, projectPath, projects.EffectiveEnvFileName, update.State.EffectiveUnreadable, kit.FromPtr(update.EffectiveContent))
 		}
-		if update.state.EffectiveUnreadable {
+		if update.State.EffectiveUnreadable {
 			slog.WarnContext(ctx, "skipping permission-locked .env file; leaving it untouched", "projectPath", projectPath)
 			return nil
 		}
 		return projects.EnsureEnvFile(ctx, projectsDirectory, projectPath)
 	}
 
-	if update.effectiveContent == nil {
+	if update.EffectiveContent == nil {
 		return errors.New("missing effective env content for git sync update")
 	}
 
-	if err := projects.WriteManagedEnvFile(ctx, projectsDirectory, projectPath, projects.EffectiveEnvFileName, update.state.EffectiveUnreadable, *update.effectiveContent); err != nil {
+	if err := projects.WriteManagedEnvFile(ctx, projectsDirectory, projectPath, projects.EffectiveEnvFileName, update.State.EffectiveUnreadable, *update.EffectiveContent); err != nil {
 		return err
 	}
-	if err := projects.WriteManagedEnvFile(ctx, projectsDirectory, projectPath, projects.GitSourceEnvFileName, update.state.GitSourceUnreadable, *update.gitEnvContent); err != nil {
+	if err := projects.WriteManagedEnvFile(ctx, projectsDirectory, projectPath, projects.GitSourceEnvFileName, update.State.GitSourceUnreadable, *update.gitEnvContent); err != nil {
 		return err
 	}
-	return projects.WriteManagedEnvFile(ctx, projectsDirectory, projectPath, projects.OverrideEnvFileName, update.state.OverrideUnreadable, update.overrideContent)
+	return projects.WriteManagedEnvFile(ctx, projectsDirectory, projectPath, projects.OverrideEnvFileName, update.State.OverrideUnreadable, update.overrideContent)
 }
 
 // EffectiveContent is the merged .env content, or nil when none is kept.
-func (u GitSyncEnvUpdate) EffectiveContent() *string { return u.effectiveContent }
 
 // HadGitSource reports whether the project tracked a git env source before.
-func (u GitSyncEnvUpdate) HadGitSource() bool { return u.state.HasGitSource }
 
 // ApplyGitSyncEnv applies the managed three-file environment merge and returns
 // the effective content before and after the update.
@@ -294,14 +237,10 @@ func ApplyGitSyncEnv(ctx context.Context, projectPath, projectsDirectory string,
 	if err != nil {
 		return "", "", fmt.Errorf("failed to resolve git env state: %w", err)
 	}
-	before = update.state.DirectContent
-	if update.effectiveContent != nil {
-		after = *update.effectiveContent
-	}
 	if persistErr := PersistGitSyncEnvFiles(ctx, projectPath, projectsDirectory, update); persistErr != nil {
 		return "", "", fmt.Errorf("failed to sync git env files: %w", persistErr)
 	}
-	return before, after, nil
+	return update.State.DirectContent, kit.FromPtr(update.EffectiveContent), nil
 }
 
 // LoadComposeMetadata loads a discovered project's compose file once and
@@ -312,10 +251,8 @@ func LoadComposeMetadata(ctx context.Context, dirPath, dirName, projectsDirector
 		ResolvedProjectName: normName,
 	}
 
-	// First, try loading without forcing a project name so compose-go can
-	// resolve COMPOSE_PROJECT_NAME from the .env file. If this fails (e.g.
-	// no .env and directory name is not a valid compose project name), fall
-	// back to the normalized directory name.
+	// Load unnamed first so COMPOSE_PROJECT_NAME from .env wins; fall back to
+	// the normalized directory name when that fails.
 	proj, _, err := projects.LoadComposeProjectFromDir(ctx, dirPath, "", projectsDirectory, autoInjectEnv, pathMapper)
 	if err != nil {
 		proj, _, err = projects.LoadComposeProjectFromDir(ctx, dirPath, normName, projectsDirectory, autoInjectEnv, pathMapper)
@@ -331,8 +268,7 @@ func LoadComposeMetadata(ctx context.Context, dirPath, dirName, projectsDirector
 		meta.ResolvedProjectName = proj.Name
 	}
 
-	// If compose-go resolved a different name (from COMPOSE_PROJECT_NAME),
-	// store it so we can match containers correctly.
+	// Keep a COMPOSE_PROJECT_NAME override so containers match.
 	if proj.Name != "" && proj.Name != normName {
 		meta.ComposeProjectName = new(proj.Name)
 	}

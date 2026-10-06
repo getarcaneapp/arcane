@@ -3,6 +3,7 @@ package project
 import (
 	"cmp"
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -30,6 +31,7 @@ import (
 	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
 	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/api/pkg/authconfig"
+	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/api/types/container"
 	dockertypesimage "github.com/moby/moby/api/types/image"
 	dockerregistry "github.com/moby/moby/api/types/registry"
@@ -55,7 +57,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/project/children/deployment"
 	projectdetails "github.com/getarcaneapp/arcane/backend/v2/internal/project/children/details"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/project/children/lifecycle"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/project/children/listing"
 	projectsync "github.com/getarcaneapp/arcane/backend/v2/internal/project/children/sync"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/project/children/tags"
@@ -86,7 +87,7 @@ func (testBuildBuilder) BuildSettings() buildtypes.BuildSettings {
 	return buildtypes.BuildSettings{}
 }
 
-var _ buildServiceInternal = testBuildBuilder{}
+var _ builder = testBuildBuilder{}
 
 func setupProjectTestDB(t *testing.T) *database.DB {
 	t.Helper()
@@ -98,7 +99,7 @@ func setupProjectTestDB(t *testing.T) *database.DB {
 
 func TestUpdateProjectWorkspaceRejectsInvalidManifestBeforeProjectLookup(t *testing.T) {
 	service := &ProjectService{}
-	service.initChildrenInternal(nil, nil)
+	service.initChildren(nil, nil)
 
 	_, err := service.UpdateProjectWorkspace(t.Context(), "missing", projecttypes.WorkspaceUpdateManifest{}, nil, usertypes.Actor{})
 	require.ErrorIs(t, err, common.ErrProjectWorkspaceBadRequest)
@@ -129,7 +130,7 @@ func TestValidateWorkspaceChangesAgainstGitOps(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func newSettingsServiceForTestInternal(t *testing.T, ctx context.Context, db *database.DB) (*settings.SettingsService, error) {
+func newSettingsServiceForTest(t *testing.T, ctx context.Context, db *database.DB) (*settings.SettingsService, error) {
 	t.Helper()
 	svc, err := settings.NewSettingsService(ctx, db)
 	if err == nil {
@@ -138,7 +139,7 @@ func newSettingsServiceForTestInternal(t *testing.T, ctx context.Context, db *da
 	return svc, err
 }
 
-func newTestDockerClientInternal(t *testing.T, server *httptest.Server) *client.Client {
+func newTestDockerClient(t *testing.T, server *httptest.Server) *client.Client {
 	t.Helper()
 
 	cli, err := client.New(
@@ -151,14 +152,14 @@ func newTestDockerClientInternal(t *testing.T, server *httptest.Server) *client.
 	return cli
 }
 
-func decodeRegistryAuthInternal(t *testing.T, encoded string) dockerregistry.AuthConfig {
+func decodeRegistryAuth(t *testing.T, encoded string) dockerregistry.AuthConfig {
 	t.Helper()
 	cfg, err := authconfig.Decode(encoded)
 	require.NoError(t, err)
 	return *cfg
 }
 
-func newImagePullServerWithObserverInternal(t *testing.T, inspectByRef map[string]dockertypesimage.InspectResponse, onPull func(fullRef, authHeader string)) *httptest.Server {
+func newImagePullServerWithObserver(t *testing.T, inspectByRef map[string]dockertypesimage.InspectResponse, onPull func(fullRef, authHeader string)) *httptest.Server {
 	t.Helper()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -207,7 +208,7 @@ func newImagePullServerWithObserverInternal(t *testing.T, inspectByRef map[strin
 func TestProjectService_RefreshProjectImageRefs_PersistsBuildMetadata(t *testing.T) {
 	ctx := t.Context()
 	db := setupProjectTestDB(t)
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	projectPath := t.TempDir()
@@ -231,7 +232,7 @@ func TestProjectService_RefreshProjectImageRefs_PersistsBuildMetadata(t *testing
 	require.NoError(t, db.Create(proj).Error)
 
 	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load(), nil, nil)
-	svc.refreshProjectImageRefsInternal(ctx, proj)
+	svc.refreshProjectImageRefs(ctx, proj)
 
 	var saved Project
 	require.NoError(t, db.First(&saved, "id = ?", proj.ID).Error)
@@ -243,7 +244,7 @@ func TestProjectService_RefreshProjectImageRefs_PersistsBuildMetadata(t *testing
 func TestProjectService_BackfillProjectImageRefs_RetriesOnlyMissingMetadata(t *testing.T) {
 	ctx := t.Context()
 	db := setupProjectTestDB(t)
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	validPath := t.TempDir()
@@ -299,12 +300,12 @@ func TestProjectService_BackfillProjectImageRefs_RetriesOnlyMissingMetadata(t *t
 	assert.Equal(t, "[]", *savedRegular.BuildImageRefsJSON)
 }
 
-func setupProjectDestroyTestServiceInternal(t *testing.T) (*ProjectService, *database.DB, string) {
+func setupProjectDestroyTestService(t *testing.T) (*ProjectService, *database.DB, string) {
 	t.Helper()
 
 	ctx := t.Context()
 	db := setupProjectTestDB(t)
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	projectsDir := t.TempDir()
@@ -316,7 +317,7 @@ func setupProjectDestroyTestServiceInternal(t *testing.T) (*ProjectService, *dat
 
 func TestProjectService_DestroyProject_RemovesFilesWhenRequested(t *testing.T) {
 	ctx := t.Context()
-	svc, db, projectsDir := setupProjectDestroyTestServiceInternal(t)
+	svc, db, projectsDir := setupProjectDestroyTestService(t)
 
 	projectPath := filepath.Join(projectsDir, "demo-remove")
 	require.NoError(t, os.MkdirAll(projectPath, 0o755))
@@ -340,7 +341,7 @@ func TestProjectService_DestroyProject_RemovesFilesWhenRequested(t *testing.T) {
 
 func TestProjectService_DestroyProject_PreservesFilesWhenRequested(t *testing.T) {
 	ctx := t.Context()
-	svc, db, projectsDir := setupProjectDestroyTestServiceInternal(t)
+	svc, db, projectsDir := setupProjectDestroyTestService(t)
 
 	projectPath := filepath.Join(projectsDir, "demo-preserve")
 	require.NoError(t, os.MkdirAll(projectPath, 0o755))
@@ -375,7 +376,7 @@ func TestProjectService_GetProjectFromDatabaseByID(t *testing.T) {
 	ctx := t.Context()
 
 	// Setup dependencies
-	settingsService, _ := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, _ := newSettingsServiceForTest(t, ctx, db)
 	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 
 	// Create test project
@@ -397,7 +398,7 @@ func TestProjectService_GetProjectFromDatabaseByID(t *testing.T) {
 	assert.Contains(t, err.Error(), "project not found")
 }
 
-func TestProjectService_UpdateProjectStatusInternal(t *testing.T) {
+func TestProjectService_UpdateProjectStatus(t *testing.T) {
 	db := setupProjectTestDB(t)
 	ctx := t.Context()
 	svc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, config.Load(), nil, nil)
@@ -408,7 +409,7 @@ func TestProjectService_UpdateProjectStatusInternal(t *testing.T) {
 	}
 	require.NoError(t, db.Create(proj).Error)
 
-	err := svc.updateProjectStatusInternal(ctx, "p1", ProjectStatusRunning)
+	err := svc.updateProjectStatus(ctx, "p1", ProjectStatusRunning)
 	require.NoError(t, err)
 
 	var updated Project
@@ -487,7 +488,7 @@ func TestProjectService_GetProjectByComposeName(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, original.ID, found.ID)
 
-		cachedProjectID, cached := svc.composeNames.projectIDInternal("myproject").Get()
+		cachedProjectID, cached := svc.composeNames.projectID("myproject").Get()
 		require.True(t, cached)
 		assert.Equal(t, original.ID, cachedProjectID)
 
@@ -504,7 +505,7 @@ func TestProjectService_GetProjectByComposeName(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, replacement.ID, found.ID)
 
-		cachedProjectID, cached = svc.composeNames.projectIDInternal("myproject").Get()
+		cachedProjectID, cached = svc.composeNames.projectID("myproject").Get()
 		require.True(t, cached)
 		assert.Equal(t, replacement.ID, cachedProjectID)
 	})
@@ -524,7 +525,7 @@ func TestProjectService_GetProjectByComposeName(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, original.ID, found.ID)
 
-		cachedProjectID, cached := svc.composeNames.projectIDInternal("myapp").Get()
+		cachedProjectID, cached := svc.composeNames.projectID("myapp").Get()
 		require.True(t, cached)
 		assert.Equal(t, original.ID, cachedProjectID)
 
@@ -537,7 +538,7 @@ func TestProjectService_GetProjectByComposeName(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "project not found")
 
-		_, cached = svc.composeNames.projectIDInternal("myapp").Get()
+		_, cached = svc.composeNames.projectID("myapp").Get()
 		assert.False(t, cached)
 	})
 }
@@ -549,7 +550,7 @@ func TestProjectService_PullProjectImages_UpdatesCurrentImageRecordAfterPull(t *
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
@@ -559,7 +560,7 @@ func TestProjectService_PullProjectImages_UpdatesCurrentImageRecordAfterPull(t *
 	imageDigest := digest.FromString("team-app-digest").String()
 	buildRepository := "arcane.local/demo-builder/service"
 
-	server := newImagePullServerWithObserverInternal(t, map[string]dockertypesimage.InspectResponse{
+	server := newImagePullServerWithObserver(t, map[string]dockertypesimage.InspectResponse{
 		imageRef: {
 			ID:          imageID,
 			RepoTags:    []string{imageRef},
@@ -567,7 +568,7 @@ func TestProjectService_PullProjectImages_UpdatesCurrentImageRecordAfterPull(t *
 		},
 	}, nil)
 
-	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}
+	dockerService := &docker.DockerClientService{Client: newTestDockerClient(t, server)}
 	eventService := event.NewEventService(db, nil, nil)
 	imageUpdateService := imageupdate.NewImageUpdateService(db, nil, nil, dockerService, nil, nil, nil)
 	imageService := image.NewImageService(db, dockerService, nil, imageUpdateService, nil, eventService, nil, nil)
@@ -647,7 +648,7 @@ func TestProjectService_EnsureImagesPresent_UpdatesCurrentImageRecordAfterPull(t
 	ctx := t.Context()
 	db := setupProjectTestDB(t)
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	imageRef := "registry.example.com/team/api:2.0.0"
@@ -655,7 +656,7 @@ func TestProjectService_EnsureImagesPresent_UpdatesCurrentImageRecordAfterPull(t
 	imageID := "sha256:team-api"
 	imageDigest := digest.FromString("team-api-digest").String()
 
-	server := newImagePullServerWithObserverInternal(t, map[string]dockertypesimage.InspectResponse{
+	server := newImagePullServerWithObserver(t, map[string]dockertypesimage.InspectResponse{
 		imageRef: {
 			ID:          imageID,
 			RepoTags:    []string{imageRef},
@@ -663,7 +664,7 @@ func TestProjectService_EnsureImagesPresent_UpdatesCurrentImageRecordAfterPull(t
 		},
 	}, nil)
 
-	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}
+	dockerService := &docker.DockerClientService{Client: newTestDockerClient(t, server)}
 	eventService := event.NewEventService(db, nil, nil)
 	imageUpdateService := imageupdate.NewImageUpdateService(db, nil, nil, dockerService, nil, nil, nil)
 	imageService := image.NewImageService(db, dockerService, nil, imageUpdateService, nil, eventService, nil, nil)
@@ -715,7 +716,7 @@ func TestProjectService_PullImageForService_UpdatesCurrentImageRecordAfterPull(t
 	ctx := t.Context()
 	db := setupProjectTestDB(t)
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	imageRef := "registry.example.com/team/worker:3.1.4"
@@ -723,7 +724,7 @@ func TestProjectService_PullImageForService_UpdatesCurrentImageRecordAfterPull(t
 	imageID := "sha256:team-worker"
 	imageDigest := digest.FromString("team-worker-digest").String()
 
-	server := newImagePullServerWithObserverInternal(t, map[string]dockertypesimage.InspectResponse{
+	server := newImagePullServerWithObserver(t, map[string]dockertypesimage.InspectResponse{
 		imageRef: {
 			ID:          imageID,
 			RepoTags:    []string{imageRef},
@@ -731,7 +732,7 @@ func TestProjectService_PullImageForService_UpdatesCurrentImageRecordAfterPull(t
 		},
 	}, nil)
 
-	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}
+	dockerService := &docker.DockerClientService{Client: newTestDockerClient(t, server)}
 	eventService := event.NewEventService(db, nil, nil)
 	imageUpdateService := imageupdate.NewImageUpdateService(db, nil, nil, dockerService, nil, nil, nil)
 	imageService := image.NewImageService(db, dockerService, nil, imageUpdateService, nil, eventService, nil, nil)
@@ -760,11 +761,11 @@ func TestProjectService_PullImageForService_UpdatesCurrentImageRecordAfterPull(t
 	assert.Equal(t, imageDigest, mo.PointerToOption(currentRecord.LatestDigest).OrEmpty())
 }
 
-func TestProjectService_ComposePullSelectedServicesInternal_ReconcilesOnlyOnSuccess(t *testing.T) {
+func TestProjectService_ComposePullSelectedServices_ReconcilesOnlyOnSuccess(t *testing.T) {
 	ctx := t.Context()
 	db := setupProjectTestDB(t)
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	privateImageRef := "registry.example.com/team/app:9.9.9"
@@ -778,7 +779,7 @@ func TestProjectService_ComposePullSelectedServicesInternal_ReconcilesOnlyOnSucc
 
 	pullsByRef := map[string]int{}
 	authHeadersByRef := map[string]string{}
-	server := newImagePullServerWithObserverInternal(t, map[string]dockertypesimage.InspectResponse{
+	server := newImagePullServerWithObserver(t, map[string]dockertypesimage.InspectResponse{
 		privateImageRef: {
 			ID:          privateImageID,
 			RepoTags:    []string{privateImageRef},
@@ -794,7 +795,7 @@ func TestProjectService_ComposePullSelectedServicesInternal_ReconcilesOnlyOnSucc
 		authHeadersByRef[fullRef] = authHeader
 	})
 
-	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}
+	dockerService := &docker.DockerClientService{Client: newTestDockerClient(t, server)}
 	eventService := event.NewEventService(db, nil, nil)
 	imageUpdateService := imageupdate.NewImageUpdateService(db, nil, nil, dockerService, nil, nil, nil)
 	imageService := image.NewImageService(db, dockerService, nil, imageUpdateService, nil, eventService, nil, nil)
@@ -854,7 +855,7 @@ func TestProjectService_ComposePullSelectedServicesInternal_ReconcilesOnlyOnSucc
 	assert.Equal(t, 1, pullsByRef[publicImageRef], "selected public image should still be pulled")
 	assert.Len(t, pullsByRef, 2, "build-backed services should not trigger image pulls")
 
-	privateAuth := decodeRegistryAuthInternal(t, authHeadersByRef[privateImageRef])
+	privateAuth := decodeRegistryAuth(t, authHeadersByRef[privateImageRef])
 	assert.Equal(t, "arcane-user", privateAuth.Username)
 	assert.Equal(t, "arcane-token", privateAuth.Password)
 	assert.Equal(t, "registry.example.com", privateAuth.ServerAddress)
@@ -880,11 +881,11 @@ func TestProjectService_ComposePullSelectedServicesInternal_ReconcilesOnlyOnSucc
 	assert.Equal(t, publicImageDigest, mo.PointerToOption(publicCurrentRecord.LatestDigest).OrEmpty())
 }
 
-func TestProjectService_ComposePullSelectedServicesInternal_LeavesRecordsWhenPullFails(t *testing.T) {
+func TestProjectService_ComposePullSelectedServices_LeavesRecordsWhenPullFails(t *testing.T) {
 	ctx := t.Context()
 	db := setupProjectTestDB(t)
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	imageRef := "registry.example.com/team/app:9.9.9"
@@ -899,7 +900,7 @@ func TestProjectService_ComposePullSelectedServicesInternal_LeavesRecordsWhenPul
 	}))
 	t.Cleanup(failingServer.Close)
 
-	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, failingServer)}
+	dockerService := &docker.DockerClientService{Client: newTestDockerClient(t, failingServer)}
 	imageUpdateService := imageupdate.NewImageUpdateService(db, nil, nil, dockerService, nil, nil, nil)
 	imageService := image.NewImageService(db, dockerService, nil, imageUpdateService, nil, event.NewEventService(db, nil, nil), nil, nil)
 	svc := NewProjectService(db, settingsService, nil, imageService, dockerService, nil, nil, nil, config.Load(), nil, nil)
@@ -937,13 +938,13 @@ func TestProjectService_ComposePullSelectedServicesInternal_LeavesRecordsWhenPul
 	assert.Zero(t, count)
 }
 
-func TestProjectService_UpdateProjectServicesHardFailsWhenPullFailsInternal(t *testing.T) {
+func TestProjectService_UpdateProjectServicesHardFailsWhenPullFails(t *testing.T) {
 	ctx := t.Context()
 	db := setupProjectTestDB(t)
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
@@ -957,7 +958,7 @@ func TestProjectService_UpdateProjectServicesHardFailsWhenPullFailsInternal(t *t
 	}))
 	t.Cleanup(failingServer.Close)
 
-	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, failingServer)}
+	dockerService := &docker.DockerClientService{Client: newTestDockerClient(t, failingServer)}
 	imageUpdateService := imageupdate.NewImageUpdateService(db, nil, nil, dockerService, nil, nil, nil)
 	imageService := image.NewImageService(db, dockerService, nil, imageUpdateService, nil, event.NewEventService(db, nil, nil), nil, nil)
 
@@ -994,12 +995,12 @@ func TestProjectService_UpdateProjectServicesHardFailsWhenPullFailsInternal(t *t
 		CheckTime:      time.Now().UTC().Add(-time.Hour),
 	}).Error)
 
-	originalComposeUp := composeUpProjectServicesInternal
+	originalComposeUp := composeUpProjectServices
 	t.Cleanup(func() {
-		composeUpProjectServicesInternal = originalComposeUp
+		composeUpProjectServices = originalComposeUp
 	})
 	upCalled := false
-	composeUpProjectServicesInternal = func(context.Context, *types.Project, []string, bool, bool, bool, map[string]dockerregistry.AuthConfig, time.Duration) error {
+	composeUpProjectServices = func(context.Context, *types.Project, []string, bool, bool, bool, map[string]dockerregistry.AuthConfig, time.Duration) error {
 		upCalled = true
 		return errors.New("compose up should not run")
 	}
@@ -1019,13 +1020,13 @@ func TestProjectService_UpdateProjectServicesHardFailsWhenPullFailsInternal(t *t
 	assert.True(t, persistedRecord.HasUpdate)
 }
 
-func TestProjectService_UpdateProjectServicesForcesRecreateInternal(t *testing.T) {
+func TestProjectService_UpdateProjectServicesForcesRecreate(t *testing.T) {
 	ctx := t.Context()
 	db := setupProjectTestDB(t)
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
@@ -1034,7 +1035,7 @@ func TestProjectService_UpdateProjectServicesForcesRecreateInternal(t *testing.T
 	imageID := "sha256:project-update-force"
 	imageDigest := digest.FromString("project-update-force-digest").String()
 
-	server := newImagePullServerWithObserverInternal(t, map[string]dockertypesimage.InspectResponse{
+	server := newImagePullServerWithObserver(t, map[string]dockertypesimage.InspectResponse{
 		imageRef: {
 			ID:          imageID,
 			RepoTags:    []string{imageRef},
@@ -1044,7 +1045,7 @@ func TestProjectService_UpdateProjectServicesForcesRecreateInternal(t *testing.T
 		assert.Equal(t, imageRef, fullRef, "namespace dependents must not be pulled")
 	})
 
-	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}
+	dockerService := &docker.DockerClientService{Client: newTestDockerClient(t, server)}
 	imageUpdateService := imageupdate.NewImageUpdateService(db, nil, nil, dockerService, nil, nil, nil)
 	eventService := event.NewEventService(db, nil, nil)
 	imageService := image.NewImageService(db, dockerService, nil, imageUpdateService, nil, eventService, nil, nil)
@@ -1068,7 +1069,7 @@ func TestProjectService_UpdateProjectServicesForcesRecreateInternal(t *testing.T
 		),
 	)
 
-	composeContainerInternal := func(service string, state container.ContainerState) container.Summary {
+	composeContainer := func(service string, state container.ContainerState) container.Summary {
 		return container.Summary{
 			ID:     service + "-container",
 			Names:  []string{"/compose-update-force-" + service + "-1"},
@@ -1076,12 +1077,12 @@ func TestProjectService_UpdateProjectServicesForcesRecreateInternal(t *testing.T
 			Labels: map[string]string{api.ProjectLabel: "compose-update-force", api.ServiceLabel: service, api.ConfigHashLabel: service + "-hash"},
 		}
 	}
-	runtimeServer := newProjectRuntimeDockerServerInternal(t, []container.Summary{
-		composeContainerInternal("app", container.StateRunning),
-		composeContainerInternal("sidecar", container.StateRunning),
-		composeContainerInternal("dormant", container.StateExited),
+	runtimeServer := newProjectRuntimeDockerServer(t, []container.Summary{
+		composeContainer("app", container.StateRunning),
+		composeContainer("sidecar", container.StateRunning),
+		composeContainer("dormant", container.StateExited),
 	})
-	t.Setenv("DOCKER_HOST", dockerHostFromProjectRuntimeServerURLInternal(t, runtimeServer.URL))
+	t.Setenv("DOCKER_HOST", dockerHostFromProjectRuntimeServerURL(t, runtimeServer.URL))
 
 	projectRecord := &Project{
 		ID:      "project-update-force",
@@ -1092,20 +1093,20 @@ func TestProjectService_UpdateProjectServicesForcesRecreateInternal(t *testing.T
 	}
 	require.NoError(t, db.Create(projectRecord).Error)
 
-	originalComposeStop := composeStopProjectServicesInternal
-	originalComposeUp := composeUpProjectServicesInternal
+	originalComposeStop := composeStopProjectServices
+	originalComposeUp := composeUpProjectServices
 	t.Cleanup(func() {
-		composeStopProjectServicesInternal = originalComposeStop
-		composeUpProjectServicesInternal = originalComposeUp
+		composeStopProjectServices = originalComposeStop
+		composeUpProjectServices = originalComposeUp
 	})
 	var stopped []string
-	composeStopProjectServicesInternal = func(_ context.Context, _ *types.Project, services []string) error {
+	composeStopProjectServices = func(_ context.Context, _ *types.Project, services []string) error {
 		stopped = services
 		return nil
 	}
 	upCalled := false
 	forceRecreate := false
-	composeUpProjectServicesInternal = func(
+	composeUpProjectServices = func(
 		_ context.Context,
 		selected *types.Project,
 		services []string,
@@ -1133,7 +1134,7 @@ func TestProjectService_UpdateProjectServicesForcesRecreateInternal(t *testing.T
 	assert.True(t, forceRecreate, "service updates must force recreate after pulling the updated image")
 }
 
-type fakeProjectVolumeRenameMigrationInternal struct {
+type fakeProjectVolumeRenameMigration struct {
 	applyCalled    bool
 	commitCalled   bool
 	rollbackCalled bool
@@ -1142,17 +1143,17 @@ type fakeProjectVolumeRenameMigrationInternal struct {
 	rollbackErr    error
 }
 
-func (m *fakeProjectVolumeRenameMigrationInternal) Apply(context.Context) error {
+func (m *fakeProjectVolumeRenameMigration) Apply(context.Context) error {
 	m.applyCalled = true
 	return m.applyErr
 }
 
-func (m *fakeProjectVolumeRenameMigrationInternal) Rollback(context.Context) error {
+func (m *fakeProjectVolumeRenameMigration) Rollback(context.Context) error {
 	m.rollbackCalled = true
 	return m.rollbackErr
 }
 
-func (m *fakeProjectVolumeRenameMigrationInternal) Commit(context.Context) error {
+func (m *fakeProjectVolumeRenameMigration) Commit(context.Context) error {
 	m.commitCalled = true
 	return m.commitErr
 }
@@ -1164,7 +1165,7 @@ func TestProjectService_UpdateProject_RenameFailsWhenVolumeMigrationPreparationF
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
@@ -1199,9 +1200,9 @@ func TestProjectService_UpdateProject_RenameFailsWhenVolumeMigrationPreparationF
 		}
 	}))
 	t.Cleanup(dockerServer.Close)
-	t.Setenv("DOCKER_HOST", dockerHostFromProjectRuntimeServerURLInternal(t, dockerServer.URL))
+	t.Setenv("DOCKER_HOST", dockerHostFromProjectRuntimeServerURL(t, dockerServer.URL))
 
-	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, dockerServer)}
+	dockerService := &docker.DockerClientService{Client: newTestDockerClient(t, dockerServer)}
 	svc := NewProjectService(db, settingsService, eventService, nil, dockerService, nil, nil, nil, config.Load(), nil, nil)
 
 	originalDirName := "Foo"
@@ -1252,13 +1253,13 @@ func TestProjectService_ApplyProjectUpdateWithRenameJournal_AppliesVolumeMigrati
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := event.NewEventService(db, nil, nil)
 	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 
-	migration := &fakeProjectVolumeRenameMigrationInternal{}
+	migration := &fakeProjectVolumeRenameMigration{}
 
 	originalDirName := "Foo"
 	originalPath := createComposeProjectDir(t, projectsDir, originalDirName)
@@ -1275,7 +1276,7 @@ func TestProjectService_ApplyProjectUpdateWithRenameJournal_AppliesVolumeMigrati
 	projectForUpdate := *project
 	journalActive := false
 	projectStateCommitted := false
-	err = svc.applyProjectUpdateWithRenameJournalInternal(ctx, &projectForUpdate, new("bar"), projectsDir, nil, nil, nil, migration, nil, &journalActive, &projectStateCommitted)
+	err = svc.applyProjectUpdate(ctx, &projectForUpdate, true, "bar", projectsDir, nil, nil, nil, migration, nil, &journalActive, &projectStateCommitted)
 	require.NoError(t, err)
 
 	assert.True(t, migration.applyCalled)
@@ -1299,7 +1300,7 @@ func TestProjectService_PrepareProjectRenameVolumeMigrationForUpdate_UsesCompose
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
@@ -1330,7 +1331,7 @@ func TestProjectService_PrepareProjectRenameVolumeMigrationForUpdate_UsesCompose
 	}))
 	t.Cleanup(dockerServer.Close)
 
-	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, dockerServer)}
+	dockerService := &docker.DockerClientService{Client: newTestDockerClient(t, dockerServer)}
 	svc := NewProjectService(db, settingsService, nil, nil, dockerService, nil, nil, nil, config.Load(), nil, nil)
 
 	projectPath := filepath.Join(projectsDir, "nginx")
@@ -1349,22 +1350,22 @@ func TestProjectService_PrepareProjectRenameVolumeMigrationForUpdate_UsesCompose
 	t.Run("skips volume made explicit in pending compose", func(t *testing.T) {
 		newCompose := "services:\n  app:\n    image: nginx:alpine\n    volumes:\n      - data:/data\nvolumes:\n  data:\n    name: fixed-data\n"
 
-		migration, prepareProjectRenameVolumeMigrationForUpdateErr := svc.prepareProjectRenameVolumeMigrationForUpdateInternal(ctx, project, new("web"), projectsDir, &newCompose, nil, nil)
+		migration, prepareErr := svc.prepareProjectRenameVolumeMigration(ctx, project, "web", projectsDir, &newCompose, nil, nil)
 
-		require.NoError(t, prepareProjectRenameVolumeMigrationForUpdateErr)
+		require.NoError(t, prepareErr)
 		require.Nil(t, migration)
 		bytes, readErr := os.ReadFile(filepath.Join(projectPath, "compose.yaml"))
 		require.NoError(t, readErr)
 		require.Equal(t, oldCompose, string(bytes))
-		require.Empty(t, projectUpdatePreviewDirsInternal(t, projectsDir))
+		require.Empty(t, projectUpdatePreviewDirs(t, projectsDir))
 	})
 
 	t.Run("plans unchanged auto-managed volume from pending compose", func(t *testing.T) {
 		newCompose := "services:\n  app:\n    image: nginx:alpine\n    volumes:\n      - data:/data\nvolumes:\n  data:\n    driver: local\n"
 
-		migration, prepareProjectRenameVolumeMigrationForUpdateErr := svc.prepareProjectRenameVolumeMigrationForUpdateInternal(ctx, project, new("web"), projectsDir, &newCompose, nil, nil)
+		migration, prepareErr := svc.prepareProjectRenameVolumeMigration(ctx, project, "web", projectsDir, &newCompose, nil, nil)
 
-		require.NoError(t, prepareProjectRenameVolumeMigrationForUpdateErr)
+		require.NoError(t, prepareErr)
 		require.NotNil(t, migration)
 		journalSource, ok := migration.(volumetypes.JournalSource)
 		require.True(t, ok)
@@ -1373,15 +1374,15 @@ func TestProjectService_PrepareProjectRenameVolumeMigrationForUpdate_UsesCompose
 		require.Equal(t, "data", journalVolumes[0].Key)
 		require.Equal(t, "nginx_data", journalVolumes[0].OldName)
 		require.Equal(t, "web_data", journalVolumes[0].NewName)
-		require.Empty(t, projectUpdatePreviewDirsInternal(t, projectsDir))
+		require.Empty(t, projectUpdatePreviewDirs(t, projectsDir))
 	})
 
 	t.Run("plans auto-managed volume when pending compose name renames project", func(t *testing.T) {
 		newCompose := "name: web\nservices:\n  app:\n    image: nginx:alpine\n    volumes:\n      - data:/data\nvolumes:\n  data:\n    driver: local\n"
 
-		migration, prepareProjectRenameVolumeMigrationForUpdateErr := svc.prepareProjectRenameVolumeMigrationForUpdateInternal(ctx, project, new("web"), projectsDir, &newCompose, nil, nil)
+		migration, prepareErr := svc.prepareProjectRenameVolumeMigration(ctx, project, "web", projectsDir, &newCompose, nil, nil)
 
-		require.NoError(t, prepareProjectRenameVolumeMigrationForUpdateErr)
+		require.NoError(t, prepareErr)
 		require.NotNil(t, migration)
 		journalSource, ok := migration.(volumetypes.JournalSource)
 		require.True(t, ok)
@@ -1390,15 +1391,15 @@ func TestProjectService_PrepareProjectRenameVolumeMigrationForUpdate_UsesCompose
 		require.Equal(t, "data", journalVolumes[0].Key)
 		require.Equal(t, "nginx_data", journalVolumes[0].OldName)
 		require.Equal(t, "web_data", journalVolumes[0].NewName)
-		require.Empty(t, projectUpdatePreviewDirsInternal(t, projectsDir))
+		require.Empty(t, projectUpdatePreviewDirs(t, projectsDir))
 	})
 
 	t.Run("plans interpolated explicit name from pending compose", func(t *testing.T) {
 		newCompose := "services:\n  app:\n    image: nginx:alpine\n    volumes:\n      - data:/data\nvolumes:\n  data:\n    name: ${DATA_VOLUME:-nginx_data}\n"
 
-		migration, prepareProjectRenameVolumeMigrationForUpdateErr := svc.prepareProjectRenameVolumeMigrationForUpdateInternal(ctx, project, new("web"), projectsDir, &newCompose, nil, nil)
+		migration, prepareErr := svc.prepareProjectRenameVolumeMigration(ctx, project, "web", projectsDir, &newCompose, nil, nil)
 
-		require.NoError(t, prepareProjectRenameVolumeMigrationForUpdateErr)
+		require.NoError(t, prepareErr)
 		require.NotNil(t, migration)
 		journalSource, ok := migration.(volumetypes.JournalSource)
 		require.True(t, ok)
@@ -1407,7 +1408,7 @@ func TestProjectService_PrepareProjectRenameVolumeMigrationForUpdate_UsesCompose
 		require.Equal(t, "data", journalVolumes[0].Key)
 		require.Equal(t, "nginx_data", journalVolumes[0].OldName)
 		require.Equal(t, "web_data", journalVolumes[0].NewName)
-		require.Empty(t, projectUpdatePreviewDirsInternal(t, projectsDir))
+		require.Empty(t, projectUpdatePreviewDirs(t, projectsDir))
 	})
 }
 
@@ -1418,13 +1419,13 @@ func TestProjectService_ApplyProjectUpdateWithRenameJournal_RollsBackVolumeMigra
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := event.NewEventService(db, nil, nil)
 	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 
-	migration := &fakeProjectVolumeRenameMigrationInternal{}
+	migration := &fakeProjectVolumeRenameMigration{}
 
 	require.NoError(t, db.Callback().Update().Before("gorm:update").Register("arcane_test_project_save_failure", func(tx *gorm.DB) {
 		if tx.Statement != nil && tx.Statement.Schema != nil && tx.Statement.Schema.Name == "Project" {
@@ -1447,8 +1448,8 @@ func TestProjectService_ApplyProjectUpdateWithRenameJournal_RollsBackVolumeMigra
 	projectForUpdate := *project
 	journalActive := false
 	projectStateCommitted := false
-	err = withProjectRenameRollbackInternal(ctx, &projectForUpdate, &projectStateCommitted, func() error {
-		return svc.applyProjectUpdateWithRenameJournalInternal(ctx, &projectForUpdate, new("bar"), projectsDir, nil, nil, nil, migration, nil, &journalActive, &projectStateCommitted)
+	err = withProjectRenameRollback(ctx, &projectForUpdate, &projectStateCommitted, func() error {
+		return svc.applyProjectUpdate(ctx, &projectForUpdate, true, "bar", projectsDir, nil, nil, nil, migration, nil, &journalActive, &projectStateCommitted)
 	})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "forced project save failure")
@@ -1467,13 +1468,13 @@ func TestProjectService_ApplyProjectUpdateWithRenameJournal_SucceedsCommittedRen
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := event.NewEventService(db, nil, nil)
 	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 
-	migration := &fakeProjectVolumeRenameMigrationInternal{
+	migration := &fakeProjectVolumeRenameMigration{
 		commitErr: errors.New("source cleanup failed"),
 	}
 
@@ -1492,8 +1493,8 @@ func TestProjectService_ApplyProjectUpdateWithRenameJournal_SucceedsCommittedRen
 	projectForUpdate := *project
 	journalActive := false
 	projectStateCommitted := false
-	err = withProjectRenameRollbackInternal(ctx, &projectForUpdate, &projectStateCommitted, func() error {
-		return svc.applyProjectUpdateWithRenameJournalInternal(ctx, &projectForUpdate, new("bar"), projectsDir, nil, nil, nil, migration, nil, &journalActive, &projectStateCommitted)
+	err = withProjectRenameRollback(ctx, &projectForUpdate, &projectStateCommitted, func() error {
+		return svc.applyProjectUpdate(ctx, &projectForUpdate, true, "bar", projectsDir, nil, nil, nil, migration, nil, &journalActive, &projectStateCommitted)
 	})
 	require.NoError(t, err)
 	require.True(t, migration.applyCalled)
@@ -1517,7 +1518,7 @@ func TestProjectService_UpdateProject_ClearsJournalForNonRenameWhenRecoveryDocke
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
@@ -1583,14 +1584,14 @@ func TestProjectService_UpdateProject_AllowsRenameAfterJournalRecoveryWithoutDoc
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
 	eventService := event.NewEventService(db, nil, nil)
 	kvService := kv.NewKVService(db)
 	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load(), kvService, nil)
-	configureProjectRuntimeDockerInternal(t, nil)
+	configureProjectRuntimeDocker(t, nil)
 
 	oldDir := "nginx"
 	projectPath := createComposeProjectDir(t, projectsDir, oldDir)
@@ -1647,12 +1648,12 @@ func TestProjectService_UpdateProject_RenamesDirectoryWhenNameChanges(t *testing
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := event.NewEventService(db, nil, nil)
 	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load(), nil, nil)
-	configureProjectRuntimeDockerInternal(t, nil)
+	configureProjectRuntimeDocker(t, nil)
 
 	originalDirName := "Foo"
 	originalPath := createComposeProjectDir(t, projectsDir, originalDirName)
@@ -1696,12 +1697,12 @@ func TestProjectService_UpdateProject_RenameFailsWhenTargetDirectoryExists(t *te
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := event.NewEventService(db, nil, nil)
 	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load(), nil, nil)
-	configureProjectRuntimeDockerInternal(t, nil)
+	configureProjectRuntimeDocker(t, nil)
 
 	originalDirName := "Foo"
 	originalPath := createComposeProjectDir(t, projectsDir, originalDirName)
@@ -1743,7 +1744,7 @@ func TestProjectService_UpdateProject_RenameFailsWhenProjectRunning(t *testing.T
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := event.NewEventService(db, nil, nil)
@@ -1787,13 +1788,13 @@ func TestProjectService_UpdateProject_RenameRejectsStaleStoppedWhenRuntimeIsRunn
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
 	eventService := event.NewEventService(db, nil, nil)
 	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load(), nil, nil)
-	configureProjectRuntimeDockerInternal(t, []container.Summary{
+	configureProjectRuntimeDocker(t, []container.Summary{
 		{
 			ID:     "app-container",
 			Names:  []string{"/foo-app-1"},
@@ -1845,15 +1846,15 @@ func TestProjectService_UpdateProject_RenameResolvesUnknownStoppedStatusBeforeVo
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
 	eventService := event.NewEventService(db, nil, nil)
 	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 
-	server := newProjectRuntimeDockerServerInternal(t, nil)
-	t.Setenv("DOCKER_HOST", dockerHostFromProjectRuntimeServerURLInternal(t, server.URL))
+	server := newProjectRuntimeDockerServer(t, nil)
+	t.Setenv("DOCKER_HOST", dockerHostFromProjectRuntimeServerURL(t, server.URL))
 
 	originalDirName := "Foo"
 	originalPath := createComposeProjectDir(t, projectsDir, originalDirName)
@@ -1903,14 +1904,14 @@ func TestProjectService_UpdateProject_RenameRejectsUnknownWhenRuntimeIsRunning(t
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
 	eventService := event.NewEventService(db, nil, nil)
 	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 
-	server := newProjectRuntimeDockerServerInternal(t, []container.Summary{
+	server := newProjectRuntimeDockerServer(t, []container.Summary{
 		{
 			ID:     "app-container",
 			Names:  []string{"/foo-app-1"},
@@ -1925,7 +1926,7 @@ func TestProjectService_UpdateProject_RenameRejectsUnknownWhenRuntimeIsRunning(t
 			},
 		},
 	})
-	t.Setenv("DOCKER_HOST", dockerHostFromProjectRuntimeServerURLInternal(t, server.URL))
+	t.Setenv("DOCKER_HOST", dockerHostFromProjectRuntimeServerURL(t, server.URL))
 
 	originalDirName := "Foo"
 	originalPath := createComposeProjectDir(t, projectsDir, originalDirName)
@@ -1967,7 +1968,7 @@ func TestProjectService_UpdateProject_ValidatesComposeUsingExistingProjectName(t
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := event.NewEventService(db, nil, nil)
@@ -2010,7 +2011,7 @@ func TestProjectService_UpdateProject_AllowsMissingEnvFileDuringComposeValidatio
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := event.NewEventService(db, nil, nil)
@@ -2055,7 +2056,7 @@ func TestProjectService_UpdateProject_EnvRetargetWritesExplicitIdenticalComposeT
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := event.NewEventService(db, nil, nil)
@@ -2109,7 +2110,7 @@ func TestProjectService_UpdateProject_EnvRetargetWithoutComposePayloadPreservesN
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := event.NewEventService(db, nil, nil)
@@ -2161,7 +2162,7 @@ func TestProjectService_UpdateProject_EnvRetargetWritesEditedComposeToSelectedBa
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := event.NewEventService(db, nil, nil)
@@ -2208,7 +2209,7 @@ func TestProjectService_UpdateProject_AllowsMissingLocalIncludeDuringComposeVali
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := event.NewEventService(db, nil, nil)
@@ -2258,7 +2259,7 @@ func TestProjectService_CreateProject_AllowsExternalInclude(t *testing.T) {
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := event.NewEventService(db, nil, nil)
@@ -2289,7 +2290,7 @@ func TestProjectService_UpdateProject_AllowsExternalInclude(t *testing.T) {
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := event.NewEventService(db, nil, nil)
@@ -2334,7 +2335,7 @@ func TestProjectService_CreateProject_CommitsWorkspaceAndConfigurationTogether(t
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 	svc := NewProjectService(db, settingsService, event.NewEventService(db, nil, nil), nil, nil, nil, nil, nil, config.Load(), nil, nil)
 	uploadIndex := 0
@@ -2369,7 +2370,7 @@ func TestProjectService_CreateProject_RollsBackInvalidWorkspaceManifest(t *testi
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 	svc := NewProjectService(db, settingsService, event.NewEventService(db, nil, nil), nil, nil, nil, nil, nil, config.Load(), nil, nil)
 	manifest := projecttypes.CreateProjectWorkspaceManifest{FileChanges: []projecttypes.WorkspaceFileChange{{
@@ -2403,7 +2404,7 @@ func TestProjectService_UpdateProject_UsesExistingEnvFileDuringComposeValidation
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := event.NewEventService(db, nil, nil)
@@ -2443,9 +2444,9 @@ func TestProjectService_UpdateProject_UsesExistingEnvFileDuringComposeValidation
 	assert.Equal(t, "FOO=bar\n", string(envBytes))
 }
 
-// newProjectServiceForOverrideTestInternal builds a project with a base compose
+// newProjectServiceForOverrideTest builds a project with a base compose
 // file on disk and returns the service, the project record, and the project path.
-func newProjectServiceForOverrideTestInternal(t *testing.T, dirName string) (*ProjectService, *Project, string) {
+func newProjectServiceForOverrideTest(t *testing.T, dirName string) (*ProjectService, *Project, string) {
 	t.Helper()
 	db := setupProjectTestDB(t)
 	ctx := t.Context()
@@ -2453,7 +2454,7 @@ func newProjectServiceForOverrideTestInternal(t *testing.T, dirName string) (*Pr
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := event.NewEventService(db, nil, nil)
@@ -2477,7 +2478,7 @@ func newProjectServiceForOverrideTestInternal(t *testing.T, dirName string) (*Pr
 
 func TestProjectService_UpdateProject_CreatesOverrideWithDefaultName(t *testing.T) {
 	ctx := t.Context()
-	svc, project, projectPath := newProjectServiceForOverrideTestInternal(t, "override-create")
+	svc, project, projectPath := newProjectServiceForOverrideTest(t, "override-create")
 
 	override := "services:\n  app:\n    image: busybox:latest\n"
 	_, err := svc.UpdateProject(ctx, project.ID, nil, nil, nil, new(override), usertypes.Actor{
@@ -2500,7 +2501,7 @@ func TestProjectService_UpdateProject_CreatesOverrideWithDefaultName(t *testing.
 
 func TestProjectService_UpdateProject_PreservesExistingOverrideName(t *testing.T) {
 	ctx := t.Context()
-	svc, project, projectPath := newProjectServiceForOverrideTestInternal(t, "override-preserve")
+	svc, project, projectPath := newProjectServiceForOverrideTest(t, "override-preserve")
 
 	// An existing docker-compose.override.yml must keep its name on edit rather
 	// than being rewritten to the default compose.override.yaml.
@@ -2521,7 +2522,7 @@ func TestProjectService_UpdateProject_PreservesExistingOverrideName(t *testing.T
 
 func TestProjectService_UpdateProject_DeletesOverrideOnBlank(t *testing.T) {
 	ctx := t.Context()
-	svc, project, projectPath := newProjectServiceForOverrideTestInternal(t, "override-delete")
+	svc, project, projectPath := newProjectServiceForOverrideTest(t, "override-delete")
 
 	overridePath := filepath.Join(projectPath, "compose.override.yaml")
 	require.NoError(t, os.WriteFile(overridePath, []byte("services:\n  app:\n    image: busybox:latest\n"), 0o600))
@@ -2539,7 +2540,7 @@ func TestProjectService_UpdateProject_DeletesOverrideOnBlank(t *testing.T) {
 func TestProjectService_UpdateProject_MergedValidationFailureLeavesDiskUnchanged(t *testing.T) {
 	ctx := t.Context()
 	baseCompose := "services:\n  app:\n    image: nginx:alpine\n"
-	svc, project, projectPath := newProjectServiceForOverrideTestInternal(t, "override-invalid")
+	svc, project, projectPath := newProjectServiceForOverrideTest(t, "override-invalid")
 
 	// A new base compose plus a malformed override must fail validation, and the
 	// backup/restore must leave both the base and the override untouched on disk.
@@ -2564,7 +2565,7 @@ func TestProjectService_UpdateProject_UsesProvidedEnvContentDuringComposeValidat
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := event.NewEventService(db, nil, nil)
@@ -2611,7 +2612,7 @@ func TestProjectService_UpdateProject_ReturnsEnvParseErrorDuringComposeValidatio
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := event.NewEventService(db, nil, nil)
@@ -2656,7 +2657,7 @@ func TestProjectService_UpdateProject_UsesGlobalEnvDuringComposeValidation(t *te
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := event.NewEventService(db, nil, nil)
@@ -2705,7 +2706,7 @@ func TestProjectService_UpdateProject_DoesNotResolveHostEnvThroughGlobalEnvDurin
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 	t.Setenv("HOST_ONLY_PATH", "/host/secret")
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := event.NewEventService(db, nil, nil)
@@ -2749,7 +2750,7 @@ func TestProjectService_UpdateProject_DerivesProjectOverrideEnvWhenGitSourceExis
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := event.NewEventService(db, nil, nil)
@@ -2796,7 +2797,7 @@ func TestProjectService_UpdateProject_UnchangedGitEnvLeavesFilesUntouched(t *tes
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := event.NewEventService(db, nil, nil)
@@ -2893,7 +2894,7 @@ func TestProjectService_UpdateProject_DeletingGitBackedKeyFallsBackToGit(t *test
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := event.NewEventService(db, nil, nil)
@@ -2943,7 +2944,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_MigratesDirectEnvIntoProjectOve
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := event.NewEventService(db, nil, nil)
@@ -2994,7 +2995,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_PreservesGitEnvSyntax(t *testin
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := event.NewEventService(db, nil, nil)
@@ -3056,7 +3057,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_NormalizesStaleCopiedGitOverrid
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := event.NewEventService(db, nil, nil)
@@ -3104,7 +3105,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_RemovesLegacyDeletedGitMasks(t 
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := event.NewEventService(db, nil, nil)
@@ -3153,7 +3154,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_RemovesGitEnvSource(t *testing.
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := event.NewEventService(db, nil, nil)
@@ -3197,7 +3198,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_WritesAndRemovesComposeOverride
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := event.NewEventService(db, nil, nil)
@@ -3248,7 +3249,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_UsesGlobalEnvDuringComposeValid
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := event.NewEventService(db, nil, nil)
@@ -3299,7 +3300,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_TolerantOfUndefinedComposeVar(t
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := event.NewEventService(db, nil, nil)
@@ -3347,7 +3348,7 @@ func TestProjectService_GetProjectDetails_ReturnsEffectiveEnvContent(t *testing.
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := event.NewEventService(db, nil, nil)
@@ -3375,7 +3376,7 @@ func TestProjectService_GetProjectDetails_ReturnsEffectiveEnvContent(t *testing.
 	assert.Equal(t, "BASE=git\nTOKEN=secret\n", details.EnvContent)
 }
 
-func TestBuildProjectUpdateInfoSummaryInternal(t *testing.T) {
+func TestBuildProjectUpdateInfoSummary(t *testing.T) {
 	now := time.Now().UTC()
 
 	tests := []struct {
@@ -3455,7 +3456,7 @@ func TestBuildProjectUpdateInfoSummaryInternal(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			summary := BuildUpdateInfoSummary(tt.imageRefs, tt.updates)
+			summary := buildUpdateInfoSummary(tt.imageRefs, tt.updates)
 			require.NotNil(t, summary)
 			assert.Equal(t, tt.wantStatus, summary.Status)
 			assert.Equal(t, tt.wantCount, summary.ImageCount)
@@ -3486,7 +3487,7 @@ func TestProjectService_GetProjectDetails_IncludesUpdateInfo(t *testing.T) {
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
@@ -3534,14 +3535,14 @@ func TestProjectService_GetProjectDetails_RefreshesRuntimeStatusWithoutRuntimeSe
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
 	projectPath := createComposeProjectDir(t, projectsDir, "projectA")
 	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte("services:\n  server:\n    image: nginx:alpine\n  worker:\n    image: busybox:latest\n"), 0o644))
 
-	server := newProjectRuntimeDockerServerInternal(t, []container.Summary{
+	server := newProjectRuntimeDockerServer(t, []container.Summary{
 		{
 			ID:     "server-container",
 			Names:  []string{"/projecta-server-1"},
@@ -3577,7 +3578,7 @@ func TestProjectService_GetProjectDetails_RefreshesRuntimeStatusWithoutRuntimeSe
 			},
 		},
 	})
-	t.Setenv("DOCKER_HOST", dockerHostFromProjectRuntimeServerURLInternal(t, server.URL))
+	t.Setenv("DOCKER_HOST", dockerHostFromProjectRuntimeServerURL(t, server.URL))
 
 	projectRecord := &Project{
 		ID:           "proj-runtime-refresh",
@@ -3607,14 +3608,14 @@ func TestProjectService_GetProjectDetails_PopulatesRuntimeServicesFromComposePs(
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
 	projectPath := createComposeProjectDir(t, projectsDir, "projectA")
 	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte("services:\n  server:\n    image: nginx:alpine\n"), 0o644))
 
-	server := newProjectRuntimeDockerServerInternal(t, []container.Summary{
+	server := newProjectRuntimeDockerServer(t, []container.Summary{
 		{
 			ID:     "server-container",
 			Names:  []string{"/projecta-server-1"},
@@ -3629,7 +3630,7 @@ func TestProjectService_GetProjectDetails_PopulatesRuntimeServicesFromComposePs(
 			},
 		},
 	})
-	t.Setenv("DOCKER_HOST", dockerHostFromProjectRuntimeServerURLInternal(t, server.URL))
+	t.Setenv("DOCKER_HOST", dockerHostFromProjectRuntimeServerURL(t, server.URL))
 
 	projectRecord := &Project{
 		ID:           "proj-runtime-services",
@@ -3654,7 +3655,7 @@ func TestProjectService_GetProjectDetails_PopulatesRuntimeServicesFromComposePs(
 	assert.Equal(t, "projecta-server-1", details.RuntimeServices[0].ContainerName)
 }
 
-func TestBuildProjectLabelFilterAccessorInternal(t *testing.T) {
+func TestListingPage_FiltersByLabel(t *testing.T) {
 	items := []projecttypes.Details{
 		{ID: "tagged", RuntimeServices: []projecttypes.RuntimeService{
 			{Name: "web", ContainerLabels: map[string]string{"heal": "true"}},
@@ -3663,8 +3664,6 @@ func TestBuildProjectLabelFilterAccessorInternal(t *testing.T) {
 		{ID: "other", RuntimeServices: []projecttypes.RuntimeService{{Name: "web", ContainerLabels: map[string]string{"heal": "false"}}}},
 		{ID: "down"},
 	}
-	paginationConfig := pagination.Config[projecttypes.Details]{FilterAccessors: []pagination.FilterAccessor[projecttypes.Details]{listing.BuildProjectLabelFilterAccessor()}}
-
 	tests := []struct {
 		name   string
 		filter string
@@ -3678,7 +3677,7 @@ func TestBuildProjectLabelFilterAccessorInternal(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := paginationConfig.SearchOrderAndPaginate(items, pagination.QueryParams{Filters: map[string]string{"label": tt.filter}})
+			result, _ := listing.Page(items, pagination.QueryParams{Filters: map[string]string{"label": tt.filter}, Limit: -1}, func(string) bool { return true })
 			var got []string
 			for _, item := range result.Items {
 				got = append(got, item.ID)
@@ -3695,7 +3694,7 @@ func TestProjectService_ListProjects_FiltersByUpdateStatus(t *testing.T) {
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
@@ -3802,7 +3801,7 @@ func TestProjectService_ListProjects_FiltersByUpdateStatus(t *testing.T) {
 	}
 }
 
-func TestBuildDiscoveredComposeProjectUpdateRowsInternal(t *testing.T) {
+func TestBuildDiscoveredComposeProjectUpdateRows(t *testing.T) {
 	db := setupProjectTestDB(t)
 	ctx := t.Context()
 	imageService := image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil)
@@ -3826,7 +3825,7 @@ func TestBuildDiscoveredComposeProjectUpdateRowsInternal(t *testing.T) {
 		CurrentVersion: "7",
 		CheckTime:      now,
 	}).Error)
-	rows := discoveryListingForTestInternal(imageService).DiscoveredUpdateRows(ctx, []container.Summary{
+	rows := discoveryListingForTest(imageService).DiscoveredUpdateRows(ctx, []container.Summary{
 		{
 			ID:      "media-web",
 			Names:   []string{"/media-web-1"},
@@ -3870,7 +3869,7 @@ func TestBuildDiscoveredComposeProjectUpdateRowsInternal(t *testing.T) {
 	assert.Equal(t, "web", row.RuntimeServices[0].Name)
 }
 
-func TestBuildDiscoveredComposeProjectUpdateRowsInternal_FallsBackToImageID(t *testing.T) {
+func TestBuildDiscoveredComposeProjectUpdateRows_FallsBackToImageID(t *testing.T) {
 	db := setupProjectTestDB(t)
 	ctx := t.Context()
 	imageService := image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil)
@@ -3919,7 +3918,7 @@ func TestBuildDiscoveredComposeProjectUpdateRowsInternal_FallsBackToImageID(t *t
 			},
 		},
 	}
-	rows := discoveryListingForTestInternal(imageService).DiscoveredUpdateRows(ctx, containers, map[string]struct{}{}, iconcatalog.DefaultCatalog)
+	rows := discoveryListingForTest(imageService).DiscoveredUpdateRows(ctx, containers, map[string]struct{}{}, iconcatalog.DefaultCatalog)
 
 	require.Len(t, rows, 1, "replicas count once and a tag policy never inherits the digest check")
 	assert.Equal(t, "compose:media", rows[0].ID)
@@ -3927,7 +3926,7 @@ func TestBuildDiscoveredComposeProjectUpdateRowsInternal_FallsBackToImageID(t *t
 
 	// The tracked-project path resolves the same record through the runtime image ID.
 	service := &ProjectService{imageService: imageService}
-	service.initChildrenInternal(nil, nil)
+	service.initChildren(nil, nil)
 	detail := projecttypes.Details{
 		ID: "tracked",
 		RuntimeServices: []projecttypes.RuntimeService{
@@ -3940,11 +3939,11 @@ func TestBuildDiscoveredComposeProjectUpdateRowsInternal_FallsBackToImageID(t *t
 			},
 		},
 	}
-	service.enrichProjectUpdateInfoInternal(ctx, &detail)
+	service.enrichProjectUpdateInfo(ctx, &detail)
 	require.True(t, detail.UpdateInfo.HasUpdate)
 	assert.Equal(t, []string{"nginx:latest"}, detail.UpdateInfo.UpdatedImageRefs)
 	detail.RuntimeServices[0].ImageID = ""
-	service.enrichProjectUpdateInfoInternal(ctx, &detail)
+	service.enrichProjectUpdateInfo(ctx, &detail)
 	require.False(t, detail.UpdateInfo.HasUpdate, "a missing runtime image ID inherits nothing")
 }
 
@@ -3952,7 +3951,7 @@ func TestProjectService_ListProjects_FiltersArchivedProjects(t *testing.T) {
 	db := setupProjectTestDB(t)
 	ctx := t.Context()
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 	projectsRoot := t.TempDir()
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
@@ -4014,7 +4013,7 @@ func TestProjectService_ArchiveProject_RequiresStoppedProject(t *testing.T) {
 	ctx := t.Context()
 
 	projectsRoot := t.TempDir()
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
 
@@ -4028,7 +4027,7 @@ func TestProjectService_ArchiveProject_RequiresStoppedProject(t *testing.T) {
 		Status:  ProjectStatusStopped,
 	}).Error)
 
-	configureProjectRuntimeDockerInternal(t, []container.Summary{
+	configureProjectRuntimeDocker(t, []container.Summary{
 		{
 			ID:     "app-container",
 			Names:  []string{"/running-demo-app-1"},
@@ -4060,7 +4059,7 @@ func TestProjectService_ArchiveProject_TogglesArchiveFlag(t *testing.T) {
 	ctx := t.Context()
 
 	projectsRoot := t.TempDir()
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
 
@@ -4073,7 +4072,7 @@ func TestProjectService_ArchiveProject_TogglesArchiveFlag(t *testing.T) {
 		Status:  ProjectStatusStopped,
 	}).Error)
 
-	configureProjectRuntimeDockerInternal(t, nil)
+	configureProjectRuntimeDocker(t, nil)
 
 	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 	user := usertypes.Actor{ID: "user-1", Username: "tester"}
@@ -4096,7 +4095,7 @@ func TestProjectService_ArchiveProject_LiveVerificationErrorPolicy(t *testing.T)
 	ctx := t.Context()
 
 	projectsRoot := t.TempDir()
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
 
@@ -4146,7 +4145,7 @@ func TestProjectService_ProjectListRows_PersistsInferredServiceCount(t *testing.
 	require.NoError(t, db.Create(&inferred).Error)
 	require.NoError(t, db.Create(&known).Error)
 	service := &ProjectService{db: db}
-	service.initChildrenInternal(nil, nil)
+	service.initChildren(nil, nil)
 
 	containers := []container.Summary{
 		{ID: "c1", State: "running", Names: []string{"/inferred-web"}, Labels: map[string]string{
@@ -4162,7 +4161,7 @@ func TestProjectService_ProjectListRows_PersistsInferredServiceCount(t *testing.
 	service.listing = listing.New(func(context.Context) ([]container.Summary, error) { return containers, nil }, nil, nil)
 	snapshot := service.listing.Snapshot(t.Context())
 
-	rows := service.projectListRowsInternal(t.Context(), projectsDir, []Project{inferred, known}, snapshot)
+	rows := service.projectListRows(t.Context(), projectsDir, []Project{inferred, known}, snapshot)
 	require.Len(t, rows, 2)
 	require.Equal(t, 2, rows[0].ServiceCount)
 	require.Equal(t, 4, rows[1].ServiceCount)
@@ -4182,7 +4181,7 @@ func TestProjectService_ListProjects_WithDerivedStatusFilter_AllowsAllPageSizeSe
 	db := setupProjectTestDB(t)
 	ctx := t.Context()
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	projectsRoot := t.TempDir()
@@ -4200,7 +4199,7 @@ func TestProjectService_ListProjects_WithDerivedStatusFilter_AllowsAllPageSizeSe
 	}
 
 	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load(), nil, nil)
-	configureProjectRuntimeDockerInternal(t, nil)
+	configureProjectRuntimeDocker(t, nil)
 
 	items, page, err := svc.ListProjects(ctx, pagination.QueryParams{
 		Filters: map[string]string{
@@ -4219,7 +4218,7 @@ func TestProjectService_ListProjects_WithDerivedStatusFilter_AllowsAllPageSizeSe
 func TestProjectService_DeployProject_StopsOnBuildPreparationError(t *testing.T) {
 	db := setupProjectTestDB(t)
 	ctx := t.Context()
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	projectsRoot := t.TempDir()
@@ -4254,7 +4253,7 @@ func TestProjectService_DeployProject_StopsOnBuildPreparationError(t *testing.T)
 func TestProjectService_DeployProject_BuildsGeneratedImageWithoutPull(t *testing.T) {
 	db := setupProjectTestDB(t)
 	ctx := t.Context()
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	projectsRoot := t.TempDir()
@@ -4290,7 +4289,7 @@ func TestProjectService_SyncProjectsFromFileSystem_IgnoresSymlinkedProjectDirsWh
 	db := setupProjectTestDB(t)
 	ctx := t.Context()
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	projectsRoot := t.TempDir()
@@ -4316,7 +4315,7 @@ func TestProjectService_SyncProjectsFromFileSystem_DetectsSymlinkedProjectDirsWh
 	db := setupProjectTestDB(t)
 	ctx := t.Context()
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	projectsRoot := t.TempDir()
@@ -4338,39 +4337,11 @@ func TestProjectService_SyncProjectsFromFileSystem_DetectsSymlinkedProjectDirsWh
 	assert.Equal(t, linkPath, items[0].Path)
 }
 
-func TestProjectService_CountProjectFolders_RespectsFollowProjectSymlinks(t *testing.T) {
-	db := setupProjectTestDB(t)
-	ctx := t.Context()
-
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
-	require.NoError(t, err)
-
-	projectsRoot := t.TempDir()
-	targetRoot := t.TempDir()
-	createComposeProjectDir(t, projectsRoot, "regular")
-	linkTarget := createComposeProjectDir(t, targetRoot, "linked-target")
-	require.NoError(t, os.Symlink(linkTarget, filepath.Join(projectsRoot, "linked")))
-
-	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
-
-	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load(), nil, nil)
-
-	require.NoError(t, settingsService.SetStringSetting(ctx, "followProjectSymlinks", "false"))
-	count, err := svc.countProjectFolders(ctx)
-	require.NoError(t, err)
-	assert.Equal(t, 1, count)
-
-	require.NoError(t, settingsService.SetStringSetting(ctx, "followProjectSymlinks", "true"))
-	count, err = svc.countProjectFolders(ctx)
-	require.NoError(t, err)
-	assert.Equal(t, 2, count)
-}
-
 func TestProjectService_SyncProjectsFromFileSystem_DiscoversNestedProjectsAndRelativePaths(t *testing.T) {
 	db := setupProjectTestDB(t)
 	ctx := t.Context()
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	projectsRoot := t.TempDir()
@@ -4403,7 +4374,7 @@ func TestProjectService_SyncProjectsFromFileSystem_RespectsConfiguredScanMaxDept
 	db := setupProjectTestDB(t)
 	ctx := t.Context()
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	projectsRoot := t.TempDir()
@@ -4427,7 +4398,7 @@ func TestProjectService_ListProjects_LoadsProjectIconFromGlobalEnvInIncludedMeta
 	db := setupProjectTestDB(t)
 	ctx := t.Context()
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	projectsRoot := t.TempDir()
@@ -4474,53 +4445,11 @@ services:
 	assert.Equal(t, "https://cdn.jsdelivr.net/gh/selfhst/icons@main/svg/watchtower.svg", items[0].IconDarkURL)
 }
 
-func TestProjectService_CountProjectFolders_RecursivelyCountsNestedProjects(t *testing.T) {
-	db := setupProjectTestDB(t)
-	ctx := t.Context()
-
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
-	require.NoError(t, err)
-
-	projectsRoot := t.TempDir()
-	createComposeProjectDir(t, projectsRoot, filepath.Join("main-project", "sub-project1"))
-	createComposeProjectDir(t, projectsRoot, filepath.Join("main-project", "sub-project2"))
-	createComposeProjectDir(t, projectsRoot, "project2")
-
-	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
-
-	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load(), nil, nil)
-
-	count, err := svc.countProjectFolders(ctx)
-	require.NoError(t, err)
-	assert.Equal(t, 3, count)
-}
-
-func TestProjectService_CountProjectFolders_RespectsConfiguredScanMaxDepth(t *testing.T) {
-	db := setupProjectTestDB(t)
-	ctx := t.Context()
-
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
-	require.NoError(t, err)
-
-	projectsRoot := t.TempDir()
-	createComposeProjectDir(t, projectsRoot, "project1")
-	createComposeProjectDir(t, projectsRoot, filepath.Join("group", "project2"))
-
-	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
-	t.Setenv("PROJECT_SCAN_MAX_DEPTH", "1")
-
-	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load(), nil, nil)
-
-	count, err := svc.countProjectFolders(ctx)
-	require.NoError(t, err)
-	assert.Equal(t, 1, count)
-}
-
 func TestProjectService_SyncProjectsFromFileSystem_RemovesDeletedNestedProject(t *testing.T) {
 	db := setupProjectTestDB(t)
 	ctx := t.Context()
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	projectsRoot := t.TempDir()
@@ -4551,7 +4480,7 @@ func TestProjectService_SyncProjectsFromFileSystem_PrunesLeakedScratchRow(t *tes
 	db := setupProjectTestDB(t)
 	ctx := t.Context()
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	projectsRoot := t.TempDir()
@@ -4581,7 +4510,7 @@ func TestProjectService_SyncProjectsFromFileSystem_PreservesProjectsWhenDirector
 	db := setupProjectTestDB(t)
 	ctx := t.Context()
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	// An existing-but-empty projects directory simulates a mis-mapped or unmounted
@@ -4616,7 +4545,7 @@ func TestProjectService_SyncProjectsFromFileSystem_PreservesProjectWithAmbiguous
 	db := setupProjectTestDB(t)
 	ctx := t.Context()
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	projectsRoot := t.TempDir()
@@ -4652,7 +4581,7 @@ func TestProjectService_SyncProjectsFromFileSystem_RemovesProjectsBeyondReducedS
 	db := setupProjectTestDB(t)
 	ctx := t.Context()
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	projectsRoot := t.TempDir()
@@ -4698,7 +4627,7 @@ func TestProjectService_SyncProjectsFromFileSystem_PreservesDBRecordsWhenDirecto
 	db := setupProjectTestDB(t)
 	ctx := t.Context()
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	projectsRoot := t.TempDir()
@@ -4747,7 +4676,7 @@ func TestProjectService_SyncProjectsFromFileSystem_DiscoversReadableProjectsDesp
 	db := setupProjectTestDB(t)
 	ctx := t.Context()
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	projectsRoot := t.TempDir()
@@ -4789,7 +4718,7 @@ func TestProjectService_SyncProjectsFromFileSystem_DiscoversReadableProjectsDesp
 	}
 
 	assert.True(t, foundReadableSibling, "readable sibling project must still be discovered")
-	// evaluateProjectPathErrorInternal only prunes on os.IsNotExist; a permission-denied
+	// evaluateProjectCleanup only prunes on os.IsNotExist; a permission-denied
 	// stat falls into the "keep the record" branch, so the stranded record must survive.
 	assert.True(t, foundStrandedRecord, "DB record under the unreadable subtree must not be pruned by a permission-denied stat")
 }
@@ -4798,7 +4727,7 @@ func TestProjectService_SyncProjectsFromFileSystem_AllowsDuplicateLeafDirectorie
 	db := setupProjectTestDB(t)
 	ctx := t.Context()
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	projectsRoot := t.TempDir()
@@ -4826,7 +4755,7 @@ func TestProjectService_SyncProjectsFromFileSystem_DetectsNestedSymlinkedProject
 	db := setupProjectTestDB(t)
 	ctx := t.Context()
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	projectsRoot := t.TempDir()
@@ -4857,7 +4786,7 @@ func TestProjectService_SyncProjectsFromFileSystem_RemovesSymlinkedProjectsWhenD
 	db := setupProjectTestDB(t)
 	ctx := t.Context()
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	projectsRoot := t.TempDir()
@@ -4891,7 +4820,7 @@ func TestProjectService_SyncProjectsFromFileSystem_RefreshesServiceCountOnCompos
 	db := setupProjectTestDB(t)
 	ctx := t.Context()
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	projectsRoot := t.TempDir()
@@ -4918,7 +4847,7 @@ func TestProjectService_SyncProjectsFromFileSystem_AlignsNameToEffectiveComposeN
 	db := setupProjectTestDB(t)
 	ctx := t.Context()
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	projectsRoot := t.TempDir()
@@ -4947,7 +4876,7 @@ func TestProjectService_SyncProjectsFromFileSystem_PreservesValidCustomNameWitho
 	db := setupProjectTestDB(t)
 	ctx := t.Context()
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	projectsRoot := t.TempDir()
@@ -4980,7 +4909,7 @@ func TestProjectService_SyncProjectsFromFileSystem_PreservesGitOpsProjectWithCus
 	ctx := t.Context()
 	require.NoError(t, db.AutoMigrate(&GitOpsSync{}))
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	projectsRoot := t.TempDir()
@@ -5030,7 +4959,7 @@ func TestProjectService_GetProjectDetails_UsesGitOpsCustomComposeFilename(t *tes
 	ctx := t.Context()
 	require.NoError(t, db.AutoMigrate(&GitOpsSync{}))
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	projectsRoot := t.TempDir()
@@ -5066,7 +4995,7 @@ func TestProjectService_GetProjectDetails_UsesGitOpsCustomComposeFilename(t *tes
 
 	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load(), nil, nil)
 
-	composeFromContent, envFromContent, _, err := svc.GetProjectContent(ctx, syncProjectID)
+	composeFromContent, envFromContent, _, err := svc.projectContent(ctx, syncProjectID)
 	require.NoError(t, err)
 	assert.Equal(t, composeContent, composeFromContent)
 	assert.Equal(t, "TZ=UTC\n", envFromContent)
@@ -5083,7 +5012,7 @@ func TestProjectService_UpdateProject_WritesThroughSymlinkedProjectPath(t *testi
 	db := setupProjectTestDB(t)
 	ctx := t.Context()
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	projectsRoot := t.TempDir()
@@ -5132,7 +5061,7 @@ func TestProjectService_UpdateProject_WritesThroughExternalEnvSymlink(t *testing
 	db := setupProjectTestDB(t)
 	ctx := t.Context()
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	projectsRoot := t.TempDir()
@@ -5190,7 +5119,7 @@ func TestProjectService_UpdateProject_RestoresExternalEnvSymlinkTargetWhenProjec
 	db := setupProjectTestDB(t)
 	ctx := t.Context()
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	projectsRoot := t.TempDir()
@@ -5261,14 +5190,14 @@ func createComposeProjectDir(t *testing.T, root, name string) string {
 	return projectPath
 }
 
-func configureProjectRuntimeDockerInternal(t *testing.T, containers []container.Summary) {
+func configureProjectRuntimeDocker(t *testing.T, containers []container.Summary) {
 	t.Helper()
 
-	server := newProjectRuntimeDockerServerInternal(t, containers)
-	t.Setenv("DOCKER_HOST", dockerHostFromProjectRuntimeServerURLInternal(t, server.URL))
+	server := newProjectRuntimeDockerServer(t, containers)
+	t.Setenv("DOCKER_HOST", dockerHostFromProjectRuntimeServerURL(t, server.URL))
 }
 
-func projectUpdatePreviewDirsInternal(t *testing.T, projectsDir string) []string {
+func projectUpdatePreviewDirs(t *testing.T, projectsDir string) []string {
 	t.Helper()
 
 	matches, err := filepath.Glob(filepath.Join(projectsDir, ".project-update-preview-*"))
@@ -5276,7 +5205,7 @@ func projectUpdatePreviewDirsInternal(t *testing.T, projectsDir string) []string
 	return matches
 }
 
-func newProjectRuntimeDockerServerInternal(t *testing.T, containers []container.Summary) *httptest.Server {
+func newProjectRuntimeDockerServer(t *testing.T, containers []container.Summary) *httptest.Server {
 	t.Helper()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -5318,7 +5247,7 @@ func newProjectRuntimeDockerServerInternal(t *testing.T, containers []container.
 	return server
 }
 
-func dockerHostFromProjectRuntimeServerURLInternal(t *testing.T, serverURL string) string {
+func dockerHostFromProjectRuntimeServerURL(t *testing.T, serverURL string) string {
 	t.Helper()
 
 	parsed, err := url.Parse(serverURL)
@@ -5524,7 +5453,7 @@ func TestProjectService_RecoverProjectRenameJournals_RelocatesTargetWhenBothPath
 	require.Equal(t, oldDir, *fromDB.DirName)
 
 	newName := "web"
-	require.NoError(t, svc.applyProjectRenameIfNeeded(t.Context(), &fromDB, &newName, projectsDir))
+	require.NoError(t, svc.applyProjectRename(t.Context(), &fromDB, newName, projectsDir))
 	require.Equal(t, "web", fromDB.Name)
 	require.Equal(t, newPath, fromDB.Path)
 	require.DirExists(t, newPath)
@@ -5616,7 +5545,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsPreservedTargetJourna
 	t.Cleanup(server.Close)
 
 	kvService := kv.NewKVService(db)
-	svc := NewProjectService(db, nil, nil, nil, &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}, nil, nil, nil, config.Load(), kvService, nil)
+	svc := NewProjectService(db, nil, nil, nil, &docker.DockerClientService{Client: newTestDockerClient(t, server)}, nil, nil, nil, config.Load(), kvService, nil)
 	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
 		OldName:    "nginx",
@@ -5722,7 +5651,7 @@ func TestProjectService_FinalizeProjectRenameAfterCommit_ClearsJournalAfterSourc
 	}
 	require.NoError(t, svc.updates.WriteJournal(ctx, journal, projecttypes.RenameJournalPhaseTargetsCopied))
 
-	migration := &fakeProjectVolumeRenameMigrationInternal{}
+	migration := &fakeProjectVolumeRenameMigration{}
 	journalActive := true
 	projects.FinalizeRenameAfterCommit(ctx, svc.updates.Operations(), project.ID, migration, journal, &journalActive)
 	require.True(t, migration.commitCalled)
@@ -5763,7 +5692,7 @@ func TestProjectService_FinalizeProjectRenameAfterCommit_KeepsJournalWhenSourceC
 	}
 	require.NoError(t, svc.updates.WriteJournal(ctx, journal, projecttypes.RenameJournalPhaseTargetsCopied))
 
-	migration := &fakeProjectVolumeRenameMigrationInternal{
+	migration := &fakeProjectVolumeRenameMigration{
 		commitErr: volumes.NewSourceCleanupError("nginx_data", errors.New("source cleanup failed")),
 	}
 	journalActive := true
@@ -5834,7 +5763,7 @@ func TestProjectService_RecoverProjectRenameJournals_KeepsJournalWhenDirectoryRo
 	require.NoError(t, db.Create(project).Error)
 
 	kvService := kv.NewKVService(db)
-	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}
+	dockerService := &docker.DockerClientService{Client: newTestDockerClient(t, server)}
 	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load(), kvService, nil)
 	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
@@ -5928,7 +5857,7 @@ func TestProjectService_RecoverProjectRenameJournals_CompletesCommittedVolumeJou
 	require.NoError(t, db.Create(project).Error)
 
 	kvService := kv.NewKVService(db)
-	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}
+	dockerService := &docker.DockerClientService{Client: newTestDockerClient(t, server)}
 	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load(), kvService, nil)
 	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
@@ -6001,7 +5930,7 @@ func TestProjectService_RecoverProjectRenameJournals_RollsBackCommittedJournalWh
 	require.NoError(t, db.Create(project).Error)
 
 	kvService := kv.NewKVService(db)
-	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}
+	dockerService := &docker.DockerClientService{Client: newTestDockerClient(t, server)}
 	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load(), kvService, nil)
 	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
@@ -6111,7 +6040,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalAfterDBRestore
 	require.NoError(t, db.Create(project).Error)
 
 	kvService := kv.NewKVService(db)
-	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}
+	dockerService := &docker.DockerClientService{Client: newTestDockerClient(t, server)}
 	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load(), kvService, nil)
 	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
@@ -6251,7 +6180,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsCommittedJournalWhenS
 	require.NoError(t, db.Create(project).Error)
 
 	kvService := kv.NewKVService(db)
-	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}
+	dockerService := &docker.DockerClientService{Client: newTestDockerClient(t, server)}
 	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load(), kvService, nil)
 	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
@@ -6337,7 +6266,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsCommittedJournalAndCl
 	require.NoError(t, db.Create(project).Error)
 
 	kvService := kv.NewKVService(db)
-	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}
+	dockerService := &docker.DockerClientService{Client: newTestDockerClient(t, server)}
 	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load(), kvService, nil)
 	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
@@ -6420,7 +6349,7 @@ func TestProjectService_RecoverProjectRenameJournals_MarksSourceCleanupPendingWh
 	require.NoError(t, db.Create(project).Error)
 
 	kvService := kv.NewKVService(db)
-	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}
+	dockerService := &docker.DockerClientService{Client: newTestDockerClient(t, server)}
 	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load(), kvService, nil)
 	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
@@ -6505,7 +6434,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsSourceCleanupPendingJ
 	require.NoError(t, db.Create(project).Error)
 
 	kvService := kv.NewKVService(db)
-	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}
+	dockerService := &docker.DockerClientService{Client: newTestDockerClient(t, server)}
 	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load(), kvService, nil)
 	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
@@ -6604,7 +6533,7 @@ func TestProjectService_RecoverProjectRenameJournals_RollsBackSourceCleanupPendi
 	require.NoError(t, db.Create(project).Error)
 
 	kvService := kv.NewKVService(db)
-	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}
+	dockerService := &docker.DockerClientService{Client: newTestDockerClient(t, server)}
 	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load(), kvService, nil)
 	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
@@ -6694,7 +6623,7 @@ func TestProjectService_RecoverProjectRenameJournals_KeepsSourceCleanupPendingJo
 	require.NoError(t, db.Create(project).Error)
 
 	kvService := kv.NewKVService(db)
-	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}
+	dockerService := &docker.DockerClientService{Client: newTestDockerClient(t, server)}
 	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load(), kvService, nil)
 	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
@@ -6830,7 +6759,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsMissingPathJournalWhe
 	require.NoError(t, db.Create(project).Error)
 
 	kvService := kv.NewKVService(db)
-	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}
+	dockerService := &docker.DockerClientService{Client: newTestDockerClient(t, server)}
 	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load(), kvService, nil)
 	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
@@ -6904,7 +6833,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalWhenRollbackSo
 	require.NoError(t, db.Create(project).Error)
 
 	kvService := kv.NewKVService(db)
-	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}
+	dockerService := &docker.DockerClientService{Client: newTestDockerClient(t, server)}
 	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load(), kvService, nil)
 	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
@@ -6983,7 +6912,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalWhenRollbackTa
 	require.NoError(t, db.Create(project).Error)
 
 	kvService := kv.NewKVService(db)
-	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}
+	dockerService := &docker.DockerClientService{Client: newTestDockerClient(t, server)}
 	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load(), kvService, nil)
 	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
@@ -7068,7 +6997,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalWhenTargetPres
 	require.NoError(t, db.Create(project).Error)
 
 	kvService := kv.NewKVService(db)
-	dockerService := &docker.DockerClientService{Client: newTestDockerClientInternal(t, server)}
+	dockerService := &docker.DockerClientService{Client: newTestDockerClient(t, server)}
 	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, nil, nil, config.Load(), kvService, nil)
 	journal := projecttypes.RenameJournal{
 		ProjectID:  project.ID,
@@ -7102,16 +7031,16 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalWhenTargetPres
 	require.NoDirExists(t, newPath)
 }
 
-func TestProjectPathMapperUsesCurrentSettingsInternal(t *testing.T) {
+func TestProjectPathMapperUsesCurrentSettings(t *testing.T) {
 	db := setupProjectTestDB(t)
-	settingsService, err := newSettingsServiceForTestInternal(t, t.Context(), db)
+	settingsService, err := newSettingsServiceForTest(t, t.Context(), db)
 	require.NoError(t, err)
 	service := &ProjectService{settingsService: settingsService}
-	service.initChildrenInternal(nil, nil)
+	service.initChildren(nil, nil)
 	containerDir := t.TempDir()
 	for _, hostDir := range []string{t.TempDir(), t.TempDir()} {
 		require.NoError(t, settingsService.SetStringSetting(t.Context(), "projectsDirectory", containerDir+":"+hostDir))
-		mapper := service.projectPathMapperInternal(t.Context())
+		mapper := service.projectPathMapper(t.Context())
 		require.NotNil(t, mapper)
 		mapped, _, containerToHostErr := mapper.ContainerToHost(filepath.Join(containerDir, "data"))
 		require.NoError(t, containerToHostErr)
@@ -7232,7 +7161,7 @@ func TestUpdateProjectServiceImagesRejectsManagedOrArchived(t *testing.T) {
 			}
 			require.NoError(t, db.Create(&proj).Error)
 			service := &ProjectService{db: db}
-			service.initChildrenInternal(nil, nil)
+			service.initChildren(nil, nil)
 			err := service.UpdateProjectServiceImages(t.Context(), proj.ID, map[string]updatertypes.ServiceImageChange{"web": {ExpectedRef: "app:1.0.0", TargetRef: "app:1.1.0"}}, usertypes.Actor{})
 			require.Error(t, err)
 			if name == "archived" {
@@ -7244,13 +7173,13 @@ func TestUpdateProjectServiceImagesRejectsManagedOrArchived(t *testing.T) {
 	}
 }
 
-type serviceImageCoordinatorInternal struct {
+type serviceImageCoordinator struct {
 	projecttypes.ComposeCoordinator
 	requests []projecttypes.ComposeServiceUpdate
 	err      error
 }
 
-func (c *serviceImageCoordinatorInternal) UpdateServices(_ context.Context, request projecttypes.ComposeServiceUpdate) error {
+func (c *serviceImageCoordinator) UpdateServices(_ context.Context, request projecttypes.ComposeServiceUpdate) error {
 	c.requests = append(c.requests, request)
 	return c.err
 }
@@ -7260,7 +7189,7 @@ func TestUpdateProjectServiceImagesPersistsBeforeDeploymentAndRetries(t *testing
 	db := setupProjectTestDB(t)
 	directory := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", directory)
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", directory))
 	projectPath := createComposeProjectDir(t, directory, "image-tags")
@@ -7271,9 +7200,9 @@ func TestUpdateProjectServiceImagesPersistsBeforeDeploymentAndRetries(t *testing
 	proj := &Project{ID: "image-tags", Name: "image-tags", Path: projectPath, Status: ProjectStatusRunning}
 	require.NoError(t, db.Create(proj).Error)
 	deploymentError := errors.New("deployment failed after source persistence")
-	coordinator := &serviceImageCoordinatorInternal{err: deploymentError}
+	coordinator := &serviceImageCoordinator{err: deploymentError}
 	service := &ProjectService{db: db, settingsService: settingsService, eventService: event.NewEventService(db, nil, nil), composeCoordinator: coordinator}
-	service.initChildrenInternal(nil, nil)
+	service.initChildren(nil, nil)
 	changes := map[string]updatertypes.ServiceImageChange{"app": {ExpectedRef: "app:1.2.0", TargetRef: "app:1.3.0"}}
 	for range 2 {
 		updateProjectServiceImagesErr := service.UpdateProjectServiceImages(ctx, proj.ID, changes, usertypes.SystemUser)
@@ -7300,7 +7229,7 @@ func TestUpdateProjectServiceImagesRejectsOverrideBeforeWriting(t *testing.T) {
 	db := setupProjectTestDB(t)
 	directory := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", directory)
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", directory))
 	projectPath := createComposeProjectDir(t, directory, "image-overrides")
@@ -7311,7 +7240,7 @@ func TestUpdateProjectServiceImagesRejectsOverrideBeforeWriting(t *testing.T) {
 	proj := &Project{ID: "image-overrides", Name: "image-overrides", Path: projectPath}
 	require.NoError(t, db.Create(proj).Error)
 	service := &ProjectService{db: db, settingsService: settingsService}
-	service.initChildrenInternal(nil, nil)
+	service.initChildren(nil, nil)
 	err = service.UpdateProjectServiceImages(ctx, proj.ID, map[string]updatertypes.ServiceImageChange{"app": {ExpectedRef: "app:1.2.0", TargetRef: "app:1.3.0"}}, usertypes.SystemUser)
 	require.ErrorContains(t, err, "overrides")
 	content, err := os.ReadFile(filepath.Join(projectPath, "compose.yaml"))
@@ -7370,26 +7299,26 @@ func TestDiscoveredProjectTagUpdatesRemainScoped(t *testing.T) {
 		{ID: "second", Image: "example:3.1.0", ImageID: "shared", Labels: map[string]string{"com.docker.compose.project": "second-project", "com.docker.compose.service": "web"}},
 	}
 	imageSvc := image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil)
-	rows := discoveryListingForTestInternal(imageSvc).DiscoveredUpdateRows(t.Context(), containers, nil, "")
+	rows := discoveryListingForTest(imageSvc).DiscoveredUpdateRows(t.Context(), containers, nil, "")
 	require.Len(t, rows, 1)
 	require.Equal(t, "first-project", rows[0].Name)
 	require.True(t, rows[0].UpdateInfo.HasUpdate)
 	require.Equal(t, target, rows[0].UpdateInfo.UpdateInfoByRef["example:3.1.0"].LatestVersion)
 	service := &ProjectService{imageService: image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil)}
-	service.initChildrenInternal(nil, nil)
+	service.initChildren(nil, nil)
 	detail := projecttypes.Details{ID: "tracked", RuntimeServices: []projecttypes.RuntimeService{{ContainerID: "first", Image: "example:3.1.0", ContainerLabels: tagLabels}}}
-	service.enrichProjectUpdateInfoInternal(t.Context(), &detail)
+	service.enrichProjectUpdateInfo(t.Context(), &detail)
 	require.True(t, detail.UpdateInfo.HasUpdate)
 	require.Equal(t, target, detail.UpdateInfo.UpdateInfoByRef["example:3.1.0"].LatestVersion)
 	delete(containers[1].Labels, labels.LabelUpdateStrategy)
-	rows = discoveryListingForTestInternal(imageSvc).DiscoveredUpdateRows(t.Context(), containers, nil, "")
+	rows = discoveryListingForTest(imageSvc).DiscoveredUpdateRows(t.Context(), containers, nil, "")
 	require.Empty(t, rows, "removing the strategy label falls back to digest checks")
 	detail.RuntimeServices[0].ContainerLabels = containers[1].Labels
-	service.enrichProjectUpdateInfoInternal(t.Context(), &detail)
+	service.enrichProjectUpdateInfo(t.Context(), &detail)
 	require.False(t, detail.UpdateInfo.HasUpdate, "an undeclared strategy no longer inherits a tag record")
 	// Turning off automatic installation keeps the check current (#3532).
 	containers[1].Labels = map[string]string{labels.LabelUpdateStrategy: "tag", labels.LabelUpdater: "off", "com.docker.compose.project": "first-project", "com.docker.compose.service": "web"}
-	rows = discoveryListingForTestInternal(imageSvc).DiscoveredUpdateRows(t.Context(), containers, nil, "")
+	rows = discoveryListingForTest(imageSvc).DiscoveredUpdateRows(t.Context(), containers, nil, "")
 	require.Len(t, rows, 1, "updater=false containers keep their check results")
 	for _, policy := range []map[string]string{
 		{
@@ -7411,10 +7340,10 @@ func TestDiscoveredProjectTagUpdatesRemainScoped(t *testing.T) {
 		current := map[string]string{"com.docker.compose.project": "first-project", "com.docker.compose.service": "web"}
 		maps.Copy(current, policy)
 		containers[1].Labels = current
-		rows = discoveryListingForTestInternal(imageSvc).DiscoveredUpdateRows(t.Context(), containers, nil, "")
+		rows = discoveryListingForTest(imageSvc).DiscoveredUpdateRows(t.Context(), containers, nil, "")
 		require.Empty(t, rows, "stale records must not mark discovered projects updated")
 		detail.RuntimeServices[0].ContainerLabels = current
-		service.enrichProjectUpdateInfoInternal(t.Context(), &detail)
+		service.enrichProjectUpdateInfo(t.Context(), &detail)
 		require.False(t, detail.UpdateInfo.HasUpdate, "runtime fallback must not apply a stale policy")
 	}
 }
@@ -7462,7 +7391,7 @@ func TestProjectTagSummaryDoesNotMutateSharedReferenceResults(t *testing.T) {
 
 func TestCountProjectsWithPendingTagUpdatesUsesRuntimeContainers(t *testing.T) {
 	db := setupProjectTestDB(t)
-	settingsService, err := newSettingsServiceForTestInternal(t, t.Context(), db)
+	settingsService, err := newSettingsServiceForTest(t, t.Context(), db)
 	require.NoError(t, err)
 	projectRecords := []Project{
 		{Name: "first", Path: "first", ImageRefsJSON: `["example:3.1.0"]`},
@@ -7488,7 +7417,7 @@ func TestCountProjectsWithPendingTagUpdatesUsesRuntimeContainers(t *testing.T) {
 		).Error,
 	)
 	service := &ProjectService{db: db, settingsService: settingsService, imageService: image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil)}
-	service.initChildrenInternal(nil, nil)
+	service.initChildren(nil, nil)
 	containers := []container.Summary{
 		{
 			ID:      "first-container",
@@ -7537,12 +7466,12 @@ func TestCountProjectsWithPendingTagUpdatesUsesRuntimeContainers(t *testing.T) {
 	require.Zero(t, count, "disabling update checks on every replica suppresses the project")
 }
 
-type serviceTagTransportInternal struct {
+type serviceTagTransport struct {
 	tags  []string
 	calls int
 }
 
-func (s *serviceTagTransportInternal) RoundTrip(request *http.Request) (*http.Response, error) {
+func (s *serviceTagTransport) RoundTrip(request *http.Request) (*http.Response, error) {
 	// The /v2/ version check precedes every listing and is not a tag call.
 	if request.URL.Path == "/v2/" {
 		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: http.NoBody, Request: request}, nil
@@ -7579,7 +7508,7 @@ func TestProjectServiceManualUpdateDiscoversTags(t *testing.T) {
 			directory := t.TempDir()
 			require.NoError(t, db.AutoMigrate(&registry.ContainerRegistry{}))
 			t.Setenv("PROJECTS_DIRECTORY", directory)
-			settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+			settingsService, err := newSettingsServiceForTest(t, ctx, db)
 			require.NoError(t, err)
 			require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", directory))
 			path := createComposeProjectDir(t, directory, "manual-tag")
@@ -7597,11 +7526,11 @@ func TestProjectServiceManualUpdateDiscoversTags(t *testing.T) {
 			proj := &Project{ID: "manual-tag", Name: "manual-tag", Path: path, Status: ProjectStatusRunning}
 			require.NoError(t, db.Create(proj).Error)
 			deploymentError := errors.New("deployment reached")
-			coordinator := &serviceImageCoordinatorInternal{err: deploymentError}
-			transport := &serviceTagTransportInternal{tags: tt.tags}
+			coordinator := &serviceImageCoordinator{err: deploymentError}
+			transport := &serviceTagTransport{tags: tt.tags}
 			registryService := registry.NewContainerRegistryService(db, nil, nil, nil, &http.Client{Transport: transport})
 			service := &ProjectService{db: db, settingsService: settingsService, eventService: event.NewEventService(db, nil, nil), composeCoordinator: coordinator, containerRegistryService: registryService}
-			service.initChildrenInternal(nil, nil)
+			service.initChildren(nil, nil)
 			err = service.UpdateProjectServices(ctx, proj.ID, []string{"app", "selected-digest"}, usertypes.SystemUser, !tt.skipDiscovery)
 			require.ErrorIs(t, err, deploymentError)
 			require.Equal(t, tt.wantCalls, transport.calls)
@@ -7635,7 +7564,7 @@ func TestProjectServiceManualUpdateRejectsUnsafeTagPolicies(t *testing.T) {
 			serviceConfig := types.ServiceConfig{Image: "app:1.2.0", Labels: types.Labels{labels.LabelUpdateStrategy: "tag"}}
 			tt.change(&serviceConfig)
 			service := &ProjectService{}
-			service.initChildrenInternal(nil, nil)
+			service.initChildren(nil, nil)
 			changes, err := service.updates.ImageChanges(t.Context(), &types.Project{Services: types.Services{"app": serviceConfig}}, false)
 			require.Error(t, err)
 			require.NotContains(t, err.Error(), "registry service unavailable")
@@ -7644,7 +7573,7 @@ func TestProjectServiceManualUpdateRejectsUnsafeTagPolicies(t *testing.T) {
 	}
 	local := types.ServiceConfig{Name: "app", Image: "app:1.2.0", Build: &types.BuildConfig{Context: "."}}
 	emptyService := &ProjectService{}
-	emptyService.initChildrenInternal(nil, nil)
+	emptyService.initChildren(nil, nil)
 	changes, err := emptyService.updates.ImageChanges(t.Context(), &types.Project{Services: types.Services{"app": local}}, false)
 	require.NoError(t, err)
 	require.Empty(t, changes, "automatic inference must preserve local-build handling")
@@ -7683,7 +7612,7 @@ func TestStoppedProjectTagPolicyNeverInheritsSharedDigestCheck(t *testing.T) {
 	db := setupProjectTestDB(t)
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
-	settingsService, err := newSettingsServiceForTestInternal(t, t.Context(), db)
+	settingsService, err := newSettingsServiceForTest(t, t.Context(), db)
 	require.NoError(t, err)
 	require.NoError(t, settingsService.SetStringSetting(t.Context(), "projectsDirectory", projectsDir))
 	projectPath := createComposeProjectDir(t, projectsDir, "tag-stopped")
@@ -7711,7 +7640,7 @@ func TestStoppedProjectTagPolicyNeverInheritsSharedDigestCheck(t *testing.T) {
 	require.Equal(t, "unknown", detail.UpdateInfo.Status)
 	require.Nil(t, detail.UpdateInfo.ServiceUpdates["app"].UpdateInfo)
 	list := []projecttypes.Details{{ID: projectRecord.ID}}
-	service.enrichProjectsWithUpdateInfoInternal(t.Context(), []Project{*projectRecord}, list, true, nil)
+	service.enrichProjectsWithUpdateInfo(t.Context(), []Project{*projectRecord}, list, true, nil)
 	require.Equal(t, "unknown", list[0].UpdateInfo.Status)
 	require.Nil(t, list[0].UpdateInfo.ServiceUpdates["app"].UpdateInfo)
 	target := "3.2.0"
@@ -7738,7 +7667,7 @@ func TestStoppedProjectTagPolicyNeverInheritsSharedDigestCheck(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "has_update", detail.UpdateInfo.Status)
 	require.Equal(t, target, detail.UpdateInfo.ServiceUpdates["app"].UpdateInfo.LatestVersion)
-	service.enrichProjectsWithUpdateInfoInternal(t.Context(), []Project{*projectRecord}, list, true, nil)
+	service.enrichProjectsWithUpdateInfo(t.Context(), []Project{*projectRecord}, list, true, nil)
 	require.Equal(t, "has_update", list[0].UpdateInfo.Status)
 	count, err := service.CountProjectsWithPendingUpdates(t.Context(), []container.Summary{})
 	require.NoError(t, err)
@@ -7761,7 +7690,7 @@ func TestConfiguredProjectUsesScheduledRuntimeChecks(t *testing.T) {
 			db := setupProjectTestDB(t)
 			directory := t.TempDir()
 			t.Setenv("PROJECTS_DIRECTORY", directory)
-			settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+			settingsService, err := newSettingsServiceForTest(t, ctx, db)
 			require.NoError(t, err)
 			require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", directory))
 			path := createComposeProjectDir(t, directory, "scheduled-project")
@@ -7801,12 +7730,12 @@ func TestConfiguredProjectUsesScheduledRuntimeChecks(t *testing.T) {
 			runtimeLabels[labels.LabelUpdateConstraint] = cmp.Or(tt.runtimeConstraint, runtimeLabels[labels.LabelUpdateConstraint])
 			runtimeServices := []projecttypes.RuntimeService{{Name: "web", ContainerID: "scheduled", Image: "example:3.1.0", ContainerLabels: runtimeLabels}}
 			service := &ProjectService{db: db, settingsService: settingsService, imageService: image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil)}
-			service.initChildrenInternal(nil, nil)
+			service.initChildren(nil, nil)
 			detail := projecttypes.Details{ID: proj.ID, Services: []types.ServiceConfig{{Name: "web", Image: tt.sourceRef, Labels: sourceLabels}}, RuntimeServices: runtimeServices}
-			service.enrichProjectUpdateInfoInternal(ctx, &detail)
+			service.enrichProjectUpdateInfo(ctx, &detail)
 			require.Equal(t, tt.wantUpdate, detail.UpdateInfo.HasUpdate)
 			list := []projecttypes.Details{{ID: proj.ID, RuntimeServices: runtimeServices}}
-			service.enrichProjectsWithUpdateInfoInternal(ctx, []Project{proj}, list, true, nil)
+			service.enrichProjectsWithUpdateInfo(ctx, []Project{proj}, list, true, nil)
 			require.Equal(t, tt.wantUpdate, list[0].UpdateInfo.HasUpdate)
 			for _, info := range []*projecttypes.UpdateInfo{detail.UpdateInfo, list[0].UpdateInfo} {
 				if tt.wantUpdate {
@@ -7883,7 +7812,7 @@ func TestConfiguredProjectAggregatesReplicaAndPreviewChecks(t *testing.T) {
 	require.True(t, summary.ServiceUpdates["web"].UpdateInfo.HasUpdate)
 }
 
-func TestPrepareProjectBindDirectoriesInternal(t *testing.T) {
+func TestPrepareProjectBindDirectories(t *testing.T) {
 	t.Parallel()
 
 	newProject := func(volumes ...types.ServiceVolumeConfig) *types.Project {
@@ -7994,7 +7923,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_TolerantOfPermissionLockedEnv(t
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := event.NewEventService(db, nil, nil)
@@ -8037,7 +7966,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_TolerantOfPermissionLockedEnv(t
 	assert.Equal(t, "FOO=locked\n", string(envBytes))
 }
 
-func TestPrepareProjectBindDirectoriesInternal_PermissionFailure(t *testing.T) {
+func TestPrepareProjectBindDirectories_PermissionFailure(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("requires Unix permission semantics")
 	}
@@ -8121,7 +8050,7 @@ func TestPrepareProjectBindDirectoriesInternal_PermissionFailure(t *testing.T) {
 	}
 }
 
-func newEnvDirectoryProjectInternal(t *testing.T, id string) (*ProjectService, *Project, string, context.Context) {
+func newEnvDirectoryProject(t *testing.T, id string) (*ProjectService, *Project, string, context.Context) {
 	t.Helper()
 
 	db := setupProjectTestDB(t)
@@ -8130,7 +8059,7 @@ func newEnvDirectoryProjectInternal(t *testing.T, id string) (*ProjectService, *
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
@@ -8153,7 +8082,7 @@ func newEnvDirectoryProjectInternal(t *testing.T, id string) (*ProjectService, *
 	return svc, project, envDir, ctx
 }
 
-func assertEnvDirectoryIntactInternal(t *testing.T, envDir string) {
+func assertEnvDirectoryIntact(t *testing.T, envDir string) {
 	t.Helper()
 	info, err := os.Stat(envDir)
 	require.NoError(t, err)
@@ -8165,7 +8094,7 @@ func TestProjectService_EnvDirectory_SyncAndDetails(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("requires Unix permission semantics")
 	}
-	svc, project, envDir, ctx := newEnvDirectoryProjectInternal(t, "env-dir-scan")
+	svc, project, envDir, ctx := newEnvDirectoryProject(t, "env-dir-scan")
 
 	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
 	all, err := svc.ListAllProjects(ctx)
@@ -8178,14 +8107,14 @@ func TestProjectService_EnvDirectory_SyncAndDetails(t *testing.T) {
 	assert.Empty(t, details.EnvContent)
 	assert.Contains(t, details.ComposeContent, "nginx:alpine")
 
-	assertEnvDirectoryIntactInternal(t, envDir)
+	assertEnvDirectoryIntact(t, envDir)
 }
 
 func TestProjectService_EnvDirectory_UpdateCompose(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("requires Unix permission semantics")
 	}
-	svc, project, envDir, ctx := newEnvDirectoryProjectInternal(t, "env-dir-update")
+	svc, project, envDir, ctx := newEnvDirectoryProject(t, "env-dir-update")
 
 	_, err := svc.UpdateProject(ctx, project.ID, nil, new("services:\n  app:\n    image: nginx:1.27-alpine\n"), nil, nil, usertypes.Actor{ID: "u1", Username: "tester"})
 	require.NoError(t, err)
@@ -8193,14 +8122,14 @@ func TestProjectService_EnvDirectory_UpdateCompose(t *testing.T) {
 	composeBytes, err := os.ReadFile(filepath.Join(project.Path, "compose.yaml"))
 	require.NoError(t, err)
 	assert.Contains(t, string(composeBytes), "nginx:1.27-alpine")
-	assertEnvDirectoryIntactInternal(t, envDir)
+	assertEnvDirectoryIntact(t, envDir)
 }
 
 func TestProjectService_EnvDirectory_GitSync(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("requires Unix permission semantics")
 	}
-	svc, project, envDir, ctx := newEnvDirectoryProjectInternal(t, "env-dir-git")
+	svc, project, envDir, ctx := newEnvDirectoryProject(t, "env-dir-git")
 
 	_, _, err := svc.ApplyGitSyncProjectFiles(ctx, project.ID, "services:\n  app:\n    image: nginx:1.27-alpine\n", new("FOO=fromgit\n"), nil, "", usertypes.Actor{ID: "u1", Username: "tester"})
 	require.NoError(t, err)
@@ -8208,25 +8137,25 @@ func TestProjectService_EnvDirectory_GitSync(t *testing.T) {
 	composeBytes, err := os.ReadFile(filepath.Join(project.Path, "compose.yaml"))
 	require.NoError(t, err)
 	assert.Contains(t, string(composeBytes), "nginx:1.27-alpine")
-	assertEnvDirectoryIntactInternal(t, envDir)
+	assertEnvDirectoryIntact(t, envDir)
 }
 
 func TestProjectService_EnvDirectory_EnvSaveFails(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("requires Unix permission semantics")
 	}
-	svc, project, envDir, ctx := newEnvDirectoryProjectInternal(t, "env-dir-save")
+	svc, project, envDir, ctx := newEnvDirectoryProject(t, "env-dir-save")
 
 	_, err := svc.UpdateProject(ctx, project.ID, nil, nil, new("FOO=bar\n"), nil, usertypes.Actor{ID: "u1", Username: "tester"})
 	require.ErrorContains(t, err, ".env is a directory")
-	assertEnvDirectoryIntactInternal(t, envDir)
+	assertEnvDirectoryIntact(t, envDir)
 }
 
 func TestProjectService_OverrideEnvDirectory_EnvSaveFails(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("requires Unix permission semantics")
 	}
-	svc, project, envDir, ctx := newEnvDirectoryProjectInternal(t, "override-dir-save")
+	svc, project, envDir, ctx := newEnvDirectoryProject(t, "override-dir-save")
 	require.NoError(t, os.RemoveAll(envDir))
 	require.NoError(t, os.WriteFile(filepath.Join(project.Path, ".env.git"), []byte("FOO=git\n"), 0o644))
 	overrideDir := filepath.Join(project.Path, "project.env")
@@ -8239,7 +8168,7 @@ func TestProjectService_OverrideEnvDirectory_EnvSaveFails(t *testing.T) {
 	assert.True(t, info.IsDir())
 }
 
-func TestComposeFileInternal(t *testing.T) {
+func TestComposeFile(t *testing.T) {
 	t.Parallel()
 
 	const resolved = "/projects/app/compose.yaml"
@@ -8253,7 +8182,7 @@ func TestComposeFileInternal(t *testing.T) {
 
 	tests := []struct {
 		name      string
-		env       *projectMetadataEnvInternal
+		env       *projectMetadataEnv
 		projectID string
 		// results is returned by resolve in order; the last entry repeats.
 		results []error
@@ -8261,7 +8190,7 @@ func TestComposeFileInternal(t *testing.T) {
 	}{
 		{
 			name:      "caches success",
-			env:       &projectMetadataEnvInternal{},
+			env:       &projectMetadataEnv{},
 			projectID: "p1",
 			results:   []error{nil},
 			calls: []call{
@@ -8271,7 +8200,7 @@ func TestComposeFileInternal(t *testing.T) {
 		},
 		{
 			name:      "retries after failure then caches success",
-			env:       &projectMetadataEnvInternal{},
+			env:       &projectMetadataEnv{},
 			projectID: "p1",
 			results:   []error{transient, nil},
 			calls: []call{
@@ -8282,7 +8211,7 @@ func TestComposeFileInternal(t *testing.T) {
 		},
 		{
 			name:      "repeated failures are never memoized",
-			env:       &projectMetadataEnvInternal{},
+			env:       &projectMetadataEnv{},
 			projectID: "p1",
 			results:   []error{transient},
 			calls: []call{
@@ -8302,7 +8231,7 @@ func TestComposeFileInternal(t *testing.T) {
 		},
 		{
 			name:      "empty project ID resolves every call",
-			env:       &projectMetadataEnvInternal{},
+			env:       &projectMetadataEnv{},
 			projectID: "",
 			results:   []error{nil},
 			calls: []call{
@@ -8327,7 +8256,7 @@ func TestComposeFileInternal(t *testing.T) {
 			}
 
 			for i, want := range tt.calls {
-				path, err := tt.env.composeFileInternal(tt.projectID, resolve)
+				path, err := tt.env.composeFile(tt.projectID, resolve)
 				if !errors.Is(err, want.wantErr) {
 					t.Fatalf("call %d: err = %v, want %v", i+1, err, want.wantErr)
 				}
@@ -8345,7 +8274,7 @@ func TestComposeFileInternal(t *testing.T) {
 func TestProjectTags_ReconcilePreservesUIAndComposeOwnershipIsReadOnly(t *testing.T) {
 	db := setupProjectTestDB(t)
 	service := &ProjectService{db: db}
-	service.initChildrenInternal(nil, nil)
+	service.initChildren(nil, nil)
 	ctx := t.Context()
 	projectModel := Project{
 		ID:              "project-tags",
@@ -8361,7 +8290,7 @@ func TestProjectTags_ReconcilePreservesUIAndComposeOwnershipIsReadOnly(t *testin
 	require.NoError(t, err)
 	require.Equal(t, []projecttypes.Tag{{Name: "database", Color: projecttypes.TagColorPurple, Sources: []projecttypes.TagSource{projecttypes.TagSourceUI}}}, projectTags)
 
-	require.NoError(t, service.reconcileComposeProjectTagsInternal(ctx, projectModel.ID, []projecttypes.TagOption{
+	require.NoError(t, service.reconcileComposeProjectTags(ctx, projectModel.ID, []projecttypes.TagOption{
 		{Name: "DATABASE", Color: projecttypes.TagColorBlue},
 		{Name: "maintenance-window", Color: projecttypes.TagColorOrange},
 	}))
@@ -8377,7 +8306,7 @@ func TestProjectTags_ReconcilePreservesUIAndComposeOwnershipIsReadOnly(t *testin
 	_, err = service.UpdateProjectTag(ctx, projectModel.ID, "maintenance-window", projecttypes.TagColorBlue, true, usertypes.Actor{})
 	require.ErrorIs(t, err, tags.ErrComposeTagReadOnly)
 
-	require.NoError(t, service.reconcileComposeProjectTagsInternal(ctx, projectModel.ID, nil))
+	require.NoError(t, service.reconcileComposeProjectTags(ctx, projectModel.ID, nil))
 	projectTags, err = service.UpdateProjectTag(ctx, projectModel.ID, "database", "", false, usertypes.Actor{})
 	require.NoError(t, err)
 	require.Empty(t, projectTags)
@@ -8405,11 +8334,13 @@ func TestProjectTags_FilterUsesExactORNames(t *testing.T) {
 	require.ElementsMatch(t, []string{"one", "two"}, []string{result[0].ID, result[1].ID})
 	require.NotContains(t, []string{result[0].ID, result[1].ID}, "three")
 
-	result = nil
-	err = listing.ApplyProjectSearchDBFilter(db.WithContext(ctx).Model(&Project{}), "MAINT").Find(&result).Error
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
-	require.Len(t, result, 1)
-	require.Equal(t, "two", result[0].ID)
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load(), nil, nil)
+	items, _, err := svc.ListProjects(ctx, pagination.QueryParams{Search: "MAINT", Limit: -1})
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	require.Equal(t, "two", items[0].ID)
 }
 
 func setupLifecycleTestDB(t *testing.T) *database.DB {
@@ -8519,7 +8450,7 @@ func TestParseLifecycleExtraMountsText_RejectsInvalidMode(t *testing.T) {
 func TestRunPreDeploy_NilProject(t *testing.T) {
 	db := setupLifecycleTestDB(t)
 	svc, _ := newLifecycleTestService(t, db)
-	require.NoError(t, svc.RunPreDeploy(t.Context(), nil, usertypes.Actor{}))
+	require.NoError(t, svc.runPreDeploy(t.Context(), nil, usertypes.Actor{}))
 }
 
 func TestRunPreDeploy_ProjectNotGitOpsManaged(t *testing.T) {
@@ -8532,17 +8463,68 @@ func TestRunPreDeploy_ProjectNotGitOpsManaged(t *testing.T) {
 		Path:            t.TempDir(),
 		GitOpsManagedBy: nil,
 	}
-	require.NoError(t, svc.RunPreDeploy(t.Context(), project, usertypes.Actor{}))
+	require.NoError(t, svc.runPreDeploy(t.Context(), project, usertypes.Actor{}))
+
+	// A stale marker without a sync row is treated as unmanaged.
+	project.ID = "nonexistent"
+	project.GitOpsManagedBy = new("missing-sync")
+	require.NoError(t, svc.runPreDeploy(t.Context(), project, usertypes.Actor{}))
 }
 
-func TestRunPreDeploy_KillSwitchDisabled(t *testing.T) {
+func TestRunPreDeploy_KillSwitchAndLastRunState(t *testing.T) {
 	db := setupLifecycleTestDB(t)
-	svc, _ := newLifecycleTestService(t, db)
+	settingsService, err := newSettingsServiceForTest(t, t.Context(), db)
+	require.NoError(t, err)
+
+	var exitCode atomic.Int64
+	// Handlers run on server goroutines, so failures use assert rather than require.
+	writeFrame := func(w io.Writer, stream stdcopy.StdType, payload string) error {
+		header := []byte{byte(stream), 0, 0, 0}
+		if _, writeErr := w.Write(binary.BigEndian.AppendUint32(header, uint32(len(payload)))); writeErr != nil {
+			return fmt.Errorf("write stream %d frame header: %w", stream, writeErr)
+		}
+		if _, writeErr := io.WriteString(w, payload); writeErr != nil {
+			return fmt.Errorf("write stream %d frame payload: %w", stream, writeErr)
+		}
+		return nil
+	}
+	dockerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/images/alpine:latest/json"):
+			w.Header().Set("Content-Type", "application/json")
+			_, writeErr := io.WriteString(w, `{"Id":"sha256:runner"}`)
+			assert.NoError(t, writeErr, "write image inspect response")
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/containers/create"):
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusCreated)
+			_, writeErr := io.WriteString(w, `{"Id":"hook-1"}`)
+			assert.NoError(t, writeErr, "write container create response")
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/containers/hook-1/start"):
+			w.WriteHeader(http.StatusNoContent)
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/hook-1/logs"):
+			w.Header().Set("Content-Type", "application/vnd.docker.multiplexed-stream")
+			if !assert.NoError(t, writeFrame(w, stdcopy.Stdout, "hello\n"), "write stdout log frame") {
+				return
+			}
+			assert.NoError(t, writeFrame(w, stdcopy.Stderr, "boom\n"), "write stderr log frame")
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/containers/hook-1/wait"):
+			w.Header().Set("Content-Type", "application/json")
+			_, writeErr := fmt.Fprintf(w, `{"StatusCode":%d}`, exitCode.Load())
+			assert.NoError(t, writeErr, "write container wait response")
+		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/containers/hook-1"):
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(dockerServer.Close)
+	dockerService := &docker.DockerClientService{Client: newTestDockerClient(t, dockerServer)}
+	svc := NewLifecycleService(db, settingsService, event.NewEventService(db, nil, nil), dockerService, nil)
 
 	syncID := "sync-1"
 	project := &Project{
 		Name:            "demo",
-		Path:            t.TempDir(),
+		Path:            writeLifecycleProjectDirWithScript(t, "pre-deploy.sh", "echo hi\n"),
 		GitOpsManagedBy: &syncID,
 	}
 	project.ID = "proj-1"
@@ -8565,7 +8547,35 @@ func TestRunPreDeploy_KillSwitchDisabled(t *testing.T) {
 	sync.ID = syncID
 	require.NoError(t, db.Create(sync).Error)
 
-	require.NoError(t, svc.RunPreDeploy(t.Context(), project, usertypes.Actor{}))
+	loadSync := func() GitOpsSync {
+		var stored GitOpsSync
+		require.NoError(t, db.First(&stored, "id = ?", syncID).Error)
+		return stored
+	}
+
+	// The kill switch skips the hook and leaves no last-run state.
+	require.NoError(t, svc.runPreDeploy(t.Context(), project, usertypes.Actor{}))
+	assert.Nil(t, loadSync().PreDeployLastRunAt)
+
+	require.NoError(t, settingsService.SetStringSetting(t.Context(), "lifecycleEnabled", "true"))
+	before := time.Now()
+	require.NoError(t, svc.runPreDeploy(t.Context(), project, usertypes.Actor{}))
+	stored := loadSync()
+	require.NotNil(t, stored.PreDeployLastRunAt)
+	assert.WithinRange(t, *stored.PreDeployLastRunAt, before, time.Now())
+	assert.Equal(t, "success", mo.PointerToOption(stored.PreDeployLastRunStatus).OrEmpty())
+	assert.Equal(t, "hello\n--- stderr ---\nboom", mo.PointerToOption(stored.PreDeployLastRunOutput).OrEmpty())
+
+	exitCode.Store(3)
+	before = time.Now()
+	err = svc.runPreDeploy(t.Context(), project, usertypes.Actor{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "exited with status 3")
+	stored = loadSync()
+	require.NotNil(t, stored.PreDeployLastRunAt)
+	assert.WithinRange(t, *stored.PreDeployLastRunAt, before, time.Now())
+	assert.Equal(t, "failed", mo.PointerToOption(stored.PreDeployLastRunStatus).OrEmpty())
+	assert.Equal(t, "hello\n--- stderr ---\nboom", mo.PointerToOption(stored.PreDeployLastRunOutput).OrEmpty())
 }
 
 func TestRunPreDeploy_NoScriptConfigured(t *testing.T) {
@@ -8595,7 +8605,7 @@ func TestRunPreDeploy_NoScriptConfigured(t *testing.T) {
 	sync.ID = syncID
 	require.NoError(t, db.Create(sync).Error)
 
-	require.NoError(t, svc.RunPreDeploy(t.Context(), project, usertypes.Actor{}))
+	require.NoError(t, svc.runPreDeploy(t.Context(), project, usertypes.Actor{}))
 }
 
 func TestRunPreDeploy_MissingRunnerImage(t *testing.T) {
@@ -8629,20 +8639,9 @@ func TestRunPreDeploy_MissingRunnerImage(t *testing.T) {
 	sync.ID = syncID
 	require.NoError(t, db.Create(sync).Error)
 
-	err := svc.RunPreDeploy(t.Context(), project, usertypes.Actor{})
+	err := svc.runPreDeploy(t.Context(), project, usertypes.Actor{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "runner image")
-}
-
-func TestResolveRunnerImage_UsesSettingDefault(t *testing.T) {
-	db := setupLifecycleTestDB(t)
-	svc, settingsService := newLifecycleTestService(t, db)
-	require.NoError(t, settingsService.SetStringSetting(t.Context(), "lifecycleDefaultRunnerImage", "alpine:latest"))
-
-	assert.Equal(t, "alpine:latest", svc.hooks.RunnerImage(t.Context(), nil))
-
-	override := "debian:stable-slim"
-	assert.Equal(t, override, svc.hooks.RunnerImage(t.Context(), &override))
 }
 
 func TestRunPreDeploy_PathTraversalRejected(t *testing.T) {
@@ -8676,49 +8675,14 @@ func TestRunPreDeploy_PathTraversalRejected(t *testing.T) {
 	sync.ID = syncID
 	require.NoError(t, db.Create(sync).Error)
 
-	err := svc.RunPreDeploy(t.Context(), project, usertypes.Actor{})
+	err := svc.runPreDeploy(t.Context(), project, usertypes.Actor{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "script path")
 }
 
-func TestLoadGitOpsSyncForProject_ReturnsNilWhenAbsent(t *testing.T) {
-	db := setupLifecycleTestDB(t)
-	sync, err := loadGitOpsSyncForProjectInternal(t.Context(), db, "nonexistent")
-	require.NoError(t, err)
-	assert.Nil(t, sync)
-}
-
-func TestPersistLastRun_UpdatesGitOpsSyncRow(t *testing.T) {
-	db := setupLifecycleTestDB(t)
-	svc, _ := newLifecycleTestService(t, db)
-
-	sync := &GitOpsSync{
-		Name:          "demo-sync",
-		EnvironmentID: "0",
-		RepositoryID:  "repo-1",
-		Branch:        "main",
-		ComposePath:   "docker-compose.yaml",
-		TargetType:    "project",
-		ProjectName:   "demo",
-	}
-	sync.ID = "sync-1"
-	require.NoError(t, db.Create(sync).Error)
-
-	now := time.Now().UTC().Truncate(time.Second)
-	svc.persistLastRunInternal(t.Context(), sync.ID, lifecycle.LifecycleStatusSuccess, "all good", now)
-
-	var got GitOpsSync
-	require.NoError(t, db.Where("id = ?", sync.ID).First(&got).Error)
-	require.NotNil(t, got.PreDeployLastRunAt)
-	require.NotNil(t, got.PreDeployLastRunStatus)
-	require.NotNil(t, got.PreDeployLastRunOutput)
-	assert.Equal(t, lifecycle.LifecycleStatusSuccess, *got.PreDeployLastRunStatus)
-	assert.Equal(t, "all good", *got.PreDeployLastRunOutput)
-}
-
-func discoveryListingForTestInternal(imageService *image.ImageService) *listing.Service {
+func discoveryListingForTest(imageService *image.ImageService) *listing.Service {
 	service := &ProjectService{imageService: imageService}
-	service.initChildrenInternal(nil, nil)
+	service.initChildren(nil, nil)
 	return service.listing
 }
 

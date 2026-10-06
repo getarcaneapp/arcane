@@ -20,7 +20,7 @@ func TestDescribeLifecyclePathAccess_ReportsPathMetadata(t *testing.T) {
 	require.NoError(t, os.MkdirAll(scriptsDir, 0o750))
 	require.NoError(t, os.WriteFile(scriptPath, []byte("#!/bin/sh\n"), 0o755))
 
-	got := describeLifecyclePathAccessInternal(dir, scriptPath)
+	got := describeLifecyclePathAccess(dir, scriptPath)
 
 	assert.Contains(t, got, "Arcane process identity: uid=")
 	assert.Contains(t, got, "Path inspection:")
@@ -49,22 +49,10 @@ func TestDescribeLifecyclePathAccess_StopsAtFirstInaccessibleComponent(t *testin
 		_ = os.Chmod(blockedDir, 0o700)
 	})
 
-	got := describeLifecyclePathAccessInternal(dir, scriptPath)
+	got := describeLifecyclePathAccess(dir, scriptPath)
 
 	assert.Contains(t, got, fmt.Sprintf("%q: mode=", blockedDir))
 	assert.Contains(t, got, fmt.Sprintf("%q: lstat ", scriptPath))
 	assert.Contains(t, got, "permission denied")
 	assert.NotContains(t, got, fmt.Sprintf("%q: mode=", scriptPath))
-}
-
-func TestLifecycleDiagnosticPaths_RemainsInsideProject(t *testing.T) {
-	dir := t.TempDir()
-	scriptPath := filepath.Join(dir, "scripts", "pre-deploy.sh")
-
-	got := lifecycleDiagnosticPathsInternal(dir, scriptPath)
-
-	require.Len(t, got, 3)
-	assert.Equal(t, dir, got[0])
-	assert.Equal(t, filepath.Join(dir, "scripts"), got[1])
-	assert.Equal(t, scriptPath, got[2])
 }

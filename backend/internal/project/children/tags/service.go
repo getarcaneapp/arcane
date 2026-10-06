@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/getarcaneapp/arcane/types/v2/project"
+	"go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 )
@@ -76,10 +77,12 @@ func ApplyUpdate(store Store, projectID, name string, color project.TagColor, at
 	if count >= projects.ProjectTagsPerSourceLimit {
 		return fmt.Errorf("a project cannot have more than %d UI tags", projects.ProjectTagsPerSourceLimit)
 	}
-	resolvedColor, err := resolveColorInternal(store, name, color)
+	// One color per tag name across projects; the normalized color only seeds new names.
+	storedColor, found, err := store.StoredColor(name)
 	if err != nil {
-		return err
+		return fmt.Errorf("resolve project tag color: %w", err)
 	}
+	resolvedColor := kit.Ternary(found, storedColor, color)
 	if attachErr := store.InsertIgnoringConflict(project.TagAssignment{ProjectID: projectID, Name: name, Source: project.TagSourceUI, Color: resolvedColor}); attachErr != nil {
 		return fmt.Errorf("attach UI project tag: %w", attachErr)
 	}
@@ -111,9 +114,14 @@ func AttachInitial(store Store, projectID string, uiTags []string, colors map[st
 	}
 	rows := make([]project.TagAssignment, 0, len(uiTags))
 	for _, tag := range uiTags {
-		color, err := resolveColorInternal(store, tag, colors[tag])
+		color, found, err := store.StoredColor(tag)
 		if err != nil {
-			return err
+			return fmt.Errorf("resolve project tag color: %w", err)
+		}
+		if !found {
+			if color, err = projects.NormalizeProjectTagColor(colors[tag]); err != nil {
+				return err
+			}
 		}
 		rows = append(rows, project.TagAssignment{ProjectID: projectID, Name: tag, Source: project.TagSourceUI, Color: color})
 	}
@@ -121,18 +129,6 @@ func AttachInitial(store Store, projectID string, uiTags []string, colors map[st
 		return fmt.Errorf("attach initial project tags: %w", err)
 	}
 	return nil
-}
-
-// resolveColorInternal keeps one color per tag name across projects.
-func resolveColorInternal(store Store, name string, fallback project.TagColor) (project.TagColor, error) {
-	color, found, err := store.StoredColor(name)
-	if err != nil {
-		return "", fmt.Errorf("resolve project tag color: %w", err)
-	}
-	if found {
-		return color, nil
-	}
-	return projects.NormalizeProjectTagColor(fallback)
 }
 
 // Group merges stored assignments into effective tags per project, sorted by
@@ -153,43 +149,6 @@ func Group(rows []project.TagAssignment) map[string][]project.Tag {
 			sort.SliceStable(result[projectID][index].Sources, func(i, j int) bool {
 				return result[projectID][index].Sources[i] == project.TagSourceUI && result[projectID][index].Sources[j] != project.TagSourceUI
 			})
-		}
-	}
-	return result
-}
-
-// Options returns one option per tag name from assignments ordered by name.
-func Options(rows []project.TagAssignment) []project.TagOption {
-	options := make([]project.TagOption, 0)
-	for _, row := range rows {
-		if len(options) > 0 && options[len(options)-1].Name == row.Name {
-			continue
-		}
-		options = append(options, project.TagOption{Name: row.Name, Color: row.Color})
-	}
-	return options
-}
-
-// TrackedProjectIDs lists the rows that are stored projects.
-func TrackedProjectIDs(items []project.Details) []string {
-	projectIDs := make([]string, 0, len(items))
-	for _, item := range items {
-		if item.ID != "" && !item.IsDiscovered && !strings.HasPrefix(item.ID, "compose:") {
-			projectIDs = append(projectIDs, item.ID)
-		}
-	}
-	return projectIDs
-}
-
-func ExcludeComposeOwnedUITags(uiTags []string, composeTags []project.TagOption) []string {
-	composeOwned := make(map[string]struct{}, len(composeTags))
-	for _, tag := range composeTags {
-		composeOwned[tag.Name] = struct{}{}
-	}
-	result := make([]string, 0, len(uiTags))
-	for _, tag := range uiTags {
-		if _, exists := composeOwned[tag]; !exists {
-			result = append(result, tag)
 		}
 	}
 	return result

@@ -60,7 +60,7 @@ func (s *Service) Read(ctx context.Context, projectPath, composeFileName string,
 
 // File returns one workspace file's content and whether it may be edited.
 func (s *Service) File(ctx context.Context, projectPath, composeFileName, relativePath string, owned map[string]struct{}) (*workspacetypes.FileContent, error) {
-	rel, fullPath, entry, err := resolvePathInternal(ctx, projectPath, composeFileName, relativePath)
+	rel, fullPath, entry, err := resolvePath(ctx, projectPath, composeFileName, relativePath)
 	if err != nil {
 		return nil, err
 	}
@@ -88,7 +88,7 @@ func (s *Service) File(ctx context.Context, projectPath, composeFileName, relati
 	}
 	reader, _, err := acfs.OpenRead(ctx, projectPath, "/"+rel, maxBytes)
 	if err != nil {
-		return nil, ClassifyProjectWorkspaceACFSError(err, "read project workspace file")
+		return nil, classifyACFSError(err, "read project workspace file")
 	}
 	defer func() { _ = reader.Close() }()
 	content, err := io.ReadAll(reader)
@@ -113,7 +113,7 @@ func (s *Service) File(ctx context.Context, projectPath, composeFileName, relati
 
 // Download opens one workspace file for streaming.
 func (s *Service) Download(ctx context.Context, projectPath, composeFileName, relativePath string) (io.ReadCloser, int64, string, error) {
-	rel, _, entry, err := resolvePathInternal(ctx, projectPath, composeFileName, relativePath)
+	rel, _, entry, err := resolvePath(ctx, projectPath, composeFileName, relativePath)
 	if err != nil {
 		return nil, 0, "", err
 	}
@@ -122,7 +122,7 @@ func (s *Service) Download(ctx context.Context, projectPath, composeFileName, re
 	}
 	file, size, err := acfs.OpenRead(ctx, projectPath, "/"+rel, 0)
 	if err != nil {
-		return nil, 0, "", ClassifyProjectWorkspaceACFSError(err, "open project workspace file")
+		return nil, 0, "", classifyACFSError(err, "open project workspace file")
 	}
 	return file, size, filepath.Base(rel), nil
 }
@@ -137,7 +137,7 @@ func (s *Service) Apply(
 ) error {
 	scope := projects.ProjectUpdateBackupScope{}
 	for _, change := range manifest.FileChanges {
-		scope.Paths = append(scope.Paths, WorkspaceChangeTargetPaths(change)...)
+		scope.Paths = append(scope.Paths, changeTargetPaths(change)...)
 	}
 	backup, cleanup, err := projects.BackupProjectDirectory(ctx, projectsDirectory, projectPath, ".project-update-backup-*", scope)
 	if err != nil {
@@ -187,7 +187,8 @@ func OwnedPaths(syncedFiles *string, composePath string) (map[string]struct{}, e
 	return owned, nil
 }
 
-func resolvePathInternal(ctx context.Context, projectPath, composeFileName, relativePath string) (string, string, types.Entry, error) {
+// resolvePath validates a workspace path outside protected config and stats it.
+func resolvePath(ctx context.Context, projectPath, composeFileName, relativePath string) (string, string, types.Entry, error) {
 	rel, err := kit.NormalizeRelativePath(relativePath)
 	if err != nil {
 		return "", "", types.Entry{}, common.Classify(common.ErrProjectWorkspaceForbidden, fmt.Errorf("invalid project workspace path: %w", err))
@@ -203,11 +204,12 @@ func resolvePathInternal(ctx context.Context, projectPath, composeFileName, rela
 		if os.IsNotExist(err) {
 			return "", "", types.Entry{}, common.Classify(common.ErrProjectWorkspaceNotFound, errors.New("project workspace file not found"))
 		}
-		return "", "", types.Entry{}, ClassifyProjectWorkspaceACFSError(err, "inspect project workspace file")
+		return "", "", types.Entry{}, classifyACFSError(err, "inspect project workspace file")
 	}
 	return rel, fullPath, entry, nil
 }
 
+// WrapProjectWorkspaceError classifies workspace apply failures.
 func WrapProjectWorkspaceError(err error) error {
 	if err == nil {
 		return nil
@@ -231,9 +233,8 @@ func WrapProjectWorkspaceError(err error) error {
 	}
 }
 
-// validateWorkspaceChangesAgainstGitOpsInternal rejects file changes that
-// touch a sync-owned path, directly or by deleting/renaming a folder that
-// still holds one.
+// ValidateWorkspaceChangesAgainstGitOps rejects changes that touch a sync-owned
+// path, directly or by deleting/renaming a folder that still holds one.
 func ValidateWorkspaceChangesAgainstGitOps(changes []project.WorkspaceFileChange, owned map[string]struct{}) error {
 	if len(owned) == 0 {
 		return nil
@@ -251,7 +252,7 @@ func ValidateWorkspaceChangesAgainstGitOps(changes []project.WorkspaceFileChange
 		return false
 	}
 	for _, change := range changes {
-		for _, target := range WorkspaceChangeTargetPaths(change) {
+		for _, target := range changeTargetPaths(change) {
 			if touchesOwned(target) {
 				return common.Classify(common.ErrProjectWorkspaceForbidden, fmt.Errorf("%q is managed by git sync and can only be changed in the git repository", target))
 			}
@@ -260,10 +261,9 @@ func ValidateWorkspaceChangesAgainstGitOps(changes []project.WorkspaceFileChange
 	return nil
 }
 
-// workspaceChangeTargetPathsInternal lists every normalized project-relative
-// path a workspace file change can create, overwrite or delete. Shared by the
-// backup scope and the GitOps ownership check so the two cannot diverge.
-func WorkspaceChangeTargetPaths(change project.WorkspaceFileChange) []string {
+// changeTargetPaths lists every normalized path a change can create, overwrite or
+// delete; backup scope and GitOps ownership share it so they cannot diverge.
+func changeTargetPaths(change project.WorkspaceFileChange) []string {
 	rel, err := kit.NormalizeRelativePath(change.RelativePath)
 	if err != nil {
 		return nil
@@ -280,11 +280,8 @@ func WorkspaceChangeTargetPaths(change project.WorkspaceFileChange) []string {
 	return paths
 }
 
-func ClassifyProjectWorkspaceACFSError(err error, operation string) error {
-	if err == nil {
-		return nil
-	}
-
+// classifyACFSError classifies workspace read failures.
+func classifyACFSError(err error, operation string) error {
 	switch {
 	case errors.Is(err, acfs.ErrInvalidPath), errors.Is(err, acfs.ErrOutsideRoot), errors.Is(err, acfs.ErrSymlinkLoop), errors.Is(err, acfs.ErrSymlink):
 		return common.Classify(common.ErrProjectWorkspaceForbidden, fmt.Errorf("%s: %w", operation, err))

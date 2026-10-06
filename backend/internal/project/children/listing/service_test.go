@@ -1,6 +1,7 @@
 package listing
 
 import (
+	"context"
 	"errors"
 	"path/filepath"
 	"testing"
@@ -61,21 +62,17 @@ func TestCalculateProjectStatus(t *testing.T) {
 	}
 }
 
-func TestIncrementStatusCounts(t *testing.T) {
-	running := 0
-	stopped := 0
+func TestStatusCounts_FallsBackToStoredStatus(t *testing.T) {
+	svc := New(func(context.Context) ([]container.Summary, error) { return nil, errors.New("docker unavailable") }, nil, nil)
 
-	CountStatus(project.StatusRunning, &running, &stopped)
-	assert.Equal(t, 1, running)
-	assert.Equal(t, 0, stopped)
+	counts := svc.StatusCounts(t.Context(), []project.Record{
+		{Status: project.StatusRunning},
+		{Status: project.StatusStopped},
+		{Status: project.StatusUnknown},
+		{Status: project.StatusRunning, IsArchived: true},
+	})
 
-	CountStatus(project.StatusStopped, &running, &stopped)
-	assert.Equal(t, 1, running)
-	assert.Equal(t, 1, stopped)
-
-	CountStatus(project.StatusUnknown, &running, &stopped)
-	assert.Equal(t, 1, running)
-	assert.Equal(t, 1, stopped)
+	assert.Equal(t, project.StatusCounts{TotalProjects: 4, ArchivedProjects: 1, RunningProjects: 1, StoppedProjects: 1}, counts)
 }
 
 func TestMapProjectToDto_SetsRedeployDisabledFromRuntimeServices(t *testing.T) {
@@ -162,7 +159,7 @@ func TestMapProjectToDto_SetsRedeployDisabledFromRuntimeServices(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tt.labels[api.WorkingDirLabel] = projectPath
-			details := Row(filepath.Dir(projectPath), iconcatalog.DefaultCatalog, proj, Snapshot{byProject: map[string][]container.Summary{
+			details := row(filepath.Dir(projectPath), iconcatalog.DefaultCatalog, proj, Snapshot{byProject: map[string][]container.Summary{
 				"arcane": {
 					{
 						ID:     tt.containerID,
@@ -208,7 +205,7 @@ func TestProjectListRow_SeedsHasBuildDirectiveFromPersistedRefs(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			p := project.Record{ID: tt.name, Name: tt.name, Path: t.TempDir(), UpdatedAt: &now, BuildImageRefsJSON: tt.buildImageRefsJSON}
-			assert.Equal(t, tt.want, Row(projectsDirectory, iconcatalog.DefaultCatalog, p, Snapshot{}).HasBuildDirective)
+			assert.Equal(t, tt.want, row(projectsDirectory, iconcatalog.DefaultCatalog, p, Snapshot{}).HasBuildDirective)
 		})
 	}
 }
