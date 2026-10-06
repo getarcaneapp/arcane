@@ -50,7 +50,7 @@
 		"embla-carousel-svelte": "^8.6.0",
 		"formsnap": "^2.0.1",
 		"ky": "^2.1.0",
-		"marked": "^18.0.14",
+		"marked": "^18.1.0",
 		"mode-watcher": "^1.1.0",
 		"runed": "^0.37.1",
 		"svelte": "^5.57.1",
@@ -65,7 +65,7 @@
 		"zod": "^4.6.5"
 	},
 	"devDependencies": {
-		"@iconify/json": "^2.2.538",
+		"@iconify/json": "^2.2.539",
 		"@inlang/paraglide-js": "2.25.4",
 		"@shadcn/lint": "^0.2.0",
 		"@sveltejs/adapter-static": "^4.0.0",
@@ -73,7 +73,7 @@
 		"@tailwindcss/vite": "^4.3.3",
 		"@tanstack/svelte-query-devtools": "^6.3.1",
 		"@types/node": "^26.6.4",
-		"@typescript-eslint/parser": "^8.71.0",
+		"@typescript-eslint/parser": "^8.71.1",
 		"@typescript/native": "npm:typescript@^7.0.2",
 		"eslint": "^10.12.0",
 		"fallow": "^3.31.0",
