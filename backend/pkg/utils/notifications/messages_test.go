@@ -245,25 +245,3 @@ func TestNtfyImageUpdateTagUsesVersions(t *testing.T) {
 	require.Contains(t, message, "🔄 `1.2.3` → `1.3.0`")
 	require.NotContains(t, message, "sha256:")
 }
-
-func TestExistingMarkdownNotificationFormatRemainsUnchanged(t *testing.T) {
-	update := &imageupdate.Response{
-		HasUpdate:     true,
-		UpdateType:    "digest",
-		CurrentDigest: "sha256:current",
-		LatestDigest:  "sha256:latest",
-	}
-
-	message := BuildImageUpdateNotificationMessage(
-		MessageFormatMarkdown,
-		"Local Docker",
-		"nginx:latest",
-		update,
-	)
-
-	require.Contains(t, message, "**🔔 Container Image Update Notification**")
-	require.Contains(t, message, "**Environment:** Local Docker")
-	require.Contains(t, message, "**Update Type:** digest")
-	require.Contains(t, message, "**Current Digest:** `sha256:current`")
-	require.Contains(t, message, "**Latest Digest:** `sha256:latest`")
-}

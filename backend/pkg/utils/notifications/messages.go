@@ -340,10 +340,10 @@ func writeNtfyTransitionInternal(message *strings.Builder, current, latest, inde
 	return true
 }
 
-func formatNtfyBytesInternal(bytes uint64) string {
+func byteMagnitudeInternal(bytes uint64) (float64, int) {
 	const unit = 1024
 	if bytes < unit {
-		return fmt.Sprintf("%d B", bytes)
+		return float64(bytes), -1
 	}
 
 	div, exp := uint64(unit), 0
@@ -352,8 +352,17 @@ func formatNtfyBytesInternal(bytes uint64) string {
 		exp++
 	}
 
+	return float64(bytes) / float64(div), exp
+}
+
+func formatNtfyBytesInternal(bytes uint64) string {
+	value, exp := byteMagnitudeInternal(bytes)
+	if exp < 0 {
+		return fmt.Sprintf("%d B", bytes)
+	}
+
 	units := []string{"KiB", "MiB", "GiB", "TiB", "PiB", "EiB"}
-	return fmt.Sprintf("%.1f %s", float64(bytes)/float64(div), units[exp])
+	return fmt.Sprintf("%.1f %s", value, units[exp])
 }
 
 func buildNtfyImageUpdateNotificationMessageInternal(
@@ -530,18 +539,12 @@ func buildNtfyAutoHealNotificationMessageInternal(
 }
 
 func FormatBytes(bytes uint64) string {
-	const unit = 1024
-	if bytes < unit {
+	value, exp := byteMagnitudeInternal(bytes)
+	if exp < 0 {
 		return fmt.Sprintf("%d B", bytes)
 	}
 
-	div, exp := int64(unit), 0
-	for n := bytes / unit; n >= unit; n /= unit {
-		div *= unit
-		exp++
-	}
-
-	return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
+	return fmt.Sprintf("%.1f %cB", value, "KMGTPE"[exp])
 }
 
 func BuildEmailSubject(environmentName, subject string) string {
