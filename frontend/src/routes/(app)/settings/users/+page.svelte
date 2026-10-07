@@ -48,8 +48,21 @@
 	const editingAssignments = $derived(
 		userToEdit?.roleAssignments
 			?.filter((a) => a.source !== 'oidc')
-			.map((a) => ({ roleId: a.roleId, environmentId: a.environmentId })) ?? []
+			.map((a) => ({ roleId: a.roleId, environmentId: a.environmentId }))
+			.sort(compareAssignments) ?? []
 	);
+
+	const nameCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+
+	// Global assignments sort first because their environment name is empty.
+	function compareAssignments(a: { roleId: string; environmentId?: string }, b: { roleId: string; environmentId?: string }) {
+		const envName = (id?: string) => (id ? (data.environments.find((e) => e.id === id)?.name ?? id) : '');
+		const roleName = (id: string) => data.roles.find((r) => r.id === id)?.name ?? id;
+		return (
+			nameCollator.compare(envName(a.environmentId), envName(b.environmentId)) ||
+			nameCollator.compare(roleName(a.roleId), roleName(b.roleId))
+		);
+	}
 
 	let isLoading = $state({
 		creating: false,
