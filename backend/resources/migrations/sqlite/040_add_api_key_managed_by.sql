@@ -1,6 +1,12 @@
+-- +goose NO TRANSACTION
 -- +goose Up
 -- Use create-copy-drop-rename for idempotent column additions in SQLite
 -- (SQLite lacks ADD COLUMN IF NOT EXISTS).
+-- Preserve environment pairings while rebuilding the referenced table.
+PRAGMA foreign_keys=OFF;
+
+BEGIN;
+
 DROP TABLE IF EXISTS api_keys_new;
 
 CREATE TABLE api_keys_new (
@@ -54,7 +60,15 @@ CREATE INDEX IF NOT EXISTS idx_api_keys_user_id ON api_keys(user_id);
 CREATE INDEX IF NOT EXISTS idx_api_keys_key_hash ON api_keys(key_hash);
 CREATE INDEX IF NOT EXISTS idx_api_keys_key_prefix ON api_keys(key_prefix);
 
+COMMIT;
+
+PRAGMA foreign_keys=ON;
+
 -- +goose Down
+PRAGMA foreign_keys=OFF;
+
+BEGIN;
+
 DROP TABLE IF EXISTS api_keys_old;
 
 CREATE TABLE api_keys_old (
@@ -106,3 +120,7 @@ ALTER TABLE api_keys_old RENAME TO api_keys;
 CREATE INDEX IF NOT EXISTS idx_api_keys_user_id ON api_keys(user_id);
 CREATE INDEX IF NOT EXISTS idx_api_keys_key_hash ON api_keys(key_hash);
 CREATE INDEX IF NOT EXISTS idx_api_keys_key_prefix ON api_keys(key_prefix);
+
+COMMIT;
+
+PRAGMA foreign_keys=ON;
