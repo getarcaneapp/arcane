@@ -22,6 +22,17 @@
 	}
 
 	let { tabs, activeKey, onSelect, onClose, actions }: Props = $props();
+
+	// Middle-click closes like browser and IDE tabs; preventing mousedown stops Windows auto-scroll.
+	function preventMiddleMouseDown(event: MouseEvent) {
+		if (event.button === 1) event.preventDefault();
+	}
+
+	function closeOnMiddleClick(event: MouseEvent, key: string) {
+		if (event.button !== 1) return;
+		event.preventDefault();
+		onClose(key);
+	}
 </script>
 
 <div class="flex h-9 shrink-0 items-center border-b border-border bg-muted/30">
@@ -47,6 +58,8 @@
 					)}
 					title={tab.title}
 					onclick={() => onSelect(tab.key)}
+					onmousedown={preventMiddleMouseDown}
+					onauxclick={(event) => closeOnMiddleClick(event, tab.key)}
 				>
 					<FileTextIcon class={cn('size-3.5 shrink-0', tab.iconClass)} />
 					<span class="max-w-40 truncate">{tab.label}</span>
@@ -67,6 +80,8 @@
 					)}
 					aria-label={m.common_close()}
 					onclick={() => onClose(tab.key)}
+					onmousedown={preventMiddleMouseDown}
+					onauxclick={(event) => closeOnMiddleClick(event, tab.key)}
 				>
 					<CloseIcon class="size-3" />
 				</button>
