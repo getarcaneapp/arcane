@@ -74,7 +74,9 @@
 	function addAssignment() {
 		if (disabled) return;
 		const defaultRoleId = roles[0]?.id ?? '';
-		assignments = [...assignments, { roleId: defaultRoleId, environmentId: undefined }];
+		const freeEnv = envOptions.find((option) => !isEnvTaken(option.id, defaultRoleId, -1));
+		const envValue = freeEnv?.id ?? GLOBAL_ENVIRONMENT_OPTION_ID;
+		assignments = [...assignments, { roleId: defaultRoleId, environmentId: selectValueToEnvId(envValue) }];
 	}
 
 	function removeAssignment(index: number) {
@@ -135,7 +137,7 @@
 		</p>
 	{/if}
 
-	{#each assignments as assignment, index (`${assignment.roleId}-${assignment.environmentId ?? 'global'}`)}
+	{#each assignments as assignment, index (index)}
 		{@const envValue = envIdToSelectValue(assignment.environmentId)}
 		<div class="grid grid-cols-1 gap-2 rounded-md border bg-card/50 p-3 sm:grid-cols-halves-action sm:items-center">
 			<Select.Root
