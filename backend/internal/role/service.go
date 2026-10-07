@@ -403,6 +403,24 @@ func (s *RoleService) replaceUserAssignmentsForSourceInternal(ctx context.Contex
 			Delete(&UserRoleAssignment{}).Error; err != nil {
 			return fmt.Errorf("failed to clear %s assignments: %w", source, err)
 		}
+		// The unique index spans (user, role, env) across sources, so drop pairs already
+		// granted by another source as well as repeats within desired.
+		var existing []UserRoleAssignment
+		if err := tx.Where("user_id = ?", userID).Find(&existing).Error; err != nil {
+			return fmt.Errorf("failed to load existing assignments: %w", err)
+		}
+		seen := make(map[string]struct{}, len(existing)+len(desired))
+		for _, a := range existing {
+			seen[assignmentKeyInternal(a)] = struct{}{}
+		}
+		desired = slices.DeleteFunc(desired, func(a UserRoleAssignment) bool {
+			key := assignmentKeyInternal(a)
+			if _, dup := seen[key]; dup {
+				return true
+			}
+			seen[key] = struct{}{}
+			return false
+		})
 		if len(desired) > 0 {
 			if err := tx.Create(&desired).Error; err != nil {
 				return fmt.Errorf("failed to insert %s assignments: %w", source, err)
@@ -422,6 +440,14 @@ func (s *RoleService) replaceUserAssignmentsForSourceInternal(ctx context.Contex
 	}
 	s.InvalidateUser(userID)
 	return nil
+}
+
+func assignmentKeyInternal(a UserRoleAssignment) string {
+	envID := ""
+	if a.EnvironmentID != nil {
+		envID = *a.EnvironmentID
+	}
+	return a.RoleID + "\x00" + envID
 }
 
 // SetUserAssignments replaces the user's source='manual' assignments with the
