@@ -473,7 +473,25 @@ func (s *ProjectService) GetProjectByComposeName(ctx context.Context, name strin
 		return cachedProject, nil
 	}
 
-	return nil, fmt.Errorf("project not found: %s", name)
+	return nil, common.Classify(common.ErrNotFound, fmt.Errorf("project not found: %s", name))
+}
+
+// ComposeServiceImage returns the effective image of serviceName in the
+// Arcane project deployed as composeName.
+func (s *ProjectService) ComposeServiceImage(ctx context.Context, composeName, serviceName string) (projectID, imageRef string, err error) {
+	proj, err := s.GetProjectByComposeName(ctx, composeName)
+	if err != nil {
+		return "", "", err
+	}
+	effective, _, err := s.loadComposeProjectForProject(ctx, proj, nil, serviceName)
+	if err != nil {
+		return "", "", fmt.Errorf("load project %s: %w", proj.Name, err)
+	}
+	service, ok := effective.Services[serviceName]
+	if !ok {
+		return "", "", fmt.Errorf("service %s is not active in project %s", serviceName, proj.Name)
+	}
+	return proj.ID, service.Image, nil
 }
 
 // EnsureProjectPathUnderRoot validates that the project's path is a safe subdirectory of the configured projects root.
@@ -971,16 +989,10 @@ func (s *ProjectService) UpdateProjectServices(ctx context.Context, projectID st
 		if changesErr != nil {
 			return changesErr
 		}
-		// ImageChanges already rejects GitOps-managed projects; tag edits need the full project.
 		if len(changes) > 0 {
-			full, _, fullErr := s.loadComposeProjectForProject(ctx, proj, nil)
-			if fullErr != nil {
-				return fmt.Errorf("load project for tag update: %w", fullErr)
+			if _, saveErr := s.SaveProjectServiceImages(ctx, projectID, changes); saveErr != nil {
+				return saveErr
 			}
-			if _, applyErr := s.updates.ApplyImageChanges(ctx, proj.Path, full, changes); applyErr != nil {
-				return applyErr
-			}
-			s.invalidateProjectCaches(projectID)
 		}
 	}
 	previousStatus := proj.Status
@@ -3172,28 +3184,39 @@ func (s *ProjectService) applyProjectRename(ctx context.Context, proj *Project, 
 
 // UpdateProjectServiceImages persists selected service image tags before recreating them.
 func (s *ProjectService) UpdateProjectServiceImages(ctx context.Context, projectID string, changes map[string]updatertypes.ServiceImageChange, user usertypes.Actor) error {
-	if len(changes) == 0 {
-		return errors.New("service image changes are required")
-	}
-	proj, err := s.getMutableProject(ctx, projectID)
+	services, err := s.SaveProjectServiceImages(ctx, projectID, changes)
 	if err != nil {
 		return err
 	}
-	if gitOpsSyncID(proj) != "" {
-		return errors.New("tag updates cannot edit a GitOps-managed project; update image tags in the source repository")
-	}
-	effective, _, err := s.loadComposeProjectForProject(ctx, proj, nil)
-	if err != nil {
-		return fmt.Errorf("load project for tag update: %w", err)
-	}
-	services, err := s.updates.ApplyImageChanges(ctx, proj.Path, effective, changes)
-	if err != nil {
-		return err
-	}
-	s.invalidateProjectCaches(projectID)
 	// Keep the desired source on deployment failure: Compose may have partially
 	// recreated services, and the pending update must remain retryable.
 	return s.UpdateProjectServices(ctx, projectID, services, user, false)
+}
+
+// SaveProjectServiceImages persists selected service image tags without
+// deploying them and returns the changed services.
+func (s *ProjectService) SaveProjectServiceImages(ctx context.Context, projectID string, changes map[string]updatertypes.ServiceImageChange) ([]string, error) {
+	if len(changes) == 0 {
+		return nil, errors.New("service image changes are required")
+	}
+	proj, err := s.getMutableProject(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	if gitOpsSyncID(proj) != "" {
+		return nil, errors.New("tag updates cannot edit a GitOps-managed project; update image tags in the source repository")
+	}
+	// Selecting the changed services keeps profile-gated ones active.
+	effective, _, err := s.loadComposeProjectForProject(ctx, proj, nil, slices.Collect(maps.Keys(changes))...)
+	if err != nil {
+		return nil, fmt.Errorf("load project for tag update: %w", err)
+	}
+	services, err := s.updates.ApplyImageChanges(ctx, proj.Path, effective, changes)
+	if err != nil {
+		return nil, err
+	}
+	s.invalidateProjectCaches(projectID)
+	return services, nil
 }
 
 func (s *ProjectService) GetProjectWorkspace(ctx context.Context, projectID string) (*workspacetypes.Workspace, error) {

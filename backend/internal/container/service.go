@@ -590,7 +590,7 @@ func (
 		// Distinguish "not found" (safe to fall back to standalone) from real DB
 		// errors (should surface so a transient failure doesn't silently recreate
 		// the container from stale cached config).
-		if strings.Contains(err.Error(), "not found") {
+		if errors.Is(err, common.ErrNotFound) {
 			slog.WarnContext(
 				ctx, "RedeployContainer: compose project not registered, falling back to standalone redeploy",
 				"containerId", containerID,

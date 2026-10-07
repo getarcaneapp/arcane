@@ -31,6 +31,8 @@ import (
 	"go.getarcane.app/sys/cgroup"
 	"go.getarcane.app/updater"
 	"go.getarcane.app/updater/labels"
+	"go.getarcane.app/updater/refs"
+	updatertypes "go.getarcane.app/updater/types"
 	"golang.org/x/mod/semver"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
@@ -38,6 +40,7 @@ import (
 	dockerInternal "github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/version"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
@@ -57,6 +60,7 @@ type Service struct {
 	versionService  *version.VersionService
 	eventService    *event.EventService
 	settingsService *settings.SettingsService
+	projectService  *project.ProjectService
 	// resolveRuntimeOptions determines how the upgrader container reaches the Docker daemon.
 	resolveRuntimeOptions func(
 		ctx context.Context,
@@ -74,6 +78,7 @@ func NewService(
 	versionService *version.VersionService,
 	eventService *event.EventService,
 	settingsService *settings.SettingsService,
+	projectService *project.ProjectService,
 	resolveRuntimeOptions func(
 		ctx context.Context,
 		dockerHost string,
@@ -89,6 +94,7 @@ func NewService(
 		versionService:        versionService,
 		eventService:          eventService,
 		settingsService:       settingsService,
+		projectService:        projectService,
 		resolveRuntimeOptions: resolveRuntimeOptions,
 	}
 }
@@ -166,6 +172,8 @@ type preparedUpgradeInternal struct {
 	// is the immutable reference actually pulled (the same unless frozen).
 	targetImage string
 	pullImage   string
+	// saveCompose persists a tag change in the container's Compose project.
+	saveCompose func(context.Context)
 }
 
 // prepareUpgradeInternal takes the upgrading guard, released by runPreparedUpgradeInternal (or here on error).
@@ -205,6 +213,10 @@ func (s *Service) prepareUpgradeInternal(ctx context.Context, user usertypes.Act
 	if err != nil {
 		return nil, err
 	}
+	targetImage, saveCompose, err := s.configuredTargetImageInternal(ctx, currentContainer, targetImage)
+	if err != nil {
+		return nil, err
+	}
 	pullImage := cmp.Or(strings.TrimSpace(target.PullImageRef), targetImage)
 
 	// Log upgrade event
@@ -226,6 +238,7 @@ func (s *Service) prepareUpgradeInternal(ctx context.Context, user usertypes.Act
 		binaryPath:    binaryPath,
 		targetImage:   targetImage,
 		pullImage:     pullImage,
+		saveCompose:   saveCompose,
 	}, nil
 }
 
@@ -269,6 +282,9 @@ func (s *Service) runPreparedUpgradeInternal(ctx context.Context, prepared *prep
 		slog.WarnContext(ctx, "Failed to close upgrader image pull reader", "error", closeErr)
 	}
 	slog.InfoContext(ctx, "Upgrader image pulled successfully", "image", upgraderImage)
+	if prepared.saveCompose != nil {
+		prepared.saveCompose(ctx)
+	}
 
 	// Try to get the /app/data mount from current container so upgrade logs persist.
 	appDataMount := docker.MountForDestination(prepared.current.Mounts, libarcane.UpgradeLogDirectory, libarcane.UpgradeLogDirectory)
@@ -389,6 +405,43 @@ func daemonHasSELinuxEnabledInternal(ctx context.Context, dockerClient *client.C
 		return false
 	}
 	return slices.Contains(infoResult.Info.SecurityOptions, "name=selinux")
+}
+
+// configuredTargetImageInternal spells targetImage like the container's Compose
+// service, or like its runtime image when Arcane does not manage that project.
+// A tag change also returns the Compose edit to save before the upgrader starts;
+// sources Arcane cannot edit keep upgrading without it, as they did before.
+func (s *Service) configuredTargetImageInternal(ctx context.Context, current container.InspectResponse, targetImage string) (string, func(context.Context), error) {
+	// Digest targets cannot be written as Compose tags.
+	if refs.NormalizeImageUpdateRef(targetImage) == "" || current.Config == nil {
+		return targetImage, nil, nil
+	}
+	runtimeRef := current.Config.Image
+	projectName, serviceName := docker.ComposeProjectLabel(current.Config.Labels), docker.ComposeServiceLabel(current.Config.Labels)
+	if projectName == "" || serviceName == "" {
+		return refs.PreserveConfiguredRef(runtimeRef, targetImage), nil, nil
+	}
+	projectID, composeRef, err := s.projectService.ComposeServiceImage(ctx, projectName, serviceName)
+	if errors.Is(err, common.ErrNotFound) {
+		return refs.PreserveConfiguredRef(runtimeRef, targetImage), nil, nil
+	}
+	if err != nil {
+		return "", nil, fmt.Errorf("resolve Compose service %s/%s: %w", projectName, serviceName, err)
+	}
+	selected := refs.PreserveConfiguredRef(composeRef, targetImage)
+	normalizedCompose := refs.NormalizeImageUpdateRef(composeRef)
+	if normalizedCompose == refs.NormalizeImageUpdateRef(targetImage) {
+		return selected, nil, nil
+	}
+	if normalizedCompose != refs.NormalizeImageUpdateRef(runtimeRef) {
+		return "", nil, fmt.Errorf("compose service %s/%s image %s does not match running image %s", projectName, serviceName, composeRef, runtimeRef)
+	}
+	changes := map[string]updatertypes.ServiceImageChange{serviceName: {ExpectedRef: runtimeRef, TargetRef: selected}}
+	return selected, func(ctx context.Context) {
+		if _, saveErr := s.projectService.SaveProjectServiceImages(ctx, projectID, changes); saveErr != nil {
+			slog.WarnContext(ctx, "Compose image not updated for self-upgrade; update it manually", "project", projectName, "service", serviceName, "image", selected, "error", saveErr)
+		}
+	}, nil
 }
 
 // resolveUpgradeTargetImageInternal picks the image the upgrade should move to.
