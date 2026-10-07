@@ -36,8 +36,9 @@ func TestTextByFormat_BuildsEveryFormat(t *testing.T) {
 		return "msg:" + string(format)
 	})
 
-	require.Len(t, text, 4)
+	require.Len(t, text, 5)
 	require.Equal(t, "msg:"+string(MessageFormatMarkdown), text[MessageFormatMarkdown])
+	require.Equal(t, "msg:"+string(MessageFormatNtfyMarkdown), text[MessageFormatNtfyMarkdown])
 	require.Equal(t, "msg:"+string(MessageFormatHTML), text[MessageFormatHTML])
 	require.Equal(t, "msg:"+string(MessageFormatSlack), text[MessageFormatSlack])
 	require.Equal(t, "msg:"+string(MessageFormatPlain), text[MessageFormatPlain])
