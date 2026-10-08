@@ -194,7 +194,8 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 	if len(trustedProxyNets) == 0 {
 		e.IPExtractor = echo.ExtractIPDirect()
 	} else {
-		opts := make([]echo.TrustOption, 0, len(trustedProxyNets))
+		// Trust only the configured ranges, not Echo's built-in loopback/link-local/private defaults.
+		opts := []echo.TrustOption{echo.TrustLoopback(false), echo.TrustLinkLocal(false), echo.TrustPrivateNet(false)}
 		for _, ipnet := range trustedProxyNets {
 			opts = append(opts, echo.TrustIPRange(ipnet))
 		}
