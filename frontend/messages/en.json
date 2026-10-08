@@ -1667,6 +1667,7 @@
   "general_base_url_help": "The Base URL for your docker host. Used when opening containers from the service links",
   "general_enable_gravatar_label": "Enable Gravatar",
   "general_enable_gravatar_description": "Use Gravatar as the fallback profile picture source for users without an uploaded photo.",
+  "general_enable_gravatar_env_override": "This setting is managed by the ENABLE_GRAVATAR environment variable.",
   "general_avatar_upload_size_label": "Profile Picture Upload Size (MB)",
   "general_avatar_upload_size_description": "Maximum cropped profile picture size users can upload.",
   "general_avatar_upload_size_help": "Allowed range: 1-50 MB.",

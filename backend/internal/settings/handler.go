@@ -197,11 +197,10 @@ func (h *SettingsHandler) appendRuntimeSettingsInternal(settingsDto []settings.P
 	if h.settingsService != nil {
 		cfg := h.settingsService.GetSettingsConfig()
 		depotConfigured := strings.TrimSpace(cfg.DepotProjectId.Value) != "" && strings.TrimSpace(cfg.DepotToken.Value) != ""
-		settingsDto = append(settingsDto, settings.PublicSetting{
-			Key:   "depotConfigured",
-			Value: strconv.FormatBool(depotConfigured),
-			Type:  "boolean",
-		})
+		settingsDto = append(settingsDto,
+			settings.PublicSetting{Key: "depotConfigured", Value: strconv.FormatBool(depotConfigured), Type: "boolean"},
+			settings.PublicSetting{Key: "enableGravatarEnvForced", Value: strconv.FormatBool(h.settingsService.IsEnvOverrideActive("enableGravatar")), Type: "boolean"},
+		)
 	}
 
 	return settingsDto
