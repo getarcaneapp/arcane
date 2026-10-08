@@ -141,6 +141,11 @@ func (s *SystemService) SetBackupScheduler(ctx context.Context, dynamicScheduler
 	return s.backup.SetScheduler(ctx, dynamicScheduler, admissionGate)
 }
 
+// PruneLocalBackupRepository frees the space of deleted local system backups.
+func (s *SystemService) PruneLocalBackupRepository(ctx context.Context) error {
+	return s.backup.PruneLocalRepository(ctx)
+}
+
 // RegisterBackupJobOnStartup schedules every saved system and system-managed volume backup policy.
 func (s *SystemService) RegisterBackupJobOnStartup(ctx context.Context) {
 	s.backup.RegisterBackupJobOnStartup(ctx)

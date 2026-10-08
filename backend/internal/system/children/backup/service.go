@@ -763,6 +763,26 @@ func (s *Service) deleteRunsInternal(ctx context.Context, localRuns2 []*backupty
 	return deleteErr
 }
 
+// PruneLocalRepository frees the data of deleted local system backups once Rustic's keep-delete window passes.
+func (s *Service) PruneLocalRepository(ctx context.Context) error {
+	key, err := s.recoveryKeys.Get(ctx)
+	if errors.Is(err, backup.ErrRecoveryKeyNotConfigured) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	dockerClient, err := s.dockerService.GetClient(ctx)
+	if err != nil {
+		return err
+	}
+	repository, err := s.localRepositoryInternal(ctx, dockerClient, false)
+	if err != nil {
+		return err
+	}
+	return s.engine.ForgetSnapshots(ctx, dockerClient, repository, key, nil)
+}
+
 func (s *Service) forgetLocalSnapshotsInternal(ctx context.Context, dockerClient *client.Client, key string, localRuns []*backuptypes.SystemBackupRun) error {
 	if len(localRuns) == 0 {
 		return nil
