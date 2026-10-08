@@ -48,8 +48,8 @@
 	<div class="order-1 flex flex-col gap-4 sm:order-2 sm:flex-row sm:items-center sm:space-x-6 lg:space-x-8">
 		<div class="flex items-center justify-between space-x-2 sm:justify-start">
 			<p class="text-sm font-medium">{m.common_rows_per_page()}</p>
-			<Select.Root allowDeselect={false} type="single" value={selectValue} onValueChange={handlePageSizeChange}>
-				<Select.Trigger class="h-11 w-17.5 sm:h-8">
+			<Select.Root allowDeselect={false} type="single" bind:value={() => selectValue, handlePageSizeChange}>
+				<Select.Trigger aria-label={m.common_rows_per_page()} class="h-11 w-17.5 sm:h-8">
 					{displayValue}
 				</Select.Trigger>
 				<Select.Content side="top">
