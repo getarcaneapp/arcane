@@ -1306,10 +1306,22 @@ func (s *ProjectService) CreateProject(
 		return nil, fmt.Errorf("failed to get projects directory: %w", err)
 	}
 
+	// Held through the DB insert so concurrent creates and filesystem syncs
+	// cannot claim the directory while it is half written.
+	s.syncMu.Lock()
+	defer s.syncMu.Unlock()
+
 	basePath := filepath.Join(projectsDirectory, sanitized)
 	var projectPath, folderName string
+	var reused bool
 	if allowNameSuffix {
-		projectPath, folderName, err = projects.CreateUniqueDir(ctx, projectsDirectory, basePath, name, utils.DirPerm)
+		// Projects at or nested beneath an existing directory claim it.
+		projectPath, folderName, reused, err = projects.CreateUniqueDir(ctx, projectsDirectory, basePath, name, utils.DirPerm, func(dir string) (bool, error) {
+			nestedPattern := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(dir+string(filepath.Separator)) + "%"
+			var claims int64
+			countErr := s.db.WithContext(ctx).Model(&Project{}).Where("path = ? OR path LIKE ? ESCAPE '\\'", dir, nestedPattern).Count(&claims).Error
+			return claims > 0, countErr
+		})
 	} else {
 		projectPath, folderName, err = projects.CreateExactDir(ctx, projectsDirectory, basePath, name, utils.DirPerm)
 	}
@@ -1319,6 +1331,53 @@ func (s *ProjectService) CreateProject(
 	projectLogical, err := acfs.LogicalPath(projectsDirectory, projectPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve created project directory: %w", err)
+	}
+
+	// A new directory is removed on failure. A reused one only gains files:
+	// every path creation can write must be absent (an existing .env file is
+	// kept as is), so the backup records only absent paths and rollback removes just
+	// what was added. Blank env content keeps an existing .env; different
+	// content conflicts with it.
+	cleanupCtx := context.WithoutCancel(ctx)
+	undo := func() error { return acfs.RemoveAll(cleanupCtx, projectsDirectory, projectLogical) }
+	if reused {
+		targets := []string{projects.DefaultComposeFileName, projects.EffectiveEnvFileName}
+		for _, change := range manifest.FileChanges {
+			targets = append(targets, workspace.ChangeTargetPaths(change)...)
+		}
+		scope := projects.ProjectUpdateBackupScope{}
+		for _, target := range targets {
+			entry, statErr := acfs.Stat(ctx, projectPath, "/"+target, false)
+			switch {
+			case errors.Is(statErr, os.ErrNotExist):
+				scope.Paths = append(scope.Paths, target)
+			case statErr != nil:
+				return nil, workspace.WrapProjectWorkspaceError(statErr)
+			case target != projects.EffectiveEnvFileName || entry.IsDirectory:
+				return nil, common.Classify(common.ErrProjectWorkspaceConflict, fmt.Errorf("%s already exists in existing directory %q and cannot be changed", target, folderName))
+			}
+		}
+		envContent = kit.Ternary(strings.TrimSpace(kit.FromPtr(envContent)) == "", nil, envContent)
+		if envContent != nil {
+			currentEnv, readEnvErr := os.ReadFile(filepath.Join(projectPath, projects.EffectiveEnvFileName))
+			if !errors.Is(readEnvErr, os.ErrNotExist) && (readEnvErr != nil || string(currentEnv) != *envContent) {
+				return nil, common.Classify(common.ErrProjectWorkspaceConflict, fmt.Errorf(".env already exists in %q with different content; clear the environment content to keep it", folderName))
+			}
+		}
+		backup, cleanupBackup, backupProjectDirectoryErr := projects.BackupProjectDirectory(ctx, projectsDirectory, projectPath, ".project-update-backup-*", scope)
+		if backupProjectDirectoryErr != nil {
+			return nil, backupProjectDirectoryErr
+		}
+		defer cleanupBackup()
+		undo = func() error {
+			return projects.RestoreProjectDirectoryBackup(cleanupCtx, projectsDirectory, projectPath, backup)
+		}
+	}
+	rollback := func(cause error) error {
+		if undoErr := undo(); undoErr != nil {
+			return errors.Join(cause, fmt.Errorf("roll back project directory: %w", undoErr))
+		}
+		return cause
 	}
 
 	proj := &Project{
@@ -1337,8 +1396,7 @@ func (s *ProjectService) CreateProject(
 		SkipDirectories:  s.config.ProjectScanSkipDirs,
 		ComposeFileName:  projects.DefaultComposeFileName,
 	}); applyProjectWorkspaceChangesErr != nil {
-		_ = acfs.RemoveAll(context.WithoutCancel(ctx), projectsDirectory, projectLogical)
-		return nil, workspace.WrapProjectWorkspaceError(applyProjectWorkspaceChangesErr)
+		return nil, rollback(workspace.WrapProjectWorkspaceError(applyProjectWorkspaceChangesErr))
 	}
 
 	// GitOps-originated creates (allowNameSuffix=false) tolerate not-yet-supplied
@@ -1355,14 +1413,11 @@ func (s *ProjectService) CreateProject(
 		"",
 		!allowNameSuffix,
 	); validateComposeContentForUpdateErr != nil {
-		_ = acfs.RemoveAll(context.WithoutCancel(ctx), projectsDirectory, projectLogical)
-		return nil, fmt.Errorf("invalid compose file: %w", validateComposeContentForUpdateErr)
+		return nil, rollback(fmt.Errorf("invalid compose file: %w", validateComposeContentForUpdateErr))
 	}
 
 	if writeProjectFilesErr := projects.WriteProjectFiles(ctx, projectsDirectory, projectPath, composeContent, envContent); writeProjectFilesErr != nil {
-		// Best-effort cleanup to restore pre-transaction behavior.
-		_ = acfs.RemoveAll(context.WithoutCancel(ctx), projectsDirectory, projectLogical)
-		return nil, fmt.Errorf("failed to save project files: %w", writeProjectFilesErr)
+		return nil, rollback(fmt.Errorf("failed to save project files: %w", writeProjectFilesErr))
 	}
 	composeMeta, err := projects.ParseArcaneComposeMetadata(
 		ctx,
@@ -1385,27 +1440,21 @@ func (s *ProjectService) CreateProject(
 		}
 		return tags.AttachInitial(tagStore{tx: tx}, proj.ID, normalizedUITags, normalizedTagColors)
 	}); transactionErr != nil {
-		_ = acfs.RemoveAll(context.WithoutCancel(ctx), projectsDirectory, projectLogical)
-		return nil, fmt.Errorf("failed to create project: %w", transactionErr)
+		return nil, rollback(fmt.Errorf("failed to create project: %w", transactionErr))
 	}
 	s.refreshComposeProjectName(ctx, proj)
 	s.refreshProjectImageRefs(ctx, proj)
 	if reconcileComposeProjectTagsErr := s.reconcileComposeProjectTags(ctx, proj.ID, composeMeta.ProjectTags); reconcileComposeProjectTagsErr != nil {
-		cleanupCtx := context.WithoutCancel(ctx)
-		databaseCleanupErr := s.db.WithContext(cleanupCtx).Transaction(func(tx *gorm.DB) error {
+		databaseCleanupErr := s.db.WithContext(context.WithoutCancel(ctx)).Transaction(func(tx *gorm.DB) error {
 			return deleteProjectWithTags(tx, proj.ID)
 		})
-		fileCleanupErr := acfs.RemoveAll(cleanupCtx, projectsDirectory, projectLogical)
 		if databaseCleanupErr != nil {
 			databaseCleanupErr = fmt.Errorf("rollback project database state after tag reconciliation failure: %w", databaseCleanupErr)
 		}
-		if fileCleanupErr != nil {
-			fileCleanupErr = fmt.Errorf("rollback project files after tag reconciliation failure: %w", fileCleanupErr)
-		}
-		return nil, errors.Join(fmt.Errorf("reconcile Compose project tags: %w", reconcileComposeProjectTagsErr), databaseCleanupErr, fileCleanupErr)
+		return nil, rollback(errors.Join(fmt.Errorf("reconcile Compose project tags: %w", reconcileComposeProjectTagsErr), databaseCleanupErr))
 	}
 
-	metadata := database.JSON{"action": "create", "projectID": proj.ID, "projectName": proj.Name, "path": projectPath}
+	metadata := database.JSON{"action": "create", "projectID": proj.ID, "projectName": proj.Name, "path": projectPath, "reusedDirectory": reused}
 	s.logProjectEvent(ctx, event.EventTypeProjectCreate, proj.ID, proj.Name, user, metadata, "could not log project creation")
 
 	return proj, nil

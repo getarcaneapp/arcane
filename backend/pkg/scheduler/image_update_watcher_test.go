@@ -390,9 +390,10 @@ func TestImageUpdateWatcher_RunNowReturnsContainedScanPanicInternal(t *testing.T
 	settings := &pollingSettingReaderFakeInternal{enabled: true}
 	watcher := newImageUpdateWatcherForTestInternal(t, scanner, settings, bus.NewDockerEventBus(), nil)
 	startImageUpdateWatcherForTestInternal(t, watcher)
-	// Wait for durable startup admission to finish, not just for the scanner to start.
+	// Wait for durable startup admission and the startup scan itself to finish,
+	// not just for the scanner to start; RunNow rejects a scan still running.
 	require.Eventually(t, func() bool {
-		return scanner.countInternal() == 1 && watcher.triggerGeneration.Load() == watcher.acknowledgedGeneration.Load()
+		return scanner.countInternal() == 1 && watcher.triggerGeneration.Load() == watcher.acknowledgedGeneration.Load() && !watcher.scanRunning.Load()
 	}, time.Second, time.Millisecond)
 
 	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
