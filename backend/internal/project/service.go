@@ -115,6 +115,9 @@ type ProjectService struct {
 	// projects, a gitops_syncs lookup — per project, on every list request.
 	// Entries are validated by compose/include/env file mtimes rather than a TTL.
 	metaCache projecttypes.ComposeCache[projects.ArcaneComposeMetadata]
+	// composeIdentities caches filesystem-sync compose identities by project path,
+	// so a sync only re-parses projects whose compose or env files changed.
+	composeIdentities projecttypes.ComposeCache[projecttypes.ComposeIdentity]
 
 	// FilesChanged fires with the project ID after project files are saved
 	// through Arcane, so Git backups can react without polling.
@@ -313,6 +316,7 @@ func NewProjectService(
 		config:                      cfg,
 		parsedCompose:               projects.NewParsedComposeCache(),
 		metaCache:                   projects.NewComposeCache[projects.ArcaneComposeMetadata](1024, nil),
+		composeIdentities:           projects.NewComposeCache[projecttypes.ComposeIdentity](2048, nil),
 		FilesChanged:                concurrency.NewSignal[string](),
 	}
 	s.initChildren(kvService, buildService)
@@ -719,7 +723,7 @@ func (s *ProjectService) refreshComposeProjectName(ctx context.Context, proj *Pr
 	if err == nil {
 		dirName := cmp.Or(mo.PointerToOption(proj.DirName).OrEmpty(), proj.Name)
 		autoInjectEnv := kit.ParseOrDefault(cfg.AutoInjectEnv.Value, false, strconv.ParseBool)
-		meta, err = projectsync.LoadComposeMetadata(ctx, proj.Path, dirName, projectsDirectory, autoInjectEnv, s.projectPathMapper(ctx))
+		meta, err = projectsync.LoadComposeMetadata(ctx, s.composeIdentities, proj.Path, dirName, projectsDirectory, autoInjectEnv, s.projectPathMapper(ctx))
 	}
 	if err != nil {
 		if errors.Is(err, common.ErrProjectEnvUnreadable) {
@@ -2615,7 +2619,7 @@ func (s *ProjectService) upsertProjectForDir(ctx context.Context, dirName, dirPa
 	projectsDirectory, serviceCountErr := projects.GetProjectsDirectory(ctx, cfg.ProjectsDirectory.Value)
 	if serviceCountErr == nil {
 		autoInjectEnv := kit.ParseOrDefault(cfg.AutoInjectEnv.Value, false, strconv.ParseBool)
-		composeMetadata, serviceCountErr = projectsync.LoadComposeMetadata(ctx, dirPath, dirName, projectsDirectory, autoInjectEnv, s.projectPathMapper(ctx))
+		composeMetadata, serviceCountErr = projectsync.LoadComposeMetadata(ctx, s.composeIdentities, dirPath, dirName, projectsDirectory, autoInjectEnv, s.projectPathMapper(ctx))
 	}
 	serviceCountLogLevel := kit.Ternary(errors.Is(serviceCountErr, common.ErrProjectEnvUnreadable), slog.LevelDebug, slog.LevelWarn)
 

@@ -12,6 +12,7 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/concurrency"
+	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/proto/tunnel/v1"
 )
 
 // activeWSStream tracks an active WebSocket stream on the agent side.
@@ -54,6 +55,7 @@ type TunnelClient struct {
 	requestTimeout         time.Duration
 	activeStreams          sync.Map // map[string]*activeWSStream
 	requestTransfers       sync.Map // map[string]*commandRequestTransfer
+	commandRecorders       sync.Map // map[string]*commandResponseRecorder awaiting credit
 	transportPreferenceMu  sync.RWMutex
 	preferWebSocketUntil   time.Time
 	grpcFailureStreak      int
@@ -63,6 +65,8 @@ type TunnelClient struct {
 
 type clientRegistrationInternal struct {
 	sessionID string
+	// commandCredit is set when the manager grants command output flow-control credit.
+	commandCredit bool
 }
 
 // connBox wraps the active TunnelConnection so it can be swapped atomically on
@@ -93,6 +97,13 @@ type commandResponseRecorder struct {
 	buffer      bytes.Buffer
 	statusCode  int
 	sequence    int64
+	// flushErr keeps the first send failure from Flush, which cannot return it.
+	flushErr error
+	// With manager flow control, sends wait while inFlight would exceed window; credits signal room.
+	ctx         context.Context
+	window      int64
+	inFlight    atomic.Int64
+	credited    chan struct{}
 	mu          sync.Mutex
 	wroteHeader bool
 	streaming   bool
@@ -124,6 +135,8 @@ type CommandRequest struct {
 	Headers       map[string]string
 	Body          []byte
 	TimeoutMillis int64
+	// Output, when set, receives the response as it streams in; CommandResult.Body is then nil.
+	Output http.ResponseWriter
 }
 
 type CommandResult struct {
@@ -191,10 +204,14 @@ type PollRuntimeRegistry struct {
 }
 
 type grpcResponseState struct {
+	out         http.ResponseWriter
+	outErr      error
+	credit      func(consumed int)
 	status      int
 	respHeaders map[string]string
 	respBody    bytes.Buffer
 	gotResponse bool
+	committed   bool
 }
 
 // AgentTunnel represents an active tunnel connection from an edge agent
@@ -214,6 +231,12 @@ type AgentTunnel struct {
 	mu            sync.RWMutex
 	done          chan struct{}
 	closeOnce     sync.Once
+
+	// Command credits queue here for a per-tunnel sender, so readers never block on the connection.
+	creditOnce   sync.Once
+	creditMu     sync.Mutex
+	credits      map[string]int64
+	creditSignal chan struct{}
 }
 
 // TunnelRegistry manages active edge agent tunnel connections
@@ -226,19 +249,30 @@ type internalTunnelRequestContextKey struct{}
 
 // TunnelServer handles incoming edge agent connections on the manager side.
 type TunnelServer struct {
-	registry           *TunnelRegistry
-	resolver           EnvironmentResolver
-	nameResolver       EnvironmentNameResolver
-	statusCallback     StatusUpdateCallback
-	eventCallback      EventCallback
-	enrollmentCallback EnrollmentCallback
-	cleanupDone        chan struct{}
-	cleanupDoneOnce    sync.Once
-	cfg                *Config
-	statusMu           sync.Mutex
+	// Config holds the edge runtime settings; set it before serving.
+	Config *Config
+	// NameResolver, when set, names environments in generated mTLS assets.
+	NameResolver EnvironmentNameResolver
+	// EventCallback, when set, receives agent events.
+	EventCallback EventCallback
+	// EnrollmentCallback, when set, runs after a successful edge mTLS enrollment.
+	EnrollmentCallback EnrollmentCallback
+
+	registry        *TunnelRegistry
+	resolver        EnvironmentResolver
+	statusCallback  StatusUpdateCallback
+	cleanupDone     chan struct{}
+	cleanupDoneOnce sync.Once
+	statusMu        sync.Mutex
 }
 
-type resolvedEnvironmentIDKey struct{}
+type streamIdentityKey struct{}
+
+// streamIdentity is what the gRPC auth interceptor verified for a tunnel stream.
+type streamIdentity struct {
+	environmentID string
+	securityMode  string
+}
 
 type contextualServerStream struct {
 	grpc.ServerStream
@@ -265,11 +299,6 @@ type GeneratedMTLSAssets struct {
 
 type enrollMTLSResponse struct {
 	Files []GeneratedMTLSFile `json:"files"`
-}
-
-type edgeMTLSLockInfo struct {
-	pid       int
-	createdAt time.Time
 }
 
 // Config contains the public edge-tunnel runtime settings needed by pkg/libarcane/edge.
@@ -326,6 +355,7 @@ type TunnelMessage struct {
 	Status        int               `json:"status,omitempty"`          // HTTP status for responses
 	TimeoutMillis int64             `json:"timeout_millis,omitempty"`  // Command timeout
 	Sequence      int64             `json:"sequence,omitempty"`        // Chunk sequence number
+	Credit        int64             `json:"credit,omitempty"`          // Command output bytes the manager consumed
 	Accepted      bool              `json:"accepted,omitempty"`        // Registration accepted
 	DrainPrevious bool              `json:"drain_previous,omitempty"`  // Replace previous session
 	Streaming     bool              `json:"streaming,omitempty"`       // Response used chunked output
@@ -350,6 +380,13 @@ type TunnelEvent struct {
 type PendingRequest struct {
 	ResponseCh chan *TunnelMessage
 	failureCh  chan error
+
+	// mu guards the ordered backlog that absorbs bursts while ResponseCh is full.
+	mu           sync.Mutex
+	backlog      []*TunnelMessage
+	backlogBytes int
+	draining     bool
+	failed       bool
 }
 
 // TunnelConn wraps a WebSocket connection with send/receive helpers.
@@ -365,10 +402,9 @@ type GRPCManagerTunnelConn struct {
 	cancel context.CancelFunc
 	mu     sync.Mutex
 	closed atomic.Bool
-	// parityEncoding is set once the agent advertises the proto-parity-v1
-	// capability, enabling native stream_data/stream_end encodings instead of
-	// the legacy ws_data re-encode.
-	parityEncoding atomic.Bool
+	// parity is set at registration when the agent advertises proto-parity-v1,
+	// enabling native stream_data/stream_end instead of the legacy ws_data re-encode.
+	parity bool
 }
 
 // GRPCAgentTunnelConn wraps the agent-side gRPC tunnel stream.
@@ -380,6 +416,13 @@ type GRPCAgentTunnelConn struct {
 }
 
 type cancelableGRPCManagerStream struct {
-	stream grpcManagerStream
-	ctx    context.Context
+	stream   grpcManagerStream
+	ctx      context.Context
+	recvCh   chan grpcRecvResult
+	recvOnce sync.Once
+}
+
+type grpcRecvResult struct {
+	msg *tunnelpb.AgentMessage
+	err error
 }

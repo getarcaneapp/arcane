@@ -1171,7 +1171,7 @@ func (s *GitOpsSyncService) BrowseFiles(ctx context.Context, environmentID, id, 
 	}
 
 	// Clone the repository
-	repoPath, err := s.repoService.Clone(browseCtx, repository.URL, syncRecord.Branch, authConfig)
+	repoPath, err := s.repoService.Clone(browseCtx, repository.URL, syncRecord.Branch, authConfig, 1)
 	if err != nil {
 		return nil, fmt.Errorf("failed to clone repository: %w", err)
 	}

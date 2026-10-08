@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -403,7 +404,7 @@ func (c *TunnelClient) grpcFailureStreakInternal() int {
 
 func (c *TunnelClient) registerMessageInternal() *TunnelMessage {
 	capabilities := AdvertisedEdgeCommands()
-	capabilities = append(capabilities, tunnelCapabilityChunkedRequest, tunnelCapabilityProtoParity)
+	capabilities = append(capabilities, tunnelCapabilityChunkedRequest, tunnelCapabilityProtoParity, tunnelCapabilityCommandCredit)
 	registration, _ := c.registration.Load()
 	return &TunnelMessage{
 		Type:          MessageTypeRegister,
@@ -457,7 +458,10 @@ func (c *TunnelClient) awaitRegistrationInternal(ctx context.Context, conn Tunne
 		if !result.msg.Accepted {
 			return nil, fmt.Errorf("manager rejected tunnel registration: %s", result.msg.Error)
 		}
-		c.registration.Store(clientRegistrationInternal{sessionID: result.msg.SessionID})
+		c.registration.Store(clientRegistrationInternal{
+			sessionID:     result.msg.SessionID,
+			commandCredit: slices.Contains(result.msg.Capabilities, tunnelCapabilityCommandCreditGrant),
+		})
 		return result.msg, nil
 	}
 }
@@ -583,6 +587,16 @@ func (c *TunnelClient) messageLoop(ctx context.Context, conn TunnelConnection, w
 				c.handleStreamClose(ctx, msg)
 			case MessageTypeCancelRequest:
 				slog.DebugContext(ctx, "Ignoring edge cancel request on agent", "id", msg.ID)
+			case MessageTypeCommandCredit:
+				if value, ok := c.commandRecorders.Load(msg.ID); ok {
+					if recorder, isRecorder := value.(*commandResponseRecorder); isRecorder {
+						recorder.inFlight.Add(-msg.Credit)
+						select {
+						case recorder.credited <- struct{}{}:
+						default:
+						}
+					}
+				}
 			case MessageTypeResponse, MessageTypeHeartbeat, MessageTypeStreamEnd, MessageTypeEvent, MessageTypeCommandAck, MessageTypeCommandOutput, MessageTypeCommandComplete:
 				slog.DebugContext(ctx, "Ignoring message type on agent", "type", msg.Type)
 			case MessageTypeHeartbeatAck:
@@ -708,7 +722,20 @@ func (c *TunnelClient) handleCommandRequest(ctx context.Context, conn TunnelConn
 		return
 	}
 
-	recorder := newCommandResponseRecorderInternal(msg.ID, msg.Command, conn)
+	recorder := &commandResponseRecorder{
+		commandID:   msg.ID,
+		commandName: msg.Command,
+		conn:        conn,
+		headers:     make(http.Header),
+		statusCode:  http.StatusOK,
+		ctx:         reqCtx,
+		credited:    make(chan struct{}, 1),
+	}
+	if registration, _ := c.registration.Load(); registration.commandCredit {
+		recorder.window = commandCreditWindow
+		c.commandRecorders.Store(msg.ID, recorder)
+		defer c.commandRecorders.Delete(msg.ID)
+	}
 	c.handler.ServeHTTP(recorder, req)
 	if closeErr := recorder.Close(); closeErr != nil {
 		slog.WarnContext(reqCtx, "Failed to finalize command response", "id", msg.ID, "command", msg.Command, "error", closeErr)
@@ -1188,16 +1215,6 @@ func (c *TunnelClient) sendCommandCompleteInternal(conn TunnelConnection, comman
 	})
 }
 
-func newCommandResponseRecorderInternal(commandID, commandName string, conn TunnelConnection) *commandResponseRecorder {
-	return &commandResponseRecorder{
-		commandID:   commandID,
-		commandName: commandName,
-		conn:        conn,
-		headers:     make(http.Header),
-		statusCode:  http.StatusOK,
-	}
-}
-
 func (r *commandResponseRecorder) Header() http.Header {
 	return r.headers
 }
@@ -1207,6 +1224,9 @@ func (r *commandResponseRecorder) Write(b []byte) (int, error) {
 	defer r.mu.Unlock()
 	originalLen := len(b)
 
+	if r.flushErr != nil {
+		return 0, r.flushErr
+	}
 	if len(b) == 0 {
 		return 0, nil
 	}
@@ -1225,16 +1245,9 @@ func (r *commandResponseRecorder) Write(b []byte) (int, error) {
 		if len(chunk) > defaultCommandChunkSize {
 			chunk = chunk[:defaultCommandChunkSize]
 		}
-		if err := r.conn.Send(&TunnelMessage{
-			ID:       r.commandID,
-			Type:     MessageTypeCommandOutput,
-			Body:     append([]byte(nil), chunk...),
-			Sequence: r.sequence,
-			Command:  r.commandName,
-		}); err != nil {
+		if err := r.sendOutputLocked(chunk); err != nil {
 			return 0, err
 		}
-		r.sequence++
 		b = b[len(chunk):]
 	}
 
@@ -1252,7 +1265,15 @@ func (r *commandResponseRecorder) Flush() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.streaming = true
-	_ = r.flushBufferLocked()
+	if r.flushErr != nil {
+		return
+	}
+	// An empty first flush still sends the status and headers so the manager can start the response.
+	if r.sequence == 0 && r.buffer.Len() == 0 {
+		r.flushErr = r.sendOutputLocked(nil)
+		return
+	}
+	r.flushErr = r.flushBufferLocked()
 }
 
 func (r *commandResponseRecorder) Close() error {
@@ -1260,6 +1281,9 @@ func (r *commandResponseRecorder) Close() error {
 	defer r.mu.Unlock()
 	if r.closed {
 		return nil
+	}
+	if r.flushErr != nil {
+		return r.flushErr
 	}
 
 	if !r.streaming {
@@ -1301,17 +1325,40 @@ func (r *commandResponseRecorder) flushBufferLocked() error {
 	if r.buffer.Len() == 0 {
 		return nil
 	}
-	if err := r.conn.Send(&TunnelMessage{
+	if err := r.sendOutputLocked(r.buffer.Bytes()); err != nil {
+		return err
+	}
+	r.buffer.Reset()
+	return nil
+}
+
+// sendOutputLocked sends one output chunk, first waiting for manager credit when the window is
+// full. The first chunk also carries the status and headers so the manager can stream the response.
+func (r *commandResponseRecorder) sendOutputLocked(chunk []byte) error {
+	for r.window > 0 && r.inFlight.Load() > 0 && r.inFlight.Load()+int64(len(chunk)) > r.window {
+		select {
+		case <-r.credited:
+		case <-r.ctx.Done():
+			return r.ctx.Err()
+		}
+	}
+	r.inFlight.Add(int64(len(chunk)))
+
+	msg := &TunnelMessage{
 		ID:       r.commandID,
 		Type:     MessageTypeCommandOutput,
-		Body:     append([]byte(nil), r.buffer.Bytes()...),
+		Body:     append([]byte(nil), chunk...),
 		Sequence: r.sequence,
 		Command:  r.commandName,
-	}); err != nil {
+	}
+	if r.sequence == 0 {
+		msg.Status = r.statusCode
+		msg.Headers = flattenResponseHeadersInternal(r.headers)
+	}
+	if err := r.conn.Send(msg); err != nil {
 		return err
 	}
 	r.sequence++
-	r.buffer.Reset()
 	return nil
 }
 
@@ -1439,7 +1486,7 @@ func (r *streamingResponseRecorder) writeHeaderLocked(statusCode int) error {
 			respHeaders[k] = v[0]
 		}
 	}
-	respHeaders["X-Arcane-Tunnel-Stream"] = "1"
+	respHeaders[tunnelStreamHeader] = "1"
 
 	if err := r.conn.Send(&TunnelMessage{
 		ID:      r.requestID,
@@ -1498,7 +1545,7 @@ func (c *TunnelClient) connectAndServeWebSocketInternal(ctx context.Context) err
 	}
 	transport := &http.Transport{Proxy: http.ProxyFromEnvironment}
 	if strings.HasPrefix(strings.ToLower(managerWSURL), "wss://") {
-		tlsConfig, err := buildManagerClientTLSConfigInternal(c.cfg)
+		tlsConfig, err := buildManagerClientTLSConfig(c.cfg)
 		if err != nil {
 			return fmt.Errorf("failed to configure edge websocket TLS: %w", err)
 		}

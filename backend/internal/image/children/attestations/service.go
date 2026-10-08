@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 
 	"github.com/containerd/platforms"
 	"github.com/getarcaneapp/arcane/types/v2/image"
@@ -27,6 +28,9 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/registryauth"
 )
+
+// zstdDecoder is shared because DecodeAll is safe for concurrent use and a decoder is costly to build.
+var zstdDecoder = sync.OnceValues(func() (*zstd.Decoder, error) { return zstd.NewReader(nil) })
 
 // Service reads in-toto attestations attached to local images and registry references.
 type Service struct {
@@ -502,12 +506,11 @@ func decompressAttestationStatementInternal(data []byte) ([]byte, error) {
 		defer func() { _ = reader.Close() }()
 		return io.ReadAll(reader)
 	case len(data) >= 4 && data[0] == 0x28 && data[1] == 0xb5 && data[2] == 0x2f && data[3] == 0xfd:
-		reader, err := zstd.NewReader(nil)
+		decoder, err := zstdDecoder()
 		if err != nil {
 			return nil, err
 		}
-		defer reader.Close()
-		return reader.DecodeAll(data, nil)
+		return decoder.DecodeAll(data, nil)
 	default:
 		return data, nil
 	}

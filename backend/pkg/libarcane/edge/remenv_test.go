@@ -76,7 +76,6 @@ func (w *noFlushResponseWriter) Write(b []byte) (int, error) {
 func (w *noFlushResponseWriter) WriteHeader(statusCode int) { w.status = statusCode }
 
 func TestCopyRequestHeaders_SkipsExpectedHeaders(t *testing.T) {
-	skip := GetSkipHeaders()
 	from := http.Header{}
 	from.Add("X-Test", "a")
 	from.Add("X-Test", "b")
@@ -87,7 +86,7 @@ func TestCopyRequestHeaders_SkipsExpectedHeaders(t *testing.T) {
 	from.Set("Transfer-Encoding", "chunked")
 
 	to := http.Header{}
-	CopyRequestHeaders(from, to, skip)
+	CopyRequestHeaders(from, to)
 
 	require.Equal(t, []string{"a", "b"}, to.Values("X-Test"))
 	require.Empty(t, to.Get(HeaderAuthorization))
@@ -151,7 +150,7 @@ func TestSetForwardedHeaders(t *testing.T) {
 }
 
 func TestGetHopByHopHeaders_IncludesStandardHeaders(t *testing.T) {
-	h := GetHopByHopHeaders()
+	h := BuildHopByHopHeaders(http.Header{})
 	_, ok := h[http.CanonicalHeaderKey("Connection")]
 	require.True(t, ok)
 	_, ok = h[http.CanonicalHeaderKey("Transfer-Encoding")]
@@ -189,7 +188,7 @@ func TestCopyResponseHeaders_SkipsHopByHopAndConnectionNamedHeaders(t *testing.T
 }
 
 func TestGetSkipHeaders_ContainsExpectedEntries(t *testing.T) {
-	skip := GetSkipHeaders()
+	skip := skipHeaders
 	require.Contains(t, skip, "Host")
 	require.Contains(t, skip, "Connection")
 	require.Contains(t, skip, "Transfer-Encoding")
