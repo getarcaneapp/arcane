@@ -33,6 +33,7 @@ type ComposeTemplateMetadata struct {
 	EnvURL           *string  `json:"envUrl,omitempty"`
 	DocumentationURL *string  `json:"documentationUrl,omitempty"`
 	IconURL          *string  `json:"iconUrl,omitempty"`
+	RegistryIconURL  *string  `json:"registryIconUrl,omitempty"`
 }
 
 func (TemplateRegistry) TableName() string { return "template_registries" }
