@@ -1,6 +1,6 @@
 module github.com/getarcaneapp/arcane/cli/v2
 
-go 1.27
+go 1.27.2
 
 replace github.com/getarcaneapp/arcane/types/v2 => ../types
 

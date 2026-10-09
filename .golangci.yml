@@ -1,8 +1,8 @@
 # Slightly Modified Version of docker's golangci lint configuration to fit arcanes standards
-version: '2'
+version: "2"
 
 run:
-  go: '1.27.1'
+  go: "1.27.2"
   build-tags:
     - exclude_frontend
     - playwright
@@ -78,20 +78,20 @@ linters:
               desc: use stdlib maps package
             - pkg: golang.org/x/exp/slices
               desc: use stdlib slices package
-            - pkg: 'github.com/google/uuid'
+            - pkg: "github.com/google/uuid"
               desc: Use stdlib uuid instead.
-            - pkg: 'gopkg.in/yaml.v3'
+            - pkg: "gopkg.in/yaml.v3"
               desc: Use go.yaml.in/yaml/v4 instead.
 
     forbidigo:
       analyze-types: true
       forbid:
         - pattern: 'context\.Background'
-          pkg: '^context$'
-          msg: 'in tests, use t.Context() instead of context.Background()'
+          pkg: "^context$"
+          msg: "in tests, use t.Context() instead of context.Background()"
         - pattern: 'context\.TODO'
-          pkg: '^context$'
-          msg: 'in tests, use t.Context() instead of context.TODO()'
+          pkg: "^context$"
+          msg: "in tests, use t.Context() instead of context.TODO()"
 
     gocritic:
       disabled-checks:
@@ -142,7 +142,7 @@ linters:
           disabled: true
 
     sloglint:
-      context: 'all' # https://github.com/go-simpler/sloglint#context-only
+      context: "all" # https://github.com/go-simpler/sloglint#context-only
       kv-only: true # https://github.com/go-simpler/sloglint#key-value-pairs-only
       static-msg: true # https://github.com/go-simpler/sloglint#static-message
       key-naming-case: camel

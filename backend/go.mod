@@ -1,6 +1,6 @@
 module github.com/getarcaneapp/arcane/backend/v2
 
-go 1.27.1
+go 1.27.2
 
 replace (
 	github.com/docker/buildx => github.com/docker/buildx v0.32.1
