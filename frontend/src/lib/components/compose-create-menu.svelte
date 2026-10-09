@@ -18,6 +18,7 @@
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { TerminalIcon, TemplateIcon, AddIcon, ArrowDownIcon as ChevronDown, GitBranchIcon } from '#lib/icons/index.js';
 	import { templateBtnClass } from '#lib/utils/compose-flow.js';
+	import type { ShortcutKey } from '#lib/utils/navigation.js';
 
 	interface Props {
 		// Tooltip shows when the tooltipOpen prop is truthy-undefined (bits-ui
@@ -35,6 +36,7 @@
 		createLoading: boolean;
 		createLabel: string;
 		createLoadingLabel: string;
+		createShortcut?: ShortcutKey[];
 		onCreate: () => void;
 
 		// Dropdown items.
@@ -70,6 +72,7 @@
 		createLoading,
 		createLabel,
 		createLoadingLabel,
+		createShortcut,
 		onCreate,
 		itemsDisabled,
 		showUseTemplate = true,
@@ -113,6 +116,7 @@
 						loading={createLoading}
 						customLabel={createLabel}
 						loadingLabel={createLoadingLabel}
+						shortcut={createShortcut}
 					/>
 				{/snippet}
 			</ArcaneTooltip.Trigger>

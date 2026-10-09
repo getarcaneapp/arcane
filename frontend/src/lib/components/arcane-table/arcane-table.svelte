@@ -6,6 +6,7 @@
 	import type { Snippet } from 'svelte';
 	import type { Component } from 'svelte';
 
+	import { TABLE_PAGE_SIZE_ALL } from '#lib/constants/table-pagination.js';
 	import { IsMobile } from '#lib/hooks/is-mobile.svelte.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
@@ -49,10 +50,12 @@
 		withoutSearch = $bindable(),
 		withoutFilters = false,
 		withoutPagination = false,
+		restoreAllPageSize = true,
 		selectionDisabled = false,
 		loading = false,
 		unstyled = false,
 		onRefresh,
+		onPageSizeChangeRequest,
 		columns,
 		rowActions,
 		mobileCard,
@@ -84,11 +87,15 @@
 		withoutSearch?: boolean;
 		withoutFilters?: boolean;
 		withoutPagination?: boolean;
+		/** Restore the default limit instead of a saved All selection when false. */
+		restoreAllPageSize?: boolean;
 		selectionDisabled?: boolean;
 		/** When true and there's no data yet, the desktop view shows skeleton rows (first-load). */
 		loading?: boolean;
 		unstyled?: boolean;
 		onRefresh: (requestOptions: SearchPaginationSortRequest) => Promise<Paginated<TData>>;
+		/** Allows a caller to confirm a page-size change before applying it. */
+		onPageSizeChangeRequest?: (limit: number, apply: () => void) => void;
 		columns: ColumnSpec<TData>[];
 		rowActions?: Snippet<[{ row: ArcaneRow<TData>; item: TData }]>;
 		mobileCard: Snippet<[{ row: ArcaneRow<TData>; item: TData; mobileFieldVisibility: Record<string, boolean> }]>;
@@ -166,9 +173,9 @@
 		wrapTextPref.current = !wrapTextPref.current;
 	}
 
-	// The desktop scroll container, bound below and handed to the desktop view so it can virtualize
-	// long flat lists. The unstyled/styled branches are mutually exclusive, so one ref suffices.
+	// Each view owns its virtualizer and restores its own scroll position.
 	let desktopScrollEl = $state<HTMLElement>();
+	let mobileScrollEl = $state<HTMLElement>();
 	const isMobile = new IsMobile();
 	const scrollPositions = { desktop: { top: 0, left: 0 }, mobile: { top: 0, left: 0 } };
 	const selectedIdSet = $derived(new Set(selectedIds ?? []));
@@ -187,6 +194,34 @@
 		return () => {
 			cancelAnimationFrame(frame);
 			node.removeEventListener('scroll', savePosition);
+		};
+	}
+
+	// Caps the shell to the viewport space below its unscrolled position so its bottom stays on screen.
+	function fitToViewport(node: HTMLElement) {
+		let frame = 0;
+		const update = () => {
+			cancelAnimationFrame(frame);
+			frame = requestAnimationFrame(() => {
+				let top = node.getBoundingClientRect().top;
+				let bottomGap = parseFloat(getComputedStyle(node).marginBottom);
+				for (let el = node.parentElement; el; el = el.parentElement) {
+					const style = getComputedStyle(el);
+					top += el.scrollTop;
+					bottomGap += parseFloat(style.paddingBottom) + parseFloat(style.borderBottomWidth) + parseFloat(style.marginBottom);
+				}
+				const available = window.innerHeight - top - bottomGap;
+				node.style.maxHeight = `${Math.max(available, window.innerHeight / 2)}px`;
+			});
+		};
+		const observer = new ResizeObserver(update);
+		for (let el = node.parentElement; el; el = el.parentElement) observer.observe(el);
+		window.addEventListener('resize', update);
+		update();
+		return () => {
+			cancelAnimationFrame(frame);
+			observer.disconnect();
+			window.removeEventListener('resize', update);
 		};
 	}
 
@@ -251,6 +286,9 @@
 			return;
 		}
 		const snapshot = extractPersistedPreferences(prefs?.current, getEffectiveLimit());
+		if (!restoreAllPageSize && snapshot.limit === TABLE_PAGE_SIZE_ALL) {
+			snapshot.limit = DEFAULT_LIMIT;
+		}
 
 		const patchedVisibility = { ...columnVisibility };
 		applyHiddenPatch(patchedVisibility, snapshot.hiddenColumns);
@@ -291,6 +329,10 @@
 			page: items?.pagination?.currentPage ?? 1,
 			limit: items?.pagination?.itemsPerPage ?? 10
 		};
+		scrollPositions.desktop.top = 0;
+		scrollPositions.mobile.top = 0;
+		if (desktopScrollEl) desktopScrollEl.scrollTop = 0;
+		if (mobileScrollEl) mobileScrollEl.scrollTop = 0;
 		const next = { ...prev, ...patch };
 		requestOptions = { ...requestOptions, pagination: next };
 		onRefresh(requestOptions);
@@ -303,9 +345,16 @@
 	}
 
 	function setPageSize(limit: number) {
-		// Persist page size
-		if (enablePersist && prefs) prefs.current = { ...prefs.current, l: limit };
-		updatePagination({ limit, page: 1 });
+		if (limit === pageSize) return;
+		const apply = () => {
+			if (enablePersist && prefs) prefs.current = { ...prefs.current, l: limit };
+			updatePagination({ limit, page: 1 });
+		};
+		if (onPageSizeChangeRequest) {
+			onPageSizeChangeRequest(limit, apply);
+		} else {
+			apply();
+		}
 	}
 
 	function onToggleAll(checked: boolean, table: ArcaneTable<TData>) {
@@ -744,6 +793,8 @@
 
 {#snippet MobileViewSnippet()}
 	<ArcaneTableMobileView
+		scrollElement={mobileScrollEl}
+		initialScrollTop={scrollPositions.mobile.top}
 		{rowIndex}
 		{table}
 		{mobileCard}
@@ -761,7 +812,7 @@
 {#if customTableView}
 	{@render customTableView({ table, renderPagination: PaginationSnippet, mobileFieldsForOptions, onToggleMobileField })}
 {:else}
-	<div class={shellClass}>
+	<div {@attach fitToViewport} class={shellClass}>
 		{#if !withoutSearch}
 			<div class={toolbarWrapClass}>
 				<DataTableToolbar
@@ -787,6 +838,7 @@
 			<div
 				{@attach (node) => restoreScroll(node, 'desktop')}
 				bind:this={desktopScrollEl}
+				data-table-scroll="desktop"
 				class="isolate h-full min-h-0 flex-1 overflow-auto bg-background"
 			>
 				<ArcaneTableDesktopView
@@ -814,7 +866,12 @@
 				/>
 			</div>
 		{:else}
-			<div {@attach (node) => restoreScroll(node, 'mobile')} class="isolate block flex-1 overflow-auto bg-background/80">
+			<div
+				{@attach (node) => restoreScroll(node, 'mobile')}
+				bind:this={mobileScrollEl}
+				data-table-scroll="mobile"
+				class="isolate block min-h-0 flex-1 overflow-auto bg-background/80"
+			>
 				{#if unstyled}
 					<div class="divide-y divide-border/40">
 						{@render MobileViewSnippet()}
@@ -826,9 +883,9 @@
 		{/if}
 
 		{#if !withoutPagination}
-			<div class="shrink-0 border-t border-border/50 px-4 py-3">
+			<nav aria-label={m.table_pagination_bottom()} class="shrink-0 border-t border-border/50 px-4 py-3">
 				{@render PaginationSnippet()}
-			</div>
+			</nav>
 		{/if}
 	</div>
 {/if}

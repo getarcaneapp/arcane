@@ -14,16 +14,20 @@ export const load: PageLoad = async ({ parent }) => {
 	const { queryClient } = await parent();
 	const envId = await environmentStore.getCurrentEnvironmentId();
 
-	const vulnerabilityRequestOptions = resolveInitialTableRequest('arcane-security-vuln-table', {
-		pagination: {
-			page: 1,
-			limit: 20
-		},
-		sort: {
-			column: 'vulnSeverity',
-			direction: 'desc'
-		}
-	} satisfies SearchPaginationSortRequest);
+	const vulnerabilityRequestOptions = resolveInitialTableRequest(
+		'arcane-security-vuln-table',
+		{
+			pagination: {
+				page: 1,
+				limit: 20
+			},
+			sort: {
+				column: 'vulnSeverity',
+				direction: 'desc'
+			}
+		} satisfies SearchPaginationSortRequest,
+		{ restoreAllPageSize: false }
+	);
 
 	const patchRequestOptions = resolveInitialTableRequest('arcane-security-patch-table', {
 		pagination: {

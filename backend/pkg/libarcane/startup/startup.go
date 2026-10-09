@@ -3,6 +3,10 @@ package startup
 import (
 	"context"
 	"log/slog"
+	"os"
+	"runtime/debug"
+
+	"go.getarcane.app/sys/cgroup"
 
 	"github.com/getarcaneapp/arcane/backend/v2/buildables"
 )
@@ -14,6 +18,22 @@ type RuntimeConfig struct {
 	EncryptionKey     string
 	AutoLoginUsername string
 	AdminStaticAPIKey string
+}
+
+// ApplyMemoryLimit sets the Go soft memory limit to 90% of the cgroup memory
+// limit so the GC tightens before the container is OOM-killed. GOMEMLIMIT wins.
+func ApplyMemoryLimit(ctx context.Context) {
+	if os.Getenv("GOMEMLIMIT") != "" {
+		return
+	}
+	limits, err := cgroup.DetectLimits()
+	// cgroup v1 reports "no limit" as a page-aligned value near MaxInt64.
+	if err != nil || limits.MemoryLimit <= 0 || limits.MemoryLimit >= 1<<62 {
+		return
+	}
+	limit := limits.MemoryLimit / 10 * 9
+	debug.SetMemoryLimit(limit)
+	slog.InfoContext(ctx, "Set Go memory limit from cgroup", "cgroupLimitBytes", limits.MemoryLimit, "goMemoryLimitBytes", limit)
 }
 
 func LoadAgentToken(ctx context.Context, cfg *RuntimeConfig, getSettingFunc func(context.Context, string, string) string) {

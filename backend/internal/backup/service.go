@@ -55,6 +55,9 @@ const (
 	VolumeAdmissionScope = "volume-backup"
 	SystemAdmissionScope = "system-backup"
 	RecoveryKeyConfigID  = "system-recovery"
+
+	// rusticRepositoryMissingMessage is how Rustic reports an uninitialized repository.
+	rusticRepositoryMissingMessage = "No repository config file found"
 )
 
 type Repository struct {
@@ -491,12 +494,9 @@ func fullSnapshotIDInternal(id string) bool {
 	return err == nil
 }
 
-// ForgetSnapshots removes the snapshots from the repository and prunes their
-// data in a single pass.
+// ForgetSnapshots removes the snapshots and prunes their data in a single pass;
+// with no IDs it only prunes, skipping an uninitialized repository.
 func (e *Engine) ForgetSnapshots(ctx context.Context, dockerClient *client.Client, repository Repository, password string, snapshotIDs []string) error {
-	if len(snapshotIDs) == 0 {
-		return errors.New("at least one snapshot ID is required")
-	}
 	requested := make([]string, 0, len(snapshotIDs))
 	for _, id := range snapshotIDs {
 		if !fullSnapshotIDInternal(id) {
@@ -516,6 +516,9 @@ func (e *Engine) ForgetSnapshots(ctx context.Context, dockerClient *client.Clien
 		return err
 	}
 	output, err := e.runContainerInternal(ctx, dockerClient, repository, password, []string{"snapshots", "--json"})
+	if len(snapshotIDs) == 0 && err != nil && strings.Contains(err.Error(), rusticRepositoryMissingMessage) {
+		return nil
+	}
 	if err != nil {
 		return err
 	}

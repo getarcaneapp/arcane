@@ -23,6 +23,7 @@
 - inline logic in project services ([\#4316](https://github.com/getarcaneapp/arcane/pull/4316) by @kmendell)
 
 **Full Changelog**: https://github.com/getarcaneapp/arcane/compare/v2.15.0...v2.15.1
+
 ## v2.15.0
 
 ### New features

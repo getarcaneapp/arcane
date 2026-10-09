@@ -390,7 +390,8 @@ func (s *BuildService) cloneGitContextInternal(ctx context.Context, repositoryUR
 	}
 
 	if s.gitRepository != nil && s.gitRepository.Client != nil {
-		return s.gitRepository.Clone(ctx, repositoryURL, ref, authConfig)
+		// Builds may run git describe or count commits, so they keep full history.
+		return s.gitRepository.Clone(ctx, repositoryURL, ref, authConfig, 0)
 	}
 
 	return "", errors.New("git repository service not available")

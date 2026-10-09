@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -137,7 +138,7 @@ func (s *Service) Apply(
 ) error {
 	scope := projects.ProjectUpdateBackupScope{}
 	for _, change := range manifest.FileChanges {
-		scope.Paths = append(scope.Paths, changeTargetPaths(change)...)
+		scope.Paths = append(scope.Paths, ChangeTargetPaths(change)...)
 	}
 	backup, cleanup, err := projects.BackupProjectDirectory(ctx, projectsDirectory, projectPath, ".project-update-backup-*", scope)
 	if err != nil {
@@ -252,7 +253,7 @@ func ValidateWorkspaceChangesAgainstGitOps(changes []project.WorkspaceFileChange
 		return false
 	}
 	for _, change := range changes {
-		for _, target := range changeTargetPaths(change) {
+		for _, target := range ChangeTargetPaths(change) {
 			if touchesOwned(target) {
 				return common.Classify(common.ErrProjectWorkspaceForbidden, fmt.Errorf("%q is managed by git sync and can only be changed in the git repository", target))
 			}
@@ -261,9 +262,9 @@ func ValidateWorkspaceChangesAgainstGitOps(changes []project.WorkspaceFileChange
 	return nil
 }
 
-// changeTargetPaths lists every normalized path a change can create, overwrite or
+// ChangeTargetPaths lists every normalized path a change can create, overwrite or
 // delete; backup scope and GitOps ownership share it so they cannot diverge.
-func changeTargetPaths(change project.WorkspaceFileChange) []string {
+func ChangeTargetPaths(change project.WorkspaceFileChange) []string {
 	rel, err := kit.NormalizeRelativePath(change.RelativePath)
 	if err != nil {
 		return nil
@@ -275,7 +276,9 @@ func changeTargetPaths(change project.WorkspaceFileChange) []string {
 			paths = append(paths, filepath.ToSlash(filepath.Join(filepath.Dir(rel), newName)))
 		}
 	case project.FileOpMove:
-		paths = append(paths, filepath.ToSlash(filepath.Join(change.NewParentPath, filepath.Base(rel))))
+		if parent, parentErr := projects.NormalizeProjectParentPath(change.NewParentPath); parentErr == nil {
+			paths = append(paths, path.Join(parent, path.Base(rel)))
+		}
 	}
 	return paths
 }

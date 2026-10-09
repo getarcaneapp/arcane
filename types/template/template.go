@@ -52,6 +52,11 @@ type RemoteTemplate struct {
 	// Required: true
 	DocumentationURL string `json:"documentation_url"`
 
+	// IconURL is the URL to the template icon.
+	//
+	// Required: false
+	IconURL string `json:"icon_url,omitempty"`
+
 	// Tags is a list of tags associated with the template.
 	//
 	// Required: true

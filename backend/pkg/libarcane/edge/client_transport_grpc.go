@@ -50,7 +50,7 @@ func (c *TunnelClient) connectAndServeGRPC(ctx context.Context) error {
 	}
 
 	if c.useTLSForManagerGRPC() {
-		tlsConfig, err := buildManagerClientTLSConfigInternal(c.cfg)
+		tlsConfig, err := buildManagerClientTLSConfig(c.cfg)
 		if err != nil {
 			return fmt.Errorf("failed to configure edge gRPC TLS: %w", err)
 		}

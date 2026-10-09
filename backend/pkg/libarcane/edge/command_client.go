@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
+	"math"
 	"net/http"
 	"slices"
 	"time"
@@ -17,7 +19,13 @@ const (
 	// manager->agent, cancel_request agent->manager) instead of the legacy
 	// re-encoded forms.
 	tunnelCapabilityProtoParity = "proto-parity-v1"
-	bodyTransferMetadataKey     = "body_transfer_id"
+	// Credit-based flow control for command output keeps at most commandCreditWindow bytes
+	// unconsumed by the manager. Agents offer it; only the manager sends the grant, which older
+	// managers that echo agent capabilities cannot produce.
+	tunnelCapabilityCommandCredit      = "command-credit-v1"
+	tunnelCapabilityCommandCreditGrant = "command-credit-grant-v1"
+	commandCreditWindow                = 8 << 20
+	bodyTransferMetadataKey            = "body_transfer_id"
 )
 
 func NewCommandClient() *CommandClient {
@@ -101,8 +109,20 @@ func (c *CommandClient) Execute(ctx context.Context, tunnel *AgentTunnel, req *C
 		}
 	}
 
-	status, headers, body, err := collectCommandResponseInternal(ctx, tunnel, pending, req.Method)
+	// Output the collector has consumed is credited back, so the agent cannot outrun a slow reader.
+	var credit func(int)
+	if slices.Contains(tunnel.Capabilities, tunnelCapabilityCommandCredit) {
+		credit = func(consumed int) {
+			tunnel.grantCommandCredit(ctx, requestID, int64(consumed))
+		}
+	}
+
+	status, headers, body, err := collectCommandResponseInternal(ctx, tunnel, pending, req.Method, req.Output, credit)
 	if err != nil {
+		if credit != nil {
+			// Release an agent still waiting to send output that nobody will read.
+			credit(math.MaxInt32)
+		}
 		return nil, err
 	}
 
@@ -155,6 +175,42 @@ func (c *CommandClient) OpenStream(ctx context.Context, tunnel *AgentTunnel, req
 }
 
 var DefaultCommandClient = NewCommandClient()
+
+// grantCommandCredit queues credit for a command without blocking. A per-tunnel sender coalesces
+// queued credits and sends them, so a stalled connection never holds up the response reader.
+func (t *AgentTunnel) grantCommandCredit(ctx context.Context, commandID string, consumed int64) {
+	t.creditOnce.Do(func() {
+		t.credits = make(map[string]int64)
+		t.creditSignal = make(chan struct{}, 1)
+		logCtx := context.WithoutCancel(ctx)
+		go func() {
+			for {
+				select {
+				case <-t.done:
+					return
+				case <-t.creditSignal:
+				}
+				t.creditMu.Lock()
+				queued := t.credits
+				t.credits = make(map[string]int64)
+				t.creditMu.Unlock()
+				for id, credit := range queued {
+					if err := t.Conn.Send(&TunnelMessage{ID: id, Type: MessageTypeCommandCredit, Credit: credit}); err != nil {
+						slog.DebugContext(logCtx, "Failed to send edge command credit", "id", id, "error", err)
+					}
+				}
+			}
+		}()
+	})
+
+	t.creditMu.Lock()
+	t.credits[commandID] += consumed
+	t.creditMu.Unlock()
+	select {
+	case t.creditSignal <- struct{}{}:
+	default:
+	}
+}
 
 func validateConnectedTunnelInternal(tunnel *AgentTunnel) error {
 	if tunnel == nil || tunnel.Conn == nil || tunnel.Conn.IsClosed() {

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
+	import { PersistedState } from 'runed';
 
 	import TerminalControls from '#lib/components/terminal/terminal-controls.svelte';
 	import Terminal from '#lib/components/terminal/terminal.svelte';
@@ -8,15 +9,32 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+	import { COMPOSE_PROJECT_LABEL, COMPOSE_SERVICE_LABEL } from '#lib/utils/docker.js';
 
 	let {
-		containerId
+		containerId,
+		labels,
+		name
 	}: {
 		containerId: string | undefined;
+		labels: Record<string, string> | null | undefined;
+		name: string | undefined;
 	} = $props();
 
+	const savedShells = new PersistedState<Record<string, string>>('arcane_terminal_shells', {});
+
+	// Keyed by compose service (or container name) so the choice survives container recreation.
+	const shellKey = $derived.by(() => {
+		const envId = environmentStore.selected?.id ?? '0';
+		const project = labels?.[COMPOSE_PROJECT_LABEL];
+		const service = labels?.[COMPOSE_SERVICE_LABEL];
+		if (project && service) return `${envId}:${project}/${service}`;
+		if (name) return `${envId}:${name}`;
+		return undefined;
+	});
+
 	let isConnected = $state(false);
-	let selectedShell = $derived(settingsStore.current?.defaultShell || '/bin/sh');
+	let selectedShell = $derived((shellKey && savedShells.current[shellKey]) || settingsStore.current?.defaultShell || '/bin/sh');
 	let reconnectKey = $state(0);
 	const websocketUrl = $derived.by(() => {
 		if (!containerId || !selectedShell) return '';
@@ -27,6 +45,7 @@
 
 	function handleShellChange(shell: string) {
 		selectedShell = shell;
+		if (shellKey) savedShells.current = { ...savedShells.current, [shellKey]: shell };
 	}
 
 	function handleConnected() {

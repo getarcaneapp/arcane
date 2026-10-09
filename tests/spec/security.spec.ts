@@ -348,7 +348,10 @@ test.describe('Security Page', () => {
 		await refreshed;
 
 		refreshed = tableRequest((params) => params.get('start') === '20');
-		await panel.getByRole('button', { name: 'Go to next page', exact: true }).click();
+		await panel
+			.getByRole('navigation', { name: 'Bottom table pagination' })
+			.getByRole('button', { name: 'Go to next page', exact: true })
+			.click();
 		await refreshed;
 		await expect(page.getByRole('row').filter({ hasText: 'CVE-2026-0003' })).toBeVisible();
 

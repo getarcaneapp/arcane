@@ -1,7 +1,12 @@
+-- +goose NO TRANSACTION
 -- +goose Up
 -- Remove the enabled column from gitops_syncs table
 -- SQLite doesn't support DROP COLUMN directly, so we need to recreate the table
 -- Only autoSync field will control automatic syncing behavior
+
+-- Preserve legacy syncs with dangling references during the atomic rebuild.
+PRAGMA foreign_keys=OFF;
+BEGIN;
 
 -- Create new table without enabled column
 CREATE TABLE gitops_syncs_new (
@@ -19,8 +24,8 @@ CREATE TABLE gitops_syncs_new (
     last_sync_status TEXT,
     last_sync_error TEXT,
     last_sync_commit TEXT,
-    created_at DATETIME NOT NULL,
-    updated_at DATETIME NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME,
     FOREIGN KEY (environment_id) REFERENCES environments(id) ON DELETE CASCADE,
     FOREIGN KEY (repository_id) REFERENCES git_repositories(id) ON DELETE CASCADE,
     FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE SET NULL
@@ -49,9 +54,15 @@ CREATE INDEX IF NOT EXISTS idx_gitops_syncs_environment_id ON gitops_syncs(envir
 CREATE INDEX IF NOT EXISTS idx_gitops_syncs_repository_id ON gitops_syncs(repository_id);
 CREATE INDEX IF NOT EXISTS idx_gitops_syncs_project_id ON gitops_syncs(project_id);
 
+COMMIT;
+PRAGMA foreign_keys=ON;
+
 -- +goose Down
 -- Re-add the enabled column to gitops_syncs table
 -- SQLite doesn't support ADD COLUMN with constraints directly, so we need to recreate the table
+
+PRAGMA foreign_keys=OFF;
+BEGIN;
 
 -- Create new table with enabled column
 CREATE TABLE gitops_syncs_new (
@@ -70,8 +81,8 @@ CREATE TABLE gitops_syncs_new (
     last_sync_error TEXT,
     last_sync_commit TEXT,
     enabled BOOLEAN NOT NULL DEFAULT true,
-    created_at DATETIME NOT NULL,
-    updated_at DATETIME NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME,
     FOREIGN KEY (environment_id) REFERENCES environments(id) ON DELETE CASCADE,
     FOREIGN KEY (repository_id) REFERENCES git_repositories(id) ON DELETE CASCADE,
     FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE SET NULL
@@ -100,3 +111,6 @@ CREATE INDEX IF NOT EXISTS idx_gitops_syncs_environment_id ON gitops_syncs(envir
 CREATE INDEX IF NOT EXISTS idx_gitops_syncs_repository_id ON gitops_syncs(repository_id);
 CREATE INDEX IF NOT EXISTS idx_gitops_syncs_project_id ON gitops_syncs(project_id);
 CREATE INDEX IF NOT EXISTS idx_gitops_syncs_enabled ON gitops_syncs(enabled);
+
+COMMIT;
+PRAGMA foreign_keys=ON;

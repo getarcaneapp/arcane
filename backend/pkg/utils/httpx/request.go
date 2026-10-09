@@ -147,6 +147,7 @@ func NewHTTPClient(options httpxtypes.ClientOptions) *http.Client {
 	transport := &http.Transport{
 		Proxy:                 http.ProxyFromEnvironment,
 		MaxIdleConns:          100,
+		MaxIdleConnsPerHost:   32,
 		IdleConnTimeout:       90 * time.Second,
 		TLSHandshakeTimeout:   options.TLSHandshakeTimeout,
 		ExpectContinueTimeout: 1 * time.Second,

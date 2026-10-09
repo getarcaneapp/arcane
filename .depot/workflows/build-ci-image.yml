@@ -49,7 +49,7 @@ jobs:
           sudo apt-get install -y gcc gettext-base
 
       - name: Install version tools
-        uses: taiki-e/install-action@e407f7bafb71fd004bc5c2da3032e5470cbb6ef0 # v2.87.24
+        uses: taiki-e/install-action@f7e5d7c961414b23f5b25b2da9294395d08513ad # v2.87.26
         with:
           tool: just,git-cliff
           fallback: none

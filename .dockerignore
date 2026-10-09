@@ -1,57 +1,111 @@
-# Version control
+# Dependencies, build output, and caches
+**/build
+# This is a production Go domain, not build output.
+!backend/internal/build
+!backend/internal/build/**
+**/node_modules
+**/.pnpm-store
+**/dist
+**/.output
+**/.svelte-kit
+**/.vite
+**/.vitest
+**/.cache
+**/.fallow
+**/.turbo
+**/*.tsbuildinfo
+**/vite.config.*.timestamp-*
+**/.tmp
+**/.temp
+
+# Generated translations; Vite regenerates these from messages and settings.json
+frontend/src/lib/paraglide
+frontend/src/paraglide
+**/project.inlang/cache
+**/project.inlang/.lix
+**/project.inlang/.meta.json
+**/project.inlang/project_id
+
+# Tests and reports
+**/*_test.go
+**/*.test.[jt]s
+**/*.test.[jt]sx
+**/*.test.[cm][jt]s
+**/*.spec.[jt]s
+**/*.spec.[jt]sx
+**/*.spec.[cm][jt]s
+**/*.stories.[jt]s
+**/*.stories.[jt]sx
+**/*.stories.[cm][jt]s
+**/test-results
+**/playwright-report
+**/.report
+**/coverage
+**/.coverage
+**/.nyc_output
+**/coverage.*
+**/*.lcov
+**/junit*.xml
+
+# Workspace manifests are required by the frontend dependency install
+/tests/**
+!/tests/package.json
+/email-templates/**
+!/email-templates/package.json
+
+# Local runtime data and binaries; keep platform binaries used by static images
+/data
+/backend/data
+/backend/.bin
+/cli/arcane-cli
+/cli/arcane-cli.exe
+/backend/local-*.crt
+/backend/local-*.key
+/backend/local-*.pem
+
+# Environment, editor, and OS files
+**/.env
+**/.env.*
+**/.vscode
+**/.idea
+**/*.sublime-*
+**/*.swp
+**/*.swo
+**/.DS_Store
+**/Thumbs.db
+**/*.log
+
+# Repository tooling, documentation, and release configuration
 .git
 .github
-.gitignore
+**/.gitignore
+.gitattributes
+.claude
+.depot
+.devcontainer
+.deepsec
+.vite-hooks
+.golangci.yml
+.goreleaser.yaml
+Justfile
+LICENSE
+**/*.md
+/docs
+/scripts
+/completions
+/inspections
+cliff.toml
+cosign.pub
+crowdin.yml
+depot.json
+frontend/.fallowrc.json
+frontend/eslint.config.js
+frontend/components.json
+backend/.air.toml
 
-# Build artifacts
-node_modules
-.pnpm-store
-build
-.svelte-kit
-coverage
-.coverage
-.nyc_output
-.env
-.env.*
-!.env.example
-
-# Development tools
-.vscode
-.idea
-*.sublime-*
-*.swp
-*.swo
-
-# Docker related
+# Docker build definitions are supplied separately by the builder
+/docker
 Dockerfile
 .dockerignore
-docker-compose*.yml
-
-# Documentation and non-essential files
-README.md
-LICENSE
-*.md
-docs
-tests
-!tests/package.json
-**/*.test.js
-**/*.spec.js
-**/*.stories.js
-
-# Temporary files
-.tmp
-.temp
-.cache
-**/.DS_Store
-npm-debug.log
-yarn-debug.log
-yarn-error.log
-pnpm-debug.log
-
-# Large media files that should be mounted or stored elsewhere
-**/*.mp4
-**/*.mov
-**/*.iso
-**/*.tar
-**/*.gz
-**/*.zip
+**/docker-compose*.yml
+**/docker-compose*.yaml

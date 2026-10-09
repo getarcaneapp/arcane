@@ -237,7 +237,7 @@ func (s *TunnelServer) HandlePoll(c *echo.Context) error {
 	// In proxy-terminated mTLS deployments, the client certificate is consumed
 	// by the TLS terminator before this request reaches Arcane. The token is
 	// still needed as the poll protocol's environment lookup claim.
-	token, source := tokenFromHeadersWithSourceInternal(req)
+	token, source := agentToken(req.Header.Values)
 	if token == "" {
 		slog.WarnContext(ctx, "Edge poll request without token")
 		return c.JSON(http.StatusUnauthorized, map[string]any{"error": "agent token required"})
@@ -259,9 +259,9 @@ func (s *TunnelServer) HandlePoll(c *echo.Context) error {
 		)
 		return c.JSON(http.StatusUnauthorized, map[string]any{"error": "invalid agent token"})
 	}
-	if requireRequestCertificateIdentityErr := s.requireRequestCertificateIdentityInternal(req, envID); requireRequestCertificateIdentityErr != nil {
-		slog.WarnContext(ctx, "Rejected edge poll request with mismatched client certificate", "environmentId", envID, "error", requireRequestCertificateIdentityErr)
-		return c.JSON(http.StatusUnauthorized, map[string]any{"error": requireRequestCertificateIdentityErr.Error()})
+	if identityErr := s.requireCertificateIdentity(req.TLS, envID); identityErr != nil {
+		slog.WarnContext(ctx, "Rejected edge poll request with mismatched client certificate", "environmentId", envID, "error", identityErr)
+		return c.JSON(http.StatusUnauthorized, map[string]any{"error": identityErr.Error()})
 	}
 
 	pollInterval := DefaultTunnelPollInterval

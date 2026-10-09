@@ -349,7 +349,7 @@
 							</h3>
 							{#if currentUser.roleAssignments && currentUser.roleAssignments.length > 0}
 								<ul class="flex flex-wrap gap-2">
-									{#each currentUser.roleAssignments as ra (`${ra.roleId}-${ra.environmentId ?? 'global'}`)}
+									{#each currentUser.roleAssignments as ra (`${ra.source}-${ra.roleId}-${ra.environmentId ?? 'global'}`)}
 										<li class="rounded-lg border border-border/60 bg-muted/20 px-3 py-1.5">
 											<span class="text-sm font-medium">{prettyRoleName(ra.roleId)}</span>
 											<span class="ml-2 text-xs text-muted-foreground">

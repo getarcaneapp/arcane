@@ -138,14 +138,17 @@
 		}
 		// Group by roleId so a user assigned the same role on multiple envs gets
 		// one badge with a tooltip listing the env count.
-		const byRole = new Map<string, number>();
+		// A Set per role, since manual and OIDC can both grant the same environment.
+		const byRole = new Map<string, Set<string>>();
 		for (const a of assignments) {
-			byRole.set(a.roleId, (byRole.get(a.roleId) ?? 0) + 1);
+			const envs = byRole.get(a.roleId) ?? new Set<string>();
+			envs.add(a.environmentId ?? 'global');
+			byRole.set(a.roleId, envs);
 		}
-		return Array.from(byRole.entries()).map(([roleId, count]) => ({
+		return Array.from(byRole.entries()).map(([roleId, envs]) => ({
 			text: roleName(roleId),
 			variant: roleVariant(roleId),
-			tooltip: count > 1 ? m.users_role_summary_env_count({ count }) : undefined
+			tooltip: envs.size > 1 ? m.users_role_summary_env_count({ count: envs.size }) : undefined
 		}));
 	}
 

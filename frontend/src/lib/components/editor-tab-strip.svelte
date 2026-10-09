@@ -22,12 +22,24 @@
 	}
 
 	let { tabs, activeKey, onSelect, onClose, actions }: Props = $props();
+
+	// Middle-click anywhere on a tab closes it like browser and IDE tabs; preventing mousedown stops Windows auto-scroll.
+	function preventMiddleMouseDown(event: MouseEvent) {
+		if (event.button === 1) event.preventDefault();
+	}
+
+	function closeOnMiddleClick(event: MouseEvent, key: string) {
+		if (event.button !== 1) return;
+		event.preventDefault();
+		onClose(key);
+	}
 </script>
 
 <div class="flex h-9 shrink-0 items-center border-b border-border bg-muted/30">
 	<div class="scrollbar-hide flex h-full min-w-0 flex-1 items-center overflow-x-auto">
 		{#each tabs as tab (tab.key)}
 			{@const isActive = activeKey === tab.key}
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<div
 				class={cn(
 					'group relative flex h-full shrink-0 items-center border-r border-border',
@@ -35,6 +47,8 @@
 				)}
 				data-tab-key={tab.key}
 				data-active={isActive}
+				onmousedown={preventMiddleMouseDown}
+				onauxclick={(event) => closeOnMiddleClick(event, tab.key)}
 			>
 				{#if isActive}
 					<span class="absolute inset-x-0 top-0 h-0.5 bg-primary"></span>

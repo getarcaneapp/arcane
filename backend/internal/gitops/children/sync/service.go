@@ -107,31 +107,42 @@ func (s *Service) DirectoryProject(ctx context.Context, sync *projectpkg.GitOpsS
 // ReconcileRevision confirms an interrupted run when the record already holds
 // the source revision that run pinned.
 func ReconcileRevision(ctx context.Context, previous scheduler.Run, record *projectpkg.GitOpsSync, outcome scheduler.Outcome) (scheduler.Outcome, error) {
-	for _, target := range previous.Outcome.Targets {
-		if target.ID != record.ID || len(target.RecoveryData) == 0 {
-			continue
-		}
-		var revision syncRevisionInternal
-		if unmarshalErr := json.Unmarshal(target.RecoveryData, &revision); unmarshalErr != nil {
-			return outcome, unmarshalErr
-		}
-		if revision.Commit != "" && record.LastSyncCommit != nil && *record.LastSyncCommit == revision.Commit && record.LastSyncStatus != nil && *record.LastSyncStatus == "success" {
-			target.Status = scheduler.Succeeded
-			if progressErr := jobcontext.Progress(ctx, target); progressErr != nil {
-				return outcome, progressErr
-			}
-			return scheduler.Outcome{Status: scheduler.Succeeded, Targets: []scheduler.TargetOutcome{target}}, nil
-		}
+	target, commit, err := recordedRevision(previous, record.ID)
+	if err != nil {
+		return outcome, err
 	}
-	return outcome, nil
+	if commit == "" || kit.FromPtr(record.LastSyncCommit) != commit || kit.FromPtr(record.LastSyncStatus) != "success" {
+		return outcome, nil
+	}
+	target.Status = scheduler.Succeeded
+	if progressErr := jobcontext.Progress(ctx, target); progressErr != nil {
+		return outcome, progressErr
+	}
+	return scheduler.Outcome{Status: scheduler.Succeeded, Targets: []scheduler.TargetOutcome{target}}, nil
+}
+
+// recordedRevision returns the target and source revision an earlier run recorded for syncID.
+func recordedRevision(run scheduler.Run, syncID string) (scheduler.TargetOutcome, string, error) {
+	idx := slices.IndexFunc(run.Outcome.Targets, func(target scheduler.TargetOutcome) bool {
+		return target.ID == syncID && len(target.RecoveryData) > 0
+	})
+	if idx < 0 {
+		return scheduler.TargetOutcome{}, "", nil
+	}
+	var revision syncRevision
+	if err := json.Unmarshal(run.Outcome.Targets[idx].RecoveryData, &revision); err != nil {
+		return scheduler.TargetOutcome{}, "", err
+	}
+	return run.Outcome.Targets[idx], revision.Commit, nil
+}
+
+// syncRevision is the recovery data a sync run records so a retry replays the same source revision.
+type syncRevision struct {
+	Commit string `json:"commit"`
 }
 
 // preparedSyncSource captures the repository data needed by the sync execution
 // paths after the source repository has been cloned and validated.
-type syncRevisionInternal struct {
-	Commit string `json:"commit"`
-}
-
 type preparedSyncSource struct {
 	repoPath         string
 	commitHash       string
@@ -177,35 +188,56 @@ func (s *Service) prepareSyncSource(ctx context.Context, sync *projectpkg.GitOps
 		return nil, s.failSync(ctx, sync.ID, result, sync, actor, "Failed to get authentication config", err.Error())
 	}
 
-	repoPath, err := s.repoService.Clone(ctx, repository.URL, sync.Branch, authConfig)
+	// A retry replays the revision its interrupted predecessor recorded, which needs full history.
+	pinnedCommit := ""
+	if previous, ok := jobcontext.Run(ctx); ok {
+		if _, pinnedCommit, err = recordedRevision(previous, sync.ID); err != nil {
+			return nil, err
+		}
+	}
+	repoPath, err := s.repoService.Clone(ctx, repository.URL, sync.Branch, authConfig, kit.Ternary(pinnedCommit == "", 1, 0))
 	if err != nil {
 		return nil, s.failSync(ctx, sync.ID, result, sync, actor, "Failed to clone repository", err.Error())
 	}
+	source := &preparedSyncSource{repoPath: repoPath}
 
-	commitHash, err := s.repoService.GetCurrentCommit(ctx, repoPath)
+	source.commitHash, err = s.repoService.GetCurrentCommit(ctx, repoPath)
 	if err != nil {
 		slog.WarnContext(ctx, "Failed to get commit hash", "error", err)
-		commitHash = ""
+	}
+	if pinnedCommit != "" && pinnedCommit != source.commitHash {
+		repo, openErr := git.PlainOpen(repoPath)
+		if openErr != nil {
+			return source, openErr
+		}
+		tree, treeErr := repo.Worktree()
+		if treeErr != nil {
+			return source, treeErr
+		}
+		if checkoutErr := tree.Checkout(&git.CheckoutOptions{Hash: plumbing.NewHash(pinnedCommit)}); checkoutErr != nil {
+			return source, checkoutErr
+		}
+		source.commitHash = pinnedCommit
+	}
+	if source.commitHash == "" {
+		return source, errors.New("GitOps source revision is unavailable")
+	}
+	revision, err := json.Marshal(syncRevision{Commit: source.commitHash})
+	if err != nil {
+		return source, err
+	}
+	progress := scheduler.TargetOutcome{ResourceType: "gitops_sync", ID: sync.ID, Status: scheduler.Running, RecoveryData: revision}
+	if progressErr := jobcontext.Progress(ctx, progress); progressErr != nil {
+		return source, progressErr
 	}
 
-	commitHash, err = pinSyncRevisionInternal(ctx, sync.ID, repoPath, commitHash)
-	if err != nil {
-		return &preparedSyncSource{repoPath: repoPath}, err
-	}
 	if !s.repoService.FileExists(ctx, repoPath, sync.ComposePath) {
 		errMsg := "compose file not found: " + sync.ComposePath
-		return &preparedSyncSource{repoPath: repoPath, commitHash: commitHash}, s.failSync(ctx, sync.ID, result, sync, actor, "Compose file not found at "+sync.ComposePath, errMsg)
+		return source, s.failSync(ctx, sync.ID, result, sync, actor, "Compose file not found at "+sync.ComposePath, errMsg)
 	}
-
-	composeContent, err := s.repoService.ReadFile(ctx, repoPath, sync.ComposePath)
+	source.composeContent, err = s.repoService.ReadFile(ctx, repoPath, sync.ComposePath)
 	if err != nil {
-		return &preparedSyncSource{repoPath: repoPath, commitHash: commitHash}, s.failSync(ctx, sync.ID, result, sync, actor, "Failed to read compose file", err.Error())
-	}
-
-	source := &preparedSyncSource{
-		repoPath:       repoPath,
-		commitHash:     commitHash,
-		composeContent: composeContent,
+		return source, s.failSync(ctx, sync.ID, result, sync, actor, "Failed to read compose file", err.Error())
 	}
 
 	envPath := filepath.Join(filepath.Dir(sync.ComposePath), ".env")
@@ -246,45 +278,6 @@ func (s *Service) prepareSyncSource(ctx context.Context, sync *projectpkg.GitOps
 	}
 
 	return source, nil
-}
-
-func pinSyncRevisionInternal(ctx context.Context, syncID, repoPath, commitHash string) (string, error) {
-	if previous, ok := jobcontext.Run(ctx); ok {
-		for _, target := range previous.Outcome.Targets {
-			if target.ID != syncID || len(target.RecoveryData) == 0 {
-				continue
-			}
-			var revision syncRevisionInternal
-			if err := json.Unmarshal(target.RecoveryData, &revision); err != nil {
-				return "", err
-			}
-			if revision.Commit != "" && revision.Commit != commitHash {
-				repository, err := git.PlainOpen(repoPath)
-				if err != nil {
-					return "", err
-				}
-				tree, err := repository.Worktree()
-				if err != nil {
-					return "", err
-				}
-				if checkoutErr := tree.Checkout(&git.CheckoutOptions{Hash: plumbing.NewHash(revision.Commit)}); checkoutErr != nil {
-					return "", checkoutErr
-				}
-				commitHash = revision.Commit
-			}
-		}
-	}
-	revision, err := json.Marshal(syncRevisionInternal{Commit: commitHash})
-	if err != nil {
-		return "", err
-	}
-	if commitHash == "" {
-		return "", errors.New("GitOps source revision is unavailable")
-	}
-	if progressErr := jobcontext.Progress(ctx, scheduler.TargetOutcome{ResourceType: "gitops_sync", ID: syncID, Status: scheduler.Running, RecoveryData: revision}); progressErr != nil {
-		return "", progressErr
-	}
-	return commitHash, nil
 }
 
 // performDirectorySync runs the directory-sync path and only triggers a

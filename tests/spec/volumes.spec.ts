@@ -514,14 +514,20 @@ test.describe('Volumes shift-select', () => {
 		await openShiftSelectVolumes(page, 30);
 
 		await rowCheckbox(page, 2).click();
-		await page.getByRole('button', { name: 'Go to next page' }).click();
+		await page
+			.getByRole('navigation', { name: 'Bottom table pagination' })
+			.getByRole('button', { name: 'Go to next page' })
+			.click();
 		await expect(page.getByRole('link', { name: mockVolume(21).name, exact: true })).toBeVisible();
 		await rowCheckbox(page, 25).click({ modifiers: ['Shift'] });
 		await expectSelected(page, [25], true);
 		await expectSelected(page, [21, 22, 23, 24], false);
 		await expect(removeSelectedButton(page, 2)).toBeVisible();
 
-		await page.getByRole('button', { name: 'Go to first page' }).click();
+		await page
+			.getByRole('navigation', { name: 'Bottom table pagination' })
+			.getByRole('button', { name: 'Go to first page' })
+			.click();
 		await expect(page.getByRole('link', { name: mockVolume(1).name, exact: true })).toBeVisible();
 		await rowCheckbox(page, 4).click();
 		await page.getByRole('button', { name: 'Name', exact: true }).click();
@@ -629,15 +635,32 @@ test.describe('Volumes shift-select', () => {
 		await expect(page.getByRole('link', { name: mockVolume(1).name, exact: true })).toBeVisible();
 		await expect(page.locator('table tbody tr[data-index]').first()).toBeAttached();
 
+		const scrollContainer = page.locator('[data-table-scroll="desktop"]');
+		await expect
+			.poll(() =>
+				scrollContainer.evaluate((container) => container.scrollHeight > container.clientHeight)
+			)
+			.toBe(true);
+		const scrollToRow = async (index: number) => {
+			await scrollContainer.evaluate((container, rowIndex) => {
+				const row = container.querySelector('tr[data-index]');
+				if (!row) throw new Error('Expected a mounted virtual row');
+				container.scrollTop = (rowIndex - 1) * row.getBoundingClientRect().height;
+			}, index);
+			await expect(rowCheckbox(page, index)).toBeAttached();
+		};
+		await expect.poll(() => page.locator('table tbody tr[data-index]').count()).toBeLessThan(100);
 		await rowCheckbox(page, 1).click();
-		await rowCheckbox(page, 140).scrollIntoViewIfNeeded();
+		await scrollToRow(140);
 		await rowCheckbox(page, 140).click({ modifiers: ['Shift'] });
 
 		await expect(removeSelectedButton(page, 140)).toBeVisible();
 		await expectSelected(page, [140], true);
 		await expectSelected(page, [141, 150], false);
 
-		await rowCheckbox(page, 1).scrollIntoViewIfNeeded();
-		await expectSelected(page, [1, 2, 3, 70], true);
+		await scrollToRow(1);
+		await expectSelected(page, [1, 2, 3], true);
+		await scrollToRow(70);
+		await expectSelected(page, [70], true);
 	});
 });

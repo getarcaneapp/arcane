@@ -237,7 +237,7 @@ func DefaultSettingsConfig() *Settings {
 		AutoHealRestartWindow:                 SettingVariable{Value: "30"},
 		VolumeHelperIdleTimeout:               SettingVariable{Value: "10"},
 		BaseServerURL:                         SettingVariable{Value: "http://localhost"},
-		EnableGravatar:                        SettingVariable{Value: "true"},
+		EnableGravatar:                        SettingVariable{Value: "false"},
 		ExperimentalFeaturesEnabled:           SettingVariable{Value: "false"},
 		AvatarMaxUploadSizeMb:                 SettingVariable{Value: "2"},
 		DefaultShell:                          SettingVariable{Value: "/bin/sh"},

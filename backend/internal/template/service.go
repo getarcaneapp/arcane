@@ -1,6 +1,7 @@
 package template
 
 import (
+	"cmp"
 	"context"
 	"encoding/json/v2"
 	"errors"
@@ -61,9 +62,8 @@ type TemplateService struct {
 }
 
 const (
-	remoteCacheDuration    = 5 * time.Minute
-	fsSyncInterval         = 1 * time.Minute
-	remoteIconResolveLimit = 4
+	remoteCacheDuration = 5 * time.Minute
+	fsSyncInterval      = 1 * time.Minute
 
 	remoteIDPrefix = "remote"
 )
@@ -727,7 +727,6 @@ func (s *TemplateService) fetchRegistryTemplatesInternal(ctx context.Context, re
 	for _, remoteTemplate := range regDTO.Templates {
 		templates = append(templates, s.convertRemoteToLocal(remoteTemplate, reg))
 	}
-	s.enrichRemoteTemplateIcons(ctx, templates)
 
 	lm := resp.Header.Get("Last-Modified")
 	newMeta := &registryFetchMeta{
@@ -780,6 +779,8 @@ func (s *TemplateService) convertRemoteToLocal(remote tmpl.RemoteTemplate, regis
 			RemoteURL:        mo.EmptyableToOption(strings.TrimSpace(remote.ComposeURL)).ToPointer(),
 			EnvURL:           mo.EmptyableToOption(strings.TrimSpace(remote.EnvURL)).ToPointer(),
 			DocumentationURL: mo.EmptyableToOption(strings.TrimSpace(remote.DocumentationURL)).ToPointer(),
+			IconURL:          mo.EmptyableToOption(strings.TrimSpace(remote.IconURL)).ToPointer(),
+			RegistryIconURL:  mo.EmptyableToOption(strings.TrimSpace(remote.IconURL)).ToPointer(),
 		},
 	}
 }
@@ -819,34 +820,6 @@ func (s *TemplateService) fetchRemoteTemplateFiles(ctx context.Context, template
 	}
 
 	return composeContent, envContent, nil
-}
-
-func (s *TemplateService) enrichRemoteTemplateIcons(ctx context.Context, templates []ComposeTemplate) {
-	if len(templates) == 0 {
-		return
-	}
-
-	group, groupCtx := errgroup.WithContext(ctx)
-	group.SetLimit(remoteIconResolveLimit)
-
-	for i := range templates {
-		idx := i
-		group.Go(func() (workerErr error) {
-			defer utils.RecoverToError(&workerErr, "template worker")
-
-			composeContent, envContent, err := s.fetchRemoteTemplateFiles(groupCtx, &templates[idx])
-			if err != nil {
-				slog.WarnContext(groupCtx, "failed to fetch remote template content for icon extraction", "templateId", templates[idx].ID, "error", err)
-				setTemplateIconURL(&templates[idx], nil)
-				return nil
-			}
-
-			setTemplateIconURL(&templates[idx], projects.ResolveTemplateIconURL(groupCtx, composeContent, envContent))
-			return nil
-		})
-	}
-
-	_ = group.Wait()
 }
 
 func (s *TemplateService) fetchURL(ctx context.Context, url string) (string, error) {
@@ -1010,6 +983,7 @@ func cloneTemplateMetadata(meta *ComposeTemplateMetadata) *ComposeTemplateMetada
 		EnvURL:           mo.EmptyableToOption(strings.TrimSpace(mo.PointerToOption(meta.EnvURL).OrEmpty())).ToPointer(),
 		DocumentationURL: mo.EmptyableToOption(strings.TrimSpace(mo.PointerToOption(meta.DocumentationURL).OrEmpty())).ToPointer(),
 		IconURL:          mo.EmptyableToOption(strings.TrimSpace(mo.PointerToOption(meta.IconURL).OrEmpty())).ToPointer(),
+		RegistryIconURL:  mo.EmptyableToOption(strings.TrimSpace(mo.PointerToOption(meta.RegistryIconURL).OrEmpty())).ToPointer(),
 	}
 }
 
@@ -1158,7 +1132,8 @@ func setTemplateIconURL(template *ComposeTemplate, iconURL *string) {
 		template.Metadata = &ComposeTemplateMetadata{}
 	}
 
-	template.Metadata.IconURL = iconURL
+	// Downloaded templates fall back to their registry icon.
+	template.Metadata.IconURL = cmp.Or(iconURL, template.Metadata.RegistryIconURL)
 	if template.Metadata.Version == nil &&
 		template.Metadata.Author == nil &&
 		len(template.Metadata.Tags) == 0 &&
@@ -1188,9 +1163,8 @@ func (s *TemplateService) GetTemplateContentWithParsedData(ctx context.Context, 
 		if composeTemplate.EnvContent != nil {
 			envContent = *composeTemplate.EnvContent
 		}
+		setTemplateIconURL(composeTemplate, projects.ResolveTemplateIconURL(ctx, composeContent, envContent))
 	}
-
-	setTemplateIconURL(composeTemplate, projects.ResolveTemplateIconURL(ctx, composeContent, envContent))
 
 	var outTemplate tmpl.Template
 	if mapErr := mapping.MapStruct(composeTemplate, &outTemplate); mapErr != nil {
