@@ -422,15 +422,7 @@ func (h *ProjectHandler) DownProject(ctx context.Context, input *DownProjectInpu
 	activitylib.FlushWriter(activityWriter)
 	activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Project stopped", nil)
 
-	return &handlerutil.Out[base.MessageResponse]{
-		Body: base.ApiResponse[base.MessageResponse]{
-			Success: true,
-			Data: base.MessageResponse{
-				Message:    "Project brought down successfully",
-				ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer(),
-			},
-		},
-	}, nil
+	return handlerutil.MessageOutput("Project brought down successfully", activityID), nil
 }
 
 func projectUpdateHTTPErrorInternal(err error) error {
@@ -687,15 +679,7 @@ func (h *ProjectHandler) DestroyProject(ctx context.Context, input *DestroyProje
 	activitylib.FlushWriter(activityWriter)
 	activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Project destroyed", nil)
 
-	return &handlerutil.Out[base.MessageResponse]{
-		Body: base.ApiResponse[base.MessageResponse]{
-			Success: true,
-			Data: base.MessageResponse{
-				Message:    "Project destroyed successfully",
-				ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer(),
-			},
-		},
-	}, nil
+	return handlerutil.MessageOutput("Project destroyed successfully", activityID), nil
 }
 
 // UpdateProject updates a Docker Compose project.
@@ -943,12 +927,7 @@ func (h *ProjectHandler) ArchiveProject(ctx context.Context, input *ArchiveProje
 		return nil, huma.Error500InternalServerError("Failed to archive project: " + archiveProjectErr.Error())
 	}
 
-	return &handlerutil.Out[base.MessageResponse]{
-		Body: base.ApiResponse[base.MessageResponse]{
-			Success: true,
-			Data:    base.MessageResponse{Message: "Project archived successfully"},
-		},
-	}, nil
+	return handlerutil.MessageOutput("Project archived successfully", ""), nil
 }
 
 func (h *ProjectHandler) UnarchiveProject(ctx context.Context, input *UnarchiveProjectInput) (*handlerutil.Out[base.MessageResponse], error) {
@@ -965,12 +944,7 @@ func (h *ProjectHandler) UnarchiveProject(ctx context.Context, input *UnarchiveP
 		return nil, huma.Error500InternalServerError("Failed to unarchive project: " + unarchiveProjectErr.Error())
 	}
 
-	return &handlerutil.Out[base.MessageResponse]{
-		Body: base.ApiResponse[base.MessageResponse]{
-			Success: true,
-			Data:    base.MessageResponse{Message: "Project unarchived successfully"},
-		},
-	}, nil
+	return handlerutil.MessageOutput("Project unarchived successfully", ""), nil
 }
 
 // PullProjectImages pulls all images for a project with streaming progress.

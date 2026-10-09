@@ -157,7 +157,12 @@
 				</div>
 			{/if}
 			{#key activeHistoryJobId}
-				<JobRunHistory jobId={activeHistoryJobId} {environmentId} onUpdate={onScheduleUpdate} />
+				<JobRunHistory
+					jobId={activeHistoryJobId}
+					{environmentId}
+					onUpdate={onScheduleUpdate}
+					onOpenActivity={() => (open = false)}
+				/>
 			{/key}
 		{:else}
 			{#each errors as text (text)}

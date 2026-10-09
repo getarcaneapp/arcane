@@ -126,4 +126,11 @@ type CheckAllImagesRequest struct {
 	Credentials []containerregistry.Credential `json:"credentials,omitempty"`
 }
 
+// CheckRequest selects the images an update check covers. All discovers every
+// local image; otherwise only ImageRefs are checked, and an empty list checks nothing.
+type CheckRequest struct {
+	ImageRefs []string `json:"imageRefs,omitempty"`
+	All       bool     `json:"all,omitempty"`
+}
+
 type BatchResponse map[string]*Response

@@ -24,7 +24,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/gitops"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/gitrepo"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/job"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/network"
@@ -56,6 +55,7 @@ import (
 var ActorOptions = fx.Options(
 	fx.Provide(provideActorRuntimeInternal, provideRunCoordinatorInternal),
 	fx.Provide(provideAdmissionGateInternal),
+	fx.Provide(provideWorkflowEngineInternal),
 	fx.Provide(provideTunnelRegistryInternal),
 )
 
@@ -81,9 +81,9 @@ var ServiceOptions = fx.Options(
 		environment.NewEnvironmentService,
 		apns.NewApnsService,
 		notification.NewNotificationService,
-		vulnerability.NewVulnerabilityService,
-		imageupdate.NewImageUpdateService,
-		image.NewImageService,
+		provideVulnerabilityServiceInternal,
+		provideImageUpdateServiceInternal,
+		provideImageServiceInternal,
 		build.NewBuildService,
 		project.NewLifecycleService,
 		container.NewContainerService,
@@ -93,16 +93,16 @@ var ServiceOptions = fx.Options(
 		swarm.NewSwarmService,
 		template.NewTemplateService,
 		oidc.NewOidcService,
-		system.NewSystemService,
+		provideSystemServiceInternal,
 		diagnostics.NewDiagnosticsService,
-		gitops.NewGitOpsSyncService,
+		provideGitOpsSyncServiceInternal,
 		variable.NewVariableService,
 		backup.NewRecoveryKeyStore,
 		upload.NewUploadService,
 		auth.NewAuthService,
 		settings.NewSettingsSearchService,
 		fx.Annotate(settings.NewSettingsService, fx.OnStop(func(ctx context.Context, service *settings.SettingsService) error { return service.Stop(ctx) })),
-		fx.Annotate(volume.NewVolumeService, fx.OnStop(func(ctx context.Context, service *volume.VolumeService) { service.CleanupHelperContainers(ctx) })),
+		provideVolumeServiceInternal,
 		fx.Annotate(webhook.NewWebhookService,
 			fx.OnStart(func(ctx context.Context, service *webhook.WebhookService) error { return service.LoadTokenHashes(ctx) }),
 			fx.OnStop(func(ctx context.Context, service *webhook.WebhookService) {
@@ -163,7 +163,7 @@ var ServiceOptions = fx.Options(
 // remain bootstrap concerns because their ordering is application-specific.
 var JobOptions = fx.Options(
 	fx.Provide(
-		scheduler.NewAutoUpdateJob,
+		fx.Annotate(scheduler.NewAutoUpdateJob, fx.ResultTags(`name:"auto-update"`)),
 		scheduler.NewImageUpdateWatcher,
 		scheduler.NewDockerClientRefreshJob,
 		scheduler.NewAnalyticsJob,
@@ -172,9 +172,9 @@ var JobOptions = fx.Options(
 		scheduler.NewExpiredSessionsCleanupJob,
 		scheduler.NewScheduledPruneJob,
 		provideFilesystemWatcherJobInternal,
-		scheduler.NewVulnerabilityScanJob,
+		fx.Annotate(scheduler.NewVulnerabilityScanJob, fx.ResultTags(`name:"vulnerability-scan"`)),
 		scheduler.NewVulnerabilityRiskJob,
-		scheduler.NewAutoPatchJob,
+		fx.Annotate(scheduler.NewAutoPatchJob, fx.ResultTags(`name:"auto-patch"`)),
 		scheduler.NewAutoHealJob,
 		scheduler.NewActivitySweepJob,
 		scheduler.NewUploadSessionsCleanupJob,

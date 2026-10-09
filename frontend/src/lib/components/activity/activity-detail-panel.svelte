@@ -42,7 +42,7 @@
 							<Dialog.Description>{jobId}</Dialog.Description>
 						</Dialog.Header>
 						{#if historyOpen}
-							<JobRunHistory {jobId} {environmentId} initialRunId={runId} />
+							<JobRunHistory {jobId} {environmentId} initialRunId={runId} onOpenActivity={() => (historyOpen = false)} />
 						{/if}
 					</Dialog.Content>
 				</Dialog.Root>

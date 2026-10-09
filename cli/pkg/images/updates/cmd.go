@@ -26,6 +26,9 @@ var UpdatesCmd = &cobra.Command{
 
 var checkAll bool
 
+// checkAllBodyInternal is an empty JSON object; older servers reject check-all without a body.
+var checkAllBodyInternal = struct{}{}
+
 var checkCmd = &cobra.Command{
 	Use:   "check [image-ref...]",
 	Short: "Check image references for updates",
@@ -44,7 +47,7 @@ var checkCmd = &cobra.Command{
 				return errors.New("--all cannot be combined with image references")
 			}
 
-			result, checkAllUpdatesErr := c.PostJSON[imageupdate.BatchResponse](cmd.Context(), types.ImageUpdatesCheckAll(c.EnvID()), imageupdate.CheckAllImagesRequest{})
+			result, checkAllUpdatesErr := c.PostJSON[imageupdate.BatchResponse](cmd.Context(), types.ImageUpdatesCheckAll(c.EnvID()), checkAllBodyInternal)
 			if checkAllUpdatesErr != nil {
 				return fmt.Errorf("failed to check all updates: %w", checkAllUpdatesErr)
 			}
@@ -97,8 +100,7 @@ var checkAllCmd = &cobra.Command{
 			return err
 		}
 
-		// The handler declares a non-pointer Body, so an empty body is a 400.
-		result, err := c.PostJSON[imageupdate.BatchResponse](cmd.Context(), types.ImageUpdatesCheckAll(c.EnvID()), imageupdate.CheckAllImagesRequest{})
+		result, err := c.PostJSON[imageupdate.BatchResponse](cmd.Context(), types.ImageUpdatesCheckAll(c.EnvID()), checkAllBodyInternal)
 		if err != nil {
 			return fmt.Errorf("failed to check all updates: %w", err)
 		}

@@ -146,12 +146,7 @@ func (h *UploadHandler) DeleteSession(ctx context.Context, input *DeleteUploadSe
 		}
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
-	return &handlerutil.Out[base.MessageResponse]{
-		Body: base.ApiResponse[base.MessageResponse]{
-			Success: true,
-			Data:    base.MessageResponse{Message: "Upload session deleted"},
-		},
-	}, nil
+	return handlerutil.MessageOutput("Upload session deleted", ""), nil
 }
 
 // LegacyMultipartMiddleware converts a deprecated multipart/form-data request

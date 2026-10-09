@@ -9,8 +9,25 @@ export type JobRunStatus =
 	| 'failed'
 	| 'needs_attention'
 	| 'canceled';
-export type JobTargetOutcome = { id: string; status: JobRunStatus; message?: string; activityId?: string };
-export type JobOutcome = { status: JobRunStatus; message?: string; activityId?: string; targets?: JobTargetOutcome[] };
+export type JobTargetOutcome = { id: string; resourceType?: string; status: JobRunStatus; message?: string; activityId?: string };
+export type JobStepOutcome = {
+	name: string;
+	status: JobRunStatus;
+	total?: number;
+	completed?: number;
+	failed?: number;
+	attempts?: number;
+	message?: string;
+	startedAt?: string;
+	finishedAt?: string;
+};
+export type JobOutcome = {
+	status: JobRunStatus;
+	message?: string;
+	activityId?: string;
+	targets?: JobTargetOutcome[];
+	steps?: JobStepOutcome[];
+};
 export type JobAttempt = { number: number; startedAt: string; finishedAt?: string; outcome: JobOutcome };
 export type JobRun = {
 	id: string;

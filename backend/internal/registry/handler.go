@@ -8,7 +8,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
-	"go.getarcane.app/kit/pkg"
+	kit "go.getarcane.app/kit/pkg"
 	"go.getarcane.app/sys/crypto"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
@@ -161,14 +161,7 @@ func (h *ContainerRegistryHandler) DeleteRegistry(ctx context.Context, input *De
 
 	h.triggerRemoteRegistrySync(ctx, "registry deletion")
 
-	return &handlerutil.Out[base.MessageResponse]{
-		Body: base.ApiResponse[base.MessageResponse]{
-			Success: true,
-			Data: base.MessageResponse{
-				Message: "Container registry deleted successfully",
-			},
-		},
-	}, nil
+	return handlerutil.MessageOutput("Container registry deleted successfully", ""), nil
 }
 
 // TestRegistry tests connectivity to a container registry.
@@ -184,14 +177,7 @@ func (h *ContainerRegistryHandler) TestRegistry(ctx context.Context, input *Test
 		if testECRRegistryErr := h.registryService.TestECRRegistry(ctx, reg); testECRRegistryErr != nil {
 			return nil, huma.Error400BadRequest("Registry test failed: " + testECRRegistryErr.Error())
 		}
-		return &handlerutil.Out[base.MessageResponse]{
-			Body: base.ApiResponse[base.MessageResponse]{
-				Success: true,
-				Data: base.MessageResponse{
-					Message: "ECR authentication succeeded",
-				},
-			},
-		}, nil
+		return handlerutil.MessageOutput("ECR authentication succeeded", ""), nil
 	}
 
 	decryptedToken, err := crypto.Decrypt(reg.Token)
@@ -206,14 +192,7 @@ func (h *ContainerRegistryHandler) TestRegistry(ctx context.Context, input *Test
 	noCredentials := strings.TrimSpace(reg.Username) == "" && strings.TrimSpace(decryptedToken) == ""
 	msg := kit.Ternary(noCredentials, "Registry saved (no credentials to test)", "Authentication succeeded")
 
-	return &handlerutil.Out[base.MessageResponse]{
-		Body: base.ApiResponse[base.MessageResponse]{
-			Success: true,
-			Data: base.MessageResponse{
-				Message: msg,
-			},
-		},
-	}, nil
+	return handlerutil.MessageOutput(msg, ""), nil
 }
 
 // SyncRegistries syncs container registries from a remote source.
@@ -223,14 +202,7 @@ func (h *ContainerRegistryHandler) SyncRegistries(ctx context.Context, input *Sy
 		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to sync registries: "+err.Error())
 	}
 
-	return &handlerutil.Out[base.MessageResponse]{
-		Body: base.ApiResponse[base.MessageResponse]{
-			Success: true,
-			Data: base.MessageResponse{
-				Message: "Registries synced successfully",
-			},
-		},
-	}, nil
+	return handlerutil.MessageOutput("Registries synced successfully", ""), nil
 }
 
 func (h *ContainerRegistryHandler) triggerRemoteRegistrySync(ctx context.Context, reason string) {

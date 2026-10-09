@@ -30,6 +30,15 @@ type Out[T any] struct {
 	Body base.ApiResponse[T]
 }
 
+// MessageOutput is a success response carrying a message and, when an activity tracks the work, its ID.
+func MessageOutput(message, activityID string) *Out[base.MessageResponse] {
+	data := base.MessageResponse{Message: message}
+	if activityID = strings.TrimSpace(activityID); activityID != "" {
+		data.ActivityID = &activityID
+	}
+	return &Out[base.MessageResponse]{Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: data}}
+}
+
 // Page is the huma response envelope for endpoints returning base.Paginated[T].
 type Page[T any] struct {
 	Body base.Paginated[T]

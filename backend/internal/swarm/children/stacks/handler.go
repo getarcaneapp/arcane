@@ -217,7 +217,7 @@ func (h *Handler) DeleteStack(ctx context.Context, input *DeleteSwarmStackInput)
 
 	h.audit(ctx, input.EnvironmentID, "stack.delete", "swarm_stack", input.Name, input.Name, map[string]any{"stack": input.Name})
 
-	return &handlerutil.Out[base.MessageResponse]{Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: base.MessageResponse{Message: "Swarm stack removed successfully"}}}, nil
+	return handlerutil.MessageOutput("Swarm stack removed successfully", ""), nil
 }
 
 // ListStackServices lists services belonging to a swarm stack.

@@ -23,6 +23,9 @@ const (
 	Canceled       RunStatus = "canceled"
 )
 
+// WorkflowTarget marks the target that records a run's workflow instance.
+const WorkflowTarget = "workflow"
+
 func (s RunStatus) Terminal() bool {
 	return s == Succeeded || s == Partial || s == Skipped || s == Failed || s == Canceled
 }
@@ -36,11 +39,25 @@ type TargetOutcome struct {
 	ActivityID   string         `json:"activityId,omitempty"`
 }
 
+// StepOutcome is one workflow step as projected onto its run.
+type StepOutcome struct {
+	Name       string     `json:"name"`
+	Status     RunStatus  `json:"status"`
+	Total      int        `json:"total,omitempty"`
+	Completed  int        `json:"completed,omitempty"`
+	Failed     int        `json:"failed,omitempty"`
+	Attempts   int        `json:"attempts,omitempty"`
+	Message    string     `json:"message,omitempty"`
+	StartedAt  *time.Time `json:"startedAt,omitempty"`
+	FinishedAt *time.Time `json:"finishedAt,omitempty"`
+}
+
 type Outcome struct {
 	Status     RunStatus       `json:"status"`
 	Message    string          `json:"message,omitempty"`
 	ActivityID string          `json:"activityId,omitempty"`
 	Targets    []TargetOutcome `json:"targets,omitempty"`
+	Steps      []StepOutcome   `json:"steps,omitempty"`
 }
 
 type Request struct {

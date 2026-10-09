@@ -25,7 +25,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/user"
 	"github.com/labstack/echo/v5"
 	"github.com/samber/mo"
-	"go.getarcane.app/kit/pkg"
+	kit "go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
@@ -272,14 +272,7 @@ func (h *AuthHandler) ChangePassword(ctx context.Context, input *ChangePasswordI
 		}
 	}
 
-	return &handlerutil.Out[base.MessageResponse]{
-		Body: base.ApiResponse[base.MessageResponse]{
-			Success: true,
-			Data: base.MessageResponse{
-				Message: "Password changed successfully",
-			},
-		},
-	}, nil
+	return handlerutil.MessageOutput("Password changed successfully", ""), nil
 }
 
 // LogoutAllOtherSessions revokes every active session for the current user
@@ -295,14 +288,7 @@ func (h *AuthHandler) LogoutAllOtherSessions(ctx context.Context, input *struct{
 		return nil, huma.Error500InternalServerError("failed to revoke sessions: " + logoutAllOtherSessionsErr.Error())
 	}
 
-	return &handlerutil.Out[base.MessageResponse]{
-		Body: base.ApiResponse[base.MessageResponse]{
-			Success: true,
-			Data: base.MessageResponse{
-				Message: "All other sessions signed out",
-			},
-		},
-	}, nil
+	return handlerutil.MessageOutput("All other sessions signed out", ""), nil
 }
 
 // validatePreferencesInternal checks the preference values Huma's enum tags

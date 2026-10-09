@@ -33,10 +33,8 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
 	scheduleutil "github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/schedule"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 )
 
 // JobService manages configuration for background job schedules.
@@ -624,7 +622,7 @@ func (s *JobService) executeRunInternal(ctx context.Context, run scheduler.Run) 
 			return scheduler.Outcome{Status: scheduler.Waiting, Message: "Waiting for Docker"}, err
 		}
 	}
-	ctx = s.runContextInternal(ctx, run)
+	ctx = s.runs.ExecutionContext(ctx, run, "")
 	if run.JobID == "environment-health" && s.RunEnvironmentHealthNow != nil {
 		err := s.RunEnvironmentHealthNow(ctx)
 		return classifyOutcomeInternal(run.JobID, scheduler.Outcome{}, err)
@@ -697,7 +695,7 @@ func (s *JobService) reconcileRunInternal(ctx context.Context, run scheduler.Run
 	if s.scheduler != nil {
 		if job, ok := s.scheduler.GetJob(run.JobID); ok {
 			if reconciler, localOk := job.(scheduler.Reconciler); localOk {
-				return reconciler.Reconcile(s.runContextInternal(ctx, run), run)
+				return reconciler.Reconcile(s.runs.ExecutionContext(ctx, run, ""), run)
 			}
 		}
 	}
@@ -723,7 +721,7 @@ func (s *JobService) reconcileRunInternal(ctx context.Context, run scheduler.Run
 	}
 	if job, ok := s.scheduler.GetJob(run.JobID); ok {
 		if reconciler, localOk2 := job.(scheduler.Reconciler); localOk2 {
-			outcome, err := reconciler.Reconcile(s.runContextInternal(ctx, run), run)
+			outcome, err := reconciler.Reconcile(s.runs.ExecutionContext(ctx, run, ""), run)
 			if err != nil {
 				slog.WarnContext(ctx, "Job reconciliation requires attention", "runId", run.ID, "error", err)
 			}
@@ -731,29 +729,6 @@ func (s *JobService) reconcileRunInternal(ctx context.Context, run scheduler.Run
 		}
 	}
 	return scheduler.Outcome{Status: scheduler.Failed, Message: "Interrupted operation has no confirmed completion", Targets: run.Outcome.Targets}, nil
-}
-
-func (s *JobService) runContextInternal(ctx context.Context, run scheduler.Run) context.Context {
-	ctx = utils.WithActivityBatchID(ctx, run.ID)
-	ctx = jobcontext.WithExecution(ctx, run, func(target scheduler.TargetOutcome) error {
-		return s.runs.UpdateRun(ctx, run, func(current *scheduler.Run) error {
-			if current.Status != scheduler.Running || current.Owner != run.Owner {
-				return runs.ErrRunConflict
-			}
-			for index := range current.Outcome.Targets {
-				if current.Outcome.Targets[index].ID == target.ID {
-					if len(target.RecoveryData) == 0 {
-						target.RecoveryData = current.Outcome.Targets[index].RecoveryData
-					}
-					current.Outcome.Targets[index] = target
-					return nil
-				}
-			}
-			current.Outcome.Targets = append(current.Outcome.Targets, target)
-			return nil
-		})
-	})
-	return ctx
 }
 
 func requiresDockerInternal(jobID string) bool {

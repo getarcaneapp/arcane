@@ -35,6 +35,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/flow/flowtest"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/imageref"
 )
 
@@ -741,4 +742,11 @@ func TestImageServiceContainerTagUpdatesStayScoped(t *testing.T) {
 	require.NotContains(t, checks, "moving-tag", "a tag policy never falls back to the shared digest check")
 	require.NotContains(t, checks, "moving-no-id", "a missing runtime image ID matches nothing")
 	require.NotSame(t, checks["moving"], checks["moving-twin"], "each container receives its own copy")
+}
+
+func TestPatchWorkflowDefinitions(t *testing.T) {
+	harness := flowtest.New(t, nil)
+	require.NoError(t, (&ImageService{}).RegisterWorkflows(harness.Engine))
+	harness.Start(t)
+	flowtest.AssertDefinitions(t, harness)
 }

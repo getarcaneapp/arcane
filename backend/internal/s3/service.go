@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/getarcaneapp/arcane/types/v2/backup"
@@ -83,17 +84,22 @@ func (s *S3DestinationService) ListAllS3Destinations(ctx context.Context) ([]bac
 	return s3DestinationsToDTOsInternal(destinations), nil
 }
 
-// ListS3DestinationsByID indexes destination DTOs for backup metadata lookups.
-func (s *S3DestinationService) ListS3DestinationsByID(ctx context.Context) (map[string]backup.S3Destination, error) {
+// DestinationsByID indexes destinations to decorate backup records, such as with their names. Decoration never fails
+// its caller, so a missing service or failed listing yields an empty index.
+func (s *S3DestinationService) DestinationsByID(ctx context.Context) map[string]backup.S3Destination {
+	if s == nil {
+		return nil
+	}
 	destinations, err := s.ListAllS3Destinations(ctx)
 	if err != nil {
-		return nil, err
+		slog.WarnContext(ctx, "could not list S3 destinations", "error", err)
+		return nil
 	}
 	indexed := make(map[string]backup.S3Destination, len(destinations))
 	for _, destination := range destinations {
 		indexed[destination.ID] = destination
 	}
-	return indexed, nil
+	return indexed
 }
 
 func (s *S3DestinationService) getS3DestinationModelInternal(ctx context.Context, id string) (*S3Destination, error) {

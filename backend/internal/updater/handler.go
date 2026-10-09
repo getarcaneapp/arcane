@@ -102,7 +102,7 @@ func (h *UpdaterHandler) GetUpdaterHistory(ctx context.Context, input *GetUpdate
 	}, nil
 }
 
-func (h *UpdaterHandler) updateContainerInternal(ctx context.Context, input *UpdateContainerInput) (*updateContainerOutput, error) {
+func (h *UpdaterHandler) updateContainer(ctx context.Context, input *UpdateContainerInput) (*updateContainerOutput, error) {
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	if input.Async {
 		acceptedActivity, err := h.updaterService.AcceptSingleContainerUpdate(runtimeCtx, input.ContainerID)

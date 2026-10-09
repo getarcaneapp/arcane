@@ -279,14 +279,7 @@ func (h *UserHandler) DeleteUser(ctx context.Context, input *DeleteUserInput) (*
 		h.invalidateUserTokenCache(input.UserID)
 	}
 
-	return &handlerutil.Out[base.MessageResponse]{
-		Body: base.ApiResponse[base.MessageResponse]{
-			Success: true,
-			Data: base.MessageResponse{
-				Message: "User deleted successfully",
-			},
-		},
-	}, nil
+	return handlerutil.MessageOutput("User deleted successfully", ""), nil
 }
 
 // GetUserAvatar returns the custom profile picture for a usertypes.

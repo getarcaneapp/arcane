@@ -19,6 +19,7 @@ import (
 	"github.com/samber/mo"
 	"go.getarcane.app/kit/pkg"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
@@ -309,6 +310,18 @@ func (s *ActivityService) StartActivity(ctx context.Context, req StartActivityRe
 		return nil, err
 	}
 
+	if req.ID != "" {
+		var existing Activity
+		err := s.db.WithContext(ctx).Where("id = ?", req.ID).Limit(1).Find(&existing).Error
+		if err != nil {
+			return nil, fmt.Errorf("failed to load activity: %w", err)
+		}
+		if existing.ID != "" {
+			dto := activityToDTOInternal(&existing)
+			return &dto, nil
+		}
+	}
+
 	now := time.Now()
 	environmentID := cmp.Or(strings.TrimSpace(req.EnvironmentID), "0")
 
@@ -361,15 +374,30 @@ func (s *ActivityService) StartActivity(ctx context.Context, req StartActivityRe
 		Metadata:             cloneJSONInternal(req.Metadata),
 		CreatedAt:            now,
 	}
+	model.ID = req.ID
 	if model.Type == "" {
 		model.Type = activity.TypeAutoUpdate
 	}
 
-	if err := s.db.WithContext(ctx).Create(model).Error; err != nil {
+	create := s.db.WithContext(ctx)
+	if req.ID != "" {
+		create = create.Clauses(clause.OnConflict{DoNothing: true})
+	}
+	created := create.Create(model)
+	if created.Error != nil || created.RowsAffected == 0 {
 		if slotRelease != nil {
 			slotRelease()
 		}
-		return nil, fmt.Errorf("failed to create activity: %w", err)
+		if created.Error != nil {
+			return nil, fmt.Errorf("failed to create activity: %w", created.Error)
+		}
+		// A concurrent start with the same ID created it first.
+		var existing Activity
+		if err := s.db.WithContext(ctx).First(&existing, "id = ?", req.ID).Error; err != nil {
+			return nil, fmt.Errorf("failed to load activity: %w", err)
+		}
+		dto := activityToDTOInternal(&existing)
+		return &dto, nil
 	}
 	if slotRelease != nil {
 		s.registerSlotReleaseInternal(model.ID, slotRelease)

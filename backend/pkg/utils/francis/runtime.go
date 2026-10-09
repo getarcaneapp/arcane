@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -17,6 +18,7 @@ import (
 	"time"
 
 	"github.com/italypaleale/francis/actor"
+	"github.com/italypaleale/francis/builtin/workflow"
 	"github.com/italypaleale/francis/components"
 	"github.com/italypaleale/francis/host/local"
 	"github.com/libtnb/sqlite"
@@ -34,6 +36,7 @@ type Runtime struct {
 	mu            sync.Mutex
 	options       []local.HostOption
 	registrations []registration
+	workflows     []*workflow.Workflow
 	service       *actor.Service
 	ready         chan struct{}
 	done          chan struct{}
@@ -147,6 +150,20 @@ func (r *Runtime) RegisterActor(actorType string, factory actor.Factory, options
 	return nil
 }
 
+// RegisterWorkflow adds a Francis workflow, registered on every host attempt.
+func (r *Runtime) RegisterWorkflow(wf *workflow.Workflow) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.started {
+		return errors.New("workflows must be registered before startup")
+	}
+	if slices.ContainsFunc(r.workflows, func(existing *workflow.Workflow) bool { return existing.Name() == wf.Name() }) {
+		return fmt.Errorf("workflow %q is already registered", wf.Name())
+	}
+	r.workflows = append(r.workflows, wf)
+	return nil
+}
+
 // Start waits for host registration. appCtx owns the running host; ctx only
 // limits startup. onFailure must cancel the application without blocking.
 func (r *Runtime) Start(ctx, appCtx context.Context, onFailure func(error)) error {
@@ -233,16 +250,26 @@ func (r *Runtime) runHost(ctx context.Context) (*local.Host, chan error, error) 
 	if err != nil {
 		return nil, nil, err
 	}
+	var registerErr error
 	for _, registration := range r.registrations {
-		if registerActorErr := host.RegisterActor(registration.actorType, registration.factory, registration.options...); registerActorErr != nil {
-			// Running a canceled host closes its provider-owned connections.
-			cleanupCtx, cancel := context.WithCancel(ctx)
-			cancel()
-			if cleanupErr := host.Run(cleanupCtx); cleanupErr != nil {
-				return nil, nil, errors.Join(registerActorErr, fmt.Errorf("clean up unregistered actor host: %w", cleanupErr))
-			}
-			return nil, nil, registerActorErr
+		if registerErr = host.RegisterActor(registration.actorType, registration.factory, registration.options...); registerErr != nil {
+			break
 		}
+	}
+	for _, wf := range r.workflows {
+		if registerErr != nil {
+			break
+		}
+		registerErr = host.RegisterBuiltInActor(wf)
+	}
+	if registerErr != nil {
+		// Running a canceled host closes its provider-owned connections.
+		cleanupCtx, cancel := context.WithCancel(ctx)
+		cancel()
+		if cleanupErr := host.Run(cleanupCtx); cleanupErr != nil {
+			return nil, nil, errors.Join(registerErr, fmt.Errorf("clean up unregistered actor host: %w", cleanupErr))
+		}
+		return nil, nil, registerErr
 	}
 	localErrors := make(chan error, 1)
 	go func() { localErrors <- host.Run(ctx) }()

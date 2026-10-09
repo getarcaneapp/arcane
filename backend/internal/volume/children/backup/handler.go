@@ -13,6 +13,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/getarcaneapp/arcane/types/v2/volume"
 	"github.com/samber/mo"
+	kit "go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
@@ -136,19 +137,14 @@ func (h *Handler) ListBackups(ctx context.Context, input *ListBackupsInput) (*Li
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
 
-	warning := h.service.backupMountWarningInternal(ctx)
+	warning := h.service.backupMountWarning(ctx)
 
 	return &ListBackupsOutput{
 		Body: VolumeBackupPaginatedResponse{
 			Success:    true,
 			Data:       backups,
 			Pagination: handlerutil.PaginationResponse(paginationResp),
-			Warnings: func() []string {
-				if warning == "" {
-					return nil
-				}
-				return []string{warning}
-			}(),
+			Warnings:   kit.Ternary(warning == "", nil, []string{warning}),
 		},
 	}, nil
 }
@@ -158,11 +154,7 @@ func (h *Handler) CreateBackup(ctx context.Context, input *CreateBackupInput) (*
 	if err != nil {
 		return nil, err
 	}
-	request := volume.CreateBackupRequest{}
-	if input.Body != nil {
-		request = *input.Body
-	}
-	entry, err := h.service.StartBackup(utils.ActivityRuntimeContext(ctx, h.appCtx), input.EnvironmentID, input.VolumeName, *user, request)
+	entry, err := h.service.StartBackup(utils.ActivityRuntimeContext(ctx, h.appCtx), input.EnvironmentID, input.VolumeName, *user, kit.FromPtr(input.Body))
 	if errors.Is(err, h.service.deps.AlreadyRunning) {
 		return nil, huma.Error409Conflict(err.Error())
 	}
@@ -197,12 +189,7 @@ func (h *Handler) DeleteBackup(ctx context.Context, input *DeleteBackupInput) (*
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
-	return &handlerutil.Out[base.MessageResponse]{
-		Body: base.ApiResponse[base.MessageResponse]{
-			Success: true,
-			Data:    base.MessageResponse{Message: "Backup deleted successfully", ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()},
-		},
-	}, nil
+	return handlerutil.MessageOutput("Backup deleted successfully", activityID), nil
 }
 
 func (h *Handler) DiscoverBackups(ctx context.Context, input *DiscoverVolumeBackupsInput) (*DiscoverVolumeBackupsOutput, error) {
@@ -225,9 +212,6 @@ func (h *Handler) DiscoverBackups(ctx context.Context, input *DiscoverVolumeBack
 }
 
 func (h *Handler) UploadBackup(ctx context.Context, input *UploadBackupInput) (*handlerutil.Out[*volume.Backup], error) {
-	if h.service == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
 	user, _ := userctx.CurrentUserFromContext(ctx)
 	var uploaded *volume.Backup
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)

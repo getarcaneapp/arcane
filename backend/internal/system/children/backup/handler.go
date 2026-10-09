@@ -3,13 +3,11 @@ package backup
 import (
 	"context"
 	"errors"
-	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
 	"github.com/getarcaneapp/arcane/types/v2/backup"
 	"github.com/getarcaneapp/arcane/types/v2/base"
-	"github.com/samber/mo"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
@@ -248,7 +246,7 @@ func (h *Handler) Restore(ctx context.Context, input *RestoreSystemBackupInput) 
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
-	return messageOutputInternal("Arcane system restore started", activityID), nil
+	return handlerutil.MessageOutput("Arcane system restore started", activityID), nil
 }
 
 // BrowseFiles returns one lazy-loaded project tree page.
@@ -285,7 +283,7 @@ func (h *Handler) RestoreFiles(ctx context.Context, input *RestoreSystemBackupFi
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
-	return messageOutputInternal("Arcane project files restored successfully", activityID), nil
+	return handlerutil.MessageOutput("Arcane project files restored successfully", activityID), nil
 }
 
 func (h *Handler) Upload(ctx context.Context, input *UploadSystemBackupInput) (*SystemBackupOutput, error) {
@@ -324,21 +322,5 @@ func (h *Handler) Delete(ctx context.Context, input *DeleteSystemBackupInput) (*
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
-	return messageOutputInternal("Arcane system backup deleted successfully", activityID), nil
-}
-
-func messageOutputInternal(message, activityID string) *handlerutil.Out[base.MessageResponse] {
-	return &handlerutil.Out[base.MessageResponse]{
-		Body: base.ApiResponse[base.MessageResponse]{
-			Success: true,
-			Data: base.MessageResponse{
-				Message: message,
-				ActivityID: mo.EmptyableToOption(
-					strings.TrimSpace(
-						activityID,
-					),
-				).ToPointer(),
-			},
-		},
-	}
+	return handlerutil.MessageOutput("Arcane system backup deleted successfully", activityID), nil
 }

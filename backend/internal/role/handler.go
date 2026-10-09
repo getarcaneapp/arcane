@@ -152,9 +152,7 @@ func (h *RoleHandler) DeleteRole(ctx context.Context, input *DeleteRoleInput) (*
 		}
 		return nil, huma.Error500InternalServerError("failed to delete role: " + err.Error())
 	}
-	return &handlerutil.Out[base.MessageResponse]{
-		Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: base.MessageResponse{Message: "role deleted"}},
-	}, nil
+	return handlerutil.MessageOutput("role deleted", ""), nil
 }
 
 func (h *RoleHandler) GetPermissionsManifest(_ context.Context, _ *struct{}) (*handlerutil.Out[roletypes.PermissionsManifest], error) {

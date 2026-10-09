@@ -95,7 +95,7 @@ func TestListPatchTargets_ExcludesUntaggedImages(t *testing.T) {
 	require.Equal(t, "nginx:latest", targets[0].ImageRef)
 }
 
-func patchFeatureSettingsInternal(t *testing.T) (*settings.SettingsService, *database.DB) {
+func patchFeatureSettings(t *testing.T) (*settings.SettingsService, *database.DB) {
 	t.Helper()
 	gdb, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
@@ -110,7 +110,7 @@ func patchFeatureSettingsInternal(t *testing.T) (*settings.SettingsService, *dat
 }
 
 func TestVulnerabilityFeatureBlocksReportPatchesOnly(t *testing.T) {
-	settingsSvc, db := patchFeatureSettingsInternal(t)
+	settingsSvc, db := patchFeatureSettings(t)
 	require.NoError(t, settingsSvc.SetBoolSetting(t.Context(), features.VulnerabilityManagementSettingKey, false))
 	svc := &Service{
 		settingsService: settingsSvc,
@@ -121,7 +121,7 @@ func TestVulnerabilityFeatureBlocksReportPatchesOnly(t *testing.T) {
 	require.ErrorIs(t, err, common.ErrFeatureDisabled)
 	_, _, err = svc.ListPatchTargets(t.Context(), "0", pagination.QueryParams{})
 	require.ErrorIs(t, err, common.ErrFeatureDisabled)
-	_, _, err = svc.PatchFlaggedImages(t.Context(), "0", user.Actor{})
+	_, err = svc.Targets(t.Context(), "0")
 	require.ErrorIs(t, err, common.ErrFeatureDisabled)
 	// Standalone patching still reaches Docker; this test deliberately has no daemon.
 	_, err = svc.PatchImage(t.Context(), "0", "test-image", imagepatch.PatchOptions{}, user.Actor{})
@@ -131,7 +131,7 @@ func TestVulnerabilityFeatureBlocksReportPatchesOnly(t *testing.T) {
 }
 
 func TestQueuedReportPatchStopsWhenFeatureDisabled(t *testing.T) {
-	settingsSvc, db := patchFeatureSettingsInternal(t)
+	settingsSvc, db := patchFeatureSettings(t)
 	svc := &Service{settingsService: settingsSvc, db: db, patchSlot: make(chan struct{}, 1)}
 	record := &ImagePatchRecord{EnvironmentID: "0", OriginalImageID: "test-image", Mode: string(imagepatch.PatchModeReport), Status: string(imagepatch.PatchStatusPatching)}
 	require.NoError(t, db.Create(record).Error)
@@ -139,7 +139,7 @@ func TestQueuedReportPatchStopsWhenFeatureDisabled(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		svc.patchInBackgroundInternal(t.Context(), record, imagepatch.PatchOptions{ScanID: "test-image"}, nil, "", "")
+		_ = svc.runPatch(t.Context(), record, imagepatch.PatchOptions{ScanID: "test-image"}, nil, "", "")
 	}()
 	require.NoError(t, settingsSvc.SetBoolSetting(t.Context(), features.VulnerabilityManagementSettingKey, false))
 	// The active patch owns its slot until it finishes normally.
@@ -159,7 +159,7 @@ func TestQueuedReportPatchStopsWhenFeatureDisabled(t *testing.T) {
 }
 
 func TestDisabledFeatureSkipsPatchVerificationScan(t *testing.T) {
-	settingsSvc, _ := patchFeatureSettingsInternal(t)
+	settingsSvc, _ := patchFeatureSettings(t)
 	require.NoError(t, settingsSvc.SetBoolSetting(t.Context(), features.VulnerabilityManagementSettingKey, false))
 	var inspected atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -178,7 +178,7 @@ func TestDisabledFeatureSkipsPatchVerificationScan(t *testing.T) {
 		vulnerabilityService: &vulnerability.VulnerabilityService{},
 	}
 	require.NotPanics(t, func() {
-		svc.verifyPatchedImageInternal(t.Context(), &ImagePatchRecord{EnvironmentID: "0", PatchedRef: "test:patched"}, "")
+		svc.verifyPatchedImage(t.Context(), &ImagePatchRecord{EnvironmentID: "0", PatchedRef: "test:patched"}, "")
 	})
 	require.Equal(t, int32(1), inspected.Load())
 }

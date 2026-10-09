@@ -99,7 +99,7 @@ func (h *ImageUpdateHandler) CheckMultipleImages(ctx context.Context, input *Che
 	}
 
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-	results, err := h.imageUpdateService.CheckMultipleImages(runtimeCtx, input.Body.ImageRefs, input.Body.Credentials)
+	results, err := h.imageUpdateService.CheckImages(runtimeCtx, imageupdate.CheckRequest{ImageRefs: input.Body.ImageRefs}, input.Body.Credentials)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to check image updates: " + err.Error())
 	}
@@ -114,7 +114,7 @@ func (h *ImageUpdateHandler) CheckMultipleImages(ctx context.Context, input *Che
 
 func (h *ImageUpdateHandler) CheckAllImages(ctx context.Context, input *CheckAllImagesInput) (*handlerutil.Out[imageupdate.BatchResponse], error) {
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-	results, err := h.imageUpdateService.CheckAllImages(runtimeCtx, 0, input.Body.Credentials)
+	results, err := h.imageUpdateService.CheckImages(runtimeCtx, imageupdate.CheckRequest{All: true}, input.Body.Credentials)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to check all images: " + err.Error())
 	}

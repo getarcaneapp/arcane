@@ -89,13 +89,7 @@ var jobMetadataRegistry = map[string]JobMetadata{
 		ManagerOnly:    false,
 		IsContinuous:   false,
 		CanRunManually: true,
-		Prerequisites: []JobPrerequisiteMetadata{
-			{
-				SettingKey:  "analyticsEnabled",
-				Label:       "Analytics enabled",
-				SettingsURL: "/settings/general",
-			},
-		},
+		Prerequisites:  []JobPrerequisiteMetadata{},
 	},
 	"auto-update": {
 		ID:             "auto-update",

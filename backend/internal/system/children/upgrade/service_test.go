@@ -23,6 +23,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/version"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/flow/flowtest"
 )
 
 // TestService_UpgradeFlag tests the upgrading flag behavior
@@ -192,14 +193,14 @@ func TestUpdateAllAgentFailureStatus(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, tt.want, updateAllAgentFailureStatusInternal(tt.err))
+			require.Equal(t, tt.want, updateAllAgentFailureStatus(tt.err))
 		})
 	}
 }
 
 // A blank-target self-upgrade resolves its image from the version check (#3687).
 // Explicit targets from the updater engine never reach this function.
-func TestResolveSelfUpgradeTargetImageInternal(t *testing.T) {
+func TestResolveSelfUpgradeTargetImage(t *testing.T) {
 	tests := []struct {
 		name         string
 		currentImage string
@@ -259,7 +260,7 @@ func TestResolveSelfUpgradeTargetImageInternal(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := resolveSelfUpgradeTargetImageInternal(tt.currentImage, tt.info)
+			got, err := resolveSelfUpgradeTargetImage(tt.currentImage, tt.info)
 			if tt.wantErr != "" {
 				require.ErrorContains(t, err, tt.wantErr)
 				return
@@ -342,7 +343,7 @@ func TestResolveSelfUpgradeTargetImageInternal(t *testing.T) {
 				Labels: map[string]string{"com.docker.compose.project": "arcane", "com.docker.compose.service": "server"},
 			}}
 
-			got, saveCompose, err := svc.configuredTargetImageInternal(t.Context(), current, tt.target)
+			got, saveCompose, err := svc.configuredTargetImage(t.Context(), current, tt.target)
 			if tt.wantErr != "" {
 				require.ErrorContains(t, err, tt.wantErr)
 				require.Nil(t, saveCompose)
@@ -425,7 +426,7 @@ func TestUpdateAllResolveResumeAction(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := resolveResumeActionInternal(tt.job, tt.currentVersion, tt.currentDigest, now)
+			got := resolveResumeAction(tt.job, tt.currentVersion, tt.currentDigest, now)
 
 			require.Equal(t, tt.wantStale, got.markStale,
 				"markStale = %v, want %v", got.markStale, tt.wantStale)
@@ -434,15 +435,6 @@ func TestUpdateAllResolveResumeAction(t *testing.T) {
 				"managerSucceeded = %v, want %v", got.managerSucceeded, tt.wantManagerOK)
 		})
 	}
-}
-
-// A force-update with an unknown latest (offline or rate-limited version check)
-// must still record a target — the current identifiers — so the resume check can
-// recognize a same-image recreation as success instead of finalizing it as failed.
-func TestUpdateAllTargetVersionFallsBackToCurrent(t *testing.T) {
-	require.Equal(t, "v2.0.0", updateAllTargetVersionInternal(&versiontypes.Info{NewestVersion: "v2.0.0", CurrentVersion: "v1.2.3"}))
-	require.Equal(t, "v1.2.3", updateAllTargetVersionInternal(&versiontypes.Info{CurrentVersion: "v1.2.3", CurrentDigest: "sha256:a"}))
-	require.Equal(t, "sha256:a", updateAllTargetVersionInternal(&versiontypes.Info{CurrentDigest: "sha256:a"}))
 }
 
 func TestUpsertPendingResult(t *testing.T) {
@@ -455,7 +447,7 @@ func TestUpsertPendingResult(t *testing.T) {
 	{
 
 		// A seeded environment resolves to its existing row without appending.
-		idx := upsertPendingResultInternal(job, "abc", "palladium")
+		idx := upsertPendingResult(job, "abc", "palladium")
 		require.Equal(t, 1, idx,
 			"existing env index = %d, want 1", idx)
 	}
@@ -465,7 +457,7 @@ func TestUpsertPendingResult(t *testing.T) {
 
 	// A missing environment (seeding raced or a new env was registered) appends a
 	// fresh pending row and returns the new index.
-	idx := upsertPendingResultInternal(job, "xyz", "oracle-cloud")
+	idx := upsertPendingResult(job, "xyz", "oracle-cloud")
 
 	require.Equal(t, 2, idx,
 		"new env index = %d, want 2", idx)
@@ -505,7 +497,7 @@ func TestUpdateAllFailedJobMarksUpdatingResultsFailed(t *testing.T) {
 	require.NoError(t, db.WithContext(ctx).Create(job).Error)
 
 	reason := "interrupted by manager restart"
-	svc.markUpdateAllFailedInternal(ctx, job, reason)
+	svc.markUpdateAllFailed(ctx, job, reason)
 
 	var got EnvironmentUpdateJob
 	require.NoError(t, db.WithContext(ctx).First(&got, "id = ?", job.ID).Error)
@@ -555,8 +547,7 @@ func TestUpdateAllFinalizesUpToDateManagerWithoutRestart(t *testing.T) {
 	}
 	require.NoError(t, db.WithContext(ctx).Create(job).Error)
 
-	svc.recordManagerResultInternal(job, EnvironmentUpdateResultStatusUpToDate, "v1.0.0")
-	svc.finalizeUpdateAllJobInternal(ctx, job)
+	svc.finalizeUpdateAllJob(ctx, job, EnvironmentUpdateResultStatusUpToDate, "v1.0.0")
 
 	var got EnvironmentUpdateJob
 	require.NoError(t, db.WithContext(ctx).First(&got, "id = ?", job.ID).Error)
@@ -594,15 +585,15 @@ func TestUpdateAllStageChangesPersist(t *testing.T) {
 	}
 	require.NoError(t, db.WithContext(ctx).Create(job).Error)
 
-	svc.setUpdateStageInternal(ctx, job, &job.Results[0], EnvironmentUpdateStageChecking)
+	svc.setUpdateStage(ctx, job, &job.Results[0], EnvironmentUpdateStageChecking)
 	started := job.Results[0].StageStartedAt
 	require.NotNil(t, started)
 	require.WithinDuration(t, time.Now(), *started, time.Second)
 
-	svc.setUpdateStageInternal(ctx, job, &job.Results[0], EnvironmentUpdateStageChecking)
+	svc.setUpdateStage(ctx, job, &job.Results[0], EnvironmentUpdateStageChecking)
 	require.Same(t, started, job.Results[0].StageStartedAt)
 
-	svc.setUpdateStageInternal(ctx, job, &job.Results[0], EnvironmentUpdateStageStarting)
+	svc.setUpdateStage(ctx, job, &job.Results[0], EnvironmentUpdateStageStarting)
 	var got EnvironmentUpdateJob
 	require.NoError(t, db.WithContext(ctx).First(&got, "id = ?", job.ID).Error)
 	require.Equal(t, EnvironmentUpdateStageStarting, got.Results[0].Stage)
@@ -688,6 +679,10 @@ func TestResumeUpdateAllFinalizesManagerWithoutRerunningAgents(t *testing.T) {
 	// is judged successful.
 	versionSvc := version.NewVersionService(nil, true, "v9.9.9-new", "", nil, nil, nil, nil)
 	svc := NewService(db, nil, versionSvc, event.NewEventService(db, nil, nil), nil, nil, nil)
+	harness := flowtest.New(t, nil)
+	require.NoError(t, svc.RegisterWorkflows(harness.Engine, nil, nil))
+	harness.Start(t)
+	flowtest.AssertDefinitions(t, harness)
 
 	job := &EnvironmentUpdateJob{
 		Status:                EnvironmentUpdateJobStatusPendingRestart,

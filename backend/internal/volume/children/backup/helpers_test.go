@@ -24,19 +24,17 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 )
 
-func TestResolveBackupStorageMountFromMountsInternal(t *testing.T) {
+func TestResolveBackupStorageMountFromMounts(t *testing.T) {
 	tests := []struct {
 		name         string
 		mounts       []container.MountPoint
 		target       string
 		readOnly     bool
 		wantResolved bool
-		wantMode     backupStorageMode
 		wantType     mount.Type
 		wantSource   string
 		wantTarget   string
 		wantReadOnly bool
-		wantEnsure   bool
 	}{
 		{
 			name: "mirrors bind mount",
@@ -46,7 +44,6 @@ func TestResolveBackupStorageMountFromMountsInternal(t *testing.T) {
 			target:       "/volume",
 			readOnly:     true,
 			wantResolved: true,
-			wantMode:     backupStorageModeArcaneMount,
 			wantType:     mount.TypeBind,
 			wantSource:   "/host/backups",
 			wantTarget:   "/volume",
@@ -60,7 +57,6 @@ func TestResolveBackupStorageMountFromMountsInternal(t *testing.T) {
 			target:       "/volume",
 			readOnly:     false,
 			wantResolved: true,
-			wantMode:     backupStorageModeArcaneMount,
 			wantType:     mount.TypeBind,
 			wantSource:   "/host/backups",
 			wantTarget:   "/volume",
@@ -74,7 +70,6 @@ func TestResolveBackupStorageMountFromMountsInternal(t *testing.T) {
 			target:       "/backups",
 			readOnly:     false,
 			wantResolved: true,
-			wantMode:     backupStorageModeArcaneMount,
 			wantType:     mount.TypeVolume,
 			wantSource:   "arcane-backups",
 			wantTarget:   "/backups",
@@ -99,40 +94,21 @@ func TestResolveBackupStorageMountFromMountsInternal(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, ok := resolveBackupStorageMountFromMountsInternal(t.Context(), tt.mounts, tt.target, tt.readOnly).Get()
-			require.Equal(t, tt.wantResolved, ok)
+			got := resolveBackupStorageMountFromMounts(t.Context(), tt.mounts, tt.target, tt.readOnly)
+			require.Equal(t, tt.wantResolved, got != nil)
 			if !tt.wantResolved {
 				return
 			}
 
-			require.Equal(t, tt.wantMode, got.mode)
-			require.Equal(t, tt.wantType, got.mount.Type)
-			require.Equal(t, tt.wantSource, got.mount.Source)
-			require.Equal(t, tt.wantTarget, got.mount.Target)
-			require.Equal(t, tt.wantReadOnly, got.mount.ReadOnly)
-			require.Equal(t, tt.wantEnsure, got.requiresEnsure)
+			require.Equal(t, tt.wantType, got.Type)
+			require.Equal(t, tt.wantSource, got.Source)
+			require.Equal(t, tt.wantTarget, got.Target)
+			require.Equal(t, tt.wantReadOnly, got.ReadOnly)
 		})
 	}
 }
 
-func TestResolveBackupStorageMountInternalFallsBackToNamedVolume(t *testing.T) {
-	svc := NewService(Dependencies{BackupVolumeName: "arcane-backups"})
-
-	got := svc.resolveBackupStorageMountInternal(t.Context(), nil, "/backups", true)
-	require.Equal(t, backupStorageModeNamedVolumeFallback, got.mode)
-	require.Equal(t, mount.TypeVolume, got.mount.Type)
-	require.Equal(t, "arcane-backups", got.mount.Source)
-	require.Equal(t, "/backups", got.mount.Target)
-	require.True(t, got.mount.ReadOnly)
-	require.True(t, got.requiresEnsure)
-}
-
-func TestBackupMountWarningForStorageInternal(t *testing.T) {
-	require.Empty(t, backupMountWarningForStorageInternal(backupStorageMountInternal{mode: backupStorageModeArcaneMount}))
-	require.Equal(t, backupMountMissingWarning, backupMountWarningForStorageInternal(backupStorageMountInternal{mode: backupStorageModeNamedVolumeFallback}))
-}
-
-func TestBackupMountWarningFromArcaneMountsInternal(t *testing.T) {
+func TestBackupMountWarningFromArcaneMounts(t *testing.T) {
 	tests := []struct {
 		name   string
 		mounts []container.MountPoint
@@ -184,12 +160,12 @@ func TestBackupMountWarningFromArcaneMountsInternal(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, tt.want, backupMountWarningFromArcaneMountsInternal(t.Context(), tt.mounts))
+			require.Equal(t, tt.want, backupMountWarningFromArcaneMounts(tt.mounts))
 		})
 	}
 }
 
-func setupVolumeBackupLifecycleTestInternal(t *testing.T, handler http.Handler) (*Service, *client.Client) {
+func setupVolumeBackupLifecycleTest(t *testing.T, handler http.Handler) (*Service, *client.Client) {
 	t.Helper()
 
 	server := httptest.NewServer(handler)
@@ -235,14 +211,14 @@ func TestVolumeBackupContainerLifecycleStopsAndRestartsOnlyRunningContainersUsin
 		}
 	})
 
-	service, dockerClient := setupVolumeBackupLifecycleTestInternal(t, serverHandler)
+	service, dockerClient := setupVolumeBackupLifecycleTest(t, serverHandler)
 	actor := user.Actor{ID: "user-1", Username: "tester"}
-	stopped, err := service.stopRunningContainersForBackupInternal(t.Context(), dockerClient, "app-data", actor, false)
+	stopped, err := service.stopRunningContainersForBackup(t.Context(), dockerClient, "app-data", actor, false)
 	require.NoError(t, err)
 	require.Len(t, stopped, 1)
 	require.Equal(t, "uses-volume", stopped[0].ID)
 
-	remaining, err := service.startContainersAfterBackupInternal(t.Context(), dockerClient, stopped, actor)
+	remaining, err := service.startContainersAfterBackup(t.Context(), dockerClient, stopped, actor)
 	require.NoError(t, err)
 	require.Empty(t, remaining)
 	require.Equal(t, []string{"stop:uses-volume", "start:uses-volume"}, operations)
@@ -279,9 +255,9 @@ func TestVolumeBackupContainerLifecycleRollsBackStoppedContainersOnStopFailure(t
 		}
 	})
 
-	service, dockerClient := setupVolumeBackupLifecycleTestInternal(t, serverHandler)
+	service, dockerClient := setupVolumeBackupLifecycleTest(t, serverHandler)
 	actor := user.Actor{ID: "user-1", Username: "tester"}
-	stillStopped, err := service.stopRunningContainersForBackupInternal(t.Context(), dockerClient, "app-data", actor, false)
+	stillStopped, err := service.stopRunningContainersForBackup(t.Context(), dockerClient, "app-data", actor, false)
 	require.ErrorContains(t, err, "failed to stop container second")
 	require.Empty(t, stillStopped)
 	require.Equal(t, []string{"stop:first", "stop:second", "start:first"}, operations)
@@ -339,14 +315,14 @@ func TestVolumeBackupContainerLifecycleWaitsForRunningComposeReplacement(t *test
 		}
 	})
 
-	service, dockerClient := setupVolumeBackupLifecycleTestInternal(t, serverHandler)
+	service, dockerClient := setupVolumeBackupLifecycleTest(t, serverHandler)
 	actor := user.Actor{ID: "user-1", Username: "tester"}
-	stopped, err := service.stopRunningContainersForBackupInternal(t.Context(), dockerClient, "app-data", actor, false)
+	stopped, err := service.stopRunningContainersForBackup(t.Context(), dockerClient, "app-data", actor, false)
 	require.NoError(t, err)
 	require.Len(t, stopped, 1)
 	require.Equal(t, "old-id", stopped[0].ID)
 
-	remaining, err := service.startContainersAfterBackupInternal(t.Context(), dockerClient, stopped, actor)
+	remaining, err := service.startContainersAfterBackup(t.Context(), dockerClient, stopped, actor)
 	require.NoError(t, err)
 	require.Empty(t, remaining)
 	require.Equal(t, []string{"stop:old-id"}, operations)

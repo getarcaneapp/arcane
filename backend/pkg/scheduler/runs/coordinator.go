@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -20,6 +21,8 @@ import (
 	kit "go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/francis"
 )
 
@@ -367,6 +370,7 @@ func (q *Coordinator) persistOutcomeInternal(ctx context.Context, run st.Run, ou
 				last := &current.Attempts[len(current.Attempts)-1]
 				last.FinishedAt = &now
 				last.Outcome = outcome
+				last.Outcome.Steps = nil
 			}
 			return nil
 		})
@@ -508,7 +512,51 @@ func mergeTargetProgressInternal(previous, outcome st.Outcome) st.Outcome {
 		}
 	}
 	outcome.ActivityID = cmp.Or(outcome.ActivityID, previous.ActivityID)
+	if len(outcome.Steps) == 0 {
+		outcome.Steps = previous.Steps
+	}
 	return outcome
+}
+
+// ExecutionContext binds durable progress for work executing a run. An empty
+// instanceID fences writes by run owner; otherwise by the active workflow instance.
+func (q *Coordinator) ExecutionContext(ctx context.Context, run st.Run, instanceID string) context.Context {
+	ctx = utils.WithActivityBatchID(ctx, run.ID)
+	return jobcontext.WithExecution(ctx, run, func(target st.TargetOutcome) error {
+		return q.UpdateRun(ctx, run, func(current *st.Run) error {
+			if !fencedInternal(current, run, instanceID) {
+				return ErrRunConflict
+			}
+			current.Outcome.Targets = jobcontext.Merge(current.Outcome.Targets, target)
+			return nil
+		})
+	})
+}
+
+// RecordSteps projects workflow step progress onto a running run.
+func (q *Coordinator) RecordSteps(ctx context.Context, run st.Run, instanceID string, steps []st.StepOutcome) error {
+	return q.UpdateRun(ctx, run, func(current *st.Run) error {
+		if !fencedInternal(current, run, instanceID) {
+			return ErrRunConflict
+		}
+		current.Outcome.Steps = steps
+		return nil
+	})
+}
+
+// fencedInternal reports whether work may still write to a run.
+func fencedInternal(current *st.Run, run st.Run, instanceID string) bool {
+	if instanceID == "" {
+		return current.Status == st.Running && current.Owner == run.Owner
+	}
+	return ActiveWorkflow(*current, instanceID)
+}
+
+// ActiveWorkflow reports whether a running run still follows a workflow instance.
+func ActiveWorkflow(run st.Run, instanceID string) bool {
+	return run.Status == st.Running && slices.ContainsFunc(run.Outcome.Targets, func(target st.TargetOutcome) bool {
+		return target.ResourceType == st.WorkflowTarget && target.ID == instanceID && !target.Status.Terminal()
+	})
 }
 
 func (q *Coordinator) Active() bool { return q.enabled.Load() }
