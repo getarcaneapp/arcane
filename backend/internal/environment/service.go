@@ -1213,7 +1213,9 @@ func (s *EnvironmentService) TestConnection(ctx context.Context, id string, cust
 	}
 	status, err := s.health.Probe(ctx, id, apiURL, envRecord.IsEdge, customApiUrl != nil)
 	if customApiUrl == nil {
-		_ = s.updateEnvironmentStatusInternal(ctx, id, status)
+		if updateErr := s.updateEnvironmentStatusInternal(ctx, id, status); updateErr != nil {
+			slog.WarnContext(ctx, "Failed to persist environment status", "environmentId", id, "status", status, "error", updateErr)
+		}
 		return status, err
 	}
 	if err != nil {
@@ -1261,13 +1263,13 @@ func (s *EnvironmentService) UpdateEnvironmentHeartbeat(ctx context.Context, id 
 	now := time.Now()
 
 	// Use Exec with raw SQL for better performance
-	// Only update if last_seen is NULL or older than 30 seconds to reduce write frequency
+	// Throttle unchanged online status to one write every 30 seconds.
 	result := s.db.WithContext(ctx).Exec(`
 		UPDATE environments
 		SET last_seen = ?, status = ?, updated_at = ?
 		WHERE id = ?
-		AND (last_seen IS NULL OR last_seen < ?)
-	`, new(now), string(EnvironmentStatusOnline), new(now), id, now.Add(-30*time.Second))
+		AND (status != ? OR last_seen IS NULL OR last_seen < ?)
+	`, new(now), string(EnvironmentStatusOnline), new(now), id, string(EnvironmentStatusOnline), now.Add(-30*time.Second))
 
 	if result.Error != nil {
 		// The 30s throttle above doubles as the notify throttle: a no-op heartbeat

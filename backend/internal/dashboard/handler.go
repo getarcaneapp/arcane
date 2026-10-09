@@ -3,6 +3,7 @@ package dashboard
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"time"
@@ -248,6 +249,15 @@ func (h *DashboardHandler) runRemoteDashboardStreamPollerInternal(ctx context.Co
 			return
 		}
 		lastError = ""
+		// A successful snapshot proves the manager reaches this direct agent; edge liveness comes from the tunnel.
+		if !currentEnvironment.IsEdge {
+			// Legacy snapshots may succeed after the fetch deadline.
+			heartbeatCtx, cancelHeartbeat := context.WithTimeout(ctx, 5*time.Second)
+			defer cancelHeartbeat()
+			if heartbeatErr := h.environmentService.UpdateEnvironmentHeartbeat(heartbeatCtx, environmentID); heartbeatErr != nil {
+				slog.WarnContext(ctx, "Failed to update environment heartbeat", "environmentId", environmentID, "error", heartbeatErr)
+			}
+		}
 		publish(dashboard.StreamEvent{
 			Type:          "snapshot",
 			EnvironmentID: environmentID,
