@@ -1,21 +1,17 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { createMutation } from '@tanstack/svelte-query';
 	import { untrack } from 'svelte';
-	import { toast } from 'svelte-sonner';
 
 	import { BoxIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { queryKeys } from '#lib/query/query-keys.js';
 	import { containerService } from '#lib/services/container-service.js';
 	import type { ContainerListRequestOptions } from '#lib/services/container-service.js';
-	import { imageService } from '#lib/services/image-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { ContainerStatusCounts } from '#lib/types/docker.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
-	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { hasPermission } from '#lib/utils/auth.js';
+	import { confirmAndApplyAllUpdates } from '#lib/utils/update-actions.js';
 
 	import ContainerEnvironmentSync from './components/container-environment-sync.svelte';
 	import ContainerTable from './components/container-table.svelte';
@@ -31,6 +27,7 @@
 	let refreshGeneration = 0;
 	let groupByProject = $state(false);
 	let hasSeenEnvironmentSync = $state(false);
+	let isApplyingUpdates = $state(false);
 	const resourcesReady = $derived(displayedEnvId === envId);
 
 	const countsFallback: ContainerStatusCounts = {
@@ -66,24 +63,6 @@
 		}
 	}
 
-	const checkUpdatesMutation = createMutation(() => ({
-		mutationKey: queryKeys.containers.checkUpdates(envId),
-		mutationFn: async () => {
-			const requestedEnvId = envId;
-			const result = await imageService.runAutoUpdate(undefined, requestedEnvId);
-			return { requestedEnvId, result };
-		},
-		onSuccess: async ({ requestedEnvId, result }) => {
-			toast.success(m.containers_check_updates_success(), activityToastOptions(extractActivityId(result)));
-			if (requestedEnvId === envId) {
-				await refreshContainers(buildRequestOptions(), requestedEnvId);
-			}
-		},
-		onError: () => {
-			toast.error(m.containers_check_updates_failed());
-		}
-	}));
-
 	function handleEnvironmentChange() {
 		if (!hasSeenEnvironmentSync) {
 			hasSeenEnvironmentSync = true;
@@ -109,10 +88,6 @@
 			return;
 		}
 		return refreshContainers(buildRequestOptions(nextOptions), envId);
-	}
-
-	async function handleCheckForUpdates() {
-		await checkUpdatesMutation.mutateAsync();
 	}
 
 	async function refresh() {
@@ -141,9 +116,13 @@
 						id: 'check-updates',
 						action: 'update',
 						label: m.containers_check_updates(),
-						onclick: handleCheckForUpdates,
-						loading: checkUpdatesMutation.isPending,
-						disabled: !resourcesReady || checkUpdatesMutation.isPending
+						onclick: () =>
+							confirmAndApplyAllUpdates({
+								setLoading: (loading) => (isApplyingUpdates = loading),
+								onRefresh: () => refreshContainers()
+							}),
+						loading: isApplyingUpdates,
+						disabled: !resourcesReady || isApplyingUpdates
 					}
 				: null,
 			{

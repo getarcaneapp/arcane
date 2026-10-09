@@ -319,8 +319,9 @@ func getKnownHostsPathsInternal(
 	}
 }
 
-// Clone clones a repository to a temporary directory
-func (c *Client) Clone(ctx context.Context, url, branch string, auth AuthConfig) (string, error) {
+// Clone clones a repository to a temporary directory. A depth of 0 fetches the
+// full history; read-only callers pass 1 to fetch only the branch tip.
+func (c *Client) Clone(ctx context.Context, url, branch string, auth AuthConfig, depth int) (string, error) {
 	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, 5*time.Minute)
@@ -362,6 +363,7 @@ func (c *Client) Clone(ctx context.Context, url, branch string, auth AuthConfig)
 	cloneOptions := &git.CloneOptions{
 		URL:      url,
 		Progress: nil,
+		Depth:    depth,
 	}
 
 	if authMethod != nil {
@@ -374,6 +376,13 @@ func (c *Client) Clone(ctx context.Context, url, branch string, auth AuthConfig)
 	}
 
 	_, err = git.PlainCloneContext(ctx, tmpDir, false, cloneOptions)
+	if err != nil && depth > 0 && strings.Contains(err.Error(), "shallow") {
+		// Servers without shallow support, go-git's own included, get a full clone.
+		cloneOptions.Depth = 0
+		if err = os.RemoveAll(tmpDir); err == nil {
+			_, err = git.PlainCloneContext(ctx, tmpDir, false, cloneOptions)
+		}
+	}
 	if err != nil {
 		_ = os.RemoveAll(tmpDir)
 		return "", fmt.Errorf("failed to clone repository: %w", err)
@@ -639,7 +648,7 @@ func (c *Client) TestConnection(ctx context.Context, url, branch string, auth Au
 		return err
 	}
 
-	tmpDir, err := c.Clone(ctx, url, branch, auth)
+	tmpDir, err := c.Clone(ctx, url, branch, auth, 1)
 	if err != nil {
 		return err
 	}

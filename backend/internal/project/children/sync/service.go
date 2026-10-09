@@ -243,19 +243,37 @@ func ApplyGitSyncEnv(ctx context.Context, projectPath, projectsDirectory string,
 	return update.State.DirectContent, kit.FromPtr(update.EffectiveContent), nil
 }
 
-// LoadComposeMetadata loads a discovered project's compose file once and
-// returns the service count plus compose-go's effective project name.
-func LoadComposeMetadata(ctx context.Context, dirPath, dirName, projectsDirectory string, autoInjectEnv bool, pathMapper *projects.PathMapper) (project.ComposeIdentity, error) {
+// LoadComposeMetadata returns a discovered project's service count plus
+// compose-go's effective project name. Results are cached by dirPath until a
+// compose, include or env file changes.
+func LoadComposeMetadata(
+	ctx context.Context,
+	cache project.ComposeCache[project.ComposeIdentity],
+	dirPath, dirName, projectsDirectory string,
+	autoInjectEnv bool,
+	pathMapper *projects.PathMapper,
+) (project.ComposeIdentity, error) {
 	normName := projects.NormalizeProjectName(dirName)
 	meta := project.ComposeIdentity{
 		ResolvedProjectName: normName,
 	}
 
+	composeFile, err := projects.DetectComposeFile(ctx, projectsDirectory, dirPath)
+	if err != nil {
+		return meta, err
+	}
+	fingerprint := fmt.Sprintf("%q|%q|%q|%t|%#v", composeFile, normName, projectsDirectory, autoInjectEnv, pathMapper)
+	if cached, ok := cache.Get(dirPath, fingerprint); ok {
+		return cached, nil
+	}
+
 	// Load unnamed first so COMPOSE_PROJECT_NAME from .env wins; fall back to
 	// the normalized directory name when that fails.
-	proj, _, err := projects.LoadComposeProjectFromDir(ctx, dirPath, "", projectsDirectory, autoInjectEnv, pathMapper)
+	dependencies := project.ComposeDependencies{}
+	proj, err := projects.LoadComposeProject(ctx, composeFile, "", projectsDirectory, autoInjectEnv, pathMapper, nil, nil, false, &dependencies, nil, nil)
 	if err != nil {
-		proj, _, err = projects.LoadComposeProjectFromDir(ctx, dirPath, normName, projectsDirectory, autoInjectEnv, pathMapper)
+		dependencies = project.ComposeDependencies{}
+		proj, err = projects.LoadComposeProject(ctx, composeFile, normName, projectsDirectory, autoInjectEnv, pathMapper, nil, nil, false, &dependencies, nil, nil)
 		if err != nil {
 			return meta, err
 		}
@@ -273,5 +291,10 @@ func LoadComposeMetadata(ctx context.Context, dirPath, dirName, projectsDirector
 		meta.ComposeProjectName = new(proj.Name)
 	}
 
+	if composeFiles, envFiles, ok := projects.ComposeCacheDependencies(ctx, proj, dependencies, composeFile, projectsDirectory, autoInjectEnv); ok {
+		if setErr := cache.Set(dirPath, fingerprint, dirPath, projectsDirectory, composeFile, composeFiles, envFiles, meta); setErr != nil {
+			slog.DebugContext(ctx, "failed to cache compose metadata", "path", dirPath, "error", setErr)
+		}
+	}
 	return meta, nil
 }

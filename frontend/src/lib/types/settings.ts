@@ -69,6 +69,7 @@ export type Settings = {
 	gitSyncMaxBinarySizeMb: number;
 	baseServerUrl: string;
 	enableGravatar: boolean;
+	enableGravatarEnvForced?: boolean;
 	experimentalFeaturesEnabled: boolean;
 	apnsEnabled?: boolean;
 	avatarMaxUploadSizeMb: number;

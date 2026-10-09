@@ -198,6 +198,7 @@
 	// Avatar policy: server-wide settings that belong with user management.
 	const isReadOnly = $derived(Boolean(settingsStore.current?.uiConfigDisabled));
 	const gravatarEnabled = $derived(Boolean(settingsStore.current?.enableGravatar));
+	const gravatarEnvForced = $derived(Boolean(settingsStore.current?.enableGravatarEnvForced));
 	const avatarMaxUploadSizeMb = $derived(
 		Number(settingsStore.current?.avatarMaxUploadSizeMb) > 0 ? Number(settingsStore.current?.avatarMaxUploadSizeMb) : 2
 	);
@@ -256,12 +257,13 @@
 				for="enableGravatar"
 				label={m.general_enable_gravatar_label()}
 				description={m.general_enable_gravatar_description()}
+				helpText={gravatarEnvForced ? m.general_enable_gravatar_env_override() : undefined}
 				layout="switch"
 			>
 				<Switch
 					id="enableGravatar"
 					checked={gravatarEnabled}
-					disabled={isReadOnly}
+					disabled={isReadOnly || gravatarEnvForced}
 					onCheckedChange={(checked) => void saveAvatarSettings({ enableGravatar: checked })}
 				/>
 			</SettingsRow>

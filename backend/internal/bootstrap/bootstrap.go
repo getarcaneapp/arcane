@@ -66,6 +66,7 @@ func Bootstrap(ctx context.Context) error {
 	slog.SetDefault(slog.New(logs.NewSlogHandler(slog.Default().Handler(), ws.LogBroadcaster())))
 	database.SetGormLogger(BuildGormLogger(cfg))
 	slog.InfoContext(ctx, "Arcane is starting...", "version", config.Version)
+	startup.ApplyMemoryLimit(ctx)
 	slog.InfoContext(ctx, "Arcane Identity Configuration", "puid", os.Getuid(), "pgid", os.Getgid())
 
 	appCtx, cancelApp := context.WithCancel(ctx)

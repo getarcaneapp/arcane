@@ -2,6 +2,7 @@ package edge
 
 import (
 	"io"
+	"maps"
 	"net/http"
 	"strings"
 
@@ -12,20 +13,33 @@ import (
 )
 
 const (
-	HeaderAPIKey        = "X-Api-Key" // #nosec G101: header name, not a credential
-	HeaderAuthorization = "Authorization"
-	HeaderCookie        = "Cookie"
-	HeaderAgentToken    = "X-Arcane-Agent-Token" // #nosec G101: header name, not a credential
-	HeaderUpgrade       = "Upgrade"
-	HeaderConnection    = "Connection"
-
+	HeaderAPIKey           = "X-Api-Key" // #nosec G101: header name, not a credential
+	HeaderAuthorization    = "Authorization"
+	HeaderCookie           = "Cookie"
+	HeaderAgentToken       = "X-Arcane-Agent-Token" // #nosec G101: header name, not a credential
+	HeaderUpgrade          = "Upgrade"
+	HeaderConnection       = "Connection"
 	ConnectionUpgradeToken = "upgrade"
 )
 
-func CopyRequestHeaders(from, to http.Header, skip map[string]struct{}) {
+var (
+	// hopByHopHeaders is shared and read-only; BuildHopByHopHeaders returns a private copy.
+	hopByHopHeaders = map[string]struct{}{
+		"Connection": {}, "Keep-Alive": {}, "Proxy-Authenticate": {}, "Proxy-Authorization": {},
+		"Te": {}, "Trailers": {}, "Trailer": {}, "Transfer-Encoding": {}, "Upgrade": {},
+	}
+	skipHeaders = map[string]struct{}{
+		"Host": {}, "Connection": {}, "Keep-Alive": {}, "Proxy-Authenticate": {},
+		"Proxy-Authorization": {}, "Te": {}, "Trailer": {}, "Transfer-Encoding": {},
+		"Upgrade": {}, "Content-Length": {}, "Accept-Encoding": {}, "Origin": {}, "Referer": {},
+		"Access-Control-Request-Method": {}, "Access-Control-Request-Headers": {}, "Cookie": {},
+	}
+)
+
+func CopyRequestHeaders(from, to http.Header) {
 	for k, vs := range from {
 		ck := http.CanonicalHeaderKey(k)
-		if _, ok := skip[ck]; ok || ck == http.CanonicalHeaderKey(HeaderAuthorization) || ck == http.CanonicalHeaderKey(HeaderAPIKey) {
+		if _, ok := skipHeaders[ck]; ok || ck == http.CanonicalHeaderKey(HeaderAuthorization) || ck == http.CanonicalHeaderKey(HeaderAPIKey) {
 			continue
 		}
 		for _, v := range vs {
@@ -122,23 +136,8 @@ func SetForwardedHeaders(req *http.Request, clientIP, host string) {
 	req.Header.Set("X-Forwarded-Host", host)
 }
 
-func GetHopByHopHeaders() map[string]struct{} {
-	return map[string]struct{}{
-		http.CanonicalHeaderKey("Connection"):          {},
-		http.CanonicalHeaderKey("Keep-Alive"):          {},
-		http.CanonicalHeaderKey("Proxy-Authenticate"):  {},
-		http.CanonicalHeaderKey("Proxy-Authorization"): {},
-		http.CanonicalHeaderKey("TE"):                  {},
-		http.CanonicalHeaderKey("Trailers"):            {},
-		http.CanonicalHeaderKey("Trailer"):             {},
-		http.CanonicalHeaderKey("Transfer-Encoding"):   {},
-		http.CanonicalHeaderKey("Upgrade"):             {},
-	}
-}
-
 func BuildHopByHopHeaders(respHeader http.Header) map[string]struct{} {
-	hop := GetHopByHopHeaders()
-
+	hop := maps.Clone(hopByHopHeaders)
 	for _, connVal := range respHeader.Values("Connection") {
 		for token := range strings.SplitSeq(connVal, ",") {
 			if t := strings.TrimSpace(token); t != "" {
@@ -159,14 +158,5 @@ func CopyResponseHeaders(from, to http.Header, hop map[string]struct{}) {
 		for _, v := range vs {
 			to.Add(k, v)
 		}
-	}
-}
-
-func GetSkipHeaders() map[string]struct{} {
-	return map[string]struct{}{
-		"Host": {}, "Connection": {}, "Keep-Alive": {}, "Proxy-Authenticate": {},
-		"Proxy-Authorization": {}, "Te": {}, "Trailer": {}, "Transfer-Encoding": {},
-		"Upgrade": {}, "Content-Length": {}, "Accept-Encoding": {}, "Origin": {}, "Referer": {},
-		"Access-Control-Request-Method": {}, "Access-Control-Request-Headers": {}, "Cookie": {},
 	}
 }

@@ -5,6 +5,7 @@
 	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
+	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 	import { EmptyState } from '#lib/components/states/index.js';
 	import { useEnvironmentRefresh } from '#lib/hooks/use-environment-refresh.svelte.js';
 	import { BoxIcon, ProjectsIcon, StartIcon, StopIcon } from '#lib/icons/index.js';
@@ -166,8 +167,16 @@
 	const archivedCompose = $derived(projectStatusCounts.archivedProjects);
 	const isRefreshBlocked = $derived(isManualRefreshing || projectsQuery.isFetching || projectStatusCountsQuery.isFetching);
 
-	async function handleCheckForUpdates() {
-		await checkUpdatesMutation.mutateAsync(envId);
+	function handleCheckForUpdates() {
+		openConfirmDialog({
+			title: m.compose_update_projects(),
+			message: m.compose_update_projects_confirm_message(),
+			confirm: {
+				label: m.compose_update_projects(),
+				destructive: false,
+				action: () => checkUpdatesMutation.mutate(envId)
+			}
+		});
 	}
 
 	async function refreshCompose() {
