@@ -292,14 +292,6 @@ func shortenNotificationDigestInternal(value string) string {
 	return algorithm + ":" + digest[:6] + "..."
 }
 
-func ntfyCodeInternal(value string) string {
-	return "`" + value + "`"
-}
-
-func ntfyStrongInternal(value string) string {
-	return "**" + value + "**"
-}
-
 func ntfyUpdateTransitionInternal(update *imageupdate.Response) (string, string) {
 	if update == nil {
 		return "", ""
@@ -326,15 +318,15 @@ func writeNtfyTransitionInternal(message *strings.Builder, current, latest, inde
 	case current != "" && latest != "":
 		fmt.Fprintf(
 			message,
-			"%s🔄 %s → %s\n",
+			"%s🔄 `%s` → `%s`\n",
 			indent,
-			ntfyCodeInternal(current),
-			ntfyCodeInternal(latest),
+			current,
+			latest,
 		)
 	case latest != "":
-		fmt.Fprintf(message, "%s🔄 %s\n", indent, ntfyCodeInternal(latest))
+		fmt.Fprintf(message, "%s🔄 `%s`\n", indent, latest)
 	default:
-		fmt.Fprintf(message, "%s🔄 %s\n", indent, ntfyCodeInternal(current))
+		fmt.Fprintf(message, "%s🔄 `%s`\n", indent, current)
 	}
 
 	return true
@@ -373,7 +365,7 @@ func buildNtfyImageUpdateNotificationMessageInternal(
 	var message strings.Builder
 
 	fmt.Fprintf(&message, "🖥️ %s\n\n", environmentName)
-	fmt.Fprintf(&message, "📦 %s\n", ntfyStrongInternal(imageRef))
+	fmt.Fprintf(&message, "📦 **%s**\n", imageRef)
 
 	if updateInfo == nil {
 		fmt.Fprintln(&message, "ℹ️ Update details unavailable")
@@ -403,8 +395,8 @@ func buildNtfyContainerUpdateNotificationMessageInternal(
 	var message strings.Builder
 
 	fmt.Fprintf(&message, "🖥️ %s\n\n", environmentName)
-	fmt.Fprintf(&message, "🐳 %s\n", ntfyStrongInternal(containerName))
-	fmt.Fprintf(&message, "📦 %s\n", ntfyCodeInternal(imageRef))
+	fmt.Fprintf(&message, "🐳 **%s**\n", containerName)
+	fmt.Fprintf(&message, "📦 `%s`\n", imageRef)
 
 	if !writeNtfyTransitionInternal(
 		&message,
@@ -430,7 +422,7 @@ func buildNtfyBatchImageUpdateNotificationMessageInternal(
 	for _, imageRef := range imageRefs {
 		update := updates[imageRef]
 
-		fmt.Fprintf(&message, "\n📦 %s\n", ntfyStrongInternal(imageRef))
+		fmt.Fprintf(&message, "\n📦 **%s**\n", imageRef)
 
 		current, latest := ntfyUpdateTransitionInternal(update)
 		if !writeNtfyTransitionInternal(&message, current, latest, "   ") {
@@ -456,8 +448,8 @@ func buildNtfyBatchContainerUpdateNotificationMessageInternal(
 	fmt.Fprintf(&message, "🖥️ %s\n", environmentName)
 
 	for _, entry := range sorted {
-		fmt.Fprintf(&message, "\n🐳 %s\n", ntfyStrongInternal(entry.ContainerName))
-		fmt.Fprintf(&message, "   📦 %s\n", ntfyCodeInternal(entry.ImageRef))
+		fmt.Fprintf(&message, "\n🐳 **%s**\n", entry.ContainerName)
+		fmt.Fprintf(&message, "   📦 `%s`\n", entry.ImageRef)
 
 		if !writeNtfyTransitionInternal(
 			&message,
@@ -485,7 +477,7 @@ func buildNtfyVulnerabilitySummaryNotificationMessageInternal(
 	fmt.Fprintf(&message, "🖥️ %s\n", environmentName)
 
 	if strings.TrimSpace(summaryLabel) != "" {
-		fmt.Fprintf(&message, "\n📊 %s\n", ntfyStrongInternal(summaryLabel))
+		fmt.Fprintf(&message, "\n📊 **%s**\n", summaryLabel)
 	}
 	if strings.TrimSpace(overview) != "" {
 		fmt.Fprintf(&message, "📦 %s\n", overview)
@@ -498,7 +490,7 @@ func buildNtfyVulnerabilitySummaryNotificationMessageInternal(
 		fmt.Fprintf(&message, "🚨 %s\n", strings.Join(severityItems, " • "))
 	}
 	if strings.TrimSpace(sampleCVEs) != "" {
-		fmt.Fprintf(&message, "🔎 %s\n", ntfyCodeInternal(sampleCVEs))
+		fmt.Fprintf(&message, "🔎 `%s`\n", sampleCVEs)
 	}
 
 	return message.String()
@@ -513,8 +505,8 @@ func buildNtfyPruneReportNotificationMessageInternal(
 	fmt.Fprintf(&message, "🖥️ %s\n", environmentName)
 	fmt.Fprintf(
 		&message,
-		"💾 %s reclaimed\n\n",
-		ntfyStrongInternal(formatNtfyBytesInternal(result.SpaceReclaimed)),
+		"💾 **%s** reclaimed\n\n",
+		formatNtfyBytesInternal(result.SpaceReclaimed),
 	)
 	fmt.Fprintf(&message, "📦 Images: %s\n", formatNtfyBytesInternal(result.ImageSpaceReclaimed))
 	fmt.Fprintf(&message, "🧱 Containers: %s\n", formatNtfyBytesInternal(result.ContainerSpaceReclaimed))
@@ -531,7 +523,7 @@ func buildNtfyAutoHealNotificationMessageInternal(
 	var message strings.Builder
 
 	fmt.Fprintf(&message, "🖥️ %s\n\n", environmentName)
-	fmt.Fprintf(&message, "🐳 %s\n", ntfyStrongInternal(containerName))
+	fmt.Fprintf(&message, "🐳 **%s**\n", containerName)
 	fmt.Fprintln(&message, "🔄 Restarted automatically")
 	fmt.Fprintln(&message, "⚠️ Reason: container was unhealthy")
 
