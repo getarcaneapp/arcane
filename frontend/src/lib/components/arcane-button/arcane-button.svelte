@@ -3,6 +3,7 @@
 	import type { HTMLAnchorAttributes, HTMLButtonAttributes } from 'svelte/elements';
 
 	import type { IconType } from '#lib/icons/index.js';
+	import type { ShortcutKey } from '#lib/utils/navigation.js';
 
 	import type { ArcaneButtonSize, Action, ArcaneButtonHoverEffect, ActionConfig, ArcaneButtonTone } from './variants';
 
@@ -17,6 +18,7 @@
 		customLabel?: string;
 		loadingLabel?: string;
 		icon?: IconType | null;
+		shortcut?: ShortcutKey[];
 		onClickPromise?: (
 			e: MouseEvent & {
 				currentTarget: EventTarget & HTMLButtonElement;
@@ -42,9 +44,14 @@
 </script>
 
 <script lang="ts">
+	import type { Attachment } from 'svelte/attachments';
+	import { on } from 'svelte/events';
+
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import userStore from '#lib/stores/user-store.svelte.js';
 	import { cn } from '#lib/utils.js';
+	import { matchesShortcutEvent } from '#lib/utils/navigation.js';
 
 	import { arcaneButtonVariants, actionConfigs } from './variants';
 
@@ -64,6 +71,7 @@
 		customLabel = undefined,
 		loadingLabel = undefined,
 		icon = undefined,
+		shortcut = undefined,
 		tabindex = 0,
 		onclick,
 		onClickPromise,
@@ -80,6 +88,17 @@
 	let isIconOnlyButton = $derived(size === 'icon' || !showLabel);
 
 	let IconComponent = $derived(icon === null ? null : (icon ?? config.IconComponent));
+
+	// The shortcut clicks the button, so disabled and loading block it and hidden buttons (inactive tabs) ignore it.
+	function clickOnShortcut(keys: ShortcutKey[]): Attachment<HTMLElement> {
+		return (node) =>
+			on(window, 'keydown', (event) => {
+				if (event.defaultPrevented || userStore.current?.preferences?.keyboardShortcutsEnabled === false) return;
+				if (!matchesShortcutEvent(keys, event) || !node.checkVisibility()) return;
+				event.preventDefault();
+				node.click();
+			});
+	}
 </script>
 
 <svelte:element
@@ -96,6 +115,7 @@
 	class={cn('relative', arcaneButtonVariants({ tone: tone ?? config.tone, size, hoverEffect }), className)}
 	aria-label={ariaLabel ?? (children ? undefined : isIconOnlyButton ? displayLabel : undefined)}
 	bind:this={ref}
+	{@attach shortcut && clickOnShortcut(shortcut)}
 	onclick={async (e: any) => {
 		onclick?.(e);
 		if (type === undefined) return;

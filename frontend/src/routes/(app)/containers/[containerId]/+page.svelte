@@ -549,7 +549,7 @@
 	{#if showShell}
 		<Tabs.Content value="shell" class="h-full">
 			{#if activeTab === 'shell'}
-				<ContainerShell containerId={container?.id} />
+				<ContainerShell containerId={container?.id} labels={container?.labels} name={container?.name} />
 			{/if}
 		</Tabs.Content>
 	{/if}

@@ -3,9 +3,10 @@ import type { ColumnFiltersState } from '@tanstack/table-core';
 
 import type { FilterMap, FilterValue } from '#lib/types/shared.js';
 import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
+import type { TableDisplayEntry } from '#lib/types/table-display.js';
 import type { PersistedPreferencesSnapshot } from '#lib/types/table-preferences.js';
 
-import type { CompactTablePrefs } from './arcane-table.types.svelte';
+import type { CompactTablePrefs, GroupedData } from './arcane-table.types.svelte';
 import { decodeFilters, decodeSort } from './arcane-table.types.svelte';
 import type { ArcaneRow } from './table-features';
 
@@ -127,4 +128,34 @@ export function getTableRowsForItems<T extends RowData>(
 		})
 		.sort((a, b) => a.index - b.index)
 		.map((entry) => entry.row);
+}
+
+export function getTableDisplayEntries<T extends RowData & { id: string }>(
+	rows: ArcaneRow<T>[],
+	rowIndex: ReadonlyMap<string, { row: ArcaneRow<T>; index: number }>,
+	groups: GroupedData<T>[] | null,
+	collapsed: Record<string, boolean>,
+	expanded?: ReadonlySet<string>
+): TableDisplayEntry<T>[] {
+	const entries: TableDisplayEntry<T>[] = [];
+	const appendRows = (groupRows: ArcaneRow<T>[], groupName?: string) => {
+		for (const row of groupRows) {
+			const key = JSON.stringify([groupName ?? null, row.id]);
+			entries.push({ kind: 'row', key: `row:${key}`, row, grouped: groupName !== undefined });
+			if (expanded?.has(row.id)) {
+				entries.push({ kind: 'detail', key: `detail:${key}`, row, grouped: groupName !== undefined });
+			}
+		}
+	};
+	if (groups?.length) {
+		for (const group of groups) {
+			entries.push({ kind: 'group', key: `group:${group.groupName}`, group });
+			if (!(collapsed[group.groupName] ?? true)) {
+				appendRows(getTableRowsForItems(rowIndex, group.items), group.groupName);
+			}
+		}
+	} else {
+		appendRows(rows);
+	}
+	return entries;
 }

@@ -32,7 +32,7 @@ type TemplateMeta struct {
 	// Required: false
 	DocumentationURL *string `json:"documentationUrl,omitempty"`
 
-	// IconURL is the URL to the template icon extracted from x-arcane metadata.
+	// IconURL is the URL to the template icon, from the registry's icon_url for remote templates or x-arcane metadata for local ones.
 	//
 	// Required: false
 	IconURL *string `json:"iconUrl,omitempty"`

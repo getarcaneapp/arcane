@@ -57,7 +57,11 @@ jobs:
         with:
           go-version-file: ${{ matrix.module.path }}/go.mod
           cache: true
-          cache-dependency-path: ${{ matrix.module.path }}/go.sum
+          cache-dependency-path: &go-cache-dependencies |
+            go.work
+            go.work.sum
+            */go.mod
+            */go.sum
 
       - name: Install GCC
         if: matrix.module.gcc
@@ -105,7 +109,8 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: ${{ matrix.module.name }}/go.mod
-          cache-dependency-path: ${{ matrix.module.name }}/go.sum
+          cache: true
+          cache-dependency-path: *go-cache-dependencies
 
       - name: Run Golangci-lint
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
@@ -244,7 +249,8 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: cli/go.mod
-          cache-dependency-path: cli/go.sum
+          cache: true
+          cache-dependency-path: *go-cache-dependencies
 
       - name: Set up Depot CLI
         uses: depot/setup-action@91bc8495a33ebfc504ffc89e5674379ccf23c29c # v1.7.2

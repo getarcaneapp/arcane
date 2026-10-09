@@ -9,7 +9,13 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	httpxtypes "github.com/getarcaneapp/arcane/types/v2/httpx"
+
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 )
+
+// dialClient is shared by every upstream dial instead of building a transport per connection.
+var dialClient = httpx.NewHTTPClient(httpxtypes.ClientOptions{TLSHandshakeTimeout: 10 * time.Second})
 
 // ProxyHTTP upgrades the incoming client connection and bridges it to remoteWS.
 //
@@ -35,7 +41,7 @@ func ProxyHTTP(w http.ResponseWriter, r *http.Request, remoteWS string, header h
 	dialCtx, dialCancel := context.WithTimeout(r.Context(), 45*time.Second)
 	remoteConn, resp, err := websocket.Dial(dialCtx, remoteWS, &websocket.DialOptions{
 		HTTPHeader: header,
-		HTTPClient: &http.Client{Transport: &http.Transport{Proxy: http.ProxyFromEnvironment}},
+		HTTPClient: dialClient,
 	})
 	dialCancel()
 	// Ensure the response body is drained & closed to avoid leaking resources.
@@ -71,7 +77,7 @@ func ProxyHTTP(w http.ResponseWriter, r *http.Request, remoteWS string, header h
 		for {
 			mt, msg, readErr := clientConn.Read(pumpCtx)
 			if readErr != nil {
-				relayCloseInternal(r.Context(), remoteConn, readErr)
+				closeRelay(r.Context(), remoteConn, readErr)
 				return
 			}
 			if writeErr := remoteConn.Write(pumpCtx, mt, msg); writeErr != nil {
@@ -86,7 +92,7 @@ func ProxyHTTP(w http.ResponseWriter, r *http.Request, remoteWS string, header h
 		for {
 			mt, msg, readErr := remoteConn.Read(pumpCtx)
 			if readErr != nil {
-				relayCloseInternal(r.Context(), clientConn, readErr)
+				closeRelay(r.Context(), clientConn, readErr)
 				return
 			}
 			if writeErr := clientConn.Write(pumpCtx, mt, msg); writeErr != nil {
@@ -99,9 +105,9 @@ func ProxyHTTP(w http.ResponseWriter, r *http.Request, remoteWS string, header h
 	return nil
 }
 
-// relayCloseInternal forwards a peer's close status to the other side of the
+// closeRelay forwards a peer's close status to the other side of the
 // bridge so the terminating reason survives the proxy hop.
-func relayCloseInternal(ctx context.Context, conn *websocket.Conn, err error) {
+func closeRelay(ctx context.Context, conn *websocket.Conn, err error) {
 	var ce websocket.CloseError
 	if !errors.As(err, &ce) {
 		return

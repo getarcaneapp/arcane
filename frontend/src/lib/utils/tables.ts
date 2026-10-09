@@ -67,7 +67,7 @@ function normalizeSearch(value: unknown): string | undefined {
 export function resolveInitialTableRequest(
 	persistKey: string,
 	defaults: SearchPaginationSortRequest,
-	options: { deferredSortColumns?: readonly string[] } = {}
+	options: { deferredSortColumns?: readonly string[]; restoreAllPageSize?: boolean } = {}
 ): SearchPaginationSortRequest {
 	const base = cloneRequest(defaults);
 	const fallbackLimit = base.pagination?.limit ?? DEFAULT_LIMIT;
@@ -103,7 +103,10 @@ export function resolveInitialTableRequest(
 			base.pagination = { ...base.pagination!, page: 1 };
 		}
 
-		const limit = normalizeTablePageSize(current.l);
+		let limit = normalizeTablePageSize(current.l);
+		if (limit === TABLE_PAGE_SIZE_ALL && options.restoreAllPageSize === false) {
+			limit = fallbackLimit;
+		}
 		if (limit !== undefined && base.pagination?.limit !== limit) {
 			base.pagination = { page: 1, limit };
 		}

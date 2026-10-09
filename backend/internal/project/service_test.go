@@ -7053,12 +7053,14 @@ func TestPrepareProjectServiceImages(t *testing.T) {
 		"\ufeff# operator configuration\r\n\r\nservices:\r\n  web:\r\n    image: \"app:${VERSION}\"   # keep this comment\r\n " +
 			"   environment:\r\n      VERSION: ${VERSION}\r\n\r\n  worker:\r\n    image: 'app:1.2.0'  \r\n  tagged:\r\n    " +
 			"image: !!str app:1.2.0\r\n  escaped:\r\n    image: \"app\\u003a1.2.0\"\r\n  untouched:\r\n    image: app:1.2.0 " +
-			"# stays\r\n\r\r  plain:\r\n    image: app:1.2.0",
+			"# stays\r\n\r\r  plain:\r\n    image: app:1.2.0\r\n  qualified:\r\n    image: docker.io/library/app:1.2.0\r\n  " +
+			"omitted:\r\n    image: registry.example.com:5000/team/app",
 	)
 	expected := "\ufeff# operator configuration\r\n\r\nservices:\r\n  web:\r\n    image: \"app:1.3.0\"   # keep this comment\r\n    " +
-		"environment:\r\n      VERSION: ${VERSION}\r\n\r\n  worker:\r\n    image: 'docker.io/library/app:1.3.0'  \r\n  " +
+		"environment:\r\n      VERSION: ${VERSION}\r\n\r\n  worker:\r\n    image: 'app:1.3.0'  \r\n  " +
 		"tagged:\r\n    image: !!str app:1.3.0\r\n  escaped:\r\n    image: \"app:1.3.0\"\r\n  untouched:\r\n    image: " +
-		"app:1.2.0 # stays\r\n\r\r  plain:\r\n    image: app:1.3.0"
+		"app:1.2.0 # stays\r\n\r\r  plain:\r\n    image: app:1.3.0\r\n  qualified:\r\n    image: docker.io/library/app:1.3.0\r\n  " +
+		"omitted:\r\n    image: registry.example.com:5000/team/app:1.3.0"
 	effective := &types.Project{
 		Services: types.Services{
 			"web": {
@@ -7079,17 +7081,25 @@ func TestPrepareProjectServiceImages(t *testing.T) {
 			"plain": {
 				Image: "app:1.2.0",
 			},
+			"qualified": {
+				Image: "docker.io/library/app:1.2.0",
+			},
+			"omitted": {
+				Image: "registry.example.com:5000/team/app",
+			},
 		},
 	}
 	updated, names, err := update.PrepareProjectServiceImages(source, effective, map[string]updatertypes.ServiceImageChange{
-		"web":     {ExpectedRef: "docker.io/library/app:1.2.0", TargetRef: "app:1.3.0"},
-		"worker":  {ExpectedRef: "app:1.2.0", TargetRef: "docker.io/library/app:1.3.0"},
-		"tagged":  {ExpectedRef: "app:1.2.0", TargetRef: "app:1.3.0"},
-		"escaped": {ExpectedRef: "app:1.2.0", TargetRef: "app:1.3.0"},
-		"plain":   {ExpectedRef: "app:1.2.0", TargetRef: "app:1.3.0"},
+		"web":       {ExpectedRef: "docker.io/library/app:1.2.0", TargetRef: "app:1.3.0"},
+		"worker":    {ExpectedRef: "app:1.2.0", TargetRef: "docker.io/library/app:1.3.0"},
+		"tagged":    {ExpectedRef: "app:1.2.0", TargetRef: "app:1.3.0"},
+		"escaped":   {ExpectedRef: "app:1.2.0", TargetRef: "app:1.3.0"},
+		"plain":     {ExpectedRef: "app:1.2.0", TargetRef: "app:1.3.0"},
+		"qualified": {ExpectedRef: "app:1.2.0", TargetRef: "app:1.3.0"},
+		"omitted":   {ExpectedRef: "registry.example.com:5000/team/app", TargetRef: "registry.example.com:5000/team/app:1.3.0"},
 	})
 	require.NoError(t, err)
-	require.Equal(t, []string{"escaped", "plain", "tagged", "web", "worker"}, names)
+	require.Equal(t, []string{"escaped", "omitted", "plain", "qualified", "tagged", "web", "worker"}, names)
 	require.Equal(t, expected, string(updated))
 	require.Equal(t, "app:1.2.0", effective.Services["web"].Image)
 }
@@ -7495,11 +7505,11 @@ func TestProjectServiceManualUpdateDiscoversTags(t *testing.T) {
 		strategy      string
 		omitLabels    bool
 	}{
-		{name: "new tag", tags: []string{"1.2.0", "1.3.0", "2.0.0"}, wantRef: "docker.io/library/app:1.3.0", wantChanged: true, wantCalls: 1},
+		{name: "new tag", tags: []string{"1.2.0", "1.3.0", "2.0.0"}, wantRef: "app:1.3.0", wantChanged: true, wantCalls: 1},
 		{name: "same tag digest fallback", tags: []string{"1.2.0", "2.0.0"}, wantRef: "app:1.2.0", wantCalls: 1},
 		{name: "planned dependency does not discover tags", tags: []string{"1.2.0", "1.3.0"}, wantRef: "app:1.2.0", skipDiscovery: true},
 		{name: "unlabeled digest default", tags: []string{"1.2.0", "1.3.0", "2.0.0"}, wantRef: "app:1.2.0", omitLabels: true},
-		{name: "explicit automatic tag", tags: []string{"1.2.0", "1.3.0", "2.0.0"}, wantRef: "docker.io/library/app:1.3.0", wantChanged: true, wantCalls: 1, strategy: "auto"},
+		{name: "explicit automatic tag", tags: []string{"1.2.0", "1.3.0", "2.0.0"}, wantRef: "app:1.3.0", wantChanged: true, wantCalls: 1, strategy: "auto"},
 		{name: "explicit digest optout", tags: []string{"1.2.0", "1.3.0"}, wantRef: "app:1.2.0", strategy: "digest"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

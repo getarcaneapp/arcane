@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -174,10 +175,10 @@ func TestTunnelServer_HandleConnect_AcceptsTokenAfterProxyTerminatedMTLS(t *test
 		}
 		return "", errors.New("invalid token")
 	}, nil)
-	server.SetConfig(&Config{
+	server.Config = &Config{
 		EdgeMTLSMode: EdgeMTLSModeRequired,
 		AppURL:       "https://manager.example.com",
-	})
+	}
 
 	router := echo.New()
 	router.GET("/connect", server.HandleConnect)
@@ -334,14 +335,14 @@ func TestTunnelServer_HandleMTLSEnroll(t *testing.T) {
 		}
 		return "env-mtls", nil
 	}, nil)
-	server.SetEnvironmentNameResolver(func(ctx context.Context, environmentID string) (string, error) {
+	server.NameResolver = func(ctx context.Context, environmentID string) (string, error) {
 		require.Equal(t, "env-mtls", environmentID)
 		return "Lab Server", nil
-	})
-	server.SetConfig(&Config{
+	}
+	server.Config = &Config{
 		EdgeMTLSMode:      EdgeMTLSModeRequired,
 		EdgeMTLSAssetsDir: t.TempDir(),
-	})
+	}
 
 	router := echo.New()
 	router.POST("/enroll", server.HandleMTLSEnroll)
@@ -378,10 +379,10 @@ func TestTunnelServer_HandleMTLSEnroll_ServesCachedAssetsDuringCooldown(t *testi
 		}
 		return "env-repeat", nil
 	}, nil)
-	server.SetConfig(&Config{
+	server.Config = &Config{
 		EdgeMTLSMode:      EdgeMTLSModeRequired,
 		EdgeMTLSAssetsDir: t.TempDir(),
-	})
+	}
 
 	router := echo.New()
 	router.POST("/enroll", server.HandleMTLSEnroll)
@@ -418,13 +419,13 @@ func TestTunnelServer_HandleMTLSEnroll_AllowsRepeatAfterCooldownAndMarksReenroll
 		}
 		return "env-repeat-old", nil
 	}, nil)
-	server.SetConfig(cfg)
+	server.Config = cfg
 
 	reenrolled := make(chan bool, 2)
-	server.SetEnrollmentCallback(func(ctx context.Context, environmentID, remoteAddr string, certIssued, caGenerated, wasReenrolled bool) {
+	server.EnrollmentCallback = func(ctx context.Context, environmentID, remoteAddr string, certIssued, caGenerated, wasReenrolled bool) {
 		require.Equal(t, "env-repeat-old", environmentID)
 		reenrolled <- wasReenrolled
-	})
+	}
 
 	router := echo.New()
 	router.POST("/enroll", server.HandleMTLSEnroll)
@@ -436,8 +437,7 @@ func TestTunnelServer_HandleMTLSEnroll_AllowsRepeatAfterCooldownAndMarksReenroll
 	require.Equal(t, http.StatusOK, w.Code)
 	require.False(t, <-reenrolled)
 
-	markerPath, err := managerMTLSEnrollmentMarkerPathInternal(cfg, "env-repeat-old")
-	require.NoError(t, err)
+	markerPath := filepath.Join(cfg.EdgeMTLSAssetsDir, generatedClientMTLSSubdir, "env-repeat-old", generatedMTLSEnrolledName)
 	oldEnrollment := time.Now().Add(-(managerMTLSReenrollCooldown + time.Minute)).UTC().Format(time.RFC3339Nano) + "\n"
 	require.NoError(t, os.WriteFile(markerPath, []byte(oldEnrollment), 0o600))
 
@@ -494,65 +494,71 @@ func TestTunnelServer_resolveEnvironment_Errors(t *testing.T) {
 	})
 }
 
-func TestTokenFromMetadata(t *testing.T) {
+func TestAgentToken(t *testing.T) {
 	t.Run("prefers agent token and trims whitespace", func(t *testing.T) {
-		ctx := metadata.NewIncomingContext(t.Context(), metadata.Pairs(
+		md := metadata.Pairs(
 			strings.ToLower(HeaderAgentToken), "  agent-token  ",
 			strings.ToLower(HeaderAPIKey), "api-token",
-		))
+		)
 
-		assert.Equal(t, "agent-token", tokenFromMetadataInternal(ctx))
+		token, source := agentToken(md.Get)
+		assert.Equal(t, "agent-token", token)
+		assert.Equal(t, HeaderAgentToken, source)
 	})
 
 	t.Run("falls back to api key", func(t *testing.T) {
-		ctx := metadata.NewIncomingContext(t.Context(), metadata.Pairs(
-			strings.ToLower(HeaderAPIKey), "api-token",
-		))
+		md := metadata.Pairs(strings.ToLower(HeaderAPIKey), "api-token")
 
-		assert.Equal(t, "api-token", tokenFromMetadataInternal(ctx))
+		token, source := agentToken(md.Get)
+		assert.Equal(t, "api-token", token)
+		assert.Equal(t, HeaderAPIKey, source)
 	})
 
 	t.Run("returns empty when metadata missing", func(t *testing.T) {
-		assert.Empty(t, tokenFromMetadataInternal(t.Context()))
+		var md metadata.MD
+		token, source := agentToken(md.Get)
+		assert.Empty(t, token)
+		assert.Empty(t, source)
 	})
 }
 
 func TestIsExpectedTunnelReceiveError(t *testing.T) {
 	t.Run("nil is not expected", func(t *testing.T) {
-		assert.False(t, isExpectedGRPCReceiveErrorInternal(nil))
+		assert.False(t, isExpectedReceiveError(nil))
 	})
 
 	t.Run("io eof expected", func(t *testing.T) {
-		assert.True(t, isExpectedGRPCReceiveErrorInternal(io.EOF))
+		assert.True(t, isExpectedReceiveError(io.EOF))
 	})
 
 	t.Run("context canceled expected", func(t *testing.T) {
-		assert.True(t, isExpectedGRPCReceiveErrorInternal(context.Canceled))
+		assert.True(t, isExpectedReceiveError(context.Canceled))
 	})
 
 	t.Run("context deadline expected", func(t *testing.T) {
-		assert.True(t, isExpectedGRPCReceiveErrorInternal(context.DeadlineExceeded))
+		assert.True(t, isExpectedReceiveError(context.DeadlineExceeded))
 	})
 
 	t.Run("grpc canceled expected", func(t *testing.T) {
 		err := status.Error(codes.Canceled, "context canceled")
-		assert.True(t, isExpectedGRPCReceiveErrorInternal(err))
+		assert.True(t, isExpectedReceiveError(err))
 	})
 
 	t.Run("grpc deadline exceeded expected", func(t *testing.T) {
 		err := status.Error(codes.DeadlineExceeded, "deadline exceeded")
-		assert.True(t, isExpectedGRPCReceiveErrorInternal(err))
+		assert.True(t, isExpectedReceiveError(err))
 	})
 
 	t.Run("unexpected error not expected", func(t *testing.T) {
-		assert.False(t, isExpectedGRPCReceiveErrorInternal(errors.New("boom")))
+		assert.False(t, isExpectedReceiveError(errors.New("boom")))
 	})
 }
 
 func TestTunnelServer_HandleEventCallback(t *testing.T) {
 	called := make(chan struct{}, 1)
-	server := NewTunnelServerWithRegistry(GetRegistry(), nil, nil)
-	server.SetEventCallback(func(ctx context.Context, environmentID string, event *TunnelEvent) error {
+	registry := NewTunnelRegistry()
+	server := NewTunnelServerWithRegistry(registry, nil, nil)
+	server.EventCallback = func(ctx context.Context, environmentID string, event *TunnelEvent) error {
 		assert.Equal(t, "env-edge", environmentID)
 		require.NotNil(t, event)
 		assert.Equal(t, "container.start", event.Type)
@@ -562,32 +568,43 @@ func TestTunnelServer_HandleEventCallback(t *testing.T) {
 		default:
 		}
 		return nil
-	})
+	}
 
-	tunnel := NewAgentTunnelWithConn("env-edge", &fakeServerTunnelConn{})
-	deliveryTimer := time.NewTimer(streamDeliveryTimeout)
-	deliveryTimer.Stop()
-	defer deliveryTimer.Stop()
-	server.handleTunnelMessage(t.Context(), tunnel, &TunnelMessage{
+	conn := &fakeServerTunnelConn{messages: []*TunnelMessage{{
 		Type: MessageTypeEvent,
 		Event: &TunnelEvent{
 			Type:  "container.start",
 			Title: "Container started",
 		},
-	}, deliveryTimer)
+	}}}
+	server.manageConnectedTunnel(t.Context(), "env-edge", conn, &TunnelMessage{Type: MessageTypeRegister}, "token")
 
 	select {
 	case <-called:
 	case <-time.After(2 * time.Second):
 		require.FailNow(t, "timeout waiting for event callback")
 	}
+
+	stopCtx, cancelStop := context.WithTimeout(t.Context(), time.Second)
+	defer cancelStop()
+	require.NoError(t, registry.Stop(stopCtx))
 }
 
-type fakeServerTunnelConn struct{}
+// fakeServerTunnelConn delivers messages in order, then reports EOF.
+type fakeServerTunnelConn struct {
+	messages []*TunnelMessage
+}
 
 func (f *fakeServerTunnelConn) Send(msg *TunnelMessage) error { return nil }
 
-func (f *fakeServerTunnelConn) Receive() (*TunnelMessage, error) { return nil, io.EOF }
+func (f *fakeServerTunnelConn) Receive() (*TunnelMessage, error) {
+	if len(f.messages) == 0 {
+		return nil, io.EOF
+	}
+	msg := f.messages[0]
+	f.messages = f.messages[1:]
+	return msg, nil
+}
 
 func (f *fakeServerTunnelConn) IsExpectedReceiveError(error) bool { return false }
 
@@ -638,23 +655,23 @@ func TestTunnelServer_ManageConnectedTunnel_RegistersBeforeSendingGRPCRegisterRe
 		return nil
 	}
 
-	tunnel := NewAgentTunnelWithConn(envID, conn)
-	server.manageConnectedTunnel(t.Context(), t.Context(), tunnel)
+	server.manageConnectedTunnel(t.Context(), envID, conn, &TunnelMessage{Type: MessageTypeRegister}, "token")
 
 	_, ok := server.registry.Get(envID).Get()
 	assert.False(t, ok)
 }
 
-func TestTunnelServer_ManageConnectedTunnel_UnregistersAfterConnectionContextCancellationInternal(t *testing.T) {
+func TestTunnelServer_ManageConnectedTunnel_UnregistersAfterConnectionContextCancellation(t *testing.T) {
 	registry := NewTunnelRegistry()
 	server := NewTunnelServerWithRegistry(registry, nil, nil)
-	tunnel := NewAgentTunnelWithConn("env-cancelled-disconnect", &registerResponseOrderConn{recvErr: context.Canceled})
+	envID := "env-cancelled-disconnect"
+	conn := &registerResponseOrderConn{recvErr: context.Canceled}
 
 	connectionCtx, cancelConnection := context.WithCancel(t.Context())
 	cancelConnection()
-	server.manageConnectedTunnel(connectionCtx, context.WithoutCancel(connectionCtx), tunnel)
+	server.manageConnectedTunnel(connectionCtx, envID, conn, &TunnelMessage{Type: MessageTypeRegister}, "token")
 
-	_, ok := registry.Get(tunnel.EnvironmentID).Get()
+	_, ok := registry.Get(envID).Get()
 	require.False(t, ok)
 
 	stopCtx, cancelStop := context.WithTimeout(t.Context(), time.Second)

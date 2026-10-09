@@ -4,6 +4,7 @@
 -- We need to recreate the table without the constraint
 
 PRAGMA foreign_keys=off;
+BEGIN;
 
 CREATE TABLE events_new (
     id TEXT PRIMARY KEY,
@@ -36,6 +37,7 @@ CREATE INDEX IF NOT EXISTS idx_events_user_id ON events(user_id);
 CREATE INDEX IF NOT EXISTS idx_events_environment_id ON events(environment_id);
 CREATE INDEX IF NOT EXISTS idx_events_timestamp ON events(timestamp);
 
+COMMIT;
 PRAGMA foreign_keys=on;
 
 -- +goose Down

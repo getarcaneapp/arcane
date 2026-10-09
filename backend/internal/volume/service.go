@@ -202,6 +202,11 @@ func (s *VolumeService) ReconcileInterruptedBackups(ctx context.Context, protect
 	return query.Updates(map[string]any{"status": VolumeBackupStatusFailed, "error": "Backup interrupted by Arcane restart"}).Error
 }
 
+// PruneLocalBackupRepository frees the space of deleted local volume backups.
+func (s *VolumeService) PruneLocalBackupRepository(ctx context.Context) error {
+	return s.backup.PruneLocalRepository(ctx)
+}
+
 // MigrateRepositoryPasswords re-keys this instance's own volume backup repositories to the recovery key; other instances re-key their own roots.
 func (s *VolumeService) MigrateRepositoryPasswords(ctx context.Context) error {
 	return s.backup.MigrateRepositoryPasswords(ctx)

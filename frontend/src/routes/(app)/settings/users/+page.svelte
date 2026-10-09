@@ -48,8 +48,21 @@
 	const editingAssignments = $derived(
 		userToEdit?.roleAssignments
 			?.filter((a) => a.source !== 'oidc')
-			.map((a) => ({ roleId: a.roleId, environmentId: a.environmentId })) ?? []
+			.map((a) => ({ roleId: a.roleId, environmentId: a.environmentId }))
+			.sort(compareAssignments) ?? []
 	);
+
+	const nameCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+
+	// Global assignments sort first because their environment name is empty.
+	function compareAssignments(a: { roleId: string; environmentId?: string }, b: { roleId: string; environmentId?: string }) {
+		const envName = (id?: string) => (id ? (data.environments.find((e) => e.id === id)?.name ?? id) : '');
+		const roleName = (id: string) => data.roles.find((r) => r.id === id)?.name ?? id;
+		return (
+			nameCollator.compare(envName(a.environmentId), envName(b.environmentId)) ||
+			nameCollator.compare(roleName(a.roleId), roleName(b.roleId))
+		);
+	}
 
 	let isLoading = $state({
 		creating: false,
@@ -185,6 +198,7 @@
 	// Avatar policy: server-wide settings that belong with user management.
 	const isReadOnly = $derived(Boolean(settingsStore.current?.uiConfigDisabled));
 	const gravatarEnabled = $derived(Boolean(settingsStore.current?.enableGravatar));
+	const gravatarEnvForced = $derived(Boolean(settingsStore.current?.enableGravatarEnvForced));
 	const avatarMaxUploadSizeMb = $derived(
 		Number(settingsStore.current?.avatarMaxUploadSizeMb) > 0 ? Number(settingsStore.current?.avatarMaxUploadSizeMb) : 2
 	);
@@ -243,12 +257,13 @@
 				for="enableGravatar"
 				label={m.general_enable_gravatar_label()}
 				description={m.general_enable_gravatar_description()}
+				helpText={gravatarEnvForced ? m.general_enable_gravatar_env_override() : undefined}
 				layout="switch"
 			>
 				<Switch
 					id="enableGravatar"
 					checked={gravatarEnabled}
-					disabled={isReadOnly}
+					disabled={isReadOnly || gravatarEnvForced}
 					onCheckedChange={(checked) => void saveAvatarSettings({ enableGravatar: checked })}
 				/>
 			</SettingsRow>

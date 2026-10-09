@@ -1532,6 +1532,7 @@
 								disabled={!canSave}
 								loading={isLoading.saving}
 								loadingLabel={m.common_saving()}
+								shortcut={['mod', 's']}
 								onclick={handleSaveChanges}
 							/>
 						</div>

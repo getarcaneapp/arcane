@@ -115,6 +115,9 @@ type ProjectService struct {
 	// projects, a gitops_syncs lookup — per project, on every list request.
 	// Entries are validated by compose/include/env file mtimes rather than a TTL.
 	metaCache projecttypes.ComposeCache[projects.ArcaneComposeMetadata]
+	// composeIdentities caches filesystem-sync compose identities by project path,
+	// so a sync only re-parses projects whose compose or env files changed.
+	composeIdentities projecttypes.ComposeCache[projecttypes.ComposeIdentity]
 
 	// FilesChanged fires with the project ID after project files are saved
 	// through Arcane, so Git backups can react without polling.
@@ -313,6 +316,7 @@ func NewProjectService(
 		config:                      cfg,
 		parsedCompose:               projects.NewParsedComposeCache(),
 		metaCache:                   projects.NewComposeCache[projects.ArcaneComposeMetadata](1024, nil),
+		composeIdentities:           projects.NewComposeCache[projecttypes.ComposeIdentity](2048, nil),
 		FilesChanged:                concurrency.NewSignal[string](),
 	}
 	s.initChildren(kvService, buildService)
@@ -473,7 +477,25 @@ func (s *ProjectService) GetProjectByComposeName(ctx context.Context, name strin
 		return cachedProject, nil
 	}
 
-	return nil, fmt.Errorf("project not found: %s", name)
+	return nil, common.Classify(common.ErrNotFound, fmt.Errorf("project not found: %s", name))
+}
+
+// ComposeServiceImage returns the effective image of serviceName in the
+// Arcane project deployed as composeName.
+func (s *ProjectService) ComposeServiceImage(ctx context.Context, composeName, serviceName string) (projectID, imageRef string, err error) {
+	proj, err := s.GetProjectByComposeName(ctx, composeName)
+	if err != nil {
+		return "", "", err
+	}
+	effective, _, err := s.loadComposeProjectForProject(ctx, proj, nil, serviceName)
+	if err != nil {
+		return "", "", fmt.Errorf("load project %s: %w", proj.Name, err)
+	}
+	service, ok := effective.Services[serviceName]
+	if !ok {
+		return "", "", fmt.Errorf("service %s is not active in project %s", serviceName, proj.Name)
+	}
+	return proj.ID, service.Image, nil
 }
 
 // EnsureProjectPathUnderRoot validates that the project's path is a safe subdirectory of the configured projects root.
@@ -701,7 +723,7 @@ func (s *ProjectService) refreshComposeProjectName(ctx context.Context, proj *Pr
 	if err == nil {
 		dirName := cmp.Or(mo.PointerToOption(proj.DirName).OrEmpty(), proj.Name)
 		autoInjectEnv := kit.ParseOrDefault(cfg.AutoInjectEnv.Value, false, strconv.ParseBool)
-		meta, err = projectsync.LoadComposeMetadata(ctx, proj.Path, dirName, projectsDirectory, autoInjectEnv, s.projectPathMapper(ctx))
+		meta, err = projectsync.LoadComposeMetadata(ctx, s.composeIdentities, proj.Path, dirName, projectsDirectory, autoInjectEnv, s.projectPathMapper(ctx))
 	}
 	if err != nil {
 		if errors.Is(err, common.ErrProjectEnvUnreadable) {
@@ -971,16 +993,10 @@ func (s *ProjectService) UpdateProjectServices(ctx context.Context, projectID st
 		if changesErr != nil {
 			return changesErr
 		}
-		// ImageChanges already rejects GitOps-managed projects; tag edits need the full project.
 		if len(changes) > 0 {
-			full, _, fullErr := s.loadComposeProjectForProject(ctx, proj, nil)
-			if fullErr != nil {
-				return fmt.Errorf("load project for tag update: %w", fullErr)
+			if _, saveErr := s.SaveProjectServiceImages(ctx, projectID, changes); saveErr != nil {
+				return saveErr
 			}
-			if _, applyErr := s.updates.ApplyImageChanges(ctx, proj.Path, full, changes); applyErr != nil {
-				return applyErr
-			}
-			s.invalidateProjectCaches(projectID)
 		}
 	}
 	previousStatus := proj.Status
@@ -1294,10 +1310,22 @@ func (s *ProjectService) CreateProject(
 		return nil, fmt.Errorf("failed to get projects directory: %w", err)
 	}
 
+	// Held through the DB insert so concurrent creates and filesystem syncs
+	// cannot claim the directory while it is half written.
+	s.syncMu.Lock()
+	defer s.syncMu.Unlock()
+
 	basePath := filepath.Join(projectsDirectory, sanitized)
 	var projectPath, folderName string
+	var reused bool
 	if allowNameSuffix {
-		projectPath, folderName, err = projects.CreateUniqueDir(ctx, projectsDirectory, basePath, name, utils.DirPerm)
+		// Projects at or nested beneath an existing directory claim it.
+		projectPath, folderName, reused, err = projects.CreateUniqueDir(ctx, projectsDirectory, basePath, name, utils.DirPerm, func(dir string) (bool, error) {
+			nestedPattern := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(dir+string(filepath.Separator)) + "%"
+			var claims int64
+			countErr := s.db.WithContext(ctx).Model(&Project{}).Where("path = ? OR path LIKE ? ESCAPE '\\'", dir, nestedPattern).Count(&claims).Error
+			return claims > 0, countErr
+		})
 	} else {
 		projectPath, folderName, err = projects.CreateExactDir(ctx, projectsDirectory, basePath, name, utils.DirPerm)
 	}
@@ -1307,6 +1335,53 @@ func (s *ProjectService) CreateProject(
 	projectLogical, err := acfs.LogicalPath(projectsDirectory, projectPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve created project directory: %w", err)
+	}
+
+	// A new directory is removed on failure. A reused one only gains files:
+	// every path creation can write must be absent (an existing .env file is
+	// kept as is), so the backup records only absent paths and rollback removes just
+	// what was added. Blank env content keeps an existing .env; different
+	// content conflicts with it.
+	cleanupCtx := context.WithoutCancel(ctx)
+	undo := func() error { return acfs.RemoveAll(cleanupCtx, projectsDirectory, projectLogical) }
+	if reused {
+		targets := []string{projects.DefaultComposeFileName, projects.EffectiveEnvFileName}
+		for _, change := range manifest.FileChanges {
+			targets = append(targets, workspace.ChangeTargetPaths(change)...)
+		}
+		scope := projects.ProjectUpdateBackupScope{}
+		for _, target := range targets {
+			entry, statErr := acfs.Stat(ctx, projectPath, "/"+target, false)
+			switch {
+			case errors.Is(statErr, os.ErrNotExist):
+				scope.Paths = append(scope.Paths, target)
+			case statErr != nil:
+				return nil, workspace.WrapProjectWorkspaceError(statErr)
+			case target != projects.EffectiveEnvFileName || entry.IsDirectory:
+				return nil, common.Classify(common.ErrProjectWorkspaceConflict, fmt.Errorf("%s already exists in existing directory %q and cannot be changed", target, folderName))
+			}
+		}
+		envContent = kit.Ternary(strings.TrimSpace(kit.FromPtr(envContent)) == "", nil, envContent)
+		if envContent != nil {
+			currentEnv, readEnvErr := os.ReadFile(filepath.Join(projectPath, projects.EffectiveEnvFileName))
+			if !errors.Is(readEnvErr, os.ErrNotExist) && (readEnvErr != nil || string(currentEnv) != *envContent) {
+				return nil, common.Classify(common.ErrProjectWorkspaceConflict, fmt.Errorf(".env already exists in %q with different content; clear the environment content to keep it", folderName))
+			}
+		}
+		backup, cleanupBackup, backupProjectDirectoryErr := projects.BackupProjectDirectory(ctx, projectsDirectory, projectPath, ".project-update-backup-*", scope)
+		if backupProjectDirectoryErr != nil {
+			return nil, backupProjectDirectoryErr
+		}
+		defer cleanupBackup()
+		undo = func() error {
+			return projects.RestoreProjectDirectoryBackup(cleanupCtx, projectsDirectory, projectPath, backup)
+		}
+	}
+	rollback := func(cause error) error {
+		if undoErr := undo(); undoErr != nil {
+			return errors.Join(cause, fmt.Errorf("roll back project directory: %w", undoErr))
+		}
+		return cause
 	}
 
 	proj := &Project{
@@ -1325,8 +1400,7 @@ func (s *ProjectService) CreateProject(
 		SkipDirectories:  s.config.ProjectScanSkipDirs,
 		ComposeFileName:  projects.DefaultComposeFileName,
 	}); applyProjectWorkspaceChangesErr != nil {
-		_ = acfs.RemoveAll(context.WithoutCancel(ctx), projectsDirectory, projectLogical)
-		return nil, workspace.WrapProjectWorkspaceError(applyProjectWorkspaceChangesErr)
+		return nil, rollback(workspace.WrapProjectWorkspaceError(applyProjectWorkspaceChangesErr))
 	}
 
 	// GitOps-originated creates (allowNameSuffix=false) tolerate not-yet-supplied
@@ -1343,14 +1417,11 @@ func (s *ProjectService) CreateProject(
 		"",
 		!allowNameSuffix,
 	); validateComposeContentForUpdateErr != nil {
-		_ = acfs.RemoveAll(context.WithoutCancel(ctx), projectsDirectory, projectLogical)
-		return nil, fmt.Errorf("invalid compose file: %w", validateComposeContentForUpdateErr)
+		return nil, rollback(fmt.Errorf("invalid compose file: %w", validateComposeContentForUpdateErr))
 	}
 
 	if writeProjectFilesErr := projects.WriteProjectFiles(ctx, projectsDirectory, projectPath, composeContent, envContent); writeProjectFilesErr != nil {
-		// Best-effort cleanup to restore pre-transaction behavior.
-		_ = acfs.RemoveAll(context.WithoutCancel(ctx), projectsDirectory, projectLogical)
-		return nil, fmt.Errorf("failed to save project files: %w", writeProjectFilesErr)
+		return nil, rollback(fmt.Errorf("failed to save project files: %w", writeProjectFilesErr))
 	}
 	composeMeta, err := projects.ParseArcaneComposeMetadata(
 		ctx,
@@ -1373,27 +1444,21 @@ func (s *ProjectService) CreateProject(
 		}
 		return tags.AttachInitial(tagStore{tx: tx}, proj.ID, normalizedUITags, normalizedTagColors)
 	}); transactionErr != nil {
-		_ = acfs.RemoveAll(context.WithoutCancel(ctx), projectsDirectory, projectLogical)
-		return nil, fmt.Errorf("failed to create project: %w", transactionErr)
+		return nil, rollback(fmt.Errorf("failed to create project: %w", transactionErr))
 	}
 	s.refreshComposeProjectName(ctx, proj)
 	s.refreshProjectImageRefs(ctx, proj)
 	if reconcileComposeProjectTagsErr := s.reconcileComposeProjectTags(ctx, proj.ID, composeMeta.ProjectTags); reconcileComposeProjectTagsErr != nil {
-		cleanupCtx := context.WithoutCancel(ctx)
-		databaseCleanupErr := s.db.WithContext(cleanupCtx).Transaction(func(tx *gorm.DB) error {
+		databaseCleanupErr := s.db.WithContext(context.WithoutCancel(ctx)).Transaction(func(tx *gorm.DB) error {
 			return deleteProjectWithTags(tx, proj.ID)
 		})
-		fileCleanupErr := acfs.RemoveAll(cleanupCtx, projectsDirectory, projectLogical)
 		if databaseCleanupErr != nil {
 			databaseCleanupErr = fmt.Errorf("rollback project database state after tag reconciliation failure: %w", databaseCleanupErr)
 		}
-		if fileCleanupErr != nil {
-			fileCleanupErr = fmt.Errorf("rollback project files after tag reconciliation failure: %w", fileCleanupErr)
-		}
-		return nil, errors.Join(fmt.Errorf("reconcile Compose project tags: %w", reconcileComposeProjectTagsErr), databaseCleanupErr, fileCleanupErr)
+		return nil, rollback(errors.Join(fmt.Errorf("reconcile Compose project tags: %w", reconcileComposeProjectTagsErr), databaseCleanupErr))
 	}
 
-	metadata := database.JSON{"action": "create", "projectID": proj.ID, "projectName": proj.Name, "path": projectPath}
+	metadata := database.JSON{"action": "create", "projectID": proj.ID, "projectName": proj.Name, "path": projectPath, "reusedDirectory": reused}
 	s.logProjectEvent(ctx, event.EventTypeProjectCreate, proj.ID, proj.Name, user, metadata, "could not log project creation")
 
 	return proj, nil
@@ -2554,7 +2619,7 @@ func (s *ProjectService) upsertProjectForDir(ctx context.Context, dirName, dirPa
 	projectsDirectory, serviceCountErr := projects.GetProjectsDirectory(ctx, cfg.ProjectsDirectory.Value)
 	if serviceCountErr == nil {
 		autoInjectEnv := kit.ParseOrDefault(cfg.AutoInjectEnv.Value, false, strconv.ParseBool)
-		composeMetadata, serviceCountErr = projectsync.LoadComposeMetadata(ctx, dirPath, dirName, projectsDirectory, autoInjectEnv, s.projectPathMapper(ctx))
+		composeMetadata, serviceCountErr = projectsync.LoadComposeMetadata(ctx, s.composeIdentities, dirPath, dirName, projectsDirectory, autoInjectEnv, s.projectPathMapper(ctx))
 	}
 	serviceCountLogLevel := kit.Ternary(errors.Is(serviceCountErr, common.ErrProjectEnvUnreadable), slog.LevelDebug, slog.LevelWarn)
 
@@ -3172,28 +3237,39 @@ func (s *ProjectService) applyProjectRename(ctx context.Context, proj *Project, 
 
 // UpdateProjectServiceImages persists selected service image tags before recreating them.
 func (s *ProjectService) UpdateProjectServiceImages(ctx context.Context, projectID string, changes map[string]updatertypes.ServiceImageChange, user usertypes.Actor) error {
-	if len(changes) == 0 {
-		return errors.New("service image changes are required")
-	}
-	proj, err := s.getMutableProject(ctx, projectID)
+	services, err := s.SaveProjectServiceImages(ctx, projectID, changes)
 	if err != nil {
 		return err
 	}
-	if gitOpsSyncID(proj) != "" {
-		return errors.New("tag updates cannot edit a GitOps-managed project; update image tags in the source repository")
-	}
-	effective, _, err := s.loadComposeProjectForProject(ctx, proj, nil)
-	if err != nil {
-		return fmt.Errorf("load project for tag update: %w", err)
-	}
-	services, err := s.updates.ApplyImageChanges(ctx, proj.Path, effective, changes)
-	if err != nil {
-		return err
-	}
-	s.invalidateProjectCaches(projectID)
 	// Keep the desired source on deployment failure: Compose may have partially
 	// recreated services, and the pending update must remain retryable.
 	return s.UpdateProjectServices(ctx, projectID, services, user, false)
+}
+
+// SaveProjectServiceImages persists selected service image tags without
+// deploying them and returns the changed services.
+func (s *ProjectService) SaveProjectServiceImages(ctx context.Context, projectID string, changes map[string]updatertypes.ServiceImageChange) ([]string, error) {
+	if len(changes) == 0 {
+		return nil, errors.New("service image changes are required")
+	}
+	proj, err := s.getMutableProject(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	if gitOpsSyncID(proj) != "" {
+		return nil, errors.New("tag updates cannot edit a GitOps-managed project; update image tags in the source repository")
+	}
+	// Selecting the changed services keeps profile-gated ones active.
+	effective, _, err := s.loadComposeProjectForProject(ctx, proj, nil, slices.Collect(maps.Keys(changes))...)
+	if err != nil {
+		return nil, fmt.Errorf("load project for tag update: %w", err)
+	}
+	services, err := s.updates.ApplyImageChanges(ctx, proj.Path, effective, changes)
+	if err != nil {
+		return nil, err
+	}
+	s.invalidateProjectCaches(projectID)
+	return services, nil
 }
 
 func (s *ProjectService) GetProjectWorkspace(ctx context.Context, projectID string) (*workspacetypes.Workspace, error) {

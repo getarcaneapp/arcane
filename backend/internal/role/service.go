@@ -377,6 +377,15 @@ func (s *RoleService) ListUserAssignments(ctx context.Context, userID string) ([
 // is enforced before commit. Shared by SetUserAssignments and
 // ReplaceOidcAssignments.
 func (s *RoleService) replaceUserAssignmentsForSourceInternal(ctx context.Context, userID, source string, desired []UserRoleAssignment) error {
+	seen := make(map[string]struct{}, len(desired))
+	desired = slices.DeleteFunc(desired, func(a UserRoleAssignment) bool {
+		key := assignmentKeyInternal(a)
+		if _, dup := seen[key]; dup {
+			return true
+		}
+		seen[key] = struct{}{}
+		return false
+	})
 	for i := range desired {
 		desired[i].UserID = userID
 		desired[i].Source = source
@@ -422,6 +431,14 @@ func (s *RoleService) replaceUserAssignmentsForSourceInternal(ctx context.Contex
 	}
 	s.InvalidateUser(userID)
 	return nil
+}
+
+func assignmentKeyInternal(a UserRoleAssignment) string {
+	envID := ""
+	if a.EnvironmentID != nil {
+		envID = *a.EnvironmentID
+	}
+	return a.RoleID + "\x00" + envID
 }
 
 // SetUserAssignments replaces the user's source='manual' assignments with the

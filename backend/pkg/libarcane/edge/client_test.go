@@ -2274,7 +2274,7 @@ func (f *fakeTunnelConn) Send(msg *TunnelMessage) error {
 	}
 	copyMsg := *msg
 	if msg.Headers != nil {
-		copyMsg.Headers = cloneHeaderMap(msg.Headers)
+		copyMsg.Headers = maps.Clone(msg.Headers)
 	}
 	if msg.Body != nil {
 		copyMsg.Body = append([]byte(nil), msg.Body...)

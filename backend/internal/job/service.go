@@ -272,6 +272,9 @@ func (s *JobService) rescheduleAffectedJobInternal(ctx context.Context, jobID st
 	}
 
 	expectedSchedule := job.Schedule(rescheduleCtx)
+	if conditional, isConditional := job.(scheduler.ConditionalJob); isConditional && !conditional.ShouldSchedule(rescheduleCtx) {
+		expectedSchedule = ""
+	}
 	if runtimeState.Schedule != expectedSchedule {
 		return fmt.Errorf("job %s runtime schedule %q does not match requested schedule %q", jobID, runtimeState.Schedule, expectedSchedule)
 	}

@@ -264,7 +264,27 @@ export function tryParseStructuredLog(message: string): {
 		return { isJson: false, isStructured: false };
 	}
 
-	const jsonCandidate = unwrapWrappedJson(trimmed);
+	let jsonCandidate = unwrapWrappedJson(trimmed);
+	if (!jsonCandidate.startsWith('{') && !jsonCandidate.startsWith('[')) {
+		let prefixEnd = 0;
+		while (prefixEnd < jsonCandidate.length && jsonCandidate.charAt(prefixEnd).trim() !== '') {
+			prefixEnd++;
+		}
+
+		const payload = jsonCandidate.slice(prefixEnd).trimStart();
+		if (payload.startsWith('{') || payload.startsWith('[')) {
+			const hasDetailsPrefix = jsonCandidate
+				.slice(0, prefixEnd)
+				.split(',')
+				.every((attribute) => {
+					const equalsIndex = attribute.indexOf('=');
+					return equalsIndex > 0 && equalsIndex === attribute.lastIndexOf('=');
+				});
+			if (hasDetailsPrefix) {
+				jsonCandidate = payload;
+			}
+		}
+	}
 	if (jsonCandidate.startsWith('{') || jsonCandidate.startsWith('[')) {
 		try {
 			const parsed = JSON.parse(jsonCandidate);

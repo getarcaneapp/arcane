@@ -434,7 +434,7 @@ func PrepareProjectServiceImages(source []byte, effective *types.Project, change
 		if !strings.Contains(imageNode.Value, "$") && refs.NormalizeImageUpdateRef(imageNode.Value) != expected && refs.NormalizeImageUpdateRef(imageNode.Value) != target {
 			return nil, nil, fmt.Errorf("service %s source image changed since Compose was loaded", name)
 		}
-		edit, err := composeImageSourceEdit(source, imageNode, change.TargetRef)
+		edit, err := composeImageSourceEdit(source, imageNode, refs.PreserveConfiguredRef(service.Image, change.TargetRef))
 		if err != nil {
 			return nil, nil, fmt.Errorf("service %s: %w", name, err)
 		}

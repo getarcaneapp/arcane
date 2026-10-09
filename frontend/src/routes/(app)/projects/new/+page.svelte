@@ -363,6 +363,7 @@
 					createLoading={ui.saving}
 					createLabel={m.compose_create_project()}
 					createLoadingLabel={m.common_action_creating()}
+					createShortcut={['mod', 's']}
 					onCreate={() => handleSubmit()}
 					itemsDisabled={createMenuBusy}
 					showUseTemplate={canUseTemplates}

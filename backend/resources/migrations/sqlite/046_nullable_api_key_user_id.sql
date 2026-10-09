@@ -3,6 +3,7 @@
 -- Environment bootstrap keys are owned by the system, not a user.
 -- Allow user_id to be NULL so agent-side key creation doesn't violate the FK constraint.
 PRAGMA foreign_keys=OFF;
+BEGIN;
 
 DROP TABLE IF EXISTS api_keys_new;
 
@@ -60,11 +61,13 @@ CREATE INDEX IF NOT EXISTS idx_api_keys_key_prefix ON api_keys(key_prefix);
 CREATE INDEX IF NOT EXISTS idx_api_keys_expires_at_not_null ON api_keys(expires_at) WHERE expires_at IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_api_keys_user_managed_by_created_at ON api_keys(user_id, managed_by, created_at, id);
 
+COMMIT;
 PRAGMA foreign_keys=ON;
 
 -- +goose Down
 -- Remove environment bootstrap keys (user_id IS NULL) before restoring the NOT NULL constraint.
 PRAGMA foreign_keys=OFF;
+BEGIN;
 
 DROP TABLE IF EXISTS api_keys_old;
 
@@ -123,4 +126,5 @@ CREATE INDEX IF NOT EXISTS idx_api_keys_key_prefix ON api_keys(key_prefix);
 CREATE INDEX IF NOT EXISTS idx_api_keys_expires_at_not_null ON api_keys(expires_at) WHERE expires_at IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_api_keys_user_managed_by_created_at ON api_keys(user_id, managed_by, created_at, id);
 
+COMMIT;
 PRAGMA foreign_keys=ON;

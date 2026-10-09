@@ -47,7 +47,7 @@ func NewHTTPServer(lc fx.Lifecycle, p HTTPServerParams) (*http.Server, error) {
 		return nil, err
 	}
 	if p.TunnelServer != nil {
-		p.TunnelServer.SetConfig(edgeCfg)
+		p.TunnelServer.Config = edgeCfg
 	}
 
 	httpHandler, grpcServer := configureTunnelServerInternal(p.AppCtx, p.Config, p.Router, p.TunnelServer, listenAddr)

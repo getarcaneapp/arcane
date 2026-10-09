@@ -13,6 +13,7 @@ import { tryCatch } from '#lib/utils/try-catch.js';
 // --- Compose / Swarm management labels ---
 
 export const COMPOSE_PROJECT_LABEL = 'com.docker.compose.project';
+export const COMPOSE_SERVICE_LABEL = 'com.docker.compose.service';
 export const SWARM_STACK_LABEL = 'com.docker.stack.namespace';
 
 export function getManagedByLabel(labels?: Record<string, string> | null): string | undefined {

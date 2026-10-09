@@ -321,13 +321,16 @@ func RemoveStaleComposeFiles(ctx context.Context, projectPath, composeFileName s
 }
 
 // CreateUniqueDir creates a unique directory within the allowed projectsRoot,
-// suffixing "-N" until an unused name is found.
-func CreateUniqueDir(ctx context.Context, projectsRoot, basePath, name string, perm os.FileMode) (path, folderName string, err error) {
+// suffixing "-N" until an unused name is found. An existing basePath is reused
+// instead when it is a real directory that claimed reports as unowned and in
+// which Compose detection finds no file (an ambiguous result counts as one);
+// reused reports that case.
+func CreateUniqueDir(ctx context.Context, projectsRoot, basePath, name string, perm os.FileMode, claimed func(dir string) (bool, error)) (path, folderName string, reused bool, err error) {
 	sanitized := SanitizeProjectName(name)
 
 	// Reject empty or invalid sanitized names
 	if sanitized == "" || strings.Trim(sanitized, "_") == "" {
-		return "", "", errors.New("invalid project name: results in empty directory name")
+		return "", "", false, errors.New("invalid project name: results in empty directory name")
 	}
 
 	candidate := basePath
@@ -336,15 +339,31 @@ func CreateUniqueDir(ctx context.Context, projectsRoot, basePath, name string, p
 	for counter := 1; ; counter++ {
 		logicalPath, logicalErr := acfs.LogicalPath(projectsRoot, candidate)
 		if logicalErr != nil {
-			return "", "", fmt.Errorf("project directory would be outside allowed projects root: %w", logicalErr)
+			return "", "", false, fmt.Errorf("project directory would be outside allowed projects root: %w", logicalErr)
 		}
 
 		mkErr := acfs.Mkdir(ctx, projectsRoot, logicalPath, perm)
 		if mkErr == nil {
-			return candidate, folderName, nil
+			return candidate, folderName, false, nil
 		}
 		if !errors.Is(mkErr, os.ErrExist) {
-			return "", "", mkErr
+			return "", "", false, mkErr
+		}
+
+		if candidate == basePath {
+			info, statErr := os.Lstat(basePath)
+			if statErr != nil {
+				return "", "", false, fmt.Errorf("inspect existing project directory: %w", statErr)
+			}
+			isClaimed, claimedErr := claimed(basePath)
+			if claimedErr != nil {
+				return "", "", false, fmt.Errorf("check existing project directory claims: %w", claimedErr)
+			}
+			if info.IsDir() && !isClaimed {
+				if composePath, detectErr := DetectComposeFile(ctx, projectsRoot, basePath); composePath == "" && errors.Is(detectErr, common.ErrComposeFileNotFound) {
+					return basePath, folderName, true, nil
+				}
+			}
 		}
 
 		candidate = fmt.Sprintf("%s-%d", basePath, counter)

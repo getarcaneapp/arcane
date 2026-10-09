@@ -1,3 +1,29 @@
+## v2.15.1
+
+### Bug fixes
+
+- remove table header blur ([4d9bca0](https://github.com/getarcaneapp/arcane/commit/4d9bca092d6006b7265a6ce07928860b47ab84a5) by @kmendell)
+- interpolate variables in Compose include paths ([\#4298](https://github.com/getarcaneapp/arcane/pull/4298) by @kmendell)
+- resolve webhook target names on remote environments ([\#4299](https://github.com/getarcaneapp/arcane/pull/4299) by @kmendell)
+- default notifySelf to true and add setting for Signal notifications ([\#4302](https://github.com/getarcaneapp/arcane/pull/4302) by @Shraymonks)
+- use persistent Git storage for SSH host keys on native installs ([\#4300](https://github.com/getarcaneapp/arcane/pull/4300) by @kmendell)
+- stop logout from hanging on permission errors after OIDC login ([\#4309](https://github.com/getarcaneapp/arcane/pull/4309) by @kmendell)
+- stop system backups failing on live project files during capture ([\#4311](https://github.com/getarcaneapp/arcane/pull/4311) by @kmendell)
+- move Francis actor state into its own SQLite database ([\#4312](https://github.com/getarcaneapp/arcane/pull/4312) by @kmendell)
+- keep selected tag on self-update and refresh stale project update status ([\#4313](https://github.com/getarcaneapp/arcane/pull/4313) by @kmendell)
+- report accurate reclaimed space in scheduled prune ([\#4317](https://github.com/getarcaneapp/arcane/pull/4317) by @kmendell)
+- allow deleting backups whose S3 repository no longer exists ([\#4319](https://github.com/getarcaneapp/arcane/pull/4319) by @kmendell)
+- navigate to the selected environment on environment-scoped routes ([\#4320](https://github.com/getarcaneapp/arcane/pull/4320) by @kmendell)
+- only release arcane-cli on apple silicon (arm64) drop amd64 support ([b3acb52](https://github.com/getarcaneapp/arcane/commit/b3acb52dd02f39e39489203ce04ab316b47de8f6) by @kmendell)
+- keep the Compose image spelling during updates and self-updates ([\#4330](https://github.com/getarcaneapp/arcane/pull/4330) by @kmendell)
+
+### Other
+
+- move docker utils package in go.getarcane.app/docker ([\#4296](https://github.com/getarcaneapp/arcane/pull/4296) by @kmendell)
+- inline logic in project services ([\#4316](https://github.com/getarcaneapp/arcane/pull/4316) by @kmendell)
+
+**Full Changelog**: https://github.com/getarcaneapp/arcane/compare/v2.15.0...v2.15.1
+
 ## v2.15.0
 
 ### New features
@@ -48,6 +74,7 @@
 - relayout login screen ([3226230](https://github.com/getarcaneapp/arcane/commit/32262306cabef7d9809651996243898cda51bdc6) by @kmendell)
 
 **Full Changelog**: https://github.com/getarcaneapp/arcane/compare/v2.14.0...v2.15.0
+
 ## v2.14.0
 
 ### New features

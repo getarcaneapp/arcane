@@ -40,6 +40,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/network"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/s3"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	systembackup "github.com/getarcaneapp/arcane/backend/v2/internal/system/children/backup"
@@ -80,6 +81,7 @@ func NewSystemService(
 	activityService *activity.ActivityService,
 	versionService *version.VersionService,
 	eventService *event.EventService,
+	projectService *project.ProjectService,
 	backupEngine *backup.Engine,
 	s3Destinations *s3.S3DestinationService,
 	recoveryKeys *backup.RecoveryKeyStore,
@@ -100,7 +102,7 @@ func NewSystemService(
 			WithTTL(dockerHostMemoryCacheTTL).
 			Build(),
 		prune:   prune.NewService(location, dockerService.GetClient, activityService, imageUpdateService, volumeService, networkService),
-		upgrade: upgrade.NewService(db, dockerService, versionService, eventService, settingsService, resolveUpgraderRuntimeOptionsInternal),
+		upgrade: upgrade.NewService(db, dockerService, versionService, eventService, settingsService, projectService, resolveUpgraderRuntimeOptionsInternal),
 	}
 	var sqlDB func() (*sql.DB, error)
 	if db != nil {
@@ -137,6 +139,11 @@ func (s *SystemService) ReconcileInterruptedBackups(ctx context.Context, protect
 // per-policy system backup jobs. Agent mode leaves them unset.
 func (s *SystemService) SetBackupScheduler(ctx context.Context, dynamicScheduler scheduler.DynamicScheduler, admissionGate *runs.Admission) error {
 	return s.backup.SetScheduler(ctx, dynamicScheduler, admissionGate)
+}
+
+// PruneLocalBackupRepository frees the space of deleted local system backups.
+func (s *SystemService) PruneLocalBackupRepository(ctx context.Context) error {
+	return s.backup.PruneLocalRepository(ctx)
 }
 
 // RegisterBackupJobOnStartup schedules every saved system and system-managed volume backup policy.
