@@ -19,6 +19,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/types/v2/container"
 	"github.com/getarcaneapp/arcane/types/v2/gitops"
+	httpxtypes "github.com/getarcaneapp/arcane/types/v2/httpx"
 	usertypes "github.com/getarcaneapp/arcane/types/v2/user"
 	"github.com/getarcaneapp/arcane/types/v2/volume"
 	"github.com/labstack/echo/v5"
@@ -107,7 +108,7 @@ func NewEnvProxyMiddlewareWithParamAndRegistry(
 		paramName:     paramName,
 		resolver:      resolver,
 		authValidator: authValidator,
-		httpClient:    &http.Client{Timeout: proxyTimeout},
+		httpClient:    httpx.NewHTTPClient(httpxtypes.ClientOptions{Timeout: proxyTimeout, TLSHandshakeTimeout: 10 * time.Second}),
 		registry:      registry,
 		matcher:       matcher,
 		checkOrigin:   checkOrigin,
@@ -774,8 +775,7 @@ func (m *EnvironmentMiddleware) createProxyRequest(c *echo.Context, target strin
 		ContentLength: contentLength,
 	}).WithContext(srcReq.Context())
 
-	skip := edge.GetSkipHeaders()
-	edge.CopyRequestHeaders(srcReq.Header, req.Header, skip)
+	edge.CopyRequestHeaders(srcReq.Header, req.Header)
 	edge.SetAuthHeader(req, c)
 	edge.SetAgentToken(req, accessToken)
 	edge.SetForwardedHeaders(req, c.RealIP(), srcReq.Host)

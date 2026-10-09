@@ -179,10 +179,10 @@ func TestTunnelServer_HandlePoll_AcceptsTokenAfterProxyTerminatedMTLS(t *testing
 		}
 		return "env-proxy-mtls", nil
 	}, nil)
-	server.SetConfig(&Config{
+	server.Config = &Config{
 		EdgeMTLSMode: EdgeMTLSModeRequired,
 		AppURL:       "https://manager.example.com",
-	})
+	}
 
 	router := echo.New()
 	router.POST("/api/tunnel/poll", server.HandlePoll)

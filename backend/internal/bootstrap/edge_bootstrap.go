@@ -50,7 +50,7 @@ func registerEdgeTunnelRoutes(
 	}
 
 	server := edge.NewTunnelServerWithRegistry(registry, resolver, statusCallback)
-	server.SetConfig(&edge.Config{
+	server.Config = &edge.Config{
 		EdgeMTLSMode:       cfg.EdgeMTLSMode,
 		EdgeMTLSCAFile:     cfg.EdgeMTLSCAFile,
 		EdgeMTLSCertFile:   cfg.EdgeMTLSCertFile,
@@ -59,8 +59,8 @@ func registerEdgeTunnelRoutes(
 		EdgeMTLSAssetsDir:  cfg.EdgeMTLSAssetsDir,
 		AppURL:             cfg.GetAppURL(),
 		ManagerApiUrl:      cfg.ManagerApiUrl,
-	})
-	server.SetEnvironmentNameResolver(func(ctx context.Context, envID string) (string, error) {
+	}
+	server.NameResolver = func(ctx context.Context, envID string) (string, error) {
 		env, err := environmentService.GetEnvironmentByID(ctx, envID)
 		if err != nil {
 			return "", err
@@ -69,9 +69,9 @@ func registerEdgeTunnelRoutes(
 			return "", nil
 		}
 		return env.Name, nil
-	})
-	server.SetEventCallback(eventCallback)
-	server.SetEnrollmentCallback(func(ctx context.Context, envID, remoteAddr string, certIssued, caGenerated, reenrolled bool) {
+	}
+	server.EventCallback = eventCallback
+	server.EnrollmentCallback = func(ctx context.Context, envID, remoteAddr string, certIssued, caGenerated, reenrolled bool) {
 		if eventService == nil {
 			return
 		}
@@ -93,7 +93,7 @@ func registerEdgeTunnelRoutes(
 			Metadata:      database.JSON{"remoteAddr": remoteAddr, "reenrollment": reenrolled},
 		})
 		createEdgeMTLSIssueEventsInternal(ctx, eventService, envIDCopy, envNameCopy, remoteAddr, certIssued, caGenerated, reenrolled)
-	})
+	}
 	var stopCleanup func(context.Context) error
 	lifecycle.Append(fx.Hook{
 		OnStart: func(context.Context) error {

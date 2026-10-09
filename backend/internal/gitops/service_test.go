@@ -1197,7 +1197,7 @@ func (e *backupTestEnvInternal) reloadInternal(t *testing.T, id string) *project
 // checkoutRemoteInternal clones the backup branch so the pushed tree can be inspected.
 func (e *backupTestEnvInternal) checkoutRemoteInternal(t *testing.T) string {
 	t.Helper()
-	repoPath, err := e.remote.Clone(t.Context(), e.repoURL, "main", git.AuthConfig{AuthType: "none"})
+	repoPath, err := e.remote.Clone(t.Context(), e.repoURL, "main", git.AuthConfig{AuthType: "none"}, 0)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = e.remote.Cleanup(repoPath) })
 	return repoPath
