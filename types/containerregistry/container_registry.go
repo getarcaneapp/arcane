@@ -46,6 +46,7 @@ type ContainerRegistry struct {
 	RepositoryNames []string `json:"repositoryNames"`
 
 	// AWSAccessKeyID is the AWS Access Key ID for ECR registries.
+	// Empty means the default AWS credential chain (e.g. an IAM instance profile) is used.
 	//
 	// Required: false
 	AWSAccessKeyID string `json:"awsAccessKeyId,omitempty"`
@@ -198,6 +199,7 @@ type Sync struct {
 	RepositoryNames []string `json:"repositoryNames"`
 
 	// AWSAccessKeyID is the AWS Access Key ID for ECR registries.
+	// Empty means the agent uses the default AWS credential chain (e.g. its own IAM instance profile).
 	//
 	// Required: false
 	AWSAccessKeyID string `json:"awsAccessKeyId,omitempty"`
