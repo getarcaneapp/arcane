@@ -650,6 +650,8 @@
   "convert_create_message": "Dit project is gegenereerd op basis van bestaande container(s). De originele containers blijven actief tenzij je ze verwijdert — het verwijderen vindt onmiddellijk na het aanmaken plaats, voordat het project wordt geïmplementeerd, en kan niet ongedaan worden gemaakt.",
   "experimental_features": "Experimentele functies",
   "experimental_features_description": "Functies inschakelen die in toekomstige versies mogelijk worden gewijzigd of verwijderd",
+  "development_branding": "Ontwikkeling en merkopbouw",
+  "development_branding_description": "Toon in deze build het ontwikkelingspictogram in plaats van het standaard Arcane-logo",
   "containers_bulk_start_confirm_title": "{count} container(s) starten",
   "containers_bulk_start_confirm_message": "Weet u zeker dat u {count} container(s) wilt starten?",
   "containers_bulk_stop_confirm_title": "Stop {count} container(s)",
