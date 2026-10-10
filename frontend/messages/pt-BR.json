@@ -650,6 +650,8 @@
   "convert_create_message": "Este projeto foi gerado a partir de um ou mais contêineres existentes. Os originais continuam em execução, a menos que você os remova — a remoção ocorre imediatamente após a criação, antes da implantação do projeto, e não pode ser desfeita.",
   "experimental_features": "Recursos experimentais",
   "experimental_features_description": "Ativar recursos que podem sofrer alterações ou ser removidos em versões futuras",
+  "development_branding": "Desenvolvimento de marca",
+  "development_branding_description": "Mostrar o ícone de desenvolvimento em vez do logotipo padrão da Arcane nesta versão",
   "containers_bulk_start_confirm_title": "Iniciar {count} container(s)",
   "containers_bulk_start_confirm_message": "Deseja mesmo iniciar {count} container(s)?",
   "containers_bulk_stop_confirm_title": "Parar {count} container(s)",
