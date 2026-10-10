@@ -650,6 +650,8 @@
   "convert_create_message": "Ce projet a été généré à partir d'un ou plusieurs conteneurs existants. Les conteneurs d'origine continuent de fonctionner tant que vous ne les supprimez pas. Leur suppression intervient immédiatement après la création du projet, avant son déploiement, et ne peut pas être annulée.",
   "experimental_features": "Fonctionnalités expérimentales",
   "experimental_features_description": "Activer des fonctionnalités susceptibles d'être modifiées ou supprimées dans les prochaines versions",
+  "development_branding": "Développement de l'image de marque",
+  "development_branding_description": "Afficher l'icône de développement à la place du logo Arcane standard dans cette version",
   "containers_bulk_start_confirm_title": "Démarrer {count} Conteneur(s)",
   "containers_bulk_start_confirm_message": "Êtes-vous sûr de vouloir démarrer {count} conteneur(s) ?",
   "containers_bulk_stop_confirm_title": "Arrêter {count} conteneur(s)",
