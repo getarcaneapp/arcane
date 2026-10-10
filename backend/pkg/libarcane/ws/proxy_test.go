@@ -18,7 +18,7 @@ import (
 func allowAnyOriginForTest(*http.Request) bool { return true }
 
 func TestProxyHTTP_RequiresOriginValidator(t *testing.T) {
-	err := ProxyHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", http.NoBody), "ws://127.0.0.1:1", nil, nil)
+	err := ProxyHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", http.NoBody), "ws://127.0.0.1:1", nil, nil, http.DefaultClient)
 	require.Error(t, err, "proxy must refuse to upgrade without an origin validator")
 }
 
@@ -48,7 +48,7 @@ func TestProxyHTTP_BidirectionalMessages(t *testing.T) {
 
 	// 2. Create a "proxy" server that uses ProxyHTTP
 	proxyServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_ = ProxyHTTP(w, r, remoteWS, nil, allowAnyOriginForTest)
+		_ = ProxyHTTP(w, r, remoteWS, nil, allowAnyOriginForTest, http.DefaultClient)
 	}))
 	defer proxyServer.Close()
 
@@ -92,7 +92,7 @@ func TestProxyHTTP_RemoteClose(t *testing.T) {
 
 	proxyDone := make(chan error, 1)
 	proxyServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		proxyDone <- ProxyHTTP(w, r, remoteWS, nil, allowAnyOriginForTest)
+		proxyDone <- ProxyHTTP(w, r, remoteWS, nil, allowAnyOriginForTest, http.DefaultClient)
 	}))
 	defer proxyServer.Close()
 
@@ -116,7 +116,7 @@ func TestProxyHTTP_RemoteClose(t *testing.T) {
 func TestProxyHTTP_InvalidRemoteURL(t *testing.T) {
 	proxyDone := make(chan error, 1)
 	proxyServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		proxyDone <- ProxyHTTP(w, r, "ws://127.0.0.1:1", nil, allowAnyOriginForTest)
+		proxyDone <- ProxyHTTP(w, r, "ws://127.0.0.1:1", nil, allowAnyOriginForTest, http.DefaultClient)
 	}))
 	defer proxyServer.Close()
 
@@ -159,7 +159,7 @@ func TestProxyHTTP_BinaryMessages(t *testing.T) {
 	remoteWS := "ws" + strings.TrimPrefix(remoteServer.URL, "http")
 
 	proxyServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_ = ProxyHTTP(w, r, remoteWS, nil, allowAnyOriginForTest)
+		_ = ProxyHTTP(w, r, remoteWS, nil, allowAnyOriginForTest, http.DefaultClient)
 	}))
 	defer proxyServer.Close()
 
@@ -202,7 +202,7 @@ func TestProxyHTTP_HeadersForwarded(t *testing.T) {
 	}
 
 	proxyServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_ = ProxyHTTP(w, r, remoteWS, customHeaders, allowAnyOriginForTest)
+		_ = ProxyHTTP(w, r, remoteWS, customHeaders, allowAnyOriginForTest, http.DefaultClient)
 	}))
 	defer proxyServer.Close()
 

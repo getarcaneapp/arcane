@@ -37,9 +37,9 @@ const (
 	diagnosticsPingPeriod = 54 * time.Second
 )
 
-// buildDiagnosticsInternal assembles a snapshot: runtime/memory/GC from the
+// buildDiagnostics assembles a snapshot: runtime/memory/GC from the
 // DiagnosticsService plus this package's WebSocket metrics and worker-goroutine count.
-func buildDiagnosticsInternal(diag *diagnostics.DiagnosticsService) systemtypes.Diagnostics {
+func buildDiagnostics(diag *diagnostics.DiagnosticsService) systemtypes.Diagnostics {
 	d := systemtypes.Diagnostics{Timestamp: time.Now().UTC()}
 	if diag != nil {
 		d.Runtime, d.Memory, d.GC = diag.Collect()
@@ -52,10 +52,10 @@ func buildDiagnosticsInternal(diag *diagnostics.DiagnosticsService) systemtypes.
 	return d
 }
 
-// registerDiagnosticsRoutesInternal wires the global diagnostics WebSocket streams and the
+// registerDiagnosticsRoutes wires the global diagnostics WebSocket streams and the
 // net/http/pprof debug endpoints. Streams require the diagnostics permission;
 // pprof keeps the stricter admin-required gate. Called from NewWebSocketHandler.
-func (h *WebSocketHandler) registerDiagnosticsRoutesInternal(group *echo.Group, authMiddleware *auth.AuthMiddleware) {
+func (h *WebSocketHandler) registerDiagnosticsRoutes(group *echo.Group, authMiddleware *auth.AuthMiddleware) {
 	diag := group.Group("/diagnostics",
 		authMiddleware.WithAdminNotRequired().Add(),
 		middleware.RequireEchoPermission(authz.PermDiagnosticsRead),
@@ -86,10 +86,10 @@ func (h *WebSocketHandler) registerDiagnosticsRoutesInternal(group *echo.Group, 
 func (h *WebSocketHandler) DiagnosticsStream(c *echo.Context) error {
 	ps, _ := c.Get(string(middleware.ContextKeyUserPermissions)).(*authz.PermissionSet)
 	snapshot := func(context.Context) any {
-		d := buildDiagnosticsInternal(h.diagnosticsService)
+		d := buildDiagnostics(h.diagnosticsService)
 		return systemtypes.DiagnosticsMessage{Type: "snapshot", Snapshot: &d}
 	}
-	return h.streamSnapshotsInternal(c, diagnosticsStreamInterval, snapshot, func(ctx context.Context, cmd systemtypes.DiagnosticsCommand) any {
+	return h.streamSnapshots(c, diagnosticsStreamInterval, snapshot, func(ctx context.Context, cmd systemtypes.DiagnosticsCommand) any {
 		if cmd.Type == "refresh" {
 			return snapshot(ctx)
 		}
@@ -124,14 +124,14 @@ func (h *WebSocketHandler) DiagnosticsStream(c *echo.Context) error {
 // ActorDiagnosticsStream pushes actor diagnostics for every environment on
 // connect and then every actorDiagnosticsStreamInterval.
 func (h *WebSocketHandler) ActorDiagnosticsStream(c *echo.Context) error {
-	return h.streamSnapshotsInternal(c, actorDiagnosticsStreamInterval, func(ctx context.Context) any {
+	return h.streamSnapshots(c, actorDiagnosticsStreamInterval, func(ctx context.Context) any {
 		return h.diagnosticsService.CollectAllActors(ctx)
 	}, nil)
 }
 
-// streamSnapshotsInternal writes build's result on connect and every interval until
+// streamSnapshots writes build's result on connect and every interval until
 // the client disconnects. A non-nil handle answers client commands concurrently.
-func (h *WebSocketHandler) streamSnapshotsInternal(c *echo.Context, interval time.Duration, build func(context.Context) any, handle func(context.Context, systemtypes.DiagnosticsCommand) any) error {
+func (h *WebSocketHandler) streamSnapshots(c *echo.Context, interval time.Duration, build func(context.Context) any, handle func(context.Context, systemtypes.DiagnosticsCommand) any) error {
 	conn, unregister, accepted := h.acceptWS(c, systemtypes.WSKindDiagnostics, c.Request().URL.Path)
 	if !accepted {
 		return nil
@@ -163,7 +163,7 @@ func (h *WebSocketHandler) streamSnapshotsInternal(c *echo.Context, interval tim
 			go write(handle(ctx, cmd))
 		}
 	}
-	done := diagnosticsReadLoopInternal(ctx, conn, onMessage)
+	done := diagnosticsReadLoop(ctx, conn, onMessage)
 
 	if !write(build(ctx)) {
 		return nil
@@ -181,7 +181,7 @@ func (h *WebSocketHandler) streamSnapshotsInternal(c *echo.Context, interval tim
 				return nil
 			}
 		case <-pingTicker.C:
-			if !pingDiagnosticsConnInternal(ctx, conn) {
+			if !pingDiagnosticsConn(ctx, conn) {
 				return nil
 			}
 		}
@@ -207,7 +207,7 @@ func (h *WebSocketHandler) ServerLogsStream(c *echo.Context) error {
 	defer cancel()
 
 	ctx := c.Request().Context()
-	done := diagnosticsReadLoopInternal(ctx, conn, nil)
+	done := diagnosticsReadLoop(ctx, conn, nil)
 	write := func(e logs.Entry) bool {
 		b, marshalErr := json.Marshal(e)
 		if marshalErr != nil {
@@ -237,25 +237,25 @@ func (h *WebSocketHandler) ServerLogsStream(c *echo.Context) error {
 				return nil
 			}
 		case <-pingTicker.C:
-			if !pingDiagnosticsConnInternal(ctx, conn) {
+			if !pingDiagnosticsConn(ctx, conn) {
 				return nil
 			}
 		}
 	}
 }
 
-// pingDiagnosticsConnInternal reports whether the peer answered a ping in time.
-// The pong is serviced by the diagnosticsReadLoopInternal reader, so a peer
+// pingDiagnosticsConn reports whether the peer answered a ping in time.
+// The pong is serviced by the diagnosticsReadLoop reader, so a peer
 // that stops answering fails here within diagnosticsPingWait.
-func pingDiagnosticsConnInternal(ctx context.Context, conn *websocket.Conn) bool {
+func pingDiagnosticsConn(ctx context.Context, conn *websocket.Conn) bool {
 	pctx, cancel := context.WithTimeout(ctx, diagnosticsPingWait)
 	defer cancel()
 	return conn.Ping(pctx) == nil
 }
 
-// diagnosticsReadLoopInternal passes incoming frames to onMessage, or drains them when
+// diagnosticsReadLoop passes incoming frames to onMessage, or drains them when
 // it is nil; the returned channel closes when the peer disconnects.
-func diagnosticsReadLoopInternal(ctx context.Context, conn *websocket.Conn, onMessage func([]byte)) <-chan struct{} {
+func diagnosticsReadLoop(ctx context.Context, conn *websocket.Conn, onMessage func([]byte)) <-chan struct{} {
 	conn.SetReadLimit(diagnosticsReadLimit)
 
 	done := make(chan struct{})

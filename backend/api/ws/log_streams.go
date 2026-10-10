@@ -33,7 +33,7 @@ type wsLogStream struct {
 	seq             atomic.Uint64
 }
 
-func buildLogStreamKeyInternal(envID, kind, resourceID, format string, batched, follow bool, tail, since string, timestamps bool) string {
+func buildLogStreamKey(envID, kind, resourceID, format string, batched, follow bool, tail, since string, timestamps bool) string {
 	return strings.Join([]string{
 		envID,
 		kind,
@@ -47,7 +47,7 @@ func buildLogStreamKeyInternal(envID, kind, resourceID, format string, batched, 
 	}, "|")
 }
 
-func (h *WebSocketHandler) getOrCreateLogStreamInternal(key string, create func(onEmpty func(*wsLogStream)) *wsLogStream) *wsLogStream {
+func (h *WebSocketHandler) getOrCreateLogStream(key string, create func(onEmpty func(*wsLogStream)) *wsLogStream) *wsLogStream {
 	h.logStreamsMu.Lock()
 	defer h.logStreamsMu.Unlock()
 
@@ -59,7 +59,7 @@ func (h *WebSocketHandler) getOrCreateLogStreamInternal(key string, create func(
 	}
 
 	stream := create(func(stream *wsLogStream) {
-		h.markLogStreamDoneInternal(key, stream)
+		h.markLogStreamDone(key, stream)
 	})
 	stream.key = key
 	stream.refs = 1
@@ -67,13 +67,13 @@ func (h *WebSocketHandler) getOrCreateLogStreamInternal(key string, create func(
 	return stream
 }
 
-func takeLogStreamCancelInternal(stream *wsLogStream) context.CancelFunc {
+func takeLogStreamCancel(stream *wsLogStream) context.CancelFunc {
 	cancel := stream.cancel
 	stream.cancel = nil
 	return cancel
 }
 
-func (h *WebSocketHandler) releaseLogStreamInternal(key string, stream *wsLogStream) {
+func (h *WebSocketHandler) releaseLogStream(key string, stream *wsLogStream) {
 	var cancel context.CancelFunc
 
 	h.logStreamsMu.Lock()
@@ -84,7 +84,7 @@ func (h *WebSocketHandler) releaseLogStreamInternal(key string, stream *wsLogStr
 		if current, ok := h.logStreams[key]; ok && current == stream {
 			delete(h.logStreams, key)
 		}
-		cancel = takeLogStreamCancelInternal(stream)
+		cancel = takeLogStreamCancel(stream)
 	}
 	h.logStreamsMu.Unlock()
 
@@ -93,7 +93,7 @@ func (h *WebSocketHandler) releaseLogStreamInternal(key string, stream *wsLogStr
 	}
 }
 
-func (h *WebSocketHandler) markLogStreamDoneInternal(key string, stream *wsLogStream) {
+func (h *WebSocketHandler) markLogStreamDone(key string, stream *wsLogStream) {
 	var cancel context.CancelFunc
 
 	h.logStreamsMu.Lock()
@@ -102,7 +102,7 @@ func (h *WebSocketHandler) markLogStreamDoneInternal(key string, stream *wsLogSt
 		if current, ok := h.logStreams[key]; ok && current == stream {
 			delete(h.logStreams, key)
 		}
-		cancel = takeLogStreamCancelInternal(stream)
+		cancel = takeLogStreamCancel(stream)
 	}
 	h.logStreamsMu.Unlock()
 
@@ -121,7 +121,7 @@ type logStreamParams struct {
 	batched    bool
 }
 
-func parseLogStreamParamsInternal(c *echo.Context) logStreamParams {
+func parseLogStreamParams(c *echo.Context) logStreamParams {
 	return logStreamParams{
 		follow:     cmp.Or(c.QueryParam("follow"), "true") == "true",
 		tail:       cmp.Or(c.QueryParam("tail"), "100"),
@@ -132,11 +132,11 @@ func parseLogStreamParamsInternal(c *echo.Context) logStreamParams {
 	}
 }
 
-// serveLogStreamInternal is the shared scaffold for all three WS log endpoints (project, container, service).
+// serveLogStream is the shared scaffold for all three WS log endpoints (project, container, service).
 // It performs upgrade, builds the stream key, gets-or-creates the multiplexing hub, registers metrics,
 // and serves the client. The caller-supplied hubBuilder constructs the underlying *wsLogStream
 // when no hub already exists for streamKey.
-func (h *WebSocketHandler) serveLogStreamInternal(
+func (h *WebSocketHandler) serveLogStream(
 	c *echo.Context,
 	kind, resourceID string,
 	params logStreamParams,
@@ -147,13 +147,13 @@ func (h *WebSocketHandler) serveLogStreamInternal(
 		return
 	}
 
-	streamKey := buildLogStreamKeyInternal(c.Param("id"), kind, resourceID, params.format, params.batched, params.follow, params.tail, params.since, params.timestamps)
-	stream := h.getOrCreateLogStreamInternal(streamKey, func(onEmpty func(*wsLogStream)) *wsLogStream {
+	streamKey := buildLogStreamKey(c.Param("id"), kind, resourceID, params.format, params.batched, params.follow, params.tail, params.since, params.timestamps)
+	stream := h.getOrCreateLogStream(streamKey, func(onEmpty func(*wsLogStream)) *wsLogStream {
 		return hubBuilder(streamKey, onEmpty)
 	})
 	release := func() {
 		unregister()
-		h.releaseLogStreamInternal(streamKey, stream)
+		h.releaseLogStream(streamKey, stream)
 	}
 	// The hub owns connection cleanup; preserve request values without request cancellation.
 	if !wshub.ServeClientWithOnRemove(context.WithoutCancel(c.Request().Context()), stream.hub, conn, release) {
@@ -166,9 +166,9 @@ func (h *WebSocketHandler) serveLogStreamInternal(
 	}
 }
 
-// broadcastLogStreamErrorInternal emits an error message to every client of a log stream.
+// broadcastLogStreamError emits an error message to every client of a log stream.
 // label is the human-readable resource noun (e.g. "project").
-func broadcastLogStreamErrorInternal(ctx context.Context, label, resourceID, format string, err error, ls *wsLogStream) {
+func broadcastLogStreamError(ctx context.Context, label, resourceID, format string, err error, ls *wsLogStream) {
 	slog.WarnContext(ctx, "log stream failed", "kind", label, "resourceId", resourceID, "error", err)
 	errorPrefix := "Failed to stream " + label + " logs: "
 
@@ -218,23 +218,23 @@ func (h *WebSocketHandler) ProjectLogs(c *echo.Context) error {
 		streamLogs = h.projectService.StreamProjectLogs
 	}
 
-	params := parseLogStreamParamsInternal(c)
-	h.serveLogStreamInternal(c, systemtypes.WSKindProjectLogs, projectID, params, func(streamKey string, onEmpty func(*wsLogStream)) *wsLogStream {
-		return h.startLogHubInternal(
+	params := parseLogStreamParams(c)
+	h.serveLogStream(c, systemtypes.WSKindProjectLogs, projectID, params, func(streamKey string, onEmpty func(*wsLogStream)) *wsLogStream {
+		return h.startLogHub(
 			streamKey,
 			projectID,
 			"project",
 			params,
 			streamLogs,
-			normalizeProjectLogMessageInternal,
-			normalizeProjectLogTextInternal,
+			normalizeProjectLogMessage,
+			normalizeProjectLogText,
 			onEmpty,
 		)
 	})
 	return nil
 }
 
-func newWSLogStreamInternal(key, format string) (*wsLogStream, context.Context) {
+func newWSLogStream(key, format string) (*wsLogStream, context.Context) {
 	ls := &wsLogStream{
 		hub:             wshub.NewHub(1024),
 		firstSubscriber: make(chan struct{}),
@@ -253,7 +253,7 @@ func newWSLogStreamInternal(key, format string) (*wsLogStream, context.Context) 
 	return ls, ctx
 }
 
-func normalizeProjectLogMessageInternal(line string) wshub.LogMessage {
+func normalizeProjectLogMessage(line string) wshub.LogMessage {
 	level, service, message, timestamp := wshub.NormalizeProjectLine(line)
 	return wshub.LogMessage{
 		Level:     level,
@@ -263,7 +263,7 @@ func normalizeProjectLogMessageInternal(line string) wshub.LogMessage {
 	}
 }
 
-func normalizeContainerLogMessageInternal(line string) wshub.LogMessage {
+func normalizeContainerLogMessage(line string) wshub.LogMessage {
 	level, message, timestamp := wshub.NormalizeContainerLine(line)
 	return wshub.LogMessage{
 		Level:     level,
@@ -272,12 +272,12 @@ func normalizeContainerLogMessageInternal(line string) wshub.LogMessage {
 	}
 }
 
-func normalizeProjectLogTextInternal(line string) string {
+func normalizeProjectLogText(line string) string {
 	_, _, message, _ := wshub.NormalizeProjectLine(line)
 	return message
 }
 
-func (h *WebSocketHandler) startLogHubInternal(
+func (h *WebSocketHandler) startLogHub(
 	key, resourceID, label string,
 	params logStreamParams,
 	stream func(context.Context, string, chan<- string, bool, string, string, bool) error,
@@ -285,7 +285,7 @@ func (h *WebSocketHandler) startLogHubInternal(
 	normalizeText func(string) string,
 	onEmptyHook func(*wsLogStream),
 ) *wsLogStream {
-	ls, ctx := newWSLogStreamInternal(key, params.format)
+	ls, ctx := newWSLogStream(key, params.format)
 
 	ls.hub.SetOnEmpty(func() {
 		if onEmptyHook != nil {
@@ -294,13 +294,13 @@ func (h *WebSocketHandler) startLogHubInternal(
 		slog.DebugContext(ctx, "client disconnected, cleaning up log hub", "kind", label, "resourceId", resourceID)
 	})
 
-	lines := h.startLogSourceInternal(ctx, key, resourceID, label, params, stream, ls)
-	startLogForwardersInternal(ctx, ls, lines, params, normalizeJSON, normalizeText)
+	lines := h.startLogSource(ctx, key, resourceID, label, params, stream, ls)
+	startLogForwarders(ctx, ls, lines, params, normalizeJSON, normalizeText)
 
 	return ls
 }
 
-func (h *WebSocketHandler) startLogSourceInternal(
+func (h *WebSocketHandler) startLogSource(
 	ctx context.Context,
 	key, resourceID, label string,
 	params logStreamParams,
@@ -322,20 +322,20 @@ func (h *WebSocketHandler) startLogSourceInternal(
 				return
 			}
 
-			h.markLogStreamDoneInternal(key, ls)
-			broadcastLogStreamErrorInternal(ctx, label, resourceID, params.format, err, ls)
+			h.markLogStreamDone(key, ls)
+			broadcastLogStreamError(ctx, label, resourceID, params.format, err, ls)
 			return
 		}
 
 		if ctx.Err() == nil {
-			h.markLogStreamDoneInternal(key, ls)
+			h.markLogStreamDone(key, ls)
 		}
 	}()
 
 	return lines
 }
 
-func startLogForwardersInternal(
+func startLogForwarders(
 	ctx context.Context,
 	ls *wsLogStream,
 	lines <-chan string,
@@ -344,7 +344,7 @@ func startLogForwardersInternal(
 	normalizeText func(string) string,
 ) {
 	if params.format == "json" {
-		messages := mapLogLinesInternal(ctx, lines, func(line string) wshub.LogMessage {
+		messages := mapLogLines(ctx, lines, func(line string) wshub.LogMessage {
 			message := normalizeJSON(line)
 			message.Seq = ls.seq.Add(1)
 			if message.Timestamp == "" {
@@ -364,12 +364,12 @@ func startLogForwardersInternal(
 
 	textLines := lines
 	if normalizeText != nil {
-		textLines = mapLogLinesInternal(ctx, lines, normalizeText)
+		textLines = mapLogLines(ctx, lines, normalizeText)
 	}
 	go wshub.ForwardLines(ctx, ls.hub, textLines)
 }
 
-func mapLogLinesInternal[T any](ctx context.Context, lines <-chan string, transform func(string) T) <-chan T {
+func mapLogLines[T any](ctx context.Context, lines <-chan string, transform func(string) T) <-chan T {
 	mapped := make(chan T, 256)
 	go func() {
 		defer close(mapped)
@@ -423,15 +423,15 @@ func (h *WebSocketHandler) ContainerLogs(c *echo.Context) error {
 		streamLogs = h.containerService.StreamLogs
 	}
 
-	params := parseLogStreamParamsInternal(c)
-	h.serveLogStreamInternal(c, systemtypes.WSKindContainerLogs, containerID, params, func(streamKey string, onEmpty func(*wsLogStream)) *wsLogStream {
-		return h.startLogHubInternal(
+	params := parseLogStreamParams(c)
+	h.serveLogStream(c, systemtypes.WSKindContainerLogs, containerID, params, func(streamKey string, onEmpty func(*wsLogStream)) *wsLogStream {
+		return h.startLogHub(
 			streamKey,
 			containerID,
 			"container",
 			params,
 			streamLogs,
-			normalizeContainerLogMessageInternal,
+			normalizeContainerLogMessage,
 			nil,
 			onEmpty,
 		)
@@ -463,15 +463,15 @@ func (h *WebSocketHandler) ServiceLogs(c *echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]any{"success": false, "error": "Service ID is required"})
 	}
 
-	params := parseLogStreamParamsInternal(c)
-	h.serveLogStreamInternal(c, systemtypes.WSKindServiceLogs, serviceID, params, func(streamKey string, onEmpty func(*wsLogStream)) *wsLogStream {
-		return h.startLogHubInternal(
+	params := parseLogStreamParams(c)
+	h.serveLogStream(c, systemtypes.WSKindServiceLogs, serviceID, params, func(streamKey string, onEmpty func(*wsLogStream)) *wsLogStream {
+		return h.startLogHub(
 			streamKey,
 			serviceID,
 			"service",
 			params,
 			h.swarmService.StreamServiceLogs,
-			normalizeContainerLogMessageInternal,
+			normalizeContainerLogMessage,
 			nil,
 			onEmpty,
 		)

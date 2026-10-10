@@ -127,15 +127,15 @@ func TestEventService_LogEventsPersistOptionalPointers(t *testing.T) {
 	require.Equal(t, "arcane-user", *userEvent.Username)
 }
 
-func TestCloneEventMetadataInternal(t *testing.T) {
+func TestCloneEventMetadata(t *testing.T) {
 	src := database.JSON{"a": "b"}
-	cloned := cloneEventMetadataInternal(src)
+	cloned := cloneEventMetadata(src)
 
 	require.Equal(t, "b", cloned["a"])
 	cloned["a"] = "changed"
 	require.Equal(t, "b", src["a"], "clone should not mutate source metadata")
 
-	nilClone := cloneEventMetadataInternal(nil)
+	nilClone := cloneEventMetadata(nil)
 	require.NotNil(t, nilClone)
 	require.Empty(t, nilClone)
 
@@ -146,7 +146,7 @@ func TestCloneEventMetadataInternal(t *testing.T) {
 			},
 		},
 	}
-	nestedClone := cloneEventMetadataInternal(nested)
+	nestedClone := cloneEventMetadata(nested)
 	require.NotNil(t, nestedClone["outer"])
 
 	outer := nested["outer"].(map[string]any)
@@ -358,7 +358,7 @@ func TestIngestAgentEventAuthenticatedEnvironment(t *testing.T) {
 		t.Run("payload environment "+supplied, func(t *testing.T) {
 			db := setupEventServiceTestDB(t)
 			svc := NewEventService(db, nil, nil)
-			req, ok := mapDaemonEventInternal(events.Message{
+			req, ok := mapDaemonEvent(events.Message{
 				Type:   events.ContainerEventType,
 				Action: events.ActionStart,
 				Actor: events.Actor{
@@ -402,7 +402,7 @@ func TestIngestAgentEventRejectsLocalEnvironment(t *testing.T) {
 			recorded, err := svc.IngestAgentEvent(t.Context(), environmentID, CreateEventRequest{Type: EventTypeContainerStart, Title: "start", EnvironmentID: new("remote-environment")})
 			require.Error(t, err)
 			require.Nil(t, recorded)
-			requireDaemonCountInternal(t, db, 0)
+			requireDaemonCount(t, db, 0)
 		})
 	}
 }
@@ -435,7 +435,7 @@ func TestDaemonEventForwardingPreservesMetadata(t *testing.T) {
 			},
 		},
 	}
-	req, ok := mapDaemonEventInternal(message)
+	req, ok := mapDaemonEvent(message)
 	require.True(t, ok)
 	svc.RecordDockerEvent(t.Context(), message)
 	svc.RecordDockerEvent(t.Context(), message)
@@ -451,7 +451,7 @@ func TestDaemonEventForwardingPreservesMetadata(t *testing.T) {
 		t.Fatal("timed out waiting for daemon event forwarding")
 	}
 	require.Never(t, func() bool { return len(requests) != 0 }, 50*time.Millisecond, time.Millisecond)
-	requireDaemonCountInternal(t, db, 1)
+	requireDaemonCount(t, db, 1)
 }
 
 func TestEventStreamPublishesCommittedMutations(t *testing.T) {
@@ -543,7 +543,7 @@ func TestEventStreamProducerBroadcasts(t *testing.T) {
 	})
 }
 
-func TestMapDaemonEventInternal(t *testing.T) {
+func TestMapDaemonEvent(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
 		name   string
@@ -580,7 +580,7 @@ func TestMapDaemonEventInternal(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			req, ok := mapDaemonEventInternal(events.Message{
+			req, ok := mapDaemonEvent(events.Message{
 				Type:   tc.kind,
 				Action: tc.action,
 				Scope:  "local",
@@ -627,7 +627,7 @@ func TestMapDaemonEventInternal(t *testing.T) {
 	}
 	for _, exitCode := range []string{"1", "137", ""} {
 		t.Run("die exit "+exitCode, func(t *testing.T) {
-			req, ok := mapDaemonEventInternal(events.Message{
+			req, ok := mapDaemonEvent(events.Message{
 				Type:   events.ContainerEventType,
 				Action: events.ActionDie,
 				Actor: events.Actor{
@@ -642,7 +642,7 @@ func TestMapDaemonEventInternal(t *testing.T) {
 	}
 	for _, kind := range []events.Type{events.ImageEventType, events.VolumeEventType, events.NetworkEventType} {
 		t.Run(string(kind)+" empty prune", func(t *testing.T) {
-			req, ok := mapDaemonEventInternal(events.Message{Type: kind, Action: events.ActionPrune})
+			req, ok := mapDaemonEvent(events.Message{Type: kind, Action: events.ActionPrune})
 			require.True(t, ok)
 			require.Equal(t, "prune", *req.ResourceName)
 		})
@@ -701,7 +701,7 @@ func TestMapDaemonEventInternal(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			_, ok := mapDaemonEventInternal(events.Message{Type: tc.kind, Action: tc.action, Actor: events.Actor{ID: tc.id}})
+			_, ok := mapDaemonEvent(events.Message{Type: tc.kind, Action: tc.action, Actor: events.Actor{ID: tc.id}})
 			require.False(t, ok)
 		})
 	}
@@ -716,7 +716,7 @@ func TestDaemonEventsPersistEveryOccurrenceImmediately(t *testing.T) {
 	for index, msg := range []events.Message{die, stop, die, stop} {
 		msg.TimeNano = int64(index + 1)
 		svc.RecordDockerEvent(t.Context(), msg)
-		requireDaemonCountInternal(t, db, int64(index+1))
+		requireDaemonCount(t, db, int64(index+1))
 	}
 	var rows []Event
 	require.NoError(t, db.Find(&rows).Error)
@@ -746,13 +746,13 @@ func TestDaemonSuppressionAndFailureAllowLaterObservations(t *testing.T) {
 				svc.MarkDockerExpectation("container", "web", "")
 			}
 			svc.RecordDockerEvent(t.Context(), msg)
-			requireDaemonCountInternal(t, db, 0)
+			requireDaemonCount(t, db, 0)
 			if failure {
 				require.NoError(t, db.Callback().Create().Remove("daemon_failure"))
 			}
 			now = now.Add(time.Minute)
 			svc.RecordDockerEvent(t.Context(), msg)
-			requireDaemonCountInternal(t, db, 1)
+			requireDaemonCount(t, db, 1)
 		})
 	}
 }
@@ -798,11 +798,11 @@ func TestDockerEventSubscriptionsReadyAndStop(t *testing.T) {
 				done := make(chan error, 1)
 				go func() { done <- run(ctx) }()
 				synctest.Wait()
-				requireDaemonCountInternal(t, db, 4*occurrences)
+				requireDaemonCount(t, db, 4*occurrences)
 				require.Equal(t, int64(4*occurrences), published.Load())
 				publishBurst(occurrences)
 				synctest.Wait()
-				requireDaemonCountInternal(t, db, 8*occurrences)
+				requireDaemonCount(t, db, 8*occurrences)
 				require.Equal(t, int64(8*occurrences), published.Load())
 				if closeBus {
 					eventBus.Close()
@@ -818,7 +818,7 @@ func TestDockerEventSubscriptionsReadyAndStop(t *testing.T) {
 	}
 }
 
-func requireDaemonCountInternal(t *testing.T, db *database.DB, want int64) {
+func requireDaemonCount(t *testing.T, db *database.DB, want int64) {
 	t.Helper()
 	var count int64
 	require.NoError(t, db.Model(&Event{}).Count(&count).Error)

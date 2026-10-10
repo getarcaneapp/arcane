@@ -171,7 +171,7 @@ func (s *NotificationService) dispatchNotificationToManager(ctx context.Context,
 	}
 
 	publishViaTunnel := func() error {
-		return edge.PublishEventToManager(&edge.TunnelEvent{
+		return edge.PublishEventToManager(ctx, &edge.TunnelEvent{
 			Type:         edge.TunnelEventTypeNotificationDispatch,
 			Title:        string(payload.Kind),
 			MetadataJSON: body,

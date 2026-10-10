@@ -1,6 +1,7 @@
 package edge
 
 import (
+	"errors"
 	"io"
 	"maps"
 	"net/http"
@@ -109,9 +110,9 @@ func HTTPToWebSocketURL(url string) string {
 	}
 }
 
-// CopyBodyWithFlush streams bytes from body to w, flushing when supported.
-// Useful for progress/streaming endpoints where incremental delivery matters.
-func CopyBodyWithFlush(w http.ResponseWriter, body io.Reader) {
+// CopyBodyWithFlush streams body to w, flushing after each write when supported. It returns the first error
+// other than io.EOF, so a response cut short upstream is not mistaken for a complete one.
+func CopyBodyWithFlush(w http.ResponseWriter, body io.Reader) error {
 	buf := make([]byte, 32*1024)
 	flusher, canFlush := w.(http.Flusher)
 
@@ -119,14 +120,17 @@ func CopyBodyWithFlush(w http.ResponseWriter, body io.Reader) {
 		n, readErr := body.Read(buf)
 		if n > 0 {
 			if _, writeErr := w.Write(buf[:n]); writeErr != nil {
-				return
+				return writeErr
 			}
 			if canFlush {
 				flusher.Flush()
 			}
 		}
+		if errors.Is(readErr, io.EOF) {
+			return nil
+		}
 		if readErr != nil {
-			return
+			return readErr
 		}
 	}
 }

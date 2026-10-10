@@ -250,7 +250,7 @@ func TestCopyBodyWithFlush_FlushesWhenSupported(t *testing.T) {
 	w := newFlushResponseWriter()
 	body := &chunkReader{chunks: [][]byte{[]byte("hello "), []byte("world")}}
 
-	CopyBodyWithFlush(w, body)
+	require.NoError(t, CopyBodyWithFlush(w, body))
 	require.Equal(t, "hello world", w.buf.String())
 	require.Equal(t, 2, w.flushes)
 }
@@ -259,11 +259,11 @@ func TestCopyBodyWithFlush_DoesNotRequireFlusher(t *testing.T) {
 	w := newNoFlushResponseWriter()
 	body := &chunkReader{chunks: [][]byte{[]byte("a"), []byte("b"), []byte("c")}}
 
-	CopyBodyWithFlush(w, body)
+	require.NoError(t, CopyBodyWithFlush(w, body))
 	require.Equal(t, "abc", w.buf.String())
 }
 
-func newTestRemenvClientInternal(timeout time.Duration) *remenv.Client {
+func newTestRemenvClient(timeout time.Duration) *remenv.Client {
 	return remenv.NewClient(&http.Client{Timeout: timeout}, remenv.TunnelTransportFuncs{
 		EnsureAvailableFunc: func(ctx context.Context, envID string) error {
 			if HasActiveTunnel(envID) {
@@ -316,7 +316,7 @@ func TestRemenvClient_EdgeWithTunnel(t *testing.T) {
 	GetRegistry().Register(envID, tunnel)
 	defer GetRegistry().Unregister(envID)
 
-	client := newTestRemenvClientInternal(1 * time.Second)
+	client := newTestRemenvClient(1 * time.Second)
 
 	resp, err := client.Do(t.Context(), remenv.Request{
 		EnvironmentID: envID,
@@ -333,7 +333,7 @@ func TestRemenvClient_EdgeWithTunnel(t *testing.T) {
 }
 
 func TestRemenvClient_EdgeNoTunnel(t *testing.T) {
-	client := newTestRemenvClientInternal(1 * time.Second)
+	client := newTestRemenvClient(1 * time.Second)
 
 	_, err := client.Do(t.Context(), remenv.Request{
 		EnvironmentID: "env-edge-missing",
@@ -376,7 +376,7 @@ func TestRemenvClient_EdgeWithGRPCTunnel(t *testing.T) {
 	defer func() { _ = conn.Close() }()
 
 	clientAPI := tunnelpb.NewTunnelServiceClient(conn)
-	stream, err := clientAPI.Connect(testGRPCOutgoingContextInternal(ctx, "valid-token"))
+	stream, err := clientAPI.Connect(testGRPCOutgoingContext(ctx, "valid-token"))
 	require.NoError(t, err)
 
 	err = stream.Send(&tunnelpb.AgentMessage{Payload: &tunnelpb.AgentMessage_Register{Register: &tunnelpb.RegisterRequest{AgentToken: "valid-token"}}})
@@ -442,7 +442,7 @@ func TestRemenvClient_EdgeWithGRPCTunnel(t *testing.T) {
 		return ok && tunnel != nil && !tunnel.Conn.IsClosed()
 	}, time.Second, 10*time.Millisecond)
 
-	client := newTestRemenvClientInternal(1 * time.Second)
+	client := newTestRemenvClient(1 * time.Second)
 	resp, err := client.Do(ctx, remenv.Request{
 		EnvironmentID: envID,
 		IsEdge:        true,

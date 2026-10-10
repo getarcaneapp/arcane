@@ -20,7 +20,7 @@ func (r *Runtime) ActorName(actorID string) string {
 	return displayName
 }
 
-type actorLogHandlerInternal struct {
+type actorLogHandler struct {
 	slog.Handler
 
 	names *sync.Map
@@ -32,7 +32,7 @@ type actorLogStepInternal struct {
 	group string
 }
 
-func (h *actorLogHandlerInternal) Handle(ctx context.Context, record slog.Record) error {
+func (h *actorLogHandler) Handle(ctx context.Context, record slog.Record) error {
 	handler := h.Handler
 	// Resolve at emission, including loggers created before restored jobs are loaded.
 	for _, step := range h.steps {
@@ -54,13 +54,13 @@ func (h *actorLogHandlerInternal) Handle(ctx context.Context, record slog.Record
 	return handler.Handle(ctx, named)
 }
 
-func (h *actorLogHandlerInternal) WithAttrs(attrs []slog.Attr) slog.Handler {
+func (h *actorLogHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	clone := *h
 	clone.steps = append(slices.Clone(h.steps), actorLogStepInternal{attrs: slices.Clone(attrs)})
 	return &clone
 }
 
-func (h *actorLogHandlerInternal) WithGroup(name string) slog.Handler {
+func (h *actorLogHandler) WithGroup(name string) slog.Handler {
 	if name == "" {
 		return h
 	}
@@ -69,7 +69,7 @@ func (h *actorLogHandlerInternal) WithGroup(name string) slog.Handler {
 	return &clone
 }
 
-func (h *actorLogHandlerInternal) nameAttrInternal(attr slog.Attr) slog.Attr {
+func (h *actorLogHandler) nameAttrInternal(attr slog.Attr) slog.Attr {
 	attr.Value = attr.Value.Resolve()
 	if attr.Value.Kind() == slog.KindGroup {
 		attrs := slices.Clone(attr.Value.Group())

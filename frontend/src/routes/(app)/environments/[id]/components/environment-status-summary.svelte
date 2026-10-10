@@ -25,25 +25,6 @@
 		versionInformation: AppVersionInformation | null | undefined;
 	} = $props();
 
-	let transportBadge = $derived.by((): { text: string; variant: 'blue' | 'purple' | 'gray' } => {
-		if (!environment.isEdge) {
-			return { text: 'HTTP', variant: 'gray' };
-		}
-
-		// Prefer the live tunnel transport; fall back to the last one used so
-		// disconnected or poll-only agents still show what they connect with.
-		const transport = (environment.connected ? environment.edgeTransport : undefined) ?? environment.lastEdgeTransport;
-		if (!transport) {
-			return { text: 'Edge', variant: 'gray' };
-		}
-
-		if (transport === 'websocket') {
-			return { text: 'WebSocket', variant: 'purple' };
-		}
-
-		return { text: 'gRPC', variant: 'blue' };
-	});
-
 	let statusBadge = $derived.by((): { text: string; variant: 'green' | 'blue' | 'amber' | 'red' } => {
 		switch (currentStatus) {
 			case 'online':
@@ -95,13 +76,12 @@
 	});
 </script>
 
-<!-- Inline header chips: status, transport, version, and (edge) heartbeat. -->
+<!-- Inline header chips: status, version, and (edge) heartbeat. -->
 <div class="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
 	<Badge variant={statusBadge.variant} minWidth="20">
 		<span class={cn('size-1.5 rounded-full', statusDotClass)}></span>
 		{statusBadge.text}
 	</Badge>
-	<Badge variant={transportBadge.variant} minWidth="20">{transportBadge.text}</Badge>
 	<div class="flex items-center gap-1.5 text-xs text-muted-foreground">
 		<TagIcon class="size-3.5 shrink-0" />
 		{#if environment.id === '0'}

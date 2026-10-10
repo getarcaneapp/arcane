@@ -15,8 +15,8 @@ import (
 // added by a newer peer. Receivers skip it, as unknown websocket message types are skipped.
 var errUnknownTunnelPayload = errors.New("unknown tunnel payload type")
 
-// tunnelMessageToManagerProto encodes a manager->agent message. Without parity, legacy agents
-// receive stream_data re-encoded as ws_data and cannot receive stream_end.
+// tunnelMessageToManagerProto encodes a manager->agent message; agents without parity get stream_data as ws_data.
+// Only the register cases survive the mux data plane; the other cases are the legacy edge message protocol, removed in v3.
 func tunnelMessageToManagerProto(msg *TunnelMessage, parity bool) (*tunnelpb.ManagerMessage, error) {
 	if msg == nil {
 		return nil, errors.New("message is nil")
@@ -124,6 +124,7 @@ func tunnelMessageToManagerProto(msg *TunnelMessage, parity bool) (*tunnelpb.Man
 	return nil, fmt.Errorf("unsupported manager message type: %s", msg.Type)
 }
 
+// Only the register cases survive the mux data plane; the other cases are the legacy edge message protocol, removed in v3.
 func managerProtoToTunnelMessage(msg *tunnelpb.ManagerMessage) (*TunnelMessage, error) {
 	if msg == nil {
 		return nil, errors.New("manager message is nil")
@@ -233,6 +234,7 @@ func managerProtoToTunnelMessage(msg *tunnelpb.ManagerMessage) (*TunnelMessage, 
 	}
 }
 
+// Only the register cases survive the mux data plane; the other cases are the legacy edge message protocol, removed in v3.
 func tunnelMessageToAgentProto(msg *TunnelMessage) (*tunnelpb.AgentMessage, error) {
 	if msg == nil {
 		return nil, errors.New("message is nil")
@@ -340,6 +342,7 @@ func tunnelMessageToAgentProto(msg *TunnelMessage) (*tunnelpb.AgentMessage, erro
 	return nil, fmt.Errorf("unsupported agent message type: %s", msg.Type)
 }
 
+// Only the register cases survive the mux data plane; the other cases are the legacy edge message protocol, removed in v3.
 func agentProtoToTunnelMessage(msg *tunnelpb.AgentMessage) (*TunnelMessage, error) {
 	if msg == nil {
 		return nil, errors.New("agent message is nil")

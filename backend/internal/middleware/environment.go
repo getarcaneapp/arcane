@@ -24,7 +24,6 @@ import (
 	usertypes "github.com/getarcaneapp/arcane/types/v2/user"
 	"github.com/getarcaneapp/arcane/types/v2/volume"
 	"github.com/labstack/echo/v5"
-	"github.com/samber/mo"
 	"go.getarcane.app/kit/pkg"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
@@ -128,7 +127,7 @@ func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) e
 	}
 
 	suffix, ok := strings.CutPrefix(req.URL.Path, apiEnvironmentsPrefix+envID)
-	if !ok || len(suffix) <= 1 || suffix[0] != '/' || isManagementPath(req.Method, suffix) {
+	if !ok || len(suffix) <= 1 || suffix[0] != '/' || IsManagerLocalPath(req.Method, suffix) {
 		return next(c)
 	}
 
@@ -176,24 +175,28 @@ func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) e
 		return writeProxyError(c, http.StatusForbidden, "You don't have permission to perform this action on this environment")
 	}
 
-	tunnel, hasTunnel := m.getActiveEdgeTunnel(envID).Get()
-	if !hasTunnel && strings.HasPrefix(strings.ToLower(strings.TrimSpace(apiURL)), "edge://") {
-		if tunnel, hasTunnel = m.waitForActiveEdgeTunnel(ctx, envID).Get(); !hasTunnel {
-			slog.WarnContext(ctx, "No active edge tunnel for environment", "environmentId", envID)
-			return writeProxyError(c, http.StatusBadGateway, "Edge agent is not connected")
-		}
-		slog.InfoContext(ctx, "Recovered edge tunnel during request", "environmentId", envID)
+	tunnel, unavailable := m.activeTunnel(ctx, envID, apiURL)
+	if unavailable {
+		return writeProxyError(c, http.StatusBadGateway, "Edge agent is not connected")
 	}
 
 	proxyPath := path.Join(apiEnvironmentsPrefix, m.localID) + suffix
 	isWebSocket := httpx.IsWebSocketUpgradeRequest(req)
-	if hasTunnel {
+	client := m.httpClient
+	if tunnel != nil {
 		slog.DebugContext(ctx, "Routing request through edge tunnel", "environmentId", envID, "path", req.URL.Path)
-		edge.SetAgentToken(req, accessToken)
-		if isWebSocket {
-			return edge.ProxyWebSocketRequest(c, tunnel, proxyPath, m.checkOrigin)
+		muxClient, isMux := tunnel.HTTPClient().Get()
+		if !isMux {
+			// Legacy edge message protocol; remove in v3.
+			edge.SetAgentToken(req, accessToken)
+			if isWebSocket {
+				return edge.ProxyWebSocketRequest(c, tunnel, proxyPath, m.checkOrigin) //nolint:staticcheck // legacy edge protocol; remove in v3
+			}
+			return edge.ProxyHTTPRequest(c, tunnel, proxyPath) //nolint:staticcheck // legacy edge protocol; remove in v3
 		}
-		return edge.ProxyHTTPRequest(c, tunnel, proxyPath)
+		// A multiplexed tunnel carries plain HTTP, so it shares the direct-agent path below.
+		apiURL = edge.MuxAgentBaseURL
+		client = &http.Client{Transport: muxClient.Transport, Timeout: m.httpClient.Timeout}
 	}
 
 	target := strings.TrimRight(apiURL, "/") + proxyPath
@@ -201,7 +204,7 @@ func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) e
 		target += "?" + req.URL.RawQuery
 	}
 	if isWebSocket {
-		if proxyErr := ws.ProxyHTTP(c.Response(), req, edge.HTTPToWebSocketURL(target), edge.BuildWebSocketHeaders(c, accessToken), m.checkOrigin); proxyErr != nil {
+		if proxyErr := ws.ProxyHTTP(c.Response(), req, edge.HTTPToWebSocketURL(target), edge.BuildWebSocketHeaders(c, accessToken), m.checkOrigin, client); proxyErr != nil {
 			slog.ErrorContext(ctx, "websocket proxy failed", "err", proxyErr)
 		}
 		return nil
@@ -240,7 +243,7 @@ func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) e
 	edge.SetAgentToken(proxyReq, accessToken)
 	edge.SetForwardedHeaders(proxyReq, c.RealIP(), req.Host)
 
-	resp, err := m.httpClient.Do(proxyReq)
+	resp, err := client.Do(proxyReq)
 	if err != nil {
 		return writeProxyError(c, http.StatusBadGateway, "Proxy request failed: "+err.Error())
 	}
@@ -255,9 +258,33 @@ func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) e
 	edge.CopyResponseHeaders(resp.Header, w.Header(), edge.BuildHopByHopHeaders(resp.Header))
 	w.WriteHeader(resp.StatusCode)
 	if req.Method != http.MethodHead {
-		edge.CopyBodyWithFlush(w, resp.Body)
+		if copyErr := edge.CopyBodyWithFlush(w, resp.Body); copyErr != nil {
+			slog.WarnContext(ctx, "Proxied response ended early", "environmentId", envID, "error", copyErr)
+			// Headers are already sent, so abort the connection instead of ending a truncated response as complete.
+			panic(http.ErrAbortHandler)
+		}
 	}
 	return nil
+}
+
+// activeTunnel returns the environment's live tunnel, if any. Edge environments refresh poll demand on every
+// request and wait briefly for the agent; unavailable reports an edge agent that never connected.
+func (m *EnvironmentMiddleware) activeTunnel(ctx context.Context, envID, apiURL string) (tunnel *edge.AgentTunnel, unavailable bool) {
+	if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(apiURL)), "edge://") {
+		tunnel, _ = m.registry.Active(envID).Get()
+		return tunnel, false
+	}
+	edge.TouchTunnelDemand(envID, edge.DefaultTunnelDemandTTL)
+	if active, ok := m.registry.Active(envID).Get(); ok {
+		return active, false
+	}
+	tunnel, ok := m.registry.WaitForActive(ctx, envID, edge.DefaultTunnelAcquireTimeout()).Get()
+	if !ok {
+		slog.WarnContext(ctx, "No active edge tunnel for environment", "environmentId", envID)
+		return nil, true
+	}
+	slog.InfoContext(ctx, "Recovered edge tunnel during request", "environmentId", envID)
+	return tunnel, false
 }
 
 // proxyPermissionDenied reports whether the caller lacks permission for the proxied request, mirroring local
@@ -450,8 +477,8 @@ func (b *proxiedReplayBody) Close() error {
 	return errors.Join(capturedErr, originalErr, removeErr)
 }
 
-// isManagementPath reports whether an environment-scoped path is served by the manager instead of being proxied.
-func isManagementPath(method, suffix string) bool {
+// IsManagerLocalPath reports whether an environment-scoped path suffix is served by the manager instead of being proxied.
+func IsManagerLocalPath(method, suffix string) bool {
 	if _, ok := managementEndpointSet[suffix]; ok {
 		return true
 	}
@@ -486,40 +513,6 @@ func isManagementPath(method, suffix string) bool {
 		return method == http.MethodPost || method == http.MethodDelete
 	}
 	return false
-}
-
-func (m *EnvironmentMiddleware) getActiveEdgeTunnel(envID string) mo.Option[*edge.AgentTunnel] {
-	if m.registry == nil {
-		return mo.None[*edge.AgentTunnel]()
-	}
-
-	tunnel, ok := m.registry.Get(envID).Get()
-	if !ok || tunnel == nil || tunnel.Conn == nil || tunnel.Conn.IsClosed() {
-		return mo.None[*edge.AgentTunnel]()
-	}
-	return mo.Some(tunnel)
-}
-
-// waitForActiveEdgeTunnel signals tunnel demand and polls until the edge agent connects or the acquire timeout elapses.
-func (m *EnvironmentMiddleware) waitForActiveEdgeTunnel(ctx context.Context, envID string) mo.Option[*edge.AgentTunnel] {
-	edge.TouchTunnelDemand(envID, edge.DefaultTunnelDemandTTL)
-
-	waitCtx, cancel := context.WithTimeout(ctx, edge.DefaultTunnelAcquireTimeout())
-	defer cancel()
-
-	ticker := time.NewTicker(edge.DefaultTunnelAcquirePollEvery)
-	defer ticker.Stop()
-
-	for {
-		if tunnel := m.getActiveEdgeTunnel(envID); tunnel.IsPresent() {
-			return tunnel
-		}
-		select {
-		case <-waitCtx.Done():
-			return mo.None[*edge.AgentTunnel]()
-		case <-ticker.C:
-		}
-	}
 }
 
 func writeProxyError(c *echo.Context, status int, message string) error {

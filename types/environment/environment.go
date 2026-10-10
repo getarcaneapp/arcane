@@ -180,6 +180,22 @@ type Environment struct {
 	// Required: false
 	EdgeCapabilities []string `json:"edgeCapabilities,omitempty"`
 
+	// EdgeDataPlane is how requests share the live tunnel: "mux" runs them as parallel streams,
+	// "legacy" uses the older single-stream message protocol.
+	//
+	// Required: false
+	EdgeDataPlane *string `json:"edgeDataPlane,omitempty"`
+
+	// EdgeRoundTripMs is the last keepalive round trip of a multiplexed tunnel, in milliseconds.
+	//
+	// Required: false
+	EdgeRoundTripMs *float64 `json:"edgeRoundTripMs,omitempty"`
+
+	// EdgeOpenStreams counts open tunnel streams, including idle pooled connections, or pending legacy requests.
+	//
+	// Required: false
+	EdgeOpenStreams *int `json:"edgeOpenStreams,omitempty"`
+
 	// Connected reports whether an edge environment currently has a live tunnel.
 	//
 	// Required: false

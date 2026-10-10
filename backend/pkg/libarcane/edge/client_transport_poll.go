@@ -17,7 +17,10 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 )
 
-const defaultTunnelPollRequestTimeout = 15 * time.Second
+const (
+	defaultTunnelPollRequestTimeout = 15 * time.Second
+	tunnelPollPath                  = "/api/tunnel/poll"
+)
 
 var defaultPollManagedSessionStopTimeout = 5 * time.Second
 
@@ -35,15 +38,10 @@ func (c *TunnelClient) connectAndServePoll(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to configure edge poll client: %w", err)
 	}
-	pollURL := managerBaseURL + "/api/tunnel/poll"
+	pollURL := managerBaseURL + tunnelPollPath
 	interval := DefaultTunnelPollInterval
-	// Failed polls back off exponentially instead of retrying every 2s forever;
-	// a successful poll restores the manager-advertised interval. No jitter: the
-	// default randomization lets the very first retry exceed the advertised
-	// interval by up to 50%, and poll cycles are already phase-spread across
-	// agents (each notices an outage at its own next tick), so there is no
-	// synchronized herd for jitter to break up. The first retry is therefore
-	// deterministically the poll interval itself.
+	// Failed polls back off exponentially; success restores the advertised interval. No jitter: polls are
+	// already phase-spread across agents, so the first retry is exactly the poll interval.
 	retryBackoff := backoff.NewExponentialBackOff()
 	retryBackoff.InitialInterval = interval
 	retryBackoff.RandomizationFactor = 0
@@ -53,14 +51,14 @@ func (c *TunnelClient) connectAndServePoll(ctx context.Context) error {
 		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), defaultPollManagedSessionStopTimeout)
 		defer cancel()
 
-		if stopPollManagedSessionErr := c.stopPollManagedSessionInternal(shutdownCtx, session); stopPollManagedSessionErr != nil {
+		if stopPollManagedSessionErr := c.stopPollManagedSession(shutdownCtx, session); stopPollManagedSessionErr != nil {
 			slog.WarnContext(ctx, "Failed to stop poll-managed websocket session during shutdown", "error", stopPollManagedSessionErr)
 		}
 	}()
 
 	for {
 		var operationErr error
-		session, operationErr = consumePollManagedSessionInternal(session)
+		session, operationErr = consumePollManagedSession(session)
 		if operationErr != nil {
 			return operationErr
 		}
@@ -69,7 +67,7 @@ func (c *TunnelClient) connectAndServePoll(ctx context.Context) error {
 			return ctx.Err()
 		}
 
-		status, operationErr := c.pollTunnelControlInternal(ctx, httpClient, pollURL, session != nil)
+		status, operationErr := c.pollTunnelControl(ctx, httpClient, pollURL, session != nil)
 		if operationErr != nil {
 			if ctx.Err() != nil {
 				return ctx.Err()
@@ -81,7 +79,7 @@ func (c *TunnelClient) connectAndServePoll(ctx context.Context) error {
 				"interval", retryInterval,
 			)
 
-			session, operationErr = waitForNextPollCycleInternal(ctx, session, retryInterval)
+			session, operationErr = waitForNextPollCycle(ctx, session, retryInterval)
 			if operationErr != nil {
 				return operationErr
 			}
@@ -96,7 +94,7 @@ func (c *TunnelClient) connectAndServePoll(ctx context.Context) error {
 		retryBackoff.InitialInterval = interval
 		retryBackoff.Reset()
 
-		session, operationErr = c.syncPollManagedSessionInternal(ctx, session, status.Status)
+		session, operationErr = c.syncPollManagedSession(ctx, session, status.Status)
 		if operationErr != nil {
 			if !errors.Is(operationErr, errPollManagedSessionStopTimeout) {
 				return operationErr
@@ -104,14 +102,14 @@ func (c *TunnelClient) connectAndServePoll(ctx context.Context) error {
 			slog.WarnContext(ctx, "Poll-managed tunnel is still draining; replacement remains fenced", "error", operationErr)
 		}
 
-		session, operationErr = waitForNextPollCycleInternal(ctx, session, interval)
+		session, operationErr = waitForNextPollCycle(ctx, session, interval)
 		if operationErr != nil {
 			return operationErr
 		}
 	}
 }
 
-func consumePollManagedSessionInternal(session *pollManagedTunnelSession) (*pollManagedTunnelSession, error) {
+func consumePollManagedSession(session *pollManagedTunnelSession) (*pollManagedTunnelSession, error) {
 	if session == nil {
 		return nil, nil
 	}
@@ -127,7 +125,7 @@ func consumePollManagedSessionInternal(session *pollManagedTunnelSession) (*poll
 	}
 }
 
-func (c *TunnelClient) syncPollManagedSessionInternal(ctx context.Context, session *pollManagedTunnelSession, status string) (*pollManagedTunnelSession, error) {
+func (c *TunnelClient) syncPollManagedSession(ctx context.Context, session *pollManagedTunnelSession, status string) (*pollManagedTunnelSession, error) {
 	switch status {
 	case TunnelStatusRequired, TunnelStatusActive:
 		if session != nil {
@@ -139,7 +137,7 @@ func (c *TunnelClient) syncPollManagedSessionInternal(ctx context.Context, sessi
 			"managerGrpcAddr", c.managerGRPCAddr,
 			"managerWsUrl", c.managerWebSocketURL(),
 		)
-		return c.startPollManagedSessionInternal(ctx), nil
+		return c.startPollManagedSession(ctx), nil
 	case TunnelStatusIdle:
 		if session == nil {
 			return nil, nil
@@ -151,7 +149,7 @@ func (c *TunnelClient) syncPollManagedSessionInternal(ctx context.Context, sessi
 		slog.InfoContext(ctx, "Poll control plane marked edge tunnel idle; closing session")
 		session.stopping = true
 		idleCtx, idleCancel := context.WithTimeout(ctx, defaultPollManagedSessionStopTimeout)
-		err := c.stopPollManagedSessionInternal(idleCtx, session)
+		err := c.stopPollManagedSession(idleCtx, session)
 		idleCancel()
 		if err != nil {
 			return session, err
@@ -163,7 +161,7 @@ func (c *TunnelClient) syncPollManagedSessionInternal(ctx context.Context, sessi
 	}
 }
 
-func waitForNextPollCycleInternal(ctx context.Context, session *pollManagedTunnelSession, interval time.Duration) (*pollManagedTunnelSession, error) {
+func waitForNextPollCycle(ctx context.Context, session *pollManagedTunnelSession, interval time.Duration) (*pollManagedTunnelSession, error) {
 	waitTimer := time.NewTimer(interval)
 	defer waitTimer.Stop()
 
@@ -185,7 +183,7 @@ func waitForNextPollCycleInternal(ctx context.Context, session *pollManagedTunne
 	}
 }
 
-func (c *TunnelClient) pollTunnelControlInternal(ctx context.Context, httpClient *http.Client, pollURL string, connected bool) (*TunnelPollResponse, error) {
+func (c *TunnelClient) pollTunnelControl(ctx context.Context, httpClient *http.Client, pollURL string, connected bool) (*TunnelPollResponse, error) {
 	pollReq := TunnelPollRequest{
 		Transport: EdgeTransportPoll,
 		Connected: connected,
@@ -226,7 +224,7 @@ func (c *TunnelClient) pollTunnelControlInternal(ctx context.Context, httpClient
 	return &pollResp, nil
 }
 
-func (c *TunnelClient) startPollManagedSessionInternal(ctx context.Context) *pollManagedTunnelSession {
+func (c *TunnelClient) startPollManagedSession(ctx context.Context) *pollManagedTunnelSession {
 	sessionCtx, cancel := context.WithCancel(ctx)
 	done := make(chan error, 1)
 
@@ -242,7 +240,7 @@ func (c *TunnelClient) startPollManagedSessionInternal(ctx context.Context) *pol
 	return &pollManagedTunnelSession{cancel: cancel, done: done}
 }
 
-func (c *TunnelClient) stopPollManagedSessionInternal(ctx context.Context, session *pollManagedTunnelSession) error {
+func (c *TunnelClient) stopPollManagedSession(ctx context.Context, session *pollManagedTunnelSession) error {
 	if session == nil {
 		return nil
 	}

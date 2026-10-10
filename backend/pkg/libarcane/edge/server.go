@@ -45,6 +45,7 @@ const (
 	TunnelStaleTimeout = 2 * time.Minute
 	// tunnelStaleSweepInterval backs up read-deadline liveness, so it runs well under TunnelStaleTimeout.
 	tunnelStaleSweepInterval = time.Minute
+	// pendingDeliveryTimeout and the backlog limits bound legacy pending consumers; remove in v3.
 	// pendingDeliveryTimeout is how long one queued message may wait for a slow consumer.
 	pendingDeliveryTimeout = 5 * time.Second
 	// maxPendingBacklogBytes and maxPendingBacklogMessages bound how far a consumer may fall behind.
@@ -374,6 +375,13 @@ func (s *TunnelServer) manageConnectedTunnel(ctx context.Context, envID string, 
 	tunnel.AgentInstance = strings.TrimSpace(registerMsg.AgentInstance)
 	tunnel.Capabilities = registerMsg.Capabilities
 	tunnel.Transport = conn.Transport()
+	// The session exists before registration so callers that find the tunnel mid-handshake wait for it.
+	transport, useMux := conn.(muxTransport)
+	useMux = useMux && slices.Contains(registerMsg.Capabilities, tunnelCapabilityMux) && (s.Config == nil || !s.Config.EdgeMuxDisabled)
+	if useMux {
+		tunnel.mux = &muxSession{ready: make(chan struct{}), closed: make(chan struct{})}
+		tunnel.mux.client = newMuxHTTPClient(tunnel.mux.dial)
+	}
 
 	// The span covers the connection lifetime; ctx stays unparented so per-message work doesn't nest under it.
 	_, span := otel.Tracer(tracing.InstrumentationName).Start(ctx, "edge.tunnel "+tunnel.Transport,
@@ -414,10 +422,14 @@ func (s *TunnelServer) manageConnectedTunnel(ctx context.Context, envID string, 
 		}
 	}()
 
-	slog.InfoContext(ctx, "Edge agent connected", "environmentId", envID, "sessionId", tunnel.SessionID, "securityMode", tunnel.SecurityMode)
+	slog.InfoContext(ctx, "Edge agent connected", "environmentId", envID, "sessionId", tunnel.SessionID, "securityMode", tunnel.SecurityMode,
+		"transport", tunnel.Transport, "dataPlane", kit.Ternary(useMux, EdgeDataPlaneMux, EdgeDataPlaneLegacy))
 
 	// Echo the agent's capabilities plus the manager's own; older agents ignore extra strings.
 	capabilities := kit.Unique(append(slices.Clone(tunnel.Capabilities), tunnelCapabilityProtoParity, tunnelCapabilityChunkedRequest, tunnelCapabilityCommandCreditGrant))
+	if useMux {
+		capabilities = append(capabilities, tunnelCapabilityMuxGrant)
+	}
 	if sendErr := conn.Send(&TunnelMessage{
 		Type:          MessageTypeRegisterResponse,
 		Accepted:      true,
@@ -432,8 +444,13 @@ func (s *TunnelServer) manageConnectedTunnel(ctx context.Context, envID string, 
 		spanErr = sendErr
 		return
 	}
-	s.updateConnectionStatus(callbackCtx, tunnel, true)
+	if useMux {
+		spanErr = s.serveMuxTunnel(ctx, tunnel, transport.muxConn(ctx))
+		return
+	}
 
+	// Deprecated: legacy edge message protocol; remove in v3.
+	s.updateConnectionStatus(callbackCtx, tunnel, true)
 	deliver := func(msg *TunnelMessage, closeStream bool) {
 		value, _ := tunnel.Pending.Load(msg.ID)
 		if pending, ok := value.(*PendingRequest); ok {
@@ -471,9 +488,9 @@ func (s *TunnelServer) manageConnectedTunnel(ctx context.Context, envID string, 
 			if s.EventCallback == nil {
 				continue
 			}
-			event := cloneTunnelEvent(msg.Event)
+			event := msg.Event
 			go func() {
-				eventCtx, cancel := context.WithTimeout(callbackCtx, 15*time.Second)
+				eventCtx, cancel := context.WithTimeout(callbackCtx, edgeEventTimeout)
 				defer cancel()
 				if eventErr := s.EventCallback(eventCtx, envID, event); eventErr != nil {
 					slog.WarnContext(eventCtx, "Failed to process edge event", "environmentId", envID, "type", event.Type, "error", eventErr)
@@ -490,6 +507,8 @@ func (s *TunnelServer) manageConnectedTunnel(ctx context.Context, envID string, 
 
 // enqueue hands msg to the consumer without blocking the tunnel; queued messages wait in order and outlive
 // a tunnel close. A consumer that stalls past pendingDeliveryTimeout or the backlog limits is failed once.
+//
+// Deprecated: legacy edge message protocol; remove in v3.
 func (p *PendingRequest) enqueue(ctx context.Context, tunnel *AgentTunnel, msg *TunnelMessage, closeStream bool) {
 	retained := func(m *TunnelMessage) int {
 		size := len(m.Body) + len(m.Error)
@@ -658,8 +677,8 @@ func (s *TunnelServer) requireCertificateIdentity(state *tls.ConnectionState, en
 	return nil
 }
 
-// IsInternalTunnelRequest reports whether a request is being dispatched by the
-// in-process edge tunnel client instead of a real network listener.
+// IsInternalTunnelRequest reports whether a request is dispatched by the legacy in-process tunnel client, which
+// skips request logging. Only the legacy edge message protocol sets it; remove in v3.
 func IsInternalTunnelRequest(ctx context.Context) bool {
 	if ctx == nil {
 		return false

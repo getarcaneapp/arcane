@@ -183,7 +183,7 @@ func TestTunnelRegistry_RegisterSessionReplacesSameAgentInstance(t *testing.T) {
 	assert.Equal(t, tunnel2, got)
 }
 
-func TestTunnelRegistryPublishesReplacementBeforeClosingPreviousInternal(t *testing.T) {
+func TestTunnelRegistryPublishesReplacementBeforeClosingPrevious(t *testing.T) {
 	registry := NewTunnelRegistry()
 
 	previousConn := &controlledCloseTunnelConn{
@@ -230,7 +230,7 @@ func TestTunnelRegistryPublishesReplacementBeforeClosingPreviousInternal(t *test
 	require.NoError(t, registry.Stop(stopCtx))
 }
 
-func TestTunnelRegistryRejectsRegistrationAfterStopInternal(t *testing.T) {
+func TestTunnelRegistryRejectsRegistrationAfterStop(t *testing.T) {
 	registry := NewTunnelRegistry()
 
 	stopCtx, cancel := context.WithTimeout(t.Context(), time.Second)

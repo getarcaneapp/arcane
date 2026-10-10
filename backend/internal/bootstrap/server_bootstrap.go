@@ -1,6 +1,7 @@
 package bootstrap
 
 import (
+	"cmp"
 	"context"
 	"crypto/tls"
 	"errors"
@@ -42,7 +43,7 @@ type HTTPServerParams struct {
 // NewHTTPServer builds the shared HTTP/gRPC server and registers its lifecycle.
 func NewHTTPServer(lc fx.Lifecycle, p HTTPServerParams) (*http.Server, error) {
 	listenAddr := p.Config.ListenAddr()
-	useTLS, tlsCertFile, tlsKeyFile, edgeCfg, err := prepareServerTLSInternal(p.AppCtx, p.Config)
+	useTLS, tlsCertFile, tlsKeyFile, edgeCfg, err := prepareServerTLS(p.AppCtx, p.Config)
 	if err != nil {
 		return nil, err
 	}
@@ -50,28 +51,52 @@ func NewHTTPServer(lc fx.Lifecycle, p HTTPServerParams) (*http.Server, error) {
 		p.TunnelServer.Config = edgeCfg
 	}
 
-	httpHandler, grpcServer := configureTunnelServerInternal(p.AppCtx, p.Config, p.Router, p.TunnelServer, listenAddr)
-	httpHandler, protocols := configureHTTPProtocolsInternal(useTLS, httpHandler)
+	// Managers serve the gRPC edge tunnel on the shared listener.
+	var httpHandler http.Handler = p.Router
+	var grpcServer *grpc.Server
+	if !p.Config.AgentMode && p.TunnelServer != nil {
+		//nolint:contextcheck // Stream interceptors receive request-scoped context from grpc.ServerStream.
+		grpcServer = grpc.NewServer(p.TunnelServer.GRPCServerOptions()...)
+		tunnelpb.RegisterTunnelServiceServer(grpcServer, p.TunnelServer)
+		httpHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if isTunnelGRPCRequest(r) {
+				grpcServer.ServeHTTP(w, normalizeTunnelGRPCRequestPath(r))
+				return
+			}
+			p.Router.ServeHTTP(w, r)
+		})
+		slog.InfoContext(p.AppCtx, "Using shared HTTP/gRPC listener for edge tunnel", "addr", listenAddr)
+	}
+	httpHandler, protocols := configureHTTPProtocols(useTLS, httpHandler)
+
+	var tlsConfig *tls.Config
+	if useTLS {
+		certificate, loadErr := tls.LoadX509KeyPair(tlsCertFile, tlsKeyFile)
+		if loadErr != nil {
+			return nil, loadErr
+		}
+		edgeTLSConfig, tlsErr := edge.BuildManagerServerTLSConfig(edgeCfg)
+		if tlsErr != nil {
+			return nil, tlsErr
+		}
+		tlsConfig = cmp.Or(edgeTLSConfig, &tls.Config{})
+		tlsConfig.Certificates = []tls.Certificate{certificate}
+	}
 
 	// Request contexts deliberately do not inherit the app lifecycle marker.
 	baseCtx, cancelBase := context.WithCancel(context.Background()) //nolint:forbidigo // HTTP requests need a root without the application lifecycle marker.
-	srv, err := newHTTPServerInternal(baseCtx, listenAddr, httpHandler, protocols, useTLS, edgeCfg)
-	if err != nil {
-		cancelBase()
-		return nil, err
-	}
-	if useTLS {
-		certificate, loadX509KeyPairErr := tls.LoadX509KeyPair(tlsCertFile, tlsKeyFile)
-		if loadX509KeyPairErr != nil {
-			cancelBase()
-			return nil, loadX509KeyPairErr
-		}
-		if srv.TLSConfig == nil {
-			srv.TLSConfig = &tls.Config{}
-		} else {
-			srv.TLSConfig = srv.TLSConfig.Clone()
-		}
-		srv.TLSConfig.Certificates = []tls.Certificate{certificate}
+	srv := &http.Server{
+		Addr:              listenAddr,
+		Handler:           httpHandler,
+		Protocols:         protocols,
+		TLSConfig:         tlsConfig,
+		ReadHeaderTimeout: 5 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		BaseContext:       func(net.Listener) context.Context { return baseCtx },
+		// Long-lived stream handlers tune dead-peer detection per connection; see handlerutil.SetDeadPeerTimeout.
+		ConnContext: httpx.WithConn,
+		// Edge gRPC tunnels are one long HTTP/2 stream, so the 1 MiB default window would cap agent throughput per RTT.
+		HTTP2: &http.HTTP2Config{MaxReceiveBufferPerStream: 8 << 20, MaxReceiveBufferPerConnection: 16 << 20},
 	}
 
 	lc.Append(fx.Hook{
@@ -120,11 +145,11 @@ func NewHTTPServer(lc fx.Lifecycle, p HTTPServerParams) (*http.Server, error) {
 	return srv, nil
 }
 
-func prepareServerTLSInternal(ctx context.Context, cfg *config.Config) (bool, string, string, *edge.Config, error) {
+func prepareServerTLS(ctx context.Context, cfg *config.Config) (bool, string, string, *edge.Config, error) {
 	useTLS := cfg.TLSEnabled
 	tlsCertFile := strings.TrimSpace(cfg.TLSCertFile)
 	tlsKeyFile := strings.TrimSpace(cfg.TLSKeyFile)
-	edgeCfg := buildEdgeRuntimeConfigInternal(cfg)
+	edgeCfg := buildEdgeRuntimeConfig(cfg)
 	if useTLS && (tlsCertFile == "" || tlsKeyFile == "") {
 		return false, "", "", nil, errors.New("TLS_ENABLED requires both TLS_CERT_FILE and TLS_KEY_FILE")
 	}
@@ -146,30 +171,7 @@ func prepareServerTLSInternal(ctx context.Context, cfg *config.Config) (bool, st
 	return useTLS, tlsCertFile, tlsKeyFile, edgeCfg, nil
 }
 
-func configureTunnelServerInternal(appCtx context.Context, cfg *config.Config, router http.Handler, tunnelServer *edge.TunnelServer, listenAddr string) (http.Handler, *grpc.Server) {
-	httpHandler := router
-	var grpcServer *grpc.Server
-
-	if !cfg.AgentMode && tunnelServer != nil {
-		//nolint:contextcheck // Stream interceptors receive request-scoped context from grpc.ServerStream.
-		grpcServer = grpc.NewServer(tunnelServer.GRPCServerOptions()...)
-		tunnelpb.RegisterTunnelServiceServer(grpcServer, tunnelServer)
-
-		httpHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if isTunnelGRPCRequestInternal(r) {
-				grpcReq := normalizeTunnelGRPCRequestPathInternal(r)
-				grpcServer.ServeHTTP(w, grpcReq)
-				return
-			}
-			router.ServeHTTP(w, r)
-		})
-		slog.InfoContext(appCtx, "Using shared HTTP/gRPC listener for edge tunnel", "addr", listenAddr)
-	}
-
-	return httpHandler, grpcServer
-}
-
-func configureHTTPProtocolsInternal(useTLS bool, handler http.Handler) (http.Handler, *http.Protocols) {
+func configureHTTPProtocols(useTLS bool, handler http.Handler) (http.Handler, *http.Protocols) {
 	var protocols http.Protocols
 	protocols.SetHTTP1(true)
 	if useTLS {
@@ -180,10 +182,8 @@ func configureHTTPProtocolsInternal(useTLS bool, handler http.Handler) (http.Han
 	protocols.SetUnencryptedHTTP2(true)
 	inner := handler
 	handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// go1.26.6 arms ReadHeaderTimeout on the raw conn before the h2c
-		// preface sniff and never clears it on the unencrypted-HTTP/2 handoff
-		// (the TLS path does), so without this every h2c connection — and the
-		// gRPC tunnel streams on it — dies ReadHeaderTimeout after accept.
+		// go1.26.6 arms ReadHeaderTimeout before the h2c handoff and never clears it, so every h2c
+		// connection (and its gRPC tunnel stream) would die ReadHeaderTimeout after accept.
 		if r.ProtoMajor == 2 && r.TLS == nil {
 			httpx.ClearReadDeadline(r.Context())
 		}
@@ -192,33 +192,7 @@ func configureHTTPProtocolsInternal(useTLS bool, handler http.Handler) (http.Han
 	return handler, &protocols
 }
 
-func newHTTPServerInternal(baseCtx context.Context, listenAddr string, handler http.Handler, protocols *http.Protocols, useTLS bool, edgeCfg *edge.Config) (*http.Server, error) {
-	srv := &http.Server{
-		Addr:              listenAddr,
-		Handler:           handler,
-		Protocols:         protocols,
-		ReadHeaderTimeout: 5 * time.Second,
-		IdleTimeout:       120 * time.Second,
-		BaseContext:       func(net.Listener) context.Context { return baseCtx },
-		// Long-lived stream handlers tune dead-peer detection for their own
-		// connection; see handlerutil.SetDeadPeerTimeout.
-		ConnContext: httpx.WithConn,
-	}
-	if !useTLS {
-		return srv, nil
-	}
-
-	tlsConfig, err := edge.BuildManagerServerTLSConfig(edgeCfg)
-	if err != nil {
-		return nil, err
-	}
-	if tlsConfig != nil {
-		srv.TLSConfig = tlsConfig
-	}
-	return srv, nil
-}
-
-func buildEdgeRuntimeConfigInternal(cfg *config.Config) *edge.Config {
+func buildEdgeRuntimeConfig(cfg *config.Config) *edge.Config {
 	return &edge.Config{
 		EdgeAgent:             cfg.EdgeAgent,
 		EdgeTransport:         cfg.EdgeTransport,
@@ -234,10 +208,11 @@ func buildEdgeRuntimeConfigInternal(cfg *config.Config) *edge.Config {
 		AgentToken:            cfg.AgentToken,
 		Port:                  cfg.Port,
 		Listen:                cfg.Listen,
+		EdgeMuxDisabled:       cfg.EdgeMuxDisabled,
 	}
 }
 
-func normalizeTunnelGRPCRequestPathInternal(r *http.Request) *http.Request {
+func normalizeTunnelGRPCRequestPath(r *http.Request) *http.Request {
 	if r == nil {
 		return nil
 	}
@@ -271,7 +246,7 @@ func normalizeTunnelGRPCRequestPathInternal(r *http.Request) *http.Request {
 	return clone
 }
 
-func isTunnelGRPCRequestInternal(r *http.Request) bool {
+func isTunnelGRPCRequest(r *http.Request) bool {
 	if r == nil || r.URL == nil {
 		return false
 	}

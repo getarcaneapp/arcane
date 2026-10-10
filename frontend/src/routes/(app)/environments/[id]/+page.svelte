@@ -216,10 +216,11 @@
 	const tabItems = $derived.by((): TabItem[] => {
 		const items: TabItem[] = [];
 
-		if (runtimeEnvironment.isEdge) {
+		// The local environment is the manager itself, so it has no connection to show.
+		if (runtimeEnvironment.id !== '0') {
 			items.push({
 				value: 'connection',
-				label: m.connection_edge(),
+				label: runtimeEnvironment.isEdge ? m.connection_edge() : m.environments_edge_connection_title(),
 				icon: ConnectionIcon
 			});
 		}
@@ -949,7 +950,7 @@
 			</SettingsSection>
 		</Tabs.Content>
 
-		{#if runtimeEnvironment.isEdge}
+		{#if runtimeEnvironment.id !== '0'}
 			<Tabs.Content value="connection">
 				<ConnectionEdgeTab
 					environment={runtimeEnvironment}

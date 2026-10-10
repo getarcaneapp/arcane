@@ -21,6 +21,7 @@ import (
 	kit "go.getarcane.app/kit/pkg"
 
 	wshub "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/ws"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/concurrency"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
@@ -65,6 +66,8 @@ var (
 
 // localDialSkipHeaders lists headers not forwarded when the agent dials its own server for a
 // proxied WebSocket: handshake headers and browser headers that fail the local origin check.
+//
+// Deprecated: legacy edge message protocol; remove in v3.
 var localDialSkipHeaders = map[string]bool{
 	"Sec-Websocket-Key":        true,
 	"Sec-Websocket-Version":    true,
@@ -85,6 +88,7 @@ var localDialSkipHeaders = map[string]bool{
 	"Sec-Ch-Ua-Platform":       true,
 }
 
+// Deprecated: legacy edge message protocol; remove in v3.
 func (t *commandRequestTransfer) stop() {
 	t.timerMu.Lock()
 	defer t.timerMu.Unlock()
@@ -120,7 +124,24 @@ func (c *TunnelClient) StartWithErrorChan(ctx context.Context, errCh chan error)
 	if errCh != nil {
 		defer close(errCh)
 	}
-	slog.InfoContext(ctx, "Starting edge agent session client", StartupLogAttrs(c.cfg)...)
+	// Log only the endpoints this agent will dial.
+	poll := UsePollEdgeTransport(c.cfg)
+	attrs := []any{
+		"controlPlane", kit.Ternary(poll, EdgeTransportPoll, "managed"),
+		"securityMode", NormalizeEdgeMTLSMode(c.cfg.EdgeMTLSMode),
+		"muxEnabled", !c.cfg.EdgeMuxDisabled,
+	}
+	if poll {
+		attrs = append(attrs, "pollUrl", strings.TrimRight(httpx.ManagerBaseURL(c.cfg.ManagerApiUrl), "/")+tunnelPollPath)
+	}
+	transports := c.managedTunnelTransports()
+	if transports.grpc {
+		attrs = append(attrs, "grpcAddr", c.managerGRPCAddr)
+	}
+	if transports.websocket {
+		attrs = append(attrs, "websocketUrl", c.managerWebSocketURL())
+	}
+	slog.InfoContext(ctx, "Starting edge agent session client", attrs...)
 	// Back off exponentially (with jitter) so a broken or unauthorized agent does not hammer the
 	// manager, resetting only once a session has stayed up long enough to count as healthy.
 	reconnectBackoff := backoff.NewExponentialBackOff()
@@ -155,45 +176,6 @@ func (c *TunnelClient) StartWithErrorChan(ctx context.Context, errCh chan error)
 			slog.InfoContext(ctx, "Attempting to reconnect edge tunnel", "delay", delay)
 		}
 	}
-}
-
-// StartupLogAttrs returns the slog attributes describing the agent's edge transport configuration.
-func StartupLogAttrs(cfg *Config) []any {
-	if cfg == nil {
-		return []any{
-			"control_plane", "unknown",
-			"managed_session_transports",
-			[]string{},
-			"security_mode", NormalizeEdgeMTLSMode(""),
-		}
-	}
-
-	poll := UsePollEdgeTransport(cfg)
-	managerGRPCAddr := strings.TrimSpace(httpx.ManagerGRPCAddr(cfg.ManagerApiUrl))
-	managerBaseURL := strings.TrimSpace(httpx.ManagerBaseURL(cfg.ManagerApiUrl))
-	managedSessionTransports := make([]string, 0, 2)
-	if UseGRPCEdgeTransport(cfg) || (poll && managerGRPCAddr != "") {
-		managedSessionTransports = append(managedSessionTransports, EdgeTransportGRPC)
-	}
-	if UseWebSocketEdgeTransport(cfg) || (poll && managerBaseURL != "") {
-		managedSessionTransports = append(managedSessionTransports, EdgeTransportWebSocket)
-	}
-
-	attrs := []any{
-		"control_plane", kit.Ternary(poll, EdgeTransportPoll, "managed"),
-		"managed_session_transports", managedSessionTransports,
-		"security_mode", NormalizeEdgeMTLSMode(cfg.EdgeMTLSMode),
-	}
-	if managerAPIURL := strings.TrimSpace(cfg.ManagerApiUrl); managerAPIURL != "" {
-		attrs = append(attrs, "manager_api_url", managerAPIURL)
-	}
-	if managerGRPCAddr != "" {
-		attrs = append(attrs, "manager_grpc_addr", managerGRPCAddr)
-	}
-	if managerBaseURL != "" {
-		attrs = append(attrs, "manager_base_url", managerBaseURL)
-	}
-	return attrs
 }
 
 func (c *TunnelClient) connectAndServeManagedTunnel(ctx context.Context) error {
@@ -246,22 +228,22 @@ func (c *TunnelClient) connectAndServeManagedTunnel(ctx context.Context) error {
 	return errors.New("no edge tunnel transport is available")
 }
 
-func (c *TunnelClient) managedTunnelTransports() managedTunnelTransportsInternal {
+func (c *TunnelClient) managedTunnelTransports() tunnelTransports {
 	if c == nil || c.cfg == nil {
-		return managedTunnelTransportsInternal{}
+		return tunnelTransports{}
 	}
 
 	managerGRPCAvailable := strings.TrimSpace(c.managerGRPCAddr) != ""
 	managerWebSocketAvailable := c.managerWebSocketURL() != ""
 	switch NormalizeEdgeTransport(c.cfg.EdgeTransport) {
 	case EdgeTransportAuto, EdgeTransportPoll:
-		return managedTunnelTransportsInternal{grpc: managerGRPCAvailable, websocket: managerWebSocketAvailable}
+		return tunnelTransports{grpc: managerGRPCAvailable, websocket: managerWebSocketAvailable}
 	case EdgeTransportWebSocket:
-		return managedTunnelTransportsInternal{websocket: managerWebSocketAvailable}
+		return tunnelTransports{websocket: managerWebSocketAvailable}
 	case EdgeTransportGRPC:
-		return managedTunnelTransportsInternal{grpc: managerGRPCAvailable}
+		return tunnelTransports{grpc: managerGRPCAvailable}
 	default:
-		return managedTunnelTransportsInternal{}
+		return tunnelTransports{}
 	}
 }
 
@@ -276,7 +258,7 @@ func (c *TunnelClient) managerWebSocketURL() string {
 	if managerBaseURL == "" {
 		return ""
 	}
-	return HTTPToWebSocketURL(managerBaseURL) + "/api/tunnel/connect"
+	return HTTPToWebSocketURL(managerBaseURL) + tunnelConnectPath
 }
 
 func (c *TunnelClient) awaitRegistration(ctx context.Context, conn TunnelConnection) (*TunnelMessage, error) {
@@ -314,7 +296,7 @@ func (c *TunnelClient) awaitRegistration(ctx context.Context, conn TunnelConnect
 		if !result.msg.Accepted {
 			return nil, fmt.Errorf("manager rejected tunnel registration: %s", result.msg.Error)
 		}
-		c.registration.Store(clientRegistrationInternal{
+		c.registration.Store(clientRegistration{
 			sessionID:     result.msg.SessionID,
 			commandCredit: slices.Contains(result.msg.Capabilities, tunnelCapabilityCommandCreditGrant),
 		})
@@ -327,7 +309,6 @@ func (c *TunnelClient) awaitRegistration(ctx context.Context, conn TunnelConnect
 func (c *TunnelClient) serveTunnelSession(ctx context.Context, conn TunnelConnection, managerAddr string) error {
 	box := &connBox{conn: conn}
 	c.conn.Store(box)
-	setActiveAgentTunnelConn(conn)
 	connCtx, connCancel := context.WithCancel(ctx)
 	var workers sync.WaitGroup
 	stopCloseWatch := context.AfterFunc(connCtx, func() { _ = conn.Close() })
@@ -359,15 +340,18 @@ func (c *TunnelClient) serveTunnelSession(ctx context.Context, conn TunnelConnec
 		}
 		cancelDrain()
 		c.conn.CompareAndSwap(box, nil)
-		clearActiveAgentTunnelConn(conn)
 	}()
 
 	registration, _ := c.registration.Load()
+	capabilities := append(AdvertisedEdgeCommands(), tunnelCapabilityChunkedRequest, tunnelCapabilityProtoParity, tunnelCapabilityCommandCredit)
+	if !c.cfg.EdgeMuxDisabled {
+		capabilities = append(capabilities, tunnelCapabilityMux)
+	}
 	registerMsg := &TunnelMessage{
 		Type:          MessageTypeRegister,
 		AgentToken:    c.cfg.AgentToken,
 		AgentInstance: c.agentInstanceID,
-		Capabilities:  append(AdvertisedEdgeCommands(), tunnelCapabilityChunkedRequest, tunnelCapabilityProtoParity, tunnelCapabilityCommandCredit),
+		Capabilities:  capabilities,
 		ResumeSession: registration.sessionID,
 	}
 	if err := conn.Send(registerMsg); err != nil {
@@ -382,8 +366,11 @@ func (c *TunnelClient) serveTunnelSession(ctx context.Context, conn TunnelConnec
 		return err
 	}
 
+	transport, useMux := conn.(muxTransport)
+	useMux = useMux && slices.Contains(registerResp.Capabilities, tunnelCapabilityMuxGrant)
 	slog.InfoContext(ctx, "Edge tunnel connected to manager",
 		"transport", conn.Transport(),
+		"dataPlane", kit.Ternary(useMux, EdgeDataPlaneMux, EdgeDataPlaneLegacy),
 		"managerAddr", managerAddr,
 		"environmentId", registerResp.EnvironmentID,
 		"sessionId", registerResp.SessionID,
@@ -401,12 +388,20 @@ func (c *TunnelClient) serveTunnelSession(ctx context.Context, conn TunnelConnec
 	}
 	c.transportPreferenceMu.Unlock()
 
+	if useMux {
+		return fmt.Errorf("%w: %w", errEstablishedTunnelSessionEnded, c.serveMuxSession(connCtx, transport.muxConn(connCtx)))
+	}
+
+	// Deprecated: legacy edge message protocol; remove in v3.
+	defer setActiveAgentEvents(&agentEventSink{conn: conn})()
 	workers.Go(func() { c.heartbeatLoop(connCtx, conn) })
 
 	return fmt.Errorf("%w: %w", errEstablishedTunnelSessionEnded, c.messageLoop(connCtx, conn, &workers))
 }
 
-// heartbeatLoop sends periodic heartbeats
+// heartbeatLoop sends periodic heartbeats.
+//
+// Deprecated: legacy edge message protocol; remove in v3.
 func (c *TunnelClient) heartbeatLoop(ctx context.Context, conn TunnelConnection) {
 	ticker := time.NewTicker(c.heartbeatInterval)
 	defer ticker.Stop()
@@ -433,7 +428,9 @@ func (c *TunnelClient) heartbeatLoop(ctx context.Context, conn TunnelConnection)
 	}
 }
 
-// messageLoop processes incoming messages from the manager
+// messageLoop processes incoming messages from the manager.
+//
+// Deprecated: legacy edge message protocol; remove in v3.
 func (c *TunnelClient) messageLoop(ctx context.Context, conn TunnelConnection, workers *sync.WaitGroup) error {
 	for {
 		if err := ctx.Err(); err != nil {
@@ -498,6 +495,7 @@ func (c *TunnelClient) messageLoop(ctx context.Context, conn TunnelConnection, w
 	}
 }
 
+// Deprecated: legacy edge message protocol; remove in v3.
 func (c *TunnelClient) beginCommandRequestTransfer(ctx context.Context, conn TunnelConnection, transferID string, msg *TunnelMessage) {
 	if c == nil || conn == nil || msg == nil {
 		return
@@ -521,6 +519,7 @@ func (c *TunnelClient) beginCommandRequestTransfer(ctx context.Context, conn Tun
 	}
 }
 
+// Deprecated: legacy edge message protocol; remove in v3.
 func (c *TunnelClient) handleCommandRequestChunk(ctx context.Context, msg *TunnelMessage, workers *sync.WaitGroup) {
 	if c == nil || msg == nil {
 		return
@@ -558,6 +557,7 @@ func (c *TunnelClient) handleCommandRequestChunk(ctx context.Context, msg *Tunne
 	}
 }
 
+// Deprecated: legacy edge message protocol; remove in v3.
 func (c *TunnelClient) handleCommandRequest(ctx context.Context, conn TunnelConnection, msg *TunnelMessage) {
 	if !ValidateEdgeCommand(msg.Command, msg.Method, msg.Path, false) {
 		c.sendCommandComplete(conn, msg.ID, http.StatusBadRequest, "unsupported edge command")
@@ -600,6 +600,7 @@ func (c *TunnelClient) handleCommandRequest(ctx context.Context, conn TunnelConn
 	}
 }
 
+// Deprecated: legacy edge message protocol; remove in v3.
 func (c *TunnelClient) buildLocalHTTPRequest(ctx context.Context, msg *TunnelMessage) (*http.Request, error) {
 	var body io.Reader
 	if len(msg.Body) > 0 {
@@ -635,6 +636,8 @@ func agentAuthCredentials(token string) map[string]string {
 }
 
 // handleRequest serves a tunneled request locally, streaming the response on gRPC connections.
+//
+// Deprecated: legacy edge message protocol; remove in v3.
 func (c *TunnelClient) handleRequest(ctx context.Context, conn TunnelConnection, msg *TunnelMessage) {
 	reqCtx, cancel := context.WithTimeout(ctx, c.requestTimeout)
 	defer cancel()
@@ -680,6 +683,8 @@ func (c *TunnelClient) handleRequest(ctx context.Context, conn TunnelConnection,
 }
 
 // handleWebSocketStart proxies a manager WebSocket or stream-open request to the local server.
+//
+// Deprecated: legacy edge message protocol; remove in v3.
 func (c *TunnelClient) handleWebSocketStart(ctx context.Context, conn TunnelConnection, msg *TunnelMessage, workers *sync.WaitGroup) {
 	streamID := msg.ID
 	if msg.Type == MessageTypeStreamOpen && !ValidateEdgeCommand(msg.Command, http.MethodGet, msg.Path, true) {
@@ -738,6 +743,7 @@ func (c *TunnelClient) handleWebSocketStart(ctx context.Context, conn TunnelConn
 	workers.Go(func() { c.startLocalWebSocketWriteLoop(ctx, streamCtx, ws, stream, cancel) })
 }
 
+// Deprecated: legacy edge message protocol; remove in v3.
 func (c *TunnelClient) buildLocalWebSocketURL(msg *TunnelMessage) string {
 	// LISTEN may be a host, host:port, IPv6, or bracketed IPv6 with port.
 	host := strings.TrimSpace(c.cfg.Listen)
@@ -750,6 +756,7 @@ func (c *TunnelClient) buildLocalWebSocketURL(msg *TunnelMessage) string {
 	return "ws://" + net.JoinHostPort(host, c.localPort) + msg.Path + kit.Ternary(msg.Query != "", "?"+msg.Query, "")
 }
 
+// Deprecated: legacy edge message protocol; remove in v3.
 func (c *TunnelClient) buildLocalWebSocketHeaders(msg *TunnelMessage) http.Header {
 	headers := http.Header{}
 	for k, v := range msg.Headers {
@@ -758,14 +765,11 @@ func (c *TunnelClient) buildLocalWebSocketHeaders(msg *TunnelMessage) http.Heade
 		}
 	}
 
-	if c.cfg.AgentToken != "" {
-		headers.Set(HeaderAPIKey, c.cfg.AgentToken)
-		headers.Set(HeaderAgentToken, c.cfg.AgentToken)
-	}
-
+	remenv.ApplyAgentTokenHeaders(headers, &c.cfg.AgentToken)
 	return headers
 }
 
+// Deprecated: legacy edge message protocol; remove in v3.
 func (c *TunnelClient) closeWebSocketStream(streamID string, stream *activeWSStream) {
 	stream.mu.Lock()
 	if stream.closed {
@@ -781,6 +785,9 @@ func (c *TunnelClient) closeWebSocketStream(streamID string, stream *activeWSStr
 	c.activeStreams.Delete(streamID)
 }
 
+// startLocalWebSocketWriteLoop writes manager frames to the local WebSocket; kept apart to bound handleWebSocketStart's complexity.
+//
+// Deprecated: legacy edge message protocol; remove in v3.
 func (c *TunnelClient) startLocalWebSocketWriteLoop(ctx, streamCtx context.Context, ws *websocket.Conn, stream *activeWSStream, cancel context.CancelFunc) {
 	for {
 		select {
@@ -803,6 +810,30 @@ func (c *TunnelClient) startLocalWebSocketWriteLoop(ctx, streamCtx context.Conte
 	}
 }
 
+// handleStreamData queues manager frames for a local WebSocket, dropping them when its buffer is full; kept apart to
+// bound messageLoop's complexity.
+//
+// Deprecated: legacy edge message protocol; remove in v3.
+func (c *TunnelClient) handleStreamData(ctx context.Context, msg *TunnelMessage) {
+	value, ok := c.activeStreams.Load(msg.ID)
+	stream, isStream := value.(*activeWSStream)
+	if !ok || !isStream {
+		slog.DebugContext(ctx, "Received WebSocket data for unknown stream", "streamId", msg.ID)
+		return
+	}
+	stream.mu.Lock()
+	defer stream.mu.Unlock()
+	if stream.closed {
+		return
+	}
+	select {
+	case stream.dataCh <- wsPayload{messageType: msg.WSMessageType, data: msg.Body}:
+	default:
+		slog.DebugContext(ctx, "Dropping WebSocket data due to backpressure", "streamId", msg.ID)
+	}
+}
+
+// Deprecated: legacy edge message protocol; remove in v3.
 func (c *TunnelClient) sendStreamCloseMessage(conn TunnelConnection, streamID, message string) {
 	if conn == nil {
 		return
@@ -810,31 +841,7 @@ func (c *TunnelClient) sendStreamCloseMessage(conn TunnelConnection, streamID, m
 	_ = conn.Send(&TunnelMessage{ID: streamID, Type: MessageTypeStreamClose, Error: message})
 }
 
-func (c *TunnelClient) handleStreamData(ctx context.Context, msg *TunnelMessage) {
-	streamRaw, ok := c.activeStreams.Load(msg.ID)
-	if !ok {
-		slog.DebugContext(ctx, "Received WebSocket data for unknown stream", "streamId", msg.ID)
-		return
-	}
-	stream, ok := streamRaw.(*activeWSStream)
-	if !ok {
-		return
-	}
-	stream.mu.Lock()
-	if stream.closed {
-		stream.mu.Unlock()
-		return
-	}
-	select {
-	case stream.dataCh <- wsPayload{messageType: msg.WSMessageType, data: msg.Body}:
-		stream.mu.Unlock()
-	default:
-		stream.mu.Unlock()
-		// Drop if channel is full (backpressure)
-		slog.DebugContext(ctx, "Dropping WebSocket data due to backpressure", "streamId", msg.ID)
-	}
-}
-
+// Deprecated: legacy edge message protocol; remove in v3.
 func (c *TunnelClient) sendCommandComplete(conn TunnelConnection, commandID string, status int, message string) {
 	if conn == nil {
 		return
@@ -847,6 +854,7 @@ func (c *TunnelClient) sendCommandComplete(conn TunnelConnection, commandID stri
 	})
 }
 
+// Deprecated: legacy edge message protocol; remove in v3.
 func (r *commandResponseRecorder) Header() http.Header {
 	return r.headers
 }
@@ -983,6 +991,7 @@ func flattenResponseHeaders(headers http.Header) map[string]string {
 	return out
 }
 
+// Deprecated: legacy edge message protocol; remove in v3.
 func (r *responseRecorder) Header() http.Header {
 	return r.headers
 }
@@ -995,6 +1004,7 @@ func (r *responseRecorder) WriteHeader(statusCode int) {
 	r.statusCode = statusCode
 }
 
+// Deprecated: legacy edge message protocol; remove in v3.
 func (r *streamingResponseRecorder) Header() http.Header {
 	return r.headers
 }

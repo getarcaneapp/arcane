@@ -44,7 +44,7 @@ func (h *WebSocketHandler) ContainerStats(c *echo.Context) error {
 	// client gets a live producer instead of a silent socket.
 	// The hub owns connection cleanup; preserve request values without request cancellation.
 	for attempt := range 2 {
-		hub := h.getOrCreateContainerStatsHubInternal(containerID)
+		hub := h.getOrCreateContainerStatsHub(containerID)
 		if wshub.ServeClientWithOnRemove(context.WithoutCancel(c.Request().Context()), hub, conn, onRemove) {
 			return nil
 		}
@@ -59,7 +59,7 @@ func (h *WebSocketHandler) ContainerStats(c *echo.Context) error {
 	return nil
 }
 
-func (h *WebSocketHandler) getOrCreateContainerStatsHubInternal(containerID string) *wshub.Hub {
+func (h *WebSocketHandler) getOrCreateContainerStatsHub(containerID string) *wshub.Hub {
 	if existing, ok := h.containerStatsHubs.Load(containerID); ok {
 		if hub, localOk := existing.(*wshub.Hub); localOk {
 			return hub
@@ -77,7 +77,7 @@ func (h *WebSocketHandler) getOrCreateContainerStatsHubInternal(containerID stri
 		return hub
 	}
 
-	h.runContainerStatsHubInternal(containerID, hub)
+	h.runContainerStatsHub(containerID, hub)
 	return hub
 }
 
@@ -85,7 +85,7 @@ func (h *WebSocketHandler) getOrCreateContainerStatsHubInternal(containerID stri
 // broadcasting its error frame, so clients receive it before the hub shuts down.
 const containerStatsErrorDrainGrace = 2 * time.Second
 
-func (h *WebSocketHandler) runContainerStatsHubInternal(containerID string, hub *wshub.Hub) {
+func (h *WebSocketHandler) runContainerStatsHub(containerID string, hub *wshub.Hub) {
 	ctx, cancel := context.WithCancel(context.Background()) //nolint:forbidigo // Shared stats hubs own their lifecycle and idle cancellation across requests.
 	var cleanupTimer *time.Timer
 	var cleanupTimerMu sync.Mutex

@@ -112,7 +112,7 @@ func NewWebSocketHandler(
 	for _, r := range handler.proxiedRoutes() {
 		wsGroup.GET(r.path, r.handler, middleware.RequireEchoPermission(r.perm))
 	}
-	handler.registerDiagnosticsRoutesInternal(group, authMiddleware)
+	handler.registerDiagnosticsRoutes(group, authMiddleware)
 }
 
 // acceptWS upgrades the request to a WebSocket, registers it with the metrics tracker, and starts its lifetime span.
@@ -152,25 +152,4 @@ func (h *WebSocketHandler) acceptWS(c *echo.Context, kind, resourceID string) (*
 		defaultWebSocketMetrics.UnregisterConnection(connID)
 		span.End()
 	}, true
-}
-
-// keepWSConnAlive pings the peer every period and cancels the connection when a ping fails.
-// The pong must be serviced by the connection's concurrent reader.
-func keepWSConnAlive(ctx context.Context, cancel context.CancelFunc, conn *websocket.Conn, period time.Duration) {
-	ticker := time.NewTicker(period)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			pctx, pcancel := context.WithTimeout(ctx, 10*time.Second)
-			err := conn.Ping(pctx)
-			pcancel()
-			if err != nil {
-				cancel()
-				return
-			}
-		}
-	}
 }

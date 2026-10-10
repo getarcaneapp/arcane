@@ -104,9 +104,10 @@ func TestProxyWebSocketRequest(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { _ = clientConn.CloseNow() }()
 
-	// Read Hello
-	_, msg, err := clientConn.Read(t.Context())
+	// Read Hello; stream data keeps its text frame type.
+	msgType, msg, err := clientConn.Read(t.Context())
 	require.NoError(t, err)
+	assert.Equal(t, websocket.MessageText, msgType)
 	assert.Equal(t, "hello", string(msg))
 
 	// Send data from Client to Agent
@@ -179,114 +180,4 @@ func TestIsForwardableWSMessage(t *testing.T) {
 	assert.False(t, isForwardableWSMessage(9))
 	assert.False(t, isForwardableWSMessage(10))
 	assert.False(t, isForwardableWSMessage(8))
-}
-
-func TestSendWebSocketData(t *testing.T) {
-	// Mock Agent Tunnel
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		conn, err := websocket.Accept(w, r, nil)
-		if err != nil {
-			return
-		}
-		defer func() { _ = conn.CloseNow() }()
-
-		// Read message
-		_, data, err := conn.Read(r.Context())
-		if err != nil {
-			return
-		}
-
-		var msg TunnelMessage
-		_ = json.Unmarshal(data, &msg)
-
-		assert.Equal(t, MessageTypeStreamData, msg.Type)
-		assert.Equal(t, "test-stream", msg.ID)
-		assert.Equal(t, int(websocket.MessageText), msg.WSMessageType)
-		assert.Equal(t, "payload", string(msg.Body))
-
-		// Drain until the peer closes so the close handshake completes promptly.
-		_, _, _ = conn.Read(r.Context())
-	}))
-	defer server.Close()
-
-	url := "ws" + strings.TrimPrefix(server.URL, "http")
-	conn, _, err := websocket.Dial(t.Context(), url, nil)
-	require.NoError(t, err)
-	defer func() { _ = conn.CloseNow() }()
-
-	tunnel := newWebSocketAgentTunnel("env-helper", conn)
-	defer func() { _ = tunnel.CloseWithReason("") }()
-
-	err = sendStreamDataInternal(tunnel, "test-stream", int(websocket.MessageText), []byte("payload"))
-	require.NoError(t, err)
-}
-
-func TestSendWebSocketClose(t *testing.T) {
-	// Mock Agent Tunnel
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		conn, err := websocket.Accept(w, r, nil)
-		if err != nil {
-			return
-		}
-		defer func() { _ = conn.CloseNow() }()
-
-		// Read message
-		_, data, err := conn.Read(r.Context())
-		if err != nil {
-			return
-		}
-
-		var msg TunnelMessage
-		_ = json.Unmarshal(data, &msg)
-
-		assert.Equal(t, MessageTypeStreamClose, msg.Type)
-		assert.Equal(t, "test-stream", msg.ID)
-
-		// Drain until the peer closes so the close handshake completes promptly.
-		_, _, _ = conn.Read(r.Context())
-	}))
-	defer server.Close()
-
-	url := "ws" + strings.TrimPrefix(server.URL, "http")
-	conn, _, err := websocket.Dial(t.Context(), url, nil)
-	require.NoError(t, err)
-
-	tunnel := newWebSocketAgentTunnel("env-helper-close", conn)
-	defer func() { _ = tunnel.CloseWithReason("") }()
-
-	sendWebSocketClose(tunnel, "test-stream")
-}
-
-func TestHandleAgentMessage_StreamDataPreservesTextFrame(t *testing.T) {
-	serverConnCh := make(chan *websocket.Conn, 1)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		conn, err := websocket.Accept(w, r, nil)
-		if !assert.NoError(t, err) {
-			return
-		}
-		serverConnCh <- conn
-	}))
-	defer server.Close()
-
-	clientURL := "ws" + strings.TrimPrefix(server.URL, "http")
-	clientConn, _, err := websocket.Dial(t.Context(), clientURL, nil)
-	require.NoError(t, err)
-	defer func() { _ = clientConn.CloseNow() }()
-
-	serverConn := <-serverConnCh
-	defer func() { _ = serverConn.CloseNow() }()
-
-	stop, err := handleAgentMessage(t.Context(), t.Context(), serverConn, &TunnelMessage{
-		ID:            "stats-stream",
-		Type:          MessageTypeStreamData,
-		Body:          []byte(`{"cpuPercent":12.5}`),
-		WSMessageType: int(websocket.MessageText),
-	}, "stats-stream")
-	require.NoError(t, err)
-	assert.False(t, stop)
-
-	msgType, payload, err := clientConn.Read(t.Context())
-	require.NoError(t, err)
-	assert.Equal(t, websocket.MessageText, msgType)
-	assert.Equal(t, `{"cpuPercent":12.5}`, string(payload))
 }

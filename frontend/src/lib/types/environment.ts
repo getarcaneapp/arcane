@@ -20,6 +20,12 @@ export type Environment = {
 	edgeTransport?: 'grpc' | 'websocket';
 	lastEdgeTransport?: 'grpc' | 'websocket';
 	edgeSecurityMode?: 'token' | 'mtls';
+	edgeDataPlane?: 'mux' | 'legacy';
+	edgeRoundTripMs?: number;
+	edgeOpenStreams?: number;
+	edgeSessionId?: string;
+	edgeAgentInstance?: string;
+	edgeCapabilities?: string[];
 	connected?: boolean;
 	connectedAt?: string;
 	lastHeartbeat?: string;

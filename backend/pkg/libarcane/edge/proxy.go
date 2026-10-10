@@ -7,34 +7,61 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
 	"time"
 
 	"github.com/labstack/echo/v5"
 	"github.com/samber/mo"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 const (
 	DefaultProxyTimeout           = 5 * time.Minute
 	DefaultTunnelAcquirePollEvery = 100 * time.Millisecond
-	tunnelStreamHeader            = "X-Arcane-Tunnel-Stream"
+	// Deprecated: legacy edge message protocol; remove in v3.
+	tunnelStreamHeader = "X-Arcane-Tunnel-Stream"
 )
 
-// browserSecurityHeaders are browser-enforced headers that must not cross the edge tunnel.
+// browserSecurityHeaders must not cross a legacy tunnel: the agent's CORS check would reject the browser Origin,
+// and the agent authenticates the manager by token instead.
+//
+// Deprecated: legacy edge message protocol; remove in v3.
 var browserSecurityHeaders = map[string]struct{}{
 	"Origin": {}, "Referer": {}, "Cookie": {}, "Access-Control-Request-Method": {},
 	"Access-Control-Request-Headers": {}, "Sec-Fetch-Mode": {}, "Sec-Fetch-Site": {}, "Sec-Fetch-Dest": {},
 }
 
-// DefaultTunnelAcquireTimeout returns a poll-aware wait timeout for acquiring
-// an on-demand edge tunnel.
+// DefaultTunnelAcquireTimeout returns a poll-aware wait timeout for acquiring an on-demand edge tunnel.
 func DefaultTunnelAcquireTimeout() time.Duration {
 	return DefaultTunnelPollInterval + 2*time.Second
 }
 
-// ProxyRequest sends an HTTP request through an edge tunnel
-// Returns the response status, headers, and body
+// ProxyRequest sends an HTTP request through an edge tunnel and returns the response status, headers, and body.
 func ProxyRequest(ctx context.Context, tunnel *AgentTunnel, method, path, query string, headers map[string]string, body []byte) (int, map[string]string, []byte, error) {
+	if tunnel != nil {
+		TouchTunnelDemand(tunnel.EnvironmentID, DefaultTunnelDemandTTL)
+	}
+	if client, ok := tunnel.HTTPClient().Get(); ok {
+		req, err := http.NewRequestWithContext(ctx, method, MuxAgentBaseURL+path+kit.Ternary(query != "", "?"+query, ""), bytes.NewReader(body))
+		if err != nil {
+			return 0, nil, nil, fmt.Errorf("create edge tunnel request: %w", err)
+		}
+		for k, v := range headers {
+			req.Header.Set(k, v)
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			return 0, nil, nil, fmt.Errorf("tunnel request failed: %w", err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+		respBody, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return 0, nil, nil, fmt.Errorf("read edge tunnel response: %w", err)
+		}
+		return resp.StatusCode, flattenResponseHeaders(resp.Header), respBody, nil
+	}
+
 	result, err := DefaultCommandClient.Execute(ctx, tunnel, &CommandRequest{
 		Method:  method,
 		Path:    path,
@@ -49,29 +76,10 @@ func ProxyRequest(ctx context.Context, tunnel *AgentTunnel, method, path, query 
 	return result.Status, result.Headers, result.Body, nil
 }
 
-func registerPendingRequestInternal(tunnel *AgentTunnel, requestID string) (*PendingRequest, error) {
-	if requestID == "" {
-		return nil, errors.New("request ID is required")
-	}
-
-	pending := &PendingRequest{
-		ResponseCh: make(chan *TunnelMessage, 256),
-		failureCh:  make(chan error, 1),
-	}
-	tunnel.Pending.Store(requestID, pending)
-	return pending, nil
-}
-
-// collectCommandResponseInternal waits for a command response. When out is set
-// the response is written to it as it arrives and the returned body is nil.
+// collectCommandResponse waits for a command response, streaming it to out when set (the returned body is then nil).
 // credit, when set, returns flow-control credit for each consumed output chunk.
-func collectCommandResponseInternal(
-	ctx context.Context,
-	tunnel *AgentTunnel,
-	pending *PendingRequest,
-	method string,
-	out http.ResponseWriter,
-	credit func(consumed int),
+func collectCommandResponse(
+	ctx context.Context, tunnel *AgentTunnel, pending *PendingRequest, method string, out http.ResponseWriter, credit func(consumed int),
 ) (int, map[string]string, []byte, error) {
 	state := &grpcResponseState{out: out, credit: credit}
 
@@ -80,12 +88,12 @@ func collectCommandResponseInternal(
 		case <-ctx.Done():
 			return 0, nil, nil, ctx.Err()
 		case <-tunnel.done:
-			if done, status, headers, body, err := state.drainTerminalResponseInternal(ctx, pending, method); done {
+			if done, status, headers, body, err := state.drainTerminalResponse(ctx, pending, method); done {
 				return status, headers, body, err
 			}
 			return 0, nil, nil, fmt.Errorf("edge tunnel closed while waiting for response: %w", ErrTunnelConnectionClosed)
 		case err := <-pending.failureCh:
-			if done, status, headers, body, drainTerminalResponseErr := state.drainTerminalResponseInternal(ctx, pending, method); done {
+			if done, status, headers, body, drainTerminalResponseErr := state.drainTerminalResponse(ctx, pending, method); done {
 				return status, headers, body, drainTerminalResponseErr
 			}
 			return 0, nil, nil, err
@@ -93,16 +101,16 @@ func collectCommandResponseInternal(
 			if !ok {
 				return 0, nil, nil, fmt.Errorf("edge tunnel response channel closed before a response was received: %w", ErrTunnelConnectionClosed)
 			}
-			if done, status, headers, body, err := state.handleTunnelMessageInternal(method, incoming); done {
+			if done, status, headers, body, err := state.handleTunnelMessage(method, incoming); done {
 				return status, headers, body, err
 			}
 		}
 	}
 }
 
-// handleTunnelMessageInternal applies one response message. A failed write to the output
+// handleTunnelMessage applies one response message. A failed write to the output
 // ends the response with that error.
-func (s *grpcResponseState) handleTunnelMessageInternal(method string, incoming *TunnelMessage) (bool, int, map[string]string, []byte, error) {
+func (s *grpcResponseState) handleTunnelMessage(method string, incoming *TunnelMessage) (bool, int, map[string]string, []byte, error) {
 	if incoming == nil {
 		return false, 0, nil, nil, nil
 	}
@@ -112,19 +120,50 @@ func (s *grpcResponseState) handleTunnelMessageInternal(method string, incoming 
 	var headers map[string]string
 	var body []byte
 	var err error
+	// The first response message carries the status and headers.
+	if !s.gotResponse && (incoming.Type == MessageTypeResponse || incoming.Type == MessageTypeCommandComplete ||
+		(incoming.Type == MessageTypeCommandOutput && incoming.Status != 0)) {
+		s.gotResponse = true
+		s.status = incoming.Status
+		s.respHeaders = incoming.Headers
+		if incoming.Type == MessageTypeCommandOutput {
+			s.commit()
+		}
+	}
 	switch incoming.Type {
 	case MessageTypeResponse:
-		done, status, headers, body = s.handleResponse(method, incoming)
+		switch {
+		case s.respHeaders[tunnelStreamHeader] == "1":
+			s.commit()
+			s.writeBody(incoming.Body)
+		case len(incoming.Body) > 0:
+			s.writeBody(incoming.Body)
+			done = true
+			status, headers, body = s.finish()
+		case method == http.MethodHead || s.status == http.StatusNoContent || s.status == http.StatusNotModified:
+			done = true
+			status, headers, body = s.finish()
+		}
 	case MessageTypeCommandOutput, MessageTypeStreamData, MessageTypeFileChunk:
-		s.handleStreamData(incoming)
+		s.writeBody(incoming.Body)
 		if incoming.Type == MessageTypeCommandOutput && s.credit != nil && len(incoming.Body) > 0 && s.outErr == nil {
 			s.credit(len(incoming.Body))
 		}
 	case MessageTypeCommandComplete:
-		done = true
-		status, headers, body, err = s.handleCommandComplete(incoming)
+		s.writeBody(incoming.Body)
+		if incoming.Error != "" && incoming.Status >= http.StatusBadRequest {
+			done, status, headers, body = true, incoming.Status, s.cleanHeaders(), s.respBody.Bytes()
+			err = errors.New(incoming.Error)
+		} else {
+			done = true
+			_, headers, body = s.finish()
+			status = incoming.Status
+		}
 	case MessageTypeStreamEnd:
-		done, status, headers, body = s.handleStreamEnd()
+		if s.gotResponse {
+			done = true
+			status, headers, body = s.finish()
+		}
 	}
 	if s.outErr != nil {
 		return true, s.status, nil, nil, fmt.Errorf("failed to write proxied response: %w", s.outErr)
@@ -132,9 +171,9 @@ func (s *grpcResponseState) handleTunnelMessageInternal(method string, incoming 
 	return done, status, headers, body, err
 }
 
-// drainTerminalResponseInternal applies messages already received for pending, including any still
+// drainTerminalResponse applies messages already received for pending, including any still
 // queued behind a full channel, until the response completes or nothing more is queued.
-func (s *grpcResponseState) drainTerminalResponseInternal(ctx context.Context, pending *PendingRequest, method string) (bool, int, map[string]string, []byte, error) {
+func (s *grpcResponseState) drainTerminalResponse(ctx context.Context, pending *PendingRequest, method string) (bool, int, map[string]string, []byte, error) {
 	for {
 		if err := ctx.Err(); err != nil {
 			return true, 0, nil, nil, err
@@ -163,89 +202,32 @@ func (s *grpcResponseState) drainTerminalResponseInternal(ctx context.Context, p
 		if !ok {
 			return true, 0, nil, nil, fmt.Errorf("edge tunnel response channel closed before a response was received: %w", ErrTunnelConnectionClosed)
 		}
-		if done, status, headers, body, err := s.handleTunnelMessageInternal(method, incoming); done {
+		if done, status, headers, body, err := s.handleTunnelMessage(method, incoming); done {
 			return true, status, headers, body, err
 		}
 	}
 }
 
-func (s *grpcResponseState) handleResponse(method string, incoming *TunnelMessage) (bool, int, map[string]string, []byte) {
-	if !s.gotResponse {
-		s.gotResponse = true
-		s.status = incoming.Status
-		s.respHeaders = incoming.Headers
-	}
-
-	if s.respHeaders[tunnelStreamHeader] == "1" {
-		s.commitInternal()
-		s.writeBodyInternal(incoming.Body)
-		return false, 0, nil, nil
-	}
-
-	if len(incoming.Body) > 0 {
-		s.writeBodyInternal(incoming.Body)
-		return s.finishInternal()
-	}
-
-	if method == http.MethodHead || s.status == http.StatusNoContent || s.status == http.StatusNotModified {
-		return s.finishInternal()
-	}
-
-	return false, 0, nil, nil
-}
-
-func (s *grpcResponseState) handleStreamData(incoming *TunnelMessage) {
-	// Agents that support streaming put the status and headers on the first output chunk.
-	if !s.gotResponse && incoming.Type == MessageTypeCommandOutput && incoming.Status != 0 {
-		s.gotResponse = true
-		s.status = incoming.Status
-		s.respHeaders = incoming.Headers
-		s.commitInternal()
-	}
-	s.writeBodyInternal(incoming.Body)
-}
-
-func (s *grpcResponseState) handleStreamEnd() (bool, int, map[string]string, []byte) {
-	if !s.gotResponse {
-		return false, 0, nil, nil
-	}
-	return s.finishInternal()
-}
-
-func (s *grpcResponseState) handleCommandComplete(incoming *TunnelMessage) (int, map[string]string, []byte, error) {
-	if !s.gotResponse {
-		s.gotResponse = true
-		s.status = incoming.Status
-		s.respHeaders = incoming.Headers
-	}
-	s.writeBodyInternal(incoming.Body)
-	if incoming.Error != "" && incoming.Status >= http.StatusBadRequest {
-		return incoming.Status, stripInternalTunnelHeaders(s.respHeaders), s.respBody.Bytes(), errors.New(incoming.Error)
-	}
-	_, _, headers, body := s.finishInternal()
-	return incoming.Status, headers, body, nil
-}
-
-// commitInternal writes the status, headers and any buffered body to out.
-func (s *grpcResponseState) commitInternal() {
+// commit writes the status, headers and any buffered body to out.
+func (s *grpcResponseState) commit() {
 	if s.out == nil || s.committed {
 		return
 	}
 	s.committed = true
 	header := s.out.Header()
-	for k, v := range s.respHeaders {
-		if !isHopByHopHeader(k) && http.CanonicalHeaderKey(k) != tunnelStreamHeader {
+	for k, v := range s.cleanHeaders() {
+		if _, hop := hopByHopHeaders[http.CanonicalHeaderKey(k)]; !hop {
 			header.Set(k, v)
 		}
 	}
 	s.out.WriteHeader(s.status)
-	s.writeBodyInternal(s.respBody.Bytes())
+	s.writeBody(s.respBody.Bytes())
 	s.respBody.Reset()
 }
 
-// writeBodyInternal buffers body until the response is committed, then writes and flushes it.
+// writeBody buffers body until the response is committed, then writes and flushes it.
 // The first output error is kept and stops later writes.
-func (s *grpcResponseState) writeBodyInternal(body []byte) {
+func (s *grpcResponseState) writeBody(body []byte) {
 	if !s.committed {
 		s.respBody.Write(body)
 		return
@@ -263,17 +245,19 @@ func (s *grpcResponseState) writeBodyInternal(body []byte) {
 	}
 }
 
-// finishInternal completes the response, committing it to out when set.
-func (s *grpcResponseState) finishInternal() (bool, int, map[string]string, []byte) {
-	headers := stripInternalTunnelHeaders(s.respHeaders)
+// finish completes the response, committing it to out when set.
+func (s *grpcResponseState) finish() (int, map[string]string, []byte) {
+	headers := s.cleanHeaders()
 	if s.out != nil {
-		s.commitInternal()
-		return true, s.status, headers, nil
+		s.commit()
+		return s.status, headers, nil
 	}
-	return true, s.status, headers, s.respBody.Bytes()
+	return s.status, headers, s.respBody.Bytes()
 }
 
-// ProxyHTTPRequest is a helper that proxies an echo context through a tunnel
+// ProxyHTTPRequest proxies an echo request through a legacy tunnel.
+//
+// Deprecated: legacy edge message protocol; remove in v3.
 func ProxyHTTPRequest(c *echo.Context, tunnel *AgentTunnel, targetPath string) error {
 	req := c.Request()
 	ctx := req.Context()
@@ -292,22 +276,15 @@ func ProxyHTTPRequest(c *echo.Context, tunnel *AgentTunnel, targetPath string) e
 		req.Body = io.NopCloser(bytes.NewReader(body))
 	}
 
-	headers := make(map[string]string)
+	headers := make(map[string]string, len(req.Header))
 	for k, v := range req.Header {
-		if len(v) > 0 {
-			if isHopByHopHeader(k) || isBrowserSecurityHeader(k) {
-				continue
-			}
+		_, hop := hopByHopHeaders[http.CanonicalHeaderKey(k)]
+		_, browser := browserSecurityHeaders[http.CanonicalHeaderKey(k)]
+		if len(v) > 0 && !hop && !browser {
 			headers[k] = v[0]
 		}
 	}
-
-	slog.DebugContext(ctx, "Proxying request through edge tunnel",
-		"environmentId", tunnel.EnvironmentID,
-		"method", req.Method,
-		"path", targetPath,
-		"bodyLength", len(body),
-	)
+	slog.DebugContext(ctx, "Proxying request through edge tunnel", "environmentId", tunnel.EnvironmentID, "method", req.Method, "path", targetPath, "bodyLength", len(body))
 
 	_, err := DefaultCommandClient.Execute(proxyCtx, tunnel, &CommandRequest{
 		Method:  req.Method,
@@ -318,11 +295,7 @@ func ProxyHTTPRequest(c *echo.Context, tunnel *AgentTunnel, targetPath string) e
 		Output:  c.Response(),
 	})
 	if err != nil {
-		slog.ErrorContext(ctx, "Edge tunnel proxy failed",
-			"environmentId", tunnel.EnvironmentID,
-			"error", err,
-		)
-
+		slog.ErrorContext(ctx, "Edge tunnel proxy failed", "environmentId", tunnel.EnvironmentID, "error", err)
 		// Headers are already sent, so abort the connection rather than end a truncated
 		// response as if it were complete. Echo's recover middleware re-panics this sentinel.
 		if resp, unwrapErr := echo.UnwrapResponse(c.Response()); unwrapErr == nil && resp.Committed {
@@ -338,34 +311,11 @@ func ProxyHTTPRequest(c *echo.Context, tunnel *AgentTunnel, targetPath string) e
 	return nil
 }
 
-// isHopByHopHeader returns true if the header should not be forwarded
-func isHopByHopHeader(header string) bool {
-	_, ok := hopByHopHeaders[http.CanonicalHeaderKey(header)]
-	return ok
-}
-
-// isBrowserSecurityHeader returns true for headers that are browser-enforced
-// security headers. These must NOT be forwarded through the edge tunnel because
-// the agent's CORS middleware will reject requests whose Origin does not match
-// its allowed origins, returning 403. The agent authenticates via
-// X-Arcane-Agent-Token instead of browser cookies/origin checks.
-func isBrowserSecurityHeader(header string) bool {
-	_, ok := browserSecurityHeaders[http.CanonicalHeaderKey(header)]
-	return ok
-}
-
-func stripInternalTunnelHeaders(headers map[string]string) map[string]string {
-	if len(headers) == 0 {
-		return headers
-	}
-	cleaned := make(map[string]string, len(headers))
-	for k, v := range headers {
-		if http.CanonicalHeaderKey(k) == tunnelStreamHeader {
-			continue
-		}
-		cleaned[k] = v
-	}
-	return cleaned
+// cleanHeaders returns the response headers without the internal stream marker.
+func (s *grpcResponseState) cleanHeaders() map[string]string {
+	headers := maps.Clone(s.respHeaders)
+	maps.DeleteFunc(headers, func(k, _ string) bool { return http.CanonicalHeaderKey(k) == tunnelStreamHeader })
+	return headers
 }
 
 // HasActiveTunnel checks if an environment has an active edge tunnel
@@ -373,53 +323,23 @@ func HasActiveTunnel(envID string) bool {
 	return GetActiveTunnel(envID).IsPresent()
 }
 
-// GetActiveTunnel returns the active tunnel for an environment, if one exists.
+// GetActiveTunnel returns the active tunnel for an environment in the default registry, if one exists.
 func GetActiveTunnel(envID string) mo.Option[*AgentTunnel] {
-	tunnel, ok := GetRegistry().Get(envID).Get()
-	if !ok || tunnel == nil || tunnel.Conn == nil || tunnel.Conn.IsClosed() {
-		return mo.None[*AgentTunnel]()
-	}
-	return mo.Some(tunnel)
+	return GetRegistry().Active(envID)
 }
 
-// WaitForActiveTunnel waits for an environment to establish a live tunnel.
+// WaitForActiveTunnel waits for an environment to establish a live tunnel in the default registry.
 func WaitForActiveTunnel(ctx context.Context, envID string, timeout time.Duration) mo.Option[*AgentTunnel] {
-	if timeout <= 0 {
-		return GetActiveTunnel(envID)
-	}
-
-	if tunnel, ok := GetActiveTunnel(envID).Get(); ok {
-		return mo.Some(tunnel)
-	}
-
-	waitCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-
-	ticker := time.NewTicker(DefaultTunnelAcquirePollEvery)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-waitCtx.Done():
-			return mo.None[*AgentTunnel]()
-		case <-ticker.C:
-			if tunnel, ok := GetActiveTunnel(envID).Get(); ok {
-				return mo.Some(tunnel)
-			}
-		}
-	}
+	return GetRegistry().WaitForActive(ctx, envID, timeout)
 }
 
-// RequestTunnelAndWait marks an edge environment as needed and waits for the
-// agent to establish a live tunnel.
+// RequestTunnelAndWait marks an edge environment as needed and waits for the agent to establish a live tunnel.
 func RequestTunnelAndWait(ctx context.Context, envID string, demandTTL, timeout time.Duration) mo.Option[*AgentTunnel] {
 	TouchTunnelDemand(envID, demandTTL)
 	return WaitForActiveTunnel(ctx, envID, timeout)
 }
 
-// DoRequest performs an HTTP request through an edge tunnel.
-// This is for service-level calls that need to route through the tunnel.
-// Returns (statusCode, responseBody, error)
+// DoRequest performs a service-level HTTP request through an edge tunnel and returns the status and body.
 func DoRequest(ctx context.Context, envID, method, path string, body []byte) (int, []byte, error) {
 	if ctx == nil {
 		return 0, nil, errors.New("context is required")
@@ -430,12 +350,9 @@ func DoRequest(ctx context.Context, envID, method, path string, body []byte) (in
 		defer cancel()
 	}
 
-	tunnel, ok := GetRegistry().Get(envID).Get()
+	tunnel, ok := GetActiveTunnel(envID).Get()
 	if !ok {
 		return 0, nil, fmt.Errorf("no active tunnel for environment %s", envID)
-	}
-	if tunnel.Conn.IsClosed() {
-		return 0, nil, fmt.Errorf("tunnel for environment %s is closed", envID)
 	}
 
 	headers := make(map[string]string)

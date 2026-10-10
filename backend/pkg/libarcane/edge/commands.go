@@ -1,6 +1,7 @@
 package edge
 
 import (
+	"cmp"
 	"net/http"
 	"strings"
 
@@ -31,6 +32,13 @@ var commandRoutes = []commandRoute{
 	{Method: http.MethodDelete, PathPattern: "/api/environments/{id}/containers/{containerId}", CommandName: "container.delete"},
 	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/containers/{containerId}/update", CommandName: "container.update"},
 	{Method: http.MethodPut, PathPattern: "/api/environments/{id}/containers/{containerId}/auto-update", CommandName: "container.auto_update.set"},
+	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/containers/{containerId}/processes", CommandName: "container.processes"},
+	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/containers/{containerId}/logs/download", CommandName: "container.logs.download"},
+	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/containers/{containerId}/kill", CommandName: "container.kill"},
+	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/containers/{containerId}/pause", CommandName: "container.pause"},
+	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/containers/{containerId}/unpause", CommandName: "container.unpause"},
+	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/containers/{containerId}/commit", CommandName: "container.commit"},
+	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/containers/generate-compose", CommandName: "container.generate_compose"},
 
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/ports", CommandName: "port.list"},
 
@@ -44,6 +52,11 @@ var commandRoutes = []commandRoute{
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/images/builds/{buildId}", CommandName: "image.build.inspect"},
 	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/images/prune", CommandName: "image.prune"},
 	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/images/upload", CommandName: "image.upload"},
+	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/images/{imageId}/history", CommandName: "image.history"},
+	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/images/{imageId}/attestations", CommandName: "image.attestations"},
+	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/images/{imageId}/export", CommandName: "image.export"},
+	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/images/{imageId}/tag", CommandName: "image.tag"},
+	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/images/{imageId}/patch", CommandName: "image.patch"},
 
 	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/uploads/{kind}", CommandName: "upload.session.create"},
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/uploads/{kind}/{uploadId}", CommandName: "upload.session.get"},
@@ -77,6 +90,8 @@ var commandRoutes = []commandRoute{
 	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/vulnerabilities/ignore", CommandName: "vulnerability.ignore.create"},
 	{Method: http.MethodDelete, PathPattern: "/api/environments/{id}/vulnerabilities/ignore/{ignoreId}", CommandName: "vulnerability.ignore.delete"},
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/vulnerabilities/ignored", CommandName: "vulnerability.ignore.list"},
+	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/vulnerabilities/ignore/bulk", CommandName: "vulnerability.ignore.bulk"},
+	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/vulnerabilities/unignore/bulk", CommandName: "vulnerability.unignore.bulk"},
 
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/projects", CommandName: "project.list"},
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/projects/counts", CommandName: "project.counts"},
@@ -100,6 +115,7 @@ var commandRoutes = []commandRoute{
 	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/projects/{projectId}/build", CommandName: "project.build"},
 	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/projects/{projectId}/archive", CommandName: "project.archive"},
 	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/projects/{projectId}/unarchive", CommandName: "project.unarchive"},
+	{Method: http.MethodPatch, PathPattern: "/api/environments/{id}/projects/{projectId}/tags", CommandName: "project.tags.update"},
 
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/gitops-syncs", CommandName: "gitops_sync.list"},
 	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/gitops-syncs", CommandName: "gitops_sync.create"},
@@ -110,6 +126,10 @@ var commandRoutes = []commandRoute{
 	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/gitops-syncs/{syncId}/sync", CommandName: "gitops_sync.run"},
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/gitops-syncs/{syncId}/status", CommandName: "gitops_sync.status"},
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/gitops-syncs/{syncId}/files", CommandName: "gitops_sync.files"},
+	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/gitops-syncs/{syncId}/backup/history", CommandName: "gitops_sync.backup.history"},
+	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/gitops-syncs/{syncId}/backup/history/{commit}", CommandName: "gitops_sync.backup.history.inspect"},
+	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/gitops-syncs/{syncId}/backup/preview", CommandName: "gitops_sync.backup.preview"},
+	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/gitops-syncs/{syncId}/backup/resolve", CommandName: "gitops_sync.backup.resolve"},
 
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/volumes/counts", CommandName: "volume.counts"},
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/volumes", CommandName: "volume.list"},
@@ -118,6 +138,7 @@ var commandRoutes = []commandRoute{
 	{Method: http.MethodDelete, PathPattern: "/api/environments/{id}/volumes/{volumeName}", CommandName: "volume.delete"},
 	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/volumes/prune", CommandName: "volume.prune"},
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/volumes/{volumeName}/usage", CommandName: "volume.usage"},
+	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/volumes/{volumeName}/rename", CommandName: "volume.rename"},
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/volumes/sizes", CommandName: "volume.sizes"},
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/volumes/{volumeName}/workspace", CommandName: "volume.workspace.list"},
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/volumes/{volumeName}/workspace/file", CommandName: "volume.workspace.read_file"},
@@ -135,6 +156,8 @@ var commandRoutes = []commandRoute{
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/volumes/backups/{backupId}/files", CommandName: "volume.backup.files"},
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/volumes/backups/{backupId}/files/browse", CommandName: "volume.backup.files_browse"},
 	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/volumes/backups/{backupId}/upload", CommandName: "volume.backup.upload"},
+	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/volumes/{volumeName}/backups/upload", CommandName: "volume.backup.import"},
+	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/volumes/backups/discover", CommandName: "volume.backup.discover"},
 
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/builds/browse", CommandName: "build_workspace.browse.list"},
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/builds/browse/content", CommandName: "build_workspace.browse.read_file"},
@@ -150,6 +173,8 @@ var commandRoutes = []commandRoute{
 	{Method: http.MethodDelete, PathPattern: "/api/environments/{id}/networks/{networkId}", CommandName: "network.delete"},
 	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/networks/prune", CommandName: "network.prune"},
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/networks/topology", CommandName: "network.topology"},
+	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/networks/{networkId}/connect", CommandName: "network.connect"},
+	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/networks/{networkId}/disconnect", CommandName: "network.disconnect"},
 
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/templates/variables", CommandName: "template.variables.get"},
 	{Method: http.MethodPut, PathPattern: "/api/environments/{id}/templates/variables", CommandName: "template.variables.update"},
@@ -182,6 +207,7 @@ var commandRoutes = []commandRoute{
 	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/updater/run", CommandName: "updater.run"},
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/updater/status", CommandName: "updater.status"},
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/updater/history", CommandName: "updater.history"},
+	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/updater/projects/{projectId}/check", CommandName: "updater.project.check"},
 
 	{Method: http.MethodHead, PathPattern: "/api/environments/{id}/system/health", CommandName: "system.health"},
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/system/docker/info", CommandName: "system.docker_info"},
@@ -192,6 +218,8 @@ var commandRoutes = []commandRoute{
 	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/system/convert", CommandName: "system.convert"},
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/system/upgrade/check", CommandName: "system.upgrade.check"},
 	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/system/upgrade", CommandName: "system.upgrade.run"},
+	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/system/upgrade/all", CommandName: "system.upgrade.all"},
+	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/system/upgrade/all/status", CommandName: "system.upgrade.all.status"},
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/diagnostics/actors", CommandName: "diagnostics.actors"},
 
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/swarm/services", CommandName: "swarm.service.list"},
@@ -245,140 +273,82 @@ var commandRoutes = []commandRoute{
 	{PathPattern: "/api/environments/{id}/ws/containers/{containerId}/logs", CommandName: "container.logs.stream", Stream: true},
 	{PathPattern: "/api/environments/{id}/ws/containers/{containerId}/stats", CommandName: "container.stats.stream", Stream: true},
 	{PathPattern: "/api/environments/{id}/ws/containers/{containerId}/terminal", CommandName: "container.exec.stream", Stream: true},
+	{PathPattern: "/api/environments/{id}/ws/swarm/services/{serviceId}/logs", CommandName: "swarm.service.logs.stream", Stream: true},
 	{PathPattern: "/api/environments/{id}/ws/system/stats", CommandName: "system.stats.stream", Stream: true},
 }
 
-var commandRoutesIndex = buildCommandRouteIndexInternal(commandRoutes)
+var commandRoutesIndex = buildCommandRouteIndex(commandRoutes)
 
+// ResolveEdgeCommandName returns the edge command for a request, or None when the allowlist does not cover it.
 func ResolveEdgeCommandName(method, requestPath string, stream bool) mo.Option[string] {
-	method = strings.ToUpper(strings.TrimSpace(method))
-	requestPath = normalizeCommandPathInternal(requestPath)
-
-	route, ok := commandRoutesIndex.resolveInternal(method, requestPath, stream).Get()
-	if !ok {
+	requestPath, _, _ = strings.Cut(strings.TrimSpace(requestPath), "?")
+	current := commandRoutesIndex[commandRouteKey{Method: kit.Ternary(stream, "", strings.ToUpper(strings.TrimSpace(method))), Stream: stream}]
+	for part := range strings.SplitSeq(strings.Trim(requestPath, "/"), "/") {
+		if current == nil {
+			break
+		}
+		if next := current.static[part]; next != nil {
+			current = next
+		} else if part != "" {
+			current = current.param
+		} else {
+			current = nil
+		}
+	}
+	if current == nil || current.route == nil {
 		return mo.None[string]()
 	}
-
-	if route.LocalOnly {
-		return mo.None[string]()
-	}
-
-	return mo.Some(route.CommandName)
+	return mo.Some(current.route.CommandName)
 }
 
+// ValidateEdgeCommand reports whether commandName is the allowlisted command for the request.
+//
+// Deprecated: legacy edge message protocol; remove in v3.
 func ValidateEdgeCommand(commandName, method, requestPath string, stream bool) bool {
 	resolved, ok := ResolveEdgeCommandName(method, requestPath, stream).Get()
 	return ok && resolved == strings.TrimSpace(commandName)
 }
 
+// AdvertisedEdgeCommands lists every allowlisted command name once.
+//
+// Deprecated: legacy edge message protocol; remove in v3.
 func AdvertisedEdgeCommands() []string {
-	seen := make(map[string]struct{}, len(commandRoutes))
-	commands := make([]string, 0, len(commandRoutes))
-	for _, route := range commandRoutes {
-		if route.LocalOnly {
-			continue
-		}
-		if _, ok := seen[route.CommandName]; ok {
-			continue
-		}
-		seen[route.CommandName] = struct{}{}
-		commands = append(commands, route.CommandName)
+	names := make([]string, len(commandRoutes))
+	for i, route := range commandRoutes {
+		names[i] = route.CommandName
 	}
-	return commands
+	return kit.Unique(names)
 }
 
-func normalizeCommandPathInternal(requestPath string) string {
-	if idx := strings.IndexByte(requestPath, '?'); idx >= 0 {
-		requestPath = requestPath[:idx]
-	}
-	requestPath = strings.TrimSpace(requestPath)
-	if requestPath == "" {
-		return "/"
-	}
-	return kit.Ternary(requestPath[0] != '/', "/"+requestPath, requestPath)
-}
-
-func splitCommandPathInternal(p string) []string {
-	trimmed := strings.Trim(p, "/")
-	if trimmed == "" {
-		return nil
-	}
-	return strings.Split(trimmed, "/")
-}
-
-func isCommandParamInternal(segment string) bool {
-	return strings.HasPrefix(segment, "{") && strings.HasSuffix(segment, "}")
-}
-
-func buildCommandRouteIndexInternal(routes []commandRoute) commandRouteIndexInternal {
-	index := commandRouteIndexInternal{roots: make(map[commandRouteKey]*commandRouteNode)}
-
+// buildCommandRouteIndex builds one path trie per method (or for streams), panicking on duplicate routes.
+func buildCommandRouteIndex(routes []commandRoute) commandRouteIndex {
+	index := make(commandRouteIndex)
 	for i := range routes {
 		route := &routes[i]
-		key := commandRouteLookupKeyInternal(route.Method, route.Stream)
-		root := index.roots[key]
-		if root == nil {
-			root = &commandRouteNode{}
-			index.roots[key] = root
+		key := commandRouteKey{Method: kit.Ternary(route.Stream, "", route.Method), Stream: route.Stream}
+		current := index[key]
+		if current == nil {
+			current = &commandRouteNode{}
+			index[key] = current
 		}
-		root.insertInternal(route)
-	}
-
-	return index
-}
-
-func commandRouteLookupKeyInternal(method string, stream bool) commandRouteKey {
-	if stream {
-		return commandRouteKey{Stream: true}
-	}
-	return commandRouteKey{Method: strings.ToUpper(strings.TrimSpace(method))}
-}
-
-func (n *commandRouteNode) insertInternal(route *commandRoute) {
-	current := n
-	for _, part := range splitCommandPathInternal(route.PathPattern) {
-		if isCommandParamInternal(part) {
-			if current.param == nil {
-				current.param = &commandRouteNode{}
+		for part := range strings.SplitSeq(strings.Trim(route.PathPattern, "/"), "/") {
+			if strings.HasPrefix(part, "{") && strings.HasSuffix(part, "}") {
+				current.param = cmp.Or(current.param, &commandRouteNode{})
+				current = current.param
+				continue
 			}
-			current = current.param
-			continue
+			if current.static == nil {
+				current.static = make(map[string]*commandRouteNode)
+			}
+			if current.static[part] == nil {
+				current.static[part] = &commandRouteNode{}
+			}
+			current = current.static[part]
 		}
-		if current.static == nil {
-			current.static = make(map[string]*commandRouteNode)
+		if current.route != nil {
+			panic("duplicate edge command route: " + route.PathPattern)
 		}
-		next := current.static[part]
-		if next == nil {
-			next = &commandRouteNode{}
-			current.static[part] = next
-		}
-		current = next
+		current.route = route
 	}
-	if current.route != nil {
-		panic("duplicate edge command route: " + route.PathPattern)
-	}
-	current.route = route
-}
-
-func (i commandRouteIndexInternal) resolveInternal(method, requestPath string, stream bool) mo.Option[*commandRoute] {
-	root := i.roots[commandRouteLookupKeyInternal(method, stream)]
-	if root == nil {
-		return mo.None[*commandRoute]()
-	}
-
-	current := root
-	for _, part := range splitCommandPathInternal(requestPath) {
-		if next := current.static[part]; next != nil {
-			current = next
-			continue
-		}
-		if current.param == nil || part == "" {
-			return mo.None[*commandRoute]()
-		}
-		current = current.param
-	}
-	if current.route == nil {
-		return mo.None[*commandRoute]()
-	}
-	return mo.Some(current.route)
+	return index
 }

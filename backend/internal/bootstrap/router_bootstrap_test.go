@@ -5,6 +5,8 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -17,6 +19,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/auth"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/container"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/swarm"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/system"
@@ -122,4 +125,64 @@ func TestSecureCookieContextMiddleware_TrustGating(t *testing.T) {
 	t.Run("unparseable remote addr is untrusted", func(t *testing.T) {
 		assert.False(t, runRequest(t, trusted, "garbage", "https"))
 	})
+}
+
+// TestProxiedEnvironmentRoutesAreEdgeRoutable fails when a route the manager forwards to remote environments is
+// missing from the edge command allowlist, so edge environments cannot silently lose an endpoint.
+func TestProxiedEnvironmentRoutesAreEdgeRoutable(t *testing.T) {
+	type proxiedRoute struct {
+		method string
+		path   string
+		stream bool
+	}
+	var routes []proxiedRoute
+	for path, item := range api.SetupAPIForSpec().OpenAPI().Paths {
+		operations := map[string]*huma.Operation{
+			http.MethodGet: item.Get, http.MethodPost: item.Post, http.MethodPut: item.Put,
+			http.MethodDelete: item.Delete, http.MethodPatch: item.Patch, http.MethodHead: item.Head,
+		}
+		for method, operation := range operations {
+			if operation != nil {
+				routes = append(routes, proxiedRoute{method: method, path: path})
+			}
+		}
+	}
+
+	cfg := &config.Config{AgentMode: true, AppUrl: "http://localhost:3552", Environment: config.AppEnvironmentTest}
+	router, _ := newRouter(RouterParams{
+		Context: t.Context(),
+		Config:  cfg,
+		HandlerDeps: api.HandlerDeps{
+			Project:   project.New(&project.ProjectService{}, nil),
+			Container: container.New(&container.ContainerService{}, nil, nil, nil),
+			Swarm:     swarm.New(&swarm.SwarmService{}, nil, nil, nil),
+			System:    system.New(&system.SystemService{}, nil, nil, nil),
+		},
+		AuthMiddleware: auth.NewAuthMiddleware(nil, cfg),
+		TunnelRegistry: edge.NewTunnelRegistry(),
+	})
+	for _, route := range router.Router().Routes() {
+		if strings.HasPrefix(route.Path, "/api/environments/:id/ws/") && !strings.HasSuffix(route.Path, "*") {
+			routes = append(routes, proxiedRoute{method: route.Method, path: strings.TrimPrefix(route.Path, "/api"), stream: true})
+		}
+	}
+
+	concrete := strings.NewReplacer("{", "", "}", "", ":", "")
+	var missing []string
+	for _, route := range routes {
+		suffix, ok := strings.CutPrefix(route.path, "/environments/{id}")
+		if !ok {
+			suffix, ok = strings.CutPrefix(route.path, "/environments/:id")
+		}
+		if !ok || suffix == "" || middleware.IsManagerLocalPath(route.method, suffix) {
+			continue
+		}
+		if edge.ResolveEdgeCommandName(route.method, "/api/environments/0"+concrete.Replace(suffix), route.stream).IsAbsent() {
+			missing = append(missing, route.method+" /api/environments/{id}"+suffix)
+		}
+	}
+
+	slices.Sort(missing)
+	assert.Empty(t, slices.Compact(missing),
+		"proxied environment routes missing from the edge command allowlist; add them to pkg/libarcane/edge/commands.go or classify them in middleware.IsManagerLocalPath")
 }

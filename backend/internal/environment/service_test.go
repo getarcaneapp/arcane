@@ -863,16 +863,15 @@ func TestEnvironmentService_ResolveEnvironmentByAccessToken(t *testing.T) {
 	require.ErrorIs(t, err, ErrInvalidEnvironmentAccessToken)
 }
 
-func TestEnvironmentService_GenerateDeploymentSnippets_ExplicitlyUsePollTransport(t *testing.T) {
+func TestEnvironmentService_GenerateDeploymentSnippets_TransportDefaults(t *testing.T) {
 	svc := NewEnvironmentService(nil, nil, nil, nil, nil, nil)
 
 	standard, err := svc.GenerateDeploymentSnippets(t.Context(), "env-1", "https://manager.example.com", "https://agent.example.com", "token-123")
 	require.NoError(t, err)
 	require.NotNil(t, standard)
-	require.NotContains(t, standard.DockerRun, "EDGE_TRANSPORT=websocket")
-	require.NotContains(t, standard.DockerCompose, "EDGE_TRANSPORT=websocket")
-	require.Contains(t, standard.DockerRun, "EDGE_TRANSPORT=poll")
-	require.Contains(t, standard.DockerCompose, "EDGE_TRANSPORT=poll")
+	// Direct agents never run the edge tunnel, so their snippets carry no transport setting.
+	require.NotContains(t, standard.DockerRun, "EDGE_TRANSPORT")
+	require.NotContains(t, standard.DockerCompose, "EDGE_TRANSPORT")
 	require.Contains(t, standard.DockerRun, "AGENT_TOKEN=token-123")
 	require.Contains(t, standard.DockerRun, "-v arcane-data:/app/data")
 	require.Contains(t, standard.DockerCompose, "- arcane-data:/app/data")
@@ -881,10 +880,8 @@ func TestEnvironmentService_GenerateDeploymentSnippets_ExplicitlyUsePollTranspor
 	edgeSnippets, err := svc.GenerateEdgeDeploymentSnippets(t.Context(), "env-2", "https://manager.example.com", "token-456", nil)
 	require.NoError(t, err)
 	require.NotNil(t, edgeSnippets)
-	require.NotContains(t, edgeSnippets.DockerRun, "EDGE_TRANSPORT=websocket")
-	require.NotContains(t, edgeSnippets.DockerCompose, "EDGE_TRANSPORT=websocket")
-	require.Contains(t, edgeSnippets.DockerRun, "EDGE_TRANSPORT=poll")
-	require.Contains(t, edgeSnippets.DockerCompose, "EDGE_TRANSPORT=poll")
+	require.Contains(t, edgeSnippets.DockerRun, "EDGE_TRANSPORT=auto")
+	require.Contains(t, edgeSnippets.DockerCompose, "EDGE_TRANSPORT=auto")
 	require.Contains(t, edgeSnippets.DockerRun, "AGENT_TOKEN=token-456")
 	require.Contains(t, edgeSnippets.DockerRun, "-v arcane-data:/app/data")
 	require.Contains(t, edgeSnippets.DockerCompose, "- arcane-data:/app/data")
@@ -1435,7 +1432,7 @@ func TestEnvironmentService_GenerateEdgeDeploymentSnippets_ReturnsBasicSnippetsW
 	require.NoError(t, err)
 	require.NotNil(t, deploymentSnippets)
 	require.Nil(t, deploymentSnippets.MTLS)
-	require.Contains(t, deploymentSnippets.DockerRun, "EDGE_TRANSPORT=poll")
+	require.Contains(t, deploymentSnippets.DockerRun, "EDGE_TRANSPORT=auto")
 	require.Contains(t, deploymentSnippets.DockerCompose, "MANAGER_API_URL=https://manager.example.com")
 }
 

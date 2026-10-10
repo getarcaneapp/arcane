@@ -374,9 +374,7 @@ func startEdgeTunnelClient(appCtx context.Context, lc fx.Lifecycle, cfg *config.
 			if !cfg.EdgeAgent || cfg.ManagerApiUrl == "" || cfg.AgentToken == "" {
 				return nil
 			}
-			edgeCfg := buildEdgeRuntimeConfigInternal(cfg)
-			slog.InfoContext(appCtx, "Starting edge agent session client", edge.StartupLogAttrs(edgeCfg)...)
-			tunnelStop, err := edge.StartTunnelClient(appCtx, edgeCfg, router)
+			tunnelStop, err := edge.StartTunnelClient(appCtx, buildEdgeRuntimeConfig(cfg), router)
 			if err != nil {
 				slog.ErrorContext(appCtx, "Failed to start edge tunnel client", "error", err)
 				return nil
@@ -418,7 +416,7 @@ func handleAgentBootstrapPairing(ctx context.Context, cfg *config.Config) error 
 
 	req.Header.Set("X-Api-Key", cfg.AgentToken)
 
-	httpClient, err := edge.NewManagerHTTPClient(buildEdgeRuntimeConfigInternal(cfg), 10*time.Second)
+	httpClient, err := edge.NewManagerHTTPClient(buildEdgeRuntimeConfig(cfg), 10*time.Second)
 	if err != nil {
 		return fmt.Errorf("failed to configure edge pairing client: %w", err)
 	}

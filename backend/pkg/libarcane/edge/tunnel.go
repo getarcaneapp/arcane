@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"sync/atomic"
+	"time"
 
 	"github.com/coder/websocket"
 	"google.golang.org/grpc/codes"
@@ -27,6 +28,13 @@ const (
 	// gRPC limit, since JSON base64-encodes binary bodies a gRPC peer would accept.
 	maxWebSocketTunnelMessageSize = 2 * maxGRPCTunnelMessageSize
 
+	// MessageTypeRegister is the first message sent by the agent on gRPC transport.
+	MessageTypeRegister TunnelMessageType = "register"
+	// MessageTypeRegisterResponse is sent by manager after register validation.
+	MessageTypeRegisterResponse TunnelMessageType = "register_response"
+
+	// The remaining types are the legacy edge message protocol; remove in v3.
+
 	// MessageTypeRequest is sent from manager to agent to initiate a request.
 	MessageTypeRequest TunnelMessageType = "request"
 	// MessageTypeResponse is sent from agent to manager with the response.
@@ -45,10 +53,6 @@ const (
 	MessageTypeWebSocketData TunnelMessageType = "ws_data"
 	// MessageTypeWebSocketClose closes a WebSocket stream.
 	MessageTypeWebSocketClose TunnelMessageType = "ws_close"
-	// MessageTypeRegister is the first message sent by the agent on gRPC transport.
-	MessageTypeRegister TunnelMessageType = "register"
-	// MessageTypeRegisterResponse is sent by manager after register validation.
-	MessageTypeRegisterResponse TunnelMessageType = "register_response"
 	// MessageTypeEvent carries an event emitted by an agent to the manager.
 	MessageTypeEvent TunnelMessageType = "event"
 	// MessageTypeCommandRequest sends a typed edge command from manager to agent.
@@ -95,50 +99,76 @@ func NewTunnelConn(conn *websocket.Conn) *TunnelConn {
 	return &TunnelConn{conn: conn}
 }
 
-// Send sends a tunnel message over the WebSocket connection.
+// Send sends a legacy tunnel message over the WebSocket connection.
 func (t *TunnelConn) Send(msg *TunnelMessage) error {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	if t.closed.Load() {
-		return ErrTunnelConnectionClosed
+	if t.muxed.Load() {
+		return errTunnelMuxActive
 	}
-
 	data, err := json.Marshal(msg)
 	if err != nil {
 		return err
 	}
-	wctx, cancel := context.WithTimeout(context.Background(), DefaultWriteTimeout) //nolint:forbidigo // Tunnel connection owns timed I/O independent of individual HTTP requests.
-	defer cancel()
-	if writeErr := t.conn.Write(wctx, websocket.MessageText, data); writeErr != nil {
-		// coder/websocket closes the connection after a failed or expired write.
-		t.closed.Store(true)
-		return writeErr
-	}
-	return nil
+	//nolint:forbidigo // Tunnel connection owns timed I/O independent of individual HTTP requests.
+	return t.write(context.Background(), websocket.MessageText, data, DefaultWriteTimeout)
 }
 
-// Receive receives a tunnel message from the WebSocket connection.
+// Receive receives a legacy tunnel message from the WebSocket connection.
 func (t *TunnelConn) Receive() (*TunnelMessage, error) {
-	if t.closed.Load() {
-		return nil, ErrTunnelConnectionClosed
-	}
-
-	rctx, cancel := context.WithTimeout(context.Background(), tunnelReadWait) //nolint:forbidigo // Tunnel connection owns timed I/O independent of individual HTTP requests.
-	defer cancel()
-	_, data, err := t.conn.Read(rctx)
+	_, data, err := t.read(context.Background()) //nolint:forbidigo // Tunnel connection owns timed I/O independent of individual HTTP requests.
 	if err != nil {
-		// Read-timeout expiry and network errors are terminal: coder/websocket
-		// closes the connection when a read context expires.
-		t.closed.Store(true)
 		return nil, err
 	}
-
 	var msg TunnelMessage
 	if unmarshalErr := json.Unmarshal(data, &msg); unmarshalErr != nil {
 		return nil, unmarshalErr
 	}
 	return &msg, nil
+}
+
+// muxConn switches the connection to binary frames carrying the multiplexed session.
+func (t *TunnelConn) muxConn(ctx context.Context) io.ReadWriteCloser {
+	t.muxed.Store(true)
+	recv := func() ([]byte, error) {
+		for {
+			messageType, data, err := t.read(ctx)
+			if err != nil || messageType == websocket.MessageBinary {
+				return data, err
+			}
+		}
+	}
+	send := func(p []byte) error { return t.write(ctx, websocket.MessageBinary, p, muxWriteTimeout) }
+	return newMuxConn(send, recv, t.Close)
+}
+
+// write sends one frame. coder/websocket closes the connection after a failed or expired write.
+func (t *TunnelConn) write(ctx context.Context, messageType websocket.MessageType, data []byte, timeout time.Duration) error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.closed.Load() {
+		return ErrTunnelConnectionClosed
+	}
+	wctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	if err := t.conn.Write(wctx, messageType, data); err != nil {
+		t.closed.Store(true)
+		return err
+	}
+	return nil
+}
+
+// read receives one frame. Read-timeout expiry and network errors are terminal: coder/websocket
+// closes the connection when a read context expires.
+func (t *TunnelConn) read(ctx context.Context) (websocket.MessageType, []byte, error) {
+	if t.closed.Load() {
+		return 0, nil, ErrTunnelConnectionClosed
+	}
+	rctx, cancel := context.WithTimeout(ctx, tunnelReadWait)
+	defer cancel()
+	messageType, data, err := t.conn.Read(rctx)
+	if err != nil {
+		t.closed.Store(true)
+	}
+	return messageType, data, err
 }
 
 // IsExpectedReceiveError returns true for normal WebSocket close/teardown errors.
@@ -184,9 +214,8 @@ type grpcAgentStream interface {
 	CloseSend() error
 }
 
-// NewGRPCManagerTunnelConn creates a manager-side gRPC tunnel wrapper. A nil
-// stream yields a connection whose Send/Receive report the closed sentinel
-// instead of dereferencing nil.
+// NewGRPCManagerTunnelConn creates a manager-side gRPC tunnel wrapper. A nil stream yields a connection
+// whose Send and Receive report ErrTunnelConnectionClosed.
 func NewGRPCManagerTunnelConn(stream grpcManagerStream) *GRPCManagerTunnelConn {
 	if stream == nil {
 		return &GRPCManagerTunnelConn{}
@@ -203,23 +232,42 @@ func NewGRPCManagerTunnelConn(stream grpcManagerStream) *GRPCManagerTunnelConn {
 	}
 }
 
-// Send sends a manager->agent tunnel message over gRPC.
+// Send sends a legacy manager->agent tunnel message over gRPC.
 func (t *GRPCManagerTunnelConn) Send(msg *TunnelMessage) error {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	if t.IsClosed() || t.stream == nil {
-		return ErrTunnelConnectionClosed
+	if t.muxed.Load() {
+		return errTunnelMuxActive
 	}
-
 	protoMsg, err := tunnelMessageToManagerProto(msg, t.parity)
 	if err != nil {
 		return err
 	}
+	return t.send(protoMsg)
+}
 
-	if sendErr := t.stream.Send(protoMsg); sendErr != nil {
+// muxConn switches the stream to MuxData messages carrying the multiplexed session.
+func (t *GRPCManagerTunnelConn) muxConn(context.Context) io.ReadWriteCloser {
+	t.muxed.Store(true)
+	send := func(p []byte) error {
+		return t.send(&tunnelpb.ManagerMessage{Payload: &tunnelpb.ManagerMessage_MuxData{MuxData: &tunnelpb.MuxData{Data: p}}})
+	}
+	recv := func() ([]byte, error) {
+		if t.stream == nil {
+			return nil, ErrTunnelConnectionClosed
+		}
+		return receiveMuxData(t.stream.Recv, &t.closed)
+	}
+	return newMuxConn(send, recv, t.Close)
+}
+
+func (t *GRPCManagerTunnelConn) send(msg *tunnelpb.ManagerMessage) error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.IsClosed() || t.stream == nil {
+		return ErrTunnelConnectionClosed
+	}
+	if err := t.stream.Send(msg); err != nil {
 		t.closed.Store(true)
-		return sendErr
+		return err
 	}
 	return nil
 }
@@ -266,23 +314,42 @@ func NewGRPCAgentTunnelConn(stream grpcAgentStream, cancelFns ...context.CancelF
 	return &GRPCAgentTunnelConn{stream: stream, cancel: cancel}
 }
 
-// Send sends an agent->manager tunnel message over gRPC.
+// Send sends a legacy agent->manager tunnel message over gRPC.
 func (t *GRPCAgentTunnelConn) Send(msg *TunnelMessage) error {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	if t.IsClosed() || t.stream == nil {
-		return ErrTunnelConnectionClosed
+	if t.muxed.Load() {
+		return errTunnelMuxActive
 	}
-
 	protoMsg, err := tunnelMessageToAgentProto(msg)
 	if err != nil {
 		return err
 	}
+	return t.send(protoMsg)
+}
 
-	if sendErr := t.stream.Send(protoMsg); sendErr != nil {
+// muxConn switches the stream to MuxData messages carrying the multiplexed session.
+func (t *GRPCAgentTunnelConn) muxConn(context.Context) io.ReadWriteCloser {
+	t.muxed.Store(true)
+	send := func(p []byte) error {
+		return t.send(&tunnelpb.AgentMessage{Payload: &tunnelpb.AgentMessage_MuxData{MuxData: &tunnelpb.MuxData{Data: p}}})
+	}
+	recv := func() ([]byte, error) {
+		if t.stream == nil {
+			return nil, ErrTunnelConnectionClosed
+		}
+		return receiveMuxData(t.stream.Recv, &t.closed)
+	}
+	return newMuxConn(send, recv, t.Close)
+}
+
+func (t *GRPCAgentTunnelConn) send(msg *tunnelpb.AgentMessage) error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.IsClosed() || t.stream == nil {
+		return ErrTunnelConnectionClosed
+	}
+	if err := t.stream.Send(msg); err != nil {
 		t.closed.Store(true)
-		return sendErr
+		return err
 	}
 	return nil
 }
@@ -388,6 +455,21 @@ func receiveGRPC[P any](ctx context.Context, recv func() (P, error), decode func
 			continue
 		}
 		return msg, err
+	}
+}
+
+// receiveMuxData returns the next MuxData payload, skipping any legacy message still in flight.
+// A gRPC stream is dead after any Recv error.
+func receiveMuxData[P interface{ GetMuxData() *tunnelpb.MuxData }](recv func() (P, error), closed *atomic.Bool) ([]byte, error) {
+	for {
+		msg, err := recv()
+		if err != nil {
+			closed.Store(true)
+			return nil, err
+		}
+		if data := msg.GetMuxData(); data != nil {
+			return data.GetData(), nil
+		}
 	}
 }
 

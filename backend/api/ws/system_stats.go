@@ -20,6 +20,7 @@ import (
 	kit "go.getarcane.app/kit/pkg"
 	"go.getarcane.app/sys/cgroup"
 
+	wshub "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/ws"
 	httputil "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 )
 
@@ -36,8 +37,8 @@ const (
 // System WebSocket Endpoints
 // ============================================================================
 
-// checkRateLimitInternal checks and applies rate limiting for WebSocket connections.
-func (h *WebSocketHandler) checkRateLimitInternal(clientIP string) bool {
+// checkRateLimit checks and applies rate limiting for WebSocket connections.
+func (h *WebSocketHandler) checkRateLimit(clientIP string) bool {
 	h.activeConnectionsMu.Lock()
 	defer h.activeConnectionsMu.Unlock()
 	if h.activeConnections[clientIP] >= 5 {
@@ -50,8 +51,8 @@ func (h *WebSocketHandler) checkRateLimitInternal(clientIP string) bool {
 	return true
 }
 
-// releaseRateLimitInternal decrements the connection counter and cleans up if needed.
-func (h *WebSocketHandler) releaseRateLimitInternal(clientIP string) {
+// releaseRateLimit decrements the connection counter and cleans up if needed.
+func (h *WebSocketHandler) releaseRateLimit(clientIP string) {
 	h.activeConnectionsMu.Lock()
 	defer h.activeConnectionsMu.Unlock()
 	if count := h.activeConnections[clientIP]; count > 1 {
@@ -61,7 +62,7 @@ func (h *WebSocketHandler) releaseRateLimitInternal(clientIP string) {
 	}
 }
 
-func (h *WebSocketHandler) acquireSystemStatsSamplerInternal(ctx context.Context, interval time.Duration) bool {
+func (h *WebSocketHandler) acquireSystemStatsSampler(ctx context.Context, interval time.Duration) bool {
 	h.systemStatsSampler.lifecycleMu.Lock()
 
 	h.systemStatsSampler.clients++
@@ -69,11 +70,11 @@ func (h *WebSocketHandler) acquireSystemStatsSamplerInternal(ctx context.Context
 		h.systemStatsSampler.intervals = map[time.Duration]int{}
 	}
 	h.systemStatsSampler.intervals[interval]++
-	h.refreshSystemStatsSamplerIntervalLockedInternal()
+	h.refreshSystemStatsSamplerIntervalLocked()
 	if h.systemStatsSampler.running {
 		ready := h.systemStatsSampler.ready
 		h.systemStatsSampler.lifecycleMu.Unlock()
-		return waitForSystemStatsSamplerReadyInternal(ctx, ready)
+		return waitForSystemStatsSamplerReady(ctx, ready)
 	}
 
 	samplerCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
@@ -87,14 +88,14 @@ func (h *WebSocketHandler) acquireSystemStatsSamplerInternal(ctx context.Context
 
 	collect := h.systemStatsCollector
 	if collect == nil {
-		collect = h.collectSystemStatsInternal
+		collect = h.collectSystemStats
 	}
 
 	go func() {
 		closeReady := sync.OnceFunc(func() {
 			close(ready)
 		})
-		if !h.initializeCPUCacheInternal(samplerCtx) {
+		if !h.initializeCPUCache(samplerCtx) {
 			closeReady()
 			return
 		}
@@ -109,13 +110,13 @@ func (h *WebSocketHandler) acquireSystemStatsSamplerInternal(ctx context.Context
 			return
 		}
 
-		h.runSystemStatsSamplerInternal(samplerCtx, wake, collect)
+		h.runSystemStatsSampler(samplerCtx, wake, collect)
 	}()
 
-	return waitForSystemStatsSamplerReadyInternal(ctx, ready)
+	return waitForSystemStatsSamplerReady(ctx, ready)
 }
 
-func waitForSystemStatsSamplerReadyInternal(ctx context.Context, ready <-chan struct{}) bool {
+func waitForSystemStatsSamplerReady(ctx context.Context, ready <-chan struct{}) bool {
 	if ready == nil {
 		return true
 	}
@@ -128,7 +129,7 @@ func waitForSystemStatsSamplerReadyInternal(ctx context.Context, ready <-chan st
 	}
 }
 
-func (h *WebSocketHandler) releaseSystemStatsSamplerInternal(interval time.Duration) {
+func (h *WebSocketHandler) releaseSystemStatsSampler(interval time.Duration) {
 	var cancel context.CancelFunc
 
 	h.systemStatsSampler.lifecycleMu.Lock()
@@ -140,7 +141,7 @@ func (h *WebSocketHandler) releaseSystemStatsSamplerInternal(interval time.Durat
 	} else {
 		delete(h.systemStatsSampler.intervals, interval)
 	}
-	h.refreshSystemStatsSamplerIntervalLockedInternal()
+	h.refreshSystemStatsSamplerIntervalLocked()
 	if h.systemStatsSampler.clients == 0 && h.systemStatsSampler.running {
 		cancel = h.systemStatsSampler.cancel
 		h.systemStatsSampler.cancel = nil
@@ -155,10 +156,10 @@ func (h *WebSocketHandler) releaseSystemStatsSamplerInternal(interval time.Durat
 	}
 }
 
-// refreshSystemStatsSamplerIntervalLockedInternal recomputes the sampler's
+// refreshSystemStatsSamplerIntervalLocked recomputes the sampler's
 // effective interval — the smallest one any subscriber requested — and must
 // be called with lifecycleMu held.
-func (h *WebSocketHandler) refreshSystemStatsSamplerIntervalLockedInternal() {
+func (h *WebSocketHandler) refreshSystemStatsSamplerIntervalLocked() {
 	effective := time.Duration(0)
 	for interval := range h.systemStatsSampler.intervals {
 		if effective == 0 || interval < effective {
@@ -177,22 +178,22 @@ func (h *WebSocketHandler) refreshSystemStatsSamplerIntervalLockedInternal() {
 	}
 }
 
-func (h *WebSocketHandler) systemStatsSamplerIntervalInternal() time.Duration {
+func (h *WebSocketHandler) systemStatsSamplerInterval() time.Duration {
 	if interval := time.Duration(h.systemStatsSampler.effectiveInterval.Load()); interval > 0 {
 		return interval
 	}
 	return systemStatsSamplerDefaultInterval
 }
 
-func (h *WebSocketHandler) runSystemStatsSamplerInternal(ctx context.Context, wake <-chan struct{}, collect func(context.Context) systemtypes.SystemStats) {
-	interval := h.systemStatsSamplerIntervalInternal()
+func (h *WebSocketHandler) runSystemStatsSampler(ctx context.Context, wake <-chan struct{}, collect func(context.Context) systemtypes.SystemStats) {
+	interval := h.systemStatsSamplerInterval()
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
 	// Subscribers come and go while the sampler runs; re-arm the ticker
 	// whenever the fastest requested interval changed.
 	rearm := func() {
-		if next := h.systemStatsSamplerIntervalInternal(); next != interval {
+		if next := h.systemStatsSamplerInterval(); next != interval {
 			interval = next
 			ticker.Reset(interval)
 		}
@@ -205,20 +206,20 @@ func (h *WebSocketHandler) runSystemStatsSamplerInternal(ctx context.Context, wa
 		case <-wake:
 			rearm()
 		case <-ticker.C:
-			h.updateCPUCacheInternal(0)
+			h.updateCPUCache(0)
 			h.systemStatsSampler.latest.Store(collect(ctx))
 			rearm()
 		}
 	}
 }
 
-// collectSystemStatsInternal gathers all system statistics.
-func (h *WebSocketHandler) collectSystemStatsInternal(ctx context.Context) systemtypes.SystemStats {
+// collectSystemStats gathers all system statistics.
+func (h *WebSocketHandler) collectSystemStats(ctx context.Context) systemtypes.SystemStats {
 	cpuUsage, _ := h.cpuCache.Load()
 
 	cpuCount := h.getCPUCount()
 	memUsed, memTotal := h.getMemoryInfo()
-	cpuCount, memUsed, memTotal = h.applyCgroupLimitsInternal(ctx, cpuCount, memUsed, memTotal)
+	cpuCount, memUsed, memTotal = h.applyCgroupLimits(ctx, cpuCount, memUsed, memTotal)
 	diskUsed, diskTotal := h.getDiskInfo(ctx)
 	hostname := h.getHostname()
 	gpuStats, gpuCount := h.getGPUInfo(ctx)
@@ -240,11 +241,11 @@ func (h *WebSocketHandler) collectSystemStatsInternal(ctx context.Context) syste
 
 // getCPUCount returns the number of CPUs.
 func (h *WebSocketHandler) getCPUCount() int {
-	h.initSystemStaticInfoInternal()
+	h.initSystemStaticInfo()
 	return h.systemStaticInfo.cpuCount
 }
 
-func (h *WebSocketHandler) initSystemStaticInfoInternal() {
+func (h *WebSocketHandler) initSystemStaticInfo() {
 	h.systemStaticInfo.once.Do(func() {
 		cpuCount, err := cpu.Counts(true)
 		if err != nil {
@@ -278,9 +279,9 @@ func (h *WebSocketHandler) getMemoryInfo() (uint64, uint64) {
 	return used, memInfo.Total
 }
 
-// applyCgroupLimitsInternal uses guest resources without applying Docker's
+// applyCgroupLimits uses guest resources without applying Docker's
 // per-container limits to host statistics.
-func (h *WebSocketHandler) applyCgroupLimitsInternal(
+func (h *WebSocketHandler) applyCgroupLimits(
 	ctx context.Context, cpuCount int, memUsed, memTotal uint64,
 ) (int, uint64, uint64) {
 	if cgroup.IsDockerContainer() {
@@ -291,8 +292,8 @@ func (h *WebSocketHandler) applyCgroupLimitsInternal(
 		}
 		return cpuCount, memUsed, memTotal
 	}
-	cpuCount = applyCPUAffinityLimitInternal(cpuCount)
-	cgroupLimits := h.getCachedCgroupLimitsInternal()
+	cpuCount = applyCPUAffinityLimit(cpuCount)
+	cgroupLimits := h.getCachedCgroupLimits()
 	if cgroupLimits == nil {
 		return cpuCount, memUsed, memTotal
 	}
@@ -312,14 +313,14 @@ func (h *WebSocketHandler) applyCgroupLimitsInternal(
 	return cpuCount, memUsed, memTotal
 }
 
-// applyCPUAffinityLimitInternal caps the CPU count at the scheduler affinity
+// applyCPUAffinityLimit caps the CPU count at the scheduler affinity
 // mask size. In an unprivileged LXC guest the cgroup cpu quota is usually
 // unset at the guest root (the limit lives host-side), so the affinity mask is
 // the only signal of the cores actually assigned — including gap bindings like
 // CPU1+CPU7 — while /proc/cpuinfo shows the whole host (#3161). runtime.NumCPU
 // reads that mask at process start. Not applied inside Docker, matching
-// applyCgroupLimitsInternal's host-totals convention there.
-func applyCPUAffinityLimitInternal(cpuCount int) int {
+// applyCgroupLimits's host-totals convention there.
+func applyCPUAffinityLimit(cpuCount int) int {
 	if n := runtime.NumCPU(); n > 0 && (cpuCount == 0 || n < cpuCount) {
 		return n
 	}
@@ -343,7 +344,7 @@ func (h *WebSocketHandler) getDiskInfo(ctx context.Context) (uint64, uint64) {
 
 // getHostname returns the system hostname.
 func (h *WebSocketHandler) getHostname() string {
-	h.initSystemStaticInfoInternal()
+	h.initSystemStaticInfo()
 	return h.systemStaticInfo.hostname
 }
 
@@ -359,12 +360,12 @@ func (h *WebSocketHandler) getGPUInfo(ctx context.Context) ([]systemtypes.GPUSta
 	return gpuData, len(gpuData)
 }
 
-// initializeCPUCacheInternal permits unavailable CPU samples but stops on cancellation.
-func (h *WebSocketHandler) initializeCPUCacheInternal(ctx context.Context) bool {
+// initializeCPUCache permits unavailable CPU samples but stops on cancellation.
+func (h *WebSocketHandler) initializeCPUCache(ctx context.Context) bool {
 	result := make(chan float64, 1)
 
 	go func() {
-		if val, ok := h.readCPUUsageInternal(time.Second); ok {
+		if val, ok := h.readCPUUsage(time.Second); ok {
 			result <- val
 		}
 		close(result)
@@ -384,21 +385,21 @@ func (h *WebSocketHandler) initializeCPUCacheInternal(ctx context.Context) bool 
 	}
 }
 
-func (h *WebSocketHandler) updateCPUCacheInternal(interval time.Duration) {
-	if val, ok := h.readCPUUsageInternal(interval); ok {
+func (h *WebSocketHandler) updateCPUCache(interval time.Duration) {
+	if val, ok := h.readCPUUsage(interval); ok {
 		h.cpuCache.Store(val)
 	}
 }
 
-func (h *WebSocketHandler) readCPUUsageInternal(interval time.Duration) (float64, bool) {
+func (h *WebSocketHandler) readCPUUsage(interval time.Duration) (float64, bool) {
 	if h.cpuUsageReader != nil {
 		return h.cpuUsageReader(interval)
 	}
 
-	return defaultReadCPUUsageInternal(interval)
+	return defaultReadCPUUsage(interval)
 }
 
-func defaultReadCPUUsageInternal(interval time.Duration) (float64, bool) {
+func defaultReadCPUUsage(interval time.Duration) (float64, bool) {
 	if vals, err := cpu.Percent(interval, false); err == nil && len(vals) > 0 {
 		return vals[0], true
 	}
@@ -406,7 +407,7 @@ func defaultReadCPUUsageInternal(interval time.Duration) (float64, bool) {
 	return 0, false
 }
 
-func (h *WebSocketHandler) getCachedCgroupLimitsInternal() *cgroup.Limits {
+func (h *WebSocketHandler) getCachedCgroupLimits() *cgroup.Limits {
 	if h.cgroupCache == nil {
 		return nil
 	}
@@ -423,10 +424,10 @@ func (h *WebSocketHandler) getCachedCgroupLimitsInternal() *cgroup.Limits {
 func (h *WebSocketHandler) SystemStats(c *echo.Context) error {
 	clientIP := c.RealIP()
 
-	if !h.checkRateLimitInternal(clientIP) {
+	if !h.checkRateLimit(clientIP) {
 		return c.JSON(http.StatusTooManyRequests, map[string]any{"success": false, "error": "Too many concurrent stats connections from this IP"})
 	}
-	defer h.releaseRateLimitInternal(clientIP)
+	defer h.releaseRateLimit(clientIP)
 
 	conn, unregister, ok := h.acceptWS(c, systemtypes.WSKindSystemStats, "")
 	if !ok {
@@ -452,15 +453,15 @@ func (h *WebSocketHandler) SystemStats(c *echo.Context) error {
 
 	ctx, cancel := context.WithCancel(c.Request().Context())
 	defer cancel()
-	if !h.acquireSystemStatsSamplerInternal(ctx, sampleInterval) {
-		h.releaseSystemStatsSamplerInternal(sampleInterval)
+	if !h.acquireSystemStatsSampler(ctx, sampleInterval) {
+		h.releaseSystemStatsSampler(sampleInterval)
 		return nil
 	}
-	defer h.releaseSystemStatsSamplerInternal(sampleInterval)
+	defer h.releaseSystemStatsSampler(sampleInterval)
 
-	go h.readSystemStatsPumpInternal(ctx, cancel, conn)
-	// The pong is serviced by readSystemStatsPumpInternal.
-	go keepWSConnAlive(ctx, cancel, conn, 54*time.Second)
+	go h.readSystemStatsPump(ctx, cancel, conn)
+	// The pong is serviced by readSystemStatsPump.
+	go wshub.KeepAlive(ctx, cancel, conn)
 
 	send := func() error {
 		stats, _ := h.systemStatsSampler.latest.Load()
@@ -489,9 +490,9 @@ func (h *WebSocketHandler) SystemStats(c *echo.Context) error {
 	}
 }
 
-// readSystemStatsPumpInternal is the single reader for the SystemStats websocket.
+// readSystemStatsPump is the single reader for the SystemStats websocket.
 // Do not add additional readers for this connection.
-func (h *WebSocketHandler) readSystemStatsPumpInternal(ctx context.Context, cancel context.CancelFunc, conn *websocket.Conn) {
+func (h *WebSocketHandler) readSystemStatsPump(ctx context.Context, cancel context.CancelFunc, conn *websocket.Conn) {
 	for {
 		if _, _, err := conn.Read(ctx); err != nil {
 			cancel()

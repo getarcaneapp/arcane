@@ -51,7 +51,7 @@ func TestGRPCTunnel_RequestResponse(t *testing.T) {
 	defer func() { _ = conn.Close() }()
 
 	client := tunnelpb.NewTunnelServiceClient(conn)
-	stream, err := client.Connect(testGRPCOutgoingContextInternal(ctx, "valid-token"))
+	stream, err := client.Connect(testGRPCOutgoingContext(ctx, "valid-token"))
 	require.NoError(t, err)
 
 	err = stream.Send(&tunnelpb.AgentMessage{Payload: &tunnelpb.AgentMessage_Register{Register: &tunnelpb.RegisterRequest{AgentToken: "valid-token"}}})
@@ -139,7 +139,7 @@ func TestGRPCTunnel_RequestResponseStreamingChunks(t *testing.T) {
 	defer func() { _ = conn.Close() }()
 
 	client := tunnelpb.NewTunnelServiceClient(conn)
-	stream, err := client.Connect(testGRPCOutgoingContextInternal(ctx, "valid-token"))
+	stream, err := client.Connect(testGRPCOutgoingContext(ctx, "valid-token"))
 	require.NoError(t, err)
 
 	err = stream.Send(&tunnelpb.AgentMessage{Payload: &tunnelpb.AgentMessage_Register{Register: &tunnelpb.RegisterRequest{AgentToken: "valid-token"}}})
@@ -339,7 +339,7 @@ func TestGRPCTunnel_InvalidTokenRejected(t *testing.T) {
 	defer func() { _ = conn.Close() }()
 
 	client := tunnelpb.NewTunnelServiceClient(conn)
-	stream, err := client.Connect(testGRPCOutgoingContextInternal(ctx, "invalid-token"))
+	stream, err := client.Connect(testGRPCOutgoingContext(ctx, "invalid-token"))
 	require.NoError(t, err)
 
 	if sendErr := stream.Send(&tunnelpb.AgentMessage{Payload: &tunnelpb.AgentMessage_Register{Register: &tunnelpb.RegisterRequest{AgentToken: "invalid-token"}}}); sendErr != nil {
@@ -384,7 +384,7 @@ func TestGRPCTunnel_FirstMessageMustBeRegister(t *testing.T) {
 	defer func() { _ = conn.Close() }()
 
 	client := tunnelpb.NewTunnelServiceClient(conn)
-	stream, err := client.Connect(testGRPCOutgoingContextInternal(ctx, "valid-token"))
+	stream, err := client.Connect(testGRPCOutgoingContext(ctx, "valid-token"))
 	require.NoError(t, err)
 
 	err = stream.Send(&tunnelpb.AgentMessage{Payload: &tunnelpb.AgentMessage_HeartbeatPing{HeartbeatPing: &tunnelpb.HeartbeatPing{}}})
@@ -428,7 +428,7 @@ func TestGRPCTunnel_RegisterMessageRequiredOnEOF(t *testing.T) {
 	defer func() { _ = conn.Close() }()
 
 	client := tunnelpb.NewTunnelServiceClient(conn)
-	stream, err := client.Connect(testGRPCOutgoingContextInternal(ctx, "valid-token"))
+	stream, err := client.Connect(testGRPCOutgoingContext(ctx, "valid-token"))
 	require.NoError(t, err)
 
 	require.NoError(t, stream.CloseSend())
@@ -458,6 +458,6 @@ func startTestGRPCTunnelServer(ctx context.Context, envID string) (*bufconn.List
 	return lis, grpcServer, tunnelServer
 }
 
-func testGRPCOutgoingContextInternal(ctx context.Context, token string) context.Context {
+func testGRPCOutgoingContext(ctx context.Context, token string) context.Context {
 	return metadata.NewOutgoingContext(ctx, metadata.Pairs(strings.ToLower(HeaderAgentToken), token))
 }

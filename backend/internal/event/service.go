@@ -121,7 +121,7 @@ func (s *EventService) CreateEvent(ctx context.Context, req CreateEventRequest) 
 	if !inserted {
 		return eventRecord, nil
 	}
-	s.correlateCreatedEventInternal(req)
+	s.correlateCreatedEvent(req)
 	s.changes.Publish(struct{}{})
 	s.forwardEventToManager(ctx, eventRecord)
 
@@ -177,7 +177,7 @@ func (s *EventService) forwardEventToManager(ctx context.Context, eventModel *Ev
 		syncCtx, cancel := context.WithTimeout(context.WithoutCancel(parentCtx), 10*time.Second)
 		defer cancel()
 
-		if err := edge.PublishEventToManager(outgoing); err != nil {
+		if err := edge.PublishEventToManager(syncCtx, outgoing); err != nil {
 			if !errors.Is(err, edge.ErrNoActiveAgentTunnel) {
 				slog.WarnContext(syncCtx, "Failed to sync event to manager over edge tunnel", "type", outgoing.Type, "error", err)
 				return
@@ -616,7 +616,7 @@ func (s *EventService) LogErrorEvent(ctx context.Context, eventType EventType, r
 	logCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer cancel()
 
-	eventMetadata := cloneEventMetadataInternal(metadata)
+	eventMetadata := cloneEventMetadata(metadata)
 	eventMetadata["error"] = err.Error()
 
 	titleCaser := cases.Title(language.English)
@@ -645,28 +645,28 @@ func (s *EventService) LogErrorEvent(ctx context.Context, eventType EventType, r
 	}
 }
 
-func cloneEventMetadataInternal(metadata database.JSON) database.JSON {
+func cloneEventMetadata(metadata database.JSON) database.JSON {
 	if metadata == nil {
 		return database.JSON{}
 	}
 
 	cloned := make(database.JSON, len(metadata))
 	for k, v := range metadata {
-		cloned[k] = cloneEventMetadataValueInternal(v)
+		cloned[k] = cloneEventMetadataValue(v)
 	}
 	return cloned
 }
 
-func cloneEventMetadataValueInternal(value any) any {
+func cloneEventMetadataValue(value any) any {
 	switch typed := value.(type) {
 	case database.JSON:
-		return cloneEventMetadataInternal(typed)
+		return cloneEventMetadata(typed)
 	case map[string]any:
-		return cloneEventMetadataInternal(typed)
+		return cloneEventMetadata(typed)
 	case []any:
 		out := make([]any, len(typed))
 		for i := range typed {
-			out[i] = cloneEventMetadataValueInternal(typed[i])
+			out[i] = cloneEventMetadataValue(typed[i])
 		}
 		return out
 	default:
@@ -801,11 +801,11 @@ func (s *EventService) SubscribeDockerEvents(eventBus *bus.DockerEventBus) (run 
 		unsubscribeNetworks()
 	})
 	return func(ctx context.Context) error {
-		return s.runDockerEventsInternal(ctx, containers, images, volumes, networks)
+		return s.runDockerEvents(ctx, containers, images, volumes, networks)
 	}, cleanup
 }
 
-func (s *EventService) runDockerEventsInternal(ctx context.Context, containers, images, volumes, networks <-chan events.Message) error {
+func (s *EventService) runDockerEvents(ctx context.Context, containers, images, volumes, networks <-chan events.Message) error {
 	ticker := time.NewTicker(time.Minute)
 	defer ticker.Stop()
 	for containers != nil || images != nil || volumes != nil || networks != nil {
@@ -848,7 +848,7 @@ func (s *EventService) RecordDockerEvent(ctx context.Context, msg events.Message
 	if ctx.Err() != nil {
 		return
 	}
-	req, ok := mapDaemonEventInternal(msg)
+	req, ok := mapDaemonEvent(msg)
 	if !ok {
 		return
 	}
@@ -868,7 +868,7 @@ func (s *EventService) RecordDockerEvent(ctx context.Context, msg events.Message
 	}
 }
 
-var daemonEventTypesInternal = map[events.Type]map[events.Action]EventType{
+var daemonEventTypes = map[events.Type]map[events.Action]EventType{
 	events.ContainerEventType: {
 		events.ActionCreate:                EventTypeContainerCreate,
 		events.ActionStart:                 EventTypeContainerStart,
@@ -905,8 +905,8 @@ var daemonEventTypesInternal = map[events.Type]map[events.Action]EventType{
 	},
 }
 
-func mapDaemonEventInternal(msg events.Message) (CreateEventRequest, bool) {
-	eventType := daemonEventTypesInternal[msg.Type][msg.Action]
+func mapDaemonEvent(msg events.Message) (CreateEventRequest, bool) {
+	eventType := daemonEventTypes[msg.Type][msg.Action]
 	if eventType == "" || (msg.Actor.ID == "" && msg.Action != events.ActionPrune) {
 		return CreateEventRequest{}, false
 	}
@@ -985,7 +985,7 @@ func (s *EventService) ShouldSuppressDaemonEvent(resourceType, actorID, actorNam
 	return s.correlation.ShouldSuppress(resourceType, actorID, actorName, composeProject)
 }
 
-func (s *EventService) correlateCreatedEventInternal(req CreateEventRequest) {
+func (s *EventService) correlateCreatedEvent(req CreateEventRequest) {
 	if req.ResourceType == nil || req.Metadata["source"] == "docker" {
 		return
 	}

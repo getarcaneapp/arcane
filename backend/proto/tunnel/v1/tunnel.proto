@@ -12,52 +12,54 @@ service TunnelService {
 
 // Messages sent from the agent to the manager.
 message AgentMessage {
+  // Every payload except register and mux_data is the legacy edge message protocol; remove in v3.
   oneof payload {
-    HttpResponse http_response = 1;
-    HeartbeatPing heartbeat_ping = 2;
-    WebSocketData ws_data = 3;
-    WebSocketClose ws_close = 4;
-    StreamData stream_data = 5;
-    StreamEnd stream_end = 6;
+    HttpResponse http_response = 1 [deprecated = true];
+    HeartbeatPing heartbeat_ping = 2 [deprecated = true];
+    WebSocketData ws_data = 3 [deprecated = true];
+    WebSocketClose ws_close = 4 [deprecated = true];
+    StreamData stream_data = 5 [deprecated = true];
+    StreamEnd stream_end = 6 [deprecated = true];
     RegisterRequest register = 7;
-    EventLog event = 8;
-    CommandAck command_ack = 9;
-    CommandOutput command_output = 10;
-    CommandComplete command_complete = 11;
-    FileChunk file_chunk = 12;
-    StreamClose stream_close = 13;
-    // Only sent when the manager advertised the proto-parity-v1 capability;
-    // older managers decode an unknown oneof case as a nil payload.
-    CancelRequest cancel_request = 14;
+    EventLog event = 8 [deprecated = true];
+    CommandAck command_ack = 9 [deprecated = true];
+    CommandOutput command_output = 10 [deprecated = true];
+    CommandComplete command_complete = 11 [deprecated = true];
+    FileChunk file_chunk = 12 [deprecated = true];
+    StreamClose stream_close = 13 [deprecated = true];
+    CancelRequest cancel_request = 14 [deprecated = true];
+    // Raw multiplexed session bytes, sent only after the manager grants mux-grant-v1.
+    MuxData mux_data = 15;
   }
 }
 
 // Messages sent from the manager to the agent.
 message ManagerMessage {
+  // Every payload except register_response and mux_data is the legacy edge message protocol; remove in v3.
   oneof payload {
-    HttpRequest http_request = 1;
-    HeartbeatPong heartbeat_pong = 2;
-    WebSocketStart ws_start = 3;
-    WebSocketData ws_data = 4;
-    WebSocketClose ws_close = 5;
+    HttpRequest http_request = 1 [deprecated = true];
+    HeartbeatPong heartbeat_pong = 2 [deprecated = true];
+    WebSocketStart ws_start = 3 [deprecated = true];
+    WebSocketData ws_data = 4 [deprecated = true];
+    WebSocketClose ws_close = 5 [deprecated = true];
     RegisterResponse register_response = 6;
-    CommandRequest command_request = 7;
-    StreamOpen stream_open = 8;
-    StreamClose stream_close = 9;
-    CancelRequest cancel_request = 10;
-    FileChunk file_chunk = 11;
-    // Only sent when the agent advertised the proto-parity-v1 capability;
-    // older agents decode an unknown oneof case as a nil payload.
-    StreamData stream_data = 12;
-    StreamEnd stream_end = 13;
-    // Only sent to agents that advertised command-credit-v1.
-    CommandCredit command_credit = 14;
+    CommandRequest command_request = 7 [deprecated = true];
+    StreamOpen stream_open = 8 [deprecated = true];
+    StreamClose stream_close = 9 [deprecated = true];
+    CancelRequest cancel_request = 10 [deprecated = true];
+    FileChunk file_chunk = 11 [deprecated = true];
+    StreamData stream_data = 12 [deprecated = true];
+    StreamEnd stream_end = 13 [deprecated = true];
+    CommandCredit command_credit = 14 [deprecated = true];
+    // Raw multiplexed session bytes, sent only after the manager grants mux-grant-v1.
+    MuxData mux_data = 15;
   }
 }
 
 message RegisterRequest {
   string agent_token = 1;
   string agent_instance_id = 2;
+  // Offered features, e.g. mux-v1 to switch to the multiplexed data plane.
   repeated string capabilities = 3;
   string resume_session_id = 4;
 }
@@ -68,12 +70,16 @@ message RegisterResponse {
   string error = 3;
   string session_id = 4;
   string security_mode = 5;
+  // Granted features; mux-grant-v1 switches both peers to mux_data after this response.
   repeated string capabilities = 6;
   bool drain_previous = 7;
   string id = 8;
 }
 
+// Deprecated: legacy edge message protocol; remove in v3.
 message CommandRequest {
+  option deprecated = true;
+
   string command_id = 1;
   string command_name = 2;
   string method = 3;
@@ -87,11 +93,17 @@ message CommandRequest {
   map<string, string> metadata = 11;
 }
 
+// Deprecated: legacy edge message protocol; remove in v3.
 message CommandAck {
+  option deprecated = true;
+
   string command_id = 1;
 }
 
+// Deprecated: legacy edge message protocol; remove in v3.
 message CommandOutput {
+  option deprecated = true;
+
   string command_id = 1;
   bytes data = 2;
   int64 sequence = 3;
@@ -101,7 +113,10 @@ message CommandOutput {
   map<string, string> headers = 5;
 }
 
+// Deprecated: legacy edge message protocol; remove in v3.
 message CommandComplete {
+  option deprecated = true;
+
   string command_id = 1;
   int32 status = 2;
   map<string, string> headers = 3;
@@ -110,7 +125,10 @@ message CommandComplete {
   bool streaming = 6;
 }
 
+// Deprecated: legacy edge message protocol; remove in v3.
 message FileChunk {
+  option deprecated = true;
+
   string transfer_id = 1;
   bytes data = 2;
   int64 sequence = 3;
@@ -118,7 +136,10 @@ message FileChunk {
   map<string, string> metadata = 5;
 }
 
+// Deprecated: legacy edge message protocol; remove in v3.
 message StreamOpen {
+  option deprecated = true;
+
   string stream_id = 1;
   string command_name = 2;
   string path = 3;
@@ -127,22 +148,33 @@ message StreamOpen {
   string session_id = 6;
 }
 
+// Deprecated: legacy edge message protocol; remove in v3.
 message StreamClose {
+  option deprecated = true;
+
   string stream_id = 1;
   string error = 2;
 }
 
+// Deprecated: legacy edge message protocol; remove in v3.
 message CancelRequest {
+  option deprecated = true;
+
   string command_id = 1;
 }
 
-// CommandCredit returns flow-control credit for command output the manager has consumed.
+// Deprecated: legacy edge message protocol; remove in v3.
 message CommandCredit {
+  option deprecated = true;
+
   string command_id = 1;
   int64 bytes = 2;
 }
 
+// Deprecated: legacy edge message protocol; remove in v3.
 message HttpRequest {
+  option deprecated = true;
+
   string request_id = 1;
   string method = 2;
   string path = 3;
@@ -151,51 +183,76 @@ message HttpRequest {
   bytes body = 6;
 }
 
+// Deprecated: legacy edge message protocol; remove in v3.
 message HttpResponse {
+  option deprecated = true;
+
   string request_id = 1;
   int32 status = 2;
   map<string, string> headers = 3;
   bytes body = 4;
 }
 
-// StreamData carries incremental HTTP response body chunks.
+// Deprecated: legacy edge message protocol; remove in v3.
 message StreamData {
+  option deprecated = true;
+
   string request_id = 1;
   bytes data = 2;
   int32 message_type = 3;
 }
 
+// Deprecated: legacy edge message protocol; remove in v3.
 message StreamEnd {
+  option deprecated = true;
+
   string request_id = 1;
 }
 
+// Deprecated: legacy edge message protocol; remove in v3.
 message HeartbeatPing {
+  option deprecated = true;
+
   string id = 1;
 }
 
+// Deprecated: legacy edge message protocol; remove in v3.
 message HeartbeatPong {
+  option deprecated = true;
+
   string id = 1;
 }
 
+// Deprecated: legacy edge message protocol; remove in v3.
 message WebSocketStart {
+  option deprecated = true;
+
   string stream_id = 1;
   string path = 2;
   string query = 3;
   map<string, string> headers = 4;
 }
 
+// Deprecated: legacy edge message protocol; remove in v3.
 message WebSocketData {
+  option deprecated = true;
+
   string stream_id = 1;
   bytes data = 2;
   int32 message_type = 3;
 }
 
+// Deprecated: legacy edge message protocol; remove in v3.
 message WebSocketClose {
+  option deprecated = true;
+
   string stream_id = 1;
 }
 
-// EventLog carries an event emitted on an agent and synced to manager.
+// Deprecated: legacy edge message protocol; remove in v3.
 message EventLog {
+  option deprecated = true;
+
   string type = 1;
   string severity = 2;
   string title = 3;
@@ -207,4 +264,9 @@ message EventLog {
   string username = 9;
   bytes metadata_json = 10;
   string id = 11;
+}
+
+// MuxData carries an opaque slice of the multiplexed session byte stream.
+message MuxData {
+  bytes data = 1;
 }

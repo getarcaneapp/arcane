@@ -7,12 +7,11 @@
 package tunnelpb
 
 import (
+	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
+	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
-
-	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
-	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 )
 
 const (
@@ -25,6 +24,8 @@ const (
 // Messages sent from the agent to the manager.
 type AgentMessage struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
+	// Every payload except register and mux_data is the legacy edge message protocol; remove in v3.
+	//
 	// Types that are valid to be assigned to Payload:
 	//
 	//	*AgentMessage_HttpResponse
@@ -41,6 +42,7 @@ type AgentMessage struct {
 	//	*AgentMessage_FileChunk
 	//	*AgentMessage_StreamClose
 	//	*AgentMessage_CancelRequest
+	//	*AgentMessage_MuxData
 	Payload       isAgentMessage_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -83,6 +85,7 @@ func (x *AgentMessage) GetPayload() isAgentMessage_Payload {
 	return nil
 }
 
+// Deprecated: Marked as deprecated in tunnel/v1/tunnel.proto.
 func (x *AgentMessage) GetHttpResponse() *HttpResponse {
 	if x != nil {
 		if x, ok := x.Payload.(*AgentMessage_HttpResponse); ok {
@@ -92,6 +95,7 @@ func (x *AgentMessage) GetHttpResponse() *HttpResponse {
 	return nil
 }
 
+// Deprecated: Marked as deprecated in tunnel/v1/tunnel.proto.
 func (x *AgentMessage) GetHeartbeatPing() *HeartbeatPing {
 	if x != nil {
 		if x, ok := x.Payload.(*AgentMessage_HeartbeatPing); ok {
@@ -101,6 +105,7 @@ func (x *AgentMessage) GetHeartbeatPing() *HeartbeatPing {
 	return nil
 }
 
+// Deprecated: Marked as deprecated in tunnel/v1/tunnel.proto.
 func (x *AgentMessage) GetWsData() *WebSocketData {
 	if x != nil {
 		if x, ok := x.Payload.(*AgentMessage_WsData); ok {
@@ -110,6 +115,7 @@ func (x *AgentMessage) GetWsData() *WebSocketData {
 	return nil
 }
 
+// Deprecated: Marked as deprecated in tunnel/v1/tunnel.proto.
 func (x *AgentMessage) GetWsClose() *WebSocketClose {
 	if x != nil {
 		if x, ok := x.Payload.(*AgentMessage_WsClose); ok {
@@ -119,6 +125,7 @@ func (x *AgentMessage) GetWsClose() *WebSocketClose {
 	return nil
 }
 
+// Deprecated: Marked as deprecated in tunnel/v1/tunnel.proto.
 func (x *AgentMessage) GetStreamData() *StreamData {
 	if x != nil {
 		if x, ok := x.Payload.(*AgentMessage_StreamData); ok {
@@ -128,6 +135,7 @@ func (x *AgentMessage) GetStreamData() *StreamData {
 	return nil
 }
 
+// Deprecated: Marked as deprecated in tunnel/v1/tunnel.proto.
 func (x *AgentMessage) GetStreamEnd() *StreamEnd {
 	if x != nil {
 		if x, ok := x.Payload.(*AgentMessage_StreamEnd); ok {
@@ -146,6 +154,7 @@ func (x *AgentMessage) GetRegister() *RegisterRequest {
 	return nil
 }
 
+// Deprecated: Marked as deprecated in tunnel/v1/tunnel.proto.
 func (x *AgentMessage) GetEvent() *EventLog {
 	if x != nil {
 		if x, ok := x.Payload.(*AgentMessage_Event); ok {
@@ -155,6 +164,7 @@ func (x *AgentMessage) GetEvent() *EventLog {
 	return nil
 }
 
+// Deprecated: Marked as deprecated in tunnel/v1/tunnel.proto.
 func (x *AgentMessage) GetCommandAck() *CommandAck {
 	if x != nil {
 		if x, ok := x.Payload.(*AgentMessage_CommandAck); ok {
@@ -164,6 +174,7 @@ func (x *AgentMessage) GetCommandAck() *CommandAck {
 	return nil
 }
 
+// Deprecated: Marked as deprecated in tunnel/v1/tunnel.proto.
 func (x *AgentMessage) GetCommandOutput() *CommandOutput {
 	if x != nil {
 		if x, ok := x.Payload.(*AgentMessage_CommandOutput); ok {
@@ -173,6 +184,7 @@ func (x *AgentMessage) GetCommandOutput() *CommandOutput {
 	return nil
 }
 
+// Deprecated: Marked as deprecated in tunnel/v1/tunnel.proto.
 func (x *AgentMessage) GetCommandComplete() *CommandComplete {
 	if x != nil {
 		if x, ok := x.Payload.(*AgentMessage_CommandComplete); ok {
@@ -182,6 +194,7 @@ func (x *AgentMessage) GetCommandComplete() *CommandComplete {
 	return nil
 }
 
+// Deprecated: Marked as deprecated in tunnel/v1/tunnel.proto.
 func (x *AgentMessage) GetFileChunk() *FileChunk {
 	if x != nil {
 		if x, ok := x.Payload.(*AgentMessage_FileChunk); ok {
@@ -191,6 +204,7 @@ func (x *AgentMessage) GetFileChunk() *FileChunk {
 	return nil
 }
 
+// Deprecated: Marked as deprecated in tunnel/v1/tunnel.proto.
 func (x *AgentMessage) GetStreamClose() *StreamClose {
 	if x != nil {
 		if x, ok := x.Payload.(*AgentMessage_StreamClose); ok {
@@ -200,10 +214,20 @@ func (x *AgentMessage) GetStreamClose() *StreamClose {
 	return nil
 }
 
+// Deprecated: Marked as deprecated in tunnel/v1/tunnel.proto.
 func (x *AgentMessage) GetCancelRequest() *CancelRequest {
 	if x != nil {
 		if x, ok := x.Payload.(*AgentMessage_CancelRequest); ok {
 			return x.CancelRequest
+		}
+	}
+	return nil
+}
+
+func (x *AgentMessage) GetMuxData() *MuxData {
+	if x != nil {
+		if x, ok := x.Payload.(*AgentMessage_MuxData); ok {
+			return x.MuxData
 		}
 	}
 	return nil
@@ -214,26 +238,32 @@ type isAgentMessage_Payload interface {
 }
 
 type AgentMessage_HttpResponse struct {
+	// Deprecated: Marked as deprecated in tunnel/v1/tunnel.proto.
 	HttpResponse *HttpResponse `protobuf:"bytes,1,opt,name=http_response,json=httpResponse,proto3,oneof"`
 }
 
 type AgentMessage_HeartbeatPing struct {
+	// Deprecated: Marked as deprecated in tunnel/v1/tunnel.proto.
 	HeartbeatPing *HeartbeatPing `protobuf:"bytes,2,opt,name=heartbeat_ping,json=heartbeatPing,proto3,oneof"`
 }
 
 type AgentMessage_WsData struct {
+	// Deprecated: Marked as deprecated in tunnel/v1/tunnel.proto.
 	WsData *WebSocketData `protobuf:"bytes,3,opt,name=ws_data,json=wsData,proto3,oneof"`
 }
 
 type AgentMessage_WsClose struct {
+	// Deprecated: Marked as deprecated in tunnel/v1/tunnel.proto.
 	WsClose *WebSocketClose `protobuf:"bytes,4,opt,name=ws_close,json=wsClose,proto3,oneof"`
 }
 
 type AgentMessage_StreamData struct {
+	// Deprecated: Marked as deprecated in tunnel/v1/tunnel.proto.
 	StreamData *StreamData `protobuf:"bytes,5,opt,name=stream_data,json=streamData,proto3,oneof"`
 }
 
 type AgentMessage_StreamEnd struct {
+	// Deprecated: Marked as deprecated in tunnel/v1/tunnel.proto.
 	StreamEnd *StreamEnd `protobuf:"bytes,6,opt,name=stream_end,json=streamEnd,proto3,oneof"`
 }
 
@@ -242,33 +272,43 @@ type AgentMessage_Register struct {
 }
 
 type AgentMessage_Event struct {
+	// Deprecated: Marked as deprecated in tunnel/v1/tunnel.proto.
 	Event *EventLog `protobuf:"bytes,8,opt,name=event,proto3,oneof"`
 }
 
 type AgentMessage_CommandAck struct {
+	// Deprecated: Marked as deprecated in tunnel/v1/tunnel.proto.
 	CommandAck *CommandAck `protobuf:"bytes,9,opt,name=command_ack,json=commandAck,proto3,oneof"`
 }
 
 type AgentMessage_CommandOutput struct {
+	// Deprecated: Marked as deprecated in tunnel/v1/tunnel.proto.
 	CommandOutput *CommandOutput `protobuf:"bytes,10,opt,name=command_output,json=commandOutput,proto3,oneof"`
 }
 
 type AgentMessage_CommandComplete struct {
+	// Deprecated: Marked as deprecated in tunnel/v1/tunnel.proto.
 	CommandComplete *CommandComplete `protobuf:"bytes,11,opt,name=command_complete,json=commandComplete,proto3,oneof"`
 }
 
 type AgentMessage_FileChunk struct {
+	// Deprecated: Marked as deprecated in tunnel/v1/tunnel.proto.
 	FileChunk *FileChunk `protobuf:"bytes,12,opt,name=file_chunk,json=fileChunk,proto3,oneof"`
 }
 
 type AgentMessage_StreamClose struct {
+	// Deprecated: Marked as deprecated in tunnel/v1/tunnel.proto.
 	StreamClose *StreamClose `protobuf:"bytes,13,opt,name=stream_close,json=streamClose,proto3,oneof"`
 }
 
 type AgentMessage_CancelRequest struct {
-	// Only sent when the manager advertised the proto-parity-v1 capability;
-	// older managers decode an unknown oneof case as a nil payload.
+	// Deprecated: Marked as deprecated in tunnel/v1/tunnel.proto.
 	CancelRequest *CancelRequest `protobuf:"bytes,14,opt,name=cancel_request,json=cancelRequest,proto3,oneof"`
+}
+
+type AgentMessage_MuxData struct {
+	// Raw multiplexed session bytes, sent only after the manager grants mux-grant-v1.
+	MuxData *MuxData `protobuf:"bytes,15,opt,name=mux_data,json=muxData,proto3,oneof"`
 }
 
 func (*AgentMessage_HttpResponse) isAgentMessage_Payload() {}
@@ -299,9 +339,13 @@ func (*AgentMessage_StreamClose) isAgentMessage_Payload() {}
 
 func (*AgentMessage_CancelRequest) isAgentMessage_Payload() {}
 
+func (*AgentMessage_MuxData) isAgentMessage_Payload() {}
+
 // Messages sent from the manager to the agent.
 type ManagerMessage struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
+	// Every payload except register_response and mux_data is the legacy edge message protocol; remove in v3.
+	//
 	// Types that are valid to be assigned to Payload:
 	//
 	//	*ManagerMessage_HttpRequest
@@ -318,6 +362,7 @@ type ManagerMessage struct {
 	//	*ManagerMessage_StreamData
 	//	*ManagerMessage_StreamEnd
 	//	*ManagerMessage_CommandCredit
+	//	*ManagerMessage_MuxData
 	Payload       isManagerMessage_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -360,6 +405,7 @@ func (x *ManagerMessage) GetPayload() isManagerMessage_Payload {
 	return nil
 }
 
+// Deprecated: Marked as deprecated in tunnel/v1/tunnel.proto.
 func (x *ManagerMessage) GetHttpRequest() *HttpRequest {
 	if x != nil {
 		if x, ok := x.Payload.(*ManagerMessage_HttpRequest); ok {
@@ -369,6 +415,7 @@ func (x *ManagerMessage) GetHttpRequest() *HttpRequest {
 	return nil
 }
 
+// Deprecated: Marked as deprecated in tunnel/v1/tunnel.proto.
 func (x *ManagerMessage) GetHeartbeatPong() *HeartbeatPong {
 	if x != nil {
 		if x, ok := x.Payload.(*ManagerMessage_HeartbeatPong); ok {
@@ -378,6 +425,7 @@ func (x *ManagerMessage) GetHeartbeatPong() *HeartbeatPong {
 	return nil
 }
 
+// Deprecated: Marked as deprecated in tunnel/v1/tunnel.proto.
 func (x *ManagerMessage) GetWsStart() *WebSocketStart {
 	if x != nil {
 		if x, ok := x.Payload.(*ManagerMessage_WsStart); ok {
@@ -387,6 +435,7 @@ func (x *ManagerMessage) GetWsStart() *WebSocketStart {
 	return nil
 }
 
+// Deprecated: Marked as deprecated in tunnel/v1/tunnel.proto.
 func (x *ManagerMessage) GetWsData() *WebSocketData {
 	if x != nil {
 		if x, ok := x.Payload.(*ManagerMessage_WsData); ok {
@@ -396,6 +445,7 @@ func (x *ManagerMessage) GetWsData() *WebSocketData {
 	return nil
 }
 
+// Deprecated: Marked as deprecated in tunnel/v1/tunnel.proto.
 func (x *ManagerMessage) GetWsClose() *WebSocketClose {
 	if x != nil {
 		if x, ok := x.Payload.(*ManagerMessage_WsClose); ok {
@@ -414,6 +464,7 @@ func (x *ManagerMessage) GetRegisterResponse() *RegisterResponse {
 	return nil
 }
 
+// Deprecated: Marked as deprecated in tunnel/v1/tunnel.proto.
 func (x *ManagerMessage) GetCommandRequest() *CommandRequest {
 	if x != nil {
 		if x, ok := x.Payload.(*ManagerMessage_CommandRequest); ok {
@@ -423,6 +474,7 @@ func (x *ManagerMessage) GetCommandRequest() *CommandRequest {
 	return nil
 }
 
+// Deprecated: Marked as deprecated in tunnel/v1/tunnel.proto.
 func (x *ManagerMessage) GetStreamOpen() *StreamOpen {
 	if x != nil {
 		if x, ok := x.Payload.(*ManagerMessage_StreamOpen); ok {
@@ -432,6 +484,7 @@ func (x *ManagerMessage) GetStreamOpen() *StreamOpen {
 	return nil
 }
 
+// Deprecated: Marked as deprecated in tunnel/v1/tunnel.proto.
 func (x *ManagerMessage) GetStreamClose() *StreamClose {
 	if x != nil {
 		if x, ok := x.Payload.(*ManagerMessage_StreamClose); ok {
@@ -441,6 +494,7 @@ func (x *ManagerMessage) GetStreamClose() *StreamClose {
 	return nil
 }
 
+// Deprecated: Marked as deprecated in tunnel/v1/tunnel.proto.
 func (x *ManagerMessage) GetCancelRequest() *CancelRequest {
 	if x != nil {
 		if x, ok := x.Payload.(*ManagerMessage_CancelRequest); ok {
@@ -450,6 +504,7 @@ func (x *ManagerMessage) GetCancelRequest() *CancelRequest {
 	return nil
 }
 
+// Deprecated: Marked as deprecated in tunnel/v1/tunnel.proto.
 func (x *ManagerMessage) GetFileChunk() *FileChunk {
 	if x != nil {
 		if x, ok := x.Payload.(*ManagerMessage_FileChunk); ok {
@@ -459,6 +514,7 @@ func (x *ManagerMessage) GetFileChunk() *FileChunk {
 	return nil
 }
 
+// Deprecated: Marked as deprecated in tunnel/v1/tunnel.proto.
 func (x *ManagerMessage) GetStreamData() *StreamData {
 	if x != nil {
 		if x, ok := x.Payload.(*ManagerMessage_StreamData); ok {
@@ -468,6 +524,7 @@ func (x *ManagerMessage) GetStreamData() *StreamData {
 	return nil
 }
 
+// Deprecated: Marked as deprecated in tunnel/v1/tunnel.proto.
 func (x *ManagerMessage) GetStreamEnd() *StreamEnd {
 	if x != nil {
 		if x, ok := x.Payload.(*ManagerMessage_StreamEnd); ok {
@@ -477,10 +534,20 @@ func (x *ManagerMessage) GetStreamEnd() *StreamEnd {
 	return nil
 }
 
+// Deprecated: Marked as deprecated in tunnel/v1/tunnel.proto.
 func (x *ManagerMessage) GetCommandCredit() *CommandCredit {
 	if x != nil {
 		if x, ok := x.Payload.(*ManagerMessage_CommandCredit); ok {
 			return x.CommandCredit
+		}
+	}
+	return nil
+}
+
+func (x *ManagerMessage) GetMuxData() *MuxData {
+	if x != nil {
+		if x, ok := x.Payload.(*ManagerMessage_MuxData); ok {
+			return x.MuxData
 		}
 	}
 	return nil
@@ -491,22 +558,27 @@ type isManagerMessage_Payload interface {
 }
 
 type ManagerMessage_HttpRequest struct {
+	// Deprecated: Marked as deprecated in tunnel/v1/tunnel.proto.
 	HttpRequest *HttpRequest `protobuf:"bytes,1,opt,name=http_request,json=httpRequest,proto3,oneof"`
 }
 
 type ManagerMessage_HeartbeatPong struct {
+	// Deprecated: Marked as deprecated in tunnel/v1/tunnel.proto.
 	HeartbeatPong *HeartbeatPong `protobuf:"bytes,2,opt,name=heartbeat_pong,json=heartbeatPong,proto3,oneof"`
 }
 
 type ManagerMessage_WsStart struct {
+	// Deprecated: Marked as deprecated in tunnel/v1/tunnel.proto.
 	WsStart *WebSocketStart `protobuf:"bytes,3,opt,name=ws_start,json=wsStart,proto3,oneof"`
 }
 
 type ManagerMessage_WsData struct {
+	// Deprecated: Marked as deprecated in tunnel/v1/tunnel.proto.
 	WsData *WebSocketData `protobuf:"bytes,4,opt,name=ws_data,json=wsData,proto3,oneof"`
 }
 
 type ManagerMessage_WsClose struct {
+	// Deprecated: Marked as deprecated in tunnel/v1/tunnel.proto.
 	WsClose *WebSocketClose `protobuf:"bytes,5,opt,name=ws_close,json=wsClose,proto3,oneof"`
 }
 
@@ -515,38 +587,48 @@ type ManagerMessage_RegisterResponse struct {
 }
 
 type ManagerMessage_CommandRequest struct {
+	// Deprecated: Marked as deprecated in tunnel/v1/tunnel.proto.
 	CommandRequest *CommandRequest `protobuf:"bytes,7,opt,name=command_request,json=commandRequest,proto3,oneof"`
 }
 
 type ManagerMessage_StreamOpen struct {
+	// Deprecated: Marked as deprecated in tunnel/v1/tunnel.proto.
 	StreamOpen *StreamOpen `protobuf:"bytes,8,opt,name=stream_open,json=streamOpen,proto3,oneof"`
 }
 
 type ManagerMessage_StreamClose struct {
+	// Deprecated: Marked as deprecated in tunnel/v1/tunnel.proto.
 	StreamClose *StreamClose `protobuf:"bytes,9,opt,name=stream_close,json=streamClose,proto3,oneof"`
 }
 
 type ManagerMessage_CancelRequest struct {
+	// Deprecated: Marked as deprecated in tunnel/v1/tunnel.proto.
 	CancelRequest *CancelRequest `protobuf:"bytes,10,opt,name=cancel_request,json=cancelRequest,proto3,oneof"`
 }
 
 type ManagerMessage_FileChunk struct {
+	// Deprecated: Marked as deprecated in tunnel/v1/tunnel.proto.
 	FileChunk *FileChunk `protobuf:"bytes,11,opt,name=file_chunk,json=fileChunk,proto3,oneof"`
 }
 
 type ManagerMessage_StreamData struct {
-	// Only sent when the agent advertised the proto-parity-v1 capability;
-	// older agents decode an unknown oneof case as a nil payload.
+	// Deprecated: Marked as deprecated in tunnel/v1/tunnel.proto.
 	StreamData *StreamData `protobuf:"bytes,12,opt,name=stream_data,json=streamData,proto3,oneof"`
 }
 
 type ManagerMessage_StreamEnd struct {
+	// Deprecated: Marked as deprecated in tunnel/v1/tunnel.proto.
 	StreamEnd *StreamEnd `protobuf:"bytes,13,opt,name=stream_end,json=streamEnd,proto3,oneof"`
 }
 
 type ManagerMessage_CommandCredit struct {
-	// Only sent to agents that advertised command-credit-v1.
+	// Deprecated: Marked as deprecated in tunnel/v1/tunnel.proto.
 	CommandCredit *CommandCredit `protobuf:"bytes,14,opt,name=command_credit,json=commandCredit,proto3,oneof"`
+}
+
+type ManagerMessage_MuxData struct {
+	// Raw multiplexed session bytes, sent only after the manager grants mux-grant-v1.
+	MuxData *MuxData `protobuf:"bytes,15,opt,name=mux_data,json=muxData,proto3,oneof"`
 }
 
 func (*ManagerMessage_HttpRequest) isManagerMessage_Payload() {}
@@ -577,12 +659,15 @@ func (*ManagerMessage_StreamEnd) isManagerMessage_Payload() {}
 
 func (*ManagerMessage_CommandCredit) isManagerMessage_Payload() {}
 
+func (*ManagerMessage_MuxData) isManagerMessage_Payload() {}
+
 type RegisterRequest struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
 	AgentToken      string                 `protobuf:"bytes,1,opt,name=agent_token,json=agentToken,proto3" json:"agent_token,omitempty"`
 	AgentInstanceId string                 `protobuf:"bytes,2,opt,name=agent_instance_id,json=agentInstanceId,proto3" json:"agent_instance_id,omitempty"`
-	Capabilities    []string               `protobuf:"bytes,3,rep,name=capabilities,proto3" json:"capabilities,omitempty"`
-	ResumeSessionId string                 `protobuf:"bytes,4,opt,name=resume_session_id,json=resumeSessionId,proto3" json:"resume_session_id,omitempty"`
+	// Offered features, e.g. mux-v1 to switch to the multiplexed data plane.
+	Capabilities    []string `protobuf:"bytes,3,rep,name=capabilities,proto3" json:"capabilities,omitempty"`
+	ResumeSessionId string   `protobuf:"bytes,4,opt,name=resume_session_id,json=resumeSessionId,proto3" json:"resume_session_id,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -652,9 +737,10 @@ type RegisterResponse struct {
 	Error         string                 `protobuf:"bytes,3,opt,name=error,proto3" json:"error,omitempty"`
 	SessionId     string                 `protobuf:"bytes,4,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
 	SecurityMode  string                 `protobuf:"bytes,5,opt,name=security_mode,json=securityMode,proto3" json:"security_mode,omitempty"`
-	Capabilities  []string               `protobuf:"bytes,6,rep,name=capabilities,proto3" json:"capabilities,omitempty"`
-	DrainPrevious bool                   `protobuf:"varint,7,opt,name=drain_previous,json=drainPrevious,proto3" json:"drain_previous,omitempty"`
-	Id            string                 `protobuf:"bytes,8,opt,name=id,proto3" json:"id,omitempty"`
+	// Granted features; mux-grant-v1 switches both peers to mux_data after this response.
+	Capabilities  []string `protobuf:"bytes,6,rep,name=capabilities,proto3" json:"capabilities,omitempty"`
+	DrainPrevious bool     `protobuf:"varint,7,opt,name=drain_previous,json=drainPrevious,proto3" json:"drain_previous,omitempty"`
+	Id            string   `protobuf:"bytes,8,opt,name=id,proto3" json:"id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -745,6 +831,9 @@ func (x *RegisterResponse) GetId() string {
 	return ""
 }
 
+// Deprecated: legacy edge message protocol; remove in v3.
+//
+// Deprecated: Marked as deprecated in tunnel/v1/tunnel.proto.
 type CommandRequest struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
 	CommandId       string                 `protobuf:"bytes,1,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
@@ -869,6 +958,9 @@ func (x *CommandRequest) GetMetadata() map[string]string {
 	return nil
 }
 
+// Deprecated: legacy edge message protocol; remove in v3.
+//
+// Deprecated: Marked as deprecated in tunnel/v1/tunnel.proto.
 type CommandAck struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	CommandId     string                 `protobuf:"bytes,1,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
@@ -913,6 +1005,9 @@ func (x *CommandAck) GetCommandId() string {
 	return ""
 }
 
+// Deprecated: legacy edge message protocol; remove in v3.
+//
+// Deprecated: Marked as deprecated in tunnel/v1/tunnel.proto.
 type CommandOutput struct {
 	state     protoimpl.MessageState `protogen:"open.v1"`
 	CommandId string                 `protobuf:"bytes,1,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
@@ -991,6 +1086,9 @@ func (x *CommandOutput) GetHeaders() map[string]string {
 	return nil
 }
 
+// Deprecated: legacy edge message protocol; remove in v3.
+//
+// Deprecated: Marked as deprecated in tunnel/v1/tunnel.proto.
 type CommandComplete struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	CommandId     string                 `protobuf:"bytes,1,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
@@ -1075,6 +1173,9 @@ func (x *CommandComplete) GetStreaming() bool {
 	return false
 }
 
+// Deprecated: legacy edge message protocol; remove in v3.
+//
+// Deprecated: Marked as deprecated in tunnel/v1/tunnel.proto.
 type FileChunk struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	TransferId    string                 `protobuf:"bytes,1,opt,name=transfer_id,json=transferId,proto3" json:"transfer_id,omitempty"`
@@ -1151,6 +1252,9 @@ func (x *FileChunk) GetMetadata() map[string]string {
 	return nil
 }
 
+// Deprecated: legacy edge message protocol; remove in v3.
+//
+// Deprecated: Marked as deprecated in tunnel/v1/tunnel.proto.
 type StreamOpen struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	StreamId      string                 `protobuf:"bytes,1,opt,name=stream_id,json=streamId,proto3" json:"stream_id,omitempty"`
@@ -1235,6 +1339,9 @@ func (x *StreamOpen) GetSessionId() string {
 	return ""
 }
 
+// Deprecated: legacy edge message protocol; remove in v3.
+//
+// Deprecated: Marked as deprecated in tunnel/v1/tunnel.proto.
 type StreamClose struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	StreamId      string                 `protobuf:"bytes,1,opt,name=stream_id,json=streamId,proto3" json:"stream_id,omitempty"`
@@ -1287,6 +1394,9 @@ func (x *StreamClose) GetError() string {
 	return ""
 }
 
+// Deprecated: legacy edge message protocol; remove in v3.
+//
+// Deprecated: Marked as deprecated in tunnel/v1/tunnel.proto.
 type CancelRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	CommandId     string                 `protobuf:"bytes,1,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
@@ -1331,7 +1441,9 @@ func (x *CancelRequest) GetCommandId() string {
 	return ""
 }
 
-// CommandCredit returns flow-control credit for command output the manager has consumed.
+// Deprecated: legacy edge message protocol; remove in v3.
+//
+// Deprecated: Marked as deprecated in tunnel/v1/tunnel.proto.
 type CommandCredit struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	CommandId     string                 `protobuf:"bytes,1,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
@@ -1384,6 +1496,9 @@ func (x *CommandCredit) GetBytes() int64 {
 	return 0
 }
 
+// Deprecated: legacy edge message protocol; remove in v3.
+//
+// Deprecated: Marked as deprecated in tunnel/v1/tunnel.proto.
 type HttpRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
@@ -1468,6 +1583,9 @@ func (x *HttpRequest) GetBody() []byte {
 	return nil
 }
 
+// Deprecated: legacy edge message protocol; remove in v3.
+//
+// Deprecated: Marked as deprecated in tunnel/v1/tunnel.proto.
 type HttpResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
@@ -1536,7 +1654,9 @@ func (x *HttpResponse) GetBody() []byte {
 	return nil
 }
 
-// StreamData carries incremental HTTP response body chunks.
+// Deprecated: legacy edge message protocol; remove in v3.
+//
+// Deprecated: Marked as deprecated in tunnel/v1/tunnel.proto.
 type StreamData struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
@@ -1597,6 +1717,9 @@ func (x *StreamData) GetMessageType() int32 {
 	return 0
 }
 
+// Deprecated: legacy edge message protocol; remove in v3.
+//
+// Deprecated: Marked as deprecated in tunnel/v1/tunnel.proto.
 type StreamEnd struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
@@ -1641,6 +1764,9 @@ func (x *StreamEnd) GetRequestId() string {
 	return ""
 }
 
+// Deprecated: legacy edge message protocol; remove in v3.
+//
+// Deprecated: Marked as deprecated in tunnel/v1/tunnel.proto.
 type HeartbeatPing struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -1685,6 +1811,9 @@ func (x *HeartbeatPing) GetId() string {
 	return ""
 }
 
+// Deprecated: legacy edge message protocol; remove in v3.
+//
+// Deprecated: Marked as deprecated in tunnel/v1/tunnel.proto.
 type HeartbeatPong struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -1729,6 +1858,9 @@ func (x *HeartbeatPong) GetId() string {
 	return ""
 }
 
+// Deprecated: legacy edge message protocol; remove in v3.
+//
+// Deprecated: Marked as deprecated in tunnel/v1/tunnel.proto.
 type WebSocketStart struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	StreamId      string                 `protobuf:"bytes,1,opt,name=stream_id,json=streamId,proto3" json:"stream_id,omitempty"`
@@ -1797,6 +1929,9 @@ func (x *WebSocketStart) GetHeaders() map[string]string {
 	return nil
 }
 
+// Deprecated: legacy edge message protocol; remove in v3.
+//
+// Deprecated: Marked as deprecated in tunnel/v1/tunnel.proto.
 type WebSocketData struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	StreamId      string                 `protobuf:"bytes,1,opt,name=stream_id,json=streamId,proto3" json:"stream_id,omitempty"`
@@ -1857,6 +1992,9 @@ func (x *WebSocketData) GetMessageType() int32 {
 	return 0
 }
 
+// Deprecated: legacy edge message protocol; remove in v3.
+//
+// Deprecated: Marked as deprecated in tunnel/v1/tunnel.proto.
 type WebSocketClose struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	StreamId      string                 `protobuf:"bytes,1,opt,name=stream_id,json=streamId,proto3" json:"stream_id,omitempty"`
@@ -1901,7 +2039,9 @@ func (x *WebSocketClose) GetStreamId() string {
 	return ""
 }
 
-// EventLog carries an event emitted on an agent and synced to manager.
+// Deprecated: legacy edge message protocol; remove in v3.
+//
+// Deprecated: Marked as deprecated in tunnel/v1/tunnel.proto.
 type EventLog struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Type          string                 `protobuf:"bytes,1,opt,name=type,proto3" json:"type,omitempty"`
@@ -2026,52 +2166,99 @@ func (x *EventLog) GetId() string {
 	return ""
 }
 
+// MuxData carries an opaque slice of the multiplexed session byte stream.
+type MuxData struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Data          []byte                 `protobuf:"bytes,1,opt,name=data,proto3" json:"data,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MuxData) Reset() {
+	*x = MuxData{}
+	mi := &file_tunnel_v1_tunnel_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MuxData) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MuxData) ProtoMessage() {}
+
+func (x *MuxData) ProtoReflect() protoreflect.Message {
+	mi := &file_tunnel_v1_tunnel_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MuxData.ProtoReflect.Descriptor instead.
+func (*MuxData) Descriptor() ([]byte, []int) {
+	return file_tunnel_v1_tunnel_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *MuxData) GetData() []byte {
+	if x != nil {
+		return x.Data
+	}
+	return nil
+}
+
 var File_tunnel_v1_tunnel_proto protoreflect.FileDescriptor
 
 const file_tunnel_v1_tunnel_proto_rawDesc = "" +
 	"\n" +
-	"\x16tunnel/v1/tunnel.proto\x12\ttunnel.v1\"\xde\x06\n" +
-	"\fAgentMessage\x12>\n" +
-	"\rhttp_response\x18\x01 \x01(\v2\x17.tunnel.v1.HttpResponseH\x00R\fhttpResponse\x12A\n" +
-	"\x0eheartbeat_ping\x18\x02 \x01(\v2\x18.tunnel.v1.HeartbeatPingH\x00R\rheartbeatPing\x123\n" +
-	"\aws_data\x18\x03 \x01(\v2\x18.tunnel.v1.WebSocketDataH\x00R\x06wsData\x126\n" +
-	"\bws_close\x18\x04 \x01(\v2\x19.tunnel.v1.WebSocketCloseH\x00R\awsClose\x128\n" +
-	"\vstream_data\x18\x05 \x01(\v2\x15.tunnel.v1.StreamDataH\x00R\n" +
-	"streamData\x125\n" +
+	"\x16tunnel/v1/tunnel.proto\x12\ttunnel.v1\"\xc3\a\n" +
+	"\fAgentMessage\x12B\n" +
+	"\rhttp_response\x18\x01 \x01(\v2\x17.tunnel.v1.HttpResponseB\x02\x18\x01H\x00R\fhttpResponse\x12E\n" +
+	"\x0eheartbeat_ping\x18\x02 \x01(\v2\x18.tunnel.v1.HeartbeatPingB\x02\x18\x01H\x00R\rheartbeatPing\x127\n" +
+	"\aws_data\x18\x03 \x01(\v2\x18.tunnel.v1.WebSocketDataB\x02\x18\x01H\x00R\x06wsData\x12:\n" +
+	"\bws_close\x18\x04 \x01(\v2\x19.tunnel.v1.WebSocketCloseB\x02\x18\x01H\x00R\awsClose\x12<\n" +
+	"\vstream_data\x18\x05 \x01(\v2\x15.tunnel.v1.StreamDataB\x02\x18\x01H\x00R\n" +
+	"streamData\x129\n" +
 	"\n" +
-	"stream_end\x18\x06 \x01(\v2\x14.tunnel.v1.StreamEndH\x00R\tstreamEnd\x128\n" +
-	"\bregister\x18\a \x01(\v2\x1a.tunnel.v1.RegisterRequestH\x00R\bregister\x12+\n" +
-	"\x05event\x18\b \x01(\v2\x13.tunnel.v1.EventLogH\x00R\x05event\x128\n" +
-	"\vcommand_ack\x18\t \x01(\v2\x15.tunnel.v1.CommandAckH\x00R\n" +
-	"commandAck\x12A\n" +
+	"stream_end\x18\x06 \x01(\v2\x14.tunnel.v1.StreamEndB\x02\x18\x01H\x00R\tstreamEnd\x128\n" +
+	"\bregister\x18\a \x01(\v2\x1a.tunnel.v1.RegisterRequestH\x00R\bregister\x12/\n" +
+	"\x05event\x18\b \x01(\v2\x13.tunnel.v1.EventLogB\x02\x18\x01H\x00R\x05event\x12<\n" +
+	"\vcommand_ack\x18\t \x01(\v2\x15.tunnel.v1.CommandAckB\x02\x18\x01H\x00R\n" +
+	"commandAck\x12E\n" +
 	"\x0ecommand_output\x18\n" +
-	" \x01(\v2\x18.tunnel.v1.CommandOutputH\x00R\rcommandOutput\x12G\n" +
-	"\x10command_complete\x18\v \x01(\v2\x1a.tunnel.v1.CommandCompleteH\x00R\x0fcommandComplete\x125\n" +
+	" \x01(\v2\x18.tunnel.v1.CommandOutputB\x02\x18\x01H\x00R\rcommandOutput\x12K\n" +
+	"\x10command_complete\x18\v \x01(\v2\x1a.tunnel.v1.CommandCompleteB\x02\x18\x01H\x00R\x0fcommandComplete\x129\n" +
 	"\n" +
-	"file_chunk\x18\f \x01(\v2\x14.tunnel.v1.FileChunkH\x00R\tfileChunk\x12;\n" +
-	"\fstream_close\x18\r \x01(\v2\x16.tunnel.v1.StreamCloseH\x00R\vstreamClose\x12A\n" +
-	"\x0ecancel_request\x18\x0e \x01(\v2\x18.tunnel.v1.CancelRequestH\x00R\rcancelRequestB\t\n" +
-	"\apayload\"\xf7\x06\n" +
-	"\x0eManagerMessage\x12;\n" +
-	"\fhttp_request\x18\x01 \x01(\v2\x16.tunnel.v1.HttpRequestH\x00R\vhttpRequest\x12A\n" +
-	"\x0eheartbeat_pong\x18\x02 \x01(\v2\x18.tunnel.v1.HeartbeatPongH\x00R\rheartbeatPong\x126\n" +
-	"\bws_start\x18\x03 \x01(\v2\x19.tunnel.v1.WebSocketStartH\x00R\awsStart\x123\n" +
-	"\aws_data\x18\x04 \x01(\v2\x18.tunnel.v1.WebSocketDataH\x00R\x06wsData\x126\n" +
-	"\bws_close\x18\x05 \x01(\v2\x19.tunnel.v1.WebSocketCloseH\x00R\awsClose\x12J\n" +
-	"\x11register_response\x18\x06 \x01(\v2\x1b.tunnel.v1.RegisterResponseH\x00R\x10registerResponse\x12D\n" +
-	"\x0fcommand_request\x18\a \x01(\v2\x19.tunnel.v1.CommandRequestH\x00R\x0ecommandRequest\x128\n" +
-	"\vstream_open\x18\b \x01(\v2\x15.tunnel.v1.StreamOpenH\x00R\n" +
-	"streamOpen\x12;\n" +
-	"\fstream_close\x18\t \x01(\v2\x16.tunnel.v1.StreamCloseH\x00R\vstreamClose\x12A\n" +
+	"file_chunk\x18\f \x01(\v2\x14.tunnel.v1.FileChunkB\x02\x18\x01H\x00R\tfileChunk\x12?\n" +
+	"\fstream_close\x18\r \x01(\v2\x16.tunnel.v1.StreamCloseB\x02\x18\x01H\x00R\vstreamClose\x12E\n" +
+	"\x0ecancel_request\x18\x0e \x01(\v2\x18.tunnel.v1.CancelRequestB\x02\x18\x01H\x00R\rcancelRequest\x12/\n" +
+	"\bmux_data\x18\x0f \x01(\v2\x12.tunnel.v1.MuxDataH\x00R\amuxDataB\t\n" +
+	"\apayload\"\xdc\a\n" +
+	"\x0eManagerMessage\x12?\n" +
+	"\fhttp_request\x18\x01 \x01(\v2\x16.tunnel.v1.HttpRequestB\x02\x18\x01H\x00R\vhttpRequest\x12E\n" +
+	"\x0eheartbeat_pong\x18\x02 \x01(\v2\x18.tunnel.v1.HeartbeatPongB\x02\x18\x01H\x00R\rheartbeatPong\x12:\n" +
+	"\bws_start\x18\x03 \x01(\v2\x19.tunnel.v1.WebSocketStartB\x02\x18\x01H\x00R\awsStart\x127\n" +
+	"\aws_data\x18\x04 \x01(\v2\x18.tunnel.v1.WebSocketDataB\x02\x18\x01H\x00R\x06wsData\x12:\n" +
+	"\bws_close\x18\x05 \x01(\v2\x19.tunnel.v1.WebSocketCloseB\x02\x18\x01H\x00R\awsClose\x12J\n" +
+	"\x11register_response\x18\x06 \x01(\v2\x1b.tunnel.v1.RegisterResponseH\x00R\x10registerResponse\x12H\n" +
+	"\x0fcommand_request\x18\a \x01(\v2\x19.tunnel.v1.CommandRequestB\x02\x18\x01H\x00R\x0ecommandRequest\x12<\n" +
+	"\vstream_open\x18\b \x01(\v2\x15.tunnel.v1.StreamOpenB\x02\x18\x01H\x00R\n" +
+	"streamOpen\x12?\n" +
+	"\fstream_close\x18\t \x01(\v2\x16.tunnel.v1.StreamCloseB\x02\x18\x01H\x00R\vstreamClose\x12E\n" +
 	"\x0ecancel_request\x18\n" +
-	" \x01(\v2\x18.tunnel.v1.CancelRequestH\x00R\rcancelRequest\x125\n" +
+	" \x01(\v2\x18.tunnel.v1.CancelRequestB\x02\x18\x01H\x00R\rcancelRequest\x129\n" +
 	"\n" +
-	"file_chunk\x18\v \x01(\v2\x14.tunnel.v1.FileChunkH\x00R\tfileChunk\x128\n" +
-	"\vstream_data\x18\f \x01(\v2\x15.tunnel.v1.StreamDataH\x00R\n" +
-	"streamData\x125\n" +
+	"file_chunk\x18\v \x01(\v2\x14.tunnel.v1.FileChunkB\x02\x18\x01H\x00R\tfileChunk\x12<\n" +
+	"\vstream_data\x18\f \x01(\v2\x15.tunnel.v1.StreamDataB\x02\x18\x01H\x00R\n" +
+	"streamData\x129\n" +
 	"\n" +
-	"stream_end\x18\r \x01(\v2\x14.tunnel.v1.StreamEndH\x00R\tstreamEnd\x12A\n" +
-	"\x0ecommand_credit\x18\x0e \x01(\v2\x18.tunnel.v1.CommandCreditH\x00R\rcommandCreditB\t\n" +
+	"stream_end\x18\r \x01(\v2\x14.tunnel.v1.StreamEndB\x02\x18\x01H\x00R\tstreamEnd\x12E\n" +
+	"\x0ecommand_credit\x18\x0e \x01(\v2\x18.tunnel.v1.CommandCreditB\x02\x18\x01H\x00R\rcommandCredit\x12/\n" +
+	"\bmux_data\x18\x0f \x01(\v2\x12.tunnel.v1.MuxDataH\x00R\amuxDataB\t\n" +
 	"\apayload\"\xae\x01\n" +
 	"\x0fRegisterRequest\x12\x1f\n" +
 	"\vagent_token\x18\x01 \x01(\tR\n" +
@@ -2088,7 +2275,7 @@ const file_tunnel_v1_tunnel_proto_rawDesc = "" +
 	"\rsecurity_mode\x18\x05 \x01(\tR\fsecurityMode\x12\"\n" +
 	"\fcapabilities\x18\x06 \x03(\tR\fcapabilities\x12%\n" +
 	"\x0edrain_previous\x18\a \x01(\bR\rdrainPrevious\x12\x0e\n" +
-	"\x02id\x18\b \x01(\tR\x02id\"\x9a\x04\n" +
+	"\x02id\x18\b \x01(\tR\x02id\"\x9e\x04\n" +
 	"\x0eCommandRequest\x12\x1d\n" +
 	"\n" +
 	"command_id\x18\x01 \x01(\tR\tcommandId\x12!\n" +
@@ -2109,11 +2296,11 @@ const file_tunnel_v1_tunnel_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1a;\n" +
 	"\rMetadataEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"+\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01:\x02\x18\x01\"/\n" +
 	"\n" +
 	"CommandAck\x12\x1d\n" +
 	"\n" +
-	"command_id\x18\x01 \x01(\tR\tcommandId\"\xf3\x01\n" +
+	"command_id\x18\x01 \x01(\tR\tcommandId:\x02\x18\x01\"\xf7\x01\n" +
 	"\rCommandOutput\x12\x1d\n" +
 	"\n" +
 	"command_id\x18\x01 \x01(\tR\tcommandId\x12\x12\n" +
@@ -2123,7 +2310,7 @@ const file_tunnel_v1_tunnel_proto_rawDesc = "" +
 	"\aheaders\x18\x05 \x03(\v2%.tunnel.v1.CommandOutput.HeadersEntryR\aheaders\x1a:\n" +
 	"\fHeadersEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x8f\x02\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01:\x02\x18\x01\"\x93\x02\n" +
 	"\x0fCommandComplete\x12\x1d\n" +
 	"\n" +
 	"command_id\x18\x01 \x01(\tR\tcommandId\x12\x16\n" +
@@ -2134,7 +2321,7 @@ const file_tunnel_v1_tunnel_proto_rawDesc = "" +
 	"\tstreaming\x18\x06 \x01(\bR\tstreaming\x1a:\n" +
 	"\fHeadersEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xeb\x01\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01:\x02\x18\x01\"\xef\x01\n" +
 	"\tFileChunk\x12\x1f\n" +
 	"\vtransfer_id\x18\x01 \x01(\tR\n" +
 	"transferId\x12\x12\n" +
@@ -2144,7 +2331,7 @@ const file_tunnel_v1_tunnel_proto_rawDesc = "" +
 	"\bmetadata\x18\x05 \x03(\v2\".tunnel.v1.FileChunk.MetadataEntryR\bmetadata\x1a;\n" +
 	"\rMetadataEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x8f\x02\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01:\x02\x18\x01\"\x93\x02\n" +
 	"\n" +
 	"StreamOpen\x12\x1b\n" +
 	"\tstream_id\x18\x01 \x01(\tR\bstreamId\x12!\n" +
@@ -2156,17 +2343,17 @@ const file_tunnel_v1_tunnel_proto_rawDesc = "" +
 	"session_id\x18\x06 \x01(\tR\tsessionId\x1a:\n" +
 	"\fHeadersEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"@\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01:\x02\x18\x01\"D\n" +
 	"\vStreamClose\x12\x1b\n" +
 	"\tstream_id\x18\x01 \x01(\tR\bstreamId\x12\x14\n" +
-	"\x05error\x18\x02 \x01(\tR\x05error\".\n" +
+	"\x05error\x18\x02 \x01(\tR\x05error:\x02\x18\x01\"2\n" +
 	"\rCancelRequest\x12\x1d\n" +
 	"\n" +
-	"command_id\x18\x01 \x01(\tR\tcommandId\"D\n" +
+	"command_id\x18\x01 \x01(\tR\tcommandId:\x02\x18\x01\"H\n" +
 	"\rCommandCredit\x12\x1d\n" +
 	"\n" +
 	"command_id\x18\x01 \x01(\tR\tcommandId\x12\x14\n" +
-	"\x05bytes\x18\x02 \x01(\x03R\x05bytes\"\xfd\x01\n" +
+	"\x05bytes\x18\x02 \x01(\x03R\x05bytes:\x02\x18\x01\"\x81\x02\n" +
 	"\vHttpRequest\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12\x16\n" +
@@ -2177,7 +2364,7 @@ const file_tunnel_v1_tunnel_proto_rawDesc = "" +
 	"\x04body\x18\x06 \x01(\fR\x04body\x1a:\n" +
 	"\fHeadersEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xd5\x01\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01:\x02\x18\x01\"\xd9\x01\n" +
 	"\fHttpResponse\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12\x16\n" +
@@ -2186,20 +2373,20 @@ const file_tunnel_v1_tunnel_proto_rawDesc = "" +
 	"\x04body\x18\x04 \x01(\fR\x04body\x1a:\n" +
 	"\fHeadersEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"b\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01:\x02\x18\x01\"f\n" +
 	"\n" +
 	"StreamData\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12\x12\n" +
 	"\x04data\x18\x02 \x01(\fR\x04data\x12!\n" +
-	"\fmessage_type\x18\x03 \x01(\x05R\vmessageType\"*\n" +
+	"\fmessage_type\x18\x03 \x01(\x05R\vmessageType:\x02\x18\x01\".\n" +
 	"\tStreamEnd\x12\x1d\n" +
 	"\n" +
-	"request_id\x18\x01 \x01(\tR\trequestId\"\x1f\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId:\x02\x18\x01\"#\n" +
 	"\rHeartbeatPing\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"\x1f\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id:\x02\x18\x01\"#\n" +
 	"\rHeartbeatPong\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"\xd5\x01\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id:\x02\x18\x01\"\xd9\x01\n" +
 	"\x0eWebSocketStart\x12\x1b\n" +
 	"\tstream_id\x18\x01 \x01(\tR\bstreamId\x12\x12\n" +
 	"\x04path\x18\x02 \x01(\tR\x04path\x12\x14\n" +
@@ -2207,13 +2394,13 @@ const file_tunnel_v1_tunnel_proto_rawDesc = "" +
 	"\aheaders\x18\x04 \x03(\v2&.tunnel.v1.WebSocketStart.HeadersEntryR\aheaders\x1a:\n" +
 	"\fHeadersEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"c\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01:\x02\x18\x01\"g\n" +
 	"\rWebSocketData\x12\x1b\n" +
 	"\tstream_id\x18\x01 \x01(\tR\bstreamId\x12\x12\n" +
 	"\x04data\x18\x02 \x01(\fR\x04data\x12!\n" +
-	"\fmessage_type\x18\x03 \x01(\x05R\vmessageType\"-\n" +
+	"\fmessage_type\x18\x03 \x01(\x05R\vmessageType:\x02\x18\x01\"1\n" +
 	"\x0eWebSocketClose\x12\x1b\n" +
-	"\tstream_id\x18\x01 \x01(\tR\bstreamId\"\xc7\x02\n" +
+	"\tstream_id\x18\x01 \x01(\tR\bstreamId:\x02\x18\x01\"\xcb\x02\n" +
 	"\bEventLog\x12\x12\n" +
 	"\x04type\x18\x01 \x01(\tR\x04type\x12\x1a\n" +
 	"\bseverity\x18\x02 \x01(\tR\bseverity\x12\x14\n" +
@@ -2227,7 +2414,9 @@ const file_tunnel_v1_tunnel_proto_rawDesc = "" +
 	"\busername\x18\t \x01(\tR\busername\x12#\n" +
 	"\rmetadata_json\x18\n" +
 	" \x01(\fR\fmetadataJson\x12\x0e\n" +
-	"\x02id\x18\v \x01(\tR\x02id2R\n" +
+	"\x02id\x18\v \x01(\tR\x02id:\x02\x18\x01\"\x1d\n" +
+	"\aMuxData\x12\x12\n" +
+	"\x04data\x18\x01 \x01(\fR\x04data2R\n" +
 	"\rTunnelService\x12A\n" +
 	"\aConnect\x12\x17.tunnel.v1.AgentMessage\x1a\x19.tunnel.v1.ManagerMessage(\x010\x01BDZBgithub.com/getarcaneapp/arcane/backend/v2/proto/tunnel/v1;tunnelpbb\x06proto3"
 
@@ -2243,7 +2432,7 @@ func file_tunnel_v1_tunnel_proto_rawDescGZIP() []byte {
 	return file_tunnel_v1_tunnel_proto_rawDescData
 }
 
-var file_tunnel_v1_tunnel_proto_msgTypes = make([]protoimpl.MessageInfo, 32)
+var file_tunnel_v1_tunnel_proto_msgTypes = make([]protoimpl.MessageInfo, 33)
 var file_tunnel_v1_tunnel_proto_goTypes = []any{
 	(*AgentMessage)(nil),     // 0: tunnel.v1.AgentMessage
 	(*ManagerMessage)(nil),   // 1: tunnel.v1.ManagerMessage
@@ -2268,15 +2457,16 @@ var file_tunnel_v1_tunnel_proto_goTypes = []any{
 	(*WebSocketData)(nil),    // 20: tunnel.v1.WebSocketData
 	(*WebSocketClose)(nil),   // 21: tunnel.v1.WebSocketClose
 	(*EventLog)(nil),         // 22: tunnel.v1.EventLog
-	nil,                      // 23: tunnel.v1.CommandRequest.HeadersEntry
-	nil,                      // 24: tunnel.v1.CommandRequest.MetadataEntry
-	nil,                      // 25: tunnel.v1.CommandOutput.HeadersEntry
-	nil,                      // 26: tunnel.v1.CommandComplete.HeadersEntry
-	nil,                      // 27: tunnel.v1.FileChunk.MetadataEntry
-	nil,                      // 28: tunnel.v1.StreamOpen.HeadersEntry
-	nil,                      // 29: tunnel.v1.HttpRequest.HeadersEntry
-	nil,                      // 30: tunnel.v1.HttpResponse.HeadersEntry
-	nil,                      // 31: tunnel.v1.WebSocketStart.HeadersEntry
+	(*MuxData)(nil),          // 23: tunnel.v1.MuxData
+	nil,                      // 24: tunnel.v1.CommandRequest.HeadersEntry
+	nil,                      // 25: tunnel.v1.CommandRequest.MetadataEntry
+	nil,                      // 26: tunnel.v1.CommandOutput.HeadersEntry
+	nil,                      // 27: tunnel.v1.CommandComplete.HeadersEntry
+	nil,                      // 28: tunnel.v1.FileChunk.MetadataEntry
+	nil,                      // 29: tunnel.v1.StreamOpen.HeadersEntry
+	nil,                      // 30: tunnel.v1.HttpRequest.HeadersEntry
+	nil,                      // 31: tunnel.v1.HttpResponse.HeadersEntry
+	nil,                      // 32: tunnel.v1.WebSocketStart.HeadersEntry
 }
 var file_tunnel_v1_tunnel_proto_depIdxs = []int32{
 	14, // 0: tunnel.v1.AgentMessage.http_response:type_name -> tunnel.v1.HttpResponse
@@ -2293,36 +2483,38 @@ var file_tunnel_v1_tunnel_proto_depIdxs = []int32{
 	8,  // 11: tunnel.v1.AgentMessage.file_chunk:type_name -> tunnel.v1.FileChunk
 	10, // 12: tunnel.v1.AgentMessage.stream_close:type_name -> tunnel.v1.StreamClose
 	11, // 13: tunnel.v1.AgentMessage.cancel_request:type_name -> tunnel.v1.CancelRequest
-	13, // 14: tunnel.v1.ManagerMessage.http_request:type_name -> tunnel.v1.HttpRequest
-	18, // 15: tunnel.v1.ManagerMessage.heartbeat_pong:type_name -> tunnel.v1.HeartbeatPong
-	19, // 16: tunnel.v1.ManagerMessage.ws_start:type_name -> tunnel.v1.WebSocketStart
-	20, // 17: tunnel.v1.ManagerMessage.ws_data:type_name -> tunnel.v1.WebSocketData
-	21, // 18: tunnel.v1.ManagerMessage.ws_close:type_name -> tunnel.v1.WebSocketClose
-	3,  // 19: tunnel.v1.ManagerMessage.register_response:type_name -> tunnel.v1.RegisterResponse
-	4,  // 20: tunnel.v1.ManagerMessage.command_request:type_name -> tunnel.v1.CommandRequest
-	9,  // 21: tunnel.v1.ManagerMessage.stream_open:type_name -> tunnel.v1.StreamOpen
-	10, // 22: tunnel.v1.ManagerMessage.stream_close:type_name -> tunnel.v1.StreamClose
-	11, // 23: tunnel.v1.ManagerMessage.cancel_request:type_name -> tunnel.v1.CancelRequest
-	8,  // 24: tunnel.v1.ManagerMessage.file_chunk:type_name -> tunnel.v1.FileChunk
-	15, // 25: tunnel.v1.ManagerMessage.stream_data:type_name -> tunnel.v1.StreamData
-	16, // 26: tunnel.v1.ManagerMessage.stream_end:type_name -> tunnel.v1.StreamEnd
-	12, // 27: tunnel.v1.ManagerMessage.command_credit:type_name -> tunnel.v1.CommandCredit
-	23, // 28: tunnel.v1.CommandRequest.headers:type_name -> tunnel.v1.CommandRequest.HeadersEntry
-	24, // 29: tunnel.v1.CommandRequest.metadata:type_name -> tunnel.v1.CommandRequest.MetadataEntry
-	25, // 30: tunnel.v1.CommandOutput.headers:type_name -> tunnel.v1.CommandOutput.HeadersEntry
-	26, // 31: tunnel.v1.CommandComplete.headers:type_name -> tunnel.v1.CommandComplete.HeadersEntry
-	27, // 32: tunnel.v1.FileChunk.metadata:type_name -> tunnel.v1.FileChunk.MetadataEntry
-	28, // 33: tunnel.v1.StreamOpen.headers:type_name -> tunnel.v1.StreamOpen.HeadersEntry
-	29, // 34: tunnel.v1.HttpRequest.headers:type_name -> tunnel.v1.HttpRequest.HeadersEntry
-	30, // 35: tunnel.v1.HttpResponse.headers:type_name -> tunnel.v1.HttpResponse.HeadersEntry
-	31, // 36: tunnel.v1.WebSocketStart.headers:type_name -> tunnel.v1.WebSocketStart.HeadersEntry
-	0,  // 37: tunnel.v1.TunnelService.Connect:input_type -> tunnel.v1.AgentMessage
-	1,  // 38: tunnel.v1.TunnelService.Connect:output_type -> tunnel.v1.ManagerMessage
-	38, // [38:39] is the sub-list for method output_type
-	37, // [37:38] is the sub-list for method input_type
-	37, // [37:37] is the sub-list for extension type_name
-	37, // [37:37] is the sub-list for extension extendee
-	0,  // [0:37] is the sub-list for field type_name
+	23, // 14: tunnel.v1.AgentMessage.mux_data:type_name -> tunnel.v1.MuxData
+	13, // 15: tunnel.v1.ManagerMessage.http_request:type_name -> tunnel.v1.HttpRequest
+	18, // 16: tunnel.v1.ManagerMessage.heartbeat_pong:type_name -> tunnel.v1.HeartbeatPong
+	19, // 17: tunnel.v1.ManagerMessage.ws_start:type_name -> tunnel.v1.WebSocketStart
+	20, // 18: tunnel.v1.ManagerMessage.ws_data:type_name -> tunnel.v1.WebSocketData
+	21, // 19: tunnel.v1.ManagerMessage.ws_close:type_name -> tunnel.v1.WebSocketClose
+	3,  // 20: tunnel.v1.ManagerMessage.register_response:type_name -> tunnel.v1.RegisterResponse
+	4,  // 21: tunnel.v1.ManagerMessage.command_request:type_name -> tunnel.v1.CommandRequest
+	9,  // 22: tunnel.v1.ManagerMessage.stream_open:type_name -> tunnel.v1.StreamOpen
+	10, // 23: tunnel.v1.ManagerMessage.stream_close:type_name -> tunnel.v1.StreamClose
+	11, // 24: tunnel.v1.ManagerMessage.cancel_request:type_name -> tunnel.v1.CancelRequest
+	8,  // 25: tunnel.v1.ManagerMessage.file_chunk:type_name -> tunnel.v1.FileChunk
+	15, // 26: tunnel.v1.ManagerMessage.stream_data:type_name -> tunnel.v1.StreamData
+	16, // 27: tunnel.v1.ManagerMessage.stream_end:type_name -> tunnel.v1.StreamEnd
+	12, // 28: tunnel.v1.ManagerMessage.command_credit:type_name -> tunnel.v1.CommandCredit
+	23, // 29: tunnel.v1.ManagerMessage.mux_data:type_name -> tunnel.v1.MuxData
+	24, // 30: tunnel.v1.CommandRequest.headers:type_name -> tunnel.v1.CommandRequest.HeadersEntry
+	25, // 31: tunnel.v1.CommandRequest.metadata:type_name -> tunnel.v1.CommandRequest.MetadataEntry
+	26, // 32: tunnel.v1.CommandOutput.headers:type_name -> tunnel.v1.CommandOutput.HeadersEntry
+	27, // 33: tunnel.v1.CommandComplete.headers:type_name -> tunnel.v1.CommandComplete.HeadersEntry
+	28, // 34: tunnel.v1.FileChunk.metadata:type_name -> tunnel.v1.FileChunk.MetadataEntry
+	29, // 35: tunnel.v1.StreamOpen.headers:type_name -> tunnel.v1.StreamOpen.HeadersEntry
+	30, // 36: tunnel.v1.HttpRequest.headers:type_name -> tunnel.v1.HttpRequest.HeadersEntry
+	31, // 37: tunnel.v1.HttpResponse.headers:type_name -> tunnel.v1.HttpResponse.HeadersEntry
+	32, // 38: tunnel.v1.WebSocketStart.headers:type_name -> tunnel.v1.WebSocketStart.HeadersEntry
+	0,  // 39: tunnel.v1.TunnelService.Connect:input_type -> tunnel.v1.AgentMessage
+	1,  // 40: tunnel.v1.TunnelService.Connect:output_type -> tunnel.v1.ManagerMessage
+	40, // [40:41] is the sub-list for method output_type
+	39, // [39:40] is the sub-list for method input_type
+	39, // [39:39] is the sub-list for extension type_name
+	39, // [39:39] is the sub-list for extension extendee
+	0,  // [0:39] is the sub-list for field type_name
 }
 
 func init() { file_tunnel_v1_tunnel_proto_init() }
@@ -2345,6 +2537,7 @@ func file_tunnel_v1_tunnel_proto_init() {
 		(*AgentMessage_FileChunk)(nil),
 		(*AgentMessage_StreamClose)(nil),
 		(*AgentMessage_CancelRequest)(nil),
+		(*AgentMessage_MuxData)(nil),
 	}
 	file_tunnel_v1_tunnel_proto_msgTypes[1].OneofWrappers = []any{
 		(*ManagerMessage_HttpRequest)(nil),
@@ -2361,6 +2554,7 @@ func file_tunnel_v1_tunnel_proto_init() {
 		(*ManagerMessage_StreamData)(nil),
 		(*ManagerMessage_StreamEnd)(nil),
 		(*ManagerMessage_CommandCredit)(nil),
+		(*ManagerMessage_MuxData)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -2368,7 +2562,7 @@ func file_tunnel_v1_tunnel_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_tunnel_v1_tunnel_proto_rawDesc), len(file_tunnel_v1_tunnel_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   32,
+			NumMessages:   33,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

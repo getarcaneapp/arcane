@@ -222,6 +222,10 @@ func (s *TunnelServer) HandlePoll(c *echo.Context) error {
 
 	tunnel, _ := s.registry.Get(envID).Get()
 	connected := tunnel.connected()
+	// Open streams (terminals, log follows, pulls) keep the session wanted even without new requests.
+	if connected && tunnel.openStreams() > 0 {
+		TouchTunnelDemand(envID, DefaultTunnelDemandTTL)
+	}
 	resp := TunnelPollResponse{
 		Status:              GetDemandRegistry().DesiredStatus(envID, connected, now),
 		PollIntervalSeconds: int(DefaultTunnelPollInterval / time.Second),

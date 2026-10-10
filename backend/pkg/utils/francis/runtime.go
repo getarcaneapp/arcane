@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -67,6 +68,12 @@ func New(databaseURL, encryptionKey, instanceID, port string, options ...local.H
 	if err != nil {
 		return nil, err
 	}
+	// The QUIC peer server only listens on loopback, where a kernel-capped UDP buffer costs nothing, so
+	// quic-go's buffer-size warning is noise unless the operator opted back in.
+	if _, set := os.LookupEnv("QUIC_GO_DISABLE_RECEIVE_BUFFER_WARNING"); !set {
+		// Setenv only fails for keys containing '=' or NUL, which this constant key cannot.
+		_ = os.Setenv("QUIC_GO_DISABLE_RECEIVE_BUFFER_WARNING", "true")
+	}
 	address := net.JoinHostPort("127.0.0.1", port)
 	runtime := &Runtime{
 		service: &actor.Service{}, ready: make(chan struct{}), done: make(chan struct{}), address: address, storeURL: storeURL,
@@ -77,7 +84,7 @@ func New(databaseURL, encryptionKey, instanceID, port string, options ...local.H
 			local.WithAlarmsFetchAheadInterval(30 * time.Second), local.WithAlarmsLeaseDuration(180 * time.Second),
 		},
 	}
-	runtime.options = append(runtime.options, local.WithLogger(slog.New(&actorLogHandlerInternal{
+	runtime.options = append(runtime.options, local.WithLogger(slog.New(&actorLogHandler{
 		Handler: slog.Default().With("scope", "francis.arcane.internal").Handler(),
 		names:   &runtime.actorNames,
 	})))

@@ -1262,6 +1262,9 @@ func ApplyEnvironmentRuntimeState(env *environment.Environment) {
 	env.EdgeSessionID = nil
 	env.EdgeAgentInstance = nil
 	env.EdgeCapabilities = nil
+	env.EdgeDataPlane = nil
+	env.EdgeRoundTripMs = nil
+	env.EdgeOpenStreams = nil
 
 	if pollState, ok := edge.GetPollRuntimeRegistry().Get(env.ID, time.Now()).Get(); ok {
 		env.LastPollAt = pollState.LastPollAt
@@ -1285,10 +1288,13 @@ func ApplyEnvironmentRuntimeState(env *environment.Environment) {
 		if len(runtimeState.Capabilities) > 0 {
 			env.EdgeCapabilities = append([]string(nil), runtimeState.Capabilities...)
 		}
-		if transport, localOk := edge.GetActiveTunnelTransport(env.ID).Get(); localOk {
-			env.EdgeTransport = &transport
-		} else if runtimeState.Transport != "" {
+		if runtimeState.Transport != "" {
 			env.EdgeTransport = &runtimeState.Transport
+		}
+		env.EdgeDataPlane = &runtimeState.DataPlane
+		env.EdgeOpenStreams = &runtimeState.OpenStreams
+		if runtimeState.RoundTripTime != nil {
+			env.EdgeRoundTripMs = new(float64(runtimeState.RoundTripTime.Microseconds()) / 1000)
 		}
 		return
 	}

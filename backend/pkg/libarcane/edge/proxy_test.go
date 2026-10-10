@@ -150,7 +150,7 @@ func TestProxyHTTPRequest_GRPCTunnel(t *testing.T) {
 	defer func() { _ = conn.Close() }()
 
 	client := tunnelpb.NewTunnelServiceClient(conn)
-	stream, err := client.Connect(testGRPCOutgoingContextInternal(ctx, "valid-token"))
+	stream, err := client.Connect(testGRPCOutgoingContext(ctx, "valid-token"))
 	require.NoError(t, err)
 
 	err = stream.Send(&tunnelpb.AgentMessage{Payload: &tunnelpb.AgentMessage_Register{Register: &tunnelpb.RegisterRequest{AgentToken: "valid-token"}}})
@@ -313,45 +313,6 @@ func TestHasActiveTunnel(t *testing.T) {
 
 	_ = tunnel.CloseWithReason("")
 	assert.False(t, HasActiveTunnel("env-active"))
-}
-
-func TestIsHopByHopHeader(t *testing.T) {
-	assert.True(t, isHopByHopHeader("Connection"))
-	assert.True(t, isHopByHopHeader("Keep-Alive"))
-	assert.True(t, isHopByHopHeader("Proxy-Authenticate"))
-	assert.True(t, isHopByHopHeader("Upgrade"))
-	assert.False(t, isHopByHopHeader("Content-Type"))
-	assert.False(t, isHopByHopHeader("X-Custom-Header"))
-}
-
-func TestIsBrowserSecurityHeader(t *testing.T) {
-	browserHeaders := []string{
-		"Origin",
-		"Referer",
-		"Cookie",
-		"Access-Control-Request-Method",
-		"Access-Control-Request-Headers",
-		"Sec-Fetch-Mode",
-		"Sec-Fetch-Site",
-		"Sec-Fetch-Dest",
-	}
-
-	for _, h := range browserHeaders {
-		assert.True(t, isBrowserSecurityHeader(h), "expected %q to be a browser security header", h)
-	}
-
-	nonBrowserHeaders := []string{
-		"Content-Type",
-		"Authorization",
-		"X-Custom-Header",
-		"X-Arcane-Agent-Token",
-		"X-API-Key",
-		"Accept",
-	}
-
-	for _, h := range nonBrowserHeaders {
-		assert.False(t, isBrowserSecurityHeader(h), "expected %q to NOT be a browser security header", h)
-	}
 }
 
 func TestProxyHTTPRequest_StripsBrowserHeaders(t *testing.T) {

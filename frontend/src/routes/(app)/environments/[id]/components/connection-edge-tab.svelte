@@ -1,12 +1,10 @@
 <script lang="ts">
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import SettingsRow from '#lib/components/settings/settings-row.svelte';
-	import SettingsSection from '#lib/components/settings/settings-section.svelte';
+	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { DownloadIcon, ResetIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { formatDateTimeShort } from '#lib/utils/formatting.js';
 
-	import { badgeTile, tile } from './connection-tiles.svelte';
 	import EnvironmentConnectionDetails from './environment-connection-details.svelte';
 	import type { ConnectionEdgeTabProps } from './tab-props';
 
@@ -15,7 +13,6 @@
 	let mtlsBundleDownloadHref = $derived(`/api/environments/${environment.id}/deployment/mtls/bundle`);
 	let mtlsCertificateDownloadHref = $derived(`/api/environments/${environment.id}/deployment/mtls/agent.crt`);
 	let mtlsKeyDownloadHref = $derived(`/api/environments/${environment.id}/deployment/mtls/agent.key`);
-	let showAgentSecurity = $derived(environment.id !== '0');
 
 	let mtlsCertificateBadge = $derived.by((): { text: string; variant: 'green' | 'amber' | 'red' } | null => {
 		const cert = environment.edgeMTLSCertificate;
@@ -31,47 +28,46 @@
 </script>
 
 <div class="space-y-8">
-	<SettingsSection title={m.connection_edge()} description={m.connection_edge_description()} variant="plain">
-		<EnvironmentConnectionDetails {environment} {currentStatus} />
-	</SettingsSection>
+	<EnvironmentConnectionDetails {environment} {currentStatus} />
 
-	{#if showAgentSecurity}
-		<SettingsSection title={m.environments_agent_mtls_section_title()} description={m.environments_agent_mtls_description()}>
+	<section class="flex flex-col gap-4">
+		<h2 class="px-1 text-base font-semibold">{m.environments_edge_security_title()}</h2>
+		<div class="flex flex-col divide-y divide-border/50 px-1">
 			{#if mtlsCertificateBadge && environment.edgeMTLSCertificate}
-				<div class="grid grid-cols-1 gap-3 p-5 sm:grid-cols-2 lg:grid-cols-3">
-					{@render badgeTile(
-						m.environments_edge_mtls_certificate_status_label(),
-						mtlsCertificateBadge.text,
-						mtlsCertificateBadge.variant
-					)}
-					{@render tile(
-						m.environments_edge_mtls_certificate_expires_label(),
-						environment.edgeMTLSCertificate.expiresAt
-							? formatDateTimeShort(environment.edgeMTLSCertificate.expiresAt) || m.common_unknown()
-							: '—',
-						{
-							subtext:
-								environment.edgeMTLSCertificate.daysRemaining !== undefined
-									? m.environments_edge_mtls_certificate_days_remaining({
-											count: environment.edgeMTLSCertificate.daysRemaining
-										})
-									: undefined
-						}
-					)}
-					{#if environment.edgeMTLSCertificate.commonName}
-						{@render tile(m.environments_edge_mtls_certificate_common_name_label(), environment.edgeMTLSCertificate.commonName, {
-							mono: true
-						})}
+				{@const cert = environment.edgeMTLSCertificate}
+				<div class="flex flex-wrap items-center justify-between gap-4 py-5 first:pt-0 last:pb-0">
+					<div class="min-w-0">
+						<div class="flex items-center gap-2">
+							<span class="text-sm font-semibold">{m.environments_edge_mtls_certificate_status_label()}</span>
+							<Badge variant={mtlsCertificateBadge.variant} size="sm" hoverEffect="none">{mtlsCertificateBadge.text}</Badge>
+						</div>
+						{#if cert.commonName}
+							<div class="mt-1 font-mono text-xs break-all text-muted-foreground select-all">{cert.commonName}</div>
+						{/if}
+					</div>
+					{#if cert.expiresAt}
+						<div class="text-right text-xs">
+							<div class="text-muted-foreground">
+								{m.environments_edge_mtls_certificate_expires_on({
+									date: formatDateTimeShort(cert.expiresAt) || m.common_unknown()
+								})}
+							</div>
+							{#if cert.daysRemaining !== undefined}
+								<div class="font-medium">
+									{m.environments_edge_mtls_certificate_days_remaining({ count: cert.daysRemaining })}
+								</div>
+							{/if}
+						</div>
 					{/if}
 				</div>
 			{/if}
 
 			{#if showMTLSDownloads}
-				<SettingsRow
-					label={m.environments_agent_mtls_downloads_label()}
-					description={m.environments_agent_mtls_downloads_description()}
-					layout="wide"
-				>
+				<div class="flex flex-wrap items-center justify-between gap-4 py-5 first:pt-0 last:pb-0">
+					<div class="min-w-0">
+						<div class="text-sm font-semibold">{m.environments_agent_mtls_downloads_label()}</div>
+						<p class="text-xs text-muted-foreground">{m.environments_agent_mtls_downloads_description()}</p>
+					</div>
 					<div class="flex flex-wrap items-center gap-2">
 						<ArcaneButton
 							action="base"
@@ -98,24 +94,24 @@
 							customLabel={m.environments_agent_mtls_download_key()}
 						/>
 					</div>
-				</SettingsRow>
+				</div>
 			{/if}
 
-			<SettingsRow
-				label={m.environments_regenerate_api_key()}
-				description={m.environments_regenerate_dialog_message()}
-				layout="switch"
-			>
+			<div class="flex flex-wrap items-center justify-between gap-4 py-5 first:pt-0 last:pb-0">
+				<div class="min-w-0">
+					<div class="text-sm font-semibold">{m.environments_regenerate_api_key()}</div>
+					<p class="text-xs text-muted-foreground">{m.environments_regenerate_api_key_description()}</p>
+				</div>
 				<ArcaneButton
 					action="base"
-					tone="outline"
+					tone="outline-destructive"
 					onclick={onRegenerateApiKey}
 					disabled={isRegeneratingKey}
 					loading={isRegeneratingKey}
 					icon={ResetIcon}
 					customLabel={m.environments_regenerate_api_key()}
 				/>
-			</SettingsRow>
-		</SettingsSection>
-	{/if}
+			</div>
+		</div>
+	</section>
 </div>

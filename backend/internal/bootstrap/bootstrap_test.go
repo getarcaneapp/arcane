@@ -60,12 +60,12 @@ func TestNormalizeTunnelGRPCRequestPath(t *testing.T) {
 	fullMethodPath := tunnelpb.TunnelService_Connect_FullMethodName
 
 	t.Run("nil request", func(t *testing.T) {
-		assert.Nil(t, normalizeTunnelGRPCRequestPathInternal(nil))
+		assert.Nil(t, normalizeTunnelGRPCRequestPath(nil))
 	})
 
 	t.Run("path without prefix remains unchanged", func(t *testing.T) {
 		req := httptest.NewRequest("POST", fullMethodPath, http.NoBody)
-		normalized := normalizeTunnelGRPCRequestPathInternal(req)
+		normalized := normalizeTunnelGRPCRequestPath(req)
 
 		assert.Same(t, req, normalized)
 		assert.Equal(t, fullMethodPath, normalized.URL.Path)
@@ -73,7 +73,7 @@ func TestNormalizeTunnelGRPCRequestPath(t *testing.T) {
 
 	t.Run("api prefix is removed", func(t *testing.T) {
 		req := httptest.NewRequest("POST", "/api"+fullMethodPath, http.NoBody)
-		normalized := normalizeTunnelGRPCRequestPathInternal(req)
+		normalized := normalizeTunnelGRPCRequestPath(req)
 
 		assert.NotSame(t, req, normalized)
 		assert.Equal(t, fullMethodPath, normalized.URL.Path)
@@ -82,7 +82,7 @@ func TestNormalizeTunnelGRPCRequestPath(t *testing.T) {
 
 	t.Run("nested proxy prefix is removed up to method path", func(t *testing.T) {
 		req := httptest.NewRequest("POST", "/edge/proxy/api"+fullMethodPath, http.NoBody)
-		normalized := normalizeTunnelGRPCRequestPathInternal(req)
+		normalized := normalizeTunnelGRPCRequestPath(req)
 
 		assert.NotSame(t, req, normalized)
 		assert.Equal(t, fullMethodPath, normalized.URL.Path)
@@ -93,7 +93,7 @@ func TestNormalizeTunnelGRPCRequestPath(t *testing.T) {
 		// Edge agents use /api/tunnel/connect as their gRPC method path so reverse proxies
 		// can route tunnel traffic on a stable URL.
 		req := httptest.NewRequest("POST", "/api/tunnel/connect", http.NoBody)
-		normalized := normalizeTunnelGRPCRequestPathInternal(req)
+		normalized := normalizeTunnelGRPCRequestPath(req)
 
 		assert.NotSame(t, req, normalized)
 		assert.Equal(t, fullMethodPath, normalized.URL.Path)
@@ -102,7 +102,7 @@ func TestNormalizeTunnelGRPCRequestPath(t *testing.T) {
 
 	t.Run("nested proxy with legacy /api/tunnel/connect is rewritten", func(t *testing.T) {
 		req := httptest.NewRequest("POST", "/edge/proxy/api/tunnel/connect", http.NoBody)
-		normalized := normalizeTunnelGRPCRequestPathInternal(req)
+		normalized := normalizeTunnelGRPCRequestPath(req)
 
 		assert.NotSame(t, req, normalized)
 		assert.Equal(t, fullMethodPath, normalized.URL.Path)
@@ -116,30 +116,30 @@ func TestIsTunnelGRPCRequest(t *testing.T) {
 	t.Run("detects by grpc content-type", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/any/path", http.NoBody)
 		req.Header.Set("Content-Type", "application/grpc")
-		assert.True(t, isTunnelGRPCRequestInternal(req))
+		assert.True(t, isTunnelGRPCRequest(req))
 	})
 
 	t.Run("detects by grpc-web content-type", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/any/path", http.NoBody)
 		req.Header.Set("Content-Type", "application/grpc-web+proto")
-		assert.True(t, isTunnelGRPCRequestInternal(req))
+		assert.True(t, isTunnelGRPCRequest(req))
 	})
 
 	t.Run("detects by method path without grpc content-type", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, fullMethodPath, http.NoBody)
-		assert.True(t, isTunnelGRPCRequestInternal(req))
+		assert.True(t, isTunnelGRPCRequest(req))
 	})
 
 	t.Run("does not match regular api requests", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/api/environments/pair", http.NoBody)
 		req.Header.Set("Content-Type", "application/json")
-		assert.False(t, isTunnelGRPCRequestInternal(req))
+		assert.False(t, isTunnelGRPCRequest(req))
 	})
 
 	t.Run("requires post", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, fullMethodPath, http.NoBody)
 		req.Header.Set("Content-Type", "application/grpc")
-		assert.False(t, isTunnelGRPCRequestInternal(req))
+		assert.False(t, isTunnelGRPCRequest(req))
 	})
 
 	t.Run("does not match http2 post with te trailers and json content-type", func(t *testing.T) {
@@ -147,7 +147,7 @@ func TestIsTunnelGRPCRequest(t *testing.T) {
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Te", "trailers")
 		req.ProtoMajor = 2
-		assert.False(t, isTunnelGRPCRequestInternal(req))
+		assert.False(t, isTunnelGRPCRequest(req))
 	})
 
 	t.Run("does not match http2 post with te trailers and form content-type", func(t *testing.T) {
@@ -155,7 +155,7 @@ func TestIsTunnelGRPCRequest(t *testing.T) {
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		req.Header.Set("Te", "trailers")
 		req.ProtoMajor = 2
-		assert.False(t, isTunnelGRPCRequestInternal(req))
+		assert.False(t, isTunnelGRPCRequest(req))
 	})
 }
 
@@ -163,7 +163,7 @@ func TestConfigureHTTPProtocols(t *testing.T) {
 	handler := http.NewServeMux()
 
 	t.Run("tls enables http1 and http2", func(t *testing.T) {
-		configuredHandler, protocols := configureHTTPProtocolsInternal(true, handler)
+		configuredHandler, protocols := configureHTTPProtocols(true, handler)
 
 		assert.Same(t, handler, configuredHandler)
 		require.NotNil(t, protocols)
@@ -173,7 +173,7 @@ func TestConfigureHTTPProtocols(t *testing.T) {
 	})
 
 	t.Run("plain enables http1 and unencrypted http2", func(t *testing.T) {
-		configuredHandler, protocols := configureHTTPProtocolsInternal(false, handler)
+		configuredHandler, protocols := configureHTTPProtocols(false, handler)
 
 		// The plain path wraps the handler to clear the stale h2c read
 		// deadline, so it is deliberately not the same handler.
@@ -203,7 +203,7 @@ func TestHTTP2APIResponsesDoNotUseAPIGzip(t *testing.T) {
 		AuthMiddleware: auth.NewAuthMiddleware(nil, cfg),
 		TunnelRegistry: edge.NewTunnelRegistry(),
 	})
-	handler, protocols := configureHTTPProtocolsInternal(false, router)
+	handler, protocols := configureHTTPProtocols(false, router)
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
@@ -265,7 +265,7 @@ func TestH2CStreamSurvivesPastReadHeaderTimeout(t *testing.T) {
 		<-release
 		_, _ = w.Write([]byte("done"))
 	})
-	handler, protocols := configureHTTPProtocolsInternal(false, streamHandler)
+	handler, protocols := configureHTTPProtocols(false, streamHandler)
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
@@ -468,7 +468,7 @@ func TestPrepareServerTLS_AgentModeSkipsManagerMTLSValidation(t *testing.T) {
 		ManagerApiUrl: "https://127.0.0.1:3552",
 	}
 
-	useTLS, tlsCertFile, tlsKeyFile, edgeCfg, err := prepareServerTLSInternal(t.Context(), cfg)
+	useTLS, tlsCertFile, tlsKeyFile, edgeCfg, err := prepareServerTLS(t.Context(), cfg)
 	require.NoError(t, err)
 	assert.False(t, useTLS)
 	assert.Empty(t, tlsCertFile)
@@ -491,7 +491,7 @@ func TestPrepareServerTLS_AllowsExternalMTLSTermination(t *testing.T) {
 		EncryptionKey:     "test-encryption-key-for-edge-mtls-32bytes-min",
 	}
 
-	useTLS, tlsCertFile, tlsKeyFile, edgeCfg, err := prepareServerTLSInternal(t.Context(), cfg)
+	useTLS, tlsCertFile, tlsKeyFile, edgeCfg, err := prepareServerTLS(t.Context(), cfg)
 	require.NoError(t, err)
 	assert.False(t, useTLS)
 	assert.Empty(t, tlsCertFile)

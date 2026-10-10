@@ -1,81 +1,110 @@
 package edge
 
 import (
+	"bytes"
+	"context"
+	"encoding/json/v2"
 	"errors"
+	"fmt"
+	"io"
+	"net/http"
 	"strings"
 	"sync"
+	"time"
 	"uuid"
 )
 
 const (
-	// ErrNoActiveAgentTunnel is returned when no active agent tunnel exists for outbound event sync.
-
-	// TunnelEventTypeNotificationDispatch marks a tunnel event that carries a
-	// notification dispatch request in MetadataJSON instead of an event-log entry.
-	// Tunnel-connected agents have no manager HTTP config, so notification
-	// dispatch rides the existing agent-to-manager event channel (#3002).
+	// TunnelEventTypeNotificationDispatch marks an event carrying a notification dispatch request in MetadataJSON;
+	// tunnel-connected agents lack manager HTTP config, so dispatch rides the event channel (#3002).
 	TunnelEventTypeNotificationDispatch = "notification.dispatch"
+
+	// edgeEventTimeout bounds the manager's processing of one agent event.
+	edgeEventTimeout = 15 * time.Second
 )
 
+// ErrNoActiveAgentTunnel is returned when no active agent tunnel exists for outbound event sync.
 var ErrNoActiveAgentTunnel = errors.New("no active edge agent tunnel")
 
-var agentTunnelState struct {
-	mu   sync.RWMutex
+// agentEventSink is where the agent's live tunnel session accepts events: a multiplexed
+// session's client, or a legacy connection.
+type agentEventSink struct {
+	client *http.Client
+	// Deprecated: legacy edge message protocol; remove in v3.
 	conn TunnelConnection
 }
 
-func setActiveAgentTunnelConn(conn TunnelConnection) {
-	agentTunnelState.mu.Lock()
-	defer agentTunnelState.mu.Unlock()
-	agentTunnelState.conn = conn
+var activeAgentEvents struct {
+	mu   sync.RWMutex
+	sink *agentEventSink
 }
 
-func clearActiveAgentTunnelConn(conn TunnelConnection) {
-	agentTunnelState.mu.Lock()
-	defer agentTunnelState.mu.Unlock()
-	if agentTunnelState.conn == conn {
-		agentTunnelState.conn = nil
+// setActiveAgentEvents publishes sink for PublishEventToManager. restore clears it unless a newer session replaced it.
+func setActiveAgentEvents(sink *agentEventSink) (restore func()) {
+	activeAgentEvents.mu.Lock()
+	activeAgentEvents.sink = sink
+	activeAgentEvents.mu.Unlock()
+	return func() {
+		activeAgentEvents.mu.Lock()
+		if activeAgentEvents.sink == sink {
+			activeAgentEvents.sink = nil
+		}
+		activeAgentEvents.mu.Unlock()
 	}
-}
-
-func getActiveAgentTunnelConn() TunnelConnection {
-	agentTunnelState.mu.RLock()
-	defer agentTunnelState.mu.RUnlock()
-	return agentTunnelState.conn
 }
 
 // PublishEventToManager sends an event from the active agent tunnel to the manager.
-func PublishEventToManager(event *TunnelEvent) error {
-	if event == nil {
-		return errors.New("event is required")
-	}
-	if strings.TrimSpace(event.Type) == "" {
-		return errors.New("event type is required")
-	}
-	if strings.TrimSpace(event.Title) == "" {
-		return errors.New("event title is required")
+func PublishEventToManager(ctx context.Context, event *TunnelEvent) error {
+	if err := validateTunnelEvent(event); err != nil {
+		return err
 	}
 
-	conn := getActiveAgentTunnelConn()
-	if conn == nil || conn.IsClosed() {
+	activeAgentEvents.mu.RLock()
+	sink := activeAgentEvents.sink
+	activeAgentEvents.mu.RUnlock()
+	switch {
+	case sink == nil:
 		return ErrNoActiveAgentTunnel
+	case sink.conn != nil:
+		if sink.conn.IsClosed() {
+			return ErrNoActiveAgentTunnel
+		}
+		return sink.conn.Send(&TunnelMessage{ID: uuid.New().String(), Type: MessageTypeEvent, Event: event})
 	}
 
-	msg := &TunnelMessage{
-		ID:    uuid.New().String(),
-		Type:  MessageTypeEvent,
-		Event: cloneTunnelEvent(event),
+	body, err := json.Marshal(event)
+	if err != nil {
+		return fmt.Errorf("encode edge event: %w", err)
 	}
-	return conn.Send(msg)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, muxManagerBaseURL+muxEventsPath, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("create edge event request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := sink.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("send edge event: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusNoContent {
+		message, readErr := io.ReadAll(io.LimitReader(resp.Body, 512))
+		if readErr != nil {
+			return fmt.Errorf("manager rejected edge event with status %d (reading response body: %w)", resp.StatusCode, readErr)
+		}
+		return fmt.Errorf("manager rejected edge event with status %d: %s", resp.StatusCode, strings.TrimSpace(string(message)))
+	}
+	return nil
 }
 
-func cloneTunnelEvent(event *TunnelEvent) *TunnelEvent {
-	if event == nil {
-		return nil
+// validateTunnelEvent checks the fields both peers require of an agent event.
+func validateTunnelEvent(event *TunnelEvent) error {
+	switch {
+	case event == nil:
+		return errors.New("event is required")
+	case strings.TrimSpace(event.Type) == "":
+		return errors.New("event type is required")
+	case strings.TrimSpace(event.Title) == "":
+		return errors.New("event title is required")
 	}
-	cloned := *event
-	if len(event.MetadataJSON) > 0 {
-		cloned.MetadataJSON = append([]byte(nil), event.MetadataJSON...)
-	}
-	return &cloned
+	return nil
 }

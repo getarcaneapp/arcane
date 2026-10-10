@@ -1066,8 +1066,9 @@ test.describe('Edge agents', () => {
 			}
 
 			await expect(page.getByTitle('API URL', { exact: true })).toHaveText(/edge:\/\/edge-agent-/);
-			await expect(page.getByText('Edge', { exact: true }).first()).toBeVisible();
-			await expect(page.getByText('Live Tunnel', { exact: true })).toBeVisible();
+			// A new edge environment waits for its agent, and the connection view opens by default.
+			await expect(page.getByText('Connecting', { exact: true })).toBeVisible();
+			await expect(page.getByRole('heading', { name: 'Security', exact: true })).toBeVisible();
 			await expect(
 				page.getByRole('tab', { name: 'Connection & Edge', exact: true })
 			).toHaveAttribute('data-state', 'active');

@@ -2,6 +2,7 @@ package edge
 
 import (
 	"strings"
+	"time"
 
 	"github.com/samber/mo"
 )
@@ -81,18 +82,6 @@ func UsePollEdgeTransport(cfg *Config) bool {
 	return NormalizeEdgeTransport(cfg.EdgeTransport) == EdgeTransportPoll
 }
 
-// GetActiveTunnelTransport returns the currently active tunnel transport for an environment.
-func GetActiveTunnelTransport(envID string) mo.Option[string] {
-	tunnel, ok := GetActiveTunnel(envID).Get()
-	if !ok {
-		return mo.None[string]()
-	}
-	if transport := tunnel.Conn.Transport(); transport != "" {
-		return mo.Some(transport)
-	}
-	return mo.None[string]()
-}
-
 // GetTunnelRuntimeState returns live metadata for an active tunnel.
 func GetTunnelRuntimeState(envID string) mo.Option[*TunnelRuntimeState] {
 	tunnel, ok := GetActiveTunnel(envID).Get()
@@ -102,7 +91,9 @@ func GetTunnelRuntimeState(envID string) mo.Option[*TunnelRuntimeState] {
 	// One snapshot under a single read lock keeps the fields consistent and race-free.
 	meta := tunnel.MetadataSnapshot()
 
-	return mo.Some(&TunnelRuntimeState{
+	state := &TunnelRuntimeState{
+		DataPlane:     EdgeDataPlaneLegacy,
+		OpenStreams:   tunnel.openStreams(),
 		Transport:     tunnel.Conn.Transport(),
 		ConnectedAt:   new(meta.ConnectedAt),
 		LastHeartbeat: new(meta.LastHeartbeat),
@@ -111,5 +102,12 @@ func GetTunnelRuntimeState(envID string) mo.Option[*TunnelRuntimeState] {
 		SecurityMode:  meta.SecurityMode,
 		Capabilities:  meta.Capabilities,
 		State:         meta.State,
-	})
+	}
+	if tunnel.mux != nil {
+		state.DataPlane = EdgeDataPlaneMux
+		if rtt := time.Duration(tunnel.mux.rtt.Load()); rtt > 0 {
+			state.RoundTripTime = &rtt
+		}
+	}
+	return mo.Some(state)
 }

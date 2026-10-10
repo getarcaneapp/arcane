@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/hashicorp/yamux"
 	"google.golang.org/grpc"
 
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/concurrency"
@@ -16,6 +17,8 @@ import (
 )
 
 // activeWSStream tracks an active WebSocket stream on the agent side.
+//
+// Deprecated: legacy edge message protocol; remove in v3.
 type activeWSStream struct {
 	ws     *websocket.Conn
 	conn   TunnelConnection // tunnel connection the stream was opened on
@@ -25,11 +28,13 @@ type activeWSStream struct {
 	closed bool
 }
 
+// Deprecated: legacy edge message protocol; remove in v3.
 type wsPayload struct {
 	messageType int
 	data        []byte
 }
 
+// Deprecated: legacy edge message protocol; remove in v3.
 type commandRequestTransfer struct {
 	request      *TunnelMessage
 	conn         TunnelConnection
@@ -53,42 +58,44 @@ type TunnelClient struct {
 	localPort              string // Port the agent is running on locally
 	conn                   atomic.Pointer[connBox]
 	requestTimeout         time.Duration
-	activeStreams          sync.Map // map[string]*activeWSStream
-	requestTransfers       sync.Map // map[string]*commandRequestTransfer
-	commandRecorders       sync.Map // map[string]*commandResponseRecorder awaiting credit
-	transportPreferenceMu  sync.RWMutex
-	preferWebSocketUntil   time.Time
-	grpcFailureStreak      int
-	agentInstanceID        string
-	registration           concurrency.Snapshot[clientRegistrationInternal]
+	// Legacy edge message protocol state; remove in v3.
+	activeStreams         sync.Map // map[string]*activeWSStream
+	requestTransfers      sync.Map // map[string]*commandRequestTransfer
+	commandRecorders      sync.Map // map[string]*commandResponseRecorder awaiting credit
+	transportPreferenceMu sync.RWMutex
+	preferWebSocketUntil  time.Time
+	grpcFailureStreak     int
+	agentInstanceID       string
+	registration          concurrency.Snapshot[clientRegistration]
 }
 
-type clientRegistrationInternal struct {
+type clientRegistration struct {
 	sessionID string
 	// commandCredit is set when the manager grants command output flow-control credit.
 	commandCredit bool
 }
 
-// connBox wraps the active TunnelConnection so it can be swapped atomically on
-// reconnect. The wrapper is required because the gRPC and WebSocket connections
-// are different concrete types; a bare atomic.Value would panic on the type
-// change, whereas an atomic.Pointer to a fixed box type does not.
+// connBox lets the active connection swap atomically on reconnect: an atomic.Value would panic when the
+// concrete type changes between gRPC and WebSocket.
 type connBox struct {
 	conn TunnelConnection
 }
 
-type managedTunnelTransportsInternal struct {
+type tunnelTransports struct {
 	grpc      bool
 	websocket bool
 }
 
-// responseRecorder captures HTTP responses
+// responseRecorder captures HTTP responses.
+//
+// Deprecated: legacy edge message protocol; remove in v3.
 type responseRecorder struct {
 	headers    http.Header
 	body       bytes.Buffer
 	statusCode int
 }
 
+// Deprecated: legacy edge message protocol; remove in v3.
 type commandResponseRecorder struct {
 	conn        TunnelConnection
 	headers     http.Header
@@ -110,6 +117,7 @@ type commandResponseRecorder struct {
 	closed      bool
 }
 
+// Deprecated: legacy edge message protocol; remove in v3.
 type streamingResponseRecorder struct {
 	requestID   string
 	conn        TunnelConnection
@@ -126,6 +134,7 @@ type pollManagedTunnelSession struct {
 	stopping bool
 }
 
+// Deprecated: legacy edge message protocol; remove in v3.
 type CommandRequest struct {
 	ID            string
 	Command       string
@@ -139,12 +148,14 @@ type CommandRequest struct {
 	Output http.ResponseWriter
 }
 
+// Deprecated: legacy edge message protocol; remove in v3.
 type CommandResult struct {
 	Status  int
 	Headers map[string]string
 	Body    []byte
 }
 
+// Deprecated: legacy edge message protocol; remove in v3.
 type CommandClient struct{}
 
 type commandRoute struct {
@@ -152,7 +163,6 @@ type commandRoute struct {
 	PathPattern string
 	CommandName string
 	Stream      bool
-	LocalOnly   bool
 }
 
 type commandRouteKey struct {
@@ -166,9 +176,7 @@ type commandRouteNode struct {
 	route  *commandRoute
 }
 
-type commandRouteIndexInternal struct {
-	roots map[commandRouteKey]*commandRouteNode
-}
+type commandRouteIndex map[commandRouteKey]*commandRouteNode
 
 // TunnelPollRequest is a forward-compatible control-plane check-in request.
 type TunnelPollRequest struct {
@@ -203,6 +211,7 @@ type PollRuntimeRegistry struct {
 	mu     sync.RWMutex
 }
 
+// Deprecated: legacy edge message protocol; remove in v3.
 type grpcResponseState struct {
 	out         http.ResponseWriter
 	outErr      error
@@ -218,6 +227,7 @@ type grpcResponseState struct {
 type AgentTunnel struct {
 	EnvironmentID string
 	Conn          TunnelConnection
+	// Deprecated: legacy edge message protocol; remove in v3.
 	Pending       sync.Map // map[string]*PendingRequest
 	ConnectedAt   time.Time
 	LastHeartbeat time.Time
@@ -232,7 +242,10 @@ type AgentTunnel struct {
 	done          chan struct{}
 	closeOnce     sync.Once
 
-	// Command credits queue here for a per-tunnel sender, so readers never block on the connection.
+	// mux is set when the agent negotiated the multiplexed data plane; it never changes afterwards.
+	mux *muxSession
+
+	// Command credits queue here for a per-tunnel sender, so readers never block on the connection; remove in v3.
 	creditOnce   sync.Once
 	creditMu     sync.Mutex
 	credits      map[string]int64
@@ -317,10 +330,18 @@ type Config struct {
 	AgentToken            string
 	Port                  string
 	Listen                string
+	// EdgeMuxDisabled keeps the legacy message protocol; remove in v3 with it.
+	EdgeMuxDisabled bool
 }
 
 // TunnelRuntimeState describes the live, in-memory state of an active edge tunnel.
 type TunnelRuntimeState struct {
+	// DataPlane is EdgeDataPlaneMux or EdgeDataPlaneLegacy.
+	DataPlane string
+	// RoundTripTime is the last keepalive round trip; only multiplexed tunnels measure it.
+	RoundTripTime *time.Duration
+	// OpenStreams counts open mux streams (including pooled idle ones) or pending legacy requests.
+	OpenStreams   int
 	Transport     string
 	ConnectedAt   *time.Time
 	LastHeartbeat *time.Time
@@ -331,7 +352,8 @@ type TunnelRuntimeState struct {
 	State         string
 }
 
-// TunnelMessage represents a transport-agnostic edge tunnel message.
+// TunnelMessage represents a transport-agnostic edge tunnel message. Only register and register_response
+// survive the mux data plane; every other type is the legacy edge message protocol and goes in v3.
 type TunnelMessage struct {
 	Headers       map[string]string `json:"headers,omitempty"`         // HTTP headers
 	Event         *TunnelEvent      `json:"event,omitempty"`           // Agent event payload
@@ -377,6 +399,8 @@ type TunnelEvent struct {
 }
 
 // PendingRequest tracks an in-flight request waiting for response.
+//
+// Deprecated: legacy edge message protocol; remove in v3.
 type PendingRequest struct {
 	ResponseCh chan *TunnelMessage
 	failureCh  chan error
@@ -394,6 +418,7 @@ type TunnelConn struct {
 	conn   *websocket.Conn
 	mu     sync.Mutex
 	closed atomic.Bool
+	muxed  atomic.Bool
 }
 
 // GRPCManagerTunnelConn wraps the manager-side gRPC tunnel stream.
@@ -402,6 +427,7 @@ type GRPCManagerTunnelConn struct {
 	cancel context.CancelFunc
 	mu     sync.Mutex
 	closed atomic.Bool
+	muxed  atomic.Bool
 	// parity is set at registration when the agent advertises proto-parity-v1,
 	// enabling native stream_data/stream_end instead of the legacy ws_data re-encode.
 	parity bool
@@ -413,6 +439,32 @@ type GRPCAgentTunnelConn struct {
 	cancel context.CancelFunc
 	mu     sync.Mutex
 	closed atomic.Bool
+	muxed  atomic.Bool
+}
+
+// muxSession is the manager end of a multiplexed data plane. client dials streams once ready closes.
+type muxSession struct {
+	client    *http.Client
+	ready     chan struct{}
+	closed    chan struct{}
+	closeOnce sync.Once
+	mu        sync.Mutex
+	session   *yamux.Session
+	// rtt is the last keepalive round trip in nanoseconds, zero until the first ping.
+	rtt atomic.Int64
+}
+
+// muxConn adapts a message transport to the byte stream yamux runs on.
+type muxConn struct {
+	recv           func() ([]byte, error)
+	closeTransport func() error
+	closeOnce      sync.Once
+	unread         []byte
+
+	mu      sync.Mutex
+	cond    sync.Cond
+	pending []byte
+	err     error
 }
 
 type cancelableGRPCManagerStream struct {

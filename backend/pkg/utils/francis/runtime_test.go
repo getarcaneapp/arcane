@@ -21,7 +21,7 @@ func TestSQLiteHostRestartPersistence(t *testing.T) {
 
 	var output bytes.Buffer
 	runtime := &Runtime{}
-	logger := slog.New(&actorLogHandlerInternal{
+	logger := slog.New(&actorLogHandler{
 		Handler: slog.NewTextHandler(&output, nil),
 		names:   &runtime.actorNames,
 	})

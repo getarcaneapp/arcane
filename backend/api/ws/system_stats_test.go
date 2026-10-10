@@ -10,15 +10,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestApplyCPUAffinityLimitInternal(t *testing.T) {
+func TestApplyCPUAffinityLimit(t *testing.T) {
 	affinity := runtime.NumCPU()
 
 	// A host-wide count larger than the affinity mask (LXC without lxcfs,
 	// #3161) is capped at the mask size; a smaller cgroup-derived count wins.
-	require.Equal(t, affinity, applyCPUAffinityLimitInternal(affinity+8))
-	require.Equal(t, affinity, applyCPUAffinityLimitInternal(0))
+	require.Equal(t, affinity, applyCPUAffinityLimit(affinity+8))
+	require.Equal(t, affinity, applyCPUAffinityLimit(0))
 	if affinity > 1 {
-		require.Equal(t, 1, applyCPUAffinityLimitInternal(1))
+		require.Equal(t, 1, applyCPUAffinityLimit(1))
 	}
 }
 
@@ -55,8 +55,8 @@ func TestSystemStatsSamplerEffectiveInterval(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			h := &WebSocketHandler{}
 			h.systemStatsSampler.intervals = tt.intervals
-			h.refreshSystemStatsSamplerIntervalLockedInternal()
-			require.Equal(t, tt.want, h.systemStatsSamplerIntervalInternal())
+			h.refreshSystemStatsSamplerIntervalLocked()
+			require.Equal(t, tt.want, h.systemStatsSamplerInterval())
 		})
 	}
 }
@@ -81,8 +81,8 @@ func TestSystemStatsSamplerRearmsOnFasterSubscriber(t *testing.T) {
 
 	ctx := t.Context()
 	slow := time.Hour
-	require.True(t, h.acquireSystemStatsSamplerInternal(ctx, slow))
-	defer h.releaseSystemStatsSamplerInternal(slow)
+	require.True(t, h.acquireSystemStatsSampler(ctx, slow))
+	defer h.releaseSystemStatsSampler(slow)
 
 	// Drain the ready-gate collection; the ticker is now armed for an hour.
 	select {
@@ -92,8 +92,8 @@ func TestSystemStatsSamplerRearmsOnFasterSubscriber(t *testing.T) {
 	}
 
 	fast := 10 * time.Millisecond
-	require.True(t, h.acquireSystemStatsSamplerInternal(ctx, fast))
-	defer h.releaseSystemStatsSamplerInternal(fast)
+	require.True(t, h.acquireSystemStatsSampler(ctx, fast))
+	defer h.releaseSystemStatsSampler(fast)
 
 	select {
 	case <-collections:

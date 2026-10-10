@@ -35,6 +35,7 @@ require (
 	github.com/go-webauthn/webauthn v0.18.2
 	github.com/gofrs/flock v0.13.1
 	github.com/google/go-containerregistry v0.22.1
+	github.com/hashicorp/yamux v0.1.2
 	github.com/italypaleale/francis v0.1.0
 	github.com/jwx-go/jwkfetch/v4 v4.0.4
 	github.com/klauspost/compress v1.20.1

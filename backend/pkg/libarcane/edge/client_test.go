@@ -451,11 +451,6 @@ func TestTunnelClient_BuildLocalWebSocketURL(t *testing.T) {
 	}
 }
 
-func TestTunnelClient_GRPCConnectMethod(t *testing.T) {
-	client := NewTunnelClient(&Config{}, http.NotFoundHandler())
-	assert.Equal(t, "/api/tunnel/connect", client.grpcConnectMethodInternal())
-}
-
 func TestTunnelClient_buildLocalWebSocketHeaders(t *testing.T) {
 	client := NewTunnelClient(&Config{
 		AgentToken: "agent-token",
@@ -887,7 +882,7 @@ func TestTunnelClient_GRPC_ChunkedRequestBodyEndToEnd(t *testing.T) {
 	assert.Equal(t, "uploaded", string(body))
 }
 
-func TestTunnelClient_useTLSForManagerGRPC(t *testing.T) {
+func TestManagerUsesTLS(t *testing.T) {
 	tests := []struct {
 		name       string
 		managerURL string
@@ -902,8 +897,7 @@ func TestTunnelClient_useTLSForManagerGRPC(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			client := NewTunnelClient(&Config{ManagerApiUrl: tc.managerURL}, http.NotFoundHandler())
-			assert.Equal(t, tc.expected, client.useTLSForManagerGRPC())
+			assert.Equal(t, tc.expected, managerUsesTLS(&Config{ManagerApiUrl: tc.managerURL}))
 		})
 	}
 }
@@ -1183,6 +1177,8 @@ func TestTunnelClient_GRPC_WebSocketProxyEndToEnd(t *testing.T) {
 		EdgeReconnectInterval: 1,
 		Listen:                localHost,
 		Port:                  localPort,
+		// This covers the legacy loopback WebSocket path; remove in v3 with it.
+		EdgeMuxDisabled: true,
 	}
 
 	client := NewTunnelClient(cfg, http.NotFoundHandler())
@@ -1843,7 +1839,7 @@ func TestTunnelClient_pollTunnelControl_UsesConfiguredHTTPClient(t *testing.T) {
 	client := NewTunnelClient(&Config{AgentToken: "valid-token"}, http.NotFoundHandler())
 	httpClient := &http.Client{Transport: rewriteTransport}
 
-	resp, err := client.pollTunnelControlInternal(t.Context(), httpClient, "http://127.0.0.1:1/api/tunnel/poll", false)
+	resp, err := client.pollTunnelControl(t.Context(), httpClient, "http://127.0.0.1:1/api/tunnel/poll", false)
 	require.NoError(t, err)
 	assert.Equal(t, TunnelStatusIdle, resp.Status)
 	assert.Equal(t, 1, resp.PollIntervalSeconds)
@@ -1990,7 +1986,7 @@ func TestTunnelClient_stopPollManagedSession_DeadlineExceededReturnsTimeoutMessa
 	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
 	defer cancel()
 
-	err := (&TunnelClient{}).stopPollManagedSessionInternal(ctx, session)
+	err := (&TunnelClient{}).stopPollManagedSession(ctx, session)
 	require.Error(t, err)
 	assert.EqualError(t, err, "timed out waiting for poll-managed websocket session to stop")
 }
@@ -2007,17 +2003,17 @@ func TestTunnelClient_syncPollManagedSession_IdleUsesBoundedStopTimeout(t *testi
 		done:   make(chan error),
 	}
 
-	nextSession, err := (&TunnelClient{}).syncPollManagedSessionInternal(t.Context(), session, TunnelStatusIdle)
+	nextSession, err := (&TunnelClient{}).syncPollManagedSession(t.Context(), session, TunnelStatusIdle)
 	require.Same(t, session, nextSession)
 	require.Error(t, err)
 	require.EqualError(t, err, "timed out waiting for poll-managed websocket session to stop")
 
-	fencedSession, err := (&TunnelClient{}).syncPollManagedSessionInternal(t.Context(), nextSession, TunnelStatusRequired)
+	fencedSession, err := (&TunnelClient{}).syncPollManagedSession(t.Context(), nextSession, TunnelStatusRequired)
 	require.NoError(t, err)
 	require.Same(t, session, fencedSession)
 
 	started := time.Now()
-	stillDraining, err := (&TunnelClient{}).syncPollManagedSessionInternal(t.Context(), nextSession, TunnelStatusIdle)
+	stillDraining, err := (&TunnelClient{}).syncPollManagedSession(t.Context(), nextSession, TunnelStatusIdle)
 	require.NoError(t, err)
 	require.Same(t, session, stillDraining)
 	require.Less(t, time.Since(started), defaultPollManagedSessionStopTimeout)

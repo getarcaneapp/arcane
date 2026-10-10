@@ -9,28 +9,16 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
-	httpxtypes "github.com/getarcaneapp/arcane/types/v2/httpx"
-	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
-
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 )
 
-// dialClient is shared by every upstream dial; its span covers the whole proxied session.
-var dialClient = func() *http.Client {
-	client := httpx.NewHTTPClient(httpxtypes.ClientOptions{TLSHandshakeTimeout: 10 * time.Second})
-	client.Transport = otelhttp.NewTransport(client.Transport)
-	return client
-}()
-
-// ProxyHTTP upgrades the incoming client connection and bridges it to remoteWS.
-//
-// checkOrigin must be the same Origin validator the local WebSocket endpoints
-// use. It is required: this upgrade is reached with the caller's session cookie
-// already validated, so accepting any Origin would let an attacker-controlled
-// page open a terminal or log stream in a remote environment.
-func ProxyHTTP(w http.ResponseWriter, r *http.Request, remoteWS string, header http.Header, checkOrigin func(*http.Request) bool) error {
+// ProxyHTTP upgrades the client connection and bridges it to remoteWS, dialed through client. checkOrigin must be
+// the local WebSocket Origin validator: the session cookie is already validated, so any Origin would allow cross-site terminals.
+func ProxyHTTP(w http.ResponseWriter, r *http.Request, remoteWS string, header http.Header, checkOrigin func(*http.Request) bool, client *http.Client) error {
 	if checkOrigin == nil {
 		return errors.New("websocket proxy requires an origin validator")
+	}
+	if client == nil {
+		return errors.New("websocket proxy requires a dial client")
 	}
 
 	clientConn, err := Accept(w, r, checkOrigin)
@@ -46,7 +34,7 @@ func ProxyHTTP(w http.ResponseWriter, r *http.Request, remoteWS string, header h
 	dialCtx, dialCancel := context.WithTimeout(r.Context(), 45*time.Second)
 	remoteConn, resp, err := websocket.Dial(dialCtx, remoteWS, &websocket.DialOptions{
 		HTTPHeader: header,
-		HTTPClient: dialClient,
+		HTTPClient: client,
 	})
 	dialCancel()
 	// Ensure the response body is drained & closed to avoid leaking resources.
@@ -98,6 +86,7 @@ func ProxyHTTP(w http.ResponseWriter, r *http.Request, remoteWS string, header h
 	}
 	go pump(clientConn, remoteConn)
 	go pump(remoteConn, clientConn)
+	go KeepAlive(pumpCtx, pumpCancel, clientConn)
 
 	<-errc
 	return nil

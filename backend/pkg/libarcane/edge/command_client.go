@@ -23,6 +23,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/tracing"
 )
 
+// Legacy edge message protocol capabilities; remove in v3.
 const (
 	tunnelCapabilityChunkedRequest = "chunked-request"
 	// tunnelCapabilityProtoParity signals the peer decodes the full TunnelMessage vocabulary natively over gRPC.
@@ -48,10 +49,12 @@ var commandDuration = sync.OnceValue(func() metric.Float64Histogram {
 	return histogram
 })
 
+// Deprecated: legacy edge message protocol; remove in v3.
 func NewCommandClient() *CommandClient {
 	return &CommandClient{}
 }
 
+// Deprecated: legacy edge message protocol; remove in v3.
 func (c *CommandClient) Execute(ctx context.Context, tunnel *AgentTunnel, req *CommandRequest) (result *CommandResult, err error) {
 	commandName, err := resolveCommand(ctx, tunnel, req, false)
 	if err != nil {
@@ -114,10 +117,8 @@ func (c *CommandClient) Execute(ctx context.Context, tunnel *AgentTunnel, req *C
 		AgentInstance: tunnel.AgentInstance,
 	}
 
-	pending, err := registerPendingRequestInternal(tunnel, requestID)
-	if err != nil {
-		return nil, err
-	}
+	pending := &PendingRequest{ResponseCh: make(chan *TunnelMessage, 256), failureCh: make(chan error, 1)}
+	tunnel.Pending.Store(requestID, pending)
 	defer tunnel.Pending.Delete(requestID)
 
 	var transferID string
@@ -154,7 +155,7 @@ func (c *CommandClient) Execute(ctx context.Context, tunnel *AgentTunnel, req *C
 		}
 	}
 
-	status, headers, body, err := collectCommandResponseInternal(ctx, tunnel, pending, req.Method, req.Output, credit)
+	status, headers, body, err := collectCommandResponse(ctx, tunnel, pending, req.Method, req.Output, credit)
 	if err != nil {
 		if credit != nil {
 			// Release an agent still waiting to send output that nobody will read.
@@ -170,6 +171,7 @@ func (c *CommandClient) Execute(ctx context.Context, tunnel *AgentTunnel, req *C
 	}, nil
 }
 
+// Deprecated: legacy edge message protocol; remove in v3.
 func (c *CommandClient) OpenStream(ctx context.Context, tunnel *AgentTunnel, req *CommandRequest) error {
 	commandName, err := resolveCommand(ctx, tunnel, req, true)
 	if err != nil {
@@ -194,6 +196,7 @@ func (c *CommandClient) OpenStream(ctx context.Context, tunnel *AgentTunnel, req
 	}
 }
 
+// Deprecated: legacy edge message protocol; remove in v3.
 var DefaultCommandClient = NewCommandClient()
 
 // grantCommandCredit queues credit for a command without blocking. A per-tunnel sender coalesces
@@ -239,6 +242,8 @@ func resolveCommand(ctx context.Context, tunnel *AgentTunnel, req *CommandReques
 		return "", errors.New("context is required")
 	case !tunnel.connected():
 		return "", errors.New("edge tunnel is not connected")
+	case tunnel.mux != nil:
+		return "", errors.New("edge tunnel uses the multiplexed data plane")
 	case req == nil:
 		return "", errors.New("command request is required")
 	case stream && req.ID == "":

@@ -384,20 +384,20 @@ func TestEnvironmentMiddleware_ForwardsResolvedIconCatalogHeaderOnly(t *testing.
 }
 
 func TestIsManagementPath_SwarmIsMethodAware(t *testing.T) {
-	assert.True(t, isManagementPath(http.MethodGet, "/swarm/nodes"))
-	assert.True(t, isManagementPath(http.MethodGet, "/swarm/nodes/node-1"))
-	assert.False(t, isManagementPath(http.MethodPatch, "/swarm/nodes/node-1"))
-	assert.True(t, isManagementPath(http.MethodPost, "/swarm/nodes/node-1/agent/deployment"))
-	assert.True(t, isManagementPath(http.MethodDelete, "/swarm/nodes/node-1/agent/deployment"))
-	assert.True(t, isManagementPath(http.MethodPut, "/swarm/nodes/node-1/agent/binding"))
-	assert.True(t, isManagementPath(http.MethodDelete, "/swarm/nodes/node-1/agent/binding"))
+	assert.True(t, IsManagerLocalPath(http.MethodGet, "/swarm/nodes"))
+	assert.True(t, IsManagerLocalPath(http.MethodGet, "/swarm/nodes/node-1"))
+	assert.False(t, IsManagerLocalPath(http.MethodPatch, "/swarm/nodes/node-1"))
+	assert.True(t, IsManagerLocalPath(http.MethodPost, "/swarm/nodes/node-1/agent/deployment"))
+	assert.True(t, IsManagerLocalPath(http.MethodDelete, "/swarm/nodes/node-1/agent/deployment"))
+	assert.True(t, IsManagerLocalPath(http.MethodPut, "/swarm/nodes/node-1/agent/binding"))
+	assert.True(t, IsManagerLocalPath(http.MethodDelete, "/swarm/nodes/node-1/agent/binding"))
 }
 
 func TestIsManagementPath_VolumeBackupPolicyIsMethodAware(t *testing.T) {
-	assert.True(t, isManagementPath(http.MethodGet, "/volumes/app-data/backup-policy"))
-	assert.True(t, isManagementPath(http.MethodPut, "/volumes/app-data/backup-policy"))
-	assert.False(t, isManagementPath(http.MethodPost, "/volumes/app-data/backup-policy"))
-	assert.False(t, isManagementPath(http.MethodGet, "/volumes/app-data/backups"))
+	assert.True(t, IsManagerLocalPath(http.MethodGet, "/volumes/app-data/backup-policy"))
+	assert.True(t, IsManagerLocalPath(http.MethodPut, "/volumes/app-data/backup-policy"))
+	assert.False(t, IsManagerLocalPath(http.MethodPost, "/volumes/app-data/backup-policy"))
+	assert.False(t, IsManagerLocalPath(http.MethodGet, "/volumes/app-data/backups"))
 }
 
 const proxyTestEnvID = "remote-1"

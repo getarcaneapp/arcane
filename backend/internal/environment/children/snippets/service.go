@@ -38,7 +38,6 @@ func Direct(managerURL, agentURL, apiKey string) (string, string) {
 		"  --name arcane-agent \\",
 		"  --restart unless-stopped \\",
 		"  -e AGENT_MODE=true \\",
-		"  -e EDGE_TRANSPORT=poll \\",
 		fmt.Sprintf("  -e AGENT_TOKEN=%s \\", apiKey),
 		fmt.Sprintf("  -e MANAGER_API_URL=%s \\", managerURL),
 		fmt.Sprintf("  -p %s \\", portMapping),
@@ -55,7 +54,6 @@ func Direct(managerURL, agentURL, apiKey string) (string, string) {
 		"    restart: unless-stopped",
 		"    environment:",
 		"      - AGENT_MODE=true",
-		"      - EDGE_TRANSPORT=poll",
 		"      - AGENT_TOKEN=" + apiKey,
 		"      - MANAGER_API_URL=" + managerURL,
 		"    ports:",
@@ -79,7 +77,7 @@ func Edge(managerURL, apiKey string) (string, string) {
 		"  --name arcane-edge-agent \\",
 		"  --restart unless-stopped \\",
 		"  -e EDGE_AGENT=true \\",
-		"  -e EDGE_TRANSPORT=poll \\",
+		"  -e EDGE_TRANSPORT=auto \\",
 		fmt.Sprintf("  -e AGENT_TOKEN=%s \\", apiKey),
 		fmt.Sprintf("  -e MANAGER_API_URL=%s \\", managerURL),
 		"  -v /var/run/docker.sock:/var/run/docker.sock \\",
@@ -96,7 +94,7 @@ func Edge(managerURL, apiKey string) (string, string) {
 		"    restart: unless-stopped",
 		"    environment:",
 		"      - EDGE_AGENT=true",
-		"      - EDGE_TRANSPORT=poll",
+		"      - EDGE_TRANSPORT=auto",
 		"      - AGENT_TOKEN=" + apiKey,
 		"      - MANAGER_API_URL=" + managerURL,
 		"    volumes:",
@@ -121,14 +119,14 @@ func (s *Service) GenerateMTLS(ctx context.Context, edgeCfg *edge.Config, envID,
 	if generatedAssets == nil {
 		return nil, "", ""
 	}
-	s.logGeneratedMTLSEventsInternal(ctx, envID, envName, generatedAssets)
+	s.logGeneratedMTLSEvents(ctx, envID, envName, generatedAssets)
 
 	mtlsDockerRun := strings.Join([]string{
 		"docker run -d \\",
 		"  --name arcane-edge-agent \\",
 		"  --restart unless-stopped \\",
 		"  -e EDGE_AGENT=true \\",
-		"  -e EDGE_TRANSPORT=poll \\",
+		"  -e EDGE_TRANSPORT=auto \\",
 		"  -e EDGE_MTLS_MODE=required \\",
 		fmt.Sprintf("  -e EDGE_MTLS_ASSETS_DIR=%s \\", DeploymentSnippetsMTLSPath),
 		fmt.Sprintf("  -e AGENT_TOKEN=%s \\", apiKey),
@@ -147,7 +145,7 @@ func (s *Service) GenerateMTLS(ctx context.Context, edgeCfg *edge.Config, envID,
 		"    restart: unless-stopped",
 		"    environment:",
 		"      - EDGE_AGENT=true",
-		"      - EDGE_TRANSPORT=poll",
+		"      - EDGE_TRANSPORT=auto",
 		"      - EDGE_MTLS_MODE=required",
 		"      - EDGE_MTLS_ASSETS_DIR=" + DeploymentSnippetsMTLSPath,
 		"      - AGENT_TOKEN=" + apiKey,
@@ -163,7 +161,7 @@ func (s *Service) GenerateMTLS(ctx context.Context, edgeCfg *edge.Config, envID,
 	return generatedAssets, mtlsDockerRun, mtlsDockerCompose
 }
 
-func (s *Service) logGeneratedMTLSEventsInternal(ctx context.Context, envID, envName string, assets *edge.GeneratedMTLSAssets) {
+func (s *Service) logGeneratedMTLSEvents(ctx context.Context, envID, envName string, assets *edge.GeneratedMTLSAssets) {
 	if s == nil || s.eventService == nil || assets == nil {
 		return
 	}

@@ -75,7 +75,7 @@ func isSupportedNotificationTestType(testType string) bool {
 	return ok
 }
 
-func (h *NotificationHandler) rejectIfAgentModeInternal() error {
+func (h *NotificationHandler) rejectIfAgentMode() error {
 	if h.config != nil && h.config.AgentMode {
 		return huma.Error400BadRequest("notifications are managed on the Arcane manager")
 	}
@@ -83,7 +83,7 @@ func (h *NotificationHandler) rejectIfAgentModeInternal() error {
 }
 
 func (h *NotificationHandler) GetAllNotificationSettings(ctx context.Context, input *GetAllNotificationSettingsInput) (*GetAllNotificationSettingsOutput, error) {
-	if err := h.rejectIfAgentModeInternal(); err != nil {
+	if err := h.rejectIfAgentMode(); err != nil {
 		return nil, err
 	}
 	settings, err := h.notificationService.GetAllSettings(ctx)
@@ -105,7 +105,7 @@ func (h *NotificationHandler) GetAllNotificationSettings(ctx context.Context, in
 }
 
 func (h *NotificationHandler) GetNotificationSettings(ctx context.Context, input *GetNotificationSettingsInput) (*GetNotificationSettingsOutput, error) {
-	if err := h.rejectIfAgentModeInternal(); err != nil {
+	if err := h.rejectIfAgentMode(); err != nil {
 		return nil, err
 	}
 	provider := notifications.NotificationProvider(input.Provider)
@@ -126,7 +126,7 @@ func (h *NotificationHandler) GetNotificationSettings(ctx context.Context, input
 }
 
 func (h *NotificationHandler) CreateOrUpdateNotificationSettings(ctx context.Context, input *CreateOrUpdateNotificationSettingsInput) (*CreateOrUpdateNotificationSettingsOutput, error) {
-	if err := h.rejectIfAgentModeInternal(); err != nil {
+	if err := h.rejectIfAgentMode(); err != nil {
 		return nil, err
 	}
 	provider := notifications.NotificationProvider(input.Body.Provider)
@@ -159,7 +159,7 @@ func (h *NotificationHandler) CreateOrUpdateNotificationSettings(ctx context.Con
 }
 
 func (h *NotificationHandler) DeleteNotificationSettings(ctx context.Context, input *DeleteNotificationSettingsInput) (*handlerutil.Out[base.MessageResponse], error) {
-	if err := h.rejectIfAgentModeInternal(); err != nil {
+	if err := h.rejectIfAgentMode(); err != nil {
 		return nil, err
 	}
 	provider := notifications.NotificationProvider(input.Provider)
@@ -172,7 +172,7 @@ func (h *NotificationHandler) DeleteNotificationSettings(ctx context.Context, in
 }
 
 func (h *NotificationHandler) TestNotification(ctx context.Context, input *TestNotificationInput) (*handlerutil.Out[notification.TestResponse], error) {
-	if err := h.rejectIfAgentModeInternal(); err != nil {
+	if err := h.rejectIfAgentMode(); err != nil {
 		return nil, err
 	}
 	provider := notifications.NotificationProvider(input.Provider)
@@ -198,7 +198,7 @@ func (h *NotificationHandler) TestNotification(ctx context.Context, input *TestN
 }
 
 func (h *NotificationHandler) DispatchNotification(ctx context.Context, input *DispatchNotificationInput) (*handlerutil.Out[notification.DispatchResponse], error) {
-	if err := h.rejectIfAgentModeInternal(); err != nil {
+	if err := h.rejectIfAgentMode(); err != nil {
 		return nil, err
 	}
 	if strings.TrimSpace(input.APIKey) == "" {

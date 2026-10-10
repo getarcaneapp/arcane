@@ -39,6 +39,24 @@ func (t *AgentTunnel) connected() bool {
 	return t != nil && t.Conn != nil && !t.Conn.IsClosed()
 }
 
+// openStreams counts open mux streams, or pending requests on a legacy tunnel.
+func (t *AgentTunnel) openStreams() int {
+	if t.mux != nil {
+		t.mux.mu.Lock()
+		defer t.mux.mu.Unlock()
+		if t.mux.session == nil {
+			return 0
+		}
+		return t.mux.session.NumStreams()
+	}
+	count := 0
+	t.Pending.Range(func(_, _ any) bool {
+		count++
+		return true
+	})
+	return count
+}
+
 // GetLastHeartbeat returns the last heartbeat time
 func (t *AgentTunnel) GetLastHeartbeat() time.Time {
 	t.mu.RLock()
@@ -57,9 +75,8 @@ type TunnelMetadataSnapshot struct {
 	State         string
 }
 
-// MetadataSnapshot returns the tunnel's mutable metadata under one read lock.
-// Reading the fields directly races with the writers that take t.mu (heartbeats,
-// registration, CloseWithReason) and can mix state from either side of a close.
+// MetadataSnapshot returns the tunnel's mutable metadata under one read lock, so readers never race
+// heartbeat, registration, or close writers.
 func (t *AgentTunnel) MetadataSnapshot() TunnelMetadataSnapshot {
 	if t == nil {
 		return TunnelMetadataSnapshot{}
@@ -96,10 +113,39 @@ func (t *AgentTunnel) CloseWithReason(reason string) error {
 			close(t.done)
 		}
 	})
+	if t.mux != nil {
+		t.mux.close()
+	}
 	if t.Conn == nil {
 		return nil
 	}
 	return t.Conn.Close()
+}
+
+// Active returns the environment's tunnel when its connection is still open.
+func (r *TunnelRegistry) Active(envID string) mo.Option[*AgentTunnel] {
+	if tunnel, _ := r.Get(envID).Get(); tunnel.connected() {
+		return mo.Some(tunnel)
+	}
+	return mo.None[*AgentTunnel]()
+}
+
+// WaitForActive polls until the environment has an open tunnel or timeout elapses.
+func (r *TunnelRegistry) WaitForActive(ctx context.Context, envID string, timeout time.Duration) mo.Option[*AgentTunnel] {
+	waitCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	ticker := time.NewTicker(DefaultTunnelAcquirePollEvery)
+	defer ticker.Stop()
+	for {
+		if tunnel := r.Active(envID); tunnel.IsPresent() {
+			return tunnel
+		}
+		select {
+		case <-waitCtx.Done():
+			return mo.None[*AgentTunnel]()
+		case <-ticker.C:
+		}
+	}
 }
 
 // NewTunnelRegistry creates a new tunnel registry
@@ -211,9 +257,8 @@ func (r *TunnelRegistry) Unregister(envID string) {
 	}
 }
 
-// UnregisterCurrent removes the active tunnel only when it still matches the
-// provided tunnel reference. It reports whether the tunnel was removed and
-// whether another active session for the environment is already present.
+// UnregisterCurrent removes the environment's tunnel only if it is still current. It reports whether it was
+// removed and whether another live session already replaced it.
 func (r *TunnelRegistry) UnregisterCurrent(ctx context.Context, envID string, current *AgentTunnel) (bool, bool) {
 	if r == nil || current == nil {
 		return false, false

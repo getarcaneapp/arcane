@@ -23,7 +23,8 @@ func (f *fakeEventTunnelConn) Send(msg *TunnelMessage) error {
 		return f.sendErr
 	}
 	copyMsg := *msg
-	copyMsg.Event = cloneTunnelEvent(msg.Event)
+	event := *msg.Event
+	copyMsg.Event = &event
 	f.msgs = append(f.msgs, &copyMsg)
 	return nil
 }
@@ -41,9 +42,9 @@ func (f *fakeEventTunnelConn) IsClosed() bool { return f.closed }
 func (f *fakeEventTunnelConn) Transport() string { return EdgeTransportWebSocket }
 
 func TestPublishEventToManager_NoActiveTunnel(t *testing.T) {
-	clearActiveAgentTunnelConn(getActiveAgentTunnelConn())
+	defer setActiveAgentEvents(nil)()
 
-	err := PublishEventToManager(&TunnelEvent{
+	err := PublishEventToManager(t.Context(), &TunnelEvent{
 		Type:  "container.start",
 		Title: "Container started",
 	})
@@ -53,10 +54,9 @@ func TestPublishEventToManager_NoActiveTunnel(t *testing.T) {
 
 func TestPublishEventToManager_SendsEventMessage(t *testing.T) {
 	conn := &fakeEventTunnelConn{}
-	setActiveAgentTunnelConn(conn)
-	defer clearActiveAgentTunnelConn(conn)
+	defer setActiveAgentEvents(&agentEventSink{conn: conn})()
 
-	err := PublishEventToManager(&TunnelEvent{
+	err := PublishEventToManager(t.Context(), &TunnelEvent{
 		Type:         "container.start",
 		Title:        "Container started",
 		Severity:     "success",
