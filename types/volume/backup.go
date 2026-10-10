@@ -81,6 +81,29 @@ type BackupEntry struct {
 	Type              backup.ManagementType `json:"type" doc:"Whether the backup was system-managed or volume-managed"`
 }
 
+// Entry is the backup as the API lists it.
+func (b *Backup) Entry() BackupEntry {
+	return BackupEntry{
+		RemoteAvailable:   b.RemoteAvailable,
+		ActivityID:        b.ActivityID,
+		ID:                b.ID,
+		VolumeName:        b.VolumeName,
+		Size:              b.Size,
+		CreatedAt:         b.CreatedAt.Format(time.RFC3339),
+		Status:            b.Status,
+		Trigger:           b.Trigger,
+		Destination:       b.Destination,
+		Format:            b.Format,
+		LocalSnapshotID:   b.LocalSnapshotID,
+		RemoteSnapshotID:  b.RemoteSnapshotID,
+		S3DestinationID:   b.S3DestinationID,
+		S3DestinationName: b.S3DestinationName,
+		PolicyID:          b.PolicyID,
+		Error:             b.Error,
+		Type:              b.Type,
+	}
+}
+
 type BackupPolicy struct {
 	ID                string       `json:"id"`
 	VolumeName        string       `json:"volumeName"`

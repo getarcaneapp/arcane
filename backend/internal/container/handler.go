@@ -19,7 +19,7 @@ import (
 	"github.com/moby/moby/api/types/network"
 	"github.com/samber/mo"
 	"go.getarcane.app/docker/types"
-	"go.getarcane.app/kit/pkg"
+	kit "go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
@@ -658,12 +658,7 @@ func (h *ContainerHandler) runContainerActionInternal(ctx context.Context, input
 	}
 	activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, cfg.CompleteMessage, nil)
 
-	return &handlerutil.Out[base.MessageResponse]{
-		Body: base.ApiResponse[base.MessageResponse]{
-			Success: true,
-			Data:    base.MessageResponse{Message: cfg.SuccessMessage, ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()},
-		},
-	}, nil
+	return handlerutil.MessageOutput(cfg.SuccessMessage, activityID), nil
 }
 
 func (h *ContainerHandler) CommitContainer(ctx context.Context, input *CommitContainerInput) (*handlerutil.Out[container.CommitResult], error) {
@@ -876,12 +871,7 @@ func (h *ContainerHandler) DeleteContainer(ctx context.Context, input *DeleteCon
 	}
 	activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Container deleted", nil)
 
-	return &handlerutil.Out[base.MessageResponse]{
-		Body: base.ApiResponse[base.MessageResponse]{
-			Success: true,
-			Data:    base.MessageResponse{Message: "Container deleted successfully", ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()},
-		},
-	}, nil
+	return handlerutil.MessageOutput("Container deleted successfully", activityID), nil
 }
 
 func (h *ContainerHandler) SetAutoUpdate(ctx context.Context, input *SetAutoUpdateInput) (*handlerutil.Out[base.MessageResponse], error) {
@@ -898,10 +888,5 @@ func (h *ContainerHandler) SetAutoUpdate(ctx context.Context, input *SetAutoUpda
 
 	msg := kit.Ternary(excluded, "Auto-update disabled", "Auto-update enabled")
 
-	return &handlerutil.Out[base.MessageResponse]{
-		Body: base.ApiResponse[base.MessageResponse]{
-			Success: true,
-			Data:    base.MessageResponse{Message: msg},
-		},
-	}, nil
+	return handlerutil.MessageOutput(msg, ""), nil
 }

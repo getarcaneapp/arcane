@@ -307,15 +307,7 @@ func (h *VolumeHandler) RemoveVolume(ctx context.Context, input *RemoveVolumeInp
 		return nil, huma.Error500InternalServerError("Failed to delete volume: " + err.Error())
 	}
 
-	return &handlerutil.Out[base.MessageResponse]{
-		Body: base.ApiResponse[base.MessageResponse]{
-			Success: true,
-			Data: base.MessageResponse{
-				Message:    "Volume removed successfully",
-				ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer(),
-			},
-		},
-	}, nil
+	return handlerutil.MessageOutput("Volume removed successfully", activityID), nil
 }
 
 // PruneVolumes removes all unused Docker volumes.

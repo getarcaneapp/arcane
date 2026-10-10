@@ -158,7 +158,7 @@ func (h *s3DestinationHandlerInternal) deleteInternal(ctx context.Context, input
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
 	h.triggerRemoteSyncInternal(ctx, "S3 destination deletion")
-	return &handlerutil.Out[base.MessageResponse]{Body: successMessageResponseInternal("S3 destination deleted successfully")}, nil
+	return handlerutil.MessageOutput("S3 destination deleted successfully", ""), nil
 }
 
 func (h *s3DestinationHandlerInternal) testInternal(ctx context.Context, input *testS3DestinationInputInternal) (*handlerutil.Out[base.MessageResponse], error) {
@@ -168,11 +168,7 @@ func (h *s3DestinationHandlerInternal) testInternal(ctx context.Context, input *
 		}
 		return nil, huma.Error400BadRequest(err.Error())
 	}
-	return &handlerutil.Out[base.MessageResponse]{Body: successMessageResponseInternal(s3ConnectionTestSuccessInternal)}, nil
-}
-
-func successMessageResponseInternal(message string) base.ApiResponse[base.MessageResponse] {
-	return base.ApiResponse[base.MessageResponse]{Success: true, Data: base.MessageResponse{Message: message}}
+	return handlerutil.MessageOutput(s3ConnectionTestSuccessInternal, ""), nil
 }
 
 func (h *s3DestinationHandlerInternal) triggerRemoteSyncInternal(ctx context.Context, reason string) {
@@ -191,12 +187,12 @@ func (h *s3DestinationHandlerInternal) testConfigurationInternal(ctx context.Con
 	if err := h.service.TestS3DestinationConfiguration(ctx, input.Body); err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}
-	return &handlerutil.Out[base.MessageResponse]{Body: successMessageResponseInternal(s3ConnectionTestSuccessInternal)}, nil
+	return handlerutil.MessageOutput(s3ConnectionTestSuccessInternal, ""), nil
 }
 
 func (h *s3DestinationHandlerInternal) syncInternal(ctx context.Context, input *syncS3DestinationsInputInternal) (*handlerutil.Out[base.MessageResponse], error) {
 	if err := h.service.SyncS3Destinations(ctx, input.Body.Destinations); err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}
-	return &handlerutil.Out[base.MessageResponse]{Body: successMessageResponseInternal("S3 destinations synced successfully")}, nil
+	return handlerutil.MessageOutput("S3 destinations synced successfully", ""), nil
 }

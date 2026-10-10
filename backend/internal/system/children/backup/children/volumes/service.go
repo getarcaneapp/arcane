@@ -6,76 +6,147 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"path"
 	"slices"
 	"strings"
+	"time"
 	"uuid"
 
 	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
 	backuptypes "github.com/getarcaneapp/arcane/types/v2/backup"
 	"github.com/getarcaneapp/arcane/types/v2/scheduler"
 	usertypes "github.com/getarcaneapp/arcane/types/v2/user"
-	"go.getarcane.app/kit/pkg"
+	"github.com/italypaleale/francis/builtin/workflow"
+	kit "go.getarcane.app/kit/pkg"
 	"gorm.io/gorm"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/backup"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/s3"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/volume"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/entityjobs"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/flow"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 )
 
-// Dependencies are the services and system admission hooks volume backups run on.
+const (
+	systemVolumeBackupConfigKey = "systemVolumeBackupConfig"
+	systemVolumeBackupJobPrefix = "volumes:"
+	// systemVolumePlanTarget records a scheduled run's frozen selection.
+	systemVolumePlanTarget      = "system-volume-plan"
+	defaultSystemVolumeSchedule = "0 0 2 * * *"
+)
+
+// Dependencies are the services and system admission volume backups run on.
 type Dependencies struct {
-	DB                *database.DB
-	Engine            *backup.Engine
-	Volumes           *volume.VolumeService
-	S3Destinations    *s3.S3DestinationService
-	Activity          *activity.ActivityService
-	Settings          *settings.SettingsService
-	Jobs              *entityjobs.Registry
-	AcquireRun        func(ctx context.Context) (*runs.Lease, error)
-	AcquireDurableRun func(ctx context.Context, runID string) (*runs.Lease, error)
-	AlreadyRunning    error
+	DB             *database.DB
+	Engine         *backup.Engine
+	Volumes        *volume.VolumeService
+	S3Destinations *s3.S3DestinationService
+	Activity       *activity.ActivityService
+	Settings       *settings.SettingsService
+	Jobs           *entityjobs.Registry
+	AlreadyRunning error
 }
 
 // Service owns system-managed volume backup policies and their runs.
 type Service struct {
-	db                *database.DB
-	engine            *backup.Engine
-	volumes           *volume.VolumeService
-	s3Destinations    *s3.S3DestinationService
-	activity          *activity.ActivityService
-	settings          *settings.SettingsService
-	jobs              *entityjobs.Registry
-	acquireRun        func(ctx context.Context) (*runs.Lease, error)
-	acquireDurableRun func(ctx context.Context, runID string) (*runs.Lease, error)
-	alreadyRunning    error
+	db             *database.DB
+	engine         *backup.Engine
+	volumes        *volume.VolumeService
+	s3Destinations *s3.S3DestinationService
+	activity       *activity.ActivityService
+	settings       *settings.SettingsService
+	jobs           *entityjobs.Registry
+	alreadyRunning error
+	flow           *flow.Engine
+	// backupWorkflow runs the selections Start accepted; policyWorkflow runs scheduled policies.
+	backupWorkflow *flow.Workflow
+	policyWorkflow *flow.Workflow
+}
+
+// selectionInput freezes the policy and volumes one run backs up; a manual run also carries its requester.
+type selectionInput struct {
+	Policy       backuptypes.SystemVolumeBackupPolicy   `json:"policy"`
+	ManualPolicy bool                                   `json:"manualPolicy"`
+	Candidates   []backuptypes.SystemVolumeBackupOption `json:"candidates"`
+	Requester    *backuptypes.Requester                 `json:"requester,omitempty"`
+	// Claim names the manual run that parked the system admission for its own task.
+	Claim string `json:"claim,omitempty"`
 }
 
 func NewService(deps Dependencies) *Service {
 	return &Service{
-		db:                deps.DB,
-		engine:            deps.Engine,
-		volumes:           deps.Volumes,
-		s3Destinations:    deps.S3Destinations,
-		activity:          deps.Activity,
-		settings:          deps.Settings,
-		jobs:              deps.Jobs,
-		acquireRun:        deps.AcquireRun,
-		acquireDurableRun: deps.AcquireDurableRun,
-		alreadyRunning:    deps.AlreadyRunning,
+		db:             deps.DB,
+		engine:         deps.Engine,
+		volumes:        deps.Volumes,
+		s3Destinations: deps.S3Destinations,
+		activity:       deps.Activity,
+		settings:       deps.Settings,
+		jobs:           deps.Jobs,
+		alreadyRunning: deps.AlreadyRunning,
 	}
 }
 
-func (s *Service) loadSystemVolumeBackupPoliciesInternal() (*backuptypes.SystemVolumeBackupPolicyCollection, error) {
+// RegisterWorkflows defines the manual and scheduled volume backup workflows while the host is still unstarted.
+func (s *Service) RegisterWorkflows(engine *flow.Engine) error {
+	var err error
+	s.flow = engine
+	template := activitylib.StartRequest{Type: activitytypes.TypeResourceAction, EnvironmentID: "0", ResourceType: new("system_backup"), ResourceID: new("volumes"), ResourceName: new("Volumes")}
+	s.backupWorkflow, err = engine.Define(flow.Definition{
+		Name:        "system-volume-backup",
+		Version:     1,
+		Fingerprint: "9b4a5e46a984446bc08df39a71e563e031548db3af1825a2413e8c96515db6ab",
+		Concurrency: 1,
+		Timeout:     24 * time.Hour,
+		Activity:    template,
+		Labels:      map[string]string{"backup": "Backing up volumes"},
+		Steps: []workflow.StepSpec{workflow.Step("backup", engine.Handler(func(ctx context.Context, t flow.Task) (any, error) {
+			var input selectionInput
+			if decodeErr := t.Payload(&input); decodeErr != nil {
+				return nil, decodeErr
+			}
+			result, backupErr := s.backUpSelection(ctx, input, volume.VolumeBackupTriggerManual, t.ActivityID())
+			if backupErr != nil {
+				return nil, backupErr
+			}
+			return selectionOutcome(result, false), nil
+		}), workflow.WithMaxAttempts(1))},
+	})
+	if err != nil {
+		return err
+	}
+	template.StartedBy, template.Step, template.LatestMessage = &usertypes.SystemUser, "Backing up volumes", "Creating scheduled system-managed volume backups"
+	s.policyWorkflow, err = engine.Define(flow.Definition{
+		Name:        "system-volume-backup-policy",
+		Version:     1,
+		Fingerprint: "94a13d1bac530e6eddcb73c27990a07d69915dc947ce5b559166eb3fb85e39ef",
+		Concurrency: 1,
+		Timeout:     24 * time.Hour,
+		Activity:    template,
+		Labels:      map[string]string{"backup": "Backing up volumes"},
+		Steps: []workflow.StepSpec{workflow.Step("backup", engine.Handler(func(ctx context.Context, t flow.Task) (any, error) {
+			previous, _ := jobcontext.Run(ctx)
+			if slices.ContainsFunc(previous.Outcome.Targets, func(target scheduler.TargetOutcome) bool { return target.ID == systemVolumePlanTarget }) {
+				return s.resumeSelection(ctx, previous, t.ActivityID())
+			}
+			var policyID string
+			if decodeErr := t.Payload(&policyID); decodeErr != nil {
+				return nil, decodeErr
+			}
+			return s.runScheduledSystemVolumeBackup(ctx, policyID, t.ActivityID())
+		}), workflow.WithMaxAttempts(1))},
+	})
+	return err
+}
+
+func (s *Service) loadSystemVolumeBackupPolicies() (*backuptypes.SystemVolumeBackupPolicyCollection, error) {
 	collection := &backuptypes.SystemVolumeBackupPolicyCollection{Policies: []backuptypes.SystemVolumeBackupPolicy{}}
 	if s.settings == nil {
 		return collection, nil
@@ -93,31 +164,24 @@ func (s *Service) loadSystemVolumeBackupPoliciesInternal() (*backuptypes.SystemV
 	return collection, nil
 }
 
-func (s *Service) systemVolumeBackupPolicyInternal(policyID string) (*backuptypes.SystemVolumeBackupPolicy, error) {
-	collection, err := s.loadSystemVolumeBackupPoliciesInternal()
+func (s *Service) systemVolumeBackupPolicy(policyID string) (*backuptypes.SystemVolumeBackupPolicy, error) {
+	collection, err := s.loadSystemVolumeBackupPolicies()
 	if err != nil {
 		return nil, err
 	}
-	for i := range collection.Policies {
-		if collection.Policies[i].ID == policyID {
-			policy := collection.Policies[i]
-			return &policy, nil
-		}
+	index := slices.IndexFunc(collection.Policies, func(policy backuptypes.SystemVolumeBackupPolicy) bool { return policy.ID == policyID })
+	if index < 0 {
+		return nil, nil
 	}
-	return nil, nil
+	return &collection.Policies[index], nil
 }
 
 func (s *Service) GetConfig(ctx context.Context) (*backuptypes.SystemVolumeBackupPolicyCollection, error) {
-	collection, err := s.loadSystemVolumeBackupPoliciesInternal()
+	collection, err := s.loadSystemVolumeBackupPolicies()
 	if err != nil {
 		return nil, err
 	}
-	destinations := make(map[string]backuptypes.S3Destination)
-	if s.s3Destinations != nil {
-		if available, listErr := s.s3Destinations.ListS3DestinationsByID(ctx); listErr == nil {
-			destinations = available
-		}
-	}
+	destinations := s.s3Destinations.DestinationsByID(ctx)
 	for i := range collection.Policies {
 		policy := &collection.Policies[i]
 		policy.S3DestinationName = destinations[policy.S3DestinationID].Name
@@ -143,9 +207,10 @@ func (s *Service) GetConfig(ctx context.Context) (*backuptypes.SystemVolumeBacku
 	return collection, nil
 }
 
-func (s *Service) normalizeSystemVolumePolicyUpdateInternal(ctx context.Context, input backuptypes.UpdateSystemVolumeBackupPolicy) (backuptypes.SystemVolumeBackupPolicy, error) {
-	if err := validateSystemVolumeSelectionInternal(input.SelectionMode); err != nil {
-		return backuptypes.SystemVolumeBackupPolicy{}, err
+func (s *Service) normalizeSystemVolumePolicyUpdate(ctx context.Context, input backuptypes.UpdateSystemVolumeBackupPolicy) (backuptypes.SystemVolumeBackupPolicy, error) {
+	mode := input.SelectionMode
+	if mode != backuptypes.SystemVolumeSelectionAll && mode != backuptypes.SystemVolumeSelectionAllowlist && mode != backuptypes.SystemVolumeSelectionBlocklist {
+		return backuptypes.SystemVolumeBackupPolicy{}, errors.New("selectionMode must be all, allowlist, or blocklist")
 	}
 	update, err := backup.ValidatePolicyUpdate(ctx, "system-managed volume", input.UpdateBackupPolicy, s.s3Destinations)
 	if err != nil {
@@ -153,13 +218,13 @@ func (s *Service) normalizeSystemVolumePolicyUpdateInternal(ctx context.Context,
 	}
 	names := kit.Unique(kit.TrimNonEmpty(input.VolumeNames))
 	slices.Sort(names)
-	if input.SelectionMode == backuptypes.SystemVolumeSelectionAll || names == nil {
+	if mode == backuptypes.SystemVolumeSelectionAll || names == nil {
 		names = []string{}
 	}
 	return backuptypes.SystemVolumeBackupPolicy{
 		ID: input.ID, Enabled: update.Enabled, Schedule: update.Schedule, RetentionCount: update.RetentionCount,
 		StopContainers: update.StopContainers, LocalEnabled: update.LocalEnabled, S3Enabled: update.S3Enabled,
-		S3DestinationID: update.S3DestinationID, SelectionMode: input.SelectionMode,
+		S3DestinationID: update.S3DestinationID, SelectionMode: mode,
 		VolumeNames: names, IgnoreAnonymous: input.IgnoreAnonymous,
 	}, nil
 }
@@ -168,7 +233,7 @@ func (s *Service) UpdateConfig(ctx context.Context, updates []backuptypes.Update
 	if s.settings == nil {
 		return nil, errors.New("settings service is unavailable")
 	}
-	existing, err := s.loadSystemVolumeBackupPoliciesInternal()
+	existing, err := s.loadSystemVolumeBackupPolicies()
 	if err != nil {
 		return nil, err
 	}
@@ -181,7 +246,7 @@ func (s *Service) UpdateConfig(ctx context.Context, updates []backuptypes.Update
 			return backuptypes.SystemVolumeBackupPolicy{ID: uuid.New().String()}
 		},
 		Build: func(ctx context.Context, policy *backuptypes.SystemVolumeBackupPolicy, update backuptypes.UpdateSystemVolumeBackupPolicy) error {
-			normalized, normalizeErr := s.normalizeSystemVolumePolicyUpdateInternal(ctx, update)
+			normalized, normalizeErr := s.normalizeSystemVolumePolicyUpdate(ctx, update)
 			if normalizeErr != nil {
 				return normalizeErr
 			}
@@ -189,11 +254,17 @@ func (s *Service) UpdateConfig(ctx context.Context, updates []backuptypes.Update
 			*policy = normalized
 			return nil
 		},
-		Persist: s.saveSystemVolumeBackupPoliciesInternal,
+		Persist: func(ctx context.Context, policies []backuptypes.SystemVolumeBackupPolicy) error {
+			encoded, encodeErr := json.Marshal(backuptypes.SystemVolumeBackupPolicyCollection{Policies: policies})
+			if encodeErr != nil {
+				return fmt.Errorf("encode policies: %w", encodeErr)
+			}
+			return s.settings.UpdateSetting(ctx, systemVolumeBackupConfigKey, string(encoded))
+		},
 		Unregister: func(ctx context.Context, policyID string) {
 			s.jobs.Unregister(ctx, systemVolumeBackupJobPrefix+policyID)
 		},
-		Reschedule: s.rescheduleSystemVolumeBackupInternal,
+		Reschedule: s.rescheduleSystemVolumeBackup,
 	}
 	if runErr := reconcile.Run(ctx, updates); runErr != nil {
 		return nil, runErr
@@ -210,7 +281,7 @@ func (s *Service) ListOptions(ctx context.Context) ([]backuptypes.SystemVolumeBa
 	if err != nil {
 		return nil, err
 	}
-	collection, err := s.loadSystemVolumeBackupPoliciesInternal()
+	collection, err := s.loadSystemVolumeBackupPolicies()
 	if err != nil {
 		return nil, err
 	}
@@ -232,151 +303,131 @@ func (s *Service) ListOptions(ctx context.Context) ([]backuptypes.SystemVolumeBa
 	return options, nil
 }
 
-func (s *Service) resolveSystemVolumeRunPolicyInternal(ctx context.Context, request backuptypes.RunSystemVolumeBackupsRequest) (backuptypes.SystemVolumeBackupPolicy, bool, error) {
-	if request.PolicyID != "" {
-		if request.Custom != nil {
-			return backuptypes.SystemVolumeBackupPolicy{}, false, errors.New("select a saved policy or custom configuration, not both")
-		}
-		policy, err := s.systemVolumeBackupPolicyInternal(request.PolicyID)
+// prepareSystemVolumeBackups resolves the requested policy, takes the system admission, and selects the live volumes.
+func (s *Service) prepareSystemVolumeBackups(ctx context.Context, request backuptypes.RunSystemVolumeBackupsRequest) (selectionInput, *runs.Lease, error) {
+	if s.volumes == nil {
+		return selectionInput{}, nil, errors.New("volume service is unavailable")
+	}
+	var input selectionInput
+	switch {
+	case request.PolicyID != "" && request.Custom != nil:
+		return selectionInput{}, nil, errors.New("select a saved policy or custom configuration, not both")
+	case request.PolicyID != "":
+		policy, err := s.systemVolumeBackupPolicy(request.PolicyID)
 		if err != nil {
-			return backuptypes.SystemVolumeBackupPolicy{}, false, err
+			return selectionInput{}, nil, err
 		}
 		if policy == nil {
-			return backuptypes.SystemVolumeBackupPolicy{}, false, errors.New("system-managed volume backup policy not found")
+			return selectionInput{}, nil, errors.New("system-managed volume backup policy not found")
 		}
-		return *policy, false, nil
+		input.Policy = *policy
+	default:
+		custom := backuptypes.UpdateSystemVolumeBackupPolicy{
+			Enabled: true, Schedule: defaultSystemVolumeSchedule, LocalEnabled: true,
+			SelectionMode: backuptypes.SystemVolumeSelectionAll, VolumeNames: []string{}, IgnoreAnonymous: true,
+		}
+		if run := request.Custom; run != nil {
+			localEnabled := run.Destination == backuptypes.SystemBackupDestinationLocal || run.Destination == backuptypes.SystemBackupDestinationLocalS3
+			s3Enabled := run.Destination == backuptypes.SystemBackupDestinationS3 || run.Destination == backuptypes.SystemBackupDestinationLocalS3
+			if !localEnabled && !s3Enabled {
+				return selectionInput{}, nil, errors.New("destination must be local, s3, or local_s3")
+			}
+			custom = backuptypes.UpdateSystemVolumeBackupPolicy{
+				Enabled: true, Schedule: defaultSystemVolumeSchedule, StopContainers: run.StopContainers,
+				LocalEnabled: localEnabled, S3Enabled: s3Enabled, S3DestinationID: run.S3DestinationID,
+				SelectionMode: run.SelectionMode, VolumeNames: run.VolumeNames, IgnoreAnonymous: run.IgnoreAnonymous,
+			}
+		}
+		policy, err := s.normalizeSystemVolumePolicyUpdate(ctx, custom)
+		if err != nil {
+			return selectionInput{}, nil, err
+		}
+		input.Policy, input.ManualPolicy = policy, true
 	}
-	custom := request.Custom
-	if custom != nil &&
-		custom.Destination != backuptypes.SystemBackupDestinationLocal &&
-		custom.Destination != backuptypes.SystemBackupDestinationS3 &&
-		custom.Destination != backuptypes.SystemBackupDestinationLocalS3 {
-		return backuptypes.SystemVolumeBackupPolicy{}, false, errors.New("destination must be local, s3, or local_s3")
-	}
-	policy, err := s.normalizeSystemVolumePolicyUpdateInternal(ctx, customSystemVolumePolicyInternal(custom))
-	return policy, true, err
-}
-
-type preparedSystemVolumeBackupInternal struct {
-	policy       backuptypes.SystemVolumeBackupPolicy
-	manualPolicy bool
-	candidates   []backuptypes.SystemVolumeBackupOption
-	lease        *runs.Lease
-}
-
-func (
-	s *Service,
-) runSystemVolumeBackupsInternal(
-	ctx context.Context,
-	request backuptypes.RunSystemVolumeBackupsRequest,
-	trigger volume.VolumeBackupTrigger,
-) (
-	*backuptypes.SystemVolumeBackupRunResult,
-	error,
-) {
-	prepared, err := s.prepareSystemVolumeBackupsInternal(ctx, request)
+	lease, admitted, err := s.engine.TryAcquireRun(ctx, backup.SystemAdmissionScope, backup.SystemAdmissionID)
 	if err != nil {
-		return nil, err
+		return selectionInput{}, nil, err
 	}
-	defer prepared.lease.Release(ctx)
-	frozen, err := json.Marshal(manualSystemVolumesInternal{Policy: prepared.policy, ManualPolicy: prepared.manualPolicy, Candidates: prepared.candidates})
-	if err != nil {
-		return nil, err
-	}
-	if progressErr := jobcontext.Progress(
-		ctx,
-		scheduler.TargetOutcome{
-			ResourceType: "backup_plan",
-			ID:           "system-volume-plan",
-			Status:       scheduler.Succeeded,
-			RecoveryData: frozen,
-		},
-	); progressErr != nil {
-		return nil, progressErr
-	}
-	return s.executeSystemVolumeBackupsInternal(ctx, prepared.policy, prepared.manualPolicy, prepared.candidates, trigger, "")
-}
-
-func (s *Service) prepareSystemVolumeBackupsInternal(ctx context.Context, request backuptypes.RunSystemVolumeBackupsRequest) (*preparedSystemVolumeBackupInternal, error) {
-	if s.volumes == nil {
-		return nil, errors.New("volume service is unavailable")
-	}
-	policyConfig, manualPolicy, err := s.resolveSystemVolumeRunPolicyInternal(ctx, request)
-	if err != nil {
-		return nil, err
-	}
-	lease, err := s.acquireRun(ctx)
-	if err != nil {
-		return nil, err
+	if !admitted {
+		return selectionInput{}, nil, s.alreadyRunning
 	}
 	options, err := s.volumes.ListBackupVolumeOptions(ctx)
 	if err != nil {
 		lease.Release(ctx)
-		return nil, err
+		return selectionInput{}, nil, err
 	}
-	candidates := selectSystemVolumeBackupCandidatesInternal(policyConfig, options)
-	return &preparedSystemVolumeBackupInternal{policy: policyConfig, manualPolicy: manualPolicy, candidates: candidates, lease: lease}, nil
+	input.Candidates = selectSystemVolumeBackupCandidates(input.Policy, options)
+	return input, lease, nil
 }
 
-func (
-	s *Service,
-) executeSystemVolumeBackupsInternal(
-	ctx context.Context,
-	policyConfig backuptypes.SystemVolumeBackupPolicy,
-	manualPolicy bool,
-	candidates []backuptypes.SystemVolumeBackupOption,
-	trigger volume.VolumeBackupTrigger,
-	activityID string,
-) (
-	result *backuptypes.SystemVolumeBackupRunResult,
-	err error,
-) {
-	result = &backuptypes.SystemVolumeBackupRunResult{
-		Matched: len(candidates), Failures: make([]backuptypes.SystemVolumeBackupFailure, 0),
+func (s *Service) executeSystemVolumeBackups(
+	ctx context.Context, input selectionInput, trigger volume.VolumeBackupTrigger, activityID string,
+) (result *backuptypes.SystemVolumeBackupRunResult, err error) {
+	result = &backuptypes.SystemVolumeBackupRunResult{Matched: len(input.Candidates), Failures: make([]backuptypes.SystemVolumeBackupFailure, 0)}
+	reportProgress := func(ctx context.Context) {
+		if activityID == "" {
+			return
+		}
+		names := make([]string, len(input.Candidates))
+		for i, candidate := range input.Candidates {
+			names[i] = candidate.Name
+		}
+		progress := 100
+		if result.Matched > 0 {
+			progress = 100 * (result.Succeeded + result.Failed + result.Skipped) / result.Matched
+		}
+		_, updateErr := s.activity.UpdateActivity(ctx, activityID, activitylib.UpdateRequest{Progress: &progress, Metadata: database.JSON{
+			"action": "run_system_volume_backups", "policyId": input.Policy.ID, "volumeNames": names,
+			"matched": result.Matched, "succeeded": result.Succeeded, "failed": result.Failed, "skipped": result.Skipped, "failures": result.Failures,
+		}})
+		if updateErr != nil {
+			slog.WarnContext(ctx, "Failed to report system-managed volume backup progress", "activityId", activityID, "policyId", input.Policy.ID, "error", updateErr)
+		}
 	}
-	defer s.updateSystemVolumeProgressInternal(context.WithoutCancel(ctx), activityID, policyConfig.ID, candidates, result)
+	defer reportProgress(context.WithoutCancel(ctx))
 	defer utils.RecoverToError(&err, "system-managed volume backup")
 
 	policy := backuptypes.UpdateBackupPolicy{
-		Enabled: true, Schedule: policyConfig.Schedule, RetentionCount: policyConfig.RetentionCount,
-		StopContainers: policyConfig.StopContainers, LocalEnabled: policyConfig.LocalEnabled, S3Enabled: policyConfig.S3Enabled,
-		S3DestinationID: policyConfig.S3DestinationID,
+		Enabled: true, Schedule: input.Policy.Schedule, RetentionCount: input.Policy.RetentionCount,
+		StopContainers: input.Policy.StopContainers, LocalEnabled: input.Policy.LocalEnabled, S3Enabled: input.Policy.S3Enabled,
+		S3DestinationID: input.Policy.S3DestinationID,
 	}
-	for _, candidate := range candidates {
-		status := completedVolumeBackupStatusInternal(ctx, candidate.Name)
-		if status == scheduler.Succeeded {
+	previous, _ := jobcontext.Run(ctx)
+	for _, candidate := range input.Candidates {
+		done := slices.IndexFunc(previous.Outcome.Targets, func(target scheduler.TargetOutcome) bool {
+			return target.ID == candidate.Name && (target.Status == scheduler.Succeeded || target.Status == scheduler.Skipped)
+		})
+		if done >= 0 && previous.Outcome.Targets[done].Status == scheduler.Succeeded {
 			result.Succeeded++
 			continue
 		}
-		if status == scheduler.Skipped {
+		if done >= 0 {
 			result.Skipped++
 			continue
 		}
 		if cancellationErr := ctx.Err(); cancellationErr != nil {
 			return result, cancellationErr
 		}
-		s.updateSystemVolumeProgressInternal(ctx, activityID, policyConfig.ID, candidates, result)
-		overridden, policyErr := s.volumes.HasEnabledBackupPolicy(ctx, candidate.Name)
-		if policyErr != nil {
-			result.Failed++
-			result.Failures = append(result.Failures, backuptypes.SystemVolumeBackupFailure{VolumeName: candidate.Name, Error: policyErr.Error()})
-			continue
-		}
-		if overridden {
+		reportProgress(ctx)
+		overridden, backupErr := s.volumes.HasEnabledBackupPolicy(ctx, candidate.Name)
+		if backupErr == nil && overridden {
 			if skipProgressErr := jobcontext.Progress(ctx, scheduler.TargetOutcome{ID: candidate.Name, Status: scheduler.Skipped}); skipProgressErr != nil {
 				return result, skipProgressErr
 			}
 			result.Skipped++
 			continue
 		}
-		seriesID := systemVolumePolicyIDInternal(policyConfig.ID, candidate.Name)
-		if manualPolicy {
-			seriesID = systemVolumeManualPolicyIDInternal(candidate.Name)
+		if backupErr == nil {
+			seriesID := backuptypes.SystemVolumePolicyPrefix + kit.Ternary(input.ManualPolicy, "manual", input.Policy.ID) + ":" + kit.SHA256Hex(candidate.Name)[:16]
+			_, backupErr = s.volumes.CreateSystemManagedBackup(ctx, candidate.Name, usertypes.SystemUser, trigger, seriesID, policy)
 		}
-		_, backupErr := s.volumes.CreateSystemManagedBackup(ctx, candidate.Name, usertypes.SystemUser, trigger, seriesID, policy)
 		if errors.Is(backupErr, volume.ErrVolumeBackupAlreadyRunning) {
 			result.Skipped++
 			continue
+		}
+		if backupErr != nil && ctx.Err() != nil {
+			// Shutdown interrupted this volume; hand the task back instead of counting it failed.
+			return result, ctx.Err()
 		}
 		if backupErr != nil {
 			result.Failed++
@@ -391,279 +442,124 @@ func (
 	return result, nil
 }
 
-func (s *Service) runScheduledSystemVolumeBackupInternal(ctx context.Context, policyID string) (scheduler.Outcome, error) {
-	policy, err := s.systemVolumeBackupPolicyInternal(policyID)
+func (s *Service) runScheduledSystemVolumeBackup(ctx context.Context, policyID, activityID string) (scheduler.Outcome, error) {
+	policy, err := s.systemVolumeBackupPolicy(policyID)
 	if err != nil {
 		return scheduler.Outcome{}, err
 	}
 	if policy == nil || !policy.Enabled {
 		return scheduler.Outcome{Status: scheduler.Skipped}, nil
 	}
-	remoteDisabled, checkErr := s.disableMissingVolumeS3Internal(ctx, policy)
-	if checkErr != nil {
-		return scheduler.Outcome{}, checkErr
+	var remoteErr error
+	if policy.S3Enabled {
+		root := path.Join(backup.VolumeRoot, s.settings.GetSettingsConfig().InstanceID.Value)
+		remoteErr = backup.CheckScheduledRemote(ctx, s.db, s.s3Destinations, "volume_backups", policy.S3DestinationID, root)
+	}
+	remoteDisabled, err := backup.DisableMissingRemote(remoteErr, policy.LocalEnabled, &policy.S3Enabled, &policy.Enabled, func(field string) (bool, error) {
+		collection, loadErr := s.loadSystemVolumeBackupPolicies()
+		if loadErr != nil {
+			return false, loadErr
+		}
+		index := slices.IndexFunc(collection.Policies, func(current backuptypes.SystemVolumeBackupPolicy) bool {
+			return current.ID == policy.ID && current.S3DestinationID == policy.S3DestinationID && current.S3Enabled == policy.S3Enabled &&
+				current.Enabled == policy.Enabled && current.LocalEnabled == policy.LocalEnabled
+		})
+		if index < 0 {
+			return false, nil
+		}
+		current := &collection.Policies[index]
+		*kit.Ternary(field == "enabled", &current.Enabled, &current.S3Enabled) = false
+		encoded, encodeErr := json.Marshal(collection)
+		if encodeErr != nil {
+			return false, fmt.Errorf("encode policies: %w", encodeErr)
+		}
+		return true, s.settings.UpdateSetting(ctx, systemVolumeBackupConfigKey, string(encoded))
+	})
+	if err != nil {
+		return scheduler.Outcome{}, err
+	}
+	if remoteDisabled {
+		s.rescheduleSystemVolumeBackup(ctx, policy)
 	}
 	if remoteDisabled && !policy.LocalEnabled {
 		return scheduler.Outcome{Status: scheduler.NeedsAttention, Message: backup.RemoteDisabledMessage}, nil
 	}
-	result, err := s.runSystemVolumeBackupsInternal(ctx, backuptypes.RunSystemVolumeBackupsRequest{PolicyID: policyID}, volume.VolumeBackupTriggerScheduled)
+	input, lease, err := s.prepareSystemVolumeBackups(ctx, backuptypes.RunSystemVolumeBackupsRequest{PolicyID: policyID})
 	if errors.Is(err, s.alreadyRunning) {
 		slog.InfoContext(ctx, "Scheduled system-managed volume backups skipped; a system backup is running", "policyId", policyID)
-		return scheduler.Outcome{Status: scheduler.Skipped}, nil
+		return scheduler.Outcome{Status: scheduler.Skipped, Message: "Skipped: a system backup is running"}, nil
+	}
+	var result *backuptypes.SystemVolumeBackupRunResult
+	if err == nil {
+		defer lease.Release(ctx)
+		var frozen []byte
+		if frozen, err = json.Marshal(input); err == nil {
+			err = jobcontext.Progress(ctx, scheduler.TargetOutcome{ResourceType: "backup_plan", ID: systemVolumePlanTarget, Status: scheduler.Succeeded, RecoveryData: frozen})
+		}
+		if err == nil {
+			result, err = s.executeSystemVolumeBackups(ctx, input, volume.VolumeBackupTriggerScheduled, activityID)
+		}
 	}
 	if err != nil {
 		slog.ErrorContext(ctx, "Scheduled system-managed volume backups failed", "policyId", policyID, "error", err)
 		return scheduler.Outcome{}, err
 	}
-	slog.InfoContext(
-		ctx,
-		"Scheduled system-managed volume backups completed",
-		"policyId",
-		policyID,
-		"matched",
-		result.Matched,
-		"succeeded",
-		result.Succeeded,
-		"failed",
-		result.Failed,
-		"skipped",
-		result.Skipped,
-	)
-	outcome := scheduler.Outcome{Status: scheduler.Succeeded}
-	if remoteDisabled {
-		outcome.Message = backup.RemoteDisabledMessage
-	}
-	if result.Failed > 0 || remoteDisabled {
-		outcome.Status = scheduler.Partial
-	}
-	for _, failure := range result.Failures {
-		outcome.Targets = append(outcome.Targets, scheduler.TargetOutcome{ID: failure.VolumeName, Status: scheduler.Failed, Message: failure.Error})
-	}
-	return outcome, nil
+	slog.InfoContext(ctx, "Scheduled system-managed volume backups completed", "policyId", policyID,
+		"matched", result.Matched, "succeeded", result.Succeeded, "failed", result.Failed, "skipped", result.Skipped)
+	return selectionOutcome(result, remoteDisabled), nil
 }
 
-func (s *Service) rescheduleSystemVolumeBackupInternal(ctx context.Context, policy *backuptypes.SystemVolumeBackupPolicy) {
-	if policy == nil {
-		return
-	}
-	jobID := systemVolumeBackupJobPrefix + policy.ID
-	if !policy.Enabled {
-		s.jobs.Unregister(ctx, jobID)
-		return
-	}
-	policyID := policy.ID
-	s.jobs.Register(ctx, jobID, func(context.Context) string {
-		current, err := s.systemVolumeBackupPolicyInternal(policyID)
-		if err != nil || current == nil {
-			return defaultSystemVolumeSchedule
-		}
-		return current.Schedule
-	}, func(ctx context.Context) (scheduler.Outcome, error) {
-		return s.runScheduledSystemVolumeBackupInternal(ctx, policyID)
-	}, func(ctx context.Context, previous scheduler.Run) (scheduler.Outcome, error) {
-		for _, target := range previous.Outcome.Targets {
-			if target.ID != "system-volume-plan" || len(target.RecoveryData) == 0 {
-				continue
-			}
-			if err := s.ExecuteDurable(ctx, previous.ID, target.RecoveryData, true); err != nil {
-				return scheduler.Outcome{Status: scheduler.NeedsAttention, Message: err.Error()}, err
-			}
-			return scheduler.Outcome{Status: scheduler.Succeeded}, nil
-		}
-		return scheduler.Outcome{Status: scheduler.NeedsAttention, Message: "The interrupted volume backup has no frozen selection"}, nil
+// resumeSelection finishes the frozen selection an interrupted scheduled run recorded.
+func (s *Service) resumeSelection(ctx context.Context, previous scheduler.Run, activityID string) (scheduler.Outcome, error) {
+	index := slices.IndexFunc(previous.Outcome.Targets, func(target scheduler.TargetOutcome) bool {
+		return target.ID == systemVolumePlanTarget && len(target.RecoveryData) > 0
 	})
-}
-
-func (s *Service) saveSystemVolumeBackupPoliciesInternal(ctx context.Context, policies []backuptypes.SystemVolumeBackupPolicy) error {
-	encoded, err := json.Marshal(backuptypes.SystemVolumeBackupPolicyCollection{Policies: policies})
+	if index < 0 {
+		return scheduler.Outcome{Status: scheduler.NeedsAttention, Message: "The interrupted volume backup has no frozen selection"}, nil
+	}
+	var input selectionInput
+	if err := json.Unmarshal(previous.Outcome.Targets[index].RecoveryData, &input); err != nil {
+		return scheduler.Outcome{}, err
+	}
+	result, err := s.backUpSelection(ctx, input, volume.VolumeBackupTriggerScheduled, activityID)
 	if err != nil {
-		return fmt.Errorf("encode policies: %w", err)
+		return scheduler.Outcome{Status: scheduler.NeedsAttention, Message: err.Error()}, err
 	}
-	return s.settings.UpdateSetting(ctx, systemVolumeBackupConfigKey, string(encoded))
+	return selectionOutcome(result, false), nil
 }
 
-func (s *Service) disableMissingVolumeS3Internal(ctx context.Context, policy *backuptypes.SystemVolumeBackupPolicy) (bool, error) {
-	if !policy.S3Enabled {
-		return false, nil
-	}
-	root := "arcane-volume-backups/" + s.settings.GetSettingsConfig().InstanceID.Value
-	err := backup.CheckScheduledRemote(ctx, s.db, s.s3Destinations, "volume_backups", policy.S3DestinationID, root)
-	if !errors.Is(err, backup.ErrRemoteRepositoryMissing) {
-		return false, nil
-	}
-	collection, err := s.loadSystemVolumeBackupPoliciesInternal()
-	if err != nil {
-		return false, err
-	}
-	for i := range collection.Policies {
-		current := &collection.Policies[i]
-		if current.ID != policy.ID {
-			continue
-		}
-		if current.S3DestinationID != policy.S3DestinationID || current.S3Enabled != policy.S3Enabled || current.Enabled != policy.Enabled || current.LocalEnabled != policy.LocalEnabled {
-			return false, nil
-		}
-		if current.LocalEnabled {
-			current.S3Enabled = false
-		} else {
-			current.Enabled = false
-		}
-		if saveSystemVolumeBackupPoliciesErr := s.saveSystemVolumeBackupPoliciesInternal(ctx, collection.Policies); saveSystemVolumeBackupPoliciesErr != nil {
-			return false, saveSystemVolumeBackupPoliciesErr
-		}
-		*policy = *current
-		s.rescheduleSystemVolumeBackupInternal(ctx, policy)
-		return true, nil
-	}
-	return false, nil
-}
-
-// Start freezes the selected policy and volumes before returning.
-func (s *Service) Start(ctx context.Context, user usertypes.Actor, request backuptypes.RunSystemVolumeBackupsRequest) (*backuptypes.BackupRunAccepted, error) {
-	prepared, err := s.prepareSystemVolumeBackupsInternal(ctx, request)
+// backUpSelection takes over the system admission, resumes the selection's interrupted volumes, and backs up the rest.
+func (s *Service) backUpSelection(ctx context.Context, input selectionInput, trigger volume.VolumeBackupTrigger, activityID string) (*backuptypes.SystemVolumeBackupRunResult, error) {
+	lease, admitted, err := s.engine.AcquireRun(ctx, backup.SystemAdmissionScope, backup.SystemAdmissionID, input.Claim)
 	if err != nil {
 		return nil, err
 	}
-	policy, manualPolicy, candidates, lease := prepared.policy, prepared.manualPolicy, prepared.candidates, prepared.lease
-
-	names := make([]string, len(candidates))
-	for i, candidate := range candidates {
-		names[i] = candidate.Name
-	}
-	activityID, workCtx := activitylib.StartHandlerActivity(ctx, s.activity, "0", activitytypes.TypeResourceAction, "system_backup", "volumes", "Volumes", &user,
-		"Backing up volumes", "Creating system-managed volume backups", database.JSON{
-			"action":      "run_system_volume_backups",
-			"policyId":    policy.ID,
-			"volumeNames": names,
-			"matched": len(
-				candidates,
-			),
-			"succeeded": 0,
-			"failed":    0,
-			"skipped":   0,
-			"failures":  []backuptypes.SystemVolumeBackupFailure{},
-		}, false)
-	if activityID == "" {
-		lease.Release(ctx)
-		return nil, errors.New("failed to create system-managed volume backup activity")
-	}
-	finish := func(runErr error) {
-		defer lease.Release(ctx)
-		activitylib.CompleteHandlerActivity(workCtx, s.activity, activityID, "System-managed volume backups completed", runErr)
-	}
-	keyID, _ := ctx.Value(middleware.ContextKeyApiKeyID).(string)
-	payload, err := json.Marshal(manualSystemVolumesInternal{Policy: policy, ManualPolicy: manualPolicy, Candidates: candidates, ActivityID: activityID, UserID: user.ID})
-	if err == nil {
-		err = s.engine.SubmitDurableRun(
-			workCtx,
-			backuptypes.DurableRunCommand{
-				Kind:             "system-volumes",
-				RunID:            activityID,
-				ActivityID:       activityID,
-				Payload:          payload,
-				UserID:           user.ID,
-				EnvironmentID:    "0",
-				Permission:       authz.PermSystemBackupsManage,
-				RequestedWithKey: keyID,
-			},
-			lease,
-		)
-	}
-
-	if err != nil {
-		finish(err)
-		return nil, err
-	}
-	return &backuptypes.BackupRunAccepted{ActivityID: activityID, Status: "running"}, nil
-}
-
-func (
-	s *Service,
-) updateSystemVolumeProgressInternal(
-	ctx context.Context,
-	activityID, policyID string,
-	candidates []backuptypes.SystemVolumeBackupOption,
-	result *backuptypes.SystemVolumeBackupRunResult,
-) {
-	if activityID == "" {
-		return
-	}
-	names := make([]string, len(candidates))
-	for i, candidate := range candidates {
-		names[i] = candidate.Name
-	}
-	progress := 100
-	if result.Matched > 0 {
-		progress = 100 * (result.Succeeded + result.Failed + result.Skipped) / result.Matched
-	}
-	_, err := s.activity.UpdateActivity(ctx, activityID, activitylib.UpdateRequest{Progress: &progress, Metadata: database.JSON{
-		"action": "run_system_volume_backups", "policyId": policyID, "volumeNames": names,
-		"matched": result.Matched, "succeeded": result.Succeeded, "failed": result.Failed, "skipped": result.Skipped, "failures": result.Failures,
-	}})
-	if err != nil {
-		slog.WarnContext(ctx, "Failed to report system-managed volume backup progress", "activityId", activityID, "policyId", policyID, "error", err)
-	}
-}
-
-type manualSystemVolumesInternal struct {
-	Policy       backuptypes.SystemVolumeBackupPolicy   `json:"policy"`
-	ManualPolicy bool                                   `json:"manualPolicy"`
-	Candidates   []backuptypes.SystemVolumeBackupOption `json:"candidates"`
-	ActivityID   string                                 `json:"activityId"`
-	UserID       string                                 `json:"userId"`
-}
-
-// ExecuteDurable runs a submitted or interrupted system-volumes run.
-func (s *Service) ExecuteDurable(ctx context.Context, runID string, payload []byte, interrupted bool) (err error) {
-	var command manualSystemVolumesInternal
-	if decodeErr := json.Unmarshal(payload, &command); decodeErr != nil {
-		return decodeErr
-	}
-	defer func() {
-		if ctx.Err() == nil {
-			activitylib.CompleteHandlerActivity(ctx, s.activity, command.ActivityID, "System-managed volume backups completed", err)
-		}
-	}()
-	lease, err := s.acquireDurableRun(ctx, runID)
-	if err != nil {
-		return err
+	if !admitted {
+		return nil, s.alreadyRunning
 	}
 	defer lease.Release(ctx)
-	if interrupted {
-		ctx, err = s.reconcileVolumeCandidatesInternal(ctx, command.Candidates)
-		if err != nil {
-			return err
+	if input.Requester != nil {
+		if authorizeErr := s.engine.Authorize(ctx, *input.Requester); authorizeErr != nil {
+			return nil, authorizeErr
 		}
 	}
-	result, err := s.executeSystemVolumeBackupsInternal(ctx, command.Policy, command.ManualPolicy, command.Candidates, volume.VolumeBackupTriggerManual, command.ActivityID)
-	if err != nil {
-		return err
-	}
-	if result.Failed > 0 {
-		return fmt.Errorf("%d volume backups failed", result.Failed)
-	}
-	return nil
-}
-
-func (s *Service) reconcileVolumeCandidatesInternal(ctx context.Context, candidates []backuptypes.SystemVolumeBackupOption) (context.Context, error) {
 	previous, _ := jobcontext.Run(ctx)
-	for _, candidate := range candidates {
-		pending := false
-		for _, target := range previous.Outcome.Targets {
-			if target.ID == candidate.Name && target.Status != scheduler.Succeeded && target.Status != scheduler.Skipped {
-				pending = true
-				break
-			}
-		}
-		if !pending {
+	for _, candidate := range input.Candidates {
+		if !slices.ContainsFunc(previous.Outcome.Targets, func(target scheduler.TargetOutcome) bool {
+			return target.ID == candidate.Name && target.Status != scheduler.Succeeded && target.Status != scheduler.Skipped
+		}) {
 			continue
 		}
 		outcome, recoveryErr := s.volumes.ReconcileBackup(ctx, previous, candidate.Name)
+		if errors.Is(recoveryErr, backup.ErrBackupSettled) {
+			// That volume's backup already failed, so the selection backs it up again below.
+			continue
+		}
 		if recoveryErr != nil {
-			return ctx, recoveryErr
+			return nil, recoveryErr
 		}
 		if outcome.Status != scheduler.Succeeded {
-			return ctx, errors.New(outcome.Message)
+			return nil, errors.New(outcome.Message)
 		}
 		for i := range previous.Outcome.Targets {
 			if previous.Outcome.Targets[i].ID == candidate.Name {
@@ -673,86 +569,109 @@ func (s *Service) reconcileVolumeCandidatesInternal(ctx context.Context, candida
 	}
 	progressCtx := ctx
 	ctx = jobcontext.WithExecution(ctx, previous, func(target scheduler.TargetOutcome) error { return jobcontext.Progress(progressCtx, target) })
-	return ctx, nil
+	return s.executeSystemVolumeBackups(ctx, input, trigger, activityID)
 }
 
-// FailDurable completes the activity of a system-volumes run that cannot continue.
-func (s *Service) FailDurable(ctx context.Context, _ string, payload []byte, runErr error) error {
-	var command manualSystemVolumesInternal
-	if err := json.Unmarshal(payload, &command); err != nil {
-		return err
+// selectionOutcome reports a run's result; failed volumes or disabled remote storage make it partial.
+func selectionOutcome(result *backuptypes.SystemVolumeBackupRunResult, remoteDisabled bool) scheduler.Outcome {
+	outcome := scheduler.Outcome{Status: scheduler.Succeeded, Message: "System-managed volume backups completed"}
+	if result.Failed > 0 {
+		outcome.Status, outcome.Message = scheduler.Partial, fmt.Sprintf("%d volume backups failed", result.Failed)
 	}
-	activitylib.CompleteHandlerActivity(ctx, s.activity, command.ActivityID, "System-managed volume backups completed", runErr)
-	return nil
+	if remoteDisabled {
+		outcome.Status, outcome.Message = scheduler.Partial, backup.RemoteDisabledMessage
+	}
+	for _, failure := range result.Failures {
+		outcome.Targets = append(outcome.Targets, scheduler.TargetOutcome{ID: failure.VolumeName, Status: scheduler.Failed, Message: failure.Error})
+	}
+	return outcome
+}
+
+func (s *Service) rescheduleSystemVolumeBackup(ctx context.Context, policy *backuptypes.SystemVolumeBackupPolicy) {
+	if policy == nil {
+		return
+	}
+	jobID := systemVolumeBackupJobPrefix + policy.ID
+	if !policy.Enabled {
+		s.jobs.Unregister(ctx, jobID)
+		return
+	}
+	policyID := policy.ID
+	s.jobs.Add(ctx, &flow.Job{
+		Engine:   s.flow,
+		Workflow: s.policyWorkflow,
+		JobName:  s.jobs.JobName(jobID),
+		Payload:  policyID,
+		Activity: activitylib.StartRequest{Metadata: database.JSON{"action": "scheduled_system_volume_backups", "policyId": policyID, "schedule": policy.Schedule}},
+		ScheduleFn: func(context.Context) string {
+			current, err := s.systemVolumeBackupPolicy(policyID)
+			if err != nil || current == nil {
+				return defaultSystemVolumeSchedule
+			}
+			return current.Schedule
+		},
+		FallbackFn: func(ctx context.Context, previous scheduler.Run) (scheduler.Outcome, error) {
+			return s.resumeSelection(ctx, previous, "")
+		},
+	})
+}
+
+// Start freezes the selected policy and volumes, then submits their workflow.
+func (s *Service) Start(ctx context.Context, user usertypes.Actor, request backuptypes.RunSystemVolumeBackupsRequest) (*backuptypes.BackupRunAccepted, error) {
+	requester := backup.NewRequester(ctx, user, "0", authz.PermSystemBackupsManage)
+	if err := s.engine.Authorize(ctx, requester); err != nil {
+		return nil, err
+	}
+	input, lease, err := s.prepareSystemVolumeBackups(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	input.Requester = &requester
+	names := make([]string, len(input.Candidates))
+	for i, candidate := range input.Candidates {
+		names[i] = candidate.Name
+	}
+	input.Claim = uuid.NewV7().String()
+	release := s.engine.Hold(backup.SystemAdmissionScope, backup.SystemAdmissionID, input.Claim, lease)
+	activityID, err := s.flow.Submit(ctx, s.backupWorkflow, input, activitylib.StartRequest{
+		StartedBy: &user, Step: "Backing up volumes", LatestMessage: "Creating system-managed volume backups",
+		Metadata: database.JSON{
+			"action": "run_system_volume_backups", "policyId": input.Policy.ID, "volumeNames": names, "matched": len(names),
+			"succeeded": 0, "failed": 0, "skipped": 0, "failures": []backuptypes.SystemVolumeBackupFailure{},
+		},
+	})
+	if err != nil {
+		release(ctx)
+		return nil, err
+	}
+	// A run canceled before its task starts never takes the parked lease.
+	go func() {
+		_, _ = s.flow.Wait(context.WithoutCancel(ctx), s.backupWorkflow, activityID)
+		release(context.WithoutCancel(ctx))
+	}()
+	return &backuptypes.BackupRunAccepted{ActivityID: activityID, Status: "running"}, nil
 }
 
 // RegisterJobsOnStartup schedules every saved policy and returns how many were loaded.
 func (s *Service) RegisterJobsOnStartup(ctx context.Context) int {
-	policies, err := s.loadSystemVolumeBackupPoliciesInternal()
+	policies, err := s.loadSystemVolumeBackupPolicies()
 	if err != nil {
 		slog.ErrorContext(ctx, "Failed to load system-managed volume backup policies", "error", err)
 		return 0
 	}
 	for i := range policies.Policies {
-		s.rescheduleSystemVolumeBackupInternal(ctx, &policies.Policies[i])
+		s.rescheduleSystemVolumeBackup(ctx, &policies.Policies[i])
 	}
 	return len(policies.Policies)
 }
 
-func completedVolumeBackupStatusInternal(ctx context.Context, volumeName string) scheduler.RunStatus {
-	previous, ok := jobcontext.Run(ctx)
-	if !ok {
-		return ""
-	}
-	for _, target := range previous.Outcome.Targets {
-		if target.ID == volumeName && (target.Status == scheduler.Succeeded || target.Status == scheduler.Skipped) {
-			return target.Status
-		}
-	}
-	return ""
-}
-
-func customSystemVolumePolicyInternal(custom *backuptypes.SystemVolumeBackupCustomRun) backuptypes.UpdateSystemVolumeBackupPolicy {
-	if custom == nil {
-		return backuptypes.UpdateSystemVolumeBackupPolicy{
-			Enabled: true, Schedule: defaultSystemVolumeSchedule, LocalEnabled: true,
-			SelectionMode: backuptypes.SystemVolumeSelectionAll, VolumeNames: []string{}, IgnoreAnonymous: true,
-		}
-	}
-	localEnabled := custom.Destination == backuptypes.SystemBackupDestinationLocal || custom.Destination == backuptypes.SystemBackupDestinationLocalS3
-	s3Enabled := custom.Destination == backuptypes.SystemBackupDestinationS3 || custom.Destination == backuptypes.SystemBackupDestinationLocalS3
-	return backuptypes.UpdateSystemVolumeBackupPolicy{
-		Enabled: true, Schedule: defaultSystemVolumeSchedule, RetentionCount: 0, StopContainers: custom.StopContainers,
-		LocalEnabled: localEnabled, S3Enabled: s3Enabled, S3DestinationID: custom.S3DestinationID,
-		SelectionMode: custom.SelectionMode, VolumeNames: custom.VolumeNames, IgnoreAnonymous: custom.IgnoreAnonymous,
-	}
-}
-
-const (
-	systemVolumeBackupConfigKey = "systemVolumeBackupConfig"
-	systemVolumeBackupJobPrefix = "volumes:"
-	defaultSystemVolumeSchedule = "0 0 2 * * *"
-)
-
-func systemVolumeManualPolicyIDInternal(volumeName string) string {
-	return backuptypes.SystemVolumePolicyPrefix + "manual:" + kit.SHA256Hex(volumeName)[:16]
-}
-
-func systemVolumePolicyIDInternal(policyID, volumeName string) string {
-	return backuptypes.SystemVolumePolicyPrefix + policyID + ":" + kit.SHA256Hex(volumeName)[:16]
-}
-
-func selectSystemVolumeBackupCandidatesInternal(policy backuptypes.SystemVolumeBackupPolicy, options []backuptypes.SystemVolumeBackupOption) []backuptypes.SystemVolumeBackupOption {
-	configured := make(map[string]struct{}, len(policy.VolumeNames))
-	for _, name := range policy.VolumeNames {
-		configured[name] = struct{}{}
-	}
+func selectSystemVolumeBackupCandidates(policy backuptypes.SystemVolumeBackupPolicy, options []backuptypes.SystemVolumeBackupOption) []backuptypes.SystemVolumeBackupOption {
 	result := make([]backuptypes.SystemVolumeBackupOption, 0, len(options))
 	for _, option := range options {
 		if !option.Available {
 			continue
 		}
-		_, selected := configured[option.Name]
+		selected := slices.Contains(policy.VolumeNames, option.Name)
 		matches := policy.SelectionMode == backuptypes.SystemVolumeSelectionAll ||
 			(policy.SelectionMode == backuptypes.SystemVolumeSelectionAllowlist && selected) ||
 			(policy.SelectionMode == backuptypes.SystemVolumeSelectionBlocklist && !selected)
@@ -761,11 +680,4 @@ func selectSystemVolumeBackupCandidatesInternal(policy backuptypes.SystemVolumeB
 		}
 	}
 	return result
-}
-
-func validateSystemVolumeSelectionInternal(mode backuptypes.SystemVolumeSelectionMode) error {
-	if mode != backuptypes.SystemVolumeSelectionAll && mode != backuptypes.SystemVolumeSelectionAllowlist && mode != backuptypes.SystemVolumeSelectionBlocklist {
-		return errors.New("selectionMode must be all, allowlist, or blocklist")
-	}
-	return nil
 }

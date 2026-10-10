@@ -14,7 +14,7 @@ import (
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
 	"github.com/samber/mo"
-	"go.getarcane.app/kit/pkg"
+	kit "go.getarcane.app/kit/pkg"
 	"go.getarcane.app/kit/pkg/mapping"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
@@ -285,12 +285,7 @@ func (h *NetworkHandler) DeleteNetwork(ctx context.Context, input *DeleteNetwork
 		return nil, huma.Error500InternalServerError("Failed to remove network: " + err.Error())
 	}
 
-	return &handlerutil.Out[base.MessageResponse]{
-		Body: base.ApiResponse[base.MessageResponse]{
-			Success: true,
-			Data:    base.MessageResponse{Message: "Network removed successfully", ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()},
-		},
-	}, nil
+	return handlerutil.MessageOutput("Network removed successfully", activityID), nil
 }
 
 func (h *NetworkHandler) ConnectContainer(ctx context.Context, input *ConnectContainerInput) (*handlerutil.Out[base.MessageResponse], error) {
@@ -324,12 +319,7 @@ func (h *NetworkHandler) ConnectContainer(ctx context.Context, input *ConnectCon
 		return nil, huma.Error500InternalServerError("Failed to connect container to network: " + err.Error())
 	}
 
-	return &handlerutil.Out[base.MessageResponse]{
-		Body: base.ApiResponse[base.MessageResponse]{
-			Success: true,
-			Data:    base.MessageResponse{Message: "Container connected successfully", ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()},
-		},
-	}, nil
+	return handlerutil.MessageOutput("Container connected successfully", activityID), nil
 }
 
 func (h *NetworkHandler) DisconnectContainer(ctx context.Context, input *DisconnectContainerInput) (*handlerutil.Out[base.MessageResponse], error) {
@@ -361,12 +351,7 @@ func (h *NetworkHandler) DisconnectContainer(ctx context.Context, input *Disconn
 		return nil, huma.Error500InternalServerError("Failed to disconnect container from network: " + err.Error())
 	}
 
-	return &handlerutil.Out[base.MessageResponse]{
-		Body: base.ApiResponse[base.MessageResponse]{
-			Success: true,
-			Data:    base.MessageResponse{Message: "Container disconnected successfully", ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()},
-		},
-	}, nil
+	return handlerutil.MessageOutput("Container disconnected successfully", activityID), nil
 }
 
 func (h *NetworkHandler) PruneNetworks(ctx context.Context, input *PruneNetworksInput) (*handlerutil.Out[networktypes.PruneReport], error) {

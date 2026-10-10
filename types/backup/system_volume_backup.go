@@ -104,6 +104,7 @@ type HistoryEntry struct {
 	Format            string                  `json:"format,omitempty"`
 	LocalSnapshotID   string                  `json:"localSnapshotId,omitempty"`
 	RemoteSnapshotID  string                  `json:"remoteSnapshotId,omitempty"`
+	RemoteInstanceID  string                  `json:"remoteInstanceId,omitempty"`
 	S3DestinationID   string                  `json:"s3DestinationId,omitempty"`
 	S3DestinationName string                  `json:"s3DestinationName,omitempty"`
 	PolicyID          string                  `json:"policyId,omitempty"`

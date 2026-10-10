@@ -369,7 +369,7 @@ func (h *PasskeyHandler) DeletePasskey(ctx context.Context, input *DeletePasskey
 	if deletePasskeyErr := h.passkeyService.DeletePasskey(ctx, userModel.ID, input.ID, sessionID, input.StepUpToken, oidcEnabled); deletePasskeyErr != nil {
 		return nil, passkeyHTTPErrorInternal(deletePasskeyErr)
 	}
-	return &handlerutil.Out[base.MessageResponse]{Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: base.MessageResponse{Message: "Passkey deleted"}}}, nil
+	return handlerutil.MessageOutput("Passkey deleted", ""), nil
 }
 
 func (h *PasskeyHandler) BeginStepUp(ctx context.Context, _ *BeginStepUpInput) (*handlerutil.Out[passkeyBeginResponse], error) {
@@ -455,7 +455,7 @@ func (h *PasskeyHandler) DisableMFA(ctx context.Context, input *MFASettingsInput
 		return nil, passkeyHTTPErrorInternal(disableMFAErr)
 	}
 	h.authService.InvalidateUserTokenCache(userModel.ID)
-	return &handlerutil.Out[base.MessageResponse]{Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: base.MessageResponse{Message: "Passkey MFA disabled"}}}, nil
+	return handlerutil.MessageOutput("Passkey MFA disabled", ""), nil
 }
 
 func (h *PasskeyHandler) RegenerateRecoveryCodes(ctx context.Context, input *MFASettingsInput) (*handlerutil.Out[RecoveryCodesResponse], error) {

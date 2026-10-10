@@ -20,6 +20,7 @@ import (
 	"go.getarcane.app/sys/crypto"
 	"gorm.io/gorm"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/backup"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
@@ -27,6 +28,7 @@ import (
 	systembackup "github.com/getarcaneapp/arcane/backend/v2/internal/system/children/backup"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/volume"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/flow/flowtest"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
 	francistest "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/francis/testing"
 )
@@ -196,7 +198,7 @@ func (s *systemBackupPolicySchedulerInternal) Submit(_ context.Context, request 
 func TestSystemBackupPoliciesRegisterIndependentJobs(t *testing.T) {
 	gormDB, err := gorm.Open(sqlite.Open("file:system-backup-schedules?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, gormDB.AutoMigrate(&SystemBackupPolicy{}, &SystemBackupRun{}, &backup.SystemBackupRecoveryConfig{}, &s3.S3Destination{}))
+	require.NoError(t, gormDB.AutoMigrate(&SystemBackupPolicy{}, &SystemBackupRun{}, &backup.SystemBackupRecoveryConfig{}, &s3.S3Destination{}, &activity.Activity{}, &activity.ActivityMessage{}))
 	crypto.InitEncryption(&crypto.Config{EncryptionKey: "system-backup-policy-test-key-32bytes", Environment: "test"})
 	db := &database.DB{DB: gormDB}
 	recoveryKeys := backup.NewRecoveryKeyStore(db)
@@ -210,6 +212,9 @@ func TestSystemBackupPoliciesRegisterIndependentJobs(t *testing.T) {
 		Config:         &config.Config{DatabaseURL: "file:system-backup-schedules-test.db"},
 		RecoveryKeys:   recoveryKeys,
 	})
+	harness := flowtest.New(t, activity.NewActivityService(db, nil))
+	require.NoError(t, service.backup.RegisterWorkflows(harness.Engine))
+	harness.Start(t)
 	jobScheduler := &systemBackupPolicySchedulerInternal{jobs: make(map[string]scheduler.Job)}
 	require.NoError(t, service.SetBackupScheduler(t.Context(), jobScheduler, newSystemBackupAdmissionGateForTestInternal(t)))
 
@@ -260,10 +265,11 @@ func TestSystemBackupPoliciesRegisterIndependentJobs(t *testing.T) {
 		// The scheduled run checks the remote first; a local policy then
 		// attempts its backup, which has no engine in this test.
 		outcome, runErr := job.Run(t.Context())
+		require.NoError(t, runErr)
 		if local {
-			require.ErrorContains(t, runErr, "backup engine is unavailable")
+			require.Equal(t, scheduler.Failed, outcome.Status)
+			require.Contains(t, outcome.Message, "backup engine is unavailable")
 		} else {
-			require.NoError(t, runErr)
 			require.Equal(t, scheduler.NeedsAttention, outcome.Status)
 			require.Equal(t, backup.RemoteDisabledMessage, outcome.Message)
 		}

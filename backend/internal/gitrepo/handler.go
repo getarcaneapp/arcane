@@ -165,14 +165,7 @@ func (h *GitRepositoryHandler) DeleteRepository(ctx context.Context, input *Dele
 		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to delete git repository")
 	}
 
-	return &handlerutil.Out[base.MessageResponse]{
-		Body: base.ApiResponse[base.MessageResponse]{
-			Success: true,
-			Data: base.MessageResponse{
-				Message: "Repository deleted successfully",
-			},
-		},
-	}, nil
+	return handlerutil.MessageOutput("Repository deleted successfully", ""), nil
 }
 
 // TestRepository tests connectivity and authentication to a git repository.
@@ -183,14 +176,7 @@ func (h *GitRepositoryHandler) TestRepository(ctx context.Context, input *TestGi
 		return nil, huma.Error400BadRequest("Failed to test git repository connection: " + err.Error())
 	}
 
-	return &handlerutil.Out[base.MessageResponse]{
-		Body: base.ApiResponse[base.MessageResponse]{
-			Success: true,
-			Data: base.MessageResponse{
-				Message: "Connection successful",
-			},
-		},
-	}, nil
+	return handlerutil.MessageOutput("Connection successful", ""), nil
 }
 
 // ListBranches returns all branches from a git repository.
@@ -236,12 +222,5 @@ func (h *GitRepositoryHandler) SyncRepositories(ctx context.Context, input *Sync
 		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to sync git repositories: "+err.Error())
 	}
 
-	return &handlerutil.Out[base.MessageResponse]{
-		Body: base.ApiResponse[base.MessageResponse]{
-			Success: true,
-			Data: base.MessageResponse{
-				Message: "Repositories synced successfully",
-			},
-		},
-	}, nil
+	return handlerutil.MessageOutput("Repositories synced successfully", ""), nil
 }

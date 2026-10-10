@@ -1,7 +1,6 @@
 package scheduler
 
 import (
-	"cmp"
 	"context"
 	"encoding/json/v2"
 	"errors"
@@ -104,15 +103,7 @@ func (j *AutoHealJob) ShouldSchedule(ctx context.Context) bool {
 }
 
 func (j *AutoHealJob) Schedule(ctx context.Context) string {
-	schedule := cmp.Or(j.settingsService.GetStringSetting(ctx, "autoHealInterval", autoHealDefaultSchedule), autoHealDefaultSchedule)
-
-	parser := scheduleutil.Parser()
-	if _, err := parser.Parse(schedule); err != nil {
-		slog.WarnContext(ctx, "Invalid cron expression for auto-heal, using default", "invalidSchedule", schedule, "error", err)
-		return autoHealDefaultSchedule
-	}
-
-	return schedule
+	return scheduleutil.Or(ctx, j.settingsService.GetStringSetting(ctx, "autoHealInterval", autoHealDefaultSchedule), autoHealDefaultSchedule, "auto-heal")
 }
 
 func (j *AutoHealJob) Run(ctx context.Context) (schedulertypes.Outcome, error) {

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"runtime"
 	"strings"
@@ -16,6 +17,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/ecr"
 	"github.com/cenkalti/backoff/v5"
+	"github.com/containerd/errdefs"
 	"github.com/distribution/reference"
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
@@ -23,6 +25,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	dockerregistry "github.com/moby/moby/api/types/registry"
 	"github.com/moby/moby/client"
 	"github.com/samber/hot"
@@ -870,7 +873,7 @@ func (s *ContainerRegistryService) ImageDigest(ctx context.Context, imageRef str
 func (s *ContainerRegistryService) InspectImageDigest(ctx context.Context, imageRef string, externalCreds []containerregistry.Credential) (*containerregistry.DigestResult, error) {
 	parts, err := refs.NormalizeReference(imageRef)
 	if err != nil {
-		return nil, err
+		return nil, common.Classify(common.ErrValidation, err)
 	}
 
 	var lastResult *containerregistry.DigestResult
@@ -933,13 +936,44 @@ func (s *ContainerRegistryService) InspectImageDigest(ctx context.Context, image
 	}, backoff.WithBackOff(bo), backoff.WithMaxTries(5))
 
 	if retryErr != nil {
-		if errors.Is(retryErr, context.Canceled) || errors.Is(retryErr, context.DeadlineExceeded) {
+		if errors.Is(retryErr, context.Canceled) {
 			return lastResult, retryErr
 		}
-		return lastResult, lastErr
+		if errors.Is(retryErr, context.DeadlineExceeded) {
+			return lastResult, common.Classify(common.ErrTimeout, retryErr)
+		}
+		return lastResult, classifyDigestErrorInternal(lastErr)
 	}
 
 	return lastResult, nil
+}
+
+// classifyDigestErrorInternal tags digest lookup failures so callers can retry
+// transient ones. Retryable kinds are checked first because fallback errors are joined.
+func classifyDigestErrorInternal(err error) error {
+	if err == nil {
+		return nil
+	}
+	errLower := strings.ToLower(err.Error())
+	transportErr, isTransport := errors.AsType[*transport.Error](err)
+	var netErr net.Error
+	var dnsErr *net.DNSError
+	switch {
+	case errors.As(err, &dnsErr) && dnsErr.IsNotFound:
+		// A registry host that does not resolve is a bad reference, not an outage worth retrying.
+		return err
+	case isRateLimitErrorInternal(err), errdefs.IsUnavailable(err), errors.As(err, &netErr),
+		strings.Contains(errLower, "connection refused"), isTransport && transportErr.StatusCode >= http.StatusInternalServerError:
+		return common.Classify(common.ErrUnavailable, err)
+	case errors.Is(err, context.DeadlineExceeded), errdefs.IsDeadlineExceeded(err):
+		return common.Classify(common.ErrTimeout, err)
+	case browse.IsUnauthorizedRegistryError(err):
+		return common.Classify(common.ErrUnauthorized, err)
+	case errdefs.IsNotFound(err), isTransport && transportErr.StatusCode == http.StatusNotFound, strings.Contains(errLower, "manifest unknown"):
+		return common.Classify(common.ErrNotFound, err)
+	default:
+		return err
+	}
 }
 
 func (

@@ -2,7 +2,10 @@
 package schedule
 
 import (
+	"cmp"
+	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/robfig/cron/v3"
@@ -23,6 +26,16 @@ func NormalizeSixField(value, subject string) (string, error) {
 		return "", fmt.Errorf("invalid %s schedule %q: %w", subject, normalized, err)
 	}
 	return normalized, nil
+}
+
+// Or returns spec when it parses and fallback otherwise; job names the schedule in the warning.
+func Or(ctx context.Context, spec, fallback, job string) string {
+	spec = cmp.Or(spec, fallback)
+	if _, err := Parser().Parse(spec); err != nil {
+		slog.WarnContext(ctx, "Invalid cron expression, using default", "job", job, "invalidSchedule", spec, "error", err)
+		return fallback
+	}
+	return spec
 }
 
 // Parser is shared by schedule validation, execution, and next-run display.

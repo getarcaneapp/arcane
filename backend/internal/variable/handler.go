@@ -171,14 +171,7 @@ func (h *VariableHandler) UpdateMaterializedVariables(ctx context.Context, input
 		return nil, huma.Error500InternalServerError("Failed to update global variables: " + err.Error())
 	}
 
-	return &handlerutil.Out[base.MessageResponse]{
-		Body: base.ApiResponse[base.MessageResponse]{
-			Success: true,
-			Data: base.MessageResponse{
-				Message: "Global variables updated successfully",
-			},
-		},
-	}, nil
+	return handlerutil.MessageOutput("Global variables updated successfully", ""), nil
 }
 
 func variableMutationHTTPErrorInternal(err error) error {

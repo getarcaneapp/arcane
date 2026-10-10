@@ -253,6 +253,8 @@ Determine global admin status through `PermissionSet.IsGlobalAdmin()` or the use
 
 Background jobs implement the scheduler job contract. Wire them through `internal/di` and register them in `internal/bootstrap/jobs_bootstrap.go`.
 
+Multi-step, fan-out, or resumable jobs use `backend/pkg/scheduler/flow`: Francis workflows that run inside coordinator runs. Follow the migration recipe in its package doc. Steps are idempotent service methods, the last step returns `scheduler.Outcome`, the job registers a `flow.Job`, and `flowtest.AssertDefinitions` guards version bumps. Keep single-operation jobs as ordinary jobs.
+
 ## Validation
 
 ### Tests

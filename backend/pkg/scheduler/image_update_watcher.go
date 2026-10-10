@@ -9,7 +9,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	imageupdatetypes "github.com/getarcaneapp/arcane/types/v2/imageupdate"
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	"github.com/moby/moby/api/types/events"
@@ -18,7 +17,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
@@ -34,11 +32,7 @@ const (
 )
 
 type imageUpdateScannerInternal interface {
-	CheckAllImages(ctx context.Context, limit int, externalCreds []containerregistry.Credential) (map[string]*imageupdatetypes.Response, error)
-}
-
-type registryCredentialLoaderInternal interface {
-	GetEnabledRegistryCredentials(ctx context.Context) ([]containerregistry.Credential, error)
+	RunImageCheck(ctx context.Context, request imageupdatetypes.CheckRequest) (schedulertypes.Outcome, error)
 }
 
 type pollingSettingReaderInternal interface {
@@ -58,7 +52,6 @@ type projectImageRefsBackfillerInternal interface {
 type ImageUpdateWatcher struct {
 	imageUpdateService     imageUpdateScannerInternal
 	settingsService        pollingSettingReaderInternal
-	environmentService     registryCredentialLoaderInternal
 	dockerService          dockerEventBusProviderInternal
 	projectService         projectImageRefsBackfillerInternal
 	dispatchMu             sync.RWMutex
@@ -89,12 +82,11 @@ type ImageUpdateWatcher struct {
 func NewImageUpdateWatcher(cfg *config.Config,
 	imageUpdateService *imageupdate.ImageUpdateService,
 	settingsService *settings.SettingsService,
-	environmentService *environment.EnvironmentService,
 	dockerService *docker.DockerClientService,
 	projectService *project.ProjectService) (*ImageUpdateWatcher,
 	error,
 ) {
-	if imageUpdateService == nil || settingsService == nil || environmentService == nil || dockerService == nil || projectService == nil {
+	if imageUpdateService == nil || settingsService == nil || dockerService == nil || projectService == nil {
 		return nil, errors.New("image update watcher dependencies unavailable")
 	}
 	location := time.UTC
@@ -104,7 +96,6 @@ func NewImageUpdateWatcher(cfg *config.Config,
 	return &ImageUpdateWatcher{
 			imageUpdateService: imageUpdateService,
 			settingsService:    settingsService,
-			environmentService: environmentService,
 			dockerService:      dockerService,
 			projectService:     projectService,
 			location:           location,
@@ -396,36 +387,13 @@ func (w *ImageUpdateWatcher) executeScanInternal(ctx context.Context) error {
 	}
 
 	slog.InfoContext(ctx, "image scan run started")
-	creds, err := w.environmentService.GetEnabledRegistryCredentials(ctx)
-	if err != nil {
-		slog.WarnContext(ctx, "failed to load registry credentials for image scan", "error", err.Error())
-		creds = nil
-	}
-
-	results, err := w.imageUpdateService.CheckAllImages(ctx, 0, creds)
+	outcome, err := w.imageUpdateService.RunImageCheck(ctx, imageupdatetypes.CheckRequest{All: true})
 	if err != nil {
 		return fmt.Errorf("image scan failed: %w", err)
 	}
-
-	updates := 0
-	scanErrors := 0
-	targets := make([]schedulertypes.TargetOutcome, 0, len(results))
-	for imageID, result := range results {
-		if result == nil {
-			continue
-		}
-		if result.Error != "" {
-			scanErrors++
-			targets = append(targets, schedulertypes.TargetOutcome{ID: imageID, Status: schedulertypes.Failed, Message: result.Error})
-			continue
-		}
-		if result.HasUpdate {
-			updates++
-		}
-	}
-	slog.InfoContext(ctx, "image scan run completed", "checked", len(results), "updates", updates, "errors", scanErrors)
-	if scanErrors > 0 {
-		return &schedulertypes.OutcomeError{Outcome: schedulertypes.Outcome{Status: schedulertypes.Partial, Message: "Some image update checks failed", Targets: targets}}
+	slog.InfoContext(ctx, "image scan run completed", "status", outcome.Status, "message", outcome.Message)
+	if outcome.Status != schedulertypes.Succeeded {
+		return &schedulertypes.OutcomeError{Outcome: outcome}
 	}
 	return nil
 }

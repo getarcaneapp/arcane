@@ -26,8 +26,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/environment"
 	usertypes "github.com/getarcaneapp/arcane/types/v2/user"
 	"github.com/getarcaneapp/arcane/types/v2/version"
-	"github.com/samber/mo"
-	"go.getarcane.app/kit/pkg"
+	kit "go.getarcane.app/kit/pkg"
 	"go.getarcane.app/kit/pkg/mapping"
 	"go.getarcane.app/streams/agg"
 
@@ -568,14 +567,7 @@ func (h *EnvironmentHandler) DeleteEnvironment(ctx context.Context, input *Delet
 		return nil, huma.Error500InternalServerError("Failed to delete environment: " + err.Error())
 	}
 
-	return &handlerutil.Out[base.MessageResponse]{
-		Body: base.ApiResponse[base.MessageResponse]{
-			Success: true,
-			Data: base.MessageResponse{
-				Message: "Environment deleted successfully",
-			},
-		},
-	}, nil
+	return handlerutil.MessageOutput("Environment deleted successfully", ""), nil
 }
 
 // TestConnection tests connectivity to an environment.
@@ -622,14 +614,7 @@ func (h *EnvironmentHandler) UpdateHeartbeat(ctx context.Context, input *UpdateH
 		return nil, huma.Error500InternalServerError("Failed to update heartbeat")
 	}
 
-	return &handlerutil.Out[base.MessageResponse]{
-		Body: base.ApiResponse[base.MessageResponse]{
-			Success: true,
-			Data: base.MessageResponse{
-				Message: "Heartbeat updated successfully",
-			},
-		},
-	}, nil
+	return handlerutil.MessageOutput("Heartbeat updated successfully", ""), nil
 }
 
 // PairAgent generates or rotates the local agent pairing token.
@@ -670,15 +655,7 @@ func (h *EnvironmentHandler) SyncEnvironment(ctx context.Context, input *SyncEnv
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
 
-	return &handlerutil.Out[base.MessageResponse]{
-		Body: base.ApiResponse[base.MessageResponse]{
-			Success: true,
-			Data: base.MessageResponse{
-				Message:    "Environment synced successfully",
-				ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer(),
-			},
-		},
-	}, nil
+	return handlerutil.MessageOutput("Environment synced successfully", activityID), nil
 }
 
 func (h *EnvironmentHandler) buildUpdateMapInternal(req *environment.Update, isLocalEnv bool) map[string]any {
@@ -808,14 +785,7 @@ func (h *EnvironmentHandler) PairEnvironment(ctx context.Context, input *PairEnv
 	slog.InfoContext(ctx, "Environment pairing completed", "environmentId", *envID, "environmentName", env.Name)
 	h.triggerEnvironmentResourceSyncInternal(ctx, *envID, env.Name, "environment pairing")
 
-	return &handlerutil.Out[base.MessageResponse]{
-		Body: base.ApiResponse[base.MessageResponse]{
-			Success: true,
-			Data: base.MessageResponse{
-				Message: "Environment pairing completed successfully",
-			},
-		},
-	}, nil
+	return handlerutil.MessageOutput("Environment pairing completed successfully", ""), nil
 }
 
 // GetDeploymentSnippets returns deployment snippets for an environment.

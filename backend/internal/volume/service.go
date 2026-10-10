@@ -22,11 +22,10 @@ import (
 	"github.com/moby/moby/client"
 	"github.com/samber/mo"
 	"go.getarcane.app/docker"
-	"go.getarcane.app/kit/pkg"
+	kit "go.getarcane.app/kit/pkg"
 	"golang.org/x/sync/singleflight"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/backup"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
@@ -43,6 +42,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumes"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/flow"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	workspacepkg "github.com/getarcaneapp/arcane/backend/v2/pkg/workspace"
@@ -75,7 +75,6 @@ func NewVolumeService(
 	db *database.DB,
 	dockerService *dockerInternal.DockerClientService,
 	eventService *event.EventService,
-	activityService *activity.ActivityService,
 	settingsService *settings.SettingsService,
 	containerService *containerdomain.ContainerService,
 	imageService *image.ImageService,
@@ -113,7 +112,6 @@ func NewVolumeService(
 		DB:               db,
 		Docker:           dockerService,
 		Events:           eventService,
-		Activity:         activityService,
 		Settings:         settingsService,
 		Engine:           engine,
 		S3Destinations:   s3Destinations,
@@ -194,12 +192,22 @@ func (s *VolumeService) ReconcileBackup(ctx context.Context, previous scheduler.
 }
 
 // ReconcileInterruptedBackups runs before this process can accept backup work.
+// RegisterWorkflows defines the backup workflows while the host is still unstarted.
+func (s *VolumeService) RegisterWorkflows(engine *flow.Engine) error {
+	return s.backup.RegisterWorkflows(engine)
+}
+
+// ReconcileInterruptedBackups fails backups left running by the previous process and watches the manual
+// backups that saved workflows resume.
 func (s *VolumeService) ReconcileInterruptedBackups(ctx context.Context, protectedIDs ...string) error {
 	query := s.db.WithContext(ctx).Model(&VolumeBackup{}).Where("status = ?", VolumeBackupStatusRunning)
 	if len(protectedIDs) > 0 {
 		query = query.Where("id NOT IN ?", protectedIDs)
 	}
-	return query.Updates(map[string]any{"status": VolumeBackupStatusFailed, "error": "Backup interrupted by Arcane restart"}).Error
+	if err := query.Updates(map[string]any{"status": VolumeBackupStatusFailed, "error": "Backup interrupted by Arcane restart"}).Error; err != nil {
+		return err
+	}
+	return s.backup.WatchAcceptedBackups(ctx)
 }
 
 // PruneLocalBackupRepository frees the space of deleted local volume backups.

@@ -133,5 +133,5 @@ func (h *Handler) DeleteSecret(ctx context.Context, input *DeleteSwarmSecretInpu
 
 	h.audit(ctx, input.EnvironmentID, "secret.delete", "swarm_secret", input.SecretID, "", map[string]any{"secretId": input.SecretID})
 
-	return &handlerutil.Out[base.MessageResponse]{Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: base.MessageResponse{Message: "Swarm secret removed successfully"}}}, nil
+	return handlerutil.MessageOutput("Swarm secret removed successfully", ""), nil
 }

@@ -1,7 +1,6 @@
 package scheduler
 
 import (
-	"cmp"
 	"context"
 	"log/slog"
 
@@ -37,15 +36,7 @@ func (j *DockerClientRefreshJob) Name() string {
 }
 
 func (j *DockerClientRefreshJob) Schedule(ctx context.Context) string {
-	schedule := cmp.Or(j.settingsService.GetStringSetting(ctx, "dockerClientRefreshInterval", dockerClientRefreshDefaultSchedule), dockerClientRefreshDefaultSchedule)
-
-	parser := scheduleutil.Parser()
-	if _, err := parser.Parse(schedule); err != nil {
-		slog.WarnContext(ctx, "Invalid cron expression for Docker client refresh, using default", "invalidSchedule", schedule, "error", err)
-		return dockerClientRefreshDefaultSchedule
-	}
-
-	return schedule
+	return scheduleutil.Or(ctx, j.settingsService.GetStringSetting(ctx, "dockerClientRefreshInterval", dockerClientRefreshDefaultSchedule), dockerClientRefreshDefaultSchedule, "docker-client-refresh")
 }
 
 func (j *DockerClientRefreshJob) Run(ctx context.Context) (schedulertypes.Outcome, error) {

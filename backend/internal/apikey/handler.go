@@ -148,14 +148,7 @@ func (h *ApiKeyHandler) DeleteApiKey(ctx context.Context, input *DeleteApiKeyInp
 		return nil, huma.Error500InternalServerError("Failed to delete API key")
 	}
 
-	return &handlerutil.Out[base.MessageResponse]{
-		Body: base.ApiResponse[base.MessageResponse]{
-			Success: true,
-			Data: base.MessageResponse{
-				Message: "API key deleted successfully",
-			},
-		},
-	}, nil
+	return handlerutil.MessageOutput("API key deleted successfully", ""), nil
 }
 
 // ListMyApiKeys lists API keys owned by the current user (self-service).
@@ -239,12 +232,5 @@ func (h *ApiKeyHandler) DeleteMyApiKey(ctx context.Context, input *DeleteApiKeyI
 		return nil, huma.Error500InternalServerError("Failed to delete API key")
 	}
 
-	return &handlerutil.Out[base.MessageResponse]{
-		Body: base.ApiResponse[base.MessageResponse]{
-			Success: true,
-			Data: base.MessageResponse{
-				Message: "API key deleted successfully",
-			},
-		},
-	}, nil
+	return handlerutil.MessageOutput("API key deleted successfully", ""), nil
 }

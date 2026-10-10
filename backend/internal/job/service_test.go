@@ -642,7 +642,7 @@ func TestJobActivityVisibilityAndGrouping(t *testing.T) {
 				require.NoError(t, getActivityDetailErr)
 				require.Equal(t, test.environment, detail.Activity.Metadata["environmentId"])
 			}
-			child, err := activities.StartActivity(svc.runContextInternal(t.Context(), run), activity.StartActivityRequest{Type: activitytypes.TypeImagePull})
+			child, err := activities.StartActivity(svc.runs.ExecutionContext(t.Context(), run, ""), activity.StartActivityRequest{Type: activitytypes.TypeImagePull})
 			require.NoError(t, err)
 			require.Equal(t, run.ID, *child.BatchID)
 		})

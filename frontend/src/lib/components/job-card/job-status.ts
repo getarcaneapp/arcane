@@ -20,6 +20,26 @@ export function jobStatusLabel(status: string, isWorker = false): string {
 	return labels[status]?.() ?? m.jobs_status_unknown();
 }
 
+/** Label for a workflow step, falling back to its name. */
+export function jobStepLabel(name: string): string {
+	const labels: Record<string, () => string> = {
+		prepare: m.jobs_step_prepare,
+		discover: m.jobs_step_discover,
+		check: m.jobs_step_check,
+		scan: m.jobs_step_scan,
+		patch: m.jobs_step_patch,
+		sync: m.jobs_step_sync,
+		backup: m.jobs_step_backup,
+		tags: m.jobs_step_tags,
+		finalize: m.jobs_step_finalize,
+		resume: m.jobs_step_resume,
+		candidates: m.jobs_step_candidates,
+		plan: m.jobs_step_plan,
+		apply: m.jobs_step_apply
+	};
+	return labels[name]?.() ?? name;
+}
+
 export function jobNameLabel(job: JobStatus): string {
 	const [group = '', ...target] = job.id.split(':');
 	const labels: Record<string, () => string> = {

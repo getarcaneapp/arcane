@@ -60,6 +60,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/vulnerability"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/webhook"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/flow"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/oidcjwk"
 )
 
@@ -110,7 +111,7 @@ type graphParams struct {
 	AuthMiddleware    *auth.AuthMiddleware
 	JWKSetManager     *oidcjwk.KeySetManager
 
-	AutoUpdate             *scheduler.AutoUpdateJob
+	AutoUpdate             *flow.Job `name:"auto-update"`
 	ImageUpdateWatcher     *scheduler.ImageUpdateWatcher
 	DockerClientRefresh    *scheduler.DockerClientRefreshJob
 	Analytics              *scheduler.AnalyticsJob
@@ -119,7 +120,7 @@ type graphParams struct {
 	ExpiredSessionsCleanup *scheduler.ExpiredSessionsCleanupJob
 	ScheduledPrune         *scheduler.ScheduledPruneJob
 	FilesystemWatcher      *scheduler.FilesystemWatcherJob
-	VulnerabilityScan      *scheduler.VulnerabilityScanJob
+	VulnerabilityScan      *flow.Job `name:"vulnerability-scan"`
 	AutoHeal               *scheduler.AutoHealJob
 }
 

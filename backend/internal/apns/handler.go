@@ -105,7 +105,7 @@ func (h *ApnsHandler) DeleteDevice(ctx context.Context, input *DeviceIDInput) (*
 	if deleteDeviceErr := h.service.DeleteDevice(ctx, user.ID, input.ID); deleteDeviceErr != nil {
 		return nil, apnsHTTPErrorInternal(deleteDeviceErr)
 	}
-	return &handlerutil.Out[base.MessageResponse]{Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: base.MessageResponse{Message: "Device removed"}}}, nil
+	return handlerutil.MessageOutput("Device removed", ""), nil
 }
 
 func (h *ApnsHandler) TestDevice(ctx context.Context, input *DeviceIDInput) (*handlerutil.Out[base.MessageResponse], error) {
@@ -116,5 +116,5 @@ func (h *ApnsHandler) TestDevice(ctx context.Context, input *DeviceIDInput) (*ha
 	if testDeviceErr := h.service.TestDevice(ctx, user.ID, input.ID); testDeviceErr != nil {
 		return nil, apnsHTTPErrorInternal(testDeviceErr)
 	}
-	return &handlerutil.Out[base.MessageResponse]{Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: base.MessageResponse{Message: "Test notification queued"}}}, nil
+	return handlerutil.MessageOutput("Test notification queued", ""), nil
 }

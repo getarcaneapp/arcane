@@ -1,7 +1,6 @@
 package scheduler
 
 import (
-	"cmp"
 	"context"
 	"log/slog"
 
@@ -39,15 +38,7 @@ func (j *ScheduledPruneJob) ShouldSchedule(ctx context.Context) bool {
 }
 
 func (j *ScheduledPruneJob) Schedule(ctx context.Context) string {
-	schedule := cmp.Or(j.settingsService.GetStringSetting(ctx, "scheduledPruneInterval", "0 0 0 * * *"), "0 0 0 * * *")
-
-	parser := scheduleutil.Parser()
-	if _, err := parser.Parse(schedule); err != nil {
-		slog.WarnContext(ctx, "Invalid cron expression for scheduled-prune, using default", "invalidSchedule", schedule, "error", err)
-		return "0 0 0 * * *"
-	}
-
-	return schedule
+	return scheduleutil.Or(ctx, j.settingsService.GetStringSetting(ctx, "scheduledPruneInterval", "0 0 0 * * *"), "0 0 0 * * *", "scheduled-prune")
 }
 
 func (j *ScheduledPruneJob) Run(ctx context.Context) (schedulertypes.Outcome, error) {

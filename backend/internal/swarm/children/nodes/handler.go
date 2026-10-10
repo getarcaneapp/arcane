@@ -295,7 +295,7 @@ func (h *Handler) DeleteNodeAgentBinding(ctx context.Context, input *DeleteSwarm
 	if err := h.environmentService.DetachSwarmNodeEnvironment(ctx, input.EnvironmentID, input.NodeID); err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
-	return &handlerutil.Out[base.MessageResponse]{Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: base.MessageResponse{Message: "Swarm node environment detached"}}}, nil
+	return handlerutil.MessageOutput("Swarm node environment detached", ""), nil
 }
 
 // DeleteNodeAgentDeployment removes a dedicated hidden node-agent registration.
@@ -313,7 +313,7 @@ func (h *Handler) DeleteNodeAgentDeployment(ctx context.Context, input *DeleteSw
 	); deleteSwarmNodeAgentDeploymentErr != nil {
 		return nil, huma.Error500InternalServerError(deleteSwarmNodeAgentDeploymentErr.Error())
 	}
-	return &handlerutil.Out[base.MessageResponse]{Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: base.MessageResponse{Message: "Dedicated swarm node agent registration removed"}}}, nil
+	return handlerutil.MessageOutput("Dedicated swarm node agent registration removed", ""), nil
 }
 
 // GetNodeIdentity returns the swarm identity of the node serving the current request.
@@ -359,7 +359,7 @@ func (h *Handler) UpdateNode(ctx context.Context, input *UpdateSwarmNodeInput) (
 
 	h.audit(ctx, input.EnvironmentID, "node.update", "swarm_node", input.NodeID, "", map[string]any{"nodeId": input.NodeID})
 
-	return &handlerutil.Out[base.MessageResponse]{Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: base.MessageResponse{Message: "Swarm node updated successfully"}}}, nil
+	return handlerutil.MessageOutput("Swarm node updated successfully", ""), nil
 }
 
 // DeleteNode removes a swarm node from the cluster.
@@ -380,7 +380,7 @@ func (h *Handler) DeleteNode(ctx context.Context, input *DeleteSwarmNodeInput) (
 
 	h.audit(ctx, input.EnvironmentID, "node.delete", "swarm_node", input.NodeID, "", map[string]any{"nodeId": input.NodeID, "force": input.Force})
 
-	return &handlerutil.Out[base.MessageResponse]{Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: base.MessageResponse{Message: "Swarm node removed successfully"}}}, nil
+	return handlerutil.MessageOutput("Swarm node removed successfully", ""), nil
 }
 
 // PromoteNode promotes a swarm worker to manager.
@@ -401,7 +401,7 @@ func (h *Handler) PromoteNode(ctx context.Context, input *PromoteSwarmNodeInput)
 
 	h.audit(ctx, input.EnvironmentID, "node.promote", "swarm_node", input.NodeID, "", map[string]any{"nodeId": input.NodeID})
 
-	return &handlerutil.Out[base.MessageResponse]{Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: base.MessageResponse{Message: "Swarm node promoted successfully"}}}, nil
+	return handlerutil.MessageOutput("Swarm node promoted successfully", ""), nil
 }
 
 // DemoteNode demotes a swarm manager to worker.
@@ -422,7 +422,7 @@ func (h *Handler) DemoteNode(ctx context.Context, input *DemoteSwarmNodeInput) (
 
 	h.audit(ctx, input.EnvironmentID, "node.demote", "swarm_node", input.NodeID, "", map[string]any{"nodeId": input.NodeID})
 
-	return &handlerutil.Out[base.MessageResponse]{Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: base.MessageResponse{Message: "Swarm node demoted successfully"}}}, nil
+	return handlerutil.MessageOutput("Swarm node demoted successfully", ""), nil
 }
 
 // ListNodeTasks lists tasks currently associated with a swarm node.

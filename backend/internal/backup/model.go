@@ -9,4 +9,5 @@ type SystemBackupRecoveryConfig struct {
 	EncryptedRecoveryKey string `gorm:"column:encrypted_recovery_key;type:text;not null"`
 }
 
+// TableName is the recovery key table.
 func (SystemBackupRecoveryConfig) TableName() string { return "system_backup_recovery_config" }

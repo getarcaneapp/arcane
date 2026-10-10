@@ -38,11 +38,7 @@ func (m *Module) Service() *UpdaterService {
 // RegisterRoutes mounts the updater endpoints. A nil module still registers, so
 // OpenAPI spec generation can discover the routes without a service graph.
 func (m *Module) RegisterRoutes(api huma.API, appCtx handlerutil.ActivityAppContext) {
-	if m == nil {
-		RegisterUpdater(api, nil, appCtx)
-		return
-	}
-	RegisterUpdater(api, m.service, appCtx)
+	RegisterUpdater(api, m.Service(), appCtx)
 }
 
 // RegisterUpdater registers updater management routes using Huma.
@@ -101,5 +97,5 @@ func RegisterUpdater(api huma.API, updaterService *UpdaterService, appCtx handle
 			"200": {Description: "Container update completed", Content: map[string]*huma.MediaType{"application/json": {Schema: completedSchema}}},
 			"202": {Description: "Container update accepted", Content: map[string]*huma.MediaType{"application/json": {Schema: acceptedSchema}}},
 		},
-	}, authz.PermImageUpdatesCheck, h.updateContainerInternal)
+	}, authz.PermImageUpdatesCheck, h.updateContainer)
 }

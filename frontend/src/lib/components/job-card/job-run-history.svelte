@@ -13,15 +13,28 @@
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { formatDateTimeShort } from '#lib/utils/formatting.js';
 
-	import { jobStatusLabel, jobStatusTone } from './job-status';
+	import { jobStatusLabel, jobStatusTone, jobStepLabel } from './job-status';
 
 	// Renders the run list and selected-run detail; the host decides where it lives (panel or dialog).
 	let {
 		jobId,
 		environmentId,
 		initialRunId,
-		onUpdate
-	}: { jobId: string; environmentId: string; initialRunId?: string; onUpdate?: () => void } = $props();
+		onUpdate,
+		onOpenActivity
+	}: {
+		jobId: string;
+		environmentId: string;
+		initialRunId?: string;
+		onUpdate?: () => void;
+		/** Lets the hosting dialog close so the Activity Center is not opened behind it. */
+		onOpenActivity?: () => void;
+	} = $props();
+
+	function openActivity(activityId: string, activityEnvironmentId: string) {
+		onOpenActivity?.();
+		activityStore.openCenter(activityId, undefined, activityEnvironmentId);
+	}
 	let page = $state(1);
 	// Hosts re-key this component per job, so the initial run only seeds state once.
 	// svelte-ignore state_referenced_locally
@@ -48,6 +61,8 @@
 		}
 	}));
 	const selectedRun = $derived(selected ? detail.data : undefined);
+	// The workflow target only links a run to its workflow instance.
+	const targets = $derived(selectedRun?.outcome.targets?.filter((target) => target.resourceType !== 'workflow') ?? []);
 	const hasPrev = $derived(page > 1);
 	const hasNext = $derived(!!runs.data && page * runs.data.limit < runs.data.total);
 	const metadata = $derived(
@@ -111,10 +126,8 @@
 	label = m.jobs_activity_output(),
 	activityEnvironmentId = environmentId
 )}
-	{#if activityId}<Button
-			variant="link"
-			size="inline"
-			onclick={() => activityStore.openCenter(activityId, undefined, activityEnvironmentId)}>{label}</Button
+	{#if activityId}<Button variant="link" size="inline" onclick={() => openActivity(activityId, activityEnvironmentId)}
+			>{label}</Button
 		>{/if}
 {/snippet}
 
@@ -181,9 +194,27 @@
 					{@render outcomeMessage(attempt.outcome.message)}
 				</div>
 			{/each}
-			{#if run.outcome.targets?.length}
+			{#if run.outcome.steps?.length}
+				<h4 class="font-medium">{m.jobs_run_steps()}</h4>
+				<ol class="divide-y divide-border/50 rounded-lg border border-border/60">
+					{#each run.outcome.steps as step (step.name)}
+						<li class="space-y-1 px-2 py-1.5">
+							<div class="flex flex-wrap items-center justify-between gap-2">
+								<span>{jobStepLabel(step.name)}</span>
+								<span class="flex items-center gap-2 text-xs text-muted-foreground tabular-nums">
+									{#if step.total}{m.jobs_step_progress({ completed: step.completed ?? 0, total: step.total })}{/if}
+									{#if step.failed}<span class="text-destructive">{m.jobs_step_failed({ count: step.failed })}</span>{/if}
+									<Badge variant={jobStatusTone(step.status)} size="sm">{jobStatusLabel(step.status)}</Badge>
+								</span>
+							</div>
+							{@render outcomeMessage(step.message)}
+						</li>
+					{/each}
+				</ol>
+			{/if}
+			{#if targets.length}
 				<h4 class="font-medium">{m.jobs_run_targets()}</h4>
-				{#each run.outcome.targets as target (target.id)}
+				{#each targets as target (target.id)}
 					<div class="space-y-1 rounded-lg border border-border/60 p-2">
 						<p class="break-all">{target.id} · {jobStatusLabel(target.status)}</p>
 						{@render outcomeMessage(target.message)}
