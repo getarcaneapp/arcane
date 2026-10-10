@@ -142,7 +142,7 @@ func (h *WebSocketHandler) serveLogStreamInternal(
 	params logStreamParams,
 	hubBuilder func(streamKey string, onEmpty func(*wsLogStream)) *wsLogStream,
 ) {
-	conn, unregister, ok := h.acceptWSInternal(c, kind, resourceID)
+	conn, unregister, ok := h.acceptWS(c, kind, resourceID)
 	if !ok {
 		return
 	}

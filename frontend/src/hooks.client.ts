@@ -1,12 +1,14 @@
 import type { HandleClientError } from '@sveltejs/kit/hooks';
 
 import { extractApiErrorMessage } from '#lib/utils/api.js';
+import { recordError } from '#lib/utils/telemetry.js';
 
 export const handleError: HandleClientError = async ({ kind, error }) => {
 	if (kind !== 'unknown') {
 		return;
 	}
 
+	recordError(error, 'sveltekit.handleError');
 	if (error && typeof error === 'object' && 'response' in error) {
 		const responseStatus = (error as { response?: { status?: number } }).response?.status;
 		const apiErrorMessage = extractApiErrorMessage(error);

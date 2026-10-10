@@ -34,7 +34,7 @@ func (h *WebSocketHandler) ContainerStats(c *echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]any{"success": false, "error": "Container ID is required"})
 	}
 
-	conn, onRemove, ok := h.acceptWSInternal(c, systemtypes.WSKindContainerStats, containerID)
+	conn, onRemove, ok := h.acceptWS(c, systemtypes.WSKindContainerStats, containerID)
 	if !ok {
 		return nil
 	}

@@ -8,148 +8,116 @@ import (
 	"net/http"
 	"net/netip"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
+
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 )
 
 type LookupIPFunc func(ctx context.Context, host string) ([]net.IP, error)
 
-// blockedRemotePrefixes contains special-use ranges that should never be treated
-// as valid public registry destinations. We intentionally keep this list explicit
-// because Go exposes helpers for some classes (for example private, loopback, and
-// link-local) but does not provide one "publicly routable on the internet" check
-// that covers the full SSRF threat model. These prefixes complement the net.IP
-// helper checks in isBlockedIPInternal and make the policy reviewable in one place.
-var blockedRemotePrefixes = mustParsePrefixesInternal(
-	"0.0.0.0/8",
-	"100.64.0.0/10",
-	"127.0.0.0/8",
-	"169.254.0.0/16",
-	"192.0.0.0/24",
-	"192.0.2.0/24",
-	"198.18.0.0/15",
-	"198.51.100.0/24",
-	"203.0.113.0/24",
-	"224.0.0.0/4",
-	"240.0.0.0/4",
-	"::/128",
-	"::1/128",
-	"2001:db8::/32",
-	"fc00::/7",
-	"fe80::/10",
-	"ff00::/8",
-)
+// blockedRemotePrefixes lists special-use ranges the netip.Addr helpers in resolveAllowedIPs do not cover,
+// keeping the SSRF policy reviewable in one place.
+var blockedRemotePrefixes = []netip.Prefix{
+	netip.MustParsePrefix("0.0.0.0/8"),
+	netip.MustParsePrefix("100.64.0.0/10"),
+	netip.MustParsePrefix("127.0.0.0/8"),
+	netip.MustParsePrefix("169.254.0.0/16"),
+	netip.MustParsePrefix("192.0.0.0/24"),
+	netip.MustParsePrefix("192.0.2.0/24"),
+	netip.MustParsePrefix("198.18.0.0/15"),
+	netip.MustParsePrefix("198.51.100.0/24"),
+	netip.MustParsePrefix("203.0.113.0/24"),
+	netip.MustParsePrefix("224.0.0.0/4"),
+	netip.MustParsePrefix("240.0.0.0/4"),
+	netip.MustParsePrefix("::/128"),
+	netip.MustParsePrefix("::1/128"),
+	netip.MustParsePrefix("2001:db8::/32"),
+	netip.MustParsePrefix("fc00::/7"),
+	netip.MustParsePrefix("fe80::/10"),
+	netip.MustParsePrefix("ff00::/8"),
+}
 
 func DefaultLookupIP(ctx context.Context, host string) ([]net.IP, error) {
 	return net.DefaultResolver.LookupIP(ctx, "ip", host)
 }
 
 func ValidateSafeRemoteURL(ctx context.Context, rawURL string, lookupIP LookupIPFunc) (*url.URL, error) {
-	if lookupIP == nil {
-		lookupIP = DefaultLookupIP
-	}
-
-	parsed, err := url.Parse(rawURL)
+	parsed, err := ValidateOutboundHTTPURL(rawURL)
 	if err != nil {
-		return nil, common.Classify(common.ErrUnsafeRemoteURL, fmt.Errorf("Remote URL is not allowed: %w", err)) //nolint:staticcheck // Preserve the existing error message.
+		return nil, unsafeRemoteURLError(err)
 	}
 
-	scheme := strings.ToLower(parsed.Scheme)
-	if scheme != "http" && scheme != "https" {
-		//nolint:staticcheck // Preserve the existing error message.
-		return nil,
-			common.Classify(common.ErrUnsafeRemoteURL,
-				fmt.Errorf("Remote URL is not allowed: %w",
-					fmt.Errorf("unsupported URL scheme %q",
-						scheme)))
+	host := strings.ToLower(parsed.Hostname())
+	if host == "localhost" || strings.HasSuffix(host, ".localhost") {
+		return nil, unsafeRemoteURLError(errors.New("missing or blocked hostname"))
 	}
 
-	if parsed.User != nil {
-		//nolint:staticcheck // Preserve the existing error message.
-		return nil,
-			common.Classify(common.ErrUnsafeRemoteURL,
-				fmt.Errorf("Remote URL is not allowed: %w",
-					errors.New("URL credentials are not allowed")))
+	if _, err = resolveAllowedIPs(ctx, parsed.Hostname(), lookupIP); err != nil {
+		return nil, err
 	}
-
-	host := parsed.Hostname()
-	if host == "" || isBlockedHostnameInternal(host) {
-		//nolint:staticcheck // Preserve the existing error message.
-		return nil,
-			common.Classify(common.ErrUnsafeRemoteURL,
-				fmt.Errorf("Remote URL is not allowed: %w",
-					errors.New("missing or blocked hostname")))
-	}
-
-	ips, err := resolveAllowedIPsInternal(ctx, host, lookupIP)
-	if err != nil || len(ips) == 0 {
-		if err == nil {
-			err = errors.New("host did not resolve to an allowed IP")
-		}
-		return nil, common.Classify(common.ErrUnsafeRemoteURL, fmt.Errorf("Remote URL is not allowed: %w", err)) //nolint:staticcheck // Preserve the existing error message.
-	}
-
 	return parsed, nil
 }
 
 func NewSafeOutboundHTTPClient(base *http.Client, lookupIP LookupIPFunc) (*http.Client, error) {
-	if lookupIP == nil {
-		lookupIP = DefaultLookupIP
-	}
 	if base == nil {
 		base = http.DefaultClient
 	}
 
-	transport, err := cloneHTTPTransportInternal(base.Transport)
-	if err != nil {
-		return nil, err
+	var transport *http.Transport
+	switch t := base.Transport.(type) {
+	case nil:
+		defaultTransport, ok := http.DefaultTransport.(*http.Transport)
+		if !ok {
+			return nil, errors.New("http.DefaultTransport is not *http.Transport")
+		}
+		transport = defaultTransport.Clone()
+	case *http.Transport:
+		transport = t.Clone()
+	default:
+		return nil, fmt.Errorf("unsupported HTTP transport type %T", base.Transport)
 	}
 
 	baseDial := transport.DialContext
 	if baseDial == nil {
-		dialer := &net.Dialer{
-			Timeout:   30 * time.Second,
-			KeepAlive: 30 * time.Second,
-		}
+		dialer := &net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}
 		baseDial = dialer.DialContext
 	}
 
 	transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
-		host, port, splitHostPortErr := net.SplitHostPort(address)
-		if splitHostPortErr != nil {
-			return nil, common.Classify(common.ErrUnsafeRemoteURL, fmt.Errorf("Remote URL is not allowed: %w", splitHostPortErr)) //nolint:staticcheck // Preserve the existing error message.
+		host, port, err := net.SplitHostPort(address)
+		if err != nil {
+			return nil, unsafeRemoteURLError(err)
 		}
 
-		ips, splitHostPortErr := resolveAllowedIPsInternal(ctx, host, lookupIP)
-		if splitHostPortErr != nil {
-			return nil, splitHostPortErr
+		ips, err := resolveAllowedIPs(ctx, host, lookupIP)
+		if err != nil {
+			return nil, err
 		}
 
-		var lastErr error
+		var dialErr error
 		for _, ip := range ips {
-			conn, dialErr := baseDial(ctx, network, net.JoinHostPort(ip.String(), port))
-			if dialErr == nil {
+			conn, connErr := baseDial(ctx, network, net.JoinHostPort(ip.String(), port))
+			if connErr == nil {
 				return conn, nil
 			}
-			lastErr = dialErr
+			dialErr = connErr
 		}
-
-		if lastErr != nil {
-			return nil, lastErr
-		}
-		return nil, errors.New("failed to resolve remote host")
+		return nil, dialErr
 	}
 
 	client := *base
-	client.Transport = transport
+	// Instrumented after the SSRF dialer is installed; the wrapper never dials itself.
+	client.Transport = otelhttp.NewTransport(transport)
 	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 		if len(via) >= 10 {
 			return errors.New("stopped after 10 redirects")
 		}
-		if _, validateSafeRemoteURLErr := ValidateSafeRemoteURL(req.Context(), req.URL.String(), lookupIP); validateSafeRemoteURLErr != nil {
-			return validateSafeRemoteURLErr
+		if _, err := ValidateSafeRemoteURL(req.Context(), req.URL.String(), lookupIP); err != nil {
+			return err
 		}
 		if base.CheckRedirect != nil {
 			return base.CheckRedirect(req, via)
@@ -160,37 +128,18 @@ func NewSafeOutboundHTTPClient(base *http.Client, lookupIP LookupIPFunc) (*http.
 	return &client, nil
 }
 
-func cloneHTTPTransportInternal(base http.RoundTripper) (*http.Transport, error) {
-	switch t := base.(type) {
-	case nil:
-		defaultTransport, ok := http.DefaultTransport.(*http.Transport)
-		if !ok {
-			return nil, errors.New("http.DefaultTransport is not *http.Transport")
+// resolveAllowedIPs resolves host (or parses an IP literal) and rejects it if any address is blocked.
+func resolveAllowedIPs(ctx context.Context, host string, lookupIP LookupIPFunc) ([]net.IP, error) {
+	literal, _, _ := strings.Cut(host, "%")
+	ips := []net.IP{net.ParseIP(literal)}
+	if ips[0] == nil {
+		if lookupIP == nil {
+			lookupIP = DefaultLookupIP
 		}
-		return defaultTransport.Clone(), nil
-	case *http.Transport:
-		return t.Clone(), nil
-	default:
-		return nil, fmt.Errorf("unsupported HTTP transport type %T", base)
-	}
-}
-
-func resolveAllowedIPsInternal(ctx context.Context, host string, lookupIP LookupIPFunc) ([]net.IP, error) {
-	if parsedIP := parseIPLiteralInternal(host); parsedIP != nil {
-		if isBlockedIPInternal(parsedIP) {
-			//nolint:staticcheck // Preserve the existing error message.
-			return nil,
-				common.Classify(common.ErrUnsafeRemoteURL,
-					fmt.Errorf("Remote URL is not allowed: %w",
-						fmt.Errorf("blocked IP address %s",
-							parsedIP)))
+		var err error
+		if ips, err = lookupIP(ctx, host); err != nil {
+			return nil, unsafeRemoteURLError(err)
 		}
-		return []net.IP{parsedIP}, nil
-	}
-
-	ips, err := lookupIP(ctx, host)
-	if err != nil {
-		return nil, err
 	}
 
 	allowed := make([]net.IP, 0, len(ips))
@@ -198,66 +147,22 @@ func resolveAllowedIPsInternal(ctx context.Context, host string, lookupIP Lookup
 		if ip == nil {
 			continue
 		}
-		if isBlockedIPInternal(ip) {
-			//nolint:staticcheck // Preserve the existing error message.
-			return nil,
-				common.Classify(common.ErrUnsafeRemoteURL,
-					fmt.Errorf("Remote URL is not allowed: %w",
-						fmt.Errorf("blocked IP address %s",
-							ip)))
+		addr, ok := netip.AddrFromSlice(ip)
+		addr = addr.Unmap()
+		blocked := !ok || addr.IsLoopback() || addr.IsPrivate() || addr.IsMulticast() || addr.IsUnspecified() ||
+			addr.IsLinkLocalUnicast() || addr.IsLinkLocalMulticast() || slices.ContainsFunc(blockedRemotePrefixes, func(p netip.Prefix) bool { return p.Contains(addr) })
+		if blocked {
+			return nil, unsafeRemoteURLError(fmt.Errorf("blocked IP address %s", ip))
 		}
 		allowed = append(allowed, ip)
 	}
 
 	if len(allowed) == 0 {
-		//nolint:staticcheck // Preserve the existing error message.
-		return nil,
-			common.Classify(common.ErrUnsafeRemoteURL,
-				fmt.Errorf("Remote URL is not allowed: %w",
-					errors.New("host did not resolve to an allowed IP")))
+		return nil, unsafeRemoteURLError(errors.New("host did not resolve to an allowed IP"))
 	}
-
 	return allowed, nil
 }
 
-func parseIPLiteralInternal(host string) net.IP {
-	host = strings.Trim(strings.TrimSpace(host), "[]")
-	if zoneIdx := strings.Index(host, "%"); zoneIdx != -1 {
-		host = host[:zoneIdx]
-	}
-	return net.ParseIP(host)
-}
-
-func isBlockedHostnameInternal(host string) bool {
-	host = strings.ToLower(strings.TrimSpace(host))
-	return host == "localhost" || strings.HasSuffix(host, ".localhost")
-}
-
-func isBlockedIPInternal(ip net.IP) bool {
-	if ip.IsLoopback() || ip.IsPrivate() || ip.IsMulticast() || ip.IsUnspecified() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
-		return true
-	}
-
-	// net.IP helper methods do not cover every special-use range we want to keep
-	// off-limits for remote registry fetching, so we also check the explicit prefix list above.
-	addr, ok := netip.AddrFromSlice(ip)
-	if !ok {
-		return true
-	}
-
-	for _, prefix := range blockedRemotePrefixes {
-		if prefix.Contains(addr.Unmap()) {
-			return true
-		}
-	}
-
-	return false
-}
-
-func mustParsePrefixesInternal(raw ...string) []netip.Prefix {
-	prefixes := make([]netip.Prefix, 0, len(raw))
-	for _, cidr := range raw {
-		prefixes = append(prefixes, netip.MustParsePrefix(cidr))
-	}
-	return prefixes
+func unsafeRemoteURLError(err error) error {
+	return common.Classify(common.ErrUnsafeRemoteURL, fmt.Errorf("Remote URL is not allowed: %w", err)) //nolint:staticcheck // Preserve the existing error message.
 }

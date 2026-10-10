@@ -1,11 +1,13 @@
 package api
 
 import (
+	"cmp"
 	"context"
 	"encoding/json/v2"
 	"io"
 	"maps"
 	"net/http"
+	"path"
 	"reflect"
 	"strings"
 
@@ -60,13 +62,13 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/vulnerability"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/webhook"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/userctx"
 )
 
 const (
 	arcaneTypesPrefix = "github.com/getarcaneapp/arcane/types/v2/"
 	dockerSDKPrefix   = "github.com/moby/moby"
 
-	// scalarDocsHTML returns the HTML template for Scalar API documentation.
 	scalarDocsHTML = `<!doctype html>
 <html>
   <head>
@@ -115,93 +117,46 @@ var jsonV2Format = huma.Format{
 	},
 }
 
-// customSchemaNamer creates unique schema names using package prefix for types
-// from github.com/getarcaneapp/arcane/types/v2 to avoid conflicts between packages that have
-// types with the same name (e.g., image.Summary vs env.Summary).
+// customSchemaNamer prefixes Arcane and Docker type schemas with their package name
+// so same-named types (e.g. image.Summary vs env.Summary) do not collide.
 func customSchemaNamer(t reflect.Type, hint string) string {
 	name := huma.DefaultSchemaNamer(t, hint)
 	typeStr := t.String()
-	pkgPath := packagePathForType(t)
-	shortPkg := shortPackageFromTypeString(typeStr)
+	elem := t
+	for elem.Kind() == reflect.Pointer {
+		elem = elem.Elem()
+	}
+	pkgPath := elem.PkgPath()
+	pkgName := path.Base(pkgPath)
+	shortPkg, _, _ := strings.Cut(typeStr, ".")
+	isArcaneType := strings.HasPrefix(pkgPath, arcaneTypesPrefix)
 
-	if pkgName, ok := arcanePackageName(pkgPath); ok {
-		name = pkgName + name
-	} else if dockerPrefix, localOk := dockerSchemaPrefix(pkgPath, shortPkg); localOk {
-		name = dockerPrefix + name
+	if isArcaneType {
+		name = kit.Capitalize(pkgName) + name
+	} else {
+		prefix := dockerSchemaPrefixes[shortPkg]
+		if strings.Contains(pkgPath, dockerSDKPrefix) {
+			prefix = cmp.Or(dockerSchemaPrefixes[pkgName], prefix)
+		}
+		name = prefix + name
 	}
 	// Preserve the published name after moving the volume backup response to types.
 	if pkgPath == arcaneTypesPrefix+"volume" && strings.TrimLeft(typeStr, "*") == "volume.Backup" {
 		name = "DockerVolumeVolumeBackup"
 	}
-	return qualifyGenericArcaneArgumentsInternal(pkgPath, typeStr, name)
-}
 
-func packagePathForType(t reflect.Type) string {
-	for t.Kind() == reflect.Pointer {
-		t = t.Elem()
+	// Qualify Arcane generic arguments with their package unless it matches the outer type's package.
+	openBracket := strings.IndexByte(typeStr, '[')
+	if !isArcaneType || openBracket < 0 {
+		return name
 	}
-
-	return t.PkgPath()
-}
-
-func shortPackageFromTypeString(typeStr string) string {
-	before, _, ok := strings.Cut(typeStr, ".")
-	return kit.Ternary(!ok, "", before)
-}
-
-func arcanePackageName(pkgPath string) (string, bool) {
-	if !strings.HasPrefix(pkgPath, arcaneTypesPrefix) {
-		return "", false
-	}
-
-	parts := strings.Split(pkgPath, "/")
-	if len(parts) == 0 {
-		return "", false
-	}
-
-	pkg := parts[len(parts)-1]
-	if pkg == "" {
-		return "", false
-	}
-
-	return kit.Capitalize(pkg), true
-}
-
-func dockerSchemaPrefix(pkgPath, shortPkg string) (string, bool) {
-	if strings.Contains(pkgPath, dockerSDKPrefix) {
-		parts := strings.Split(pkgPath, "/")
-		last := parts[len(parts)-1]
-		if prefix, ok := dockerSchemaPrefixes[last]; ok {
-			return prefix, true
-		}
-	}
-
-	prefix, ok := dockerSchemaPrefixes[shortPkg]
+	anonymous := reflect.TypeFor[struct{}]()
+	schemaPrefix, ok := strings.CutSuffix(name, huma.DefaultSchemaNamer(anonymous, typeStr))
 	if !ok {
-		return "", false
+		return name
 	}
 
-	return prefix, true
-}
-
-func qualifyGenericArcaneArgumentsInternal(pkgPath, typeName, schemaName string) string {
-	openBracket := strings.IndexByte(typeName, '[')
-	if !strings.HasPrefix(pkgPath, arcaneTypesPrefix) || openBracket < 0 {
-		return schemaName
-	}
-
-	outerPackage := strings.TrimPrefix(pkgPath, arcaneTypesPrefix)
-	if _, after, found := strings.CutLast(outerPackage, "/"); found {
-		outerPackage = after
-	}
-
-	plainSchemaName := huma.DefaultSchemaNamer(reflect.TypeFor[struct{}](), typeName)
-	schemaPrefix, ok := strings.CutSuffix(schemaName, plainSchemaName)
-	if !ok {
-		return schemaName
-	}
-
-	rewrittenTypeName := typeName
+	rewrittenTypeName := typeStr
 	searchOffset := openBracket + 1
 	for {
 		prefixIndex := strings.Index(rewrittenTypeName[searchOffset:], arcaneTypesPrefix)
@@ -216,28 +171,18 @@ func qualifyGenericArcaneArgumentsInternal(pkgPath, typeName, schemaName string)
 			break
 		}
 
-		innerPackage := afterPrefix[:separator]
-		if _, after, found := strings.CutLast(innerPackage, "/"); found {
-			innerPackage = after
-		}
-
-		replacement := ""
-		if innerPackage != outerPackage {
-			replacement = kit.Capitalize(innerPackage)
-		}
-
+		innerPackage := path.Base(afterPrefix[:separator])
+		replacement := kit.Ternary(innerPackage != pkgName, kit.Capitalize(innerPackage), "")
 		argumentTypeIndex := prefixIndex + len(arcaneTypesPrefix) + separator + 1
 		rewrittenTypeName = rewrittenTypeName[:prefixIndex] + replacement + rewrittenTypeName[argumentTypeIndex:]
 		searchOffset = prefixIndex + len(replacement)
 	}
 
-	return schemaPrefix + huma.DefaultSchemaNamer(reflect.TypeFor[struct{}](), rewrittenTypeName)
+	return schemaPrefix + huma.DefaultSchemaNamer(anonymous, rewrittenTypeName)
 }
 
 // HandlerDeps contains the services required to register HTTP API handlers.
-//
-// It intentionally contains only dependencies consumed by SetupAPI,
-// registerHandlersInternal, and the authentication middleware.
+// It contains only dependencies consumed by SetupAPI and the authentication middleware.
 type HandlerDeps struct {
 	fx.In
 
@@ -292,22 +237,9 @@ func SetupAPI(e *echo.Echo, apiGroup *echo.Group, appCtx handlerutil.ActivityApp
 	humaConfig.Formats["application/json"] = jsonV2Format
 	humaConfig.Formats["json"] = jsonV2Format
 	humaConfig.Info.Description = "Modern Docker Management, Designed for Everyone"
-
 	// Disable default docs path - we'll use Scalar instead
 	humaConfig.DocsPath = ""
-
-	// Configure servers for OpenAPI spec
-	if cfg.AppUrl != "" {
-		humaConfig.Servers = []*huma.Server{
-			{URL: cfg.AppUrl + "/api"},
-		}
-	} else {
-		humaConfig.Servers = []*huma.Server{
-			{URL: "/api"},
-		}
-	}
-
-	// Configure security schemes
+	humaConfig.Servers = []*huma.Server{{URL: cfg.AppUrl + "/api"}}
 	humaConfig.Components.SecuritySchemes = map[string]*huma.SecurityScheme{
 		"BearerAuth": {
 			Type:         "http",
@@ -326,82 +258,20 @@ func SetupAPI(e *echo.Echo, apiGroup *echo.Group, appCtx handlerutil.ActivityApp
 		{"BearerAuth": {}},
 		{"ApiKeyAuth": {}},
 	}
-
-	// Use custom schema namer to avoid conflicts between types with same name
-	// from different packages (e.g., image.Summary vs env.Summary)
 	humaConfig.Components.Schemas = huma.NewMapRegistry("#/components/schemas/", customSchemaNamer)
 
-	// Create Huma API wrapping the Echo router group
 	api := humaecho.NewWithGroup(e, apiGroup, humaConfig)
 
-	// Add authentication middleware
 	api.UseMiddleware(auth.NewHumaMiddleware(api, deps.Auth.Service(), deps.ApiKey.Service(), deps.Role.Service(), deps.Environment.Service(), cfg))
-	api.UseMiddleware(middleware.NewActivityBatchID())
-	registerNormalizationInternal(api)
-
-	// Register all Huma handlers
-	registerHandlersInternal(api, deps, appCtx, cfg)
-
-	// Register Scalar API docs endpoint with dark mode
-	registerScalarDocs(apiGroup)
-
-	return api
-}
-
-// registerScalarDocs adds the Scalar API documentation endpoint.
-func registerScalarDocs(apiGroup *echo.Group) {
-	apiGroup.GET("/docs", func(c *echo.Context) error {
-		return c.HTML(http.StatusOK, scalarDocsHTML)
+	api.UseMiddleware(func(ctx huma.Context, next func(huma.Context)) {
+		if actor, ok := userctx.CurrentUserFromContext(ctx.Context()); ok {
+			middleware.RecordAuthenticatedRequest(ctx.Context(), humaecho.Unwrap(ctx).Request().Header, actor)
+		}
+		next(ctx)
 	})
-}
+	api.UseMiddleware(middleware.NewActivityBatchID())
+	registerNormalization(api)
 
-// SetupAPIForSpec creates a Huma API instance for OpenAPI spec generation only.
-// No services are required - this is purely for schema generation.
-func SetupAPIForSpec() huma.API {
-	e := echo.New()
-	apiGroup := e.Group("/api")
-
-	humaConfig := huma.DefaultConfig("Arcane API", config.Version)
-	humaConfig.Formats = maps.Clone(humaConfig.Formats)
-	humaConfig.Formats["application/json"] = jsonV2Format
-	humaConfig.Formats["json"] = jsonV2Format
-	humaConfig.Info.Description = "Modern Docker Management, Designed for Everyone"
-	humaConfig.Servers = []*huma.Server{
-		{URL: "/api"},
-	}
-	humaConfig.Components.SecuritySchemes = map[string]*huma.SecurityScheme{
-		"BearerAuth": {
-			Type:         "http",
-			Scheme:       "bearer",
-			BearerFormat: "JWT",
-			Description:  "JWT Bearer token authentication",
-		},
-		"ApiKeyAuth": {
-			Type:        "apiKey",
-			In:          "header",
-			Name:        "X-API-Key",
-			Description: "API Key authentication",
-		},
-	}
-	humaConfig.Security = []map[string][]string{
-		{"BearerAuth": {}},
-		{"ApiKeyAuth": {}},
-	}
-
-	// Use custom schema namer to avoid conflicts between types with same name
-	humaConfig.Components.Schemas = huma.NewMapRegistry("#/components/schemas/", customSchemaNamer)
-
-	api := humaecho.NewWithGroup(e, apiGroup, humaConfig)
-
-	// Register handlers with zero-value dependencies for schema discovery only.
-	registerNormalizationInternal(api)
-	registerHandlersInternal(api, HandlerDeps{}, handlerutil.NewActivityAppContext(context.Background()), nil) //nolint:forbidigo // Schema discovery has no running request or application lifecycle.
-
-	return api
-}
-
-// registerHandlersInternal registers all Huma-based API handlers.
-func registerHandlersInternal(api huma.API, deps HandlerDeps, handlerAppCtx handlerutil.ActivityAppContext, cfg *config.Config) {
 	health.RegisterRoutes(api)
 	deps.Auth.RegisterRoutes(api)
 	passkey.RegisterPasskeys(api, deps.Passkey, deps.Auth.Service(), deps.User.Service())
@@ -410,37 +280,51 @@ func registerHandlersInternal(api huma.API, deps HandlerDeps, handlerAppCtx hand
 	deps.Role.RegisterRoutes(api)
 	appimages.RegisterAppImages(api, deps.AppImages)
 	deps.User.RegisterRoutes(api)
-	deps.Project.RegisterRoutes(api, handlerAppCtx)
+	deps.Project.RegisterRoutes(api, appCtx)
 	version.RegisterVersion(api, deps.Version)
 	deps.Event.RegisterRoutes(api)
 	deps.Activity.RegisterRoutes(api)
 	oidc.RegisterOidc(api, deps.Auth.Service(), deps.Passkey, deps.Oidc, deps.Role.Service(), deps.User.Service(), cfg)
-	deps.Environment.RegisterRoutes(api, handlerAppCtx)
+	deps.Environment.RegisterRoutes(api, appCtx, deps.Version.GetAppVersionInfo)
 	deps.ContainerRegistry.RegisterRoutes(api)
 	deps.Template.RegisterRoutes(api)
 	deps.Variable.RegisterRoutes(api, cfg)
-	deps.Image.RegisterRoutes(api, handlerAppCtx)
+	deps.Image.RegisterRoutes(api, appCtx)
 	deps.Upload.RegisterRoutes(api)
 	build.RegisterBuildWorkspaces(api, deps.Build, deps.Upload.Service())
-	deps.ImageUpdate.RegisterRoutes(api, handlerAppCtx)
+	deps.ImageUpdate.RegisterRoutes(api, appCtx)
 	deps.Settings.RegisterRoutes(api)
 	deps.S3Destination.RegisterRoutes(api)
 	deps.JobSchedule.RegisterRoutes(api)
-	deps.Volume.RegisterRoutes(api, handlerAppCtx)
-	deps.Container.RegisterRoutes(api, handlerAppCtx)
+	deps.Volume.RegisterRoutes(api, appCtx)
+	deps.Container.RegisterRoutes(api, appCtx)
 	port.RegisterPorts(api, deps.Port)
-	network.RegisterNetworks(api, deps.Network, deps.Docker, deps.Activity.Service(), handlerAppCtx)
+	network.RegisterNetworks(api, deps.Network, deps.Docker, deps.Activity.Service(), appCtx)
 	deps.Swarm.RegisterRoutes(api)
 	deps.Notification.RegisterRoutes(api)
 	deps.Apns.RegisterRoutes(api)
-	deps.Updater.RegisterRoutes(api, handlerAppCtx)
+	deps.Updater.RegisterRoutes(api, appCtx)
 	deps.Search.RegisterRoutes(api)
-	deps.System.RegisterRoutes(api, handlerAppCtx)
+	deps.System.RegisterRoutes(api, appCtx)
 	handlers.RegisterDiagnostics(api, deps.Diagnostics)
 	deps.GitRepository.RegisterRoutes(api)
 	deps.GitOpsSync.RegisterRoutes(api)
 	deps.Webhook.RegisterRoutes(api)
-	deps.Vulnerability.RegisterRoutes(api, handlerAppCtx)
+	deps.Vulnerability.RegisterRoutes(api, appCtx)
 	deps.Dashboard.RegisterRoutes(api)
 	handlers.RegisterStream(api, deps.Dashboard.Handler(), deps.Activity.Handler(), deps.Environment.Handler(), deps.Event.Service(), deps.Version)
+
+	apiGroup.GET("/docs", func(c *echo.Context) error {
+		return c.HTML(http.StatusOK, scalarDocsHTML)
+	})
+
+	return api
+}
+
+// SetupAPIForSpec creates a Huma API instance for OpenAPI spec generation only.
+// No services are required - this is purely for schema generation.
+func SetupAPIForSpec() huma.API {
+	e := echo.New()
+	appCtx := handlerutil.NewActivityAppContext(context.Background()) //nolint:forbidigo // Schema discovery has no running request or application lifecycle.
+	return SetupAPI(e, e.Group("/api"), appCtx, &config.Config{}, HandlerDeps{})
 }

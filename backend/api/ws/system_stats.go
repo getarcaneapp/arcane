@@ -428,7 +428,7 @@ func (h *WebSocketHandler) SystemStats(c *echo.Context) error {
 	}
 	defer h.releaseRateLimitInternal(clientIP)
 
-	conn, unregister, ok := h.acceptWSInternal(c, systemtypes.WSKindSystemStats, "")
+	conn, unregister, ok := h.acceptWS(c, systemtypes.WSKindSystemStats, "")
 	if !ok {
 		return nil
 	}
@@ -460,7 +460,7 @@ func (h *WebSocketHandler) SystemStats(c *echo.Context) error {
 
 	go h.readSystemStatsPumpInternal(ctx, cancel, conn)
 	// The pong is serviced by readSystemStatsPumpInternal.
-	go keepWSConnAliveInternal(ctx, cancel, conn, 54*time.Second)
+	go keepWSConnAlive(ctx, cancel, conn, 54*time.Second)
 
 	send := func() error {
 		stats, _ := h.systemStatsSampler.latest.Load()

@@ -1,11 +1,13 @@
 package settings
 
 import (
+	"cmp"
 	"context"
-	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -22,6 +24,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/search"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/telemetry"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
@@ -75,110 +78,18 @@ type GetCategoriesOutput struct {
 	Body []category.Category
 }
 
-// validateProjectsDirectoryValueInternal validates a projects directory value allowing:
-// - Unix absolute paths (/...)
-// - Windows drive paths (C:/..., C:\...)
-// - Mapping format "container:host" where container is absolute Unix or Windows path
-func validateProjectsDirectoryValueInternal(path string) error {
-	switch {
-	case projects.IsWindowsDrivePath(path):
-		return nil
-	case strings.Contains(path, ":"):
-		parts := strings.SplitN(path, ":", 2)
-		if len(parts) != 2 {
-			return errors.New("projectsDirectory must be an absolute path or valid mapping format")
-		}
-		container := parts[0]
-		if !strings.HasPrefix(container, "/") && !projects.IsWindowsDrivePath(container) {
-			return errors.New("projectsDirectory mapping format: container path must be absolute")
-		}
-		return nil
-	default:
-		if !strings.HasPrefix(path, "/") {
-			return errors.New("projectsDirectory must be an absolute path starting with '/'")
-		}
-		return nil
-	}
-}
-
-// validateAbsoluteDirectoryPathInternal validates a plain absolute directory path allowing:
-// - Unix absolute paths (/...)
-// - Windows drive paths (C:/..., C:\...)
-func validateAbsoluteDirectoryPathInternal(path string) error {
-	switch {
-	case projects.IsWindowsDrivePath(path):
-		return nil
-	case strings.HasPrefix(path, "/"):
-		return nil
-	default:
-		return errors.New("must be an absolute path")
-	}
-}
-
-func filterSettingsCategoriesInternal(ps *authz.PermissionSet, categories []category.Category) []category.Category {
-	if ps == nil {
-		return []category.Category{}
-	}
-	filtered := make([]category.Category, 0, len(categories))
-	for _, cat := range categories {
-		if canAccessSettingsCategoryAtAnyScopeInternal(ps, cat.ID) {
-			filtered = append(filtered, cat)
-		}
-	}
-	return filtered
-}
-
-func canAccessSettingsCategoryAtAnyScopeInternal(ps *authz.PermissionSet, categoryID string) bool {
-	if ps == nil {
-		return false
-	}
-	if authz.CanAccessSettingsCategory(ps, categoryID, "") {
-		return true
-	}
-	for envID := range ps.PerEnv {
-		if authz.CanAccessSettingsCategory(ps, categoryID, envID) {
-			return true
-		}
-	}
-	return false
-}
-
-func (h *SettingsHandler) appendRuntimeSettingsInternal(settingsDto []settings.PublicSetting, includeAuthenticatedOnly bool) []settings.PublicSetting {
+func (h *SettingsHandler) appendRuntimeSettings(settingsDto []settings.PublicSetting, includeAuthenticatedOnly bool) []settings.PublicSetting {
+	relay := h.cfg != nil && !h.cfg.AgentMode
+	settingsDto = append(settingsDto,
+		settings.PublicSetting{Key: "frontendTracingEnabled", Value: strconv.FormatBool(relay && telemetry.Endpoint("traces") != ""), Type: "boolean"},
+		settings.PublicSetting{Key: "frontendMetricsEnabled", Value: strconv.FormatBool(relay && telemetry.Endpoint("metrics") != ""), Type: "boolean"},
+		settings.PublicSetting{Key: "frontendLogsEnabled", Value: strconv.FormatBool(relay && telemetry.Endpoint("logs") != ""), Type: "boolean"},
+	)
 	if !includeAuthenticatedOnly {
 		return settingsDto
 	}
 
-	uiConfigDisabled := false
-	if h.cfg != nil {
-		uiConfigDisabled = h.cfg.UIConfigurationDisabled
-	}
-	settingsDto = append(settingsDto, settings.PublicSetting{
-		Key:   "uiConfigDisabled",
-		Value: strconv.FormatBool(uiConfigDisabled),
-		Type:  "boolean",
-	})
-
-	projectWorkspaceMaxFileSizeMB := 10
-	volumeWorkspaceMaxFileSizeMB := 10
-	if h.cfg != nil {
-		projectWorkspaceMaxFileSizeMB = workspace.EffectiveMaxFileSizeMB(h.cfg.ProjectWorkspaceMaxFileSizeMB)
-		volumeWorkspaceMaxFileSizeMB = workspace.EffectiveMaxFileSizeMB(h.cfg.VolumeWorkspaceMaxFileSizeMB)
-	}
-	settingsDto = append(settingsDto,
-		settings.PublicSetting{Key: projectWorkspaceMaxFileSizeSettingKey, Value: strconv.Itoa(projectWorkspaceMaxFileSizeMB), Type: "number"},
-		settings.PublicSetting{Key: volumeWorkspaceMaxFileSizeSettingKey, Value: strconv.Itoa(volumeWorkspaceMaxFileSizeMB), Type: "number"},
-	)
-
-	backupVolumeName := "arcane-backups"
-	if h.cfg != nil && strings.TrimSpace(h.cfg.BackupVolumeName) != "" {
-		backupVolumeName = h.cfg.BackupVolumeName
-	}
-	settingsDto = append(settingsDto, settings.PublicSetting{
-		Key:   "backupVolumeName",
-		Value: backupVolumeName,
-		Type:  "string",
-	})
-
+	cfg := cmp.Or(h.cfg, &config.Config{})
 	var edgeCfg *edge.Config
 	if h.cfg != nil {
 		edgeCfg = &edge.Config{
@@ -188,15 +99,23 @@ func (h *SettingsHandler) appendRuntimeSettingsInternal(settingsDto []settings.P
 		}
 	}
 	_, edgeMTLSCAErr := edge.AvailableManagerMTLSCAPath(edgeCfg)
-	settingsDto = append(settingsDto, settings.PublicSetting{
-		Key:   "edgeMTLSManagerCAAvailable",
-		Value: strconv.FormatBool(edgeMTLSCAErr == nil),
-		Type:  "boolean",
-	})
+	projectWorkspaceMaxFileSizeMB := workspace.EffectiveMaxFileSizeMB(cfg.ProjectWorkspaceMaxFileSizeMB)
+	volumeWorkspaceMaxFileSizeMB := workspace.EffectiveMaxFileSizeMB(cfg.VolumeWorkspaceMaxFileSizeMB)
+	settingsDto = append(settingsDto,
+		settings.PublicSetting{Key: "uiConfigDisabled", Value: strconv.FormatBool(cfg.UIConfigurationDisabled), Type: "boolean"},
+		settings.PublicSetting{Key: projectWorkspaceMaxFileSizeSettingKey, Value: strconv.Itoa(projectWorkspaceMaxFileSizeMB), Type: "number"},
+		settings.PublicSetting{Key: volumeWorkspaceMaxFileSizeSettingKey, Value: strconv.Itoa(volumeWorkspaceMaxFileSizeMB), Type: "number"},
+		settings.PublicSetting{
+			Key:   "backupVolumeName",
+			Value: kit.Ternary(strings.TrimSpace(cfg.BackupVolumeName) != "", cfg.BackupVolumeName, "arcane-backups"),
+			Type:  "string",
+		},
+		settings.PublicSetting{Key: "edgeMTLSManagerCAAvailable", Value: strconv.FormatBool(edgeMTLSCAErr == nil), Type: "boolean"},
+	)
 
 	if h.settingsService != nil {
-		cfg := h.settingsService.GetSettingsConfig()
-		depotConfigured := strings.TrimSpace(cfg.DepotProjectId.Value) != "" && strings.TrimSpace(cfg.DepotToken.Value) != ""
+		settingsCfg := h.settingsService.GetSettingsConfig()
+		depotConfigured := strings.TrimSpace(settingsCfg.DepotProjectId.Value) != "" && strings.TrimSpace(settingsCfg.DepotToken.Value) != ""
 		settingsDto = append(settingsDto,
 			settings.PublicSetting{Key: "depotConfigured", Value: strconv.FormatBool(depotConfigured), Type: "boolean"},
 			settings.PublicSetting{Key: "enableGravatarEnvForced", Value: strconv.FormatBool(h.settingsService.IsEnvOverrideActive("enableGravatar")), Type: "boolean"},
@@ -223,7 +142,7 @@ func (h *SettingsHandler) GetPublicSettings(ctx context.Context, input *GetPubli
 		return nil, huma.Error500InternalServerError("Failed to map settings")
 	}
 
-	return &GetPublicSettingsOutput{Body: h.appendRuntimeSettingsInternal(settingsDto, false)}, nil
+	return &GetPublicSettingsOutput{Body: h.appendRuntimeSettings(settingsDto, false)}, nil
 }
 
 // GetSettings returns all settings for an environment.
@@ -244,13 +163,10 @@ func (h *SettingsHandler) GetSettings(ctx context.Context, input *GetSettingsInp
 			}
 			allowedKeys[projectWorkspaceMaxFileSizeSettingKey] = struct{}{}
 			allowedKeys[volumeWorkspaceMaxFileSizeSettingKey] = struct{}{}
-			filtered := make([]settings.PublicSetting, 0, len(*settingsDto))
-			for _, setting := range *settingsDto {
-				if _, ok := allowedKeys[setting.Key]; ok {
-					filtered = append(filtered, setting)
-				}
-			}
-			settingsDto = &filtered
+			*settingsDto = slices.DeleteFunc(*settingsDto, func(setting settings.PublicSetting) bool {
+				_, ok := allowedKeys[setting.Key]
+				return !ok
+			})
 		}
 		return &GetSettingsOutput{Body: *settingsDto}, nil
 	}
@@ -262,99 +178,79 @@ func (h *SettingsHandler) GetSettings(ctx context.Context, input *GetSettingsInp
 		return nil, huma.Error500InternalServerError("Failed to map settings")
 	}
 
-	return &GetSettingsOutput{Body: h.appendRuntimeSettingsInternal(settingsDto, true)}, nil
+	return &GetSettingsOutput{Body: h.appendRuntimeSettings(settingsDto, true)}, nil
 }
 
 // UpdateSettings updates settings for an environment.
 func (h *SettingsHandler) UpdateSettings(ctx context.Context, input *UpdateSettingsInput) (*handlerutil.Out[[]settings.SettingDto], error) {
-	if err := h.validateSettingsUpdateInput(input.Body); err != nil {
-		return nil, err
+	update := input.Body
+	// Only validate changed directories so env-provided values do not block unrelated saves.
+	currentCfg := h.settingsService.GetSettingsConfig()
+	projectsDir := ""
+	if update.ProjectsDirectory != nil && *update.ProjectsDirectory != currentCfg.ProjectsDirectory.Value {
+		projectsDir = *update.ProjectsDirectory
+	}
+	if projectsDir != "" && !projects.IsWindowsDrivePath(projectsDir) {
+		// Mapping format is "container:host"; the container path must be absolute.
+		if container, _, isMapping := strings.Cut(projectsDir, ":"); !strings.HasPrefix(container, "/") {
+			return nil, huma.Error400BadRequest(kit.Ternary(isMapping,
+				"projectsDirectory mapping format: container path must be absolute",
+				"projectsDirectory must be an absolute path starting with '/'"))
+		}
+	}
+
+	if dir := update.SwarmStackSourcesDirectory; dir != nil && *dir != "" && *dir != currentCfg.SwarmStackSourcesDirectory.Value &&
+		!projects.IsWindowsDrivePath(*dir) && !strings.HasPrefix(*dir, "/") {
+		return nil, huma.Error400BadRequest("swarmStackSourcesDirectory must be an absolute path")
+	}
+
+	if update.AvatarMaxUploadSizeMb != nil && strings.TrimSpace(*update.AvatarMaxUploadSizeMb) != "" {
+		value, err := strconv.Atoi(strings.TrimSpace(*update.AvatarMaxUploadSizeMb))
+		if err != nil || value < 1 || value > 50 {
+			return nil, huma.Error400BadRequest("avatarMaxUploadSizeMb must be between 1 and 50")
+		}
+	}
+
+	if update.TrivyConfig != nil && strings.TrimSpace(*update.TrivyConfig) != "" {
+		var doc map[string]any
+		if err := yaml.Unmarshal([]byte(*update.TrivyConfig), &doc); err != nil {
+			return nil, huma.Error400BadRequest("trivyConfig must be a YAML mapping: " + err.Error())
+		}
+		if doc == nil {
+			return nil, huma.Error400BadRequest("trivyConfig must be a YAML mapping")
+		}
 	}
 
 	if input.EnvironmentID != "0" {
-		return h.updateSettingsForRemoteEnvironment(ctx, input)
+		if update.AuthLocalEnabled != nil || update.OidcEnabled != nil || update.AuthSessionTimeout != nil || update.AuthPasswordPolicy != nil ||
+			update.OidcClientId != nil || update.OidcClientSecret != nil || update.OidcIssuerUrl != nil || update.OidcScopes != nil ||
+			update.OidcMergeAccounts != nil || update.OidcSkipTlsVerify != nil || update.OidcAutoRedirectToProvider != nil ||
+			update.OidcProviderName != nil || update.OidcProviderLogoUrl != nil || update.OidcGroupsClaim != nil {
+			return nil, huma.Error403Forbidden("Authentication settings can only be updated from the main environment")
+		}
+		apiResp, err := h.proxyRemoteJSON.JSON[base.ApiResponse[[]settings.SettingDto]](ctx, input.EnvironmentID, http.MethodPut, "/api/environments/0/settings", update)
+		if err != nil {
+			return nil, err
+		}
+		return &handlerutil.Out[[]settings.SettingDto]{Body: *apiResp}, nil
 	}
 
-	return h.updateSettingsForLocalEnvironment(ctx, input.Body)
-}
-
-func (h *SettingsHandler) validateSettingsUpdateInput(input settings.Update) error {
-	// Validate projects directory if provided and changed from current value.
-	// Skip validation when the value matches the current (possibly env-overridden) setting
-	// so that saving unrelated settings doesn't fail due to env-provided directory formats.
-	if input.ProjectsDirectory != nil && *input.ProjectsDirectory != "" {
-		currentDir := h.settingsService.GetSettingsConfig().ProjectsDirectory.Value
-		if *input.ProjectsDirectory != currentDir {
-			if err := validateProjectsDirectoryValueInternal(*input.ProjectsDirectory); err != nil {
-				return huma.Error400BadRequest(err.Error())
-			}
+	if projectsDir != "" {
+		resolved, err := projects.GetProjectsDirectory(ctx, strings.TrimSpace(projectsDir))
+		if err != nil {
+			return nil, huma.Error400BadRequest(fmt.Sprintf("cannot use projects directory %q: %v", projectsDir, err))
+		}
+		// os rather than acfs: the directory is validated before it becomes a confinement root.
+		f, err := os.Open(resolved)
+		if err == nil {
+			err = f.Close()
+		}
+		if err != nil {
+			return nil, huma.Error400BadRequest(fmt.Sprintf("cannot read projects directory %q: %v", resolved, err))
 		}
 	}
 
-	if input.SwarmStackSourcesDirectory != nil && *input.SwarmStackSourcesDirectory != "" {
-		currentDir := h.settingsService.GetSettingsConfig().SwarmStackSourcesDirectory.Value
-		if *input.SwarmStackSourcesDirectory != currentDir {
-			if err := validateAbsoluteDirectoryPathInternal(*input.SwarmStackSourcesDirectory); err != nil {
-				return huma.Error400BadRequest("swarmStackSourcesDirectory " + err.Error())
-			}
-		}
-	}
-
-	if input.AvatarMaxUploadSizeMb != nil && strings.TrimSpace(*input.AvatarMaxUploadSizeMb) != "" {
-		value, err := strconv.Atoi(strings.TrimSpace(*input.AvatarMaxUploadSizeMb))
-		if err != nil || value < 1 || value > 50 {
-			return huma.Error400BadRequest("avatarMaxUploadSizeMb must be between 1 and 50")
-		}
-	}
-
-	if input.TrivyConfig != nil && strings.TrimSpace(*input.TrivyConfig) != "" {
-		var doc map[string]any
-		if err := yaml.Unmarshal([]byte(*input.TrivyConfig), &doc); err != nil {
-			return huma.Error400BadRequest("trivyConfig must be a YAML mapping: " + err.Error())
-		}
-		if doc == nil {
-			return huma.Error400BadRequest("trivyConfig must be a YAML mapping")
-		}
-	}
-
-	return nil
-}
-
-func (h *SettingsHandler) updateSettingsForRemoteEnvironment(ctx context.Context, input *UpdateSettingsInput) (*handlerutil.Out[[]settings.SettingDto], error) {
-	// Check if trying to update auth settings on non-local environment.
-	if hasAuthSettingsUpdateInternal(input.Body) {
-		return nil, huma.Error403Forbidden("Authentication settings can only be updated from the main environment")
-	}
-
-	apiResp, err := h.proxyRemoteJSON.JSON[base.ApiResponse[[]settings.SettingDto]](ctx, input.EnvironmentID, http.MethodPut, "/api/environments/0/settings", input.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	return &handlerutil.Out[[]settings.SettingDto]{Body: *apiResp}, nil
-}
-
-func (h *SettingsHandler) updateSettingsForLocalEnvironment(ctx context.Context, input settings.Update) (*handlerutil.Out[[]settings.SettingDto], error) {
-	if input.ProjectsDirectory != nil && *input.ProjectsDirectory != "" {
-		currentDir := h.settingsService.GetSettingsConfig().ProjectsDirectory.Value
-		if *input.ProjectsDirectory != currentDir {
-			resolved, err := projects.GetProjectsDirectory(ctx, strings.TrimSpace(*input.ProjectsDirectory))
-			if err != nil {
-				return nil, huma.Error400BadRequest(fmt.Sprintf("cannot use projects directory %q: %v", *input.ProjectsDirectory, err))
-			}
-			// os.* rather than acfs: this validates a user-typed directory before
-			// it becomes a confinement root, so no root exists for it yet.
-			f, err := os.Open(resolved)
-			if err != nil {
-				return nil, huma.Error400BadRequest(fmt.Sprintf("cannot read projects directory %q: %v", resolved, err))
-			}
-			if closeErr := f.Close(); closeErr != nil {
-				return nil, huma.Error400BadRequest(fmt.Sprintf("cannot read projects directory %q: %v", resolved, closeErr))
-			}
-		}
-	}
-
-	updatedSettings, err := h.settingsService.UpdateSettings(ctx, input)
+	updatedSettings, err := h.settingsService.UpdateSettings(ctx, update)
 	if err != nil {
 		apiErr := common.ToAPIError(err)
 		if apiErr.HTTPStatus() == http.StatusInternalServerError {
@@ -365,31 +261,12 @@ func (h *SettingsHandler) updateSettingsForLocalEnvironment(ctx context.Context,
 
 	settingDtos := make([]settings.SettingDto, 0, len(updatedSettings))
 	for _, setting := range updatedSettings {
-		settingDtos = append(settingDtos, settings.SettingDto{
-			Key:   setting.Key,
-			Type:  "string",
-			Value: setting.Value,
-		})
+		settingDtos = append(settingDtos, settings.SettingDto{Key: setting.Key, Type: "string", Value: setting.Value})
 	}
 
 	return &handlerutil.Out[[]settings.SettingDto]{
-		Body: base.ApiResponse[[]settings.SettingDto]{
-			Success: true,
-			Data:    settingDtos,
-		},
+		Body: base.ApiResponse[[]settings.SettingDto]{Success: true, Data: settingDtos},
 	}, nil
-}
-
-func hasAuthSettingsUpdateInternal(req settings.Update) bool {
-	return req.AuthLocalEnabled != nil || req.OidcEnabled != nil ||
-		req.AuthSessionTimeout != nil || req.AuthPasswordPolicy != nil ||
-		req.OidcClientId != nil ||
-		req.OidcClientSecret != nil || req.OidcIssuerUrl != nil ||
-		req.OidcScopes != nil ||
-		req.OidcMergeAccounts != nil ||
-		req.OidcSkipTlsVerify != nil || req.OidcAutoRedirectToProvider != nil ||
-		req.OidcProviderName != nil || req.OidcProviderLogoUrl != nil ||
-		req.OidcGroupsClaim != nil
 }
 
 // Search searches settings by query.
@@ -398,16 +275,29 @@ func (h *SettingsHandler) Search(ctx context.Context, input *SearchSettingsInput
 		return nil, huma.Error400BadRequest("Query parameter is required")
 	}
 
-	ps, _ := middleware.PermissionsFromContext(ctx)
-	results := search.Search(h.settingsSearchService.GetSettingsCategories(), input.Body.Query, searchtypes.SettingsProfile)
-	results.Results = filterSettingsCategoriesInternal(ps, results.Results)
-	results.Count = len(results.Results)
+	categories, err := h.GetCategories(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	results := search.Search(categories.Body, input.Body.Query, searchtypes.SettingsProfile)
+	if results.Results == nil {
+		results.Results = []category.Category{}
+	}
 	return &SearchSettingsOutput{Body: results}, nil
 }
 
-// GetCategories returns all available settings categories.
+// GetCategories returns the settings categories reachable at any scope.
 func (h *SettingsHandler) GetCategories(ctx context.Context, input *struct{}) (*GetCategoriesOutput, error) {
+	categories := []category.Category{}
 	ps, _ := middleware.PermissionsFromContext(ctx)
-	categories := filterSettingsCategoriesInternal(ps, h.settingsSearchService.GetSettingsCategories())
+	if ps == nil {
+		return &GetCategoriesOutput{Body: categories}, nil
+	}
+	scopes := append([]string{""}, slices.Collect(maps.Keys(ps.PerEnv))...)
+	for _, cat := range h.settingsSearchService.GetSettingsCategories() {
+		if slices.ContainsFunc(scopes, func(envID string) bool { return authz.CanAccessSettingsCategory(ps, cat.ID, envID) }) {
+			categories = append(categories, cat)
+		}
+	}
 	return &GetCategoriesOutput{Body: categories}, nil
 }

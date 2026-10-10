@@ -49,7 +49,7 @@ func TestNormalizationBeforeHumaValidation(t *testing.T) {
 			cfg := huma.DefaultConfig("test", "1")
 			cfg.Formats = map[string]huma.Format{"application/json": jsonV2Format, "json": jsonV2Format}
 			api := humaecho.New(router, cfg)
-			registerNormalizationInternal(api)
+			registerNormalization(api)
 			called := false
 			var received normalizationTestBody
 			huma.Register(api, huma.Operation{
@@ -88,7 +88,7 @@ func TestNormalizationBeforeHumaValidation(t *testing.T) {
 	t.Run("identity fields pass through unchanged", func(t *testing.T) {
 		router := echo.New()
 		api := humaecho.New(router, huma.DefaultConfig("test", "1"))
-		registerNormalizationInternal(api)
+		registerNormalization(api)
 		var received usertypes.CreateUser
 		huma.Register(api, huma.Operation{
 			OperationID: "create",
@@ -133,7 +133,7 @@ func TestNormalizationBeforeHumaValidation(t *testing.T) {
 func TestNormalizationBodyLimits(t *testing.T) {
 	router := echo.New()
 	api := humaecho.New(router, huma.DefaultConfig("test", "1"))
-	registerNormalizationInternal(api)
+	registerNormalization(api)
 	huma.Register(api, huma.Operation{
 		OperationID:  "limit",
 		Method:       http.MethodPost,
@@ -218,7 +218,7 @@ func TestNormalizationReadTimeout(t *testing.T) {
 			logs.Reset()
 			router := echo.New()
 			api := humaecho.New(router, huma.DefaultConfig("test", "1"))
-			registerNormalizationInternal(api)
+			registerNormalization(api)
 			called := false
 			huma.Register(api, huma.Operation{
 				OperationID:     "timeout",
@@ -254,7 +254,7 @@ func TestNormalizationReadTimeout(t *testing.T) {
 func TestNormalizationRejectsInvalidTagsAtRegistration(t *testing.T) {
 	router := echo.New()
 	api := humaecho.New(router, huma.DefaultConfig("test", "1"))
-	registerNormalizationInternal(api)
+	registerNormalization(api)
 	require.Panics(t, func() {
 		huma.Register(api, huma.Operation{OperationID: "invalid", Method: http.MethodPost, Path: "/invalid"}, func(_ context.Context, _ *struct {
 			Body struct {

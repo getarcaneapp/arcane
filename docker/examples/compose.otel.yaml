@@ -1,0 +1,33 @@
+services:
+  arcane:
+    image: ghcr.io/getarcaneapp/manager:latest
+    container_name: arcane
+    ports:
+      - '3552:3552'
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - arcane-data:/app/data
+    environment:
+      - ENCRYPTION_KEY=replace_me_with_a_random_32_char_value
+      - TZ=UTC
+      - OTEL_TRACES_EXPORTER=otlp
+      - OTEL_METRICS_EXPORTER=otlp
+      - OTEL_LOGS_EXPORTER=otlp
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+      # Keep 25% of new traces; traces started by a sampled parent are always kept.
+      # - OTEL_TRACES_SAMPLER=parentbased_traceidratio
+      # - OTEL_TRACES_SAMPLER_ARG=0.25
+    depends_on:
+      - otel-collector
+    restart: unless-stopped
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    container_name: otel-collector
+    command: ['--config=/etc/otelcol/config.yaml']
+    volumes:
+      - ./otel/collector.yaml:/etc/otelcol/config.yaml:ro
+    restart: unless-stopped
+
+volumes:
+  arcane-data:

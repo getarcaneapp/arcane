@@ -83,11 +83,10 @@ func UsePollEdgeTransport(cfg *Config) bool {
 
 // GetActiveTunnelTransport returns the currently active tunnel transport for an environment.
 func GetActiveTunnelTransport(envID string) mo.Option[string] {
-	tunnel, ok := GetRegistry().Get(envID).Get()
-	if !ok || tunnel == nil || tunnel.Conn == nil || tunnel.Conn.IsClosed() {
+	tunnel, ok := GetActiveTunnel(envID).Get()
+	if !ok {
 		return mo.None[string]()
 	}
-
 	if transport := tunnel.Conn.Transport(); transport != "" {
 		return mo.Some(transport)
 	}
@@ -96,13 +95,11 @@ func GetActiveTunnelTransport(envID string) mo.Option[string] {
 
 // GetTunnelRuntimeState returns live metadata for an active tunnel.
 func GetTunnelRuntimeState(envID string) mo.Option[*TunnelRuntimeState] {
-	tunnel, ok := GetRegistry().Get(envID).Get()
-	if !ok || tunnel == nil || tunnel.Conn == nil || tunnel.Conn.IsClosed() {
+	tunnel, ok := GetActiveTunnel(envID).Get()
+	if !ok {
 		return mo.None[*TunnelRuntimeState]()
 	}
-
-	// One snapshot under a single read lock, so the reported fields all describe
-	// the same moment and none of them race the tunnel's writers.
+	// One snapshot under a single read lock keeps the fields consistent and race-free.
 	meta := tunnel.MetadataSnapshot()
 
 	return mo.Some(&TunnelRuntimeState{

@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 const (
@@ -22,9 +24,8 @@ const (
 
 var ErrEnvironmentUnavailable = errors.New("edge agent is not connected")
 
-// ExtractBearerToken returns the token portion of an "Authorization: Bearer <token>"
-// header value. It is case-insensitive on the scheme and trims surrounding whitespace.
-// Returns an empty string if the header is empty or does not use the Bearer scheme.
+// ExtractBearerToken returns the trimmed token from an "Authorization: Bearer <token>" value,
+// or "" when the scheme (case-insensitive) is not Bearer.
 func ExtractBearerToken(headerValue string) string {
 	headerValue = strings.TrimSpace(headerValue)
 	if headerValue == "" {
@@ -36,9 +37,7 @@ func ExtractBearerToken(headerValue string) string {
 	return strings.TrimSpace(headerValue[len(bearerScheme):])
 }
 
-// RedactedTokenFingerprint returns a short, redacted identifier for a token
-// suitable for debug logs. It is intentionally not reversible and never
-// reveals the full secret.
+// RedactedTokenFingerprint returns a short, non-reversible token identifier for debug logs.
 func RedactedTokenFingerprint(token string) string {
 	token = strings.TrimSpace(token)
 	if len(token) <= 10 {
@@ -93,42 +92,38 @@ type Client struct {
 }
 
 func NewClient(httpClient *http.Client, tunnel TunnelTransport) *Client {
-	if httpClient == nil {
-		httpClient = &http.Client{Timeout: 30 * time.Second}
+	client := &http.Client{Timeout: 30 * time.Second}
+	if httpClient != nil {
+		copied := *httpClient
+		client = &copied
 	}
+	client.Transport = otelhttp.NewTransport(client.Transport)
 
 	return &Client{
-		httpClient: httpClient,
+		httpClient: client,
 		tunnel:     tunnel,
 	}
 }
 
 func (c *Client) Do(ctx context.Context, req Request) (*Response, error) {
 	if req.IsEdge {
-		return c.doViaTunnelInternal(ctx, req)
+		if c.tunnel == nil {
+			return nil, &TransportError{Err: errors.New("edge transport unavailable")}
+		}
+		if err := c.tunnel.EnsureAvailable(ctx, req.EnvironmentID); err != nil {
+			return nil, &TransportError{Err: err}
+		}
+		headers := maps.Clone(req.Headers)
+		if headers == nil {
+			headers = map[string]string{}
+		}
+		resp, err := c.tunnel.Do(ctx, req.EnvironmentID, req.Method, req.Path, headers, req.Body)
+		if err != nil {
+			return nil, &TransportError{Err: err}
+		}
+		return resp, nil
 	}
 
-	return c.doDirectHTTPInternal(ctx, req)
-}
-
-func (c *Client) doViaTunnelInternal(ctx context.Context, req Request) (*Response, error) {
-	if c.tunnel == nil {
-		return nil, &TransportError{Err: errors.New("edge transport unavailable")}
-	}
-
-	if err := c.tunnel.EnsureAvailable(ctx, req.EnvironmentID); err != nil {
-		return nil, &TransportError{Err: err}
-	}
-
-	resp, err := c.tunnel.Do(ctx, req.EnvironmentID, req.Method, req.Path, cloneHeaders(req.Headers), req.Body)
-	if err != nil {
-		return nil, &TransportError{Err: err}
-	}
-
-	return resp, nil
-}
-
-func (c *Client) doDirectHTTPInternal(ctx context.Context, req Request) (*Response, error) {
 	var bodyReader io.Reader
 	if len(req.Body) > 0 {
 		bodyReader = bytes.NewReader(req.Body)
@@ -154,26 +149,23 @@ func (c *Client) doDirectHTTPInternal(ctx context.Context, req Request) (*Respon
 		return nil, &TransportError{Err: fmt.Errorf("failed to read response body: %w", err)}
 	}
 
-	return &Response{
-		StatusCode: resp.StatusCode,
-		Body:       respBody,
-		Headers:    flattenHeaders(resp.Header),
-	}, nil
+	headers := make(map[string]string, len(resp.Header))
+	for key, values := range resp.Header {
+		if len(values) > 0 {
+			headers[key] = values[0]
+		}
+	}
+	return &Response{StatusCode: resp.StatusCode, Body: respBody, Headers: headers}, nil
 }
 
 func (r *Response) RequireSuccess() error {
-	if r != nil && r.StatusCode >= http.StatusOK && r.StatusCode < http.StatusMultipleChoices {
-		return nil
-	}
-
 	if r == nil {
 		return &StatusError{}
 	}
-
-	return &StatusError{
-		StatusCode: r.StatusCode,
-		Body:       r.Body,
+	if r.StatusCode >= http.StatusOK && r.StatusCode < http.StatusMultipleChoices {
+		return nil
 	}
+	return &StatusError{StatusCode: r.StatusCode, Body: r.Body}
 }
 
 type TransportError struct {
@@ -189,16 +181,15 @@ func (e *TransportError) Unavailable() bool {
 	if errors.Is(e.Err, context.DeadlineExceeded) || errors.Is(e.Err, ErrEnvironmentUnavailable) {
 		return true
 	}
-	var networkErr net.Error
-	if errors.As(e.Err, &networkErr) && networkErr.Timeout() {
+	if networkErr, ok := errors.AsType[net.Error](e.Err); ok && networkErr.Timeout() {
 		return true
 	}
-	var operationErr *net.OpError
-	if !errors.As(e.Err, &operationErr) || operationErr.Op != "dial" {
+	operationErr, ok := errors.AsType[*net.OpError](e.Err)
+	if !ok || operationErr.Op != "dial" {
 		return false
 	}
-	var addressErr *net.AddrError
-	return !errors.As(operationErr, &addressErr)
+	_, isAddressErr := errors.AsType[*net.AddrError](operationErr)
+	return !isAddressErr
 }
 
 func (e *TransportError) Error() string {
@@ -248,14 +239,8 @@ func (e *DecodeError) Unwrap() error {
 	return e.Err
 }
 
-// ApplyAgentTokenHeaders sets the agent token in both X- header forms on the
-// given http.Header. It deliberately does NOT set the Authorization header:
-// these helpers are used by the manager when proxying user requests through
-// to remote environments, and the Authorization header in that case carries
-// the calling user's bearer or session token. Direct agent->manager call
-// sites (poll, websocket dial, grpc dial, mTLS enroll) set
-// `Authorization: Bearer <token>` themselves so the token survives reverse
-// proxies that strip non-standard X- headers.
+// ApplyAgentTokenHeaders sets the agent token in both X- header forms. It never sets
+// Authorization, which carries the proxied user's own token.
 func ApplyAgentTokenHeaders(headers http.Header, accessToken *string) {
 	if headers == nil || accessToken == nil || strings.TrimSpace(*accessToken) == "" {
 		return
@@ -265,8 +250,7 @@ func ApplyAgentTokenHeaders(headers http.Header, accessToken *string) {
 	headers.Set(HeaderAPIKey, *accessToken)
 }
 
-// ApplyAgentTokenHeaderMap mirrors ApplyAgentTokenHeaders for map-based
-// header carriers. Same rationale: do not write Authorization here.
+// ApplyAgentTokenHeaderMap mirrors ApplyAgentTokenHeaders for map-based header carriers.
 func ApplyAgentTokenHeaderMap(headers map[string]string, accessToken *string) {
 	if headers == nil || accessToken == nil || strings.TrimSpace(*accessToken) == "" {
 		return
@@ -274,28 +258,4 @@ func ApplyAgentTokenHeaderMap(headers map[string]string, accessToken *string) {
 
 	headers[HeaderAgentToken] = *accessToken
 	headers[HeaderAPIKey] = *accessToken
-}
-
-func flattenHeaders(headers http.Header) map[string]string {
-	if len(headers) == 0 {
-		return map[string]string{}
-	}
-
-	out := make(map[string]string, len(headers))
-	for key, values := range headers {
-		if len(values) > 0 {
-			out[key] = values[0]
-		}
-	}
-	return out
-}
-
-func cloneHeaders(headers map[string]string) map[string]string {
-	if len(headers) == 0 {
-		return map[string]string{}
-	}
-
-	out := make(map[string]string, len(headers))
-	maps.Copy(out, headers)
-	return out
 }

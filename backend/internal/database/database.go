@@ -23,6 +23,7 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
+	"gorm.io/plugin/opentelemetry/metrics"
 
 	sqliteutil "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/sqlite"
 	"github.com/getarcaneapp/arcane/backend/v2/resources"
@@ -137,11 +138,30 @@ func Initialize(ctx context.Context, databaseURL string, options MigrationOption
 	if cancellationErr := ctx.Err(); cancellationErr != nil {
 		return nil, cancellationErr
 	}
-
 	sqlDB, err := db.SQLDB()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get sql.DB: %w", err)
 	}
+	// Statement spans and pool metrics are no-ops until telemetry is enabled.
+	cb := gormDB.Callback()
+	err = errors.Join(
+		cb.Create().Before("gorm:create").Register("arcane:otel_before_create", startStatementSpan),
+		cb.Create().After("gorm:create").Register("arcane:otel_after_create", endStatementSpan),
+		cb.Query().Before("gorm:query").Register("arcane:otel_before_query", startStatementSpan),
+		cb.Query().After("gorm:query").Register("arcane:otel_after_query", endStatementSpan),
+		cb.Update().Before("gorm:update").Register("arcane:otel_before_update", startStatementSpan),
+		cb.Update().After("gorm:update").Register("arcane:otel_after_update", endStatementSpan),
+		cb.Delete().Before("gorm:delete").Register("arcane:otel_before_delete", startStatementSpan),
+		cb.Delete().After("gorm:delete").Register("arcane:otel_after_delete", endStatementSpan),
+		cb.Row().Before("gorm:row").Register("arcane:otel_before_row", startStatementSpan),
+		cb.Row().After("gorm:row").Register("arcane:otel_after_row", endStatementSpan),
+		cb.Raw().Before("gorm:raw").Register("arcane:otel_before_raw", startStatementSpan),
+		cb.Raw().After("gorm:raw").Register("arcane:otel_after_raw", endStatementSpan),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to register database instrumentation: %w", err)
+	}
+	metrics.ReportDBStatsMetrics(sqlDB)
 	if migrationErr := migrateDatabase(ctx, sqlDB, dbProvider, options, latestMigrationVersion); migrationErr != nil {
 		slog.ErrorContext(ctx, "Failed to run migrations", "error", migrationErr)
 		return nil, fmt.Errorf("failed to run migrations: %w", migrationErr)

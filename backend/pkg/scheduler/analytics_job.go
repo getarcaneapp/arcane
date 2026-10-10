@@ -16,6 +16,7 @@ import (
 	"github.com/cenkalti/backoff/v5"
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	kit "go.getarcane.app/kit/pkg"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
@@ -54,6 +55,10 @@ func NewAnalyticsJob(
 	if httpClient == nil {
 		httpClient = &http.Client{Timeout: 30 * time.Second}
 	}
+	// Trace a copy so the injected shared client keeps its raw transport.
+	traced := *httpClient
+	traced.Transport = otelhttp.NewTransport(httpClient.Transport)
+	httpClient = &traced
 	heartbeatURL := kit.Ternary(!cfg.Environment.IsProdEnvironment(), devHeartbeatEndpoint, defaultHeartbeatEndpoint)
 	return &AnalyticsJob{
 		settingsService: settingsService,

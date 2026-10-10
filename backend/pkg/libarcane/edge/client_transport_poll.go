@@ -137,7 +137,7 @@ func (c *TunnelClient) syncPollManagedSessionInternal(ctx context.Context, sessi
 		slog.InfoContext(ctx, "Poll control plane requested edge tunnel",
 			"status", status,
 			"managerGrpcAddr", c.managerGRPCAddr,
-			"managerWsUrl", c.managerWebSocketURLInternal(),
+			"managerWsUrl", c.managerWebSocketURL(),
 		)
 		return c.startPollManagedSessionInternal(ctx), nil
 	case TunnelStatusIdle:
@@ -204,7 +204,7 @@ func (c *TunnelClient) pollTunnelControlInternal(ctx context.Context, httpClient
 		return nil, fmt.Errorf("failed to create poll request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	for header, value := range agentAuthCredentialsInternal(c.cfg.AgentToken) {
+	for header, value := range agentAuthCredentials(c.cfg.AgentToken) {
 		req.Header.Set(header, value)
 	}
 
@@ -231,7 +231,7 @@ func (c *TunnelClient) startPollManagedSessionInternal(ctx context.Context) *pol
 	done := make(chan error, 1)
 
 	go func() {
-		err := c.connectAndServeManagedTunnelInternal(sessionCtx)
+		err := c.connectAndServeManagedTunnel(sessionCtx)
 		if sessionCtx.Err() != nil {
 			err = nil
 		}

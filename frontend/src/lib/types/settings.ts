@@ -80,6 +80,9 @@ export type Settings = {
 	autoInjectEnv: boolean;
 	backupVolumeName?: string;
 	edgeMTLSManagerCAAvailable?: boolean;
+	frontendTracingEnabled?: boolean;
+	frontendMetricsEnabled?: boolean;
+	frontendLogsEnabled?: boolean;
 
 	authLocalEnabled: boolean;
 	authSessionTimeout: number;

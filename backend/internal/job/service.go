@@ -20,6 +20,10 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/scheduler"
 	"github.com/robfig/cron/v3"
 	"go.getarcane.app/kit/pkg"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
@@ -35,6 +39,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
 	scheduleutil "github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/schedule"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/tracing"
 )
 
 // JobService manages configuration for background job schedules.
@@ -58,6 +63,9 @@ type JobService struct {
 	scheduler    scheduler.JobController
 	lifecycleCtx context.Context
 	location     *time.Location // Timezone for cron schedule calculations
+	runCount     metric.Int64Counter
+	runDuration  metric.Float64Histogram
+	activeRuns   metric.Int64UpDownCounter
 
 	// environment-health is no longer a single scheduler job — it fans out to one
 	// dynamic job per environment owned by environment.EnvironmentService. These bridge the Jobs
@@ -86,6 +94,19 @@ func NewJobService(
 		settings:    localSettings,
 		cfg:         cfg,
 		location:    cfg.GetLocation(),
+	}
+
+	meter := otel.Meter(tracing.InstrumentationName)
+	var errs [3]error
+	service.runCount, errs[0] = meter.Int64Counter("arcane.job.runs",
+		metric.WithDescription("Executed job runs by outcome"), metric.WithUnit("{run}"))
+	service.runDuration, errs[1] = meter.Float64Histogram("arcane.job.duration",
+		metric.WithDescription("Job run duration by outcome"), metric.WithUnit("s"),
+		metric.WithExplicitBucketBoundaries(0.01, 0.05, 0.1, 0.5, 1, 5, 10, 30, 60, 120, 300, 600, 1800, 3600))
+	service.activeRuns, errs[2] = meter.Int64UpDownCounter("arcane.job.active",
+		metric.WithDescription("Job runs currently executing"), metric.WithUnit("{run}"))
+	if err := errors.Join(errs[:]...); err != nil {
+		otel.Handle(err)
 	}
 
 	if coordinator != nil {
@@ -609,7 +630,33 @@ func (s *JobService) authorizeRunInternal(ctx context.Context, run scheduler.Run
 	return nil
 }
 
-func (s *JobService) executeRunInternal(ctx context.Context, run scheduler.Run) (scheduler.Outcome, error) {
+func (s *JobService) executeRunInternal(ctx context.Context, run scheduler.Run) (result scheduler.Outcome, runErr error) {
+	// Entity-scoped jobs ("gitops-sync:<id>") share one span name and metric series per job type.
+	jobType, _, _ := strings.Cut(run.JobID, ":")
+	ctx, span := otel.Tracer(tracing.InstrumentationName).Start(ctx, "job "+jobType, trace.WithAttributes(
+		attribute.String("arcane.job.id", run.JobID),
+		attribute.String("arcane.job.run_id", run.ID),
+		attribute.String("arcane.environment.id", run.EnvironmentID),
+	))
+	jobAttr := attribute.String("arcane.job.id", jobType)
+	started := time.Now()
+	if s.activeRuns != nil {
+		s.activeRuns.Add(ctx, 1, metric.WithAttributes(jobAttr))
+	}
+	defer func() {
+		outcomeAttr := attribute.String("arcane.job.outcome", string(result.Status))
+		span.SetAttributes(outcomeAttr)
+		tracing.End(span, runErr)
+		if s.activeRuns != nil {
+			// Record against a non-canceled context so shutdown-interrupted runs still count.
+			metricCtx := context.WithoutCancel(ctx)
+			attrs := metric.WithAttributes(jobAttr, outcomeAttr)
+			s.activeRuns.Add(metricCtx, -1, metric.WithAttributes(jobAttr))
+			s.runCount.Add(metricCtx, 1, attrs)
+			s.runDuration.Record(metricCtx, time.Since(started).Seconds(), attrs)
+		}
+	}()
+
 	if err := s.authorizeRunInternal(ctx, run); err != nil {
 		return scheduler.Outcome{Status: scheduler.Failed}, err
 	}

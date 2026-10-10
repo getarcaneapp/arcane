@@ -23,6 +23,10 @@ import (
 	"go.getarcane.app/acfs"
 	"go.getarcane.app/kit/pkg"
 	"go.getarcane.app/kit/pkg/mapping"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
@@ -35,13 +39,24 @@ import (
 	projectpkg "github.com/getarcaneapp/arcane/backend/v2/internal/project"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/swarm"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/gitutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/entityjobs"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/flow"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/tracing"
 )
+
+var syncRuns = func() metric.Int64Counter {
+	counter, err := otel.Meter(tracing.InstrumentationName).Int64Counter("arcane.gitops.syncs",
+		metric.WithDescription("GitOps sync runs by outcome"), metric.WithUnit("{sync}"))
+	if err != nil {
+		otel.Handle(err)
+	}
+	return counter
+}()
 
 const (
 	defaultGitSyncTimeout = 5 * time.Minute
@@ -749,7 +764,22 @@ func (s *GitOpsSyncService) PerformSync(ctx context.Context, environmentID, id s
 
 // performSyncAdmitted runs one sync under its admission lease and dispatches by mode. backupAdopt makes a
 // backup replace whatever the remote holds in its backup directory.
-func (s *GitOpsSyncService) performSyncAdmitted(ctx context.Context, environmentID, id string, actor user.Actor, backupAdopt bool) (*gitops.SyncResult, error) {
+func (s *GitOpsSyncService) performSyncAdmitted(ctx context.Context, environmentID, id string, actor user.Actor, backupAdopt bool) (syncResult *gitops.SyncResult, syncErr error) {
+	ctx, span := otel.Tracer(tracing.InstrumentationName).Start(ctx, "gitops.sync", trace.WithAttributes(
+		attribute.String("arcane.gitops.sync_id", id),
+		attribute.String("arcane.environment.id", environmentID),
+	))
+	counted := false
+	defer func() {
+		success := syncErr == nil && syncResult != nil && syncResult.Success
+		if counted {
+			outcome := attribute.String("arcane.gitops.outcome", kit.Ternary(success, "success", "failure"))
+			span.SetAttributes(outcome)
+			syncRuns.Add(context.WithoutCancel(ctx), 1, metric.WithAttributes(outcome))
+		}
+		tracing.End(span, syncErr)
+	}()
+
 	// Overlapping runs of one sync (schedule, kick, manual, webhook) must not race the clone and redeploy.
 	lease, admitted, err := s.jobs.TryAcquire(ctx, id)
 	if err != nil {
@@ -757,9 +787,11 @@ func (s *GitOpsSyncService) performSyncAdmitted(ctx context.Context, environment
 	}
 	if !admitted {
 		slog.InfoContext(ctx, "GitOps sync already in progress; skipping", "syncId", id)
+		span.SetAttributes(attribute.Bool("arcane.gitops.skipped", true))
 		return &gitops.SyncResult{Success: false, Message: "sync already in progress", SyncedAt: time.Now()}, nil
 	}
 	defer lease.Release(ctx)
+	counted = true
 
 	syncCtx, cancel := context.WithTimeout(ctx, defaultGitSyncTimeout)
 	defer cancel()
@@ -767,6 +799,14 @@ func (s *GitOpsSyncService) performSyncAdmitted(ctx context.Context, environment
 	syncRecord, err := s.GetSyncByID(syncCtx, environmentID, id)
 	if err != nil {
 		return nil, err
+	}
+	span.SetAttributes(
+		attribute.String("arcane.git.branch", syncRecord.Branch),
+		attribute.String("arcane.gitops.mode", syncRecord.Mode),
+		attribute.String("arcane.gitops.target_type", syncRecord.TargetType),
+	)
+	if syncRecord.Repository != nil {
+		span.SetAttributes(git.RepositoryAttribute(syncRecord.Repository.URL))
 	}
 
 	result := &gitops.SyncResult{

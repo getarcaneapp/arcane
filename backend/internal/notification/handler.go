@@ -71,7 +71,7 @@ func normalizeNotificationTestType(testType string) string {
 }
 
 func isSupportedNotificationTestType(testType string) bool {
-	_, ok := supportedNotificationTestTypes[testType]
+	_, ok := notificationTestEventTypes[testType]
 	return ok
 }
 

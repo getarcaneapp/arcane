@@ -385,9 +385,8 @@ func TestEasyJoinRoutesDeclareSwarmJoinPermission(t *testing.T) {
 	}
 }
 
-// TestEnvScopedOperationsDeclarePermission guards the remote-environment proxy
-// authorization model. Every authenticated environment-scoped operation must
-// declare the permission that the proxy enforces before forwarding it.
+// TestEnvScopedOperationsDeclarePermission ensures every authenticated env-scoped operation
+// declares the permission the remote-environment proxy enforces before forwarding.
 func TestEnvScopedOperationsDeclarePermission(t *testing.T) {
 	api := SetupAPIForSpec()
 	oapi := api.OpenAPI()
@@ -400,14 +399,20 @@ func TestEnvScopedOperationsDeclarePermission(t *testing.T) {
 		if !strings.HasPrefix(path, "/environments/{id}/") {
 			continue
 		}
-		// Upload-session routes derive their permission from the {kind} path
-		// segment at request time (authz.UploadKindPermission); both the local
-		// handlers and the proxy's uploadSessionKindInternal special case
-		// enforce it, so no static mapping exists to declare here.
+		// Upload-session routes derive their permission from the {kind} segment at request time.
 		if strings.HasPrefix(path, "/environments/{id}/uploads/{kind}") {
 			continue
 		}
-		for method, op := range envScopedTestOperationsInternal(item) {
+		operations := map[string]*humav2.Operation{
+			http.MethodGet:     item.Get,
+			http.MethodPost:    item.Post,
+			http.MethodPut:     item.Put,
+			http.MethodDelete:  item.Delete,
+			http.MethodPatch:   item.Patch,
+			http.MethodHead:    item.Head,
+			http.MethodOptions: item.Options,
+		}
+		for method, op := range operations {
 			if op == nil {
 				continue
 			}
@@ -425,17 +430,5 @@ func TestEnvScopedOperationsDeclarePermission(t *testing.T) {
 		sort.Strings(missing)
 		assert.Failf(t, "unexpected failure", "%d env-scoped operation(s) missing required-permission metadata; register them with middleware.RegisterWithPermission:\n  %s",
 			len(missing), strings.Join(missing, "\n  "))
-	}
-}
-
-func envScopedTestOperationsInternal(item *humav2.PathItem) map[string]*humav2.Operation {
-	return map[string]*humav2.Operation{
-		http.MethodGet:     item.Get,
-		http.MethodPost:    item.Post,
-		http.MethodPut:     item.Put,
-		http.MethodDelete:  item.Delete,
-		http.MethodPatch:   item.Patch,
-		http.MethodHead:    item.Head,
-		http.MethodOptions: item.Options,
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/mail"
+	"regexp"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 )
@@ -64,8 +65,25 @@ func Deliver(ctx context.Context, provider NotificationProvider, config database
 	if !ok {
 		return false, nil
 	}
-	return true, deliver(ctx, config, c)
+	if deliverErr := deliver(ctx, config, c); deliverErr != nil {
+		return true, deliveryError{message: webhookURL.ReplaceAllString(deliverErr.Error(), "${1}${2}"), err: deliverErr}
+	}
+	return true, nil
 }
+
+// webhookURL matches http(s) URLs in provider errors. Webhook tokens often sit in the path or userinfo,
+// so only the scheme and host are kept.
+var webhookURL = regexp.MustCompile(`(https?://)(?:[^@/?#\s"']*@)?([^/?#\s"']+)[^\s"']*`)
+
+// deliveryError reports a provider failure without its webhook URL while keeping the cause for errors.Is.
+type deliveryError struct {
+	message string
+	err     error
+}
+
+func (e deliveryError) Error() string { return e.message }
+
+func (e deliveryError) Unwrap() error { return e.err }
 
 func deliverDiscord(ctx context.Context, config database.JSON, c Content) error {
 	discordConfig, err := DecodeConfig[DiscordConfig](config, "Discord")

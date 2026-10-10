@@ -10,12 +10,17 @@ import (
 
 	"github.com/coder/websocket"
 	httpxtypes "github.com/getarcaneapp/arcane/types/v2/httpx"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 )
 
-// dialClient is shared by every upstream dial instead of building a transport per connection.
-var dialClient = httpx.NewHTTPClient(httpxtypes.ClientOptions{TLSHandshakeTimeout: 10 * time.Second})
+// dialClient is shared by every upstream dial; its span covers the whole proxied session.
+var dialClient = func() *http.Client {
+	client := httpx.NewHTTPClient(httpxtypes.ClientOptions{TLSHandshakeTimeout: 10 * time.Second})
+	client.Transport = otelhttp.NewTransport(client.Transport)
+	return client
+}()
 
 // ProxyHTTP upgrades the incoming client connection and bridges it to remoteWS.
 //
@@ -50,12 +55,11 @@ func ProxyHTTP(w http.ResponseWriter, r *http.Request, remoteWS string, header h
 		_ = resp.Body.Close()
 	}
 	if err != nil {
-		slog.ErrorContext(dialCtx, "failed to dial remote websocket", "remoteWs", remoteWS, "err", err, "respStatus", func() int {
-			if resp != nil {
-				return resp.StatusCode
-			}
-			return 0
-		}())
+		respStatus := 0
+		if resp != nil {
+			respStatus = resp.StatusCode
+		}
+		slog.ErrorContext(dialCtx, "failed to dial remote websocket", "remoteWs", remoteWS, "err", err, "respStatus", respStatus)
 		_ = clientConn.Close(websocket.StatusBadGateway, "")
 		return err
 	}
@@ -70,53 +74,31 @@ func ProxyHTTP(w http.ResponseWriter, r *http.Request, remoteWS string, header h
 	defer pumpCancel()
 
 	errc := make(chan struct{}, 2)
-
-	// client -> remote
-	go func() {
+	pump := func(src, dst *websocket.Conn) {
 		defer func() { errc <- struct{}{} }()
 		for {
-			mt, msg, readErr := clientConn.Read(pumpCtx)
+			mt, msg, readErr := src.Read(pumpCtx)
 			if readErr != nil {
-				closeRelay(r.Context(), remoteConn, readErr)
+				// Forward the peer's close status so the terminating reason survives the proxy hop.
+				if ce, ok := errors.AsType[websocket.CloseError](readErr); ok {
+					code := ce.Code
+					if code == websocket.StatusNoStatusRcvd {
+						code = websocket.StatusNormalClosure
+					}
+					if closeErr := dst.Close(code, ce.Reason); closeErr != nil {
+						slog.DebugContext(r.Context(), "failed to relay websocket close", "status", int(code), "err", closeErr)
+					}
+				}
 				return
 			}
-			if writeErr := remoteConn.Write(pumpCtx, mt, msg); writeErr != nil {
+			if writeErr := dst.Write(pumpCtx, mt, msg); writeErr != nil {
 				return
 			}
 		}
-	}()
-
-	// remote -> client
-	go func() {
-		defer func() { errc <- struct{}{} }()
-		for {
-			mt, msg, readErr := remoteConn.Read(pumpCtx)
-			if readErr != nil {
-				closeRelay(r.Context(), clientConn, readErr)
-				return
-			}
-			if writeErr := clientConn.Write(pumpCtx, mt, msg); writeErr != nil {
-				return
-			}
-		}
-	}()
+	}
+	go pump(clientConn, remoteConn)
+	go pump(remoteConn, clientConn)
 
 	<-errc
 	return nil
-}
-
-// closeRelay forwards a peer's close status to the other side of the
-// bridge so the terminating reason survives the proxy hop.
-func closeRelay(ctx context.Context, conn *websocket.Conn, err error) {
-	var ce websocket.CloseError
-	if !errors.As(err, &ce) {
-		return
-	}
-	code := ce.Code
-	if code == websocket.StatusNoStatusRcvd {
-		code = websocket.StatusNormalClosure
-	}
-	if closeErr := conn.Close(code, ce.Reason); closeErr != nil {
-		slog.DebugContext(ctx, "failed to relay websocket close", "status", int(code), "err", closeErr)
-	}
 }

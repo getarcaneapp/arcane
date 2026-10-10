@@ -7,10 +7,12 @@ import (
 	"net"
 	"net/http"
 	"path"
+	"slices"
 	"strings"
 
 	"github.com/getarcaneapp/arcane/types/v2"
 	usertypes "github.com/getarcaneapp/arcane/types/v2/user"
+	"github.com/labstack/echo-otel/v5"
 	"github.com/labstack/echo/v5"
 	echomiddleware "github.com/labstack/echo/v5/middleware"
 	"github.com/samber/slog-echo/v2"
@@ -24,6 +26,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/federated"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/telemetry"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cookie"
@@ -44,6 +47,7 @@ var loggerSkipPatterns = []string{
 	"GET /api/environments/*/ws/projects/*/logs",
 	"GET /api/environments/*/ws/system/stats",
 	"GET /api/stream",
+	"POST /api/telemetry/*",
 	"GET /_app/*",
 	"GET /img",
 	"GET /api/health",
@@ -52,52 +56,7 @@ var loggerSkipPatterns = []string{
 	"PUT /api/environments/*/uploads/*/*/chunks/*",
 }
 
-func shouldLogRequestInternal(c *echo.Context, _ error) bool {
-	mp := c.Request().Method + " " + c.Request().URL.Path
-	for _, pat := range loggerSkipPatterns {
-		if pat == mp {
-			return false
-		}
-		if before, ok := strings.CutSuffix(pat, "/*"); ok {
-			if strings.HasPrefix(mp, before) {
-				return false
-			}
-		}
-		if ok, _ := path.Match(pat, mp); ok {
-			return false
-		}
-		if strings.HasSuffix(pat, "/") && strings.HasPrefix(mp, pat) {
-			return false
-		}
-	}
-	return true
-}
-
-// requestLoggerMiddlewareInternal wraps slog-echo and filters out internal
-// edge tunnel requests plus high-volume endpoints (health, WS, static).
-func requestLoggerMiddlewareInternal() echo.MiddlewareFunc {
-	loggerMiddleware := slogecho.NewWithConfig(slog.Default(), slogecho.Config{
-		DefaultLevel:     slog.LevelInfo,
-		ClientErrorLevel: slog.LevelWarn,
-		ServerErrorLevel: slog.LevelError,
-		Filters:          []slogecho.Filter{shouldLogRequestInternal},
-		WithRequestID:    true,
-	})
-
-	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c *echo.Context) error {
-			if edge.IsInternalTunnelRequest(c.Request().Context()) {
-				return next(c)
-			}
-			if c.Request().Body == nil {
-				c.Request().Body = http.NoBody
-			}
-			return loggerMiddleware(next)(c)
-		}
-	}
-}
-
-func createAuthValidatorInternal(deps api.HandlerDeps) middleware.AuthValidator {
+func createAuthValidator(deps api.HandlerDeps) middleware.AuthValidator {
 	resolveUser := func(ctx context.Context, user *usertypes.Actor) *authz.PermissionSet {
 		ps, err := deps.Role.Service().ResolvePermissions(ctx, user.ID)
 		if err != nil || ps == nil {
@@ -134,26 +93,21 @@ func createAuthValidatorInternal(deps api.HandlerDeps) middleware.AuthValidator 
 			return nil, nil, false
 		}
 
-		user, ok := verifyRouterRequestUserInternal(ctx, deps.Auth.Service(), req)
-		if !ok {
+		// Bearer tokens take precedence over the browser token cookie.
+		verify := deps.Auth.Service().VerifyBrowserToken
+		token, err := cookie.GetTokenCookie(req)
+		if bearer, ok := strings.CutPrefix(req.Header.Get("Authorization"), "Bearer "); ok {
+			verify, token, err = deps.Auth.Service().VerifyToken, bearer, nil
+		}
+		if err != nil || token == "" {
 			return nil, nil, false
 		}
-		return resolveUser(ctx, user), user, true
+		user, _, err := verify(ctx, token)
+		if err != nil || user == nil {
+			return nil, nil, false
+		}
+		return resolveUser(ctx, user.Actor()), user.Actor(), true
 	}
-}
-
-func verifyRouterRequestUserInternal(ctx context.Context, authService *auth.AuthService, req *http.Request) (*usertypes.Actor, bool) {
-	if authHeader := req.Header.Get("Authorization"); strings.HasPrefix(authHeader, "Bearer ") {
-		user, _, err := authService.VerifyToken(ctx, strings.TrimPrefix(authHeader, "Bearer "))
-		return user.Actor(), err == nil && user != nil
-	}
-
-	browserToken, err := cookie.GetTokenCookie(req)
-	if err != nil || browserToken == "" {
-		return nil, false
-	}
-	user, _, err := authService.VerifyBrowserToken(ctx, browserToken)
-	return user.Actor(), err == nil && user != nil
 }
 
 type RouterParams struct {
@@ -167,45 +121,84 @@ type RouterParams struct {
 	TunnelRegistry *edge.TunnelRegistry
 }
 
-// newEchoInternal builds the Echo instance with path parameter values
-// percent-decoded before they reach handlers (RFC 3986 §6.2.2.2); route
-// matching still happens on the escaped path, so an encoded "/" cannot
-// change which route matches.
-func newEchoInternal() *echo.Echo {
-	return echo.NewWithConfig(echo.Config{
-		Router: echo.NewRouter(echo.RouterConfig{
-			AllowOverwritingRoute:   true,
-			UnescapePathParamValues: true,
-		}),
-	})
-}
-
 func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 	ctx := p.Context
 	cfg := p.Config
 	deps := p.HandlerDeps
 
-	e := newEchoInternal()
+	// Path params are decoded after matching on the escaped path, so an encoded "/" cannot change the route.
+	e := echo.NewWithConfig(echo.Config{
+		Router: echo.NewRouter(echo.RouterConfig{AllowOverwritingRoute: true, UnescapePathParamValues: true}),
+	})
 
-	trustedProxyNets := parseTrustedProxyCIDRsInternal(cfg.TrustedProxies)
+	var trustedProxyNets []*net.IPNet
+	// Trust only the configured ranges, not Echo's built-in loopback/link-local/private defaults.
+	trustOpts := []echo.TrustOption{echo.TrustLoopback(false), echo.TrustLinkLocal(false), echo.TrustPrivateNet(false)}
+	for cidr := range strings.SplitSeq(cfg.TrustedProxies, ",") {
+		cidr = strings.TrimSpace(cidr)
+		if cidr == "" {
+			continue
+		}
+		_, ipnet, err := net.ParseCIDR(cidr)
+		if err != nil {
+			slog.WarnContext(ctx, "invalid TRUSTED_PROXIES CIDR, ignoring", "cidr", cidr, "error", err)
+			continue
+		}
+		trustedProxyNets = append(trustedProxyNets, ipnet)
+		trustOpts = append(trustOpts, echo.TrustIPRange(ipnet))
+	}
 	if cfg.TrustedProxies != "" && len(trustedProxyNets) == 0 {
 		slog.WarnContext(ctx, "TRUSTED_PROXIES set but no valid CIDRs found; falling back to direct IP extraction")
 	}
 	if len(trustedProxyNets) == 0 {
 		e.IPExtractor = echo.ExtractIPDirect()
 	} else {
-		// Trust only the configured ranges, not Echo's built-in loopback/link-local/private defaults.
-		opts := []echo.TrustOption{echo.TrustLoopback(false), echo.TrustLinkLocal(false), echo.TrustPrivateNet(false)}
-		for _, ipnet := range trustedProxyNets {
-			opts = append(opts, echo.TrustIPRange(ipnet))
-		}
-		e.IPExtractor = echo.ExtractIPFromXFFHeader(opts...)
+		e.IPExtractor = echo.ExtractIPFromXFFHeader(trustOpts...)
 	}
 
 	e.Use(echomiddleware.Recover())
 	e.Use(echomiddleware.RequestID())
-	e.Use(requestLoggerMiddlewareInternal())
-	e.Use(secureCookieContextMiddlewareInternal(trustedProxyNets))
+	// Trace REST API calls only, skipping long-lived streams, tunnels, health probes, and the browser trace relay.
+	e.Use(echootel.NewMiddlewareWithConfig(echootel.Config{Skipper: func(c *echo.Context) bool {
+		req := c.Request()
+		p := req.URL.Path
+		return !strings.HasPrefix(p, "/api/") || p == "/api/health" ||
+			strings.HasPrefix(p, "/api/telemetry/") || strings.HasPrefix(p, "/api/tunnel/") ||
+			httpx.IsWebSocketUpgradeRequest(req) || strings.Contains(req.Header.Get("Accept"), "text/event-stream")
+	}}))
+	e.Use(middleware.SpanEnvironment(deps.Environment.Service().ResolveEnvironmentName))
+	requestLogger := slogecho.NewWithConfig(slog.Default(), slogecho.Config{
+		DefaultLevel:     slog.LevelInfo,
+		ClientErrorLevel: slog.LevelWarn,
+		ServerErrorLevel: slog.LevelError,
+		Filters: []slogecho.Filter{func(c *echo.Context, _ error) bool {
+			mp := c.Request().Method + " " + c.Request().URL.Path
+			return !slices.ContainsFunc(loggerSkipPatterns, func(pat string) bool {
+				if prefix, ok := strings.CutSuffix(pat, "/*"); ok && strings.HasPrefix(mp, prefix) {
+					return true
+				}
+				matched, _ := path.Match(pat, mp)
+				return matched
+			})
+		}},
+		WithRequestID: true,
+		WithTraceID:   true,
+		WithSpanID:    true,
+	})
+	// Internal edge tunnel requests are never logged.
+	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
+		logged := requestLogger(next)
+		return func(c *echo.Context) error {
+			if edge.IsInternalTunnelRequest(c.Request().Context()) {
+				return next(c)
+			}
+			if c.Request().Body == nil {
+				c.Request().Body = http.NoBody
+			}
+			return logged(c)
+		}
+	})
+	e.Use(secureCookieContextMiddleware(trustedProxyNets))
 
 	authMiddleware := p.AuthMiddleware
 	e.Use(middleware.NewCORSMiddleware(cfg).Add())
@@ -234,9 +227,7 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 	apiGroup.Use(middleware.PerTokenRateLimitForPaths(
 		[]string{"/api/webhooks/trigger/:token"}, 60, 10, deps.Webhook.Service().IsKnownToken,
 	))
-	// Agent event ingestion authenticates on the agent token alone and sits
-	// outside the auth middleware, so it needs its own brute-force ceiling.
-	// The allowance is generous because busy agents legitimately batch events.
+	// Agent event ingestion sits outside the auth middleware, so it needs its own ceiling; agents batch events.
 	apiGroup.Use(middleware.PerIPRateLimitForPaths(
 		[]string{"/api/events"}, 60, 30,
 	))
@@ -253,6 +244,9 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 	// Register public webhook trigger endpoint before auth middleware (token in URL is the sole auth)
 	api.RegisterWebhookTrigger(apiGroup, deps.Webhook.Service(), handlerAppCtx)
 	federated.RegisterFederatedTokenExchange(apiGroup, deps.Federated)
+	if !cfg.AgentMode {
+		telemetry.RegisterRoutes(apiGroup, telemetry.NewService())
+	}
 	deps.Event.RegisterAgentRoutes(apiGroup, func(ctx context.Context, token string) (string, error) {
 		env, err := deps.Environment.Service().ResolveEnvironmentByAccessToken(ctx, token)
 		if err != nil {
@@ -270,7 +264,7 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 		types.LocalDockerEnvironmentID,
 		"id",
 		envResolver,
-		createAuthValidatorInternal(deps),
+		createAuthValidator(deps),
 		permissionMatcher,
 		p.TunnelRegistry,
 		httpx.ValidateWebSocketOrigin(cfg.GetAppURL()),
@@ -279,10 +273,8 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 
 	humaAPI := api.SetupAPI(e, apiGroup, handlerAppCtx, cfg, deps)
 
-	// Populate the proxy permission matcher from the registered API surface so
-	// remote-environment requests are authorized with the same permissions
-	// enforced locally. The matcher pointer is shared with the proxy middleware
-	// constructed above; population completes here, before the server serves traffic.
+	// Fill the proxy's shared matcher from the local API surface before serving so remote
+	// requests are authorized with the same permissions.
 	permissionMatcher.CollectFromHumaAPI(humaAPI)
 	ws.AddProxiedPermissions(permissionMatcher)
 
@@ -293,8 +285,7 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 	// Remaining echo handlers (WebSocket/streaming)
 	ws.NewWebSocketHandler(apiGroup, deps.Project.Service(), deps.Container.Service(), deps.Swarm.Service(), deps.System.Service(), deps.Diagnostics, authMiddleware, cfg)
 
-	// Register edge tunnel endpoint for manager to accept agent connections
-	// This is only registered when NOT in agent mode (i.e., running as manager)
+	// Managers accept agent connections on the edge tunnel endpoint.
 	var tunnelServer *edge.TunnelServer
 	if !cfg.AgentMode {
 		tunnelServer = registerEdgeTunnelRoutes(ctx, p.Lifecycle, cfg, apiGroup, deps.Environment.Service(), deps.Event.Service(), deps.Notification.Service(), p.TunnelRegistry)
@@ -327,42 +318,22 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 	return e, tunnelServer
 }
 
-// parseTrustedProxyCIDRsInternal parses TRUSTED_PROXIES into a list of
-// validated networks. Invalid entries are logged and skipped.
-func parseTrustedProxyCIDRsInternal(raw string) []*net.IPNet {
-	if raw == "" {
-		return nil
-	}
-	var nets []*net.IPNet
-	for cidr := range strings.SplitSeq(raw, ",") {
-		cidr = strings.TrimSpace(cidr)
-		if cidr == "" {
-			continue
-		}
-		_, ipnet, err := net.ParseCIDR(cidr)
-		if err != nil {
-			slog.WarnContext(context.Background(), "invalid TRUSTED_PROXIES CIDR, ignoring", "cidr", cidr, "error", err) //nolint:forbidigo // Startup configuration parsing has no request context.
-			continue
-		}
-		nets = append(nets, ipnet)
-	}
-	return nets
-}
-
-// secureCookieContextMiddlewareInternal records whether the request should be
-// treated as HTTPS for cookie-emitting handlers. X-Forwarded-Proto is honored
-// ONLY when the direct TCP peer is in TRUSTED_PROXIES — an untrusted client
-// setting the header directly cannot trick the server into issuing Secure /
-// __Host- cookies over plain HTTP.
-func secureCookieContextMiddlewareInternal(trustedProxyNets []*net.IPNet) echo.MiddlewareFunc {
+// secureCookieContextMiddleware marks requests as HTTPS for cookies. X-Forwarded-Proto is
+// honored only when the direct TCP peer is in TRUSTED_PROXIES.
+func secureCookieContextMiddleware(trustedProxyNets []*net.IPNet) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c *echo.Context) error {
 			req := c.Request()
 			secure := req.TLS != nil
-			if !secure && len(trustedProxyNets) > 0 &&
-				strings.EqualFold(req.Header.Get("X-Forwarded-Proto"), "https") &&
-				remoteAddrInTrustedProxiesInternal(req.RemoteAddr, trustedProxyNets) {
-				secure = true
+			if !secure && len(trustedProxyNets) > 0 && strings.EqualFold(req.Header.Get("X-Forwarded-Proto"), "https") {
+				host, _, err := net.SplitHostPort(req.RemoteAddr)
+				if err != nil {
+					host = req.RemoteAddr
+				}
+				// Unparseable remote addresses are untrusted.
+				if ip := net.ParseIP(host); ip != nil {
+					secure = slices.ContainsFunc(trustedProxyNets, func(n *net.IPNet) bool { return n.Contains(ip) })
+				}
 			}
 			if secure {
 				c.SetRequest(req.WithContext(context.WithValue(req.Context(), cookie.SecureCookieContextKey{}, true)))
@@ -370,24 +341,4 @@ func secureCookieContextMiddlewareInternal(trustedProxyNets []*net.IPNet) echo.M
 			return next(c)
 		}
 	}
-}
-
-// remoteAddrInTrustedProxiesInternal reports whether the direct TCP peer
-// address of the request falls within any of the configured trusted-proxy
-// networks. Unparseable remote addresses are treated as untrusted.
-func remoteAddrInTrustedProxiesInternal(remoteAddr string, nets []*net.IPNet) bool {
-	host, _, err := net.SplitHostPort(remoteAddr)
-	if err != nil {
-		host = remoteAddr
-	}
-	ip := net.ParseIP(host)
-	if ip == nil {
-		return false
-	}
-	for _, n := range nets {
-		if n.Contains(ip) {
-			return true
-		}
-	}
-	return false
 }

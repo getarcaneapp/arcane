@@ -32,6 +32,10 @@ import (
 	"github.com/project-copacetic/copacetic/pkg/types"
 	"github.com/samber/mo"
 	"go.getarcane.app/acfs"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
@@ -45,6 +49,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/logging"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/tracing"
 )
 
 // scheduledPatchUser is the actor recorded for scheduled patches and their verification scans.
@@ -52,6 +57,8 @@ var (
 	scheduledPatchUser = usertypes.Actor{Username: "System"}
 	// errPatchInterrupted fails a patch cut off mid-run; its record keeps the message so it never reruns.
 	errPatchInterrupted = errors.New("image patch was interrupted before its result was recorded; start a new patch")
+	// registryTransport traces platform-manifest lookups; ggcr adds its retry wrappers on top.
+	registryTransport = otelhttp.NewTransport(remote.DefaultTransport)
 )
 
 // Target is one image a scheduled patch run covers.
@@ -276,7 +283,16 @@ func (s *Service) startPatch(
 }
 
 // runPatch executes one recorded patch with Copacetic and settles its record and activity.
-func (s *Service) runPatch(ctx context.Context, record *ImagePatchRecord, opts imagepatch.PatchOptions, reportData []byte, copaImageRef, activityID string) error {
+func (s *Service) runPatch(ctx context.Context, record *ImagePatchRecord, opts imagepatch.PatchOptions, reportData []byte, copaImageRef, activityID string) (runErr error) {
+	ctx, span := otel.Tracer(tracing.InstrumentationName).Start(ctx, "image.patch", trace.WithAttributes(
+		attribute.String("arcane.environment.id", record.EnvironmentID),
+		attribute.String("arcane.image.patch_id", record.ID),
+		attribute.String("arcane.image.ref", record.OriginalRef),
+		attribute.String("arcane.image.patched_ref", record.PatchedRef),
+		attribute.String("arcane.image.patch_mode", record.Mode),
+		attribute.String("arcane.activity.id", activityID),
+	))
+	defer func() { tracing.End(span, runErr) }()
 	fail := func(err error, durationMs int64) error {
 		s.finishPatchRecord(ctx, record, imagepatch.PatchStatusFailed, err.Error(), nil, durationMs)
 		s.completePatchActivity(ctx, activityID, false, err.Error())
@@ -428,7 +444,7 @@ func platformPinnedRef(ctx context.Context, imageRef string, target v1.Platform)
 	if err != nil {
 		return ""
 	}
-	desc, err := remote.Get(ref, remote.WithContext(ctx), remote.WithAuthFromKeychain(authn.DefaultKeychain))
+	desc, err := remote.Get(ref, remote.WithContext(ctx), remote.WithTransport(registryTransport), remote.WithAuthFromKeychain(authn.DefaultKeychain))
 	if err != nil || !desc.MediaType.IsIndex() {
 		return ""
 	}

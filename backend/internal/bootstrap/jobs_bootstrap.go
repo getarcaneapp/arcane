@@ -393,7 +393,7 @@ func registerDynamicJobs(params dynamicJobsParams) error {
 		params.JobSchedule.RunEnvironmentHealthNow = func(ctx context.Context) error {
 			return params.Environment.RunHealthChecksNow(ctx)
 		}
-		params.Environment.RegisterHealthJobsOnStartup(params.AppCtx)
+		params.Environment.RescheduleHealthJobs(params.AppCtx)
 	}
 	return nil
 }

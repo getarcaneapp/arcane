@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
+	"go.opentelemetry.io/otel"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
@@ -13,6 +14,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/tracing"
 )
 
 // Module wires the container domain and mounts its routes.
@@ -23,8 +25,13 @@ type Module struct {
 	activityService *activity.ActivityService
 }
 
-// New wires container routes around an existing service.
+// New wires container routes around an existing service and registers per-container resource metrics once.
 func New(service *ContainerService, dockerService *docker.DockerClientService, settingsService *settings.SettingsService, activityService *activity.ActivityService) *Module {
+	if service != nil && service.stats != nil && service.dockerService != nil {
+		if err := service.stats.ObserveResources(otel.Meter(tracing.InstrumentationName), service.dockerService.ListContainers); err != nil {
+			otel.Handle(err)
+		}
+	}
 	return &Module{service: service, dockerService: dockerService, settingsService: settingsService, activityService: activityService}
 }
 

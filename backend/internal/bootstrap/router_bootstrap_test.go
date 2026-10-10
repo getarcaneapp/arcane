@@ -13,15 +13,39 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/getarcaneapp/arcane/backend/v2/api"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/auth"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/container"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/swarm"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/system"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cookie"
 )
 
-func TestNewEchoInternal_DecodesPathParams(t *testing.T) {
-	router := newEchoInternal()
-	api := humaecho.NewWithGroup(router, router.Group("/api"), huma.DefaultConfig("test", "1.0.0"))
+func TestNewRouter_DecodesPathParams(t *testing.T) {
+	cfg := &config.Config{
+		AgentMode:   true,
+		AppUrl:      "http://localhost:3552",
+		Environment: config.AppEnvironmentTest,
+	}
+	router, _ := newRouter(RouterParams{
+		Context: t.Context(),
+		Config:  cfg,
+		HandlerDeps: api.HandlerDeps{
+			Project:   project.New(&project.ProjectService{}, nil),
+			Container: container.New(&container.ContainerService{}, nil, nil, nil),
+			Swarm:     swarm.New(&swarm.SwarmService{}, nil, nil, nil),
+			System:    system.New(&system.SystemService{}, nil, nil, nil),
+		},
+		AuthMiddleware: auth.NewAuthMiddleware(nil, cfg),
+		TunnelRegistry: edge.NewTunnelRegistry(),
+	})
+	humaAPI := humaecho.NewWithGroup(router, router.Group("/api"), huma.DefaultConfig("test", "1.0.0"))
 
 	var got string
-	huma.Register(api, huma.Operation{
+	huma.Register(humaAPI, huma.Operation{
 		OperationID: "get-image",
 		Method:      http.MethodGet,
 		Path:        "/environments/{id}/images/{imageId}",
@@ -66,7 +90,7 @@ func TestSecureCookieContextMiddleware_TrustGating(t *testing.T) {
 		c := e.NewContext(req, rec)
 
 		var observed bool
-		handler := secureCookieContextMiddlewareInternal(nets)(func(c *echo.Context) error {
+		handler := secureCookieContextMiddleware(nets)(func(c *echo.Context) error {
 			observed = cookie.SecureCookieFromContext(c.Request().Context())
 			return nil
 		})
