@@ -650,6 +650,8 @@
   "convert_create_message": "Dự án này được tạo ra từ (các) container hiện có. Các container gốc sẽ tiếp tục chạy trừ khi bạn xóa chúng — việc xóa sẽ diễn ra ngay sau khi tạo dự án, trước khi dự án được triển khai, và không thể hoàn tác.",
   "experimental_features": "Các tính năng thử nghiệm",
   "experimental_features_description": "Kích hoạt các tính năng có thể bị thay đổi hoặc loại bỏ trong các phiên bản sau",
+  "development_branding": "Xây dựng thương hiệu",
+  "development_branding_description": "Hiển thị biểu tượng phiên bản phát triển thay vì logo Arcane tiêu chuẩn trên bản dựng này",
   "containers_bulk_start_confirm_title": "Khởi động ({count}) Container",
   "containers_bulk_start_confirm_message": "Bạn có chắc chắn muốn xóa {count} container?",
   "containers_bulk_stop_confirm_title": "Dừng {count} Container",
