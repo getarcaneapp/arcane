@@ -2036,6 +2036,8 @@
   "registries_aws_secret_access_key": "Секретний ключ доступу до AWS",
   "registries_aws_region": "Регіон AWS",
   "registries_aws_region_placeholder": "наприклад, us-east-1",
+  "registries_aws_credentials_description": "Залиште обидва поля для ключів AWS порожніми, щоб використовувати роль IAM (профіль екземпляра) хоста, на якому працює Arcane.",
+  "registries_aws_iam_role": "Роль IAM",
   "registries_repository_names": "Назви репозиторіїв",
   "registries_repository_names_placeholder": "team/api\nteam/platform/api",
   "registries_repository_names_description": "У кожному рядку вказується назва одного повного репозиторію. Використовується під час відправлення образів зі сторінки збірки.",
