@@ -146,6 +146,11 @@ func NewEnvironmentService(
 	}
 	s.proxy = proxy.New(db, httpClient, settingsService, &s.syncGate)
 
+	return s
+}
+
+// RegisterMetrics reports the arcane.environments gauge; only the manager calls it.
+func (s *EnvironmentService) RegisterMetrics() {
 	meter := otel.Meter(tracing.InstrumentationName)
 	statusGauge, err := meter.Int64ObservableGauge("arcane.environments",
 		metric.WithDescription("Visible environments by persisted status"),
@@ -184,7 +189,6 @@ func NewEnvironmentService(
 	if err != nil {
 		otel.Handle(err)
 	}
-	return s
 }
 
 // SetVariableSyncer injects the global-variable syncer on the manager; agents leave it nil.

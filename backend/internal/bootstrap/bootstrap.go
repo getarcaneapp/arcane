@@ -279,6 +279,7 @@ func initializeStartupState(p initializeStartupStateParams) {
 		if err := p.Environment.ReconcileEdgeStatusesOnStartup(appCtx); err != nil {
 			slog.WarnContext(appCtx, "Failed to reconcile edge environment statuses on startup", "error", err)
 		}
+		p.Environment.RegisterMetrics()
 
 		// Global variables are manager-owned: import a legacy local .env.global once, then sync everywhere.
 		p.Environment.SetVariableSyncer(p.Variable)
