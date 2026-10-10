@@ -650,6 +650,8 @@
   "convert_create_message": "Αυτό το έργο δημιουργήθηκε από υπάρχοντα κοντέινερ. Τα αρχικά κοντέινερ συνεχίζουν να εκτελούνται, εκτός αν τα καταργήσετε — η κατάργηση πραγματοποιείται αμέσως μετά τη δημιουργία, πριν από την ανάπτυξη του έργου, και δεν μπορεί να ανακληθεί.",
   "experimental_features": "Πειραματικά χαρακτηριστικά",
   "experimental_features_description": "Ενεργοποίηση λειτουργιών που ενδέχεται να αλλάξουν ή να καταργηθούν σε μελλοντικές εκδόσεις",
+  "development_branding": "Ανάπτυξη και δημιουργία εμπορικής ταυτότητας",
+  "development_branding_description": "Εμφάνιση του εικονιδίου ανάπτυξης αντί του τυπικού λογότυπου της Arcane σε αυτή την έκδοση",
   "containers_bulk_start_confirm_title": "Έναρξη {count} Δοχείο(α)",
   "containers_bulk_start_confirm_message": "Είστε βέβαιοι ότι θέλετε να ξεκινήσετε {count} container(s)?",
   "containers_bulk_stop_confirm_title": "Stop {count} Δοχείο(-α)",
