@@ -222,6 +222,9 @@ func (s *ContainerRegistryService) CreateRegistry(ctx context.Context, req conta
 	}
 
 	if registryType == RegistryTypeECR {
+		if endpointErr := validateECRRegistryEndpoint(registryRecord.URL, registryRecord.Insecure); endpointErr != nil {
+			return nil, endpointErr
+		}
 		if strings.TrimSpace(req.AWSRegion) == "" {
 			return nil, common.Classify(common.ErrValidation, &base.FieldError{Field: "awsRegion", Err: errors.New("AWS Region is required")})
 		}
@@ -357,6 +360,9 @@ func (s *ContainerRegistryService) applyRegistryTypeUpdateInternal(localRegistry
 }
 
 func (s *ContainerRegistryService) updateECRRegistryFieldsInternal(localRegistry *ContainerRegistry, req containerregistry.UpdateContainerRegistryRequest) error {
+	if err := validateECRRegistryEndpoint(localRegistry.URL, localRegistry.Insecure); err != nil {
+		return err
+	}
 	utils.ApplyChanged(&localRegistry.AWSAccessKeyID, mo.PointerToOption(req.AWSAccessKeyID))
 	utils.ApplyChanged(&localRegistry.AWSRegion, mo.PointerToOption(req.AWSRegion))
 
@@ -1576,6 +1582,9 @@ type ecrTokenResult struct {
 // ECR API, persisted back to the DB, and returned.
 // Concurrent refreshes for the same registry are deduplicated via singleflight.
 func (s *ContainerRegistryService) GetOrRefreshECRToken(ctx context.Context, reg *ContainerRegistry) (username, password string, err error) {
+	if endpointErr := validateECRRegistryEndpoint(reg.URL, reg.Insecure); endpointErr != nil {
+		return "", "", endpointErr
+	}
 	// Fast path: return cached token if still valid.
 	if reg.ECRTokenGeneratedAt != nil && time.Since(reg.ECRTokenGeneratedAt.UTC()) < ecrTokenTTL {
 		if reg.ECRToken != "" {
