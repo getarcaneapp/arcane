@@ -2036,6 +2036,8 @@
   "registries_aws_secret_access_key": "AWS hemlig åtkomstnyckel",
   "registries_aws_region": "AWS-region",
   "registries_aws_region_placeholder": "t.ex. us-east-1",
+  "registries_aws_credentials_description": "Lämna båda AWS-nyckelfälten tomma för att använda IAM-rollen (instansprofilen) för den värd som kör Arcane.",
+  "registries_aws_iam_role": "IAM-roll",
   "registries_repository_names": "Namn på arkiv",
   "registries_repository_names_placeholder": "team/api\nteam/platform/api",
   "registries_repository_names_description": "Ett fullständigt arkivnamn per rad. Används när avbildningar skickas från byggsidan.",
