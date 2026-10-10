@@ -135,6 +135,59 @@ func TestNtfyNotificationMessagesVisualLayout(t *testing.T) {
 			},
 		},
 		{
+			name: "single container update with image tags",
+			build: func() string {
+				return BuildContainerUpdateNotificationMessage(
+					MessageFormatNtfyMarkdown,
+					"Local Docker",
+					"nginx",
+					"nginx:1.27-alpine",
+					"nginx:1.26-alpine",
+					"nginx:1.27-alpine",
+				)
+			},
+			contains: []string{
+				"📦 `nginx:1.27-alpine`",
+				"🔄 `nginx:1.26-alpine` → `nginx:1.27-alpine`",
+			},
+			notContains: []string{
+				"nginx:1.26-a...",
+				"nginx:1.27-a...",
+			},
+		},
+		{
+			name: "batch container updates with image tags",
+			build: func() string {
+				return BuildBatchContainerUpdateNotificationMessage(
+					MessageFormatNtfyMarkdown,
+					"Local Docker",
+					[]ContainerUpdateBatchEntry{
+						{
+							ContainerName: "nginx",
+							ImageRef:      "nginx:1.27-alpine",
+							OldDigest:     "nginx:1.26-alpine",
+							NewDigest:     "nginx:1.27-alpine",
+						},
+						{
+							ContainerName: "private-registry",
+							ImageRef:      "registry.example.com:5000/example/app:1.27-alpine",
+							OldDigest:     "registry.example.com:5000/example/app:1.26-alpine",
+							NewDigest:     "registry.example.com:5000/example/app:1.27-alpine",
+						},
+					},
+				)
+			},
+			contains: []string{
+				"🐳 **nginx**",
+				"🔄 `nginx:1.26-alpine` → `nginx:1.27-alpine`",
+				"🐳 **private-registry**",
+				"🔄 `registry.example.com:5000/example/app:1.26-alpine` → `registry.example.com:5000/example/app:1.27-alpine`",
+			},
+			notContains: []string{
+				"alpine...",
+			},
+		},
+		{
 			name: "vulnerability summary",
 			build: func() string {
 				return BuildVulnerabilitySummaryNotificationMessage(
