@@ -650,6 +650,8 @@
   "convert_create_message": "Ten projekt został utworzony na podstawie istniejących kontenerów. Oryginalne kontenery będą nadal działać, dopóki ich nie usuniesz — usunięcie następuje natychmiast po utworzeniu projektu, przed jego wdrożeniem, i nie można go cofnąć.",
   "experimental_features": "Funkcje eksperymentalne",
   "experimental_features_description": "Włącz funkcje, które mogą ulec zmianie lub zostać usunięte w przyszłych wersjach",
+  "development_branding": "Rozwój marki",
+  "development_branding_description": "W tej wersji wyświetlaj ikonę „Development” zamiast standardowego logo Arcane",
   "containers_bulk_start_confirm_title": "Uruchom {count} kontener(ów)",
   "containers_bulk_start_confirm_message": "Czy na pewno chcesz uruchomić {count} kontener(ów)?",
   "containers_bulk_stop_confirm_title": "Zatrzymaj {count} kontener(ów)",
