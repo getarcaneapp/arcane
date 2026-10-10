@@ -650,6 +650,8 @@
   "convert_create_message": "该项目是从现有容器生成的。除非您将其删除，否则原始容器会继续运行——删除会在项目创建后立即执行（先于项目部署），且无法撤销。",
   "experimental_features": "实验功能",
   "experimental_features_description": "启用未来版本中可能会更改或移除的功能",
+  "development_branding": "开发与品牌建设",
+  "development_branding_description": "在此版本中显示开发图标，而非标准的Arcane徽标",
   "containers_bulk_start_confirm_title": "启动 {count} 个容器",
   "containers_bulk_start_confirm_message": "确定要启动 {count} 个容器吗？",
   "containers_bulk_stop_confirm_title": "停止 {count} 个容器",
