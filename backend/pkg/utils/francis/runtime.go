@@ -120,7 +120,7 @@ func (r *Runtime) Store() (*gorm.DB, error) {
 	}
 	dialector := postgres.Open(r.storeURL)
 	if strings.HasPrefix(r.storeURL, "file:") {
-		dialector = sqlite.Open(r.storeURL + "?_pragma=busy_timeout(2500)")
+		dialector = sqlite.Open(r.storeURL)
 	}
 	store, err := gorm.Open(dialector, &gorm.Config{Logger: logger.Discard})
 	if err != nil {
@@ -281,10 +281,12 @@ func (r *Runtime) publishReady(ctx context.Context, host *local.Host, runErrors 
 	close(r.ready)
 	go func() {
 		err := <-runErrors
-		r.finish(err)
 		if ctx.Err() != nil || onFailure == nil {
+			r.finish(err)
 			return
 		}
+		// onFailure reports the error, so Stop must not return it again.
+		r.finish(nil)
 		if err == nil {
 			err = errors.New("actor host stopped unexpectedly")
 		}

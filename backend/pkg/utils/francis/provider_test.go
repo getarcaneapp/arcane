@@ -18,13 +18,17 @@ func TestMigrateLegacyStore(t *testing.T) {
 	databaseURL := "file:" + mainPath + "?_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)&_txlock=immediate"
 	storeURL, err := StoreURL(databaseURL)
 	require.NoError(t, err)
-	require.Equal(t, "file:"+filepath.Join(filepath.Dir(mainPath), "arcane.francis.db"), storeURL)
+	const defaults = "_pragma=busy_timeout%282500%29&_pragma=synchronous%28NORMAL%29"
+	require.Equal(t, "file:"+filepath.Join(filepath.Dir(mainPath), "arcane.francis.db")+"?_pragma=journal_mode%28WAL%29&"+defaults+"&_txlock=immediate", storeURL)
 	for input, expected := range map[string]string{
-		"file:/data/arcane%23prod.db?_txlock=immediate":      "file:/data/arcane%23prod.francis.db",
-		"file:/data/arcane%2Edb":                             "file:/data/arcane.francis.db",
-		"file:data/arcane%23prod%2Edb":                       "file:data/arcane%23prod.francis.db",
-		"file:data/arcane":                                   "file:data/arcane.francis.db",
-		"postgres://arcane@localhost/arcane?sslmode=disable": "postgres://arcane@localhost/arcane?sslmode=disable",
+		"file:/data/arcane%23prod.db?_txlock=immediate": "file:/data/arcane%23prod.francis.db?" + defaults + "&_txlock=immediate",
+		"file:/data/arcane%2Edb":                        "file:/data/arcane.francis.db?" + defaults,
+		"file:data/arcane%23prod%2Edb":                  "file:data/arcane%23prod.francis.db?" + defaults,
+		"file:data/arcane":                              "file:data/arcane.francis.db?" + defaults,
+		"file:arcane.db?_pragma=busy_timeout(15000)&_pragma=foreign_keys(1)&_fk=1": "file:arcane.francis.db?_pragma=busy_timeout%2815000%29&_pragma=synchronous%28NORMAL%29",
+		"file:arcane.db?_sync=FULL&mode=rw":                                        "file:arcane.francis.db?_pragma=synchronous%28FULL%29&_pragma=busy_timeout%282500%29",
+		"file:arcane.db?_pragma=journal_mode(DELETE)&_pragma=synchronous(EXTRA)":   "file:arcane.francis.db?_pragma=journal_mode%28DELETE%29&_pragma=synchronous%28EXTRA%29&_pragma=busy_timeout%282500%29",
+		"postgres://arcane@localhost/arcane?sslmode=disable":                       "postgres://arcane@localhost/arcane?sslmode=disable",
 	} {
 		storeURL, err = StoreURL(input)
 		require.NoError(t, err)

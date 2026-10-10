@@ -17,6 +17,8 @@ import (
 	"github.com/italypaleale/francis/components/postgres"
 	"github.com/italypaleale/francis/components/sqlite"
 	"github.com/italypaleale/francis/host/local"
+
+	sqliteutil "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/sqlite"
 )
 
 // legacyDrops remove the Francis schema that lived in the Arcane SQLite database
@@ -42,8 +44,8 @@ func StorePath(databasePath string) string {
 	return strings.TrimSuffix(databasePath, extension) + ".francis" + cmp.Or(extension, ".db")
 }
 
-// StoreURL resolves Francis storage: a sibling SQLite file without application
-// pragmas, or the Postgres URL unchanged.
+// StoreURL resolves Francis storage: a sibling SQLite file with the Arcane SQLite
+// settings except foreign_keys, which Francis enforces, or the Postgres URL unchanged.
 func StoreURL(databaseURL string) (string, error) {
 	switch {
 	case strings.HasPrefix(databaseURL, "file:"):
@@ -60,7 +62,17 @@ func StoreURL(databaseURL string) (string, error) {
 		if databasePath == "" || strings.HasPrefix(databasePath, ":memory:") || parsed.Query().Get("mode") == "memory" {
 			return "", errors.New("actor storage requires a file-backed SQLite database")
 		}
-		return "file:" + (&url.URL{Path: StorePath(databasePath)}).EscapedPath(), nil
+		query := sqliteutil.NormalizeQuery(parsed.Query())
+		// The sibling file must be creatable and writable whatever mode opens arcane.db.
+		query.Del("mode")
+		if !sqliteutil.HasPragma(query, "busy_timeout") {
+			query.Add("_pragma", "busy_timeout(2500)")
+		}
+		// NORMAL stops WAL commits from holding the write lock through an fsync.
+		if !sqliteutil.HasPragma(query, "synchronous") {
+			query.Add("_pragma", "synchronous(NORMAL)")
+		}
+		return "file:" + (&url.URL{Path: StorePath(databasePath)}).EscapedPath() + "?" + query.Encode(), nil
 	case strings.HasPrefix(databaseURL, "postgres"):
 		return databaseURL, nil
 	default:
@@ -182,6 +194,7 @@ func MigrateLegacyStore(ctx context.Context, mainDB *sql.DB, databaseURL string)
 	if err = tx.Commit(); err != nil {
 		return fmt.Errorf("commit legacy actor storage cleanup: %w", err)
 	}
-	slog.InfoContext(ctx, "Migrated actor state to its dedicated database", "path", strings.TrimPrefix(storeURL, "file:"))
+	storePath, _, _ := strings.Cut(strings.TrimPrefix(storeURL, "file:"), "?")
+	slog.InfoContext(ctx, "Migrated actor state to its dedicated database", "path", storePath)
 	return nil
 }
