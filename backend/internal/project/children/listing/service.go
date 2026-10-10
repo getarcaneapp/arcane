@@ -313,7 +313,11 @@ func ApplyPresentation(ctx context.Context, projectsDir, catalog string, records
 		resp := &details[i]
 		icon := iconcatalog.Resolve(catalog, metas[i].ProjectIcon)
 		resp.IconLightURL, resp.IconDarkURL = icon.IconLightURL, icon.IconDarkURL
-		resp.URLs = metas[i].ProjectURLS
+		resp.Links = metas[i].ProjectLinks
+		resp.URLs = nil //nolint:staticcheck // Preserve the deprecated URLs field for v2 clients.
+		for _, link := range resp.Links {
+			resp.URLs = append(resp.URLs, link.URL) //nolint:staticcheck // Preserve the deprecated URLs field for v2 clients.
+		}
 		resp.ConfigurationError = projects.CheckProjectEnvAccess(ctx, projectsDir, records[i].Path)
 		for k := range resp.RuntimeServices {
 			service := &resp.RuntimeServices[k]

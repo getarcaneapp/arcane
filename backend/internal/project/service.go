@@ -1741,7 +1741,10 @@ func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string
 	meta := s.ProjectMetadata(ctx, *proj, nil)
 	icon := iconcatalog.Resolve(IconCatalogForContext(ctx), meta.ProjectIcon)
 	resp.IconLightURL, resp.IconDarkURL = icon.IconLightURL, icon.IconDarkURL
-	resp.URLs = meta.ProjectURLS
+	resp.Links = meta.ProjectLinks
+	for _, link := range resp.Links {
+		resp.URLs = append(resp.URLs, link.URL) //nolint:staticcheck // Preserve the deprecated URLs field for v2 clients.
+	}
 	resp.Tags, err = s.GetProjectTags(ctx, projectID)
 	if err != nil {
 		return projecttypes.Details{}, err
