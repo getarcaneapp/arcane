@@ -650,6 +650,8 @@
   "convert_create_message": "此專案是從現有的容器所建立的。除非您將原始容器移除，否則它們會持續運行——移除操作會在專案建立後立即進行，且在專案部署之前完成，此操作無法撤銷。",
   "experimental_features": "實驗性功能",
   "experimental_features_description": "啟用可能在未來版本中變更或移除的功能",
+  "development_branding": "發展與品牌塑造",
+  "development_branding_description": "在此版本中，顯示開發版圖示，而非標準的 Arcane 標誌",
   "containers_bulk_start_confirm_title": "啟動 {count} 個容器",
   "containers_bulk_start_confirm_message": "確定要啟動 {count} 個容器？",
   "containers_bulk_stop_confirm_title": "停止 {count} 個容器",
