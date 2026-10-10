@@ -650,6 +650,8 @@
   "convert_create_message": "Detta projekt har skapats utifrån befintliga containrar. Originalcontainrarna fortsätter att köras så länge du inte tar bort dem – borttagningen sker omedelbart efter skapandet, innan projektet distribueras, och kan inte ångras.",
   "experimental_features": "Experimentella funktioner",
   "experimental_features_description": "Aktivera funktioner som kan komma att ändras eller tas bort i framtida versioner",
+  "development_branding": "Utveckling och varumärkesprofilering",
+  "development_branding_description": "Visa utvecklingsikonen istället för den vanliga Arcane-logotypen i den här versionen",
   "containers_bulk_start_confirm_title": "Starta {count} behållare",
   "containers_bulk_start_confirm_message": "Är du säker på att du vill starta {count} behållare?",
   "containers_bulk_stop_confirm_title": "Stoppa {count} behållare",
