@@ -650,6 +650,8 @@
   "convert_create_message": "Ĉi tiu projekto estis generita el ekzistantaj ujoj. La originaloj daŭre funkcias, krom se vi forigas ilin — forigo okazas tuj post kreiĝo, antaŭ ol la projekto estas deplojita, kaj ne povas esti nuligita.",
   "experimental_features": "Eksperimentaj trajtoj",
   "experimental_features_description": "Aktivigu funkciojn, kiuj eble ŝanĝiĝos aŭ estos forigitaj en estontaj eldonoj.",
+  "development_branding": "Disvolva markado",
+  "development_branding_description": "Montru la evoluigan ikonon anstataŭ la norma Arcane-emblemo en ĉi tiu konstruo.",
   "containers_bulk_start_confirm_title": "Startigi {count} ujo(j)n",
   "containers_bulk_start_confirm_message": "Ĉu vi certas, ke vi volas startigi {count} ujo(j)n?",
   "containers_bulk_stop_confirm_title": "Haltigi {count} ujo(j)n",
