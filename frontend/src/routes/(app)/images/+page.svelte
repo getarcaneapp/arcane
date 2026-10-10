@@ -428,7 +428,12 @@
 					<Dialog.Description>{m.images_prune_confirm_description({ mode: imagePruneMode })}</Dialog.Description>
 				</Dialog.Header>
 				<SettingsSection class="py-4">
-					<SettingsRow label={m.images()} description={m.prune_images_dialog_description()} layout="wide">
+					<SettingsRow
+						label={m.images()}
+						description={m.prune_images_dialog_description()}
+						layout="wide"
+						contentClass="flex justify-center"
+					>
 						<PruneModePicker
 							modeOptions={imagePruneModes}
 							bind:value={imagePruneMode}

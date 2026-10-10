@@ -14,9 +14,9 @@ import (
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/registry"
 	"github.com/moby/moby/client"
+	"go.getarcane.app/docker"
 	kit "go.getarcane.app/kit/pkg"
 
-	docker "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 )
@@ -28,7 +28,7 @@ const defaultComposeTimeout = 30 * time.Minute
 
 // detachFromHTTPContextInternal creates a new context derived from
 // context.WithoutCancel(parent) that carries any values from the parent
-// (such as dockerutils.ProgressWriterKey) but is **not** cancelled or
+// (such as types.ProgressWriterKey) but is **not** cancelled or
 // deadline-bounded by the parent. This allows compose operations to survive
 // HTTP request timeouts and proxy deadline cancellations. A standalone timeout
 // is applied so the operation cannot run forever. See #1209.

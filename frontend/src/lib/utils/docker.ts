@@ -13,6 +13,7 @@ import { tryCatch } from '#lib/utils/try-catch.js';
 // --- Compose / Swarm management labels ---
 
 export const COMPOSE_PROJECT_LABEL = 'com.docker.compose.project';
+export const COMPOSE_SERVICE_LABEL = 'com.docker.compose.service';
 export const SWARM_STACK_LABEL = 'com.docker.stack.namespace';
 
 export function getManagedByLabel(labels?: Record<string, string> | null): string | undefined {
@@ -353,7 +354,7 @@ export function getApplicationLogo(
 	full = false,
 	colorOverride?: string,
 	version?: string,
-	opts?: { animated?: boolean; loop?: boolean }
+	opts?: { animated?: boolean; loop?: boolean; development?: boolean }
 ): string {
 	const params = new URLSearchParams();
 
@@ -371,6 +372,11 @@ export function getApplicationLogo(
 
 	if (opts?.loop) {
 		params.set('loop', 'true');
+	}
+
+	// Cache-busts open pages when development branding is toggled.
+	if (opts?.development) {
+		params.set('branding', 'development');
 	}
 
 	if (version) {

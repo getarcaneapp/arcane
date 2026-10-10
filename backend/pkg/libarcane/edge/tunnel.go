@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"sync/atomic"
 
 	"github.com/coder/websocket"
 	"google.golang.org/grpc/codes"
@@ -25,9 +26,6 @@ const (
 	// maxWebSocketTunnelMessageSize caps inbound websocket tunnel frames at 2x the
 	// gRPC limit, since JSON base64-encodes binary bodies a gRPC peer would accept.
 	maxWebSocketTunnelMessageSize = 2 * maxGRPCTunnelMessageSize
-
-	// ErrTunnelConnectionClosed is returned by Send and Receive on every transport
-	// once the tunnel connection is closed.
 
 	// MessageTypeRequest is sent from manager to agent to initiate a request.
 	MessageTypeRequest TunnelMessageType = "request"
@@ -69,15 +67,17 @@ const (
 	MessageTypeStreamClose TunnelMessageType = "stream_close"
 	// MessageTypeCancelRequest requests cancellation of an in-flight command.
 	MessageTypeCancelRequest TunnelMessageType = "cancel_request"
+	// MessageTypeCommandCredit returns flow-control credit for consumed command output.
+	MessageTypeCommandCredit TunnelMessageType = "command_credit"
 )
 
-var ErrTunnelConnectionClosed = errors.New("edge tunnel connection is closed")
-
-// tunnelReadWait bounds how long a websocket tunnel read may sit idle. Both
-// peers see traffic at least every DefaultHeartbeatInterval (agent heartbeat,
-// manager heartbeat_ack), so 3x tolerates transient stalls while still
-// detecting a silently dead peer. Variable so tests can shorten it.
-var tunnelReadWait = 3 * DefaultHeartbeatInterval
+var (
+	// ErrTunnelConnectionClosed is returned by Send and Receive on every transport once the connection is closed.
+	ErrTunnelConnectionClosed = errors.New("edge tunnel connection is closed")
+	// tunnelReadWait bounds an idle websocket read; heartbeats arrive every DefaultHeartbeatInterval.
+	// It is a variable so tests can shorten it.
+	tunnelReadWait = 3 * DefaultHeartbeatInterval
+)
 
 // TunnelConnection is the transport contract shared by WebSocket and gRPC wrappers.
 type TunnelConnection interface {
@@ -143,18 +143,7 @@ func (t *TunnelConn) Receive() (*TunnelMessage, error) {
 
 // IsExpectedReceiveError returns true for normal WebSocket close/teardown errors.
 func (t *TunnelConn) IsExpectedReceiveError(err error) bool {
-	if err == nil {
-		return false
-	}
-
-	if errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		return true
-	}
-	if errors.Is(err, net.ErrClosed) || errors.Is(err, ErrTunnelConnectionClosed) {
-		return true
-	}
-
-	return wshub.IsExpectedClose(err)
+	return isExpectedReceiveError(err)
 }
 
 // Close closes the WebSocket tunnel connection, sending a close frame on the
@@ -208,6 +197,7 @@ func NewGRPCManagerTunnelConn(stream grpcManagerStream) *GRPCManagerTunnelConn {
 		stream: &cancelableGRPCManagerStream{
 			stream: stream,
 			ctx:    recvCtx,
+			recvCh: make(chan grpcRecvResult),
 		},
 		cancel: cancel,
 	}
@@ -222,23 +212,16 @@ func (t *GRPCManagerTunnelConn) Send(msg *TunnelMessage) error {
 		return ErrTunnelConnectionClosed
 	}
 
-	protoMsg, err := tunnelMessageToManagerProto(msg, t.parityEncoding.Load())
+	protoMsg, err := tunnelMessageToManagerProto(msg, t.parity)
 	if err != nil {
 		return err
 	}
 
 	if sendErr := t.stream.Send(protoMsg); sendErr != nil {
-		t.markClosed()
+		t.closed.Store(true)
 		return sendErr
 	}
 	return nil
-}
-
-// SetParityEncoding enables native proto encodings for message types that are
-// otherwise re-encoded for legacy agents. Set when the agent advertises the
-// proto-parity-v1 capability during registration.
-func (t *GRPCManagerTunnelConn) SetParityEncoding(enabled bool) {
-	t.parityEncoding.Store(enabled)
 }
 
 // Receive receives an agent->manager tunnel message from gRPC.
@@ -246,37 +229,17 @@ func (t *GRPCManagerTunnelConn) Receive() (*TunnelMessage, error) {
 	if t.stream == nil {
 		return nil, ErrTunnelConnectionClosed
 	}
-
-	for {
-		protoMsg, err := t.stream.Recv()
-		if err != nil {
-			// A gRPC stream is dead after any Recv error, not just io.EOF.
-			t.markClosed()
-			return nil, err
-		}
-
-		msg, err := agentProtoToTunnelMessage(protoMsg)
-		if err != nil {
-			if errors.Is(err, errUnknownTunnelPayload) {
-				// A newer peer sent a payload this build cannot decode yet;
-				// skip it like unknown websocket message types are skipped.
-				slog.Debug("Ignoring unknown edge tunnel payload", "error", err)
-				continue
-			}
-			return nil, err
-		}
-		return msg, nil
-	}
+	return receiveGRPC(t.stream.Context(), t.stream.Recv, agentProtoToTunnelMessage, &t.closed)
 }
 
 // IsExpectedReceiveError returns true for expected gRPC stream shutdown errors.
 func (t *GRPCManagerTunnelConn) IsExpectedReceiveError(err error) bool {
-	return isExpectedGRPCReceiveErrorInternal(err)
+	return isExpectedReceiveError(err)
 }
 
 // Close marks the stream closed on manager side.
 func (t *GRPCManagerTunnelConn) Close() error {
-	t.markClosed()
+	t.closed.Store(true)
 	if t.cancel != nil {
 		t.cancel()
 	}
@@ -286,10 +249,6 @@ func (t *GRPCManagerTunnelConn) Close() error {
 // IsClosed returns whether the stream is closed.
 func (t *GRPCManagerTunnelConn) IsClosed() bool {
 	return t.closed.Load()
-}
-
-func (t *GRPCManagerTunnelConn) markClosed() {
-	t.closed.Store(true)
 }
 
 // Transport identifies the underlying tunnel transport.
@@ -322,7 +281,7 @@ func (t *GRPCAgentTunnelConn) Send(msg *TunnelMessage) error {
 	}
 
 	if sendErr := t.stream.Send(protoMsg); sendErr != nil {
-		t.markClosed()
+		t.closed.Store(true)
 		return sendErr
 	}
 	return nil
@@ -333,37 +292,16 @@ func (t *GRPCAgentTunnelConn) Receive() (*TunnelMessage, error) {
 	if t.stream == nil {
 		return nil, ErrTunnelConnectionClosed
 	}
-
-	for {
-		protoMsg, err := t.stream.Recv()
-		if err != nil {
-			// A gRPC stream is dead after any Recv error, not just io.EOF.
-			t.markClosed()
-			return nil, err
-		}
-
-		msg, err := managerProtoToTunnelMessage(protoMsg)
-		if err != nil {
-			if errors.Is(err, errUnknownTunnelPayload) {
-				// A newer peer sent a payload this build cannot decode yet;
-				// skip it like unknown websocket message types are skipped.
-				slog.Debug("Ignoring unknown edge tunnel payload", "error", err)
-				continue
-			}
-			return nil, err
-		}
-		return msg, nil
-	}
+	return receiveGRPC(t.stream.Context(), t.stream.Recv, managerProtoToTunnelMessage, &t.closed)
 }
 
 // IsExpectedReceiveError returns true for expected gRPC stream shutdown errors.
 func (t *GRPCAgentTunnelConn) IsExpectedReceiveError(err error) bool {
-	return isExpectedGRPCReceiveErrorInternal(err)
+	return isExpectedReceiveError(err)
 }
 
-// Close closes the client send stream. The half-close happens before cancel so
-// the manager observes a clean io.EOF (the gRPC analog of a websocket close
-// frame) instead of codes.Canceled.
+// Close half-closes the send stream before cancelling, so the manager sees a
+// clean io.EOF instead of codes.Canceled.
 func (t *GRPCAgentTunnelConn) Close() error {
 	if t.closed.Swap(true) {
 		return nil
@@ -394,10 +332,6 @@ func (t *GRPCAgentTunnelConn) IsClosed() bool {
 	return t.closed.Load()
 }
 
-func (t *GRPCAgentTunnelConn) markClosed() {
-	t.closed.Store(true)
-}
-
 // Transport identifies the underlying tunnel transport.
 func (t *GRPCAgentTunnelConn) Transport() string {
 	return EdgeTransportGRPC
@@ -407,22 +341,29 @@ func (s *cancelableGRPCManagerStream) Send(msg *tunnelpb.ManagerMessage) error {
 	return s.stream.Send(msg)
 }
 
+// Recv returns the next message, or ctx's error once ctx is done. gRPC Recv ignores ctx,
+// so a single reader goroutine waits on the stream instead.
 func (s *cancelableGRPCManagerStream) Recv() (*tunnelpb.AgentMessage, error) {
-	type recvResult struct {
-		msg *tunnelpb.AgentMessage
-		err error
-	}
-
-	recvCh := make(chan recvResult, 1)
-	go func() {
-		msg, err := s.stream.Recv()
-		recvCh <- recvResult{msg: msg, err: err}
-	}()
+	s.recvOnce.Do(func() {
+		go func() {
+			for {
+				msg, err := s.stream.Recv()
+				select {
+				case s.recvCh <- grpcRecvResult{msg: msg, err: err}:
+				case <-s.ctx.Done():
+					return
+				}
+				if err != nil {
+					return
+				}
+			}
+		}()
+	})
 
 	select {
 	case <-s.ctx.Done():
 		return nil, s.ctx.Err()
-	case result := <-recvCh:
+	case result := <-s.recvCh:
 		return result.msg, result.err
 	}
 }
@@ -431,18 +372,35 @@ func (s *cancelableGRPCManagerStream) Context() context.Context {
 	return s.ctx
 }
 
-func isExpectedGRPCReceiveErrorInternal(err error) bool {
+// receiveGRPC decodes the next stream message, skipping payloads from newer peers
+// that this build cannot decode, as unknown websocket message types are skipped.
+func receiveGRPC[P any](ctx context.Context, recv func() (P, error), decode func(P) (*TunnelMessage, error), closed *atomic.Bool) (*TunnelMessage, error) {
+	for {
+		protoMsg, err := recv()
+		if err != nil {
+			// A gRPC stream is dead after any Recv error, not just io.EOF.
+			closed.Store(true)
+			return nil, err
+		}
+		msg, err := decode(protoMsg)
+		if errors.Is(err, errUnknownTunnelPayload) {
+			slog.DebugContext(ctx, "Ignoring unknown edge tunnel payload", "error", err)
+			continue
+		}
+		return msg, err
+	}
+}
+
+// isExpectedReceiveError reports normal teardown on either transport: EOF, cancellation,
+// a closed connection, a clean websocket close, or a cancelled gRPC stream.
+func isExpectedReceiveError(err error) bool {
 	if err == nil {
 		return false
 	}
-
-	if errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+	if errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) ||
+		errors.Is(err, net.ErrClosed) || errors.Is(err, ErrTunnelConnectionClosed) || wshub.IsExpectedClose(err) {
 		return true
 	}
-	if errors.Is(err, ErrTunnelConnectionClosed) {
-		return true
-	}
-
 	code := status.Code(err)
 	return code == codes.Canceled || code == codes.DeadlineExceeded
 }

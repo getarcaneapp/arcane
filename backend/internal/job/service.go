@@ -20,6 +20,10 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/scheduler"
 	"github.com/robfig/cron/v3"
 	"go.getarcane.app/kit/pkg"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
@@ -33,10 +37,9 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
 	scheduleutil "github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/schedule"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/tracing"
 )
 
 // JobService manages configuration for background job schedules.
@@ -60,6 +63,9 @@ type JobService struct {
 	scheduler    scheduler.JobController
 	lifecycleCtx context.Context
 	location     *time.Location // Timezone for cron schedule calculations
+	runCount     metric.Int64Counter
+	runDuration  metric.Float64Histogram
+	activeRuns   metric.Int64UpDownCounter
 
 	// environment-health is no longer a single scheduler job — it fans out to one
 	// dynamic job per environment owned by environment.EnvironmentService. These bridge the Jobs
@@ -88,6 +94,19 @@ func NewJobService(
 		settings:    localSettings,
 		cfg:         cfg,
 		location:    cfg.GetLocation(),
+	}
+
+	meter := otel.Meter(tracing.InstrumentationName)
+	var errs [3]error
+	service.runCount, errs[0] = meter.Int64Counter("arcane.job.runs",
+		metric.WithDescription("Executed job runs by outcome"), metric.WithUnit("{run}"))
+	service.runDuration, errs[1] = meter.Float64Histogram("arcane.job.duration",
+		metric.WithDescription("Job run duration by outcome"), metric.WithUnit("s"),
+		metric.WithExplicitBucketBoundaries(0.01, 0.05, 0.1, 0.5, 1, 5, 10, 30, 60, 120, 300, 600, 1800, 3600))
+	service.activeRuns, errs[2] = meter.Int64UpDownCounter("arcane.job.active",
+		metric.WithDescription("Job runs currently executing"), metric.WithUnit("{run}"))
+	if err := errors.Join(errs[:]...); err != nil {
+		otel.Handle(err)
 	}
 
 	if coordinator != nil {
@@ -272,6 +291,9 @@ func (s *JobService) rescheduleAffectedJobInternal(ctx context.Context, jobID st
 	}
 
 	expectedSchedule := job.Schedule(rescheduleCtx)
+	if conditional, isConditional := job.(scheduler.ConditionalJob); isConditional && !conditional.ShouldSchedule(rescheduleCtx) {
+		expectedSchedule = ""
+	}
 	if runtimeState.Schedule != expectedSchedule {
 		return fmt.Errorf("job %s runtime schedule %q does not match requested schedule %q", jobID, runtimeState.Schedule, expectedSchedule)
 	}
@@ -608,7 +630,33 @@ func (s *JobService) authorizeRunInternal(ctx context.Context, run scheduler.Run
 	return nil
 }
 
-func (s *JobService) executeRunInternal(ctx context.Context, run scheduler.Run) (scheduler.Outcome, error) {
+func (s *JobService) executeRunInternal(ctx context.Context, run scheduler.Run) (result scheduler.Outcome, runErr error) {
+	// Entity-scoped jobs ("gitops-sync:<id>") share one span name and metric series per job type.
+	jobType, _, _ := strings.Cut(run.JobID, ":")
+	ctx, span := otel.Tracer(tracing.InstrumentationName).Start(ctx, "job "+jobType, trace.WithAttributes(
+		attribute.String("arcane.job.id", run.JobID),
+		attribute.String("arcane.job.run_id", run.ID),
+		attribute.String("arcane.environment.id", run.EnvironmentID),
+	))
+	jobAttr := attribute.String("arcane.job.id", jobType)
+	started := time.Now()
+	if s.activeRuns != nil {
+		s.activeRuns.Add(ctx, 1, metric.WithAttributes(jobAttr))
+	}
+	defer func() {
+		outcomeAttr := attribute.String("arcane.job.outcome", string(result.Status))
+		span.SetAttributes(outcomeAttr)
+		tracing.End(span, runErr)
+		if s.activeRuns != nil {
+			// Record against a non-canceled context so shutdown-interrupted runs still count.
+			metricCtx := context.WithoutCancel(ctx)
+			attrs := metric.WithAttributes(jobAttr, outcomeAttr)
+			s.activeRuns.Add(metricCtx, -1, metric.WithAttributes(jobAttr))
+			s.runCount.Add(metricCtx, 1, attrs)
+			s.runDuration.Record(metricCtx, time.Since(started).Seconds(), attrs)
+		}
+	}()
+
 	if err := s.authorizeRunInternal(ctx, run); err != nil {
 		return scheduler.Outcome{Status: scheduler.Failed}, err
 	}
@@ -621,7 +669,7 @@ func (s *JobService) executeRunInternal(ctx context.Context, run scheduler.Run) 
 			return scheduler.Outcome{Status: scheduler.Waiting, Message: "Waiting for Docker"}, err
 		}
 	}
-	ctx = s.runContextInternal(ctx, run)
+	ctx = s.runs.ExecutionContext(ctx, run, "")
 	if run.JobID == "environment-health" && s.RunEnvironmentHealthNow != nil {
 		err := s.RunEnvironmentHealthNow(ctx)
 		return classifyOutcomeInternal(run.JobID, scheduler.Outcome{}, err)
@@ -694,7 +742,7 @@ func (s *JobService) reconcileRunInternal(ctx context.Context, run scheduler.Run
 	if s.scheduler != nil {
 		if job, ok := s.scheduler.GetJob(run.JobID); ok {
 			if reconciler, localOk := job.(scheduler.Reconciler); localOk {
-				return reconciler.Reconcile(s.runContextInternal(ctx, run), run)
+				return reconciler.Reconcile(s.runs.ExecutionContext(ctx, run, ""), run)
 			}
 		}
 	}
@@ -720,7 +768,7 @@ func (s *JobService) reconcileRunInternal(ctx context.Context, run scheduler.Run
 	}
 	if job, ok := s.scheduler.GetJob(run.JobID); ok {
 		if reconciler, localOk2 := job.(scheduler.Reconciler); localOk2 {
-			outcome, err := reconciler.Reconcile(s.runContextInternal(ctx, run), run)
+			outcome, err := reconciler.Reconcile(s.runs.ExecutionContext(ctx, run, ""), run)
 			if err != nil {
 				slog.WarnContext(ctx, "Job reconciliation requires attention", "runId", run.ID, "error", err)
 			}
@@ -728,29 +776,6 @@ func (s *JobService) reconcileRunInternal(ctx context.Context, run scheduler.Run
 		}
 	}
 	return scheduler.Outcome{Status: scheduler.Failed, Message: "Interrupted operation has no confirmed completion", Targets: run.Outcome.Targets}, nil
-}
-
-func (s *JobService) runContextInternal(ctx context.Context, run scheduler.Run) context.Context {
-	ctx = utils.WithActivityBatchID(ctx, run.ID)
-	ctx = jobcontext.WithExecution(ctx, run, func(target scheduler.TargetOutcome) error {
-		return s.runs.UpdateRun(ctx, run, func(current *scheduler.Run) error {
-			if current.Status != scheduler.Running || current.Owner != run.Owner {
-				return runs.ErrRunConflict
-			}
-			for index := range current.Outcome.Targets {
-				if current.Outcome.Targets[index].ID == target.ID {
-					if len(target.RecoveryData) == 0 {
-						target.RecoveryData = current.Outcome.Targets[index].RecoveryData
-					}
-					current.Outcome.Targets[index] = target
-					return nil
-				}
-			}
-			current.Outcome.Targets = append(current.Outcome.Targets, target)
-			return nil
-		})
-	})
-	return ctx
 }
 
 func requiresDockerInternal(jobID string) bool {

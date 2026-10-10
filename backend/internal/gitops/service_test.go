@@ -13,7 +13,6 @@ import (
 
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/getarcaneapp/arcane/types/v2/gitops"
-	"github.com/getarcaneapp/arcane/types/v2/lifecycle"
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	"github.com/getarcaneapp/arcane/types/v2/user"
 	"github.com/go-git/go-billy/v5/osfs"
@@ -26,6 +25,7 @@ import (
 	"go.getarcane.app/kit/pkg"
 	"gorm.io/gorm"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
@@ -37,13 +37,15 @@ import (
 	projectpkg "github.com/getarcaneapp/arcane/backend/v2/internal/project"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/gitutil"
+	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/entityjobs"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/flow/flowtest"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
 	francistest "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/francis/testing"
 )
 
-func setupGitOpsProjectTestDBInternal(t *testing.T) *database.DB {
+func setupGitOpsProjectTestDB(t *testing.T) *database.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
@@ -54,7 +56,7 @@ func setupGitOpsProjectTestDBInternal(t *testing.T) *database.DB {
 	return &database.DB{DB: db}
 }
 
-func newGitOpsSettingsServiceForTestInternal(t testing.TB, ctx context.Context, db *database.DB) (*settings.SettingsService, error) {
+func newGitOpsSettingsServiceForTest(t testing.TB, ctx context.Context, db *database.DB) (*settings.SettingsService, error) {
 	t.Helper()
 	service, err := settings.NewSettingsService(ctx, db)
 	if err == nil {
@@ -63,7 +65,7 @@ func newGitOpsSettingsServiceForTestInternal(t testing.TB, ctx context.Context, 
 	return service, err
 }
 
-func newGitOpsAdmissionGateForTestInternal(t testing.TB) *runs.Admission {
+func newGitOpsAdmissionGateForTest(t testing.TB) *runs.Admission {
 	t.Helper()
 	runtime := francistest.New(t)
 	gate := runs.NewAdmission(runtime.Service(), t.Name())
@@ -76,10 +78,10 @@ func setupGitOpsSyncDirectoryTestService(t *testing.T) (*GitOpsSyncService, *dat
 	t.Helper()
 
 	ctx := t.Context()
-	db := setupGitOpsProjectTestDBInternal(t)
+	db := setupGitOpsProjectTestDB(t)
 	require.NoError(t, db.AutoMigrate(&projectpkg.GitOpsSync{}))
 
-	settingsService, err := newGitOpsSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newGitOpsSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	projectsDir := t.TempDir()
@@ -91,15 +93,15 @@ func setupGitOpsSyncDirectoryTestService(t *testing.T) (*GitOpsSyncService, *dat
 	return NewGitOpsSyncService(db, nil, projectService, nil, eventService, settingsService), db, projectsDir
 }
 
-func TestGitOpsSyncService_OverlappingSyncPreservesSuccessShapedSkipInternal(t *testing.T) {
-	gate := newGitOpsAdmissionGateForTestInternal(t)
-	key := schedulertypes.AdmissionKey{Scope: gitOpsSyncAdmissionScopeInternal, ID: "sync-id"}
+func TestGitOpsSyncService_OverlappingSyncPreservesSuccessShapedSkip(t *testing.T) {
+	gate := newGitOpsAdmissionGateForTest(t)
+	key := schedulertypes.AdmissionKey{Scope: gitOpsSyncAdmissionScope, ID: "sync-id"}
 	lease, admitted, err := gate.TryAcquire(t.Context(), key)
 	require.NoError(t, err)
 	require.True(t, admitted)
 
-	service := &GitOpsSyncService{jobs: entityjobs.New(entityjobs.GitOpsSyncJobPrefix, gitOpsSyncAdmissionScopeInternal)}
-	require.NoError(t, service.SetScheduler(t.Context(), &gitOpsSyncTestSchedulerInternal{}, gate))
+	service := &GitOpsSyncService{jobs: entityjobs.New(entityjobs.GitOpsSyncJobPrefix, gitOpsSyncAdmissionScope)}
+	require.NoError(t, service.SetScheduler(t.Context(), &gitOpsSyncTestScheduler{}, gate))
 	result, err := service.PerformSync(t.Context(), "0", "sync-id", user.Actor{})
 	require.NoError(t, err)
 	require.False(t, result.Success)
@@ -107,36 +109,36 @@ func TestGitOpsSyncService_OverlappingSyncPreservesSuccessShapedSkipInternal(t *
 	lease.Release(t.Context())
 }
 
-type gitOpsSyncTestSchedulerInternal struct {
+type gitOpsSyncTestScheduler struct {
 	submitted []schedulertypes.Request
 	added     []string
 	removed   []string
 }
 
-func (s *gitOpsSyncTestSchedulerInternal) AddJob(_ context.Context, job schedulertypes.Job) error {
+func (s *gitOpsSyncTestScheduler) AddJob(_ context.Context, job schedulertypes.Job) error {
 	s.added = append(s.added, job.Name())
 	return nil
 }
 
-func (s *gitOpsSyncTestSchedulerInternal) RemoveJob(_ context.Context, name string) {
+func (s *gitOpsSyncTestScheduler) RemoveJob(_ context.Context, name string) {
 	s.removed = append(s.removed, name)
 }
 
-func (s *gitOpsSyncTestSchedulerInternal) HasJob(_ string) bool {
+func (s *gitOpsSyncTestScheduler) HasJob(_ string) bool {
 	return false
 }
 
-// setupGitOpsSyncRemoteTestServiceInternal wires a sync service with a real
+// setupGitOpsSyncRemoteTestService wires a sync service with a real
 // scheduler registry over a bare remote "repo-1" whose main branch holds files.
-func setupGitOpsSyncRemoteTestServiceInternal(t *testing.T, files map[string]string) (*GitOpsSyncService, *database.DB, string, *gitOpsSyncTestSchedulerInternal) {
+func setupGitOpsSyncRemoteTestService(t *testing.T, files map[string]string) (*GitOpsSyncService, *database.DB, string, *gitOpsSyncTestScheduler) {
 	t.Helper()
-	installBackupTestTransportInternal()
+	installBackupTestTransport()
 
 	ctx := t.Context()
-	db := setupGitOpsProjectTestDBInternal(t)
+	db := setupGitOpsProjectTestDB(t)
 	require.NoError(t, db.AutoMigrate(&projectpkg.GitOpsSync{}, &gitrepo.GitRepository{}))
 
-	settingsService, err := newGitOpsSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newGitOpsSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	projectsDir := t.TempDir()
@@ -147,15 +149,15 @@ func setupGitOpsSyncRemoteTestServiceInternal(t *testing.T, files map[string]str
 	repoService := gitrepo.NewGitRepositoryService(db, t.TempDir(), eventService, settingsService)
 
 	service := NewGitOpsSyncService(db, repoService, projectService, nil, eventService, settingsService)
-	testScheduler := &gitOpsSyncTestSchedulerInternal{}
-	require.NoError(t, service.SetScheduler(ctx, testScheduler, newGitOpsAdmissionGateForTestInternal(t)))
+	testScheduler := &gitOpsSyncTestScheduler{}
+	require.NoError(t, service.SetScheduler(ctx, testScheduler, newGitOpsAdmissionGateForTest(t)))
 
 	bare := filepath.Join(t.TempDir(), "sync.git")
 	_, err = gogit.PlainInit(bare, true)
 	require.NoError(t, err)
 	repoURL := "http://localhost" + bare
 	require.NoError(t, db.Create(&gitrepo.GitRepository{ID: "repo-1", Name: "sync-remote", URL: repoURL, AuthType: "none", Enabled: true}).Error)
-	pushRemoteCommitInternal(t, git.NewClient(t.TempDir()), repoURL, "seed", files)
+	pushRemoteCommit(t, git.NewClient(t.TempDir()), repoURL, "seed", files)
 
 	return service, db, projectsDir, testScheduler
 }
@@ -165,7 +167,7 @@ func setupGitOpsSyncRemoteTestServiceInternal(t *testing.T, files map[string]str
 // broken binding, not a "-N" duplicate.
 func TestGitOpsSyncService_GetOrCreateProject_RefusesDuplicateOnNameCollision(t *testing.T) {
 	ctx := t.Context()
-	svc, db, projectsDir, _ := setupGitOpsSyncRemoteTestServiceInternal(t, map[string]string{"docker-compose.yaml": "services:\n  app:\n    image: nginx:alpine\n"})
+	svc, db, projectsDir, _ := setupGitOpsSyncRemoteTestService(t, map[string]string{"docker-compose.yaml": "services:\n  app:\n    image: nginx:alpine\n"})
 	require.NoError(t, os.MkdirAll(filepath.Join(projectsDir, "Dozzle"), 0o755))
 
 	syncRecord := &projectpkg.GitOpsSync{
@@ -194,7 +196,7 @@ func TestGitOpsSyncService_GetOrCreateProject_RefusesDuplicateOnNameCollision(t 
 
 func TestGitOpsSyncService_SyncProjectDirectory_FailsWhenBoundProjectMissing(t *testing.T) {
 	ctx := t.Context()
-	svc, db, projectsDir, testScheduler := setupGitOpsSyncRemoteTestServiceInternal(t, map[string]string{"apps/demo/docker-compose.yaml": "services:\n  app:\n    image: nginx:alpine\n"})
+	svc, db, projectsDir, testScheduler := setupGitOpsSyncRemoteTestService(t, map[string]string{"apps/demo/docker-compose.yaml": "services:\n  app:\n    image: nginx:alpine\n"})
 
 	missingProjectID := "missing-project"
 	syncRecord := &projectpkg.GitOpsSync{
@@ -237,7 +239,7 @@ func TestGitOpsSyncService_SyncProjectDirectory_FailsWhenBoundProjectMissing(t *
 
 func TestGitOpsSyncService_SyncProjectDirectory_DisablesAutoSyncWhenBoundProjectRecoveryAmbiguous(t *testing.T) {
 	ctx := t.Context()
-	svc, db, projectsDir, testScheduler := setupGitOpsSyncRemoteTestServiceInternal(t, map[string]string{"apps/media/radarr.yaml": "services:\n  app:\n    image: lscr.io/linuxserver/radarr:latest\n"})
+	svc, db, projectsDir, testScheduler := setupGitOpsSyncRemoteTestService(t, map[string]string{"apps/media/radarr.yaml": "services:\n  app:\n    image: lscr.io/linuxserver/radarr:latest\n"})
 
 	for _, dirName := range []string{"Radarr-3", "Radarr-30"} {
 		projectPath := filepath.Join(projectsDir, dirName)
@@ -281,9 +283,9 @@ func TestGitOpsSyncService_SyncProjectDirectory_DisablesAutoSyncWhenBoundProject
 	assert.Contains(t, testScheduler.removed, entityjobs.GitOpsSyncJobPrefix+syncRecord.ID)
 }
 
-func TestGitOpsSyncService_GetOrCreateProjectInternal_FailsWhenBoundProjectMissing(t *testing.T) {
+func TestGitOpsSyncService_GetOrCreateProject_FailsWhenBoundProjectMissing(t *testing.T) {
 	ctx := t.Context()
-	svc, db, projectsDir, testScheduler := setupGitOpsSyncRemoteTestServiceInternal(t, map[string]string{"apps/demo/docker-compose.yaml": "services:\n  app:\n    image: nginx:alpine\n"})
+	svc, db, projectsDir, testScheduler := setupGitOpsSyncRemoteTestService(t, map[string]string{"apps/demo/docker-compose.yaml": "services:\n  app:\n    image: nginx:alpine\n"})
 
 	missingProjectID := "missing-project"
 	syncRecord := &projectpkg.GitOpsSync{
@@ -322,23 +324,6 @@ func TestGitOpsSyncService_GetOrCreateProjectInternal_FailsWhenBoundProjectMissi
 	require.NotNil(t, storedSync.LastSyncError)
 	assert.Contains(t, *storedSync.LastSyncError, "project binding")
 	assert.Contains(t, testScheduler.removed, entityjobs.GitOpsSyncJobPrefix+syncRecord.ID)
-}
-
-func TestApplyLifecycleFieldsToSyncInternal_DefaultsPreDeployTimeout(t *testing.T) {
-	var syncRecord projectpkg.GitOpsSync
-
-	applyLifecycleFieldsToSyncInternal(&syncRecord, lifecycleConfigInputInternal{})
-
-	require.Equal(t, lifecycle.DefaultTimeoutSec, syncRecord.PreDeployTimeoutSec)
-}
-
-func TestApplyLifecycleFieldsToSyncInternal_UsesExplicitPreDeployTimeout(t *testing.T) {
-	timeoutSec := 90
-	var syncRecord projectpkg.GitOpsSync
-
-	applyLifecycleFieldsToSyncInternal(&syncRecord, lifecycleConfigInputInternal{timeoutSec: &timeoutSec})
-
-	require.Equal(t, timeoutSec, syncRecord.PreDeployTimeoutSec)
 }
 
 func TestGitOpsSyncService_GetSyncByID_ReturnsNotFoundError(t *testing.T) {
@@ -434,8 +419,8 @@ func TestGitOpsSyncService_RegisterAutoSyncJobsOnStartup_SkipsOrphans(t *testing
 		LastSyncAt:    &now,
 	}).Error)
 
-	scheduler := &gitOpsSyncTestSchedulerInternal{}
-	require.NoError(t, svc.SetScheduler(ctx, scheduler, newGitOpsAdmissionGateForTestInternal(t)))
+	scheduler := &gitOpsSyncTestScheduler{}
+	require.NoError(t, svc.SetScheduler(ctx, scheduler, newGitOpsAdmissionGateForTest(t)))
 	svc.RegisterAutoSyncJobsOnStartup(ctx)
 
 	require.Equal(t, []string{entityjobs.GitOpsSyncJobPrefix + "sync-live"}, scheduler.added)
@@ -472,8 +457,8 @@ func TestGitOpsSyncService_DeleteSync_DeletesStaleProjectReference(t *testing.T)
 func TestGitOpsSyncService_DeleteSync_SucceedsWhenEnvironmentMismatched(t *testing.T) {
 	ctx := t.Context()
 	svc, db, _ := setupGitOpsSyncDirectoryTestService(t)
-	scheduler := &gitOpsSyncTestSchedulerInternal{}
-	require.NoError(t, svc.SetScheduler(ctx, scheduler, newGitOpsAdmissionGateForTestInternal(t)))
+	scheduler := &gitOpsSyncTestScheduler{}
+	require.NoError(t, svc.SetScheduler(ctx, scheduler, newGitOpsAdmissionGateForTest(t)))
 
 	syncRecord := &projectpkg.GitOpsSync{
 		ID:            "sync-env-mismatch",
@@ -523,18 +508,22 @@ func TestGitOpsSyncService_DeleteSync_ClearsOrphanedManagedFlag(t *testing.T) {
 	assert.Nil(t, got.GitOpsManagedBy)
 }
 
-// TestGitOpsSyncService_RunScheduledSync_UnregistersMissingSync verifies a scheduled
-// run whose row no longer exists (e.g. deleted out-of-band via raw SQL) unregisters
-// its own job instead of firing forever.
-func TestGitOpsSyncService_RunScheduledSync_UnregistersMissingSync(t *testing.T) {
+// TestGitOpsSyncWorkflow_UnregistersMissingSync verifies a scheduled run whose row no longer exists
+// (e.g. deleted out-of-band via raw SQL) unregisters its own job instead of firing forever.
+func TestGitOpsSyncWorkflow_UnregistersMissingSync(t *testing.T) {
 	ctx := t.Context()
-	svc, _, _ := setupGitOpsSyncDirectoryTestService(t)
-	scheduler := &gitOpsSyncTestSchedulerInternal{}
-	require.NoError(t, svc.SetScheduler(ctx, scheduler, newGitOpsAdmissionGateForTestInternal(t)))
+	svc, db, _ := setupGitOpsSyncDirectoryTestService(t)
+	require.NoError(t, db.AutoMigrate(&activity.Activity{}, &activity.ActivityMessage{}))
+	harness := flowtest.New(t, activity.NewActivityService(db, nil))
+	require.NoError(t, svc.RegisterWorkflows(harness.Engine))
+	harness.Start(t)
+	flowtest.AssertDefinitions(t, harness)
+	scheduler := &gitOpsSyncTestScheduler{}
+	require.NoError(t, svc.SetScheduler(ctx, scheduler, newGitOpsAdmissionGateForTest(t)))
 
-	_, scheduledSyncErr := svc.runScheduledSyncInternal(ctx, "0", "ghost-sync")
-	require.NoError(t, scheduledSyncErr)
-
+	outcome, err := harness.Engine.Run(ctx, svc.syncWorkflow, syncTarget{EnvironmentID: "0", SyncID: "ghost-sync"}, activitylib.StartRequest{}, nil)
+	require.NoError(t, err)
+	assert.Equal(t, schedulertypes.Skipped, outcome.Status)
 	assert.Contains(t, scheduler.removed, entityjobs.GitOpsSyncJobPrefix+"ghost-sync")
 }
 
@@ -664,8 +653,8 @@ func TestGitOpsSyncService_ReconcileDirectorySyncProjectsOnStartup_SkipsAmbiguou
 
 func TestGitOpsSyncService_GetEnvironmentSyncLimits(t *testing.T) {
 	ctx := t.Context()
-	db := setupGitOpsProjectTestDBInternal(t)
-	settingsSvc, err := newGitOpsSettingsServiceForTestInternal(t, ctx, db)
+	db := setupGitOpsProjectTestDB(t)
+	settingsSvc, err := newGitOpsSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	require.NoError(t, settingsSvc.SetIntSetting(ctx, "gitSyncMaxFiles", 123))
@@ -687,8 +676,8 @@ func TestGitOpsSyncService_GetEffectiveSyncLimits(t *testing.T) {
 	t.Setenv("GIT_SYNC_MAX_TOTAL_SIZE_MB", "")
 	t.Setenv("GIT_SYNC_MAX_BINARY_SIZE_MB", "")
 
-	db := setupGitOpsProjectTestDBInternal(t)
-	settingsSvc, err := newGitOpsSettingsServiceForTestInternal(t, ctx, db)
+	db := setupGitOpsProjectTestDB(t)
+	settingsSvc, err := newGitOpsSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	require.NoError(t, settingsSvc.SetIntSetting(ctx, "gitSyncMaxFiles", 200))
@@ -743,7 +732,7 @@ func TestGitOpsSyncService_GetEffectiveSyncLimits(t *testing.T) {
 		t.Setenv("GIT_SYNC_MAX_FILES", "10000")
 		t.Setenv("GIT_SYNC_MAX_TOTAL_SIZE_MB", "1024")
 		t.Setenv("GIT_SYNC_MAX_BINARY_SIZE_MB", "12")
-		settingsSvcEnv, svcErr := newGitOpsSettingsServiceForTestInternal(t, ctx, db)
+		settingsSvcEnv, svcErr := newGitOpsSettingsServiceForTest(t, ctx, db)
 		require.NoError(t, svcErr)
 		svcEnv := &GitOpsSyncService{settingsService: settingsSvcEnv}
 
@@ -764,7 +753,7 @@ func TestGitOpsSyncService_GetEffectiveSyncLimits(t *testing.T) {
 		t.Setenv("GIT_SYNC_MAX_FILES", "0")
 		t.Setenv("GIT_SYNC_MAX_TOTAL_SIZE_MB", "0")
 		t.Setenv("GIT_SYNC_MAX_BINARY_SIZE_MB", "0")
-		settingsSvcEnv, svcErr := newGitOpsSettingsServiceForTestInternal(t, ctx, db)
+		settingsSvcEnv, svcErr := newGitOpsSettingsServiceForTest(t, ctx, db)
 		require.NoError(t, svcErr)
 		svcEnv := &GitOpsSyncService{settingsService: settingsSvcEnv}
 
@@ -795,14 +784,14 @@ func setupLifecycleValidationService(t *testing.T) (*GitOpsSyncService, context.
 
 func TestValidateLifecycleConfig_AllNilNoError(t *testing.T) {
 	svc, ctx := setupLifecycleValidationService(t)
-	require.NoError(t, svc.validateLifecycleConfigInternal(ctx, nil, lifecycleConfigInputInternal{}))
+	require.NoError(t, svc.validateLifecycleConfig(ctx, nil, lifecycleConfigInput{}))
 }
 
 func TestValidateLifecycleConfig_RejectsWhenGloballyDisabled(t *testing.T) {
 	svc, _, _ := setupGitOpsSyncDirectoryTestService(t)
 	ctx := t.Context()
 	// lifecycleEnabled defaults to false; do not enable.
-	err := svc.validateLifecycleConfigInternal(ctx, nil, lifecycleConfigInputInternal{
+	err := svc.validateLifecycleConfig(ctx, nil, lifecycleConfigInput{
 		scriptPath:  new("scripts/deploy.sh"),
 		runnerImage: new("alpine:latest"),
 	})
@@ -812,7 +801,7 @@ func TestValidateLifecycleConfig_RejectsWhenGloballyDisabled(t *testing.T) {
 
 func TestValidateLifecycleConfig_RejectsAbsoluteScriptPath(t *testing.T) {
 	svc, ctx := setupLifecycleValidationService(t)
-	err := svc.validateLifecycleConfigInternal(ctx, nil, lifecycleConfigInputInternal{
+	err := svc.validateLifecycleConfig(ctx, nil, lifecycleConfigInput{
 		scriptPath:  new("/etc/passwd"),
 		runnerImage: new("alpine:latest"),
 	})
@@ -822,7 +811,7 @@ func TestValidateLifecycleConfig_RejectsAbsoluteScriptPath(t *testing.T) {
 
 func TestValidateLifecycleConfig_RejectsTraversalScriptPath(t *testing.T) {
 	svc, ctx := setupLifecycleValidationService(t)
-	err := svc.validateLifecycleConfigInternal(ctx, nil, lifecycleConfigInputInternal{
+	err := svc.validateLifecycleConfig(ctx, nil, lifecycleConfigInput{
 		scriptPath:  new("../outside.sh"),
 		runnerImage: new("alpine:latest"),
 	})
@@ -836,7 +825,7 @@ func TestValidateLifecycleConfig_RejectsOverlongScriptPath(t *testing.T) {
 	for i := range long {
 		long[i] = 'a'
 	}
-	err := svc.validateLifecycleConfigInternal(ctx, nil, lifecycleConfigInputInternal{
+	err := svc.validateLifecycleConfig(ctx, nil, lifecycleConfigInput{
 		scriptPath:  new(string(long)),
 		runnerImage: new("alpine:latest"),
 	})
@@ -847,7 +836,7 @@ func TestValidateLifecycleConfig_RejectsOverlongScriptPath(t *testing.T) {
 func TestValidateLifecycleConfig_RejectsScriptWithoutRunnerImageOnCreate(t *testing.T) {
 	svc, ctx := setupLifecycleValidationService(t)
 	require.NoError(t, svc.settingsService.SetStringSetting(ctx, "lifecycleDefaultRunnerImage", " "))
-	err := svc.validateLifecycleConfigInternal(ctx, nil, lifecycleConfigInputInternal{
+	err := svc.validateLifecycleConfig(ctx, nil, lifecycleConfigInput{
 		scriptPath: new("scripts/deploy.sh"),
 	})
 	require.Error(t, err)
@@ -857,7 +846,7 @@ func TestValidateLifecycleConfig_RejectsScriptWithoutRunnerImageOnCreate(t *test
 func TestValidateLifecycleConfig_AcceptsScriptWithDefaultRunnerImageOnCreate(t *testing.T) {
 	svc, ctx := setupLifecycleValidationService(t)
 	require.NoError(t, svc.settingsService.SetStringSetting(ctx, "lifecycleDefaultRunnerImage", "alpine:latest"))
-	require.NoError(t, svc.validateLifecycleConfigInternal(ctx, nil, lifecycleConfigInputInternal{
+	require.NoError(t, svc.validateLifecycleConfig(ctx, nil, lifecycleConfigInput{
 		targetType:    new("project"),
 		scriptPath:    new("scripts/deploy.sh"),
 		syncDirectory: new(true),
@@ -868,7 +857,7 @@ func TestValidateLifecycleConfig_AcceptsScriptWithExistingRunnerImageOnUpdate(t 
 	svc, ctx := setupLifecycleValidationService(t)
 	existing := &projectpkg.GitOpsSync{SyncDirectory: true}
 	existing.PreDeployRunnerImage = new("alpine:latest")
-	require.NoError(t, svc.validateLifecycleConfigInternal(ctx, existing, lifecycleConfigInputInternal{
+	require.NoError(t, svc.validateLifecycleConfig(ctx, existing, lifecycleConfigInput{
 		scriptPath: new("scripts/deploy.sh"),
 	}))
 }
@@ -876,7 +865,7 @@ func TestValidateLifecycleConfig_AcceptsScriptWithExistingRunnerImageOnUpdate(t 
 func TestValidateLifecycleConfig_RejectsTimeoutZeroOrNegative(t *testing.T) {
 	svc, ctx := setupLifecycleValidationService(t)
 	for _, v := range []int{0, -1, -3600} {
-		err := svc.validateLifecycleConfigInternal(ctx, nil, lifecycleConfigInputInternal{
+		err := svc.validateLifecycleConfig(ctx, nil, lifecycleConfigInput{
 			timeoutSec: new(v),
 		})
 		require.Errorf(t, err, "expected error for timeoutSec=%d", v)
@@ -887,7 +876,7 @@ func TestValidateLifecycleConfig_RejectsTimeoutZeroOrNegative(t *testing.T) {
 func TestValidateLifecycleConfig_RejectsTimeoutAboveSettingCap(t *testing.T) {
 	svc, ctx := setupLifecycleValidationService(t)
 	require.NoError(t, svc.settingsService.SetStringSetting(ctx, "lifecycleMaxTimeoutSec", "120"))
-	err := svc.validateLifecycleConfigInternal(ctx, nil, lifecycleConfigInputInternal{
+	err := svc.validateLifecycleConfig(ctx, nil, lifecycleConfigInput{
 		timeoutSec: new(300),
 	})
 	require.Error(t, err)
@@ -896,7 +885,7 @@ func TestValidateLifecycleConfig_RejectsTimeoutAboveSettingCap(t *testing.T) {
 
 func TestValidateLifecycleConfig_RejectsInvalidEnvKey(t *testing.T) {
 	svc, ctx := setupLifecycleValidationService(t)
-	err := svc.validateLifecycleConfigInternal(ctx, nil, lifecycleConfigInputInternal{
+	err := svc.validateLifecycleConfig(ctx, nil, lifecycleConfigInput{
 		env: new("FOO-BAR=baz"),
 	})
 	require.Error(t, err)
@@ -904,14 +893,14 @@ func TestValidateLifecycleConfig_RejectsInvalidEnvKey(t *testing.T) {
 
 func TestValidateLifecycleConfig_AcceptsValidEnv(t *testing.T) {
 	svc, ctx := setupLifecycleValidationService(t)
-	require.NoError(t, svc.validateLifecycleConfigInternal(ctx, nil, lifecycleConfigInputInternal{
+	require.NoError(t, svc.validateLifecycleConfig(ctx, nil, lifecycleConfigInput{
 		env: new("FOO=bar\nBAZ_2=qux"),
 	}))
 }
 
 func TestValidateLifecycleConfig_RejectsRelativeMountSource(t *testing.T) {
 	svc, ctx := setupLifecycleValidationService(t)
-	err := svc.validateLifecycleConfigInternal(ctx, nil, lifecycleConfigInputInternal{
+	err := svc.validateLifecycleConfig(ctx, nil, lifecycleConfigInput{
 		extraMounts: new("relative/path:/in/container"),
 	})
 	require.Error(t, err)
@@ -920,7 +909,7 @@ func TestValidateLifecycleConfig_RejectsRelativeMountSource(t *testing.T) {
 
 func TestValidateLifecycleConfig_RejectsRelativeMountTarget(t *testing.T) {
 	svc, ctx := setupLifecycleValidationService(t)
-	err := svc.validateLifecycleConfigInternal(ctx, nil, lifecycleConfigInputInternal{
+	err := svc.validateLifecycleConfig(ctx, nil, lifecycleConfigInput{
 		extraMounts: new("/host/path:relative/target"),
 	})
 	require.Error(t, err)
@@ -933,14 +922,14 @@ func TestValidateLifecycleConfig_AllowsClearingScriptWithoutImage(t *testing.T) 
 	existing.PreDeployScriptPath = new("scripts/old.sh")
 	existing.PreDeployRunnerImage = new("alpine:latest")
 	// User clears the script (empty string in update); image clear is implied not required.
-	require.NoError(t, svc.validateLifecycleConfigInternal(ctx, existing, lifecycleConfigInputInternal{
+	require.NoError(t, svc.validateLifecycleConfig(ctx, existing, lifecycleConfigInput{
 		scriptPath: new(""),
 	}))
 }
 
 func TestValidateLifecycleConfig_RejectsScriptWithoutSyncDirectoryOnCreate(t *testing.T) {
 	svc, ctx := setupLifecycleValidationService(t)
-	err := svc.validateLifecycleConfigInternal(ctx, nil, lifecycleConfigInputInternal{
+	err := svc.validateLifecycleConfig(ctx, nil, lifecycleConfigInput{
 		scriptPath:    new("scripts/deploy.sh"),
 		runnerImage:   new("alpine:latest"),
 		syncDirectory: new(false),
@@ -954,7 +943,7 @@ func TestValidateLifecycleConfig_RejectsScriptWithoutSyncDirectoryOnCreate(t *te
 
 func TestValidateLifecycleConfig_AcceptsScriptWithSyncDirectoryOnCreate(t *testing.T) {
 	svc, ctx := setupLifecycleValidationService(t)
-	require.NoError(t, svc.validateLifecycleConfigInternal(ctx, nil, lifecycleConfigInputInternal{
+	require.NoError(t, svc.validateLifecycleConfig(ctx, nil, lifecycleConfigInput{
 		targetType:    new("project"),
 		scriptPath:    new("scripts/deploy.sh"),
 		runnerImage:   new("alpine:latest"),
@@ -964,7 +953,7 @@ func TestValidateLifecycleConfig_AcceptsScriptWithSyncDirectoryOnCreate(t *testi
 
 func TestValidateLifecycleConfig_RejectsLifecycleHookForSwarmStack(t *testing.T) {
 	svc, ctx := setupLifecycleValidationService(t)
-	err := svc.validateLifecycleConfigInternal(ctx, nil, lifecycleConfigInputInternal{
+	err := svc.validateLifecycleConfig(ctx, nil, lifecycleConfigInput{
 		targetType:    new("swarm_stack"),
 		scriptPath:    new("scripts/deploy.sh"),
 		runnerImage:   new("alpine:latest"),
@@ -983,7 +972,7 @@ func TestValidateLifecycleConfig_RejectsSwarmTargetChangeWithExistingLifecycleHo
 	existing := &projectpkg.GitOpsSync{TargetType: "project", SyncDirectory: true}
 	existing.PreDeployScriptPath = new("scripts/deploy.sh")
 	existing.PreDeployRunnerImage = new("alpine:latest")
-	err := svc.validateLifecycleConfigInternal(ctx, existing, lifecycleConfigInputInternal{
+	err := svc.validateLifecycleConfig(ctx, existing, lifecycleConfigInput{
 		targetType: new("swarm_stack"),
 	})
 	require.Error(t, err)
@@ -997,7 +986,7 @@ func TestValidateLifecycleConfig_RejectsSwarmTargetChangeWithExistingLifecycleHo
 func TestValidateLifecycleConfig_AcceptsScriptWhenExistingSyncHasSyncDirectory(t *testing.T) {
 	svc, ctx := setupLifecycleValidationService(t)
 	existing := &projectpkg.GitOpsSync{SyncDirectory: true}
-	require.NoError(t, svc.validateLifecycleConfigInternal(ctx, existing, lifecycleConfigInputInternal{
+	require.NoError(t, svc.validateLifecycleConfig(ctx, existing, lifecycleConfigInput{
 		scriptPath:  new("scripts/deploy.sh"),
 		runnerImage: new("alpine:latest"),
 	}))
@@ -1009,7 +998,7 @@ func TestValidateLifecycleConfig_RejectsSyncDirectoryToggleOffWhileScriptStillSe
 	existing.PreDeployScriptPath = new("scripts/deploy.sh")
 	existing.PreDeployRunnerImage = new("alpine:latest")
 	// Admin toggles syncDirectory off without clearing the script — should be rejected.
-	err := svc.validateLifecycleConfigInternal(ctx, existing, lifecycleConfigInputInternal{
+	err := svc.validateLifecycleConfig(ctx, existing, lifecycleConfigInput{
 		syncDirectory: new(false),
 	})
 	require.Error(t, err)
@@ -1029,27 +1018,27 @@ func TestRedeployAfterSyncFailedError_FormatAndUnwrap(t *testing.T) {
 	require.ErrorIs(t, err, common.ErrRedeployAfterSyncFailed)
 }
 
-func (s *gitOpsSyncTestSchedulerInternal) Submit(_ context.Context, request schedulertypes.Request) (schedulertypes.Run, error) {
+func (s *gitOpsSyncTestScheduler) Submit(_ context.Context, request schedulertypes.Request) (schedulertypes.Run, error) {
 	s.submitted = append(s.submitted, request)
 	return schedulertypes.Run{ID: request.RunID, JobID: request.JobID, EnvironmentID: request.EnvironmentID, Status: schedulertypes.Queued}, nil
 }
 
-var installBackupTestTransportOnceInternal sync.Once
+var installBackupTestTransportOnce sync.Once
 
-// installBackupTestTransportInternal serves bare repositories on disk over the
+// installBackupTestTransport serves bare repositories on disk over the
 // "http" scheme so backups push without a network or the git binary.
-func installBackupTestTransportInternal() {
-	installBackupTestTransportOnceInternal.Do(func() {
+func installBackupTestTransport() {
+	installBackupTestTransportOnce.Do(func() {
 		client.InstallProtocol("http", server.NewClient(server.NewFilesystemLoader(osfs.New("/"))))
 	})
 }
 
-// backupTestEnvInternal is one wired-up backup fixture: a bare remote, a git
+// backupTestEnv is one wired-up backup fixture: a bare remote, a git
 // repository row, a project directory and the sync service under test.
-type backupTestEnvInternal struct {
+type backupTestEnv struct {
 	service     *GitOpsSyncService
 	db          *database.DB
-	scheduler   *gitOpsBackupTestSchedulerInternal
+	scheduler   *gitOpsBackupTestScheduler
 	projectsDir string
 	projectPath string
 	project     *projectpkg.Project
@@ -1057,15 +1046,15 @@ type backupTestEnvInternal struct {
 	remote      *git.Client
 }
 
-// gitOpsBackupTestSchedulerInternal runs a submitted job body inline so the
+// gitOpsBackupTestScheduler runs a submitted job body inline so the
 // save-debounce path reaches PerformSync the way the real scheduler does.
-type gitOpsBackupTestSchedulerInternal struct {
+type gitOpsBackupTestScheduler struct {
 	mu        sync.Mutex
 	jobs      map[string]schedulertypes.Job
 	submitted []schedulertypes.Request
 }
 
-func (s *gitOpsBackupTestSchedulerInternal) AddJob(_ context.Context, job schedulertypes.Job) error {
+func (s *gitOpsBackupTestScheduler) AddJob(_ context.Context, job schedulertypes.Job) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.jobs == nil {
@@ -1075,20 +1064,20 @@ func (s *gitOpsBackupTestSchedulerInternal) AddJob(_ context.Context, job schedu
 	return nil
 }
 
-func (s *gitOpsBackupTestSchedulerInternal) RemoveJob(_ context.Context, name string) {
+func (s *gitOpsBackupTestScheduler) RemoveJob(_ context.Context, name string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.jobs, name)
 }
 
-func (s *gitOpsBackupTestSchedulerInternal) HasJob(name string) bool {
+func (s *gitOpsBackupTestScheduler) HasJob(name string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	_, ok := s.jobs[name]
 	return ok
 }
 
-func (s *gitOpsBackupTestSchedulerInternal) Submit(ctx context.Context, request schedulertypes.Request) (schedulertypes.Run, error) {
+func (s *gitOpsBackupTestScheduler) Submit(ctx context.Context, request schedulertypes.Request) (schedulertypes.Run, error) {
 	s.mu.Lock()
 	s.submitted = append(s.submitted, request)
 	job := s.jobs[request.JobID]
@@ -1099,21 +1088,21 @@ func (s *gitOpsBackupTestSchedulerInternal) Submit(ctx context.Context, request 
 	return schedulertypes.Run{ID: request.RunID, JobID: request.JobID, EnvironmentID: request.EnvironmentID, Status: schedulertypes.Queued}, nil
 }
 
-func (s *gitOpsBackupTestSchedulerInternal) submitCount() int {
+func (s *gitOpsBackupTestScheduler) submitCount() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return len(s.submitted)
 }
 
-func setupGitOpsBackupTestServiceInternal(t *testing.T) *backupTestEnvInternal {
+func setupGitOpsBackupTestService(t *testing.T) *backupTestEnv {
 	t.Helper()
-	installBackupTestTransportInternal()
+	installBackupTestTransport()
 
 	ctx := t.Context()
-	db := setupGitOpsProjectTestDBInternal(t)
-	require.NoError(t, db.AutoMigrate(&projectpkg.GitOpsSync{}, &projectpkg.ProjectTag{}, &gitrepo.GitRepository{}, &environment.Environment{}))
+	db := setupGitOpsProjectTestDB(t)
+	require.NoError(t, db.AutoMigrate(&projectpkg.GitOpsSync{}, &projectpkg.ProjectTag{}, &gitrepo.GitRepository{}, &environment.Environment{}, &activity.Activity{}, &activity.ActivityMessage{}))
 
-	settingsService, err := newGitOpsSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newGitOpsSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
 	projectsDir := t.TempDir()
@@ -1124,8 +1113,12 @@ func setupGitOpsBackupTestServiceInternal(t *testing.T) *backupTestEnvInternal {
 	repoService := gitrepo.NewGitRepositoryService(db, t.TempDir(), eventService, settingsService)
 
 	service := NewGitOpsSyncService(db, repoService, projectService, nil, eventService, settingsService)
-	scheduler := &gitOpsBackupTestSchedulerInternal{}
-	require.NoError(t, service.SetScheduler(ctx, scheduler, newGitOpsAdmissionGateForTestInternal(t)))
+	// The test scheduler runs submitted jobs inline, which runs the sync workflow.
+	harness := flowtest.New(t, activity.NewActivityService(db, nil))
+	require.NoError(t, service.RegisterWorkflows(harness.Engine))
+	harness.Start(t)
+	scheduler := &gitOpsBackupTestScheduler{}
+	require.NoError(t, service.SetScheduler(ctx, scheduler, newGitOpsAdmissionGateForTest(t)))
 
 	bare := filepath.Join(t.TempDir(), "backups.git")
 	_, err = gogit.PlainInit(bare, true)
@@ -1142,7 +1135,7 @@ func setupGitOpsBackupTestServiceInternal(t *testing.T) *backupTestEnvInternal {
 
 	projectPath := filepath.Join(projectsDir, "demo-project")
 	require.NoError(t, os.MkdirAll(projectPath, 0o755))
-	writeBackupProjectFileInternal(t, projectPath, "compose.yaml", "services:\n  app:\n    image: nginx:1.27-alpine\n")
+	writeBackupProjectFile(t, projectPath, "compose.yaml", "services:\n  app:\n    image: nginx:1.27-alpine\n")
 
 	project := &projectpkg.Project{
 		ID:      "proj-backup",
@@ -1153,7 +1146,7 @@ func setupGitOpsBackupTestServiceInternal(t *testing.T) *backupTestEnvInternal {
 	}
 	require.NoError(t, db.Create(project).Error)
 
-	return &backupTestEnvInternal{
+	return &backupTestEnv{
 		service:     service,
 		db:          db,
 		scheduler:   scheduler,
@@ -1165,14 +1158,14 @@ func setupGitOpsBackupTestServiceInternal(t *testing.T) *backupTestEnvInternal {
 	}
 }
 
-func writeBackupProjectFileInternal(t *testing.T, root, relative, content string) {
+func writeBackupProjectFile(t *testing.T, root, relative, content string) {
 	t.Helper()
 	target := filepath.Join(root, filepath.FromSlash(relative))
 	require.NoError(t, os.MkdirAll(filepath.Dir(target), 0o755))
 	require.NoError(t, os.WriteFile(target, []byte(content), 0o644))
 }
 
-func (e *backupTestEnvInternal) createBackupInternal(t *testing.T, req gitops.CreateSyncRequest) *projectpkg.GitOpsSync {
+func (e *backupTestEnv) createBackup(t *testing.T, req gitops.CreateSyncRequest) *projectpkg.GitOpsSync {
 	t.Helper()
 	req.Name = cmp.Or(req.Name, "demo-backup")
 	req.RepositoryID = cmp.Or(req.RepositoryID, "repo-backup")
@@ -1187,23 +1180,23 @@ func (e *backupTestEnvInternal) createBackupInternal(t *testing.T, req gitops.Cr
 	return syncRecord
 }
 
-func (e *backupTestEnvInternal) reloadInternal(t *testing.T, id string) *projectpkg.GitOpsSync {
+func (e *backupTestEnv) reload(t *testing.T, id string) *projectpkg.GitOpsSync {
 	t.Helper()
 	var syncRecord projectpkg.GitOpsSync
 	require.NoError(t, e.db.Where("id = ?", id).First(&syncRecord).Error)
 	return &syncRecord
 }
 
-// checkoutRemoteInternal clones the backup branch so the pushed tree can be inspected.
-func (e *backupTestEnvInternal) checkoutRemoteInternal(t *testing.T) string {
+// checkoutRemote clones the backup branch so the pushed tree can be inspected.
+func (e *backupTestEnv) checkoutRemote(t *testing.T) string {
 	t.Helper()
-	repoPath, err := e.remote.Clone(t.Context(), e.repoURL, "main", git.AuthConfig{AuthType: "none"})
+	repoPath, err := e.remote.Clone(t.Context(), e.repoURL, "main", git.AuthConfig{AuthType: "none"}, 0)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = e.remote.Cleanup(repoPath) })
 	return repoPath
 }
 
-func (e *backupTestEnvInternal) remoteHeadInternal(t *testing.T) string {
+func (e *backupTestEnv) remoteHead(t *testing.T) string {
 	t.Helper()
 	head, exists, err := e.remote.RemoteBranchHead(t.Context(), e.repoURL, "main", git.AuthConfig{AuthType: "none"})
 	require.NoError(t, err)
@@ -1211,8 +1204,8 @@ func (e *backupTestEnvInternal) remoteHeadInternal(t *testing.T) string {
 	return head
 }
 
-// pushRemoteCommitInternal commits directly to the branch as another writer.
-func pushRemoteCommitInternal(t *testing.T, remote *git.Client, repoURL, message string, files map[string]string) {
+// pushRemoteCommit commits directly to the branch as another writer.
+func pushRemoteCommit(t *testing.T, remote *git.Client, repoURL, message string, files map[string]string) {
 	t.Helper()
 	auth := git.AuthConfig{AuthType: "none"}
 	checkout, err := remote.CheckoutForWrite(t.Context(), repoURL, "main", auth)
@@ -1228,16 +1221,16 @@ func pushRemoteCommitInternal(t *testing.T, remote *git.Client, repoURL, message
 }
 
 func TestGitOpsBackup_FirstRunPushesSelectedFiles(t *testing.T) {
-	env := setupGitOpsBackupTestServiceInternal(t)
-	writeBackupProjectFileInternal(t, env.projectPath, "config/app.conf", "key = value\n")
+	env := setupGitOpsBackupTestService(t)
+	writeBackupProjectFile(t, env.projectPath, "config/app.conf", "key = value\n")
 
-	syncRecord := env.createBackupInternal(t, gitops.CreateSyncRequest{BackupPaths: []string{"compose.yaml", "config"}})
+	syncRecord := env.createBackup(t, gitops.CreateSyncRequest{BackupPaths: []string{"compose.yaml", "config"}})
 
 	require.Equal(t, gitops.SyncModeBackup, syncRecord.Mode)
 	require.Equal(t, "backups/demo", syncRecord.BackupDirectory)
 	require.Equal(t, "backups/demo/compose.yaml", syncRecord.ComposePath)
 
-	stored := env.reloadInternal(t, syncRecord.ID)
+	stored := env.reload(t, syncRecord.ID)
 	require.NotNil(t, stored.LastSyncStatus)
 	assert.Equal(t, "success", *stored.LastSyncStatus)
 	assert.NotNil(t, stored.LastBackupAt)
@@ -1245,10 +1238,10 @@ func TestGitOpsBackup_FirstRunPushesSelectedFiles(t *testing.T) {
 	assert.False(t, stored.BackupConflict)
 	assert.Nil(t, stored.BackupFailureReason)
 	require.NotNil(t, stored.LastSyncCommit)
-	assert.Equal(t, env.remoteHeadInternal(t), *stored.LastSyncCommit)
+	assert.Equal(t, env.remoteHead(t), *stored.LastSyncCommit)
 	require.NotNil(t, stored.LastBackupSnapshot)
 
-	repoPath := env.checkoutRemoteInternal(t)
+	repoPath := env.checkoutRemote(t)
 	composeBytes, err := os.ReadFile(filepath.Join(repoPath, "backups", "demo", "compose.yaml"))
 	require.NoError(t, err)
 	assert.Contains(t, string(composeBytes), "nginx:1.27-alpine")
@@ -1262,32 +1255,32 @@ func TestGitOpsBackup_FirstRunPushesSelectedFiles(t *testing.T) {
 }
 
 func TestGitOpsBackup_UnchangedContentMakesNoNewCommit(t *testing.T) {
-	env := setupGitOpsBackupTestServiceInternal(t)
-	syncRecord := env.createBackupInternal(t, gitops.CreateSyncRequest{})
-	firstHead := env.remoteHeadInternal(t)
+	env := setupGitOpsBackupTestService(t)
+	syncRecord := env.createBackup(t, gitops.CreateSyncRequest{})
+	firstHead := env.remoteHead(t)
 
 	result, err := env.service.PerformSync(t.Context(), "0", syncRecord.ID, user.SystemUser)
 	require.NoError(t, err)
 	assert.True(t, result.Success)
 	assert.Contains(t, result.Message, "already contains")
-	assert.Equal(t, firstHead, env.remoteHeadInternal(t))
+	assert.Equal(t, firstHead, env.remoteHead(t))
 
-	stored := env.reloadInternal(t, syncRecord.ID)
+	stored := env.reload(t, syncRecord.ID)
 	require.NotNil(t, stored.LastSyncStatus)
 	assert.Equal(t, "success", *stored.LastSyncStatus)
 	assert.Equal(t, gitops.BackupStateBackedUp, stored.BackupState())
 }
 
 func TestGitOpsBackup_AddsAndRemovesFilesAndKeepsUnrelatedRemoteFiles(t *testing.T) {
-	env := setupGitOpsBackupTestServiceInternal(t)
-	writeBackupProjectFileInternal(t, env.projectPath, "config/app.conf", "key = value\n")
-	writeBackupProjectFileInternal(t, env.projectPath, "config/extra.conf", "extra = 1\n")
-	syncRecord := env.createBackupInternal(t, gitops.CreateSyncRequest{BackupPaths: []string{"compose.yaml", "config"}})
+	env := setupGitOpsBackupTestService(t)
+	writeBackupProjectFile(t, env.projectPath, "config/app.conf", "key = value\n")
+	writeBackupProjectFile(t, env.projectPath, "config/extra.conf", "extra = 1\n")
+	syncRecord := env.createBackup(t, gitops.CreateSyncRequest{BackupPaths: []string{"compose.yaml", "config"}})
 
-	pushRemoteCommitInternal(t, env.remote, env.repoURL, "unrelated docs", map[string]string{"docs/readme.md": "docs\n"})
+	pushRemoteCommit(t, env.remote, env.repoURL, "unrelated docs", map[string]string{"docs/readme.md": "docs\n"})
 
 	require.NoError(t, os.Remove(filepath.Join(env.projectPath, "config", "extra.conf")))
-	writeBackupProjectFileInternal(t, env.projectPath, "scripts/run.sh", "#!/bin/sh\necho hi\n")
+	writeBackupProjectFile(t, env.projectPath, "scripts/run.sh", "#!/bin/sh\necho hi\n")
 
 	_, err := env.service.UpdateSync(t.Context(), "0", syncRecord.ID, gitops.UpdateSyncRequest{
 		BackupPaths: []string{"compose.yaml", "config", "scripts"},
@@ -1298,7 +1291,7 @@ func TestGitOpsBackup_AddsAndRemovesFilesAndKeepsUnrelatedRemoteFiles(t *testing
 	require.NoError(t, err)
 	require.True(t, result.Success)
 
-	repoPath := env.checkoutRemoteInternal(t)
+	repoPath := env.checkoutRemote(t)
 	assert.FileExists(t, filepath.Join(repoPath, "backups", "demo", "scripts", "run.sh"))
 	assert.FileExists(t, filepath.Join(repoPath, "backups", "demo", "config", "app.conf"))
 	assert.FileExists(t, filepath.Join(repoPath, "docs", "readme.md"))
@@ -1316,15 +1309,15 @@ func TestGitOpsBackup_EnvFilesOnlyIncludedWhenListedExplicitly(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			env := setupGitOpsBackupTestServiceInternal(t)
-			writeBackupProjectFileInternal(t, env.projectPath, ".env", "TOKEN=secret\n")
-			writeBackupProjectFileInternal(t, env.projectPath, "config/app.conf", "key = value\n")
-			writeBackupProjectFileInternal(t, env.projectPath, "config/.env", "TOKEN=nested\n")
-			writeBackupProjectFileInternal(t, env.projectPath, "config/staging.env", "TOKEN=staging\n")
+			env := setupGitOpsBackupTestService(t)
+			writeBackupProjectFile(t, env.projectPath, ".env", "TOKEN=secret\n")
+			writeBackupProjectFile(t, env.projectPath, "config/app.conf", "key = value\n")
+			writeBackupProjectFile(t, env.projectPath, "config/.env", "TOKEN=nested\n")
+			writeBackupProjectFile(t, env.projectPath, "config/staging.env", "TOKEN=staging\n")
 
-			env.createBackupInternal(t, gitops.CreateSyncRequest{BackupPaths: test.paths})
+			env.createBackup(t, gitops.CreateSyncRequest{BackupPaths: test.paths})
 
-			repoPath := env.checkoutRemoteInternal(t)
+			repoPath := env.checkoutRemote(t)
 			assert.FileExists(t, filepath.Join(repoPath, "backups", "demo", "compose.yaml"))
 			assert.FileExists(t, filepath.Join(repoPath, "backups", "demo", "config", "app.conf"))
 			assert.NoFileExists(t, filepath.Join(repoPath, "backups", "demo", "config", ".env"))
@@ -1339,19 +1332,19 @@ func TestGitOpsBackup_EnvFilesOnlyIncludedWhenListedExplicitly(t *testing.T) {
 }
 
 func TestGitOpsBackup_RemoteEditConflictsThenResolvesWithArcane(t *testing.T) {
-	env := setupGitOpsBackupTestServiceInternal(t)
-	syncRecord := env.createBackupInternal(t, gitops.CreateSyncRequest{})
+	env := setupGitOpsBackupTestService(t)
+	syncRecord := env.createBackup(t, gitops.CreateSyncRequest{})
 
-	pushRemoteCommitInternal(t, env.remote, env.repoURL, "edited backup outside arcane", map[string]string{
+	pushRemoteCommit(t, env.remote, env.repoURL, "edited backup outside arcane", map[string]string{
 		"backups/demo/compose.yaml": "services:\n  app:\n    image: tampered\n",
 	})
-	writeBackupProjectFileInternal(t, env.projectPath, "compose.yaml", "services:\n  app:\n    image: nginx:1.28-alpine\n")
+	writeBackupProjectFile(t, env.projectPath, "compose.yaml", "services:\n  app:\n    image: nginx:1.28-alpine\n")
 
 	_, err := env.service.PerformSync(t.Context(), "0", syncRecord.ID, user.SystemUser)
 	require.Error(t, err)
 	require.ErrorIs(t, err, common.ErrConflict)
 
-	stored := env.reloadInternal(t, syncRecord.ID)
+	stored := env.reload(t, syncRecord.ID)
 	assert.True(t, stored.BackupConflict)
 	assert.Equal(t, gitops.BackupStateNeedsAttention, stored.BackupState())
 	require.NotNil(t, stored.BackupFailureReason)
@@ -1368,26 +1361,26 @@ func TestGitOpsBackup_RemoteEditConflictsThenResolvesWithArcane(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, result.Success)
 
-	resolved := env.reloadInternal(t, syncRecord.ID)
+	resolved := env.reload(t, syncRecord.ID)
 	assert.False(t, resolved.BackupConflict)
 	assert.Nil(t, resolved.BackupFailureReason)
 	assert.Equal(t, gitops.BackupStateBackedUp, resolved.BackupState())
 
-	repoPath := env.checkoutRemoteInternal(t)
+	repoPath := env.checkoutRemote(t)
 	composeBytes, err := os.ReadFile(filepath.Join(repoPath, "backups", "demo", "compose.yaml"))
 	require.NoError(t, err)
 	assert.Contains(t, string(composeBytes), "nginx:1.28-alpine")
 }
 
 func TestGitOpsBackup_OccupiedDestinationNeedsAttention(t *testing.T) {
-	env := setupGitOpsBackupTestServiceInternal(t)
-	pushRemoteCommitInternal(t, env.remote, env.repoURL, "pre-existing files", map[string]string{
+	env := setupGitOpsBackupTestService(t)
+	pushRemoteCommit(t, env.remote, env.repoURL, "pre-existing files", map[string]string{
 		"backups/demo/unrelated.txt": "not an arcane backup\n",
 	})
 
-	syncRecord := env.createBackupInternal(t, gitops.CreateSyncRequest{})
+	syncRecord := env.createBackup(t, gitops.CreateSyncRequest{})
 
-	stored := env.reloadInternal(t, syncRecord.ID)
+	stored := env.reload(t, syncRecord.ID)
 	assert.True(t, stored.BackupConflict)
 	assert.Equal(t, gitops.BackupStateNeedsAttention, stored.BackupState())
 	require.NotNil(t, stored.BackupFailureReason)
@@ -1396,9 +1389,9 @@ func TestGitOpsBackup_OccupiedDestinationNeedsAttention(t *testing.T) {
 }
 
 func TestGitOpsBackup_AdoptsMatchingRemoteWithoutSnapshot(t *testing.T) {
-	env := setupGitOpsBackupTestServiceInternal(t)
-	syncRecord := env.createBackupInternal(t, gitops.CreateSyncRequest{})
-	head := env.remoteHeadInternal(t)
+	env := setupGitOpsBackupTestService(t)
+	syncRecord := env.createBackup(t, gitops.CreateSyncRequest{})
+	head := env.remoteHead(t)
 
 	require.NoError(t, env.db.Model(&projectpkg.GitOpsSync{}).Where("id = ?", syncRecord.ID).
 		Update("last_backup_snapshot", nil).Error)
@@ -1406,25 +1399,25 @@ func TestGitOpsBackup_AdoptsMatchingRemoteWithoutSnapshot(t *testing.T) {
 	result, err := env.service.PerformSync(t.Context(), "0", syncRecord.ID, user.SystemUser)
 	require.NoError(t, err)
 	assert.True(t, result.Success)
-	assert.Equal(t, head, env.remoteHeadInternal(t))
+	assert.Equal(t, head, env.remoteHead(t))
 
-	stored := env.reloadInternal(t, syncRecord.ID)
+	stored := env.reload(t, syncRecord.ID)
 	assert.False(t, stored.BackupConflict)
 	assert.Equal(t, gitops.BackupStateBackedUp, stored.BackupState())
 }
 
 func TestGitOpsBackup_SucceedsOnTopOfAnotherWritersCommit(t *testing.T) {
-	env := setupGitOpsBackupTestServiceInternal(t)
-	syncRecord := env.createBackupInternal(t, gitops.CreateSyncRequest{})
+	env := setupGitOpsBackupTestService(t)
+	syncRecord := env.createBackup(t, gitops.CreateSyncRequest{})
 
-	pushRemoteCommitInternal(t, env.remote, env.repoURL, "other writer", map[string]string{"other/notes.txt": "notes\n"})
-	writeBackupProjectFileInternal(t, env.projectPath, "compose.yaml", "services:\n  app:\n    image: nginx:1.29-alpine\n")
+	pushRemoteCommit(t, env.remote, env.repoURL, "other writer", map[string]string{"other/notes.txt": "notes\n"})
+	writeBackupProjectFile(t, env.projectPath, "compose.yaml", "services:\n  app:\n    image: nginx:1.29-alpine\n")
 
 	result, err := env.service.PerformSync(t.Context(), "0", syncRecord.ID, user.SystemUser)
 	require.NoError(t, err)
 	require.True(t, result.Success)
 
-	repoPath := env.checkoutRemoteInternal(t)
+	repoPath := env.checkoutRemote(t)
 	assert.FileExists(t, filepath.Join(repoPath, "other", "notes.txt"))
 	composeBytes, err := os.ReadFile(filepath.Join(repoPath, "backups", "demo", "compose.yaml"))
 	require.NoError(t, err)
@@ -1437,13 +1430,13 @@ func TestGitOpsBackup_CreateValidation(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		mutate  func(t *testing.T, env *backupTestEnvInternal)
+		mutate  func(t *testing.T, env *backupTestEnv)
 		request gitops.CreateSyncRequest
 		wantErr error
 	}{
 		{
 			name: "project deployed from git",
-			mutate: func(t *testing.T, env *backupTestEnvInternal) {
+			mutate: func(t *testing.T, env *backupTestEnv) {
 				t.Helper()
 				require.NoError(t, env.db.Model(&projectpkg.Project{}).Where("id = ?", env.project.ID).
 					Update("gitops_managed_by", "sync-deploy").Error)
@@ -1452,16 +1445,16 @@ func TestGitOpsBackup_CreateValidation(t *testing.T) {
 		},
 		{
 			name: "second backup for the same project",
-			mutate: func(t *testing.T, env *backupTestEnvInternal) {
+			mutate: func(t *testing.T, env *backupTestEnv) {
 				t.Helper()
-				env.createBackupInternal(t, gitops.CreateSyncRequest{})
+				env.createBackup(t, gitops.CreateSyncRequest{})
 			},
 			request: gitops.CreateSyncRequest{Name: "second", BackupDirectory: "backups/other"},
 			wantErr: common.ErrConflict,
 		},
 		{
 			name: "overlapping destination on the same branch",
-			mutate: func(t *testing.T, env *backupTestEnvInternal) {
+			mutate: func(t *testing.T, env *backupTestEnv) {
 				t.Helper()
 				other := &projectpkg.Project{
 					ID:      "proj-other",
@@ -1470,9 +1463,9 @@ func TestGitOpsBackup_CreateValidation(t *testing.T) {
 					Path:    filepath.Join(env.projectsDir, "other-project"),
 					Status:  projectpkg.ProjectStatusStopped,
 				}
-				writeBackupProjectFileInternal(t, other.Path, "compose.yaml", "services: {}\n")
+				writeBackupProjectFile(t, other.Path, "compose.yaml", "services: {}\n")
 				require.NoError(t, env.db.Create(other).Error)
-				env.createBackupInternal(t, gitops.CreateSyncRequest{})
+				env.createBackup(t, gitops.CreateSyncRequest{})
 				env.project = other
 			},
 			request: gitops.CreateSyncRequest{Name: "nested", BackupDirectory: "backups/demo/nested"},
@@ -1492,8 +1485,8 @@ func TestGitOpsBackup_CreateValidation(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			env := setupGitOpsBackupTestServiceInternal(t)
-			writeBackupProjectFileInternal(t, env.projectPath, "config/app.conf", "key = value\n")
+			env := setupGitOpsBackupTestService(t)
+			writeBackupProjectFile(t, env.projectPath, "config/app.conf", "key = value\n")
 			if test.mutate != nil {
 				test.mutate(t, env)
 			}
@@ -1513,7 +1506,7 @@ func TestGitOpsBackup_CreateValidation(t *testing.T) {
 }
 
 func TestGitOpsBackup_CreateWithoutProjectIsRejected(t *testing.T) {
-	env := setupGitOpsBackupTestServiceInternal(t)
+	env := setupGitOpsBackupTestService(t)
 
 	_, err := env.service.CreateSync(t.Context(), "0", gitops.CreateSyncRequest{
 		Name:            "demo-backup",
@@ -1528,14 +1521,14 @@ func TestGitOpsBackup_CreateWithoutProjectIsRejected(t *testing.T) {
 }
 
 func TestGitOpsBackup_SaveSignalMarksPendingAndRunsAfterDebounce(t *testing.T) {
-	env := setupGitOpsBackupTestServiceInternal(t)
-	syncRecord := env.createBackupInternal(t, gitops.CreateSyncRequest{})
-	firstHead := env.remoteHeadInternal(t)
+	env := setupGitOpsBackupTestService(t)
+	syncRecord := env.createBackup(t, gitops.CreateSyncRequest{})
+	firstHead := env.remoteHead(t)
 
 	env.service.backups.debounce = 50 * time.Millisecond
 	env.service.SubscribeProjectFileChanges(t.Context())
 
-	writeBackupProjectFileInternal(t, env.projectPath, "compose.yaml", "services:\n  app:\n    image: nginx:1.29-alpine\n")
+	writeBackupProjectFile(t, env.projectPath, "compose.yaml", "services:\n  app:\n    image: nginx:1.29-alpine\n")
 	env.service.projectService.FilesChanged.Publish(env.project.ID)
 
 	require.Eventually(t, func() bool {
@@ -1543,23 +1536,23 @@ func TestGitOpsBackup_SaveSignalMarksPendingAndRunsAfterDebounce(t *testing.T) {
 		return err == nil && exists && head != firstHead
 	}, 5*time.Second, 25*time.Millisecond)
 	require.Positive(t, env.scheduler.submitCount())
-	require.NotEqual(t, firstHead, env.remoteHeadInternal(t))
+	require.NotEqual(t, firstHead, env.remoteHead(t))
 
 	require.Eventually(t, func() bool {
-		stored := env.reloadInternal(t, syncRecord.ID)
+		stored := env.reload(t, syncRecord.ID)
 		return stored.LastSyncStatus != nil && *stored.LastSyncStatus == "success" && !stored.BackupPending
 	}, 5*time.Second, 25*time.Millisecond)
 
-	stored := env.reloadInternal(t, syncRecord.ID)
+	stored := env.reload(t, syncRecord.ID)
 	require.NotNil(t, stored.LastBackupAt)
 	assert.False(t, stored.BackupPending)
 	assert.Equal(t, gitops.BackupStateBackedUp, stored.BackupState())
 }
 
 func TestGitOpsBackup_SaveSignalOnlyMarksPendingWhenAutoSyncIsOff(t *testing.T) {
-	env := setupGitOpsBackupTestServiceInternal(t)
-	syncRecord := env.createBackupInternal(t, gitops.CreateSyncRequest{})
-	head := env.remoteHeadInternal(t)
+	env := setupGitOpsBackupTestService(t)
+	syncRecord := env.createBackup(t, gitops.CreateSyncRequest{})
+	head := env.remoteHead(t)
 
 	autoSync := false
 	_, err := env.service.UpdateSync(t.Context(), "0", syncRecord.ID, gitops.UpdateSyncRequest{AutoSync: &autoSync}, user.SystemUser)
@@ -1568,31 +1561,31 @@ func TestGitOpsBackup_SaveSignalOnlyMarksPendingWhenAutoSyncIsOff(t *testing.T) 
 	env.service.backups.debounce = 50 * time.Millisecond
 	env.service.SubscribeProjectFileChanges(t.Context())
 
-	writeBackupProjectFileInternal(t, env.projectPath, "compose.yaml", "services:\n  app:\n    image: nginx:1.29-alpine\n")
+	writeBackupProjectFile(t, env.projectPath, "compose.yaml", "services:\n  app:\n    image: nginx:1.29-alpine\n")
 	env.service.projectService.FilesChanged.Publish(env.project.ID)
 
 	require.Eventually(t, func() bool {
-		return env.reloadInternal(t, syncRecord.ID).BackupPending
+		return env.reload(t, syncRecord.ID).BackupPending
 	}, 5*time.Second, 25*time.Millisecond)
 
 	time.Sleep(300 * time.Millisecond)
-	assert.Equal(t, head, env.remoteHeadInternal(t))
+	assert.Equal(t, head, env.remoteHead(t))
 
-	stored := env.reloadInternal(t, syncRecord.ID)
+	stored := env.reload(t, syncRecord.ID)
 	assert.True(t, stored.BackupPending)
 	assert.Equal(t, gitops.BackupStatePaused, stored.BackupState())
 }
 
 func TestGitOpsBackup_ReconcileInterruptedBackupsOnStartup(t *testing.T) {
-	env := setupGitOpsBackupTestServiceInternal(t)
-	syncRecord := env.createBackupInternal(t, gitops.CreateSyncRequest{})
+	env := setupGitOpsBackupTestService(t)
+	syncRecord := env.createBackup(t, gitops.CreateSyncRequest{})
 
 	require.NoError(t, env.db.Model(&projectpkg.GitOpsSync{}).Where("id = ?", syncRecord.ID).
 		Update("last_sync_status", backup.BackupStatusRunning).Error)
 
 	require.NoError(t, env.service.ReconcileInterruptedBackupsOnStartup(t.Context()))
 
-	stored := env.reloadInternal(t, syncRecord.ID)
+	stored := env.reload(t, syncRecord.ID)
 	require.NotNil(t, stored.LastSyncStatus)
 	assert.Equal(t, "failed", *stored.LastSyncStatus)
 	assert.True(t, stored.BackupPending)
@@ -1601,8 +1594,8 @@ func TestGitOpsBackup_ReconcileInterruptedBackupsOnStartup(t *testing.T) {
 }
 
 func TestGitOpsBackup_DeletingProjectRemovesBackupSync(t *testing.T) {
-	env := setupGitOpsBackupTestServiceInternal(t)
-	syncRecord := env.createBackupInternal(t, gitops.CreateSyncRequest{})
+	env := setupGitOpsBackupTestService(t)
+	syncRecord := env.createBackup(t, gitops.CreateSyncRequest{})
 
 	require.NoError(t, env.service.projectService.DestroyProject(t.Context(), env.project.ID, true, false, user.SystemUser))
 
@@ -1612,11 +1605,11 @@ func TestGitOpsBackup_DeletingProjectRemovesBackupSync(t *testing.T) {
 }
 
 func TestGitOpsDeploy_LinksExistingProject(t *testing.T) {
-	env := setupGitOpsBackupTestServiceInternal(t)
+	env := setupGitOpsBackupTestService(t)
 	ctx := t.Context()
 	remoteCompose := "services:\n  app:\n    image: nginx:1.28-alpine\n"
-	pushRemoteCommitInternal(t, env.remote, env.repoURL, "seed", map[string]string{"apps/demo/compose.yaml": remoteCompose})
-	writeBackupProjectFileInternal(t, env.projectPath, ".env", "TOKEN=keep-me\n")
+	pushRemoteCommit(t, env.remote, env.repoURL, "seed", map[string]string{"apps/demo/compose.yaml": remoteCompose})
+	writeBackupProjectFile(t, env.projectPath, ".env", "TOKEN=keep-me\n")
 
 	created, err := env.service.CreateSync(ctx, "0", gitops.CreateSyncRequest{
 		Name:         "deploy-existing",
@@ -1653,7 +1646,7 @@ func TestGitOpsDeploy_LinksExistingProject(t *testing.T) {
 }
 
 func TestGitOpsImport_ForwardsDeployAndLifecycleFields(t *testing.T) {
-	env := setupGitOpsBackupTestServiceInternal(t)
+	env := setupGitOpsBackupTestService(t)
 	ctx := t.Context()
 	require.NoError(t, env.service.settingsService.SetStringSetting(ctx, "lifecycleEnabled", "true"))
 

@@ -18,11 +18,11 @@ import (
 	francistest "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/francis/testing"
 )
 
-func noLatestRunInternal(context.Context, string) (*volume.BackupEntry, error) {
+func noLatestRun(context.Context, string) (*volume.BackupEntry, error) {
 	return nil, nil
 }
 
-func newVolumeAdmissionForTestInternal(t testing.TB) *runs.Admission {
+func newVolumeAdmissionForTest(t testing.TB) *runs.Admission {
 	t.Helper()
 	runtime := francistest.New(t)
 	gate := runs.NewAdmission(runtime.Service(), t.Name())
@@ -31,21 +31,21 @@ func newVolumeAdmissionForTestInternal(t testing.TB) *runs.Admission {
 	return gate
 }
 
-type volumeBackupPolicySchedulerInternal struct {
+type volumeBackupPolicyScheduler struct {
 	submitted []scheduler.Request
 	jobs      map[string]scheduler.Job
 }
 
-func (s *volumeBackupPolicySchedulerInternal) AddJob(_ context.Context, job scheduler.Job) error {
+func (s *volumeBackupPolicyScheduler) AddJob(_ context.Context, job scheduler.Job) error {
 	s.jobs[job.Name()] = job
 	return nil
 }
 
-func (s *volumeBackupPolicySchedulerInternal) RemoveJob(_ context.Context, name string) {
+func (s *volumeBackupPolicyScheduler) RemoveJob(_ context.Context, name string) {
 	delete(s.jobs, name)
 }
 
-func (s *volumeBackupPolicySchedulerInternal) HasJob(name string) bool {
+func (s *volumeBackupPolicyScheduler) HasJob(name string) bool {
 	_, ok := s.jobs[name]
 	return ok
 }
@@ -55,9 +55,9 @@ func TestVolumeBackupPolicy_UpdateRegistersIndependentJobsAndSettings(t *testing
 	require.NoError(t, err)
 	require.NoError(t, gormDB.AutoMigrate(&VolumeBackupPolicy{}))
 	db := &database.DB{DB: gormDB}
-	jobScheduler := &volumeBackupPolicySchedulerInternal{jobs: make(map[string]scheduler.Job)}
-	service := NewService(Dependencies{DB: db, LatestRun: noLatestRunInternal})
-	gate := newVolumeAdmissionForTestInternal(t)
+	jobScheduler := &volumeBackupPolicyScheduler{jobs: make(map[string]scheduler.Job)}
+	service := NewService(Dependencies{DB: db, LatestRun: noLatestRun})
+	gate := newVolumeAdmissionForTest(t)
 	require.NoError(t, service.SetScheduler(t.Context(), jobScheduler, gate))
 
 	collection, err := service.UpdateBackupPolicies(t.Context(), "app-data", []volume.UpdateBackupPolicy{
@@ -131,7 +131,7 @@ func TestVolumeBackupPolicy_UpdateUsesSelectedS3Destination(t *testing.T) {
 	service := NewService(Dependencies{
 		DB:             db,
 		S3Destinations: s3.NewS3DestinationService(db, nil),
-		LatestRun:      noLatestRunInternal,
+		LatestRun:      noLatestRun,
 	})
 	collection, err := service.UpdateBackupPolicies(t.Context(), "app-data", []volume.UpdateBackupPolicy{{
 		Schedule:        "0 0 2 * * *",
@@ -156,13 +156,13 @@ func TestVolumeBackupPolicy_UpdateUsesSelectedS3Destination(t *testing.T) {
 	require.Equal(t, destination.ID, stored.S3DestinationID)
 }
 
-func TestBackupPolicyDestinationLookupFailureInternal(t *testing.T) {
+func TestBackupPolicyDestinationLookupFailure(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&VolumeBackupPolicy{}, &s3.S3Destination{}))
 	policy := &VolumeBackupPolicy{VolumeName: "app-data", Schedule: "0 0 2 * * *", S3DestinationID: "missing"}
 	require.NoError(t, db.Create(policy).Error)
-	service := NewService(Dependencies{DB: &database.DB{DB: db}, S3Destinations: s3.NewS3DestinationService(&database.DB{DB: db}, nil), LatestRun: noLatestRunInternal})
+	service := NewService(Dependencies{DB: &database.DB{DB: db}, S3Destinations: s3.NewS3DestinationService(&database.DB{DB: db}, nil), LatestRun: noLatestRun})
 	for _, drop := range []bool{false, true} {
 		if drop {
 			require.NoError(t, db.Migrator().DropTable(&s3.S3Destination{}))
@@ -176,7 +176,7 @@ func TestBackupPolicyDestinationLookupFailureInternal(t *testing.T) {
 	}
 }
 
-func (s *volumeBackupPolicySchedulerInternal) Submit(_ context.Context, request scheduler.Request) (scheduler.Run, error) {
+func (s *volumeBackupPolicyScheduler) Submit(_ context.Context, request scheduler.Request) (scheduler.Run, error) {
 	s.submitted = append(s.submitted, request)
 	return scheduler.Run{ID: request.RunID, JobID: request.JobID, EnvironmentID: request.EnvironmentID, Status: scheduler.Queued}, nil
 }

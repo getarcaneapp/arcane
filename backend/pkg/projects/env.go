@@ -196,7 +196,7 @@ func (l *EnvLoader) loadAndMergeGlobalEnv(ctx context.Context, path string, envM
 		injectionVars[k] = v
 	}
 
-	slog.DebugContext(ctx, "Merged global env into environment map", "total_env_count", len(envMap))
+	slog.DebugContext(ctx, "Merged global env into environment map", "totalEnvCount", len(envMap))
 	return nil
 }
 
@@ -217,7 +217,7 @@ func (l *EnvLoader) loadAndMergeProjectEnv(ctx context.Context, path string, env
 		}
 	}
 
-	slog.DebugContext(ctx, "Merged project .env into environment map", "total_env_count", len(envMap))
+	slog.DebugContext(ctx, "Merged project .env into environment map", "totalEnvCount", len(envMap))
 	return nil
 }
 
@@ -339,7 +339,7 @@ func WithTransientValidationEnvFile(ctx context.Context, projectPath string, eff
 		// Its contents can't be verified or safely overwritten, so leave it
 		// untouched and validate against whatever's already on disk instead of
 		// aborting the whole update.
-		slog.Warn("skipping unreadable .env during compose validation; leaving it untouched", "projectPath", projectPath, "error", readErr)
+		slog.WarnContext(ctx, "skipping unreadable .env during compose validation; leaving it untouched", "projectPath", projectPath, "error", readErr)
 		if run == nil {
 			return nil
 		}
@@ -637,7 +637,8 @@ func ReadProjectEnvState(projectPath string) (ProjectEnvState, error) {
 	}
 
 	if effectiveUnreadable || gitSourceUnreadable || overrideUnreadable {
-		slog.Warn("skipping unreadable project env file(s); leaving them untouched",
+		ctx := context.Background() //nolint:forbidigo // Compose environment parsing is a pure helper without a request context.
+		slog.WarnContext(ctx, "skipping unreadable project env file(s); leaving them untouched",
 			"projectPath", projectPath,
 			"effectiveUnreadable", effectiveUnreadable,
 			"gitSourceUnreadable", gitSourceUnreadable,
@@ -689,7 +690,7 @@ func ReadProjectEnvState(projectPath string) (ProjectEnvState, error) {
 // typically unwritable too, so attempting the write would abort the whole caller.
 func WriteManagedEnvFile(ctx context.Context, projectsDirectory, projectPath, fileName string, unreadable bool, content string) error {
 	if unreadable {
-		slog.Warn("skipping unreadable project env file; leaving it untouched", "projectPath", projectPath, "file", fileName)
+		slog.WarnContext(ctx, "skipping unreadable project env file; leaving it untouched", "projectPath", projectPath, "file", fileName)
 		return nil
 	}
 
@@ -828,7 +829,7 @@ func ParseComposeEnvOptions(workdir string, env EnvMap) (ComposeEnvOptions, erro
 		if n, convErr := strconv.Atoi(raw); convErr == nil && n > 0 {
 			opts.ParallelLimit = n
 		} else {
-			slog.Debug("ignoring invalid COMPOSE_PARALLEL_LIMIT", "value", raw)
+			slog.DebugContext(context.Background(), "ignoring invalid COMPOSE_PARALLEL_LIMIT", "value", raw) //nolint:forbidigo // Compose environment parsing is a pure helper without a request context.
 		}
 	}
 
@@ -993,7 +994,8 @@ func parseComposeBoolInternal(env EnvMap, key string) bool {
 	}
 	v, err := strconv.ParseBool(raw)
 	if err != nil {
-		slog.Debug("ignoring invalid compose boolean env var", "key", key, "value", raw)
+		slog.DebugContext(context.Background(), "ignoring invalid compose boolean env var", //nolint:forbidigo // Compose environment parsing is a pure helper without a request context.
+			"key", key, "value", raw)
 		return false
 	}
 	return v

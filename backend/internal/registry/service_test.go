@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -22,6 +23,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/google/go-containerregistry/pkg/v1/random"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/api/pkg/authconfig"
 	dockerregistry "github.com/moby/moby/api/types/registry"
@@ -635,6 +637,112 @@ func TestContainerRegistryService_UpdateRegistryRejectsECRTargetChangeWithStored
 	decryptedSecret, decryptErr := crypto.Decrypt(updated.AWSSecretAccessKey)
 	require.NoError(t, decryptErr)
 	require.Equal(t, "new-secret-key", decryptedSecret)
+}
+
+func TestContainerRegistryService_CreateRegistry_AcceptsECRWithoutKeysForIAMRole(t *testing.T) {
+	db := setupContainerRegistryTestDBInternal(t)
+	svc := NewContainerRegistryService(db, nil, nil, nil)
+
+	reg, err := svc.CreateRegistry(t.Context(), containerregistry.CreateContainerRegistryRequest{
+		URL:          "123456789012.dkr.ecr.us-east-1.amazonaws.com",
+		RegistryType: RegistryTypeECR,
+		AWSRegion:    "us-east-1",
+	})
+	require.NoError(t, err)
+	assert.Empty(t, reg.AWSAccessKeyID)
+	assert.Empty(t, reg.AWSSecretAccessKey)
+	assert.Equal(t, "us-east-1", reg.AWSRegion)
+}
+
+func TestContainerRegistryService_CreateRegistry_RejectsIncompleteECRKeyPair(t *testing.T) {
+	tests := []struct {
+		name  string
+		keyID string
+		key   string
+		field string
+	}{
+		{name: "key id without secret", keyID: "access-key", field: "awsSecretAccessKey"},
+		{name: "secret without key id", key: "secret-key", field: "awsAccessKeyId"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db := setupContainerRegistryTestDBInternal(t)
+			svc := NewContainerRegistryService(db, nil, nil, nil)
+
+			_, err := svc.CreateRegistry(t.Context(), containerregistry.CreateContainerRegistryRequest{
+				URL:                "123456789012.dkr.ecr.us-east-1.amazonaws.com",
+				RegistryType:       RegistryTypeECR,
+				AWSAccessKeyID:     tt.keyID,
+				AWSSecretAccessKey: tt.key,
+				AWSRegion:          "us-east-1",
+			})
+			require.ErrorIs(t, err, common.ErrValidation)
+			fieldErr, ok := errors.AsType[*base.FieldError](err)
+			require.True(t, ok)
+			assert.Equal(t, tt.field, fieldErr.Field)
+		})
+	}
+}
+
+func TestContainerRegistryService_UpdateRegistry_ClearingECRKeysSwitchesToIAMRole(t *testing.T) {
+	db := setupContainerRegistryTestDBInternal(t)
+	svc := NewContainerRegistryService(db, nil, nil, nil)
+
+	reg, err := svc.CreateRegistry(t.Context(), containerregistry.CreateContainerRegistryRequest{
+		URL:                "123456789012.dkr.ecr.us-east-1.amazonaws.com",
+		RegistryType:       RegistryTypeECR,
+		AWSAccessKeyID:     "access-key",
+		AWSSecretAccessKey: "secret-key",
+		AWSRegion:          "us-east-1",
+	})
+	require.NoError(t, err)
+
+	cachedAt := time.Now().UTC()
+	reg.ECRToken = "cached-token"
+	reg.ECRTokenGeneratedAt = &cachedAt
+	require.NoError(t, db.WithContext(t.Context()).Save(reg).Error)
+
+	updated, err := svc.UpdateRegistry(t.Context(), reg.ID, containerregistry.UpdateContainerRegistryRequest{
+		AWSAccessKeyID: new(""),
+	})
+	require.NoError(t, err)
+	assert.Empty(t, updated.AWSAccessKeyID)
+	assert.Empty(t, updated.AWSSecretAccessKey)
+	assert.Empty(t, updated.ECRToken)
+	assert.Nil(t, updated.ECRTokenGeneratedAt)
+}
+
+func TestContainerRegistryService_SyncRegistries_ClearsECRSecretWhenManagerSendsNoKeys(t *testing.T) {
+	db := setupContainerRegistryTestDBInternal(t)
+	svc := NewContainerRegistryService(db, nil, nil, nil)
+
+	existing, err := svc.CreateRegistry(t.Context(), containerregistry.CreateContainerRegistryRequest{
+		URL:                "123456789012.dkr.ecr.us-east-1.amazonaws.com",
+		RegistryType:       RegistryTypeECR,
+		AWSAccessKeyID:     "access-key",
+		AWSSecretAccessKey: "secret-key",
+		AWSRegion:          "us-east-1",
+	})
+	require.NoError(t, err)
+
+	err = svc.SyncRegistries(t.Context(), []containerregistry.Sync{
+		{
+			ID:           existing.ID,
+			URL:          existing.URL,
+			Enabled:      true,
+			RegistryType: RegistryTypeECR,
+			AWSRegion:    "us-east-1",
+			CreatedAt:    existing.CreatedAt,
+			UpdatedAt:    existing.UpdatedAt,
+		},
+	})
+	require.NoError(t, err)
+
+	var updated ContainerRegistry
+	require.NoError(t, db.WithContext(t.Context()).First(&updated, "id = ?", existing.ID).Error)
+	assert.Empty(t, updated.AWSAccessKeyID)
+	assert.Empty(t, updated.AWSSecretAccessKey)
 }
 
 func TestContainerRegistryService_UpdateRegistry_RejectsChangingRegistryType(t *testing.T) {
@@ -1592,4 +1700,29 @@ func TestContainerRegistryService_ImageVersionLabelErrorNotCachedInternal(t *tes
 	label, err := svc.ImageVersionLabel(t.Context(), imageRef)
 	require.NoError(t, err)
 	assert.Equal(t, "v2.8.0-next.67", label)
+}
+
+func TestClassifyDigestError(t *testing.T) {
+	cases := map[string]struct {
+		err  error
+		kind error
+	}{
+		"rate limit":         {errors.New("toomanyrequests: rate limit exceeded"), common.ErrUnavailable},
+		"server error":       {&transport.Error{StatusCode: http.StatusBadGateway}, common.ErrUnavailable},
+		"connection refused": {errors.New("dial tcp 10.0.0.1:443: connect: connection refused"), common.ErrUnavailable},
+		"unauthorized":       {&transport.Error{StatusCode: http.StatusUnauthorized}, common.ErrUnauthorized},
+		"not found":          {&transport.Error{StatusCode: http.StatusNotFound}, common.ErrNotFound},
+		"manifest unknown":   {errors.New("MANIFEST_UNKNOWN: manifest unknown"), common.ErrNotFound},
+	}
+	for name, tc := range cases {
+		require.ErrorIs(t, classifyDigestErrorInternal(tc.err), tc.kind, name)
+	}
+
+	plain := errors.New("x509: certificate signed by unknown authority")
+	classified := classifyDigestErrorInternal(plain)
+	require.Equal(t, plain, classified)
+	require.NotErrorIs(t, classified, common.ErrUnavailable)
+	// A host that does not resolve never comes back, so it must not be retried like an outage.
+	unknownHost := &url.Error{Op: "Get", URL: "https://invalid-registry.example.com/v2/", Err: &net.DNSError{Err: "no such host", Name: "invalid-registry.example.com", IsNotFound: true}}
+	require.NotErrorIs(t, classifyDigestErrorInternal(unknownHost), common.ErrUnavailable)
 }

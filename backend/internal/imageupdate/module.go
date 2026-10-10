@@ -3,14 +3,20 @@ package imageupdate
 
 import (
 	"context"
+	"errors"
+	"log/slog"
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/types/v2/image"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/tracing"
 )
 
 type Module struct {
@@ -18,7 +24,32 @@ type Module struct {
 	getUpdateInfoByImageRefs func(context.Context, []string) (map[string]*image.UpdateInfo, error)
 }
 
+// New wires image update routes and registers the arcane.image.updates gauges once.
 func New(service *ImageUpdateService, getUpdateInfo func(context.Context, []string) (map[string]*image.UpdateInfo, error)) *Module {
+	if service != nil {
+		meter := otel.Meter(tracing.InstrumentationName)
+		updates, updatesErr := meter.Int64ObservableGauge("arcane.image.updates",
+			metric.WithDescription("Local images with an available update by update type"), metric.WithUnit("{image}"))
+		checkErrors, checkErrorsErr := meter.Int64ObservableGauge("arcane.image.update.check_errors",
+			metric.WithDescription("Local images whose last update check failed"), metric.WithUnit("{image}"))
+		err := errors.Join(updatesErr, checkErrorsErr)
+		if err == nil {
+			_, err = meter.RegisterCallback(func(ctx context.Context, o metric.Observer) error {
+				summary, summaryErr := service.GetUpdateSummary(ctx)
+				if summaryErr != nil {
+					slog.DebugContext(ctx, "Skipping image update metrics", "error", summaryErr)
+					return nil
+				}
+				o.ObserveInt64(updates, int64(summary.DigestUpdates), metric.WithAttributes(attribute.String("image.update.type", "digest")))
+				o.ObserveInt64(updates, int64(summary.ImagesWithUpdates-summary.DigestUpdates), metric.WithAttributes(attribute.String("image.update.type", "tag")))
+				o.ObserveInt64(checkErrors, int64(summary.ErrorsCount))
+				return nil
+			}, updates, checkErrors)
+		}
+		if err != nil {
+			otel.Handle(err)
+		}
+	}
 	return &Module{service: service, getUpdateInfoByImageRefs: getUpdateInfo}
 }
 
@@ -41,13 +72,7 @@ func (m *Module) RegisterRoutes(api huma.API, appCtx handlerutil.ActivityAppCont
 func RegisterImageUpdates(
 	api huma.API,
 	imageUpdateSvc *ImageUpdateService,
-	getUpdateInfoByImageRefs func(
-		context.Context,
-		[]string,
-	) (
-		map[string]*image.UpdateInfo,
-		error,
-	),
+	getUpdateInfoByImageRefs func(context.Context, []string) (map[string]*image.UpdateInfo, error),
 	appCtx handlerutil.ActivityAppContext,
 ) {
 	h := &ImageUpdateHandler{

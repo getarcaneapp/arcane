@@ -13,6 +13,13 @@ func (r *Runtime) NameActor(actorID, name string) {
 	r.actorNames.Store(actorID, name)
 }
 
+// ActorName returns the display name set by NameActor, or an empty string.
+func (r *Runtime) ActorName(actorID string) string {
+	name, _ := r.actorNames.Load(actorID)
+	displayName, _ := name.(string)
+	return displayName
+}
+
 type actorLogHandlerInternal struct {
 	slog.Handler
 

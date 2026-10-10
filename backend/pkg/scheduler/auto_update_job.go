@@ -1,254 +1,32 @@
 package scheduler
 
 import (
-	"cmp"
 	"context"
-	"errors"
-	"log/slog"
-	"strings"
 
-	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
-	updatertypes "github.com/getarcaneapp/arcane/types/v2/updater"
 	kit "go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/updater"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/flow"
 )
 
-const autoUpdateAdmissionScopeInternal = "auto-update"
+const autoUpdateDefaultSchedule = "0 0 0 * * *"
 
-// pendingUpdateApplierInternal is the slice of UpdaterService the job needs,
-// kept as an interface so the overlap guard is testable with a fake.
-type pendingUpdateApplierInternal interface {
-	ApplyPending(ctx context.Context, options updatertypes.Options) (*updatertypes.Result, error)
-}
-
-type AutoUpdateJob struct {
-	updaterService  pendingUpdateApplierInternal
-	settingsService *settings.SettingsService
-	admissionGate   *runs.Admission
-}
-
-func NewAutoUpdateJob(updaterService *updater.UpdaterService, settingsService *settings.SettingsService, admissionGate *runs.Admission) (*AutoUpdateJob, error) {
-	if admissionGate == nil {
-		return nil, errors.New("auto-update admission gate unavailable")
+// NewAutoUpdateJob runs the durable auto-update workflow on the configured schedule.
+// Interrupted runs that cannot resume fall back to frozen-plan recovery.
+func NewAutoUpdateJob(engine *flow.Engine, updaterService *updater.UpdaterService, settingsService *settings.SettingsService) *flow.Job {
+	return &flow.Job{
+		Engine:   engine,
+		Workflow: updaterService.AutoUpdateWorkflow(),
+		JobName:  "auto-update",
+		ScheduleFn: func(ctx context.Context) string {
+			schedule := settingsService.GetStringSetting(ctx, "autoUpdateInterval", autoUpdateDefaultSchedule)
+			return kit.Ternary(schedule == "", autoUpdateDefaultSchedule, schedule)
+		},
+		ShouldRunFn: func(ctx context.Context) bool {
+			return settingsService.GetBoolSetting(ctx, "autoUpdate", false) && settingsService.GetBoolSetting(ctx, "pollingEnabled", true)
+		},
+		FallbackFn:      updaterService.ReconcilePending,
+		ValidateRetryFn: updaterService.ValidateAutoUpdateRetry,
 	}
-	return &AutoUpdateJob{
-		updaterService:  updaterService,
-		settingsService: settingsService,
-		admissionGate:   admissionGate,
-	}, nil
-}
-
-func (j *AutoUpdateJob) Name() string {
-	return "auto-update"
-}
-
-func (j *AutoUpdateJob) ShouldSchedule(ctx context.Context) bool {
-	enabled := j.settingsService.GetBoolSetting(ctx, "autoUpdate", false)
-	pollingEnabled := j.settingsService.GetBoolSetting(ctx, "pollingEnabled", true)
-	return enabled && pollingEnabled
-}
-
-func (j *AutoUpdateJob) Schedule(ctx context.Context) string {
-	s := j.settingsService.GetStringSetting(ctx, "autoUpdateInterval", "0 0 0 * * *")
-	return kit.Ternary(s == "", "0 0 0 * * *", s)
-}
-
-func (j *AutoUpdateJob) Run(ctx context.Context) (schedulertypes.Outcome, error) {
-	options := updatertypes.Options{}
-	unresolvedTargets := false
-	if previous, ok := jobcontext.Run(ctx); ok && (previous.AttemptCount > 1 || len(previous.Outcome.Targets) > 0) {
-		var priorOutcome schedulertypes.Outcome
-		options, priorOutcome, unresolvedTargets = autoUpdateRetryOptionsInternal(previous)
-		if priorOutcome.Status != "" {
-			priorOutcome.ActivityID = cmp.Or(priorOutcome.ActivityID, previous.Outcome.ActivityID)
-			if priorOutcome.Status == schedulertypes.Failed && previous.Outcome.Message != "" {
-				priorOutcome.Message += ": " + previous.Outcome.Message
-			}
-			return priorOutcome, nil
-		}
-	}
-
-	enabled := j.settingsService.GetBoolSetting(ctx, "autoUpdate", false)
-	pollingEnabled := j.settingsService.GetBoolSetting(ctx, "pollingEnabled", true)
-	if !enabled || !pollingEnabled {
-		if len(options.ResourceIds) > 0 {
-			return schedulertypes.Outcome{Status: schedulertypes.Failed, Message: "Auto-update is disabled; the remaining targets were not updated"}, nil
-		}
-		slog.DebugContext(ctx, "auto-update disabled or polling disabled; skipping run",
-			"autoUpdate", enabled, "pollingEnabled", pollingEnabled)
-		return schedulertypes.Outcome{Status: schedulertypes.Skipped}, nil
-	}
-
-	lease, admitted, err := j.admissionGate.TryAcquire(ctx, schedulertypes.AdmissionKey{Scope: autoUpdateAdmissionScopeInternal})
-	if err != nil {
-		slog.ErrorContext(ctx, "auto-update admission failed", "error", err)
-		return schedulertypes.Outcome{}, err
-	}
-	if !admitted {
-		if len(options.ResourceIds) > 0 {
-			return schedulertypes.Outcome{Status: schedulertypes.Failed, Message: "Another update is active; the remaining targets were not updated"}, nil
-		}
-		slog.WarnContext(ctx, "auto-update run still in progress; skipping overlapping run")
-		return schedulertypes.Outcome{Status: schedulertypes.Skipped}, nil
-	}
-	defer lease.Release(ctx)
-
-	slog.InfoContext(ctx, "auto-update run started")
-
-	result, err := j.updaterService.ApplyPending(ctx, options)
-	if err != nil {
-		slog.ErrorContext(ctx, "auto-update run failed", "err", err)
-		if result == nil {
-			return schedulertypes.Outcome{}, err
-		}
-	}
-	if result == nil {
-		return schedulertypes.Outcome{Status: schedulertypes.Failed, Message: "Updater returned no operation result"}, nil
-	}
-
-	return autoUpdateOutcomeInternal(ctx, result, unresolvedTargets, err)
-}
-
-func (j *AutoUpdateJob) Reschedule(ctx context.Context) error {
-	slog.InfoContext(ctx, "rescheduling auto-update job in new scheduler; currently requires restart")
-	return nil
-}
-
-func (j *AutoUpdateJob) Reconcile(ctx context.Context, previous schedulertypes.Run) (schedulertypes.Outcome, error) {
-	if service, ok := j.updaterService.(*updater.UpdaterService); ok {
-		return service.ReconcilePending(ctx, previous)
-	}
-	confirmed := confirmedAutoUpdateInternal(previous)
-	if confirmed.Status != schedulertypes.Succeeded {
-		confirmed.Message = "Interrupted auto-update has no confirmed full-batch completion"
-		if previous.Outcome.Message != "" {
-			confirmed.Message += ": " + previous.Outcome.Message
-		}
-	}
-	return confirmed, nil
-}
-
-func autoUpdateRetryOptionsInternal(previous schedulertypes.Run) (updatertypes.Options, schedulertypes.Outcome, bool) {
-	options := updatertypes.Options{}
-	unresolvedTargets := true
-	for _, target := range previous.Outcome.Targets {
-		if target.ID == "auto-update" && target.ResourceType == "update-batch" && (target.Status == schedulertypes.Succeeded || target.Status == schedulertypes.Partial) {
-			unresolvedTargets = false
-		}
-	}
-	confirmed := confirmedAutoUpdateInternal(previous)
-	if confirmed.Status == schedulertypes.Succeeded {
-		return options, confirmed, false
-	}
-	hasResourceTargets := false
-	for _, target := range previous.Outcome.Targets {
-		if target.ID == "auto-update" {
-			continue
-		}
-		hasResourceTargets = true
-		if target.Status == schedulertypes.Succeeded || target.Status == schedulertypes.Skipped {
-			continue
-		}
-		if target.ResourceType != "container" || target.Status != schedulertypes.Failed || strings.TrimSpace(target.ID) == "" {
-			unresolvedTargets = true
-			continue
-		}
-		options.ResourceIds = append(options.ResourceIds, target.ID)
-	}
-	if hasResourceTargets && len(options.ResourceIds) == 0 {
-		if unresolvedTargets {
-			return options, schedulertypes.Outcome{Status: schedulertypes.Failed, Message: "Remaining targets have no confirmed completion or safe retry", Targets: previous.Outcome.Targets}, true
-		}
-		return options,
-			schedulertypes.Outcome{
-				Status:     schedulertypes.Failed,
-				Message:    "Target results do not confirm full-batch completion",
-				ActivityID: previous.Outcome.ActivityID,
-				Targets:    previous.Outcome.Targets,
-			},
-			true
-	}
-	if !hasResourceTargets {
-		return options,
-			schedulertypes.Outcome{
-				Status:     schedulertypes.Failed,
-				Message:    "The previous update has no confirmed retry targets",
-				ActivityID: previous.Outcome.ActivityID,
-				Targets:    previous.Outcome.Targets,
-			},
-			true
-	}
-	if len(options.ResourceIds) > 0 {
-		options.Type = "container"
-	}
-	return options, schedulertypes.Outcome{}, unresolvedTargets
-}
-
-// ValidateRetry restricts replay to explicitly failed container updates.
-func (j *AutoUpdateJob) ValidateRetry(_ context.Context, previous schedulertypes.Run) error {
-	options, outcome, _ := autoUpdateRetryOptionsInternal(previous)
-	if outcome.Status != "" || len(options.ResourceIds) == 0 {
-		return errors.New("auto-update has no safely retryable failed containers")
-	}
-	return nil
-}
-
-func autoUpdateOutcomeInternal(ctx context.Context, result *updatertypes.Result, unresolvedTargets bool, err error) (schedulertypes.Outcome, error) {
-	slog.InfoContext(ctx, "auto-update run completed",
-		"checked", result.Checked,
-		"updated", result.Updated,
-		"restarted", result.Restarted,
-		"skipped", result.Skipped,
-		"failed", result.Failed,
-	)
-	outcome := schedulertypes.Outcome{Status: schedulertypes.Succeeded}
-	if result.ActivityID != nil {
-		outcome.ActivityID = *result.ActivityID
-	}
-	for _, item := range result.Items {
-		status := kit.Ternary(item.Status == "failed", schedulertypes.Failed, schedulertypes.Succeeded)
-		if item.Status == "skipped" {
-			status = schedulertypes.Skipped
-		}
-		outcome.Targets = append(outcome.Targets, schedulertypes.TargetOutcome{ID: item.ResourceID, ResourceType: item.ResourceType, Status: status, Message: item.Error, ActivityID: outcome.ActivityID})
-	}
-	if result.Failed > 0 || err != nil || unresolvedTargets {
-		outcome.Status = schedulertypes.Partial
-		outcome.Message = "Some updates failed"
-		if err != nil {
-			outcome.Message += ": " + err.Error()
-		}
-	}
-	if unresolvedTargets {
-		outcome.Status = schedulertypes.Failed
-		outcome.Message = "Some target outcomes could not be confirmed"
-	}
-	if outcomeErr, ok := errors.AsType[*schedulertypes.OutcomeError](err); ok {
-		outcome.Status = outcomeErr.Outcome.Status
-		outcome.Message = outcomeErr.Outcome.Message
-		outcome.Targets = nil
-	}
-	return outcome, err
-}
-
-func confirmedAutoUpdateInternal(previous schedulertypes.Run) schedulertypes.Outcome {
-	confirmed := jobcontext.ConfirmedTarget(previous, "auto-update")
-	for _, target := range previous.Outcome.Targets {
-		if target.ID == "auto-update" && target.ResourceType != "update-batch" {
-			confirmed.Status = schedulertypes.Failed
-		}
-	}
-	if confirmed.Status == schedulertypes.Succeeded {
-		for _, target := range previous.Outcome.Targets {
-			if target.Status != schedulertypes.Succeeded && target.Status != schedulertypes.Skipped {
-				confirmed.Status = schedulertypes.Failed
-				break
-			}
-		}
-	}
-	return confirmed
 }

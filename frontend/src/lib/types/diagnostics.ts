@@ -59,6 +59,7 @@ export interface WebSocketMetricsSnapshot {
 	containerExec: number;
 	systemStats: number;
 	serviceLogsActive: number;
+	diagnosticsActive: number;
 }
 
 export interface WebSocketDiagnostics {
@@ -72,6 +73,73 @@ export interface Diagnostics {
 	memory: MemoryInfo;
 	gc: GCInfo;
 	websocket: WebSocketDiagnostics;
+}
+
+export interface ActorHostInfo {
+	hostId: string;
+	address: string;
+	lastHealthCheck: string;
+}
+
+export interface ActorInstance {
+	actorId: string;
+	name?: string;
+	hostId: string;
+	activatedAt: string;
+}
+
+export interface ActorJobFailure {
+	jobId: string;
+	actorId: string;
+	name?: string;
+	method: string;
+	attempts: number;
+	lastError?: string;
+	failedAt: string;
+}
+
+export interface ActorTypeInfo {
+	actorType: string;
+	concurrencyLimit: number;
+	activeActors: number;
+	storedStates: number;
+	pendingAlarms: number;
+	pendingJobs: number;
+	leasedAlarms: number;
+	completedJobs: number;
+	deadJobs: number;
+	nextAlarmAt?: string;
+	instances: ActorInstance[] | null;
+	recentFailures: ActorJobFailure[] | null;
+}
+
+export interface ActorDiagnostics {
+	environmentId: string;
+	environmentName: string;
+	error?: string;
+	ready: boolean;
+	hosts: ActorHostInfo[] | null;
+	actorTypes: ActorTypeInfo[] | null;
+	runs: Record<string, number> | null;
+	checkedAt: string;
+}
+
+export interface DiagnosticsCommand {
+	id: string;
+	type: 'refresh' | 'dump' | 'leakScan' | 'profile';
+	name?: string;
+	seconds?: number;
+}
+
+export interface DiagnosticsMessage {
+	type: 'snapshot' | 'result';
+	id?: string;
+	snapshot?: Diagnostics;
+	leakReport?: GoroutineLeakReport;
+	text?: string;
+	/** Base64-encoded pprof bytes for profile results. */
+	data?: string;
+	error?: string;
 }
 
 export interface LogEntry {

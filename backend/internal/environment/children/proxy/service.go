@@ -345,13 +345,13 @@ func (s *Service) fanOutSyncToEnvironment[Model, Item, Request any](
 		return fmt.Errorf("sync cancelled while waiting for an in-flight delivery: %w", err)
 	}
 	if unchanged {
-		slog.DebugContext(ctx, "Skipping sync; payload unchanged since last delivery", "kind", kind, "environmentID", environmentID, "environmentName", target.name)
+		slog.DebugContext(ctx, "Skipping sync; payload unchanged since last delivery", "kind", kind, "environmentId", environmentID, "environmentName", target.name)
 		return nil
 	}
 	delivered := false
 	defer func() { finishDelivery(delivered) }()
 
-	slog.InfoContext(ctx, "Starting sync to environment", "kind", kind, "environmentID", environmentID, "environmentName", target.name, "apiUrl", target.targetURL)
+	slog.InfoContext(ctx, "Starting sync to environment", "kind", kind, "environmentId", environmentID, "environmentName", target.name, "apiUrl", target.targetURL)
 
 	reqCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
@@ -373,7 +373,7 @@ func (s *Service) fanOutSyncToEnvironment[Model, Item, Request any](
 	}
 	delivered = true
 
-	slog.InfoContext(ctx, "Successfully synced to environment", "kind", kind, "environmentID", environmentID, "environmentName", target.name)
+	slog.InfoContext(ctx, "Successfully synced to environment", "kind", kind, "environmentId", environmentID, "environmentName", target.name)
 
 	return nil
 }

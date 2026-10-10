@@ -1,20 +1,6 @@
 {
 	"$schema": "https://raw.githubusercontent.com/fallow-rs/fallow/main/schema.json",
-	"entry": [
-		"src/routes/**/*.{svelte,ts,js}",
-		"src/hooks.*.ts",
-		"src/service-worker/index.ts",
-		"src/lib/paraglide/messages/_index.js",
-		"src/lib/index.ts",
-		"src/lib/components/**/index.ts"
-	],
-	"ignorePatterns": [
-		"src/lib/paraglide/server.js",
-		"src/lib/paraglide/runtime.js",
-		"src/lib/paraglide/registry.js",
-		"email-templates/**",
-		"tests/**"
-	],
+	"entry": ["src/routes/**/*.{svelte,ts,js}", "src/lib/components/**/index.ts"],
 	"ignoreDependencies": [
 		"@typescript/native",
 		"@iconify/json",
@@ -22,9 +8,7 @@
 		"paneforge",
 		"shadcn-svelte",
 		"svelte-toolbelt",
-		"isomorphic-dompurify",
-		"tailwindcss",
-		"tw-animate-css"
+		"isomorphic-dompurify"
 	],
 	"ignoreExports": [
 		{
@@ -37,14 +21,10 @@
 		},
 		{
 			"file": "src/lib/icons/index.ts",
-			"exports": ["LayoutGridIcon", "LayoutListIcon", "MonitorSpeakerIcon"]
+			"exports": ["LayoutGridIcon", "MonitorSpeakerIcon"]
 		}
 	],
 	"ignoreExportsUsedInFile": {
-		"type": true,
-		"interface": true
-	},
-	"unusedComponentProps": {
-		"ignorePattern": "^_"
+		"type": true
 	}
 }

@@ -2,6 +2,7 @@ package config
 
 import (
 	"cmp"
+	"context"
 	"fmt"
 	"log/slog"
 	"net"
@@ -198,7 +199,8 @@ func applyProxyDefaults(cfg *Config) {
 		return
 	}
 	cfg.TrustedProxies = "127.0.0.0/8,::1/128"
-	slog.Info("LISTEN bound to loopback; trusting loopback proxies for X-Forwarded headers", "listen", cfg.Listen, "trusted_proxies", cfg.TrustedProxies)
+	slog.InfoContext(context.Background(), "LISTEN bound to loopback; trusting loopback proxies for X-Forwarded headers", //nolint:forbidigo // Configuration loads before any request context exists.
+		"listen", cfg.Listen, "trustedProxies", cfg.TrustedProxies)
 }
 
 // loadFromEnv uses reflection to load configuration from environment variables.
@@ -313,6 +315,7 @@ func visitConfigFields(v reflect.Value, fn func(reflect.Value, reflect.StructFie
 
 // setFieldValueInternal sets a reflect.Value from a string based on the field's type.
 func setFieldValueInternal(field reflect.Value, fieldType reflect.StructField, value string) {
+	ctx := context.Background() //nolint:forbidigo // Configuration loads before any request context exists.
 	if !field.CanSet() {
 		return
 	}
@@ -350,14 +353,14 @@ func setFieldValueInternal(field reflect.Value, fieldType reflect.StructField, v
 			defaultValue := fieldType.Tag.Get("default")
 
 			if fallback, fallbackErr := time.ParseDuration(defaultValue); fallbackErr == nil {
-				slog.Warn("Invalid duration for config field, using tagged default",
+				slog.WarnContext(ctx, "Invalid duration for config field, using tagged default",
 					"reason", reason,
 					"field", envTag,
 					"value", value,
 					"default", defaultValue)
 				field.SetInt(int64(fallback))
 			} else {
-				slog.Warn("Invalid duration for config field and invalid tagged default",
+				slog.WarnContext(ctx, "Invalid duration for config field and invalid tagged default",
 					"reason", reason,
 					"field", envTag,
 					"value", value,
@@ -420,7 +423,7 @@ func (c *Config) GetLocation() *time.Location {
 
 	loc, err := time.LoadLocation(tz)
 	if err != nil {
-		slog.Warn("Failed to load timezone, falling back to UTC", "timezone", tz, "error", err)
+		slog.WarnContext(context.Background(), "Failed to load timezone, falling back to UTC", "timezone", tz, "error", err) //nolint:forbidigo // Timezone resolution is a process-wide setting lookup.
 		return time.UTC
 	}
 	return loc

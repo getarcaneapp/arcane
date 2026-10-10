@@ -7,25 +7,23 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/types/v2/base"
-	"go.getarcane.app/kit/pkg"
+	kit "go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
 )
 
 // Handler serves the self-upgrade and update-all endpoints.
 type Handler struct {
-	service            *Service
-	environmentService *environment.EnvironmentService
-	cfg                *config.Config
-	appCtx             context.Context
+	service *Service
+	cfg     *config.Config
+	appCtx  context.Context
 }
 
-func NewHandler(service *Service, environmentService *environment.EnvironmentService, cfg *config.Config, appCtx context.Context) *Handler {
-	return &Handler{service: service, environmentService: environmentService, cfg: cfg, appCtx: appCtx}
+func NewHandler(service *Service, cfg *config.Config, appCtx context.Context) *Handler {
+	return &Handler{service: service, cfg: cfg, appCtx: appCtx}
 }
 
 type CheckUpgradeInput struct {
@@ -52,9 +50,8 @@ type TriggerUpgradeBody struct {
 	TargetVersion string `json:"targetVersion,omitempty" doc:"Release version to upgrade to; overrides this instance's own version check"`
 }
 
-// TriggerUpgradeData reports the upgrade was accepted. UpToDate lets a client skip
-// waiting for a restart: the upgrader still pulls, but when the environment already
-// runs the newest image it finds nothing to swap in and no restart follows.
+// TriggerUpgradeData reports the upgrade was accepted. UpToDate lets a client skip waiting
+// for a restart: an environment already on the newest image is not recreated.
 type TriggerUpgradeData struct {
 	Message  string `json:"message" doc:"Response message"`
 	UpToDate bool   `json:"upToDate" doc:"Environment already runs the newest image, so no restart is expected"`
@@ -68,19 +65,11 @@ type UpdateAllStatusInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 }
 
-// rejectIfAgentModeInternal blocks manager-only operations when running as an agent.
-func (h *Handler) rejectIfAgentModeInternal() error {
-	if h.cfg != nil && h.cfg.AgentMode {
-		return huma.Error400BadRequest("update-all is managed on the Arcane manager")
-	}
-	return nil
-}
-
 // CheckUpgradeAvailable checks if a system upgrade is available.
 func (h *Handler) CheckUpgradeAvailable(ctx context.Context, input *CheckUpgradeInput) (*CheckUpgradeOutput, error) {
 	canUpgrade, err := h.service.CanUpgrade(ctx)
 	if err != nil {
-		slog.Debug("System upgrade check failed", "error", err)
+		slog.DebugContext(ctx, "System upgrade check failed", "error", err)
 		return &CheckUpgradeOutput{
 			Body: UpgradeCheckResultData{
 				CanUpgrade: false,
@@ -106,20 +95,14 @@ func (h *Handler) TriggerUpgrade(ctx context.Context, input *TriggerUpgradeInput
 		return nil, err
 	}
 
-	slog.Info("System upgrade triggered", "user", user.Username, "userId", user.ID)
+	slog.InfoContext(ctx, "System upgrade triggered", "user", user.Username, "userId", user.ID)
 
-	// Resolved before triggering, while the version check still describes the running
-	// container: the upgrade itself may replace it.
+	// Resolved before triggering, while the version check still describes the running container.
 	upToDate := h.service.AlreadyOnNewestImage(ctx)
 
-	targetVersion := ""
-	if input.Body != nil {
-		targetVersion = input.Body.TargetVersion
-	}
-
-	err = h.service.TriggerUpgradeAsync(utils.ActivityRuntimeContext(ctx, h.appCtx), *user, targetVersion)
+	err = h.service.TriggerUpgradeAsync(utils.ActivityRuntimeContext(ctx, h.appCtx), *user, kit.FromPtr(input.Body).TargetVersion)
 	if err != nil {
-		slog.Error("System upgrade failed", "error", err, "user", user.Username)
+		slog.ErrorContext(ctx, "System upgrade failed", "error", err, "user", user.Username)
 
 		if errors.Is(err, common.ErrUpgradeInProgress) {
 			return nil, huma.Error409Conflict("Failed to initiate upgrade: " + err.Error())
@@ -145,11 +128,10 @@ func (h *Handler) TriggerUpgrade(ctx context.Context, input *TriggerUpgradeInput
 	}, nil
 }
 
-// TriggerUpdateAll starts a fleet-wide update, upgrading the manager first and then
-// the remote agents (the latter resume after the manager restarts).
+// TriggerUpdateAll starts a fleet-wide update: every remote agent in turn, then the manager last.
 func (h *Handler) TriggerUpdateAll(ctx context.Context, input *TriggerUpdateAllInput) (*handlerutil.Out[EnvironmentUpdateJob], error) {
-	if err := h.rejectIfAgentModeInternal(); err != nil {
-		return nil, err
+	if h.cfg != nil && h.cfg.AgentMode {
+		return nil, huma.Error400BadRequest("update-all is managed on the Arcane manager")
 	}
 
 	user, err := handlerutil.RequireUser(ctx)
@@ -157,13 +139,9 @@ func (h *Handler) TriggerUpdateAll(ctx context.Context, input *TriggerUpdateAllI
 		return nil, err
 	}
 
-	slog.Info("Update-all environments triggered", "user", user.Username, "userId", user.ID)
+	slog.InfoContext(ctx, "Update-all environments triggered", "user", user.Username, "userId", user.ID)
 
-	// Use a runtime context so the agents phase can outlive the request when the
-	// manager is already up to date.
-	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-
-	job, err := h.service.StartUpdateAll(runtimeCtx, *user, h.environmentService)
+	job, err := h.service.StartUpdateAll(ctx, *user)
 	if err != nil {
 		if errors.Is(err, common.ErrUpdateAllInProgress) {
 			return nil, huma.Error409Conflict(err.Error())
@@ -181,8 +159,8 @@ func (h *Handler) TriggerUpdateAll(ctx context.Context, input *TriggerUpdateAllI
 
 // GetUpdateAllStatus returns the latest update-all job for live progress polling.
 func (h *Handler) GetUpdateAllStatus(ctx context.Context, input *UpdateAllStatusInput) (*handlerutil.Out[EnvironmentUpdateJob], error) {
-	if err := h.rejectIfAgentModeInternal(); err != nil {
-		return nil, err
+	if h.cfg != nil && h.cfg.AgentMode {
+		return nil, huma.Error400BadRequest("update-all is managed on the Arcane manager")
 	}
 
 	job, err := h.service.GetLatestUpdateAllJob(ctx)

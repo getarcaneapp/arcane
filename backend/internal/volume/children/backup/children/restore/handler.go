@@ -3,14 +3,12 @@ package restore
 import (
 	"context"
 	"errors"
-	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
 	"github.com/getarcaneapp/arcane/types/v2/backup"
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	uploadtypes "github.com/getarcaneapp/arcane/types/v2/upload"
-	"github.com/samber/mo"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
@@ -78,12 +76,7 @@ func (h *Handler) RestoreBackup(ctx context.Context, input *RestoreBackupInput) 
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
-	return &handlerutil.Out[base.MessageResponse]{
-		Body: base.ApiResponse[base.MessageResponse]{
-			Success: true,
-			Data:    base.MessageResponse{Message: "Restore initiated successfully", ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()},
-		},
-	}, nil
+	return handlerutil.MessageOutput("Restore initiated successfully", activityID), nil
 }
 
 func (h *Handler) RestoreBackupFiles(ctx context.Context, input *RestoreBackupFilesInput) (*handlerutil.Out[base.MessageResponse], error) {
@@ -120,12 +113,7 @@ func (h *Handler) RestoreBackupFiles(ctx context.Context, input *RestoreBackupFi
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
 
-	return &handlerutil.Out[base.MessageResponse]{
-		Body: base.ApiResponse[base.MessageResponse]{
-			Success: true,
-			Data:    base.MessageResponse{Message: "Restore initiated successfully", ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()},
-		},
-	}, nil
+	return handlerutil.MessageOutput("Restore initiated successfully", activityID), nil
 }
 
 func (h *Handler) UploadAndRestore(ctx context.Context, input *UploadAndRestoreInput) (*handlerutil.Out[base.MessageResponse], error) {
@@ -164,10 +152,5 @@ func (h *Handler) UploadAndRestore(ctx context.Context, input *UploadAndRestoreI
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
-	return &handlerutil.Out[base.MessageResponse]{
-		Body: base.ApiResponse[base.MessageResponse]{
-			Success: true,
-			Data:    base.MessageResponse{Message: "Backup uploaded and restored successfully", ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()},
-		},
-	}, nil
+	return handlerutil.MessageOutput("Backup uploaded and restored successfully", activityID), nil
 }

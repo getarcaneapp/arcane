@@ -1,90 +1,33 @@
 package scheduler
 
 import (
-	"cmp"
 	"context"
-	"errors"
-	"log/slog"
 
-	"github.com/getarcaneapp/arcane/types/v2"
 	"github.com/getarcaneapp/arcane/types/v2/features"
-	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
-	"github.com/getarcaneapp/arcane/types/v2/user"
-	"go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/flow"
 	scheduleutil "github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/schedule"
 )
 
-const AutoPatchJobName = "auto-patch"
+const (
+	AutoPatchJobName     = "auto-patch"
+	autoPatchDefaultCron = "0 0 3 * * *"
+)
 
-var autoPatchSystemUser = user.Actor{
-	Username: "System",
-}
-
-// AutoPatchJob periodically patches images whose latest vulnerability scan
-// found fixable OS package vulnerabilities. It is opt-in via the
-// "imageAutoPatchEnabled" setting.
-type AutoPatchJob struct {
-	imageService    *image.ImageService
-	settingsService *settings.SettingsService
-}
-
-// NewAutoPatchJob creates a new AutoPatchJob.
-func NewAutoPatchJob(imageService *image.ImageService, settingsService *settings.SettingsService) *AutoPatchJob {
-	return &AutoPatchJob{
-		imageService:    imageService,
-		settingsService: settingsService,
+// NewAutoPatchJob runs the durable auto-patch workflow. It is opt-in via the
+// "imageAutoPatchEnabled" setting and defaults to daily at 03:00.
+func NewAutoPatchJob(engine *flow.Engine, imageService *image.ImageService, settingsService *settings.SettingsService) *flow.Job {
+	return &flow.Job{
+		Engine:   engine,
+		Workflow: imageService.PatchWorkflow(),
+		JobName:  AutoPatchJobName,
+		ScheduleFn: func(ctx context.Context) string {
+			return scheduleutil.Or(ctx, settingsService.GetStringSetting(ctx, "imageAutoPatchInterval", autoPatchDefaultCron), autoPatchDefaultCron, AutoPatchJobName)
+		},
+		ShouldRunFn: func(ctx context.Context) bool {
+			return settingsService.IsFeatureEnabled(ctx, features.VulnerabilityManagement) && settingsService.GetBoolSetting(ctx, "imageAutoPatchEnabled", false)
+		},
 	}
-}
-
-func (j *AutoPatchJob) Name() string {
-	return AutoPatchJobName
-}
-
-func (j *AutoPatchJob) ShouldSchedule(ctx context.Context) bool {
-	return j.settingsService.IsFeatureEnabled(ctx, features.VulnerabilityManagement) && j.settingsService.GetBoolSetting(ctx, "imageAutoPatchEnabled", false)
-}
-
-// Schedule returns the cron expression for the job. Defaults to daily at 3 AM.
-func (j *AutoPatchJob) Schedule(ctx context.Context) string {
-	schedule := cmp.Or(j.settingsService.GetStringSetting(ctx, "imageAutoPatchInterval", "0 0 3 * * *"), "0 0 3 * * *")
-
-	parser := scheduleutil.Parser()
-	if _, err := parser.Parse(schedule); err != nil {
-		slog.WarnContext(ctx, "Invalid cron expression for auto-patch, using default", "invalid_schedule", schedule, "error", err)
-		return "0 0 3 * * *"
-	}
-
-	return schedule
-}
-
-func (j *AutoPatchJob) Run(ctx context.Context) (schedulertypes.Outcome, error) {
-	if !j.ShouldSchedule(ctx) {
-		slog.DebugContext(ctx, "scheduled image patching disabled; skipping run")
-		return schedulertypes.Outcome{Status: schedulertypes.Skipped}, nil
-	}
-
-	slog.InfoContext(ctx, "scheduled image patching started")
-
-	patched, skipped, err := j.imageService.PatchFlaggedImages(ctx, types.LocalDockerEnvironmentID, autoPatchSystemUser)
-	if errors.Is(err, common.ErrFeatureDisabled) {
-		status := kit.Ternary(patched > 0, schedulertypes.Partial, schedulertypes.Skipped)
-		return schedulertypes.Outcome{Status: status, Message: err.Error()}, nil
-	}
-	if err != nil {
-		slog.ErrorContext(ctx, "scheduled image patching failed", "error", err)
-		if patched > 0 {
-			return schedulertypes.Outcome{Status: schedulertypes.Partial}, err
-		}
-		return schedulertypes.Outcome{}, err
-	}
-
-	slog.InfoContext(ctx, "scheduled image patching completed",
-		"patched", patched,
-		"skipped", skipped,
-	)
-	return schedulertypes.Outcome{Status: schedulertypes.Succeeded}, nil
 }

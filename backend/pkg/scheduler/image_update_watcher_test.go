@@ -11,7 +11,6 @@ import (
 	"testing/synctest"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	"github.com/getarcaneapp/arcane/types/v2/imageupdate"
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	"github.com/moby/moby/api/types/events"
@@ -33,7 +32,7 @@ type imageUpdateScannerFakeInternal struct {
 	releaseCh <-chan struct{}
 }
 
-func (s *imageUpdateScannerFakeInternal) CheckAllImages(ctx context.Context, _ int, _ []containerregistry.Credential) (map[string]*imageupdate.Response, error) {
+func (s *imageUpdateScannerFakeInternal) RunImageCheck(ctx context.Context, _ imageupdate.CheckRequest) (schedulertypes.Outcome, error) {
 	s.mu.Lock()
 	s.calls++
 	call := s.calls
@@ -70,7 +69,7 @@ func (s *imageUpdateScannerFakeInternal) CheckAllImages(ctx context.Context, _ i
 		panic("deliberate image scan panic")
 	}
 
-	return map[string]*imageupdate.Response{}, err
+	return schedulertypes.Outcome{Status: schedulertypes.Succeeded}, err
 }
 
 func (s *imageUpdateScannerFakeInternal) countInternal() int {
@@ -118,12 +117,6 @@ func (s *pollingSettingReaderFakeInternal) setEnabledInternal(enabled bool) {
 	s.mu.Lock()
 	s.enabled = enabled
 	s.mu.Unlock()
-}
-
-type registryCredentialLoaderFakeInternal struct{}
-
-func (registryCredentialLoaderFakeInternal) GetEnabledRegistryCredentials(context.Context) ([]containerregistry.Credential, error) {
-	return nil, nil
 }
 
 type dockerEventBusProviderFakeInternal struct {
@@ -197,7 +190,6 @@ func newImageUpdateWatcherForTestInternal(t *testing.T,
 	watcher := &ImageUpdateWatcher{
 		imageUpdateService: scanner,
 		settingsService:    settings,
-		environmentService: registryCredentialLoaderFakeInternal{},
 		dockerService:      dockerEventBusProviderFakeInternal{eventBus: eventBus},
 		projectService:     backfiller,
 		trigger:            make(chan struct{}, 1),
@@ -390,9 +382,10 @@ func TestImageUpdateWatcher_RunNowReturnsContainedScanPanicInternal(t *testing.T
 	settings := &pollingSettingReaderFakeInternal{enabled: true}
 	watcher := newImageUpdateWatcherForTestInternal(t, scanner, settings, bus.NewDockerEventBus(), nil)
 	startImageUpdateWatcherForTestInternal(t, watcher)
-	// Wait for durable startup admission to finish, not just for the scanner to start.
+	// Wait for durable startup admission and the startup scan itself to finish,
+	// not just for the scanner to start; RunNow rejects a scan still running.
 	require.Eventually(t, func() bool {
-		return scanner.countInternal() == 1 && watcher.triggerGeneration.Load() == watcher.acknowledgedGeneration.Load()
+		return scanner.countInternal() == 1 && watcher.triggerGeneration.Load() == watcher.acknowledgedGeneration.Load() && !watcher.scanRunning.Load()
 	}, time.Second, time.Millisecond)
 
 	ctx, cancel := context.WithTimeout(t.Context(), time.Second)

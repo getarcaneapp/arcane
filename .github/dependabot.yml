@@ -106,10 +106,8 @@ updates:
         patterns:
           - '*'
 
-  # Dependabot only scans .github/workflows plus listed composite-action dirs;
-  # .depot/workflows/*.yml must be bumped by hand.
   - package-ecosystem: 'github-actions'
-    directories: ['/', '/.depot/actions/publish-images']
+    directories: ['/', '/.depot/workflows', '/.depot/actions/publish-images']
     cooldown:
       default-days: 2
     schedule:

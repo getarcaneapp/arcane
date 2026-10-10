@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"os"
@@ -84,7 +85,9 @@ func LookupEnvOrFile(name string) (value string, found, fromFile bool) {
 		// Secret paths are arbitrary host paths, so there is no acfs root to confine them to.
 		content, err := os.ReadFile(filePath) //nolint:gosec // path intentionally comes from a *_FILE env var
 		if err != nil {
-			slog.Warn("Failed to read secret file, falling back to direct env var", "env", name+suffix, "error", err)
+			ctx := context.Background() //nolint:forbidigo // Environment lookup runs during configuration loading without a request context.
+			slog.WarnContext(ctx, "Failed to read secret file, falling back to direct env var",
+				"env", name+suffix, "error", err)
 			break
 		}
 

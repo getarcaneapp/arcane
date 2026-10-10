@@ -213,7 +213,9 @@
 		}
 		await Promise.all([
 			queryClient.invalidateQueries({ queryKey: ['containers', environmentId] }),
-			queryClient.invalidateQueries({ queryKey: queryKeys.containers.detail(environmentId, containerId) })
+			queryClient.invalidateQueries({ queryKey: queryKeys.containers.detail(environmentId, containerId) }),
+			queryClient.invalidateQueries({ queryKey: ['projects', environmentId] }),
+			queryClient.invalidateQueries({ queryKey: queryKeys.projects.environment(environmentId) })
 		]);
 		if (updateViewMounted && environmentId === currentEnvId && containerId === container.id) await refreshAll();
 	}
@@ -547,7 +549,7 @@
 	{#if showShell}
 		<Tabs.Content value="shell" class="h-full">
 			{#if activeTab === 'shell'}
-				<ContainerShell containerId={container?.id} />
+				<ContainerShell containerId={container?.id} labels={container?.labels} name={container?.name} />
 			{/if}
 		</Tabs.Content>
 	{/if}

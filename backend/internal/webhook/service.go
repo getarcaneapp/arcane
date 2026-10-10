@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -50,7 +51,18 @@ var (
 	ErrWebhookInvalidType   = errors.New("invalid webhook target type")
 	ErrWebhookInvalidAction = errors.New("invalid webhook action type")
 	ErrWebhookMissingTarget = errors.New("target ID is required for container, project, and gitops webhook types")
+
+	// remoteWebhookTargetListPaths lists agent endpoints for target types whose records live in the agent's database.
+	remoteWebhookTargetListPaths = map[string]string{
+		WebhookTargetTypeProject: "/api/environments/" + types.LocalDockerEnvironmentID + "/projects/references",
+		WebhookTargetTypeGitOps:  "/api/environments/" + types.LocalDockerEnvironmentID + "/gitops-syncs?limit=-1",
+	}
 )
+
+type remoteWebhookTarget struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
 
 type WebhookService struct {
 	tokenWriteMu sync.Mutex
@@ -315,9 +327,14 @@ func (s *WebhookService) ListWebhookSummaries(ctx context.Context, environmentID
 		return nil, err
 	}
 
+	remoteNames := s.remoteWebhookTargetNamesInternal(ctx, environmentID, webhooks)
 	summaries := make([]webhook.Summary, len(webhooks))
 	for i := range webhooks {
 		wh := webhooks[i]
+		targetName, ok := remoteNames[wh.TargetType][wh.TargetID]
+		if !ok {
+			targetName = s.resolveWebhookTargetNameInternal(ctx, &wh)
+		}
 		summaries[i] = webhook.Summary{
 			ID:              wh.ID,
 			Name:            wh.Name,
@@ -325,7 +342,7 @@ func (s *WebhookService) ListWebhookSummaries(ctx context.Context, environmentID
 			TargetType:      wh.TargetType,
 			ActionType:      resolvedWebhookActionTypeInternal(wh.TargetType, wh.ActionType),
 			TargetID:        wh.TargetID,
-			TargetName:      s.resolveWebhookTargetNameInternal(ctx, &wh),
+			TargetName:      targetName,
 			EnvironmentID:   wh.EnvironmentID,
 			Enabled:         wh.Enabled,
 			LastTriggeredAt: wh.LastTriggeredAt,
@@ -334,6 +351,30 @@ func (s *WebhookService) ListWebhookSummaries(ctx context.Context, environmentID
 	}
 
 	return summaries, nil
+}
+
+// remoteWebhookTargetNamesInternal fetches target names keyed by target type and ID from a remote environment.
+func (s *WebhookService) remoteWebhookTargetNamesInternal(ctx context.Context, environmentID string, webhooks []Webhook) map[string]map[string]string {
+	names := map[string]map[string]string{}
+	if !isRemoteWebhookEnvironmentInternal(environmentID) {
+		return names
+	}
+
+	for targetType, path := range remoteWebhookTargetListPaths {
+		if !slices.ContainsFunc(webhooks, func(wh Webhook) bool { return wh.TargetType == targetType }) {
+			continue
+		}
+		var out base.ApiResponse[[]remoteWebhookTarget]
+		if err := s.environmentService.ProxyJSONRequest(ctx, environmentID, http.MethodGet, path, nil, &out); err != nil {
+			slog.WarnContext(ctx, "failed to resolve remote webhook target names", "environmentId", environmentID, "targetType", targetType, "error", err)
+			continue
+		}
+		names[targetType] = make(map[string]string, len(out.Data))
+		for _, target := range out.Data {
+			names[targetType][target.ID] = target.Name
+		}
+	}
+	return names
 }
 
 func (s *WebhookService) resolveWebhookTargetNameInternal(ctx context.Context, wh *Webhook) string {
@@ -523,12 +564,12 @@ func (s *WebhookService) TriggerByToken(ctx context.Context, rawToken string) er
 	s.actions.Go(func() {
 		defer func() {
 			if panicErr := utils.PanicToError(recover()); panicErr != nil {
-				slog.ErrorContext(execCtx, "webhook action panicked", "webhookID", wh.ID, "webhookName", wh.Name, "actionType", actionType, "error", panicErr)
+				slog.ErrorContext(execCtx, "webhook action panicked", "webhookId", wh.ID, "webhookName", wh.Name, "actionType", actionType, "error", panicErr)
 			}
 		}()
 		if _, executeWebhookActionErr := s.executeWebhookActionInternal(execCtx, wh, actionType); executeWebhookActionErr != nil {
 			// Action failures are recorded as error events by wrapWebhookActionErrorInternal.
-			slog.ErrorContext(execCtx, "webhook action failed", "webhookID", wh.ID, "webhookName", wh.Name, "actionType", actionType, "error", executeWebhookActionErr)
+			slog.ErrorContext(execCtx, "webhook action failed", "webhookId", wh.ID, "webhookName", wh.Name, "actionType", actionType, "error", executeWebhookActionErr)
 			return
 		}
 		s.logWebhookEventInternal(execCtx, wh, actionType, event.EventSeveritySuccess, "")

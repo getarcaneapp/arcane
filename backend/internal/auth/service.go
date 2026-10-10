@@ -439,11 +439,11 @@ func (s *AuthService) tryMergeOidcUser(ctx context.Context, userInfo auth.OidcUs
 		return nil, false, nil
 	}
 
-	if err := s.validateMergeEmailVerification(userInfo); err != nil {
+	if err := s.validateMergeEmailVerification(ctx, userInfo); err != nil {
 		return nil, false, err
 	}
 
-	slog.Info("Merging OIDC account with existing user", "email", userInfo.Email, "subject", userInfo.Subject)
+	slog.InfoContext(ctx, "Merging OIDC account with existing user", "email", userInfo.Email, "subject", userInfo.Subject)
 	if mergeErr := s.mergeOidcWithExistingUser(ctx, existingUser, userInfo, tokenResp); mergeErr != nil {
 		return nil, false, mergeErr
 	}
@@ -455,7 +455,7 @@ func (s *AuthService) isOidcMergeEnabled(ctx context.Context) bool {
 	return settingsErr == nil && localSettings.OidcMergeAccounts.IsTrue()
 }
 
-func (s *AuthService) validateMergeEmailVerification(userInfo auth.OidcUserInfo) error {
+func (s *AuthService) validateMergeEmailVerification(ctx context.Context, userInfo auth.OidcUserInfo) error {
 	emailVerifiedPresent := false
 	if userInfo.Extra != nil {
 		if _, ok := userInfo.Extra["email_verified"]; ok {
@@ -466,7 +466,7 @@ func (s *AuthService) validateMergeEmailVerification(userInfo auth.OidcUserInfo)
 		return errors.New("email not verified by OIDC provider; cannot merge accounts")
 	}
 	if !emailVerifiedPresent {
-		slog.Warn("OIDC email_verified claim missing; allowing merge", "email", userInfo.Email, "subject", userInfo.Subject)
+		slog.WarnContext(ctx, "OIDC email_verified claim missing; allowing merge", "email", userInfo.Email, "subject", userInfo.Subject)
 	}
 	return nil
 }
@@ -516,7 +516,7 @@ func (s *AuthService) createOidcUser(ctx context.Context, userInfo auth.OidcUser
 		return nil, createErr
 	}
 	if syncOidcRoleAssignmentsErr := s.syncOidcRoleAssignments(ctx, localUser, userInfo, tokenResp); syncOidcRoleAssignmentsErr != nil {
-		slog.WarnContext(ctx, "failed to sync OIDC role assignments on user create", "error", syncOidcRoleAssignmentsErr, "user_id", localUser.ID)
+		slog.WarnContext(ctx, "failed to sync OIDC role assignments on user create", "error", syncOidcRoleAssignmentsErr, "userId", localUser.ID)
 	}
 	return localUser, nil
 }
@@ -547,7 +547,7 @@ func (s *AuthService) resolveOidcUsernameInternal(ctx context.Context, userInfo 
 		_, candidateErr := s.userService.GetUserByUsername(ctx, unique)
 		if errors.Is(candidateErr, common.ErrUserNotFound) {
 			slog.InfoContext(ctx, "OIDC username already taken by an existing account; assigning a unique username instead",
-				"username", username, "unique_username", unique, "subject", userInfo.Subject)
+				"username", username, "uniqueUsername", unique, "subject", userInfo.Subject)
 			return unique, nil
 		}
 		if candidateErr != nil {
@@ -572,7 +572,7 @@ func (s *AuthService) updateOidcUser(ctx context.Context, localUser *user.User, 
 		return err
 	}
 	if err := s.syncOidcRoleAssignments(ctx, localUser, userInfo, tokenResp); err != nil {
-		slog.WarnContext(ctx, "failed to sync OIDC role assignments on user update", "error", err, "user_id", localUser.ID)
+		slog.WarnContext(ctx, "failed to sync OIDC role assignments on user update", "error", err, "userId", localUser.ID)
 	}
 	return nil
 }
@@ -591,7 +591,7 @@ func (s *AuthService) mergeOidcWithExistingUser(ctx context.Context, localUser *
 	}
 	if merged != nil {
 		if syncErr := s.syncOidcRoleAssignments(ctx, merged, userInfo, tokenResp); syncErr != nil {
-			slog.WarnContext(ctx, "failed to sync OIDC role assignments on user merge", "error", syncErr, "user_id", merged.ID)
+			slog.WarnContext(ctx, "failed to sync OIDC role assignments on user merge", "error", syncErr, "userId", merged.ID)
 		}
 	}
 	return nil

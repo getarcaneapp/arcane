@@ -372,6 +372,6 @@ func ResolveTemplateIconURL(ctx context.Context, composeContent, envContent stri
 		return nil
 	}
 
-	icon, _, _, _ := parseArcaneBlockInternal(project.Extensions[arcaneBlockKey])
+	icon, _, _, _ := parseArcaneBlockInternal(ctx, project.Extensions[arcaneBlockKey])
 	return mo.EmptyableToOption(strings.TrimSpace(icon.Icon)).ToPointer()
 }

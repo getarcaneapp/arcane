@@ -1,6 +1,7 @@
 package projects
 
 import (
+	"context"
 	"log/slog"
 	"strings"
 	"time"
@@ -67,7 +68,8 @@ func ResolveServiceImagePullMode(svc composetypes.ServiceConfig) ImagePullStep {
 	normalized.PullPolicy = rawPolicy
 	policy, refreshAfter, err := normalized.GetPullPolicy()
 	if err != nil {
-		slog.Warn("failed to parse service pull_policy, defaulting to missing", "service", svc.Name, "pull_policy", svc.PullPolicy, "error", err)
+		slog.WarnContext(context.Background(), "failed to parse service pull_policy, defaulting to missing", //nolint:forbidigo // Pull policy parsing is a pure helper without a request context.
+			"service", svc.Name, "pullPolicy", svc.PullPolicy, "error", err)
 		return ImagePullStep{Mode: ImagePullModeIfMissing}
 	}
 	switch policy {

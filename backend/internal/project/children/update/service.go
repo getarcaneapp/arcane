@@ -68,28 +68,21 @@ func New(
 
 // SyncState holds the paths an in-flight rename protects from filesystem sync.
 type SyncState struct {
-	skipDiscoveredPaths map[string]struct{}
-	protectSeenPaths    map[string]struct{}
+	SkipDiscoveredPaths map[string]struct{}
+	ProtectSeenPaths    map[string]struct{}
 }
 
-// SkipDiscoveredPath reports whether a discovered directory is a rename target.
-func (s SyncState) SkipDiscoveredPath(path string) bool {
-	_, ok := s.skipDiscoveredPaths[filepath.Clean(path)]
-	return ok
-}
-
-// MarkProtectedPathsSeen keeps rename sources from being cleaned up.
-func (s SyncState) MarkProtectedPathsSeen(seen map[string]struct{}) {
-	for path := range s.protectSeenPaths {
-		seen[path] = struct{}{}
-	}
+// composeImageEdit is an image scalar's source byte span and its replacement text.
+type composeImageEdit struct {
+	start, end int
+	text       []byte
 }
 
 // SyncState collects the paths pending renames protect during filesystem sync.
 func (s *Service) SyncState(ctx context.Context) SyncState {
 	state := SyncState{
-		skipDiscoveredPaths: make(map[string]struct{}),
-		protectSeenPaths:    make(map[string]struct{}),
+		SkipDiscoveredPaths: make(map[string]struct{}),
+		ProtectSeenPaths:    make(map[string]struct{}),
 	}
 	if s == nil || s.kv == nil {
 		return state
@@ -111,10 +104,10 @@ func (s *Service) SyncState(ctx context.Context) SyncState {
 			continue
 		}
 		if oldPath := strings.TrimSpace(journal.OldPath); oldPath != "" {
-			state.protectSeenPaths[filepath.Clean(oldPath)] = struct{}{}
+			state.ProtectSeenPaths[filepath.Clean(oldPath)] = struct{}{}
 		}
 		if newPath := strings.TrimSpace(journal.NewPath); newPath != "" {
-			state.skipDiscoveredPaths[filepath.Clean(newPath)] = struct{}{}
+			state.SkipDiscoveredPaths[filepath.Clean(newPath)] = struct{}{}
 		}
 	}
 
@@ -177,14 +170,14 @@ func (s *Service) WriteJournal(ctx context.Context, journal *project.RenameJourn
 	return nil
 }
 
-func (s *Service) clearJournalInternal(ctx context.Context, projectID string) error {
+func (s *Service) clearJournal(ctx context.Context, projectID string) error {
 	if s == nil || s.kv == nil || strings.TrimSpace(projectID) == "" {
 		return nil
 	}
 	return s.kv.Delete(ctx, project.RenameJournalKeyPrefix+projectID)
 }
 
-func (s *Service) writeRollbackCleanupInternal(ctx context.Context, journal *project.RenameJournal) error {
+func (s *Service) writeRollbackCleanup(ctx context.Context, journal *project.RenameJournal) error {
 	if s == nil || s.kv == nil || journal == nil || strings.TrimSpace(journal.ProjectID) == "" || len(journal.Volumes) == 0 {
 		return nil
 	}
@@ -208,7 +201,7 @@ func (s *Service) writeRollbackCleanupInternal(ctx context.Context, journal *pro
 	return nil
 }
 
-func (s *Service) clearRollbackCleanupInternal(ctx context.Context, projectID string) error {
+func (s *Service) clearRollbackCleanup(ctx context.Context, projectID string) error {
 	if s == nil || s.kv == nil || strings.TrimSpace(projectID) == "" {
 		return nil
 	}
@@ -233,12 +226,26 @@ func (s *Service) RecoverAll(ctx context.Context) error {
 			recoverErr = errors.Join(recoverErr, fmt.Errorf("decode project rename journal %s: %w", entry.Key, unmarshalErr))
 			continue
 		}
-		if recoverProjectRenameJournalErr := s.recoverJournalInternal(ctx, &journal); recoverProjectRenameJournalErr != nil {
-			recoverErr = errors.Join(recoverErr, fmt.Errorf("recover project rename journal %s: %w", entry.Key, recoverProjectRenameJournalErr))
-			continue
+		if journalErr := s.recoverJournal(ctx, &journal); journalErr != nil {
+			recoverErr = errors.Join(recoverErr, fmt.Errorf("recover project rename journal %s: %w", entry.Key, journalErr))
 		}
 	}
-	return errors.Join(recoverErr, s.recoverRollbackCleanupsInternal(ctx))
+
+	cleanups, err := s.kv.ListByPrefix(ctx, project.RenameRollbackCleanupKeyPrefix)
+	if err != nil {
+		return errors.Join(recoverErr, err)
+	}
+	for _, entry := range cleanups {
+		var cleanup project.RenameRollbackCleanup
+		if unmarshalErr := json.Unmarshal([]byte(entry.Value), &cleanup); unmarshalErr != nil {
+			recoverErr = errors.Join(recoverErr, fmt.Errorf("decode project rename rollback cleanup %s: %w", entry.Key, unmarshalErr))
+			continue
+		}
+		if cleanupErr := s.recoverRollbackCleanup(ctx, &cleanup); cleanupErr != nil {
+			recoverErr = errors.Join(recoverErr, fmt.Errorf("recover project rename rollback cleanup %s: %w", entry.Key, cleanupErr))
+		}
+	}
+	return recoverErr
 }
 
 // RecoverProject replays one project's pending rename journal.
@@ -256,10 +263,10 @@ func (s *Service) RecoverProject(ctx context.Context, projectID string) error {
 	if unmarshalErr := json.Unmarshal([]byte(raw), &journal); unmarshalErr != nil {
 		return fmt.Errorf("decode project rename journal: %w", unmarshalErr)
 	}
-	return s.recoverJournalInternal(ctx, &journal)
+	return s.recoverJournal(ctx, &journal)
 }
 
-func (s *Service) recoverJournalInternal(ctx context.Context, journal *project.RenameJournal) error {
+func (s *Service) recoverJournal(ctx context.Context, journal *project.RenameJournal) error {
 	if s == nil || journal == nil || strings.TrimSpace(journal.ProjectID) == "" {
 		return nil
 	}
@@ -273,37 +280,12 @@ func (s *Service) recoverJournalInternal(ctx context.Context, journal *project.R
 	return projects.RecoverRenameJournal(ctx, journal, projectCommitted, s.Operations())
 }
 
-func (s *Service) recoverRollbackCleanupsInternal(ctx context.Context) error {
-	if s == nil || s.kv == nil {
-		return nil
-	}
-
-	entries, err := s.kv.ListByPrefix(ctx, project.RenameRollbackCleanupKeyPrefix)
-	if err != nil {
-		return err
-	}
-
-	var recoverErr error
-	for _, entry := range entries {
-		var cleanup project.RenameRollbackCleanup
-		if unmarshalErr := json.Unmarshal([]byte(entry.Value), &cleanup); unmarshalErr != nil {
-			recoverErr = errors.Join(recoverErr, fmt.Errorf("decode project rename rollback cleanup %s: %w", entry.Key, unmarshalErr))
-			continue
-		}
-		if recoverProjectRenameRollbackCleanupErr := s.recoverRollbackCleanupInternal(ctx, &cleanup); recoverProjectRenameRollbackCleanupErr != nil {
-			recoverErr = errors.Join(recoverErr, fmt.Errorf("recover project rename rollback cleanup %s: %w", entry.Key, recoverProjectRenameRollbackCleanupErr))
-			continue
-		}
-	}
-	return recoverErr
-}
-
-func (s *Service) recoverRollbackCleanupInternal(ctx context.Context, cleanup *project.RenameRollbackCleanup) error {
+func (s *Service) recoverRollbackCleanup(ctx context.Context, cleanup *project.RenameRollbackCleanup) error {
 	if s == nil || cleanup == nil || strings.TrimSpace(cleanup.ProjectID) == "" {
 		return nil
 	}
 	if len(cleanup.Volumes) == 0 {
-		return s.clearRollbackCleanupInternal(ctx, cleanup.ProjectID)
+		return s.clearRollbackCleanup(ctx, cleanup.ProjectID)
 	}
 
 	name, path, found, stateErr := s.projectState(ctx, cleanup.ProjectID)
@@ -311,19 +293,19 @@ func (s *Service) recoverRollbackCleanupInternal(ctx context.Context, cleanup *p
 		return fmt.Errorf("load project for rename rollback cleanup: %w", stateErr)
 	}
 	if !found {
-		slog.WarnContext(ctx, "clearing project rename rollback cleanup because project no longer exists", "projectID", cleanup.ProjectID)
-		return s.clearRollbackCleanupInternal(ctx, cleanup.ProjectID)
+		slog.WarnContext(ctx, "clearing project rename rollback cleanup because project no longer exists", "projectId", cleanup.ProjectID)
+		return s.clearRollbackCleanup(ctx, cleanup.ProjectID)
 	}
 
 	if name != cleanup.OldName || filepath.Clean(path) != filepath.Clean(cleanup.OldPath) {
-		slog.WarnContext(ctx, "clearing project rename rollback cleanup because project state changed", "projectID", cleanup.ProjectID, "projectName", name, "projectPath", path)
-		return s.clearRollbackCleanupInternal(ctx, cleanup.ProjectID)
+		slog.WarnContext(ctx, "clearing project rename rollback cleanup because project state changed", "projectId", cleanup.ProjectID, "projectName", name, "projectPath", path)
+		return s.clearRollbackCleanup(ctx, cleanup.ProjectID)
 	}
 
 	return projects.CleanupRenameRollbackTargets(ctx, cleanup, s.Operations())
 }
 
-func (s *Service) dockerClientInternal(ctx context.Context, dockerRequired bool) (*client.Client, error) {
+func (s *Service) dockerClient(ctx context.Context, dockerRequired bool) (*client.Client, error) {
 	if !dockerRequired {
 		return nil, nil
 	}
@@ -342,11 +324,11 @@ func (s *Service) dockerClientInternal(ctx context.Context, dockerRequired bool)
 // Operations exposes journal persistence to the shared rename engine.
 func (s *Service) Operations() project.RenameRecoveryOperations {
 	return project.RenameRecoveryOperations{
-		Docker:               s.dockerClientInternal,
+		Docker:               s.dockerClient,
 		WriteJournal:         s.WriteJournal,
-		ClearJournal:         s.clearJournalInternal,
-		ClearRollbackCleanup: s.clearRollbackCleanupInternal,
-		WriteRollbackCleanup: s.writeRollbackCleanupInternal,
+		ClearJournal:         s.clearJournal,
+		ClearRollbackCleanup: s.clearRollbackCleanup,
+		WriteRollbackCleanup: s.writeRollbackCleanup,
 		RestoreState:         s.restoreState,
 	}
 }
@@ -372,7 +354,7 @@ func PersistProjectServiceImages(ctx context.Context, projectPath, logical strin
 	return nil
 }
 
-func ComposeImageField(node *yaml.Node, key string) *yaml.Node {
+func composeImageField(node *yaml.Node, key string) *yaml.Node {
 	if node == nil || node.Kind != yaml.MappingNode {
 		return nil
 	}
@@ -384,7 +366,7 @@ func ComposeImageField(node *yaml.Node, key string) *yaml.Node {
 	return nil
 }
 
-func ValidateImageUpdateSource(node *yaml.Node) error {
+func validateImageUpdateSource(node *yaml.Node) error {
 	if node.Kind == yaml.AliasNode || node.Anchor != "" {
 		return errors.New("tag updates do not rewrite Compose YAML anchors or aliases; use explicit service images")
 	}
@@ -396,7 +378,7 @@ func ValidateImageUpdateSource(node *yaml.Node) error {
 		}
 	}
 	for _, child := range node.Content {
-		if err := ValidateImageUpdateSource(child); err != nil {
+		if err := validateImageUpdateSource(child); err != nil {
 			return err
 		}
 	}
@@ -416,19 +398,19 @@ func PrepareProjectServiceImages(source []byte, effective *types.Project, change
 	if len(document.Content) != 1 {
 		return nil, nil, errors.New("Compose source must contain a mapping") //nolint:staticcheck // Preserve the existing error message.
 	}
-	if err := ValidateImageUpdateSource(document.Content[0]); err != nil {
+	if err := validateImageUpdateSource(document.Content[0]); err != nil {
 		return nil, nil, err
 	}
-	if ComposeImageField(document.Content[0], "include") != nil {
+	if composeImageField(document.Content[0], "include") != nil {
 		return nil, nil, errors.New("tag updates do not rewrite Compose includes; update their source manually")
 	}
-	servicesNode := ComposeImageField(document.Content[0], "services")
+	servicesNode := composeImageField(document.Content[0], "services")
 	if servicesNode == nil || servicesNode.Kind != yaml.MappingNode {
 		return nil, nil, errors.New("Compose source has no services mapping") //nolint:staticcheck // Preserve the existing error message.
 	}
 	serviceNames := make([]string, 0, len(changes))
 	// Rewrite image scalars in place; re-encoding the node tree drops blank lines and operator formatting.
-	edits := make([]composeImageEditInternal, 0, len(changes))
+	edits := make([]composeImageEdit, 0, len(changes))
 	for name, change := range changes {
 		service, ok := effective.Services[name]
 		if !ok {
@@ -441,18 +423,18 @@ func PrepareProjectServiceImages(source []byte, effective *types.Project, change
 		if refs.NormalizeImageUpdateRef(service.Image) != expected && refs.NormalizeImageUpdateRef(service.Image) != target {
 			return nil, nil, fmt.Errorf("service %s image changed since update check: expected %s, found %s", name, change.ExpectedRef, service.Image)
 		}
-		serviceNode := ComposeImageField(servicesNode, name)
-		if ComposeImageField(serviceNode, "extends") != nil {
+		serviceNode := composeImageField(servicesNode, name)
+		if composeImageField(serviceNode, "extends") != nil {
 			return nil, nil, fmt.Errorf("tag updates do not rewrite extended service %s; update its source manually", name)
 		}
-		imageNode := ComposeImageField(serviceNode, "image")
+		imageNode := composeImageField(serviceNode, "image")
 		if imageNode == nil || imageNode.Kind != yaml.ScalarNode || imageNode.Tag != "!!str" {
 			return nil, nil, fmt.Errorf("service %s requires an explicit image scalar in the authoritative Compose file", name)
 		}
 		if !strings.Contains(imageNode.Value, "$") && refs.NormalizeImageUpdateRef(imageNode.Value) != expected && refs.NormalizeImageUpdateRef(imageNode.Value) != target {
 			return nil, nil, fmt.Errorf("service %s source image changed since Compose was loaded", name)
 		}
-		edit, err := ComposeImageSourceEdit(source, imageNode, change.TargetRef)
+		edit, err := composeImageSourceEdit(source, imageNode, refs.PreserveConfiguredRef(service.Image, change.TargetRef))
 		if err != nil {
 			return nil, nil, fmt.Errorf("service %s: %w", name, err)
 		}
@@ -461,7 +443,7 @@ func PrepareProjectServiceImages(source []byte, effective *types.Project, change
 	}
 	slices.Sort(serviceNames)
 	// Splice from the end so earlier spans keep their offsets; distinct scalars never overlap.
-	slices.SortFunc(edits, func(a, b composeImageEditInternal) int { return b.start - a.start })
+	slices.SortFunc(edits, func(a, b composeImageEdit) int { return b.start - a.start })
 	updated := slices.Clone(source)
 	for _, edit := range edits {
 		updated = slices.Concat(updated[:edit.start], edit.text, updated[edit.end:])
@@ -469,11 +451,11 @@ func PrepareProjectServiceImages(source []byte, effective *types.Project, change
 	return updated, serviceNames, nil
 }
 
-// composeImageSourceEditInternal finds an image scalar's single-line source span using YAML's line-break rules
+// composeImageSourceEdit finds an image scalar's single-line source span using YAML's line-break rules
 // and renders the target in the scalar's original style.
-func ComposeImageSourceEdit(source []byte, node *yaml.Node, target string) (composeImageEditInternal, error) {
+func composeImageSourceEdit(source []byte, node *yaml.Node, target string) (composeImageEdit, error) {
 	const lineBreaks = "\r\n\u0085\u2028\u2029"
-	edit := composeImageEditInternal{start: len(source) - len(bytes.TrimPrefix(source, []byte("\xEF\xBB\xBF")))}
+	edit := composeImageEdit{start: len(source) - len(bytes.TrimPrefix(source, []byte("\xEF\xBB\xBF")))}
 	for line, column := 1, 1; line < node.Line || (line == node.Line && column < node.Column); column++ {
 		if edit.start >= len(source) {
 			return edit, errors.New("image scalar position is outside the Compose source")
@@ -509,14 +491,8 @@ func ComposeImageSourceEdit(source []byte, node *yaml.Node, target string) (comp
 	return edit, nil
 }
 
-// composeImageEditInternal is an image scalar's source byte span and its replacement text.
-type composeImageEditInternal struct {
-	start, end int
-	text       []byte
-}
-
-// ensureProjectEnvReadableInternal rejects operator-driven file writes into a
-// project whose .env exists but cannot be read by the runtime user.
+// EnsureProjectEnvReadable rejects operator-driven file writes into a project
+// whose .env exists but cannot be read by the runtime user.
 func EnsureProjectEnvReadable(ctx context.Context, projectsDirectory, projectPath string) error {
 	cfgErr := projects.CheckProjectEnvAccess(ctx, projectsDirectory, projectPath)
 	if cfgErr == nil || !cfgErr.BlocksOperations {
@@ -536,71 +512,60 @@ func EnsureProjectEnvReadable(ctx context.Context, projectsDirectory, projectPat
 // ImageChanges discovers newer image tags allowed by each service's update
 // policy. GitOps-managed projects cannot have their source edited.
 func (s *Service) ImageChanges(ctx context.Context, effective *types.Project, gitOpsManaged bool) (map[string]updatertypes.ServiceImageChange, error) {
+	policy := updater.DefaultLabelPolicy()
 	changes := make(map[string]updatertypes.ServiceImageChange)
-	for _, name := range effective.ServiceNames() {
-		change, err := s.imageChangeInternal(ctx, effective.Services[name], gitOpsManaged)
+	for _, key := range effective.ServiceNames() {
+		service := effective.Services[key]
+		name := service.Name
+		configuredPolicy := policy.TagPolicy(service.Labels)
+		if service.Build != nil && (configuredPolicy.Strategy == "" || configuredPolicy.Strategy == "auto") && configuredPolicy.Constraint == "" && configuredPolicy.TagPattern == "" {
+			continue
+		}
+		immutable := refs.IsDigestPinnedReference(service.Image) || refs.IsImageIDLikeReference(service.Image)
+		if configuredPolicy.Strategy == "tag" && immutable {
+			return nil, fmt.Errorf("service %s has an immutable image reference", name)
+		}
+		tagPolicy, err := tagpolicy.Resolve(service.Image, configuredPolicy)
+		if err != nil {
+			return nil, fmt.Errorf("resolve service %s update policy: %w", name, err)
+		}
+		if tagPolicy.Strategy == "digest" {
+			continue
+		}
+		switch {
+		case policy.IsUpdateDisabled(service.Labels):
+			return nil, fmt.Errorf("updates are disabled for service %s", name)
+		case service.Build != nil:
+			return nil, fmt.Errorf("tag discovery is unsupported for locally built service %s", name)
+		case gitOpsManaged:
+			return nil, errors.New("tag updates cannot edit a GitOps-managed project; update image tags in the source repository")
+		case immutable:
+			return nil, fmt.Errorf("service %s has an immutable image reference", name)
+		}
+		parsed, err := refs.NormalizeReference(service.Image)
+		if err != nil {
+			return nil, fmt.Errorf("parse service %s image: %w", name, err)
+		}
+		if s.registryService == nil {
+			return nil, errors.New("registry service unavailable for tag updates")
+		}
+		credentials, err := s.credentials(ctx)
 		if err != nil {
 			return nil, err
 		}
-		if change != nil {
-			changes[name] = *change
+		tags, err := s.registryService.ListImageTags(ctx, service.Image, credentials)
+		if err != nil {
+			return nil, fmt.Errorf("list service %s image tags: %w", name, err)
+		}
+		selected, err := tagpolicy.Select(parsed.Tag, tags, tagPolicy)
+		if err != nil {
+			return nil, fmt.Errorf("select service %s image tag: %w", name, err)
+		}
+		if selected != parsed.Tag {
+			changes[key] = updatertypes.ServiceImageChange{ExpectedRef: service.Image, TargetRef: parsed.RegistryHost + "/" + parsed.Repository + ":" + selected}
 		}
 	}
 	return changes, nil
-}
-
-func (s *Service) imageChangeInternal(ctx context.Context, service types.ServiceConfig, gitOpsManaged bool) (*updatertypes.ServiceImageChange, error) {
-	policy := updater.DefaultLabelPolicy()
-	name := service.Name
-	configuredPolicy := policy.TagPolicy(service.Labels)
-	if service.Build != nil && (configuredPolicy.Strategy == "" || configuredPolicy.Strategy == "auto") && configuredPolicy.Constraint == "" && configuredPolicy.TagPattern == "" {
-		return nil, nil
-	}
-	if configuredPolicy.Strategy == "tag" && (refs.IsDigestPinnedReference(service.Image) || refs.IsImageIDLikeReference(service.Image)) {
-		return nil, fmt.Errorf("service %s has an immutable image reference", name)
-	}
-	tagPolicy, resolveErr := tagpolicy.Resolve(service.Image, configuredPolicy)
-	if resolveErr != nil {
-		return nil, fmt.Errorf("resolve service %s update policy: %w", name, resolveErr)
-	}
-	if tagPolicy.Strategy == "digest" {
-		return nil, nil
-	}
-	if policy.IsUpdateDisabled(service.Labels) {
-		return nil, fmt.Errorf("updates are disabled for service %s", name)
-	}
-	if service.Build != nil {
-		return nil, fmt.Errorf("tag discovery is unsupported for locally built service %s", name)
-	}
-	if gitOpsManaged {
-		return nil, errors.New("tag updates cannot edit a GitOps-managed project; update image tags in the source repository")
-	}
-	if refs.IsDigestPinnedReference(service.Image) || refs.IsImageIDLikeReference(service.Image) {
-		return nil, fmt.Errorf("service %s has an immutable image reference", name)
-	}
-	parsed, err := refs.NormalizeReference(service.Image)
-	if err != nil {
-		return nil, fmt.Errorf("parse service %s image: %w", name, err)
-	}
-	if s.registryService == nil {
-		return nil, errors.New("registry service unavailable for tag updates")
-	}
-	credentials, err := s.credentials(ctx)
-	if err != nil {
-		return nil, err
-	}
-	tags, err := s.registryService.ListImageTags(ctx, service.Image, credentials)
-	if err != nil {
-		return nil, fmt.Errorf("list service %s image tags: %w", name, err)
-	}
-	selected, err := tagpolicy.Select(parsed.Tag, tags, tagPolicy)
-	if err != nil {
-		return nil, fmt.Errorf("select service %s image tag: %w", name, err)
-	}
-	if selected != parsed.Tag {
-		return &updatertypes.ServiceImageChange{ExpectedRef: service.Image, TargetRef: parsed.RegistryHost + "/" + parsed.Repository + ":" + selected}, nil
-	}
-	return nil, nil
 }
 
 // ApplyImageChanges rewrites the image fields of the single authoritative

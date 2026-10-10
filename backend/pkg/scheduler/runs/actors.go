@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 	"uuid"
@@ -342,12 +343,17 @@ func (a *coordinatorActorInternal) Alarm(ctx context.Context, name string, data 
 	return a.flushInternal(ctx, &state)
 }
 
-func (q *Coordinator) repairInternal(ctx context.Context) error {
+// repairInternal flushes coordinators so schedule alarms and dispatches are restored.
+// Unless all is set, it skips records without unfinished runs so idle coordinators can deactivate.
+func (q *Coordinator) repairInternal(ctx context.Context, all bool) error {
 	records, err := q.Records(ctx)
 	if err != nil {
 		return err
 	}
 	for _, record := range records {
+		if !all && !slices.ContainsFunc(record.Runs, func(run st.Run) bool { return !run.Status.Terminal() && run.Status != st.NeedsAttention }) {
+			continue
+		}
 		if _, invokeErr := q.service.Invoke(ctx, coordinatorTypeInternal, kit.SHA256Hex(record.EnvironmentID+"\x00"+record.JobID), "repair", nil); invokeErr != nil {
 			return invokeErr
 		}

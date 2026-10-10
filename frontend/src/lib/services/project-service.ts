@@ -14,7 +14,7 @@ import type {
 import { readNdjsonStream } from '#lib/utils/streaming.js';
 import { transformPaginationParams } from '#lib/utils/tables.js';
 
-import BaseAPIService from './api-service';
+import BaseAPIService, { withSessionSignal } from './api-service';
 
 class ProjectService extends BaseAPIService {
 	private async resolveEnvironmentId(environmentId?: string): Promise<string> {
@@ -150,7 +150,8 @@ class ProjectService extends BaseAPIService {
 			headers: {
 				'Content-Type': 'application/json'
 			},
-			body: JSON.stringify(body)
+			body: JSON.stringify(body),
+			signal: withSessionSignal()
 		});
 		if (!res.ok || !res.body) {
 			throw new Error(messages.startFailed(String(res.status)));
@@ -244,7 +245,7 @@ class ProjectService extends BaseAPIService {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		const url = `/api/environments/${envId}/projects/${projectId}/pull`;
 
-		const res = await fetch(url, { method: 'POST' });
+		const res = await fetch(url, { method: 'POST', signal: withSessionSignal() });
 		if (!res.ok || !res.body) {
 			throw new Error(`Failed to start project image pull (${res.status})`);
 		}

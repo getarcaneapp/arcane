@@ -2,6 +2,7 @@ package projects
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/types/v2/project"
 	workspacetypes "github.com/getarcaneapp/arcane/types/v2/workspace"
+	"go.getarcane.app/acfs"
 	kit "go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
@@ -45,7 +47,14 @@ type ProjectWorkspaceApplyOptions struct {
 	MaxFileSizeBytes int64
 }
 
-func ReadProjectWorkspace(projectPath string, maxDepth int, skipDirectories, composeFileName string, maxEntries int, maxFileSizeBytes int64) ([]workspacetypes.FileEntry, string, bool, error) {
+func ReadProjectWorkspace(
+	ctx context.Context,
+	projectPath string,
+	maxDepth int,
+	skipDirectories, composeFileName string,
+	maxEntries int,
+	maxFileSizeBytes int64,
+) ([]workspacetypes.FileEntry, string, bool, error) {
 	if maxDepth == ProjectWorkspaceUseScanDepth {
 		maxDepth = config.LoadProjectWorkspaceConfig().ProjectWorkspaceMaxDepth
 	}
@@ -73,6 +82,7 @@ func ReadProjectWorkspace(projectPath string, maxDepth int, skipDirectories, com
 	defer func() { _ = root.Close() }()
 
 	walker := &projectWorkspaceTreeWalkerInternal{
+		ctx:              ctx,
 		projectAbs:       projectAbs,
 		maxDepth:         maxDepth,
 		maxEntries:       maxEntries,
@@ -98,6 +108,7 @@ func ReadProjectWorkspace(projectPath string, maxDepth int, skipDirectories, com
 }
 
 type projectWorkspaceTreeWalkerInternal struct {
+	ctx              context.Context
 	projectAbs       string
 	maxDepth         int
 	maxEntries       int
@@ -119,7 +130,7 @@ func (w *projectWorkspaceTreeWalkerInternal) visit(rel string, entry fs.DirEntry
 		// on the project workspace root, or one that is not a permission/disappearance
 		// error, stays fatal so real I/O problems remain observable.
 		if rel != "." && entry != nil && entry.IsDir() && (os.IsPermission(walkErr) || os.IsNotExist(walkErr)) {
-			slog.Debug("Skipping unreadable project workspace subdirectory", "relativePath", rel, "error", walkErr)
+			slog.DebugContext(w.ctx, "Skipping unreadable project workspace subdirectory", "relativePath", rel, "error", walkErr)
 			return fs.SkipDir
 		}
 		return walkErr
@@ -154,7 +165,7 @@ func (w *projectWorkspaceTreeWalkerInternal) visit(rel string, entry fs.DirEntry
 		if !os.IsPermission(err) && !os.IsNotExist(err) {
 			return err
 		}
-		slog.Debug("Skipping unreadable project workspace entry", "relativePath", rel, "error", err)
+		slog.DebugContext(w.ctx, "Skipping unreadable project workspace entry", "relativePath", rel, "error", err)
 		return kit.Ternary(entry.IsDir(), fs.SkipDir, nil)
 	}
 
@@ -230,8 +241,8 @@ func classifyProjectWorkspaceFileInternal(filePath string, size, maxFileSizeByte
 // rollback: on any error, earlier changes remain on disk. Callers own
 // atomicity — ProjectService.UpdateProjectWorkspace wraps every save in
 // BackupProjectUpdateScope / RestoreProjectUpdateBackup, and project creation
-// removes the whole directory on failure.
-func ApplyProjectWorkspaceChanges(projectPath string, changes []project.WorkspaceFileChange, uploads map[int][]byte, opts ProjectWorkspaceApplyOptions) error {
+// removes a new directory or restores the scoped backup of a reused one.
+func ApplyProjectWorkspaceChanges(ctx context.Context, projectPath string, changes []project.WorkspaceFileChange, uploads map[int][]byte, opts ProjectWorkspaceApplyOptions) error {
 	if opts.MaxFileSizeBytes <= 0 {
 		opts.MaxFileSizeBytes = workspacepkg.MaxFileSizeBytes(workspacepkg.DefaultMaxFileSizeMB)
 	}
@@ -247,7 +258,7 @@ func ApplyProjectWorkspaceChanges(projectPath string, changes []project.Workspac
 	}
 
 	if opts.ExpectedRevision != "" {
-		_, currentRevision, _, err := ReadProjectWorkspace(projectPath, opts.MaxDepth, opts.SkipDirectories, opts.ComposeFileName, opts.MaxEntries, opts.MaxFileSizeBytes)
+		_, currentRevision, _, err := ReadProjectWorkspace(ctx, projectPath, opts.MaxDepth, opts.SkipDirectories, opts.ComposeFileName, opts.MaxEntries, opts.MaxFileSizeBytes)
 		if err != nil {
 			return fmt.Errorf("read project workspace revision: %w", err)
 		}
@@ -357,7 +368,7 @@ func createProjectWorkspaceFileInternal(root *os.Root, protected map[string]bool
 	f, err := root.OpenFile(rel, os.O_WRONLY|os.O_CREATE|os.O_EXCL, utils.FilePerm)
 	if err != nil {
 		if errors.Is(err, os.ErrExist) {
-			return fmt.Errorf("project workspace file already exists: %s", rel)
+			return fmt.Errorf("project workspace file already exists: %s: %w", rel, acfs.ErrAlreadyExists)
 		}
 		return fmt.Errorf("create project workspace file: %w", err)
 	}
@@ -380,7 +391,7 @@ func createProjectWorkspaceFolderInternal(root *os.Root, protected map[string]bo
 	}
 
 	if _, err := root.Lstat(rel); err == nil {
-		return fmt.Errorf("project workspace folder already exists: %s", rel)
+		return fmt.Errorf("project workspace folder already exists: %s: %w", rel, acfs.ErrAlreadyExists)
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("inspect project workspace folder: %w", err)
 	}
@@ -485,7 +496,9 @@ func renameProjectWorkspacePathInternal(root *os.Root, protected map[string]bool
 	return nil
 }
 
-func normalizeOptionalProjectParentPathInternal(input string) (string, error) {
+// NormalizeProjectParentPath normalizes a move destination folder; a blank
+// one is the project root.
+func NormalizeProjectParentPath(input string) (string, error) {
 	if strings.TrimSpace(input) == "" {
 		return "", nil
 	}
@@ -500,7 +513,7 @@ func moveProjectWorkspacePathInternal(root *os.Root, protected map[string]bool, 
 		return err
 	}
 
-	parentRel, err := normalizeOptionalProjectParentPathInternal(newParentPath)
+	parentRel, err := NormalizeProjectParentPath(newParentPath)
 	if err != nil {
 		return fmt.Errorf("invalid project workspace parent path: %w", err)
 	}

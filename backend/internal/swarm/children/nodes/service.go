@@ -196,7 +196,7 @@ func (s *Service) ReconcileNodeAgents(ctx context.Context, environmentID string)
 		candidate := node.Agent.Candidates[0]
 		bound, bindErr := s.environmentService.BindSwarmNodeEnvironment(ctx, environmentID, node.ID, candidate.EnvironmentID, false)
 		if bindErr != nil {
-			slog.WarnContext(ctx, "failed to persist reconciled swarm node binding", "environmentID", candidate.EnvironmentID, "nodeID", node.ID, "error", bindErr.Error())
+			slog.WarnContext(ctx, "failed to persist reconciled swarm node binding", "environmentId", candidate.EnvironmentID, "nodeId", node.ID, "error", bindErr.Error())
 			results = append(results, result)
 			continue
 		}
@@ -269,7 +269,7 @@ func (s *Service) enrichNodeAgentStatusesInternal(ctx context.Context, environme
 	}
 	coverage, err := s.resolveNodeAgentCoverageInternal(ctx, environmentID)
 	if err != nil {
-		slog.WarnContext(ctx, "failed to resolve swarm node agent coverage", "environmentID", environmentID, "error", err.Error())
+		slog.WarnContext(ctx, "failed to resolve swarm node agent coverage", "environmentId", environmentID, "error", err.Error())
 		return
 	}
 
@@ -287,7 +287,7 @@ func (s *Service) resolveNodeAgentCoverageInternal(ctx context.Context, environm
 
 	candidateEnvs, err := s.environmentService.ListSwarmNodeCandidateEnvironments(ctx)
 	if err != nil {
-		slog.WarnContext(ctx, "failed to load swarm node agent candidates", "environmentID", environmentID, "error", err.Error())
+		slog.WarnContext(ctx, "failed to load swarm node agent candidates", "environmentId", environmentID, "error", err.Error())
 		candidateEnvs = nil
 	}
 
@@ -417,7 +417,7 @@ func (s *Service) resolveSwarmNodeAgentRuntimeInternal(ctx context.Context, env 
 
 	identity, err := s.fetchSwarmNodeIdentityViaEdgeInternal(ctx, env.ID)
 	if err != nil {
-		slog.DebugContext(ctx, "failed to probe swarm node identity", "environmentID", env.ID, "error", err.Error())
+		slog.DebugContext(ctx, "failed to probe swarm node identity", "environmentId", env.ID, "error", err.Error())
 		return runtime
 	}
 

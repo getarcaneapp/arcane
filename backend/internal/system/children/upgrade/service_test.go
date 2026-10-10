@@ -4,24 +4,31 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	versiontypes "github.com/getarcaneapp/arcane/types/v2/version"
 	"github.com/libtnb/sqlite"
+	"github.com/moby/moby/api/types/container"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/version"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/flow/flowtest"
 )
 
 // TestService_UpgradeFlag tests the upgrading flag behavior
 func TestService_UpgradeFlag(t *testing.T) {
-	s := NewService(nil, nil, nil, nil, nil, nil)
+	s := NewService(nil, nil, nil, nil, nil, nil, nil)
 
 	// Initially should be false
 	require.False(t, s.upgrading.Load())
@@ -37,7 +44,7 @@ func TestService_UpgradeFlag(t *testing.T) {
 
 // TestService_Initialization tests proper initialization
 func TestService_Initialization(t *testing.T) {
-	s := NewService(nil, nil, nil, nil, nil, nil)
+	s := NewService(nil, nil, nil, nil, nil, nil, nil)
 
 	require.NotNil(t, s)
 	require.False(t, s.upgrading.Load())
@@ -61,7 +68,7 @@ func TestService_ErrorVariables(t *testing.T) {
 
 // TestService_UpgradingFlag_ConcurrentAccess tests upgrading flag
 func TestService_UpgradingFlag_ConcurrentAccess(t *testing.T) {
-	s := NewService(nil, nil, nil, nil, nil, nil)
+	s := NewService(nil, nil, nil, nil, nil, nil, nil)
 
 	// Test initial state
 	require.False(t, s.upgrading.Load(), "upgrading flag should start as false")
@@ -77,7 +84,7 @@ func TestService_UpgradingFlag_ConcurrentAccess(t *testing.T) {
 
 // TestService_CompareAndSwap tests atomic CompareAndSwap operation
 func TestService_CompareAndSwap(t *testing.T) {
-	s := NewService(nil, nil, nil, nil, nil, nil)
+	s := NewService(nil, nil, nil, nil, nil, nil, nil)
 
 	// Test successful CompareAndSwap from false to true
 	swapped := s.upgrading.CompareAndSwap(false, true)
@@ -98,7 +105,7 @@ func TestService_CompareAndSwap(t *testing.T) {
 // TestService_Services tests that services are stored correctly
 func TestService_Services(t *testing.T) {
 	// Create upgrade service with nil services (valid for testing initialization)
-	s := NewService(nil, nil, nil, nil, nil, nil)
+	s := NewService(nil, nil, nil, nil, nil, nil, nil)
 
 	// Verify service is created and initialized properly
 	require.NotNil(t, s)
@@ -107,7 +114,7 @@ func TestService_Services(t *testing.T) {
 
 // TestService_ConcurrentUpgradeAttempts tests that concurrent upgrade attempts are prevented
 func TestService_ConcurrentUpgradeAttempts(t *testing.T) {
-	s := NewService(nil, nil, nil, nil, nil, nil)
+	s := NewService(nil, nil, nil, nil, nil, nil, nil)
 
 	// Simulate first upgrade starting
 	success := s.upgrading.CompareAndSwap(false, true)
@@ -138,7 +145,7 @@ func TestService_UpgradeInProgressError(t *testing.T) {
 
 // TestService_AtomicOperations tests atomic.Bool operations
 func TestService_AtomicOperations(t *testing.T) {
-	s := NewService(nil, nil, nil, nil, nil, nil)
+	s := NewService(nil, nil, nil, nil, nil, nil, nil)
 
 	// Test Load
 	require.False(t, s.upgrading.Load())
@@ -186,14 +193,14 @@ func TestUpdateAllAgentFailureStatus(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, tt.want, updateAllAgentFailureStatusInternal(tt.err))
+			require.Equal(t, tt.want, updateAllAgentFailureStatus(tt.err))
 		})
 	}
 }
 
 // A blank-target self-upgrade resolves its image from the version check (#3687).
 // Explicit targets from the updater engine never reach this function.
-func TestResolveSelfUpgradeTargetImageInternal(t *testing.T) {
+func TestResolveSelfUpgradeTargetImage(t *testing.T) {
 	tests := []struct {
 		name         string
 		currentImage string
@@ -253,13 +260,105 @@ func TestResolveSelfUpgradeTargetImageInternal(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := resolveSelfUpgradeTargetImageInternal(tt.currentImage, tt.info)
+			got, err := resolveSelfUpgradeTargetImage(tt.currentImage, tt.info)
 			if tt.wantErr != "" {
 				require.ErrorContains(t, err, tt.wantErr)
 				return
 			}
 			require.NoError(t, err)
 			require.Equal(t, tt.want, got)
+		})
+	}
+
+	// Both the updater engine and the manual upgrade respell the resolved
+	// target from the container's Compose service before the upgrader starts.
+	composeTests := []struct {
+		name, runtime, target, want, wantCompose, wantErr string
+		files                                             map[string]string
+	}{
+		{
+			name: "unmanaged Compose keeps the runtime spelling", runtime: "getarcaneapp/manager:next",
+			target: "docker.io/getarcaneapp/manager:next", want: "getarcaneapp/manager:next",
+		},
+		{
+			name: "Compose spelling repairs a qualified runtime image", runtime: "docker.io/getarcaneapp/manager:next",
+			target: "docker.io/getarcaneapp/manager:next", want: "getarcaneapp/manager:next",
+			files: map[string]string{
+				"compose.yaml":          "services:\n  server:\n    image: example/old:1\n",
+				"compose.override.yaml": "services:\n  server:\n    image: getarcaneapp/manager:${TAG}\n",
+				".env":                  "TAG=next\n",
+			},
+			wantCompose: "services:\n  server:\n    image: example/old:1\n",
+		},
+		{
+			name: "release tag change saves Compose", runtime: "getarcaneapp/manager:v1.0.0",
+			target: "getarcaneapp/manager:v1.1.0", want: "getarcaneapp/manager:v1.1.0",
+			files:       map[string]string{"compose.yaml": "services:\n  server:\n    image: getarcaneapp/manager:v1.0.0\n    profiles: [admin]\n"},
+			wantCompose: "services:\n  server:\n    image: getarcaneapp/manager:v1.1.0\n    profiles: [admin]\n",
+		},
+		{
+			name: "override source keeps upgrading without an edit", runtime: "getarcaneapp/manager:v1.0.0",
+			target: "docker.io/getarcaneapp/manager:v1.1.0", want: "getarcaneapp/manager:v1.1.0",
+			files: map[string]string{
+				"compose.yaml":          "services:\n  server:\n    image: example/old:1\n",
+				"compose.override.yaml": "services:\n  server:\n    image: getarcaneapp/manager:v1.0.0\n",
+			},
+			wantCompose: "services:\n  server:\n    image: example/old:1\n",
+		},
+		{
+			name: "conflicting Compose source fails", runtime: "getarcaneapp/manager:v1.0.0",
+			target:      "docker.io/getarcaneapp/manager:v1.1.0",
+			files:       map[string]string{"compose.yaml": "services:\n  server:\n    image: getarcaneapp/manager:v1.2.0\n"},
+			wantCompose: "services:\n  server:\n    image: getarcaneapp/manager:v1.2.0\n", wantErr: "does not match running image",
+		},
+		{
+			name: "digest target is left alone", runtime: "getarcaneapp/manager@sha256:" + strings.Repeat("a", 64),
+			target: "getarcaneapp/manager@sha256:" + strings.Repeat("b", 64), want: "getarcaneapp/manager@sha256:" + strings.Repeat("b", 64),
+			files: map[string]string{"compose.yaml": "services:\n  server:\n    image: getarcaneapp/manager@sha256:" + strings.Repeat("a", 64) + "\n"},
+		},
+	}
+	for _, tt := range composeTests {
+		t.Run(tt.name, func(t *testing.T) {
+			gormDB, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+			require.NoError(t, err)
+			db := &database.DB{DB: gormDB}
+			require.NoError(t, db.AutoMigrate(&project.Project{}, &settings.SettingVariable{}))
+			directory := t.TempDir()
+			t.Setenv("PROJECTS_DIRECTORY", directory)
+			settingsSvc, err := settings.NewSettingsService(t.Context(), db)
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, settingsSvc.Stop(context.WithoutCancel(t.Context()))) })
+			require.NoError(t, settingsSvc.SetStringSetting(t.Context(), "projectsDirectory", directory))
+			projectPath := filepath.Join(directory, "arcane")
+			if len(tt.files) > 0 {
+				require.NoError(t, os.MkdirAll(projectPath, 0o755))
+				for name, content := range tt.files {
+					require.NoError(t, os.WriteFile(filepath.Join(projectPath, name), []byte(content), 0o600))
+				}
+				require.NoError(t, db.Create(&project.Project{ID: "project-arcane", Name: "arcane", Path: projectPath}).Error)
+			}
+			svc := NewService(db, nil, nil, nil, nil, project.NewProjectService(db, settingsSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil), nil)
+			current := container.InspectResponse{Config: &container.Config{
+				Image:  tt.runtime,
+				Labels: map[string]string{"com.docker.compose.project": "arcane", "com.docker.compose.service": "server"},
+			}}
+
+			got, saveCompose, err := svc.configuredTargetImage(t.Context(), current, tt.target)
+			if tt.wantErr != "" {
+				require.ErrorContains(t, err, tt.wantErr)
+				require.Nil(t, saveCompose)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, tt.want, got)
+			}
+			if saveCompose != nil {
+				saveCompose(t.Context())
+			}
+			if tt.wantCompose != "" {
+				content, readErr := os.ReadFile(filepath.Join(projectPath, "compose.yaml"))
+				require.NoError(t, readErr)
+				require.Equal(t, tt.wantCompose, string(content))
+			}
 		})
 	}
 }
@@ -327,7 +426,7 @@ func TestUpdateAllResolveResumeAction(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := resolveResumeActionInternal(tt.job, tt.currentVersion, tt.currentDigest, now)
+			got := resolveResumeAction(tt.job, tt.currentVersion, tt.currentDigest, now)
 
 			require.Equal(t, tt.wantStale, got.markStale,
 				"markStale = %v, want %v", got.markStale, tt.wantStale)
@@ -336,15 +435,6 @@ func TestUpdateAllResolveResumeAction(t *testing.T) {
 				"managerSucceeded = %v, want %v", got.managerSucceeded, tt.wantManagerOK)
 		})
 	}
-}
-
-// A force-update with an unknown latest (offline or rate-limited version check)
-// must still record a target — the current identifiers — so the resume check can
-// recognize a same-image recreation as success instead of finalizing it as failed.
-func TestUpdateAllTargetVersionFallsBackToCurrent(t *testing.T) {
-	require.Equal(t, "v2.0.0", updateAllTargetVersionInternal(&versiontypes.Info{NewestVersion: "v2.0.0", CurrentVersion: "v1.2.3"}))
-	require.Equal(t, "v1.2.3", updateAllTargetVersionInternal(&versiontypes.Info{CurrentVersion: "v1.2.3", CurrentDigest: "sha256:a"}))
-	require.Equal(t, "sha256:a", updateAllTargetVersionInternal(&versiontypes.Info{CurrentDigest: "sha256:a"}))
 }
 
 func TestUpsertPendingResult(t *testing.T) {
@@ -357,7 +447,7 @@ func TestUpsertPendingResult(t *testing.T) {
 	{
 
 		// A seeded environment resolves to its existing row without appending.
-		idx := upsertPendingResultInternal(job, "abc", "palladium")
+		idx := upsertPendingResult(job, "abc", "palladium")
 		require.Equal(t, 1, idx,
 			"existing env index = %d, want 1", idx)
 	}
@@ -367,7 +457,7 @@ func TestUpsertPendingResult(t *testing.T) {
 
 	// A missing environment (seeding raced or a new env was registered) appends a
 	// fresh pending row and returns the new index.
-	idx := upsertPendingResultInternal(job, "xyz", "oracle-cloud")
+	idx := upsertPendingResult(job, "xyz", "oracle-cloud")
 
 	require.Equal(t, 2, idx,
 		"new env index = %d, want 2", idx)
@@ -392,7 +482,7 @@ func TestUpdateAllFailedJobMarksUpdatingResultsFailed(t *testing.T) {
 	db := &database.DB{DB: gormDB}
 	require.NoError(t, db.AutoMigrate(&EnvironmentUpdateJob{}, &event.Event{}))
 
-	svc := NewService(db, nil, nil, event.NewEventService(db, nil, nil), nil, nil)
+	svc := NewService(db, nil, nil, event.NewEventService(db, nil, nil), nil, nil, nil)
 	job := &EnvironmentUpdateJob{
 		Status:   EnvironmentUpdateJobStatusRunning,
 		UserID:   "user-1",
@@ -407,7 +497,7 @@ func TestUpdateAllFailedJobMarksUpdatingResultsFailed(t *testing.T) {
 	require.NoError(t, db.WithContext(ctx).Create(job).Error)
 
 	reason := "interrupted by manager restart"
-	svc.markUpdateAllFailedInternal(ctx, job, reason)
+	svc.markUpdateAllFailed(ctx, job, reason)
 
 	var got EnvironmentUpdateJob
 	require.NoError(t, db.WithContext(ctx).First(&got, "id = ?", job.ID).Error)
@@ -441,7 +531,7 @@ func TestUpdateAllFinalizesUpToDateManagerWithoutRestart(t *testing.T) {
 	db := &database.DB{DB: gormDB}
 	require.NoError(t, db.AutoMigrate(&EnvironmentUpdateJob{}, &event.Event{}))
 
-	svc := NewService(db, nil, nil, event.NewEventService(db, nil, nil), nil, nil)
+	svc := NewService(db, nil, nil, event.NewEventService(db, nil, nil), nil, nil, nil)
 	job := &EnvironmentUpdateJob{
 		Status:                EnvironmentUpdateJobStatusPendingRestart,
 		UserID:                "user-1",
@@ -457,8 +547,7 @@ func TestUpdateAllFinalizesUpToDateManagerWithoutRestart(t *testing.T) {
 	}
 	require.NoError(t, db.WithContext(ctx).Create(job).Error)
 
-	svc.recordManagerResultInternal(job, EnvironmentUpdateResultStatusUpToDate, "v1.0.0")
-	svc.finalizeUpdateAllJobInternal(ctx, job)
+	svc.finalizeUpdateAllJob(ctx, job, EnvironmentUpdateResultStatusUpToDate, "v1.0.0")
 
 	var got EnvironmentUpdateJob
 	require.NoError(t, db.WithContext(ctx).First(&got, "id = ?", job.ID).Error)
@@ -487,7 +576,7 @@ func TestUpdateAllStageChangesPersist(t *testing.T) {
 	db := &database.DB{DB: gormDB}
 	require.NoError(t, db.AutoMigrate(&EnvironmentUpdateJob{}))
 
-	svc := NewService(db, nil, nil, nil, nil, nil)
+	svc := NewService(db, nil, nil, nil, nil, nil, nil)
 	job := &EnvironmentUpdateJob{
 		Status: EnvironmentUpdateJobStatusRunning,
 		Results: EnvironmentUpdateResults{
@@ -496,15 +585,15 @@ func TestUpdateAllStageChangesPersist(t *testing.T) {
 	}
 	require.NoError(t, db.WithContext(ctx).Create(job).Error)
 
-	svc.setUpdateStageInternal(ctx, job, &job.Results[0], EnvironmentUpdateStageChecking)
+	svc.setUpdateStage(ctx, job, &job.Results[0], EnvironmentUpdateStageChecking)
 	started := job.Results[0].StageStartedAt
 	require.NotNil(t, started)
 	require.WithinDuration(t, time.Now(), *started, time.Second)
 
-	svc.setUpdateStageInternal(ctx, job, &job.Results[0], EnvironmentUpdateStageChecking)
+	svc.setUpdateStage(ctx, job, &job.Results[0], EnvironmentUpdateStageChecking)
 	require.Same(t, started, job.Results[0].StageStartedAt)
 
-	svc.setUpdateStageInternal(ctx, job, &job.Results[0], EnvironmentUpdateStageStarting)
+	svc.setUpdateStage(ctx, job, &job.Results[0], EnvironmentUpdateStageStarting)
 	var got EnvironmentUpdateJob
 	require.NoError(t, db.WithContext(ctx).First(&got, "id = ?", job.ID).Error)
 	require.Equal(t, EnvironmentUpdateStageStarting, got.Results[0].Stage)
@@ -589,7 +678,11 @@ func TestResumeUpdateAllFinalizesManagerWithoutRerunningAgents(t *testing.T) {
 	// The reported version differs from ManagerVersionAtStart, so the manager upgrade
 	// is judged successful.
 	versionSvc := version.NewVersionService(nil, true, "v9.9.9-new", "", nil, nil, nil, nil)
-	svc := NewService(db, nil, versionSvc, event.NewEventService(db, nil, nil), nil, nil)
+	svc := NewService(db, nil, versionSvc, event.NewEventService(db, nil, nil), nil, nil, nil)
+	harness := flowtest.New(t, nil)
+	require.NoError(t, svc.RegisterWorkflows(harness.Engine, nil, nil))
+	harness.Start(t)
+	flowtest.AssertDefinitions(t, harness)
 
 	job := &EnvironmentUpdateJob{
 		Status:                EnvironmentUpdateJobStatusPendingRestart,

@@ -76,7 +76,7 @@ func (logrusSlogHook) Fire(entry *logrus.Entry) error {
 		ctx = context.Background() //nolint:forbidigo // Legacy log entry has no context; logging still needs an empty root.
 	}
 	message := strings.TrimSpace(entry.Message)
-	slog.Log(ctx, level, message, args...)
+	slog.Log(ctx, level, message, args...) //nolint:sloglint // Bridged logrus entries carry their own message.
 
 	if level >= slog.LevelInfo && message != "" {
 		// Snapshot under the lock, write outside it: a writer that logs through

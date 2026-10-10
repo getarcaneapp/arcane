@@ -13,13 +13,13 @@ import (
 
 	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
 	backuptypes "github.com/getarcaneapp/arcane/types/v2/backup"
-	dbtypes "github.com/getarcaneapp/arcane/types/v2/database"
 	recoverytypes "github.com/getarcaneapp/arcane/types/v2/recovery"
 	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
 	"github.com/spf13/cobra"
+	"go.getarcane.app/docker"
 	"go.getarcane.app/docker/compat"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -29,7 +29,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/system"
-	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	rusticruntime "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/rustic"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/francis"
 )
@@ -77,7 +76,7 @@ func runRestoreInternal(cmd *cobra.Command, _ []string) error {
 		if pullErr != nil {
 			return fmt.Errorf("pull Arcane tools image for Rustic: %w", pullErr)
 		}
-		if pullErr = dockerutil.RenderJSONMessageStream(reader, nil); pullErr != nil {
+		if pullErr = docker.RenderJSONMessageStream(reader, nil); pullErr != nil {
 			_ = reader.Close()
 			return fmt.Errorf("pull Arcane tools image for Rustic: %w", pullErr)
 		}
@@ -112,7 +111,7 @@ func runRestoreInternal(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("%w; the pre-restore system backup was restored", runStagesErr)
 	}
 	if !request.ProjectsIncluded {
-		slog.Warn("the restored system backup did not include the projects directory; the current projects directory was left untouched")
+		slog.WarnContext(ctx, "the restored system backup did not include the projects directory; the current projects directory was left untouched")
 	}
 	manifestData, err := os.ReadFile("/app/data/.arcane-recovery.json")
 	if err != nil {
@@ -135,7 +134,7 @@ func runRestoreInternal(cmd *cobra.Command, _ []string) error {
 	if finalizeRestoredBackupErr := finalizeRestoredBackupInternal(ctx, manifest.Environment["DATABASE_URL"], manifest.BackupID, manifest.ActivityID, request); finalizeRestoredBackupErr != nil {
 		return fmt.Errorf("finalize restored system backup: %w", finalizeRestoredBackupErr)
 	}
-	if upgradeContainerErr := upgrade.UpgradeContainer(ctx, dockerClient, inspect.Container, request.ContainerImage, manifest.Environment); upgradeContainerErr != nil {
+	if upgradeContainerErr := upgrade.UpgradeContainer(ctx, dockerClient, inspect.Container, request.ContainerImage, "", manifest.Environment); upgradeContainerErr != nil {
 		return fmt.Errorf("recreate Arcane container with recovered configuration: %w", upgradeContainerErr)
 	}
 	return nil
@@ -145,7 +144,7 @@ func finalizeRestoredBackupInternal(ctx context.Context, databaseURL, manifestBa
 	if !strings.HasPrefix(databaseURL, "file:") {
 		return errors.New("restored Arcane database is not SQLite")
 	}
-	dsn, err := database.ParseSQLiteConnectionString(databaseURL, dbtypes.SQLiteConnectionOptions{})
+	dsn, err := database.ParseSQLiteConnectionString(databaseURL)
 	if err != nil {
 		return err
 	}
@@ -279,7 +278,7 @@ func runStagesInternal(ctx context.Context, dockerClient *client.Client, request
 		mounts = append(mounts, stage.Target.Mounts...)
 		command := []string{"restore", "--delete", stage.SnapshotID + ":" + stage.SourcePath, stage.Target.Path}
 		if _, err := rusticruntime.Run(ctx, dockerClient, request.RecoveryKey, command, stage.Repository.Environment, mounts, container.NetworkMode(request.NetworkMode)); err != nil {
-			slog.Error("Rustic system restore stage failed", "source", stage.SourcePath, "error", err)
+			slog.ErrorContext(ctx, "Rustic system restore stage failed", "source", stage.SourcePath, "error", err)
 			return fmt.Errorf("restore %s: %w", stage.SourcePath, err)
 		}
 	}

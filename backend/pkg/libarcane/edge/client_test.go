@@ -193,10 +193,8 @@ func TestTunnelClient_WebSocketProxy(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 }
 
-// TestTunnelClient_WebSocket_ReconnectClosesStreams verifies that a reconnect
-// reclaims the goroutines, local sockets, and activeStreams entries opened on
-// the previous connection instead of leaking them. Run under -race it also
-// exercises concurrent c.conn access across the reassignment on reconnect.
+// TestTunnelClient_WebSocket_ReconnectClosesStreams verifies a reconnect reclaims the previous
+// connection's goroutines, sockets, and activeStreams entries, and races c.conn under -race.
 func TestTunnelClient_WebSocket_ReconnectClosesStreams(t *testing.T) {
 	// Local WS echo server the agent proxies to.
 	localServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -370,50 +368,6 @@ func TestTunnelClient_HandleRequest_Errors(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 }
 
-func TestTunnelClient_InternalHelpers(t *testing.T) {
-	// Mock connection
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		conn, err := websocket.Accept(w, r, nil)
-		if err != nil {
-			return
-		}
-		defer func() { _ = conn.CloseNow() }()
-
-		for {
-			_, _, readErr := conn.Read(r.Context())
-			if readErr != nil {
-				return
-			}
-		}
-	}))
-	defer server.Close()
-
-	cfg := &Config{
-		ManagerApiUrl: server.URL,
-		AgentToken:    "test-token",
-	}
-	client := NewTunnelClient(cfg, nil)
-
-	// Manually connect
-	serverURL := "ws" + strings.TrimPrefix(server.URL, "http")
-	conn, _, err := websocket.Dial(t.Context(), serverURL, nil)
-	require.NoError(t, err)
-	defer func() { _ = conn.CloseNow() }()
-
-	tunnelConn := NewTunnelConn(conn)
-	client.conn.Store(&connBox{conn: tunnelConn})
-
-	// Test sendWebSocketData
-	err = client.sendWebSocketData(tunnelConn, "stream-1", int(websocket.MessageText), []byte("data"))
-	require.NoError(t, err)
-
-	// Test sendWebSocketClose
-	client.sendWebSocketClose(tunnelConn, "stream-1")
-
-	// Test sendErrorResponse
-	client.sendErrorResponse(tunnelConn, "req-1", 500, "error")
-}
-
 func TestTunnelClient_BuildLocalWebSocketURL(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -492,22 +446,22 @@ func TestTunnelClient_BuildLocalWebSocketURL(t *testing.T) {
 				Path:  testCase.path,
 				Query: testCase.query,
 			}
-			assert.Equal(t, testCase.expected, client.buildLocalWebSocketURLInternal(msg))
+			assert.Equal(t, testCase.expected, client.buildLocalWebSocketURL(msg))
 		})
 	}
 }
 
-func TestTunnelClient_GRPCConnectMethodInternal(t *testing.T) {
+func TestTunnelClient_GRPCConnectMethod(t *testing.T) {
 	client := NewTunnelClient(&Config{}, http.NotFoundHandler())
 	assert.Equal(t, "/api/tunnel/connect", client.grpcConnectMethodInternal())
 }
 
-func TestTunnelClient_buildLocalWebSocketHeadersInternal(t *testing.T) {
+func TestTunnelClient_buildLocalWebSocketHeaders(t *testing.T) {
 	client := NewTunnelClient(&Config{
 		AgentToken: "agent-token",
 	}, http.NotFoundHandler())
 
-	headers := client.buildLocalWebSocketHeadersInternal(&TunnelMessage{
+	headers := client.buildLocalWebSocketHeaders(&TunnelMessage{
 		Headers: map[string]string{
 			"sec-websocket-key":      "abc",
 			"sec-websocket-version":  "13",
@@ -525,12 +479,12 @@ func TestTunnelClient_buildLocalWebSocketHeadersInternal(t *testing.T) {
 	assert.Equal(t, "agent-token", headers.Get("X-Arcane-Agent-Token"))
 }
 
-func TestTunnelClient_buildLocalWebSocketHeadersInternal_FiltersBrowserHeaders(t *testing.T) {
+func TestTunnelClient_buildLocalWebSocketHeaders_FiltersBrowserHeaders(t *testing.T) {
 	client := NewTunnelClient(&Config{
 		AgentToken: "agent-token",
 	}, http.NotFoundHandler())
 
-	headers := client.buildLocalWebSocketHeadersInternal(&TunnelMessage{
+	headers := client.buildLocalWebSocketHeaders(&TunnelMessage{
 		Headers: map[string]string{
 			// Browser headers that should be stripped
 			"Origin":             "https://docker.example.com",
@@ -630,13 +584,13 @@ func TestTunnelClient_DialLocalWebSocket_StripsForwardedBrowserHeaders(t *testin
 		},
 	}
 
-	headers := client.buildLocalWebSocketHeadersInternal(msg)
+	headers := client.buildLocalWebSocketHeaders(msg)
 	assert.Empty(t, headers.Get("Host"))
 	assert.Empty(t, headers.Get("Origin"))
 	assert.Empty(t, headers.Get("Cookie"))
 	assert.Empty(t, headers.Get("Authorization"))
 
-	ws, _, err := client.dialLocalWebSocket(t.Context(), client.buildLocalWebSocketURLInternal(msg), headers)
+	ws, _, err := websocket.Dial(t.Context(), client.buildLocalWebSocketURL(msg), &websocket.DialOptions{HTTPHeader: headers})
 	require.NoError(t, err)
 	defer func() { _ = ws.CloseNow() }()
 
@@ -644,20 +598,6 @@ func TestTunnelClient_DialLocalWebSocket_StripsForwardedBrowserHeaders(t *testin
 	require.NoError(t, err)
 	assert.Equal(t, websocket.MessageText, msgType)
 	assert.Equal(t, "ok", string(body))
-}
-
-func TestTunnelClient_IsGRPCConnectionInternal(t *testing.T) {
-	t.Run("nil connection", func(t *testing.T) {
-		assert.False(t, isGRPCConnection(nil))
-	})
-
-	t.Run("grpc connection", func(t *testing.T) {
-		assert.True(t, isGRPCConnection(NewGRPCAgentTunnelConn(nil)))
-	})
-
-	t.Run("non-grpc connection", func(t *testing.T) {
-		assert.False(t, isGRPCConnection(&fakeTunnelConnForTransportCheck{}))
-	})
 }
 
 func TestTunnelClient_HandleRequest_GRPCConfigWithWebSocketConnUsesNonStreamingResponse(t *testing.T) {
@@ -700,30 +640,6 @@ func TestTunnelClient_HeartbeatLoop_ClosesConnectionOnSendFailure(t *testing.T) 
 	client.heartbeatLoop(ctx, conn)
 	assert.True(t, conn.closeCalled)
 }
-
-type fakeTunnelConnForTransportCheck struct{}
-
-func (f *fakeTunnelConnForTransportCheck) Send(_ *TunnelMessage) error {
-	return nil
-}
-
-func (f *fakeTunnelConnForTransportCheck) Receive() (*TunnelMessage, error) {
-	return nil, nil
-}
-
-func (f *fakeTunnelConnForTransportCheck) IsExpectedReceiveError(error) bool {
-	return false
-}
-
-func (f *fakeTunnelConnForTransportCheck) Close() error {
-	return nil
-}
-
-func (f *fakeTunnelConnForTransportCheck) IsClosed() bool {
-	return false
-}
-
-func (f *fakeTunnelConnForTransportCheck) Transport() string { return EdgeTransportWebSocket }
 
 type capturingTunnelConnForHandleRequest struct {
 	sent []*TunnelMessage
@@ -799,7 +715,7 @@ type blockingRegistrationConn struct {
 	receiveStartOnce sync.Once
 }
 
-func newBlockingRegistrationConnInternal() *blockingRegistrationConn {
+func newBlockingRegistrationConn() *blockingRegistrationConn {
 	return &blockingRegistrationConn{
 		closedCh:       make(chan struct{}),
 		receiveStarted: make(chan struct{}),
@@ -867,7 +783,7 @@ func TestTunnelClient_GRPC_EndToEnd(t *testing.T) {
 		tunnelServer.WaitForCleanupDone()
 	}()
 
-	managerURL, stopManager := startTestGRPCTunnelServerOnAPIPathInternal(t, ctx, tunnelServer)
+	managerURL, stopManager := startTestGRPCTunnelServerOnAPIPath(t, ctx, tunnelServer)
 	defer stopManager()
 
 	localHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -935,7 +851,7 @@ func TestTunnelClient_GRPC_ChunkedRequestBodyEndToEnd(t *testing.T) {
 		tunnelServer.WaitForCleanupDone()
 	}()
 
-	managerURL, stopManager := startTestGRPCTunnelServerOnAPIPathInternal(t, ctx, tunnelServer)
+	managerURL, stopManager := startTestGRPCTunnelServerOnAPIPath(t, ctx, tunnelServer)
 	defer stopManager()
 
 	wantBody := bytes.Repeat([]byte("arcane-edge-chunk"), 320*1024)
@@ -1078,7 +994,7 @@ func TestTunnelClient_connectAndServeGRPC_RegistrationRejected(t *testing.T) {
 		tunnelServer.WaitForCleanupDone()
 	}()
 
-	managerURL, stopManager := startTestGRPCTunnelServerOnAPIPathInternal(t, ctx, tunnelServer)
+	managerURL, stopManager := startTestGRPCTunnelServerOnAPIPath(t, ctx, tunnelServer)
 	defer stopManager()
 
 	client := NewTunnelClient(&Config{
@@ -1100,7 +1016,7 @@ func TestTunnelClient_connectAndServeGRPC_TimesOutWithoutRegisterResponse(t *tes
 	defer cancel()
 
 	service := &stallingTunnelService{}
-	managerURL, stopManager := startTestTunnelServiceOnAPIPathInternal(t, ctx, service)
+	managerURL, stopManager := startTestTunnelServiceOnAPIPath(t, ctx, service)
 	defer stopManager()
 
 	client := NewTunnelClient(&Config{
@@ -1120,29 +1036,29 @@ func TestTunnelClient_connectAndServeGRPC_TimesOutWithoutRegisterResponse(t *tes
 	assert.True(t, active == nil || active.conn.IsClosed())
 }
 
-func TestTunnelClient_awaitRegistrationInternal_ClosesConnOnContextDone(t *testing.T) {
+func TestTunnelClient_awaitRegistration_ClosesConnOnContextDone(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
 	defer cancel()
 
-	conn := newBlockingRegistrationConnInternal()
+	conn := newBlockingRegistrationConn()
 	client := &TunnelClient{
 		registrationTimeout: time.Second,
 	}
 	client.conn.Store(&connBox{conn: conn})
 
-	msg, err := client.awaitRegistrationInternal(ctx, conn)
+	msg, err := client.awaitRegistration(ctx, conn)
 	require.Nil(t, msg)
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 	assert.True(t, conn.IsClosed())
 	assert.EqualValues(t, 1, conn.closeCount.Load())
 }
 
-func TestTunnelClient_awaitRegistrationInternal_ClosesAttemptConnWhenClientConnChanges(t *testing.T) {
+func TestTunnelClient_awaitRegistration_ClosesAttemptConnWhenClientConnChanges(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
-	firstConn := newBlockingRegistrationConnInternal()
-	secondConn := newBlockingRegistrationConnInternal()
+	firstConn := newBlockingRegistrationConn()
+	secondConn := newBlockingRegistrationConn()
 	t.Cleanup(func() {
 		_ = firstConn.Close()
 		_ = secondConn.Close()
@@ -1159,7 +1075,7 @@ func TestTunnelClient_awaitRegistrationInternal_ClosesAttemptConnWhenClientConnC
 	}
 	resultCh := make(chan registrationResult, 1)
 	go func() {
-		msg, err := client.awaitRegistrationInternal(ctx, firstConn)
+		msg, err := client.awaitRegistration(ctx, firstConn)
 		resultCh <- registrationResult{msg: msg, err: err}
 	}()
 
@@ -1207,7 +1123,7 @@ func TestTunnelClient_GRPC_WebSocketProxyEndToEnd(t *testing.T) {
 		tunnelServer.WaitForCleanupDone()
 	}()
 
-	managerURL, stopManager := startTestGRPCTunnelServerOnAPIPathInternal(t, ctx, tunnelServer)
+	managerURL, stopManager := startTestGRPCTunnelServerOnAPIPath(t, ctx, tunnelServer)
 	defer stopManager()
 
 	headerTokenCh := make(chan string, 1)
@@ -1342,7 +1258,7 @@ func TestTunnelClient_GRPC_WebSocketProxyEndToEnd(t *testing.T) {
 	}
 }
 
-func TestTunnelClient_connectAndServe_WebSocketConfigFallsBackToWebSocket(t *testing.T) {
+func TestTunnelClient_connectAndServeManagedTunnel_WebSocketConfigFallsBackToWebSocket(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 
@@ -1375,7 +1291,7 @@ func TestTunnelClient_connectAndServe_WebSocketConfigFallsBackToWebSocket(t *tes
 	}
 
 	client := NewTunnelClient(cfg, http.NotFoundHandler())
-	err := client.connectAndServe(ctx)
+	err := client.connectAndServeManagedTunnel(ctx)
 	require.Error(t, err)
 
 	select {
@@ -1392,16 +1308,16 @@ func TestTunnelClient_managedTunnelTransports_AutoEnablesGRPCAndWebSocket(t *tes
 		AgentToken:    "valid-token",
 	}, http.NotFoundHandler())
 
-	transports := client.managedTunnelTransportsInternal()
+	transports := client.managedTunnelTransports()
 	assert.True(t, transports.grpc)
 	assert.True(t, transports.websocket)
 }
 
-func TestTunnelClient_connectAndServe_AutoFallsBackToWebSocketWhenGRPCUnavailable(t *testing.T) {
+func TestTunnelClient_connectAndServeManagedTunnel_AutoFallsBackToWebSocketWhenGRPCUnavailable(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
-	managerURL, wsConnectedCh, stopManager := startTestWebSocketTunnelManagerInternal(t, ctx)
+	managerURL, wsConnectedCh, stopManager := startTestWebSocketTunnelManager(t, ctx)
 	defer stopManager()
 
 	client := NewTunnelClient(&Config{
@@ -1409,14 +1325,14 @@ func TestTunnelClient_connectAndServe_AutoFallsBackToWebSocketWhenGRPCUnavailabl
 		ManagerApiUrl: managerURL,
 		AgentToken:    "valid-token",
 	}, http.NotFoundHandler())
-	grpcAddr, releaseGRPCAddr := reserveTCPAddressInternal(t)
+	grpcAddr, releaseGRPCAddr := reserveTCPAddress(t)
 	defer releaseGRPCAddr()
 	client.managerGRPCAddr = grpcAddr
 	client.registrationTimeout = 100 * time.Millisecond
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- client.connectAndServe(ctx)
+		errCh <- client.connectAndServeManagedTunnel(ctx)
 	}()
 
 	select {
@@ -1434,14 +1350,14 @@ func TestTunnelClient_connectAndServe_AutoFallsBackToWebSocketWhenGRPCUnavailabl
 	}
 }
 
-func TestTunnelClient_connectAndServe_AutoFallsBackToWebSocketWhenGRPCSetupHangs(t *testing.T) {
+func TestTunnelClient_connectAndServeManagedTunnel_AutoFallsBackToWebSocketWhenGRPCSetupHangs(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
-	grpcAddr, stopGRPC := startHangingTCPServerInternal(t, ctx)
+	grpcAddr, stopGRPC := startHangingTCPServer(t, ctx)
 	defer stopGRPC()
 
-	managerURL, wsConnectedCh, stopManager := startTestWebSocketTunnelManagerInternal(t, ctx)
+	managerURL, wsConnectedCh, stopManager := startTestWebSocketTunnelManager(t, ctx)
 	defer stopManager()
 
 	client := NewTunnelClient(&Config{
@@ -1454,7 +1370,7 @@ func TestTunnelClient_connectAndServe_AutoFallsBackToWebSocketWhenGRPCSetupHangs
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- client.connectAndServe(ctx)
+		errCh <- client.connectAndServeManagedTunnel(ctx)
 	}()
 
 	select {
@@ -1472,11 +1388,11 @@ func TestTunnelClient_connectAndServe_AutoFallsBackToWebSocketWhenGRPCSetupHangs
 	}
 }
 
-func TestTunnelClient_connectAndServe_GRPCDoesNotFallbackToWebSocket(t *testing.T) {
+func TestTunnelClient_connectAndServeManagedTunnel_GRPCDoesNotFallbackToWebSocket(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 	defer cancel()
 
-	managerURL, wsConnectedCh, stopManager := startTestWebSocketTunnelManagerInternal(t, ctx)
+	managerURL, wsConnectedCh, stopManager := startTestWebSocketTunnelManager(t, ctx)
 	defer stopManager()
 
 	client := NewTunnelClient(&Config{
@@ -1484,12 +1400,12 @@ func TestTunnelClient_connectAndServe_GRPCDoesNotFallbackToWebSocket(t *testing.
 		ManagerApiUrl: managerURL,
 		AgentToken:    "valid-token",
 	}, http.NotFoundHandler())
-	grpcAddr, releaseGRPCAddr := reserveTCPAddressInternal(t)
+	grpcAddr, releaseGRPCAddr := reserveTCPAddress(t)
 	defer releaseGRPCAddr()
 	client.managerGRPCAddr = grpcAddr
 	client.registrationTimeout = 100 * time.Millisecond
 
-	err := client.connectAndServe(ctx)
+	err := client.connectAndServeManagedTunnel(ctx)
 	require.Error(t, err)
 
 	select {
@@ -1499,7 +1415,7 @@ func TestTunnelClient_connectAndServe_GRPCDoesNotFallbackToWebSocket(t *testing.
 	}
 }
 
-func TestTunnelClient_connectAndServe_OpensGRPCWhenAvailable(t *testing.T) {
+func TestTunnelClient_connectAndServeManagedTunnel_OpensGRPCWhenAvailable(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
@@ -1518,7 +1434,7 @@ func TestTunnelClient_connectAndServe_OpensGRPCWhenAvailable(t *testing.T) {
 	go tunnelServer.StartCleanupLoop(ctx)
 	defer tunnelServer.WaitForCleanupDone()
 
-	managerURL, stopManager := startTestGRPCTunnelServerOnAPIPathInternal(t, ctx, tunnelServer)
+	managerURL, stopManager := startTestGRPCTunnelServerOnAPIPath(t, ctx, tunnelServer)
 	defer stopManager()
 
 	client := NewTunnelClient(&Config{
@@ -1529,7 +1445,7 @@ func TestTunnelClient_connectAndServe_OpensGRPCWhenAvailable(t *testing.T) {
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- client.connectAndServe(ctx)
+		errCh <- client.connectAndServeManagedTunnel(ctx)
 	}()
 
 	require.Eventually(t, func() bool {
@@ -1551,7 +1467,7 @@ func TestTunnelClient_connectAndServe_OpensGRPCWhenAvailable(t *testing.T) {
 	}
 }
 
-func startTestWebSocketTunnelManagerInternal(t *testing.T, ctx context.Context) (string, <-chan struct{}, func()) {
+func startTestWebSocketTunnelManager(t *testing.T, ctx context.Context) (string, <-chan struct{}, func()) {
 	t.Helper()
 
 	wsConnectedCh := make(chan struct{}, 1)
@@ -1595,7 +1511,7 @@ func startTestWebSocketTunnelManagerInternal(t *testing.T, ctx context.Context) 
 	return managerServer.URL, wsConnectedCh, managerServer.Close
 }
 
-func reserveTCPAddressInternal(t *testing.T) (string, func()) {
+func reserveTCPAddress(t *testing.T) (string, func()) {
 	t.Helper()
 
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
@@ -1605,7 +1521,7 @@ func reserveTCPAddressInternal(t *testing.T) (string, func()) {
 	}
 }
 
-func startHangingTCPServerInternal(t *testing.T, ctx context.Context) (string, func()) {
+func startHangingTCPServer(t *testing.T, ctx context.Context) (string, func()) {
 	t.Helper()
 
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
@@ -1638,12 +1554,12 @@ func startHangingTCPServerInternal(t *testing.T, ctx context.Context) (string, f
 	return lis.Addr().String(), stop
 }
 
-func startTestGRPCTunnelServerOnAPIPathInternal(t *testing.T, ctx context.Context, tunnelServer *TunnelServer) (string, func()) {
+func startTestGRPCTunnelServerOnAPIPath(t *testing.T, ctx context.Context, tunnelServer *TunnelServer) (string, func()) {
 	t.Helper()
-	return startTestTunnelServiceOnAPIPathInternal(t, ctx, tunnelServer)
+	return startTestTunnelServiceOnAPIPath(t, ctx, tunnelServer)
 }
 
-func startTestTunnelServiceOnAPIPathInternal(t *testing.T, ctx context.Context, service tunnelpb.TunnelServiceServer) (string, func()) {
+func startTestTunnelServiceOnAPIPath(t *testing.T, ctx context.Context, service tunnelpb.TunnelServiceServer) (string, func()) {
 	t.Helper()
 
 	var serverOptions []grpc.ServerOption
@@ -1702,7 +1618,7 @@ func startTestTunnelServiceOnAPIPathInternal(t *testing.T, ctx context.Context, 
 	return "http://" + lis.Addr().String(), cleanup
 }
 
-func TestTunnelClient_connectAndServe_AutoDoesNotFallbackWhenEstablishedGRPCSessionDrops(t *testing.T) {
+func TestTunnelClient_connectAndServeManagedTunnel_AutoDoesNotFallbackWhenEstablishedGRPCSessionDrops(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
@@ -1721,10 +1637,10 @@ func TestTunnelClient_connectAndServe_AutoDoesNotFallbackWhenEstablishedGRPCSess
 	go tunnelServer.StartCleanupLoop(ctx)
 	defer tunnelServer.WaitForCleanupDone()
 
-	grpcManagerURL, stopGRPCManager := startTestGRPCTunnelServerOnAPIPathInternal(t, ctx, tunnelServer)
+	grpcManagerURL, stopGRPCManager := startTestGRPCTunnelServerOnAPIPath(t, ctx, tunnelServer)
 	defer stopGRPCManager()
 
-	wsManagerURL, wsConnectedCh, stopWSManager := startTestWebSocketTunnelManagerInternal(t, ctx)
+	wsManagerURL, wsConnectedCh, stopWSManager := startTestWebSocketTunnelManager(t, ctx)
 	defer stopWSManager()
 
 	client := NewTunnelClient(&Config{
@@ -1739,7 +1655,7 @@ func TestTunnelClient_connectAndServe_AutoDoesNotFallbackWhenEstablishedGRPCSess
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- client.connectAndServe(ctx)
+		errCh <- client.connectAndServeManagedTunnel(ctx)
 	}()
 
 	var tunnel *AgentTunnel
@@ -1768,7 +1684,7 @@ func TestTunnelClient_connectAndServe_AutoDoesNotFallbackWhenEstablishedGRPCSess
 		require.FailNow(t, "dropped gRPC session must not fall back to websocket")
 	default:
 	}
-	assert.Zero(t, client.grpcFailureStreakInternal())
+	assert.Zero(t, client.grpcFailureStreak)
 	cancel()
 }
 
@@ -1794,7 +1710,7 @@ func TestTunnelClient_connectAndServePoll_OpensGRPCWhenRequired(t *testing.T) {
 		tunnelServer.WaitForCleanupDone()
 	}()
 
-	managerURL, stopManager := startTestPollAndGRPCManagerInternal(t, ctx, tunnelServer, TunnelPollResponse{
+	managerURL, stopManager := startTestPollAndGRPCManager(t, ctx, tunnelServer, TunnelPollResponse{
 		Status:              TunnelStatusRequired,
 		PollIntervalSeconds: 1,
 	})
@@ -1808,7 +1724,7 @@ func TestTunnelClient_connectAndServePoll_OpensGRPCWhenRequired(t *testing.T) {
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- client.connectAndServe(ctx)
+		errCh <- client.connectAndServePoll(ctx)
 	}()
 
 	require.Eventually(t, func() bool {
@@ -1889,7 +1805,7 @@ func TestTunnelClient_connectAndServePoll_OpensWebSocketWhenRequired(t *testing.
 	}, http.NotFoundHandler())
 	client.registrationTimeout = 100 * time.Millisecond
 
-	err := client.connectAndServe(ctx)
+	err := client.connectAndServePoll(ctx)
 	require.Error(t, err)
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 
@@ -1902,7 +1818,7 @@ func TestTunnelClient_connectAndServePoll_OpensWebSocketWhenRequired(t *testing.
 	assert.GreaterOrEqual(t, pollCount.Load(), int32(1))
 }
 
-func TestTunnelClient_pollTunnelControlInternal_UsesConfiguredHTTPClient(t *testing.T) {
+func TestTunnelClient_pollTunnelControl_UsesConfiguredHTTPClient(t *testing.T) {
 	t.Parallel()
 
 	managerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1974,7 +1890,7 @@ func TestTunnelClient_connectAndServePoll_DoesNotOpenWebSocketWhenIdle(t *testin
 		AgentToken:    "valid-token",
 	}, http.NotFoundHandler())
 
-	err := client.connectAndServe(ctx)
+	err := client.connectAndServePoll(ctx)
 	require.Error(t, err)
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 
@@ -2050,7 +1966,7 @@ func TestTunnelClient_connectAndServePoll_RetriesAfterTransientPollError(t *test
 	}, http.NotFoundHandler())
 	client.registrationTimeout = 100 * time.Millisecond
 
-	err := client.connectAndServe(ctx)
+	err := client.connectAndServePoll(ctx)
 	require.Error(t, err)
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 
@@ -2063,7 +1979,7 @@ func TestTunnelClient_connectAndServePoll_RetriesAfterTransientPollError(t *test
 	assert.GreaterOrEqual(t, pollCount.Load(), int32(2))
 }
 
-func TestTunnelClient_stopPollManagedSessionInternal_DeadlineExceededReturnsTimeoutMessage(t *testing.T) {
+func TestTunnelClient_stopPollManagedSession_DeadlineExceededReturnsTimeoutMessage(t *testing.T) {
 	t.Parallel()
 
 	session := &pollManagedTunnelSession{
@@ -2079,7 +1995,7 @@ func TestTunnelClient_stopPollManagedSessionInternal_DeadlineExceededReturnsTime
 	assert.EqualError(t, err, "timed out waiting for poll-managed websocket session to stop")
 }
 
-func TestTunnelClient_syncPollManagedSessionInternal_IdleUsesBoundedStopTimeout(t *testing.T) {
+func TestTunnelClient_syncPollManagedSession_IdleUsesBoundedStopTimeout(t *testing.T) {
 	previousTimeout := defaultPollManagedSessionStopTimeout
 	defaultPollManagedSessionStopTimeout = 20 * time.Millisecond
 	defer func() {
@@ -2107,7 +2023,7 @@ func TestTunnelClient_syncPollManagedSessionInternal_IdleUsesBoundedStopTimeout(
 	require.Less(t, time.Since(started), defaultPollManagedSessionStopTimeout)
 }
 
-func startTestPollAndGRPCManagerInternal(t *testing.T, ctx context.Context, service tunnelpb.TunnelServiceServer, pollResp TunnelPollResponse) (string, func()) {
+func startTestPollAndGRPCManager(t *testing.T, ctx context.Context, service tunnelpb.TunnelServiceServer, pollResp TunnelPollResponse) (string, func()) {
 	t.Helper()
 
 	var serverOptions []grpc.ServerOption
@@ -2210,10 +2126,10 @@ func TestTunnelClient_InternalRequestSkipsSlogEcho(t *testing.T) {
 		{
 			name: "streaming response",
 			run: func(t *testing.T, client *TunnelClient) {
-				conn := &fakeTunnelConn{}
+				conn := &fakeTunnelConn{transport: EdgeTransportGRPC}
 				client.conn.Store(&connBox{conn: conn})
 
-				client.handleRequestStreaming(t.Context(), conn, &TunnelMessage{
+				client.handleRequest(t.Context(), conn, &TunnelMessage{
 					ID:     "req-stream",
 					Type:   MessageTypeRequest,
 					Method: http.MethodGet,
@@ -2274,7 +2190,7 @@ func (f *fakeTunnelConn) Send(msg *TunnelMessage) error {
 	}
 	copyMsg := *msg
 	if msg.Headers != nil {
-		copyMsg.Headers = cloneHeaderMap(msg.Headers)
+		copyMsg.Headers = maps.Clone(msg.Headers)
 	}
 	if msg.Body != nil {
 		copyMsg.Body = append([]byte(nil), msg.Body...)
@@ -2314,7 +2230,7 @@ func (f *fakeTunnelConn) Transport() string {
 	return f.transport
 }
 
-func TestTunnelClient_serveTunnelSessionInternal_GRPCSendEOFSurfacesRegistrationError(t *testing.T) {
+func TestTunnelClient_serveTunnelSession_GRPCSendEOFSurfacesRegistrationError(t *testing.T) {
 	conn := &fakeTunnelConn{
 		sendErr:    io.EOF,
 		receiveErr: status.Error(codes.Unauthenticated, "invalid agent token"),
@@ -2322,7 +2238,7 @@ func TestTunnelClient_serveTunnelSessionInternal_GRPCSendEOFSurfacesRegistration
 	}
 	client := NewTunnelClient(&Config{}, http.NotFoundHandler())
 
-	err := client.serveTunnelSessionInternal(t.Context(), conn, "manager.test")
+	err := client.serveTunnelSession(t.Context(), conn, "manager.test")
 	require.Error(t, err)
 	assert.Equal(t, codes.Unauthenticated, status.Code(err))
 	assert.Contains(t, err.Error(), "invalid agent token")
@@ -2330,7 +2246,7 @@ func TestTunnelClient_serveTunnelSessionInternal_GRPCSendEOFSurfacesRegistration
 
 func TestStreamingResponseRecorder_Sequence(t *testing.T) {
 	conn := &fakeTunnelConn{}
-	r := newStreamingResponseRecorder("req-1", conn)
+	r := &streamingResponseRecorder{requestID: "req-1", conn: conn, headers: make(http.Header), statusCode: http.StatusOK}
 
 	r.Header().Set("Content-Type", "text/plain")
 
@@ -2361,7 +2277,7 @@ func TestStreamingResponseRecorder_Sequence(t *testing.T) {
 
 func TestStreamingResponseRecorder_WriteHeaderAndClose(t *testing.T) {
 	conn := &fakeTunnelConn{}
-	r := newStreamingResponseRecorder("req-2", conn)
+	r := &streamingResponseRecorder{requestID: "req-2", conn: conn, headers: make(http.Header), statusCode: http.StatusOK}
 
 	r.WriteHeader(http.StatusCreated)
 	require.NoError(t, r.Close())
@@ -2411,7 +2327,7 @@ func TestConnectAndServeWebSocket_CancelUnblocksMessageLoop(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan error, 1)
-	go func() { done <- client.connectAndServeWebSocketInternal(ctx) }()
+	go func() { done <- client.connectAndServeWebSocket(ctx) }()
 
 	select {
 	case <-registered:

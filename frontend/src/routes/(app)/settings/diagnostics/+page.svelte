@@ -17,32 +17,29 @@
 		ClockIcon,
 		ConnectionIcon,
 		DownloadIcon,
+		EnvironmentsIcon,
 		ArrowDownIcon
 	} from '#lib/icons/index.js';
 	import { SettingsPageLayout } from '#lib/layouts/index.js';
 	import type { SettingsStatCard } from '#lib/layouts/types.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { diagnosticsService } from '#lib/services/diagnostics-service.js';
 	import type { Diagnostics, GoroutineLeakReport, PprofProfile } from '#lib/types/diagnostics.js';
 	import { cn } from '#lib/utils.js';
 	import { formatTime } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
-	import { createDiagnosticsWebSocket, ReconnectingWebSocket } from '#lib/utils/ws.js';
+	import { createDiagnosticsWebSocket, type DiagnosticsWebSocket } from '#lib/utils/ws.js';
 
+	import DiagnosticActorPanel from './components/diagnostic-actor-panel.svelte';
 	import DiagnosticLeakPanel from './components/diagnostic-leak-panel.svelte';
 	import DiagnosticLogPanel from './components/diagnostic-log-panel.svelte';
 
-	type DiagnosticsTab = 'overview' | 'connections' | 'logs' | 'profiling';
+	type DiagnosticsTab = 'overview' | 'connections' | 'actors' | 'logs' | 'profiling';
 
 	let diag = $state<Diagnostics | null>(null);
-	let connected = $state(false);
 	let paused = $state(false);
-	let lastUpdated = $state(0);
-	let now = $state(performance.now());
 	let error = $state<string | null>(null);
 
-	let ws: ReconnectingWebSocket<Diagnostics> | null = null;
-	let tick: ReturnType<typeof setInterval> | null = null;
+	let ws = $state.raw<DiagnosticsWebSocket | null>(null);
 
 	const wsKindLabels: Record<string, string> = {
 		project_logs: m.diagnostics_ws_project_logs(),
@@ -50,7 +47,8 @@
 		container_stats: m.diagnostics_ws_container_stats(),
 		container_exec: m.diagnostics_ws_kind_terminal(),
 		system_stats: m.diagnostics_ws_system_stats(),
-		service_logs: m.diagnostics_ws_service_logs()
+		service_logs: m.diagnostics_ws_service_logs(),
+		diagnostics: m.diagnostics()
 	};
 
 	function fmtBytes(n: number): string {
@@ -92,12 +90,6 @@
 		return m.diagnostics_leaks_not_scanned();
 	}
 
-	const agoText = $derived.by(() => {
-		if (!lastUpdated) return '—';
-		const s = Math.max(0, Math.round((now - lastUpdated) / 1000));
-		return s <= 1 ? m.diagnostics_just_now() : m.diagnostics_seconds_ago({ seconds: s });
-	});
-
 	const totalConnections = $derived.by(() => {
 		const s = diag?.websocket?.snapshot;
 		if (!s) return 0;
@@ -113,7 +105,8 @@
 			{ label: m.diagnostics_ws_container_stats(), value: s.containerStats },
 			{ label: m.diagnostics_ws_terminals(), value: s.containerExec },
 			{ label: m.diagnostics_ws_system_stats(), value: s.systemStats },
-			{ label: m.diagnostics_ws_service_logs(), value: s.serviceLogsActive }
+			{ label: m.diagnostics_ws_service_logs(), value: s.serviceLogsActive },
+			{ label: m.diagnostics(), value: s.diagnosticsActive }
 		];
 	});
 
@@ -127,6 +120,7 @@
 					icon: ConnectionIcon,
 					badge: totalConnections || undefined
 				},
+				{ value: 'actors', label: m.diagnostics_tab_actors(), icon: EnvironmentsIcon },
 				{ value: 'logs', label: m.common_logs(), icon: ActivityIcon },
 				{
 					value: 'profiling',
@@ -165,12 +159,6 @@
 	const headerStats = $derived.by((): SettingsStatCard[] => {
 		if (!diag) return [];
 		return [
-			{
-				title: m.diagnostics_updated_ago({ ago: agoText }),
-				value: paused ? m.paused() : connected ? m.common_live() : m.diagnostics_status_connecting(),
-				icon: ActivityIcon,
-				iconColor: paused ? 'text-warning' : connected ? 'text-success' : 'text-muted-foreground'
-			},
 			{
 				title: m.goroutines(),
 				value: fmtNum(diag.runtime.goroutines),
@@ -211,43 +199,19 @@
 	]);
 
 	function applySnapshot(d: Diagnostics) {
+		if (paused) return;
 		diag = d;
-		lastUpdated = performance.now();
 		error = null;
 	}
 
-	function openStream() {
-		ws = createDiagnosticsWebSocket({
-			onMessage: applySnapshot,
-			onOpen: () => (connected = true),
-			onClose: () => (connected = false)
-		});
-		ws.connect();
-	}
-
-	function closeStream() {
-		ws?.close();
-		ws = null;
-		connected = false;
-	}
-
+	// Pausing only freezes the view so on-demand commands keep working.
 	function togglePause() {
 		paused = !paused;
-		if (paused) closeStream();
-		else openStream();
+		if (!paused) refresh();
 	}
 
-	async function refresh() {
-		const operationResult = await tryCatch(
-			(async () => {
-				applySnapshot(await diagnosticsService.getDiagnostics());
-			})()
-		);
-		if (operationResult.error !== null) {
-			const e = operationResult.error;
-
-			error = e instanceof Error ? e.message : m.diagnostics_error_load();
-		}
+	function refresh() {
+		if (!ws?.refresh()) error = m.disconnected();
 	}
 
 	let dumpOpen = $state<{ goroutine: boolean; heap: boolean }>({ goroutine: false, heap: false });
@@ -257,13 +221,15 @@
 	async function loadDump(name: 'goroutine' | 'heap') {
 		dumpLoading[name] = true;
 		try {
-			const operationResult = await tryCatch((async () => diagnosticsService.getDump(name))());
+			const operationResult = await tryCatch(
+				ws ? ws.request({ type: 'dump', name }) : Promise.reject(new Error(m.disconnected()))
+			);
 			if (operationResult.error !== null) {
 				const e = operationResult.error;
 
 				dumpText[name] = e instanceof Error ? e.message : m.diagnostics_error_dump();
 			} else {
-				dumpText[name] = operationResult.data;
+				dumpText[name] = operationResult.data.text ?? '';
 			}
 		} finally {
 			dumpLoading[name] = false;
@@ -305,7 +271,8 @@
 		try {
 			const operationResult = await tryCatch(
 				(async () => {
-					await diagnosticsService.downloadProfile(p);
+					if (!ws) throw new Error(m.disconnected());
+					await ws.downloadProfile(p);
 				})()
 			);
 			if (operationResult.error !== null) {
@@ -319,12 +286,13 @@
 	}
 
 	onMount(() => {
-		refresh();
-		openStream();
-		tick = setInterval(() => (now = performance.now()), 1000);
+		ws = createDiagnosticsWebSocket({
+			onSnapshot: applySnapshot
+		});
+		ws.connect();
 		return () => {
-			closeStream();
-			if (tick) clearInterval(tick);
+			ws?.close();
+			ws = null;
 		};
 	});
 </script>
@@ -487,7 +455,7 @@
 				<Tabs.Content value="connections" class="mt-6">
 					<div class="space-y-4">
 						{@render sectionHeading(m.diagnostics_section_connections({ count: diag.websocket.connections?.length ?? 0 }))}
-						<div class="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3 lg:grid-cols-6">
+						<div class="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-4 lg:grid-cols-7">
 							{#each wsCounts as c (c.label)}
 								<div>
 									<div class="text-xs text-muted-foreground">{c.label}</div>
@@ -531,6 +499,10 @@
 					</div>
 				</Tabs.Content>
 
+				<Tabs.Content value="actors" class="mt-6">
+					<DiagnosticActorPanel />
+				</Tabs.Content>
+
 				<Tabs.Content value="logs" class="mt-6">
 					<DiagnosticLogPanel height="min(70vh, 640px)" />
 				</Tabs.Content>
@@ -542,6 +514,7 @@
 							<DiagnosticLeakPanel
 								leakedGoroutines={diag.runtime.leakedGoroutines}
 								leakScannedAt={diag.runtime.leakScannedAt}
+								socket={ws}
 								onscanned={onLeakScanned}
 							/>
 						</section>

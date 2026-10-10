@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { useQueryClient } from '@tanstack/svelte-query';
 	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
@@ -70,11 +71,16 @@
 	let togglingAutoUpdateIds = $state<Record<string, boolean>>({});
 	let bulkUpdating = $state(false);
 	let updateTableMounted = false;
+	const queryClient = useQueryClient();
 	const currentEnvironmentId = $derived(environmentStore.selected?.id || '0');
 	const updateActivities = createContainerUpdateActivityTracker(
 		() => currentEnvironmentId,
 		() => {
-			if (updateTableMounted) void refreshRows();
+			if (!updateTableMounted) return;
+			void refreshRows();
+			// Compose containers also drive the project update badges.
+			void queryClient.invalidateQueries({ queryKey: ['projects', currentEnvironmentId] });
+			void queryClient.invalidateQueries({ queryKey: ['project', currentEnvironmentId] });
 		}
 	);
 	onMount(() => {

@@ -15,7 +15,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
-	"sort"
 	"strings"
 	"time"
 
@@ -32,8 +31,13 @@ import (
 	"go.getarcane.app/acfs"
 	acfstypes "go.getarcane.app/acfs/types"
 	kit "go.getarcane.app/kit/pkg"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	gossh "golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/knownhosts"
+
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/tracing"
 )
 
 const (
@@ -54,16 +58,11 @@ const (
 	defaultKnownHostsPath           = "/app/data/.ssh/known_hosts"
 )
 
-// go-git's file transport execs the git binary, which doesn't exist in the
-// distroless image. Unregister it so a repository URL can never reach it.
+// go-git's file transport execs the git binary, which the distroless image lacks, so unregister it.
 func init() {
 	client.InstallProtocol("file", nil)
 
-	// go-git strips multi_ack/multi_ack_detailed from pack negotiation by
-	// default, which Azure DevOps rejects by sending an incomplete pack
-	// ("invalid reset option: object not found" on clone). Advertise them and
-	// keep only thin-pack disabled, matching Flux/ArgoCD; other hosts are
-	// unaffected.
+	// Azure DevOps sends an incomplete pack without multi_ack, so only thin-pack stays disabled (as in Flux/ArgoCD).
 	transport.UnsupportedCapabilities = []capability.Capability{
 		capability.ThinPack,
 	}
@@ -76,8 +75,7 @@ type Client struct {
 
 var scpLikeURLPattern = regexp.MustCompile(`^[^@/]+@[^:/]+:`)
 
-// normalizeURL coerces a repository URL into a form go-git resolves to a
-// network transport, never the file transport (which execs the git binary).
+// normalizeURL coerces a repository URL onto a network transport, never the file transport.
 // Schemeless host-style URLs (e.g. github.com/org/repo.git) get https://.
 func normalizeURL(raw string) (string, error) {
 	url := strings.TrimSpace(raw)
@@ -121,8 +119,8 @@ type AuthConfig struct {
 	SSHHostKeyVerification string // strict, accept_new, skip
 }
 
-// getAuthInternal returns the appropriate transport.AuthMethod.
-func (c *Client) getAuthInternal(url string, localConfig AuthConfig) (transport.AuthMethod, error) {
+// getAuth returns the appropriate transport.AuthMethod.
+func (c *Client) getAuth(ctx context.Context, url string, localConfig AuthConfig) (transport.AuthMethod, error) {
 	switch localConfig.AuthType {
 	case "http":
 		if localConfig.Token != "" {
@@ -144,8 +142,7 @@ func (c *Client) getAuthInternal(url string, localConfig AuthConfig) (transport.
 				return nil, fmt.Errorf("failed to create ssh auth: %w", err)
 			}
 
-			// Configure host key verification based on mode
-			hostKeyCallback, err := c.getSSHHostKeyCallback(localConfig.SSHHostKeyVerification)
+			hostKeyCallback, err := c.getSSHHostKeyCallback(ctx, localConfig.SSHHostKeyVerification)
 			if err != nil {
 				return nil, fmt.Errorf("failed to configure SSH host key verification: %w", err)
 			}
@@ -156,170 +153,201 @@ func (c *Client) getAuthInternal(url string, localConfig AuthConfig) (transport.
 			return publicKeys, nil
 		}
 		return nil, errors.New("ssh key required for ssh authentication")
-	case "none":
-		return nil, nil
 	default:
 		return nil, nil
 	}
 }
 
-// getSSHHostKeyCallback returns the appropriate SSH host key callback based on verification mode
-func (c *Client) getSSHHostKeyCallback(mode string) (gossh.HostKeyCallback, error) {
-	switch mode {
-	case SSHHostKeyVerificationStrict:
-		// Use known_hosts verification respecting SSH_KNOWN_HOSTS env var
-		return knownhosts.New(getKnownHostsPath())
-	case SSHHostKeyVerificationSkip:
-		// Skip host key verification - intentionally insecure, user explicitly opted in via UI
+// getSSHHostKeyCallback returns the SSH host key callback for the verification mode.
+func (c *Client) getSSHHostKeyCallback(ctx context.Context, mode string) (gossh.HostKeyCallback, error) {
+	if mode == SSHHostKeyVerificationSkip {
 		return gossh.InsecureIgnoreHostKey(), nil //nolint:gosec // User explicitly chose to skip verification
-	case SSHHostKeyVerificationAcceptNew, "":
-		// Default: accept and remember new host keys
-		return c.createAcceptNewHostKeyCallback()
-	default:
-		// Fall back to accept_new for unknown modes
-		return c.createAcceptNewHostKeyCallback()
 	}
-}
 
-// createAcceptNewHostKeyCallback creates a callback that accepts new host keys and saves them
-func (c *Client) createAcceptNewHostKeyCallback() (gossh.HostKeyCallback, error) {
-	knownHostsPath := getKnownHostsPath()
+	knownHostsPaths, pathErr := getKnownHostsPaths(
+		c.workDir,
+		os.Getenv,
+		os.Stat,
+		os.UserHomeDir,
+	)
+	if pathErr != nil {
+		return nil, pathErr
+	}
+	if mode == SSHHostKeyVerificationStrict {
+		return knownhosts.New(knownHostsPaths...)
+	}
 
-	// Ensure the directory exists
-	// os.* rather than acfs: known_hosts lives under the user home (not an arcane
-	// confinement root), and acfs has no append/flock API for the writes below.
+	// Other modes accept and remember new host keys; os.* reaches paths outside acfs roots and supports append/flock.
+	knownHostsPath := knownHostsPaths[0]
 	dir := filepath.Dir(knownHostsPath)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("failed to create known_hosts directory: %w", err)
 	}
 
-	// Create the file if it doesn't exist
 	if _, err := os.Stat(knownHostsPath); os.IsNotExist(err) {
 		file, openFileErr := os.OpenFile(knownHostsPath, os.O_CREATE|os.O_WRONLY, 0o600)
 		if openFileErr != nil {
 			return nil, fmt.Errorf("failed to create known_hosts file: %w", openFileErr)
 		}
 		if closeErr := file.Close(); closeErr != nil {
-			slog.Warn("Failed to close known_hosts file", "path", knownHostsPath, "error", closeErr)
+			slog.WarnContext(ctx, "Failed to close known_hosts file", "path", knownHostsPath, "error", closeErr)
 		}
 	}
 
 	return func(hostname string, remote net.Addr, key gossh.PublicKey) error {
-		// Re-read known_hosts on each call to handle concurrent modifications
-		existingCallback, err := knownhosts.New(knownHostsPath)
+		// Re-read known_hosts each call for concurrent edits; unreadable trust fails closed.
+		existingCallback, err := knownhosts.New(knownHostsPaths...)
 		if err != nil {
-			existingCallback = nil
+			return fmt.Errorf("failed to read known_hosts: %w", err)
 		}
 
-		// Check if the host is already known
-		if existingCallback != nil {
-			existingCallbackErr := existingCallback(hostname, remote, key)
-			if existingCallbackErr == nil {
-				return nil // Host key matches
+		existingCallbackErr := existingCallback(hostname, remote, key)
+		if existingCallbackErr == nil {
+			return nil
+		}
+		if keyErr, ok := errors.AsType[*knownhosts.KeyError](existingCallbackErr); ok && len(keyErr.Want) > 0 {
+			return fmt.Errorf("host key mismatch for %s (possible MITM attack): %w", hostname, existingCallbackErr)
+		}
+
+		// Unknown host: save it, logging persistence failures after the file closes and the lock releases.
+		var saveErr error
+		defer func() {
+			if saveErr != nil {
+				slog.WarnContext(ctx, "Failed to save host key", "hostname", hostname, "error", saveErr)
 			}
-			// Check if it's a "key mismatch" error vs "unknown host"
-			if keyErr, ok := errors.AsType[*knownhosts.KeyError](existingCallbackErr); ok && len(keyErr.Want) > 0 {
-				// Host is known but key doesn't match - this is a security concern
-				return fmt.Errorf("host key mismatch for %s (possible MITM attack): %w", hostname, existingCallbackErr)
+		}()
+
+		fileLock := flock.New(knownHostsPath)
+		if lockErr := fileLock.Lock(); lockErr != nil {
+			saveErr = fmt.Errorf("failed to acquire lock on known_hosts file: %w", lockErr)
+			return nil
+		}
+		defer func() {
+			if unlockErr := fileLock.Unlock(); unlockErr != nil && saveErr == nil {
+				saveErr = fmt.Errorf("failed to release lock on known_hosts file: %w", unlockErr)
 			}
-			// Otherwise, host is unknown - we'll add it
-		}
+		}()
 
-		// Add the new host key to known_hosts
-		if addHostKeyErr := addHostKey(knownHostsPath, hostname, key); addHostKeyErr != nil {
-			// Log the error but don't fail - still allow the connection
-			// The host key just won't be remembered for next time
-			slog.Warn("Failed to save host key", "hostname", hostname, "error", addHostKeyErr)
+		// acfs has no append API, and override paths can be outside its roots.
+		file, openErr := os.OpenFile(knownHostsPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+		if openErr != nil {
+			saveErr = fmt.Errorf("failed to open known_hosts file: %w", openErr)
+			return nil
 		}
-
+		defer func() {
+			if closeErr := file.Close(); closeErr != nil && saveErr == nil {
+				saveErr = fmt.Errorf("failed to close known_hosts file: %w", closeErr)
+			}
+		}()
+		line := knownhosts.Line([]string{hostname}, key)
+		if _, writeErr := file.WriteString(line + "\n"); writeErr != nil {
+			saveErr = fmt.Errorf("failed to write to known_hosts file: %w", writeErr)
+		}
 		return nil
 	}, nil
 }
 
-// getKnownHostsPath returns the path to the known_hosts file
-func getKnownHostsPath() string {
-	return getKnownHostsPathInternal(os.Getenv, os.Stat, os.UserHomeDir)
-}
-
-func getKnownHostsPathInternal(getenv func(string) string, stat func(string) (os.FileInfo, error), userHomeDir func() (string, error)) string {
-	// Check environment variable first
+// getKnownHostsPaths returns trusted known_hosts files; new keys are saved to the first.
+func getKnownHostsPaths(
+	workDir string,
+	getenv func(string) string,
+	stat func(string) (os.FileInfo, error),
+	userHomeDir func() (string, error),
+) ([]string, error) {
 	if localPath := getenv("SSH_KNOWN_HOSTS"); localPath != "" {
-		return localPath
+		return []string{localPath}, nil
 	}
 
-	// Prefer Arcane's writable persistent data directory when it is available,
-	// which is the case for published container images and PUID/PGID setups.
+	// Prefer Arcane's writable data directory, present in published images and PUID/PGID setups.
 	if info, err := stat(defaultKnownHostsDataDir); err == nil && info.IsDir() {
-		return defaultKnownHostsPath
+		return []string{defaultKnownHostsPath}, nil
 	}
 
-	// Fall back to the user's home directory for local development and CI.
+	var homePath string
+	homeExists := false
 	homeDir, err := userHomeDir()
 	if err == nil && homeDir != "" {
-		return filepath.Join(homeDir, ".ssh", "known_hosts")
+		homePath = filepath.Join(homeDir, ".ssh", "known_hosts")
+		_, statErr := stat(homePath)
+		switch {
+		case statErr == nil:
+			homeExists = true
+		case errors.Is(statErr, fs.ErrNotExist):
+		case workDir != "" && errors.Is(statErr, fs.ErrPermission):
+			// Inaccessible home trust falls back to native storage.
+		default:
+			return nil, fmt.Errorf("failed to check existing known_hosts file %s: %w", homePath, statErr)
+		}
 	}
 
-	// Last resort for environments without a resolvable home directory.
-	return filepath.Join(os.TempDir(), ".ssh", "known_hosts")
+	if workDir == "" {
+		if homePath != "" {
+			return []string{homePath}, nil
+		}
+		// Last resort for environments without a resolvable home directory.
+		return []string{filepath.Join(os.TempDir(), ".ssh", "known_hosts")}, nil
+	}
+
+	// Native storage keeps saved keys while honoring every readable trust file.
+	workPath := filepath.Join(workDir, ".ssh", "known_hosts")
+	_, workErr := stat(workPath)
+	if workErr != nil && !errors.Is(workErr, fs.ErrNotExist) {
+		return nil, fmt.Errorf("failed to check git known_hosts file %s: %w", workPath, workErr)
+	}
+	switch {
+	case workErr == nil && homeExists:
+		return []string{workPath, homePath}, nil
+	case homeExists:
+		return []string{homePath}, nil
+	default:
+		return []string{workPath}, nil
+	}
 }
 
-// addHostKey adds a host key to the known_hosts file
-func addHostKey(knownHostsPath, hostname string, key gossh.PublicKey) (err error) {
-	// Format the known_hosts line
-	line := knownhosts.Line([]string{hostname}, key)
-
-	// Acquire exclusive lock to prevent concurrent writes
-	fileLock := flock.New(knownHostsPath)
-	if lockErr := fileLock.Lock(); lockErr != nil {
-		return fmt.Errorf("failed to acquire lock on known_hosts file: %w", lockErr)
-	}
-	defer func() {
-		if unlockErr := fileLock.Unlock(); unlockErr != nil && err == nil {
-			err = fmt.Errorf("failed to release lock on known_hosts file: %w", unlockErr)
-		}
-	}()
-
-	// Append to the file
-	// os.* rather than acfs: acfs has no append API, and known_hosts lives under
-	// the user home rather than an arcane confinement root.
-	file, err := os.OpenFile(knownHostsPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+// RepositoryAttribute names the repository on spans without credentials or query tokens.
+func RepositoryAttribute(rawURL string) attribute.KeyValue {
+	endpoint, err := transport.NewEndpoint(rawURL)
 	if err != nil {
-		return fmt.Errorf("failed to open known_hosts file: %w", err)
+		return attribute.String("arcane.git.repository", "")
 	}
-	defer func() {
-		if cerr := file.Close(); cerr != nil && err == nil {
-			err = fmt.Errorf("failed to close known_hosts file: %w", cerr)
-		}
-	}()
-
-	if _, writeStringErr := file.WriteString(line + "\n"); writeStringErr != nil {
-		return fmt.Errorf("failed to write to known_hosts file: %w", writeStringErr)
+	endpoint.User, endpoint.Password = "", ""
+	if i := strings.IndexAny(endpoint.Path, "?#"); i >= 0 {
+		endpoint.Path = endpoint.Path[:i]
 	}
-
-	return nil
+	return attribute.String("arcane.git.repository", endpoint.String())
 }
 
-// Clone clones a repository to a temporary directory
-func (c *Client) Clone(ctx context.Context, url, branch string, auth AuthConfig) (string, error) {
+// Clone clones a repository to a temporary directory. A depth of 0 fetches the
+// full history; read-only callers pass 1 to fetch only the branch tip.
+func (c *Client) Clone(ctx context.Context, url, branch string, auth AuthConfig, depth int) (repoPath string, err error) {
+	ctx, span := otel.Tracer(tracing.InstrumentationName).Start(ctx, "gitrepo.clone", trace.WithAttributes(
+		attribute.String("arcane.git.branch", branch),
+		attribute.Int("arcane.git.depth", depth),
+	))
+	defer func() { tracing.End(span, err) }()
+
 	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, 5*time.Minute)
 		defer cancel()
 	}
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return "", ctxErr
+	}
 
-	if err := ctx.Err(); err != nil {
+	url, err = normalizeURL(url)
+	if err != nil {
+		return "", err
+	}
+	span.SetAttributes(RepositoryAttribute(url))
+	authMethod, err := c.getAuth(ctx, url, auth)
+	if err != nil {
 		return "", err
 	}
 
-	// Create a temporary directory
-	workDir := c.workDir
-	if workDir == "" {
-		workDir = os.TempDir()
-	}
-	// Ensure the work directory exists
-	// os.* rather than acfs: this creates the clone staging root itself (under the
-	// system temp dir by default), which has to exist before acfs could open it.
-	if err := os.MkdirAll(workDir, 0o755); err != nil {
+	// os.* rather than acfs: the clone staging root must exist before acfs could open it.
+	workDir := cmp.Or(c.workDir, os.TempDir())
+	if err = os.MkdirAll(workDir, 0o755); err != nil {
 		return "", fmt.Errorf("failed to create work dir: %w", err)
 	}
 	tmpDir, err := os.MkdirTemp(workDir, cloneScratchPrefix+"*")
@@ -327,36 +355,26 @@ func (c *Client) Clone(ctx context.Context, url, branch string, auth AuthConfig)
 		return "", fmt.Errorf("failed to create temp dir: %w", err)
 	}
 
-	url, err = normalizeURL(url)
-	if err != nil {
-		_ = os.RemoveAll(tmpDir)
-		return "", err
-	}
-
-	authMethod, err := c.getAuthInternal(url, auth)
-	if err != nil {
-		_ = os.RemoveAll(tmpDir)
-		return "", err
-	}
-
-	cloneOptions := &git.CloneOptions{
-		URL:      url,
-		Progress: nil,
-	}
-
-	if authMethod != nil {
-		cloneOptions.Auth = authMethod
-	}
-
+	cloneOptions := &git.CloneOptions{URL: url, Auth: authMethod, Depth: depth}
 	if branch != "" {
 		cloneOptions.ReferenceName = plumbing.NewBranchReferenceName(branch)
 		cloneOptions.SingleBranch = true
 	}
 
-	_, err = git.PlainCloneContext(ctx, tmpDir, false, cloneOptions)
+	repo, err := git.PlainCloneContext(ctx, tmpDir, false, cloneOptions)
+	if err != nil && depth > 0 && strings.Contains(err.Error(), "shallow") {
+		// Servers without shallow support, go-git's own included, get a full clone.
+		cloneOptions.Depth = 0
+		if err = os.RemoveAll(tmpDir); err == nil {
+			repo, err = git.PlainCloneContext(ctx, tmpDir, false, cloneOptions)
+		}
+	}
 	if err != nil {
 		_ = os.RemoveAll(tmpDir)
 		return "", fmt.Errorf("failed to clone repository: %w", err)
+	}
+	if head, headErr := repo.Head(); headErr == nil {
+		span.SetAttributes(attribute.String("arcane.git.commit", head.Hash().String()))
 	}
 
 	return tmpDir, nil
@@ -386,111 +404,79 @@ type BranchInfo struct {
 	IsDefault bool
 }
 
-// ListBranches lists all branches in a remote repository
+// ListBranches lists a remote repository's branches, default branch first.
 func (c *Client) ListBranches(ctx context.Context, url string, auth AuthConfig) ([]BranchInfo, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
 	refs, err := c.listRemoteReferences(ctx, url, auth)
 	if err != nil {
 		return nil, err
 	}
 
-	var branches []BranchInfo
+	// HEAD is a symbolic reference to the default branch.
 	var defaultBranch string
-
-	// Find the default branch (HEAD points to it)
-	for _, ref := range refs {
-		if ref.Name().String() == "HEAD" {
-			// HEAD is a symbolic reference that points to the default branch
-			if ref.Target().IsBranch() {
-				defaultBranch = ref.Target().Short()
-			}
-			break
-		}
+	if i := slices.IndexFunc(refs, func(ref *plumbing.Reference) bool { return ref.Name().String() == "HEAD" }); i >= 0 && refs[i].Target().IsBranch() {
+		defaultBranch = refs[i].Target().Short()
 	}
 
-	// Collect all branches
+	var branches []BranchInfo
 	seen := make(map[string]bool)
 	for _, ref := range refs {
-		if ref.Name().IsBranch() {
-			branchName := ref.Name().Short()
-			if seen[branchName] {
-				continue
-			}
-			seen[branchName] = true
-
-			branches = append(branches, BranchInfo{
-				Name:      branchName,
-				IsDefault: branchName == defaultBranch,
-			})
+		branchName := ref.Name().Short()
+		if !ref.Name().IsBranch() || seen[branchName] {
+			continue
 		}
+		seen[branchName] = true
+		branches = append(branches, BranchInfo{Name: branchName, IsDefault: branchName == defaultBranch})
 	}
 
-	// Sort branches with default first
-	sort.Slice(branches, func(i, j int) bool {
-		if branches[i].IsDefault {
-			return true
+	slices.SortFunc(branches, func(a, b BranchInfo) int {
+		if a.IsDefault != b.IsDefault {
+			return kit.Ternary(a.IsDefault, -1, 1)
 		}
-		if branches[j].IsDefault {
-			return false
-		}
-		return branches[i].Name < branches[j].Name
+		return strings.Compare(a.Name, b.Name)
 	})
-
 	return branches, nil
 }
 
 // ProbeRemote verifies that a remote repository is reachable without cloning it.
 func (c *Client) ProbeRemote(ctx context.Context, url string, auth AuthConfig) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-
 	_, err := c.listRemoteReferences(ctx, url, auth)
 	return err
 }
 
-func (c *Client) listRemoteReferences(ctx context.Context, url string, auth AuthConfig) ([]*plumbing.Reference, error) {
-	url, err := normalizeURL(url)
+func (c *Client) listRemoteReferences(ctx context.Context, url string, auth AuthConfig) (refs []*plumbing.Reference, err error) {
+	ctx, span := otel.Tracer(tracing.InstrumentationName).Start(ctx, "gitrepo.list_remote")
+	defer func() { tracing.End(span, err) }()
+
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return nil, ctxErr
+	}
+	url, err = normalizeURL(url)
 	if err != nil {
 		return nil, err
 	}
-
-	authMethod, err := c.getAuthInternal(url, auth)
+	span.SetAttributes(RepositoryAttribute(url))
+	authMethod, err := c.getAuth(ctx, url, auth)
 	if err != nil {
 		return nil, err
-	}
-
-	// Create a remote without cloning
-	rem := git.NewRemote(nil, &config.RemoteConfig{
-		Name: "origin",
-		URLs: []string{url},
-	})
-
-	listOptions := &git.ListOptions{}
-	if authMethod != nil {
-		listOptions.Auth = authMethod
 	}
 
 	listCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
-	refs, err := rem.ListContext(listCtx, listOptions)
+	rem := git.NewRemote(nil, &config.RemoteConfig{Name: "origin", URLs: []string{url}})
+	refs, err = rem.ListContext(listCtx, &git.ListOptions{Auth: authMethod})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list remote references: %w", err)
 	}
-
+	span.SetAttributes(attribute.Int("arcane.result.count", len(refs)))
 	return refs, nil
 }
 
 // ValidatePath ensures the path is safe and doesn't escape the repo
 func ValidatePath(repoPath, requestedPath string) error {
-	// Clean the paths
 	cleanRepoPath := filepath.Clean(repoPath)
 	cleanRequestedPath := filepath.Clean(filepath.Join(repoPath, requestedPath))
 
-	// Check if the requested path is within the repo using relative path validation
 	rel, err := filepath.Rel(cleanRepoPath, cleanRequestedPath)
 	if err != nil {
 		return fmt.Errorf("invalid path: %w", err)
@@ -502,9 +488,8 @@ func ValidatePath(repoPath, requestedPath string) error {
 	return nil
 }
 
-// BrowseTree returns the file tree at the specified path. The clone directory
-// is the confinement root: paths that escape it, and symbolic links pointing
-// outside it, are rejected rather than followed.
+// BrowseTree returns the file tree at targetPath, confined to the clone directory: escaping paths and
+// symlinks pointing outside it are rejected rather than followed.
 func (c *Client) BrowseTree(ctx context.Context, repoPath, targetPath string) ([]gitops.FileTreeNode, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -529,7 +514,6 @@ func (c *Client) BrowseTree(ctx context.Context, repoPath, targetPath string) ([
 		if errErr := ctx.Err(); errErr != nil {
 			return nil, errErr
 		}
-		// Skip .git directory
 		if child.Name == ".git" {
 			continue
 		}
@@ -547,9 +531,7 @@ func (c *Client) BrowseTree(ctx context.Context, repoPath, targetPath string) ([
 	return nodes, nil
 }
 
-// Cleanup removes a temporary repository directory
-// Stays on os.RemoveAll: acfs refuses to remove its own root, and here the whole
-// clone directory itself is what gets deleted.
+// Cleanup removes a temporary repository directory with os.RemoveAll, since acfs refuses to remove its own root.
 func (c *Client) Cleanup(repoPath string) error {
 	return os.RemoveAll(repoPath)
 }
@@ -564,10 +546,7 @@ func (c *Client) Discard(ctx context.Context, repoPath string) {
 // PurgeScratchDirs removes clone scratch dirs ("gitops-*") under the work dir
 // whose mtime is older than maxAge. maxAge <= 0 removes all (boot sweep).
 func (c *Client) PurgeScratchDirs(ctx context.Context, maxAge time.Duration) (int, error) {
-	root := c.workDir
-	if root == "" {
-		root = os.TempDir()
-	}
+	root := cmp.Or(c.workDir, os.TempDir())
 
 	entries, err := os.ReadDir(root)
 	if err != nil {
@@ -605,27 +584,13 @@ func (c *Client) PurgeScratchDirs(ctx context.Context, maxAge time.Duration) (in
 	return removed, nil
 }
 
-// CommitInfo holds information about a git commit
-type CommitInfo struct {
-	Hash    string
-	Author  string
-	Message string
-	Date    time.Time
-}
-
 // TestConnection tests if the repository can be accessed with the given credentials
 func (c *Client) TestConnection(ctx context.Context, url, branch string, auth AuthConfig) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-
-	tmpDir, err := c.Clone(ctx, url, branch, auth)
+	tmpDir, err := c.Clone(ctx, url, branch, auth, 1)
 	if err != nil {
 		return err
 	}
-	defer func() {
-		_ = c.Cleanup(tmpDir)
-	}()
+	c.Discard(ctx, tmpDir)
 	return nil
 }
 
@@ -656,10 +621,7 @@ type SyncFileInfo struct {
 	Content      []byte
 	Size         int64
 	IsBinary     bool
-	// Executable mirrors git's +x bit so callers can preserve it on the
-	// destination. Required for lifecycle hooks: a script committed as
-	// 100755 must arrive in the project workspace runnable, otherwise the
-	// lifecycle runner fails to exec it.
+	// Executable mirrors git's +x bit so lifecycle hook scripts arrive runnable.
 	Executable bool
 }
 
@@ -671,16 +633,8 @@ type DirectoryWalkResult struct {
 	SkippedBinaries int
 }
 
-type syncWalkLimits struct {
-	maxFiles      int
-	maxTotalSize  int64
-	maxBinarySize int64
-}
-
-// WalkDirectory walks the directory containing the compose file and returns all files.
-// It enforces limits on file count, total size, and skips large binary files.
-// The composePath is the path to the compose file within the repo - the directory
-// containing this file will be walked.
+// WalkDirectory returns every file in the compose file's directory, enforcing file count and
+// total size limits and skipping large binary files.
 func (c *Client) WalkDirectory(ctx context.Context, repoPath, composePath string,
 	maxFiles int, maxTotalSize, maxBinarySize int64,
 ) (*DirectoryWalkResult, error) {
@@ -688,114 +642,88 @@ func (c *Client) WalkDirectory(ctx context.Context, repoPath, composePath string
 		return nil, err
 	}
 
-	// Validate compose path
 	if err := ValidatePath(repoPath, composePath); err != nil {
 		return nil, fmt.Errorf("invalid compose path: %w", err)
 	}
 
-	// Get the directory containing the compose file
 	syncDir := filepath.Dir(filepath.Join(repoPath, composePath))
 
 	result := &DirectoryWalkResult{
 		Files: make([]SyncFileInfo, 0),
 	}
-	limits := syncWalkLimits{
-		maxFiles:      maxFiles,
-		maxTotalSize:  maxTotalSize,
-		maxBinarySize: maxBinarySize,
-	}
-
 	err := acfs.Walk(ctx, syncDir, "/", func(entry acfstypes.Entry) error {
-		return c.walkSyncEntry(ctx, syncDir, entry, result, limits)
-	})
-	if err != nil {
-		return nil, err
-	}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if entry.IsSymlink {
+			return nil
+		}
+		if entry.IsDirectory {
+			if entry.Name == ".git" {
+				return fs.SkipDir
+			}
+			return nil
+		}
 
-	// Validate we found at least one file
-	if len(result.Files) == 0 {
+		relativePath := strings.TrimPrefix(entry.Path, "/")
+		if maxFiles > 0 && result.TotalFiles >= maxFiles {
+			return fmt.Errorf("file count limit exceeded (max %d files)", maxFiles)
+		}
+
+		if maxBinarySize > 0 && entry.Size > maxBinarySize {
+			reader, _, openErr := acfs.OpenRead(ctx, syncDir, entry.Path, binarySniffBytes)
+			if openErr != nil {
+				return fmt.Errorf("failed to inspect file %s: %w", relativePath, openErr)
+			}
+			buf := make([]byte, binarySniffBytes)
+			n, readErr := reader.Read(buf)
+			closeErr := reader.Close()
+			if readErr != nil && !errors.Is(readErr, io.EOF) {
+				return fmt.Errorf("failed to inspect file %s: %w", relativePath, errors.Join(readErr, closeErr))
+			}
+			if closeErr != nil {
+				return fmt.Errorf("failed to close file %s after inspection: %w", relativePath, closeErr)
+			}
+			if IsBinaryContent(buf[:n]) {
+				result.SkippedBinaries++
+				return nil
+			}
+		}
+
+		content, readErr := acfs.ReadFile(ctx, syncDir, entry.Path)
+		if readErr != nil {
+			return fmt.Errorf("failed to read file %s: %w", relativePath, readErr)
+		}
+
+		fileSize := int64(len(content))
+		isBinary := IsBinaryContent(content)
+		if isBinary && maxBinarySize > 0 && fileSize > maxBinarySize {
+			result.SkippedBinaries++
+			return nil
+		}
+		if maxTotalSize > 0 && result.TotalSize+fileSize > maxTotalSize {
+			return fmt.Errorf("total size limit exceeded (max %d bytes)", maxTotalSize)
+		}
+
+		result.Files = append(result.Files, SyncFileInfo{
+			RelativePath: relativePath,
+			Content:      content,
+			Size:         fileSize,
+			IsBinary:     isBinary,
+			Executable:   os.FileMode(entry.UnixMode)&0o111 != 0,
+		})
+		result.TotalFiles++
+		result.TotalSize += fileSize
+		return nil
+	})
+	switch {
+	case err != nil:
+		return nil, err
+	case len(result.Files) == 0:
 		return nil, errors.New("no files found in sync directory (directory may be empty or all files were skipped)")
 	}
 
 	return result, nil
-}
-
-func (c *Client) walkSyncEntry(ctx context.Context, syncDir string, entry acfstypes.Entry, result *DirectoryWalkResult, limits syncWalkLimits) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	if entry.IsSymlink {
-		return nil
-	}
-	if entry.IsDirectory {
-		return kit.Ternary(entry.Name == ".git", fs.SkipDir, nil)
-	}
-
-	return c.appendSyncFile(ctx, syncDir, entry, result, limits)
-}
-
-func (c *Client) appendSyncFile(ctx context.Context, syncDir string, entry acfstypes.Entry, result *DirectoryWalkResult, limits syncWalkLimits) error {
-	relativePath := strings.TrimPrefix(entry.Path, "/")
-	if limits.maxFiles > 0 && result.TotalFiles >= limits.maxFiles {
-		return fmt.Errorf("file count limit exceeded (max %d files)", limits.maxFiles)
-	}
-
-	if limits.maxBinarySize > 0 && entry.Size > limits.maxBinarySize {
-		isBinary, err := c.isBinarySyncFile(ctx, syncDir, entry.Path)
-		if err != nil {
-			return fmt.Errorf("failed to inspect file %s: %w", relativePath, err)
-		}
-		if isBinary {
-			result.SkippedBinaries++
-			return nil
-		}
-	}
-
-	content, err := acfs.ReadFile(ctx, syncDir, entry.Path)
-	if err != nil {
-		return fmt.Errorf("failed to read file %s: %w", relativePath, err)
-	}
-
-	fileSize := int64(len(content))
-	isBinary := IsBinaryContent(content)
-
-	if isBinary && limits.maxBinarySize > 0 && fileSize > limits.maxBinarySize {
-		result.SkippedBinaries++
-		return nil
-	}
-
-	if limits.maxTotalSize > 0 && result.TotalSize+fileSize > limits.maxTotalSize {
-		return fmt.Errorf("total size limit exceeded (max %d bytes)", limits.maxTotalSize)
-	}
-
-	executable := os.FileMode(entry.UnixMode)&0o111 != 0
-	result.Files = append(result.Files, SyncFileInfo{
-		RelativePath: relativePath,
-		Content:      content,
-		Size:         fileSize,
-		IsBinary:     isBinary,
-		Executable:   executable,
-	})
-	result.TotalFiles++
-	result.TotalSize += fileSize
-
-	return nil
-}
-
-func (c *Client) isBinarySyncFile(ctx context.Context, syncDir, logicalPath string) (bool, error) {
-	reader, _, err := acfs.OpenRead(ctx, syncDir, logicalPath, binarySniffBytes)
-	if err != nil {
-		return false, err
-	}
-	defer func() { _ = reader.Close() }()
-
-	buf := make([]byte, binarySniffBytes)
-	n, err := reader.Read(buf)
-	if err != nil && !errors.Is(err, io.EOF) {
-		return false, err
-	}
-
-	return IsBinaryContent(buf[:n]), nil
 }
 
 // IsBinaryContent reports whether content looks binary rather than text.
@@ -804,18 +732,13 @@ func IsBinaryContent(content []byte) bool {
 		return false
 	}
 
-	// Check first 512 bytes (or less if file is smaller)
-	checkSize := min(len(content), 512)
-
-	// Use net/http's content type detection
+	checkSize := min(len(content), binarySniffBytes)
 	contentType := nethttp.DetectContentType(content[:checkSize])
 
-	// Text types are not binary
 	if strings.HasPrefix(contentType, "text/") {
 		return false
 	}
 
-	// Common text-based application types
 	textAppTypes := []string{
 		"application/json",
 		"application/xml",
@@ -831,13 +754,11 @@ func IsBinaryContent(content []byte) bool {
 		}
 	}
 
-	// For application/octet-stream, do additional null-byte check
-	// Text files rarely have null bytes, so their presence indicates binary
+	// Text files rarely contain null bytes, so they mark octet-stream content as binary.
 	if contentType == "application/octet-stream" {
 		return slices.Contains(content[:checkSize], 0)
 	}
 
-	// Everything else is considered binary
 	return strings.HasPrefix(contentType, "application/") ||
 		strings.HasPrefix(contentType, "image/") ||
 		strings.HasPrefix(contentType, "video/") ||

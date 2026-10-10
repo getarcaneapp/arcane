@@ -71,7 +71,7 @@ func (s *Service) PruneAll(ctx context.Context, environmentID string, req system
 		"images", req.Images,
 		"volumes", req.Volumes,
 		"networks", req.Networks,
-		"build_cache", req.BuildCache,
+		"buildCache", req.BuildCache,
 	)
 
 	prune := s.beginSystemPruneInternal(ctx, environmentID, req)
@@ -259,25 +259,25 @@ func (s *Service) runSystemPruneInternal(ctx context.Context, req system.PruneAl
 		"Selective prune operation completed",
 		"success",
 		result.Success,
-		"containers_pruned",
+		"containersPruned",
 		len(
 			result.ContainersPruned,
 		),
-		"images_deleted",
+		"imagesDeleted",
 		len(
 			result.ImagesDeleted,
 		),
-		"volumes_deleted",
+		"volumesDeleted",
 		len(
 			result.VolumesDeleted,
 		),
-		"networks_deleted",
+		"networksDeleted",
 		len(
 			result.NetworksDeleted,
 		),
-		"space_reclaimed",
+		"spaceReclaimed",
 		result.SpaceReclaimed,
-		"error_count",
+		"errorCount",
 		len(
 			result.Errors,
 		),
@@ -402,7 +402,7 @@ func (s *Service) pruneImagesInternal(ctx context.Context, options system.PruneI
 		return fmt.Errorf("failed to prune images: %w", err)
 	}
 
-	slog.InfoContext(ctx, "Image pruning completed", "images_deleted", len(report.Report.ImagesDeleted), "bytes_reclaimed", report.Report.SpaceReclaimed)
+	slog.InfoContext(ctx, "Image pruning completed", "imagesDeleted", len(report.Report.ImagesDeleted), "bytesReclaimed", report.Report.SpaceReclaimed)
 
 	// Collect IDs to delete from DB
 	var idsToDelete []string
@@ -451,7 +451,7 @@ func (s *Service) pruneBuildCacheInternal(ctx context.Context, options system.Pr
 		return fmt.Errorf("failed to prune build cache: %w", err)
 	}
 
-	slog.InfoContext(ctx, "build cache pruning completed", "cache_entries_deleted", len(report.Report.CachesDeleted), "bytes_reclaimed", report.Report.SpaceReclaimed)
+	slog.InfoContext(ctx, "build cache pruning completed", "cacheEntriesDeleted", len(report.Report.CachesDeleted), "bytesReclaimed", report.Report.SpaceReclaimed)
 
 	result.SpaceReclaimed += report.Report.SpaceReclaimed
 	result.BuildCacheSpaceReclaimed += report.Report.SpaceReclaimed
@@ -465,7 +465,7 @@ func (s *Service) pruneVolumesInternal(ctx context.Context, options system.Prune
 		return err
 	}
 
-	slog.InfoContext(ctx, "Volume prune completed", "volumes_deleted", len(report.VolumesDeleted), "space_reclaimed", report.SpaceReclaimed)
+	slog.InfoContext(ctx, "Volume prune completed", "volumesDeleted", len(report.VolumesDeleted), "spaceReclaimed", report.SpaceReclaimed)
 
 	result.VolumesDeleted = report.VolumesDeleted
 	result.SpaceReclaimed += report.SpaceReclaimed
@@ -492,7 +492,7 @@ func (s *Service) pruneNetworksInternal(ctx context.Context, options system.Prun
 		return fmt.Errorf("failed to prune networks: %w", err)
 	}
 
-	slog.InfoContext(ctx, "Network prune completed", "networks_deleted", len(report.Report.NetworksDeleted))
+	slog.InfoContext(ctx, "Network prune completed", "networksDeleted", len(report.Report.NetworksDeleted))
 
 	result.NetworksDeleted = report.Report.NetworksDeleted
 	return nil
@@ -780,7 +780,7 @@ func (s *Service) executePrunePlanInternal(ctx context.Context, plan prunePlanIn
 		if progressErr := jobcontext.Progress(ctx, target); progressErr != nil {
 			return progressErr
 		}
-		eligible, exists, pruneResourceEligibleErr := s.pruneResourceEligibleInternal(ctx, dockerClient, plan, resource)
+		eligible, exists, pruneResourceEligibleErr := s.pruneResourceEligibleInternal(ctx, dockerClient, plan, &resource)
 		if pruneResourceEligibleErr != nil {
 			return pruneResourceEligibleErr
 		}
@@ -798,6 +798,10 @@ func (s *Service) executePrunePlanInternal(ctx context.Context, plan prunePlanIn
 				result.Errors = append(result.Errors, pruneResourceEligibleErr.Error())
 			} else {
 				target.Status = scheduler.Succeeded
+				if pruneResourceEligibleErr != nil {
+					// Something else removed it first; do not claim its bytes.
+					resource.Size = 0
+				}
 				recordPrunedResourceInternal(resource, result)
 			}
 		}
@@ -858,8 +862,6 @@ func recordPrunedResourceInternal(resource pruneResourceInternal, result *system
 		result.ContainersPruned = append(result.ContainersPruned, resource.ID)
 	case "image":
 		result.ImagesDeleted = append(result.ImagesDeleted, resource.ID)
-		// ImageRemove does not report reclaimed bytes; Size includes shared layers.
-		return
 	case "volume":
 		result.VolumesDeleted = append(result.VolumesDeleted, resource.ID)
 	case "network":
@@ -868,7 +870,16 @@ func recordPrunedResourceInternal(resource pruneResourceInternal, result *system
 	if resource.Size <= 0 {
 		return
 	}
-	result.SpaceReclaimed += uint64(resource.Size)
+	size := uint64(resource.Size)
+	result.SpaceReclaimed += size
+	switch resource.Kind {
+	case "container":
+		result.ContainerSpaceReclaimed += size
+	case "image":
+		result.ImageSpaceReclaimed += size
+	case "volume":
+		result.VolumeSpaceReclaimed += size
+	}
 }
 
 func (s *Service) executePruneCacheInternal(ctx context.Context, dockerClient *client.Client, plan prunePlanInternal, result *system.PruneAllResult, recovery bool) error {
@@ -916,7 +927,8 @@ func (s *Service) executePruneCacheInternal(ctx context.Context, dockerClient *c
 	return nil
 }
 
-func (s *Service) pruneResourceEligibleInternal(ctx context.Context, dockerClient *client.Client, plan prunePlanInternal, resource pruneResourceInternal) (eligible, exists bool, err error) {
+// pruneResourceEligibleInternal re-checks a planned resource against live state and refreshes its size from that snapshot.
+func (s *Service) pruneResourceEligibleInternal(ctx context.Context, dockerClient *client.Client, plan prunePlanInternal, resource *pruneResourceInternal) (eligible, exists bool, err error) {
 	if resource.Kind == "network" {
 		inspected, networkInspectWithCompatibilityErr := compat.NetworkInspectWithCompatibility(ctx, dockerClient, resource.ID, client.NetworkInspectOptions{})
 		if errdefs.IsNotFound(networkInspectWithCompatibilityErr) {
@@ -935,6 +947,7 @@ func (s *Service) pruneResourceEligibleInternal(ctx context.Context, dockerClien
 	case "container":
 		for _, item := range usage.Containers.Items {
 			if item.ID == resource.ID {
+				resource.Size = item.SizeRw
 				return item.State != "running" && item.State != "paused" && item.State != "restarting", true, nil
 			}
 		}
@@ -943,16 +956,25 @@ func (s *Service) pruneResourceEligibleInternal(ctx context.Context, dockerClien
 	case "volume":
 		for _, item := range usage.Volumes.Items {
 			if item.Name == resource.ID {
-				return item.UsageData != nil && item.UsageData.RefCount == 0 && !strings.EqualFold(item.Labels[libarcane.InternalResourceLabel], "true"), true, nil
+				if item.UsageData == nil {
+					return false, true, nil
+				}
+				resource.Size = item.UsageData.Size
+				return item.UsageData.RefCount == 0 && !strings.EqualFold(item.Labels[libarcane.InternalResourceLabel], "true"), true, nil
 			}
 		}
 	}
 	return false, false, nil
 }
 
-func pruneImageEligibleInternal(usage client.DiskUsageResult, request *system.PruneImagesOptions, resource pruneResourceInternal) (eligible, exists bool, err error) {
+func pruneImageEligibleInternal(usage client.DiskUsageResult, request *system.PruneImagesOptions, resource *pruneResourceInternal) (eligible, exists bool, err error) {
 	for _, item := range usage.Images.Items {
 		if item.ID == resource.ID {
+			// Size - SharedSize is the unique layer size Docker counts as reclaimable for an unused image.
+			resource.Size = 0
+			if item.SharedSize >= 0 {
+				resource.Size = item.Size - item.SharedSize
+			}
 			for _, tag := range item.RepoTags {
 				if !slices.Contains(resource.Names, tag) {
 					return false, true, nil

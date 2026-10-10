@@ -467,7 +467,7 @@ func (s *Service) restoreArchiveBackupFilesInternal(ctx context.Context, dockerC
 		return fmt.Errorf("failed to restore files: %w", err)
 	}
 	if strings.TrimSpace(stderr) != "" {
-		slog.DebugContext(ctx, "volume service: restore files stderr", "backup_id", backupID, "stderr", strings.TrimSpace(stderr))
+		slog.DebugContext(ctx, "volume service: restore files stderr", "backupId", backupID, "stderr", strings.TrimSpace(stderr))
 	}
 	return nil
 }

@@ -372,7 +372,7 @@ func RemapEscapedRelativeSources(
 		slog.WarnContext(ctx,
 			"compose relative path resolves outside the mounted projects directory; remapped so the Docker host resolves it the same way `docker compose up` would",
 			"kind", target.kind, "name", target.name, "spec", rawSource,
-			"container_path", target.current, "host_path", hostPath,
+			"containerPath", target.current, "hostPath", hostPath,
 		)
 	}
 }
@@ -474,13 +474,13 @@ func hostWorkingDirInternal(ctx context.Context, pathMapper projecttypes.VolumeS
 	hostWorkingDir, mapped, err := pathMapper.ContainerToHost(containerWorkingDir)
 	if err != nil {
 		slog.WarnContext(ctx, "failed to resolve host path for project directory; relative paths outside the projects mount may resolve incorrectly",
-			"working_dir", containerWorkingDir, "error", err)
+			"workingDir", containerWorkingDir, "error", err)
 		return "", false
 	}
 
 	if !mapped {
 		slog.WarnContext(ctx, "project directory is not inside a mounted directory; relative paths outside the projects mount may resolve incorrectly",
-			"working_dir", containerWorkingDir)
+			"workingDir", containerWorkingDir)
 		return "", false
 	}
 

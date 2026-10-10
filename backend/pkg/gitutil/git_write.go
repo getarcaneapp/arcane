@@ -10,6 +10,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -18,7 +19,6 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/format/diff"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"go.getarcane.app/acfs"
@@ -215,7 +215,7 @@ func (c *Client) CheckoutForWrite(ctx context.Context, url, branch string, auth 
 		return nil, err
 	}
 
-	repoPath, err := c.Clone(ctx, normalized, branch, auth)
+	repoPath, err := c.Clone(ctx, normalized, branch, auth, 0)
 	if err == nil {
 		repo, openErr := git.PlainOpen(repoPath)
 		if openErr != nil {
@@ -269,7 +269,7 @@ func (c *Client) initEmptyCheckoutInternal(url, branch string) (*WriteCheckout, 
 }
 
 func (c *Client) checkoutNewBranchInternal(ctx context.Context, url, branch string, auth AuthConfig) (*WriteCheckout, error) {
-	repoPath, err := c.Clone(ctx, url, "", auth)
+	repoPath, err := c.Clone(ctx, url, "", auth, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -361,7 +361,7 @@ func stageCommitFilesInternal(ctx context.Context, checkout *WriteCheckout, work
 // pushBranchInternal pushes the checkout branch without force and verifies the
 // remote now points at commit.
 func (c *Client) pushBranchInternal(ctx context.Context, checkout *WriteCheckout, commit string, auth AuthConfig) error {
-	authMethod, err := c.getAuthInternal(checkout.url, auth)
+	authMethod, err := c.getAuth(ctx, checkout.url, auth)
 	if err != nil {
 		return err
 	}
@@ -448,9 +448,15 @@ func (c *Client) DirectoryHistory(ctx context.Context, repoPath, directory strin
 			}
 			return nil, fmt.Errorf("failed to iterate history: %w", nextErr)
 		}
-		files, nextErr := commitDirectoryFilesInternal(commit, prefix)
+		changes, nextErr := commitChangesInternal(ctx, commit, object.DefaultDiffTreeOptions)
 		if nextErr != nil {
 			return nil, nextErr
+		}
+		var files []string
+		for _, change := range changes {
+			if _, relative, ok := changePathInDirectoryInternal(change, prefix); ok {
+				files = append(files, relative)
+			}
 		}
 		entries = append(entries, historyEntryInternal(commit, files))
 		if limit > 0 && len(entries) >= limit {
@@ -481,22 +487,31 @@ func (c *Client) CommitDiff(ctx context.Context, repoPath, commitHash, directory
 		return HistoryEntry{}, nil, fmt.Errorf("commit not found: %w", err)
 	}
 	prefix := directoryPrefixInternal(directory)
-	patch, err := commitPatchInternal(commit)
+	// Files are listed rename-aware; each file's patch comes from the plain diff.
+	listed, err := commitChangesInternal(ctx, commit, object.DefaultDiffTreeOptions)
+	if err != nil {
+		return HistoryEntry{}, nil, err
+	}
+	plain, err := commitChangesInternal(ctx, commit, nil)
 	if err != nil {
 		return HistoryEntry{}, nil, err
 	}
 
 	var files []string
 	var diffs []FileDiff
-	for _, filePatch := range patch.FilePatches() {
-		name, relative, ok := patchPathInDirectoryInternal(filePatch, prefix)
+	for _, change := range listed {
+		name, relative, ok := changePathInDirectoryInternal(change, prefix)
 		if !ok {
 			continue
 		}
 		files = append(files, relative)
-		single, commitFilePatchErr := commitFilePatchInternal(commit, name)
-		if commitFilePatchErr != nil {
-			return HistoryEntry{}, nil, commitFilePatchErr
+		single := ""
+		if idx := slices.IndexFunc(plain, func(c *object.Change) bool { return c.From.Name == name || c.To.Name == name }); idx >= 0 {
+			patch, patchErr := plain[idx].Patch()
+			if patchErr != nil {
+				return HistoryEntry{}, nil, fmt.Errorf("failed to build patch for %s: %w", name, patchErr)
+			}
+			single = patch.String()
 		}
 		diffs = append(diffs, FileDiff{Path: relative, Patch: single})
 	}
@@ -523,7 +538,9 @@ func historyEntryInternal(commit *object.Commit, files []string) HistoryEntry {
 	}
 }
 
-func commitPatchInternal(commit *object.Commit) (*object.Patch, error) {
+// commitChangesInternal diffs a commit against its first parent. Nil opts
+// disables rename detection.
+func commitChangesInternal(ctx context.Context, commit *object.Commit, opts *object.DiffTreeOptions) (object.Changes, error) {
 	var parentTree *object.Tree
 	if commit.NumParents() > 0 {
 		parent, err := commit.Parent(0)
@@ -539,71 +556,23 @@ func commitPatchInternal(commit *object.Commit) (*object.Patch, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to load commit tree: %w", err)
 	}
-	patch, err := parentTree.Patch(tree)
+	changes, err := object.DiffTreeWithOptions(ctx, parentTree, tree, opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to diff commit: %w", err)
 	}
-	return patch, nil
+	return changes, nil
 }
 
-func commitDirectoryFilesInternal(commit *object.Commit, prefix string) ([]string, error) {
-	patch, err := commitPatchInternal(commit)
-	if err != nil {
-		return nil, err
-	}
-	var files []string
-	for _, filePatch := range patch.FilePatches() {
-		if _, relative, ok := patchPathInDirectoryInternal(filePatch, prefix); ok {
-			files = append(files, relative)
-		}
-	}
-	return files, nil
-}
-
-// patchPathInDirectoryInternal picks the side of a file patch that lives under
+// changePathInDirectoryInternal picks the side of a change that lives under
 // prefix, so renames into or out of the directory are still reported.
-func patchPathInDirectoryInternal(filePatch diff.FilePatch, prefix string) (string, string, bool) {
-	from, to := filePatch.Files()
-	for _, file := range []diff.File{to, from} {
-		if file == nil {
+func changePathInDirectoryInternal(change *object.Change, prefix string) (string, string, bool) {
+	for _, name := range []string{change.To.Name, change.From.Name} {
+		if name == "" {
 			continue
 		}
-		if relative, ok := strings.CutPrefix(file.Path(), prefix); ok {
-			return file.Path(), relative, true
+		if relative, ok := strings.CutPrefix(name, prefix); ok {
+			return name, relative, true
 		}
 	}
 	return "", "", false
-}
-
-func commitFilePatchInternal(commit *object.Commit, name string) (string, error) {
-	var parentTree *object.Tree
-	if commit.NumParents() > 0 {
-		parent, err := commit.Parent(0)
-		if err != nil {
-			return "", fmt.Errorf("failed to load parent commit: %w", err)
-		}
-		parentTree, err = parent.Tree()
-		if err != nil {
-			return "", fmt.Errorf("failed to load parent tree: %w", err)
-		}
-	}
-	tree, err := commit.Tree()
-	if err != nil {
-		return "", fmt.Errorf("failed to load commit tree: %w", err)
-	}
-	changes, err := object.DiffTree(parentTree, tree)
-	if err != nil {
-		return "", fmt.Errorf("failed to diff commit: %w", err)
-	}
-	for _, change := range changes {
-		if change.From.Name != name && change.To.Name != name {
-			continue
-		}
-		patch, patchErr := change.Patch()
-		if patchErr != nil {
-			return "", fmt.Errorf("failed to build patch for %s: %w", name, patchErr)
-		}
-		return patch.String(), nil
-	}
-	return "", nil
 }

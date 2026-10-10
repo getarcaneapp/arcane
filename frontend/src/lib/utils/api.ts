@@ -1,7 +1,7 @@
 import { error as kitError } from '@sveltejs/kit';
 import { toast } from 'svelte-sonner';
 
-import { APIError, extractServerMessage } from '#lib/services/api-service.js';
+import { APIError, extractServerMessage, isSessionCancelledError } from '#lib/services/api-service.js';
 import type { Result } from '#lib/types/result.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -56,6 +56,8 @@ export async function handleApiResultWithCallbacks<T>({
 	try {
 		setLoadingState(true);
 
+		// Work from a signed-out session is dropped without feedback.
+		if (isSessionCancelledError(result.error)) return;
 		if (result.error) {
 			console.error(`API Error: ${message}:`, result.error);
 			if (!(result.error instanceof APIError) || result.error.status !== 403) {

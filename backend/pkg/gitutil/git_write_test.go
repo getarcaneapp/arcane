@@ -117,7 +117,7 @@ func TestCheckoutForWrite_CreatesMissingBranchFromDefault(t *testing.T) {
 	require.Equal(t, head, remoteHead)
 
 	verify := NewClient(t.TempDir())
-	repoPath, err := verify.Clone(ctx, url, "feature", noAuthInternal())
+	repoPath, err := verify.Clone(ctx, url, "feature", noAuthInternal(), 0)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = verify.Cleanup(repoPath) })
 	assert.FileExists(t, filepath.Join(repoPath, "unrelated", "keep.txt"))

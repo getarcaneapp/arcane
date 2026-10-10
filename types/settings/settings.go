@@ -271,6 +271,11 @@ type Update struct {
 
 	ExperimentalFeaturesEnabled *string `json:"experimentalFeaturesEnabled,omitzero"`
 
+	// DevelopmentBrandingEnabled shows the development icon on non-stable builds.
+	//
+	// Required: false
+	DevelopmentBrandingEnabled *string `json:"developmentBrandingEnabled,omitzero"`
+
 	// DefaultShell is the default shell used for container execution.
 	//
 	// Required: false

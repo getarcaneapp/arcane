@@ -15,6 +15,7 @@
 	import { RemoteEnvironmentIcon, EdgeConnectionIcon, DownloadIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
+	import { isSessionCancelledError, withSessionSignal } from '#lib/services/api-service.js';
 	import { environmentManagementService } from '#lib/services/env-mgmt-service.js';
 	import type { CreateEnvironmentDTO, DeploymentSnippetFile } from '#lib/types/environment.js';
 	import { downloadTextFile } from '#lib/utils/formatting.js';
@@ -190,7 +191,7 @@
 		const downloadUrl = file.downloadUrl;
 		const operationResult2 = await tryCatch(
 			(async () => {
-				const response = await fetch(downloadUrl, { credentials: 'include' });
+				const response = await fetch(downloadUrl, { credentials: 'include', signal: withSessionSignal() });
 				if (!response.ok) {
 					throw new Error(`HTTP ${response.status}`);
 				}
@@ -205,7 +206,7 @@
 				URL.revokeObjectURL(url);
 			})()
 		);
-		if (operationResult2.error !== null) {
+		if (operationResult2.error !== null && !isSessionCancelledError(operationResult2.error)) {
 			const err = operationResult2.error;
 
 			console.error('Failed to download mTLS asset:', err);

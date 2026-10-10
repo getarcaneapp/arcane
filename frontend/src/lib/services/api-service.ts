@@ -1,4 +1,4 @@
-import ky, { HTTPError as KyHTTPError, NetworkError, TimeoutError, type Options as KyOptions, type SearchParamsOption } from 'ky';
+import ky, { HTTPError as KyHTTPError, TimeoutError, type Options as KyOptions, type SearchParamsOption } from 'ky';
 import { toast } from 'svelte-sonner';
 
 import { m } from '#lib/paraglide/messages.js';
@@ -28,15 +28,24 @@ export interface APIResponse<T = any> {
 	status: number;
 }
 
+// Thrown for work belonging to a session that ended through logout.
+export class SessionCancelledError extends Error {
+	constructor() {
+		super('Session ended');
+		this.name = 'SessionCancelledError';
+	}
+}
+
+// Browsers may surface a logout abort as a plain AbortError instead of the abort reason.
+export function isSessionCancelledError(error: unknown): boolean {
+	if (error instanceof SessionCancelledError) return true;
+	return error instanceof Error && error.name === 'AbortError' && sessionController.signal.aborted;
+}
+
 export class APIError extends Error {
 	config: InternalRequestConfig & { method?: string; url?: string };
 	request?: { url: string };
-	response?: {
-		data: any;
-		headers: Headers;
-		raw: Response;
-		status: number;
-	};
+	response?: APIResponse;
 	status?: number;
 
 	constructor(
@@ -49,97 +58,66 @@ export class APIError extends Error {
 			cause?: unknown;
 		}
 	) {
-		super(message);
+		super(message, { cause: options.cause });
 		this.name = options.name ?? 'APIError';
-		if (options.cause !== undefined) {
-			(this as Error & { cause?: unknown }).cause = options.cause;
-		}
 		this.config = options.config;
 		this.request = options.requestUrl ? { url: options.requestUrl } : undefined;
-		this.response = options.response
-			? {
-					data: options.response.data,
-					headers: options.response.headers,
-					raw: options.response.raw,
-					status: options.response.status
-				}
-			: undefined;
+		this.response = options.response;
 		this.status = options.response?.status;
 	}
 }
 
-const problemMessageFactoriesInternal: Record<string, () => string> = {
+const problemMessageFactories: Record<string, () => string> = {
 	'urn:arcane:problem:password-policy:basic': m.security_password_policy_basic_tooltip,
 	'urn:arcane:problem:password-policy:standard': m.security_password_policy_standard_tooltip,
 	'urn:arcane:problem:password-policy:strong': m.security_password_policy_strong_tooltip
 };
 
-function asRecordInternal(value: unknown): Record<string, unknown> | undefined {
+function asRecord(value: unknown): Record<string, unknown> | undefined {
 	return value !== null && typeof value === 'object' ? (value as Record<string, unknown>) : undefined;
 }
 
-function nonEmptyStringInternal(value: unknown): string | undefined {
+function nonEmptyString(value: unknown): string | undefined {
 	return typeof value === 'string' && value.trim() ? value : undefined;
 }
 
 export function extractServerMessage(data: unknown, includeErrors = false): string | undefined {
-	const outer = asRecordInternal(data);
-	const innerValue = outer?.['data'] ?? data;
-	const stringValue = nonEmptyStringInternal(innerValue);
+	const innerValue = asRecord(data)?.['data'] ?? data;
+	const stringValue = nonEmptyString(innerValue);
 	if (stringValue) return stringValue;
 
-	const inner = asRecordInternal(innerValue);
+	const inner = asRecord(innerValue);
 	if (!inner) return undefined;
 	if (inner['code'] === 'feature_disabled' && inner['feature'] === 'vulnerabilityManagement') {
 		return m.features_vulnerability_disabled();
 	}
 
-	const problemType = nonEmptyStringInternal(inner['type']);
-	const localizedMessage = problemType ? problemMessageFactoriesInternal[problemType] : undefined;
+	const problemType = nonEmptyString(inner['type']);
+	const localizedMessage = problemType ? problemMessageFactories[problemType] : undefined;
 	if (localizedMessage) return localizedMessage();
 
 	for (const key of ['error', 'message', 'detail', 'error_description']) {
-		const message = nonEmptyStringInternal(inner[key]);
+		const message = nonEmptyString(inner[key]);
 		if (message) return message;
 	}
 
-	if (includeErrors && Array.isArray(inner['errors']) && inner['errors'].length > 0) {
-		const first = inner['errors'][0];
-		const firstString = nonEmptyStringInternal(first);
-		if (firstString) return firstString;
-
-		const firstError = asRecordInternal(first);
-		return nonEmptyStringInternal(firstError?.['message']) ?? nonEmptyStringInternal(firstError?.['error']);
-	}
-
-	return undefined;
+	if (!includeErrors || !Array.isArray(inner['errors'])) return undefined;
+	const first: unknown = inner['errors'][0];
+	const firstError = asRecord(first);
+	return nonEmptyString(first) ?? nonEmptyString(firstError?.['message']) ?? nonEmptyString(firstError?.['error']);
 }
 
-// Batch id applied to mutating requests STARTED synchronously inside
-// runWithActivityBatchId, so the backend groups the resulting activities under
-// one Activity Center row. The scope never spans an await: fn must kick off
-// its requests synchronously and return their promises, so an unrelated action
-// started from any other task can never inherit the batch id.
-let activeActivityBatchIdInternal: string | null = null;
+// Batch id for mutating requests started synchronously inside runWithActivityBatchId; it never spans an await,
+// so fn must start its requests synchronously and return their promises.
+let activeActivityBatchId: string | null = null;
 
 export function runWithActivityBatchId<T>(batchId: string, fn: () => T): T {
-	activeActivityBatchIdInternal = batchId;
+	activeActivityBatchId = batchId;
 	try {
 		return fn();
 	} finally {
-		activeActivityBatchIdInternal = null;
+		activeActivityBatchId = null;
 	}
-}
-
-function isBodyInit(value: unknown): value is BodyInit {
-	return (
-		value instanceof FormData ||
-		value instanceof URLSearchParams ||
-		value instanceof Blob ||
-		value instanceof ArrayBuffer ||
-		ArrayBuffer.isView(value) ||
-		typeof value === 'string'
-	);
 }
 
 async function parseResponseBody(response: Response, responseType: APIRequestConfig['responseType'] = 'json'): Promise<any> {
@@ -168,160 +146,92 @@ async function parseResponseBody(response: Response, responseType: APIRequestCon
 	}
 }
 
-async function parseErrorResponseBody(error: KyHTTPError): Promise<any> {
-	if (error.data !== undefined) {
-		return error.data;
-	}
-
-	if (error.response.bodyUsed) {
-		return undefined;
-	}
-
-	return parseResponseBody(error.response.clone());
-}
-
-function normalizeUrl(baseURL: string, url: string): string {
-	if (/^[a-z]+:\/\//i.test(url)) {
-		return url;
-	}
-
-	const trimmedBase = baseURL.replace(/\/+$/, '');
-	const trimmedUrl = url.replace(/^\/+/, '');
-
-	if (/^[a-z]+:\/\//i.test(trimmedBase)) {
-		return new URL(trimmedUrl, `${trimmedBase}/`).toString();
-	}
-
-	return `${trimmedBase}/${trimmedUrl}`;
-}
-
-function getRequestPath(url: string, baseURL: string): string {
-	let reqUrl = url;
-	try {
-		if (/^https?:\/\//i.test(reqUrl)) {
-			reqUrl = new URL(reqUrl).pathname;
-		} else if (baseURL && /^https?:\/\//i.test(baseURL)) {
-			reqUrl = new URL(reqUrl.replace(/^\/+/, ''), `${baseURL.replace(/\/+$/, '')}/`).pathname;
-		}
-	} catch {
-		// ignore URL parse errors and fall back to the raw request URL
-	}
-
-	if (reqUrl.startsWith('/api')) {
-		reqUrl = reqUrl.slice(4) || '/';
-	}
-
-	return reqUrl;
-}
-
 let tokenRefreshHandler: (() => Promise<string | null>) | null = null;
-// Set true while a manager self-update / fleet "Update All" is running. During that
-// window the backend briefly restarts and returns version-mismatch 401s; we must not
-// bounce the user to /login — the session is recoverable once the backend is back.
-let upgradeInProgressInternal = false;
+// True while a manager self-update or fleet "Update All" runs; its version-mismatch 401s
+// are recoverable and must not bounce the user to /login.
+let upgradeInProgress = false;
 // A confirmed manager restart still needs document recovery after polling ends.
-let upgradeReloadPendingInternal = false;
-let upgradeReloadStartedInternal = false;
-let unauthorizedRedirectStartedInternal = false;
-const skipAuthPathsInternal = [
+let upgradeReloadPending = false;
+let upgradeReloadStarted = false;
+let unauthorizedRedirectStarted = false;
+const skipAuthPaths = [
 	'/auth/login',
 	'/auth/logout',
 	'/auth/refresh',
 	'/auth/oidc',
-	'/auth/oidc/login',
-	'/auth/oidc/callback',
 	'/auth/passkey',
 	'/auth/mfa',
 	'/auth/auto-login',
-	'/auth/auto-login-config',
 	'/settings/public'
 ];
 
-type UnauthorizedActionInternal = 'none' | 'redirect' | 'reload' | 'retry';
+// Each session owns one controller; logout aborts it and keeps it aborted until
+// the next sign-in, so protected requests fail fast in between.
+let sessionController = new AbortController();
 
-function isAuthPagePathInternal(pathname: string): boolean {
+/** Combines a caller signal with the current session, so logout cancels the request. */
+export function withSessionSignal(signal?: AbortSignal | null): AbortSignal {
+	const session = sessionController.signal;
+	return signal ? AbortSignal.any([signal, session]) : session;
+}
+
+export function currentSessionSignal(): AbortSignal {
+	return sessionController.signal;
+}
+
+export function isAuthPagePath(pathname: string): boolean {
 	return ['/login', '/logout', '/oidc', '/auth/oidc', '/mobile/passkey'].some((prefix) => pathname.startsWith(prefix));
 }
+
+type UnauthorizedAction = 'none' | 'redirect' | 'reload' | 'retry';
 
 export async function handleUnauthorizedResponseInternal(
 	requestPath: string,
 	retry = false,
 	serverMsg?: string | null
-): Promise<UnauthorizedActionInternal> {
-	if (typeof window === 'undefined' || retry) {
+): Promise<UnauthorizedAction> {
+	const session = sessionController.signal;
+	if (typeof window === 'undefined' || retry || session.aborted) {
 		return 'none';
 	}
 
 	const isVersionMismatch = serverMsg?.toLowerCase().includes('application has been updated') ?? false;
-	const isAuthApi = skipAuthPathsInternal.some((path) => requestPath.startsWith(path));
+	const isAuthApi = skipAuthPaths.some((path) => requestPath.startsWith(path));
 	const pathname = window.location.pathname || '/';
-	const isOnAuthPage = isAuthPagePathInternal(pathname);
 
-	if (isAuthApi || isOnAuthPage) {
+	if (isAuthApi || isAuthPagePath(pathname)) {
 		return 'none';
 	}
-	if (unauthorizedRedirectStartedInternal) return 'redirect';
+	if (unauthorizedRedirectStarted) return 'redirect';
 
-	// During a server self-update the backend briefly returns version-mismatch 401s.
-	// Refresh first so the new backend rotates both tokens, then replace the stale
-	// frontend document exactly once. Only transport failures are recoverable restart
-	// noise; a rejected or missing refresh token is a terminal authentication failure.
-	const recoverable = isVersionMismatch || upgradeInProgressInternal;
+	// During a self-update, refresh so the new backend rotates tokens, then reload the stale document once.
+	// Only transport failures are recoverable; a rejected refresh is terminal.
+	const recoverable = isVersionMismatch || upgradeInProgress;
 
 	if (!tokenRefreshHandler) return 'none';
 
 	const operationResult = await tryCatch(
 		(async () => {
 			await tokenRefreshHandler();
-			if (!isVersionMismatch || (!upgradeInProgressInternal && !upgradeReloadPendingInternal)) return 'retry';
-			if (!upgradeReloadStartedInternal) {
-				upgradeReloadStartedInternal = true;
+			if (!isVersionMismatch || (!upgradeInProgress && !upgradeReloadPending)) return 'retry';
+			if (!upgradeReloadStarted) {
+				upgradeReloadStarted = true;
 				window.location.reload();
 			}
 			return 'reload';
 		})()
 	);
-	if (operationResult.error !== null) {
-		const error = operationResult.error;
-		const isTransientRefreshFailure =
-			error instanceof APIError && (error.name === 'NetworkError' || error.name === 'TimeoutError');
-		if (recoverable && isTransientRefreshFailure) return 'none';
-		if (!unauthorizedRedirectStartedInternal) {
-			unauthorizedRedirectStartedInternal = true;
-			window.location.replace(`/login?redirect=${encodeURIComponent(pathname)}`);
-		}
-		return 'redirect';
-	} else {
-		return operationResult.data;
-	}
-}
+	if (session.aborted) return 'none';
+	if (operationResult.error === null) return operationResult.data;
 
-function buildRequestOptionsInternal(method: string, data: unknown, config: InternalRequestConfig): KyOptions {
-	const headers = new Headers(config.headers);
-	const isMutation = !['GET', 'HEAD'].includes(method.toUpperCase());
-	if (activeActivityBatchIdInternal && isMutation && !headers.has('X-Arcane-Batch-Id')) {
-		headers.set('X-Arcane-Batch-Id', activeActivityBatchIdInternal);
+	const error = operationResult.error;
+	const isTransientRefreshFailure = error instanceof APIError && (error.name === 'NetworkError' || error.name === 'TimeoutError');
+	if (recoverable && isTransientRefreshFailure) return 'none';
+	if (!unauthorizedRedirectStarted) {
+		unauthorizedRedirectStarted = true;
+		window.location.replace(`/login?redirect=${encodeURIComponent(pathname)}`);
 	}
-	const options: KyOptions = {
-		cache: config.cache,
-		method,
-		headers,
-		retry: config.retry ?? 0,
-		searchParams: config.params,
-		signal: config.signal,
-		timeout: config.timeout ?? false
-	};
-
-	const bodyData = data !== undefined ? data : config.data;
-	if (bodyData !== undefined && bodyData !== null) {
-		if (isBodyInit(bodyData)) {
-			options.body = bodyData;
-		} else {
-			options.json = bodyData;
-		}
-	}
-
-	return options;
+	return 'redirect';
 }
 
 class APIClient {
@@ -348,21 +258,59 @@ class APIClient {
 		config: InternalRequestConfig = {}
 	): Promise<APIResponse<T>> {
 		const baseURL = config.baseURL ?? this.defaults.baseURL;
-		const requestUrl = normalizeUrl(baseURL, url);
-		const requestConfig = {
-			...config,
-			baseURL,
-			method,
-			url
-		};
+		const requestUrl = /^[a-z]+:\/\//i.test(url) ? url : `${baseURL.replace(/\/+$/, '')}/${url.replace(/^\/+/, '')}`;
+		const requestConfig = { ...config, baseURL, method, url };
+		let requestPath = requestUrl;
+		try {
+			requestPath = new URL(requestUrl, 'http://localhost').pathname;
+		} catch {
+			// Fall back to the raw request URL.
+		}
+		if (requestPath.startsWith('/api')) requestPath = requestPath.slice(4) || '/';
+
+		// Requests needed to sign in again must keep working after logout.
+		const isSessionFree =
+			!requestPath.startsWith('/auth/refresh') &&
+			(skipAuthPaths.some((prefix) => requestPath.startsWith(prefix)) ||
+				['/oidc/url', '/oidc/callback', '/oidc/status'].includes(requestPath) ||
+				requestPath.startsWith('/app-version') ||
+				requestPath.endsWith('/settings/public'));
+		const session = isSessionFree ? undefined : sessionController.signal;
+		const signal = session ? withSessionSignal(config.signal) : config.signal;
+		const upperMethod = method.toUpperCase();
 
 		const operationResult = await tryCatch(
 			(async () => {
-				const options = buildRequestOptionsInternal(method, data, config);
+				const headers = new Headers(config.headers);
+				if (activeActivityBatchId && !['GET', 'HEAD'].includes(upperMethod) && !headers.has('X-Arcane-Batch-Id')) {
+					headers.set('X-Arcane-Batch-Id', activeActivityBatchId);
+				}
+				const options: KyOptions = {
+					cache: config.cache,
+					method,
+					headers,
+					retry: config.retry ?? 0,
+					searchParams: config.params,
+					signal,
+					timeout: config.timeout ?? false
+				};
+				const body = data ?? config.data;
+				if (
+					body instanceof FormData ||
+					body instanceof URLSearchParams ||
+					body instanceof Blob ||
+					body instanceof ArrayBuffer ||
+					ArrayBuffer.isView(body) ||
+					typeof body === 'string'
+				) {
+					options.body = body as BodyInit;
+				} else if (body !== undefined && body !== null) {
+					options.json = body;
+				}
 
 				const response = await this.client(requestUrl, options);
-				const parsed =
-					method.toUpperCase() === 'HEAD' ? undefined : await parseResponseBody(response.clone(), config.responseType);
+				const parsed = upperMethod === 'HEAD' ? undefined : await parseResponseBody(response.clone(), config.responseType);
+				if (session?.aborted) throw new SessionCancelledError();
 				return {
 					data: parsed as T,
 					headers: response.headers,
@@ -371,78 +319,32 @@ class APIClient {
 				};
 			})()
 		);
-		if (operationResult.error !== null) {
-			const error = operationResult.error;
-			if (error instanceof KyHTTPError) {
-				return this.handleHttpError<T>(error, method, url, data, config, requestConfig, requestUrl);
-			}
+		if (operationResult.error === null) return operationResult.data;
 
-			if (error instanceof TimeoutError) {
-				throw new APIError('Request timed out', {
-					cause: error,
-					config: requestConfig,
-					name: 'TimeoutError',
-					requestUrl
-				});
-			}
-
-			if (error instanceof NetworkError) {
-				throw new APIError(error.message, {
-					cause: error,
-					config: requestConfig,
-					name: 'NetworkError',
-					requestUrl
-				});
-			}
-
-			if (error instanceof Error) {
-				throw new APIError(error.message, {
-					cause: error,
-					config: requestConfig,
-					name: error.name || 'APIError',
-					requestUrl
-				});
-			}
-
-			throw new APIError('Unknown error', {
+		const error = operationResult.error;
+		if (session?.aborted) throw new SessionCancelledError();
+		if (!(error instanceof KyHTTPError)) {
+			let message = 'Unknown error';
+			if (error instanceof TimeoutError) message = 'Request timed out';
+			else if (error instanceof Error) message = error.message;
+			throw new APIError(message, {
 				cause: error,
 				config: requestConfig,
+				name: (error instanceof Error && error.name) || undefined,
 				requestUrl
 			});
-		} else {
-			return operationResult.data;
 		}
-	}
 
-	private async handleHttpError<T>(
-		error: KyHTTPError,
-		method: string,
-		url: string,
-		data: unknown,
-		config: InternalRequestConfig,
-		requestConfig: InternalRequestConfig & { baseURL: string; method: string; url: string },
-		requestUrl: string
-	): Promise<APIResponse<T>> {
 		const errorResponse = error.response;
-		const parsed = await parseErrorResponseBody(error);
-		const response: APIResponse = {
-			data: parsed,
-			headers: errorResponse.headers,
-			raw: errorResponse,
-			status: errorResponse.status
-		};
+		const parsed =
+			error.data !== undefined || errorResponse.bodyUsed ? error.data : await parseResponseBody(errorResponse.clone());
+		if (session?.aborted) throw new SessionCancelledError();
 
-		if (errorResponse.status === 401 && typeof window !== 'undefined' && !config._retry) {
-			const action = await handleUnauthorizedResponseInternal(
-				getRequestPath(url, requestConfig.baseURL),
-				!!config._retry,
-				extractServerMessage(parsed)
-			);
+		if (errorResponse.status === 401) {
+			const action = await handleUnauthorizedResponseInternal(requestPath, config._retry, extractServerMessage(parsed));
+			if (session?.aborted) throw new SessionCancelledError();
 			if (action === 'retry') {
-				return this.performRequest<T>(method, url, data, {
-					...config,
-					_retry: true
-				});
+				return this.performRequest<T>(method, url, data, { ...config, _retry: true });
 			}
 			if (action === 'redirect' || action === 'reload') {
 				return new Promise(() => {});
@@ -459,7 +361,7 @@ class APIClient {
 			config: requestConfig,
 			name: 'HTTPError',
 			requestUrl,
-			response
+			response: { data: parsed, headers: errorResponse.headers, raw: errorResponse, status: errorResponse.status }
 		});
 	}
 
@@ -501,24 +403,31 @@ abstract class BaseAPIService {
 	// Toggled by the update flows (Update All / local update center) so an in-progress
 	// self-update restart is treated as a recoverable reconnect, not a logout.
 	static setUpgradeInProgress(value: boolean) {
-		if (!upgradeReloadPendingInternal && (!value || !upgradeInProgressInternal)) {
-			upgradeReloadStartedInternal = false;
+		if (!upgradeReloadPending && (!value || !upgradeInProgress)) {
+			upgradeReloadStarted = false;
 		}
-		upgradeInProgressInternal = value;
+		upgradeInProgress = value;
+	}
+
+	/** Cancels the current session's work and blocks protected requests until beginSession. */
+	static endSession() {
+		sessionController.abort(new SessionCancelledError());
+	}
+
+	static beginSession() {
+		if (sessionController.signal.aborted) {
+			sessionController = new AbortController();
+		}
 	}
 
 	static confirmUpgradeRestart() {
-		upgradeReloadPendingInternal = true;
+		upgradeReloadPending = true;
 	}
 
 	protected async handleResponse<T>(promise: Promise<APIResponse>): Promise<T> {
-		const response = await promise;
-		const payload = response.data;
-		const extracted =
-			payload && typeof payload === 'object' && 'data' in payload && (payload as any).data !== undefined
-				? (payload as any).data
-				: payload;
-		return extracted as T;
+		const payload = (await promise).data;
+		const inner = asRecord(payload)?.['data'];
+		return (inner !== undefined ? inner : payload) as T;
 	}
 }
 

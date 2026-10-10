@@ -26,7 +26,8 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 COPY backend ./
 COPY .arcane.json ../arcane.json
 
-RUN --mount=type=cache,target=/root/.cache/go-build \
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
     if [ "${VERSION}" = "dev" ]; then VERSION=$(jq -r '.version // "dev"' ../arcane.json); fi && \
     if [ "${REVISION}" = "unknown" ]; then REVISION=$(jq -r '.revision // "unknown"' ../arcane.json); fi && \
     if [ "${BUILD_TIME}" = "unknown" ]; then BUILD_TIME=$(jq -r '.buildTime // "unknown"' ../arcane.json); fi && \

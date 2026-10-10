@@ -1064,3 +1064,21 @@ func TestSyncResourcesToEnvironmentOutcomes(t *testing.T) {
 		})
 	}
 }
+
+func TestActivityService_StartActivityWithIDIsIdempotent(t *testing.T) {
+	db := setupActivityServiceTestDBInternal(t)
+	service := NewActivityService(db, nil)
+
+	first, err := service.StartActivity(t.Context(), StartActivityRequest{ID: "workflow-activity", Type: activity.TypeAutoUpdate, LatestMessage: "first"})
+	require.NoError(t, err)
+	require.Equal(t, "workflow-activity", first.ID)
+
+	again, err := service.StartActivity(t.Context(), StartActivityRequest{ID: "workflow-activity", Type: activity.TypeAutoUpdate, LatestMessage: "redelivered"})
+	require.NoError(t, err)
+	require.Equal(t, first.ID, again.ID)
+	require.Equal(t, "first", again.LatestMessage)
+
+	var count int64
+	require.NoError(t, db.Model(&Activity{}).Where("id = ?", "workflow-activity").Count(&count).Error)
+	require.Equal(t, int64(1), count)
+}

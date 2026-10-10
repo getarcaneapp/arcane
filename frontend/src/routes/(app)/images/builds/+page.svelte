@@ -13,6 +13,7 @@
 	import TabbedPageLayout from '#lib/layouts/tabbed-page-layout.svelte';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
+	import { isSessionCancelledError, withSessionSignal } from '#lib/services/api-service.js';
 	import { containerRegistryService } from '#lib/services/container-registry-service.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
@@ -272,7 +273,8 @@
 				headers: {
 					'Content-Type': 'application/json'
 				},
-				body: JSON.stringify(payload)
+				body: JSON.stringify(payload),
+				signal: withSessionSignal()
 			});
 
 			if (!response.ok || !response.body) {
@@ -596,7 +598,7 @@
 					toast.success(m.build_completed());
 				})()
 			);
-			if (operationResult.error !== null) {
+			if (operationResult.error !== null && !isSessionCancelledError(operationResult.error)) {
 				const error = operationResult.error;
 
 				const message = sanitizeLogText(error instanceof Error ? error.message : m.build_failed());

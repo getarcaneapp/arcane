@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -53,7 +52,7 @@ func setupNotificationTestDB(t *testing.T) *database.DB {
 	return &database.DB{DB: db}
 }
 
-func setupNotificationTestServiceInternal(t *testing.T) (*database.DB, *NotificationService) {
+func setupNotificationTestService(t *testing.T) (*database.DB, *NotificationService) {
 	t.Helper()
 
 	db := setupNotificationTestDB(t)
@@ -66,7 +65,7 @@ func setupNotificationTestServiceInternal(t *testing.T) (*database.DB, *Notifica
 	return db, NewNotificationService(db, cfg, envSvc, event.NewEventService(db, cfg, nil), nil)
 }
 
-func newNotificationTestUpdateInfoInternal() *imageupdate.Response {
+func newNotificationTestUpdateInfo() *imageupdate.Response {
 	return &imageupdate.Response{
 		HasUpdate:     true,
 		UpdateType:    "digest",
@@ -76,7 +75,7 @@ func newNotificationTestUpdateInfoInternal() *imageupdate.Response {
 	}
 }
 
-func captureNotificationServiceLogsInternal(t *testing.T) *bytes.Buffer {
+func captureNotificationServiceLogs(t *testing.T) *bytes.Buffer {
 	t.Helper()
 
 	var buf bytes.Buffer
@@ -90,11 +89,11 @@ func captureNotificationServiceLogsInternal(t *testing.T) *bytes.Buffer {
 	return &buf
 }
 
-func TestNotificationService_ResolveNotificationTargetInternal_UsesEnvironmentRecordAndFallback(t *testing.T) {
+func TestNotificationService_ResolveNotificationTarget_UsesEnvironmentRecordAndFallback(t *testing.T) {
 	ctx := t.Context()
-	db, svc := setupNotificationTestServiceInternal(t)
+	db, svc := setupNotificationTestService(t)
 
-	target, err := svc.resolveNotificationTargetInternal(ctx, "")
+	target, err := svc.ResolveNotificationTarget(ctx, "")
 	require.NoError(t, err)
 	require.Equal(t, "0", target.EnvironmentID)
 	require.Equal(t, "Local Docker", target.EnvironmentName)
@@ -108,42 +107,21 @@ func TestNotificationService_ResolveNotificationTargetInternal_UsesEnvironmentRe
 		Status:  string(environment.EnvironmentStatusOnline),
 	}).Error)
 
-	target, err = svc.resolveNotificationTargetInternal(ctx, "env-remote")
+	target, err = svc.ResolveNotificationTarget(ctx, "env-remote")
 	require.NoError(t, err)
 	require.Equal(t, "env-remote", target.EnvironmentID)
 	require.Equal(t, "Remote Alpha", target.EnvironmentName)
 }
 
-func TestNotificationService_ResolveNotificationTargetForAccessTokenInternal_UsesStoredEnvironmentName(t *testing.T) {
-	ctx := t.Context()
-	db, svc := setupNotificationTestServiceInternal(t)
-
-	token := "remote-token"
-	now := time.Now()
-	require.NoError(t, db.WithContext(ctx).Create(&environment.Environment{
-		ID: "env-remote", CreatedAt: now, UpdatedAt: &now,
-		Name:        "Remote Edge",
-		ApiUrl:      "http://remote.example",
-		Enabled:     true,
-		Status:      string(environment.EnvironmentStatusOnline),
-		AccessToken: &token,
-	}).Error)
-
-	target, err := svc.resolveNotificationTargetForAccessTokenInternal(ctx, token)
-	require.NoError(t, err)
-	require.Equal(t, "env-remote", target.EnvironmentID)
-	require.Equal(t, "Remote Edge", target.EnvironmentName)
-}
-
 func TestNotificationService_DispatchNotification_InvalidAccessTokenReturnsUnauthorizedSentinel(t *testing.T) {
 	ctx := t.Context()
-	_, svc := setupNotificationTestServiceInternal(t)
+	_, svc := setupNotificationTestService(t)
 
 	_, err := svc.DispatchNotification(ctx, "missing-token", notification.DispatchRequest{
 		Kind: notification.DispatchKindImageUpdate,
 		ImageUpdate: &notification.DispatchImageUpdate{
 			ImageRef:   "nginx:latest",
-			UpdateInfo: *newNotificationTestUpdateInfoInternal(),
+			UpdateInfo: *newNotificationTestUpdateInfo(),
 		},
 	})
 
@@ -153,7 +131,7 @@ func TestNotificationService_DispatchNotification_InvalidAccessTokenReturnsUnaut
 
 func TestNotificationService_DispatchNotification_UnsupportedKindReturnsSentinel(t *testing.T) {
 	ctx := t.Context()
-	db, svc := setupNotificationTestServiceInternal(t)
+	db, svc := setupNotificationTestService(t)
 
 	token := "remote-token"
 	now := time.Now()
@@ -179,8 +157,8 @@ func TestNotificationService_DispatchNotification_UnsupportedKindReturnsSentinel
 
 func TestNotificationService_DispatchNotification_LogsManagerDispatchForAgent(t *testing.T) {
 	ctx := t.Context()
-	db, svc := setupNotificationTestServiceInternal(t)
-	logBuffer := captureNotificationServiceLogsInternal(t)
+	db, svc := setupNotificationTestService(t)
+	logBuffer := captureNotificationServiceLogs(t)
 
 	token := "remote-token"
 	now := time.Now()
@@ -197,7 +175,7 @@ func TestNotificationService_DispatchNotification_LogsManagerDispatchForAgent(t 
 		Kind: notification.DispatchKindImageUpdate,
 		ImageUpdate: &notification.DispatchImageUpdate{
 			ImageRef:   "nginx:latest",
-			UpdateInfo: *newNotificationTestUpdateInfoInternal(),
+			UpdateInfo: *newNotificationTestUpdateInfo(),
 		},
 	})
 
@@ -206,8 +184,8 @@ func TestNotificationService_DispatchNotification_LogsManagerDispatchForAgent(t 
 	require.Equal(t, 0, dispatchResponse.Delivered)
 	logs := logBuffer.String()
 	require.Contains(t, logs, "Manager dispatching notification on behalf of agent")
-	require.Contains(t, logs, "environment_id=env-remote")
-	require.Contains(t, logs, "environment_name=\"Remote Edge\"")
+	require.Contains(t, logs, "environmentId=env-remote")
+	require.Contains(t, logs, "environmentName=\"Remote Edge\"")
 	require.Contains(t, logs, "kind=image_update")
 }
 
@@ -251,7 +229,7 @@ func TestNotificationService_SendImageUpdateNotification_AgentModeDispatchesToMa
 		ManagerApiUrl: server.URL,
 	}, envSvc, nil, nil)
 
-	delivered, err := svc.SendImageUpdateNotification(ctx, "nginx:latest", newNotificationTestUpdateInfoInternal(), notifications.NotificationEventImageUpdate)
+	delivered, err := svc.SendImageUpdateNotification(ctx, "nginx:latest", newNotificationTestUpdateInfo(), notifications.NotificationEventImageUpdate)
 	require.NoError(t, err)
 	require.Equal(t, 2, delivered)
 	require.EqualValues(t, 1, calls.Load())
@@ -260,7 +238,7 @@ func TestNotificationService_SendImageUpdateNotification_AgentModeDispatchesToMa
 	require.Equal(t, "nginx:latest", dispatched.ImageUpdate.ImageRef)
 }
 
-func TestNotificationService_SendBatchImageUpdateNotification_AgentModeUsesManagerDeliveredCountInternal(t *testing.T) {
+func TestNotificationService_SendBatchImageUpdateNotification_AgentModeUsesManagerDeliveredCount(t *testing.T) {
 	ctx := t.Context()
 	db := setupNotificationTestDB(t)
 	envSvc := environment.NewEnvironmentService(db, nil, nil, nil, nil, nil)
@@ -299,7 +277,7 @@ func TestNotificationService_SendBatchImageUpdateNotification_AgentModeUsesManag
 	}, envSvc, nil, nil)
 
 	delivered, err := svc.SendBatchImageUpdateNotification(ctx, map[string]*imageupdate.Response{
-		"nginx:latest": newNotificationTestUpdateInfoInternal(),
+		"nginx:latest": newNotificationTestUpdateInfo(),
 	})
 	require.NoError(t, err)
 	require.Equal(t, 0, delivered)
@@ -323,7 +301,7 @@ func TestNotificationService_SendImageUpdateNotification_AgentModeRequiresUpdate
 	require.Contains(t, err.Error(), "updateInfo is required")
 }
 
-func TestNotificationService_SendBatchImageUpdateNotification_AgentModeSkipsNoOpDispatchInternal(t *testing.T) {
+func TestNotificationService_SendBatchImageUpdateNotification_AgentModeSkipsNoOpDispatch(t *testing.T) {
 	ctx := t.Context()
 	db := setupNotificationTestDB(t)
 	envSvc := environment.NewEnvironmentService(db, nil, nil, nil, nil, nil)
@@ -364,8 +342,8 @@ func TestNotificationService_SendBatchImageUpdateNotification_AgentModeSkipsNoOp
 	})
 }
 
-func TestBuildImageUpdateNotificationMessageInternal_IncludesEnvironment(t *testing.T) {
-	updateInfo := newNotificationTestUpdateInfoInternal()
+func TestBuildImageUpdateNotificationMessage_IncludesEnvironment(t *testing.T) {
+	updateInfo := newNotificationTestUpdateInfo()
 
 	message := notifications.BuildImageUpdateNotificationMessage(notifications.MessageFormatMarkdown, "Remote Alpha", "nginx:latest", updateInfo)
 	require.Contains(t, message, "**Environment:** Remote Alpha")
@@ -375,16 +353,16 @@ func TestBuildImageUpdateNotificationMessageInternal_IncludesEnvironment(t *test
 	require.Contains(t, plainMessage, "Environment: Remote Alpha")
 }
 
-func TestBuildContainerUpdateNotificationMessageInternal_IncludesEnvironment(t *testing.T) {
+func TestBuildContainerUpdateNotificationMessage_IncludesEnvironment(t *testing.T) {
 	message := notifications.BuildContainerUpdateNotificationMessage(notifications.MessageFormatMarkdown, "Local Lab", "nginx", "nginx:latest", "sha256:old", "sha256:new")
 
 	require.Contains(t, message, "**Environment:** Local Lab")
 	require.Equal(t, 1, strings.Count(message, "Environment"))
 }
 
-func TestBuildBatchImageUpdateNotificationMessageInternal_EnvironmentAppearsOnce(t *testing.T) {
+func TestBuildBatchImageUpdateNotificationMessage_EnvironmentAppearsOnce(t *testing.T) {
 	updates := map[string]*imageupdate.Response{
-		"nginx:latest": newNotificationTestUpdateInfoInternal(),
+		"nginx:latest": newNotificationTestUpdateInfo(),
 		"redis:latest": {
 			HasUpdate:     true,
 			UpdateType:    "minor",
@@ -399,7 +377,7 @@ func TestBuildBatchImageUpdateNotificationMessageInternal_EnvironmentAppearsOnce
 	require.Equal(t, 1, strings.Count(message, "Environment"))
 }
 
-func TestBuildVulnerabilitySummaryNotificationMessageInternal_IncludesEnvironment(t *testing.T) {
+func TestBuildVulnerabilitySummaryNotificationMessage_IncludesEnvironment(t *testing.T) {
 	message := notifications.BuildVulnerabilitySummaryNotificationMessage(
 		notifications.MessageFormatMarkdown,
 		"Remote Alpha",
@@ -414,7 +392,7 @@ func TestBuildVulnerabilitySummaryNotificationMessageInternal_IncludesEnvironmen
 	require.Equal(t, 1, strings.Count(message, "Environment"))
 }
 
-func TestBuildPruneReportNotificationMessageInternal_IncludesEnvironment(t *testing.T) {
+func TestBuildPruneReportNotificationMessage_IncludesEnvironment(t *testing.T) {
 	message := notifications.BuildPruneReportNotificationMessage(notifications.MessageFormatMarkdown, "Cluster One", &system.PruneAllResult{
 		SpaceReclaimed:           3825205248,
 		ContainerSpaceReclaimed:  503316480,
@@ -427,14 +405,14 @@ func TestBuildPruneReportNotificationMessageInternal_IncludesEnvironment(t *test
 	require.Equal(t, 1, strings.Count(message, "Environment"))
 }
 
-func TestBuildAutoHealNotificationMessageInternal_IncludesEnvironment(t *testing.T) {
+func TestBuildAutoHealNotificationMessage_IncludesEnvironment(t *testing.T) {
 	message := notifications.BuildAutoHealNotificationMessage(notifications.MessageFormatMarkdown, "Cluster One", "nginx")
 
 	require.Contains(t, message, "**Environment:** Cluster One")
 	require.Equal(t, 1, strings.Count(message, "Environment"))
 }
 
-func TestNotificationCredentialInternal_KeepsPlaintextLegacyValues(t *testing.T) {
+func TestNotificationCredential_KeepsPlaintextLegacyValues(t *testing.T) {
 	setupNotificationTestDB(t)
 
 	value := "discord-webhook-token/plaintext"
@@ -443,7 +421,7 @@ func TestNotificationCredentialInternal_KeepsPlaintextLegacyValues(t *testing.T)
 	require.Equal(t, "discord-webhook-token/plaintext", value)
 }
 
-func TestNotificationCredentialInternal_DecryptsEncryptedValues(t *testing.T) {
+func TestNotificationCredential_DecryptsEncryptedValues(t *testing.T) {
 	setupNotificationTestDB(t)
 
 	encrypted, err := crypto.Encrypt("gotify-application-token")
@@ -453,7 +431,7 @@ func TestNotificationCredentialInternal_DecryptsEncryptedValues(t *testing.T) {
 	require.Equal(t, "gotify-application-token", encrypted)
 }
 
-func TestNotificationCredentialInternal_ReturnsErrorForCorruptedCiphertext(t *testing.T) {
+func TestNotificationCredential_ReturnsErrorForCorruptedCiphertext(t *testing.T) {
 	setupNotificationTestDB(t)
 
 	encrypted, err := crypto.Encrypt("gotify-application-token")
@@ -465,7 +443,7 @@ func TestNotificationCredentialInternal_ReturnsErrorForCorruptedCiphertext(t *te
 	require.Error(t, notifications.DecryptStringCredential(new(base64.StdEncoding.EncodeToString(ciphertext))))
 }
 
-func TestNotificationCredentialInternal_LeavesEmptyValuesEmpty(t *testing.T) {
+func TestNotificationCredential_LeavesEmptyValuesEmpty(t *testing.T) {
 	setupNotificationTestDB(t)
 
 	value := ""
@@ -474,7 +452,7 @@ func TestNotificationCredentialInternal_LeavesEmptyValuesEmpty(t *testing.T) {
 	require.Empty(t, value)
 }
 
-func TestNotificationService_CreateOrUpdateSettingsEncryptsCredentialFieldsInternal(t *testing.T) {
+func TestNotificationService_CreateOrUpdateSettingsEncryptsCredentialFields(t *testing.T) {
 	ctx := t.Context()
 	db := setupNotificationTestDB(t)
 	svc := NewNotificationService(db, &config.Config{}, nil, nil, nil)
@@ -497,7 +475,7 @@ func TestNotificationService_CreateOrUpdateSettingsEncryptsCredentialFieldsInter
 	require.Equal(t, "discord-secret-token", decrypted)
 }
 
-func TestNotificationService_CreateOrUpdateSettingsPreservesStoredCredentialWhenEmptyInternal(t *testing.T) {
+func TestNotificationService_CreateOrUpdateSettingsPreservesStoredCredentialWhenEmpty(t *testing.T) {
 	ctx := t.Context()
 	db := setupNotificationTestDB(t)
 	svc := NewNotificationService(db, &config.Config{}, nil, nil, nil)
@@ -525,7 +503,7 @@ func TestNotificationService_CreateOrUpdateSettingsPreservesStoredCredentialWhen
 	require.Equal(t, "initial-gotify-token", decrypted)
 }
 
-func TestNotificationService_CreateOrUpdateSettingsRejectsTargetChangeWithStoredCredentialInternal(t *testing.T) {
+func TestNotificationService_CreateOrUpdateSettingsRejectsTargetChangeWithStoredCredential(t *testing.T) {
 	ctx := t.Context()
 	db := setupNotificationTestDB(t)
 	svc := NewNotificationService(db, &config.Config{}, nil, nil, nil)
@@ -560,7 +538,7 @@ func TestNotificationService_CreateOrUpdateSettingsRejectsTargetChangeWithStored
 	require.Equal(t, originalToken, updated.Config["token"])
 }
 
-func TestNotificationService_CreateOrUpdateSettingsClearsEmailPasswordWhenAuthModeNoneInternal(t *testing.T) {
+func TestNotificationService_CreateOrUpdateSettingsClearsEmailPasswordWhenAuthModeNone(t *testing.T) {
 	ctx := t.Context()
 	db := setupNotificationTestDB(t)
 	svc := NewNotificationService(db, &config.Config{}, nil, nil, nil)
@@ -584,7 +562,7 @@ func TestNotificationService_CreateOrUpdateSettingsClearsEmailPasswordWhenAuthMo
 	require.Empty(t, stored.Config["smtpPassword"])
 }
 
-func TestNotificationService_CreateOrUpdateSettingsPreservesCredentialAcrossDisableInternal(t *testing.T) {
+func TestNotificationService_CreateOrUpdateSettingsPreservesCredentialAcrossDisable(t *testing.T) {
 	ctx := t.Context()
 	db := setupNotificationTestDB(t)
 	svc := NewNotificationService(db, &config.Config{}, nil, nil, nil)
@@ -615,7 +593,7 @@ func TestNotificationService_CreateOrUpdateSettingsPreservesCredentialAcrossDisa
 	require.Equal(t, "initial-gotify-token", decrypted)
 }
 
-func TestNotificationService_CreateOrUpdateSettingsKeepsConfigWhenDisabledInternal(t *testing.T) {
+func TestNotificationService_CreateOrUpdateSettingsKeepsConfigWhenDisabled(t *testing.T) {
 	ctx := t.Context()
 	db := setupNotificationTestDB(t)
 	svc := NewNotificationService(db, &config.Config{}, nil, nil, nil)
@@ -651,53 +629,55 @@ func TestNotificationService_CreateOrUpdateSettingsKeepsConfigWhenDisabledIntern
 	require.Equal(t, false, events["prune_report"])
 }
 
-func TestNotificationService_NotifyEnabledProvidersInternal_SkipsFiltersAndAggregatesInternal(t *testing.T) {
+func TestNotificationService_NotifyEnabledProviders_SkipsFiltersAndAggregates(t *testing.T) {
 	ctx := t.Context()
 	db := setupNotificationTestDB(t)
 	svc := NewNotificationService(db, &config.Config{}, nil, event.NewEventService(db, nil, nil), nil)
+
+	var webhookCalls atomic.Int32
+	var cancelOnWebhook atomic.Pointer[context.CancelFunc]
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		webhookCalls.Add(1)
+		if cancelWebhook := cancelOnWebhook.Load(); cancelWebhook != nil {
+			(*cancelWebhook)()
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
 
 	rows := []NotificationSettings{
 		{Provider: notifications.NotificationProviderDiscord, Enabled: false, Config: database.JSON{}},
 		{Provider: notifications.NotificationProviderSlack, Enabled: true, Config: database.JSON{
 			"events": map[string]any{string(notifications.NotificationEventPruneReport): false},
 		}},
-		{Provider: notifications.NotificationProviderGotify, Enabled: true, Config: database.JSON{}},
-		{Provider: notifications.NotificationProviderNtfy, Enabled: true, Config: database.JSON{}},
+		{Provider: notifications.NotificationProviderGeneric, Enabled: true, Config: database.JSON{"webhookUrl": server.URL}},
+		// An unconfigured Telegram provider fails before any network call.
+		{Provider: notifications.NotificationProviderTelegram, Enabled: true, Config: database.JSON{}},
 	}
 	for i := range rows {
 		require.NoError(t, db.WithContext(ctx).Create(&rows[i]).Error)
 	}
 
-	var dispatchedMu sync.Mutex
-	var dispatched []notifications.NotificationProvider
+	content := notifications.Content{Text: notifications.TextByFormat(func(notifications.MessageFormat) string { return "loop-test" })}
 	target := NotificationTarget{EnvironmentID: "0", EnvironmentName: "Local Docker"}
-	delivered, err := svc.notifyEnabledProvidersInternal(ctx, target, notifications.NotificationEventPruneReport, "loop-test", database.JSON{"eventType": "prune_report"},
-		func(_ context.Context, provider notifications.NotificationProvider, _ database.JSON) (bool, error) {
-			dispatchedMu.Lock()
-			dispatched = append(dispatched, provider)
-			dispatchedMu.Unlock()
-			if provider == notifications.NotificationProviderNtfy {
-				return true, errors.New("boom")
-			}
-			return true, nil
-		})
+	delivered, err := svc.notifyEnabledProviders(ctx, target, notifications.NotificationEventPruneReport, "loop-test", database.JSON{"eventType": "prune_report"}, content)
 
 	// Disabled and event-disabled rows are never dispatched.
-	require.ElementsMatch(t, []notifications.NotificationProvider{notifications.NotificationProviderGotify, notifications.NotificationProviderNtfy}, dispatched)
+	require.EqualValues(t, 1, webhookCalls.Load())
 	require.Equal(t, 1, delivered)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "notification errors: ntfy: boom")
+	require.Contains(t, err.Error(), "notification errors: telegram: telegram bot token not configured")
 
 	// Each dispatched attempt lands in the event log.
 	var events []event.Event
 	require.NoError(t, db.WithContext(ctx).Where("type = ?", event.EventTypeNotificationSend).Order("created_at").Find(&events).Error)
 	require.Len(t, events, 2)
 	require.Equal(t, event.EventSeveritySuccess, events[0].Severity)
-	require.Equal(t, "Notification sent via gotify", events[0].Title)
+	require.Equal(t, "Notification sent via generic", events[0].Title)
 	require.Equal(t, "loop-test", events[0].Description)
 	require.Equal(t, event.EventSeverityError, events[1].Severity)
-	require.Equal(t, "Notification failed via ntfy", events[1].Title)
-	require.Contains(t, events[1].Description, "boom")
+	require.Equal(t, "Notification failed via telegram", events[1].Title)
+	require.Contains(t, events[1].Description, "telegram bot token not configured")
 
 	// Completed attempts persist even when cancellation ends the caller's wait.
 	sqlDB, err := db.DB.DB()
@@ -713,14 +693,11 @@ func TestNotificationService_NotifyEnabledProvidersInternal_SkipsFiltersAndAggre
 	}))
 	canceledCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	cancelOnWebhook.Store(&cancel)
 	returned := make(chan struct{})
 	go func() {
 		defer close(returned)
-		_, _ = svc.notifyEnabledProvidersInternal(canceledCtx, target, notifications.NotificationEventPruneReport, "canceled-loop-test", nil,
-			func(context.Context, notifications.NotificationProvider, database.JSON) (bool, error) {
-				cancel()
-				return true, nil
-			})
+		_, _ = svc.notifyEnabledProviders(canceledCtx, target, notifications.NotificationEventPruneReport, "canceled-loop-test", nil, content)
 	}()
 	select {
 	case <-returned:
@@ -730,7 +707,7 @@ func TestNotificationService_NotifyEnabledProvidersInternal_SkipsFiltersAndAggre
 	releaseOnce.Do(func() { close(releaseLogging) })
 	require.Eventually(t, func() bool {
 		var count int64
-		return db.WithContext(ctx).Model(&event.Event{}).Where("description = ?", "canceled-loop-test").Count(&count).Error == nil && count == 2
+		return db.WithContext(ctx).Model(&event.Event{}).Where("description LIKE ?", "canceled-loop-test%").Count(&count).Error == nil && count == 2
 	}, time.Second, 10*time.Millisecond)
 }
 
@@ -745,17 +722,17 @@ func TestSupportedNotificationTestTypes_IncludesAutoHeal(t *testing.T) {
 	}
 
 	for _, tt := range expected {
-		_, ok := supportedNotificationTestTypes[tt]
-		require.True(t, ok, "expected %q to be in supportedNotificationTestTypes", tt)
+		_, ok := notificationTestEventTypes[tt]
+		require.True(t, ok, "expected %q to be in notificationTestEventTypes", tt)
 	}
 
-	require.Len(t, supportedNotificationTestTypes, len(expected),
-		"supportedNotificationTestTypes has unexpected entries")
+	require.Len(t, notificationTestEventTypes, len(expected),
+		"notificationTestEventTypes has unexpected entries")
 }
 
 func TestNotificationService_DispatchNotificationForEnvironment_ResolvesTunnelSessionEnvironment(t *testing.T) {
 	ctx := t.Context()
-	db, svc := setupNotificationTestServiceInternal(t)
+	db, svc := setupNotificationTestService(t)
 
 	now := time.Now()
 	require.NoError(t, db.WithContext(ctx).Create(&environment.Environment{
@@ -770,7 +747,7 @@ func TestNotificationService_DispatchNotificationForEnvironment_ResolvesTunnelSe
 		Kind: notification.DispatchKindImageUpdate,
 		ImageUpdate: &notification.DispatchImageUpdate{
 			ImageRef:   "nginx:latest",
-			UpdateInfo: *newNotificationTestUpdateInfoInternal(),
+			UpdateInfo: *newNotificationTestUpdateInfo(),
 		},
 	})
 	require.NoError(t, err)
@@ -787,11 +764,11 @@ func TestNotificationService_AgentDispatchWithoutHTTPConfigFallsBackToTunnel(t *
 
 	// No MANAGER_API_URL/AGENT_TOKEN and no active tunnel: the error must point
 	// at both options instead of only the HTTP env vars (#3002).
-	_, err := svc.dispatchNotificationToManagerInternal(ctx, notification.DispatchRequest{
+	_, err := svc.dispatchNotificationToManager(ctx, notification.DispatchRequest{
 		Kind: notification.DispatchKindImageUpdate,
 		ImageUpdate: &notification.DispatchImageUpdate{
 			ImageRef:   "nginx:latest",
-			UpdateInfo: *newNotificationTestUpdateInfoInternal(),
+			UpdateInfo: *newNotificationTestUpdateInfo(),
 		},
 	})
 	require.Error(t, err)
@@ -806,11 +783,11 @@ func TestNotificationService_AgentDispatchHTTPFailureFallsBackToTunnel(t *testin
 
 	// HTTP dispatch fails and no tunnel is connected either: the fallback must
 	// not mask the HTTP transport error.
-	_, err := svc.dispatchNotificationToManagerInternal(ctx, notification.DispatchRequest{
+	_, err := svc.dispatchNotificationToManager(ctx, notification.DispatchRequest{
 		Kind: notification.DispatchKindImageUpdate,
 		ImageUpdate: &notification.DispatchImageUpdate{
 			ImageRef:   "nginx:latest",
-			UpdateInfo: *newNotificationTestUpdateInfoInternal(),
+			UpdateInfo: *newNotificationTestUpdateInfo(),
 		},
 	})
 	require.Error(t, err)

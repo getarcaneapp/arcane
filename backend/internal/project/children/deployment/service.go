@@ -19,7 +19,6 @@ import (
 	usertypes "github.com/getarcaneapp/arcane/types/v2/user"
 	"go.getarcane.app/acfs"
 	buildtypes "go.getarcane.app/builds/types"
-	"go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
@@ -48,28 +47,6 @@ func New(settingsService *settings.SettingsService, imageService *image.ImageSer
 	return &Service{settingsService: settingsService, imageService: imageService, dockerService: dockerService, buildService: buildService}
 }
 
-// PullImages pulls every pullable image of the Compose project.
-func (s *Service) PullImages(ctx context.Context, compProj *composetypes.Project, progressWriter io.Writer, user usertypes.Actor, credentials []containerregistry.Credential) error {
-	for _, img := range projects.PullableImageRefs(compProj) {
-		if err := s.Pull(ctx, img, progressWriter, user, credentials); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (s *Service) reconcilePulledInternal(ctx context.Context, imageRefs []string) {
-	if s.imageService == nil {
-		return
-	}
-
-	for _, imageRef := range imageRefs {
-		if err := s.imageService.ReconcilePulledImageUpdate(ctx, imageRef); err != nil {
-			slog.WarnContext(ctx, "failed to reconcile pulled image update state", "image", imageRef, "error", err)
-		}
-	}
-}
-
 // Pull pulls one image within the configured pull timeout and reconciles its
 // update state.
 func (s *Service) Pull(
@@ -95,7 +72,9 @@ func (s *Service) Pull(
 		return fmt.Errorf("failed to pull image %s: %w", imageRef, err)
 	}
 
-	s.reconcilePulledInternal(ctx, []string{imageRef})
+	if err := s.imageService.ReconcilePulledImageUpdate(ctx, imageRef); err != nil {
+		slog.WarnContext(ctx, "failed to reconcile pulled image update state", "image", imageRef, "error", err)
+	}
 	return nil
 }
 
@@ -160,48 +139,12 @@ func (s *Service) ImageOperations(user *usertypes.Actor, credentials []container
 	return operations
 }
 
-// ensureProjectBindDirectoryInternal creates source (and missing parents)
-// when it resolves inside projectPath and nothing exists there yet. Sources
-// escaping the project, lexically or through a symlink, are skipped.
-func EnsureProjectBindDirectory(ctx context.Context, projectPath, source string) error {
-	logicalPath, err := acfs.LogicalPath(projectPath, source)
-	if err != nil {
-		return kit.Ternary(errors.Is(err, acfs.ErrOutsideRoot), nil, err)
-	}
-	if logicalPath == "/" {
-		return nil
-	}
-
-	exists, err := acfs.Exists(ctx, projectPath, logicalPath)
-	if errors.Is(err, acfs.ErrOutsideRoot) || exists {
-		return nil
-	}
-	if errors.Is(err, fs.ErrPermission) {
-		// Leave sources Arcane cannot inspect to the Docker daemon.
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-
-	if mkdirAllErr := acfs.MkdirAll(ctx, projectPath, logicalPath, utils.DirPerm); mkdirAllErr != nil {
-		return kit.Ternary(errors.Is(mkdirAllErr, acfs.ErrOutsideRoot), nil, mkdirAllErr)
-	}
-	slog.InfoContext(ctx, "created missing bind directory for project deployment", "projectPath", projectPath, "source", source)
-	return nil
-}
-
-// prepareProjectBindDirectoriesInternal returns the load-time preparation for
-// deployments: bind-mount sources confirmed missing inside projectPath are
-// created as Arcane's runtime user before containers are stopped or created.
-// Left to Docker, those directories would be created as root (#4132).
+// PrepareProjectBindDirectories creates missing bind-mount sources inside
+// projectPath as Arcane's runtime user before deploys; Docker would create them as root (#4132).
 //
-// Only bind sources with Compose's automatic host path creation enabled are
-// considered (short syntax, or long syntax without create_host_path: false),
-// mirroring what the daemon would otherwise do. Existing files, directories,
-// and symlinks are left untouched, as are sources outside the project
-// directory or reached through a symlink escaping it (#4195). Those sources
-// and sources Arcane cannot inspect are left to Docker, even if missing.
+// Only sources with Compose's automatic host path creation are considered.
+// Existing paths, sources escaping the project lexically or through a symlink
+// (#4195), and sources Arcane cannot inspect are left to Docker.
 func PrepareProjectBindDirectories(projectPath string) projects.PrepareProjectFunc {
 	return func(ctx context.Context, project *composetypes.Project) error {
 		for _, serviceName := range slices.Sorted(maps.Keys(project.Services)) {
@@ -212,7 +155,21 @@ func PrepareProjectBindDirectories(projectPath string) projects.PrepareProjectFu
 				if volume.Bind != nil && !bool(volume.Bind.CreateHostPath) {
 					continue
 				}
-				if err := EnsureProjectBindDirectory(ctx, projectPath, volume.Source); err != nil {
+				logicalPath, err := acfs.LogicalPath(projectPath, volume.Source)
+				if err == nil && logicalPath != "/" {
+					exists, existsErr := acfs.Exists(ctx, projectPath, logicalPath)
+					switch {
+					case exists || errors.Is(existsErr, acfs.ErrOutsideRoot) || errors.Is(existsErr, fs.ErrPermission):
+						// Leave existing, escaping, and uninspectable sources to the Docker daemon.
+					case existsErr != nil:
+						err = existsErr
+					default:
+						if err = acfs.MkdirAll(ctx, projectPath, logicalPath, utils.DirPerm); err == nil {
+							slog.InfoContext(ctx, "created missing bind directory for project deployment", "projectPath", projectPath, "source", volume.Source)
+						}
+					}
+				}
+				if err != nil && !errors.Is(err, acfs.ErrOutsideRoot) {
 					return fmt.Errorf("bind source %s for service %s: %w", volume.Source, serviceName, err)
 				}
 			}

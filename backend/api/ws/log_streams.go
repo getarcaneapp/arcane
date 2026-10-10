@@ -142,7 +142,7 @@ func (h *WebSocketHandler) serveLogStreamInternal(
 	params logStreamParams,
 	hubBuilder func(streamKey string, onEmpty func(*wsLogStream)) *wsLogStream,
 ) {
-	conn, unregister, ok := h.acceptWSInternal(c, kind, resourceID)
+	conn, unregister, ok := h.acceptWS(c, kind, resourceID)
 	if !ok {
 		return
 	}
@@ -160,17 +160,17 @@ func (h *WebSocketHandler) serveLogStreamInternal(
 		// The stream refcount normally keeps this hub alive, so a stopped hub
 		// here means it was torn down out from under us; drop our reference
 		// rather than leaking the connection and the metrics entry.
-		slog.Debug("log stream hub stopped before client registration", "streamKey", streamKey)
+		slog.DebugContext(c.Request().Context(), "log stream hub stopped before client registration", "streamKey", streamKey)
 		_ = conn.CloseNow()
 		release()
 	}
 }
 
 // broadcastLogStreamErrorInternal emits an error message to every client of a log stream.
-// resourceLabel is the human-readable noun used in slog/error text (e.g. "project log stream").
-// errorPrefix is the user-facing message prefix (e.g. "Failed to stream project logs: ").
-func broadcastLogStreamErrorInternal(resourceLabel, errorPrefix, resourceID, format string, err error, ls *wsLogStream) {
-	slog.Warn(resourceLabel+" failed", "resourceID", resourceID, "error", err)
+// label is the human-readable resource noun (e.g. "project").
+func broadcastLogStreamErrorInternal(ctx context.Context, label, resourceID, format string, err error, ls *wsLogStream) {
+	slog.WarnContext(ctx, "log stream failed", "kind", label, "resourceId", resourceID, "error", err)
+	errorPrefix := "Failed to stream " + label + " logs: "
 
 	if format == "json" {
 		msg := wshub.LogMessage{
@@ -291,7 +291,7 @@ func (h *WebSocketHandler) startLogHubInternal(
 		if onEmptyHook != nil {
 			onEmptyHook(ls)
 		}
-		slog.Debug("client disconnected, cleaning up "+label+" log hub", label+"ID", resourceID)
+		slog.DebugContext(ctx, "client disconnected, cleaning up log hub", "kind", label, "resourceId", resourceID)
 	})
 
 	lines := h.startLogSourceInternal(ctx, key, resourceID, label, params, stream, ls)
@@ -323,7 +323,7 @@ func (h *WebSocketHandler) startLogSourceInternal(
 			}
 
 			h.markLogStreamDoneInternal(key, ls)
-			broadcastLogStreamErrorInternal(label+" log stream", "Failed to stream "+label+" logs: ", resourceID, params.format, err, ls)
+			broadcastLogStreamErrorInternal(ctx, label, resourceID, params.format, err, ls)
 			return
 		}
 

@@ -152,7 +152,7 @@ func (s *Service) DeployStack(ctx context.Context, environmentID string, req swa
 	}
 
 	if upsertStackSourceErr := s.upsertStackSourceInternal(ctx, environmentID, stackName, req.ComposeContent, req.OverrideContent, req.EnvContent, req.Files); upsertStackSourceErr != nil {
-		slog.WarnContext(ctx, "failed to persist swarm stack source", "environmentID", normalizeSwarmEnvironmentIDInternal(environmentID), "stackName", stackName, "error", upsertStackSourceErr)
+		slog.WarnContext(ctx, "failed to persist swarm stack source", "environmentId", normalizeSwarmEnvironmentIDInternal(environmentID), "stackName", stackName, "error", upsertStackSourceErr)
 	}
 
 	workingDir := req.WorkingDir
@@ -352,7 +352,7 @@ func (s *Service) UpdateStackSource(ctx context.Context, environmentID, stackNam
 			restoreErr = s.deleteStackSourceInternal(ctx, environmentID, stackName)
 		}
 		if restoreErr != nil {
-			slog.WarnContext(ctx, "failed to restore swarm stack source after deploy failure", "environmentID", normalizeSwarmEnvironmentIDInternal(environmentID), "stackName", stackName, "error", restoreErr)
+			slog.WarnContext(ctx, "failed to restore swarm stack source after deploy failure", "environmentId", normalizeSwarmEnvironmentIDInternal(environmentID), "stackName", stackName, "error", restoreErr)
 		}
 		return nil, fmt.Errorf("failed to redeploy swarm stack from updated source: %w", deployStackAfterSourceUpdateErr)
 	}
@@ -477,7 +477,7 @@ func (s *Service) RemoveStack(ctx context.Context, environmentID, stackName stri
 	}
 
 	if deleteStackSourceErr := s.deleteStackSourceInternal(ctx, environmentID, stackName); deleteStackSourceErr != nil {
-		slog.WarnContext(ctx, "failed to remove persisted swarm stack source", "environmentID", normalizeSwarmEnvironmentIDInternal(environmentID), "stackName", stackName, "error", deleteStackSourceErr)
+		slog.WarnContext(ctx, "failed to remove persisted swarm stack source", "environmentId", normalizeSwarmEnvironmentIDInternal(environmentID), "stackName", stackName, "error", deleteStackSourceErr)
 	}
 
 	return nil

@@ -22,7 +22,7 @@ func TestSetupMessageOnlyLogFile(t *testing.T) {
 
 	// Each entry is written atomically as it is logged, so the file is readable
 	// in full without any flush or close.
-	slog.Info("container updated", "container", "web")
+	slog.InfoContext(t.Context(), "container updated", "container", "web")
 
 	content, err := os.ReadFile(logFile.Name())
 

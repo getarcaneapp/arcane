@@ -70,9 +70,9 @@ func (c *composeCoordinatorInternal) Deploy(ctx context.Context, request project
 		return nil, fmt.Errorf("failed to prepare project images for deploy: %w", prepareImagesForDeployErr)
 	}
 	removeOrphans := ResolveRemoveOrphans(request.GitOpsManaged, request.Options)
-	slog.InfoContext(ctx, "starting compose up with health check support", "projectID", request.ProjectID, "projectName", model.Name, "services", len(model.Services), "removeOrphans", removeOrphans)
+	slog.InfoContext(ctx, "starting compose up with health check support", "projectId", request.ProjectID, "projectName", model.Name, "services", len(model.Services), "removeOrphans", removeOrphans)
 	if upErr := c.commands.Up(ctx, model, nil, removeOrphans, forceRecreate, recreateVolumes, request.AuthConfigs, request.WaitTimeout); upErr != nil {
-		slog.ErrorContext(ctx, "compose up failed", "projectName", model.Name, "projectID", request.ProjectID, "error", upErr)
+		slog.ErrorContext(ctx, "compose up failed", "projectName", model.Name, "projectId", request.ProjectID, "error", upErr)
 		if strings.Contains(upErr.Error(), "timeout") || strings.Contains(upErr.Error(), "context deadline exceeded") {
 			return nil,
 				fmt.Errorf("deployment timed out waiting for services - long-running 'service_healthy'/'service_completed_successfully' dependencies "+
@@ -81,7 +81,7 @@ func (c *composeCoordinatorInternal) Deploy(ctx context.Context, request project
 		}
 		return nil, fmt.Errorf("failed to deploy project: %w", upErr)
 	}
-	slog.InfoContext(ctx, "compose up completed successfully", "projectID", request.ProjectID, "projectName", model.Name)
+	slog.InfoContext(ctx, "compose up completed successfully", "projectId", request.ProjectID, "projectName", model.Name)
 	return model, nil
 }
 

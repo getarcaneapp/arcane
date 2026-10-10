@@ -2,10 +2,11 @@ package docker
 
 import (
 	"context"
+	"encoding/json"
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"regexp"
+	"path"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -22,7 +23,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/concurrency"
 )
 
-func TestNewDockerClient_PinsEffectiveAPIVersion(t *testing.T) {
+func TestDockerClientService_GetClientPinsEffectiveAPIVersion(t *testing.T) {
 	t.Setenv("DOCKER_API_VERSION", "1.54")
 	t.Setenv("DOCKER_HOST", "tcp://docker-from-env:2375")
 
@@ -45,13 +46,12 @@ func TestNewDockerClient_PinsEffectiveAPIVersion(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			server := newDockerPingTestServerInternal(t, tt.pingAPIVersion)
+			server := newDockerPingTestServer(t, func() string { return tt.pingAPIVersion })
+			svc := newDockerClientServiceForTest(t, server.URL)
+			t.Cleanup(svc.Close)
 
-			cli, err := newDockerClientInternal(t.Context(), server.URL)
+			cli, err := svc.GetClient(t.Context())
 			require.NoError(t, err)
-			t.Cleanup(func() {
-				_ = cli.Close()
-			})
 
 			assert.Equal(t, server.URL, cli.DaemonHost())
 			assert.Equal(t, tt.expectedVersion, cli.ClientVersion())
@@ -61,8 +61,8 @@ func TestNewDockerClient_PinsEffectiveAPIVersion(t *testing.T) {
 }
 
 func TestDockerClientService_GetClientReturnsCachedClientUntilRefresh(t *testing.T) {
-	server := newDockerPingTestServerInternal(t, "1.41")
-	svc := newDockerClientServiceForTestInternal(t, server.URL)
+	server := newDockerPingTestServer(t, func() string { return "1.41" })
+	svc := newDockerClientServiceForTest(t, server.URL)
 
 	firstClient, err := svc.GetClient(t.Context())
 	require.NoError(t, err)
@@ -80,10 +80,10 @@ func TestDockerClientService_GetClientReturnsCachedClientUntilRefresh(t *testing
 func TestDockerClientService_RefreshClientRecreatesCachedClientAfterAPIVersionChange(t *testing.T) {
 	apiVersion := atomic.Value{}
 	apiVersion.Store("1.41")
-	server := newDockerPingTestServerWithVersionInternal(t, func() string {
+	server := newDockerPingTestServer(t, func() string {
 		return apiVersion.Load().(string)
 	})
-	svc := newDockerClientServiceForTestInternal(t, server.URL)
+	svc := newDockerClientServiceForTest(t, server.URL)
 
 	firstClient, err := svc.GetClient(t.Context())
 	require.NoError(t, err)
@@ -107,13 +107,23 @@ func TestDockerClientService_RefreshClientRecreatesCachedClientAfterAPIVersionCh
 
 func TestDockerClientService_RefreshClientClosesOldCachedClientWhenReplaced(t *testing.T) {
 	var oldServerClosedConnections atomic.Int32
-	oldServer := newDockerPingTestServerWithConnStateInternal(t, "1.41", func(_ net.Conn, state http.ConnState) {
+	oldServer := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/_ping" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Api-Version", "1.41")
+		w.WriteHeader(http.StatusOK)
+	}))
+	oldServer.Config.ConnState = func(_ net.Conn, state http.ConnState) {
 		if state == http.StateClosed {
 			oldServerClosedConnections.Add(1)
 		}
-	})
-	newServer := newDockerPingTestServerInternal(t, "1.42")
-	svc := newDockerClientServiceForTestInternal(t, oldServer.URL)
+	}
+	oldServer.Start()
+	t.Cleanup(oldServer.Close)
+	newServer := newDockerPingTestServer(t, func() string { return "1.42" })
+	svc := newDockerClientServiceForTest(t, oldServer.URL)
 
 	firstClient, err := svc.GetClient(t.Context())
 	require.NoError(t, err)
@@ -143,7 +153,7 @@ func TestDockerClientService_RefreshClientClosesOldCachedClientWhenReplaced(t *t
 
 func TestDockerClientService_RefreshClientProbeFailureKeepsCachedClient(t *testing.T) {
 	var failProbe atomic.Bool
-	server := newDockerPingTestServerWithHandlerInternal(t, func(w http.ResponseWriter, r *http.Request) {
+	server := newDockerPingTestServerWithHandler(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/_ping" {
 			http.NotFound(w, r)
 			return
@@ -155,7 +165,7 @@ func TestDockerClientService_RefreshClientProbeFailureKeepsCachedClient(t *testi
 		w.Header().Set("Api-Version", "1.41")
 		w.WriteHeader(http.StatusOK)
 	})
-	svc := newDockerClientServiceForTestInternal(t, server.URL)
+	svc := newDockerClientServiceForTest(t, server.URL)
 
 	firstClient, err := svc.GetClient(t.Context())
 	require.NoError(t, err)
@@ -172,33 +182,50 @@ func TestDockerClientService_RefreshClientProbeFailureKeepsCachedClient(t *testi
 	assert.False(t, svc.clientLastProbe.IsZero())
 }
 
-func TestDockerClientService_PublishesDaemonImageEventsInternal(t *testing.T) {
-	svc := NewDockerClientService(t.Context(), nil, &config.Config{}, nil)
+func TestDockerClientService_PublishesDaemonImageEvents(t *testing.T) {
+	expected := events.Message{Type: events.ImageEventType, Action: events.ActionPull, TimeNano: 123, Actor: events.Actor{ID: "nginx:latest"}}
+	payload, err := json.Marshal(expected)
+	require.NoError(t, err)
+	server := newDockerPingTestServerWithHandler(t, func(w http.ResponseWriter, r *http.Request) {
+		switch path.Base(r.URL.Path) {
+		case "_ping":
+			w.Header().Set("Api-Version", "1.41")
+			w.WriteHeader(http.StatusOK)
+		case "events":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write(payload)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+	svc := newDockerClientServiceForTest(t, server.URL)
 	t.Cleanup(svc.Close)
 	eventCh, unsubscribe := svc.EventBus().Subscribe(events.ImageEventType)
 	t.Cleanup(unsubscribe)
-	messages := make(chan events.Message, 1)
-	expected := events.Message{Type: events.ImageEventType, Action: events.ActionPull, TimeNano: 123, Actor: events.Actor{ID: "nginx:latest"}}
-	messages <- expected
-	close(messages)
-	require.NoError(t, svc.consumeEventsInternal(t.Context(), messages, nil))
+	stop, err := concurrency.StartSupervised(t.Context(), "Docker event watcher", func(ctx context.Context) error {
+		svc.WatchEvents(ctx)
+		return nil
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = stop(context.WithoutCancel(t.Context())) })
+
 	select {
 	case message := <-eventCh:
 		require.Equal(t, expected, message)
-	default:
+	case <-time.After(time.Second):
 		t.Fatal("daemon image event was not published")
 	}
 }
 
-func TestDockerClientService_EventActorStopCancelsAndJoinsStreamInternal(t *testing.T) {
+func TestDockerClientService_EventActorStopCancelsAndJoinsStream(t *testing.T) {
 	streamStarted := make(chan struct{})
 	streamStopped := make(chan struct{})
-	server := newDockerPingTestServerWithHandlerInternal(t, func(w http.ResponseWriter, r *http.Request) {
-		switch dockerTestPathInternal(r.URL.Path) {
-		case "/_ping":
+	server := newDockerPingTestServerWithHandler(t, func(w http.ResponseWriter, r *http.Request) {
+		switch path.Base(r.URL.Path) {
+		case "_ping":
 			w.Header().Set("Api-Version", "1.41")
 			w.WriteHeader(http.StatusOK)
-		case "/events":
+		case "events":
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
 			if flusher, ok := w.(http.Flusher); ok {
@@ -212,7 +239,7 @@ func TestDockerClientService_EventActorStopCancelsAndJoinsStreamInternal(t *test
 		}
 	})
 
-	service := newDockerClientServiceForTestInternal(t, server.URL)
+	service := newDockerClientServiceForTest(t, server.URL)
 	t.Cleanup(service.Close)
 
 	eventsCh, unsubscribe := service.EventBus().Subscribe(events.ImageEventType)
@@ -275,26 +302,14 @@ func TestCountImageUsage_NoImages(t *testing.T) {
 	assert.Equal(t, imagetypes.UsageCounts{}, counts)
 }
 
-func newDockerClientServiceForTestInternal(t *testing.T, host string) *DockerClientService {
+func newDockerClientServiceForTest(t *testing.T, host string) *DockerClientService {
 	return NewDockerClientService(t.Context(), nil, &config.Config{DockerHost: host}, nil)
 }
 
-func dockerTestPathInternal(path string) string {
-	return regexp.MustCompile(`^/v\d+\.\d+`).ReplaceAllString(path, "")
-}
-
-func newDockerPingTestServerInternal(t *testing.T, apiVersion string) *httptest.Server {
+func newDockerPingTestServer(t *testing.T, apiVersion func() string) *httptest.Server {
 	t.Helper()
 
-	return newDockerPingTestServerWithVersionInternal(t, func() string {
-		return apiVersion
-	})
-}
-
-func newDockerPingTestServerWithVersionInternal(t *testing.T, apiVersion func() string) *httptest.Server {
-	t.Helper()
-
-	return newDockerPingTestServerWithHandlerInternal(t, func(w http.ResponseWriter, r *http.Request) {
+	return newDockerPingTestServerWithHandler(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/_ping" {
 			http.NotFound(w, r)
 			return
@@ -307,26 +322,7 @@ func newDockerPingTestServerWithVersionInternal(t *testing.T, apiVersion func() 
 	})
 }
 
-func newDockerPingTestServerWithConnStateInternal(t *testing.T, apiVersion string, connState func(net.Conn, http.ConnState)) *httptest.Server {
-	t.Helper()
-
-	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/_ping" {
-			http.NotFound(w, r)
-			return
-		}
-
-		w.Header().Set("Api-Version", apiVersion)
-		w.WriteHeader(http.StatusOK)
-	}))
-	server.Config.ConnState = connState
-	server.Start()
-	t.Cleanup(server.Close)
-
-	return server
-}
-
-func newDockerPingTestServerWithHandlerInternal(t *testing.T, handler http.HandlerFunc) *httptest.Server {
+func newDockerPingTestServerWithHandler(t *testing.T, handler http.HandlerFunc) *httptest.Server {
 	t.Helper()
 
 	server := httptest.NewServer(handler)

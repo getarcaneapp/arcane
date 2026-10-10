@@ -115,7 +115,7 @@ func Edge(managerURL, apiKey string) (string, string) {
 func (s *Service) GenerateMTLS(ctx context.Context, edgeCfg *edge.Config, envID, envName, managerURL, apiKey string) (*edge.GeneratedMTLSAssets, string, string) {
 	generatedAssets, err := edge.GenerateManagerClientMTLSAssetsWithContext(ctx, edgeCfg, envID, envName)
 	if err != nil {
-		slog.WarnContext(ctx, "Failed to generate edge mTLS assets; returning basic snippets only", "environment_id", envID, "error", err)
+		slog.WarnContext(ctx, "Failed to generate edge mTLS assets; returning basic snippets only", "environmentId", envID, "error", err)
 		return nil, "", ""
 	}
 	if generatedAssets == nil {
@@ -191,7 +191,7 @@ func (s *Service) logGeneratedMTLSEventsInternal(ctx context.Context, envID, env
 			EnvironmentID: &envIDCopy,
 			Metadata:      database.JSON{"kind": "client"},
 		}); err != nil {
-			slog.WarnContext(ctx, "Failed to create edge mTLS certificate issuance event", "environment_id", envID, "error", err)
+			slog.WarnContext(ctx, "Failed to create edge mTLS certificate issuance event", "environmentId", envID, "error", err)
 		}
 	}
 }

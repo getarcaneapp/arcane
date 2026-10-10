@@ -12,7 +12,6 @@ const LOCAL_SETTING_KEYS = new Set([
 	'oidcAutoRedirectToProvider',
 	'oidcMergeAccounts',
 	'oidcSkipTlsVerify',
-	'oidcAutoRedirectToProvider',
 	'oidcClientId',
 	'oidcClientSecret',
 	'oidcIssuerUrl',
@@ -21,7 +20,11 @@ const LOCAL_SETTING_KEYS = new Set([
 	'oidcProviderName',
 	'oidcProviderLogoUrl',
 	'edgeMTLSManagerCAAvailable',
+	'frontendTracingEnabled',
+	'frontendMetricsEnabled',
+	'frontendLogsEnabled',
 	'experimentalFeaturesEnabled',
+	'developmentBrandingEnabled',
 	'apnsEnabled'
 ]);
 
@@ -45,33 +48,39 @@ export function preventDefault<T extends Event>(fn: (event: T) => unknown) {
 }
 
 export function createForm<T extends z.ZodType<Record<string, unknown>>>(schema: T, initialValues: z.infer<T>) {
-	const inputs = $state<FormInputs<z.infer<T>>>(initializeInputs(initialValues));
+	const schemaKeys = Object.keys(schema instanceof z.ZodObject ? schema.shape : {});
+	const inputs = $state(
+		Object.fromEntries(
+			schemaKeys
+				.filter((key) => Object.hasOwn(initialValues, key))
+				.map((key) => [key, { value: initialValues[key as keyof z.infer<T>], error: null }])
+		) as FormInputs<z.infer<T>>
+	);
 	let errors = $state.raw<z.ZodError<z.infer<T>>>();
 
-	function initializeInputs(values: z.infer<T>): FormInputs<z.infer<T>> {
-		const fields = {} as FormInputs<z.infer<T>>;
-		const schemaShape = schema instanceof z.ZodObject ? schema.shape : {};
-		for (const key of Object.keys(schemaShape) as (keyof z.infer<T>)[]) {
-			if (Object.prototype.hasOwnProperty.call(values, key)) {
-				fields[key] = { value: values[key], error: null };
-			}
-		}
-		return fields;
+	function parse() {
+		const values = Object.fromEntries(
+			Object.entries(inputs).map(([key, input]) => {
+				const value: unknown = input.value;
+				if (typeof value === 'string') return [key, value.trim()];
+				if (Array.isArray(value)) return [key, value.map((item: unknown) => (typeof item === 'string' ? item.trim() : item))];
+				return [key, value];
+			})
+		);
+		return { values, result: schema.safeParse(values) };
 	}
 
 	function validate() {
-		const values = Object.fromEntries(Object.entries(inputs).map(([key, input]) => [key, input.value]));
-		const result = schema.safeParse(values);
+		const { result } = parse();
 		errors = result.error;
 		for (const key of Object.keys(inputs) as (keyof z.infer<T>)[]) {
 			inputs[key].error = result.error?.issues.find((issue) => issue.path[0] === key)?.message ?? null;
 		}
-		return result.success ? data() : null;
+		return result.success ? (result.data as z.infer<T>) : null;
 	}
 
 	function data() {
-		const values = Object.fromEntries(Object.entries(inputs).map(([key, input]) => [key, trimValue(input.value)]));
-		const result = schema.safeParse(values);
+		const { values, result } = parse();
 		return (result.success ? result.data : values) as z.infer<T>;
 	}
 
@@ -83,12 +92,6 @@ export function createForm<T extends z.ZodType<Record<string, unknown>>>(schema:
 
 	function setValue<K extends keyof z.infer<T>>(key: K, value: z.infer<T>[K]) {
 		inputs[key].value = value;
-	}
-
-	function trimValue(value: unknown): unknown {
-		if (typeof value === 'string') return value.trim();
-		if (Array.isArray(value)) return value.map((item: unknown) => (typeof item === 'string' ? item.trim() : item));
-		return value;
 	}
 
 	return {

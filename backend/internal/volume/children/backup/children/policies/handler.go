@@ -114,7 +114,7 @@ func (h *Handler) UpdateBackupPolicy(ctx context.Context, input *UpdateVolumeBac
 					errorStatus = http.StatusBadGateway
 					return fmt.Errorf("failed to synchronize S3 destinations to environment: %w", syncErr)
 				}
-				slog.WarnContext(activityCtx, "S3 destination sync failed before local-only volume backup policy write", "environment_id", input.EnvironmentID, "error", syncErr)
+				slog.WarnContext(activityCtx, "S3 destination sync failed before local-only volume backup policy write", "environmentId", input.EnvironmentID, "error", syncErr)
 			}
 			remotePath := fmt.Sprintf("/api/environments/0/volumes/%s/backup-policy", url.PathEscape(input.VolumeName))
 			var proxyErr error

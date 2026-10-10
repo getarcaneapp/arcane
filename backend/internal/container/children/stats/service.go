@@ -1,4 +1,4 @@
-// Package stats owns container resource sampling, resource sorting and the
+// Package stats owns container resource sampling, resource metrics, resource sorting and the
 // live stats stream.
 package stats
 
@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -18,8 +20,11 @@ import (
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 	"github.com/samber/hot"
+	"go.getarcane.app/docker"
 	"go.getarcane.app/kit/pkg"
 	"go.getarcane.app/streams/stats"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/singleflight"
 
@@ -33,6 +38,7 @@ const (
 	ContainerResourceSampleCacheSize    = 4096
 	ContainerResourceCollectConcurrency = 16
 	ContainerResourceCollectTimeout     = 3 * time.Second
+	ContainerMetricsCollectTimeout      = 20 * time.Second
 )
 
 // Service collects container stats through the parent's Docker client.
@@ -40,7 +46,8 @@ type Service struct {
 	getClient     func(context.Context) (*client.Client, error)
 	dockerHost    func() string
 	history       stats.Store
-	cache         *hot.HotCache[string, containertypes.ResourceSample]
+	cache         *hot.HotCache[string, container.StatsResponse]
+	inspectCache  *hot.HotCache[string, container.InspectResponse]
 	flight        singleflight.Group
 	sampleTimeout time.Duration
 	batchTimeout  time.Duration
@@ -57,8 +64,13 @@ func New(getClient func(context.Context) (*client.Client, error), dockerHost fun
 	return &Service{
 		getClient:  getClient,
 		dockerHost: dockerHost,
-		cache: hot.NewHotCache[string, containertypes.ResourceSample](hot.LRU, ContainerResourceSampleCacheSize).
+		cache: hot.NewHotCache[string, container.StatsResponse](hot.LRU, ContainerResourceSampleCacheSize).
 			WithTTL(cacheTTL).
+			WithJanitor().
+			Build(),
+		// Restart count and start time only change on restart, so metrics reuse inspects for a minute.
+		inspectCache: hot.NewHotCache[string, container.InspectResponse](hot.LRU, ContainerResourceSampleCacheSize).
+			WithTTL(time.Minute).
 			WithJanitor().
 			Build(),
 		sampleTimeout: sampleTimeout,
@@ -107,12 +119,7 @@ func (s *Service) Stream(ctx context.Context, containerID string, statsChan chan
 			StatsResponse:        statsData,
 			CurrentHistorySample: stats.BuildSample(statsData),
 		}
-		payload.StatsHistory = s.history.Record(
-			containerID,
-			payload.CurrentHistorySample,
-			!historySent,
-			recordedAt,
-		)
+		payload.StatsHistory = s.history.Record(containerID, payload.CurrentHistorySample, !historySent, recordedAt)
 		historySent = true
 
 		select {
@@ -123,121 +130,247 @@ func (s *Service) Stream(ctx context.Context, containerID string, statsChan chan
 	}
 }
 
-// Collect fetches one sample per running container. Individual failures leave
-// the container unsampled; a batch timeout or cancellation fails the request
-// so partial lists never sort as global.
+// Collect fetches one sample per running container. Individual failures leave the container
+// unsampled; a batch timeout or cancellation fails so partial lists never sort as global.
 func (s *Service) Collect(ctx context.Context, items []containertypes.Summary) (map[string]*containertypes.ResourceSample, error) {
-	batchCtx, cancel := context.WithTimeout(ctx, s.batchTimeout)
-	defer cancel()
-
-	g, groupCtx := errgroup.WithContext(batchCtx)
-	g.SetLimit(ContainerResourceCollectConcurrency)
-
-	samples := make(map[string]*containertypes.ResourceSample, len(items))
-	var mu sync.Mutex
-
+	ids := make([]string, 0, len(items))
 	for i := range items {
-		if items[i].State != string(container.StateRunning) {
-			continue
+		if items[i].State == string(container.StateRunning) {
+			ids = append(ids, items[i].ID)
 		}
-		id := items[i].ID
-		g.Go(func() error {
-			sample, err := s.fetchInternal(groupCtx, id)
-			if err != nil {
-				if groupCtx.Err() != nil {
-					return groupCtx.Err()
-				}
-				slog.WarnContext(groupCtx, "Failed to collect container resource sample", "container_id", id, "error", err)
-				return nil
-			}
-			mu.Lock()
-			samples[id] = sample
-			mu.Unlock()
-			return nil
-		})
 	}
-
-	if err := g.Wait(); err != nil {
+	raw, err := collect(ctx, s.batchTimeout, ids, s.fetch)
+	if err != nil {
 		return nil, fmt.Errorf("failed to collect container resource samples: %w", err)
+	}
+	samples := make(map[string]*containertypes.ResourceSample, len(raw))
+	for id, statsData := range raw {
+		built := stats.BuildSample(statsData)
+		samples[id] = &containertypes.ResourceSample{
+			CPUPercent:       float64(built.CPUTenths) / 10,
+			MemoryUsageBytes: built.MemoryUsageBytes,
+			MemoryLimitBytes: statsData.MemoryStats.Limit,
+			SampleTime:       statsData.Read,
+		}
 	}
 	return samples, nil
 }
 
-// cacheKeyInternal isolates cache and coalescing entries by Docker daemon and
-// container ID.
-func (s *Service) cacheKeyInternal(containerID string) string {
-	return s.dockerHost() + "\x00" + containerID
+// collect runs fetch for each ID with bounded concurrency under timeout. Individual failures are
+// skipped; on batch timeout or cancellation it returns the partial result with the error.
+func collect[T any](ctx context.Context, timeout time.Duration, ids []string, fetch func(context.Context, string) (T, error)) (map[string]T, error) {
+	batchCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	g, groupCtx := errgroup.WithContext(batchCtx)
+	g.SetLimit(ContainerResourceCollectConcurrency)
+	results := make(map[string]T, len(ids))
+	var mu sync.Mutex
+	for _, id := range ids {
+		g.Go(func() error {
+			result, err := fetch(groupCtx, id)
+			if err != nil {
+				if groupCtx.Err() != nil {
+					return groupCtx.Err()
+				}
+				slog.WarnContext(groupCtx, "Failed to collect container resource sample", "containerId", id, "error", err)
+				return nil
+			}
+			mu.Lock()
+			results[id] = result
+			mu.Unlock()
+			return nil
+		})
+	}
+	return results, g.Wait()
 }
 
-// fetchInternal returns a cached sample when fresh and coalesces concurrent
-// fetches for the same container.
-func (s *Service) fetchInternal(ctx context.Context, containerID string) (*containertypes.ResourceSample, error) {
-	key := s.cacheKeyInternal(containerID)
+// fetch returns a cached stats sample when fresh and coalesces concurrent fetches per daemon and
+// container. IncludePreviousSample gives the CPU delta a valid previous sample.
+func (s *Service) fetch(ctx context.Context, containerID string) (container.StatsResponse, error) {
+	key := s.dockerHost() + "\x00" + containerID
 	if sample, ok, _ := s.cache.Get(key); ok {
-		return &sample, nil
+		return sample, nil
 	}
 
 	ch := s.flight.DoChan(key, func() (any, error) {
 		flightCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), s.sampleTimeout)
 		defer cancel()
-		return s.sampleInternal(flightCtx, containerID)
+
+		dockerClient, err := s.getClient(flightCtx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to connect to Docker: %w", err)
+		}
+		statsResponse, err := dockerClient.ContainerStats(flightCtx, containerID, client.ContainerStatsOptions{Stream: false, IncludePreviousSample: true})
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch container stats: %w", err)
+		}
+		defer func() { _ = statsResponse.Body.Close() }()
+
+		var statsData container.StatsResponse
+		if decodeErr := json.UnmarshalDecode(jsontext.NewDecoder(statsResponse.Body), &statsData); decodeErr != nil {
+			return nil, fmt.Errorf("failed to decode container stats: %w", decodeErr)
+		}
+		if statsData.Read.IsZero() {
+			statsData.Read = time.Now()
+		}
+		s.cache.Set(key, statsData)
+		return statsData, nil
 	})
 
 	fetchCtx, cancel := context.WithTimeout(ctx, s.sampleTimeout)
 	defer cancel()
-
 	select {
 	case <-fetchCtx.Done():
-		return nil, fetchCtx.Err()
+		return container.StatsResponse{}, fetchCtx.Err()
 	case res := <-ch:
 		if res.Err != nil {
-			return nil, res.Err
+			return container.StatsResponse{}, res.Err
 		}
-		sample, ok := res.Val.(*containertypes.ResourceSample)
+		statsData, ok := res.Val.(container.StatsResponse)
 		if !ok {
-			return nil, errors.New("resource sample flight returned unexpected type")
+			return container.StatsResponse{}, errors.New("resource sample flight returned unexpected type")
 		}
-		return sample, nil
+		return statsData, nil
 	}
 }
 
-// sampleInternal performs the non-streaming Docker stats call.
-// IncludePreviousSample gives the CPU delta a valid previous sample.
-func (s *Service) sampleInternal(ctx context.Context, containerID string) (*containertypes.ResourceSample, error) {
-	dockerClient, err := s.getClient(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
+type resourceSample struct {
+	stats   container.StatsResponse
+	inspect *container.InspectResponse
+}
+
+type resourceInstruments struct {
+	cpuTime                  metric.Float64ObservableCounter
+	cpuUtilization, uptime   metric.Float64ObservableGauge
+	memoryUsage, memoryLimit metric.Int64ObservableGauge
+	pids                     metric.Int64ObservableGauge
+	networkIO, diskIO        metric.Int64ObservableCounter
+	restarts                 metric.Int64ObservableCounter
+}
+
+// ObserveResources reports arcane.container.* metrics for running containers from list, sharing the
+// sample cache and flights with Collect so overlapping collections reuse Docker calls.
+func (s *Service) ObserveResources(meter metric.Meter, list func(context.Context) ([]container.Summary, error)) error {
+	var r resourceInstruments
+	var errs [9]error
+	r.cpuTime, errs[0] = meter.Float64ObservableCounter("arcane.container.cpu.time",
+		metric.WithDescription("Cumulative CPU time consumed by a running container"), metric.WithUnit("s"))
+	r.cpuUtilization, errs[1] = meter.Float64ObservableGauge("arcane.container.cpu.utilization",
+		metric.WithDescription("Container CPU usage as a fraction of total host CPU capacity"), metric.WithUnit("1"))
+	r.memoryUsage, errs[2] = meter.Int64ObservableGauge("arcane.container.memory.usage",
+		metric.WithDescription("Container memory usage excluding inactive page cache"), metric.WithUnit("By"))
+	r.memoryLimit, errs[3] = meter.Int64ObservableGauge("arcane.container.memory.limit",
+		metric.WithDescription("Container memory limit, or host memory when unlimited"), metric.WithUnit("By"))
+	r.pids, errs[4] = meter.Int64ObservableGauge("arcane.container.pids",
+		metric.WithDescription("Processes and threads running in a container"), metric.WithUnit("{process}"))
+	r.networkIO, errs[5] = meter.Int64ObservableCounter("arcane.container.network.io",
+		metric.WithDescription("Bytes received and transmitted across all container network interfaces"), metric.WithUnit("By"))
+	r.diskIO, errs[6] = meter.Int64ObservableCounter("arcane.container.disk.io",
+		metric.WithDescription("Bytes read from and written to block devices by a container"), metric.WithUnit("By"))
+	r.restarts, errs[7] = meter.Int64ObservableCounter("arcane.container.restarts",
+		metric.WithDescription("Times Docker restarted the container under its restart policy"), metric.WithUnit("{restart}"))
+	r.uptime, errs[8] = meter.Float64ObservableGauge("arcane.container.uptime",
+		metric.WithDescription("Time since the container last started"), metric.WithUnit("s"))
+	if err := errors.Join(errs[:]...); err != nil {
+		return err
 	}
 
-	statsResponse, err := dockerClient.ContainerStats(ctx, containerID, client.ContainerStatsOptions{Stream: false, IncludePreviousSample: true})
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch container stats: %w", err)
-	}
-	defer func() { _ = statsResponse.Body.Close() }()
+	_, err := meter.RegisterCallback(func(ctx context.Context, o metric.Observer) error {
+		containers, err := list(ctx)
+		if err != nil {
+			slog.DebugContext(ctx, "Skipping container resource metrics", "error", err)
+			return nil
+		}
+		running := make(map[string]container.Summary, len(containers))
+		for _, c := range containers {
+			if c.State == container.StateRunning {
+				running[c.ID] = c
+			}
+		}
+		samples, err := collect(ctx, ContainerMetricsCollectTimeout, slices.Collect(maps.Keys(running)), func(ctx context.Context, id string) (resourceSample, error) {
+			statsData, fetchErr := s.fetch(ctx, id)
+			if fetchErr != nil {
+				return resourceSample{}, fetchErr
+			}
+			sample := resourceSample{stats: statsData}
+			if cached, ok, _ := s.inspectCache.Get(id); ok {
+				sample.inspect = &cached
+			} else if dockerClient, clientErr := s.getClient(ctx); clientErr == nil {
+				if inspect, inspectErr := dockerClient.ContainerInspect(ctx, id, client.ContainerInspectOptions{}); inspectErr == nil {
+					s.inspectCache.Set(id, inspect.Container)
+					sample.inspect = &inspect.Container
+				}
+			}
+			return sample, nil
+		})
+		if err != nil {
+			slog.DebugContext(ctx, "Container resource metrics are partial", "error", err)
+		}
+		for id, sample := range samples {
+			r.observe(o, running[id], sample)
+		}
+		return nil
+	}, r.cpuTime, r.cpuUtilization, r.memoryUsage, r.memoryLimit, r.pids, r.networkIO, r.diskIO, r.restarts, r.uptime)
+	return err
+}
 
-	var statsData container.StatsResponse
-	if unmarshalDecodeErr := json.UnmarshalDecode(jsontext.NewDecoder(statsResponse.Body), &statsData); unmarshalDecodeErr != nil {
-		return nil, fmt.Errorf("failed to decode container stats: %w", unmarshalDecodeErr)
+// observe records one container's sample, labelled by name, image and Compose project/service.
+func (r *resourceInstruments) observe(o metric.Observer, c container.Summary, sample resourceSample) {
+	attrs := []attribute.KeyValue{
+		attribute.String("container.name", docker.ContainerNameFromNames(c.Names)),
+		attribute.String("container.image.name", c.Image),
+	}
+	if project := docker.ComposeProjectLabel(c.Labels); project != "" {
+		attrs = append(attrs, attribute.String("compose.project", project))
+	}
+	if service := docker.ComposeServiceLabel(c.Labels); service != "" {
+		attrs = append(attrs, attribute.String("compose.service", service))
+	}
+	labels := metric.WithAttributes(attrs...)
+	with := func(kv attribute.KeyValue) metric.MeasurementOption {
+		return metric.WithAttributes(append(attrs[:len(attrs):len(attrs)], kv)...)
 	}
 
+	statsData := sample.stats
 	built := stats.BuildSample(statsData)
-	sample := &containertypes.ResourceSample{
-		CPUPercent:       float64(built.CPUTenths) / 10,
-		MemoryUsageBytes: built.MemoryUsageBytes,
-		MemoryLimitBytes: statsData.MemoryStats.Limit,
-		SampleTime:       statsData.Read,
-	}
-	if sample.SampleTime.IsZero() {
-		sample.SampleTime = time.Now()
-	}
+	o.ObserveFloat64(r.cpuTime, float64(statsData.CPUStats.CPUUsage.TotalUsage)/float64(time.Second), labels)
+	o.ObserveFloat64(r.cpuUtilization, float64(built.CPUTenths)/1000, labels)
+	o.ObserveInt64(r.memoryUsage, int64(built.MemoryUsageBytes), labels)
+	o.ObserveInt64(r.memoryLimit, int64(statsData.MemoryStats.Limit), labels)
+	o.ObserveInt64(r.pids, int64(statsData.PidsStats.Current), labels)
 
-	s.cache.Set(s.cacheKeyInternal(containerID), *sample)
-	return sample, nil
+	var rx, tx, read, write uint64
+	for _, network := range statsData.Networks {
+		rx += network.RxBytes
+		tx += network.TxBytes
+	}
+	for _, entry := range statsData.BlkioStats.IoServiceBytesRecursive {
+		switch strings.ToLower(entry.Op) {
+		case "read":
+			read += entry.Value
+		case "write":
+			write += entry.Value
+		}
+	}
+	o.ObserveInt64(r.networkIO, int64(rx), with(attribute.String("network.io.direction", "receive")))
+	o.ObserveInt64(r.networkIO, int64(tx), with(attribute.String("network.io.direction", "transmit")))
+	o.ObserveInt64(r.diskIO, int64(read), with(attribute.String("disk.io.direction", "read")))
+	o.ObserveInt64(r.diskIO, int64(write), with(attribute.String("disk.io.direction", "write")))
+
+	if sample.inspect == nil {
+		return
+	}
+	o.ObserveInt64(r.restarts, int64(sample.inspect.RestartCount), labels)
+	if sample.inspect.State != nil {
+		if startedAt, err := time.Parse(time.RFC3339Nano, sample.inspect.State.StartedAt); err == nil {
+			o.ObserveFloat64(r.uptime, time.Since(startedAt).Seconds(), labels)
+		}
+	}
 }
 
-// ContainerResourceSampleSort orders summaries by their collected sample
-// value, keeping unsampled containers last in both directions and breaking
-// ties by name, then ID. Valid zero values sort as zero, not as unavailable.
+// ContainerResourceSampleSort orders summaries by sample value with unsampled containers last in both
+// directions, breaking ties by name then ID. Valid zero values sort as zero, not as unavailable.
 func ContainerResourceSampleSort(sort string, descending bool) pagination.SortOption[containertypes.Summary] {
 	value := kit.Ternary(
 		sort == containertypes.SortCPUUsage,

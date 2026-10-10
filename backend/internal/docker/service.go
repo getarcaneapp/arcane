@@ -14,12 +14,10 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/dashboard"
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
 	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/api/types/events"
 	"github.com/moby/moby/api/types/image"
-	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/api/types/network"
-	"github.com/moby/moby/api/types/volume"
 	"github.com/moby/moby/client"
+	"go.getarcane.app/docker"
 	"go.getarcane.app/docker/compat"
 	"go.getarcane.app/kit/pkg"
 	"go.getarcane.app/streams/bus"
@@ -29,7 +27,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 )
@@ -53,10 +50,8 @@ type DockerClientService struct {
 	mu              sync.Mutex
 	eventBus        *bus.DockerEventBus
 
-	// Coalesce concurrent full-inventory list calls so overlapping requests
-	// (e.g. the Homepage widget's simultaneous counts endpoints) decode one
-	// Docker response instead of one per caller. Per-instance on purpose:
-	// a WithClient copy talks to a different daemon and must not share flights.
+	// Coalesce concurrent full-inventory lists into one Docker response; per-instance
+	// because a WithClient copy talks to a different daemon.
 	imageListFlight     singleflight.Group
 	containerListFlight singleflight.Group
 }
@@ -82,28 +77,12 @@ func (s *DockerClientService) WithClient(dockerClient *client.Client) *DockerCli
 	}
 }
 
-func newDockerClientInternal(ctx context.Context, host string) (*client.Client, error) {
-	apiVersion, err := detectDockerAPIVersionInternal(ctx, host)
-	if err != nil {
-		return nil, err
-	}
-
-	configuredClient, err := newDockerClientWithAPIVersionInternal(host, apiVersion)
-	if err != nil {
-		return nil, err
-	}
-
-	return configuredClient, nil
-}
-
-func detectDockerAPIVersionInternal(ctx context.Context, host string) (string, error) {
-	probeClient, err := client.New(
-		client.WithHost(host),
-	)
+func detectDockerAPIVersion(ctx context.Context, host string) (string, error) {
+	probeClient, err := client.New(client.WithHost(host))
 	if err != nil {
 		return "", fmt.Errorf("failed to create Docker probe client: %w", err)
 	}
-	defer closeDockerClientInternal(probeClient, "failed to close probe Docker client")
+	defer closeDockerClient(ctx, probeClient, "probe")
 
 	ctx, cancel := context.WithTimeout(ctx, dockerClientNegotiationTimeout)
 	defer cancel()
@@ -115,32 +94,20 @@ func detectDockerAPIVersionInternal(ctx context.Context, host string) (string, e
 
 	apiVersion := strings.TrimSpace(pingResult.APIVersion)
 	if apiVersion == "" {
-		slog.WarnContext(ctx, "Docker ping did not report an API version, using minimum supported client API version", "api_version", client.MinAPIVersion)
+		slog.WarnContext(ctx, "Docker ping did not report an API version, using minimum supported client API version", "apiVersion", client.MinAPIVersion)
 		return client.MinAPIVersion, nil
 	}
 
 	return apiVersion, nil
 }
 
-func newDockerClientWithAPIVersionInternal(host, apiVersion string) (*client.Client, error) {
-	configuredClient, err := client.New(
-		client.WithHost(host),
-		client.WithAPIVersion(apiVersion),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to configure Docker client API version %s: %w", apiVersion, err)
-	}
-
-	return configuredClient, nil
-}
-
-func closeDockerClientInternal(cli *client.Client, message string) {
+func closeDockerClient(ctx context.Context, cli *client.Client, purpose string) {
 	if cli == nil {
 		return
 	}
 
 	if err := cli.Close(); err != nil {
-		slog.Warn(message, "error", err)
+		slog.WarnContext(ctx, "Failed to close Docker client", "purpose", purpose, "error", err)
 	}
 }
 
@@ -155,16 +122,20 @@ func (s *DockerClientService) GetClient(ctx context.Context) (*client.Client, er
 	}
 	s.mu.Unlock()
 
-	cli, err := newDockerClientInternal(ctx, s.config.DockerHost)
+	apiVersion, err := detectDockerAPIVersion(ctx, s.config.DockerHost)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Docker client: %w", err)
+	}
+	cli, err := client.New(client.WithHost(s.config.DockerHost), client.WithAPIVersion(apiVersion))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Docker client: failed to configure Docker client API version %s: %w", apiVersion, err)
 	}
 
 	s.mu.Lock()
 	if s.Client != nil {
 		existingClient := s.Client
 		s.mu.Unlock()
-		closeDockerClientInternal(cli, "failed to close unused Docker client after concurrent initialization")
+		closeDockerClient(ctx, cli, "unused after concurrent initialization")
 		return existingClient, nil
 	}
 
@@ -179,7 +150,7 @@ func (s *DockerClientService) GetClient(ctx context.Context) (*client.Client, er
 // RefreshClient probes the Docker daemon and recreates the cached client when
 // the daemon's effective API version changed.
 func (s *DockerClientService) RefreshClient(ctx context.Context) error {
-	apiVersion, err := detectDockerAPIVersionInternal(ctx, s.config.DockerHost)
+	apiVersion, err := detectDockerAPIVersion(ctx, s.config.DockerHost)
 	if err != nil {
 		return fmt.Errorf("failed to refresh Docker client: %w", err)
 	}
@@ -192,16 +163,16 @@ func (s *DockerClientService) RefreshClient(ctx context.Context) error {
 	}
 	s.mu.Unlock()
 
-	cli, err := newDockerClientWithAPIVersionInternal(s.config.DockerHost, apiVersion)
+	cli, err := client.New(client.WithHost(s.config.DockerHost), client.WithAPIVersion(apiVersion))
 	if err != nil {
-		return fmt.Errorf("failed to refresh Docker client: %w", err)
+		return fmt.Errorf("failed to refresh Docker client: failed to configure Docker client API version %s: %w", apiVersion, err)
 	}
 
 	s.mu.Lock()
 	if s.Client != nil && apiVersion == s.clientVersion {
 		s.clientLastProbe = time.Now()
 		s.mu.Unlock()
-		closeDockerClientInternal(cli, "failed to close unused Docker client after concurrent refresh")
+		closeDockerClient(ctx, cli, "unused after concurrent refresh")
 		return nil
 	}
 
@@ -211,7 +182,7 @@ func (s *DockerClientService) RefreshClient(ctx context.Context) error {
 	s.clientLastProbe = time.Now()
 	s.mu.Unlock()
 
-	closeDockerClientInternal(oldClient, "failed to close replaced Docker client")
+	closeDockerClient(ctx, oldClient, "replaced")
 
 	return nil
 }
@@ -231,7 +202,7 @@ func (s *DockerClientService) Close() {
 	s.Client = nil
 	s.mu.Unlock()
 
-	closeDockerClientInternal(oldClient, "failed to close Docker client")
+	closeDockerClient(context.Background(), oldClient, "cached") //nolint:forbidigo // Shutdown close runs without a request context.
 }
 
 func (s *DockerClientService) EventBus() *bus.DockerEventBus {
@@ -249,77 +220,53 @@ func (s *DockerClientService) WatchEvents(ctx context.Context) {
 	eventBackoff.MaxInterval = 30 * time.Second
 
 	for ctx.Err() == nil {
-		dockerClient, err := s.GetClient(ctx)
-		if err != nil {
+		if dockerClient, err := s.GetClient(ctx); err != nil {
 			slog.WarnContext(ctx, "failed to connect to Docker event stream", "error", err)
-			if !sleepDockerEventBackoffInternal(ctx, eventBackoff) {
-				return
+		} else {
+			result := dockerClient.Events(ctx, client.EventsListOptions{})
+			streamStart := time.Now()
+			var streamErr error
+		stream:
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case msg, ok := <-result.Messages:
+					if !ok {
+						break stream
+					}
+					// Stamp missing daemon timestamps once, before normal and overflow delivery diverge.
+					if msg.TimeNano == 0 {
+						msg.TimeNano = time.Now().UnixNano()
+					}
+					s.EventBus().Publish(msg)
+				case recvErr, ok := <-result.Err:
+					streamErr = kit.Ternary(ok, recvErr, nil)
+					break stream
+				}
 			}
-			continue
+			if streamErr != nil && !errors.Is(streamErr, context.Canceled) && !errors.Is(streamErr, io.EOF) {
+				slog.WarnContext(ctx, "Docker event stream stopped", "error", streamErr)
+			}
+			// Only a stream that stayed up counts as recovery, so a daemon that drops connections immediately keeps backing off.
+			if time.Since(streamStart) >= dockerEventStreamHealthyAfter {
+				eventBackoff.Reset()
+			}
 		}
 
-		result := dockerClient.Events(ctx, client.EventsListOptions{})
-		streamStart := time.Now()
-		err = s.consumeEventsInternal(ctx, result.Messages, result.Err)
-		if err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, io.EOF) {
-			slog.WarnContext(ctx, "Docker event stream stopped", "error", err)
-		}
-
-		// Only a stream that actually stayed up counts as recovery. Resetting
-		// unconditionally before Events() meant a daemon that accepts the
-		// connection and drops it immediately was reconnected at the floor
-		// interval forever.
-		if time.Since(streamStart) >= dockerEventStreamHealthyAfter {
-			eventBackoff.Reset()
-		}
-
-		if !sleepDockerEventBackoffInternal(ctx, eventBackoff) {
-			return
-		}
-	}
-}
-
-func (s *DockerClientService) consumeEventsInternal(ctx context.Context, messages <-chan events.Message, errs <-chan error) error {
-	for {
+		timer := time.NewTimer(eventBackoff.NextBackOff())
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
-		case msg, ok := <-messages:
-			if !ok {
-				return nil
-			}
-			// Stamp missing daemon timestamps once, before normal and overflow delivery diverge.
-			if msg.TimeNano == 0 {
-				msg.TimeNano = time.Now().UnixNano()
-			}
-			s.EventBus().Publish(msg)
-		case err, ok := <-errs:
-			return kit.Ternary(!ok, nil, err)
+			timer.Stop()
+			return
+		case <-timer.C:
 		}
 	}
 }
 
-func sleepDockerEventBackoffInternal(ctx context.Context, eventBackoff *backoff.ExponentialBackOff) bool {
-	delay := eventBackoff.NextBackOff()
-	timer := time.NewTimer(delay)
-	defer timer.Stop()
-	select {
-	case <-ctx.Done():
-		return false
-	case <-timer.C:
-		return true
-	}
-}
-
-// listCoalescedInternal runs op through the given singleflight group so
-// concurrent callers share one Docker request and one decoded result. The
-// flight runs on a context detached from the initiating caller, bounded only
-// by op's own Docker API timeout, so one canceled waiter cannot cancel work
-// other waiters still need; each waiter stops waiting when its own context
-// ends. Results and errors are shared only among concurrent callers —
-// singleflight drops the key once the flight completes, so nothing is cached.
-// Callers must treat the shared result as immutable.
-func listCoalescedInternal[T any](ctx context.Context, group *singleflight.Group, op func(context.Context) (T, error)) (T, error) {
+// listCoalesced shares one detached op among concurrent callers; each waiter stops on its own
+// context, nothing is cached, and the shared result must be treated as immutable.
+func listCoalesced[T any](ctx context.Context, group *singleflight.Group, op func(context.Context) (T, error)) (T, error) {
 	var zero T
 
 	ch := group.DoChan("list", func() (any, error) {
@@ -341,79 +288,54 @@ func listCoalescedInternal[T any](ctx context.Context, group *singleflight.Group
 	}
 }
 
-func (s *DockerClientService) apiTimeoutInternal() time.Duration {
-	if s.settingsService == nil {
-		return timeouts.DefaultDockerAPI
+// callAPI runs op against the cached client under the configured Docker API timeout.
+func callAPI[T any](ctx context.Context, s *DockerClientService, op func(context.Context, *client.Client) (T, error)) (T, error) {
+	dockerClient, err := s.GetClient(ctx)
+	if err != nil {
+		var zero T
+		return zero, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
-	return timeouts.GetDuration(s.settingsService.GetSettingsConfig().DockerAPITimeout.AsInt(), timeouts.DefaultDockerAPI)
+	timeout := timeouts.DefaultDockerAPI
+	if s.settingsService != nil {
+		timeout = timeouts.GetDuration(s.settingsService.GetSettingsConfig().DockerAPITimeout.AsInt(), timeouts.DefaultDockerAPI)
+	}
+	apiCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	return op(apiCtx, dockerClient)
 }
 
 func (s *DockerClientService) ListContainers(ctx context.Context) ([]container.Summary, error) {
-	return listCoalescedInternal(ctx, &s.containerListFlight, func(ctx context.Context) ([]container.Summary, error) {
-		dockerClient, err := s.GetClient(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to connect to Docker: %w", err)
-		}
-
-		apiCtx, cancel := context.WithTimeout(ctx, s.apiTimeoutInternal())
-		defer cancel()
-
-		containerList, err := dockerClient.ContainerList(apiCtx, client.ContainerListOptions{All: true})
-		if err != nil {
-			return nil, fmt.Errorf("failed to list Docker containers: %w", err)
-		}
-		return containerList.Items, nil
+	return listCoalesced(ctx, &s.containerListFlight, func(ctx context.Context) ([]container.Summary, error) {
+		return callAPI(ctx, s, func(ctx context.Context, dockerClient *client.Client) ([]container.Summary, error) {
+			containerList, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true})
+			if err != nil {
+				return nil, fmt.Errorf("failed to list Docker containers: %w", err)
+			}
+			return containerList.Items, nil
+		})
 	})
 }
 
 func (s *DockerClientService) ListImages(ctx context.Context) ([]image.Summary, error) {
-	return listCoalescedInternal(ctx, &s.imageListFlight, func(ctx context.Context) ([]image.Summary, error) {
-		dockerClient, err := s.GetClient(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to connect to Docker: %w", err)
-		}
-
-		apiCtx, cancel := context.WithTimeout(ctx, s.apiTimeoutInternal())
-		defer cancel()
-
-		imageList, err := dockerClient.ImageList(apiCtx, client.ImageListOptions{All: true})
-		if err != nil {
-			return nil, fmt.Errorf("failed to list Docker images: %w", err)
-		}
-		return imageList.Items, nil
+	return listCoalesced(ctx, &s.imageListFlight, func(ctx context.Context) ([]image.Summary, error) {
+		return callAPI(ctx, s, func(ctx context.Context, dockerClient *client.Client) ([]image.Summary, error) {
+			imageList, err := dockerClient.ImageList(ctx, client.ImageListOptions{All: true})
+			if err != nil {
+				return nil, fmt.Errorf("failed to list Docker images: %w", err)
+			}
+			return imageList.Items, nil
+		})
 	})
 }
 
-func (s *DockerClientService) listNetworksInternal(ctx context.Context) ([]network.Summary, error) {
-	dockerClient, err := s.GetClient(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
-	}
-
-	apiCtx, cancel := context.WithTimeout(ctx, s.apiTimeoutInternal())
-	defer cancel()
-
-	networkList, err := compat.NetworkListWithCompatibility(apiCtx, dockerClient, client.NetworkListOptions{})
-	if err != nil {
-		return nil, fmt.Errorf("failed to list Docker networks: %w", err)
-	}
-	return networkList.Items, nil
-}
-
-func (s *DockerClientService) listVolumesInternal(ctx context.Context) (*client.VolumeListResult, error) {
-	dockerClient, err := s.GetClient(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
-	}
-
-	apiCtx, cancel := context.WithTimeout(ctx, s.apiTimeoutInternal())
-	defer cancel()
-
-	volResp, err := dockerClient.VolumeList(apiCtx, client.VolumeListOptions{})
-	if err != nil {
-		return nil, fmt.Errorf("failed to list Docker volumes: %w", err)
-	}
-	return &volResp, nil
+func (s *DockerClientService) listNetworks(ctx context.Context) ([]network.Summary, error) {
+	return callAPI(ctx, s, func(ctx context.Context, dockerClient *client.Client) ([]network.Summary, error) {
+		networkList, err := compat.NetworkListWithCompatibility(ctx, dockerClient, client.NetworkListOptions{})
+		if err != nil {
+			return nil, fmt.Errorf("failed to list Docker networks: %w", err)
+		}
+		return networkList.Items, nil
+	})
 }
 
 func (s *DockerClientService) GetSnapshot(ctx context.Context, envID string) (*dashboard.DockerSnapshot, error) {
@@ -442,7 +364,7 @@ func (s *DockerClientService) GetSnapshot(ctx context.Context, envID string) (*d
 		defer utils.RecoverToError(&workerErr, "docker snapshot worker")
 
 		var err error
-		networks, err = s.listNetworksInternal(groupCtx)
+		networks, err = s.listNetworks(groupCtx)
 		if err != nil {
 			slog.WarnContext(groupCtx, "failed to list Docker networks for snapshot", "error", err)
 		}
@@ -452,7 +374,13 @@ func (s *DockerClientService) GetSnapshot(ctx context.Context, envID string) (*d
 		defer utils.RecoverToError(&workerErr, "docker snapshot worker")
 
 		var err error
-		volumes, err = s.listVolumesInternal(groupCtx)
+		volumes, err = callAPI(groupCtx, s, func(ctx context.Context, dockerClient *client.Client) (*client.VolumeListResult, error) {
+			volResp, listErr := dockerClient.VolumeList(ctx, client.VolumeListOptions{})
+			if listErr != nil {
+				return nil, fmt.Errorf("failed to list Docker volumes: %w", listErr)
+			}
+			return &volResp, nil
+		})
 		if err != nil {
 			slog.WarnContext(groupCtx, "failed to list Docker volumes for snapshot", "error", err)
 		}
@@ -518,9 +446,8 @@ func (s *DockerClientService) GetAllImages(ctx context.Context) ([]image.Summary
 	return images, CountImageUsage(images, containers), nil
 }
 
-// CountImageUsage tallies in-use, unused, and total image counts, plus the
-// summed size of all images. An image is in use when a container references
-// its ID.
+// CountImageUsage tallies in-use, unused, and total image counts plus the summed
+// image size. An image is in use when a container references its ID.
 func CountImageUsage(images []image.Summary, containers []container.Summary) imagetypes.UsageCounts {
 	inUseImageIDs := make(map[string]struct{}, len(containers))
 	for _, c := range containers {
@@ -549,65 +476,27 @@ func (s *DockerClientService) GetAllNetworks(ctx context.Context) ([]network.Sum
 	if err != nil {
 		return nil, 0, 0, 0, err
 	}
-	inUseByID, inUseByName := docker.BuildNetworkUsageMaps(containers)
-
-	networks, err := s.listNetworksInternal(ctx)
+	networks, err := s.listNetworks(ctx)
 	if err != nil {
 		return nil, 0, 0, 0, err
 	}
-
-	var inuse, unused, total int
-	for _, n := range networks {
-		total++ // total includes all networks (including defaults)
-
-		// Only count non-default networks towards in-use/unused breakdown
-		if !docker.IsDefaultNetwork(n.Name) {
-			used := inUseByID[n.ID] || inUseByName[n.Name]
-			if used {
-				inuse++
-			} else {
-				unused++
-			}
-		}
-	}
-
-	// Return order: inuse, unused, total (matches handler expectations)
+	inuse, unused, total := CountNetworkUsage(networks, containers)
 	return networks, inuse, unused, total, nil
 }
 
-func (s *DockerClientService) GetAllVolumes(ctx context.Context) ([]*volume.Volume, int, int, int, error) {
-	containers, err := s.ListContainers(ctx)
-	if err != nil {
-		return nil, 0, 0, 0, err
-	}
-	ref := make(map[string]int64, len(containers))
-	for _, c := range containers {
-		for _, m := range c.Mounts {
-			if m.Type == mount.TypeVolume && m.Name != "" {
-				ref[m.Name]++
-			}
-		}
-	}
-
-	volResp, err := s.listVolumesInternal(ctx)
-	if err != nil {
-		return nil, 0, 0, 0, err
-	}
-	volumeItems := volResp.Items
-	volumes := make([]*volume.Volume, 0, len(volumeItems))
-	for i := range volumeItems {
-		volumes = append(volumes, &volumeItems[i])
-	}
-
-	var inuse, unused, total int
-	for _, v := range volumes {
+// CountNetworkUsage returns in-use and unused counts for non-default networks, and the total of all networks.
+func CountNetworkUsage(networks []network.Summary, containers []container.Summary) (inuse, unused, total int) {
+	inUseByID, inUseByName := docker.BuildNetworkUsageMaps(containers)
+	for _, n := range networks {
 		total++
-		if ref[v.Name] > 0 {
+		if docker.IsDefaultNetwork(n.Name) {
+			continue
+		}
+		if inUseByID[n.ID] || inUseByName[n.Name] {
 			inuse++
 		} else {
 			unused++
 		}
 	}
-
-	return volumes, inuse, unused, total, nil
+	return inuse, unused, total
 }

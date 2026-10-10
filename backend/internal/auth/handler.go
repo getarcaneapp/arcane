@@ -25,7 +25,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/user"
 	"github.com/labstack/echo/v5"
 	"github.com/samber/mo"
-	"go.getarcane.app/kit/pkg"
+	kit "go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
@@ -170,7 +170,7 @@ func (h *AuthHandler) Logout(ctx context.Context, input *struct{}) (*LogoutOutpu
 	if h.authService != nil {
 		if sessionID, exists := middleware.GetCurrentSessionIDFromContext(ctx); exists {
 			if err := h.authService.RevokeSession(ctx, sessionID); err != nil {
-				slog.ErrorContext(ctx, "Failed to revoke session on logout; clearing cookie anyway", "sessionID", sessionID, "error", err)
+				slog.ErrorContext(ctx, "Failed to revoke session on logout; clearing cookie anyway", "sessionId", sessionID, "error", err)
 			}
 		}
 		if userModel, exists := userdomain.CurrentUserFromContext(ctx); exists {
@@ -272,14 +272,7 @@ func (h *AuthHandler) ChangePassword(ctx context.Context, input *ChangePasswordI
 		}
 	}
 
-	return &handlerutil.Out[base.MessageResponse]{
-		Body: base.ApiResponse[base.MessageResponse]{
-			Success: true,
-			Data: base.MessageResponse{
-				Message: "Password changed successfully",
-			},
-		},
-	}, nil
+	return handlerutil.MessageOutput("Password changed successfully", ""), nil
 }
 
 // LogoutAllOtherSessions revokes every active session for the current user
@@ -295,14 +288,7 @@ func (h *AuthHandler) LogoutAllOtherSessions(ctx context.Context, input *struct{
 		return nil, huma.Error500InternalServerError("failed to revoke sessions: " + logoutAllOtherSessionsErr.Error())
 	}
 
-	return &handlerutil.Out[base.MessageResponse]{
-		Body: base.ApiResponse[base.MessageResponse]{
-			Success: true,
-			Data: base.MessageResponse{
-				Message: "All other sessions signed out",
-			},
-		},
-	}, nil
+	return handlerutil.MessageOutput("All other sessions signed out", ""), nil
 }
 
 // validatePreferencesInternal checks the preference values Huma's enum tags
@@ -447,7 +433,7 @@ func (h *AuthHandler) UploadMyAvatar(ctx context.Context, input *UploadMyAvatarI
 	data, mimeType = normalizeAvatarImageInternal(data, mimeType)
 
 	if uploadAvatarErr := h.userService.UploadAvatar(ctx, currentUser.ID, data, mimeType); uploadAvatarErr != nil {
-		slog.ErrorContext(ctx, "Failed to save avatar", "user_id", currentUser.ID, "error", uploadAvatarErr)
+		slog.ErrorContext(ctx, "Failed to save avatar", "userId", currentUser.ID, "error", uploadAvatarErr)
 		return nil, huma.Error500InternalServerError("failed to save avatar")
 	}
 	h.authService.InvalidateUserTokenCache(currentUser.ID)
@@ -488,7 +474,7 @@ func (h *AuthHandler) DeleteMyAvatar(ctx context.Context, input *struct{}) (*han
 	}
 
 	if deleteAvatarErr := h.userService.DeleteAvatar(ctx, currentUser.ID); deleteAvatarErr != nil {
-		slog.ErrorContext(ctx, "Failed to delete avatar", "user_id", currentUser.ID, "error", deleteAvatarErr)
+		slog.ErrorContext(ctx, "Failed to delete avatar", "userId", currentUser.ID, "error", deleteAvatarErr)
 		return nil, huma.Error500InternalServerError("failed to delete avatar")
 	}
 	h.authService.InvalidateUserTokenCache(currentUser.ID)
@@ -914,7 +900,7 @@ func resolveUserPermissionsInternal(ctx context.Context, permResolver Permission
 	}
 	ps, err := permResolver.ResolvePermissions(ctx, authenticatedUser.ID)
 	if err != nil {
-		slog.WarnContext(ctx, "failed to resolve user permissions", "error", err, "user_id", authenticatedUser.ID)
+		slog.WarnContext(ctx, "failed to resolve user permissions", "error", err, "userId", authenticatedUser.ID)
 		return nil
 	}
 	return ps
@@ -926,7 +912,7 @@ func resolveApiKeyPermissionsInternal(ctx context.Context, permResolver Permissi
 	}
 	ps, err := permResolver.ResolveApiKeyPermissions(ctx, apiKeyID)
 	if err != nil {
-		slog.WarnContext(ctx, "failed to resolve api key permissions", "error", err, "api_key_id", apiKeyID)
+		slog.WarnContext(ctx, "failed to resolve api key permissions", "error", err, "apiKeyId", apiKeyID)
 		return nil
 	}
 	return ps
@@ -1070,8 +1056,8 @@ func (m *AuthMiddleware) agentAuth(ctx context.Context, c *echo.Context, next ec
 		ctx, "Agent auth forbidden",
 		"path", req.URL.Path,
 		"method", req.Method,
-		"has_agent_token_hdr", req.Header.Get(middleware.HeaderAgentToken) != "",
-		"agent_token_config_set", m.cfg.AgentToken != "",
+		"hasAgentTokenHdr", req.Header.Get(middleware.HeaderAgentToken) != "",
+		"agentTokenConfigSet", m.cfg.AgentToken != "",
 	)
 	return c.JSON(http.StatusForbidden, common.APIError{
 		Code:    "FORBIDDEN",

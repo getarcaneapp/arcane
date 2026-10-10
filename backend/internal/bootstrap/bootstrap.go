@@ -16,12 +16,11 @@ import (
 	"github.com/labstack/echo/v5"
 	"github.com/moby/moby/client"
 	"github.com/subosito/gotenv"
-	"go.getarcane.app/streams/logs"
 	"go.getarcane.app/sys/crypto"
+	"go.opentelemetry.io/contrib/bridges/otelslog"
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxevent"
 
-	"github.com/getarcaneapp/arcane/backend/v2/api/ws"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
@@ -41,6 +40,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/startup"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/tracing"
 )
 
 func Bootstrap(ctx context.Context) error {
@@ -61,59 +61,90 @@ func Bootstrap(ctx context.Context) error {
 	}
 	cfg.DockerConfig = runtimeIdentityCfg.DockerConfig
 
-	SetupSlogLogger(cfg)
-	// Tee all slog output into the in-memory ring buffer that powers the diagnostics live log tail.
-	slog.SetDefault(slog.New(logs.NewSlogHandler(slog.Default().Handler(), ws.LogBroadcaster())))
+	SetupSlogLogger(cfg, nil)
 	database.SetGormLogger(BuildGormLogger(cfg))
 	slog.InfoContext(ctx, "Arcane is starting...", "version", config.Version)
-	slog.InfoContext(ctx, "Arcane Identity Configuration", "PUID", os.Getuid(), "PGID", os.Getgid())
+	startup.ApplyMemoryLimit(ctx)
+	slog.InfoContext(ctx, "Arcane Identity Configuration", "puid", os.Getuid(), "pgid", os.Getgid())
 
-	appCtx, cancelApp := context.WithCancel(ctx)
+	appCtx, cancelApp := context.WithCancelCause(ctx)
 	appCtx = utils.WithAppLifecycleContext(appCtx)
 
-	db, err := initializeDBAndMigrateInternal(appCtx, cfg)
+	db, err := database.Initialize(appCtx, cfg.DatabaseURL, database.MigrationOptions{AllowDowngrade: cfg.AllowDowngrade})
 	if err != nil {
-		cancelApp()
+		cancelApp(nil)
 		return fmt.Errorf("failed to initialize database: %w", err)
 	}
+	slog.InfoContext(appCtx, "Database initialized successfully")
 	defer func() {
-		cancelApp()
+		cancelApp(nil)
 		if closeErr := db.Close(); closeErr != nil {
-			slog.Error("Error closing database", "error", closeErr)
+			slog.ErrorContext(ctx, "Error closing database", "error", closeErr)
 		}
 	}()
 
+	// Telemetry identifies this installation by its persisted instance ID, so it starts once the
+	// database is open but before Docker clients and services. Exporter errors go to the console-only logger.
+	instanceID, err := settings.EnsureInstanceID(appCtx, db)
+	if err != nil {
+		return err
+	}
+	providers, err := setupTelemetry(ctx, cfg, slog.Default(), instanceID)
+	if err != nil {
+		return fmt.Errorf("setup telemetry: %w", err)
+	}
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer cancel()
+		if shutdownErr := providers.Shutdown(shutdownCtx); shutdownErr != nil {
+			slog.ErrorContext(shutdownCtx, "Error shutting down telemetry", "error", shutdownErr)
+		}
+	}()
+	if providers.loggerProvider != nil {
+		SetupSlogLogger(cfg, otelslog.NewHandler(tracing.InstrumentationName, otelslog.WithLoggerProvider(providers.loggerProvider)))
+		db.Logger = BuildGormLogger(cfg)
+	}
+	if providers.tracerProvider != nil || providers.meterProvider != nil || providers.loggerProvider != nil {
+		slog.InfoContext(ctx, "OpenTelemetry export enabled", "traces", providers.tracerProvider != nil, "metrics", providers.meterProvider != nil, "logs", providers.loggerProvider != nil)
+	}
+
 	app := fx.New(applicationOptions(appCtx, cfg, db, cancelApp))
 
-	startCtx, cancelStart := context.WithTimeout(ctx, 5*time.Minute)
+	startCtx, cancelStart := context.WithTimeout(ctx, app.StartTimeout())
 	defer cancelStart()
 	if startErr := app.Start(startCtx); startErr != nil {
 		return fmt.Errorf("start application: %w", startErr)
 	}
 
+	// appCtx also ends when a component stops the app itself; its cause is then the run error.
+	var runErr error
 	select {
-	case <-ctx.Done():
-		slog.InfoContext(appCtx, "Context canceled")
+	case <-appCtx.Done():
+		if ctx.Err() == nil {
+			runErr = context.Cause(appCtx)
+		} else {
+			slog.InfoContext(appCtx, "Context canceled")
+		}
 	case signal := <-app.Done():
 		slog.InfoContext(appCtx, "Received shutdown signal", "signal", signal)
 	}
 
-	stopCtx, cancelStop := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	stopCtx, cancelStop := context.WithTimeout(context.WithoutCancel(ctx), app.StopTimeout())
 	defer cancelStop()
 	if stopErr := app.Stop(stopCtx); stopErr != nil {
-		return fmt.Errorf("stop application: %w", stopErr)
+		return errors.Join(runErr, fmt.Errorf("stop application: %w", stopErr))
 	}
 
 	slog.InfoContext(context.WithoutCancel(appCtx), "Arcane shutdown complete")
-	return nil
+	return runErr
 }
 
-func applicationOptions(appCtx context.Context, cfg *config.Config, db *database.DB, cancelApp context.CancelFunc) fx.Option {
+func applicationOptions(appCtx context.Context, cfg *config.Config, db *database.DB, cancelApp context.CancelCauseFunc) fx.Option {
 	return fx.Options(
 		fx.Supply(cfg, db, cancelApp),
 		fx.Provide(
 			func() context.Context { return appCtx },
-			newConfiguredHTTPClientInternal,
+			newConfiguredHTTPClient,
 		),
 		di.ActorOptions,
 		di.ServiceOptions,
@@ -135,11 +166,9 @@ func applicationOptions(appCtx context.Context, cfg *config.Config, db *database
 	)
 }
 
-// isWeakProductionEncryptionKeyInternal reports whether an explicit
-// ENCRYPTION_KEY is an unprefixed passphrase shorter than 32 characters in
-// production. crypto derives a key from any non-empty passphrase, so this
-// preserves the historical fail-fast rejection of low-entropy production keys.
-func isWeakProductionEncryptionKeyInternal(encryptionKey, localEnvironment string, agentMode bool) bool {
+// isWeakProductionEncryptionKey reports whether a production ENCRYPTION_KEY is an
+// unprefixed passphrase shorter than 32 characters.
+func isWeakProductionEncryptionKey(encryptionKey, localEnvironment string, agentMode bool) bool {
 	if localEnvironment != "production" || agentMode {
 		return false
 	}
@@ -150,13 +179,7 @@ func isWeakProductionEncryptionKeyInternal(encryptionKey, localEnvironment strin
 	return len(strings.TrimPrefix(key, "raw:")) < 32
 }
 
-func warnDeprecatedEnvVarsInternal(cfg *config.Config) {
-	for _, envName := range cfg.DeprecatedEnvVarsSet() {
-		slog.Warn("Deprecated environment variable is set and no longer used; remove it from your environment", "env", envName)
-	}
-}
-
-func newConfiguredHTTPClientInternal(cfg *config.Config) *http.Client {
+func newConfiguredHTTPClient(cfg *config.Config) *http.Client {
 	options := httpxtypes.ClientOptions{
 		Timeout:             10 * time.Second,
 		TLSHandshakeTimeout: 5 * time.Second,
@@ -171,9 +194,8 @@ func newConfiguredHTTPClientInternal(cfg *config.Config) *http.Client {
 type initializeStartupStateParams struct {
 	fx.In
 
-	AppCtx     context.Context
-	Config     *config.Config
-	HTTPClient *http.Client
+	AppCtx context.Context
+	Config *config.Config
 
 	Volume        *volume.VolumeService
 	Settings      *settings.SettingsService
@@ -192,11 +214,8 @@ type initializeStartupStateParams struct {
 func initializeStartupState(p initializeStartupStateParams) {
 	appCtx := p.AppCtx
 	cfg := p.Config
-	httpClient := p.HTTPClient
 
-	if p.Volume != nil {
-		startup.CleanupOrphanedVolumeHelpers(appCtx, p.Volume.CleanupOrphanedVolumeHelpers)
-	}
+	startup.CleanupOrphanedVolumeHelpers(appCtx, p.Volume.CleanupOrphanedVolumeHelpers)
 
 	runtimeCfg := &startup.RuntimeConfig{
 		AgentMode:         cfg.AgentMode,
@@ -207,14 +226,16 @@ func initializeStartupState(p initializeStartupStateParams) {
 		AdminStaticAPIKey: cfg.AdminStaticAPIKey,
 	}
 
-	warnDeprecatedEnvVarsInternal(cfg)
+	for _, envName := range cfg.DeprecatedEnvVarsSet() {
+		slog.WarnContext(appCtx, "Deprecated environment variable is set and no longer used; remove it from your environment", "env", envName)
+	}
 
 	startup.LoadAgentToken(appCtx, runtimeCfg, p.Settings.GetStringSetting)
 	startup.EnsureEncryptionKey(appCtx, runtimeCfg, p.Settings.EnsureEncryptionKey)
 	cfg.AgentToken = runtimeCfg.AgentToken
 	cfg.EncryptionKey = runtimeCfg.EncryptionKey
 
-	if isWeakProductionEncryptionKeyInternal(cfg.EncryptionKey, string(cfg.Environment), cfg.AgentMode) {
+	if isWeakProductionEncryptionKey(cfg.EncryptionKey, string(cfg.Environment), cfg.AgentMode) {
 		panic("ENCRYPTION_KEY passphrase must be at least 32 characters in production (or use a hex:/base64: encoded 32-byte key)")
 	}
 
@@ -236,23 +257,31 @@ func initializeStartupState(p initializeStartupStateParams) {
 	if err := p.Environment.EnsureLocalEnvironment(appCtx, cfg.AppUrl); err != nil {
 		slog.WarnContext(appCtx, "Failed to ensure local environment", "error", err)
 	}
-	initializeGitOpsStartupStateInternal(appCtx, p.GitOpsSync)
+	if err := p.GitOpsSync.CleanupOrphanedSyncsOnStartup(appCtx); err != nil {
+		slog.WarnContext(appCtx, "Failed to clean up orphaned GitOps syncs on startup", "error", err)
+	}
+	if err := p.GitOpsSync.CleanupLeakedScratchDirsOnStartup(appCtx); err != nil {
+		slog.WarnContext(appCtx, "Failed to clean up leaked GitOps scratch directories on startup", "error", err)
+	}
+	if err := p.GitOpsSync.CleanupLeakedCloneDirsOnStartup(appCtx); err != nil {
+		slog.WarnContext(appCtx, "Failed to clean up leaked git clone directories on startup", "error", err)
+	}
+	if err := p.GitOpsSync.ReconcileDirectorySyncProjectsOnStartup(appCtx); err != nil {
+		slog.WarnContext(appCtx, "Failed to reconcile directory GitOps projects on startup", "error", err)
+	}
 	p.Vulnerability.ImportLegacyReportFiles(appCtx)
 	p.Vulnerability.BackfillScanItems(appCtx)
-	if p.Project != nil {
-		if err := p.Project.RecoverProjectRenameJournals(appCtx); err != nil {
-			slog.WarnContext(appCtx, "Failed to recover interrupted project rename operations on startup", "error", err)
-		}
+	if err := p.Project.RecoverProjectRenameJournals(appCtx); err != nil {
+		slog.WarnContext(appCtx, "Failed to recover interrupted project rename operations on startup", "error", err)
 	}
 
 	if !cfg.AgentMode {
 		if err := p.Environment.ReconcileEdgeStatusesOnStartup(appCtx); err != nil {
 			slog.WarnContext(appCtx, "Failed to reconcile edge environment statuses on startup", "error", err)
 		}
+		p.Environment.RegisterMetrics()
 
-		// Global variables are a manager resource: import any pre-existing local
-		// .env.global once, then materialize the effective set everywhere. Agents
-		// only serve the per-environment variables endpoint the manager pushes to.
+		// Global variables are manager-owned: import a legacy local .env.global once, then sync everywhere.
 		p.Environment.SetVariableSyncer(p.Variable)
 		if err := p.Variable.ImportLegacyLocalEnvFile(appCtx); err != nil {
 			slog.WarnContext(appCtx, "Failed to import legacy global variables", "error", err)
@@ -272,22 +301,18 @@ func initializeStartupState(p initializeStartupStateParams) {
 		}
 
 		effectiveAPIVersion := cmp.Or(strings.TrimSpace(dockerClient.ClientVersion()), strings.TrimSpace(version.APIVersion))
-		slog.InfoContext(ctx, "Docker API versions detected", "client_api_version", dockerClient.ClientVersion(), "server_api_version", version.APIVersion, "effective_api_version", effectiveAPIVersion)
+		slog.InfoContext(ctx, "Docker API versions detected", "clientApiVersion", dockerClient.ClientVersion(), "serverApiVersion", version.APIVersion, "effectiveApiVersion", effectiveAPIVersion)
 		return nil
 	})
-	if p.Swarm != nil {
-		if err := p.Swarm.SyncSwarmEnabledState(appCtx); err != nil {
-			slog.WarnContext(appCtx, "Failed to persist swarm enabled state", "error", err)
-		}
+	if err := p.Swarm.SyncSwarmEnabledState(appCtx); err != nil {
+		slog.WarnContext(appCtx, "Failed to persist swarm enabled state", "error", err)
 	}
 
 	startup.InitializeNonAgentFeatures(appCtx, runtimeCfg,
 		p.Role.EnsureBuiltInRoles,
 		func(ctx context.Context) error {
-			// Backfill legacy users.roles first so CreateDefaultAdmin's
-			// zero-global-admin recovery gate sees upgraded assignments.
-			// Runs once (kv completion marker); runRoleStartupTasks repeats
-			// the call for agent-mode and error-retry coverage.
+			// Backfill legacy users.roles first so CreateDefaultAdmin's zero-global-admin gate sees them;
+			// runRoleStartupTasks repeats it for agent mode and retries.
 			if err := p.Role.BackfillLegacyRoleAssignments(ctx); err != nil {
 				slog.WarnContext(ctx, "Failed to backfill legacy role assignments before admin bootstrap", "error", err)
 			}
@@ -303,14 +328,11 @@ func initializeStartupState(p initializeStartupStateParams) {
 	)
 	startup.CleanupUnknownSettings(appCtx, p.Settings)
 
-	runRoleStartupTasks(appCtx, p.Role, p.ApiKey, cfg, cfg.AgentMode)
+	runRoleStartupTasks(appCtx, p.Role, p.ApiKey, cfg)
 
-	// Auto-pair only applies in Edge mode (where the agent's outbound tunnel is the
-	// only path to the manager). Direct mode is passive — the manager dials the agent's
-	// HTTP server on TCP 3553, and the manager-side health-check promotes the env to
-	// Online once reachability is confirmed.
+	// Only edge agents auto-pair; direct agents are passive and the manager dials them.
 	if cfg.AgentMode && cfg.EdgeAgent && cfg.AgentToken != "" && cfg.ManagerApiUrl != "" {
-		if err := handleAgentBootstrapPairing(appCtx, cfg, httpClient); err != nil {
+		if err := handleAgentBootstrapPairing(appCtx, cfg); err != nil {
 			slog.WarnContext(appCtx, "Failed to auto-pair agent with manager", "error", err)
 		}
 	} else if cfg.AgentMode && !cfg.EdgeAgent {
@@ -318,36 +340,14 @@ func initializeStartupState(p initializeStartupStateParams) {
 	}
 }
 
-func initializeGitOpsStartupStateInternal(appCtx context.Context, gitOpsSync *gitops.GitOpsSyncService) {
-	if gitOpsSync == nil {
-		return
-	}
-	if err := gitOpsSync.CleanupOrphanedSyncsOnStartup(appCtx); err != nil {
-		slog.WarnContext(appCtx, "Failed to clean up orphaned GitOps syncs on startup", "error", err)
-	}
-
-	if err := gitOpsSync.CleanupLeakedScratchDirsOnStartup(appCtx); err != nil {
-		slog.WarnContext(appCtx, "Failed to clean up leaked GitOps scratch directories on startup", "error", err)
-	}
-	if err := gitOpsSync.CleanupLeakedCloneDirsOnStartup(appCtx); err != nil {
-		slog.WarnContext(appCtx, "Failed to clean up leaked git clone directories on startup", "error", err)
-	}
-	if err := gitOpsSync.ReconcileDirectorySyncProjectsOnStartup(appCtx); err != nil {
-		slog.WarnContext(appCtx, "Failed to reconcile directory GitOps projects on startup", "error", err)
-	}
-}
-
-func runRoleStartupTasks(ctx context.Context, roleService *role.RoleService, apiKeyService *apikey.ApiKeyService, cfg *config.Config, agentMode bool) {
+func runRoleStartupTasks(ctx context.Context, roleService *role.RoleService, apiKeyService *apikey.ApiKeyService, cfg *config.Config) {
 	if roleService == nil {
 		return
 	}
 	if err := roleService.EnsureBuiltInRoles(ctx); err != nil {
 		slog.ErrorContext(ctx, "Failed to reconcile built-in roles", "error", err)
 	}
-	// Backfill must run AFTER EnsureBuiltInRoles (it references the role IDs
-	// seeded there) and BEFORE BackfillApiKeyPermissions / AssertGlobalAdminExists
-	// (both consult the assignments table this populates). It is a no-op once
-	// its kv completion marker exists.
+	// Runs after EnsureBuiltInRoles seeds role IDs and before the API key backfill and admin guard read assignments.
 	if err := roleService.BackfillLegacyRoleAssignments(ctx); err != nil {
 		slog.ErrorContext(ctx, "Failed to backfill legacy users.roles into user_role_assignments", "error", err)
 	}
@@ -356,12 +356,10 @@ func runRoleStartupTasks(ctx context.Context, roleService *role.RoleService, api
 			slog.WarnContext(ctx, "Failed to backfill API key permissions", "error", err)
 		}
 	}
-	if cfg != nil {
-		if err := roleService.ReconcileEnvOidcMappings(ctx, cfg.OidcRoleMappings); err != nil {
-			slog.ErrorContext(ctx, "Failed to reconcile OIDC_ROLE_MAPPINGS", "error", err)
-		}
+	if err := roleService.ReconcileEnvOidcMappings(ctx, cfg.OidcRoleMappings); err != nil {
+		slog.ErrorContext(ctx, "Failed to reconcile OIDC_ROLE_MAPPINGS", "error", err)
 	}
-	if agentMode {
+	if cfg.AgentMode {
 		return
 	}
 	if err := roleService.AssertGlobalAdminExists(ctx); err != nil {
@@ -373,11 +371,18 @@ func startEdgeTunnelClient(appCtx context.Context, lc fx.Lifecycle, cfg *config.
 	var stop func(context.Context) error
 	lc.Append(fx.Hook{
 		OnStart: func(context.Context) error {
-			var startErr error
-			stop, startErr = startEdgeTunnelClientIfConfigured(appCtx, cfg, router)
-			if startErr != nil {
-				slog.ErrorContext(appCtx, "Failed to start edge tunnel client", "error", startErr)
+			if !cfg.EdgeAgent || cfg.ManagerApiUrl == "" || cfg.AgentToken == "" {
+				return nil
 			}
+			edgeCfg := buildEdgeRuntimeConfigInternal(cfg)
+			slog.InfoContext(appCtx, "Starting edge agent session client", edge.StartupLogAttrs(edgeCfg)...)
+			tunnelStop, err := edge.StartTunnelClient(appCtx, edgeCfg, router)
+			if err != nil {
+				slog.ErrorContext(appCtx, "Failed to start edge tunnel client", "error", err)
+				return nil
+			}
+			stop = tunnelStop
+			slog.InfoContext(appCtx, "Edge tunnel client started", "managerUrl", cfg.ManagerApiUrl)
 			return nil
 		},
 		OnStop: func(ctx context.Context) error {
@@ -389,49 +394,16 @@ func startEdgeTunnelClient(appCtx context.Context, lc fx.Lifecycle, cfg *config.
 	})
 }
 
-func registerAppCancelHook(lc fx.Lifecycle, cancelApp context.CancelFunc) {
+func registerAppCancelHook(lc fx.Lifecycle, cancelApp context.CancelCauseFunc) {
 	lc.Append(fx.Hook{
 		OnStop: func(context.Context) error {
-			cancelApp()
+			cancelApp(nil)
 			return nil
 		},
 	})
 }
 
-func startEdgeTunnelClientIfConfigured(appCtx context.Context, cfg *config.Config, router http.Handler) (func(context.Context) error, error) {
-	managerEndpointConfigured := cfg.ManagerApiUrl != ""
-	if !cfg.EdgeAgent || !managerEndpointConfigured || cfg.AgentToken == "" {
-		return nil, nil
-	}
-
-	edgeCfg := &edge.Config{
-		EdgeAgent:             cfg.EdgeAgent,
-		EdgeTransport:         cfg.EdgeTransport,
-		EdgeReconnectInterval: cfg.EdgeReconnectInterval,
-		EdgeMTLSMode:          cfg.EdgeMTLSMode,
-		EdgeMTLSCAFile:        cfg.EdgeMTLSCAFile,
-		EdgeMTLSCertFile:      cfg.EdgeMTLSCertFile,
-		EdgeMTLSKeyFile:       cfg.EdgeMTLSKeyFile,
-		EdgeMTLSServerName:    cfg.EdgeMTLSServerName,
-		EdgeMTLSAssetsDir:     cfg.EdgeMTLSAssetsDir,
-		AppURL:                cfg.GetAppURL(),
-		ManagerApiUrl:         cfg.ManagerApiUrl,
-		AgentToken:            cfg.AgentToken,
-		Port:                  cfg.Port,
-		Listen:                cfg.Listen,
-	}
-
-	slog.InfoContext(appCtx, "Starting edge agent session client", edge.StartupLogAttrs(edgeCfg)...)
-	stop, err := edge.StartTunnelClient(appCtx, edgeCfg, router)
-	if err != nil {
-		return nil, fmt.Errorf("failed to start edge tunnel client: %w", err)
-	}
-
-	slog.InfoContext(appCtx, "Edge tunnel client started", "manager_url", cfg.ManagerApiUrl)
-	return stop, nil
-}
-
-func handleAgentBootstrapPairing(ctx context.Context, cfg *config.Config, httpClient *http.Client) error {
+func handleAgentBootstrapPairing(ctx context.Context, cfg *config.Config) error {
 	slog.InfoContext(ctx, "Agent mode detected with token, attempting auto-pairing", "managerUrl", cfg.ManagerApiUrl)
 
 	pairURL := strings.TrimRight(httpx.ManagerBaseURL(cfg.ManagerApiUrl), "/") + "/api/environments/pair"
@@ -446,20 +418,9 @@ func handleAgentBootstrapPairing(ctx context.Context, cfg *config.Config, httpCl
 
 	req.Header.Set("X-Api-Key", cfg.AgentToken)
 
-	if cfg.EdgeAgent && strings.TrimSpace(cfg.ManagerApiUrl) != "" {
-		edgeClient, edgeErr := edge.NewManagerHTTPClient(&edge.Config{
-			ManagerApiUrl:      cfg.ManagerApiUrl,
-			EdgeMTLSMode:       cfg.EdgeMTLSMode,
-			EdgeMTLSCAFile:     cfg.EdgeMTLSCAFile,
-			EdgeMTLSCertFile:   cfg.EdgeMTLSCertFile,
-			EdgeMTLSKeyFile:    cfg.EdgeMTLSKeyFile,
-			EdgeMTLSServerName: cfg.EdgeMTLSServerName,
-			EdgeMTLSAssetsDir:  cfg.EdgeMTLSAssetsDir,
-		}, 10*time.Second)
-		if edgeErr != nil {
-			return fmt.Errorf("failed to configure edge pairing client: %w", edgeErr)
-		}
-		httpClient = edgeClient
+	httpClient, err := edge.NewManagerHTTPClient(buildEdgeRuntimeConfigInternal(cfg), 10*time.Second)
+	if err != nil {
+		return fmt.Errorf("failed to configure edge pairing client: %w", err)
 	}
 
 	resp, err := httpClient.Do(req)
@@ -470,35 +431,17 @@ func handleAgentBootstrapPairing(ctx context.Context, cfg *config.Config, httpCl
 
 	body, _ := io.ReadAll(resp.Body)
 
-	switch resp.StatusCode {
-	case http.StatusOK:
+	switch {
+	case resp.StatusCode == http.StatusOK:
 		slog.InfoContext(ctx, "Successfully paired agent with manager", "managerUrl", cfg.ManagerApiUrl)
 		return nil
-	case http.StatusBadRequest:
-		// Environment is not in pending status - already paired, this is fine
-		if strings.Contains(string(body), "not in pending status") {
-			slog.InfoContext(ctx, "Agent already paired with manager", "managerUrl", cfg.ManagerApiUrl)
-			return nil
-		}
-		return fmt.Errorf("pairing failed with status %d: %s", resp.StatusCode, string(body))
-	case http.StatusUnauthorized:
-		// Invalid API key - could be already paired with a different key, or key was deleted
-		// This is not fatal; the agent can still function if it has a valid token configured
+	case resp.StatusCode == http.StatusBadRequest && strings.Contains(string(body), "not in pending status"):
+		slog.InfoContext(ctx, "Agent already paired with manager", "managerUrl", cfg.ManagerApiUrl)
+		return nil
+	case resp.StatusCode == http.StatusUnauthorized:
+		// Not fatal: the key may belong to an earlier pairing, and a configured token still works.
 		slog.DebugContext(ctx, "Pairing skipped - API key not recognized (agent may already be paired)", "managerUrl", cfg.ManagerApiUrl)
 		return nil
-	default:
-		return fmt.Errorf("pairing failed with status %d: %s", resp.StatusCode, string(body))
 	}
-}
-
-func initializeDBAndMigrateInternal(ctx context.Context, cfg *config.Config) (*database.DB, error) {
-	db, err := database.Initialize(ctx, cfg.DatabaseURL, database.MigrationOptions{
-		AllowDowngrade: cfg.AllowDowngrade,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize database: %w", err)
-	}
-
-	slog.Info("Database initialized successfully")
-	return db, nil
+	return fmt.Errorf("pairing failed with status %d: %s", resp.StatusCode, string(body))
 }

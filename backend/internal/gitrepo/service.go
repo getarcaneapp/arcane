@@ -540,7 +540,7 @@ func (s *GitRepositoryService) BrowseFiles(ctx context.Context, id, branch, path
 	}
 
 	// Clone the repository
-	repoPath, err := s.Clone(ctx, repository.URL, branch, authConfig)
+	repoPath, err := s.Clone(ctx, repository.URL, branch, authConfig, 1)
 	if err != nil {
 		return nil, fmt.Errorf("failed to clone repository: %w", err)
 	}

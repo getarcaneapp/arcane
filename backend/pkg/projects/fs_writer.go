@@ -298,10 +298,10 @@ func RollbackRenamedProjectDirectory(ctx context.Context, oldPath, newPath strin
 	case oldExists && newExists:
 		conflictPath, relocateRenameConflictDirectoryErr := relocateRenameConflictDirectoryInternal(ctx, newPath)
 		if relocateRenameConflictDirectoryErr != nil {
-			slog.Warn("project rename directory rollback found both paths and failed to relocate target path; keeping old path and clearing journal",
+			slog.WarnContext(ctx, "project rename directory rollback found both paths and failed to relocate target path; keeping old path and clearing journal",
 				"oldPath", oldPath, "newPath", newPath, "error", relocateRenameConflictDirectoryErr)
 		} else {
-			slog.Warn("project rename directory rollback found both paths; moved target path aside and kept old path", "oldPath", oldPath, "newPath", newPath, "conflictPath", conflictPath)
+			slog.WarnContext(ctx, "project rename directory rollback found both paths; moved target path aside and kept old path", "oldPath", oldPath, "newPath", newPath, "conflictPath", conflictPath)
 		}
 	case !oldExists && newExists:
 		// Both paths share a parent whenever the rename stayed inside the
@@ -318,7 +318,7 @@ func RollbackRenamedProjectDirectory(ctx context.Context, oldPath, newPath strin
 		}
 	case !oldExists:
 		pathsMissing = true
-		slog.Warn("project rename directory paths are missing during rollback", "oldPath", oldPath, "newPath", newPath)
+		slog.WarnContext(ctx, "project rename directory paths are missing during rollback", "oldPath", oldPath, "newPath", newPath)
 	}
 	return pathsMissing, nil
 }
@@ -491,7 +491,8 @@ func findComposeOverrideCandidatesInternal(exists func(name string) bool) []stri
 // highest-preference match will be used.
 func warnOnMultipleComposeOverridesInternal(found []string) {
 	if len(found) > 1 {
-		slog.Warn("multiple compose override files found; using highest-preference match",
+		ctx := context.Background() //nolint:forbidigo // Compose file discovery is a pure helper without a request context.
+		slog.WarnContext(ctx, "multiple compose override files found; using highest-preference match",
 			"using", found[0], "found", found)
 	}
 }

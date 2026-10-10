@@ -76,8 +76,7 @@ func makePublicTestClient(t *testing.T, server *httptest.Server) (*http.Client, 
 
 func TestFetchRegistryTemplates_ReusesCachedIconsOnNotModified(t *testing.T) {
 	var composeHits atomic.Int32
-	var okComposeURL string
-	var badComposeURL string
+	var composeURL string
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -97,37 +96,36 @@ func TestFetchRegistryTemplates_ReusesCachedIconsOnNotModified(t *testing.T) {
     {
       "id": "good",
       "name": "Good Template",
-      "description": "Has a compose icon",
+      "description": "Has a registry icon",
       "version": "1.0.0",
       "author": "Arcane",
-      "compose_url": "` + okComposeURL + `",
+      "compose_url": "` + composeURL + `",
       "env_url": "",
       "documentation_url": "",
+      "icon_url": "https://cdn.example/good.png",
       "tags": ["demo"]
     },
     {
-      "id": "bad",
-      "name": "Broken Template",
-      "description": "Compose fetch fails",
+      "id": "plain",
+      "name": "Plain Template",
+      "description": "Only has a compose icon",
       "version": "1.0.0",
       "author": "Arcane",
-      "compose_url": "` + badComposeURL + `",
+      "compose_url": "` + composeURL + `",
       "env_url": "",
       "documentation_url": "",
       "tags": ["demo"]
     }
   ]
 }`))
-		case "/ok.yml":
+		case "/compose.yml":
 			composeHits.Add(1)
 			_, _ = w.Write([]byte(`x-arcane:
-  icon: https://cdn.example/good.png
+  icon: https://cdn.example/compose.png
 services:
   app:
     image: nginx:alpine
 `))
-		case "/missing.yml":
-			http.NotFound(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -136,8 +134,7 @@ services:
 
 	client, lookupIP, baseURL := makePublicTestClient(t, server)
 	registryURL := baseURL + "/registry.json"
-	okComposeURL = baseURL + "/ok.yml"
-	badComposeURL = baseURL + "/missing.yml"
+	composeURL = baseURL + "/compose.yml"
 
 	service := &TemplateService{
 		httpClient:        client,
@@ -151,22 +148,21 @@ services:
 		Enabled: true,
 	}
 
-	templates, err := service.fetchRegistryTemplatesInternal(t.Context(), registry, service.remoteGeneration.Load())
+	templates, err := service.fetchRegistryTemplates(t.Context(), registry, service.remoteGeneration.Load())
 	require.NoError(t, err)
 	require.Len(t, templates, 2)
 	require.NotNil(t, templates[0].Metadata)
 	require.NotNil(t, templates[0].Metadata.IconURL)
 	require.Equal(t, "https://cdn.example/good.png", *templates[0].Metadata.IconURL)
 	require.Nil(t, templates[1].Metadata.IconURL)
-	require.EqualValues(t, 1, composeHits.Load())
 
-	cachedTemplates, err := service.fetchRegistryTemplatesInternal(t.Context(), registry, service.remoteGeneration.Load())
+	cachedTemplates, err := service.fetchRegistryTemplates(t.Context(), registry, service.remoteGeneration.Load())
 	require.NoError(t, err)
 	require.Len(t, cachedTemplates, 2)
 	require.NotNil(t, cachedTemplates[0].Metadata)
 	require.NotNil(t, cachedTemplates[0].Metadata.IconURL)
 	require.Equal(t, "https://cdn.example/good.png", *cachedTemplates[0].Metadata.IconURL)
-	require.EqualValues(t, 1, composeHits.Load())
+	require.Zero(t, composeHits.Load())
 }
 
 func TestDownloadTemplate_PreservesIconURL(t *testing.T) {
@@ -176,14 +172,12 @@ func TestDownloadTemplate_PreservesIconURL(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/compose.yaml":
-			_, _ = w.Write([]byte(`x-arcane:
-  icon: https://cdn.example/download.png
-services:
+			_, _ = w.Write([]byte(`services:
   app:
     image: nginx:alpine
 `))
 		case "/template.env":
-			_, _ = w.Write([]byte("DOWNLOAD_ICON=https://cdn.example/download.png\n"))
+			_, _ = w.Write([]byte("APP_PORT=8080\n"))
 		default:
 			http.NotFound(w, r)
 		}
@@ -211,9 +205,10 @@ services:
 		IsCustom:    false,
 		RegistryID:  mo.EmptyableToOption(strings.TrimSpace("reg-1")).ToPointer(),
 		Metadata: &ComposeTemplateMetadata{
-			RemoteURL: mo.EmptyableToOption(strings.TrimSpace(baseURL + "/compose.yaml")).ToPointer(),
-			EnvURL:    mo.EmptyableToOption(strings.TrimSpace(baseURL + "/template.env")).ToPointer(),
-			IconURL:   mo.EmptyableToOption(strings.TrimSpace("https://cdn.example/download.png")).ToPointer(),
+			RemoteURL:       mo.EmptyableToOption(strings.TrimSpace(baseURL + "/compose.yaml")).ToPointer(),
+			EnvURL:          mo.EmptyableToOption(strings.TrimSpace(baseURL + "/template.env")).ToPointer(),
+			IconURL:         mo.EmptyableToOption(strings.TrimSpace("https://cdn.example/download.png")).ToPointer(),
+			RegistryIconURL: mo.EmptyableToOption(strings.TrimSpace("https://cdn.example/download.png")).ToPointer(),
 		},
 	}
 
@@ -230,6 +225,25 @@ services:
 	require.NotNil(t, stored.Metadata)
 	require.NotNil(t, stored.Metadata.IconURL)
 	require.Equal(t, "https://cdn.example/download.png", *stored.Metadata.IconURL)
+
+	// Filesystem sync and parsed content must not clear the registry icon.
+	content, err := service.GetTemplateContentWithParsedData(t.Context(), downloaded.ID)
+	require.NoError(t, err)
+	require.NotNil(t, content.Template.Metadata)
+	require.NotNil(t, content.Template.Metadata.IconURL)
+	require.Equal(t, "https://cdn.example/download.png", *content.Template.Metadata.IconURL)
+
+	// A compose icon wins, and removing it restores the registry icon.
+	for _, tc := range []struct{ compose, icon string }{
+		{"x-arcane:\n  icon: https://cdn.example/compose.png\nservices:\n  app:\n    image: nginx:alpine\n", "https://cdn.example/compose.png"},
+		{"services:\n  app:\n    image: nginx:alpine\n", "https://cdn.example/download.png"},
+	} {
+		require.NoError(t, service.UpdateTemplate(t.Context(), downloaded.ID, &ComposeTemplate{Name: stored.Name, Description: stored.Description, Content: tc.compose}))
+		require.NoError(t, service.db.WithContext(t.Context()).First(&stored, "id = ?", downloaded.ID).Error)
+		require.NotNil(t, stored.Metadata)
+		require.NotNil(t, stored.Metadata.IconURL)
+		require.Equal(t, tc.icon, *stored.Metadata.IconURL)
+	}
 }
 
 func TestGetAllTemplatesPaginated_FiltersByType(t *testing.T) {
@@ -287,12 +301,12 @@ func TestGetAllTemplatesPaginated_FiltersByType(t *testing.T) {
 				Filters: map[string]string{"type": tt.typeFilter},
 			})
 			require.NoError(t, err)
-			require.ElementsMatch(t, tt.wantIDs, templateIDsInternal(templates))
+			require.ElementsMatch(t, tt.wantIDs, templateIDs(templates))
 		})
 	}
 }
 
-func templateIDsInternal(templates []tmpl.Template) []string {
+func templateIDs(templates []tmpl.Template) []string {
 	ids := make([]string, 0, len(templates))
 	for _, template := range templates {
 		ids = append(ids, template.ID)
@@ -312,7 +326,7 @@ func TestFetchRaw_BlocksUnsafeRemoteURL(t *testing.T) {
 	require.ErrorIs(t, err, common.ErrUnsafeRemoteURL)
 }
 
-func TestSyncFilesystemTemplatesInternal_PopulatesIconURL(t *testing.T) {
+func TestSyncLocalTemplatesFromFilesystem_PopulatesIconURL(t *testing.T) {
 	tempDir := t.TempDir()
 
 	templatesRoot := filepath.Join(tempDir, "templates")
@@ -335,7 +349,7 @@ services:
 		registryFetchMeta: make(map[string]*registryFetchMeta),
 	}
 
-	require.NoError(t, service.syncFilesystemTemplatesInternal(t.Context()))
+	require.NoError(t, service.SyncLocalTemplatesFromFilesystem(t.Context()))
 
 	var stored ComposeTemplate
 	require.NoError(t, service.db.WithContext(t.Context()).First(&stored, "name = ?", "example").Error)
@@ -396,7 +410,6 @@ func TestGetTemplate_ForceRefreshesRemoteCacheOnMiss(t *testing.T) {
 
 	service := NewTemplateService(t.Context(), db, client, settingsSvc)
 	service.lookupIP = lookupIP
-	service.safeHTTPClient = service.newSafeHTTPClientInternal()
 
 	// Cache starts empty; GetTemplate for a remote ID should force a refresh and find the template.
 	got, err := service.GetTemplate(t.Context(), "remote:reg-1:affine")
@@ -417,12 +430,12 @@ func minimalSettingsServiceForTest(t *testing.T) *settings.SettingsService {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&settings.SettingVariable{}))
-	svc, err := newSettingsServiceForTestInternal(t, t.Context(), &database.DB{DB: db})
+	svc, err := newSettingsServiceForTest(t, t.Context(), &database.DB{DB: db})
 	require.NoError(t, err)
 	return svc
 }
 
-func newSettingsServiceForTestInternal(t testing.TB, ctx context.Context, db *database.DB) (*settings.SettingsService, error) {
+func newSettingsServiceForTest(t testing.TB, ctx context.Context, db *database.DB) (*settings.SettingsService, error) {
 	t.Helper()
 	svc, err := settings.NewSettingsService(ctx, db)
 	if err == nil {

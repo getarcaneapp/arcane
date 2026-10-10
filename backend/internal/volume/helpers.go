@@ -18,10 +18,10 @@ import (
 	"github.com/moby/moby/client"
 	"github.com/samber/mo"
 	"go.getarcane.app/acfs/types"
+	"go.getarcane.app/docker"
 	"go.getarcane.app/docker/compat"
 	"go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
@@ -359,7 +359,7 @@ func (s *VolumeService) CleanupHelperContainers(ctx context.Context) {
 
 	for _, containerID := range helperIDs {
 		if _, containerRemoveErr := dockerClient.ContainerRemove(ctx, containerID, volumehelper.RemoveOptions()); containerRemoveErr != nil {
-			slog.WarnContext(ctx, "failed to remove helper container", "container_id", containerID, "error", containerRemoveErr.Error())
+			slog.WarnContext(ctx, "failed to remove helper container", "containerId", containerID, "error", containerRemoveErr.Error())
 		}
 	}
 }
@@ -384,7 +384,7 @@ func (s *VolumeService) ReapIdleHelpers(ctx context.Context, idleTimeout time.Du
 	removed := 0
 	for _, containerID := range staleIDs {
 		if _, containerRemoveErr := dockerClient.ContainerRemove(ctx, containerID, volumehelper.RemoveOptions()); containerRemoveErr != nil {
-			slog.WarnContext(ctx, "failed to remove idle helper container", "container_id", containerID, "error", containerRemoveErr.Error())
+			slog.WarnContext(ctx, "failed to remove idle helper container", "containerId", containerID, "error", containerRemoveErr.Error())
 			continue
 		}
 		removed++
@@ -482,8 +482,8 @@ func (s *VolumeService) CleanupOrphanedVolumeHelpers(ctx context.Context) (int, 
 			slog.WarnContext(
 				ctx,
 				"volume service: failed to remove orphaned volume helper container",
-				"container_id", c.ID,
-				"container_names", c.Names,
+				"containerId", c.ID,
+				"containerNames", c.Names,
 				"error", containerRemoveErr.Error(),
 			)
 			continue
@@ -505,7 +505,7 @@ func (s *VolumeService) removeHelperEntry(volumeName string) {
 }
 
 func (s *VolumeService) execInContainerInternal(ctx context.Context, containerID, execUser string, cmd []string) (string, string, error) {
-	slog.DebugContext(ctx, "volume service: exec in container", "container_id", containerID, "user", execUser, "cmd", cmd)
+	slog.DebugContext(ctx, "volume service: exec in container", "containerId", containerID, "user", execUser, "cmd", cmd)
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return "", "", err

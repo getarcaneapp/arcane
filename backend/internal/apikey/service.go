@@ -164,7 +164,7 @@ func (s *ApiKeyService) BackfillApiKeyPermissions(ctx context.Context) error {
 					return fmt.Errorf("failed to seed api key permission: %w", createKeyPermissionErr)
 				}
 			}
-			slog.InfoContext(ctx, "Backfilled missing permissions for bootstrap api key", "api_key_id", key.ID, "perm_count", len(perms), "env_id", key.EnvironmentID)
+			slog.InfoContext(ctx, "Backfilled missing permissions for bootstrap api key", "apiKeyId", key.ID, "permCount", len(perms), "envId", key.EnvironmentID)
 		}
 		return nil
 	})
@@ -267,7 +267,7 @@ func (s *ApiKeyService) markApiKeyUsedDebouncedInternal(ctx context.Context, key
 	s.lastUsedMu.Unlock()
 
 	if err := s.markApiKeyUsedInternal(ctx, keyID); err != nil {
-		slog.WarnContext(ctx, "failed to persist API key usage", "api_key_id", keyID, "error", err)
+		slog.WarnContext(ctx, "failed to persist API key usage", "apiKeyId", keyID, "error", err)
 		// Release the reservation so the next use retries instead of silently
 		// skipping writes for the rest of the window — but only if it is still
 		// ours, to avoid clobbering a newer reservation made after an
@@ -952,7 +952,7 @@ func (s *ApiKeyService) loadKeyGrantsInternal(ctx context.Context, apiKeyID stri
 	}
 	var rows []role.ApiKeyPermission
 	if err := s.db.WithContext(ctx).Where("api_key_id = ?", apiKeyID).Find(&rows).Error; err != nil {
-		slog.WarnContext(ctx, "failed to load api key permission grants", "api_key_id", apiKeyID, "error", err)
+		slog.WarnContext(ctx, "failed to load api key permission grants", "apiKeyId", apiKeyID, "error", err)
 		return empty
 	}
 	out := make([]apikey.PermissionGrant, len(rows))

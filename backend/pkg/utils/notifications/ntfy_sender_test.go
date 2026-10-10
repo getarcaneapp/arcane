@@ -24,7 +24,7 @@ func TestBuildNtfyURL(t *testing.T) {
 			},
 			wantErr: false,
 			check: func(url string) bool {
-				return url == "ntfy://ntfy.sh/test-topic?cache=yes&firebase=yes"
+				return url == "ntfy://ntfy.sh/test-topic?cache=yes&firebase=yes&markdown=yes"
 			},
 		},
 		{
@@ -37,7 +37,7 @@ func TestBuildNtfyURL(t *testing.T) {
 			},
 			wantErr: false,
 			check: func(url string) bool {
-				return url == "ntfy://ntfy.example.com/alerts?cache=yes&firebase=yes"
+				return url == "ntfy://ntfy.example.com/alerts?cache=yes&firebase=yes&markdown=yes"
 			},
 		},
 		{
@@ -51,7 +51,7 @@ func TestBuildNtfyURL(t *testing.T) {
 			},
 			wantErr: false,
 			check: func(url string) bool {
-				return url == "ntfy://ntfy.example.com:8080/updates?cache=yes&firebase=yes"
+				return url == "ntfy://ntfy.example.com:8080/updates?cache=yes&firebase=yes&markdown=yes"
 			},
 		},
 		{
@@ -67,7 +67,7 @@ func TestBuildNtfyURL(t *testing.T) {
 			},
 			wantErr: false,
 			check: func(url string) bool {
-				return url == "ntfy://user:pass@ntfy.example.com:443/private?cache=yes&firebase=yes"
+				return url == "ntfy://user:pass@ntfy.example.com:443/private?cache=yes&firebase=yes&markdown=yes"
 			},
 		},
 		{
@@ -83,7 +83,7 @@ func TestBuildNtfyURL(t *testing.T) {
 			},
 			wantErr: false,
 			check: func(url string) bool {
-				return url == "ntfy://ntfy.sh/alerts?cache=yes&firebase=yes&priority=high&tags=warning%2Cserver&title=Arcane+Update"
+				return url == "ntfy://ntfy.sh/alerts?cache=yes&firebase=yes&markdown=yes&priority=high&tags=warning%2Cserver&title=Arcane+Update"
 			},
 		},
 		{
@@ -112,7 +112,7 @@ func TestBuildNtfyURL(t *testing.T) {
 			wantErr: false,
 			check: func(url string) bool {
 				return url == "ntfy://user:pass@ntfy.example.com:8080/test?cache=no&disabletlsverification=yes&firebase=no&icon=htt"+
-					"ps%3A%2F%2Fexample.com%2Ficon.png&priority=max&tags=urgent&title=Arcane+Alert"
+					"ps%3A%2F%2Fexample.com%2Ficon.png&markdown=yes&priority=max&tags=urgent&title=Arcane+Alert"
 			},
 		},
 	}
@@ -144,6 +144,7 @@ func TestBuildNtfyURLDisableTLSVerificationUsesCertificateVerificationFlag(t *te
 	require.NoError(t, err)
 
 	query := parsedURL.Query()
+	assert.Equal(t, "yes", query.Get("markdown"))
 	assert.Equal(t, "yes", query.Get("disabletlsverification"))
 	assert.Empty(t, query.Get("disabletls"))
 }
@@ -162,6 +163,7 @@ func TestBuildNtfyURLDisableTLSUsesPlainHTTPFlag(t *testing.T) {
 	require.NoError(t, err)
 
 	query := parsedURL.Query()
+	assert.Equal(t, "yes", query.Get("markdown"))
 	assert.Equal(t, "yes", query.Get("disabletls"))
 	assert.Empty(t, query.Get("disabletlsverification"))
 }

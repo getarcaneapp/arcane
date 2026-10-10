@@ -4,15 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
 
-	"github.com/getarcaneapp/arcane/types/v2/gitops"
-	"github.com/getarcaneapp/arcane/types/v2/swarm"
 	"github.com/getarcaneapp/arcane/types/v2/user"
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/assert"
@@ -31,7 +28,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 )
 
-func setupSyncTestServiceInternal(t *testing.T) (*Service, *database.DB, string) {
+func setupSyncTestService(t *testing.T) (*Service, *database.DB, string) {
 	t.Helper()
 
 	ctx := t.Context()
@@ -61,7 +58,7 @@ func setupSyncTestServiceInternal(t *testing.T) (*Service, *database.DB, string)
 	return New(arcaneDB, nil, projectService, nil, eventService, limits, logError, unregisterJob), arcaneDB, projectsDir
 }
 
-func writeFileInternal(t *testing.T, rootDir, relativePath string, content []byte) {
+func writeFile(t *testing.T, rootDir, relativePath string, content []byte) {
 	t.Helper()
 
 	targetPath := filepath.Join(rootDir, relativePath)
@@ -71,10 +68,10 @@ func writeFileInternal(t *testing.T, rootDir, relativePath string, content []byt
 
 // TestGitOpsSyncService_SyncProjectDirectory_RefusesDuplicateOnNameCollision verifies a
 // directory sync refuses to create a "-N" sibling when its target name is already taken
-// by a non-adoptable directory; instead it errors as a broken binding and disables auto-sync.
+// by a non-adoptable directory; instead it errors as a broken binding.
 func TestGitOpsSyncService_SyncProjectDirectory_RefusesDuplicateOnNameCollision(t *testing.T) {
 	ctx := t.Context()
-	svc, db, projectsDir := setupSyncTestServiceInternal(t)
+	svc, db, projectsDir := setupSyncTestService(t)
 
 	// Occupy the target name with a dir that is NOT an adoptable GitOps project
 	// (it has no matching compose file).
@@ -97,20 +94,16 @@ func TestGitOpsSyncService_SyncProjectDirectory_RefusesDuplicateOnNameCollision(
 		{RelativePath: "docker-compose.yaml", Content: []byte("services:\n  app:\n    image: nginx:alpine\n")},
 	}
 
-	_, _, _, _, err := svc.syncProjectDirectoryInternal(ctx, sync, syncFiles, user.Actor{})
+	_, _, _, _, err := svc.syncProjectDirectory(ctx, sync, syncFiles, user.Actor{})
 	require.ErrorIs(t, err, common.ErrGitOpsSyncProjectBindingBroken)
 
 	_, statErr := os.Stat(filepath.Join(projectsDir, "Dozzle-1"))
 	require.ErrorIs(t, statErr, os.ErrNotExist, "must not mint a -N duplicate")
-
-	var got projectpkg.GitOpsSync
-	require.NoError(t, db.Where("id = ?", sync.ID).First(&got).Error)
-	assert.False(t, got.AutoSync, "auto-sync should be disabled on broken binding")
 }
 
 func TestGitOpsSyncService_SyncProjectDirectory_CreatesProjectPreservingRepoLayout(t *testing.T) {
 	ctx := t.Context()
-	svc, db, _ := setupSyncTestServiceInternal(t)
+	svc, db, _ := setupSyncTestService(t)
 
 	sync := &projectpkg.GitOpsSync{
 		ID:            "sync-directory-create",
@@ -149,7 +142,7 @@ services:
 		},
 	}
 
-	project, syncedFiles, created, changed, err := svc.syncProjectDirectoryInternal(ctx, sync, syncFiles, user.Actor{})
+	project, syncedFiles, created, changed, err := svc.syncProjectDirectory(ctx, sync, syncFiles, user.Actor{})
 	require.NoError(t, err)
 	require.NotNil(t, project)
 	require.True(t, created)
@@ -189,7 +182,7 @@ services:
 
 func TestGitOpsSyncService_SyncProjectDirectory_UpdatesProjectAndCleansOldSyncedFiles(t *testing.T) {
 	ctx := t.Context()
-	svc, db, projectsDir := setupSyncTestServiceInternal(t)
+	svc, db, projectsDir := setupSyncTestService(t)
 
 	projectPath := filepath.Join(projectsDir, "demo-project")
 	require.NoError(t, os.MkdirAll(filepath.Join(projectPath, "nested"), 0o755))
@@ -254,7 +247,7 @@ services:
 	keepBefore, err := os.Stat(filepath.Join(projectPath, "keep.txt"))
 	require.NoError(t, err)
 
-	updatedProject, syncedFiles, created, changed, err := svc.syncProjectDirectoryInternal(ctx, sync, syncFiles, user.Actor{})
+	updatedProject, syncedFiles, created, changed, err := svc.syncProjectDirectory(ctx, sync, syncFiles, user.Actor{})
 	require.NoError(t, err)
 	require.NotNil(t, updatedProject)
 	require.False(t, created)
@@ -293,7 +286,7 @@ services:
 // for https://github.com/getarcaneapp/arcane/issues/2476.
 func TestGitOpsSyncService_SyncProjectDirectory_PreservesEnvOverrideAndAddsNewGitKey(t *testing.T) {
 	ctx := t.Context()
-	svc, db, projectsDir := setupSyncTestServiceInternal(t)
+	svc, db, projectsDir := setupSyncTestService(t)
 
 	projectPath := filepath.Join(projectsDir, "demo-project")
 	require.NoError(t, os.MkdirAll(projectPath, 0o755))
@@ -345,7 +338,7 @@ func TestGitOpsSyncService_SyncProjectDirectory_PreservesEnvOverrideAndAddsNewGi
 		},
 	}
 
-	updatedProject, syncedFiles, created, changed, err := svc.syncProjectDirectoryInternal(ctx, sync, syncFiles, user.Actor{})
+	updatedProject, syncedFiles, created, changed, err := svc.syncProjectDirectory(ctx, sync, syncFiles, user.Actor{})
 	require.NoError(t, err)
 	require.NotNil(t, updatedProject)
 	require.False(t, created)
@@ -386,7 +379,7 @@ func TestGitOpsSyncService_SyncProjectDirectory_PreservesEnvOverrideAndAddsNewGi
 // of migrated into project.env.
 func TestGitOpsSyncService_SyncProjectDirectory_MigratesLegacyTrackedEnvOnFirstSyncAfterUpgrade(t *testing.T) {
 	ctx := t.Context()
-	svc, db, projectsDir := setupSyncTestServiceInternal(t)
+	svc, db, projectsDir := setupSyncTestService(t)
 
 	projectPath := filepath.Join(projectsDir, "demo-project")
 	require.NoError(t, os.MkdirAll(projectPath, 0o755))
@@ -436,7 +429,7 @@ func TestGitOpsSyncService_SyncProjectDirectory_MigratesLegacyTrackedEnvOnFirstS
 		},
 	}
 
-	updatedProject, _, created, _, err := svc.syncProjectDirectoryInternal(ctx, sync, syncFiles, user.Actor{})
+	updatedProject, _, created, _, err := svc.syncProjectDirectory(ctx, sync, syncFiles, user.Actor{})
 	require.NoError(t, err)
 	require.NotNil(t, updatedProject)
 	require.False(t, created)
@@ -457,7 +450,7 @@ func TestGitOpsSyncService_SyncProjectDirectory_MigratesLegacyTrackedEnvOnFirstS
 // .env.git/project.env on disk are still produced solely by the merge.
 func TestGitOpsSyncService_SyncProjectDirectory_IgnoresCommittedReservedEnvFiles(t *testing.T) {
 	ctx := t.Context()
-	svc, db, _ := setupSyncTestServiceInternal(t)
+	svc, db, _ := setupSyncTestService(t)
 
 	sync := &projectpkg.GitOpsSync{
 		ID:            "sync-directory-reserved-env",
@@ -492,7 +485,7 @@ func TestGitOpsSyncService_SyncProjectDirectory_IgnoresCommittedReservedEnvFiles
 		},
 	}
 
-	project, syncedFiles, created, _, err := svc.syncProjectDirectoryInternal(ctx, sync, syncFiles, user.Actor{})
+	project, syncedFiles, created, _, err := svc.syncProjectDirectory(ctx, sync, syncFiles, user.Actor{})
 	require.NoError(t, err)
 	require.NotNil(t, project)
 	require.True(t, created)
@@ -515,11 +508,11 @@ func TestGitOpsSyncService_SyncProjectDirectory_IgnoresCommittedReservedEnvFiles
 
 func TestGitOpsSyncService_DirectorySync_RealWalkWithNestedConfig(t *testing.T) {
 	ctx := t.Context()
-	svc, db, _ := setupSyncTestServiceInternal(t)
+	svc, db, _ := setupSyncTestService(t)
 	svc.repoService = &gitrepo.GitRepositoryService{Client: git.NewClient("")}
 
 	repoPath := t.TempDir()
-	writeFileInternal(t, repoPath, "traefik (nl10)/docker-compose.yml", []byte(`services:
+	writeFile(t, repoPath, "traefik (nl10)/docker-compose.yml", []byte(`services:
   traefik:
     image: traefik:v3.4
     volumes:
@@ -527,7 +520,7 @@ func TestGitOpsSyncService_DirectorySync_RealWalkWithNestedConfig(t *testing.T) 
       - ./logs:/var/log/traefik
       - ./config/dynamic_config.yml:/etc/traefik/dynamic_config.yml:ro
 `))
-	writeFileInternal(t, repoPath, "traefik (nl10)/config/dynamic_config.yml", []byte("http:\n  routers:\n    dashboard:\n      rule: Host(`traefik.example.com`)\n"))
+	writeFile(t, repoPath, "traefik (nl10)/config/dynamic_config.yml", []byte("http:\n  routers:\n    dashboard:\n      rule: Host(`traefik.example.com`)\n"))
 
 	sync := &projectpkg.GitOpsSync{
 		ID:            "sync-directory-real-walk",
@@ -550,7 +543,7 @@ func TestGitOpsSyncService_DirectorySync_RealWalkWithNestedConfig(t *testing.T) 
 	}
 	assert.Contains(t, composeContent, "./config/dynamic_config.yml")
 
-	project, syncedFiles, created, changed, err := svc.syncProjectDirectoryInternal(ctx, sync, syncFiles, user.Actor{})
+	project, syncedFiles, created, changed, err := svc.syncProjectDirectory(ctx, sync, syncFiles, user.Actor{})
 	require.NoError(t, err)
 	require.NotNil(t, project)
 	require.True(t, created)
@@ -577,11 +570,11 @@ func TestGitOpsSyncService_DirectorySync_RealWalkWithNestedConfig(t *testing.T) 
 
 func TestGitOpsSyncService_DirectorySync_OverwritesExistingDirectoryAtFilePath(t *testing.T) {
 	ctx := t.Context()
-	svc, db, projectsDir := setupSyncTestServiceInternal(t)
+	svc, db, projectsDir := setupSyncTestService(t)
 	svc.repoService = &gitrepo.GitRepositoryService{Client: git.NewClient("")}
 
 	repoPath := t.TempDir()
-	writeFileInternal(t, repoPath, "traefik (nl10)/docker-compose.yml", []byte(`services:
+	writeFile(t, repoPath, "traefik (nl10)/docker-compose.yml", []byte(`services:
   traefik:
     image: traefik:v3.4
     volumes:
@@ -589,7 +582,7 @@ func TestGitOpsSyncService_DirectorySync_OverwritesExistingDirectoryAtFilePath(t
       - ./logs:/var/log/traefik
       - ./config/dynamic_config.yml:/etc/traefik/dynamic_config.yml:ro
 `))
-	writeFileInternal(t, repoPath, "traefik (nl10)/config/dynamic_config.yml", []byte("http:\n  routers:\n    dashboard:\n      rule: Host(`traefik.example.com`)\n"))
+	writeFile(t, repoPath, "traefik (nl10)/config/dynamic_config.yml", []byte("http:\n  routers:\n    dashboard:\n      rule: Host(`traefik.example.com`)\n"))
 
 	projectPath := filepath.Join(projectsDir, "traefik-project")
 	require.NoError(t, os.MkdirAll(filepath.Join(projectPath, "config", "dynamic_config.yml"), 0o755))
@@ -621,7 +614,7 @@ func TestGitOpsSyncService_DirectorySync_OverwritesExistingDirectoryAtFilePath(t
 	syncFiles, err := svc.walkAndParseSyncDirectory(ctx, sync, repoPath)
 	require.NoError(t, err)
 
-	updatedProject, syncedFiles, created, changed, err := svc.syncProjectDirectoryInternal(ctx, sync, syncFiles, user.Actor{})
+	updatedProject, syncedFiles, created, changed, err := svc.syncProjectDirectory(ctx, sync, syncFiles, user.Actor{})
 	require.NoError(t, err)
 	require.NotNil(t, updatedProject)
 	require.False(t, created)
@@ -650,9 +643,9 @@ func TestGitOpsSyncService_DirectorySync_OverwritesExistingDirectoryAtFilePath(t
 	assert.True(t, dockerArtifactInfo.IsDir())
 }
 
-func TestGitOpsSyncService_CreateDirectorySyncProjectInternal_RollsBackProjectOnUpdateFailure(t *testing.T) {
+func TestGitOpsSyncService_CreateDirectorySyncProject_RollsBackProjectOnUpdateFailure(t *testing.T) {
 	ctx := t.Context()
-	svc, db, projectsDir := setupSyncTestServiceInternal(t)
+	svc, db, projectsDir := setupSyncTestService(t)
 
 	sync := &projectpkg.GitOpsSync{
 		ID:            "sync-directory-tx-rollback",
@@ -687,7 +680,7 @@ func TestGitOpsSyncService_CreateDirectorySyncProjectInternal_RollsBackProjectOn
 		_ = db.Callback().Update().Remove(callbackName)
 	}()
 
-	project, err := svc.createDirectorySyncProjectInternal(ctx, sync, stage, user.Actor{})
+	project, err := svc.createDirectorySyncProject(ctx, sync, stage, user.Actor{})
 	require.Error(t, err)
 	require.Nil(t, project)
 	assert.Contains(t, err.Error(), "failed to mark project as GitOps-managed")
@@ -704,21 +697,21 @@ func TestGitOpsSyncService_CreateDirectorySyncProjectInternal_RollsBackProjectOn
 	require.ErrorIs(t, statErr, os.ErrNotExist)
 }
 
-// TestGitOpsSyncService_UpdateDirectorySyncProjectInternal_RollsBackScopedChangesOnUpdateFailure
+// TestGitOpsSyncService_UpdateDirectorySyncProject_RollsBackScopedChangesOnUpdateFailure
 // forces the project metadata update to fail after the synced files were written
 // to the live project, and verifies the scoped rollback restores exactly what the
 // sync touched (in place, keeping inodes) while unrelated files are never copied,
 // rewritten or pruned.
-func TestGitOpsSyncService_UpdateDirectorySyncProjectInternal_RollsBackScopedChangesOnUpdateFailure(t *testing.T) {
+func TestGitOpsSyncService_UpdateDirectorySyncProject_RollsBackScopedChangesOnUpdateFailure(t *testing.T) {
 	ctx := t.Context()
-	svc, db, projectsDir := setupSyncTestServiceInternal(t)
+	svc, db, projectsDir := setupSyncTestService(t)
 
 	projectPath := filepath.Join(projectsDir, "demo-project")
-	writeFileInternal(t, projectPath, "docker-compose.yaml", []byte("services:\n  app:\n    image: nginx:1.26-alpine\n"))
-	writeFileInternal(t, projectPath, "old.txt", []byte("remove me\n"))
-	writeFileInternal(t, projectPath, "keep.txt", []byte("keep me\n"))
-	writeFileInternal(t, projectPath, ".env", []byte("A=1\n"))
-	writeFileInternal(t, projectPath, "data/blob.bin", []byte("bind-mount data\n"))
+	writeFile(t, projectPath, "docker-compose.yaml", []byte("services:\n  app:\n    image: nginx:1.26-alpine\n"))
+	writeFile(t, projectPath, "old.txt", []byte("remove me\n"))
+	writeFile(t, projectPath, "keep.txt", []byte("keep me\n"))
+	writeFile(t, projectPath, ".env", []byte("A=1\n"))
+	writeFile(t, projectPath, "data/blob.bin", []byte("bind-mount data\n"))
 	// A directory sits where git now ships a file.
 	require.NoError(t, os.MkdirAll(filepath.Join(projectPath, "config", "dynamic.yml"), 0o755))
 
@@ -795,7 +788,7 @@ func TestGitOpsSyncService_UpdateDirectorySyncProjectInternal_RollsBackScopedCha
 		_ = db.Callback().Update().Remove(callbackName)
 	}()
 
-	updatedProject, _, _, _, err := svc.syncProjectDirectoryInternal(ctx, sync, syncFiles, user.Actor{})
+	updatedProject, _, _, _, err := svc.syncProjectDirectory(ctx, sync, syncFiles, user.Actor{})
 	require.Error(t, err)
 	require.Nil(t, updatedProject)
 	assert.Contains(t, err.Error(), "forced project update failure")
@@ -846,9 +839,9 @@ func TestGitOpsSyncService_UpdateDirectorySyncProjectInternal_RollsBackScopedCha
 	}
 }
 
-func TestGitOpsSyncService_GetDirectorySyncProjectInternal_RelinksManagedProjectWhenProjectIDStale(t *testing.T) {
+func TestGitOpsSyncService_GetDirectorySyncProject_RelinksManagedProjectWhenProjectIDStale(t *testing.T) {
 	ctx := t.Context()
-	svc, db, projectsDir := setupSyncTestServiceInternal(t)
+	svc, db, projectsDir := setupSyncTestService(t)
 
 	projectPath := filepath.Join(projectsDir, "Radarr-3")
 	require.NoError(t, os.MkdirAll(projectPath, 0o755))
@@ -878,7 +871,7 @@ func TestGitOpsSyncService_GetDirectorySyncProjectInternal_RelinksManagedProject
 	}
 	require.NoError(t, db.Create(project).Error)
 
-	recovered, err := svc.getDirectorySyncProjectInternal(ctx, sync)
+	recovered, err := svc.DirectoryProject(ctx, sync)
 	require.NoError(t, err)
 	require.NotNil(t, recovered)
 	assert.Equal(t, project.ID, recovered.ID)
@@ -889,9 +882,9 @@ func TestGitOpsSyncService_GetDirectorySyncProjectInternal_RelinksManagedProject
 	assert.Equal(t, project.ID, *storedSync.ProjectID)
 }
 
-func TestGitOpsSyncService_GetDirectorySyncProjectInternal_RecoversUniqueDirectoryCandidate(t *testing.T) {
+func TestGitOpsSyncService_GetDirectorySyncProject_RecoversUniqueDirectoryCandidate(t *testing.T) {
 	ctx := t.Context()
-	svc, db, projectsDir := setupSyncTestServiceInternal(t)
+	svc, db, projectsDir := setupSyncTestService(t)
 
 	projectPath := filepath.Join(projectsDir, "Radarr-3")
 	require.NoError(t, os.MkdirAll(projectPath, 0o755))
@@ -910,7 +903,7 @@ func TestGitOpsSyncService_GetDirectorySyncProjectInternal_RecoversUniqueDirecto
 	}
 	require.NoError(t, db.Create(sync).Error)
 
-	recovered, err := svc.getDirectorySyncProjectInternal(ctx, sync)
+	recovered, err := svc.DirectoryProject(ctx, sync)
 	require.NoError(t, err)
 	require.NotNil(t, recovered)
 	assert.Equal(t, projectPath, recovered.Path)
@@ -928,120 +921,6 @@ func TestGitOpsSyncService_GetDirectorySyncProjectInternal_RecoversUniqueDirecto
 	assert.Equal(t, 1, storedProject.ServiceCount)
 }
 
-// TestBuildSwarmStackDeployRequestInternal guards the Git Sync swarm deploy request.
-// WithRegistryAuth must always be set: swarm tasks pull with only the auth embedded in
-// the service spec, so a request without it makes every private image fail to pull.
-func TestBuildSwarmStackDeployRequestInternal(t *testing.T) {
-	t.Parallel()
-
-	files := []swarm.SyncFile{{RelativePath: "configs/app.conf", Content: []byte("k=v")}}
-
-	cases := []struct {
-		name            string
-		sync            *projectpkg.GitOpsSync
-		source          *preparedSyncSource
-		overrideContent string
-		envContent      string
-		files           []swarm.SyncFile
-		want            swarm.StackDeployRequest
-	}{
-		{
-			name:            "populates all fields and enables registry auth",
-			sync:            &projectpkg.GitOpsSync{ProjectName: "descent", ComposePath: "deploy/swarm/compose.yaml"},
-			source:          &preparedSyncSource{repoPath: "/tmp/repo", composeContent: "services: {}\n"},
-			overrideContent: "override",
-			envContent:      "A=1",
-			files:           files,
-			want: swarm.StackDeployRequest{
-				Name:             "descent",
-				ComposeContent:   "services: {}\n",
-				OverrideContent:  "override",
-				EnvContent:       "A=1",
-				Files:            files,
-				Prune:            true,
-				WithRegistryAuth: true,
-				WorkingDir:       filepath.Join(string(filepath.Separator), "tmp", "repo", "deploy", "swarm"),
-			},
-		},
-		{
-			name:   "enables registry auth with empty optional content and a root-level compose path",
-			sync:   &projectpkg.GitOpsSync{ProjectName: "ptest", ComposePath: "compose.yaml"},
-			source: &preparedSyncSource{repoPath: "/tmp/repo", composeContent: "services: {}\n"},
-			want: swarm.StackDeployRequest{
-				Name:             "ptest",
-				ComposeContent:   "services: {}\n",
-				Prune:            true,
-				WithRegistryAuth: true,
-				WorkingDir:       "/tmp/repo",
-			},
-		},
-		{
-			name:   "passes an empty file list through unchanged",
-			sync:   &projectpkg.GitOpsSync{ProjectName: "ptest", ComposePath: "stacks/compose.yaml"},
-			source: &preparedSyncSource{repoPath: "/tmp/repo", composeContent: "services: {}\n"},
-			// performSwarmStackSyncInternal always passes a non-nil slice; the builder must not reshape it.
-			files: []swarm.SyncFile{},
-			want: swarm.StackDeployRequest{
-				Name:             "ptest",
-				ComposeContent:   "services: {}\n",
-				Files:            []swarm.SyncFile{},
-				Prune:            true,
-				WithRegistryAuth: true,
-				WorkingDir:       filepath.Join(string(filepath.Separator), "tmp", "repo", "stacks"),
-			},
-		},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			got := buildSwarmStackDeployRequestInternal(tc.sync, tc.source, tc.overrideContent, tc.envContent, tc.files)
-			assert.Equal(t, tc.want, got)
-		})
-	}
-}
-
-func TestMarkSyncRedeployFailedInternal_PersistsErrorOnSyncRow(t *testing.T) {
-	ctx := t.Context()
-	svc, db, _ := setupSyncTestServiceInternal(t)
-	// Event logging requires a real event.EventService; the shared setup leaves it
-	// nil since most tests don't exercise the event path.
-	require.NoError(t, db.AutoMigrate(&event.Event{}))
-	svc.eventService = event.NewEventService(db, config.Load(), nil)
-
-	sync := &projectpkg.GitOpsSync{
-		ID:            "sync-1",
-		Name:          "redeploy-fail",
-		EnvironmentID: "0",
-		RepositoryID:  "repo-1",
-		Branch:        "main",
-		ComposePath:   "compose.yml",
-		TargetType:    "project",
-	}
-	require.NoError(t, db.WithContext(ctx).Select("*").Omit("Environment", "Repository", "Project").Create(sync).Error)
-
-	result := &gitops.SyncResult{Success: true}
-	syncedFiles := []string{"compose.yml", "scripts/pre-deploy.sh"}
-	hookErr := common.Classify(common.ErrRedeployAfterSyncFailed, fmt.Errorf("redeploy failed: %w", errors.New("pre-deploy hook failed: exit 1")))
-
-	svc.markSyncRedeployFailedInternal(ctx, sync, sync.ID, "abc123", syncedFiles, hookErr, user.Actor{ID: "user", Username: "tester"}, result)
-
-	require.False(t, result.Success)
-	require.NotNil(t, result.Error)
-	require.Contains(t, *result.Error, "pre-deploy hook failed")
-
-	var stored projectpkg.GitOpsSync
-	require.NoError(t, db.WithContext(ctx).First(&stored, "id = ?", sync.ID).Error)
-	require.NotNil(t, stored.LastSyncStatus)
-	require.Equal(t, "failed", *stored.LastSyncStatus)
-	require.NotNil(t, stored.LastSyncError)
-	require.Contains(t, *stored.LastSyncError, "pre-deploy hook failed")
-	// The synced-files list should still be populated so operators can see
-	// what reached disk before the redeploy died.
-	require.NotNil(t, stored.SyncedFiles)
-	require.Contains(t, *stored.SyncedFiles, "compose.yml")
-	require.Contains(t, *stored.SyncedFiles, "scripts/pre-deploy.sh")
-}
-
 // TestGitOpsSyncService_SyncProjectDirectory_PreservesUnreadableBindMountData verifies
 // that re-syncing an existing GitOps project tolerates a foreign-owned unreadable file
 // inside the project directory (e.g. data a container wrote through a relative bind
@@ -1056,10 +935,10 @@ func TestGitOpsSyncService_SyncProjectDirectory_PreservesUnreadableBindMountData
 	}
 
 	ctx := t.Context()
-	svc, db, projectsDir := setupSyncTestServiceInternal(t)
+	svc, db, projectsDir := setupSyncTestService(t)
 
 	projectPath := filepath.Join(projectsDir, "demo-project")
-	writeFileInternal(t, projectPath, "docker-compose.yaml", []byte(`services:
+	writeFile(t, projectPath, "docker-compose.yaml", []byte(`services:
   app:
     image: nginx:1.26-alpine
 `))
@@ -1107,7 +986,7 @@ func TestGitOpsSyncService_SyncProjectDirectory_PreservesUnreadableBindMountData
 		},
 	}
 
-	updatedProject, _, created, _, err := svc.syncProjectDirectoryInternal(ctx, sync, syncFiles, user.Actor{})
+	updatedProject, _, created, _, err := svc.syncProjectDirectory(ctx, sync, syncFiles, user.Actor{})
 	require.NoError(t, err)
 	require.NotNil(t, updatedProject)
 	require.False(t, created)

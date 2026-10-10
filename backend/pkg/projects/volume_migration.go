@@ -17,9 +17,9 @@ import (
 	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
 	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
 	"github.com/moby/moby/client"
+	"go.getarcane.app/docker"
 	"go.yaml.in/yaml/v4"
 
-	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumes"
 )
 
@@ -234,21 +234,21 @@ func FinalizeRenameAfterCommit(ctx context.Context,
 ) {
 	if renameJournal != nil {
 		if err := operations.WriteJournal(ctx, renameJournal, projecttypes.RenameJournalPhaseProjectStateCommitted); err != nil {
-			slog.WarnContext(ctx, "failed to mark project rename journal committed", "projectID", projectID, "error", err)
+			slog.WarnContext(ctx, "failed to mark project rename journal committed", "projectId", projectID, "error", err)
 		}
 	}
 
 	if committer, ok := volumeMigration.(volumetypes.Committer); ok {
 		if err := committer.Commit(ctx); err != nil {
-			slog.WarnContext(ctx, "failed to clean up project source volumes after committed rename", "projectID", projectID, "error", err)
+			slog.WarnContext(ctx, "failed to clean up project source volumes after committed rename", "projectId", projectID, "error", err)
 			if _, localOk := errors.AsType[*volumetypes.SourceCleanupError](err); localOk {
 				if writeErr := operations.WriteJournal(ctx, renameJournal, projecttypes.RenameJournalPhaseSourceCleanupPending); writeErr != nil {
-					slog.WarnContext(ctx, "failed to mark project rename source cleanup pending", "projectID", projectID, "error", writeErr)
+					slog.WarnContext(ctx, "failed to mark project rename source cleanup pending", "projectId", projectID, "error", writeErr)
 				}
 			}
 			return
 		} else if writeJournalErr := operations.WriteJournal(ctx, renameJournal, projecttypes.RenameJournalPhaseOldVolumesRemoved); writeJournalErr != nil {
-			slog.WarnContext(ctx, "failed to mark old project rename volumes removed", "projectID", projectID, "error", writeJournalErr)
+			slog.WarnContext(ctx, "failed to mark old project rename volumes removed", "projectId", projectID, "error", writeJournalErr)
 		}
 	}
 
@@ -260,7 +260,7 @@ func completeRenameJournalInternal(ctx context.Context, operations projecttypes.
 		return
 	}
 	if clearErr := operations.ClearJournal(ctx, projectID); clearErr != nil {
-		slog.WarnContext(ctx, "failed to clear project rename journal", "projectID", projectID, "error", clearErr)
+		slog.WarnContext(ctx, "failed to clear project rename journal", "projectId", projectID, "error", clearErr)
 		return
 	}
 	*journalActive = false
@@ -298,7 +298,7 @@ func cleanupRenameJournalSourcesInternal(ctx context.Context, operations project
 		if missingWithSource, ok := errors.AsType[*volumetypes.TargetMissingWithSourceError](ensureTargetsReadyForCleanupErr); ok {
 			slog.WarnContext(ctx,
 				"rolling back project rename because target volume is missing and source volume remains",
-				"projectID",
+				"projectId",
 				journal.ProjectID,
 				"sourceVolume",
 				missingWithSource.SourceVolume,
@@ -309,7 +309,7 @@ func cleanupRenameJournalSourcesInternal(ctx context.Context, operations project
 		if externallyRemoved, ok := errors.AsType[*volumetypes.VolumesExternallyRemovedError](ensureTargetsReadyForCleanupErr); ok {
 			slog.WarnContext(ctx,
 				"project rename cleanup found source and target volumes externally removed",
-				"projectID",
+				"projectId",
 				journal.ProjectID,
 				"volumeCount",
 				len(externallyRemoved.Volumes),
@@ -335,7 +335,7 @@ func rollbackRenameJournalInternal(ctx context.Context, operations projecttypes.
 	if directoryErr != nil {
 		slog.WarnContext(ctx,
 			"keeping project rename journal after restoring database state because directory rollback failed",
-			"projectID",
+			"projectId",
 			journal.ProjectID,
 			"pathsMissing",
 			pathsMissing,
@@ -345,14 +345,14 @@ func rollbackRenameJournalInternal(ctx context.Context, operations projecttypes.
 
 	if volumeErr != nil {
 		if volumes.OnlyPreservedTargetErrors(volumeErr) {
-			slog.WarnContext(ctx, "clearing project rename journal after preserving target volume data", "projectID", journal.ProjectID, "pathsMissing", pathsMissing, "error", volumeErr)
+			slog.WarnContext(ctx, "clearing project rename journal after preserving target volume data", "projectId", journal.ProjectID, "pathsMissing", pathsMissing, "error", volumeErr)
 		} else {
 			if cleanupErr := operations.WriteRollbackCleanup(ctx, journal); cleanupErr != nil {
 				return errors.Join(directoryErr, volumeErr, cleanupErr)
 			}
 			slog.WarnContext(ctx,
 				"queued project rename target volume cleanup after restoring database state despite volume rollback failure",
-				"projectID",
+				"projectId",
 				journal.ProjectID,
 				"pathsMissing",
 				pathsMissing,
@@ -413,12 +413,12 @@ func CleanupRenameRollbackTargets(ctx context.Context, cleanup *projecttypes.Ren
 
 	if cleanupRollbackTargetVolumesErr := volumes.CleanupRollbackTargetVolumes(ctx, dockerClient, cleanup.Volumes); cleanupRollbackTargetVolumesErr != nil {
 		if volumes.OnlyPreservedTargetErrors(cleanupRollbackTargetVolumesErr) {
-			slog.WarnContext(ctx, "clearing project rename rollback cleanup after preserving target volume data", "projectID", cleanup.ProjectID, "error", cleanupRollbackTargetVolumesErr)
+			slog.WarnContext(ctx, "clearing project rename rollback cleanup after preserving target volume data", "projectId", cleanup.ProjectID, "error", cleanupRollbackTargetVolumesErr)
 			return operations.ClearRollbackCleanup(ctx, cleanup.ProjectID)
 		}
 		return cleanupRollbackTargetVolumesErr
 	}
 
-	dockerutil.InvalidateVolumeUsageCache(dockerClient)
+	docker.InvalidateVolumeUsageCache(dockerClient)
 	return operations.ClearRollbackCleanup(ctx, cleanup.ProjectID)
 }

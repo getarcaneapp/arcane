@@ -9,20 +9,11 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/compose-spec/compose-go/v2/template"
 	"github.com/samber/mo"
 	"go.getarcane.app/acfs"
 	"go.yaml.in/yaml/v4"
 )
-
-// expandEnvVarsInternal expands ${VAR} and $VAR references in a string using the provided env map.
-func expandEnvVarsInternal(s string, envMap EnvMap) string {
-	return os.Expand(s, func(key string) string {
-		if val, ok := envMap[key]; ok {
-			return val
-		}
-		return ""
-	})
-}
 
 // Security Model for Include Files:
 // - READ: Docker Compose's spec allows include files from anywhere (parent dirs,
@@ -234,10 +225,15 @@ func resolveIncludeFileInternal(includePath, baseDir string, envMap EnvMap, incl
 		return IncludeFile{}, errors.New("empty include path")
 	}
 
-	// Expand environment variables in the include path (e.g., ${PROJECT_STACK_DIR})
-	if len(envMap) > 0 {
-		includePath = expandEnvVarsInternal(includePath, envMap)
+	// Interpolate with Compose semantics so ${VAR:-default} and ${VAR:?err} resolve.
+	expanded, err := template.SubstituteWithOptions(includePath, func(key string) (string, bool) {
+		value, ok := envMap[key]
+		return value, ok
+	}, template.WithoutLogging)
+	if err != nil {
+		return IncludeFile{}, fmt.Errorf("interpolate include path %s: %w", includePath, err)
 	}
+	includePath = expanded
 
 	fullPath := includePath
 	if !filepath.IsAbs(includePath) {

@@ -16,6 +16,7 @@ import (
 	"github.com/cenkalti/backoff/v5"
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	kit "go.getarcane.app/kit/pkg"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
@@ -26,9 +27,13 @@ const (
 	AnalyticsJobName                 = "analytics-heartbeat"
 	defaultHeartbeatEndpoint         = "https://checkin.getarcane.app/heartbeat"
 	devHeartbeatEndpoint             = "http://localhost:8080/heartbeat"
+	analyticsHeartbeatNextAttemptKey = "analytics.heartbeat.next_attempt_at"
+	// analyticsHeartbeatLastAttemptKey is the window older releases kept; it is carried forward once.
 	analyticsHeartbeatLastAttemptKey = "analytics.heartbeat.last_attempt_at"
 	analyticsHeartbeatDedupeWindow   = 24 * time.Hour
-	analyticsHeartbeatCheckSchedule  = "0 0 * * * *"
+	// analyticsHeartbeatRetryDelay spaces retries of a failed send, which the hourly check then picks up.
+	analyticsHeartbeatRetryDelay    = time.Hour
+	analyticsHeartbeatCheckSchedule = "0 0 * * * *"
 )
 
 type AnalyticsJob struct {
@@ -50,6 +55,10 @@ func NewAnalyticsJob(
 	if httpClient == nil {
 		httpClient = &http.Client{Timeout: 30 * time.Second}
 	}
+	// Trace a copy so the injected shared client keeps its raw transport.
+	traced := *httpClient
+	traced.Transport = otelhttp.NewTransport(httpClient.Transport)
+	httpClient = &traced
 	heartbeatURL := kit.Ternary(!cfg.Environment.IsProdEnvironment(), devHeartbeatEndpoint, defaultHeartbeatEndpoint)
 	return &AnalyticsJob{
 		settingsService: settingsService,
@@ -79,7 +88,7 @@ func (j *AnalyticsJob) Run(ctx context.Context) (schedulertypes.Outcome, error) 
 		return schedulertypes.Outcome{Status: schedulertypes.Skipped}, nil
 	}
 
-	allowed, err := j.claimHeartbeatAttemptWindowInternal(ctx)
+	allowed, err := j.claimHeartbeat(ctx)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to acquire analytics heartbeat send window", "error", err)
 		return schedulertypes.Outcome{}, err
@@ -106,22 +115,8 @@ func (j *AnalyticsJob) Run(ctx context.Context) (schedulertypes.Outcome, error) 
 		return schedulertypes.Outcome{}, err
 	}
 
-	slog.InfoContext(
-		ctx,
-		"sending analytics heartbeat",
-		"jobName",
-		AnalyticsJobName,
-		"version",
-		payload.Version,
-		"instanceID",
-		payload.InstanceID,
-		"serverType",
-		payload.ServerType,
-		"heartbeatURL",
-		j.heartbeatURL,
-		"env",
-		j.cfg.Environment,
-	)
+	slog.InfoContext(ctx, "sending analytics heartbeat", "version", payload.Version, "instanceId", payload.InstanceID,
+		"serverType", payload.ServerType, "heartbeatUrl", j.heartbeatURL, "env", j.cfg.Environment)
 
 	_, err = backoff.Retry(
 		ctx,
@@ -158,7 +153,12 @@ func (j *AnalyticsJob) Run(ctx context.Context) (schedulertypes.Outcome, error) 
 				if bodyText != "" {
 					details = append(details, "response="+bodyText)
 				}
-				return struct{}{}, fmt.Errorf("analytics heartbeat request failed: %s", strings.Join(details, "; "))
+				failure := fmt.Errorf("analytics heartbeat request failed: %s", strings.Join(details, "; "))
+				// Retrying a rejection within seconds only spends more of the endpoint's limit.
+				if resp.StatusCode < http.StatusInternalServerError {
+					return struct{}{}, backoff.Permanent(failure)
+				}
+				return struct{}{}, failure
 			}
 			return struct{}{}, nil
 		},
@@ -166,26 +166,15 @@ func (j *AnalyticsJob) Run(ctx context.Context) (schedulertypes.Outcome, error) 
 		backoff.WithMaxTries(3),
 	)
 	if err != nil {
-		slog.ErrorContext(ctx, "analytics heartbeat failed", "error", err)
+		slog.ErrorContext(ctx, "analytics heartbeat failed; retrying after the retry delay", "error", err, "retryDelay", analyticsHeartbeatRetryDelay)
+		retryAt := j.now().UTC().Add(analyticsHeartbeatRetryDelay).Format(time.RFC3339Nano)
+		if retryErr := j.kvService.Set(ctx, analyticsHeartbeatNextAttemptKey, retryAt); retryErr != nil {
+			slog.WarnContext(ctx, "failed to shorten analytics heartbeat window after a failed send", "error", retryErr)
+		}
 		return schedulertypes.Outcome{}, err
 	}
 
-	slog.InfoContext(
-		ctx,
-		"analytics heartbeat sent successfully",
-		"jobName",
-		AnalyticsJobName,
-		"version",
-		payload.Version,
-		"instanceID",
-		payload.InstanceID,
-		"serverType",
-		payload.ServerType,
-		"heartbeatURL",
-		j.heartbeatURL,
-		"env",
-		j.cfg.Environment,
-	)
+	slog.InfoContext(ctx, "analytics heartbeat sent successfully", "version", payload.Version, "instanceId", payload.InstanceID, "serverType", payload.ServerType)
 	return schedulertypes.Outcome{Status: schedulertypes.Succeeded}, nil
 }
 
@@ -194,58 +183,41 @@ func (j *AnalyticsJob) Reschedule(ctx context.Context) error {
 	return nil
 }
 
-func (j *AnalyticsJob) claimHeartbeatAttemptWindowInternal(ctx context.Context) (bool, error) {
+// claimHeartbeat reports whether a heartbeat is due and, if so, schedules the next one a day out. Claiming before
+// sending keeps restarts from sending twice; a failed send moves the next attempt up to the retry delay.
+func (j *AnalyticsJob) claimHeartbeat(ctx context.Context) (bool, error) {
 	if j.kvService == nil {
 		return false, errors.New("analytics heartbeat kv service is not configured")
 	}
-
 	j.runMu.Lock()
 	defer j.runMu.Unlock()
 
 	now := j.now().UTC()
-	rawLastAttemptAt, ok, err := j.kvService.Get(ctx, analyticsHeartbeatLastAttemptKey)
+	rawNextAttemptAt, ok, err := j.kvService.Get(ctx, analyticsHeartbeatNextAttemptKey)
 	if err != nil {
 		return false, fmt.Errorf("failed to load analytics heartbeat attempt state: %w", err)
 	}
-
-	if ok {
-		lastAttemptAt, parseErr := time.Parse(time.RFC3339Nano, rawLastAttemptAt)
-		if parseErr != nil {
-			slog.WarnContext(
-				ctx,
-				"invalid analytics heartbeat attempt timestamp; resetting dedupe window",
-				"key",
-				analyticsHeartbeatLastAttemptKey,
-				"value",
-				rawLastAttemptAt,
-				"error",
-				parseErr,
-			)
-		} else {
-			nextEligibleAt := lastAttemptAt.Add(analyticsHeartbeatDedupeWindow)
-			if now.Before(nextEligibleAt) {
-				slog.InfoContext(
-					ctx,
-					"skipping analytics heartbeat; already attempted within dedupe window",
-					"jobName",
-					AnalyticsJobName,
-					"lastAttemptAt",
-					lastAttemptAt,
-					"nextEligibleAt",
-					nextEligibleAt,
-				)
-				return false, nil
-			}
+	nextAttemptAt, parseErr := time.Parse(time.RFC3339Nano, rawNextAttemptAt)
+	if !ok {
+		// An upgrade from a release that stored the last attempt keeps that window instead of sending again.
+		rawLastAttemptAt, hadLast, lastErr := j.kvService.Get(ctx, analyticsHeartbeatLastAttemptKey)
+		if lastErr != nil {
+			return false, fmt.Errorf("failed to load analytics heartbeat attempt state: %w", lastErr)
+		}
+		if lastAttemptAt, lastParseErr := time.Parse(time.RFC3339Nano, rawLastAttemptAt); hadLast && lastParseErr == nil {
+			ok, parseErr, nextAttemptAt = true, nil, lastAttemptAt.Add(analyticsHeartbeatDedupeWindow)
 		}
 	}
-
-	// Persist the attempt window before sending on purpose: the product behavior is
-	// best-effort at-most-once-per-24h check-ins, which avoids duplicate heartbeats
-	// after restarts or partially completed outbound requests.
-	if setErr := j.kvService.Set(ctx, analyticsHeartbeatLastAttemptKey, now.Format(time.RFC3339Nano)); setErr != nil {
+	if ok && parseErr != nil {
+		slog.WarnContext(ctx, "invalid analytics heartbeat attempt timestamp; resetting window", "value", rawNextAttemptAt, "error", parseErr)
+	}
+	if ok && parseErr == nil && now.Before(nextAttemptAt) {
+		slog.InfoContext(ctx, "skipping analytics heartbeat; next one is not due yet", "nextAttemptAt", nextAttemptAt)
+		return false, nil
+	}
+	if setErr := j.kvService.Set(ctx, analyticsHeartbeatNextAttemptKey, now.Add(analyticsHeartbeatDedupeWindow).Format(time.RFC3339Nano)); setErr != nil {
 		return false, fmt.Errorf("failed to persist analytics heartbeat attempt state: %w", setErr)
 	}
-
 	return true, nil
 }
 

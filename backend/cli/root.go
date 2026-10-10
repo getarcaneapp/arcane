@@ -23,7 +23,7 @@ var rootCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		err := bootstrap.Bootstrap(cmd.Context())
 		if err != nil {
-			slog.Error("Failed to run Arcane", "error", err)
+			slog.ErrorContext(cmd.Context(), "Failed to run Arcane", "error", err)
 			os.Exit(1)
 		}
 	},

@@ -33,29 +33,30 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/swarm"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/system"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/flow"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
 	francistest "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/francis/testing"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/proto/tunnel/v1"
 )
 
-type blockingBusWatcherInternal struct {
+type blockingBusWatcher struct {
 	started chan struct{}
 	stopped chan struct{}
 }
 
-func (w *blockingBusWatcherInternal) Name() string { return "blocking" }
+func (w *blockingBusWatcher) Name() string { return "blocking" }
 
-func (w *blockingBusWatcherInternal) Start(ctx context.Context) error {
+func (w *blockingBusWatcher) Start(ctx context.Context) error {
 	close(w.started)
 	<-ctx.Done()
 	close(w.stopped)
 	return nil
 }
 
-func (w *blockingBusWatcherInternal) RunNow(context.Context) error { return nil }
+func (w *blockingBusWatcher) RunNow(context.Context) error { return nil }
 
-func TestNormalizeTunnelGRPCRequestPathInternal(t *testing.T) {
+func TestNormalizeTunnelGRPCRequestPath(t *testing.T) {
 	fullMethodPath := tunnelpb.TunnelService_Connect_FullMethodName
 
 	t.Run("nil request", func(t *testing.T) {
@@ -89,10 +90,8 @@ func TestNormalizeTunnelGRPCRequestPathInternal(t *testing.T) {
 	})
 
 	t.Run("legacy /api/tunnel/connect is rewritten to gRPC method", func(t *testing.T) {
-		// Regression: PR #2722 removed this branch, breaking the edge agent's
-		// gRPC transport. The agent client uses /api/tunnel/connect as its
-		// gRPC method path so reverse proxies can route tunnel traffic with
-		// a stable URL instead of the proto-generated gRPC service name.
+		// Edge agents use /api/tunnel/connect as their gRPC method path so reverse proxies
+		// can route tunnel traffic on a stable URL.
 		req := httptest.NewRequest("POST", "/api/tunnel/connect", http.NoBody)
 		normalized := normalizeTunnelGRPCRequestPathInternal(req)
 
@@ -111,7 +110,7 @@ func TestNormalizeTunnelGRPCRequestPathInternal(t *testing.T) {
 	})
 }
 
-func TestIsTunnelGRPCRequestInternal(t *testing.T) {
+func TestIsTunnelGRPCRequest(t *testing.T) {
 	fullMethodPath := tunnelpb.TunnelService_Connect_FullMethodName
 
 	t.Run("detects by grpc content-type", func(t *testing.T) {
@@ -160,7 +159,7 @@ func TestIsTunnelGRPCRequestInternal(t *testing.T) {
 	})
 }
 
-func TestConfigureHTTPProtocolsInternal(t *testing.T) {
+func TestConfigureHTTPProtocols(t *testing.T) {
 	handler := http.NewServeMux()
 
 	t.Run("tls enables http1 and http2", func(t *testing.T) {
@@ -186,7 +185,7 @@ func TestConfigureHTTPProtocolsInternal(t *testing.T) {
 	})
 }
 
-func TestHTTP2APIResponsesDoNotUseAPIGzipInternal(t *testing.T) {
+func TestHTTP2APIResponsesDoNotUseAPIGzip(t *testing.T) {
 	cfg := &config.Config{
 		AgentMode:   true,
 		AppUrl:      "http://localhost:3552",
@@ -199,7 +198,7 @@ func TestHTTP2APIResponsesDoNotUseAPIGzipInternal(t *testing.T) {
 			Project:   project.New(&project.ProjectService{}, nil),
 			Container: container.New(&container.ContainerService{}, nil, nil, nil),
 			Swarm:     swarm.New(&swarm.SwarmService{}, nil, nil, nil),
-			System:    system.New(&system.SystemService{}, nil, nil, nil, nil),
+			System:    system.New(&system.SystemService{}, nil, nil, nil),
 		},
 		AuthMiddleware: auth.NewAuthMiddleware(nil, cfg),
 		TunnelRegistry: edge.NewTunnelRegistry(),
@@ -254,12 +253,9 @@ func TestHTTP2APIResponsesDoNotUseAPIGzipInternal(t *testing.T) {
 	}
 }
 
-func TestH2CStreamSurvivesPastReadHeaderTimeoutInternal(t *testing.T) {
-	// Regression guard for the go1.26.6 CVE-2026-56853 backport, which arms
-	// ReadHeaderTimeout on the raw conn before the h2c preface sniff and never
-	// clears it on the HTTP/2 handoff. Without ClearReadDeadline in the h2c
-	// handler wrapper, the connection — and every gRPC tunnel stream on it —
-	// dies with an i/o timeout exactly ReadHeaderTimeout after accept.
+func TestH2CStreamSurvivesPastReadHeaderTimeout(t *testing.T) {
+	// go1.26.6 arms ReadHeaderTimeout before the h2c preface sniff and never clears it, so
+	// without ClearReadDeadline every h2c stream dies ReadHeaderTimeout after accept.
 	const readHeaderTimeout = 250 * time.Millisecond
 
 	release := make(chan struct{})
@@ -299,9 +295,7 @@ func TestH2CStreamSurvivesPastReadHeaderTimeoutInternal(t *testing.T) {
 	defer func() { _ = resp.Body.Close() }()
 	require.Equal(t, "HTTP/2.0", resp.Proto)
 
-	// Keep the stream idle well past ReadHeaderTimeout before the handler
-	// writes again; on a connection with the stale deadline still armed the
-	// read below fails instead of returning the body.
+	// Idle past ReadHeaderTimeout; a stale deadline would fail the read below.
 	time.Sleep(4 * readHeaderTimeout)
 	close(release)
 
@@ -310,7 +304,7 @@ func TestH2CStreamSurvivesPastReadHeaderTimeoutInternal(t *testing.T) {
 	require.Equal(t, "done", string(body))
 }
 
-func TestHTTPServerStopCancelsStreamingRequestContextsInternal(t *testing.T) {
+func TestHTTPServerStopCancelsStreamingRequestContexts(t *testing.T) {
 	appCtx := t.Context()
 
 	handlerEntered := make(chan struct{})
@@ -350,7 +344,7 @@ func TestHTTPServerStopCancelsStreamingRequestContextsInternal(t *testing.T) {
 	require.Less(t, time.Since(start), time.Second)
 }
 
-func TestNewHTTPServerRejectsInvalidTLSCertificateInternal(t *testing.T) {
+func TestNewHTTPServerRejectsInvalidTLSCertificate(t *testing.T) {
 	cfg := &config.Config{
 		AgentMode:   true,
 		TLSEnabled:  true,
@@ -367,7 +361,7 @@ func TestNewHTTPServerRejectsInvalidTLSCertificateInternal(t *testing.T) {
 }
 
 func TestRegisterAppCancelHookRunsAfterLaterStopHooks(t *testing.T) {
-	appCtx, cancelApp := context.WithCancel(t.Context())
+	appCtx, cancelApp := context.WithCancelCause(t.Context())
 	lifecycle := fxtest.NewLifecycle(t)
 	registerAppCancelHook(lifecycle, cancelApp)
 	appActiveDuringDependencyStop := false
@@ -384,7 +378,7 @@ func TestRegisterAppCancelHookRunsAfterLaterStopHooks(t *testing.T) {
 	require.ErrorIs(t, appCtx.Err(), context.Canceled)
 }
 
-func TestJobSchedulerStopCancelsItsPrivateContextInternal(t *testing.T) {
+func TestJobSchedulerStopCancelsItsPrivateContext(t *testing.T) {
 	appCtx := t.Context()
 
 	lifecycle := fxtest.NewLifecycle(t)
@@ -400,6 +394,8 @@ func TestJobSchedulerStopCancelsItsPrivateContextInternal(t *testing.T) {
 	require.NoError(t, coordinator.Register(runtime))
 	admission := runs.NewAdmission(runtime.Service(), t.Name())
 	require.NoError(t, admission.Register(runtime))
+	workflows, err := flow.New(appCtx, runtime, coordinator, nil)
+	require.NoError(t, err)
 	lifecycle.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error { return runtime.Start(ctx, appCtx, nil) },
 		OnStop:  runtime.Stop,
@@ -409,7 +405,7 @@ func TestJobSchedulerStopCancelsItsPrivateContextInternal(t *testing.T) {
 	gitopsSync := gitops.NewGitOpsSyncService(&database.DB{DB: db}, nil, nil, nil, nil, nil)
 	require.NoError(t, db.Create(&environment.Environment{ID: "0", Name: "Local", Enabled: true}).Error)
 	require.NoError(t, db.Create(&project.GitOpsSync{ID: "overdue", EnvironmentID: "0", AutoSync: true, SyncInterval: 1}).Error)
-	jobScheduler, err := newJobScheduler(appCtx, lifecycle, &config.Config{}, coordinator, admission, nil, nil, nil, jobService, nil, nil, nil, gitopsSync)
+	jobScheduler, err := newJobScheduler(appCtx, lifecycle, &config.Config{}, coordinator, admission, nil, nil, nil, jobService, workflows, nil, gitopsSync, runtime)
 	require.NoError(t, err)
 	require.NoError(t, registerDynamicJobs(dynamicJobsParams{
 		AppCtx: appCtx, Config: &config.Config{}, Scheduler: jobScheduler,
@@ -420,7 +416,7 @@ func TestJobSchedulerStopCancelsItsPrivateContextInternal(t *testing.T) {
 		executed <- run
 		return schedulertypes.Outcome{Status: schedulertypes.Succeeded}, nil
 	}, nil)
-	watcher := &blockingBusWatcherInternal{
+	watcher := &blockingBusWatcher{
 		started: make(chan struct{}),
 		stopped: make(chan struct{}),
 	}
@@ -453,8 +449,8 @@ func TestJobSchedulerStopCancelsItsPrivateContextInternal(t *testing.T) {
 }
 
 func TestApplicationOptionsValidate(t *testing.T) {
-	appCtx, cancelApp := context.WithCancel(t.Context())
-	defer cancelApp()
+	appCtx, cancelApp := context.WithCancelCause(t.Context())
+	defer cancelApp(nil)
 
 	err := fx.ValidateApp(applicationOptions(
 		appCtx,
@@ -465,7 +461,7 @@ func TestApplicationOptionsValidate(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestPrepareServerTLSInternal_AgentModeSkipsManagerMTLSValidation(t *testing.T) {
+func TestPrepareServerTLS_AgentModeSkipsManagerMTLSValidation(t *testing.T) {
 	cfg := &config.Config{
 		AgentMode:     true,
 		EdgeMTLSMode:  "required",
@@ -481,7 +477,7 @@ func TestPrepareServerTLSInternal_AgentModeSkipsManagerMTLSValidation(t *testing
 	assert.Equal(t, "required", edgeCfg.EdgeMTLSMode)
 }
 
-func TestPrepareServerTLSInternal_AllowsExternalMTLSTermination(t *testing.T) {
+func TestPrepareServerTLS_AllowsExternalMTLSTermination(t *testing.T) {
 	libcrypto.InitEncryption(&libcrypto.Config{
 		EncryptionKey: "test-encryption-key-for-edge-mtls-32bytes-min",
 		Environment:   "test",
@@ -507,9 +503,9 @@ func TestPrepareServerTLSInternal_AllowsExternalMTLSTermination(t *testing.T) {
 	require.FileExists(t, assetsDir+"/ca.key")
 }
 
-func TestIsWeakProductionEncryptionKeyInternal(t *testing.T) {
-	assert.True(t, isWeakProductionEncryptionKeyInternal("short", "production", false))
-	assert.False(t, isWeakProductionEncryptionKeyInternal("test-encryption-key-for-edge-mtls-32bytes-min", "production", false))
-	assert.False(t, isWeakProductionEncryptionKeyInternal("hex:abc", "production", false))
-	assert.False(t, isWeakProductionEncryptionKeyInternal("short", "development", false))
+func TestIsWeakProductionEncryptionKey(t *testing.T) {
+	assert.True(t, isWeakProductionEncryptionKey("short", "production", false))
+	assert.False(t, isWeakProductionEncryptionKey("test-encryption-key-for-edge-mtls-32bytes-min", "production", false))
+	assert.False(t, isWeakProductionEncryptionKey("hex:abc", "production", false))
+	assert.False(t, isWeakProductionEncryptionKey("short", "development", false))
 }

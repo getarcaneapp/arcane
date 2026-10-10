@@ -50,6 +50,8 @@ message ManagerMessage {
     // older agents decode an unknown oneof case as a nil payload.
     StreamData stream_data = 12;
     StreamEnd stream_end = 13;
+    // Only sent to agents that advertised command-credit-v1.
+    CommandCredit command_credit = 14;
   }
 }
 
@@ -93,6 +95,10 @@ message CommandOutput {
   string command_id = 1;
   bytes data = 2;
   int64 sequence = 3;
+  // Set on the first chunk so the manager can stream the response before
+  // command_complete arrives. Older managers ignore these fields.
+  int32 status = 4;
+  map<string, string> headers = 5;
 }
 
 message CommandComplete {
@@ -128,6 +134,12 @@ message StreamClose {
 
 message CancelRequest {
   string command_id = 1;
+}
+
+// CommandCredit returns flow-control credit for command output the manager has consumed.
+message CommandCredit {
+  string command_id = 1;
+  int64 bytes = 2;
 }
 
 message HttpRequest {

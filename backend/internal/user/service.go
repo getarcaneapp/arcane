@@ -528,7 +528,7 @@ func (s *UserService) grantDefaultAdminRoleInternal(ctx context.Context, adminUs
 	if setUserAssignmentsErr := s.roleService.SetUserAssignments(ctx, adminUserID, manual); setUserAssignmentsErr != nil {
 		return fmt.Errorf("failed to grant default admin global role: %w", setUserAssignmentsErr)
 	}
-	slog.InfoContext(ctx, "Default admin granted global Admin role assignment", "user_id", adminUserID)
+	slog.InfoContext(ctx, "Default admin granted global Admin role assignment", "userId", adminUserID)
 	return nil
 }
 
@@ -696,7 +696,7 @@ func permissionSetToMap(ps *authz.PermissionSet) map[string][]string {
 }
 
 func (s *UserService) GetUser(ctx context.Context, userID string) (*User, error) {
-	slog.Debug("GetUser called", "user_id", userID)
+	slog.DebugContext(ctx, "GetUser called", "userId", userID)
 	return s.getUserInternal(ctx, userID, s.db.DB)
 }
 

@@ -148,7 +148,7 @@ Use:
 
 Before adding backend logic, search the owning domain and the relevant shared packages:
 
-- `backend/pkg/dockerutil`: Docker names, labels, clients, logs, and stream helpers
+- `go.getarcane.app/docker` (Kit): Docker names, labels, clients, logs, and stream helpers
 - `backend/pkg/projects`: Compose parsing, discovery, and image references
 - `backend/pkg/pagination`: in-memory and database pagination
 - `backend/pkg/libarcane`: reusable Arcane engines and transport behavior
@@ -252,6 +252,8 @@ Determine global admin status through `PermissionSet.IsGlobalAdmin()` or the use
 - Edge agent mode uses `EDGE_AGENT=true` with `MANAGER_API_URL` and dials the manager.
 
 Background jobs implement the scheduler job contract. Wire them through `internal/di` and register them in `internal/bootstrap/jobs_bootstrap.go`.
+
+Multi-step, fan-out, or resumable jobs use `backend/pkg/scheduler/flow`: Francis workflows that run inside coordinator runs. Follow the migration recipe in its package doc. Steps are idempotent service methods, the last step returns `scheduler.Outcome`, the job registers a `flow.Job`, and `flowtest.AssertDefinitions` guards version bumps. Keep single-operation jobs as ordinary jobs.
 
 ## Validation
 

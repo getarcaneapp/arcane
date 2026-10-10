@@ -1,7 +1,6 @@
 package scheduler
 
 import (
-	"cmp"
 	"context"
 	"encoding/json/v2"
 	"errors"
@@ -14,17 +13,17 @@ import (
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
+	"go.getarcane.app/docker"
 	"go.getarcane.app/docker/compat"
 	kit "go.getarcane.app/kit/pkg"
 	"go.getarcane.app/sys/cgroup"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
+	dockerInternal "github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/notification"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
@@ -56,7 +55,7 @@ type restartRecord struct {
 }
 
 type AutoHealJob struct {
-	dockerClientService *docker.DockerClientService
+	dockerClientService *dockerInternal.DockerClientService
 	settingsService     *settings.SettingsService
 	eventService        *event.EventService
 	notificationService *notification.NotificationService
@@ -76,7 +75,7 @@ type AutoHealJob struct {
 }
 
 func NewAutoHealJob(
-	dockerClientService *docker.DockerClientService,
+	dockerClientService *dockerInternal.DockerClientService,
 	settingsService *settings.SettingsService,
 	eventService *event.EventService,
 	notificationService *notification.NotificationService,
@@ -104,15 +103,7 @@ func (j *AutoHealJob) ShouldSchedule(ctx context.Context) bool {
 }
 
 func (j *AutoHealJob) Schedule(ctx context.Context) string {
-	schedule := cmp.Or(j.settingsService.GetStringSetting(ctx, "autoHealInterval", autoHealDefaultSchedule), autoHealDefaultSchedule)
-
-	parser := scheduleutil.Parser()
-	if _, err := parser.Parse(schedule); err != nil {
-		slog.WarnContext(ctx, "Invalid cron expression for auto-heal, using default", "invalid_schedule", schedule, "error", err)
-		return autoHealDefaultSchedule
-	}
-
-	return schedule
+	return scheduleutil.Or(ctx, j.settingsService.GetStringSetting(ctx, "autoHealInterval", autoHealDefaultSchedule), autoHealDefaultSchedule, "auto-heal")
 }
 
 func (j *AutoHealJob) Run(ctx context.Context) (schedulertypes.Outcome, error) {
@@ -203,7 +194,7 @@ func (j *AutoHealJob) selfContainerIDInternal(ctx context.Context) string {
 			return
 		}
 		j.selfID = strings.ToLower(strings.TrimSpace(id))
-		slog.InfoContext(ctx, "auto-heal: detected own container; it will never be auto-restarted", "container_id", j.selfID)
+		slog.InfoContext(ctx, "auto-heal: detected own container; it will never be auto-restarted", "containerId", j.selfID)
 	})
 	return j.selfID
 }
@@ -223,7 +214,7 @@ func (j *AutoHealJob) filterCandidatesInternal(containers []container.Summary, e
 			continue
 		}
 
-		containerName := dockerutil.ContainerNameFromNames(c.Names)
+		containerName := docker.ContainerNameFromNames(c.Names)
 		if j.isExcluded(containerName, excludedContainers) {
 			continue
 		}
@@ -251,7 +242,7 @@ func (j *AutoHealJob) processCandidateInternal(
 			}
 		}
 	}
-	containerName := dockerutil.ContainerNameFromNames(candidate.Names)
+	containerName := docker.ContainerNameFromNames(candidate.Names)
 
 	// The daemon-side health filter already selected unhealthy containers; the
 	// inspect re-confirms right before restarting so a container that recovered
@@ -276,8 +267,8 @@ func (j *AutoHealJob) processCandidateInternal(
 		slog.WarnContext(
 			ctx, "auto-heal restart-loop protection: skipping container",
 			"container", containerName,
-			"max_restarts", maxRestarts,
-			"window_minutes", restartWindowMinutes,
+			"maxRestarts", maxRestarts,
+			"windowMinutes", restartWindowMinutes,
 		)
 		return target, nil
 	}
@@ -303,7 +294,7 @@ func (j *AutoHealJob) processCandidateInternal(
 
 	j.postRestartActionsInternal(ctx, containerID, containerName)
 
-	slog.InfoContext(ctx, "auto-heal restarted unhealthy container", "container", containerName, "container_id", containerID)
+	slog.InfoContext(ctx, "auto-heal restarted unhealthy container", "container", containerName, "containerId", containerID)
 	target.Status = schedulertypes.Succeeded
 	return target, nil
 }

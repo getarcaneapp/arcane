@@ -65,7 +65,12 @@ func TestNewSafeOutboundHTTPClient_BlocksUnsafeRedirectTarget(t *testing.T) {
 	}))
 	defer server.Close()
 
-	baseClient := newRedirectTestClient(server.Listener.Addr().String())
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+		dialer := &net.Dialer{}
+		return dialer.DialContext(ctx, network, server.Listener.Addr().String())
+	}
+	baseClient := &http.Client{Transport: transport, Timeout: 5 * time.Second}
 	lookupIP := func(ctx context.Context, host string) ([]net.IP, error) {
 		return []net.IP{net.ParseIP("93.184.216.34")}, nil
 	}
@@ -76,17 +81,4 @@ func TestNewSafeOutboundHTTPClient_BlocksUnsafeRedirectTarget(t *testing.T) {
 	_, err = client.Get("http://registry.example.com/redirect")
 	require.Error(t, err)
 	require.ErrorIs(t, err, common.ErrUnsafeRemoteURL)
-}
-
-func newRedirectTestClient(listenerAddr string) *http.Client {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
-		dialer := &net.Dialer{}
-		return dialer.DialContext(ctx, network, listenerAddr)
-	}
-
-	return &http.Client{
-		Transport: transport,
-		Timeout:   5 * time.Second,
-	}
 }

@@ -133,5 +133,5 @@ func (h *Handler) DeleteConfig(ctx context.Context, input *DeleteSwarmConfigInpu
 
 	h.audit(ctx, input.EnvironmentID, "config.delete", "swarm_config", input.ConfigID, "", map[string]any{"configId": input.ConfigID})
 
-	return &handlerutil.Out[base.MessageResponse]{Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: base.MessageResponse{Message: "Swarm config removed successfully"}}}, nil
+	return handlerutil.MessageOutput("Swarm config removed successfully", ""), nil
 }

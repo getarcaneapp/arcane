@@ -34,7 +34,7 @@ func (h *WebSocketHandler) ContainerStats(c *echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]any{"success": false, "error": "Container ID is required"})
 	}
 
-	conn, onRemove, ok := h.acceptWSInternal(c, systemtypes.WSKindContainerStats, containerID)
+	conn, onRemove, ok := h.acceptWS(c, systemtypes.WSKindContainerStats, containerID)
 	if !ok {
 		return nil
 	}
@@ -50,10 +50,10 @@ func (h *WebSocketHandler) ContainerStats(c *echo.Context) error {
 		}
 		h.containerStatsHubs.CompareAndDelete(containerID, hub)
 		slog.DebugContext(c.Request().Context(), "container stats hub stopped before client registration; retrying",
-			"containerID", containerID, "attempt", attempt+1)
+			"containerId", containerID, "attempt", attempt+1)
 	}
 
-	slog.WarnContext(c.Request().Context(), "failed to register container stats client", "containerID", containerID)
+	slog.WarnContext(c.Request().Context(), "failed to register container stats client", "containerId", containerID)
 	_ = conn.CloseNow()
 	onRemove()
 	return nil
@@ -103,7 +103,7 @@ func (h *WebSocketHandler) runContainerStatsHubInternal(containerID string, hub 
 				return
 			}
 			h.containerStatsHubs.CompareAndDelete(containerID, hub)
-			slog.Debug("container stats hub idle, cleaning up upstream stream", "containerID", containerID)
+			slog.DebugContext(ctx, "container stats hub idle, cleaning up upstream stream", "containerId", containerID)
 			cleanupTimer = nil
 			cancel()
 		})
@@ -136,7 +136,7 @@ func (h *WebSocketHandler) runContainerStatsHubInternal(containerID string, hub 
 		// socket that would never emit another sample. Tell them why, then drop
 		// the hub so the next connect rebuilds a producer instead of attaching
 		// to this dead one.
-		slog.Warn("container stats stream failed", "containerID", containerID, "error", err)
+		slog.WarnContext(ctx, "container stats stream failed", "containerId", containerID, "error", err)
 		if b, marshalErr := json.Marshal(map[string]any{
 			"error":     "Failed to stream container stats: " + err.Error(),
 			"timestamp": wshub.NowRFC3339(),

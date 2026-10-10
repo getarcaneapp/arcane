@@ -289,7 +289,7 @@ func (s *VariableService) resolveEffectiveVariablesInternal(ctx context.Context,
 				decrypted, decryptErr := crypto.Decrypt(value)
 				if decryptErr != nil {
 					slog.WarnContext(ctx, "Failed to decrypt global variable for sync; skipping",
-						"variable_id", variable.ID, "key", variable.Key, "error", decryptErr)
+						"variableId", variable.ID, "key", variable.Key, "error", decryptErr)
 					continue
 				}
 				value = decrypted
@@ -412,7 +412,7 @@ func (s *VariableService) syncEnvironmentsInternal(ctx context.Context, envIDs [
 			syncCtx, cancel := context.WithTimeout(ctx, variableSyncTimeout)
 			defer cancel()
 			if err := s.SyncEnvironment(syncCtx, envID); err != nil {
-				slog.WarnContext(syncCtx, "Failed to sync global variables to environment", "environment_id", envID, "error", err)
+				slog.WarnContext(syncCtx, "Failed to sync global variables to environment", "environmentId", envID, "error", err)
 			}
 		})
 	}
@@ -575,7 +575,7 @@ func (s *VariableService) WriteLocalEnvFile(ctx context.Context, vars []env.Vari
 		return fmt.Errorf("failed to write global variables file: %w", writeErr)
 	}
 
-	slog.InfoContext(ctx, "Updated global variables",
+	slog.DebugContext(ctx, "Synchronized global variables file",
 		"path", envPath,
 		"count", len(vars))
 
@@ -679,7 +679,7 @@ func (s *VariableService) importVariablesInternal(ctx context.Context, vars []en
 			return fmt.Errorf("failed to import legacy variable %q: %w", key, transactionErr)
 		}
 		covered[key] = true
-		slog.InfoContext(ctx, "Imported legacy global variable", "key", key, "environment_id", scopeEnvID)
+		slog.InfoContext(ctx, "Imported legacy global variable", "key", key, "environmentId", scopeEnvID)
 	}
 
 	return nil

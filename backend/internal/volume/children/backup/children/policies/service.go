@@ -5,23 +5,25 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"path"
+	"slices"
 	"strings"
+	"time"
 
 	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
-	backuptypes "github.com/getarcaneapp/arcane/types/v2/backup"
 	"github.com/getarcaneapp/arcane/types/v2/scheduler"
 	"github.com/getarcaneapp/arcane/types/v2/user"
 	"github.com/getarcaneapp/arcane/types/v2/volume"
-	"go.getarcane.app/kit/pkg"
+	"github.com/italypaleale/francis/builtin/workflow"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/backup"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/s3"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/entityjobs"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/flow"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
 )
@@ -33,7 +35,6 @@ type Dependencies struct {
 	DB             *database.DB
 	S3Destinations *s3.S3DestinationService
 	Settings       *settings.SettingsService
-	Activity       *activity.ActivityService
 	AlreadyRunning error
 	LatestRun      func(ctx context.Context, policyID string) (*volume.BackupEntry, error)
 	CreateBackup   func(ctx context.Context, volumeName, policyID string) (*volume.Backup, error)
@@ -42,8 +43,15 @@ type Dependencies struct {
 
 // Service owns per-volume backup policies and their scheduled jobs.
 type Service struct {
-	deps Dependencies
-	jobs *entityjobs.Registry
+	deps     Dependencies
+	jobs     *entityjobs.Registry
+	flow     *flow.Engine
+	workflow *flow.Workflow
+}
+
+// scheduledBackupInput is the policy a scheduled backup job runs for.
+type scheduledBackupInput struct {
+	PolicyID string `json:"policyId"`
 }
 
 func NewService(deps Dependencies) *Service {
@@ -56,13 +64,32 @@ func (s *Service) SetScheduler(ctx context.Context, dynamicScheduler scheduler.D
 	return s.jobs.SetScheduler(ctx, dynamicScheduler, admissionGate)
 }
 
-func (s *Service) policiesInternal(ctx context.Context, volumeName string) ([]VolumeBackupPolicy, error) {
+// RegisterWorkflows defines the scheduled backup workflow while the host is still unstarted.
+func (s *Service) RegisterWorkflows(engine *flow.Engine) error {
+	var err error
+	s.flow = engine
+	s.workflow, err = engine.Define(flow.Definition{
+		Name:        "volume-backup-policy",
+		Version:     1,
+		Fingerprint: "cbf39d2f46876dd35ec9c1a792e7946097827079c8fc33c00b0f8034e8044534",
+		Concurrency: 4,
+		Timeout:     24 * time.Hour,
+		Activity: activitylib.StartRequest{
+			Type: activitytypes.TypeResourceAction, ResourceType: new("volume_backup"), StartedBy: &user.SystemUser,
+			Step: "Creating scheduled backup", LatestMessage: "Creating scheduled volume backup",
+		},
+		Labels: map[string]string{"backup": "Creating scheduled backup"},
+		Steps:  []workflow.StepSpec{workflow.Step("backup", engine.Handler(s.runScheduledBackup), workflow.WithMaxAttempts(1))},
+	})
+	return err
+}
+
+func (s *Service) policies(ctx context.Context, volumeName string) ([]VolumeBackupPolicy, error) {
 	var policies []VolumeBackupPolicy
 	if err := s.deps.DB.WithContext(ctx).Where("volume_name = ?", volumeName).Order("created_at ASC").Find(&policies).Error; err != nil {
 		return nil, fmt.Errorf("failed to load volume backup policies: %w", err)
 	}
-	return policies,
-		nil
+	return policies, nil
 }
 
 // Policy loads one policy of the volume; an empty or unknown ID returns nil.
@@ -82,19 +109,13 @@ func (s *Service) Policy(ctx context.Context, volumeName, policyID string) (*Vol
 }
 
 func (s *Service) GetBackupPolicies(ctx context.Context, volumeName string) (*volume.BackupPolicyCollection, error) {
-	policies, err := s.policiesInternal(ctx, volumeName)
+	policies, err := s.policies(ctx, volumeName)
 	if err != nil {
 		return nil, err
 	}
 	result := &volume.BackupPolicyCollection{Policies: make([]volume.BackupPolicy, 0, len(policies))}
-	destinations := make(map[string]backuptypes.S3Destination)
-	if s.deps.S3Destinations != nil {
-		available, listErr := s.deps.S3Destinations.ListS3DestinationsByID(ctx)
-		if listErr == nil {
-			result.S3Available = len(available) > 0
-			destinations = available
-		}
-	}
+	destinations := s.deps.S3Destinations.DestinationsByID(ctx)
+	result.S3Available = len(destinations) > 0
 	for i := range policies {
 		lastRun, runErr := s.deps.LatestRun(ctx, policies[i].ID)
 		if runErr != nil {
@@ -117,7 +138,7 @@ func (s *Service) GetBackupPolicies(ctx context.Context, volumeName string) (*vo
 }
 
 func (s *Service) UpdateBackupPolicies(ctx context.Context, volumeName string, updates []volume.UpdateBackupPolicy) (*volume.BackupPolicyCollection, error) {
-	existing, err := s.policiesInternal(ctx, volumeName)
+	existing, err := s.policies(ctx, volumeName)
 	if err != nil {
 		return nil, err
 	}
@@ -140,7 +161,7 @@ func (s *Service) UpdateBackupPolicies(ctx context.Context, volumeName string, u
 			return nil
 		},
 		Unregister: s.jobs.Unregister,
-		Reschedule: s.rescheduleInternal,
+		Reschedule: s.reschedule,
 	}
 	if runErr := reconcile.Run(ctx, updates); runErr != nil {
 		return nil, runErr
@@ -158,70 +179,68 @@ func (s *Service) HasEnabledBackupPolicy(ctx context.Context, volumeName string)
 	return count > 0, nil
 }
 
-func (s *Service) runScheduledBackupInternal(ctx context.Context, policyID string) (scheduler.Outcome, error) {
+// runScheduledBackup is the volume-backup-policy step. A delivery that finds the checkpoint
+// it recorded resumes that backup instead of starting another.
+func (s *Service) runScheduledBackup(ctx context.Context, t flow.Task) (any, error) {
+	var input scheduledBackupInput
+	if err := t.Payload(&input); err != nil {
+		return nil, err
+	}
+	// The run belongs to one policy, so its checkpoint is found by kind; it names the volume as the backup did,
+	// even if the volume was renamed since the job was registered.
+	// A retry after a rename can leave an older checkpoint first, so the latest one is the run's own.
+	previous, _ := jobcontext.Run(ctx)
+	for _, target := range slices.Backward(previous.Outcome.Targets) {
+		if target.ResourceType != "volume_backup" || len(target.RecoveryData) == 0 {
+			continue
+		}
+		// A retry of a backup that already failed runs a new one below.
+		if outcome, err := s.deps.Reconcile(ctx, previous, target.ID); !errors.Is(err, backup.ErrBackupSettled) {
+			return outcome, err
+		}
+		break
+	}
 	var policy VolumeBackupPolicy
-	if err := s.deps.DB.WithContext(ctx).Where("id = ? AND enabled = ?", policyID, true).First(&policy).Error; err != nil {
+	if err := s.deps.DB.WithContext(ctx).Where("id = ? AND enabled = ?", input.PolicyID, true).First(&policy).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return scheduler.Outcome{Status: scheduler.Canceled, Message: "Backup policy disabled or deleted"}, nil
 		}
-		return scheduler.Outcome{}, err
+		return nil, err
 	}
-	if previous, ok := jobcontext.Run(ctx); ok {
-		outcome := jobcontext.ConfirmedTarget(previous, policy.VolumeName)
-		if outcome.Status == scheduler.Succeeded {
-			return outcome, nil
-		}
+	var remoteErr error
+	if policy.S3Enabled {
+		root := path.Join(backup.VolumeRoot, s.deps.Settings.GetSettingsConfig().InstanceID.Value)
+		remoteErr = backup.CheckScheduledRemote(ctx, s.deps.DB, s.deps.S3Destinations, "volume_backups", policy.S3DestinationID, root)
 	}
-	remoteDisabled, checkErr := s.disableMissingS3Internal(ctx, &policy)
-	if checkErr != nil {
-		return scheduler.Outcome{}, checkErr
+	remoteDisabled, disableErr := backup.DisableMissingRemote(remoteErr, policy.LocalEnabled, &policy.S3Enabled, &policy.Enabled, func(field string) (bool, error) {
+		return backup.DisableStoredRemote(ctx, s.deps.DB, &VolumeBackupPolicy{}, policy.ID, policy.S3DestinationID, policy.LocalEnabled, field)
+	})
+	if disableErr != nil {
+		return nil, disableErr
+	}
+	if remoteDisabled {
+		s.reschedule(ctx, &policy)
 	}
 	if remoteDisabled && !policy.LocalEnabled {
 		return scheduler.Outcome{Status: scheduler.NeedsAttention, Message: backup.RemoteDisabledMessage}, nil
 	}
-	var entry *volume.Backup
-	activityID, err := activitylib.RunHandlerActivity(ctx, s.deps.Activity, activitylib.HandlerOptions{
-		EnvironmentID:  "0",
-		Type:           activitytypes.TypeResourceAction,
-		ResourceType:   "volume_backup",
-		ResourceID:     policy.VolumeName,
-		ResourceName:   policy.VolumeName,
-		User:           &user.SystemUser,
-		Step:           "Creating scheduled backup",
-		Message:        "Creating scheduled volume backup",
-		SuccessMessage: "Scheduled volume backup created successfully",
-		Metadata: database.JSON{
-			"action":          "scheduled_volume_backup",
-			"policyId":        policy.ID,
-			"schedule":        policy.Schedule,
-			"volumeName":      policy.VolumeName,
-			"retentionCount":  policy.RetentionCount,
-			"stopContainers":  policy.StopContainers,
-			"localEnabled":    policy.LocalEnabled,
-			"s3Enabled":       policy.S3Enabled,
-			"s3DestinationId": policy.S3DestinationID,
-		},
-	}, func(activityCtx context.Context) error {
-		var backupErr error
-		entry, backupErr = s.deps.CreateBackup(activityCtx, policy.VolumeName, policy.ID)
-		return backupErr
-	})
+	entry, err := s.deps.CreateBackup(ctx, policy.VolumeName, policy.ID)
 	if errors.Is(err, s.deps.AlreadyRunning) {
 		slog.InfoContext(ctx, "Scheduled volume backup skipped; another backup is running", "volume", policy.VolumeName)
-		return scheduler.Outcome{Status: scheduler.Skipped}, nil
+		return scheduler.Outcome{Status: scheduler.Skipped, Message: "Skipped: another backup is running for this volume"}, nil
 	}
 	if err != nil {
 		slog.ErrorContext(ctx, "Scheduled volume backup failed", "volume", policy.VolumeName, "error", err)
-		return scheduler.Outcome{}, err
+		return nil, err
 	}
-	slog.InfoContext(ctx, "Scheduled volume backup completed", "volume", policy.VolumeName, "backup_id", entry.ID, "remote_snapshot_id", entry.RemoteSnapshotID)
+	slog.InfoContext(ctx, "Scheduled volume backup completed", "volume", policy.VolumeName, "backupId", entry.ID, "remoteSnapshotId", entry.RemoteSnapshotID)
 	if remoteDisabled {
-		return scheduler.Outcome{Status: scheduler.Partial, ActivityID: activityID, Message: backup.RemoteDisabledMessage}, nil
+		return scheduler.Outcome{Status: scheduler.Partial, Message: backup.RemoteDisabledMessage}, nil
 	}
-	return scheduler.Outcome{Status: scheduler.Succeeded, ActivityID: activityID}, nil
+	return scheduler.Outcome{Status: scheduler.Succeeded, Message: "Scheduled volume backup created successfully"}, nil
 }
 
-func (s *Service) rescheduleInternal(ctx context.Context, policy *VolumeBackupPolicy) {
+func (s *Service) reschedule(ctx context.Context, policy *VolumeBackupPolicy) {
 	if policy == nil {
 		return
 	}
@@ -229,22 +248,31 @@ func (s *Service) rescheduleInternal(ctx context.Context, policy *VolumeBackupPo
 		s.jobs.Unregister(ctx, policy.ID)
 		return
 	}
-	policyID := policy.ID
-	s.jobs.Register(ctx, policyID,
-		func(ctx context.Context) string {
+	policyID, volumeName := policy.ID, policy.VolumeName
+	s.jobs.Add(ctx, &flow.Job{
+		Engine:   s.flow,
+		Workflow: s.workflow,
+		JobName:  s.jobs.JobName(policyID),
+		Payload:  scheduledBackupInput{PolicyID: policyID},
+		Activity: activitylib.StartRequest{
+			ResourceID: new(volumeName), ResourceName: new(volumeName),
+			Metadata: database.JSON{
+				"action": "scheduled_volume_backup", "policyId": policyID, "schedule": policy.Schedule, "volumeName": volumeName,
+				"retentionCount": policy.RetentionCount, "stopContainers": policy.StopContainers,
+				"localEnabled": policy.LocalEnabled, "s3Enabled": policy.S3Enabled, "s3DestinationId": policy.S3DestinationID,
+			},
+		},
+		ScheduleFn: func(ctx context.Context) string {
 			var current VolumeBackupPolicy
 			if err := s.deps.DB.WithContext(ctx).Where("id = ?", policyID).First(&current).Error; err != nil {
 				return defaultSchedule
 			}
 			return current.Schedule
 		},
-		func(ctx context.Context) (scheduler.Outcome, error) {
-			return s.runScheduledBackupInternal(ctx, policyID)
+		FallbackFn: func(ctx context.Context, previous scheduler.Run) (scheduler.Outcome, error) {
+			return s.deps.Reconcile(ctx, previous, volumeName)
 		},
-		func(ctx context.Context, previous scheduler.Run) (scheduler.Outcome, error) {
-			return s.deps.Reconcile(ctx, previous, policy.VolumeName)
-		},
-	)
+	})
 }
 
 func (s *Service) RegisterJobsOnStartup(ctx context.Context) {
@@ -257,14 +285,14 @@ func (s *Service) RegisterJobsOnStartup(ctx context.Context) {
 		return
 	}
 	for i := range policies {
-		s.rescheduleInternal(ctx, &policies[i])
+		s.reschedule(ctx, &policies[i])
 	}
 	slog.InfoContext(ctx, "Registered scheduled volume backup jobs", "count", len(policies))
 }
 
 // Remove unregisters and deletes every policy of a removed volume.
 func (s *Service) Remove(ctx context.Context, volumeName string) {
-	policies, err := s.policiesInternal(ctx, volumeName)
+	policies, err := s.policies(ctx, volumeName)
 	if err != nil {
 		return
 	}
@@ -279,28 +307,4 @@ func (s *Service) Remove(ctx context.Context, volumeName string) {
 // Rename moves a renamed volume's policies inside the caller's transaction.
 func (s *Service) Rename(tx *gorm.DB, oldName, newName string) error {
 	return tx.Model(&VolumeBackupPolicy{}).Where("volume_name = ?", oldName).Update("volume_name", newName).Error
-}
-
-func (s *Service) disableMissingS3Internal(ctx context.Context, policy *VolumeBackupPolicy) (bool, error) {
-	if !policy.S3Enabled {
-		return false, nil
-	}
-	err := backup.CheckScheduledRemote(ctx, s.deps.DB, s.deps.S3Destinations, "volume_backups", policy.S3DestinationID, "arcane-volume-backups/"+s.deps.Settings.GetSettingsConfig().InstanceID.Value)
-	if !errors.Is(err, backup.ErrRemoteRepositoryMissing) {
-		return false, nil
-	}
-	column := kit.Ternary(policy.LocalEnabled, "s3_enabled", "enabled")
-	result := s.deps.DB.WithContext(ctx).Model(&VolumeBackupPolicy{}).
-		Where("id = ? AND s3_destination_id = ? AND enabled = ? AND s3_enabled = ? AND local_enabled = ?", policy.ID, policy.S3DestinationID, true, true, policy.LocalEnabled).
-		Update(column, false)
-	if result.Error != nil || result.RowsAffected == 0 {
-		return false, result.Error
-	}
-	if policy.LocalEnabled {
-		policy.S3Enabled = false
-	} else {
-		policy.Enabled = false
-	}
-	s.rescheduleInternal(ctx, policy)
-	return true, nil
 }

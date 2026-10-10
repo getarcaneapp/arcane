@@ -20,7 +20,7 @@
 		UpdateAllStage
 	} from '#lib/types/system-upgrade.js';
 	import { cn } from '#lib/utils.js';
-	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '#lib/utils/api.js';
+	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { formatElapsedTime, formatRelativeTime, nowInstantString } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -55,7 +55,6 @@
 	let phase = $state<Phase>('confirm');
 	let job = $state<UpdateAllJob | null>(null);
 	let reconnecting = $state(false);
-	let progressError = $state('');
 	// Ticks once a second while the dialog is open so elapsed stage times advance.
 	let clock = $state<string>();
 	let pollActive = false;
@@ -80,7 +79,6 @@
 		phase = 'confirm';
 		job = null;
 		reconnecting = false;
-		progressError = '';
 	}
 
 	function schedulePoll() {
@@ -95,7 +93,6 @@
 	function followJob(next: UpdateAllJob) {
 		job = next;
 		reconnecting = false;
-		progressError = '';
 		if (!isActiveJob(next)) {
 			stopPolling();
 			phase = 'finished';
@@ -120,11 +117,9 @@
 		if (!job && error instanceof APIError && error.status === 404) {
 			stopPolling();
 			phase = 'confirm';
-			progressError = '';
 			return;
 		}
 		reconnecting = job?.status === 'pending_restart' && isConnectionLost(error);
-		progressError = reconnecting ? '' : extractApiErrorMessage(error);
 		pollActive = true;
 		schedulePoll();
 	}
@@ -173,7 +168,6 @@
 		const attempt = ++startAttempt;
 		phase = 'running';
 		reconnecting = false;
-		progressError = '';
 
 		if (debugDemo) {
 			void runDebugDemo();
@@ -394,13 +388,8 @@
 			enterStage(row, 'starting');
 			if (!(await pause(700))) return;
 			enterStage(row, 'reconnecting');
-			// One slow reconnect and one status-read outage, to exercise both displays.
+			// One slow reconnect, to exercise the elapsed-time display.
 			if (index === 1 && !(await pause(5000))) return;
-			if (index === 2) {
-				progressError = m.environments_update_all_progress_unavailable();
-				if (!(await pause(2000))) return;
-				progressError = '';
-			}
 			// The manager restart is the one moment the reconnecting banner shows.
 			if (index === 0 && job) {
 				job.status = 'pending_restart';
@@ -520,12 +509,6 @@
 				{#if phase === 'finished'}
 					<p class="mt-3 text-sm text-muted-foreground">{m.environments_update_all_summary(outcomeCounts)}</p>
 					{#if job?.error}<p class="mt-2 text-sm text-destructive">{job.error}</p>{/if}
-				{/if}
-				{#if progressError}
-					<div role="status" class="mt-4 rounded-lg border border-warning/20 bg-warning/5 px-3 py-2.5 text-sm">
-						<p class="font-medium">{m.environments_update_all_progress_unavailable()}</p>
-						<p class="mt-1 break-words text-muted-foreground">{progressError}</p>
-					</div>
 				{/if}
 
 				{#if reconnecting}

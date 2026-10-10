@@ -17,10 +17,10 @@ import (
 	"github.com/docker/compose/v5/pkg/compose"
 	"github.com/moby/moby/api/types/registry"
 	"github.com/moby/moby/client"
+	"go.getarcane.app/docker"
 	"go.getarcane.app/docker/compat"
+	"go.getarcane.app/docker/types"
 	kit "go.getarcane.app/kit/pkg"
-
-	dockerutils "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 )
 
 type Client struct {
@@ -84,8 +84,8 @@ func NewClient(ctx context.Context, dockerHost string, authConfigs map[string]re
 	// When the caller streams operation output, render compose's own progress
 	// events exactly as `docker compose --progress=plain` prints them.
 	var logWriter io.WriteCloser
-	if progressWriter, ok := ctx.Value(dockerutils.ProgressWriterKey{}).(io.Writer); ok && progressWriter != nil {
-		logWriter = dockerutils.NewLogLineWriter(progressWriter)
+	if progressWriter, ok := ctx.Value(types.ProgressWriterKey{}).(io.Writer); ok && progressWriter != nil {
+		logWriter = docker.NewLogLineWriter(progressWriter)
 	}
 
 	if prompt == nil {
@@ -258,6 +258,6 @@ func (w *writerConsumer) write(container, msg string) {
 	defer w.mu.Unlock()
 	if _, err := io.WriteString(w.out, output); err != nil && !w.writeErrLogged {
 		w.writeErrLogged = true
-		slog.Debug("project log output write failed; subsequent output may be truncated", "error", err)
+		slog.DebugContext(context.Background(), "project log output write failed; subsequent output may be truncated", "error", err) //nolint:forbidigo // Compose output writer has no request context.
 	}
 }

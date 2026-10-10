@@ -1,185 +1,105 @@
 package backup
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"log/slog"
-	"path"
+	"slices"
 	"strings"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/scheduler"
 	usertypes "github.com/getarcaneapp/arcane/types/v2/user"
 	"github.com/getarcaneapp/arcane/types/v2/volume"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
-	"github.com/samber/mo"
-	"go.getarcane.app/kit/pkg"
+	"go.getarcane.app/docker"
+	kit "go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/backup"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
 )
 
-type backupStorageMode string
-
 const (
-	// backupStorageModeArcaneMount means backup helpers mirror an existing Arcane
-	// container mount at /backups. This intentionally covers any mount the Arcane
-	// container already has at /backups, not exclusively bind mounts.
-	backupStorageModeArcaneMount backupStorageMode = "arcane_mount"
-	// backupStorageModeNamedVolumeFallback means no suitable Arcane container
-	// mount was found, so Arcane's dedicated named backup volume is used.
-	backupStorageModeNamedVolumeFallback backupStorageMode = "named_volume_fallback"
-
 	backupMountMissingWarning = "No volume is mounted at /backups in the Arcane container. Backups will only live inside Docker unless you mount a host path."
 
 	volumeBackupContainerRecoveryTimeout  = 30 * time.Second
 	volumeBackupContainerRecoveryInterval = 500 * time.Millisecond
 
-	volumeRusticRepositoryPath       = "/repository/volumes"
-	localVolumeRepositoryID          = "volumes:local"
-	legacyVolumePasswordSaltInternal = "arcane-volume-backups:"
+	volumeRusticRepositoryPath = "/repository/volumes"
+	localVolumeRepositoryID    = "volumes:local"
+	legacyVolumePasswordSalt   = "arcane-volume-backups:"
 
 	systemRecoverySnapshotLabel = "arcane-system-recovery"
 )
 
-type backupStorageMountInternal struct {
-	mode           backupStorageMode
-	mount          mount.Mount
-	requiresEnsure bool
-}
-
-func resolveBackupStorageMountFromMountsInternal(mounts []container.MountPoint, target string, readOnly bool) mo.Option[backupStorageMountInternal] {
+// resolveBackupStorageMountFromMounts mirrors the Arcane container's /backups mount at target, or returns nil.
+func resolveBackupStorageMountFromMounts(ctx context.Context, mounts []container.MountPoint, target string, readOnly bool) *mount.Mount {
 	mirroredMount := docker.MountForDestination(mounts, "/backups", target)
 	if mirroredMount == nil {
-		return mo.None[backupStorageMountInternal]()
+		return nil
 	}
-	// MountForDestination only returns non-nil for bind and named volume mounts.
-
 	if !readOnly && mirroredMount.ReadOnly {
-		slog.Warn("volume service: requested writable backup mount but source is read-only; writes may fail")
+		slog.WarnContext(ctx, "volume service: requested writable backup mount but source is read-only; writes may fail")
 	}
 	mirroredMount.ReadOnly = readOnly
-
-	return mo.Some(backupStorageMountInternal{
-		mode:  backupStorageModeArcaneMount,
-		mount: *mirroredMount,
-	})
+	return mirroredMount
 }
 
-func (s *Service) resolveBackupStorageMountInternal(ctx context.Context, dockerClient *client.Client, target string, readOnly bool) backupStorageMountInternal {
-	if dockerClient != nil {
-		inspect, err := libarcane.InspectCurrentArcaneContainer(ctx, dockerClient)
-		if err != nil {
-			slog.WarnContext(ctx, "volume service: failed to inspect arcane container for backup mount resolution, falling back to named volume", "error", err.Error())
-		} else if resolved, ok := resolveBackupStorageMountFromMountsInternal(inspect.Mounts, target, readOnly).Get(); ok {
-			return resolved
-		}
+// backupMountWarningFromArcaneMounts warns unless Arcane mounts /backups; a /restores mount also suppresses it for compatibility.
+func backupMountWarningFromArcaneMounts(mounts []container.MountPoint) string {
+	restoresMounted := slices.ContainsFunc(mounts, func(m container.MountPoint) bool { return m.Destination == "/restores" })
+	if docker.MountForDestination(mounts, "/backups", "/backups") != nil || restoresMounted {
+		return ""
 	}
-
-	return backupStorageMountInternal{
-		mode: backupStorageModeNamedVolumeFallback,
-		mount: mount.Mount{
-			Type:     mount.TypeVolume,
-			Source:   s.deps.BackupVolumeName,
-			Target:   target,
-			ReadOnly: readOnly,
-		},
-		requiresEnsure: true,
-	}
-}
-
-func (s *Service) resolveUsableBackupStorageMountInternal(ctx context.Context, dockerClient *client.Client, target string, readOnly bool) (backupStorageMountInternal, error) {
-	backupStorage := s.resolveBackupStorageMountInternal(ctx, dockerClient, target, readOnly)
-	if backupStorage.requiresEnsure {
-		if err := s.ensureBackupVolumeInternal(ctx); err != nil {
-			return backupStorageMountInternal{}, err
-		}
-	}
-	return backupStorage, nil
-}
-
-func backupMountWarningForStorageInternal(storage backupStorageMountInternal) string {
-	return kit.Ternary(storage.mode == backupStorageModeArcaneMount, "", backupMountMissingWarning)
-}
-
-func backupMountWarningFromArcaneMountsInternal(mounts []container.MountPoint) string {
-	backupStorage, ok := resolveBackupStorageMountFromMountsInternal(mounts, "/backups", true).Get()
-	if ok {
-		return backupMountWarningForStorageInternal(backupStorage)
-	}
-
-	// Backward compatibility: historically either /backups or /restores mount
-	// suppressed the warning. Preserve that user-visible behavior.
-	for _, m := range mounts {
-		if m.Destination == "/restores" {
-			return ""
-		}
-	}
-
 	return backupMountMissingWarning
 }
 
-func (s *Service) backupMountWarningInternal(ctx context.Context) string {
+func (s *Service) backupMountWarning(ctx context.Context) string {
 	dockerClient, err := s.deps.Docker.GetClient(ctx)
 	if err != nil {
 		return ""
 	}
-
 	// Cannot determine Arcane mount status (e.g. running outside Docker); suppress warning.
 	inspect, err := libarcane.InspectCurrentArcaneContainer(ctx, dockerClient)
 	if err != nil {
 		return ""
 	}
-
-	return backupMountWarningFromArcaneMountsInternal(inspect.Mounts)
+	return backupMountWarningFromArcaneMounts(inspect.Mounts)
 }
 
 // StorageMount resolves the backup repository mount shared with system-backup and workspace operations.
+// It mirrors Arcane's own /backups mount and otherwise falls back to the dedicated named backup volume.
 func (s *Service) StorageMount(ctx context.Context, dockerClient *client.Client, target string, readOnly bool) (mount.Mount, error) {
-	storage, err := s.resolveUsableBackupStorageMountInternal(ctx, dockerClient, target, readOnly)
+	if dockerClient != nil {
+		inspect, err := libarcane.InspectCurrentArcaneContainer(ctx, dockerClient)
+		if err != nil {
+			slog.WarnContext(ctx, "volume service: failed to inspect arcane container for backup mount resolution, falling back to named volume", "error", err.Error())
+		} else if mirrored := resolveBackupStorageMountFromMounts(ctx, inspect.Mounts, target, readOnly); mirrored != nil {
+			return *mirrored, nil
+		}
+	}
+	slog.DebugContext(ctx, "volume service: ensure backup volume", "backupVolume", s.deps.BackupVolumeName)
+	ensureClient, err := s.deps.Docker.GetClient(ctx)
 	if err != nil {
 		return mount.Mount{}, err
 	}
-	return storage.mount, nil
-}
-
-func (s *Service) ensureBackupVolumeInternal(ctx context.Context) error {
-	slog.DebugContext(ctx, "volume service: ensure backup volume", "backup_volume", s.deps.BackupVolumeName)
-	dockerClient, err := s.deps.Docker.GetClient(ctx)
-	if err != nil {
-		return err
-	}
-
-	_, err = dockerClient.VolumeInspect(ctx, s.deps.BackupVolumeName, client.VolumeInspectOptions{})
-	if err != nil {
-		_, err = dockerClient.VolumeCreate(ctx, client.VolumeCreateOptions{
-			Name: s.deps.BackupVolumeName,
-		})
-		if err != nil {
-			return fmt.Errorf("failed to create backup volume: %w", err)
+	if _, inspectErr := ensureClient.VolumeInspect(ctx, s.deps.BackupVolumeName, client.VolumeInspectOptions{}); inspectErr != nil {
+		if _, createErr := ensureClient.VolumeCreate(ctx, client.VolumeCreateOptions{Name: s.deps.BackupVolumeName}); createErr != nil {
+			return mount.Mount{}, fmt.Errorf("failed to create backup volume: %w", createErr)
 		}
 	}
-	return nil
+	return mount.Mount{Type: mount.TypeVolume, Source: s.deps.BackupVolumeName, Target: target, ReadOnly: readOnly}, nil
 }
 
-func (
-	s *Service,
-) stopRunningContainersForBackupInternal(
-	ctx context.Context,
-	dockerClient *client.Client,
-	volumeName string,
-	user usertypes.Actor,
-	refuseArcaneWriters bool,
-) (
-	[]container.Summary,
-	error,
-) {
+func (s *Service) stopRunningContainersForBackup(ctx context.Context, dockerClient *client.Client, volumeName string, user usertypes.Actor, refuseArcaneWriters bool) ([]container.Summary, error) {
 	if s.deps.StopContainer == nil || s.deps.StartContainer == nil {
 		return nil, errors.New("container service is unavailable")
 	}
@@ -195,10 +115,8 @@ func (
 			arcaneOwned = append(arcaneOwned, candidate)
 			continue
 		}
-		// Arcane's own helper containers mount the volume as well, but they are
-		// auto-removed when stopped and recreated on demand. Stopping one here
-		// would leave nothing for the restart pass to find, failing an
-		// otherwise successful backup or restore.
+		// Arcane's helper containers are auto-removed when stopped, so stopping
+		// one would leave nothing for the restart pass and fail the operation.
 		if strings.EqualFold(candidate.Labels[libarcane.InternalResourceLabel], "true") {
 			continue
 		}
@@ -212,16 +130,14 @@ func (
 		}
 	}
 	containerIDs := docker.FilterContainersUsingVolume(eligible, volumeName)
-	containersByID := make(map[string]container.Summary, len(eligible))
-	for _, candidate := range eligible {
-		containersByID[candidate.ID] = candidate
-	}
 	stopped := make([]container.Summary, 0, len(containerIDs))
-	for _, containerID := range containerIDs {
-		candidate := containersByID[containerID]
-		if stopContainerErr := s.deps.StopContainer(ctx, containerID, user); stopContainerErr != nil {
-			stillStopped, restartErr := s.startContainersAfterBackupInternal(context.WithoutCancel(ctx), dockerClient, stopped, user)
-			return stillStopped, errors.Join(fmt.Errorf("failed to stop container %s before volume backup: %w", containerID, stopContainerErr), restartErr)
+	for _, candidate := range eligible {
+		if !slices.Contains(containerIDs, candidate.ID) {
+			continue
+		}
+		if stopContainerErr := s.deps.StopContainer(ctx, candidate.ID, user); stopContainerErr != nil {
+			stillStopped, restartErr := s.startContainersAfterBackup(context.WithoutCancel(ctx), dockerClient, stopped, user)
+			return stillStopped, errors.Join(fmt.Errorf("failed to stop container %s before volume backup: %w", candidate.ID, stopContainerErr), restartErr)
 		}
 		stopped = append(stopped, candidate)
 	}
@@ -229,7 +145,7 @@ func (
 }
 
 //nolint:gocognit // recovery retries must reconcile IDs, names, and Compose identities in one bounded loop
-func (s *Service) startContainersAfterBackupInternal(ctx context.Context, dockerClient *client.Client, stoppedContainers []container.Summary, user usertypes.Actor) ([]container.Summary, error) {
+func (s *Service) startContainersAfterBackup(ctx context.Context, dockerClient *client.Client, stoppedContainers []container.Summary, user usertypes.Actor) ([]container.Summary, error) {
 	recoveryCtx, cancel := context.WithTimeout(ctx, volumeBackupContainerRecoveryTimeout)
 	defer cancel()
 
@@ -263,7 +179,7 @@ func (s *Service) startContainersAfterBackupInternal(ctx context.Context, docker
 				}
 				if current.State == container.StateRunning || current.State == container.StateRestarting {
 					if current.ID != stopped.ID {
-						slog.InfoContext(ctx, "volume service: container was replaced during backup and is already running", "previous_container", stopped.ID, "current_container", current.ID)
+						slog.InfoContext(ctx, "volume service: container was replaced during backup and is already running", "previousContainer", stopped.ID, "currentContainer", current.ID)
 					}
 					continue
 				}
@@ -273,7 +189,7 @@ func (s *Service) startContainersAfterBackupInternal(ctx context.Context, docker
 					continue
 				}
 				if current.ID != stopped.ID {
-					slog.InfoContext(ctx, "volume service: restarted replacement container after backup", "previous_container", stopped.ID, "current_container", current.ID)
+					slog.InfoContext(ctx, "volume service: restarted replacement container after backup", "previousContainer", stopped.ID, "currentContainer", current.ID)
 				}
 			}
 			remaining = nextRemaining
@@ -305,113 +221,80 @@ func (s *Service) startContainersAfterBackupInternal(ctx context.Context, docker
 	return nil, nil
 }
 
-func sanitizeBackupPathInternal(input string) (string, error) {
-	trimmed := strings.TrimSpace(input)
-	if trimmed == "" {
-		return "", errors.New("invalid path: empty")
-	}
-	cleaned := path.Clean(trimmed)
-	if cleaned == "." || cleaned == "/" {
-		return "", fmt.Errorf("invalid path: %s", input)
-	}
-	if path.IsAbs(cleaned) {
-		cleaned = strings.TrimPrefix(cleaned, "/")
-	}
-	if cleaned == "" || cleaned == "." || cleaned == "/" || strings.HasPrefix(cleaned, "..") || strings.Contains(cleaned, "/../") {
-		return "", fmt.Errorf("invalid path: %s", input)
-	}
-	return cleaned, nil
-}
-
-func sanitizeBackupIDInternal(backupID string) (string, error) {
-	cleaned, err := sanitizeBackupPathInternal(backupID)
+func backupArchiveFilename(backupID string) (string, error) {
+	name, err := kit.ValidateFileName(backupID)
 	if err != nil {
 		return "", fmt.Errorf("invalid backup id: %w", err)
 	}
-	if strings.Contains(cleaned, "/") {
-		return "", errors.New("invalid backup id: path separators not allowed")
-	}
-	return cleaned, nil
+	return name + ".tar.gz", nil
 }
 
-func backupArchiveFilenameInternal(backupID string) (string, error) {
-	sanitizedBackupID, err := sanitizeBackupIDInternal(backupID)
-	if err != nil {
-		return "", err
-	}
-	return sanitizedBackupID + ".tar.gz", nil
-}
-
-// volumeBackupPasswordInternal returns the recovery key once one is stored, re-keying the given repositories off the legacy derivation first.
-func (s *Service) volumeBackupPasswordInternal(ctx context.Context, dockerClient *client.Client, repositories ...backup.Repository) (string, error) {
+// volumeBackupPassword returns the recovery key once one is stored, re-keying the given repositories off the legacy derivation first.
+func (s *Service) volumeBackupPassword(ctx context.Context, dockerClient *client.Client, repositories ...backup.Repository) (string, error) {
+	legacyPassword := kit.SHA256Hex(legacyVolumePasswordSalt + s.deps.EncryptionKey)
 	if s.deps.RecoveryKeys == nil {
-		return kit.SHA256Hex(legacyVolumePasswordSaltInternal + s.deps.EncryptionKey), nil
+		return legacyPassword, nil
 	}
 	key, err := s.deps.RecoveryKeys.Get(ctx)
 	if errors.Is(err, backup.ErrRecoveryKeyNotConfigured) {
-		return kit.SHA256Hex(legacyVolumePasswordSaltInternal + s.deps.EncryptionKey), nil
+		return legacyPassword, nil
 	}
 	if err != nil {
 		return "", err
 	}
+	if s.deps.Engine == nil {
+		return key, nil
+	}
+	// Re-key each legacy repository once per process; one that opens with neither password is left for the caller to create or report.
 	for _, repository := range repositories {
-		s.rekeyRepositoryInternal(ctx, dockerClient, repository, key)
+		if done, _ := s.rekeyed.Load(repository.ID); done == key {
+			continue
+		}
+		if _, listErr := s.deps.Engine.ListSnapshots(ctx, dockerClient, repository, key); listErr == nil {
+			s.rekeyed.Store(repository.ID, key)
+			continue
+		}
+		if repository.ID == localVolumeRepositoryID {
+			writable, localErr := s.localRusticRepository(ctx, dockerClient, false)
+			if localErr != nil {
+				slog.WarnContext(ctx, "could not open the local volume backup repository for re-keying", "error", localErr.Error())
+				continue
+			}
+			repository = writable
+		}
+		if changeErr := s.deps.Engine.ChangeRepositoryPassword(ctx, dockerClient, repository, legacyPassword, key); changeErr != nil {
+			slog.DebugContext(ctx, "volume backup repository was not re-keyed", "repository", repository.ID, "error", changeErr.Error())
+			continue
+		}
+		slog.InfoContext(ctx, "Re-keyed volume backup repository to the recovery key", "repository", repository.ID)
+		s.rekeyed.Store(repository.ID, key)
 	}
 	return key, nil
 }
 
-// rekeyRepositoryInternal re-keys a legacy repository once per process; one that opens with neither password is left for the caller's operation to create or report.
-func (s *Service) rekeyRepositoryInternal(ctx context.Context, dockerClient *client.Client, repository backup.Repository, recoveryKey string) {
-	if s.deps.Engine == nil {
-		return
-	}
-	if done, _ := s.rekeyed.Load(repository.ID); done == recoveryKey {
-		return
-	}
-	if _, err := s.deps.Engine.ListSnapshots(ctx, dockerClient, repository, recoveryKey); err == nil {
-		s.rekeyed.Store(repository.ID, recoveryKey)
-		return
-	}
-	if repository.ID == localVolumeRepositoryID {
-		writable, err := s.localRusticRepositoryInternal(ctx, dockerClient, false)
-		if err != nil {
-			slog.WarnContext(ctx, "could not open the local volume backup repository for re-keying", "error", err.Error())
-			return
-		}
-		repository = writable
-	}
-	if err := s.deps.Engine.ChangeRepositoryPassword(ctx, dockerClient, repository, kit.SHA256Hex(legacyVolumePasswordSaltInternal+s.deps.EncryptionKey), recoveryKey); err != nil {
-		slog.DebugContext(ctx, "volume backup repository was not re-keyed", "repository", repository.ID, "error", err.Error())
-		return
-	}
-	slog.InfoContext(ctx, "Re-keyed volume backup repository to the recovery key", "repository", repository.ID)
-	s.rekeyed.Store(repository.ID, recoveryKey)
-}
-
-func (s *Service) localRusticRepositoryInternal(ctx context.Context, dockerClient *client.Client, readOnly bool) (backup.Repository, error) {
-	storage, err := s.resolveUsableBackupStorageMountInternal(ctx, dockerClient, "/repository", readOnly)
+func (s *Service) localRusticRepository(ctx context.Context, dockerClient *client.Client, readOnly bool) (backup.Repository, error) {
+	storage, err := s.StorageMount(ctx, dockerClient, "/repository", readOnly)
 	if err != nil {
 		return backup.Repository{}, err
 	}
 	return backup.Repository{
 		ID:          localVolumeRepositoryID,
 		Environment: []string{"RUSTIC_REPOSITORY=" + volumeRusticRepositoryPath},
-		Mounts:      []mount.Mount{storage.mount},
+		Mounts:      []mount.Mount{storage},
 	}, nil
 }
 
-func (s *Service) remoteRusticRepositoryInternal(ctx context.Context, destinationID string) (backup.Repository, error) {
-	return s.remoteRusticRepositoryForInstanceInternal(ctx, destinationID, "")
+// remoteInstanceID resolves the instance whose S3 root holds a backup; empty means this instance.
+func (s *Service) remoteInstanceID(instanceID string) string {
+	return cmp.Or(strings.TrimSpace(instanceID), strings.TrimSpace(s.deps.Settings.GetSettingsConfig().InstanceID.Value))
 }
 
-// remoteRusticRepositoryForInstanceInternal addresses one instance's root on the destination; empty means this instance.
-func (s *Service) remoteRusticRepositoryForInstanceInternal(ctx context.Context, destinationID, instanceID string) (backup.Repository, error) {
+// remoteRusticRepository addresses one instance's root on the destination; empty instanceID means this instance.
+func (s *Service) remoteRusticRepository(ctx context.Context, destinationID, instanceID string) (backup.Repository, error) {
 	if s.deps.S3Destinations == nil {
-		return backup.Repository{}, errors.New("S3 backup service is unavailable")
+		return backup.Repository{}, errors.New("S3 backup destinations are unavailable")
 	}
-	if strings.TrimSpace(instanceID) == "" {
-		instanceID = strings.TrimSpace(s.deps.Settings.GetSettingsConfig().InstanceID.Value)
-	}
+	instanceID = s.remoteInstanceID(instanceID)
 	if instanceID == "" {
 		return backup.Repository{}, errors.New("arcane instance ID is unavailable")
 	}
@@ -421,94 +304,74 @@ func (s *Service) remoteRusticRepositoryForInstanceInternal(ctx context.Context,
 	}
 	return backup.Repository{
 		ID:          "volumes:s3:" + destinationID + ":" + instanceID,
-		Environment: configuration.RusticEnvironment("arcane-volume-backups", instanceID),
+		Environment: configuration.RusticEnvironment(backup.VolumeRoot, instanceID),
 	}, nil
 }
 
-func (s *Service) rusticRepositoryForBackupInternal(ctx context.Context, dockerClient *client.Client, entry *volume.Backup) (backup.Repository, string, error) {
-	if entry.LocalSnapshotID != "" {
-		repository, err := s.localRusticRepositoryInternal(ctx, dockerClient, true)
-		return repository, entry.LocalSnapshotID, err
+// acquireVolumeRun takes the volume's run lease, failing with AlreadyRunning while another backup operation holds it.
+func (s *Service) acquireVolumeRun(ctx context.Context, volumeName string) (*runs.Lease, error) {
+	lease, admitted, err := s.deps.Engine.TryAcquireRun(ctx, backup.VolumeAdmissionScope, volumeName)
+	if err != nil {
+		return nil, err
 	}
-	if entry.RemoteSnapshotID != "" {
-		repository, err := s.remoteRusticRepositoryForInstanceInternal(ctx, entry.S3DestinationID, entry.RemoteInstanceID)
-		return repository, entry.RemoteSnapshotID, err
+	if !admitted {
+		return nil, s.deps.AlreadyRunning
 	}
-	return backup.Repository{}, "", errors.New("volume backup has no Rustic snapshot")
+	return lease, nil
 }
 
-func (s *Service) createBackupTempContainerWithMountInternal(ctx context.Context, dockerClient *client.Client, helperImage string, backupMount mount.Mount) (string, func(), error) {
-	var err error
-	if dockerClient == nil {
-		dockerClient, err = s.deps.Docker.GetClient(ctx)
-		if err != nil {
-			return "", nil, err
-		}
+// backupDestination names the destination that holds a backup's local and remote copies.
+func backupDestination(local, remote bool) volume.BackupDestination {
+	switch {
+	case local && remote:
+		return volume.BackupDestinationLocalS3
+	case remote:
+		return volume.BackupDestinationS3
+	default:
+		return volume.BackupDestinationLocal
 	}
+}
 
-	if strings.TrimSpace(helperImage) == "" {
-		helperImage, err = s.deps.HelperImage(ctx, dockerClient)
-		if err != nil {
-			return "", nil, err
-		}
+// logBackupEvent records a volume backup event; a nil user logs as the system user.
+func (s *Service) logBackupEvent(ctx context.Context, eventType event.EventType, volumeName string, user *usertypes.Actor, metadata database.JSON) {
+	actor := cmp.Or(user, &usertypes.SystemUser)
+	if err := s.deps.Events.LogVolumeEvent(ctx, eventType, volumeName, volumeName, actor.ID, actor.Username, "0", metadata); err != nil {
+		slog.WarnContext(ctx, "could not log volume backup event", "volume", volumeName, "action", metadata["action"], "error", err)
 	}
+}
 
-	config := &container.Config{
-		Image:           helperImage,
-		Cmd:             []string{"sleep", "infinity"},
-		NetworkDisabled: true,
-		Labels:          volumehelper.Labels(),
+func (s *Service) createBackupTempContainerWithMount(ctx context.Context, dockerClient *client.Client, backupMount mount.Mount) (string, func(), error) {
+	helperImage, err := s.deps.HelperImage(ctx, dockerClient)
+	if err != nil {
+		return "", nil, err
 	}
-
-	hostConfig := volumehelper.HostConfig(helperImage, nil, []mount.Mount{backupMount})
-
 	resp, err := dockerClient.ContainerCreate(ctx, client.ContainerCreateOptions{
-		Config:     config,
-		HostConfig: hostConfig,
+		Config:     &container.Config{Image: helperImage, Cmd: []string{"sleep", "infinity"}, NetworkDisabled: true, Labels: volumehelper.Labels()},
+		HostConfig: volumehelper.HostConfig(helperImage, nil, []mount.Mount{backupMount}),
 	})
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to create backup temp container: %w", err)
 	}
-
 	if _, containerStartErr := dockerClient.ContainerStart(ctx, resp.ID, client.ContainerStartOptions{}); containerStartErr != nil {
 		_, _ = dockerClient.ContainerRemove(ctx, resp.ID, volumehelper.RemoveOptions())
 		return "", nil, fmt.Errorf("failed to start backup temp container: %w", containerStartErr)
 	}
-
-	cleanup := func() {
+	return resp.ID, func() {
 		_, _ = dockerClient.ContainerRemove(context.WithoutCancel(ctx), resp.ID, volumehelper.RemoveOptions())
-	}
-
-	return resp.ID, cleanup, nil
+	}, nil
 }
 
-func (s *Service) createBackupTempContainerInternal(ctx context.Context, dockerClient *client.Client, target string, readOnly bool) (string, func(), error) {
-	slog.DebugContext(ctx, "volume service: create backup temp container", "target", target, "read_only", readOnly)
+func (s *Service) createBackupTempContainer(ctx context.Context, dockerClient *client.Client, target string, readOnly bool) (string, func(), error) {
+	slog.DebugContext(ctx, "volume service: create backup temp container", "target", target, "readOnly", readOnly)
 	var err error
 	if dockerClient == nil {
-		dockerClient, err = s.deps.Docker.GetClient(ctx)
-		if err != nil {
+		if dockerClient, err = s.deps.Docker.GetClient(ctx); err != nil {
 			return "", nil, err
 		}
 	}
-
-	backupStorage, err := s.resolveUsableBackupStorageMountInternal(ctx, dockerClient, target, readOnly)
+	backupMount, err := s.StorageMount(ctx, dockerClient, target, readOnly)
 	if err != nil {
 		return "", nil, err
 	}
-
-	return s.createBackupTempContainerWithMountInternal(ctx, dockerClient, "", backupStorage.mount)
-}
-
-func volumeSourceMountInternal(volumeName string) mount.Mount {
-	return mount.Mount{Type: mount.TypeVolume, Source: volumeName, Target: "/volume", ReadOnly: true}
-}
-
-func backupDestinationAttemptedInternal(previous scheduler.Run, backupID, destination string) bool {
-	for _, evidence := range previous.Outcome.Targets {
-		if evidence.ID == backupID+":"+destination {
-			return true
-		}
-	}
-	return false
+	return s.createBackupTempContainerWithMount(ctx, dockerClient, backupMount)
 }

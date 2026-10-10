@@ -3,6 +3,7 @@
 package sync
 
 import (
+	"cmp"
 	"context"
 	"encoding/json/v2"
 	"errors"
@@ -24,6 +25,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/user"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/transport"
 	"go.getarcane.app/acfs"
 	"go.getarcane.app/kit/pkg"
 	"gorm.io/gorm"
@@ -39,18 +41,62 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 )
 
-// Service runs deployment syncs. Shared sync limits, error events and job
-// registration stay with the parent and arrive as callbacks.
-type Service struct {
-	db             *database.DB
-	repoService    *gitrepo.GitRepositoryService
-	projectService *projectpkg.ProjectService
-	swarmService   *swarm.SwarmService
-	eventService   *event.EventService
-	limits         func(context.Context, *projectpkg.GitOpsSync) (int, int64, int64)
-	logError       func(context.Context, *projectpkg.GitOpsSync, user.Actor, string)
-	unregisterJob  func(context.Context, string)
-}
+// reservedRootEnvFiles are the project-root env files the override merge owns; git never writes them raw.
+var reservedRootEnvFiles = []string{projects.EffectiveEnvFileName, projects.GitSourceEnvFileName, projects.OverrideEnvFileName, projects.GlobalEnvFileName}
+
+type (
+	// Service runs deployment syncs. Shared sync limits, error events and job
+	// registration stay with the parent and arrive as callbacks.
+	Service struct {
+		db             *database.DB
+		repoService    *gitrepo.GitRepositoryService
+		projectService *projectpkg.ProjectService
+		swarmService   *swarm.SwarmService
+		eventService   *event.EventService
+		limits         func(context.Context, *projectpkg.GitOpsSync) (int, int64, int64)
+		logError       func(context.Context, *projectpkg.GitOpsSync, user.Actor, string)
+		unregisterJob  func(context.Context, string)
+	}
+
+	// syncRevision is the recovery data a run records so a retry replays the same source revision.
+	syncRevision struct {
+		Commit string `json:"commit"`
+	}
+
+	// preparedSyncSource is the cloned and validated source a sync applies.
+	preparedSyncSource struct {
+		repoPath         string
+		commitHash       string
+		composeContent   string
+		envContent       *string
+		overrideContent  *string
+		overrideFileName string
+		// replay marks a retry of a pinned revision, which redeploys even when the files are unchanged.
+		replay bool
+	}
+
+	// stagedDirectorySync holds the fully prepared directory-sync result before it
+	// is promoted into the live project path.
+	stagedDirectorySync struct {
+		stagePath string
+		// stageLogical is stagePath relative to the projects directory, the root every staging mutation is confined to.
+		stageLogical    string
+		projectsDir     string
+		composeFileName string
+		project         *projectpkg.Project
+		// syncFiles are the repo files written raw; syncedFiles are their paths.
+		syncFiles   []projects.SyncFile
+		syncedFiles []string
+		// oldSyncedFiles are the paths the previous sync tracked.
+		oldSyncedFiles []string
+		// gitEnvContent is the repo's project-root .env, routed through the env merge.
+		gitEnvContent   *string
+		serviceCount    int
+		contentsChanged bool
+		// backupScope names every live path promotion may create, rewrite or delete.
+		backupScope projects.ProjectUpdateBackupScope
+	}
+)
 
 func New(
 	db *database.DB,
@@ -74,157 +120,221 @@ func New(
 	}
 }
 
-// Run clones the sync source and applies it to its project or Swarm stack.
+// Run clones the sync source and applies it to its project or Swarm stack. A retry replays the
+// revision its run pinned, and redeploys it unless the record already confirms that revision.
 func (s *Service) Run(ctx context.Context, sync *projectpkg.GitOpsSync, actor user.Actor, result *gitops.SyncResult) (*gitops.SyncResult, error) {
-	source, err := s.prepareSyncSource(ctx, sync, result, actor)
-	if source != nil && source.repoPath != "" {
+	pinned := ""
+	if run, ok := jobcontext.Run(ctx); ok {
+		index := slices.IndexFunc(run.Outcome.Targets, func(target scheduler.TargetOutcome) bool {
+			return target.ID == sync.ID && len(target.RecoveryData) > 0
+		})
+		var revision syncRevision
+		if index >= 0 {
+			if err := json.Unmarshal(run.Outcome.Targets[index].RecoveryData, &revision); err != nil {
+				return result, err
+			}
+		}
+		pinned = revision.Commit
+	}
+	if pinned != "" && kit.FromPtr(sync.LastSyncCommit) == pinned && kit.FromPtr(sync.LastSyncStatus) == "success" {
+		result.Success = true
+		result.Message = "Revision " + pinned + " is already synced"
+		return result, nil
+	}
+
+	source, err := s.prepareSyncSource(ctx, sync, result, actor, pinned)
+	if source != nil {
 		defer s.repoService.Discard(ctx, source.repoPath)
 	}
 	if err != nil {
 		return result, err
 	}
-	if source == nil {
-		return result, errors.New("prepared sync source is missing")
-	}
 
-	if sync.TargetType == "swarm_stack" {
-		return s.performSwarmStackSyncInternal(ctx, sync, sync.ID, actor, result, source)
-	}
-
+	var syncFiles []projects.SyncFile
 	if sync.SyncDirectory {
-		return s.performDirectorySync(ctx, sync, sync.ID, actor, result, source)
-	}
-
-	return s.performSingleFileSyncInternal(ctx, sync, sync.ID, actor, result, source)
-}
-
-// DirectoryProject resolves the linked project for a directory sync,
-// relinking or recovering it when the stored reference is stale.
-func (s *Service) DirectoryProject(ctx context.Context, sync *projectpkg.GitOpsSync) (*projectpkg.Project, error) {
-	return s.getDirectorySyncProjectInternal(ctx, sync)
-}
-
-// ReconcileRevision confirms an interrupted run when the record already holds
-// the source revision that run pinned.
-func ReconcileRevision(ctx context.Context, previous scheduler.Run, record *projectpkg.GitOpsSync, outcome scheduler.Outcome) (scheduler.Outcome, error) {
-	for _, target := range previous.Outcome.Targets {
-		if target.ID != record.ID || len(target.RecoveryData) == 0 {
-			continue
-		}
-		var revision syncRevisionInternal
-		if unmarshalErr := json.Unmarshal(target.RecoveryData, &revision); unmarshalErr != nil {
-			return outcome, unmarshalErr
-		}
-		if revision.Commit != "" && record.LastSyncCommit != nil && *record.LastSyncCommit == revision.Commit && record.LastSyncStatus != nil && *record.LastSyncStatus == "success" {
-			target.Status = scheduler.Succeeded
-			if progressErr := jobcontext.Progress(ctx, target); progressErr != nil {
-				return outcome, progressErr
-			}
-			return scheduler.Outcome{Status: scheduler.Succeeded, Targets: []scheduler.TargetOutcome{target}}, nil
+		if syncFiles, err = s.walkAndParseSyncDirectory(ctx, sync, source.repoPath); err != nil {
+			return result, s.failSync(ctx, result, sync, actor, "Failed to walk directory", err)
 		}
 	}
-	return outcome, nil
+	var project *projectpkg.Project
+	var syncedFiles []string
+	changed := false
+	switch {
+	case sync.TargetType == "swarm_stack":
+		if s.swarmService == nil {
+			return result, s.failSync(ctx, result, sync, actor, "Swarm service is unavailable", errors.New("swarm service is unavailable"))
+		}
+		swarmFiles := make([]swarmtypes.SyncFile, len(syncFiles))
+		for i, file := range syncFiles {
+			swarmFiles[i] = swarmtypes.SyncFile{RelativePath: file.RelativePath, Content: file.Content}
+			syncedFiles = append(syncedFiles, file.RelativePath)
+		}
+		// Swarm tasks pull with only the auth embedded in the service spec, so registry auth is always resolved.
+		request := swarmtypes.StackDeployRequest{
+			Name:             sync.ProjectName,
+			ComposeContent:   source.composeContent,
+			OverrideContent:  kit.FromPtr(source.overrideContent),
+			EnvContent:       kit.FromPtr(source.envContent),
+			Files:            swarmFiles,
+			Prune:            true,
+			WithRegistryAuth: true,
+			WorkingDir:       filepath.Dir(filepath.Join(source.repoPath, sync.ComposePath)),
+		}
+		if _, deployErr := s.swarmService.DeployStack(ctx, sync.EnvironmentID, request); deployErr != nil {
+			return result, s.failSync(ctx, result, sync, actor, "Failed to deploy swarm stack", deployErr)
+		}
+		result.Message = fmt.Sprintf("Successfully deployed swarm stack %s from %s", sync.ProjectName, sync.ComposePath)
+	case sync.SyncDirectory:
+		if project, syncedFiles, _, changed, err = s.syncProjectDirectory(ctx, sync, syncFiles, actor); err != nil {
+			message := kit.Ternary(errors.Is(err, common.ErrGitOpsSyncProjectBindingBroken), "GitOps project binding broken", "Failed to sync project directory")
+			return result, s.failSync(ctx, result, sync, actor, message, err)
+		}
+		result.Message = fmt.Sprintf("Successfully synced directory with %d files to project %s", len(syncedFiles), project.Name)
+	default:
+		if project, changed, err = s.syncComposeFile(ctx, sync, actor, result, source); err != nil {
+			return result, err
+		}
+		result.Message = fmt.Sprintf("Successfully synced compose file from %s to project %s", sync.ComposePath, project.Name)
+	}
+	if syncedFiles == nil {
+		syncedFiles = []string{filepath.Base(sync.ComposePath)}
+		if source.overrideFileName != "" {
+			syncedFiles = append(syncedFiles, source.overrideFileName)
+		}
+	}
+
+	if project != nil && (changed || source.replay) {
+		if err = s.deployOnce(ctx, sync, project, actor, source.replay); err != nil {
+			// The files reached disk, so the row keeps their revision and list.
+			errMsg := err.Error()
+			result.Message = "Sync wrote files but redeploy failed"
+			result.Error = &errMsg
+			s.updateSyncStatus(ctx, sync.ID, "failed", errMsg, source.commitHash, syncedFiles)
+			s.logError(ctx, sync, actor, errMsg)
+			return result, err
+		}
+	}
+
+	s.updateSyncStatus(ctx, sync.ID, "success", "", source.commitHash, syncedFiles)
+	result.Success = true
+	targetKind, targetName := "swarm stack", sync.ProjectName
+	if project != nil {
+		targetKind, targetName = "project", project.Name
+	}
+	_, _ = s.eventService.CreateEvent(ctx, event.CreateEventRequest{
+		Type:          event.EventTypeGitSyncRun,
+		Severity:      event.EventSeveritySuccess,
+		Title:         kit.Ternary(project == nil, "Git sync completed for stack", "Git sync completed"),
+		Description:   fmt.Sprintf("Successfully synced '%s' to %s '%s'", sync.Name, targetKind, targetName),
+		ResourceType:  new("git_sync"),
+		ResourceID:    new(sync.ID),
+		ResourceName:  new(sync.Name),
+		UserID:        new(actor.ID),
+		Username:      new(actor.Username),
+		EnvironmentID: new(sync.EnvironmentID),
+	})
+	slog.InfoContext(ctx, "GitOps sync completed", "syncId", sync.ID, "target", targetName)
+	return result, nil
 }
 
-// preparedSyncSource captures the repository data needed by the sync execution
-// paths after the source repository has been cloned and validated.
-type syncRevisionInternal struct {
-	Commit string `json:"commit"`
+// deployOnce redeploys the synced project, recording the deploy on the run. The deploy runs lifecycle hooks, so a
+// replay skips a deploy the run confirmed and refuses one that started without a recorded result.
+func (s *Service) deployOnce(ctx context.Context, sync *projectpkg.GitOpsSync, project *projectpkg.Project, actor user.Actor, replay bool) error {
+	target := scheduler.TargetOutcome{ResourceType: "gitops_deploy", ID: sync.ID + ":deploy", Status: scheduler.Running}
+	previous, _ := jobcontext.Run(ctx)
+	if index := slices.IndexFunc(previous.Outcome.Targets, func(recorded scheduler.TargetOutcome) bool { return recorded.ID == target.ID }); replay && index >= 0 {
+		switch previous.Outcome.Targets[index].Status {
+		case scheduler.Succeeded:
+			return nil
+		case scheduler.Running:
+			return errors.New("the interrupted deploy may already have run its lifecycle hooks; redeploy the project to finish it")
+		default:
+		}
+	}
+	if err := jobcontext.Progress(ctx, target); err != nil {
+		return err
+	}
+	deployErr := s.redeployIfRunningAfterSync(ctx, sync, project, actor)
+	// Interrupted mid-deploy, its effects are unknown, so the deploy stays running for the replay to refuse.
+	if ctx.Err() != nil {
+		return cmp.Or(deployErr, ctx.Err())
+	}
+	target.Status = kit.Ternary(deployErr == nil, scheduler.Succeeded, scheduler.Failed)
+	return errors.Join(deployErr, jobcontext.Progress(ctx, target))
 }
 
-type preparedSyncSource struct {
-	repoPath         string
-	commitHash       string
-	composeContent   string
-	envContent       *string
-	overrideContent  *string
-	overrideFileName string
-}
-
-// stagedDirectorySync holds the fully prepared directory-sync result before it
-// is promoted into the live project path.
-type stagedDirectorySync struct {
-	stagePath string
-	// stageLogical is stagePath expressed relative to the projects directory,
-	// which is the confinement root every staging mutation runs against.
-	stageLogical    string
-	projectsDir     string
-	composeFileName string
-	project         *projectpkg.Project
-	// syncFiles are the repo files written raw; syncedFiles are their paths.
-	syncFiles   []projects.SyncFile
-	syncedFiles []string
-	// oldSyncedFiles are the paths the previous sync tracked.
-	oldSyncedFiles []string
-	// gitEnvContent is the repo's project-root .env, routed through the env merge.
-	gitEnvContent   *string
-	serviceCount    int
-	contentsChanged bool
-	// backupScope names every live path promotion may create, rewrite or delete.
-	backupScope projects.ProjectUpdateBackupScope
-}
-
-// prepareSyncSource clones the source repository, validates that the configured
-// compose file exists, and reads the compose/env inputs for the sync flow.
-func (s *Service) prepareSyncSource(ctx context.Context, sync *projectpkg.GitOpsSync, result *gitops.SyncResult, actor user.Actor) (*preparedSyncSource, error) {
+// prepareSyncSource clones the source at the pinned revision, or the branch head, records that revision on
+// the run, and reads the compose, env and override inputs.
+func (s *Service) prepareSyncSource(ctx context.Context, sync *projectpkg.GitOpsSync, result *gitops.SyncResult, actor user.Actor, pinned string) (*preparedSyncSource, error) {
 	repository := sync.Repository
 	if repository == nil {
-		return nil, s.failSync(ctx, sync.ID, result, sync, actor, "Repository not found", "repository not found")
+		return nil, s.failSync(ctx, result, sync, actor, "Repository not found", errors.New("repository not found"))
 	}
-
 	authConfig, err := s.repoService.GetAuthConfig(ctx, repository)
 	if err != nil {
-		return nil, s.failSync(ctx, sync.ID, result, sync, actor, "Failed to get authentication config", err.Error())
+		return nil, s.failSync(ctx, result, sync, actor, "Failed to get authentication config", err)
 	}
-
-	repoPath, err := s.repoService.Clone(ctx, repository.URL, sync.Branch, authConfig)
+	// Replaying a pinned revision needs full history.
+	repoPath, err := s.repoService.Clone(ctx, repository.URL, sync.Branch, authConfig, kit.Ternary(pinned == "", 1, 0))
 	if err != nil {
-		return nil, s.failSync(ctx, sync.ID, result, sync, actor, "Failed to clone repository", err.Error())
+		// Anything but a rejected or missing repository is worth another attempt.
+		if !errors.Is(err, transport.ErrAuthenticationRequired) && !errors.Is(err, transport.ErrAuthorizationFailed) && !errors.Is(err, transport.ErrRepositoryNotFound) {
+			err = common.Classify(common.ErrUnavailable, err)
+		}
+		return nil, s.failSync(ctx, result, sync, actor, "Failed to clone repository", err)
 	}
+	source := &preparedSyncSource{repoPath: repoPath, replay: pinned != ""}
 
-	commitHash, err := s.repoService.GetCurrentCommit(ctx, repoPath)
+	source.commitHash, err = s.repoService.GetCurrentCommit(ctx, repoPath)
 	if err != nil {
 		slog.WarnContext(ctx, "Failed to get commit hash", "error", err)
-		commitHash = ""
+	}
+	if pinned != "" && pinned != source.commitHash {
+		repo, openErr := git.PlainOpen(repoPath)
+		if openErr != nil {
+			return source, openErr
+		}
+		tree, treeErr := repo.Worktree()
+		if treeErr != nil {
+			return source, treeErr
+		}
+		if checkoutErr := tree.Checkout(&git.CheckoutOptions{Hash: plumbing.NewHash(pinned)}); checkoutErr != nil {
+			return source, checkoutErr
+		}
+		source.commitHash = pinned
+	}
+	if source.commitHash == "" {
+		return source, errors.New("GitOps source revision is unavailable")
+	}
+	revision, err := json.Marshal(syncRevision{Commit: source.commitHash})
+	if err != nil {
+		return source, err
+	}
+	progress := scheduler.TargetOutcome{ResourceType: "gitops_sync", ID: sync.ID, Status: scheduler.Running, RecoveryData: revision}
+	if progressErr := jobcontext.Progress(ctx, progress); progressErr != nil {
+		return source, progressErr
 	}
 
-	commitHash, err = pinSyncRevisionInternal(ctx, sync.ID, repoPath, commitHash)
-	if err != nil {
-		return &preparedSyncSource{repoPath: repoPath}, err
-	}
 	if !s.repoService.FileExists(ctx, repoPath, sync.ComposePath) {
-		errMsg := "compose file not found: " + sync.ComposePath
-		return &preparedSyncSource{repoPath: repoPath, commitHash: commitHash}, s.failSync(ctx, sync.ID, result, sync, actor, "Compose file not found at "+sync.ComposePath, errMsg)
+		return source, s.failSync(ctx, result, sync, actor, "Compose file not found at "+sync.ComposePath, errors.New("compose file not found: "+sync.ComposePath))
 	}
-
-	composeContent, err := s.repoService.ReadFile(ctx, repoPath, sync.ComposePath)
+	source.composeContent, err = s.repoService.ReadFile(ctx, repoPath, sync.ComposePath)
 	if err != nil {
-		return &preparedSyncSource{repoPath: repoPath, commitHash: commitHash}, s.failSync(ctx, sync.ID, result, sync, actor, "Failed to read compose file", err.Error())
+		return source, s.failSync(ctx, result, sync, actor, "Failed to read compose file", err)
 	}
 
-	source := &preparedSyncSource{
-		repoPath:       repoPath,
-		commitHash:     commitHash,
-		composeContent: composeContent,
-	}
-
-	envPath := filepath.Join(filepath.Dir(sync.ComposePath), ".env")
+	composeDir := filepath.Dir(sync.ComposePath)
+	envPath := filepath.Join(composeDir, ".env")
 	if s.repoService.FileExists(ctx, repoPath, envPath) {
-		content, readFileErr := s.repoService.ReadFile(ctx, repoPath, envPath)
-		if readFileErr != nil {
-			slog.WarnContext(ctx, "Failed to read .env file", "path", envPath, "error", readFileErr)
+		if content, readErr := s.repoService.ReadFile(ctx, repoPath, envPath); readErr != nil {
+			slog.WarnContext(ctx, "Failed to read .env file", "path", envPath, "error", readErr)
 		} else {
 			source.envContent = &content
 		}
 	}
 
-	// Detect a Docker Compose override file (compose.override.yaml, etc.) sitting
-	// beside the compose file in the repo, mirroring `docker compose` behavior.
-	// Only auto-load an override when the compose file was referenced by a
-	// standard filename; an explicit custom path is the `-f` case, where docker
-	// compose does not auto-load overrides.
+	// Like docker compose, only a standard compose filename auto-loads a sibling override; a custom path is the -f case.
 	if slices.Contains(projects.ComposeFileCandidates(), filepath.Base(sync.ComposePath)) {
-		composeDir := filepath.Dir(sync.ComposePath)
 		overrideName, overrideContent, overrideFound, overrideErr := projects.ResolveComposeOverride(
 			func(name string) bool {
 				return s.repoService.FileExists(ctx, repoPath, filepath.Join(composeDir, name))
@@ -233,567 +343,365 @@ func (s *Service) prepareSyncSource(ctx context.Context, sync *projectpkg.GitOps
 				return s.repoService.ReadFile(ctx, repoPath, filepath.Join(composeDir, name))
 			},
 		)
-		// Fail the sync on a read error instead of degrading: WriteComposeOverrideFile
-		// with nil content removes the project's existing override, so a transient
-		// read failure here would delete the override and redeploy without it.
+		// Degrading would delete the project's existing override on a transient read failure.
 		if overrideErr != nil {
-			return source, s.failSync(ctx, sync.ID, result, sync, actor, "Failed to read compose override file", overrideErr.Error())
+			return source, s.failSync(ctx, result, sync, actor, "Failed to read compose override file", overrideErr)
 		}
 		if overrideFound {
 			source.overrideContent = &overrideContent
 			source.overrideFileName = overrideName
 		}
 	}
-
 	return source, nil
 }
 
-func pinSyncRevisionInternal(ctx context.Context, syncID, repoPath, commitHash string) (string, error) {
-	if previous, ok := jobcontext.Run(ctx); ok {
-		for _, target := range previous.Outcome.Targets {
-			if target.ID != syncID || len(target.RecoveryData) == 0 {
-				continue
-			}
-			var revision syncRevisionInternal
-			if err := json.Unmarshal(target.RecoveryData, &revision); err != nil {
-				return "", err
-			}
-			if revision.Commit != "" && revision.Commit != commitHash {
-				repository, err := git.PlainOpen(repoPath)
-				if err != nil {
-					return "", err
-				}
-				tree, err := repository.Worktree()
-				if err != nil {
-					return "", err
-				}
-				if checkoutErr := tree.Checkout(&git.CheckoutOptions{Hash: plumbing.NewHash(revision.Commit)}); checkoutErr != nil {
-					return "", checkoutErr
-				}
-				commitHash = revision.Commit
-			}
-		}
-	}
-	revision, err := json.Marshal(syncRevisionInternal{Commit: commitHash})
-	if err != nil {
-		return "", err
-	}
-	if commitHash == "" {
-		return "", errors.New("GitOps source revision is unavailable")
-	}
-	if progressErr := jobcontext.Progress(ctx, scheduler.TargetOutcome{ResourceType: "gitops_sync", ID: syncID, Status: scheduler.Running, RecoveryData: revision}); progressErr != nil {
-		return "", progressErr
-	}
-	return commitHash, nil
-}
-
-// performDirectorySync runs the directory-sync path and only triggers a
-// redeploy when an already running project's synced contents changed.
-func (
-	s *Service,
-) performDirectorySync(
-	ctx context.Context,
-	sync *projectpkg.GitOpsSync,
-	id string,
-	actor user.Actor,
-	result *gitops.SyncResult,
-	source *preparedSyncSource,
-) (
-	*gitops.SyncResult,
-	error,
-) {
-	slog.InfoContext(ctx, "Using directory sync mode", "syncId", id, "composePath", sync.ComposePath)
-
-	syncFiles, err := s.walkAndParseSyncDirectory(ctx, sync, source.repoPath)
-	if err != nil {
-		return result, s.failSync(ctx, id, result, sync, actor, "Failed to walk directory", err.Error())
-	}
-
-	project, syncedFiles, _, contentsChanged, err := s.syncProjectDirectoryInternal(ctx, sync, syncFiles, actor)
-	if err != nil {
-		if errors.Is(err, common.ErrGitOpsSyncProjectBindingBroken) {
-			errMsg := err.Error()
-			result.Message = "GitOps project binding broken"
-			result.Error = new(errMsg)
-			return result, err
-		}
-		return result, s.failSync(ctx, id, result, sync, actor, "Failed to sync project directory", err.Error())
-	}
-
-	if contentsChanged {
-		if redeployErr := s.redeployIfRunningAfterSync(ctx, sync, project, actor, "directory"); redeployErr != nil {
-			if errors.Is(redeployErr, common.ErrRedeployAfterSyncFailed) {
-				s.markSyncRedeployFailedInternal(ctx, sync, id, source.commitHash, syncedFiles, redeployErr, actor, result)
-			}
-			return result, redeployErr
-		}
-	}
-
-	s.updateSyncStatusWithFiles(ctx, id, "success", "", source.commitHash, syncedFiles)
-	result.Success = true
-	result.Message = fmt.Sprintf("Successfully synced directory with %d files to project %s", len(syncedFiles), project.Name)
-	s.logSyncSuccess(ctx, sync, project, actor)
-	slog.InfoContext(ctx, "GitOps sync completed", "syncId", id, "project", project.Name)
-
-	return result, nil
-}
-
-// singleFileSyncedFilesInternal builds the tracked-file list for a single-file
-// sync: the compose file's base name plus the override file name when one was
-// resolved. Shared by the compose-only and swarm-stack single-file paths so the
-// two never disagree on what a single-file sync tracked.
-func singleFileSyncedFilesInternal(sync *projectpkg.GitOpsSync, source *preparedSyncSource) []string {
-	syncedFiles := []string{filepath.Base(sync.ComposePath)}
-	if source.overrideFileName != "" {
-		syncedFiles = append(syncedFiles, source.overrideFileName)
-	}
-	return syncedFiles
-}
-
-// performSingleFileSyncInternal preserves the legacy compose-only Git sync behavior.
-func (
-	s *Service,
-) performSingleFileSyncInternal(
-	ctx context.Context,
-	sync *projectpkg.GitOpsSync,
-	id string,
-	actor user.Actor,
-	result *gitops.SyncResult,
-	source *preparedSyncSource,
-) (
-	*gitops.SyncResult,
-	error,
-) {
-	slog.InfoContext(ctx, "Using single file sync mode", "syncId", id, "composePath", sync.ComposePath)
-
-	// Single-file sync copies only the one compose file (plus .env and a sibling
-	// override). If the synced .env references additional files via COMPOSE_FILE
-	// or COMPOSE_ENV_FILES, those files never reach the project, so direct the
-	// user to directory sync instead of silently deploying an incomplete
-	// selection.
+// syncComposeFile applies a single-file sync, creating the project on the first sync. It reports whether the
+// project files changed.
+func (s *Service) syncComposeFile(ctx context.Context, sync *projectpkg.GitOpsSync, actor user.Actor, result *gitops.SyncResult, source *preparedSyncSource) (*projectpkg.Project, bool, error) {
+	slog.InfoContext(ctx, "Using single file sync mode", "syncId", sync.ID, "composePath", sync.ComposePath)
+	// Files referenced through COMPOSE_FILE or COMPOSE_ENV_FILES never reach a single-file project.
 	if projects.ComposeEnvRequiresDirectorySync(sync.ComposePath, source.overrideFileName, source.envContent) {
-		return result, s.failSync(ctx, id, result, sync, actor,
-			"COMPOSE_FILE or COMPOSE_ENV_FILES references additional files",
-			"the synced .env references additional files via COMPOSE_FILE or COMPOSE_ENV_FILES; enable \"Sync entire directory\" for this sync")
+		return nil, false, s.failSync(ctx, result, sync, actor, "COMPOSE_FILE or COMPOSE_ENV_FILES references additional files",
+			errors.New("the synced .env references additional files via COMPOSE_FILE or COMPOSE_ENV_FILES; enable \"Sync entire directory\" for this sync"))
 	}
 
-	syncedFiles := singleFileSyncedFilesInternal(sync, source)
-
-	project, err := s.getOrCreateProjectInternal(ctx, sync, id, source.composeContent, source.envContent, source.overrideContent, source.overrideFileName, result, actor)
-	if err != nil {
-		if errors.Is(err, common.ErrRedeployAfterSyncFailed) {
-			s.markSyncRedeployFailedInternal(ctx, sync, id, source.commitHash, syncedFiles, err, actor, result)
-		}
-		return result, err
-	}
-
-	s.updateSyncStatusWithFiles(ctx, id, "success", "", source.commitHash, syncedFiles)
-	result.Success = true
-	result.Message = fmt.Sprintf("Successfully synced compose file from %s to project %s", sync.ComposePath, project.Name)
-	s.logSyncSuccess(ctx, sync, project, actor)
-	slog.InfoContext(ctx, "GitOps sync completed", "syncId", id, "project", project.Name)
-
-	return result, nil
-}
-
-// buildSwarmStackDeployRequestInternal assembles the deploy request for a Git Sync that targets
-// a Swarm stack. WithRegistryAuth is always set so the Git Sync path resolves stored registry
-// credentials the same way a direct stack deploy does. Resolution happens per image at deploy
-// time and yields nothing unless a configured container registry matches that image's host, so
-// stacks built only from public images are unaffected.
-func buildSwarmStackDeployRequestInternal(sync *projectpkg.GitOpsSync, source *preparedSyncSource, overrideContent, envContent string, swarmFiles []swarmtypes.SyncFile) swarmtypes.StackDeployRequest {
-	return swarmtypes.StackDeployRequest{
-		Name:             sync.ProjectName,
-		ComposeContent:   source.composeContent,
-		OverrideContent:  overrideContent,
-		EnvContent:       envContent,
-		Files:            swarmFiles,
-		Prune:            true,
-		WithRegistryAuth: true,
-		WorkingDir:       filepath.Dir(filepath.Join(source.repoPath, sync.ComposePath)),
-	}
-}
-
-// performSwarmStackSyncInternal executes a single file sync targeted at a Swarm Stack
-func (
-	s *Service,
-) performSwarmStackSyncInternal(
-	ctx context.Context,
-	sync *projectpkg.GitOpsSync,
-	id string,
-	actor user.Actor,
-	result *gitops.SyncResult,
-	source *preparedSyncSource,
-) (
-	*gitops.SyncResult,
-	error,
-) {
-	slog.InfoContext(ctx, "Deploying Swarm Stack from GitOps sync", "syncId", id, "stackName", sync.ProjectName)
-
-	if s.swarmService == nil {
-		return result, s.failSync(ctx, id, result, sync, actor, "Swarm service is unavailable", "swarm service is unavailable")
-	}
-
-	envContent := ""
-	if source.envContent != nil {
-		envContent = *source.envContent
-	}
-
-	overrideContent := ""
-	if source.overrideContent != nil {
-		overrideContent = *source.overrideContent
-	}
-
-	var syncFiles []projects.SyncFile
-	if sync.SyncDirectory {
-		files, err := s.walkAndParseSyncDirectory(ctx, sync, source.repoPath)
+	if projectID := kit.FromPtr(sync.ProjectID); projectID != "" {
+		project, found, err := s.projectService.FindProjectByID(ctx, projectID)
 		if err != nil {
-			return result, s.failSync(ctx, id, result, sync, actor, "Failed to walk directory", err.Error())
+			return nil, false, s.failSync(ctx, result, sync, actor, "Failed to load existing project", fmt.Errorf("failed to get project %s: %w", projectID, err))
 		}
-		syncFiles = files
-	}
-
-	swarmFiles := make([]swarmtypes.SyncFile, len(syncFiles))
-	syncedFiles := make([]string, 0, len(syncFiles))
-	for i, f := range syncFiles {
-		swarmFiles[i] = swarmtypes.SyncFile{
-			RelativePath: f.RelativePath,
-			Content:      f.Content,
+		if !found {
+			slog.WarnContext(ctx, "Existing project not found; GitOps project binding is broken", "projectId", projectID, "syncId", sync.ID)
+			bindingErr := common.Classify(common.ErrGitOpsSyncProjectBindingBroken, fmt.Errorf("GitOps sync project binding broken: sync %s references missing project %s", sync.ID, projectID))
+			return nil, false, s.failSync(ctx, result, sync, actor, "GitOps project binding broken", bindingErr)
 		}
-		syncedFiles = append(syncedFiles, f.RelativePath)
+		_, changed, err := s.projectService.ApplyGitSyncProjectFiles(ctx, project.ID, source.composeContent, source.envContent, source.overrideContent, source.overrideFileName, actor)
+		if err != nil {
+			return nil, false, s.failSync(ctx, result, sync, actor, "Failed to update project files", err)
+		}
+		slog.InfoContext(ctx, "Updated project files", "projectName", project.Name, "projectId", project.ID, "changed", changed)
+		return project, changed, nil
 	}
 
-	req := buildSwarmStackDeployRequestInternal(sync, source, overrideContent, envContent, swarmFiles)
-
-	if _, err := s.swarmService.DeployStack(ctx, sync.EnvironmentID, req); err != nil {
-		return result, s.failSync(ctx, id, result, sync, actor, "Failed to deploy swarm stack", err.Error())
+	// The non-suffixing create: a name collision means the binding is broken, never a "-N" duplicate.
+	project, err := s.projectService.CreateProject(ctx, sync.ProjectName, source.composeContent, source.envContent, projecttypes.CreateProjectWorkspaceManifest{}, nil, nil, nil, actor, false)
+	if errors.Is(err, projects.ErrProjectDirExists) {
+		err = common.Classify(common.ErrGitOpsSyncProjectBindingBroken, fmt.Errorf("GitOps sync project binding broken: sync %s cannot create project %q: a directory with that name "+
+			"already exists; refusing to create a duplicate", sync.ID, projects.SanitizeProjectName(sync.ProjectName)))
+		return nil, false, s.failSync(ctx, result, sync, actor, "GitOps project binding broken", err)
 	}
-
-	if len(syncedFiles) == 0 {
-		syncedFiles = singleFileSyncedFilesInternal(sync, source)
+	if err != nil {
+		return nil, false, s.failSync(ctx, result, sync, actor, "Failed to create project", err)
 	}
-	s.updateSyncStatusWithFiles(ctx, id, "success", "", source.commitHash, syncedFiles)
-	result.Success = true
-	result.Message = fmt.Sprintf("Successfully deployed swarm stack %s from %s", sync.ProjectName, sync.ComposePath)
-
-	// Log event
-	_, _ = s.eventService.CreateEvent(ctx, event.CreateEventRequest{
-		Type:          event.EventTypeGitSyncRun,
-		Severity:      event.EventSeveritySuccess,
-		Title:         "Git sync completed for stack",
-		Description:   fmt.Sprintf("Successfully synced '%s' to swarm stack '%s'", sync.Name, sync.ProjectName),
-		ResourceType:  new("git_sync"),
-		ResourceID:    new(sync.ID),
-		ResourceName:  new(sync.Name),
-		UserID:        new(actor.ID),
-		Username:      new(actor.Username),
-		EnvironmentID: new(sync.EnvironmentID),
-	})
-
-	slog.InfoContext(ctx, "GitOps swarm stack sync completed", "syncId", id, "stack", sync.ProjectName)
-	return result, nil
+	if err = s.db.WithContext(ctx).Model(&projectpkg.GitOpsSync{}).Where("id = ?", sync.ID).Update("project_id", project.ID).Error; err != nil {
+		return nil, false, s.failSync(ctx, result, sync, actor, "Failed to update sync with project ID", err)
+	}
+	if err = s.db.WithContext(ctx).Model(&projectpkg.Project{}).Where("id = ?", project.ID).Update("gitops_managed_by", sync.ID).Error; err != nil {
+		return nil, false, s.failSync(ctx, result, sync, actor, "Failed to mark project as GitOps-managed", err)
+	}
+	if _, _, err = s.projectService.ApplyGitSyncProjectFiles(ctx, project.ID, source.composeContent, source.envContent, source.overrideContent, source.overrideFileName, actor); err != nil {
+		return nil, false, s.failSync(ctx, result, sync, actor, "Failed to sync project env files", err)
+	}
+	slog.InfoContext(ctx, "Created project for GitOps sync", "projectName", sync.ProjectName, "projectId", project.ID)
+	return project, true, nil
 }
 
-// redeployIfRunningAfterSync redeploys a project when it is already running,
-// or when the sync has RedeployAfterSync enabled (in which case a stopped
-// project is redeployed too, mirroring Portainer's "Re-pull image" stack
-// option). Returns a common.ErrRedeployAfterSyncFailed when the redeploy
-// itself fails; callers surface that on the sync row's LastSyncError.
-//
-// When neither condition holds — project stopped and RedeployAfterSync off —
-// RedeployProject is never called (Arcane does not start a stopped project on
-// its behalf by default), which also means the image pull that RedeployProject
-// performs as a side effect never happens. Left alone, that can leave a
-// stopped container referencing an image tag that was since re-pointed or
-// pruned upstream, with no local copy to fall back on at next start. If the
-// sync opted into PullImageAfterSync, pull the image here instead so it stays
-// available even while the project is stopped.
-func (s *Service) redeployIfRunningAfterSync(ctx context.Context, sync *projectpkg.GitOpsSync, project *projectpkg.Project, actor user.Actor, syncMode string) error {
+// redeployIfRunningAfterSync redeploys a running project, or any project when RedeployAfterSync is on. A project
+// left stopped still gets its images pulled when PullImageAfterSync is on, so a re-pointed tag stays available.
+func (s *Service) redeployIfRunningAfterSync(ctx context.Context, sync *projectpkg.GitOpsSync, project *projectpkg.Project, actor user.Actor) error {
 	details, err := s.projectService.GetProjectDetails(ctx, project.ID, projecttypes.DetailsOptions{})
 	running := err == nil && (details.Status == string(projectpkg.ProjectStatusRunning) || details.Status == string(projectpkg.ProjectStatusPartiallyRunning))
-
-	if !running && !sync.RedeployAfterSync {
-		return s.pullImageAfterSyncIfConfiguredInternal(ctx, sync, project, actor)
-	}
-
-	slog.InfoContext(ctx, "Redeploying project due to content change from Git sync", "syncMode", syncMode, "projectName", project.Name, "projectId", project.ID, "wasRunning", running)
-	if redeployProjectErr := s.projectService.RedeployProject(ctx, project.ID, actor, nil); redeployProjectErr != nil {
-		slog.ErrorContext(ctx, "Failed to redeploy project after Git sync", "syncMode", syncMode, "error", redeployProjectErr, "projectId", project.ID)
-		return common.Classify(common.ErrRedeployAfterSyncFailed, fmt.Errorf("redeploy failed: %w", redeployProjectErr))
-	}
-	return nil
-}
-
-// pullImageAfterSyncIfConfiguredInternal pulls each service's image for a
-// project that Git sync changed but did not redeploy (because it wasn't
-// running), when the sync has PullImageAfterSync enabled. Best-effort: a pull
-// failure is logged but never fails the sync itself, mirroring how
-// RedeployProject treats its own pre-deploy pull.
-func (s *Service) pullImageAfterSyncIfConfiguredInternal(ctx context.Context, sync *projectpkg.GitOpsSync, project *projectpkg.Project, actor user.Actor) error {
-	if !sync.PullImageAfterSync {
-		return nil
-	}
-
-	credentials, cerr := s.projectService.ResolveRegistryCredentials(ctx)
-	if cerr != nil {
-		slog.WarnContext(ctx, "failed to resolve registry credentials for post-sync pull", "error", cerr, "projectId", project.ID)
-	}
-	slog.InfoContext(ctx, "Pulling project images after Git sync (project not running)", "projectName", project.Name, "projectId", project.ID)
-	if err := s.projectService.PullProjectImages(ctx, project.ID, io.Discard, actor, credentials); err != nil {
-		slog.ErrorContext(ctx, "failed to pull project images after Git sync", "error", err, "projectId", project.ID)
-		return common.Classify(common.ErrRedeployAfterSyncFailed, fmt.Errorf("post-sync image pull failed: %w", err))
+	switch {
+	case running || sync.RedeployAfterSync:
+		slog.InfoContext(ctx, "Redeploying project after Git sync", "projectName", project.Name, "projectId", project.ID, "wasRunning", running)
+		if redeployErr := s.projectService.RedeployProject(ctx, project.ID, actor, nil); redeployErr != nil {
+			slog.ErrorContext(ctx, "Failed to redeploy project after Git sync", "error", redeployErr, "projectId", project.ID)
+			return common.Classify(common.ErrRedeployAfterSyncFailed, fmt.Errorf("redeploy failed: %w", redeployErr))
+		}
+	case sync.PullImageAfterSync:
+		credentials, credentialsErr := s.projectService.ResolveRegistryCredentials(ctx)
+		if credentialsErr != nil {
+			slog.WarnContext(ctx, "failed to resolve registry credentials for post-sync pull", "error", credentialsErr, "projectId", project.ID)
+		}
+		slog.InfoContext(ctx, "Pulling project images after Git sync (project not running)", "projectName", project.Name, "projectId", project.ID)
+		if pullErr := s.projectService.PullProjectImages(ctx, project.ID, io.Discard, actor, credentials); pullErr != nil {
+			slog.ErrorContext(ctx, "failed to pull project images after Git sync", "error", pullErr, "projectId", project.ID)
+			return common.Classify(common.ErrRedeployAfterSyncFailed, fmt.Errorf("post-sync image pull failed: %w", pullErr))
+		}
 	}
 	return nil
 }
 
-// logSyncSuccess records the Git sync completion event once the filesystem and
-// sync-status updates have already succeeded.
-func (s *Service) logSyncSuccess(ctx context.Context, sync *projectpkg.GitOpsSync, project *projectpkg.Project, actor user.Actor) {
-	_, _ = s.eventService.CreateEvent(ctx, event.CreateEventRequest{
-		Type:          event.EventTypeGitSyncRun,
-		Severity:      event.EventSeveritySuccess,
-		Title:         "Git sync completed",
-		Description:   fmt.Sprintf("Successfully synced '%s' to project '%s'", sync.Name, project.Name),
-		ResourceType:  new("git_sync"),
-		ResourceID:    new(sync.ID),
-		ResourceName:  new(sync.Name),
-		UserID:        new(actor.ID),
-		Username:      new(actor.Username),
-		EnvironmentID: new(sync.EnvironmentID),
-	})
-}
-
-func (s *Service) updateSyncStatus(ctx context.Context, id, status, errorMsg, commitHash string) {
-	now := time.Now()
+// updateSyncStatus stores a run's result on the row. An empty commit keeps the recorded one, and nil
+// syncedFiles keeps the tracked list.
+func (s *Service) updateSyncStatus(ctx context.Context, id, status, errorMsg, commitHash string, syncedFiles []string) {
 	updates := map[string]any{
-		"last_sync_at":     now,
+		"last_sync_at":     time.Now(),
 		"last_sync_status": status,
+		"last_sync_error":  kit.Ternary[any](errorMsg != "", errorMsg, nil),
 	}
-
-	updates["last_sync_error"] = kit.Ternary[any](errorMsg != "", errorMsg, nil)
-
 	if commitHash != "" {
 		updates["last_sync_commit"] = commitHash
 	}
-
+	if syncedFiles != nil {
+		updates["synced_files"] = projectpkg.EncodeSyncedFiles(syncedFiles)
+	}
 	if err := s.db.WithContext(ctx).Model(&projectpkg.GitOpsSync{}).Where("id = ?", id).Updates(updates).Error; err != nil {
 		slog.ErrorContext(ctx, "Failed to update sync status", "error", err, "syncId", id)
 	}
 }
 
-func (s *Service) failSync(ctx context.Context, id string, result *gitops.SyncResult, sync *projectpkg.GitOpsSync, actor user.Actor, message, errMsg string) error {
-	result.Message = message
-	result.Error = new(errMsg)
-	s.updateSyncStatus(ctx, id, "failed", errMsg, "")
-	s.logError(ctx, sync, actor, errMsg)
-	return fmt.Errorf("%s", errMsg)
-}
-
-// markSyncRedeployFailedInternal records a sync where the file sync wrote
-// cleanly but the auto-redeploy that follows failed (typically a pre-deploy
-// lifecycle hook returning non-zero). The synced-files list and commit hash
-// are preserved on the row so operators can see what reached disk; the
-// error message surfaces the redeploy failure on LastSyncError.
-func (
-	s *Service,
-) markSyncRedeployFailedInternal(
-	ctx context.Context,
-	sync *projectpkg.GitOpsSync,
-	id, commitHash string,
-	syncedFiles []string,
-	redeployErr error,
-	actor user.Actor,
-	result *gitops.SyncResult,
-) {
-	errMsg := redeployErr.Error()
-	result.Success = false
-	result.Message = "Sync wrote files but redeploy failed"
-	result.Error = new(errMsg)
-	s.updateSyncStatusWithFiles(ctx, id, "failed", errMsg, commitHash, syncedFiles)
-	s.logError(ctx, sync, actor, errMsg)
-}
-
-func (s *Service) disableAutoSyncForBrokenBindingInternal(ctx context.Context, sync *projectpkg.GitOpsSync) {
-	if sync == nil || sync.ID == "" {
-		return
-	}
-	if err := s.db.WithContext(ctx).
-		Model(&projectpkg.GitOpsSync{}).
-		Where("id = ?", sync.ID).
-		Update("auto_sync", false).Error; err != nil {
-		slog.ErrorContext(ctx, "Failed to disable GitOps auto-sync after broken project binding", "syncId", sync.ID, "error", err)
-	}
-	sync.AutoSync = false
-	s.unregisterJob(ctx, sync.ID)
-}
-
-func (
-	s *Service,
-) failSyncAndDisableAutoSyncInternal(
-	ctx context.Context,
-	id string,
-	result *gitops.SyncResult,
-	sync *projectpkg.GitOpsSync,
-	actor user.Actor,
-	message string,
-	failure error,
-) error {
-	errMsg := failure.Error()
-	_ = s.failSync(ctx, id, result, sync, actor, message, errMsg)
-	s.disableAutoSyncForBrokenBindingInternal(ctx, sync)
-	return failure
-}
-
-func (s *Service) recordBrokenProjectBindingInternal(ctx context.Context, sync *projectpkg.GitOpsSync, actor user.Actor, err error) {
-	if !errors.Is(err, common.ErrGitOpsSyncProjectBindingBroken) || sync == nil {
-		return
-	}
+// failSync records a failed sync on the result, the row and an event, and returns err. A broken project
+// binding also turns auto-sync off so the sync stops retrying.
+func (s *Service) failSync(ctx context.Context, result *gitops.SyncResult, sync *projectpkg.GitOpsSync, actor user.Actor, message string, err error) error {
 	errMsg := err.Error()
-	s.updateSyncStatus(ctx, sync.ID, "failed", errMsg, "")
+	result.Message = message
+	result.Error = &errMsg
+	s.updateSyncStatus(ctx, sync.ID, "failed", errMsg, "", nil)
 	s.logError(ctx, sync, actor, errMsg)
-	s.disableAutoSyncForBrokenBindingInternal(ctx, sync)
+	if errors.Is(err, common.ErrGitOpsSyncProjectBindingBroken) {
+		if disableErr := s.db.WithContext(ctx).Model(&projectpkg.GitOpsSync{}).Where("id = ?", sync.ID).Update("auto_sync", false).Error; disableErr != nil {
+			slog.ErrorContext(ctx, "Failed to disable GitOps auto-sync after broken project binding", "syncId", sync.ID, "error", disableErr)
+		}
+		sync.AutoSync = false
+		s.unregisterJob(ctx, sync.ID)
+	}
+	return err
 }
 
-func (
-	s *Service,
-) createProjectForSyncInternal(
-	ctx context.Context,
-	sync *projectpkg.GitOpsSync,
-	id, composeContent string,
-	envContent, overrideContent *string,
-	overrideFileName string,
-	result *gitops.SyncResult,
-	actor user.Actor,
-) (
-	*projectpkg.Project,
-	error,
-) {
-	// Use the non-suffixing create: a GitOps sync must never mint a "-N" duplicate.
-	// A name collision means a project directory already exists for this name, so the
-	// binding is broken — fail loudly and disable auto-sync instead of duplicating.
-	project, err := s.projectService.CreateProject(ctx, sync.ProjectName, composeContent, envContent, projecttypes.CreateProjectWorkspaceManifest{}, nil, nil, nil, actor, false)
+// syncProjectDirectory stages and validates the synced tree, then creates or updates the project. It reports
+// the synced paths, whether it created the project, and whether the contents changed.
+func (s *Service) syncProjectDirectory(ctx context.Context, sync *projectpkg.GitOpsSync, syncFiles []projects.SyncFile, actor user.Actor) (*projectpkg.Project, []string, bool, bool, error) {
+	projectsDir, err := s.projectService.GetProjectsDirectory(ctx)
 	if err != nil {
-		if errors.Is(err, projects.ErrProjectDirExists) {
-			bindingErr := common.Classify(
-				common.ErrGitOpsSyncProjectBindingBroken,
-				fmt.Errorf(
-					"GitOps sync project binding broken: sync %s cannot create project %q: a directory with that name "+
-						"already exists; refusing to create a duplicate",
-					sync.ID,
-					projects.SanitizeProjectName(
-						sync.ProjectName,
-					),
-				),
-			)
-
-			return nil, s.failSyncAndDisableAutoSyncInternal(ctx, id, result, sync, actor, "GitOps project binding broken", bindingErr)
-		}
-		return nil, s.failSync(ctx, id, result, sync, actor, "Failed to create project", err.Error())
+		return nil, nil, false, false, fmt.Errorf("failed to get projects directory: %w", err)
 	}
-
-	// Update sync with project ID
-	if linkSyncProjectErr := s.db.WithContext(ctx).Model(&projectpkg.GitOpsSync{}).Where("id = ?", id).Updates(map[string]any{
-		"project_id": project.ID,
-	}).Error; linkSyncProjectErr != nil {
-		return nil, s.failSync(ctx, id, result, sync, actor, "Failed to update sync with project ID", linkSyncProjectErr.Error())
-	}
-
-	// Mark project as GitOps-managed
-	if markProjectManagedErr := s.db.WithContext(ctx).Model(&projectpkg.Project{}).Where("id = ?", project.ID).Update("gitops_managed_by", id).Error; markProjectManagedErr != nil {
-		return nil, s.failSync(ctx, id, result, sync, actor, "Failed to mark project as GitOps-managed", markProjectManagedErr.Error())
-	}
-
-	if _, _, applyGitSyncProjectFilesErr := s.projectService.ApplyGitSyncProjectFiles(
-		ctx, project.ID, composeContent, envContent, overrideContent, overrideFileName, actor,
-	); applyGitSyncProjectFilesErr != nil {
-		return nil, s.failSync(ctx, id, result, sync, actor, "Failed to sync project env files", applyGitSyncProjectFilesErr.Error())
-	}
-
-	slog.InfoContext(ctx, "Created project for GitOps sync", "projectName", sync.ProjectName, "projectId", project.ID)
-
-	// A freshly created project has no containers yet, so it's always
-	// "stopped" from RedeployProject's point of view — mirror
-	// updateProjectForSyncInternal's post-sync behavior here instead of
-	// silently leaving the new project undeployed with no image pulled.
-	if sync.RedeployAfterSync {
-		slog.InfoContext(ctx, "Redeploying newly created project from Git sync", "projectName", project.Name, "projectId", project.ID)
-		if redeployProjectErr := s.projectService.RedeployProject(ctx, project.ID, actor, nil); redeployProjectErr != nil {
-			slog.ErrorContext(ctx, "Failed to redeploy newly created project after Git sync", "error", redeployProjectErr, "projectId", project.ID)
-			return nil, common.Classify(common.ErrRedeployAfterSyncFailed, fmt.Errorf("redeploy failed: %w", redeployProjectErr))
-		}
-	} else if pullImageAfterSyncIfConfiguredErr := s.pullImageAfterSyncIfConfiguredInternal(ctx, sync, project, actor); pullImageAfterSyncIfConfiguredErr != nil {
-		return nil, pullImageAfterSyncIfConfiguredErr
-	}
-
-	return project, nil
-}
-
-func (
-	s *Service,
-) getOrCreateProjectInternal(
-	ctx context.Context,
-	sync *projectpkg.GitOpsSync,
-	id, composeContent string,
-	envContent, overrideContent *string,
-	overrideFileName string,
-	result *gitops.SyncResult,
-	actor user.Actor,
-) (
-	*projectpkg.Project,
-	error,
-) {
-	var project *projectpkg.Project
-
-	if sync.ProjectID != nil && *sync.ProjectID != "" {
-		var found bool
-		var lookupErr error
-		project, found, lookupErr = s.projectService.FindProjectByID(ctx, *sync.ProjectID)
-		if lookupErr != nil {
-			lookupErr = fmt.Errorf("failed to get project %s: %w", *sync.ProjectID, lookupErr)
-			return nil, s.failSync(ctx, id, result, sync, actor, "Failed to load existing project", lookupErr.Error())
-		}
-		if !found {
-			err := common.Classify(common.ErrGitOpsSyncProjectBindingBroken, fmt.Errorf("GitOps sync project binding broken: sync %s references missing project %s", sync.ID, *sync.ProjectID))
-
-			slog.WarnContext(ctx, "Existing project not found; GitOps project binding is broken", "projectId", *sync.ProjectID, "syncId", sync.ID)
-			return nil, s.failSyncAndDisableAutoSyncInternal(ctx, id, result, sync, actor, "GitOps project binding broken", err)
-		}
-	}
-
-	if project == nil {
-		return s.createProjectForSyncInternal(ctx, sync, id, composeContent, envContent, overrideContent, overrideFileName, result, actor)
-	}
-
-	if err := s.updateProjectForSyncInternal(ctx, sync, id, project, composeContent, envContent, overrideContent, overrideFileName, result, actor); err != nil {
-		return nil, err
-	}
-	return project, nil
-}
-
-func (
-	s *Service,
-) updateProjectForSyncInternal(
-	ctx context.Context,
-	sync *projectpkg.GitOpsSync,
-	id string,
-	project *projectpkg.Project,
-	composeContent string,
-	envContent, overrideContent *string,
-	overrideFileName string,
-	result *gitops.SyncResult,
-	actor user.Actor,
-) error {
-	_, changed, err := s.projectService.ApplyGitSyncProjectFiles(
-		ctx, project.ID, composeContent, envContent, overrideContent, overrideFileName, actor,
-	)
+	stageLogical, err := acfs.MkdirTemp(ctx, projectsDir, "/", ".gitops-sync-stage-*")
 	if err != nil {
-		return s.failSync(ctx, id, result, sync, actor, "Failed to update project files", err.Error())
+		return nil, nil, false, false, fmt.Errorf("failed to create staging directory: %w", err)
 	}
-	slog.InfoContext(ctx, "Updated project files", "projectName", project.Name, "projectId", project.ID, "changed", changed)
-	if !changed {
+	stage := &stagedDirectorySync{
+		stagePath:       filepath.Join(projectsDir, filepath.FromSlash(strings.TrimPrefix(stageLogical, "/"))),
+		stageLogical:    stageLogical,
+		projectsDir:     projectsDir,
+		composeFileName: filepath.Base(sync.ComposePath),
+		// Older syncs may still track .env, which cleanup would delete from the stage before the env merge reads it.
+		oldSyncedFiles:  slices.DeleteFunc(sync.SyncedFileList(), func(path string) bool { return slices.Contains(reservedRootEnvFiles, path) }),
+		contentsChanged: true,
+	}
+	// The stage must go even after ctx was cancelled: acfs refuses work on a cancelled context.
+	defer func() {
+		if stage.stagePath != "" {
+			_ = acfs.RemoveAll(context.WithoutCancel(ctx), projectsDir, stageLogical)
+		}
+	}()
+
+	// Reserved root env files are Arcane's bookkeeping and only come from the env merge, which takes a committed .env as its git source.
+	for _, file := range syncFiles {
+		switch {
+		case !slices.Contains(reservedRootEnvFiles, file.RelativePath):
+			stage.syncFiles = append(stage.syncFiles, file)
+			stage.syncedFiles = append(stage.syncedFiles, file.RelativePath)
+		case file.RelativePath == projects.EffectiveEnvFileName:
+			stage.gitEnvContent = new(string(file.Content))
+		default:
+			slog.WarnContext(ctx, "dropping reserved Arcane env file from git payload; will be re-derived from override merge", "path", file.RelativePath)
+		}
+	}
+
+	if stage.project, err = s.DirectoryProject(ctx, sync); err != nil {
+		return nil, nil, false, false, err
+	}
+	if stage.project != nil {
+		staleFiles, staleErr := projects.StaleComposeFiles(ctx, stage.project.Path, stage.composeFileName, stage.syncedFiles)
+		if staleErr != nil {
+			return nil, nil, false, false, fmt.Errorf("failed to detect stale compose files: %w", staleErr)
+		}
+		stage.backupScope.Paths = slices.Concat(stage.syncedFiles, stage.oldSyncedFiles, staleFiles,
+			[]string{projects.EffectiveEnvFileName, projects.GitSourceEnvFileName, projects.OverrideEnvFileName})
+		if linkErr := linkProjectIntoStage(stage.project.Path, stage.stagePath, stage.backupScope.Paths); linkErr != nil {
+			return nil, nil, false, false, fmt.Errorf("failed to stage current project files: %w", linkErr)
+		}
+		if _, seedErr := seedStageEnvFromDir(ctx, stage.project.Path, projectsDir, stage.stagePath); seedErr != nil {
+			return nil, nil, false, false, seedErr
+		}
+		if stage.contentsChanged, err = projects.DirectorySyncContentsChanged(ctx, stage.project.Path, stage.syncFiles, stage.oldSyncedFiles, stage.composeFileName); err != nil {
+			return nil, nil, false, false, fmt.Errorf("failed to compare staged directory changes: %w", err)
+		}
+	} else if seedErr := s.seedStageEnvFromCandidateDir(ctx, sync, projectsDir, stage.stagePath); seedErr != nil {
+		return nil, nil, false, false, seedErr
+	}
+
+	preEnvContent, postEnvContent, err := s.applyDirectorySync(ctx, stage.stagePath, stage)
+	if err != nil {
+		return nil, nil, false, false, err
+	}
+	if stage.project != nil && projects.EnvContentChanged(preEnvContent, postEnvContent) {
+		stage.contentsChanged = true
+	}
+	if stage.serviceCount, err = s.projectService.ValidateComposeDirectory(ctx, sync.ProjectName, stage.stagePath, stage.composeFileName); err != nil {
+		return nil, nil, false, false, fmt.Errorf("invalid compose file: %w", err)
+	}
+
+	if stage.project == nil {
+		project, createErr := s.createDirectorySyncProject(ctx, sync, stage, actor)
+		if createErr != nil {
+			return nil, nil, false, false, createErr
+		}
+		return project, stage.syncedFiles, true, true, nil
+	}
+	project, err := s.updateDirectorySyncProject(ctx, sync, stage)
+	if err != nil {
+		return nil, nil, false, false, err
+	}
+	return project, stage.syncedFiles, false, stage.contentsChanged, nil
+}
+
+// seedStageEnvFromCandidateDir copies the env files of a pre-existing directory at the conventional project
+// path into a first-sync stage, so a server-side .env can supply ${VAR} values the repo leaves out.
+func (s *Service) seedStageEnvFromCandidateDir(ctx context.Context, sync *projectpkg.GitOpsSync, projectsDir, stagePath string) error {
+	candidatePath := filepath.Join(projectsDir, projects.SanitizeProjectName(sync.ProjectName))
+	info, err := os.Stat(candidatePath)
+	if errors.Is(err, os.ErrNotExist) {
 		return nil
 	}
-	return s.redeployIfRunningAfterSync(ctx, sync, project, actor, "single-file")
+	if err != nil {
+		return fmt.Errorf("inspect pre-existing project directory %s: %w", candidatePath, err)
+	}
+	if !info.IsDir() {
+		return nil
+	}
+	state, err := seedStageEnvFromDir(ctx, candidatePath, projectsDir, stagePath)
+	if err != nil || state.HasEffective || (!state.HasGitSource && !state.HasOverride) {
+		return err
+	}
+	// Only .env.git and/or project.env exist, so derive .env from them.
+	merged, err := projects.BuildEffectiveEnvContent(state.GitContent, state.OverrideContent)
+	if err != nil {
+		return fmt.Errorf("build effective env from pre-existing project: %w", err)
+	}
+	if writeErr := projects.WriteProjectFile(ctx, projectsDir, stagePath, projects.EffectiveEnvFileName, merged); writeErr != nil {
+		return fmt.Errorf("seed stage .env: %w", writeErr)
+	}
+	return nil
+}
+
+// DirectoryProject resolves the linked project for a directory sync, relinking or recovering it when the
+// stored reference is stale. A sync whose project is gone and cannot be recovered has a broken binding.
+func (s *Service) DirectoryProject(ctx context.Context, sync *projectpkg.GitOpsSync) (*projectpkg.Project, error) {
+	projectID := kit.FromPtr(sync.ProjectID)
+	if projectID != "" {
+		project, found, err := s.projectService.FindProjectByID(ctx, projectID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get project %s: %w", projectID, err)
+		}
+		if found {
+			if rootErr := s.projectService.EnsureProjectPathUnderRoot(ctx, project, true); rootErr != nil {
+				return nil, rootErr
+			}
+			return project, s.projectService.EnsureGitOpsProjectLinked(ctx, sync, project)
+		}
+		slog.WarnContext(ctx, "Existing project not found, attempting recovery", "projectId", projectID, "syncId", sync.ID)
+	}
+
+	project, err := s.recoverProject(ctx, sync)
+	if projectID != "" && project == nil {
+		cause := cmp.Or(err, errors.New("no unique recovery candidate was found"))
+		return nil, common.Classify(common.ErrGitOpsSyncProjectBindingBroken, fmt.Errorf("GitOps sync project binding broken: sync %s references missing project %s: %w", sync.ID, projectID, cause))
+	}
+	return project, err
+}
+
+// recoverProject finds the one project still managed by the sync, or else adopts the one projects-directory
+// entry that matches the sync's name and holds its compose file.
+func (s *Service) recoverProject(ctx context.Context, sync *projectpkg.GitOpsSync) (*projectpkg.Project, error) {
+	var managed []projectpkg.Project
+	if err := s.db.WithContext(ctx).Where("gitops_managed_by = ?", sync.ID).Find(&managed).Error; err != nil {
+		return nil, fmt.Errorf("failed to list GitOps-managed projects for sync %s: %w", sync.ID, err)
+	}
+	var recovered []projectpkg.Project
+	for i := range managed {
+		if err := s.projectService.EnsureProjectPathUnderRoot(ctx, &managed[i], true); err != nil {
+			return nil, err
+		}
+		if _, err := s.projectService.ResolveProjectComposeFile(ctx, &managed[i]); err == nil {
+			recovered = append(recovered, managed[i])
+		} else if !errors.Is(err, common.ErrProjectComposeFileNotFound) {
+			return nil, err
+		}
+	}
+	switch len(recovered) {
+	case 0:
+	case 1:
+		return &recovered[0], s.projectService.EnsureGitOpsProjectLinked(ctx, sync, &recovered[0])
+	default:
+		return nil, fmt.Errorf("multiple GitOps-managed projects match sync %s; refusing automatic relink", sync.ID)
+	}
+
+	projectsDir, err := s.projectService.GetProjectsDirectory(ctx)
+	if err != nil {
+		return nil, err
+	}
+	entries, err := acfs.List(ctx, projectsDir, "/")
+	if err != nil {
+		return nil, fmt.Errorf("failed to list projects directory %s: %w", projectsDir, err)
+	}
+	composeFileName := strings.TrimSpace(filepath.Base(sync.ComposePath))
+	if composeFileName == "" || composeFileName == "." {
+		return nil, nil
+	}
+
+	prefix := projects.SanitizeProjectName(sync.ProjectName)
+	var matches []string
+	for _, entry := range entries {
+		// acfs reports a symlink as a non-directory, so adoption never follows one; Arcane's own scratch dirs never qualify.
+		if !entry.IsDirectory || projects.IsInternalScratchDirName(entry.Name) || (prefix != "" && entry.Name != prefix && !strings.HasPrefix(entry.Name, prefix+"-")) {
+			continue
+		}
+		candidatePath := filepath.Join(projectsDir, entry.Name)
+		composeEntry, statErr := acfs.Stat(ctx, projectsDir, path.Join(entry.Path, composeFileName), true)
+		switch {
+		case statErr == nil && !composeEntry.IsDirectory:
+			matches = append(matches, candidatePath)
+		case statErr != nil && !errors.Is(statErr, fs.ErrNotExist):
+			return nil, fmt.Errorf("failed to inspect recovery candidate %s: %w", filepath.Join(candidatePath, composeFileName), statErr)
+		}
+	}
+	switch len(matches) {
+	case 0:
+		return nil, nil
+	case 1:
+	default:
+		return nil, fmt.Errorf("multiple candidate project directories match sync %s; refusing automatic relink", sync.ID)
+	}
+
+	var project projectpkg.Project
+	err = s.db.WithContext(ctx).Where("path = ?", matches[0]).First(&project).Error
+	if err == nil {
+		if ensureErr := s.projectService.EnsureProjectPathUnderRoot(ctx, &project, true); ensureErr != nil {
+			return nil, ensureErr
+		}
+		return &project, s.projectService.EnsureGitOpsProjectLinked(ctx, sync, &project)
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, fmt.Errorf("failed to get project by path %s: %w", matches[0], err)
+	}
+
+	project = projectpkg.Project{
+		Name:            sync.ProjectName,
+		DirName:         new(filepath.Base(matches[0])),
+		Path:            matches[0],
+		Status:          projectpkg.ProjectStatusUnknown,
+		StatusReason:    new("Project recovered from existing GitOps-managed directory"),
+		GitOpsManagedBy: &sync.ID,
+	}
+	if project.ServiceCount, err = s.projectService.CountServicesFromCompose(ctx, project); err != nil {
+		slog.WarnContext(ctx, "Failed to count services while recovering GitOps project", "syncId", sync.ID, "path", matches[0], "error", err)
+	}
+	if createErr := s.projectService.CreateGitOpsManagedProject(ctx, sync, &project, user.Actor{}, false); createErr != nil {
+		return nil, createErr
+	}
+	return &project, nil
 }
 
 // walkAndParseSyncDirectory walks the repository directory and returns all files with their contents.
@@ -840,146 +748,9 @@ func (s *Service) walkAndParseSyncDirectory(ctx context.Context, sync *projectpk
 	return syncFiles, nil
 }
 
-// syncProjectDirectoryInternal runs the new directory-sync path end to end:
-// stage files, validate the staged tree, then create or update the project.
-func (
-	s *Service,
-) syncProjectDirectoryInternal(
-	ctx context.Context,
-	sync *projectpkg.GitOpsSync,
-	syncFiles []projects.SyncFile,
-	actor user.Actor,
-) (
-	*projectpkg.Project,
-	[]string,
-	bool,
-	bool,
-	error,
-) {
-	stage, err := s.stageDirectorySyncInternal(ctx, sync, syncFiles)
-	if err != nil {
-		s.recordBrokenProjectBindingInternal(ctx, sync, actor, err)
-		return nil, nil, false, false, err
-	}
-	// The stage must go even after ctx was cancelled: acfs refuses work on a
-	// cancelled context.
-	defer func() {
-		if stage.stagePath != "" {
-			_ = acfs.RemoveAll(context.WithoutCancel(ctx), stage.projectsDir, stage.stageLogical)
-		}
-	}()
-
-	if stage.project == nil {
-		project, createDirectorySyncProjectErr := s.createDirectorySyncProjectInternal(ctx, sync, stage, actor)
-		if createDirectorySyncProjectErr != nil {
-			// A name-collision on create surfaces as a broken-binding error; disable
-			// auto-sync so it cannot keep retrying (no-op for other error kinds).
-			s.recordBrokenProjectBindingInternal(ctx, sync, actor, createDirectorySyncProjectErr)
-			return nil, nil, false, false, createDirectorySyncProjectErr
-		}
-		return project, stage.syncedFiles, true, true, nil
-	}
-
-	project, err := s.updateDirectorySyncProjectInternal(ctx, sync, stage)
-	if err != nil {
-		return nil, nil, false, false, err
-	}
-	return project, stage.syncedFiles, false, stage.contentsChanged, nil
-}
-
-// stageDirectorySyncInternal builds a temporary project tree that reflects the exact
-// repo layout after sync, including cleanup of files removed from the repo. For an
-// existing project the tree is sparse: only paths the sync touches are materialized
-// and the rest is linked to the live project, so validation never copies it.
-func (s *Service) stageDirectorySyncInternal(ctx context.Context, sync *projectpkg.GitOpsSync, syncFiles []projects.SyncFile) (stage *stagedDirectorySync, err error) {
-	projectsDir, err := s.projectService.GetProjectsDirectory(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get projects directory: %w", err)
-	}
-
-	// The project-root env files are reserved for the three-file override
-	// merge applied below by the Project domain rather than a raw
-	// overwrite — a raw .env write would silently wipe edits made in Arcane
-	// on every sync.
-	filteredSyncFiles, gitEnvContent := partitionReservedRootEnvFiles(ctx, syncFiles)
-
-	stageLogical, err := acfs.MkdirTemp(ctx, projectsDir, "/", ".gitops-sync-stage-*")
-	if err != nil {
-		return nil, fmt.Errorf("failed to create staging directory: %w", err)
-	}
-	defer func() {
-		if err != nil {
-			_ = acfs.RemoveAll(context.WithoutCancel(ctx), projectsDir, stageLogical)
-		}
-	}()
-
-	stage = &stagedDirectorySync{
-		stagePath:       filepath.Join(projectsDir, filepath.FromSlash(strings.TrimPrefix(stageLogical, "/"))),
-		stageLogical:    stageLogical,
-		projectsDir:     projectsDir,
-		composeFileName: filepath.Base(sync.ComposePath),
-		syncFiles:       filteredSyncFiles,
-		syncedFiles:     make([]string, len(filteredSyncFiles)),
-		gitEnvContent:   gitEnvContent,
-		contentsChanged: true,
-	}
-	for i, file := range filteredSyncFiles {
-		stage.syncedFiles[i] = file.RelativePath
-	}
-
-	// Syncs created before this fix may still have .env recorded as a tracked
-	// file. Drop reserved root env files here too, or CleanupRemovedFiles would
-	// treat .env as removed-by-git and delete the stage .env before
-	// ApplyGitSyncEnvToDirectory gets a chance to read it for the merge.
-	stage.oldSyncedFiles = filterReservedRootEnvFiles(sync.SyncedFileList())
-
-	stage.project, err = s.getDirectorySyncProjectInternal(ctx, sync)
-	if err != nil {
-		return nil, err
-	}
-
-	if stage.project != nil {
-		staleFiles, staleErr := projects.StaleComposeFiles(ctx, stage.project.Path, stage.composeFileName, stage.syncedFiles)
-		if staleErr != nil {
-			return nil, fmt.Errorf("failed to detect stale compose files: %w", staleErr)
-		}
-		stage.backupScope.Paths = slices.Concat(stage.syncedFiles, stage.oldSyncedFiles, staleFiles,
-			[]string{projects.EffectiveEnvFileName, projects.GitSourceEnvFileName, projects.OverrideEnvFileName})
-		if linkProjectIntoStageErr := linkProjectIntoStage(stage.project.Path, stage.stagePath, stage.backupScope.Paths); linkProjectIntoStageErr != nil {
-			return nil, fmt.Errorf("failed to stage current project files: %w", linkProjectIntoStageErr)
-		}
-		if _, seedStageEnvFromDirErr := seedStageEnvFromDir(ctx, stage.project.Path, projectsDir, stage.stagePath); seedStageEnvFromDirErr != nil {
-			return nil, seedStageEnvFromDirErr
-		}
-		stage.contentsChanged, err = projects.DirectorySyncContentsChanged(ctx, stage.project.Path, filteredSyncFiles, stage.oldSyncedFiles, stage.composeFileName)
-		if err != nil {
-			return nil, fmt.Errorf("failed to compare staged directory changes: %w", err)
-		}
-	} else if seedStageEnvFromCandidateDirErr := s.seedStageEnvFromCandidateDirInternal(ctx, sync, projectsDir, stage.stagePath); seedStageEnvFromCandidateDirErr != nil {
-		return nil, seedStageEnvFromCandidateDirErr
-	}
-
-	preEnvContent, postEnvContent, err := s.applyDirectorySyncInternal(ctx, stage.stagePath, stage)
-	if err != nil {
-		return nil, err
-	}
-	if stage.project != nil && projects.EnvContentChanged(preEnvContent, postEnvContent) {
-		stage.contentsChanged = true
-	}
-
-	stage.serviceCount, err = s.projectService.ValidateComposeDirectory(ctx, sync.ProjectName, stage.stagePath, stage.composeFileName)
-	if err != nil {
-		return nil, fmt.Errorf("invalid compose file: %w", err)
-	}
-
-	return stage, nil
-}
-
-// applyDirectorySyncInternal applies the sync to targetPath in the order
-// validation saw it: drop files git no longer tracks and stale compose files,
-// write the repo files, then run the project-root env merge. It returns the
-// effective .env content before and after the merge.
-func (s *Service) applyDirectorySyncInternal(ctx context.Context, targetPath string, stage *stagedDirectorySync) (string, string, error) {
+// applyDirectorySync drops untracked and stale compose files, writes the repo files, then runs the env merge, the
+// order validation saw. It returns the effective .env content before and after the merge.
+func (s *Service) applyDirectorySync(ctx context.Context, targetPath string, stage *stagedDirectorySync) (string, string, error) {
 	if len(stage.oldSyncedFiles) > 0 {
 		if err := projects.CleanupRemovedFiles(ctx, stage.projectsDir, targetPath, stage.oldSyncedFiles, stage.syncedFiles); err != nil {
 			return "", "", fmt.Errorf("failed to clean removed synced files: %w", err)
@@ -1003,291 +774,16 @@ func (s *Service) applyDirectorySyncInternal(ctx context.Context, targetPath str
 	return s.projectService.ApplyGitSyncEnvToDirectory(ctx, targetPath, stage.projectsDir, stage.gitEnvContent)
 }
 
-// seedStageEnvFromCandidateDirInternal copies env files from a pre-existing project
-// directory at the conventional path (projectsDir/<sanitized-sync-name>/) into the
-// staging directory before initial-sync validation. This lets users pre-seed
-// ${VAR} substitutions via a server-side .env when the compose file in git
-// expects values that the git repo intentionally does not provide. Only env
-// files are touched — other files would conflict with what WriteSyncedDirectory
-// is about to lay down from git.
-func (s *Service) seedStageEnvFromCandidateDirInternal(ctx context.Context, sync *projectpkg.GitOpsSync, projectsDir, stagePath string) error {
-	candidatePath := filepath.Join(projectsDir, projects.SanitizeProjectName(sync.ProjectName))
-	info, err := os.Stat(candidatePath)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil
-		}
-		return fmt.Errorf("inspect pre-existing project directory %s: %w", candidatePath, err)
-	}
-	if !info.IsDir() {
-		return nil
-	}
-
-	state, err := seedStageEnvFromDir(ctx, candidatePath, projectsDir, stagePath)
-	if err != nil {
-		return err
-	}
-	if !state.HasEffective && !state.HasGitSource && !state.HasOverride {
-		return nil
-	}
-
-	if !state.HasEffective {
-		// Only .env.git and/or project.env exist, so derive .env from them.
-		merged, mergeErr := projects.BuildEffectiveEnvContent(state.GitContent, state.OverrideContent)
-		if mergeErr != nil {
-			return fmt.Errorf("build effective env from pre-existing project: %w", mergeErr)
-		}
-		if writeProjectFileErr := projects.WriteProjectFile(ctx, projectsDir, stagePath, projects.EffectiveEnvFileName, merged); writeProjectFileErr != nil {
-			return fmt.Errorf("seed stage .env: %w", writeProjectFileErr)
-		}
-	}
-
-	slog.DebugContext(ctx, "Seeded GitOps stage with pre-existing project env files",
-		"candidatePath", candidatePath,
-		"hasEffective", state.HasEffective,
-		"hasGit", state.HasGitSource,
-		"hasOverride", state.HasOverride,
-	)
-	return nil
-}
-
-func (s *Service) lookupProjectByPathInternal(ctx context.Context, projectPath string) (*projectpkg.Project, bool, error) {
-	var project projectpkg.Project
-	if err := s.db.WithContext(ctx).Where("path = ?", projectPath).First(&project).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, false, nil
-		}
-		return nil, false, fmt.Errorf("failed to get project by path %s: %w", projectPath, err)
-	}
-
-	return &project, true, nil
-}
-
-func (s *Service) findRecoverableManagedProjectInternal(ctx context.Context, sync *projectpkg.GitOpsSync) (*projectpkg.Project, error) {
-	var managedProjects []projectpkg.Project
-	if err := s.db.WithContext(ctx).
-		Where("gitops_managed_by = ?", sync.ID).
-		Find(&managedProjects).Error; err != nil {
-		return nil, fmt.Errorf("failed to list GitOps-managed projects for sync %s: %w", sync.ID, err)
-	}
-
-	matches := make([]projectpkg.Project, 0, len(managedProjects))
-	for i := range managedProjects {
-		project := managedProjects[i]
-		if err := s.projectService.EnsureProjectPathUnderRoot(ctx, &project, true); err != nil {
-			return nil, err
-		}
-		if _, err := s.projectService.ResolveProjectComposeFile(ctx, &project); err != nil {
-			if errors.Is(err, common.ErrProjectComposeFileNotFound) {
-				continue
-			}
-			return nil, err
-		}
-		matches = append(matches, project)
-	}
-
-	switch len(matches) {
-	case 0:
-		return nil, nil
-	case 1:
-		return &matches[0], nil
-	default:
-		return nil, fmt.Errorf("multiple GitOps-managed projects match sync %s; refusing automatic relink", sync.ID)
-	}
-}
-
-func (s *Service) findUniqueProjectDirectoryCandidateInternal(ctx context.Context, sync *projectpkg.GitOpsSync) (string, error) {
-	projectsDir, err := s.projectService.GetProjectsDirectory(ctx)
-	if err != nil {
-		return "", err
-	}
-
-	entries, err := acfs.List(ctx, projectsDir, "/")
-	if err != nil {
-		return "", fmt.Errorf("failed to list projects directory %s: %w", projectsDir, err)
-	}
-
-	composeFileName := strings.TrimSpace(filepath.Base(sync.ComposePath))
-	if composeFileName == "" || composeFileName == "." {
-		return "", nil
-	}
-
-	prefix := projects.SanitizeProjectName(sync.ProjectName)
-	matches := make([]string, 0, 1)
-	for _, entry := range entries {
-		// Adoption never follows symlinks, and acfs reports a symlink as a
-		// non-directory, so a plain directory is the only candidate kind.
-		if !entry.IsDirectory {
-			continue
-		}
-		// Never adopt one of Arcane's own scratch dirs as a recovery candidate.
-		if projects.IsInternalScratchDirName(entry.Name) {
-			continue
-		}
-		if prefix != "" && entry.Name != prefix && !strings.HasPrefix(entry.Name, prefix+"-") {
-			continue
-		}
-
-		candidatePath := filepath.Join(projectsDir, entry.Name)
-		composePath := filepath.Join(candidatePath, composeFileName)
-		if composeEntry, statErr := acfs.Stat(ctx, projectsDir, path.Join(entry.Path, composeFileName), true); statErr == nil {
-			if !composeEntry.IsDirectory {
-				matches = append(matches, candidatePath)
-			}
-		} else if !errors.Is(statErr, fs.ErrNotExist) {
-			return "", fmt.Errorf("failed to inspect recovery candidate %s: %w", composePath, statErr)
-		}
-	}
-
-	switch len(matches) {
-	case 0:
-		return "", nil
-	case 1:
-		return matches[0], nil
-	default:
-		return "", fmt.Errorf("multiple candidate project directories match sync %s; refusing automatic relink", sync.ID)
-	}
-}
-
-func (s *Service) createRecoveredProjectFromDirectoryInternal(ctx context.Context, sync *projectpkg.GitOpsSync, projectPath string) (*projectpkg.Project, error) {
-	project := &projectpkg.Project{
-		Name:            sync.ProjectName,
-		DirName:         new(filepath.Base(projectPath)),
-		Path:            projectPath,
-		Status:          projectpkg.ProjectStatusUnknown,
-		StatusReason:    new("Project recovered from existing GitOps-managed directory"),
-		ServiceCount:    0,
-		RunningCount:    0,
-		GitOpsManagedBy: &sync.ID,
-	}
-
-	if serviceCount, err := s.projectService.CountServicesFromCompose(ctx, *project); err == nil {
-		project.ServiceCount = serviceCount
-	} else {
-		slog.WarnContext(ctx, "Failed to count services while recovering GitOps project", "syncId", sync.ID, "path", projectPath, "error", err)
-	}
-
-	if err := s.projectService.CreateGitOpsManagedProject(ctx, sync, project, user.Actor{}, false); err != nil {
-		return nil, err
-	}
-
-	return project, nil
-}
-
-func (s *Service) recoverProjectFromDirectoryCandidateInternal(ctx context.Context, sync *projectpkg.GitOpsSync) (*projectpkg.Project, error) {
-	projectPath, err := s.findUniqueProjectDirectoryCandidateInternal(ctx, sync)
-	if err != nil || projectPath == "" {
-		return nil, err
-	}
-
-	project, found, err := s.lookupProjectByPathInternal(ctx, projectPath)
-	if err != nil {
-		return nil, err
-	}
-	if found {
-		if ensureProjectPathUnderRootErr := s.projectService.EnsureProjectPathUnderRoot(ctx, project, true); ensureProjectPathUnderRootErr != nil {
-			return nil, ensureProjectPathUnderRootErr
-		}
-		if ensureGitOpsProjectLinkedErr := s.projectService.EnsureGitOpsProjectLinked(ctx, sync, project); ensureGitOpsProjectLinkedErr != nil {
-			return nil, ensureGitOpsProjectLinkedErr
-		}
-		return project, nil
-	}
-
-	return s.createRecoveredProjectFromDirectoryInternal(ctx, sync, projectPath)
-}
-
-// getDirectorySyncProjectInternal resolves the linked project for a sync when one
-// exists, while tolerating deleted/stale project references.
-func (s *Service) getDirectorySyncProjectInternal(ctx context.Context, sync *projectpkg.GitOpsSync) (*projectpkg.Project, error) {
-	if sync == nil {
-		return nil, nil
-	}
-
-	establishedBinding := hasEstablishedProjectBinding(sync)
-	if establishedBinding {
-		project, found, err := s.projectService.FindProjectByID(ctx, *sync.ProjectID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get project %s: %w", *sync.ProjectID, err)
-		}
-		if found {
-			if ensureProjectPathUnderRootErr := s.projectService.EnsureProjectPathUnderRoot(ctx, project, true); ensureProjectPathUnderRootErr != nil {
-				return nil, ensureProjectPathUnderRootErr
-			}
-			if ensureGitOpsProjectLinkedErr := s.projectService.EnsureGitOpsProjectLinked(ctx, sync, project); ensureGitOpsProjectLinkedErr != nil {
-				return nil, ensureGitOpsProjectLinkedErr
-			}
-			return project, nil
-		}
-
-		slog.WarnContext(ctx, "Existing project not found, attempting recovery", "projectId", *sync.ProjectID, "syncId", sync.ID)
-	}
-
-	project, findRecoverableManagedProjectErr := s.findRecoverableManagedProjectInternal(ctx, sync)
-	if findRecoverableManagedProjectErr != nil {
-		if establishedBinding {
-			return nil, common.Classify(
-				common.ErrGitOpsSyncProjectBindingBroken,
-				fmt.Errorf(
-					"GitOps sync project binding broken: sync %s references missing project %s: %w",
-					sync.ID,
-					*sync.ProjectID,
-					findRecoverableManagedProjectErr,
-				),
-			)
-		}
-		return nil, findRecoverableManagedProjectErr
-	}
-	if project != nil {
-		if err := s.projectService.EnsureGitOpsProjectLinked(ctx, sync, project); err != nil {
-			return nil, err
-		}
-		return project, nil
-	}
-
-	project, findRecoverableManagedProjectErr = s.recoverProjectFromDirectoryCandidateInternal(ctx, sync)
-	if findRecoverableManagedProjectErr != nil {
-		if establishedBinding {
-			return nil, common.Classify(
-				common.ErrGitOpsSyncProjectBindingBroken,
-				fmt.Errorf(
-					"GitOps sync project binding broken: sync %s references missing project %s: %w",
-					sync.ID,
-					*sync.ProjectID,
-					findRecoverableManagedProjectErr,
-				),
-			)
-		}
-		return nil, findRecoverableManagedProjectErr
-	}
-	if project != nil {
-		return project, nil
-	}
-
-	if establishedBinding {
-		return nil, common.Classify(
-			common.ErrGitOpsSyncProjectBindingBroken,
-			fmt.Errorf(
-				"GitOps sync project binding broken: sync %s references missing project %s: no unique recovery candidate was found",
-				sync.ID,
-				*sync.ProjectID,
-			),
-		)
-	}
-
-	return nil, nil
-}
-
-// createDirectorySyncProjectInternal promotes a validated staged tree into a new
+// createDirectorySyncProject promotes a validated staged tree into a new
 // managed project directory and links it back to the Git sync record.
-func (s *Service) createDirectorySyncProjectInternal(ctx context.Context, sync *projectpkg.GitOpsSync, stage *stagedDirectorySync, actor user.Actor) (*projectpkg.Project, error) {
+func (s *Service) createDirectorySyncProject(ctx context.Context, sync *projectpkg.GitOpsSync, stage *stagedDirectorySync, actor user.Actor) (*projectpkg.Project, error) {
 	projectsDir, err := s.projectService.GetProjectsDirectory(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get projects directory: %w", err)
 	}
 
 	// Non-suffixing create: a GitOps sync must never mint a "-N" duplicate. Any
-	// adoptable existing directory was already resolved by getDirectorySyncProjectInternal,
+	// adoptable existing directory was already resolved by getDirectorySyncProject,
 	// so a collision here means the name is taken by an unrelated/unrecoverable dir;
 	// treat it as a broken binding rather than creating a duplicate.
 	basePath := filepath.Join(projectsDir, projects.SanitizeProjectName(sync.ProjectName))
@@ -1344,10 +840,9 @@ func (s *Service) createDirectorySyncProjectInternal(ctx context.Context, sync *
 	return project, nil
 }
 
-// updateDirectorySyncProjectInternal applies a validated stage to the existing
-// project path in place so running containers keep their bind-mount inodes; a
-// backup scoped to the touched paths allows rollback if promotion fails.
-func (s *Service) updateDirectorySyncProjectInternal(ctx context.Context, sync *projectpkg.GitOpsSync, stage *stagedDirectorySync) (*projectpkg.Project, error) {
+// updateDirectorySyncProject applies a validated stage in place, so running containers keep their bind-mount
+// inodes; a backup scoped to the touched paths rolls a failed promotion back.
+func (s *Service) updateDirectorySyncProject(ctx context.Context, sync *projectpkg.GitOpsSync, stage *stagedDirectorySync) (*projectpkg.Project, error) {
 	project := stage.project
 	projectPath := filepath.Clean(project.Path)
 	existed := true
@@ -1407,7 +902,7 @@ func (s *Service) updateDirectorySyncProjectInternal(ctx context.Context, sync *
 		return errors.Join(cause, fmt.Errorf("rollback project directory: %w", restoreErr))
 	}
 
-	if _, _, err := s.applyDirectorySyncInternal(ctx, projectPath, stage); err != nil {
+	if _, _, err := s.applyDirectorySync(ctx, projectPath, stage); err != nil {
 		return nil, restore(fmt.Errorf("failed to promote staged project directory: %w", err))
 	}
 
@@ -1422,30 +917,8 @@ func (s *Service) updateDirectorySyncProjectInternal(ctx context.Context, sync *
 	return project, nil
 }
 
-// updateSyncStatusWithFiles updates sync status including the list of synced files
-func (s *Service) updateSyncStatusWithFiles(ctx context.Context, id, status, errorMsg, commitHash string, syncedFiles []string) {
-	now := time.Now()
-	updates := map[string]any{
-		"last_sync_at":     now,
-		"last_sync_status": status,
-		"synced_files":     projectpkg.EncodeSyncedFiles(syncedFiles),
-	}
-
-	updates["last_sync_error"] = kit.Ternary[any](errorMsg != "", errorMsg, nil)
-
-	if commitHash != "" {
-		updates["last_sync_commit"] = commitHash
-	}
-
-	if err := s.db.WithContext(ctx).Model(&projectpkg.GitOpsSync{}).Where("id = ?", id).Updates(updates).Error; err != nil {
-		slog.ErrorContext(ctx, "Failed to update sync status with files", "error", err, "syncId", id)
-	}
-}
-
-// seedStageEnvFromDir copies the readable project-root env files from
-// sourceDir into the stage verbatim and returns the env state it read. A
-// permission-locked file is skipped rather than aborting the whole staging
-// attempt, matching how the env merge leaves such files untouched.
+// seedStageEnvFromDir copies sourceDir's readable project-root env files into the stage and returns the state
+// it read; like the env merge, it skips a permission-locked file.
 func seedStageEnvFromDir(ctx context.Context, sourceDir, projectsDir, stagePath string) (projects.ProjectEnvState, error) {
 	state, err := projects.ReadProjectEnvState(sourceDir)
 	if err != nil {
@@ -1469,74 +942,8 @@ func seedStageEnvFromDir(ctx context.Context, sourceDir, projectsDir, stagePath 
 	return state, nil
 }
 
-// partitionReservedRootEnvFiles splits syncFiles into the set safe to
-// write directly (everything except the reserved root env files) and the
-// git-sourced root .env content, if the repo has one. A committed
-// .env.git/project.env/.env.global at the project root is dropped rather than
-// raw-written: those are Arcane-owned bookkeeping files that must only ever be
-// produced by the override merge, never by an untrusted git payload.
-func partitionReservedRootEnvFiles(ctx context.Context, syncFiles []projects.SyncFile) ([]projects.SyncFile, *string) {
-	filtered := make([]projects.SyncFile, 0, len(syncFiles))
-	var gitEnvContent *string
-	for _, file := range syncFiles {
-		if !isReservedRootEnvFile(file.RelativePath) {
-			filtered = append(filtered, file)
-			continue
-		}
-		switch file.RelativePath {
-		case projects.EffectiveEnvFileName:
-			content := string(file.Content)
-			gitEnvContent = &content
-		case projects.GlobalEnvFileName:
-			slog.WarnContext(ctx, "dropping .env.global from git payload; project-root env files are not raw-written from git and .env.global is not project-scoped",
-				"path", file.RelativePath,
-			)
-		default:
-			slog.WarnContext(ctx, "dropping reserved Arcane env file from git payload; will be re-derived from override merge",
-				"path", file.RelativePath,
-			)
-		}
-	}
-	return filtered, gitEnvContent
-}
-
-// isReservedRootEnvFile reports whether relPath is one of the
-// project-root env bookkeeping files the override-merge system owns (.env,
-// .env.git, project.env, .env.global). These are excluded from the raw
-// directory-sync write and routed through ProjectService.ApplyGitSyncEnvToDirectory
-// instead. Exact-matching RelativePath intentionally leaves nested env files
-// (e.g. svc/.env) in the raw write set — only the project root is
-// merge-managed.
-func isReservedRootEnvFile(relPath string) bool {
-	switch relPath {
-	case projects.EffectiveEnvFileName, projects.GitSourceEnvFileName, projects.OverrideEnvFileName, projects.GlobalEnvFileName:
-		return true
-	default:
-		return false
-	}
-}
-
-// filterReservedRootEnvFiles drops reserved root env file paths from a
-// tracked synced-file list. Syncs created before the override-merge migration
-// may still have .env recorded from an earlier sync; leaving it in would make
-// CleanupRemovedFiles treat .env as removed-by-git and delete the live-copied
-// stage .env before ApplyGitSyncEnvToDirectory can read it for the merge.
-func filterReservedRootEnvFiles(paths []string) []string {
-	filtered := make([]string, 0, len(paths))
-	for _, p := range paths {
-		if !isReservedRootEnvFile(p) {
-			filtered = append(filtered, p)
-		}
-	}
-	return filtered
-}
-
-// linkProjectIntoStage builds the sparse stage view of an existing
-// project: paths in scope are left for the apply step, directories on the way
-// to them are recreated, and everything else is exposed through a symlink to
-// its live location so validation sees the whole tree without copying it.
-// The links are validation-only and never promoted. acfs refuses to create
-// symlinks by design, so this is the one place the stage is built with os.
+// linkProjectIntoStage symlinks every live path outside scopePaths into the stage, so validation sees the whole
+// project without copying it. The links are never promoted; acfs refuses symlinks, so this uses os.
 func linkProjectIntoStage(livePath, stagePath string, scopePaths []string) error {
 	scope := make(map[string]struct{}, len(scopePaths))
 	ancestors := make(map[string]struct{})
@@ -1576,8 +983,4 @@ func linkProjectIntoStage(livePath, stagePath string, scopePaths []string) error
 		return nil
 	}
 	return link("")
-}
-
-func hasEstablishedProjectBinding(sync *projectpkg.GitOpsSync) bool {
-	return sync != nil && sync.ProjectID != nil && strings.TrimSpace(*sync.ProjectID) != ""
 }

@@ -1,8 +1,10 @@
 package ws
 
 import (
+	"cmp"
 	"context"
 	"encoding/json/v2"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/pprof"
@@ -23,6 +25,8 @@ import (
 const (
 	// diagnosticsStreamInterval is how often the live diagnostics stream pushes a snapshot.
 	diagnosticsStreamInterval = 2 * time.Second
+	// actorDiagnosticsStreamInterval is slower because each push queries every environment.
+	actorDiagnosticsStreamInterval = 10 * time.Second
 
 	// Keepalive/liveness bounds for the diagnostics sockets, mirroring the system
 	// stats stream. Without them a silently dead peer wedges the writer forever,
@@ -33,10 +37,9 @@ const (
 	diagnosticsPingPeriod = 54 * time.Second
 )
 
-// BuildDiagnostics assembles a full diagnostics snapshot: runtime/memory/GC from
-// the DiagnosticsService plus this package's WebSocket metrics and worker-goroutine
-// count. Shared by the REST endpoint (via handlers) and the live WebSocket stream.
-func BuildDiagnostics(diag *diagnostics.DiagnosticsService) systemtypes.Diagnostics {
+// buildDiagnosticsInternal assembles a snapshot: runtime/memory/GC from the
+// DiagnosticsService plus this package's WebSocket metrics and worker-goroutine count.
+func buildDiagnosticsInternal(diag *diagnostics.DiagnosticsService) systemtypes.Diagnostics {
 	d := systemtypes.Diagnostics{Timestamp: time.Now().UTC()}
 	if diag != nil {
 		d.Runtime, d.Memory, d.GC = diag.Collect()
@@ -58,6 +61,7 @@ func (h *WebSocketHandler) registerDiagnosticsRoutesInternal(group *echo.Group, 
 		middleware.RequireEchoPermission(authz.PermDiagnosticsRead),
 	)
 	diag.GET("/stream", h.DiagnosticsStream)
+	diag.GET("/actors/stream", h.ActorDiagnosticsStream)
 	diag.GET("/logs/stream", h.ServerLogsStream)
 
 	pprofGroup := group.Group("/debug/pprof", authMiddleware.WithAdminRequired().Add())
@@ -77,23 +81,71 @@ func (h *WebSocketHandler) registerDiagnosticsRoutesInternal(group *echo.Group, 
 	})
 }
 
-// DiagnosticsStream pushes a fresh diagnostics snapshot on connect and then every
-// diagnosticsStreamInterval until the client disconnects.
+// DiagnosticsStream pushes a snapshot on connect and every diagnosticsStreamInterval,
+// and answers refresh, dump, leak-scan, and profile commands from the client.
 func (h *WebSocketHandler) DiagnosticsStream(c *echo.Context) error {
-	conn, err := wshub.Accept(c.Response(), c.Request(), h.checkWSOrigin)
-	if err != nil {
+	ps, _ := c.Get(string(middleware.ContextKeyUserPermissions)).(*authz.PermissionSet)
+	snapshot := func(context.Context) any {
+		d := buildDiagnosticsInternal(h.diagnosticsService)
+		return systemtypes.DiagnosticsMessage{Type: "snapshot", Snapshot: &d}
+	}
+	return h.streamSnapshotsInternal(c, diagnosticsStreamInterval, snapshot, func(ctx context.Context, cmd systemtypes.DiagnosticsCommand) any {
+		if cmd.Type == "refresh" {
+			return snapshot(ctx)
+		}
+		result := systemtypes.DiagnosticsMessage{Type: "result", ID: cmd.ID}
+		var err error
+		switch cmd.Type {
+		case "leakScan":
+			report, scanErr := h.diagnosticsService.ScanGoroutineLeaks()
+			result.LeakReport, err = &report, scanErr
+		case "dump", "profile":
+			if !ps.IsGlobalAdmin() {
+				result.Error = "profiles require a global administrator"
+				return result
+			}
+			if cmd.Type == "dump" {
+				var text []byte
+				text, err = h.diagnosticsService.Profile(ctx, cmd.Name, 0, 2)
+				result.Text = string(text)
+			} else {
+				result.Data, err = h.diagnosticsService.Profile(ctx, cmd.Name, min(cmp.Or(cmd.Seconds, 30), 120), 0)
+			}
+		default:
+			err = fmt.Errorf("unknown diagnostics command %q", cmd.Type)
+		}
+		if err != nil {
+			result.Error = err.Error()
+		}
+		return result
+	})
+}
+
+// ActorDiagnosticsStream pushes actor diagnostics for every environment on
+// connect and then every actorDiagnosticsStreamInterval.
+func (h *WebSocketHandler) ActorDiagnosticsStream(c *echo.Context) error {
+	return h.streamSnapshotsInternal(c, actorDiagnosticsStreamInterval, func(ctx context.Context) any {
+		return h.diagnosticsService.CollectAllActors(ctx)
+	}, nil)
+}
+
+// streamSnapshotsInternal writes build's result on connect and every interval until
+// the client disconnects. A non-nil handle answers client commands concurrently.
+func (h *WebSocketHandler) streamSnapshotsInternal(c *echo.Context, interval time.Duration, build func(context.Context) any, handle func(context.Context, systemtypes.DiagnosticsCommand) any) error {
+	conn, unregister, accepted := h.acceptWS(c, systemtypes.WSKindDiagnostics, c.Request().URL.Path)
+	if !accepted {
 		return nil
 	}
+	defer unregister()
 	defer func() {
 		if closeNowErr := conn.CloseNow(); closeNowErr != nil {
-			slog.Debug("Failed to close diagnostics websocket connection", "error", closeNowErr)
+			slog.DebugContext(c.Request().Context(), "Failed to close diagnostics websocket connection", "error", closeNowErr)
 		}
 	}()
 
 	ctx := c.Request().Context()
-	done := diagnosticsReadLoopInternal(ctx, conn)
-	write := func() bool {
-		b, marshalErr := json.Marshal(BuildDiagnostics(h.diagnosticsService))
+	write := func(v any) bool {
+		b, marshalErr := json.Marshal(v)
 		if marshalErr != nil {
 			return true
 		}
@@ -101,11 +153,22 @@ func (h *WebSocketHandler) DiagnosticsStream(c *echo.Context) error {
 		defer cancel()
 		return conn.Write(wctx, websocket.MessageText, b) == nil
 	}
+	var onMessage func([]byte)
+	if handle != nil {
+		onMessage = func(b []byte) {
+			var cmd systemtypes.DiagnosticsCommand
+			if json.Unmarshal(b, &cmd) != nil {
+				return
+			}
+			go write(handle(ctx, cmd))
+		}
+	}
+	done := diagnosticsReadLoopInternal(ctx, conn, onMessage)
 
-	if !write() {
+	if !write(build(ctx)) {
 		return nil
 	}
-	ticker := time.NewTicker(diagnosticsStreamInterval)
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	pingTicker := time.NewTicker(diagnosticsPingPeriod)
 	defer pingTicker.Stop()
@@ -114,7 +177,7 @@ func (h *WebSocketHandler) DiagnosticsStream(c *echo.Context) error {
 		case <-done:
 			return nil
 		case <-ticker.C:
-			if !write() {
+			if !write(build(ctx)) {
 				return nil
 			}
 		case <-pingTicker.C:
@@ -127,13 +190,14 @@ func (h *WebSocketHandler) DiagnosticsStream(c *echo.Context) error {
 
 // ServerLogsStream replays the recent backend log backlog then streams new entries live.
 func (h *WebSocketHandler) ServerLogsStream(c *echo.Context) error {
-	conn, err := wshub.Accept(c.Response(), c.Request(), h.checkWSOrigin)
-	if err != nil {
+	conn, unregister, accepted := h.acceptWS(c, systemtypes.WSKindDiagnostics, c.Request().URL.Path)
+	if !accepted {
 		return nil
 	}
+	defer unregister()
 	defer func() {
 		if closeNowErr := conn.CloseNow(); closeNowErr != nil {
-			slog.Debug("Failed to close server logs websocket connection", "error", closeNowErr)
+			slog.DebugContext(c.Request().Context(), "Failed to close server logs websocket connection", "error", closeNowErr)
 		}
 	}()
 
@@ -143,7 +207,7 @@ func (h *WebSocketHandler) ServerLogsStream(c *echo.Context) error {
 	defer cancel()
 
 	ctx := c.Request().Context()
-	done := diagnosticsReadLoopInternal(ctx, conn)
+	done := diagnosticsReadLoopInternal(ctx, conn, nil)
 	write := func(e logs.Entry) bool {
 		b, marshalErr := json.Marshal(e)
 		if marshalErr != nil {
@@ -189,17 +253,21 @@ func pingDiagnosticsConnInternal(ctx context.Context, conn *websocket.Conn) bool
 	return conn.Ping(pctx) == nil
 }
 
-// diagnosticsReadLoopInternal drains incoming frames; the returned channel closes
-// when the peer disconnects, signaling the writer loop to stop.
-func diagnosticsReadLoopInternal(ctx context.Context, conn *websocket.Conn) <-chan struct{} {
+// diagnosticsReadLoopInternal passes incoming frames to onMessage, or drains them when
+// it is nil; the returned channel closes when the peer disconnects.
+func diagnosticsReadLoopInternal(ctx context.Context, conn *websocket.Conn, onMessage func([]byte)) <-chan struct{} {
 	conn.SetReadLimit(diagnosticsReadLimit)
 
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
 		for {
-			if _, _, err := conn.Read(ctx); err != nil {
+			_, b, err := conn.Read(ctx)
+			if err != nil {
 				return
+			}
+			if onMessage != nil {
+				onMessage(b)
 			}
 		}
 	}()

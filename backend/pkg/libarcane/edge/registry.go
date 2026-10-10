@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/samber/mo"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/concurrency"
 )
@@ -30,6 +32,11 @@ func (t *AgentTunnel) UpdateHeartbeat() {
 	t.mu.Lock()
 	t.LastHeartbeat = time.Now()
 	t.mu.Unlock()
+}
+
+// connected reports whether the tunnel has a live, open connection.
+func (t *AgentTunnel) connected() bool {
+	return t != nil && t.Conn != nil && !t.Conn.IsClosed()
 }
 
 // GetLastHeartbeat returns the last heartbeat time
@@ -110,37 +117,31 @@ func (r *TunnelRegistry) Get(envID string) mo.Option[*AgentTunnel] {
 
 // Register adds a tunnel to the registry, closing any existing tunnel for the same env
 func (r *TunnelRegistry) Register(envID string, tunnel *AgentTunnel) {
+	ctx := context.Background() //nolint:forbidigo // Legacy registration path runs outside any request context.
 	if r == nil || tunnel == nil {
-		slog.Error("Failed to register edge agent tunnel", "environment_id", envID, "error", "tunnel is required")
+		slog.ErrorContext(ctx, "Failed to register edge agent tunnel", "environmentId", envID, "error", "tunnel is required")
 		return
 	}
-	//nolint:forbidigo // Legacy registry operation has no caller context and only mutates in-memory state.
-	previous,
-		err := r.tunnels.ApplyTyped(context.Background(),
-		"register edge tunnel",
-		func(tunnels map[string]*AgentTunnel) (*AgentTunnel,
-			bool,
-			error,
-		) {
-			if r.stopped.Load() {
-				return nil, false, errors.New("edge tunnel registry stopped")
-			}
-			previous := tunnels[envID]
-			tunnels[envID] = tunnel
-			return previous, true, nil
-		})
+	previous, err := r.tunnels.ApplyTyped(ctx, "register edge tunnel", func(tunnels map[string]*AgentTunnel) (*AgentTunnel, bool, error) {
+		if r.stopped.Load() {
+			return nil, false, errors.New("edge tunnel registry stopped")
+		}
+		previous := tunnels[envID]
+		tunnels[envID] = tunnel
+		return previous, true, nil
+	})
 	if err != nil {
-		slog.Error("Failed to register edge agent tunnel", "environment_id", envID, "error", err)
+		slog.ErrorContext(ctx, "Failed to register edge agent tunnel", "environmentId", envID, "error", err)
 		return
 	}
 	if previous != nil && previous != tunnel {
-		slog.Info("Replacing existing edge tunnel")
+		slog.InfoContext(ctx, "Replacing existing edge tunnel")
 		_ = previous.CloseWithReason("")
 	}
-	slog.Info("Edge agent tunnel registered")
+	slog.InfoContext(ctx, "Edge agent tunnel registered")
 }
 
-type registerSessionResultInternal struct {
+type registerSessionResult struct {
 	accepted      bool
 	drainPrevious bool
 	reason        string
@@ -158,8 +159,8 @@ func (r *TunnelRegistry) RegisterSession(ctx context.Context, tunnel *AgentTunne
 		return false, false, "environment ID is required", nil
 	}
 
-	result, err := r.tunnels.ApplyTyped(ctx, "register edge tunnel session", func(tunnels map[string]*AgentTunnel) (registerSessionResultInternal, bool, error) {
-		var result registerSessionResultInternal
+	result, err := r.tunnels.ApplyTyped(ctx, "register edge tunnel session", func(tunnels map[string]*AgentTunnel) (registerSessionResult, bool, error) {
+		var result registerSessionResult
 		if r.stopped.Load() {
 			return result, false, errors.New("edge tunnel registry stopped")
 		}
@@ -173,7 +174,7 @@ func (r *TunnelRegistry) RegisterSession(ctx context.Context, tunnel *AgentTunne
 			tunnelMetadata := tunnel.MetadataSnapshot()
 			existingStale := staleAfter > 0 && time.Since(existingMetadata.LastHeartbeat) > staleAfter
 			sameAgentInstance := existingMetadata.AgentInstance != "" && tunnelMetadata.AgentInstance != "" && existingMetadata.AgentInstance == tunnelMetadata.AgentInstance
-			if existing.Conn != nil && !existing.Conn.IsClosed() && !existingStale && !sameAgentInstance {
+			if existing.connected() && !existingStale && !sameAgentInstance {
 				result.reason = "another edge agent session is already active"
 				return result, false, nil
 			}
@@ -192,20 +193,21 @@ func (r *TunnelRegistry) RegisterSession(ctx context.Context, tunnel *AgentTunne
 		_ = result.previous.CloseWithReason("replaced by newer edge tunnel session")
 	}
 	metadata := tunnel.MetadataSnapshot()
-	slog.Info("Edge agent tunnel registered", "environment_id", envID, "session_id", metadata.SessionID, "security_mode", metadata.SecurityMode)
+	slog.InfoContext(ctx, "Edge agent tunnel registered", "environmentId", envID, "sessionId", metadata.SessionID, "securityMode", metadata.SecurityMode)
 	return result.accepted, result.drainPrevious, result.reason, nil
 }
 
 // Unregister removes a tunnel from the registry
 func (r *TunnelRegistry) Unregister(envID string) {
-	tunnel, removed, err := r.tunnels.Remove(context.Background(), "unregister edge tunnel", envID) //nolint:forbidigo // Legacy registry operation has no caller context and only mutates in-memory state.
+	ctx := context.Background() //nolint:forbidigo // Legacy unregistration path runs outside any request context.
+	tunnel, removed, err := r.tunnels.Remove(ctx, "unregister edge tunnel", envID)
 	if err != nil {
-		slog.Error("Failed to unregister edge agent tunnel", "environment_id", envID, "error", err)
+		slog.ErrorContext(ctx, "Failed to unregister edge agent tunnel", "environmentId", envID, "error", err)
 		return
 	}
 	if removed {
 		_ = tunnel.CloseWithReason("")
-		slog.Info("Edge agent tunnel unregistered")
+		slog.InfoContext(ctx, "Edge agent tunnel unregistered")
 	}
 }
 
@@ -217,15 +219,15 @@ func (r *TunnelRegistry) UnregisterCurrent(ctx context.Context, envID string, cu
 		return false, false
 	}
 
-	type resultInternal struct {
+	type unregisterResult struct {
 		removed           bool
 		activeReplacement bool
 	}
-	result, err := r.tunnels.ApplyTyped(ctx, "unregister current edge tunnel", func(tunnels map[string]*AgentTunnel) (resultInternal, bool, error) {
-		var result resultInternal
+	result, err := r.tunnels.ApplyTyped(ctx, "unregister current edge tunnel", func(tunnels map[string]*AgentTunnel) (unregisterResult, bool, error) {
+		var result unregisterResult
 		existing := tunnels[envID]
 		if existing != current {
-			result.activeReplacement = existing != nil && existing.Conn != nil && !existing.Conn.IsClosed()
+			result.activeReplacement = existing.connected()
 			return result, false, nil
 		}
 		delete(tunnels, envID)
@@ -233,7 +235,7 @@ func (r *TunnelRegistry) UnregisterCurrent(ctx context.Context, envID string, cu
 		return result, true, nil
 	})
 	if err != nil {
-		slog.ErrorContext(ctx, "Failed to unregister current edge agent tunnel", "environment_id", envID, "error", err)
+		slog.ErrorContext(ctx, "Failed to unregister current edge agent tunnel", "environmentId", envID, "error", err)
 		return false, false
 	}
 	if !result.removed {
@@ -242,7 +244,7 @@ func (r *TunnelRegistry) UnregisterCurrent(ctx context.Context, envID string, cu
 
 	_ = current.CloseWithReason("")
 	metadata := current.MetadataSnapshot()
-	slog.Info("Edge agent tunnel unregistered", "environment_id", envID, "session_id", metadata.SessionID)
+	slog.InfoContext(ctx, "Edge agent tunnel unregistered", "environmentId", envID, "sessionId", metadata.SessionID)
 	return true, false
 }
 
@@ -260,7 +262,7 @@ func (r *TunnelRegistry) CleanupStale(ctx context.Context, maxAge time.Duration)
 		if tunnel == nil {
 			continue
 		}
-		slog.Warn("Removing stale edge tunnel", "last_heartbeat", tunnel.GetLastHeartbeat())
+		slog.WarnContext(ctx, "Removing stale edge tunnel", "lastHeartbeat", tunnel.GetLastHeartbeat())
 		_ = tunnel.CloseWithReason("edge tunnel heartbeat expired")
 	}
 
@@ -281,6 +283,40 @@ func (r *TunnelRegistry) Stop(ctx context.Context) error {
 		}
 	}
 	return err
+}
+
+// ObserveAgents reports connected edge agents by transport through the arcane.edge.agents gauge.
+// Poll-mode agents count as "poll" while their check-ins are fresh and no tunnel is open.
+func (r *TunnelRegistry) ObserveAgents(meter metric.Meter) (metric.Registration, error) {
+	gauge, err := meter.Int64ObservableGauge("arcane.edge.agents",
+		metric.WithDescription("Connected edge agents by transport"),
+		metric.WithUnit("{agent}"),
+	)
+	if err != nil {
+		return nil, err
+	}
+	return meter.RegisterCallback(func(_ context.Context, o metric.Observer) error {
+		counts := map[string]int64{EdgeTransportWebSocket: 0, EdgeTransportGRPC: 0, EdgeTransportPoll: 0}
+		tunneled := make(map[string]bool)
+		for _, tunnel := range r.tunnels.Values() {
+			if tunnel.connected() {
+				counts[tunnel.Conn.Transport()]++
+				tunneled[tunnel.EnvironmentID] = true
+			}
+		}
+		polls, now := GetPollRuntimeRegistry(), time.Now()
+		polls.mu.RLock()
+		for envID, state := range polls.states {
+			if !tunneled[envID] && state.LastPollAt != nil && now.Sub(*state.LastPollAt) <= pollRuntimeTTL(state) {
+				counts[EdgeTransportPoll]++
+			}
+		}
+		polls.mu.RUnlock()
+		for transport, count := range counts {
+			o.ObserveInt64(gauge, count, metric.WithAttributes(attribute.String("arcane.edge.transport", transport)))
+		}
+		return nil
+	}, gauge)
 }
 
 var (

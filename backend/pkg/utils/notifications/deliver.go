@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/mail"
+	"regexp"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 )
@@ -19,6 +20,10 @@ type Content struct {
 
 	// Title is the generic-webhook title.
 	Title string
+
+	// NtfyTitle is the event-specific ntfy title used when the provider does
+	// not have a custom title configured.
+	NtfyTitle string
 
 	// DefaultTitle is applied to pushover/gotify when their config has no
 	// title; "" means don't default.
@@ -64,8 +69,25 @@ func Deliver(ctx context.Context, provider NotificationProvider, config database
 	if !ok {
 		return false, nil
 	}
-	return true, deliver(ctx, config, c)
+	if deliverErr := deliver(ctx, config, c); deliverErr != nil {
+		return true, deliveryError{message: webhookURL.ReplaceAllString(deliverErr.Error(), "${1}${2}"), err: deliverErr}
+	}
+	return true, nil
 }
+
+// webhookURL matches http(s) URLs in provider errors. Webhook tokens often sit in the path or userinfo,
+// so only the scheme and host are kept.
+var webhookURL = regexp.MustCompile(`(https?://)(?:[^@/?#\s"']*@)?([^/?#\s"']+)[^\s"']*`)
+
+// deliveryError reports a provider failure without its webhook URL while keeping the cause for errors.Is.
+type deliveryError struct {
+	message string
+	err     error
+}
+
+func (e deliveryError) Error() string { return e.message }
+
+func (e deliveryError) Unwrap() error { return e.err }
 
 func deliverDiscord(ctx context.Context, config database.JSON, c Content) error {
 	discordConfig, err := DecodeConfig[DiscordConfig](config, "Discord")
@@ -184,7 +206,10 @@ func deliverNtfy(ctx context.Context, config database.JSON, c Content) error {
 	if err != nil {
 		return err
 	}
-	if sendNtfyErr := SendNtfy(ctx, ntfyConfig, c.Text[MessageFormatPlain]); sendNtfyErr != nil {
+	if ntfyConfig.Title == "" {
+		ntfyConfig.Title = c.NtfyTitle
+	}
+	if sendNtfyErr := SendNtfy(ctx, ntfyConfig, c.Text[MessageFormatNtfyMarkdown]); sendNtfyErr != nil {
 		return fmt.Errorf("failed to send Ntfy notification: %w", sendNtfyErr)
 	}
 	return nil
@@ -271,7 +296,13 @@ func deliverGeneric(ctx context.Context, config database.JSON, c Content) error 
 // TextByFormat builds the per-format message map for Content.Text from a
 // single messages.go builder closure.
 func TextByFormat(build func(MessageFormat) string) map[MessageFormat]string {
-	formats := []MessageFormat{MessageFormatMarkdown, MessageFormatHTML, MessageFormatSlack, MessageFormatPlain}
+	formats := []MessageFormat{
+		MessageFormatMarkdown,
+		MessageFormatNtfyMarkdown,
+		MessageFormatHTML,
+		MessageFormatSlack,
+		MessageFormatPlain,
+	}
 	text := make(map[MessageFormat]string, len(formats))
 	for _, format := range formats {
 		text[format] = build(format)

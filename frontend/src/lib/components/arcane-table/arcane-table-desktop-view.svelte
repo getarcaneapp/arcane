@@ -2,12 +2,12 @@
 	import { FlexRender as FlexRenderBase } from '@tanstack/svelte-table';
 	import { untrack, type Component, type Snippet } from 'svelte';
 	import type { Attachment } from 'svelte/attachments';
-	import { slide } from 'svelte/transition';
 
 	import Skeleton from '#lib/components/ui/skeleton/skeleton.svelte';
 	import * as Table from '#lib/components/ui/table/index.js';
 	import { ArrowRightIcon, ArrowDownIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import type { TableDisplayEntry } from '#lib/types/table-display.js';
 	import { cn } from '#lib/utils.js';
 
 	import { createVirtualizer } from '../ui/virtualizer.svelte';
@@ -18,10 +18,8 @@
 		type GroupSelectionState,
 		type SelectionModifiers
 	} from './arcane-table.types.svelte';
-	import { getTableRowsForItems } from './arcane-table.utils';
+	import { getTableDisplayEntries } from './arcane-table.utils';
 	import type { ArcaneCell, ArcaneFeatures, ArcaneRow, ArcaneSvelteTable } from './table-features';
-
-	void slide;
 
 	let {
 		table,
@@ -63,13 +61,13 @@
 		expandedRowContent?: Snippet<[{ row: ArcaneRow<TData>; item: TData }]>;
 		expandedRows?: Set<string>;
 		onToggleRowExpanded?: (rowId: string) => void;
-		/** The scrollable ancestor, supplied by the wrapper, used to virtualize long flat lists. */
+		/** The scrollable ancestor, supplied by the wrapper, used to virtualize displayed entries. */
 		scrollElement?: HTMLElement;
 		/** First-load flag — when set and there's no data, render skeleton rows. */
 		loading?: boolean;
 		/** Renders the empty state; receives an optional wrapper class. */
 		empty: Snippet;
-		/** Wrap cell content instead of truncating (disables virtualization: rows lose their fixed height). */
+		/** Wrap cell content instead of truncating. */
 		wrapText?: boolean;
 	} = $props();
 
@@ -95,10 +93,7 @@
 		if (event.shiftKey && !hasExpand && !selectionDisabled && !shouldIgnoreTableRowClick(event)) event.preventDefault();
 	}
 
-	// Get rows for a specific group from the table model
-	const isGrouped = $derived(groupedRows !== null && groupedRows.length > 0);
-
-	// Keep small pages and variable-layout views on the regular table path.
+	// Keep small views on the regular table path.
 	const VIRTUALIZE_THRESHOLD = 100;
 	const ROW_ESTIMATE_PX = 44;
 	let measuredRowHeight = $state<number | null>(null);
@@ -106,32 +101,32 @@
 	let bodyElement = $state<HTMLTableSectionElement | null>(null);
 	let scrollMargin = $state(0);
 	const flatRows = $derived(table.getRowModel().rows);
-	const shouldVirtualize = $derived(
-		!isGrouped && !hasExpand && !wrapText && !!scrollElement && flatRows.length > VIRTUALIZE_THRESHOLD
+	const entries = $derived(
+		getTableDisplayEntries(flatRows, rowIndex, groupedRows, groupCollapsedState, hasExpand ? expandedRows : undefined)
 	);
+	const shouldVirtualize = $derived(entries.length > VIRTUALIZE_THRESHOLD);
 	// Natural column widths (% of the table) measured from an auto-layout pass, then locked for table-fixed.
 	let lockedColumns = $state<{ key: string; widths: number[] } | null>(null);
 	const columnKey = $derived(
 		table
 			.getVisibleLeafColumns()
 			.map((column) => column.id)
-			.join('|')
+			.join('|') + `:${hasExpand}:${wrapText}`
 	);
 	const columnWidths = $derived(shouldVirtualize && lockedColumns?.key === columnKey ? lockedColumns.widths : null);
 	const getItemKey = $derived.by(() => {
-		const rows = flatRows;
-		return (index: number) => rows[index]?.id ?? index;
+		const displayed = entries;
+		return (index: number) => displayed[index]?.key ?? index;
 	});
 
 	function measureRow(node: HTMLTableRowElement) {
-		untrack(() => {
-			if (measuredRowHeight === null) {
+		return untrack(() => {
+			if (node.dataset['entryKind'] === 'row' && measuredRowHeight === null) {
 				const height = node.getBoundingClientRect().height;
 				if (height > 0) measuredRowHeight = height;
 			}
-			rowVirtualizer.measureElement(node);
+			return rowVirtualizer.measureElement(node);
 		});
-		return () => queueMicrotask(() => rowVirtualizer.measureElement(null));
 	}
 
 	$effect(() => {
@@ -140,10 +135,10 @@
 		const body = bodyElement;
 		if (!shouldVirtualize || !container || !tableNode || !body) return;
 
-		table.getVisibleLeafColumns();
+		const layoutKey = columnKey;
 		let width = 0;
 		const remeasure = () => {
-			const row = body.querySelector<HTMLTableRowElement>('tr[data-index]');
+			const row = body.querySelector<HTMLTableRowElement>('tr[data-entry-kind="row"]');
 			const height = row?.getBoundingClientRect().height;
 			if (height) measuredRowHeight = height;
 			rowVirtualizer.measure();
@@ -163,7 +158,7 @@
 			const tableWidth = tableNode.getBoundingClientRect().width;
 			if (!cells || !tableWidth) return;
 			lockedColumns = {
-				key: columnKey,
+				key: layoutKey,
 				widths: Array.from(cells, (cell) => (cell.getBoundingClientRect().width / tableWidth) * 100)
 			};
 		};
@@ -176,6 +171,7 @@
 			updateLayout();
 		});
 		observer.observe(tableNode);
+		observer.observe(container);
 		if (tableNode.tHead) observer.observe(tableNode.tHead);
 		document.fonts.addEventListener('loadingdone', fontsChanged);
 		untrack(updateLayout);
@@ -188,17 +184,27 @@
 	// Runes can't be created conditionally, so the virtualizer always exists but is `enabled` only
 	// when we actually virtualize; disabled, it stays cheap and reports an empty window.
 	const rowVirtualizer = createVirtualizer<HTMLElement, HTMLTableRowElement>(() => {
-		const rowSize = measuredRowHeight ?? ROW_ESTIMATE_PX;
 		return {
-			count: flatRows.length,
+			count: entries.length,
 			getScrollElement: () => scrollElement ?? null,
-			estimateSize: () => rowSize,
+			estimateSize: (index) => (entries[index]?.kind === 'detail' ? 160 : (measuredRowHeight ?? ROW_ESTIMATE_PX)),
 			overscan: 10,
 			getItemKey,
 			initialOffset: initialScrollTop,
 			scrollMargin,
-			enabled: shouldVirtualize
+			enabled: shouldVirtualize && !!scrollElement
 		};
+	});
+	$effect(() => {
+		const container = scrollElement;
+		const size = rowVirtualizer.totalSize;
+		const margin = scrollMargin;
+		if (!container || !shouldVirtualize) return;
+		const frame = requestAnimationFrame(() => {
+			const max = Math.max(0, size + margin - container.clientHeight);
+			if (container.scrollTop > max) container.scrollTop = max;
+		});
+		return () => cancelAnimationFrame(frame);
 	});
 </script>
 
@@ -228,6 +234,7 @@
 	<Table.Row
 		{@attach rowMeasurement}
 		data-index={virtualIndex}
+		data-entry-kind="row"
 		data-state={selectedIdSet.has(rowId) && 'selected'}
 		data-expanded={isExpanded ? true : undefined}
 		onclick={(event) => handleRowClick(event, rowId)}
@@ -245,7 +252,7 @@
 						e.stopPropagation();
 						onToggleRowExpanded?.(rowId);
 					}}
-					aria-label={isExpanded ? 'Collapse row' : 'Expand row'}
+					aria-label={isExpanded ? m.table_collapse_row() : m.table_expand_row()}
 				>
 					<ArrowRightIcon class="size-4" />
 				</button>
@@ -280,14 +287,14 @@
 			</Table.Cell>
 		{/each}
 	</Table.Row>
+{/snippet}
 
-	{#if hasExpand && isExpanded && expandedRowContent}
-		<Table.Row variant="detail">
+{#snippet detailRow(row: ArcaneRow<TData>, rowMeasurement?: Attachment<HTMLTableRowElement>, virtualIndex?: number)}
+	{#if expandedRowContent}
+		<Table.Row variant="detail" {@attach rowMeasurement} data-index={virtualIndex}>
 			<Table.Cell colspan={columnsCount} variant="flush">
-				<div transition:slide={{ duration: 200 }}>
-					<div class="px-6 py-4">
-						{@render expandedRowContent({ row, item: row.original })}
-					</div>
+				<div class="px-6 py-4">
+					{@render expandedRowContent({ row, item: row.original })}
 				</div>
 			</Table.Cell>
 		</Table.Row>
@@ -319,12 +326,16 @@
 		{#each table.getHeaderGroups() as headerGroup (headerGroup.id)}
 			<Table.Row>
 				{#if hasExpand}
-					<Table.Head variant="expander"></Table.Head>
+					<Table.Head
+						variant="expander"
+						style={columnWidths ? `--col-width: ${columnWidths[0]}%` : undefined}
+						class={columnWidths ? 'w-(--col-width)' : undefined}
+					></Table.Head>
 				{/if}
 				{#each headerGroup.headers as header, i (header.id)}
 					{@const meta = header.column.columnDef.meta}
 					{@const pxWidth = typeof meta?.width === 'number' ? `${meta.width}px` : undefined}
-					{@const colWidth = columnWidths ? `${columnWidths[i]}%` : pxWidth}
+					{@const colWidth = columnWidths ? `${columnWidths[i + (hasExpand ? 1 : 0)]}%` : pxWidth}
 					<Table.Head
 						colspan={header.colSpan}
 						pinned={header.column.id === 'actions'}
@@ -347,13 +358,15 @@
 	</Table.Header>
 {/snippet}
 
-{#snippet tableGroup(group: GroupedData<TData>)}
+{#snippet tableGroup(group: GroupedData<TData>, rowMeasurement?: Attachment<HTMLTableRowElement>, virtualIndex?: number)}
 	{@const isCollapsed = groupCollapsedState[group.groupName] ?? true}
 	{@const selectionState = getGroupSelectionState?.(group.items) ?? 'none'}
 	{@const hasSelection = selectionState !== 'none'}
 	{@const IconComponent = groupIcon?.(group.groupName)}
 
 	<Table.Row
+		{@attach rowMeasurement}
+		data-index={virtualIndex}
 		variant={unstyled ? 'static' : 'default'}
 		data-state={hasSelection ? 'selected' : undefined}
 		onclick={() => onGroupToggle?.(group.groupName)}
@@ -384,13 +397,16 @@
 			</div>
 		</Table.Cell>
 	</Table.Row>
+{/snippet}
 
-	<!-- Group Items (if not collapsed) -->
-	{#if !isCollapsed}
-		{@const groupRows = getTableRowsForItems(rowIndex, group.items)}
-		{#each groupRows as row (row.id)}
-			{@render dataRow(row, true)}
-		{/each}
+{#snippet displayEntry(entry: TableDisplayEntry<TData>, virtualIndex?: number)}
+	{@const measurement = virtualIndex !== undefined ? measureRow : undefined}
+	{#if entry.kind === 'group'}
+		{@render tableGroup(entry.group, measurement, virtualIndex)}
+	{:else if entry.kind === 'detail'}
+		{@render detailRow(entry.row, measurement, virtualIndex)}
+	{:else}
+		{@render dataRow(entry.row, entry.grouped, measurement, virtualIndex)}
 	{/if}
 {/snippet}
 
@@ -399,14 +415,14 @@
 	{@const first = vItems[0]}
 	{@const last = vItems[vItems.length - 1]}
 	{@const padTop = first ? Math.max(0, first.start - scrollMargin) : 0}
-	{@const padBottom = last ? Math.max(0, rowVirtualizer.totalSize - (last.end - scrollMargin)) : 0}
+	{@const padBottom = last ? Math.max(0, rowVirtualizer.totalSize - (last.end - scrollMargin)) : rowVirtualizer.totalSize}
 	{#if padTop > 0}
 		<tr aria-hidden="true"><td colspan={columnsCount} class="h-(--pad) border-0 p-0" style="--pad: {padTop}px"></td></tr>
 	{/if}
 	{#each vItems as vItem (vItem.key)}
-		{@const row = flatRows[vItem.index]}
-		{#if row}
-			{@render dataRow(row, false, measureRow, vItem.index)}
+		{@const entry = entries[vItem.index]}
+		{#if entry}
+			{@render displayEntry(entry, vItem.index)}
 		{/if}
 	{/each}
 	{#if padBottom > 0}
@@ -421,25 +437,18 @@
 			'[&_td]:bg-transparent! [&_thead]:bg-transparent! [&_tr]:border-border/40! [&_tr]:bg-transparent! [&_tr]:hover:bg-transparent! [&_tr:hover_td]:bg-transparent! [&_tr[data-state=selected]]:bg-transparent! [&_tr[data-state=selected]_td]:bg-transparent!'
 	)}
 >
-	{#if !unstyled}
-		<div aria-hidden="true" class="sticky top-0 z-(--arcane-z-sticky) -mb-10 h-10 backdrop-blur-sm"></div>
-	{/if}
 	<Table.Root bind:ref={tableElement} class={columnWidths ? 'table-fixed' : undefined}>
 		{@render tableHeader()}
 		<Table.Body bind:ref={bodyElement}>
-			{#if isGrouped && groupedRows}
-				{#each groupedRows as group (group.groupName)}
-					{@render tableGroup(group)}
-				{/each}
-			{:else if loading && flatRows.length === 0}
+			{#if loading && entries.length === 0}
 				{@render skeletonRows()}
-			{:else if flatRows.length === 0}
+			{:else if entries.length === 0}
 				{@render emptyState()}
 			{:else if shouldVirtualize}
 				{@render virtualRows()}
 			{:else}
-				{#each flatRows as row (row.id)}
-					{@render dataRow(row, false)}
+				{#each entries as entry (entry.key)}
+					{@render displayEntry(entry)}
 				{/each}
 			{/if}
 		</Table.Body>

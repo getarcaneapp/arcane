@@ -3,6 +3,7 @@ package di
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
@@ -19,14 +20,17 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/backup"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/build"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/container"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/gitops"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/gitrepo"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/network"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/notification"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/passkey"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
@@ -34,14 +38,18 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
 	s3domain "github.com/getarcaneapp/arcane/backend/v2/internal/s3"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/swarm"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/system"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/template"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/updater"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/user"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/version"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/volume"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/vulnerability"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/flow"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/concurrency"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/francis"
@@ -66,57 +74,58 @@ func provideSettingsModuleInternal(service *settings.SettingsService, search *se
 	return settings.New(service, search, localEnvironment.ProxyJSONRequest, cfg)
 }
 
-func provideBackupEngineInternal(
-	ctx context.Context,
-	lc fx.Lifecycle,
-	admission *runs.Admission,
-	imageService *image.ImageService,
-	runtime *francis.Runtime,
-	coordinator *runs.Coordinator,
-	roles *role.RoleService,
-	cfg *config.Config,
-) (
-	*backup.Engine,
-	error,
-) {
-	engine := backup.NewEngine(ctx, admission, imageService)
-	if err := engine.Register(runtime); err != nil {
-		return nil, err
-	}
-	engine.SetExecutionReady(coordinator.Active)
-	engine.SetAuthorize(func(ctx context.Context, command backuptypes.DurableRunCommand) error {
-		if cfg.AgentMode && command.UserID == "agent" && command.RequestedWithKey == "" {
+func provideBackupEngineInternal(lc fx.Lifecycle, admission *runs.Admission, imageService *image.ImageService, roles *role.RoleService, cfg *config.Config) *backup.Engine {
+	engine := backup.NewEngine(admission, imageService)
+	engine.SetAuthorize(func(ctx context.Context, requester backuptypes.Requester) error {
+		if cfg.AgentMode && requester.UserID == "agent" && requester.APIKeyID == "" {
 			return nil
 		}
-		if command.UserID == "" {
+		if requester.UserID == "" {
 			return errors.New("requesting user unavailable")
 		}
-		permissions, err := roles.ResolveExecutionPermissions(ctx, command.UserID, command.RequestedWithKey)
+		permissions, err := roles.ResolveExecutionPermissions(ctx, requester.UserID, requester.APIKeyID)
 		if err != nil {
 			return err
 		}
-		if !permissions.Allows(command.Permission, command.EnvironmentID) {
+		if !permissions.Allows(requester.Permission, requester.EnvironmentID) {
 			return errors.New("requesting user no longer has permission for this backup")
 		}
-		if command.Permission == authz.PermSystemBackupsManage && !permissions.IsGlobalAdmin() {
+		if requester.Permission == authz.PermSystemBackupsManage && !permissions.IsGlobalAdmin() {
 			return errors.New("system backups require a global administrator")
 		}
 		return nil
 	})
 	lc.Append(fx.Hook{OnStop: engine.Stop})
-	return engine, nil
+	return engine
 }
 
-func provideActorRuntimeInternal(appCtx context.Context, cfg *config.Config, settingsService *settings.SettingsService, lc fx.Lifecycle, cancelApp context.CancelFunc) (*francis.Runtime, error) {
+func provideActorRuntimeInternal(
+	appCtx context.Context,
+	cfg *config.Config,
+	db *database.DB,
+	settingsService *settings.SettingsService,
+	lc fx.Lifecycle,
+	cancelApp context.CancelCauseFunc,
+) (*francis.Runtime, error) {
 	runtime, err := francis.New(cfg.DatabaseURL, "", "", cfg.ActorPort)
 	if err != nil {
 		return nil, err
 	}
 	lc.Append(fx.Hook{OnStart: func(ctx context.Context) error {
+		sqlDB, sqlDBErr := db.SQLDB()
+		if sqlDBErr != nil {
+			return sqlDBErr
+		}
+		if migrateErr := francis.MigrateLegacyStore(ctx, sqlDB, cfg.DatabaseURL); migrateErr != nil {
+			return migrateErr
+		}
 		if configureIdentityErr := runtime.ConfigureIdentity(cfg.EncryptionKey, settingsService.GetSettingsConfig().InstanceID.Value); configureIdentityErr != nil {
 			return configureIdentityErr
 		}
-		return runtime.Start(ctx, appCtx, func(err error) { slog.ErrorContext(appCtx, "Francis host failed", "error", err); cancelApp() })
+		return runtime.Start(ctx, appCtx, func(err error) {
+			slog.ErrorContext(appCtx, "Francis host failed", "error", err)
+			cancelApp(fmt.Errorf("francis host failed: %w", err))
+		})
 	}, OnStop: runtime.Stop})
 	return runtime, nil
 }
@@ -127,6 +136,17 @@ func provideRunCoordinatorInternal(runtime *francis.Runtime, store *kv.KVService
 		return nil, err
 	}
 	return coordinator, nil
+}
+
+// provideWorkflowEngineInternal starts monitoring after the host is ready; its
+// hook follows the runtime's because the engine depends on it.
+func provideWorkflowEngineInternal(appCtx context.Context, runtime *francis.Runtime, coordinator *runs.Coordinator, activities *activity.ActivityService, lc fx.Lifecycle) (*flow.Engine, error) {
+	engine, err := flow.New(appCtx, runtime, coordinator, activities)
+	if err != nil {
+		return nil, err
+	}
+	lc.Append(fx.Hook{OnStart: engine.Start, OnStop: engine.Stop})
+	return engine, nil
 }
 
 func provideAdmissionGateInternal(runtime *francis.Runtime) (*runs.Admission, error) {
@@ -259,10 +279,8 @@ func provideProjectServiceInternal(
 type updaterServiceParams struct {
 	fx.In
 
-	Context      context.Context
 	Config       *config.Config
-	Lifecycle    fx.Lifecycle
-	ActorRuntime *francis.Runtime
+	Workflows    *flow.Engine
 	Coordinator  *runs.Coordinator
 	Admission    *runs.Admission
 	Roles        *role.RoleService
@@ -277,6 +295,64 @@ type updaterServiceParams struct {
 	Notification *notification.NotificationService
 	System       *system.SystemService
 	Activity     *activity.ActivityService
+}
+
+// provideImageUpdateServiceInternal registers the image-check workflow while the host is still unstarted.
+func provideImageUpdateServiceInternal(
+	db *database.DB,
+	settingsService *settings.SettingsService,
+	registryService *registry.ContainerRegistryService,
+	dockerService *docker.DockerClientService,
+	eventService *event.EventService,
+	notificationService *notification.NotificationService,
+	activityService *activity.ActivityService,
+	engine *flow.Engine,
+) (*imageupdate.ImageUpdateService, error) {
+	service := imageupdate.NewImageUpdateService(db, settingsService, registryService, dockerService, eventService, notificationService, activityService)
+	if err := service.RegisterWorkflows(engine); err != nil {
+		return nil, err
+	}
+	return service, nil
+}
+
+// provideImageServiceInternal registers the auto-patch workflow while the host is still unstarted.
+func provideImageServiceInternal(
+	db *database.DB,
+	dockerService *docker.DockerClientService,
+	registryService *registry.ContainerRegistryService,
+	imageUpdateService *imageupdate.ImageUpdateService,
+	vulnerabilityService *vulnerability.VulnerabilityService,
+	eventService *event.EventService,
+	settingsService *settings.SettingsService,
+	activityService *activity.ActivityService,
+	engine *flow.Engine,
+) (*image.ImageService, error) {
+	service := image.NewImageService(db, dockerService, registryService, imageUpdateService, vulnerabilityService, eventService, settingsService, activityService)
+	if err := service.RegisterWorkflows(engine); err != nil {
+		return nil, err
+	}
+	return service, nil
+}
+
+// provideVulnerabilityServiceInternal registers the scheduled scan workflow while the host is still unstarted.
+func provideVulnerabilityServiceInternal(
+	db *database.DB,
+	cfg *config.Config,
+	dockerService *docker.DockerClientService,
+	eventService *event.EventService,
+	settingsService *settings.SettingsService,
+	notificationService *notification.NotificationService,
+	activityService *activity.ActivityService,
+	registryService *registry.ContainerRegistryService,
+	kvService *kv.KVService,
+	httpClient *http.Client,
+	engine *flow.Engine,
+) (*vulnerability.VulnerabilityService, error) {
+	service := vulnerability.NewVulnerabilityService(db, cfg, dockerService, eventService, settingsService, notificationService, activityService, registryService, kvService, httpClient)
+	if err := service.RegisterWorkflows(engine); err != nil {
+		return nil, err
+	}
+	return service, nil
 }
 
 func provideUpdaterServiceInternal(p updaterServiceParams) (*updater.UpdaterService, error) {
@@ -300,21 +376,9 @@ func provideUpdaterServiceInternal(p updaterServiceParams) (*updater.UpdaterServ
 	if err != nil {
 		return nil, err
 	}
-	if registerActorsErr := service.RegisterActors(p.ActorRuntime); registerActorsErr != nil {
-		return nil, registerActorsErr
+	if registerWorkflowsErr := service.RegisterWorkflows(p.Workflows); registerWorkflowsErr != nil {
+		return nil, registerWorkflowsErr
 	}
-	p.Lifecycle.Append(
-		fx.Hook{
-			OnStart: func(
-				context.Context,
-			) error {
-				return service.Start(
-					p.Context,
-				)
-			},
-			OnStop: service.Stop,
-		},
-	) //nolint:contextcheck // Workers inherit the application lifetime after startup returns.
 	return service, nil
 }
 
@@ -395,4 +459,76 @@ func provideFilesystemWatcherJobInternal(
 		},
 	})
 	return job, nil
+}
+
+// provideGitOpsSyncServiceInternal registers the gitops-sync workflow while the host is still unstarted.
+func provideGitOpsSyncServiceInternal(
+	db *database.DB,
+	repoService *gitrepo.GitRepositoryService,
+	projectService *project.ProjectService,
+	swarmService *swarm.SwarmService,
+	eventService *event.EventService,
+	settingsService *settings.SettingsService,
+	engine *flow.Engine,
+) (*gitops.GitOpsSyncService, error) {
+	service := gitops.NewGitOpsSyncService(db, repoService, projectService, swarmService, eventService, settingsService)
+	if err := service.RegisterWorkflows(engine); err != nil {
+		return nil, err
+	}
+	return service, nil
+}
+
+// provideVolumeServiceInternal registers the volume backup workflows while the host is still unstarted.
+func provideVolumeServiceInternal(
+	lc fx.Lifecycle,
+	db *database.DB,
+	dockerService *docker.DockerClientService,
+	eventService *event.EventService,
+	settingsService *settings.SettingsService,
+	containerService *container.ContainerService,
+	imageService *image.ImageService,
+	backupEngine *backup.Engine,
+	s3Destinations *s3domain.S3DestinationService,
+	cfg *config.Config,
+	recoveryKeys *backup.RecoveryKeyStore,
+	engine *flow.Engine,
+) (*volume.VolumeService, error) {
+	service := volume.NewVolumeService(db, dockerService, eventService, settingsService, containerService, imageService, backupEngine, s3Destinations, cfg, recoveryKeys)
+	if err := service.RegisterWorkflows(engine); err != nil {
+		return nil, err
+	}
+	lc.Append(fx.Hook{OnStop: func(ctx context.Context) error { service.CleanupHelperContainers(ctx); return nil }})
+	return service, nil
+}
+
+// provideSystemServiceInternal registers the system backup workflows while the host is still unstarted.
+func provideSystemServiceInternal(
+	db *database.DB,
+	dockerService *docker.DockerClientService,
+	containerService *container.ContainerService,
+	imageUpdateService *imageupdate.ImageUpdateService,
+	volumeService *volume.VolumeService,
+	networkService *network.NetworkService,
+	settingsService *settings.SettingsService,
+	activityService *activity.ActivityService,
+	versionService *version.VersionService,
+	eventService *event.EventService,
+	projectService *project.ProjectService,
+	backupEngine *backup.Engine,
+	s3Destinations *s3domain.S3DestinationService,
+	recoveryKeys *backup.RecoveryKeyStore,
+	actors *francis.Runtime,
+	cfg *config.Config,
+	environments *environment.EnvironmentService,
+	engine *flow.Engine,
+	roles *role.RoleService,
+) (*system.SystemService, error) {
+	service := system.NewSystemService(
+		db, dockerService, containerService, imageUpdateService, volumeService, networkService, settingsService, activityService,
+		versionService, eventService, projectService, backupEngine, s3Destinations, recoveryKeys, actors, cfg,
+	)
+	if err := service.RegisterWorkflows(engine, environments, roles); err != nil {
+		return nil, err
+	}
+	return service, nil
 }

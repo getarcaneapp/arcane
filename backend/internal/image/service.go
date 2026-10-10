@@ -13,24 +13,31 @@ import (
 	"time"
 
 	"github.com/distribution/reference"
+	"github.com/getarcaneapp/arcane/types/v2"
+	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
+	"github.com/getarcaneapp/arcane/types/v2/features"
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
+	"github.com/getarcaneapp/arcane/types/v2/scheduler"
 	"github.com/getarcaneapp/arcane/types/v2/system"
 	usertypes "github.com/getarcaneapp/arcane/types/v2/user"
 	vulnerabilitytypes "github.com/getarcaneapp/arcane/types/v2/vulnerability"
+	"github.com/italypaleale/francis/builtin/workflow"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/image"
 	"github.com/moby/moby/client"
 	"github.com/samber/hot"
 	"github.com/samber/mo"
+	"go.getarcane.app/docker"
 	"go.getarcane.app/kit/pkg"
 	"go.getarcane.app/updater"
 	"go.getarcane.app/updater/pkg/utils/tagpolicy"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
+	dockerInternal "github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/image/children/attestations"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/image/children/patch"
@@ -38,28 +45,36 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/vulnerability"
-	dockerutils "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
+	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/registryauth"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/flow"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/imageref"
 )
 
+// patchSlot is one patch task's output; failures travel as task errors.
+type patchSlot struct {
+	Skipped bool `json:"skipped,omitempty"`
+}
+
 type ImageService struct {
 	db                   *database.DB
-	dockerService        *docker.DockerClientService
+	dockerService        *dockerInternal.DockerClientService
 	imageUpdateService   *imageupdate.ImageUpdateService
 	registryService      *registry.ContainerRegistryService
 	vulnerabilityService *vulnerability.VulnerabilityService
 	eventService         *event.EventService
 
-	patch          *patch.Service
-	projectIDCache *hot.HotCache[struct{}, map[string]string]
+	settingsService *settings.SettingsService
+	patch           *patch.Service
+	patchWorkflow   *flow.Workflow
+	projectIDCache  *hot.HotCache[struct{}, map[string]string]
 }
 
 func NewImageService(
 	db *database.DB,
-	dockerService *docker.DockerClientService,
+	dockerService *dockerInternal.DockerClientService,
 	registryService *registry.ContainerRegistryService,
 	imageUpdateService *imageupdate.ImageUpdateService,
 	vulnerabilityService *vulnerability.VulnerabilityService,
@@ -74,6 +89,7 @@ func NewImageService(
 		imageUpdateService:   imageUpdateService,
 		vulnerabilityService: vulnerabilityService,
 		eventService:         eventService,
+		settingsService:      settingsService,
 		patch:                patch.NewService(db, dockerService, settingsService, activityService, registryService, vulnerabilityService),
 		projectIDCache: hot.NewHotCache[struct{}, map[string]string](hot.LRU, 1).
 			WithTTL(projectIDCacheTTL).
@@ -81,10 +97,100 @@ func NewImageService(
 	}
 }
 
-// PatchFlaggedImages patches eligible images for the scheduled patch job.
-func (s *ImageService) PatchFlaggedImages(ctx context.Context, environmentID string, user usertypes.Actor) (patched, skipped int, err error) {
-	return s.patch.PatchFlaggedImages(ctx, environmentID, user)
+// RegisterWorkflows defines the scheduled auto-patch: find images with fixable
+// findings, patch each one in turn, then report. Call it before the host starts.
+func (s *ImageService) RegisterWorkflows(engine *flow.Engine) error {
+	patchWorkflow, err := engine.Define(flow.Definition{
+		Name:        "auto-patch",
+		Version:     1,
+		Fingerprint: "e399c9c07ea15a7d6a39f086529110040a4d2cc95daf72c1464363c7f5bb5efc",
+		// Copacetic runs one BuildKit patch at a time and mirrors a process-wide logger.
+		Concurrency: 1,
+		Timeout:     12 * time.Hour,
+		Activity: activitylib.StartRequest{
+			Type:          activitytypes.TypeImagePatch,
+			ResourceType:  new("images"),
+			ResourceName:  new("Scheduled image patch"),
+			Step:          "Finding patchable images",
+			LatestMessage: "Scheduled image patch started",
+		},
+		Labels: map[string]string{
+			"discover": "Finding patchable images",
+			"patch":    "Patching images",
+			"finalize": "Finishing image patch",
+		},
+		Steps: []workflow.StepSpec{
+			workflow.Step("discover", engine.Handler(func(ctx context.Context, _ flow.Task) (any, error) {
+				if !s.settingsService.IsFeatureEnabled(ctx, features.VulnerabilityManagement) {
+					return []patch.Target{}, nil
+				}
+				targets, err := s.patch.Targets(ctx, types.LocalDockerEnvironmentID)
+				if errors.Is(err, common.ErrPatchRequiresContainerdImageStore) {
+					return nil, err
+				}
+				if err != nil {
+					return nil, common.Classify(common.ErrUnavailable, err)
+				}
+				return targets, nil
+			})),
+			workflow.ForEach("patch", engine.Handler(func(ctx context.Context, t flow.Task) (any, error) {
+				var target patch.Target
+				if err := t.DecodeItem(&target); err != nil {
+					return nil, err
+				}
+				if !s.settingsService.IsFeatureEnabled(ctx, features.VulnerabilityManagement) {
+					return patchSlot{Skipped: true}, nil
+				}
+				// The record ID is stable per task, so a redelivery resumes its own patch.
+				return nil, s.patch.PatchTarget(ctx, types.LocalDockerEnvironmentID, target, fmt.Sprintf("%s-%d", t.ActivityID(), t.Index()))
+			}),
+				workflow.WithItemsFrom("discover"),
+				workflow.WithMaxParallel(1),
+				workflow.WithFailurePolicy(workflow.TolerateFailures),
+				workflow.WithMaxAttempts(2),
+				workflow.WithRetryBackoff(30*time.Second, 2*time.Minute)),
+			workflow.Step("finalize", engine.Handler(func(ctx context.Context, t flow.Task) (any, error) {
+				var targets []patch.Target
+				if err := t.DecodeOutput("discover", &targets); err != nil {
+					return nil, err
+				}
+				slots, err := flow.Results[patchSlot](t, "patch")
+				if err != nil {
+					return nil, err
+				}
+				outcome := scheduler.Outcome{Status: scheduler.Succeeded}
+				patched, skipped := 0, 0
+				for index, slot := range slots {
+					switch {
+					case slot.Err != "":
+						outcome.Targets = append(outcome.Targets, scheduler.TargetOutcome{ResourceType: "image", ID: targets[index].ImageName, Status: scheduler.Failed, Message: slot.Err})
+					case slot.Value.Skipped:
+						skipped++
+					default:
+						patched++
+					}
+				}
+				outcome.Message = fmt.Sprintf("Image patch completed: %d patched, %d failed", patched, len(outcome.Targets))
+				switch {
+				case skipped > 0 || (len(targets) == 0 && !s.settingsService.IsFeatureEnabled(ctx, features.VulnerabilityManagement)):
+					outcome.Status = kit.Ternary(patched > 0, scheduler.Partial, scheduler.Skipped)
+					outcome.Message = fmt.Sprintf("Remaining patches stopped because feature %s was disabled", features.VulnerabilityManagement)
+				case len(outcome.Targets) > 0:
+					outcome.Status = scheduler.Partial
+				}
+				return outcome, nil
+			}), workflow.WithInputFrom("discover")),
+		},
+	})
+	if err != nil {
+		return err
+	}
+	s.patchWorkflow = patchWorkflow
+	return nil
 }
+
+// PatchWorkflow is the scheduled auto-patch workflow.
+func (s *ImageService) PatchWorkflow() *flow.Workflow { return s.patchWorkflow }
 
 // newAttestationsServiceInternal builds the attestation reader from the image
 // service's Docker client and registry credentials.
@@ -228,7 +334,7 @@ func (s *ImageService) RemoveImage(ctx context.Context, id string, force bool, u
 		"force":   force,
 	}
 	if logErr := s.eventService.LogImageEvent(ctx, event.EventTypeImageDelete, id, imageName, user.ID, user.Username, "0", metadata); logErr != nil {
-		slog.Warn("could not log image deletion action", "err", logErr, "image", imageName, "image_id", id)
+		slog.WarnContext(ctx, "could not log image deletion action", "err", logErr, "image", imageName, "imageId", id)
 	}
 
 	return nil
@@ -280,12 +386,12 @@ func (s *ImageService) PullImage(ctx context.Context, imageName string, progress
 	}
 	defer func() { _ = reader.Close() }()
 
-	logWriter := dockerutils.NewLogLineWriter(progressWriter)
-	streamErr := dockerutils.RenderJSONMessageStream(reader, logWriter)
+	logWriter := docker.NewLogLineWriter(progressWriter)
+	streamErr := docker.RenderJSONMessageStream(reader, logWriter)
 	_ = logWriter.Close()
 	if streamErr != nil {
 		if errors.Is(streamErr, context.Canceled) || strings.Contains(streamErr.Error(), "context canceled") {
-			slog.Debug("image pull stream canceled", "image", imageName, "err", streamErr)
+			slog.DebugContext(ctx, "image pull stream canceled", "image", imageName, "err", streamErr)
 			s.eventService.LogErrorEvent(ctx, event.EventTypeImageError, "image", "", imageName, user.ID, user.Username, "0", streamErr, database.JSON{"action": "pull", "step": "canceled"})
 			return fmt.Errorf("image pull stream canceled for %s: %w", imageName, streamErr)
 		}
@@ -293,14 +399,14 @@ func (s *ImageService) PullImage(ctx context.Context, imageName string, progress
 		return fmt.Errorf("error reading image pull stream for %s: %w", imageName, streamErr)
 	}
 
-	slog.Debug("image pull stream completed", "image", imageName)
+	slog.DebugContext(ctx, "image pull stream completed", "image", imageName)
 
 	metadata := database.JSON{
 		"action":    "pull",
 		"imageName": imageName,
 	}
 	if logErr := s.eventService.LogImageEvent(ctx, event.EventTypeImagePull, "", imageName, user.ID, user.Username, "0", metadata); logErr != nil {
-		slog.Warn("could not log image pull action", "err", logErr, "image", imageName)
+		slog.WarnContext(ctx, "could not log image pull action", "err", logErr, "image", imageName)
 	}
 	if s.registryService != nil {
 		if recordImagePullErr := s.registryService.RecordImagePull(ctx, imageName); recordImagePullErr != nil {
@@ -370,7 +476,7 @@ func (s *ImageService) TagImage(ctx context.Context, source string, req imagetyp
 		"target":     target,
 	}
 	if logErr := s.eventService.LogImageEvent(ctx, event.EventTypeImageTag, "", source, user.ID, user.Username, "0", metadata); logErr != nil {
-		slog.Warn("could not log image tag action", "err", logErr, "image", source, "target", target)
+		slog.WarnContext(ctx, "could not log image tag action", "err", logErr, "image", source, "target", target)
 	}
 
 	return nil
@@ -479,7 +585,7 @@ func (s *ImageService) LoadImageFromReader(ctx context.Context, reader io.Reader
 
 	var result imagetypes.LoadResult
 	var responseBuilder strings.Builder
-	streamErr := dockerutils.RenderJSONMessageStream(loadResp, &responseBuilder)
+	streamErr := docker.RenderJSONMessageStream(loadResp, &responseBuilder)
 	if streamErr != nil {
 		s.eventService.LogErrorEvent(
 			ctx,
@@ -507,7 +613,7 @@ func (s *ImageService) LoadImageFromReader(ctx context.Context, reader io.Reader
 		"fileName": fileName,
 	}
 	if logErr := s.eventService.LogImageEvent(ctx, event.EventTypeImageLoad, "", fileName, user.ID, user.Username, "0", metadata); logErr != nil {
-		slog.Warn("could not log image load action", "err", logErr, "file", fileName)
+		slog.WarnContext(ctx, "could not log image load action", "err", logErr, "file", fileName)
 	}
 
 	return &result, nil
@@ -640,7 +746,7 @@ func (s *ImageService) PruneImages(ctx context.Context, options system.PruneImag
 		"spaceReclaimed": pruneReport.SpaceReclaimed,
 	}
 	if logErr := s.eventService.LogImageEvent(ctx, event.EventTypeImageDelete, "", "bulk_prune", usertypes.SystemUser.ID, usertypes.SystemUser.Username, "0", metadata); logErr != nil {
-		slog.Warn("could not log image prune action", "err", logErr)
+		slog.WarnContext(ctx, "could not log image prune action", "err", logErr)
 	}
 
 	return &pruneReport, nil
@@ -1032,7 +1138,7 @@ func (s *ImageService) BuildProjectIDMap(ctx context.Context, containers []conta
 		if c.Labels == nil {
 			continue
 		}
-		if projectName := dockerutils.ComposeProjectLabel(c.Labels); projectName != "" {
+		if projectName := docker.ComposeProjectLabel(c.Labels); projectName != "" {
 			projectNameSet[projectName] = struct{}{}
 		}
 	}
@@ -1059,7 +1165,7 @@ func BuildVolumeUsageMap(containers []container.Summary, projectIDByName map[str
 			continue
 		}
 
-		projectName := dockerutils.ComposeProjectLabel(c.Labels)
+		projectName := docker.ComposeProjectLabel(c.Labels)
 
 		if projectName != "" {
 			projectID := projectIDByName[projectName]
@@ -1078,7 +1184,7 @@ func BuildVolumeUsageMap(containers []container.Summary, projectIDByName map[str
 			continue
 		}
 
-		containerName := cmp.Or(dockerutils.ContainerNameFromNames(c.Names), c.ID)
+		containerName := cmp.Or(docker.ContainerNameFromNames(c.Names), c.ID)
 
 		if containerSeen[c.ImageID] == nil {
 			containerSeen[c.ImageID] = make(map[string]bool)

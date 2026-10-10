@@ -426,16 +426,16 @@ func TestListWebhookSummaries_ResolvesTargetNames(t *testing.T) {
 	require.NoError(t, db.WithContext(ctx).Exec(`CREATE TABLE projects (id TEXT PRIMARY KEY, name TEXT NOT NULL)`).Error)
 	require.NoError(t, db.WithContext(ctx).Exec(`CREATE TABLE gitops_syncs (id TEXT PRIMARY KEY, environment_id TEXT NOT NULL, name TEXT NOT NULL)`).Error)
 	require.NoError(t, db.WithContext(ctx).Exec(`INSERT INTO projects (id, name) VALUES (?, ?)`, "project-1", "Main Project").Error)
-	require.NoError(t, db.WithContext(ctx).Exec(`INSERT INTO gitops_syncs (id, environment_id, name) VALUES (?, ?, ?)`, "sync-1", "env-1", "Deploy Sync").Error)
+	require.NoError(t, db.WithContext(ctx).Exec(`INSERT INTO gitops_syncs (id, environment_id, name) VALUES (?, ?, ?)`, "sync-1", types.LocalDockerEnvironmentID, "Deploy Sync").Error)
 
-	_, _, err := svc.CreateWebhook(ctx, "project-hook", WebhookTargetTypeProject, WebhookActionTypeUpdate, "project-1", "env-1", user.Actor{})
+	_, _, err := svc.CreateWebhook(ctx, "project-hook", WebhookTargetTypeProject, WebhookActionTypeUpdate, "project-1", types.LocalDockerEnvironmentID, user.Actor{})
 	require.NoError(t, err)
-	_, _, err = svc.CreateWebhook(ctx, "updater-hook", WebhookTargetTypeUpdater, WebhookActionTypeRun, "", "env-1", user.Actor{})
+	_, _, err = svc.CreateWebhook(ctx, "updater-hook", WebhookTargetTypeUpdater, WebhookActionTypeRun, "", types.LocalDockerEnvironmentID, user.Actor{})
 	require.NoError(t, err)
-	_, _, err = svc.CreateWebhook(ctx, "gitops-hook", WebhookTargetTypeGitOps, WebhookActionTypeSync, "sync-1", "env-1", user.Actor{})
+	_, _, err = svc.CreateWebhook(ctx, "gitops-hook", WebhookTargetTypeGitOps, WebhookActionTypeSync, "sync-1", types.LocalDockerEnvironmentID, user.Actor{})
 	require.NoError(t, err)
 
-	summaries, err := svc.ListWebhookSummaries(ctx, "env-1")
+	summaries, err := svc.ListWebhookSummaries(ctx, types.LocalDockerEnvironmentID)
 	require.NoError(t, err)
 	require.Len(t, summaries, 3)
 
@@ -462,12 +462,12 @@ func TestListWebhookSummaries_DefaultsLegacyActionType(t *testing.T) {
 		TargetType:    WebhookTargetTypeProject,
 		ActionType:    "",
 		TargetID:      "project-1",
-		EnvironmentID: "env-1",
+		EnvironmentID: types.LocalDockerEnvironmentID,
 		Enabled:       true,
 	}
 	require.NoError(t, db.WithContext(ctx).Create(legacyWebhook).Error)
 
-	summaries, err := svc.ListWebhookSummaries(ctx, "env-1")
+	summaries, err := svc.ListWebhookSummaries(ctx, types.LocalDockerEnvironmentID)
 	require.NoError(t, err)
 	require.Len(t, summaries, 1)
 	assert.Equal(t, WebhookActionTypeUpdate, summaries[0].ActionType)

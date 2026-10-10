@@ -10,6 +10,11 @@ import (
 
 // BuildSignalURL converts SignalConfig to Shoutrrr URL format using shoutrrr's Config
 func BuildSignalURL(config SignalConfig) (string, error) {
+	notifySelf := true
+	if config.NotifySelf != nil {
+		notifySelf = *config.NotifySelf
+	}
+
 	signalConfig := &signal.Config{
 		Host:       config.Host,
 		Port:       config.Port,
@@ -19,6 +24,7 @@ func BuildSignalURL(config SignalConfig) (string, error) {
 		Source:     config.Source,
 		Recipients: config.Recipients,
 		DisableTLS: config.DisableTLS,
+		NotifySelf: notifySelf,
 	}
 
 	url := signalConfig.GetURL()

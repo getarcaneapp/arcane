@@ -16,7 +16,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/system"
 	uploadtypes "github.com/getarcaneapp/arcane/types/v2/upload"
 	"go.getarcane.app/builds/types"
-	"go.getarcane.app/kit/pkg"
+	kit "go.getarcane.app/kit/pkg"
 	"gorm.io/gorm"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
@@ -203,12 +203,7 @@ func (h *ImageHandler) TagImage(ctx context.Context, input *TagImageInput) (*han
 		return nil, huma.Error500InternalServerError(fmt.Sprintf("failed to tag image: %v", tagImageErr))
 	}
 
-	return &handlerutil.Out[base.MessageResponse]{
-		Body: base.ApiResponse[base.MessageResponse]{
-			Success: true,
-			Data:    base.MessageResponse{Message: "Image tagged successfully"},
-		},
-	}, nil
+	return handlerutil.MessageOutput("Image tagged successfully", ""), nil
 }
 
 // GetImageHistory returns Docker image layer history.
@@ -304,14 +299,7 @@ func (h *ImageHandler) RemoveImage(ctx context.Context, input *RemoveImageInput)
 		return nil, huma.Error500InternalServerError("Failed to remove image: " + removeImageErr.Error())
 	}
 
-	return &handlerutil.Out[base.MessageResponse]{
-		Body: base.ApiResponse[base.MessageResponse]{
-			Success: true,
-			Data: base.MessageResponse{
-				Message: "Image removed successfully",
-			},
-		},
-	}, nil
+	return handlerutil.MessageOutput("Image removed successfully", ""), nil
 }
 
 // PullImage pulls a Docker image with streaming progress.

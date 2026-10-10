@@ -21,8 +21,8 @@ export const load: PageLoad = async ({ params, parent }) => {
 		queryFn: () => containerService.getContainerEditConfig(containerId, envId)
 	});
 
-	// Compose-managed containers are edited via their project; self-managed
-	// (Arcane server) containers cannot be edited at all.
+	// Compose-managed containers are edited via their project; the running
+	// Arcane server or agent container cannot be edited at all.
 	if (editConfig.isCompose || editConfig.editDisabled) {
 		redirect(302, `/containers/${containerId}`);
 	}

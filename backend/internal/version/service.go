@@ -384,7 +384,7 @@ func (s *VersionService) storedOrDigestBasedUpdateInternal(ctx context.Context, 
 	if s.imageUpdateService != nil && strings.TrimSpace(currentImageID) != "" && checkImageRef == currentImageRef {
 		record, found, err := s.imageUpdateService.StoredUpdateByImageID(ctx, currentImageID)
 		if err != nil {
-			slog.WarnContext(ctx, "Failed to read stored Arcane image update state", "imageID", currentImageID, "error", err)
+			slog.WarnContext(ctx, "Failed to read stored Arcane image update state", "imageId", currentImageID, "error", err)
 		} else if found {
 			return record.HasUpdate, mo.PointerToOption(record.LatestDigest).OrEmpty()
 		}
@@ -400,26 +400,26 @@ func (s *VersionService) storedOrDigestBasedUpdateInternal(ctx context.Context, 
 // detectCurrentImageInfo attempts to detect the current container's image tag and digest
 func (s *VersionService) detectCurrentImageInfo(ctx context.Context) (tag, digest, imageRef, imageID string) {
 	if s.dockerService == nil {
-		slog.Debug("detectCurrentImageInfo: dockerService is nil")
+		slog.DebugContext(ctx, "detectCurrentImageInfo: dockerService is nil")
 		return "", "", "", ""
 	}
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		slog.Debug("detectCurrentImageInfo: failed to get docker client", "error", err)
+		slog.DebugContext(ctx, "detectCurrentImageInfo: failed to get docker client", "error", err)
 		return "", "", "", ""
 	}
 
 	containerId := s.detectContainerID(ctx, dockerClient)
 	if containerId == "" {
-		slog.Debug("detectCurrentImageInfo: could not detect container ID")
+		slog.DebugContext(ctx, "detectCurrentImageInfo: could not detect container ID")
 		return "", "", "", ""
 	}
-	slog.Debug("detectCurrentImageInfo: detected container", "containerId", containerId)
+	slog.DebugContext(ctx, "detectCurrentImageInfo: detected container", "containerId", containerId)
 
 	inspectResult, err := compat.ContainerInspectWithCompatibility(ctx, dockerClient, containerId, client.ContainerInspectOptions{})
 	if err != nil {
-		slog.Debug("detectCurrentImageInfo: failed to inspect container", "containerId", containerId, "error", err)
+		slog.DebugContext(ctx, "detectCurrentImageInfo: failed to inspect container", "containerId", containerId, "error", err)
 		return "", "", "", ""
 	}
 	container := inspectResult.Container
@@ -448,10 +448,10 @@ func (s *VersionService) detectCurrentImageInfo(ctx context.Context) (tag, diges
 func (s *VersionService) detectContainerID(ctx context.Context, dockerClient *client.Client) string {
 	containerId, err := s.getCurrentContainerID()
 	if err == nil {
-		slog.Debug("detectContainerID: found via getCurrentContainerID", "containerId", containerId)
+		slog.DebugContext(ctx, "detectContainerID: found via getCurrentContainerID", "containerId", containerId)
 		return containerId
 	}
-	slog.Debug("detectContainerID: getCurrentContainerID failed, trying label fallback", "error", err)
+	slog.DebugContext(ctx, "detectContainerID: getCurrentContainerID failed, trying label fallback", "error", err)
 
 	// Fallback: locate the Arcane container by label (works even when cgroup/hostname detection fails)
 	return libarcane.FindArcaneContainerIDByLabel(ctx, dockerClient)

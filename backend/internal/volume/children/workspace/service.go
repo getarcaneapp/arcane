@@ -29,14 +29,14 @@ import (
 	"github.com/moby/moby/client"
 	"go.getarcane.app/acfs"
 	"go.getarcane.app/acfs/types"
+	"go.getarcane.app/docker"
 	"go.getarcane.app/docker/compat"
 	"go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
+	dockerInternal "github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
@@ -46,7 +46,7 @@ import (
 
 // Dependencies are the helper-container, lock, and backup operations the workspace runs through.
 type Dependencies struct {
-	Docker                *docker.DockerClientService
+	Docker                *dockerInternal.DockerClientService
 	Events                *event.EventService
 	Locks                 *utils.KeyedMutex
 	AcquireHelper         func(ctx context.Context, volumeName string) (string, func(), error)
@@ -80,7 +80,7 @@ func (s *Service) GetVolumeWorkspace(ctx context.Context, volumeName string) (*w
 
 	totalStartedAt := time.Now()
 	defer func() {
-		slog.DebugContext(ctx, "volume workspace load completed", "volume", volumeName, "total_duration", time.Since(totalStartedAt))
+		slog.DebugContext(ctx, "volume workspace load completed", "volume", volumeName, "totalDuration", time.Since(totalStartedAt))
 	}()
 
 	inspectionStartedAt := time.Now()
@@ -98,7 +98,7 @@ func (s *Service) GetVolumeWorkspace(ctx context.Context, volumeName string) (*w
 	if requireVolumeHelperACFSErr := s.deps.RequireACFS(ctx, volumeName, containerID); requireVolumeHelperACFSErr != nil {
 		return nil, requireVolumeHelperACFSErr
 	}
-	slog.DebugContext(ctx, "volume workspace helper acquired", "volume", volumeName, "container_id", containerID, "duration", time.Since(helperStartedAt))
+	slog.DebugContext(ctx, "volume workspace helper acquired", "volume", volumeName, "containerId", containerID, "duration", time.Since(helperStartedAt))
 
 	scanStartedAt := time.Now()
 	tree, err := s.readVolumeWorkspaceFromContainerInternal(ctx, containerID)
@@ -110,7 +110,7 @@ func (s *Service) GetVolumeWorkspace(ctx context.Context, volumeName string) (*w
 		"volume workspace tree scan completed",
 		"volume",
 		volumeName,
-		"file_count",
+		"fileCount",
 		len(
 			tree.Files,
 		),
@@ -151,7 +151,7 @@ func (s *Service) readVolumeWorkspaceFromContainerInternal(ctx context.Context, 
 			"acfs", "walk", "--root", "/volume", "--path", "/",
 			"--max-depth", strconv.Itoa(maxDepth), "--max-entries", strconv.Itoa(maxEntries),
 		}
-		exitCode, execErr := dockerutil.ExecInContainer(workCtx, dockerClient, containerID, client.ExecCreateOptions{
+		exitCode, execErr := docker.ExecInContainer(workCtx, dockerClient, containerID, client.ExecCreateOptions{
 			AttachStdout: true,
 			AttachStderr: true,
 			Cmd:          cmd,
@@ -352,7 +352,7 @@ func (s *Service) startVolumeWorkspaceReadInternal(ctx context.Context, containe
 	}
 	go func() {
 		var stderr bytes.Buffer
-		exitCode, execErr := dockerutil.ExecInContainer(workCtx, dockerClient, containerID, client.ExecCreateOptions{
+		exitCode, execErr := docker.ExecInContainer(workCtx, dockerClient, containerID, client.ExecCreateOptions{
 			AttachStdout: true,
 			AttachStderr: true,
 			Cmd:          cmd,
@@ -407,7 +407,10 @@ func (s *Service) validateVolumeHelperSupportInternal(ctx context.Context, volum
 	if err != nil {
 		return fmt.Errorf("failed to inspect volume: %w", err)
 	}
-	return dockerutil.ValidateVolumeWorkspaceHelperSupport(volumeName, result.Volume.Options)
+	if options := result.Volume.Options; options["type"] == "none" || strings.Contains(options["o"], "bind") {
+		return fmt.Errorf("volume %q uses a custom mount configuration and cannot be accessed through the workspace helper", volumeName)
+	}
+	return nil
 }
 
 func (s *Service) validateVolumeWorkspacePathInternal(ctx context.Context, containerID, relativePath string, allowMissing bool) error {
@@ -493,7 +496,7 @@ func (
 ) {
 	totalStartedAt := time.Now()
 	defer func() {
-		slog.DebugContext(ctx, "volume workspace update completed", "volume", volumeName, "file_change_count", len(manifest.FileChanges), "total_duration", time.Since(totalStartedAt))
+		slog.DebugContext(ctx, "volume workspace update completed", "volume", volumeName, "fileChangeCount", len(manifest.FileChanges), "totalDuration", time.Since(totalStartedAt))
 	}()
 
 	if err := workspacepkg.ValidateUpdateManifest(manifest.FileTreeRevision, len(manifest.FileChanges), 500); err != nil {
@@ -528,7 +531,7 @@ func (
 	if requireVolumeHelperACFSErr := s.deps.RequireACFS(ctx, volumeName, containerID); requireVolumeHelperACFSErr != nil {
 		return nil, requireVolumeHelperACFSErr
 	}
-	slog.DebugContext(ctx, "volume workspace mutation helper acquired", "volume", volumeName, "container_id", containerID, "dedicated", needsBackups, "duration", time.Since(helperStartedAt))
+	slog.DebugContext(ctx, "volume workspace mutation helper acquired", "volume", volumeName, "containerId", containerID, "dedicated", needsBackups, "duration", time.Since(helperStartedAt))
 
 	revisionScanStartedAt := time.Now()
 	current, err := s.readVolumeWorkspaceFromContainerInternal(ctx, containerID)
@@ -540,7 +543,7 @@ func (
 		"volume workspace revision tree scan completed",
 		"volume",
 		volumeName,
-		"file_count",
+		"fileCount",
 		len(
 			current.Files,
 		),
@@ -565,7 +568,7 @@ func (
 	if err != nil {
 		return nil, err
 	}
-	slog.DebugContext(ctx, "volume workspace staging completed", "volume", volumeName, "staged_file_count", len(stagedFiles), "duration", time.Since(stagingStartedAt))
+	slog.DebugContext(ctx, "volume workspace staging completed", "volume", volumeName, "stagedFileCount", len(stagedFiles), "duration", time.Since(stagingStartedAt))
 
 	backupStartedAt := time.Now()
 	scope, err := volumeWorkspaceBackupScopeInternal(manifest.FileChanges)
@@ -581,7 +584,7 @@ func (
 	if err != nil {
 		return nil, err
 	}
-	slog.DebugContext(ctx, "volume workspace backup completed", "volume", volumeName, "scope_count", len(scope), "duration", time.Since(backupStartedAt))
+	slog.DebugContext(ctx, "volume workspace backup completed", "volume", volumeName, "scopeCount", len(scope), "duration", time.Since(backupStartedAt))
 
 	applyStartedAt := time.Now()
 	if applyVolumeWorkspaceChangesErr := s.applyVolumeWorkspaceChangesInternal(
@@ -596,7 +599,7 @@ func (
 	); applyVolumeWorkspaceChangesErr != nil {
 		return nil, applyVolumeWorkspaceChangesErr
 	}
-	slog.DebugContext(ctx, "volume workspace changes applied", "volume", volumeName, "file_change_count", len(manifest.FileChanges), "duration", time.Since(applyStartedAt))
+	slog.DebugContext(ctx, "volume workspace changes applied", "volume", volumeName, "fileChangeCount", len(manifest.FileChanges), "duration", time.Since(applyStartedAt))
 
 	finalScanStartedAt := time.Now()
 	tree, err := s.readVolumeWorkspaceFromContainerInternal(ctx, containerID)
@@ -608,7 +611,7 @@ func (
 		"volume workspace final tree scan completed",
 		"volume",
 		volumeName,
-		"file_count",
+		"fileCount",
 		len(
 			tree.Files,
 		),
@@ -659,7 +662,7 @@ func volumeWorkspaceWriteIdentityFromConfigUserInternal(configUser string) volum
 }
 
 func (s *Service) resolveVolumeWorkspaceWriteIdentityInternal(ctx context.Context, dockerClient *client.Client, containerID, volumeName string) volumeWorkspaceWriteIdentityInternal {
-	consumerIDs, err := dockerutil.GetContainersUsingVolume(ctx, dockerClient, volumeName)
+	consumerIDs, err := docker.GetContainersUsingVolume(ctx, dockerClient, volumeName)
 	if err != nil {
 		slog.WarnContext(ctx, "could not list containers for volume workspace write identity", "volume", volumeName, "error", err.Error())
 	}
@@ -670,7 +673,7 @@ func (s *Service) resolveVolumeWorkspaceWriteIdentityInternal(ctx context.Contex
 		if inspectErr != nil || inspect.Container.Config == nil {
 			// An uninspectable consumer could declare a conflicting user, so the identity is
 			// indeterminate; defer to the volume root's owner.
-			slog.WarnContext(ctx, "could not inspect volume consumer; using volume root owner for workspace writes", "volume", volumeName, "container_id", consumerID)
+			slog.WarnContext(ctx, "could not inspect volume consumer; using volume root owner for workspace writes", "volume", volumeName, "containerId", consumerID)
 			identity = volumeWorkspaceWriteIdentityInternal{}
 			break
 		}
@@ -692,7 +695,7 @@ func (s *Service) resolveVolumeWorkspaceWriteIdentityInternal(ctx context.Contex
 				volumeName,
 				"identity",
 				identity.execUser,
-				"conflicting_identity",
+				"conflictingIdentity",
 				parsed.execUser,
 			)
 			identity = volumeWorkspaceWriteIdentityInternal{}
@@ -700,7 +703,7 @@ func (s *Service) resolveVolumeWorkspaceWriteIdentityInternal(ctx context.Contex
 		}
 	}
 	if identity.execUser != "" {
-		slog.InfoContext(ctx, "volume workspace writes run as container user", "volume", volumeName, "identity", identity.execUser, "source_container_id", identitySource)
+		slog.InfoContext(ctx, "volume workspace writes run as container user", "volume", volumeName, "identity", identity.execUser, "sourceContainerId", identitySource)
 		return identity
 	}
 	// PUID-style images drop privileges after start, so Config.User stays empty; the owner of the

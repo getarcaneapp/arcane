@@ -5,6 +5,13 @@ pro: true
 
 project_name: arcane
 
+metadata:
+  maintainers:
+    - 'Kyle Mendell <ksm@ofkm.us>'
+  license: 'BSD-3-Clause'
+  homepage: 'https://getarcane.app/'
+  description: 'Modern Docker Management, Designed for Everyone.'
+
 git:
   ignore_tag_prefixes:
     - backend/
@@ -117,6 +124,8 @@ builds:
       - rva20u64
     ignore:
       - goos: darwin
+        goarch: amd64
+      - goos: darwin
         goarch: riscv64
     ldflags:
       - -w -s
@@ -133,18 +142,24 @@ archives:
       - arcane-cli
     formats:
       - tar.gz
-    name_template: '{{ .Binary }}_{{ .Os }}_{{ .Arch }}{{ with .Arm }}v{{ . }}{{ end }}'
+    name_template: &binary-name '{{ .Binary }}_{{ .Os }}_{{ .Arch }}{{ with .Arm }}v{{ . }}{{ end }}'
+  - id: arcane-cli-binary
+    ids:
+      - arcane-cli
+    formats:
+      - binary
+    name_template: *binary-name
   - id: default
     ids:
       - arcane
       - arcane-agent
     formats:
       - binary
-    name_template: '{{ .Binary }}_{{ .Os }}_{{ .Arch }}{{ with .Arm }}v{{ . }}{{ end }}'
+    name_template: *binary-name
 
 notarize:
   macos:
-    - enabled: '{{ isEnvSet "MACOS_SIGN_P12" }}'
+    - enabled: '{{ not .IsSnapshot }}'
       ids:
         - arcane-cli
       sign:
@@ -162,7 +177,6 @@ signs:
     cmd: cosign
     artifacts: checksum
     signature: '${artifact}.sigstore.json'
-    stdin: '{{ .Env.COSIGN_PASSWORD }}'
     args:
       - sign-blob
       - --key=env://COSIGN_PRIVATE_KEY
@@ -170,23 +184,6 @@ signs:
       - '${artifact}'
       - --yes
     output: true
-
-checksum:
-  extra_files:
-    - glob: 'dist/arcane-cli_linux_amd64_v1/arcane-cli'
-      name_template: arcane-cli_linux_amd64
-    - glob: 'dist/arcane-cli_linux_arm64_v8.0/arcane-cli'
-      name_template: arcane-cli_linux_arm64
-    - glob: 'dist/arcane-cli_linux_386_sse2/arcane-cli'
-      name_template: arcane-cli_linux_386
-    - glob: 'dist/arcane-cli_linux_arm_7/arcane-cli'
-      name_template: arcane-cli_linux_armv7
-    - glob: 'dist/arcane-cli_linux_riscv64_rva20u64/arcane-cli'
-      name_template: arcane-cli_linux_riscv64
-    - glob: 'dist/arcane-cli_darwin_amd64_v1/arcane-cli'
-      name_template: arcane-cli_darwin_amd64
-    - glob: 'dist/arcane-cli_darwin_arm64_v8.0/arcane-cli'
-      name_template: arcane-cli_darwin_arm64
 
 nightly:
   version_template: '{{ .Env.NEXT_IMAGE_VERSION }}'
@@ -198,12 +195,9 @@ nfpms:
     ids:
       - arcane-cli
     vendor: getarcaneapp
-    homepage: https://getarcane.app
-    maintainer: Kyle Mendell <ksm@ofkm.us>
     description: |-
-      Arcane CLI - Modern Docker Management, Designed for Everyone.
+      Arcane CLI - {{ .Metadata.Description }}
       This is the command-line interface for Arcane.
-    license: BSD-3-Clause
     formats:
       - apk
       - deb
@@ -263,8 +257,7 @@ homebrew_casks:
         - zsh
         - fish
         - pwsh
-    description: 'Arcane CLI - Modern Docker Management, Designed for Everyone.'
-    homepage: 'https://getarcane.app'
+    description: 'Arcane CLI - {{ .Metadata.Description }}'
     skip_upload: '{{ if eq (index .Env "BUILD_NEXT") "true" }}true{{ end }}'
     repository:
       owner: getarcaneapp
@@ -296,9 +289,9 @@ dockers_v2:
       'org.opencontainers.image.source': 'https://github.com/getarcaneapp/arcane'
       'org.opencontainers.image.version': 'v{{.Version}}'
       'org.opencontainers.image.revision': '{{.FullCommit}}'
-      'org.opencontainers.image.licenses': 'BSD-3-Clause'
+      'org.opencontainers.image.licenses': '{{ .Metadata.License }}'
       'org.opencontainers.image.title': 'Arcane'
-      'org.opencontainers.image.description': 'Modern Docker Management, Made for Everyone'
+      'org.opencontainers.image.description': '{{ .Metadata.Description }}'
       'com.getarcaneapp.arcane': 'true'
     sbom: '{{ if eq (index .Env "BUILD_NEXT") "true" }}false{{ else }}true{{ end }}'
 
@@ -326,19 +319,17 @@ dockers_v2:
       'org.opencontainers.image.source': 'https://github.com/getarcaneapp/arcane'
       'org.opencontainers.image.version': 'v{{.Version}}'
       'org.opencontainers.image.revision': '{{.FullCommit}}'
-      'org.opencontainers.image.licenses': 'BSD-3-Clause'
+      'org.opencontainers.image.licenses': '{{ .Metadata.License }}'
       'org.opencontainers.image.title': 'Arcane Agent'
       'org.opencontainers.image.description': 'Arcanes Remote Agent'
       'com.getarcaneapp.arcane.agent': 'true'
     sbom: '{{ if eq (index .Env "BUILD_NEXT") "true" }}false{{ else }}true{{ end }}'
 
 docker_signs:
-  - id: cosign-images
-    cmd: cosign
+  - cmd: cosign
     ids:
       - arcane-image
       - arcane-agent-image
-    stdin: '{{ .Env.COSIGN_PASSWORD }}'
     args:
       - sign
       - --key=env://COSIGN_PRIVATE_KEY
@@ -352,22 +343,10 @@ blobs:
     region: auto
     bucket: '{{ index .Env "R2_BUCKET" }}'
     directory: bin/cli-next
-    extra_files_only: true
+    ids:
+      - arcane-cli-binary
+    if: '{{ eq .ArtifactID "arcane-cli-binary" }}'
     extra_files:
-      - glob: dist/arcane-cli_linux_amd64_v1/arcane-cli
-        name_template: arcane-cli_linux_amd64
-      - glob: dist/arcane-cli_linux_arm64_v8.0/arcane-cli
-        name_template: arcane-cli_linux_arm64
-      - glob: dist/arcane-cli_linux_386_sse2/arcane-cli
-        name_template: arcane-cli_linux_386
-      - glob: dist/arcane-cli_linux_arm_7/arcane-cli
-        name_template: arcane-cli_linux_armv7
-      - glob: dist/arcane-cli_linux_riscv64_rva20u64/arcane-cli
-        name_template: arcane-cli_linux_riscv64
-      - glob: dist/arcane-cli_darwin_amd64_v1/arcane-cli
-        name_template: arcane-cli_darwin_amd64
-      - glob: dist/arcane-cli_darwin_arm64_v8.0/arcane-cli
-        name_template: arcane-cli_darwin_arm64
       - glob: dist/arcane_*_checksums.txt
         name_template: arcane-cli_checksums.txt
       - glob: dist/arcane_*_checksums.txt.sigstore.json
@@ -428,6 +407,11 @@ announce:
     icon_url: 'https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png'
 
 release:
+  ids:
+    - default
+    - arcane-cli-archive
+    - arcane-cli
+    - cosign-checksums
   github:
     owner: getarcaneapp
     name: arcane

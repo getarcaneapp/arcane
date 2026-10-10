@@ -28,63 +28,125 @@ func TestInitAllowsMultiAckCapabilities(t *testing.T) {
 }
 
 func TestGetKnownHostsPath(t *testing.T) {
-	t.Run("returns SSH_KNOWN_HOSTS env var when set", func(t *testing.T) {
-		customPath := "/custom/path/known_hosts"
-
-		result := getKnownHostsPathInternal(
-			func(string) string { return customPath },
-			os.Stat,
-			os.UserHomeDir,
-		)
-
-		assert.Equal(t, customPath, result,
-			"expected %s, got %s", customPath, result)
-	})
-
-	t.Run("returns Arcane data path when data directory exists", func(t *testing.T) {
-		result := getKnownHostsPathInternal(
-			func(string) string { return "" },
-			func(path string) (os.FileInfo, error) {
-				if path == defaultKnownHostsDataDir {
-					return stubFileInfo{dir: true}, nil
-				}
-				return nil, os.ErrNotExist
-			},
-			func() (string, error) { return "/home/tester", nil },
-		)
-
-		expected := defaultKnownHostsPath
-
-		assert.Equal(t, expected, result,
-			"expected %s, got %s", expected, result)
-	})
-
-	t.Run("falls back to home directory when Arcane data directory is unavailable", func(t *testing.T) {
-		homeDir := "/home/tester"
-		result := getKnownHostsPathInternal(
-			func(string) string { return "" },
-			func(string) (os.FileInfo, error) { return nil, os.ErrNotExist },
-			func() (string, error) { return homeDir, nil },
-		)
-
-		expected := filepath.Join(homeDir, ".ssh", "known_hosts")
-
-		assert.Equal(t, expected, result,
-			"expected %s, got %s", expected, result)
-	})
-
-	t.Run("falls back to temp dir when data directory and home are unavailable", func(t *testing.T) {
-		result := getKnownHostsPathInternal(
-			func(string) string { return "" },
-			func(string) (os.FileInfo, error) { return nil, os.ErrNotExist },
-			func() (string, error) { return "", errors.New("no home directory") },
-		)
-
-		expected := filepath.Join(os.TempDir(), ".ssh", "known_hosts")
-
-		assert.Equal(t, expected, result,
-			"expected %s, got %s", expected, result)
-	})
+	homePath := "/home/tester/.ssh/known_hosts"
+	tests := []struct {
+		name       string
+		workDir    string
+		override   string
+		dataDir    bool
+		homeDir    string
+		homeExists bool
+		workExists bool
+		homeErr    error
+		statErr    error
+		workErr    error
+		want       []string
+		wantErr    error
+	}{
+		{
+			name:    "returns SSH_KNOWN_HOSTS env var when set",
+			workDir: "/opt/arcane/data/git", override: "/custom/path/known_hosts",
+			dataDir: true, homeDir: "/home/tester", homeExists: true,
+			want: []string{"/custom/path/known_hosts"},
+		},
+		{
+			name:    "returns Arcane data path when data directory exists",
+			workDir: "/opt/arcane/data/git", dataDir: true,
+			homeDir: "/home/tester", homeExists: true,
+			want: []string{defaultKnownHostsPath},
+		},
+		{
+			name:    "preserves existing home trust file before native storage",
+			workDir: "/opt/arcane/data/git", homeDir: "/home/tester", homeExists: true,
+			want: []string{homePath},
+		},
+		{
+			name:       "trusts both native and home files when both exist",
+			workDir:    "/opt/arcane/data/git",
+			homeDir:    "/home/tester",
+			homeExists: true,
+			workExists: true,
+			want:       []string{"/opt/arcane/data/git/.ssh/known_hosts", homePath},
+		},
+		{
+			name:    "uses native storage when the home trust file is absent",
+			workDir: "/opt/arcane/data/git", homeDir: "/var/lib/arcane",
+			want: []string{"/opt/arcane/data/git/.ssh/known_hosts"},
+		},
+		{
+			name:    "keeps relative native storage relative to the working directory",
+			workDir: "data/git", homeDir: "/var/lib/arcane",
+			want: []string{filepath.Join("data", "git", ".ssh", "known_hosts")},
+		},
+		{
+			name:    "uses native storage without a resolvable home",
+			workDir: "/opt/arcane/data/git", homeErr: errors.New("no home directory"),
+			want: []string{"/opt/arcane/data/git/.ssh/known_hosts"},
+		},
+		{
+			name:    "falls back to home directory without a work directory",
+			homeDir: "/home/tester", want: []string{homePath},
+		},
+		{
+			name:    "falls back to temp dir when data directory and home are unavailable",
+			homeErr: errors.New("no home directory"),
+			want:    []string{filepath.Join(os.TempDir(), ".ssh", "known_hosts")},
+		},
+		{
+			name:    "uses native storage when the home trust file is inaccessible",
+			workDir: "/opt/arcane/data/git", homeDir: "/home/tester",
+			statErr: os.ErrPermission, want: []string{"/opt/arcane/data/git/.ssh/known_hosts"},
+		},
+		{
+			name:    "surfaces home trust file access errors without native storage",
+			homeDir: "/home/tester", statErr: os.ErrPermission, wantErr: os.ErrPermission,
+		},
+		{
+			name:    "does not replace inaccessible native trust with a home trust file",
+			workDir: "/opt/arcane/data/git", homeDir: "/home/tester", homeExists: true,
+			workErr: os.ErrPermission, wantErr: os.ErrPermission,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := getKnownHostsPaths(
+				tt.workDir,
+				func(key string) string {
+					require.Equal(t, "SSH_KNOWN_HOSTS", key)
+					return tt.override
+				},
+				func(path string) (os.FileInfo, error) {
+					if path == defaultKnownHostsDataDir && tt.dataDir {
+						return stubFileInfo{dir: true}, nil
+					}
+					if path == filepath.Join(tt.workDir, ".ssh", "known_hosts") {
+						if tt.workErr != nil {
+							return nil, tt.workErr
+						}
+						if tt.workExists {
+							return stubFileInfo{}, nil
+						}
+					}
+					if path == homePath {
+						if tt.statErr != nil {
+							return nil, tt.statErr
+						}
+						if tt.homeExists {
+							return stubFileInfo{}, nil
+						}
+					}
+					return nil, os.ErrNotExist
+				},
+				func() (string, error) { return tt.homeDir, tt.homeErr },
+			)
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr)
+			} else {
+				require.NoError(t, err)
+			}
+			assert.Equal(t, tt.want, result)
+		})
+	}
 }
 
 type stubFileInfo struct {
@@ -102,7 +164,8 @@ func TestGetSSHHostKeyCallback(t *testing.T) {
 	client := NewClient("")
 
 	t.Run("skip mode returns InsecureIgnoreHostKey", func(t *testing.T) {
-		callback, err := client.getSSHHostKeyCallback(SSHHostKeyVerificationSkip)
+		t.Setenv("SSH_KNOWN_HOSTS", filepath.Join(t.TempDir(), "missing", "known_hosts"))
+		callback, err := client.getSSHHostKeyCallback(t.Context(), SSHHostKeyVerificationSkip)
 
 		require.NoError(t, err,
 			"unexpected error: %v", err)
@@ -122,7 +185,7 @@ func TestGetSSHHostKeyCallback(t *testing.T) {
 		knownHostsPath := filepath.Join(tmpDir, "known_hosts")
 		t.Setenv("SSH_KNOWN_HOSTS", knownHostsPath)
 
-		callback, err := client.getSSHHostKeyCallback("")
+		callback, err := client.getSSHHostKeyCallback(t.Context(), "")
 
 		require.NoError(t, err,
 			"unexpected error: %v", err)
@@ -136,7 +199,7 @@ func TestGetSSHHostKeyCallback(t *testing.T) {
 		knownHostsPath := filepath.Join(tmpDir, "known_hosts")
 		t.Setenv("SSH_KNOWN_HOSTS", knownHostsPath)
 
-		callback, err := client.getSSHHostKeyCallback(SSHHostKeyVerificationAcceptNew)
+		callback, err := client.getSSHHostKeyCallback(t.Context(), SSHHostKeyVerificationAcceptNew)
 
 		require.NoError(t, err,
 			"unexpected error: %v", err)
@@ -154,7 +217,10 @@ func TestAddHostKey(t *testing.T) {
 		// Generate a test key
 		key := generateTestPublicKey(t)
 
-		err := addHostKey(knownHostsPath, "example.com:22", key)
+		t.Setenv("SSH_KNOWN_HOSTS", knownHostsPath)
+		callback, err := NewClient("").getSSHHostKeyCallback(t.Context(), SSHHostKeyVerificationAcceptNew)
+		require.NoError(t, err)
+		err = callback("example.com:22", &net.TCPAddr{}, key)
 
 		require.NoError(t, err,
 			"unexpected error: %v", err)
@@ -175,6 +241,8 @@ func TestAddHostKey(t *testing.T) {
 		t.Setenv("SSH_KNOWN_HOSTS", knownHostsPath)
 
 		key := generateTestPublicKey(t)
+		callback, callbackErr := NewClient("").getSSHHostKeyCallback(t.Context(), SSHHostKeyVerificationAcceptNew)
+		require.NoError(t, callbackErr)
 		var wg sync.WaitGroup
 		errChan := make(chan error, 10)
 
@@ -184,7 +252,7 @@ func TestAddHostKey(t *testing.T) {
 			go func(idx int) {
 				defer wg.Done()
 				hostname := "host" + string(rune('0'+idx)) + ".example.com:22"
-				if err := addHostKey(knownHostsPath, hostname, key); err != nil {
+				if err := callback(hostname, &net.TCPAddr{}, key); err != nil {
 					errChan <- err
 				}
 			}(i)
@@ -203,8 +271,8 @@ func TestAddHostKey(t *testing.T) {
 		require.NoError(t, err,
 			"failed to read known_hosts: %v", err)
 
-		assert.NotEmpty(t, content,
-			"expected non-empty known_hosts file after concurrent writes")
+		assert.Len(t, strings.Split(strings.TrimSpace(string(content)), "\n"), 10,
+			"every concurrent callback must persist its host key")
 	})
 }
 
@@ -215,7 +283,7 @@ func TestCreateAcceptNewHostKeyCallback(t *testing.T) {
 		t.Setenv("SSH_KNOWN_HOSTS", knownHostsPath)
 
 		client := NewClient("")
-		callback, err := client.createAcceptNewHostKeyCallback()
+		callback, err := client.getSSHHostKeyCallback(t.Context(), SSHHostKeyVerificationAcceptNew)
 
 		require.NoError(t, err,
 			"unexpected error: %v", err)
@@ -237,7 +305,7 @@ func TestCreateAcceptNewHostKeyCallback(t *testing.T) {
 		t.Setenv("SSH_KNOWN_HOSTS", knownHostsPath)
 
 		client := NewClient("")
-		callback, err := client.createAcceptNewHostKeyCallback()
+		callback, err := client.getSSHHostKeyCallback(t.Context(), SSHHostKeyVerificationAcceptNew)
 
 		require.NoError(t, err,
 			"unexpected error: %v", err)
@@ -266,7 +334,7 @@ func TestCreateAcceptNewHostKeyCallback(t *testing.T) {
 		t.Setenv("SSH_KNOWN_HOSTS", knownHostsPath)
 
 		client := NewClient("")
-		callback, err := client.createAcceptNewHostKeyCallback()
+		callback, err := client.getSSHHostKeyCallback(t.Context(), SSHHostKeyVerificationAcceptNew)
 
 		require.NoError(t, err,
 			"unexpected error: %v", err)
@@ -280,7 +348,9 @@ func TestCreateAcceptNewHostKeyCallback(t *testing.T) {
 		require.NoError(t, err,
 			"first callback returned error: %v", err)
 
-		// Second call should recognize the known host
+		// A new client must reuse the persisted trust file.
+		callback, err = NewClient("").getSSHHostKeyCallback(t.Context(), SSHHostKeyVerificationStrict)
+		require.NoError(t, err)
 		err = callback("192.168.1.1:22", addr, key)
 
 		assert.NoError(t, err,
@@ -293,7 +363,7 @@ func TestCreateAcceptNewHostKeyCallback(t *testing.T) {
 		t.Setenv("SSH_KNOWN_HOSTS", knownHostsPath)
 
 		client := NewClient("")
-		callback, err := client.createAcceptNewHostKeyCallback()
+		callback, err := client.getSSHHostKeyCallback(t.Context(), SSHHostKeyVerificationAcceptNew)
 
 		require.NoError(t, err,
 			"unexpected error: %v", err)
@@ -361,7 +431,7 @@ func TestNewClient(t *testing.T) {
 	})
 }
 
-func writeFileInternal(t *testing.T, dir, name string, content []byte) {
+func writeFile(t *testing.T, dir, name string, content []byte) {
 	t.Helper()
 	targetPath := filepath.Join(dir, name)
 	{
@@ -383,9 +453,9 @@ func minimalCompose() []byte {
 
 func TestWalkDirectory_BasicWalk(t *testing.T) {
 	tmpDir := t.TempDir()
-	writeFileInternal(t, tmpDir, "compose.yaml", minimalCompose())
-	writeFileInternal(t, tmpDir, "file1.txt", []byte("hello world"))
-	writeFileInternal(t, tmpDir, "file2.txt", []byte("another file"))
+	writeFile(t, tmpDir, "compose.yaml", minimalCompose())
+	writeFile(t, tmpDir, "file1.txt", []byte("hello world"))
+	writeFile(t, tmpDir, "file2.txt", []byte("another file"))
 
 	client := NewClient("")
 	result, err := client.WalkDirectory(t.Context(), tmpDir, "compose.yaml", 0, 0, 0)
@@ -402,9 +472,9 @@ func TestWalkDirectory_BasicWalk(t *testing.T) {
 
 func TestWalkDirectory_PreservesExecutableBit(t *testing.T) {
 	tmpDir := t.TempDir()
-	writeFileInternal(t, tmpDir, "compose.yaml", minimalCompose())
-	writeFileInternal(t, tmpDir, "scripts/hook.sh", []byte("#!/bin/sh\necho hi\n"))
-	writeFileInternal(t, tmpDir, "README.md", []byte("readme"))
+	writeFile(t, tmpDir, "compose.yaml", minimalCompose())
+	writeFile(t, tmpDir, "scripts/hook.sh", []byte("#!/bin/sh\necho hi\n"))
+	writeFile(t, tmpDir, "README.md", []byte("readme"))
 	{
 		err := os.Chmod(filepath.Join(tmpDir, "scripts", "hook.sh"), 0o755)
 		require.NoError(t, err,
@@ -439,11 +509,11 @@ func TestWalkDirectory_PreservesExecutableBit(t *testing.T) {
 
 func TestWalkDirectory_MaxFilesLimit(t *testing.T) {
 	tmpDir := t.TempDir()
-	writeFileInternal(t, tmpDir, "compose.yaml", minimalCompose())
-	writeFileInternal(t, tmpDir, "a.txt", []byte("a"))
-	writeFileInternal(t, tmpDir, "b.txt", []byte("b"))
-	writeFileInternal(t, tmpDir, "c.txt", []byte("c"))
-	writeFileInternal(t, tmpDir, "d.txt", []byte("d"))
+	writeFile(t, tmpDir, "compose.yaml", minimalCompose())
+	writeFile(t, tmpDir, "a.txt", []byte("a"))
+	writeFile(t, tmpDir, "b.txt", []byte("b"))
+	writeFile(t, tmpDir, "c.txt", []byte("c"))
+	writeFile(t, tmpDir, "d.txt", []byte("d"))
 
 	client := NewClient("")
 	_, err := client.WalkDirectory(t.Context(), tmpDir, "compose.yaml", 3, 0, 0)
@@ -457,11 +527,11 @@ func TestWalkDirectory_MaxFilesLimit(t *testing.T) {
 
 func TestWalkDirectory_MaxFilesUnlimited(t *testing.T) {
 	tmpDir := t.TempDir()
-	writeFileInternal(t, tmpDir, "compose.yaml", minimalCompose())
-	writeFileInternal(t, tmpDir, "a.txt", []byte("a"))
-	writeFileInternal(t, tmpDir, "b.txt", []byte("b"))
-	writeFileInternal(t, tmpDir, "c.txt", []byte("c"))
-	writeFileInternal(t, tmpDir, "d.txt", []byte("d"))
+	writeFile(t, tmpDir, "compose.yaml", minimalCompose())
+	writeFile(t, tmpDir, "a.txt", []byte("a"))
+	writeFile(t, tmpDir, "b.txt", []byte("b"))
+	writeFile(t, tmpDir, "c.txt", []byte("c"))
+	writeFile(t, tmpDir, "d.txt", []byte("d"))
 
 	client := NewClient("")
 	result, err := client.WalkDirectory(t.Context(), tmpDir, "compose.yaml", 0, 0, 0)
@@ -475,9 +545,9 @@ func TestWalkDirectory_MaxFilesUnlimited(t *testing.T) {
 
 func TestWalkDirectory_MaxTotalSizeLimit(t *testing.T) {
 	tmpDir := t.TempDir()
-	writeFileInternal(t, tmpDir, "compose.yaml", minimalCompose())
-	writeFileInternal(t, tmpDir, "big1.txt", []byte(strings.Repeat("x", 40)))
-	writeFileInternal(t, tmpDir, "big2.txt", []byte(strings.Repeat("y", 40)))
+	writeFile(t, tmpDir, "compose.yaml", minimalCompose())
+	writeFile(t, tmpDir, "big1.txt", []byte(strings.Repeat("x", 40)))
+	writeFile(t, tmpDir, "big2.txt", []byte(strings.Repeat("y", 40)))
 
 	client := NewClient("")
 	_, err := client.WalkDirectory(t.Context(), tmpDir, "compose.yaml", 0, 50, 0)
@@ -491,9 +561,9 @@ func TestWalkDirectory_MaxTotalSizeLimit(t *testing.T) {
 
 func TestWalkDirectory_MaxTotalSizeUnlimited(t *testing.T) {
 	tmpDir := t.TempDir()
-	writeFileInternal(t, tmpDir, "compose.yaml", minimalCompose())
-	writeFileInternal(t, tmpDir, "big1.txt", []byte(strings.Repeat("x", 500)))
-	writeFileInternal(t, tmpDir, "big2.txt", []byte(strings.Repeat("y", 500)))
+	writeFile(t, tmpDir, "compose.yaml", minimalCompose())
+	writeFile(t, tmpDir, "big1.txt", []byte(strings.Repeat("x", 500)))
+	writeFile(t, tmpDir, "big2.txt", []byte(strings.Repeat("y", 500)))
 
 	client := NewClient("")
 	result, err := client.WalkDirectory(t.Context(), tmpDir, "compose.yaml", 0, 0, 0)
@@ -507,10 +577,10 @@ func TestWalkDirectory_MaxTotalSizeUnlimited(t *testing.T) {
 
 func TestWalkDirectory_MaxBinarySizeSkips(t *testing.T) {
 	tmpDir := t.TempDir()
-	writeFileInternal(t, tmpDir, "compose.yaml", minimalCompose())
+	writeFile(t, tmpDir, "compose.yaml", minimalCompose())
 	// Binary content: null bytes cause IsBinaryContent to return true
 	binaryContent := []byte{0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x12, 0x13}
-	writeFileInternal(t, tmpDir, "data.bin", binaryContent)
+	writeFile(t, tmpDir, "data.bin", binaryContent)
 
 	client := NewClient("")
 	result, err := client.WalkDirectory(t.Context(), tmpDir, "compose.yaml", 0, 0, 5)
@@ -524,9 +594,9 @@ func TestWalkDirectory_MaxBinarySizeSkips(t *testing.T) {
 
 func TestWalkDirectory_MaxBinarySizeUnlimited(t *testing.T) {
 	tmpDir := t.TempDir()
-	writeFileInternal(t, tmpDir, "compose.yaml", minimalCompose())
+	writeFile(t, tmpDir, "compose.yaml", minimalCompose())
 	binaryContent := []byte{0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x12, 0x13}
-	writeFileInternal(t, tmpDir, "data.bin", binaryContent)
+	writeFile(t, tmpDir, "data.bin", binaryContent)
 
 	client := NewClient("")
 	result, err := client.WalkDirectory(t.Context(), tmpDir, "compose.yaml", 0, 0, 0)
@@ -543,8 +613,8 @@ func TestWalkDirectory_MaxBinarySizeUnlimited(t *testing.T) {
 
 func TestWalkDirectory_LargeTextFileNotSkippedByBinaryLimit(t *testing.T) {
 	tmpDir := t.TempDir()
-	writeFileInternal(t, tmpDir, "compose.yaml", minimalCompose())
-	writeFileInternal(t, tmpDir, "notes.txt", []byte(strings.Repeat("plain text\n", 32)))
+	writeFile(t, tmpDir, "compose.yaml", minimalCompose())
+	writeFile(t, tmpDir, "notes.txt", []byte(strings.Repeat("plain text\n", 32)))
 
 	client := NewClient("")
 	result, err := client.WalkDirectory(t.Context(), tmpDir, "compose.yaml", 0, 0, 16)
@@ -561,8 +631,8 @@ func TestWalkDirectory_LargeTextFileNotSkippedByBinaryLimit(t *testing.T) {
 
 func TestWalkDirectory_ComposeInSubdirectory(t *testing.T) {
 	tmpDir := t.TempDir()
-	writeFileInternal(t, tmpDir, "subdir/docker-compose.yml", minimalCompose())
-	writeFileInternal(t, tmpDir, "subdir/dynamic_config.yml", []byte("http:\n  routers: {}\n"))
+	writeFile(t, tmpDir, "subdir/docker-compose.yml", minimalCompose())
+	writeFile(t, tmpDir, "subdir/dynamic_config.yml", []byte("http:\n  routers: {}\n"))
 
 	client := NewClient("")
 	result, err := client.WalkDirectory(t.Context(), tmpDir, "subdir/docker-compose.yml", 0, 0, 0)
@@ -591,8 +661,8 @@ func TestWalkDirectory_ComposeInSubdirectory(t *testing.T) {
 
 func TestWalkDirectory_NestedSiblingFile(t *testing.T) {
 	tmpDir := t.TempDir()
-	writeFileInternal(t, tmpDir, "subdir/docker-compose.yml", minimalCompose())
-	writeFileInternal(t, tmpDir, "subdir/config/dynamic_config.yml", []byte("tls:\n  certificates: []\n"))
+	writeFile(t, tmpDir, "subdir/docker-compose.yml", minimalCompose())
+	writeFile(t, tmpDir, "subdir/config/dynamic_config.yml", []byte("tls:\n  certificates: []\n"))
 
 	client := NewClient("")
 	result, err := client.WalkDirectory(t.Context(), tmpDir, "subdir/docker-compose.yml", 0, 0, 0)
@@ -621,8 +691,8 @@ func TestWalkDirectory_NestedSiblingFile(t *testing.T) {
 
 func TestWalkDirectory_SpecialCharsInPath(t *testing.T) {
 	tmpDir := t.TempDir()
-	writeFileInternal(t, tmpDir, "traefik (nl10)/docker-compose.yml", minimalCompose())
-	writeFileInternal(t, tmpDir, "traefik (nl10)/config/dynamic_config.yml", []byte("http:\n  middlewares: {}\n"))
+	writeFile(t, tmpDir, "traefik (nl10)/docker-compose.yml", minimalCompose())
+	writeFile(t, tmpDir, "traefik (nl10)/config/dynamic_config.yml", []byte("http:\n  middlewares: {}\n"))
 
 	client := NewClient("")
 	result, err := client.WalkDirectory(t.Context(), tmpDir, "traefik (nl10)/docker-compose.yml", 0, 0, 0)
@@ -704,11 +774,13 @@ func TestPurgeScratchDirs(t *testing.T) {
 
 	staleDir := filepath.Join(workDir, "gitops-stale")
 	freshDir := filepath.Join(workDir, "gitops-fresh")
-	keepDir := filepath.Join(workDir, "keep-me")
+	keepDir := filepath.Join(workDir, ".ssh")
 	scratchFile := filepath.Join(workDir, "gitops-file")
 	require.NoError(t, os.MkdirAll(staleDir, 0o755))
 	require.NoError(t, os.MkdirAll(freshDir, 0o755))
-	require.NoError(t, os.MkdirAll(keepDir, 0o755))
+	require.NoError(t, os.MkdirAll(keepDir, 0o700))
+	knownHostsPath := filepath.Join(keepDir, "known_hosts")
+	require.NoError(t, os.WriteFile(knownHostsPath, []byte("persisted trust"), 0o600))
 	require.NoError(t, os.WriteFile(scratchFile, []byte("x"), 0o644))
 	staleTime := time.Now().Add(-3 * time.Hour)
 	require.NoError(t, os.Chtimes(staleDir, staleTime, staleTime))
@@ -719,7 +791,7 @@ func TestPurgeScratchDirs(t *testing.T) {
 
 	_, err = os.Stat(staleDir)
 	require.ErrorIs(t, err, os.ErrNotExist, "stale clone dir should be removed")
-	for _, p := range []string{freshDir, keepDir, scratchFile} {
+	for _, p := range []string{freshDir, keepDir, knownHostsPath, scratchFile} {
 		_, statErr := os.Stat(p)
 		require.NoError(t, statErr, "must be kept by the age-cutoff purge: %s", p)
 	}
@@ -730,7 +802,7 @@ func TestPurgeScratchDirs(t *testing.T) {
 
 	_, err = os.Stat(freshDir)
 	require.ErrorIs(t, err, os.ErrNotExist, "boot sweep should remove fresh clone dirs")
-	for _, p := range []string{keepDir, scratchFile} {
+	for _, p := range []string{keepDir, knownHostsPath, scratchFile} {
 		_, statErr2 := os.Stat(p)
 		require.NoError(t, statErr2, "boot sweep must keep non-scratch entries: %s", p)
 	}

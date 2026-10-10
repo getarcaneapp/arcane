@@ -58,7 +58,7 @@ func (s *Service) ListDirectory(ctx context.Context, dirPath string) ([]workspac
 }
 
 func (s *Service) GetFileContent(ctx context.Context, filePath string, maxBytes int64) ([]byte, string, error) {
-	slog.DebugContext(ctx, "build workspace: get file content", "path", filePath, "max_bytes", maxBytes)
+	slog.DebugContext(ctx, "build workspace: get file content", "path", filePath, "maxBytes", maxBytes)
 	root, err := s.resolveRoot()
 	if err != nil {
 		return nil, "", err
@@ -109,7 +109,7 @@ func (s *Service) DownloadFile(ctx context.Context, filePath string) (io.ReadClo
 }
 
 func (s *Service) UploadFile(ctx context.Context, destPath string, content io.Reader, filename string, size int64) error {
-	slog.DebugContext(ctx, "build workspace: upload file", "dest_path", destPath, "filename", filename)
+	slog.DebugContext(ctx, "build workspace: upload file", "destPath", destPath, "filename", filename)
 	root, err := s.resolveRoot()
 	if err != nil {
 		return err

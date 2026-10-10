@@ -21,28 +21,28 @@ import (
 	"github.com/moby/moby/api/types/volume"
 	"github.com/moby/moby/client"
 	"github.com/samber/mo"
-	"go.getarcane.app/kit/pkg"
+	"go.getarcane.app/docker"
+	kit "go.getarcane.app/kit/pkg"
 	"golang.org/x/sync/singleflight"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/backup"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	containerdomain "github.com/getarcaneapp/arcane/backend/v2/internal/container"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
+	dockerInternal "github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/s3"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	volumebackup "github.com/getarcaneapp/arcane/backend/v2/internal/volume/children/backup"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/volume/children/workspace"
-	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumes"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/flow"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	workspacepkg "github.com/getarcaneapp/arcane/backend/v2/pkg/workspace"
@@ -50,7 +50,7 @@ import (
 
 type VolumeService struct {
 	db               *database.DB
-	dockerService    *docker.DockerClientService
+	dockerService    *dockerInternal.DockerClientService
 	eventService     *event.EventService
 	settingsService  *settings.SettingsService
 	imageService     *image.ImageService
@@ -73,9 +73,8 @@ const internalVolumePruneFilterValue = libarcane.InternalResourceLabel + "=true"
 
 func NewVolumeService(
 	db *database.DB,
-	dockerService *docker.DockerClientService,
+	dockerService *dockerInternal.DockerClientService,
 	eventService *event.EventService,
-	activityService *activity.ActivityService,
 	settingsService *settings.SettingsService,
 	containerService *containerdomain.ContainerService,
 	imageService *image.ImageService,
@@ -84,7 +83,6 @@ func NewVolumeService(
 	cfg *config.Config,
 	recoveryKeys *backup.RecoveryKeyStore,
 ) *VolumeService {
-	slog.Debug("volume service: new")
 	backupVolumeName := ""
 	encryptionKey := ""
 	workspaceMaxDepth := 50
@@ -114,7 +112,6 @@ func NewVolumeService(
 		DB:               db,
 		Docker:           dockerService,
 		Events:           eventService,
-		Activity:         activityService,
 		Settings:         settingsService,
 		Engine:           engine,
 		S3Destinations:   s3Destinations,
@@ -195,12 +192,27 @@ func (s *VolumeService) ReconcileBackup(ctx context.Context, previous scheduler.
 }
 
 // ReconcileInterruptedBackups runs before this process can accept backup work.
+// RegisterWorkflows defines the backup workflows while the host is still unstarted.
+func (s *VolumeService) RegisterWorkflows(engine *flow.Engine) error {
+	return s.backup.RegisterWorkflows(engine)
+}
+
+// ReconcileInterruptedBackups fails backups left running by the previous process and watches the manual
+// backups that saved workflows resume.
 func (s *VolumeService) ReconcileInterruptedBackups(ctx context.Context, protectedIDs ...string) error {
 	query := s.db.WithContext(ctx).Model(&VolumeBackup{}).Where("status = ?", VolumeBackupStatusRunning)
 	if len(protectedIDs) > 0 {
 		query = query.Where("id NOT IN ?", protectedIDs)
 	}
-	return query.Updates(map[string]any{"status": VolumeBackupStatusFailed, "error": "Backup interrupted by Arcane restart"}).Error
+	if err := query.Updates(map[string]any{"status": VolumeBackupStatusFailed, "error": "Backup interrupted by Arcane restart"}).Error; err != nil {
+		return err
+	}
+	return s.backup.WatchAcceptedBackups(ctx)
+}
+
+// PruneLocalBackupRepository frees the space of deleted local volume backups.
+func (s *VolumeService) PruneLocalBackupRepository(ctx context.Context) error {
+	return s.backup.PruneLocalRepository(ctx)
 }
 
 // MigrateRepositoryPasswords re-keys this instance's own volume backup repositories to the recovery key; other instances re-key their own roots.
@@ -371,11 +383,11 @@ func (s *VolumeService) GetVolumeByName(ctx context.Context, name string) (*volu
 	localSettings := s.settingsService.GetSettingsConfig()
 	usageCtx, usageCancel := context.WithTimeout(ctx, timeouts.GetDuration(localSettings.DockerAPITimeout.AsInt(), timeouts.DefaultDockerAPI))
 	defer usageCancel()
-	if usageVolumes, ok := dockerutil.GetVolumeUsageDataStaleWhileRevalidate(usageCtx, dockerClient).Get(); ok {
+	if usageVolumes, ok := docker.GetVolumeUsageDataStaleWhileRevalidate(usageCtx, dockerClient).Get(); ok {
 		for _, uv := range usageVolumes {
 			if uv.Name == vol.Name && uv.UsageData != nil {
 				vol.UsageData = uv.UsageData
-				slog.DebugContext(ctx, "attached volume usage data", "volume", vol.Name, "size_bytes", uv.UsageData.Size, "ref_count", uv.UsageData.RefCount)
+				slog.DebugContext(ctx, "attached volume usage data", "volume", vol.Name, "sizeBytes", uv.UsageData.Size, "refCount", uv.UsageData.RefCount)
 				break
 			}
 		}
@@ -383,7 +395,7 @@ func (s *VolumeService) GetVolumeByName(ctx context.Context, name string) (*volu
 
 	v := volumetypes.NewSummary(vol)
 
-	containerIDs, err := dockerutil.GetContainersUsingVolume(ctx, dockerClient, name)
+	containerIDs, err := docker.GetContainersUsingVolume(ctx, dockerClient, name)
 	if err != nil {
 		slog.WarnContext(ctx, "failed to get containers using volume", "volume", name, "error", err.Error())
 	} else {
@@ -442,7 +454,7 @@ func (s *VolumeService) CreateVolume(ctx context.Context, options client.VolumeC
 		slog.WarnContext(ctx, "could not log volume creation action", "volume", vol.Volume.Name, "error", logErr.Error())
 	}
 
-	dockerutil.InvalidateVolumeUsageCache(dockerClient)
+	docker.InvalidateVolumeUsageCache(dockerClient)
 
 	return new(volumetypes.NewSummary(vol.Volume)), nil
 }
@@ -479,7 +491,7 @@ func (s *VolumeService) DeleteVolume(ctx context.Context, name string, force boo
 
 	s.removeHelperEntry(name)
 	s.backup.RemovePolicies(ctx, name)
-	dockerutil.InvalidateVolumeUsageCache(dockerClient)
+	docker.InvalidateVolumeUsageCache(dockerClient)
 	return nil
 }
 
@@ -519,7 +531,7 @@ func (s *VolumeService) PruneVolumesWithOptions(ctx context.Context, all bool) (
 		s.backup.RemovePolicies(ctx, volumeName)
 	}
 
-	dockerutil.InvalidateVolumeUsageCache(dockerClient)
+	docker.InvalidateVolumeUsageCache(dockerClient)
 
 	return &volumetypes.PruneReport{
 		VolumesDeleted: volumePruneResult.Report.VolumesDeleted,
@@ -555,7 +567,7 @@ func (s *VolumeService) GetVolumeUsage(ctx context.Context, name string) (bool, 
 		return false, nil, fmt.Errorf("volume not found: %w", err)
 	}
 
-	containerIDs, err := dockerutil.GetContainersUsingVolume(ctx, dockerClient, vol.Volume.Name)
+	containerIDs, err := docker.GetContainersUsingVolume(ctx, dockerClient, vol.Volume.Name)
 	if err != nil {
 		return false, nil, fmt.Errorf("failed to get containers using volume: %w", err)
 	}
@@ -583,7 +595,7 @@ func (s *VolumeService) GetVolumeSizes(ctx context.Context) (map[string]VolumeSi
 		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
-	usageVolumes, err := dockerutil.GetVolumeUsageData(apiCtx, dockerClient)
+	usageVolumes, err := docker.GetVolumeUsageData(apiCtx, dockerClient)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get volume usage data: %w", err)
 	}
@@ -874,7 +886,7 @@ func (s *VolumeService) ListVolumesPaginated(ctx context.Context, params paginat
 		params.Start,
 		"limit",
 		params.Limit,
-		"include_internal",
+		"includeInternal",
 		includeInternal,
 	)
 	dockerClient, err := s.dockerService.GetClient(ctx)
@@ -929,7 +941,7 @@ func (s *VolumeService) ListVolumesPaginated(ctx context.Context, params paginat
 	// background so this list request never waits for Docker's DiskUsage call.
 	var usageVolumes []volume.Volume
 	if params.Sort == "size" {
-		if uv, found := dockerutil.GetVolumeUsageDataStaleWhileRevalidate(apiCtx, dockerClient).Get(); found && (len(uv) > 0 || len(volResult.volumes) == 0) {
+		if uv, found := docker.GetVolumeUsageDataStaleWhileRevalidate(apiCtx, dockerClient).Get(); found && (len(uv) > 0 || len(volResult.volumes) == 0) {
 			usageVolumes = uv
 			usageCacheSnapshot = "available"
 		} else {
@@ -962,21 +974,21 @@ func (s *VolumeService) ListVolumesPaginated(ctx context.Context, params paginat
 	paginationResp := pagination.BuildResponse(result.TotalCount, result.TotalAvailable, effectiveParams)
 	slog.DebugContext(
 		ctx, "volume service: listed volumes",
-		"docker_host", dockerClient.DaemonHost(),
-		"requested_sort", params.Sort,
-		"requested_order", params.Order,
-		"effective_sort", effectiveParams.Sort,
-		"effective_order", effectiveParams.Order,
-		"usage_cache_snapshot", usageCacheSnapshot,
-		"docker_volumes", len(volResult.volumes),
-		"usage_volumes", len(usageVolumes),
-		"included_volumes", len(items),
-		"matched_volumes", result.TotalCount,
-		"returned_volumes", len(result.Items),
-		"container_volume_count", len(volumeContainerMap),
-		"filter_count", len(params.Filters),
-		"current_page", paginationResp.CurrentPage,
-		"total_pages", paginationResp.TotalPages,
+		"dockerHost", dockerClient.DaemonHost(),
+		"requestedSort", params.Sort,
+		"requestedOrder", params.Order,
+		"effectiveSort", effectiveParams.Sort,
+		"effectiveOrder", effectiveParams.Order,
+		"usageCacheSnapshot", usageCacheSnapshot,
+		"dockerVolumes", len(volResult.volumes),
+		"usageVolumes", len(usageVolumes),
+		"includedVolumes", len(items),
+		"matchedVolumes", result.TotalCount,
+		"returnedVolumes", len(result.Items),
+		"containerVolumeCount", len(volumeContainerMap),
+		"filterCount", len(params.Filters),
+		"currentPage", paginationResp.CurrentPage,
+		"totalPages", paginationResp.TotalPages,
 		"duration", time.Since(startedAt),
 	)
 
@@ -1057,7 +1069,7 @@ func (s *VolumeService) RenameVolume(ctx context.Context, oldName, newName strin
 	}
 
 	s.removeHelperEntry(oldName)
-	dockerutil.InvalidateVolumeUsageCache(dockerClient)
+	docker.InvalidateVolumeUsageCache(dockerClient)
 
 	renamed, err := s.GetVolumeByName(ctx, newName)
 	if err != nil {

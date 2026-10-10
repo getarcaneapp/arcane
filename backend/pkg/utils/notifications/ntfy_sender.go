@@ -60,6 +60,9 @@ func BuildNtfyURL(config NtfyConfig) (string, error) {
 		q.Set("icon", config.Icon)
 	}
 
+	// Arcane notification bodies use Markdown for improved readability.
+	q.Set("markdown", "yes")
+
 	// Always send explicit cache/firebase params to avoid ambiguity
 	if config.Cache {
 		q.Set("cache", "yes")

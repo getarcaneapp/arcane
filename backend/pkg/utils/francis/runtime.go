@@ -5,31 +5,38 @@ import (
 	"context"
 	"crypto/hkdf"
 	"crypto/sha256"
-	"crypto/tls"
+	"database/sql"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net"
+	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
 
 	"github.com/italypaleale/francis/actor"
+	"github.com/italypaleale/francis/builtin/workflow"
 	"github.com/italypaleale/francis/components"
 	"github.com/italypaleale/francis/host/local"
-	"github.com/quic-go/quic-go"
-	"github.com/quic-go/quic-go/http3"
+	"github.com/libtnb/sqlite"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
-const tablePrefixInternal = "arcane_francis"
+// TablePrefix namespaces the Francis tables in their store.
+const TablePrefix = "arcane_francis"
 
 // Runtime starts one durable actor host and publishes its service after readiness.
 // Services must wait for Ready before using Service, including during startup retries.
 type Runtime struct {
 	mu            sync.Mutex
 	options       []local.HostOption
-	registrations []registrationInternal
+	registrations []registration
+	workflows     []*workflow.Workflow
 	service       *actor.Service
 	ready         chan struct{}
 	done          chan struct{}
@@ -37,10 +44,12 @@ type Runtime struct {
 	started       bool
 	runError      error
 	address       string
+	storeURL      string
+	store         *gorm.DB
 	actorNames    sync.Map
 }
 
-type registrationInternal struct {
+type registration struct {
 	actorType string
 	factory   actor.Factory
 	options   []local.RegisterActorOption
@@ -54,22 +63,22 @@ func New(databaseURL, encryptionKey, instanceID, port string, options ...local.H
 	if err != nil || portNumber < 1 || portNumber > 65535 {
 		return nil, errors.New("ACTOR_PORT must be between 1 and 65535")
 	}
-	providerOption, err := providerOptionInternal(databaseURL)
+	storeURL, err := StoreURL(databaseURL)
 	if err != nil {
 		return nil, err
 	}
 	address := net.JoinHostPort("127.0.0.1", port)
 	runtime := &Runtime{
-		service: &actor.Service{}, ready: make(chan struct{}), done: make(chan struct{}), address: address,
+		service: &actor.Service{}, ready: make(chan struct{}), done: make(chan struct{}), address: address, storeURL: storeURL,
 		options: []local.HostOption{
-			local.WithAddress(address), providerOption,
+			local.WithAddress(address), providerOption(storeURL),
 			local.WithMaxHosts(1), local.WithHostHealthCheckDeadline(90 * time.Second),
 			local.WithShutdownGracePeriod(10 * time.Second), local.WithAlarmsPollInterval(time.Second),
 			local.WithAlarmsFetchAheadInterval(30 * time.Second), local.WithAlarmsLeaseDuration(180 * time.Second),
 		},
 	}
 	runtime.options = append(runtime.options, local.WithLogger(slog.New(&actorLogHandlerInternal{
-		Handler: slog.Default().With("scope", "actor-host").Handler(),
+		Handler: slog.Default().With("scope", "francis.arcane.internal").Handler(),
 		names:   &runtime.actorNames,
 	})))
 	if encryptionKey != "" && instanceID != "" {
@@ -102,6 +111,30 @@ func (r *Runtime) ConfigureIdentity(encryptionKey, instanceID string) error {
 func (r *Runtime) Service() *actor.Service { return r.service }
 func (r *Runtime) Ready() <-chan struct{}  { return r.ready }
 
+// Store lazily opens a small pool on Francis storage for diagnostics and backups.
+func (r *Runtime) Store() (*gorm.DB, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.store != nil {
+		return r.store, nil
+	}
+	dialector := postgres.Open(r.storeURL)
+	if strings.HasPrefix(r.storeURL, "file:") {
+		dialector = sqlite.Open(r.storeURL)
+	}
+	store, err := gorm.Open(dialector, &gorm.Config{Logger: logger.Discard})
+	if err != nil {
+		return nil, fmt.Errorf("open actor storage: %w", err)
+	}
+	sqlDB, err := store.DB()
+	if err != nil {
+		return nil, fmt.Errorf("open actor storage: %w", err)
+	}
+	sqlDB.SetMaxOpenConns(2)
+	r.store = store
+	return store, nil
+}
+
 func (r *Runtime) RegisterActor(actorType string, factory actor.Factory, options ...local.RegisterActorOption) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -113,12 +146,26 @@ func (r *Runtime) RegisterActor(actorType string, factory actor.Factory, options
 			return fmt.Errorf("actor type %q is already registered", actorType)
 		}
 	}
-	r.registrations = append(r.registrations, registrationInternal{actorType: actorType, factory: factory, options: append([]local.RegisterActorOption(nil), options...)})
+	r.registrations = append(r.registrations, registration{actorType: actorType, factory: factory, options: append([]local.RegisterActorOption(nil), options...)})
 	return nil
 }
 
-// Start waits for registration and the peer listener. appCtx owns the running host;
-// ctx only limits startup. onFailure must cancel the application without blocking.
+// RegisterWorkflow adds a Francis workflow, registered on every host attempt.
+func (r *Runtime) RegisterWorkflow(wf *workflow.Workflow) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.started {
+		return errors.New("workflows must be registered before startup")
+	}
+	if slices.ContainsFunc(r.workflows, func(existing *workflow.Workflow) bool { return existing.Name() == wf.Name() }) {
+		return fmt.Errorf("workflow %q is already registered", wf.Name())
+	}
+	r.workflows = append(r.workflows, wf)
+	return nil
+}
+
+// Start waits for host registration. appCtx owns the running host; ctx only
+// limits startup. onFailure must cancel the application without blocking.
 func (r *Runtime) Start(ctx, appCtx context.Context, onFailure func(error)) error {
 	r.mu.Lock()
 	if r.started {
@@ -134,111 +181,112 @@ func (r *Runtime) Start(ctx, appCtx context.Context, onFailure func(error)) erro
 	if err != nil {
 		cancel()
 		err = fmt.Errorf("bind actor loopback UDP listener: %w", err)
-		r.finishInternal(err)
+		r.finish(err)
 		return err
 	}
 	if err = listener.Close(); err != nil {
 		cancel()
-		r.finishInternal(err)
+		r.finish(err)
 		return err
 	}
 	startupCtx, startupCancel := context.WithTimeout(ctx, 120*time.Second)
 	defer startupCancel()
-	// An ephemeral probe socket can claim the port between the preflight and host bind.
 	bindRetries := 0
 
 	for {
-		host, errCh, runHostErr := r.runHostInternal(runCtx)
+		host, errCh, runHostErr := r.runHost(runCtx)
 		if runHostErr != nil {
 			cancel()
-			r.finishInternal(runHostErr)
+			r.finish(runHostErr)
 			return runHostErr
 		}
 		select {
 		case <-host.Ready():
-			runHostErr = waitForPeerInternal(startupCtx, r.address, errCh)
-			if runHostErr != nil {
-				if errors.Is(runHostErr, syscall.EADDRINUSE) && bindRetries < 3 {
-					<-errCh
-					bindRetries++
-					continue
-				}
-				cancel()
-				r.finishInternal(<-errCh)
-				return runHostErr
-			}
 			select {
-			case runErr := <-errCh:
-				cancel()
-				r.finishInternal(runErr)
-				return fmt.Errorf("actor host stopped during startup: %w", runErr)
+			case runHostErr = <-errCh:
 			default:
+				r.publishReady(runCtx, host, errCh, onFailure)
+				return nil
 			}
-			r.publishReadyInternal(runCtx, host, errCh, onFailure)
-			return nil
 		case runHostErr = <-errCh:
-			if errors.Is(runHostErr, syscall.EADDRINUSE) && bindRetries < 3 {
-				bindRetries++
-				continue
-			}
-			if !errors.Is(runHostErr, components.ErrClusterFull) && !errors.Is(runHostErr, components.ErrHostAlreadyRegistered) {
-				cancel()
-				r.finishInternal(runHostErr)
-				return runHostErr
-			}
-			slog.WarnContext(ctx, "Waiting for the previous actor host registration to expire", "error", runHostErr)
 		case <-startupCtx.Done():
 			cancel()
-			r.finishInternal(<-errCh)
+			r.finish(<-errCh)
 			return startupCtx.Err()
+		}
+		if runHostErr == nil {
+			runHostErr = errors.New("actor host stopped during startup")
+		}
+		switch {
+		case errors.Is(runHostErr, syscall.EADDRINUSE) && bindRetries < 3:
+			bindRetries++
+			slog.WarnContext(ctx, "Retrying actor host after a UDP port conflict", "error", runHostErr, "retry", bindRetries)
+		case errors.Is(runHostErr, components.ErrClusterFull), errors.Is(runHostErr, components.ErrHostAlreadyRegistered):
+			slog.WarnContext(ctx, "Waiting for the previous actor host registration to expire", "error", runHostErr)
+		default:
+			cancel()
+			r.finish(runHostErr)
+			return runHostErr
 		}
 		timer := time.NewTimer(time.Second)
 		select {
 		case <-timer.C:
 		case <-runCtx.Done():
 			timer.Stop()
-			r.finishInternal(runCtx.Err())
+			r.finish(runCtx.Err())
 			return runCtx.Err()
 		case <-startupCtx.Done():
 			timer.Stop()
 			cancel()
-			runHostErr = fmt.Errorf("another Arcane process owns this database or its registration has not expired: %w", startupCtx.Err())
-			r.finishInternal(runHostErr)
+			runHostErr = fmt.Errorf("actor host startup timed out: %w", errors.Join(startupCtx.Err(), runHostErr))
+			r.finish(runHostErr)
 			return runHostErr
 		}
 	}
 }
 
-func (r *Runtime) runHostInternal(ctx context.Context) (*local.Host, chan error, error) {
+func (r *Runtime) runHost(ctx context.Context) (*local.Host, chan error, error) {
 	host, err := local.NewHost(r.options...)
 	if err != nil {
 		return nil, nil, err
 	}
+	var registerErr error
 	for _, registration := range r.registrations {
-		if registerActorErr := host.RegisterActor(registration.actorType, registration.factory, registration.options...); registerActorErr != nil {
-			// Running a canceled host closes its provider-owned connections.
-			cleanupCtx, cancel := context.WithCancel(ctx)
-			cancel()
-			if cleanupErr := host.Run(cleanupCtx); cleanupErr != nil {
-				return nil, nil, errors.Join(registerActorErr, fmt.Errorf("clean up unregistered actor host: %w", cleanupErr))
-			}
-			return nil, nil, registerActorErr
+		if registerErr = host.RegisterActor(registration.actorType, registration.factory, registration.options...); registerErr != nil {
+			break
 		}
+	}
+	for _, wf := range r.workflows {
+		if registerErr != nil {
+			break
+		}
+		registerErr = host.RegisterBuiltInActor(wf)
+	}
+	if registerErr != nil {
+		// Running a canceled host closes its provider-owned connections.
+		cleanupCtx, cancel := context.WithCancel(ctx)
+		cancel()
+		if cleanupErr := host.Run(cleanupCtx); cleanupErr != nil {
+			return nil, nil, errors.Join(registerErr, fmt.Errorf("clean up unregistered actor host: %w", cleanupErr))
+		}
+		return nil, nil, registerErr
 	}
 	localErrors := make(chan error, 1)
 	go func() { localErrors <- host.Run(ctx) }()
 	return host, localErrors, nil
 }
 
-func (r *Runtime) publishReadyInternal(ctx context.Context, host *local.Host, runErrors <-chan error, onFailure func(error)) {
+func (r *Runtime) publishReady(ctx context.Context, host *local.Host, runErrors <-chan error, onFailure func(error)) {
 	*r.service = *host.Service()
 	close(r.ready)
 	go func() {
 		err := <-runErrors
-		r.finishInternal(err)
 		if ctx.Err() != nil || onFailure == nil {
+			r.finish(err)
 			return
 		}
+		// onFailure reports the error, so Stop must not return it again.
+		r.finish(nil)
 		if err == nil {
 			err = errors.New("actor host stopped unexpectedly")
 		}
@@ -248,57 +296,33 @@ func (r *Runtime) publishReadyInternal(ctx context.Context, host *local.Host, ru
 
 func (r *Runtime) Stop(ctx context.Context) error {
 	r.mu.Lock()
-	cancel, started := r.cancel, r.started
-	r.mu.Unlock()
-	if !started {
-		return nil
+	var err error
+	if r.store != nil {
+		var sqlDB *sql.DB
+		if sqlDB, err = r.store.DB(); err == nil {
+			err = sqlDB.Close()
+		}
+		r.store = nil
 	}
-	cancel()
+	if !r.started {
+		r.mu.Unlock()
+		return err
+	}
+	r.mu.Unlock()
+	r.cancel()
 	select {
 	case <-r.done:
 		r.mu.Lock()
 		defer r.mu.Unlock()
-		return r.runError
+		return errors.Join(r.runError, err)
 	case <-ctx.Done():
-		return ctx.Err()
+		return errors.Join(ctx.Err(), err)
 	}
 }
 
-func (r *Runtime) finishInternal(err error) {
+func (r *Runtime) finish(err error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.runError = err
 	close(r.done)
-}
-
-func waitForPeerInternal(ctx context.Context, address string, runErrors chan error) error {
-	// A TLS rejection proves the loopback listener is serving before shutdown.
-	//nolint:gosec // This readiness probe never sends credentials or application data.
-	tlsConfig := &tls.Config{InsecureSkipVerify: true, NextProtos: []string{http3.NextProtoH3}}
-	for {
-		probeCtx, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
-		connection, err := quic.DialAddr(probeCtx, address, tlsConfig, &quic.Config{})
-		cancel()
-		if connection != nil {
-			if closeWithErrorErr := connection.CloseWithError(0, "readiness probe complete"); closeWithErrorErr != nil {
-				return fmt.Errorf("close actor readiness probe: %w", closeWithErrorErr)
-			}
-			return nil
-		}
-		var transportError *quic.TransportError
-		if errors.As(err, &transportError) && transportError.Remote {
-			return nil
-		}
-		timer := time.NewTimer(10 * time.Millisecond)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return ctx.Err()
-		case runErr := <-runErrors:
-			timer.Stop()
-			runErrors <- runErr
-			return fmt.Errorf("actor peer listener stopped before readiness: %w", runErr)
-		case <-timer.C:
-		}
-	}
 }

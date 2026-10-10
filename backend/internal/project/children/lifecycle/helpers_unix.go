@@ -10,7 +10,7 @@ import (
 	"syscall"
 )
 
-func describeLifecyclePathAccessInternal(projectPath, resolvedScriptPath string) string {
+func describeLifecyclePathAccess(projectPath, resolvedScriptPath string) string {
 	var lines []string
 
 	lines = append(lines,
@@ -22,7 +22,31 @@ func describeLifecyclePathAccessInternal(projectPath, resolvedScriptPath string)
 		"Path inspection:",
 	)
 
-	for _, candidate := range lifecycleDiagnosticPathsInternal(projectPath, resolvedScriptPath) {
+	// Walk from the project root down to the script; fall back to the two
+	// endpoints when the script resolves outside the project.
+	paths := []string{projectPath, resolvedScriptPath}
+	absProject, projectErr := filepath.Abs(projectPath)
+	absScript, scriptErr := filepath.Abs(resolvedScriptPath)
+	relative, relErr := filepath.Rel(absProject, absScript)
+	switch {
+	case projectErr != nil:
+	case scriptErr != nil:
+		paths = []string{absProject, resolvedScriptPath}
+	case relErr != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)):
+		paths = []string{absProject, absScript}
+	default:
+		paths = []string{absProject}
+		current := absProject
+		for component := range strings.SplitSeq(relative, string(filepath.Separator)) {
+			if component == "" || component == "." {
+				continue
+			}
+			current = filepath.Join(current, component)
+			paths = append(paths, current)
+		}
+	}
+
+	for _, candidate := range paths {
 		// os.* rather than acfs: diagnostics walk arbitrary ancestor directories
 		// of a user-configured path, so no confinement root exists for them.
 		info, err := os.Lstat(candidate)
@@ -36,13 +60,23 @@ func describeLifecyclePathAccessInternal(projectPath, resolvedScriptPath string)
 			owner = fmt.Sprintf("uid=%d gid=%d", stat.Uid, stat.Gid)
 		}
 
+		fileType := "other"
+		switch {
+		case info.Mode()&os.ModeSymlink != 0:
+			fileType = "symlink"
+		case info.IsDir():
+			fileType = "directory"
+		case info.Mode().IsRegular():
+			fileType = "regular"
+		}
+
 		lines = append(lines, fmt.Sprintf(
 			"  %q: mode=%s permissions=%04o %s type=%s",
 			candidate,
 			info.Mode(),
 			info.Mode().Perm(),
 			owner,
-			lifecycleFileTypeInternal(info),
+			fileType,
 		))
 	}
 
@@ -52,47 +86,4 @@ func describeLifecyclePathAccessInternal(projectPath, resolvedScriptPath string)
 	)
 
 	return strings.Join(lines, " ")
-}
-
-func lifecycleDiagnosticPathsInternal(projectPath, resolvedScriptPath string) []string {
-	absProject, err := filepath.Abs(projectPath)
-	if err != nil {
-		return []string{projectPath, resolvedScriptPath}
-	}
-
-	absScript, err := filepath.Abs(resolvedScriptPath)
-	if err != nil {
-		return []string{absProject, resolvedScriptPath}
-	}
-
-	relative, err := filepath.Rel(absProject, absScript)
-	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
-		return []string{absProject, absScript}
-	}
-
-	paths := []string{absProject}
-	current := absProject
-
-	for component := range strings.SplitSeq(relative, string(filepath.Separator)) {
-		if component == "" || component == "." {
-			continue
-		}
-		current = filepath.Join(current, component)
-		paths = append(paths, current)
-	}
-
-	return paths
-}
-
-func lifecycleFileTypeInternal(info os.FileInfo) string {
-	switch {
-	case info.Mode()&os.ModeSymlink != 0:
-		return "symlink"
-	case info.IsDir():
-		return "directory"
-	case info.Mode().IsRegular():
-		return "regular"
-	default:
-		return "other"
-	}
 }

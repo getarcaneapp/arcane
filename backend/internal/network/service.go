@@ -15,6 +15,7 @@ import (
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
+	"go.getarcane.app/docker"
 	"go.getarcane.app/docker/compat"
 	"go.getarcane.app/kit/pkg"
 	"go.getarcane.app/kit/pkg/mapping"
@@ -22,20 +23,19 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
+	dockerInternal "github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 )
 
 type NetworkService struct {
 	db            *database.DB
-	dockerService *docker.DockerClientService
+	dockerService *dockerInternal.DockerClientService
 	eventService  *event.EventService
 }
 
-func NewNetworkService(db *database.DB, dockerService *docker.DockerClientService, eventService *event.EventService) *NetworkService {
+func NewNetworkService(db *database.DB, dockerService *dockerInternal.DockerClientService, eventService *event.EventService) *NetworkService {
 	return &NetworkService{
 		db:            db,
 		dockerService: dockerService,
@@ -122,7 +122,7 @@ func (s *NetworkService) GetNetworkTopology(ctx context.Context) (*networktypes.
 			Metadata: networktypes.TopologyNodeMetadata{
 				Driver:    rawNetwork.Driver,
 				Scope:     rawNetwork.Scope,
-				IsDefault: dockerutil.IsDefaultNetwork(rawNetwork.Name),
+				IsDefault: docker.IsDefaultNetwork(rawNetwork.Name),
 			},
 		})
 
@@ -383,7 +383,7 @@ func (s *NetworkService) ListNetworksPaginated(ctx context.Context, params pagin
 		return nil, pagination.Response{}, networktypes.UsageCounts{}, fmt.Errorf("failed to list containers: %w", err)
 	}
 
-	inUseByID, inUseByName := dockerutil.BuildNetworkUsageMaps(containers)
+	inUseByID, inUseByName := docker.BuildNetworkUsageMaps(containers)
 
 	networkList, err := compat.NetworkListWithCompatibility(ctx, dockerClient, client.NetworkListOptions{})
 	if err != nil {
@@ -414,7 +414,7 @@ func buildTopologyContainerInfoInternal(containers []container.Summary) map[stri
 	for _, rawContainer := range containers {
 		name := rawContainer.ID
 		if len(rawContainer.Names) > 0 {
-			name = dockerutil.ContainerNameFromNames(rawContainer.Names)
+			name = docker.ContainerNameFromNames(rawContainer.Names)
 		}
 		infoByID[rawContainer.ID] = topologyContainerInfo{
 			Name:  name,
@@ -433,7 +433,7 @@ func (s *NetworkService) convertToNetworkSummaries(rawNets []network.Summary, in
 			return nil, fmt.Errorf("failed to map network: %w", err)
 		}
 		netDto.InUse = inUseByID[netDto.ID] || inUseByName[netDto.Name]
-		netDto.IsDefault = dockerutil.IsDefaultNetwork(netDto.Name)
+		netDto.IsDefault = docker.IsDefaultNetwork(netDto.Name)
 		items = append(items, netDto)
 	}
 	return items, nil

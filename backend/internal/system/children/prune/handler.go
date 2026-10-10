@@ -33,7 +33,7 @@ func (h *Handler) PruneAll(ctx context.Context, input *PruneAllInput) (*handleru
 		"images", input.Body.Images,
 		"volumes", input.Body.Volumes,
 		"networks", input.Body.Networks,
-		"build_cache", input.Body.BuildCache)
+		"buildCache", input.Body.BuildCache)
 
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	result := h.service.StartPruneAll(runtimeCtx, input.EnvironmentID, input.Body)

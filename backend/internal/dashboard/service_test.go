@@ -47,8 +47,9 @@ func setupDashboardServiceTestDB(t *testing.T) (*database.DB, *settings.Settings
 	require.NoError(t, db.AutoMigrate(&apikey.ApiKey{}, &environment.Environment{}, &imageupdate.ImageUpdateRecord{}, &project.Project{}, &settings.SettingVariable{}))
 
 	databaseDB := &database.DB{DB: db}
-	settingsSvc, err := newSettingsServiceForTestInternal(t.Context(), t, databaseDB)
+	settingsSvc, err := settings.NewSettingsService(t.Context(), databaseDB)
 	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, settingsSvc.Stop(context.WithoutCancel(t.Context()))) })
 
 	return databaseDB, settingsSvc
 }
@@ -185,7 +186,8 @@ func TestDashboardService_GetSnapshot_ReturnsDashboardSnapshot(t *testing.T) {
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 	require.NoError(t, settingsSvc.SetStringSetting(t.Context(), "projectsDirectory", projectsDir))
 	require.NoError(t, settingsSvc.SetStringSetting(t.Context(), "autoUpdateExcludedContainers", "stopped-app"))
-	projectPath := createComposeProjectDirInternal(t, projectsDir, "project-with-update")
+	projectPath := filepath.Join(projectsDir, "project-with-update")
+	require.NoError(t, os.MkdirAll(projectPath, 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte("services:\n  app:\n    image: repo/worker:latest\n"), 0o644))
 	dirName := "project-with-update"
 	require.NoError(t, db.WithContext(t.Context()).Create(&project.Project{
@@ -197,7 +199,7 @@ func TestDashboardService_GetSnapshot_ReturnsDashboardSnapshot(t *testing.T) {
 	}).Error)
 	imageSvc := image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil)
 	projectSvc := project.NewProjectService(db, settingsSvc, nil, imageSvc, nil, nil, nil, nil, config.Load(), nil, nil)
-	svc := NewDashboardService(db, dockerSvc, nil, projectSvc, imageSvc, settingsSvc, nil, nil, nil, volume.NewVolumeService(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil))
+	svc := NewDashboardService(db, dockerSvc, nil, projectSvc, imageSvc, settingsSvc, nil, nil, nil, volume.NewVolumeService(db, nil, nil, nil, nil, nil, nil, nil, nil, nil))
 
 	snapshot, err := svc.GetSnapshot(t.Context(), DashboardActionItemsOptions{}, true)
 	require.NoError(t, err)
@@ -266,7 +268,7 @@ func TestDashboardService_GetSnapshot_DebugAllGoodOnlyClearsActionItems(t *testi
 	require.Empty(t, snapshot.ActionItems.Items)
 }
 
-func TestDashboardService_GetSnapshot_EnrichesPinnedReferencesInternal(t *testing.T) {
+func TestDashboardService_GetSnapshot_EnrichesPinnedReferences(t *testing.T) {
 	db, settingsSvc := setupDashboardServiceTestDB(t)
 
 	pinnedRef := "ghcr.io/syncthing/syncthing:2.1.3@sha256:8c8ff37ab6aa8be23b700648a90fa9412e214852e9fd6ea8477c8334792daec0"
@@ -304,29 +306,6 @@ func TestDashboardService_GetSnapshot_EnrichesPinnedReferencesInternal(t *testin
 	assert.Equal(t, "ghcr.io/syncthing/syncthing", snapshot.Images.Data[0].Repo)
 	assert.Equal(t, "<none>", snapshot.Images.Data[0].Tag)
 	assert.Equal(t, []string{pinnedRef}, snapshot.Images.Data[0].PinnedReferences)
-}
-
-// createComposeProjectDirInternal writes a minimal single-service compose project under
-// root and returns its path.
-func createComposeProjectDirInternal(t *testing.T, root, name string) string {
-	t.Helper()
-
-	projectPath := filepath.Join(root, name)
-	require.NoError(t, os.MkdirAll(projectPath, 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte("services:\n  app:\n    image: nginx:alpine\n"), 0o600))
-
-	return projectPath
-}
-
-// newSettingsServiceForTestInternal builds a SettingsService backed by its own actor runtime,
-// stopped when the test ends.
-func newSettingsServiceForTestInternal(ctx context.Context, t testing.TB, db *database.DB) (*settings.SettingsService, error) {
-	t.Helper()
-	svc, err := settings.NewSettingsService(ctx, db)
-	if err == nil {
-		t.Cleanup(func() { require.NoError(t, svc.Stop(context.WithoutCancel(t.Context()))) })
-	}
-	return svc, err
 }
 
 func TestDashboardService_GetSnapshot_TrimmedOmitsTablesAndSharesBuilds(t *testing.T) {
@@ -463,27 +442,27 @@ func TestPendingContainerCountUsesScopedTagRecords(t *testing.T) {
 		{ID: "first", Image: "app:1.2.3", ImageID: "shared", Labels: map[string]string{labels.LabelUpdateStrategy: "auto"}},
 		{ID: "unchecked", Image: "app:1.2.3", ImageID: "shared", Labels: map[string]string{labels.LabelUpdateStrategy: "auto"}},
 	}
-	count, err := service.getPendingContainerUpdatesCountInternal(t.Context(), containers)
+	count, err := service.getPendingContainerUpdatesCount(t.Context(), containers)
 	require.NoError(t, err)
 	require.Equal(t, 1, count)
 	containers = append(containers, dockercontainer.Summary{ID: "digest", Image: "app:latest", ImageID: "shared"})
-	count, err = service.getPendingContainerUpdatesCountInternal(t.Context(), containers)
+	count, err = service.getPendingContainerUpdatesCount(t.Context(), containers)
 	require.NoError(t, err)
 	require.Equal(t, 2, count, "a digest record under another tag of the running image counts")
 	containers = append(containers, dockercontainer.Summary{ID: "digest-twin", Image: "app:latest", ImageID: "shared"})
-	count, err = service.getPendingContainerUpdatesCountInternal(t.Context(), containers)
+	count, err = service.getPendingContainerUpdatesCount(t.Context(), containers)
 	require.NoError(t, err)
 	require.Equal(t, 3, count, "separate containers sharing one image each count once")
 	containers[0].Labels[labels.LabelUpdater] = "off"
-	count, err = service.getPendingContainerUpdatesCountInternal(t.Context(), containers)
+	count, err = service.getPendingContainerUpdatesCount(t.Context(), containers)
 	require.NoError(t, err)
 	require.Equal(t, 3, count, "disabling automatic installation keeps the pending update visible")
 	containers[0].Labels[imageref.UpdateCheckLabel] = "false"
-	count, err = service.getPendingContainerUpdatesCountInternal(t.Context(), containers)
+	count, err = service.getPendingContainerUpdatesCount(t.Context(), containers)
 	require.NoError(t, err)
 	require.Equal(t, 2, count, "disabling update checks suppresses the result")
 	containers[2].ImageID = ""
-	count, err = service.getPendingContainerUpdatesCountInternal(t.Context(), containers)
+	count, err = service.getPendingContainerUpdatesCount(t.Context(), containers)
 	require.NoError(t, err)
 	require.Equal(t, 1, count, "a missing runtime image ID inherits no digest check")
 }

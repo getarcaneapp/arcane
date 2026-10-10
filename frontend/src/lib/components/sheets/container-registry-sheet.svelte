@@ -48,13 +48,10 @@
 		})
 		.superRefine((data, ctx) => {
 			if (data.registryType === 'ecr') {
-				if (!data.awsAccessKeyId?.trim()) {
-					ctx.addIssue({
-						code: z.ZodIssueCode.custom,
-						message: m.registries_aws_access_key_id_required(),
-						path: ['awsAccessKeyId']
-					});
-				}
+				// Both key fields empty means the host's IAM role is used; otherwise they must come as a pair.
+				const hasKeyId = !!data.awsAccessKeyId?.trim();
+				const hasSecret = !!data.awsSecretAccessKey?.trim();
+				const storedSecretKept = isEditMode && !!registryToEdit?.awsAccessKeyId;
 				if (!data.awsRegion?.trim()) {
 					ctx.addIssue({
 						code: z.ZodIssueCode.custom,
@@ -62,7 +59,14 @@
 						path: ['awsRegion']
 					});
 				}
-				if (!isEditMode && !data.awsSecretAccessKey?.trim()) {
+				if (hasSecret && !hasKeyId) {
+					ctx.addIssue({
+						code: z.ZodIssueCode.custom,
+						message: m.registries_aws_access_key_id_required(),
+						path: ['awsAccessKeyId']
+					});
+				}
+				if (hasKeyId && !hasSecret && !storedSecretKept) {
 					ctx.addIssue({
 						code: z.ZodIssueCode.custom,
 						message: m.registries_aws_secret_access_key_required(),
@@ -161,11 +165,16 @@
 					bind:input={inputs.token}
 				/>
 			{:else}
-				<FormInput label={m.registries_aws_access_key_id()} type="text" bind:input={inputs.awsAccessKeyId} />
+				<FormInput
+					label={m.registries_aws_access_key_id()}
+					type="text"
+					description={m.registries_aws_credentials_description()}
+					bind:input={inputs.awsAccessKeyId}
+				/>
 				<FormInput
 					label={m.registries_aws_secret_access_key()}
 					type="password"
-					placeholder={isEditMode ? m.registries_token_keep_placeholder() : ''}
+					placeholder={isEditMode && registryToEdit?.awsAccessKeyId ? m.registries_token_keep_placeholder() : ''}
 					bind:input={inputs.awsSecretAccessKey}
 				/>
 				<FormInput

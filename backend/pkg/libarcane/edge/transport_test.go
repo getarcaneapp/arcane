@@ -3,7 +3,6 @@ package edge
 import (
 	"context"
 	"fmt"
-	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -192,7 +191,7 @@ func (u *unknownTunnelConn) Transport() string { return "" }
 
 func BenchmarkEdgeTunnelProxyRequest(b *testing.B) {
 	previousLogger := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	slog.SetDefault(slog.New(slog.DiscardHandler))
 	b.Cleanup(func() {
 		slog.SetDefault(previousLogger)
 	})

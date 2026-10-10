@@ -87,6 +87,47 @@ func TestBuildSignalURL(t *testing.T) {
 					assert.Contains(t, url, "port=9443")
 			},
 		},
+		{
+			name: "NotifySelf defaults to true (omitted in shoutrrr URL)",
+			config: SignalConfig{
+				Host:       "signal.example.com",
+				Port:       8080,
+				Token:      "token123",
+				Source:     "+1234567890",
+				Recipients: []string{"+0987654321"},
+			},
+			check: func(url string) bool {
+				return assert.NotContains(t, url, "notifyself=")
+			},
+		},
+		{
+			name: "NotifySelf explicitly true (omitted in shoutrrr URL)",
+			config: SignalConfig{
+				Host:       "signal.example.com",
+				Port:       8080,
+				Token:      "token123",
+				Source:     "+1234567890",
+				Recipients: []string{"+0987654321"},
+				NotifySelf: new(true),
+			},
+			check: func(url string) bool {
+				return assert.NotContains(t, url, "notifyself=")
+			},
+		},
+		{
+			name: "NotifySelf explicitly false (included as notifyself=No)",
+			config: SignalConfig{
+				Host:       "signal.example.com",
+				Port:       8080,
+				Token:      "token123",
+				Source:     "+1234567890",
+				Recipients: []string{"+0987654321"},
+				NotifySelf: new(false),
+			},
+			check: func(url string) bool {
+				return assert.Contains(t, url, "notifyself=No")
+			},
+		},
 	}
 
 	for _, tt := range tests {

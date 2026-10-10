@@ -1,7 +1,6 @@
 package scheduler
 
 import (
-	"cmp"
 	"context"
 	"log/slog"
 
@@ -39,15 +38,7 @@ func (j *ScheduledPruneJob) ShouldSchedule(ctx context.Context) bool {
 }
 
 func (j *ScheduledPruneJob) Schedule(ctx context.Context) string {
-	schedule := cmp.Or(j.settingsService.GetStringSetting(ctx, "scheduledPruneInterval", "0 0 0 * * *"), "0 0 0 * * *")
-
-	parser := scheduleutil.Parser()
-	if _, err := parser.Parse(schedule); err != nil {
-		slog.WarnContext(ctx, "Invalid cron expression for scheduled-prune, using default", "invalid_schedule", schedule, "error", err)
-		return "0 0 0 * * *"
-	}
-
-	return schedule
+	return scheduleutil.Or(ctx, j.settingsService.GetStringSetting(ctx, "scheduledPruneInterval", "0 0 0 * * *"), "0 0 0 * * *", "scheduled-prune")
 }
 
 func (j *ScheduledPruneJob) Run(ctx context.Context) (schedulertypes.Outcome, error) {
@@ -69,7 +60,7 @@ func (j *ScheduledPruneJob) Run(ctx context.Context) (schedulertypes.Outcome, er
 		"images", req.Images,
 		"volumes", req.Volumes,
 		"networks", req.Networks,
-		"build_cache", req.BuildCache,
+		"buildCache", req.BuildCache,
 	)
 
 	result, started, err := j.systemService.PruneScheduled(ctx, "0", req)
@@ -84,11 +75,11 @@ func (j *ScheduledPruneJob) Run(ctx context.Context) (schedulertypes.Outcome, er
 
 	slog.InfoContext(ctx, "scheduled prune run completed",
 		"success", result.Success,
-		"space_reclaimed_bytes", result.SpaceReclaimed,
-		"containers_pruned", len(result.ContainersPruned),
-		"images_deleted", len(result.ImagesDeleted),
-		"volumes_deleted", len(result.VolumesDeleted),
-		"networks_deleted", len(result.NetworksDeleted),
+		"spaceReclaimedBytes", result.SpaceReclaimed,
+		"containersPruned", len(result.ContainersPruned),
+		"imagesDeleted", len(result.ImagesDeleted),
+		"volumesDeleted", len(result.VolumesDeleted),
+		"networksDeleted", len(result.NetworksDeleted),
 		"errors", len(result.Errors),
 	)
 	if len(result.Errors) > 0 {

@@ -13,8 +13,11 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/vulnerability"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/flow"
 )
 
 type settingsSubscriptionStubInternal struct {
@@ -74,19 +77,21 @@ func (s *timeoutSyncEnvironmentStubInternal) ProxyRequest(ctx context.Context, _
 	return nil, 0, ctx.Err()
 }
 
-func TestSettingsTimeoutSyncDoesNotBlockOtherEffectsInternal(t *testing.T) {
+func TestSettingsTimeoutSyncDoesNotBlockOtherEffects(t *testing.T) {
 	lifecycle := fxtest.NewLifecycle(t)
 
 	settings := &settingsSubscriptionStubInternal{}
 	localScheduler := &settingsSubscriptionSchedulerStubInternal{rescheduled: make(chan struct{})}
 	localEnvironment := &timeoutSyncEnvironmentStubInternal{started: make(chan struct{})}
-	require.NoError(t, setupSettingsSubscriptionsInternal(settingsSubscriptionsParams{
-		Lifecycle:    lifecycle,
-		LifecycleCtx: t.Context(),
-		Config:       &config.Config{},
-		Scheduler:    localScheduler,
-		Settings:     settings,
-		Environment:  localEnvironment,
+	require.NoError(t, setupSettingsSubscriptions(settingsSubscriptionsParams{
+		Lifecycle:          lifecycle,
+		LifecycleCtx:       t.Context(),
+		Config:             &config.Config{},
+		Scheduler:          localScheduler,
+		Settings:           settings,
+		Environment:        localEnvironment,
+		AutoUpdate:         &flow.Job{JobName: "auto-update"},
+		ImageUpdateWatcher: &scheduler.ImageUpdateWatcher{},
 	}))
 
 	timeoutCallbackDone := make(chan struct{})
@@ -118,19 +123,19 @@ func TestSettingsTimeoutSyncDoesNotBlockOtherEffectsInternal(t *testing.T) {
 	require.NoError(t, lifecycle.Stop(stopCtx))
 }
 
-func TestFeatureChangeReschedulesScanAndPatchJobsInternal(t *testing.T) {
+func TestFeatureChangeReschedulesScanAndPatchJobs(t *testing.T) {
 	lifecycle := fxtest.NewLifecycle(t)
 	settings := &settingsSubscriptionStubInternal{}
 	schedulerStub := &settingsSubscriptionSchedulerStubInternal{rescheduled: make(chan struct{})}
-	require.NoError(t, setupSettingsSubscriptionsInternal(settingsSubscriptionsParams{
+	require.NoError(t, setupSettingsSubscriptions(settingsSubscriptionsParams{
 		Lifecycle:         lifecycle,
 		LifecycleCtx:      t.Context(),
 		Config:            &config.Config{},
 		Scheduler:         schedulerStub,
 		Settings:          settings,
-		VulnerabilityScan: scheduler.NewVulnerabilityScanJob(nil, nil),
+		VulnerabilityScan: scheduler.NewVulnerabilityScanJob(nil, &vulnerability.VulnerabilityService{}, nil),
 		VulnerabilityRisk: scheduler.NewVulnerabilityRiskJob(nil, nil),
-		AutoPatch:         scheduler.NewAutoPatchJob(nil, nil),
+		AutoPatch:         scheduler.NewAutoPatchJob(nil, &image.ImageService{}, nil),
 	}))
 	require.Len(t, settings.featureCallbacks, 3)
 	for _, callback := range settings.featureCallbacks {

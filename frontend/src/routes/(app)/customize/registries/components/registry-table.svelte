@@ -46,7 +46,7 @@
 	const canBrowseRegistry = $derived(hasPermission('registries:read') && hasPermission('registries:browse'));
 
 	function maskAccessKeyId(keyId: string | undefined): string {
-		if (!keyId) return m.common_na();
+		if (!keyId) return m.registries_aws_iam_role();
 		if (keyId.length <= 4) return keyId;
 		return '*'.repeat(11) + keyId.slice(-4);
 	}
@@ -240,9 +240,7 @@
 					item.registryType === 'ecr' ? maskAccessKeyId(item.awsAccessKeyId) : item.username,
 				icon: UserIcon,
 				iconVariant: 'gray' as const,
-				show:
-					(mobileFieldVisibility['username'] ?? true) &&
-					(item.registryType === 'ecr' ? !!item.awsAccessKeyId : item.username !== undefined)
+				show: (mobileFieldVisibility['username'] ?? true) && (item.registryType === 'ecr' || item.username !== undefined)
 			},
 			{
 				label: m.common_description(),

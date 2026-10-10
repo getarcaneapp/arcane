@@ -50,7 +50,7 @@ func (c *TunnelClient) connectAndServeGRPC(ctx context.Context) error {
 	}
 
 	if c.useTLSForManagerGRPC() {
-		tlsConfig, err := buildManagerClientTLSConfigInternal(c.cfg)
+		tlsConfig, err := buildManagerClientTLSConfig(c.cfg)
 		if err != nil {
 			return fmt.Errorf("failed to configure edge gRPC TLS: %w", err)
 		}
@@ -76,7 +76,7 @@ func (c *TunnelClient) connectAndServeGRPC(ctx context.Context) error {
 
 	// metadata.New lowercases the keys itself.
 	streamCtx, streamCancel := context.WithCancel(metadata.NewOutgoingContext(ctx,
-		metadata.New(agentAuthCredentialsInternal(c.cfg.AgentToken))))
+		metadata.New(agentAuthCredentials(c.cfg.AgentToken))))
 	defer streamCancel()
 
 	method := c.grpcConnectMethodInternal()
@@ -85,7 +85,7 @@ func (c *TunnelClient) connectAndServeGRPC(ctx context.Context) error {
 		return fmt.Errorf("failed to open tunnel stream: %w", err)
 	}
 
-	if serveTunnelSessionErr := c.serveTunnelSessionInternal(ctx, NewGRPCAgentTunnelConn(stream, streamCancel), managerAddr); serveTunnelSessionErr != nil {
+	if serveTunnelSessionErr := c.serveTunnelSession(ctx, NewGRPCAgentTunnelConn(stream, streamCancel), managerAddr); serveTunnelSessionErr != nil {
 		if errors.Is(serveTunnelSessionErr, errTunnelRegistrationTimeout) {
 			// The channel already reached Ready, so TCP/TLS works but gRPC
 			// framing was never answered end to end.
@@ -104,7 +104,7 @@ func (c *TunnelClient) waitForGRPCReadyInternal(ctx context.Context, conn *grpc.
 		return errors.New("manager gRPC connection is not initialized")
 	}
 
-	timeout := c.registrationTimeoutInternal()
+	timeout := c.registrationTimeout
 	readyCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 

@@ -1,6 +1,7 @@
 package notifications
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json/v2"
 	"errors"
@@ -37,7 +38,8 @@ func DecryptStringCredential(value *string) error {
 		if isPlausibleEncryptedCredentialInternal(*value) {
 			return fmt.Errorf("failed to decrypt notification credential: %w", err)
 		}
-		slog.Warn("Failed to decrypt notification credential, using raw legacy value", "error", err)
+		slog.WarnContext(context.Background(), "Failed to decrypt notification credential, using raw legacy value", //nolint:forbidigo // Credential decryption is a pure helper without a request context.
+			"error", err)
 		return nil
 	}
 	*value = decrypted

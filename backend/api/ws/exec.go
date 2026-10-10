@@ -40,7 +40,7 @@ func (h *WebSocketHandler) ContainerExec(c *echo.Context) error {
 
 	shell := cmp.Or(c.QueryParam("shell"), "/bin/sh")
 
-	conn, unregister, ok := h.acceptWSInternal(c, systemtypes.WSKindContainerExec, containerID)
+	conn, unregister, ok := h.acceptWS(c, systemtypes.WSKindContainerExec, containerID)
 	if !ok {
 		return nil
 	}
@@ -54,7 +54,7 @@ func (h *WebSocketHandler) ContainerExec(c *echo.Context) error {
 	defer cancel(nil)
 
 	// The pong is serviced by the concurrent stdin reader.
-	go keepWSConnAliveInternal(ctx, func() { cancel(errors.New("websocket ping failed")) }, conn, 54*time.Second)
+	go keepWSConnAlive(ctx, func() { cancel(errors.New("websocket ping failed")) }, conn, 54*time.Second)
 
 	h.runContainerExecInternal(ctx, cancel, conn, containerID, shell)
 	return nil
@@ -80,11 +80,11 @@ func (h *WebSocketHandler) runContainerExecInternal(ctx context.Context, cancel 
 	// run on cancellation while the stdout pipe is blocked in a read — closing
 	// the session is what unblocks it.
 	cleanup := sync.OnceFunc(func() {
-		slog.Debug("Cleaning up exec session", "execID", execID, "containerID", containerID, "contextErr", ctx.Err())
+		slog.DebugContext(ctx, "Cleaning up exec session", "execId", execID, "containerId", containerID, "contextErr", ctx.Err())
 		cleanupCtx, cleanupCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 		defer cleanupCancel()
 		if closeErr := execSession.Close(cleanupCtx); closeErr != nil { //nolint:contextcheck
-			slog.Warn("Failed to clean up exec session", "execID", execID, "error", closeErr)
+			slog.WarnContext(ctx, "Failed to clean up exec session", "execId", execID, "error", closeErr)
 		}
 	})
 	defer cleanup()
@@ -129,8 +129,8 @@ func closeExecInternal(ctx context.Context, conn *websocket.Conn, containerID, e
 	}
 	closeErr := conn.Close(status, reason)
 	slog.Log(ctx, level, "Container exec session ended",
-		"containerID", containerID,
-		"execID", execID,
+		"containerId", containerID,
+		"execId", execID,
 		"status", int(status),
 		"reason", reason,
 		"cause", cause,

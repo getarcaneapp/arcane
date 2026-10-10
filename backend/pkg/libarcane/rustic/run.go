@@ -64,7 +64,7 @@ func Run(ctx context.Context, dockerClient *client.Client, password string, comm
 			if containerRemoveErr == nil || cerrdefs.IsNotFound(containerRemoveErr) {
 				return
 			}
-			slog.WarnContext(cleanupCtx, "failed to remove Rustic container, retrying", "container_id", created.ID, "error", containerRemoveErr)
+			slog.WarnContext(cleanupCtx, "failed to remove Rustic container, retrying", "containerId", created.ID, "error", containerRemoveErr)
 			time.Sleep(5 * time.Second)
 		}
 	}()

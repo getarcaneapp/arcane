@@ -92,3 +92,81 @@ type WebSocketDiagnostics struct {
 	Snapshot    WebSocketMetricsSnapshot  `json:"snapshot"`
 	Connections []WebSocketConnectionInfo `json:"connections"`
 }
+
+// ActorDiagnostics describes the Francis actor host of one environment.
+type ActorDiagnostics struct {
+	EnvironmentID   string `json:"environmentId"`
+	EnvironmentName string `json:"environmentName"`
+	// Error is set when the environment's actor diagnostics could not be collected.
+	Error      string          `json:"error,omitempty"`
+	Ready      bool            `json:"ready"`
+	Hosts      []ActorHostInfo `json:"hosts"`
+	ActorTypes []ActorTypeInfo `json:"actorTypes"`
+	Runs       map[string]int  `json:"runs"`
+	CheckedAt  time.Time       `json:"checkedAt"`
+}
+
+// ActorHostInfo is a registered Francis host.
+type ActorHostInfo struct {
+	HostID          string    `json:"hostId"`
+	Address         string    `json:"address"`
+	LastHealthCheck time.Time `json:"lastHealthCheck"`
+}
+
+// ActorTypeInfo holds per actor type activation, alarm, and job details.
+type ActorTypeInfo struct {
+	ActorType string `json:"actorType"`
+	// ConcurrencyLimit caps concurrent invocations per actor; 0 is unlimited.
+	ConcurrencyLimit int               `json:"concurrencyLimit"`
+	ActiveActors     int               `json:"activeActors"`
+	StoredStates     int               `json:"storedStates"`
+	PendingAlarms    int               `json:"pendingAlarms"`
+	PendingJobs      int               `json:"pendingJobs"`
+	LeasedAlarms     int               `json:"leasedAlarms"`
+	CompletedJobs    int               `json:"completedJobs"`
+	DeadJobs         int               `json:"deadJobs"`
+	NextAlarmAt      time.Time         `json:"nextAlarmAt,omitzero"`
+	Instances        []ActorInstance   `json:"instances"`
+	RecentFailures   []ActorJobFailure `json:"recentFailures"`
+}
+
+// ActorInstance is an activated actor.
+type ActorInstance struct {
+	ActorID string `json:"actorId"`
+	// Name is Arcane's display name for the actor, when known.
+	Name        string    `json:"name,omitempty"`
+	HostID      string    `json:"hostId"`
+	ActivatedAt time.Time `json:"activatedAt"`
+}
+
+// ActorJobFailure is a dead-lettered actor job.
+type ActorJobFailure struct {
+	JobID     string    `json:"jobId"`
+	ActorID   string    `json:"actorId"`
+	Name      string    `json:"name,omitempty"`
+	Method    string    `json:"method"`
+	Attempts  int       `json:"attempts"`
+	LastError string    `json:"lastError,omitempty"`
+	FailedAt  time.Time `json:"failedAt"`
+}
+
+// DiagnosticsCommand is a client request sent over the diagnostics stream.
+type DiagnosticsCommand struct {
+	ID string `json:"id"`
+	// Type is refresh, dump, leakScan, or profile.
+	Type    string `json:"type"`
+	Name    string `json:"name,omitempty"`
+	Seconds int    `json:"seconds,omitempty"`
+}
+
+// DiagnosticsMessage is a snapshot push or command result on the diagnostics stream.
+type DiagnosticsMessage struct {
+	// Type is snapshot or result.
+	Type       string               `json:"type"`
+	ID         string               `json:"id,omitempty"`
+	Snapshot   *Diagnostics         `json:"snapshot,omitempty"`
+	LeakReport *GoroutineLeakReport `json:"leakReport,omitempty"`
+	Text       string               `json:"text,omitempty"`
+	Data       []byte               `json:"data,omitempty"`
+	Error      string               `json:"error,omitempty"`
+}

@@ -84,7 +84,7 @@ func (c *Client) readPump(ctx context.Context, hub *Hub) {
 		// peer going away and to service control frames (close/pong).
 		if _, _, err := c.conn.Read(ctx); err != nil {
 			if !isExpectedCloseError(err) {
-				slog.Debug("websocket readPump end", "err", err)
+				slog.DebugContext(ctx, "websocket readPump end", "err", err)
 			}
 			return
 		}
@@ -116,7 +116,7 @@ func (c *Client) writePump(ctx context.Context, hub *Hub) {
 			cancel()
 			if err != nil {
 				if !isExpectedCloseError(err) {
-					slog.Debug("websocket write error", "err", err)
+					slog.DebugContext(ctx, "websocket write error", "err", err)
 				}
 				return
 			}

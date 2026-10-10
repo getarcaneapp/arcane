@@ -125,7 +125,7 @@ func walkProjectDirectoriesInternal(ctx context.Context,
 	identity, err := ResolveDirectoryIdentityInternal(path)
 	if err != nil {
 		if !isRoot && errors.Is(err, os.ErrPermission) {
-			slog.Warn("Skipping unreadable project directory during discovery", "path", path, "error", err)
+			slog.WarnContext(ctx, "Skipping unreadable project directory during discovery", "path", path, "error", err)
 			return nil
 		}
 		return err
@@ -148,7 +148,7 @@ func walkProjectDirectoriesInternal(ctx context.Context,
 	switch composePath, detectComposeFileErr := DetectComposeFile(ctx, root, path); {
 	case detectComposeFileErr == nil, errors.Is(detectComposeFileErr, common.ErrProjectEnvUnreadable) && composePath != "":
 		if detectComposeFileErr != nil {
-			slog.Warn("Discovered project with an unreadable .env",
+			slog.WarnContext(ctx, "Discovered project with an unreadable .env",
 				"path", path,
 				"envFile", filepath.Join(path, EffectiveEnvFileName),
 				"uid", os.Geteuid(),
@@ -164,7 +164,7 @@ func walkProjectDirectoriesInternal(ctx context.Context,
 		}
 	case errors.Is(detectComposeFileErr, common.ErrComposeFileNotFound):
 	default:
-		slog.Warn("Skipping undetectable project directory during discovery", "path", path, "error", detectComposeFileErr)
+		slog.WarnContext(ctx, "Skipping undetectable project directory during discovery", "path", path, "error", detectComposeFileErr)
 	}
 
 	if maxDepth > 0 && currentDepth >= maxDepth {
@@ -174,7 +174,7 @@ func walkProjectDirectoriesInternal(ctx context.Context,
 	entries, err := os.ReadDir(path)
 	if err != nil {
 		if !isRoot && errors.Is(err, os.ErrPermission) {
-			slog.Warn("Skipping unreadable project directory during discovery", "path", path, "error", err)
+			slog.WarnContext(ctx, "Skipping unreadable project directory during discovery", "path", path, "error", err)
 			return nil
 		}
 		return err

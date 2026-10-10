@@ -1,8 +1,6 @@
 package lifecycle
 
 import (
-	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -110,13 +108,6 @@ func TestValidateScriptPath_RejectsSymlink(t *testing.T) {
 	}
 	err := ValidateScriptPath(t.Context(), dir, "link.sh")
 	require.Error(t, err)
-}
-
-func TestLifecycleStatusForResult(t *testing.T) {
-	assert.Equal(t, LifecycleStatusSuccess, LifecycleStatusForResult(0, nil))
-	assert.Equal(t, LifecycleStatusFailed, LifecycleStatusForResult(1, nil))
-	assert.Equal(t, LifecycleStatusFailed, LifecycleStatusForResult(0, errors.New("boom")))
-	assert.Equal(t, LifecycleStatusTimeout, LifecycleStatusForResult(0, context.DeadlineExceeded))
 }
 
 func TestCombineLifecycleOutput(t *testing.T) {

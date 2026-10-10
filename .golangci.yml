@@ -2,7 +2,7 @@
 version: '2'
 
 run:
-  go: '1.27.1'
+  go: '1.27.2'
   build-tags:
     - exclude_frontend
     - playwright
@@ -47,6 +47,7 @@ linters:
     - gocritic
     - gomodguard_v2
     - govet
+    - importas
     - ineffassign
     - lll
     - misspell
@@ -54,6 +55,7 @@ linters:
     - nolintlint
     - perfsprint
     - revive
+    - sloglint
     - staticcheck
     - testifylint
     - unconvert
@@ -104,6 +106,13 @@ linters:
     gocognit:
       min-complexity: 40
 
+    importas:
+      alias:
+        - pkg: go.getarcane.app/docker
+          alias: docker
+        - pkg: github.com/getarcaneapp/arcane/backend/v2/internal/docker
+          alias: dockerInternal
+
     lll:
       line-length: 200
 
@@ -116,6 +125,11 @@ linters:
 
     grouper:
       const-require-single-const: true
+      const-require-grouping: true
+      var-require-single-var: true
+      var-require-grouping: true
+      type-require-single-type: true
+      type-require-grouping: true
 
     nakedret:
       # Disallow naked returns if func has more lines of code than this setting.
@@ -131,7 +145,7 @@ linters:
       context: 'all' # https://github.com/go-simpler/sloglint#context-only
       kv-only: true # https://github.com/go-simpler/sloglint#key-value-pairs-only
       static-msg: true # https://github.com/go-simpler/sloglint#static-message
-      key-naming-case: snake
+      key-naming-case: camel
 
   exclusions:
     generated: strict

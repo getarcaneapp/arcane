@@ -2,19 +2,20 @@
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { AlertTriangleIcon, DownloadIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { diagnosticsService } from '#lib/services/diagnostics-service.js';
 	import type { GoroutineLeakReport } from '#lib/types/diagnostics.js';
 	import { cn } from '#lib/utils.js';
 	import { formatTime } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
+	import type { DiagnosticsWebSocket } from '#lib/utils/ws.js';
 
 	interface Props {
 		leakedGoroutines: number;
 		leakScannedAt?: string;
+		socket: DiagnosticsWebSocket | null;
 		onscanned?: (report: GoroutineLeakReport) => void;
 	}
 
-	let { leakedGoroutines, leakScannedAt, onscanned }: Props = $props();
+	let { leakedGoroutines, leakScannedAt, socket, onscanned }: Props = $props();
 
 	let scanning = $state(false);
 	let downloading = $state(false);
@@ -32,7 +33,9 @@
 		try {
 			const operationResult = await tryCatch(
 				(async () => {
-					const next = await diagnosticsService.scanGoroutineLeaks();
+					if (!socket) throw new Error(m.disconnected());
+					const next = (await socket.request({ type: 'leakScan' })).leakReport;
+					if (!next) return;
 					report = next;
 					onscanned?.(next);
 				})()
@@ -53,7 +56,8 @@
 		try {
 			const operationResult = await tryCatch(
 				(async () => {
-					await diagnosticsService.downloadProfile('goroutineleak');
+					if (!socket) throw new Error(m.disconnected());
+					await socket.downloadProfile('goroutineleak');
 				})()
 			);
 			if (operationResult.error !== null) {

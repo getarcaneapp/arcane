@@ -77,8 +77,8 @@ func ProxyWebSocketRequest(c *echo.Context, tunnel *AgentTunnel, targetPath stri
 	}
 
 	slog.DebugContext(ctx, "Started WebSocket stream through edge tunnel",
-		"stream_id", streamID,
-		"environment_id", tunnel.EnvironmentID,
+		"streamId", streamID,
+		"environmentId", tunnel.EnvironmentID,
 		"path", targetPath,
 	)
 
@@ -142,7 +142,7 @@ func forwardAgentToClient(ctx, streamCtx context.Context, clientWS *websocket.Co
 			err := clientWS.Ping(pctx)
 			pcancel()
 			if err != nil {
-				slog.DebugContext(ctx, "Failed to ping client WebSocket", "stream_id", streamID, "error", err)
+				slog.DebugContext(ctx, "Failed to ping client WebSocket", "streamId", streamID, "error", err)
 				sendWebSocketClose(tunnel, streamID)
 				return
 			}
@@ -165,7 +165,7 @@ func handleAgentMessage(ctx, streamCtx context.Context, clientWS *websocket.Conn
 	case MessageTypeWebSocketData, MessageTypeStreamData:
 		return false, writeWebSocketData(streamCtx, clientWS, msg)
 	case MessageTypeWebSocketClose, MessageTypeStreamClose, MessageTypeStreamEnd:
-		slog.DebugContext(ctx, "Agent closed WebSocket stream", "stream_id", streamID, "error", msg.Error)
+		slog.DebugContext(ctx, "Agent closed WebSocket stream", "streamId", streamID, "error", msg.Error)
 		status, reason := websocket.StatusNormalClosure, msg.Error
 		if reason != "" {
 			status = websocket.StatusInternalError
@@ -174,7 +174,7 @@ func handleAgentMessage(ctx, streamCtx context.Context, clientWS *websocket.Conn
 			}
 		}
 		if err := clientWS.Close(status, reason); err != nil {
-			slog.DebugContext(ctx, "Failed to close client WebSocket", "stream_id", streamID, "status", int(status), "error", err)
+			slog.DebugContext(ctx, "Failed to close client WebSocket", "streamId", streamID, "status", int(status), "error", err)
 		}
 		return true, nil
 	case MessageTypeRequest,
@@ -192,10 +192,10 @@ func handleAgentMessage(ctx, streamCtx context.Context, clientWS *websocket.Conn
 		MessageTypeFileChunk,
 		MessageTypeStreamOpen,
 		MessageTypeCancelRequest:
-		slog.DebugContext(ctx, "Ignoring tunnel message", "type", msg.Type, "stream_id", streamID)
+		slog.DebugContext(ctx, "Ignoring tunnel message", "type", msg.Type, "streamId", streamID)
 		return false, nil
 	default:
-		slog.DebugContext(ctx, "Unknown tunnel message", "type", msg.Type, "stream_id", streamID)
+		slog.DebugContext(ctx, "Unknown tunnel message", "type", msg.Type, "streamId", streamID)
 		return false, nil
 	}
 }
@@ -203,7 +203,7 @@ func handleAgentMessage(ctx, streamCtx context.Context, clientWS *websocket.Conn
 func writeWebSocketData(streamCtx context.Context, clientWS *websocket.Conn, msg *TunnelMessage) error {
 	msgType := websocket.MessageType(msg.WSMessageType)
 	if msgType != websocket.MessageText && msgType != websocket.MessageBinary {
-		slog.Warn("Dropping WebSocket message with unsupported type", "messageType", msg.WSMessageType)
+		slog.WarnContext(streamCtx, "Dropping WebSocket message with unsupported type", "messageType", msg.WSMessageType)
 		return nil
 	}
 	wctx, cancel := context.WithTimeout(streamCtx, tunnelWSDataWriteWait)

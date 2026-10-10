@@ -121,7 +121,8 @@ func (h *Hub) Broadcast(msg []byte) {
 		now := time.Now().UnixNano()
 		lastWarned := h.lastWarned.Load()
 		if now-lastWarned >= broadcastDropWarningInterval.Nanoseconds() && h.lastWarned.CompareAndSwap(lastWarned, now) {
-			slog.Warn("websocket hub broadcast buffer full; dropping messages", "dropped_count", h.dropped.Swap(0))
+			slog.WarnContext(context.Background(), "websocket hub broadcast buffer full; dropping messages", //nolint:forbidigo // Hub broadcast runs outside any request context.
+				"droppedCount", h.dropped.Swap(0))
 		}
 	}
 }
@@ -143,7 +144,7 @@ func (h *Hub) remove(c *Client) {
 
 	// Call outside the lock to avoid holding the mutex during cancel().
 	if onEmpty != nil {
-		slog.Debug("websocket hub empty after client removal, triggering cleanup")
+		slog.DebugContext(context.Background(), "websocket hub empty after client removal, triggering cleanup") //nolint:forbidigo // Hub cleanup runs outside any request context.
 		onEmpty()
 	}
 }

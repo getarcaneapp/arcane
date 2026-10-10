@@ -1,30 +1,39 @@
 package ws
 
 import (
+	"context"
+	"maps"
+	"slices"
 	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	systemtypes "github.com/getarcaneapp/arcane/types/v2/system"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 )
 
 // WebSocketMetrics tracks active WebSocket connections and their counts.
 type WebSocketMetrics struct {
-	projectLogsActive   atomic.Int64
-	containerLogsActive atomic.Int64
-	containerStats      atomic.Int64
-	containerExec       atomic.Int64
-	systemStats         atomic.Int64
-	serviceLogsActive   atomic.Int64
-	seq                 atomic.Uint64
-	mu                  sync.RWMutex
-	connections         map[string]systemtypes.WebSocketConnectionInfo
+	counters    map[string]*atomic.Int64
+	seq         atomic.Uint64
+	mu          sync.RWMutex
+	connections map[string]systemtypes.WebSocketConnectionInfo
 }
 
 // NewWebSocketMetrics creates a new WebSocketMetrics instance.
 func NewWebSocketMetrics() *WebSocketMetrics {
 	return &WebSocketMetrics{
+		counters: map[string]*atomic.Int64{
+			systemtypes.WSKindProjectLogs:    {},
+			systemtypes.WSKindContainerLogs:  {},
+			systemtypes.WSKindContainerStats: {},
+			systemtypes.WSKindContainerExec:  {},
+			systemtypes.WSKindSystemStats:    {},
+			systemtypes.WSKindServiceLogs:    {},
+			systemtypes.WSKindDiagnostics:    {},
+		},
 		connections: make(map[string]systemtypes.WebSocketConnectionInfo),
 	}
 }
@@ -32,28 +41,43 @@ func NewWebSocketMetrics() *WebSocketMetrics {
 // Snapshot returns a point-in-time copy of the active connection counts.
 func (m *WebSocketMetrics) Snapshot() systemtypes.WebSocketMetricsSnapshot {
 	return systemtypes.WebSocketMetricsSnapshot{
-		ProjectLogsActive:   m.projectLogsActive.Load(),
-		ContainerLogsActive: m.containerLogsActive.Load(),
-		ContainerStats:      m.containerStats.Load(),
-		ContainerExec:       m.containerExec.Load(),
-		SystemStats:         m.systemStats.Load(),
-		ServiceLogsActive:   m.serviceLogsActive.Load(),
+		ProjectLogsActive:   m.counters[systemtypes.WSKindProjectLogs].Load(),
+		ContainerLogsActive: m.counters[systemtypes.WSKindContainerLogs].Load(),
+		ContainerStats:      m.counters[systemtypes.WSKindContainerStats].Load(),
+		ContainerExec:       m.counters[systemtypes.WSKindContainerExec].Load(),
+		SystemStats:         m.counters[systemtypes.WSKindSystemStats].Load(),
+		ServiceLogsActive:   m.counters[systemtypes.WSKindServiceLogs].Load(),
+		DiagnosticsActive:   m.counters[systemtypes.WSKindDiagnostics].Load(),
 	}
+}
+
+// ObserveConnections reports active connection counts by kind through the arcane.websocket.connections gauge.
+func (m *WebSocketMetrics) ObserveConnections(meter metric.Meter) error {
+	gauge, err := meter.Int64ObservableGauge("arcane.websocket.connections",
+		metric.WithDescription("Active WebSocket connections by kind"),
+		metric.WithUnit("{connection}"),
+	)
+	if err != nil {
+		return err
+	}
+	_, err = meter.RegisterCallback(func(_ context.Context, o metric.Observer) error {
+		for kind, counter := range m.counters {
+			o.ObserveInt64(gauge, counter.Load(), metric.WithAttributes(attribute.String("kind", kind)))
+		}
+		return nil
+	}, gauge)
+	return err
 }
 
 // Connections returns a snapshot of all tracked WebSocket connections.
 func (m *WebSocketMetrics) Connections() []systemtypes.WebSocketConnectionInfo {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	result := make([]systemtypes.WebSocketConnectionInfo, 0, len(m.connections))
-	for _, info := range m.connections {
-		result = append(result, info)
-	}
-	return result
+	return slices.AppendSeq(make([]systemtypes.WebSocketConnectionInfo, 0, len(m.connections)), maps.Values(m.connections))
 }
 
-// RegisterConnection adds a connection to the tracker and increments the
-// appropriate kind counter. Returns the assigned connection ID.
+// RegisterConnection adds a connection to the tracker and increments its kind counter.
+// Returns the assigned connection ID.
 func (m *WebSocketMetrics) RegisterConnection(info systemtypes.WebSocketConnectionInfo) string {
 	if info.ID == "" {
 		info.ID = "ws-" + strconv.FormatUint(m.seq.Add(1), 10)
@@ -64,41 +88,19 @@ func (m *WebSocketMetrics) RegisterConnection(info systemtypes.WebSocketConnecti
 	m.mu.Lock()
 	m.connections[info.ID] = info
 	m.mu.Unlock()
-	m.applyDelta(info.Kind, 1)
+	if counter, ok := m.counters[info.Kind]; ok {
+		counter.Add(1)
+	}
 	return info.ID
 }
 
-// UnregisterConnection removes a connection from the tracker and decrements
-// the appropriate kind counter.
+// UnregisterConnection removes a connection from the tracker and decrements its kind counter.
 func (m *WebSocketMetrics) UnregisterConnection(id string) {
-	if id == "" {
-		return
-	}
-	var info systemtypes.WebSocketConnectionInfo
 	m.mu.Lock()
-	if existing, ok := m.connections[id]; ok {
-		info = existing
-		delete(m.connections, id)
-	}
+	info := m.connections[id]
+	delete(m.connections, id)
 	m.mu.Unlock()
-	if info.Kind != "" {
-		m.applyDelta(info.Kind, -1)
-	}
-}
-
-func (m *WebSocketMetrics) applyDelta(kind string, delta int64) {
-	switch kind {
-	case systemtypes.WSKindProjectLogs:
-		m.projectLogsActive.Add(delta)
-	case systemtypes.WSKindContainerLogs:
-		m.containerLogsActive.Add(delta)
-	case systemtypes.WSKindContainerStats:
-		m.containerStats.Add(delta)
-	case systemtypes.WSKindContainerExec:
-		m.containerExec.Add(delta)
-	case systemtypes.WSKindSystemStats:
-		m.systemStats.Add(delta)
-	case systemtypes.WSKindServiceLogs:
-		m.serviceLogsActive.Add(delta)
+	if counter, ok := m.counters[info.Kind]; ok {
+		counter.Add(-1)
 	}
 }

@@ -28,7 +28,7 @@ func RecoverToError(errPtr *error, label string, args ...any) { //nolint:gocriti
 	}
 
 	err := fmt.Errorf("%s: %w", label+" panicked", panicErr)
-	slog.Error(label+" panicked", append([]any{"error", err}, args...)...)
+	slog.ErrorContext(context.Background(), "Recovered from panic", append([]any{"label", label, "error", err}, args...)...) //nolint:forbidigo // Panic recovery runs without a request context.
 	if errPtr != nil {
 		*errPtr = err
 	}

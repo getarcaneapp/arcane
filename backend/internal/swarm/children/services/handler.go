@@ -191,7 +191,7 @@ func (h *Handler) DeleteService(ctx context.Context, input *DeleteSwarmServiceIn
 
 	h.audit(ctx, input.EnvironmentID, "service.delete", "swarm_service", input.ServiceID, "", map[string]any{"serviceId": input.ServiceID})
 
-	return &handlerutil.Out[base.MessageResponse]{Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: base.MessageResponse{Message: "Swarm service removed successfully"}}}, nil
+	return handlerutil.MessageOutput("Swarm service removed successfully", ""), nil
 }
 
 // ListServiceTasks lists tasks belonging to a specific swarm service.

@@ -12,9 +12,8 @@ import (
 type EnvironmentUpdateJobStatus string
 
 const (
-	// EnvironmentUpdateJobStatusPendingRestart means the remote agents have been
-	// updated and the manager has triggered its own self-upgrade as the final step;
-	// it is waiting to restart on the new version, after which the job is finalized.
+	// EnvironmentUpdateJobStatusPendingRestart means the agents are done and the manager triggered its own
+	// self-upgrade; the job is finalized once it restarts on the new version.
 	EnvironmentUpdateJobStatusPendingRestart EnvironmentUpdateJobStatus = "pending_restart"
 	// EnvironmentUpdateJobStatusRunning means the agents phase is in progress.
 	EnvironmentUpdateJobStatusRunning EnvironmentUpdateJobStatus = "running"
@@ -23,9 +22,8 @@ const (
 	// EnvironmentUpdateJobStatusFailed means the job stopped before completing.
 	EnvironmentUpdateJobStatusFailed EnvironmentUpdateJobStatus = "failed"
 
-	// EnvironmentUpdateResultStatusPending is the initial state recorded for an
-	// environment that is seeded into the job but not yet being processed (and for
-	// the manager entry while its self-upgrade is in flight).
+	// EnvironmentUpdateResultStatusPending is the initial state of an environment
+	// seeded into the job but not yet being processed.
 	EnvironmentUpdateResultStatusPending EnvironmentUpdateResultStatus = "pending"
 	// EnvironmentUpdateResultStatusUpdating means this environment is being processed
 	// right now; it drives the live per-environment progress indicator in the UI.
@@ -65,14 +63,15 @@ type EnvironmentUpdateResult struct {
 	EnvironmentName string                        `json:"environmentName"`
 	Status          EnvironmentUpdateResultStatus `json:"status"`
 	FromVersion     string                        `json:"fromVersion,omitempty"`
+	FromDigest      string                        `json:"fromDigest,omitempty"`
 	ToVersion       string                        `json:"toVersion,omitempty"`
 	Stage           EnvironmentUpdateStage        `json:"stage,omitempty"`
 	StageStartedAt  *time.Time                    `json:"stageStartedAt,omitempty"`
 	Error           string                        `json:"error,omitempty"`
 }
 
-// clearStageInternal drops live-progress fields once the row leaves updating.
-func (r *EnvironmentUpdateResult) clearStageInternal() {
+// clearStage drops live-progress fields once the row leaves updating.
+func (r *EnvironmentUpdateResult) clearStage() {
 	r.Stage = ""
 	r.StageStartedAt = nil
 }
@@ -91,9 +90,8 @@ func (r *EnvironmentUpdateResults) Scan(value any) error {
 	return database.JSONScan(r, value)
 }
 
-// EnvironmentUpdateJob is a persisted fleet-wide update orchestration record. It
-// survives the manager's final self-upgrade restart so the manager result can be
-// finalized on the next boot. See [EnvironmentUpdateJobStatus].
+// EnvironmentUpdateJob is a persisted fleet-wide update record. It survives the manager's
+// self-upgrade restart so the next boot can finalize the manager result.
 type EnvironmentUpdateJob struct {
 	database.BaseModel
 

@@ -18,6 +18,7 @@ import (
 	"go.getarcane.app/builds/api"
 	"go.getarcane.app/builds/pkg/contextsource"
 	"go.getarcane.app/builds/types"
+	"go.getarcane.app/docker"
 	"go.getarcane.app/kit/pkg"
 	"go.getarcane.app/kit/pkg/capture"
 	gitkit "go.getarcane.app/kit/pkg/git"
@@ -25,12 +26,11 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/build/children/workspace"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
+	dockerInternal "github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/gitrepo"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	dockerutils "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/gitutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 )
@@ -38,7 +38,7 @@ import (
 type BuildService struct {
 	db              *database.DB
 	settings        *settings.SettingsService
-	dockerService   *docker.DockerClientService
+	dockerService   *dockerInternal.DockerClientService
 	registryService *registry.ContainerRegistryService
 	gitRepository   *gitrepo.GitRepositoryService
 	eventService    *event.EventService
@@ -54,7 +54,7 @@ const buildHistoryOutputLimitBytes = 2 * 1024 * 1024
 func NewBuildService(
 	db *database.DB,
 	localSettings *settings.SettingsService,
-	dockerService *docker.DockerClientService,
+	dockerService *dockerInternal.DockerClientService,
 	registryService *registry.ContainerRegistryService,
 	gitRepository *gitrepo.GitRepositoryService,
 	eventService *event.EventService,
@@ -124,7 +124,7 @@ func (
 	writer := io.Writer(logCapture)
 	var logWriter io.WriteCloser
 	if progressWriter != nil {
-		logWriter = dockerutils.NewLogLineWriter(progressWriter)
+		logWriter = docker.NewLogLineWriter(progressWriter)
 		writer = io.MultiWriter(logWriter, logCapture)
 	}
 
@@ -301,17 +301,17 @@ func (s *BuildService) resolveBuildRequestInternal(
 		return req, func() error { return nil }, nil
 	}
 
-	writeBuildProgressStatusInternal(progressWriter, serviceName, "resolving remote git context "+source.RepositoryURL)
+	writeBuildProgressStatusInternal(ctx, progressWriter, serviceName, "resolving remote git context "+source.RepositoryURL)
 
 	authConfig, matchedRepository, err := s.resolveGitBuildAuthInternal(ctx, source.RepositoryURL)
 	if err != nil {
 		return types.BuildRequest{}, func() error { return nil }, err
 	}
 	if matchedRepository {
-		writeBuildProgressStatusInternal(progressWriter, serviceName, "using saved git credentials for "+source.RepositoryURL)
+		writeBuildProgressStatusInternal(ctx, progressWriter, serviceName, "using saved git credentials for "+source.RepositoryURL)
 	}
 	if gitkit.RequiresRemoteProbe(source.RepositoryURL) {
-		writeBuildProgressStatusInternal(progressWriter, serviceName, "verifying remote git repository "+source.RepositoryURL)
+		writeBuildProgressStatusInternal(ctx, progressWriter, serviceName, "verifying remote git repository "+source.RepositoryURL)
 		if probeGitContextErr := s.probeGitContextInternal(ctx, source.RepositoryURL, authConfig); probeGitContextErr != nil {
 			return types.BuildRequest{}, func() error { return nil }, fmt.Errorf("failed to verify remote git repository %q: %w", source.RepositoryURL, probeGitContextErr)
 		}
@@ -343,7 +343,7 @@ func (s *BuildService) resolveBuildRequestInternal(
 		return types.BuildRequest{}, func() error { return nil }, errors.New("resolved git build context is not a directory")
 	}
 
-	writeBuildProgressStatusInternal(progressWriter, serviceName, "using remote build context "+source.Raw)
+	writeBuildProgressStatusInternal(ctx, progressWriter, serviceName, "using remote build context "+source.Raw)
 
 	resolvedReq := req
 	resolvedReq.ContextDir = contextDir
@@ -390,7 +390,8 @@ func (s *BuildService) cloneGitContextInternal(ctx context.Context, repositoryUR
 	}
 
 	if s.gitRepository != nil && s.gitRepository.Client != nil {
-		return s.gitRepository.Clone(ctx, repositoryURL, ref, authConfig)
+		// Builds may run git describe or count commits, so they keep full history.
+		return s.gitRepository.Clone(ctx, repositoryURL, ref, authConfig, 0)
 	}
 
 	return "", errors.New("git repository service not available")
@@ -409,7 +410,7 @@ func (s *BuildService) cleanupGitContextInternal(repoPath string) error {
 	return errors.New("git repository service not available")
 }
 
-func writeBuildProgressStatusInternal(progressWriter io.Writer, serviceName, status string) {
+func writeBuildProgressStatusInternal(ctx context.Context, progressWriter io.Writer, serviceName, status string) {
 	if progressWriter == nil || strings.TrimSpace(status) == "" {
 		return
 	}
@@ -419,7 +420,7 @@ func writeBuildProgressStatusInternal(progressWriter io.Writer, serviceName, sta
 		line = service + ": " + status
 	}
 	if _, err := io.WriteString(progressWriter, line+"\n"); err != nil {
-		slog.Debug("failed to write build progress status", "error", err)
+		slog.DebugContext(ctx, "failed to write build progress status", "error", err)
 	}
 }
 

@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -51,7 +52,8 @@ func (m *CSRFMiddleware) Add() echo.MiddlewareFunc {
 		// AddTrustedOrigin expects scheme://host[:port]; deriveAllowedOriginsInternal
 		// already produces that form (shared with CORS). Skip anything malformed.
 		if err := cop.AddTrustedOrigin(origin); err != nil {
-			slog.Warn("CSRF: ignoring invalid trusted origin", "origin", origin, "error", err)
+			slog.WarnContext(context.Background(), "CSRF: ignoring invalid trusted origin", //nolint:forbidigo // Middleware configuration is derived at startup without a request context.
+				"origin", origin, "error", err)
 		}
 	}
 	for _, pattern := range publicCrossOriginBypassPaths {
@@ -69,7 +71,7 @@ func (m *CSRFMiddleware) Add() echo.MiddlewareFunc {
 					"path", req.URL.Path,
 					"method", req.Method,
 					"origin", req.Header.Get("Origin"),
-					"sec_fetch_site", req.Header.Get("Sec-Fetch-Site"),
+					"secFetchSite", req.Header.Get("Sec-Fetch-Site"),
 				)
 				return c.JSON(http.StatusForbidden, common.APIError{
 					Code:    common.APIErrorCodeForbidden,

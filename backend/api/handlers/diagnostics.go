@@ -6,88 +6,46 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/types/v2/system"
-	"go.getarcane.app/streams/logs"
 
-	"github.com/getarcaneapp/arcane/backend/v2/api/ws"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/diagnostics"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
 )
 
-// DiagnosticsHandler serves the REST diagnostics endpoints. The live WebSocket
-// streams and pprof routes live in the api/ws package alongside the other
-// streaming endpoints; the snapshot is assembled there too (ws.BuildDiagnostics).
+// DiagnosticsHandler serves the environment-scoped actor diagnostics the manager
+// collects from each agent. The diagnostics page itself uses the api/ws streams.
 type DiagnosticsHandler struct {
 	diag *diagnostics.DiagnosticsService
 }
 
-type DiagnosticsInput struct{}
-
-type GetDiagnosticsOutput struct {
-	Body system.Diagnostics
+type GetEnvironmentActorDiagnosticsInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
 }
 
-type GetDiagnosticsLogsOutput struct {
-	Body []logs.Entry
-}
-
-type ScanGoroutineLeaksInput struct{}
-
-type ScanGoroutineLeaksOutput struct {
-	Body system.GoroutineLeakReport
+type GetEnvironmentActorDiagnosticsOutput struct {
+	Body system.ActorDiagnostics
 }
 
 // RegisterDiagnostics registers the Huma diagnostics REST endpoints.
 func RegisterDiagnostics(api huma.API, diag *diagnostics.DiagnosticsService) {
 	h := &DiagnosticsHandler{diag: diag}
 
-	huma.Register(api, huma.Operation{
-		OperationID: "get-diagnostics",
+	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "get-environment-actor-diagnostics",
 		Method:      http.MethodGet,
-		Path:        "/diagnostics",
-		Summary:     "Get runtime diagnostics",
-		Description: "Returns Go runtime, memory, garbage-collector, and WebSocket connection statistics.",
+		Path:        "/environments/{id}/diagnostics/actors",
+		Summary:     "Get actor diagnostics for an environment",
+		Description: "Returns Francis actor host, actor type, and run queue diagnostics for one environment.",
 		Tags:        []string{"Diagnostics"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: middleware.RequirePermission(api, authz.PermDiagnosticsRead),
-	}, h.GetDiagnostics)
-
-	huma.Register(api, huma.Operation{
-		OperationID: "get-diagnostics-logs",
-		Method:      http.MethodGet,
-		Path:        "/diagnostics/logs",
-		Summary:     "Get recent backend logs",
-		Description: "Returns the most recent buffered backend log entries (oldest first).",
-		Tags:        []string{"Diagnostics"},
-		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: middleware.RequirePermission(api, authz.PermDiagnosticsRead),
-	}, h.GetRecentLogs)
-
-	huma.Register(api, huma.Operation{
-		OperationID: "scan-goroutine-leaks",
-		Method:      http.MethodPost,
-		Path:        "/diagnostics/goroutineleak",
-		Summary:     "Scan for leaked goroutines",
-		Description: "Runs a goroutine leak-detection GC cycle and returns the goroutineleak pprof profile as text (leaked stacks only).",
-		Tags:        []string{"Diagnostics"},
-		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: middleware.RequirePermission(api, authz.PermDiagnosticsRead),
-	}, h.ScanGoroutineLeaks)
+	}, authz.PermDiagnosticsRead, h.GetEnvironmentActorDiagnostics)
 }
 
-func (h *DiagnosticsHandler) GetDiagnostics(_ context.Context, _ *DiagnosticsInput) (*GetDiagnosticsOutput, error) {
-	return &GetDiagnosticsOutput{Body: ws.BuildDiagnostics(h.diag)}, nil
-}
-
-func (h *DiagnosticsHandler) GetRecentLogs(_ context.Context, _ *DiagnosticsInput) (*GetDiagnosticsLogsOutput, error) {
-	return &GetDiagnosticsLogsOutput{Body: ws.LogBroadcaster().Recent()}, nil
-}
-
-func (h *DiagnosticsHandler) ScanGoroutineLeaks(_ context.Context, _ *ScanGoroutineLeaksInput) (*ScanGoroutineLeaksOutput, error) {
-	report, err := h.diag.ScanGoroutineLeaks()
+func (h *DiagnosticsHandler) GetEnvironmentActorDiagnostics(ctx context.Context, _ *GetEnvironmentActorDiagnosticsInput) (*GetEnvironmentActorDiagnosticsOutput, error) {
+	d, err := h.diag.CollectActors(ctx)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("Failed to collect goroutine leak profile: " + err.Error())
+		return nil, huma.Error500InternalServerError("Failed to collect actor diagnostics: " + err.Error())
 	}
-	return &ScanGoroutineLeaksOutput{Body: report}, nil
+	return &GetEnvironmentActorDiagnosticsOutput{Body: d}, nil
 }

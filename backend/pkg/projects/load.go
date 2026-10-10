@@ -301,7 +301,7 @@ func ApplyLenientLoaderOptions(ctx context.Context, opts *loader.Options, compos
 	opts.SkipValidation = true
 	opts.SkipConsistencyCheck = true
 	if opts.Interpolate == nil {
-		slog.WarnContext(ctx, "compose loader did not initialize Interpolate options; lenient variable substitution will not apply", "compose_file", composeFile)
+		slog.WarnContext(ctx, "compose loader did not initialize Interpolate options; lenient variable substitution will not apply", "composeFile", composeFile)
 		return
 	}
 
@@ -322,7 +322,7 @@ func ApplyLenientLoaderOptions(ctx context.Context, opts *loader.Options, compos
 					default:
 						// Variable is unset with no default (or a ${VAR:?msg}
 						// required variable, which lenient loading tolerates).
-						slog.DebugContext(ctx, "compose variable undefined during lenient load, using placeholder", "expression", substring, "compose_file", composeFile)
+						slog.DebugContext(ctx, "compose variable undefined during lenient load, using placeholder", "expression", substring, "composeFile", composeFile)
 						return lenientUndefinedPlaceholder, nil
 					}
 				}),

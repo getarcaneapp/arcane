@@ -43,8 +43,9 @@ func newVolumeWorkspaceTestDockerClientInternal(t *testing.T, server *httptest.S
 	return dockerClient
 }
 
-func TestValidateVolumeHelperSupportInternalOnlyInspectsVolume(t *testing.T) {
+func TestValidateVolumeHelperSupportInternal(t *testing.T) {
 	var requests []string
+	var options map[string]string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests = append(requests, r.Method+" "+r.URL.Path)
 		if r.Method != http.MethodGet || !strings.HasSuffix(r.URL.Path, "/volumes/workspace-volume") {
@@ -52,7 +53,7 @@ func TestValidateVolumeHelperSupportInternalOnlyInspectsVolume(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(volume.Volume{Name: "workspace-volume", Driver: "local"}); err != nil {
+		if err := json.NewEncoder(w).Encode(volume.Volume{Name: "workspace-volume", Driver: "local", Options: options}); err != nil {
 			t.Errorf("encode volume inspect response: %v", err)
 		}
 	}))
@@ -63,6 +64,13 @@ func TestValidateVolumeHelperSupportInternalOnlyInspectsVolume(t *testing.T) {
 
 	require.NoError(t, service.validateVolumeHelperSupportInternal(t.Context(), "workspace-volume"))
 	require.Equal(t, []string{"GET /v1.41/volumes/workspace-volume"}, requests)
+
+	options = map[string]string{"type": "nfs"}
+	require.NoError(t, service.validateVolumeHelperSupportInternal(t.Context(), "workspace-volume"))
+	options = map[string]string{"type": "none"}
+	require.Error(t, service.validateVolumeHelperSupportInternal(t.Context(), "workspace-volume"))
+	options = map[string]string{"o": "bind,rw"}
+	require.Error(t, service.validateVolumeHelperSupportInternal(t.Context(), "workspace-volume"))
 }
 
 func TestUpdateVolumeWorkspaceValidationFailureReturnsNoWorkspace(t *testing.T) {

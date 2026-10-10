@@ -201,6 +201,7 @@
 				source: z.string(),
 				recipients: z.string(),
 				disableTls: z.boolean(),
+				notifySelf: z.boolean(),
 				...eventSubscriptionSchemaFields
 			})
 			.superRefine((d, ctx) => {
@@ -609,6 +610,13 @@
 				placeholder: m.notifications_signal_recipients_placeholder(),
 				helpText: m.notifications_signal_recipients_help(),
 				rows: 3
+			},
+			{
+				kind: 'switch',
+				key: 'notifySelf',
+				id: 'signal-notify-self',
+				label: m.notifications_signal_notify_self_label(),
+				description: m.notifications_signal_notify_self_description()
 			},
 			{
 				kind: 'switch',

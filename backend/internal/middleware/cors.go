@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"context"
 	"log/slog"
 	"net/url"
 	"strings"
@@ -61,6 +62,7 @@ func (m *CORSMiddleware) Add() echo.MiddlewareFunc {
 }
 
 func deriveAllowedOriginsInternal(cfg *config.Config, custom []string) []string {
+	ctx := context.Background() //nolint:forbidigo // Middleware configuration is derived at startup without a request context.
 	if len(custom) > 0 {
 		return kit.Unique(custom)
 	}
@@ -75,7 +77,7 @@ func deriveAllowedOriginsInternal(cfg *config.Config, custom []string) []string 
 			if u, err := url.Parse(appURL); err == nil {
 				origins = append(origins, u.Scheme+"://"+u.Host)
 			} else {
-				slog.Warn("Failed to parse APP_URL for CORS origins", "url", appURL, "error", err)
+				slog.WarnContext(ctx, "Failed to parse APP_URL for CORS origins", "url", appURL, "error", err)
 			}
 		}
 	}
@@ -91,7 +93,7 @@ func deriveAllowedOriginsInternal(cfg *config.Config, custom []string) []string 
 
 	if len(origins) == 0 {
 		if cfg != nil && cfg.Environment == "production" {
-			slog.Warn("CORS: No origins specified for production - defaulting to https://localhost")
+			slog.WarnContext(ctx, "CORS: No origins specified for production - defaulting to https://localhost")
 			return []string{"https://localhost"}
 		}
 		return []string{"http://localhost:3000"}

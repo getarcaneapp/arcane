@@ -8,18 +8,18 @@ import (
 
 	"github.com/getarcaneapp/arcane/types/v2/container"
 	porttypes "github.com/getarcaneapp/arcane/types/v2/port"
+	"go.getarcane.app/docker"
 	"go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
+	dockerInternal "github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 )
 
 type PortService struct {
-	dockerService *docker.DockerClientService
+	dockerService *dockerInternal.DockerClientService
 }
 
-func NewPortService(dockerService *docker.DockerClientService) *PortService {
+func NewPortService(dockerService *dockerInternal.DockerClientService) *PortService {
 	return &PortService{dockerService: dockerService}
 }
 
@@ -128,7 +128,7 @@ func (s *PortService) buildPortSortBindings() []pagination.SortBinding[porttypes
 
 func primaryContainerNameInternal(names []string, id string) string {
 	if len(names) > 0 && names[0] != "" {
-		return dockerutil.ContainerNameFromNames(names)
+		return docker.ContainerNameFromNames(names)
 	}
 	if len(id) >= 12 {
 		return id[:12]

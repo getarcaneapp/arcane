@@ -2,7 +2,7 @@
 DROP TABLE IF EXISTS images_table;
 
 -- +goose Down
-CREATE TABLE IF NOT EXISTS images_table (
+CREATE TABLE IF NOT EXISTS images (
     id TEXT PRIMARY KEY,
     repo_tags TEXT,
     repo_digests TEXT,

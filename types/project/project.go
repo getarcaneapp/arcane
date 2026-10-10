@@ -98,6 +98,12 @@ type TagOption struct {
 	Color TagColor `json:"color"`
 }
 
+// Reference identifies a project by ID and name.
+type Reference struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
 // UpdateTag mutates a UI-managed tag association.
 type UpdateTag struct {
 	Name     string   `json:"name"`

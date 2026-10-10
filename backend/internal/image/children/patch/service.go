@@ -11,6 +11,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -31,6 +32,10 @@ import (
 	"github.com/project-copacetic/copacetic/pkg/types"
 	"github.com/samber/mo"
 	"go.getarcane.app/acfs"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
@@ -44,7 +49,23 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/logging"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/tracing"
 )
+
+// scheduledPatchUser is the actor recorded for scheduled patches and their verification scans.
+var (
+	scheduledPatchUser = usertypes.Actor{Username: "System"}
+	// errPatchInterrupted fails a patch cut off mid-run; its record keeps the message so it never reruns.
+	errPatchInterrupted = errors.New("image patch was interrupted before its result was recorded; start a new patch")
+	// registryTransport traces platform-manifest lookups; ggcr adds its retry wrappers on top.
+	registryTransport = otelhttp.NewTransport(remote.DefaultTransport)
+)
+
+// Target is one image a scheduled patch run covers.
+type Target struct {
+	ImageID   string `json:"imageId"`
+	ImageName string `json:"imageName"`
+}
 
 // Service patches image OS packages in place using the Copacetic
 // library and records each run in the image_patches table.
@@ -79,7 +100,7 @@ func NewService(
 	if os.Getenv("DOCKER_HOST") == "" && dockerService != nil {
 		if host := strings.TrimSpace(dockerService.DockerHost()); host != "" {
 			if err := os.Setenv("DOCKER_HOST", host); err != nil {
-				slog.Warn("failed to set DOCKER_HOST for image patching", "error", err)
+				slog.WarnContext(context.Background(), "failed to set DOCKER_HOST for image patching", "error", err) //nolint:forbidigo // Service construction has no request context.
 			}
 		}
 	}
@@ -98,128 +119,195 @@ func NewService(
 // PatchImage starts a background patch run for the given image and returns the
 // pending record (carrying the activity ID) immediately.
 func (s *Service) PatchImage(ctx context.Context, envID, imageID string, opts imagepatch.PatchOptions, user usertypes.Actor) (*imagepatch.PatchRecord, error) {
-	if strings.TrimSpace(opts.ScanID) != "" {
+	if opts.ScanID != "" {
 		if err := s.settingsService.RequireFeature(ctx, features.VulnerabilityManagement); err != nil {
 			return nil, err
 		}
 	}
-	runCtx := utils.ActivityRuntimeContext(ctx, nil)
+	record, run, err := s.startPatch(utils.ActivityRuntimeContext(ctx, nil), envID, imageID, opts, user, "")
+	if err != nil {
+		return nil, err
+	}
+	go func() { _ = run() }()
+	dto := record.ToDto()
+	return &dto, nil
+}
+
+// PatchTarget patches one scanned image and waits for the result. recordID keys
+// the patch so a redelivered task resumes its own record instead of patching twice.
+func (s *Service) PatchTarget(ctx context.Context, envID string, target Target, recordID string) error {
+	_, run, err := s.startPatch(ctx, envID, target.ImageID, imagepatch.PatchOptions{ScanID: target.ImageID}, scheduledPatchUser, recordID)
+	if err != nil || run == nil {
+		return err
+	}
+	return run()
+}
+
+// startPatch validates an image, records its patch as running, and returns the
+// function that performs it. A completed record under recordID returns no function.
+func (s *Service) startPatch(
+	ctx context.Context,
+	envID, imageID string,
+	opts imagepatch.PatchOptions,
+	user usertypes.Actor,
+	recordID string,
+) (*ImagePatchRecord, func() error, error) {
+	var existing ImagePatchRecord
+	if recordID != "" {
+		if err := s.db.WithContext(ctx).Where("id = ?", recordID).Limit(1).Find(&existing).Error; err != nil {
+			return nil, nil, fmt.Errorf("failed to load image patch record: %w", err)
+		}
+		if existing.Status == string(imagepatch.PatchStatusCompleted) {
+			return &existing, nil, nil
+		}
+		// A record still patching was cut off mid-run, so whether Copacetic already replaced its tag is unknown.
+		// Its failure keeps that message, so no later delivery runs the patch again either.
+		if existing.Status == string(imagepatch.PatchStatusPatching) || mo.PointerToOption(existing.Error).OrEmpty() == errPatchInterrupted.Error() {
+			s.finishPatchRecord(ctx, &existing, imagepatch.PatchStatusFailed, errPatchInterrupted.Error(), nil, 0)
+			return nil, nil, errPatchInterrupted
+		}
+	}
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
+		return nil, nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
-	if requireContainerdImageStoreErr := requireContainerdImageStoreInternal(runCtx, dockerClient); requireContainerdImageStoreErr != nil {
-		return nil, requireContainerdImageStoreErr
+	if storeErr := requireContainerdImageStore(ctx, dockerClient); storeErr != nil {
+		return nil, nil, storeErr
 	}
-
-	imageInspect, err := dockerClient.ImageInspect(runCtx, imageID)
+	imageInspect, err := dockerClient.ImageInspect(ctx, imageID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to inspect image: %w", err)
+		return nil, nil, fmt.Errorf("failed to inspect image: %w", err)
 	}
 	if len(imageInspect.RepoTags) == 0 {
-		return nil, common.ErrImageUntagged
+		return nil, nil, common.ErrImageUntagged
 	}
 	imageRef := imageInspect.RepoTags[0]
-
+	if existing.ID != "" {
+		// A replay patches the source its record names, so the output matches the saved PatchedRef.
+		if !slices.Contains(imageInspect.RepoTags, existing.OriginalRef) {
+			return nil, nil, fmt.Errorf("image is no longer tagged %s; start a new patch", existing.OriginalRef)
+		}
+		imageRef = existing.OriginalRef
+	}
 	// Never pulled or pushed: BuildKit cannot fetch the image to patch it.
 	if len(imageInspect.RepoDigests) == 0 {
-		return nil, common.ErrImageLocalOnly
+		return nil, nil, common.ErrImageLocalOnly
 	}
-	originalDigest := imageInspect.RepoDigests[0]
 
-	// Resolve the stored scan report when patching from a scan.
 	mode := imagepatch.PatchModeUpdateAll
 	var reportData []byte
-	if strings.TrimSpace(opts.ScanID) != "" {
-		// Scan records are keyed by image ID; refuse a scan belonging to a
-		// different image than the one selected by the route.
+	if opts.ScanID != "" {
+		// Scan records are keyed by image ID; refuse a scan of a different image than the route selected.
 		if opts.ScanID != imageInspect.ID {
-			return nil, common.ErrPatchScanImageMismatch
+			return nil, nil, common.ErrPatchScanImageMismatch
 		}
 		var report vulnerability.VulnerabilityReportRecord
-		if loadScanReportErr := s.db.WithContext(runCtx).First(&report, "image_id = ?", opts.ScanID).Error; loadScanReportErr != nil || report.Data == "" {
-			return nil, common.ErrPatchScanReportUnavailable
+		if reportErr := s.db.WithContext(ctx).First(&report, "image_id = ?", opts.ScanID).Error; reportErr != nil || report.Data == "" {
+			return nil, nil, common.ErrPatchScanReportUnavailable
 		}
 		reportData = []byte(report.Data)
 		mode = imagepatch.PatchModeReport
 	}
 
-	suffix := strings.TrimSpace(opts.Suffix)
-	if suffix == "" {
-		suffix = strings.TrimSpace(s.settingsService.GetSettingsConfig().ImagePatchSuffix.Value)
-	}
-	suffix = cmp.Or(suffix, "patched")
+	suffix := cmp.Or(strings.TrimSpace(opts.Suffix), strings.TrimSpace(s.settingsService.GetSettingsConfig().ImagePatchSuffix.Value), "patched")
 	patchedRef, err := resolvePatchedRef(imageRef, opts.PatchedTag, suffix)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	// Copa reads registry credentials from the docker config; refresh it before
-	// any registry lookups below.
-	s.writeRegistryAuthConfigInternal(runCtx)
+	// Copa reads registry credentials from the docker config; refresh it before any registry lookups.
+	s.writeRegistryAuthConfig(ctx)
 
-	// Unless the all-platforms setting is enabled, pin the patch target to the
-	// platform-specific manifest digest matching this image so copa patches a
-	// single platform and keeps the plain patched tag. Report-mode patches are
-	// always single-platform in copa, so no pinning is needed there.
+	// Unless the all-platforms setting is on, pin update-all patches to this image's platform manifest so copa
+	// patches one platform and keeps the plain patched tag. Report-mode patches are always single-platform.
 	copaImageRef := imageRef
 	if mode == imagepatch.PatchModeUpdateAll && !s.settingsService.GetSettingsConfig().ImagePatchAllPlatforms.IsTrue() {
-		if pinned := platformPinnedRefInternal(runCtx, imageRef, v1.Platform{
+		copaImageRef = cmp.Or(platformPinnedRef(ctx, imageRef, v1.Platform{
 			OS:           imageInspect.Os,
 			Architecture: imageInspect.Architecture,
 			Variant:      imageInspect.Variant,
-		}); pinned != "" {
-			copaImageRef = pinned
+		}), imageRef)
+	}
+
+	activityID := ""
+	if s.activityService != nil {
+		// Each attempt gets its own activity, since a finished activity never reopens.
+		started, startErr := s.activityService.StartActivity(ctx, activity.StartActivityRequest{
+			EnvironmentID: envID,
+			Type:          activitytypes.TypeImagePatch,
+			ResourceType:  new("image"),
+			ResourceID:    &imageID,
+			ResourceName:  &imageRef,
+			StartedBy:     &user,
+			Progress:      new(0),
+			LatestMessage: "Image patch queued",
+		})
+		if startErr != nil {
+			slog.WarnContext(ctx, "failed to create image patch activity", "error", startErr, "imageRef", imageRef)
+		} else {
+			activityID = started.ID
 		}
 	}
+	runCtx := s.activityService.Track(ctx, activityID)
 
-	activityID := s.startPatchActivityInternal(runCtx, envID, imageID, imageRef, &user)
-	runCtx = s.activityService.Track(runCtx, activityID)
-
-	record := &ImagePatchRecord{
-		EnvironmentID:   envID,
-		OriginalImageID: imageInspect.ID,
-		OriginalRef:     imageRef,
-		OriginalDigest:  originalDigest,
-		PatchedRef:      patchedRef,
-		Mode:            string(mode),
-		Status:          string(imagepatch.PatchStatusPatching),
-		ActivityID:      mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer(),
+	record := &existing
+	var saveErr error
+	if record.ID == "" {
+		record = &ImagePatchRecord{
+			EnvironmentID:   envID,
+			OriginalImageID: imageInspect.ID,
+			OriginalRef:     imageRef,
+			OriginalDigest:  imageInspect.RepoDigests[0],
+			PatchedRef:      patchedRef,
+			Mode:            string(mode),
+			Status:          string(imagepatch.PatchStatusPatching),
+			ActivityID:      mo.EmptyableToOption(activityID).ToPointer(),
+		}
+		record.ID = recordID
+		saveErr = s.db.WithContext(ctx).Create(record).Error
+	} else {
+		// A retried record runs again under this attempt's activity, without the earlier attempt's error.
+		record.Status, record.Error, record.ActivityID = string(imagepatch.PatchStatusPatching), nil, mo.EmptyableToOption(activityID).ToPointer()
+		saveErr = s.db.WithContext(ctx).Model(record).Select("status", "error", "activity_id").Updates(record).Error
 	}
-	if createPatchRecordErr := s.db.WithContext(runCtx).Create(record).Error; createPatchRecordErr != nil {
-		return nil, fmt.Errorf("failed to create image patch record: %w", createPatchRecordErr)
+	if saveErr != nil {
+		// No worker will run, so settle the activity and release its cancel registration here.
+		saveErr = fmt.Errorf("failed to save image patch record: %w", saveErr)
+		s.completePatchActivity(runCtx, activityID, false, saveErr.Error())
+		return nil, nil, saveErr
 	}
 
-	slog.InfoContext(runCtx, "image patch queued",
-		"environmentId", envID,
-		"imageRef", imageRef,
-		"patchedRef", patchedRef,
-		"mode", mode,
-		"patchTarget", copaImageRef,
-	)
-
-	go s.patchInBackgroundInternal(runCtx, record, opts, reportData, copaImageRef, activityID)
-
-	dto := record.ToDto()
-	return &dto, nil
+	slog.InfoContext(ctx, "image patch queued", "environmentId", envID, "imageRef", imageRef, "patchedRef", patchedRef, "mode", mode, "patchTarget", copaImageRef)
+	return record, func() error { return s.runPatch(runCtx, record, opts, reportData, copaImageRef, activityID) }, nil
 }
 
-func (s *Service) patchInBackgroundInternal(ctx context.Context, record *ImagePatchRecord, opts imagepatch.PatchOptions, reportData []byte, copaImageRef, activityID string) {
+// runPatch executes one recorded patch with Copacetic and settles its record and activity.
+func (s *Service) runPatch(ctx context.Context, record *ImagePatchRecord, opts imagepatch.PatchOptions, reportData []byte, copaImageRef, activityID string) (runErr error) {
+	ctx, span := otel.Tracer(tracing.InstrumentationName).Start(ctx, "image.patch", trace.WithAttributes(
+		attribute.String("arcane.environment.id", record.EnvironmentID),
+		attribute.String("arcane.image.patch_id", record.ID),
+		attribute.String("arcane.image.ref", record.OriginalRef),
+		attribute.String("arcane.image.patched_ref", record.PatchedRef),
+		attribute.String("arcane.image.patch_mode", record.Mode),
+		attribute.String("arcane.activity.id", activityID),
+	))
+	defer func() { tracing.End(span, runErr) }()
+	fail := func(err error, durationMs int64) error {
+		s.finishPatchRecord(ctx, record, imagepatch.PatchStatusFailed, err.Error(), nil, durationMs)
+		s.completePatchActivity(ctx, activityID, false, err.Error())
+		return err
+	}
 	select {
 	case s.patchSlot <- struct{}{}:
 		defer func() { <-s.patchSlot }()
 	case <-ctx.Done():
-		s.finishPatchRecordInternal(ctx, record, imagepatch.PatchStatusFailed, ctx.Err().Error(), nil, 0)
-		s.completePatchActivityInternal(ctx, activityID, false, ctx.Err().Error())
-		return
+		return fail(ctx.Err(), 0)
 	}
 
 	if record.Mode == string(imagepatch.PatchModeReport) {
 		if err := s.settingsService.RequireFeature(ctx, features.VulnerabilityManagement); err != nil {
-			s.finishPatchRecordInternal(ctx, record, imagepatch.PatchStatusFailed, err.Error(), nil, 0)
-			s.completePatchActivityInternal(ctx, activityID, false, err.Error())
-			return
+			return fail(err, 0)
 		}
 	}
 
@@ -238,9 +326,7 @@ func (s *Service) patchInBackgroundInternal(ctx context.Context, record *ImagePa
 			}()
 		}
 		if err != nil {
-			s.finishPatchRecordInternal(ctx, record, imagepatch.PatchStatusFailed, err.Error(), nil, 0)
-			s.completePatchActivityInternal(ctx, activityID, false, err.Error())
-			return
+			return fail(err, 0)
 		}
 	}
 
@@ -286,7 +372,7 @@ func (s *Service) patchInBackgroundInternal(ctx context.Context, record *ImagePa
 
 	// Mirror copa's log output into the activity while the patch runs; BuildKit
 	// step progress stays quiet until copa exposes a progress writer upstream.
-	s.appendPatchActivityInternal(ctx, activityID, 30, "Patching image packages via BuildKit")
+	s.appendPatchActivity(ctx, activityID, 30, "Patching image packages via BuildKit")
 	patchOut := activitylib.NewWriter(ctx, s.activityService, activityID, nil, "Patching image")
 	removeMirror := logging.AddLogrusMirror(patchOut)
 	patchErr := patch.Patch(ctx, copaOpts)
@@ -301,15 +387,12 @@ func (s *Service) patchInBackgroundInternal(ctx context.Context, record *ImagePa
 		if strings.Contains(patchErr.Error(), `exporter "docker" could not be found`) {
 			patchErr = common.ErrPatchRequiresContainerdImageStore
 		}
-		s.finishPatchRecordInternal(ctx, record, imagepatch.PatchStatusFailed, patchErr.Error(), nil, durationMs)
-		slog.WarnContext(ctx, "image patch failed",
-			"environmentId", record.EnvironmentID,
-			"imageRef", record.OriginalRef,
-			"durationMs", durationMs,
-			"error", patchErr,
-		)
-		s.completePatchActivityInternal(ctx, activityID, false, patchErr.Error())
-		return
+		// Interrupted mid-run, Copacetic may already have replaced the tag, so the record must never rerun.
+		if ctx.Err() != nil {
+			patchErr = errPatchInterrupted
+		}
+		slog.WarnContext(ctx, "image patch failed", "environmentId", record.EnvironmentID, "imageRef", record.OriginalRef, "durationMs", durationMs, "error", patchErr)
+		return fail(patchErr, durationMs)
 	}
 
 	// Count VEX statements as the number of patched packages, when available.
@@ -326,47 +409,42 @@ func (s *Service) patchInBackgroundInternal(ctx context.Context, record *ImagePa
 		}
 	}
 
-	s.verifyPatchedImageInternal(ctx, record, activityID)
+	s.verifyPatchedImage(ctx, record, activityID)
 
-	s.finishPatchRecordInternal(ctx, record, imagepatch.PatchStatusCompleted, "", packagesUpdated, durationMs)
-	slog.InfoContext(ctx, "image patch completed",
-		"environmentId", record.EnvironmentID,
-		"imageRef", record.OriginalRef,
-		"patchedRef", record.PatchedRef,
-		"durationMs", durationMs,
-	)
-	s.completePatchActivityInternal(ctx, activityID, true, "")
+	s.finishPatchRecord(ctx, record, imagepatch.PatchStatusCompleted, "", packagesUpdated, durationMs)
+	slog.InfoContext(ctx, "image patch completed", "environmentId", record.EnvironmentID, "imageRef", record.OriginalRef, "patchedRef", record.PatchedRef, "durationMs", durationMs)
+	s.completePatchActivity(ctx, activityID, true, "")
+	return nil
 }
 
-func (s *Service) verifyPatchedImageInternal(ctx context.Context, record *ImagePatchRecord, activityID string) {
-	// Warn when the expected patched tag is missing from the daemon (e.g. copa
-	// took the multi-platform path and arch-suffixed the tag). When it exists,
-	// re-scan it so the security page can show whether the patch worked.
+// verifyPatchedImage warns when the expected tag is missing (copa may arch-suffix
+// multi-platform tags) and otherwise re-scans it to show whether the patch worked.
+func (s *Service) verifyPatchedImage(ctx context.Context, record *ImagePatchRecord, activityID string) {
 	if dockerClient, err := s.dockerService.GetClient(ctx); err == nil {
-		if patchedInspect, imageInspectErr := dockerClient.ImageInspect(ctx, record.PatchedRef); imageInspectErr != nil {
-			slog.WarnContext(ctx, "patched image tag not found after patching", "patchedRef", record.PatchedRef, "error", imageInspectErr)
-			s.appendPatchActivityInternal(ctx, activityID, 95, "Patched image was created but the expected tag "+record.PatchedRef+" was not found; check the image list")
+		if patchedInspect, inspectErr := dockerClient.ImageInspect(ctx, record.PatchedRef); inspectErr != nil {
+			slog.WarnContext(ctx, "patched image tag not found after patching", "patchedRef", record.PatchedRef, "error", inspectErr)
+			s.appendPatchActivity(ctx, activityID, 95, "Patched image was created but the expected tag "+record.PatchedRef+" was not found; check the image list")
 		} else if s.vulnerabilityService != nil && s.settingsService.IsFeatureEnabled(ctx, features.VulnerabilityManagement) {
-			s.appendPatchActivityInternal(ctx, activityID, 95, "Re-scanning patched image to verify the patch")
-			if _, scanImageErr := s.vulnerabilityService.ScanImage(context.WithoutCancel(ctx), record.EnvironmentID, patchedInspect.ID, usertypes.Actor{Username: "System"}); scanImageErr != nil {
-				slog.WarnContext(ctx, "failed to start verification scan of patched image", "patchedRef", record.PatchedRef, "error", scanImageErr)
+			s.appendPatchActivity(ctx, activityID, 95, "Re-scanning patched image to verify the patch")
+			if _, scanErr := s.vulnerabilityService.ScanImage(context.WithoutCancel(ctx), record.EnvironmentID, patchedInspect.ID, scheduledPatchUser); scanErr != nil {
+				slog.WarnContext(ctx, "failed to start verification scan of patched image", "patchedRef", record.PatchedRef, "error", scanErr)
 			}
 		}
 	}
 }
 
-// platformPinnedRefInternal resolves a tag reference to the manifest digest of
+// platformPinnedRef resolves a tag reference to the manifest digest of
 // the given platform when the registry serves a multi-platform index. This
 // makes copa patch a single platform (keeping the plain patched tag) instead
 // of every platform in the index. Returns "" when the reference is not a
 // multi-platform index or cannot be resolved, in which case the plain tag is
 // used and copa's own discovery decides.
-func platformPinnedRefInternal(ctx context.Context, imageRef string, target v1.Platform) string {
+func platformPinnedRef(ctx context.Context, imageRef string, target v1.Platform) string {
 	ref, err := name.ParseReference(imageRef)
 	if err != nil {
 		return ""
 	}
-	desc, err := remote.Get(ref, remote.WithContext(ctx), remote.WithAuthFromKeychain(authn.DefaultKeychain))
+	desc, err := remote.Get(ref, remote.WithContext(ctx), remote.WithTransport(registryTransport), remote.WithAuthFromKeychain(authn.DefaultKeychain))
 	if err != nil || !desc.MediaType.IsIndex() {
 		return ""
 	}
@@ -411,11 +489,11 @@ func resolvePatchedRef(imageRef, patchedTag, suffix string) (string, error) {
 	return localName + ":" + tag, nil
 }
 
-// writeRegistryAuthConfigInternal merges Arcane's registry credentials into the
+// writeRegistryAuthConfig merges Arcane's registry credentials into the
 // docker config file copa reads for BuildKit registry auth. It only touches the
 // config when DOCKER_CONFIG is set, i.e. the deployment (normally Arcane's own
 // startup) owns that directory — a user's ~/.docker/config.json is never modified.
-func (s *Service) writeRegistryAuthConfigInternal(ctx context.Context) {
+func (s *Service) writeRegistryAuthConfig(ctx context.Context) {
 	configDir := strings.TrimSpace(os.Getenv("DOCKER_CONFIG"))
 	if configDir == "" || s.registryService == nil {
 		return
@@ -473,7 +551,7 @@ func (s *Service) writeRegistryAuthConfigInternal(ctx context.Context) {
 	}
 }
 
-func (s *Service) finishPatchRecordInternal(ctx context.Context, record *ImagePatchRecord, status imagepatch.PatchStatus, errMessage string, packagesUpdated *int, durationMs int64) {
+func (s *Service) finishPatchRecord(ctx context.Context, record *ImagePatchRecord, status imagepatch.PatchStatus, errMessage string, packagesUpdated *int, durationMs int64) {
 	updates := map[string]any{
 		"status":      string(status),
 		"duration_ms": durationMs,
@@ -517,8 +595,8 @@ func (s *Service) ListPatches(ctx context.Context, envID string, params paginati
 	return dtos, paginationResp, nil
 }
 
-// PatchedRefs returns the set of patched image references recorded for an
-// environment, used to keep patch outputs from being patched again.
+// PatchedRefs returns every name a completed patch output can be scanned under
+// (normalized and familiar), used to keep patch outputs from being patched again.
 func (s *Service) PatchedRefs(ctx context.Context, envID string) (map[string]struct{}, error) {
 	var refs []string
 	if err := s.db.WithContext(ctx).
@@ -528,9 +606,12 @@ func (s *Service) PatchedRefs(ctx context.Context, envID string) (map[string]str
 		Pluck("patched_ref", &refs).Error; err != nil {
 		return nil, fmt.Errorf("failed to list patched image refs: %w", err)
 	}
-	set := make(map[string]struct{}, len(refs))
+	set := make(map[string]struct{}, len(refs)*2)
 	for _, ref := range refs {
 		set[ref] = struct{}{}
+		if named, err := reference.ParseNormalizedNamed(ref); err == nil {
+			set[reference.FamiliarString(named)] = struct{}{}
+		}
 	}
 	return set, nil
 }
@@ -547,13 +628,7 @@ func (s *Service) ListPatchTargets(ctx context.Context, envID string, params pag
 	if err != nil {
 		return nil, pagination.Response{}, err
 	}
-	excludedNames := make([]string, 0, len(patchedRefs)*2)
-	for ref := range patchedRefs {
-		excludedNames = append(excludedNames, ref)
-		if named, parseNormalizedNamedErr := reference.ParseNormalizedNamed(ref); parseNormalizedNamedErr == nil {
-			excludedNames = append(excludedNames, reference.FamiliarString(named))
-		}
-	}
+	excludedNames := slices.Collect(maps.Keys(patchedRefs))
 
 	// Only list images that are actionable (fixable vulnerabilities) or carry
 	// patch history.
@@ -599,7 +674,7 @@ func (s *Service) ListPatchTargets(ctx context.Context, envID string, params pag
 	for i := range scans {
 		imageIDs = append(imageIDs, scans[i].ID)
 	}
-	lastPatchByImageID, lastPatchScanByImageID, err := s.latestPatchesByImageInternal(ctx, envID, imageIDs)
+	lastPatchByImageID, lastPatchScanByImageID, err := s.latestPatchesByImage(ctx, envID, imageIDs)
 	if err != nil {
 		return nil, pagination.Response{}, err
 	}
@@ -636,10 +711,10 @@ func (s *Service) ListPatchTargets(ctx context.Context, envID string, params pag
 	return targets, paginationResp, nil
 }
 
-// latestPatchesByImageInternal loads the most recent patch run per original
+// latestPatchesByImage loads the most recent patch run per original
 // image in two batched queries, plus the scan of each completed patch's output
 // image so the original's row can show whether the patch worked.
-func (s *Service) latestPatchesByImageInternal(ctx context.Context, envID string, imageIDs []string) (map[string]*ImagePatchRecord, map[string]*imagepatch.PatchScanSummary, error) {
+func (s *Service) latestPatchesByImage(ctx context.Context, envID string, imageIDs []string) (map[string]*ImagePatchRecord, map[string]*imagepatch.PatchScanSummary, error) {
 	var patchRows []ImagePatchRecord
 	if err := s.db.WithContext(ctx).
 		Where("environment_id = ? AND original_image_id IN ?", envID, imageIDs).
@@ -704,75 +779,54 @@ func (s *Service) latestPatchesByImageInternal(ctx context.Context, envID string
 	return lastPatchByImageID, lastPatchScanByImageID, nil
 }
 
-// PatchFlaggedImages patches every image whose latest completed vulnerability
-// scan found fixable vulnerabilities and stored a raw report. Images that are
-// themselves patch outputs are skipped (never patch a patched tag), as are
-// images already patched since their latest scan. Used by the scheduled
-// auto-patch job.
-func (s *Service) PatchFlaggedImages(ctx context.Context, envID string, user usertypes.Actor) (patched, skipped int, err error) {
-	if requireFeatureErr := s.settingsService.RequireFeature(ctx, features.VulnerabilityManagement); requireFeatureErr != nil {
-		return 0, 0, requireFeatureErr
+// Targets lists images whose latest completed scan found fixable vulnerabilities
+// and kept a report, skipping patch outputs and images patched since that scan.
+func (s *Service) Targets(ctx context.Context, envID string) ([]Target, error) {
+	if err := s.settingsService.RequireFeature(ctx, features.VulnerabilityManagement); err != nil {
+		return nil, err
 	}
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return 0, 0, fmt.Errorf("failed to connect to Docker: %w", err)
+		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
-	if requireContainerdImageStoreErr := requireContainerdImageStoreInternal(ctx, dockerClient); requireContainerdImageStoreErr != nil {
-		return 0, 0, requireContainerdImageStoreErr
+	if storeErr := requireContainerdImageStore(ctx, dockerClient); storeErr != nil {
+		return nil, storeErr
 	}
 	var scans []vulnerability.VulnerabilityScanRecord
-	if loadFixableScansErr := s.db.WithContext(ctx).
+	if scansErr := s.db.WithContext(ctx).
 		Where("status = ? AND fixable_count > 0", vulnerability.ScanStatusCompleted).
 		Where("id IN (?)", s.db.Model(&vulnerability.VulnerabilityReportRecord{}).Select("image_id")).
 		Where("image_name NOT LIKE 'sha256:%' AND image_name NOT LIKE '%<none>%' AND image_name <> id").
-		Find(&scans).Error; loadFixableScansErr != nil {
-		return 0, 0, fmt.Errorf("failed to list vulnerability scans: %w", loadFixableScansErr)
+		Find(&scans).Error; scansErr != nil {
+		return nil, fmt.Errorf("failed to list vulnerability scans: %w", scansErr)
 	}
-
 	patchedRefs, err := s.PatchedRefs(ctx, envID)
 	if err != nil {
-		return 0, 0, err
+		return nil, err
 	}
 
+	targets := make([]Target, 0, len(scans))
 	for i := range scans {
-		if !s.settingsService.IsFeatureEnabled(ctx, features.VulnerabilityManagement) {
-			return patched, skipped + len(scans) - i, fmt.Errorf("remaining patches stopped because feature %s was disabled: %w", features.VulnerabilityManagement, common.ErrFeatureDisabled)
-		}
 		scan := &scans[i]
-
 		if _, isPatchOutput := patchedRefs[scan.ImageName]; isPatchOutput {
-			skipped++
 			continue
 		}
-
-		// Skip images already patched (or being patched) since their latest scan.
+		// Skip images already patched, or being patched, since their latest scan.
 		var recent int64
-		if countRecentPatchesErr := s.db.WithContext(ctx).
+		if countErr := s.db.WithContext(ctx).
 			Model(&ImagePatchRecord{}).
 			Where("environment_id = ? AND original_image_id = ? AND status IN ? AND created_at >= ?",
 				envID, scan.ID, []string{string(imagepatch.PatchStatusCompleted), string(imagepatch.PatchStatusPatching)}, scan.ScanTime).
-			Count(&recent).Error; countRecentPatchesErr == nil && recent > 0 {
-			skipped++
+			Count(&recent).Error; countErr == nil && recent > 0 {
 			continue
 		}
-
-		if _, patchImageErr := s.PatchImage(ctx, envID, scan.ID, imagepatch.PatchOptions{ScanID: scan.ID}, user); patchImageErr != nil {
-			slog.WarnContext(ctx, "scheduled image patch failed to start",
-				"imageId", scan.ID,
-				"imageName", scan.ImageName,
-				"error", patchImageErr,
-			)
-			skipped++
-			continue
-		}
-		patched++
+		targets = append(targets, Target{ImageID: scan.ID, ImageName: scan.ImageName})
 	}
-
-	return patched, skipped, nil
+	return targets, nil
 }
 
 // Copa needs BuildKit's docker exporter, which dockerd only offers with the containerd image store.
-func requireContainerdImageStoreInternal(ctx context.Context, dockerClient *client.Client) error {
+func requireContainerdImageStore(ctx context.Context, dockerClient *client.Client) error {
 	info, err := dockerClient.Info(ctx, client.InfoOptions{})
 	if err != nil {
 		return fmt.Errorf("failed to inspect Docker: %w", err)
@@ -785,28 +839,7 @@ func requireContainerdImageStoreInternal(ctx context.Context, dockerClient *clie
 	return common.ErrPatchRequiresContainerdImageStore
 }
 
-func (s *Service) startPatchActivityInternal(ctx context.Context, envID, imageID, imageRef string, user *usertypes.Actor) string {
-	if s.activityService == nil {
-		return ""
-	}
-	started, err := s.activityService.StartActivity(ctx, activity.StartActivityRequest{
-		EnvironmentID: envID,
-		Type:          activitytypes.TypeImagePatch,
-		ResourceType:  new("image"),
-		ResourceID:    &imageID,
-		ResourceName:  &imageRef,
-		StartedBy:     user,
-		Progress:      new(0),
-		LatestMessage: "Image patch queued",
-	})
-	if err != nil {
-		slog.WarnContext(ctx, "failed to create image patch activity", "error", err, "imageRef", imageRef)
-		return ""
-	}
-	return started.ID
-}
-
-func (s *Service) appendPatchActivityInternal(ctx context.Context, activityID string, progress int, message string) {
+func (s *Service) appendPatchActivity(ctx context.Context, activityID string, progress int, message string) {
 	if s.activityService == nil || activityID == "" {
 		return
 	}
@@ -819,7 +852,7 @@ func (s *Service) appendPatchActivityInternal(ctx context.Context, activityID st
 	}
 }
 
-func (s *Service) completePatchActivityInternal(ctx context.Context, activityID string, success bool, errMessage string) {
+func (s *Service) completePatchActivity(ctx context.Context, activityID string, success bool, errMessage string) {
 	if s.activityService == nil || activityID == "" {
 		return
 	}
@@ -827,18 +860,13 @@ func (s *Service) completePatchActivityInternal(ctx context.Context, activityID 
 	status := activitytypes.StatusSuccess
 	message := "Image patch completed"
 	var errorPtr *string
-	if !success {
-		if activitylib.CancelledByContext(ctx) {
-			status = activitytypes.StatusCancelled
-			message = "Image patch cancelled"
-		} else {
-			status = activitytypes.StatusFailed
-			message = "Image patch failed"
-			if strings.TrimSpace(errMessage) != "" {
-				errorPtr = &errMessage
-				message = errMessage
-			}
-		}
+	switch {
+	case success:
+	case activitylib.CancelledByContext(ctx):
+		status, message = activitytypes.StatusCancelled, "Image patch cancelled"
+	default:
+		status, message = activitytypes.StatusFailed, cmp.Or(errMessage, "Image patch failed")
+		errorPtr = mo.EmptyableToOption(errMessage).ToPointer()
 	}
 
 	if _, err := s.activityService.CompleteActivity(utils.ActivityRuntimeContext(ctx, nil), activityID, status, message, errorPtr); err != nil {

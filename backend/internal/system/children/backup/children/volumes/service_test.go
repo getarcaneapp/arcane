@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestSystemVolumeBackupSelectionInternal(t *testing.T) {
+func TestSystemVolumeBackupSelection(t *testing.T) {
 	options := []backup.SystemVolumeBackupOption{
 		{Name: "app", Available: true},
 		{Name: "cache", Available: true},
@@ -37,7 +37,7 @@ func TestSystemVolumeBackupSelectionInternal(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			selected := selectSystemVolumeBackupCandidatesInternal(tt.config, options)
+			selected := selectSystemVolumeBackupCandidates(tt.config, options)
 			names := make([]string, len(selected))
 			for i := range selected {
 				names[i] = selected[i].Name

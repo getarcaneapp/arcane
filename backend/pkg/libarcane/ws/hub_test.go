@@ -356,7 +356,7 @@ func TestHub_BroadcastOverloadAggregatesDropWarning(t *testing.T) {
 	logLines := strings.Split(strings.TrimSpace(logBuffer.String()), "\n")
 	require.Len(t, logLines, 1)
 	assert.Contains(t, logLines[0], "websocket hub broadcast buffer full; dropping messages")
-	assert.Contains(t, logLines[0], "dropped_count=1001")
+	assert.Contains(t, logLines[0], "droppedCount=1001")
 	assert.Zero(t, h.dropped.Load())
 
 	h.Broadcast([]byte("still overloaded"))

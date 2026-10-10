@@ -192,6 +192,7 @@ var commandRoutes = []commandRoute{
 	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/system/convert", CommandName: "system.convert"},
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/system/upgrade/check", CommandName: "system.upgrade.check"},
 	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/system/upgrade", CommandName: "system.upgrade.run"},
+	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/diagnostics/actors", CommandName: "diagnostics.actors"},
 
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/swarm/services", CommandName: "swarm.service.list"},
 	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/swarm/services", CommandName: "swarm.service.create"},

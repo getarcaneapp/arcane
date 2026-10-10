@@ -122,14 +122,7 @@ func (h *FederatedCredentialHandler) DeleteFederatedCredential(ctx context.Conte
 		return nil, federatedCredentialManagementErrorInternal(err)
 	}
 
-	return &handlerutil.Out[base.MessageResponse]{
-		Body: base.ApiResponse[base.MessageResponse]{
-			Success: true,
-			Data: base.MessageResponse{
-				Message: "Federated credential deleted successfully",
-			},
-		},
-	}, nil
+	return handlerutil.MessageOutput("Federated credential deleted successfully", ""), nil
 }
 
 func writeFederatedTokenExchangeErrorInternal(c *echo.Context, err error) error {

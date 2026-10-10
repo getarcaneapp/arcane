@@ -257,14 +257,7 @@ func (h *TemplateHandler) DeleteTemplate(ctx context.Context, input *DeleteTempl
 		return nil, huma.Error500InternalServerError("Failed to delete template: " + err.Error())
 	}
 
-	return &handlerutil.Out[base.MessageResponse]{
-		Body: base.ApiResponse[base.MessageResponse]{
-			Success: true,
-			Data: base.MessageResponse{
-				Message: "Template deleted successfully",
-			},
-		},
-	}, nil
+	return handlerutil.MessageOutput("Template deleted successfully", ""), nil
 }
 
 // DownloadTemplate downloads a remote template to local storage.
@@ -332,14 +325,7 @@ func (h *TemplateHandler) SaveDefaultTemplates(ctx context.Context, input *SaveD
 		return nil, huma.Error500InternalServerError("Failed to save default template: " + err.Error())
 	}
 
-	return &handlerutil.Out[base.MessageResponse]{
-		Body: base.ApiResponse[base.MessageResponse]{
-			Success: true,
-			Data: base.MessageResponse{
-				Message: "Default templates saved successfully",
-			},
-		},
-	}, nil
+	return handlerutil.MessageOutput("Default templates saved successfully", ""), nil
 }
 
 // GetRegistries returns all template registries.
@@ -416,14 +402,7 @@ func (h *TemplateHandler) UpdateRegistry(ctx context.Context, input *UpdateTempl
 		return nil, huma.Error500InternalServerError("Failed to update registry: " + err.Error())
 	}
 
-	return &handlerutil.Out[base.MessageResponse]{
-		Body: base.ApiResponse[base.MessageResponse]{
-			Success: true,
-			Data: base.MessageResponse{
-				Message: "Registry updated successfully",
-			},
-		},
-	}, nil
+	return handlerutil.MessageOutput("Registry updated successfully", ""), nil
 }
 
 // DeleteRegistry deletes a template registry.
@@ -439,14 +418,7 @@ func (h *TemplateHandler) DeleteRegistry(ctx context.Context, input *DeleteTempl
 		return nil, huma.Error500InternalServerError("Failed to delete registry: " + err.Error())
 	}
 
-	return &handlerutil.Out[base.MessageResponse]{
-		Body: base.ApiResponse[base.MessageResponse]{
-			Success: true,
-			Data: base.MessageResponse{
-				Message: "Registry deleted successfully",
-			},
-		},
-	}, nil
+	return handlerutil.MessageOutput("Registry deleted successfully", ""), nil
 }
 
 // FetchRegistry fetches templates from a remote registry URL.

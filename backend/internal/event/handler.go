@@ -121,12 +121,5 @@ func (h *EventHandler) DeleteEvent(ctx context.Context, input *DeleteEventInput)
 		return nil, huma.Error500InternalServerError("Failed to delete event: " + err.Error())
 	}
 
-	return &handlerutil.Out[base.MessageResponse]{
-		Body: base.ApiResponse[base.MessageResponse]{
-			Success: true,
-			Data: base.MessageResponse{
-				Message: "Event deleted successfully",
-			},
-		},
-	}, nil
+	return handlerutil.MessageOutput("Event deleted successfully", ""), nil
 }

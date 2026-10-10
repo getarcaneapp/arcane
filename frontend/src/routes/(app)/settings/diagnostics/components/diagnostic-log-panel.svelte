@@ -87,10 +87,6 @@
 
 <div class="overflow-hidden rounded-xl border border-border/60">
 	<div class="flex flex-wrap items-center gap-2 border-b border-border/60 bg-muted/30 px-3 py-2">
-		<span class="flex items-center gap-1.5 text-xs font-medium">
-			<span class={cn('size-2 rounded-full', connected ? 'bg-success' : 'bg-muted-foreground')}></span>
-			{connected ? m.diagnostics_logs_streaming() : m.disconnected()}
-		</span>
 		<span class="text-xs text-muted-foreground tabular-nums">{m.diagnostics_logs_count({ count: filtered.length })}</span>
 
 		<div class="ml-auto flex items-center gap-2">

@@ -1,26 +1,29 @@
 package edge
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"maps"
 	"math"
+	"slices"
 
 	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/proto/tunnel/v1"
 )
 
-// errUnknownTunnelPayload marks a proto payload this peer cannot decode, e.g.
-// a oneof case added by a newer peer. Receivers skip such messages instead of
-// killing the stream, mirroring how unknown JSON message types are ignored on
-// the websocket transport.
+// errUnknownTunnelPayload marks a proto payload this peer cannot decode, such as a oneof case
+// added by a newer peer. Receivers skip it, as unknown websocket message types are skipped.
 var errUnknownTunnelPayload = errors.New("unknown tunnel payload type")
 
-// tunnelMessageToManagerProto encodes a manager->agent message. parity is true
-// once the agent advertised tunnelCapabilityProtoParity; without it, legacy
-// agents receive stream_data re-encoded as ws_data and cannot receive stream_end.
+// tunnelMessageToManagerProto encodes a manager->agent message. Without parity, legacy agents
+// receive stream_data re-encoded as ws_data and cannot receive stream_end.
 func tunnelMessageToManagerProto(msg *TunnelMessage, parity bool) (*tunnelpb.ManagerMessage, error) {
 	if msg == nil {
 		return nil, errors.New("message is nil")
+	}
+	messageType, err := intToInt32(msg.WSMessageType, "ws_message_type")
+	if err != nil {
+		return nil, err
 	}
 
 	switch msg.Type {
@@ -30,7 +33,7 @@ func tunnelMessageToManagerProto(msg *TunnelMessage, parity bool) (*tunnelpb.Man
 			Method:    msg.Method,
 			Path:      msg.Path,
 			Query:     msg.Query,
-			Headers:   cloneHeaderMap(msg.Headers),
+			Headers:   maps.Clone(msg.Headers),
 			Body:      msg.Body,
 		}}}, nil
 	case MessageTypeHeartbeatAck:
@@ -40,24 +43,10 @@ func tunnelMessageToManagerProto(msg *TunnelMessage, parity bool) (*tunnelpb.Man
 			StreamId: msg.ID,
 			Path:     msg.Path,
 			Query:    msg.Query,
-			Headers:  cloneHeaderMap(msg.Headers),
+			Headers:  maps.Clone(msg.Headers),
 		}}}, nil
-	case MessageTypeWebSocketData:
-		messageType, err := intToInt32(msg.WSMessageType, "ws_message_type")
-		if err != nil {
-			return nil, err
-		}
-		return &tunnelpb.ManagerMessage{Payload: &tunnelpb.ManagerMessage_WsData{WsData: &tunnelpb.WebSocketData{
-			StreamId:    msg.ID,
-			Data:        msg.Body,
-			MessageType: messageType,
-		}}}, nil
-	case MessageTypeStreamData:
-		messageType, err := intToInt32(msg.WSMessageType, "ws_message_type")
-		if err != nil {
-			return nil, err
-		}
-		if parity {
+	case MessageTypeWebSocketData, MessageTypeStreamData:
+		if msg.Type == MessageTypeStreamData && parity {
 			return &tunnelpb.ManagerMessage{Payload: &tunnelpb.ManagerMessage_StreamData{StreamData: &tunnelpb.StreamData{
 				RequestId:   msg.ID,
 				Data:        msg.Body,
@@ -73,7 +62,6 @@ func tunnelMessageToManagerProto(msg *TunnelMessage, parity bool) (*tunnelpb.Man
 		if parity {
 			return &tunnelpb.ManagerMessage{Payload: &tunnelpb.ManagerMessage_StreamEnd{StreamEnd: &tunnelpb.StreamEnd{RequestId: msg.ID}}}, nil
 		}
-		return nil, fmt.Errorf("unsupported manager message type: %s", msg.Type)
 	case MessageTypeWebSocketClose:
 		return &tunnelpb.ManagerMessage{Payload: &tunnelpb.ManagerMessage_WsClose{WsClose: &tunnelpb.WebSocketClose{StreamId: msg.ID}}}, nil
 	case MessageTypeRegisterResponse:
@@ -84,7 +72,7 @@ func tunnelMessageToManagerProto(msg *TunnelMessage, parity bool) (*tunnelpb.Man
 			Error:         msg.Error,
 			SessionId:     msg.SessionID,
 			SecurityMode:  msg.SecurityMode,
-			Capabilities:  append([]string(nil), msg.Capabilities...),
+			Capabilities:  slices.Clone(msg.Capabilities),
 			DrainPrevious: msg.DrainPrevious,
 		}}}, nil
 	case MessageTypeCommandRequest:
@@ -94,12 +82,12 @@ func tunnelMessageToManagerProto(msg *TunnelMessage, parity bool) (*tunnelpb.Man
 			Method:          msg.Method,
 			Path:            msg.Path,
 			Query:           msg.Query,
-			Headers:         cloneHeaderMap(msg.Headers),
+			Headers:         maps.Clone(msg.Headers),
 			Body:            msg.Body,
 			TimeoutMillis:   msg.TimeoutMillis,
 			SessionId:       msg.SessionID,
 			AgentInstanceId: msg.AgentInstance,
-			Metadata:        cloneHeaderMap(msg.Metadata),
+			Metadata:        maps.Clone(msg.Metadata),
 		}}}, nil
 	case MessageTypeStreamOpen:
 		return &tunnelpb.ManagerMessage{Payload: &tunnelpb.ManagerMessage_StreamOpen{StreamOpen: &tunnelpb.StreamOpen{
@@ -107,7 +95,7 @@ func tunnelMessageToManagerProto(msg *TunnelMessage, parity bool) (*tunnelpb.Man
 			CommandName: msg.Command,
 			Path:        msg.Path,
 			Query:       msg.Query,
-			Headers:     cloneHeaderMap(msg.Headers),
+			Headers:     maps.Clone(msg.Headers),
 			SessionId:   msg.SessionID,
 		}}}, nil
 	case MessageTypeStreamClose:
@@ -119,25 +107,21 @@ func tunnelMessageToManagerProto(msg *TunnelMessage, parity bool) (*tunnelpb.Man
 		return &tunnelpb.ManagerMessage{Payload: &tunnelpb.ManagerMessage_CancelRequest{CancelRequest: &tunnelpb.CancelRequest{
 			CommandId: msg.ID,
 		}}}, nil
+	case MessageTypeCommandCredit:
+		return &tunnelpb.ManagerMessage{Payload: &tunnelpb.ManagerMessage_CommandCredit{CommandCredit: &tunnelpb.CommandCredit{
+			CommandId: msg.ID,
+			Bytes:     msg.Credit,
+		}}}, nil
 	case MessageTypeFileChunk:
 		return &tunnelpb.ManagerMessage{Payload: &tunnelpb.ManagerMessage_FileChunk{FileChunk: &tunnelpb.FileChunk{
 			TransferId: msg.ID,
 			Data:       msg.Body,
 			Sequence:   msg.Sequence,
 			Eof:        msg.EOF,
-			Metadata:   cloneHeaderMap(msg.Metadata),
+			Metadata:   maps.Clone(msg.Metadata),
 		}}}, nil
-	case MessageTypeResponse,
-		MessageTypeHeartbeat,
-		MessageTypeRegister,
-		MessageTypeEvent,
-		MessageTypeCommandAck,
-		MessageTypeCommandOutput,
-		MessageTypeCommandComplete:
-		return nil, fmt.Errorf("unsupported manager message type: %s", msg.Type)
-	default:
-		return nil, fmt.Errorf("unsupported manager message type: %s", msg.Type)
 	}
+	return nil, fmt.Errorf("unsupported manager message type: %s", msg.Type)
 }
 
 func managerProtoToTunnelMessage(msg *tunnelpb.ManagerMessage) (*TunnelMessage, error) {
@@ -153,7 +137,7 @@ func managerProtoToTunnelMessage(msg *tunnelpb.ManagerMessage) (*TunnelMessage, 
 			Method:  payload.HttpRequest.GetMethod(),
 			Path:    payload.HttpRequest.GetPath(),
 			Query:   payload.HttpRequest.GetQuery(),
-			Headers: cloneHeaderMap(payload.HttpRequest.GetHeaders()),
+			Headers: maps.Clone(payload.HttpRequest.GetHeaders()),
 			Body:    payload.HttpRequest.GetBody(),
 		}, nil
 	case *tunnelpb.ManagerMessage_HeartbeatPong:
@@ -164,15 +148,14 @@ func managerProtoToTunnelMessage(msg *tunnelpb.ManagerMessage) (*TunnelMessage, 
 			Type:    MessageTypeWebSocketStart,
 			Path:    payload.WsStart.GetPath(),
 			Query:   payload.WsStart.GetQuery(),
-			Headers: cloneHeaderMap(payload.WsStart.GetHeaders()),
+			Headers: maps.Clone(payload.WsStart.GetHeaders()),
 		}, nil
 	case *tunnelpb.ManagerMessage_WsData:
 		return &TunnelMessage{
 			ID:   payload.WsData.GetStreamId(),
 			Type: MessageTypeWebSocketData,
 			Body: payload.WsData.GetData(),
-			// WSMessageType carries RFC 6455 opcodes (text=1, binary=2) on the
-			// wire; a mixed-version fleet depends on these exact values.
+			// RFC 6455 opcodes (text=1, binary=2) on the wire; mixed-version fleets depend on them.
 			WSMessageType: int(payload.WsData.GetMessageType()),
 		}, nil
 	case *tunnelpb.ManagerMessage_WsClose:
@@ -186,7 +169,7 @@ func managerProtoToTunnelMessage(msg *tunnelpb.ManagerMessage) (*TunnelMessage, 
 			Error:         payload.RegisterResponse.GetError(),
 			SessionID:     payload.RegisterResponse.GetSessionId(),
 			SecurityMode:  payload.RegisterResponse.GetSecurityMode(),
-			Capabilities:  append([]string(nil), payload.RegisterResponse.GetCapabilities()...),
+			Capabilities:  slices.Clone(payload.RegisterResponse.GetCapabilities()),
 			DrainPrevious: payload.RegisterResponse.GetDrainPrevious(),
 		}, nil
 	case *tunnelpb.ManagerMessage_CommandRequest:
@@ -197,12 +180,12 @@ func managerProtoToTunnelMessage(msg *tunnelpb.ManagerMessage) (*TunnelMessage, 
 			Method:        payload.CommandRequest.GetMethod(),
 			Path:          payload.CommandRequest.GetPath(),
 			Query:         payload.CommandRequest.GetQuery(),
-			Headers:       cloneHeaderMap(payload.CommandRequest.GetHeaders()),
+			Headers:       maps.Clone(payload.CommandRequest.GetHeaders()),
 			Body:          payload.CommandRequest.GetBody(),
 			TimeoutMillis: payload.CommandRequest.GetTimeoutMillis(),
 			SessionID:     payload.CommandRequest.GetSessionId(),
 			AgentInstance: payload.CommandRequest.GetAgentInstanceId(),
-			Metadata:      cloneHeaderMap(payload.CommandRequest.GetMetadata()),
+			Metadata:      maps.Clone(payload.CommandRequest.GetMetadata()),
 		}, nil
 	case *tunnelpb.ManagerMessage_StreamOpen:
 		return &TunnelMessage{
@@ -211,7 +194,7 @@ func managerProtoToTunnelMessage(msg *tunnelpb.ManagerMessage) (*TunnelMessage, 
 			Command:   payload.StreamOpen.GetCommandName(),
 			Path:      payload.StreamOpen.GetPath(),
 			Query:     payload.StreamOpen.GetQuery(),
-			Headers:   cloneHeaderMap(payload.StreamOpen.GetHeaders()),
+			Headers:   maps.Clone(payload.StreamOpen.GetHeaders()),
 			SessionID: payload.StreamOpen.GetSessionId(),
 		}, nil
 	case *tunnelpb.ManagerMessage_StreamClose:
@@ -232,7 +215,7 @@ func managerProtoToTunnelMessage(msg *tunnelpb.ManagerMessage) (*TunnelMessage, 
 			Body:     payload.FileChunk.GetData(),
 			Sequence: payload.FileChunk.GetSequence(),
 			EOF:      payload.FileChunk.GetEof(),
-			Metadata: cloneHeaderMap(payload.FileChunk.GetMetadata()),
+			Metadata: maps.Clone(payload.FileChunk.GetMetadata()),
 		}, nil
 	case *tunnelpb.ManagerMessage_StreamData:
 		return &TunnelMessage{
@@ -243,6 +226,8 @@ func managerProtoToTunnelMessage(msg *tunnelpb.ManagerMessage) (*TunnelMessage, 
 		}, nil
 	case *tunnelpb.ManagerMessage_StreamEnd:
 		return &TunnelMessage{ID: payload.StreamEnd.GetRequestId(), Type: MessageTypeStreamEnd}, nil
+	case *tunnelpb.ManagerMessage_CommandCredit:
+		return &TunnelMessage{ID: payload.CommandCredit.GetCommandId(), Type: MessageTypeCommandCredit, Credit: payload.CommandCredit.GetBytes()}, nil
 	default:
 		return nil, fmt.Errorf("manager payload %T: %w", payload, errUnknownTunnelPayload)
 	}
@@ -252,26 +237,26 @@ func tunnelMessageToAgentProto(msg *TunnelMessage) (*tunnelpb.AgentMessage, erro
 	if msg == nil {
 		return nil, errors.New("message is nil")
 	}
+	status, err := intToInt32(msg.Status, "status")
+	if err != nil {
+		return nil, err
+	}
+	messageType, err := intToInt32(msg.WSMessageType, "ws_message_type")
+	if err != nil {
+		return nil, err
+	}
 
 	switch msg.Type {
 	case MessageTypeResponse:
-		status, err := intToInt32(msg.Status, "status")
-		if err != nil {
-			return nil, err
-		}
 		return &tunnelpb.AgentMessage{Payload: &tunnelpb.AgentMessage_HttpResponse{HttpResponse: &tunnelpb.HttpResponse{
 			RequestId: msg.ID,
 			Status:    status,
-			Headers:   cloneHeaderMap(msg.Headers),
+			Headers:   maps.Clone(msg.Headers),
 			Body:      msg.Body,
 		}}}, nil
 	case MessageTypeHeartbeat:
 		return &tunnelpb.AgentMessage{Payload: &tunnelpb.AgentMessage_HeartbeatPing{HeartbeatPing: &tunnelpb.HeartbeatPing{Id: msg.ID}}}, nil
 	case MessageTypeWebSocketData:
-		messageType, err := intToInt32(msg.WSMessageType, "ws_message_type")
-		if err != nil {
-			return nil, err
-		}
 		return &tunnelpb.AgentMessage{Payload: &tunnelpb.AgentMessage_WsData{WsData: &tunnelpb.WebSocketData{
 			StreamId:    msg.ID,
 			Data:        msg.Body,
@@ -280,10 +265,6 @@ func tunnelMessageToAgentProto(msg *TunnelMessage) (*tunnelpb.AgentMessage, erro
 	case MessageTypeWebSocketClose:
 		return &tunnelpb.AgentMessage{Payload: &tunnelpb.AgentMessage_WsClose{WsClose: &tunnelpb.WebSocketClose{StreamId: msg.ID}}}, nil
 	case MessageTypeStreamData:
-		messageType, err := intToInt32(msg.WSMessageType, "ws_message_type")
-		if err != nil {
-			return nil, err
-		}
 		return &tunnelpb.AgentMessage{Payload: &tunnelpb.AgentMessage_StreamData{StreamData: &tunnelpb.StreamData{
 			RequestId:   msg.ID,
 			Data:        msg.Body,
@@ -295,7 +276,7 @@ func tunnelMessageToAgentProto(msg *TunnelMessage) (*tunnelpb.AgentMessage, erro
 		return &tunnelpb.AgentMessage{Payload: &tunnelpb.AgentMessage_Register{Register: &tunnelpb.RegisterRequest{
 			AgentToken:      msg.AgentToken,
 			AgentInstanceId: msg.AgentInstance,
-			Capabilities:    append([]string(nil), msg.Capabilities...),
+			Capabilities:    slices.Clone(msg.Capabilities),
 			ResumeSessionId: msg.ResumeSession,
 		}}}, nil
 	case MessageTypeEvent:
@@ -313,7 +294,7 @@ func tunnelMessageToAgentProto(msg *TunnelMessage) (*tunnelpb.AgentMessage, erro
 			ResourceName: msg.Event.ResourceName,
 			UserId:       msg.Event.UserID,
 			Username:     msg.Event.Username,
-			MetadataJson: append([]byte(nil), msg.Event.MetadataJSON...),
+			MetadataJson: bytes.Clone(msg.Event.MetadataJSON),
 		}}}, nil
 	case MessageTypeCommandAck:
 		return &tunnelpb.AgentMessage{Payload: &tunnelpb.AgentMessage_CommandAck{CommandAck: &tunnelpb.CommandAck{
@@ -324,16 +305,14 @@ func tunnelMessageToAgentProto(msg *TunnelMessage) (*tunnelpb.AgentMessage, erro
 			CommandId: msg.ID,
 			Data:      msg.Body,
 			Sequence:  msg.Sequence,
+			Status:    status,
+			Headers:   maps.Clone(msg.Headers),
 		}}}, nil
 	case MessageTypeCommandComplete:
-		status, err := intToInt32(msg.Status, "status")
-		if err != nil {
-			return nil, err
-		}
 		return &tunnelpb.AgentMessage{Payload: &tunnelpb.AgentMessage_CommandComplete{CommandComplete: &tunnelpb.CommandComplete{
 			CommandId: msg.ID,
 			Status:    status,
-			Headers:   cloneHeaderMap(msg.Headers),
+			Headers:   maps.Clone(msg.Headers),
 			Body:      msg.Body,
 			Error:     msg.Error,
 			Streaming: msg.Streaming,
@@ -344,7 +323,7 @@ func tunnelMessageToAgentProto(msg *TunnelMessage) (*tunnelpb.AgentMessage, erro
 			Data:       msg.Body,
 			Sequence:   msg.Sequence,
 			Eof:        msg.EOF,
-			Metadata:   cloneHeaderMap(msg.Metadata),
+			Metadata:   maps.Clone(msg.Metadata),
 		}}}, nil
 	case MessageTypeStreamClose:
 		return &tunnelpb.AgentMessage{Payload: &tunnelpb.AgentMessage_StreamClose{StreamClose: &tunnelpb.StreamClose{
@@ -357,16 +336,8 @@ func tunnelMessageToAgentProto(msg *TunnelMessage) (*tunnelpb.AgentMessage, erro
 		return &tunnelpb.AgentMessage{Payload: &tunnelpb.AgentMessage_CancelRequest{CancelRequest: &tunnelpb.CancelRequest{
 			CommandId: msg.ID,
 		}}}, nil
-	case MessageTypeRequest,
-		MessageTypeHeartbeatAck,
-		MessageTypeWebSocketStart,
-		MessageTypeRegisterResponse,
-		MessageTypeCommandRequest,
-		MessageTypeStreamOpen:
-		return nil, fmt.Errorf("unsupported agent message type: %s", msg.Type)
-	default:
-		return nil, fmt.Errorf("unsupported agent message type: %s", msg.Type)
 	}
+	return nil, fmt.Errorf("unsupported agent message type: %s", msg.Type)
 }
 
 func agentProtoToTunnelMessage(msg *tunnelpb.AgentMessage) (*TunnelMessage, error) {
@@ -380,7 +351,7 @@ func agentProtoToTunnelMessage(msg *tunnelpb.AgentMessage) (*TunnelMessage, erro
 			ID:      payload.HttpResponse.GetRequestId(),
 			Type:    MessageTypeResponse,
 			Status:  int(payload.HttpResponse.GetStatus()),
-			Headers: cloneHeaderMap(payload.HttpResponse.GetHeaders()),
+			Headers: maps.Clone(payload.HttpResponse.GetHeaders()),
 			Body:    payload.HttpResponse.GetBody(),
 		}, nil
 	case *tunnelpb.AgentMessage_HeartbeatPing:
@@ -408,7 +379,7 @@ func agentProtoToTunnelMessage(msg *tunnelpb.AgentMessage) (*TunnelMessage, erro
 			Type:          MessageTypeRegister,
 			AgentToken:    payload.Register.GetAgentToken(),
 			AgentInstance: payload.Register.GetAgentInstanceId(),
-			Capabilities:  append([]string(nil), payload.Register.GetCapabilities()...),
+			Capabilities:  slices.Clone(payload.Register.GetCapabilities()),
 			ResumeSession: payload.Register.GetResumeSessionId(),
 		}, nil
 	case *tunnelpb.AgentMessage_Event:
@@ -425,7 +396,7 @@ func agentProtoToTunnelMessage(msg *tunnelpb.AgentMessage) (*TunnelMessage, erro
 				ResourceName: payload.Event.GetResourceName(),
 				UserID:       payload.Event.GetUserId(),
 				Username:     payload.Event.GetUsername(),
-				MetadataJSON: append([]byte(nil), payload.Event.GetMetadataJson()...),
+				MetadataJSON: bytes.Clone(payload.Event.GetMetadataJson()),
 			},
 		}, nil
 	case *tunnelpb.AgentMessage_CommandAck:
@@ -436,13 +407,15 @@ func agentProtoToTunnelMessage(msg *tunnelpb.AgentMessage) (*TunnelMessage, erro
 			Type:     MessageTypeCommandOutput,
 			Body:     payload.CommandOutput.GetData(),
 			Sequence: payload.CommandOutput.GetSequence(),
+			Status:   int(payload.CommandOutput.GetStatus()),
+			Headers:  maps.Clone(payload.CommandOutput.GetHeaders()),
 		}, nil
 	case *tunnelpb.AgentMessage_CommandComplete:
 		return &TunnelMessage{
 			ID:        payload.CommandComplete.GetCommandId(),
 			Type:      MessageTypeCommandComplete,
 			Status:    int(payload.CommandComplete.GetStatus()),
-			Headers:   cloneHeaderMap(payload.CommandComplete.GetHeaders()),
+			Headers:   maps.Clone(payload.CommandComplete.GetHeaders()),
 			Body:      payload.CommandComplete.GetBody(),
 			Error:     payload.CommandComplete.GetError(),
 			Streaming: payload.CommandComplete.GetStreaming(),
@@ -454,7 +427,7 @@ func agentProtoToTunnelMessage(msg *tunnelpb.AgentMessage) (*TunnelMessage, erro
 			Body:     payload.FileChunk.GetData(),
 			Sequence: payload.FileChunk.GetSequence(),
 			EOF:      payload.FileChunk.GetEof(),
-			Metadata: cloneHeaderMap(payload.FileChunk.GetMetadata()),
+			Metadata: maps.Clone(payload.FileChunk.GetMetadata()),
 		}, nil
 	case *tunnelpb.AgentMessage_StreamClose:
 		return &TunnelMessage{
@@ -470,15 +443,6 @@ func agentProtoToTunnelMessage(msg *tunnelpb.AgentMessage) (*TunnelMessage, erro
 	default:
 		return nil, fmt.Errorf("agent payload %T: %w", payload, errUnknownTunnelPayload)
 	}
-}
-
-func cloneHeaderMap(in map[string]string) map[string]string {
-	if len(in) == 0 {
-		return nil
-	}
-	out := make(map[string]string, len(in))
-	maps.Copy(out, in)
-	return out
 }
 
 func intToInt32(value int, field string) (int32, error) {

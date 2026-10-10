@@ -69,7 +69,9 @@ export type Settings = {
 	gitSyncMaxBinarySizeMb: number;
 	baseServerUrl: string;
 	enableGravatar: boolean;
+	enableGravatarEnvForced?: boolean;
 	experimentalFeaturesEnabled: boolean;
+	developmentBrandingEnabled: boolean;
 	apnsEnabled?: boolean;
 	avatarMaxUploadSizeMb: number;
 	uiConfigDisabled: boolean;
@@ -78,6 +80,9 @@ export type Settings = {
 	autoInjectEnv: boolean;
 	backupVolumeName?: string;
 	edgeMTLSManagerCAAvailable?: boolean;
+	frontendTracingEnabled?: boolean;
+	frontendMetricsEnabled?: boolean;
+	frontendLogsEnabled?: boolean;
 
 	authLocalEnabled: boolean;
 	authSessionTimeout: number;

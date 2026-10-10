@@ -5,7 +5,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"hash/maphash"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/url"
 	"slices"
@@ -25,6 +27,9 @@ import (
 	"go.getarcane.app/kit/pkg"
 	"go.getarcane.app/kit/pkg/mapping"
 	"go.getarcane.app/sys/crypto"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 	"gorm.io/gorm"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
@@ -47,36 +52,28 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/tracing"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/validation"
 )
 
 type EnvironmentService struct {
 	db               *database.DB
-	httpClient       *http.Client
-	dockerService    *docker.DockerClientService
 	eventService     *event.EventService
 	settingsService  *settings.SettingsService
-	edgeTokens       *edgeTokenCacheInternal
-	remoteEnvs       *remoteEnvSnapshotCacheInternal
-	environmentCache *hot.HotCache[environmentCacheKeyInternal, Environment]
+	edgeTokens       *edgeTokenCache
+	remoteEnvs       *remoteEnvSnapshotCache
+	environmentCache *hot.HotCache[environmentCacheKey, Environment]
 	environmentGens  [environmentCacheStripes]atomic.Uint64
 
-	// jobs carries the scheduler and app lifecycle context, injected
-	// post-construction via SetScheduler (manager-only). Each enabled environment
-	// gets its own health-check job; this replaces the single global
-	// environment-health job.
+	// jobs holds one health-check job per enabled environment; SetScheduler wires it on the manager.
 	jobs *entityjobs.Registry
 
-	// variableSyncer is injected post-construction via SetVariableSyncer
-	// (manager-only) to avoid a wire cycle with variable.VariableService.
+	// variableSyncer is set by SetVariableSyncer on the manager to avoid a wire cycle.
 	variableSyncer VariableSyncer
 
-	// runtimeWatchers receive a coalesced wake-up whenever an environment's
-	// liveness changes. See environment_runtime_notify.go.
-	runtimeWatchers runtimeWatchersInternal
+	runtimeWatchers runtimeWatchers
 
-	// syncGate skips the periodic registry/S3/repository pushes to an agent
-	// while the payload it last accepted is unchanged.
+	// syncGate skips agent config pushes while the last accepted payload is unchanged.
 	syncGate utils.SyncGate
 
 	proxy    *proxy.Service
@@ -87,12 +84,11 @@ type EnvironmentService struct {
 
 const (
 	// LocalEnvironmentID is the reserved ID of the environment Arcane manages directly.
-	LocalEnvironmentID                   = "0"
-	localEnvironmentFallbackNameInternal = "Local"
+	LocalEnvironmentID           = "0"
+	localEnvironmentFallbackName = "Local"
 
-	// SyncDeliveryExpiry bounds how long an accepted config push is trusted. An
-	// agent rebuilt with a fresh data volume while its status stayed online gets
-	// everything again within this window without operator action.
+	// SyncDeliveryExpiry bounds how long an accepted config push is trusted, so a
+	// rebuilt agent that stayed online is resynced without operator action.
 	SyncDeliveryExpiry = time.Hour
 )
 
@@ -103,14 +99,12 @@ var (
 )
 
 // VariableSyncer pushes the effective global-variable set to one environment.
-// Implemented by variable.VariableService.
 type VariableSyncer interface {
 	SyncEnvironment(ctx context.Context, envID string) error
 	ForgetSyncState(envID string)
 }
 
-// ForgetSyncState makes the next sync of every resource group resend to the
-// environment regardless of whether the payload changed.
+// ForgetSyncState makes the next sync of every resource group resend regardless of payload changes.
 func (s *EnvironmentService) ForgetSyncState(environmentID string) {
 	s.syncGate.Forget(environmentID)
 	if s.variableSyncer != nil {
@@ -130,26 +124,74 @@ func NewEnvironmentService(
 		httpClient = http.DefaultClient
 	}
 	s := &EnvironmentService{
-		syncGate:         utils.SyncGate{Expiry: SyncDeliveryExpiry},
-		db:               db,
-		httpClient:       httpClient,
-		dockerService:    dockerService,
-		eventService:     eventService,
-		settingsService:  settingsService,
-		edgeTokens:       newEdgeTokenCacheInternal(),
-		remoteEnvs:       newRemoteEnvSnapshotCacheInternal(),
-		environmentCache: newEnvironmentCacheInternal(),
-		jobs:             entityjobs.New(environmentHealthJobPrefix, environmentHealthAdmissionScopeInternal),
-		health:           health.New(httpClient, dockerService),
-		snippets:         snippets.New(eventService),
-		swarm:            swarm.New(apiKeyService),
+		syncGate:        utils.SyncGate{Expiry: SyncDeliveryExpiry},
+		db:              db,
+		eventService:    eventService,
+		settingsService: settingsService,
+		edgeTokens: &edgeTokenCache{
+			byToken: hot.NewHotCache[string, string](hot.LRU, 1024).WithTTL(edgeTokenCacheTTL).WithJanitor().Build(),
+			byEnvID: make(map[string]string),
+		},
+		remoteEnvs: &remoteEnvSnapshotCache{envs: make(map[string]Environment)},
+		// Caches records by ID, including misses, for hot paths that read only CRUD-managed fields.
+		environmentCache: hot.NewHotCache[environmentCacheKey, Environment](hot.LRU, 256).
+			WithTTL(environmentCacheTTL).
+			WithMissingSharedCache().
+			WithJanitor().
+			Build(),
+		jobs:     entityjobs.New(environmentHealthJobPrefix, environmentHealthAdmissionScope),
+		health:   health.New(httpClient, dockerService),
+		snippets: snippets.New(eventService),
+		swarm:    swarm.New(apiKeyService),
 	}
 	s.proxy = proxy.New(db, httpClient, settingsService, &s.syncGate)
+
 	return s
 }
 
-// SetVariableSyncer injects the global-variable syncer. Called during
-// bootstrap on the manager only; agents leave it nil.
+// RegisterMetrics reports the arcane.environments gauge; only the manager calls it.
+func (s *EnvironmentService) RegisterMetrics() {
+	meter := otel.Meter(tracing.InstrumentationName)
+	statusGauge, err := meter.Int64ObservableGauge("arcane.environments",
+		metric.WithDescription("Visible environments by persisted status"),
+		metric.WithUnit("{environment}"),
+	)
+	if err == nil {
+		_, err = meter.RegisterCallback(func(ctx context.Context, o metric.Observer) error {
+			var rows []struct {
+				Status string
+				Count  int64
+			}
+			if scanErr := s.db.WithContext(ctx).Model(&Environment{}).
+				Select("status, COUNT(*) AS count").
+				Where("hidden = ?", false).
+				Group("status").
+				Scan(&rows).Error; scanErr != nil {
+				return fmt.Errorf("failed to count environments by status: %w", scanErr)
+			}
+			// Known statuses report zero so their series drop instead of going stale.
+			counts := map[string]int64{
+				string(EnvironmentStatusOnline):  0,
+				string(EnvironmentStatusStandby): 0,
+				string(EnvironmentStatusOffline): 0,
+				string(EnvironmentStatusError):   0,
+				string(EnvironmentStatusPending): 0,
+			}
+			for _, row := range rows {
+				counts[row.Status] += row.Count
+			}
+			for status, count := range counts {
+				o.ObserveInt64(statusGauge, count, metric.WithAttributes(attribute.String("status", status)))
+			}
+			return nil
+		}, statusGauge)
+	}
+	if err != nil {
+		otel.Handle(err)
+	}
+}
+
+// SetVariableSyncer injects the global-variable syncer on the manager; agents leave it nil.
 func (s *EnvironmentService) SetVariableSyncer(syncer VariableSyncer) {
 	s.variableSyncer = syncer
 }
@@ -171,7 +213,7 @@ func (s *EnvironmentService) ResolveEdgeEnvironmentByToken(ctx context.Context, 
 		Where("access_token = ?", token).
 		First(&env).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			s.logEdgeTokenResolveMissInternal(ctx, token)
+			s.logEdgeTokenResolveMiss(ctx, token)
 			return "", errors.New("invalid agent token")
 		}
 		return "", fmt.Errorf("failed to resolve edge environment by token: %w", err)
@@ -181,16 +223,9 @@ func (s *EnvironmentService) ResolveEdgeEnvironmentByToken(ctx context.Context, 
 	return env.ID, nil
 }
 
-// logEdgeTokenResolveMissInternal emits a debug log diagnosing why an agent
-// token failed to resolve to an edge environment. Counts existing edge
-// environments (by access_token presence) so operators can distinguish
-// "no edge envs configured" from "token does not match any configured env".
-// Token contents are never logged in full — only length and a short
-// fingerprint that cannot be reversed.
-func (s *EnvironmentService) logEdgeTokenResolveMissInternal(ctx context.Context, token string) {
-	if s == nil || s.db == nil {
-		return
-	}
+// logEdgeTokenResolveMiss logs edge environment counts at debug level so a token
+// miss can be diagnosed; only the token's length and irreversible fingerprint are logged.
+func (s *EnvironmentService) logEdgeTokenResolveMiss(ctx context.Context, token string) {
 	if !slog.Default().Enabled(ctx, slog.LevelDebug) {
 		return
 	}
@@ -217,9 +252,8 @@ func (s *EnvironmentService) logEdgeTokenResolveMissInternal(ctx context.Context
 	slog.DebugContext(ctx, "Edge agent token did not match any environment", args...)
 }
 
-// ResolveEnvironmentName looks up an environment and returns the label to show for it.
-// Use this instead of hardcoding a name for a known ID: names are user-editable, so
-// even the local environment's is not fixed.
+// ResolveEnvironmentName returns an environment's display label; names are
+// user-editable, so never hardcode one for a known ID.
 func (s *EnvironmentService) ResolveEnvironmentName(ctx context.Context, environmentID string) string {
 	if strings.TrimSpace(environmentID) == "" {
 		environmentID = LocalEnvironmentID
@@ -227,7 +261,7 @@ func (s *EnvironmentService) ResolveEnvironmentName(ctx context.Context, environ
 	env, err := s.GetEnvironmentByIDCached(ctx, environmentID)
 	if err != nil || env == nil {
 		if !errors.Is(err, context.Canceled) {
-			slog.WarnContext(ctx, "failed to resolve environment name", "environmentID", environmentID, "error", err)
+			slog.WarnContext(ctx, "failed to resolve environment name", "environmentId", environmentID, "error", err)
 		}
 		return DisplayName(environmentID, "")
 	}
@@ -239,12 +273,11 @@ func (s *EnvironmentService) EnsureLocalEnvironment(ctx context.Context, appUrl 
 	err := s.db.WithContext(ctx).Where("id = ?", LocalEnvironmentID).First(&existingEnv).Error
 
 	if err == nil {
-		// Local environment already exists, ensure ApiUrl matches current appUrl
 		if existingEnv.ApiUrl != appUrl {
 			if updateLocalURLErr := s.db.WithContext(ctx).Model(&existingEnv).Update("api_url", appUrl).Error; updateLocalURLErr != nil {
 				return fmt.Errorf("failed to update local environment api url: %w", updateLocalURLErr)
 			}
-			s.invalidateEnvironmentCacheInternal(LocalEnvironmentID)
+			s.invalidateEnvironmentCache(LocalEnvironmentID)
 			slog.InfoContext(ctx, "updated local environment api url", "id", LocalEnvironmentID, "url", appUrl)
 		}
 		return nil
@@ -254,7 +287,6 @@ func (s *EnvironmentService) EnsureLocalEnvironment(ctx context.Context, appUrl 
 		return fmt.Errorf("failed to check for local environment: %w", err)
 	}
 
-	// Create the local environment
 	now := time.Now()
 	localEnv := &Environment{
 		ID:        LocalEnvironmentID,
@@ -269,7 +301,7 @@ func (s *EnvironmentService) EnsureLocalEnvironment(ctx context.Context, appUrl 
 	if createLocalEnvironmentErr := s.db.WithContext(ctx).Create(localEnv).Error; createLocalEnvironmentErr != nil {
 		return fmt.Errorf("failed to create local environment: %w", createLocalEnvironmentErr)
 	}
-	s.invalidateEnvironmentCacheInternal(LocalEnvironmentID)
+	s.invalidateEnvironmentCache(LocalEnvironmentID)
 
 	slog.InfoContext(ctx, "created local environment record", "id", LocalEnvironmentID)
 	return nil
@@ -294,29 +326,14 @@ func (s *EnvironmentService) CreateEnvironment(ctx context.Context, env *Environ
 		return nil, fmt.Errorf("failed to create environment: %w", err)
 	}
 
-	// Create event in background
-	go s.createEnvironmentEvent(
-		context.WithoutCancel(
-			ctx,
-		),
-		env.ID,
-		env.Name,
-		event.EventTypeEnvironmentCreate,
-		"Environment Created",
-		fmt.Sprintf(
-			"Environment '%s' was created",
-			env.Name,
-		),
-		event.EventSeveritySuccess,
-		userID,
-		username,
-	)
+	go s.createEnvironmentEvent(context.WithoutCancel(ctx), env.ID, env.Name, event.EventTypeEnvironmentCreate,
+		"Environment Created", fmt.Sprintf("Environment '%s' was created", env.Name), event.EventSeveritySuccess, userID, username)
 
 	if env.Enabled {
-		s.registerHealthJobInternal(ctx, env.ID)
+		s.registerHealthJob(ctx, env.ID)
 	}
 	s.remoteEnvs.put(*env)
-	s.invalidateEnvironmentCacheInternal(env.ID)
+	s.invalidateEnvironmentCache(env.ID)
 	s.NotifyRuntimeStateChanged()
 
 	return env, nil
@@ -371,7 +388,7 @@ func (s *EnvironmentService) UpdateEnvironment(ctx context.Context, id string, u
 	if updateEnvironmentErr := s.db.WithContext(ctx).Model(&Environment{}).Where("id = ?", id).Updates(updates).Error; updateEnvironmentErr != nil {
 		return nil, fmt.Errorf("failed to update environment: %w", updateEnvironmentErr)
 	}
-	s.invalidateEnvironmentCacheInternal(id)
+	s.invalidateEnvironmentCache(id)
 	s.NotifyRuntimeStateChanged()
 
 	updated, err := s.GetEnvironmentByID(ctx, id)
@@ -389,45 +406,29 @@ func (s *EnvironmentService) UpdateEnvironment(ctx context.Context, id string, u
 	if rawEnabled, ok := updates["enabled"]; ok {
 		if enabled, isBool := rawEnabled.(bool); isBool {
 			if enabled {
-				s.registerHealthJobInternal(ctx, id)
+				s.registerHealthJob(ctx, id)
 			} else {
-				s.removeHealthJobInternal(ctx, id)
+				s.jobs.Unregister(ctx, id)
 			}
 		}
 	}
 
-	// Create event in background (skip for local environment)
-	if id != "0" {
-		go s.createEnvironmentEvent(
-			context.WithoutCancel(
-				ctx,
-			),
-			id,
-			updated.Name,
-			event.EventTypeEnvironmentUpdate,
-			"Environment Updated",
-			fmt.Sprintf(
-				"Environment '%s' was updated",
-				updated.Name,
-			),
-			event.EventSeverityInfo,
-			userID,
-			username,
-		)
+	if id != LocalEnvironmentID {
+		go s.createEnvironmentEvent(context.WithoutCancel(ctx), id, updated.Name, event.EventTypeEnvironmentUpdate,
+			"Environment Updated", fmt.Sprintf("Environment '%s' was updated", updated.Name), event.EventSeverityInfo, userID, username)
 	}
 
 	return updated, nil
 }
 
 func (s *EnvironmentService) DeleteEnvironment(ctx context.Context, id string, userID, username *string) error {
-	// Get environment details before deletion
 	env, err := s.GetEnvironmentByID(ctx, id)
 	if err != nil {
 		return err
 	}
 
 	// Stop the per-environment health job before the row is removed.
-	s.removeHealthJobInternal(ctx, id)
+	s.jobs.Unregister(ctx, id)
 
 	var syncIDs []string
 	if transactionErr := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -453,13 +454,12 @@ func (s *EnvironmentService) DeleteEnvironment(ctx context.Context, id string, u
 		return nil
 	}); transactionErr != nil {
 		if env.Enabled {
-			s.registerHealthJobInternal(ctx, env.ID)
+			s.registerHealthJob(ctx, env.ID)
 		}
 		return transactionErr
 	}
 
-	// Deleting an environment orphans its GitOps syncs, whose jobs belong to
-	// gitops.GitOpsSyncService's own registry — remove them by name here.
+	// The deleted GitOps syncs' jobs live in the gitops registry, so remove them by name.
 	if jobScheduler := s.jobs.Scheduler(); jobScheduler != nil {
 		schedulerCtx := s.jobs.Context(ctx)
 		for _, syncID := range syncIDs {
@@ -470,33 +470,16 @@ func (s *EnvironmentService) DeleteEnvironment(ctx context.Context, id string, u
 	s.edgeTokens.invalidate(id)
 	s.ForgetSyncState(id)
 	s.remoteEnvs.remove(id)
-	s.invalidateEnvironmentCacheInternal(id)
+	s.invalidateEnvironmentCache(id)
 	s.NotifyRuntimeStateChanged()
 
-	// Create event in background
-	go s.createEnvironmentEvent(
-		context.WithoutCancel(
-			ctx,
-		),
-		id,
-		env.Name,
-		event.EventTypeEnvironmentDelete,
-		"Environment Deleted",
-		fmt.Sprintf(
-			"Environment '%s' was deleted",
-			env.Name,
-		),
-		event.EventSeverityWarning,
-		userID,
-		username,
-	)
+	go s.createEnvironmentEvent(context.WithoutCancel(ctx), id, env.Name, event.EventTypeEnvironmentDelete,
+		"Environment Deleted", fmt.Sprintf("Environment '%s' was deleted", env.Name), event.EventSeverityWarning, userID, username)
 
 	return nil
 }
 
-func (
-	s *EnvironmentService,
-) createEnvironmentEvent(
+func (s *EnvironmentService) createEnvironmentEvent(
 	ctx context.Context,
 	envID, envName string,
 	eventType event.EventType,
@@ -504,7 +487,7 @@ func (
 	severity event.EventSeverity,
 	userID, username *string,
 ) {
-	if s == nil || s.eventService == nil {
+	if s.eventService == nil {
 		return
 	}
 
@@ -534,17 +517,14 @@ func (s *EnvironmentService) RegenerateEnvironmentApiKey(ctx context.Context, en
 }
 
 func (s *EnvironmentService) linkEnvironmentApiKey(ctx context.Context, envID, newApiKeyID, apiKey, userID, username, envName string) error {
-	// Trim once at the boundary so the value persisted, the value cached,
-	// and the value returned by callers (which already TrimSpace before
-	// returning) all stay byte-identical. Any divergence here would surface
-	// as a 401 "invalid agent token" because lookup is direct equality.
+	// Persisted, cached, and returned keys must stay byte-identical: token lookup is direct equality.
 	apiKey = strings.TrimSpace(apiKey)
 
 	updates := map[string]any{
 		"api_key_id":   newApiKeyID,
 		"access_token": apiKey,
 		"status":       string(EnvironmentStatusPending),
-		"last_seen":    nil, // Clear last seen time
+		"last_seen":    nil,
 	}
 
 	result := s.db.WithContext(ctx).Model(&Environment{}).Where("id = ?", envID).Updates(updates)
@@ -552,11 +532,10 @@ func (s *EnvironmentService) linkEnvironmentApiKey(ctx context.Context, envID, n
 		return fmt.Errorf("failed to update environment with new API key: %w", result.Error)
 	}
 	if result.RowsAffected == 0 {
-		// A zero-row update would otherwise report a successful rotation while
-		// the new key was never linked to anything.
+		// Otherwise a rotation would succeed without linking the new key.
 		return ErrEnvironmentNotFound
 	}
-	s.invalidateEnvironmentCacheInternal(envID)
+	s.invalidateEnvironmentCache(envID)
 	s.NotifyRuntimeStateChanged()
 
 	s.edgeTokens.sync(envID, apiKey)
@@ -569,24 +548,8 @@ func (s *EnvironmentService) linkEnvironmentApiKey(ctx context.Context, envID, n
 		env.UpdatedAt = &now
 	})
 
-	// Create event log in background
-	go s.createEnvironmentEvent(
-		context.WithoutCancel(
-			ctx,
-		),
-		envID,
-		envName,
-		event.EventTypeEnvironmentApiKeyRegenerated,
-		"API Key Regenerated",
-		"Environment API key was regenerated and status set to pending",
-		event.EventSeverityInfo,
-		new(
-			userID,
-		),
-		new(
-			username,
-		),
-	)
+	go s.createEnvironmentEvent(context.WithoutCancel(ctx), envID, envName, event.EventTypeEnvironmentApiKeyRegenerated,
+		"API Key Regenerated", "Environment API key was regenerated and status set to pending", event.EventSeverityInfo, new(userID), new(username))
 
 	return nil
 }
@@ -628,7 +591,7 @@ func (s *EnvironmentService) GetEnabledRegistryCredentials(ctx context.Context) 
 
 		decryptedToken, err := crypto.Decrypt(reg.Token)
 		if err != nil {
-			slog.WarnContext(ctx, "Failed to decrypt registry token", "registryURL", reg.URL, "error", err.Error())
+			slog.WarnContext(ctx, "Failed to decrypt registry token", "registryUrl", reg.URL, "error", err.Error())
 			continue
 		}
 
@@ -660,19 +623,11 @@ func (s *EnvironmentService) SyncResourcesToEnvironment(ctx context.Context, env
 		var failedGroups []string
 
 		s.ForgetSyncState(environmentID)
-		if err := s.SyncRegistriesToEnvironment(ctx, environmentID); err != nil {
-			slog.WarnContext(ctx, "Failed to sync registries", "environmentID", environmentID, "error", err.Error())
-			failedGroups = append(failedGroups, "container registries")
-		}
-
-		if err := s.SyncS3DestinationsToEnvironment(ctx, environmentID); err != nil {
-			slog.WarnContext(ctx, "Failed to sync S3 destinations", "environmentID", environmentID, "error", err.Error())
-			failedGroups = append(failedGroups, "S3 destinations")
-		}
-
-		if err := s.SyncRepositoriesToEnvironment(ctx, environmentID); err != nil {
-			slog.WarnContext(ctx, "Failed to sync git repositories", "environmentID", environmentID, "error", err.Error())
-			failedGroups = append(failedGroups, "git repositories")
+		for _, resource := range s.resourceSyncs() {
+			if err := resource.sync(ctx, environmentID); err != nil {
+				slog.WarnContext(ctx, "Failed to sync resources", "kind", resource.kind, "environmentId", environmentID, "error", err.Error())
+				failedGroups = append(failedGroups, resource.kind)
+			}
 		}
 
 		if len(failedGroups) > 0 {
@@ -683,13 +638,27 @@ func (s *EnvironmentService) SyncResourcesToEnvironment(ctx context.Context, env
 	})
 }
 
+type resourceSync struct {
+	kind string
+	sync func(ctx context.Context, environmentID string) error
+}
+
+// resourceSyncs lists the manager-owned resource groups pushed to remote environments.
+func (s *EnvironmentService) resourceSyncs() []resourceSync {
+	return []resourceSync{
+		{"container registries", s.SyncRegistriesToEnvironment},
+		{"S3 destinations", s.SyncS3DestinationsToEnvironment},
+		{"git repositories", s.SyncRepositoriesToEnvironment},
+	}
+}
+
 // DisplayName returns the stored environment name or its readable fallback.
 func DisplayName(environmentID, storedName string) string {
 	if name := strings.TrimSpace(storedName); name != "" {
 		return name
 	}
 	id := strings.TrimSpace(environmentID)
-	return kit.Ternary(id == "" || id == LocalEnvironmentID, localEnvironmentFallbackNameInternal, id)
+	return kit.Ternary(id == "" || id == LocalEnvironmentID, localEnvironmentFallbackName, id)
 }
 
 const (
@@ -707,15 +676,11 @@ func (s *EnvironmentService) GetActiveRemoteEnvironmentSnapshot(environmentID st
 }
 
 // ListActiveRemoteEnvironments returns every enabled, visible, non-local
-// environment from memory, sorted by ID. The first call loads them from the
-// database.
+// environment from memory, sorted by ID; the first call loads them from the database.
 func (s *EnvironmentService) ListActiveRemoteEnvironments(ctx context.Context) ([]Environment, error) {
 	s.remoteEnvs.mu.RLock()
 	seeded := s.remoteEnvs.seeded
-	environments := make([]Environment, 0, len(s.remoteEnvs.envs))
-	for _, envRecord := range s.remoteEnvs.envs {
-		environments = append(environments, envRecord)
-	}
+	environments := slices.AppendSeq(make([]Environment, 0, len(s.remoteEnvs.envs)), maps.Values(s.remoteEnvs.envs))
 	s.remoteEnvs.mu.RUnlock()
 
 	if !seeded {
@@ -732,11 +697,11 @@ func (s *EnvironmentService) ListActiveRemoteEnvironments(ctx context.Context) (
 }
 
 // GetEnvironmentByIDCached is GetEnvironmentByID behind a short TTL cache that
-// also remembers unknown IDs. Status and heartbeat fields may be stale.
+// remembers unknown IDs; status and heartbeat fields may be stale.
 func (s *EnvironmentService) GetEnvironmentByIDCached(ctx context.Context, id string) (*Environment, error) {
-	key := environmentCacheKeyInternal{gen: s.environmentGens[environmentCacheStripeInternal(id)].Load(), id: id}
-	envRecord, found, err := s.environmentCache.GetWithLoaders(key, func(keys []environmentCacheKeyInternal) (map[environmentCacheKeyInternal]Environment, error) {
-		found := make(map[environmentCacheKeyInternal]Environment, len(keys))
+	key := environmentCacheKey{gen: s.environmentGens[maphash.String(environmentCacheSeed, id)%environmentCacheStripes].Load(), id: id}
+	envRecord, found, err := s.environmentCache.GetWithLoaders(key, func(keys []environmentCacheKey) (map[environmentCacheKey]Environment, error) {
+		found := make(map[environmentCacheKey]Environment, len(keys))
 		for _, k := range keys {
 			loaded, loadErr := s.GetEnvironmentByID(ctx, k.id)
 			if errors.Is(loadErr, ErrEnvironmentNotFound) {
@@ -758,36 +723,24 @@ func (s *EnvironmentService) GetEnvironmentByIDCached(ctx context.Context, id st
 	return &envRecord, nil
 }
 
-// invalidateEnvironmentCacheInternal starts a new generation for id's stripe
-// after a committed write, orphaning its cached record and in-flight loads.
-func (s *EnvironmentService) invalidateEnvironmentCacheInternal(id string) {
+// invalidateEnvironmentCache starts a new generation for id's stripe after a
+// committed write, orphaning its cached record and in-flight loads.
+func (s *EnvironmentService) invalidateEnvironmentCache(id string) {
 	if s == nil || s.environmentCache == nil {
 		return
 	}
-	previous := s.environmentGens[environmentCacheStripeInternal(id)].Add(1) - 1
-	s.environmentCache.Delete(environmentCacheKeyInternal{gen: previous, id: id})
-}
-
-// invalidateAllEnvironmentCacheInternal covers writes whose affected IDs are unknown.
-func (s *EnvironmentService) invalidateAllEnvironmentCacheInternal() {
-	if s == nil || s.environmentCache == nil {
-		return
-	}
-	for i := range s.environmentGens {
-		s.environmentGens[i].Add(1)
-	}
-	s.environmentCache.Purge()
+	previous := s.environmentGens[maphash.String(environmentCacheSeed, id)%environmentCacheStripes].Add(1) - 1
+	s.environmentCache.Delete(environmentCacheKey{gen: previous, id: id})
 }
 
 func (s *EnvironmentService) ListEnvironmentsPaginated(ctx context.Context, params pagination.QueryParams, accessibleEnvIDs []string) ([]environment.Environment, pagination.Response, error) {
 	if strings.TrimSpace(params.Filters["type"]) != "" {
-		return s.listEnvironmentsPaginatedWithRuntimeFiltersInternal(ctx, params, accessibleEnvIDs)
+		return s.listEnvironmentsPaginatedWithRuntimeFilters(ctx, params, accessibleEnvIDs)
 	}
 
 	var envs []Environment
 	q := s.db.WithContext(ctx).Model(&Environment{}).Where("hidden = ?", false)
-	// accessibleEnvIDs == nil means "no restriction". A non-nil slice limits the
-	// result to those environment IDs; an empty slice therefore matches nothing.
+	// nil means no restriction; a non-nil slice limits results, so an empty one matches nothing.
 	switch {
 	case accessibleEnvIDs == nil:
 		// no restriction
@@ -821,17 +774,11 @@ func (s *EnvironmentService) ListEnvironmentsPaginated(ctx context.Context, para
 	return out, paginationResp, nil
 }
 
-func (
-	s *EnvironmentService,
-) listEnvironmentsPaginatedWithRuntimeFiltersInternal(
+func (s *EnvironmentService) listEnvironmentsPaginatedWithRuntimeFilters(
 	ctx context.Context,
 	params pagination.QueryParams,
 	accessibleEnvIDs []string,
-) (
-	[]environment.Environment,
-	pagination.Response,
-	error,
-) {
+) ([]environment.Environment, pagination.Response, error) {
 	var envs []Environment
 	if err := s.db.WithContext(ctx).
 		Model(&Environment{}).
@@ -845,9 +792,9 @@ func (
 		return nil, pagination.Response{}, fmt.Errorf("failed to map environments: %w", mapErr)
 	}
 
-	// nil = no restriction; non-nil restricts to the caller's accessible envs.
+	// nil means no restriction; non-nil restricts to the caller's accessible environments.
 	if accessibleEnvIDs != nil {
-		items = filterEnvironmentsByIDInternal(items, accessibleEnvIDs)
+		items = slices.DeleteFunc(items, func(item environment.Environment) bool { return !slices.Contains(accessibleEnvIDs, item.ID) })
 	}
 
 	for i := range items {
@@ -910,7 +857,27 @@ func (
 			},
 			{
 				Key: "type",
-				Fn:  environmentTypeMatchesInternal,
+				Fn: func(item environment.Environment, filterValue string) bool {
+					typeKey := "http"
+					if item.IsEdge {
+						// Disconnected or poll-only agents classify by the transport they last used.
+						transport := ""
+						if item.Connected != nil && *item.Connected && item.EdgeTransport != nil {
+							transport = *item.EdgeTransport
+						} else if item.LastEdgeTransport != nil {
+							transport = *item.LastEdgeTransport
+						}
+						switch strings.ToLower(strings.TrimSpace(transport)) {
+						case edge.EdgeTransportWebSocket:
+							typeKey = "websocket"
+						case edge.EdgeTransportGRPC:
+							typeKey = "grpc"
+						default:
+							typeKey = "edge"
+						}
+					}
+					return typeKey == strings.ToLower(strings.TrimSpace(filterValue))
+				},
 			},
 		},
 	}
@@ -964,7 +931,7 @@ func (s *EnvironmentService) ListRemoteEnvironments(ctx context.Context) ([]Envi
 		var envs []Environment
 		err := s.db.WithContext(ctx).
 			Model(&Environment{}).
-			Where("id != ?", "0").
+			Where("id != ?", LocalEnvironmentID).
 			Where("enabled = ?", true).
 			Where("hidden = ?", false).
 			Find(&envs).Error
@@ -1004,37 +971,31 @@ func (s *EnvironmentService) NotifyRuntimeStateChanged() {
 }
 
 const (
-	defaultEnvironmentHealthInterval        = "0 */2 * * * *"
-	environmentHealthCheckTimeout           = 90 * time.Second
-	environmentHealthJobPrefix              = "environment-health:"
-	environmentHealthAdmissionScopeInternal = "environment-health"
+	defaultEnvironmentHealthInterval = "0 */2 * * * *"
+	environmentHealthCheckTimeout    = 90 * time.Second
+	environmentHealthJobPrefix       = "environment-health:"
+	environmentHealthAdmissionScope  = "environment-health"
 )
 
-// SetScheduler injects the job scheduler and app lifecycle context. Called during
-// bootstrap on the manager only (agent mode leaves scheduler nil, so all health-job
-// registration becomes a no-op).
+// SetScheduler injects the job scheduler and app lifecycle context on the manager;
+// agents leave it nil, making health-job registration a no-op.
 func (s *EnvironmentService) SetScheduler(ctx context.Context, jobScheduler scheduler.DynamicScheduler, admissionGate *runs.Admission) error {
 	return s.jobs.SetScheduler(ctx, jobScheduler, admissionGate)
 }
 
-// registerHealthJobInternal schedules one environment's health check on the
-// global environmentHealthInterval (environment health has no per-entity
-// interval); the run body self-cancels cleanly when the environment is gone.
-func (s *EnvironmentService) registerHealthJobInternal(ctx context.Context, envID string) {
+// registerHealthJob schedules one environment's health check on the global
+// environmentHealthInterval; the run self-cancels once the environment is gone.
+func (s *EnvironmentService) registerHealthJob(ctx context.Context, envID string) {
 	s.jobs.Register(ctx, envID,
 		func(ctx context.Context) string {
 			sched := s.settingsService.GetStringSetting(ctx, "environmentHealthInterval", defaultEnvironmentHealthInterval)
 			return kit.Ternary(sched == "", defaultEnvironmentHealthInterval, sched)
 		},
-		func(ctx context.Context) (scheduler.Outcome, error) { return s.runHealthCheckInternal(ctx, envID) },
+		func(ctx context.Context) (scheduler.Outcome, error) { return s.runHealthCheck(ctx, envID) },
 		func(context.Context, scheduler.Run) (scheduler.Outcome, error) {
 			return scheduler.Outcome{Status: scheduler.Retrying, Message: "Connection checks can safely resume"}, nil
 		},
 	)
-}
-
-func (s *EnvironmentService) removeHealthJobInternal(ctx context.Context, envID string) {
-	s.jobs.Unregister(ctx, envID)
 }
 
 func (s *EnvironmentService) ListEnabledEnvironmentIDs(ctx context.Context) ([]string, error) {
@@ -1048,35 +1009,21 @@ func (s *EnvironmentService) ListEnabledEnvironmentIDs(ctx context.Context) ([]s
 	return ids, nil
 }
 
-func (s *EnvironmentService) registerAllEnabledHealthJobsInternal(ctx context.Context) int {
-	ids, err := s.ListEnabledEnvironmentIDs(ctx)
-	if err != nil {
-		slog.ErrorContext(ctx, "failed to list environments for health jobs", "error", err)
-		return 0
-	}
-	for _, id := range ids {
-		s.registerHealthJobInternal(ctx, id)
-	}
-	return len(ids)
-}
-
-// RegisterHealthJobsOnStartup registers a health-check job for every enabled
-// environment. Replaces the old global environment-health job.
-func (s *EnvironmentService) RegisterHealthJobsOnStartup(ctx context.Context) {
-	if !s.jobs.Enabled() {
-		return
-	}
-	n := s.registerAllEnabledHealthJobsInternal(ctx)
-	slog.InfoContext(ctx, "Registered environment health jobs on startup", "count", n)
-}
-
-// RescheduleHealthJobs re-registers all enabled environments' health jobs, picking
-// up a changed global interval. Wired from the Jobs UI via job.JobService.
+// RescheduleHealthJobs re-registers every enabled environment's health job,
+// picking up a changed global interval.
 func (s *EnvironmentService) RescheduleHealthJobs(ctx context.Context) {
 	if !s.jobs.Enabled() {
 		return
 	}
-	s.registerAllEnabledHealthJobsInternal(ctx)
+	ids, err := s.ListEnabledEnvironmentIDs(ctx)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to list environments for health jobs", "error", err)
+		return
+	}
+	for _, id := range ids {
+		s.registerHealthJob(ctx, id)
+	}
+	slog.InfoContext(ctx, "Registered environment health jobs", "count", len(ids))
 }
 
 // RunHealthChecksNow queues each enabled environment's health check.
@@ -1090,7 +1037,7 @@ func (s *EnvironmentService) RunHealthChecksNow(ctx context.Context) error {
 		return err
 	}
 	parent, hasParent := jobcontext.Run(ctx)
-	request := scheduler.Request{EnvironmentID: "0", Trigger: "internal"}
+	request := scheduler.Request{EnvironmentID: LocalEnvironmentID, Trigger: "internal"}
 	if hasParent {
 		request.Trigger = parent.Trigger
 		request.RequestedBy = parent.RequestedBy
@@ -1105,16 +1052,16 @@ func (s *EnvironmentService) RunHealthChecksNow(ctx context.Context) error {
 	return nil
 }
 
-// runHealthCheckInternal tests one environment's connection (updating its DB status)
-// and, for online remotes, syncs registries and repositories to it.
-func (s *EnvironmentService) runHealthCheckInternal(ctx context.Context, envID string) (scheduler.Outcome, error) {
+// runHealthCheck tests one environment's connection, persisting its status, and
+// syncs manager-owned resources to online remotes.
+func (s *EnvironmentService) runHealthCheck(ctx context.Context, envID string) (scheduler.Outcome, error) {
 	lease, admitted, err := s.jobs.TryAcquire(ctx, envID)
 	if err != nil {
-		slog.ErrorContext(ctx, "environment health check admission failed", "environment_id", envID, "error", err)
+		slog.ErrorContext(ctx, "environment health check admission failed", "environmentId", envID, "error", err)
 		return scheduler.Outcome{}, err
 	}
 	if !admitted {
-		slog.WarnContext(ctx, "environment health check skipped; previous run still in progress", "environment_id", envID)
+		slog.WarnContext(ctx, "environment health check skipped; previous run still in progress", "environmentId", envID)
 		return scheduler.Outcome{Status: scheduler.Skipped}, nil
 	}
 	defer lease.Release(ctx)
@@ -1130,19 +1077,18 @@ func (s *EnvironmentService) runHealthCheckInternal(ctx context.Context, envID s
 	status, err := s.TestConnection(ctx, envID, nil)
 	switch {
 	case err != nil:
-		slog.WarnContext(ctx, "environment health check failed", "environment_id", envID, "status", status, "error", err)
+		slog.WarnContext(ctx, "environment health check failed", "environmentId", envID, "status", status, "error", err)
 		return scheduler.Outcome{Status: scheduler.Retrying}, err
 	case status != "online":
 		return scheduler.Outcome{Status: scheduler.Retrying, Message: "Environment is offline"}, errors.New("environment is offline")
 	}
 
-	// Local environment (ID "0") has no registries/repositories to push.
-	if envID == "0" {
+	// The local environment has no resources to push.
+	if envID == LocalEnvironmentID {
 		return scheduler.Outcome{Status: scheduler.Succeeded}, nil
 	}
 
-	// An agent that just came back may have restarted with different state;
-	// resend everything once instead of trusting the last delivered payload.
+	// An agent that just came back may have restarted with different state, so resend everything.
 	if !wasOnline {
 		s.ForgetSyncState(envID)
 	}
@@ -1150,22 +1096,16 @@ func (s *EnvironmentService) runHealthCheckInternal(ctx context.Context, envID s
 	var syncErrors []error
 	syncCtx, cancel := context.WithTimeout(ctx, environmentHealthCheckTimeout)
 	defer cancel()
-	if syncRegistriesToEnvironmentErr := s.SyncRegistriesToEnvironment(syncCtx, envID); syncRegistriesToEnvironmentErr != nil {
-		slog.WarnContext(syncCtx, "failed to sync registries during health check", "environment_id", envID, "error", syncRegistriesToEnvironmentErr)
-		syncErrors = append(syncErrors, syncRegistriesToEnvironmentErr)
-	}
-	if syncS3DestinationsToEnvironmentErr := s.SyncS3DestinationsToEnvironment(syncCtx, envID); syncS3DestinationsToEnvironmentErr != nil {
-		slog.WarnContext(syncCtx, "failed to sync S3 destinations during health check", "environment_id", envID, "error", syncS3DestinationsToEnvironmentErr)
-		syncErrors = append(syncErrors, syncS3DestinationsToEnvironmentErr)
-	}
-	if syncRepositoriesToEnvironmentErr := s.SyncRepositoriesToEnvironment(syncCtx, envID); syncRepositoriesToEnvironmentErr != nil {
-		slog.WarnContext(syncCtx, "failed to sync git repositories during health check", "environment_id", envID, "error", syncRepositoriesToEnvironmentErr)
-		syncErrors = append(syncErrors, syncRepositoriesToEnvironmentErr)
+	for _, resource := range s.resourceSyncs() {
+		if syncErr := resource.sync(syncCtx, envID); syncErr != nil {
+			slog.WarnContext(syncCtx, "failed to sync resources during health check", "kind", resource.kind, "environmentId", envID, "error", syncErr)
+			syncErrors = append(syncErrors, syncErr)
+		}
 	}
 	if s.variableSyncer != nil {
-		if syncEnvironmentErr := s.variableSyncer.SyncEnvironment(syncCtx, envID); syncEnvironmentErr != nil {
-			slog.WarnContext(syncCtx, "failed to sync global variables during health check", "environment_id", envID, "error", syncEnvironmentErr)
-			syncErrors = append(syncErrors, syncEnvironmentErr)
+		if syncErr := s.variableSyncer.SyncEnvironment(syncCtx, envID); syncErr != nil {
+			slog.WarnContext(syncCtx, "failed to sync global variables during health check", "environmentId", envID, "error", syncErr)
+			syncErrors = append(syncErrors, syncErr)
 		}
 	}
 	if joinErr := errors.Join(syncErrors...); joinErr != nil {
@@ -1176,7 +1116,7 @@ func (s *EnvironmentService) runHealthCheckInternal(ctx context.Context, envID s
 
 // SyncRegistriesToEnvironment syncs all registries from this manager to a remote environment.
 func (s *EnvironmentService) SyncRegistriesToEnvironment(ctx context.Context, environmentID string) error {
-	target, err := s.resolveRemoteEnvironmentTargetInternal(ctx, environmentID)
+	target, err := s.resolveRemoteEnvironmentTarget(ctx, environmentID)
 	if err != nil {
 		return err
 	}
@@ -1185,7 +1125,7 @@ func (s *EnvironmentService) SyncRegistriesToEnvironment(ctx context.Context, en
 
 // SyncS3DestinationsToEnvironment sends manager-owned destinations to one remote environment.
 func (s *EnvironmentService) SyncS3DestinationsToEnvironment(ctx context.Context, environmentID string) error {
-	target, err := s.resolveRemoteEnvironmentTargetInternal(ctx, environmentID)
+	target, err := s.resolveRemoteEnvironmentTarget(ctx, environmentID)
 	if err != nil {
 		return err
 	}
@@ -1194,7 +1134,7 @@ func (s *EnvironmentService) SyncS3DestinationsToEnvironment(ctx context.Context
 
 // SyncRepositoriesToEnvironment syncs all git repositories from this manager to a remote environment.
 func (s *EnvironmentService) SyncRepositoriesToEnvironment(ctx context.Context, environmentID string) error {
-	target, err := s.resolveRemoteEnvironmentTargetInternal(ctx, environmentID)
+	target, err := s.resolveRemoteEnvironmentTarget(ctx, environmentID)
 	if err != nil {
 		return err
 	}
@@ -1213,33 +1153,32 @@ func (s *EnvironmentService) TestConnection(ctx context.Context, id string, cust
 	}
 	status, err := s.health.Probe(ctx, id, apiURL, envRecord.IsEdge, customApiUrl != nil)
 	if customApiUrl == nil {
-		_ = s.updateEnvironmentStatusInternal(ctx, id, status)
+		if updateErr := s.updateEnvironmentStatus(ctx, id, status); updateErr != nil {
+			slog.WarnContext(ctx, "Failed to persist environment status", "environmentId", id, "status", status, "error", updateErr)
+		}
 		return status, err
 	}
 	if err != nil {
-		slog.WarnContext(ctx, "Environment custom URL connection test failed", "environment_id", id, "error", err)
+		slog.WarnContext(ctx, "Environment custom URL connection test failed", "environmentId", id, "error", err)
 		return "error", common.ErrEnvironmentConnectionTestFailed
 	}
 	return status, nil
 }
 
-func (s *EnvironmentService) updateEnvironmentStatusInternal(ctx context.Context, id, status string) error {
+func (s *EnvironmentService) updateEnvironmentStatus(ctx context.Context, id, status string) error {
 	var currentEnv Environment
 	if err := s.db.WithContext(ctx).Select("status", "is_edge").Where("id = ?", id).First(&currentEnv).Error; err != nil {
 		return fmt.Errorf("failed to check environment status: %w", err)
 	}
 
 	if currentEnv.Status == string(EnvironmentStatusPending) {
-		// Edge envs must complete pairing via the agent's outbound tunnel — manager
-		// can't dial them directly, so a manager-side reachability check means nothing.
-		// Direct envs are reachable from the manager, so a successful health check IS
-		// the pairing signal. Don't promote on offline/error ticks though, or a transient
-		// blip during initial setup would flip the env out of pending.
+		// Only a successful check pairs a direct environment; edge environments pair
+		// through the agent's tunnel, so manager reachability means nothing for them.
 		if currentEnv.IsEdge || status != string(EnvironmentStatusOnline) {
-			slog.DebugContext(ctx, "skipping status update for pending environment", "environment_id", id)
+			slog.DebugContext(ctx, "skipping status update for pending environment", "environmentId", id)
 			return nil
 		}
-		slog.InfoContext(ctx, "promoted pending direct environment to online via reachability check", "environment_id", id)
+		slog.InfoContext(ctx, "promoted pending direct environment to online via reachability check", "environmentId", id)
 	}
 
 	now := time.Now()
@@ -1251,8 +1190,7 @@ func (s *EnvironmentService) updateEnvironmentStatusInternal(ctx context.Context
 	if err := s.db.WithContext(ctx).Model(&Environment{}).Where("id = ?", id).Updates(updates).Error; err != nil {
 		return fmt.Errorf("failed to update environment status: %w", err)
 	}
-	// Direct environments have no tunnel callback, so this health-check write is
-	// the only moment their liveness changes.
+	// Direct environments have no tunnel callback, so this is their only liveness change.
 	s.NotifyRuntimeStateChanged()
 	return nil
 }
@@ -1260,18 +1198,15 @@ func (s *EnvironmentService) updateEnvironmentStatusInternal(ctx context.Context
 func (s *EnvironmentService) UpdateEnvironmentHeartbeat(ctx context.Context, id string) error {
 	now := time.Now()
 
-	// Use Exec with raw SQL for better performance
-	// Only update if last_seen is NULL or older than 30 seconds to reduce write frequency
+	// Throttle unchanged online status to one write every 30 seconds; this doubles as the notify throttle.
 	result := s.db.WithContext(ctx).Exec(`
 		UPDATE environments
 		SET last_seen = ?, status = ?, updated_at = ?
 		WHERE id = ?
-		AND (last_seen IS NULL OR last_seen < ?)
-	`, new(now), string(EnvironmentStatusOnline), new(now), id, now.Add(-30*time.Second))
+		AND (status != ? OR last_seen IS NULL OR last_seen < ?)
+	`, new(now), string(EnvironmentStatusOnline), new(now), id, string(EnvironmentStatusOnline), now.Add(-30*time.Second))
 
 	if result.Error != nil {
-		// The 30s throttle above doubles as the notify throttle: a no-op heartbeat
-		// changed nothing worth waking a stream for.
 		return fmt.Errorf("failed to update environment heartbeat: %w", result.Error)
 	}
 
@@ -1282,8 +1217,8 @@ func (s *EnvironmentService) UpdateEnvironmentHeartbeat(ctx context.Context, id 
 	return nil
 }
 
-// UpdateEnvironmentConnectionState updates runtime connectivity status without creating
-// a generic "environment updated" event. This is used for edge tunnel connect/disconnect.
+// UpdateEnvironmentConnectionState records an edge tunnel connect or disconnect
+// without emitting an "environment updated" event.
 func (s *EnvironmentService) UpdateEnvironmentConnectionState(ctx context.Context, id string, connected bool) error {
 	now := time.Now()
 
@@ -1293,8 +1228,7 @@ func (s *EnvironmentService) UpdateEnvironmentConnectionState(ctx context.Contex
 	if connected {
 		updates["status"] = string(EnvironmentStatusOnline)
 		updates["last_seen"] = &now
-		// Remember the tunnel transport so the UI can keep showing it after
-		// the tunnel drops or while the agent is poll-only.
+		// Remember the transport so the UI can show it after the tunnel drops or while poll-only.
 		if state, ok := edge.GetTunnelRuntimeState(id).Get(); ok && state.Transport != "" {
 			updates["last_edge_transport"] = state.Transport
 		}
@@ -1311,8 +1245,8 @@ func (s *EnvironmentService) UpdateEnvironmentConnectionState(ctx context.Contex
 	return nil
 }
 
-// ApplyEnvironmentRuntimeState normalizes edge environment runtime status using
-// in-memory tunnel and poll registries without mutating persisted state.
+// ApplyEnvironmentRuntimeState overlays in-memory tunnel and poll state onto an
+// edge environment without mutating persisted state.
 func ApplyEnvironmentRuntimeState(env *environment.Environment) {
 	if env == nil || !env.IsEdge {
 		return
@@ -1369,9 +1303,8 @@ func ApplyEnvironmentRuntimeState(env *environment.Environment) {
 	}
 }
 
-// ReconcileEdgeStatusesOnStartup resets edge environments to offline when the manager starts.
-// Live edge tunnels are process-local runtime state, so persisted "online" flags can be stale
-// after a restart until agents reconnect. Pending environments are left untouched.
+// ReconcileEdgeStatusesOnStartup marks non-pending edge environments offline at
+// startup, since tunnels are process-local and persisted "online" flags are stale.
 func (s *EnvironmentService) ReconcileEdgeStatusesOnStartup(ctx context.Context) error {
 	result := s.db.WithContext(ctx).Model(&Environment{}).
 		Where("is_edge = ?", true).
@@ -1392,97 +1325,58 @@ func (s *EnvironmentService) ReconcileEdgeStatusesOnStartup(ctx context.Context)
 	return nil
 }
 
-// SyncRegistriesToRemoteEnvironments syncs container registries to all eligible remote environments.
-// Eligibility requires a non-local, enabled environment with a configured access token.
+// SyncRegistriesToRemoteEnvironments syncs container registries to every remote environment with an access token.
 func (s *EnvironmentService) SyncRegistriesToRemoteEnvironments(ctx context.Context) error {
-	envs, err := s.ListRemoteEnvironments(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to list remote environments for registry sync: %w", err)
-	}
-
-	if len(envs) == 0 {
-		return nil
-	}
-
-	var failedCount int
-	for _, env := range envs {
-		if env.AccessToken == nil || *env.AccessToken == "" {
-			slog.DebugContext(ctx, "Skipping registry sync for environment without access token",
-				"environmentID", env.ID,
-				"environmentName", env.Name)
-			continue
-		}
-
-		if syncRegistriesToEnvironmentErr := s.SyncRegistriesToEnvironment(ctx, env.ID); syncRegistriesToEnvironmentErr != nil {
-			failedCount++
-			slog.WarnContext(ctx, "Failed to sync registries to remote environment",
-				"environmentID", env.ID,
-				"environmentName", env.Name,
-				"error", syncRegistriesToEnvironmentErr.Error())
-		}
-	}
-
-	if failedCount > 0 {
-		return fmt.Errorf("failed to sync registries to %d remote environment(s)", failedCount)
-	}
-
-	return nil
+	return s.syncToRemoteEnvironments(ctx, "registries", s.SyncRegistriesToEnvironment)
 }
 
-// SyncS3DestinationsToRemoteEnvironments refreshes the destination cache on every enabled remote environment.
+// SyncS3DestinationsToRemoteEnvironments refreshes the destination cache on every remote environment with an access token.
 func (s *EnvironmentService) SyncS3DestinationsToRemoteEnvironments(ctx context.Context) error {
+	return s.syncToRemoteEnvironments(ctx, "S3 destinations", s.SyncS3DestinationsToEnvironment)
+}
+
+func (s *EnvironmentService) syncToRemoteEnvironments(ctx context.Context, kind string, sync func(context.Context, string) error) error {
 	envs, err := s.ListRemoteEnvironments(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to list remote environments for S3 destination sync: %w", err)
+		return fmt.Errorf("failed to list remote environments for %s sync: %w", kind, err)
 	}
 
 	var failedCount int
 	for _, env := range envs {
 		if env.AccessToken == nil || strings.TrimSpace(*env.AccessToken) == "" {
-			slog.DebugContext(ctx, "Skipping S3 destination sync for environment without access token", "environmentID", env.ID, "environmentName", env.Name)
+			slog.DebugContext(ctx, "Skipping sync for environment without access token", "kind", kind, "environmentId", env.ID, "environmentName", env.Name)
 			continue
 		}
-		if syncS3DestinationsToEnvironmentErr := s.SyncS3DestinationsToEnvironment(ctx, env.ID); syncS3DestinationsToEnvironmentErr != nil {
+		if syncErr := sync(ctx, env.ID); syncErr != nil {
 			failedCount++
-			slog.WarnContext(ctx, "Failed to sync S3 destinations to remote environment", "environmentID", env.ID, "environmentName", env.Name, "error", syncS3DestinationsToEnvironmentErr)
+			slog.WarnContext(ctx, "Failed to sync to remote environment", "kind", kind, "environmentId", env.ID, "environmentName", env.Name, "error", syncErr)
 		}
 	}
 
 	if failedCount > 0 {
-		return fmt.Errorf("failed to sync S3 destinations to %d remote environment(s)", failedCount)
+		return fmt.Errorf("failed to sync %s to %d remote environment(s)", kind, failedCount)
 	}
 	return nil
 }
 
-// CheckS3DestinationReferences returns an error while any managed environment
-// still references the destination, or when a synced environment cannot be
-// checked conclusively. Deleting credentials that a remote environment still
-// needs would strand its policies and retained backups.
+// CheckS3DestinationReferences fails while any synced environment references the
+// destination or cannot be checked, since deleting it would strand remote backups.
 func (s *EnvironmentService) CheckS3DestinationReferences(ctx context.Context, destinationID string) error {
 	envs, err := s.ListRemoteEnvironments(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to list remote environments for S3 destination reference check: %w", err)
 	}
 	for _, env := range envs {
+		// Environments without an access token never receive destination syncs.
 		if env.AccessToken == nil || strings.TrimSpace(*env.AccessToken) == "" {
-			// Environments without an access token never receive destination
-			// syncs, so they cannot hold a reference.
 			continue
 		}
 		var result struct {
 			InUse bool `json:"inUse"`
 		}
-		if proxyJSONRequestForEnvironmentErr := s.ProxyJSONRequestForEnvironment(
-			ctx,
-			env,
-			http.MethodGet,
-			"/api/backups/s3/"+url.PathEscape(
-				destinationID,
-			)+"/in-use",
-			nil,
-			&result,
-		); proxyJSONRequestForEnvironmentErr != nil {
-			return fmt.Errorf("cannot verify S3 destination references on environment %s; restore connectivity before deleting: %w", env.Name, proxyJSONRequestForEnvironmentErr)
+		path := "/api/backups/s3/" + url.PathEscape(destinationID) + "/in-use"
+		if proxyErr := s.ProxyJSONRequestForEnvironment(ctx, env, http.MethodGet, path, nil, &result); proxyErr != nil {
+			return fmt.Errorf("cannot verify S3 destination references on environment %s; restore connectivity before deleting: %w", env.Name, proxyErr)
 		}
 		if result.InUse {
 			return fmt.Errorf("still referenced by environment %s", env.Name)
@@ -1491,7 +1385,7 @@ func (s *EnvironmentService) CheckS3DestinationReferences(ctx context.Context, d
 	return nil
 }
 
-func (s *EnvironmentService) resolveRemoteEnvironmentTargetInternal(ctx context.Context, envID string) (*proxy.Target, error) {
+func (s *EnvironmentService) resolveRemoteEnvironmentTarget(ctx context.Context, envID string) (*proxy.Target, error) {
 	envRecord, err := s.GetEnvironmentByID(ctx, envID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get environment: %w", err)
@@ -1501,7 +1395,7 @@ func (s *EnvironmentService) resolveRemoteEnvironmentTargetInternal(ctx context.
 }
 
 func (s *EnvironmentService) ExecuteRemoteRequest(ctx context.Context, envID, method, path string, body []byte) (*remenv.Response, error) {
-	target, err := s.resolveRemoteEnvironmentTargetInternal(ctx, envID)
+	target, err := s.resolveRemoteEnvironmentTarget(ctx, envID)
 	if err != nil {
 		return nil, err
 	}
@@ -1513,7 +1407,7 @@ func (s *EnvironmentService) ProxyJSONRequest(ctx context.Context, envID, method
 	proxyCtx, cancel := s.proxy.Context(ctx)
 	defer cancel()
 
-	target, err := s.resolveRemoteEnvironmentTargetInternal(proxyCtx, envID)
+	target, err := s.resolveRemoteEnvironmentTarget(proxyCtx, envID)
 	if err != nil {
 		return err
 	}
@@ -1521,8 +1415,7 @@ func (s *EnvironmentService) ProxyJSONRequest(ctx context.Context, envID, method
 	return s.proxy.JSON(proxyCtx, target, method, path, body, out)
 }
 
-// ProxyJSONRequestForEnvironment sends a JSON request using an already-loaded
-// environment row, avoiding an extra environment lookup on hot stream paths.
+// ProxyJSONRequestForEnvironment sends a JSON request for an already-loaded environment row.
 func (s *EnvironmentService) ProxyJSONRequestForEnvironment(ctx context.Context, env Environment, method, path string, body []byte, out any) error {
 	proxyCtx, cancel := s.proxy.Context(ctx)
 	defer cancel()
@@ -1580,8 +1473,8 @@ func (s *EnvironmentService) GenerateDeploymentSnippets(ctx context.Context, env
 	}, nil
 }
 
-// GenerateEdgeDeploymentSnippets generates Docker deployment snippets for an edge agent.
-// Edge agents connect outbound to the manager and don't require exposed ports.
+// GenerateEdgeDeploymentSnippets generates Docker deployment snippets for an
+// edge agent, which dials the manager and exposes no ports.
 func (s *EnvironmentService) GenerateEdgeDeploymentSnippets(ctx context.Context, envID, managerURL, apiKey string, edgeCfg *edge.Config) (*DeploymentSnippets, error) {
 	managerURL = strings.TrimRight(managerURL, "/")
 	dockerRun, dockerCompose := snippets.Edge(managerURL, apiKey)
@@ -1634,15 +1527,14 @@ func (s *EnvironmentService) ListSwarmNodeAgentEnvironments(ctx context.Context,
 	return envs, nil
 }
 
-// ListSwarmNodeCandidateEnvironments returns enabled visible environments that
-// can provide swarm-node coverage for a manager environment.
+// ListSwarmNodeCandidateEnvironments returns enabled visible environments that can cover a swarm node.
 func (s *EnvironmentService) ListSwarmNodeCandidateEnvironments(ctx context.Context) ([]Environment, error) {
 	var envs []Environment
 	if err := s.db.WithContext(ctx).
 		Model(&Environment{}).
 		Where("hidden = ?", false).
 		Where("enabled = ?", true).
-		Where("id <> ?", "0").
+		Where("id <> ?", LocalEnvironmentID).
 		Order("name ASC").
 		Find(&envs).Error; err != nil {
 		return nil, fmt.Errorf("failed to list swarm node candidate environments: %w", err)
@@ -1650,8 +1542,7 @@ func (s *EnvironmentService) ListSwarmNodeCandidateEnvironments(ctx context.Cont
 	return envs, nil
 }
 
-// BindSwarmNodeEnvironment binds an existing visible environment to a swarm
-// node without modifying its connection details or agent token.
+// BindSwarmNodeEnvironment binds a visible environment to a swarm node, keeping its connection and token.
 func (s *EnvironmentService) BindSwarmNodeEnvironment(
 	ctx context.Context,
 	parentEnvironmentID, nodeID, environmentID string,
@@ -1699,11 +1590,14 @@ func (s *EnvironmentService) BindSwarmNodeEnvironment(
 	}
 
 	s.remoteEnvs.put(envRecord)
-	// A rebind also clears the binding on other environments.
+	// A rebind also clears the binding on other environments, whose IDs are unknown.
 	if rebind {
-		s.invalidateAllEnvironmentCacheInternal()
+		for i := range s.environmentGens {
+			s.environmentGens[i].Add(1)
+		}
+		s.environmentCache.Purge()
 	} else {
-		s.invalidateEnvironmentCacheInternal(envRecord.ID)
+		s.invalidateEnvironmentCache(envRecord.ID)
 	}
 	s.NotifyRuntimeStateChanged()
 	return &envRecord, nil
@@ -1717,14 +1611,17 @@ func (s *EnvironmentService) DetachSwarmNodeEnvironment(ctx context.Context, par
 		Updates(map[string]any{"parent_environment_id": nil, "swarm_node_id": nil, "updated_at": &now}).Error; err != nil {
 		return fmt.Errorf("failed to detach swarm node environment: %w", err)
 	}
-	s.invalidateAllEnvironmentCacheInternal()
+	// The detached environment's ID is unknown, so invalidate every stripe.
+	for i := range s.environmentGens {
+		s.environmentGens[i].Add(1)
+	}
+	s.environmentCache.Purge()
 	s.NotifyRuntimeStateChanged()
 
 	return nil
 }
 
-// DeleteSwarmNodeAgentDeployment removes a dedicated hidden agent registration
-// while leaving visible remote environments untouched.
+// DeleteSwarmNodeAgentDeployment removes a dedicated hidden agent registration, leaving visible ones untouched.
 func (s *EnvironmentService) DeleteSwarmNodeAgentDeployment(ctx context.Context, parentEnvironmentID, nodeID string, userID, username *string) error {
 	var envRecord Environment
 	if err := s.db.WithContext(ctx).
@@ -1750,9 +1647,8 @@ func (s *EnvironmentService) EnsureSwarmNodeAgentEnvironment(
 	}
 
 	var env Environment
-	// Prefer an existing visible binding. Legacy hidden registrations remain
-	// reusable, but all newly provisioned node agents are normal Remote
-	// Environments so one token and one agent can serve both use cases.
+	// Prefer a visible binding; legacy hidden registrations stay reusable, but new
+	// node agents are normal remote environments so one token serves both uses.
 	err = s.db.WithContext(ctx).
 		Where("parent_environment_id = ?", parentEnvironmentID).
 		Where("swarm_node_id = ?", nodeID).
@@ -1804,7 +1700,7 @@ func (s *EnvironmentService) UpdateSwarmNodeIdentity(ctx context.Context, envID,
 	if err := s.db.WithContext(ctx).Model(&Environment{}).Where("id = ?", envID).Updates(updates).Error; err != nil {
 		return fmt.Errorf("failed to update swarm node identity: %w", err)
 	}
-	s.invalidateEnvironmentCacheInternal(envID)
+	s.invalidateEnvironmentCache(envID)
 	s.NotifyRuntimeStateChanged()
 
 	return nil

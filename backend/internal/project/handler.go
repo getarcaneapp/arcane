@@ -19,6 +19,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/volume"
 	workspacetypes "github.com/getarcaneapp/arcane/types/v2/workspace"
 	"github.com/samber/mo"
+	"go.getarcane.app/docker/types"
 	"go.getarcane.app/kit/pkg/mapping"
 	"gorm.io/gorm"
 
@@ -26,7 +27,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/project/children/tags"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
@@ -61,6 +61,11 @@ type GetProjectStatusCountsInput struct {
 
 // ListProjectTagsInput identifies the environment whose tag catalog is requested.
 type ListProjectTagsInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+}
+
+// ListProjectReferencesInput identifies the environment whose project references are requested.
+type ListProjectReferencesInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 }
 
@@ -217,6 +222,15 @@ func (h *ProjectHandler) ListProjectTags(ctx context.Context, _ *ListProjectTags
 	return &handlerutil.Out[[]project.TagOption]{Body: base.ApiResponse[[]project.TagOption]{Success: true, Data: options}}, nil
 }
 
+// ListProjectReferences returns the ID and name of every project in an environment.
+func (h *ProjectHandler) ListProjectReferences(ctx context.Context, _ *ListProjectReferencesInput) (*handlerutil.Out[[]project.Reference], error) {
+	references, err := h.projectService.ListProjectReferences(ctx)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("Failed to list project references: " + err.Error())
+	}
+	return &handlerutil.Out[[]project.Reference]{Body: base.ApiResponse[[]project.Reference]{Success: true, Data: references}}, nil
+}
+
 // UpdateProjectTag applies one UI-managed project tag association change.
 func (h *ProjectHandler) UpdateProjectTag(ctx context.Context, input *UpdateProjectTagInput) (*handlerutil.Out[project.UpdateTagResponse], error) {
 	user, err := handlerutil.RequireUser(ctx)
@@ -275,7 +289,7 @@ type projectStreamOperationConfigInternal struct {
 	SuccessMessage string
 	Metadata       database.JSON
 	// Action runs the operation. ctx carries the stream writer under
-	// dockerutils.ProgressWriterKey; it is also passed directly for actions
+	// types.ProgressWriterKey; it is also passed directly for actions
 	// that take a writer parameter.
 	Action func(ctx context.Context, writer io.Writer) error
 }
@@ -326,7 +340,7 @@ func (h *ProjectHandler) streamProjectOperationInternal(environmentID, projectID
 
 			writer := activitylib.NewWriter(runtimeCtx, h.activityService, activityID, rawWriter, cfg.WriterStep)
 
-			opCtx := context.WithValue(runtimeCtx, docker.ProgressWriterKey{}, writer)
+			opCtx := context.WithValue(runtimeCtx, types.ProgressWriterKey{}, writer)
 			if err := cfg.Action(opCtx, writer); err != nil {
 				activitylib.FlushWriter(writer)
 				activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, cfg.FailureMessage, err)
@@ -396,7 +410,7 @@ func (h *ProjectHandler) DownProject(ctx context.Context, input *DownProjectInpu
 		false,
 	)
 	activityWriter := activitylib.NewWriter(runtimeCtx, h.activityService, activityID, io.Discard, "Stopping project")
-	downCtx := context.WithValue(runtimeCtx, docker.ProgressWriterKey{}, activityWriter)
+	downCtx := context.WithValue(runtimeCtx, types.ProgressWriterKey{}, activityWriter)
 	if downProjectErr := h.projectService.DownProject(downCtx, input.ProjectID, *user); downProjectErr != nil {
 		activitylib.FlushWriter(activityWriter)
 		activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Project stopped", downProjectErr)
@@ -408,15 +422,7 @@ func (h *ProjectHandler) DownProject(ctx context.Context, input *DownProjectInpu
 	activitylib.FlushWriter(activityWriter)
 	activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Project stopped", nil)
 
-	return &handlerutil.Out[base.MessageResponse]{
-		Body: base.ApiResponse[base.MessageResponse]{
-			Success: true,
-			Data: base.MessageResponse{
-				Message:    "Project brought down successfully",
-				ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer(),
-			},
-		},
-	}, nil
+	return handlerutil.MessageOutput("Project brought down successfully", activityID), nil
 }
 
 func projectUpdateHTTPErrorInternal(err error) error {
@@ -635,10 +641,10 @@ func (h *ProjectHandler) DestroyProject(ctx context.Context, input *DestroyProje
 		slog.DebugContext(ctx, "DestroyProject handler received body",
 			"removeFiles", removeFiles,
 			"removeVolumes", removeVolumes,
-			"projectID", input.ProjectID)
+			"projectId", input.ProjectID)
 	} else {
 		slog.DebugContext(ctx, "DestroyProject handler received nil body",
-			"projectID", input.ProjectID)
+			"projectId", input.ProjectID)
 	}
 
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
@@ -664,7 +670,7 @@ func (h *ProjectHandler) DestroyProject(ctx context.Context, input *DestroyProje
 		false,
 	)
 	activityWriter := activitylib.NewWriter(runtimeCtx, h.activityService, activityID, io.Discard, "Destroying project")
-	destroyCtx := context.WithValue(runtimeCtx, docker.ProgressWriterKey{}, activityWriter)
+	destroyCtx := context.WithValue(runtimeCtx, types.ProgressWriterKey{}, activityWriter)
 	if destroyProjectErr := h.projectService.DestroyProject(destroyCtx, input.ProjectID, removeFiles, removeVolumes, *user); destroyProjectErr != nil {
 		activitylib.FlushWriter(activityWriter)
 		activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Project destroyed", destroyProjectErr)
@@ -673,15 +679,7 @@ func (h *ProjectHandler) DestroyProject(ctx context.Context, input *DestroyProje
 	activitylib.FlushWriter(activityWriter)
 	activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Project destroyed", nil)
 
-	return &handlerutil.Out[base.MessageResponse]{
-		Body: base.ApiResponse[base.MessageResponse]{
-			Success: true,
-			Data: base.MessageResponse{
-				Message:    "Project destroyed successfully",
-				ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer(),
-			},
-		},
-	}, nil
+	return handlerutil.MessageOutput("Project destroyed successfully", activityID), nil
 }
 
 // UpdateProject updates a Docker Compose project.
@@ -897,7 +895,7 @@ func (h *ProjectHandler) runProjectActivityActionInternal(ctx context.Context, e
 		)
 	}
 	activityWriter := activitylib.NewWriter(runtimeCtx, h.activityService, activityID, io.Discard, cfg.WriterStep)
-	actionCtx := context.WithValue(runtimeCtx, docker.ProgressWriterKey{}, activityWriter)
+	actionCtx := context.WithValue(runtimeCtx, types.ProgressWriterKey{}, activityWriter)
 	if actionErr := cfg.Action(actionCtx, projectID, *user); actionErr != nil {
 		activitylib.FlushWriter(activityWriter)
 		activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, cfg.FailureMessage, actionErr)
@@ -929,12 +927,7 @@ func (h *ProjectHandler) ArchiveProject(ctx context.Context, input *ArchiveProje
 		return nil, huma.Error500InternalServerError("Failed to archive project: " + archiveProjectErr.Error())
 	}
 
-	return &handlerutil.Out[base.MessageResponse]{
-		Body: base.ApiResponse[base.MessageResponse]{
-			Success: true,
-			Data:    base.MessageResponse{Message: "Project archived successfully"},
-		},
-	}, nil
+	return handlerutil.MessageOutput("Project archived successfully", ""), nil
 }
 
 func (h *ProjectHandler) UnarchiveProject(ctx context.Context, input *UnarchiveProjectInput) (*handlerutil.Out[base.MessageResponse], error) {
@@ -951,12 +944,7 @@ func (h *ProjectHandler) UnarchiveProject(ctx context.Context, input *UnarchiveP
 		return nil, huma.Error500InternalServerError("Failed to unarchive project: " + unarchiveProjectErr.Error())
 	}
 
-	return &handlerutil.Out[base.MessageResponse]{
-		Body: base.ApiResponse[base.MessageResponse]{
-			Success: true,
-			Data:    base.MessageResponse{Message: "Project unarchived successfully"},
-		},
-	}, nil
+	return handlerutil.MessageOutput("Project unarchived successfully", ""), nil
 }
 
 // PullProjectImages pulls all images for a project with streaming progress.

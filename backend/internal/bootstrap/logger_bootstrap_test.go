@@ -18,7 +18,7 @@ func TestRequestLogHandler(t *testing.T) {
 
 		logger.LogAttrs(t.Context(), slog.LevelWarn, "Not Found",
 			slog.Group("request",
-				slog.Time("time", time.Now()),
+				slog.Time("time", time.Now()), //nolint:sloglint // Mirrors the attribute shape slog-echo emits.
 				slog.String("method", "GET"),
 				slog.String("host", "localhost:3552"),
 				slog.String("path", "/api/missing"),
@@ -29,12 +29,12 @@ func TestRequestLogHandler(t *testing.T) {
 				slog.Int("length", 0),
 			),
 			slog.Group("response",
-				slog.Time("time", time.Now()),
+				slog.Time("time", time.Now()), //nolint:sloglint // Mirrors the attribute shape slog-echo emits.
 				slog.Duration("latency", 1500*time.Microsecond),
 				slog.Int("status", 404),
 				slog.Int("length", 24),
 			),
-			slog.Any("error", map[string]any{
+			slog.Any("error", map[string]any{ //nolint:sloglint // Mirrors the attribute shape slog-echo emits.
 				"code":     404,
 				"message":  "Not Found",
 				"internal": nil,

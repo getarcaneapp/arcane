@@ -57,7 +57,9 @@
 		disabled = false,
 		disabledReason,
 		onRefresh,
-		extraActions = []
+		extraActions = [],
+		hasUnsavedChanges = false,
+		onSaveChanges
 	}: {
 		id: string;
 		name?: string;
@@ -75,6 +77,8 @@
 		disabledReason?: string;
 		onRefresh?: () => void | Promise<void>;
 		extraActions?: ActionButton[];
+		hasUnsavedChanges?: boolean;
+		onSaveChanges?: () => Promise<boolean>;
 	} = $props();
 
 	let isLoading = $state<LoadingStates>({
@@ -276,48 +280,74 @@
 		}
 	}
 
+	// Saves pending editor changes first; the deploy is skipped if the save fails.
+	function confirmSaveBeforeDeploy(label: string, run: () => Promise<void>) {
+		openConfirmDialog({
+			title: m.common_unsaved_changes(),
+			message: m.projects_save_before_deploy_message(),
+			confirm: {
+				label,
+				action: async () => {
+					if (await onSaveChanges?.()) await run();
+				}
+			}
+		});
+	}
+
+	function confirmDeploy(watch: boolean) {
+		if (hasUnsavedChanges) {
+			confirmSaveBeforeDeploy(m.projects_save_and_deploy(), () => handleDeploy(undefined, watch));
+			return;
+		}
+		void handleDeploy(undefined, watch);
+	}
+
 	function confirmRedeploy(watch: boolean) {
+		if (hasUnsavedChanges) {
+			confirmSaveBeforeDeploy(m.projects_save_and_redeploy(), () => handleRedeploy(watch));
+			return;
+		}
 		openConfirmDialog({
 			title: type === 'container' ? m.container_confirm_redeploy_title() : m.common_confirm_redeploy_title(),
 			message: type === 'container' ? m.container_confirm_redeploy_message() : m.common_confirm_redeploy_message(),
 			confirm: {
 				label: m.common_redeploy(),
-				action: async () => {
-					const operationStartedAt = Math.floor(Temporal.Now.instant().epochMilliseconds / 1000);
-					if (watch) {
-						operationWatchStore.start(`${m.common_redeploy()} — ${name ?? id}`);
-					}
-					const result = await redeployMutation.mutateAsync({ watch });
-					if (watch && result.error) {
-						operationWatchStore.fail(
-							result.error.message || m.common_action_failed_with_type({ action: m.common_redeploy(), type })
-						);
-						return;
-					}
-					if (watch) {
-						enterInteractiveWatchInternal(operationStartedAt);
-					}
-					await handleApiResultWithCallbacks({
-						result,
-						message: m.common_action_failed_with_type({ action: m.common_redeploy(), type }),
-						onSuccess: async (data) => {
-							const activityId = type === 'container' ? extractActivityId(data) : redeployActivityId;
-							if (activityId && !watch) {
-								toast.success(
-									type === 'project' ? m.compose_redeploy_success() : m.container_redeploy_success(),
-									activityToastOptions(activityId)
-								);
-							}
-							const containerData = data as ContainerDetailsDto;
-							if (type === 'container' && containerData?.id) {
-								goto(`/containers/${containerData.id}`);
-							} else if (type === 'container') {
-								goto('/containers');
-							} else {
-								onActionComplete('running');
-							}
-						}
-					});
+				action: () => handleRedeploy(watch)
+			}
+		});
+	}
+
+	async function handleRedeploy(watch: boolean) {
+		const operationStartedAt = Math.floor(Temporal.Now.instant().epochMilliseconds / 1000);
+		if (watch) {
+			operationWatchStore.start(`${m.common_redeploy()} — ${name ?? id}`);
+		}
+		const result = await redeployMutation.mutateAsync({ watch });
+		if (watch && result.error) {
+			operationWatchStore.fail(result.error.message || m.common_action_failed_with_type({ action: m.common_redeploy(), type }));
+			return;
+		}
+		if (watch) {
+			enterInteractiveWatchInternal(operationStartedAt);
+		}
+		await handleApiResultWithCallbacks({
+			result,
+			message: m.common_action_failed_with_type({ action: m.common_redeploy(), type }),
+			onSuccess: async (data) => {
+				const activityId = type === 'container' ? extractActivityId(data) : redeployActivityId;
+				if (activityId && !watch) {
+					toast.success(
+						type === 'project' ? m.compose_redeploy_success() : m.container_redeploy_success(),
+						activityToastOptions(activityId)
+					);
+				}
+				const containerData = data as ContainerDetailsDto;
+				if (type === 'container' && containerData?.id) {
+					goto(`/containers/${containerData.id}`);
+				} else if (type === 'container') {
+					goto('/containers');
+				} else {
+					onActionComplete('running');
 				}
 			}
 		});
@@ -519,7 +549,7 @@
 					loading: uiLoading.start,
 					disabled,
 					disabledReason,
-					onclick: () => handleDeploy(),
+					onclick: () => confirmDeploy(false),
 					menuContent: upMenu
 				});
 			}
@@ -635,7 +665,7 @@
 {#snippet upMenu(disabled: boolean)}
 	<DeployOptionsMenuItems />
 	<DropdownMenu.Separator />
-	{@render watchItem(() => handleDeploy(undefined, true), disabled)}
+	{@render watchItem(() => confirmDeploy(true), disabled)}
 {/snippet}
 
 {#snippet redeployMenu(disabled: boolean)}

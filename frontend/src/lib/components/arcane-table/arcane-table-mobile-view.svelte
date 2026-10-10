@@ -1,17 +1,19 @@
 <script lang="ts" generics="TData extends Record<string, any> & { id: string }">
-	import type { Snippet, Component } from 'svelte';
-	import { slide } from 'svelte/transition';
+	import { PersistedState } from 'runed';
+	import { untrack, type Snippet, type Component } from 'svelte';
 
-	import DropdownCard from '#lib/components/dropdown-card.svelte';
+	import * as Card from '#lib/components/ui/card/index.js';
 	import Skeleton from '#lib/components/ui/skeleton/skeleton.svelte';
+	import { createVirtualizer } from '#lib/components/ui/virtualizer.svelte.js';
+	import VirtualRows from '#lib/components/virtual-rows.svelte';
+	import { ArrowDownIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import type { TableDisplayEntry } from '#lib/types/table-display.js';
 	import { cn } from '#lib/utils.js';
 
 	import { shouldIgnoreTableRowClick, type GroupedData } from './arcane-table.types.svelte';
-	import { getTableRowsForItems } from './arcane-table.utils';
+	import { getTableDisplayEntries } from './arcane-table.utils';
 	import type { ArcaneRow, ArcaneSvelteTable } from './table-features';
-
-	void slide;
 
 	let {
 		table,
@@ -23,6 +25,8 @@
 		expandedRowContent,
 		expandedRows,
 		onToggleRowExpanded,
+		scrollElement,
+		initialScrollTop = 0,
 		loading = false,
 		empty
 	}: {
@@ -37,6 +41,8 @@
 		onToggleRowExpanded?: (rowId: string) => void;
 		/** First-load flag — when set and there's no data, render skeleton cards. */
 		loading?: boolean;
+		scrollElement?: HTMLElement;
+		initialScrollTop?: number;
 		/** Renders the empty state; receives an optional wrapper class. */
 		empty: Snippet;
 	} = $props();
@@ -48,8 +54,69 @@
 		if (hasExpand) onToggleRowExpanded?.(rowId);
 	}
 
-	// Check if we should render grouped view
-	const isGrouped = $derived(groupedRows !== null && groupedRows.length > 0);
+	const groupExpansion = new PersistedState<Record<string, boolean>>('collapsible-cards-expanded', {}, { syncTabs: false });
+	const collapsedGroups = $derived.by(() => {
+		const collapsed: Record<string, boolean> = {};
+		for (const group of groupedRows ?? []) {
+			collapsed[group.groupName] = !(groupExpansion.current[`mobile-group-${group.groupName}`] ?? false);
+		}
+		return collapsed;
+	});
+	const entries = $derived(getTableDisplayEntries(table.getRowModel().rows, rowIndex, groupedRows, collapsedGroups));
+	const shouldVirtualize = $derived(entries.length > 100);
+	const getItemKey = $derived.by(() => {
+		const displayed = entries;
+		return (index: number) => displayed[index]?.key ?? index;
+	});
+	const rowVirtualizer = createVirtualizer<HTMLElement, HTMLDivElement>(() => ({
+		count: entries.length,
+		getScrollElement: () => scrollElement ?? null,
+		estimateSize: (index) => (entries[index]?.kind === 'group' ? 90 : 160),
+		overscan: 10,
+		getItemKey,
+		initialOffset: initialScrollTop,
+		enabled: shouldVirtualize && !!scrollElement
+	}));
+
+	function toggleGroup(groupName: string) {
+		groupExpansion.current = {
+			...groupExpansion.current,
+			[`mobile-group-${groupName}`]: collapsedGroups[groupName] ?? true
+		};
+	}
+
+	$effect(() => {
+		const container = scrollElement;
+		if (!container || !shouldVirtualize) return;
+		// Field changes invalidate cached heights for cards outside the viewport.
+		JSON.stringify(mobileFieldVisibility);
+		let width = container.clientWidth;
+		const observer = new ResizeObserver(() => {
+			if (container.clientWidth !== width) {
+				width = container.clientWidth;
+				rowVirtualizer.measure();
+			}
+		});
+		observer.observe(container);
+		const remeasure = () => rowVirtualizer.measure();
+		document.fonts.addEventListener('loadingdone', remeasure);
+		untrack(remeasure);
+		return () => {
+			observer.disconnect();
+			document.fonts.removeEventListener('loadingdone', remeasure);
+		};
+	});
+
+	$effect(() => {
+		const container = scrollElement;
+		const size = rowVirtualizer.totalSize;
+		if (!container || !shouldVirtualize) return;
+		const frame = requestAnimationFrame(() => {
+			const max = Math.max(0, size - container.clientHeight);
+			if (container.scrollTop > max) container.scrollTop = max;
+		});
+		return () => cancelAnimationFrame(frame);
+	});
 </script>
 
 {#snippet mobileSkeleton()}
@@ -75,7 +142,7 @@
 		{@render mobileCard({ row, item: row.original, mobileFieldVisibility })}
 	</div>
 	{#if hasExpand && isExpanded && expandedRowContent}
-		<div class="bg-muted/30 px-4 py-3" transition:slide={{ duration: 200 }}>
+		<div class="bg-muted/30 px-4 py-3">
 			{@render expandedRowContent({ row, item: row.original })}
 		</div>
 	{/if}
@@ -87,39 +154,50 @@
 	</div>
 {/snippet}
 
-<div class="divide-y divide-border/30">
-	{#if isGrouped && groupedRows}
-		<div class="space-y-4 py-2">
-			{#each groupedRows as group (group.groupName)}
-				{@const groupRows = getTableRowsForItems(rowIndex, group.items)}
-				{@const IconComponent = groupIcon?.(group.groupName)}
-
-				<DropdownCard
-					id={`mobile-group-${group.groupName}`}
-					title={group.groupName}
-					description={`${group.items.length} ${group.items.length === 1 ? 'item' : 'items'}`}
-					icon={IconComponent}
-				>
-					<div class="divide-y divide-border/30">
-						{#each groupRows as row (row.id)}
-							{@render mobileRow(row)}
-						{:else}
-							<div class="flex h-24 items-center justify-center text-center text-muted-foreground">
-								{m.common_no_results_found()}
-							</div>
-						{/each}
-					</div>
-				</DropdownCard>
-			{/each}
-		</div>
-	{:else if loading && table.getRowModel().rows.length === 0}
-		{@render mobileSkeleton()}
+{#snippet displayEntry(entry: TableDisplayEntry<TData>)}
+	{#if entry.kind === 'group'}
+		{@const group = entry.group}
+		{@const expanded = !collapsedGroups[group.groupName]}
+		<Card.Root>
+			<Card.Header
+				icon={groupIcon?.(group.groupName)}
+				enableHover
+				class="cursor-pointer select-none"
+				role="button"
+				tabindex={0}
+				aria-expanded={expanded}
+				onclick={() => toggleGroup(group.groupName)}
+				onkeydown={(event) => {
+					if (event.key === 'Enter' || event.key === ' ') {
+						event.preventDefault();
+						toggleGroup(group.groupName);
+					}
+				}}
+			>
+				<div>
+					<Card.Title>{group.groupName}</Card.Title>
+					<Card.Description class="mt-1">{m.table_group_items({ count: group.items.length })}</Card.Description>
+				</div>
+				<Card.Action class="ml-auto">
+					<ArrowDownIcon class={cn('size-5', expanded && 'rotate-180')} />
+				</Card.Action>
+			</Card.Header>
+		</Card.Root>
 	{:else}
-		<!-- Non-grouped view (original behavior) -->
-		{#each table.getRowModel().rows as row (row.id)}
-			{@render mobileRow(row)}
-		{:else}
-			{@render emptyState()}
-		{/each}
+		<div class="border-b border-border/30">
+			{@render mobileRow(entry.row)}
+		</div>
 	{/if}
-</div>
+{/snippet}
+
+{#if loading && entries.length === 0}
+	{@render mobileSkeleton()}
+{:else if entries.length === 0}
+	{@render emptyState()}
+{:else if shouldVirtualize}
+	<VirtualRows virtualizer={rowVirtualizer} rows={entries} row={displayEntry} />
+{:else}
+	{#each entries as entry (entry.key)}
+		{@render displayEntry(entry)}
+	{/each}
+{/if}

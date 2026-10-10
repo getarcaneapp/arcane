@@ -92,7 +92,7 @@ func (s *Service) EnsureApiKey(
 		// The new key was never linked; remove it so a failed rotation does
 		// not leave an orphaned valid credential behind.
 		if delErr := s.apiKeys.DeleteApiKey(ctx, apiKeyDto.ID); delErr != nil && !errors.Is(delErr, apikey.ErrApiKeyNotFound) {
-			slog.ErrorContext(ctx, "Failed to clean up unlinked environment API key", "environmentID", environmentID, "error", delErr.Error())
+			slog.ErrorContext(ctx, "Failed to clean up unlinked environment API key", "environmentId", environmentID, "error", delErr.Error())
 		}
 		return "", linkErr
 	}
@@ -104,7 +104,7 @@ func (s *Service) EnsureApiKey(
 	// stays visible and deletable on the API Keys page.
 	if previousApiKeyID != nil && *previousApiKeyID != apiKeyDto.ID {
 		if deleteApiKeyErr := s.apiKeys.DeleteApiKey(ctx, *previousApiKeyID); deleteApiKeyErr != nil && !errors.Is(deleteApiKeyErr, apikey.ErrApiKeyNotFound) {
-			slog.ErrorContext(ctx, "Failed to delete previous environment API key; the old key remains valid until deleted manually", "environmentID", environmentID, "error", deleteApiKeyErr.Error())
+			slog.ErrorContext(ctx, "Failed to delete previous environment API key; the old key remains valid until deleted manually", "environmentId", environmentID, "error", deleteApiKeyErr.Error())
 		}
 	}
 

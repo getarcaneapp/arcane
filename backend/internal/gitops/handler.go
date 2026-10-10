@@ -280,14 +280,7 @@ func (h *GitOpsSyncHandler) DeleteSync(ctx context.Context, input *DeleteGitOpsS
 		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to delete GitOps sync")
 	}
 
-	return &handlerutil.Out[base.MessageResponse]{
-		Body: base.ApiResponse[base.MessageResponse]{
-			Success: true,
-			Data: base.MessageResponse{
-				Message: "Sync deleted successfully",
-			},
-		},
-	}, nil
+	return handlerutil.MessageOutput("Sync deleted successfully", ""), nil
 }
 
 // PerformSync manually triggers a sync operation.

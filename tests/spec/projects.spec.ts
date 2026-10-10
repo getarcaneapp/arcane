@@ -421,6 +421,12 @@ test.describe('Projects Page', () => {
 
 		await clickProjectsPageUpdateAction(page);
 
+		// The check only starts once the confirmation dialog is accepted
+		const dialog = page.getByRole('dialog');
+		await expect(dialog).toBeVisible();
+		expect(checkAllRequests).toBe(0);
+		await dialog.getByRole('button', { name: 'Update Projects', exact: true }).click();
+
 		await expect.poll(() => checkAllRequests).toBe(1);
 		expect(updaterRunRequests).toBe(0);
 	});

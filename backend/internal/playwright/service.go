@@ -48,7 +48,7 @@ func NewPlaywrightService(
 }
 
 func (ps *PlaywrightService) CreateTestApiKeys(ctx context.Context, count int) ([]*apikeytypes.ApiKeyCreatedDto, error) {
-	slog.Info("Playwright: Creating test API keys", "count", count)
+	slog.InfoContext(ctx, "Playwright: Creating test API keys", "count", count)
 
 	// Get the arcane user to associate the API keys with
 	localUser, err := ps.userService.GetUserByUsername(ctx, "arcane")
@@ -82,12 +82,12 @@ func (ps *PlaywrightService) CreateTestApiKeys(ctx context.Context, count int) (
 		createdKeys = append(createdKeys, apiKey)
 	}
 
-	slog.Info("Playwright: Test API keys created successfully", "count", len(createdKeys))
+	slog.InfoContext(ctx, "Playwright: Test API keys created successfully", "count", len(createdKeys))
 	return createdKeys, nil
 }
 
 func (ps *PlaywrightService) DeleteAllTestApiKeys(ctx context.Context) error {
-	slog.Info("Playwright: Deleting all test API keys")
+	slog.InfoContext(ctx, "Playwright: Deleting all test API keys")
 
 	// Get all API keys with test prefix
 	params := pagination.QueryParams{
@@ -103,11 +103,11 @@ func (ps *PlaywrightService) DeleteAllTestApiKeys(ctx context.Context) error {
 
 	for _, apiKey := range apiKeys {
 		if deleteApiKeyErr := ps.apiKeyService.DeleteApiKey(ctx, apiKey.ID); deleteApiKeyErr != nil {
-			slog.Warn("Failed to delete test API key", "id", apiKey.ID, "error", deleteApiKeyErr)
+			slog.WarnContext(ctx, "Failed to delete test API key", "id", apiKey.ID, "error", deleteApiKeyErr)
 		}
 	}
 
-	slog.Info("Playwright: Test API keys deleted", "count", len(apiKeys))
+	slog.InfoContext(ctx, "Playwright: Test API keys deleted", "count", len(apiKeys))
 	return nil
 }
 

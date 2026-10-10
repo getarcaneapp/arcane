@@ -1,3 +1,80 @@
+## v2.15.1
+
+### Bug fixes
+
+- remove table header blur ([4d9bca0](https://github.com/getarcaneapp/arcane/commit/4d9bca092d6006b7265a6ce07928860b47ab84a5) by @kmendell)
+- interpolate variables in Compose include paths ([\#4298](https://github.com/getarcaneapp/arcane/pull/4298) by @kmendell)
+- resolve webhook target names on remote environments ([\#4299](https://github.com/getarcaneapp/arcane/pull/4299) by @kmendell)
+- default notifySelf to true and add setting for Signal notifications ([\#4302](https://github.com/getarcaneapp/arcane/pull/4302) by @Shraymonks)
+- use persistent Git storage for SSH host keys on native installs ([\#4300](https://github.com/getarcaneapp/arcane/pull/4300) by @kmendell)
+- stop logout from hanging on permission errors after OIDC login ([\#4309](https://github.com/getarcaneapp/arcane/pull/4309) by @kmendell)
+- stop system backups failing on live project files during capture ([\#4311](https://github.com/getarcaneapp/arcane/pull/4311) by @kmendell)
+- move Francis actor state into its own SQLite database ([\#4312](https://github.com/getarcaneapp/arcane/pull/4312) by @kmendell)
+- keep selected tag on self-update and refresh stale project update status ([\#4313](https://github.com/getarcaneapp/arcane/pull/4313) by @kmendell)
+- report accurate reclaimed space in scheduled prune ([\#4317](https://github.com/getarcaneapp/arcane/pull/4317) by @kmendell)
+- allow deleting backups whose S3 repository no longer exists ([\#4319](https://github.com/getarcaneapp/arcane/pull/4319) by @kmendell)
+- navigate to the selected environment on environment-scoped routes ([\#4320](https://github.com/getarcaneapp/arcane/pull/4320) by @kmendell)
+- only release arcane-cli on apple silicon (arm64) drop amd64 support ([b3acb52](https://github.com/getarcaneapp/arcane/commit/b3acb52dd02f39e39489203ce04ab316b47de8f6) by @kmendell)
+- keep the Compose image spelling during updates and self-updates ([\#4330](https://github.com/getarcaneapp/arcane/pull/4330) by @kmendell)
+
+### Other
+
+- move docker utils package in go.getarcane.app/docker ([\#4296](https://github.com/getarcaneapp/arcane/pull/4296) by @kmendell)
+- inline logic in project services ([\#4316](https://github.com/getarcaneapp/arcane/pull/4316) by @kmendell)
+
+**Full Changelog**: https://github.com/getarcaneapp/arcane/compare/v2.15.0...v2.15.1
+
+## v2.15.0
+
+### New features
+
+- browse repositories and tags of configured registries ([\#4162](https://github.com/getarcaneapp/arcane/pull/4162) by @Laval13)
+- add mobile sorting to shared table view menu ([\#4225](https://github.com/getarcaneapp/arcane/pull/4225) by @kmendell)
+- mutiple ui/ux changes, backup login, and show both digest values ([\#4271](https://github.com/getarcaneapp/arcane/pull/4271) by @kmendell)
+- add actor statuses to diagnostics page ([01a8964](https://github.com/getarcaneapp/arcane/commit/01a8964d69ba443b7462e83d2913e43b8a8c5133) by @kmendell)
+- add unsaved changes message when deploying or redploying projects ([32f1e33](https://github.com/getarcaneapp/arcane/commit/32f1e33526c112fbb01d870f153ba969e69a866e) by @kmendell)
+
+### Bug fixes
+
+- handle .env directories in project scan, env saves and workspace ([\#4213](https://github.com/getarcaneapp/arcane/pull/4213) by @Mczubi)
+- reduce remote agent egress from manager polling and config sync ([\#4218](https://github.com/getarcaneapp/arcane/pull/4218) by @kmendell)
+- honour \*\_FILE on the environment-managed settings path ([\#4203](https://github.com/getarcaneapp/arcane/pull/4203) by @mortencombat)
+- align editor themes with selected application theme ([\#4219](https://github.com/getarcaneapp/arcane/pull/4219) by @kmendell)
+- prevent overlapping columns in virtualized tables ([\#4220](https://github.com/getarcaneapp/arcane/pull/4220) by @kmendell)
+- remove duplicate deployment event on redeploy ([1b31dd9](https://github.com/getarcaneapp/arcane/commit/1b31dd9cb233726c49c768b5a0cb619af04609e1) by @kmendell)
+- omit SQL parameters to prevent oversized query logs ([\#4221](https://github.com/getarcaneapp/arcane/pull/4221) by @kmendell)
+- stop directory sync from copying unrelated project data ([\#4222](https://github.com/getarcaneapp/arcane/pull/4222) by @kmendell)
+- prevent detail page errors when navigating away ([\#4229](https://github.com/getarcaneapp/arcane/pull/4229) by @kmendell)
+- automatically clean up upgrade logs with configurable retention ([\#4230](https://github.com/getarcaneapp/arcane/pull/4230) by @kmendell)
+- add ecr public to docker image list ([0d3cd41](https://github.com/getarcaneapp/arcane/commit/0d3cd419ed7d3c2763dac662bf80e98d7a06230f) by @kmendell)
+- reject events from cancelled stream connections ([\#4241](https://github.com/getarcaneapp/arcane/pull/4241) by @kmendell)
+- prevent loaded associations from overriding repository updates ([\#4243](https://github.com/getarcaneapp/arcane/pull/4243) by @kmendell)
+- allow redeploy with restricted bind sources ([\#4260](https://github.com/getarcaneapp/arcane/pull/4260) by @kmendell)
+- prevent stale cache fills and harden stream cleanup ([\#4267](https://github.com/getarcaneapp/arcane/pull/4267) by @kmendell)
+- remove manual review and fix Francis scheduling ([\#4268](https://github.com/getarcaneapp/arcane/pull/4268) by @kmendell)
+- recover oversized legacy job histories on startup ([\#4270](https://github.com/getarcaneapp/arcane/pull/4270) by @kmendell)
+- show upgrade status for arcanes self-upgrade ([\#4278](https://github.com/getarcaneapp/arcane/pull/4278) by @kmendell)
+
+### Performance improvements
+
+- reduce database chatter and simplify hot queries ([\#4239](https://github.com/getarcaneapp/arcane/pull/4239) by @kmendell)
+
+### Other
+
+- use go.getarcane.app for common utilities ([\#4223](https://github.com/getarcaneapp/arcane/pull/4223) by @kmendell)
+- cleanup crowded action button ui ([\#4233](https://github.com/getarcaneapp/arcane/pull/4233) by @kmendell)
+- use francis for distrbuted actors ([\#4261](https://github.com/getarcaneapp/arcane/pull/4261) by @kmendell)
+- use std lib errors ([\#4263](https://github.com/getarcaneapp/arcane/pull/4263) by @kmendell)
+- update header design on dashboard ([\#4269](https://github.com/getarcaneapp/arcane/pull/4269) by @kmendell)
+- remove viper config loading and use raw yaml marshalling ([e4c1c0a](https://github.com/getarcaneapp/arcane/commit/e4c1c0a335af7d63a19a5f3eb86c37205e51bfea) by @kmendell)
+- regroup commands and add loading states ([0f6591f](https://github.com/getarcaneapp/arcane/commit/0f6591f7d3162ae3e01946a5f6f1f39779a09180) by @kmendell)
+- use standardized layout for domain packages ([7d41c58](https://github.com/getarcaneapp/arcane/commit/7d41c588ac9ae0b81defb81e2f679e6fa2fec581) by @kmendell)
+- use sse over json log line streaming ([\#4276](https://github.com/getarcaneapp/arcane/pull/4276) by @kmendell)
+- simplify json serializer ([b47a8b9](https://github.com/getarcaneapp/arcane/commit/b47a8b90dec588ab2c516f4e24601f4e10880337) by @kmendell)
+- relayout login screen ([3226230](https://github.com/getarcaneapp/arcane/commit/32262306cabef7d9809651996243898cda51bdc6) by @kmendell)
+
+**Full Changelog**: https://github.com/getarcaneapp/arcane/compare/v2.14.0...v2.15.0
+
 ## v2.14.0
 
 ### New features

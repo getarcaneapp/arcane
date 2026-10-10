@@ -40,6 +40,8 @@ type SlotWaiter interface {
 }
 
 type StartRequest struct {
+	// ID is an optional caller-chosen ID; starting an existing ID returns that row.
+	ID            string
 	EnvironmentID string
 	// BatchID groups activities spawned by one logical user action. When nil,
 	// the batch ID attached to the request context (if any) is used instead.

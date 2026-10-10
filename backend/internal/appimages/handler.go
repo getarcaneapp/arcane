@@ -50,40 +50,31 @@ func (h *AppImagesHandler) GetLogo(ctx context.Context, input *GetLogoInput) (*G
 		name += "-animated"
 	}
 
-	return h.getImageWithColor(name, input.Color, input.Loop && name == "logo-animated")
+	return h.getImageWithColor(name, input.Color, input.Loop)
 }
 
 // GetLogoEmail returns the application logo image for emails (PNG).
 func (h *AppImagesHandler) GetLogoEmail(ctx context.Context, input *struct{}) (*GetAppImageOutput, error) {
-	return h.getImage("logo-email")
+	return h.getImageWithColor("logo-email", "", false)
 }
 
 // GetFavicon returns the application favicon image.
 func (h *AppImagesHandler) GetFavicon(ctx context.Context, input *struct{}) (*GetAppImageOutput, error) {
-	return h.getImage("favicon")
+	return h.getImageWithColor("favicon", "", false)
 }
 
 // GetDefaultProfile returns the default user profile image.
 func (h *AppImagesHandler) GetDefaultProfile(ctx context.Context, input *struct{}) (*GetAppImageOutput, error) {
-	return h.getImage("profile")
+	return h.getImageWithColor("profile", "", false)
 }
 
 // GetPWAIcon returns a PWA icon image.
 func (h *AppImagesHandler) GetPWAIcon(ctx context.Context, input *GetPWAIconInput) (*GetAppImageOutput, error) {
-	return h.getImageByFilenameInternal(input.Filename)
-}
-
-func (h *AppImagesHandler) getImage(name string) (*GetAppImageOutput, error) {
-	return h.getImageWithColor(name, "", false)
-}
-
-func (h *AppImagesHandler) getImageByFilenameInternal(filename string) (*GetAppImageOutput, error) {
-	if _, ok := allowedPWAIconFilenames[filename]; !ok {
+	if _, ok := allowedPWAIconFilenames[input.Filename]; !ok {
 		return nil, huma.Error400BadRequest("invalid PWA icon filename")
 	}
 
-	name := strings.TrimSuffix(filename, filepath.Ext(filename))
-	return h.getImage(name)
+	return h.getImageWithColor(strings.TrimSuffix(input.Filename, filepath.Ext(input.Filename)), "", false)
 }
 
 func (h *AppImagesHandler) getImageWithColor(name, colorOverride string, loop bool) (*GetAppImageOutput, error) {
@@ -92,10 +83,11 @@ func (h *AppImagesHandler) getImageWithColor(name, colorOverride string, loop bo
 		return nil, huma.Error500InternalServerError("Failed to retrieve image: " + err.Error())
 	}
 
-	// Always disable logo caching so theme/logo updates are reflected immediately.
-	// Keep cache for static app images that do not change at runtime.
+	// Disable branding caching so theme and build-channel artwork is reflected immediately.
+	_, isPWAIcon := allowedPWAIconFilenames[name+".png"]
+	isBranding := IsLogoVariant(name) || isPWAIcon || name == "logo-email" || name == "favicon"
 	cacheControl := kit.Ternary(
-		IsLogoVariant(name) || colorOverride != "",
+		isBranding || colorOverride != "",
 		"no-cache, no-store, must-revalidate",
 		"public, max-age=900, stale-while-revalidate=86400",
 	)

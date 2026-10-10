@@ -13,6 +13,7 @@
 	import type { AppVersionInformation, Settings } from '#lib/types/settings.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
+	import { isDevelopmentBuild, usesDevelopmentBranding } from '#lib/utils/branding.js';
 	import { getApplicationLogo } from '#lib/utils/docker.js';
 	import { resolveLogoColor } from '#lib/utils/theme.svelte.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
@@ -44,18 +45,18 @@
 
 	const enabledFeatures = $derived((displayInfo.enabledFeatures ?? []).filter(Boolean).join(', '));
 	const logoColor = $derived(resolveLogoColor(mode.current === 'dark'));
-	const logoUrl = $derived(getApplicationLogo(false, logoColor, logoColor));
+	const developmentBranding = $derived(usesDevelopmentBranding());
+	const logoUrl = $derived(getApplicationLogo(false, logoColor, logoColor, { development: developmentBranding }));
 
-	const canToggleExperimental = $derived(hasPermission('settings:write'));
-	const experimentalEnabled = $derived(settingsStore.current?.experimentalFeaturesEnabled === true);
-	let savingExperimental = $state(false);
+	const canToggleSettings = $derived(hasPermission('settings:write'));
+	let savingSetting = $state(false);
 
-	async function handleExperimentalToggle(enabled: boolean) {
-		savingExperimental = true;
+	async function updateSetting(update: Partial<Settings>) {
+		savingSetting = true;
 		await handleApiResultWithCallbacks<Settings>({
-			result: await tryCatch(settingsService.updateSettings({ experimentalFeaturesEnabled: enabled })),
+			result: await tryCatch(settingsService.updateSettings(update)),
 			message: m.common_update_failed({ resource: m.settings() }),
-			setLoadingState: (value) => (savingExperimental = value),
+			setLoadingState: (value) => (savingSetting = value),
 			onSuccess: async (updated) => {
 				settingsStore.set(updated);
 				toast.success(m.common_update_success({ resource: m.settings() }));
@@ -64,10 +65,26 @@
 	}
 </script>
 
+{#snippet settingToggle(
+	id: string,
+	label: string,
+	description: string,
+	checked: boolean,
+	onCheckedChange: (enabled: boolean) => void
+)}
+	<div class="flex items-center justify-between gap-3 border-b border-border/50 py-3 last:border-0">
+		<div class="flex flex-col gap-1">
+			<span class="text-sm font-medium text-foreground">{label}</span>
+			<span class="text-sm text-muted-foreground">{description}</span>
+		</div>
+		<Switch {id} {checked} disabled={savingSetting} aria-label={label} {onCheckedChange} />
+	</div>
+{/snippet}
+
 <ResponsiveDialog {open} {onOpenChange} contentClass="sm:max-w-md">
 	{#snippet title()}
 		<div class="flex items-center gap-3">
-			<img src={logoUrl} alt="Arcane" class="size-7" />
+			<img src={logoUrl} alt="Arcane" class={developmentBranding ? 'size-10' : 'size-7'} />
 			<div class="flex flex-col gap-0.5">
 				<span class="text-xl leading-none">{m.version_info_title()}</span>
 				<span class="text-sm font-normal text-muted-foreground">{displayInfo.displayVersion || displayInfo.currentVersion}</span>
@@ -94,20 +111,23 @@
 
 		{@render infoRow(m.version_info_build_features(), enabledFeatures || '-')}
 
-		{#if canToggleExperimental}
-			<div class="flex items-center justify-between gap-3 border-b border-border/50 py-3 last:border-0">
-				<div class="flex flex-col gap-1">
-					<span class="text-sm font-medium text-foreground">{m.experimental_features()}</span>
-					<span class="text-sm text-muted-foreground">{m.experimental_features_description()}</span>
-				</div>
-				<Switch
-					id="experimental-features-toggle"
-					checked={experimentalEnabled}
-					disabled={savingExperimental}
-					aria-label={m.experimental_features()}
-					onCheckedChange={handleExperimentalToggle}
-				/>
-			</div>
+		{#if canToggleSettings}
+			{@render settingToggle(
+				'experimental-features-toggle',
+				m.experimental_features(),
+				m.experimental_features_description(),
+				settingsStore.current?.experimentalFeaturesEnabled === true,
+				(enabled) => updateSetting({ experimentalFeaturesEnabled: enabled })
+			)}
+			{#if isDevelopmentBuild()}
+				{@render settingToggle(
+					'development-branding-toggle',
+					m.development_branding(),
+					m.development_branding_description(),
+					settingsStore.current?.developmentBrandingEnabled !== false,
+					(enabled) => updateSetting({ developmentBrandingEnabled: enabled })
+				)}
+			{/if}
 		{/if}
 
 		{#if displayInfo.currentDigest}

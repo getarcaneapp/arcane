@@ -23,6 +23,7 @@ import (
 	"github.com/moby/moby/client"
 	"github.com/samber/hot"
 	"github.com/samber/mo"
+	"go.getarcane.app/docker"
 	"go.getarcane.app/docker/compat"
 	"go.getarcane.app/sys/cgroup"
 	"go.getarcane.app/updater"
@@ -35,10 +36,13 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/container"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
+	dockerInternal "github.com/getarcaneapp/arcane/backend/v2/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/network"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/s3"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	systembackup "github.com/getarcaneapp/arcane/backend/v2/internal/system/children/backup"
@@ -46,18 +50,19 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/system/children/upgrade"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/version"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/volume"
-	dockerutils "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/vuln"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/flow"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/francis"
 )
 
 // SystemService owns Docker system-wide operations and coordinates the prune
 // and self-upgrade features.
 type SystemService struct {
 	db                    *database.DB
-	dockerService         *docker.DockerClientService
+	dockerService         *dockerInternal.DockerClientService
 	containerService      *container.ContainerService
 	settingsService       *settings.SettingsService
 	activityService       *activity.ActivityService
@@ -70,7 +75,7 @@ type SystemService struct {
 
 func NewSystemService(
 	db *database.DB,
-	dockerService *docker.DockerClientService,
+	dockerService *dockerInternal.DockerClientService,
 	containerService *container.ContainerService,
 	imageUpdateService *imageupdate.ImageUpdateService,
 	volumeService *volume.VolumeService,
@@ -79,9 +84,11 @@ func NewSystemService(
 	activityService *activity.ActivityService,
 	versionService *version.VersionService,
 	eventService *event.EventService,
+	projectService *project.ProjectService,
 	backupEngine *backup.Engine,
 	s3Destinations *s3.S3DestinationService,
 	recoveryKeys *backup.RecoveryKeyStore,
+	actors *francis.Runtime,
 	cfg *config.Config,
 ) *SystemService {
 	location := time.UTC
@@ -98,7 +105,7 @@ func NewSystemService(
 			WithTTL(dockerHostMemoryCacheTTL).
 			Build(),
 		prune:   prune.NewService(location, dockerService.GetClient, activityService, imageUpdateService, volumeService, networkService),
-		upgrade: upgrade.NewService(db, dockerService, versionService, eventService, settingsService, resolveUpgraderRuntimeOptionsInternal),
+		upgrade: upgrade.NewService(db, dockerService, versionService, eventService, settingsService, projectService, resolveUpgraderRuntimeOptionsInternal),
 	}
 	var sqlDB func() (*sql.DB, error)
 	if db != nil {
@@ -108,6 +115,7 @@ func NewSystemService(
 		Store:                 s.backupStoreInternal(s3Destinations),
 		DB:                    db,
 		SQLDB:                 sqlDB,
+		ActorStore:            actors.Store,
 		Docker:                dockerService,
 		Volumes:               volumeService,
 		Engine:                backupEngine,
@@ -121,19 +129,33 @@ func NewSystemService(
 	return s
 }
 
-// ReconcileInterruptedBackups fails system backup runs left running by the previous process.
+// RegisterWorkflows defines the backup workflows while the host is still unstarted.
+func (s *SystemService) RegisterWorkflows(engine *flow.Engine, environments *environment.EnvironmentService, roles *role.RoleService) error {
+	return errors.Join(s.backup.RegisterWorkflows(engine), s.upgrade.RegisterWorkflows(engine, environments, roles))
+}
+
+// ReconcileInterruptedBackups fails system backup runs left running by the previous process and watches the
+// manual backups that saved workflows resume.
 func (s *SystemService) ReconcileInterruptedBackups(ctx context.Context, protectedIDs ...string) error {
 	query := s.db.WithContext(ctx).Model(&SystemBackupRun{}).Where("status = ?", SystemBackupStatusRunning)
 	if len(protectedIDs) > 0 {
 		query = query.Where("id NOT IN ?", protectedIDs)
 	}
-	return query.Updates(map[string]any{"status": SystemBackupStatusFailed, "error": "Backup interrupted by application restart"}).Error
+	if err := query.Updates(map[string]any{"status": SystemBackupStatusFailed, "error": "Backup interrupted by application restart"}).Error; err != nil {
+		return err
+	}
+	return s.backup.WatchAcceptedBackups(ctx)
 }
 
 // SetBackupScheduler injects the dynamic scheduler and admission gate for
 // per-policy system backup jobs. Agent mode leaves them unset.
 func (s *SystemService) SetBackupScheduler(ctx context.Context, dynamicScheduler scheduler.DynamicScheduler, admissionGate *runs.Admission) error {
 	return s.backup.SetScheduler(ctx, dynamicScheduler, admissionGate)
+}
+
+// PruneLocalBackupRepository frees the space of deleted local system backups.
+func (s *SystemService) PruneLocalBackupRepository(ctx context.Context) error {
+	return s.backup.PruneLocalRepository(ctx)
 }
 
 // RegisterBackupJobOnStartup schedules every saved system and system-managed volume backup policy.
@@ -435,7 +457,7 @@ func resolveUpgraderRuntimeOptionsInternal(
 	if scheme != "unix" {
 		// The upgrader must reach the tcp DOCKER_HOST, so prefer a network the
 		// daemon proxy is actually on over the plain auto heuristic (#3533).
-		networkMode := dockerutils.SelectAutoNetworkMode(currentContainer)
+		networkMode := docker.SelectAutoNetworkMode(currentContainer)
 		if selectReachableNetwork != nil {
 			networkMode = selectReachableNetwork(ctx, currentContainer, dockerHost)
 		}
@@ -462,9 +484,9 @@ func resolveUpgraderRuntimeOptionsInternal(
 }
 
 const systemBackupHistoryUnion = "SELECT id, size, created_at, status, trigger, destination, '' AS format, local_snapshot_id, " +
-	"remote_snapshot_id, s3_destination_id, policy_id, error, 'system' AS type, 'system' AS " +
+	"remote_snapshot_id, '' AS remote_instance_id, s3_destination_id, policy_id, error, 'system' AS type, 'system' AS " +
 	"resource_type, 'Arcane' AS resource_name FROM system_backup_runs UNION ALL SELECT id, size, " +
-	"created_at, status, trigger, destination, format, local_snapshot_id, remote_snapshot_id, " +
+	"created_at, status, trigger, destination, format, local_snapshot_id, remote_snapshot_id, COALESCE(remote_instance_id, '') AS remote_instance_id, " +
 	"s3_destination_id, policy_id, error, CASE WHEN policy_id LIKE 'system-volume:%' THEN 'system' ELSE " +
 	"'volume' END AS type, 'volume' AS resource_type, volume_name AS resource_name FROM volume_backups"
 
@@ -612,15 +634,8 @@ func (s *SystemService) backupStoreInternal(s3Destinations *s3.S3DestinationServ
 				},
 			}.Run(ctx, updates)
 		},
-		DisablePolicyRemote: func(ctx context.Context, policy *backuptypes.SystemBackupPolicy) (bool, error) {
-			column := "enabled"
-			if policy.LocalEnabled {
-				column = "s3_enabled"
-			}
-			result := s.db.WithContext(ctx).Model(&SystemBackupPolicy{}).
-				Where("id = ? AND s3_destination_id = ? AND enabled = ? AND s3_enabled = ? AND local_enabled = ?", policy.ID, policy.S3DestinationID, true, true, policy.LocalEnabled).
-				Update(column, false)
-			return result.Error == nil && result.RowsAffected > 0, result.Error
+		DisablePolicyRemote: func(ctx context.Context, policy *backuptypes.SystemBackupPolicy, field string) (bool, error) {
+			return backup.DisableStoredRemote(ctx, s.db, &SystemBackupPolicy{}, policy.ID, policy.S3DestinationID, policy.LocalEnabled, field)
 		},
 		CheckScheduledRemote: func(ctx context.Context, destinationID string) error {
 			return backup.CheckScheduledRemote(ctx, s.db, s3Destinations, "system_backup_runs", destinationID, "arcane-system-recovery")

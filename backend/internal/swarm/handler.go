@@ -198,7 +198,7 @@ func (h *SwarmHandler) JoinSwarm(ctx context.Context, input *JoinSwarmInput) (*h
 
 	h.auditSwarmMutation(ctx, input.EnvironmentID, "lifecycle.join", "swarm", "cluster", "cluster", map[string]any{"remoteAddrs": input.Body.RemoteAddrs})
 
-	return &handlerutil.Out[base.MessageResponse]{Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: base.MessageResponse{Message: "Joined swarm successfully"}}}, nil
+	return handlerutil.MessageOutput("Joined swarm successfully", ""), nil
 }
 
 // LeaveSwarm removes the target engine from its current swarm cluster.
@@ -219,7 +219,7 @@ func (h *SwarmHandler) LeaveSwarm(ctx context.Context, input *LeaveSwarmInput) (
 
 	h.auditSwarmMutation(ctx, input.EnvironmentID, "lifecycle.leave", "swarm", "cluster", "cluster", map[string]any{"force": input.Body.Force})
 
-	return &handlerutil.Out[base.MessageResponse]{Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: base.MessageResponse{Message: "Left swarm successfully"}}}, nil
+	return handlerutil.MessageOutput("Left swarm successfully", ""), nil
 }
 
 // UnlockSwarm unlocks a swarm manager using the supplied unlock key.
@@ -240,7 +240,7 @@ func (h *SwarmHandler) UnlockSwarm(ctx context.Context, input *UnlockSwarmInput)
 
 	h.auditSwarmMutation(ctx, input.EnvironmentID, "lifecycle.unlock", "swarm", "cluster", "cluster", map[string]any{})
 
-	return &handlerutil.Out[base.MessageResponse]{Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: base.MessageResponse{Message: "Swarm unlocked successfully"}}}, nil
+	return handlerutil.MessageOutput("Swarm unlocked successfully", ""), nil
 }
 
 // GetUnlockKey returns the current swarm manager unlock key.
@@ -310,7 +310,7 @@ func (h *SwarmHandler) RotateJoinTokens(ctx context.Context, input *RotateSwarmJ
 		},
 	)
 
-	return &handlerutil.Out[base.MessageResponse]{Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: base.MessageResponse{Message: "Swarm join tokens rotated successfully"}}}, nil
+	return handlerutil.MessageOutput("Swarm join tokens rotated successfully", ""), nil
 }
 
 // UpdateSwarmSpec updates the swarm cluster specification.
@@ -331,7 +331,7 @@ func (h *SwarmHandler) UpdateSwarmSpec(ctx context.Context, input *UpdateSwarmSp
 
 	h.auditSwarmMutation(ctx, input.EnvironmentID, "lifecycle.update_spec", "swarm", "cluster", "cluster", map[string]any{})
 
-	return &handlerutil.Out[base.MessageResponse]{Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: base.MessageResponse{Message: "Swarm spec updated successfully"}}}, nil
+	return handlerutil.MessageOutput("Swarm spec updated successfully", ""), nil
 }
 
 // auditSwarmMutation writes an informational event for a completed swarm mutation.

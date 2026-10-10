@@ -101,7 +101,7 @@ func (fw *Watcher) Start(ctx context.Context) error {
 		return err
 	}
 
-	if err := fw.addExistingDirectories(fw.watchedPath); err != nil {
+	if err := fw.addExistingDirectories(ctx, fw.watchedPath); err != nil {
 		slog.WarnContext(ctx, "Failed to add some existing directories to watcher",
 			"path", fw.watchedPath,
 			"error", err)
@@ -283,7 +283,7 @@ func (fw *Watcher) handleEventInternal(ctx context.Context, event fsnotify.Event
 		logicalName := fw.logicalPathForWatchEventInternal(event.Name)
 		if fw.isWatchableDirectory(event.Name) {
 			if fw.shouldWatchDir(logicalName) {
-				if err := fw.addExistingDirectoriesRecursiveInternal(event.Name, logicalName, map[string]struct{}{}); err != nil {
+				if err := fw.addExistingDirectoriesRecursiveInternal(ctx, event.Name, logicalName, map[string]struct{}{}); err != nil {
 					slog.WarnContext(ctx, "Failed to add new directory to watcher",
 						"path", event.Name,
 						"error", err)
@@ -318,15 +318,15 @@ func (fw *Watcher) shouldHandleEventInternal(event fsnotify.Event) bool {
 	return projects.IsProjectFile(filepath.Base(event.Name))
 }
 
-func (fw *Watcher) addExistingDirectories(root string) error {
-	return fw.addExistingDirectoriesRecursiveInternal(root, root, map[string]struct{}{})
+func (fw *Watcher) addExistingDirectories(ctx context.Context, root string) error {
+	return fw.addExistingDirectoriesRecursiveInternal(ctx, root, root, map[string]struct{}{})
 }
 
-func (fw *Watcher) addExistingDirectoriesRecursiveInternal(path, logicalPath string, ancestors map[string]struct{}) error {
+func (fw *Watcher) addExistingDirectoriesRecursiveInternal(ctx context.Context, path, logicalPath string, ancestors map[string]struct{}) error {
 	identity, err := projects.ResolveDirectoryIdentityInternal(path)
 	if err != nil {
 		if path != fw.watchedPath && errors.Is(err, os.ErrPermission) {
-			slog.Warn("Skipping unreadable directory for watcher", "path", path, "error", err)
+			slog.WarnContext(ctx, "Skipping unreadable directory for watcher", "path", path, "error", err)
 			return nil
 		}
 		return err
@@ -347,7 +347,7 @@ func (fw *Watcher) addExistingDirectoriesRecursiveInternal(path, logicalPath str
 			return nil
 		}
 
-		fw.addWatchPathInternal(path, logicalPath)
+		fw.addWatchPathInternal(ctx, path, logicalPath)
 
 		if fw.maxDepth > 0 && depth == fw.maxDepth {
 			return nil
@@ -357,7 +357,7 @@ func (fw *Watcher) addExistingDirectoriesRecursiveInternal(path, logicalPath str
 	entries, err := os.ReadDir(path)
 	if err != nil {
 		if path != fw.watchedPath && errors.Is(err, os.ErrPermission) {
-			slog.Warn("Skipping unreadable directory for watcher", "path", path, "error", err)
+			slog.WarnContext(ctx, "Skipping unreadable directory for watcher", "path", path, "error", err)
 			return nil
 		}
 		return err
@@ -372,7 +372,7 @@ func (fw *Watcher) addExistingDirectoriesRecursiveInternal(path, logicalPath str
 			continue
 		}
 		childLogicalPath := filepath.Join(logicalPath, entry.Name())
-		if addExistingDirectoriesRecursiveErr := fw.addExistingDirectoriesRecursiveInternal(childPath, childLogicalPath, ancestors); addExistingDirectoriesRecursiveErr != nil {
+		if addExistingDirectoriesRecursiveErr := fw.addExistingDirectoriesRecursiveInternal(ctx, childPath, childLogicalPath, ancestors); addExistingDirectoriesRecursiveErr != nil {
 			return addExistingDirectoriesRecursiveErr
 		}
 	}
@@ -409,7 +409,7 @@ func (fw *Watcher) logicalPathForWatchEventInternal(path string) string {
 	return filepath.Join(bestLogicalPath, rel)
 }
 
-func (fw *Watcher) addWatchPathInternal(path, logicalPath string) {
+func (fw *Watcher) addWatchPathInternal(ctx context.Context, path, logicalPath string) {
 	watchPaths := []string{path}
 	if fw.followSymlinks {
 		if info, err := os.Lstat(path); err == nil && info.Mode()&os.ModeSymlink != 0 {
@@ -422,7 +422,7 @@ func (fw *Watcher) addWatchPathInternal(path, logicalPath string) {
 	for _, watchPath := range watchPaths {
 		fw.watchAliases[filepath.Clean(watchPath)] = filepath.Clean(logicalPath)
 		if err := fw.watcher.Add(watchPath); err != nil {
-			slog.Warn("Failed to add directory to watcher",
+			slog.WarnContext(ctx, "Failed to add directory to watcher",
 				"path", watchPath,
 				"error", err)
 		}
@@ -501,7 +501,7 @@ func (fw *Watcher) reconnectInternal(ctx context.Context) bool {
 			if err == nil {
 				fw.watcher = watcher
 				fw.watchAliases = make(map[string]string)
-				if addExistingDirectoriesErr := fw.addExistingDirectories(fw.watchedPath); addExistingDirectoriesErr != nil {
+				if addExistingDirectoriesErr := fw.addExistingDirectories(ctx, fw.watchedPath); addExistingDirectoriesErr != nil {
 					slog.WarnContext(ctx, "Some filesystem subscriptions could not be restored", "error", addExistingDirectoriesErr)
 				}
 				// Changes while disconnected need a full reconciliation.

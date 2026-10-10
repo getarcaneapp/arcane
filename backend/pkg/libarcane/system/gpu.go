@@ -170,7 +170,7 @@ func (m *GPUMonitor) detectInternal(ctx context.Context) error {
 			}
 			return errors.New("intel_gpu_top not found but GPU_TYPE set to intel")
 		default:
-			slog.WarnContext(ctx, "Invalid GPU_TYPE specified, falling back to auto-detection", "gpu_type", t)
+			slog.WarnContext(ctx, "Invalid GPU_TYPE specified, falling back to auto-detection", "gpuType", t)
 		}
 	}
 
@@ -277,7 +277,7 @@ func getNvidiaStatsInternal(ctx context.Context) ([]systemtypes.GPUStats, error)
 		return nil, errors.New("no GPU data parsed from nvidia-smi")
 	}
 
-	slog.DebugContext(ctx, "Collected NVIDIA GPU stats", "gpu_count", len(stats))
+	slog.DebugContext(ctx, "Collected NVIDIA GPU stats", "gpuCount", len(stats))
 	return stats, nil
 }
 
@@ -321,7 +321,7 @@ func getAMDStatsInternal(ctx context.Context) ([]systemtypes.GPUStats, error) {
 		return nil, errors.New("no AMD GPU data found in sysfs")
 	}
 
-	slog.DebugContext(ctx, "Collected AMD GPU stats", "gpu_count", len(stats))
+	slog.DebugContext(ctx, "Collected AMD GPU stats", "gpuCount", len(stats))
 	return stats, nil
 }
 

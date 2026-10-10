@@ -32,7 +32,7 @@ func TestReadProjectWorkspace_SkipsUnreadableDirectory(t *testing.T) {
 	// Restore before t.TempDir's own cleanup runs, or it cannot remove the tree.
 	t.Cleanup(func() { _ = os.Chmod(workdir, 0o755) })
 
-	files, revision, _, err := ReadProjectWorkspace(projectDir, 5, "", "compose.yaml", 0, 0)
+	files, revision, _, err := ReadProjectWorkspace(t.Context(), projectDir, 5, "", "compose.yaml", 0, 0)
 	require.NoError(t, err)
 	require.NotEmpty(t, revision, "an empty revision blocks every project workspace edit")
 
@@ -53,7 +53,7 @@ func TestReadProjectWorkspace_SkipsUnreadableDirectory(t *testing.T) {
 
 	// The compare walk in ApplyWorkspaceFileChanges skips identically, so the
 	// optimistic-concurrency check does not spuriously conflict.
-	_, again, _, err := ReadProjectWorkspace(projectDir, 5, "", "compose.yaml", 0, 0)
+	_, again, _, err := ReadProjectWorkspace(t.Context(), projectDir, 5, "", "compose.yaml", 0, 0)
 	require.NoError(t, err)
 	assert.Equal(t, revision, again)
 }

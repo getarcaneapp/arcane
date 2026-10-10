@@ -1,5 +1,15 @@
-import type { Diagnostics, LogEntry } from '#lib/types/diagnostics.js';
+import { m } from '#lib/paraglide/messages.js';
+import { currentSessionSignal } from '#lib/services/api-service.js';
+import type {
+	ActorDiagnostics,
+	Diagnostics,
+	DiagnosticsCommand,
+	DiagnosticsMessage,
+	LogEntry,
+	PprofProfile
+} from '#lib/types/diagnostics.js';
 import type { SystemStats } from '#lib/types/shared.js';
+import { downloadBlob } from '#lib/utils/browser-download.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
 export interface ReconnectWSOptions<T> {
@@ -110,7 +120,7 @@ export class ReconnectingWebSocket<T = unknown> {
 	}
 
 	private scheduleReconnect() {
-		if (this.opts.shouldReconnect && !this.opts.shouldReconnect()) {
+		if (currentSessionSignal().aborted || (this.opts.shouldReconnect && !this.opts.shouldReconnect())) {
 			return;
 		}
 
@@ -127,6 +137,12 @@ export class ReconnectingWebSocket<T = unknown> {
 			this.reconnectTimer = null;
 			if (!this.closed) this.connectOnce();
 		}, backoff);
+	}
+
+	send(data: string): boolean {
+		if (this.ws?.readyState !== WebSocket.OPEN) return false;
+		this.ws.send(data);
+		return true;
 	}
 
 	close() {
@@ -243,14 +259,75 @@ export function createContainerStatsWebSocket(opts: {
 	});
 }
 
+/** Diagnostics stream carrying live snapshots plus request/response commands. */
 export function createDiagnosticsWebSocket(opts: {
-	onMessage: (data: Diagnostics) => void;
+	onSnapshot: (data: Diagnostics) => void;
+	onOpen?: () => void;
+	onClose?: () => void;
+}) {
+	let nextId = 0;
+	const pending = new Map<string, { resolve: (msg: DiagnosticsMessage) => void; reject: (err: Error) => void }>();
+	const rejectPending = () => {
+		for (const entry of pending.values()) entry.reject(new Error(m.disconnected()));
+		pending.clear();
+	};
+
+	const socket = createDiagnosticsStreamWebSocket<DiagnosticsMessage>('/api/diagnostics/stream', {
+		onMessage: (msg) => {
+			if (msg.type === 'snapshot') {
+				if (msg.snapshot) opts.onSnapshot(msg.snapshot);
+				return;
+			}
+			const entry = pending.get(msg.id ?? '');
+			if (!entry) return;
+			pending.delete(msg.id ?? '');
+			if (msg.error) entry.reject(new Error(msg.error));
+			else entry.resolve(msg);
+		},
+		onOpen: opts.onOpen,
+		onClose: () => {
+			rejectPending();
+			opts.onClose?.();
+		}
+	});
+
+	const request = (command: Omit<DiagnosticsCommand, 'id'>) =>
+		new Promise<DiagnosticsMessage>((resolve, reject) => {
+			const id = String(++nextId);
+			if (!socket.send(JSON.stringify({ ...command, id }))) {
+				reject(new Error(m.disconnected()));
+				return;
+			}
+			pending.set(id, { resolve, reject });
+		});
+
+	return {
+		connect: () => socket.connect(),
+		close: () => {
+			socket.close();
+			rejectPending();
+		},
+		refresh: () => socket.send(JSON.stringify({ id: '', type: 'refresh' })),
+		request,
+		/** Captures a pprof profile over the stream and saves it as a file. */
+		async downloadProfile(profile: PprofProfile) {
+			const msg = await request({ type: 'profile', name: profile });
+			const bytes = Uint8Array.from(atob(msg.data ?? ''), (char) => char.charCodeAt(0));
+			downloadBlob(bytes, `${profile}.${profile === 'trace' ? 'out' : 'pprof'}`);
+		}
+	};
+}
+
+export type DiagnosticsWebSocket = ReturnType<typeof createDiagnosticsWebSocket>;
+
+export function createActorDiagnosticsWebSocket(opts: {
+	onMessage: (data: ActorDiagnostics[]) => void;
 	onOpen?: () => void;
 	onClose?: () => void;
 	onError?: (err: Event | Error) => void;
 	maxBackoff?: number;
 }) {
-	return createDiagnosticsStreamWebSocket('/api/diagnostics/stream', opts);
+	return createDiagnosticsStreamWebSocket('/api/diagnostics/actors/stream', opts);
 }
 
 export function createBackendLogsWebSocket(opts: {
@@ -272,7 +349,7 @@ function createDiagnosticsStreamWebSocket<T>(
 		onError?: (err: Event | Error) => void;
 		maxBackoff?: number;
 	}
-) {
+): ReconnectingWebSocket<T> {
 	const buildUrl = () => {
 		const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
 		return `${protocol}://${location.host}${path}`;
