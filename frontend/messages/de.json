@@ -650,6 +650,8 @@
   "convert_create_message": "Dieses Projekt wurde aus vorhandenen Containern erstellt. Die Originale laufen weiter, solange Sie sie nicht entfernen – die Entfernung erfolgt unmittelbar nach der Erstellung, bevor das Projekt bereitgestellt wird, und kann nicht rückgängig gemacht werden.",
   "experimental_features": "Experimentelle Funktionen",
   "experimental_features_description": "Funktionen aktivieren, die sich in zukünftigen Versionen ändern oder entfernt werden können",
+  "development_branding": "Entwicklung und Markenbildung",
+  "development_branding_description": "In dieser Version das Entwicklungssymbol anstelle des üblichen Arcane-Logos anzeigen",
   "containers_bulk_start_confirm_title": "{count} Container starten",
   "containers_bulk_start_confirm_message": "Möchtest du wirklich {count} Container starten?",
   "containers_bulk_stop_confirm_title": "{count} Container stoppen",
