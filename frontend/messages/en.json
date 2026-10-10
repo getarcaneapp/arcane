@@ -650,6 +650,8 @@
   "convert_create_message": "This project was generated from existing container(s). The originals keep running unless you remove them — removal happens immediately after creation, before the project is deployed, and cannot be undone.",
   "experimental_features": "Experimental Features",
   "experimental_features_description": "Enable features that may change or be removed in future releases",
+  "development_branding": "Development Branding",
+  "development_branding_description": "Show the development icon instead of the standard Arcane logo on this build",
   "containers_bulk_start_confirm_title": "Start {count} Container(s)",
   "containers_bulk_start_confirm_message": "Are you sure you want to start {count} container(s)?",
   "containers_bulk_stop_confirm_title": "Stop {count} Container(s)",

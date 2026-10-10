@@ -4,6 +4,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
 	import { cn } from '#lib/utils.js';
+	import { usesDevelopmentBranding } from '#lib/utils/branding.js';
 	import { getApplicationLogo } from '#lib/utils/docker.js';
 	import { resolveLogoColor } from '#lib/utils/theme.svelte.js';
 
@@ -11,7 +12,12 @@
 
 	const logoColor = $derived(resolveLogoColor(mode.current === 'dark'));
 	const animationsEnabled = $derived(userStore.current?.preferences?.animationsEnabled ?? true);
-	const logoUrl = $derived(getApplicationLogo(!isCollapsed, logoColor, logoColor, { animated: animationsEnabled }));
+	const developmentBranding = $derived(usesDevelopmentBranding());
+	const logoUrl = $derived(
+		getApplicationLogo(!isCollapsed, logoColor, logoColor, { animated: animationsEnabled, development: developmentBranding })
+	);
+	const markSize = $derived(developmentBranding ? 32 : 24);
+	const markClass = $derived(markSize === 32 ? 'size-8' : 'size-6');
 </script>
 
 <div
@@ -24,9 +30,9 @@
 		<img
 			src={logoUrl}
 			alt={m.layout_title()}
-			class={cn('drop-shadow-sm transition-all duration-300', isCollapsed ? 'h-6 w-6' : 'h-9 w-auto max-w-40')}
-			width={isCollapsed ? '24' : '160'}
-			height={isCollapsed ? '24' : '72'}
+			class={cn('drop-shadow-sm transition-all duration-300', isCollapsed ? markClass : 'h-9 w-auto max-w-40')}
+			width={isCollapsed ? markSize : 160}
+			height={isCollapsed ? markSize : 72}
 		/>
 	</div>
 </div>

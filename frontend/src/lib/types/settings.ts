@@ -71,6 +71,7 @@ export type Settings = {
 	enableGravatar: boolean;
 	enableGravatarEnvForced?: boolean;
 	experimentalFeaturesEnabled: boolean;
+	developmentBrandingEnabled: boolean;
 	apnsEnabled?: boolean;
 	avatarMaxUploadSizeMb: number;
 	uiConfigDisabled: boolean;

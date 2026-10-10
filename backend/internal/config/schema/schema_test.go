@@ -299,6 +299,7 @@ var expectedSettingOverrideKeys = []string{
 	"deployWaitTimeout",
 	"depotProjectId",
 	"depotToken",
+	"developmentBrandingEnabled",
 	"diskUsagePath",
 	"dockerApiTimeout",
 	"dockerClientRefreshInterval",

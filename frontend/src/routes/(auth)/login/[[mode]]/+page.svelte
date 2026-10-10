@@ -23,7 +23,9 @@
 	import { passkeyService } from '#lib/services/passkey-service.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
 	import type { AuthenticationResponse, MFAChallenge as MFAChallengeData } from '#lib/types/auth.js';
+	import { cn } from '#lib/utils.js';
 	import { normalizeAuthenticationError } from '#lib/utils/auth.js';
+	import { usesDevelopmentBranding } from '#lib/utils/branding.js';
 	import { getApplicationLogo } from '#lib/utils/docker.js';
 	import { getEffectiveLandingPage } from '#lib/utils/navigation.js';
 	import { resolveLogoColor } from '#lib/utils/theme.svelte.js';
@@ -42,9 +44,11 @@
 
 	const logoColor = $derived(resolveLogoColor(mode.current === 'dark'));
 	const animationsEnabled = $derived(userStore.current?.preferences?.animationsEnabled ?? true);
+	const developmentBranding = $derived(usesDevelopmentBranding());
 	const markUrl = $derived(
 		getApplicationLogo(false, logoColor, logoColor, {
-			animated: animationsEnabled
+			animated: animationsEnabled,
+			development: developmentBranding
 		})
 	);
 
@@ -183,12 +187,16 @@
 	<div class="w-full max-w-sm md:max-w-3xl">
 		<Card.Root>
 			<div
-				class="pointer-events-none absolute inset-x-6 top-0 z-1 h-px bg-linear-to-r from-transparent via-primary/60 to-transparent"
+				class={cn('login-beam pointer-events-none absolute inset-0 z-1 rounded-xl', animationsEnabled && 'login-beam--animated')}
 			></div>
 			<div class="grid md:grid-cols-2">
 				<div class="p-6 md:p-8">
 					<div class="mb-7 flex flex-col items-center text-center">
-						<img class="mb-4 size-10 drop-shadow-md drop-shadow-primary/15 md:hidden" src={markUrl} alt={m.layout_title()} />
+						<img
+							class={cn('mb-4 drop-shadow-md drop-shadow-primary/15 md:hidden', developmentBranding ? 'size-14' : 'size-10')}
+							src={markUrl}
+							alt={m.layout_title()}
+						/>
 						<h1 class="text-2xl font-semibold tracking-tight">
 							{m.welcome_back()}
 						</h1>
@@ -397,3 +405,44 @@
 		</div>
 	</div>
 </div>
+
+<style>
+	@property --login-beam-angle {
+		syntax: '<angle>';
+		initial-value: -45deg;
+		inherits: false;
+	}
+
+	/* A 1px ring masked out of a rotating conic gradient, so the highlight travels around the card edge. */
+	.login-beam {
+		padding: 1px;
+		background: conic-gradient(
+			from var(--login-beam-angle),
+			transparent 0deg,
+			var(--primary) 50deg,
+			transparent 100deg,
+			transparent 180deg,
+			color-mix(in oklab, var(--primary) 60%, transparent) 230deg,
+			transparent 280deg
+		);
+		mask:
+			linear-gradient(#000 0 0) content-box exclude,
+			linear-gradient(#000 0 0);
+	}
+
+	.login-beam--animated {
+		animation: login-beam-spin 6s linear infinite;
+	}
+
+	@keyframes login-beam-spin {
+		to {
+			--login-beam-angle: 315deg;
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.login-beam--animated {
+			animation: none;
+		}
+	}
+</style>

@@ -22,6 +22,7 @@ const LOCAL_SETTING_KEYS = new Set([
 	'oidcProviderLogoUrl',
 	'edgeMTLSManagerCAAvailable',
 	'experimentalFeaturesEnabled',
+	'developmentBrandingEnabled',
 	'apnsEnabled'
 ]);
 

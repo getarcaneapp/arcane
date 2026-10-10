@@ -239,6 +239,7 @@ func DefaultSettingsConfig() *Settings {
 		BaseServerURL:                         SettingVariable{Value: "http://localhost"},
 		EnableGravatar:                        SettingVariable{Value: "false"},
 		ExperimentalFeaturesEnabled:           SettingVariable{Value: "false"},
+		DevelopmentBrandingEnabled:            SettingVariable{Value: "true"},
 		AvatarMaxUploadSizeMb:                 SettingVariable{Value: "2"},
 		DefaultShell:                          SettingVariable{Value: "/bin/sh"},
 		DockerHost:                            SettingVariable{Value: "unix:///var/run/docker.sock"},

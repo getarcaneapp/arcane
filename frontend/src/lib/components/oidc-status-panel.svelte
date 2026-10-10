@@ -4,6 +4,7 @@
 
 	import { m } from '#lib/paraglide/messages.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
+	import { usesDevelopmentBranding } from '#lib/utils/branding.js';
 	import { getApplicationLogo } from '#lib/utils/docker.js';
 	import { resolveLogoColor } from '#lib/utils/theme.svelte.js';
 
@@ -20,7 +21,11 @@
 	const logoColor = $derived(resolveLogoColor(mode.current === 'dark'));
 	const animationsEnabled = $derived(userStore.current?.preferences?.animationsEnabled ?? true);
 	const loaderLogoUrl = $derived(
-		getApplicationLogo(false, logoColor, logoColor, { animated: animationsEnabled, loop: animationsEnabled })
+		getApplicationLogo(false, logoColor, logoColor, {
+			animated: animationsEnabled,
+			loop: animationsEnabled,
+			development: usesDevelopmentBranding()
+		})
 	);
 </script>
 
