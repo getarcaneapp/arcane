@@ -650,6 +650,8 @@
   "convert_create_message": "Цей проєкт було створено на основі існуючих контейнерів. Оригінали продовжують працювати, доки ви їх не видалите — видалення відбувається одразу після створення, до розгортання проєкту, і його неможливо скасувати.",
   "experimental_features": "Експериментальні функції",
   "experimental_features_description": "Увімкнути функції, які можуть бути змінені або видалені в майбутніх версіях",
+  "development_branding": "Розробка брендингу",
+  "development_branding_description": "У цій версії замість стандартного логотипу Arcane відображати значок розробки",
   "containers_bulk_start_confirm_title": "Запустити контейнерів: {count}",
   "containers_bulk_start_confirm_message": "Ви впевнені, що бажаєте запустити таку кількість контейнерів: {count}?",
   "containers_bulk_stop_confirm_title": "Зупинити контейнерів: {count}",
