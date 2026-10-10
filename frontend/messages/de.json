@@ -2036,6 +2036,8 @@
   "registries_aws_secret_access_key": "AWS Secret Access Key",
   "registries_aws_region": "AWS-Region",
   "registries_aws_region_placeholder": "z.B. us-east-1",
+  "registries_aws_credentials_description": "Lassen Sie beide AWS-Schlüsselfelder leer, um die IAM-Rolle (Instanzprofil) des Hosts zu verwenden, auf dem Arcane ausgeführt wird.",
+  "registries_aws_iam_role": "IAM-Rolle",
   "registries_repository_names": "Repository-Namen",
   "registries_repository_names_placeholder": "team/api\nteam/platform/api",
   "registries_repository_names_description": "Pro Zeile ein vollständiger Repository-Name. Wird beim Pushen von Images von der Build-Seite verwendet.",
