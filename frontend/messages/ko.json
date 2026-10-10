@@ -650,6 +650,8 @@
   "convert_create_message": "이 프로젝트는 기존 컨테이너를 기반으로 생성되었습니다. 원본 컨테이너는 사용자가 직접 제거하지 않는 한 계속 실행됩니다. 제거 작업은 프로젝트 생성 직후, 프로젝트가 배포되기 전에 즉시 수행되며, 이 작업은 되돌릴 수 없습니다.",
   "experimental_features": "실험적 기능",
   "experimental_features_description": "향후 릴리스에서 변경되거나 제거될 수 있는 기능을 활성화합니다.",
+  "development_branding": "개발 브랜딩",
+  "development_branding_description": "이 빌드에서는 표준 Arcane 로고 대신 개발 아이콘을 표시합니다.",
   "containers_bulk_start_confirm_title": "{count}개 컨테이너 시작",
   "containers_bulk_start_confirm_message": "{count}개의 컨테이너를 시작하시겠습니까?",
   "containers_bulk_stop_confirm_title": "{count}개 컨테이너 중지",
