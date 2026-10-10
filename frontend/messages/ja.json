@@ -2036,6 +2036,8 @@
   "registries_aws_secret_access_key": "AWSシークレットアクセスキー",
   "registries_aws_region": "AWSリージョン",
   "registries_aws_region_placeholder": "例：US-EAST-1",
+  "registries_aws_credentials_description": "Arcane を実行しているホストの IAM ロール（インスタンスプロファイル）を使用するには、両方の AWS キーフィールドを空のままにしてください。",
+  "registries_aws_iam_role": "IAMロール",
   "registries_repository_names": "リポジトリ名",
   "registries_repository_names_placeholder": "team/api\nteam/platform/api",
   "registries_repository_names_description": "1行につき1つのリポジトリ名を指定します。ビルドページからイメージをプッシュする際に使用します。",
