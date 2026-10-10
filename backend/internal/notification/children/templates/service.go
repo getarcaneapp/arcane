@@ -35,7 +35,8 @@ func (s *Service) ImageUpdate(environmentName, imageRef string, updateInfo *imag
 		Text: notifications.TextByFormat(func(format notifications.MessageFormat) string {
 			return notifications.BuildImageUpdateNotificationMessage(format, environmentName, imageRef, updateInfo)
 		}),
-		Title: "Container Image Update",
+		Title:     "Container Image Update",
+		NtfyTitle: "📦 Container Image Update",
 		RenderEmail: func() (string, string, error) {
 			htmlBody, _, err := s.renderEmailTemplateInternal(environmentName, imageRef, updateInfo)
 			if err != nil {
@@ -54,7 +55,8 @@ func (s *Service) ContainerUpdate(environmentName, containerName, imageRef, oldD
 		Text: notifications.TextByFormat(func(format notifications.MessageFormat) string {
 			return notifications.BuildContainerUpdateNotificationMessage(format, environmentName, containerName, imageRef, oldDigest, newDigest)
 		}),
-		Title: "Container Updated",
+		Title:     "Container Updated",
+		NtfyTitle: "✅ Container Updated",
 		RenderEmail: func() (string, string, error) {
 			htmlBody, _, err := s.renderContainerUpdateEmailTemplateInternal(environmentName, containerName, imageRef, oldDigest, newDigest)
 			if err != nil {
@@ -83,6 +85,7 @@ func (s *Service) Vulnerability(environmentName string, payload notification.Dis
 			)
 		}),
 		Title:        defaultTitle,
+		NtfyTitle:    "🛡️ Daily Vulnerability Summary",
 		DefaultTitle: defaultTitle,
 		RenderEmail: func() (string, string, error) {
 			htmlBody, _, err := s.renderVulnerabilitySummaryEmailTemplateInternal(environmentName, payload)
@@ -98,11 +101,17 @@ func (s *Service) Vulnerability(environmentName string, payload notification.Dis
 }
 
 func (s *Service) BatchImageUpdate(environmentName string, updates map[string]*imageupdate.Response) notifications.Content {
+	ntfyTitle := fmt.Sprintf("📦 %d Container Image Updates", len(updates))
+	if len(updates) == 1 {
+		ntfyTitle = "📦 1 Container Image Update"
+	}
+
 	return notifications.Content{
 		Text: notifications.TextByFormat(func(format notifications.MessageFormat) string {
 			return notifications.BuildBatchImageUpdateNotificationMessage(format, environmentName, updates)
 		}),
-		Title: "Container Image Updates Available",
+		Title:     "Container Image Updates Available",
+		NtfyTitle: ntfyTitle,
 		RenderEmail: func() (string, string, error) {
 			htmlBody, _, err := s.renderBatchEmailTemplateInternal(environmentName, updates)
 			if err != nil {
@@ -117,11 +126,17 @@ func (s *Service) BatchImageUpdate(environmentName string, updates map[string]*i
 }
 
 func (s *Service) BatchContainerUpdate(environmentName string, entries []notifications.ContainerUpdateBatchEntry) notifications.Content {
+	ntfyTitle := fmt.Sprintf("✅ %d Containers Updated", len(entries))
+	if len(entries) == 1 {
+		ntfyTitle = "✅ 1 Container Updated"
+	}
+
 	return notifications.Content{
 		Text: notifications.TextByFormat(func(format notifications.MessageFormat) string {
 			return notifications.BuildBatchContainerUpdateNotificationMessage(format, environmentName, entries)
 		}),
-		Title: "Containers Updated",
+		Title:     "Containers Updated",
+		NtfyTitle: ntfyTitle,
 		RenderEmail: func() (string, string, error) {
 			htmlBody, _, err := s.renderBatchContainerUpdateEmailTemplateInternal(environmentName, entries)
 			if err != nil {
@@ -144,6 +159,7 @@ func (s *Service) PruneReport(environmentName string, result *system.PruneAllRes
 			return notifications.BuildPruneReportNotificationMessage(format, environmentName, result)
 		}),
 		Title:        defaultTitle,
+		NtfyTitle:    "🧹 System Prune Complete",
 		DefaultTitle: defaultTitle,
 		RenderEmail: func() (string, string, error) {
 			htmlBody, _, err := s.renderPruneReportEmailTemplateInternal(environmentName, result)
@@ -163,6 +179,7 @@ func (s *Service) AutoHeal(environmentName, containerName string) notifications.
 			return notifications.BuildAutoHealNotificationMessage(format, environmentName, containerName)
 		}),
 		Title:        defaultTitle,
+		NtfyTitle:    "❤️‍🩹 Container Auto-Healed",
 		DefaultTitle: defaultTitle,
 		RenderEmail: func() (string, string, error) {
 			subject := notifications.BuildEmailSubject(environmentName, fmt.Sprintf("Auto Heal: Container '%s' Restarted", containerName))

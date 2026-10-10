@@ -21,6 +21,10 @@ type Content struct {
 	// Title is the generic-webhook title.
 	Title string
 
+	// NtfyTitle is the event-specific ntfy title used when the provider does
+	// not have a custom title configured.
+	NtfyTitle string
+
 	// DefaultTitle is applied to pushover/gotify when their config has no
 	// title; "" means don't default.
 	DefaultTitle string
@@ -202,7 +206,10 @@ func deliverNtfy(ctx context.Context, config database.JSON, c Content) error {
 	if err != nil {
 		return err
 	}
-	if sendNtfyErr := SendNtfy(ctx, ntfyConfig, c.Text[MessageFormatPlain]); sendNtfyErr != nil {
+	if ntfyConfig.Title == "" {
+		ntfyConfig.Title = c.NtfyTitle
+	}
+	if sendNtfyErr := SendNtfy(ctx, ntfyConfig, c.Text[MessageFormatNtfyMarkdown]); sendNtfyErr != nil {
 		return fmt.Errorf("failed to send Ntfy notification: %w", sendNtfyErr)
 	}
 	return nil
@@ -289,7 +296,13 @@ func deliverGeneric(ctx context.Context, config database.JSON, c Content) error 
 // TextByFormat builds the per-format message map for Content.Text from a
 // single messages.go builder closure.
 func TextByFormat(build func(MessageFormat) string) map[MessageFormat]string {
-	formats := []MessageFormat{MessageFormatMarkdown, MessageFormatHTML, MessageFormatSlack, MessageFormatPlain}
+	formats := []MessageFormat{
+		MessageFormatMarkdown,
+		MessageFormatNtfyMarkdown,
+		MessageFormatHTML,
+		MessageFormatSlack,
+		MessageFormatPlain,
+	}
 	text := make(map[MessageFormat]string, len(formats))
 	for _, format := range formats {
 		text[format] = build(format)
