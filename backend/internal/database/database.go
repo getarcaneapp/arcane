@@ -449,47 +449,8 @@ func ParseSQLiteConnectionString(connString string) (string, error) {
 		return "", fmt.Errorf("failed to parse SQLite connection string: %w", err)
 	}
 
-	qs := make(url.Values, len(connStringUrl.Query()))
-	for k, v := range connStringUrl.Query() {
-		switch k {
-		case "_auto_vacuum", "_vacuum":
-			qs.Add("_pragma", "auto_vacuum("+v[0]+")")
-		case "_busy_timeout", "_timeout":
-			qs.Add("_pragma", "busy_timeout("+v[0]+")")
-		case "_case_sensitive_like", "_cslike":
-			qs.Add("_pragma", "case_sensitive_like("+v[0]+")")
-		case "_foreign_keys", "_fk":
-			// Foreign-key enforcement is required on every pooled connection.
-			continue
-		case "_locking_mode", "_locking":
-			qs.Add("_pragma", "locking_mode("+v[0]+")")
-		case "_secure_delete":
-			qs.Add("_pragma", "secure_delete("+v[0]+")")
-		case "_synchronous", "_sync":
-			qs.Add("_pragma", "synchronous("+v[0]+")")
-		case "_journal_mode":
-			qs.Add("_pragma", "journal_mode("+v[0]+")")
-		case "_txlock":
-			qs.Add("_txlock", v[0])
-		case "_pragma":
-			for _, pragma := range v {
-				name := strings.TrimSpace(pragma)
-				if end := strings.IndexAny(name, "=( \t\r\n"); end >= 0 {
-					name = name[:end]
-				}
-				if _, unqualified, found := strings.Cut(name, "."); found {
-					name = unqualified
-				}
-				if strings.EqualFold(strings.Trim(name, "\"'`[]"), "foreign_keys") {
-					continue
-				}
-				qs.Add("_pragma", pragma)
-			}
-		default:
-			qs[k] = v
-		}
-	}
-
+	qs := sqliteutil.NormalizeQuery(connStringUrl.Query())
+	// Foreign-key enforcement is required on every pooled connection.
 	qs.Add("_pragma", "foreign_keys(1)")
 	connStringUrl.RawQuery = qs.Encode()
 	return connStringUrl.String(), nil
