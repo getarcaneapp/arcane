@@ -650,6 +650,8 @@
   "convert_create_message": "Bu proje, mevcut konteyner(ler)den oluşturulmuştur. Orijinaller, siz bunları kaldırmadığınız sürece çalışmaya devam eder — kaldırma işlemi, projenin oluşturulmasından hemen sonra, projenin dağıtılmasından önce gerçekleşir ve geri alınamaz.",
   "experimental_features": "Deneysel Özellikler",
   "experimental_features_description": "Gelecek sürümlerde değiştirilebilecek veya kaldırılabilecek özellikleri etkinleştirin",
+  "development_branding": "Geliştirme ve Markalaşma",
+  "development_branding_description": "Bu sürümde standart Arcane logosu yerine geliştirme simgesini göster",
   "containers_bulk_start_confirm_title": "Konteyner() {count} başlat",
   "containers_bulk_start_confirm_message": "{count} konteynerler(i) başlatmak istediğinizden emin misiniz?",
   "containers_bulk_stop_confirm_title": "{count} konteynerler(i) durdur",
