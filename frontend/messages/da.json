@@ -2036,6 +2036,8 @@
   "registries_aws_secret_access_key": "AWS Secret Access Key",
   "registries_aws_region": "AWS Region",
   "registries_aws_region_placeholder": "e.g. us-east-1",
+  "registries_aws_credentials_description": "Lad begge AWS-nøglefelter stå tomme for at bruge IAM-rollen (instansprofilen) for den vært, der kører Arcane.",
+  "registries_aws_iam_role": "IAM-rolle",
   "registries_repository_names": "Navne på arkiver",
   "registries_repository_names_placeholder": "team/api\nteam/platform/api",
   "registries_repository_names_description": "Ét fuldstændigt repository-navn pr. linje. Anvendes, når der pushes billeder fra build-siden.",
