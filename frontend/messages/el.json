@@ -2036,6 +2036,8 @@
   "registries_aws_secret_access_key": "Μυστικό κλειδί πρόσβασης AWS",
   "registries_aws_region": "Περιοχή AWS",
   "registries_aws_region_placeholder": "π.χ. us-east-1",
+  "registries_aws_credentials_description": "Αφήστε και τα δύο πεδία κλειδιών AWS κενά για να χρησιμοποιήσετε τον ρόλο IAM (προφίλ παρουσίας) του κεντρικού υπολογιστή στον οποίο εκτελείται το Arcane.",
+  "registries_aws_iam_role": "Ρόλος IAM",
   "registries_repository_names": "Ονόματα αποθετηρίων",
   "registries_repository_names_placeholder": "team/api\nteam/platform/api",
   "registries_repository_names_description": "Ένα πλήρες όνομα αποθετηρίου ανά γραμμή. Χρησιμοποιείται κατά την αποστολή εικόνων από τη σελίδα δημιουργίας.",
