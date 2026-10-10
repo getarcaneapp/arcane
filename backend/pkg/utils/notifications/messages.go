@@ -1,6 +1,7 @@
 package notifications
 
 import (
+	"encoding/hex"
 	"fmt"
 	"maps"
 	"slices"
@@ -285,7 +286,25 @@ func BuildAutoHealNotificationMessage(format MessageFormat, environmentName, con
 func shortenNotificationDigestInternal(value string) string {
 	trimmed := strings.TrimSpace(value)
 	algorithm, digest, found := strings.Cut(trimmed, ":")
-	if !found || algorithm == "" || len(digest) <= 6 {
+	if !found {
+		return trimmed
+	}
+
+	var expectedLength int
+	switch algorithm {
+	case "sha256":
+		expectedLength = 64
+	case "sha384":
+		expectedLength = 96
+	case "sha512":
+		expectedLength = 128
+	default:
+		return trimmed
+	}
+	if len(digest) != expectedLength {
+		return trimmed
+	}
+	if _, err := hex.DecodeString(digest); err != nil {
 		return trimmed
 	}
 
