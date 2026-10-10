@@ -125,8 +125,8 @@ type graphParams struct {
 }
 
 func TestOptionsValidate(t *testing.T) {
-	_, cancel := context.WithCancel(t.Context())
-	defer cancel()
+	_, cancel := context.WithCancelCause(t.Context())
+	defer cancel(nil)
 	err := fx.ValidateApp(
 		fx.Supply(
 			cancel,

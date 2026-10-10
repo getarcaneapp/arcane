@@ -84,13 +84,14 @@ func TestSettingsTimeoutSyncDoesNotBlockOtherEffects(t *testing.T) {
 	localScheduler := &settingsSubscriptionSchedulerStubInternal{rescheduled: make(chan struct{})}
 	localEnvironment := &timeoutSyncEnvironmentStubInternal{started: make(chan struct{})}
 	require.NoError(t, setupSettingsSubscriptions(settingsSubscriptionsParams{
-		Lifecycle:    lifecycle,
-		LifecycleCtx: t.Context(),
-		Config:       &config.Config{},
-		Scheduler:    localScheduler,
-		Settings:     settings,
-		Environment:  localEnvironment,
-		AutoUpdate:   &flow.Job{JobName: "auto-update"},
+		Lifecycle:          lifecycle,
+		LifecycleCtx:       t.Context(),
+		Config:             &config.Config{},
+		Scheduler:          localScheduler,
+		Settings:           settings,
+		Environment:        localEnvironment,
+		AutoUpdate:         &flow.Job{JobName: "auto-update"},
+		ImageUpdateWatcher: &scheduler.ImageUpdateWatcher{},
 	}))
 
 	timeoutCallbackDone := make(chan struct{})

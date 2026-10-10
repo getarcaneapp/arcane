@@ -361,7 +361,7 @@ func TestNewHTTPServerRejectsInvalidTLSCertificate(t *testing.T) {
 }
 
 func TestRegisterAppCancelHookRunsAfterLaterStopHooks(t *testing.T) {
-	appCtx, cancelApp := context.WithCancel(t.Context())
+	appCtx, cancelApp := context.WithCancelCause(t.Context())
 	lifecycle := fxtest.NewLifecycle(t)
 	registerAppCancelHook(lifecycle, cancelApp)
 	appActiveDuringDependencyStop := false
@@ -449,8 +449,8 @@ func TestJobSchedulerStopCancelsItsPrivateContext(t *testing.T) {
 }
 
 func TestApplicationOptionsValidate(t *testing.T) {
-	appCtx, cancelApp := context.WithCancel(t.Context())
-	defer cancelApp()
+	appCtx, cancelApp := context.WithCancelCause(t.Context())
+	defer cancelApp(nil)
 
 	err := fx.ValidateApp(applicationOptions(
 		appCtx,
