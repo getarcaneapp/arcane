@@ -650,6 +650,8 @@
   "convert_create_message": "Tento projekt byl vytvořen na základě existujících kontejnerů. Původní kontejnery budou nadále spuštěny, dokud je neodstraníte – k odstranění dojde ihned po vytvoření projektu, ještě před jeho nasazením, a tento úkon nelze vrátit zpět.",
   "experimental_features": "Experimentální funkce",
   "experimental_features_description": "Povolit funkce, které se v budoucích verzích mohou změnit nebo být odstraněny",
+  "development_branding": "Vývoj značky",
+  "development_branding_description": "V této verzi zobrazit ikonu vývoje namísto standardního loga Arcane",
   "containers_bulk_start_confirm_title": "Spustit {count} kontejner(ů)",
   "containers_bulk_start_confirm_message": "Opravdu chcete spustit {count} kontejner(ů)?",
   "containers_bulk_stop_confirm_title": "Zastavit {count} kontejner(ů)",
