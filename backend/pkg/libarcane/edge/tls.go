@@ -33,6 +33,7 @@ import (
 	"go.getarcane.app/acfs/atomic"
 	kit "go.getarcane.app/kit/pkg"
 	libcrypto "go.getarcane.app/sys/crypto"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
@@ -101,12 +102,7 @@ func NewManagerHTTPClient(cfg *Config, timeout time.Duration) (*http.Client, err
 	if tlsConfig != nil {
 		transport.TLSClientConfig = tlsConfig
 	}
-
-	client := &http.Client{Transport: transport}
-	if timeout > 0 {
-		client.Timeout = timeout
-	}
-	return client, nil
+	return &http.Client{Transport: otelhttp.NewTransport(transport), Timeout: max(timeout, 0)}, nil
 }
 
 // PrepareManagerMTLSAssetsWithContext generates the manager CA when edge mTLS is
@@ -345,7 +341,7 @@ func enrollAgentMTLSAssets(ctx context.Context, cfg *Config, assetsDir, certPath
 	if reqErr != nil {
 		return fmt.Errorf("failed to create edge mTLS enrollment request: %w", reqErr)
 	}
-	for header, value := range agentAuthCredentialsInternal(cfg.AgentToken) {
+	for header, value := range agentAuthCredentials(cfg.AgentToken) {
 		req.Header.Set(header, value)
 	}
 

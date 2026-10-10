@@ -13,6 +13,10 @@ import (
 	"github.com/labstack/echo/v5"
 	"github.com/samber/hot"
 	"go.getarcane.app/sys/cgroup"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/auth"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
@@ -26,9 +30,13 @@ import (
 	wshub "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/ws"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/concurrency"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/tracing"
 )
 
-var defaultWebSocketMetrics = wshub.NewWebSocketMetrics()
+var (
+	defaultWebSocketMetrics     = wshub.NewWebSocketMetrics()
+	observeWebSocketMetricsOnce sync.Once
+)
 
 // WebSocketHandler consolidates all WebSocket and streaming endpoints.
 // REST endpoints are handled by Huma handlers.
@@ -39,7 +47,6 @@ type WebSocketHandler struct {
 	systemService       *system.SystemService
 	diagnosticsService  *diagnostics.DiagnosticsService
 	checkWSOrigin       func(*http.Request) bool
-	wsMetrics           *wshub.WebSocketMetrics
 	activeConnectionsMu sync.Mutex
 	activeConnections   map[string]int
 	logStreamsMu        sync.Mutex
@@ -88,7 +95,6 @@ func NewWebSocketHandler(
 		swarmService:       swarmService,
 		systemService:      systemService,
 		diagnosticsService: diagnosticsService,
-		wsMetrics:          defaultWebSocketMetrics,
 		logStreams:         make(map[string]*wsLogStream),
 		cgroupCache:        cgroup.NewCache(cgroupCacheTTL),
 		gpuMonitor:         systemlib.NewGPUMonitor(cfg.GPUMonitoringEnabled, cfg.GPUType),
@@ -97,6 +103,11 @@ func NewWebSocketHandler(
 			Build(),
 		checkWSOrigin: httpx.ValidateWebSocketOrigin(cfg.GetAppURL()),
 	}
+	observeWebSocketMetricsOnce.Do(func() {
+		if err := defaultWebSocketMetrics.ObserveConnections(otel.Meter(tracing.InstrumentationName)); err != nil {
+			otel.Handle(err)
+		}
+	})
 	wsGroup := group.Group("/environments/:id/ws", authMiddleware.WithAdminNotRequired().Add())
 	for _, r := range handler.proxiedRoutes() {
 		wsGroup.GET(r.path, r.handler, middleware.RequireEchoPermission(r.perm))
@@ -104,37 +115,48 @@ func NewWebSocketHandler(
 	handler.registerDiagnosticsRoutesInternal(group, authMiddleware)
 }
 
-func buildWSConnectionInfoInternal(c *echo.Context, kind, resourceID string) systemtypes.WebSocketConnectionInfo {
+// acceptWS upgrades the request to a WebSocket, registers it with the metrics tracker, and starts its lifetime span.
+// The returned unregister func must be called exactly once when the connection ends.
+func (h *WebSocketHandler) acceptWS(c *echo.Context, kind, resourceID string) (*websocket.Conn, func(), bool) {
+	req := c.Request()
+	conn, err := wshub.Accept(c.Response(), req, h.checkWSOrigin)
+	if err != nil {
+		slog.DebugContext(req.Context(), "websocket accept failed", "kind", kind, "resourceId", resourceID, "error", err)
+		return nil, nil, false
+	}
 	userID, _ := c.Get("userID").(string)
-	return systemtypes.WebSocketConnectionInfo{
+	info := systemtypes.WebSocketConnectionInfo{
 		Kind:       kind,
 		EnvID:      c.Param("id"),
 		ResourceID: resourceID,
 		ClientIP:   c.RealIP(),
 		UserID:     userID,
-		UserAgent:  c.Request().Header.Get("User-Agent"),
+		UserAgent:  req.Header.Get("User-Agent"),
 	}
+	connID := defaultWebSocketMetrics.RegisterConnection(info)
+	// The HTTP tracing middleware skips upgrades, so this is a root span unless the client sent a traceparent.
+	parent := otel.GetTextMapPropagator().Extract(req.Context(), propagation.HeaderCarrier(req.Header))
+	_, span := otel.Tracer(tracing.InstrumentationName).Start(parent, "websocket "+kind,
+		trace.WithSpanKind(trace.SpanKindServer),
+		trace.WithAttributes(
+			attribute.String("arcane.websocket.kind", kind),
+			attribute.String("arcane.websocket.connection_id", connID),
+			attribute.String("arcane.environment.id", info.EnvID),
+			attribute.String("arcane.websocket.resource_id", resourceID),
+			attribute.String("http.route", c.Path()),
+			attribute.String("client.address", info.ClientIP),
+			attribute.String("user.id", userID),
+			attribute.String("user_agent.original", info.UserAgent),
+		))
+	return conn, func() {
+		defaultWebSocketMetrics.UnregisterConnection(connID)
+		span.End()
+	}, true
 }
 
-// acceptWSInternal upgrades the request to a WebSocket and registers it with
-// the metrics tracker. The returned unregister func must be called exactly
-// once when the connection ends.
-func (h *WebSocketHandler) acceptWSInternal(c *echo.Context, kind, resourceID string) (*websocket.Conn, func(), bool) {
-	conn, err := wshub.Accept(c.Response(), c.Request(), h.checkWSOrigin)
-	if err != nil {
-		slog.DebugContext(c.Request().Context(), "websocket accept failed", "kind", kind, "resourceId", resourceID, "error", err)
-		return nil, nil, false
-	}
-	connID := h.wsMetrics.RegisterConnection(buildWSConnectionInfoInternal(c, kind, resourceID))
-	return conn, func() { h.wsMetrics.UnregisterConnection(connID) }, true
-}
-
-// keepWSConnAliveInternal pings the peer every period. Ping round-trips (the
-// pong must be serviced by the connection's concurrent reader) and is safe
-// alongside a concurrent writer. A failed ping means the client is gone, so
-// it cancels the connection's context — a silently-dead client would
-// otherwise keep the session open until a write fails.
-func keepWSConnAliveInternal(ctx context.Context, cancel context.CancelFunc, conn *websocket.Conn, period time.Duration) {
+// keepWSConnAlive pings the peer every period and cancels the connection when a ping fails.
+// The pong must be serviced by the connection's concurrent reader.
+func keepWSConnAlive(ctx context.Context, cancel context.CancelFunc, conn *websocket.Conn, period time.Duration) {
 	ticker := time.NewTicker(period)
 	defer ticker.Stop()
 	for {

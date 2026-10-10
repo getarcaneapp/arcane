@@ -67,7 +67,7 @@ func TestGetMobileRedirectAllowlistTrimsWhitespace(t *testing.T) {
 func TestGetMobileRedirectAllowlistUsesSettings(t *testing.T) {
 	ctx := t.Context()
 	db := setupSettingsTestDB(t)
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 
 	require.NoError(t, err,
 		"settings.NewSettingsService: %v", err)
@@ -108,7 +108,7 @@ func setupSettingsTestDB(t *testing.T) *database.DB {
 	return &database.DB{DB: db}
 }
 
-func newSettingsServiceForTestInternal(t testing.TB, ctx context.Context, db *database.DB) (*settings.SettingsService, error) {
+func newSettingsServiceForTest(t testing.TB, ctx context.Context, db *database.DB) (*settings.SettingsService, error) {
 	t.Helper()
 	svc, err := settings.NewSettingsService(ctx, db)
 	if err == nil {

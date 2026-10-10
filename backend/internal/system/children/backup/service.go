@@ -31,6 +31,10 @@ import (
 	"go.getarcane.app/docker/compat"
 	kit "go.getarcane.app/kit/pkg"
 	"go.getarcane.app/sys/cgroup"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
 	"gorm.io/gorm"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
@@ -54,6 +58,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/backupbrowser"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/tracing"
 )
 
 const (
@@ -139,6 +144,7 @@ type Service struct {
 	// backupWorkflow runs backups StartBackup accepted; policyWorkflow runs scheduled policies.
 	backupWorkflow *flow.Workflow
 	policyWorkflow *flow.Workflow
+	operations     metric.Int64Counter
 }
 
 // manualBackupInput is a manual backup's workflow payload; the run row is created before it starts.
@@ -166,6 +172,12 @@ func NewService(deps Dependencies) *Service {
 		s3Destinations: deps.S3Destinations, activityService: deps.Activity, settingsService: deps.Settings, config: deps.Config,
 		recoveryKeys: deps.RecoveryKeys, resolveRuntimeOptions: deps.ResolveRuntimeOptions,
 		jobs: entityjobs.New("system-backup:", backup.SystemAdmissionScope),
+	}
+	var counterErr error
+	service.operations, counterErr = otel.Meter(tracing.InstrumentationName).Int64Counter("arcane.backups",
+		metric.WithDescription("Backup operations by outcome"), metric.WithUnit("{backup}"))
+	if counterErr != nil {
+		otel.Handle(counterErr)
 	}
 	service.snapshots = snapshots.NewService(
 		deps.Engine,
@@ -228,6 +240,22 @@ func (s *Service) recoveryEnvironment(ctx context.Context) map[string]string {
 		result["PROJECTS_DIRECTORY"] = value
 	}
 	return result
+}
+
+// startOperation opens a backup span; the returned func ends it and counts the outcome.
+func (s *Service) startOperation(ctx context.Context, operation string, attrs ...attribute.KeyValue) (context.Context, func(err error, results ...attribute.KeyValue)) {
+	attrs = append(attrs, attribute.String("arcane.environment.id", "0"), attribute.String("arcane.backup.kind", "system"))
+	ctx, span := otel.Tracer(tracing.InstrumentationName).Start(ctx, "backup."+operation, trace.WithAttributes(attrs...))
+	return ctx, func(err error, results ...attribute.KeyValue) {
+		span.SetAttributes(results...)
+		tracing.End(span, err)
+		if s.operations != nil {
+			s.operations.Add(context.WithoutCancel(ctx), 1, metric.WithAttributes(
+				attribute.String("arcane.backup.operation", operation),
+				attribute.String("arcane.backup.outcome", kit.Ternary(err == nil, "success", "failure")),
+			))
+		}
+	}
 }
 
 // acquireRun takes the shared system backup admission lease.
@@ -431,6 +459,11 @@ func (s *Service) prepareBackup(ctx context.Context, trigger string, request bac
 // executeBackup stages one snapshot, keeps it locally and/or replicates it to S3, then records the run's result.
 func (s *Service) executeBackup(ctx context.Context, prepared *preparedSystemBackup) (_ *backuptypes.SystemBackupRun, err error) {
 	run, key, checkpoint := prepared.run, prepared.recoveryKey, prepared.checkpoint
+	ctx, finish := s.startOperation(ctx, "create", attribute.String("arcane.backup.id", run.ID), attribute.String("arcane.backup.trigger", run.Trigger))
+	defer func() {
+		finish(err, attribute.String("arcane.backup.target", string(run.Destination)), attribute.Int64("arcane.backup.size_bytes", run.Size),
+			attribute.String("arcane.backup.s3_destination_id", run.S3DestinationID))
+	}()
 	defer func() {
 		if err = cmp.Or(err, ctx.Err()); err != nil {
 			run.Status, run.Error = backuptypes.SystemBackupStatusFailed, err.Error()
@@ -560,7 +593,10 @@ func (s *Service) BrowseBackupFiles(ctx context.Context, id, recoveryKey, reques
 
 // RestoreBackupFiles restores selected project files into the current projects
 // directory after creating a safety snapshot.
-func (s *Service) RestoreBackupFiles(ctx context.Context, id string, request backuptypes.RestoreSystemBackupFilesRequest, user usertypes.Actor) error {
+func (s *Service) RestoreBackupFiles(ctx context.Context, id string, request backuptypes.RestoreSystemBackupFilesRequest, user usertypes.Actor) (opErr error) {
+	ctx, finish := s.startOperation(ctx, "restore_files", attribute.String("arcane.backup.id", id),
+		attribute.Int("arcane.result.count", len(request.Paths)), attribute.Bool("arcane.backup.select_all", request.SelectAll))
+	defer func() { finish(opErr) }()
 	lease, err := s.acquireRun(ctx)
 	if err != nil {
 		return err
@@ -591,7 +627,9 @@ func (s *Service) RestoreBackupFiles(ctx context.Context, id string, request bac
 	return s.snapshots.RestoreFiles(ctx, dockerClient, key, *run, request.RestoreSelection, safetyBackup)
 }
 
-func (s *Service) DeleteBackup(ctx context.Context, id, recoveryKey string) error {
+func (s *Service) DeleteBackup(ctx context.Context, id, recoveryKey string) (opErr error) {
+	ctx, finish := s.startOperation(ctx, "delete", attribute.String("arcane.backup.id", id))
+	defer func() { finish(opErr) }()
 	// Deletes contend with create/restore/upload on the system run lease so a
 	// slow operation cannot resurrect or double-forget snapshots.
 	lease, err := s.acquireRun(ctx)
@@ -805,7 +843,9 @@ func (s *Service) UploadBackup(ctx context.Context, id string, request backuptyp
 	return run, nil
 }
 
-func (s *Service) RestoreBackup(ctx context.Context, id, recoveryKey string, user usertypes.Actor) error {
+func (s *Service) RestoreBackup(ctx context.Context, id, recoveryKey string, user usertypes.Actor) (opErr error) {
+	ctx, finish := s.startOperation(ctx, "restore", attribute.String("arcane.backup.id", id))
+	defer func() { finish(opErr) }()
 	run, err := s.store.Run(ctx, id)
 	if err != nil {
 		return err

@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 	"uuid"
 
@@ -21,6 +22,9 @@ import (
 	"github.com/labstack/echo/v5"
 	"go.getarcane.app/acfs/atomic"
 	kit "go.getarcane.app/kit/pkg"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
@@ -32,6 +36,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/tracing"
 	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/proto/tunnel/v1"
 )
 
@@ -46,6 +51,9 @@ const (
 	maxPendingBacklogBytes    = 32 << 20
 	maxPendingBacklogMessages = 4096
 )
+
+// observeAgentsOnce registers the connected-agents gauge for the first (manager) tunnel server.
+var observeAgentsOnce sync.Once
 
 // EnvironmentResolver resolves an agent token to an environment ID.
 type EnvironmentResolver func(ctx context.Context, token string) (environmentID string, err error)
@@ -69,6 +77,11 @@ func NewTunnelServerWithRegistry(registry *TunnelRegistry, resolver EnvironmentR
 	if registry == nil {
 		registry = NewTunnelRegistry()
 	}
+	observeAgentsOnce.Do(func() {
+		if _, err := registry.ObserveAgents(otel.Meter(tracing.InstrumentationName)); err != nil {
+			otel.Handle(err)
+		}
+	})
 
 	return &TunnelServer{
 		registry:       registry,
@@ -362,16 +375,31 @@ func (s *TunnelServer) manageConnectedTunnel(ctx context.Context, envID string, 
 	tunnel.Capabilities = registerMsg.Capabilities
 	tunnel.Transport = conn.Transport()
 
+	// The span covers the connection lifetime; ctx stays unparented so per-message work doesn't nest under it.
+	_, span := otel.Tracer(tracing.InstrumentationName).Start(ctx, "edge.tunnel "+tunnel.Transport,
+		trace.WithSpanKind(trace.SpanKindServer),
+		trace.WithAttributes(
+			attribute.String("arcane.edge.transport", tunnel.Transport),
+			attribute.String("arcane.environment.id", envID),
+			attribute.String("arcane.edge.session_id", tunnel.SessionID),
+			attribute.String("arcane.edge.security_mode", securityMode),
+			attribute.String("arcane.edge.agent_instance", tunnel.AgentInstance),
+		))
+	var spanErr error
+	defer func() { tracing.End(span, spanErr) }()
+
 	accepted, drainPrevious, rejectReason, err := s.registry.RegisterSession(callbackCtx, tunnel, TunnelStaleTimeout)
 	if err != nil {
 		slog.ErrorContext(ctx, "Failed to register edge agent session", "environmentId", envID, "agentInstanceId", tunnel.AgentInstance, "error", err)
 		_ = tunnel.CloseWithReason("edge agent session registration unavailable")
+		spanErr = err
 		return
 	}
 	if !accepted {
 		slog.WarnContext(ctx, "Rejected duplicate edge agent session", "environmentId", envID, "agentInstanceId", tunnel.AgentInstance, "reason", rejectReason)
 		_ = conn.Send(&TunnelMessage{Type: MessageTypeRegisterResponse, EnvironmentID: envID, Error: rejectReason})
 		_ = tunnel.CloseWithReason(rejectReason)
+		spanErr = errors.New(rejectReason)
 		return
 	}
 
@@ -401,6 +429,7 @@ func (s *TunnelServer) manageConnectedTunnel(ctx context.Context, envID string, 
 	}); sendErr != nil {
 		slog.WarnContext(ctx, "Failed to send register response", "environmentId", envID, "error", sendErr)
 		_ = tunnel.CloseWithReason("")
+		spanErr = sendErr
 		return
 	}
 	s.updateConnectionStatus(callbackCtx, tunnel, true)
@@ -419,6 +448,7 @@ func (s *TunnelServer) manageConnectedTunnel(ctx context.Context, envID string, 
 		if receiveErr != nil {
 			if !conn.IsExpectedReceiveError(receiveErr) {
 				slog.WarnContext(ctx, "Error receiving from edge tunnel", "environmentId", envID, "error", receiveErr)
+				spanErr = receiveErr
 			}
 			return
 		}
@@ -458,10 +488,8 @@ func (s *TunnelServer) manageConnectedTunnel(ctx context.Context, envID string, 
 	}
 }
 
-// enqueue hands msg to the consumer without blocking the tunnel. Behind a full channel, messages
-// wait in order for up to pendingDeliveryTimeout each. A consumer that stalls or falls past the
-// backlog limits is failed once, and a stream also tells the agent to stop. Queued messages
-// outlive a tunnel close so the collector can still drain a fully received response.
+// enqueue hands msg to the consumer without blocking the tunnel; queued messages wait in order and outlive
+// a tunnel close. A consumer that stalls past pendingDeliveryTimeout or the backlog limits is failed once.
 func (p *PendingRequest) enqueue(ctx context.Context, tunnel *AgentTunnel, msg *TunnelMessage, closeStream bool) {
 	retained := func(m *TunnelMessage) int {
 		size := len(m.Body) + len(m.Error)
@@ -582,7 +610,7 @@ func (s *TunnelServer) updateConnectionStatus(ctx context.Context, tunnel *Agent
 	s.statusMu.Lock()
 	defer s.statusMu.Unlock()
 	if !connected {
-		if active, ok := s.registry.Get(tunnel.EnvironmentID).Get(); ok && active != tunnel && active.Conn != nil && !active.Conn.IsClosed() {
+		if active, _ := s.registry.Get(tunnel.EnvironmentID).Get(); active != tunnel && active.connected() {
 			return
 		}
 	}

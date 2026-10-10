@@ -35,20 +35,20 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/oidcjwk"
 )
 
-type federatedTestIssuerInternal struct {
+type federatedTestIssuer struct {
 	IssuerURL string
 	private   *mldsa.PrivateKey
 	keyID     string
 	server    *httptest.Server
 }
 
-func newFederatedTestIssuerInternal(t *testing.T) *federatedTestIssuerInternal {
+func newFederatedTestIssuer(t *testing.T) *federatedTestIssuer {
 	t.Helper()
 
 	privateKey, err := mldsa.GenerateKey(mldsa.MLDSA87())
 	require.NoError(t, err)
 
-	issuer := &federatedTestIssuerInternal{
+	issuer := &federatedTestIssuer{
 		private: privateKey,
 		keyID:   "federated-test-key",
 	}
@@ -90,7 +90,7 @@ func newFederatedTestIssuerInternal(t *testing.T) *federatedTestIssuerInternal {
 	return issuer
 }
 
-func (i *federatedTestIssuerInternal) tokenInternal(t *testing.T, subject string, audience []string) string {
+func (i *federatedTestIssuer) token(t *testing.T, subject string, audience []string) string {
 	t.Helper()
 
 	now := time.Now()
@@ -110,7 +110,7 @@ func (i *federatedTestIssuerInternal) tokenInternal(t *testing.T, subject string
 	return string(signed)
 }
 
-func setupFederatedCredentialServiceTestDBInternal(t *testing.T) *database.DB {
+func setupFederatedCredentialServiceTestDB(t *testing.T) *database.DB {
 	t.Helper()
 
 	dsn := fmt.Sprintf("file:%s?mode=memory&cache=shared", strings.NewReplacer("/", "_", " ", "_").Replace(t.Name()))
@@ -135,15 +135,15 @@ func setupFederatedCredentialServiceTestDBInternal(t *testing.T) *database.DB {
 	return &database.DB{DB: db}
 }
 
-func setupFederatedCredentialServiceInternal(t *testing.T, issuer *federatedTestIssuerInternal) (*FederatedCredentialService, *auth.AuthService, *database.DB) {
+func setupFederatedCredentialService(t *testing.T, issuer *federatedTestIssuer) (*FederatedCredentialService, *auth.AuthService, *database.DB) {
 	t.Helper()
 
 	ctx := t.Context()
-	db := setupFederatedCredentialServiceTestDBInternal(t)
+	db := setupFederatedCredentialServiceTestDB(t)
 	roleSvc := role.NewRoleService(db)
 	userSvc := user.NewUserService(db, roleSvc, session.RevokeAllUserSessionsExceptInDB)
 	sessionSvc := session.NewSessionService(db)
-	settingsSvc, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsSvc, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 	eventSvc := event.NewEventService(db, &config.Config{}, nil)
 	signingKey, err := mldsa.GenerateKey(mldsa.MLDSA87())
@@ -197,8 +197,8 @@ func setupFederatedCredentialServiceInternal(t *testing.T, issuer *federatedTest
 }
 
 func TestFederatedCredentialServiceExchangeToken(t *testing.T) {
-	issuer := newFederatedTestIssuerInternal(t)
-	service, authSvc, db := setupFederatedCredentialServiceInternal(t, issuer)
+	issuer := newFederatedTestIssuer(t)
+	service, authSvc, db := setupFederatedCredentialService(t, issuer)
 	ctx := t.Context()
 
 	tests := []struct {
@@ -208,18 +208,18 @@ func TestFederatedCredentialServiceExchangeToken(t *testing.T) {
 	}{
 		{
 			name:  "issues an Arcane bearer token for a matching issuer audience and subject",
-			token: issuer.tokenInternal(t, "repo:getarcaneapp/arcane:ref:refs/heads/main", []string{"arcane-ci"}),
+			token: issuer.token(t, "repo:getarcaneapp/arcane:ref:refs/heads/main", []string{"arcane-ci"}),
 		},
 		{
 			name:  "rejects audience mismatch",
-			token: issuer.tokenInternal(t, "repo:getarcaneapp/arcane:ref:refs/heads/main", []string{"other-audience"}),
+			token: issuer.token(t, "repo:getarcaneapp/arcane:ref:refs/heads/main", []string{"other-audience"}),
 			wantError: func(err error) bool {
 				return errors.Is(err, common.ErrFederatedCredentialInvalidGrant)
 			},
 		},
 		{
 			name:  "rejects subject mismatch",
-			token: issuer.tokenInternal(t, "repo:other/repo:ref:refs/heads/main", []string{"arcane-ci"}),
+			token: issuer.token(t, "repo:other/repo:ref:refs/heads/main", []string{"arcane-ci"}),
 			wantError: func(err error) bool {
 				return errors.Is(err, common.ErrFederatedCredentialInvalidGrant)
 			},
@@ -261,14 +261,14 @@ func TestFederatedCredentialServiceExchangeToken(t *testing.T) {
 	}
 }
 
-func TestFederatedCredentialServiceExchangeTokenRejectsIssuerWithoutCredentialInternal(t *testing.T) {
-	issuer := newFederatedTestIssuerInternal(t)
-	otherIssuer := newFederatedTestIssuerInternal(t)
-	service, _, _ := setupFederatedCredentialServiceInternal(t, issuer)
+func TestFederatedCredentialServiceExchangeTokenRejectsIssuerWithoutCredential(t *testing.T) {
+	issuer := newFederatedTestIssuer(t)
+	otherIssuer := newFederatedTestIssuer(t)
+	service, _, _ := setupFederatedCredentialService(t, issuer)
 
 	resp, err := service.ExchangeToken(t.Context(), federated.TokenExchangeRequest{
 		GrantType:        federated.TokenExchangeGrantType,
-		SubjectToken:     otherIssuer.tokenInternal(t, "repo:getarcaneapp/arcane:ref:refs/heads/main", []string{"arcane-ci"}),
+		SubjectToken:     otherIssuer.token(t, "repo:getarcaneapp/arcane:ref:refs/heads/main", []string{"arcane-ci"}),
 		SubjectTokenType: federated.SubjectTokenTypeJWT,
 		Audience:         "https://arcane.example.com",
 	})
@@ -278,14 +278,14 @@ func TestFederatedCredentialServiceExchangeTokenRejectsIssuerWithoutCredentialIn
 	require.Nil(t, resp)
 }
 
-func TestFederatedCredentialServiceExchangeTokenDoesNotRequireGlobalFeatureFlagInternal(t *testing.T) {
-	issuer := newFederatedTestIssuerInternal(t)
-	service, _, _ := setupFederatedCredentialServiceInternal(t, issuer)
+func TestFederatedCredentialServiceExchangeTokenDoesNotRequireGlobalFeatureFlag(t *testing.T) {
+	issuer := newFederatedTestIssuer(t)
+	service, _, _ := setupFederatedCredentialService(t, issuer)
 	service.settingsService = nil
 
 	resp, err := service.ExchangeToken(t.Context(), federated.TokenExchangeRequest{
 		GrantType:        federated.TokenExchangeGrantType,
-		SubjectToken:     issuer.tokenInternal(t, "repo:getarcaneapp/arcane:ref:refs/heads/main", []string{"arcane-ci"}),
+		SubjectToken:     issuer.token(t, "repo:getarcaneapp/arcane:ref:refs/heads/main", []string{"arcane-ci"}),
 		SubjectTokenType: federated.SubjectTokenTypeJWT,
 		Audience:         "https://arcane.example.com",
 	})
@@ -295,9 +295,9 @@ func TestFederatedCredentialServiceExchangeTokenDoesNotRequireGlobalFeatureFlagI
 	require.NotEmpty(t, resp.AccessToken)
 }
 
-func TestFederatedCredentialServiceExchangeTokenRejectsExpiredCredentialInternal(t *testing.T) {
-	issuer := newFederatedTestIssuerInternal(t)
-	service, _, db := setupFederatedCredentialServiceInternal(t, issuer)
+func TestFederatedCredentialServiceExchangeTokenRejectsExpiredCredential(t *testing.T) {
+	issuer := newFederatedTestIssuer(t)
+	service, _, db := setupFederatedCredentialService(t, issuer)
 	expiredAt := time.Now().Add(-time.Minute)
 	require.NoError(t, db.WithContext(t.Context()).
 		Model(&FederatedCredential{}).
@@ -306,7 +306,7 @@ func TestFederatedCredentialServiceExchangeTokenRejectsExpiredCredentialInternal
 
 	resp, err := service.ExchangeToken(t.Context(), federated.TokenExchangeRequest{
 		GrantType:        federated.TokenExchangeGrantType,
-		SubjectToken:     issuer.tokenInternal(t, "repo:getarcaneapp/arcane:ref:refs/heads/main", []string{"arcane-ci"}),
+		SubjectToken:     issuer.token(t, "repo:getarcaneapp/arcane:ref:refs/heads/main", []string{"arcane-ci"}),
 		SubjectTokenType: federated.SubjectTokenTypeJWT,
 		Audience:         "https://arcane.example.com",
 	})
@@ -316,14 +316,14 @@ func TestFederatedCredentialServiceExchangeTokenRejectsExpiredCredentialInternal
 	require.Nil(t, resp)
 }
 
-func TestFederatedCredentialServiceUpdateDisableRevokesIssuedSessionsInternal(t *testing.T) {
-	issuer := newFederatedTestIssuerInternal(t)
-	service, authSvc, _ := setupFederatedCredentialServiceInternal(t, issuer)
+func TestFederatedCredentialServiceUpdateDisableRevokesIssuedSessions(t *testing.T) {
+	issuer := newFederatedTestIssuer(t)
+	service, authSvc, _ := setupFederatedCredentialService(t, issuer)
 	ctx := t.Context()
 
 	resp, err := service.ExchangeToken(ctx, federated.TokenExchangeRequest{
 		GrantType:        federated.TokenExchangeGrantType,
-		SubjectToken:     issuer.tokenInternal(t, "repo:getarcaneapp/arcane:ref:refs/heads/main", []string{"arcane-ci"}),
+		SubjectToken:     issuer.token(t, "repo:getarcaneapp/arcane:ref:refs/heads/main", []string{"arcane-ci"}),
 		SubjectTokenType: federated.SubjectTokenTypeJWT,
 		Audience:         "https://arcane.example.com",
 	})
@@ -340,11 +340,11 @@ func TestFederatedCredentialServiceUpdateDisableRevokesIssuedSessionsInternal(t 
 	require.ErrorIs(t, err, common.ErrSessionRevoked, "unexpected error: %v", err)
 }
 
-func TestFederatedCredentialServiceRejectsReplayedSubjectTokenInternal(t *testing.T) {
-	issuer := newFederatedTestIssuerInternal(t)
-	service, _, _ := setupFederatedCredentialServiceInternal(t, issuer)
+func TestFederatedCredentialServiceRejectsReplayedSubjectToken(t *testing.T) {
+	issuer := newFederatedTestIssuer(t)
+	service, _, _ := setupFederatedCredentialService(t, issuer)
 	ctx := t.Context()
-	subjectToken := issuer.tokenInternal(t, "repo:getarcaneapp/arcane:ref:refs/heads/main", []string{"arcane-ci"})
+	subjectToken := issuer.token(t, "repo:getarcaneapp/arcane:ref:refs/heads/main", []string{"arcane-ci"})
 	req := federated.TokenExchangeRequest{
 		GrantType:        federated.TokenExchangeGrantType,
 		SubjectToken:     subjectToken,
@@ -363,8 +363,8 @@ func TestFederatedCredentialServiceRejectsReplayedSubjectTokenInternal(t *testin
 }
 
 func TestFederatedCredentialServiceCreateRejectsBareWildcardGlob(t *testing.T) {
-	issuer := newFederatedTestIssuerInternal(t)
-	service, _, _ := setupFederatedCredentialServiceInternal(t, issuer)
+	issuer := newFederatedTestIssuer(t)
+	service, _, _ := setupFederatedCredentialService(t, issuer)
 
 	_, err := service.Create(t.Context(), "admin-user", federated.CreateFederatedCredential{
 		Name:            "Unsafe wildcard",
@@ -380,7 +380,7 @@ func TestFederatedCredentialServiceCreateRejectsBareWildcardGlob(t *testing.T) {
 	require.ErrorIs(t, err, common.ErrFederatedCredentialInvalid, "unexpected error: %v", err)
 }
 
-func newSettingsServiceForTestInternal(t testing.TB, ctx context.Context, db *database.DB) (*settings.SettingsService, error) {
+func newSettingsServiceForTest(t testing.TB, ctx context.Context, db *database.DB) (*settings.SettingsService, error) {
 	t.Helper()
 	svc, err := settings.NewSettingsService(ctx, db)
 	if err == nil {

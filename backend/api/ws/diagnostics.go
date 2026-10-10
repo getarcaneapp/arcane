@@ -132,7 +132,7 @@ func (h *WebSocketHandler) ActorDiagnosticsStream(c *echo.Context) error {
 // streamSnapshotsInternal writes build's result on connect and every interval until
 // the client disconnects. A non-nil handle answers client commands concurrently.
 func (h *WebSocketHandler) streamSnapshotsInternal(c *echo.Context, interval time.Duration, build func(context.Context) any, handle func(context.Context, systemtypes.DiagnosticsCommand) any) error {
-	conn, unregister, accepted := h.acceptWSInternal(c, systemtypes.WSKindDiagnostics, c.Request().URL.Path)
+	conn, unregister, accepted := h.acceptWS(c, systemtypes.WSKindDiagnostics, c.Request().URL.Path)
 	if !accepted {
 		return nil
 	}
@@ -190,7 +190,7 @@ func (h *WebSocketHandler) streamSnapshotsInternal(c *echo.Context, interval tim
 
 // ServerLogsStream replays the recent backend log backlog then streams new entries live.
 func (h *WebSocketHandler) ServerLogsStream(c *echo.Context) error {
-	conn, unregister, accepted := h.acceptWSInternal(c, systemtypes.WSKindDiagnostics, c.Request().URL.Path)
+	conn, unregister, accepted := h.acceptWS(c, systemtypes.WSKindDiagnostics, c.Request().URL.Path)
 	if !accepted {
 		return nil
 	}

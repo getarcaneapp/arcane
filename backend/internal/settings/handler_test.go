@@ -19,7 +19,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 )
 
-func TestSettingsHandlerAppendRuntimeSettingsInternal(t *testing.T) {
+func TestSettingsHandlerAppendRuntimeSettings(t *testing.T) {
 	handler := &SettingsHandler{cfg: &config.Config{
 		UIConfigurationDisabled:       true,
 		BackupVolumeName:              "custom-backups",
@@ -27,13 +27,13 @@ func TestSettingsHandlerAppendRuntimeSettingsInternal(t *testing.T) {
 		VolumeWorkspaceMaxFileSizeMB:  18,
 	}}
 
-	publicKeys := runtimeSettingKeysInternal(handler.appendRuntimeSettingsInternal(nil, false))
+	publicKeys := runtimeSettingKeys(handler.appendRuntimeSettings(nil, false))
 	require.NotContains(t, publicKeys, "uiConfigDisabled")
 	require.NotContains(t, publicKeys, "backupVolumeName")
 	require.NotContains(t, publicKeys, "depotConfigured")
 	require.NotContains(t, publicKeys, "edgeMTLSManagerCAAvailable")
 
-	authenticatedKeys := runtimeSettingKeysInternal(handler.appendRuntimeSettingsInternal(nil, true))
+	authenticatedKeys := runtimeSettingKeys(handler.appendRuntimeSettings(nil, true))
 	require.Equal(t, "12", authenticatedKeys[projectWorkspaceMaxFileSizeSettingKey])
 	require.Equal(t, "18", authenticatedKeys[volumeWorkspaceMaxFileSizeSettingKey])
 	require.Equal(t, "true", authenticatedKeys["uiConfigDisabled"])
@@ -41,20 +41,20 @@ func TestSettingsHandlerAppendRuntimeSettingsInternal(t *testing.T) {
 	require.Equal(t, "false", authenticatedKeys["edgeMTLSManagerCAAvailable"])
 }
 
-func TestSettingsHandlerAppendRuntimeSettingsDoesNotGenerateEdgeMTLSCAInternal(t *testing.T) {
+func TestSettingsHandlerAppendRuntimeSettingsDoesNotGenerateEdgeMTLSCA(t *testing.T) {
 	assetsDir := t.TempDir()
 	handler := &SettingsHandler{cfg: &config.Config{
 		EdgeMTLSMode:      edge.EdgeMTLSModeRequired,
 		EdgeMTLSAssetsDir: assetsDir,
 	}}
 
-	authenticatedKeys := runtimeSettingKeysInternal(handler.appendRuntimeSettingsInternal(nil, true))
+	authenticatedKeys := runtimeSettingKeys(handler.appendRuntimeSettings(nil, true))
 	require.Equal(t, "false", authenticatedKeys["edgeMTLSManagerCAAvailable"])
 	require.NoFileExists(t, filepath.Join(assetsDir, "ca.crt"))
 	require.NoFileExists(t, filepath.Join(assetsDir, "ca.key"))
 }
 
-func TestSettingsHandlerUpdateLocalEnvironmentRejectsUnreadableProjectsDirectoryInternal(t *testing.T) {
+func TestSettingsHandlerUpdateLocalEnvironmentRejectsUnreadableProjectsDirectory(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("POSIX permission-denied behavior is not portable to Windows")
 	}
@@ -63,7 +63,7 @@ func TestSettingsHandlerUpdateLocalEnvironmentRejectsUnreadableProjectsDirectory
 	}
 
 	ctx := t.Context()
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, setupSettingsTestDB(t))
+	settingsService, err := newSettingsServiceForTest(t, ctx, setupSettingsTestDB(t))
 	require.NoError(t, err)
 	originalDir := settingsService.GetSettingsConfig().ProjectsDirectory.Value
 
@@ -72,7 +72,7 @@ func TestSettingsHandlerUpdateLocalEnvironmentRejectsUnreadableProjectsDirectory
 	t.Cleanup(func() { _ = os.Chmod(unreadable, 0o700) })
 
 	handler := &SettingsHandler{settingsService: settingsService, cfg: &config.Config{}}
-	_, err = handler.updateSettingsForLocalEnvironment(ctx, settings.Update{ProjectsDirectory: new(unreadable)})
+	_, err = handler.UpdateSettings(ctx, &UpdateSettingsInput{EnvironmentID: "0", Body: settings.Update{ProjectsDirectory: new(unreadable)}})
 	require.Error(t, err)
 
 	var statusErr huma.StatusError
@@ -82,7 +82,7 @@ func TestSettingsHandlerUpdateLocalEnvironmentRejectsUnreadableProjectsDirectory
 	require.Equal(t, originalDir, settingsService.GetSettingsConfig().ProjectsDirectory.Value)
 }
 
-func TestSettingsHandlerRemoteWorkspaceSettingsVisibilityInternal(t *testing.T) {
+func TestSettingsHandlerRemoteWorkspaceSettingsVisibility(t *testing.T) {
 	remoteSettings := []settings.PublicSetting{
 		{Key: "dockerHost", Type: "string", Value: "unix:///var/run/docker.sock"},
 		{Key: "baseServerUrl", Type: "string", Value: "https://manager.example"},
@@ -99,7 +99,7 @@ func TestSettingsHandlerRemoteWorkspaceSettingsVisibilityInternal(t *testing.T) 
 		return json.Unmarshal(payload, output)
 	}
 
-	settingsService, err := newSettingsServiceForTestInternal(t, t.Context(), setupSettingsTestDB(t))
+	settingsService, err := newSettingsServiceForTest(t, t.Context(), setupSettingsTestDB(t))
 	require.NoError(t, err)
 	handler := &SettingsHandler{settingsService: settingsService, proxyRemoteJSON: proxy}
 
@@ -116,7 +116,7 @@ func TestSettingsHandlerRemoteWorkspaceSettingsVisibilityInternal(t *testing.T) 
 	require.Equal(t, remoteSettings, output.Body)
 }
 
-func runtimeSettingKeysInternal(publicSettings []settings.PublicSetting) map[string]string {
+func runtimeSettingKeys(publicSettings []settings.PublicSetting) map[string]string {
 	keys := make(map[string]string, len(publicSettings))
 	for _, setting := range publicSettings {
 		keys[setting.Key] = setting.Value

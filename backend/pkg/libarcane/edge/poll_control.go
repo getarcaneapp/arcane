@@ -19,14 +19,10 @@ import (
 const (
 	// DefaultTunnelPollInterval is how often poll-mode agents should check in.
 	DefaultTunnelPollInterval = 2 * time.Second
-	// DefaultPollRuntimeTTL is how long a poll check-in is considered fresh for
-	// runtime status reporting when no live tunnel is currently open.
+	// DefaultPollRuntimeTTL is the minimum time a poll check-in stays fresh for runtime status.
 	DefaultPollRuntimeTTL = 6 * time.Second
-	// DefaultTunnelDemandTTL is how long the manager should keep an edge tunnel
-	// marked as required after a user/API request touches the environment. It is
-	// deliberately longer than the default environment health interval (2m) so
-	// health checks refreshing the demand keep idle poll-mode tunnels open
-	// instead of letting them flap between checks.
+	// DefaultTunnelDemandTTL keeps a touched environment's tunnel required; it exceeds the 2m health
+	// interval so health checks keep idle poll-mode tunnels open instead of flapping.
 	DefaultTunnelDemandTTL = 5 * time.Minute
 
 	// TunnelStatusIdle indicates that no reverse tunnel is currently needed.
@@ -37,15 +33,9 @@ const (
 	TunnelStatusActive = "ACTIVE"
 )
 
-func pollRuntimeTTLInternal(state PollRuntimeState) time.Duration {
-	ttl := DefaultPollRuntimeTTL
-	if state.PollIntervalSeconds > 0 {
-		intervalTTL := time.Duration(state.PollIntervalSeconds) * time.Second * 3
-		if intervalTTL > ttl {
-			ttl = intervalTTL
-		}
-	}
-	return ttl
+// pollRuntimeTTL is how long a check-in stays fresh: three poll intervals, never under DefaultPollRuntimeTTL.
+func pollRuntimeTTL(state PollRuntimeState) time.Duration {
+	return max(DefaultPollRuntimeTTL, time.Duration(state.PollIntervalSeconds)*time.Second*3)
 }
 
 // NewTunnelDemandRegistry creates a new tunnel demand registry.
@@ -164,7 +154,7 @@ func (r *PollRuntimeRegistry) Get(envID string, now time.Time) mo.Option[PollRun
 		return mo.None[PollRuntimeState]()
 	}
 
-	ttl := pollRuntimeTTLInternal(state)
+	ttl := pollRuntimeTTL(state)
 
 	if now.Sub(*state.LastPollAt) > ttl {
 		r.mu.Lock()
@@ -173,7 +163,7 @@ func (r *PollRuntimeRegistry) Get(envID string, now time.Time) mo.Option[PollRun
 			r.mu.Unlock()
 			return mo.None[PollRuntimeState]()
 		}
-		ttl = pollRuntimeTTLInternal(state)
+		ttl = pollRuntimeTTL(state)
 		if now.Sub(*state.LastPollAt) > ttl {
 			delete(r.states, envID)
 			r.mu.Unlock()
@@ -185,58 +175,21 @@ func (r *PollRuntimeRegistry) Get(envID string, now time.Time) mo.Option[PollRun
 	return mo.Some(state)
 }
 
-func decodeTunnelPollRequestInternal(c *echo.Context) (*TunnelPollRequest, error) {
-	if c == nil || c.Request() == nil || c.Request().Body == nil {
-		return &TunnelPollRequest{}, nil
-	}
-
-	req := c.Request()
-	defer func() { _ = req.Body.Close() }()
-
-	var pollReq TunnelPollRequest
-	if err := json.UnmarshalRead(req.Body, &pollReq); err != nil {
-		if errors.Is(err, http.ErrBodyReadAfterClose) {
-			return &TunnelPollRequest{}, nil
-		}
-		if errors.Is(err, io.EOF) {
-			return &TunnelPollRequest{}, nil
-		}
-		return nil, err
-	}
-
-	return &pollReq, nil
-}
-
-func (s *TunnelServer) pollStatusInternal(envID string) TunnelPollResponse {
-	hasActiveTunnel := false
-	activeTransport := ""
-
-	if tunnel, ok := s.registry.Get(envID).Get(); ok && tunnel != nil && tunnel.Conn != nil && !tunnel.Conn.IsClosed() {
-		hasActiveTunnel = true
-		activeTransport = tunnel.Conn.Transport()
-	}
-
-	status := GetDemandRegistry().DesiredStatus(envID, hasActiveTunnel, time.Now())
-	return TunnelPollResponse{
-		Status:              status,
-		PollIntervalSeconds: int(DefaultTunnelPollInterval / time.Second),
-		ActiveTransport:     activeTransport,
-		Connected:           hasActiveTunnel,
-	}
-}
-
 // HandlePoll is the HTTP control-plane endpoint used by poll-mode agents.
 func (s *TunnelServer) HandlePoll(c *echo.Context) error {
 	req := c.Request()
 	ctx := req.Context()
 
-	if _, err := decodeTunnelPollRequestInternal(c); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]any{"error": "invalid poll payload"})
+	if req.Body != nil {
+		var pollReq TunnelPollRequest
+		err := json.UnmarshalRead(req.Body, &pollReq)
+		_ = req.Body.Close()
+		if err != nil && !errors.Is(err, http.ErrBodyReadAfterClose) && !errors.Is(err, io.EOF) {
+			return c.JSON(http.StatusBadRequest, map[string]any{"error": "invalid poll payload"})
+		}
 	}
 
-	// In proxy-terminated mTLS deployments, the client certificate is consumed
-	// by the TLS terminator before this request reaches Arcane. The token is
-	// still needed as the poll protocol's environment lookup claim.
+	// Proxy-terminated mTLS consumes the client certificate, so the token remains the environment claim.
 	token, source := agentToken(req.Header.Values)
 	if token == "" {
 		slog.WarnContext(ctx, "Edge poll request without token")
@@ -264,10 +217,18 @@ func (s *TunnelServer) HandlePoll(c *echo.Context) error {
 		return c.JSON(http.StatusUnauthorized, map[string]any{"error": identityErr.Error()})
 	}
 
-	pollInterval := DefaultTunnelPollInterval
-	GetPollRuntimeRegistry().Update(envID, pollInterval, time.Now())
+	now := time.Now()
+	GetPollRuntimeRegistry().Update(envID, DefaultTunnelPollInterval, now)
 
-	resp := s.pollStatusInternal(envID)
-	resp.PollIntervalSeconds = int(pollInterval / time.Second)
+	tunnel, _ := s.registry.Get(envID).Get()
+	connected := tunnel.connected()
+	resp := TunnelPollResponse{
+		Status:              GetDemandRegistry().DesiredStatus(envID, connected, now),
+		PollIntervalSeconds: int(DefaultTunnelPollInterval / time.Second),
+		Connected:           connected,
+	}
+	if connected {
+		resp.ActiveTransport = tunnel.Conn.Transport()
+	}
 	return c.JSON(http.StatusOK, resp)
 }

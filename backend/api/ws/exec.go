@@ -40,7 +40,7 @@ func (h *WebSocketHandler) ContainerExec(c *echo.Context) error {
 
 	shell := cmp.Or(c.QueryParam("shell"), "/bin/sh")
 
-	conn, unregister, ok := h.acceptWSInternal(c, systemtypes.WSKindContainerExec, containerID)
+	conn, unregister, ok := h.acceptWS(c, systemtypes.WSKindContainerExec, containerID)
 	if !ok {
 		return nil
 	}
@@ -54,7 +54,7 @@ func (h *WebSocketHandler) ContainerExec(c *echo.Context) error {
 	defer cancel(nil)
 
 	// The pong is serviced by the concurrent stdin reader.
-	go keepWSConnAliveInternal(ctx, func() { cancel(errors.New("websocket ping failed")) }, conn, 54*time.Second)
+	go keepWSConnAlive(ctx, func() { cancel(errors.New("websocket ping failed")) }, conn, 54*time.Second)
 
 	h.runContainerExecInternal(ctx, cancel, conn, containerID, shell)
 	return nil

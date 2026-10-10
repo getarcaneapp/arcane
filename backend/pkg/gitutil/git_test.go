@@ -109,7 +109,7 @@ func TestGetKnownHostsPath(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := getKnownHostsPathsInternal(
+			result, err := getKnownHostsPaths(
 				tt.workDir,
 				func(key string) string {
 					require.Equal(t, "SSH_KNOWN_HOSTS", key)
@@ -165,7 +165,7 @@ func TestGetSSHHostKeyCallback(t *testing.T) {
 
 	t.Run("skip mode returns InsecureIgnoreHostKey", func(t *testing.T) {
 		t.Setenv("SSH_KNOWN_HOSTS", filepath.Join(t.TempDir(), "missing", "known_hosts"))
-		callback, err := client.getSSHHostKeyCallbackInternal(t.Context(), SSHHostKeyVerificationSkip)
+		callback, err := client.getSSHHostKeyCallback(t.Context(), SSHHostKeyVerificationSkip)
 
 		require.NoError(t, err,
 			"unexpected error: %v", err)
@@ -185,7 +185,7 @@ func TestGetSSHHostKeyCallback(t *testing.T) {
 		knownHostsPath := filepath.Join(tmpDir, "known_hosts")
 		t.Setenv("SSH_KNOWN_HOSTS", knownHostsPath)
 
-		callback, err := client.getSSHHostKeyCallbackInternal(t.Context(), "")
+		callback, err := client.getSSHHostKeyCallback(t.Context(), "")
 
 		require.NoError(t, err,
 			"unexpected error: %v", err)
@@ -199,7 +199,7 @@ func TestGetSSHHostKeyCallback(t *testing.T) {
 		knownHostsPath := filepath.Join(tmpDir, "known_hosts")
 		t.Setenv("SSH_KNOWN_HOSTS", knownHostsPath)
 
-		callback, err := client.getSSHHostKeyCallbackInternal(t.Context(), SSHHostKeyVerificationAcceptNew)
+		callback, err := client.getSSHHostKeyCallback(t.Context(), SSHHostKeyVerificationAcceptNew)
 
 		require.NoError(t, err,
 			"unexpected error: %v", err)
@@ -218,7 +218,7 @@ func TestAddHostKey(t *testing.T) {
 		key := generateTestPublicKey(t)
 
 		t.Setenv("SSH_KNOWN_HOSTS", knownHostsPath)
-		callback, err := NewClient("").getSSHHostKeyCallbackInternal(t.Context(), SSHHostKeyVerificationAcceptNew)
+		callback, err := NewClient("").getSSHHostKeyCallback(t.Context(), SSHHostKeyVerificationAcceptNew)
 		require.NoError(t, err)
 		err = callback("example.com:22", &net.TCPAddr{}, key)
 
@@ -241,7 +241,7 @@ func TestAddHostKey(t *testing.T) {
 		t.Setenv("SSH_KNOWN_HOSTS", knownHostsPath)
 
 		key := generateTestPublicKey(t)
-		callback, callbackErr := NewClient("").getSSHHostKeyCallbackInternal(t.Context(), SSHHostKeyVerificationAcceptNew)
+		callback, callbackErr := NewClient("").getSSHHostKeyCallback(t.Context(), SSHHostKeyVerificationAcceptNew)
 		require.NoError(t, callbackErr)
 		var wg sync.WaitGroup
 		errChan := make(chan error, 10)
@@ -283,7 +283,7 @@ func TestCreateAcceptNewHostKeyCallback(t *testing.T) {
 		t.Setenv("SSH_KNOWN_HOSTS", knownHostsPath)
 
 		client := NewClient("")
-		callback, err := client.getSSHHostKeyCallbackInternal(t.Context(), SSHHostKeyVerificationAcceptNew)
+		callback, err := client.getSSHHostKeyCallback(t.Context(), SSHHostKeyVerificationAcceptNew)
 
 		require.NoError(t, err,
 			"unexpected error: %v", err)
@@ -305,7 +305,7 @@ func TestCreateAcceptNewHostKeyCallback(t *testing.T) {
 		t.Setenv("SSH_KNOWN_HOSTS", knownHostsPath)
 
 		client := NewClient("")
-		callback, err := client.getSSHHostKeyCallbackInternal(t.Context(), SSHHostKeyVerificationAcceptNew)
+		callback, err := client.getSSHHostKeyCallback(t.Context(), SSHHostKeyVerificationAcceptNew)
 
 		require.NoError(t, err,
 			"unexpected error: %v", err)
@@ -334,7 +334,7 @@ func TestCreateAcceptNewHostKeyCallback(t *testing.T) {
 		t.Setenv("SSH_KNOWN_HOSTS", knownHostsPath)
 
 		client := NewClient("")
-		callback, err := client.getSSHHostKeyCallbackInternal(t.Context(), SSHHostKeyVerificationAcceptNew)
+		callback, err := client.getSSHHostKeyCallback(t.Context(), SSHHostKeyVerificationAcceptNew)
 
 		require.NoError(t, err,
 			"unexpected error: %v", err)
@@ -349,7 +349,7 @@ func TestCreateAcceptNewHostKeyCallback(t *testing.T) {
 			"first callback returned error: %v", err)
 
 		// A new client must reuse the persisted trust file.
-		callback, err = NewClient("").getSSHHostKeyCallbackInternal(t.Context(), SSHHostKeyVerificationStrict)
+		callback, err = NewClient("").getSSHHostKeyCallback(t.Context(), SSHHostKeyVerificationStrict)
 		require.NoError(t, err)
 		err = callback("192.168.1.1:22", addr, key)
 
@@ -363,7 +363,7 @@ func TestCreateAcceptNewHostKeyCallback(t *testing.T) {
 		t.Setenv("SSH_KNOWN_HOSTS", knownHostsPath)
 
 		client := NewClient("")
-		callback, err := client.getSSHHostKeyCallbackInternal(t.Context(), SSHHostKeyVerificationAcceptNew)
+		callback, err := client.getSSHHostKeyCallback(t.Context(), SSHHostKeyVerificationAcceptNew)
 
 		require.NoError(t, err,
 			"unexpected error: %v", err)
@@ -431,7 +431,7 @@ func TestNewClient(t *testing.T) {
 	})
 }
 
-func writeFileInternal(t *testing.T, dir, name string, content []byte) {
+func writeFile(t *testing.T, dir, name string, content []byte) {
 	t.Helper()
 	targetPath := filepath.Join(dir, name)
 	{
@@ -453,9 +453,9 @@ func minimalCompose() []byte {
 
 func TestWalkDirectory_BasicWalk(t *testing.T) {
 	tmpDir := t.TempDir()
-	writeFileInternal(t, tmpDir, "compose.yaml", minimalCompose())
-	writeFileInternal(t, tmpDir, "file1.txt", []byte("hello world"))
-	writeFileInternal(t, tmpDir, "file2.txt", []byte("another file"))
+	writeFile(t, tmpDir, "compose.yaml", minimalCompose())
+	writeFile(t, tmpDir, "file1.txt", []byte("hello world"))
+	writeFile(t, tmpDir, "file2.txt", []byte("another file"))
 
 	client := NewClient("")
 	result, err := client.WalkDirectory(t.Context(), tmpDir, "compose.yaml", 0, 0, 0)
@@ -472,9 +472,9 @@ func TestWalkDirectory_BasicWalk(t *testing.T) {
 
 func TestWalkDirectory_PreservesExecutableBit(t *testing.T) {
 	tmpDir := t.TempDir()
-	writeFileInternal(t, tmpDir, "compose.yaml", minimalCompose())
-	writeFileInternal(t, tmpDir, "scripts/hook.sh", []byte("#!/bin/sh\necho hi\n"))
-	writeFileInternal(t, tmpDir, "README.md", []byte("readme"))
+	writeFile(t, tmpDir, "compose.yaml", minimalCompose())
+	writeFile(t, tmpDir, "scripts/hook.sh", []byte("#!/bin/sh\necho hi\n"))
+	writeFile(t, tmpDir, "README.md", []byte("readme"))
 	{
 		err := os.Chmod(filepath.Join(tmpDir, "scripts", "hook.sh"), 0o755)
 		require.NoError(t, err,
@@ -509,11 +509,11 @@ func TestWalkDirectory_PreservesExecutableBit(t *testing.T) {
 
 func TestWalkDirectory_MaxFilesLimit(t *testing.T) {
 	tmpDir := t.TempDir()
-	writeFileInternal(t, tmpDir, "compose.yaml", minimalCompose())
-	writeFileInternal(t, tmpDir, "a.txt", []byte("a"))
-	writeFileInternal(t, tmpDir, "b.txt", []byte("b"))
-	writeFileInternal(t, tmpDir, "c.txt", []byte("c"))
-	writeFileInternal(t, tmpDir, "d.txt", []byte("d"))
+	writeFile(t, tmpDir, "compose.yaml", minimalCompose())
+	writeFile(t, tmpDir, "a.txt", []byte("a"))
+	writeFile(t, tmpDir, "b.txt", []byte("b"))
+	writeFile(t, tmpDir, "c.txt", []byte("c"))
+	writeFile(t, tmpDir, "d.txt", []byte("d"))
 
 	client := NewClient("")
 	_, err := client.WalkDirectory(t.Context(), tmpDir, "compose.yaml", 3, 0, 0)
@@ -527,11 +527,11 @@ func TestWalkDirectory_MaxFilesLimit(t *testing.T) {
 
 func TestWalkDirectory_MaxFilesUnlimited(t *testing.T) {
 	tmpDir := t.TempDir()
-	writeFileInternal(t, tmpDir, "compose.yaml", minimalCompose())
-	writeFileInternal(t, tmpDir, "a.txt", []byte("a"))
-	writeFileInternal(t, tmpDir, "b.txt", []byte("b"))
-	writeFileInternal(t, tmpDir, "c.txt", []byte("c"))
-	writeFileInternal(t, tmpDir, "d.txt", []byte("d"))
+	writeFile(t, tmpDir, "compose.yaml", minimalCompose())
+	writeFile(t, tmpDir, "a.txt", []byte("a"))
+	writeFile(t, tmpDir, "b.txt", []byte("b"))
+	writeFile(t, tmpDir, "c.txt", []byte("c"))
+	writeFile(t, tmpDir, "d.txt", []byte("d"))
 
 	client := NewClient("")
 	result, err := client.WalkDirectory(t.Context(), tmpDir, "compose.yaml", 0, 0, 0)
@@ -545,9 +545,9 @@ func TestWalkDirectory_MaxFilesUnlimited(t *testing.T) {
 
 func TestWalkDirectory_MaxTotalSizeLimit(t *testing.T) {
 	tmpDir := t.TempDir()
-	writeFileInternal(t, tmpDir, "compose.yaml", minimalCompose())
-	writeFileInternal(t, tmpDir, "big1.txt", []byte(strings.Repeat("x", 40)))
-	writeFileInternal(t, tmpDir, "big2.txt", []byte(strings.Repeat("y", 40)))
+	writeFile(t, tmpDir, "compose.yaml", minimalCompose())
+	writeFile(t, tmpDir, "big1.txt", []byte(strings.Repeat("x", 40)))
+	writeFile(t, tmpDir, "big2.txt", []byte(strings.Repeat("y", 40)))
 
 	client := NewClient("")
 	_, err := client.WalkDirectory(t.Context(), tmpDir, "compose.yaml", 0, 50, 0)
@@ -561,9 +561,9 @@ func TestWalkDirectory_MaxTotalSizeLimit(t *testing.T) {
 
 func TestWalkDirectory_MaxTotalSizeUnlimited(t *testing.T) {
 	tmpDir := t.TempDir()
-	writeFileInternal(t, tmpDir, "compose.yaml", minimalCompose())
-	writeFileInternal(t, tmpDir, "big1.txt", []byte(strings.Repeat("x", 500)))
-	writeFileInternal(t, tmpDir, "big2.txt", []byte(strings.Repeat("y", 500)))
+	writeFile(t, tmpDir, "compose.yaml", minimalCompose())
+	writeFile(t, tmpDir, "big1.txt", []byte(strings.Repeat("x", 500)))
+	writeFile(t, tmpDir, "big2.txt", []byte(strings.Repeat("y", 500)))
 
 	client := NewClient("")
 	result, err := client.WalkDirectory(t.Context(), tmpDir, "compose.yaml", 0, 0, 0)
@@ -577,10 +577,10 @@ func TestWalkDirectory_MaxTotalSizeUnlimited(t *testing.T) {
 
 func TestWalkDirectory_MaxBinarySizeSkips(t *testing.T) {
 	tmpDir := t.TempDir()
-	writeFileInternal(t, tmpDir, "compose.yaml", minimalCompose())
+	writeFile(t, tmpDir, "compose.yaml", minimalCompose())
 	// Binary content: null bytes cause IsBinaryContent to return true
 	binaryContent := []byte{0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x12, 0x13}
-	writeFileInternal(t, tmpDir, "data.bin", binaryContent)
+	writeFile(t, tmpDir, "data.bin", binaryContent)
 
 	client := NewClient("")
 	result, err := client.WalkDirectory(t.Context(), tmpDir, "compose.yaml", 0, 0, 5)
@@ -594,9 +594,9 @@ func TestWalkDirectory_MaxBinarySizeSkips(t *testing.T) {
 
 func TestWalkDirectory_MaxBinarySizeUnlimited(t *testing.T) {
 	tmpDir := t.TempDir()
-	writeFileInternal(t, tmpDir, "compose.yaml", minimalCompose())
+	writeFile(t, tmpDir, "compose.yaml", minimalCompose())
 	binaryContent := []byte{0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x12, 0x13}
-	writeFileInternal(t, tmpDir, "data.bin", binaryContent)
+	writeFile(t, tmpDir, "data.bin", binaryContent)
 
 	client := NewClient("")
 	result, err := client.WalkDirectory(t.Context(), tmpDir, "compose.yaml", 0, 0, 0)
@@ -613,8 +613,8 @@ func TestWalkDirectory_MaxBinarySizeUnlimited(t *testing.T) {
 
 func TestWalkDirectory_LargeTextFileNotSkippedByBinaryLimit(t *testing.T) {
 	tmpDir := t.TempDir()
-	writeFileInternal(t, tmpDir, "compose.yaml", minimalCompose())
-	writeFileInternal(t, tmpDir, "notes.txt", []byte(strings.Repeat("plain text\n", 32)))
+	writeFile(t, tmpDir, "compose.yaml", minimalCompose())
+	writeFile(t, tmpDir, "notes.txt", []byte(strings.Repeat("plain text\n", 32)))
 
 	client := NewClient("")
 	result, err := client.WalkDirectory(t.Context(), tmpDir, "compose.yaml", 0, 0, 16)
@@ -631,8 +631,8 @@ func TestWalkDirectory_LargeTextFileNotSkippedByBinaryLimit(t *testing.T) {
 
 func TestWalkDirectory_ComposeInSubdirectory(t *testing.T) {
 	tmpDir := t.TempDir()
-	writeFileInternal(t, tmpDir, "subdir/docker-compose.yml", minimalCompose())
-	writeFileInternal(t, tmpDir, "subdir/dynamic_config.yml", []byte("http:\n  routers: {}\n"))
+	writeFile(t, tmpDir, "subdir/docker-compose.yml", minimalCompose())
+	writeFile(t, tmpDir, "subdir/dynamic_config.yml", []byte("http:\n  routers: {}\n"))
 
 	client := NewClient("")
 	result, err := client.WalkDirectory(t.Context(), tmpDir, "subdir/docker-compose.yml", 0, 0, 0)
@@ -661,8 +661,8 @@ func TestWalkDirectory_ComposeInSubdirectory(t *testing.T) {
 
 func TestWalkDirectory_NestedSiblingFile(t *testing.T) {
 	tmpDir := t.TempDir()
-	writeFileInternal(t, tmpDir, "subdir/docker-compose.yml", minimalCompose())
-	writeFileInternal(t, tmpDir, "subdir/config/dynamic_config.yml", []byte("tls:\n  certificates: []\n"))
+	writeFile(t, tmpDir, "subdir/docker-compose.yml", minimalCompose())
+	writeFile(t, tmpDir, "subdir/config/dynamic_config.yml", []byte("tls:\n  certificates: []\n"))
 
 	client := NewClient("")
 	result, err := client.WalkDirectory(t.Context(), tmpDir, "subdir/docker-compose.yml", 0, 0, 0)
@@ -691,8 +691,8 @@ func TestWalkDirectory_NestedSiblingFile(t *testing.T) {
 
 func TestWalkDirectory_SpecialCharsInPath(t *testing.T) {
 	tmpDir := t.TempDir()
-	writeFileInternal(t, tmpDir, "traefik (nl10)/docker-compose.yml", minimalCompose())
-	writeFileInternal(t, tmpDir, "traefik (nl10)/config/dynamic_config.yml", []byte("http:\n  middlewares: {}\n"))
+	writeFile(t, tmpDir, "traefik (nl10)/docker-compose.yml", minimalCompose())
+	writeFile(t, tmpDir, "traefik (nl10)/config/dynamic_config.yml", []byte("http:\n  middlewares: {}\n"))
 
 	client := NewClient("")
 	result, err := client.WalkDirectory(t.Context(), tmpDir, "traefik (nl10)/docker-compose.yml", 0, 0, 0)
@@ -836,7 +836,7 @@ func TestNormalizeURL(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := normalizeURLInternal(tc.in)
+			got, err := normalizeURL(tc.in)
 			if tc.wantErr {
 
 				require.Error(t, err,

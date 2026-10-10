@@ -36,6 +36,10 @@ import (
 	"go.getarcane.app/updater/digest"
 	"go.getarcane.app/updater/refs"
 	"go.getarcane.app/updater/registry"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/singleflight"
 	"gorm.io/gorm"
 
@@ -48,6 +52,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/tracing"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/validation"
 )
 
@@ -110,6 +115,10 @@ func NewContainerRegistryService(
 	if len(distributionHTTPClients) > 0 && distributionHTTPClients[0] != nil {
 		distributionHTTPClient = distributionHTTPClients[0]
 	}
+	// Trace a copy so the injected client keeps its raw transport.
+	traced := *distributionHTTPClient
+	traced.Transport = otelhttp.NewTransport(distributionHTTPClient.Transport)
+	distributionHTTPClient = &traced
 	service := &ContainerRegistryService{
 		db:                     db,
 		dockerClient:           dockerClient,
@@ -795,7 +804,11 @@ func registryDisplayNameInternal(registryHost, registryType string) string {
 	}
 }
 
-func (s *ContainerRegistryService) TestRegistry(ctx context.Context, registryURL, username, token string) error {
+func (s *ContainerRegistryService) TestRegistry(ctx context.Context, registryURL, username, token string) (testErr error) {
+	ctx, span := otel.Tracer(tracing.InstrumentationName).Start(ctx, "registry.test_credentials", trace.WithAttributes(
+		attribute.String("arcane.registry.host", registryauth.NormalizeRegistryForComparison(registryURL)),
+	))
+	defer func() { tracing.End(span, testErr) }()
 	if strings.TrimSpace(username) == "" && strings.TrimSpace(token) == "" {
 		// No credentials configured — skip the credential test.
 		return nil
@@ -870,7 +883,14 @@ func (s *ContainerRegistryService) ImageDigest(ctx context.Context, imageRef str
 	return digestValue, nil
 }
 
-func (s *ContainerRegistryService) InspectImageDigest(ctx context.Context, imageRef string, externalCreds []containerregistry.Credential) (*containerregistry.DigestResult, error) {
+func (s *ContainerRegistryService) InspectImageDigest(ctx context.Context, imageRef string, externalCreds []containerregistry.Credential) (inspected *containerregistry.DigestResult, digestErr error) {
+	ctx, span := otel.Tracer(tracing.InstrumentationName).Start(ctx, "registry.inspect_digest", trace.WithAttributes(attribute.String("arcane.image.ref", imageRef)))
+	defer func() {
+		if inspected != nil && inspected.Digest != "" {
+			span.SetAttributes(attribute.String("arcane.image.digest", inspected.Digest))
+		}
+		tracing.End(span, digestErr)
+	}()
 	parts, err := refs.NormalizeReference(imageRef)
 	if err != nil {
 		return nil, common.Classify(common.ErrValidation, err)
@@ -1556,7 +1576,12 @@ func (s *ContainerRegistryService) fetchDigestFromRegistryInternal(ctx context.C
 
 // ListImageTags discovers repository tags with the same credential precedence as
 // digest checks. External credentials replace local credentials when supplied.
-func (s *ContainerRegistryService) ListImageTags(ctx context.Context, imageRef string, externalCreds []containerregistry.Credential) ([]string, error) {
+func (s *ContainerRegistryService) ListImageTags(ctx context.Context, imageRef string, externalCreds []containerregistry.Credential) (tagList []string, tagsErr error) {
+	ctx, span := otel.Tracer(tracing.InstrumentationName).Start(ctx, "registry.list_tags", trace.WithAttributes(attribute.String("arcane.image.ref", imageRef)))
+	defer func() {
+		span.SetAttributes(attribute.Int("arcane.result.count", len(tagList)))
+		tracing.End(span, tagsErr)
+	}()
 	if refs.IsDigestPinnedReference(imageRef) || refs.IsImageIDLikeReference(imageRef) {
 		return nil, errors.New("cannot discover tags for an immutable image reference")
 	}

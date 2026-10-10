@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"maps"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -51,12 +50,8 @@ const (
 type SettingsService struct {
 	db     *database.DB
 	config atomic.Pointer[Settings]
-	// effectiveConfig is the env-override-applied snapshot, rebuilt whenever
-	// config is stored. Overrides are resolved once at startup and never
-	// change, so materializing them here turns every read (GetSettings and
-	// the typed getters — ~100 call sites, some in per-project loops) into a
-	// pointer load instead of a full struct Clone plus a reflection pass.
-	// The snapshot is shared: readers must never mutate it.
+	// effectiveConfig is the shared, read-only env-override-applied snapshot,
+	// rebuilt whenever config is stored so reads are a pointer load.
 	effectiveConfig atomic.Pointer[Settings]
 	envOverrides    []settingsEnvOverride
 	writes          sync.Mutex
@@ -69,15 +64,9 @@ type SettingsService struct {
 	changes         *concurrency.Signal[[]libarcane.SettingUpdate]
 }
 
-type settingsUpdateResultInternal struct {
-	settings []SettingVariable
-	changes  []libarcane.SettingUpdate
-}
-
 type settingsEnvOverride struct {
 	fieldIndex int
 	key        string
-	envVarName string
 	value      string
 }
 
@@ -92,28 +81,57 @@ func NewSettingsService(ctx context.Context, db *database.DB) (*SettingsService,
 		lifecycleCtx: ctx,
 		changes:      concurrency.NewSignal[[]libarcane.SettingUpdate](),
 	}
-	svc.envOverrides = resolveSettingsEnvOverridesInternal()
+	fields, _ := getSettingsFieldCacheInternal()
+	for _, field := range fields {
+		if !slices.Contains(splitSettingAttrsInternal(field.attrs), "envOverride") {
+			continue
+		}
+		if val, ok, _ := utils.LookupEnvOrFile(settingEnvName(field.key)); ok && val != "" {
+			svc.envOverrides = append(svc.envOverrides, settingsEnvOverride{fieldIndex: field.index, key: field.key, value: kit.TrimQuotes(val)})
+		}
+	}
 	if len(svc.envOverrides) > 0 {
 		slog.InfoContext(ctx, "Loaded Environment Settings Overrides", "count", len(svc.envOverrides))
 	}
 
-	err := svc.LoadDatabaseSettings(ctx)
-	if err != nil {
+	if _, err := EnsureInstanceID(ctx, db); err != nil {
+		return nil, fmt.Errorf("failed to setup instance ID: %w", err)
+	}
+	if err := svc.LoadDatabaseSettings(ctx); err != nil {
 		return nil, fmt.Errorf("failed to load settings: %w", err)
 	}
 
-	err = svc.setupInstanceID(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to setup instance ID: %w", err)
-	}
-
-	go svc.runEffectsInternal()
+	go func() {
+		defer close(svc.effectsDone)
+		for {
+			svc.effectsMu.Lock()
+			if len(svc.effects) > 0 {
+				effect := svc.effects[0]
+				svc.effects[0] = nil
+				svc.effects = svc.effects[1:]
+				svc.effectsMu.Unlock()
+				func() { defer utils.RecoverToError(nil, "settings effect"); effect() }()
+				continue
+			}
+			closed := svc.effectsClosed
+			svc.effectsMu.Unlock()
+			if closed {
+				return
+			}
+			select {
+			case <-svc.effectsWake:
+			case <-svc.lifecycleCtx.Done():
+				svc.effectsMu.Lock()
+				svc.effectsClosed = true
+				svc.effectsMu.Unlock()
+			}
+		}
+	}()
 	return svc, nil
 }
 
-// SubscribeSettingsChanges invokes callback once when any subscribed key is
-// present in a successful update. The callback receives only matching values.
-// Callbacks run serially on the ordered effects worker, outside the write mutex.
+// SubscribeSettingsChanges invokes callback once with the matching values when any subscribed key
+// is present in a successful update. Callbacks run serially on the effects worker, outside the write mutex.
 func (s *SettingsService) SubscribeSettingsChanges(keys []string, callback func([]libarcane.SettingUpdate)) func() {
 	if callback == nil || len(keys) == 0 {
 		return func() {}
@@ -130,7 +148,7 @@ func (s *SettingsService) SubscribeSettingsChanges(keys []string, callback func(
 			}
 		}
 		if len(matching) > 0 {
-			if err := s.enqueueEffectInternal(func() { callback(matching) }); err != nil && s.lifecycleCtx.Err() == nil {
+			if err := s.enqueueEffect(func() { callback(matching) }); err != nil && s.lifecycleCtx.Err() == nil {
 				slog.ErrorContext(s.lifecycleCtx, "Failed to queue settings change effects", "error", err)
 			}
 		}
@@ -154,7 +172,7 @@ func (s *SettingsService) NotifySettingsChanges(ctx context.Context, keys ...str
 		}
 		updates = append(updates, libarcane.SettingUpdate{Key: key, Value: value})
 	}
-	s.publishSettingsChangesInternal(updates)
+	s.publishSettingsChanges(updates)
 	return nil
 }
 
@@ -167,31 +185,73 @@ func (s *SettingsService) GetSettingsConfig() *Settings {
 	return v
 }
 
-func (s *SettingsService) LoadDatabaseSettings(ctx context.Context) (err error) {
-	dst, err := s.loadDatabaseSettingsInternal(ctx, s.db)
-	if err != nil {
-		return err
+func (s *SettingsService) LoadDatabaseSettings(ctx context.Context) error {
+	var stored []SettingVariable
+	queryCtx, queryCancel := context.WithTimeout(ctx, 10*time.Second)
+	defer queryCancel()
+	if err := s.db.WithContext(queryCtx).Find(&stored).Error; err != nil {
+		return fmt.Errorf("failed to load configuration from the database: %w", err)
+	}
+
+	dst := DefaultSettingsConfig()
+	appCfg := config.Load()
+	fields, _ := getSettingsFieldCacheInternal()
+	rv := reflect.ValueOf(dst).Elem()
+	if appCfg.UIConfigurationDisabled || appCfg.AgentMode {
+		slog.DebugContext(ctx, "LoadDatabaseSettings: using env path",
+			"uiConfigurationDisabled", appCfg.UIConfigurationDisabled, "agentMode", appCfg.AgentMode, "environment", appCfg.Environment)
+
+		storedValues := make(map[string]string, len(stored))
+		for _, setting := range stored {
+			storedValues[setting.Key] = setting.Value
+		}
+		for _, field := range fields {
+			value := rv.Field(field.index).FieldByName("Value")
+			if slices.Contains(splitSettingAttrsInternal(field.attrs), "internal") {
+				if val, ok := storedValues[field.key]; ok {
+					value.SetString(val)
+				}
+				continue
+			}
+
+			envVarName := settingEnvName(field.key)
+			if val, ok, _ := utils.LookupEnvOrFile(envVarName); ok {
+				mask := kit.Ternary(val == "", "<empty>", fmt.Sprintf("%d chars", len(val)))
+				slog.DebugContext(ctx, "LoadDatabaseSettings: env override found", "key", field.key, "env", envVarName, "valueMasked", mask)
+				value.SetString(kit.TrimQuotes(val))
+				continue
+			}
+			if val, ok := storedValues[field.key]; ok {
+				slog.DebugContext(ctx, "LoadDatabaseSettings: using database fallback", "key", field.key)
+				value.SetString(val)
+				continue
+			}
+			slog.DebugContext(ctx, "LoadDatabaseSettings: env not set and no database value", "key", field.key, "env", envVarName)
+		}
+
+		count := 0
+		for _, field := range fields {
+			if rv.Field(field.index).FieldByName("Value").String() != "" {
+				count++
+			}
+		}
+		slog.DebugContext(ctx, "LoadDatabaseSettings: completed env load", "loadedFields", count)
+	} else {
+		for _, setting := range stored {
+			if err := dst.UpdateField(setting.Key, setting.Value, false); err != nil && !errors.Is(err, SettingKeyNotFoundError{}) {
+				return fmt.Errorf("failed to process settings for key '%s': %w", setting.Key, err)
+			}
+		}
+		s.applyEnvOverrides(dst)
 	}
 
 	s.config.Store(dst)
 
 	effective := dst.Clone()
-	s.applyEnvOverrides(ctx, effective)
+	s.applyEnvOverrides(effective)
 	s.effectiveConfig.Store(effective)
 
 	return nil
-}
-
-func (s *SettingsService) refreshSettingsCacheInternal(ctx context.Context) error {
-	if err := s.LoadDatabaseSettings(ctx); err != nil {
-		return fmt.Errorf("failed to refresh settings cache: %w", err)
-	}
-
-	return nil
-}
-
-func (s *SettingsService) getDefaultSettings() *Settings {
-	return DefaultSettingsConfig()
 }
 
 // DefaultSettingsConfig returns the canonical default settings model used by Arcane.
@@ -317,111 +377,7 @@ func DefaultSettingsConfig() *Settings {
 	}
 }
 
-func (s *SettingsService) loadDatabaseSettingsInternal(ctx context.Context, db *database.DB) (*Settings, error) {
-	if config.Load().UIConfigurationDisabled || config.Load().AgentMode {
-		slog.DebugContext(
-			ctx,
-			"loadDatabaseSettingsInternal: using env path",
-			"uiConfigurationDisabled",
-			config.Load().UIConfigurationDisabled,
-			"agentMode",
-			config.Load().AgentMode,
-			"environment",
-			config.Load().Environment,
-		)
-		return s.loadDatabaseConfigFromEnv(ctx, db)
-	}
-
-	dest := s.getDefaultSettings()
-
-	var loaded []SettingVariable
-	queryCtx, queryCancel := context.WithTimeout(ctx, 10*time.Second)
-	defer queryCancel()
-	err := db.WithContext(queryCtx).
-		Find(&loaded).Error
-	if err != nil {
-		return nil, fmt.Errorf("failed to load configuration from the database: %w", err)
-	}
-
-	for _, v := range loaded {
-		err = dest.UpdateField(v.Key, v.Value, false)
-
-		if err != nil && !errors.Is(err, SettingKeyNotFoundError{}) {
-			return nil, fmt.Errorf("failed to process settings for key '%s': %w", v.Key, err)
-		}
-	}
-
-	// Apply environment variable overrides for fields tagged with "envOverride"
-	s.applyEnvOverrides(ctx, dest)
-
-	return dest, nil
-}
-
-func (s *SettingsService) loadDatabaseConfigFromEnv(ctx context.Context, db *database.DB) (*Settings, error) {
-	dest := s.getDefaultSettings()
-
-	// Fetch all settings once to avoid N+1 queries for internal keys
-	var allSettings []SettingVariable
-	if err := db.WithContext(ctx).Find(&allSettings).Error; err != nil {
-		return nil, fmt.Errorf("failed to load settings for env config: %w", err)
-	}
-	settingsMap := make(map[string]string, len(allSettings))
-	for _, s := range allSettings {
-		settingsMap[s.Key] = s.Value
-	}
-
-	rt := reflect.ValueOf(dest).Elem().Type()
-	rv := reflect.ValueOf(dest).Elem()
-	for i := range rt.NumField() {
-		field := rt.Field(i)
-
-		tagParts := strings.Split(field.Tag.Get("key"), ",")
-		key := tagParts[0]
-		isInternal := slices.Contains(tagParts[1:], "internal")
-
-		if isInternal {
-			if val, ok := settingsMap[key]; ok {
-				rv.Field(i).FieldByName("Value").SetString(val)
-			}
-			continue
-		}
-
-		envVarName := strings.ToUpper(kit.SnakeCase(key))
-
-		// debug: log each env name checked and whether a value exists
-		if val, ok, _ := utils.LookupEnvOrFile(envVarName); ok {
-			mask := "<empty>"
-			if val != "" {
-				mask = fmt.Sprintf("%d chars", len(val))
-			}
-			slog.DebugContext(ctx, "loadDatabaseConfigFromEnv: env override found", "key", key, "env", envVarName, "valueMasked", mask)
-			rv.Field(i).FieldByName("Value").SetString(kit.TrimQuotes(val))
-			continue
-		}
-		if val, ok := settingsMap[key]; ok {
-			// Fallback to database if environment variable is not set
-			slog.DebugContext(ctx, "loadDatabaseConfigFromEnv: using database fallback", "key", key)
-			rv.Field(i).FieldByName("Value").SetString(val)
-			continue
-		}
-		slog.DebugContext(ctx, "loadDatabaseConfigFromEnv: env not set and no database value", "key", key, "env", envVarName)
-	}
-
-	// debug: final snapshot (only show which fields are non-empty)
-	count := 0
-	for i := range rt.NumField() {
-		v := rv.Field(i).FieldByName("Value").String()
-		if v != "" {
-			count++
-		}
-	}
-	slog.DebugContext(ctx, "loadDatabaseConfigFromEnv: completed env load", "loadedFields", count)
-
-	return dest, nil
-}
-
-func (s *SettingsService) applyEnvOverrides(ctx context.Context, dest *Settings) {
-	_ = ctx
+func (s *SettingsService) applyEnvOverrides(dest *Settings) {
 	rv := reflect.ValueOf(dest).Elem()
 
 	for _, override := range s.envOverrides {
@@ -429,64 +385,27 @@ func (s *SettingsService) applyEnvOverrides(ctx context.Context, dest *Settings)
 	}
 }
 
-func resolveSettingsEnvOverridesInternal() []settingsEnvOverride {
-	rt := reflect.TypeFor[Settings]()
-	overrides := make([]settingsEnvOverride, 0)
-
-	for i := range rt.NumField() {
-		field := rt.Field(i)
-		tagValue := field.Tag.Get("key")
-		if tagValue == "" {
-			continue
-		}
-
-		// Parse tag attributes (e.g., "dockerHost,public,envOverride")
-		parts := strings.Split(tagValue, ",")
-		key := parts[0]
-		hasEnvOverride := slices.Contains(parts[1:], "envOverride")
-
-		if !hasEnvOverride {
-			continue
-		}
-
-		envVarName := strings.ToUpper(kit.SnakeCase(key))
-		if val, ok, _ := utils.LookupEnvOrFile(envVarName); ok && val != "" {
-			overrides = append(overrides, settingsEnvOverride{
-				fieldIndex: i,
-				key:        key,
-				envVarName: envVarName,
-				value:      kit.TrimQuotes(val),
-			})
-		}
-	}
-
-	return overrides
-}
-
-// IsEnvOverrideActive reports whether an environment override currently controls the setting.
-// and its corresponding environment variable is currently set to a non-empty value.
+// IsEnvOverrideActive reports whether a non-empty environment override controls the setting.
 func (s *SettingsService) IsEnvOverrideActive(key string) bool {
-	for _, override := range s.envOverrides {
-		if override.key == key {
-			return true
-		}
-	}
-
-	return false
+	return slices.ContainsFunc(s.envOverrides, func(override settingsEnvOverride) bool { return override.key == key })
 }
 
-// GetSettings returns the effective (env-override-applied) settings snapshot.
-// The snapshot is shared across callers and must be treated as read-only;
-// mutation flows go through UpdateSettings, which works on an explicit clone.
-func (s *SettingsService) GetSettings(ctx context.Context) (*Settings, error) {
-	settingsCfg := s.getEffectiveSettingsConfigInternal(ctx)
+// GetSettings returns the shared, read-only effective (env-override-applied) settings snapshot.
+// Mutation flows go through UpdateSettings, which works on an explicit clone.
+func (s *SettingsService) GetSettings(_ context.Context) (*Settings, error) {
+	if effective := s.effectiveConfig.Load(); effective != nil {
+		return effective, nil
+	}
+
+	// Only reachable before LoadDatabaseSettings has completed in the
+	// constructor; fall back to building the snapshot per call.
+	settingsCfg := s.GetSettingsConfig().Clone()
+	s.applyEnvOverrides(settingsCfg)
 	return settingsCfg, nil
 }
 
-// GetSettingsOrDefaults is a convenience for hot paths that need a snapshot but cannot
-// meaningfully recover from a settings load failure. It logs any error and guarantees a
-// non-nil *Settings (defaults: a zero-valued struct, which the SettingVariable helpers
-// like kit.ParseOrDefault treat as "use the caller's default").
+// GetSettingsOrDefaults logs any settings load failure and always returns a non-nil *Settings;
+// a zero-valued struct makes SettingVariable helpers fall back to the caller's default.
 func (s *SettingsService) GetSettingsOrDefaults(ctx context.Context) *Settings {
 	cfg, err := s.GetSettings(ctx)
 	if err != nil {
@@ -495,19 +414,7 @@ func (s *SettingsService) GetSettingsOrDefaults(ctx context.Context) *Settings {
 	return kit.Ternary(cfg == nil, &Settings{}, cfg)
 }
 
-func (s *SettingsService) getEffectiveSettingsConfigInternal(ctx context.Context) *Settings {
-	if effective := s.effectiveConfig.Load(); effective != nil {
-		return effective
-	}
-
-	// Only reachable before LoadDatabaseSettings has completed in the
-	// constructor; fall back to building the snapshot per call.
-	settingsCfg := s.GetSettingsConfig().Clone()
-	s.applyEnvOverrides(ctx, settingsCfg)
-	return settingsCfg
-}
-
-func validateSettingValueInternal(key, value string) error {
+func validateSettingValue(key, value string) error {
 	if key == "upgradeLogRetentionDays" && value != "" {
 		days, err := strconv.Atoi(value)
 		if err != nil || days < 0 || days > 3650 {
@@ -523,7 +430,7 @@ func validateSettingValueInternal(key, value string) error {
 }
 
 func (s *SettingsService) UpdateSetting(ctx context.Context, key, value string) error {
-	if err := validateSettingValueInternal(key, value); err != nil {
+	if err := validateSettingValue(key, value); err != nil {
 		return err
 	}
 	if err := libarcane.ValidateCronSetting(key, value); err != nil {
@@ -535,10 +442,7 @@ func (s *SettingsService) UpdateSetting(ctx context.Context, key, value string) 
 		return err
 	}
 
-	if err := s.updateSettingValueNoRefreshInternal(ctx, key, value); err != nil {
-		return err
-	}
-	return s.refreshSettingsCacheInternal(context.WithoutCancel(ctx))
+	return s.persistSettings(ctx, []SettingVariable{{Key: key, Value: value}})
 }
 
 // UpdateSettingValues persists a group of internal setting values atomically
@@ -546,7 +450,7 @@ func (s *SettingsService) UpdateSetting(ctx context.Context, key, value string) 
 func (s *SettingsService) UpdateSettingValues(ctx context.Context, updates []libarcane.SettingUpdate) error {
 	values := make([]SettingVariable, 0, len(updates))
 	for _, update := range updates {
-		if err := validateSettingValueInternal(update.Key, update.Value); err != nil {
+		if err := validateSettingValue(update.Key, update.Value); err != nil {
 			return err
 		}
 		values = append(values, SettingVariable{Key: update.Key, Value: update.Value})
@@ -557,23 +461,7 @@ func (s *SettingsService) UpdateSettingValues(ctx context.Context, updates []lib
 		return err
 	}
 
-	if err := s.persistSettings(ctx, values); err != nil {
-		return err
-	}
-	return s.refreshSettingsCacheInternal(context.WithoutCancel(ctx))
-}
-
-func (s *SettingsService) updateSettingValueNoRefreshInternal(ctx context.Context, key, value string) error {
-	if key == "oidcProviderName" {
-		value = normalization.Text(value, true, true)
-	}
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		settingVar := &SettingVariable{
-			Key:   key,
-			Value: value,
-		}
-		return tx.Save(settingVar).Error
-	})
+	return s.persistSettings(ctx, values)
 }
 
 // UpdateSettings publishes the refreshed snapshot before returning. Each
@@ -587,33 +475,7 @@ func (s *SettingsService) UpdateSettings(ctx context.Context, updates settings.U
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	result, err := s.updateSettingsInternal(ctx, updates)
-	if err == nil {
-		s.publishSettingsChangesInternal(result.changes)
-	}
-	return result.settings, err
-}
 
-func (s *SettingsService) publishSettingsChangesInternal(updates []libarcane.SettingUpdate) {
-	safe := make([]libarcane.SettingUpdate, 0, len(updates))
-	cfg := s.GetSettingsConfig()
-	for _, update := range updates {
-		_, _, sensitive, err := cfg.FieldByKey(update.Key)
-		if err != nil {
-			slog.WarnContext(s.lifecycleCtx, "Skipping settings change notification for unknown key", "key", update.Key, "error", err)
-			continue
-		}
-		if !sensitive {
-			safe = append(safe, update)
-		}
-	}
-	if len(safe) > 0 {
-		s.changes.Publish(safe)
-	}
-}
-
-func (s *SettingsService) updateSettingsInternal(ctx context.Context, updates settings.Update) (settingsUpdateResultInternal, error) {
-	defaultCfg := s.getDefaultSettings()
 	cfg := s.GetSettingsConfig().Clone()
 	oidcClientSecretUpdated := updates.OidcClientSecret != nil && !s.IsEnvOverrideActive("oidcClientSecret")
 	trivyServerTokenUpdated := updates.TrivyServerToken != nil && *updates.TrivyServerToken != "" && !s.IsEnvOverrideActive("trivyServerToken")
@@ -633,7 +495,7 @@ func (s *SettingsService) updateSettingsInternal(ctx context.Context, updates se
 		map[string]bool{"oidcClientSecret": cfg.OidcClientSecret.Value != ""},
 		map[string]bool{"oidcClientSecret": updates.OidcClientSecret != nil},
 	); err != nil {
-		return settingsUpdateResultInternal{}, err
+		return nil, err
 	}
 
 	effectiveValue := func(current SettingVariable, next *string) string {
@@ -642,10 +504,7 @@ func (s *SettingsService) updateSettingsInternal(ctx context.Context, updates se
 		}
 		return current.Value
 	}
-	oidcClientSecret := cfg.OidcClientSecret.Value
-	if oidcClientSecretUpdated {
-		oidcClientSecret = *updates.OidcClientSecret
-	}
+	oidcClientSecret := kit.Ternary(oidcClientSecretUpdated, kit.FromPtr(updates.OidcClientSecret), cfg.OidcClientSecret.Value)
 	if effectiveValue(cfg.OidcEnabled, updates.OidcEnabled) == "true" {
 		required := []struct{ key, value string }{
 			{"oidcClientId", effectiveValue(cfg.OidcClientId, updates.OidcClientId)},
@@ -654,16 +513,7 @@ func (s *SettingsService) updateSettingsInternal(ctx context.Context, updates se
 		}
 		for _, field := range required {
 			if strings.TrimSpace(field.value) == "" {
-				return settingsUpdateResultInternal{}, common.Classify(
-					common.ErrValidation,
-					&base.FieldError{
-						Field: field.key,
-						Err: fmt.Errorf(
-							"enabling OIDC requires %s",
-							field.key,
-						),
-					},
-				)
+				return nil, common.Classify(common.ErrValidation, &base.FieldError{Field: field.key, Err: fmt.Errorf("enabling OIDC requires %s", field.key)})
 			}
 		}
 	}
@@ -676,12 +526,12 @@ func (s *SettingsService) updateSettingsInternal(ctx context.Context, updates se
 		map[string]bool{"trivyServerToken": cfg.TrivyServerToken.Value != ""},
 		map[string]bool{"trivyServerToken": trivyServerTokenUpdated},
 	); err != nil {
-		return settingsUpdateResultInternal{}, err
+		return nil, err
 	}
 
-	valuesToUpdate, err := s.prepareUpdateValues(updates, cfg, defaultCfg)
+	valuesToUpdate, err := s.prepareUpdateValues(updates, cfg, DefaultSettingsConfig())
 	if err != nil {
-		return settingsUpdateResultInternal{}, err
+		return nil, err
 	}
 	if oidcClientSecretUpdated {
 		valuesToUpdate = append(valuesToUpdate, SettingVariable{Key: "oidcClientSecret", Value: *updates.OidcClientSecret})
@@ -691,21 +541,34 @@ func (s *SettingsService) updateSettingsInternal(ctx context.Context, updates se
 	}
 
 	if persistSettingsErr := s.persistSettings(ctx, valuesToUpdate); persistSettingsErr != nil {
-		return settingsUpdateResultInternal{}, persistSettingsErr
+		return nil, persistSettingsErr
 	}
 
-	if refreshSettingsCacheErr := s.refreshSettingsCacheInternal(context.WithoutCancel(ctx)); refreshSettingsCacheErr != nil {
-		return settingsUpdateResultInternal{}, refreshSettingsCacheErr
-	}
-	settingsCfg := s.GetSettingsConfig()
 	changes := make([]libarcane.SettingUpdate, 0, len(valuesToUpdate))
 	for _, value := range valuesToUpdate {
 		changes = append(changes, libarcane.SettingUpdate{Key: value.Key, Value: value.Value})
 	}
-	return settingsUpdateResultInternal{
-		settings: settingsCfg.ToSettingVariableSlice(SettingVisibilityNonAdmin, false),
-		changes:  changes,
-	}, nil
+	result := s.GetSettingsConfig().ToSettingVariableSlice(SettingVisibilityNonAdmin, false)
+	s.publishSettingsChanges(changes)
+	return result, nil
+}
+
+func (s *SettingsService) publishSettingsChanges(updates []libarcane.SettingUpdate) {
+	safe := make([]libarcane.SettingUpdate, 0, len(updates))
+	cfg := s.GetSettingsConfig()
+	for _, update := range updates {
+		_, _, sensitive, err := cfg.FieldByKey(update.Key)
+		if err != nil {
+			slog.WarnContext(s.lifecycleCtx, "Skipping settings change notification for unknown key", "key", update.Key, "error", err)
+			continue
+		}
+		if !sensitive {
+			safe = append(safe, update)
+		}
+	}
+	if len(safe) > 0 {
+		s.changes.Publish(safe)
+	}
 }
 
 func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defaultCfg *Settings) ([]SettingVariable, error) {
@@ -714,15 +577,20 @@ func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defa
 	valuesToUpdate := make([]SettingVariable, 0)
 
 	for i := range rt.NumField() {
-		field := rt.Field(i)
 		fieldValue := rv.Field(i)
-
-		key, value, ok := extractUpdateValue(field, fieldValue)
-		if !ok {
+		if fieldValue.Kind() == reflect.Pointer && fieldValue.IsNil() {
 			continue
 		}
+		key, _, _ := strings.Cut(rt.Field(i).Tag.Get("json"), ",")
+		if key == "" {
+			continue
+		}
+		var value string
+		if fieldValue.Kind() == reflect.Pointer {
+			value = fieldValue.Elem().String()
+		}
 
-		if err := validateSettingValueInternal(key, value); err != nil {
+		if err := validateSettingValue(key, value); err != nil {
 			return nil, err
 		}
 
@@ -746,18 +614,11 @@ func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defa
 			return nil, fmt.Errorf("invalid cron expression for %s: %w", key, err)
 		}
 
-		var valueToSave string
-		var err error
-
-		if value == "" {
-			defaultValue, _, _, _ := defaultCfg.FieldByKey(key)
-			valueToSave = defaultValue
-			err = cfg.UpdateField(key, defaultValue, true)
-		} else {
-			valueToSave = value
-			err = cfg.UpdateField(key, value, true)
+		valueToSave := value
+		if valueToSave == "" {
+			valueToSave, _, _, _ = defaultCfg.FieldByKey(key)
 		}
-
+		err := cfg.UpdateField(key, valueToSave, true)
 		if errors.Is(err, SettingSensitiveForbiddenError{}) {
 			continue
 		}
@@ -771,26 +632,8 @@ func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defa
 	return valuesToUpdate, nil
 }
 
-func extractUpdateValue(field reflect.StructField, fieldValue reflect.Value) (string, string, bool) {
-	if fieldValue.Kind() == reflect.Pointer && fieldValue.IsNil() {
-		return "", "", false
-	}
-
-	key, _, _ := strings.Cut(field.Tag.Get("json"), ",")
-	if key == "" {
-		return "", "", false
-	}
-
-	var value string
-	if fieldValue.Kind() == reflect.Pointer {
-		value = fieldValue.Elem().String()
-	}
-
-	return key, value, true
-}
-
 func (s *SettingsService) persistSettings(ctx context.Context, values []SettingVariable) error {
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		for _, setting := range values {
 			if setting.Key == "oidcProviderName" {
 				setting.Value = normalization.Text(setting.Value, true, true)
@@ -800,12 +643,19 @@ func (s *SettingsService) persistSettings(ctx context.Context, values []SettingV
 			}
 		}
 		return nil
-	})
+	}); err != nil {
+		return err
+	}
+
+	if err := s.LoadDatabaseSettings(context.WithoutCancel(ctx)); err != nil {
+		return fmt.Errorf("failed to refresh settings cache: %w", err)
+	}
+	return nil
 }
 
-// retiredSettingValuesInternal lists former defaults that startup replaces
+// retiredSettingValues lists former defaults that startup replaces
 // with the current default when an install still holds them verbatim.
-var retiredSettingValuesInternal = map[string][]string{
+var retiredSettingValues = map[string][]string{
 	"dockerClientRefreshInterval": {"*/30 * * * * *"},
 	"autoHealInterval":            {"*/30 * * * * *"},
 }
@@ -817,10 +667,9 @@ func (s *SettingsService) EnsureDefaultSettings(ctx context.Context) error {
 		return err
 	}
 
-	defaultSettings := s.getDefaultSettings()
-	defaultSettingVars := defaultSettings.ToSettingVariableSlice(SettingVisibilityAll, false)
+	defaultSettingVars := DefaultSettingsConfig().ToSettingVariableSlice(SettingVisibilityAll, false)
 
-	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		for _, defaultSetting := range defaultSettingVars {
 			var existing SettingVariable
 			err := tx.Where("key = ?", defaultSetting.Key).First(&existing).Error
@@ -832,17 +681,15 @@ func (s *SettingsService) EnsureDefaultSettings(ctx context.Context) error {
 				}
 			case err != nil:
 				return fmt.Errorf("failed to check for existing setting %s: %w", defaultSetting.Key, err)
-			case slices.Contains(retiredSettingValuesInternal[defaultSetting.Key], existing.Value):
-				if replaceDefaultSettingErr := tx.Model(&SettingVariable{}).Where("key = ?", defaultSetting.Key).Update("value", defaultSetting.Value).Error; replaceDefaultSettingErr != nil {
+			case slices.Contains(retiredSettingValues[defaultSetting.Key], existing.Value):
+				replaceDefaultSettingErr := tx.Model(&SettingVariable{}).Where("key = ?", defaultSetting.Key).Update("value", defaultSetting.Value).Error
+				if replaceDefaultSettingErr != nil {
 					return fmt.Errorf("failed to replace retired default for setting %s: %w", defaultSetting.Key, replaceDefaultSettingErr)
 				}
 			}
 		}
 		return nil
-	}); err != nil {
-		return err
-	}
-	return nil
+	})
 }
 
 func (s *SettingsService) PruneUnknownSettings(ctx context.Context) error {
@@ -852,12 +699,12 @@ func (s *SettingsService) PruneUnknownSettings(ctx context.Context) error {
 		return err
 	}
 
-	allowedKeys := allowedSettingKeys()
-	if len(allowedKeys) == 0 {
-		return nil
+	fields, _ := getSettingsFieldCacheInternal()
+	keys := make([]string, 0, len(fields)+1)
+	for _, field := range fields {
+		keys = append(keys, field.key)
 	}
-
-	keys := slices.Collect(maps.Keys(allowedKeys))
+	keys = append(keys, "encryptionKey")
 
 	result := s.db.WithContext(ctx).Where("key NOT IN ?", keys).Delete(&SettingVariable{})
 	if result.Error != nil {
@@ -876,14 +723,38 @@ func (s *SettingsService) PersistEnvSettingsIfMissing(ctx context.Context) error
 		return err
 	}
 
-	rt := reflect.TypeFor[Settings]()
 	appCfg := config.Load()
 	isEnvOnlyMode := appCfg.AgentMode || appCfg.UIConfigurationDisabled
+	fields, _ := getSettingsFieldCacheInternal()
 
 	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		for field := range rt.Fields() {
-			if err := s.processEnvField(ctx, tx, field, isEnvOnlyMode); err != nil {
-				return err
+		for _, field := range fields {
+			attrs := splitSettingAttrsInternal(field.attrs)
+			// Outside env-only mode, only persist fields explicitly marked as envOverride.
+			if slices.Contains(attrs, "internal") || (!isEnvOnlyMode && !slices.Contains(attrs, "envOverride")) {
+				continue
+			}
+			envVal, ok, _ := utils.LookupEnvOrFile(settingEnvName(field.key))
+			if !ok {
+				continue
+			}
+			envVal = kit.TrimQuotes(envVal)
+
+			var existing SettingVariable
+			err := tx.Where("key = ?", field.key).First(&existing).Error
+			switch {
+			case errors.Is(err, gorm.ErrRecordNotFound):
+				if createEnvSettingErr := tx.Create(&SettingVariable{Key: field.key, Value: envVal}).Error; createEnvSettingErr != nil {
+					return fmt.Errorf("persist env setting %s: %w", field.key, createEnvSettingErr)
+				}
+				slog.DebugContext(ctx, "Created setting from environment", "key", field.key)
+			case err != nil:
+				return fmt.Errorf("check setting %s: %w", field.key, err)
+			case existing.Value != envVal:
+				if updateEnvSettingErr := tx.Model(&existing).Update("value", envVal).Error; updateEnvSettingErr != nil {
+					return fmt.Errorf("update env setting %s: %w", field.key, updateEnvSettingErr)
+				}
+				slog.DebugContext(ctx, "Updated setting from environment", "key", field.key)
 			}
 		}
 		return nil
@@ -893,115 +764,26 @@ func (s *SettingsService) PersistEnvSettingsIfMissing(ctx context.Context) error
 	return s.LoadDatabaseSettings(context.WithoutCancel(ctx))
 }
 
-func allowedSettingKeys() map[string]struct{} {
-	allowed := make(map[string]struct{})
-
-	settingsType := reflect.TypeFor[Settings]()
-	for field := range settingsType.Fields() {
-		key, _, _ := strings.Cut(field.Tag.Get("key"), ",")
-		if key == "" {
-			continue
-		}
-		allowed[key] = struct{}{}
-	}
-
-	allowed["encryptionKey"] = struct{}{}
-
-	return allowed
-}
-
-func (s *SettingsService) processEnvField(ctx context.Context, tx *gorm.DB, field reflect.StructField, isEnvOnlyMode bool) error {
-	tag := field.Tag.Get("key")
-	key, attrs, _ := strings.Cut(tag, ",")
-
-	if !s.shouldProcessField(key, attrs, isEnvOnlyMode) {
-		return nil
-	}
-
-	envVarName := strings.ToUpper(kit.SnakeCase(key))
-	envVal, ok, _ := utils.LookupEnvOrFile(envVarName)
-	if !ok {
-		return nil
-	}
-	envVal = kit.TrimQuotes(envVal)
-
-	return s.upsertEnvSetting(ctx, tx, key, envVal)
-}
-
-func (s *SettingsService) shouldProcessField(key, attrs string, isEnvOnlyMode bool) bool {
-	if key == "" || strings.Contains(attrs, "internal") {
-		return false
-	}
-
-	// If not in env-only mode, only persist if it's explicitly marked as envOverride
-	return isEnvOnlyMode || strings.Contains(attrs, "envOverride")
-}
-
-func (s *SettingsService) upsertEnvSetting(ctx context.Context, tx *gorm.DB, key, envVal string) error {
-	var existing SettingVariable
-	err := tx.Where("key = ?", key).First(&existing).Error
-
-	switch {
-	case errors.Is(err, gorm.ErrRecordNotFound):
-		newVar := SettingVariable{Key: key, Value: envVal}
-		if createEnvSettingErr := tx.Create(&newVar).Error; createEnvSettingErr != nil {
-			return fmt.Errorf("persist env setting %s: %w", key, createEnvSettingErr)
-		}
-		slog.DebugContext(ctx, "Created setting from environment", "key", key)
-	case err != nil:
-		return fmt.Errorf("check setting %s: %w", key, err)
-	default:
-		if existing.Value != envVal {
-			if updateEnvSettingErr := tx.Model(&existing).Update("value", envVal).Error; updateEnvSettingErr != nil {
-				return fmt.Errorf("update env setting %s: %w", key, updateEnvSettingErr)
-			}
-			slog.DebugContext(ctx, "Updated setting from environment", "key", key)
-		}
-	}
-
-	return nil
-}
-
 func (s *SettingsService) ListSettings(visibility SettingVisibility) []SettingVariable {
 	return s.GetSettingsConfig().ToSettingVariableSlice(visibility, true)
 }
 
 // GetSettingType returns the type from the setting metadata
 func (s *SettingsService) GetSettingType(key string) string {
-	rt := reflect.TypeFor[Settings]()
-	for field := range rt.Fields() {
-		keyTag := field.Tag.Get("key")
-		fieldKey, _, _ := strings.Cut(keyTag, ",")
-		if fieldKey == key {
-			metaTag := field.Tag.Get("meta")
-			parts := strings.SplitSeq(metaTag, ";")
-			for part := range parts {
-				if after, ok := strings.CutPrefix(part, "type="); ok {
-					return after
-				}
+	_, byKey := getSettingsFieldCacheInternal()
+	if field, ok := byKey[key]; ok {
+		metaTag := reflect.TypeFor[Settings]().Field(field.index).Tag.Get("meta")
+		for part := range strings.SplitSeq(metaTag, ";") {
+			if after, found := strings.CutPrefix(part, "type="); found {
+				return after
 			}
-			return "text" // default type
 		}
 	}
-	return "text" // default if not found
-}
-
-func (s *SettingsService) setupInstanceID(ctx context.Context) error {
-	instanceID := s.GetSettingsConfig().InstanceID.Value
-	if instanceID != "" {
-		return nil
-	}
-
-	err := s.UpdateSetting(ctx, "instanceId", uuid.New().String())
-	if err != nil {
-		return fmt.Errorf("failed to set instance ID in database: %w", err)
-	}
-
-	return nil
+	return "text"
 }
 
 func (s *SettingsService) settingValue[T any](ctx context.Context, key string, parse func(string) (T, error)) mo.Option[T] {
-	cfg := s.getEffectiveSettingsConfigInternal(ctx)
+	cfg := s.GetSettingsOrDefaults(ctx)
 	value, _, _, err := cfg.FieldByKey(key)
 	if err != nil || value == "" {
 		return mo.None[T]()
@@ -1038,9 +820,8 @@ func (s *SettingsService) SetStringSetting(ctx context.Context, key, value strin
 	return s.UpdateSetting(ctx, key, value)
 }
 
-// SetContainerAutoUpdateExclusionInternal adds or removes a container name from
-// the autoUpdateExcludedContainers setting. When excluded is true the container
-// is added to the list; when false it is removed.
+// SetContainerAutoUpdateExclusionInternal adds (excluded) or removes a container name
+// in the autoUpdateExcludedContainers setting.
 func (s *SettingsService) SetContainerAutoUpdateExclusionInternal(ctx context.Context, containerName string, excluded bool) error {
 	s.writes.Lock()
 	defer s.writes.Unlock()
@@ -1049,23 +830,13 @@ func (s *SettingsService) SetContainerAutoUpdateExclusionInternal(ctx context.Co
 	}
 
 	ordered := kit.Unique(kit.TrimNonEmpty(strings.Split(s.GetStringSetting(ctx, "autoUpdateExcludedContainers", ""), ",")))
-
 	if excluded {
 		ordered = kit.Unique(append(ordered, containerName))
 	} else {
-		filtered := ordered[:0]
-		for _, name := range ordered {
-			if name != containerName {
-				filtered = append(filtered, name)
-			}
-		}
-		ordered = filtered
+		ordered = slices.DeleteFunc(ordered, func(name string) bool { return name == containerName })
 	}
 
-	if err := s.updateSettingValueNoRefreshInternal(ctx, "autoUpdateExcludedContainers", strings.Join(ordered, ",")); err != nil {
-		return err
-	}
-	return s.refreshSettingsCacheInternal(context.WithoutCancel(ctx))
+	return s.persistSettings(ctx, []SettingVariable{{Key: "autoUpdateExcludedContainers", Value: strings.Join(ordered, ",")}})
 }
 
 func (s *SettingsService) EnsureEncryptionKey(ctx context.Context) (string, error) {
@@ -1075,50 +846,14 @@ func (s *SettingsService) EnsureEncryptionKey(ctx context.Context) (string, erro
 		return "", err
 	}
 
-	const keyName = "encryptionKey"
-	var key string
-
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var sv SettingVariable
-		err := tx.Where("key = ?", keyName).First(&sv).Error
-
-		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-			return fmt.Errorf("failed to load encryption key: %w", err)
-		}
-
-		if sv.Value != "" {
-			key = sv.Value
-			return nil
-		}
-
-		notFound := errors.Is(err, gorm.ErrRecordNotFound)
+	return ensureSettingValue(ctx, s.db, "encryptionKey", "encryption key", func() (string, error) {
 		sum := sha256.Sum256([]byte(uuid.New().String()))
-		generatedKey := base64.StdEncoding.EncodeToString(sum[:])
-		key = generatedKey
-
-		if notFound {
-			if createErr := tx.Create(&SettingVariable{Key: keyName, Value: generatedKey}).Error; createErr != nil {
-				return fmt.Errorf("failed to persist encryption key: %w", createErr)
-			}
-			return nil
-		}
-
-		if updErr := tx.Model(&SettingVariable{}).
-			Where("key = ?", keyName).
-			Update("value", generatedKey).Error; updErr != nil {
-			return fmt.Errorf("failed to update encryption key: %w", updErr)
-		}
-		return nil
+		return base64.StdEncoding.EncodeToString(sum[:]), nil
 	})
-	if err != nil {
-		return "", err
-	}
-
-	return key, nil
 }
 
 func (s *SettingsService) EnsureJwtSigningKey(ctx context.Context) (*mldsa.PrivateKey, error) {
-	seed, err := s.ensureEncryptedKeyInternal(ctx, "jwtSigningKeySeed", mldsa.PrivateKeySize)
+	seed, err := s.ensureEncryptedKey(ctx, "jwtSigningKeySeed", mldsa.PrivateKeySize)
 	if err != nil {
 		return nil, err
 	}
@@ -1130,66 +865,46 @@ func (s *SettingsService) EnsureJwtSigningKey(ctx context.Context) (*mldsa.Priva
 }
 
 func (s *SettingsService) EnsureBrowserSessionSigningKey(ctx context.Context) ([]byte, error) {
-	return s.ensureEncryptedKeyInternal(ctx, "browserSessionSigningKey", browserSessionSigningKeySize)
+	return s.ensureEncryptedKey(ctx, "browserSessionSigningKey", browserSessionSigningKeySize)
 }
 
-func (s *SettingsService) ensureEncryptedKeyInternal(ctx context.Context, keyName string, size int) ([]byte, error) {
+func (s *SettingsService) ensureEncryptedKey(ctx context.Context, keyName string, size int) ([]byte, error) {
 	s.writes.Lock()
 	defer s.writes.Unlock()
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 
-	var key []byte
-
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var sv SettingVariable
-		err := tx.Where("key = ?", keyName).First(&sv).Error
-		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-			return fmt.Errorf("failed to load signing key: %w", err)
+	var generated []byte
+	stored, err := ensureSettingValue(ctx, s.db, keyName, "signing key", func() (string, error) {
+		generated = make([]byte, size)
+		if _, genErr := rand.Read(generated); genErr != nil {
+			return "", fmt.Errorf("failed to generate signing key: %w", genErr)
 		}
-
-		if sv.Value != "" {
-			decoded, decErr := crypto.Decrypt(sv.Value)
-			if decErr != nil {
-				return fmt.Errorf("failed to decrypt signing key: %w", decErr)
-			}
-			key, decErr = base64.StdEncoding.DecodeString(decoded)
-			if decErr != nil {
-				return fmt.Errorf("failed to decode signing key: %w", decErr)
-			}
-			if len(key) != size {
-				return fmt.Errorf("invalid signing key length: got %d, want %d", len(key), size)
-			}
-			return nil
-		}
-
-		key = make([]byte, size)
-		if _, genErr := rand.Read(key); genErr != nil {
-			return fmt.Errorf("failed to generate signing key: %w", genErr)
-		}
-		encrypted, encErr := crypto.Encrypt(base64.StdEncoding.EncodeToString(key))
+		encrypted, encErr := crypto.Encrypt(base64.StdEncoding.EncodeToString(generated))
 		if encErr != nil {
-			return fmt.Errorf("failed to encrypt signing key: %w", encErr)
+			return "", fmt.Errorf("failed to encrypt signing key: %w", encErr)
 		}
-
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			if createSigningKeyErr := tx.Create(&SettingVariable{Key: keyName, Value: encrypted}).Error; createSigningKeyErr != nil {
-				return fmt.Errorf("failed to persist signing key: %w", createSigningKeyErr)
-			}
-			return nil
-		}
-		if updateSigningKeyErr := tx.Model(&SettingVariable{}).
-			Where("key = ?", keyName).
-			Update("value", encrypted).Error; updateSigningKeyErr != nil {
-			return fmt.Errorf("failed to update signing key: %w", updateSigningKeyErr)
-		}
-		return nil
+		return encrypted, nil
 	})
 	if err != nil {
 		return nil, err
 	}
+	if generated != nil {
+		return generated, nil
+	}
 
+	decoded, err := crypto.Decrypt(stored)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decrypt signing key: %w", err)
+	}
+	key, err := base64.StdEncoding.DecodeString(decoded)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode signing key: %w", err)
+	}
+	if len(key) != size {
+		return nil, fmt.Errorf("invalid signing key length: got %d, want %d", len(key), size)
+	}
 	return key, nil
 }
 
@@ -1198,95 +913,56 @@ func (s *SettingsService) NormalizeProjectsDirectory(ctx context.Context, projec
 		slog.DebugContext(ctx, "PROJECTS_DIRECTORY environment variable is set, skipping normalization", "value", projectsDirEnv)
 		return nil
 	}
-
-	s.writes.Lock()
-	defer s.writes.Unlock()
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-
-	var projectsDirSetting SettingVariable
-	err := s.db.WithContext(ctx).Where("key = ?", "projectsDirectory").First(&projectsDirSetting).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		slog.DebugContext(ctx, "No projectsDirectory setting found, skipping normalization")
-		return nil
-	}
-	if err != nil {
-		return fmt.Errorf("failed to load projectsDirectory setting: %w", err)
-	}
-
-	value := strings.TrimSpace(projectsDirSetting.Value)
-	isMapping := strings.Contains(value, ":") && (strings.HasPrefix(value, "/") || projects.IsWindowsDrivePath(value))
-	if filepath.IsAbs(value) || isMapping {
-		slog.DebugContext(ctx, "Projects directory already normalized or custom, skipping", "value", projectsDirSetting.Value)
-		return nil
-	}
-
-	cwd, _ := os.Getwd()
-	absPath, absErr := filepath.Abs(value)
-	if absErr != nil {
-		return fmt.Errorf("failed to resolve relative path to absolute: %w", absErr)
-	}
-	slog.InfoContext(ctx, "Normalizing projects directory from relative to absolute path", "from", value, "to", absPath, "base", cwd)
-	if updateSettingValueNoRefreshErr := s.updateSettingValueNoRefreshInternal(ctx, "projectsDirectory", absPath); updateSettingValueNoRefreshErr != nil {
-		return fmt.Errorf("failed to update projectsDirectory: %w", updateSettingValueNoRefreshErr)
-	}
-	if refreshSettingsCacheErr := s.refreshSettingsCacheInternal(context.WithoutCancel(ctx)); refreshSettingsCacheErr != nil {
-		return refreshSettingsCacheErr
-	}
-	slog.InfoContext(ctx, "Successfully normalized projects directory")
-	s.publishSettingsChangesInternal([]libarcane.SettingUpdate{{Key: "projectsDirectory", Value: absPath}})
-	return nil
+	return s.normalizeDirectorySetting(ctx, "projectsDirectory")
 }
 
 func (s *SettingsService) NormalizeBuildsDirectory(ctx context.Context) error {
-	const buildsKey = "buildsDirectory"
-	envVarName := strings.ToUpper(kit.SnakeCase(buildsKey))
-	if envVal, ok, _ := utils.LookupEnvOrFile(envVarName); ok && strings.TrimSpace(envVal) != "" {
+	if envVal, ok, _ := utils.LookupEnvOrFile(settingEnvName("buildsDirectory")); ok && strings.TrimSpace(envVal) != "" {
 		slog.DebugContext(ctx, "BUILDS_DIRECTORY environment variable is set, skipping normalization", "value", envVal)
 		return nil
 	}
+	return s.normalizeDirectorySetting(ctx, "buildsDirectory")
+}
 
+func (s *SettingsService) normalizeDirectorySetting(ctx context.Context, key string) error {
 	s.writes.Lock()
 	defer s.writes.Unlock()
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 
-	var buildsDirSetting SettingVariable
-	err := s.db.WithContext(ctx).Where("key = ?", buildsKey).First(&buildsDirSetting).Error
+	var setting SettingVariable
+	err := s.db.WithContext(ctx).Where("key = ?", key).First(&setting).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		slog.DebugContext(ctx, "No buildsDirectory setting found, skipping normalization")
+		slog.DebugContext(ctx, "No directory setting found, skipping normalization", "key", key)
 		return nil
 	}
 	if err != nil {
-		return fmt.Errorf("failed to load buildsDirectory setting: %w", err)
+		return fmt.Errorf("failed to load %s setting: %w", key, err)
 	}
 
-	value := strings.TrimSpace(buildsDirSetting.Value)
-	if value == "" || filepath.IsAbs(value) {
-		slog.DebugContext(ctx, "Builds directory already normalized or empty, skipping", "value", buildsDirSetting.Value)
+	value := strings.TrimSpace(setting.Value)
+	isMapping := strings.Contains(value, ":") && (strings.HasPrefix(value, "/") || projects.IsWindowsDrivePath(value))
+	if value == "" || filepath.IsAbs(value) || isMapping {
+		slog.DebugContext(ctx, "Directory setting already normalized, custom, or empty, skipping", "key", key, "value", setting.Value)
 		return nil
 	}
 
 	cwd, _ := os.Getwd()
-	absPath, absErr := filepath.Abs(value)
-	if absErr != nil {
-		return fmt.Errorf("failed to resolve relative path to absolute: %w", absErr)
+	absPath, err := filepath.Abs(value)
+	if err != nil {
+		return fmt.Errorf("failed to resolve relative path to absolute: %w", err)
 	}
-	slog.InfoContext(ctx, "Normalizing builds directory from relative to absolute path", "from", value, "to", absPath, "base", cwd)
-	if updateSettingValueNoRefreshErr := s.updateSettingValueNoRefreshInternal(ctx, buildsKey, absPath); updateSettingValueNoRefreshErr != nil {
-		return fmt.Errorf("failed to update buildsDirectory: %w", updateSettingValueNoRefreshErr)
+	slog.InfoContext(ctx, "Normalizing directory setting from relative to absolute path", "key", key, "from", value, "to", absPath, "base", cwd)
+	if persistSettingsErr := s.persistSettings(ctx, []SettingVariable{{Key: key, Value: absPath}}); persistSettingsErr != nil {
+		return persistSettingsErr
 	}
-	if refreshSettingsCacheErr := s.refreshSettingsCacheInternal(context.WithoutCancel(ctx)); refreshSettingsCacheErr != nil {
-		return refreshSettingsCacheErr
-	}
-	slog.InfoContext(ctx, "Successfully normalized builds directory")
-	s.publishSettingsChangesInternal([]libarcane.SettingUpdate{{Key: buildsKey, Value: absPath}})
+	slog.InfoContext(ctx, "Successfully normalized directory setting", "key", key)
+	s.publishSettingsChanges([]libarcane.SettingUpdate{{Key: key, Value: absPath}})
 	return nil
 }
 
-func (s *SettingsService) enqueueEffectInternal(effect func()) error {
+func (s *SettingsService) enqueueEffect(effect func()) error {
 	s.effectsMu.Lock()
 	defer s.effectsMu.Unlock()
 	if s.effectsClosed {
@@ -1298,33 +974,6 @@ func (s *SettingsService) enqueueEffectInternal(effect func()) error {
 	default:
 	}
 	return nil
-}
-
-func (s *SettingsService) runEffectsInternal() {
-	defer close(s.effectsDone)
-	for {
-		s.effectsMu.Lock()
-		if len(s.effects) > 0 {
-			effect := s.effects[0]
-			s.effects[0] = nil
-			s.effects = s.effects[1:]
-			s.effectsMu.Unlock()
-			func() { var err error; defer utils.RecoverToError(&err, "settings effect"); effect() }()
-			continue
-		}
-		closed := s.effectsClosed
-		s.effectsMu.Unlock()
-		if closed {
-			return
-		}
-		select {
-		case <-s.effectsWake:
-		case <-s.lifecycleCtx.Done():
-			s.effectsMu.Lock()
-			s.effectsClosed = true
-			s.effectsMu.Unlock()
-		}
-	}
 }
 
 // Stop drains accepted effects and joins the settings worker.

@@ -17,10 +17,10 @@ import { featureStore } from '#lib/stores/features.store.svelte.js';
 import userStore from '#lib/stores/user-store.svelte.js';
 import { versionStore } from '#lib/stores/version.store.svelte.js';
 import type { PermissionsManifest, User } from '#lib/types/auth.js';
-import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 import { isAuthRejectionError } from '#lib/utils/api.js';
 import { getAuthRedirectPath, userHasPermission } from '#lib/utils/auth.js';
 import { getEffectiveLandingPage } from '#lib/utils/navigation.js';
+import { setTelemetry } from '#lib/utils/telemetry.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
 import type { LayoutLoad } from './$types';
@@ -44,14 +44,8 @@ const queryClient = new QueryClient({
 
 let authenticatedUserId: string | null | undefined;
 
-// The layout load re-runs on every navigation and re-checks the session. A
-// transient failure of that check (network blip, 5xx, 429) must not sign the
-// user out of the SPA: that clears every cache, bounces through /login and
-// lands on the landing page. Only an explicit rejection means the session is
-// gone; anything else keeps the user we already know about.
-function resolveUserAfterLoadFailureInternal(error: unknown): User | null {
-	if (isAuthRejectionError(error) || isSessionCancelledError(error)) return null;
-	return userStore.current;
+function dataOrNull<T>(promise: Promise<T>): Promise<T | null> {
+	return tryCatch(promise).then((result) => (result.error ? null : result.data));
 }
 
 export const load: LayoutLoad = async ({ url }) => {
@@ -76,9 +70,11 @@ export const load: LayoutLoad = async ({ url }) => {
 			})
 		: Promise.resolve(null);
 	let [user, autoLoginConfig] = await Promise.all([
-		tryCatch(userService.getCurrentUser()).then((result) =>
-			result.error ? resolveUserAfterLoadFailureInternal(result.error) : result.data
-		),
+		// Only an explicit rejection signs the user out; transient check failures keep the known user.
+		tryCatch(userService.getCurrentUser()).then((result): User | null => {
+			if (!result.error) return result.data;
+			return isAuthRejectionError(result.error) || isSessionCancelledError(result.error) ? null : userStore.current;
+		}),
 		autoLoginConfigRequest
 	]);
 
@@ -115,17 +111,8 @@ export const load: LayoutLoad = async ({ url }) => {
 	let permissionsManifestLoadFailed = false;
 	if (user) {
 		// Initialize environment store (required for settings service)
-		const environmentRequestOptions: SearchPaginationSortRequest = {
-			pagination: {
-				page: 1,
-				limit: -1
-			}
-		};
-
-		const environmentsRequest = tryCatch(environmentManagementService.getEnvironments(environmentRequestOptions));
-		const permissionsManifestRequest = tryCatch(roleService.getPermissionsManifest()).then((result) =>
-			result.error ? null : result.data
-		);
+		const environmentsRequest = tryCatch(environmentManagementService.getEnvironments({ pagination: { page: 1, limit: -1 } }));
+		const permissionsManifestRequest = dataOrNull(roleService.getPermissionsManifest());
 		const environments = await environmentsRequest;
 		if (!environments.error) {
 			await environmentStore.initialize(environments.data.data);
@@ -135,23 +122,15 @@ export const load: LayoutLoad = async ({ url }) => {
 			await environmentStore.initialize([]);
 		}
 
-		const settingsRequest = userHasPermission(user, 'settings:read')
-			? tryCatch(settingsService.getSettings()).then(async (result) => {
-					if (!result.error) return result.data;
-					const publicSettings = await tryCatch(settingsService.getPublicSettings(environmentStore.selected?.id ?? '0'));
-					return publicSettings.error ? null : publicSettings.data;
-				})
-			: tryCatch(settingsService.getPublicSettings(environmentStore.selected?.id ?? '0')).then((result) =>
-					result.error ? null : result.data
-				);
+		const settingsRequest = (
+			userHasPermission(user, 'settings:read') ? dataOrNull(settingsService.getSettings()) : Promise.resolve(null)
+		).then((loaded) => loaded ?? dataOrNull(settingsService.getPublicSettings(environmentStore.selected?.id ?? '0')));
 		featureStore.connect(queryClient);
 		const currentEnvironmentId = await environmentStore.getCurrentEnvironmentId();
 		const featuresRequest = featureStore.refresh(currentEnvironmentId);
 		// Optional discovery: skip it without swarm:read and never toast a denial.
 		const swarmStatusRequest = userHasPermission(user, 'swarm:read', currentEnvironmentId)
-			? tryCatch(swarmService.getSwarmStatus(currentEnvironmentId, { suppressAccessDeniedToast: true })).then((result) =>
-					result.error ? null : result.data
-				)
+			? dataOrNull(swarmService.getSwarmStatus(currentEnvironmentId, { suppressAccessDeniedToast: true }))
 			: Promise.resolve(null);
 		const [loadedSettings, loadedSwarmStatus, loadedPermissionsManifest] = await Promise.all([
 			settingsRequest,
@@ -159,9 +138,7 @@ export const load: LayoutLoad = async ({ url }) => {
 			permissionsManifestRequest
 		]);
 		// Keep recovery/settings pages reachable while a selected agent is offline.
-		settings =
-			loadedSettings ??
-			(await tryCatch(settingsService.getPublicSettings()).then((result) => (result.error ? null : result.data)));
+		settings = loadedSettings ?? (await dataOrNull(settingsService.getPublicSettings()));
 		await featuresRequest;
 		swarmEnabled = loadedSwarmStatus?.enabled;
 		permissionsManifest = loadedPermissionsManifest;
@@ -171,7 +148,7 @@ export const load: LayoutLoad = async ({ url }) => {
 		await environmentStore.initialize([]);
 
 		// Try to fetch public settings for login page configuration
-		settings = await tryCatch(settingsService.getPublicSettings()).then((result) => (result.error ? null : result.data));
+		settings = await dataOrNull(settingsService.getPublicSettings());
 	}
 
 	if (settings) {
@@ -180,6 +157,18 @@ export const load: LayoutLoad = async ({ url }) => {
 
 	const versionInformation = await versionInformationRequest;
 	versionStore.seed(versionInformation);
+	// Waiting lets the first page view be traced, but a stalled SDK download must never hold up the app.
+	await Promise.race([
+		setTelemetry(
+			{
+				traces: settings?.frontendTracingEnabled ?? false,
+				metrics: settings?.frontendMetricsEnabled ?? false,
+				logs: settings?.frontendLogsEnabled ?? false
+			},
+			versionInformation.currentVersion
+		),
+		new Promise((resolve) => setTimeout(resolve, 2_000))
+	]);
 
 	const redirectPath = getAuthRedirectPath(
 		url.pathname,

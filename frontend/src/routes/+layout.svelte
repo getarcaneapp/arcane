@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { browser, dev } from '$app/env';
-	import { refreshAll } from '$app/navigation';
+	import { dev } from '$app/env';
+	import { afterNavigate, beforeNavigate, refreshAll } from '$app/navigation';
 	import { navigating, page } from '$app/state';
 	import { QueryClientProvider } from '@tanstack/svelte-query';
 	import { SvelteQueryDevtools } from '@tanstack/svelte-query-devtools';
@@ -17,9 +17,10 @@
 	import { IsMobile } from '#lib/hooks/is-mobile.svelte.js';
 	import { IsTablet } from '#lib/hooks/is-tablet.svelte.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { isAuthPagePath } from '#lib/services/api-service.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-	import { cn } from '#lib/utils.js';
+	import { finishNavigation, startPageView } from '#lib/utils/telemetry.js';
 
 	import type { LayoutProps } from './$types';
 
@@ -28,39 +29,30 @@
 	let { data, children }: LayoutProps = $props();
 
 	onMount(() => {
-		if (!dev && browser && 'serviceWorker' in navigator) {
+		if (!dev && 'serviceWorker' in navigator) {
 			navigator.serviceWorker.register('/service-worker.js', { type: 'module' });
 		}
 	});
 
-	const settings = $derived(data.settings);
+	beforeNavigate((navigation) => {
+		if (!navigation.willUnload) startPageView(navigation.to?.route.id);
+	});
+
+	afterNavigate((navigation) => finishNavigation(navigation.to?.route.id, navigation.type));
 
 	const isMobile = new IsMobile();
 	const isTablet = new IsTablet();
 
-	// Mirror the effective layout onto <html> so CSS (sidebar visibility, etc.) can follow the
-	// per-device layout preference instead of raw viewport breakpoints. `$effect.pre` runs
-	// before the first DOM commit, so the attribute is present at first paint.
+	// Mirror the per-device layout onto <html> for CSS; `$effect.pre` sets it before first paint.
 	$effect.pre(() => {
 		document.documentElement.setAttribute('data-layout', isMobile.current ? 'mobile' : 'desktop');
 	});
-	const isNavigating = $derived(navigating.type !== null);
 
-	const isAuthPage = $derived(
-		String(page.url.pathname).startsWith('/login') ||
-			String(page.url.pathname).startsWith('/logout') ||
-			String(page.url.pathname).startsWith('/oidc') ||
-			String(page.url.pathname).startsWith('/mobile/passkey')
-	);
+	const isAuthPage = $derived(isAuthPagePath(page.url.pathname));
 
-	const autoLoginEnabled = $derived(settingsStore.autoLoginEnabled.current);
 	const showPasswordChangeDialog = $derived(
-		!!(data.user && data.user.requiresPasswordChange && !isAuthPage && !autoLoginEnabled)
+		!!data.user?.requiresPasswordChange && !isAuthPage && !settingsStore.autoLoginEnabled.current
 	);
-
-	function handlePasswordChangeSuccess() {
-		refreshAll();
-	}
 
 	const resourceName = $derived.by((): string | undefined => {
 		switch (page.route.id) {
@@ -94,13 +86,13 @@
 </svelte:head>
 
 <QueryClientProvider client={data.queryClient}>
-	<div class={cn('flex min-h-dvh flex-col', 'bg-transparent')}>
-		{#if !settings && data.user && page.route.id !== '/(app)/environments/[id]'}
+	<div class="flex min-h-dvh flex-col bg-transparent">
+		{#if !data.settings && data.user && page.route.id !== '/(app)/environments/[id]'}
 			<Error message={m.error_occurred()} showButton={true} />
 		{:else}
 			<Tooltip.Provider>
 				{@render children()}
-				<FirstLoginPasswordDialog open={showPasswordChangeDialog} onSuccess={handlePasswordChangeSuccess} />
+				<FirstLoginPasswordDialog open={showPasswordChangeDialog} onSuccess={() => refreshAll()} />
 				{#if dev}
 					<SvelteQueryDevtools />
 				{/if}
@@ -123,5 +115,5 @@
 		}}
 	/>
 	<ConfirmDialog />
-	<LoadingIndicator active={isNavigating} thickness="h-1.5" />
+	<LoadingIndicator active={navigating.type !== null} thickness="h-1.5" />
 </QueryClientProvider>

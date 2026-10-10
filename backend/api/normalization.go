@@ -19,7 +19,7 @@ import (
 )
 
 // Install before routes so Huma validates normalized input.
-func registerNormalizationInternal(api huma.API) {
+func registerNormalization(api huma.API) {
 	api.OpenAPI().OnAddOperation = append(api.OpenAPI().OnAddOperation, func(_ *huma.OpenAPI, op *huma.Operation) {
 		typ := normalizationBodyTypeInternal(api, op)
 		if typ == nil {
