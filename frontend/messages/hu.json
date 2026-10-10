@@ -650,6 +650,8 @@
   "convert_create_message": "Ez a projekt meglévő konténerekből jött létre. Az eredeti konténerek továbbra is futnak, amíg el nem távolítod őket — az eltávolítás közvetlenül a létrehozás után, a projekt telepítése előtt történik, és visszafordíthatatlan.",
   "experimental_features": "Kísérleti funkciók",
   "experimental_features_description": "Olyan funkciók engedélyezése, amelyek a jövőbeli kiadásokban változhatnak vagy eltűnhetnek",
+  "development_branding": "Fejlesztés és márkaépítés",
+  "development_branding_description": "Ebben a verzióban a szokásos Arcane-logó helyett a fejlesztési ikont jelenítse meg",
   "containers_bulk_start_confirm_title": "Start {count} Container(s)",
   "containers_bulk_start_confirm_message": "Are you sure you want to start {count} container(s)?",
   "containers_bulk_stop_confirm_title": "Stop {count} Container(s)",
