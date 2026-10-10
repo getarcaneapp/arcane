@@ -2036,6 +2036,8 @@
   "registries_aws_secret_access_key": "AWS Secret Access Key",
   "registries_aws_region": "AWS Region",
   "registries_aws_region_placeholder": "e.g. us-east-1",
+  "registries_aws_credentials_description": "若要使用运行 Arcane 的主机的 IAM 角色（实例配置文件），请将两个 AWS 密钥字段均留空。",
+  "registries_aws_iam_role": "IAM 角色",
   "registries_repository_names": "仓库名称",
   "registries_repository_names_placeholder": "team/api\nteam/platform/api",
   "registries_repository_names_description": "每行一个完整的仓库名称。在构建页面推送镜像时使用。",

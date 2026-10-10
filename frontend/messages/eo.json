@@ -2036,6 +2036,8 @@
   "registries_aws_secret_access_key": "AWS Sekreta Alirkodo",
   "registries_aws_region": "AWS-regiono",
   "registries_aws_region_placeholder": "ekz. us-east-1",
+  "registries_aws_credentials_description": "Lasu ambaŭ AWS-ŝlosilkampojn malplenaj por uzi la IAM-rolon (ekzemplerprofilo) de la gastiganto, kiu rulas Arcane.",
+  "registries_aws_iam_role": "Rolo de IAM",
   "registries_repository_names": "Nomoj de deponejoj",
   "registries_repository_names_placeholder": "team/api\nteam/platform/api",
   "registries_repository_names_description": "Unu kompleta deponeja nomo po linio. Uzata kiam oni puŝas bildojn de la konstrua paĝo.",
