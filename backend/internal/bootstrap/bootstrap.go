@@ -67,17 +67,17 @@ func Bootstrap(ctx context.Context) error {
 	startup.ApplyMemoryLimit(ctx)
 	slog.InfoContext(ctx, "Arcane Identity Configuration", "puid", os.Getuid(), "pgid", os.Getgid())
 
-	appCtx, cancelApp := context.WithCancel(ctx)
+	appCtx, cancelApp := context.WithCancelCause(ctx)
 	appCtx = utils.WithAppLifecycleContext(appCtx)
 
 	db, err := database.Initialize(appCtx, cfg.DatabaseURL, database.MigrationOptions{AllowDowngrade: cfg.AllowDowngrade})
 	if err != nil {
-		cancelApp()
+		cancelApp(nil)
 		return fmt.Errorf("failed to initialize database: %w", err)
 	}
 	slog.InfoContext(appCtx, "Database initialized successfully")
 	defer func() {
-		cancelApp()
+		cancelApp(nil)
 		if closeErr := db.Close(); closeErr != nil {
 			slog.ErrorContext(ctx, "Error closing database", "error", closeErr)
 		}
@@ -110,30 +110,36 @@ func Bootstrap(ctx context.Context) error {
 
 	app := fx.New(applicationOptions(appCtx, cfg, db, cancelApp))
 
-	startCtx, cancelStart := context.WithTimeout(ctx, 5*time.Minute)
+	startCtx, cancelStart := context.WithTimeout(ctx, app.StartTimeout())
 	defer cancelStart()
 	if startErr := app.Start(startCtx); startErr != nil {
 		return fmt.Errorf("start application: %w", startErr)
 	}
 
+	// appCtx also ends when a component stops the app itself; its cause is then the run error.
+	var runErr error
 	select {
-	case <-ctx.Done():
-		slog.InfoContext(appCtx, "Context canceled")
+	case <-appCtx.Done():
+		if ctx.Err() == nil {
+			runErr = context.Cause(appCtx)
+		} else {
+			slog.InfoContext(appCtx, "Context canceled")
+		}
 	case signal := <-app.Done():
 		slog.InfoContext(appCtx, "Received shutdown signal", "signal", signal)
 	}
 
-	stopCtx, cancelStop := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	stopCtx, cancelStop := context.WithTimeout(context.WithoutCancel(ctx), app.StopTimeout())
 	defer cancelStop()
 	if stopErr := app.Stop(stopCtx); stopErr != nil {
-		return fmt.Errorf("stop application: %w", stopErr)
+		return errors.Join(runErr, fmt.Errorf("stop application: %w", stopErr))
 	}
 
 	slog.InfoContext(context.WithoutCancel(appCtx), "Arcane shutdown complete")
-	return nil
+	return runErr
 }
 
-func applicationOptions(appCtx context.Context, cfg *config.Config, db *database.DB, cancelApp context.CancelFunc) fx.Option {
+func applicationOptions(appCtx context.Context, cfg *config.Config, db *database.DB, cancelApp context.CancelCauseFunc) fx.Option {
 	return fx.Options(
 		fx.Supply(cfg, db, cancelApp),
 		fx.Provide(
@@ -209,9 +215,7 @@ func initializeStartupState(p initializeStartupStateParams) {
 	appCtx := p.AppCtx
 	cfg := p.Config
 
-	if p.Volume != nil {
-		startup.CleanupOrphanedVolumeHelpers(appCtx, p.Volume.CleanupOrphanedVolumeHelpers)
-	}
+	startup.CleanupOrphanedVolumeHelpers(appCtx, p.Volume.CleanupOrphanedVolumeHelpers)
 
 	runtimeCfg := &startup.RuntimeConfig{
 		AgentMode:         cfg.AgentMode,
@@ -253,26 +257,22 @@ func initializeStartupState(p initializeStartupStateParams) {
 	if err := p.Environment.EnsureLocalEnvironment(appCtx, cfg.AppUrl); err != nil {
 		slog.WarnContext(appCtx, "Failed to ensure local environment", "error", err)
 	}
-	if p.GitOpsSync != nil {
-		if err := p.GitOpsSync.CleanupOrphanedSyncsOnStartup(appCtx); err != nil {
-			slog.WarnContext(appCtx, "Failed to clean up orphaned GitOps syncs on startup", "error", err)
-		}
-		if err := p.GitOpsSync.CleanupLeakedScratchDirsOnStartup(appCtx); err != nil {
-			slog.WarnContext(appCtx, "Failed to clean up leaked GitOps scratch directories on startup", "error", err)
-		}
-		if err := p.GitOpsSync.CleanupLeakedCloneDirsOnStartup(appCtx); err != nil {
-			slog.WarnContext(appCtx, "Failed to clean up leaked git clone directories on startup", "error", err)
-		}
-		if err := p.GitOpsSync.ReconcileDirectorySyncProjectsOnStartup(appCtx); err != nil {
-			slog.WarnContext(appCtx, "Failed to reconcile directory GitOps projects on startup", "error", err)
-		}
+	if err := p.GitOpsSync.CleanupOrphanedSyncsOnStartup(appCtx); err != nil {
+		slog.WarnContext(appCtx, "Failed to clean up orphaned GitOps syncs on startup", "error", err)
+	}
+	if err := p.GitOpsSync.CleanupLeakedScratchDirsOnStartup(appCtx); err != nil {
+		slog.WarnContext(appCtx, "Failed to clean up leaked GitOps scratch directories on startup", "error", err)
+	}
+	if err := p.GitOpsSync.CleanupLeakedCloneDirsOnStartup(appCtx); err != nil {
+		slog.WarnContext(appCtx, "Failed to clean up leaked git clone directories on startup", "error", err)
+	}
+	if err := p.GitOpsSync.ReconcileDirectorySyncProjectsOnStartup(appCtx); err != nil {
+		slog.WarnContext(appCtx, "Failed to reconcile directory GitOps projects on startup", "error", err)
 	}
 	p.Vulnerability.ImportLegacyReportFiles(appCtx)
 	p.Vulnerability.BackfillScanItems(appCtx)
-	if p.Project != nil {
-		if err := p.Project.RecoverProjectRenameJournals(appCtx); err != nil {
-			slog.WarnContext(appCtx, "Failed to recover interrupted project rename operations on startup", "error", err)
-		}
+	if err := p.Project.RecoverProjectRenameJournals(appCtx); err != nil {
+		slog.WarnContext(appCtx, "Failed to recover interrupted project rename operations on startup", "error", err)
 	}
 
 	if !cfg.AgentMode {
@@ -304,10 +304,8 @@ func initializeStartupState(p initializeStartupStateParams) {
 		slog.InfoContext(ctx, "Docker API versions detected", "clientApiVersion", dockerClient.ClientVersion(), "serverApiVersion", version.APIVersion, "effectiveApiVersion", effectiveAPIVersion)
 		return nil
 	})
-	if p.Swarm != nil {
-		if err := p.Swarm.SyncSwarmEnabledState(appCtx); err != nil {
-			slog.WarnContext(appCtx, "Failed to persist swarm enabled state", "error", err)
-		}
+	if err := p.Swarm.SyncSwarmEnabledState(appCtx); err != nil {
+		slog.WarnContext(appCtx, "Failed to persist swarm enabled state", "error", err)
 	}
 
 	startup.InitializeNonAgentFeatures(appCtx, runtimeCfg,
@@ -396,10 +394,10 @@ func startEdgeTunnelClient(appCtx context.Context, lc fx.Lifecycle, cfg *config.
 	})
 }
 
-func registerAppCancelHook(lc fx.Lifecycle, cancelApp context.CancelFunc) {
+func registerAppCancelHook(lc fx.Lifecycle, cancelApp context.CancelCauseFunc) {
 	lc.Append(fx.Hook{
 		OnStop: func(context.Context) error {
-			cancelApp()
+			cancelApp(nil)
 			return nil
 		},
 	})

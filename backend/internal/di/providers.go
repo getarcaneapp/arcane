@@ -3,6 +3,7 @@ package di
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
@@ -104,7 +105,7 @@ func provideActorRuntimeInternal(
 	db *database.DB,
 	settingsService *settings.SettingsService,
 	lc fx.Lifecycle,
-	cancelApp context.CancelFunc,
+	cancelApp context.CancelCauseFunc,
 ) (*francis.Runtime, error) {
 	runtime, err := francis.New(cfg.DatabaseURL, "", "", cfg.ActorPort)
 	if err != nil {
@@ -121,7 +122,10 @@ func provideActorRuntimeInternal(
 		if configureIdentityErr := runtime.ConfigureIdentity(cfg.EncryptionKey, settingsService.GetSettingsConfig().InstanceID.Value); configureIdentityErr != nil {
 			return configureIdentityErr
 		}
-		return runtime.Start(ctx, appCtx, func(err error) { slog.ErrorContext(appCtx, "Francis host failed", "error", err); cancelApp() })
+		return runtime.Start(ctx, appCtx, func(err error) {
+			slog.ErrorContext(appCtx, "Francis host failed", "error", err)
+			cancelApp(fmt.Errorf("francis host failed: %w", err))
+		})
 	}, OnStop: runtime.Stop})
 	return runtime, nil
 }

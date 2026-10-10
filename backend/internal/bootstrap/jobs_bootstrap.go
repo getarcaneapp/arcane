@@ -406,13 +406,13 @@ type settingsSubscriptionsParams struct {
 	Settings     settingsChangeSubscriber
 	Environment  timeoutSettingsEnvironment
 
-	AutoUpdate         *flow.Job `name:"auto-update"`
+	AutoUpdate         *flow.Job
 	ImageUpdateWatcher *scheduler.ImageUpdateWatcher
 	FilesystemWatcher  *scheduler.FilesystemWatcherJob
 	ScheduledPrune     *scheduler.ScheduledPruneJob
-	VulnerabilityScan  *flow.Job `name:"vulnerability-scan"`
+	VulnerabilityScan  *flow.Job
 	VulnerabilityRisk  *scheduler.VulnerabilityRiskJob
-	AutoPatch          *flow.Job `name:"auto-patch"`
+	AutoPatch          *flow.Job
 	AutoHeal           *scheduler.AutoHealJob
 	Apns               *apns.ApnsService
 	ApnsOutbox         *scheduler.ApnsOutboxJob
@@ -446,10 +446,8 @@ func setupSettingsSubscriptions(params settingsSubscriptionsParams) error {
 	timeoutSyncExecutor, cancelTimeoutSync := setupTimeoutSettingsSubscription(params, subscribe)
 
 	subscribe([]string{"pollingEnabled", "pollingInterval"}, func(_ []libarcane.SettingUpdate) {
-		if params.ImageUpdateWatcher != nil {
-			params.ImageUpdateWatcher.RefreshSchedule()
-			params.ImageUpdateWatcher.Trigger()
-		}
+		params.ImageUpdateWatcher.RefreshSchedule()
+		params.ImageUpdateWatcher.Trigger()
 		if err := params.Scheduler.RescheduleJob(params.LifecycleCtx, params.AutoUpdate); err != nil {
 			slog.WarnContext(params.LifecycleCtx, "Failed to reschedule auto-update job", "error", err)
 		}
@@ -464,18 +462,14 @@ func setupSettingsSubscriptions(params settingsSubscriptionsParams) error {
 	rescheduleOn([]string{"autoUpdate", "autoUpdateInterval"}, params.AutoUpdate)
 
 	subscribe([]string{"projectsDirectory", "followProjectSymlinks"}, func(_ []libarcane.SettingUpdate) {
-		if params.FilesystemWatcher != nil {
-			if err := params.FilesystemWatcher.RestartProjectsWatcher(params.LifecycleCtx); err != nil {
-				slog.WarnContext(params.LifecycleCtx, "Failed to restart projects filesystem watcher", "error", err)
-			}
+		if err := params.FilesystemWatcher.RestartProjectsWatcher(params.LifecycleCtx); err != nil {
+			slog.WarnContext(params.LifecycleCtx, "Failed to restart projects filesystem watcher", "error", err)
 		}
 	})
 
 	subscribe([]string{"templatesDirectory"}, func(_ []libarcane.SettingUpdate) {
-		if params.FilesystemWatcher != nil {
-			if err := params.FilesystemWatcher.RestartTemplatesWatcher(params.LifecycleCtx); err != nil {
-				slog.WarnContext(params.LifecycleCtx, "Failed to restart templates filesystem watcher", "error", err)
-			}
+		if err := params.FilesystemWatcher.RestartTemplatesWatcher(params.LifecycleCtx); err != nil {
+			slog.WarnContext(params.LifecycleCtx, "Failed to restart templates filesystem watcher", "error", err)
 		}
 	})
 
