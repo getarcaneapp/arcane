@@ -2036,6 +2036,8 @@
   "registries_aws_secret_access_key": "AWS 시크릿 액세스 키",
   "registries_aws_region": "AWS 리전",
   "registries_aws_region_placeholder": "예: us-east-1",
+  "registries_aws_credentials_description": "Arcane을 실행 중인 호스트의 IAM 역할(인스턴스 프로필)을 사용하려면 두 AWS 키 필드를 모두 비워 두십시오.",
+  "registries_aws_iam_role": "IAM 역할",
   "registries_repository_names": "저장소 이름",
   "registries_repository_names_placeholder": "team/api\nteam/platform/api",
   "registries_repository_names_description": "한 줄에 하나의 전체 저장소 이름을 기재합니다. 빌드 페이지에서 이미지를 푸시할 때 사용됩니다.",
