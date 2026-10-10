@@ -650,6 +650,8 @@
   "convert_create_message": "Dette projekt er oprettet ud fra eksisterende containere. De oprindelige containere fortsætter med at køre, medmindre du fjerner dem — fjernelsen sker umiddelbart efter oprettelsen, inden projektet implementeres, og kan ikke fortrydes.",
   "experimental_features": "Eksperimentelle funktioner",
   "experimental_features_description": "Aktivér funktioner, der kan ændres eller fjernes i fremtidige udgivelser",
+  "development_branding": "Udvikling af varemærkeidentitet",
+  "development_branding_description": "Vis udviklingsikonet i stedet for det almindelige Arcane-logo i denne version",
   "containers_bulk_start_confirm_title": "Start {count} Container(s)",
   "containers_bulk_start_confirm_message": "Are you sure you want to start {count} container(s)?",
   "containers_bulk_stop_confirm_title": "Stop {count} Container(s)",
