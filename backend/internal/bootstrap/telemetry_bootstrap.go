@@ -9,18 +9,17 @@ import (
 	"slices"
 	"sync"
 
-	"go.getarcane.app/kit/pkg"
+	kit "go.getarcane.app/kit/pkg"
 	"go.opentelemetry.io/contrib/exporters/autoexport"
 	"go.opentelemetry.io/contrib/instrumentation/runtime"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/log/global"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/log"
 	"go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel/sdk/trace"
-	"go.opentelemetry.io/otel/semconv/v1.40.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.19.0"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/telemetry"
@@ -114,7 +113,7 @@ func setupTelemetry(ctx context.Context, cfg *config.Config, errorLogger *slog.L
 		otel.SetMeterProvider(tel.meterProvider)
 	}
 	if tel.loggerProvider != nil {
-		global.SetLoggerProvider(tel.loggerProvider)
+		otel.SetLoggerProvider(tel.loggerProvider)
 	}
 	return tel, nil
 }

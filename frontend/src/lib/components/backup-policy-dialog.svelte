@@ -58,7 +58,7 @@
 		updatePolicies: (policies: TUpdate[]) => Promise<TPolicy[]>;
 		messages: { saved: string; saveFailed: string; removed: string };
 		onSaved: (policies: TPolicy[]) => void;
-		contentClass?: string;
+		contentClass?: 'sm:max-w-180' | 'sm:max-w-190';
 	} = $props();
 
 	let saving = $state(false);
@@ -204,7 +204,12 @@
 	}
 </script>
 
-<ResponsiveDialog bind:open title={policyId ? m.jobs_edit_schedule() : addTitle} {description} {contentClass}>
+<ResponsiveDialog
+	bind:open
+	title={policyId ? m.jobs_edit_schedule() : addTitle}
+	{description}
+	contentClass={contentClass === 'sm:max-w-190' ? 'sm:max-w-190' : 'sm:max-w-180'}
+>
 	{#snippet children()}
 		<div class="space-y-4 py-2">
 			{#if beforeFields}
