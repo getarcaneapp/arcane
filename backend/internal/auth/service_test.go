@@ -52,7 +52,7 @@ func setupAuthServiceTestDB(t *testing.T) *database.DB {
 	return &database.DB{DB: db}
 }
 
-func newSettingsServiceForAuthTestInternal(t testing.TB, ctx context.Context, db *database.DB) (*settings.SettingsService, error) {
+func newSettingsServiceForAuthTest(t testing.TB, ctx context.Context, db *database.DB) (*settings.SettingsService, error) {
 	t.Helper()
 	svc, err := settings.NewSettingsService(ctx, db)
 	if err == nil {
@@ -61,7 +61,7 @@ func newSettingsServiceForAuthTestInternal(t testing.TB, ctx context.Context, db
 	return svc, err
 }
 
-func newTestSigningKeyInternal() *mldsa.PrivateKey {
+func newTestSigningKey() *mldsa.PrivateKey {
 	key, err := mldsa.GenerateKey(mldsa.MLDSA87())
 	if err != nil {
 		panic(err)
@@ -71,7 +71,7 @@ func newTestSigningKeyInternal() *mldsa.PrivateKey {
 
 func newTestAuthService() *AuthService {
 	return &AuthService{
-		signingKey:        newTestSigningKeyInternal(),
+		signingKey:        newTestSigningKey(),
 		browserSigningKey: bytes.Repeat([]byte{0x42}, browserSessionSigningKeySize),
 		refreshExpiry:     24 * time.Hour,
 		config:            &config.Config{},
@@ -82,7 +82,7 @@ func newTestAuthService() *AuthService {
 	}
 }
 
-func signLegacyTokenInternal(t testing.TB, key *mldsa.PrivateKey, claims map[string]any) string {
+func signLegacyToken(t testing.TB, key *mldsa.PrivateKey, claims map[string]any) string {
 	t.Helper()
 	header, err := json.Marshal(map[string]string{"alg": jwa.MLDSA87().String(), "typ": "JWT"})
 	require.NoError(t, err)
@@ -94,7 +94,7 @@ func signLegacyTokenInternal(t testing.TB, key *mldsa.PrivateKey, claims map[str
 	return signingInput + "." + base64.RawURLEncoding.EncodeToString(signature)
 }
 
-func signJWXTokenInternal(t testing.TB, key *mldsa.PrivateKey, claims map[string]any) string {
+func signJWXToken(t testing.TB, key *mldsa.PrivateKey, claims map[string]any) string {
 	t.Helper()
 	payload, err := json.Marshal(claims)
 	require.NoError(t, err)
@@ -105,7 +105,7 @@ func signJWXTokenInternal(t testing.TB, key *mldsa.PrivateKey, claims map[string
 	return string(signed)
 }
 
-func signUnsignedTokenInternal(t testing.TB, claims map[string]any) string {
+func signUnsignedToken(t testing.TB, claims map[string]any) string {
 	t.Helper()
 	payload, err := json.Marshal(claims)
 	require.NoError(t, err)
@@ -134,10 +134,10 @@ func makeAccessToken(t *testing.T, key *mldsa.PrivateKey, subject, id, username 
 		"display_name": displayName,
 		"app_version":  config.Version,
 	}
-	return signLegacyTokenInternal(t, key, claims)
+	return signLegacyToken(t, key, claims)
 }
 
-func makeRefreshTokenInternal(t *testing.T, key *mldsa.PrivateKey, id string, exp time.Time, userIDAndSessionID ...string) string {
+func makeRefreshToken(t *testing.T, key *mldsa.PrivateKey, id string, exp time.Time, userIDAndSessionID ...string) string {
 	t.Helper()
 	userID := id
 	sessionID := ""
@@ -156,7 +156,7 @@ func makeRefreshTokenInternal(t *testing.T, key *mldsa.PrivateKey, id string, ex
 		"sid":         sessionID,
 		"app_version": config.Version,
 	}
-	return signLegacyTokenInternal(t, key, claims)
+	return signLegacyToken(t, key, claims)
 }
 
 func createTestSession(t *testing.T, db *database.DB, userID string, expiresAt time.Time) (*session.UserSession, string) {
@@ -168,11 +168,6 @@ func createTestSession(t *testing.T, db *database.DB, userID string, expiresAt t
 	})
 	require.NoError(t, err)
 	return localSession, refreshJTI
-}
-
-func makeUnsignedToken(t *testing.T, claims map[string]any) string {
-	t.Helper()
-	return signUnsignedTokenInternal(t, claims)
 }
 
 func TestVerifyToken_ValidClaims(t *testing.T) {
@@ -274,7 +269,7 @@ func TestVerifyToken_InvalidSubject(t *testing.T) {
 func TestVerifyToken_InvalidSignature(t *testing.T) {
 	s := newTestAuthService()
 	exp := time.Now().Add(5 * time.Minute)
-	otherKey := newTestSigningKeyInternal()
+	otherKey := newTestSigningKey()
 
 	token := makeAccessToken(t, otherKey, "access", "u1", "bob", []string{"user"}, "", "", exp)
 
@@ -310,13 +305,13 @@ func TestGenerateUsernameFromEmail(t *testing.T) {
 		"short subject username %q", u3)
 }
 
-func TestUniqueOidcUsernameInternal(t *testing.T) {
-	u := uniqueOidcUsernameInternal("alice", "1234567890abcdef")
+func TestUniqueOidcUsername(t *testing.T) {
+	u := uniqueOidcUsername("alice", "1234567890abcdef")
 
 	assert.Equal(t, "alice_90abcdef", u,
 		"suffixed username %q", u)
 
-	u2 := uniqueOidcUsernameInternal("alice", "short")
+	u2 := uniqueOidcUsername("alice", "short")
 
 	assert.Equal(t, "alice_short", u2,
 		"short subject username %q", u2)
@@ -371,7 +366,7 @@ func TestVerifyToken_VersionMismatch(t *testing.T) {
 func TestRefreshToken_Valid(t *testing.T) {
 	db := setupAuthServiceTestDB(t)
 	userSvc := user.NewUserService(db, nil, session.RevokeAllUserSessionsExceptInDB)
-	settingsSvc, err := newSettingsServiceForAuthTestInternal(t, t.Context(), db)
+	settingsSvc, err := newSettingsServiceForAuthTest(t, t.Context(), db)
 	require.NoError(t, err)
 	s := newTestAuthService()
 	s.userService = userSvc
@@ -387,7 +382,7 @@ func TestRefreshToken_Valid(t *testing.T) {
 
 	exp := time.Now().Add(5 * time.Minute)
 	localSession, refreshJTI := createTestSession(t, db, "u-refresh", exp)
-	token := makeRefreshTokenInternal(t, s.signingKey, refreshJTI, exp, "u-refresh", localSession.ID)
+	token := makeRefreshToken(t, s.signingKey, refreshJTI, exp, "u-refresh", localSession.ID)
 
 	tokenPair, err := s.RefreshToken(t.Context(), token, auth.SessionMeta{})
 	require.NoError(t, err)
@@ -397,13 +392,13 @@ func TestRefreshToken_Valid(t *testing.T) {
 	require.NotEmpty(t, tokenPair.RefreshToken)
 	require.Less(t, len(tokenPair.BrowserToken), 1024)
 
-	accessAlgorithm, ok := signedTokenAlgorithmInternal(tokenPair.AccessToken)
+	accessAlgorithm, ok := signedTokenAlgorithm(tokenPair.AccessToken)
 	require.True(t, ok)
 	require.Equal(t, jwa.MLDSA87().String(), accessAlgorithm)
-	browserAlgorithm, ok := signedTokenAlgorithmInternal(tokenPair.BrowserToken)
+	browserAlgorithm, ok := signedTokenAlgorithm(tokenPair.BrowserToken)
 	require.True(t, ok)
 	require.Equal(t, jwa.HS512().String(), browserAlgorithm)
-	refreshAlgorithm, ok := signedTokenAlgorithmInternal(tokenPair.RefreshToken)
+	refreshAlgorithm, ok := signedTokenAlgorithm(tokenPair.RefreshToken)
 	require.True(t, ok)
 	require.Equal(t, jwa.MLDSA87().String(), refreshAlgorithm)
 }
@@ -414,7 +409,7 @@ func TestRefreshToken_Valid(t *testing.T) {
 func TestRefreshToken_VersionMismatchRotates(t *testing.T) {
 	db := setupAuthServiceTestDB(t)
 	userSvc := user.NewUserService(db, nil, session.RevokeAllUserSessionsExceptInDB)
-	settingsSvc, err := newSettingsServiceForAuthTestInternal(t, t.Context(), db)
+	settingsSvc, err := newSettingsServiceForAuthTest(t, t.Context(), db)
 	require.NoError(t, err)
 	s := newTestAuthService()
 	s.userService = userSvc
@@ -434,7 +429,7 @@ func TestRefreshToken_VersionMismatchRotates(t *testing.T) {
 	oldVersion := config.Version
 	t.Cleanup(func() { config.Version = oldVersion })
 	config.Version = "1.0.0"
-	token := makeRefreshTokenInternal(t, s.signingKey, refreshJTI, exp, localUser.ID, localSession.ID)
+	token := makeRefreshToken(t, s.signingKey, refreshJTI, exp, localUser.ID, localSession.ID)
 	config.Version = "2.0.0"
 
 	tokenPair, err := s.RefreshToken(t.Context(), token, auth.SessionMeta{})
@@ -579,7 +574,7 @@ func TestVerifyToken_RejectsRevokedCachedSession(t *testing.T) {
 func TestRefreshToken_RotatesJTI(t *testing.T) {
 	db := setupAuthServiceTestDB(t)
 	userSvc := user.NewUserService(db, nil, session.RevokeAllUserSessionsExceptInDB)
-	settingsSvc, err := newSettingsServiceForAuthTestInternal(t, t.Context(), db)
+	settingsSvc, err := newSettingsServiceForAuthTest(t, t.Context(), db)
 	require.NoError(t, err)
 	s := newTestAuthService()
 	s.userService = userSvc
@@ -595,7 +590,7 @@ func TestRefreshToken_RotatesJTI(t *testing.T) {
 
 	exp := time.Now().Add(5 * time.Minute)
 	localSession, refreshJTI := createTestSession(t, db, localUser.ID, exp)
-	token := makeRefreshTokenInternal(t, s.signingKey, refreshJTI, exp, localUser.ID, localSession.ID)
+	token := makeRefreshToken(t, s.signingKey, refreshJTI, exp, localUser.ID, localSession.ID)
 
 	tokenPair, err := s.RefreshToken(t.Context(), token, auth.SessionMeta{})
 	require.NoError(t, err)
@@ -608,7 +603,7 @@ func TestRefreshToken_RotatesJTI(t *testing.T) {
 func TestRefreshToken_RejectsRevokedSession(t *testing.T) {
 	db := setupAuthServiceTestDB(t)
 	userSvc := user.NewUserService(db, nil, session.RevokeAllUserSessionsExceptInDB)
-	settingsSvc, err := newSettingsServiceForAuthTestInternal(t, t.Context(), db)
+	settingsSvc, err := newSettingsServiceForAuthTest(t, t.Context(), db)
 	require.NoError(t, err)
 	s := newTestAuthService()
 	s.userService = userSvc
@@ -625,7 +620,7 @@ func TestRefreshToken_RejectsRevokedSession(t *testing.T) {
 	exp := time.Now().Add(5 * time.Minute)
 	localSession, refreshJTI := createTestSession(t, db, localUser.ID, exp)
 	require.NoError(t, s.RevokeSession(t.Context(), localSession.ID))
-	token := makeRefreshTokenInternal(t, s.signingKey, refreshJTI, exp, localUser.ID, localSession.ID)
+	token := makeRefreshToken(t, s.signingKey, refreshJTI, exp, localUser.ID, localSession.ID)
 
 	_, err = s.RefreshToken(t.Context(), token, auth.SessionMeta{})
 	require.ErrorIs(t, err, common.ErrSessionRevoked)
@@ -694,7 +689,7 @@ func TestChangePassword_KeepsCurrentSessionAlive(t *testing.T) {
 func TestRefreshToken_RejectsNonHMACAlg(t *testing.T) {
 	s := newTestAuthService()
 	exp := time.Now().Add(5 * time.Minute)
-	token := makeUnsignedToken(t, map[string]any{
+	token := signUnsignedToken(t, map[string]any{
 		"jti": "u1",
 		"sub": "refresh",
 		"iat": time.Now().Unix(),
@@ -712,7 +707,7 @@ func TestGetOidcConfigurationStatus(t *testing.T) {
 	// Disabled
 	s := newTestAuthService()
 	s.config = &config.Config{}
-	settingsSvc, err := newSettingsServiceForAuthTestInternal(t, t.Context(), db)
+	settingsSvc, err := newSettingsServiceForAuthTest(t, t.Context(), db)
 	require.NoError(t, err)
 	s.settingsService = settingsSvc
 
@@ -731,7 +726,7 @@ func TestGetOidcConfigurationStatus(t *testing.T) {
 
 	// Explicit env override to false should still be treated as forced
 	t.Setenv("OIDC_ENABLED", "false")
-	settingsSvc, err = newSettingsServiceForAuthTestInternal(t, t.Context(), db)
+	settingsSvc, err = newSettingsServiceForAuthTest(t, t.Context(), db)
 	require.NoError(t, err)
 	s.settingsService = settingsSvc
 	s.config.OidcEnabled = false
@@ -745,7 +740,7 @@ func TestGetOidcConfigurationStatus(t *testing.T) {
 
 	// Enabled but missing fields
 	t.Setenv("OIDC_ENABLED", "true")
-	settingsSvc, err = newSettingsServiceForAuthTestInternal(t, t.Context(), db)
+	settingsSvc, err = newSettingsServiceForAuthTest(t, t.Context(), db)
 	require.NoError(t, err)
 	s.settingsService = settingsSvc
 	s.config.OidcEnabled = true
@@ -773,7 +768,7 @@ func TestFindOrCreateOidcUser_MergeEnabled_EmailNotVerified_NoExistingUser_Creat
 	ctx := t.Context()
 	db := setupAuthServiceTestDB(t)
 
-	settingsSvc, err := newSettingsServiceForAuthTestInternal(t, ctx, db)
+	settingsSvc, err := newSettingsServiceForAuthTest(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, settingsSvc.EnsureDefaultSettings(ctx))
 	require.NoError(t, settingsSvc.SetBoolSetting(ctx, "oidcMergeAccounts", true))
@@ -823,96 +818,86 @@ func TestFindOrCreateOidcUser_MergeEnabled_EmailNotVerified_NoExistingUser_Creat
 	require.NotEqual(t, created.Username, other.Username)
 }
 
-func TestFindOrCreateOidcUser_MergeEnabled_EmailNotVerified_WithExistingUser_ReturnsError(t *testing.T) {
-	ctx := t.Context()
-	db := setupAuthServiceTestDB(t)
-
-	settingsSvc, err := newSettingsServiceForAuthTestInternal(t, ctx, db)
-	require.NoError(t, err)
-	require.NoError(t, settingsSvc.EnsureDefaultSettings(ctx))
-	require.NoError(t, settingsSvc.SetBoolSetting(ctx, "oidcMergeAccounts", true))
-
-	userSvc := user.NewUserService(db, nil, session.RevokeAllUserSessionsExceptInDB)
-	// Seed an existing local user with matching email
-	email := "existing@example.com"
-	existing := &user.User{
-		ID:       "u1",
-		Username: "existing",
-		Email:    &email,
+func TestFindOrCreateOidcUser_MergeEnabled_WithExistingUser(t *testing.T) {
+	tests := []struct {
+		name          string
+		emailVerified bool
+		extra         map[string]any
+		wantMerge     bool
+	}{
+		{name: "verified email merges", emailVerified: true, extra: map[string]any{"email_verified": true}, wantMerge: true},
+		{name: "explicit false rejected", extra: map[string]any{"email_verified": false}},
+		{name: "missing claim with nil extra rejected"},
+		{name: "missing claim with empty extra rejected", extra: map[string]any{}},
 	}
-	_, err = userSvc.CreateUser(ctx, existing)
-	require.NoError(t, err)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+			db := setupAuthServiceTestDB(t)
 
-	authSvc := newTestAuthService()
-	authSvc.userService = userSvc
-	authSvc.settingsService = settingsSvc
+			settingsSvc, err := newSettingsServiceForAuthTest(t, ctx, db)
+			require.NoError(t, err)
+			require.NoError(t, settingsSvc.EnsureDefaultSettings(ctx))
+			require.NoError(t, settingsSvc.SetBoolSetting(ctx, "oidcMergeAccounts", true))
 
-	userInfo := auth.OidcUserInfo{
-		Subject:       "sub-merge",
-		Email:         email,
-		EmailVerified: false,
-		Extra: map[string]any{
-			"email_verified": false,
-		},
+			userSvc := user.NewUserService(db, nil, session.RevokeAllUserSessionsExceptInDB)
+			email := "existing@example.com"
+			existing := &user.User{ID: "u1", Username: "existing", Email: &email}
+			_, err = userSvc.CreateUser(ctx, existing)
+			require.NoError(t, err)
+
+			authSvc := newTestAuthService()
+			authSvc.userService = userSvc
+			authSvc.settingsService = settingsSvc
+
+			userInfo := auth.OidcUserInfo{
+				Subject:       "sub-merge",
+				Email:         email,
+				Name:          "OIDC Name",
+				EmailVerified: tc.emailVerified,
+				Extra:         tc.extra,
+			}
+
+			got, isNew, err := authSvc.findOrCreateOidcUser(ctx, userInfo, &auth.OidcTokenResponse{AccessToken: "at", RefreshToken: "rt", ExpiresIn: 60})
+			fetched, fetchErr := userSvc.GetUserByID(ctx, existing.ID)
+			require.NoError(t, fetchErr)
+
+			if tc.wantMerge {
+				require.NoError(t, err)
+				require.False(t, isNew)
+				require.Equal(t, existing.ID, got.ID)
+				require.NotNil(t, fetched.OidcSubjectId)
+				require.Equal(t, userInfo.Subject, *fetched.OidcSubjectId)
+				require.NotNil(t, fetched.OidcAccessToken)
+				require.Equal(t, "at", *fetched.OidcAccessToken)
+				return
+			}
+
+			require.EqualError(t, err, "email not verified by OIDC provider; cannot merge accounts")
+			require.Nil(t, got)
+			require.False(t, isNew)
+
+			var userCount int64
+			require.NoError(t, db.Model(&user.User{}).Count(&userCount).Error)
+			require.Equal(t, int64(1), userCount, "no separate account should be created")
+			var roleAssignments int64
+			require.NoError(t, db.Model(&role.UserRoleAssignment{}).Where("user_id = ?", existing.ID).Count(&roleAssignments).Error)
+			require.Zero(t, roleAssignments)
+
+			require.True(t, fetched.OidcSubjectId == nil || *fetched.OidcSubjectId == "")
+			require.Nil(t, fetched.OidcAccessToken)
+			require.Nil(t, fetched.OidcRefreshToken)
+			require.Nil(t, fetched.OidcAccessTokenExpiresAt)
+			require.Nil(t, fetched.DisplayName)
+			require.Nil(t, fetched.LastLogin)
+		})
 	}
-
-	_, _, err = authSvc.findOrCreateOidcUser(ctx, userInfo, &auth.OidcTokenResponse{AccessToken: "at"})
-	require.Error(t, err)
-
-	// Ensure existing user is not linked
-	fetched, err := userSvc.GetUserByID(ctx, existing.ID)
-	require.NoError(t, err)
-	require.True(t, fetched.OidcSubjectId == nil || *fetched.OidcSubjectId == "")
-}
-
-func TestFindOrCreateOidcUser_MergeEnabled_EmailVerificationMissing_WithExistingUser_Merges(t *testing.T) {
-	ctx := t.Context()
-	db := setupAuthServiceTestDB(t)
-
-	settingsSvc, err := newSettingsServiceForAuthTestInternal(t, ctx, db)
-	require.NoError(t, err)
-	require.NoError(t, settingsSvc.EnsureDefaultSettings(ctx))
-	require.NoError(t, settingsSvc.SetBoolSetting(ctx, "oidcMergeAccounts", true))
-
-	userSvc := user.NewUserService(db, nil, session.RevokeAllUserSessionsExceptInDB)
-	// Seed an existing local user with matching email
-	email := "existing@example.com"
-	existing := &user.User{
-		ID:       "u1",
-		Username: "existing",
-		Email:    &email,
-	}
-	_, err = userSvc.CreateUser(ctx, existing)
-	require.NoError(t, err)
-
-	authSvc := newTestAuthService()
-	authSvc.userService = userSvc
-	authSvc.settingsService = settingsSvc
-
-	userInfo := auth.OidcUserInfo{
-		Subject:       "sub-merge-missing-verified",
-		Email:         email,
-		EmailVerified: false,
-		Extra:         map[string]any{},
-	}
-
-	mergedUser, isNew, err := authSvc.findOrCreateOidcUser(ctx, userInfo, &auth.OidcTokenResponse{AccessToken: "at"})
-	require.NoError(t, err)
-	require.False(t, isNew)
-	require.NotNil(t, mergedUser)
-	require.Equal(t, existing.ID, mergedUser.ID)
-
-	// Ensure existing user is linked
-	fetched, err := userSvc.GetUserByID(ctx, existing.ID)
-	require.NoError(t, err)
-	require.NotNil(t, fetched.OidcSubjectId)
-	require.Equal(t, userInfo.Subject, *fetched.OidcSubjectId)
 }
 
 func TestAuthenticateLocalPrimary_EmailFallback(t *testing.T) {
 	db := setupAuthServiceTestDB(t)
 	userSvc := user.NewUserService(db, nil, session.RevokeAllUserSessionsExceptInDB)
-	settingsSvc, err := newSettingsServiceForAuthTestInternal(t, t.Context(), db)
+	settingsSvc, err := newSettingsServiceForAuthTest(t, t.Context(), db)
 	require.NoError(t, err)
 	s := newTestAuthService()
 	s.userService = userSvc

@@ -461,6 +461,10 @@ func (s *OidcService) buildUserInfo(
 	case claims == nil:
 		userInfoErr = errors.New("userinfo endpoint not configured")
 	}
+	if userInfoErr == nil && idToken != nil && userInfoClaims != nil && kit.As(userInfoClaims["sub"], "") != idToken.Subject {
+		slog.WarnContext(ctx, "HandleCallback: discarding userinfo claims for a different subject", "subject", idToken.Subject)
+		userInfoErr = errors.New("userinfo subject does not match ID token subject")
+	}
 	if userInfoErr != nil {
 		slog.DebugContext(ctx, "HandleCallback: userinfo request failed", "error", userInfoErr)
 		if claims == nil {
@@ -471,6 +475,12 @@ func (s *OidcService) buildUserInfo(
 	}
 	if merged := maps.Clone(userInfoClaims); merged != nil {
 		maps.Copy(merged, claims)
+		// email_verified must come from the same source as the selected email.
+		_, idTokenHasEmail := claims["email"]
+		delete(merged, "email_verified")
+		if verified, ok := kit.Ternary(idTokenHasEmail, claims, userInfoClaims)["email_verified"]; ok {
+			merged["email_verified"] = verified
+		}
 		claims = merged
 	}
 
@@ -484,7 +494,7 @@ func (s *OidcService) buildUserInfo(
 		Subject:           subject,
 		Name:              jwtclaims.GetStringClaim(claims, "name"),
 		Email:             jwtclaims.GetStringClaim(claims, "email"),
-		EmailVerified:     jwtclaims.GetBoolClaim(claims, "email_verified"),
+		EmailVerified:     kit.As(claims["email_verified"], false),
 		PreferredUsername: jwtclaims.GetStringClaim(claims, "preferred_username"),
 		GivenName:         jwtclaims.GetStringClaim(claims, "given_name"),
 		FamilyName:        jwtclaims.GetStringClaim(claims, "family_name"),

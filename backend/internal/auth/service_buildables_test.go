@@ -25,7 +25,7 @@ func TestGetAutoLoginConfig_Enabled(t *testing.T) {
 	ctx := t.Context()
 	db := setupAuthServiceTestDB(t)
 
-	settingsSvc, err := newSettingsServiceForAuthTestInternal(t, ctx, db)
+	settingsSvc, err := newSettingsServiceForAuthTest(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, settingsSvc.EnsureDefaultSettings(ctx))
 	require.NoError(t, settingsSvc.SetBoolSetting(ctx, "authLocalEnabled", true))
@@ -51,7 +51,7 @@ func TestGetAutoLoginConfig_DisabledWhenLocalAuthDisabled(t *testing.T) {
 	ctx := t.Context()
 	db := setupAuthServiceTestDB(t)
 
-	settingsSvc, err := newSettingsServiceForAuthTestInternal(t, ctx, db)
+	settingsSvc, err := newSettingsServiceForAuthTest(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, settingsSvc.EnsureDefaultSettings(ctx))
 	require.NoError(t, settingsSvc.SetBoolSetting(ctx, "authLocalEnabled", false))

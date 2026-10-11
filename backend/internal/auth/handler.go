@@ -265,7 +265,7 @@ func (h *AuthHandler) ChangePassword(ctx context.Context, input *ChangePasswordI
 		case errors.Is(err, ErrInvalidCredentials):
 			return nil, huma.Error401Unauthorized("Current password is incorrect")
 		case errors.Is(err, common.ErrValidation):
-			passwordPolicy := h.authService.passwordPolicyInternal(ctx)
+			passwordPolicy := h.authService.passwordPolicy(ctx)
 			return nil, handlerutil.Error400BadRequestWithType(err.Error(), validation.PasswordPolicyProblemType(passwordPolicy))
 		default:
 			return nil, huma.Error500InternalServerError("Failed to change password")
@@ -289,39 +289,6 @@ func (h *AuthHandler) LogoutAllOtherSessions(ctx context.Context, input *struct{
 	}
 
 	return handlerutil.MessageOutput("All other sessions signed out", ""), nil
-}
-
-// validatePreferencesInternal checks the preference values Huma's enum tags
-// cannot express. Everything else is constrained by the schema.
-func validatePreferencesInternal(p *user.Preferences) error {
-	// The "default" sentinel means "no override"; anything else must be a color
-	// literal safe to inject into CSS.
-	if v := p.AccentColor; v != nil && *v != "" && *v != "default" && !settingstypes.SafeAccentColor.MatchString(*v) {
-		return huma.Error400BadRequest("invalid accentColor value")
-	}
-	// Keep the landing page a same-origin relative path. The frontend
-	// additionally validates it against the known nav pages, falling back to
-	// /dashboard.
-	if v := p.DefaultLandingPage; v != nil && (!strings.HasPrefix(*v, "/") || strings.HasPrefix(*v, "//")) {
-		return huma.Error400BadRequest("invalid defaultLandingPage value")
-	}
-	return nil
-}
-
-// mergePreferencesInternal copies every set (non-nil) field of src onto dst.
-// Reflection keeps this merge-only update free of per-field branches, the same
-// way the settings update path walks its DTO, so a new preference needs no
-// handler change.
-func mergePreferencesInternal(dst, src *user.Preferences) {
-	dstValue := reflect.ValueOf(dst).Elem()
-	srcValue := reflect.ValueOf(src).Elem()
-
-	for i := range srcValue.NumField() {
-		field := srcValue.Field(i)
-		if field.Kind() == reflect.Pointer && !field.IsNil() {
-			dstValue.Field(i).Set(field)
-		}
-	}
 }
 
 // UpdateMyProfile lets the current user update their own displayName and email.
@@ -363,10 +330,27 @@ func (h *AuthHandler) UpdateMyProfile(ctx context.Context, input *UpdateMyProfil
 		userModel.FontSize = input.Body.FontSize
 	}
 	if p := input.Body.Preferences; p != nil {
-		if validatePreferencesErr := validatePreferencesInternal(p); validatePreferencesErr != nil {
-			return nil, validatePreferencesErr
+		// Huma's enum tags cannot express these checks. The "default" accent
+		// sentinel means "no override"; anything else must be a color literal
+		// safe to inject into CSS.
+		if v := p.AccentColor; v != nil && *v != "" && *v != "default" && !settingstypes.SafeAccentColor.MatchString(*v) {
+			return nil, huma.Error400BadRequest("invalid accentColor value")
 		}
-		mergePreferencesInternal(&userModel.Preferences, p)
+		// Keep the landing page a same-origin relative path. The frontend
+		// additionally validates it against the known nav pages, falling back to
+		// /dashboard.
+		if v := p.DefaultLandingPage; v != nil && (!strings.HasPrefix(*v, "/") || strings.HasPrefix(*v, "//")) {
+			return nil, huma.Error400BadRequest("invalid defaultLandingPage value")
+		}
+		// Copy every set (non-nil) field. Reflection keeps this merge-only update
+		// free of per-field branches, so a new preference needs no handler change.
+		dstValue := reflect.ValueOf(&userModel.Preferences).Elem()
+		srcValue := reflect.ValueOf(p).Elem()
+		for i := range srcValue.NumField() {
+			if field := srcValue.Field(i); field.Kind() == reflect.Pointer && !field.IsNil() {
+				dstValue.Field(i).Set(field)
+			}
+		}
 	}
 
 	updated, err := h.userService.UpdateUser(ctx, userModel, nil)
@@ -410,7 +394,12 @@ func (h *AuthHandler) UploadMyAvatar(ctx context.Context, input *UploadMyAvatarI
 	}
 	defer func() { _ = f.Close() }()
 
-	maxSizeMb := h.avatarMaxUploadSizeMbInternal(ctx)
+	const defaultAvatarMaxUploadSizeMb = 2
+	maxSizeMb := defaultAvatarMaxUploadSizeMb
+	if h.settingsService != nil {
+		maxSizeMb = h.settingsService.GetIntSetting(ctx, "avatarMaxUploadSizeMb", defaultAvatarMaxUploadSizeMb)
+		maxSizeMb = kit.Ternary(maxSizeMb <= 0, defaultAvatarMaxUploadSizeMb, maxSizeMb)
+	}
 	maxSizeBytes := int64(maxSizeMb) * 1024 * 1024
 
 	// Read one byte past the configured ceiling so oversized files are rejected
@@ -425,12 +414,12 @@ func (h *AuthHandler) UploadMyAvatar(ctx context.Context, input *UploadMyAvatarI
 	}
 	data := buf.Bytes()
 
-	// Detect and validate image format
-	mimeType, err := detectAvatarMimeTypeInternal(data)
-	if err != nil {
+	// Only PNG, JPEG, and WebP avatars are accepted.
+	mimeType := http.DetectContentType(data)
+	if mimeType != "image/png" && mimeType != "image/jpeg" && mimeType != "image/webp" {
 		return nil, huma.Error400BadRequest("unsupported image format: only PNG, JPEG and WebP are accepted")
 	}
-	data, mimeType = normalizeAvatarImageInternal(data, mimeType)
+	data, mimeType = normalizeAvatarImage(data, mimeType)
 
 	if uploadAvatarErr := h.userService.UploadAvatar(ctx, currentUser.ID, data, mimeType); uploadAvatarErr != nil {
 		slog.ErrorContext(ctx, "Failed to save avatar", "userId", currentUser.ID, "error", uploadAvatarErr)
@@ -455,15 +444,6 @@ func (h *AuthHandler) UploadMyAvatar(ctx context.Context, input *UploadMyAvatarI
 			Data:    out,
 		},
 	}, nil
-}
-
-func (h *AuthHandler) avatarMaxUploadSizeMbInternal(ctx context.Context) int {
-	const defaultAvatarMaxUploadSizeMb = 2
-	if h.settingsService == nil {
-		return defaultAvatarMaxUploadSizeMb
-	}
-	maxSizeMb := h.settingsService.GetIntSetting(ctx, "avatarMaxUploadSizeMb", defaultAvatarMaxUploadSizeMb)
-	return kit.Ternary(maxSizeMb <= 0, defaultAvatarMaxUploadSizeMb, maxSizeMb)
 }
 
 // DeleteMyAvatar removes the current user's custom profile picture.
@@ -497,19 +477,7 @@ func (h *AuthHandler) DeleteMyAvatar(ctx context.Context, input *struct{}) (*han
 	}, nil
 }
 
-// detectAvatarMimeTypeInternal validates that data is a supported image format and returns its MIME type.
-// Supported formats: PNG, JPEG, WebP.
-func detectAvatarMimeTypeInternal(data []byte) (string, error) {
-	mimeType := http.DetectContentType(data)
-	switch mimeType {
-	case "image/png", "image/jpeg", "image/webp":
-		return mimeType, nil
-	default:
-		return "", errors.New("unsupported image format: only PNG, JPEG and WebP are accepted")
-	}
-}
-
-func normalizeAvatarImageInternal(data []byte, mimeType string) ([]byte, string) {
+func normalizeAvatarImage(data []byte, mimeType string) ([]byte, string) {
 	const maxAvatarNormalizePixels = 16 * 1024 * 1024
 	if mimeType != "image/png" {
 		return data, mimeType
@@ -524,7 +492,7 @@ func normalizeAvatarImageInternal(data []byte, mimeType string) ([]byte, string)
 	}
 
 	img, err := png.Decode(bytes.NewReader(data))
-	if err != nil || imageHasTransparencyInternal(img) {
+	if err != nil || imageHasTransparency(img) {
 		return data, mimeType
 	}
 
@@ -539,7 +507,7 @@ func normalizeAvatarImageInternal(data []byte, mimeType string) ([]byte, string)
 	return out.Bytes(), "image/jpeg"
 }
 
-func imageHasTransparencyInternal(img image.Image) bool {
+func imageHasTransparency(img image.Image) bool {
 	bounds := img.Bounds()
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
@@ -563,8 +531,8 @@ type operationProvider interface {
 	Operation() *huma.Operation
 }
 
-// parseSecurityRequirementsInternal extracts security requirements from a Huma operation.
-func parseSecurityRequirementsInternal(api huma.API, ctx operationProvider) securityRequirements {
+// parseSecurityRequirements extracts security requirements from a Huma operation.
+func parseSecurityRequirements(api huma.API, ctx operationProvider) securityRequirements {
 	reqs := securityRequirements{}
 	if ctx.Operation() == nil {
 		return reqs
@@ -597,47 +565,19 @@ func parseSecurityRequirementsInternal(api huma.API, ctx operationProvider) secu
 	return reqs
 }
 
-// tryBearerAuthInternal attempts Bearer token authentication. Returns the
+// tryBearerAuth attempts Bearer token authentication. Returns the
 // authenticated user on success, or the underlying error from VerifyToken so
 // the caller can distinguish a missing/invalid token from a token-version
 // mismatch (which requires clearing the stale cookie).
-func tryBearerAuthInternal(ctx huma.Context, authService *AuthService) (*userdomain.User, string, error) {
-	token, fromCookie := extractBearerTokenInternal(ctx)
+func tryBearerAuth(ctx huma.Context, authService *AuthService) (*userdomain.User, string, error) {
+	token, fromCookie := extractBearerToken(ctx)
 	if token == "" {
 		return nil, "", nil
 	}
-	var authenticatedUser *userdomain.User
-	var sessionID string
-	var err error
-	if fromCookie {
-		authenticatedUser, sessionID, err = authService.VerifyBrowserToken(ctx.Context(), token)
-	} else {
-		authenticatedUser, sessionID, err = authService.VerifyToken(ctx.Context(), token)
-	}
-	if err != nil {
-		return nil, "", err
-	}
-	return authenticatedUser, sessionID, nil
+	return kit.Ternary(fromCookie, authService.VerifyBrowserToken, authService.VerifyToken)(ctx.Context(), token)
 }
 
-// tryApiKeyAuthInternal checks if API key authentication should be allowed
-// through. Returns the resolved user plus the API key record so the caller
-// can resolve permissions according to the key's kind.
-func tryApiKeyAuthInternal(ctx huma.Context, apiKeyService *apikey.ApiKeyService) (*userdomain.User, *apikey.ApiKey, bool) {
-	apiKey := ctx.Header(middleware.HeaderApiKey)
-	if apiKey == "" {
-		return nil, nil, false
-	}
-
-	authenticatedUser, key, err := apiKeyService.ValidateApiKeyWithID(ctx.Context(), apiKey)
-	if err != nil || authenticatedUser == nil {
-		return nil, nil, false
-	}
-
-	return authenticatedUser, key, true
-}
-
-func tryEnvironmentAccessTokenAuthInternal(ctx huma.Context, resolver EnvironmentAccessTokenResolver, token string) (*userdomain.User, *environment.Environment, bool) {
+func tryEnvironmentAccessTokenAuth(ctx huma.Context, resolver EnvironmentAccessTokenResolver, token string) (*userdomain.User, *environment.Environment, bool) {
 	if resolver == nil || strings.TrimSpace(token) == "" {
 		return nil, nil, false
 	}
@@ -647,41 +587,13 @@ func tryEnvironmentAccessTokenAuthInternal(ctx huma.Context, resolver Environmen
 		return nil, nil, false
 	}
 
-	return createEnvironmentUserInternal(env), env, true
+	return createEnvironmentUser(env), env, true
 }
 
-// tryAgentAuthInternal checks if the request is from an authenticated agent.
-// Returns a sudo agent user if the agent token is valid.
-func tryAgentAuthInternal(ctx huma.Context, cfg *config.Config) (*userdomain.User, bool) {
-	if cfg == nil || !cfg.AgentMode {
-		return nil, false
-	}
-
-	path := ctx.URL().Path
-
-	// Check for agent bootstrap pairing
-	if strings.HasPrefix(path, middleware.AgentPairingPrefix) &&
-		AgentTokenMatches(ctx.Header(middleware.HeaderAgentBootstrap), cfg.AgentToken) {
-		return createAgentSudoUserInternal(), true
-	}
-
-	// Check for agent token
-	if AgentTokenMatches(ctx.Header(middleware.HeaderAgentToken), cfg.AgentToken) {
-		return createAgentSudoUserInternal(), true
-	}
-
-	// Check for API key as agent token
-	if AgentTokenMatches(ctx.Header(middleware.HeaderApiKey), cfg.AgentToken) {
-		return createAgentSudoUserInternal(), true
-	}
-
-	return nil, false
-}
-
-// createAgentSudoUserInternal creates a sudo user for agent authentication.
+// createAgentSudoUser creates a sudo user for agent authentication.
 // The sudo PermissionSet attached to the context by the agent token path
 // bypasses every check; the user's Roles field is intentionally empty.
-func createAgentSudoUserInternal() *userdomain.User {
+func createAgentSudoUser() *userdomain.User {
 	return &userdomain.User{
 		ID:       "agent",
 		Email:    new("agent@getarcane.app"),
@@ -689,7 +601,7 @@ func createAgentSudoUserInternal() *userdomain.User {
 	}
 }
 
-// applyProxiedIconCatalogInternal copies the requesting user's icon catalog
+// applyProxiedIconCatalog copies the requesting user's icon catalog
 // preference, forwarded by the manager, onto the synthetic user this request
 // authenticates as. Without it the synthetic user has no preferences and every
 // proxied icon resolves against the default catalog.
@@ -697,7 +609,7 @@ func createAgentSudoUserInternal() *userdomain.User {
 // Only called on synthetic-user auth paths (agent token, environment access
 // token), where the header is set by the manager after it strips any
 // client-supplied value. Real-user auth paths never read it.
-func applyProxiedIconCatalogInternal(ctx huma.Context, authenticatedUser *userdomain.User) {
+func applyProxiedIconCatalog(ctx huma.Context, authenticatedUser *userdomain.User) {
 	if authenticatedUser == nil {
 		return
 	}
@@ -708,7 +620,7 @@ func applyProxiedIconCatalogInternal(ctx huma.Context, authenticatedUser *userdo
 	authenticatedUser.Preferences.IconCatalog = &catalog
 }
 
-func createEnvironmentUserInternal(env *environment.Environment) *userdomain.User {
+func createEnvironmentUser(env *environment.Environment) *userdomain.User {
 	return &userdomain.User{
 		ID:       "environment:" + env.ID,
 		Username: env.Name,
@@ -739,31 +651,37 @@ func NewHumaMiddleware(
 			return
 		}
 
-		if newCtx, ok := tryAgentAuthCtxInternal(ctx, cfg); ok {
+		if newCtx, ok := tryAgentAuth(ctx, cfg); ok {
 			next(newCtx)
 			return
 		}
 
-		reqs := parseSecurityRequirementsInternal(api, ctx)
+		reqs := parseSecurityRequirements(api, ctx)
 		if !reqs.isRequired {
-			next(opportunisticBearerAuthInternal(ctx, authService, permResolver))
+			// Public routes (e.g. logout) still learn who the caller is when a
+			// valid bearer token is present, but never fail the request.
+			if authenticatedUser, sessionID, err := tryBearerAuth(ctx, authService); err == nil && authenticatedUser != nil {
+				newCtx := setUserInContext(ctx.Context(), authenticatedUser, resolveUserPermissions(ctx.Context(), permResolver, authenticatedUser))
+				ctx = huma.WithContext(ctx, context.WithValue(newCtx, middleware.ContextKeyCurrentSessionID, sessionID))
+			}
+			next(ctx)
 			return
 		}
 
 		if reqs.apiKeyAuth && ctx.Header(middleware.HeaderApiKey) != "" {
-			handleApiKeyAuthInternal(api, ctx, authService, apiKeyService, permResolver, envTokenResolver, reqs.bearerAuth, next)
+			handleApiKeyAuth(api, ctx, authService, apiKeyService, permResolver, envTokenResolver, reqs.bearerAuth, next)
 			return
 		}
 
-		if authenticatedUser, env, ok := tryEnvironmentAccessTokenAuthInternal(ctx, envTokenResolver, ctx.Header(middleware.HeaderAgentToken)); ok {
-			applyProxiedIconCatalogInternal(ctx, authenticatedUser)
-			newCtx := setUserInContextInternal(ctx.Context(), authenticatedUser, authz.EnvironmentPermissionSet(env.ID))
+		if authenticatedUser, env, ok := tryEnvironmentAccessTokenAuth(ctx, envTokenResolver, ctx.Header(middleware.HeaderAgentToken)); ok {
+			applyProxiedIconCatalog(ctx, authenticatedUser)
+			newCtx := setUserInContext(ctx.Context(), authenticatedUser, authz.EnvironmentPermissionSet(env.ID))
 			next(huma.WithContext(ctx, newCtx))
 			return
 		}
 
 		if reqs.bearerAuth {
-			nextCtx, handled := handleBearerAuthInternal(api, ctx, authService, permResolver)
+			nextCtx, handled := handleBearerAuth(api, ctx, authService, permResolver)
 			if handled {
 				if nextCtx != nil {
 					next(nextCtx)
@@ -776,16 +694,22 @@ func NewHumaMiddleware(
 	}
 }
 
-func tryAgentAuthCtxInternal(ctx huma.Context, cfg *config.Config) (huma.Context, bool) {
+// tryAgentAuth authenticates an agent-mode request presenting the
+// agent token as a bootstrap pairing, agent token, or API key header.
+func tryAgentAuth(ctx huma.Context, cfg *config.Config) (huma.Context, bool) {
 	if cfg == nil || !cfg.AgentMode {
 		return ctx, false
 	}
-	authenticatedUser, ok := tryAgentAuthInternal(ctx, cfg)
-	if !ok {
+	bootstrapPairing := strings.HasPrefix(ctx.URL().Path, middleware.AgentPairingPrefix) &&
+		AgentTokenMatches(ctx.Header(middleware.HeaderAgentBootstrap), cfg.AgentToken)
+	if !bootstrapPairing &&
+		!AgentTokenMatches(ctx.Header(middleware.HeaderAgentToken), cfg.AgentToken) &&
+		!AgentTokenMatches(ctx.Header(middleware.HeaderApiKey), cfg.AgentToken) {
 		return ctx, false
 	}
-	applyProxiedIconCatalogInternal(ctx, authenticatedUser)
-	authCtx := setUserInContextInternal(ctx.Context(), authenticatedUser, authz.SudoPermissionSet())
+	authenticatedUser := createAgentSudoUser()
+	applyProxiedIconCatalog(ctx, authenticatedUser)
+	authCtx := setUserInContext(ctx.Context(), authenticatedUser, authz.SudoPermissionSet())
 	updatePath := strings.Contains(ctx.URL().Path, "/containers/") && strings.HasSuffix(ctx.URL().Path, "/update")
 	if ctx.Method() == http.MethodPost && updatePath {
 		if initiatorID := strings.TrimSpace(ctx.Header(middleware.HeaderUpdateInitiatorID)); initiatorID != "" {
@@ -802,26 +726,10 @@ func tryAgentAuthCtxInternal(ctx huma.Context, cfg *config.Config) (huma.Context
 	return huma.WithContext(ctx, authCtx), true
 }
 
-// opportunisticBearerAuthInternal populates the user/session context if a valid
-// bearer token is present, but never fails the request. Used for public routes
-// (e.g. logout) that still need to know who the caller is when a token exists.
-func opportunisticBearerAuthInternal(ctx huma.Context, authService *AuthService, permResolver PermissionResolver) huma.Context {
-	if token, _ := extractBearerTokenInternal(ctx); token == "" {
-		return ctx
-	}
-	authenticatedUser, sessionID, err := tryBearerAuthInternal(ctx, authService)
-	if err != nil || authenticatedUser == nil {
-		return ctx
-	}
-	newCtx := setUserInContextInternal(ctx.Context(), authenticatedUser, resolveUserPermissionsInternal(ctx.Context(), permResolver, authenticatedUser))
-	newCtx = context.WithValue(newCtx, middleware.ContextKeyCurrentSessionID, sessionID)
-	return huma.WithContext(ctx, newCtx)
-}
-
-// handleApiKeyAuthInternal handles the API-key-present branch. Invalid user
+// handleApiKeyAuth handles the API-key-present branch. Invalid user
 // keys fail closed; only recognized environment tokens defer to bearer auth
 // when both credentials are present on a bearer-capable operation.
-func handleApiKeyAuthInternal(
+func handleApiKeyAuth(
 	api huma.API,
 	ctx huma.Context,
 	authService *AuthService,
@@ -833,23 +741,26 @@ func handleApiKeyAuthInternal(
 		huma.Context,
 	),
 ) {
-	if authenticatedUser, key, ok := tryApiKeyAuthInternal(ctx, apiKeyService); ok {
+	if authenticatedUser, key, err := apiKeyService.ValidateApiKeyWithID(ctx.Context(), ctx.Header(middleware.HeaderApiKey)); err == nil && authenticatedUser != nil {
 		// Personal keys inherit the owner's role permissions (same resolution
 		// as session auth); scoped keys are limited to their own grants.
 		var ps *authz.PermissionSet
 		if key.Kind == apikey.ApiKeyKindPersonal {
-			ps = resolveUserPermissionsInternal(ctx.Context(), permResolver, authenticatedUser)
-		} else {
-			ps = resolveApiKeyPermissionsInternal(ctx.Context(), permResolver, key.ID)
+			ps = resolveUserPermissions(ctx.Context(), permResolver, authenticatedUser)
+		} else if permResolver != nil && key.ID != "" {
+			if ps, err = permResolver.ResolveApiKeyPermissions(ctx.Context(), key.ID); err != nil {
+				slog.WarnContext(ctx.Context(), "failed to resolve api key permissions", "error", err, "apiKeyId", key.ID)
+				ps = nil
+			}
 		}
-		newCtx := setUserInContextInternal(ctx.Context(), authenticatedUser, ps)
+		newCtx := setUserInContext(ctx.Context(), authenticatedUser, ps)
 		newCtx = context.WithValue(newCtx, middleware.ContextKeyApiKeyID, key.ID)
 		next(huma.WithContext(ctx, newCtx))
 		return
 	}
-	if authenticatedUser, env, ok := tryEnvironmentAccessTokenAuthInternal(ctx, envTokenResolver, ctx.Header(middleware.HeaderApiKey)); ok {
-		if token, _ := extractBearerTokenInternal(ctx); allowBearerFallback && token != "" {
-			nextCtx, handled := handleBearerAuthInternal(api, ctx, authService, permResolver)
+	if authenticatedUser, env, ok := tryEnvironmentAccessTokenAuth(ctx, envTokenResolver, ctx.Header(middleware.HeaderApiKey)); ok {
+		if token, _ := extractBearerToken(ctx); allowBearerFallback && token != "" {
+			nextCtx, handled := handleBearerAuth(api, ctx, authService, permResolver)
 			if handled {
 				if nextCtx != nil {
 					next(nextCtx)
@@ -857,19 +768,19 @@ func handleApiKeyAuthInternal(
 				return
 			}
 		}
-		applyProxiedIconCatalogInternal(ctx, authenticatedUser)
-		newCtx := setUserInContextInternal(ctx.Context(), authenticatedUser, authz.EnvironmentPermissionSet(env.ID))
+		applyProxiedIconCatalog(ctx, authenticatedUser)
+		newCtx := setUserInContext(ctx.Context(), authenticatedUser, authz.EnvironmentPermissionSet(env.ID))
 		next(huma.WithContext(ctx, newCtx))
 		return
 	}
 	_ = huma.WriteErr(api, ctx, http.StatusUnauthorized, "Unauthorized: invalid API key")
 }
 
-func handleBearerAuthInternal(api huma.API, ctx huma.Context, authService *AuthService, permResolver PermissionResolver) (huma.Context, bool) {
-	authenticatedUser, sessionID, err := tryBearerAuthInternal(ctx, authService)
+func handleBearerAuth(api huma.API, ctx huma.Context, authService *AuthService, permResolver PermissionResolver) (huma.Context, bool) {
+	authenticatedUser, sessionID, err := tryBearerAuth(ctx, authService)
 	if err == nil && authenticatedUser != nil {
-		ps := resolveUserPermissionsInternal(ctx.Context(), permResolver, authenticatedUser)
-		newCtx := setUserInContextInternal(ctx.Context(), authenticatedUser, ps)
+		ps := resolveUserPermissions(ctx.Context(), permResolver, authenticatedUser)
+		newCtx := setUserInContext(ctx.Context(), authenticatedUser, ps)
 		newCtx = context.WithValue(newCtx, middleware.ContextKeyCurrentSessionID, sessionID)
 		return huma.WithContext(ctx, newCtx), true
 	}
@@ -890,11 +801,11 @@ func handleBearerAuthInternal(api huma.API, ctx huma.Context, authService *AuthS
 	return nil, false
 }
 
-// resolveUserPermissionsInternal asks the RoleService for the user's resolved
+// resolveUserPermissions asks the RoleService for the user's resolved
 // PermissionSet. If RoleService is unavailable or the lookup fails (boot-time
 // edge cases, broken DB) it returns nil and logs a warning — handlers then
 // see deny-all, which is the safe default.
-func resolveUserPermissionsInternal(ctx context.Context, permResolver PermissionResolver, authenticatedUser *userdomain.User) *authz.PermissionSet {
+func resolveUserPermissions(ctx context.Context, permResolver PermissionResolver, authenticatedUser *userdomain.User) *authz.PermissionSet {
 	if permResolver == nil || authenticatedUser == nil {
 		return nil
 	}
@@ -906,20 +817,8 @@ func resolveUserPermissionsInternal(ctx context.Context, permResolver Permission
 	return ps
 }
 
-func resolveApiKeyPermissionsInternal(ctx context.Context, permResolver PermissionResolver, apiKeyID string) *authz.PermissionSet {
-	if permResolver == nil || apiKeyID == "" {
-		return nil
-	}
-	ps, err := permResolver.ResolveApiKeyPermissions(ctx, apiKeyID)
-	if err != nil {
-		slog.WarnContext(ctx, "failed to resolve api key permissions", "error", err, "apiKeyId", apiKeyID)
-		return nil
-	}
-	return ps
-}
-
-// extractBearerTokenInternal extracts the JWT token and reports whether it came from a cookie.
-func extractBearerTokenInternal(ctx huma.Context) (string, bool) {
+// extractBearerToken extracts the JWT token and reports whether it came from a cookie.
+func extractBearerToken(ctx huma.Context) (string, bool) {
 	// Try Authorization header first
 	authHeader := ctx.Header("Authorization")
 	if len(authHeader) > 7 && strings.ToLower(authHeader[:7]) == "bearer " {
@@ -936,10 +835,10 @@ func extractBearerTokenInternal(ctx huma.Context) (string, bool) {
 	return "", false
 }
 
-// setUserInContextInternal adds the authenticated user and the resolved
+// setUserInContext adds the authenticated user and the resolved
 // PermissionSet to the context. Callers must supply a non-nil PermissionSet;
 // pass authz.NewPermissionSet() to express deny-all.
-func setUserInContextInternal(ctx context.Context, authenticatedUser *userdomain.User, ps *authz.PermissionSet) context.Context {
+func setUserInContext(ctx context.Context, authenticatedUser *userdomain.User, ps *authz.PermissionSet) context.Context {
 	if ps == nil {
 		ps = authz.NewPermissionSet()
 	}
@@ -1029,7 +928,7 @@ func (m *AuthMiddleware) Add() echo.MiddlewareFunc {
 }
 
 func (m *AuthMiddleware) agentAuth(ctx context.Context, c *echo.Context, next echo.HandlerFunc) error {
-	if isPreflightInternal(c) {
+	if c.Request().Method == http.MethodOptions {
 		return next(c)
 	}
 
@@ -1037,18 +936,18 @@ func (m *AuthMiddleware) agentAuth(ctx context.Context, c *echo.Context, next ec
 	if strings.HasPrefix(req.URL.Path, middleware.AgentPairingPrefix) &&
 		AgentTokenMatches(req.Header.Get(middleware.HeaderAgentBootstrap), m.cfg.AgentToken) {
 		slog.InfoContext(ctx, "Agent auth: bootstrap pairing accepted", "path", req.URL.Path, "method", req.Method)
-		agentSudoInternal(c)
+		agentSudo(c)
 		return next(c)
 	}
 
 	if AgentTokenMatches(req.Header.Get(middleware.HeaderAgentToken), m.cfg.AgentToken) {
-		agentSudoInternal(c)
+		agentSudo(c)
 		return next(c)
 	}
 
 	// Check for API key as agent token
 	if AgentTokenMatches(req.Header.Get(middleware.HeaderApiKey), m.cfg.AgentToken) {
-		agentSudoInternal(c)
+		agentSudo(c)
 		return next(c)
 	}
 
@@ -1078,8 +977,8 @@ func (m *AuthMiddleware) managerAuth(ctx context.Context, c *echo.Context, next 
 	req := c.Request()
 	if agentToken := req.Header.Get(middleware.HeaderAgentToken); agentToken != "" {
 		if env, ok := m.resolveEnvironmentAccessToken(ctx, agentToken).Get(); ok {
-			ps := environmentScopedInternal(c, env)
-			return m.authorizeAndContinueInternal(c, next, ps)
+			ps := environmentScoped(c, env)
+			return m.authorizeAndContinue(c, next, ps)
 		}
 	}
 
@@ -1088,7 +987,10 @@ func (m *AuthMiddleware) managerAuth(ctx context.Context, c *echo.Context, next 
 		return m.apiKeyHeaderAuth(ctx, c, next, apiKey)
 	}
 
-	token, fromCookie := extractBearerOrCookieTokenInternal(c)
+	token, hasBearer := strings.CutPrefix(req.Header.Get("Authorization"), "Bearer ")
+	if !hasBearer {
+		token, _ = cookie.GetTokenCookie(req)
+	}
 	if token == "" {
 		if m.options.SuccessOptional {
 			return next(c)
@@ -1099,14 +1001,8 @@ func (m *AuthMiddleware) managerAuth(ctx context.Context, c *echo.Context, next 
 		})
 	}
 
-	var authenticatedUser *userdomain.User
-	var sessionID string
-	var err error
-	if fromCookie {
-		authenticatedUser, sessionID, err = m.authService.VerifyBrowserToken(ctx, token)
-	} else {
-		authenticatedUser, sessionID, err = m.authService.VerifyToken(ctx, token)
-	}
+	verify := kit.Ternary(hasBearer, m.authService.VerifyToken, m.authService.VerifyBrowserToken)
+	authenticatedUser, sessionID, err := verify(ctx, token)
 	if err != nil {
 		// A version mismatch means the app self-updated; the session is still valid
 		// (the refresh path tolerates the version change and rotates the token), so do
@@ -1140,7 +1036,7 @@ func (m *AuthMiddleware) managerAuth(ctx context.Context, c *echo.Context, next 
 	c.Set(string(middleware.ContextKeyCurrentUser), authenticatedUser)
 	c.Set(string(middleware.ContextKeyCurrentSessionID), sessionID)
 	c.Set(string(middleware.ContextKeyUserPermissions), ps)
-	return m.authorizeAndContinueInternal(c, next, ps)
+	return m.authorizeAndContinue(c, next, ps)
 }
 
 // apiKeyHeaderAuth authenticates an X-API-Key credential: a user-owned API key
@@ -1152,21 +1048,29 @@ func (m *AuthMiddleware) apiKeyHeaderAuth(ctx context.Context, c *echo.Context, 
 			// Personal keys inherit the owner's role permissions (same
 			// resolution as session auth); scoped keys use their own grants.
 			var ps *authz.PermissionSet
-			if key.Kind == apikey.ApiKeyKindPersonal {
+			// Falling back to the owner's role permissions would defeat per-key
+			// scoping, so scoped-key resolution failures are explicitly denied.
+			switch {
+			case key.Kind == apikey.ApiKeyKindPersonal:
 				ps = m.resolvePermissionsOrDeny(ctx, authenticatedUser)
-			} else {
-				ps = m.resolveApiKeyPermissionsOrDeny(ctx, key.ID)
+			case m.roleResolver == nil || key.ID == "":
+				ps = authz.NewPermissionSet()
+			default:
+				if ps, err = m.roleResolver.ResolveApiKeyPermissions(ctx, key.ID); err != nil || ps == nil {
+					slog.WarnContext(ctx, "failed to resolve api key permissions for Echo auth", "error", err)
+					ps = authz.NewPermissionSet()
+				}
 			}
 			c.Set(string(middleware.ContextKeyUserID), authenticatedUser.ID)
 			c.Set(string(middleware.ContextKeyCurrentUser), authenticatedUser)
 			c.Set(string(middleware.ContextKeyUserPermissions), ps)
 			c.Set(string(middleware.ContextKeyAuthMethod), "api_key")
-			return m.authorizeAndContinueInternal(c, next, ps)
+			return m.authorizeAndContinue(c, next, ps)
 		}
 	}
 	if env, ok := m.resolveEnvironmentAccessToken(ctx, apiKey).Get(); ok {
-		ps := environmentScopedInternal(c, env)
-		return m.authorizeAndContinueInternal(c, next, ps)
+		ps := environmentScoped(c, env)
+		return m.authorizeAndContinue(c, next, ps)
 	}
 	return c.JSON(http.StatusUnauthorized, common.APIError{
 		Code:    common.APIErrorCodeUnauthorized,
@@ -1174,7 +1078,7 @@ func (m *AuthMiddleware) apiKeyHeaderAuth(ctx context.Context, c *echo.Context, 
 	})
 }
 
-func (m *AuthMiddleware) authorizeAndContinueInternal(c *echo.Context, next echo.HandlerFunc, ps *authz.PermissionSet) error {
+func (m *AuthMiddleware) authorizeAndContinue(c *echo.Context, next echo.HandlerFunc, ps *authz.PermissionSet) error {
 	if m.options.AdminRequired && !ps.IsGlobalAdmin() {
 		return c.JSON(http.StatusForbidden, common.APIError{
 			Code:    "FORBIDDEN",
@@ -1199,21 +1103,6 @@ func (m *AuthMiddleware) resolvePermissionsOrDeny(ctx context.Context, authentic
 	return ps
 }
 
-// resolveApiKeyPermissionsOrDeny returns the API key's per-key PermissionSet,
-// or an empty (deny-all) set on failure. Falling back to the owner's role
-// permissions would defeat per-key scoping, so failures are explicitly denied.
-func (m *AuthMiddleware) resolveApiKeyPermissionsOrDeny(ctx context.Context, apiKeyID string) *authz.PermissionSet {
-	if m.roleResolver == nil || apiKeyID == "" {
-		return authz.NewPermissionSet()
-	}
-	ps, err := m.roleResolver.ResolveApiKeyPermissions(ctx, apiKeyID)
-	if err != nil || ps == nil {
-		slog.WarnContext(ctx, "failed to resolve api key permissions for Echo auth", "error", err)
-		return authz.NewPermissionSet()
-	}
-	return ps
-}
-
 func (m *AuthMiddleware) resolveEnvironmentAccessToken(ctx context.Context, token string) mo.Option[*environment.Environment] {
 	if m.envTokenResolver == nil {
 		return mo.None[*environment.Environment]()
@@ -1227,43 +1116,20 @@ func (m *AuthMiddleware) resolveEnvironmentAccessToken(ctx context.Context, toke
 	return mo.Some(env)
 }
 
-func isPreflightInternal(c *echo.Context) bool {
-	return c.Request().Method == http.MethodOptions
-}
-
-func agentSudoInternal(c *echo.Context) {
-	agentUser := &userdomain.User{
-		ID:       "agent",
-		Email:    new("agent@getarcane.app"),
-		Username: "agent",
-	}
+func agentSudo(c *echo.Context) {
+	agentUser := createAgentSudoUser()
 	c.Set(string(middleware.ContextKeyUserID), agentUser.ID)
 	c.Set(string(middleware.ContextKeyCurrentUser), agentUser)
 	c.Set(string(middleware.ContextKeyUserPermissions), authz.SudoPermissionSet())
 	c.Set(string(middleware.ContextKeyAuthMethod), "agent_token")
 }
 
-func environmentScopedInternal(c *echo.Context, env *environment.Environment) *authz.PermissionSet {
-	envUser := &userdomain.User{
-		ID:       "environment:" + env.ID,
-		Username: env.Name,
-	}
+func environmentScoped(c *echo.Context, env *environment.Environment) *authz.PermissionSet {
+	envUser := createEnvironmentUser(env)
 	c.Set(string(middleware.ContextKeyUserID), envUser.ID)
 	c.Set(string(middleware.ContextKeyCurrentUser), envUser)
 	ps := authz.EnvironmentPermissionSet(env.ID)
 	c.Set(string(middleware.ContextKeyUserPermissions), ps)
 	c.Set(string(middleware.ContextKeyAuthMethod), "environment_access_token")
 	return ps
-}
-
-func extractBearerOrCookieTokenInternal(c *echo.Context) (string, bool) {
-	req := c.Request()
-	authHeader := req.Header.Get("Authorization")
-	if after, ok := strings.CutPrefix(authHeader, "Bearer "); ok {
-		return after, false
-	}
-	if tok, err := cookie.GetTokenCookie(req); err == nil && tok != "" {
-		return tok, true
-	}
-	return "", false
 }

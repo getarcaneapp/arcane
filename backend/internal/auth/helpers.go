@@ -58,7 +58,7 @@ var tokenParseOptions = []jwt.ParseOption{
 	jwt.WithRequiredClaim(claimUserID),
 }
 
-func parseAccessTokenInternal(ctx context.Context, rawToken string, key *mldsa.PublicKey) (*accessTokenClaims, error) {
+func parseAccessToken(ctx context.Context, rawToken string, key *mldsa.PublicKey) (*accessTokenClaims, error) {
 	token, err := jwt.ParseString(rawToken, append(tokenParseOptions, jwt.WithKey(jwa.MLDSA87(), key), jwt.WithContext(ctx))...)
 	if err != nil {
 		switch {
@@ -88,7 +88,7 @@ func parseAccessTokenInternal(ctx context.Context, rawToken string, key *mldsa.P
 	return new(accessTokenClaims{UserID: userID, SessionID: sessionID, Username: username, AppVersion: appVersion, ExpiresAt: expiresAt}), nil
 }
 
-func parseBrowserTokenInternal(ctx context.Context, rawToken string, key []byte) (*accessTokenClaims, error) {
+func parseBrowserToken(ctx context.Context, rawToken string, key []byte) (*accessTokenClaims, error) {
 	token, err := jwt.ParseString(rawToken, append(tokenParseOptions, jwt.WithKey(jwa.HS512(), key), jwt.WithContext(ctx))...)
 	if err != nil {
 		switch {
@@ -117,7 +117,7 @@ func parseBrowserTokenInternal(ctx context.Context, rawToken string, key []byte)
 	return new(accessTokenClaims{UserID: userID, SessionID: sessionID, AppVersion: appVersion, ExpiresAt: expiresAt}), nil
 }
 
-func signedTokenAlgorithmInternal(rawToken string) (string, bool) {
+func signedTokenAlgorithm(rawToken string) (string, bool) {
 	message, err := jws.Parse([]byte(rawToken), jws.WithCompact())
 	if err != nil {
 		return "", false
@@ -133,7 +133,7 @@ func signedTokenAlgorithmInternal(rawToken string) (string, bool) {
 	return algorithm.String(), true
 }
 
-func parseRefreshTokenInternal(ctx context.Context, rawToken string, key *mldsa.PublicKey) (*refreshTokenClaims, error) {
+func parseRefreshToken(ctx context.Context, rawToken string, key *mldsa.PublicKey) (*refreshTokenClaims, error) {
 	token, err := jwt.ParseString(rawToken, append(tokenParseOptions, jwt.WithKey(jwa.MLDSA87(), key), jwt.WithContext(ctx))...)
 	if err != nil {
 		claimErr := errors.Is(err, jwt.MissingRequiredClaimError{}) || errors.Is(err, jwt.ClaimValidationError{})

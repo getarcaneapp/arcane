@@ -100,13 +100,13 @@ func TestNewHumaMiddleware_AcceptsEnvironmentAccessTokenViaAPIKey(t *testing.T) 
 }
 
 func TestNewHumaMiddleware_UsesBearerWhenLoopbackProxySendsEnvironmentAccessToken(t *testing.T) {
-	db := setupAuthMiddlewareTestDBInternal(t)
+	db := setupAuthMiddlewareTestDB(t)
 	userSvc := user.NewUserService(db, nil, session.RevokeAllUserSessionsExceptInDB)
 	sessionSvc := session.NewSessionService(db)
 
-	signingKey := newTestSigningKeyInternal()
+	signingKey := newTestSigningKey()
 	authSvc := NewAuthService(userSvc, nil, nil, sessionSvc, nil, &config.Config{JWTRefreshExpiry: 24 * time.Hour}).WithSigningKey(signingKey)
-	bearerToken := mintHumaMiddlewareTestTokenInternal(t, userSvc, sessionSvc, signingKey, "u-loopback")
+	bearerToken := mintHumaMiddlewareTestToken(t, userSvc, sessionSvc, signingKey, "u-loopback")
 
 	ps := authz.NewPermissionSet()
 	ps.AddEnv("0", authz.PermContainersStart)
@@ -122,7 +122,7 @@ func TestNewHumaMiddleware_UsesBearerWhenLoopbackProxySendsEnvironmentAccessToke
 	}
 
 	api := humaecho.NewWithGroup(router, apiGroup, humaConfig)
-	api.UseMiddleware(NewHumaMiddleware(api, authSvc, nil, staticPermissionResolverInternal{ps: ps}, testEnvironmentAccessResolver{
+	api.UseMiddleware(NewHumaMiddleware(api, authSvc, nil, staticPermissionResolver{ps: ps}, testEnvironmentAccessResolver{
 		env: &environment.Environment{
 			ID:          "remote-env",
 			Name:        "Remote Env",
@@ -255,7 +255,7 @@ func TestParseSecurityRequirements(t *testing.T) {
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			require.Equal(t, testCase.expected, parseSecurityRequirementsInternal(api, testOperationProvider{
+			require.Equal(t, testCase.expected, parseSecurityRequirements(api, testOperationProvider{
 				operation: &huma.Operation{Security: testCase.security},
 			}))
 		})
@@ -263,11 +263,11 @@ func TestParseSecurityRequirements(t *testing.T) {
 }
 
 func TestNewHumaMiddleware_OpportunisticAuthOnPublicRoute(t *testing.T) {
-	db := setupAuthMiddlewareTestDBInternal(t)
+	db := setupAuthMiddlewareTestDB(t)
 	userSvc := user.NewUserService(db, nil, session.RevokeAllUserSessionsExceptInDB)
 	sessionSvc := session.NewSessionService(db)
 
-	signingKey := newTestSigningKeyInternal()
+	signingKey := newTestSigningKey()
 	cfg := &config.Config{JWTRefreshExpiry: 24 * time.Hour}
 	authSvc := NewAuthService(userSvc, nil, nil, sessionSvc, nil, cfg).WithSigningKey(signingKey)
 
@@ -291,7 +291,7 @@ func TestNewHumaMiddleware_OpportunisticAuthOnPublicRoute(t *testing.T) {
 		"username": "logouttest",
 		"roles":    []string{"user"},
 	}
-	token := signJWXTokenInternal(t, signingKey, claims)
+	token := signJWXToken(t, signingKey, claims)
 
 	router := echo.New()
 	apiGroup := router.Group("/api")
@@ -350,11 +350,11 @@ func TestNewHumaMiddleware_OpportunisticAuthOnPublicRoute(t *testing.T) {
 // middleware returns a refreshable 401 and must NOT clear the auth cookies — otherwise
 // the user is logged out on every update.
 func TestNewHumaMiddleware_VersionMismatchIsRecoverable(t *testing.T) {
-	db := setupAuthMiddlewareTestDBInternal(t)
+	db := setupAuthMiddlewareTestDB(t)
 	userSvc := user.NewUserService(db, nil, session.RevokeAllUserSessionsExceptInDB)
 	sessionSvc := session.NewSessionService(db)
 
-	signingKey := newTestSigningKeyInternal()
+	signingKey := newTestSigningKey()
 	browserSigningKey := bytes.Repeat([]byte{0x24}, browserSessionSigningKeySize)
 	cfg := &config.Config{JWTRefreshExpiry: 24 * time.Hour}
 	authSvc := NewAuthService(userSvc, nil, nil, sessionSvc, nil, cfg).WithSigningKey(signingKey)
@@ -485,7 +485,7 @@ func (r testEnvironmentAccessResolver) ResolveEnvironmentByAccessToken(_ context
 	return nil, context.Canceled
 }
 
-func setupAuthMiddlewareTestDBInternal(t *testing.T) *database.DB {
+func setupAuthMiddlewareTestDB(t *testing.T) *database.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
@@ -493,7 +493,7 @@ func setupAuthMiddlewareTestDBInternal(t *testing.T) *database.DB {
 	return &database.DB{DB: db}
 }
 
-func mintHumaMiddlewareTestTokenInternal(t *testing.T, userSvc *user.UserService, sessionSvc *session.SessionService, signingKey *mldsa.PrivateKey, userID string) string {
+func mintHumaMiddlewareTestToken(t *testing.T, userSvc *user.UserService, sessionSvc *session.SessionService, signingKey *mldsa.PrivateKey, userID string) string {
 	t.Helper()
 
 	_, err := userSvc.CreateUser(t.Context(), &user.User{
@@ -515,18 +515,18 @@ func mintHumaMiddlewareTestTokenInternal(t *testing.T, userSvc *user.UserService
 		"user_id":  userID,
 		"username": userID,
 	}
-	return signJWXTokenInternal(t, signingKey, claims)
+	return signJWXToken(t, signingKey, claims)
 }
 
-type staticPermissionResolverInternal struct {
+type staticPermissionResolver struct {
 	ps *authz.PermissionSet
 }
 
-func (r staticPermissionResolverInternal) ResolvePermissions(_ context.Context, _ string) (*authz.PermissionSet, error) {
+func (r staticPermissionResolver) ResolvePermissions(_ context.Context, _ string) (*authz.PermissionSet, error) {
 	return r.ps, nil
 }
 
-func (r staticPermissionResolverInternal) ResolveApiKeyPermissions(_ context.Context, _ string) (*authz.PermissionSet, error) {
+func (r staticPermissionResolver) ResolveApiKeyPermissions(_ context.Context, _ string) (*authz.PermissionSet, error) {
 	return r.ps, nil
 }
 
@@ -624,10 +624,10 @@ func TestAuthMiddleware_ManagerAuthResolvesPermissionsByKeyKind(t *testing.T) {
 
 	t.Run("browser cookie uses owner role permissions", func(t *testing.T) {
 		ctx := t.Context()
-		db := setupAuthMiddlewareTestDBInternal(t)
+		db := setupAuthMiddlewareTestDB(t)
 		userSvc := user.NewUserService(db, nil, session.RevokeAllUserSessionsExceptInDB)
 		sessionSvc := session.NewSessionService(db)
-		settingsSvc, err := newSettingsServiceForAuthTestInternal(t, ctx, db)
+		settingsSvc, err := newSettingsServiceForAuthTest(t, ctx, db)
 		require.NoError(t, err)
 		authSvc := newTestAuthService()
 		authSvc.userService = userSvc
@@ -640,7 +640,7 @@ func TestAuthMiddleware_ManagerAuthResolvesPermissionsByKeyKind(t *testing.T) {
 		expiresAt := time.Now().Add(time.Hour)
 		browserSession, refreshJTI, err := sessionSvc.CreateSession(ctx, browserUser.ID, expiresAt, auth.SessionMeta{})
 		require.NoError(t, err)
-		tokenPair, err := authSvc.buildTokenPairInternal(ctx, browserUser, browserSession, refreshJTI)
+		tokenPair, err := authSvc.buildTokenPair(ctx, browserUser, browserSession, refreshJTI)
 		require.NoError(t, err)
 
 		router := echo.New()
