@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-	kit "go.getarcane.app/kit/pkg"
+	"go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/config"
@@ -72,6 +72,7 @@ func newConfigShowCmd() *cobra.Command {
 			}
 			output.Header("Previews")
 			output.KeyValue("allEnvironments", strconv.FormatBool(cfg.Previews.AllEnvironments))
+			output.KeyValue("newSelfUpdater", strconv.FormatBool(cfg.Previews.NewSelfUpdater))
 			output.Header("Pagination resources")
 			for _, resource := range types.KnownPaginatedResources {
 				limit := cfg.LimitFor(resource)
@@ -131,6 +132,7 @@ Examples:
 	arcane config set server-url http://localhost:3553
 	arcane config set api-key arc_xxxxxxxxxxxxx
 	arcane config set previews.allEnvironments true
+	arcane config set previews.newSelfUpdater true
 	arcane config set pagination.default.limit 25
 	arcane config set pagination.resources.images.limit 100
 	arcane config set server-url http://localhost:3553 api-key arc_xxxxxxxxxxxxx
@@ -443,13 +445,18 @@ func applyConfigSetArg(ctx context.Context, cfg *types.Config, key, value string
 		cfg.RefreshToken = ""
 		_, _ = fmt.Fprintf(w, "Set jwt_token = %s\n", maskAPIKey(value))
 		return nil
-	case "previews.allenvironments":
+	case "previews.allenvironments", "previews.newselfupdater":
+		name := kit.Ternary(normalized == "previews.allenvironments", "allEnvironments", "newSelfUpdater")
 		enabled, err := strconv.ParseBool(value)
 		if err != nil {
-			return fmt.Errorf("invalid previews.allEnvironments value %q (expected true or false)", value)
+			return fmt.Errorf("invalid previews.%s value %q (expected true or false)", name, value)
 		}
-		cfg.Previews.AllEnvironments = enabled
-		_, _ = fmt.Fprintf(w, "Set previews.allEnvironments = %t\n", enabled)
+		if normalized == "previews.allenvironments" {
+			cfg.Previews.AllEnvironments = enabled
+		} else {
+			cfg.Previews.NewSelfUpdater = enabled
+		}
+		_, _ = fmt.Fprintf(w, "Set previews.%s = %t\n", name, enabled)
 		return nil
 	case "environment", "default-environment", "default_environment":
 		cfg.DefaultEnvironment = value

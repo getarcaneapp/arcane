@@ -77,12 +77,13 @@ func NormalizePaginatedResource(resource string) string {
 	}
 }
 
-// Config holds the CLI configuration for connecting to an Arcane server.
 // PreviewsConfig contains optional CLI preview features.
 type PreviewsConfig struct {
 	AllEnvironments bool `yaml:"allEnvironments"`
+	NewSelfUpdater  bool `yaml:"newSelfUpdater"`
 }
 
+// Config holds the CLI configuration for connecting to an Arcane server.
 // It is persisted to disk as YAML and loaded on each CLI invocation.
 type Config struct {
 	// ServerURL is the base URL of the Arcane server (e.g., http://localhost:3552)

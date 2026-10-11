@@ -25,6 +25,7 @@ import (
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/config"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
+	"github.com/getarcaneapp/arcane/cli/v2/internal/selfupdate"
 )
 
 const (
@@ -32,9 +33,12 @@ const (
 	cliUpdateChannelStable = "stable"
 	cliUpdateHTTPTimeout   = 2 * time.Minute
 	maxCLIChecksumSize     = 1 * 1024 * 1024
+	maxCLIBundleSize       = 1 * 1024 * 1024
 	maxCLIDownloadSize     = 256 * 1024 * 1024
 	maxCLIExtractSize      = 128 * 1024 * 1024
 )
+
+var errCLIUpdateNotFound = errors.New("HTTP 404 Not Found")
 
 type cliUpdateOptions struct {
 	version, target string
@@ -42,16 +46,18 @@ type cliUpdateOptions struct {
 }
 
 type cliUpdatePlan struct {
-	Channel      string `json:"channel"`
-	Version      string `json:"version"`
-	ArtifactName string `json:"artifactName"`
-	ArtifactURL  string `json:"artifactUrl"`
-	ChecksumURL  string `json:"checksumUrl"`
-	ArtifactSHA  string `json:"artifactSha"`
-	ExpectedSHA  string `json:"expectedSha,omitempty"`
-	CurrentSHA   string `json:"currentSha"`
-	TargetPath   string `json:"targetPath"`
-	UpdateNeeded bool   `json:"updateNeeded"`
+	Channel           string `json:"channel"`
+	Version           string `json:"version"`
+	ArtifactName      string `json:"artifactName"`
+	ArtifactURL       string `json:"artifactUrl"`
+	ChecksumURL       string `json:"checksumUrl"`
+	BundleURL         string `json:"bundleUrl,omitempty"`
+	SignatureVerified bool   `json:"signatureVerified"`
+	ArtifactSHA       string `json:"artifactSha"`
+	ExpectedSHA       string `json:"expectedSha,omitempty"`
+	CurrentSHA        string `json:"currentSha"`
+	TargetPath        string `json:"targetPath"`
+	UpdateNeeded      bool   `json:"updateNeeded"`
 }
 
 type githubLatestRelease struct {
@@ -63,6 +69,12 @@ func Command() *cobra.Command {
 	var opts cliUpdateOptions
 	cmd := &cobra.Command{
 		Use: "self-update", Aliases: []string{"self", "cli"}, Short: "Update arcane-cli",
+		Long: `Update arcane-cli using the configured release channel.
+
+Enable Sigstore verification with arcane-cli config set previews.newSelfUpdater true.
+This preview fetches trust data from tuf-repo-cdn.sigstore.dev and caches it under
+the user cache directory at arcane-cli/sigstore, usable offline until expiry.
+Releases before v1.18.0 are unsigned. Valid signatures do not prevent replay of older releases.`,
 		Args: cobra.NoArgs, SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error { return opts.runCLIUpdate(cmd, "") },
 	}
@@ -157,6 +169,9 @@ func (opts cliUpdateOptions) runCLIUpdate(cmd *cobra.Command, overrideChannel st
 		output.KeyValue("Latest SHA", plan.ExpectedSHA)
 	}
 	output.KeyValue("Artifact SHA", plan.ArtifactSHA)
+	if plan.SignatureVerified {
+		output.KeyValue("Signature", "verified")
+	}
 
 	if !plan.UpdateNeeded {
 		output.Success("arcane-cli is already up to date")
@@ -181,11 +196,15 @@ func (opts cliUpdateOptions) buildCLIUpdatePlan(ctx context.Context, overrideCha
 		return nil, err
 	}
 
+	cfg, err := config.Load()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load config: %w", err)
+	}
 	channel := strings.ToLower(strings.TrimSpace(overrideChannel))
 	if channel == "" {
-		channel, err = configuredCLIUpdateChannel()
-		if err != nil {
-			return nil, err
+		channel = strings.ToLower(strings.TrimSpace(cfg.CLIUpdateChannel))
+		if channel != "" && channel != cliUpdateChannelNext && channel != cliUpdateChannelStable {
+			return nil, fmt.Errorf("invalid configured CLI update channel %q (expected stable or next)", cfg.CLIUpdateChannel)
 		}
 	}
 	if channel == "" {
@@ -201,13 +220,16 @@ func (opts cliUpdateOptions) buildCLIUpdatePlan(ctx context.Context, overrideCha
 	if err != nil {
 		return nil, err
 	}
-
-	var plan *cliUpdatePlan
-	if channel == cliUpdateChannelNext {
-		plan, err = opts.resolveNextCLIUpdate(ctx)
-	} else {
-		plan, err = opts.resolveStableCLIUpdate(ctx)
+	var verifier *selfupdate.Verifier
+	if cfg.Previews.NewSelfUpdater {
+		verifier, err = selfupdate.New(ctx)
+		if err != nil {
+			return nil, err
+		}
 	}
+
+	resolve := kit.Ternary(channel == cliUpdateChannelNext, opts.resolveNextCLIUpdate, opts.resolveStableCLIUpdate)
+	plan, err := resolve(ctx, verifier)
 	if err != nil {
 		return nil, err
 	}
@@ -216,21 +238,6 @@ func (opts cliUpdateOptions) buildCLIUpdatePlan(ctx context.Context, overrideCha
 	plan.CurrentSHA = currentSHA
 	plan.UpdateNeeded = cliUpdateNeeded(channel, currentSHA, plan.ExpectedSHA, plan.Version)
 	return plan, nil
-}
-
-func configuredCLIUpdateChannel() (string, error) {
-	cfg, err := config.Load()
-	if err != nil {
-		return "", fmt.Errorf("failed to load config: %w", err)
-	}
-	channel := strings.ToLower(strings.TrimSpace(cfg.CLIUpdateChannel))
-	if channel == "" {
-		return "", nil
-	}
-	if channel != cliUpdateChannelNext && channel != cliUpdateChannelStable {
-		return "", fmt.Errorf("invalid configured CLI update channel %q (expected stable or next)", cfg.CLIUpdateChannel)
-	}
-	return channel, nil
 }
 
 func (opts cliUpdateOptions) resolveCLIUpdateTarget() (string, error) {
@@ -251,7 +258,7 @@ func (opts cliUpdateOptions) resolveCLIUpdateTarget() (string, error) {
 	return filepath.EvalSymlinks(exe)
 }
 
-func (opts cliUpdateOptions) resolveNextCLIUpdate(ctx context.Context) (*cliUpdatePlan, error) {
+func (opts cliUpdateOptions) resolveNextCLIUpdate(ctx context.Context, verifier *selfupdate.Verifier) (*cliUpdatePlan, error) {
 	baseURL := strings.TrimSpace(config.CLINextBaseURL)
 	if baseURL == "" {
 		return nil, errors.New("next CLI update base URL is empty")
@@ -269,7 +276,7 @@ func (opts cliUpdateOptions) resolveNextCLIUpdate(ctx context.Context) (*cliUpda
 	opts.verboseCLIUpdate("next checksum URL: %s", checksumURL)
 	opts.verboseCLIUpdate("next checksum candidates: %s", artifactName+", "+platformName)
 
-	checksums, err := fetchText(ctx, checksumURL)
+	checksums, bundleURL, err := opts.fetchCLIChecksums(ctx, checksumURL, verifier)
 	if err != nil {
 		return nil, err
 	}
@@ -280,16 +287,18 @@ func (opts cliUpdateOptions) resolveNextCLIUpdate(ctx context.Context) (*cliUpda
 	}
 
 	return &cliUpdatePlan{
-		Version:      "next",
-		ArtifactName: artifactName,
-		ArtifactURL:  artifactURL,
-		ChecksumURL:  checksumURL,
-		ArtifactSHA:  expectedSHA,
-		ExpectedSHA:  expectedSHA,
+		Version:           "next",
+		ArtifactName:      artifactName,
+		ArtifactURL:       artifactURL,
+		ChecksumURL:       checksumURL,
+		BundleURL:         bundleURL,
+		SignatureVerified: verifier != nil,
+		ArtifactSHA:       expectedSHA,
+		ExpectedSHA:       expectedSHA,
 	}, nil
 }
 
-func (opts cliUpdateOptions) resolveStableCLIUpdate(ctx context.Context) (*cliUpdatePlan, error) {
+func (opts cliUpdateOptions) resolveStableCLIUpdate(ctx context.Context, verifier *selfupdate.Verifier) (*cliUpdatePlan, error) {
 	version := strings.TrimSpace(opts.version)
 	if version == "" {
 		latest, err := fetchLatestGitHubRelease(ctx)
@@ -321,7 +330,7 @@ func (opts cliUpdateOptions) resolveStableCLIUpdate(ctx context.Context) (*cliUp
 	opts.verboseCLIUpdate("stable checksum URL: %s", checksumURL)
 	opts.verboseCLIUpdate("stable checksum candidates: %s", artifactName)
 
-	checksums, err := fetchText(ctx, checksumURL)
+	checksums, bundleURL, err := opts.fetchCLIChecksums(ctx, checksumURL, verifier)
 	if err != nil {
 		return nil, err
 	}
@@ -332,11 +341,13 @@ func (opts cliUpdateOptions) resolveStableCLIUpdate(ctx context.Context) (*cliUp
 	}
 
 	return &cliUpdatePlan{
-		Version:      version,
-		ArtifactName: artifactName,
-		ArtifactURL:  artifactURL,
-		ChecksumURL:  checksumURL,
-		ArtifactSHA:  artifactSHA,
+		Version:           version,
+		ArtifactName:      artifactName,
+		ArtifactURL:       artifactURL,
+		ChecksumURL:       checksumURL,
+		BundleURL:         bundleURL,
+		SignatureVerified: verifier != nil,
+		ArtifactSHA:       artifactSHA,
 	}, nil
 }
 
@@ -529,31 +540,58 @@ func extractCLIFromTarGz(archivePath, outputPath string) error {
 	return errors.New("archive did not contain arcane-cli")
 }
 
-func fetchText(ctx context.Context, url string) (string, error) {
+func (opts cliUpdateOptions) fetchCLIChecksums(ctx context.Context, checksumURL string, verifier *selfupdate.Verifier) (string, string, error) {
+	checksums, err := fetchBytes(ctx, checksumURL, "text/plain", "checksum", maxCLIChecksumSize)
+	if err != nil {
+		return "", "", err
+	}
+	if verifier == nil {
+		return string(checksums), "", nil
+	}
+
+	bundleURL := checksumURL + ".sigstore.json"
+	opts.verboseCLIUpdate("checksum bundle URL: %s", bundleURL)
+	bundleJSON, err := fetchBytes(ctx, bundleURL, "application/json", "bundle", maxCLIBundleSize)
+	if errors.Is(err, errCLIUpdateNotFound) {
+		return "", "", fmt.Errorf("failed to fetch %s: releases before v1.18.0 are unsigned; run `arcane-cli config set previews.newSelfUpdater false` to install them", bundleURL)
+	}
+	if err != nil {
+		return "", "", err
+	}
+	if verifyErr := verifier.Verify(checksums, bundleJSON); verifyErr != nil {
+		return "", "", verifyErr
+	}
+	opts.verboseCLIUpdate("checksum signature verified: %s", bundleURL)
+	return string(checksums), bundleURL, nil
+}
+
+func fetchBytes(ctx context.Context, url, accept, kind string, limit int64) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	req.Header.Set("Accept", "text/plain")
+	req.Header.Set("Accept", accept)
 
 	client := &http.Client{Timeout: cliUpdateHTTPTimeout}
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("failed to fetch %s: %w", url, err)
+		return nil, fmt.Errorf("failed to fetch %s: %w", url, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, fmt.Errorf("failed to fetch %s: %w", url, errCLIUpdateNotFound)
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("failed to fetch %s: HTTP %s", url, resp.Status)
+		return nil, fmt.Errorf("failed to fetch %s: HTTP %s", url, resp.Status)
 	}
-	limitedBody := &io.LimitedReader{R: resp.Body, N: maxCLIChecksumSize + 1}
-	body, err := io.ReadAll(limitedBody)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
 	if err != nil {
-		return "", fmt.Errorf("failed to read %s: %w", url, err)
+		return nil, fmt.Errorf("failed to read %s: %w", url, err)
 	}
-	if len(body) > maxCLIChecksumSize {
-		return "", fmt.Errorf("failed to read %s: checksum response exceeds maximum size of %d bytes", url, maxCLIChecksumSize)
+	if int64(len(body)) > limit {
+		return nil, fmt.Errorf("failed to read %s: %s response exceeds maximum size of %d bytes", url, kind, limit)
 	}
-	return string(body), nil
+	return body, nil
 }
 
 func (opts cliUpdateOptions) downloadFile(ctx context.Context, url, outputPath string, jsonMode bool) error {

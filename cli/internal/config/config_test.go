@@ -54,6 +54,7 @@ func TestLoadReturnsDefaultsWhenFileMissing(t *testing.T) {
 		"ServerURL=%q, want %q", cfg.ServerURL, "http://localhost:3552")
 
 	require.False(t, cfg.Previews.AllEnvironments)
+	require.False(t, cfg.Previews.NewSelfUpdater)
 	require.Equal(t, "0", cfg.DefaultEnvironment,
 		"DefaultEnvironment=%q, want %q", cfg.DefaultEnvironment, "0")
 
@@ -79,6 +80,7 @@ func TestSaveAndLoadRoundTripPagination(t *testing.T) {
 
 			cfg := DefaultConfig()
 			cfg.Previews.AllEnvironments = true
+			cfg.Previews.NewSelfUpdater = true
 			cfg.APIKey = "k_test"
 			cfg.FederatedAudience = "audience_test"
 			cfg.CLIUpdateChannel = "next"
@@ -106,6 +108,7 @@ func TestSaveAndLoadRoundTripPagination(t *testing.T) {
 			require.NotContains(t, text, "GitOps:")
 
 			require.Contains(t, text, "previews:\n    allEnvironments: true")
+			require.Contains(t, text, "newSelfUpdater: true")
 			require.Contains(t, text, "pagination:",
 				"expected saved YAML to include pagination block:\n%s", text)
 
@@ -131,6 +134,7 @@ func TestSaveAndLoadRoundTripPagination(t *testing.T) {
 			cached, cacheErr := Load()
 			require.NoError(t, cacheErr)
 			require.True(t, cached.Previews.AllEnvironments)
+			require.True(t, cached.Previews.NewSelfUpdater)
 			require.Equal(t, "k_test", cached.APIKey)
 			require.Equal(t, 17, cached.LimitFor("images"))
 			require.Equal(t, 8, cached.LimitFor("gitops-syncs"))
@@ -160,6 +164,7 @@ func TestSaveAndLoadRoundTripPagination(t *testing.T) {
 			require.Equal(t, "next", loaded.CLIUpdateChannel,
 				"CLIUpdateChannel=%q, want next", loaded.CLIUpdateChannel)
 			require.True(t, loaded.Previews.AllEnvironments)
+			require.True(t, loaded.Previews.NewSelfUpdater)
 			require.Equal(t, "k_test", loaded.APIKey)
 			require.Equal(t, "audience_test", loaded.FederatedAudience)
 			require.Equal(t, 8, loaded.LimitFor("gitops-syncs"))
@@ -175,7 +180,7 @@ func TestSaveAndLoadRoundTripPagination(t *testing.T) {
 			}))
 			omittedRaw, omittedErr := os.ReadFile(path)
 			require.NoError(t, omittedErr)
-			require.Equal(t, "server_url: https://short.test\npreviews:\n    allEnvironments: false\n", string(omittedRaw))
+			require.Equal(t, "server_url: https://short.test\npreviews:\n    allEnvironments: false\n    newSelfUpdater: false\n", string(omittedRaw))
 			securedInfo, securedErr := os.Stat(path)
 			require.NoError(t, securedErr)
 			require.Equal(t, os.FileMode(0o600), securedInfo.Mode().Perm())

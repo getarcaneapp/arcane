@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"io"
 	"path/filepath"
 	"testing"
@@ -8,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/getarcaneapp/arcane/cli/v2/internal/config"
+	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
 )
 
@@ -21,6 +23,7 @@ func TestApplyConfigSetArgs(t *testing.T) {
 		"server-url", "http://localhost:3552",
 		"api-key", "arc_test_12345678",
 		"previews.allEnvironments", "true",
+		"previews.newSelfUpdater", "true",
 		"default-limit", "25",
 		"pagination.resources.images.limit", "100",
 		"resource-limit.volumes", "40",
@@ -39,6 +42,7 @@ func TestApplyConfigSetArgs(t *testing.T) {
 		"JWTToken = %q, want empty", cfg.JWTToken)
 
 	require.True(t, cfg.Previews.AllEnvironments)
+	require.True(t, cfg.Previews.NewSelfUpdater)
 	for _, value := range []string{"false", "true", "invalid"} {
 		setErr := applyConfigSetArg(t.Context(), cfg, "previews.allEnvironments", value, io.Discard)
 		if value == "invalid" {
@@ -48,6 +52,7 @@ func TestApplyConfigSetArgs(t *testing.T) {
 		require.NoError(t, setErr)
 		require.Equal(t, value == "true", cfg.Previews.AllEnvironments)
 	}
+	require.True(t, cfg.Previews.NewSelfUpdater)
 	require.Equal(t, 25, cfg.Pagination.Default.Limit,
 		"Pagination.Default.Limit = %d, want 25", cfg.Pagination.Default.Limit)
 	{
@@ -86,6 +91,38 @@ func TestApplyConfigSetArgs(t *testing.T) {
 		require.NoError(t, config.SwitchServer(t.Context(), loaded, "https://a.test"))
 		require.Equal(t, "saved_a", loaded.JWTToken)
 	}
+}
+
+func TestNewSelfUpdaterPreview(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "custom.yml")
+	t.Setenv("HOME", t.TempDir())
+	require.NoError(t, config.SetConfigPath(path))
+	t.Cleanup(func() { require.NoError(t, config.SetConfigPath("")) })
+	var stdout bytes.Buffer
+	output.Configure(&stdout, io.Discard, false, true, "")
+	t.Cleanup(func() { output.Configure(nil, nil, true, false, "") })
+	require.NoError(t, config.Save(t.Context(), &types.Config{Previews: types.PreviewsConfig{AllEnvironments: true}}))
+	for _, value := range []string{"true", "false"} {
+		stdout.Reset()
+		cmd := newConfigSetCmd()
+		cmd.SetArgs([]string{"previews.newSelfUpdater", value})
+		require.NoError(t, cmd.ExecuteContext(t.Context()))
+		require.Contains(t, stdout.String(), "Set previews.newSelfUpdater = "+value)
+		require.NoError(t, config.SetConfigPath(path))
+		loaded, err := config.Load()
+		require.NoError(t, err)
+		require.Equal(t, value == "true", loaded.Previews.NewSelfUpdater)
+		require.True(t, loaded.Previews.AllEnvironments)
+		stdout.Reset()
+		require.NoError(t, newConfigShowCmd().ExecuteContext(t.Context()))
+		require.Regexp(t, `(?m)^\s*newSelfUpdater\s+`+value+`\s*$`, stdout.String())
+	}
+	cfg, err := config.Load()
+	require.NoError(t, err)
+	require.ErrorContains(t, applyConfigSetArg(t.Context(), cfg, "previews.newSelfUpdater", "invalid", io.Discard), "invalid previews.newSelfUpdater")
+	require.False(t, cfg.Previews.NewSelfUpdater)
+	require.True(t, cfg.Previews.AllEnvironments)
+	require.Contains(t, newConfigSetCmd().Long, "arcane config set previews.newSelfUpdater true")
 }
 
 func TestApplyConfigSetArgs_OddArgs(t *testing.T) {
