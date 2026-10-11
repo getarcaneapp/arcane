@@ -25,6 +25,7 @@ import (
 	"github.com/italypaleale/francis/builtin/workflow"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
+	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
 	"github.com/opencontainers/go-digest"
 	"go.getarcane.app/docker"
@@ -429,11 +430,21 @@ func (s *Service) runPreparedUpgrade(ctx context.Context, prepared *preparedUpgr
 		}
 	}
 
+	var networkingConfig *network.NetworkingConfig
+	if networkMode != "" && networkMode.IsUserDefined() {
+		networkingConfig = &network.NetworkingConfig{
+			EndpointsConfig: map[string]*network.EndpointSettings{
+				string(networkMode): {Aliases: []string{"arcane-upgrader"}},
+			},
+		}
+	}
+
 	upgraderName := fmt.Sprintf("%s-upgrader-%d", prepared.containerName, time.Now().Unix())
 	resp, err := dockerClient.ContainerCreate(ctx, client.ContainerCreateOptions{
-		Config:     config,
-		HostConfig: hostConfig,
-		Name:       upgraderName,
+		Config:           config,
+		HostConfig:       hostConfig,
+		NetworkingConfig: networkingConfig,
+		Name:             upgraderName,
 	})
 	if err != nil {
 		return "", fmt.Errorf("create upgrader container: %w", err)
