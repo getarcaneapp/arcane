@@ -99,4 +99,8 @@ func TestService_RenderPruneReportEmailTemplate_IncludesEnvironment(t *testing.T
 	require.NoError(t, err)
 	require.Contains(t, htmlBody, "Cluster West")
 	require.Contains(t, textBody, "Cluster West")
+	for _, size := range []string{"3.6 GiB", "480.0 MiB", "2.3 GiB", "612.0 MiB", "219.5 MiB"} {
+		require.Contains(t, htmlBody, size)
+		require.Contains(t, textBody, size)
+	}
 }

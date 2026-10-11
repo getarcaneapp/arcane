@@ -1,17 +1,21 @@
 package output
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"sync"
 	"time"
 
 	"charm.land/bubbles/v2/progress"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/term"
-	"go.getarcane.app/sys/bytes"
+	"github.com/docker/go-units"
+	"go.getarcane.app/kit/pkg"
 )
 
 var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
@@ -50,51 +54,100 @@ type tracker struct {
 
 // StartTracker renders a checklist only for interactive text output.
 func StartTracker(ctx context.Context, out io.Writer, enabled bool, labels ...string) *tracker {
-	if out == nil {
-		out = io.Discard
-	}
-	t := &tracker{out: out, live: enabled && IsTerminal(out) && IsTerminal(Stdout()), current: -1}
+	out = cmp.Or(out, io.Discard)
+	t := &tracker{out: out, live: enabled && IsTerminal(out) && IsTerminal(Stdout()) && ctx.Err() == nil, current: -1}
 	for _, label := range labels {
 		t.steps = append(t.steps, trackerStep{label: label, status: stepPending})
 	}
-	if !t.live || ctx.Err() != nil {
-		t.live = false
+	if !t.live {
 		return t
 	}
+	fd, hasFD := t.out.(interface{ Fd() uintptr })
 	t.stop, t.done = make(chan struct{}), make(chan struct{})
 	t.resumeOuter = SuspendProgress()
 	trackersMu.Lock()
 	activeTrackers[t] = struct{}{}
 	trackersMu.Unlock()
-	go t.runInternal(ctx)
-	return t
-}
-
-func (t *tracker) runInternal(ctx context.Context) {
-	defer close(t.done)
-	defer func() {
-		t.mu.Lock()
-		defer t.mu.Unlock()
-		t.stopped = true
-		t.clearInternal()
-	}()
-	ticker := time.NewTicker(100 * time.Millisecond)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-t.stop:
-			return
-		case <-ticker.C:
+	go func() {
+		defer close(t.done)
+		defer func() {
+			t.mu.Lock()
+			defer t.mu.Unlock()
+			t.stopped = true
+			if t.drawn == 0 {
+				return
+			}
+			terminalMu.Lock()
+			defer terminalMu.Unlock()
+			_, _ = io.WriteString(t.out, strings.Repeat("\x1b[A\r\x1b[2K", t.drawn))
+			t.drawn = 0
+		}()
+		ticker := time.NewTicker(100 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.stop:
+				return
+			case <-ticker.C:
+			}
 			t.mu.Lock()
 			t.frame++
-			if t.paused == 0 {
-				t.drawInternal()
+			if t.paused > 0 {
+				t.mu.Unlock()
+				continue
 			}
+			width, height := 80, 24
+			if hasFD {
+				w, h, err := term.GetSize(fd.Fd())
+				width = max(kit.Ternary(err == nil, w, width), 1)
+				height = max(kit.Ternary(err == nil, h, height), 2)
+			}
+			var frame strings.Builder
+			frame.WriteString(kit.Ternary(t.drawn > 0, fmt.Sprintf("\x1b[%dA", t.drawn), ""))
+			start := max(len(t.steps)-max(height-2, 1), 0)
+			icons := [...]string{stepPending: "○", stepRunning: spinnerFrames[t.frame%len(spinnerFrames)], stepSucceeded: "✓", stepFailed: "✗"}
+			styles := [...]lipgloss.Style{stepPending: statusMutedStyle, stepRunning: infoStyle, stepSucceeded: successStyle, stepFailed: statusOfflineStyle}
+			for _, step := range t.steps[start:] {
+				line := "  " + renderForInternal(t.out, styles[step.status], icons[step.status]) + " " + renderForInternal(t.out, valueStyle, step.label)
+				if step.status == stepRunning && step.total > 0 {
+					current := min(step.current, step.total)
+					var count string
+					if step.bytes {
+						count = Bytes(current) + "/" + Bytes(step.total)
+					} else {
+						count = fmt.Sprintf("%d/%d", current, step.total)
+					}
+					barWidth := min(24, max(width-visibleWidthInternal(step.label)-len(count)-7, 1))
+					bar := progress.New(progress.WithWidth(barWidth), progress.WithColors(arcanePurple))
+					showColor := colorEnabledInternal()
+					bar.FullColor = kit.Ternary(showColor, bar.FullColor, nil)
+					bar.EmptyColor = kit.Ternary(showColor, bar.EmptyColor, nil)
+					bar.PercentageStyle = kit.Ternary(showColor, bar.PercentageStyle, tablePlainCell.UnsetPadding())
+					line = fmt.Sprintf("  %s %s %s", renderForInternal(t.out, infoStyle, step.label), bar.ViewAs(float64(current)/float64(step.total)), count)
+					if !showColor {
+						line = ansi.Strip(line)
+					}
+				}
+				frame.WriteString("\r\x1b[2K")
+				frame.WriteString(ansi.Truncate(line, width, "…"))
+				frame.WriteByte('\n')
+			}
+			// Erase rows left over after a terminal resize.
+			count := len(t.steps) - start
+			if extra := t.drawn - count; extra > 0 {
+				frame.WriteString(strings.Repeat("\r\x1b[2K\n", extra))
+				_, _ = fmt.Fprintf(&frame, "\x1b[%dA", extra)
+			}
+			t.drawn = count
+			terminalMu.Lock()
+			_, _ = io.WriteString(t.out, frame.String())
+			terminalMu.Unlock()
 			t.mu.Unlock()
 		}
-	}
+	}()
+	return t
 }
 
 // NextStep completes the active step and starts the next pending step.
@@ -114,16 +167,11 @@ func (t *tracker) NextStep() {
 func (t *tracker) SetProgress(key, label string, current, total int64, byteCount bool) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	index := -1
+	var index int
 	if key == "" && t.current >= 0 && t.current < len(t.steps) {
 		index = t.current
 	} else {
-		for i := range t.steps {
-			if t.steps[i].key == key {
-				index = i
-				break
-			}
-		}
+		index = slices.IndexFunc(t.steps, func(step trackerStep) bool { return step.key == key })
 	}
 	if index < 0 {
 		t.steps = append(t.steps, trackerStep{key: key})
@@ -174,7 +222,12 @@ func SuspendProgress() func() {
 	for _, t := range trackers {
 		t.mu.Lock()
 		t.paused++
-		t.clearInternal()
+		if t.drawn > 0 {
+			terminalMu.Lock()
+			_, _ = io.WriteString(t.out, strings.Repeat("\x1b[A\r\x1b[2K", t.drawn))
+			t.drawn = 0
+			terminalMu.Unlock()
+		}
 		t.mu.Unlock()
 	}
 	var once sync.Once
@@ -189,82 +242,14 @@ func SuspendProgress() func() {
 	}
 }
 
-func (t *tracker) clearInternal() {
-	if t.drawn == 0 {
-		return
-	}
-	terminalMu.Lock()
-	defer terminalMu.Unlock()
-	_, _ = io.WriteString(t.out, strings.Repeat("\x1b[A\r\x1b[2K", t.drawn))
-	t.drawn = 0
-}
-
-func (t *tracker) drawInternal() {
-	width := 80
-	height := 24
-	if fd, ok := t.out.(interface{ Fd() uintptr }); ok {
-		if w, h, err := term.GetSize(fd.Fd()); err == nil {
-			width, height = max(w, 1), max(h, 2)
-		}
-	}
-	var frame strings.Builder
-	if t.drawn > 0 {
-		_, _ = fmt.Fprintf(&frame, "\x1b[%dA", t.drawn)
-	}
-	start := max(len(t.steps)-max(height-2, 1), 0)
-	for _, step := range t.steps[start:] {
-		frame.WriteString("\r\x1b[2K")
-		frame.WriteString(ansi.Truncate(t.renderStepInternal(step, width), width, "…"))
-		frame.WriteByte('\n')
-	}
-	// Erase rows left over after a terminal resize.
-	count := len(t.steps) - start
-	for i := count; i < t.drawn; i++ {
-		frame.WriteString("\r\x1b[2K\n")
-	}
-	if t.drawn > count {
-		_, _ = fmt.Fprintf(&frame, "\x1b[%dA", t.drawn-count)
-	}
-	t.drawn = count
-	terminalMu.Lock()
-	defer terminalMu.Unlock()
-	_, _ = io.WriteString(t.out, frame.String())
-}
-
-func (t *tracker) renderStepInternal(step trackerStep, width int) string {
-	icon, style := "○", statusMutedStyle
-	switch step.status {
-	case stepRunning:
-		icon, style = spinnerFrames[t.frame%len(spinnerFrames)], infoStyle
-		if step.total > 0 {
-			current := min(step.current, step.total)
-			count := fmt.Sprintf("%d/%d", current, step.total)
-			if step.bytes {
-				count = Bytes(current) + "/" + Bytes(step.total)
-			}
-			barWidth := min(24, max(width-visibleWidthInternal(step.label)-len(count)-7, 1))
-			bar := progress.New(progress.WithWidth(barWidth), progress.WithColors(arcanePurple))
-			if !colorEnabledInternal() {
-				bar.FullColor = nil
-				bar.EmptyColor = nil
-				bar.PercentageStyle = tablePlainCell.UnsetPadding()
-			}
-			line := fmt.Sprintf("  %s %s %s", renderForInternal(t.out, infoStyle, step.label), bar.ViewAs(float64(current)/float64(step.total)), count)
-			if !colorEnabledInternal() {
-				return ansi.Strip(line)
-			}
-			return line
-		}
-	case stepSucceeded:
-		icon, style = "✓", successStyle
-	case stepFailed:
-		icon, style = "✗", warnStyle.Foreground(statusOffline)
-	}
-	return "  " + renderForInternal(t.out, style, icon) + " " + renderForInternal(t.out, valueStyle, step.label)
-}
-
 // Bytes renders a signed byte count in human-readable form.
-func Bytes(value int64) string { return bytes.Capacity(uint64(max(value, 0))).String() }
+func Bytes(value int64) string { return UnsignedBytes(uint64(max(value, 0))) }
 
 // UnsignedBytes renders an unsigned byte count in human-readable form.
-func UnsignedBytes(value uint64) string { return bytes.Capacity(value).String() }
+func UnsignedBytes(value uint64) string {
+	if value < units.KiB {
+		return fmt.Sprintf("%d B", value)
+	}
+
+	return units.CustomSize("%.1f %s", float64(value), units.KiB, []string{"B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB"})
+}

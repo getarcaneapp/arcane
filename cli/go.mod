@@ -13,6 +13,7 @@ require (
 	github.com/charmbracelet/colorprofile v0.4.3
 	github.com/charmbracelet/x/ansi v0.11.9
 	github.com/charmbracelet/x/term v0.2.2
+	github.com/docker/go-units v0.5.0
 	github.com/getarcaneapp/arcane/types/v2 v2.14.0
 	github.com/mattn/go-runewidth v0.0.31
 	github.com/muesli/cancelreader v0.2.2
@@ -22,7 +23,6 @@ require (
 	github.com/stretchr/testify v1.12.1
 	go.getarcane.app/acfs v0.6.2
 	go.getarcane.app/kit v0.4.0
-	go.getarcane.app/sys/bytes v0.3.0
 	go.yaml.in/yaml/v4 v4.0.0-rc.6
 )
 
@@ -44,7 +44,6 @@ require (
 	github.com/containerd/errdefs/pkg v0.3.0 // indirect
 	github.com/distribution/reference v0.6.0 // indirect
 	github.com/docker/go-connections v0.8.2 // indirect
-	github.com/docker/go-units v0.5.0 // indirect
 	github.com/felixge/httpsnoop v1.1.0 // indirect
 	github.com/go-logfmt/logfmt v0.6.1 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect

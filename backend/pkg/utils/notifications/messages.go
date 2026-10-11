@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"maps"
 	"slices"
-	"sort"
 	"strings"
 
+	"github.com/docker/go-units"
 	"github.com/getarcaneapp/arcane/types/v2/imageupdate"
 	"github.com/getarcaneapp/arcane/types/v2/system"
-	kit "go.getarcane.app/kit/pkg"
+	"go.getarcane.app/kit/pkg"
 )
 
 type MessageFormat string
@@ -23,7 +23,7 @@ const (
 	MessageFormatHTML         MessageFormat = "html"
 )
 
-func formatNotificationTitleInternal(format MessageFormat, title string) string {
+func formatNotificationTitle(format MessageFormat, title string) string {
 	switch format {
 	case MessageFormatPlain:
 		return title
@@ -38,7 +38,7 @@ func formatNotificationTitleInternal(format MessageFormat, title string) string 
 	}
 }
 
-func formatNotificationLabelInternal(format MessageFormat, label string) string {
+func formatNotificationLabel(format MessageFormat, label string) string {
 	switch format {
 	case MessageFormatPlain:
 		return label + ":"
@@ -53,7 +53,7 @@ func formatNotificationLabelInternal(format MessageFormat, label string) string 
 	}
 }
 
-func formatNotificationCodeInternal(format MessageFormat, value string) string {
+func formatNotificationCode(format MessageFormat, value string) string {
 	switch format {
 	case MessageFormatPlain:
 		return value
@@ -67,8 +67,32 @@ func formatNotificationCodeInternal(format MessageFormat, value string) string {
 }
 
 func BuildImageUpdateNotificationMessage(format MessageFormat, environmentName, imageRef string, updateInfo *imageupdate.Response) string {
+	var message strings.Builder
+
 	if format == MessageFormatNtfyMarkdown {
-		return buildNtfyImageUpdateNotificationMessageInternal(environmentName, imageRef, updateInfo)
+		fmt.Fprintf(&message, "🖥️ %s\n\n", environmentName)
+		fmt.Fprintf(&message, "📦 **%s**\n", imageRef)
+
+		if updateInfo == nil {
+			fmt.Fprintln(&message, "ℹ️ Update details unavailable")
+			return message.String()
+		}
+
+		if !updateInfo.HasUpdate {
+			fmt.Fprintln(&message, "✅ Already up to date")
+			return message.String()
+		}
+
+		current, latest := updateInfo.CurrentVersion, updateInfo.LatestVersion
+		if (updateInfo.UpdateType != "tag" || (current == "" && latest == "")) && (updateInfo.CurrentDigest != "" || updateInfo.LatestDigest != "") {
+			current = shortenNotificationDigest(updateInfo.CurrentDigest)
+			latest = shortenNotificationDigest(updateInfo.LatestDigest)
+		}
+		if !writeNtfyTransition(&message, current, latest, "") {
+			fmt.Fprintln(&message, "⚠️ Update available")
+		}
+
+		return message.String()
 	}
 
 	updateStatus := kit.Ternary(updateInfo != nil && updateInfo.HasUpdate, "Update Available", "No Update")
@@ -76,18 +100,17 @@ func BuildImageUpdateNotificationMessage(format MessageFormat, environmentName, 
 		updateStatus = "⚠️ Update Available"
 	}
 
-	var message strings.Builder
-	fmt.Fprintf(&message, "%s\n\n", formatNotificationTitleInternal(format, "🔔 Container Image Update Notification"))
-	fmt.Fprintf(&message, "%s %s\n", formatNotificationLabelInternal(format, "Environment"), environmentName)
-	fmt.Fprintf(&message, "%s %s\n", formatNotificationLabelInternal(format, "Image"), imageRef)
-	fmt.Fprintf(&message, "%s %s\n", formatNotificationLabelInternal(format, "Status"), updateStatus)
+	fmt.Fprintf(&message, "%s\n\n", formatNotificationTitle(format, "🔔 Container Image Update Notification"))
+	fmt.Fprintf(&message, "%s %s\n", formatNotificationLabel(format, "Environment"), environmentName)
+	fmt.Fprintf(&message, "%s %s\n", formatNotificationLabel(format, "Image"), imageRef)
+	fmt.Fprintf(&message, "%s %s\n", formatNotificationLabel(format, "Status"), updateStatus)
 	if updateInfo != nil {
-		fmt.Fprintf(&message, "%s %s\n", formatNotificationLabelInternal(format, "Update Type"), updateInfo.UpdateType)
+		fmt.Fprintf(&message, "%s %s\n", formatNotificationLabel(format, "Update Type"), updateInfo.UpdateType)
 		if updateInfo.CurrentDigest != "" {
-			fmt.Fprintf(&message, "%s %s\n", formatNotificationLabelInternal(format, "Current Digest"), formatNotificationCodeInternal(format, updateInfo.CurrentDigest))
+			fmt.Fprintf(&message, "%s %s\n", formatNotificationLabel(format, "Current Digest"), formatNotificationCode(format, updateInfo.CurrentDigest))
 		}
 		if updateInfo.LatestDigest != "" {
-			fmt.Fprintf(&message, "%s %s\n", formatNotificationLabelInternal(format, "Latest Digest"), formatNotificationCodeInternal(format, updateInfo.LatestDigest))
+			fmt.Fprintf(&message, "%s %s\n", formatNotificationLabel(format, "Latest Digest"), formatNotificationCode(format, updateInfo.LatestDigest))
 		}
 	}
 
@@ -95,32 +118,69 @@ func BuildImageUpdateNotificationMessage(format MessageFormat, environmentName, 
 }
 
 func BuildContainerUpdateNotificationMessage(format MessageFormat, environmentName, containerName, imageRef, oldDigest, newDigest string) string {
+	var message strings.Builder
+
 	if format == MessageFormatNtfyMarkdown {
-		return buildNtfyContainerUpdateNotificationMessageInternal(environmentName, containerName, imageRef, oldDigest, newDigest)
+		fmt.Fprintf(&message, "🖥️ %s\n\n", environmentName)
+		fmt.Fprintf(&message, "🐳 **%s**\n", containerName)
+		fmt.Fprintf(&message, "📦 `%s`\n", imageRef)
+
+		if !writeNtfyTransition(
+			&message,
+			shortenNotificationDigest(oldDigest),
+			shortenNotificationDigest(newDigest),
+			"",
+		) {
+			fmt.Fprintln(&message, "✅ Updated successfully")
+		}
+
+		return message.String()
 	}
 
 	status := kit.Ternary(format != MessageFormatPlain, "✅ Updated Successfully", "Updated Successfully")
 
-	var message strings.Builder
-	fmt.Fprintf(&message, "%s\n\n", formatNotificationTitleInternal(format, "✅ Container Successfully Updated"))
+	fmt.Fprintf(&message, "%s\n\n", formatNotificationTitle(format, "✅ Container Successfully Updated"))
 	fmt.Fprintf(&message, "Your container has been updated with the latest image version.\n\n")
-	fmt.Fprintf(&message, "%s %s\n", formatNotificationLabelInternal(format, "Environment"), environmentName)
-	fmt.Fprintf(&message, "%s %s\n", formatNotificationLabelInternal(format, "Container"), containerName)
-	fmt.Fprintf(&message, "%s %s\n", formatNotificationLabelInternal(format, "Image"), imageRef)
-	fmt.Fprintf(&message, "%s %s\n", formatNotificationLabelInternal(format, "Status"), status)
+	fmt.Fprintf(&message, "%s %s\n", formatNotificationLabel(format, "Environment"), environmentName)
+	fmt.Fprintf(&message, "%s %s\n", formatNotificationLabel(format, "Container"), containerName)
+	fmt.Fprintf(&message, "%s %s\n", formatNotificationLabel(format, "Image"), imageRef)
+	fmt.Fprintf(&message, "%s %s\n", formatNotificationLabel(format, "Status"), status)
 	if oldDigest != "" {
-		fmt.Fprintf(&message, "%s %s\n", formatNotificationLabelInternal(format, "Previous Version"), formatNotificationCodeInternal(format, oldDigest))
+		fmt.Fprintf(&message, "%s %s\n", formatNotificationLabel(format, "Previous Version"), formatNotificationCode(format, oldDigest))
 	}
 	if newDigest != "" {
-		fmt.Fprintf(&message, "%s %s\n", formatNotificationLabelInternal(format, "Current Version"), formatNotificationCodeInternal(format, newDigest))
+		fmt.Fprintf(&message, "%s %s\n", formatNotificationLabel(format, "Current Version"), formatNotificationCode(format, newDigest))
 	}
 
 	return message.String()
 }
 
 func BuildBatchImageUpdateNotificationMessage(format MessageFormat, environmentName string, updates map[string]*imageupdate.Response) string {
+	imageRefs := slices.Sorted(maps.Keys(updates))
+	var message strings.Builder
+
 	if format == MessageFormatNtfyMarkdown {
-		return buildNtfyBatchImageUpdateNotificationMessageInternal(environmentName, updates)
+		fmt.Fprintf(&message, "🖥️ %s\n", environmentName)
+
+		for _, imageRef := range imageRefs {
+			update := updates[imageRef]
+
+			fmt.Fprintf(&message, "\n📦 **%s**\n", imageRef)
+
+			var current, latest string
+			if update != nil {
+				current, latest = update.CurrentVersion, update.LatestVersion
+				if (update.UpdateType != "tag" || (current == "" && latest == "")) && (update.CurrentDigest != "" || update.LatestDigest != "") {
+					current = shortenNotificationDigest(update.CurrentDigest)
+					latest = shortenNotificationDigest(update.LatestDigest)
+				}
+			}
+			if !writeNtfyTransition(&message, current, latest, "   ") {
+				fmt.Fprintln(&message, "   ⚠️ Update available")
+			}
+		}
+
+		return message.String()
 	}
 
 	title := "Container Image Updates Available"
@@ -129,11 +189,8 @@ func BuildBatchImageUpdateNotificationMessage(format MessageFormat, environmentN
 		description = "1 container image has an update available."
 	}
 
-	imageRefs := slices.Sorted(maps.Keys(updates))
-
-	var message strings.Builder
-	fmt.Fprintf(&message, "%s\n\n%s\n", formatNotificationTitleInternal(format, title), description)
-	fmt.Fprintf(&message, "%s %s\n\n", formatNotificationLabelInternal(format, "Environment"), environmentName)
+	fmt.Fprintf(&message, "%s\n\n%s\n", formatNotificationTitle(format, title), description)
+	fmt.Fprintf(&message, "%s %s\n\n", formatNotificationLabel(format, "Environment"), environmentName)
 
 	for _, imageRef := range imageRefs {
 		update := updates[imageRef]
@@ -146,18 +203,18 @@ func BuildBatchImageUpdateNotificationMessage(format MessageFormat, environmentN
 		case MessageFormatMarkdown:
 			fmt.Fprintf(&message, "**%s**\n", imageRef)
 			fmt.Fprintf(&message, "• **Type:** %s\n", update.UpdateType)
-			fmt.Fprintf(&message, "• **Current:** %s\n", formatNotificationCodeInternal(format, update.CurrentDigest))
-			fmt.Fprintf(&message, "• **Latest:** %s\n\n", formatNotificationCodeInternal(format, update.LatestDigest))
+			fmt.Fprintf(&message, "• **Current:** %s\n", formatNotificationCode(format, update.CurrentDigest))
+			fmt.Fprintf(&message, "• **Latest:** %s\n\n", formatNotificationCode(format, update.LatestDigest))
 		case MessageFormatSlack:
 			fmt.Fprintf(&message, "*%s*\n", imageRef)
 			fmt.Fprintf(&message, "• *Type:* %s\n", update.UpdateType)
-			fmt.Fprintf(&message, "• *Current:* %s\n", formatNotificationCodeInternal(format, update.CurrentDigest))
-			fmt.Fprintf(&message, "• *Latest:* %s\n\n", formatNotificationCodeInternal(format, update.LatestDigest))
+			fmt.Fprintf(&message, "• *Current:* %s\n", formatNotificationCode(format, update.CurrentDigest))
+			fmt.Fprintf(&message, "• *Latest:* %s\n\n", formatNotificationCode(format, update.LatestDigest))
 		case MessageFormatHTML:
 			fmt.Fprintf(&message, "<b>%s</b>\n", imageRef)
 			fmt.Fprintf(&message, "• <b>Type:</b> %s\n", update.UpdateType)
-			fmt.Fprintf(&message, "• <b>Current:</b> %s\n", formatNotificationCodeInternal(format, update.CurrentDigest))
-			fmt.Fprintf(&message, "• <b>Latest:</b> %s\n\n", formatNotificationCodeInternal(format, update.LatestDigest))
+			fmt.Fprintf(&message, "• <b>Current:</b> %s\n", formatNotificationCode(format, update.CurrentDigest))
+			fmt.Fprintf(&message, "• <b>Latest:</b> %s\n\n", formatNotificationCode(format, update.LatestDigest))
 		}
 	}
 
@@ -174,8 +231,28 @@ type ContainerUpdateBatchEntry struct {
 
 // BuildBatchContainerUpdateNotificationMessage builds a formatted notification for a batch of container updates.
 func BuildBatchContainerUpdateNotificationMessage(format MessageFormat, environmentName string, entries []ContainerUpdateBatchEntry) string {
+	sorted := slices.Clone(entries)
+	slices.SortFunc(sorted, func(a, b ContainerUpdateBatchEntry) int { return strings.Compare(a.ContainerName, b.ContainerName) })
+	var message strings.Builder
+
 	if format == MessageFormatNtfyMarkdown {
-		return buildNtfyBatchContainerUpdateNotificationMessageInternal(environmentName, entries)
+		fmt.Fprintf(&message, "🖥️ %s\n", environmentName)
+
+		for _, entry := range sorted {
+			fmt.Fprintf(&message, "\n🐳 **%s**\n", entry.ContainerName)
+			fmt.Fprintf(&message, "   📦 `%s`\n", entry.ImageRef)
+
+			if !writeNtfyTransition(
+				&message,
+				shortenNotificationDigest(entry.OldDigest),
+				shortenNotificationDigest(entry.NewDigest),
+				"   ",
+			) {
+				fmt.Fprintln(&message, "   ✅ Updated successfully")
+			}
+		}
+
+		return message.String()
 	}
 
 	title := "Containers Updated"
@@ -185,13 +262,8 @@ func BuildBatchContainerUpdateNotificationMessage(format MessageFormat, environm
 		description = "1 container was updated."
 	}
 
-	sorted := make([]ContainerUpdateBatchEntry, len(entries))
-	copy(sorted, entries)
-	sort.Slice(sorted, func(i, j int) bool { return sorted[i].ContainerName < sorted[j].ContainerName })
-
-	var message strings.Builder
-	fmt.Fprintf(&message, "%s\n\n%s\n", formatNotificationTitleInternal(format, title), description)
-	fmt.Fprintf(&message, "%s %s\n\n", formatNotificationLabelInternal(format, "Environment"), environmentName)
+	fmt.Fprintf(&message, "%s\n\n%s\n", formatNotificationTitle(format, title), description)
+	fmt.Fprintf(&message, "%s %s\n\n", formatNotificationLabel(format, "Environment"), environmentName)
 
 	for _, entry := range sorted {
 		switch format {
@@ -206,10 +278,10 @@ func BuildBatchContainerUpdateNotificationMessage(format MessageFormat, environm
 		}
 		fmt.Fprintf(&message, "• Image: %s\n", entry.ImageRef)
 		if entry.OldDigest != "" {
-			fmt.Fprintf(&message, "• Previous Version: %s\n", formatNotificationCodeInternal(format, entry.OldDigest))
+			fmt.Fprintf(&message, "• Previous Version: %s\n", formatNotificationCode(format, entry.OldDigest))
 		}
 		if entry.NewDigest != "" {
-			fmt.Fprintf(&message, "• Current Version: %s\n\n", formatNotificationCodeInternal(format, entry.NewDigest))
+			fmt.Fprintf(&message, "• Current Version: %s\n\n", formatNotificationCode(format, entry.NewDigest))
 		} else {
 			fmt.Fprintf(&message, "\n")
 		}
@@ -219,50 +291,75 @@ func BuildBatchContainerUpdateNotificationMessage(format MessageFormat, environm
 }
 
 func BuildVulnerabilitySummaryNotificationMessage(format MessageFormat, environmentName, summaryLabel, overview, fixableCount, severityBreakdown, sampleCVEs string) string {
+	var message strings.Builder
+
 	if format == MessageFormatNtfyMarkdown {
-		return buildNtfyVulnerabilitySummaryNotificationMessageInternal(
-			environmentName,
-			summaryLabel,
-			overview,
-			fixableCount,
-			severityBreakdown,
-			sampleCVEs,
-		)
+		fmt.Fprintf(&message, "🖥️ %s\n", environmentName)
+
+		if strings.TrimSpace(summaryLabel) != "" {
+			fmt.Fprintf(&message, "\n📊 **%s**\n", summaryLabel)
+		}
+		if strings.TrimSpace(overview) != "" {
+			fmt.Fprintf(&message, "📦 %s\n", overview)
+		}
+		if strings.TrimSpace(fixableCount) != "" {
+			fmt.Fprintf(&message, "🛠️ %s\n", fixableCount)
+		}
+		if strings.TrimSpace(severityBreakdown) != "" {
+			severityItems := strings.Fields(severityBreakdown)
+			fmt.Fprintf(&message, "🚨 %s\n", strings.Join(severityItems, " • "))
+		}
+		if strings.TrimSpace(sampleCVEs) != "" {
+			fmt.Fprintf(&message, "🔎 `%s`\n", sampleCVEs)
+		}
+
+		return message.String()
 	}
 
-	var message strings.Builder
-	fmt.Fprintf(&message, "%s\n\n", formatNotificationTitleInternal(format, "📊 Daily Vulnerability Summary"))
+	fmt.Fprintf(&message, "%s\n\n", formatNotificationTitle(format, "📊 Daily Vulnerability Summary"))
 
 	if strings.TrimSpace(summaryLabel) != "" {
-		fmt.Fprintf(&message, "%s %s\n", formatNotificationLabelInternal(format, "Summary"), summaryLabel)
+		fmt.Fprintf(&message, "%s %s\n", formatNotificationLabel(format, "Summary"), summaryLabel)
 	}
-	fmt.Fprintf(&message, "%s %s\n", formatNotificationLabelInternal(format, "Environment"), environmentName)
+	fmt.Fprintf(&message, "%s %s\n", formatNotificationLabel(format, "Environment"), environmentName)
 	if strings.TrimSpace(overview) != "" {
-		fmt.Fprintf(&message, "%s %s\n", formatNotificationLabelInternal(format, "Overview"), overview)
+		fmt.Fprintf(&message, "%s %s\n", formatNotificationLabel(format, "Overview"), overview)
 	}
 	if strings.TrimSpace(fixableCount) != "" {
-		fmt.Fprintf(&message, "%s %s\n", formatNotificationLabelInternal(format, "Fixable Vulnerabilities"), fixableCount)
+		fmt.Fprintf(&message, "%s %s\n", formatNotificationLabel(format, "Fixable Vulnerabilities"), fixableCount)
 	}
 	if strings.TrimSpace(severityBreakdown) != "" {
-		fmt.Fprintf(&message, "%s %s\n", formatNotificationLabelInternal(format, "Severity Breakdown"), severityBreakdown)
+		fmt.Fprintf(&message, "%s %s\n", formatNotificationLabel(format, "Severity Breakdown"), severityBreakdown)
 	}
 	if strings.TrimSpace(sampleCVEs) != "" {
-		fmt.Fprintf(&message, "%s %s\n", formatNotificationLabelInternal(format, "Sample CVEs"), sampleCVEs)
+		fmt.Fprintf(&message, "%s %s\n", formatNotificationLabel(format, "Sample CVEs"), sampleCVEs)
 	}
 
 	return message.String()
 }
 
 func BuildPruneReportNotificationMessage(format MessageFormat, environmentName string, result *system.PruneAllResult) string {
+	var message strings.Builder
+
 	if format == MessageFormatNtfyMarkdown {
-		return buildNtfyPruneReportNotificationMessageInternal(environmentName, result)
+		fmt.Fprintf(&message, "🖥️ %s\n", environmentName)
+		fmt.Fprintf(
+			&message,
+			"💾 **%s** reclaimed\n\n",
+			FormatBytes(result.SpaceReclaimed),
+		)
+		fmt.Fprintf(&message, "📦 Images: %s\n", FormatBytes(result.ImageSpaceReclaimed))
+		fmt.Fprintf(&message, "🧱 Containers: %s\n", FormatBytes(result.ContainerSpaceReclaimed))
+		fmt.Fprintf(&message, "💿 Volumes: %s\n", FormatBytes(result.VolumeSpaceReclaimed))
+		fmt.Fprintf(&message, "🛠️ Build cache: %s\n", FormatBytes(result.BuildCacheSpaceReclaimed))
+
+		return message.String()
 	}
 
-	var message strings.Builder
-	fmt.Fprintf(&message, "%s\n\n", formatNotificationTitleInternal(format, "🧹 System Prune Report"))
-	fmt.Fprintf(&message, "%s %s\n", formatNotificationLabelInternal(format, "Environment"), environmentName)
-	fmt.Fprintf(&message, "%s %s\n\n", formatNotificationLabelInternal(format, "Total Space Reclaimed"), FormatBytes(result.SpaceReclaimed))
-	fmt.Fprintf(&message, "%s\n", formatNotificationLabelInternal(format, "Breakdown"))
+	fmt.Fprintf(&message, "%s\n\n", formatNotificationTitle(format, "🧹 System Prune Report"))
+	fmt.Fprintf(&message, "%s %s\n", formatNotificationLabel(format, "Environment"), environmentName)
+	fmt.Fprintf(&message, "%s %s\n\n", formatNotificationLabel(format, "Total Space Reclaimed"), FormatBytes(result.SpaceReclaimed))
+	fmt.Fprintf(&message, "%s\n", formatNotificationLabel(format, "Breakdown"))
 	fmt.Fprintf(&message, "- Containers: %s\n", FormatBytes(result.ContainerSpaceReclaimed))
 	fmt.Fprintf(&message, "- Images: %s\n", FormatBytes(result.ImageSpaceReclaimed))
 	fmt.Fprintf(&message, "- Volumes: %s\n", FormatBytes(result.VolumeSpaceReclaimed))
@@ -271,19 +368,25 @@ func BuildPruneReportNotificationMessage(format MessageFormat, environmentName s
 }
 
 func BuildAutoHealNotificationMessage(format MessageFormat, environmentName, containerName string) string {
+	var message strings.Builder
+
 	if format == MessageFormatNtfyMarkdown {
-		return buildNtfyAutoHealNotificationMessageInternal(environmentName, containerName)
+		fmt.Fprintf(&message, "🖥️ %s\n\n", environmentName)
+		fmt.Fprintf(&message, "🐳 **%s**\n", containerName)
+		fmt.Fprintln(&message, "🔄 Restarted automatically")
+		fmt.Fprintln(&message, "⚠️ Reason: container was unhealthy")
+
+		return message.String()
 	}
 
-	var message strings.Builder
-	fmt.Fprintf(&message, "%s\n\n", formatNotificationTitleInternal(format, "Auto Heal"))
-	fmt.Fprintf(&message, "%s %s\n", formatNotificationLabelInternal(format, "Environment"), environmentName)
-	fmt.Fprintf(&message, "%s %s\n", formatNotificationLabelInternal(format, "Container"), containerName)
-	fmt.Fprintf(&message, "%s Automatically restarted because it was unhealthy.\n", formatNotificationLabelInternal(format, "Status"))
+	fmt.Fprintf(&message, "%s\n\n", formatNotificationTitle(format, "Auto Heal"))
+	fmt.Fprintf(&message, "%s %s\n", formatNotificationLabel(format, "Environment"), environmentName)
+	fmt.Fprintf(&message, "%s %s\n", formatNotificationLabel(format, "Container"), containerName)
+	fmt.Fprintf(&message, "%s Automatically restarted because it was unhealthy.\n", formatNotificationLabel(format, "Status"))
 	return message.String()
 }
 
-func shortenNotificationDigestInternal(value string) string {
+func shortenNotificationDigest(value string) string {
 	trimmed := strings.TrimSpace(value)
 	algorithm, digest, found := strings.Cut(trimmed, ":")
 	if !found {
@@ -311,24 +414,7 @@ func shortenNotificationDigestInternal(value string) string {
 	return algorithm + ":" + digest[:6] + "..."
 }
 
-func ntfyUpdateTransitionInternal(update *imageupdate.Response) (string, string) {
-	if update == nil {
-		return "", ""
-	}
-
-	if update.UpdateType == "tag" && (update.CurrentVersion != "" || update.LatestVersion != "") {
-		return update.CurrentVersion, update.LatestVersion
-	}
-
-	if update.CurrentDigest != "" || update.LatestDigest != "" {
-		return shortenNotificationDigestInternal(update.CurrentDigest),
-			shortenNotificationDigestInternal(update.LatestDigest)
-	}
-
-	return update.CurrentVersion, update.LatestVersion
-}
-
-func writeNtfyTransitionInternal(message *strings.Builder, current, latest, indent string) bool {
+func writeNtfyTransition(message *strings.Builder, current, latest, indent string) bool {
 	if current == "" && latest == "" {
 		return false
 	}
@@ -351,211 +437,12 @@ func writeNtfyTransitionInternal(message *strings.Builder, current, latest, inde
 	return true
 }
 
-func byteMagnitudeInternal(bytes uint64) (float64, int) {
-	const unit = 1024
-	if bytes < unit {
-		return float64(bytes), -1
-	}
-
-	div, exp := uint64(unit), 0
-	for n := bytes / unit; n >= unit; n /= unit {
-		div *= unit
-		exp++
-	}
-
-	return float64(bytes) / float64(div), exp
-}
-
-func formatNtfyBytesInternal(bytes uint64) string {
-	value, exp := byteMagnitudeInternal(bytes)
-	if exp < 0 {
-		return fmt.Sprintf("%d B", bytes)
-	}
-
-	units := []string{"KiB", "MiB", "GiB", "TiB", "PiB", "EiB"}
-	return fmt.Sprintf("%.1f %s", value, units[exp])
-}
-
-func buildNtfyImageUpdateNotificationMessageInternal(
-	environmentName,
-	imageRef string,
-	updateInfo *imageupdate.Response,
-) string {
-	var message strings.Builder
-
-	fmt.Fprintf(&message, "🖥️ %s\n\n", environmentName)
-	fmt.Fprintf(&message, "📦 **%s**\n", imageRef)
-
-	if updateInfo == nil {
-		fmt.Fprintln(&message, "ℹ️ Update details unavailable")
-		return message.String()
-	}
-
-	if !updateInfo.HasUpdate {
-		fmt.Fprintln(&message, "✅ Already up to date")
-		return message.String()
-	}
-
-	current, latest := ntfyUpdateTransitionInternal(updateInfo)
-	if !writeNtfyTransitionInternal(&message, current, latest, "") {
-		fmt.Fprintln(&message, "⚠️ Update available")
-	}
-
-	return message.String()
-}
-
-func buildNtfyContainerUpdateNotificationMessageInternal(
-	environmentName,
-	containerName,
-	imageRef,
-	oldDigest,
-	newDigest string,
-) string {
-	var message strings.Builder
-
-	fmt.Fprintf(&message, "🖥️ %s\n\n", environmentName)
-	fmt.Fprintf(&message, "🐳 **%s**\n", containerName)
-	fmt.Fprintf(&message, "📦 `%s`\n", imageRef)
-
-	if !writeNtfyTransitionInternal(
-		&message,
-		shortenNotificationDigestInternal(oldDigest),
-		shortenNotificationDigestInternal(newDigest),
-		"",
-	) {
-		fmt.Fprintln(&message, "✅ Updated successfully")
-	}
-
-	return message.String()
-}
-
-func buildNtfyBatchImageUpdateNotificationMessageInternal(
-	environmentName string,
-	updates map[string]*imageupdate.Response,
-) string {
-	imageRefs := slices.Sorted(maps.Keys(updates))
-
-	var message strings.Builder
-	fmt.Fprintf(&message, "🖥️ %s\n", environmentName)
-
-	for _, imageRef := range imageRefs {
-		update := updates[imageRef]
-
-		fmt.Fprintf(&message, "\n📦 **%s**\n", imageRef)
-
-		current, latest := ntfyUpdateTransitionInternal(update)
-		if !writeNtfyTransitionInternal(&message, current, latest, "   ") {
-			fmt.Fprintln(&message, "   ⚠️ Update available")
-		}
-	}
-
-	return message.String()
-}
-
-func buildNtfyBatchContainerUpdateNotificationMessageInternal(
-	environmentName string,
-	entries []ContainerUpdateBatchEntry,
-) string {
-	sorted := make([]ContainerUpdateBatchEntry, len(entries))
-	copy(sorted, entries)
-
-	sort.Slice(sorted, func(i, j int) bool {
-		return sorted[i].ContainerName < sorted[j].ContainerName
-	})
-
-	var message strings.Builder
-	fmt.Fprintf(&message, "🖥️ %s\n", environmentName)
-
-	for _, entry := range sorted {
-		fmt.Fprintf(&message, "\n🐳 **%s**\n", entry.ContainerName)
-		fmt.Fprintf(&message, "   📦 `%s`\n", entry.ImageRef)
-
-		if !writeNtfyTransitionInternal(
-			&message,
-			shortenNotificationDigestInternal(entry.OldDigest),
-			shortenNotificationDigestInternal(entry.NewDigest),
-			"   ",
-		) {
-			fmt.Fprintln(&message, "   ✅ Updated successfully")
-		}
-	}
-
-	return message.String()
-}
-
-func buildNtfyVulnerabilitySummaryNotificationMessageInternal(
-	environmentName,
-	summaryLabel,
-	overview,
-	fixableCount,
-	severityBreakdown,
-	sampleCVEs string,
-) string {
-	var message strings.Builder
-
-	fmt.Fprintf(&message, "🖥️ %s\n", environmentName)
-
-	if strings.TrimSpace(summaryLabel) != "" {
-		fmt.Fprintf(&message, "\n📊 **%s**\n", summaryLabel)
-	}
-	if strings.TrimSpace(overview) != "" {
-		fmt.Fprintf(&message, "📦 %s\n", overview)
-	}
-	if strings.TrimSpace(fixableCount) != "" {
-		fmt.Fprintf(&message, "🛠️ %s\n", fixableCount)
-	}
-	if strings.TrimSpace(severityBreakdown) != "" {
-		severityItems := strings.Fields(severityBreakdown)
-		fmt.Fprintf(&message, "🚨 %s\n", strings.Join(severityItems, " • "))
-	}
-	if strings.TrimSpace(sampleCVEs) != "" {
-		fmt.Fprintf(&message, "🔎 `%s`\n", sampleCVEs)
-	}
-
-	return message.String()
-}
-
-func buildNtfyPruneReportNotificationMessageInternal(
-	environmentName string,
-	result *system.PruneAllResult,
-) string {
-	var message strings.Builder
-
-	fmt.Fprintf(&message, "🖥️ %s\n", environmentName)
-	fmt.Fprintf(
-		&message,
-		"💾 **%s** reclaimed\n\n",
-		formatNtfyBytesInternal(result.SpaceReclaimed),
-	)
-	fmt.Fprintf(&message, "📦 Images: %s\n", formatNtfyBytesInternal(result.ImageSpaceReclaimed))
-	fmt.Fprintf(&message, "🧱 Containers: %s\n", formatNtfyBytesInternal(result.ContainerSpaceReclaimed))
-	fmt.Fprintf(&message, "💿 Volumes: %s\n", formatNtfyBytesInternal(result.VolumeSpaceReclaimed))
-	fmt.Fprintf(&message, "🛠️ Build cache: %s\n", formatNtfyBytesInternal(result.BuildCacheSpaceReclaimed))
-
-	return message.String()
-}
-
-func buildNtfyAutoHealNotificationMessageInternal(
-	environmentName,
-	containerName string,
-) string {
-	var message strings.Builder
-
-	fmt.Fprintf(&message, "🖥️ %s\n\n", environmentName)
-	fmt.Fprintf(&message, "🐳 **%s**\n", containerName)
-	fmt.Fprintln(&message, "🔄 Restarted automatically")
-	fmt.Fprintln(&message, "⚠️ Reason: container was unhealthy")
-
-	return message.String()
-}
-
 func FormatBytes(bytes uint64) string {
-	value, exp := byteMagnitudeInternal(bytes)
-	if exp < 0 {
+	if bytes < units.KiB {
 		return fmt.Sprintf("%d B", bytes)
 	}
 
-	return fmt.Sprintf("%.1f %cB", value, "KMGTPE"[exp])
+	return units.CustomSize("%.1f %s", float64(bytes), units.KiB, []string{"B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB"})
 }
 
 func BuildEmailSubject(environmentName, subject string) string {
