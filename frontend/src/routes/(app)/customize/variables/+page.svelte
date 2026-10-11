@@ -6,6 +6,7 @@
 	import { ResourcePageLayout, type ActionButton } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { variableService } from '#lib/services/variable-service.js';
+	import { GLOBAL_SCOPE } from '#lib/types/auth.js';
 	import type {
 		GlobalVariable,
 		GlobalVariableCreateDto,
@@ -30,7 +31,7 @@
 	let variableToEdit = $state<GlobalVariable | null>(null);
 	let isSubmitting = $state(false);
 
-	const canManageVariables = $derived(hasPermission('templates:update'));
+	const canCreateVariables = $derived(hasPermission('variables:create', GLOBAL_SCOPE));
 
 	function reportSyncResults(results?: VariableEnvSyncResult[]) {
 		const failed = results?.filter((result) => result.status === 'error') ?? [];
@@ -131,7 +132,7 @@
 	}
 
 	const actionButtons = $derived<ActionButton[]>(
-		canManageVariables
+		canCreateVariables
 			? [
 					{
 						id: 'create',
