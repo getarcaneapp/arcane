@@ -103,13 +103,13 @@ func newLoginCmd() *cobra.Command {
 			cfg.JWTToken = tokenResult.Token
 			cfg.RefreshToken = tokenResult.RefreshToken
 			cfg.APIKey = ""
-			if saveErr := config.Save(cfg); saveErr != nil {
+			if saveErr := config.SaveTokens(cmd.Context(), cfg); saveErr != nil {
 				return fmt.Errorf("failed to save token: %w", saveErr)
 			}
 
 			output.Success("Login successful")
-			path, _ := config.ConfigPath()
-			output.KeyValue("JWT token saved to config", path)
+			path, _ := config.AuthPath()
+			output.KeyValue("Session saved to", path)
 			return nil
 		},
 	}
@@ -137,9 +137,7 @@ func newLogoutCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("failed to load config: %w", err)
 			}
-			cfg.JWTToken = ""
-			cfg.RefreshToken = ""
-			if saveErr := config.Save(cfg); saveErr != nil {
+			if saveErr := config.ClearTokens(cmd.Context(), cfg); saveErr != nil {
 				return fmt.Errorf("failed to clear token: %w", saveErr)
 			}
 
@@ -268,12 +266,12 @@ func newRefreshCmd() *cobra.Command {
 					cfg.JWTToken = data.Token
 					cfg.APIKey = ""
 					cfg.RefreshToken = cmp.Or(data.RefreshToken, cfg.RefreshToken)
-					if saveErr := config.Save(cfg); saveErr != nil {
+					if saveErr := config.SaveTokens(cmd.Context(), cfg); saveErr != nil {
 						return fmt.Errorf("failed to save token: %w", saveErr)
 					}
 					output.Success("Token refreshed successfully")
-					path, _ := config.ConfigPath()
-					output.KeyValue("New JWT token saved to config", path)
+					path, _ := config.AuthPath()
+					output.KeyValue("Session saved to", path)
 					return nil
 				},
 			})

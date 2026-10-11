@@ -89,9 +89,10 @@ type Config struct {
 	ServerURL string `yaml:"server_url"`
 	// APIKey is the API key for authentication (sent as X-API-KEY)
 	APIKey string `yaml:"api_key,omitempty"`
-	// JWTToken is the JWT access token for authentication (sent as Authorization: Bearer)
+	// JWTToken is the access token sent as Authorization: Bearer. It is saved in auth.json;
+	// the config file key is only read as a fallback until v3.
 	JWTToken string `yaml:"jwt_token,omitempty"`
-	// RefreshToken is the refresh token for obtaining new access tokens
+	// RefreshToken obtains new access tokens. Saved and read like JWTToken.
 	RefreshToken string `yaml:"refresh_token,omitempty"`
 	// Previews contains optional CLI preview features.
 	Previews PreviewsConfig `yaml:"previews"`

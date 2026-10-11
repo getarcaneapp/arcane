@@ -456,7 +456,7 @@ func (c *Client) refreshAccessToken(ctx context.Context) error {
 	cfg.JWTToken = result.Data.Token
 	cfg.APIKey = ""
 	cfg.RefreshToken = newRefresh
-	if saveErr := config.Save(cfg); saveErr != nil {
+	if saveErr := config.SaveTokens(ctx, cfg); saveErr != nil {
 		return fmt.Errorf("failed to save refreshed token: %w", saveErr)
 	}
 

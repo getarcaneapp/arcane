@@ -134,7 +134,8 @@ func newCreateCmd() *cobra.Command {
 				Path:           types.FederatedCredentials(),
 				FailureMessage: "failed to create federated credential",
 				Body: federated.CreateFederatedCredential{
-					Name:            opts.name,
+					Name: opts.name,
+					// TODO(v3): drop the deprecated flag handling.
 					Enabled:         !opts.disabled,
 					IssuerURL:       opts.issuerURL,
 					Audiences:       opts.audiences,
@@ -198,6 +199,7 @@ func newUpdateCmd() *cobra.Command {
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		PreRunE: func(cmd *cobra.Command, _ []string) error {
+			// TODO(v3): drop the deprecated flag handling.
 			return cmdutil.ExclusiveFlags(cmd, "enabled", "disabled")
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -223,8 +225,9 @@ func newUpdateCmd() *cobra.Command {
 				Path:           types.FederatedCredential(args[0]),
 				FailureMessage: "failed to update federated credential",
 				Body: federated.UpdateFederatedCredential{
-					Name:            kit.Ternary(cmd.Flags().Changed("name"), &opts.name, nil),
-					Description:     kit.Ternary(cmd.Flags().Changed("description"), &opts.description, nil),
+					Name:        kit.Ternary(cmd.Flags().Changed("name"), &opts.name, nil),
+					Description: kit.Ternary(cmd.Flags().Changed("description"), &opts.description, nil),
+					// TODO(v3): drop the deprecated flag handling.
 					Enabled:         kit.Ternary(cmd.Flags().Changed("enabled") || cmd.Flags().Changed("disabled"), new(opts.enabled && !opts.disabled), nil),
 					IssuerURL:       kit.Ternary(cmd.Flags().Changed("issuer-url"), &opts.issuerURL, nil),
 					Audiences:       kit.Ternary(cmd.Flags().Changed("audience"), opts.audiences, nil),
@@ -248,6 +251,7 @@ func newUpdateCmd() *cobra.Command {
 	command.Flags().StringVar(&opts.description, "description", "", "New description")
 	command.Flags().BoolVar(&opts.enabled, "enabled", false, "Enable the trust rule")
 	command.Flags().BoolVar(&opts.disabled, "disabled", false, "Disable the trust rule")
+	// TODO(v3): remove the deprecated --disabled flag.
 	_ = command.Flags().MarkDeprecated("disabled", "use --enabled=false")
 	command.Flags().StringVar(&opts.issuerURL, "issuer-url", "", "New issuer URL")
 	command.Flags().StringArrayVar(&opts.audiences, "audience", nil, "Replace allowed audiences (repeatable)")

@@ -147,6 +147,7 @@ func newSettingsSetCmd() *cobra.Command {
 			if cmd.Flags().Changed("enabled") {
 				req.Enabled = opts.enabled
 			}
+			// TODO(v3): drop the deprecated flag handling.
 			if cmd.Flags().Changed("provider-config") || cmd.Flags().Changed("config") {
 				configFlag := "--config"
 				if cmd.Flags().Changed("provider-config") {
@@ -197,6 +198,7 @@ func newSettingsSetCmd() *cobra.Command {
 	command.Flags().BoolVar(&opts.enabled, "enabled", false, "Enable the provider")
 	command.Flags().StringVar(&opts.config, "provider-config", "", "Provider configuration as a JSON object")
 	command.Flags().StringVar(&opts.config, "config", "", "Provider configuration as a JSON object")
+	// TODO(v3): remove the deprecated --config flag.
 	_ = command.Flags().MarkDeprecated("config", "use --provider-config")
 	command.Flags().StringVar(&opts.file, "file", "", "Path to a JSON file with provider, enabled, and config fields")
 	return command

@@ -1,9 +1,11 @@
 package config
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -15,6 +17,9 @@ import (
 func setTempConfigPath(t *testing.T) string {
 	t.Helper()
 
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	path := filepath.Join(t.TempDir(), "arcanecli.yml")
 	{
 		err := SetConfigPath(path)
@@ -75,8 +80,6 @@ func TestSaveAndLoadRoundTripPagination(t *testing.T) {
 			cfg := DefaultConfig()
 			cfg.Previews.AllEnvironments = true
 			cfg.APIKey = "k_test"
-			cfg.JWTToken = "jwt_test"
-			cfg.RefreshToken = "refresh_test"
 			cfg.FederatedAudience = "audience_test"
 			cfg.CLIUpdateChannel = "next"
 			cfg.SetDefaultLimit(42)
@@ -87,7 +90,7 @@ func TestSaveAndLoadRoundTripPagination(t *testing.T) {
 			cfg.Pagination.Resources["volumes"] = types.PaginationResourceConfig{Limit: -1}
 			{
 
-				err := Save(cfg)
+				err := Save(t.Context(), cfg)
 				require.NoError(t, err,
 					"Save() failed: %v", err)
 			}
@@ -158,8 +161,6 @@ func TestSaveAndLoadRoundTripPagination(t *testing.T) {
 				"CLIUpdateChannel=%q, want next", loaded.CLIUpdateChannel)
 			require.True(t, loaded.Previews.AllEnvironments)
 			require.Equal(t, "k_test", loaded.APIKey)
-			require.Equal(t, "jwt_test", loaded.JWTToken)
-			require.Equal(t, "refresh_test", loaded.RefreshToken)
 			require.Equal(t, "audience_test", loaded.FederatedAudience)
 			require.Equal(t, 8, loaded.LimitFor("gitops-syncs"))
 			loaded.SetResourceLimit("images", 101)
@@ -168,7 +169,7 @@ func TestSaveAndLoadRoundTripPagination(t *testing.T) {
 			require.Equal(t, 17, reloaded.LimitFor("images"))
 
 			require.NoError(t, os.Chmod(path, 0o644))
-			require.NoError(t, Save(&types.Config{
+			require.NoError(t, Save(t.Context(), &types.Config{
 				ServerURL:  "https://short.test",
 				Pagination: types.PaginationConfig{Default: types.PaginationResourceConfig{Limit: -1}},
 			}))
@@ -336,7 +337,7 @@ func TestInitDefaultFileCreatesTemplate(t *testing.T) {
 	require.Contains(t, text, "previews:\n    allEnvironments: false")
 	var values map[string]any
 	require.NoError(t, yaml.Unmarshal(raw, &values))
-	for _, key := range []string{"api_key", "jwt_token", "refresh_token", "federated_audience"} {
+	for _, key := range []string{"api_key", "federated_audience"} {
 		require.Contains(t, values, key)
 		require.Empty(t, values[key])
 	}
@@ -351,8 +352,6 @@ func TestInitDefaultFileCreatesTemplate(t *testing.T) {
 	requiredKeys := []string{
 		"server_url:",
 		"api_key:",
-		"jwt_token:",
-		"refresh_token:",
 		"default_environment:",
 		"log_level:",
 		"pagination:",
@@ -511,4 +510,139 @@ func TestBackupFileRotatesExistingBak(t *testing.T) {
 
 	require.NotEmpty(t, rotated,
 		"expected rotated backup matching %q", backupPath+".*")
+}
+
+func TestAuthTokens(t *testing.T) {
+	path := setTempConfigPath(t)
+	require.NoError(t, os.WriteFile(path, []byte("server_url: https://a.test\njwt_token: legacy_jwt\nrefresh_token: legacy_refresh\n"), 0o600))
+
+	legacy, err := Load()
+	require.NoError(t, err)
+	require.Equal(t, "legacy_jwt", legacy.JWTToken)
+
+	legacy.DefaultEnvironment = "1"
+	require.NoError(t, Save(t.Context(), legacy))
+	loadedLegacy, err := Load()
+	require.NoError(t, err)
+	require.Equal(t, "legacy_jwt", loadedLegacy.JWTToken)
+	require.Equal(t, "legacy_refresh", loadedLegacy.RefreshToken)
+
+	require.NoError(t, SaveTokens(t.Context(), legacy))
+	require.NoError(t, SwitchServer(t.Context(), legacy, "https://b.test/"))
+	require.Empty(t, legacy.JWTToken)
+	require.NoError(t, Save(t.Context(), legacy))
+	raw, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.NotContains(t, string(raw), "legacy_")
+
+	authPath, err := AuthPath()
+	require.NoError(t, err)
+	info, err := os.Stat(authPath)
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+
+	legacy.JWTToken, legacy.RefreshToken = "b_jwt", "b_refresh"
+	require.NoError(t, SaveTokens(t.Context(), legacy))
+	require.NoError(t, SwitchServer(t.Context(), legacy, "https://a.test"))
+	require.Equal(t, "legacy_jwt", legacy.JWTToken)
+	require.Equal(t, "legacy_refresh", legacy.RefreshToken)
+
+	apiKeyConfig := &types.Config{ServerURL: "https://a.test", APIKey: "arc_key"}
+	require.NoError(t, Save(t.Context(), apiKeyConfig))
+	invalidateCache()
+	loaded, err := Load()
+	require.NoError(t, err)
+	require.Equal(t, "arc_key", loaded.APIKey)
+	require.Empty(t, loaded.JWTToken)
+	auth, err := loadAuth()
+	require.NoError(t, err)
+	require.Len(t, auth, 2)
+
+	stale := legacy.Clone()
+	refreshed := legacy.Clone()
+	refreshed.JWTToken, refreshed.RefreshToken = "refreshed_jwt", "refreshed_refresh"
+	require.NoError(t, SaveTokens(t.Context(), refreshed))
+	waitingPath := path + ".waiting"
+	require.NoError(t, SetConfigPath(waitingPath))
+	stale.DefaultEnvironment = "2"
+	require.NoError(t, Save(t.Context(), stale))
+	auth, err = loadAuth()
+	require.NoError(t, err)
+	require.Equal(t, "refreshed_jwt", auth["https://a.test"].AccessToken)
+	require.Equal(t, "refreshed_refresh", auth["https://a.test"].RefreshToken)
+	loaded, err = Load()
+	require.NoError(t, err)
+	require.Equal(t, "refreshed_jwt", loaded.JWTToken)
+	require.Equal(t, "2", loaded.DefaultEnvironment)
+
+	require.NoError(t, SetConfigPath(path))
+	require.NoError(t, ClearTokens(t.Context(), apiKeyConfig))
+	require.Equal(t, "arc_key", apiKeyConfig.APIKey)
+	require.NoError(t, SetConfigPath(waitingPath))
+	require.NoError(t, Save(t.Context(), stale))
+	loaded, err = Load()
+	require.NoError(t, err)
+	require.Empty(t, loaded.JWTToken)
+	require.Empty(t, loaded.RefreshToken)
+	auth, err = loadAuth()
+	require.NoError(t, err)
+	require.NotContains(t, auth, "https://a.test")
+	require.Equal(t, "b_jwt", auth["https://b.test"].AccessToken)
+	require.NoError(t, os.WriteFile(path+".session", []byte("server_url: https://a.test\n"), 0o600))
+	require.NoError(t, SetConfigPath(path+".session"))
+	loaded, err = Load()
+	require.NoError(t, err)
+	require.Empty(t, loaded.JWTToken)
+	require.Empty(t, loaded.RefreshToken)
+	require.NoError(t, SetConfigPath(path))
+
+	for _, serverURL := range []string{"https://a.test", "https://b.test"} {
+		require.NoError(t, ClearTokens(t.Context(), &types.Config{ServerURL: serverURL}))
+	}
+	_, statErr := os.Stat(authPath)
+	require.ErrorIs(t, statErr, os.ErrNotExist)
+
+	require.NoError(t, os.MkdirAll(filepath.Dir(authPath), 0o700))
+	require.NoError(t, os.WriteFile(authPath, []byte("null"), 0o600))
+	require.NoError(t, SaveTokens(t.Context(), &types.Config{ServerURL: "https://a.test", JWTToken: "jwt"}))
+
+	require.NoError(t, os.WriteFile(authPath, []byte("{broken"), 0o600))
+	require.NoError(t, Save(t.Context(), stale))
+	require.ErrorContains(t, SaveTokens(t.Context(), &types.Config{ServerURL: "https://a.test", JWTToken: "jwt"}), "config backup --auth")
+	backupPath, moved, err := BackupAuthFile(t.Context())
+	require.NoError(t, err)
+	require.True(t, moved)
+	require.FileExists(t, backupPath)
+	require.NoError(t, SaveTokens(t.Context(), &types.Config{ServerURL: "https://a.test", JWTToken: "jwt"}))
+
+	before, err := os.ReadFile(authPath)
+	require.NoError(t, err)
+	unlock, err := lockAuth(t.Context())
+	require.NoError(t, err)
+	defer func() { assert.NoError(t, unlock()) }()
+	require.NoError(t, Save(t.Context(), stale))
+	require.NoError(t, SwitchServer(t.Context(), stale, "https://b.test"))
+	for _, operation := range []struct {
+		name string
+		run  func(context.Context) error
+	}{
+		{name: "save", run: func(ctx context.Context) error {
+			return SaveTokens(ctx, &types.Config{ServerURL: "https://a.test", JWTToken: "changed"})
+		}},
+		{name: "backup", run: func(ctx context.Context) error {
+			_, _, backupErr := BackupAuthFile(ctx)
+			return backupErr
+		}},
+		{name: "clear tokens", run: func(ctx context.Context) error {
+			return ClearTokens(ctx, &types.Config{ServerURL: "https://a.test", APIKey: "arc_key"})
+		}},
+	} {
+		ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+		operationErr := operation.run(ctx)
+		cancel()
+		require.ErrorIs(t, operationErr, context.DeadlineExceeded, operation.name)
+	}
+	after, err := os.ReadFile(authPath)
+	require.NoError(t, err)
+	require.Equal(t, before, after)
 }

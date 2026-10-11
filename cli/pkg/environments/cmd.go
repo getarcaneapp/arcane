@@ -227,7 +227,7 @@ func newSwitchCmd() *cobra.Command {
 			}
 
 			cfg.DefaultEnvironment = selected.ID
-			if saveErr := config.Save(cfg); saveErr != nil {
+			if saveErr := config.Save(cmd.Context(), cfg); saveErr != nil {
 				return fmt.Errorf("failed to save config: %w", saveErr)
 			}
 
@@ -254,6 +254,7 @@ func newUpdateCmd() *cobra.Command {
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		PreRunE: func(cmd *cobra.Command, _ []string) error {
+			// TODO(v3): drop the deprecated flag handling.
 			return cmdutil.ExclusiveFlags(cmd, "enabled", "disabled")
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -262,10 +263,12 @@ func newUpdateCmd() *cobra.Command {
 				return err
 			}
 
+			// TODO(v3): drop the deprecated flag handling.
 			enabled := cmd.Flags().Changed("enabled") && opts.enabled || cmd.Flags().Changed("disabled") && !opts.disabled
 			req := environment.Update{
-				Name:    kit.Ternary(cmd.Flags().Changed("name"), &opts.name, nil),
-				ApiUrl:  kit.Ternary(cmd.Flags().Changed("api-url"), &opts.apiUrl, nil),
+				Name:   kit.Ternary(cmd.Flags().Changed("name"), &opts.name, nil),
+				ApiUrl: kit.Ternary(cmd.Flags().Changed("api-url"), &opts.apiUrl, nil),
+				// TODO(v3): drop the deprecated flag handling.
 				Enabled: kit.Ternary(cmd.Flags().Changed("enabled") || cmd.Flags().Changed("disabled"), &enabled, nil),
 			}
 
@@ -289,6 +292,7 @@ func newUpdateCmd() *cobra.Command {
 	command.Flags().StringVar(&opts.apiUrl, "api-url", "", "API URL")
 	command.Flags().BoolVar(&opts.enabled, "enabled", false, "Enable environment")
 	command.Flags().BoolVar(&opts.disabled, "disabled", false, "Disable environment")
+	// TODO(v3): remove the deprecated --disabled flag.
 	_ = command.Flags().MarkDeprecated("disabled", "use --enabled=false")
 	return command
 }
@@ -309,6 +313,7 @@ func newCreateCmd() *cobra.Command {
 		Args:         cobra.NoArgs,
 		SilenceUsage: true,
 		PreRunE: func(cmd *cobra.Command, _ []string) error {
+			// TODO(v3): drop the deprecated flag handling.
 			return cmdutil.ExclusiveFlags(cmd, "enabled", "disabled")
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -323,7 +328,8 @@ func newCreateCmd() *cobra.Command {
 				AccessToken: kit.Ternary(cmd.Flags().Changed("access-token"), &opts.accessToken, nil),
 				UseApiKey:   kit.Ternary(cmd.Flags().Changed("use-api-key"), &opts.useApiKey, nil),
 				IsEdge:      kit.Ternary(cmd.Flags().Changed("edge"), &opts.edge, nil),
-				Enabled:     kit.Ternary(cmd.Flags().Changed("enabled") || cmd.Flags().Changed("disabled"), new(opts.enabled && !opts.disabled), nil),
+				// TODO(v3): drop the deprecated flag handling.
+				Enabled: kit.Ternary(cmd.Flags().Changed("enabled") || cmd.Flags().Changed("disabled"), new(opts.enabled && !opts.disabled), nil),
 			}
 
 			return cmdutil.Run(cmd, c, cmdutil.Spec[environment.Environment]{
@@ -353,6 +359,7 @@ func newCreateCmd() *cobra.Command {
 	command.Flags().BoolVar(&opts.edge, "edge", false, "Create as an edge environment")
 	command.Flags().BoolVar(&opts.enabled, "enabled", true, "Enable environment")
 	command.Flags().BoolVar(&opts.disabled, "disabled", false, "Create environment in disabled state")
+	// TODO(v3): remove the deprecated --disabled flag.
 	_ = command.Flags().MarkDeprecated("disabled", "use --enabled=false")
 	_ = command.MarkFlagRequired("api-url")
 	return command

@@ -22,6 +22,9 @@ func WriteConfig(t *testing.T, serverURL string, preview ...bool) string {
 	t.Helper()
 
 	tempDir := t.TempDir()
+	// Keep commands away from the developer's ~/.arcanecli/auth.json.
+	t.Setenv("HOME", tempDir)
+	t.Setenv("USERPROFILE", tempDir)
 	configPath := filepath.Join(tempDir, "arcanecli.yml")
 	configContent := strings.Join([]string{
 		"server_url: " + serverURL,

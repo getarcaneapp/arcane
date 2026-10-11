@@ -714,6 +714,7 @@ func newDownloadCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("failed to download template: %w", err)
 			}
+			// TODO(v3): drop the deprecated flag handling.
 			jsonMode := cmdutil.JSONOutputEnabled(cmd) || opts.legacyOutput == "json"
 			outputFile := cmp.Or(opts.outputFile, kit.Ternary(slices.Contains([]string{"text", "json"}, opts.legacyOutput), "", opts.legacyOutput))
 			if jsonMode && outputFile == "" {
@@ -749,6 +750,7 @@ func newDownloadCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVarP(&opts.outputFile, "output-file", "o", "", "Output file path")
 	cmd.Flags().StringVar(&opts.legacyOutput, "output", "", "Output file path")
+	// TODO(v3): remove the deprecated --output flag.
 	_ = cmd.Flags().MarkDeprecated("output", "use --output-file or -o")
 	return cmd
 }
@@ -840,6 +842,7 @@ func newRegistriesUpdateCmd() *cobra.Command {
 				Name:        kit.Ternary(cmd.Flags().Changed("name"), opts.name, current.Name),
 				URL:         kit.Ternary(cmd.Flags().Changed("url"), opts.url, current.URL),
 				Description: kit.Ternary(cmd.Flags().Changed("description"), opts.desc, current.Description),
+				// TODO(v3): drop the deprecated flag handling.
 				Enabled: cmd.Flags().Changed("enabled") && opts.enabled ||
 					cmd.Flags().Changed("disabled") && !opts.disabled ||
 					!cmd.Flags().Changed("enabled") && !cmd.Flags().Changed("disabled") && current.Enabled,
@@ -865,7 +868,9 @@ func newRegistriesUpdateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&opts.desc, "description", "", "Registry description")
 	cmd.Flags().BoolVar(&opts.enabled, "enabled", false, "Enable registry")
 	cmd.Flags().BoolVar(&opts.disabled, "disabled", false, "Disable registry")
+	// TODO(v3): remove the deprecated --disabled flag.
 	_ = cmd.Flags().MarkDeprecated("disabled", "use --enabled=false")
+	// TODO(v3): drop the deprecated flag handling.
 	cmd.PreRunE = func(cmd *cobra.Command, _ []string) error { return cmdutil.ExclusiveFlags(cmd, "enabled", "disabled") }
 	return cmd
 }

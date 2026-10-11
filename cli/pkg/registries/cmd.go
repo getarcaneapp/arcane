@@ -163,12 +163,13 @@ func newCreateCmd() *cobra.Command {
 			}
 
 			req := containerregistry.CreateContainerRegistryRequest{
-				URL:                opts.url,
-				RegistryType:       opts.registryType,
-				Username:           opts.username,
-				Token:              opts.token,
-				Description:        &opts.description,
-				Insecure:           &opts.insecure,
+				URL:          opts.url,
+				RegistryType: opts.registryType,
+				Username:     opts.username,
+				Token:        opts.token,
+				Description:  &opts.description,
+				Insecure:     &opts.insecure,
+				// TODO(v3): drop the deprecated flag handling.
 				Enabled:            new(opts.enabled && !opts.disabled),
 				AWSAccessKeyID:     opts.awsKeyID,
 				AWSSecretAccessKey: opts.awsSecret,
@@ -205,7 +206,9 @@ func newCreateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&opts.awsKeyID, "aws-access-key-id", "", "AWS Access Key ID (ECR only; omit both keys to use the host's IAM role)")
 	cmd.Flags().StringVar(&opts.awsSecret, "aws-secret-access-key", "", "AWS Secret Access Key (ECR only; omit both keys to use the host's IAM role)")
 	cmd.Flags().StringVar(&opts.awsRegion, "aws-region", "", "AWS region (ECR only)")
+	// TODO(v3): remove the deprecated --disabled flag.
 	_ = cmd.Flags().MarkDeprecated("disabled", "use --enabled=false")
+	// TODO(v3): drop the deprecated flag handling.
 	cmd.PreRunE = func(cmd *cobra.Command, _ []string) error { return cmdutil.ExclusiveFlags(cmd, "enabled", "disabled") }
 	_ = cmd.MarkFlagRequired("url")
 	return cmd
@@ -234,11 +237,13 @@ func newUpdateCmd() *cobra.Command {
 				URL:      kit.Ternary(cmd.Flags().Changed("url"), &opts.url, nil),
 				Username: kit.Ternary(cmd.Flags().Changed("username"), &opts.username, nil),
 				Token:    kit.Ternary(cmd.Flags().Changed("password"), &opts.password, nil),
+				// TODO(v3): drop the deprecated flag handling.
 				Enabled: kit.Ternary(cmd.Flags().Changed("enabled") || cmd.Flags().Changed("disabled"),
 					new(cmd.Flags().Changed("enabled") && opts.enabled || cmd.Flags().Changed("disabled") && !opts.disabled), nil),
 			}
 
 			if req.URL == nil && req.Username == nil && req.Token == nil && req.Enabled == nil {
+				// TODO(v3): drop the deprecated flag handling.
 				return errors.New("no updates provided; use --url, --username, --password, --enabled, or --disabled")
 			}
 
@@ -259,7 +264,9 @@ func newUpdateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&opts.password, "password", "", "Password")
 	cmd.Flags().BoolVar(&opts.enabled, "enabled", false, "Enable registry")
 	cmd.Flags().BoolVar(&opts.disabled, "disabled", false, "Disable registry")
+	// TODO(v3): remove the deprecated --disabled flag.
 	_ = cmd.Flags().MarkDeprecated("disabled", "use --enabled=false")
+	// TODO(v3): drop the deprecated flag handling.
 	cmd.PreRunE = func(cmd *cobra.Command, _ []string) error { return cmdutil.ExclusiveFlags(cmd, "enabled", "disabled") }
 	return cmd
 }

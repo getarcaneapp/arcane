@@ -16,6 +16,7 @@ require (
 	github.com/creack/pty v1.1.24
 	github.com/docker/go-units v0.5.0
 	github.com/getarcaneapp/arcane/types/v2 v2.14.0
+	github.com/gofrs/flock v0.13.1
 	github.com/mattn/go-runewidth v0.0.31
 	github.com/muesli/cancelreader v0.2.2
 	github.com/samber/hot v0.13.1

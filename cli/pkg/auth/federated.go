@@ -95,7 +95,7 @@ GitHub Actions example:
 				cfg.JWTToken = tokenResp.AccessToken
 				cfg.APIKey = ""
 				cfg.RefreshToken = ""
-				if saveErr := config.Save(cfg); saveErr != nil {
+				if saveErr := config.SaveTokens(cmd.Context(), cfg); saveErr != nil {
 					return fmt.Errorf("failed to save federated token: %w", saveErr)
 				}
 			}
@@ -127,8 +127,8 @@ GitHub Actions example:
 				output.KeyValue("Token source", tokenSource)
 				output.KeyValue("Expires at", expiresAt.Format(time.RFC3339))
 				if opts.persist {
-					path, _ := config.ConfigPath()
-					output.KeyValue("JWT token saved to config", path)
+					path, _ := config.AuthPath()
+					output.KeyValue("Session saved to", path)
 				} else {
 					output.Info("Use --export, --json, or --persist to consume the token.")
 				}

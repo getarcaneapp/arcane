@@ -2,24 +2,29 @@ package config
 
 import (
 	"io"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/getarcaneapp/arcane/cli/v2/internal/config"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
 )
 
 func TestApplyConfigSetArgs(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	cfg := &types.Config{}
 
-	err := applyConfigSetArgs(cfg, []string{
+	err := applyConfigSetArgs(t.Context(), cfg, []string{
 		"server-url", "http://localhost:3552",
 		"api-key", "arc_test_12345678",
 		"previews.allEnvironments", "true",
 		"default-limit", "25",
 		"pagination.resources.images.limit", "100",
 		"resource-limit.volumes", "40",
-	}, io.Discard)
+	}, nil, io.Discard)
 
 	require.NoError(t, err,
 		"applyConfigSetArgs() error = %v", err)
@@ -35,7 +40,7 @@ func TestApplyConfigSetArgs(t *testing.T) {
 
 	require.True(t, cfg.Previews.AllEnvironments)
 	for _, value := range []string{"false", "true", "invalid"} {
-		setErr := applyConfigSetArg(cfg, "previews.allEnvironments", value, io.Discard)
+		setErr := applyConfigSetArg(t.Context(), cfg, "previews.allEnvironments", value, io.Discard)
 		if value == "invalid" {
 			require.Error(t, setErr)
 			continue
@@ -57,11 +62,35 @@ func TestApplyConfigSetArgs(t *testing.T) {
 		require.Equal(t, 40, got,
 			"LimitFor(volumes) = %d, want 40", got)
 	}
+
+	path := filepath.Join(home, "config.yml")
+	require.NoError(t, config.SetConfigPath(path))
+	t.Cleanup(func() { require.NoError(t, config.SetConfigPath("")) })
+	for _, args := range [][]string{
+		{"jwt-token", "new_token", "server-url", "https://b.test"},
+		{"server-url", "https://b.test", "jwt-token", "new_token"},
+		{"jwt-token", "new_token", "--server-url", "https://b.test"},
+		{"server-url", "https://b.test", "--jwt-token", "new_token"},
+		{"jwt-token", "new_token", "server-url", "https://c.test", "--server-url", "https://b.test"},
+	} {
+		require.NoError(t, config.SaveTokens(t.Context(), &types.Config{ServerURL: "https://b.test", JWTToken: "saved_b"}))
+		require.NoError(t, config.SaveTokens(t.Context(), &types.Config{ServerURL: "https://a.test", JWTToken: "saved_a"}))
+		cmd := newConfigSetCmd()
+		cmd.SetArgs(args)
+		require.NoError(t, cmd.ExecuteContext(t.Context()))
+		require.NoError(t, config.SetConfigPath(path))
+		loaded, loadErr := config.Load()
+		require.NoError(t, loadErr)
+		require.Equal(t, "https://b.test", loaded.ServerURL)
+		require.Equal(t, "new_token", loaded.JWTToken)
+		require.NoError(t, config.SwitchServer(t.Context(), loaded, "https://a.test"))
+		require.Equal(t, "saved_a", loaded.JWTToken)
+	}
 }
 
 func TestApplyConfigSetArgs_OddArgs(t *testing.T) {
 	cfg := &types.Config{}
-	err := applyConfigSetArgs(cfg, []string{"server-url", "http://localhost:3552", "api-key"}, io.Discard)
+	err := applyConfigSetArgs(t.Context(), cfg, []string{"server-url", "http://localhost:3552", "api-key"}, nil, io.Discard)
 
 	require.Error(t, err,
 		"expected error for odd key/value args, got nil")
@@ -69,7 +98,7 @@ func TestApplyConfigSetArgs_OddArgs(t *testing.T) {
 
 func TestApplyConfigSetArg_UnknownKey(t *testing.T) {
 	cfg := &types.Config{}
-	err := applyConfigSetArg(cfg, "not-a-real-key", "value", io.Discard)
+	err := applyConfigSetArg(t.Context(), cfg, "not-a-real-key", "value", io.Discard)
 
 	require.Error(t, err,
 		"expected unknown key error, got nil")
@@ -80,7 +109,7 @@ func TestApplyConfigSetArg_UnknownKey(t *testing.T) {
 
 func TestApplyConfigSetArg_ResourceLimitPair(t *testing.T) {
 	cfg := &types.Config{}
-	err := applyConfigSetArg(cfg, "resource-limit", "containers=55", io.Discard)
+	err := applyConfigSetArg(t.Context(), cfg, "resource-limit", "containers=55", io.Discard)
 
 	require.NoError(t, err,
 		"applyConfigSetArg() error = %v", err)

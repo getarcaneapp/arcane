@@ -2,10 +2,12 @@ package config
 
 import (
 	"cmp"
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"path/filepath"
 	"slices"
 	"sort"
 	"strconv"
@@ -51,15 +53,23 @@ func newConfigShowCmd() *cobra.Command {
 			}
 			output.Header("CLI configuration")
 			output.KeyValue("Config file", path)
+			authPath, authPathErr := config.AuthPath()
+			if authPathErr != nil {
+				authPath = fmt.Sprintf("(unavailable: %v)", authPathErr)
+			}
+			output.KeyValue("Auth file", authPath)
 			output.KeyValue("Server URL", cmp.Or(cfg.ServerURL, "(not set)"))
 			output.KeyValue("API key", maskAPIKey(cfg.APIKey))
-			output.KeyValue("JWT token", maskAPIKey(cfg.JWTToken))
-			output.KeyValue("Refresh token", maskAPIKey(cfg.RefreshToken))
 			output.KeyValue("Environment", cmp.Or(cfg.DefaultEnvironment, "0 (local)"))
 			output.KeyValue("Federated audience", cmp.Or(cfg.FederatedAudience, "(not set)"))
 			output.KeyValue("Log level", cmp.Or(cfg.LogLevel, "info (default)"))
 			output.KeyValue("Update channel", cmp.Or(cfg.CLIUpdateChannel, "(auto)"))
 			output.KeyValue("Pagination limit", kit.Ternary(cfg.Pagination.Default.Limit > 0, strconv.Itoa(cfg.Pagination.Default.Limit), "(not set)"))
+			if cfg.JWTToken != "" || cfg.RefreshToken != "" {
+				output.Header("Session")
+				output.KeyValue("Access token", maskAPIKey(cfg.JWTToken))
+				output.KeyValue("Refresh token", maskAPIKey(cfg.RefreshToken))
+			}
 			output.Header("Previews")
 			output.KeyValue("allEnvironments", strconv.FormatBool(cfg.Previews.AllEnvironments))
 			output.Header("Pagination resources")
@@ -141,10 +151,7 @@ Legacy flag syntax (flags shown below) is still supported:
 			if cmdutil.JSONOutputEnabled(cmd) {
 				w = io.Discard
 			}
-			if setErr := applyConfigSetArgs(cfg, args, w); setErr != nil {
-				return setErr
-			}
-
+			var flagArgs []string
 			updatedKeys := make([]string, 0, len(args)/2)
 			for i := 0; i < len(args); i += 2 {
 				updatedKeys = append(updatedKeys, args[i])
@@ -158,9 +165,7 @@ Legacy flag syntax (flags shown below) is still supported:
 				{"log-level", opts.logLevel},
 			} {
 				if flag.value != "" {
-					if setErr := applyConfigSetArg(cfg, flag.key, flag.value, w); setErr != nil {
-						return setErr
-					}
+					flagArgs = append(flagArgs, flag.key, flag.value)
 					updatedKeys = append(updatedKeys, flag.key)
 				}
 			}
@@ -168,17 +173,17 @@ Legacy flag syntax (flags shown below) is still supported:
 				if opts.defaultLimit < 0 {
 					return errors.New("--default-limit must be >= 0")
 				}
-				if setErr := applyConfigSetArg(cfg, "default-limit", strconv.Itoa(opts.defaultLimit), w); setErr != nil {
-					return setErr
-				}
+				flagArgs = append(flagArgs, "default-limit", strconv.Itoa(opts.defaultLimit))
 				updatedKeys = append(updatedKeys, "default-limit")
 			}
 			for _, pair := range opts.resourceLimits {
-				if setErr := applyConfigSetArg(cfg, "resource-limit", pair, w); setErr != nil {
-					return setErr
-				}
+				flagArgs = append(flagArgs, "resource-limit", pair)
 				resource, _, _ := strings.Cut(pair, "=")
 				updatedKeys = append(updatedKeys, "pagination.resources."+types.NormalizePaginatedResource(resource)+".limit")
+			}
+
+			if setErr := applyConfigSetArgs(cmd.Context(), cfg, args, flagArgs, w); setErr != nil {
+				return setErr
 			}
 
 			if len(args) == 0 && len(opts.resourceLimits) == 0 && !cmd.Flags().Changed("default-limit") &&
@@ -188,7 +193,14 @@ Legacy flag syntax (flags shown below) is still supported:
 					"--default-limit, --resource-limit)")
 			}
 
-			if saveErr := config.Save(cfg); saveErr != nil {
+			save := config.Save
+			if cfg.APIKey == "" && slices.ContainsFunc(updatedKeys, func(key string) bool {
+				normalized := strings.ReplaceAll(strings.ToLower(strings.TrimSpace(key)), " ", "")
+				return slices.Contains([]string{"jwt-token", "jwt", "jwt_token"}, normalized)
+			}) {
+				save = config.SaveTokens
+			}
+			if saveErr := save(cmd.Context(), cfg); saveErr != nil {
 				return fmt.Errorf("failed to save config: %w", saveErr)
 			}
 
@@ -328,23 +340,35 @@ If the config file already exists, this command is a no-op and does not overwrit
 }
 
 func newConfigBackupCmd() *cobra.Command {
-	return &cobra.Command{
+	var opts struct{ auth bool }
+	cmd := &cobra.Command{
 		Use:          "backup",
 		Short:        "Move the current config file to a .bak backup",
 		Args:         cobra.NoArgs,
 		SilenceUsage: true,
 		Long: `Move the active config file to <config-path>.bak.
 
-This removes the original config file from its previous path.`,
+This removes the original config file from its previous path.
+With --auth, move ~/.arcanecli/auth.json instead, for example when it is damaged.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			path, err := config.ConfigPath()
+			pathFn := config.ConfigPath
+			if opts.auth {
+				pathFn = config.AuthPath
+			}
+			path, err := pathFn()
 			if err != nil {
 				return err
 			}
 
-			backupPath, moved, err := config.BackupFile()
+			var backupPath string
+			var moved bool
+			if opts.auth {
+				backupPath, moved, err = config.BackupAuthFile(cmd.Context())
+			} else {
+				backupPath, moved, err = config.BackupFile()
+			}
 			if err != nil {
-				return fmt.Errorf("failed to backup config: %w", err)
+				return fmt.Errorf("failed to backup %s: %w", filepath.Base(path), err)
 			}
 			if cmdutil.JSONOutputEnabled(cmd) {
 				return cmdutil.PrintJSON(struct {
@@ -353,15 +377,17 @@ This removes the original config file from its previous path.`,
 				}{Path: cmp.Or(backupPath, path), Moved: moved})
 			}
 			if !moved {
-				_, _ = fmt.Fprintf(output.Stdout(), "No config file found at %s (no changes made)\n", path)
+				_, _ = fmt.Fprintf(output.Stdout(), "No file found at %s (no changes made)\n", path)
 				return nil
 			}
 
-			_, _ = fmt.Fprintf(output.Stdout(), "Backed up config to %s\n", backupPath)
-			_, _ = fmt.Fprintf(output.Stdout(), "Removed original config at %s\n", path)
+			_, _ = fmt.Fprintf(output.Stdout(), "Backed up %s to %s\n", filepath.Base(path), backupPath)
+			_, _ = fmt.Fprintf(output.Stdout(), "Removed original at %s\n", path)
 			return nil
 		},
 	}
+	cmd.Flags().BoolVar(&opts.auth, "auth", false, "Back up the saved sessions file instead of the config")
+	return cmd
 }
 
 func maskAPIKey(key string) string {
@@ -374,23 +400,33 @@ func maskAPIKey(key string) string {
 	return key[:4] + "..." + key[len(key)-4:]
 }
 
-func applyConfigSetArgs(cfg *types.Config, args []string, w io.Writer) error {
+func applyConfigSetArgs(ctx context.Context, cfg *types.Config, args, flags []string, w io.Writer) error {
 	if len(args)%2 != 0 {
 		return fmt.Errorf("expected key/value pairs, got odd number of arguments (%d). Example: `arcane config set server-url http://localhost:3552`", len(args))
 	}
-	for i := 0; i < len(args); i += 2 {
-		if err := applyConfigSetArg(cfg, args[i], args[i+1], w); err != nil {
-			return err
+	args = append(slices.Clone(args), flags...)
+	// Switch servers before credential keys so tokens attach to the final server regardless of order.
+	for _, serverFirst := range []bool{true, false} {
+		for i := 0; i < len(args); i += 2 {
+			key := strings.ReplaceAll(strings.ToLower(strings.TrimSpace(args[i])), " ", "")
+			if slices.Contains([]string{"server-url", "server", "serverurl", "server_url"}, key) != serverFirst {
+				continue
+			}
+			if err := applyConfigSetArg(ctx, cfg, args[i], args[i+1], w); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
 }
 
-func applyConfigSetArg(cfg *types.Config, key, value string, w io.Writer) error {
+func applyConfigSetArg(ctx context.Context, cfg *types.Config, key, value string, w io.Writer) error {
 	normalized := strings.ReplaceAll(strings.ToLower(strings.TrimSpace(key)), " ", "")
 	switch normalized {
 	case "server-url", "server", "serverurl", "server_url":
-		cfg.ServerURL = value
+		if err := config.SwitchServer(ctx, cfg, value); err != nil {
+			return err
+		}
 		_, _ = fmt.Fprintf(w, "Set server_url = %s\n", value)
 		return nil
 	case "api-key", "apikey", "api_key":

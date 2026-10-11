@@ -122,7 +122,7 @@ func (opts cliUpdateOptions) setCLIUpdateChannelAndRun(cmd *cobra.Command, chann
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 	cfg.CLIUpdateChannel = channel
-	if saveErr := config.Save(cfg); saveErr != nil {
+	if saveErr := config.Save(cmd.Context(), cfg); saveErr != nil {
 		return fmt.Errorf("failed to save config: %w", saveErr)
 	}
 
