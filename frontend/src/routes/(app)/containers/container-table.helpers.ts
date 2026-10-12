@@ -15,6 +15,35 @@ export type ActionStatus =
 	| '';
 export type StateBadgeVariant = 'green' | 'red' | 'amber';
 
+/** The lowest published port, else the lowest private one, as the backend sorts ports. */
+function lowestPort(container: ContainerSummaryDto): number | null {
+	const ports = container.ports ?? [];
+	const lowest = (values: number[]) => (values.length > 0 ? Math.min(...values) : null);
+	return (
+		lowest(ports.flatMap((port) => (port.publicPort ? [port.publicPort] : []))) ??
+		lowest(ports.flatMap((port) => (port.privatePort > 0 ? [port.privatePort] : [])))
+	);
+}
+
+/** Sort value for a container column whose sort key is not a row field. */
+export function containerSortValue(container: ContainerSummaryDto, column: string): unknown {
+	switch (column) {
+		case 'name':
+			return container.names?.[0];
+		case 'cpuUsage':
+			return container.resourceSample?.cpuPercent ?? null;
+		case 'memoryUsage':
+			return container.resourceSample?.memoryUsageBytes ?? null;
+		case 'ports':
+			return lowestPort(container);
+		// The updates table sorts its image column as imageRef.
+		case 'imageRef':
+			return container.image;
+		default:
+			return container[column as keyof ContainerSummaryDto];
+	}
+}
+
 export function getContainerDisplayName(container: ContainerSummaryDto): string {
 	const first = container.names?.[0];
 	if (first) {

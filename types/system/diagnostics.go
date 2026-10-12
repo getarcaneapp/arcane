@@ -52,6 +52,29 @@ type GoroutineLeakReport struct {
 	ScannedAt time.Time `json:"scannedAt"`
 }
 
+// GoroutineProfile groups the live goroutines by identical stack, largest group first.
+type GoroutineProfile struct {
+	Total      int              `json:"total"`
+	Groups     []GoroutineGroup `json:"groups"`
+	CapturedAt time.Time        `json:"capturedAt"`
+}
+
+// GoroutineGroup is a set of goroutines that share one stack.
+type GoroutineGroup struct {
+	Count int `json:"count"`
+	// Label is the outermost non-runtime function, usually the goroutine's entry point.
+	Label string `json:"label"`
+	// Frames lists the stack innermost first.
+	Frames []GoroutineFrame `json:"frames"`
+}
+
+// GoroutineFrame is one stack frame of a goroutine group.
+type GoroutineFrame struct {
+	Function string `json:"function"`
+	File     string `json:"file"`
+	Line     int    `json:"line"`
+}
+
 // MemoryInfo is the subset of runtime.MemStats surfaced in diagnostics. All
 // byte counts are raw bytes.
 type MemoryInfo struct {

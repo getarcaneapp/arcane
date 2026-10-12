@@ -4,15 +4,23 @@ import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import { featureStore } from '#lib/stores/features.store.svelte.js';
 import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 import { throwPageLoadError } from '#lib/utils/api.js';
+import { fetchAcrossEnvironments } from '#lib/utils/environments.js';
 import { resolveInitialTableRequest } from '#lib/utils/tables.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
-import { mapVulnerabilityPage, mapVulnerabilityRequest } from '#lib/utils/vulnerability.js';
+import {
+	mapVulnerabilityPage,
+	mapVulnerabilityRequest,
+	vulnerabilityEnvironments,
+	vulnerabilityOverviewEnvironment,
+	vulnerabilitySortValue
+} from '#lib/utils/vulnerability.js';
 
 import type { PageLoad } from './$types';
 
 export const load: PageLoad = async ({ parent }) => {
 	const { queryClient } = await parent();
 	const envId = await environmentStore.getCurrentEnvironmentId();
+	const shown = await environmentStore.getShownEnvironments();
 
 	const vulnerabilityRequestOptions = resolveInitialTableRequest(
 		'arcane-security-vuln-table',
@@ -40,8 +48,9 @@ export const load: PageLoad = async ({ parent }) => {
 		}
 	} satisfies SearchPaginationSortRequest);
 
-	await featureStore.load(envId);
-	if (!featureStore.isEnabled('vulnerabilityManagement', envId)) {
+	await Promise.all([envId, ...shown.map((env) => env.id)].map((id) => featureStore.load(id)));
+	const overviewEnvironment = vulnerabilityOverviewEnvironment();
+	if (!overviewEnvironment) {
 		return {
 			envId,
 			featureDisabled: true,
@@ -60,12 +69,18 @@ export const load: PageLoad = async ({ parent }) => {
 		(async () =>
 			Promise.all([
 				queryClient.query({
-					queryKey: queryKeys.vulnerabilities.overviewByEnvironment(envId),
-					queryFn: () => vulnerabilityService.getRiskOverviewForEnvironment(envId)
+					queryKey: queryKeys.vulnerabilities.overviewByEnvironment(overviewEnvironment.id),
+					queryFn: () => vulnerabilityService.getRiskOverviewForEnvironment(overviewEnvironment.id)
 				}),
 				queryClient.query({
-					queryKey: queryKeys.vulnerabilities.allByEnvironment(envId, requestForApi),
-					queryFn: () => vulnerabilityService.getAllVulnerabilitiesForEnvironment(envId, requestForApi)
+					queryKey: queryKeys.vulnerabilities.allByEnvironment(environmentStore.shownKey, requestForApi),
+					queryFn: () =>
+						fetchAcrossEnvironments(
+							vulnerabilityEnvironments(),
+							requestForApi,
+							(id, request, config) => vulnerabilityService.getAllVulnerabilitiesForEnvironment(id, request, config),
+							vulnerabilitySortValue
+						)
 				})
 			]))()
 	);

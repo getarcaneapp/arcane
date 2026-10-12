@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { createMutation, createQuery, keepPreviousData } from '@tanstack/svelte-query';
-	import { untrack } from 'svelte';
+	import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
+	import { tick, untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
@@ -18,9 +18,19 @@
 	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import type { ProjectStatusCounts } from '#lib/types/swarm.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
-	import { hasPermission } from '#lib/utils/auth.js';
+	import {
+		acrossEnvironmentsNote,
+		actionEnvironments,
+		fetchAcrossEnvironments,
+		hasShownPermission,
+		listScopes,
+		settleAcrossEnvironments,
+		sumAcrossEnvironments,
+		withFailedEnvironments
+	} from '#lib/utils/environments.js';
 
 	import ProjectsTable from './components/projects-table.svelte';
+	import { fetchProjectTags } from './projects-table.helpers';
 
 	let { data } = $props();
 
@@ -41,7 +51,8 @@
 	let baseProjectRequestOptions = $state(untrack(() => withArchivedFilter(data.projectRequestOptions, data.showArchived)));
 	let selectedIds = $state<string[]>([]);
 	let isManualRefreshing = $state(false);
-	const envId = $derived(environmentStore.selected?.id || '0');
+	const queryClient = useQueryClient();
+	const scope = $derived(environmentStore.shownKey);
 	const showArchived = $derived(page.url.searchParams.get('archived') === 'true');
 	const projectRequestOptions = $derived(withArchivedFilter(baseProjectRequestOptions, showArchived));
 	const countsFallback: ProjectStatusCounts = {
@@ -51,115 +62,155 @@
 		archivedProjects: 0
 	};
 
+	// The load already cached the first page under its key; seeding every key with it would hide other pages and filters.
 	const projectsQuery = createQuery(() => {
-		const queryEnvId = envId;
+		const queryScope = scope;
+		const environments = environmentStore.shown;
+		const options = projectRequestOptions;
 		return {
-			queryKey: queryKeys.projects.list(queryEnvId, projectRequestOptions),
-			queryFn: () => projectService.getProjectsForEnvironment(queryEnvId, projectRequestOptions),
-			placeholderData: keepPreviousData,
-			initialData: data.envId === queryEnvId ? data.projects : undefined,
-			select: (value) => ({ envId: queryEnvId, value }),
+			queryKey: queryKeys.projects.list(queryScope, options),
+			queryFn: () =>
+				fetchAcrossEnvironments(environments, options, (id, request, config) =>
+					projectService.getProjectsForEnvironment(id, request, config)
+				),
+			placeholderData: (previous, query) => {
+				if (query?.queryKey[1] === queryScope) return previous;
+				return undefined;
+			},
+			select: (value) => ({ envId: queryScope, value }),
 			refetchOnMount: false
 		};
 	});
-	let projects = $derived(projectsQuery.data?.envId === envId ? projectsQuery.data.value : null);
+	let projects = $derived(projectsQuery.data?.envId === scope ? projectsQuery.data.value : null);
 
 	const projectStatusCountsQuery = createQuery(() => {
-		const queryEnvId = envId;
+		const queryScope = scope;
+		const environments = environmentStore.shown;
 		return {
-			queryKey: queryKeys.projects.statusCounts(queryEnvId),
-			queryFn: () => projectService.getProjectStatusCountsForEnvironment(queryEnvId),
-			initialData: data.envId === queryEnvId ? data.projectStatusCounts : undefined,
-			select: (value) => ({ envId: queryEnvId, value }),
+			queryKey: queryKeys.projects.statusCounts(queryScope),
+			queryFn: () =>
+				sumAcrossEnvironments(environments, (id, config) => projectService.getProjectStatusCountsForEnvironment(id, config)),
+			initialData: data.scope === queryScope ? data.projectStatusCounts : undefined,
+			select: (value) => ({ envId: queryScope, value }),
 			refetchOnMount: false
 		};
 	});
 	const projectTagsQuery = createQuery(() => {
-		const queryEnvId = envId;
+		const queryScope = scope;
+		const environments = environmentStore.shown;
 		return {
-			queryKey: queryKeys.projects.tags(queryEnvId),
-			queryFn: () => projectService.getProjectTagsForEnvironment(queryEnvId),
-			initialData: data.envId === queryEnvId ? data.projectTags : undefined,
-			select: (value) => ({ envId: queryEnvId, value }),
+			queryKey: queryKeys.projects.tags(queryScope),
+			queryFn: () => fetchProjectTags(environments),
+			initialData: data.scope === queryScope ? data.projectTags : undefined,
+			select: (value) => ({ envId: queryScope, value }),
 			refetchOnMount: false
 		};
 	});
-	const projectTags = $derived(projectTagsQuery.data?.envId === envId ? projectTagsQuery.data.value : []);
+	const projectTags = $derived(projectTagsQuery.data?.envId === scope ? projectTagsQuery.data.value.tags : []);
+	const relatedFailures = $derived(
+		[projectStatusCountsQuery.data, projectTagsQuery.data].flatMap((result) =>
+			result?.envId === scope ? result.value.failedEnvironments : []
+		)
+	);
 	const resourcesReady = $derived(projects !== null);
+	// Tags change rarely, so a refresh reloads them only after an environment failed to return them.
+	const refetchFailedTags = () =>
+		projectTagsQuery.isError || projectTagsQuery.data?.value.failedEnvironments.length ? projectTagsQuery.refetch() : undefined;
 
 	useEnvironmentRefresh(() => {
 		selectedIds = [];
 		isManualRefreshing = false;
 	});
 
-	const checkUpdatesMutation = createMutation(() => ({
-		mutationKey: queryKeys.projects.checkUpdates(envId),
-		mutationFn: async (requestedEnvId: string) => {
-			// Refresh update info for all images, then use the image->project usage
-			// map to narrow the redeploy to projects that actually have updates.
-			// This avoids hitting every project (and its registry) when nothing has
-			// changed, which is especially expensive on instances with many projects.
-			const imageCheckResults = await imageService.checkAllImages(requestedEnvId);
+	async function updateEnvironmentProjects(requestedEnvId: string) {
+		// Refresh update info for all images, then use the image->project usage
+		// map to narrow the redeploy to projects that actually have updates.
+		// This avoids hitting every project (and its registry) when nothing has
+		// changed, which is especially expensive on instances with many projects.
+		const imageCheckResults = await imageService.checkAllImages(requestedEnvId);
 
-			const images = await imageService.getImagesForEnvironment(requestedEnvId, {
-				pagination: { page: 1, limit: 10000 }
-			});
-			const projectIdsWithUpdates = new Set<string>();
-			for (const img of images.data) {
-				if (!img.updateInfo?.hasUpdate) continue;
-				for (const user of img.usedBy ?? []) {
-					if (user.type === 'project' && user.id) {
-						projectIdsWithUpdates.add(user.id);
-					}
+		const images = await imageService.getImagesForEnvironment(requestedEnvId, {
+			pagination: { page: 1, limit: 10000 }
+		});
+		const projectIdsWithUpdates = new Set<string>();
+		for (const img of images.data) {
+			if (!img.updateInfo?.hasUpdate) continue;
+			for (const user of img.usedBy ?? []) {
+				if (user.type === 'project' && user.id) {
+					projectIdsWithUpdates.add(user.id);
 				}
 			}
+		}
 
-			if (projectIdsWithUpdates.size === 0) {
-				return { updated: 0, activityId: extractActivityId(imageCheckResults) };
-			}
+		if (projectIdsWithUpdates.size === 0) {
+			return { updated: 0, activityId: extractActivityId(imageCheckResults) };
+		}
 
-			const allProjects = await projectService.getProjectsForEnvironment(requestedEnvId, {
-				pagination: { page: 1, limit: 1000 }
-			});
-			const projectsToUpdate = allProjects.data.filter((p) => projectIdsWithUpdates.has(p.id));
+		const allProjects = await projectService.getProjectsForEnvironment(requestedEnvId, {
+			pagination: { page: 1, limit: 1000 }
+		});
+		const projectsToUpdate = allProjects.data.filter((p) => projectIdsWithUpdates.has(p.id));
 
-			const results = await Promise.allSettled(
-				projectsToUpdate.map(async (proj) => {
-					// deployProject with pullPolicy 'always' already pulls fresh images,
-					// so no separate pullProjectImages call is needed.
-					await projectService.deployProject(proj.id, 'up', { pullPolicy: 'always' });
-					return proj.name;
-				})
+		const results = await Promise.allSettled(
+			projectsToUpdate.map(async (proj) => {
+				// deployProject with pullPolicy 'always' already pulls fresh images,
+				// so no separate pullProjectImages call is needed.
+				await projectService.deployProject(proj.id, 'up', { pullPolicy: 'always' }, requestedEnvId);
+				return proj.name;
+			})
+		);
+		const failed = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
+		if (failed.length > 0) {
+			const succeeded = results.length - failed.length;
+			throw new Error(`${failed.length} project(s) failed to update (${succeeded} succeeded)`);
+		}
+
+		return { updated: results.length, activityId: extractActivityId(imageCheckResults) };
+	}
+
+	const checkUpdatesMutation = createMutation(() => ({
+		mutationKey: queryKeys.projects.checkUpdates(scope),
+		mutationFn: async (_requestedScope: string) => {
+			const results = await settleAcrossEnvironments(
+				actionEnvironments('image-updates:check', 'projects:deploy'),
+				updateEnvironmentProjects
 			);
-			const failed = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
-			if (failed.length > 0) {
-				const succeeded = results.length - failed.length;
-				throw new Error(`${failed.length} project(s) failed to update (${succeeded} succeeded)`);
-			}
-
-			return { updated: results.length, activityId: extractActivityId(imageCheckResults) };
+			return {
+				updated: results.reduce((total, result) => total + result.value.updated, 0),
+				activityId: results[0]?.value.activityId,
+				environmentIds: results.map(({ environment }) => environment.id)
+			};
 		},
-		onSuccess: async (result, requestedEnvId) => {
+		onSuccess: async (result, requestedScope) => {
 			const toastOptions = activityToastOptions(result.activityId);
 			if (result && result.updated === 0) {
 				toast.success(m.image_update_up_to_date_title(), toastOptions);
 			} else {
 				toast.success(m.compose_update_success(), toastOptions);
 			}
-			if (requestedEnvId === envId) {
+			// The shown list refetches itself; the affected environments' other cached lists are marked stale.
+			await Promise.all(
+				listScopes(result.environmentIds)
+					.filter((listScope) => listScope !== requestedScope)
+					.flatMap((listScope) => [
+						queryClient.invalidateQueries({ queryKey: ['projects', listScope] }),
+						queryClient.invalidateQueries({ queryKey: queryKeys.projects.statusCounts(listScope) })
+					])
+			);
+			if (requestedScope === scope) {
 				await Promise.all([projectsQuery.refetch(), projectStatusCountsQuery.refetch()]);
 			}
 		},
-		onError: (error, requestedEnvId) => {
+		onError: (error, requestedScope) => {
 			toast.error(error instanceof Error ? error.message : m.containers_check_updates_failed());
-			if (requestedEnvId === envId) {
+			if (requestedScope === scope) {
 				void Promise.all([projectsQuery.refetch(), projectStatusCountsQuery.refetch()]);
 			}
 		}
 	}));
 
 	const projectStatusCounts = $derived(
-		projectStatusCountsQuery.data?.envId === envId ? projectStatusCountsQuery.data.value : countsFallback
+		projectStatusCountsQuery.data?.envId === scope ? projectStatusCountsQuery.data.value : countsFallback
 	);
 	const totalCompose = $derived(projectStatusCounts.totalProjects);
 	const runningCompose = $derived(projectStatusCounts.runningProjects);
@@ -170,23 +221,24 @@
 	function handleCheckForUpdates() {
 		openConfirmDialog({
 			title: m.compose_update_projects(),
-			message: m.compose_update_projects_confirm_message(),
+			message:
+				`${m.compose_update_projects_confirm_message()} ${acrossEnvironmentsNote(actionEnvironments('image-updates:check', 'projects:deploy'))}`.trim(),
 			confirm: {
 				label: m.compose_update_projects(),
 				destructive: false,
-				action: () => checkUpdatesMutation.mutate(envId)
+				action: () => checkUpdatesMutation.mutate(scope)
 			}
 		});
 	}
 
 	async function refreshCompose() {
 		if (isRefreshBlocked) return;
-		const requestedEnvId = envId;
+		const requestedScope = scope;
 		isManualRefreshing = true;
 		try {
-			await Promise.all([projectsQuery.refetch(), projectStatusCountsQuery.refetch()]);
+			await Promise.all([projectsQuery.refetch(), projectStatusCountsQuery.refetch(), refetchFailedTags()]);
 		} finally {
-			if (requestedEnvId === envId) {
+			if (requestedScope === scope) {
 				isManualRefreshing = false;
 			}
 		}
@@ -202,8 +254,8 @@
 		await goto(`${url.pathname}${url.search}`, { reset: false, replace: true });
 	}
 
-	const canCreateProject = $derived(hasPermission('projects:create', envId));
-	const canDeployProject = $derived(hasPermission('projects:deploy', envId));
+	const canCreateProject = $derived(hasShownPermission('projects:create'));
+	const canDeployProject = $derived(hasShownPermission('projects:deploy'));
 
 	const actionButtons: ActionButton[] = $derived.by(() => {
 		const buttons: ActionButton[] = [];
@@ -282,7 +334,7 @@
 	{#snippet mainContent()}
 		{#if projects}
 			<ProjectsTable
-				{projects}
+				projects={withFailedEnvironments(projects, relatedFailures)}
 				emptyState={projectsEmptyState}
 				bind:selectedIds
 				requestOptions={projectRequestOptions}
@@ -290,10 +342,16 @@
 				availableTags={projectTags}
 				onToggleArchived={toggleArchived}
 				onRefreshData={async (options) => {
-					const requestedEnvId = envId;
+					const requestedScope = scope;
 					baseProjectRequestOptions = withArchivedFilter(options, showArchived);
-					await Promise.all([projectsQuery.refetch(), projectStatusCountsQuery.refetch()]);
-					if (requestedEnvId !== envId) {
+					// Let the query switch to the new options first; the refetch then joins its fetch.
+					await tick();
+					await Promise.all([
+						projectsQuery.refetch({ cancelRefetch: false }),
+						projectStatusCountsQuery.refetch(),
+						refetchFailedTags()
+					]);
+					if (requestedScope !== scope) {
 						selectedIds = [];
 					}
 				}}

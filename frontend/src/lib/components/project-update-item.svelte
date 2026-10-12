@@ -24,13 +24,15 @@
 
 	interface Props {
 		updateInfo?: ProjectUpdateInfo;
+		/** Environment that owns the project; defaults to the selected one. */
+		environmentId?: string;
 		class?: string;
 		onCheck?: () => void | Promise<void>;
 		checking?: boolean;
 		disabled?: boolean;
 	}
 
-	let { updateInfo, class: className = '', onCheck, checking = false, disabled = false }: Props = $props();
+	let { updateInfo, environmentId, class: className = '', onCheck, checking = false, disabled = false }: Props = $props();
 	let isOpen = $state(false);
 
 	const status = $derived(getProjectUpdateStatus(updateInfo));
@@ -170,7 +172,7 @@
 {#snippet refRow(imageRef: string)}
 	{@const parsed = parseImageRef(imageRef)}
 	<div class="flex items-center rounded-md bg-muted px-2 py-1">
-		<ImageUpdateItem updateInfo={updateInfoByRef[imageRef]} {imageRef} repo={parsed.repo} tag={parsed.tag} />
+		<ImageUpdateItem updateInfo={updateInfoByRef[imageRef]} {imageRef} repo={parsed.repo} tag={parsed.tag} {environmentId} />
 		<span class="min-w-0 flex-1 font-mono text-xs break-all text-foreground">{imageRef}</span>
 	</div>
 {/snippet}
@@ -291,7 +293,12 @@
 										{@const parsed = parseImageRef(service.imageRef)}
 										<div class="rounded-md bg-muted px-2 py-1.5">
 											<div class="flex items-center gap-2">
-												<ImageUpdateItem updateInfo={service.updateInfo ?? undefined} repo={parsed.repo} tag={parsed.tag} />
+												<ImageUpdateItem
+													updateInfo={service.updateInfo ?? undefined}
+													repo={parsed.repo}
+													tag={parsed.tag}
+													{environmentId}
+												/>
 												<span class="min-w-0 flex-1 text-xs font-medium break-all">{serviceName}</span>
 											</div>
 											<div class="mt-1 font-mono text-2xs break-all text-muted-foreground">{service.imageRef}</div>

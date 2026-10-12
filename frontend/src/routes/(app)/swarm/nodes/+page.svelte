@@ -88,7 +88,7 @@
 	]);
 </script>
 
-<ResourcePageLayout title={m.nodes()} subtitle={m.swarm_nodes_subtitle()} {actionButtons} {statCards}>
+<ResourcePageLayout title={m.nodes()} subtitle={m.swarm_nodes_subtitle()} {actionButtons} {statCards} environmentPicker>
 	{#snippet mainContent()}
 		<div class="space-y-4">
 			{#if uncoveredNodeCount > 0}

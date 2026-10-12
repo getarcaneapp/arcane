@@ -14,12 +14,14 @@
 	import { containerService, type ContainerListRequestOptions } from '#lib/services/container-service.js';
 	import { imageService } from '#lib/services/image-service.js';
 	import { projectService } from '#lib/services/project-service.js';
-	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+	import { environmentStore, type EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { ensureStandaloneContainerUpdatesFilter, ensureUpdatesFilter } from '#lib/utils/docker.js';
+	import { actionEnvironments, fetchAcrossEnvironments, listScopes, settleAcrossEnvironments } from '#lib/utils/environments.js';
 	import { confirmAndApplyAllUpdates } from '#lib/utils/update-actions.js';
 
+	import { containerSortValue } from '../containers/container-table.helpers';
 	import ContainerUpdatesTable from './components/container-updates-table.svelte';
 	import ProjectUpdatesTable from './components/project-updates-table.svelte';
 
@@ -28,63 +30,85 @@
 
 	let containerRequestOptions = $derived(data.containerRequestOptions as ContainerListRequestOptions);
 	let projectRequestOptions = $derived(data.projectRequestOptions as SearchPaginationSortRequest);
-	const envId = $derived(environmentStore.selected?.id || '0');
+	const scope = $derived(environmentStore.shownKey);
 
 	// The page loader already populated these keys, so no initialData is needed.
 	// Previous rows are kept only within the same environment, and results are
 	// tagged with their environment so a switch never shows another's rows.
 	const containersQuery = createQuery(() => {
-		const queryEnvId = envId;
+		const queryScope = scope;
+		const environments = environmentStore.shown;
 		const options = ensureStandaloneContainerUpdatesFilter(containerRequestOptions);
 		return {
-			queryKey: queryKeys.containers.list(queryEnvId, options),
-			queryFn: () => containerService.getContainersForEnvironment(queryEnvId, options),
+			queryKey: queryKeys.containers.list(queryScope, options),
+			queryFn: () =>
+				fetchAcrossEnvironments(
+					environments,
+					options,
+					(id, request, config) => containerService.getContainersForEnvironment(id, request, config),
+					containerSortValue
+				),
 			placeholderData: (previous, query) => {
-				if (query?.queryKey[1] === queryEnvId) return previous;
+				if (query?.queryKey[1] === queryScope) return previous;
 				return undefined;
 			},
-			select: (value) => ({ envId: queryEnvId, value }),
+			select: (value) => ({ envId: queryScope, value }),
 			refetchOnMount: false
 		};
 	});
 
 	const projectsQuery = createQuery(() => {
-		const queryEnvId = envId;
+		const queryScope = scope;
+		const environments = environmentStore.shown;
 		const options = ensureUpdatesFilter(projectRequestOptions);
 		return {
-			queryKey: queryKeys.projects.list(queryEnvId, options),
-			queryFn: () => projectService.getProjectsForEnvironment(queryEnvId, options),
+			queryKey: queryKeys.projects.list(queryScope, options),
+			queryFn: () =>
+				fetchAcrossEnvironments(environments, options, (id, request, config) =>
+					projectService.getProjectsForEnvironment(id, request, config)
+				),
 			placeholderData: (previous, query) => {
-				if (query?.queryKey[1] === queryEnvId) return previous;
+				if (query?.queryKey[1] === queryScope) return previous;
 				return undefined;
 			},
-			select: (value) => ({ envId: queryEnvId, value }),
+			select: (value) => ({ envId: queryScope, value }),
 			refetchOnMount: false
 		};
 	});
 
-	const containers = $derived(containersQuery.data?.envId === envId ? containersQuery.data.value : null);
-	const projects = $derived(projectsQuery.data?.envId === envId ? projectsQuery.data.value : null);
+	const containers = $derived(containersQuery.data?.envId === scope ? containersQuery.data.value : null);
+	const projects = $derived(projectsQuery.data?.envId === scope ? projectsQuery.data.value : null);
 
 	// Table refreshes write into the cache entry for the environment and request
 	// they were issued for, so a late response never replaces another
 	// environment's active table. Failures reject so callers can report them;
 	// the query's error state also renders inline.
 	async function refreshContainers(options: ContainerListRequestOptions) {
-		const requestedEnvId = envId;
+		const requestedScope = scope;
+		const environments = environmentStore.shown;
 		const requestedOptions = ensureStandaloneContainerUpdatesFilter(options);
 		await queryClient.fetchQuery({
-			queryKey: queryKeys.containers.list(requestedEnvId, requestedOptions),
-			queryFn: () => containerService.getContainersForEnvironment(requestedEnvId, requestedOptions)
+			queryKey: queryKeys.containers.list(requestedScope, requestedOptions),
+			queryFn: () =>
+				fetchAcrossEnvironments(
+					environments,
+					requestedOptions,
+					(id, request, config) => containerService.getContainersForEnvironment(id, request, config),
+					containerSortValue
+				)
 		});
 	}
 
 	async function refreshProjects(options: SearchPaginationSortRequest) {
-		const requestedEnvId = envId;
+		const requestedScope = scope;
+		const environments = environmentStore.shown;
 		const requestedOptions = ensureUpdatesFilter(options);
 		await queryClient.fetchQuery({
-			queryKey: queryKeys.projects.list(requestedEnvId, requestedOptions),
-			queryFn: () => projectService.getProjectsForEnvironment(requestedEnvId, requestedOptions)
+			queryKey: queryKeys.projects.list(requestedScope, requestedOptions),
+			queryFn: () =>
+				fetchAcrossEnvironments(environments, requestedOptions, (id, request, config) =>
+					projectService.getProjectsForEnvironment(id, request, config)
+				)
 		});
 	}
 
@@ -92,25 +116,29 @@
 	// response for this environment. The table refetches its own rows afterwards,
 	// so other cached lists are only marked stale here.
 	async function invalidateContainerQueries() {
-		const requestedEnvId = envId;
 		await Promise.all([
-			queryClient.invalidateQueries({ queryKey: ['containers', requestedEnvId], refetchType: 'none' }),
-			queryClient.invalidateQueries({ queryKey: ['container', requestedEnvId] })
+			...listScopes(environmentStore.shown.map((env) => env.id)).map((scope) =>
+				queryClient.invalidateQueries({ queryKey: ['containers', scope], refetchType: 'none' })
+			),
+			...environmentStore.shown.map((env) => queryClient.invalidateQueries({ queryKey: ['container', env.id] }))
 		]);
 	}
 
 	const checkUpdatesMutation = createMutation(() => ({
-		mutationKey: ['updates', 'check-all', envId],
-		mutationFn: (requestedEnvId: string) => imageService.checkAllImages(requestedEnvId),
-		onSuccess: async (_result, requestedEnvId) => {
+		mutationKey: ['updates', 'check-all', scope],
+		mutationFn: (environments: EnvironmentRef[]) =>
+			settleAcrossEnvironments(environments, (id) => imageService.checkAllImages(id)),
+		onSuccess: async (_result, environments) => {
 			toast.success(m.images_update_check_completed());
 			await Promise.all([
-				queryClient.invalidateQueries({ queryKey: ['containers', requestedEnvId] }),
-				queryClient.invalidateQueries({ queryKey: ['container', requestedEnvId] }),
-				queryClient.invalidateQueries({ queryKey: ['projects', requestedEnvId] }),
-				queryClient.invalidateQueries({ queryKey: queryKeys.projects.environment(requestedEnvId) }),
-				queryClient.invalidateQueries({ queryKey: ['images', requestedEnvId] }),
-				queryClient.invalidateQueries({ queryKey: ['image', requestedEnvId] })
+				...listScopes(environments.map((env) => env.id)).flatMap((scope) =>
+					['containers', 'projects', 'images'].map((resource) => queryClient.invalidateQueries({ queryKey: [resource, scope] }))
+				),
+				...environments.flatMap((env) => [
+					queryClient.invalidateQueries({ queryKey: ['container', env.id] }),
+					queryClient.invalidateQueries({ queryKey: queryKeys.projects.environment(env.id) }),
+					queryClient.invalidateQueries({ queryKey: ['image', env.id] })
+				])
 			]);
 		},
 		onError: (error) => {
@@ -173,7 +201,7 @@
 			action: 'inspect',
 			label: m.images_check_updates(),
 			loadingLabel: m.common_action_checking(),
-			onclick: () => checkUpdatesMutation.mutate(envId),
+			onclick: () => checkUpdatesMutation.mutate(actionEnvironments('image-updates:check')),
 			loading: isChecking,
 			disabled: isChecking
 		},
@@ -235,7 +263,7 @@
 				<TabBar items={tabItems} value={effectiveTab} onValueChange={handleTabChange} />
 
 				<Tabs.Content value="containers" class="mt-4">
-					{#key `${envId}-containers`}
+					{#key `${scope}-containers`}
 						{#if containersQuery.isError}
 							<EmptyState
 								icon={ContainersIcon}
@@ -258,7 +286,7 @@
 				</Tabs.Content>
 
 				<Tabs.Content value="projects" class="mt-4">
-					{#key `${envId}-projects`}
+					{#key `${scope}-projects`}
 						{#if projectsQuery.isError}
 							<EmptyState
 								icon={ProjectsIcon}

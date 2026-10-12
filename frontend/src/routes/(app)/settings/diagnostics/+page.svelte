@@ -18,7 +18,8 @@
 		ConnectionIcon,
 		DownloadIcon,
 		EnvironmentsIcon,
-		ArrowDownIcon
+		ArrowDownIcon,
+		LayersIcon
 	} from '#lib/icons/index.js';
 	import { SettingsPageLayout } from '#lib/layouts/index.js';
 	import type { SettingsStatCard } from '#lib/layouts/types.js';
@@ -30,10 +31,11 @@
 	import { createDiagnosticsWebSocket, type DiagnosticsWebSocket } from '#lib/utils/ws.js';
 
 	import DiagnosticActorPanel from './components/diagnostic-actor-panel.svelte';
+	import DiagnosticGoroutinePanel from './components/diagnostic-goroutine-panel.svelte';
 	import DiagnosticLeakPanel from './components/diagnostic-leak-panel.svelte';
 	import DiagnosticLogPanel from './components/diagnostic-log-panel.svelte';
 
-	type DiagnosticsTab = 'overview' | 'connections' | 'actors' | 'logs' | 'profiling';
+	type DiagnosticsTab = 'overview' | 'connections' | 'actors' | 'goroutines' | 'logs' | 'profiling';
 
 	let diag = $state<Diagnostics | null>(null);
 	let paused = $state(false);
@@ -121,6 +123,7 @@
 					badge: totalConnections || undefined
 				},
 				{ value: 'actors', label: m.diagnostics_tab_actors(), icon: EnvironmentsIcon },
+				{ value: 'goroutines', label: m.goroutines(), icon: LayersIcon },
 				{ value: 'logs', label: m.common_logs(), icon: ActivityIcon },
 				{
 					value: 'profiling',
@@ -501,6 +504,10 @@
 
 				<Tabs.Content value="actors" class="mt-6">
 					<DiagnosticActorPanel />
+				</Tabs.Content>
+
+				<Tabs.Content value="goroutines" class="mt-6">
+					<DiagnosticGoroutinePanel />
 				</Tabs.Content>
 
 				<Tabs.Content value="logs" class="mt-6">

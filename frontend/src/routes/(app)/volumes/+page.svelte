@@ -11,12 +11,13 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { volumeService } from '#lib/services/volume-service.js';
+	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { VolumeCreateRequest, VolumeUsageCounts } from '#lib/types/docker.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
-	import { hasPermission } from '#lib/utils/auth.js';
+	import { fetchAcrossEnvironments, hasShownPermission } from '#lib/utils/environments.js';
 	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';
 
-	import VolumeTable from './components/volume-table.svelte';
+	import VolumeTable, { volumeSortValue } from './components/volume-table.svelte';
 
 	let { data } = $props();
 	const queryClient = useQueryClient();
@@ -24,22 +25,29 @@
 	const pageState = new ResourceListPageState(untrack(() => data.volumeRequestOptions));
 	const countsFallback: VolumeUsageCounts = { inuse: 0, unused: 0, total: 0 };
 
+	// The load already cached the first page under its key; seeding every key with it would hide other pages and filters.
 	const volumesQuery = createQuery(() => {
-		const queryEnvId = pageState.envId;
+		const queryScope = pageState.scope;
+		const environments = environmentStore.shown;
 		const options = pageState.requestOptions;
 		return {
-			queryKey: queryKeys.volumes.table(queryEnvId, options),
-			queryFn: () => volumeService.getVolumesForEnvironment(queryEnvId, options),
+			queryKey: queryKeys.volumes.table(queryScope, options),
+			queryFn: () =>
+				fetchAcrossEnvironments(
+					environments,
+					options,
+					(id, request, config) => volumeService.getVolumesForEnvironment(id, request, config),
+					volumeSortValue
+				),
 			placeholderData: (previous, query) => {
-				if (query?.queryKey[1] === queryEnvId) return previous;
+				if (query?.queryKey[1] === queryScope) return previous;
 				return undefined;
 			},
-			initialData: data.envId === queryEnvId ? data.volumes : undefined,
-			select: (value) => ({ envId: queryEnvId, value })
+			select: (value) => ({ envId: queryScope, value })
 		};
 	});
 
-	const resourcesReady = $derived(volumesQuery.data?.envId === pageState.envId);
+	const resourcesReady = $derived(volumesQuery.data?.envId === pageState.scope);
 	const volumes = $derived(volumesQuery.data?.value ?? data.volumes);
 
 	const createVolumeMutation = createMutation(() => ({
@@ -52,8 +60,8 @@
 				m.common_create_success({ resource: `${m.resource_volume()} "${name}"` }),
 				activityToastOptions(extractActivityId(data))
 			);
-			if (options.requestedEnvId === pageState.envId) {
-				await loadVolumes(pageState.requestOptions, options.requestedEnvId);
+			if (environmentStore.shown.some((env) => env.id === options.requestedEnvId)) {
+				await loadVolumes();
 				pageState.isCreateDialogOpen = false;
 			}
 		},
@@ -68,15 +76,22 @@
 		pageState.isCreateDialogOpen = false;
 	});
 
-	async function handleCreate(options: VolumeCreateRequest) {
-		await createVolumeMutation.mutateAsync({ options, requestedEnvId: pageState.envId });
+	async function handleCreate(options: VolumeCreateRequest, environmentId: string) {
+		await createVolumeMutation.mutateAsync({ options, requestedEnvId: environmentId });
 	}
 
-	async function loadVolumes(options = pageState.requestOptions, requestedEnvId = pageState.envId) {
+	async function loadVolumes(options = pageState.requestOptions, requestedScope = pageState.scope) {
+		const environments = environmentStore.shown;
 		pageState.requestOptions = options;
 		await queryClient.query({
-			queryKey: queryKeys.volumes.table(requestedEnvId, options),
-			queryFn: () => volumeService.getVolumesForEnvironment(requestedEnvId, options)
+			queryKey: queryKeys.volumes.table(requestedScope, options),
+			queryFn: () =>
+				fetchAcrossEnvironments(
+					environments,
+					options,
+					(id, request, config) => volumeService.getVolumesForEnvironment(id, request, config),
+					volumeSortValue
+				)
 		});
 	}
 
@@ -90,7 +105,7 @@
 		return countsFallback;
 	});
 
-	const canCreateVolume = $derived(hasPermission('volumes:create', pageState.envId));
+	const canCreateVolume = $derived(hasShownPermission('volumes:create'));
 
 	const actionButtons: ActionButton[] = $derived.by(() => {
 		const buttons: ActionButton[] = [];
@@ -137,11 +152,11 @@
 <ResourcePageLayout title={m.resource_volumes_cap()} subtitle={m.volumes_subtitle()} {actionButtons} {statCards}>
 	{#snippet mainContent()}
 		{#if resourcesReady}
-			{#key pageState.envId}
+			{#key pageState.scope}
 				<VolumeTable
 					bind:volumes={
 						() => volumes,
-						(value) => queryClient.setQueryData(queryKeys.volumes.table(pageState.envId, pageState.requestOptions), value)
+						(value) => queryClient.setQueryData(queryKeys.volumes.table(pageState.scope, pageState.requestOptions), value)
 					}
 					bind:selectedIds={pageState.selectedIds}
 					bind:requestOptions={pageState.requestOptions}

@@ -13,7 +13,6 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { networkService } from '#lib/services/network-service.js';
-	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { ContainerDetailsDto } from '#lib/types/docker.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
@@ -21,11 +20,12 @@
 
 	interface Props {
 		container: ContainerDetailsDto;
+		environmentId: string;
 	}
 
-	let { container }: Props = $props();
+	let { container, environmentId }: Props = $props();
 
-	const envId = $derived(environmentStore.selected?.id || '0');
+	const envId = $derived(environmentId);
 	const canConnect = $derived(hasPermission('networks:connect', envId));
 	const canDisconnect = $derived(hasPermission('networks:disconnect', envId));
 
@@ -38,7 +38,7 @@
 	const networkListOptions = { pagination: { page: 1, limit: 500 } };
 	const networksQuery = createQuery(() => ({
 		queryKey: queryKeys.networks.list(envId, networkListOptions),
-		queryFn: () => networkService.getNetworks(networkListOptions),
+		queryFn: () => networkService.getNetworksForEnvironment(envId, networkListOptions),
 		enabled: canConnect
 	}));
 
@@ -60,11 +60,15 @@
 						.split(',')
 						.map((alias) => alias.trim())
 						.filter(Boolean);
-					await networkService.connectContainer(connectNetwork, {
-						containerId: container.id,
-						aliases: aliases.length > 0 ? aliases : undefined,
-						ipv4Address: connectIp.trim() || undefined
-					});
+					await networkService.connectContainer(
+						connectNetwork,
+						{
+							containerId: container.id,
+							aliases: aliases.length > 0 ? aliases : undefined,
+							ipv4Address: connectIp.trim() || undefined
+						},
+						envId
+					);
 					toast.success(m.network_connect_success());
 					connectNetwork = '';
 					connectAliases = '';
@@ -79,6 +83,8 @@
 	}
 
 	function handleDisconnect(networkName: string, networkId: string) {
+		// The dialog outlives navigation, so it disconnects the container it was opened for.
+		const target = { containerId: container.id, environmentId: envId };
 		openConfirmDialog({
 			title: m.network_disconnect_confirm_title(),
 			message: m.network_disconnect_confirm_message({ network: networkName }),
@@ -90,7 +96,11 @@
 					try {
 						const operationResult = await tryCatch(
 							(async () => {
-								await networkService.disconnectContainer(networkId || networkName, { containerId: container.id, force: false });
+								await networkService.disconnectContainer(
+									networkId || networkName,
+									{ containerId: target.containerId, force: false },
+									target.environmentId
+								);
 								toast.success(m.network_disconnect_success());
 								await refreshAll();
 							})()

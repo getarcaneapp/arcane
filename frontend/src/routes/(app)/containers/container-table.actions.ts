@@ -4,6 +4,7 @@ import { toast } from 'svelte-sonner';
 import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 import { m } from '#lib/paraglide/messages.js';
 import { containerService, type ContainersPaginatedResponse } from '#lib/services/container-service.js';
+import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import type { Activity } from '#lib/types/activity.type.js';
 import type { ContainerSummaryDto } from '#lib/types/docker.js';
 import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
@@ -15,6 +16,7 @@ import {
 	confirmAndUpdateContainer,
 	runContainerLifecycleAction
 } from '#lib/utils/container-actions.js';
+import { hasShownPermission, rowKey, type EnvironmentPage, type EnvironmentRow } from '#lib/utils/environments.js';
 import type { TableActionConfig, TableBulkActionConfig } from '#lib/utils/table-action-types.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -29,15 +31,19 @@ type BulkLoadingState = {
 };
 
 type ActionDeps = {
-	setContainers: (next: ContainersPaginatedResponse) => void;
+	setContainers: (next: ContainerPage) => void;
 	setSelectedIds: (next: string[]) => void;
-	refreshContainers: () => Promise<ContainersPaginatedResponse>;
+	refreshContainers: () => Promise<ContainerPage>;
 	actionStatus: Record<string, ActionStatus>;
 	isBulkLoading: BulkLoadingState;
-	environmentId: () => string;
+	/** Shown-environments scope the table rendered; compared only, never sent to the API. */
+	scope: () => string;
 	onUpdateAccepted: (activity: Activity) => void;
 	canRefreshUpdates: () => boolean;
 };
+
+type ContainerRow = EnvironmentRow<ContainerSummaryDto>;
+type ContainerPage = EnvironmentPage<ContainersPaginatedResponse>;
 
 type ContainerActionKind = 'start' | 'stop' | 'restart' | 'pause' | 'unpause' | 'redeploy';
 
@@ -50,7 +56,7 @@ const containerActionConfigs: Record<
 > = {
 	redeploy: {
 		status: 'redeploying',
-		run: (id) => containerService.redeployContainer(id),
+		run: (id, environmentId) => containerService.redeployContainer(id, environmentId),
 		success: () => m.container_redeploy_success(),
 		failure: () => m.container_redeploy_failed()
 	}
@@ -62,7 +68,7 @@ export function createContainerActions({
 	refreshContainers,
 	actionStatus,
 	isBulkLoading,
-	environmentId,
+	scope,
 	onUpdateAccepted,
 	canRefreshUpdates
 }: ActionDeps) {
@@ -72,13 +78,15 @@ export function createContainerActions({
 		return result;
 	};
 
-	async function performContainerAction(action: ContainerActionKind, id: string) {
+	async function performContainerAction(action: ContainerActionKind, id: string, environmentId: string) {
+		const key = rowKey({ id, environmentId, environmentTagged: true });
 		if (action === 'start' || action === 'stop' || action === 'restart' || action === 'pause' || action === 'unpause') {
 			await runContainerLifecycleAction({
 				action,
 				containerId: id,
+				environmentId,
 				setStatus: (status) => {
-					actionStatus[id] = status;
+					actionStatus[key] = status;
 				},
 				onRefresh: reloadContainers
 			});
@@ -86,15 +94,15 @@ export function createContainerActions({
 		}
 
 		const config = containerActionConfigs[action];
-		actionStatus[id] = config.status;
+		actionStatus[key] = config.status;
 
 		const operationResult = await tryCatch(
 			(async () => {
 				await handleApiResultWithCallbacks({
-					result: await tryCatch(config.run(id)),
+					result: await tryCatch(config.run(id, environmentId)),
 					message: config.failure(),
 					setLoadingState: (value) => {
-						actionStatus[id] = value ? config.status : '';
+						actionStatus[key] = value ? config.status : '';
 					},
 					async onSuccess(data) {
 						toast.success(config.success(), activityToastOptions(extractActivityId(data)));
@@ -108,37 +116,41 @@ export function createContainerActions({
 
 			console.error('Container action failed:', error);
 			toast.error(m.containers_action_error());
-			actionStatus[id] = '';
+			actionStatus[key] = '';
 		}
 	}
 
-	async function handleRemoveContainer(id: string, name: string) {
+	async function handleRemoveContainer(id: string, name: string, environmentId: string) {
+		const key = rowKey({ id, environmentId, environmentTagged: true });
 		confirmAndRemoveContainer({
 			containerId: id,
 			containerName: name,
+			environmentId,
 			setStatus: (status) => {
-				actionStatus[id] = status;
+				actionStatus[key] = status;
 			},
 			onRefresh: reloadContainers
 		});
 	}
 
-	async function handleUpdateContainer(container: ContainerSummaryDto) {
+	async function handleUpdateContainer(container: ContainerRow) {
+		const key = rowKey(container);
 		const containerName = getContainerDisplayName(container);
 
 		confirmAndUpdateContainer({
 			containerId: container.id,
 			containerName,
-			environmentId: environmentId(),
+			environmentId: container.environmentId,
 			setLoading: (loading) => {
-				actionStatus[container.id] = loading ? 'updating' : '';
+				actionStatus[key] = loading ? 'updating' : '';
 			},
 			onRefresh: () => (canRefreshUpdates() ? reloadContainers() : undefined),
 			onAccepted: onUpdateAccepted
 		});
 	}
 
-	async function handleRedeployContainer(container: ContainerSummaryDto) {
+	async function handleRedeployContainer(container: ContainerRow) {
+		const key = rowKey(container);
 		openConfirmDialog({
 			title: m.container_confirm_redeploy_title(),
 			message: m.container_confirm_redeploy_message(),
@@ -146,12 +158,12 @@ export function createContainerActions({
 				label: m.common_redeploy(),
 				destructive: false,
 				action: async () => {
-					actionStatus[container.id] = 'redeploying';
+					actionStatus[key] = 'redeploying';
 					await handleApiResultWithCallbacks({
-						result: await tryCatch(containerService.redeployContainer(container.id)),
+						result: await tryCatch(containerService.redeployContainer(container.id, container.environmentId)),
 						message: m.container_redeploy_failed(),
 						setLoadingState: (value) => {
-							actionStatus[container.id] = value ? 'redeploying' : '';
+							actionStatus[key] = value ? 'redeploying' : '';
 						},
 						async onSuccess(data) {
 							toast.success(m.container_redeploy_success(), activityToastOptions(extractActivityId(data)));
@@ -170,7 +182,7 @@ export function createContainerActions({
 			message: config.message(ids.length),
 			confirmLabel: config.label,
 			destructive: config.destructive ?? false,
-			run: (id) => config.run(id),
+			run: (id, environmentId) => config.run(id, environmentId),
 			messages: {
 				success: config.success,
 				partial: config.partial,
@@ -190,7 +202,7 @@ export function createContainerActions({
 			message: (count) => m.containers_bulk_start_confirm_message({ count }),
 			label: m.common_start(),
 			loadingKey: 'start',
-			run: (id) => containerService.startContainer(id),
+			run: (id, environmentId) => containerService.startContainer(id, environmentId),
 			success: (count) => m.containers_bulk_start_success({ count }),
 			partial: (success, total, failed) => m.containers_bulk_start_partial({ success, total, failed }),
 			failure: () => m.containers_start_failed()
@@ -203,7 +215,7 @@ export function createContainerActions({
 			message: (count) => m.containers_bulk_stop_confirm_message({ count }),
 			label: m.common_stop(),
 			loadingKey: 'stop',
-			run: (id) => containerService.stopContainer(id),
+			run: (id, environmentId) => containerService.stopContainer(id, environmentId),
 			success: (count) => m.containers_bulk_stop_success({ count }),
 			partial: (success, total, failed) => m.containers_bulk_stop_partial({ success, total, failed }),
 			failure: () => m.containers_stop_failed()
@@ -216,7 +228,7 @@ export function createContainerActions({
 			message: (count) => m.containers_bulk_restart_confirm_message({ count }),
 			label: m.common_restart(),
 			loadingKey: 'restart',
-			run: (id) => containerService.restartContainer(id),
+			run: (id, environmentId) => containerService.restartContainer(id, environmentId),
 			success: (count) => m.containers_bulk_restart_success({ count }),
 			partial: (success, total, failed) => m.containers_bulk_restart_partial({ success, total, failed }),
 			failure: () => m.containers_restart_failed()
@@ -224,7 +236,8 @@ export function createContainerActions({
 	}
 
 	function handleBulkUpdate(validIds: string[], allIds: string[]) {
-		const updateEnvironmentId = environmentId();
+		const updateScope = scope();
+		const tracksActivities = environmentStore.shown.every((env) => hasPermission('activities:read', env.id));
 		const totalCount = allIds.length;
 		const filteredCount = validIds.length;
 		const message =
@@ -238,22 +251,19 @@ export function createContainerActions({
 			message,
 			confirmLabel: m.common_update(),
 			destructive: false,
-			run: (id) => containerService.updateContainer(id, updateEnvironmentId),
+			run: (id, environmentId) => containerService.updateContainer(id, environmentId),
 			messages: {
 				success: (count) => m.containers_bulk_update_accepted({ count }),
 				partial: (success, total, failed) => m.containers_bulk_update_accept_partial({ success, total, failed }),
 				failure: () => m.containers_bulk_update_accept_failed()
 			},
 			acceptanceOnly: true,
-			activityLink: hasPermission('activities:read', updateEnvironmentId),
+			activityLink: hasShownPermission('activities:read'),
 			onItemSuccess: (_id, activity) => onUpdateAccepted(activity),
 			setLoading: (loading) => {
 				isBulkLoading['update'] = loading;
 			},
-			onComplete: () =>
-				canRefreshUpdates() && updateEnvironmentId === environmentId() && !hasPermission('activities:read', updateEnvironmentId)
-					? reloadContainers()
-					: undefined,
+			onComplete: () => (canRefreshUpdates() && updateScope === scope() && !tracksActivities ? reloadContainers() : undefined),
 			clearSelection: () => setSelectedIds([])
 		});
 	}
@@ -269,8 +279,12 @@ export function createContainerActions({
 				{ id: 'force', label: m.containers_remove_force_label(), initialState: false },
 				{ id: 'volumes', label: m.containers_remove_volumes_label(), initialState: false }
 			],
-			run: (id, checkboxStates) =>
-				containerService.deleteContainer(id, { force: !!checkboxStates['force'], volumes: !!checkboxStates['volumes'] }),
+			run: (id, environmentId, checkboxStates) =>
+				containerService.deleteContainer(id, {
+					force: !!checkboxStates['force'],
+					volumes: !!checkboxStates['volumes'],
+					environmentId
+				}),
 			messages: {
 				success: (count) => m.containers_bulk_remove_success({ count }),
 				partial: (success, total, failed) => m.containers_bulk_remove_partial({ success, total, failed }),

@@ -13,12 +13,13 @@
 	type Props = {
 		open: boolean;
 		imageId: string;
+		environmentId?: string;
 		defaultRepository?: string;
 		onOpenChange?: (open: boolean) => void;
 		onTagged?: () => Promise<void> | void;
 	};
 
-	let { open = $bindable(false), imageId, defaultRepository = '', onOpenChange, onTagged }: Props = $props();
+	let { open = $bindable(false), imageId, environmentId, defaultRepository = '', onOpenChange, onTagged }: Props = $props();
 
 	const schema = z.object({
 		repository: z.string().min(1, m.images_tag_repository_required()),
@@ -48,10 +49,14 @@
 		try {
 			const operationResult = await tryCatch(
 				(async () => {
-					await imageService.tagImage(imageId, {
-						repository: data.repository.trim(),
-						tag: data.tag?.trim() || undefined
-					});
+					await imageService.tagImage(
+						imageId,
+						{
+							repository: data.repository.trim(),
+							tag: data.tag?.trim() || undefined
+						},
+						environmentId
+					);
 					toast.success(m.images_tag_success());
 					await onTagged?.();
 					handleOpenChange(false);

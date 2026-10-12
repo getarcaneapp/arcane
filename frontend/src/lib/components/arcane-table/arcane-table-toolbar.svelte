@@ -7,7 +7,9 @@
 	import * as Popover from '#lib/components/ui/popover/index.js';
 	import { ResetIcon, SearchIcon, FilterIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { cn } from '#lib/utils.js';
+	import { ENVIRONMENT_FILTER } from '#lib/utils/environments.js';
 	import { debounced } from '#lib/utils/ws.js';
 
 	import DataTableFacetedFilter from './arcane-table-filter.svelte';
@@ -63,6 +65,10 @@
 		}))
 	);
 
+	const environmentColumn = $derived(
+		table.getAllColumns().some((col) => col.id === ENVIRONMENT_FILTER) ? table.getColumn(ENVIRONMENT_FILTER) : undefined
+	);
+	const environmentFilterOptions = $derived(environmentStore.shown.map((env) => ({ label: env.name, value: env.id })));
 	const usageColumn = $derived(table.getAllColumns().some((col) => col.id === 'inUse') ? table.getColumn('inUse') : undefined);
 	const updatesColumn = $derived(
 		table.getAllColumns().some((col) => col.id === 'updates') ? table.getColumn('updates') : undefined
@@ -94,6 +100,7 @@
 	const hasFilterColumns = $derived(
 		!withoutFilters &&
 			[
+				environmentColumn,
 				typeColumn && typeColumnFilterOptions.length > 0,
 				tagsColumn && tagsColumnFilterOptions.length > 0,
 				labelColumn,
@@ -109,6 +116,9 @@
 </script>
 
 {#snippet filterList()}
+	{#if environmentColumn}
+		<DataTableFacetedFilter column={environmentColumn} title={m.resource_environment_cap()} options={environmentFilterOptions} />
+	{/if}
 	{#if typeColumn && typeColumnFilterOptions.length > 0}
 		<DataTableFacetedFilter column={typeColumn} title={m.common_type()} options={typeColumnFilterOptions} />
 	{/if}

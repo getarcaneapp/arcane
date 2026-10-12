@@ -2,6 +2,7 @@ package diagnostics
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -11,6 +12,9 @@ import (
 	"runtime/debug"
 	"runtime/pprof"
 	"runtime/trace"
+	"slices"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -136,6 +140,58 @@ func (s *DiagnosticsService) ScanGoroutineLeaks() (system.GoroutineLeakReport, e
 		Profile:   buf.String(),
 		ScannedAt: now,
 	}, nil
+}
+
+// Goroutines groups the live goroutines by identical stack, largest group first.
+// Records that differ only by pprof labels share a stack and merge into one group.
+func (s *DiagnosticsService) Goroutines() (system.GoroutineProfile, error) {
+	var buf bytes.Buffer
+	if err := pprof.Lookup("goroutine").WriteTo(&buf, 1); err != nil {
+		return system.GoroutineProfile{}, fmt.Errorf("write goroutine profile: %w", err)
+	}
+
+	profile := system.GoroutineProfile{Groups: []system.GoroutineGroup{}, CapturedAt: time.Now().UTC()}
+	index := map[string]int{}
+	// debug=1 text holds "N @ pcs" records of "#\tpc\tfunc+off\tfile:line" frames, separated by blank lines.
+	// A tabwriter aligns the columns, so a run of tabs is one separator.
+	for record := range strings.SplitSeq(buf.String(), "\n\n") {
+		group := system.GoroutineGroup{Frames: []system.GoroutineFrame{}}
+		for line := range strings.Lines(record) {
+			fields := strings.FieldsFunc(line, func(r rune) bool { return r == '\t' || r == '\n' })
+			if len(fields) == 0 {
+				continue
+			}
+			switch head, _, isHead := strings.Cut(fields[0], " @"); {
+			case isHead && !strings.HasPrefix(head, "#"):
+				group.Count, _ = strconv.Atoi(head)
+			case len(fields) == 4 && fields[0] == "#":
+				function, _, _ := strings.Cut(fields[2], "+0x")
+				sep := strings.LastIndexByte(fields[3], ':')
+				lineNo, err := strconv.Atoi(fields[3][sep+1:])
+				hasLine := sep >= 0 && err == nil
+				group.Frames = append(group.Frames, system.GoroutineFrame{
+					Function: function,
+					File:     kit.Ternary(hasLine, fields[3][:max(sep, 0)], fields[3]),
+					Line:     kit.Ternary(hasLine, lineNo, 0),
+				})
+				// Frames run innermost first, so the last non-runtime frame is the entry point.
+				group.Label = kit.Ternary(group.Label == "" || !strings.HasPrefix(function, "runtime."), function, group.Label)
+			}
+		}
+		if group.Count == 0 {
+			continue
+		}
+		profile.Total += group.Count
+		key := fmt.Sprint(group.Frames)
+		if i, ok := index[key]; ok {
+			profile.Groups[i].Count += group.Count
+			continue
+		}
+		index[key] = len(profile.Groups)
+		profile.Groups = append(profile.Groups, group)
+	}
+	slices.SortStableFunc(profile.Groups, func(a, b system.GoroutineGroup) int { return cmp.Compare(b.Count, a.Count) })
+	return profile, nil
 }
 
 // Profile captures a pprof profile in the given debug format. The CPU profile

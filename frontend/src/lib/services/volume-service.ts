@@ -11,7 +11,7 @@ import type {
 import type { SearchPaginationSortRequest, Paginated } from '#lib/types/shared.js';
 import { transformPaginationParams } from '#lib/utils/tables.js';
 
-import BaseAPIService from './api-service';
+import BaseAPIService, { type APIRequestConfig } from './api-service';
 
 export type VolumesPaginatedResponse = Paginated<VolumeSummaryDto, VolumeUsageCounts>;
 
@@ -27,10 +27,11 @@ class VolumeService extends BaseAPIService {
 
 	async getVolumesForEnvironment(
 		environmentId: string,
-		options?: SearchPaginationSortRequest
+		options?: SearchPaginationSortRequest,
+		config?: APIRequestConfig
 	): Promise<VolumesPaginatedResponse> {
 		const params = transformPaginationParams(options);
-		const res = await this.api.get(`/environments/${environmentId}/volumes`, { params });
+		const res = await this.api.get(`/environments/${environmentId}/volumes`, { ...config, params });
 		return res.data;
 	}
 
@@ -43,8 +44,8 @@ class VolumeService extends BaseAPIService {
 		return this.handleResponse(this.api.get(`/environments/${environmentId}/volumes/${volumeName}`)) as Promise<VolumeDetailDto>;
 	}
 
-	async getVolumeUsage(volumeName: string): Promise<VolumeUsageDto> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+	async getVolumeUsage(volumeName: string, environmentId?: string): Promise<VolumeUsageDto> {
+		const envId = await this.resolveEnvironmentId(environmentId);
 		return this.handleResponse(this.api.get(`/environments/${envId}/volumes/${volumeName}/usage`)) as Promise<VolumeUsageDto>;
 	}
 
@@ -54,8 +55,8 @@ class VolumeService extends BaseAPIService {
 		return res.data.data;
 	}
 
-	async getVolumeSizes(environmentId: string): Promise<VolumeSizeInfo[]> {
-		const res = await this.api.get(`/environments/${environmentId}/volumes/sizes`);
+	async getVolumeSizes(environmentId: string, config?: APIRequestConfig): Promise<VolumeSizeInfo[]> {
+		const res = await this.api.get(`/environments/${environmentId}/volumes/sizes`, config);
 		return res.data.data;
 	}
 
@@ -71,12 +72,14 @@ class VolumeService extends BaseAPIService {
 		) as Promise<VolumeDetailDto>;
 	}
 
-	async deleteVolume(volumeName: string): Promise<any> {
+	async deleteVolume(volumeName: string, environmentId?: string): Promise<any> {
 		// Resolve the env id synchronously when possible so bulk deletes start
 		// their request inside the runWithActivityBatchId scope (see api-service).
-		const envId = environmentStore.isInitialized()
-			? (environmentStore.selected?.id ?? LOCAL_DOCKER_ENVIRONMENT_ID)
-			: await environmentStore.getCurrentEnvironmentId();
+		const envId =
+			environmentId ??
+			(environmentStore.isInitialized()
+				? (environmentStore.selected?.id ?? LOCAL_DOCKER_ENVIRONMENT_ID)
+				: await environmentStore.getCurrentEnvironmentId());
 		return this.handleResponse(this.api.delete(`/environments/${envId}/volumes/${volumeName}`));
 	}
 }

@@ -1,3 +1,15 @@
+<script module lang="ts">
+	import type { ImageSummaryDto } from '#lib/types/docker.js';
+
+	/** Sort value for an image column; vulnerabilities sort by total, critical, then high, unscanned first, as the backend does. */
+	export function imageSortValue(image: ImageSummaryDto, column: string): unknown {
+		if (column !== 'vulnerabilities') return image[column as keyof ImageSummaryDto];
+		const scan = image.vulnerabilityScan;
+		if (scan?.status !== 'completed' || !scan.summary) return [-1];
+		return [scan.summary.total, scan.summary.critical, scan.summary.high];
+	}
+</script>
+
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { useQueryClient } from '@tanstack/svelte-query';
@@ -9,6 +21,7 @@
 	import UniversalMobileCard from '#lib/components/arcane-table/cards/universal-mobile-card.svelte';
 	import InUseStatus from '#lib/components/arcane-table/cells/in-use-status.svelte';
 	import UnixCreatedCell from '#lib/components/arcane-table/cells/unix-created-cell.svelte';
+	import { environmentColumns } from '#lib/components/arcane-table/environment-column.js';
 	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '#lib/components/arcane-table/index.js';
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
@@ -33,24 +46,35 @@
 	} from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
-	import { imageService } from '#lib/services/image-service.js';
+	import { imageService, type ImagesPaginatedResponse } from '#lib/services/image-service.js';
 	import { vulnerabilityService } from '#lib/services/vulnerability-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { featureStore } from '#lib/stores/features.store.svelte.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
-	import type { ImageSummaryDto, ImageUpdateInfoDto } from '#lib/types/docker.js';
+	import type { ImageUpdateInfoDto } from '#lib/types/docker.js';
 	import type { VulnerabilityScanSummary } from '#lib/types/environment.js';
-	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
+	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { handleApiResultWithCallbacks, extractApiErrorMessage } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { bulkConfirmAndRun } from '#lib/utils/bulk-actions.js';
 	import { isLikelyStaleFailedSummary, isVulnerabilityScanInProgress } from '#lib/utils/docker.js';
+	import {
+		collectAcrossEnvironments,
+		environmentHref,
+		fetchAcrossEnvironments,
+		hasShownPermission,
+		rowKey,
+		type EnvironmentPage,
+		type EnvironmentRow
+	} from '#lib/utils/environments.js';
 	import { bytes, formatDateTimeShort, nowInstantString } from '#lib/utils/formatting.js';
 	import { inUseBadge } from '#lib/utils/mobile-card-badges.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import ImageTagDialog from './image-tag-dialog.svelte';
+
+	type ImageRow = EnvironmentRow<ImageSummaryDto>;
 
 	let {
 		images = $bindable(),
@@ -60,7 +84,7 @@
 		onRefreshData,
 		loading = false
 	}: {
-		images: Paginated<ImageSummaryDto>;
+		images: EnvironmentPage<ImagesPaginatedResponse>;
 		selectedIds: string[];
 		requestOptions: SearchPaginationSortRequest;
 		onImageUpdated?: () => Promise<void>;
@@ -74,8 +98,9 @@
 		checking: false
 	});
 
-	const currentEnvId = $derived(environmentStore.selected?.id || '0');
-	const vulnerabilityManagementEnabled = $derived(featureStore.isEnabled('vulnerabilityManagement', currentEnvId));
+	const vulnerabilityManagementEnabled = $derived(
+		environmentStore.shown.some((env) => featureStore.isEnabled('vulnerabilityManagement', env.id))
+	);
 	$effect(() => {
 		if (!vulnerabilityManagementEnabled) stopBatchScanPolling();
 	});
@@ -83,30 +108,30 @@
 	// this the deriveds would cache pre-hydration falses forever.
 	const canDeleteImage = $derived.by(() => {
 		userStore.current;
-		return hasPermission('images:delete', currentEnvId);
+		return hasShownPermission('images:delete');
 	});
 	const canPullImage = $derived.by(() => {
 		userStore.current;
-		return hasPermission('images:pull', currentEnvId);
+		return hasShownPermission('images:pull');
 	});
 	const canScanImage = $derived.by(() => {
 		userStore.current;
-		return vulnerabilityManagementEnabled && hasPermission('vulnerabilities:scan', currentEnvId);
+		return vulnerabilityManagementEnabled && hasShownPermission('vulnerabilities:scan');
 	});
 	const canTagImage = $derived.by(() => {
 		userStore.current;
-		return hasPermission('images:tag', currentEnvId);
+		return hasShownPermission('images:tag');
 	});
 	const canPatchImage = $derived.by(() => {
 		userStore.current;
-		return hasPermission('images:patch', currentEnvId);
+		return hasShownPermission('images:patch');
 	});
 	const canReadImage = $derived.by(() => {
 		userStore.current;
-		return hasPermission('images:read', currentEnvId);
+		return hasShownPermission('images:read');
 	});
 
-	let tagDialogImage = $state<ImageSummaryDto | null>(null);
+	let tagDialogImage = $state<ImageRow | null>(null);
 	let scanRequestedAtByImage = $state<Record<string, string>>({});
 	let scanPollTimeout: ReturnType<typeof setTimeout> | null = null;
 	let scanPollInFlight = false;
@@ -119,7 +144,12 @@
 			await onRefreshData(options);
 			return;
 		}
-		images = await imageService.getImages(options);
+		images = await fetchAcrossEnvironments(
+			environmentStore.shown,
+			options,
+			(id, request, config) => imageService.getImagesForEnvironment(id, request, config),
+			imageSortValue
+		);
 	}
 
 	function handleDeleteSelected(ids: string[]) {
@@ -130,7 +160,8 @@
 			confirmLabel: m.common_remove(),
 			destructive: true,
 			checkboxes: [{ id: 'force', label: m.images_remove_force_label(), initialState: false }],
-			run: (id, checkboxStates) => imageService.deleteImage(id, { force: !!checkboxStates['force'] }),
+			run: (id, environmentId, checkboxStates) =>
+				imageService.deleteImage(id, { force: !!checkboxStates['force'] }, environmentId),
 			messages: {
 				success: (count) => (count === 1 ? m.image_removed_successfully() : m.images_remove_success_many({ count })),
 				partial: (success, total, failed) => m.common_bulk_remove_partial({ success, total, failed, resource: m.images() }),
@@ -145,7 +176,7 @@
 		});
 	}
 
-	async function deleteImage(id: string) {
+	async function deleteImage(id: string, environmentId: string) {
 		openConfirmDialog({
 			title: m.common_remove_title({ resource: m.resource_image() }),
 			message: m.images_remove_message(),
@@ -163,7 +194,7 @@
 					const force = !!checkboxStates['force'];
 					isLoading.removing = true;
 
-					const result = await tryCatch(imageService.deleteImage(id, { force }));
+					const result = await tryCatch(imageService.deleteImage(id, { force }, environmentId));
 					await handleApiResultWithCallbacks({
 						result,
 						message: m.failed_to_remove_image(),
@@ -179,13 +210,13 @@
 			}
 		});
 	}
-	async function handleInlineImagePull(repoTag: string) {
+	async function handleInlineImagePull(repoTag: string, environmentId: string) {
 		if (!repoTag || repoTag === '<none>:<none>') {
 			toast.error(m.images_pull_no_tag());
 			return;
 		}
 
-		const result = await tryCatch(imageService.pullImage(repoTag));
+		const result = await tryCatch(imageService.pullImage(repoTag, undefined, undefined, environmentId));
 		await handleApiResultWithCallbacks({
 			result,
 			message: m.images_pull_failed(),
@@ -197,17 +228,17 @@
 		});
 	}
 
-	async function handleInlineVulnerabilityScan(imageId: string) {
+	async function handleInlineVulnerabilityScan(image: ImageRow) {
 		if (!canScanImage) return;
-		const requestedEnvId = currentEnvId;
-		const result = await tryCatch(vulnerabilityService.scanImage(imageId, currentEnvId));
-		if (destroyed || !vulnerabilityManagementEnabled || requestedEnvId !== currentEnvId) return;
+		const requestedScope = environmentStore.shownKey;
+		const result = await tryCatch(vulnerabilityService.scanImage(image.id, image.environmentId));
+		if (destroyed || !vulnerabilityManagementEnabled || requestedScope !== environmentStore.shownKey) return;
 		await handleApiResultWithCallbacks({
 			result,
 			message: m.vuln_scan_failed(),
 			setLoadingState: () => {},
 			onSuccess: async (data) => {
-				scanRequestedAtByImage[imageId] = data.scanTime || nowInstantString();
+				scanRequestedAtByImage[rowKey(image)] = data.scanTime || nowInstantString();
 				const summary: VulnerabilityScanSummary = {
 					imageId: data.imageId,
 					scanTime: data.scanTime,
@@ -217,7 +248,7 @@
 					summary: data.summary,
 					error: data.error
 				};
-				await handleVulnerabilityScanChanged(imageId, summary);
+				await handleVulnerabilityScanChanged(rowKey(image), summary);
 
 				if (data.status === 'completed') {
 					toast.success(m.vuln_scan_completed(), activityToastOptions(data.activityId));
@@ -234,13 +265,13 @@
 		});
 	}
 
-	async function handleExportImage(imageId: string) {
-		const url = await imageService.getImageExportUrl(imageId);
+	async function handleExportImage(imageId: string, environmentId: string) {
+		const url = await imageService.getImageExportUrl(imageId, environmentId);
 		window.open(url, '_blank', 'noopener,noreferrer');
 	}
 
-	async function handleInlineImagePatch(imageId: string) {
-		const result = await tryCatch(imageService.patchImage(imageId));
+	async function handleInlineImagePatch(imageId: string, environmentId: string) {
+		const result = await tryCatch(imageService.patchImage(imageId, undefined, environmentId));
 		await handleApiResultWithCallbacks({
 			result,
 			message: m.images_patch_failed(),
@@ -251,30 +282,30 @@
 		});
 	}
 
-	async function handleUpdateInfoChanged(imageId: string, newUpdateInfo: ImageUpdateInfoDto) {
+	async function handleUpdateInfoChanged(key: string, newUpdateInfo: ImageUpdateInfoDto) {
 		if (destroyed) return;
 		images = {
 			...images,
 			data: images.data.map((image) => {
-				if (image.id === imageId) return { ...image, updateInfo: newUpdateInfo };
+				if (rowKey(image) === key) return { ...image, updateInfo: newUpdateInfo };
 				return image;
 			})
 		};
 		await onImageUpdated?.();
 	}
 
-	async function handleVulnerabilityScanChanged(imageId: string, newScanSummary: VulnerabilityScanSummary) {
+	async function handleVulnerabilityScanChanged(key: string, newScanSummary: VulnerabilityScanSummary) {
 		if (destroyed) return;
 		images = {
 			...images,
 			data: images.data.map((image) => {
-				if (image.id === imageId) return { ...image, vulnerabilityScan: newScanSummary };
+				if (rowKey(image) === key) return { ...image, vulnerabilityScan: newScanSummary };
 				return image;
 			})
 		};
 		if (newScanSummary.status === 'completed' || newScanSummary.status === 'failed') {
-			if (scanRequestedAtByImage[imageId]) {
-				delete scanRequestedAtByImage[imageId];
+			if (scanRequestedAtByImage[key]) {
+				delete scanRequestedAtByImage[key];
 				scanRequestedAtByImage = { ...scanRequestedAtByImage };
 			}
 		}
@@ -292,19 +323,17 @@
 		}
 	}
 
-	function getScanningImageIds(): string[] {
+	function getScanningImages(): ImageRow[] {
 		if (!vulnerabilityManagementEnabled) return [];
-		return (images.data ?? [])
-			.filter((item) => isVulnerabilityScanInProgress(item.vulnerabilityScan?.status))
-			.map((item) => item.id);
+		return (images.data ?? []).filter((item) => isVulnerabilityScanInProgress(item.vulnerabilityScan?.status));
 	}
 
 	let scanPollError = $state<string | null>(null);
 
 	async function pollBatchScanSummaries() {
-		const requestedEnvId = currentEnvId;
-		const imageIds = getScanningImageIds();
-		if (imageIds.length === 0) {
+		const requestedScope = environmentStore.shownKey;
+		const scanning = getScanningImages();
+		if (scanning.length === 0) {
 			stopBatchScanPolling();
 			return;
 		}
@@ -318,21 +347,30 @@
 		try {
 			const operationResult = await tryCatch(
 				(async () => {
-					const response = await vulnerabilityService.getScanSummaries(imageIds, requestedEnvId);
-					if (destroyed || !vulnerabilityManagementEnabled || requestedEnvId !== currentEnvId) return;
-					const summaries = response?.summaries ?? {};
+					const environments = environmentStore.shown.filter((env) => scanning.some((image) => image.environmentId === env.id));
+					// A failing environment is reported; the others' summaries still apply.
+					const { values, failures } = await collectAcrossEnvironments(environments, async (environmentId) => {
+						const ids = scanning.filter((image) => image.environmentId === environmentId).map((image) => image.id);
+						const response = await vulnerabilityService.getScanSummaries(ids, environmentId);
+						return scanning
+							.filter((image) => image.environmentId === environmentId && response?.summaries?.[image.id])
+							.map((image) => [rowKey(image), response.summaries[image.id]!] as const);
+					});
+					if (destroyed || !vulnerabilityManagementEnabled || requestedScope !== environmentStore.shownKey) return [];
+					const summaries = Object.fromEntries(values.flatMap(({ value }) => value));
 
 					if (Object.keys(summaries).length > 0 && images.data?.length) {
 						let changed = false;
 						let completed = false;
 						const nextScanRequestedAtByImage = { ...scanRequestedAtByImage };
 						const nextData = images.data.map((img) => {
-							const summary = summaries[img.id];
+							const key = rowKey(img);
+							const summary = summaries[key];
 							if (!summary) return img;
 
 							if (
 								summary.status === 'failed' &&
-								isLikelyStaleFailedSummary(summary, nextScanRequestedAtByImage[img.id]) &&
+								isLikelyStaleFailedSummary(summary, nextScanRequestedAtByImage[key]) &&
 								isVulnerabilityScanInProgress(img.vulnerabilityScan?.status)
 							) {
 								return img;
@@ -341,7 +379,7 @@
 							changed = true;
 							if (summary.status === 'completed' || summary.status === 'failed') {
 								completed = true;
-								delete nextScanRequestedAtByImage[img.id];
+								delete nextScanRequestedAtByImage[key];
 							}
 							return { ...img, vulnerabilityScan: summary };
 						});
@@ -353,12 +391,16 @@
 							await onImageUpdated?.();
 						}
 					}
+					return failures;
 				})()
 			);
-			scanPollError = operationResult.error !== null ? extractApiErrorMessage(operationResult.error) : null;
+			scanPollError =
+				operationResult.error !== null
+					? extractApiErrorMessage(operationResult.error)
+					: operationResult.data.map(({ environment, message }) => `${environment.name}: ${message}`).join('\n') || null;
 		} finally {
 			scanPollInFlight = false;
-			if (!destroyed && getScanningImageIds().length > 0) {
+			if (!destroyed && getScanningImages().length > 0) {
 				scheduleBatchScanPolling();
 			}
 		}
@@ -378,13 +420,14 @@
 		const cache = queryClient.getQueryCache();
 		function updateScanPolling() {
 			if (destroyed) return;
-			if (getScanningImageIds().length > 0) startBatchScanPolling();
+			if (getScanningImages().length > 0) startBatchScanPolling();
 			else stopBatchScanPolling();
 		}
 		updateScanPolling();
 		return cache.subscribe((event) => {
 			if (event.type !== 'updated' && event.type !== 'observerResultsUpdated') return;
-			if (event.query !== cache.find({ queryKey: queryKeys.images.list(currentEnvId, requestOptions), exact: true })) return;
+			if (event.query !== cache.find({ queryKey: queryKeys.images.list(environmentStore.shownKey, requestOptions), exact: true }))
+				return;
 			void tick().then(updateScanPolling);
 		});
 	});
@@ -394,7 +437,8 @@
 		stopBatchScanPolling();
 	});
 
-	const allColumns = [
+	const allColumns = $derived([
+		...environmentColumns<ImageRow>(),
 		{ accessorKey: 'id', title: m.common_id(), hidden: true },
 		{ accessorKey: 'repo', title: m.resource_repository_cap(), sortable: true, cell: RepoCell },
 		{ accessorKey: 'repoTags', title: m.common_tags(), cell: TagCell },
@@ -448,7 +492,7 @@
 		},
 		{ accessorKey: 'size', title: m.common_size(), sortable: true, cell: SizeCell },
 		{ accessorKey: 'created', title: m.common_created(), sortable: true, cellComponent: UnixCreatedCell }
-	] satisfies ColumnSpec<ImageSummaryDto>[];
+	] satisfies ColumnSpec<ImageRow>[]);
 
 	const columns = $derived(allColumns.filter((column) => vulnerabilityManagementEnabled || column.id !== 'vulnerabilities'));
 
@@ -482,15 +526,15 @@
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
 </script>
 
-{#snippet RepoCell({ item }: { item: ImageSummaryDto })}
+{#snippet RepoCell({ item }: { item: ImageRow })}
 	{#if item.repo && item.repo !== '<none>'}
-		<a class="font-medium hover:underline" href="/images/{item.id}">{item.repo}</a>
+		<a class="font-medium hover:underline" href={environmentHref(`/images/${item.id}`, item.environmentId)}>{item.repo}</a>
 	{:else}
 		<span class="text-muted-foreground italic">{m.images_untagged()}</span>
 	{/if}
 {/snippet}
 
-{#snippet TagCell({ item }: { item: ImageSummaryDto })}
+{#snippet TagCell({ item }: { item: ImageRow })}
 	{#if item.repoTags && item.repoTags.length > 0 && item.repoTags[0] !== '<none>:<none>'}
 		<div class="flex flex-wrap gap-1.5">
 			{#each item.repoTags.slice(0, 2) as repoTag, tagIndex (`${repoTag}-${tagIndex}`)}
@@ -541,15 +585,15 @@
 	{bytes.format(Number(value ?? 0))}
 {/snippet}
 
-{#snippet StatusCell({ item }: { item: ImageSummaryDto })}
+{#snippet StatusCell({ item }: { item: ImageRow })}
 	<InUseStatus inUse={item.inUse} />
 {/snippet}
 
-{#snippet UsageBadgeList(usages: NonNullable<ImageSummaryDto['usedBy']>)}
+{#snippet UsageBadgeList(usages: NonNullable<ImageSummaryDto['usedBy']>, environmentId: string)}
 	{#each usages as usage, usageIndex (`${usage.type}-${usage.id ?? usage.name}-${usageIndex}`)}
 		{#if usage.type === 'project'}
 			{#if usage.id}
-				<Badge variant="outline" href={`/projects/${encodeURIComponent(usage.id)}`}>
+				<Badge variant="outline" href={environmentHref(`/projects/${encodeURIComponent(usage.id)}`, environmentId)}>
 					<ProjectsIcon class="size-3" />
 					<span>{usage.name}</span>
 				</Badge>
@@ -560,7 +604,7 @@
 				</Badge>
 			{/if}
 		{:else if usage.id}
-			<Badge variant="outline" href={`/containers/${encodeURIComponent(usage.id)}`}>
+			<Badge variant="outline" href={environmentHref(`/containers/${encodeURIComponent(usage.id)}`, environmentId)}>
 				<ContainersIcon class="size-3" />
 				<span>{usage.name}</span>
 			</Badge>
@@ -573,14 +617,14 @@
 	{/each}
 {/snippet}
 
-{#snippet UsedByCell({ item }: { item: ImageSummaryDto })}
+{#snippet UsedByCell({ item }: { item: ImageRow })}
 	{#if item.usedBy && item.usedBy.length > 0}
 		{@const maxVisible = 3}
 		{@const hasOverflow = item.usedBy.length > maxVisible}
 		{@const visibleUsage = hasOverflow ? item.usedBy.slice(0, maxVisible) : item.usedBy}
 		{@const overflowUsage = hasOverflow ? item.usedBy.slice(maxVisible) : []}
 		<div class="flex flex-wrap gap-1.5">
-			{@render UsageBadgeList(visibleUsage)}
+			{@render UsageBadgeList(visibleUsage, item.environmentId)}
 			{#if hasOverflow}
 				<Tooltip.Provider>
 					<Tooltip.Root>
@@ -591,7 +635,7 @@
 						</Tooltip.Trigger>
 						<Tooltip.Content class="pointer-events-auto">
 							<div class="flex max-w-xs flex-wrap gap-1.5">
-								{@render UsageBadgeList(overflowUsage)}
+								{@render UsageBadgeList(overflowUsage, item.environmentId)}
 							</div>
 						</Tooltip.Content>
 					</Tooltip.Root>
@@ -603,33 +647,36 @@
 	{/if}
 {/snippet}
 
-{#snippet UpdatesCell({ item }: { item: ImageSummaryDto })}
+{#snippet UpdatesCell({ item }: { item: ImageRow })}
 	<div class="flex items-center justify-center">
 		<ImageUpdateItem
 			updateInfo={item.updateInfo}
 			imageId={item.id}
+			environmentId={item.environmentId}
 			repo={item.repo}
 			tag={item.tag}
 			isLocal={!item.repoDigests || item.repoDigests.length === 0}
-			onUpdated={(newInfo) => handleUpdateInfoChanged(item.id, newInfo)}
+			onUpdated={(newInfo) => handleUpdateInfoChanged(rowKey(item), newInfo)}
 		/>
 	</div>
 {/snippet}
 
-{#snippet VulnerabilitiesCell({ item }: { item: ImageSummaryDto })}
-	{#if vulnerabilityManagementEnabled}
+{#snippet VulnerabilitiesCell({ item }: { item: ImageRow })}
+	<!-- The column shows when any environment scans; each row needs its own environment to. -->
+	{#if featureStore.isEnabled('vulnerabilityManagement', item.environmentId)}
 		<div class="flex items-center justify-center">
 			<VulnerabilityScanItem
 				scanSummary={item.vulnerabilityScan}
 				imageId={item.id}
+				environmentId={item.environmentId}
 				pollError={scanPollError}
-				onScanned={(newSummary) => handleVulnerabilityScanChanged(item.id, newSummary)}
+				onScanned={(newSummary) => handleVulnerabilityScanChanged(rowKey(item), newSummary)}
 			/>
 		</div>
 	{/if}
 {/snippet}
 
-{#snippet MobileTagsValue(item: ImageSummaryDto)}
+{#snippet MobileTagsValue(item: ImageRow)}
 	{#if item.repoTags && item.repoTags.length > 0 && item.repoTags[0] !== '<none>:<none>'}
 		<span class="font-mono text-xs">{item.repoTags.map((rt) => rt.split(':').pop() || rt).join(', ')}</span>
 	{:else if item.pinnedReferences && item.pinnedReferences.length > 0}
@@ -650,7 +697,7 @@
 	item,
 	mobileFieldVisibility
 }: {
-	item: ImageSummaryDto;
+	item: ImageRow;
 	mobileFieldVisibility: MobileFieldVisibility;
 })}
 	<UniversalMobileCard
@@ -669,7 +716,7 @@
 		subtitle={(item) => ((mobileFieldVisibility['id'] ?? false) ? item.id : null)}
 		badges={[
 			inUseBadge(mobileFieldVisibility['inUse'] ?? true),
-			(item: ImageSummaryDto) => {
+			(item: ImageRow) => {
 				if (!(mobileFieldVisibility['updates'] ?? false)) return null;
 				if (!item.repoDigests || item.repoDigests.length === 0) {
 					return { variant: 'gray' as const, text: m.image_update_local_title() };
@@ -684,14 +731,14 @@
 		fields={[
 			{
 				label: m.common_size(),
-				getValue: (item: ImageSummaryDto) => bytes.format(Number(item.size ?? 0)),
+				getValue: (item: ImageRow) => bytes.format(Number(item.size ?? 0)),
 				icon: VolumesIcon,
 				iconVariant: 'blue' as const,
 				show: mobileFieldVisibility['size'] ?? true
 			},
 			{
 				label: m.common_tags(),
-				getValue: (item: ImageSummaryDto) => item,
+				getValue: (item: ImageRow) => item,
 				type: 'component',
 				component: MobileTagsValue,
 				icon: ImagesIcon,
@@ -700,7 +747,7 @@
 			},
 			{
 				label: m.images_used_by(),
-				getValue: (item: ImageSummaryDto) => item.usedBy?.map((usage) => usage.name).join(', ') || '—',
+				getValue: (item: ImageRow) => item.usedBy?.map((usage) => usage.name).join(', ') || '—',
 				icon: ImagesIcon,
 				iconVariant: 'purple' as const,
 				show: mobileFieldVisibility['usedBy'] ?? false
@@ -714,13 +761,14 @@
 				}
 			: undefined}
 		rowActions={RowActions}
-		onclick={(item: ImageSummaryDto) => goto(`/images/${item.id}`)}
+		onclick={(item: ImageRow) => goto(environmentHref(`/images/${item.id}`, item.environmentId))}
 	/>
 {/snippet}
 
-{#snippet RowActions({ item }: { item: ImageSummaryDto })}
+{#snippet RowActions({ item }: { item: ImageRow })}
+	{@const envId = item.environmentId}
 	<RowActionsMenu>
-		<DropdownMenu.Item onclick={() => goto(`/images/${item.id}`)}>
+		<DropdownMenu.Item onclick={() => goto(environmentHref(`/images/${item.id}`, envId))}>
 			<InspectIcon class="size-4" />
 			{m.common_inspect()}
 		</DropdownMenu.Item>
@@ -729,38 +777,38 @@
 			<DropdownMenu.Separator />
 		{/if}
 
-		{#if canTagImage}
+		{#if canTagImage && hasPermission('images:tag', envId)}
 			<DropdownMenu.Item onclick={() => (tagDialogImage = item)}>
 				<TagIcon class="size-4" />
 				{m.images_tag_image()}
 			</DropdownMenu.Item>
 		{/if}
 
-		{#if canReadImage}
-			<DropdownMenu.Item onclick={() => handleExportImage(item.id)}>
+		{#if canReadImage && hasPermission('images:read', envId)}
+			<DropdownMenu.Item onclick={() => handleExportImage(item.id, envId)}>
 				<DownloadIcon class="size-4" />
 				{m.images_export()}
 			</DropdownMenu.Item>
 		{/if}
 
 		{@const usableTag = item.repoTags?.find((tag) => tag !== '<none>:<none>')}
-		{#if canPullImage}
-			<DropdownMenu.Item onclick={() => handleInlineImagePull(usableTag || '')} disabled={!usableTag}>
+		{#if canPullImage && hasPermission('images:pull', envId)}
+			<DropdownMenu.Item onclick={() => handleInlineImagePull(usableTag || '', envId)} disabled={!usableTag}>
 				<DownloadIcon class="size-4" />
 				{m.pull()}
 			</DropdownMenu.Item>
 		{/if}
 
-		{#if canScanImage}
-			<DropdownMenu.Item onclick={() => handleInlineVulnerabilityScan(item.id)}>
+		{#if canScanImage && featureStore.isEnabled('vulnerabilityManagement', envId) && hasPermission('vulnerabilities:scan', envId)}
+			<DropdownMenu.Item onclick={() => handleInlineVulnerabilityScan(item)}>
 				<ScanIcon class="size-4" />
 				{m.vuln_scan()}
 			</DropdownMenu.Item>
 		{/if}
 
-		{#if canPatchImage}
+		{#if canPatchImage && hasPermission('images:patch', envId)}
 			{@const imageIsLocal = !item.repoDigests || item.repoDigests.length === 0}
-			<DropdownMenu.Item onclick={() => handleInlineImagePatch(item.id)} disabled={imageIsLocal || !usableTag}>
+			<DropdownMenu.Item onclick={() => handleInlineImagePatch(item.id, envId)} disabled={imageIsLocal || !usableTag}>
 				<ShieldCheckIcon class="size-4" />
 				<div class="flex flex-col items-start">
 					<span>{m.images_patch()}</span>
@@ -771,10 +819,10 @@
 			</DropdownMenu.Item>
 		{/if}
 
-		{#if canDeleteImage}
+		{#if canDeleteImage && hasPermission('images:delete', envId)}
 			<DropdownMenu.Separator />
 
-			<DropdownMenu.Item variant="destructive" onclick={() => deleteImage(item.id)} disabled={isLoading.removing}>
+			<DropdownMenu.Item variant="destructive" onclick={() => deleteImage(item.id, envId)} disabled={isLoading.removing}>
 				{#if isLoading.removing}
 					<Spinner class="size-4" />
 				{:else}
@@ -809,6 +857,7 @@
 	<ImageTagDialog
 		open={!!tagDialogImage}
 		imageId={tagDialogImage.id}
+		environmentId={tagDialogImage.environmentId}
 		defaultRepository={tagDialogImage.repo !== '<none>' ? tagDialogImage.repo : ''}
 		onOpenChange={(open) => {
 			if (!open) tagDialogImage = null;

@@ -16,18 +16,26 @@ import { uploadService, type UploadProgressCallback } from './upload-service';
 export type VolumeBackupListResponse = Paginated<BackupEntry> & { warnings?: string[] };
 
 class VolumeBackupService extends BaseAPIService {
-	async getPolicies(volumeName: string): Promise<VolumeBackupPolicyCollection> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+	private async resolveEnvironmentId(environmentId?: string): Promise<string> {
+		return environmentId ?? (await environmentStore.getCurrentEnvironmentId());
+	}
+
+	async getPolicies(volumeName: string, environmentId?: string): Promise<VolumeBackupPolicyCollection> {
+		const envId = await this.resolveEnvironmentId(environmentId);
 		return this.handleResponse(this.api.get(`/environments/${envId}/volumes/${volumeName}/backup-policy`));
 	}
 
-	async updatePolicies(volumeName: string, policies: UpdateVolumeBackupPolicy[]): Promise<VolumeBackupPolicyCollection> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+	async updatePolicies(
+		volumeName: string,
+		policies: UpdateVolumeBackupPolicy[],
+		environmentId?: string
+	): Promise<VolumeBackupPolicyCollection> {
+		const envId = await this.resolveEnvironmentId(environmentId);
 		return this.handleResponse(this.api.put(`/environments/${envId}/volumes/${volumeName}/backup-policy`, { policies }));
 	}
 
-	async createBackup(volumeName: string, request?: CreateVolumeBackupRequest): Promise<BackupEntry> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+	async createBackup(volumeName: string, request?: CreateVolumeBackupRequest, environmentId?: string): Promise<BackupEntry> {
+		const envId = await this.resolveEnvironmentId(environmentId);
 		const res = await this.api.post(`/environments/${envId}/volumes/${volumeName}/backups`, request);
 		return res.data.data;
 	}
@@ -37,7 +45,7 @@ class VolumeBackupService extends BaseAPIService {
 		options?: SearchPaginationSortRequest,
 		environmentId?: string
 	): Promise<VolumeBackupListResponse> {
-		const envId = environmentId ?? (await environmentStore.getCurrentEnvironmentId());
+		const envId = await this.resolveEnvironmentId(environmentId);
 		const params = transformPaginationParams(options);
 		const res = await this.api.get(`/environments/${envId}/volumes/${volumeName}/backups`, { params });
 		return res.data;
@@ -48,13 +56,18 @@ class VolumeBackupService extends BaseAPIService {
 		return this.handleResponse(this.api.post(`/environments/${envId}/volumes/backups/discover`, { s3DestinationId }));
 	}
 
-	async restoreBackup(volumeName: string, backupId: string): Promise<unknown> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+	async restoreBackup(volumeName: string, backupId: string, environmentId?: string): Promise<unknown> {
+		const envId = await this.resolveEnvironmentId(environmentId);
 		return this.handleResponse(this.api.post(`/environments/${envId}/volumes/${volumeName}/backups/${backupId}/restore`));
 	}
 
-	async restoreBackupFiles(volumeName: string, backupId: string, selection: BackupRestoreSelection): Promise<unknown> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+	async restoreBackupFiles(
+		volumeName: string,
+		backupId: string,
+		selection: BackupRestoreSelection,
+		environmentId?: string
+	): Promise<unknown> {
+		const envId = await this.resolveEnvironmentId(environmentId);
 		return this.handleResponse(
 			this.api.post(`/environments/${envId}/volumes/${volumeName}/backups/${backupId}/restore-files`, {
 				...selection
@@ -62,8 +75,12 @@ class VolumeBackupService extends BaseAPIService {
 		);
 	}
 
-	async browseBackupFiles(backupId: string, request: BackupFileBrowseRequest): Promise<Paginated<BackupFileEntry>> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+	async browseBackupFiles(
+		backupId: string,
+		request: BackupFileBrowseRequest,
+		environmentId?: string
+	): Promise<Paginated<BackupFileEntry>> {
+		const envId = await this.resolveEnvironmentId(environmentId);
 		const response = await this.api.get(`/environments/${envId}/volumes/backups/${backupId}/files/browse`, {
 			params: request
 		});
@@ -71,7 +88,7 @@ class VolumeBackupService extends BaseAPIService {
 	}
 
 	async backupHasPath(backupId: string, filePath: string, environmentId?: string): Promise<boolean> {
-		const envId = environmentId ?? (await environmentStore.getCurrentEnvironmentId());
+		const envId = await this.resolveEnvironmentId(environmentId);
 		const res = await this.api.get(`/environments/${envId}/volumes/backups/${backupId}/has-path`, {
 			params: { path: filePath }
 		});
@@ -84,8 +101,8 @@ class VolumeBackupService extends BaseAPIService {
 		return res.data.data ?? [];
 	}
 
-	async downloadBackup(backupId: string): Promise<void> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+	async downloadBackup(backupId: string, environmentId?: string): Promise<void> {
+		const envId = await this.resolveEnvironmentId(environmentId);
 		const res = await this.api.get(`/environments/${envId}/volumes/backups/${backupId}/download`, {
 			responseType: 'blob'
 		});
@@ -99,13 +116,13 @@ class VolumeBackupService extends BaseAPIService {
 		link.remove();
 	}
 
-	async deleteBackup(backupId: string): Promise<unknown> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+	async deleteBackup(backupId: string, environmentId?: string): Promise<unknown> {
+		const envId = await this.resolveEnvironmentId(environmentId);
 		return this.handleResponse(this.api.delete(`/environments/${envId}/volumes/backups/${backupId}`));
 	}
 
-	async uploadBackup(backupId: string, s3DestinationId: string): Promise<BackupEntry> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+	async uploadBackup(backupId: string, s3DestinationId: string, environmentId?: string): Promise<BackupEntry> {
+		const envId = await this.resolveEnvironmentId(environmentId);
 		return this.handleResponse(this.api.post(`/environments/${envId}/volumes/backups/${backupId}/upload`, { s3DestinationId }));
 	}
 

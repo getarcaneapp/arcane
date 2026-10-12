@@ -14,11 +14,12 @@
 	type Props = {
 		containerId: string;
 		containerName: string;
+		environmentId: string;
 		onClose?: () => void;
 		onComplete?: () => void | Promise<void>;
 	};
 
-	let { containerId, containerName, onClose, onComplete }: Props = $props();
+	let { containerId, containerName, environmentId, onClose, onComplete }: Props = $props();
 
 	const SIGNALS = ['SIGKILL', 'SIGTERM', 'SIGINT', 'SIGHUP', 'SIGQUIT'];
 	let open = $state(true);
@@ -29,7 +30,7 @@
 		if (!containerId) return;
 		isSubmitting = true;
 		await handleApiResultWithCallbacks({
-			result: await tryCatch(containerService.killContainer(containerId, signal)),
+			result: await tryCatch(containerService.killContainer(containerId, signal, environmentId)),
 			message: m.containers_kill_failed({ name: containerName }),
 			setLoadingState: (value) => {
 				isSubmitting = value;

@@ -4,10 +4,12 @@ import { markActivityToastShown } from '#lib/components/activity/activity-comple
 import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 import { runWithActivityBatchId } from '#lib/services/api-service.js';
 import { activityStore } from '#lib/stores/activity.store.svelte.js';
+import { environmentStore, LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
 import type { Activity } from '#lib/types/activity.type.js';
 import type { Result } from '#lib/types/result.js';
 import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
+import { parseRowKey } from '#lib/utils/environments.js';
 import { streamCacheBuster } from '#lib/utils/streaming.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -33,10 +35,10 @@ export interface BulkOperationResult {
 }
 
 export interface RunBulkOperationOptions<T> {
-	/** The ids to operate on. A no-op when empty. */
+	/** The ids or table row keys to operate on. A no-op when empty. */
 	ids: string[];
-	/** Runs the operation for a single id. May throw — failures are tallied. */
-	run: (id: string) => Promise<T>;
+	/** Runs the operation for a single id in its row's environment. May throw — failures are tallied. */
+	run: (id: string, environmentId: string) => Promise<T>;
 	messages: BulkOperationMessages;
 	/** Toggle a loading flag around the whole run. */
 	setLoading?: (loading: boolean) => void;
@@ -78,7 +80,8 @@ async function runBulkOperation<T>({
 
 	let firstActivityId: string | undefined;
 	const activityIds: string[] = [];
-	const tally = (id: string, outcome: Result<T>) => {
+	const tally = (key: string, outcome: Result<T>) => {
+		const { id } = parseRowKey(key);
 		if (outcome.error) {
 			result.failed += 1;
 			onItemFailure?.(id, outcome.error);
@@ -96,14 +99,29 @@ async function runBulkOperation<T>({
 
 	setLoading?.(true);
 	try {
-		// Multi-item runs share a batch id so the Activity Center renders one
+		// Multi-item runs share a batch id per environment so the Activity Center renders one
 		// batch row. Each request is STARTED inside the synchronous batch scope
 		// (awaited outside it), so concurrent unrelated actions never inherit it.
 		// streamCacheBuster instead of bare crypto.randomUUID: the latter is
 		// secure-context-only (throws on plain-HTTP deployments), and the fallback
 		// format matches the backend batch-id pattern ^[A-Za-z0-9_-]{1,64}$.
-		const batchId = total > 1 ? streamCacheBuster() : null;
-		const startRun = (id: string) => (batchId ? runWithActivityBatchId(batchId, () => tryCatch(run(id))) : tryCatch(run(id)));
+		const counts = new Map<string | undefined, number>();
+		for (const key of ids) {
+			const { environmentId } = parseRowKey(key);
+			counts.set(environmentId, (counts.get(environmentId) ?? 0) + 1);
+		}
+		const batchIds = new Map(
+			Array.from(counts, ([environmentId, count]) => [environmentId, count > 1 ? streamCacheBuster() : null])
+		);
+		const startRun = (key: string) => {
+			const { id, environmentId } = parseRowKey(key);
+			const batchId = batchIds.get(environmentId);
+			// Plain ids belong to the selected environment, as the services assume.
+			const rowEnvironmentId = environmentId ?? environmentStore.selected?.id ?? LOCAL_DOCKER_ENVIRONMENT_ID;
+			return batchId
+				? runWithActivityBatchId(batchId, () => tryCatch(run(id, rowEnvironmentId)))
+				: tryCatch(run(id, rowEnvironmentId));
+		};
 		if (sequential) {
 			for (const id of ids) {
 				tally(id, await startRun(id));
@@ -152,8 +170,8 @@ export interface BulkConfirmAndRunOptions<T> extends Omit<RunBulkOperationOption
 	destructive?: boolean;
 	/** Optional confirm-dialog checkboxes (e.g. force / remove volumes). */
 	checkboxes?: BulkConfirmCheckbox[];
-	/** Runs the operation for a single id, given the resolved checkbox states. */
-	run: (id: string, checkboxStates: Record<string, boolean>) => Promise<T>;
+	/** Runs the operation for a single id in its row's environment, given the resolved checkbox states. */
+	run: (id: string, environmentId: string, checkboxStates: Record<string, boolean>) => Promise<T>;
 }
 
 /**
@@ -190,7 +208,7 @@ export function bulkConfirmAndRun<T>({
 			action: async (checkboxStates) => {
 				await runBulkOperation({
 					ids,
-					run: (id) => run(id, checkboxStates),
+					run: (id, environmentId) => run(id, environmentId, checkboxStates),
 					messages,
 					setLoading,
 					onComplete,

@@ -4,8 +4,8 @@ import { queryKeys } from '#lib/query/query-keys.js';
 import { projectService } from '#lib/services/project-service.js';
 import { projectWorkspaceService } from '#lib/services/project-workspace-service.js';
 import { variableService } from '#lib/services/variable-service.js';
-import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import { throwPageLoadError } from '#lib/utils/api.js';
+import { resolveDetailEnvironmentId } from '#lib/utils/environments.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
 import type { PageLoad } from './$types';
@@ -27,9 +27,9 @@ async function loadGlobalVariables(queryClient: QueryClient) {
 	});
 }
 
-export const load: PageLoad = async ({ params, parent }) => {
+export const load: PageLoad = async ({ params, parent, url }) => {
 	const { queryClient } = await parent();
-	const envId = await environmentStore.getCurrentEnvironmentId();
+	const envId = await resolveDetailEnvironmentId(url);
 
 	type ProjectData = Awaited<ReturnType<typeof projectService.getProjectForEnvironment>>;
 
@@ -70,6 +70,7 @@ export const load: PageLoad = async ({ params, parent }) => {
 	};
 
 	return {
+		envId,
 		projectId: params.projectId,
 		project,
 		editorState,

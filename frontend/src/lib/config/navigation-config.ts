@@ -29,10 +29,11 @@ import {
 	BackupIcon
 } from '#lib/icons/index.js';
 import { m } from '#lib/paraglide/messages.js';
+import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import { featureStore } from '#lib/stores/features.store.svelte.js';
 import type { PermissionsManifest, User } from '#lib/types/auth.js';
 import type { FeatureID } from '#lib/types/features.js';
-import { canReachAccessSurface } from '#lib/utils/access-policy.js';
+import { canReachShownAccessSurface } from '#lib/utils/auth.js';
 import type { ShortcutKey } from '#lib/utils/navigation.js';
 
 export type NavigationItem = {
@@ -317,17 +318,23 @@ export function filterByPermissions(
 	return out;
 }
 
+/** Whether a feature is enabled in `envId` or, while the all environments preview is on, in any shown environment. */
+function hasShownFeature(feature: FeatureID, envId: string): boolean {
+	const envIds = environmentStore.selected ? [envId, ...environmentStore.shown.map((env) => env.id)] : [envId];
+	return envIds.some((id) => featureStore.isEnabled(feature, id));
+}
+
 function canSeeItem(
 	item: NavigationItem,
 	user: User,
 	currentEnvId: string | undefined,
 	accessManifest: PermissionsManifest | null | undefined
 ): boolean {
-	if (item.requiredFeature && !featureStore.isEnabled(item.requiredFeature, currentEnvId ?? '0')) return false;
+	if (item.requiredFeature && !hasShownFeature(item.requiredFeature, currentEnvId ?? '0')) return false;
 	if (item.adminOnly && !user.isGlobalAdmin) return false;
 	if (!item.accessSurfaceId) return true;
 	if (!accessManifest?.accessSurfaces?.length) return true;
-	return canReachAccessSurface(accessManifest, item.accessSurfaceId, user, currentEnvId);
+	return canReachShownAccessSurface(accessManifest, item.accessSurfaceId, user, currentEnvId);
 }
 
 /** Returns the title of the navigation item whose URL is the longest prefix of `pathname`. */
@@ -366,7 +373,9 @@ export function getSwarmNavigationItems(swarmEnabled: boolean | undefined, curre
 	if (swarmEnabled) {
 		return navigationItems.swarmItems;
 	}
-	if (swarmEnabled === false && !featureStore.isSwarmEnabled(currentEnvId, false)) {
+	// With the preview on, Swarm may run on another shown environment; the cluster page's picker selects it.
+	const candidates = [currentEnvId, ...environmentStore.shown.map((env) => env.id)];
+	if (swarmEnabled === false && !candidates.some((id) => featureStore.isSwarmEnabled(id, false))) {
 		return [];
 	}
 

@@ -63,6 +63,12 @@ class SettingsService extends BaseAPIService {
 		return { ...extractEnvironmentSettings(environmentSettings), ...extractLocalSettings(mainSettings) } as Settings;
 	}
 
+	/** The environment's merged settings, or only its public settings without `settings:read`. */
+	async getReadableSettings(environmentId: string): Promise<Settings> {
+		if (!userStore.hasPermission('settings:read', environmentId)) return this.getPublicSettings(environmentId);
+		return this.getSettingsForEnvironmentMerged(environmentId);
+	}
+
 	async updateSettings(settings: Partial<Settings>) {
 		// Wait for environment store to be initialized before updating settings
 		await environmentStore.ready;
@@ -105,8 +111,7 @@ class SettingsService extends BaseAPIService {
 		}
 
 		// Reload and return merged settings
-		if (!userStore.hasPermission('settings:read', envId)) return this.getPublicSettings(envId);
-		return this.getSettingsForEnvironmentMerged(envId);
+		return this.getReadableSettings(envId);
 	}
 
 	async getOidcStatus(): Promise<OidcStatusInfo> {

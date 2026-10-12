@@ -359,6 +359,7 @@
 	class="pb-6"
 	{actionButtons}
 	{statCards}
+	environmentPicker
 >
 	{#snippet mainContent()}
 		<div class="space-y-6 pb-6">

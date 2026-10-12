@@ -1,4 +1,5 @@
 <script lang="ts">
+	import EnvironmentDestinationSelect from '#lib/components/form/environment-destination-select.svelte';
 	import FormInput from '#lib/components/form/form-input.svelte';
 	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
 	import * as Collapsible from '#lib/components/ui/collapsible/index.js';
@@ -9,6 +10,7 @@
 	import type { BuildFormInputs, SelectOption } from './build-form.types';
 
 	let {
+		environmentId = $bindable(),
 		inputs = $bindable(),
 		provider,
 		showAdvanced = $bindable(false),
@@ -19,6 +21,7 @@
 		registryLoadFailed = false,
 		onSubmit
 	}: {
+		environmentId: string;
 		inputs: BuildFormInputs;
 		provider: 'local' | 'depot';
 		showAdvanced?: boolean;
@@ -36,6 +39,7 @@
 
 <div class="space-y-7 p-8">
 	<form onsubmit={preventDefault(() => onSubmit?.())} class="space-y-7">
+		<EnvironmentDestinationSelect bind:value={environmentId} permission="images:build" />
 		<div class="space-y-4">
 			{#if isPushMode}
 				<SelectWithLabel

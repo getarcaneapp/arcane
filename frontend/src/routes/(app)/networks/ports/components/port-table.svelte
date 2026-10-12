@@ -2,14 +2,25 @@
 	import { goto } from '$app/navigation';
 
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
+	import { environmentColumns } from '#lib/components/arcane-table/environment-column.js';
 	import { UniversalMobileCard } from '#lib/components/arcane-table/index.js';
 	import type { ColumnSpec, MobileFieldVisibility } from '#lib/components/arcane-table/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { ContainersIcon, ConnectionIcon, GlobeIcon, HashIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { portService } from '#lib/services/port-service.js';
+	import { portService, type PortsPaginatedResponse } from '#lib/services/port-service.js';
+	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { PortMappingDto } from '#lib/types/docker.js';
-	import type { SearchPaginationSortRequest, Paginated } from '#lib/types/shared.js';
+	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
+	import {
+		environmentHref,
+		fetchAcrossEnvironments,
+		type EnvironmentPage,
+		type EnvironmentRow
+	} from '#lib/utils/environments.js';
+
+	type PortRow = EnvironmentRow<PortMappingDto>;
+	type PortPage = EnvironmentPage<PortsPaginatedResponse>;
 
 	let {
 		ports,
@@ -17,7 +28,7 @@
 		requestOptions = $bindable(),
 		onRefreshData
 	}: {
-		ports: Paginated<PortMappingDto>;
+		ports: PortPage;
 		selectedIds: string[];
 		requestOptions: SearchPaginationSortRequest;
 		onRefreshData?: (options: SearchPaginationSortRequest) => Promise<void>;
@@ -43,22 +54,25 @@
 		return `${port.containerPort}/${port.protocol}`;
 	}
 
-	async function refreshPorts(options: SearchPaginationSortRequest = requestOptions): Promise<Paginated<PortMappingDto> | void> {
+	async function refreshPorts(options: SearchPaginationSortRequest = requestOptions): Promise<PortPage | void> {
 		if (onRefreshData) {
 			await onRefreshData(options);
 			return;
 		}
-		return await portService.getPorts(options);
+		return await fetchAcrossEnvironments(environmentStore.shown, options, (id, request, config) =>
+			portService.getPortsForEnvironment(id, request, config)
+		);
 	}
 
-	const columns = [
+	const columns = $derived([
+		...environmentColumns<PortRow>(),
 		{ accessorKey: 'hostPort', title: m.ports_host_port(), sortable: true, cell: HostPortCell },
 		{ accessorKey: 'containerPort', title: m.ports_container_port(), sortable: true, cell: ContainerPortCell },
 		{ accessorKey: 'protocol', title: m.common_type(), sortable: true, cell: ProtocolCell },
 		{ accessorKey: 'containerName', title: m.container(), sortable: true, cell: ContainerCell },
 		{ accessorKey: 'hostIp', title: m.ports_host_ip(), sortable: true, cell: HostIpCell },
 		{ accessorKey: 'isPublished', title: m.common_status(), sortable: true, cell: PublishedCell }
-	] satisfies ColumnSpec<PortMappingDto>[];
+	] satisfies ColumnSpec<PortRow>[]);
 
 	const mobileFields = [
 		{ id: 'hostPort', label: m.ports_host_port(), defaultVisible: true },
@@ -70,43 +84,37 @@
 	];
 </script>
 
-{#snippet HostPortCell({ item }: { item: PortMappingDto })}
+{#snippet HostPortCell({ item }: { item: PortRow })}
 	<span class={['font-mono text-sm', { 'text-muted-foreground': !item.isPublished }]}>
 		{formatHostPort(item)}
 	</span>
 {/snippet}
 
-{#snippet ContainerPortCell({ item }: { item: PortMappingDto })}
+{#snippet ContainerPortCell({ item }: { item: PortRow })}
 	<span class="font-mono text-sm">{item.containerPort}</span>
 {/snippet}
 
-{#snippet ProtocolCell({ item }: { item: PortMappingDto })}
+{#snippet ProtocolCell({ item }: { item: PortRow })}
 	<Badge variant="gray">{item.protocol.toUpperCase()}</Badge>
 {/snippet}
 
-{#snippet ContainerCell({ item }: { item: PortMappingDto })}
-	<a class="font-medium hover:underline" href="/containers/{item.containerId}">
+{#snippet ContainerCell({ item }: { item: PortRow })}
+	<a class="font-medium hover:underline" href={environmentHref(`/containers/${item.containerId}`, item.environmentId)}>
 		{item.containerName}
 	</a>
 {/snippet}
 
-{#snippet HostIpCell({ item }: { item: PortMappingDto })}
+{#snippet HostIpCell({ item }: { item: PortRow })}
 	<span class={['font-mono text-sm', { 'text-muted-foreground': !item.isPublished }]}>
 		{formatHostIp(item)}
 	</span>
 {/snippet}
 
-{#snippet PublishedCell({ item }: { item: PortMappingDto })}
+{#snippet PublishedCell({ item }: { item: PortRow })}
 	<Badge variant={item.isPublished ? 'sky' : 'gray'}>{item.isPublished ? m.published() : m.ports_exposed_label()}</Badge>
 {/snippet}
 
-{#snippet PortMobileCardSnippet({
-	item,
-	mobileFieldVisibility
-}: {
-	item: PortMappingDto;
-	mobileFieldVisibility: MobileFieldVisibility;
-})}
+{#snippet PortMobileCardSnippet({ item, mobileFieldVisibility }: { item: PortRow; mobileFieldVisibility: MobileFieldVisibility })}
 	<UniversalMobileCard
 		{item}
 		icon={(item: PortMappingDto) => ({
@@ -156,7 +164,7 @@
 				show: mobileFieldVisibility['containerName'] ?? true
 			}
 		]}
-		onclick={() => void goto(`/containers/${item.containerId}`)}
+		onclick={() => void goto(environmentHref(`/containers/${item.containerId}`, item.environmentId))}
 	/>
 {/snippet}
 

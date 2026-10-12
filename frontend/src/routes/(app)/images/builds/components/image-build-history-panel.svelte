@@ -5,6 +5,7 @@
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
+	import { environmentColumns } from '#lib/components/arcane-table/environment-column.js';
 	import type { ColumnSpec, MobileFieldVisibility } from '#lib/components/arcane-table/index.js';
 	import { UniversalMobileCard } from '#lib/components/arcane-table/index.js';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
@@ -28,8 +29,10 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { imageService } from '#lib/services/image-service.js';
+	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { ImageBuildRecord, ImageBuildStatus } from '#lib/types/docker.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
+	import { fetchAcrossEnvironments, type EnvironmentRow } from '#lib/utils/environments.js';
 
 	import {
 		buildHistoryStatusLabel,
@@ -41,15 +44,16 @@
 		parseBuildOutput
 	} from '../image-build-history';
 
+	type BuildRow = EnvironmentRow<ImageBuildRecord>;
+
 	interface Props {
-		environmentId: string;
-		onApplyBuild: (build: ImageBuildRecord) => void;
+		onApplyBuild: (build: ImageBuildRecord, environmentId: string) => void;
 	}
 
-	let { environmentId, onApplyBuild }: Props = $props();
+	let { onApplyBuild }: Props = $props();
 
 	const queryClient = useQueryClient();
-	const EMPTY_BUILD_HISTORY: Paginated<ImageBuildRecord> = {
+	const EMPTY_BUILD_HISTORY: Paginated<BuildRow> = {
 		data: [],
 		pagination: { totalPages: 1, totalItems: 0, currentPage: 1, itemsPerPage: 20 }
 	};
@@ -60,27 +64,29 @@
 	});
 	let selectedIds = $state<string[]>([]);
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
-	let selectedOptimistic = $state<ImageBuildRecord | null>(null);
+	let selectedOptimistic = $state<BuildRow | null>(null);
 	let selectedId = $state<string | null>(null);
 	let detailsOpen = $state(false);
 
 	const historyQuery = createQuery(() => {
-		const requestedEnvironmentId = environmentId;
+		const scope = environmentStore.shownKey;
+		const environments = environmentStore.shown;
 		const options = requestOptions;
 		return {
-			queryKey: queryKeys.images.buildsList(requestedEnvironmentId, options),
-			queryFn: () => imageService.getImageBuilds(options)
+			queryKey: queryKeys.images.buildsList(scope, options),
+			queryFn: () =>
+				fetchAcrossEnvironments(environments, options, (id, request, config) => imageService.getImageBuilds(request, id, config))
 		};
 	});
 
-	const historyItems = $derived<Paginated<ImageBuildRecord>>(historyQuery.data ?? EMPTY_BUILD_HISTORY);
+	const historyItems = $derived<Paginated<BuildRow>>(historyQuery.data ?? EMPTY_BUILD_HISTORY);
 
 	const detailQuery = createQuery(() => {
-		const requestedEnvironmentId = environmentId;
+		const requestedEnvironmentId = selectedOptimistic?.environmentId ?? 'none';
 		const buildId = selectedId;
 		return {
 			queryKey: queryKeys.images.buildRecord(requestedEnvironmentId, buildId ?? 'none'),
-			queryFn: () => imageService.getImageBuild(buildId!),
+			queryFn: () => imageService.getImageBuild(buildId!, requestedEnvironmentId),
 			enabled: !!buildId && detailsOpen
 		};
 	});
@@ -110,11 +116,18 @@
 		reportError(detailQuery.error, true);
 		return cache.subscribe((event) => {
 			if (event.type !== 'updated' && event.type !== 'observerResultsUpdated') return;
-			if (event.query === cache.find({ queryKey: queryKeys.images.buildsList(environmentId, requestOptions), exact: true })) {
+			if (
+				event.query ===
+				cache.find({ queryKey: queryKeys.images.buildsList(environmentStore.shownKey, requestOptions), exact: true })
+			) {
 				reportError(event.query.state.error, false);
 			} else if (
 				selectedId &&
-				event.query === cache.find({ queryKey: queryKeys.images.buildRecord(environmentId, selectedId), exact: true })
+				event.query ===
+					cache.find({
+						queryKey: queryKeys.images.buildRecord(selectedOptimistic?.environmentId ?? 'none', selectedId),
+						exact: true
+					})
 			) {
 				reportError(event.query.state.error, true);
 			}
@@ -123,7 +136,8 @@
 
 	const detailItems = $derived(selectedBuild ? getBuildDetailItems(selectedBuild) : []);
 
-	const columns = [
+	const columns = $derived([
+		...environmentColumns<BuildRow>(),
 		{
 			accessorKey: 'status',
 			title: m.common_status(),
@@ -152,7 +166,7 @@
 			title: m.duration(),
 			cell: BuildHistoryDurationCell
 		}
-	] satisfies ColumnSpec<ImageBuildRecord>[];
+	] satisfies ColumnSpec<BuildRow>[]);
 
 	const mobileFields = [
 		{ id: 'status', label: m.common_status(), defaultVisible: true },
@@ -169,15 +183,15 @@
 		return result.data ?? historyQuery.data ?? EMPTY_BUILD_HISTORY;
 	}
 
-	function openDetails(build: ImageBuildRecord) {
+	function openDetails(build: BuildRow) {
 		selectedId = build.id;
 		selectedOptimistic = build;
 		detailsOpen = true;
 	}
 
 	function applySelectedBuild() {
-		if (!selectedBuild) return;
-		onApplyBuild(selectedBuild);
+		if (!selectedBuild || !selectedOptimistic) return;
+		onApplyBuild(selectedBuild, selectedOptimistic.environmentId);
 		detailsOpen = false;
 	}
 </script>
@@ -207,7 +221,7 @@
 	<span class="text-sm">{formatBuildDuration(Number(value ?? 0))}</span>
 {/snippet}
 
-{#snippet BuildHistoryRowActions({ item }: { item: ImageBuildRecord })}
+{#snippet BuildHistoryRowActions({ item }: { item: BuildRow })}
 	<DropdownMenu.Root>
 		<DropdownMenu.Trigger data-row-select-ignore>
 			<ArcaneButton action="inspect" tone="ghost" size="icon" showLabel={false} icon={EllipsisIcon} />
@@ -225,7 +239,7 @@
 	item,
 	mobileFieldVisibility: fieldVisibility
 }: {
-	item: ImageBuildRecord;
+	item: BuildRow;
 	mobileFieldVisibility: MobileFieldVisibility;
 })}
 	<UniversalMobileCard
@@ -273,7 +287,7 @@
 				show: fieldVisibility['durationMs'] ?? false
 			}
 		]}
-		onclick={(item: ImageBuildRecord) => openDetails(item)}
+		onclick={(item: BuildRow) => openDetails(item)}
 	/>
 {/snippet}
 
@@ -323,7 +337,7 @@
 						{/if}
 						<span class="text-muted-foreground">{formatBuildTimestamp(selectedBuild.createdAt)}</span>
 					</div>
-					<IfPermitted perm="images:build">
+					<IfPermitted perm="images:build" envId={selectedOptimistic?.environmentId}>
 						<ArcaneButton
 							action="base"
 							tone="outline"

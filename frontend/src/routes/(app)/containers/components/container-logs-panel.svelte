@@ -23,6 +23,7 @@
 
 	let {
 		containerId,
+		environmentId,
 		stats = null,
 		hasInitialStatsLoaded = false,
 		isRunning = false,
@@ -32,6 +33,7 @@
 		onStop
 	}: {
 		containerId: string | undefined;
+		environmentId: string;
 		stats?: ContainerStats | null;
 		hasInitialStatsLoaded?: boolean;
 		isRunning?: boolean;
@@ -120,7 +122,7 @@
 
 	async function handleDownload() {
 		if (!containerId) return;
-		const result = await tryCatch(containerService.downloadContainerLogs(containerId));
+		const result = await tryCatch(containerService.downloadContainerLogs(containerId, environmentId));
 		if (result.error !== null) {
 			toast.error(m.common_download_error(), { description: result.error.message });
 		}
@@ -215,6 +217,7 @@
 				bind:autoScroll
 				type="container"
 				{containerId}
+				{environmentId}
 				bind:showParsedJson={preferences.showParsedJson}
 				showStreamLabels={preferences.showStreamLabels}
 				tailLines={preferences.tailLines}

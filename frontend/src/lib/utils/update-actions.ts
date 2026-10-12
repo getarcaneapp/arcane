@@ -6,10 +6,10 @@ import BaseAPIService from '#lib/services/api-service.js';
 import systemUpgradeService from '#lib/services/api/system-upgrade-service.js';
 import { imageService } from '#lib/services/image-service.js';
 import { userService } from '#lib/services/user-service.js';
-import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import type { AutoUpdateResourceType, AutoUpdateResult } from '#lib/types/automation.js';
 import { activityToastOptions } from '#lib/utils/activity-toast.js';
 import { toastUpgradeError } from '#lib/utils/api.js';
+import { acrossEnvironmentsNote, actionEnvironments, settleAcrossEnvironments } from '#lib/utils/environments.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
 /**
@@ -19,8 +19,12 @@ import { tryCatch } from '#lib/utils/try-catch.js';
  */
 
 /** Applies pending updates for a single resource via a scoped updater run. */
-export function applyScopedUpdate(type: Extract<AutoUpdateResourceType, 'container' | 'project'>, id: string) {
-	return imageService.runAutoUpdate({ type, resourceIds: [id] });
+export function applyScopedUpdate(
+	type: Extract<AutoUpdateResourceType, 'container' | 'project'>,
+	id: string,
+	environmentId?: string
+) {
+	return imageService.runAutoUpdate({ type, resourceIds: [id] }, environmentId);
 }
 
 type ThrowOnUpdateFailureOptions = {
@@ -111,13 +115,14 @@ async function disarmWhenBackendResponds() {
 }
 
 /**
- * Confirms, then applies every pending update on the host (an empty-body
+ * Confirms, then applies every pending update on each shown host (an empty-body
  * updater run — the same path the nightly auto-update job takes).
  */
 export function confirmAndApplyAllUpdates({ setLoading, onRefresh }: ConfirmAndApplyAllUpdatesOptions) {
+	const environments = actionEnvironments('image-updates:check');
 	openConfirmDialog({
 		title: m.update_all(),
-		message: m.updates_update_all_confirm_message(),
+		message: `${m.updates_update_all_confirm_message()} ${acrossEnvironmentsNote(environments)}`.trim(),
 		confirm: {
 			label: m.update_all(),
 			destructive: false,
@@ -127,13 +132,13 @@ export function confirmAndApplyAllUpdates({ setLoading, onRefresh }: ConfirmAndA
 				// through self-upgrade, restarting this backend. Only the local
 				// manager hosts this frontend's API, so only it needs the flag that
 				// makes the restart a recoverable reconnect instead of a logout.
-				const envId = await environmentStore.getCurrentEnvironmentId();
-				const restartsThisBackend = envId === MANAGER_ENVIRONMENT_ID;
+				const restartsThisBackend = environments.some((env) => env.id === MANAGER_ENVIRONMENT_ID);
 				if (restartsThisBackend) BaseAPIService.setUpgradeInProgress(true);
 				try {
 					const operationResult = await tryCatch(
 						(async () => {
-							summarizeUpdateResult(await imageService.runAutoUpdate());
+							const results = await settleAcrossEnvironments(environments, (id) => imageService.runAutoUpdate(undefined, id));
+							for (const { value } of results) summarizeUpdateResult(value);
 							await onRefresh?.();
 						})()
 					);

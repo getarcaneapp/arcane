@@ -91,7 +91,7 @@
 	/>
 {/if}
 
-<ResourcePageLayout title={m.services()} subtitle={m.swarm_services_subtitle()} {actionButtons} {statCards}>
+<ResourcePageLayout title={m.services()} subtitle={m.swarm_services_subtitle()} {actionButtons} {statCards} environmentPicker>
 	{#snippet mainContent()}
 		<SwarmServicesTable bind:services bind:requestOptions />
 	{/snippet}

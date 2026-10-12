@@ -3,14 +3,17 @@ import { projectService } from '#lib/services/project-service.js';
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 import { throwPageLoadError } from '#lib/utils/api.js';
+import { fetchAcrossEnvironments, sumAcrossEnvironments } from '#lib/utils/environments.js';
 import { resolveInitialTableRequest } from '#lib/utils/tables.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
 import type { PageLoad } from './$types';
+import { fetchProjectTags } from './projects-table.helpers';
 
 export const load: PageLoad = async ({ parent, url }) => {
 	const { queryClient } = await parent();
-	const envId = await environmentStore.getCurrentEnvironmentId();
+	const environments = await environmentStore.getShownEnvironments();
+	const scope = environmentStore.shownKey;
 	const showArchived = url.searchParams.get('archived') === 'true';
 
 	const projectRequestOptions = resolveInitialTableRequest('arcane-project-table', {
@@ -38,16 +41,20 @@ export const load: PageLoad = async ({ parent, url }) => {
 		(async () =>
 			Promise.all([
 				queryClient.query({
-					queryKey: queryKeys.projects.list(envId, projectRequestOptions),
-					queryFn: () => projectService.getProjectsForEnvironment(envId, projectRequestOptions)
+					queryKey: queryKeys.projects.list(scope, projectRequestOptions),
+					queryFn: () =>
+						fetchAcrossEnvironments(environments, projectRequestOptions, (id, request, config) =>
+							projectService.getProjectsForEnvironment(id, request, config)
+						)
 				}),
 				queryClient.query({
-					queryKey: queryKeys.projects.statusCounts(envId),
-					queryFn: () => projectService.getProjectStatusCountsForEnvironment(envId)
+					queryKey: queryKeys.projects.statusCounts(scope),
+					queryFn: () =>
+						sumAcrossEnvironments(environments, (id, config) => projectService.getProjectStatusCountsForEnvironment(id, config))
 				}),
 				queryClient.query({
-					queryKey: queryKeys.projects.tags(envId),
-					queryFn: () => projectService.getProjectTagsForEnvironment(envId)
+					queryKey: queryKeys.projects.tags(scope),
+					queryFn: () => fetchProjectTags(environments)
 				})
 			]))()
 	);
@@ -59,5 +66,5 @@ export const load: PageLoad = async ({ parent, url }) => {
 		[projects, projectStatusCounts, projectTags] = operationResult.data;
 	}
 
-	return { envId, projects, projectRequestOptions, projectStatusCounts, projectTags, showArchived };
+	return { scope, projects, projectRequestOptions, projectStatusCounts, projectTags, showArchived };
 };

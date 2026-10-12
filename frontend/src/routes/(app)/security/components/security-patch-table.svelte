@@ -1,61 +1,88 @@
+<script module lang="ts">
+	import { imageService } from '#lib/services/image-service.js';
+	import type { ImagePatchTargetDto } from '#lib/types/docker.js';
+	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
+	import {
+		environmentHref,
+		fetchAcrossEnvironments,
+		type EnvironmentFailure,
+		type EnvironmentRow
+	} from '#lib/utils/environments.js';
+	import { vulnerabilityEnvironments } from '#lib/utils/vulnerability.js';
+
+	export type PatchTargetRow = EnvironmentRow<ImagePatchTargetDto> & { id: string };
+	export type PatchTargetPage = Paginated<PatchTargetRow> & { failedEnvironments?: EnvironmentFailure[] };
+
+	/** Patch targets from every shown environment with vulnerability management, keyed by environment and image. */
+	export async function fetchPatchTargets(options: SearchPaginationSortRequest): Promise<PatchTargetPage> {
+		const page = await fetchAcrossEnvironments(
+			vulnerabilityEnvironments(),
+			options,
+			(id, request, config) => imageService.listPatchTargets(request, id, config),
+			// The image column sorts as imageName but the row holds imageRef.
+			(target, column) => (column === 'imageName' ? target.imageRef : target[column as keyof ImagePatchTargetDto])
+		);
+		// The table keys rows by environment and id, so the id is the image's own.
+		return { ...page, data: page.data.map((target) => ({ ...target, id: target.imageId })) };
+	}
+</script>
+
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
 
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
 	import type { ColumnSpec } from '#lib/components/arcane-table/arcane-table.types.svelte.js';
 	import UniversalMobileCard from '#lib/components/arcane-table/cards/universal-mobile-card.svelte';
+	import { environmentColumns } from '#lib/components/arcane-table/environment-column.js';
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import MonoCell from '#lib/components/vulnerability/mono-cell.svelte';
 	import { ShieldCheckIcon, ImagesIcon, ClockIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { imageService } from '#lib/services/image-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-	import { featureStore } from '#lib/stores/features.store.svelte.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
-	import type { ImagePatchTargetDto } from '#lib/types/docker.js';
-	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { activityToastOptions } from '#lib/utils/activity-toast.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { formatDateTimeShort } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
-	type PatchTargetRow = ImagePatchTargetDto & { id: string };
-
 	let {
 		targets = $bindable(),
 		requestOptions = $bindable()
 	}: {
-		targets: Paginated<PatchTargetRow>;
+		targets: PatchTargetPage;
 		requestOptions: SearchPaginationSortRequest;
 	} = $props();
 
-	const currentEnvId = $derived(environmentStore.selected?.id || '0');
 	// Track the user store: hasPermission reads it non-reactively, so without
 	// this the derived would cache a pre-hydration false forever.
 	const canPatchImage = $derived.by(() => {
 		userStore.current;
-		return featureStore.isEnabled('vulnerabilityManagement', currentEnvId) && hasPermission('images:patch', currentEnvId);
+		return vulnerabilityEnvironments().some((env) => hasPermission('images:patch', env.id));
 	});
 
+	// Only the latest request is applied, so a slow response for an earlier filter cannot replace newer rows.
+	let latestRequest = 0;
 	async function refreshPatchTargets(options: SearchPaginationSortRequest) {
-		if (!featureStore.isEnabled('vulnerabilityManagement', currentEnvId)) return targets;
-		const requestedEnvId = currentEnvId;
-		const response = await imageService.listPatchTargets(options);
-		if (!featureStore.isEnabled('vulnerabilityManagement', currentEnvId) || requestedEnvId !== currentEnvId) return targets;
-		const mapped = { ...response, data: (response.data ?? []).map((t) => ({ ...t, id: t.imageId })) };
-		targets = mapped;
-		return mapped;
+		if (vulnerabilityEnvironments().length === 0) return targets;
+		const requestedScope = environmentStore.shownKey;
+		const request = ++latestRequest;
+		const response = await fetchPatchTargets(options);
+		if (vulnerabilityEnvironments().length === 0 || requestedScope !== environmentStore.shownKey || request !== latestRequest) {
+			return targets;
+		}
+		targets = response;
+		return response;
 	}
 
 	async function handlePatchImage(item: PatchTargetRow) {
-		if (!canPatchImage) return;
+		if (!hasPermission('images:patch', item.environmentId)) return;
 		const operationResult = await tryCatch(
 			(async () => {
 				// The fixable counts come from the stored scan, so patch from that report.
-				const record = await imageService.patchImage(item.imageId, { scanId: item.imageId });
+				const record = await imageService.patchImage(item.imageId, { scanId: item.imageId }, item.environmentId);
 				toast.info(m.images_patch_started({ patchedRef: record.patchedRef }), activityToastOptions(record.activityId));
 				await refreshPatchTargets(requestOptions);
 			})()
@@ -94,6 +121,7 @@
 	}
 
 	const columns = $derived([
+		...environmentColumns<PatchTargetRow>(),
 		{ id: 'imageName', accessorKey: 'imageRef', title: m.common_image(), sortable: true, cell: ImageCell },
 		{ accessorKey: 'fixableCount', title: m.security_fixable(), sortable: true, cell: FixableCell },
 		{ accessorKey: 'scanTime', title: m.security_last_scanned(), sortable: true, cell: ScannedCell },
@@ -119,7 +147,7 @@
 {/snippet}
 
 {#snippet ImageCell({ item }: { item: PatchTargetRow })}
-	<a class="truncate text-sm font-medium hover:underline" href="/images/{item.imageId}">
+	<a class="truncate text-sm font-medium hover:underline" href={environmentHref(`/images/${item.imageId}`, item.environmentId)}>
 		{item.imageRef}
 	</a>
 {/snippet}
@@ -196,7 +224,10 @@
 
 {#snippet rowActions({ item }: { item: PatchTargetRow })}
 	<RowActionsMenu>
-		<DropdownMenu.Item onclick={() => handlePatchImage(item)} disabled={item.localOnly || item.fixableCount === 0}>
+		<DropdownMenu.Item
+			onclick={() => handlePatchImage(item)}
+			disabled={item.localOnly || item.fixableCount === 0 || !hasPermission('images:patch', item.environmentId)}
+		>
 			<ShieldCheckIcon class="size-4" />
 			<div class="flex flex-col items-start">
 				<span>{m.images_patch()}</span>

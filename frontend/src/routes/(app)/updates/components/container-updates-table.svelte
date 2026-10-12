@@ -6,6 +6,7 @@
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
 	import CheckedAtCell from '#lib/components/arcane-table/cells/checked-at-cell.svelte';
 	import DigestCell from '#lib/components/arcane-table/cells/digest-cell.svelte';
+	import { environmentColumns } from '#lib/components/arcane-table/environment-column.js';
 	import {
 		UniversalMobileCard,
 		type BulkAction,
@@ -32,13 +33,25 @@
 	import { confirmAndUpdateContainer } from '#lib/utils/container-actions.js';
 	import { isAutoUpdateLabelDisabled } from '#lib/utils/container-auto-update.js';
 	import { createContainerUpdateActivityTracker } from '#lib/utils/container-update-activities.js';
+	import {
+		environmentHref,
+		hasShownPermission,
+		listScopes,
+		rowKey,
+		type EnvironmentPage,
+		type EnvironmentRow
+	} from '#lib/utils/environments.js';
 	import { formatImageUpdateCheckedAt, formatImageUpdateValue } from '#lib/utils/image-updates.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import { getContainerDisplayName } from '../../containers/container-table.helpers';
 
+	type ContainerRow = EnvironmentRow<ContainerSummaryDto>;
 	type ContainerUpdateRow = {
 		id: string;
+		environmentId: string;
+		environmentName: string;
+		environmentTagged: true;
 		containerId: string;
 		name: string;
 		imageRef: string;
@@ -52,11 +65,11 @@
 		statusAvailable: boolean;
 		autoUpdateTitle: string;
 		updateInfo?: ImageUpdateInfoDto;
-		container: ContainerSummaryDto;
+		container: ContainerRow;
 	};
 
 	interface Props {
-		containers: ContainersPaginatedResponse;
+		containers: EnvironmentPage<ContainersPaginatedResponse>;
 		requestOptions: SearchPaginationSortRequest;
 		// Refreshed rows arrive through the `containers` prop once the parent's query updates.
 		onRefreshData: (options: ContainerListRequestOptions) => Promise<void>;
@@ -72,15 +85,19 @@
 	let bulkUpdating = $state(false);
 	let updateTableMounted = false;
 	const queryClient = useQueryClient();
-	const currentEnvironmentId = $derived(environmentStore.selected?.id || '0');
+	const scope = $derived(environmentStore.shownKey);
 	const updateActivities = createContainerUpdateActivityTracker(
-		() => currentEnvironmentId,
+		() => environmentStore.shown.map((env) => env.id),
 		() => {
 			if (!updateTableMounted) return;
 			void refreshRows();
 			// Compose containers also drive the project update badges.
-			void queryClient.invalidateQueries({ queryKey: ['projects', currentEnvironmentId] });
-			void queryClient.invalidateQueries({ queryKey: ['project', currentEnvironmentId] });
+			for (const listScope of listScopes(environmentStore.shown.map((env) => env.id))) {
+				void queryClient.invalidateQueries({ queryKey: ['projects', listScope] });
+			}
+			for (const env of environmentStore.shown) {
+				void queryClient.invalidateQueries({ queryKey: ['project', env.id] });
+			}
 		}
 	);
 	onMount(() => {
@@ -92,7 +109,7 @@
 		};
 	});
 
-	function mapContainerRow(container: ContainerSummaryDto): ContainerUpdateRow {
+	function mapContainerRow(container: ContainerRow): ContainerUpdateRow {
 		const name = getContainerDisplayName(container);
 		const labelControlled = isAutoUpdateLabelDisabled(container.labels);
 		const statusAvailable = typeof container.autoUpdateEnabled === 'boolean';
@@ -107,6 +124,9 @@
 		}
 		return {
 			id: container.id,
+			environmentId: container.environmentId,
+			environmentName: container.environmentName,
+			environmentTagged: true,
 			containerId: container.id,
 			name,
 			imageRef: container.image,
@@ -127,13 +147,14 @@
 		data: (containers.data ?? []).map(mapContainerRow)
 	});
 
-	const columns = [
+	const columns = $derived([
+		...environmentColumns<ContainerUpdateRow>(),
 		{ accessorKey: 'name', title: m.common_name(), sortable: true, cell: NameCell },
 		{ accessorKey: 'imageRef', title: m.common_image(), sortable: true, cell: ImageCell },
 		{ accessorKey: 'currentValue', title: m.common_current(), sortable: false, cellComponent: DigestCell },
 		{ accessorKey: 'latestValue', title: m.image_update_latest_label(), sortable: false, cellComponent: DigestCell },
 		{ accessorKey: 'checkedAt', title: m.common_updated(), sortable: false, cellComponent: CheckedAtCell }
-	] satisfies ColumnSpec<ContainerUpdateRow>[];
+	] satisfies ColumnSpec<ContainerUpdateRow>[]);
 
 	const mobileFields = [
 		{ id: 'imageRef', label: m.common_image(), defaultVisible: true },
@@ -146,15 +167,15 @@
 		await onRefreshData(requestOptions as ContainerListRequestOptions);
 	}
 
-	async function handleUpdateContainer(container: ContainerSummaryDto) {
+	async function handleUpdateContainer(container: ContainerRow) {
 		const containerName = getContainerDisplayName(container);
 
 		confirmAndUpdateContainer({
 			containerId: container.id,
 			containerName,
-			environmentId: currentEnvironmentId,
+			environmentId: container.environmentId,
 			setLoading: (loading) => {
-				updatingContainerIds = { ...updatingContainerIds, [container.id]: loading };
+				updatingContainerIds = { ...updatingContainerIds, [rowKey(container)]: loading };
 			},
 			onRefresh: () => (updateTableMounted ? refreshRows() : undefined),
 			onAccepted: (activity) => {
@@ -169,9 +190,9 @@
 	// the new status back.
 	async function handleToggleAutoUpdate(item: ContainerUpdateRow) {
 		const enable = item.autoUpdateDisabled;
-		togglingAutoUpdateIds = { ...togglingAutoUpdateIds, [item.containerId]: true };
+		togglingAutoUpdateIds = { ...togglingAutoUpdateIds, [rowKey(item)]: true };
 		try {
-			const operationResult = await tryCatch(containerService.setAutoUpdate(item.containerId, enable));
+			const operationResult = await tryCatch(containerService.setAutoUpdate(item.containerId, enable, item.environmentId));
 			if (operationResult.error !== null) {
 				toast.error(m.auto_update_failed(), { description: extractApiErrorMessage(operationResult.error) });
 				return;
@@ -190,41 +211,37 @@
 				});
 			}
 		} finally {
-			togglingAutoUpdateIds = { ...togglingAutoUpdateIds, [item.containerId]: false };
+			togglingAutoUpdateIds = { ...togglingAutoUpdateIds, [rowKey(item)]: false };
 		}
 	}
 
 	function handleBulkUpdate(ids: string[]) {
-		const updateEnvironmentId = currentEnvironmentId;
+		const updateScope = scope;
+		const tracksActivities = environmentStore.shown.every((env) => hasPermission('activities:read', env.id));
 		bulkConfirmAndRun({
 			ids,
 			title: m.updates_bulk_update_confirm_title({ count: ids.length }),
 			message: m.updates_bulk_update_confirm_message({ count: ids.length }),
 			confirmLabel: m.common_update(),
-			run: (id) => containerService.updateContainer(id, updateEnvironmentId),
+			run: (id, environmentId) => containerService.updateContainer(id, environmentId),
 			messages: {
 				success: (count) => m.containers_bulk_update_accepted({ count }),
 				partial: (success, total, failed) => m.containers_bulk_update_accept_partial({ success, total, failed }),
 				failure: () => m.containers_bulk_update_accept_failed()
 			},
 			acceptanceOnly: true,
-			activityLink: hasPermission('activities:read', updateEnvironmentId),
+			activityLink: hasShownPermission('activities:read'),
 			onItemSuccess: (_id, activity) => {
 				if (updateTableMounted) updateActivities.accept(activity);
 			},
 			setLoading: (loading) => (bulkUpdating = loading),
-			onComplete: () =>
-				updateTableMounted &&
-				updateEnvironmentId === currentEnvironmentId &&
-				!hasPermission('activities:read', updateEnvironmentId)
-					? refreshRows()
-					: undefined,
+			onComplete: () => (updateTableMounted && updateScope === scope && !tracksActivities ? refreshRows() : undefined),
 			clearSelection: () => (selectedIds = [])
 		});
 	}
 
 	const bulkActions = $derived<BulkAction[]>(
-		hasPermission('containers:autoupdate')
+		hasShownPermission('containers:autoupdate')
 			? [
 					{
 						id: 'update',
@@ -244,7 +261,7 @@
 	<div class="flex items-center gap-2">
 		<a
 			class="font-medium hover:underline {item.autoUpdateDisabled ? 'text-muted-foreground' : ''}"
-			href={`/containers/${item.containerId}`}
+			href={environmentHref(`/containers/${item.containerId}`, item.environmentId)}
 		>
 			{item.name}
 		</a>
@@ -265,13 +282,10 @@
 {/snippet}
 
 {#snippet RowActions({ item }: { item: ContainerUpdateRow })}
-	<IfPermitted perm="containers:autoupdate">
+	<IfPermitted perm="containers:autoupdate" envId={item.environmentId}>
 		<RowActionsMenu>
-			<DropdownMenu.Item
-				onclick={() => handleUpdateContainer(item.container)}
-				disabled={!!updatingContainerIds[item.containerId]}
-			>
-				{#if updatingContainerIds[item.containerId]}
+			<DropdownMenu.Item onclick={() => handleUpdateContainer(item.container)} disabled={!!updatingContainerIds[rowKey(item)]}>
+				{#if updatingContainerIds[rowKey(item)]}
 					<Spinner class="size-4" />
 				{:else}
 					<UpdateIcon class="size-4" />
@@ -281,10 +295,10 @@
 
 			<DropdownMenu.Item
 				onclick={() => handleToggleAutoUpdate(item)}
-				disabled={item.labelControlled || !item.statusAvailable || !!togglingAutoUpdateIds[item.containerId]}
+				disabled={item.labelControlled || !item.statusAvailable || !!togglingAutoUpdateIds[rowKey(item)]}
 				title={item.autoUpdateTitle}
 			>
-				{#if togglingAutoUpdateIds[item.containerId]}
+				{#if togglingAutoUpdateIds[rowKey(item)]}
 					<Spinner class="size-4" />
 				{:else if item.autoUpdateDisabled}
 					<EyeOnIcon class="size-4" />
@@ -326,7 +340,7 @@
 		]}
 		rowActions={RowActions}
 		onclick={(item: ContainerUpdateRow) => {
-			window.location.href = `/containers/${item.containerId}`;
+			window.location.href = environmentHref(`/containers/${item.containerId}`, item.environmentId);
 		}}
 	/>
 {/snippet}

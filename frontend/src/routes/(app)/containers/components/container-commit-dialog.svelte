@@ -17,11 +17,12 @@
 		open: boolean;
 		containerId: string;
 		containerName: string;
+		environmentId: string;
 		onOpenChange?: (open: boolean) => void;
 		onCommitted?: () => Promise<void> | void;
 	};
 
-	let { open = $bindable(false), containerId, containerName, onOpenChange, onCommitted }: Props = $props();
+	let { open = $bindable(false), containerId, containerName, environmentId, onOpenChange, onCommitted }: Props = $props();
 
 	const schema = z.object({
 		repository: z.string().optional().default(''),
@@ -58,13 +59,17 @@
 		try {
 			const operationResult = await tryCatch(
 				(async () => {
-					const result = await containerService.commitContainer(containerId, {
-						repository: data.repository.trim() || undefined,
-						tag: data.tag?.trim() || undefined,
-						comment: data.comment.trim() || undefined,
-						author: data.author.trim() || undefined,
-						noPause: data.noPause
-					});
+					const result = await containerService.commitContainer(
+						containerId,
+						{
+							repository: data.repository.trim() || undefined,
+							tag: data.tag?.trim() || undefined,
+							comment: data.comment.trim() || undefined,
+							author: data.author.trim() || undefined,
+							noPause: data.noPause
+						},
+						environmentId
+					);
 					toast.success(m.containers_commit_success({ imageId: result.id }));
 					didCommit = true;
 					open = false;

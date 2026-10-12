@@ -114,12 +114,12 @@
 
 {#if !autoLoginEnabled}
 	<section class="space-y-5">
-		<div class="flex items-center gap-2">
-			<ShieldAlertIcon class="size-4 text-destructive" />
-			<div>
-				<h2 class="text-base font-semibold tracking-tight sm:text-lg">{m.danger_zone()}</h2>
-				<p class="mt-1 text-xs text-muted-foreground sm:text-sm">{m.account_danger_zone_desc()}</p>
-			</div>
+		<div>
+			<h2 class="flex items-center gap-2 text-base font-semibold tracking-tight sm:text-lg">
+				<ShieldAlertIcon class="size-4 text-destructive" />
+				{m.danger_zone()}
+			</h2>
+			<p class="mt-1 text-xs text-muted-foreground sm:text-sm">{m.account_danger_zone_desc()}</p>
 		</div>
 		<div class="rounded-xl border border-destructive/30 bg-destructive/5 p-4">
 			<div class="grid gap-4 sm:grid-cols-2">

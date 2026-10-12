@@ -68,15 +68,17 @@
 
 	let {
 		volumeName,
+		environmentId,
 		hasWorkspaceChanges = false,
 		onWorkspaceRestored
 	}: {
 		volumeName: string;
+		environmentId: string;
 		hasWorkspaceChanges?: boolean;
 		onWorkspaceRestored?: () => void | Promise<void>;
 	} = $props();
 
-	const currentEnvId = $derived(environmentStore.selected?.id || '0');
+	const currentEnvId = $derived(environmentId);
 	const canReadActivities = $derived(hasPermission('activities:read', currentEnvId));
 	const canBackupVolume = $derived(hasPermission('volumes:backup', currentEnvId));
 	const canDeleteBackup = $derived(hasPermission('volumes:backup', currentEnvId));
@@ -193,7 +195,7 @@
 		try {
 			const operationResult = await tryCatch(
 				(async () => {
-					const result = await volumeBackupService.createBackup(name, request);
+					const result = await volumeBackupService.createBackup(name, request, environmentId);
 					if (!active || environmentId !== currentEnvId || name !== volumeName) return false;
 					showS3DestinationDialog = false;
 					onDemandS3DestinationId = '';
@@ -250,7 +252,7 @@
 				action: async () => {
 					const operationResult = await tryCatch(
 						(async () => {
-							const result = await volumeBackupService.deleteBackup(backup.id);
+							const result = await volumeBackupService.deleteBackup(backup.id, currentEnvId);
 							toast.success(
 								m.common_delete_success({ resource: m.volumes_workspace_backup() }),
 								activityToastOptions(extractActivityId(result))
@@ -276,7 +278,7 @@
 			message: m.volume_backups_remove_selected_message({ count: ids.length }),
 			confirmLabel: m.common_remove(),
 			destructive: true,
-			run: (id) => volumeBackupService.deleteBackup(id),
+			run: (id) => volumeBackupService.deleteBackup(id, currentEnvId),
 			messages: {
 				success: (count) => m.common_bulk_remove_success({ count, resource: m.volumes_backups_title() }),
 				partial: (success, total, failed) =>
@@ -313,7 +315,7 @@
 		uploadingBackupId = backup.id;
 		try {
 			await runBackupAction(
-				() => volumeBackupService.uploadBackup(backup.id, s3DestinationId),
+				() => volumeBackupService.uploadBackup(backup.id, s3DestinationId, currentEnvId),
 				m.backups_upload_s3_success,
 				m.backups_upload_s3_failed
 			);
@@ -328,18 +330,19 @@
 		selectAllBackupFiles = false;
 		backupFilesSearch = '';
 		backupFileProvider = {
-			browse: (request) => volumeBackupService.browseBackupFiles(backup.id, request)
+			browse: (request) => volumeBackupService.browseBackupFiles(backup.id, request, environmentId)
 		};
 		showRestoreFiles = true;
 	}
 
 	async function handleRestore(backup: BackupEntry) {
 		const name = volumeName;
+		const environmentId = currentEnvId;
 		// Check if volume is in use
 		let usageWarning = '';
 		const operationResult = await tryCatch(
 			(async () => {
-				const usage = await volumeService.getVolumeUsage(volumeName);
+				const usage = await volumeService.getVolumeUsage(volumeName, environmentId);
 				if (usage.inUse && usage.containers?.length > 0) {
 					usageWarning = m.volumes_backup_restore_in_use_warning({ count: usage.containers.length });
 				}
@@ -360,7 +363,7 @@
 				destructive: !!usageWarning || hasWorkspaceChanges,
 				action: () =>
 					runBackupAction(
-						() => volumeBackupService.restoreBackup(name, backup.id),
+						() => volumeBackupService.restoreBackup(name, backup.id, environmentId),
 						m.volumes_backup_restore_success,
 						m.common_failed,
 						() => onWorkspaceRestored?.()
@@ -375,15 +378,18 @@
 
 		const name = volumeName;
 		const backupId = restoreTarget.id;
+		const environmentId = currentEnvId;
 		const selection = { paths: [...selectedPaths], selectAll: selectAllBackupFiles };
 		restoringFiles = true;
 		try {
 			const operationResult = await tryCatch(
 				(async () => {
-					const result = await volumeBackupService.restoreBackupFiles(name, backupId, {
-						...selection,
-						search: selection.selectAll ? backupFilesSearch.trim() : undefined
-					});
+					const result = await volumeBackupService.restoreBackupFiles(
+						name,
+						backupId,
+						{ ...selection, search: selection.selectAll ? backupFilesSearch.trim() : undefined },
+						environmentId
+					);
 					await onWorkspaceRestored?.();
 					toast.success(m.volumes_backup_restore_selection_success(), activityToastOptions(extractActivityId(result)));
 					showRestoreFiles = false;
@@ -408,7 +414,7 @@
 		const environmentId = currentEnvId;
 		const name = volumeName;
 		const [collection, destinations] = await Promise.all([
-			volumeBackupService.getPolicies(name),
+			volumeBackupService.getPolicies(name, environmentId),
 			canBackupVolume && canListS3Destinations ? tryCatch(s3DestinationService.listAll()) : Promise.resolve(null),
 			loadData(requestOptions)
 		]);
@@ -512,7 +518,7 @@
 			</DropdownMenu.Item>
 		{/if}
 		{#if item.format === 'archive' || item.localSnapshotId}
-			<DropdownMenu.Item onclick={() => volumeBackupService.downloadBackup(item.id)}>
+			<DropdownMenu.Item onclick={() => volumeBackupService.downloadBackup(item.id, currentEnvId)}>
 				<DownloadIcon class="size-4" />
 				{m.templates_download()}
 			</DropdownMenu.Item>
@@ -528,7 +534,7 @@
 				</DropdownMenu.Item>
 			{/each}
 		{/if}
-		<IfPermitted perm="volumes:backup">
+		<IfPermitted perm="volumes:backup" envId={currentEnvId}>
 			<DropdownMenu.Separator />
 			<DropdownMenu.Item variant="destructive" onclick={() => handleDelete(item)}>
 				<TrashIcon class="size-4" />
@@ -832,7 +838,7 @@
 			defaultSchedule="0 0 2 * * *"
 			showStopContainers
 			destinations={canListS3Destinations && !s3DestinationsError ? s3Destinations : undefined}
-			updatePolicies={async (policies) => (await volumeBackupService.updatePolicies(volumeName, policies)).policies}
+			updatePolicies={async (policies) => (await volumeBackupService.updatePolicies(volumeName, policies, currentEnvId)).policies}
 			messages={{
 				saved: m.volume_backup_policy_saved(),
 				saveFailed: m.volume_backup_policy_save_failed(),

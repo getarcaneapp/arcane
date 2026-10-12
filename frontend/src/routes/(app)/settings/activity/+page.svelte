@@ -45,6 +45,7 @@
 	icon={ActivityIcon}
 	pageType="form"
 	showReadOnlyTag={isReadOnly}
+	environmentPicker
 >
 	{#snippet mainContent()}
 		<fieldset disabled={isReadOnly} class="relative space-y-8">

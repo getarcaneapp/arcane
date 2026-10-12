@@ -6,6 +6,7 @@
 
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
 	import ActionMenuItem from '#lib/components/arcane-table/cells/action-menu-item.svelte';
+	import { environmentColumns } from '#lib/components/arcane-table/environment-column.js';
 	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '#lib/components/arcane-table/index.js';
 	import { UniversalMobileCard } from '#lib/components/arcane-table/index.js';
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
@@ -34,12 +35,22 @@
 		getProjectUpdateTooltip,
 		getProjectUpdateVariant
 	} from '#lib/utils/docker.js';
+	import {
+		environmentHref,
+		fetchAcrossEnvironments,
+		hasShownPermission,
+		rowKey,
+		type EnvironmentPage,
+		type EnvironmentRow
+	} from '#lib/utils/environments.js';
 	import { capitalizeFirstLetter, formatDateTimeShort } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 	import { summarizeUpdateCheckResult } from '#lib/utils/update-actions.js';
 
 	import { createProjectActions } from '../projects-table.actions';
 	import type { ActionStatus } from '../projects-table.helpers';
+
+	type ProjectRow = EnvironmentRow<Project>;
 
 	let {
 		projects = $bindable(),
@@ -52,7 +63,7 @@
 		availableTags = [],
 		emptyState
 	}: {
-		projects: Paginated<Project>;
+		projects: EnvironmentPage<Paginated<Project>>;
 		selectedIds: string[];
 		requestOptions: SearchPaginationSortRequest;
 		withoutFilters?: boolean;
@@ -79,23 +90,25 @@
 			await onRefreshData(options);
 			return;
 		}
-		projects = await projectService.getProjects(options);
+		projects = await fetchAcrossEnvironments(environmentStore.shown, options, (id, request, config) =>
+			projectService.getProjectsForEnvironment(id, request, config)
+		);
 	}
 
-	async function handleCheckProjectUpdates(project: Project) {
-		if (checkingProjectIds[project.id]) {
+	async function handleCheckProjectUpdates(project: ProjectRow) {
+		if (checkingProjectIds[rowKey(project)]) {
 			return;
 		}
 
 		checkingProjectIds = {
 			...checkingProjectIds,
-			[project.id]: true
+			[rowKey(project)]: true
 		};
 
 		try {
 			const operationResult = await tryCatch(
 				(async () => {
-					const result = await projectService.checkUpdates(project.id);
+					const result = await projectService.checkUpdates(project.id, project.environmentId);
 					summarizeUpdateCheckResult(result);
 					await refreshProjects(requestOptions);
 				})()
@@ -106,19 +119,19 @@
 		} finally {
 			checkingProjectIds = {
 				...checkingProjectIds,
-				[project.id]: false
+				[rowKey(project)]: false
 			};
 		}
 	}
 
-	async function handleTagToggle(project: Project, name: string, attached: boolean, color: ProjectTagColor) {
-		const response = await projectService.updateProjectTag(project.id, name, attached, color);
+	async function handleTagToggle(project: ProjectRow, name: string, attached: boolean, color: ProjectTagColor) {
+		const response = await projectService.updateProjectTag(project.id, name, attached, color, project.environmentId);
 		if (attached && !tagCatalog.some((tag) => tag.name === name)) {
 			tagCatalog = [...tagCatalog, { name, color }].sort((a, b) => a.name.localeCompare(b.name));
 		}
 		projects = {
 			...projects,
-			data: projects.data.map((item) => (item.id === project.id ? { ...item, tags: response.tags } : item))
+			data: projects.data.map((item) => (rowKey(item) === rowKey(project) ? { ...item, tags: response.tags } : item))
 		};
 		return response.tags;
 	}
@@ -137,12 +150,9 @@
 	}
 
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
-	const envId = $derived(environmentStore.selected?.id);
-	const currentEnvId = $derived(environmentStore.selected?.id || '0');
-	const canUpdateProject = $derived(hasPermission('projects:update', currentEnvId));
-	const canDeployProject = $derived(hasPermission('projects:deploy', currentEnvId));
-	const canDownProject = $derived(hasPermission('projects:down', currentEnvId));
-	const canArchiveProject = $derived(hasPermission('projects:archive', currentEnvId));
+	const canDeployProject = $derived(hasShownPermission('projects:deploy'));
+	const canDownProject = $derived(hasShownPermission('projects:down'));
+	const canArchiveProject = $derived(hasShownPermission('projects:archive'));
 
 	const {
 		performProjectAction,
@@ -159,12 +169,11 @@
 			selectedIds = next;
 		},
 		actionStatus,
-		isBulkLoading,
-		getEnvId: () => envId
+		isBulkLoading
 	});
 
 	const isAnyLoading = $derived(hasAnyLoadingState(actionStatus, isBulkLoading));
-	const selectedProjects = $derived.by(() => (projects?.data ?? []).filter((project) => selectedIds?.includes(project.id)));
+	const selectedProjects = $derived.by(() => (projects?.data ?? []).filter((project) => selectedIds?.includes(rowKey(project))));
 	const hasRedeployDisabledSelection = $derived.by(() => selectedProjects.some((project) => project.redeployDisabled));
 	const hasArchivedSelection = $derived.by(() => selectedProjects.some((project) => project.isArchived));
 	const isProjectArchiveBlocked = (project: Project) =>
@@ -181,6 +190,7 @@
 	const columns = $derived.by(
 		() =>
 			[
+				...environmentColumns<ProjectRow>(),
 				{ accessorKey: 'id', title: m.common_id(), hidden: true },
 				{ accessorKey: 'name', title: m.common_name(), sortable: true, cell: NameCell },
 				{
@@ -203,7 +213,7 @@
 				{ accessorKey: 'createdAt', title: m.common_created(), sortable: true, cell: CreatedCell },
 				{ accessorKey: 'serviceCount', title: m.services(), sortable: true },
 				{ id: 'label', accessorFn: () => '', title: m.common_labels(), hidden: true }
-			] satisfies ColumnSpec<Project>[]
+			] satisfies ColumnSpec<ProjectRow>[]
 	);
 
 	const mobileFields = [
@@ -283,7 +293,7 @@
 	]);
 </script>
 
-{#snippet NameCell({ item }: { item: Project })}
+{#snippet NameCell({ item }: { item: ProjectRow })}
 	<div class="flex items-center gap-2">
 		<IconImage
 			src={getThemedIconUrl(item, mode.current)}
@@ -292,31 +302,31 @@
 			class="size-6"
 			containerClass="size-8"
 		/>
-		<a class="font-medium hover:underline" href="/projects/{item.id}">{item.name}</a>
+		<a class="font-medium hover:underline" href={environmentHref(`/projects/${item.id}`, item.environmentId)}>{item.name}</a>
 		{#if item.isArchived}
 			<span class="rounded bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground">{m.projects_archived_badge()}</span>
 		{/if}
 	</div>
 {/snippet}
 
-{#snippet TagsCell({ item }: { item: Project })}
+{#snippet TagsCell({ item }: { item: ProjectRow })}
 	<ProjectTagEditor
 		tags={item.tags ?? []}
 		availableTags={tagCatalog}
-		canEdit={canUpdateProject && !item.isDiscovered}
+		canEdit={hasPermission('projects:update', item.environmentId) && !item.isDiscovered}
 		onToggle={(name, attached, color) => handleTagToggle(item, name, attached, color)}
 	/>
 {/snippet}
 
-{#snippet DirectoryCell({ item }: { item: Project })}
+{#snippet DirectoryCell({ item }: { item: ProjectRow })}
 	<span class="block max-w-88 truncate text-muted-foreground">{item.relativePath ?? item.dirName ?? item.path}</span>
 {/snippet}
 
-{#snippet ProviderCell({ item }: { item: Project })}
+{#snippet ProviderCell({ item }: { item: ProjectRow })}
 	<div class="flex items-center gap-2">
 		{#if item.gitOpsManagedBy}
 			<GitBranchIcon class="size-4" />
-			<a class="font-medium hover:underline" href="/environments/{envId}/gitops">
+			<a class="font-medium hover:underline" href="/environments/{item.environmentId}/gitops">
 				{m.git()}
 			</a>
 		{:else}
@@ -334,7 +344,7 @@
 	</span>
 {/snippet}
 
-{#snippet StatusCell({ item }: { item: Project })}
+{#snippet StatusCell({ item }: { item: ProjectRow })}
 	{@const statusTooltip = getStatusTooltip(item)}
 	{#if statusTooltip}
 		<ArcaneTooltip.Root>
@@ -355,11 +365,12 @@
 	{/if}
 {/snippet}
 
-{#snippet UpdatesCell({ item }: { item: Project })}
+{#snippet UpdatesCell({ item }: { item: ProjectRow })}
 	<ProjectUpdateItem
 		updateInfo={item.updateInfo}
+		environmentId={item.environmentId}
 		onCheck={() => handleCheckProjectUpdates(item)}
-		checking={!!checkingProjectIds[item.id]}
+		checking={!!checkingProjectIds[rowKey(item)]}
 		disabled={!!item.isArchived || !!item.configurationError?.blocksOperations}
 		class="mr-2"
 	/>
@@ -373,21 +384,21 @@
 	item,
 	mobileFieldVisibility
 }: {
-	item: Project;
+	item: ProjectRow;
 	mobileFieldVisibility: MobileFieldVisibility;
 })}
 	<UniversalMobileCard
 		{item}
-		icon={(item: Project) => ({
+		icon={(item: ProjectRow) => ({
 			component: FolderOpenIcon,
 			variant: item.status === 'running' ? 'emerald' : item.status === 'exited' ? 'red' : 'amber',
 			imageUrl: getThemedIconUrl(item, mode.current) ?? undefined,
 			alt: item.name
 		})}
-		title={(item: Project) => item.name}
-		subtitle={(item: Project) => ((mobileFieldVisibility['id'] ?? true) ? item.id : null)}
+		title={(item: ProjectRow) => item.name}
+		subtitle={(item: ProjectRow) => ((mobileFieldVisibility['id'] ?? true) ? item.id : null)}
 		badges={[
-			(item: Project) =>
+			(item: ProjectRow) =>
 				(mobileFieldVisibility['status'] ?? true)
 					? {
 							variant: getStatusVariant(item.status),
@@ -395,14 +406,14 @@
 							tooltip: getStatusTooltip(item)
 						}
 					: null,
-			(item: Project) =>
+			(item: ProjectRow) =>
 				item.isArchived
 					? {
 							variant: 'gray' as const,
 							text: m.projects_archived_badge()
 						}
 					: null,
-			(item: Project) =>
+			(item: ProjectRow) =>
 				(mobileFieldVisibility['updates'] ?? true)
 					? {
 							variant: getProjectUpdateVariant(item.updateInfo),
@@ -415,13 +426,13 @@
 			{
 				label: m.common_tags(),
 				type: 'component',
-				getValue: (item: Project) => ({ item }),
+				getValue: (item: ProjectRow) => ({ item }),
 				component: TagsCell,
 				show: mobileFieldVisibility['tags'] ?? true
 			},
 			{
 				label: m.common_working_directory(),
-				getValue: (item: Project) => item.relativePath ?? item.dirName ?? item.path,
+				getValue: (item: ProjectRow) => item.relativePath ?? item.dirName ?? item.path,
 				icon: FolderOpenIcon,
 				iconVariant: 'gray' as const,
 				show: mobileFieldVisibility['directory'] ?? true
@@ -429,7 +440,7 @@
 			{
 				label: m.projects_col_provider(),
 				type: 'component',
-				getValue: (item: Project) => ({
+				getValue: (item: ProjectRow) => ({
 					icon: item.gitOpsManagedBy ? GitBranchIcon : ProjectsIcon,
 					text: item.gitOpsManagedBy ? m.git() : m.local()
 				}),
@@ -438,7 +449,7 @@
 			},
 			{
 				label: m.services(),
-				getValue: (item: Project) => {
+				getValue: (item: ProjectRow) => {
 					const serviceCount = item.serviceCount ? Number(item.serviceCount) : (item.services?.length ?? 0);
 					return `${serviceCount} ${Number(serviceCount) === 1 ? 'service' : 'services'}`;
 				},
@@ -450,17 +461,18 @@
 		footer={(mobileFieldVisibility['createdAt'] ?? true) && item.createdAt
 			? {
 					label: m.common_created(),
-					getValue: (item: Project) => formatDateTimeShort(item.createdAt),
+					getValue: (item: ProjectRow) => formatDateTimeShort(item.createdAt),
 					icon: CalendarIcon
 				}
 			: undefined}
 		rowActions={RowActions}
-		onclick={() => goto(`/projects/${item.id}`)}
+		onclick={() => goto(environmentHref(`/projects/${item.id}`, item.environmentId))}
 	/>
 {/snippet}
 
-{#snippet RowActions({ item }: { item: Project })}
-	{@const status = actionStatus[item.id]}
+{#snippet RowActions({ item }: { item: ProjectRow })}
+	{@const status = actionStatus[rowKey(item)]}
+	{@const envId = item.environmentId}
 	{@const configurationBlocked = !!item.configurationError?.blocksOperations}
 	{@const lifecycleDisabled = item.isArchived || isAnyLoading || configurationBlocked}
 	{@const archivedTitle = configurationBlocked
@@ -469,14 +481,14 @@
 			? m.projects_archived_badge()
 			: undefined}
 	<RowActionsMenu>
-		<DropdownMenu.Item onclick={() => goto(`/projects/${item.id}`)} disabled={isAnyLoading}>
+		<DropdownMenu.Item onclick={() => goto(environmentHref(`/projects/${item.id}`, envId))} disabled={isAnyLoading}>
 			<EditIcon class="size-4" />
 			{m.common_edit()}
 		</DropdownMenu.Item>
 
-		{#if item.gitOpsManagedBy && canUpdateProject}
+		{#if item.gitOpsManagedBy && hasPermission('projects:update', envId)}
 			<ActionMenuItem
-				onclick={() => handleSyncFromGit(item.id, item.gitOpsManagedBy!)}
+				onclick={() => handleSyncFromGit(item.id, item.gitOpsManagedBy!, envId)}
 				disabled={isAnyLoading}
 				icon={RefreshIcon}
 				label={m.git_sync_from_git()}
@@ -487,9 +499,9 @@
 		<DropdownMenu.Separator />
 
 		{#if item.status !== 'running'}
-			<IfPermitted perm="projects:deploy" envId={currentEnvId}>
+			<IfPermitted perm="projects:deploy" {envId}>
 				<ActionMenuItem
-					onclick={() => performProjectAction('start', item.id)}
+					onclick={() => performProjectAction('start', item.id, envId)}
 					disabled={lifecycleDisabled}
 					title={archivedTitle}
 					icon={StartIcon}
@@ -498,9 +510,9 @@
 				/>
 			</IfPermitted>
 		{:else}
-			<IfPermitted perm="projects:down" envId={currentEnvId}>
+			<IfPermitted perm="projects:down" {envId}>
 				<ActionMenuItem
-					onclick={() => performProjectAction('stop', item.id)}
+					onclick={() => performProjectAction('stop', item.id, envId)}
 					disabled={lifecycleDisabled}
 					title={archivedTitle}
 					icon={StopIcon}
@@ -509,9 +521,9 @@
 				/>
 			</IfPermitted>
 
-			<IfPermitted perm="projects:restart">
+			<IfPermitted perm="projects:restart" {envId}>
 				<ActionMenuItem
-					onclick={() => performProjectAction('restart', item.id)}
+					onclick={() => performProjectAction('restart', item.id, envId)}
 					disabled={lifecycleDisabled}
 					title={archivedTitle}
 					icon={RestartIcon}
@@ -521,7 +533,7 @@
 			</IfPermitted>
 		{/if}
 
-		<IfPermitted perm="projects:deploy" envId={currentEnvId}>
+		<IfPermitted perm="projects:deploy" {envId}>
 			{#if item.redeployDisabled}
 				<DropdownMenu.Item disabled title={m.common_redeploy_disabled_arcane_self()}>
 					<RedeployIcon class="size-4 opacity-50" />
@@ -529,7 +541,7 @@
 				</DropdownMenu.Item>
 			{:else}
 				<ActionMenuItem
-					onclick={() => performProjectAction('redeploy', item.id)}
+					onclick={() => performProjectAction('redeploy', item.id, envId)}
 					disabled={lifecycleDisabled}
 					title={archivedTitle}
 					icon={RedeployIcon}
@@ -541,10 +553,10 @@
 
 		<DropdownMenu.Separator />
 
-		<IfPermitted perm="projects:archive" envId={currentEnvId}>
+		<IfPermitted perm="projects:archive" {envId}>
 			{#if item.isArchived}
 				<ActionMenuItem
-					onclick={() => performProjectAction('unarchive', item.id)}
+					onclick={() => performProjectAction('unarchive', item.id, envId)}
 					disabled={isAnyLoading}
 					icon={BoxIcon}
 					label={m.projects_unarchive()}
@@ -552,7 +564,7 @@
 				/>
 			{:else}
 				<ActionMenuItem
-					onclick={() => performProjectAction('archive', item.id)}
+					onclick={() => performProjectAction('archive', item.id, envId)}
 					disabled={isProjectArchiveBlocked(item) || isAnyLoading}
 					title={isProjectArchiveBlocked(item) ? m.projects_archive_requires_stopped() : undefined}
 					icon={BoxIcon}
@@ -562,10 +574,10 @@
 			{/if}
 		</IfPermitted>
 
-		<IfPermitted perm="projects:delete">
+		<IfPermitted perm="projects:delete" {envId}>
 			<ActionMenuItem
 				destructive
-				onclick={() => handleDestroyProject(item.id)}
+				onclick={() => handleDestroyProject(item.id, envId)}
 				disabled={isAnyLoading}
 				icon={TrashIcon}
 				label={m.compose_destroy()}

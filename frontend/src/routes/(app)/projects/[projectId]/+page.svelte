@@ -26,6 +26,7 @@
 	import { Switch } from '#lib/components/ui/switch/index.js';
 	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import WorkspaceFileTreePanel from '#lib/components/workspace-file-tree-panel.svelte';
+	import { useEnvironmentSettings } from '#lib/hooks/use-environment-settings.svelte.js';
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';
 	import {
 		ArrowLeftIcon,
@@ -53,11 +54,9 @@
 	import { gitOpsSyncService } from '#lib/services/gitops-sync-service.js';
 	import { projectService } from '#lib/services/project-service.js';
 	import { projectWorkspaceService } from '#lib/services/project-workspace-service.js';
-	import settingsStore from '#lib/stores/config-store.svelte.js';
-	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { ProjectEditorLayout } from '#lib/types/auth.js';
 	import type { ProjectWorkspaceFileChange, ProjectWorkspaceFileContent } from '#lib/types/project-workspace.js';
-	import type { IncludeFile, Project, ProjectTagColor, ProjectTagOption } from '#lib/types/swarm.js';
+	import type { IncludeFile, Project, ProjectTagColor } from '#lib/types/swarm.js';
 	import { cn } from '#lib/utils.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
@@ -70,6 +69,7 @@
 		type ProjectEditorLayoutMode
 	} from '#lib/utils/compose-flow.js';
 	import { getStatusVariant, getThemedIconUrl } from '#lib/utils/docker.js';
+	import { environmentName, listScopes } from '#lib/utils/environments.js';
 	import { capitalizeFirstLetter } from '#lib/utils/formatting.js';
 	import { gitOpsComposeEditUrl, gitOpsFileEditUrl, gitOpsProjectUrl } from '#lib/utils/gitops.js';
 	import { toGitRouteUrl, toSafeHref } from '#lib/utils/navigation.js';
@@ -100,6 +100,7 @@
 		planProjectWorkspaceFileRename,
 		validateProjectWorkspaceFileName
 	} from '../components/project-workspace-utils';
+	import { fetchProjectTags, type ProjectTagOptions } from '../projects-table.helpers';
 
 	let { data } = $props();
 	let projectId = $derived(data.projectId);
@@ -119,7 +120,7 @@
 		archiving: false
 	});
 
-	const envId = $derived(environmentStore.selected?.id || '0');
+	const envId = $derived(data.envId);
 	const canUpdateProject = $derived(hasPermission('projects:update', envId));
 	const canArchiveProject = $derived(hasPermission('projects:archive', envId));
 	const canViewProjectLogs = $derived(hasPermission('projects:logs', envId));
@@ -139,7 +140,9 @@
 	let projectWorkspaceStagedUploadedText = $state<Record<string, string>>({});
 	let projectWorkspaceFilePromises: Record<string, Promise<IncludeFile | ProjectWorkspaceFileContent> | undefined> = {};
 	const globalVariableMap = $derived(globalVariablesToMap(data.globalVariables));
-	const projectWorkspaceMaxFileSizeMb = $derived(settingsStore.current?.projectWorkspaceMaxFileSizeMb ?? 10);
+	// A project from another environment follows that environment's upload limit.
+	const projectSettings = useEnvironmentSettings(() => envId);
+	const projectWorkspaceMaxFileSizeMb = $derived(projectSettings.current?.projectWorkspaceMaxFileSizeMb ?? 10);
 
 	const projectDetailQuery = createQuery(() => ({
 		queryKey: queryKeys.projects.detail(envId, projectId),
@@ -149,20 +152,22 @@
 	}));
 	const projectTagsQuery = createQuery(() => ({
 		queryKey: queryKeys.projects.tags(envId),
-		queryFn: () => projectService.getProjectTagsForEnvironment(envId)
+		queryFn: () => fetchProjectTags([{ id: envId, name: environmentName(envId) }])
 	}));
-	const availableProjectTags = $derived(projectTagsQuery.data ?? []);
+	const availableProjectTags = $derived(projectTagsQuery.data?.tags ?? []);
 
 	async function handleProjectTagToggle(name: string, attached: boolean, color: ProjectTagColor) {
-		const response = await projectService.updateProjectTag(projectId, name, attached, color);
+		const response = await projectService.updateProjectTag(projectId, name, attached, color, envId);
 		queryClient.setQueryData<Project>(queryKeys.projects.detail(envId, projectId), (current) =>
 			current ? { ...current, tags: response.tags } : current
 		);
 		if (attached) {
-			queryClient.setQueryData<ProjectTagOption[]>(queryKeys.projects.tags(envId), (current = []) =>
-				current.some((tag) => tag.name === name)
-					? current
-					: [...current, { name, color }].sort((a, b) => a.name.localeCompare(b.name))
+			queryClient.setQueryData<ProjectTagOptions>(
+				queryKeys.projects.tags(envId),
+				(current = { tags: [], failedEnvironments: [] }) =>
+					current.tags.some((tag) => tag.name === name)
+						? current
+						: { ...current, tags: [...current.tags, { name, color }].sort((a, b) => a.name.localeCompare(b.name)) }
 			);
 		}
 		return response.tags;
@@ -635,7 +640,7 @@
 	}
 
 	async function syncProjectQueries(updatedProject: Project) {
-		const currentEnvId = envId ?? (await environmentStore.getCurrentEnvironmentId());
+		const currentEnvId = envId;
 
 		// The save response is slim (no directory walks), so merge it into the
 		// cached detail instead of replacing it wholesale.
@@ -644,21 +649,25 @@
 			(old: Project | undefined) => ({ ...old, ...updatedProject }) as Project
 		);
 		await Promise.all([
-			queryClient.invalidateQueries({ queryKey: ['projects', currentEnvId] }),
-			queryClient.invalidateQueries({ queryKey: queryKeys.projects.statusCounts(currentEnvId) })
+			...listScopes([currentEnvId]).flatMap((scope) => [
+				queryClient.invalidateQueries({ queryKey: ['projects', scope] }),
+				queryClient.invalidateQueries({ queryKey: queryKeys.projects.statusCounts(scope) })
+			])
 		]);
 	}
 
 	const checkProjectUpdatesMutation = createMutation(() => ({
 		mutationKey: queryKeys.projects.detailCheckUpdates(envId ?? '0', projectId),
-		mutationFn: () => projectService.checkUpdates(projectId),
+		mutationFn: () => projectService.checkUpdates(projectId, envId),
 		onSuccess: async (result) => {
-			const currentEnvId = envId ?? (await environmentStore.getCurrentEnvironmentId());
+			const currentEnvId = envId;
 			summarizeUpdateCheckResult(result);
 			await Promise.all([
 				refreshProjectDetails(),
-				queryClient.invalidateQueries({ queryKey: ['projects', currentEnvId] }),
-				queryClient.invalidateQueries({ queryKey: queryKeys.projects.statusCounts(currentEnvId) })
+				...listScopes([currentEnvId]).flatMap((scope) => [
+					queryClient.invalidateQueries({ queryKey: ['projects', scope] }),
+					queryClient.invalidateQueries({ queryKey: queryKeys.projects.statusCounts(scope) })
+				])
 			]);
 		},
 		onError: () => {
@@ -791,7 +800,8 @@
 						namePayload,
 						composePayload,
 						envPayload,
-						overridePayload
+						overridePayload,
+						envId
 					);
 					rebaseEditorDraft(updatedProject, { preserveProjectWorkspaceContents: true });
 					await syncProjectQueries(updatedProject);
@@ -833,7 +843,7 @@
 		isLoading.archiving = true;
 		try {
 			const result = await tryCatch(
-				archiving ? projectService.archiveProject(project.id) : projectService.unarchiveProject(project.id)
+				archiving ? projectService.archiveProject(project.id, envId) : projectService.unarchiveProject(project.id, envId)
 			);
 			await handleApiResultWithCallbacks({
 				result,
@@ -841,10 +851,12 @@
 				onSuccess: async () => {
 					toast.success(archiving ? m.compose_archive_success() : m.compose_unarchive_success());
 					await refreshProjectDetails();
-					const currentEnvId = envId ?? (await environmentStore.getCurrentEnvironmentId());
+					const currentEnvId = envId;
 					await Promise.all([
-						queryClient.invalidateQueries({ queryKey: ['projects', currentEnvId] }),
-						queryClient.invalidateQueries({ queryKey: queryKeys.projects.statusCounts(currentEnvId) })
+						...listScopes([currentEnvId]).flatMap((scope) => [
+							queryClient.invalidateQueries({ queryKey: ['projects', scope] }),
+							queryClient.invalidateQueries({ queryKey: queryKeys.projects.statusCounts(scope) })
+						])
 					]);
 				}
 			});
@@ -1353,7 +1365,7 @@
 	async function refreshProjectDetails(options: RefreshProjectDetailsOptions = {}) {
 		if (!projectId) return;
 		await handleApiResultWithCallbacks({
-			result: await tryCatch(projectService.getProject(projectId)),
+			result: await tryCatch(projectService.getProjectForEnvironment(envId, projectId)),
 			message: m.common_refresh_failed({ resource: m.project() }),
 			onSuccess: async (updatedProject) => {
 				if (options.forceRebaseDraft || !hasChanges) {
@@ -1810,6 +1822,7 @@
 							<ProjectServicesPanel
 								services={project.runtimeServices}
 								{projectId}
+								environmentId={envId}
 								updateInfoByRef={project.updateInfo?.updateInfoByRef}
 								onRefresh={() => refreshProjectDetails()}
 							/>
@@ -1817,7 +1830,7 @@
 						{#snippet second()}
 							<div class="flex h-full min-h-0 flex-col overflow-hidden">
 								{#key project.id}
-									<ProjectsLogsPanel projectId={project.id} bind:autoScroll={autoScrollStackLogs} />
+									<ProjectsLogsPanel projectId={project.id} environmentId={envId} bind:autoScroll={autoScrollStackLogs} />
 								{/key}
 							</div>
 						{/snippet}
@@ -1828,6 +1841,7 @@
 					<ProjectServicesPanel
 						services={project.runtimeServices}
 						{projectId}
+						environmentId={envId}
 						updateInfoByRef={project.updateInfo?.updateInfoByRef}
 						onRefresh={() => refreshProjectDetails()}
 					/>
@@ -2165,6 +2179,7 @@
 				/>
 				<ProjectUpdateItem
 					updateInfo={project.updateInfo}
+					environmentId={envId}
 					onCheck={handleCheckProjectUpdates}
 					checking={checkProjectUpdatesMutation.isPending}
 					disabled={!!project.isArchived || composeActionsBlocked}
@@ -2235,6 +2250,7 @@
 		{#snippet headerActions()}
 			<ActionButtons
 				id={project.id}
+				environmentId={envId}
 				name={project.name}
 				type="project"
 				itemState={project.status}

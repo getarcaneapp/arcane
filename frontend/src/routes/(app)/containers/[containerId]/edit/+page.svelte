@@ -20,6 +20,7 @@
 	import type { ContainerEditRequest } from '#lib/types/docker.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
+	import { environmentHref } from '#lib/utils/environments.js';
 	import { createForm } from '#lib/utils/settings.svelte.js';
 
 	let { data } = $props();
@@ -31,13 +32,13 @@
 	let rows = $state(untrack(() => rowsFromEditConfig(data.editConfig)));
 
 	const editContainerMutation = createMutation(() => ({
-		mutationFn: (request: ContainerEditRequest) => containerService.editContainer(data.containerId, request),
+		mutationFn: (request: ContainerEditRequest) => containerService.editContainer(data.containerId, request, data.envId),
 		onSuccess: async (details) => {
 			toast.success(m.edit_success(), activityToastOptions(extractActivityId(details)));
 			await queryClient.invalidateQueries({ queryKey: queryKeys.containers.all });
 			queryClient.removeQueries({ queryKey: queryKeys.containers.detail(data.envId, data.containerId) });
 			queryClient.removeQueries({ queryKey: queryKeys.containers.editConfig(data.envId, data.containerId) });
-			goto(`/containers/${details.id}`);
+			goto(environmentHref(`/containers/${details.id}`, data.envId));
 		},
 		onError: (error) => {
 			toast.error(m.edit_failed(), { description: extractApiErrorMessage(error) });
@@ -69,7 +70,7 @@
 				action="base"
 				tone="ghost"
 				size="sm"
-				href={`/containers/${data.containerId}`}
+				href={environmentHref(`/containers/${data.containerId}`, data.envId)}
 				class="gap-2 bg-transparent"
 				icon={ArrowLeftIcon}
 				customLabel={m.common_back()}
@@ -87,7 +88,8 @@
 			mode="edit"
 			{form}
 			bind:rows
-			cancelHref={`/containers/${data.containerId}`}
+			cancelHref={environmentHref(`/containers/${data.containerId}`, data.envId)}
+			environmentId={data.envId}
 			submitting={editContainerMutation.isPending}
 			onSubmit={handleSubmit}
 		/>

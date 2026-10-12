@@ -5,6 +5,7 @@ import type { FilterMap, FilterValue } from '#lib/types/shared.js';
 import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 import type { TableDisplayEntry } from '#lib/types/table-display.js';
 import type { PersistedPreferencesSnapshot } from '#lib/types/table-preferences.js';
+import { ENVIRONMENT_FILTER, environmentFilterIds, rowKey } from '#lib/utils/environments.js';
 
 import type { CompactTablePrefs, GroupedData } from './arcane-table.types.svelte';
 import { decodeFilters, decodeSort } from './arcane-table.types.svelte';
@@ -37,6 +38,7 @@ export function toFilterMap(filters: ColumnFiltersState): FilterMap {
  * request `FilterMap`. Used to reflect externally-set `requestOptions.filters`
  * (e.g. a clickable stat card) back into the faceted-filter UI. Values are kept
  * as-is so they match the facet option `value` types (array, boolean, string).
+ * The environment filter keeps only shown environments, so a stale one never shows as active.
  */
 export function fromFilterMap(map?: FilterMap): ColumnFiltersState {
 	if (!map) return [];
@@ -44,6 +46,11 @@ export function fromFilterMap(map?: FilterMap): ColumnFiltersState {
 	for (const [id, value] of Object.entries(map)) {
 		if (value === undefined || value === null) continue;
 		if (Array.isArray(value) && value.length === 0) continue;
+		if (id === ENVIRONMENT_FILTER) {
+			const environmentIds = environmentFilterIds(value);
+			if (environmentIds.length > 0) out.push({ id, value: environmentIds });
+			continue;
+		}
 		out.push({ id, value });
 	}
 	return out;
@@ -118,9 +125,9 @@ export function extractPersistedPreferences(
 
 export function getTableRowsForItems<T extends RowData>(
 	rowIndex: ReadonlyMap<string, { row: ArcaneRow<T>; index: number }>,
-	groupItems: Array<{ id: string }>
+	groupItems: Array<{ id: string; environmentId?: string }>
 ): ArcaneRow<T>[] {
-	const ids = new Set(groupItems.map((item) => item.id));
+	const ids = new Set(groupItems.map((item) => rowKey(item)));
 	return Array.from(ids)
 		.flatMap((id) => {
 			const entry = rowIndex.get(id);

@@ -10,7 +10,7 @@ import type {
 import type { SearchPaginationSortRequest, Paginated } from '#lib/types/shared.js';
 import { transformPaginationParams } from '#lib/utils/tables.js';
 
-import BaseAPIService from './api-service';
+import BaseAPIService, { type APIRequestConfig } from './api-service';
 
 export type NetworksPaginatedResponse = Paginated<NetworkSummaryDto, NetworkUsageCounts>;
 
@@ -26,10 +26,11 @@ class NetworkService extends BaseAPIService {
 
 	async getNetworksForEnvironment(
 		environmentId: string,
-		options?: SearchPaginationSortRequest
+		options?: SearchPaginationSortRequest,
+		config?: APIRequestConfig
 	): Promise<NetworksPaginatedResponse> {
 		const params = transformPaginationParams(options);
-		const res = await this.api.get(`/environments/${environmentId}/networks`, { params });
+		const res = await this.api.get(`/environments/${environmentId}/networks`, { ...config, params });
 		return res.data;
 	}
 
@@ -67,21 +68,26 @@ class NetworkService extends BaseAPIService {
 		return this.handleResponse(this.api.post(`/environments/${envId}/networks`, request));
 	}
 
-	async deleteNetwork(networkId: string): Promise<any> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+	async deleteNetwork(networkId: string, environmentId?: string): Promise<any> {
+		const envId = await this.resolveEnvironmentId(environmentId);
 		return this.handleResponse(this.api.delete(`/environments/${envId}/networks/${networkId}`));
 	}
 
 	async connectContainer(
 		networkId: string,
-		request: { containerId: string; aliases?: string[]; ipv4Address?: string; ipv6Address?: string }
+		request: { containerId: string; aliases?: string[]; ipv4Address?: string; ipv6Address?: string },
+		environmentId?: string
 	): Promise<any> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+		const envId = await this.resolveEnvironmentId(environmentId);
 		return this.handleResponse(this.api.post(`/environments/${envId}/networks/${networkId}/connect`, request));
 	}
 
-	async disconnectContainer(networkId: string, request: { containerId: string; force?: boolean }): Promise<any> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+	async disconnectContainer(
+		networkId: string,
+		request: { containerId: string; force?: boolean },
+		environmentId?: string
+	): Promise<any> {
+		const envId = await this.resolveEnvironmentId(environmentId);
 		return this.handleResponse(this.api.post(`/environments/${envId}/networks/${networkId}/disconnect`, request));
 	}
 }

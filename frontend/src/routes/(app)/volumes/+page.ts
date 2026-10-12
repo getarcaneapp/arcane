@@ -2,13 +2,16 @@ import { queryKeys } from '#lib/query/query-keys.js';
 import { volumeService } from '#lib/services/volume-service.js';
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
+import { fetchAcrossEnvironments } from '#lib/utils/environments.js';
 import { resolveInitialTableRequest } from '#lib/utils/tables.js';
 
 import type { PageLoad } from './$types';
+import { volumeSortValue } from './components/volume-table.svelte';
 
 export const load: PageLoad = async ({ parent }) => {
 	const { queryClient } = await parent();
-	const envId = await environmentStore.getCurrentEnvironmentId();
+	const environments = await environmentStore.getShownEnvironments();
+	const scope = environmentStore.shownKey;
 
 	const volumeRequestOptions = resolveInitialTableRequest(
 		'arcane-volumes-table',
@@ -27,12 +30,18 @@ export const load: PageLoad = async ({ parent }) => {
 
 	// Single API call - counts are included in the response
 	const volumes = await queryClient.query({
-		queryKey: queryKeys.volumes.table(envId, volumeRequestOptions),
-		queryFn: () => volumeService.getVolumesForEnvironment(envId, volumeRequestOptions)
+		queryKey: queryKeys.volumes.table(scope, volumeRequestOptions),
+		queryFn: () =>
+			fetchAcrossEnvironments(
+				environments,
+				volumeRequestOptions,
+				(id, request, config) => volumeService.getVolumesForEnvironment(id, request, config),
+				volumeSortValue
+			)
 	});
 
 	return {
-		envId,
+		scope,
 		volumes,
 		volumeRequestOptions,
 		// Use counts from the volumes response

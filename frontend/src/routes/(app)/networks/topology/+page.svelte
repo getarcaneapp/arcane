@@ -43,7 +43,12 @@
 	]);
 </script>
 
-<ResourcePageLayout title={m.networks_topology_title()} subtitle={m.networks_topology_subtitle()} {actionButtons}>
+<ResourcePageLayout
+	title={m.networks_topology_title()}
+	subtitle={m.networks_topology_subtitle()}
+	{actionButtons}
+	environmentPicker
+>
 	{#snippet mainContent()}
 		{#if topology}
 			<NetworkDiagram {topology} />

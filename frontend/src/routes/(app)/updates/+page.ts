@@ -5,14 +5,17 @@ import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 import { throwPageLoadError } from '#lib/utils/api.js';
 import { ensureStandaloneContainerUpdatesFilter, ensureUpdatesFilter } from '#lib/utils/docker.js';
+import { fetchAcrossEnvironments } from '#lib/utils/environments.js';
 import { resolveInitialTableRequest } from '#lib/utils/tables.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
+import { containerSortValue } from '../containers/container-table.helpers';
 import type { PageLoad } from './$types';
 
 export const load: PageLoad = async ({ parent }) => {
 	const { queryClient } = await parent();
-	const envId = await environmentStore.getCurrentEnvironmentId();
+	const environments = await environmentStore.getShownEnvironments();
+	const scope = environmentStore.shownKey;
 
 	const containerRequestOptions = ensureStandaloneContainerUpdatesFilter(
 		resolveInitialTableRequest('arcane-updates-container-table', {
@@ -32,12 +35,21 @@ export const load: PageLoad = async ({ parent }) => {
 		(async () =>
 			Promise.all([
 				queryClient.query({
-					queryKey: queryKeys.containers.list(envId, containerRequestOptions),
-					queryFn: () => containerService.getContainersForEnvironment(envId, containerRequestOptions)
+					queryKey: queryKeys.containers.list(scope, containerRequestOptions),
+					queryFn: () =>
+						fetchAcrossEnvironments(
+							environments,
+							containerRequestOptions,
+							(id, request, config) => containerService.getContainersForEnvironment(id, request, config),
+							containerSortValue
+						)
 				}),
 				queryClient.query({
-					queryKey: queryKeys.projects.list(envId, projectRequestOptions),
-					queryFn: () => projectService.getProjectsForEnvironment(envId, projectRequestOptions)
+					queryKey: queryKeys.projects.list(scope, projectRequestOptions),
+					queryFn: () =>
+						fetchAcrossEnvironments(environments, projectRequestOptions, (id, request, config) =>
+							projectService.getProjectsForEnvironment(id, request, config)
+						)
 				})
 			]))()
 	);

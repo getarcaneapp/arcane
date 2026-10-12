@@ -8,7 +8,8 @@ import type { PageLoad } from './$types';
 export const load: PageLoad = async ({ parent }) => {
 	const { user } = await parent();
 	const envId = await environmentStore.getCurrentEnvironmentId();
-	if (!userHasPermission(user, 'containers:create', envId)) {
+	const shown = await environmentStore.getShownEnvironments();
+	if (!shown.some((env) => userHasPermission(user, 'containers:create', env.id))) {
 		redirect(302, '/containers');
 	}
 

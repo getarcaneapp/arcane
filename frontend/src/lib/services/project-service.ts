@@ -14,7 +14,7 @@ import type {
 import { readNdjsonStream } from '#lib/utils/streaming.js';
 import { transformPaginationParams } from '#lib/utils/tables.js';
 
-import BaseAPIService, { withSessionSignal } from './api-service';
+import BaseAPIService, { type APIRequestConfig, withSessionSignal } from './api-service';
 
 class ProjectService extends BaseAPIService {
 	private async resolveEnvironmentId(environmentId?: string): Promise<string> {
@@ -26,29 +26,42 @@ class ProjectService extends BaseAPIService {
 		return this.getProjectsForEnvironment(envId, options);
 	}
 
-	async getProjectsForEnvironment(environmentId: string, options?: SearchPaginationSortRequest): Promise<Paginated<Project>> {
+	async getProjectsForEnvironment(
+		environmentId: string,
+		options?: SearchPaginationSortRequest,
+		config?: APIRequestConfig
+	): Promise<Paginated<Project>> {
 		const params = transformPaginationParams(options);
-		const res = await this.api.get(`/environments/${environmentId}/projects`, { params });
+		const res = await this.api.get(`/environments/${environmentId}/projects`, { ...config, params });
 		return res.data;
 	}
 
-	deployProject(projectId: string, mode: 'up' | 'redeploy', options?: DeployProjectOptions): Promise<Project>;
+	deployProject(
+		projectId: string,
+		mode: 'up' | 'redeploy',
+		options?: DeployProjectOptions,
+		environmentId?: string
+	): Promise<Project>;
 	deployProject(
 		projectId: string,
 		mode: 'up' | 'redeploy',
 		onLine: (data: unknown) => void,
-		options?: DeployProjectOptions
+		options?: DeployProjectOptions,
+		environmentId?: string
 	): Promise<Project>;
 	async deployProject(
 		projectId: string,
 		mode: 'up' | 'redeploy',
 		onLineOrOptions?: ((data: unknown) => void) | DeployProjectOptions,
-		maybeOptions?: DeployProjectOptions
+		optionsOrEnvironmentId?: DeployProjectOptions | string,
+		maybeEnvironmentId?: string
 	): Promise<Project> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
-		const url = `/api/environments/${envId}/projects/${projectId}/${mode}`;
 		const onLine = typeof onLineOrOptions === 'function' ? onLineOrOptions : undefined;
-		const options = typeof onLineOrOptions === 'function' ? maybeOptions : onLineOrOptions;
+		const options = onLine
+			? (optionsOrEnvironmentId as DeployProjectOptions | undefined)
+			: (onLineOrOptions as DeployProjectOptions);
+		const envId = await this.resolveEnvironmentId(onLine ? maybeEnvironmentId : (optionsOrEnvironmentId as string | undefined));
+		const url = `/api/environments/${envId}/projects/${projectId}/${mode}`;
 
 		await this.postProjectStream(url, options ?? {}, onLine, {
 			startFailed: (status) => m.progress_deploy_failed_to_start({ status }),
@@ -56,11 +69,11 @@ class ProjectService extends BaseAPIService {
 		});
 
 		// The deploy stream doesn't return the project object; fetch fresh details.
-		return this.getProject(projectId);
+		return this.getProjectForEnvironment(envId, projectId);
 	}
 
-	async downProject(projectName: string): Promise<Project> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+	async downProject(projectName: string, environmentId?: string): Promise<Project> {
+		const envId = await this.resolveEnvironmentId(environmentId);
 		return this.handleResponse(this.api.post(`/environments/${envId}/projects/${projectName}/down`));
 	}
 
@@ -69,9 +82,10 @@ class ProjectService extends BaseAPIService {
 		composeContent: string,
 		envContent?: string,
 		workspaceFiles: ProjectWorkspaceFileDraft[] = [],
-		tags: ProjectTag[] = []
+		tags: ProjectTag[] = [],
+		environmentId?: string
 	): Promise<Project> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+		const envId = await this.resolveEnvironmentId(environmentId);
 		const form = new FormData();
 		const uploads: File[] = [];
 		const fileChanges = workspaceFiles.map((file) => {
@@ -95,8 +109,8 @@ class ProjectService extends BaseAPIService {
 		return this.handleResponse(this.api.post(`/environments/${envId}/projects`, form));
 	}
 
-	async checkUpdates(projectId: string): Promise<ProjectUpdateInfo> {
-		const envId = await this.resolveEnvironmentId();
+	async checkUpdates(projectId: string, environmentId?: string): Promise<ProjectUpdateInfo> {
+		const envId = await this.resolveEnvironmentId(environmentId);
 		return this.handleResponse(
 			this.api.post(`/environments/${envId}/updater/projects/${encodeURIComponent(projectId)}/check`, {})
 		);
@@ -171,22 +185,23 @@ class ProjectService extends BaseAPIService {
 		return this.getProjectStatusCountsForEnvironment(envId);
 	}
 
-	async getProjectStatusCountsForEnvironment(environmentId: string): Promise<ProjectStatusCounts> {
-		const res = await this.api.get(`/environments/${environmentId}/projects/counts`);
+	async getProjectStatusCountsForEnvironment(environmentId: string, config?: APIRequestConfig): Promise<ProjectStatusCounts> {
+		const res = await this.api.get(`/environments/${environmentId}/projects/counts`, config);
 		return res.data.data;
 	}
 
-	async getProjectTagsForEnvironment(environmentId: string): Promise<ProjectTagOption[]> {
-		return this.handleResponse(this.api.get(`/environments/${environmentId}/projects/tags`));
+	async getProjectTagsForEnvironment(environmentId: string, config?: APIRequestConfig): Promise<ProjectTagOption[]> {
+		return this.handleResponse(this.api.get(`/environments/${environmentId}/projects/tags`, config));
 	}
 
 	async updateProjectTag(
 		projectId: string,
 		name: string,
 		attached: boolean,
-		color?: ProjectTagColor
+		color?: ProjectTagColor,
+		environmentId?: string
 	): Promise<{ tags: ProjectTag[]; activityId?: string }> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+		const envId = await this.resolveEnvironmentId(environmentId);
 		return this.handleResponse(this.api.patch(`/environments/${envId}/projects/${projectId}/tags`, { name, attached, color }));
 	}
 
@@ -195,9 +210,10 @@ class ProjectService extends BaseAPIService {
 		name?: string,
 		composeContent?: string,
 		envContent?: string,
-		overrideContent?: string
+		overrideContent?: string,
+		environmentId?: string
 	): Promise<Project> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+		const envId = await this.resolveEnvironmentId(environmentId);
 		const payload: {
 			name?: string;
 			composeContent?: string;
@@ -219,8 +235,8 @@ class ProjectService extends BaseAPIService {
 		return this.handleResponse(this.api.put(`/environments/${envId}/projects/${projectId}`, payload));
 	}
 
-	async restartProject(projectId: string, services?: string[]): Promise<unknown> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+	async restartProject(projectId: string, services?: string[], environmentId?: string): Promise<unknown> {
+		const envId = await this.resolveEnvironmentId(environmentId);
 		let params: URLSearchParams | undefined;
 		if (services && services.length > 0) {
 			params = new URLSearchParams();
@@ -231,18 +247,18 @@ class ProjectService extends BaseAPIService {
 		return this.handleResponse(this.api.post(`/environments/${envId}/projects/${projectId}/restart`, undefined, { params }));
 	}
 
-	async archiveProject(projectId: string): Promise<void> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+	async archiveProject(projectId: string, environmentId?: string): Promise<void> {
+		const envId = await this.resolveEnvironmentId(environmentId);
 		await this.handleResponse(this.api.post(`/environments/${envId}/projects/${projectId}/archive`));
 	}
 
-	async unarchiveProject(projectId: string): Promise<void> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+	async unarchiveProject(projectId: string, environmentId?: string): Promise<void> {
+		const envId = await this.resolveEnvironmentId(environmentId);
 		await this.handleResponse(this.api.post(`/environments/${envId}/projects/${projectId}/unarchive`));
 	}
 
-	private async streamProjectPull(projectId: string, onLine?: (data: any) => void): Promise<void> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+	private async streamProjectPull(projectId: string, onLine?: (data: any) => void, environmentId?: string): Promise<void> {
+		const envId = await this.resolveEnvironmentId(environmentId);
 		const url = `/api/environments/${envId}/projects/${projectId}/pull`;
 
 		const res = await fetch(url, { method: 'POST', signal: withSessionSignal() });
@@ -265,14 +281,16 @@ class ProjectService extends BaseAPIService {
 	buildProjectImages(
 		projectId: string,
 		options: { services?: string[]; provider?: 'local' | 'depot'; push?: boolean; load?: boolean } | undefined,
-		onLine: (data: any) => void
+		onLine: (data: any) => void,
+		environmentId?: string
 	): Promise<void>;
 	async buildProjectImages(
 		projectId: string,
 		options?: { services?: string[]; provider?: 'local' | 'depot'; push?: boolean; load?: boolean },
-		onLine?: (data: any) => void
+		onLine?: (data: any) => void,
+		environmentId?: string
 	): Promise<void> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+		const envId = await this.resolveEnvironmentId(environmentId);
 		const url = `/api/environments/${envId}/projects/${projectId}/build`;
 
 		await this.postProjectStream(url, options || {}, onLine, {
@@ -282,13 +300,13 @@ class ProjectService extends BaseAPIService {
 	}
 
 	pullProjectImages(projectId: string): Promise<void>;
-	pullProjectImages(projectId: string, onLine: (data: any) => void): Promise<void>;
-	async pullProjectImages(projectId: string, onLine?: (data: any) => void): Promise<void> {
-		await this.streamProjectPull(projectId, onLine);
+	pullProjectImages(projectId: string, onLine: (data: any) => void, environmentId?: string): Promise<void>;
+	async pullProjectImages(projectId: string, onLine?: (data: any) => void, environmentId?: string): Promise<void> {
+		await this.streamProjectPull(projectId, onLine, environmentId);
 	}
 
-	async destroyProject(projectName: string, removeVolumes = false): Promise<void> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+	async destroyProject(projectName: string, removeVolumes = false, environmentId?: string): Promise<void> {
+		const envId = await this.resolveEnvironmentId(environmentId);
 		await this.handleResponse(
 			this.api.delete(`/environments/${envId}/projects/${projectName}/destroy`, {
 				data: {

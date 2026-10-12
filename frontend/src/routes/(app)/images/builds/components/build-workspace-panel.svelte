@@ -17,7 +17,8 @@
 		remoteContext,
 		onModeChange,
 		onRemoteContextChange,
-		onSelectContext
+		onSelectContext,
+		environmentId
 	}: {
 		rootLabel: string;
 		rootPath: string;
@@ -27,15 +28,16 @@
 		onModeChange?: (mode: 'workspace' | 'remote') => void;
 		onRemoteContextChange?: (value: string) => void;
 		onSelectContext?: (path: string) => void;
+		environmentId: string;
 	} = $props();
 
 	const provider: FileProvider = {
-		list: (path: string) => buildWorkspaceService.listDirectory(path),
-		mkdir: (path: string) => buildWorkspaceService.createDirectory(path),
-		upload: (path: string, file: File, onProgress) => buildWorkspaceService.uploadFile(path, file, onProgress),
-		delete: (path: string) => buildWorkspaceService.deleteFile(path),
-		download: (path: string) => buildWorkspaceService.downloadFile(path),
-		getContent: (path: string) => buildWorkspaceService.getFileContent(path)
+		list: (path: string) => buildWorkspaceService.listDirectory(path, environmentId),
+		mkdir: (path: string) => buildWorkspaceService.createDirectory(path, environmentId),
+		upload: (path: string, file: File, onProgress) => buildWorkspaceService.uploadFile(path, file, onProgress, environmentId),
+		delete: (path: string) => buildWorkspaceService.deleteFile(path, environmentId),
+		download: (path: string) => buildWorkspaceService.downloadFile(path, environmentId),
+		getContent: (path: string) => buildWorkspaceService.getFileContent(path, environmentId)
 	};
 </script>
 
@@ -98,7 +100,16 @@
 	<div class="flex min-h-0 flex-1 flex-col overflow-hidden">
 		<div class="flex min-h-0 flex-1 flex-col p-4">
 			{#if contextMode === 'workspace'}
-				<BuildWorkspaceBrowser {provider} {rootLabel} {rootPath} onSelectContext={(path: string) => onSelectContext?.(path)} />
+				<!-- A new destination gets a fresh browser, so nothing pending, such as a delete confirmation, carries over. -->
+				{#key environmentId}
+					<BuildWorkspaceBrowser
+						{provider}
+						{rootLabel}
+						{rootPath}
+						{environmentId}
+						onSelectContext={(path: string) => onSelectContext?.(path)}
+					/>
+				{/key}
 			{:else}
 				<div class="flex h-full flex-col rounded-2xl border border-border/20 bg-card p-5">
 					<div class="max-w-xl space-y-2">

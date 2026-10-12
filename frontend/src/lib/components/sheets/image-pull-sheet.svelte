@@ -2,11 +2,13 @@
 	import { toast } from 'svelte-sonner';
 	import { z } from 'zod/v4';
 
+	import EnvironmentDestinationSelect from '#lib/components/form/environment-destination-select.svelte';
 	import FormInput from '#lib/components/form/form-input.svelte';
 	import SheetFooterActions from '#lib/components/sheets/sheet-footer-actions.svelte';
 	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { imageService } from '#lib/services/image-service.js';
+	import { destinationEnvironmentId } from '#lib/utils/environments.js';
 	import { createForm, preventDefault } from '#lib/utils/settings.svelte.js';
 
 	type ImagePullFormProps = {
@@ -30,6 +32,8 @@
 	let inputs = $derived(form.inputs);
 
 	let isPulling = $state(false);
+	let pickedEnvironmentId = $state('');
+	const environmentId = $derived(destinationEnvironmentId(pickedEnvironmentId, 'images:pull'));
 
 	async function handleSubmit() {
 		const data = form.validate();
@@ -52,11 +56,11 @@
 		const fullImageName = `${imageName}:${imageTag}`;
 		open = false;
 		isPulling = false;
-		void drainPullStream(fullImageName);
+		void drainPullStream(fullImageName, environmentId);
 	}
 
-	async function drainPullStream(fullImageName: string) {
-		const result = await imageService.pullImageStream(fullImageName);
+	async function drainPullStream(fullImageName: string, targetEnvironmentId: string) {
+		const result = await imageService.pullImageStream(fullImageName, undefined, targetEnvironmentId);
 		if (result.cancelled) return;
 		if (!result.success) {
 			const message = result.error || m.images_pull_unexpected_error();
@@ -74,6 +78,7 @@
 
 		open = newOpenState;
 		if (!newOpenState || newOpenState) {
+			pickedEnvironmentId = '';
 			inputs.imageRef.value = '';
 			inputs.tag.value = 'latest';
 		}
@@ -90,6 +95,10 @@
 >
 	{#snippet children()}
 		<form onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-6">
+			<EnvironmentDestinationSelect
+				bind:value={() => environmentId, (value) => (pickedEnvironmentId = value)}
+				permission="images:pull"
+			/>
 			<FormInput
 				label={m.images_image_name_label()}
 				type="text"

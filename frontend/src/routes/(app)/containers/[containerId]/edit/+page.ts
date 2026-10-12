@@ -2,18 +2,18 @@ import { redirect } from '@sveltejs/kit';
 
 import { queryKeys } from '#lib/query/query-keys.js';
 import { containerService } from '#lib/services/container-service.js';
-import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import { userHasPermission } from '#lib/utils/auth.js';
+import { environmentHref, resolveDetailEnvironmentId } from '#lib/utils/environments.js';
 
 import type { PageLoad } from './$types';
 
-export const load: PageLoad = async ({ params, parent }) => {
+export const load: PageLoad = async ({ params, parent, url }) => {
 	const { queryClient, user } = await parent();
-	const envId = await environmentStore.getCurrentEnvironmentId();
+	const envId = await resolveDetailEnvironmentId(url);
 	const containerId = params.containerId;
 
 	if (!userHasPermission(user, 'containers:edit', envId)) {
-		redirect(302, `/containers/${containerId}`);
+		redirect(302, environmentHref(`/containers/${containerId}`, envId));
 	}
 
 	const editConfig = await queryClient.query({
@@ -24,7 +24,7 @@ export const load: PageLoad = async ({ params, parent }) => {
 	// Compose-managed containers are edited via their project; the running
 	// Arcane server or agent container cannot be edited at all.
 	if (editConfig.isCompose || editConfig.editDisabled) {
-		redirect(302, `/containers/${containerId}`);
+		redirect(302, environmentHref(`/containers/${containerId}`, envId));
 	}
 
 	return { editConfig, envId, containerId };

@@ -6,15 +6,14 @@
 	import { ArrowRightIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { imageService } from '#lib/services/image-service.js';
-	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { ImageAttestationDto, ImageAttestationListDto, ImageDetailSummaryDto } from '#lib/types/docker.js';
 	import { bytes } from '#lib/utils/formatting.js';
 
 	const ALL_FILTER = '__all__';
 
-	let { image }: { image: ImageDetailSummaryDto } = $props();
+	let { image, environmentId }: { image: ImageDetailSummaryDto; environmentId: string } = $props();
 
-	const envId = $derived(environmentStore.selected?.id || '0');
+	const envId = $derived(environmentId);
 	let selectedPlatform = $state(ALL_FILTER);
 	let selectedPredicateType = $state(ALL_FILTER);
 	let detailsOpen = $state(false);

@@ -8,6 +8,7 @@
 	import { ArrowDownIcon, ArrowUpIcon, InfoIcon, ScanIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { VulnerabilityRiskDrivers, VulnerabilityRiskImage, VulnerabilityRiskOverview } from '#lib/types/environment.js';
+	import { environmentHref } from '#lib/utils/environments.js';
 	import { formatRelativeTime } from '#lib/utils/formatting.js';
 	import {
 		getRiskBandDisplay,
@@ -19,10 +20,11 @@
 
 	interface Props {
 		overview: VulnerabilityRiskOverview;
+		environmentId: string;
 		onSelectVulnerability: (vulnerabilityId: string) => void;
 	}
 
-	let { overview, onSelectVulnerability }: Props = $props();
+	let { overview, environmentId, onSelectVulnerability }: Props = $props();
 
 	let trendDays = $state('30');
 	let findingRank = $state<'risk' | 'prevalence'>('risk');
@@ -350,7 +352,7 @@
 						{@const band = getRiskBandDisplay(image.riskBand, image.scoreStatus)}
 						<li>
 							<a
-								href="/images/{image.imageId}?tab=vulnerabilities"
+								href={environmentHref(`/images/${image.imageId}?tab=vulnerabilities`, environmentId)}
 								class="-mx-2 grid grid-cols-content-action items-center gap-4 rounded-md px-2 py-3 transition-colors hover:bg-muted/40"
 							>
 								<span class="min-w-0 space-y-1">

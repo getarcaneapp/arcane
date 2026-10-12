@@ -11,21 +11,21 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { containerService } from '#lib/services/container-service.js';
-	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 
 	interface Props {
 		containerId: string;
+		environmentId: string;
 		status: string;
 	}
 
-	let { containerId, status }: Props = $props();
+	let { containerId, environmentId, status }: Props = $props();
 
 	const canFetch = $derived(status === 'running' || status === 'paused');
 
 	const processesQuery = createQuery(() => ({
-		queryKey: queryKeys.containers.processes(environmentStore.selected?.id ?? '', containerId),
-		queryFn: ({ signal }) => containerService.getContainerProcesses(containerId, signal),
+		queryKey: queryKeys.containers.processes(environmentId, containerId),
+		queryFn: ({ signal }) => containerService.getContainerProcesses(containerId, signal, environmentId),
 		enabled: canFetch,
 		gcTime: 0,
 		retry: false,

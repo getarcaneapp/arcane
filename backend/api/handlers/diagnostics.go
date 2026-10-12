@@ -13,8 +13,8 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
 )
 
-// DiagnosticsHandler serves the environment-scoped actor diagnostics the manager
-// collects from each agent. The diagnostics page itself uses the api/ws streams.
+// DiagnosticsHandler serves the environment-scoped actor and goroutine diagnostics.
+// The live diagnostics snapshots use the api/ws streams.
 type DiagnosticsHandler struct {
 	diag *diagnostics.DiagnosticsService
 }
@@ -25,6 +25,14 @@ type GetEnvironmentActorDiagnosticsInput struct {
 
 type GetEnvironmentActorDiagnosticsOutput struct {
 	Body system.ActorDiagnostics
+}
+
+type GetEnvironmentGoroutineDiagnosticsInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+}
+
+type GetEnvironmentGoroutineDiagnosticsOutput struct {
+	Body system.GoroutineProfile
 }
 
 // RegisterDiagnostics registers the Huma diagnostics REST endpoints.
@@ -40,6 +48,16 @@ func RegisterDiagnostics(api huma.API, diag *diagnostics.DiagnosticsService) {
 		Tags:        []string{"Diagnostics"},
 		Security:    handlerutil.DefaultOperationSecurity(),
 	}, authz.PermDiagnosticsRead, h.GetEnvironmentActorDiagnostics)
+
+	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "get-environment-goroutine-diagnostics",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/diagnostics/goroutines",
+		Summary:     "Get goroutine diagnostics for an environment",
+		Description: "Returns the live goroutines grouped by identical stack, largest group first.",
+		Tags:        []string{"Diagnostics"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}, authz.PermDiagnosticsRead, h.GetEnvironmentGoroutineDiagnostics)
 }
 
 func (h *DiagnosticsHandler) GetEnvironmentActorDiagnostics(ctx context.Context, _ *GetEnvironmentActorDiagnosticsInput) (*GetEnvironmentActorDiagnosticsOutput, error) {
@@ -48,4 +66,12 @@ func (h *DiagnosticsHandler) GetEnvironmentActorDiagnostics(ctx context.Context,
 		return nil, huma.Error500InternalServerError("Failed to collect actor diagnostics: " + err.Error())
 	}
 	return &GetEnvironmentActorDiagnosticsOutput{Body: d}, nil
+}
+
+func (h *DiagnosticsHandler) GetEnvironmentGoroutineDiagnostics(_ context.Context, _ *GetEnvironmentGoroutineDiagnosticsInput) (*GetEnvironmentGoroutineDiagnosticsOutput, error) {
+	profile, err := h.diag.Goroutines()
+	if err != nil {
+		return nil, huma.Error500InternalServerError("Failed to collect goroutine diagnostics: " + err.Error())
+	}
+	return &GetEnvironmentGoroutineDiagnosticsOutput{Body: profile}, nil
 }

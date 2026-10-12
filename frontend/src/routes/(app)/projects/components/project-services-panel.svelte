@@ -13,7 +13,6 @@
 	import { StartIcon, StopIcon, RefreshIcon, TrashIcon, InspectIcon, LayersIcon, BoxIcon, HealthIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { projectService } from '#lib/services/project-service.js';
-	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { ImageUpdateData } from '#lib/types/docker.js';
 	import type { RuntimeService } from '#lib/types/swarm.js';
 	import { cn } from '#lib/utils.js';
@@ -22,22 +21,24 @@
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { confirmAndRemoveContainer, runContainerLifecycleAction } from '#lib/utils/container-actions.js';
 	import { getThemedIconUrl, parseImageRef } from '#lib/utils/docker.js';
+	import { environmentHref } from '#lib/utils/environments.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	interface Props {
 		services?: RuntimeService[];
 		projectId?: string;
+		environmentId: string;
 		updateInfoByRef?: Record<string, ImageUpdateData>;
 		onRefresh?: () => Promise<void>;
 	}
 
-	let { services = [], projectId, updateInfoByRef = {}, onRefresh }: Props = $props();
+	let { services = [], projectId, environmentId, updateInfoByRef = {}, onRefresh }: Props = $props();
 
 	function serviceImageRef(service: RuntimeService): string {
 		return service.serviceConfig?.image || service.image || '';
 	}
 
-	const currentEnvId = $derived(environmentStore.selected?.id || '0');
+	const currentEnvId = $derived(environmentId);
 	const canStartContainer = $derived(hasPermission('containers:start', currentEnvId));
 	const canStopContainer = $derived(hasPermission('containers:stop', currentEnvId));
 	const canRestartProject = $derived(hasPermission('projects:restart', currentEnvId));
@@ -85,14 +86,15 @@
 	function getContainerUrl(service: RuntimeService): string {
 		if (!service.containerId) return '#';
 		return projectId
-			? `/containers/${service.containerId}?from=project&projectId=${projectId}`
-			: `/containers/${service.containerId}`;
+			? environmentHref(`/containers/${service.containerId}?from=project&projectId=${projectId}`, environmentId)
+			: environmentHref(`/containers/${service.containerId}`, environmentId);
 	}
 
 	async function performContainerAction(action: 'start' | 'stop' | 'restart', id: string) {
 		await runContainerLifecycleAction({
 			action,
 			containerId: id,
+			environmentId,
 			setStatus: (status) => {
 				actionStatus[id] = status;
 			},
@@ -112,7 +114,7 @@
 		const operationResult = await tryCatch(
 			(async () => {
 				await handleApiResultWithCallbacks({
-					result: await tryCatch(projectService.restartProject(projectId, [item.name])),
+					result: await tryCatch(projectService.restartProject(projectId, [item.name], environmentId)),
 					message: m.containers_restart_failed(),
 					setLoadingState: (value) => {
 						actionStatus[id] = value ? 'restarting' : '';
@@ -137,6 +139,7 @@
 		confirmAndRemoveContainer({
 			containerId: id,
 			containerName: name,
+			environmentId,
 			setStatus: (status) => {
 				actionStatus[id] = status;
 			},
@@ -185,7 +188,13 @@
 					{#if serviceImageRef(item)}
 						{@const imageRef = serviceImageRef(item)}
 						{@const parsed = parseImageRef(imageRef)}
-						<ImageUpdateItem updateInfo={updateInfoByRef[imageRef]} {imageRef} repo={parsed.repo} tag={parsed.tag} />
+						<ImageUpdateItem
+							updateInfo={updateInfoByRef[imageRef]}
+							{imageRef}
+							repo={parsed.repo}
+							tag={parsed.tag}
+							{environmentId}
+						/>
 					{/if}
 					{#if item.containerId}
 						<RowActionsMenu triggerClass="size-6 shrink-0 opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100">

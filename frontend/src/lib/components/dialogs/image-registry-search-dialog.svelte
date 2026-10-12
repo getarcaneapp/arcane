@@ -2,6 +2,7 @@
 	import { toast } from 'svelte-sonner';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import EnvironmentDestinationSelect from '#lib/components/form/environment-destination-select.svelte';
 	import * as InputGroup from '#lib/components/ui/input-group/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
@@ -9,6 +10,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { imageService } from '#lib/services/image-service.js';
 	import type { ImageSearchResultDto } from '#lib/types/docker.js';
+	import { destinationEnvironmentId } from '#lib/utils/environments.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	type Props = {
@@ -25,6 +27,8 @@
 	let hasSearched = $state(false);
 	let isSearching = $state(false);
 	let pullingImageName = $state<string | null>(null);
+	let pickedEnvironmentId = $state('');
+	const environmentId = $derived(destinationEnvironmentId(pickedEnvironmentId, 'images:pull'));
 
 	const normalizedTag = $derived(tag.trim() || 'latest');
 	const canSearch = $derived(query.trim().length > 0 && !isSearching);
@@ -34,6 +38,7 @@
 		tag = 'latest';
 		results = [];
 		hasSearched = false;
+		pickedEnvironmentId = '';
 	}
 
 	function handleOpenChange(nextOpen: boolean) {
@@ -56,7 +61,7 @@
 		try {
 			const operationResult1 = await tryCatch(
 				(async () => {
-					results = await imageService.searchImages(term);
+					results = await imageService.searchImages(term, environmentId);
 				})()
 			);
 			if (operationResult1.error !== null) {
@@ -82,11 +87,12 @@
 		if (!imageRef || pullingImageName) return;
 
 		pullingImageName = imageRef;
+		const targetEnvironmentId = environmentId;
 		open = false;
 		onOpenChange?.(false);
 		resetDialog();
 
-		const result = await imageService.pullImageStream(imageRef);
+		const result = await imageService.pullImageStream(imageRef, undefined, targetEnvironmentId);
 		pullingImageName = null;
 		if (result.cancelled) return;
 		if (!result.success) {
@@ -110,6 +116,10 @@
 >
 	{#snippet children()}
 		<div class="grid gap-4 py-4">
+			<EnvironmentDestinationSelect
+				bind:value={() => environmentId, (value) => (pickedEnvironmentId = value)}
+				permission="images:pull"
+			/>
 			<div class="grid gap-3 sm:grid-cols-content-36-action">
 				<div class="space-y-2">
 					<Label for="image-registry-search-query">{m.images_search_query()}</Label>

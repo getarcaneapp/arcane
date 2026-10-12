@@ -23,6 +23,7 @@
 	import * as Select from '#lib/components/ui/select/index.js';
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import WorkspaceFileTreePanel from '#lib/components/workspace-file-tree-panel.svelte';
+	import { useEnvironmentSettings } from '#lib/hooks/use-environment-settings.svelte.js';
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';
 	import {
 		VolumesIcon,
@@ -42,7 +43,6 @@
 	import { volumeBackupService } from '#lib/services/volume-backup-service.js';
 	import { volumeService } from '#lib/services/volume-service.js';
 	import { volumeWorkspaceService } from '#lib/services/volume-workspace-service.js';
-	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { VolumeDetailDto } from '#lib/types/docker.js';
 	import type { BackupEntry } from '#lib/types/shared.js';
@@ -51,6 +51,7 @@
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { composeTreeSplitProps } from '#lib/utils/compose-flow.js';
+	import { environmentHref } from '#lib/utils/environments.js';
 	import { formatDateTimeShort, truncateString } from '#lib/utils/formatting.js';
 	import { bytes } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
@@ -78,15 +79,19 @@
 	let active = true;
 	let containersDetailed = $derived<{ id: string; name: string }[]>(data.containersDetailed ?? []);
 
-	const backupVolumeName = $derived.by(() => settingsStore.current?.backupVolumeName || 'arcane-backups');
-	const isBackupVolume = $derived(volume?.name === backupVolumeName);
+	const currentEnvId = $derived(data.envId);
+	// A volume opened from another environment follows that environment's settings.
+	const environmentSettings = useEnvironmentSettings(() => currentEnvId);
+	const volumeSettings = $derived(environmentSettings.current);
+	// Until the backup volume name is known, the volume cannot be removed.
+	const backupVolumeName = $derived(volumeSettings ? volumeSettings.backupVolumeName || 'arcane-backups' : undefined);
+	const isBackupVolume = $derived(!backupVolumeName || volume?.name === backupVolumeName);
 
-	const currentEnvId = $derived(environmentStore.selected?.id || '0');
 	const canDeleteVolume = $derived(hasPermission('volumes:delete', currentEnvId));
 	const canReadVolume = $derived(hasPermission('volumes:read', currentEnvId));
 	const canUploadVolume = $derived(hasPermission('volumes:upload', currentEnvId));
 	const canBackupVolume = $derived(hasPermission('volumes:backup', currentEnvId));
-	const volumeWorkspaceMaxFileSizeMb = $derived(settingsStore.current?.volumeWorkspaceMaxFileSizeMb ?? 10);
+	const volumeWorkspaceMaxFileSizeMb = $derived(volumeSettings?.volumeWorkspaceMaxFileSizeMb ?? 10);
 
 	let isLoading = $state({ remove: false, save: false });
 	const createdDate = $derived(volume?.createdAt ? formatDateTimeShort(volume.createdAt) : m.common_unknown());
@@ -753,11 +758,13 @@
 	async function handleRemoveVolumeConfirm(volumeName: string) {
 		if (!active || !volume) return;
 		const safeName = volumeName?.trim() || m.common_unknown();
-		if (safeName === backupVolumeName) return;
+		if (!backupVolumeName || safeName === backupVolumeName) return;
 		const message = volume.inUse
 			? `${m.volumes_remove_confirm_message({ name: safeName })}\n\n${m.volumes_remove_in_use_warning()}`
 			: m.volumes_remove_confirm_message({ name: safeName });
 
+		// The dialog outlives navigation, so it removes the volume from the environment it was opened for.
+		const environmentId = currentEnvId;
 		openConfirmDialog({
 			title: m.common_remove_title({ resource: m.resource_volume() }),
 			message,
@@ -767,7 +774,7 @@
 				action: async () => {
 					isLoading.remove = true;
 					await handleApiResultWithCallbacks({
-						result: await tryCatch(volumeService.deleteVolume(safeName)),
+						result: await tryCatch(volumeService.deleteVolume(safeName, environmentId)),
 						message: m.volumes_remove_failed({ name: safeName }),
 						setLoadingState: (value) => (isLoading.remove = value),
 						onSuccess: async (data) => {
@@ -822,7 +829,10 @@
 				{#each containersDetailed as c (c.id)}
 					<div class="flex flex-col p-3 sm:flex-row sm:items-center">
 						<div class="mb-2 w-full font-medium break-all sm:mb-0 sm:w-1/3">
-							<a href="/containers/{c.id}" class="flex items-center text-primary hover:underline">
+							<a
+								href={environmentHref(`/containers/${c.id}`, currentEnvId)}
+								class="flex items-center text-primary hover:underline"
+							>
 								<ContainersIcon class="mr-1.5 size-3.5 text-muted-foreground" />
 								{c.name}
 							</a>
@@ -844,7 +854,9 @@
 				{#each volume.containers as id (id)}
 					<div class="flex items-center justify-between gap-3 p-3">
 						<code class="font-mono text-sm break-all">{truncateString(id, 48)}</code>
-						<a href={`/containers/${id}`} class="text-sm text-primary hover:underline">{m.common_view()}</a>
+						<a href={environmentHref(`/containers/${id}`, currentEnvId)} class="text-sm text-primary hover:underline"
+							>{m.common_view()}</a
+						>
 					</div>
 				{/each}
 			</div>
@@ -1110,7 +1122,12 @@
 					{@render volumeWorkspace(volume)}
 				{:else if tab === 'backups'}
 					{#key `${currentEnvId}:${volume.name}`}
-						<BackupList volumeName={volume.name} {hasWorkspaceChanges} onWorkspaceRestored={refreshRestoredVolumeWorkspace} />
+						<BackupList
+							volumeName={volume.name}
+							environmentId={currentEnvId}
+							{hasWorkspaceChanges}
+							onWorkspaceRestored={refreshRestoredVolumeWorkspace}
+						/>
 					{/key}
 				{/if}
 			</div>

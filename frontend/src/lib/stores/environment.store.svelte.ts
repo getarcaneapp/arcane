@@ -2,10 +2,21 @@ import { goto, refreshAll } from '$app/navigation';
 import { page } from '$app/state';
 import { PersistedState } from 'runed';
 
+import userStore from '#lib/stores/user-store.svelte.js';
 import type { Environment } from '#lib/types/environment.js';
 import { isEnvironmentOnline } from '#lib/utils/docker.js';
 
 export const LOCAL_DOCKER_ENVIRONMENT_ID = '0';
+
+export type EnvironmentRef = Pick<Environment, 'id' | 'name'>;
+
+// Preview: resource lists show and act on every enabled environment, like the CLI's previews.allEnvironments.
+// Saved in the user's preferences, so it follows them across browsers.
+export const allEnvironmentsPreview = {
+	get current(): boolean {
+		return userStore.current?.preferences?.allEnvironmentsPreview ?? false;
+	}
+};
 
 function getResourceListPage(): string | null {
 	const routeId = page.route?.id;
@@ -37,6 +48,7 @@ function createEnvironmentManagementStore() {
 	const _selectedSubscribers = new Set<(environment: Environment | null) => void>();
 
 	let _resolveReadyPromiseFunction: () => void;
+	let _selectionHold: Promise<void> | null = null;
 	const _readyPromise = new Promise<void>((resolve) => {
 		_resolveReadyPromiseFunction = resolve;
 	});
@@ -56,6 +68,14 @@ function createEnvironmentManagementStore() {
 			subscriber(_selectedEnvironment);
 		}
 	}
+
+	// Toggling the preview changes the shown environments, so selected subscribers refresh.
+	let _lastPreview = allEnvironmentsPreview.current;
+	userStore.onChange(() => {
+		if (allEnvironmentsPreview.current === _lastPreview) return;
+		_lastPreview = allEnvironmentsPreview.current;
+		_notifySelectedSubscribers();
+	});
 
 	function _isAutoSelectableEnvironment(environment: Environment): boolean {
 		if (!environment.enabled) return false;
@@ -116,6 +136,16 @@ function createEnvironmentManagementStore() {
 		get available(): Environment[] {
 			return _availableEnvironments;
 		},
+		// Environments that resource lists show: the selected one, or every enabled one with the preview on.
+		get shown(): EnvironmentRef[] {
+			const enabled = allEnvironmentsPreview.current ? _availableEnvironments.filter((env) => env.enabled) : [];
+			if (enabled.length > 0) return enabled.sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
+			return [_selectedEnvironment ?? { id: LOCAL_DOCKER_ENVIRONMENT_ID, name: '' }];
+		},
+		// Query-key scope for the shown environments.
+		get shownKey(): string {
+			return this.shown.map((env) => env.id).join(',');
+		},
 		initialize: async (environmentsData: Environment[]) => {
 			const available = _updateAvailable(environmentsData);
 			const hasRealEnvironments = environmentsData.length > 0;
@@ -157,12 +187,17 @@ function createEnvironmentManagementStore() {
 			const updated = available.find((env) => env.id === _selectedEnvironment!.id);
 			if (updated) {
 				_assignSelectedEnvironment(updated);
+			} else {
+				// The selection stays, but the shown environments changed, so subscribers still refresh.
+				_notifySelectedSubscribers();
 			}
 		},
-		setEnvironment: async (environment: Environment) => {
+		// `navigate: false` only selects, for callers that are already loading the page that needs it.
+		setEnvironment: async (environment: Environment, { navigate = true }: { navigate?: boolean } = {}) => {
 			if (!environment.enabled) return;
 			if (_selectedEnvironment?.id !== environment.id) {
 				_assignSelectedEnvironment(environment);
+				if (!navigate) return;
 
 				// Check if we're on a resource detail page (e.g., /containers/abc123)
 				// These pages show environment-specific resources that won't exist in the new environment
@@ -196,8 +231,24 @@ function createEnvironmentManagementStore() {
 		isInitialized: () => _initialized,
 		getLocalEnvironment: () => _availableEnvironments.find((env) => env.id === LOCAL_DOCKER_ENVIRONMENT_ID) || null,
 		ready: _readyPromise,
+		// The root load can switch environments for the route it loads; lookups wait until it has chosen.
+		holdSelection: (): (() => void) => {
+			let release!: () => void;
+			const hold = new Promise<void>((resolve) => (release = resolve));
+			_selectionHold = hold;
+			return () => {
+				if (_selectionHold === hold) _selectionHold = null;
+				release();
+			};
+		},
+		getShownEnvironments: async (): Promise<EnvironmentRef[]> => {
+			await _readyPromise;
+			await _selectionHold;
+			return environmentStore.shown;
+		},
 		getCurrentEnvironmentId: async (): Promise<string> => {
 			await _readyPromise;
+			await _selectionHold;
 			return _selectedEnvironment ? _selectedEnvironment.id : LOCAL_DOCKER_ENVIRONMENT_ID;
 		}
 	};

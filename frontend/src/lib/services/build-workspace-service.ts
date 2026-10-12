@@ -6,24 +6,28 @@ import BaseAPIService from './api-service';
 import { uploadService, type UploadProgressCallback } from './upload-service';
 
 class BuildWorkspaceService extends BaseAPIService {
-	async listDirectory(path: string = '/'): Promise<FileEntry[]> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+	private async resolveEnvironmentId(environmentId?: string): Promise<string> {
+		return environmentId ?? (await environmentStore.getCurrentEnvironmentId());
+	}
+
+	async listDirectory(path: string = '/', environmentId?: string): Promise<FileEntry[]> {
+		const envId = await this.resolveEnvironmentId(environmentId);
 		const res = await this.api.get(`/environments/${envId}/builds/browse`, {
 			params: { path }
 		});
 		return res.data.data;
 	}
 
-	async getFileContent(path: string): Promise<FileContentResponse> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+	async getFileContent(path: string, environmentId?: string): Promise<FileContentResponse> {
+		const envId = await this.resolveEnvironmentId(environmentId);
 		const res = await this.api.get(`/environments/${envId}/builds/browse/content`, {
 			params: { path }
 		});
 		return res.data.data;
 	}
 
-	async downloadFile(path: string): Promise<void> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+	async downloadFile(path: string, environmentId?: string): Promise<void> {
+		const envId = await this.resolveEnvironmentId(environmentId);
 		const res = await this.api.get(`/environments/${envId}/builds/browse/download`, {
 			params: { path },
 			responseType: 'blob'
@@ -32,8 +36,8 @@ class BuildWorkspaceService extends BaseAPIService {
 		downloadBlob(res.data, filenameFromPath(path));
 	}
 
-	async uploadFile(path: string, file: File, onProgress?: UploadProgressCallback): Promise<void> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+	async uploadFile(path: string, file: File, onProgress?: UploadProgressCallback, environmentId?: string): Promise<void> {
+		const envId = await this.resolveEnvironmentId(environmentId);
 		const uploadId = await uploadService.uploadFile(envId, 'build-workspace', file, onProgress);
 		return this.handleResponse(
 			this.api.post(
@@ -46,8 +50,8 @@ class BuildWorkspaceService extends BaseAPIService {
 		);
 	}
 
-	async createDirectory(path: string): Promise<void> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+	async createDirectory(path: string, environmentId?: string): Promise<void> {
+		const envId = await this.resolveEnvironmentId(environmentId);
 		return this.handleResponse(
 			this.api.post(`/environments/${envId}/builds/browse/mkdir`, null, {
 				params: { path }
@@ -55,8 +59,8 @@ class BuildWorkspaceService extends BaseAPIService {
 		);
 	}
 
-	async deleteFile(path: string): Promise<void> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+	async deleteFile(path: string, environmentId?: string): Promise<void> {
+		const envId = await this.resolveEnvironmentId(environmentId);
 		return this.handleResponse(
 			this.api.delete(`/environments/${envId}/builds/browse`, {
 				params: { path }

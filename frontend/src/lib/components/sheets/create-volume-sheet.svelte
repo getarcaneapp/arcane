@@ -1,12 +1,14 @@
 <script lang="ts">
 	import { z } from 'zod/v4';
 
+	import EnvironmentDestinationSelect from '#lib/components/form/environment-destination-select.svelte';
 	import FormInput from '#lib/components/form/form-input.svelte';
 	import SheetFooterActions from '#lib/components/sheets/sheet-footer-actions.svelte';
 	import * as Accordion from '#lib/components/ui/accordion/index.js';
 	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { VolumeCreateRequest } from '#lib/types/docker.js';
+	import { destinationEnvironmentId } from '#lib/utils/environments.js';
 	import { parseKeyValuePairs } from '#lib/utils/form-parsers.js';
 	import { createForm, preventDefault } from '#lib/utils/settings.svelte.js';
 
@@ -14,11 +16,14 @@
 
 	type CreateVolumeFormProps = {
 		open: boolean;
-		onSubmit: (data: VolumeCreateRequest) => void;
+		onSubmit: (data: VolumeCreateRequest, environmentId: string) => void;
 		isLoading: boolean;
 	};
 
 	let { open = $bindable(false), onSubmit, isLoading }: CreateVolumeFormProps = $props();
+
+	let pickedEnvironmentId = $state('');
+	const environmentId = $derived(destinationEnvironmentId(pickedEnvironmentId, 'volumes:create'));
 
 	const drivers = [
 		{ value: 'local', label: m.local() },
@@ -59,12 +64,13 @@
 			labels: Object.keys(labels).length ? labels : undefined
 		};
 
-		onSubmit(volumeOptions);
+		onSubmit(volumeOptions, environmentId);
 	}
 
 	function handleOpenChange(newOpenState: boolean) {
 		open = newOpenState;
 		if (!newOpenState) {
+			pickedEnvironmentId = '';
 			inputs.volumeName.value = '';
 			inputs.volumeDriver.value = 'local';
 			inputs.volumeOptText.value = '';
@@ -83,6 +89,10 @@
 >
 	{#snippet children()}
 		<form onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-6">
+			<EnvironmentDestinationSelect
+				bind:value={() => environmentId, (value) => (pickedEnvironmentId = value)}
+				permission="volumes:create"
+			/>
 			<FormInput
 				label={m.volume_name_label()}
 				id="volume-name"

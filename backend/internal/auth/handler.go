@@ -336,6 +336,14 @@ func (h *AuthHandler) UpdateMyProfile(ctx context.Context, input *UpdateMyProfil
 		if v := p.AccentColor; v != nil && *v != "" && *v != "default" && !settingstypes.SafeAccentColor.MatchString(*v) {
 			return nil, huma.Error400BadRequest("invalid accentColor value")
 		}
+		// Keys are environment IDs; the caps keep one user's preferences from growing without bound.
+		if v := p.EnvironmentColors; v != nil {
+			for id, color := range *v {
+				if len(*v) > 1000 || id == "" || len(id) > 64 || !settingstypes.SafeAccentColor.MatchString(color) {
+					return nil, huma.Error400BadRequest("invalid environmentColors value")
+				}
+			}
+		}
 		// Keep the landing page a same-origin relative path. The frontend
 		// additionally validates it against the known nav pages, falling back to
 		// /dashboard.

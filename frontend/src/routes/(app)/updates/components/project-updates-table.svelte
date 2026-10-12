@@ -2,6 +2,7 @@
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
 	import CheckedAtCell from '#lib/components/arcane-table/cells/checked-at-cell.svelte';
 	import DigestCell from '#lib/components/arcane-table/cells/digest-cell.svelte';
+	import { environmentColumns } from '#lib/components/arcane-table/environment-column.js';
 	import {
 		UniversalMobileCard,
 		type BulkAction,
@@ -16,24 +17,34 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import type { Project } from '#lib/types/swarm.js';
-	import { hasPermission } from '#lib/utils/auth.js';
 	import { bulkConfirmAndRun, confirmAndRun } from '#lib/utils/bulk-actions.js';
+	import {
+		environmentHref,
+		hasShownPermission,
+		rowKey,
+		type EnvironmentPage,
+		type EnvironmentRow
+	} from '#lib/utils/environments.js';
 	import { formatImageUpdateCheckedAt, formatImageUpdateValue } from '#lib/utils/image-updates.js';
 	import { applyScopedUpdate, summarizeUpdateResult, throwOnUpdateFailure } from '#lib/utils/update-actions.js';
 
+	type ProjectRow = EnvironmentRow<Project>;
 	type ProjectUpdateRow = {
 		id: string;
+		environmentId: string;
+		environmentName: string;
+		environmentTagged: true;
 		projectId: string;
 		name: string;
 		imageSummary: string;
 		currentValue: string;
 		latestValue: string;
 		checkedAt: string;
-		project: Project;
+		project: ProjectRow;
 	};
 
 	interface Props {
-		projects: Paginated<Project>;
+		projects: EnvironmentPage<Paginated<Project>>;
 		requestOptions: SearchPaginationSortRequest;
 		onRefreshData: (options: SearchPaginationSortRequest) => Promise<void>;
 	}
@@ -45,7 +56,7 @@
 	let updatingProjectIds = $state<Record<string, boolean>>({});
 	let bulkUpdating = $state(false);
 
-	function mapProjectRow(project: Project): ProjectUpdateRow {
+	function mapProjectRow(project: ProjectRow): ProjectUpdateRow {
 		const updateInfo = project.updateInfo;
 		const updatedRefs = updateInfo?.updatedImageRefs ?? [];
 		const summaryRefs = updatedRefs.length > 0 ? updatedRefs : (updateInfo?.imageRefs ?? []);
@@ -78,6 +89,9 @@
 
 		return {
 			id: project.id,
+			environmentId: project.environmentId,
+			environmentName: project.environmentName,
+			environmentTagged: true,
 			projectId: project.id,
 			name: project.name,
 			imageSummary,
@@ -93,13 +107,14 @@
 		data: (projects.data ?? []).map(mapProjectRow)
 	});
 
-	const columns = [
+	const columns = $derived([
+		...environmentColumns<ProjectUpdateRow>(),
 		{ accessorKey: 'name', title: m.common_name(), sortable: true, cell: NameCell },
 		{ accessorKey: 'imageSummary', title: m.common_image(), sortable: false, cell: ImageCell },
 		{ accessorKey: 'currentValue', title: m.common_current(), sortable: false, cellComponent: DigestCell },
 		{ accessorKey: 'latestValue', title: m.image_update_latest_label(), sortable: false, cellComponent: DigestCell },
 		{ accessorKey: 'checkedAt', title: m.common_updated(), sortable: false, cellComponent: CheckedAtCell }
-	] satisfies ColumnSpec<ProjectUpdateRow>[];
+	] satisfies ColumnSpec<ProjectUpdateRow>[]);
 
 	const mobileFields = [
 		{ id: 'imageSummary', label: m.common_image(), defaultVisible: true },
@@ -116,9 +131,9 @@
 			message: m.updates_update_confirm_message({ name: item.name }),
 			confirmLabel: m.common_update(),
 			setLoading: (loading) => {
-				updatingProjectIds = { ...updatingProjectIds, [item.projectId]: loading };
+				updatingProjectIds = { ...updatingProjectIds, [rowKey(item)]: loading };
 			},
-			run: () => applyScopedUpdate('project', item.projectId),
+			run: () => applyScopedUpdate('project', item.projectId, item.environmentId),
 			failureMessage: m.updates_apply_all_failed(),
 			onSuccess: async (result) => {
 				summarizeUpdateResult(result);
@@ -133,7 +148,7 @@
 			title: m.updates_bulk_update_confirm_title({ count: ids.length }),
 			message: m.updates_bulk_update_confirm_message({ count: ids.length }),
 			confirmLabel: m.common_update(),
-			run: (id) => applyScopedUpdate('project', id).then(throwOnUpdateFailure),
+			run: (id, environmentId) => applyScopedUpdate('project', id, environmentId).then(throwOnUpdateFailure),
 			messages: {
 				success: (count) => m.updates_bulk_update_success({ count }),
 				partial: (success, total, failed) => m.updates_bulk_update_partial({ success, total, failed }),
@@ -146,7 +161,7 @@
 	}
 
 	const bulkActions = $derived<BulkAction[]>(
-		hasPermission('image-updates:check')
+		hasShownPermission('image-updates:check')
 			? [
 					{
 						id: 'update',
@@ -166,7 +181,7 @@
 	{#if item.project.isDiscovered}
 		<span class="font-medium">{item.name}</span>
 	{:else}
-		<a class="font-medium hover:underline" href={`/projects/${item.projectId}`}>
+		<a class="font-medium hover:underline" href={environmentHref(`/projects/${item.projectId}`, item.environmentId)}>
 			{item.name}
 		</a>
 	{/if}
@@ -182,10 +197,10 @@
 {/snippet}
 
 {#snippet RowActions({ item }: { item: ProjectUpdateRow })}
-	<IfPermitted perm="image-updates:check">
+	<IfPermitted perm="image-updates:check" envId={item.environmentId}>
 		<RowActionsMenu>
-			<DropdownMenu.Item onclick={() => handleUpdateProject(item)} disabled={!!updatingProjectIds[item.projectId]}>
-				{#if updatingProjectIds[item.projectId]}
+			<DropdownMenu.Item onclick={() => handleUpdateProject(item)} disabled={!!updatingProjectIds[rowKey(item)]}>
+				{#if updatingProjectIds[rowKey(item)]}
 					<Spinner class="size-4" />
 				{:else}
 					<UpdateIcon class="size-4" />
@@ -222,7 +237,7 @@
 		rowActions={RowActions}
 		onclick={(item: ProjectUpdateRow) => {
 			if (item.project.isDiscovered) return;
-			window.location.href = `/projects/${item.projectId}`;
+			window.location.href = environmentHref(`/projects/${item.projectId}`, item.environmentId);
 		}}
 	/>
 {/snippet}

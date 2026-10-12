@@ -10,13 +10,15 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { networkService } from '#lib/services/network-service.js';
+	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { NetworkCreateOptions, NetworkUsageCounts } from '#lib/types/docker.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
+	import { fetchAcrossEnvironments } from '#lib/utils/environments.js';
 	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
-	import NetworkTable from './components/network-table.svelte';
+	import NetworkTable, { networkSortValue } from './components/network-table.svelte';
 
 	let { data } = $props();
 	const queryClient = useQueryClient();
@@ -24,21 +26,28 @@
 	const pageState = new ResourceListPageState(untrack(() => data.networkRequestOptions));
 	const countsFallback: NetworkUsageCounts = { inuse: 0, unused: 0, total: 0 };
 
+	// The load already cached the first page under its key; seeding every key with it would hide other pages and filters.
 	const networksQuery = createQuery(() => {
-		const queryEnvId = pageState.envId;
+		const queryScope = pageState.scope;
+		const environments = environmentStore.shown;
 		const options = pageState.requestOptions;
 		return {
-			queryKey: queryKeys.networks.list(queryEnvId, options),
-			queryFn: () => networkService.getNetworksForEnvironment(queryEnvId, options),
+			queryKey: queryKeys.networks.list(queryScope, options),
+			queryFn: () =>
+				fetchAcrossEnvironments(
+					environments,
+					options,
+					(id, request, config) => networkService.getNetworksForEnvironment(id, request, config),
+					networkSortValue
+				),
 			placeholderData: (previous, query) => {
-				if (query?.queryKey[1] === queryEnvId) return previous;
+				if (query?.queryKey[1] === queryScope) return previous;
 				return undefined;
 			},
-			initialData: data.envId === queryEnvId ? data.networks : undefined,
-			select: (value) => ({ envId: queryEnvId, value })
+			select: (value) => ({ envId: queryScope, value })
 		};
 	});
-	const resourcesReady = $derived(networksQuery.data?.envId === pageState.envId);
+	const resourcesReady = $derived(networksQuery.data?.envId === pageState.scope);
 	const networks = $derived(networksQuery.data?.value ?? data.networks);
 
 	const createNetworkMutation = createMutation(() => ({
@@ -50,8 +59,8 @@
 				m.common_create_success({ resource: `${m.resource_network()} "${variables.name}"` }),
 				activityToastOptions(extractActivityId(data))
 			);
-			if (variables.requestedEnvId === pageState.envId) {
-				await loadNetworks(pageState.requestOptions, variables.requestedEnvId);
+			if (environmentStore.shown.some((env) => env.id === variables.requestedEnvId)) {
+				await loadNetworks();
 				pageState.isCreateDialogOpen = false;
 			}
 		},
@@ -67,15 +76,22 @@
 		pageState.isCreateDialogOpen = false;
 	});
 
-	async function handleCreate(name: string, options: NetworkCreateOptions) {
-		await tryCatch(createNetworkMutation.mutateAsync({ name, options, requestedEnvId: pageState.envId }));
+	async function handleCreate(name: string, options: NetworkCreateOptions, environmentId: string) {
+		await tryCatch(createNetworkMutation.mutateAsync({ name, options, requestedEnvId: environmentId }));
 	}
 
-	async function loadNetworks(options = pageState.requestOptions, requestedEnvId = pageState.envId) {
+	async function loadNetworks(options = pageState.requestOptions, requestedScope = pageState.scope) {
+		const environments = environmentStore.shown;
 		pageState.requestOptions = options;
 		await queryClient.query({
-			queryKey: queryKeys.networks.list(requestedEnvId, options),
-			queryFn: () => networkService.getNetworksForEnvironment(requestedEnvId, options),
+			queryKey: queryKeys.networks.list(requestedScope, options),
+			queryFn: () =>
+				fetchAcrossEnvironments(
+					environments,
+					options,
+					(id, request, config) => networkService.getNetworksForEnvironment(id, request, config),
+					networkSortValue
+				),
 			staleTime: 0
 		});
 	}
@@ -131,11 +147,11 @@
 <ResourcePageLayout title={m.resource_networks_cap()} subtitle={m.networks_subtitle()} {actionButtons} {statCards}>
 	{#snippet mainContent()}
 		{#if resourcesReady}
-			{#key pageState.envId}
+			{#key pageState.scope}
 				<NetworkTable
 					bind:networks={
 						() => networks,
-						(value) => queryClient.setQueryData(queryKeys.networks.list(pageState.envId, pageState.requestOptions), value)
+						(value) => queryClient.setQueryData(queryKeys.networks.list(pageState.scope, pageState.requestOptions), value)
 					}
 					bind:selectedIds={pageState.selectedIds}
 					bind:requestOptions={pageState.requestOptions}

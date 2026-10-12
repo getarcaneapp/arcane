@@ -15,12 +15,16 @@
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { isSessionCancelledError, withSessionSignal } from '#lib/services/api-service.js';
 	import { containerRegistryService } from '#lib/services/container-registry-service.js';
+	import { settingsService } from '#lib/services/settings-service.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { ImageBuildRecord } from '#lib/types/docker.js';
+	import type { Settings } from '#lib/types/settings.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
+	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { isDepotBuildAvailable } from '#lib/utils/build-provider.js';
 	import { extractErrorMessage } from '#lib/utils/docker.js';
+	import { destinationEnvironmentId } from '#lib/utils/environments.js';
 	import { parseList } from '#lib/utils/form-parsers.js';
 	import { sanitizeLogText } from '#lib/utils/formatting.js';
 	import { buildImageReference, getRegistryDisplayName } from '#lib/utils/registry.js';
@@ -41,7 +45,17 @@
 		isGitBuildContextSource
 	} from './image-build-history';
 
-	const buildsRoot = $derived(((settingsStore.current?.buildsDirectory ?? '/builds') as string).trim() || '/builds');
+	// The builds directory and providers come from the destination, which may differ from the selected environment.
+	const buildSettingsOptions = (environmentId: string) => ({
+		queryKey: queryKeys.settings.byEnvironment(environmentId),
+		queryFn: () => settingsService.getReadableSettings(environmentId)
+	});
+	const buildsRootOf = (settings: Settings | undefined) => (settings?.buildsDirectory ?? '/builds').trim() || '/builds';
+	let pickedEnvironmentId = $state('');
+	const buildEnvironmentId = $derived(destinationEnvironmentId(pickedEnvironmentId, 'images:build'));
+	const queryClient = useQueryClient();
+	const buildSettingsQuery = createQuery(() => buildSettingsOptions(buildEnvironmentId));
+	const buildsRoot = $derived(buildsRootOf(buildSettingsQuery.data));
 	const buildsRootLabel = $derived.by(() => {
 		const raw = buildsRoot.trim();
 		if (!raw) return '/builds';
@@ -52,7 +66,7 @@
 		return `…/${tail}`;
 	});
 
-	const depotAvailable = $derived(isDepotBuildAvailable(settingsStore.current));
+	const depotAvailable = $derived(isDepotBuildAvailable(buildSettingsQuery.data));
 
 	const providerOptions = $derived.by<BuildProviderOption[]>(() => {
 		const options: BuildProviderOption[] = [
@@ -72,7 +86,9 @@
 		return options;
 	});
 
-	let selectedContextPath = $state('/');
+	// A picked directory belongs to its destination; another destination starts at its builds root.
+	let selectedContext = $state({ environmentId: '', path: '/' });
+	const selectedContextPath = $derived(selectedContext.environmentId === buildEnvironmentId ? selectedContext.path : '/');
 	let contextMode = $state<'workspace' | 'remote'>('workspace');
 	let remoteContextSource = $state('');
 
@@ -160,7 +176,6 @@
 	let showAdvanced = $state(false);
 
 	const selectedEnvId = $derived(environmentStore.selected?.id || '0');
-	const queryClient = useQueryClient();
 	const resolvedProvider = $derived(depotAvailable ? inputs.provider.value : 'local');
 	const isPushMode = $derived(resolvedProvider === 'depot' ? true : inputs.push.value);
 
@@ -329,9 +344,11 @@
 			appendLog(m.build_completed());
 		},
 		onSettled: async (_data, _error, variables) => {
-			await queryClient.invalidateQueries({
-				queryKey: queryKeys.images.builds(variables.envId)
-			});
+			await Promise.all(
+				[variables.envId, environmentStore.shownKey].map((key) =>
+					queryClient.invalidateQueries({ queryKey: queryKeys.images.builds(key) })
+				)
+			);
 		}
 	}));
 
@@ -468,7 +485,19 @@
 		return provider === 'local' ? m.build_provider_unsupported_local({ fields }) : m.build_provider_unsupported_depot({ fields });
 	}
 
-	function applyBuildConfig(build: ImageBuildRecord) {
+	let latestApply = 0;
+	async function applyBuildConfig(build: ImageBuildRecord, environmentId: string) {
+		// Load the destination's builds root first, so the whole choice is applied at once and a newer one wins.
+		const apply = ++latestApply;
+		const remote = isGitBuildContextSource(build.contextDir);
+		const settings = remote ? undefined : await tryCatch(queryClient.ensureQueryData(buildSettingsOptions(environmentId)));
+		if (apply !== latestApply) return;
+		// Without the destination's builds root the saved directory cannot be resolved, so nothing is applied.
+		if (settings?.error) {
+			toast.error(m.common_load_failed({ resource: m.settings() }), { description: extractApiErrorMessage(settings.error) });
+			return;
+		}
+		pickedEnvironmentId = environmentId;
 		for (const key of ['dockerfile', 'target', 'network', 'isolation'] as const) form.setValue(key, build[key] ?? '');
 		for (const key of ['privileged', 'noCache', 'pull', 'push'] as const) form.setValue(key, build[key] ?? false);
 		form.setValue('tags', build.tags?.join(', ') ?? '');
@@ -494,13 +523,16 @@
 			[build.buildArgs, build.labels, build.ulimits].some((values) => Object.keys(values ?? {}).length > 0) ||
 			(build.shmSize ?? 0) > 0;
 
-		if (isGitBuildContextSource(build.contextDir)) {
+		if (remote) {
 			contextMode = 'remote';
 			remoteContextSource = build.contextDir;
 		} else {
 			contextMode = 'workspace';
 			remoteContextSource = '';
-			selectedContextPath = getContextPathFromBuild(build, buildsRoot);
+			selectedContext = {
+				environmentId: buildEnvironmentId,
+				path: getContextPathFromBuild(build, buildsRootOf(settings?.data ?? undefined))
+			};
 		}
 		mainUrlTab.select('build');
 		rightPanelTab = 'config';
@@ -510,6 +542,17 @@
 	async function handleSubmit() {
 		const data = form.validate();
 		if (!data) return;
+		// Without the destination's settings, the context path and providers would be guesses.
+		if (!buildSettingsQuery.data && buildSettingsQuery.error) {
+			toast.error(m.common_load_failed({ resource: m.settings() }), {
+				description: extractApiErrorMessage(buildSettingsQuery.error)
+			});
+			return;
+		}
+		if (!buildSettingsQuery.data) {
+			toast.info(m.common_loading());
+			return;
+		}
 
 		if (!contextDir || contextDir.trim() === '') {
 			toast.error(contextMode === 'remote' ? m.build_remote_context_required() : m.build_context_required());
@@ -590,9 +633,8 @@
 		try {
 			const operationResult = await tryCatch(
 				(async () => {
-					const resolvedEnvId = await environmentStore.getCurrentEnvironmentId();
 					await buildMutation.mutateAsync({
-						envId: resolvedEnvId,
+						envId: buildEnvironmentId,
 						...payload
 					});
 					toast.success(m.build_completed());
@@ -633,13 +675,15 @@
 			remoteContext={remoteContextSource}
 			onModeChange={(mode) => (contextMode = mode)}
 			onRemoteContextChange={(value: string) => (remoteContextSource = value)}
-			onSelectContext={(path: string) => (selectedContextPath = path)}
+			onSelectContext={(path: string) => (selectedContext = { environmentId: buildEnvironmentId, path })}
+			environmentId={buildEnvironmentId}
 		/>
 	</Card.Root>
 {/snippet}
 
 {#snippet configPanel()}
 	<BuildConfigPanel
+		bind:environmentId={() => buildEnvironmentId, (value) => (pickedEnvironmentId = value)}
 		bind:inputs
 		provider={resolvedProvider}
 		bind:showAdvanced
@@ -653,7 +697,7 @@
 {/snippet}
 
 {#snippet historyContent()}
-	<ImageBuildHistoryPanel environmentId={selectedEnvId} onApplyBuild={applyBuildConfig} />
+	<ImageBuildHistoryPanel onApplyBuild={applyBuildConfig} />
 {/snippet}
 <!-- Right panel with tabs (config + output) -->
 {#snippet rightPanel()}

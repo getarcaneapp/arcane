@@ -9,9 +9,11 @@
 
 	let {
 		projectId,
+		environmentId,
 		autoScroll = $bindable()
 	}: {
 		projectId: string;
+		environmentId: string;
 		autoScroll: boolean;
 	} = $props();
 
@@ -83,6 +85,7 @@
 			bind:this={viewer}
 			bind:autoScroll
 			{projectId}
+			{environmentId}
 			tailLines={preferences.tailLines}
 			bind:showParsedJson={preferences.showParsedJson}
 			showStreamLabels={preferences.showStreamLabels}

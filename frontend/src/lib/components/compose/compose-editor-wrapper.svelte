@@ -10,7 +10,7 @@
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	let {
-		projectId,
+		projectHref,
 		projectName,
 		gitOpsManagedBy = undefined,
 		fileTitle,
@@ -19,7 +19,7 @@
 		onSave,
 		children
 	}: {
-		projectId: string;
+		projectHref: string;
 		projectName: string;
 		gitOpsManagedBy?: string;
 		fileTitle: string;
@@ -87,11 +87,6 @@
 		{#if !isReadOnly}
 			<ArcaneButton action="save" loading={isSaving} disabled={!isDirty} onclick={handleSave} />
 		{/if}
-		<ArcaneButton
-			action="base"
-			href="/projects/{projectId}"
-			icon={ExternalLinkIcon}
-			customLabel={m.container_compose_view_project()}
-		/>
+		<ArcaneButton action="base" href={projectHref} icon={ExternalLinkIcon} customLabel={m.container_compose_view_project()} />
 	</div>
 </div>

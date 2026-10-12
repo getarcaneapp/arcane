@@ -1,5 +1,6 @@
 import { browser } from '$app/env';
-import { redirect } from '@sveltejs/kit';
+import { navigating, page } from '$app/state';
+import { error, redirect } from '@sveltejs/kit';
 import { QueryClient } from '@tanstack/svelte-query';
 
 import { queryKeys } from '#lib/query/query-keys.js';
@@ -18,7 +19,7 @@ import userStore from '#lib/stores/user-store.svelte.js';
 import { versionStore } from '#lib/stores/version.store.svelte.js';
 import type { PermissionsManifest, User } from '#lib/types/auth.js';
 import { isAuthRejectionError } from '#lib/utils/api.js';
-import { getAuthRedirectPath, userHasPermission } from '#lib/utils/auth.js';
+import { getAuthRedirectPath, shownEnvironmentForRoute, userHasPermission } from '#lib/utils/auth.js';
 import { getEffectiveLandingPage } from '#lib/utils/navigation.js';
 import { setTelemetry } from '#lib/utils/telemetry.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
@@ -43,12 +44,25 @@ const queryClient = new QueryClient({
 });
 
 let authenticatedUserId: string | null | undefined;
+// Whether a signed-in page has loaded; later loads without a navigation to their path are preloads.
+let opened = false;
 
 function dataOrNull<T>(promise: Promise<T>): Promise<T | null> {
 	return tryCatch(promise).then((result) => (result.error ? null : result.data));
 }
 
-export const load: LayoutLoad = async ({ url }) => {
+export const load: LayoutLoad = async (event) => {
+	// With several environments shown this load may switch environments for the route, and child loads start
+	// alongside it, so their environment lookups wait until it has chosen.
+	const releaseSelection = environmentStore.shown.length > 1 ? environmentStore.holdSelection() : undefined;
+	try {
+		return await loadRoot(event, releaseSelection);
+	} finally {
+		releaseSelection?.();
+	}
+};
+
+async function loadRoot({ url }: Parameters<LayoutLoad>[0], releaseSelection: (() => void) | undefined) {
 	// Logout must not wait on, or be triggered by, authenticated requests; preloading runs this too.
 	if (url.pathname === '/logout') {
 		return {
@@ -102,6 +116,8 @@ export const load: LayoutLoad = async ({ url }) => {
 	let permissionsManifest: PermissionsManifest | null = null;
 	let permissionsManifestLoadFailed = false;
 	if (user) {
+		const opening = !opened;
+		opened = true;
 		// Initialize environment store (required for settings service)
 		const environmentsRequest = tryCatch(environmentManagementService.getEnvironments({ pagination: { page: 1, limit: -1 } }));
 		const permissionsManifestRequest = dataOrNull(roleService.getPermissionsManifest());
@@ -114,12 +130,34 @@ export const load: LayoutLoad = async ({ url }) => {
 			await environmentStore.initialize([]);
 		}
 
+		// With the preview on, a page only another shown environment allows opens there instead of failing.
+		if (environmentStore.shown.length > 1) {
+			const reachable = shownEnvironmentForRoute(
+				url.pathname,
+				user,
+				environmentStore.selected?.id,
+				await permissionsManifestRequest
+			);
+			const environment = environmentStore.available.find((env) => env.id === reachable?.id);
+			// Switch only when opening, reloading or navigating to the page on screen. A hover preload of another page
+			// must not retarget this one, so it is stopped instead; SvelteKit then drops it and the click loads afresh.
+			const forPageOnScreen = opening || navigating.to?.url.pathname === url.pathname || page.url.pathname === url.pathname;
+			if (environment && !forPageOnScreen) error(403);
+			if (environment) await environmentStore.setEnvironment(environment, { navigate: false });
+		}
+		releaseSelection?.();
+
 		const settingsRequest = (
 			userHasPermission(user, 'settings:read') ? dataOrNull(settingsService.getSettings()) : Promise.resolve(null)
 		).then((loaded) => loaded ?? dataOrNull(settingsService.getPublicSettings(environmentStore.selected?.id ?? '0')));
 		featureStore.connect(queryClient);
 		const currentEnvironmentId = await environmentStore.getCurrentEnvironmentId();
 		const featuresRequest = featureStore.refresh(currentEnvironmentId);
+		// The all environments preview shows navigation for features in any shown environment. The others load
+		// in the background, so an unreachable environment never stalls navigation.
+		for (const env of environmentStore.shown) {
+			if (env.id !== currentEnvironmentId) void featureStore.load(env.id);
+		}
 		// Optional discovery: skip it without swarm:read and never toast a denial.
 		const swarmStatusRequest = userHasPermission(user, 'swarm:read', currentEnvironmentId)
 			? dataOrNull(swarmService.getSwarmStatus(currentEnvironmentId, { suppressAccessDeniedToast: true }))
@@ -182,4 +220,4 @@ export const load: LayoutLoad = async ({ url }) => {
 		queryClient,
 		swarmEnabled
 	};
-};
+}

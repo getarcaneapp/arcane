@@ -15,6 +15,7 @@
 
 	interface Props {
 		container: ContainerDetailsDto;
+		environmentId: string;
 		primaryIpAddress: string;
 		autoUpdateEnabled?: boolean;
 		autoUpdateLabelControlled?: boolean;
@@ -28,6 +29,7 @@
 
 	let {
 		container,
+		environmentId,
 		primaryIpAddress,
 		autoUpdateEnabled = true,
 		autoUpdateLabelControlled = false,
@@ -43,7 +45,7 @@
 	async function handleAutoUpdateToggle(checked: boolean) {
 		autoUpdateToggling = true;
 		try {
-			const operationResult = await tryCatch(containerService.setAutoUpdate(container.id, checked));
+			const operationResult = await tryCatch(containerService.setAutoUpdate(container.id, checked, environmentId));
 			if (operationResult.error !== null) {
 				toast.error(m.auto_update_failed(), { description: extractApiErrorMessage(operationResult.error) });
 				return;

@@ -19,7 +19,6 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import type { UploadProgressCallback } from '#lib/services/upload-service.js';
-	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { FileEntry } from '#lib/types/shared.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
@@ -30,17 +29,18 @@
 		rootLabel = '/builds',
 		rootPath,
 		persistKey = 'arcane-build-workspace-table',
-		onSelectContext
+		onSelectContext,
+		environmentId: envId
 	}: {
 		provider: FileProvider;
 		rootLabel?: string;
 		rootPath?: string;
 		persistKey?: string;
 		onSelectContext?: (path: string) => void;
+		environmentId: string;
 	} = $props();
 
 	let currentPath = $state('/');
-	const envId = $derived(environmentStore.selected?.id || '0');
 	const canBuildImage = $derived(hasPermission('images:build', envId));
 	const queryClient = useQueryClient();
 

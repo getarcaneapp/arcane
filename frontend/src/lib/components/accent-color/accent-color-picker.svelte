@@ -4,25 +4,13 @@
 	import { Label } from '#lib/components/ui/label/index.js';
 	import * as RadioGroup from '#lib/components/ui/radio-group/index.js';
 	import { CheckIcon, AddIcon } from '#lib/icons/index.js';
-	import { applyAccentColor, resolveThemePrimary } from '#lib/utils/theme.svelte.js';
+	import { resolveThemePrimary } from '#lib/utils/theme.svelte.js';
 
 	import CustomColorDialog from './custom-color.svelte';
 
-	let {
-		selectedColor = $bindable(),
-		previousColor,
-		disabled = false,
-		onSelect
-	}: {
-		selectedColor: string;
-		previousColor: string;
-		disabled?: boolean;
-		/** Called whenever the user picks a different accent color. */
-		onSelect?: (color: string) => void;
-	} = $props();
-	let showCustomColorDialog = $state(false);
+	type Swatch = { label: string; color: string };
 
-	const accentColors = [
+	const defaultColors: Swatch[] = [
 		{ label: 'Purple', color: 'oklch(0.606 0.25 292.717)' },
 		{ label: 'Rose', color: 'oklch(0.63 0.2 15)' },
 		{ label: 'Orange', color: 'oklch(0.68 0.2 50)' },
@@ -32,16 +20,39 @@
 		{ label: 'Blue', color: 'oklch(0.6 0.2 240)' }
 	];
 
+	let {
+		selectedColor = $bindable(),
+		previousColor,
+		disabled = false,
+		colors = defaultColors,
+		withTheme = true,
+		customColorTitle,
+		onSelect
+	}: {
+		selectedColor: string;
+		previousColor: string;
+		disabled?: boolean;
+		/** Preset swatches; defaults to the accent colors. */
+		colors?: Swatch[];
+		/** Offers the "inherit the application theme" swatch. */
+		withTheme?: boolean;
+		customColorTitle?: string;
+		/** Called whenever the user picks a different color. */
+		onSelect?: (color: string) => void;
+	} = $props();
+	let showCustomColorDialog = $state(false);
+	// Several pickers can share a page, so radio IDs are scoped to this one.
+	const uid = $props.id();
+
 	const themePrimary = $derived(resolveThemePrimary(mode.current === 'dark'));
 
 	// Check if current accent color is a custom color (not in predefined list)
-	let isCustomColor = $derived(selectedColor !== 'theme' && !accentColors.some((c) => c.color === selectedColor));
-	let isPreviousColorCustom = $derived(previousColor !== 'theme' && !accentColors.some((c) => c.color === previousColor));
+	let isCustomColor = $derived(selectedColor !== 'theme' && !colors.some((c) => c.color === selectedColor));
+	let isPreviousColorCustom = $derived(previousColor !== 'theme' && !colors.some((c) => c.color === previousColor));
 
 	function handleAccentColorChange(accentValue: string) {
 		const storedValue = accentValue === 'theme' ? 'default' : accentValue;
 		selectedColor = accentValue;
-		applyAccentColor(storedValue);
 		onSelect?.(storedValue);
 	}
 </script>
@@ -55,8 +66,10 @@
 		}
 	}}
 >
-	{@render colorOption('Theme', 'theme', selectedColor === 'theme')}
-	{#each accentColors as accent (accent.color)}
+	{#if withTheme}
+		{@render colorOption('Theme', 'theme', selectedColor === 'theme')}
+	{/if}
+	{#each colors as accent (accent.color)}
 		{@render colorOption(accent.label, accent.color, selectedColor === accent.color)}
 	{/each}
 	{#if isCustomColor || isPreviousColorCustom}
@@ -65,13 +78,13 @@
 	{@render colorOption('Custom', 'custom', false, true)}
 </RadioGroup.Root>
 
-<CustomColorDialog bind:open={showCustomColorDialog} onApply={handleAccentColorChange} />
+<CustomColorDialog bind:open={showCustomColorDialog} title={customColorTitle} onApply={handleAccentColorChange} />
 
 {#snippet colorOption(label: string, color: string, isSelected: boolean, isCustomColorSelection = false)}
 	<div class="group/item relative">
-		<RadioGroup.Item id={color} value={color} class="sr-only" />
+		<RadioGroup.Item id={`${uid}-${color}`} value={color} class="sr-only" />
 		<Label
-			for={color}
+			for={`${uid}-${color}`}
 			class={{
 				'cursor-pointer': !disabled,
 				'cursor-not-allowed': disabled,

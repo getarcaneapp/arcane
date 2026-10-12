@@ -9,12 +9,13 @@
 	import { SettingsIcon, ArrowRightIcon, ArrowLeftIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
+	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { SettingsFormContext, SettingsFormState } from '#lib/types/settings-form.js';
 	import { cn } from '#lib/utils.js';
 
 	import type { LayoutProps } from './$types';
 
-	let { children }: LayoutProps = $props();
+	let { children, data }: LayoutProps = $props();
 
 	let isSubPage = $derived(page.url.pathname !== '/settings');
 	let currentPageName = $derived(page.url.pathname.split('/').pop() || 'settings');
@@ -112,7 +113,13 @@
 
 		<div>
 			<div class="w-full max-w-none">
-				{@render children()}
+				<!-- Settings forms read their values once, so after an environment switch the page waits for that
+				     environment's settings and is then rebuilt with them. -->
+				{#if data.settingsEnvironmentId === environmentStore.selected?.id}
+					{#key data.settingsEnvironmentId}
+						{@render children()}
+					{/key}
+				{/if}
 			</div>
 		</div>
 	</main>

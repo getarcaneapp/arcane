@@ -3,14 +3,14 @@ import { error } from '@sveltejs/kit';
 import { queryKeys } from '#lib/query/query-keys.js';
 import { containerService } from '#lib/services/container-service.js';
 import { volumeService } from '#lib/services/volume-service.js';
-import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+import { resolveDetailEnvironmentId } from '#lib/utils/environments.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
 import type { PageLoad } from './$types';
 
-export const load: PageLoad = async ({ params, parent }) => {
+export const load: PageLoad = async ({ params, parent, url }) => {
 	const { queryClient } = await parent();
-	const envId = await environmentStore.getCurrentEnvironmentId();
+	const envId = await resolveDetailEnvironmentId(url);
 
 	const { volumeName } = params;
 
@@ -46,6 +46,7 @@ export const load: PageLoad = async ({ params, parent }) => {
 			}
 
 			return {
+				envId,
 				volume,
 				containersDetailed
 			};

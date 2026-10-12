@@ -1,15 +1,18 @@
 import { queryKeys } from '#lib/query/query-keys.js';
 import { networkService } from '#lib/services/network-service.js';
 import { throwPageLoadError } from '#lib/utils/api.js';
+import { fetchAcrossEnvironments } from '#lib/utils/environments.js';
 import { resolveListPageLoadContext } from '#lib/utils/tables.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
 import type { PageLoad } from './$types';
+import { networkSortValue } from './components/network-table.svelte';
 
 export const load: PageLoad = async ({ parent }) => {
 	const {
 		queryClient,
-		envId,
+		environments,
+		scope,
 		requestOptions: networkRequestOptions
 	} = await resolveListPageLoadContext(parent, 'arcane-networks-table', {
 		column: 'name',
@@ -21,8 +24,14 @@ export const load: PageLoad = async ({ parent }) => {
 	const operationResult = await tryCatch(
 		(async () =>
 			queryClient.query({
-				queryKey: queryKeys.networks.list(envId, networkRequestOptions),
-				queryFn: () => networkService.getNetworksForEnvironment(envId, networkRequestOptions)
+				queryKey: queryKeys.networks.list(scope, networkRequestOptions),
+				queryFn: () =>
+					fetchAcrossEnvironments(
+						environments,
+						networkRequestOptions,
+						(id, request, config) => networkService.getNetworksForEnvironment(id, request, config),
+						networkSortValue
+					)
 			}))()
 	);
 	if (operationResult.error !== null) {
@@ -34,7 +43,7 @@ export const load: PageLoad = async ({ parent }) => {
 	}
 
 	return {
-		envId,
+		scope,
 		networks,
 		networkRequestOptions,
 		// Use counts from the networks response

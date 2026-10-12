@@ -2,22 +2,23 @@ import { error } from '@sveltejs/kit';
 
 import { queryKeys } from '#lib/query/query-keys.js';
 import { imageService } from '#lib/services/image-service.js';
-import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import { featureStore } from '#lib/stores/features.store.svelte.js';
 import type { ImageDetailSummaryDto } from '#lib/types/docker.js';
 import { parseImageRef } from '#lib/utils/docker.js';
+import { resolveDetailEnvironmentId } from '#lib/utils/environments.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
 import type { PageLoad } from './$types';
 
 type ImageDetailData = {
+	envId: string;
 	image: ImageDetailSummaryDto;
 	error?: string;
 };
 
-export const load: PageLoad = async ({ params, parent }): Promise<ImageDetailData> => {
+export const load: PageLoad = async ({ params, parent, url }): Promise<ImageDetailData> => {
 	const { queryClient } = await parent();
-	const envId = await environmentStore.getCurrentEnvironmentId();
+	const envId = await resolveDetailEnvironmentId(url);
 
 	await featureStore.load(envId);
 	const { imageId } = params;
@@ -41,6 +42,7 @@ export const load: PageLoad = async ({ params, parent }): Promise<ImageDetailDat
 			}
 
 			return {
+				envId,
 				image: {
 					...image,
 					repo,

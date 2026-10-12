@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { createQuery, keepPreviousData } from '@tanstack/svelte-query';
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
 
 	import { AlertIcon, CheckIcon, CloseIcon, EventsIcon, InfoIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
@@ -20,12 +20,15 @@
 	let requestOptions = $derived(data.eventRequestOptions);
 	let isDeleting = $state(false);
 
-	const eventsQuery = createQuery(() => ({
-		queryKey: queryKeys.events.listGlobal(requestOptions),
-		queryFn: () => eventService.getEvents(requestOptions),
-		placeholderData: keepPreviousData,
-		initialData: data.events
-	}));
+	// The load already cached the first page under its key; seeding every key with it would hide other pages and filters.
+	const eventsQuery = createQuery(() => {
+		const options = requestOptions;
+		return {
+			queryKey: queryKeys.events.listGlobal(options),
+			queryFn: () => eventService.getEvents(options),
+			placeholderData: keepPreviousData
+		};
+	});
 
 	const statsQuery = createQuery(() => ({
 		queryKey: queryKeys.events.statsGlobal(),
@@ -208,7 +211,9 @@
 			bind:requestOptions
 			onRefreshData={async (options) => {
 				requestOptions = options;
-				await refresh();
+				// Let the query switch to the new options first; the refetch then joins its fetch.
+				await tick();
+				await Promise.all([eventsQuery.refetch({ cancelRefetch: false }), statsQuery.refetch()]);
 			}}
 		/>
 	{/snippet}

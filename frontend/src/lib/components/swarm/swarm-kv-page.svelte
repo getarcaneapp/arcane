@@ -194,7 +194,14 @@
 	]);
 </script>
 
-<ResourcePageLayout title={messages.pageTitle} subtitle={messages.pageSubtitle} {icon} {actionButtons} {statCards}>
+<ResourcePageLayout
+	title={messages.pageTitle}
+	subtitle={messages.pageSubtitle}
+	{icon}
+	{actionButtons}
+	{statCards}
+	environmentPicker
+>
 	{#snippet mainContent()}
 		<div class={canManage ? 'grid gap-4 lg:grid-cols-2' : 'grid gap-4'}>
 			{#if canManage}

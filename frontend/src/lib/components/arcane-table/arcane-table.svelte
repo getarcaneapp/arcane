@@ -6,10 +6,16 @@
 	import type { Snippet } from 'svelte';
 	import type { Component } from 'svelte';
 
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import * as Alert from '#lib/components/ui/alert/index.js';
 	import { TABLE_PAGE_SIZE_ALL } from '#lib/constants/table-pagination.js';
 	import { IsMobile } from '#lib/hooks/is-mobile.svelte.js';
+	import { AlertTriangleIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
+	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
+	import { rowKey, type EnvironmentFailure } from '#lib/utils/environments.js';
+	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import ArcaneTableCell from './arcane-table-cell.svelte';
 	import TableCheckbox from './arcane-table-checkbox.svelte';
@@ -82,7 +88,8 @@
 		expandedRowContent,
 		emptyState
 	}: {
-		items: Paginated<TData>;
+		/** Merged lists carry the environments that could not be loaded. */
+		items: Paginated<TData> & { failedEnvironments?: EnvironmentFailure[] };
 		requestOptions: SearchPaginationSortRequest;
 		withoutSearch?: boolean;
 		withoutFilters?: boolean;
@@ -358,7 +365,7 @@
 	}
 
 	function onToggleAll(checked: boolean, table: ArcaneTable<TData>) {
-		const pageIds = table.getRowModel().rows.map((r) => (r.original as TData).id);
+		const pageIds = table.getRowModel().rows.map((r) => r.id);
 		if (checked) {
 			const set = new Set([...(selectedIds ?? []), ...pageIds]);
 			selectedIds = Array.from(set);
@@ -396,7 +403,7 @@
 			cols.push({
 				id: 'select',
 				header: ({ table }) => {
-					const pageIds = table.getRowModel().rows.map((r) => (r.original as TData).id);
+					const pageIds = table.getRowModel().rows.map((r) => r.id);
 					const selectedSet = new Set(selectedIds ?? []);
 					const total = pageIds.length;
 					const selectedOnPage = pageIds.filter((id) => selectedSet.has(id)).length;
@@ -411,7 +418,7 @@
 					});
 				},
 				cell: ({ row }) => {
-					const id = (row.original as TData).id;
+					const id = row.id;
 					return renderComponent(TableCheckbox, {
 						checked: (selectedIds ?? []).includes(id),
 						onCheckedChange: (value, modifiers) => onToggleRow(!!value, id, modifiers),
@@ -520,7 +527,7 @@
 		// Stable row identity across server refreshes. Without this v9 keys rows by positional
 		// index, so every onRefresh fetch re-keys all rows and forces a full re-render; keying
 		// by the backing id lets unchanged rows (and their DOM/selection) be reused.
-		getRowId: (row) => row.id,
+		getRowId: (row) => rowKey(row),
 		get data() {
 			return sortedData;
 		},
@@ -669,7 +676,7 @@
 		}))
 	);
 
-	const rowIndex = $derived.by(() => new Map(table.getRowModel().rows.map((row, index) => [row.original.id, { row, index }])));
+	const rowIndex = $derived.by(() => new Map(table.getRowModel().rows.map((row, index) => [row.id, { row, index }])));
 
 	// Compute grouped rows when groupBy is provided
 	const effectiveGroupedRows = $derived.by((): GroupedData<TData>[] | null => {
@@ -702,7 +709,7 @@
 
 	// Get selection state for a group
 	function getGroupSelectionState(groupItems: TData[]): GroupSelectionState {
-		const groupIds = groupItems.map((item) => item.id);
+		const groupIds = groupItems.map((item) => rowKey(item));
 		const selectedCount = groupIds.filter((id) => selectedIdSet.has(id)).length;
 
 		if (selectedCount === 0) return 'none';
@@ -712,7 +719,7 @@
 
 	// Toggle selection for all items in a group
 	function onToggleGroupSelection(groupItems: TData[]) {
-		const groupIds = groupItems.map((item) => item.id);
+		const groupIds = groupItems.map((item) => rowKey(item));
 		const state = getGroupSelectionState(groupItems);
 
 		if (state === 'all') {
@@ -831,6 +838,29 @@
 					{isFiltered}
 					onResetFilters={resetFilters}
 				/>
+			</div>
+		{/if}
+
+		{#if items.failedEnvironments?.length}
+			<div class="shrink-0 px-3 pt-3">
+				<Alert.Root variant="warning-subtle" size="sm" icon={AlertTriangleIcon}>
+					<div class="flex flex-wrap items-center justify-between gap-2">
+						<Alert.Description>
+							{m.all_environments_unavailable({
+								environments: items.failedEnvironments
+									.map(({ environment, message }) => `${environment.name} (${message})`)
+									.join(', ')
+							})}
+						</Alert.Description>
+						<ArcaneButton
+							action="refresh"
+							size="sm"
+							customLabel={m.common_retry()}
+							onClickPromise={async () =>
+								handleApiResultWithCallbacks({ result: await tryCatch(onRefresh(requestOptions)), message: m.common_failed() })}
+						/>
+					</div>
+				</Alert.Root>
 			</div>
 		{/if}
 

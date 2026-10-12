@@ -3,14 +3,17 @@ import { containerService } from '#lib/services/container-service.js';
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 import { throwPageLoadError } from '#lib/utils/api.js';
+import { fetchAcrossEnvironments } from '#lib/utils/environments.js';
 import { resolveInitialTableRequest } from '#lib/utils/tables.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
 import type { PageLoad } from './$types';
+import { containerSortValue } from './container-table.helpers';
 
 export const load: PageLoad = async ({ parent }) => {
 	const { queryClient } = await parent();
-	const envId = await environmentStore.getCurrentEnvironmentId();
+	const environments = await environmentStore.getShownEnvironments();
+	const scope = environmentStore.shownKey;
 
 	const containerRequestOptions = resolveInitialTableRequest('arcane-container-table', {
 		pagination: { page: 1, limit: 20 },
@@ -21,8 +24,14 @@ export const load: PageLoad = async ({ parent }) => {
 	const operationResult = await tryCatch(
 		(async () =>
 			queryClient.query({
-				queryKey: queryKeys.containers.list(envId, containerRequestOptions),
-				queryFn: () => containerService.getContainersForEnvironment(envId, containerRequestOptions)
+				queryKey: queryKeys.containers.list(scope, containerRequestOptions),
+				queryFn: () =>
+					fetchAcrossEnvironments(
+						environments,
+						containerRequestOptions,
+						(id, request, config) => containerService.getContainersForEnvironment(id, request, config),
+						containerSortValue
+					)
 			}))()
 	);
 	if (operationResult.error !== null) {
@@ -34,7 +43,7 @@ export const load: PageLoad = async ({ parent }) => {
 	}
 
 	return {
-		envId,
+		scope,
 		containers,
 		containerRequestOptions
 	};

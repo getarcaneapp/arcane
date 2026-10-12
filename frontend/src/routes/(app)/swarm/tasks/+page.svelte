@@ -59,6 +59,7 @@
 	subtitle={nodeId ? m.swarm_tasks_subtitle_node_scoped() : m.swarm_tasks_subtitle()}
 	{actionButtons}
 	{statCards}
+	environmentPicker
 >
 	{#snippet mainContent()}
 		<SwarmTasksTable bind:tasks bind:requestOptions {fetchTasks} />

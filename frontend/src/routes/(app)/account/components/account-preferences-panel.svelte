@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { mode } from 'mode-watcher';
-	import { toast } from 'svelte-sonner';
 
 	import AccentColorPicker from '#lib/components/accent-color/accent-color-picker.svelte';
 	import ApplicationThemePicker from '#lib/components/application-theme/application-theme-picker.svelte';
@@ -15,15 +14,14 @@
 	import { DEFAULT_LANDING_PAGE, getLandingPageNavItems } from '#lib/config/navigation-config.js';
 	import { DockIcon, MonitorSpeakerIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { userService } from '#lib/services/user-service.js';
 	import { getLayoutMode, layoutModeStore, type LayoutMode } from '#lib/stores/layout-mode.store.svelte.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
 	import type { ProjectEditorLayout, UserPreferences } from '#lib/types/auth.js';
 	import type { ApplicationTheme, IconCatalog } from '#lib/types/settings.js';
 	import { cn } from '#lib/utils.js';
 	import { getMobileNavigation } from '#lib/utils/navigation.js';
-	import { applyGlassEffects, applyInterfaceAnimations, applyOledMode } from '#lib/utils/theme.svelte.js';
-	import { tryCatch } from '#lib/utils/try-catch.js';
+	import { applyAccentColor, applyGlassEffects, applyInterfaceAnimations, applyOledMode } from '#lib/utils/theme.svelte.js';
+	import { saveUserPreferences } from '#lib/utils/user-preferences.js';
 	import { debounced } from '#lib/utils/ws.js';
 
 	const mobileNavigation = getMobileNavigation();
@@ -72,28 +70,11 @@
 		return landingPageOptions.some((option) => option.value === current) ? current : DEFAULT_LANDING_PAGE;
 	});
 
-	async function savePreferences(patch: Partial<UserPreferences>) {
-		const previous = currentUser;
-		if (!previous) return;
-		const operationResult = await tryCatch(
-			(async () => {
-				const updated = await userService.updateMyProfile({ preferences: patch });
-				await userStore.setUser(updated);
-			})()
-		);
-		if (operationResult.error !== null) {
-			const error = operationResult.error;
-
-			toast.error(error instanceof Error ? error.message : m.common_update_failed({ resource: m.account_preferences() }));
-			await userStore.setUser(previous);
-		}
-	}
-
 	let pendingPreferences: Partial<UserPreferences> = {};
 	const flushPreferences = debounced(() => {
 		const patch = pendingPreferences;
 		pendingPreferences = {};
-		void savePreferences(patch);
+		void saveUserPreferences(patch);
 	}, 400);
 
 	function savePreferencesDebounced(patch: Partial<UserPreferences>) {
@@ -104,7 +85,7 @@
 	function selectMobileNavigationMode(value: 'floating' | 'docked') {
 		if (value === mobileNavigationMode) return;
 		mobileNavigation.visible = true;
-		void savePreferences({ mobileNavigationMode: value });
+		void saveUserPreferences({ mobileNavigationMode: value });
 	}
 </script>
 
@@ -125,7 +106,7 @@
 					triggerSize="sm"
 					value={projectEditorLayoutValue}
 					options={projectEditorLayoutOptions}
-					onValueChange={(value) => void savePreferences({ defaultProjectEditorLayout: value as ProjectEditorLayout })}
+					onValueChange={(value) => void saveUserPreferences({ defaultProjectEditorLayout: value as ProjectEditorLayout })}
 				/>
 			</div>
 		</SettingsRow>
@@ -160,7 +141,7 @@
 					triggerSize="sm"
 					value={iconCatalogValue}
 					options={iconCatalogOptions}
-					onValueChange={(value) => void savePreferences({ iconCatalog: value as IconCatalog })}
+					onValueChange={(value) => void saveUserPreferences({ iconCatalog: value as IconCatalog })}
 				/>
 			</div>
 		</SettingsRow>
@@ -175,7 +156,10 @@
 			<AccentColorPicker
 				previousColor={accentColorValue}
 				selectedColor={accentColorValue}
-				onSelect={(value) => savePreferencesDebounced({ accentColor: value })}
+				onSelect={(value) => {
+					applyAccentColor(value);
+					savePreferencesDebounced({ accentColor: value });
+				}}
 			/>
 		</SettingsRow>
 		<SettingsRow label={m.oled_mode()} description={m.oled_mode_description()} layout="switch">
@@ -192,7 +176,7 @@
 				disabled={!isDefaultApplicationTheme}
 				onCheckedChange={(checked) => {
 					applyOledMode(checked);
-					void savePreferences({ oledMode: checked });
+					void saveUserPreferences({ oledMode: checked });
 				}}
 			/>
 		</SettingsRow>
@@ -202,7 +186,7 @@
 				checked={glassEffectsEnabled}
 				onCheckedChange={(checked) => {
 					applyGlassEffects(checked);
-					void savePreferences({ glassEffectsEnabled: checked });
+					void saveUserPreferences({ glassEffectsEnabled: checked });
 				}}
 			/>
 		</SettingsRow>
@@ -212,7 +196,7 @@
 				checked={animationsEnabled}
 				onCheckedChange={(checked) => {
 					applyInterfaceAnimations(checked);
-					void savePreferences({ animationsEnabled: checked });
+					void saveUserPreferences({ animationsEnabled: checked });
 				}}
 			/>
 		</SettingsRow>
@@ -232,7 +216,7 @@
 					triggerSize="sm"
 					value={landingValue}
 					options={landingPageOptions}
-					onValueChange={(value) => void savePreferences({ defaultLandingPage: value })}
+					onValueChange={(value) => void saveUserPreferences({ defaultLandingPage: value })}
 				/>
 			</div>
 		</SettingsRow>
@@ -244,7 +228,7 @@
 			<Switch
 				id="account-sidebar-hover-expansion"
 				checked={sidebarHoverExpansionEnabled}
-				onCheckedChange={(checked) => void savePreferences({ sidebarHoverExpansion: checked })}
+				onCheckedChange={(checked) => void saveUserPreferences({ sidebarHoverExpansion: checked })}
 			/>
 		</SettingsRow>
 		<SettingsRow
@@ -255,7 +239,7 @@
 			<Switch
 				id="account-keyboard-shortcuts"
 				checked={keyboardShortcutsEnabled}
-				onCheckedChange={(checked) => void savePreferences({ keyboardShortcutsEnabled: checked })}
+				onCheckedChange={(checked) => void saveUserPreferences({ keyboardShortcutsEnabled: checked })}
 			/>
 		</SettingsRow>
 	</SettingsSection>
@@ -285,7 +269,7 @@
 			<Switch
 				id="account-mobile-nav-labels"
 				checked={mobileNavigationShowLabels}
-				onCheckedChange={(checked) => void savePreferences({ mobileNavigationShowLabels: checked })}
+				onCheckedChange={(checked) => void saveUserPreferences({ mobileNavigationShowLabels: checked })}
 			/>
 		</SettingsRow>
 	</SettingsSection>

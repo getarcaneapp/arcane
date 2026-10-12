@@ -12,6 +12,11 @@
 	}: WithElementRef<HTMLAttributes<HTMLDivElement>> = $props();
 </script>
 
-<div bind:this={ref} class={cn('text-sm group-data-[size=sm]/alert:text-xs [&_p]:leading-relaxed', className)} {...restProps}>
+<div
+	bind:this={ref}
+	data-slot="alert-description"
+	class={cn('text-sm group-data-[size=sm]/alert:text-xs [&_p]:leading-relaxed', className)}
+	{...restProps}
+>
 	{@render children?.()}
 </div>

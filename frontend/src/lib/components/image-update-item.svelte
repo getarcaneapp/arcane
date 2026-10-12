@@ -33,6 +33,8 @@
 		isLoadingInBackground?: boolean;
 		imageId?: string;
 		containerId?: string;
+		/** Environment that owns the image; defaults to the selected one. */
+		environmentId?: string;
 		tagUpdates?: boolean;
 		/** Image reference for ref-scoped checks when no local image ID exists (e.g. not-pulled refs) */
 		imageRef?: string;
@@ -51,6 +53,7 @@
 		isLoadingInBackground = false,
 		imageId,
 		containerId,
+		environmentId: rowEnvironmentId,
 		tagUpdates = false,
 		imageRef,
 		repo,
@@ -67,7 +70,7 @@
 	}
 
 	const imageUpdateQuery = createQuery<ImageUpdateData>(() => {
-		const environmentId = environmentStore.selected?.id || '0';
+		const environmentId = rowEnvironmentId ?? (environmentStore.selected?.id || '0');
 		const target = { imageId, containerId, imageRef, tagUpdates };
 		let key = target.imageId || target.imageRef || '';
 		if (target.containerId) key = `container:${target.containerId}`;
@@ -76,10 +79,10 @@
 			queryFn: async () => {
 				let result: ImageUpdateInfoDto | undefined;
 				if (target.imageId && !(target.containerId && target.imageRef)) {
-					result = await imageService.checkImageUpdateByID(target.imageId);
+					result = await imageService.checkImageUpdateByID(target.imageId, environmentId);
 				} else {
 					const ref = target.imageRef ?? '';
-					result = (await imageService.checkMultipleImages([ref]))[ref];
+					result = (await imageService.checkMultipleImages([ref], environmentId))[ref];
 				}
 				if (!result) throw new Error(m.images_update_check_failed());
 				if (target.containerId) {

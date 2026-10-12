@@ -74,6 +74,7 @@
 	icon={GlobeIcon}
 	pageType="management"
 	{actionButtons}
+	environmentPicker
 >
 	{#snippet mainContent()}
 		<WebhookTable

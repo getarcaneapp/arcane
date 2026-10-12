@@ -2,19 +2,20 @@
 	import { refreshAll } from '$app/navigation';
 	import { onDestroy } from 'svelte';
 
-	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { ContainerStats as ContainerStatsType, ContainerStatsHistorySample } from '#lib/types/docker.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 	import { createContainerStatsWebSocket, type ReconnectingWebSocket } from '#lib/utils/ws.js';
 
 	let {
 		containerId,
+		environmentId,
 		enabled,
 		stats = $bindable<ContainerStatsType | null>(null),
 		hasInitialStatsLoaded = $bindable(false),
 		statsError = $bindable(false)
 	}: {
 		containerId?: string;
+		environmentId: string;
 		enabled: boolean;
 		stats?: ContainerStatsType | null;
 		hasInitialStatsLoaded?: boolean;
@@ -42,7 +43,7 @@
 		const requestedContainerId = containerId;
 		const operationResult = await tryCatch(
 			(async () => {
-				const envId = await environmentStore.getCurrentEnvironmentId();
+				const envId = environmentId;
 				if (requestGeneration !== generation || !enabled || requestedContainerId !== containerId) return;
 
 				const ws = createContainerStatsWebSocket({

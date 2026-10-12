@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { createQuery } from '@tanstack/svelte-query';
+	import { tick } from 'svelte';
 
 	import { useEnvironmentRefresh } from '#lib/hooks/use-environment-refresh.svelte.js';
 	import { ResourcePageLayout, type ActionButton } from '#lib/layouts/index.js';
@@ -7,6 +8,7 @@
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { portService } from '#lib/services/port-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+	import { fetchAcrossEnvironments } from '#lib/utils/environments.js';
 
 	import PortTable from './components/port-table.svelte';
 
@@ -15,18 +17,27 @@
 	let requestOptions = $derived(data.portRequestOptions);
 	let selectedIds = $state<string[]>([]);
 
-	const envId = $derived(environmentStore.selected?.id || '0');
+	const scope = $derived(environmentStore.shownKey);
 
+	// The load already cached the first page under its key; seeding every key with it would hide other pages and filters.
 	const portsQuery = createQuery(() => {
-		const queryEnvId = envId;
+		const queryScope = scope;
+		const environments = environmentStore.shown;
+		const options = requestOptions;
 		return {
-			queryKey: queryKeys.ports.list(queryEnvId, requestOptions),
-			queryFn: () => portService.getPortsForEnvironment(queryEnvId, requestOptions),
-			initialData: data.envId === queryEnvId ? data.ports : undefined,
-			select: (value) => ({ envId: queryEnvId, value })
+			queryKey: queryKeys.ports.list(queryScope, options),
+			queryFn: () =>
+				fetchAcrossEnvironments(environments, options, (id, request, config) =>
+					portService.getPortsForEnvironment(id, request, config)
+				),
+			placeholderData: (previous, query) => {
+				if (query?.queryKey[1] === queryScope) return previous;
+				return undefined;
+			},
+			select: (value) => ({ envId: queryScope, value })
 		};
 	});
-	const ports = $derived(portsQuery.data?.envId === envId ? portsQuery.data.value : null);
+	const ports = $derived(portsQuery.data?.envId === scope ? portsQuery.data.value : null);
 
 	useEnvironmentRefresh(() => {
 		selectedIds = [];
@@ -61,6 +72,9 @@
 				bind:requestOptions
 				onRefreshData={async (options) => {
 					requestOptions = options;
+					// Let the query pick up the new key first; unchanged options (Retry) still refetch.
+					await tick();
+					await portsQuery.refetch({ cancelRefetch: false });
 				}}
 			/>
 		{/if}

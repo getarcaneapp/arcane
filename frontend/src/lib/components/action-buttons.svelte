@@ -12,6 +12,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { containerService } from '#lib/services/container-service.js';
 	import { projectService } from '#lib/services/project-service.js';
+	import { settingsService } from '#lib/services/settings-service.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { deployOptionsStore } from '#lib/stores/deploy-options.store.svelte.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
@@ -23,6 +24,7 @@
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { isDepotBuildAvailable } from '#lib/utils/build-provider.js';
+	import { environmentHref } from '#lib/utils/environments.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 	import { attachProjectLogsToWatch } from '#lib/utils/watch-logs.js';
 
@@ -43,6 +45,7 @@
 
 	let {
 		id,
+		environmentId,
 		name,
 		type = 'container',
 		itemState = 'stopped',
@@ -62,6 +65,8 @@
 		onSaveChanges
 	}: {
 		id: string;
+		/** Environment that owns the resource; defaults to the selected one. */
+		environmentId?: string;
 		name?: string;
 		type?: TargetType;
 		itemState?: string;
@@ -118,8 +123,8 @@
 		mutationFn: () =>
 			tryCatch(
 				type === 'container'
-					? containerService.startContainer(id)
-					: projectService.deployProject(id, 'up', deployOptionsStore.takeRequestOptions())
+					? containerService.startContainer(id, currentEnvId)
+					: projectService.deployProject(id, 'up', deployOptionsStore.takeRequestOptions(), currentEnvId)
 			),
 		onMutate: () => setLoading('start', true),
 		onSettled: () => setLoading('start', false)
@@ -127,14 +132,24 @@
 
 	const stopMutation = createMutation(() => ({
 		mutationKey: ['action', 'stop', type, id],
-		mutationFn: () => tryCatch(type === 'container' ? containerService.stopContainer(id) : projectService.downProject(id)),
+		mutationFn: (target: ActionTarget = actionTarget()) =>
+			tryCatch(
+				type === 'container'
+					? containerService.stopContainer(target.id, target.environmentId)
+					: projectService.downProject(target.id, target.environmentId)
+			),
 		onMutate: () => setLoading('stop', true),
 		onSettled: () => setLoading('stop', false)
 	}));
 
 	const restartMutation = createMutation(() => ({
 		mutationKey: ['action', 'restart', type, id],
-		mutationFn: () => tryCatch(type === 'container' ? containerService.restartContainer(id) : projectService.restartProject(id)),
+		mutationFn: () =>
+			tryCatch(
+				type === 'container'
+					? containerService.restartContainer(id, currentEnvId)
+					: projectService.restartProject(id, undefined, currentEnvId)
+			),
 		onMutate: () => setLoading('restart', true),
 		onSettled: () => setLoading('restart', false)
 	}));
@@ -145,12 +160,12 @@
 
 	const redeployMutation = createMutation(() => ({
 		mutationKey: ['action', 'redeploy', type, id],
-		mutationFn: ({ watch = false }: { watch?: boolean } = {}) =>
+		mutationFn: ({ watch = false, target }: { watch?: boolean; target: ActionTarget }) =>
 			tryCatch(
 				(type === 'container'
-					? containerService.redeployContainer(id)
+					? containerService.redeployContainer(target.id, target.environmentId)
 					: projectService.deployProject(
-							id,
+							target.id,
 							'redeploy',
 							(frame) => {
 								redeployActivityId = activityIdFromStreamFrame(frame) ?? redeployActivityId;
@@ -160,7 +175,8 @@
 							},
 							// Taken inside mutationFn so cancelling the confirm dialog doesn't
 							// spend the single-shot recreateVolumes opt-in.
-							deployOptionsStore.takeRequestOptions()
+							deployOptionsStore.takeRequestOptions(),
+							target.environmentId
 						)) as Promise<ContainerDetailsDto | Project>
 			),
 		onMutate: () => {
@@ -172,11 +188,11 @@
 
 	const removeMutation = createMutation(() => ({
 		mutationKey: ['action', 'remove', type, id],
-		mutationFn: ({ removeVolumes }: { removeVolumes: boolean }) =>
+		mutationFn: ({ removeVolumes, target }: { removeVolumes: boolean; target: ActionTarget }) =>
 			tryCatch(
 				type === 'container'
-					? containerService.deleteContainer(id, { volumes: removeVolumes })
-					: projectService.destroyProject(id, removeVolumes)
+					? containerService.deleteContainer(target.id, { volumes: removeVolumes, environmentId: target.environmentId })
+					: projectService.destroyProject(target.id, removeVolumes, target.environmentId)
 			),
 		onMutate: () => setLoading('remove', true),
 		onSettled: () => setLoading('remove', false)
@@ -199,7 +215,10 @@
 	// corresponding permission on the currently-selected environment. Project
 	// pull / build / redeploy all share the `projects:deploy` permission since
 	// they're stages of the deploy flow.
-	const currentEnvId = $derived(environmentStore.selected?.id);
+	const currentEnvId = $derived(environmentId ?? environmentStore.selected?.id);
+	// Captured when an action starts: a confirmation or watch can outlive navigation to another resource.
+	type ActionTarget = { id: string; environmentId: string | undefined };
+	const actionTarget = (): ActionTarget => ({ id, environmentId: currentEnvId });
 	const canStart = $derived(
 		type === 'container' ? hasPermission('containers:start', currentEnvId) : hasPermission('projects:deploy', currentEnvId)
 	);
@@ -218,14 +237,6 @@
 	const canPull = $derived(type === 'project' && hasPermission('projects:deploy', currentEnvId));
 	const canBuild = $derived(type === 'project' && hasPermission('projects:deploy', currentEnvId));
 	const deployButtonLabel = $derived(projectHasBuildDirective ? m.compose_build_and_deploy() : m.common_up());
-	const depotAvailable = $derived(isDepotBuildAvailable(settingsStore.current));
-	const projectBuildProvider = $derived.by<'local' | 'depot'>(() => {
-		const configuredProvider = (settingsStore.current?.buildProvider as 'local' | 'depot') ?? 'local';
-		if (configuredProvider === 'depot' && !depotAvailable) {
-			return 'local';
-		}
-		return configuredProvider;
-	});
 
 	async function handleRefresh() {
 		if (!onRefresh) return;
@@ -234,6 +245,7 @@
 
 	function confirmAction(action: string) {
 		if (action === 'remove') {
+			const target = actionTarget();
 			openConfirmDialog({
 				title: type === 'project' ? m.compose_destroy() : m.common_confirm_removal_title(),
 				message:
@@ -246,7 +258,7 @@
 					action: async (checkboxStates) => {
 						const removeVolumes = checkboxStates['removeVolumes'] === true;
 
-						const result = await removeMutation.mutateAsync({ removeVolumes });
+						const result = await removeMutation.mutateAsync({ removeVolumes, target });
 						await handleApiResultWithCallbacks({
 							result,
 							message: m.common_action_failed_with_type({
@@ -303,8 +315,9 @@
 	}
 
 	function confirmRedeploy(watch: boolean) {
+		const target = actionTarget();
 		if (hasUnsavedChanges) {
-			confirmSaveBeforeDeploy(m.projects_save_and_redeploy(), () => handleRedeploy(watch));
+			confirmSaveBeforeDeploy(m.projects_save_and_redeploy(), () => handleRedeploy(watch, target));
 			return;
 		}
 		openConfirmDialog({
@@ -312,23 +325,25 @@
 			message: type === 'container' ? m.container_confirm_redeploy_message() : m.common_confirm_redeploy_message(),
 			confirm: {
 				label: m.common_redeploy(),
-				action: () => handleRedeploy(watch)
+				action: () => handleRedeploy(watch, target)
 			}
 		});
 	}
 
-	async function handleRedeploy(watch: boolean) {
+	async function handleRedeploy(watch: boolean, target: ActionTarget) {
 		const operationStartedAt = Math.floor(Temporal.Now.instant().epochMilliseconds / 1000);
+		// Follow-ups stay in the environment the redeploy ran in.
+		const operationEnvId = target.environmentId;
 		if (watch) {
 			operationWatchStore.start(`${m.common_redeploy()} — ${name ?? id}`);
 		}
-		const result = await redeployMutation.mutateAsync({ watch });
+		const result = await redeployMutation.mutateAsync({ watch, target });
 		if (watch && result.error) {
 			operationWatchStore.fail(result.error.message || m.common_action_failed_with_type({ action: m.common_redeploy(), type }));
 			return;
 		}
 		if (watch) {
-			enterInteractiveWatchInternal(operationStartedAt);
+			enterInteractiveWatchInternal(operationStartedAt, target);
 		}
 		await handleApiResultWithCallbacks({
 			result,
@@ -343,7 +358,8 @@
 				}
 				const containerData = data as ContainerDetailsDto;
 				if (type === 'container' && containerData?.id) {
-					goto(`/containers/${containerData.id}`);
+					const path = `/containers/${containerData.id}`;
+					goto(operationEnvId ? environmentHref(path, operationEnvId) : path);
 				} else if (type === 'container') {
 					goto('/containers');
 				} else {
@@ -369,6 +385,7 @@
 		setLoading('start', true);
 
 		const operationStartedAt = Math.floor(Temporal.Now.instant().epochMilliseconds / 1000);
+		const target = actionTarget();
 		if (watch) {
 			operationWatchStore.start(`${deployButtonLabel} — ${name ?? id}`);
 		}
@@ -377,13 +394,14 @@
 			const operationResult1 = await tryCatch(
 				(async () => {
 					await projectService.deployProject(
-						id,
+						target.id,
 						'up',
 						watch ? (frame: unknown) => operationWatchStore.onLine(frame) : () => {},
-						options ?? deployOptionsStore.takeRequestOptions()
+						options ?? deployOptionsStore.takeRequestOptions(),
+						target.environmentId
 					);
 					if (watch) {
-						enterInteractiveWatchInternal(operationStartedAt);
+						enterInteractiveWatchInternal(operationStartedAt, target);
 					}
 					await refreshAll();
 					itemState = 'running';
@@ -410,17 +428,17 @@
 	// output is followed by the containers' live logs — everything they wrote
 	// since the operation began — and dismissing the dialog is the Ctrl-C:
 	// the project is brought down.
-	function enterInteractiveWatchInternal(operationStartedAt: number) {
+	function enterInteractiveWatchInternal(operationStartedAt: number, target: ActionTarget) {
 		operationWatchStore.append(`Attaching to ${name ?? id}`);
-		const detach = attachProjectLogsToWatch(id, operationStartedAt);
+		const detach = attachProjectLogsToWatch(target.id, operationStartedAt, target.environmentId);
 		operationWatchStore.setOnClose(() => {
 			detach();
-			void handleStop();
+			void handleStop(target);
 		});
 	}
 
-	async function handleStop() {
-		const result = await stopMutation.mutateAsync();
+	async function handleStop(target: ActionTarget = actionTarget()) {
+		const result = await stopMutation.mutateAsync(target);
 		await handleApiResultWithCallbacks({
 			result,
 			message: m.common_action_failed_with_type({ action: m.common_stop(), type }),
@@ -467,7 +485,11 @@
 		try {
 			const operationResult2 = await tryCatch(
 				(async () => {
-					await projectService.pullProjectImages(id, watch ? (frame: unknown) => operationWatchStore.onLine(frame) : () => {});
+					await projectService.pullProjectImages(
+						id,
+						watch ? (frame: unknown) => operationWatchStore.onLine(frame) : () => {},
+						currentEnvId
+					);
 					await refreshAll();
 					onActionComplete(itemState);
 				})()
@@ -493,7 +515,13 @@
 		try {
 			const operationResult3 = await tryCatch(
 				(async () => {
-					const buildProvider = projectBuildProvider;
+					// A project in another environment builds with that environment's provider settings.
+					const settings =
+						currentEnvId && currentEnvId !== environmentStore.selected?.id
+							? await settingsService.getReadableSettings(currentEnvId)
+							: settingsStore.current;
+					const configuredProvider = (settings?.buildProvider as 'local' | 'depot') ?? 'local';
+					const buildProvider = configuredProvider === 'depot' && isDepotBuildAvailable(settings) ? 'depot' : 'local';
 					await projectService.buildProjectImages(
 						id,
 						{
@@ -501,7 +529,8 @@
 							push: buildProvider === 'depot',
 							load: buildProvider !== 'depot'
 						},
-						() => {}
+						() => {},
+						currentEnvId
 					);
 					await refreshAll();
 				})()

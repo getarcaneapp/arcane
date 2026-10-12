@@ -8,9 +8,11 @@
 
 	let {
 		open = $bindable(false),
+		title = m.custom_accent_color(),
 		onApply
 	}: {
 		open: boolean;
+		title?: string;
 		onApply: (color: string) => void;
 	} = $props();
 
@@ -40,7 +42,7 @@
 <Dialog.Root {open} {onOpenChange}>
 	<Dialog.Content class="max-w-md">
 		<Dialog.Header>
-			<Dialog.Title><span class="flex items-center gap-2">{m.custom_accent_color()}</span></Dialog.Title>
+			<Dialog.Title><span class="flex items-center gap-2">{title}</span></Dialog.Title>
 			<Dialog.Description>
 				{m.custom_accent_color_description()}
 			</Dialog.Description>

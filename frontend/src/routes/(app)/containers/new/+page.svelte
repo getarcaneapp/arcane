@@ -11,26 +11,29 @@
 		toCreateRequest
 	} from '#lib/components/containers/container-form/container-form-state.js';
 	import ContainerForm from '#lib/components/containers/container-form/container-form.svelte';
+	import EnvironmentDestinationSelect from '#lib/components/form/environment-destination-select.svelte';
 	import { ArrowLeftIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { containerService } from '#lib/services/container-service.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
+	import { destinationEnvironmentId, environmentHref } from '#lib/utils/environments.js';
 	import { createForm } from '#lib/utils/settings.svelte.js';
-
-	let { data } = $props();
 
 	const queryClient = useQueryClient();
 	const form = createForm<typeof containerFormSchema>(containerFormSchema, emptyContainerFormValues());
 	let rows = $state(emptyContainerFormRows());
+	let pickedEnvironmentId = $state('');
+	const environmentId = $derived(destinationEnvironmentId(pickedEnvironmentId, 'containers:create'));
 
 	const createContainerMutation = createMutation(() => ({
-		mutationKey: queryKeys.containers.create(data.envId),
-		mutationFn: (request: ReturnType<typeof toCreateRequest>) => containerService.createContainer(request, data.envId),
-		onSuccess: async (created) => {
+		mutationKey: queryKeys.containers.create(environmentId),
+		mutationFn: ({ request, destination }: { request: ReturnType<typeof toCreateRequest>; destination: string }) =>
+			containerService.createContainer(request, destination),
+		onSuccess: async (created, { destination }) => {
 			toast.success(m.common_create_success({ resource: m.resource_container() }));
 			await queryClient.invalidateQueries({ queryKey: queryKeys.containers.all });
-			goto(`/containers/${created.id}`);
+			goto(environmentHref(`/containers/${created.id}`, destination));
 		},
 		onError: (error) => {
 			toast.error(m.containers_create_failed(), { description: extractApiErrorMessage(error) });
@@ -40,7 +43,7 @@
 	function handleSubmit() {
 		const values = form.validate();
 		if (!values) return;
-		createContainerMutation.mutate(toCreateRequest(values, rows));
+		createContainerMutation.mutate({ request: toCreateRequest(values, rows), destination: environmentId });
 	}
 </script>
 
@@ -61,7 +64,18 @@
 		</div>
 	</div>
 
-	<div class="mx-auto w-full max-w-full px-6 py-6">
-		<ContainerForm mode="create" {form} bind:rows submitting={createContainerMutation.isPending} onSubmit={handleSubmit} />
+	<div class="mx-auto w-full max-w-full space-y-6 px-6 py-6">
+		<EnvironmentDestinationSelect
+			bind:value={() => environmentId, (value) => (pickedEnvironmentId = value)}
+			permission="containers:create"
+		/>
+		<ContainerForm
+			mode="create"
+			{form}
+			{environmentId}
+			bind:rows
+			submitting={createContainerMutation.isPending}
+			onSubmit={handleSubmit}
+		/>
 	</div>
 </div>

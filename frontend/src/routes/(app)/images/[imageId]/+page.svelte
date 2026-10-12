@@ -42,6 +42,7 @@
 		isVulnerabilityScanInProgress
 	} from '#lib/utils/docker.js';
 	import { parseImageRef } from '#lib/utils/docker.js';
+	import { environmentHref } from '#lib/utils/environments.js';
 	import { bytes, formatDateTimeShort, nowInstantString } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 	import { toastVulnerabilityScanStatus } from '#lib/utils/vulnerability.js';
@@ -53,7 +54,7 @@
 	let { data } = $props();
 	let { image } = $derived(data);
 
-	const currentEnvId = $derived(environmentStore.selected?.id || '0');
+	const currentEnvId = $derived(data.envId);
 	const vulnerabilityManagementEnabled = $derived(featureStore.isEnabled('vulnerabilityManagement', currentEnvId));
 
 	const urlTab = useUrlTab({
@@ -158,7 +159,7 @@
 		// Prefer the stored scan report when one exists; fall back to
 		// patching all outdated OS packages.
 		const options = vulnerabilityScan?.hasReport ? { scanId: image.id } : undefined;
-		const result = await tryCatch(imageService.patchImage(image.id, options));
+		const result = await tryCatch(imageService.patchImage(image.id, options, currentEnvId));
 		await handleApiResultWithCallbacks({
 			result,
 			message: m.images_patch_failed(),
@@ -315,6 +316,8 @@
 	const pinnedRepository = $derived.by(() => (pinnedRefs[0] ? parseImageRef(pinnedRefs[0]).repo : ''));
 
 	async function handleImageRemove(id: string) {
+		// The dialog outlives navigation, so it removes the image from the environment it was opened for.
+		const environmentId = currentEnvId;
 		openConfirmDialog({
 			title: m.common_remove_title({ resource: m.resource_image() }),
 			message: m.images_remove_message(),
@@ -332,7 +335,7 @@
 					const force = !!checkboxStates['force'];
 					isLoading.removing = true;
 					await handleApiResultWithCallbacks({
-						result: await tryCatch(imageService.deleteImage(id, { force })),
+						result: await tryCatch(imageService.deleteImage(id, { force }, environmentId)),
 						message: m.failed_to_remove_image(),
 						setLoadingState: (value) => (isLoading.removing = value),
 						onSuccess: async (data) => {
@@ -348,7 +351,7 @@
 	async function handleExportImage(id: string) {
 		isLoading.exporting = true;
 		try {
-			const url = await imageService.getImageExportUrl(id);
+			const url = await imageService.getImageExportUrl(id, currentEnvId);
 			window.open(url, '_blank', 'noopener,noreferrer');
 		} finally {
 			isLoading.exporting = false;
@@ -502,14 +505,15 @@
 				</Tabs.Content>
 
 				<Tabs.Content value="history">
-					<ImageHistoryPanel imageId={image.id} />
+					<ImageHistoryPanel imageId={image.id} environmentId={currentEnvId} />
 				</Tabs.Content>
 				<Tabs.Content value="attestations">
-					<ImageAttestationsPanel {image} />
+					<ImageAttestationsPanel {image} environmentId={currentEnvId} />
 				</Tabs.Content>
 				{#if vulnerabilityManagementEnabled}
 					<Tabs.Content value="vulnerabilities">
 						<VulnerabilityScanPanel
+							environmentId={currentEnvId}
 							scan={vulnerabilityScan}
 							reportError={scanReportError}
 							isScanning={isLoading.scanning}
@@ -537,8 +541,9 @@
 	<ImageTagDialog
 		bind:open={tagDialogOpen}
 		imageId={image.id}
+		environmentId={currentEnvId}
 		defaultRepository={image.repoTags?.[0]?.split(':')[0] ??
 			(pinnedRepository || (image.repo && image.repo !== '<none>' ? image.repo : ''))}
-		onTagged={() => goto(`/images/${image.id}`, { refreshAll: true })}
+		onTagged={() => goto(environmentHref(`/images/${image.id}`, currentEnvId), { refreshAll: true })}
 	/>
 {/if}

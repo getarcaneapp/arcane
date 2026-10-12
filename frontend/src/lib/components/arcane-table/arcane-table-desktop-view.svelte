@@ -229,7 +229,7 @@
 	rowMeasurement?: Attachment<HTMLTableRowElement>,
 	virtualIndex?: number
 )}
-	{@const rowId = row.original.id}
+	{@const rowId = row.id}
 	{@const isExpanded = expandedRows?.has(rowId) ?? false}
 	<Table.Row
 		{@attach rowMeasurement}

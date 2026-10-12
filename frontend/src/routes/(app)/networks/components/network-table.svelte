@@ -1,9 +1,47 @@
+<script module lang="ts">
+	import type { NetworkSummaryDto } from '#lib/types/docker.js';
+
+	function ipamValues(item: NetworkSummaryDto, key: 'subnet' | 'gateway'): string[] {
+		return (item.ipam?.config ?? []).map((c) => c[key]).filter((v): v is string => !!v);
+	}
+
+	// A fixed-width digit key that orders like the backend: IPv4 before IPv6, then by address, then by prefix
+	// length. An entry that is not an address sorts after every address.
+	function addressSortKey(value: string): string {
+		const [address = '', prefix = ''] = value.split('/');
+		const octets = address.split('.');
+		let family = '1';
+		let hex = '';
+		if (octets.length === 4 && octets.every((octet) => /^\d{1,3}$/.test(octet))) {
+			hex = octets.map((octet) => Number(octet).toString(16).padStart(2, '0')).join('');
+		} else if (/^[\da-f:]+$/i.test(address)) {
+			const [head = '', tail = ''] = address.split('::');
+			const headGroups = head ? head.split(':') : [];
+			const tailGroups = tail ? tail.split(':') : [];
+			const fill = address.includes('::') ? 8 - headGroups.length - tailGroups.length : 0;
+			family = '2';
+			hex = [...headGroups, ...Array<string>(Math.max(fill, 0)).fill('0'), ...tailGroups].map((g) => g.padStart(4, '0')).join('');
+		}
+		if (!hex) return `z${value}`;
+		return `${family}${BigInt(`0x${hex}`).toString().padStart(39, '0')}${prefix.padStart(3, '0')}`;
+	}
+
+	/** Sort value for a network column whose sort key is not a row field. */
+	export function networkSortValue(network: NetworkSummaryDto, column: string): unknown {
+		// The backend sorts each network's entries before comparing networks, so entry order does not matter.
+		if (column === 'subnet' || column === 'gateway')
+			return ipamValues(network, column).map(addressSortKey).sort().join(' ') || null;
+		return network[column as keyof NetworkSummaryDto];
+	}
+</script>
+
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
 
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
 	import InUseStatus from '#lib/components/arcane-table/cells/in-use-status.svelte';
+	import { environmentColumns } from '#lib/components/arcane-table/environment-column.js';
 	import type { ColumnSpec, BulkAction } from '#lib/components/arcane-table/index.js';
 	import { UniversalMobileCard } from '#lib/components/arcane-table/index.js';
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
@@ -13,16 +51,25 @@
 	import { DEFAULT_NETWORK_NAMES } from '#lib/constants.js';
 	import { NetworksIcon, GlobeIcon, InspectIcon, TrashIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { networkService } from '#lib/services/network-service.js';
-	import type { NetworkSummaryDto, NetworkUsageCounts } from '#lib/types/docker.js';
-	import type { SearchPaginationSortRequest, Paginated } from '#lib/types/shared.js';
+	import { networkService, type NetworksPaginatedResponse } from '#lib/services/network-service.js';
+	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { bulkConfirmAndRun } from '#lib/utils/bulk-actions.js';
+	import {
+		environmentHref,
+		fetchAcrossEnvironments,
+		rowKey,
+		type EnvironmentPage,
+		type EnvironmentRow
+	} from '#lib/utils/environments.js';
 	import { capitalizeFirstLetter } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	type FieldVisibility = Record<string, boolean>;
+	type NetworkRow = EnvironmentRow<NetworkSummaryDto>;
+	type NetworkPage = EnvironmentPage<NetworksPaginatedResponse>;
 
 	let {
 		networks = $bindable(),
@@ -31,10 +78,10 @@
 		onNetworksChange,
 		onRefreshData
 	}: {
-		networks: Paginated<NetworkSummaryDto, NetworkUsageCounts>;
+		networks: NetworkPage;
 		selectedIds: string[];
 		requestOptions: SearchPaginationSortRequest;
-		onNetworksChange?: (networks: Paginated<NetworkSummaryDto, NetworkUsageCounts>) => void;
+		onNetworksChange?: (networks: NetworkPage) => void;
 		onRefreshData?: (options: SearchPaginationSortRequest) => Promise<void>;
 	} = $props();
 
@@ -50,11 +97,16 @@
 			}
 			return;
 		}
-		networks = await networkService.getNetworks(options);
+		networks = await fetchAcrossEnvironments(
+			environmentStore.shown,
+			options,
+			(id, request, config) => networkService.getNetworksForEnvironment(id, request, config),
+			networkSortValue
+		);
 		onNetworksChange?.(networks);
 	}
 
-	async function handleDeleteNetwork(id: string, name: string) {
+	async function handleDeleteNetwork(id: string, name: string, environmentId: string) {
 		const safeName = name?.trim() || m.common_unknown();
 		if (DEFAULT_NETWORK_NAMES.has(name)) {
 			toast.error(m.networks_cannot_delete_default({ name: safeName }));
@@ -69,7 +121,7 @@
 				action: async () => {
 					isLoading.remove = true;
 					await handleApiResultWithCallbacks({
-						result: await tryCatch(networkService.deleteNetwork(id)),
+						result: await tryCatch(networkService.deleteNetwork(id, environmentId)),
 						message: m.common_delete_failed({ resource: `${m.resource_network()} "${safeName}"` }),
 						setLoadingState: (value) => (isLoading.remove = value),
 						onSuccess: async (data) => {
@@ -86,7 +138,7 @@
 	}
 
 	function handleDeleteSelectedNetworks(ids: string[]) {
-		const selectedNetworkList = networks.data.filter((n) => ids.includes(n.id));
+		const selectedNetworkList = networks.data.filter((n) => ids.includes(rowKey(n)));
 		const defaultNetworks = selectedNetworkList.filter((n) => n.isDefault);
 
 		if (defaultNetworks.length > 0) {
@@ -101,7 +153,7 @@
 			message: m.networks_delete_selected_message({ count: ids.length }),
 			confirmLabel: m.common_delete(),
 			destructive: true,
-			run: (id) => networkService.deleteNetwork(id),
+			run: (id, environmentId) => networkService.deleteNetwork(id, environmentId),
 			messages: {
 				success: (count) => m.common_bulk_delete_success({ count, resource: m.resource_networks_cap() }),
 				partial: (success, total, failed) =>
@@ -128,7 +180,8 @@
 		return variantMap[driver] || 'gray';
 	}
 
-	const columns = [
+	const columns = $derived([
+		...environmentColumns<NetworkRow>(),
 		{ accessorKey: 'id', title: m.common_id(), cell: IdCell, hidden: true },
 		{ accessorKey: 'name', title: m.common_name(), sortable: true, cell: NameCell },
 		{ accessorKey: 'inUse', title: m.common_status(), sortable: true, cell: StatusCell },
@@ -136,19 +189,19 @@
 		{ accessorKey: 'scope', title: m.common_scope(), sortable: true, cell: ScopeCell },
 		{
 			id: 'subnet',
-			accessorFn: (row) => ipamValues(row, 'subnet').join(' '),
+			accessorFn: (row) => networkSortValue(row, 'subnet'),
 			title: m.common_subnet(),
 			sortable: true,
 			cell: SubnetCell
 		},
 		{
 			id: 'gateway',
-			accessorFn: (row) => ipamValues(row, 'gateway').join(' '),
+			accessorFn: (row) => networkSortValue(row, 'gateway'),
 			title: m.common_gateway(),
 			sortable: true,
 			cell: GatewayCell
 		}
-	] satisfies ColumnSpec<NetworkSummaryDto>[];
+	] satisfies ColumnSpec<NetworkRow>[]);
 
 	const mobileFields = [
 		{ id: 'id', label: m.common_id(), defaultVisible: false },
@@ -158,10 +211,6 @@
 		{ id: 'subnet', label: m.common_subnet(), defaultVisible: true },
 		{ id: 'gateway', label: m.common_gateway(), defaultVisible: true }
 	];
-
-	function ipamValues(item: NetworkSummaryDto, key: 'subnet' | 'gateway'): string[] {
-		return (item.ipam?.config ?? []).map((c) => c[key]).filter((v): v is string => !!v);
-	}
 
 	const bulkActions = $derived.by<BulkAction[]>(() => [
 		{
@@ -178,15 +227,15 @@
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
 </script>
 
-{#snippet NameCell({ item }: { item: NetworkSummaryDto })}
-	<a class="font-medium hover:underline" href="/networks/{item.id}">{item.name}</a>
+{#snippet NameCell({ item }: { item: NetworkRow })}
+	<a class="font-medium hover:underline" href={environmentHref(`/networks/${item.id}`, item.environmentId)}>{item.name}</a>
 {/snippet}
 
-{#snippet IdCell({ item }: { item: NetworkSummaryDto })}
+{#snippet IdCell({ item }: { item: NetworkRow })}
 	<span class="truncate font-mono text-sm">{String(item.id)}</span>
 {/snippet}
 
-{#snippet DriverCell({ item }: { item: NetworkSummaryDto })}
+{#snippet DriverCell({ item }: { item: NetworkRow })}
 	<Badge
 		variant={item.driver === 'bridge'
 			? 'blue'
@@ -201,11 +250,11 @@
 	>
 {/snippet}
 
-{#snippet ScopeCell({ item }: { item: NetworkSummaryDto })}
+{#snippet ScopeCell({ item }: { item: NetworkRow })}
 	<Badge variant={item.scope === 'local' ? 'green' : 'amber'} minWidth="20">{capitalizeFirstLetter(item.scope)}</Badge>
 {/snippet}
 
-{#snippet SubnetCell({ item }: { item: NetworkSummaryDto })}
+{#snippet SubnetCell({ item }: { item: NetworkRow })}
 	{@const subnets = ipamValues(item, 'subnet')}
 	{#if subnets.length === 0}
 		<span class="text-muted-foreground">—</span>
@@ -218,7 +267,7 @@
 	{/if}
 {/snippet}
 
-{#snippet GatewayCell({ item }: { item: NetworkSummaryDto })}
+{#snippet GatewayCell({ item }: { item: NetworkRow })}
 	{@const gateways = ipamValues(item, 'gateway')}
 	{#if gateways.length === 0}
 		<span class="text-muted-foreground">—</span>
@@ -231,7 +280,7 @@
 	{/if}
 {/snippet}
 
-{#snippet StatusCell({ item }: { item: NetworkSummaryDto })}
+{#snippet StatusCell({ item }: { item: NetworkRow })}
 	{#if item.isDefault}
 		<Badge variant="sky" minWidth="20">{m.networks_predefined()}</Badge>
 	{:else}
@@ -239,23 +288,17 @@
 	{/if}
 {/snippet}
 
-{#snippet NetworkMobileCardSnippet({
-	item,
-	mobileFieldVisibility
-}: {
-	item: NetworkSummaryDto;
-	mobileFieldVisibility: FieldVisibility;
-})}
+{#snippet NetworkMobileCardSnippet({ item, mobileFieldVisibility }: { item: NetworkRow; mobileFieldVisibility: FieldVisibility })}
 	<UniversalMobileCard
 		{item}
-		icon={(item: NetworkSummaryDto) => ({
+		icon={(item: NetworkRow) => ({
 			component: NetworksIcon,
 			variant: item.inUse ? 'emerald' : 'amber'
 		})}
-		title={(item: NetworkSummaryDto) => item.name}
-		subtitle={(item: NetworkSummaryDto) => ((mobileFieldVisibility['id'] ?? true) ? item.id : null)}
+		title={(item: NetworkRow) => item.name}
+		subtitle={(item: NetworkRow) => ((mobileFieldVisibility['id'] ?? true) ? item.id : null)}
 		badges={[
-			(item: NetworkSummaryDto) =>
+			(item: NetworkRow) =>
 				(mobileFieldVisibility['inUse'] ?? true)
 					? (item.isDefault ?? false) || DEFAULT_NETWORK_NAMES.has(item.name)
 						? { variant: 'gray', text: m.networks_predefined() }
@@ -267,7 +310,7 @@
 		fields={[
 			{
 				label: m.common_driver(),
-				getValue: (item: NetworkSummaryDto) => capitalizeFirstLetter(item.driver),
+				getValue: (item: NetworkRow) => capitalizeFirstLetter(item.driver),
 				icon: NetworksIcon,
 				iconVariant: 'gray' as const,
 				type: 'badge' as const,
@@ -276,7 +319,7 @@
 			},
 			{
 				label: m.common_scope(),
-				getValue: (item: NetworkSummaryDto) => capitalizeFirstLetter(item.scope),
+				getValue: (item: NetworkRow) => capitalizeFirstLetter(item.scope),
 				icon: GlobeIcon,
 				iconVariant: 'gray' as const,
 				type: 'badge' as const,
@@ -285,7 +328,7 @@
 			},
 			{
 				label: m.common_subnet(),
-				getValue: (item: NetworkSummaryDto) => ipamValues(item, 'subnet').join(', ') || '—',
+				getValue: (item: NetworkRow) => ipamValues(item, 'subnet').join(', ') || '—',
 				icon: NetworksIcon,
 				iconVariant: 'gray' as const,
 				type: 'mono' as const,
@@ -293,7 +336,7 @@
 			},
 			{
 				label: m.common_gateway(),
-				getValue: (item: NetworkSummaryDto) => ipamValues(item, 'gateway').join(', ') || '—',
+				getValue: (item: NetworkRow) => ipamValues(item, 'gateway').join(', ') || '—',
 				icon: GlobeIcon,
 				iconVariant: 'gray' as const,
 				type: 'mono' as const,
@@ -301,13 +344,13 @@
 			}
 		]}
 		rowActions={RowActions}
-		onclick={() => goto(`/networks/${item.id}`)}
+		onclick={() => goto(environmentHref(`/networks/${item.id}`, item.environmentId))}
 	/>
 {/snippet}
 
-{#snippet RowActions({ item }: { item: NetworkSummaryDto })}
+{#snippet RowActions({ item }: { item: NetworkRow })}
 	<RowActionsMenu>
-		<DropdownMenu.Item onclick={() => goto(`/networks/${item.id}`)} disabled={isAnyLoading}>
+		<DropdownMenu.Item onclick={() => goto(environmentHref(`/networks/${item.id}`, item.environmentId))} disabled={isAnyLoading}>
 			<InspectIcon class="size-4" />
 			{m.common_inspect()}
 		</DropdownMenu.Item>
@@ -316,7 +359,7 @@
 
 		<DropdownMenu.Item
 			variant="destructive"
-			onclick={() => handleDeleteNetwork(item.id, item.name)}
+			onclick={() => handleDeleteNetwork(item.id, item.name, item.environmentId)}
 			disabled={isAnyLoading || item.isDefault || DEFAULT_NETWORK_NAMES.has(item.name)}
 		>
 			<TrashIcon class="size-4" />

@@ -258,6 +258,7 @@
 	icon={NotificationsIcon}
 	pageType="form"
 	showReadOnlyTag={isReadOnly}
+	environmentPicker
 >
 	{#snippet mainContent()}
 		<fieldset disabled={isReadOnly} class="relative w-full min-w-0">

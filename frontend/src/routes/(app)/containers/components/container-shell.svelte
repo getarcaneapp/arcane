@@ -13,10 +13,12 @@
 
 	let {
 		containerId,
+		environmentId,
 		labels,
 		name
 	}: {
 		containerId: string | undefined;
+		environmentId: string;
 		labels: Record<string, string> | null | undefined;
 		name: string | undefined;
 	} = $props();
@@ -25,7 +27,7 @@
 
 	// Keyed by compose service (or container name) so the choice survives container recreation.
 	const shellKey = $derived.by(() => {
-		const envId = environmentStore.selected?.id ?? '0';
+		const envId = environmentId;
 		const project = labels?.[COMPOSE_PROJECT_LABEL];
 		const service = labels?.[COMPOSE_SERVICE_LABEL];
 		if (project && service) return `${envId}:${project}/${service}`;
@@ -40,7 +42,7 @@
 		if (!containerId || !selectedShell) return '';
 		let protocol = 'ws:';
 		if (page.url.protocol === 'https:') protocol = 'wss:';
-		return `${protocol}//${page.url.host}/api/environments/${environmentStore.selected?.id ?? '0'}/ws/containers/${containerId}/terminal?shell=${encodeURIComponent(selectedShell)}`;
+		return `${protocol}//${page.url.host}/api/environments/${environmentId}/ws/containers/${containerId}/terminal?shell=${encodeURIComponent(selectedShell)}`;
 	});
 
 	function handleShellChange(shell: string) {

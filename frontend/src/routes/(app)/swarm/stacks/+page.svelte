@@ -58,7 +58,13 @@
 	]);
 </script>
 
-<ResourcePageLayout title={m.swarm_stacks_title()} subtitle={m.swarm_stacks_subtitle()} {actionButtons} {statCards}>
+<ResourcePageLayout
+	title={m.swarm_stacks_title()}
+	subtitle={m.swarm_stacks_subtitle()}
+	{actionButtons}
+	{statCards}
+	environmentPicker
+>
 	{#snippet mainContent()}
 		<SwarmStacksTable bind:stacks bind:requestOptions />
 	{/snippet}

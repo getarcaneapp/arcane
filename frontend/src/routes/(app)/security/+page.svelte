@@ -3,9 +3,11 @@
 	import { toast } from 'svelte-sonner';
 
 	import FeatureDisabled from '#lib/components/features/feature-disabled.svelte';
+	import EnvironmentDestinationSelect from '#lib/components/form/environment-destination-select.svelte';
 	import { EmptyState } from '#lib/components/states/index.js';
 	import { TabBar, type TabItem } from '#lib/components/tab-bar/index.js';
 	import * as Tabs from '#lib/components/ui/tabs/index.js';
+	import { TABLE_PAGE_SIZE_ALL } from '#lib/constants/table-pagination.js';
 	import { useEnvironmentRefresh } from '#lib/hooks/use-environment-refresh.svelte.js';
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';
 	import { ActivityIcon, ImagesIcon, InspectIcon, ScanIcon, ShieldAlertIcon, ShieldCheckIcon } from '#lib/icons/index.js';
@@ -16,28 +18,34 @@
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { featureStore } from '#lib/stores/features.store.svelte.js';
-	import type { ImagePatchTargetDto } from '#lib/types/docker.js';
-	import type { VulnerabilityRiskOverview, VulnerabilityWithImage } from '#lib/types/environment.js';
+	import type { VulnerabilityRiskOverview } from '#lib/types/environment.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { extractApiErrorMessage, parallelRefresh } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
+	import { fetchAcrossEnvironments } from '#lib/utils/environments.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 	import {
 		getSeveritySegments,
 		mapVulnerabilityPage,
 		mapVulnerabilityRequest,
-		withVulnerabilityToggles
+		vulnerabilityEnvironments,
+		vulnerabilityOverviewEnvironment,
+		vulnerabilityOverviewEnvironments,
+		vulnerabilitySortValue,
+		withVulnerabilityToggles,
+		type VulnerabilityRow
 	} from '#lib/utils/vulnerability.js';
 
 	import SecurityOverview from './components/security-overview.svelte';
-	import SecurityPatchTable from './components/security-patch-table.svelte';
+	import SecurityPatchTable, { fetchPatchTargets, type PatchTargetPage } from './components/security-patch-table.svelte';
 	import SecurityVulnerabilityTable from './components/security-vulnerability-table.svelte';
 
 	let { data } = $props();
 	let displayedEnvId = $derived(data.envId);
+	// Rows carry their environment, so they are cleared when the shown environments change too.
+	let displayedShownKey = environmentStore.shownKey;
 
 	let overview = $derived<VulnerabilityRiskOverview | null>(data.overview);
-	type VulnerabilityRow = VulnerabilityWithImage & { id: string };
 
 	let vulnerabilities = $derived<Paginated<VulnerabilityRow>>(data.vulnerabilities);
 	let requestOptions = $derived<SearchPaginationSortRequest>(data.vulnerabilityRequestOptions);
@@ -69,22 +77,22 @@
 	let scanPollTimeout: ReturnType<typeof setTimeout> | null = null;
 	// Set once on destroy so an in-flight poll tick can't re-arm a timer on a dead component.
 	let destroyed = false;
+	let refreshGeneration = 0;
 
 	// Patch targets, loaded when the tab is first opened
-	type PatchTargetRow = ImagePatchTargetDto & { id: string };
-	let patchTargets = $state<Paginated<PatchTargetRow>>({
+	let patchTargets = $state<PatchTargetPage>({
 		data: [],
 		pagination: { totalPages: 0, totalItems: 0, currentPage: 1, itemsPerPage: 20 }
 	});
 	let patchRequestOptions = $derived<SearchPaginationSortRequest>(data.patchRequestOptions);
 	async function loadPatches() {
 		if (!vulnerabilityManagementEnabled) return;
-		const requestedEnvId = currentEnvId;
+		const requestedScope = scopeKey();
 		const operationResult = await tryCatch(
 			(async () => {
-				const response = await imageService.listPatchTargets(patchRequestOptions);
-				if (destroyed || !vulnerabilityManagementEnabled || requestedEnvId !== currentEnvId) return;
-				patchTargets = { ...response, data: (response.data ?? []).map((t) => ({ ...t, id: t.imageId })) };
+				const response = await fetchPatchTargets(patchRequestOptions);
+				if (destroyed || !vulnerabilityManagementEnabled || requestedScope !== scopeKey()) return;
+				patchTargets = response;
 			})()
 		);
 		if (operationResult.error !== null) {
@@ -98,13 +106,13 @@
 	const severityItems = $derived(getSeveritySegments(overview?.summary));
 
 	async function refreshOverview() {
-		const requestedEnvId = currentEnvId;
-		const result = await tryCatch(vulnerabilityService.getRiskOverviewForEnvironment(requestedEnvId));
+		const requestedScope = scopeKey();
+		const result = await tryCatch(vulnerabilityService.getRiskOverviewForEnvironment(overviewEnvironmentId));
 		if (result.error !== null) {
 			toast.error(m.common_refresh_failed({ resource: m.security() }), { description: extractApiErrorMessage(result.error) });
 			return;
 		}
-		if (!destroyed && vulnerabilityManagementEnabled && requestedEnvId === currentEnvId) overview = result.data;
+		if (!destroyed && vulnerabilityManagementEnabled && requestedScope === scopeKey()) overview = result.data;
 	}
 
 	async function showVulnerability(vulnerabilityId: string) {
@@ -122,38 +130,48 @@
 	// reset drops retained data first so a failed reload leaves the page empty rather than stale.
 	async function refreshAll(reset = false) {
 		const requestedEnvId = currentEnvId;
+		const requestedScope = scopeKey();
+		// A newer refresh wins, so an older one finishing last cannot put removed environments back.
+		const generation = ++refreshGeneration;
+		const stillCurrent = () =>
+			!destroyed && vulnerabilityManagementEnabled && requestedScope === scopeKey() && generation === refreshGeneration;
 		selectedVulnerabilityIds = [];
-		if (reset || displayedEnvId !== requestedEnvId) {
+		if (reset || displayedEnvId !== requestedEnvId || displayedShownKey !== environmentStore.shownKey) {
 			overview = null;
 			vulnerabilities = { data: [], pagination: { totalPages: 0, totalItems: 0, currentPage: 1, itemsPerPage: 20 } };
 			patchTargets = { data: [], pagination: { totalPages: 0, totalItems: 0, currentPage: 1, itemsPerPage: 20 } };
 			displayedEnvId = requestedEnvId;
+			displayedShownKey = environmentStore.shownKey;
 		}
-		await featureStore.refresh(requestedEnvId);
-		if (requestedEnvId !== currentEnvId || !vulnerabilityManagementEnabled) return;
+		await Promise.all(environmentStore.shown.map((env) => featureStore.refresh(env.id)));
+		if (!stillCurrent()) return;
 		const requestForApi = mapVulnerabilityRequest(withVulnerabilityToggles(requestOptions, { showIgnored, fixAvailable }));
 		await parallelRefresh(
 			{
 				overview: {
-					fetch: () => vulnerabilityService.getRiskOverviewForEnvironment(requestedEnvId),
+					fetch: () => vulnerabilityService.getRiskOverviewForEnvironment(overviewEnvironmentId),
 					onSuccess: (data) => {
-						if (!destroyed && vulnerabilityManagementEnabled && requestedEnvId === currentEnvId) overview = data;
+						if (stillCurrent()) overview = data;
 					},
 					errorMessage: m.common_refresh_failed({ resource: m.security() })
 				},
 				vulnerabilities: {
-					fetch: () => vulnerabilityService.getAllVulnerabilitiesForEnvironment(requestedEnvId, requestForApi),
+					fetch: () =>
+						fetchAcrossEnvironments(
+							vulnerabilityEnvironments(),
+							requestForApi,
+							(id, request, config) => vulnerabilityService.getAllVulnerabilitiesForEnvironment(id, request, config),
+							vulnerabilitySortValue
+						),
 					onSuccess: (data) => {
-						if (!destroyed && vulnerabilityManagementEnabled && requestedEnvId === currentEnvId)
-							vulnerabilities = mapVulnerabilityPage(data, requestOptions);
+						if (stillCurrent()) vulnerabilities = mapVulnerabilityPage(data, requestOptions);
 					},
 					errorMessage: m.common_refresh_failed({ resource: m.vuln_title() })
 				},
 				patches: {
-					fetch: () => imageService.listPatchTargets(patchRequestOptions),
+					fetch: () => fetchPatchTargets(patchRequestOptions),
 					onSuccess: (data) => {
-						if (!destroyed && vulnerabilityManagementEnabled && requestedEnvId === currentEnvId)
-							patchTargets = { ...data, data: (data.data ?? []).map((t: ImagePatchTargetDto) => ({ ...t, id: t.imageId })) };
+						if (stillCurrent()) patchTargets = data;
 					},
 					errorMessage: m.common_refresh_failed({ resource: m.patches() })
 				}
@@ -234,24 +252,29 @@
 	useEnvironmentRefresh(refreshAll);
 
 	onMount(() => {
-		let activePatchActivityIds = new Set<string>();
-		let observedEnvironmentId: string | undefined;
+		// Activity ID to type for the patches and scans still running.
+		let activeActivities = new Map<string, string>();
+		let observedScope: string | undefined;
 		return activityStore.subscribeActivities((activities) => {
-			const environmentId = environmentStore.selected?.id;
-			const active = new Set(
+			// Patches and scans run in each row's own environment, so every shown one is watched.
+			const environmentIds = environmentStore.shown.map((env) => env.id);
+			const active = new Map(
 				activities
 					.filter(
 						(activity) =>
-							(activity.sourceEnvironmentId || activity.environmentId || '0') === environmentId &&
+							environmentIds.includes(activity.sourceEnvironmentId || activity.environmentId || '0') &&
 							(activity.type === 'image_patch' || activity.type === 'vulnerability_scan') &&
 							(activity.status === 'queued' || activity.status === 'running')
 					)
-					.map((activity) => activity.id)
+					.map((activity) => [activity.id, activity.type] as const)
 			);
-			const finished = observedEnvironmentId === environmentId && [...activePatchActivityIds].some((id) => !active.has(id));
-			observedEnvironmentId = environmentId;
-			activePatchActivityIds = active;
-			if (finished && environmentId && hasPermission('images:read', environmentId)) void loadPatches();
+			const scope = environmentStore.shownKey;
+			const finished = observedScope === scope ? [...activeActivities].filter(([id]) => !active.has(id)) : [];
+			observedScope = scope;
+			activeActivities = active;
+			// Scan polling follows one environment's overview, so with several shown a finished scan refreshes findings.
+			if (environmentIds.length > 1 && finished.some(([, type]) => type === 'vulnerability_scan')) void refreshAll();
+			else if (finished.length > 0 && environmentIds.some((id) => hasPermission('images:read', id))) void loadPatches();
 		});
 	});
 
@@ -263,18 +286,30 @@
 	async function scanAllImages() {
 		if (!vulnerabilityManagementEnabled || isLoading.scanningAll) return;
 
-		const requestedEnvId = currentEnvId;
+		const requestedScope = scopeKey();
 		isLoading.scanningAll = true;
 		scanProgress = { current: 0, total: 0 };
 
 		try {
 			const operationResult = await tryCatch(
 				(async () => {
-					// Fetch all images with a high limit to get all of them
-					const imagesResponse = await imageService.getImages({
-						pagination: { page: 1, limit: 1000 }
-					});
+					// Fetch all images with a high limit to get all of them; merged, every environment's whole list.
+					const environments = vulnerabilityEnvironments().filter((env) => hasPermission('vulnerabilities:scan', env.id));
+					const limit = environments.length > 1 ? TABLE_PAGE_SIZE_ALL : 1000;
+					const imagesResponse = await fetchAcrossEnvironments(
+						environments,
+						{ pagination: { page: 1, limit } },
+						(id, request, config) => imageService.getImagesForEnvironment(id, request, config)
+					);
 					const images = imagesResponse.data ?? [];
+					// Environments whose images could not be listed were not scanned.
+					const skipped = imagesResponse.failedEnvironments ?? [];
+					for (const { environment, message } of skipped) {
+						toast.error(m.all_environments_request_failed({ environment: environment.name }), {
+							id: `environment-request-failed-${environment.id}`,
+							description: message
+						});
+					}
 
 					if (images.length === 0) {
 						toast.info(m.security_no_images_to_scan());
@@ -289,14 +324,14 @@
 					let failed = 0;
 
 					for (let i = 0; i < images.length; i += BATCH_SIZE) {
-						if (destroyed || !vulnerabilityManagementEnabled || requestedEnvId !== currentEnvId) return;
+						if (destroyed || !vulnerabilityManagementEnabled || requestedScope !== scopeKey()) return;
 						const batch = images.slice(i, i + BATCH_SIZE);
 
 						await Promise.all(
 							batch.map(async (image) => {
 								const operationResult = await tryCatch(
 									(async () => {
-										const result = await vulnerabilityService.scanImage(image.id, requestedEnvId);
+										const result = await vulnerabilityService.scanImage(image.id, image.environmentId);
 										if (result.status === 'completed' || result.status === 'scanning' || result.status === 'pending') {
 											succeeded++;
 										} else {
@@ -316,7 +351,9 @@
 					}
 
 					// Show summary toast (scans run in background; this reflects requests started, not completed)
-					if (failed === 0) {
+					if (failed === 0 && skipped.length > 0) {
+						toast.warning(m.security_scan_all_success({ count: succeeded }));
+					} else if (failed === 0) {
 						toast.success(m.security_scan_all_success({ count: succeeded }));
 					} else if (succeeded === 0) {
 						toast.error(m.security_scan_all_failed({ count: failed }));
@@ -341,7 +378,10 @@
 	}
 
 	const currentEnvId = $derived(environmentStore.selected?.id || '0');
-	const vulnerabilityManagementEnabled = $derived(featureStore.isEnabled('vulnerabilityManagement', currentEnvId));
+	// Reads cover every shown environment, so a result is stale once the selection or the shown set changes.
+	const scopeKey = () => `${currentEnvId}|${environmentStore.shownKey}`;
+	const vulnerabilityManagementEnabled = $derived(vulnerabilityEnvironments().length > 0);
+	const overviewEnvironmentId = $derived(vulnerabilityOverviewEnvironment()?.id ?? currentEnvId);
 	let wasFeatureEnabled = true;
 	$effect(() => {
 		const enabled = vulnerabilityManagementEnabled;
@@ -353,7 +393,9 @@
 		}
 		wasFeatureEnabled = enabled;
 	});
-	const canScanVuln = $derived(vulnerabilityManagementEnabled && hasPermission('vulnerabilities:scan', currentEnvId));
+	const canScanVuln = $derived(
+		vulnerabilityManagementEnabled && vulnerabilityEnvironments().some((env) => hasPermission('vulnerabilities:scan', env.id))
+	);
 
 	const actionButtons: ActionButton[] = $derived.by(() => {
 		const buttons: ActionButton[] = [];
@@ -414,6 +456,14 @@
 	{/if}
 {/snippet}
 
+{#snippet overviewEnvironmentPicker()}
+	{#if environmentStore.shown.length > 1}
+		<div class="mb-3">
+			<EnvironmentDestinationSelect environments={vulnerabilityOverviewEnvironments()} />
+		</div>
+	{/if}
+{/snippet}
+
 <ResourcePageLayout
 	title={m.security()}
 	subtitle={m.security_subtitle()}
@@ -426,12 +476,14 @@
 			<Tabs.Root value={activeTab}>
 				<TabBar items={securityTabItems} value={activeTab} onValueChange={handleTabChange} />
 				<Tabs.Content value="overview" class="mt-4">
+					{@render overviewEnvironmentPicker()}
 					{#if overview}
-						<SecurityOverview {overview} onSelectVulnerability={showVulnerability} />
+						<SecurityOverview {overview} environmentId={overviewEnvironmentId} onSelectVulnerability={showVulnerability} />
 					{/if}
 				</Tabs.Content>
 				<Tabs.Content value="vulnerabilities" class="mt-4">
 					{#if overview}
+						{@render overviewEnvironmentPicker()}
 						<div class="mb-3 flex flex-wrap items-center gap-x-5 gap-y-1.5 text-xs text-muted-foreground">
 							<span>
 								{m.security_images_scanned()}:

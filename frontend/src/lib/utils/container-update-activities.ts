@@ -3,7 +3,7 @@ import type { Activity } from '#lib/types/activity.type.js';
 
 /** Tracks accepted updates and updates that were already running when a view mounted. */
 export function createContainerUpdateActivityTracker(
-	environmentId: () => string,
+	environmentIds: () => string[],
 	onTerminal: (activity: Activity) => void,
 	resourceId?: () => string
 ) {
@@ -11,10 +11,10 @@ export function createContainerUpdateActivityTracker(
 	const acceptedIds = new Set<string>();
 	const terminalIds = new Set<string>();
 	const refreshedIds = new Set<string>();
-	let observedKey = `${environmentId()}:${resourceId?.() ?? ''}`;
+	let observedKey = `${environmentIds().join(',')}:${resourceId?.() ?? ''}`;
 
 	function observe(activities: readonly Activity[]) {
-		const currentKey = `${environmentId()}:${resourceId?.() ?? ''}`;
+		const currentKey = `${environmentIds().join(',')}:${resourceId?.() ?? ''}`;
 		if (observedKey !== currentKey) {
 			activeIds.clear();
 			acceptedIds.clear();
@@ -26,7 +26,7 @@ export function createContainerUpdateActivityTracker(
 			if (
 				activity.type !== 'auto_update' ||
 				activity.resourceType !== 'container' ||
-				(activity.sourceEnvironmentId || activity.environmentId) !== environmentId() ||
+				!environmentIds().includes(activity.sourceEnvironmentId || activity.environmentId || '') ||
 				(resourceId && activity.resourceId !== resourceId())
 			)
 				continue;

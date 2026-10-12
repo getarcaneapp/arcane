@@ -10,12 +10,17 @@ import { ReconnectingWebSocket } from '#lib/utils/ws.js';
  * operation began (application startup included) without dredging up history
  * from previous runs. Returns a detach function that closes the stream.
  */
-export function attachProjectLogsToWatch(projectId: string, sinceEpochSeconds: number): () => void {
+export function attachProjectLogsToWatch(
+	projectId: string,
+	sinceEpochSeconds: number,
+	environmentId: string | undefined
+): () => void {
 	let active = true;
 
 	const client = new ReconnectingWebSocket<string>({
 		buildUrl: async () => {
-			const envId = await environmentStore.getCurrentEnvironmentId();
+			// The project's own environment; the selected one only when none is given.
+			const envId = environmentId ?? (await environmentStore.getCurrentEnvironmentId());
 			const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
 			return `${protocol}://${window.location.host}/api/environments/${envId}/ws/projects/${projectId}/logs?follow=true&tail=all&since=${sinceEpochSeconds}&timestamps=false&format=json&batched=true`;
 		},

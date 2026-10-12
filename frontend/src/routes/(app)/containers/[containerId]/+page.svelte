@@ -36,7 +36,6 @@
 	import { projectWorkspaceService } from '#lib/services/project-workspace-service.js';
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
-	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { ContainerDetailsDto, ContainerNetworkSettings, ContainerStats as ContainerStatsType } from '#lib/types/docker.js';
 	import type { IncludeFile } from '#lib/types/swarm.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
@@ -45,6 +44,7 @@
 	import { isAutoUpdateLabelDisabled } from '#lib/utils/container-auto-update.js';
 	import { createContainerUpdateActivityTracker } from '#lib/utils/container-update-activities.js';
 	import { calculateMemoryUsage, getThemedIconUrl } from '#lib/utils/docker.js';
+	import { environmentHref, listScopes } from '#lib/utils/environments.js';
 	import { bytes } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -149,7 +149,7 @@
 	);
 	const showNetworkTab = $derived(hasNetworks || hasPorts);
 	const hasMounts = $derived(!!(container?.mounts && container.mounts.length > 0));
-	const currentEnvId = $derived(environmentStore.selected?.id || '0');
+	const currentEnvId = $derived(data.envId);
 	const canViewLogs = $derived(hasPermission('containers:logs', currentEnvId));
 	const canExecShell = $derived(hasPermission('containers:exec', currentEnvId));
 	const canPauseContainer = $derived(hasPermission('containers:pause', currentEnvId));
@@ -179,7 +179,7 @@
 	let updateLoading = $state(false);
 	let updateViewMounted = false;
 	const updateActivities = createContainerUpdateActivityTracker(
-		() => currentEnvId,
+		() => [currentEnvId],
 		() => {
 			void refreshAfterUpdate();
 		},
@@ -200,7 +200,9 @@
 		const result = await tryCatch(containerService.getContainerForEnvironment(environmentId, containerId));
 		if (!updateViewMounted || environmentId !== currentEnvId || containerId !== container.id) return;
 		if (result.error instanceof APIError && result.error.status === 404) {
-			await queryClient.invalidateQueries({ queryKey: ['containers', environmentId] });
+			await Promise.all(
+				listScopes([environmentId]).map((scope) => queryClient.invalidateQueries({ queryKey: ['containers', scope] }))
+			);
 			if (!updateViewMounted || environmentId !== currentEnvId || containerId !== container.id) return;
 			await goto('/containers');
 			return;
@@ -212,9 +214,11 @@
 			return;
 		}
 		await Promise.all([
-			queryClient.invalidateQueries({ queryKey: ['containers', environmentId] }),
+			...listScopes([environmentId]).flatMap((scope) => [
+				queryClient.invalidateQueries({ queryKey: ['containers', scope] }),
+				queryClient.invalidateQueries({ queryKey: ['projects', scope] })
+			]),
 			queryClient.invalidateQueries({ queryKey: queryKeys.containers.detail(environmentId, containerId) }),
-			queryClient.invalidateQueries({ queryKey: ['projects', environmentId] }),
 			queryClient.invalidateQueries({ queryKey: queryKeys.projects.environment(environmentId) })
 		]);
 		if (updateViewMounted && environmentId === currentEnvId && containerId === container.id) await refreshAll();
@@ -241,6 +245,7 @@
 		await runContainerLifecycleAction({
 			action: 'pause',
 			containerId: container.id,
+			environmentId: currentEnvId,
 			setStatus: (status) => {
 				lifecycleStatus = status === 'pausing' ? status : '';
 			},
@@ -253,6 +258,7 @@
 		await runContainerLifecycleAction({
 			action: 'unpause',
 			containerId: container.id,
+			environmentId: currentEnvId,
 			setStatus: (status) => {
 				lifecycleStatus = status === 'unpausing' ? status : '';
 			},
@@ -306,10 +312,7 @@
 		const includes = proj.includeFiles ?? [];
 		if (includes.length === 0) return null;
 
-		const envId = await tryCatch(environmentStore.getCurrentEnvironmentId()).then((result) =>
-			result.error ? null : result.data
-		);
-		if (!envId) return null;
+		const envId = currentEnvId;
 
 		for (const f of includes) {
 			if (f.content && hasServiceInContent(f.content, svcName)) {
@@ -370,7 +373,7 @@
 		const projectId = page.url.searchParams.get('projectId');
 
 		if (from === 'project' && projectId) {
-			return `/projects/${projectId}`;
+			return environmentHref(`/projects/${projectId}`, currentEnvId);
 		}
 
 		return '/containers';
@@ -386,7 +389,7 @@
 				label: m.common_edit(),
 				icon: EditIcon,
 				group: 'manage',
-				href: `/containers/${container.id}/edit`
+				href: environmentHref(`/containers/${container.id}/edit`, currentEnvId)
 			});
 		}
 		if (canConvertToCompose) {
@@ -466,7 +469,13 @@
 			<Badge variant="amber" minWidth="20">{m.sidebar_update_available()}</Badge>
 		{/if}
 		{#if project && composeInfo}
-			<Badge variant="gray" size="sm" href="/projects/{project.id}" title={m.projects_title()} class="max-w-40">
+			<Badge
+				variant="gray"
+				size="sm"
+				href={environmentHref(`/projects/${project.id}`, currentEnvId)}
+				title={m.projects_title()}
+				class="max-w-40"
+			>
 				<span class="block min-w-0 truncate">
 					{composeInfo.projectName}
 				</span>
@@ -479,9 +488,10 @@
 	{#await serviceComposeSourcePromise then serviceComposeSource}
 		{#if project && serviceComposeSource}
 			<Tabs.Content value="compose" class="h-full min-h-0">
-				{#key `${project?.id}-${serviceComposeSource?.includeFile?.relativePath ?? 'root'}`}
+				{#key `${currentEnvId}:${project?.id}-${serviceComposeSource?.includeFile?.relativePath ?? 'root'}`}
 					<ContainerComposePanel
 						{project}
+						environmentId={currentEnvId}
 						serviceName={composeServiceName}
 						includeFile={serviceComposeSource.includeFile}
 						rootFilename={rootComposeFilename}
@@ -496,6 +506,7 @@
 	<Tabs.Content value="overview" class="h-full">
 		<ContainerOverview
 			{container}
+			environmentId={currentEnvId}
 			{primaryIpAddress}
 			{autoUpdateEnabled}
 			{autoUpdateLabelControlled}
@@ -527,15 +538,16 @@
 
 	<Tabs.Content value="processes" class="h-full">
 		{#if activeTab === 'processes'}
-			<ContainerProcesses containerId={container.id} status={containerStatus} />
+			<ContainerProcesses containerId={container.id} environmentId={currentEnvId} status={containerStatus} />
 		{/if}
 	</Tabs.Content>
 
 	<Tabs.Content value="logs" class="h-full">
 		{#if activeTab === 'logs'}
-			{#key container?.id}
+			{#key `${currentEnvId}:${container?.id}`}
 				<ContainerLogsPanel
 					containerId={container?.id}
+					environmentId={currentEnvId}
 					{stats}
 					{hasInitialStatsLoaded}
 					isRunning={!!container.state?.running}
@@ -549,7 +561,12 @@
 	{#if showShell}
 		<Tabs.Content value="shell" class="h-full">
 			{#if activeTab === 'shell'}
-				<ContainerShell containerId={container?.id} labels={container?.labels} name={container?.name} />
+				<ContainerShell
+					containerId={container?.id}
+					environmentId={currentEnvId}
+					labels={container?.labels}
+					name={container?.name}
+				/>
 			{/if}
 		</Tabs.Content>
 	{/if}
@@ -568,7 +585,7 @@
 
 	{#if showNetworkTab}
 		<Tabs.Content value="network" class="h-full">
-			<ContainerNetwork {container} />
+			<ContainerNetwork {container} environmentId={currentEnvId} />
 		</Tabs.Content>
 	{/if}
 
@@ -589,6 +606,7 @@
 	{#key `${currentEnvId}:${container.id}`}
 		<ContainerDetailStatsSync
 			containerId={container.id}
+			environmentId={currentEnvId}
 			enabled={(activeTab === 'stats' || activeTab === 'logs') && !!container.state?.running}
 			bind:stats
 			bind:hasInitialStatsLoaded
@@ -604,6 +622,7 @@
 		{#snippet headerActions()}
 			<ActionButtons
 				id={container.id}
+				environmentId={currentEnvId}
 				name={containerDisplayName}
 				type="container"
 				itemState={container.state?.running ? 'running' : 'stopped'}
@@ -622,6 +641,7 @@
 		<KillContainerDialog
 			containerId={container.id}
 			containerName={containerDisplayName}
+			environmentId={currentEnvId}
 			onClose={() => (killDialogOpen = false)}
 			onComplete={() => {
 				killDialogOpen = false;
@@ -634,6 +654,7 @@
 			bind:open={commitDialogOpen}
 			containerId={container.id}
 			containerName={containerDisplayName}
+			environmentId={currentEnvId}
 			onCommitted={refreshContainerDetails}
 		/>
 	{/if}

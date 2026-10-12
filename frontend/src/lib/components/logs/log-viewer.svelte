@@ -24,6 +24,8 @@
 	interface Props {
 		class?: string;
 		containerId?: string | null;
+		/** Environment that owns the resource; defaults to the selected one. */
+		environmentId?: string;
 		projectId?: string | null;
 		serviceId?: string | null;
 		type?: 'container' | 'project' | 'service';
@@ -44,6 +46,7 @@
 	let {
 		class: className,
 		containerId = null,
+		environmentId,
 		projectId = null,
 		serviceId = null,
 		type = 'container',
@@ -162,10 +165,12 @@
 	let currentStreamKey: string | null = null;
 	let streamSession = 0;
 	let currentStreamSession = 0;
+	// The environment is part of the key: the same ID in another environment is a different stream.
 	function streamKey() {
-		if (type === 'project') return projectId ? `project:${projectId}` : null;
-		if (type === 'service') return serviceId ? `svc:${serviceId}` : null;
-		return containerId ? `ctr:${containerId}` : null;
+		const env = environmentId ?? '';
+		if (type === 'project') return projectId ? `${env}:project:${projectId}` : null;
+		if (type === 'service') return serviceId ? `${env}:svc:${serviceId}` : null;
+		return containerId ? `${env}:ctr:${containerId}` : null;
 	}
 
 	const humanType = $derived(type === 'project' ? m.project() : type === 'service' ? m.swarm_service() : m.container());
@@ -178,7 +183,7 @@
 	}
 
 	async function buildLogWsEndpoint(): Promise<string> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+		const envId = environmentId ?? (await environmentStore.getCurrentEnvironmentId());
 		const basePath =
 			type === 'project'
 				? `/api/environments/${envId}/ws/projects/${projectId}/logs`

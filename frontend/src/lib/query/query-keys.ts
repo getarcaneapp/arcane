@@ -126,6 +126,7 @@ export const queryKeys = {
 		list: (environmentId: string, options: SearchPaginationSortRequest) =>
 			['images', environmentId, stableSerialize(options)] as const,
 		usageCounts: (environmentId: string) => ['images', 'usage-counts', environmentId] as const,
+		uploadLimit: (environmentId: string) => ['images', 'upload-limit', environmentId] as const,
 		history: (environmentId: string, imageId: string) => ['image', environmentId, imageId, 'history'] as const,
 		detail: (environmentId: string, imageId: string) => ['image', environmentId, imageId] as const,
 		updateCheck: (environmentId: string, imageId: string) => ['image-update', environmentId, imageId] as const,
@@ -177,6 +178,7 @@ export const queryKeys = {
 	},
 	volumes: {
 		sizes: (environmentId: string) => ['volume-sizes', environmentId] as const,
+		backupVolumeNames: (scope: string) => ['volume-backup-names', scope] as const,
 		table: (environmentId: string, options: SearchPaginationSortRequest) =>
 			['volumes', environmentId, stableSerialize(options)] as const,
 		detail: (environmentId: string, volumeName: string) => ['volume', environmentId, volumeName] as const,

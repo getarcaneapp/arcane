@@ -577,7 +577,7 @@ func (s *Service) preparePrunePlanInternal(ctx context.Context, req system.Prune
 	if selectPruneImagesErr := s.selectPruneImagesInternal(&plan, usage, imageRefs); selectPruneImagesErr != nil {
 		return plan, selectPruneImagesErr
 	}
-	selectPruneVolumesInternal(&plan, usage, volumeRefs)
+	s.selectPruneVolumesInternal(&plan, usage, volumeRefs)
 	if selectPruneNetworksErr := s.selectPruneNetworksInternal(ctx, dockerClient, &plan, selectedContainers); selectPruneNetworksErr != nil {
 		return plan, selectPruneNetworksErr
 	}
@@ -640,11 +640,13 @@ func (s *Service) selectPruneImagesInternal(plan *prunePlanInternal, usage clien
 	return nil
 }
 
-func selectPruneVolumesInternal(plan *prunePlanInternal, usage client.DiskUsageResult, volumeRefs map[string]int) {
+func (s *Service) selectPruneVolumesInternal(plan *prunePlanInternal, usage client.DiskUsageResult, volumeRefs map[string]int) {
 	req := plan.Request
 	if req.Volumes != nil && req.Volumes.Mode != system.PruneVolumeModeNone {
 		for _, item := range usage.Volumes.Items {
-			if item.UsageData == nil || item.UsageData.RefCount > int64(volumeRefs[item.Name]) || strings.EqualFold(item.Labels[libarcane.InternalResourceLabel], "true") {
+			// The backup volume is unused between backups but holds them, so it is never pruned.
+			if item.UsageData == nil || item.UsageData.RefCount > int64(volumeRefs[item.Name]) ||
+				strings.EqualFold(item.Labels[libarcane.InternalResourceLabel], "true") || s.volumeService.IsBackupVolume(item.Name) {
 				continue
 			}
 			if req.Volumes.Mode == system.PruneVolumeModeAnonymous {
@@ -960,7 +962,8 @@ func (s *Service) pruneResourceEligibleInternal(ctx context.Context, dockerClien
 					return false, true, nil
 				}
 				resource.Size = item.UsageData.Size
-				return item.UsageData.RefCount == 0 && !strings.EqualFold(item.Labels[libarcane.InternalResourceLabel], "true"), true, nil
+				return item.UsageData.RefCount == 0 && !strings.EqualFold(item.Labels[libarcane.InternalResourceLabel], "true") &&
+					!s.volumeService.IsBackupVolume(item.Name), true, nil
 			}
 		}
 	}

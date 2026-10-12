@@ -21,7 +21,6 @@
 	import { imageService } from '#lib/services/image-service.js';
 	import { networkService } from '#lib/services/network-service.js';
 	import { volumeService } from '#lib/services/volume-service.js';
-	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { ImageSearchResultDto } from '#lib/types/docker.js';
 	import { preventDefault, createForm } from '#lib/utils/settings.svelte.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
@@ -34,9 +33,11 @@
 		rows = $bindable(),
 		submitting = false,
 		cancelHref = '/containers',
+		environmentId,
 		onSubmit
 	}: {
 		mode: 'create' | 'edit';
+		environmentId: string;
 		form: ReturnType<typeof createForm<typeof containerFormSchema>>;
 		rows: ContainerFormRows;
 		submitting?: boolean;
@@ -47,7 +48,7 @@
 	// The form instance is created once by the page and never swapped.
 	// svelte-ignore state_referenced_locally
 	const inputs = form.inputs;
-	const envId = $derived(environmentStore.selected?.id || '0');
+	const envId = $derived(environmentId);
 
 	let selectedTab = $state('general');
 
@@ -76,11 +77,11 @@
 	const listOptions = { pagination: { page: 1, limit: 500 } };
 	const volumesQuery = createQuery(() => ({
 		queryKey: queryKeys.volumes.table(envId, listOptions),
-		queryFn: () => volumeService.getVolumes(listOptions)
+		queryFn: () => volumeService.getVolumesForEnvironment(envId, listOptions)
 	}));
 	const networksQuery = createQuery(() => ({
 		queryKey: queryKeys.networks.list(envId, listOptions),
-		queryFn: () => networkService.getNetworks(listOptions)
+		queryFn: () => networkService.getNetworksForEnvironment(envId, listOptions)
 	}));
 
 	const volumeNames = $derived((volumesQuery.data?.data ?? []).map((volume) => volume.name));
@@ -101,7 +102,7 @@
 		imageSearchTimer = setTimeout(async () => {
 			const operationResult1 = await tryCatch(
 				(async () => {
-					imageSuggestions = (await imageService.searchImages(term)).slice(0, 6);
+					imageSuggestions = (await imageService.searchImages(term, envId)).slice(0, 6);
 				})()
 			);
 			if (operationResult1.error !== null) {

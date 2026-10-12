@@ -155,6 +155,26 @@ export interface GoroutineLeakReport {
 	scannedAt: string;
 }
 
+export interface GoroutineFrame {
+	function: string;
+	file: string;
+	line: number;
+}
+
+export interface GoroutineGroup {
+	count: number;
+	/** Outermost non-runtime function, usually the goroutine's entry point. */
+	label: string;
+	/** Stack frames, innermost first. */
+	frames: GoroutineFrame[];
+}
+
+export interface GoroutineProfile {
+	total: number;
+	groups: GoroutineGroup[];
+	capturedAt: string;
+}
+
 export type PprofProfile =
 	| 'heap'
 	| 'goroutine'

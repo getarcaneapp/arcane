@@ -10,6 +10,7 @@
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
 	import type { SortState } from '#lib/components/arcane-table/arcane-table.types.svelte';
 	import ActionMenuItem from '#lib/components/arcane-table/cells/action-menu-item.svelte';
+	import { environmentColumns } from '#lib/components/arcane-table/environment-column.js';
 	import type { ColumnSpec, BulkAction } from '#lib/components/arcane-table/index.js';
 	import { UniversalMobileCard } from '#lib/components/arcane-table/index.js';
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
@@ -43,6 +44,7 @@
 		InfoIcon
 	} from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
 	import {
 		containerService,
 		type ContainerListRequestOptions,
@@ -57,10 +59,20 @@
 	import { hasAnyLoadingState } from '#lib/utils/bulk-actions.js';
 	import { createContainerUpdateActivityTracker } from '#lib/utils/container-update-activities.js';
 	import { COMPOSE_PROJECT_LABEL, getContainerIpAddresses, getThemedIconUrl, parseImageRef } from '#lib/utils/docker.js';
+	import {
+		environmentHref,
+		fetchAcrossEnvironments,
+		hasShownPermission,
+		listScopes,
+		rowKey,
+		type EnvironmentPage,
+		type EnvironmentRow
+	} from '#lib/utils/environments.js';
 	import { formatDateTimeShort, truncateImageDigest } from '#lib/utils/formatting.js';
 
 	import { createContainerActions } from '../container-table.actions';
 	import {
+		containerSortValue,
 		getActionStatusMessage,
 		getContainerDisplayName,
 		getProjectName,
@@ -75,9 +87,11 @@
 	import KillContainerDialog from './kill-container-dialog.svelte';
 
 	type FieldVisibility = Record<string, boolean>;
+	type ContainerRow = EnvironmentRow<ContainerSummaryDto>;
+	type ContainerPage = EnvironmentPage<ContainersPaginatedResponse>;
 
 	let {
-		environmentId,
+		scope,
 		containers = $bindable(),
 		selectedIds = $bindable(),
 		requestOptions = $bindable(),
@@ -85,13 +99,14 @@
 		withoutFilters = false,
 		onRefreshData
 	}: {
-		environmentId: string;
-		containers: ContainersPaginatedResponse;
+		/** Shown-environments scope the rows were loaded for. */
+		scope: string;
+		containers: ContainerPage;
 		selectedIds: string[];
 		requestOptions: SearchPaginationSortRequest;
 		groupByProject?: boolean;
 		withoutFilters?: boolean;
-		onRefreshData?: (options: ContainerListRequestOptions) => Promise<ContainersPaginatedResponse>;
+		onRefreshData?: (options: ContainerListRequestOptions) => Promise<ContainerPage>;
 	} = $props();
 
 	// Track action status per container ID (e.g., "starting", "stopping", "updating", "")
@@ -109,13 +124,17 @@
 	const queryClient = useQueryClient();
 	let updateTableMounted = false;
 	const updateActivities = createContainerUpdateActivityTracker(
-		() => environmentId,
+		() => environmentStore.shown.map((env) => env.id),
 		() => {
-			if (!updateTableMounted || environmentId !== environmentStore.selected?.id) return;
-			void queryClient.invalidateQueries({ queryKey: ['containers', environmentId] });
-			void queryClient.invalidateQueries({ queryKey: ['container', environmentId] });
-			void queryClient.invalidateQueries({ queryKey: ['projects', environmentId] });
-			void queryClient.invalidateQueries({ queryKey: ['project', environmentId] });
+			if (!updateTableMounted || scope !== environmentStore.shownKey) return;
+			for (const listScope of listScopes(environmentStore.shown.map((env) => env.id))) {
+				void queryClient.invalidateQueries({ queryKey: ['containers', listScope] });
+				void queryClient.invalidateQueries({ queryKey: ['projects', listScope] });
+			}
+			for (const env of environmentStore.shown) {
+				void queryClient.invalidateQueries({ queryKey: ['container', env.id] });
+				void queryClient.invalidateQueries({ queryKey: queryKeys.projects.environment(env.id) });
+			}
 			void refreshContainers(requestOptions);
 		}
 	);
@@ -141,8 +160,15 @@
 		};
 	}
 
-	async function fetchContainers(request: ContainerListRequestOptions): Promise<ContainersPaginatedResponse> {
-		return onRefreshData ? onRefreshData(request) : containerService.getContainers(request);
+	async function fetchContainers(request: ContainerListRequestOptions): Promise<ContainerPage> {
+		return onRefreshData
+			? onRefreshData(request)
+			: fetchAcrossEnvironments(
+					environmentStore.shown,
+					request,
+					(id, request, config) => containerService.getContainersForEnvironment(id, request, config),
+					containerSortValue
+				);
 	}
 
 	// Refreshes can overlap: a resource poll may still be in flight when the user changes
@@ -222,11 +248,11 @@
 		refreshContainers: () => refreshContainers(requestOptions),
 		actionStatus,
 		isBulkLoading,
-		environmentId: () => environmentId,
+		scope: () => scope,
 		onUpdateAccepted: (activity) => {
 			if (updateTableMounted) updateActivities.accept(activity);
 		},
-		canRefreshUpdates: () => updateTableMounted && environmentId === environmentStore.selected?.id
+		canRefreshUpdates: () => updateTableMounted && scope === environmentStore.shownKey
 	});
 
 	const isAnyLoading = $derived(hasAnyLoadingState(actionStatus, isBulkLoading));
@@ -267,11 +293,10 @@
 		}
 
 		const runningContainers = containers.data?.filter((c) => c.state === 'running') ?? [];
-		return new Set(runningContainers.map((c) => c.id));
+		return new Set(runningContainers.map((c) => rowKey(c)));
 	});
 
-	const currentEnvId = $derived(environmentStore.selected?.id || '0');
-	const resourcesCurrent = $derived(environmentId === currentEnvId);
+	const resourcesCurrent = $derived(scope === environmentStore.shownKey);
 
 	// Only the on/off state is tracked here. The callback reads requestOptions when
 	// it runs, so pagination or filter changes do not restart the poll cycle.
@@ -280,35 +305,34 @@
 		resourcePoller.start(() => refreshContainers(requestOptions));
 		return () => resourcePoller.stop();
 	});
-	const canUpdateContainers = $derived(hasPermission('containers:autoupdate', currentEnvId));
-	const canEditContainers = $derived(hasPermission('containers:edit', currentEnvId));
-	const canStartContainers = $derived(hasPermission('containers:start', currentEnvId));
-	const canStopContainers = $derived(hasPermission('containers:stop', currentEnvId));
-	const canRestartContainers = $derived(hasPermission('containers:restart', currentEnvId));
-	const canDeleteContainers = $derived(hasPermission('containers:delete', currentEnvId));
+	const canUpdateContainers = $derived(hasShownPermission('containers:autoupdate'));
+	const canStartContainers = $derived(hasShownPermission('containers:start'));
+	const canStopContainers = $derived(hasShownPermission('containers:stop'));
+	const canRestartContainers = $derived(hasShownPermission('containers:restart'));
+	const canDeleteContainers = $derived(hasShownPermission('containers:delete'));
 	// Reserve room for per-row state buttons so every State cell fits the width measured from the first rows.
 	const stateActionsMinWidth = $derived.by(() => {
 		if (canUpdateContainers) return 'min-w-15';
 		if (canStartContainers || canStopContainers) return 'min-w-7';
 		return '';
 	});
-	const canKillContainers = $derived(hasPermission('containers:kill', currentEnvId));
 	const canConvertToCompose = $derived(
-		hasPermission('projects:create', currentEnvId) && settingsStore.current?.experimentalFeaturesEnabled === true
+		hasShownPermission('projects:create') && settingsStore.current?.experimentalFeaturesEnabled === true
+	);
+	const selectedEnvironmentIds = $derived(
+		new Set(containers.data?.filter((c) => selectedIds?.includes(rowKey(c))).map((c) => c.environmentId))
 	);
 
 	function handleBulkConvert(ids: string[]) {
-		const convertibleIds = ids.filter((id) => {
-			const container = containers.data?.find((c) => c.id === id);
-			return container && !container.labels?.[COMPOSE_PROJECT_LABEL];
-		});
-		if (convertibleIds.length === 0) return;
-		goto(`/projects/new?fromContainers=${convertibleIds.join(',')}&fromEnv=${encodeURIComponent(currentEnvId)}`);
+		const convertible = (containers.data ?? []).filter((c) => ids.includes(rowKey(c)) && !c.labels?.[COMPOSE_PROJECT_LABEL]);
+		if (convertible.length === 0) return;
+		const fromEnv = encodeURIComponent(convertible[0]!.environmentId);
+		goto(`/projects/new?fromContainers=${convertible.map((c) => c.id).join(',')}&fromEnv=${fromEnv}`);
 	}
 
 	function filterUpdatableContainerIds() {
 		return selectedIds?.filter((id) => {
-			const container = containers.data?.find((c) => c.id === id);
+			const container = containers.data?.find((c) => rowKey(c) === id);
 			return container?.updateInfo?.hasUpdate;
 		});
 	}
@@ -325,9 +349,9 @@
 
 	// The dialog is mounted only while a row is targeted, so it gets fresh state on
 	// every open; clearing the target unmounts it.
-	let killTarget = $state<ContainerSummaryDto | null>(null);
+	let killTarget = $state<ContainerRow | null>(null);
 
-	function openKillDialog(container: ContainerSummaryDto) {
+	function openKillDialog(container: ContainerRow) {
 		killTarget = container;
 	}
 
@@ -384,6 +408,7 @@
 	}
 
 	const columns = $derived([
+		...environmentColumns<ContainerRow>(),
 		{ accessorKey: 'id', title: m.common_id(), cell: IdCell, hidden: true },
 		{
 			accessorKey: 'names',
@@ -420,14 +445,14 @@
 			id: 'cpuUsage',
 			// TanStack only treats accessor columns as sortable, so the sampled value is
 			// exposed even though ordering happens on the server.
-			accessorFn: (row) => row.resourceSample?.cpuPercent ?? null,
+			accessorFn: (row) => containerSortValue(row, 'cpuUsage'),
 			title: m.cpu_usage(),
 			sortable: !groupByProject && resourceSortSupported,
 			cell: CPUCell
 		},
 		{
 			id: 'memoryUsage',
-			accessorFn: (row) => row.resourceSample?.memoryUsageBytes ?? null,
+			accessorFn: (row) => containerSortValue(row, 'memoryUsage'),
 			title: m.memory_usage(),
 			sortable: !groupByProject && resourceSortSupported,
 			cell: MemoryCell
@@ -458,7 +483,7 @@
 			title: m.common_labels(),
 			hidden: true
 		}
-	] satisfies ColumnSpec<ContainerSummaryDto>[]);
+	] satisfies ColumnSpec<ContainerRow>[]);
 
 	const mobileFields = [
 		{ id: 'id', label: m.common_id(), defaultVisible: false },
@@ -562,7 +587,7 @@
 						}),
 						action: 'base' as const,
 						onClick: handleBulkConvert,
-						disabled: !resourcesCurrent || isAnyLoading,
+						disabled: !resourcesCurrent || isAnyLoading || selectedEnvironmentIds.size > 1,
 						icon: ProjectsIcon
 					}
 				]
@@ -574,13 +599,13 @@
 		return ProjectsIcon;
 	}
 
-	function getGroupName(item: ContainerSummaryDto): string {
+	function getGroupName(item: ContainerRow): string {
 		return getProjectName(item);
 	}
 </script>
 
 {#if resourcesCurrent}
-	<ContainerStatsSync {statsManager} envId={environmentId} targetIds={shouldConnect} />
+	<ContainerStatsSync {statsManager} targetIds={shouldConnect} />
 {/if}
 
 {#snippet IPAddressCell({ item }: { item: ContainerSummaryDto })}
@@ -618,9 +643,9 @@
 		/>
 	{:else}
 		<ContainerStatsCell
-			value={statsManager.getCPUPercent(item.id)}
-			loading={statsManager.isLoading(item.id) ?? false}
-			unavailable={statsManager.hasError(item.id)}
+			value={statsManager.getCPUPercent(rowKey(item))}
+			loading={statsManager.isLoading(rowKey(item)) ?? false}
+			unavailable={statsManager.hasError(rowKey(item))}
 			stopped={item.state !== 'running'}
 			type="cpu"
 		/>
@@ -637,11 +662,11 @@
 			type="memory"
 		/>
 	{:else}
-		{@const memoryData = statsManager.getMemoryUsage(item.id)}
+		{@const memoryData = statsManager.getMemoryUsage(rowKey(item))}
 		<ContainerStatsCell
 			value={memoryData?.usage}
 			limit={memoryData?.limit}
-			unavailable={statsManager.hasError(item.id)}
+			unavailable={statsManager.hasError(rowKey(item))}
 			stopped={item.state !== 'running'}
 			type="memory"
 		/>
@@ -652,13 +677,15 @@
 	<PortBadge ports={item.ports ?? []} hideExposed={hideExposedPorts} wrap={false} />
 {/snippet}
 
-{#snippet NameCell({ item }: { item: ContainerSummaryDto })}
+{#snippet NameCell({ item }: { item: ContainerRow })}
 	{@const displayName = getContainerDisplayName(item)}
 	{@const iconUrl = getThemedIconUrl(item, mode.current)}
 	{@const projectLabel = item.labels?.[COMPOSE_PROJECT_LABEL]}
 	<div class="flex items-center gap-2">
 		<IconImage src={iconUrl} alt={displayName} fallback={BoxIcon} class="size-6" containerClass="size-8 shrink-0" />
-		<a class="min-w-0 truncate font-medium hover:underline" href="/containers/{item.id}">{displayName}</a>
+		<a class="min-w-0 truncate font-medium hover:underline" href={environmentHref(`/containers/${item.id}`, item.environmentId)}
+			>{displayName}</a
+		>
 		{#if item.hidden}
 			<Badge variant="gray" size="sm">{m.hidden()}</Badge>
 		{/if}
@@ -676,8 +703,8 @@
 	<span class="font-mono text-sm">{String(item.id)}</span>
 {/snippet}
 
-{#snippet StateCell({ item }: { item: ContainerSummaryDto })}
-	{@const status = actionStatus[item.id]}
+{#snippet StateCell({ item }: { item: ContainerRow })}
+	{@const status = actionStatus[rowKey(item)]}
 	<div class="flex items-center gap-2">
 		{#if status}
 			<div class="flex items-center gap-1.5">
@@ -690,30 +717,30 @@
 			<Badge variant={getStateBadgeVariant(item.state)} minWidth="20">{getContainerStatusLabel(item.state)}</Badge>
 		{/if}
 		<div class="flex items-center gap-1 {stateActionsMinWidth}">
-			{#if !status && item.state !== 'running' && canStartContainers}
+			{#if !status && item.state !== 'running' && hasPermission('containers:start', item.environmentId)}
 				<ArcaneButton
 					action="base"
 					tone="outline"
 					size="sm"
 					class="size-7 border-transparent bg-transparent p-0 text-success shadow-none hover:bg-success/10 hover:text-success"
-					onclick={() => performContainerAction('start', item.id)}
+					onclick={() => performContainerAction('start', item.id, item.environmentId)}
 					disabled={!resourcesCurrent || isAnyLoading}
 					icon={StartIcon}
 					title={m.common_start()}
 				/>
-			{:else if !status && item.state === 'running' && canStopContainers}
+			{:else if !status && item.state === 'running' && hasPermission('containers:stop', item.environmentId)}
 				<ArcaneButton
 					action="base"
 					tone="outline"
 					size="sm"
 					class="size-7 border-transparent bg-transparent p-0 text-destructive shadow-none hover:bg-destructive/10 hover:text-destructive"
-					onclick={() => performContainerAction('stop', item.id)}
+					onclick={() => performContainerAction('stop', item.id, item.environmentId)}
 					disabled={!resourcesCurrent || isAnyLoading}
 					title={m.common_stop()}
 					icon={StopIcon}
 				/>
 			{/if}
-			{#if !status && item.updateInfo?.hasUpdate && canUpdateContainers}
+			{#if !status && item.updateInfo?.hasUpdate && hasPermission('containers:autoupdate', item.environmentId)}
 				<ArcaneButton
 					action="base"
 					tone="ghost"
@@ -729,24 +756,25 @@
 	</div>
 {/snippet}
 
-{#snippet ContainerUpdateItem(item: ContainerSummaryDto)}
+{#snippet ContainerUpdateItem(item: ContainerRow)}
 	{@const imageRef = parseImageRef(item.image)}
 	<ImageUpdateItem
 		updateInfo={item.updateInfo}
 		imageId={item.imageId}
 		imageRef={item.image}
 		containerId={item.id}
+		environmentId={item.environmentId}
 		tagUpdates={item.updateStrategy
 			? item.updateStrategy !== 'digest'
 			: item.labels?.['com.getarcaneapp.arcane.updater.strategy']?.trim() === 'tag'}
 		repo={imageRef.repo}
 		tag={imageRef.tag}
-		onUpdateContainer={canUpdateContainers ? () => handleUpdateContainer(item) : undefined}
+		onUpdateContainer={hasPermission('containers:autoupdate', item.environmentId) ? () => handleUpdateContainer(item) : undefined}
 		debugHasUpdate={false}
 	/>
 {/snippet}
 
-{#snippet UpdatesCell({ item }: { item: ContainerSummaryDto })}
+{#snippet UpdatesCell({ item }: { item: ContainerRow })}
 	{@render ContainerUpdateItem(item)}
 {/snippet}
 
@@ -773,7 +801,7 @@
 	item,
 	mobileFieldVisibility
 }: {
-	item: ContainerSummaryDto;
+	item: ContainerRow;
 	mobileFieldVisibility: FieldVisibility;
 })}
 	<UniversalMobileCard
@@ -831,8 +859,8 @@
 						const cpu = item.resourceSample?.cpuPercent;
 						return cpu === undefined ? m.common_unavailable() : `${cpu.toFixed(1)}%`;
 					}
-					const cpu = statsManager.getCPUPercent(item.id);
-					if (cpu === undefined) return statsManager.hasError(item.id) ? m.common_unavailable() : '...';
+					const cpu = statsManager.getCPUPercent(rowKey(item));
+					if (cpu === undefined) return statsManager.hasError(rowKey(item)) ? m.common_unavailable() : '...';
 					return `${cpu.toFixed(1)}%`;
 				},
 				icon: ClockIcon,
@@ -847,8 +875,8 @@
 						const usage = item.resourceSample?.memoryUsageBytes;
 						return usage === undefined ? m.common_unavailable() : `${(usage / 1024 / 1024).toFixed(0)} MB`;
 					}
-					const memData = statsManager.getMemoryUsage(item.id);
-					if (!memData?.usage) return statsManager.hasError(item.id) ? m.common_unavailable() : '...';
+					const memData = statsManager.getMemoryUsage(rowKey(item));
+					if (!memData?.usage) return statsManager.hasError(rowKey(item)) ? m.common_unavailable() : '...';
 					return `${(memData.usage / 1024 / 1024).toFixed(0)} MB`;
 				},
 				icon: ClockIcon,
@@ -864,7 +892,7 @@
 				}
 			: undefined}
 		rowActions={RowActions}
-		onclick={(item: ContainerSummaryDto) => goto(`/containers/${item.id}`)}
+		onclick={(item: ContainerRow) => goto(environmentHref(`/containers/${item.id}`, item.environmentId))}
 	>
 		{#if ((mobileFieldVisibility['ports'] ?? true) && item.ports && item.ports.length > 0) || (mobileFieldVisibility['updates'] ?? true)}
 			<div class="flex flex-row gap-4 border-t pt-3">
@@ -900,25 +928,26 @@
 	</UniversalMobileCard>
 {/snippet}
 
-{#snippet RowActions({ item }: { item: ContainerSummaryDto })}
+{#snippet RowActions({ item }: { item: ContainerRow })}
 	{#if resourcesCurrent}
-		{@const status = actionStatus[item.id]}
+		{@const status = actionStatus[rowKey(item)]}
+		{@const envId = item.environmentId}
 		<RowActionsMenu>
-			<DropdownMenu.Item onclick={() => goto(`/containers/${item.id}`)} disabled={isAnyLoading}>
+			<DropdownMenu.Item onclick={() => goto(environmentHref(`/containers/${item.id}`, envId))} disabled={isAnyLoading}>
 				<InspectIcon class="size-4" />
 				{m.common_inspect()}
 			</DropdownMenu.Item>
 
-			{#if canEditContainers && !item.redeployDisabled && !item.labels?.[COMPOSE_PROJECT_LABEL]}
-				<DropdownMenu.Item onclick={() => goto(`/containers/${item.id}/edit`)} disabled={isAnyLoading}>
+			{#if hasPermission('containers:edit', envId) && !item.redeployDisabled && !item.labels?.[COMPOSE_PROJECT_LABEL]}
+				<DropdownMenu.Item onclick={() => goto(environmentHref(`/containers/${item.id}/edit`, envId))} disabled={isAnyLoading}>
 					<EditIcon class="size-4" />
 					{m.common_edit()}
 				</DropdownMenu.Item>
 			{/if}
 
-			{#if canConvertToCompose && !item.labels?.[COMPOSE_PROJECT_LABEL]}
+			{#if canConvertToCompose && hasPermission('projects:create', envId) && !item.labels?.[COMPOSE_PROJECT_LABEL]}
 				<DropdownMenu.Item
-					onclick={() => goto(`/projects/new?fromContainers=${item.id}&fromEnv=${encodeURIComponent(currentEnvId)}`)}
+					onclick={() => goto(`/projects/new?fromContainers=${item.id}&fromEnv=${encodeURIComponent(envId)}`)}
 					disabled={isAnyLoading}
 				>
 					<ProjectsIcon class="size-4" />
@@ -928,7 +957,7 @@
 
 			<DropdownMenu.Separator />
 
-			{#if item.updateInfo?.hasUpdate && canUpdateContainers}
+			{#if item.updateInfo?.hasUpdate && hasPermission('containers:autoupdate', envId)}
 				<ActionMenuItem
 					onclick={() => handleUpdateContainer(item)}
 					disabled={isAnyLoading}
@@ -938,47 +967,47 @@
 				/>
 			{/if}
 			{#if item.state === 'paused'}
-				<IfPermitted perm="containers:pause" envId={currentEnvId}>
+				<IfPermitted perm="containers:pause" {envId}>
 					<ActionMenuItem
-						onclick={() => performContainerAction('unpause', item.id)}
+						onclick={() => performContainerAction('unpause', item.id, envId)}
 						disabled={isAnyLoading}
 						icon={PlayIcon}
 						label={m.common_unpause()}
 						loading={status === 'unpausing'}
 					/>
 				</IfPermitted>
-			{:else if item.state !== 'running' && canStartContainers}
+			{:else if item.state !== 'running' && hasPermission('containers:start', envId)}
 				<ActionMenuItem
-					onclick={() => performContainerAction('start', item.id)}
+					onclick={() => performContainerAction('start', item.id, envId)}
 					disabled={isAnyLoading}
 					icon={StartIcon}
 					label={m.common_start()}
 					loading={status === 'starting'}
 				/>
 			{:else if item.state === 'running'}
-				<IfPermitted perm="containers:stop" envId={currentEnvId}>
+				<IfPermitted perm="containers:stop" {envId}>
 					<ActionMenuItem
 						icon={StopIcon}
 						label={m.common_stop()}
-						onclick={() => performContainerAction('stop', item.id)}
+						onclick={() => performContainerAction('stop', item.id, envId)}
 						loading={status === 'stopping'}
 						disabled={isAnyLoading}
 					/>
 				</IfPermitted>
 
-				<IfPermitted perm="containers:restart" envId={currentEnvId}>
+				<IfPermitted perm="containers:restart" {envId}>
 					<ActionMenuItem
 						icon={RefreshIcon}
 						label={m.common_restart()}
-						onclick={() => performContainerAction('restart', item.id)}
+						onclick={() => performContainerAction('restart', item.id, envId)}
 						loading={status === 'restarting'}
 						disabled={isAnyLoading}
 					/>
 				</IfPermitted>
 
-				<IfPermitted perm="containers:pause" envId={currentEnvId}>
+				<IfPermitted perm="containers:pause" {envId}>
 					<ActionMenuItem
-						onclick={() => performContainerAction('pause', item.id)}
+						onclick={() => performContainerAction('pause', item.id, envId)}
 						disabled={isAnyLoading}
 						icon={PauseIcon}
 						label={m.common_pause()}
@@ -987,14 +1016,14 @@
 				</IfPermitted>
 			{/if}
 
-			{#if (item.state === 'running' || item.state === 'paused') && canKillContainers}
+			{#if (item.state === 'running' || item.state === 'paused') && hasPermission('containers:kill', envId)}
 				<DropdownMenu.Item onclick={() => openKillDialog(item)} disabled={isAnyLoading}>
 					<ZapIcon class="size-4" />
 					{m.common_kill()}
 				</DropdownMenu.Item>
 			{/if}
 
-			<IfPermitted perm="containers:redeploy" envId={currentEnvId}>
+			<IfPermitted perm="containers:redeploy" {envId}>
 				{#if item.redeployDisabled}
 					<DropdownMenu.Item disabled title={m.common_redeploy_disabled_arcane_self()}>
 						<RedeployIcon class="size-4 opacity-50" />
@@ -1013,11 +1042,11 @@
 
 			<DropdownMenu.Separator />
 
-			<IfPermitted perm="containers:delete" envId={currentEnvId}>
+			<IfPermitted perm="containers:delete" {envId}>
 				<ActionMenuItem
 					icon={TrashIcon}
 					label={m.common_remove()}
-					onclick={() => handleRemoveContainer(item.id, getContainerDisplayName(item))}
+					onclick={() => handleRemoveContainer(item.id, getContainerDisplayName(item), envId)}
 					loading={status === 'removing'}
 					disabled={isAnyLoading}
 					destructive
@@ -1096,6 +1125,7 @@
 	<KillContainerDialog
 		containerId={killTarget.id}
 		containerName={getContainerDisplayName(killTarget)}
+		environmentId={killTarget.environmentId}
 		onClose={() => (killTarget = null)}
 		onComplete={async () => {
 			await refreshContainers(requestOptions);

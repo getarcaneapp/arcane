@@ -105,6 +105,7 @@ var (
 	ErrVolumeWorkspaceNotFound                 = Classify(ErrNotFound, errors.New("Volume workspace file not found"))
 	ErrVolumeRenameInvalid                     = Classify(ErrBadRequest, errors.New("source and target volume names must be non-empty and different"))
 	ErrVolumeRenameProtected                   = Classify(ErrBadRequest, errors.New("Arcane's internal volumes cannot be renamed"))
+	ErrVolumeDeleteProtected                   = Classify(ErrBadRequest, errors.New("Arcane's backup volume cannot be removed"))
 	ErrProjectComposeFileNotFound              = Classify(ErrNotFound, errors.New("Project compose file not found"))
 	ErrComposeFileNotFound                     = Classify(ErrNotFound, errors.New("no compose file found"))
 	ErrComposeFileEnvInvalid                   = Classify(ErrValidation, errors.New("invalid COMPOSE_FILE selection"))

@@ -1,8 +1,11 @@
 <script lang="ts" generics="T">
 	import type { Snippet, Component } from 'svelte';
 
+	import EnvironmentCell from '#lib/components/arcane-table/cells/environment-cell.svelte';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import * as Card from '#lib/components/ui/card/index.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { cn } from '#lib/utils.js';
 
 	type IconVariant = 'emerald' | 'red' | 'amber' | 'blue' | 'purple' | 'gray' | 'sky' | 'orange';
@@ -83,7 +86,16 @@
 		resolvedIcon?.imageUrl && resolvedIcon.imageUrl !== errorImageUrl ? resolvedIcon.imageUrl : null
 	);
 
-	const visibleFields = $derived(fields.filter((f) => f.show !== false));
+	// Merged rows carry their environment; show it while several environments are shown.
+	const environmentId = $derived(
+		environmentStore.shown.length > 1 ? (item as { environmentId?: string }).environmentId : undefined
+	);
+	const environmentField = $derived<FieldDefinition<T>[]>(
+		environmentId
+			? [{ label: m.resource_environment_cap(), getValue: () => environmentId, type: 'component', component: EnvironmentValue }]
+			: []
+	);
+	const visibleFields = $derived([...environmentField, ...fields.filter((f) => f.show !== false)]);
 	const subtitleValue = $derived(subtitle?.(item));
 	const hasSubtitle = $derived(!!subtitleValue);
 
@@ -115,6 +127,10 @@
 		return map[variant];
 	}
 </script>
+
+{#snippet EnvironmentValue(value: string)}
+	<EnvironmentCell {value} />
+{/snippet}
 
 {#snippet FieldValue(field: FieldDefinition<T>, value: any, isCompact: boolean)}
 	{#if field.type === 'badge' && field.badgeVariant}

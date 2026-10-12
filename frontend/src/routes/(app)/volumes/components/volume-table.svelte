@@ -1,3 +1,13 @@
+<script module lang="ts">
+	import type { VolumeSummaryDto } from '#lib/types/docker.js';
+
+	/** Sort value for a volume column; size falls back to usage data, as the backend sorts it. */
+	export function volumeSortValue(volume: VolumeSummaryDto, column: string): unknown {
+		if (column === 'size') return volume.size || (volume.usageData?.size ?? 0);
+		return volume[column as keyof VolumeSummaryDto];
+	}
+</script>
+
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
@@ -7,6 +17,7 @@
 
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
 	import InUseStatus from '#lib/components/arcane-table/cells/in-use-status.svelte';
+	import { environmentColumns } from '#lib/components/arcane-table/environment-column.js';
 	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '#lib/components/arcane-table/index.js';
 	import { UniversalMobileCard } from '#lib/components/arcane-table/index.js';
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
@@ -16,16 +27,29 @@
 	import { TrashIcon, InspectIcon, VolumesIcon, CalendarIcon, EditIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
-	import { volumeService } from '#lib/services/volume-service.js';
+	import { settingsService } from '#lib/services/settings-service.js';
+	import { volumeService, type VolumesPaginatedResponse } from '#lib/services/volume-service.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
-	import type { VolumeSummaryDto, VolumeSizeInfo } from '#lib/types/docker.js';
-	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
+	import type { VolumeSizeInfo } from '#lib/types/docker.js';
+	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { handleApiResultWithCallbacks, extractApiErrorMessage } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { bulkConfirmAndRun } from '#lib/utils/bulk-actions.js';
+	import {
+		collectAcrossEnvironments,
+		environmentHref,
+		fetchAcrossEnvironments,
+		hasShownPermission,
+		parseRowKey,
+		rowKey,
+		tagEnvironment,
+		withFailedEnvironments,
+		type EnvironmentPage,
+		type EnvironmentRow
+	} from '#lib/utils/environments.js';
 	import { formatDateTimeShort, truncateString } from '#lib/utils/formatting.js';
 	import { bytes } from '#lib/utils/formatting.js';
 	import { inUseBadge } from '#lib/utils/mobile-card-badges.js';
@@ -33,13 +57,15 @@
 
 	import RenameVolumeDialog from './rename-volume-dialog.svelte';
 
+	type VolumeRow = EnvironmentRow<VolumeSummaryDto>;
+
 	let {
 		volumes = $bindable(),
 		selectedIds = $bindable(),
 		requestOptions = $bindable(),
 		onRefreshData
 	}: {
-		volumes: Paginated<VolumeSummaryDto>;
+		volumes: EnvironmentPage<VolumesPaginatedResponse>;
 		selectedIds: string[];
 		requestOptions: SearchPaginationSortRequest;
 		onRefreshData?: (options: SearchPaginationSortRequest) => Promise<void>;
@@ -49,21 +75,21 @@
 		removing: false,
 		renaming: false
 	});
-	let volumeToRename = $state<VolumeSummaryDto | null>(null);
+	let volumeToRename = $state<VolumeRow | null>(null);
 	let renameDialogOpen = $state(false);
 	let renameSession = $state(0);
 	let renameEnvironmentId = $state('0');
 
-	const currentEnvId = $derived(environmentStore.selected?.id || '0');
+	const scope = $derived(environmentStore.shownKey);
 	// Track the user store: hasPermission reads it non-reactively, so without
 	// this the derived would cache a pre-hydration false forever.
 	const canDeleteVolume = $derived.by(() => {
 		userStore.current;
-		return hasPermission('volumes:delete', currentEnvId);
+		return hasShownPermission('volumes:delete');
 	});
 	const canRenameVolume = $derived.by(() => {
 		userStore.current;
-		return hasPermission('volumes:rename', currentEnvId);
+		return hasShownPermission('volumes:rename');
 	});
 	let tablePreferences = $state<{ persistCustomSettings(settings: Record<string, unknown>): void }>();
 	let customSettings = $state<Record<string, unknown>>({});
@@ -75,10 +101,19 @@
 		if (onRefreshData) {
 			await onRefreshData(options);
 		} else {
-			volumes = await volumeService.getVolumes(options);
+			volumes = await fetchAcrossEnvironments(
+				environmentStore.shown,
+				options,
+				(id, request, config) => volumeService.getVolumesForEnvironment(id, request, config),
+				volumeSortValue
+			);
 		}
 		if (refreshSizes && sizesEnabled) {
 			await sizesQuery.refetch({ cancelRefetch: false });
+		}
+		// A retry also reloads backup volume names an environment failed to return.
+		if (backupVolumeNamesQuery.isError || backupVolumeNamesQuery.data?.failures.length) {
+			await backupVolumeNamesQuery.refetch();
 		}
 	}
 
@@ -102,27 +137,63 @@
 		refreshVolumes(nextOptions);
 	}
 
-	const backupVolumeName = $derived.by(() => settingsStore.current?.backupVolumeName || 'arcane-backups');
-	const isBackupVolumeName = (name?: string) => (name ?? '') === backupVolumeName;
-	const isBackupVolume = (item: VolumeSummaryDto) => isBackupVolumeName(item.name);
-
 	let columnVisibility = $state<ColumnVisibilityState>({});
 	let tablePreferencesReady = $state(false);
 	const queryClient = useQueryClient();
+
+	// Each environment names its own backup volume; other shown environments' names come from their settings.
+	const backupVolumeNamesQuery = createQuery(() => {
+		const selectedId = environmentStore.selected?.id;
+		const others = environmentStore.shown.filter((env) => env.id !== selectedId);
+		return {
+			// The selected environment is left out, so it is part of the key.
+			queryKey: queryKeys.volumes.backupVolumeNames(`${scope}|${selectedId}`),
+			queryFn: async () => {
+				const { values, failures } = await collectAcrossEnvironments(others, (id) =>
+					queryClient.ensureQueryData({
+						queryKey: queryKeys.settings.byEnvironment(id),
+						queryFn: () => settingsService.getReadableSettings(id)
+					})
+				);
+				const names = new Map(
+					values.map(({ environment, value }) => [environment.id, value.backupVolumeName || 'arcane-backups'])
+				);
+				return { names, failures };
+			},
+			enabled: others.length > 0,
+			refetchOnWindowFocus: false
+		};
+	});
+	const isBackupVolumeName = (name: string, environmentId = environmentStore.selected?.id) => {
+		if (environmentId === environmentStore.selected?.id) {
+			return name === (settingsStore.current?.backupVolumeName || 'arcane-backups');
+		}
+		// Until another environment's backup volume name is known, none of its volumes can be removed or renamed.
+		const configured = backupVolumeNamesQuery.data?.names.get(environmentId ?? '');
+		return configured === undefined || name === configured;
+	};
+	const isBackupVolume = (item: VolumeRow) => isBackupVolumeName(item.name, item.environmentId);
 	const sizesEnabled = $derived.by(() => {
 		userStore.current;
 		return (
 			tablePreferencesReady &&
 			!!environmentStore.selected?.id &&
 			columnVisibility['size'] !== false &&
-			hasPermission('volumes:read', currentEnvId)
+			hasShownPermission('volumes:read')
 		);
 	});
 	const sizesQuery = createQuery(() => {
-		const environmentId = currentEnvId;
+		const queryScope = scope;
+		const environments = environmentStore.shown;
 		return {
-			queryKey: queryKeys.volumes.sizes(environmentId),
-			queryFn: () => volumeService.getVolumeSizes(environmentId),
+			queryKey: queryKeys.volumes.sizes(queryScope),
+			queryFn: async () => {
+				const { values } = await collectAcrossEnvironments(
+					environments.filter((env) => hasPermission('volumes:read', env.id)),
+					(id, config) => volumeService.getVolumeSizes(id, config)
+				);
+				return values.flatMap(({ environment, value }) => value.map((size) => tagEnvironment(size, environment)));
+			},
 			enabled: sizesEnabled,
 			refetchOnWindowFocus: false,
 			retry: false
@@ -131,7 +202,7 @@
 	const sizesMap = $derived.by(() => {
 		const sizes = new Map<string, VolumeSizeInfo>();
 		if (!sizesEnabled) return sizes;
-		for (const size of sizesQuery.data ?? []) sizes.set(size.name, size);
+		for (const size of sizesQuery.data ?? []) sizes.set(rowKey({ ...size, id: size.name }), size);
 		return sizes;
 	});
 	const sizesLoading = $derived(sizesEnabled && sizesQuery.isFetching);
@@ -140,7 +211,7 @@
 		const cache = queryClient.getQueryCache();
 		return cache.subscribe((event) => {
 			if (event.type !== 'updated') return;
-			if (event.query !== cache.find({ queryKey: queryKeys.volumes.sizes(currentEnvId), exact: true })) return;
+			if (event.query !== cache.find({ queryKey: queryKeys.volumes.sizes(scope), exact: true })) return;
 			if (event.action.type === 'success' && sizesEnabled && requestOptions?.sort?.column === 'size') {
 				void tryCatch(refreshVolumes(requestOptions, false)).then((result) =>
 					handleApiResultWithCallbacks({ result, message: m.common_refresh_failed({ resource: m.resource_volumes_cap() }) })
@@ -149,9 +220,9 @@
 		});
 	});
 
-	async function handleRemoveVolumeConfirm(name: string) {
+	async function handleRemoveVolumeConfirm(name: string, environmentId: string) {
 		const safeName = name?.trim() || m.common_unknown();
-		if (isBackupVolumeName(safeName)) return;
+		if (isBackupVolumeName(safeName, environmentId)) return;
 		openConfirmDialog({
 			title: m.common_remove_title({ resource: m.resource_volume() }),
 			message: m.common_remove_confirm({ resource: `${m.resource_volume()} "${safeName}"` }),
@@ -161,7 +232,7 @@
 				action: async () => {
 					isLoading.removing = true;
 					await handleApiResultWithCallbacks({
-						result: await tryCatch(volumeService.deleteVolume(safeName)),
+						result: await tryCatch(volumeService.deleteVolume(safeName, environmentId)),
 						message: m.common_remove_failed({ resource: `${m.resource_volume()} "${safeName}"` }),
 						setLoadingState: (value) => (isLoading.removing = value),
 						onSuccess: async (data) => {
@@ -177,9 +248,9 @@
 		});
 	}
 
-	function handleRenameVolume(item: VolumeSummaryDto) {
+	function handleRenameVolume(item: VolumeRow) {
 		volumeToRename = item;
-		renameEnvironmentId = currentEnvId;
+		renameEnvironmentId = item.environmentId;
 		renameSession += 1;
 		renameDialogOpen = true;
 	}
@@ -195,7 +266,7 @@
 			onSuccess: async (data) => {
 				toast.success(m.volumes_rename_success({ oldName, newName }), activityToastOptions(extractActivityId(data)));
 				renameDialogOpen = false;
-				if (renameEnvironmentId === currentEnvId) await refreshVolumes();
+				if (environmentStore.shown.some((env) => env.id === renameEnvironmentId)) await refreshVolumes();
 			}
 		});
 	}
@@ -204,7 +275,10 @@
 		// A volume's id IS its name (backend sets ID: v.Name), so ids can be
 		// passed to the delete endpoint directly — no per-page name lookup, which
 		// would break for selections carried across pages.
-		const idsToDelete = ids.filter((id) => !isBackupVolumeName(id));
+		const idsToDelete = ids.filter((key) => {
+			const { environmentId, id } = parseRowKey(key);
+			return !isBackupVolumeName(id, environmentId);
+		});
 
 		bulkConfirmAndRun({
 			ids: idsToDelete,
@@ -212,7 +286,7 @@
 			message: m.volumes_remove_selected_message({ count: idsToDelete.length }),
 			confirmLabel: m.common_remove(),
 			destructive: true,
-			run: (id) => volumeService.deleteVolume(id),
+			run: (id, environmentId) => volumeService.deleteVolume(id, environmentId),
 			messages: {
 				success: (count) => m.common_bulk_remove_success({ count, resource: m.resource_volumes_cap() }),
 				partial: (success, total, failed) =>
@@ -227,14 +301,15 @@
 		});
 	}
 
-	const columns = [
+	const columns = $derived([
+		...environmentColumns<VolumeRow>(),
 		{ accessorKey: 'id', title: m.common_id(), hidden: true },
 		{ accessorKey: 'name', title: m.common_name(), sortable: true, cell: NameCell },
 		{ accessorKey: 'inUse', title: m.common_status(), sortable: true, cell: StatusCell },
 		{ accessorKey: 'size', title: m.common_size(), sortable: true, cell: SizeCell },
 		{ accessorKey: 'createdAt', title: m.common_created(), sortable: true, cell: CreatedCell },
 		{ accessorKey: 'driver', title: m.common_driver(), sortable: true }
-	] satisfies ColumnSpec<VolumeSummaryDto>[];
+	] satisfies ColumnSpec<VolumeRow>[]);
 
 	const mobileFields = [
 		{ id: 'id', label: m.common_id(), defaultVisible: false },
@@ -245,7 +320,12 @@
 	];
 
 	// Volume id === name, so the backup-volume filter works on the id directly.
-	const deletableSelectedIds = $derived((selectedIds ?? []).filter((id) => !isBackupVolumeName(id)));
+	const deletableSelectedIds = $derived(
+		(selectedIds ?? []).filter((key) => {
+			const { environmentId, id } = parseRowKey(key);
+			return !isBackupVolumeName(id, environmentId);
+		})
+	);
 
 	const bulkActions = $derived.by<BulkAction[]>(() => [
 		{
@@ -262,18 +342,18 @@
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
 </script>
 
-{#snippet NameCell({ item }: { item: VolumeSummaryDto })}
-	<a class="font-medium hover:underline" href="/volumes/{item.id}" title={item.name}>
+{#snippet NameCell({ item }: { item: VolumeRow })}
+	<a class="font-medium hover:underline" href={environmentHref(`/volumes/${item.id}`, item.environmentId)} title={item.name}>
 		{truncateString(item.name, 40)}
 	</a>
 {/snippet}
 
-{#snippet StatusCell({ item }: { item: VolumeSummaryDto })}
+{#snippet StatusCell({ item }: { item: VolumeRow })}
 	<InUseStatus inUse={item.inUse} />
 {/snippet}
 
-{#snippet SizeCell({ item }: { item: VolumeSummaryDto })}
-	{@const sizeInfo = sizesMap.get(item.name)}
+{#snippet SizeCell({ item }: { item: VolumeRow })}
+	{@const sizeInfo = sizesMap.get(rowKey(item))}
 	{#if sizeInfo && sizeInfo.size >= 0}
 		<span class="text-sm tabular-nums">{bytes.format(sizeInfo.size)}</span>
 	{:else if sizesLoading && sizesMap.size === 0}
@@ -305,7 +385,7 @@
 	item,
 	mobileFieldVisibility
 }: {
-	item: VolumeSummaryDto;
+	item: VolumeRow;
 	mobileFieldVisibility: MobileFieldVisibility;
 })}
 	<UniversalMobileCard
@@ -320,7 +400,7 @@
 		fields={[
 			{
 				label: m.common_driver(),
-				getValue: (item: VolumeSummaryDto) => item.driver,
+				getValue: (item: VolumeRow) => item.driver,
 				icon: VolumesIcon,
 				iconVariant: 'gray' as const,
 				show: mobileFieldVisibility['driver'] ?? true
@@ -334,13 +414,13 @@
 				}
 			: undefined}
 		rowActions={RowActions}
-		onclick={() => goto(`/volumes/${item.id}`)}
+		onclick={() => goto(environmentHref(`/volumes/${item.id}`, item.environmentId))}
 	/>
 {/snippet}
 
-{#snippet RowActions({ item }: { item: VolumeSummaryDto })}
+{#snippet RowActions({ item }: { item: VolumeRow })}
 	<RowActionsMenu>
-		<DropdownMenu.Item onclick={() => goto(`/volumes/${item.id}`)}>
+		<DropdownMenu.Item onclick={() => goto(environmentHref(`/volumes/${item.id}`, item.environmentId))}>
 			<InspectIcon class="size-4" />
 			{m.common_inspect()}
 		</DropdownMenu.Item>
@@ -349,7 +429,7 @@
 			<DropdownMenu.Separator />
 		{/if}
 
-		{#if canRenameVolume}
+		{#if canRenameVolume && hasPermission('volumes:rename', item.environmentId)}
 			<DropdownMenu.Item
 				onclick={() => handleRenameVolume(item)}
 				disabled={item.inUse || isBackupVolume(item) || isLoading.renaming}
@@ -359,10 +439,10 @@
 			</DropdownMenu.Item>
 		{/if}
 
-		{#if canDeleteVolume}
+		{#if canDeleteVolume && hasPermission('volumes:delete', item.environmentId)}
 			<DropdownMenu.Item
 				variant="destructive"
-				onclick={() => handleRemoveVolumeConfirm(item.name)}
+				onclick={() => handleRemoveVolumeConfirm(item.name, item.environmentId)}
 				disabled={item.inUse || isBackupVolume(item)}
 			>
 				<TrashIcon class="size-4" />
@@ -375,7 +455,7 @@
 <ArcaneTable
 	bind:this={tablePreferences}
 	persistKey="arcane-volumes-table"
-	items={volumes}
+	items={withFailedEnvironments(volumes, backupVolumeNamesQuery.data?.failures)}
 	bind:requestOptions
 	bind:selectedIds
 	bind:mobileFieldVisibility

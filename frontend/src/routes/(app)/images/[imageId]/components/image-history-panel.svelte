@@ -13,17 +13,17 @@
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { bytes, formatDateTimeShort } from '#lib/utils/formatting.js';
 
-	let { imageId }: { imageId: string } = $props();
+	let { imageId, environmentId: imageEnvironmentId }: { imageId: string; environmentId: string } = $props();
 
 	const historyQuery = createQuery(() => {
-		const environmentId = environmentStore.selected?.id;
+		const environmentId = imageEnvironmentId;
 		const requestedImageId = imageId;
 		userStore.current;
 		return {
 			queryKey: queryKeys.images.history(environmentId ?? '', requestedImageId),
 			queryFn: async () => {
 				await environmentStore.ready;
-				return imageService.getImageHistory(requestedImageId);
+				return imageService.getImageHistory(requestedImageId, environmentId);
 			},
 			enabled: !!environmentId && !!requestedImageId && hasPermission('images:read', environmentId)
 		};

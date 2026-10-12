@@ -28,6 +28,7 @@
 	import type { NetworkInspectDto, IPAMSubnetDto } from '#lib/types/docker.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
+	import { environmentHref } from '#lib/utils/environments.js';
 	import { formatDateTimeShort } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -60,7 +61,7 @@
 		if (data.network?.id) {
 			const operationResult = await tryCatch(
 				(async () =>
-					networkService.getNetwork(data.network.id, {
+					networkService.getNetworkForEnvironment(data.envId, data.network.id, {
 						sort: { column: sortCol, direction: sortDir }
 					}))()
 			);
@@ -87,6 +88,8 @@
 			return;
 		}
 
+		// The dialog outlives navigation, so it removes the network it was opened for.
+		const target = { id: network.id, environmentId: data.envId };
 		openConfirmDialog({
 			title: m.common_remove_title({ resource: m.resource_network() }),
 			message: m.networks_remove_confirm_message({ name: network?.name ?? shortId }),
@@ -96,7 +99,7 @@
 				action: async () => {
 					isRemoving = true;
 					await handleApiResultWithCallbacks({
-						result: await tryCatch(networkService.deleteNetwork(network.id)),
+						result: await tryCatch(networkService.deleteNetwork(target.id, target.environmentId)),
 						message: m.networks_remove_failed({ name: network?.name ?? shortId }),
 						setLoadingState: (value) => (isRemoving = value),
 						onSuccess: async (data) => {
@@ -280,7 +283,10 @@
 						].filter(Boolean)}
 						<div class="flex flex-col p-3 sm:flex-row sm:items-center">
 							<div class="mb-2 w-full font-medium break-all sm:mb-0 sm:w-1/3">
-								<a href="/containers/{container.id}" class="flex items-center text-primary hover:underline">
+								<a
+									href={environmentHref(`/containers/${container.id}`, data.envId)}
+									class="flex items-center text-primary hover:underline"
+								>
 									<ContainersIcon class="mr-1.5 size-3.5 text-muted-foreground" />
 									{container.name ?? container.Name}
 								</a>

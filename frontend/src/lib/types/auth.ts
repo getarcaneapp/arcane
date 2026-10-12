@@ -133,6 +133,8 @@ export type TimeFormat = 'auto' | '12h' | '24h';
 
 export type ProjectEditorLayout = 'auto' | 'classic' | 'tree';
 
+export type EnvironmentLabelStyle = 'name' | 'dot';
+
 /**
  * Personal display/UI preferences stored on the user record. Every field is
  * optional: an unset value falls back to the frontend default.
@@ -151,6 +153,9 @@ export type UserPreferences = {
 	mobileNavigationShowLabels?: boolean;
 	defaultLandingPage?: string;
 	defaultProjectEditorLayout?: ProjectEditorLayout;
+	allEnvironmentsPreview?: boolean;
+	environmentColors?: Record<string, string>;
+	environmentLabelStyle?: EnvironmentLabelStyle;
 };
 
 export type User = {

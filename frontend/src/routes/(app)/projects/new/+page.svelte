@@ -12,20 +12,20 @@
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 	import TemplateSelectionDialog from '#lib/components/dialogs/template-selection-dialog.svelte';
 	import EditorTabStrip from '#lib/components/editor-tab-strip.svelte';
+	import EnvironmentDestinationSelect from '#lib/components/form/environment-destination-select.svelte';
 	import ProjectTagEditor from '#lib/components/project-tag-editor.svelte';
 	import ResizableSplit from '#lib/components/resizable-split.svelte';
 	import * as Alert from '#lib/components/ui/alert/index.js';
 	import { Switch } from '#lib/components/ui/switch/index.js';
 	import { WorkspaceDraftState } from '#lib/components/workspace-editor/workspace-draft-state.svelte.js';
 	import WorkspaceFileTreePanel from '#lib/components/workspace-file-tree-panel.svelte';
+	import { useEnvironmentSettings } from '#lib/hooks/use-environment-settings.svelte.js';
 	import { ArrowLeftIcon } from '#lib/icons/index.js';
 	import { AlertIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { containerService } from '#lib/services/container-service.js';
 	import { projectService } from '#lib/services/project-service.js';
-	import settingsStore from '#lib/stores/config-store.svelte.js';
-	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { ProjectTag } from '#lib/types/swarm.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
@@ -40,6 +40,7 @@
 		templateNameSlug,
 		type ProjectEditorLayoutMode
 	} from '#lib/utils/compose-flow.js';
+	import { destinationEnvironmentId, environmentHref, environmentName } from '#lib/utils/environments.js';
 	import { preventDefault, createForm } from '#lib/utils/settings.svelte.js';
 	import {
 		getTemplateEditorValidationState,
@@ -61,14 +62,23 @@
 		planProjectWorkspaceFileRename,
 		validateProjectWorkspaceFileName
 	} from '../components/project-workspace-utils';
+	import { fetchProjectTags } from '../projects-table.helpers';
 
 	let { data } = $props();
 
-	const currentEnvId = $derived(environmentStore.selected?.id || '0');
+	let pickedEnvironmentId = $state('');
+	// Converted containers default the destination to their environment.
+	const environmentId = $derived(
+		destinationEnvironmentId(pickedEnvironmentId || (data.sourceEnvironmentId ?? ''), 'projects:create')
+	);
+	const currentEnvId = $derived(environmentId);
 	const canCreateProject = $derived(hasPermission('projects:create', currentEnvId));
-	const canDeleteContainers = $derived(hasPermission('containers:delete', currentEnvId));
+	// Originals are removed from their own environment, not the destination.
+	const canDeleteContainers = $derived(hasPermission('containers:delete', data.sourceEnvironmentId ?? currentEnvId));
 	const sourceContainerIds = $derived(data.sourceContainerIds ?? []);
-	const projectWorkspaceMaxFileSizeMb = $derived(settingsStore.current?.projectWorkspaceMaxFileSizeMb ?? 10);
+	// Files are uploaded to the destination, so its limit applies.
+	const destinationSettings = useEnvironmentSettings(() => currentEnvId);
+	const projectWorkspaceMaxFileSizeMb = $derived(destinationSettings.current?.projectWorkspaceMaxFileSizeMb ?? 10);
 
 	let ui = $state({
 		saving: false,
@@ -112,9 +122,9 @@
 	let newProjectTags = $state<ProjectTag[]>([]);
 	const projectTagsQuery = createQuery(() => ({
 		queryKey: queryKeys.projects.tags(currentEnvId),
-		queryFn: () => projectService.getProjectTagsForEnvironment(currentEnvId)
+		queryFn: () => fetchProjectTags([{ id: currentEnvId, name: environmentName(currentEnvId) }])
 	}));
-	const availableProjectTags = $derived(projectTagsQuery.data ?? []);
+	const availableProjectTags = $derived(projectTagsQuery.data?.tags ?? []);
 	let validation = $state({
 		composeHasErrors: false,
 		envHasErrors: false,
@@ -201,11 +211,12 @@
 		// Sync the authoritative compose name into form state at submit time so
 		// validation and the create payload use it (event-time write, not an effect).
 		if (composeYamlName) form.setValue('name', composeYamlName);
+		const destination = environmentId;
 		await submitComposeResourceForm({
 			validate: () => validateTemplateEditorForm(validationState, form.validate),
 			setLoading: (value) => (ui.saving = value),
 			submit: ({ name, composeContent, envContent }) =>
-				projectService.createProject(name, composeContent, envContent, workspaceDraft.toDrafts(), newProjectTags),
+				projectService.createProject(name, composeContent, envContent, workspaceDraft.toDrafts(), newProjectTags, destination),
 			failureMessage: (name) => m.common_create_failed({ resource: `${m.resource_project()} "${name}"` }),
 			onSuccess: async (project, { name }) => {
 				toast.success(
@@ -224,7 +235,7 @@
 					}
 				}
 				// fallow-ignore-next-line code-duplication -- create-success handler; navigation target diverges per page
-				goto(`/projects/${project.id}`, { refreshAll: true });
+				goto(environmentHref(`/projects/${project.id}`, destination), { refreshAll: true });
 			}
 		});
 	}
@@ -375,7 +386,7 @@
 					convertLabel={m.compose_convert_from_docker_run()}
 					onConvert={() => (ui.showConverterDialog = true)}
 					fromGitLabel={m.git_from_git_repo()}
-					onFromGit={async () => goto(`/environments/${await environmentStore.getCurrentEnvironmentId()}/gitops?action=create`)}
+					onFromGit={async () => goto(`/environments/${environmentId}/gitops?action=create`)}
 					createTemplateLabel={m.templates_create_template()}
 					createTemplateDisabled={!inputs.name.value ||
 						!inputs.composeContent.value ||
@@ -397,6 +408,11 @@
 					{@render projectNameField('block')}
 					<ProjectTagEditor bind:tags={newProjectTags} availableTags={availableProjectTags} canEdit={!ui.saving} class="mt-2" />
 				</div>
+
+				<EnvironmentDestinationSelect
+					bind:value={() => environmentId, (value) => (pickedEnvironmentId = value)}
+					permission="projects:create"
+				/>
 
 				{#if templateLoadNotices.length > 0}
 					<Alert.Root variant="warning" size="sm">

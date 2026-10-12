@@ -14,12 +14,13 @@
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { environmentManagementService } from '#lib/services/env-mgmt-service.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
-	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+	import { allEnvironmentsPreview, environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { Environment } from '#lib/types/environment.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { cn } from '#lib/utils.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
+	import { saveUserPreferences } from '#lib/utils/user-preferences.js';
 	import { debounced } from '#lib/utils/ws.js';
 
 	type Props = {
@@ -279,9 +280,24 @@
 				</div>
 			{:else}
 				<div class="space-y-1">
+					{#if allEnvironmentsPreview.current}
+						<div class="flex w-full items-center gap-3 rounded-lg border border-primary bg-primary/10 p-3 font-medium">
+							<div class="flex size-8 shrink-0 items-center justify-center rounded-md border border-primary bg-primary">
+								<EnvironmentsIcon class="size-4 text-primary-foreground" />
+							</div>
+							<span class="flex-1 truncate">{m.all_environments()}</span>
+							<ArcaneButton
+								action="base"
+								tone="outline"
+								size="sm"
+								customLabel={m.all_environments_preview_turn_off()}
+								onclick={() => saveUserPreferences({ allEnvironmentsPreview: false })}
+							/>
+						</div>
+					{/if}
 					{#each environments as env (env.id)}
-						{@const isActive = environmentStore.selected?.id === env.id}
-						{@const isDisabled = !env.enabled}
+						{@const isActive = !allEnvironmentsPreview.current && environmentStore.selected?.id === env.id}
+						{@const isDisabled = !env.enabled || allEnvironmentsPreview.current}
 						<div
 							class={cn(
 								'flex items-center gap-2 rounded-lg border p-1 transition-colors',

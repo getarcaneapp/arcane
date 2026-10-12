@@ -10,25 +10,26 @@
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { ContainerStatusCounts } from '#lib/types/docker.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
-	import { hasPermission } from '#lib/utils/auth.js';
+	import { fetchAcrossEnvironments, hasShownPermission } from '#lib/utils/environments.js';
 	import { confirmAndApplyAllUpdates } from '#lib/utils/update-actions.js';
 
 	import ContainerEnvironmentSync from './components/container-environment-sync.svelte';
 	import ContainerTable from './components/container-table.svelte';
+	import { containerSortValue } from './container-table.helpers';
 
 	let { data } = $props();
 
 	let requestOptions = $derived(data.containerRequestOptions);
 	let selectedIds = $state<string[]>([]);
 	let containers = $derived(data.containers);
-	const envId = $derived(environmentStore.selected?.id || '0');
-	let displayedEnvId = $state<string | null>(untrack(() => (data.envId === envId ? data.envId : null)));
+	const scope = $derived(environmentStore.shownKey);
+	let displayedScope = $state<string | null>(untrack(() => (data.scope === scope ? data.scope : null)));
 	let isRefreshing = $state(false);
 	let refreshGeneration = 0;
 	let groupByProject = $state(false);
 	let hasSeenEnvironmentSync = $state(false);
 	let isApplyingUpdates = $state(false);
-	const resourcesReady = $derived(displayedEnvId === envId);
+	const resourcesReady = $derived(displayedScope === scope);
 
 	const countsFallback: ContainerStatusCounts = {
 		runningContainers: 0,
@@ -43,21 +44,26 @@
 		};
 	}
 
-	async function refreshContainers(options: ContainerListRequestOptions = buildRequestOptions(), requestedEnvId = envId) {
+	async function refreshContainers(options: ContainerListRequestOptions = buildRequestOptions(), requestedScope = scope) {
 		const generation = ++refreshGeneration;
-		if (requestedEnvId === envId) {
+		if (requestedScope === scope) {
 			isRefreshing = true;
 		}
 		try {
-			const next = await containerService.getContainersForEnvironment(requestedEnvId, options);
-			if (requestedEnvId !== envId || generation !== refreshGeneration) {
+			const next = await fetchAcrossEnvironments(
+				environmentStore.shown,
+				options,
+				(id, request, config) => containerService.getContainersForEnvironment(id, request, config),
+				containerSortValue
+			);
+			if (requestedScope !== scope || generation !== refreshGeneration) {
 				return containers;
 			}
 			containers = next;
-			displayedEnvId = requestedEnvId;
+			displayedScope = requestedScope;
 			return next;
 		} finally {
-			if (requestedEnvId === envId && generation === refreshGeneration) {
+			if (requestedScope === scope && generation === refreshGeneration) {
 				isRefreshing = false;
 			}
 		}
@@ -66,14 +72,14 @@
 	function handleEnvironmentChange() {
 		if (!hasSeenEnvironmentSync) {
 			hasSeenEnvironmentSync = true;
-			if (data.envId === envId) {
+			if (data.scope === scope) {
 				return;
 			}
 		}
 
 		refreshGeneration += 1;
 		isRefreshing = false;
-		displayedEnvId = null;
+		displayedScope = null;
 		selectedIds = [];
 
 		const nextOptions: SearchPaginationSortRequest = {
@@ -84,10 +90,10 @@
 			}
 		};
 		requestOptions = nextOptions;
-		if (!hasPermission('containers:list', envId)) {
+		if (!hasShownPermission('containers:list')) {
 			return;
 		}
-		return refreshContainers(buildRequestOptions(nextOptions), envId);
+		return refreshContainers(buildRequestOptions(nextOptions), scope);
 	}
 
 	async function refresh() {
@@ -96,8 +102,8 @@
 
 	const containerStatusCounts = $derived(resourcesReady ? (containers.counts ?? countsFallback) : countsFallback);
 
-	const canCreateContainers = $derived(hasPermission('containers:create', envId));
-	const canAutoUpdate = $derived(hasPermission('containers:autoupdate', envId));
+	const canCreateContainers = $derived(hasShownPermission('containers:create'));
+	const canAutoUpdate = $derived(hasShownPermission('containers:autoupdate'));
 
 	const actionButtons: ActionButton[] = $derived(
 		[
@@ -160,7 +166,7 @@
 	]);
 </script>
 
-{#key envId}
+{#key scope}
 	<ContainerEnvironmentSync onActivate={handleEnvironmentChange} />
 {/key}
 
@@ -168,13 +174,13 @@
 	{#snippet mainContent()}
 		{#if resourcesReady}
 			<ContainerTable
-				environmentId={displayedEnvId!}
+				scope={displayedScope!}
 				bind:containers
 				bind:selectedIds
 				bind:requestOptions
 				bind:groupByProject
 				onRefreshData={async (options) => {
-					const requestedEnvId = envId;
+					const requestedScope = scope;
 					requestOptions = {
 						search: options.search,
 						pagination: options.pagination,
@@ -183,7 +189,7 @@
 						includeInternal: options.includeInternal,
 						includeHidden: options.includeHidden
 					};
-					return refreshContainers(options, requestedEnvId);
+					return refreshContainers(options, requestedScope);
 				}}
 			/>
 		{/if}

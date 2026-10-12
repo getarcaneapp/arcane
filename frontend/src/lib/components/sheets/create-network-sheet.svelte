@@ -2,6 +2,7 @@
 	import { z } from 'zod/v4';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import EnvironmentDestinationSelect from '#lib/components/form/environment-destination-select.svelte';
 	import SheetFooterActions from '#lib/components/sheets/sheet-footer-actions.svelte';
 	import * as Accordion from '#lib/components/ui/accordion/index.js';
 	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
@@ -12,6 +13,7 @@
 	import { CloseIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { IPAMConfig, NetworkCreateOptions } from '#lib/types/docker.js';
+	import { destinationEnvironmentId } from '#lib/utils/environments.js';
 	import { parseKeyValuePairs } from '#lib/utils/form-parsers.js';
 	import { createForm, preventDefault } from '#lib/utils/settings.svelte.js';
 
@@ -19,11 +21,14 @@
 
 	type CreateNetworkFormProps = {
 		open: boolean;
-		onSubmit: (name: string, options: NetworkCreateOptions) => void;
+		onSubmit: (name: string, options: NetworkCreateOptions, environmentId: string) => void;
 		isLoading: boolean;
 	};
 
 	let { open = $bindable(false), onSubmit, isLoading }: CreateNetworkFormProps = $props();
+
+	let pickedEnvironmentId = $state('');
+	const environmentId = $derived(destinationEnvironmentId(pickedEnvironmentId, 'networks:create'));
 
 	const drivers = [
 		{ value: 'bridge', label: m.bridge() },
@@ -122,13 +127,14 @@
 			}
 		}
 
-		onSubmit(data.networkName.trim(), options);
+		onSubmit(data.networkName.trim(), options, environmentId);
 	}
 
 	function handleOpenChange(newOpenState: boolean) {
 		open = newOpenState;
 		if (!newOpenState) {
 			// Reset form data
+			pickedEnvironmentId = '';
 			inputs.networkName.value = '';
 			inputs.networkDriver.value = 'bridge';
 			inputs.checkDuplicate.value = true;
@@ -154,6 +160,10 @@
 >
 	{#snippet children()}
 		<form onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-6">
+			<EnvironmentDestinationSelect
+				bind:value={() => environmentId, (value) => (pickedEnvironmentId = value)}
+				permission="networks:create"
+			/>
 			<div class="space-y-2">
 				<Label for="network-name">{m.network_name_label()}</Label>
 				<Input

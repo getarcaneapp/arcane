@@ -4,14 +4,17 @@
 	import { projectService } from '#lib/services/project-service.js';
 	import { projectWorkspaceService } from '#lib/services/project-workspace-service.js';
 	import type { Project, IncludeFile } from '#lib/types/swarm.js';
+	import { environmentHref } from '#lib/utils/environments.js';
 
 	let {
 		project,
+		environmentId,
 		serviceName,
 		includeFile = null,
 		rootFilename = 'compose.yml'
 	}: {
 		project: Project;
+		environmentId: string;
 		serviceName: string;
 		includeFile?: IncludeFile | null;
 		rootFilename?: string;
@@ -30,23 +33,24 @@
 
 	async function save() {
 		if (includeFile) {
-			const workspace = await projectWorkspaceService.getWorkspace(project.id);
+			const workspace = await projectWorkspaceService.getWorkspace(project.id, environmentId);
 			await projectWorkspaceService.updateWorkspace(
 				project.id,
 				{
 					fileTreeRevision: workspace.fileTreeRevision,
 					fileChanges: [{ operation: 'update_file', relativePath: includeFile.relativePath, uploadIndex: 0 }]
 				},
-				[new File([composeContent], includeFile.relativePath, { type: 'text/yaml' })]
+				[new File([composeContent], includeFile.relativePath, { type: 'text/yaml' })],
+				environmentId
 			);
 		} else {
-			await projectService.updateProject(project.id, undefined, composeContent);
+			await projectService.updateProject(project.id, undefined, composeContent, undefined, undefined, environmentId);
 		}
 	}
 </script>
 
 <ComposeEditorWrapper
-	projectId={project.id}
+	projectHref={environmentHref(`/projects/${project.id}`, environmentId)}
 	projectName={project.name}
 	gitOpsManagedBy={project.gitOpsManagedBy}
 	{fileTitle}

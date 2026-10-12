@@ -461,6 +461,10 @@ func (s *VolumeService) CreateVolume(ctx context.Context, options client.VolumeC
 
 func (s *VolumeService) DeleteVolume(ctx context.Context, name string, force bool, user usertypes.Actor) error {
 	slog.DebugContext(ctx, "volume service: delete volume", "volume", name, "force", force, "user", user.ID)
+	// Clients may not know this environment's backup volume name, so its removal is refused here.
+	if s.IsBackupVolume(name) {
+		return common.ErrVolumeDeleteProtected
+	}
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, event.EventTypeVolumeError, "volume", name, name, user.ID, user.Username, "0", err, database.JSON{"action": "delete", "force": force})
@@ -808,8 +812,13 @@ func (s *VolumeService) CountUsageFromSnapshot(dockerVolumes []volume.Volume, co
 	return counts
 }
 
+// IsBackupVolume reports whether name is the volume that stores this environment's backups.
+func (s *VolumeService) IsBackupVolume(name string) bool {
+	return strings.EqualFold(strings.TrimSpace(name), strings.TrimSpace(s.backupVolumeName))
+}
+
 func (s *VolumeService) isInternalVolumeInternal(v volumetypes.Volume) bool {
-	if strings.EqualFold(strings.TrimSpace(v.Name), strings.TrimSpace(s.backupVolumeName)) {
+	if s.IsBackupVolume(v.Name) {
 		return true
 	}
 

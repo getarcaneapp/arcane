@@ -260,7 +260,7 @@
 	]);
 </script>
 
-<ResourcePageLayout title={m.git_syncs_title()} subtitle={m.git_subtitle()} {actionButtons} {statCards}>
+<ResourcePageLayout title={m.git_syncs_title()} subtitle={m.git_subtitle()} {actionButtons} {statCards} environmentPicker>
 	{#snippet mainContent()}
 		<SyncTable
 			{environmentId}

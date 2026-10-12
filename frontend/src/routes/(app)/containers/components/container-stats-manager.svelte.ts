@@ -2,6 +2,7 @@ import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 
 import type { ContainerStats } from '#lib/types/docker.js';
 import { calculateCPUPercent, calculateMemoryPercent, calculateMemoryUsage } from '#lib/utils/docker.js';
+import { parseRowKey } from '#lib/utils/environments.js';
 import { createContainerStatsWebSocket } from '#lib/utils/ws.js';
 import type { ReconnectingWebSocket } from '#lib/utils/ws.js';
 
@@ -11,16 +12,18 @@ export class ContainerStatsManager {
 	private loadingStates = new SvelteMap<string, boolean>();
 	private errorStates = new SvelteMap<string, boolean>();
 	private desiredIds = new SvelteSet<string>();
-	private currentEnvId: string | null = null;
 
-	connect(containerId: string, envId: string): void {
+	/** Keyed by table row key; the row's environment is decoded only for the websocket URL. */
+	connect(containerId: string): void {
 		if (this.connections.has(containerId)) return;
+		const { id, environmentId } = parseRowKey(containerId);
+		if (!environmentId) return;
 
 		this.loadingStates.set(containerId, true);
 
 		const ws = createContainerStatsWebSocket({
-			getEnvId: () => envId,
-			containerId,
+			getEnvId: () => environmentId,
+			containerId: id,
 			onMessage: (data: ContainerStats) => {
 				this.stats.set(containerId, data);
 				this.loadingStates.set(containerId, false);
@@ -86,31 +89,17 @@ export class ContainerStatsManager {
 		return Array.from(this.connections.keys());
 	}
 
-	set envId(value: string) {
-		if (this.currentEnvId === value) return;
-		this.currentEnvId = value;
-		this.resetConnections();
-		this.syncConnections();
-	}
-
+	/** Table row keys; each container streams from its row's environment. */
 	set targetIds(value: Set<string>) {
 		this.desiredIds = new SvelteSet(value);
 		this.syncConnections();
 	}
 
-	private resetConnections(): void {
-		const ids = Array.from(this.connections.keys());
-		for (const id of ids) {
-			this.disconnect(id);
-		}
-	}
-
 	private syncConnections(): void {
-		if (!this.currentEnvId) return;
 		const connectedIds = new SvelteSet(this.connections.keys());
 		for (const id of this.desiredIds) {
 			if (!connectedIds.has(id)) {
-				this.connect(id, this.currentEnvId);
+				this.connect(id);
 			}
 		}
 

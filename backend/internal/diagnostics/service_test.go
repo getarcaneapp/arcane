@@ -1,12 +1,15 @@
 package diagnostics
 
 import (
+	"context"
 	"runtime"
 	"runtime/pprof"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/getarcaneapp/arcane/types/v2/system"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -94,4 +97,39 @@ func leakUnbufferedChannelInternal() {
 //go:noinline
 func blockForeverOnDroppedChannelInternal() {
 	<-make(chan struct{})
+}
+
+func TestDiagnosticsServiceGoroutines(t *testing.T) {
+	s := NewDiagnosticsService(nil, nil, nil)
+	release := make(chan struct{})
+	defer close(release)
+	// Different pprof labels split debug=1 records; the service merges them by stack.
+	for _, worker := range []string{"a", "a", "b"} {
+		go func() {
+			pprof.Do(t.Context(), pprof.Labels("worker", worker), func(context.Context) { <-release })
+		}()
+	}
+
+	require.EventuallyWithT(t, func(c *assert.CollectT) {
+		profile, err := s.Goroutines()
+		require.NoError(c, err)
+		assert.True(c, slices.IsSortedFunc(profile.Groups, func(a, b system.GoroutineGroup) int { return b.Count - a.Count }))
+		assert.Equal(c, profile.Total, func() int {
+			total := 0
+			for _, g := range profile.Groups {
+				total += g.Count
+			}
+			return total
+		}())
+		// The label is the outermost frame, the started func; the blocking closure and pprof.Do sit inside it.
+		i := slices.IndexFunc(profile.Groups, func(g system.GoroutineGroup) bool {
+			return strings.HasSuffix(g.Label, "TestDiagnosticsServiceGoroutines.func1")
+		})
+		require.GreaterOrEqual(c, i, 0)
+		group := profile.Groups[i]
+		assert.Equal(c, 3, group.Count)
+		require.Len(c, group.Frames, 3)
+		assert.Equal(c, "runtime/pprof.Do", group.Frames[1].Function)
+		assert.False(c, slices.ContainsFunc(group.Frames, func(f system.GoroutineFrame) bool { return f.File == "" || f.Line <= 0 }))
+	}, 5*time.Second, 20*time.Millisecond)
 }
