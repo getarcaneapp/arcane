@@ -347,7 +347,7 @@ func CreateUniqueDir(ctx context.Context, projectsRoot, basePath, name string, p
 			return candidate, folderName, false, nil
 		}
 		if !errors.Is(mkErr, os.ErrExist) {
-			return "", "", false, mkErr
+			return "", "", false, projectDirError(projectsRoot, candidate, mkErr)
 		}
 
 		if candidate == basePath {
@@ -392,10 +392,18 @@ func CreateExactDir(ctx context.Context, projectsRoot, basePath, name string, pe
 	}
 
 	if mkdirErr := acfs.Mkdir(ctx, projectsRoot, logicalPath, perm); mkdirErr != nil {
-		return "", "", kit.Ternary[error](errors.Is(mkdirErr, os.ErrExist), ErrProjectDirExists, mkdirErr)
+		return "", "", kit.Ternary[error](errors.Is(mkdirErr, os.ErrExist), ErrProjectDirExists, projectDirError(projectsRoot, basePath, mkdirErr))
 	}
 
 	return basePath, sanitized, nil
+}
+
+func projectDirError(projectsRoot, path string, err error) error {
+	wrapped := fmt.Errorf("%s: %w", path, err)
+	if errors.Is(err, os.ErrPermission) {
+		return common.Classify(common.ErrForbidden, fmt.Errorf("%w (projects directory %s must be writable by uid %d)", wrapped, projectsRoot, os.Getuid()))
+	}
+	return wrapped
 }
 
 func SanitizeProjectName(name string) string {
