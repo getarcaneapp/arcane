@@ -24,6 +24,7 @@ import (
 	"github.com/moby/moby/client"
 	"go.getarcane.app/acfs"
 	"go.getarcane.app/docker"
+	"go.getarcane.app/docker/compat"
 	"go.getarcane.app/kit/pkg"
 	"go.getarcane.app/sys/cgroup"
 	"gorm.io/gorm"
@@ -637,6 +638,31 @@ func sourceMounts(mounts []container.MountPoint, inContainer bool, containerPath
 	return result, nil
 }
 
+// bindVolumeSubpaths rewrites volume subpath mounts as binds of the
+// subpath on daemons before API 1.45, which ignore subpaths and mount the
+// volume root instead.
+func bindVolumeSubpaths(ctx context.Context, dockerClient *client.Client, mounts []mount.Mount) error {
+	if compat.IsDockerAPIVersionAtLeast(compat.DetectDockerAPIVersion(ctx, dockerClient), "1.45") {
+		return nil
+	}
+	for index, resolved := range mounts {
+		if resolved.Type != mount.TypeVolume || resolved.VolumeOptions == nil || resolved.VolumeOptions.Subpath == "" {
+			continue
+		}
+		inspect, err := dockerClient.VolumeInspect(ctx, resolved.Source, client.VolumeInspectOptions{})
+		if err != nil {
+			return fmt.Errorf("inspect volume %s for system backup: %w", resolved.Source, err)
+		}
+		mounts[index] = mount.Mount{
+			Type:     mount.TypeBind,
+			Source:   filepath.Join(inspect.Volume.Mountpoint, resolved.VolumeOptions.Subpath),
+			Target:   resolved.Target,
+			ReadOnly: resolved.ReadOnly,
+		}
+	}
+	return nil
+}
+
 // nestedDataPath returns the data directory relative to the projects
 // directory when the projects mount contains it on the host: the same bind
 // path prefix or the same named volume and subpath. Mounting one host
@@ -1090,6 +1116,9 @@ func (s *Service) Create(
 			return backup.Snapshot{}, mountErr
 		}
 		layout.mounts = append(layout.mounts, stagedMounts...)
+	}
+	if bindErr := bindVolumeSubpaths(ctx, dockerClient, layout.mounts); bindErr != nil {
+		return backup.Snapshot{}, bindErr
 	}
 	input := backup.CreateSnapshotInput{Mounts: layout.mounts, Sources: layout.sources}
 	for _, excluded := range layout.excludes {
