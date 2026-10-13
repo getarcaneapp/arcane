@@ -306,6 +306,9 @@ func newClientInternal(ctx context.Context, configuration Configuration) (*awss3
 	endpoint := configuration.EndpointURL()
 	return awss3.NewFromConfig(awsConfiguration, func(options *awss3.Options) {
 		options.UsePathStyle = configuration.ForcePathStyle
+		// S3-compatible stores such as GCS reject the SDK's default flexible checksums.
+		options.RequestChecksumCalculation = aws.RequestChecksumCalculationWhenRequired
+		options.ResponseChecksumValidation = aws.ResponseChecksumValidationWhenRequired
 		if endpoint != "" {
 			options.BaseEndpoint = aws.String(endpoint)
 		}
