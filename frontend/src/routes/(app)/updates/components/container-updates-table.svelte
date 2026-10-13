@@ -31,7 +31,7 @@
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { bulkConfirmAndRun } from '#lib/utils/bulk-actions.js';
 	import { confirmAndUpdateContainer } from '#lib/utils/container-actions.js';
-	import { isAutoUpdateLabelDisabled } from '#lib/utils/container-auto-update.js';
+	import { isAutoUpdateLabelDisabled, UPDATE_CHECK_LABEL } from '#lib/utils/container-auto-update.js';
 	import { createContainerUpdateActivityTracker } from '#lib/utils/container-update-activities.js';
 	import {
 		environmentHref,
@@ -118,7 +118,7 @@
 		if (!statusAvailable) {
 			autoUpdateTitle = m.auto_update_status_unavailable();
 		} else if (labelControlled) {
-			autoUpdateTitle = m.auto_update_controlled_by_label();
+			autoUpdateTitle = m.auto_update_controlled_by_label_checks_continue({ label: `${UPDATE_CHECK_LABEL}=false` });
 		} else if (autoUpdateDisabled) {
 			autoUpdateTitle = m.auto_update_disabled_checks_continue();
 		}
@@ -268,7 +268,9 @@
 		{#if item.autoUpdateDisabled}
 			<Badge
 				variant="gray"
-				title={item.labelControlled ? m.auto_update_controlled_by_label() : m.auto_update_disabled_checks_continue()}
+				title={item.labelControlled
+					? m.auto_update_controlled_by_label_checks_continue({ label: `${UPDATE_CHECK_LABEL}=false` })
+					: m.auto_update_disabled_checks_continue()}
 			>
 				{m.updates_auto_update_disabled()}
 			</Badge>

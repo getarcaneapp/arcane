@@ -296,6 +296,7 @@
   "auto_update_disabled_toast": "Auto-update disabled",
   "auto_update_failed": "Failed to update auto-update setting",
   "auto_update_controlled_by_label": "Controlled by Docker label",
+  "auto_update_controlled_by_label_checks_continue": "Auto-update is controlled by a Docker label. Update checks continue; to stop them, add the label {label}.",
   "auto_update_status_unavailable": "Auto-update status is unavailable because this environment's agent does not report it. Update the agent to manage it here.",
   "excluded_containers": "Excluded Containers",
   "auto_heal_exclude_description": "Select containers to exclude from auto-heal monitoring.",

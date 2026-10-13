@@ -33,7 +33,7 @@ import (
 	acfstypes "go.getarcane.app/acfs/types"
 	"go.getarcane.app/docker"
 	dockertypes "go.getarcane.app/docker/types"
-	"go.getarcane.app/kit/pkg"
+	kit "go.getarcane.app/kit/pkg"
 	"go.getarcane.app/kit/pkg/mapping"
 	"go.getarcane.app/sys/cgroup"
 	"go.getarcane.app/updater"
@@ -2438,14 +2438,10 @@ func (s *ProjectService) refreshProjectImageRefs(ctx context.Context, proj *Proj
 		if dbErr := s.db.WithContext(ctx).
 			Model(&Project{}).
 			Where("id = ?", proj.ID).
-			Updates(map[string]any{
-				"image_refs_json":       "",
-				"build_image_refs_json": nil,
-			}).Error; dbErr != nil {
+			Update("image_refs_json", "").Error; dbErr != nil {
 			slog.WarnContext(ctx, "failed to clear stale project image refs", "projectId", proj.ID, "error", dbErr)
 		}
 		proj.ImageRefsJSON = ""
-		proj.BuildImageRefsJSON = nil
 		slog.WarnContext(ctx, "failed to refresh project image refs", "projectId", proj.ID, "projectName", proj.Name, "error", fmt.Errorf("load compose project: %w", err))
 		return
 	}
