@@ -456,7 +456,7 @@ func (s *Service) prepareBackup(ctx context.Context, trigger string, request bac
 	return &preparedSystemBackup{run: run, recoveryKey: recoveryKey, checkpoint: checkpoint}, nil
 }
 
-// executeBackup stages one snapshot, keeps it locally and/or replicates it to S3, then records the run's result.
+// executeBackup snapshots straight to S3 for S3-only runs, otherwise keeps a local snapshot and optionally replicates it to S3, then records the run's result.
 func (s *Service) executeBackup(ctx context.Context, prepared *preparedSystemBackup) (_ *backuptypes.SystemBackupRun, err error) {
 	run, key, checkpoint := prepared.run, prepared.recoveryKey, prepared.checkpoint
 	ctx, finish := s.startOperation(ctx, "create", attribute.String("arcane.backup.id", run.ID), attribute.String("arcane.backup.trigger", run.Trigger))
@@ -488,49 +488,34 @@ func (s *Service) executeBackup(ctx context.Context, prepared *preparedSystemBac
 	if progressErr := progress("stage", scheduler.Running, ""); progressErr != nil {
 		return run, progressErr
 	}
-	local, err := s.localRepository(ctx, dockerClient, false)
+	// S3-only runs write straight to S3 so no local repository is created.
+	s3Only := !checkpoint.LocalEnabled
+	var repository backup.Repository
+	if s3Only {
+		repository, err = s.remoteRepository(ctx, run.S3DestinationID)
+	} else {
+		repository, err = s.localRepository(ctx, dockerClient, false)
+	}
 	var staged backup.Snapshot
 	if err == nil {
-		staged, err = s.snapshots.Create(ctx, dockerClient, local, key, run.ID)
+		staged, err = s.snapshots.Create(ctx, dockerClient, repository, key, run.ID)
 	}
-	directRemote := err != nil
-	if directRemote {
-		stagingErr := fmt.Errorf("failed to create local system recovery staging snapshot: %w", err)
-		if checkpoint.LocalEnabled || !checkpoint.S3Enabled {
-			return run, stagingErr
-		}
-		// S3-only backups write straight to S3 when local staging storage is unusable.
-		direct, repoErr := s.remoteRepository(ctx, run.S3DestinationID)
-		if repoErr != nil {
-			return run, errors.Join(stagingErr, repoErr)
-		}
-		if staged, err = s.snapshots.Create(ctx, dockerClient, direct, key, run.ID); err != nil {
-			return run, errors.Join(stagingErr, fmt.Errorf("failed to create S3 system recovery snapshot: %w", err))
-		}
+	if err != nil {
+		return run, fmt.Errorf("failed to create %s system recovery snapshot: %w", kit.Ternary(s3Only, "S3", "local"), err)
 	}
 	if progressErr := progress("stage", scheduler.Succeeded, staged.ID); progressErr != nil {
 		return run, progressErr
 	}
-	if directRemote {
+	if s3Only {
 		run.RemoteSnapshotID, run.Size = staged.ID, staged.Size
 		return run, s.store.SaveRun(ctx, run)
 	}
-	if checkpoint.LocalEnabled {
-		run.LocalSnapshotID, run.Size = staged.ID, staged.Size
-		if saveErr := s.store.SaveRun(ctx, run); saveErr != nil {
-			return run, saveErr
-		}
-		if progressErr := progress("local", scheduler.Succeeded, staged.ID); progressErr != nil {
-			return run, progressErr
-		}
-	} else {
-		// S3-only runs forget the staged snapshot even when replication fails.
-		defer func() {
-			cleanupCtx := context.WithoutCancel(ctx)
-			if forgetErr := s.engine.ForgetSnapshots(cleanupCtx, dockerClient, local, key, []string{staged.ID}); forgetErr != nil {
-				slog.WarnContext(cleanupCtx, "failed to remove staged system recovery snapshot", "snapshotId", staged.ID, "error", forgetErr)
-			}
-		}()
+	run.LocalSnapshotID, run.Size = staged.ID, staged.Size
+	if saveErr := s.store.SaveRun(ctx, run); saveErr != nil {
+		return run, saveErr
+	}
+	if progressErr := progress("local", scheduler.Succeeded, staged.ID); progressErr != nil {
+		return run, progressErr
 	}
 	if !checkpoint.S3Enabled {
 		return run, nil
@@ -542,7 +527,7 @@ func (s *Service) executeBackup(ctx context.Context, prepared *preparedSystemBac
 	if progressErr := progress("remote", scheduler.Running, ""); progressErr != nil {
 		return run, progressErr
 	}
-	snapshot, err := s.engine.Replicate(ctx, dockerClient, local, staged.ID, remote, key, "arcane-system-recovery", backup.RunSnapshotTag(run.ID))
+	snapshot, err := s.engine.Replicate(ctx, dockerClient, repository, staged.ID, remote, key, "arcane-system-recovery", backup.RunSnapshotTag(run.ID))
 	if err != nil {
 		return run, fmt.Errorf("failed to create S3 system recovery snapshot: %w", err)
 	}
@@ -1395,34 +1380,41 @@ func (s *Service) observeBackupSnapshots(
 	ctx context.Context, dockerClient *client.Client, previous scheduler.Run, run *backuptypes.SystemBackupRun, checkpoint systemBackupRecovery, key string,
 ) (backup.Snapshot, backup.Repository, backup.Repository, error) {
 	var staged backup.Snapshot
-	var remote backup.Repository
-	local, err := s.localRepository(ctx, dockerClient, false)
-	if err != nil && checkpoint.LocalEnabled {
-		return staged, local, remote, err
-	}
+	var local, remote backup.Repository
 	targets := previous.Outcome.Targets
 	stageIndex := slices.IndexFunc(targets, func(target scheduler.TargetOutcome) bool { return target.ID == run.ID+":stage" })
 	stageID := run.LocalSnapshotID
 	if stageIndex >= 0 && stageID == "" && targets[stageIndex].Status == scheduler.Succeeded {
 		stageID = targets[stageIndex].Message
 	}
-	if err == nil && (stageIndex >= 0 || stageID != "") {
-		snapshot, found, findErr := s.engine.FindRunSnapshot(ctx, dockerClient, local, key, run.ID, stageID)
-		if findErr == nil && found {
+	remoteAttempted := slices.ContainsFunc(targets, func(target scheduler.TargetOutcome) bool { return target.ID == run.ID+":remote" })
+	findStaged := func() error {
+		repository, err := s.localRepository(ctx, dockerClient, false)
+		if err != nil {
+			return err
+		}
+		local = repository
+		if stageIndex < 0 && stageID == "" {
+			return nil
+		}
+		snapshot, found, err := s.engine.FindRunSnapshot(ctx, dockerClient, local, key, run.ID, stageID)
+		if found {
 			staged = snapshot
 		}
-		if checkpoint.LocalEnabled && findErr != nil {
-			return staged, local, remote, findErr
+		return err
+	}
+	if checkpoint.LocalEnabled {
+		if err := findStaged(); err != nil {
+			return staged, local, remote, err
 		}
 	}
 	if !checkpoint.S3Enabled {
 		return staged, local, remote, nil
 	}
-	remote, err = s.remoteRepository(ctx, run.S3DestinationID)
+	remote, err := s.remoteRepository(ctx, run.S3DestinationID)
 	if err != nil {
 		return staged, local, remote, err
 	}
-	remoteAttempted := slices.ContainsFunc(targets, func(target scheduler.TargetOutcome) bool { return target.ID == run.ID+":remote" })
 	if (stageIndex >= 0 && staged.ID == "") || remoteAttempted || run.RemoteSnapshotID != "" {
 		snapshot, found, findErr := s.engine.FindRunSnapshot(ctx, dockerClient, remote, key, run.ID, run.RemoteSnapshotID)
 		if findErr != nil {
@@ -1430,6 +1422,13 @@ func (s *Service) observeBackupSnapshots(
 		}
 		if found {
 			run.RemoteSnapshotID, run.Size = snapshot.ID, cmp.Or(run.Size, snapshot.Size)
+		}
+	}
+	// S3-only runs snapshot straight to S3, so only runs from older versions left a local staged snapshot to recover,
+	// including one tagged before its stage success was recorded.
+	if !checkpoint.LocalEnabled && (remoteAttempted || ((stageIndex >= 0 || stageID != "") && run.RemoteSnapshotID == "")) {
+		if err = findStaged(); err != nil {
+			slog.WarnContext(ctx, "failed to find staged system recovery snapshot", "backupId", run.ID, "error", err)
 		}
 	}
 	return staged, local, remote, nil
