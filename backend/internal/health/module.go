@@ -4,11 +4,13 @@ import (
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
+
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/francis"
 )
 
 // RegisterRoutes registers the health check routes.
-func RegisterRoutes(api huma.API) {
-	handler := &healthHandler{}
+func RegisterRoutes(api huma.API, actors *francis.Runtime) {
+	handler := &healthHandler{actors: actors}
 
 	huma.Register(api, huma.Operation{
 		OperationID: "health-check",
@@ -18,7 +20,7 @@ func RegisterRoutes(api huma.API) {
 		Description: "Check if the API is healthy",
 		Tags:        []string{"Health"},
 		Security:    []map[string][]string{},
-	}, handler.getHealth)
+	}, health[healthOutput](handler))
 
 	huma.Register(api, huma.Operation{
 		OperationID: "health-check-head",
@@ -28,5 +30,5 @@ func RegisterRoutes(api huma.API) {
 		Description: "Check if the API is healthy (HEAD request)",
 		Tags:        []string{"Health"},
 		Security:    []map[string][]string{},
-	}, handler.headHealth)
+	}, health[headHealthOutput](handler))
 }

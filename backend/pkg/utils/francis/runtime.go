@@ -79,7 +79,7 @@ func New(databaseURL, encryptionKey, instanceID, port string, options ...local.H
 		service: &actor.Service{}, ready: make(chan struct{}), done: make(chan struct{}), address: address, storeURL: storeURL,
 		options: []local.HostOption{
 			local.WithAddress(address), providerOption(storeURL),
-			local.WithMaxHosts(1), local.WithHostHealthCheckDeadline(90 * time.Second),
+			local.WithMaxHosts(1), local.WithHostHealthCheckDeadline(150 * time.Second),
 			local.WithShutdownGracePeriod(10 * time.Second), local.WithAlarmsPollInterval(time.Second),
 			local.WithAlarmsFetchAheadInterval(30 * time.Second), local.WithAlarmsLeaseDuration(180 * time.Second),
 		},
@@ -117,6 +117,7 @@ func (r *Runtime) ConfigureIdentity(encryptionKey, instanceID string) error {
 
 func (r *Runtime) Service() *actor.Service { return r.service }
 func (r *Runtime) Ready() <-chan struct{}  { return r.ready }
+func (r *Runtime) Done() <-chan struct{}   { return r.done }
 
 // Store lazily opens a small pool on Francis storage for diagnostics and backups.
 func (r *Runtime) Store() (*gorm.DB, error) {
