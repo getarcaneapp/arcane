@@ -1,6 +1,9 @@
 package git
 
 import (
+	"crypto/ed25519"
+	"crypto/rand"
+	"encoding/pem"
 	"errors"
 	"net"
 	"os"
@@ -13,9 +16,11 @@ import (
 
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v5/plumbing/transport"
+	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	gossh "golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/knownhosts"
 )
 
 // Azure DevOps requires multi_ack/multi_ack_detailed in pack negotiation;
@@ -206,6 +211,58 @@ func TestGetSSHHostKeyCallback(t *testing.T) {
 
 		require.NotNil(t, callback,
 			"expected non-nil callback")
+	})
+}
+
+func TestGetAuthSSHHostKeyAlgorithms(t *testing.T) {
+	const repoURL = "git@example.com:org/repo.git"
+
+	getSSHAuth := func(t *testing.T, mode string) *ssh.PublicKeys {
+		t.Helper()
+		auth, err := NewClient("").getAuth(t.Context(), repoURL, AuthConfig{
+			AuthType:               "ssh",
+			SSHKey:                 generateTestPrivateKeyPEM(t),
+			SSHHostKeyVerification: mode,
+		})
+		require.NoError(t, err)
+		publicKeys, ok := auth.(*ssh.PublicKeys)
+		require.True(t, ok, "expected *ssh.PublicKeys, got %T", auth)
+		return publicKeys
+	}
+
+	t.Run("saved host keys select matching algorithms", func(t *testing.T) {
+		knownHostsPath := filepath.Join(t.TempDir(), "known_hosts")
+		t.Setenv("SSH_KNOWN_HOSTS", knownHostsPath)
+		key := generateTestPublicKey(t)
+		require.NoError(t, os.WriteFile(knownHostsPath, []byte(knownhosts.Line([]string{"example.com"}, key)+"\n"), 0o600))
+
+		for _, mode := range []string{SSHHostKeyVerificationStrict, SSHHostKeyVerificationAcceptNew} {
+			publicKeys := getSSHAuth(t, mode)
+			assert.Equal(t, []string{gossh.KeyAlgoED25519}, publicKeys.HostKeyAlgorithms, "mode %q", mode)
+			assert.NoError(t, publicKeys.HostKeyCallback("example.com:22", &net.TCPAddr{}, key), "mode %q", mode)
+		}
+	})
+
+	t.Run("accept_new still trusts unknown hosts", func(t *testing.T) {
+		knownHostsPath := filepath.Join(t.TempDir(), "known_hosts")
+		t.Setenv("SSH_KNOWN_HOSTS", knownHostsPath)
+
+		publicKeys := getSSHAuth(t, SSHHostKeyVerificationAcceptNew)
+		assert.Empty(t, publicKeys.HostKeyAlgorithms)
+		require.NoError(t, publicKeys.HostKeyCallback("example.com:22", &net.TCPAddr{}, generateTestPublicKey(t)))
+
+		content, err := os.ReadFile(knownHostsPath)
+		require.NoError(t, err)
+		assert.NotEmpty(t, content, "expected unknown host key to be saved")
+	})
+
+	t.Run("skip does not require a trust file", func(t *testing.T) {
+		knownHostsPath := filepath.Join(t.TempDir(), "missing", "known_hosts")
+		t.Setenv("SSH_KNOWN_HOSTS", knownHostsPath)
+
+		publicKeys := getSSHAuth(t, SSHHostKeyVerificationSkip)
+		assert.Empty(t, publicKeys.HostKeyAlgorithms)
+		assert.NoFileExists(t, knownHostsPath)
 	})
 }
 
@@ -742,6 +799,18 @@ func generateTestPublicKey(t *testing.T) gossh.PublicKey {
 		"failed to parse test public key: %v", err)
 
 	return key
+}
+
+// generateTestPrivateKeyPEM creates an OpenSSH-encoded ED25519 client key.
+func generateTestPrivateKeyPEM(t *testing.T) string {
+	t.Helper()
+
+	_, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+	block, err := gossh.MarshalPrivateKey(privateKey, "")
+	require.NoError(t, err)
+
+	return string(pem.EncodeToMemory(block))
 }
 
 // generateTestPublicKeyVariant creates a different test ED25519 public key

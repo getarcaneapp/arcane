@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -148,6 +149,20 @@ func (c *Client) getAuth(ctx context.Context, url string, localConfig AuthConfig
 			}
 			publicKeys.HostKeyCallbackHelper = ssh.HostKeyCallbackHelper{
 				HostKeyCallback: hostKeyCallback,
+			}
+			// go-git skips algorithm negotiation for custom callbacks, so a server offering a
+			// different key type than known_hosts records would fail as a mismatch.
+			if localConfig.SSHHostKeyVerification != SSHHostKeyVerificationSkip {
+				knownHostsPaths, pathErr := getKnownHostsPaths(c.workDir, os.Getenv, os.Stat, os.UserHomeDir)
+				if pathErr != nil {
+					return nil, fmt.Errorf("failed to configure SSH host key verification: %w", pathErr)
+				}
+				knownHosts, dbErr := ssh.NewKnownHostsDb(knownHostsPaths...)
+				if dbErr != nil {
+					return nil, fmt.Errorf("failed to read known_hosts: %w", dbErr)
+				}
+				hostWithPort := net.JoinHostPort(endpoint.Host, strconv.Itoa(cmp.Or(endpoint.Port, ssh.DefaultPort)))
+				publicKeys.HostKeyAlgorithms = knownHosts.HostKeyAlgorithms(hostWithPort)
 			}
 
 			return publicKeys, nil
