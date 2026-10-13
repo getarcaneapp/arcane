@@ -105,7 +105,8 @@
 		getTableDisplayEntries(flatRows, rowIndex, groupedRows, groupCollapsedState, hasExpand ? expandedRows : undefined)
 	);
 	const shouldVirtualize = $derived(entries.length > VIRTUALIZE_THRESHOLD);
-	// Natural column widths (% of the table) measured from an auto-layout pass, then locked for table-fixed.
+	// Natural column widths (px) measured from an auto-layout pass, then locked for table-fixed. Pixels rather than
+	// percentages keep an overflowing table from squashing every column; the table scrolls horizontally instead.
 	let lockedColumns = $state<{ key: string; widths: number[] } | null>(null);
 	const columnKey = $derived(
 		table
@@ -114,6 +115,7 @@
 			.join('|') + `:${hasExpand}:${wrapText}`
 	);
 	const columnWidths = $derived(shouldVirtualize && lockedColumns?.key === columnKey ? lockedColumns.widths : null);
+	const lockedTableWidth = $derived(columnWidths?.reduce((total, width) => total + width, 0));
 	const getItemKey = $derived.by(() => {
 		const displayed = entries;
 		return (index: number) => displayed[index]?.key ?? index;
@@ -155,11 +157,10 @@
 		const measureColumns = () => {
 			if (columnWidths || !body.querySelector('tr[data-index]')) return;
 			const cells = tableNode.tHead?.rows[0]?.cells;
-			const tableWidth = tableNode.getBoundingClientRect().width;
-			if (!cells || !tableWidth) return;
+			if (!cells?.length) return;
 			lockedColumns = {
 				key: layoutKey,
-				widths: Array.from(cells, (cell) => (cell.getBoundingClientRect().width / tableWidth) * 100)
+				widths: Array.from(cells, (cell) => cell.getBoundingClientRect().width)
 			};
 		};
 		const fontsChanged = () => {
@@ -328,14 +329,14 @@
 				{#if hasExpand}
 					<Table.Head
 						variant="expander"
-						style={columnWidths ? `--col-width: ${columnWidths[0]}%` : undefined}
+						style={columnWidths ? `--col-width: ${columnWidths[0]}px` : undefined}
 						class={columnWidths ? 'w-(--col-width)' : undefined}
 					></Table.Head>
 				{/if}
 				{#each headerGroup.headers as header, i (header.id)}
 					{@const meta = header.column.columnDef.meta}
 					{@const pxWidth = typeof meta?.width === 'number' ? `${meta.width}px` : undefined}
-					{@const colWidth = columnWidths ? `${columnWidths[i + (hasExpand ? 1 : 0)]}%` : pxWidth}
+					{@const colWidth = columnWidths ? `${columnWidths[i + (hasExpand ? 1 : 0)]}px` : pxWidth}
 					<Table.Head
 						colspan={header.colSpan}
 						pinned={header.column.id === 'actions'}
@@ -437,7 +438,11 @@
 			'[&_td]:bg-transparent! [&_thead]:bg-transparent! [&_tr]:border-border/40! [&_tr]:bg-transparent! [&_tr]:hover:bg-transparent! [&_tr:hover_td]:bg-transparent! [&_tr[data-state=selected]]:bg-transparent! [&_tr[data-state=selected]_td]:bg-transparent!'
 	)}
 >
-	<Table.Root bind:ref={tableElement} class={columnWidths ? 'table-fixed' : undefined}>
+	<Table.Root
+		bind:ref={tableElement}
+		class={cn(columnWidths && 'table-fixed', lockedTableWidth && 'min-w-(--table-width)')}
+		style={lockedTableWidth ? `--table-width: ${lockedTableWidth}px` : undefined}
+	>
 		{@render tableHeader()}
 		<Table.Body bind:ref={bodyElement}>
 			{#if loading && entries.length === 0}
