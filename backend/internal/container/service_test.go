@@ -187,6 +187,7 @@ func TestBuildContainerFilterAccessors_FiltersStandaloneContainers(t *testing.T)
 	items := []containertypes.Summary{
 		{ID: "standalone", Labels: map[string]string{}, UpdateInfo: updateInfo},
 		{ID: "compose", Labels: map[string]string{"com.docker.compose.project": "alpha"}, UpdateInfo: updateInfo},
+		{ID: "swarm-task", Labels: map[string]string{"com.docker.swarm.service.name": "web"}, UpdateInfo: updateInfo},
 	}
 
 	result := pagination.Config[containertypes.Summary]{FilterAccessors: service.buildContainerFilterAccessors()}.SearchOrderAndPaginate(

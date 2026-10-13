@@ -2126,7 +2126,7 @@ func (s *ContainerService) buildContainerFilterAccessors() []pagination.FilterAc
 		{
 			Key: "standalone",
 			Fn: func(c containertypes.Summary, filterValue string) bool {
-				isStandalone := docker.ComposeProjectLabel(c.Labels) == ""
+				isStandalone := docker.ComposeProjectLabel(c.Labels) == "" && !labels.IsSwarmTask(c.Labels)
 				value, valid := kit.ParseBool(filterValue)
 				return !valid || isStandalone == value
 			},
