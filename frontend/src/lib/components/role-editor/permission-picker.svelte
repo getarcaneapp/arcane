@@ -86,6 +86,28 @@
 		}
 	}
 
+	function presetLabel(preset: PermissionPreset): string {
+		switch (preset.key) {
+			case 'editor':
+				return m.roles_preset_editor_label();
+			case 'global-admin':
+				return m.roles_preset_global_admin_label();
+			default:
+				return preset.label;
+		}
+	}
+
+	function presetDescription(preset: PermissionPreset): string | undefined {
+		switch (preset.key) {
+			case 'editor':
+				return m.roles_preset_editor_description();
+			case 'global-admin':
+				return m.roles_preset_global_admin_description();
+			default:
+				return preset.description;
+		}
+	}
+
 	function isPresetSelected(preset: PermissionPreset): boolean {
 		return preset.permissions.length > 0 && preset.permissions.every((permission) => selectedSet.has(permission));
 	}
@@ -111,9 +133,9 @@
 						onCheckedChange={(checked) => togglePreset(preset, checked === true)}
 					/>
 					<div class="flex flex-col gap-0.5">
-						<span class="text-sm leading-none font-medium">{preset.label}</span>
+						<span class="text-sm leading-none font-medium">{presetLabel(preset)}</span>
 						{#if preset.description}
-							<span class="text-xs text-muted-foreground">{preset.description}</span>
+							<span class="text-xs text-muted-foreground">{presetDescription(preset)}</span>
 						{/if}
 					</div>
 				</label>

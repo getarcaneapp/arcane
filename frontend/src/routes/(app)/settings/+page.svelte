@@ -98,6 +98,14 @@
 		security: {
 			title: m.security,
 			description: m.settings_category_security_description
+		},
+		s3destinations: {
+			title: m.s3_destinations_title,
+			description: m.s3_destinations_description
+		},
+		systembackups: {
+			title: m.system_backups_title,
+			description: m.system_backups_description
 		}
 	} as const;
 

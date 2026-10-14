@@ -120,7 +120,7 @@
 						onCheckedChange={(checked) => toggleQuickPreset(role.id, checked === true)}
 					/>
 					<div class="flex flex-col gap-1">
-						<div class="flex items-center gap-2">
+						<div class="flex flex-wrap items-center gap-2">
 							<Badge variant={getRoleVariant(role.id)} size="sm">{role.name}</Badge>
 							<span class="text-xs text-muted-foreground">{m.global_org_wide()}</span>
 						</div>
@@ -149,7 +149,7 @@
 				onValueChange={(v) => updateAssignment(index, { environmentId: selectValueToEnvId(v) })}
 			>
 				<Select.Trigger class="w-full" aria-label={m.resource_environment_cap()}>
-					<span>{selectedLabel.environment(envValue)}</span>
+					<span class="min-w-0 truncate">{selectedLabel.environment(envValue)}</span>
 				</Select.Trigger>
 				<Select.Content>
 					{#each envOptions as option (option.id)}
@@ -171,8 +171,8 @@
 				onValueChange={(v) => updateAssignment(index, { roleId: v })}
 			>
 				<Select.Trigger class="w-full" aria-label={m.common_role()}>
-					<span class="flex items-center gap-2">
-						<span>{selectedLabel.role(assignment.roleId)}</span>
+					<span class="flex min-w-0 items-center gap-2">
+						<span class="truncate">{selectedLabel.role(assignment.roleId)}</span>
 					</span>
 				</Select.Trigger>
 				<Select.Content>

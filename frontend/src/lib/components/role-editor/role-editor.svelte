@@ -94,7 +94,7 @@
 					action="base"
 					tone="outline"
 					type="button"
-					class="w-full"
+					class="h-auto min-h-9 w-full text-center whitespace-normal"
 					icon={CopyIcon}
 					onclick={onClone}
 					customLabel={m.roles_clone_button()}
