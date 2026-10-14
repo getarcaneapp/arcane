@@ -296,6 +296,7 @@
   "auto_update_disabled_toast": "Automatické aktualizace zakázány",
   "auto_update_failed": "Nepodařilo se aktualizovat nastavení automatických aktualizací",
   "auto_update_controlled_by_label": "Řízeno pomocí značky Dockeru",
+  "auto_update_controlled_by_label_checks_continue": "Automatická aktualizace se řídí štítkem Dockeru. Kontroly aktualizací pokračují; chcete-li je zastavit, přidejte štítek {label}.",
   "auto_update_status_unavailable": "Stav automatické aktualizace není k dispozici, protože agent v tomto prostředí jej nehlásí. Chcete-li tuto funkci spravovat, aktualizujte agenta zde.",
   "excluded_containers": "Vyloučené kontejnery",
   "auto_heal_exclude_description": "Vyberte kontejnery, které chcete vyloučit z monitorování automatického uzdravení.",
