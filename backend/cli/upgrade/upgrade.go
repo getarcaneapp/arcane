@@ -20,10 +20,10 @@ import (
 	kit "go.getarcane.app/kit/pkg"
 	"go.getarcane.app/sys/cgroup"
 	"go.getarcane.app/updater/labels"
-	"go.getarcane.app/updater/refs"
 
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/imageref"
 )
 
 var (
@@ -107,15 +107,22 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 
 	// Pull the new image
 	slog.InfoContext(ctx, "Pulling new image", "image", imageToPull)
-	if pullImageErr := pullImage(ctx, dockerClient, imageToPull); pullImageErr != nil {
-		return fmt.Errorf("failed to pull image: %w", pullImageErr)
-	}
 	// A frozen pull is tagged back as the selected reference so the recreated
 	// container keeps its tag instead of an immutable digest.
 	if imageToPull != newImage {
-		if tagErr := tagPulledImage(ctx, dockerClient, imageToPull, newImage); tagErr != nil {
+		var pullImageErr error
+		tagErr := imageref.PullAsTag(ctx, dockerClient, imageToPull, newImage, func(ctx context.Context) error {
+			pullImageErr = pullImage(ctx, dockerClient, imageToPull)
+			return pullImageErr
+		})
+		if pullImageErr != nil {
+			return fmt.Errorf("failed to pull image: %w", pullImageErr)
+		}
+		if tagErr != nil {
 			return fmt.Errorf("failed to tag pulled image: %w", tagErr)
 		}
+	} else if pullImageErr := pullImage(ctx, dockerClient, imageToPull); pullImageErr != nil {
+		return fmt.Errorf("failed to pull image: %w", pullImageErr)
 	}
 
 	// The pull always runs so a mutable tag gets re-resolved, but when it lands on
@@ -140,38 +147,6 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	}
 
 	slog.InfoContext(ctx, "Upgrade completed successfully", "container", containerName, "image", newImage)
-	return nil
-}
-
-// tagPulledImage tags the pulled immutable reference as the selected one and
-// verifies the tag now resolves to the pulled image. Both must name the same
-// repository.
-func tagPulledImage(ctx context.Context, dockerClient *client.Client, pulled, selected string) error {
-	pulledRef, err := refs.NormalizeReference(pulled)
-	if err != nil {
-		return err
-	}
-	selectedRef, err := refs.NormalizeReference(selected)
-	if err != nil {
-		return err
-	}
-	if pulledRef.RegistryHost != selectedRef.RegistryHost || pulledRef.Repository != selectedRef.Repository {
-		return fmt.Errorf("pulled image %s does not belong to repository of %s", pulled, selected)
-	}
-	if _, tagErr := dockerClient.ImageTag(ctx, client.ImageTagOptions{Source: pulled, Target: selected}); tagErr != nil {
-		return tagErr
-	}
-	pulledInspect, err := dockerClient.ImageInspect(ctx, pulled)
-	if err != nil {
-		return fmt.Errorf("inspect pulled image: %w", err)
-	}
-	selectedInspect, err := dockerClient.ImageInspect(ctx, selected)
-	if err != nil {
-		return fmt.Errorf("inspect tagged image: %w", err)
-	}
-	if pulledInspect.ID != selectedInspect.ID {
-		return fmt.Errorf("%s resolves to %s after tagging, expected %s", selected, selectedInspect.ID, pulledInspect.ID)
-	}
 	return nil
 }
 

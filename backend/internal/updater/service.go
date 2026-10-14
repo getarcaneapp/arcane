@@ -659,8 +659,8 @@ func (s *UpdaterService) PullImage(ctx context.Context, imageRef string, progres
 			return fmt.Errorf("resolve registry credentials: %w", err)
 		}
 	}
-	if pullErr := s.deps.ImagePuller.PullImage(pullCtx, pulledRef, writer, s.deps.SystemUser, credentials); pullErr != nil {
-		return pullErr
+	pull := func(ctx context.Context) error {
+		return s.deps.ImagePuller.PullImage(ctx, pulledRef, writer, s.deps.SystemUser, credentials)
 	}
 	// A frozen digest pull is tagged back to the reference the engine asked for.
 	if pulledRef != imageRef {
@@ -668,9 +668,11 @@ func (s *UpdaterService) PullImage(ctx context.Context, imageRef string, progres
 		if clientErr != nil {
 			return clientErr
 		}
-		if _, tagErr := dockerClient.ImageTag(pullCtx, client.ImageTagOptions{Source: pulledRef, Target: imageRef}); tagErr != nil {
-			return tagErr
+		if pullErr := imageref.PullAsTag(pullCtx, dockerClient, pulledRef, imageRef, pull); pullErr != nil {
+			return pullErr
 		}
+	} else if pullErr := pull(pullCtx); pullErr != nil {
+		return pullErr
 	}
 	// Reconcile by tag on the run context so a late pull still clears its update records (#4306).
 	if reconcileErr := s.deps.ImagePuller.ReconcilePulledImageUpdate(ctx, imageRef); reconcileErr != nil {
