@@ -296,6 +296,7 @@
   "auto_update_disabled_toast": "Aŭtomata ĝisdatigo malŝaltita",
   "auto_update_failed": "Malsukcesis ĝisdatigi la agordon pri aŭtomata ĝisdatigo.",
   "auto_update_controlled_by_label": "Kontroliĝas per Docker-etikedo",
+  "auto_update_controlled_by_label_checks_continue": "Aŭtomata ĝisdatigo estas kontrolata per Docker-etikedo. Ĝisdatigaj kontroloj daŭras; por ĉesigi ilin, aldonu la etikedon {label}.",
   "auto_update_status_unavailable": "La stato de aŭtomata ĝisdatigo ne estas disponebla, ĉar la agento de ĉi tiu medio ne raportas ĝin. Ĝisdatigu la agenton ĉi tie por administri ĝin.",
   "excluded_containers": "Ekskluditaj ujoj",
   "auto_heal_exclude_description": "Elektu ujojn por ekskludi el aŭtomata resaniga monitorado.",
