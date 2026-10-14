@@ -296,6 +296,7 @@
   "auto_update_disabled_toast": "已停用自動更新功能",
   "auto_update_failed": "更新自動更新設定失敗",
   "auto_update_controlled_by_label": "由 Docker 標籤控制",
+  "auto_update_controlled_by_label_checks_continue": "自動更新由 Docker 標籤控制。系統會持續檢查更新；若要停止檢查，請新增標籤 {label}。",
   "auto_update_status_unavailable": "由於此環境的代理程式未回報自動更新狀態，因此無法顯示該狀態。請在此處更新代理程式以進行管理。",
   "excluded_containers": "排除的容器",
   "auto_heal_exclude_description": "選取要從自動修復監控中排除的容器。",
