@@ -827,7 +827,7 @@
   "add_volume_mount_button": "Añadir montaje de volumen",
   "read_only_label": "Solo lectura",
   "text_format": "Formato de texto",
-  "volumes_text_placeholder": "/host/path:/container/path\nvolume_name:/container/path:ro",
+  "volumes_text_placeholder": "/ruta/host:/ruta/contenedor\nnombre_volumen:/ruta/contenedor:ro",
   "volumes_text_description": "Introduzca los puntos de montaje del volumen en formato host:container o host:container:ro, uno por línea",
   "network_settings_title": "Configuración de red",
   "disable_network_label": "Desactivar la red",
