@@ -296,6 +296,7 @@
   "auto_update_disabled_toast": "自動更新は無効",
   "auto_update_failed": "自動更新設定の更新に失敗しました",
   "auto_update_controlled_by_label": "Dockerラベルで管理",
+  "auto_update_controlled_by_label_checks_continue": "自動更新は Docker ラベルによって制御されます。更新チェックは継続されます。これを停止するには、 {label} というラベルを追加してください。",
   "auto_update_status_unavailable": "この環境のエージェントは自動更新ステータスを報告しないため、自動更新ステータスは利用できません。こちらでエージェントを更新して、管理できるようにしてください。",
   "excluded_containers": "除外コンテナ",
   "auto_heal_exclude_description": "自動治癒監視から除外するコンテナを選択します。",
