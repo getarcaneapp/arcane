@@ -296,6 +296,7 @@
   "auto_update_disabled_toast": "Automatisch bijwerken uitgeschakeld",
   "auto_update_failed": "De instelling voor automatisch bijwerken is niet bijgewerkt",
   "auto_update_controlled_by_label": "Beheerd door Docker-label",
+  "auto_update_controlled_by_label_checks_continue": "Automatische updates worden geregeld via een Docker-label. De updatecontroles gaan door; om ze te stoppen, voeg je het label ` {label} ` toe.",
   "auto_update_status_unavailable": "De status van automatische updates is niet beschikbaar omdat de agent in deze omgeving deze niet doorgeeft. Werk de agent bij om dit hier te kunnen beheren.",
   "excluded_containers": "Uitgesloten containers",
   "auto_heal_exclude_description": "Selecteer containers die moeten worden uitgesloten van monitoring voor automatisch herstel.",
