@@ -296,6 +296,7 @@
   "auto_update_disabled_toast": "Auto-uppdatering inaktiverad",
   "auto_update_failed": "Misslyckades med att uppdatera inställningen för automatisk uppdatering",
   "auto_update_controlled_by_label": "Kontrolleras av Docker-etikett",
+  "auto_update_controlled_by_label_checks_continue": "Automatisk uppdatering styrs av en Docker-etikett. Uppdateringskontrollerna fortsätter; för att stoppa dem lägger du till etiketten {label}.",
   "auto_update_status_unavailable": "Funktionen för automatisk uppdatering är inte tillgänglig eftersom agenten i den här miljön inte rapporterar den. Uppdatera agenten för att hantera detta här.",
   "excluded_containers": "Undantagna containrar",
   "auto_heal_exclude_description": "Välj behållare för att utesluta från automatisk läkning övervakning.",
