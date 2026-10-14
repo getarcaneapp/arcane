@@ -54,6 +54,7 @@ func RegisterProjects(api huma.API, projectService *ProjectService, activityServ
 		Description: "Get a paginated list of Docker Compose projects",
 		Tags:        []string{"Projects"},
 		Security:    handlerutil.DefaultOperationSecurity(),
+		Metadata:    map[string]any{authz.MetaEnvironmentAggregate: true},
 	}, authz.PermProjectsList, h.ListProjects)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
@@ -64,6 +65,7 @@ func RegisterProjects(api huma.API, projectService *ProjectService, activityServ
 		Description: "Get counts of running, stopped, and total projects",
 		Tags:        []string{"Projects"},
 		Security:    handlerutil.DefaultOperationSecurity(),
+		Metadata:    map[string]any{authz.MetaEnvironmentAggregate: true},
 	}, authz.PermProjectsList, h.GetProjectStatusCounts)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
@@ -74,6 +76,7 @@ func RegisterProjects(api huma.API, projectService *ProjectService, activityServ
 		Description: "Get sorted, distinct project tag names",
 		Tags:        []string{"Projects"},
 		Security:    handlerutil.DefaultOperationSecurity(),
+		Metadata:    map[string]any{authz.MetaEnvironmentAggregate: true},
 	}, authz.PermProjectsList, h.ListProjectTags)
 
 	middleware.RegisterWithPermission(api, huma.Operation{

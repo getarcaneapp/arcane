@@ -8,6 +8,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/port"
 
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 )
 
 type PortHandler struct {
@@ -25,6 +26,14 @@ type ListPortsInput struct {
 
 func (h *PortHandler) ListPorts(ctx context.Context, input *ListPortsInput) (*handlerutil.Page[port.PortMapping], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
+
+	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
+		body, err := h.portService.AggregatePorts(ctx, params)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("failed to list ports")
+		}
+		return &handlerutil.Page[port.PortMapping]{Body: body}, nil
+	}
 
 	items, paginationResp, err := h.portService.ListPortsPaginated(ctx, params)
 	if err != nil {

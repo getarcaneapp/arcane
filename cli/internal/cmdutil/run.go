@@ -1,12 +1,14 @@
 package cmdutil
 
 import (
+	"cmp"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"time"
 
 	"github.com/getarcaneapp/arcane/types/v2/base"
@@ -56,7 +58,15 @@ func RunList[T any](cmd *cobra.Command, c *client.Client, spec ListSpec[T]) erro
 		return fmt.Errorf("failed to list %s: %w", spec.Resource, err)
 	}
 
+	merged, _ := cmd.Context().Value(mergedScopeKey{}).(*mergedScope)
 	if JSONOutputEnabled(cmd) {
+		if merged != nil {
+			var envelope base.Paginated[jsontext.Value]
+			if unmarshalErr := json.Unmarshal(body, &envelope); unmarshalErr != nil {
+				return fmt.Errorf("failed to parse response: %w", unmarshalErr)
+			}
+			merged.failures = append(merged.failures, envelope.FailedEnvironments...)
+		}
 		return PrintRawJSON(body)
 	}
 
@@ -67,12 +77,24 @@ func RunList[T any](cmd *cobra.Command, c *client.Client, spec ListSpec[T]) erro
 
 	loading.Finish("", nil)
 	loading.Stop()
-	rows := make([][]string, len(result.Data))
+	headers, rows := spec.Headers, make([][]string, len(result.Data))
+	if merged != nil {
+		merged.failures = append(merged.failures, result.FailedEnvironments...)
+		headers = slices.Concat([]string{"ENVIRONMENT"}, spec.Headers)
+	}
 	for i, item := range result.Data {
 		rows[i] = spec.Row(item)
+		if merged == nil {
+			continue
+		}
+		var ref base.EnvironmentRef
+		if tagged, ok := any(item).(interface{ Environment() base.EnvironmentRef }); ok {
+			ref = tagged.Environment()
+		}
+		rows[i] = slices.Concat([]string{cmp.Or(ref.Name, merged.names[cmp.Or(ref.ID, c.EnvID())], ref.ID)}, rows[i])
 	}
 
-	return PrintTable(cmd, spec.Headers, rows, TableSummary{Resource: spec.Resource, Total: result.Pagination.TotalItems, Paginated: true})
+	return PrintTable(cmd, headers, rows, TableSummary{Resource: spec.Resource, Total: result.Pagination.TotalItems, Paginated: true})
 }
 
 // Spec describes a request with raw JSON data output or typed text rendering.
@@ -102,6 +124,13 @@ func Run[T any](cmd *cobra.Command, c *client.Client, spec Spec[T]) error {
 	}
 	loading.Finish("", nil)
 	loading.Stop()
+	merged, isMerged := cmd.Context().Value(mergedScopeKey{}).(*mergedScope)
+	if isMerged {
+		merged.failures = append(merged.failures, result.FailedEnvironments...)
+	}
+	if jsonMode && isMerged {
+		return PrintJSON(result)
+	}
 	if jsonMode {
 		if len(result.Data) == 0 {
 			return PrintJSON(nil)

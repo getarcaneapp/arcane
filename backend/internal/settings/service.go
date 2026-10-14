@@ -301,6 +301,7 @@ func DefaultSettingsConfig() *Settings {
 		ExperimentalFeaturesEnabled:           SettingVariable{Value: "false"},
 		DevelopmentBrandingEnabled:            SettingVariable{Value: "true"},
 		AvatarMaxUploadSizeMb:                 SettingVariable{Value: "2"},
+		AllEnvironmentsLimit:                  SettingVariable{Value: "64"},
 		DefaultShell:                          SettingVariable{Value: "/bin/sh"},
 		DockerHost:                            SettingVariable{Value: "unix:///var/run/docker.sock"},
 		BuildsDirectory:                       SettingVariable{Value: "/builds"},
@@ -419,6 +420,12 @@ func validateSettingValue(key, value string) error {
 		days, err := strconv.Atoi(value)
 		if err != nil || days < 0 || days > 3650 {
 			return common.Classify(common.ErrValidation, errors.New("upgradeLogRetentionDays must be a whole number between 0 and 3650"))
+		}
+	}
+	if key == "allEnvironmentsLimit" {
+		limit, err := strconv.Atoi(value)
+		if err != nil || limit < 2 || limit > 256 {
+			return common.Classify(common.ErrValidation, errors.New("allEnvironmentsLimit must be a whole number between 2 and 256"))
 		}
 	}
 	for _, definition := range features.All() {

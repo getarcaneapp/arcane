@@ -38,7 +38,8 @@ const (
 	environmentsPathMarker = "/environments/"
 
 	// proxyTimeout is generous because proxied operations such as image pulls can stream for minutes.
-	proxyTimeout = 30 * time.Minute
+	proxyTimeout     = 30 * time.Minute
+	proxyDialTimeout = 5 * time.Second
 
 	maxProxiedWorkspaceManifestBytes = 1024 * 1024
 	maxProxiedGitOpsSyncBodyBytes    = 1024 * 1024
@@ -94,7 +95,7 @@ func NewEnvProxyMiddlewareWithParamAndRegistry(
 	}
 
 	// Traced so direct agents continue the manager's trace.
-	httpClient := httpx.NewHTTPClient(httpxtypes.ClientOptions{Timeout: proxyTimeout, TLSHandshakeTimeout: 10 * time.Second})
+	httpClient := httpx.NewHTTPClient(httpxtypes.ClientOptions{Timeout: proxyTimeout, TLSHandshakeTimeout: 10 * time.Second, DialTimeout: proxyDialTimeout})
 	httpClient.Transport = otelhttp.NewTransport(httpClient.Transport)
 
 	m := &EnvironmentMiddleware{
@@ -118,6 +119,9 @@ func NewEnvProxyMiddlewareWithParamAndRegistry(
 func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) error {
 	req := c.Request()
 	ctx := req.Context()
+	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
+		return next(c)
+	}
 
 	_, rest, hasMarker := strings.Cut(req.URL.Path, environmentsPathMarker)
 	pathEnvID, _, _ := strings.Cut(rest, "/")

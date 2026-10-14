@@ -1,6 +1,7 @@
 package image
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -9,9 +10,11 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
 	"github.com/getarcaneapp/arcane/types/v2/user"
@@ -36,6 +39,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/flow/flowtest"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/imageref"
 )
 
@@ -749,4 +753,108 @@ func TestPatchWorkflowDefinitions(t *testing.T) {
 	require.NoError(t, (&ImageService{}).RegisterWorkflows(harness.Engine))
 	harness.Start(t)
 	flowtest.AssertDefinitions(t, harness)
+}
+
+func imageScopeContext(t *testing.T, target string, bodies map[string]any) (context.Context, *sync.Map) {
+	t.Helper()
+	var queries sync.Map
+	return httpx.WithEnvironmentScope(t.Context(), &httpx.EnvironmentScope{
+		IDs:     []string{"a", "b", "c"},
+		Request: httptest.NewRequest(http.MethodGet, target, http.NoBody),
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			id := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/environments/"), "/")[0]
+			queries.Store(id, r.URL.Query())
+			body, ok := bodies[id]
+			if !ok {
+				w.WriteHeader(http.StatusBadGateway)
+				_, _ = w.Write([]byte(`{"detail":"environment offline"}`))
+				return
+			}
+			_ = json.NewEncoder(w).Encode(body)
+		}),
+		Resolve: func(_ context.Context, id string) (base.EnvironmentRef, error) {
+			return base.EnvironmentRef{ID: id, Name: "Env " + id}, nil
+		},
+	}), &queries
+}
+
+func TestAggregateImagesMergesEnvironments(t *testing.T) {
+	bodies := map[string]any{
+		"a": imagetypes.ListResponse{Success: true, Data: []imagetypes.Summary{
+			{ID: "a1", Repo: "nginx", Tag: "latest"},
+			{ID: "a2", Repo: "redis", Tag: "7"},
+		}, Pagination: base.PaginationResponse{TotalItems: 2, GrandTotalItems: 4}, MaxImageUploadSize: 500},
+		"b": imagetypes.ListResponse{Success: true, Data: []imagetypes.Summary{
+			{ID: "b1", Repo: "postgres", Tag: "16"},
+		}, Pagination: base.PaginationResponse{TotalItems: 1}, MaxImageUploadSize: 100},
+	}
+	rowLabels := func(items []imagetypes.Summary) []string {
+		out := make([]string, 0, len(items))
+		for _, item := range items {
+			out = append(out, item.EnvironmentID+"/"+item.Repo)
+		}
+		return out
+	}
+	svc := &ImageService{}
+
+	t.Run("sorts by repo across environments and pages", func(t *testing.T) {
+		ctx, queries := imageScopeContext(t, "/api/environments/a,b,c/images?start=0&limit=2&sort=repo&order=asc", bodies)
+		body, err := svc.AggregateImages(ctx, pagination.QueryParams{SortParams: pagination.SortParams{Sort: "repo", Order: pagination.SortAsc}, Params: pagination.Params{Limit: 2}})
+		require.NoError(t, err)
+
+		assert.True(t, body.Success)
+		assert.Equal(t, []string{"a/nginx", "b/postgres"}, rowLabels(body.Data))
+		assert.Equal(t, "Env b", body.Data[1].EnvironmentName)
+		assert.Equal(t, int64(3), body.Pagination.TotalItems)
+		assert.Equal(t, int64(5), body.Pagination.GrandTotalItems)
+		assert.Equal(t, int64(2), body.Pagination.TotalPages)
+		assert.Equal(t, 500, body.MaxImageUploadSize)
+		require.Len(t, body.FailedEnvironments, 1)
+		assert.Equal(t, "c", body.FailedEnvironments[0].Environment.ID)
+		assert.Equal(t, "environment offline", body.FailedEnvironments[0].Message)
+		for _, id := range []string{"a", "b"} {
+			query, ok := queries.Load(id)
+			require.True(t, ok)
+			assert.Equal(t, "0", query.(url.Values).Get("start"))
+			assert.Equal(t, "-1", query.(url.Values).Get("limit"))
+		}
+	})
+
+	t.Run("sorts by environment", func(t *testing.T) {
+		ctx, _ := imageScopeContext(t, "/api/environments/a,b,c/images?sort=environment&order=desc", bodies)
+		body, err := svc.AggregateImages(ctx, pagination.QueryParams{SortParams: pagination.SortParams{Sort: "environment", Order: pagination.SortDesc}, Params: pagination.Params{Limit: -1}})
+		require.NoError(t, err)
+		assert.Equal(t, []string{"b/postgres", "a/nginx", "a/redis"}, rowLabels(body.Data))
+	})
+
+	t.Run("upload limit comes from the first answering environment", func(t *testing.T) {
+		ctx, _ := imageScopeContext(t, "/api/environments/a,b,c/images", map[string]any{"b": bodies["b"]})
+		body, err := svc.AggregateImages(ctx, pagination.QueryParams{Params: pagination.Params{Limit: 20}})
+		require.NoError(t, err)
+		assert.Equal(t, 100, body.MaxImageUploadSize)
+		assert.Len(t, body.FailedEnvironments, 2)
+	})
+
+	t.Run("all environments failing returns empty data", func(t *testing.T) {
+		ctx, _ := imageScopeContext(t, "/api/environments/a,b,c/images", map[string]any{})
+		body, err := svc.AggregateImages(ctx, pagination.QueryParams{Params: pagination.Params{Limit: 20}})
+		require.NoError(t, err)
+		assert.Empty(t, body.Data)
+		assert.Len(t, body.FailedEnvironments, 3)
+	})
+}
+
+func TestAggregateImageCountsSumsEnvironments(t *testing.T) {
+	ctx, _ := imageScopeContext(t, "/api/environments/a,b,c/images/counts", map[string]any{
+		"a": base.ApiResponse[imagetypes.UsageCounts]{Success: true, Data: imagetypes.UsageCounts{Inuse: 1, Unused: 2, Total: 3, TotalSize: 100}},
+		"b": base.ApiResponse[imagetypes.UsageCounts]{Success: true, Data: imagetypes.UsageCounts{Inuse: 2, Total: 2, TotalSize: 50}},
+	})
+
+	body, err := (&ImageService{}).AggregateImageCounts(ctx)
+	require.NoError(t, err)
+
+	assert.True(t, body.Success)
+	assert.Equal(t, imagetypes.UsageCounts{Inuse: 3, Unused: 2, Total: 5, TotalSize: 150}, body.Data)
+	require.Len(t, body.FailedEnvironments, 1)
+	assert.Equal(t, "c", body.FailedEnvironments[0].Environment.ID)
 }

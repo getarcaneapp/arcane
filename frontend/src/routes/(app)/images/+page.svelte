@@ -38,7 +38,7 @@
 	import { bytes } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
-	import ImageTable, { imageSortValue } from './components/image-table.svelte';
+	import ImageTable from './components/image-table.svelte';
 
 	let { data } = $props();
 	const queryClient = useQueryClient();
@@ -75,11 +75,8 @@
 		return {
 			queryKey: queryKeys.images.list(queryScope, options),
 			queryFn: () =>
-				fetchAcrossEnvironments(
-					environments,
-					options,
-					(id, request, config) => imageService.getImagesForEnvironment(id, request, config),
-					imageSortValue
+				fetchAcrossEnvironments(environments, options, (id, request, config) =>
+					imageService.getImagesForEnvironment(id, request, config)
 				),
 			placeholderData: (previous, query) => {
 				if (query?.queryKey[1] === queryScope) return previous;
@@ -265,11 +262,8 @@
 			queryClient.query({
 				queryKey: queryKeys.images.list(requestedScope, options),
 				queryFn: () =>
-					fetchAcrossEnvironments(
-						environments,
-						options,
-						(id, request, config) => imageService.getImagesForEnvironment(id, request, config),
-						imageSortValue
+					fetchAcrossEnvironments(environments, options, (id, request, config) =>
+						imageService.getImagesForEnvironment(id, request, config)
 					),
 				staleTime: 0
 			}),
@@ -428,6 +422,7 @@
 					<EnvironmentDestinationSelect
 						bind:value={() => uploadEnvironmentId, (value) => (pickedUploadEnvironmentId = value)}
 						permission="images:upload"
+						variant="field"
 					/>
 					<FileDropZone
 						{onUpload}

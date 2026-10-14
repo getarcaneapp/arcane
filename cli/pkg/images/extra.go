@@ -411,7 +411,7 @@ func newBuildsCmd() *cobra.Command {
 		provider string
 	}
 	command := &cobra.Command{
-		Annotations:  map[string]string{"arcane:scope": cmdutil.ScopeRead},
+		Annotations:  map[string]string{"arcane:scope": cmdutil.ScopeMerged},
 		Use:          "builds",
 		Short:        "List image build history",
 		SilenceUsage: true,

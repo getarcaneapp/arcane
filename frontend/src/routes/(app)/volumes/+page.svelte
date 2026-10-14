@@ -17,7 +17,7 @@
 	import { fetchAcrossEnvironments, hasShownPermission } from '#lib/utils/environments.js';
 	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';
 
-	import VolumeTable, { volumeSortValue } from './components/volume-table.svelte';
+	import VolumeTable from './components/volume-table.svelte';
 
 	let { data } = $props();
 	const queryClient = useQueryClient();
@@ -33,11 +33,8 @@
 		return {
 			queryKey: queryKeys.volumes.table(queryScope, options),
 			queryFn: () =>
-				fetchAcrossEnvironments(
-					environments,
-					options,
-					(id, request, config) => volumeService.getVolumesForEnvironment(id, request, config),
-					volumeSortValue
+				fetchAcrossEnvironments(environments, options, (id, request, config) =>
+					volumeService.getVolumesForEnvironment(id, request, config)
 				),
 			placeholderData: (previous, query) => {
 				if (query?.queryKey[1] === queryScope) return previous;
@@ -86,11 +83,8 @@
 		await queryClient.query({
 			queryKey: queryKeys.volumes.table(requestedScope, options),
 			queryFn: () =>
-				fetchAcrossEnvironments(
-					environments,
-					options,
-					(id, request, config) => volumeService.getVolumesForEnvironment(id, request, config),
-					volumeSortValue
+				fetchAcrossEnvironments(environments, options, (id, request, config) =>
+					volumeService.getVolumesForEnvironment(id, request, config)
 				)
 		});
 	}

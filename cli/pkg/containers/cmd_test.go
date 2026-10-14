@@ -10,6 +10,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	kit "go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/cli/v2/internal/testutil"
 )
@@ -162,13 +163,7 @@ func TestContainersListSendsLimitAndStart(t *testing.T) {
 			if tc.all {
 				wantQuery = "limit=-1"
 			}
-			require.Equal(t, wantQuery, queries["/api/environments/0/containers"])
-			if tc.preview {
-				require.Len(t, queries, 2)
-				require.Equal(t, wantQuery, queries["/api/environments/remote/containers"])
-			} else {
-				require.Len(t, queries, 1)
-			}
+			require.Equal(t, map[string]string{kit.Ternary(tc.preview, "/api/environments/0,remote/containers", "/api/environments/0/containers"): wantQuery}, queries)
 			require.True(t, json.Valid([]byte(out)))
 			require.Contains(t, out, "pagination")
 		})
@@ -217,6 +212,7 @@ func TestContainersListExplicitStartZeroSendsStartZero(t *testing.T) {
 }
 
 func TestContainersListTextShowsShowingSummary(t *testing.T) {
+	const localRow = `{"environmentId":"0","environmentName":"Local","id":"same-id","names":["/nginx"],"image":"nginx:latest","state":"running","status":"Up 1 hour"}`
 	for _, tc := range []struct {
 		name                                  string
 		command                               []string
@@ -237,11 +233,14 @@ func TestContainersListTextShowsShowingSummary(t *testing.T) {
 				switch {
 				case r.URL.Path == "/api/environments":
 					_, _ = w.Write([]byte(`{"success":true,"data":[{"id":"remote","name":"Remote","enabled":true},{"id":"0","name":"Local","enabled":true}]}`))
-				case tc.unavailable && strings.Contains(r.URL.Path, "/remote/"):
-					w.WriteHeader(http.StatusForbidden)
-					_, _ = w.Write([]byte(`{"success":false,"error":"resource denied"}`))
 				case tc.empty:
 					_, _ = w.Write([]byte(`{"success":true,"data":[],"pagination":{"totalItems":0}}`))
+				case r.URL.Path == "/api/environments/0,remote/containers" && tc.unavailable:
+					_, _ = w.Write([]byte(`{"success":true,"data":[` + localRow + `],"pagination":{"totalItems":26},` +
+						`"failedEnvironments":[{"environment":{"id":"remote","name":"remote"},"message":"resource denied"}]}`))
+				case r.URL.Path == "/api/environments/0,remote/containers":
+					remoteRow := strings.Replace(localRow, `"0","environmentName":"Local"`, `"remote","environmentName":"Remote"`, 1)
+					_, _ = w.Write([]byte(`{"success":true,"data":[` + localRow + `,` + remoteRow + `],"pagination":{"totalItems":52}}`))
 				case strings.HasSuffix(r.URL.Path, "/jobs"):
 					_, _ = w.Write([]byte(`{"jobs":[{"id":"same-id","name":"nginx"}],"isAgent":false,"durableRuns":true}`))
 				case strings.HasSuffix(r.URL.Path, "/settings"):
@@ -284,6 +283,7 @@ func TestContainersListTextShowsShowingSummary(t *testing.T) {
 			require.NotContains(t, out, "(remote)")
 			if tc.unavailable {
 				require.NotContains(t, out, "Remote")
+				require.Contains(t, diagnostics, "Remote (remote): resource denied")
 				return
 			}
 			require.Contains(t, out, "Remote")
@@ -414,6 +414,9 @@ func TestContainersListJSONContract(t *testing.T) {
 					w.WriteHeader(http.StatusForbidden)
 					_, _ = w.Write([]byte(`{"success":false,"error":"resource denied"}`))
 					return
+				case r.URL.Path == "/api/environments/0,remote/containers" && tc.unavailable:
+					_, _ = w.Write([]byte(`{"success":true,"data":[{"environmentId":"0","environmentName":"Local","id":"same-id"}],"pagination":{"totalItems":1},` +
+						`"failedEnvironments":[{"environment":{"id":"remote","name":"remote"},"message":"resource denied"}]}`))
 				case strings.HasSuffix(r.URL.Path, "/jobs"):
 					_, _ = w.Write([]byte(`{"jobs":[],"isAgent":false,"durableRuns":true}`))
 				case strings.HasSuffix(r.URL.Path, "/settings"):
@@ -443,6 +446,21 @@ func TestContainersListJSONContract(t *testing.T) {
 			} else {
 				require.NoError(t, runErr, diagnostics)
 			}
+			mu.Lock()
+			paths := append([]string(nil), requested...)
+			mu.Unlock()
+			if tc.args == nil && !tc.explicit && !tc.empty {
+				require.Equal(t, []string{"/api/environments", "/api/environments/0,remote/containers"}, paths)
+				require.True(t, json.Valid([]byte(out)), out)
+				if tc.unavailable {
+					require.ErrorContains(t, runErr, "Remote (remote): resource denied")
+					require.Contains(t, out, "failedEnvironments")
+					return
+				}
+				require.Contains(t, out, "counts")
+				require.Contains(t, out, "groups")
+				return
+			}
 			var result struct {
 				Success      bool `json:"success"`
 				Environments []struct {
@@ -452,9 +470,6 @@ func TestContainersListJSONContract(t *testing.T) {
 				} `json:"environments"`
 			}
 			require.NoError(t, json.Unmarshal([]byte(out), &result), out)
-			mu.Lock()
-			paths := append([]string(nil), requested...)
-			mu.Unlock()
 			if tc.explicit {
 				require.NotContains(t, paths, "/api/environments")
 				require.Empty(t, result.Environments)
@@ -471,14 +486,6 @@ func TestContainersListJSONContract(t *testing.T) {
 			require.Len(t, result.Environments, 2)
 			require.Equal(t, "0", result.Environments[0].ID)
 			require.Equal(t, "remote", result.Environments[1].ID)
-			if tc.unavailable {
-				require.NotEmpty(t, result.Environments[1].Error)
-				require.Empty(t, result.Environments[1].Result)
-			}
-			if tc.args == nil {
-				require.Contains(t, string(result.Environments[0].Result), "counts")
-				require.Contains(t, string(result.Environments[0].Result), "groups")
-			}
 			require.NotContains(t, out, "Selected")
 		})
 	}

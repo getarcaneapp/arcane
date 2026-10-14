@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -18,6 +19,7 @@ import (
 	"github.com/containerd/platforms"
 	"github.com/distribution/reference"
 	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
+	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/getarcaneapp/arcane/types/v2/features"
 	"github.com/getarcaneapp/arcane/types/v2/imagepatch"
 	usertypes "github.com/getarcaneapp/arcane/types/v2/user"
@@ -48,6 +50,8 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/vuln"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/logging"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/tracing"
 )
@@ -614,6 +618,42 @@ func (s *Service) PatchedRefs(ctx context.Context, envID string) (map[string]str
 		}
 	}
 	return set, nil
+}
+
+func (s *Service) AggregatePatchTargets(ctx context.Context, params pagination.QueryParams) (base.Paginated[imagepatch.PatchTarget], error) {
+	collection, err := httpx.CollectEnvironments[base.Paginated[imagepatch.PatchTarget]](ctx, url.Values{"start": {"0"}, "limit": {"-1"}})
+	if err != nil {
+		return base.Paginated[imagepatch.PatchTarget]{}, fmt.Errorf("collect environment patch targets: %w", err)
+	}
+	pages := make([]pagination.EnvironmentPage[imagepatch.PatchTarget], 0, len(collection.Results))
+	for _, result := range collection.Results {
+		pages = append(pages, pagination.EnvironmentPage[imagepatch.PatchTarget]{
+			Environment:    result.Environment,
+			Items:          result.Value.Data,
+			TotalAvailable: cmp.Or(result.Value.Pagination.GrandTotalItems, result.Value.Pagination.TotalItems),
+		})
+	}
+	items, resp := pagination.MergeEnvironmentPages(pagination.Config[imagepatch.PatchTarget]{
+		SortBindings: []pagination.SortBinding[imagepatch.PatchTarget]{
+			{
+				Key: "scanTime",
+				Fn: func(a, b imagepatch.PatchTarget) int {
+					return cmp.Or(a.ScanTime.Compare(b.ScanTime), strings.Compare(a.ImageID, b.ImageID))
+				},
+				DescFn: func(a, b imagepatch.PatchTarget) int {
+					return cmp.Or(b.ScanTime.Compare(a.ScanTime), strings.Compare(a.ImageID, b.ImageID))
+				},
+			},
+			{Key: "imageName", Fn: func(a, b imagepatch.PatchTarget) int { return strings.Compare(a.ImageRef, b.ImageRef) }},
+			{Key: "fixableCount", Fn: func(a, b imagepatch.PatchTarget) int { return cmp.Compare(a.FixableCount, b.FixableCount) }},
+		},
+	}, pages, params)
+	return base.Paginated[imagepatch.PatchTarget]{
+		Success:            true,
+		Data:               items,
+		Pagination:         handlerutil.PaginationResponse(resp),
+		FailedEnvironments: collection.Failures,
+	}, nil
 }
 
 // ListPatchTargets returns scanned images with their fixable-vulnerability

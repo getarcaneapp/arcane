@@ -4,12 +4,14 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"slices"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/labstack/echo/v5"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 )
 
 // RegisterWithPermission registers a Huma operation that requires perm. It
@@ -69,7 +71,11 @@ func RequirePermission(api huma.API, perm string) huma.Middlewares {
 		if authz.IsEnvScoped(perm) {
 			envID = authz.EnvIDFromPath(ctx.URL().Path)
 		}
-		if !ps.Allows(perm, envID) {
+		allowed := ps.Allows(perm, envID)
+		if scope, scoped := httpx.EnvironmentScopeFromContext(ctx.Context()); scoped && authz.IsEnvScoped(perm) {
+			allowed = slices.ContainsFunc(scope.IDs, func(id string) bool { return ps.Allows(perm, id) })
+		}
+		if !allowed {
 			if err := huma.WriteErr(api, ctx, http.StatusForbidden, "permission denied: "+perm); err != nil {
 				slog.WarnContext(ctx.Context(), "failed to write 403 response", "error", err)
 			}

@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"maps"
 	"net/netip"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -45,6 +46,8 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/iconcatalog"
 )
 
@@ -1653,7 +1656,7 @@ func (s *ContainerService) ListContainersPaginated(
 		ungroupedParams.Limit = -1
 
 		result := config.SearchOrderAndPaginate(items, ungroupedParams)
-		groups, paginationResp := paginateContainerProjectGroupsInternal(result, params)
+		groups, paginationResp := paginateContainerProjectGroups(result, params)
 
 		// Icons must be resolved before flattening: groups hold value copies,
 		// so the flattened items only carry icons applied to the groups first.
@@ -1719,11 +1722,54 @@ func (s *ContainerService) listContainersByResourceInternal(
 	}, nil
 }
 
-func paginateContainerProjectGroupsInternal(
+func (s *ContainerService) AggregateContainers(ctx context.Context, params pagination.QueryParams, groupBy string) (ContainerPaginatedResponse, error) {
+	collection, err := httpx.CollectEnvironments[ContainerPaginatedResponse](ctx, url.Values{"start": {"0"}, "limit": {"-1"}, "groupBy": nil})
+	if err != nil {
+		return ContainerPaginatedResponse{}, err
+	}
+
+	pages := make([]pagination.EnvironmentPage[containertypes.Summary], 0, len(collection.Results))
+	counts := containertypes.StatusCounts{}
+	resourceSortSupported := true
+	for _, result := range collection.Results {
+		page := result.Value
+		pages = append(pages, pagination.EnvironmentPage[containertypes.Summary]{
+			Environment:    result.Environment,
+			Items:          page.Data,
+			TotalAvailable: cmp.Or(page.Pagination.GrandTotalItems, page.Pagination.TotalItems),
+		})
+		counts.RunningContainers += page.Counts.RunningContainers
+		counts.StoppedContainers += page.Counts.StoppedContainers
+		counts.TotalContainers += page.Counts.TotalContainers
+		resourceSortSupported = resourceSortSupported && page.ResourceSortSupported
+	}
+
+	grouped := groupBy == containerGroupByProject
+	ungroupedParams := params
+	ungroupedParams.Start, ungroupedParams.Limit = 0, -1
+	data, resp := pagination.MergeEnvironmentPages(s.buildContainerPaginationConfig(), pages, kit.Ternary(grouped, ungroupedParams, params))
+	var groups []containertypes.SummaryGroup
+	if grouped {
+		groups, resp = paginateContainerProjectGroups(pagination.FilterResult[containertypes.Summary]{Items: data, TotalCount: resp.TotalItems, TotalAvailable: resp.GrandTotalItems}, params)
+		data = flattenContainerProjectGroupsInternal(groups)
+	}
+
+	return ContainerPaginatedResponse{
+		Success:               true,
+		Data:                  data,
+		Groups:                groups,
+		Counts:                counts,
+		Pagination:            handlerutil.PaginationResponse(resp),
+		ResourceSortSupported: resourceSortSupported,
+		FailedEnvironments:    collection.Failures,
+	}, nil
+}
+
+func paginateContainerProjectGroups(
 	result pagination.FilterResult[containertypes.Summary],
 	params pagination.QueryParams,
 ) ([]containertypes.SummaryGroup, pagination.Response) {
-	groups := groupContainersByProjectInternal(result.Items)
+	groups := groupContainersByProject(result.Items)
 	totalCount := len(result.Items)
 
 	if params.Limit <= 0 {
@@ -1773,7 +1819,7 @@ func paginateContainerProjectGroupsInternal(
 	}
 }
 
-func groupContainersByProjectInternal(items []containertypes.Summary) []containertypes.SummaryGroup {
+func groupContainersByProject(items []containertypes.Summary) []containertypes.SummaryGroup {
 	groups := make([]containertypes.SummaryGroup, 0)
 	groupIndexes := make(map[string]int)
 

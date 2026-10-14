@@ -4,6 +4,7 @@ import type { FormInputs } from '#lib/types/form.js';
 
 const LOCAL_SETTING_KEYS = new Set([
 	'avatarMaxUploadSizeMb',
+	'allEnvironmentsLimit',
 	'authLocalEnabled',
 	'authSessionTimeout',
 	'authPasswordPolicy',

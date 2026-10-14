@@ -60,15 +60,15 @@
 				customLabel={m.common_back()}
 			/>
 			<div class="hidden h-4 w-px bg-border sm:block"></div>
-			<h1 class="text-base font-semibold">{m.create_container_title()}</h1>
+			<h1 class="flex-1 text-base font-semibold">{m.create_container_title()}</h1>
+			<EnvironmentDestinationSelect
+				bind:value={() => environmentId, (value) => (pickedEnvironmentId = value)}
+				permission="containers:create"
+			/>
 		</div>
 	</div>
 
 	<div class="mx-auto w-full max-w-full space-y-6 px-6 py-6">
-		<EnvironmentDestinationSelect
-			bind:value={() => environmentId, (value) => (pickedEnvironmentId = value)}
-			permission="containers:create"
-		/>
 		<ContainerForm
 			mode="create"
 			{form}

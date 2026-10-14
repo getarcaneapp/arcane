@@ -101,7 +101,7 @@ func newListCmd() *cobra.Command {
 		image    string
 	}
 	command := &cobra.Command{
-		Annotations:  map[string]string{"arcane:scope": cmdutil.ScopeRead},
+		Annotations:  map[string]string{"arcane:scope": cmdutil.ScopeMerged},
 		Use:          "list",
 		Aliases:      []string{"ls"},
 		Short:        "List vulnerabilities across all scanned images",

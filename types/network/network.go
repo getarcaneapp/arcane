@@ -4,9 +4,13 @@ import (
 	"time"
 
 	"github.com/moby/moby/api/types/network"
+
+	"github.com/getarcaneapp/arcane/types/v2/base"
 )
 
 type Summary struct {
+	base.EnvironmentTag
+
 	// ID is the unique identifier of the network.
 	//
 	// Required: true

@@ -277,6 +277,7 @@ var expectedEnvConfigVars = []string{
 var expectedSettingOverrideKeys = []string{
 	"activityHistoryMaxEntries",
 	"activityHistoryRetentionDays",
+	"allEnvironmentsLimit",
 	"apnsEnabled",
 	"authLocalEnabled",
 	"authPasswordPolicy",

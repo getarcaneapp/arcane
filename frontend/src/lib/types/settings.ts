@@ -74,6 +74,7 @@ export type Settings = {
 	developmentBrandingEnabled: boolean;
 	apnsEnabled?: boolean;
 	avatarMaxUploadSizeMb: number;
+	allEnvironmentsLimit: number;
 	uiConfigDisabled: boolean;
 	defaultShell: string;
 	dockerHost: string;

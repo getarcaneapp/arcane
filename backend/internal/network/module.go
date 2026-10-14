@@ -28,6 +28,7 @@ func RegisterNetworks(api huma.API, networkSvc *NetworkService, dockerSvc *docke
 		Summary:     "List networks",
 		Tags:        []string{"Networks"},
 		Security:    handlerutil.DefaultOperationSecurity(),
+		Metadata:    map[string]any{authz.MetaEnvironmentAggregate: true},
 	}, authz.PermNetworksList, h.ListNetworks)
 
 	middleware.RegisterWithPermission(api, huma.Operation{

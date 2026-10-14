@@ -490,15 +490,8 @@ func GroupComposeContainersByProject(containers []container.Summary) map[string]
 	return containersByProject
 }
 
-// Page searches, orders and paginates rows by their derived fields and returns
-// the page indexes of tracked rows still needing enrichment.
-func Page(items []project.Details, params pagination.QueryParams, tracked func(id string) bool) (pagination.FilterResult[project.Details], []int) {
-	// Tags are filtered in the database query.
-	if _, exists := params.Filters["tags"]; exists {
-		params.Filters = maps.Clone(params.Filters)
-		delete(params.Filters, "tags")
-	}
-	config := pagination.Config[project.Details]{
+func PaginationConfig() pagination.Config[project.Details] {
+	return pagination.Config[project.Details]{
 		SearchAccessors: []pagination.SearchAccessor[project.Details]{
 			func(p project.Details) (string, error) { return p.Name, nil },
 			func(p project.Details) (string, error) { return p.Path, nil },
@@ -517,6 +510,7 @@ func Page(items []project.Details, params pagination.QueryParams, tracked func(i
 			{Key: "name", Fn: func(a, b project.Details) int { return strings.Compare(a.Name, b.Name) }},
 			{Key: "status", Fn: func(a, b project.Details) int { return strings.Compare(a.Status, b.Status) }},
 			{Key: "serviceCount", Fn: func(a, b project.Details) int { return cmp.Compare(a.ServiceCount, b.ServiceCount) }},
+			{Key: "runningCount", Fn: func(a, b project.Details) int { return cmp.Compare(a.RunningCount, b.RunningCount) }},
 			{Key: "path", Fn: func(a, b project.Details) int { return strings.Compare(a.RelativePath, b.RelativePath) }},
 			{
 				Key: "createdAt",
@@ -576,7 +570,17 @@ func Page(items []project.Details, params pagination.QueryParams, tracked func(i
 			},
 		},
 	}
-	result := config.SearchOrderAndPaginate(items, params)
+}
+
+// Page searches, orders and paginates rows by their derived fields and returns
+// the page indexes of tracked rows still needing enrichment.
+func Page(items []project.Details, params pagination.QueryParams, tracked func(id string) bool) (pagination.FilterResult[project.Details], []int) {
+	// Tags are filtered in the database query.
+	if _, exists := params.Filters["tags"]; exists {
+		params.Filters = maps.Clone(params.Filters)
+		delete(params.Filters, "tags")
+	}
+	result := PaginationConfig().SearchOrderAndPaginate(items, params)
 	pageIndexes := make([]int, 0, len(result.Items))
 	for i, item := range result.Items {
 		if tracked(item.ID) {

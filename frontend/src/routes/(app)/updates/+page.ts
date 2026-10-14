@@ -9,7 +9,6 @@ import { fetchAcrossEnvironments } from '#lib/utils/environments.js';
 import { resolveInitialTableRequest } from '#lib/utils/tables.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
-import { containerSortValue } from '../containers/container-table.helpers';
 import type { PageLoad } from './$types';
 
 export const load: PageLoad = async ({ parent }) => {
@@ -37,11 +36,8 @@ export const load: PageLoad = async ({ parent }) => {
 				queryClient.query({
 					queryKey: queryKeys.containers.list(scope, containerRequestOptions),
 					queryFn: () =>
-						fetchAcrossEnvironments(
-							environments,
-							containerRequestOptions,
-							(id, request, config) => containerService.getContainersForEnvironment(id, request, config),
-							containerSortValue
+						fetchAcrossEnvironments(environments, containerRequestOptions, (id, request, config) =>
+							containerService.getContainersForEnvironment(id, request, config)
 						)
 				}),
 				queryClient.query({

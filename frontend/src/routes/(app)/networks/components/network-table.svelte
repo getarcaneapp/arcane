@@ -97,11 +97,8 @@
 			}
 			return;
 		}
-		networks = await fetchAcrossEnvironments(
-			environmentStore.shown,
-			options,
-			(id, request, config) => networkService.getNetworksForEnvironment(id, request, config),
-			networkSortValue
+		networks = await fetchAcrossEnvironments(environmentStore.shown, options, (id, request, config) =>
+			networkService.getNetworksForEnvironment(id, request, config)
 		);
 		onNetworksChange?.(networks);
 	}

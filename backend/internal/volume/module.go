@@ -98,6 +98,7 @@ func RegisterVolumes(
 		Description: "Get a paginated list of Docker volumes",
 		Tags:        []string{"Volumes"},
 		Security:    handlerutil.DefaultOperationSecurity(),
+		Metadata:    map[string]any{authz.MetaEnvironmentAggregate: true},
 	}, authz.PermVolumesList, h.ListVolumes)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
@@ -168,5 +169,6 @@ func RegisterVolumes(
 		Description: "Get disk usage sizes for all volumes (slow operation)",
 		Tags:        []string{"Volumes"},
 		Security:    handlerutil.DefaultOperationSecurity(),
+		Metadata:    map[string]any{authz.MetaEnvironmentAggregate: true},
 	}, authz.PermVolumesList, h.GetVolumeSizes)
 }

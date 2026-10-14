@@ -21,7 +21,6 @@
 	import { actionEnvironments, fetchAcrossEnvironments, listScopes, settleAcrossEnvironments } from '#lib/utils/environments.js';
 	import { confirmAndApplyAllUpdates } from '#lib/utils/update-actions.js';
 
-	import { containerSortValue } from '../containers/container-table.helpers';
 	import ContainerUpdatesTable from './components/container-updates-table.svelte';
 	import ProjectUpdatesTable from './components/project-updates-table.svelte';
 
@@ -42,11 +41,8 @@
 		return {
 			queryKey: queryKeys.containers.list(queryScope, options),
 			queryFn: () =>
-				fetchAcrossEnvironments(
-					environments,
-					options,
-					(id, request, config) => containerService.getContainersForEnvironment(id, request, config),
-					containerSortValue
+				fetchAcrossEnvironments(environments, options, (id, request, config) =>
+					containerService.getContainersForEnvironment(id, request, config)
 				),
 			placeholderData: (previous, query) => {
 				if (query?.queryKey[1] === queryScope) return previous;
@@ -90,11 +86,8 @@
 		await queryClient.fetchQuery({
 			queryKey: queryKeys.containers.list(requestedScope, requestedOptions),
 			queryFn: () =>
-				fetchAcrossEnvironments(
-					environments,
-					requestedOptions,
-					(id, request, config) => containerService.getContainersForEnvironment(id, request, config),
-					containerSortValue
+				fetchAcrossEnvironments(environments, requestedOptions, (id, request, config) =>
+					containerService.getContainersForEnvironment(id, request, config)
 				)
 		});
 	}

@@ -150,6 +150,14 @@ func (h *ImageHandler) ListImages(ctx context.Context, input *ListImagesInput) (
 
 	params.Limit = cmp.Or(params.Limit, 20)
 
+	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
+		body, err := h.imageService.AggregateImages(ctx, params)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("Failed to list images: " + err.Error())
+		}
+		return &ListImagesOutput{Body: body}, nil
+	}
+
 	images, paginationResp, err := h.imageService.ListImagesPaginated(ctx, params)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to list images: " + err.Error())
@@ -432,6 +440,14 @@ func (h *ImageHandler) ListImageBuilds(ctx context.Context, input *ListImageBuil
 		params.Filters["provider"] = input.Provider
 	}
 
+	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
+		body, err := h.buildService.AggregateImageBuilds(ctx, params)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("Failed to list build history: " + err.Error())
+		}
+		return &handlerutil.Page[image.BuildRecord]{Body: body}, nil
+	}
+
 	builds, paginationResp, err := h.buildService.ListImageBuildsByEnvironmentPaginated(ctx, input.EnvironmentID, params)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to list build history: " + err.Error())
@@ -542,6 +558,14 @@ func resolvePruneImageUntilInternal(input *PruneImagesInput) string {
 
 // GetImageUsageCounts returns counts of images by usage status.
 func (h *ImageHandler) GetImageUsageCounts(ctx context.Context, input *GetImageUsageCountsInput) (*handlerutil.Out[image.UsageCounts], error) {
+	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
+		body, err := h.imageService.AggregateImageCounts(ctx)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("Failed to get image usage counts: " + err.Error())
+		}
+		return &handlerutil.Out[image.UsageCounts]{Body: body}, nil
+	}
+
 	_, counts, err := h.dockerService.GetAllImages(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to get image usage counts: " + err.Error())

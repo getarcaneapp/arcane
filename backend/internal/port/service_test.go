@@ -1,13 +1,18 @@
 package port
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
+	"net/url"
 	"strings"
+	"sync"
 	"testing"
 
+	"github.com/getarcaneapp/arcane/types/v2/base"
+	porttypes "github.com/getarcaneapp/arcane/types/v2/port"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
@@ -15,6 +20,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 )
 
 func newPortServiceTestDockerService(t *testing.T, containers []container.Summary) *docker.DockerClientService {
@@ -242,4 +248,84 @@ func newTestDockerClientInternal(t *testing.T, server *httptest.Server) *client.
 	})
 
 	return cli
+}
+
+func portScopeContext(t *testing.T, target string, bodies map[string]any) (context.Context, *sync.Map) {
+	t.Helper()
+	var queries sync.Map
+	return httpx.WithEnvironmentScope(t.Context(), &httpx.EnvironmentScope{
+		IDs:     []string{"a", "b", "c"},
+		Request: httptest.NewRequest(http.MethodGet, target, http.NoBody),
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			id := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/environments/"), "/")[0]
+			queries.Store(id, r.URL.Query())
+			body, ok := bodies[id]
+			if !ok {
+				w.WriteHeader(http.StatusBadGateway)
+				_, _ = w.Write([]byte(`{"detail":"environment offline"}`))
+				return
+			}
+			_ = json.NewEncoder(w).Encode(body)
+		}),
+		Resolve: func(_ context.Context, id string) (base.EnvironmentRef, error) {
+			return base.EnvironmentRef{ID: id, Name: "Env " + id}, nil
+		},
+	}), &queries
+}
+
+func TestAggregatePortsMergesEnvironments(t *testing.T) {
+	bodies := map[string]any{
+		"a": base.Paginated[porttypes.PortMapping]{Success: true, Data: []porttypes.PortMapping{
+			{ID: "a1", ContainerName: "web", HostPort: 8080, ContainerPort: 80, Protocol: "tcp", IsPublished: true},
+			{ID: "a2", ContainerName: "db", HostPort: 5432, ContainerPort: 5432, Protocol: "tcp", IsPublished: true},
+		}, Pagination: base.PaginationResponse{TotalItems: 2, GrandTotalItems: 3}},
+		"b": base.Paginated[porttypes.PortMapping]{Success: true, Data: []porttypes.PortMapping{
+			{ID: "b1", ContainerName: "api", HostPort: 3000, ContainerPort: 3000, Protocol: "tcp", IsPublished: true},
+		}, Pagination: base.PaginationResponse{TotalItems: 1}},
+	}
+	rowLabels := func(items []porttypes.PortMapping) []string {
+		out := make([]string, 0, len(items))
+		for _, item := range items {
+			out = append(out, item.EnvironmentID+"/"+item.ContainerName)
+		}
+		return out
+	}
+	svc := &PortService{}
+
+	t.Run("sorts by host port across environments and pages", func(t *testing.T) {
+		ctx, queries := portScopeContext(t, "/api/environments/a,b,c/ports?start=0&limit=2&sort=hostPort&order=asc", bodies)
+		body, err := svc.AggregatePorts(ctx, pagination.QueryParams{SortParams: pagination.SortParams{Sort: "hostPort", Order: pagination.SortAsc}, Params: pagination.Params{Limit: 2}})
+		require.NoError(t, err)
+
+		assert.True(t, body.Success)
+		assert.Equal(t, []string{"b/api", "a/db"}, rowLabels(body.Data))
+		assert.Equal(t, "Env b", body.Data[0].EnvironmentName)
+		assert.Equal(t, int64(3), body.Pagination.TotalItems)
+		assert.Equal(t, int64(4), body.Pagination.GrandTotalItems)
+		assert.Equal(t, int64(2), body.Pagination.TotalPages)
+		require.Len(t, body.FailedEnvironments, 1)
+		assert.Equal(t, "c", body.FailedEnvironments[0].Environment.ID)
+		assert.Equal(t, "environment offline", body.FailedEnvironments[0].Message)
+		for _, id := range []string{"a", "b"} {
+			query, ok := queries.Load(id)
+			require.True(t, ok)
+			assert.Equal(t, "0", query.(url.Values).Get("start"))
+			assert.Equal(t, "-1", query.(url.Values).Get("limit"))
+		}
+	})
+
+	t.Run("sorts by environment", func(t *testing.T) {
+		ctx, _ := portScopeContext(t, "/api/environments/a,b,c/ports?sort=environment&order=asc", bodies)
+		body, err := svc.AggregatePorts(ctx, pagination.QueryParams{SortParams: pagination.SortParams{Sort: "environment", Order: pagination.SortAsc}, Params: pagination.Params{Limit: -1}})
+		require.NoError(t, err)
+		assert.Equal(t, []string{"a/db", "a/web", "b/api"}, rowLabels(body.Data))
+	})
+
+	t.Run("all environments failing returns empty data", func(t *testing.T) {
+		ctx, _ := portScopeContext(t, "/api/environments/a,b,c/ports", map[string]any{})
+		body, err := svc.AggregatePorts(ctx, pagination.QueryParams{Params: pagination.Params{Limit: 20}})
+		require.NoError(t, err)
+		assert.Empty(t, body.Data)
+		assert.Len(t, body.FailedEnvironments, 3)
+	})
 }

@@ -49,7 +49,7 @@ func newTagsCmd() *cobra.Command {
 			})
 		},
 	}
-	cmdutil.SetScope(cmdutil.ScopeRead, cmd)
+	cmdutil.SetScope(cmdutil.ScopeMerged, cmd)
 	return cmd
 }
 

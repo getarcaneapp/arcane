@@ -25,6 +25,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 )
 
 // VolumeHandler provides Huma-based volume management endpoints.
@@ -115,6 +116,8 @@ type GetVolumeSizesInput struct {
 
 // VolumeSizeInfo represents size information for a single volume.
 type VolumeSizeInfo struct {
+	base.EnvironmentTag
+
 	Name     string `json:"name"`
 	Size     int64  `json:"size"`
 	RefCount int64  `json:"refCount"`
@@ -128,6 +131,14 @@ func (h *VolumeHandler) ListVolumes(ctx context.Context, input *ListVolumesInput
 	}
 
 	params.Limit = cmp.Or(params.Limit, 20)
+
+	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
+		body, err := h.volumeService.AggregateVolumes(ctx, params)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("Failed to list volumes: " + err.Error())
+		}
+		return &ListVolumesOutput{Body: body}, nil
+	}
 
 	volumes, paginationResp, counts, err := h.volumeService.ListVolumesPaginated(ctx, params, input.IncludeInternal)
 	if err != nil {
@@ -383,6 +394,14 @@ func (h *VolumeHandler) GetVolumeUsageCounts(ctx context.Context, input *GetVolu
 // GetVolumeSizes returns disk usage sizes for all volumes.
 // This is a slow operation as it requires calculating disk usage.
 func (h *VolumeHandler) GetVolumeSizes(ctx context.Context, input *GetVolumeSizesInput) (*handlerutil.Out[[]VolumeSizeInfo], error) {
+	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
+		body, err := h.volumeService.AggregateVolumeSizes(ctx)
+		if err != nil {
+			return nil, huma.Error500InternalServerError(err.Error())
+		}
+		return &handlerutil.Out[[]VolumeSizeInfo]{Body: body}, nil
+	}
+
 	sizes, err := h.volumeService.GetVolumeSizes(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())

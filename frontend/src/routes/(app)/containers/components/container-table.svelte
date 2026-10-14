@@ -163,11 +163,8 @@
 	async function fetchContainers(request: ContainerListRequestOptions): Promise<ContainerPage> {
 		return onRefreshData
 			? onRefreshData(request)
-			: fetchAcrossEnvironments(
-					environmentStore.shown,
-					request,
-					(id, request, config) => containerService.getContainersForEnvironment(id, request, config),
-					containerSortValue
+			: fetchAcrossEnvironments(environmentStore.shown, request, (id, request, config) =>
+					containerService.getContainersForEnvironment(id, request, config)
 				);
 	}
 

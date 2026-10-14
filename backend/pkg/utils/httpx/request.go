@@ -3,6 +3,7 @@ package httpx
 import (
 	"cmp"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	httpxtypes "github.com/getarcaneapp/arcane/types/v2/httpx"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 type HeaderSetter interface {
@@ -146,6 +148,7 @@ func GetClientBaseURL(origin, forwardedHost, forwardedProto, host, appURL string
 func NewHTTPClient(options httpxtypes.ClientOptions) *http.Client {
 	transport := &http.Transport{
 		Proxy:                 http.ProxyFromEnvironment,
+		DialContext:           kit.Ternary(options.DialTimeout > 0, (&net.Dialer{Timeout: options.DialTimeout, KeepAlive: 30 * time.Second}).DialContext, nil),
 		MaxIdleConns:          100,
 		MaxIdleConnsPerHost:   32,
 		IdleConnTimeout:       90 * time.Second,

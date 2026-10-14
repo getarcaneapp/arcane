@@ -12,6 +12,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 )
 
 // ImagePatchHandler provides Huma-based image patching endpoints.
@@ -78,6 +79,13 @@ func (h *ImagePatchHandler) PatchImage(ctx context.Context, input *PatchImageInp
 // ListPatchTargets returns scanned images with fixable counts and latest patch runs.
 func (h *ImagePatchHandler) ListPatchTargets(ctx context.Context, input *ListPatchTargetsInput) (*handlerutil.Page[imagepatch.PatchTarget], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
+	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
+		body, err := h.imagePatchService.AggregatePatchTargets(ctx, params)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("Failed to list image patch targets: " + err.Error())
+		}
+		return &handlerutil.Page[imagepatch.PatchTarget]{Body: body}, nil
+	}
 
 	targets, paginationResp, err := h.imagePatchService.ListPatchTargets(ctx, input.EnvironmentID, params)
 	if err != nil {

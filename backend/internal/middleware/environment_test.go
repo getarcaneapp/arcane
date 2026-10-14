@@ -18,6 +18,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 )
 
 func newTestEnvironmentMiddleware() *EnvironmentMiddleware {
@@ -626,4 +627,28 @@ func TestProxyPermissionDeniedResourceSortRequiresRead(t *testing.T) {
 	c = newProxyRequestContext(http.MethodGet, "/api/environments/"+proxyTestEnvID+"/containers?sort=memoryUsage&order=desc")
 	require.False(t, m.proxyPermissionDenied(c, withRead, proxyTestEnvID, "/containers"),
 		"expected resource sort to be allowed with containers:list and containers:read")
+}
+
+func TestEnvironmentMiddleware_ServesMultiEnvironmentScopeLocally(t *testing.T) {
+	router := echo.New()
+	router.Pre(func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c *echo.Context) error {
+			req := c.Request()
+			c.SetRequest(req.WithContext(httpx.WithEnvironmentScope(req.Context(), &httpx.EnvironmentScope{IDs: []string{"env-edge", "0"}})))
+			return next(c)
+		}
+	})
+	api := attachMiddleware(router, newTestEnvironmentMiddleware())
+
+	localHandlerHit := false
+	api.GET("/environments/:id/containers", func(c *echo.Context) error {
+		localHandlerHit = true
+		return c.JSON(http.StatusOK, map[string]any{"success": true})
+	})
+
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/environments/env-edge/containers", http.NoBody))
+
+	assert.Equal(t, http.StatusOK, recorder.Code)
+	assert.True(t, localHandlerHit)
 }

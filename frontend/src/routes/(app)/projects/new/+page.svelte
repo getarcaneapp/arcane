@@ -363,6 +363,10 @@
 			</div>
 
 			<div class="flex items-center gap-2">
+				<EnvironmentDestinationSelect
+					bind:value={() => environmentId, (value) => (pickedEnvironmentId = value)}
+					permission="projects:create"
+				/>
 				<ComposeCreateMenu
 					tooltipOpen={!effectiveName && !createMenuBusy ? undefined : false}
 					tooltipVisible={effectiveName === ''}
@@ -408,11 +412,6 @@
 					{@render projectNameField('block')}
 					<ProjectTagEditor bind:tags={newProjectTags} availableTags={availableProjectTags} canEdit={!ui.saving} class="mt-2" />
 				</div>
-
-				<EnvironmentDestinationSelect
-					bind:value={() => environmentId, (value) => (pickedEnvironmentId = value)}
-					permission="projects:create"
-				/>
 
 				{#if templateLoadNotices.length > 0}
 					<Alert.Root variant="warning" size="sm">

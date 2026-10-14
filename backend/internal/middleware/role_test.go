@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -12,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 )
 
 func TestRequirePermission_RejectsCallerMissingPermission(t *testing.T) {
@@ -222,6 +224,49 @@ func TestRequireSudoRejectsHumanAdminAndAllowsAgent(t *testing.T) {
 
 			require.Equal(t, tt.wantStatus, rec.Code)
 			require.Equal(t, tt.wantRan, handlerRan)
+		})
+	}
+}
+
+func TestRequirePermissionAllowsScopeWhenAnyEnvironmentAllows(t *testing.T) {
+	tests := []struct {
+		name    string
+		ids     []string
+		allowed bool
+	}{
+		{name: "one permitted environment", ids: []string{"env-2", "env-1"}, allowed: true},
+		{name: "no permitted environment", ids: []string{"env-2", "env-3"}, allowed: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			router := echo.New()
+			api := humaecho.NewWithGroup(router, router.Group("/api"), huma.DefaultConfig("test", "1.0.0"))
+			api.UseMiddleware(func(ctx huma.Context, next func(huma.Context)) {
+				ps := authz.NewPermissionSet()
+				ps.AddEnv("env-1", authz.PermContainersList)
+				scoped := httpx.WithEnvironmentScope(context.WithValue(ctx.Context(), ContextKeyUserPermissions, ps), &httpx.EnvironmentScope{IDs: tt.ids})
+				next(huma.WithContext(ctx, scoped))
+			})
+			huma.Register(api, huma.Operation{
+				OperationID: "scoped-list",
+				Method:      http.MethodGet,
+				Path:        "/environments/{id}/containers",
+				Middlewares: RequirePermission(api, authz.PermContainersList),
+			}, func(_ context.Context, _ *struct {
+				ID string `path:"id"`
+			},
+			) (*struct{}, error) {
+				return &struct{}{}, nil
+			})
+
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/environments/"+strings.Join(tt.ids, ",")+"/containers", http.NoBody))
+
+			if tt.allowed {
+				require.Less(t, rec.Code, http.StatusMultipleChoices)
+				return
+			}
+			require.Equal(t, http.StatusForbidden, rec.Code)
 		})
 	}
 }

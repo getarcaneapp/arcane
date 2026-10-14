@@ -10,13 +10,16 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/getarcaneapp/arcane/types/v2/backup"
+	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/getarcaneapp/arcane/types/v2/user"
 	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
 	"github.com/libtnb/sqlite"
@@ -33,6 +36,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/s3"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 )
 
 func TestEnrichVolumesWithUsageDataInternal(t *testing.T) {
@@ -479,4 +483,111 @@ func TestVolumeBackupPolicy_GetReturnsLastRunForEachPolicyFromStore(t *testing.T
 	second, err := store.Latest(t.Context(), "second-policy")
 	require.NoError(t, err)
 	require.Equal(t, "failed", second.Status)
+}
+
+func volumeScopeContext(t *testing.T, target string, bodies map[string]any) (context.Context, *sync.Map) {
+	t.Helper()
+	var queries sync.Map
+	return httpx.WithEnvironmentScope(t.Context(), &httpx.EnvironmentScope{
+		IDs:     []string{"a", "b", "c"},
+		Request: httptest.NewRequest(http.MethodGet, target, http.NoBody),
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			id := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/environments/"), "/")[0]
+			queries.Store(id, r.URL.Query())
+			body, ok := bodies[id]
+			if !ok {
+				w.WriteHeader(http.StatusBadGateway)
+				_, _ = w.Write([]byte(`{"detail":"environment offline"}`))
+				return
+			}
+			_ = json.NewEncoder(w).Encode(body)
+		}),
+		Resolve: func(_ context.Context, id string) (base.EnvironmentRef, error) {
+			return base.EnvironmentRef{ID: id, Name: "Env " + id}, nil
+		},
+	}), &queries
+}
+
+func TestAggregateVolumesMergesEnvironments(t *testing.T) {
+	bodies := map[string]any{
+		"a": base.PaginatedWithCounts[volumetypes.Volume, VolumeUsageCountsData]{Success: true, Data: []volumetypes.Volume{
+			{Name: "data", Size: 30, InUse: true},
+			{Name: "logs", Size: 5},
+		}, Counts: VolumeUsageCountsData{Inuse: 1, Unused: 1, Total: 2}, Pagination: base.PaginationResponse{TotalItems: 2, GrandTotalItems: 3}},
+		"b": base.PaginatedWithCounts[volumetypes.Volume, VolumeUsageCountsData]{Success: true, Data: []volumetypes.Volume{
+			{Name: "cache", Size: 10},
+		}, Counts: VolumeUsageCountsData{Unused: 1, Total: 1}, Pagination: base.PaginationResponse{TotalItems: 1}},
+	}
+	rowLabels := func(items []volumetypes.Volume) []string {
+		out := make([]string, 0, len(items))
+		for _, item := range items {
+			out = append(out, item.EnvironmentID+"/"+item.Name)
+		}
+		return out
+	}
+	svc := &VolumeService{}
+
+	t.Run("sorts by name across environments and pages", func(t *testing.T) {
+		ctx, queries := volumeScopeContext(t, "/api/environments/a,b,c/volumes?start=0&limit=2&sort=name&order=asc", bodies)
+		body, err := svc.AggregateVolumes(ctx, pagination.QueryParams{SortParams: pagination.SortParams{Sort: "name", Order: pagination.SortAsc}, Params: pagination.Params{Limit: 2}})
+		require.NoError(t, err)
+
+		require.True(t, body.Success)
+		require.Equal(t, []string{"b/cache", "a/data"}, rowLabels(body.Data))
+		require.Equal(t, "Env b", body.Data[0].EnvironmentName)
+		require.Equal(t, int64(3), body.Pagination.TotalItems)
+		require.Equal(t, int64(4), body.Pagination.GrandTotalItems)
+		require.Equal(t, int64(2), body.Pagination.TotalPages)
+		require.Equal(t, VolumeUsageCountsData{Inuse: 1, Unused: 2, Total: 3}, body.Counts)
+		require.Equal(t, []base.EnvironmentFailure{{Environment: base.EnvironmentRef{ID: "c", Name: "c"}, Message: "environment offline"}}, body.FailedEnvironments)
+		for _, id := range []string{"a", "b"} {
+			stored, ok := queries.Load(id)
+			require.True(t, ok)
+			require.Equal(t, "0", stored.(url.Values).Get("start"))
+			require.Equal(t, "-1", stored.(url.Values).Get("limit"))
+		}
+	})
+
+	t.Run("sorts by size reported by each environment", func(t *testing.T) {
+		ctx, queries := volumeScopeContext(t, "/api/environments/a,b,c/volumes?sort=size&order=desc", bodies)
+		body, err := svc.AggregateVolumes(ctx, pagination.QueryParams{SortParams: pagination.SortParams{Sort: "size", Order: pagination.SortDesc}, Params: pagination.Params{Limit: -1}})
+		require.NoError(t, err)
+		require.Equal(t, []string{"a/data", "b/cache", "a/logs"}, rowLabels(body.Data))
+		stored, _ := queries.Load("b")
+		require.Equal(t, "size", stored.(url.Values).Get("sort"))
+	})
+
+	t.Run("sorts by environment", func(t *testing.T) {
+		ctx, _ := volumeScopeContext(t, "/api/environments/a,b,c/volumes?sort=environment&order=desc", bodies)
+		body, err := svc.AggregateVolumes(ctx, pagination.QueryParams{SortParams: pagination.SortParams{Sort: "environment", Order: pagination.SortDesc}, Params: pagination.Params{Limit: -1}})
+		require.NoError(t, err)
+		require.Equal(t, []string{"b/cache", "a/data", "a/logs"}, rowLabels(body.Data))
+	})
+
+	t.Run("all environments failing returns empty data", func(t *testing.T) {
+		ctx, _ := volumeScopeContext(t, "/api/environments/a,b,c/volumes", map[string]any{})
+		body, err := svc.AggregateVolumes(ctx, pagination.QueryParams{Params: pagination.Params{Limit: 20}})
+		require.NoError(t, err)
+		require.Empty(t, body.Data)
+		require.Len(t, body.FailedEnvironments, 3)
+	})
+}
+
+func TestAggregateVolumeSizesKeepsEnvironmentRows(t *testing.T) {
+	ctx, _ := volumeScopeContext(t, "/api/environments/a,b,c/volumes/sizes", map[string]any{
+		"a": base.ApiResponse[[]VolumeSizeInfo]{Success: true, Data: []VolumeSizeInfo{{Name: "data", Size: 30, RefCount: 1}, {Name: "logs", Size: 5}}},
+		"b": base.ApiResponse[[]VolumeSizeInfo]{Success: true, Data: []VolumeSizeInfo{{Name: "data", Size: 7}}},
+	})
+
+	body, err := (&VolumeService{}).AggregateVolumeSizes(ctx)
+	require.NoError(t, err)
+
+	require.True(t, body.Success)
+	require.Equal(t, []VolumeSizeInfo{
+		{EnvironmentTag: base.EnvironmentTag{EnvironmentID: "a", EnvironmentName: "Env a"}, Name: "data", Size: 30, RefCount: 1},
+		{EnvironmentTag: base.EnvironmentTag{EnvironmentID: "a", EnvironmentName: "Env a"}, Name: "logs", Size: 5},
+		{EnvironmentTag: base.EnvironmentTag{EnvironmentID: "b", EnvironmentName: "Env b"}, Name: "data", Size: 7},
+	}, body.Data)
+	require.Len(t, body.FailedEnvironments, 1)
+	require.Equal(t, "c", body.FailedEnvironments[0].Environment.ID)
 }

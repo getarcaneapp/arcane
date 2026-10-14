@@ -1,9 +1,15 @@
 package volume
 
-import "github.com/moby/moby/api/types/volume"
+import (
+	"github.com/moby/moby/api/types/volume"
+
+	"github.com/getarcaneapp/arcane/types/v2/base"
+)
 
 // Volume represents a Docker volume.
 type Volume struct {
+	base.EnvironmentTag
+
 	// ID is the unique identifier of the volume.
 	//
 	// Required: true

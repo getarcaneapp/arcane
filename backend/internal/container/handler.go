@@ -33,6 +33,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 )
 
 type ContainerHandler struct {
@@ -45,12 +46,13 @@ type ContainerHandler struct {
 
 // ContainerPaginatedResponse is the paginated list response for containers.
 type ContainerPaginatedResponse struct {
-	Success               bool                     `json:"success"`
-	Data                  []container.Summary      `json:"data"`
-	Groups                []container.SummaryGroup `json:"groups,omitempty"`
-	Counts                container.StatusCounts   `json:"counts"`
-	Pagination            base.PaginationResponse  `json:"pagination"`
-	ResourceSortSupported bool                     `json:"resourceSortSupported"`
+	Success               bool                      `json:"success"`
+	Data                  []container.Summary       `json:"data"`
+	Groups                []container.SummaryGroup  `json:"groups,omitempty"`
+	Counts                container.StatusCounts    `json:"counts"`
+	Pagination            base.PaginationResponse   `json:"pagination"`
+	ResourceSortSupported bool                      `json:"resourceSortSupported"`
+	FailedEnvironments    []base.EnvironmentFailure `json:"failedEnvironments,omitempty" doc:"Environments whose results are missing from a multi-environment response"`
 }
 
 type ListContainersInput struct {
@@ -137,10 +139,6 @@ type GenerateComposeInput struct {
 }
 
 func (h *ContainerHandler) ListContainers(ctx context.Context, input *ListContainersInput) (*ListContainersOutput, error) {
-	if ps, _ := middleware.PermissionsFromContext(ctx); stats.ContainerResourceSortPermissionDenied(ps, input.EnvironmentID, input.Sort) {
-		return nil, huma.Error403Forbidden("permission denied: " + authz.PermContainersRead)
-	}
-
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	if input.Updates != "" {
 		params.Filters["updates"] = input.Updates
@@ -150,6 +148,18 @@ func (h *ContainerHandler) ListContainers(ctx context.Context, input *ListContai
 	}
 	if input.Label != "" {
 		params.Filters["label"] = input.Label
+	}
+
+	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
+		body, err := h.containerService.AggregateContainers(ctx, params, input.GroupBy)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("Failed to list containers: " + err.Error())
+		}
+		return &ListContainersOutput{Body: body}, nil
+	}
+
+	if ps, _ := middleware.PermissionsFromContext(ctx); stats.ContainerResourceSortPermissionDenied(ps, input.EnvironmentID, input.Sort) {
+		return nil, huma.Error403Forbidden("permission denied: " + authz.PermContainersRead)
 	}
 
 	result, err := h.containerService.ListContainersPaginated(ctx, params, true, input.IncludeInternal, input.IncludeHidden, input.GroupBy)

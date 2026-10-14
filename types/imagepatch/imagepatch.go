@@ -1,7 +1,11 @@
 // Package imagepatch contains shared types for Copacetic-based image patching.
 package imagepatch
 
-import "time"
+import (
+	"time"
+
+	"github.com/getarcaneapp/arcane/types/v2/base"
+)
 
 // PatchMode describes how package updates for a patch run were determined.
 type PatchMode string
@@ -47,6 +51,8 @@ type PatchScanSummary struct {
 // PatchTarget describes a scanned image from the patching point of view: how
 // many of its vulnerabilities are fixable and what the latest patch run did.
 type PatchTarget struct {
+	base.EnvironmentTag
+
 	ImageID      string    `json:"imageId"`
 	ImageRef     string    `json:"imageRef"`
 	FixableCount int       `json:"fixableCount"`

@@ -63,7 +63,7 @@ func newListCmd() *cobra.Command {
 		updatesFilter string
 	}
 	command := &cobra.Command{
-		Annotations:  map[string]string{"arcane:scope": cmdutil.ScopeRead},
+		Annotations:  map[string]string{"arcane:scope": cmdutil.ScopeMerged},
 		Use:          "list",
 		Aliases:      []string{"ls"},
 		Short:        "List images",
@@ -341,7 +341,7 @@ func newPruneCmd() *cobra.Command {
 
 func newCountsCmd() *cobra.Command {
 	return &cobra.Command{
-		Annotations:  map[string]string{"arcane:scope": cmdutil.ScopeRead},
+		Annotations:  map[string]string{"arcane:scope": cmdutil.ScopeMerged},
 		Use:          "counts",
 		Short:        "Get image usage counts",
 		SilenceUsage: true,

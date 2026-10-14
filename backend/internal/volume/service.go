@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"regexp"
 	"strings"
 	"sync"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/containerd/errdefs"
 	backuptypes "github.com/getarcaneapp/arcane/types/v2/backup"
+	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/getarcaneapp/arcane/types/v2/scheduler"
 	usertypes "github.com/getarcaneapp/arcane/types/v2/user"
 	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
@@ -45,6 +47,8 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/flow"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	workspacepkg "github.com/getarcaneapp/arcane/backend/v2/pkg/workspace"
 )
 
@@ -658,7 +662,7 @@ func (s *VolumeService) buildVolumeContainerMapInternal(ctx context.Context) (ma
 	return volumeContainerMap, nil
 }
 
-func (s *VolumeService) buildVolumePaginationConfigInternal() pagination.Config[volumetypes.Volume] {
+func (s *VolumeService) buildVolumePaginationConfig() pagination.Config[volumetypes.Volume] {
 	return pagination.Config[volumetypes.Volume]{
 		SearchAccessors: []pagination.SearchAccessor[volumetypes.Volume]{
 			func(v volumetypes.Volume) (string, error) { return v.Name, nil },
@@ -977,7 +981,7 @@ func (s *VolumeService) ListVolumesPaginated(ctx context.Context, params paginat
 		items = append(items, volDto)
 	}
 
-	paginationConfig := s.buildVolumePaginationConfigInternal()
+	paginationConfig := s.buildVolumePaginationConfig()
 	result := paginationConfig.SearchOrderAndPaginate(items, effectiveParams)
 	counts := calculateVolumeUsageCountsInternal(items)
 	paginationResp := pagination.BuildResponse(result.TotalCount, result.TotalAvailable, effectiveParams)
@@ -1002,6 +1006,53 @@ func (s *VolumeService) ListVolumesPaginated(ctx context.Context, params paginat
 	)
 
 	return result.Items, paginationResp, counts, nil
+}
+
+func (s *VolumeService) AggregateVolumes(ctx context.Context, params pagination.QueryParams) (base.PaginatedWithCounts[volumetypes.Volume, VolumeUsageCountsData], error) {
+	collection, err := httpx.CollectEnvironments[base.PaginatedWithCounts[volumetypes.Volume, VolumeUsageCountsData]](ctx, url.Values{"start": {"0"}, "limit": {"-1"}})
+	if err != nil {
+		return base.PaginatedWithCounts[volumetypes.Volume, VolumeUsageCountsData]{}, err
+	}
+
+	pages := make([]pagination.EnvironmentPage[volumetypes.Volume], 0, len(collection.Results))
+	counts := VolumeUsageCountsData{}
+	for _, result := range collection.Results {
+		page := result.Value
+		pages = append(pages, pagination.EnvironmentPage[volumetypes.Volume]{
+			Environment:    result.Environment,
+			Items:          page.Data,
+			TotalAvailable: cmp.Or(page.Pagination.GrandTotalItems, page.Pagination.TotalItems),
+		})
+		counts.Inuse += page.Counts.Inuse
+		counts.Unused += page.Counts.Unused
+		counts.Total += page.Counts.Total
+	}
+	data, resp := pagination.MergeEnvironmentPages(s.buildVolumePaginationConfig(), pages, params)
+
+	return base.PaginatedWithCounts[volumetypes.Volume, VolumeUsageCountsData]{
+		Success:            true,
+		Data:               data,
+		Counts:             counts,
+		Pagination:         handlerutil.PaginationResponse(resp),
+		FailedEnvironments: collection.Failures,
+	}, nil
+}
+
+func (s *VolumeService) AggregateVolumeSizes(ctx context.Context) (base.ApiResponse[[]VolumeSizeInfo], error) {
+	collection, err := httpx.CollectEnvironments[base.ApiResponse[[]VolumeSizeInfo]](ctx, nil)
+	if err != nil {
+		return base.ApiResponse[[]VolumeSizeInfo]{}, err
+	}
+
+	sizes := make([]VolumeSizeInfo, 0)
+	for _, result := range collection.Results {
+		for _, size := range result.Value.Data {
+			size.SetEnvironment(result.Environment)
+			sizes = append(sizes, size)
+		}
+	}
+
+	return base.ApiResponse[[]VolumeSizeInfo]{Success: true, Data: sizes, FailedEnvironments: collection.Failures}, nil
 }
 
 // RenameVolume copies an unused volume to a new name and removes the source.

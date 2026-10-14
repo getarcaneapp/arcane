@@ -107,6 +107,7 @@ func RegisterImages(
 		Description: "Get a paginated list of Docker images",
 		Tags:        []string{"Images"},
 		Security:    handlerutil.DefaultOperationSecurity(),
+		Metadata:    map[string]any{authz.MetaEnvironmentAggregate: true},
 	}, authz.PermImagesList, h.ListImages)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
@@ -117,6 +118,7 @@ func RegisterImages(
 		Description: "Get counts of images in use, unused, total, and total size",
 		Tags:        []string{"Images"},
 		Security:    handlerutil.DefaultOperationSecurity(),
+		Metadata:    map[string]any{authz.MetaEnvironmentAggregate: true},
 	}, authz.PermImagesList, h.GetImageUsageCounts)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
@@ -207,6 +209,7 @@ func RegisterImages(
 		Description: "Get a paginated list of image build history for an environment",
 		Tags:        []string{"Images"},
 		Security:    handlerutil.DefaultOperationSecurity(),
+		Metadata:    map[string]any{authz.MetaEnvironmentAggregate: true},
 	}, authz.PermImagesList, h.ListImageBuilds)
 
 	middleware.RegisterWithPermission(api, huma.Operation{

@@ -1,15 +1,3 @@
-<script module lang="ts">
-	import type { ImageSummaryDto } from '#lib/types/docker.js';
-
-	/** Sort value for an image column; vulnerabilities sort by total, critical, then high, unscanned first, as the backend does. */
-	export function imageSortValue(image: ImageSummaryDto, column: string): unknown {
-		if (column !== 'vulnerabilities') return image[column as keyof ImageSummaryDto];
-		const scan = image.vulnerabilityScan;
-		if (scan?.status !== 'completed' || !scan.summary) return [-1];
-		return [scan.summary.total, scan.summary.critical, scan.summary.high];
-	}
-</script>
-
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { useQueryClient } from '@tanstack/svelte-query';
@@ -51,7 +39,7 @@
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { featureStore } from '#lib/stores/features.store.svelte.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
-	import type { ImageUpdateInfoDto } from '#lib/types/docker.js';
+	import type { ImageSummaryDto, ImageUpdateInfoDto } from '#lib/types/docker.js';
 	import type { VulnerabilityScanSummary } from '#lib/types/environment.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
@@ -144,11 +132,8 @@
 			await onRefreshData(options);
 			return;
 		}
-		images = await fetchAcrossEnvironments(
-			environmentStore.shown,
-			options,
-			(id, request, config) => imageService.getImagesForEnvironment(id, request, config),
-			imageSortValue
+		images = await fetchAcrossEnvironments(environmentStore.shown, options, (id, request, config) =>
+			imageService.getImagesForEnvironment(id, request, config)
 		);
 	}
 

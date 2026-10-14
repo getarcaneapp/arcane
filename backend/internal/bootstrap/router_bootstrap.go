@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/getarcaneapp/arcane/types/v2"
+	"github.com/getarcaneapp/arcane/types/v2/base"
 	usertypes "github.com/getarcaneapp/arcane/types/v2/user"
 	"github.com/labstack/echo-otel/v5"
 	"github.com/labstack/echo/v5"
@@ -24,6 +25,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/auth"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/federated"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/telemetry"
@@ -269,6 +271,15 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 		p.TunnelRegistry,
 		httpx.ValidateWebSocketOrigin(cfg.GetAppURL()),
 	)
+	apiGroup.Use(middleware.NewEnvironmentScopeMiddleware(func(ctx context.Context, id string) (base.EnvironmentRef, error) {
+		env, err := deps.Environment.Service().GetEnvironmentByIDCached(ctx, id)
+		if err != nil {
+			return base.EnvironmentRef{}, err
+		}
+		return base.EnvironmentRef{ID: id, Name: environment.DisplayName(id, env.Name)}, nil
+	}, permissionMatcher, func(ctx context.Context) int {
+		return deps.Settings.Service().GetIntSetting(ctx, "allEnvironmentsLimit", 64)
+	}))
 	apiGroup.Use(envProxyMiddleware)
 
 	humaAPI := api.SetupAPI(e, apiGroup, handlerAppCtx, cfg, deps)

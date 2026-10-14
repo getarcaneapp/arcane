@@ -1,8 +1,14 @@
 package image
 
-import "time"
+import (
+	"time"
+
+	"github.com/getarcaneapp/arcane/types/v2/base"
+)
 
 // BuildRecord represents a historical image build entry.
+//
+//nolint:recvcheck // Rows read the environment by value and set it through a pointer.
 type BuildRecord struct {
 	CreatedAt       time.Time         `json:"createdAt" sortable:"true"`
 	BuildArgs       map[string]string `json:"buildArgs,omitempty"`
@@ -17,6 +23,7 @@ type BuildRecord struct {
 	Ulimits         map[string]string `json:"ulimits,omitempty"`
 	ID              string            `json:"id" sortable:"true"`
 	EnvironmentID   string            `json:"environmentId"`
+	EnvironmentName string            `json:"environmentName,omitempty"`
 	Status          string            `json:"status" sortable:"true"`
 	Provider        string            `json:"provider,omitempty"`
 	ContextDir      string            `json:"contextDir"`
@@ -37,4 +44,12 @@ type BuildRecord struct {
 	Push            bool              `json:"push"`
 	Load            bool              `json:"load"`
 	OutputTruncated bool              `json:"outputTruncated"`
+}
+
+func (r BuildRecord) Environment() base.EnvironmentRef {
+	return base.EnvironmentRef{ID: r.EnvironmentID, Name: r.EnvironmentName}
+}
+
+func (r *BuildRecord) SetEnvironment(ref base.EnvironmentRef) {
+	r.EnvironmentID, r.EnvironmentName = ref.ID, ref.Name
 }

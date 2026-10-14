@@ -24,6 +24,7 @@ import (
 	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 )
 
 type NetworkHandler struct {
@@ -92,6 +93,14 @@ func (h *NetworkHandler) ListNetworks(ctx context.Context, input *ListNetworksIn
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	if input.InUse != "" {
 		params.Filters["inUse"] = input.InUse
+	}
+
+	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
+		body, err := h.networkService.AggregateNetworks(ctx, params)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("Failed to list networks: " + err.Error())
+		}
+		return &ListNetworksOutput{Body: body}, nil
 	}
 
 	networks, paginationResp, counts, err := h.networkService.ListNetworksPaginated(ctx, params)

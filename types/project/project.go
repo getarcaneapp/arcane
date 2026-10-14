@@ -5,6 +5,7 @@ import (
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 
+	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
 )
@@ -453,6 +454,8 @@ type ConfigurationError struct {
 
 // Details contains detailed information about a project.
 type Details struct {
+	base.EnvironmentTag
+
 	// Tags are the effective UI and Compose tags for the project.
 	Tags []Tag `json:"tags"`
 

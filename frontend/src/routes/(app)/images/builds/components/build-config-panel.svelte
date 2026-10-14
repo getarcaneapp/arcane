@@ -39,8 +39,8 @@
 
 <div class="space-y-7 p-8">
 	<form onsubmit={preventDefault(() => onSubmit?.())} class="space-y-7">
-		<EnvironmentDestinationSelect bind:value={environmentId} permission="images:build" />
 		<div class="space-y-4">
+			<EnvironmentDestinationSelect bind:value={environmentId} permission="images:build" variant="field" />
 			{#if isPushMode}
 				<SelectWithLabel
 					id="build-push-registry"

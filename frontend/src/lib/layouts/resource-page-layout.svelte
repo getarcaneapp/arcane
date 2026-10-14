@@ -89,10 +89,12 @@
 			</div>
 		</div>
 
-		{#if environmentPicker}
-			<EnvironmentDestinationSelect />
-		{/if}
-		<ActionButtonGroup buttons={actionButtons} />
+		<div class="flex min-w-0 items-center justify-end gap-2">
+			{#if environmentPicker}
+				<EnvironmentDestinationSelect />
+			{/if}
+			<ActionButtonGroup buttons={actionButtons} />
+		</div>
 	</header>
 
 	<div class="md:-mx-5 md:-mb-5 md:px-2 md:pb-2">

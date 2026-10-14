@@ -166,6 +166,13 @@ func (h *ProjectHandler) ListProjects(ctx context.Context, input *ListProjectsIn
 	if input.Label != "" {
 		params.Filters["label"] = input.Label
 	}
+	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
+		body, err := h.projectService.AggregateProjects(ctx, params)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("Failed to list projects: " + err.Error())
+		}
+		return &handlerutil.Page[project.Details]{Body: body}, nil
+	}
 
 	projects, paginationResp, err := h.projectService.ListProjects(ctx, params)
 	if err != nil {
@@ -190,6 +197,13 @@ func (h *ProjectHandler) ListProjects(ctx context.Context, input *ListProjectsIn
 
 // GetProjectStatusCounts returns counts of projects by status.
 func (h *ProjectHandler) GetProjectStatusCounts(ctx context.Context, input *GetProjectStatusCountsInput) (*handlerutil.Out[project.StatusCounts], error) {
+	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
+		body, err := h.projectService.AggregateProjectCounts(ctx)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("Failed to get project status counts: " + err.Error())
+		}
+		return &handlerutil.Out[project.StatusCounts]{Body: body}, nil
+	}
 	counts, err := h.projectService.GetProjectStatusCounts(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to get project status counts: " + err.Error())
@@ -205,6 +219,13 @@ func (h *ProjectHandler) GetProjectStatusCounts(ctx context.Context, input *GetP
 
 // ListProjectTags returns the reusable project tag catalog for an environment.
 func (h *ProjectHandler) ListProjectTags(ctx context.Context, _ *ListProjectTagsInput) (*handlerutil.Out[[]project.TagOption], error) {
+	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
+		body, err := h.projectService.AggregateProjectTags(ctx)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("Failed to list project tags: " + err.Error())
+		}
+		return &handlerutil.Out[[]project.TagOption]{Body: body}, nil
+	}
 	options, err := h.projectService.ListProjectTagOptions(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to list project tags: " + err.Error())

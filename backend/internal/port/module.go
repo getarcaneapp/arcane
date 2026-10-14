@@ -20,5 +20,6 @@ func RegisterPorts(api huma.API, portSvc *PortService) {
 		Summary:     "List port mappings",
 		Tags:        []string{"Ports"},
 		Security:    handlerutil.DefaultOperationSecurity(),
+		Metadata:    map[string]any{authz.MetaEnvironmentAggregate: true},
 	}, authz.PermContainersList, h.ListPorts)
 }

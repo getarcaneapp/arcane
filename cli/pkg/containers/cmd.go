@@ -71,7 +71,7 @@ func newContainerListCmd(updatesOnly bool) *cobra.Command {
 		includeHidden bool
 	}
 	command := &cobra.Command{
-		Annotations:  map[string]string{"arcane:scope": cmdutil.ScopeRead},
+		Annotations:  map[string]string{"arcane:scope": cmdutil.ScopeMerged},
 		Use:          kit.Ternary(updatesOnly, "updates", "list"),
 		Aliases:      kit.Ternary(updatesOnly, []string(nil), []string{"ls"}),
 		Short:        kit.Ternary(updatesOnly, "List containers with available updates", "List containers"),

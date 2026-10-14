@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"maps"
+	"net/url"
 	"slices"
 	"strings"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"github.com/distribution/reference"
 	"github.com/getarcaneapp/arcane/types/v2"
 	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
+	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	"github.com/getarcaneapp/arcane/types/v2/features"
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
@@ -50,6 +52,8 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/flow"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/imageref"
 )
 
@@ -1012,6 +1016,53 @@ func (s *ImageService) ListImagesPaginated(ctx context.Context, params paginatio
 	paginationResp := pagination.BuildResponse(result.TotalCount, result.TotalAvailable, params)
 
 	return result.Items, paginationResp, nil
+}
+
+func (s *ImageService) AggregateImages(ctx context.Context, params pagination.QueryParams) (imagetypes.ListResponse, error) {
+	collection, err := httpx.CollectEnvironments[imagetypes.ListResponse](ctx, url.Values{"start": {"0"}, "limit": {"-1"}})
+	if err != nil {
+		return imagetypes.ListResponse{}, err
+	}
+
+	pages := make([]pagination.EnvironmentPage[imagetypes.Summary], 0, len(collection.Results))
+	for _, result := range collection.Results {
+		pages = append(pages, pagination.EnvironmentPage[imagetypes.Summary]{
+			Environment:    result.Environment,
+			Items:          result.Value.Data,
+			TotalAvailable: cmp.Or(result.Value.Pagination.GrandTotalItems, result.Value.Pagination.TotalItems),
+		})
+	}
+	data, resp := pagination.MergeEnvironmentPages(s.getImagePaginationConfig(), pages, params)
+
+	return imagetypes.ListResponse{
+		Success:    true,
+		Data:       data,
+		Pagination: handlerutil.PaginationResponse(resp),
+		MaxImageUploadSize: func() int {
+			if len(collection.Results) == 0 {
+				return 0
+			}
+			return collection.Results[0].Value.MaxImageUploadSize
+		}(),
+		FailedEnvironments: collection.Failures,
+	}, nil
+}
+
+func (s *ImageService) AggregateImageCounts(ctx context.Context) (base.ApiResponse[imagetypes.UsageCounts], error) {
+	collection, err := httpx.CollectEnvironments[base.ApiResponse[imagetypes.UsageCounts]](ctx, nil)
+	if err != nil {
+		return base.ApiResponse[imagetypes.UsageCounts]{}, err
+	}
+
+	counts := imagetypes.UsageCounts{}
+	for _, result := range collection.Results {
+		counts.Inuse += result.Value.Data.Inuse
+		counts.Unused += result.Value.Data.Unused
+		counts.Total += result.Value.Data.Total
+		counts.TotalSize += result.Value.Data.TotalSize
+	}
+
+	return base.ApiResponse[imagetypes.UsageCounts]{Success: true, Data: counts, FailedEnvironments: collection.Failures}, nil
 }
 
 func buildImageRefUpdateLookupsInternal(imageRefs []string) []imageRefUpdateLookup {

@@ -22,15 +22,17 @@ type PaginationResponse struct {
 
 // ApiResponse is a generic wrapper for API responses.
 type ApiResponse[T any] struct {
-	Success bool `json:"success" doc:"Whether the request was successful"`
-	Data    T    `json:"data" doc:"Response data"`
+	Success            bool                 `json:"success" doc:"Whether the request was successful"`
+	Data               T                    `json:"data" doc:"Response data"`
+	FailedEnvironments []EnvironmentFailure `json:"failedEnvironments,omitempty" doc:"Environments whose results are missing from a multi-environment response"`
 }
 
 // Paginated is a generic wrapper for paginated responses.
 type Paginated[T any] struct {
-	Success    bool               `json:"success" doc:"Whether the request was successful"`
-	Data       []T                `json:"data" doc:"Array of items for the current page"`
-	Pagination PaginationResponse `json:"pagination" doc:"Pagination metadata"`
+	Success            bool                 `json:"success" doc:"Whether the request was successful"`
+	Data               []T                  `json:"data" doc:"Array of items for the current page"`
+	Pagination         PaginationResponse   `json:"pagination" doc:"Pagination metadata"`
+	FailedEnvironments []EnvironmentFailure `json:"failedEnvironments,omitempty" doc:"Environments whose results are missing from a multi-environment response"`
 }
 
 // PaginatedWithWarnings is a generic wrapper for paginated responses with warnings.
@@ -43,8 +45,9 @@ type PaginatedWithWarnings[T any] struct {
 
 // PaginatedWithCounts is a generic wrapper for paginated responses with aggregate counts.
 type PaginatedWithCounts[T, C any] struct {
-	Success    bool               `json:"success" doc:"Whether the request was successful"`
-	Data       []T                `json:"data" doc:"Array of items for the current page"`
-	Counts     C                  `json:"counts" doc:"Aggregate counts for the filtered collection"`
-	Pagination PaginationResponse `json:"pagination" doc:"Pagination metadata"`
+	Success            bool                 `json:"success" doc:"Whether the request was successful"`
+	Data               []T                  `json:"data" doc:"Array of items for the current page"`
+	Counts             C                    `json:"counts" doc:"Aggregate counts for the filtered collection"`
+	Pagination         PaginationResponse   `json:"pagination" doc:"Pagination metadata"`
+	FailedEnvironments []EnvironmentFailure `json:"failedEnvironments,omitempty" doc:"Environments whose results are missing from a multi-environment response"`
 }

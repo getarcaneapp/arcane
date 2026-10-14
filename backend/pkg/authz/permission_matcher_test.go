@@ -1,8 +1,12 @@
 package authz
 
 import (
+	"context"
+	"net/http"
 	"testing"
 
+	"github.com/danielgtaylor/huma/v2"
+	"github.com/danielgtaylor/huma/v2/humatest"
 	"github.com/stretchr/testify/require"
 )
 
@@ -100,4 +104,34 @@ func TestPermissionMatcherUnmappedReturnsNotFound(t *testing.T) {
 		require.False(t, ok,
 			"expected unmapped path to return not found")
 	}
+}
+
+func TestPermissionMatcherCollectsEnvironmentAggregation(t *testing.T) {
+	_, api := humatest.New(t)
+	handler := func(context.Context, *struct {
+		ID string `path:"id"`
+	},
+	) (*struct{}, error) {
+		return &struct{}{}, nil
+	}
+	aggregate := map[string]any{MetaRequiredPermission: "containers:list", MetaEnvironmentAggregate: true}
+	huma.Register(api, huma.Operation{OperationID: "list", Method: http.MethodGet, Path: "/environments/{id}/containers", Metadata: aggregate}, handler)
+	huma.Register(api, huma.Operation{OperationID: "create", Method: http.MethodPost, Path: "/environments/{id}/projects", Metadata: aggregate}, handler)
+	huma.Register(api, huma.Operation{
+		OperationID: "images",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/images",
+		Metadata:    map[string]any{MetaRequiredPermission: "images:list"},
+	}, handler)
+
+	m := NewPermissionMatcher()
+	m.CollectFromHumaAPI(api)
+
+	require.True(t, m.SupportsEnvironmentAggregation(http.MethodGet, "/containers"))
+	require.False(t, m.SupportsEnvironmentAggregation(http.MethodPost, "/projects"), "only GET operations aggregate")
+	require.False(t, m.SupportsEnvironmentAggregation(http.MethodGet, "/images"), "operations must opt in")
+	require.False(t, m.SupportsEnvironmentAggregation(http.MethodGet, "/containers/abc"), "suffix must match exactly")
+	perm, ok := m.Lookup(http.MethodGet, "/containers").Get()
+	require.True(t, ok)
+	require.Equal(t, "containers:list", perm)
 }

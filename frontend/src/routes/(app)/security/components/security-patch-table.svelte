@@ -15,12 +15,8 @@
 
 	/** Patch targets from every shown environment with vulnerability management, keyed by environment and image. */
 	export async function fetchPatchTargets(options: SearchPaginationSortRequest): Promise<PatchTargetPage> {
-		const page = await fetchAcrossEnvironments(
-			vulnerabilityEnvironments(),
-			options,
-			(id, request, config) => imageService.listPatchTargets(request, id, config),
-			// The image column sorts as imageName but the row holds imageRef.
-			(target, column) => (column === 'imageName' ? target.imageRef : target[column as keyof ImagePatchTargetDto])
+		const page = await fetchAcrossEnvironments(vulnerabilityEnvironments(), options, (id, request, config) =>
+			imageService.listPatchTargets(request, id, config)
 		);
 		// The table keys rows by environment and id, so the id is the image's own.
 		return { ...page, data: page.data.map((target) => ({ ...target, id: target.imageId })) };

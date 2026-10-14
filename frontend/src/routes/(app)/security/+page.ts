@@ -11,8 +11,7 @@ import {
 	mapVulnerabilityPage,
 	mapVulnerabilityRequest,
 	vulnerabilityEnvironments,
-	vulnerabilityOverviewEnvironment,
-	vulnerabilitySortValue
+	vulnerabilityOverviewEnvironment
 } from '#lib/utils/vulnerability.js';
 
 import type { PageLoad } from './$types';
@@ -75,11 +74,8 @@ export const load: PageLoad = async ({ parent }) => {
 				queryClient.query({
 					queryKey: queryKeys.vulnerabilities.allByEnvironment(environmentStore.shownKey, requestForApi),
 					queryFn: () =>
-						fetchAcrossEnvironments(
-							vulnerabilityEnvironments(),
-							requestForApi,
-							(id, request, config) => vulnerabilityService.getAllVulnerabilitiesForEnvironment(id, request, config),
-							vulnerabilitySortValue
+						fetchAcrossEnvironments(vulnerabilityEnvironments(), requestForApi, (id, request, config) =>
+							vulnerabilityService.getAllVulnerabilitiesForEnvironment(id, request, config)
 						)
 				})
 			]))()

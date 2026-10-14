@@ -6,7 +6,6 @@ import { fetchAcrossEnvironments } from '#lib/utils/environments.js';
 import { resolveInitialTableRequest } from '#lib/utils/tables.js';
 
 import type { PageLoad } from './$types';
-import { volumeSortValue } from './components/volume-table.svelte';
 
 export const load: PageLoad = async ({ parent }) => {
 	const { queryClient } = await parent();
@@ -32,11 +31,8 @@ export const load: PageLoad = async ({ parent }) => {
 	const volumes = await queryClient.query({
 		queryKey: queryKeys.volumes.table(scope, volumeRequestOptions),
 		queryFn: () =>
-			fetchAcrossEnvironments(
-				environments,
-				volumeRequestOptions,
-				(id, request, config) => volumeService.getVolumesForEnvironment(id, request, config),
-				volumeSortValue
+			fetchAcrossEnvironments(environments, volumeRequestOptions, (id, request, config) =>
+				volumeService.getVolumesForEnvironment(id, request, config)
 			)
 	});
 

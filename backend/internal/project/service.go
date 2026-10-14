@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"maps"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -19,6 +20,7 @@ import (
 	"time"
 
 	"github.com/compose-spec/compose-go/v2/types"
+	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
 	lifecycletype "github.com/getarcaneapp/arcane/types/v2/lifecycle"
@@ -69,6 +71,8 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/concurrency"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/iconcatalog"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/imageref"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/userctx"
@@ -3426,6 +3430,63 @@ func (s *ProjectService) GetProjectStatusCounts(ctx context.Context) (projecttyp
 		return projecttypes.StatusCounts{}, fmt.Errorf("failed to list projects: %w", listProjectsErr)
 	}
 	return s.listing.StatusCounts(ctx, projectRecords(projectsList)), nil
+}
+
+func (s *ProjectService) AggregateProjects(ctx context.Context, params pagination.QueryParams) (base.Paginated[projecttypes.Details], error) {
+	collection, err := httpx.CollectEnvironments[base.Paginated[projecttypes.Details]](ctx, url.Values{"start": {"0"}, "limit": {"-1"}})
+	if err != nil {
+		return base.Paginated[projecttypes.Details]{}, fmt.Errorf("collect environment projects: %w", err)
+	}
+	pages := make([]pagination.EnvironmentPage[projecttypes.Details], 0, len(collection.Results))
+	for _, result := range collection.Results {
+		pages = append(pages, pagination.EnvironmentPage[projecttypes.Details]{
+			Environment:    result.Environment,
+			Items:          result.Value.Data,
+			TotalAvailable: cmp.Or(result.Value.Pagination.GrandTotalItems, result.Value.Pagination.TotalItems),
+		})
+	}
+	byID := func(a, b projecttypes.Details) int { return strings.Compare(a.ID, b.ID) }
+	listConfig := listing.PaginationConfig()
+	listConfig.SortBindings = append([]pagination.SortBinding[projecttypes.Details]{{Key: "id", Fn: byID, DescFn: byID}}, listConfig.SortBindings...)
+	items, resp := pagination.MergeEnvironmentPages(listConfig, pages, params)
+	return base.Paginated[projecttypes.Details]{
+		Success:            true,
+		Data:               items,
+		Pagination:         handlerutil.PaginationResponse(resp),
+		FailedEnvironments: collection.Failures,
+	}, nil
+}
+
+func (s *ProjectService) AggregateProjectCounts(ctx context.Context) (base.ApiResponse[projecttypes.StatusCounts], error) {
+	collection, err := httpx.CollectEnvironments[base.ApiResponse[projecttypes.StatusCounts]](ctx, nil)
+	if err != nil {
+		return base.ApiResponse[projecttypes.StatusCounts]{}, fmt.Errorf("collect environment project counts: %w", err)
+	}
+	var counts projecttypes.StatusCounts
+	for _, result := range collection.Results {
+		counts.RunningProjects += result.Value.Data.RunningProjects
+		counts.StoppedProjects += result.Value.Data.StoppedProjects
+		counts.TotalProjects += result.Value.Data.TotalProjects
+		counts.ArchivedProjects += result.Value.Data.ArchivedProjects
+	}
+	return base.ApiResponse[projecttypes.StatusCounts]{Success: true, Data: counts, FailedEnvironments: collection.Failures}, nil
+}
+
+func (s *ProjectService) AggregateProjectTags(ctx context.Context) (base.ApiResponse[[]projecttypes.TagOption], error) {
+	collection, err := httpx.CollectEnvironments[base.ApiResponse[[]projecttypes.TagOption]](ctx, nil)
+	if err != nil {
+		return base.ApiResponse[[]projecttypes.TagOption]{}, fmt.Errorf("collect environment project tags: %w", err)
+	}
+	options := make([]projecttypes.TagOption, 0)
+	for _, result := range collection.Results {
+		for _, option := range result.Value.Data {
+			if !slices.ContainsFunc(options, func(existing projecttypes.TagOption) bool { return existing.Name == option.Name }) {
+				options = append(options, option)
+			}
+		}
+	}
+	slices.SortStableFunc(options, func(a, b projecttypes.TagOption) int { return strings.Compare(a.Name, b.Name) })
+	return base.ApiResponse[[]projecttypes.TagOption]{Success: true, Data: options, FailedEnvironments: collection.Failures}, nil
 }
 
 // projectListRows builds list rows and persists live-inferred service counts

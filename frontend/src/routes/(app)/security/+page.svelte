@@ -31,7 +31,6 @@
 		vulnerabilityEnvironments,
 		vulnerabilityOverviewEnvironment,
 		vulnerabilityOverviewEnvironments,
-		vulnerabilitySortValue,
 		withVulnerabilityToggles,
 		type VulnerabilityRow
 	} from '#lib/utils/vulnerability.js';
@@ -157,11 +156,8 @@
 				},
 				vulnerabilities: {
 					fetch: () =>
-						fetchAcrossEnvironments(
-							vulnerabilityEnvironments(),
-							requestForApi,
-							(id, request, config) => vulnerabilityService.getAllVulnerabilitiesForEnvironment(id, request, config),
-							vulnerabilitySortValue
+						fetchAcrossEnvironments(vulnerabilityEnvironments(), requestForApi, (id, request, config) =>
+							vulnerabilityService.getAllVulnerabilitiesForEnvironment(id, request, config)
 						),
 					onSuccess: (data) => {
 						if (stillCurrent()) vulnerabilities = mapVulnerabilityPage(data, requestOptions);
@@ -456,14 +452,6 @@
 	{/if}
 {/snippet}
 
-{#snippet overviewEnvironmentPicker()}
-	{#if environmentStore.shown.length > 1}
-		<div class="mb-3">
-			<EnvironmentDestinationSelect environments={vulnerabilityOverviewEnvironments()} />
-		</div>
-	{/if}
-{/snippet}
-
 <ResourcePageLayout
 	title={m.security()}
 	subtitle={m.security_subtitle()}
@@ -474,16 +462,19 @@
 			<FeatureDisabled />
 		{:else}
 			<Tabs.Root value={activeTab}>
-				<TabBar items={securityTabItems} value={activeTab} onValueChange={handleTabChange} />
+				<div class="flex flex-wrap items-center justify-between gap-2">
+					<TabBar items={securityTabItems} value={activeTab} onValueChange={handleTabChange} />
+					{#if activeTab === 'overview' || (activeTab === 'vulnerabilities' && overview)}
+						<EnvironmentDestinationSelect environments={vulnerabilityOverviewEnvironments()} />
+					{/if}
+				</div>
 				<Tabs.Content value="overview" class="mt-4">
-					{@render overviewEnvironmentPicker()}
 					{#if overview}
 						<SecurityOverview {overview} environmentId={overviewEnvironmentId} onSelectVulnerability={showVulnerability} />
 					{/if}
 				</Tabs.Content>
 				<Tabs.Content value="vulnerabilities" class="mt-4">
 					{#if overview}
-						{@render overviewEnvironmentPicker()}
 						<div class="mb-3 flex flex-wrap items-center gap-x-5 gap-y-1.5 text-xs text-muted-foreground">
 							<span>
 								{m.security_images_scanned()}:

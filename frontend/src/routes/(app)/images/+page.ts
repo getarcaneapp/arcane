@@ -7,7 +7,6 @@ import { resolveListPageLoadContext } from '#lib/utils/tables.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
 import type { PageLoad } from './$types';
-import { imageSortValue } from './components/image-table.svelte';
 
 export const load: PageLoad = async ({ parent }) => {
 	const {
@@ -28,11 +27,8 @@ export const load: PageLoad = async ({ parent }) => {
 				queryClient.query({
 					queryKey: queryKeys.images.list(scope, imageRequestOptions),
 					queryFn: () =>
-						fetchAcrossEnvironments(
-							environments,
-							imageRequestOptions,
-							(id, request, config) => imageService.getImagesForEnvironment(id, request, config),
-							imageSortValue
+						fetchAcrossEnvironments(environments, imageRequestOptions, (id, request, config) =>
+							imageService.getImagesForEnvironment(id, request, config)
 						)
 				}),
 				queryClient.query({

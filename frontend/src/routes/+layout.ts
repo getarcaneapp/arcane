@@ -28,16 +28,19 @@ import type { LayoutLoad } from './$types';
 
 export const ssr = false;
 
+const spansEnvironments = ({ queryKey }: { queryKey: readonly unknown[] }) =>
+	environmentStore.shown.length > 1 && queryKey.includes(environmentStore.shownKey);
+
 const queryClient = new QueryClient({
 	defaultOptions: {
 		queries: {
 			enabled: browser,
 			// Covers the gap between a page loader's fetch and the component's
 			// mount so the same query isn't fetched twice in one navigation.
-			staleTime: 2_000,
+			staleTime: (query) => (spansEnvironments(query) ? 15_000 : 2_000),
 			gcTime: 60 * 1000,
 			refetchOnMount: true,
-			refetchOnWindowFocus: 'always',
+			refetchOnWindowFocus: (query) => (spansEnvironments(query) ? true : 'always'),
 			refetchOnReconnect: 'always'
 		}
 	}

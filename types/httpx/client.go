@@ -7,4 +7,5 @@ import "time"
 type ClientOptions struct {
 	Timeout             time.Duration
 	TLSHandshakeTimeout time.Duration
+	DialTimeout         time.Duration
 }

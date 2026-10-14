@@ -2,13 +2,18 @@ package patch
 
 import (
 	"context"
+	"encoding/json/v2"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/getarcaneapp/arcane/types/v2/features"
 	"github.com/getarcaneapp/arcane/types/v2/imagepatch"
 	"github.com/getarcaneapp/arcane/types/v2/user"
@@ -25,6 +30,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/vulnerability"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 )
 
 func TestResolvePatchedRef(t *testing.T) {
@@ -181,4 +187,73 @@ func TestDisabledFeatureSkipsPatchVerificationScan(t *testing.T) {
 		svc.verifyPatchedImage(t.Context(), &ImagePatchRecord{EnvironmentID: "0", PatchedRef: "test:patched"}, "")
 	})
 	require.Equal(t, int32(1), inspected.Load())
+}
+
+func TestAggregatePatchTargetsMergesEnvironments(t *testing.T) {
+	scanned := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+	bodies := map[string]base.Paginated[imagepatch.PatchTarget]{
+		"a": {Success: true, Data: []imagepatch.PatchTarget{
+			{ImageID: "sha256:a1", ImageRef: "nginx:1", FixableCount: 3, ScanTime: scanned.Add(2 * time.Hour)},
+			{ImageID: "sha256:a2", ImageRef: "redis:7", FixableCount: 1, ScanTime: scanned},
+		}, Pagination: base.PaginationResponse{TotalItems: 2, GrandTotalItems: 4}},
+		"b": {Success: true, Data: []imagepatch.PatchTarget{
+			{ImageID: "sha256:b1", ImageRef: "alpine:3", FixableCount: 5, ScanTime: scanned.Add(time.Hour)},
+		}, Pagination: base.PaginationResponse{TotalItems: 1}},
+	}
+	var queries sync.Map
+	ctx := httpx.WithEnvironmentScope(t.Context(), &httpx.EnvironmentScope{
+		IDs:     []string{"a", "b", "c"},
+		Request: httptest.NewRequest(http.MethodGet, "/api/environments/a,b,c/images/patch-targets?start=0&limit=20&order=desc", http.NoBody),
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			id := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/environments/"), "/")[0]
+			queries.Store(id, r.URL.Query())
+			body, ok := bodies[id]
+			if !ok {
+				w.WriteHeader(http.StatusBadGateway)
+				_, _ = w.Write([]byte(`{"detail":"environment offline"}`))
+				return
+			}
+			payload, err := json.Marshal(body)
+			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			_, _ = w.Write(payload)
+		}),
+		Resolve: func(_ context.Context, id string) (base.EnvironmentRef, error) {
+			return base.EnvironmentRef{ID: id, Name: "Env " + id}, nil
+		},
+	})
+	rowLabels := func(items []imagepatch.PatchTarget) []string {
+		out := make([]string, 0, len(items))
+		for _, item := range items {
+			out = append(out, item.EnvironmentID+"/"+item.ImageRef)
+		}
+		return out
+	}
+	svc := &Service{}
+	merge := func(sort string, order pagination.SortOrder, start, limit int) base.Paginated[imagepatch.PatchTarget] {
+		body, err := svc.AggregatePatchTargets(ctx, pagination.QueryParams{SortParams: pagination.SortParams{Sort: sort, Order: order}, Params: pagination.Params{Start: start, Limit: limit}})
+		require.NoError(t, err)
+		return body
+	}
+
+	defaults := merge("", pagination.SortDesc, 0, 20)
+	assert.True(t, defaults.Success)
+	assert.Equal(t, []string{"a/nginx:1", "b/alpine:3", "a/redis:7"}, rowLabels(defaults.Data))
+	assert.Equal(t, "Env a", defaults.Data[0].EnvironmentName)
+	assert.Equal(t, int64(3), defaults.Pagination.TotalItems)
+	assert.Equal(t, int64(5), defaults.Pagination.GrandTotalItems)
+	require.Len(t, defaults.FailedEnvironments, 1)
+	assert.Equal(t, "c", defaults.FailedEnvironments[0].Environment.ID)
+	for _, id := range []string{"a", "b"} {
+		query, ok := queries.Load(id)
+		require.True(t, ok)
+		assert.Equal(t, "0", query.(url.Values).Get("start"))
+		assert.Equal(t, "-1", query.(url.Values).Get("limit"))
+	}
+
+	assert.Equal(t, []string{"b/alpine:3", "a/nginx:1", "a/redis:7"}, rowLabels(merge("imageName", pagination.SortAsc, 0, -1).Data))
+	assert.Equal(t, []string{"b/alpine:3", "a/nginx:1"}, rowLabels(merge("fixableCount", pagination.SortDesc, 0, 2).Data))
+	assert.Equal(t, []string{"a/redis:7", "a/nginx:1", "b/alpine:3"}, rowLabels(merge("environment", pagination.SortAsc, 0, -1).Data))
 }

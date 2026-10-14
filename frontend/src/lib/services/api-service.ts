@@ -15,6 +15,7 @@ export interface APIRequestConfig {
 	signal?: AbortSignal;
 	suppressAccessDeniedToast?: boolean;
 	timeout?: number | false;
+	onFailedEnvironments?: (failures: { environment: { id: string; name: string }; message: string }[]) => void;
 }
 
 interface InternalRequestConfig extends APIRequestConfig {
@@ -311,6 +312,7 @@ class APIClient {
 				const response = await this.client(requestUrl, options);
 				const parsed = upperMethod === 'HEAD' ? undefined : await parseResponseBody(response.clone(), config.responseType);
 				if (session?.aborted) throw new SessionCancelledError();
+				if (Array.isArray(parsed?.failedEnvironments)) config.onFailedEnvironments?.(parsed.failedEnvironments);
 				return {
 					data: parsed as T,
 					headers: response.headers,

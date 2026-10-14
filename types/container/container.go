@@ -9,6 +9,7 @@ import (
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/network"
 
+	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
 )
@@ -837,6 +838,8 @@ type ResourceSample struct {
 
 // Summary represents a container summary.
 type Summary struct {
+	base.EnvironmentTag
+
 	// ID is the unique identifier of the container.
 	//
 	// Required: true

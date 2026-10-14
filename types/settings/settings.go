@@ -269,6 +269,11 @@ type Update struct {
 	// Required: false
 	AvatarMaxUploadSizeMb *string `json:"avatarMaxUploadSizeMb,omitzero"`
 
+	// AllEnvironmentsLimit is the maximum number of environments in one multi-environment request.
+	//
+	// Required: false
+	AllEnvironmentsLimit *string `json:"allEnvironmentsLimit,omitzero"`
+
 	ExperimentalFeaturesEnabled *string `json:"experimentalFeaturesEnabled,omitzero"`
 
 	// DevelopmentBrandingEnabled shows the development icon on non-stable builds.

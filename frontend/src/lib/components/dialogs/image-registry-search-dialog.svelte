@@ -119,6 +119,7 @@
 			<EnvironmentDestinationSelect
 				bind:value={() => environmentId, (value) => (pickedEnvironmentId = value)}
 				permission="images:pull"
+				variant="field"
 			/>
 			<div class="grid gap-3 sm:grid-cols-content-36-action">
 				<div class="space-y-2">

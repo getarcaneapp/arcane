@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/containerd/errdefs"
+	"github.com/getarcaneapp/arcane/types/v2/base"
 	containertypes "github.com/getarcaneapp/arcane/types/v2/container"
 	"github.com/getarcaneapp/arcane/types/v2/image"
 	"github.com/getarcaneapp/arcane/types/v2/user"
@@ -41,6 +42,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 )
 
 func TestPaginateContainerProjectGroupsKeepsProjectWhole(t *testing.T) {
@@ -69,7 +71,7 @@ func TestPaginateContainerProjectGroupsKeepsProjectWhole(t *testing.T) {
 		newGroupedContainerSummary("immich-postgres", "immich"),
 	}
 
-	groupedItems, resp := paginateContainerProjectGroupsInternal(
+	groupedItems, resp := paginateContainerProjectGroups(
 		pagination.FilterResult[containertypes.Summary]{Items: items, TotalCount: int64(len(items)), TotalAvailable: int64(len(items))},
 		pagination.QueryParams{Start: 0, Limit: 20},
 	)
@@ -108,14 +110,14 @@ func TestPaginateContainerProjectGroupsSelectsRequestedPage(t *testing.T) {
 	}
 	result := pagination.FilterResult[containertypes.Summary]{Items: items, TotalCount: int64(len(items)), TotalAvailable: int64(len(items))}
 
-	pageGroups, resp := paginateContainerProjectGroupsInternal(result, pagination.QueryParams{Start: 4, Limit: 4})
+	pageGroups, resp := paginateContainerProjectGroups(result, pagination.QueryParams{Start: 4, Limit: 4})
 
 	require.Equal(t, []string{"proj-b", "solo-1"}, groupNamesOf(pageGroups))
 	require.Equal(t, 2, resp.CurrentPage)
 	require.Equal(t, int64(3), resp.TotalPages)
 	require.Equal(t, int64(11), resp.TotalItems)
 
-	pageGroups, resp = paginateContainerProjectGroupsInternal(result, pagination.QueryParams{Start: 400, Limit: 4})
+	pageGroups, resp = paginateContainerProjectGroups(result, pagination.QueryParams{Start: 400, Limit: 4})
 
 	require.Equal(t, []string{"proj-c", "solo-2"}, groupNamesOf(pageGroups))
 	require.Equal(t, 3, resp.CurrentPage)
@@ -140,7 +142,7 @@ func TestContainerSummaryIconsAppliedAfterGrouping(t *testing.T) {
 		require.Empty(t, item.IconLightURL, "icons must be deferred until after pagination")
 	}
 
-	groups, _ := paginateContainerProjectGroupsInternal(
+	groups, _ := paginateContainerProjectGroups(
 		pagination.FilterResult[containertypes.Summary]{Items: items, TotalCount: int64(len(items)), TotalAvailable: int64(len(items))},
 		pagination.QueryParams{Start: 0, Limit: 20},
 	)
@@ -166,7 +168,7 @@ func groupNamesOf(groups []containertypes.SummaryGroup) []string {
 }
 
 func TestGroupContainersByProjectUsesNoProjectBucket(t *testing.T) {
-	groups := groupContainersByProjectInternal([]containertypes.Summary{
+	groups := groupContainersByProject([]containertypes.Summary{
 		{ID: "1", Labels: map[string]string{"com.docker.compose.project": "alpha"}},
 		{ID: "2", Labels: map[string]string{}},
 		{ID: "3", Labels: nil},
@@ -1266,4 +1268,118 @@ func TestContainerServiceDownloadLogsPassesTTYOutputThroughInternal(t *testing.T
 
 	require.Equal(t, "container-0123456789ab-logs.log", filename)
 	require.Equal(t, "raw tty line\r\nno trailing newline", string(content))
+}
+
+func containerScopeContext(t *testing.T, target string, bodies map[string]any) (context.Context, *sync.Map) {
+	t.Helper()
+	var queries sync.Map
+	return httpx.WithEnvironmentScope(t.Context(), &httpx.EnvironmentScope{
+		IDs:     []string{"a", "b", "c"},
+		Request: httptest.NewRequest(http.MethodGet, target, http.NoBody),
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			id := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/environments/"), "/")[0]
+			queries.Store(id, r.URL.Query())
+			body, ok := bodies[id]
+			if !ok {
+				w.WriteHeader(http.StatusBadGateway)
+				_, _ = w.Write([]byte(`{"detail":"environment offline"}`))
+				return
+			}
+			_ = json.NewEncoder(w).Encode(body)
+		}),
+		Resolve: func(_ context.Context, id string) (base.EnvironmentRef, error) {
+			return base.EnvironmentRef{ID: id, Name: "Env " + id}, nil
+		},
+	}), &queries
+}
+
+func TestAggregateContainersMergesEnvironments(t *testing.T) {
+	bodies := map[string]any{
+		"a": ContainerPaginatedResponse{
+			Success:               true,
+			Data:                  []containertypes.Summary{newGroupedContainerSummary("alpha", "shop"), newGroupedContainerSummary("charlie", "web")},
+			Counts:                containertypes.StatusCounts{RunningContainers: 1, StoppedContainers: 1, TotalContainers: 2},
+			Pagination:            base.PaginationResponse{TotalItems: 2, GrandTotalItems: 3},
+			ResourceSortSupported: true,
+		},
+		"b": ContainerPaginatedResponse{
+			Success:    true,
+			Data:       []containertypes.Summary{newGroupedContainerSummary("bravo", "shop"), newGroupedContainerSummary("delta", "")},
+			Counts:     containertypes.StatusCounts{RunningContainers: 2, TotalContainers: 2},
+			Pagination: base.PaginationResponse{TotalItems: 2},
+		},
+	}
+	rowLabels := func(items []containertypes.Summary) []string {
+		out := make([]string, 0, len(items))
+		for _, item := range items {
+			out = append(out, item.EnvironmentID+"/"+item.Names[0])
+		}
+		return out
+	}
+	svc := &ContainerService{}
+
+	t.Run("sorts by name across environments and pages", func(t *testing.T) {
+		ctx, queries := containerScopeContext(t, "/api/environments/a,b,c/containers?start=2&limit=2&sort=name&order=asc&groupBy=project", bodies)
+		body, err := svc.AggregateContainers(ctx, pagination.QueryParams{SortParams: pagination.SortParams{Sort: "name", Order: pagination.SortAsc}, Params: pagination.Params{Start: 2, Limit: 2}}, "")
+		require.NoError(t, err)
+
+		require.True(t, body.Success)
+		require.Equal(t, []string{"a/charlie", "b/delta"}, rowLabels(body.Data))
+		require.Equal(t, "Env a", body.Data[0].EnvironmentName)
+		require.Empty(t, body.Groups)
+		require.Equal(t, int64(4), body.Pagination.TotalItems)
+		require.Equal(t, int64(5), body.Pagination.GrandTotalItems)
+		require.Equal(t, int64(2), body.Pagination.TotalPages)
+		require.Equal(t, 2, body.Pagination.CurrentPage)
+		require.Equal(t, containertypes.StatusCounts{RunningContainers: 3, StoppedContainers: 1, TotalContainers: 4}, body.Counts)
+		require.False(t, body.ResourceSortSupported)
+		require.Equal(t, []base.EnvironmentFailure{{Environment: base.EnvironmentRef{ID: "c", Name: "c"}, Message: "environment offline"}}, body.FailedEnvironments)
+		for _, id := range []string{"a", "b", "c"} {
+			stored, ok := queries.Load(id)
+			require.True(t, ok)
+			query := stored.(url.Values)
+			require.Equal(t, "0", query.Get("start"))
+			require.Equal(t, "-1", query.Get("limit"))
+			require.Equal(t, "name", query.Get("sort"))
+			require.False(t, query.Has("groupBy"))
+		}
+	})
+
+	t.Run("sorts by environment", func(t *testing.T) {
+		ctx, _ := containerScopeContext(t, "/api/environments/a,b,c/containers?sort=environment&order=asc", bodies)
+		body, err := svc.AggregateContainers(ctx, pagination.QueryParams{SortParams: pagination.SortParams{Sort: "environment", Order: pagination.SortAsc}, Params: pagination.Params{Limit: 20}}, "")
+		require.NoError(t, err)
+		require.Equal(t, []string{"a/alpha", "a/charlie", "b/bravo", "b/delta"}, rowLabels(body.Data))
+	})
+
+	t.Run("project groups merge across environments and stay whole", func(t *testing.T) {
+		ctx, queries := containerScopeContext(t, "/api/environments/a,b,c/containers?start=0&limit=1&sort=name&order=asc&groupBy=project", bodies)
+		body, err := svc.AggregateContainers(ctx, pagination.QueryParams{SortParams: pagination.SortParams{Sort: "name", Order: pagination.SortAsc}, Params: pagination.Params{Limit: 1}}, "project")
+		require.NoError(t, err)
+
+		require.Equal(t, []string{"shop"}, groupNamesOf(body.Groups))
+		require.Equal(t, []string{"a/alpha", "b/bravo"}, rowLabels(body.Groups[0].Items))
+		require.Equal(t, []string{"a/alpha", "b/bravo"}, rowLabels(body.Data))
+		require.Equal(t, int64(3), body.Pagination.TotalPages)
+		require.Equal(t, int64(4), body.Pagination.TotalItems)
+		stored, _ := queries.Load("a")
+		require.False(t, stored.(url.Values).Has("groupBy"))
+	})
+
+	t.Run("resource sort is supported only when every environment supports it", func(t *testing.T) {
+		ctx, _ := containerScopeContext(t, "/api/environments/a,b,c/containers", map[string]any{"a": bodies["a"]})
+		body, err := svc.AggregateContainers(ctx, pagination.QueryParams{Params: pagination.Params{Limit: 20}}, "")
+		require.NoError(t, err)
+		require.True(t, body.ResourceSortSupported)
+		require.Len(t, body.FailedEnvironments, 2)
+	})
+
+	t.Run("all environments failing returns empty data", func(t *testing.T) {
+		ctx, _ := containerScopeContext(t, "/api/environments/a,b,c/containers", map[string]any{})
+		body, err := svc.AggregateContainers(ctx, pagination.QueryParams{Params: pagination.Params{Limit: 20}}, "")
+		require.NoError(t, err)
+		require.True(t, body.Success)
+		require.Empty(t, body.Data)
+		require.Len(t, body.FailedEnvironments, 3)
+	})
 }

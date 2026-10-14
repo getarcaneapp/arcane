@@ -1,6 +1,10 @@
 package port
 
+import "github.com/getarcaneapp/arcane/types/v2/base"
+
 type PortMapping struct {
+	base.EnvironmentTag
+
 	// ID is the stable unique identifier for the mapping row.
 	//
 	// Required: true

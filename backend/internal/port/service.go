@@ -3,9 +3,11 @@ package port
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"strconv"
 	"strings"
 
+	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/getarcaneapp/arcane/types/v2/container"
 	porttypes "github.com/getarcaneapp/arcane/types/v2/port"
 	"go.getarcane.app/docker"
@@ -13,6 +15,8 @@ import (
 
 	dockerInternal "github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 )
 
 type PortService struct {
@@ -49,6 +53,31 @@ func (s *PortService) ListPortsPaginated(ctx context.Context, params pagination.
 
 	result := s.buildPortPaginationConfig().SearchOrderAndPaginate(items, params)
 	return result.Items, pagination.BuildResponse(result.TotalCount, result.TotalAvailable, params), nil
+}
+
+func (s *PortService) AggregatePorts(ctx context.Context, params pagination.QueryParams) (base.Paginated[porttypes.PortMapping], error) {
+	collection, err := httpx.CollectEnvironments[base.Paginated[porttypes.PortMapping]](ctx, url.Values{"start": {"0"}, "limit": {"-1"}})
+	if err != nil {
+		return base.Paginated[porttypes.PortMapping]{}, err
+	}
+
+	pages := make([]pagination.EnvironmentPage[porttypes.PortMapping], 0, len(collection.Results))
+	for _, result := range collection.Results {
+		page := result.Value.Pagination
+		pages = append(pages, pagination.EnvironmentPage[porttypes.PortMapping]{
+			Environment:    result.Environment,
+			Items:          result.Value.Data,
+			TotalAvailable: kit.Ternary(page.GrandTotalItems != 0, page.GrandTotalItems, page.TotalItems),
+		})
+	}
+	data, resp := pagination.MergeEnvironmentPages(s.buildPortPaginationConfig(), pages, params)
+
+	return base.Paginated[porttypes.PortMapping]{
+		Success:            true,
+		Data:               data,
+		Pagination:         handlerutil.PaginationResponse(resp),
+		FailedEnvironments: collection.Failures,
+	}, nil
 }
 
 func (s *PortService) buildPortPaginationConfig() pagination.Config[porttypes.PortMapping] {

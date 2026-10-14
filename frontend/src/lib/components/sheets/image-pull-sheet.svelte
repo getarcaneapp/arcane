@@ -98,6 +98,7 @@
 			<EnvironmentDestinationSelect
 				bind:value={() => environmentId, (value) => (pickedEnvironmentId = value)}
 				permission="images:pull"
+				variant="field"
 			/>
 			<FormInput
 				label={m.images_image_name_label()}

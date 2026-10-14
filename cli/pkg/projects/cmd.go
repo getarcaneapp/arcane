@@ -76,7 +76,7 @@ func newListCmd() *cobra.Command {
 	cmd.Flags().StringVar(&opts.projectsStatusFilter, "status", "", "Filter by status (comma-separated: running, stopped, partially running)")
 	cmdutil.EnumVarP(cmd, cmd.Flags(), &opts.projectsArchivedFilter, "archived", "", "", "Archived filter", "true", "false", "all")
 	cmd.Flags().StringVar(&opts.projectsLabelFilter, "label", "", "Filter by container label (key or key=value)")
-	cmdutil.SetScope(cmdutil.ScopeRead, cmd)
+	cmdutil.SetScope(cmdutil.ScopeMerged, cmd)
 	return cmd
 }
 
@@ -92,7 +92,7 @@ func newUpdatesCmd() *cobra.Command {
 	cmd.Flags().IntVarP(&opts.limitFlag, "limit", "n", 20, "Number of projects to show")
 	cmd.Flags().IntVar(&opts.startFlag, "start", 0, cmdutil.StartFlagUsage)
 	cmd.Flags().BoolVarP(&opts.allFlag, "all", "a", false, cmdutil.AllFlagUsage)
-	cmdutil.SetScope(cmdutil.ScopeRead, cmd)
+	cmdutil.SetScope(cmdutil.ScopeMerged, cmd)
 	return cmd
 }
 
@@ -626,7 +626,7 @@ func newCountsCmd() *cobra.Command {
 			})
 		},
 	}
-	cmdutil.SetScope(cmdutil.ScopeRead, cmd)
+	cmdutil.SetScope(cmdutil.ScopeMerged, cmd)
 	return cmd
 }
 

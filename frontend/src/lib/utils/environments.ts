@@ -1,9 +1,9 @@
 import { error } from '@sveltejs/kit';
 import { toast } from 'svelte-sonner';
 
-import { TABLE_PAGE_SIZE_ALL } from '#lib/constants/table-pagination.js';
 import { m } from '#lib/paraglide/messages.js';
 import type { APIRequestConfig } from '#lib/services/api-service.js';
+import settingsStore from '#lib/stores/config-store.svelte.js';
 import {
 	allEnvironmentsPreview,
 	environmentStore,
@@ -15,7 +15,7 @@ import { extractApiErrorMessage } from '#lib/utils/api.js';
 import { hasPermission } from '#lib/utils/auth.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
-/** A row tagged by fetchAcrossEnvironments; `environmentTagged` tells it apart from DTOs that carry an environment. */
+/** A row tagged by environment; `environmentTagged` tells it apart from DTOs that carry an environment. */
 export type EnvironmentRow<T> = T & { environmentId: string; environmentName: string; environmentTagged: true };
 export type EnvironmentFailure = { environment: EnvironmentRef; message: string };
 
@@ -36,7 +36,7 @@ export function rowKey(row: { id: string; environmentId?: string; environmentTag
 	return row.environmentTagged && row.environmentId !== undefined ? `${row.environmentId}${KEY_SEPARATOR}${row.id}` : row.id;
 }
 
-export function tagEnvironment<T extends object>(row: T, environment: EnvironmentRef): EnvironmentRow<T> {
+function tagEnvironment<T extends object>(row: T, environment: EnvironmentRef): EnvironmentRow<T> {
 	return { ...row, environmentId: environment.id, environmentName: environment.name, environmentTagged: true };
 }
 
@@ -161,23 +161,52 @@ export async function settleAcrossEnvironments<T>(
 	return values;
 }
 
-function sumNumbers<C extends object>(values: C[]): C {
-	const total: Record<string, unknown> = { ...values[0] };
-	for (const value of values.slice(1)) {
-		for (const [key, entry] of Object.entries(value)) {
-			if (typeof entry === 'number') total[key] = Number(total[key] ?? 0) + entry;
-		}
+export async function readAcrossEnvironments<T>(
+	environments: EnvironmentRef[],
+	run: (scope: string, config: APIRequestConfig) => Promise<T>,
+	reportInline = environments.length > 1
+): Promise<{ value: T; failures: EnvironmentFailure[] }> {
+	if (environments.length === 0) throw new Error('readAcrossEnvironments needs at least one environment');
+	const limit = Number(settingsStore.current?.allEnvironmentsLimit) || 64;
+	const included = environments.slice(0, limit);
+	const excluded = environments
+		.slice(limit)
+		.map((environment) => ({ environment, message: m.all_environments_not_included({ limit }) }));
+	let reported: EnvironmentFailure[] = [];
+	const result = await tryCatch(
+		run(included.map((env) => env.id).join(','), {
+			suppressAccessDeniedToast: reportInline,
+			onFailedEnvironments: (failures) => {
+				reported = failures;
+			}
+		})
+	);
+	if (result.error !== null) {
+		if (!reportInline || included.length > 1) throw result.error;
+		throw new Error(`${included[0]!.name}: ${extractApiErrorMessage(result.error)}`);
 	}
-	return total as C;
+	const failures = reported.map(({ environment, message }) => ({
+		environment: included.find((env) => env.id === environment.id) ?? environment,
+		message
+	}));
+	if (failures.length > 0 && failures.length === included.length) {
+		throw new Error(failures.map(({ environment, message }) => `${environment.name}: ${message}`).join('\n'));
+	}
+	return { value: result.data, failures: [...failures, ...excluded] };
 }
 
-/** Sums numeric count fields across environments; failing environments are reported, not counted. */
+export function environmentRows<T extends object>(rows: T[], environments: EnvironmentRef[]): EnvironmentRow<T>[] {
+	if (environments.length === 1) return rows.map((row) => tagEnvironment(row, environments[0]!));
+	return rows.map((row) => ({ ...(row as EnvironmentRow<T>), environmentTagged: true }));
+}
+
+/** Count fields across environments, summed by the server; failing environments are reported, not counted. */
 export async function sumAcrossEnvironments<C extends object>(
 	environments: EnvironmentRef[],
-	fetch: (environmentId: string, config: APIRequestConfig) => Promise<C>
+	fetch: (scope: string, config: APIRequestConfig) => Promise<C>
 ): Promise<C & { failedEnvironments: EnvironmentFailure[] }> {
-	const { values, failures } = await collectAcrossEnvironments(environments, fetch);
-	return { ...sumNumbers(values.map((result) => result.value)), failedEnvironments: failures };
+	const { value, failures } = await readAcrossEnvironments(environments, fetch);
+	return { ...value, failedEnvironments: failures };
 }
 
 /** Adds failures from related reads, such as counts or tags, to a list's inline alert, once per environment. */
@@ -195,43 +224,11 @@ export function withFailedEnvironments<P extends { failedEnvironments?: Environm
 	};
 }
 
-/** Orders two sort values, comparing arrays element by element; missing values always sort last, whatever the direction. */
-function compareSortValues(left: unknown, right: unknown, sign: number): number {
-	const leftMissing = left === undefined || left === null;
-	const rightMissing = right === undefined || right === null;
-	if (leftMissing || rightMissing) return Number(leftMissing) - Number(rightMissing);
-	if (Array.isArray(left) && Array.isArray(right)) {
-		return left.reduce<number>((result, value, index) => result || compareSortValues(value, right[index], sign), 0);
-	}
-	if (typeof left === 'number' && typeof right === 'number') return sign * (left - right);
-	// The backend sorts true first when ascending.
-	if (typeof left === 'boolean' && typeof right === 'boolean') return sign * (Number(right) - Number(left));
-	return sign * String(left).localeCompare(String(right), undefined, { numeric: true });
-}
-
-/** Splits units into pages the way the backend pages groups: a unit is never split, so the one crossing the limit finishes its page. */
-function pageUnits<T>(units: T[][], limit: number): T[][][] {
-	if (limit <= 0) return [units];
-	const pages: T[][][] = [[]];
-	let count = 0;
-	for (const unit of units) {
-		pages.at(-1)!.push(unit);
-		count += unit.length;
-		if (count >= limit) {
-			pages.push([]);
-			count = 0;
-		}
-	}
-	if (pages.length > 1 && pages.at(-1)!.length === 0) pages.pop();
-	return pages;
-}
-
 /**
- * Runs the same list request per environment and tags each row with its environment. With one
- * environment the request passes through; with several, every row is fetched, merged, sorted
- * and sliced to the requested page. `sortValue` reads computed sort columns; it defaults to the
- * row field named by the column. Same-named groups merge across environments and are paged whole.
- * An `environment` filter narrows the environments queried.
+ * Runs a list request for several environments as one request, which the server fans out, merges, sorts
+ * and pages, so rows of different environments interleave by the requested sort and same-named groups
+ * merge. With one environment the request passes through. An `environment` filter narrows the
+ * environments queried; sorting by environment is only sent when several are.
  */
 export async function fetchAcrossEnvironments<
 	P extends Page<T>,
@@ -240,94 +237,28 @@ export async function fetchAcrossEnvironments<
 >(
 	environments: EnvironmentRef[],
 	options: O,
-	fetch: (environmentId: string, options: O, config: APIRequestConfig) => Promise<P>,
-	sortValue: (row: T, column: string) => unknown = (row, column) => row[column as keyof T]
+	fetch: (scope: string, options: O, config: APIRequestConfig) => Promise<P>
 ): Promise<EnvironmentPage<P>> {
 	const { [ENVIRONMENT_FILTER]: environmentFilter, ...filters } = options.filters ?? {};
 	// Picks are checked against every shown environment, so picking only ones this page skips shows nothing.
 	const picked = environmentFilterIds(environmentFilter);
 	const targets = picked.length > 0 ? environments.filter((env) => picked.includes(env.id)) : environments;
-	// The environment filter and sort are applied here, never by an environment's API.
-	const sortsByEnvironment = options.sort?.column === ENVIRONMENT_FILTER;
-	const scoped: O = { ...options, filters: options.filters && filters, sort: sortsByEnvironment ? undefined : options.sort };
 	if (targets.length === 0) {
 		const pagination = { totalPages: 0, totalItems: 0, currentPage: 1, itemsPerPage: options.pagination?.limit ?? 0 };
 		return { data: [], pagination, failedEnvironments: [] } as unknown as EnvironmentPage<P>;
 	}
-	const merging = targets.length > 1;
-	const request = merging ? { ...scoped, pagination: { page: 1, limit: TABLE_PAGE_SIZE_ALL } } : scoped;
+	const sortsByEnvironment = options.sort?.column === ENVIRONMENT_FILTER && targets.length === 1;
+	const request: O = { ...options, filters: options.filters && filters, sort: sortsByEnvironment ? undefined : options.sort };
 	// Filtering to one of several environments still reports its failure the merged way.
-	const { values: pages, failures } = await collectAcrossEnvironments(
+	const { value: page, failures } = await readAcrossEnvironments(
 		targets,
-		(id, config) => fetch(id, request, config),
+		(scope, config) => fetch(scope, request, config),
 		environments.length > 1
 	);
-	const tag = <R extends object>(environment: EnvironmentRef, rows: R[]) => rows.map((row) => tagEnvironment(row, environment));
-	const { environment: firstEnvironment, value: first } = pages[0]!;
-	// Environments without rows omit groups, so any response having them decides. If one with rows has none
-	// (an older agent), the merged list stays flat rather than dropping its rows.
-	const grouped = pages.some(({ value }) => value.groups) && pages.every(({ value }) => value.groups || value.data.length === 0);
-	if (!merging) {
-		return {
-			...first,
-			data: tag(firstEnvironment, first.data),
-			groups: first.groups?.map((group) => ({ ...group, items: tag(firstEnvironment, group.items) })),
-			failedEnvironments: []
-		};
-	}
-
-	const { column, direction } = options.sort ?? {};
-	const sign = direction === 'desc' ? -1 : 1;
-	const rowSortValue = (row: EnvironmentRow<T>, sortColumn: string) =>
-		sortsByEnvironment ? row.environmentName : sortValue(row, sortColumn);
-	const rows = pages
-		.flatMap(({ environment, value }) => tag(environment, value.data))
-		.sort(
-			(a, b) =>
-				(column ? compareSortValues(rowSortValue(a, column), rowSortValue(b, column), sign) : 0) ||
-				a.environmentName.localeCompare(b.environmentName) ||
-				a.environmentId.localeCompare(b.environmentId)
-		);
-
-	// Group items are separate objects from the data rows, so membership is matched by environment and ID.
-	const memberKey = (environmentId: string, row: object) =>
-		`${environmentId}${KEY_SEPARATOR}${'id' in row ? String(row.id) : ''}`;
-	const groupOf = new Map(
-		pages.flatMap(({ environment, value }) =>
-			(value.groups ?? []).flatMap((group) =>
-				group.items.map((item) => [memberKey(environment.id, item), group.groupName] as const)
-			)
-		)
-	);
-	// Same-named groups merge across environments and follow the merged row order, like the backend groups its sorted rows.
-	const groups = new Map<string, { groupName: string; items: typeof rows }>();
-	for (const row of grouped ? rows : []) {
-		const groupName = groupOf.get(memberKey(row.environmentId, row));
-		if (groupName === undefined) continue;
-		const entry = groups.get(groupName) ?? { groupName, items: [] };
-		entry.items.push(row);
-		groups.set(groupName, entry);
-	}
-
-	const limit = options.pagination?.limit ?? TABLE_PAGE_SIZE_ALL;
-	const groupList = [...groups.values()];
-	const pageList = pageUnits(grouped ? groupList.map((group) => group.items) : rows.map((row) => [row]), limit);
-	const page = Math.min(limit > 0 ? (options.pagination?.page ?? 1) : 1, pageList.length);
-	const selected = pageList[page - 1]!;
-	const totals = sumNumbers(pages.map(({ value }) => value.pagination));
 	return {
-		...first,
-		data: selected.flat(),
-		pagination: {
-			...totals,
-			currentPage: page,
-			itemsPerPage: limit > 0 ? limit : totals.totalItems,
-			totalPages: pageList.length
-		},
-		counts: pages.some(({ value }) => value.counts)
-			? sumNumbers(pages.flatMap(({ value }) => (value.counts ? [value.counts] : [])))
-			: undefined,
-		groups: grouped ? groupList.filter((group) => selected.includes(group.items)) : undefined,
+		...page,
+		data: environmentRows(page.data, targets),
+		groups: page.groups?.map((group) => ({ ...group, items: environmentRows(group.items, targets) })),
 		failedEnvironments: failures
 	};
 }

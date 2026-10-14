@@ -19,16 +19,16 @@ func RegisterRoutes(api huma.API, imagePatchService *Service, appCtx handlerutil
 	handlerutil.RegisterSecured(api,
 		handlerutil.Operation("list-image-patches", http.MethodGet, "/environments/{id}/images/patches", "List image patches", "Retrieves the paginated image patch history for the environment", "Images"),
 		authz.PermImagesList, h.ListImagePatches)
-	handlerutil.RegisterSecured(api,
-		handlerutil.Operation(
-			"list-image-patch-targets",
-			http.MethodGet,
-			"/environments/{id}/images/patch-targets",
-			"List image patch targets",
-			"Retrieves scanned images with fixable vulnerability counts and their latest patch run",
-			"Images",
-		),
-		authz.PermVulnsRead, h.ListPatchTargets)
+	patchTargets := handlerutil.Operation(
+		"list-image-patch-targets",
+		http.MethodGet,
+		"/environments/{id}/images/patch-targets",
+		"List image patch targets",
+		"Retrieves scanned images with fixable vulnerability counts and their latest patch run",
+		"Images",
+	)
+	patchTargets.Metadata = map[string]any{authz.MetaEnvironmentAggregate: true}
+	handlerutil.RegisterSecured(api, patchTargets, authz.PermVulnsRead, h.ListPatchTargets)
 	handlerutil.RegisterSecured(api,
 		handlerutil.Operation(
 			"patch-image",

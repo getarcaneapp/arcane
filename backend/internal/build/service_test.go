@@ -6,12 +6,19 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"io"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
+	"github.com/getarcaneapp/arcane/types/v2/base"
+	"github.com/getarcaneapp/arcane/types/v2/image"
 	usertypes "github.com/getarcaneapp/arcane/types/v2/user"
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/assert"
@@ -26,6 +33,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/gitrepo"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/gitutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 )
 
 func TestBuildService_ResolveBuildRequest_PassesThroughLocalContext(t *testing.T) {
@@ -489,4 +497,92 @@ func encryptSecretForTest(t *testing.T, value string) string {
 	encrypted, err := crypto.Encrypt(value)
 	require.NoError(t, err)
 	return encrypted
+}
+
+func buildScopeContext(t *testing.T, target string, bodies map[string]any) (context.Context, *sync.Map) {
+	t.Helper()
+	var queries sync.Map
+	return httpx.WithEnvironmentScope(t.Context(), &httpx.EnvironmentScope{
+		IDs:     []string{"a", "b", "c"},
+		Request: httptest.NewRequest(http.MethodGet, target, http.NoBody),
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			id := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/environments/"), "/")[0]
+			queries.Store(id, r.URL.Query())
+			body, ok := bodies[id]
+			if !ok {
+				w.WriteHeader(http.StatusBadGateway)
+				_, _ = w.Write([]byte(`{"detail":"environment offline"}`))
+				return
+			}
+			_ = json.MarshalWrite(w, body)
+		}),
+		Resolve: func(_ context.Context, id string) (base.EnvironmentRef, error) {
+			return base.EnvironmentRef{ID: id, Name: "Env " + id}, nil
+		},
+	}), &queries
+}
+
+func TestAggregateImageBuildsMergesEnvironments(t *testing.T) {
+	start := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
+	bodies := map[string]any{
+		"a": base.Paginated[image.BuildRecord]{Success: true, Data: []image.BuildRecord{
+			{ID: "a1", EnvironmentID: "0", Status: "success", CreatedAt: start.Add(time.Hour)},
+			{ID: "a2", EnvironmentID: "0", Status: "failed", CreatedAt: start.Add(3 * time.Hour)},
+		}, Pagination: base.PaginationResponse{TotalItems: 2}},
+		"b": base.Paginated[image.BuildRecord]{Success: true, Data: []image.BuildRecord{
+			{ID: "b1", EnvironmentID: "0", Status: "success", CreatedAt: start.Add(2 * time.Hour)},
+		}, Pagination: base.PaginationResponse{TotalItems: 1}},
+	}
+	rowLabels := func(items []image.BuildRecord) []string {
+		out := make([]string, 0, len(items))
+		for _, item := range items {
+			out = append(out, item.EnvironmentID+"/"+item.ID)
+		}
+		return out
+	}
+	svc := &BuildService{}
+
+	t.Run("defaults to newest first across environments and pages", func(t *testing.T) {
+		ctx, queries := buildScopeContext(t, "/api/environments/a,b,c/images/builds?start=0&limit=2&order=desc", bodies)
+		body, err := svc.AggregateImageBuilds(ctx, pagination.QueryParams{SortParams: pagination.SortParams{Order: pagination.SortDesc}, Params: pagination.Params{Limit: 2}})
+		require.NoError(t, err)
+
+		assert.True(t, body.Success)
+		assert.Equal(t, []string{"a/a2", "b/b1"}, rowLabels(body.Data))
+		assert.Equal(t, "Env b", body.Data[1].EnvironmentName)
+		assert.Equal(t, int64(3), body.Pagination.TotalItems)
+		assert.Equal(t, int64(3), body.Pagination.GrandTotalItems)
+		assert.Equal(t, int64(2), body.Pagination.TotalPages)
+		require.Len(t, body.FailedEnvironments, 1)
+		assert.Equal(t, "c", body.FailedEnvironments[0].Environment.ID)
+		assert.Equal(t, "environment offline", body.FailedEnvironments[0].Message)
+		for _, id := range []string{"a", "b"} {
+			query, ok := queries.Load(id)
+			require.True(t, ok)
+			assert.Equal(t, "0", query.(url.Values).Get("start"))
+			assert.Equal(t, "-1", query.(url.Values).Get("limit"))
+		}
+	})
+
+	t.Run("sorts by status", func(t *testing.T) {
+		ctx, _ := buildScopeContext(t, "/api/environments/a,b,c/images/builds?sort=status&order=asc", bodies)
+		body, err := svc.AggregateImageBuilds(ctx, pagination.QueryParams{SortParams: pagination.SortParams{Sort: "status", Order: pagination.SortAsc}, Params: pagination.Params{Limit: -1}})
+		require.NoError(t, err)
+		assert.Equal(t, []string{"a/a2", "a/a1", "b/b1"}, rowLabels(body.Data))
+	})
+
+	t.Run("sorts by environment", func(t *testing.T) {
+		ctx, _ := buildScopeContext(t, "/api/environments/a,b,c/images/builds?sort=environment&order=desc", bodies)
+		body, err := svc.AggregateImageBuilds(ctx, pagination.QueryParams{SortParams: pagination.SortParams{Sort: "environment", Order: pagination.SortDesc}, Params: pagination.Params{Limit: -1}})
+		require.NoError(t, err)
+		assert.Equal(t, []string{"b/b1", "a/a1", "a/a2"}, rowLabels(body.Data))
+	})
+
+	t.Run("all environments failing returns empty data", func(t *testing.T) {
+		ctx, _ := buildScopeContext(t, "/api/environments/a,b,c/images/builds", map[string]any{})
+		body, err := svc.AggregateImageBuilds(ctx, pagination.QueryParams{Params: pagination.Params{Limit: 20}})
+		require.NoError(t, err)
+		assert.Empty(t, body.Data)
+		assert.Len(t, body.FailedEnvironments, 3)
+	})
 }

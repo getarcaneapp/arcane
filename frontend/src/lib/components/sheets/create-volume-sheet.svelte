@@ -92,6 +92,7 @@
 			<EnvironmentDestinationSelect
 				bind:value={() => environmentId, (value) => (pickedEnvironmentId = value)}
 				permission="volumes:create"
+				variant="field"
 			/>
 			<FormInput
 				label={m.volume_name_label()}

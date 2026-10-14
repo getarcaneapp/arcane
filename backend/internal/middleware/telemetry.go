@@ -55,6 +55,10 @@ func SpanEnvironment(environmentName func(ctx context.Context, id string) string
 			if id == "" || !strings.HasPrefix(c.Path(), "/api/environments/:id") || !span.IsRecording() {
 				return next(c)
 			}
+			if strings.Contains(id, ",") {
+				span.SetAttributes(attribute.StringSlice("arcane.environment.ids", strings.Split(id, ",")))
+				return next(c)
+			}
 			span.SetAttributes(attribute.String("arcane.environment.id", id))
 			err := next(c)
 			if resp, unwrapErr := echo.UnwrapResponse(c.Response()); err == nil && unwrapErr == nil && resp.Status < http.StatusBadRequest {

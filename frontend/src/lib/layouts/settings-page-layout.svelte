@@ -87,7 +87,7 @@
 
 			<div class="flex flex-1 items-center justify-end gap-2">
 				{#if environmentPicker}
-					<EnvironmentDestinationSelect />
+					<EnvironmentDestinationSelect size={pageType === 'form' ? 'sm' : 'default'} />
 				{/if}
 
 				{#if showReadOnlyTag}

@@ -16,6 +16,8 @@ const (
 	// to an agent.
 	MetaRequiredPermission = "arcane:requiredPermission"
 
+	MetaEnvironmentAggregate = "arcane:environmentAggregate"
+
 	envPathPrefixInternal = "/environments/{id}"
 )
 
@@ -43,6 +45,12 @@ func (m *PermissionMatcher) CollectFromHumaAPI(humaAPI huma.API) {
 		for method, op := range operationsByMethodInternal(item) {
 			if op == nil {
 				continue
+			}
+			if aggregate, _ := op.Metadata[MetaEnvironmentAggregate].(bool); aggregate && method == http.MethodGet {
+				if m.aggregates == nil {
+					m.aggregates = map[string]struct{}{}
+				}
+				m.aggregates[method+" "+suffix] = struct{}{}
 			}
 			if perm, localOk := requiredPermissionInternal(op).Get(); localOk {
 				m.Add(method, suffix, perm)

@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"log/slog"
 	"net/netip"
+	"net/url"
 	"slices"
 	"sort"
 	"strings"
 
+	"github.com/getarcaneapp/arcane/types/v2/base"
 	networktypes "github.com/getarcaneapp/arcane/types/v2/network"
 	usertypes "github.com/getarcaneapp/arcane/types/v2/user"
 	"github.com/moby/moby/api/types/container"
@@ -27,6 +29,8 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 )
 
 type NetworkService struct {
@@ -437,6 +441,36 @@ func (s *NetworkService) convertToNetworkSummaries(rawNets []network.Summary, in
 		items = append(items, netDto)
 	}
 	return items, nil
+}
+
+func (s *NetworkService) AggregateNetworks(ctx context.Context, params pagination.QueryParams) (base.PaginatedWithCounts[networktypes.Summary, networktypes.UsageCounts], error) {
+	collection, err := httpx.CollectEnvironments[base.PaginatedWithCounts[networktypes.Summary, networktypes.UsageCounts]](ctx, url.Values{"start": {"0"}, "limit": {"-1"}})
+	if err != nil {
+		return base.PaginatedWithCounts[networktypes.Summary, networktypes.UsageCounts]{}, err
+	}
+
+	pages := make([]pagination.EnvironmentPage[networktypes.Summary], 0, len(collection.Results))
+	counts := networktypes.UsageCounts{}
+	for _, result := range collection.Results {
+		page := result.Value
+		pages = append(pages, pagination.EnvironmentPage[networktypes.Summary]{
+			Environment:    result.Environment,
+			Items:          page.Data,
+			TotalAvailable: cmp.Or(page.Pagination.GrandTotalItems, page.Pagination.TotalItems),
+		})
+		counts.Inuse += page.Counts.Inuse
+		counts.Unused += page.Counts.Unused
+		counts.Total += page.Counts.Total
+	}
+	data, resp := pagination.MergeEnvironmentPages(s.buildNetworkPaginationConfig(), pages, params)
+
+	return base.PaginatedWithCounts[networktypes.Summary, networktypes.UsageCounts]{
+		Success:            true,
+		Data:               data,
+		Counts:             counts,
+		Pagination:         handlerutil.PaginationResponse(resp),
+		FailedEnvironments: collection.Failures,
+	}, nil
 }
 
 func (s *NetworkService) buildNetworkPaginationConfig() pagination.Config[networktypes.Summary] {

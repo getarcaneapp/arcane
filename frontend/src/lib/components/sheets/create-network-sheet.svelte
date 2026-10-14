@@ -163,6 +163,7 @@
 			<EnvironmentDestinationSelect
 				bind:value={() => environmentId, (value) => (pickedEnvironmentId = value)}
 				permission="networks:create"
+				variant="field"
 			/>
 			<div class="space-y-2">
 				<Label for="network-name">{m.network_name_label()}</Label>

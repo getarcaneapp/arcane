@@ -100,7 +100,7 @@ func newListCmd() *cobra.Command {
 	cmd.Flags().BoolVarP(&opts.allFlag, "all", "a", false, cmdutil.AllFlagUsage)
 	cmd.Flags().BoolVar(&opts.inUseOnlyFlag, "inuse", false, "Only show networks currently in use")
 	cmd.Flags().BoolVar(&opts.unusedOnlyFlag, "unused", false, "Only show networks not in use")
-	cmdutil.SetScope(cmdutil.ScopeRead, cmd)
+	cmdutil.SetScope(cmdutil.ScopeMerged, cmd)
 	cmd.PreRunE = func(cmd *cobra.Command, _ []string) error { return cmdutil.ExclusiveFlags(cmd, "inuse", "unused") }
 	return cmd
 }

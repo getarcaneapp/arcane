@@ -23,7 +23,8 @@ import (
 // The matcher is populated once during startup and is read-only afterwards, so
 // concurrent Lookup calls during request serving need no synchronization.
 type PermissionMatcher struct {
-	routes []permRoute
+	routes     []permRoute
+	aggregates map[string]struct{}
 }
 
 type permRoute struct {
@@ -102,6 +103,11 @@ func (m *PermissionMatcher) Lookup(method, suffixPath string) mo.Option[string] 
 		return mo.Some(bestPerm)
 	}
 	return mo.None[string]()
+}
+
+func (m *PermissionMatcher) SupportsEnvironmentAggregation(method, suffix string) bool {
+	_, ok := m.aggregates[strings.ToUpper(method)+" "+suffix]
+	return ok
 }
 
 // pathSegmentsInternal splits a path into its non-empty segments, ignoring

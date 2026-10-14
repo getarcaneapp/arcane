@@ -56,12 +56,55 @@ async function enablePreview(page: Page) {
 }
 
 // Lists the real local environment plus a mocked remote one, and keeps the live stream from replacing that list.
+// The merged request gets the real local rows plus the remote row, or a remote failure while `remote.failure` is set.
 async function mockRemoteEnvironment(page: Page) {
+	const remote: { failure?: string } = {};
 	const local = await page.request.get('/api/environments/0');
 	const localEnvironment = (await local.json()).data;
 	await page.route(/\/api\/stream(?:\?.*)?$/, (route) => route.abort());
 	await page.route(/\/api\/environments(?:\?.*)?$/, (route) =>
 		route.fulfill({ json: paginated([localEnvironment, remoteEnvironment]) })
+	);
+	await page.route(
+		new RegExp(`/api/environments/0(?:,|%2C)${remoteEnvironment.id}/containers(?:\\?.*)?$`),
+		async (route) => {
+			const url = new URL(route.request().url());
+			const query = new URLSearchParams(url.search);
+			const descending = query.get('sort') === 'environment' && query.get('order') === 'desc';
+			query.delete('sort');
+			query.delete('order');
+			const localPage = await (
+				await page.request.get(`/api/environments/0/containers?${query}`)
+			).json();
+			const localRows = localPage.data.map((row: object) => ({
+				...row,
+				environmentId: localEnvironment.id,
+				environmentName: localEnvironment.name
+			}));
+			const remoteRows = remote.failure
+				? []
+				: [
+						{
+							...remoteContainer,
+							environmentId: remoteEnvironment.id,
+							environmentName: remoteEnvironment.name
+						}
+					];
+			const rows = descending ? [...remoteRows, ...localRows] : [...localRows, ...remoteRows];
+			await route.fulfill({
+				json: {
+					...paginated(rows, localPage.counts),
+					failedEnvironments: remote.failure
+						? [
+								{
+									environment: { id: remoteEnvironment.id, name: remoteEnvironment.id },
+									message: remote.failure
+								}
+							]
+						: undefined
+				}
+			});
+		}
 	);
 	await page.route(
 		new RegExp(`/api/environments/${remoteEnvironment.id}/containers(?:\\?.*)?$`),
@@ -74,6 +117,7 @@ async function mockRemoteEnvironment(page: Page) {
 				})
 			})
 	);
+	return remote;
 }
 
 test.describe('All environments preview', () => {
@@ -147,22 +191,15 @@ test.describe('All environments preview', () => {
 
 	test('a failed environment is named inline and can be retried', async ({ page }) => {
 		await enablePreview(page);
-		await mockRemoteEnvironment(page);
-		let remoteAvailable = false;
-		await page.route(
-			new RegExp(`/api/environments/${remoteEnvironment.id}/containers(?:\\?.*)?$`),
-			(route) =>
-				remoteAvailable
-					? route.fallback()
-					: route.fulfill({ status: 500, json: { success: false, error: 'remote unavailable' } })
-		);
+		const remote = await mockRemoteEnvironment(page);
+		remote.failure = 'remote unavailable';
 
 		await page.goto('/containers');
 		const alert = page.getByRole('alert').filter({ hasText: remoteEnvironment.name });
 		await expect(alert).toBeVisible();
 		await expect(page.getByRole('row').filter({ hasText: 'remote-preview-web' })).toHaveCount(0);
 
-		remoteAvailable = true;
+		remote.failure = undefined;
 		await alert.getByRole('button', { name: 'Retry', exact: true }).click();
 
 		await expect(page.getByRole('row').filter({ hasText: 'remote-preview-web' })).toBeVisible();
@@ -186,9 +223,7 @@ test.describe('All environments preview', () => {
 		await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
 	});
 
-	test('sorting by environment orders rows without sending the sort to environments', async ({
-		page
-	}) => {
+	test('sorting by environment asks the server for the merged order', async ({ page }) => {
 		await enablePreview(page);
 		await mockRemoteEnvironment(page);
 		const listRequests: string[] = [];
@@ -206,7 +241,9 @@ test.describe('All environments preview', () => {
 		await page.getByRole('menuitem', { name: 'Desc', exact: true }).click();
 
 		await expect(page.getByRole('row').nth(1)).toContainText(remoteEnvironment.name);
-		expect(listRequests.some((url) => /[?&]sort=environment/.test(url))).toBe(false);
+		expect(
+			listRequests.some((url) => /[?&]sort=environment/.test(url) && /[?&]order=desc/.test(url))
+		).toBe(true);
 	});
 
 	test('the dot label style shows the environment name on hover', async ({ page }) => {

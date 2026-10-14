@@ -15,7 +15,6 @@
 
 	import ContainerEnvironmentSync from './components/container-environment-sync.svelte';
 	import ContainerTable from './components/container-table.svelte';
-	import { containerSortValue } from './container-table.helpers';
 
 	let { data } = $props();
 
@@ -50,11 +49,8 @@
 			isRefreshing = true;
 		}
 		try {
-			const next = await fetchAcrossEnvironments(
-				environmentStore.shown,
-				options,
-				(id, request, config) => containerService.getContainersForEnvironment(id, request, config),
-				containerSortValue
+			const next = await fetchAcrossEnvironments(environmentStore.shown, options, (id, request, config) =>
+				containerService.getContainersForEnvironment(id, request, config)
 			);
 			if (requestedScope !== scope || generation !== refreshGeneration) {
 				return containers;

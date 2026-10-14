@@ -77,6 +77,7 @@ func RegisterContainers(
 		Description: "Paginated list of containers",
 		Tags:        []string{"Containers"},
 		Security:    handlerutil.DefaultOperationSecurity(),
+		Metadata:    map[string]any{authz.MetaEnvironmentAggregate: true},
 	}, authz.PermContainersList, h.ListContainers)
 
 	middleware.RegisterWithPermission(api, huma.Operation{

@@ -18,7 +18,7 @@
 	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
-	import NetworkTable, { networkSortValue } from './components/network-table.svelte';
+	import NetworkTable from './components/network-table.svelte';
 
 	let { data } = $props();
 	const queryClient = useQueryClient();
@@ -34,11 +34,8 @@
 		return {
 			queryKey: queryKeys.networks.list(queryScope, options),
 			queryFn: () =>
-				fetchAcrossEnvironments(
-					environments,
-					options,
-					(id, request, config) => networkService.getNetworksForEnvironment(id, request, config),
-					networkSortValue
+				fetchAcrossEnvironments(environments, options, (id, request, config) =>
+					networkService.getNetworksForEnvironment(id, request, config)
 				),
 			placeholderData: (previous, query) => {
 				if (query?.queryKey[1] === queryScope) return previous;
@@ -86,11 +83,8 @@
 		await queryClient.query({
 			queryKey: queryKeys.networks.list(requestedScope, options),
 			queryFn: () =>
-				fetchAcrossEnvironments(
-					environments,
-					options,
-					(id, request, config) => networkService.getNetworksForEnvironment(id, request, config),
-					networkSortValue
+				fetchAcrossEnvironments(environments, options, (id, request, config) =>
+					networkService.getNetworksForEnvironment(id, request, config)
 				),
 			staleTime: 0
 		});

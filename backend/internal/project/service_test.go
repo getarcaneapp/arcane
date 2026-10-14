@@ -18,12 +18,14 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
+	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
 	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
@@ -68,6 +70,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumes"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/iconcatalog"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/imageref"
 )
@@ -4919,7 +4922,7 @@ func TestProjectService_SyncProjectsFromFileSystem_PreservesGitOpsProjectWithCus
 
 	syncProjectID := "proj-custom-compose"
 	syncID := "sync-custom-compose"
-	sync := &GitOpsSync{
+	gitOpsSync := &GitOpsSync{
 		ID:            syncID,
 		Name:          "Radarr Sync",
 		EnvironmentID: "0",
@@ -4929,7 +4932,7 @@ func TestProjectService_SyncProjectsFromFileSystem_PreservesGitOpsProjectWithCus
 		ProjectID:     &syncProjectID,
 		SyncDirectory: true,
 	}
-	require.NoError(t, db.Create(sync).Error)
+	require.NoError(t, db.Create(gitOpsSync).Error)
 
 	project := &Project{
 		ID:              syncProjectID,
@@ -7359,23 +7362,23 @@ func TestDiscoveredProjectTagUpdatesRemainScoped(t *testing.T) {
 }
 
 func TestProjectTagSummaryDoesNotMutateSharedReferenceResults(t *testing.T) {
-	base := map[string]*imagetypes.UpdateInfo{"example:3.1.0": {HasUpdate: false, UpdateType: "digest"}}
+	known := map[string]*imagetypes.UpdateInfo{"example:3.1.0": {HasUpdate: false, UpdateType: "digest"}}
 	scoped := map[string]*imagetypes.UpdateInfo{
 		"first":  {HasUpdate: true, UpdateType: "tag", LatestVersion: "3.2.0"},
 		"second": {HasUpdate: true, UpdateType: "tag", LatestVersion: "4.0.0"},
 	}
-	merged := projectdetails.MergeProjectContainerUpdateInfo(base, []projecttypes.RuntimeService{{ContainerID: "first", Image: "example:3.1.0"}, {ContainerID: "second", Image: "example:3.1.0"}}, scoped)
+	merged := projectdetails.MergeProjectContainerUpdateInfo(known, []projecttypes.RuntimeService{{ContainerID: "first", Image: "example:3.1.0"}, {ContainerID: "second", Image: "example:3.1.0"}}, scoped)
 	require.True(t, merged["example:3.1.0"].HasUpdate)
 	require.Empty(t, merged["example:3.1.0"].LatestVersion)
-	require.False(t, base["example:3.1.0"].HasUpdate)
+	require.False(t, known["example:3.1.0"].HasUpdate)
 	require.Equal(t, "3.2.0", scoped["first"].LatestVersion)
 
 	// A shared image result is dropped when every service using the reference
 	// opted out of update checks, and kept while one still monitors it.
-	base = map[string]*imagetypes.UpdateInfo{"example:3.1.0": {HasUpdate: true, UpdateType: "digest"}, "other:1.0": {HasUpdate: true, UpdateType: "digest"}}
+	known = map[string]*imagetypes.UpdateInfo{"example:3.1.0": {HasUpdate: true, UpdateType: "digest"}, "other:1.0": {HasUpdate: true, UpdateType: "digest"}}
 	unmonitored := map[string]string{imageref.UpdateCheckLabel: "false"}
 	merged = projectdetails.MergeProjectContainerUpdateInfo(
-		base,
+		known,
 		[]projecttypes.RuntimeService{
 			{
 				ContainerID:     "a",
@@ -7394,9 +7397,9 @@ func TestProjectTagSummaryDoesNotMutateSharedReferenceResults(t *testing.T) {
 	)
 	require.True(t, merged["example:3.1.0"].HasUpdate, "updater=false keeps the shared result")
 	require.True(t, merged["other:1.0"].HasUpdate, "references without runtime services are untouched")
-	merged = projectdetails.MergeProjectContainerUpdateInfo(base, []projecttypes.RuntimeService{{ContainerID: "a", Image: "example:3.1.0", ContainerLabels: unmonitored}}, nil)
+	merged = projectdetails.MergeProjectContainerUpdateInfo(known, []projecttypes.RuntimeService{{ContainerID: "a", Image: "example:3.1.0", ContainerLabels: unmonitored}}, nil)
 	require.NotContains(t, merged, "example:3.1.0")
-	require.True(t, base["example:3.1.0"].HasUpdate)
+	require.True(t, known["example:3.1.0"].HasUpdate)
 }
 
 func TestCountProjectsWithPendingTagUpdatesUsesRuntimeContainers(t *testing.T) {
@@ -8542,7 +8545,7 @@ func TestRunPreDeploy_KillSwitchAndLastRunState(t *testing.T) {
 
 	scriptPath := "pre-deploy.sh"
 	runnerImage := "alpine:latest"
-	sync := &GitOpsSync{
+	gitOpsSync := &GitOpsSync{
 		Name:                 "demo-sync",
 		EnvironmentID:        "0",
 		RepositoryID:         "repo-1",
@@ -8554,8 +8557,8 @@ func TestRunPreDeploy_KillSwitchAndLastRunState(t *testing.T) {
 		PreDeployScriptPath:  &scriptPath,
 		PreDeployRunnerImage: &runnerImage,
 	}
-	sync.ID = syncID
-	require.NoError(t, db.Create(sync).Error)
+	gitOpsSync.ID = syncID
+	require.NoError(t, db.Create(gitOpsSync).Error)
 
 	loadSync := func() GitOpsSync {
 		var stored GitOpsSync
@@ -8602,7 +8605,7 @@ func TestRunPreDeploy_NoScriptConfigured(t *testing.T) {
 	project.ID = "proj-1"
 	require.NoError(t, db.Create(project).Error)
 
-	sync := &GitOpsSync{
+	gitOpsSync := &GitOpsSync{
 		Name:          "demo-sync",
 		EnvironmentID: "0",
 		RepositoryID:  "repo-1",
@@ -8612,8 +8615,8 @@ func TestRunPreDeploy_NoScriptConfigured(t *testing.T) {
 		ProjectName:   "demo",
 		ProjectID:     &project.ID,
 	}
-	sync.ID = syncID
-	require.NoError(t, db.Create(sync).Error)
+	gitOpsSync.ID = syncID
+	require.NoError(t, db.Create(gitOpsSync).Error)
 
 	require.NoError(t, svc.runPreDeploy(t.Context(), project, usertypes.Actor{}))
 }
@@ -8635,7 +8638,7 @@ func TestRunPreDeploy_MissingRunnerImage(t *testing.T) {
 	require.NoError(t, db.Create(project).Error)
 
 	scriptPath := "pre-deploy.sh"
-	sync := &GitOpsSync{
+	gitOpsSync := &GitOpsSync{
 		Name:                "demo-sync",
 		EnvironmentID:       "0",
 		RepositoryID:        "repo-1",
@@ -8646,8 +8649,8 @@ func TestRunPreDeploy_MissingRunnerImage(t *testing.T) {
 		ProjectID:           &project.ID,
 		PreDeployScriptPath: &scriptPath,
 	}
-	sync.ID = syncID
-	require.NoError(t, db.Create(sync).Error)
+	gitOpsSync.ID = syncID
+	require.NoError(t, db.Create(gitOpsSync).Error)
 
 	err := svc.runPreDeploy(t.Context(), project, usertypes.Actor{})
 	require.Error(t, err)
@@ -8670,7 +8673,7 @@ func TestRunPreDeploy_PathTraversalRejected(t *testing.T) {
 
 	scriptPath := "../etc/passwd"
 	runnerImage := "alpine:latest"
-	sync := &GitOpsSync{
+	gitOpsSync := &GitOpsSync{
 		Name:                 "demo-sync",
 		EnvironmentID:        "0",
 		RepositoryID:         "repo-1",
@@ -8682,8 +8685,8 @@ func TestRunPreDeploy_PathTraversalRejected(t *testing.T) {
 		PreDeployScriptPath:  &scriptPath,
 		PreDeployRunnerImage: &runnerImage,
 	}
-	sync.ID = syncID
-	require.NoError(t, db.Create(sync).Error)
+	gitOpsSync.ID = syncID
+	require.NoError(t, db.Create(gitOpsSync).Error)
 
 	err := svc.runPreDeploy(t.Context(), project, usertypes.Actor{})
 	require.Error(t, err)
@@ -8708,4 +8711,121 @@ func TestListProjectReferencesIncludesArchivedProjects(t *testing.T) {
 		{ID: "project-active", Name: "active"},
 		{ID: "project-archived", Name: "archived"},
 	}, references)
+}
+
+func projectScopeContext(t *testing.T, target string, bodies map[string]any) (context.Context, *sync.Map) {
+	t.Helper()
+	var queries sync.Map
+	return httpx.WithEnvironmentScope(t.Context(), &httpx.EnvironmentScope{
+		IDs:     []string{"a", "b", "c"},
+		Request: httptest.NewRequest(http.MethodGet, target, http.NoBody),
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			id := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/environments/"), "/")[0]
+			queries.Store(id, r.URL.Query())
+			body, ok := bodies[id]
+			if !ok {
+				w.WriteHeader(http.StatusBadGateway)
+				_, _ = w.Write([]byte(`{"detail":"environment offline"}`))
+				return
+			}
+			_ = json.NewEncoder(w).Encode(body)
+		}),
+		Resolve: func(_ context.Context, id string) (base.EnvironmentRef, error) {
+			return base.EnvironmentRef{ID: id, Name: "Env " + id}, nil
+		},
+	}), &queries
+}
+
+func TestAggregateProjectsMergesEnvironments(t *testing.T) {
+	bodies := map[string]any{
+		"a": base.Paginated[projecttypes.Details]{Success: true, Data: []projecttypes.Details{
+			{ID: "a1", Name: "web", ServiceCount: 2},
+			{ID: "a2", Name: "db", ServiceCount: 1},
+		}, Pagination: base.PaginationResponse{TotalItems: 2, GrandTotalItems: 3}},
+		"b": base.Paginated[projecttypes.Details]{Success: true, Data: []projecttypes.Details{
+			{ID: "b1", Name: "cache", ServiceCount: 3},
+		}, Pagination: base.PaginationResponse{TotalItems: 1}},
+	}
+	rowLabels := func(items []projecttypes.Details) []string {
+		out := make([]string, 0, len(items))
+		for _, item := range items {
+			out = append(out, item.EnvironmentID+"/"+item.Name)
+		}
+		return out
+	}
+	svc := &ProjectService{}
+
+	t.Run("sorts by name across environments and pages", func(t *testing.T) {
+		ctx, queries := projectScopeContext(t, "/api/environments/a,b,c/projects?start=0&limit=2&sort=name&order=asc", bodies)
+		body, err := svc.AggregateProjects(ctx, pagination.QueryParams{SortParams: pagination.SortParams{Sort: "name", Order: pagination.SortAsc}, Params: pagination.Params{Limit: 2}})
+		require.NoError(t, err)
+
+		assert.True(t, body.Success)
+		assert.Equal(t, []string{"b/cache", "a/db"}, rowLabels(body.Data))
+		assert.Equal(t, "Env b", body.Data[0].EnvironmentName)
+		assert.Equal(t, int64(3), body.Pagination.TotalItems)
+		assert.Equal(t, int64(4), body.Pagination.GrandTotalItems)
+		assert.Equal(t, int64(2), body.Pagination.TotalPages)
+		require.Len(t, body.FailedEnvironments, 1)
+		assert.Equal(t, "c", body.FailedEnvironments[0].Environment.ID)
+		assert.Equal(t, "environment offline", body.FailedEnvironments[0].Message)
+		for _, id := range []string{"a", "b"} {
+			query, ok := queries.Load(id)
+			require.True(t, ok)
+			assert.Equal(t, "0", query.(url.Values).Get("start"))
+			assert.Equal(t, "-1", query.(url.Values).Get("limit"))
+		}
+	})
+
+	t.Run("sorts by service count descending", func(t *testing.T) {
+		ctx, _ := projectScopeContext(t, "/api/environments/a,b,c/projects", bodies)
+		body, err := svc.AggregateProjects(ctx, pagination.QueryParams{SortParams: pagination.SortParams{Sort: "serviceCount", Order: pagination.SortDesc}, Params: pagination.Params{Limit: -1}})
+		require.NoError(t, err)
+		assert.Equal(t, []string{"b/cache", "a/web", "a/db"}, rowLabels(body.Data))
+	})
+
+	t.Run("sorts by environment", func(t *testing.T) {
+		ctx, queries := projectScopeContext(t, "/api/environments/a,b,c/projects?sort=environment&order=desc", bodies)
+		body, err := svc.AggregateProjects(ctx, pagination.QueryParams{SortParams: pagination.SortParams{Sort: "environment", Order: pagination.SortDesc}, Params: pagination.Params{Limit: -1}})
+		require.NoError(t, err)
+		assert.Equal(t, []string{"b/cache", "a/web", "a/db"}, rowLabels(body.Data))
+		query, _ := queries.Load("a")
+		assert.Empty(t, query.(url.Values).Get("sort"))
+	})
+
+	t.Run("all environments failing returns empty data", func(t *testing.T) {
+		ctx, _ := projectScopeContext(t, "/api/environments/a,b,c/projects", map[string]any{})
+		body, err := svc.AggregateProjects(ctx, pagination.QueryParams{Params: pagination.Params{Limit: 20}})
+		require.NoError(t, err)
+		assert.Empty(t, body.Data)
+		assert.Len(t, body.FailedEnvironments, 3)
+	})
+}
+
+func TestAggregateProjectCountsSumsEnvironments(t *testing.T) {
+	ctx, _ := projectScopeContext(t, "/api/environments/a,b,c/projects/counts", map[string]any{
+		"a": base.ApiResponse[projecttypes.StatusCounts]{Success: true, Data: projecttypes.StatusCounts{RunningProjects: 2, StoppedProjects: 1, TotalProjects: 4, ArchivedProjects: 1}},
+		"b": base.ApiResponse[projecttypes.StatusCounts]{Success: true, Data: projecttypes.StatusCounts{RunningProjects: 1, StoppedProjects: 3, TotalProjects: 4}},
+	})
+
+	body, err := (&ProjectService{}).AggregateProjectCounts(ctx)
+	require.NoError(t, err)
+
+	assert.True(t, body.Success)
+	assert.Equal(t, projecttypes.StatusCounts{RunningProjects: 3, StoppedProjects: 4, TotalProjects: 8, ArchivedProjects: 1}, body.Data)
+	require.Len(t, body.FailedEnvironments, 1)
+	assert.Equal(t, "c", body.FailedEnvironments[0].Environment.ID)
+}
+
+func TestAggregateProjectTagsUnionsByName(t *testing.T) {
+	ctx, _ := projectScopeContext(t, "/api/environments/a,b,c/projects/tags", map[string]any{
+		"a": base.ApiResponse[[]projecttypes.TagOption]{Success: true, Data: []projecttypes.TagOption{{Name: "prod", Color: "red"}, {Name: "web", Color: "blue"}}},
+		"b": base.ApiResponse[[]projecttypes.TagOption]{Success: true, Data: []projecttypes.TagOption{{Name: "api", Color: "green"}, {Name: "prod", Color: "gray"}}},
+	})
+
+	body, err := (&ProjectService{}).AggregateProjectTags(ctx)
+	require.NoError(t, err)
+
+	assert.Equal(t, []projecttypes.TagOption{{Name: "api", Color: "green"}, {Name: "prod", Color: "red"}, {Name: "web", Color: "blue"}}, body.Data)
+	require.Len(t, body.FailedEnvironments, 1)
 }

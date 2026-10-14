@@ -24,6 +24,8 @@ type ListResponse struct {
 	//
 	// Required: true
 	MaxImageUploadSize int `json:"maxImageUploadSize" doc:"Maximum image archive upload size in MB"`
+
+	FailedEnvironments []base.EnvironmentFailure `json:"failedEnvironments,omitempty" doc:"Environments whose results are missing from a multi-environment response"`
 }
 
 type UpdateInfo struct {
@@ -111,6 +113,8 @@ type UsedBy struct {
 }
 
 type Summary struct {
+	base.EnvironmentTag
+
 	// ID is the unique identifier of the image.
 	//
 	// Required: true

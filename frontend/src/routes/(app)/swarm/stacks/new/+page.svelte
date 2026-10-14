@@ -288,6 +288,9 @@
 			</div>
 
 			<div class="flex items-center gap-2">
+				{#if !isEditMode}
+					<EnvironmentDestinationSelect />
+				{/if}
 				<ComposeCreateMenu
 					tooltipOpen={!inputs.name.value && !ui.saving && !ui.converting && !ui.isLoadingTemplateContent ? undefined : false}
 					tooltipVisible={inputs.name.value === ''}
@@ -334,7 +337,6 @@
 				<form class="flex h-full min-h-0 flex-1 flex-col gap-3 px-2 pb-4 sm:px-6" onsubmit={preventDefault(handleSubmit)}>
 					{#if !isEditMode}
 						<div class="flex shrink-0 flex-wrap items-center gap-x-6 gap-y-3 rounded-lg border border-border bg-card px-4 py-3">
-							<EnvironmentDestinationSelect />
 							<div class="flex items-center gap-2">
 								<Checkbox
 									id="swarm-stack-prune"

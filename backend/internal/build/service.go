@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/getarcaneapp/arcane/types/v2/image"
 	usertypes "github.com/getarcaneapp/arcane/types/v2/user"
 	"go.getarcane.app/builds/api"
@@ -33,6 +34,8 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/gitutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 )
 
 type BuildService struct {
@@ -256,10 +259,10 @@ func sanitizeBuildContextForEventInternal(raw string) string {
 		return ""
 	}
 
-	base, fragment, hasFragment := strings.Cut(trimmed, "#")
-	parsed, err := url.Parse(base)
+	address, fragment, hasFragment := strings.Cut(trimmed, "#")
+	parsed, err := url.Parse(address)
 	if err != nil {
-		return kit.Ternary(strings.Contains(base, "@"), "[unparseable URL]", trimmed)
+		return kit.Ternary(strings.Contains(address, "@"), "[unparseable URL]", trimmed)
 	}
 	if parsed.User == nil {
 		return trimmed
@@ -458,6 +461,48 @@ func (s *BuildService) ListImageBuildsByEnvironmentPaginated(ctx context.Context
 	}
 
 	return records, paginationResp, nil
+}
+
+func (s *BuildService) AggregateImageBuilds(ctx context.Context, params pagination.QueryParams) (base.Paginated[image.BuildRecord], error) {
+	collection, err := httpx.CollectEnvironments[base.Paginated[image.BuildRecord]](ctx, url.Values{"start": {"0"}, "limit": {"-1"}})
+	if err != nil {
+		return base.Paginated[image.BuildRecord]{}, err
+	}
+
+	pages := make([]pagination.EnvironmentPage[image.BuildRecord], 0, len(collection.Results))
+	for _, result := range collection.Results {
+		pages = append(pages, pagination.EnvironmentPage[image.BuildRecord]{
+			Environment:    result.Environment,
+			Items:          result.Value.Data,
+			TotalAvailable: cmp.Or(result.Value.Pagination.GrandTotalItems, result.Value.Pagination.TotalItems),
+		})
+	}
+
+	config := pagination.Config[image.BuildRecord]{SortBindings: []pagination.SortBinding[image.BuildRecord]{
+		{
+			Key: "createdAt",
+			Fn: func(a, b image.BuildRecord) int {
+				return cmp.Or(a.CreatedAt.Compare(b.CreatedAt), strings.Compare(a.ID, b.ID))
+			},
+			DescFn: func(a, b image.BuildRecord) int {
+				return cmp.Or(b.CreatedAt.Compare(a.CreatedAt), strings.Compare(a.ID, b.ID))
+			},
+		},
+		{Key: "completedAt", Fn: func(a, b image.BuildRecord) int {
+			return kit.FromPtr(a.CompletedAt).Compare(kit.FromPtr(b.CompletedAt))
+		}},
+		{Key: "status", Fn: func(a, b image.BuildRecord) int {
+			return strings.Compare(a.Status, b.Status)
+		}},
+	}}
+	data, resp := pagination.MergeEnvironmentPages(config, pages, params)
+
+	return base.Paginated[image.BuildRecord]{
+		Success:            true,
+		Data:               data,
+		Pagination:         handlerutil.PaginationResponse(resp),
+		FailedEnvironments: collection.Failures,
+	}, nil
 }
 
 func (s *BuildService) GetImageBuildByID(ctx context.Context, environmentID, buildID string) (*image.BuildRecord, error) {

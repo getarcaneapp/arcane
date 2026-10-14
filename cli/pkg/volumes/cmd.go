@@ -103,7 +103,7 @@ func newListCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&opts.inUseOnlyFlag, "inuse", false, "Only show volumes currently in use")
 	cmd.Flags().BoolVar(&opts.unusedOnlyFlag, "unused", false, "Only show volumes not in use")
 	cmd.Flags().BoolVar(&opts.includeFlag, "include-internal", false, "Include Arcane-internal volumes")
-	cmdutil.SetScope(cmdutil.ScopeRead, cmd)
+	cmdutil.SetScope(cmdutil.ScopeMerged, cmd)
 	cmd.PreRunE = func(cmd *cobra.Command, _ []string) error { return cmdutil.ExclusiveFlags(cmd, "inuse", "unused") }
 	return cmd
 }
@@ -261,7 +261,7 @@ func newSizesCmd() *cobra.Command {
 			})
 		},
 	}
-	cmdutil.SetScope(cmdutil.ScopeRead, cmd)
+	cmdutil.SetScope(cmdutil.ScopeMerged, cmd)
 	return cmd
 }
 

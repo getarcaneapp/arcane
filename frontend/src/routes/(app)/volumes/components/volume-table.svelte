@@ -1,13 +1,3 @@
-<script module lang="ts">
-	import type { VolumeSummaryDto } from '#lib/types/docker.js';
-
-	/** Sort value for a volume column; size falls back to usage data, as the backend sorts it. */
-	export function volumeSortValue(volume: VolumeSummaryDto, column: string): unknown {
-		if (column === 'size') return volume.size || (volume.usageData?.size ?? 0);
-		return volume[column as keyof VolumeSummaryDto];
-	}
-</script>
-
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
@@ -32,7 +22,7 @@
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
-	import type { VolumeSizeInfo } from '#lib/types/docker.js';
+	import type { VolumeSizeInfo, VolumeSummaryDto } from '#lib/types/docker.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { handleApiResultWithCallbacks, extractApiErrorMessage } from '#lib/utils/api.js';
@@ -41,11 +31,12 @@
 	import {
 		collectAcrossEnvironments,
 		environmentHref,
+		environmentRows,
 		fetchAcrossEnvironments,
 		hasShownPermission,
 		parseRowKey,
+		readAcrossEnvironments,
 		rowKey,
-		tagEnvironment,
 		withFailedEnvironments,
 		type EnvironmentPage,
 		type EnvironmentRow
@@ -101,11 +92,8 @@
 		if (onRefreshData) {
 			await onRefreshData(options);
 		} else {
-			volumes = await fetchAcrossEnvironments(
-				environmentStore.shown,
-				options,
-				(id, request, config) => volumeService.getVolumesForEnvironment(id, request, config),
-				volumeSortValue
+			volumes = await fetchAcrossEnvironments(environmentStore.shown, options, (id, request, config) =>
+				volumeService.getVolumesForEnvironment(id, request, config)
 			);
 		}
 		if (refreshSizes && sizesEnabled) {
@@ -188,11 +176,10 @@
 		return {
 			queryKey: queryKeys.volumes.sizes(queryScope),
 			queryFn: async () => {
-				const { values } = await collectAcrossEnvironments(
-					environments.filter((env) => hasPermission('volumes:read', env.id)),
-					(id, config) => volumeService.getVolumeSizes(id, config)
-				);
-				return values.flatMap(({ environment, value }) => value.map((size) => tagEnvironment(size, environment)));
+				const readable = environments.filter((env) => hasPermission('volumes:read', env.id));
+				if (readable.length === 0) return [];
+				const { value } = await readAcrossEnvironments(readable, (scope, config) => volumeService.getVolumeSizes(scope, config));
+				return environmentRows(value, readable);
 			},
 			enabled: sizesEnabled,
 			refetchOnWindowFocus: false,

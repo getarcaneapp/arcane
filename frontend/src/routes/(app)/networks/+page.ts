@@ -6,7 +6,6 @@ import { resolveListPageLoadContext } from '#lib/utils/tables.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
 import type { PageLoad } from './$types';
-import { networkSortValue } from './components/network-table.svelte';
 
 export const load: PageLoad = async ({ parent }) => {
 	const {
@@ -26,11 +25,8 @@ export const load: PageLoad = async ({ parent }) => {
 			queryClient.query({
 				queryKey: queryKeys.networks.list(scope, networkRequestOptions),
 				queryFn: () =>
-					fetchAcrossEnvironments(
-						environments,
-						networkRequestOptions,
-						(id, request, config) => networkService.getNetworksForEnvironment(id, request, config),
-						networkSortValue
+					fetchAcrossEnvironments(environments, networkRequestOptions, (id, request, config) =>
+						networkService.getNetworksForEnvironment(id, request, config)
 					)
 			}))()
 	);

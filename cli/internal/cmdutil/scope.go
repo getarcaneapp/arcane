@@ -7,23 +7,36 @@ import (
 	"encoding/json/jsontext"
 	"errors"
 	"fmt"
+	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 
+	"github.com/getarcaneapp/arcane/types/v2/base"
+	"github.com/getarcaneapp/arcane/types/v2/settings"
 	"github.com/spf13/cobra"
 
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/prompt"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/runtime"
+	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
 )
 
 const (
 	ScopeRead        = "read"
+	ScopeMerged      = "merged"
 	ScopeFleet       = "fleet"
 	ScopeDestination = "destination"
 	ScopeResource    = "resource"
 	ScopeGlobal      = "global"
 )
+
+type mergedScopeKey struct{}
+
+type mergedScope struct {
+	names    map[string]string
+	failures []base.EnvironmentFailure
+}
 
 type environmentResult struct {
 	EnvironmentID   string         `json:"environmentId"`
@@ -98,6 +111,9 @@ func RunScoped(cmd *cobra.Command, args []string, run func(*cobra.Command, []str
 	if scope == ScopeResource {
 		return run(cmd, args)
 	}
+	if scope == ScopeMerged {
+		return RunMerged(cmd, args, run)
+	}
 	if scope != ScopeDestination {
 		return RunEnvironments(cmd, args, run, scope == ScopeFleet)
 	}
@@ -122,6 +138,63 @@ func RunScoped(cmd *cobra.Command, args []string, run func(*cobra.Command, []str
 	app.SelectEnvironment(environments[choice].ID)
 	defer app.SelectEnvironment("")
 	return run(cmd, args)
+}
+
+func RunMerged(cmd *cobra.Command, args []string, run func(*cobra.Command, []string) error) error {
+	app, _ := runtime.From(cmd.Context())
+	environments, discoveryErr := app.Environments(cmd.Context())
+	if discoveryErr != nil {
+		return discoveryErr
+	}
+	if len(environments) == 0 {
+		return RunEnvironments(cmd, args, run, false)
+	}
+	limit := 64
+	// The limit is at least 2, so only more environments need it.
+	if len(environments) > 2 {
+		c, clientErr := ClientFromCommand(cmd)
+		if clientErr != nil {
+			return clientErr
+		}
+		publicSettings, settingsErr := c.DoJSON[[]settings.PublicSetting](cmd.Context(), http.MethodGet, types.SettingsPublic("0"), nil)
+		if settingsErr != nil {
+			return fmt.Errorf("failed to read the environment limit: %w", settingsErr)
+		}
+		for _, setting := range publicSettings {
+			if parsed, parseErr := strconv.Atoi(setting.Value); setting.Key == "allEnvironmentsLimit" && parseErr == nil && parsed > 0 {
+				limit = parsed
+			}
+		}
+	}
+	merged := &mergedScope{names: make(map[string]string, len(environments))}
+	ids := make([]string, 0, min(limit, len(environments)))
+	for i, env := range environments {
+		merged.names[env.ID] = cmp.Or(env.Name, env.ID)
+		if i < limit {
+			ids = append(ids, env.ID)
+			continue
+		}
+		merged.failures = append(merged.failures, base.EnvironmentFailure{
+			Environment: base.EnvironmentRef{ID: env.ID, Name: merged.names[env.ID]},
+			Message:     fmt.Sprintf("not included: more than %d environments are shown at once", limit),
+		})
+	}
+	commandContext := cmd.Context()
+	cmd.SetContext(context.WithValue(commandContext, mergedScopeKey{}, merged))
+	defer cmd.SetContext(commandContext)
+	app.SelectEnvironment(strings.Join(ids, ","))
+	defer app.SelectEnvironment("")
+	if runErr := run(cmd, args); runErr != nil {
+		return runErr
+	}
+	failures := make([]error, len(merged.failures))
+	for i, failure := range merged.failures {
+		failures[i] = fmt.Errorf("%s (%s): %s", cmp.Or(merged.names[failure.Environment.ID], failure.Environment.Name), failure.Environment.ID, failure.Message)
+		if !JSONOutputEnabled(cmd) {
+			_, _ = fmt.Fprintln(output.Stderr(), failures[i])
+		}
+	}
+	return errors.Join(failures...)
 }
 
 // RunEnvironments executes a command sequentially and reports each environment's result.
