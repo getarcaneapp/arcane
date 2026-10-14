@@ -296,6 +296,7 @@
   "auto_update_disabled_toast": "Auto-opdatering deaktiveret",
   "auto_update_failed": "Kunne ikke opdatere indstillingen for auto-opdatering",
   "auto_update_controlled_by_label": "Styret af Docker-label",
+  "auto_update_controlled_by_label_checks_continue": "Automatisk opdatering styres via en Docker-label. Opdateringskontrollen fortsætter; for at stoppe den skal du tilføje labelen {label}.",
   "auto_update_status_unavailable": "Status for automatisk opdatering er ikke tilgængelig, da agenten i dette miljø ikke rapporterer den. Opdater agenten her for at kunne administrere den.",
   "excluded_containers": "Excluded Containers",
   "auto_heal_exclude_description": "Select containers to exclude from auto-heal monitoring.",
