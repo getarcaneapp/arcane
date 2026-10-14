@@ -296,6 +296,7 @@
   "auto_update_disabled_toast": "Otomatik güncelleme devre dışı bırakıldı",
   "auto_update_failed": "Otomatik güncelleme ayarını güncelleme işlemi başarısız oldu",
   "auto_update_controlled_by_label": "Docker etiketi tarafından kontrol edilir",
+  "auto_update_controlled_by_label_checks_continue": "Otomatik güncelleme, bir Docker etiketi ile kontrol edilir. Güncelleme kontrolleri devam eder; bunları durdurmak için {label} etiketini ekleyin.",
   "auto_update_status_unavailable": "Bu ortamdaki ajanın bu bilgiyi raporlamaması nedeniyle otomatik güncelleme durumu kullanılamıyor. Bunu yönetmek için ajanı buradan güncelleyin.",
   "excluded_containers": "Hariç tutulan Konteynerler",
   "auto_heal_exclude_description": "Otomatik onarım izlemesinden hariç tutulacak konteynerleri seçin.",
