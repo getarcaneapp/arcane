@@ -296,6 +296,7 @@
   "auto_update_disabled_toast": "Auto-update disabled",
   "auto_update_failed": "Failed to update auto-update setting",
   "auto_update_controlled_by_label": "Controlled by Docker label",
+  "auto_update_controlled_by_label_checks_continue": "Az automatikus frissítést egy Docker-címke vezérli. A frissítésellenőrzés továbbra is folyik; ha le szeretnéd állítani, add hozzá a „ {label} ” címkét.",
   "auto_update_status_unavailable": "Az automatikus frissítés állapota nem érhető el, mivel a környezet ügynöke nem jelenti ezt az adatot. Frissítse az ügynököt, hogy itt kezelhesse ezt a funkciót.",
   "excluded_containers": "Excluded Containers",
   "auto_heal_exclude_description": "Select containers to exclude from auto-heal monitoring.",
