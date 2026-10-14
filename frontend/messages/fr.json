@@ -296,6 +296,7 @@
   "auto_update_disabled_toast": "Mise à jour automatique désactivée",
   "auto_update_failed": "Échec de la mise à jour du paramètre de mise à jour automatique",
   "auto_update_controlled_by_label": "Contrôlé par l'étiquette Docker",
+  "auto_update_controlled_by_label_checks_continue": "La mise à jour automatique est gérée par une étiquette Docker. Les vérifications de mise à jour se poursuivent ; pour les interrompre, ajoutez l'étiquette {label}.",
   "auto_update_status_unavailable": "Le statut de mise à jour automatique n'est pas disponible car l'agent de cet environnement ne le signale pas. Mettez à jour l'agent pour pouvoir le gérer ici.",
   "excluded_containers": "Conteneurs exclus",
   "auto_heal_exclude_description": "Sélectionnez les conteneurs à exclure de la surveillance auto-réparatrice.",
