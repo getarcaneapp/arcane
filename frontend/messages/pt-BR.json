@@ -296,6 +296,7 @@
   "auto_update_disabled_toast": "Atualização automática desativada",
   "auto_update_failed": "Falha ao atualizar a configuração de atualização automática",
   "auto_update_controlled_by_label": "Controlado pelo rótulo do Docker",
+  "auto_update_controlled_by_label_checks_continue": "A atualização automática é controlada por uma etiqueta do Docker. As verificações de atualização continuam; para interrompê-las, adicione a etiqueta {label}.",
   "auto_update_status_unavailable": "O status da atualização automática não está disponível porque o agente deste ambiente não o reporta. Atualize o agente para gerenciá-lo aqui.",
   "excluded_containers": "Containers apagados",
   "auto_heal_exclude_description": "Selecione os contêineres para excluir do monitoramento de auto-cura.",
