@@ -180,7 +180,8 @@ func (s *UserService) GetUserByOidcSubjectId(ctx context.Context, subjectId stri
 // common.ErrAmbiguousUserEmail instead of arbitrarily selecting one.
 func (s *UserService) GetUserByEmail(ctx context.Context, email string) (*User, error) {
 	var users []User
-	if err := s.db.DB.WithContext(ctx).Where("email = ?", email).Limit(2).Find(&users).Error; err != nil {
+	// Email addresses are matched case-insensitively; providers often return different casing.
+	if err := s.db.DB.WithContext(ctx).Where("LOWER(email) = LOWER(?)", email).Limit(2).Find(&users).Error; err != nil {
 		return nil, fmt.Errorf("failed to query users by email: %w", err)
 	}
 	switch len(users) {
