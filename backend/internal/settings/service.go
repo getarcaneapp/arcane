@@ -37,6 +37,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/search"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/schedule"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/concurrency"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
@@ -688,11 +689,16 @@ func (s *SettingsService) EnsureDefaultSettings(ctx context.Context) error {
 				}
 			case err != nil:
 				return fmt.Errorf("failed to check for existing setting %s: %w", defaultSetting.Key, err)
-			case slices.Contains(retiredSettingValues[defaultSetting.Key], existing.Value):
+			case slices.Contains(retiredSettingValues[defaultSetting.Key], existing.Value),
+				existing.Value != "" && s.GetSettingType(defaultSetting.Key) == "cron" && func() bool {
+					_, parseErr := schedule.Parser().Parse(existing.Value)
+					return parseErr != nil
+				}():
 				replaceDefaultSettingErr := tx.Model(&SettingVariable{}).Where("key = ?", defaultSetting.Key).Update("value", defaultSetting.Value).Error
 				if replaceDefaultSettingErr != nil {
-					return fmt.Errorf("failed to replace retired default for setting %s: %w", defaultSetting.Key, replaceDefaultSettingErr)
+					return fmt.Errorf("failed to replace setting %s with default: %w", defaultSetting.Key, replaceDefaultSettingErr)
 				}
+				slog.InfoContext(ctx, "Replaced invalid setting value with default", "key", defaultSetting.Key, "from", existing.Value, "to", defaultSetting.Value)
 			}
 		}
 		return nil

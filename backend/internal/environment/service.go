@@ -51,6 +51,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/entityjobs"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/schedule"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/tracing"
@@ -989,8 +990,7 @@ func (s *EnvironmentService) SetScheduler(ctx context.Context, jobScheduler sche
 func (s *EnvironmentService) registerHealthJob(ctx context.Context, envID string) {
 	s.jobs.Register(ctx, envID,
 		func(ctx context.Context) string {
-			sched := s.settingsService.GetStringSetting(ctx, "environmentHealthInterval", defaultEnvironmentHealthInterval)
-			return kit.Ternary(sched == "", defaultEnvironmentHealthInterval, sched)
+			return schedule.Or(ctx, s.settingsService.GetStringSetting(ctx, "environmentHealthInterval", defaultEnvironmentHealthInterval), defaultEnvironmentHealthInterval, environmentHealthJobPrefix+envID)
 		},
 		func(ctx context.Context) (scheduler.Outcome, error) { return s.runHealthCheck(ctx, envID) },
 		func(context.Context, scheduler.Run) (scheduler.Outcome, error) {
