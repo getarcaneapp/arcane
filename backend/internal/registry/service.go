@@ -806,7 +806,9 @@ func (s *ContainerRegistryService) InspectImageDigest(ctx context.Context, image
 			return nil, daemonErr
 		}
 		if !registry.IsFallbackEligibleDaemonError(daemonErr) &&
-			(browse.IsUnauthorizedRegistryError(daemonErr) || !slices.ContainsFunc([]string{"context deadline exceeded", "client.timeout exceeded", "i/o timeout"}, func(indicator string) bool {
+			(browse.IsUnauthorizedRegistryError(daemonErr) || !slices.ContainsFunc([]string{
+				"context deadline exceeded", "client.timeout exceeded", "i/o timeout", "tls handshake timeout",
+			}, func(indicator string) bool {
 				return strings.Contains(strings.ToLower(daemonErr.Error()), indicator)
 			})) {
 			return nil, backoff.Permanent(daemonErr)
@@ -840,6 +842,10 @@ func (s *ContainerRegistryService) InspectImageDigest(ctx context.Context, image
 		}
 
 		lastErr = fmt.Errorf("daemon digest lookup failed; registry fallback failed: %w", errors.Join(daemonErr, fallbackErr))
+		if strings.Contains(strings.ToLower(daemonErr.Error()), "tls handshake timeout") {
+			// A handshake timeout is transient; retry the daemon rather than giving up after one attempt.
+			return nil, lastErr
+		}
 		return nil, backoff.Permanent(lastErr)
 	}, backoff.WithBackOff(&backoff.ExponentialBackOff{
 		InitialInterval:     500 * time.Millisecond,
@@ -870,6 +876,9 @@ func classifyDigestError(err error) error {
 	_, isNetErr := errors.AsType[net.Error](err)
 	dnsErr, isDNSErr := errors.AsType[*net.DNSError](err)
 	switch {
+	case strings.Contains(strings.ToLower(err.Error()), "tls handshake timeout"):
+		// Checked before the net.Error case so a joined daemon timeout is not reported as unavailable.
+		return common.Classify(common.ErrTimeout, err)
 	case isDNSErr && dnsErr.IsNotFound:
 		// A registry host that does not resolve is a bad reference, not an outage worth retrying.
 		return err
