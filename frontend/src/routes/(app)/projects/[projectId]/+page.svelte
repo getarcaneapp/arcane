@@ -2266,7 +2266,10 @@
 				onActionComplete={() => {
 					void refreshProjectDetails();
 				}}
-				onRefresh={() => refreshProjectDetails()}
+				onRefresh={async () => {
+					await refreshProjectDetails({ clearLoadedFileCache: true });
+					await queryClient.invalidateQueries({ queryKey: queryKeys.projects.workspace(envId, projectId) });
+				}}
 				extraActions={projectExtraActions}
 				hasUnsavedChanges={hasChanges}
 				onSaveChanges={handleSaveChanges}
