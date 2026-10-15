@@ -29,7 +29,7 @@ require (
 	go.getarcane.app/acfs v0.6.2
 	go.getarcane.app/builds v0.4.4
 	go.getarcane.app/docker v0.1.0
-	go.getarcane.app/kit v0.4.0
+	go.getarcane.app/kit v0.4.1
 	go.yaml.in/yaml/v4 v4.0.0-rc.6
 	google.golang.org/protobuf v1.36.12
 )

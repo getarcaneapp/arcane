@@ -524,8 +524,8 @@ func (s *UpdaterService) runSingleContainerUpdate(ctx context.Context, container
 		return out, ctxErr
 	}
 
-	// The caller picked this container, so the autoUpdateExcludedContainers setting does not
-	// apply here; labels and immutable references still do.
+	// The caller picked this container, so the autoUpdateExcludedContainers setting and the
+	// updater opt-out label do not apply here; immutable references still do.
 	moduleResult, err := s.engine.UpdateContainer(ctx, containerID, updater.Options{IgnoreSettingsExclusions: true})
 	if moduleResult != nil {
 		out = resultFromModule(moduleResult)

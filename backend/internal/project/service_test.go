@@ -9042,7 +9042,6 @@ func TestProjectServiceManualUpdateRejectsUnsafeTagPolicies(t *testing.T) {
 		name   string
 		change func(*types.ServiceConfig)
 	}{
-		{name: "disabled", change: func(s *types.ServiceConfig) { s.Labels[labels.LabelUpdater] = "false" }},
 		{name: "invalid constraint", change: func(s *types.ServiceConfig) { s.Labels[labels.LabelUpdateConstraint] = "not semver" }},
 		{name: "local build", change: func(s *types.ServiceConfig) { s.Build = &types.BuildConfig{Context: "."} }},
 		{name: "digest pin", change: func(s *types.ServiceConfig) { s.Image = "app@sha256:" + strings.Repeat("a", 64) }},

@@ -552,8 +552,6 @@ func (s *Service) ImageChanges(ctx context.Context, effective *types.Project, gi
 			continue
 		}
 		switch {
-		case policy.IsUpdateDisabled(service.Labels):
-			return nil, fmt.Errorf("updates are disabled for service %s", service.Name)
 		case service.Build != nil:
 			return nil, fmt.Errorf("tag discovery is unsupported for locally built service %s", service.Name)
 		case gitOpsManaged:
