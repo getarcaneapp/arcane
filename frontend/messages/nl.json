@@ -785,6 +785,7 @@
   "container_user_placeholder": "1000:1000 of gebruikersnaam",
   "container_user_description": "Gebruiker die de container uitvoert als",
   "container_hostname_placeholder": "mijn-hostnaam",
+  "container_hostname_invalid": "Voer een geldige hostnaam in",
   "container_domain_label": "Domeinnaam",
   "container_domain_placeholder": "voorbeeld.com",
   "container_compose_gitops_managed_title": "GitOps beheerd - Alleen lezen",
