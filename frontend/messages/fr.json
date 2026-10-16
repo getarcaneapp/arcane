@@ -785,6 +785,7 @@
   "container_user_placeholder": "1000:1000 ou nom d'utilisateur",
   "container_user_description": "Utilisateur sous lequel exécuter le conteneur",
   "container_hostname_placeholder": "mon-nom-d-hôte",
+  "container_hostname_invalid": "Saisissez un nom d'hôte valide",
   "container_domain_label": "Nom de domaine",
   "container_domain_placeholder": "example.com",
   "container_compose_gitops_managed_title": "GitOps Managed - Lecture seule",
