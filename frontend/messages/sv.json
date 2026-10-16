@@ -785,6 +785,7 @@
   "container_user_placeholder": "1000:1000 eller användarnamn",
   "container_user_description": "Användare som containern ska köras som",
   "container_hostname_placeholder": "mitt-vardnamn",
+  "container_hostname_invalid": "Ange ett giltigt värdnamn",
   "container_domain_label": "Domännamn",
   "container_domain_placeholder": "example.com",
   "container_compose_gitops_managed_title": "GitOps Managed - Endast för läsning",
