@@ -785,6 +785,7 @@
   "container_user_placeholder": "1000:1000 nebo uživatelské jméno",
   "container_user_description": "Uživatel, pod kterým se má kontejner spustit",
   "container_hostname_placeholder": "my-hostname",
+  "container_hostname_invalid": "Zadejte platný název hostitele",
   "container_domain_label": "Název domény",
   "container_domain_placeholder": "example.com",
   "container_compose_gitops_managed_title": "Spravováno GitOps — pouze pro čtení",
