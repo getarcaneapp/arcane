@@ -9,6 +9,7 @@
 
 	import type { ActionButton } from '#lib/components/action-button-group/types.js';
 	import ActionButtons from '#lib/components/action-buttons.svelte';
+	import EnvironmentCell from '#lib/components/arcane-table/cells/environment-cell.svelte';
 	import IconImage from '#lib/components/icon-image.svelte';
 	import ResourceNotFound from '#lib/components/resource-not-found.svelte';
 	import { Badge } from '#lib/components/ui/badge/index.js';
@@ -467,6 +468,7 @@
 				minWidth="20">{getContainerStatusLabel(container.state.status)}</Badge
 			>
 		{/if}
+		<EnvironmentCell value={currentEnvId} />
 		{#if updateInfo?.hasUpdate}
 			<Badge variant="amber" minWidth="20">{m.sidebar_update_available()}</Badge>
 		{/if}

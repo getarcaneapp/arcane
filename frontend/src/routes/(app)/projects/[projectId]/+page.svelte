@@ -55,7 +55,6 @@
 	import { gitOpsSyncService } from '#lib/services/gitops-sync-service.js';
 	import { projectService } from '#lib/services/project-service.js';
 	import { projectWorkspaceService } from '#lib/services/project-workspace-service.js';
-	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { ProjectEditorLayout } from '#lib/types/auth.js';
 	import type { ProjectWorkspaceFileChange, ProjectWorkspaceFileContent } from '#lib/types/project-workspace.js';
 	import type { IncludeFile, Project, ProjectTagColor } from '#lib/types/swarm.js';
@@ -2170,9 +2169,7 @@
 					class="max-w-40 min-w-0 sm:max-w-56 md:max-w-72 lg:max-w-88"
 				/>
 				{@render projectStatus(project)}
-				{#if environmentStore.shown.length > 1}
-					<EnvironmentCell value={envId} />
-				{/if}
+				<EnvironmentCell value={envId} />
 				{#if project.isArchived}
 					<Badge variant="gray" minWidth="20">{m.projects_archived_badge()}</Badge>
 				{/if}

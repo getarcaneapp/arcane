@@ -4,6 +4,7 @@
 
 	import type { ActionButton } from '#lib/components/action-button-group/types.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import EnvironmentCell from '#lib/components/arcane-table/cells/environment-cell.svelte';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 	import { DetailMetaStrip, DetailSection, KeyValueCard, KeyValueGrid } from '#lib/components/resource-detail/index.js';
 	import * as Alert from '#lib/components/ui/alert/index.js';
@@ -338,6 +339,7 @@
 			<Badge variant="blue" minWidth="20">{m.networks_predefined()}</Badge>
 		{/if}
 		<Badge variant="purple" minWidth="20">{network?.driver ?? m.common_unknown()}</Badge>
+		<EnvironmentCell value={data.envId} />
 	{/snippet}
 
 	{#if errorMessage}
