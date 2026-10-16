@@ -785,6 +785,7 @@
   "container_user_placeholder": "1000:1000 aŭ uzantnomo",
   "container_user_description": "Uzanto sub kiu la ujo rulos",
   "container_hostname_placeholder": "mia-gastiganto",
+  "container_hostname_invalid": "Enigu validan gastnomon",
   "container_domain_label": "Domajnnomo",
   "container_domain_placeholder": "example.com",
   "container_compose_gitops_managed_title": "GitOps Administrata — Nur-legebla",
