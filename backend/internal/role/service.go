@@ -912,12 +912,16 @@ func (s *RoleService) ReconcileEnvOidcMappings(ctx context.Context, rawSpec stri
 	return dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
 		// Verify every referenced role exists. Done inside the tx so a concurrent
 		// role delete can't race past this check.
+		roleIDs := make([]string, 0, len(specs))
+		for _, sp := range specs {
+			roleIDs = append(roleIDs, sp.RoleID)
+		}
+		var existingIDs []string
+		if err := tx.Model(&Role{}).Where("id IN ?", roleIDs).Pluck("id", &existingIDs).Error; err != nil {
+			return fmt.Errorf("OIDC_ROLE_MAPPINGS: failed to verify roles: %w", err)
+		}
 		for i, sp := range specs {
-			var count int64
-			if err := tx.Model(&Role{}).Where("id = ?", sp.RoleID).Count(&count).Error; err != nil {
-				return fmt.Errorf("OIDC_ROLE_MAPPINGS[%d]: failed to verify role: %w", i, err)
-			}
-			if count == 0 {
+			if !slices.Contains(existingIDs, sp.RoleID) {
 				return fmt.Errorf("OIDC_ROLE_MAPPINGS[%d]: role %q does not exist", i, sp.RoleID)
 			}
 		}

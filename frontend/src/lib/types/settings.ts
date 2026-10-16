@@ -137,6 +137,8 @@ export type Settings = {
 	buildProvider: 'local' | 'depot';
 	buildsDirectory: string;
 	buildTimeout: number;
+	// Missing on agents that predate the setting.
+	buildHistoryRetentionDays?: number;
 	depotProjectId: string;
 	depotToken?: string;
 	depotConfigured?: boolean;

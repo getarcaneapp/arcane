@@ -128,11 +128,11 @@
 		() => {
 			if (!updateTableMounted || scope !== environmentStore.shownKey) return;
 			for (const listScope of listScopes(environmentStore.shown.map((env) => env.id))) {
-				void queryClient.invalidateQueries({ queryKey: ['containers', listScope] });
-				void queryClient.invalidateQueries({ queryKey: ['projects', listScope] });
+				void queryClient.invalidateQueries({ queryKey: queryKeys.containers.listPrefix(listScope) });
+				void queryClient.invalidateQueries({ queryKey: queryKeys.projects.listPrefix(listScope) });
 			}
 			for (const env of environmentStore.shown) {
-				void queryClient.invalidateQueries({ queryKey: ['container', env.id] });
+				void queryClient.invalidateQueries({ queryKey: queryKeys.containers.environment(env.id) });
 				void queryClient.invalidateQueries({ queryKey: queryKeys.projects.environment(env.id) });
 			}
 			void refreshContainers(requestOptions);

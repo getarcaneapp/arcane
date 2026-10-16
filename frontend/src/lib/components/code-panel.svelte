@@ -6,7 +6,6 @@
 		DiagnosticSummary,
 		EditorContext
 	} from '#lib/components/code-editor/analysis/types.js';
-	import CodeEditor from '#lib/components/code-editor/editor.svelte';
 	import * as Card from '#lib/components/ui/card/index.js';
 	import { IsMobile } from '#lib/hooks/is-mobile.svelte.js';
 	import { CodeIcon, FileTextIcon, SearchIcon, ArrowsUpDownIcon } from '#lib/icons/index.js';
@@ -101,24 +100,31 @@
 		onkeydown={handleEditorKeydown}
 	>
 		<div class={effectiveAutoHeight ? '' : 'absolute inset-0'}>
-			<CodeEditor
-				bind:value
-				{language}
-				{validationMode}
-				fontSize="13px"
-				autoHeight={effectiveAutoHeight}
-				{readOnly}
-				bind:hasErrors
-				bind:validationReady
-				bind:diagnosticSummary
-				{fileId}
-				{originalValue}
-				{enableDiff}
-				{editorContext}
-				bind:outlineOpen
-				bind:diffOpen
-				bind:commandPaletteOpen
-			/>
+			<!-- CodeMirror loads with the first panel that renders, not with the route. -->
+			{#await import('#lib/components/code-editor/editor.svelte')}
+				<p class="p-4 text-sm text-muted-foreground">{m.common_loading()}</p>
+			{:then { default: CodeEditor }}
+				<CodeEditor
+					bind:value
+					{language}
+					{validationMode}
+					fontSize="13px"
+					autoHeight={effectiveAutoHeight}
+					{readOnly}
+					bind:hasErrors
+					bind:validationReady
+					bind:diagnosticSummary
+					{fileId}
+					{originalValue}
+					{enableDiff}
+					{editorContext}
+					bind:outlineOpen
+					bind:diffOpen
+					bind:commandPaletteOpen
+				/>
+			{:catch}
+				<p class="p-4 text-sm text-destructive">{m.code_editor_load_failed()}</p>
+			{/await}
 		</div>
 	</div>
 	{#if error}

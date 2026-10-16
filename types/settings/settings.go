@@ -560,6 +560,11 @@ type Update struct {
 	// Required: false
 	BuildTimeout *string `json:"buildTimeout,omitzero"`
 
+	// BuildHistoryRetentionDays is the number of days of completed and failed image build history to retain.
+	//
+	// Required: false
+	BuildHistoryRetentionDays *string `json:"buildHistoryRetentionDays,omitzero"`
+
 	// DepotProjectId is the Depot project identifier.
 	//
 	// Required: false

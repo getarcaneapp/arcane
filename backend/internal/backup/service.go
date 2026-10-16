@@ -823,12 +823,10 @@ func (r PolicyReconciliation[P, U]) Run(ctx context.Context, updates []U) error 
 					return saveErr
 				}
 			}
-			for i := range removed {
-				if deleteErr := tx.Delete(&removed[i]).Error; deleteErr != nil {
-					return deleteErr
-				}
+			if len(removed) == 0 {
+				return nil
 			}
-			return nil
+			return tx.Delete(&removed).Error
 		})
 	}
 	if persistErr != nil {

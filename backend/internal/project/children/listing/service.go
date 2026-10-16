@@ -547,6 +547,12 @@ func PaginationConfig() pagination.Config[project.Details] {
 				},
 			},
 			{
+				Key: "name",
+				Fn: func(p project.Details, filterValue string) bool {
+					return slices.Contains(kit.TrimNonEmpty(strings.Split(filterValue, ",")), p.Name)
+				},
+			},
+			{
 				Key: "archived",
 				Fn: func(p project.Details, filterValue string) bool {
 					if strings.EqualFold(strings.TrimSpace(filterValue), "all") {

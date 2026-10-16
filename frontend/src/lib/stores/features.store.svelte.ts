@@ -28,7 +28,9 @@ async function load(environmentId: string, force = false): Promise<void> {
 	if (!force) {
 		const pending = requests.get(environmentId);
 		if (pending) return pending;
-		if (environments[environmentId]?.status === 'ready') return;
+		// An unavailable environment stays settled until a forced refresh, such as its reconnect.
+		const status = environments[environmentId]?.status;
+		if (status === 'ready' || status === 'unavailable') return;
 	}
 	controllers.get(environmentId)?.abort();
 	const controller = new AbortController();

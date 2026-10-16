@@ -4,7 +4,7 @@
 
 	import JobDetailPanel from '#lib/components/job-card/job-detail-panel.svelte';
 	import JobRow from '#lib/components/job-card/job-row.svelte';
-	import { jobNameLabel, type JobPanelSection } from '#lib/components/job-card/job-status.js';
+	import { isJobRunPending, jobNameLabel, type JobPanelSection } from '#lib/components/job-card/job-status.js';
 	import SettingsSection from '#lib/components/settings/settings-section.svelte';
 	import { EmptyState } from '#lib/components/states/index.js';
 	import * as Alert from '#lib/components/ui/alert/index.js';
@@ -32,7 +32,6 @@
 		parseExcludedContainerSet
 	} from '#lib/utils/container-auto-update.js';
 	import { formatRelativeTime, parseInstant } from '#lib/utils/formatting.js';
-	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import type { JobsTabProps } from './tab-props';
 
@@ -53,22 +52,29 @@
 			};
 		},
 		enabled: !!environmentId && canManageJobs,
-		refetchInterval: 5000
+		// Idle polling still picks up scheduled runs and worker health changes.
+		refetchInterval: (query) =>
+			query.state.data?.jobs.some(
+				(job) =>
+					isJobRunPending(job.currentRun?.status) || job.children?.some((child) => isJobRunPending(child.currentRun?.status))
+			)
+				? 5000
+				: 30_000
 	}));
 	const jobsResponse = $derived(jobsQuery.data);
 	const capabilityUnknown = $derived(
 		!!jobsResponse?.offline && (!jobsResponse.observedAt || jobsResponse.observedAt.startsWith('0001-'))
 	);
 
-	const containersPromise = $derived.by(async () => {
-		if (!environmentId) return [];
-		if (!formInputs.autoUpdate.value && !formInputs.autoHealEnabled.value) return [];
-		const result = await tryCatch(
-			containerService.getContainersForEnvironment(environmentId, { pagination: { page: 1, limit: 100 } })
-		);
-		if (result.error) throw result.error;
-		return result.data.data;
+	const containersQuery = createQuery(() => {
+		const options = { pagination: { page: 1, limit: 100 } };
+		return {
+			queryKey: queryKeys.containers.list(environmentId, options),
+			queryFn: () => containerService.getContainersForEnvironment(environmentId, options),
+			enabled: !!environmentId && (formInputs.autoUpdate.value || formInputs.autoHealEnabled.value)
+		};
 	});
+	const containers = $derived(containersQuery.data?.data ?? []);
 
 	let searchTerm = $state('');
 	let autoHealSearchTerm = $state('');
@@ -249,11 +255,11 @@
 			<div class="space-y-1">
 				<Label>
 					{m.excluded_containers()}
-					{#await containersPromise then containers}
+					{#if containersQuery.isSuccess}
 						<span class="ml-1 font-normal text-muted-foreground">
 							({containers.filter((c) => excludedContainers.has(getContainerName(c))).length})
 						</span>
-					{/await}
+					{/if}
 				</Label>
 				<p class="text-xs text-muted-foreground">{m.auto_update_exclude_description()}</p>
 				<p class="text-xs text-muted-foreground">
@@ -323,11 +329,11 @@
 			<div class="space-y-1">
 				<Label>
 					{m.excluded_containers()}
-					{#await containersPromise then containers}
+					{#if containersQuery.isSuccess}
 						<span class="ml-1 font-normal text-muted-foreground">
 							({containers.filter((c) => autoHealExcludedContainers.has(getContainerName(c))).length})
 						</span>
-					{/await}
+					{/if}
 				</Label>
 				<p class="text-xs text-muted-foreground">{m.auto_heal_exclude_description()}</p>
 			</div>
@@ -409,11 +415,16 @@
 		<ScrollArea.Root class="h-full">
 			<div class="p-2">
 				<div class="space-y-2">
-					{#await containersPromise}
+					{#if containersQuery.isLoading}
 						<div class="flex items-center justify-center p-4">
 							<Spinner class="size-4" />
 						</div>
-					{:then containers}
+					{:else if containersQuery.isError}
+						<div class="space-y-1 p-2 text-sm text-destructive">
+							<p>{m.jobs_containers_load_error()}</p>
+							<p class="text-xs opacity-80">{extractApiErrorMessage(containersQuery.error)}</p>
+						</div>
+					{:else}
 						{@const allItems = containers.map(config.mapItem)}
 						{@const filteredItems = config.term
 							? allItems.filter((item) => item.label.toLowerCase().includes(config.term.toLowerCase()))
@@ -445,11 +456,7 @@
 								</div>
 							{/each}
 						{/if}
-					{:catch error}
-						<div class="p-2 text-sm text-destructive">
-							{(error instanceof Error ? error.message : '') || m.jobs_containers_load_error()}
-						</div>
-					{/await}
+					{/if}
 				</div>
 			</div>
 		</ScrollArea.Root>

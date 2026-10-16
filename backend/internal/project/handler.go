@@ -51,6 +51,7 @@ type ListProjectsInput struct {
 	Archived      string `query:"archived" doc:"Archived filter: 'true' (only archived), 'all' (include archived). Default excludes archived."`
 	Tags          string `query:"tags" doc:"Filter by tag names (comma-separated, OR semantics)"`
 	Label         string `query:"label" doc:"Filter by container label key or key=value on any running service"`
+	Name          string `query:"name" doc:"Filter by exact project name (comma-separated for several)"`
 }
 
 type GetProjectStatusCountsInput struct {
@@ -163,6 +164,9 @@ func (h *ProjectHandler) ListProjects(ctx context.Context, input *ListProjectsIn
 	}
 	if input.Label != "" {
 		params.Filters["label"] = input.Label
+	}
+	if input.Name != "" {
+		params.Filters["name"] = input.Name
 	}
 	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
 		body, err := h.projectService.AggregateProjects(ctx, params)

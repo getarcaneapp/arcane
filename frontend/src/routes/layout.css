@@ -468,9 +468,7 @@ html.reduce-effects *::after {
 	}
 
 	.hover-lift {
-		transition:
-			transform 160ms ease,
-			box-shadow 160ms ease;
+		transition: transform 160ms ease;
 	}
 
 	.hover-lift:hover {

@@ -25,6 +25,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
+	"gorm.io/gorm"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
@@ -672,6 +673,22 @@ func (s *JobService) reconcileRun(ctx context.Context, run scheduler.Run) (sched
 			return reconciler.Reconcile(s.runs.ExecutionContext(ctx, run, ""), run)
 		}
 	}
+	var activityIDs []string
+	for _, target := range run.Outcome.Targets {
+		if run.JobID != "auto-update" && target.Status != scheduler.Succeeded && target.Status != scheduler.Skipped && target.ActivityID != "" {
+			activityIDs = append(activityIDs, target.ActivityID)
+		}
+	}
+	var records []activity.Activity
+	if len(activityIDs) > 0 {
+		if err := s.db.WithContext(ctx).Select("id", "status").Where("id IN ?", activityIDs).Find(&records).Error; err != nil {
+			return scheduler.Outcome{Status: scheduler.Failed}, err
+		}
+	}
+	statusByID := make(map[string]activitytypes.Status, len(records))
+	for _, record := range records {
+		statusByID[record.ID] = record.Status
+	}
 	// A successful activity proves only that target, never the entire batch.
 	targets := make([]scheduler.TargetOutcome, 0, len(run.Outcome.Targets))
 	for index, target := range run.Outcome.Targets {
@@ -686,11 +703,11 @@ func (s *JobService) reconcileRun(ctx context.Context, run scheduler.Run) (sched
 				Targets: slices.Concat(targets, run.Outcome.Targets[index:]),
 			}, nil
 		}
-		var record activity.Activity
-		if err := s.db.WithContext(ctx).First(&record, "id = ?", target.ActivityID).Error; err != nil {
-			return scheduler.Outcome{Status: scheduler.Failed}, err
+		status, found := statusByID[target.ActivityID]
+		if !found {
+			return scheduler.Outcome{Status: scheduler.Failed}, gorm.ErrRecordNotFound
 		}
-		if record.Status != activitytypes.StatusSuccess {
+		if status != activitytypes.StatusSuccess {
 			return scheduler.Outcome{
 				Status:  scheduler.Failed,
 				Message: "Interrupted operation has no confirmed completion",

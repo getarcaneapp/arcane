@@ -7,6 +7,7 @@
 
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 	import { EmptyState } from '#lib/components/states/index.js';
+	import { TABLE_PAGE_SIZE_ALL } from '#lib/constants/table-pagination.js';
 	import { useEnvironmentRefresh } from '#lib/hooks/use-environment-refresh.svelte.js';
 	import { BoxIcon, ProjectsIcon, StartIcon, StopIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
@@ -123,33 +124,23 @@
 	});
 
 	async function updateEnvironmentProjects(requestedEnvId: string) {
-		// Refresh update info for all images, then use the image->project usage
-		// map to narrow the redeploy to projects that actually have updates.
-		// This avoids hitting every project (and its registry) when nothing has
-		// changed, which is especially expensive on instances with many projects.
+		// Refresh update info for all images, then redeploy only the projects the
+		// list reports as having updates. This avoids hitting every project (and
+		// its registry) when nothing has changed, which is especially expensive on
+		// instances with many projects.
 		const imageCheckResults = await imageService.checkAllImages(requestedEnvId);
 
-		const images = await imageService.getImagesForEnvironment(requestedEnvId, {
-			pagination: { page: 1, limit: 10000 }
+		// The updates filter is evaluated over every candidate in one pass, so a single unbounded request is cheapest.
+		const projectsWithUpdates = await projectService.getProjectsForEnvironment(requestedEnvId, {
+			filters: { updates: 'has_update' },
+			pagination: { page: 1, limit: TABLE_PAGE_SIZE_ALL }
 		});
-		const projectIdsWithUpdates = new Set<string>();
-		for (const img of images.data) {
-			if (!img.updateInfo?.hasUpdate) continue;
-			for (const user of img.usedBy ?? []) {
-				if (user.type === 'project' && user.id) {
-					projectIdsWithUpdates.add(user.id);
-				}
-			}
-		}
+		// Untracked compose rows cannot be deployed by ID.
+		const projectsToUpdate = projectsWithUpdates.data.filter((p) => !p.isDiscovered);
 
-		if (projectIdsWithUpdates.size === 0) {
+		if (projectsToUpdate.length === 0) {
 			return { updated: 0, activityId: extractActivityId(imageCheckResults) };
 		}
-
-		const allProjects = await projectService.getProjectsForEnvironment(requestedEnvId, {
-			pagination: { page: 1, limit: 1000 }
-		});
-		const projectsToUpdate = allProjects.data.filter((p) => projectIdsWithUpdates.has(p.id));
 
 		const results = await Promise.allSettled(
 			projectsToUpdate.map(async (proj) => {

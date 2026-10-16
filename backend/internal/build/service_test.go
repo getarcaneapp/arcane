@@ -476,6 +476,58 @@ func TestBuildService_ListImageBuilds_OmitsOutputColumn(t *testing.T) {
 	assert.Equal(t, output, *detail.Output)
 }
 
+func TestBuildService_PruneHistory_DeletesOnlyOldTerminalBuilds(t *testing.T) {
+	db, err := setupBuildHistoryTestDB()
+	require.NoError(t, err)
+	svc := &BuildService{db: db}
+
+	old := time.Now().Add(-40 * 24 * time.Hour)
+	recent := time.Now().Add(-time.Hour)
+	for _, build := range []ImageBuild{
+		{
+			ID:            "old-success",
+			CreatedAt:     old,
+			EnvironmentID: "0",
+			Status:        ImageBuildStatusSuccess,
+			CompletedAt:   &old,
+		},
+		{
+			ID:            "old-failed",
+			CreatedAt:     old,
+			EnvironmentID: "0",
+			Status:        ImageBuildStatusFailed,
+			CompletedAt:   &old,
+		},
+		{
+			ID:            "old-running",
+			CreatedAt:     old,
+			EnvironmentID: "0",
+			Status:        ImageBuildStatusRunning,
+		},
+		{
+			ID:            "recent-success",
+			CreatedAt:     recent,
+			EnvironmentID: "0",
+			Status:        ImageBuildStatusSuccess,
+			CompletedAt:   &recent,
+		},
+	} {
+		require.NoError(t, db.WithContext(t.Context()).Create(&build).Error)
+	}
+
+	deleted, err := svc.PruneHistory(t.Context(), 30)
+	require.NoError(t, err)
+	assert.Equal(t, int64(2), deleted)
+
+	var remaining []string
+	require.NoError(t, db.WithContext(t.Context()).Model(&ImageBuild{}).Order("id").Pluck("id", &remaining).Error)
+	assert.Equal(t, []string{"old-running", "recent-success"}, remaining)
+
+	deleted, err = svc.PruneHistory(t.Context(), 0)
+	require.NoError(t, err)
+	assert.Zero(t, deleted)
+}
+
 func setupBuildHistoryTestDB() (*database.DB, error) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {

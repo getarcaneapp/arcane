@@ -592,27 +592,22 @@ func (s *ImageUpdateService) getImageRefByID(ctx context.Context, imageID string
 }
 
 func (s *ImageUpdateService) getAllImageRefs(ctx context.Context, limit int) ([]string, error) {
-	dockerClient, err := s.dockerClient(ctx)
-	if err != nil {
-		return nil, err
-	}
-
 	imageCtx, cancelImage := s.dockerAPIContext(ctx)
-	imageList, err := dockerClient.ImageList(imageCtx, client.ImageListOptions{})
+	images, err := s.dockerService.ListImages(imageCtx)
 	cancelImage()
 	if err != nil {
 		return nil, fmt.Errorf("failed to list Docker images: %w", err)
 	}
 
 	containerCtx, cancelContainers := s.dockerAPIContext(ctx)
-	containerList, err := dockerClient.ContainerList(containerCtx, client.ContainerListOptions{All: true})
+	containers, err := s.dockerService.ListContainers(containerCtx)
 	cancelContainers()
 	if err != nil {
 		slog.WarnContext(ctx, "failed to list Docker containers; continuing without update-check opt-out filtering", "error", err.Error())
-		return filterImageSummariesByContainerOptOut(imageList.Items, nil, limit), nil
+		return filterImageSummariesByContainerOptOut(images, nil, limit), nil
 	}
 
-	return filterImageSummariesByContainerOptOut(imageList.Items, containerList.Items, limit), nil
+	return filterImageSummariesByContainerOptOut(images, containers, limit), nil
 }
 
 func newMonitoringEligibility(containers []container.Summary) monitoringEligibility {

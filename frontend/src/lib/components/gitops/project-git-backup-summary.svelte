@@ -253,9 +253,7 @@
 		{/if}
 
 		<div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-			<div
-				class="hover-lift flex items-center justify-between gap-3 rounded-xl border border-border/70 bg-card/60 p-4 backdrop-blur-md"
-			>
+			<div class="hover-lift flex items-center justify-between gap-3 rounded-xl border border-border/70 bg-card/80 p-4">
 				<div class="space-y-2">
 					<p class="text-sm font-medium tracking-wide text-muted-foreground">{m.files_in_last_backup()}</p>
 					<h3 class="text-2xl font-semibold tracking-tight tabular-nums">{snapshotFiles}</h3>
@@ -289,7 +287,7 @@
 		</div>
 
 		{#if canBackup}
-			<div class="rounded-xl border border-border/70 bg-card/60 backdrop-blur-md">
+			<div class="rounded-xl border border-border/70 bg-card/80">
 				<div class="flex items-center justify-between gap-2 border-b border-border/50 px-4 py-3">
 					<h3 class="flex items-center gap-2 text-sm font-medium">
 						<ClockIcon class="size-4" />

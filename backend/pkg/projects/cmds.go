@@ -178,26 +178,20 @@ func composeUpOptionsInternal(proj *composetypes.Project,
 
 // ComposePs lists a project's compose containers. dockerHost is the
 // config-resolved docker host used to reuse the shared read-only compose
-// client; empty falls back to a one-shot environment-resolved client.
+// client; empty uses the environment-resolved host.
 func ComposePs(ctx context.Context, dockerHost string, proj *composetypes.Project, services []string, all bool) ([]api.ContainerSummary, error) {
-	c, shared, err := plainComposeClientInternal(ctx, dockerHost)
+	c, err := plainComposeClientInternal(dockerHost)
 	if err != nil {
 		return nil, err
-	}
-	if !shared {
-		defer func() { _ = c.Close() }()
 	}
 
 	return c.svc.Ps(ctx, proj.Name, api.PsOptions{All: all, Services: services})
 }
 
 func ComposeGenerate(ctx context.Context, dockerHost, projectName string, containerIDs []string) (string, error) {
-	c, shared, err := plainComposeClientInternal(ctx, dockerHost)
+	c, err := plainComposeClientInternal(dockerHost)
 	if err != nil {
 		return "", err
-	}
-	if !shared {
-		defer func() { _ = c.Close() }()
 	}
 
 	model, err := c.svc.Generate(ctx, api.GenerateOptions{ProjectName: projectName, Containers: containerIDs})
@@ -243,12 +237,9 @@ func ComposeLogs(ctx context.Context, projectName string, out io.Writer, follow 
 func ListGlobalComposeContainers(ctx context.Context, dockerClient client.APIClient, dockerHost string) ([]container.Summary, error) {
 	cli := dockerClient
 	if cli == nil {
-		c, shared, err := plainComposeClientInternal(ctx, dockerHost)
+		c, err := plainComposeClientInternal(dockerHost)
 		if err != nil {
 			return nil, err
-		}
-		if !shared {
-			defer func() { _ = c.Close() }()
 		}
 		cli = c.dockerCli.Client()
 	}

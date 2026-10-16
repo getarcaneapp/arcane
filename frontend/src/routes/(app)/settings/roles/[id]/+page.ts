@@ -1,5 +1,6 @@
 import { error, redirect } from '@sveltejs/kit';
 
+import { queryKeys } from '#lib/query/query-keys.js';
 import { roleService } from '#lib/services/role-service.js';
 import { userIsGlobalAdmin } from '#lib/utils/auth.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
@@ -19,12 +20,12 @@ export const load: PageLoad = async ({ parent, params }) => {
 	const [role, permissionsManifest] = await Promise.all([
 		tryCatch(
 			queryClient.query({
-				queryKey: ['roles', 'detail', params.id],
+				queryKey: queryKeys.roles.detail(params.id),
 				queryFn: () => roleService.get(params.id)
 			})
 		).then((result) => (result.error ? null : result.data)),
 		queryClient.query({
-			queryKey: ['roles', 'permissions-manifest'],
+			queryKey: queryKeys.roles.permissionsManifest(),
 			queryFn: () => roleService.getPermissionsManifest()
 		})
 	]);

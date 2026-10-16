@@ -21,9 +21,10 @@
 	} from '#lib/types/system-upgrade.js';
 	import { cn } from '#lib/utils.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
-	import { formatElapsedTime, formatRelativeTime, nowInstantString } from '#lib/utils/formatting.js';
+	import { formatRelativeTime, nowInstantString } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
+	import UpdateAllElapsed from './update-all-elapsed.svelte';
 	import VersionUpdateSummary from './version-update-summary.svelte';
 
 	// open has no $bindable fallback: upstream binds can start out undefined, and
@@ -55,8 +56,6 @@
 	let phase = $state<Phase>('confirm');
 	let job = $state<UpdateAllJob | null>(null);
 	let reconnecting = $state(false);
-	// Ticks once a second while the dialog is open so elapsed stage times advance.
-	let clock = $state<string>();
 	let pollActive = false;
 	let pollTimer: ReturnType<typeof setTimeout> | null = null;
 	// Bumped on every confirm and reset so a startup/status response that lands after
@@ -157,11 +156,7 @@
 	// opening and its cleanup once per close.
 	const observeUpdate: Attachment = () => {
 		if (!debugDemo) void restoreActiveJob();
-		const ticker = setInterval(() => (clock = nowInstantString()), 1000);
-		return () => {
-			clearInterval(ticker);
-			resetState();
-		};
+		return () => resetState();
 	};
 
 	async function handleConfirm() {
@@ -518,11 +513,7 @@
 						<Spinner class="size-4" />
 						<div>
 							<span>{m.environments_update_all_manager_restarting()}</span>
-							<span class="block text-xs">
-								{m.environments_update_all_elapsed({
-									duration: formatElapsedTime(managerResult?.stageStartedAt ?? job?.createdAt, { base: clock })
-								})}
-							</span>
+							<UpdateAllElapsed class="block text-xs" since={managerResult?.stageStartedAt ?? job?.createdAt} />
 						</div>
 					</div>
 				{/if}
@@ -573,11 +564,7 @@
 									<div class={cn('max-w-48 shrink-0 text-right text-xs', statusPresentation(result.status).text)}>
 										<span>{rowLabel(result)}</span>
 										{#if result.status === 'updating' && result.stageStartedAt}
-											<span class="block text-muted-foreground">
-												{m.environments_update_all_elapsed({
-													duration: formatElapsedTime(result.stageStartedAt, { base: clock })
-												})}
-											</span>
+											<UpdateAllElapsed class="block text-muted-foreground" since={result.stageStartedAt} />
 										{/if}
 									</div>
 								</li>

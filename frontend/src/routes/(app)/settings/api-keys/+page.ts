@@ -26,7 +26,7 @@ export const load: PageLoad = async ({ parent }) => {
 			queryFn: () => apiKeyService.getApiKeys(apiKeyRequestOptions)
 		}),
 		queryClient.query({
-			queryKey: ['permissions', 'manifest'],
+			queryKey: queryKeys.roles.permissionsManifest(),
 			queryFn: () => roleService.getPermissionsManifest(),
 			staleTime: Infinity
 		})

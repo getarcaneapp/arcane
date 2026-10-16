@@ -18,6 +18,8 @@ import { featureStore } from '#lib/stores/features.store.svelte.js';
 import userStore from '#lib/stores/user-store.svelte.js';
 import { versionStore } from '#lib/stores/version.store.svelte.js';
 import type { PermissionsManifest, User } from '#lib/types/auth.js';
+import type { Environment } from '#lib/types/environment.js';
+import type { AppVersionInformation, Settings } from '#lib/types/settings.js';
 import { isAuthRejectionError } from '#lib/utils/api.js';
 import { getAuthRedirectPath, shownEnvironmentForRoute, userHasPermission } from '#lib/utils/auth.js';
 import { getEffectiveLandingPage } from '#lib/utils/navigation.js';
@@ -49,6 +51,15 @@ const queryClient = new QueryClient({
 let authenticatedUserId: string | null | undefined;
 // Whether a signed-in page has loaded; later loads without a navigation to their path are preloads.
 let opened = false;
+let telemetryAwaited = false;
+
+// Navigations reuse root data for this long; a refresh of the page on screen always refetches.
+const ROOT_STALE_TIME = 30_000;
+// Query results last pushed into the stores, so a cached repeat never overwrites newer local or streamed state.
+let appliedUser: User | undefined;
+let appliedEnvironments: Environment[] | undefined;
+let appliedSettings: Settings | undefined;
+let appliedVersion: AppVersionInformation | undefined;
 
 function dataOrNull<T>(promise: Promise<T>): Promise<T | null> {
 	return tryCatch(promise).then((result) => (result.error ? null : result.data));
@@ -79,13 +90,24 @@ async function loadRoot({ url }: Parameters<LayoutLoad>[0], releaseSelection: ((
 		};
 	}
 
+	// Explicit refreshes (refreshAll, invalidateAll) re-run this load for the page on screen; navigations change the URL.
+	const rootQuery = { staleTime: url.href === page.url.href ? 0 : ROOT_STALE_TIME, retry: false };
 	let [user, versionInformation] = await Promise.all([
 		// Only an explicit rejection signs the user out; transient check failures keep the known user.
-		tryCatch(userService.getCurrentUser()).then((result): User | null => {
+		tryCatch(
+			queryClient.query({ ...rootQuery, queryKey: queryKeys.auth.currentUser(), queryFn: () => userService.getCurrentUser() })
+		).then((result): User | null => {
 			if (!result.error) return result.data;
-			return isAuthRejectionError(result.error) || isSessionCancelledError(result.error) ? null : userStore.current;
+			if (!isAuthRejectionError(result.error) && !isSessionCancelledError(result.error)) return userStore.current;
+			// A rejected session must not be served from the cache by the next load.
+			queryClient.removeQueries({ queryKey: queryKeys.auth.currentUser() });
+			return null;
 		}),
-		versionService.getVersionInformation()
+		queryClient.query({
+			...rootQuery,
+			queryKey: queryKeys.system.appVersion(),
+			queryFn: () => versionService.getVersionInformation()
+		})
 	]);
 	const autoLoginConfig =
 		browser && versionInformation.enabledFeatures?.includes('autologin')
@@ -108,11 +130,12 @@ async function loadRoot({ url }: Parameters<LayoutLoad>[0], releaseSelection: ((
 		authService.resetAuthenticatedState(queryClient, { restartMountedStores: user !== null });
 	}
 	authenticatedUserId = nextAuthenticatedUserId;
-	if (user) {
-		await userStore.setUser(user);
-	} else {
+	if (!user) {
 		userStore.clearUser();
+	} else if (user !== appliedUser || !userStore.current) {
+		await userStore.setUser(user);
 	}
+	appliedUser = user ?? undefined;
 
 	let settings = null;
 	let swarmEnabled: boolean | undefined;
@@ -122,11 +145,26 @@ async function loadRoot({ url }: Parameters<LayoutLoad>[0], releaseSelection: ((
 		const opening = !opened;
 		opened = true;
 		// Initialize environment store (required for settings service)
-		const environmentsRequest = tryCatch(environmentManagementService.getEnvironments({ pagination: { page: 1, limit: -1 } }));
-		const permissionsManifestRequest = dataOrNull(roleService.getPermissionsManifest());
+		const environmentListOptions = { pagination: { page: 1, limit: -1 } };
+		const environmentsRequest = tryCatch(
+			queryClient.query({
+				...rootQuery,
+				queryKey: queryKeys.environments.list(environmentListOptions),
+				queryFn: () => environmentManagementService.getEnvironments(environmentListOptions)
+			})
+		);
+		const permissionsManifestRequest = dataOrNull(
+			queryClient.query({
+				...rootQuery,
+				queryKey: queryKeys.roles.permissionsManifest(),
+				queryFn: () => roleService.getPermissionsManifest()
+			})
+		);
 		const environments = await environmentsRequest;
 		if (!environments.error) {
-			await environmentStore.initialize(environments.data.data);
+			// The live environment stream keeps the store newer than a cached list.
+			if (environments.data.data !== appliedEnvironments) await environmentStore.initialize(environments.data.data);
+			appliedEnvironments = environments.data.data;
 		} else if (!environmentStore.isInitialized()) {
 			// A failed refetch on an already-initialised store keeps the current
 			// selection; re-initialising with [] would drop it to "No Environment".
@@ -150,12 +188,30 @@ async function loadRoot({ url }: Parameters<LayoutLoad>[0], releaseSelection: ((
 		}
 		releaseSelection?.();
 
-		const settingsRequest = (
-			userHasPermission(user, 'settings:read') ? dataOrNull(settingsService.getSettings()) : Promise.resolve(null)
-		).then((loaded) => loaded ?? dataOrNull(settingsService.getPublicSettings(environmentStore.selected?.id ?? '0')));
 		featureStore.connect(queryClient);
 		const currentEnvironmentId = await environmentStore.getCurrentEnvironmentId();
-		const featuresRequest = featureStore.refresh(currentEnvironmentId);
+		const settingsRequest = (
+			userHasPermission(user, 'settings:read')
+				? dataOrNull(
+						queryClient.query({
+							...rootQuery,
+							queryKey: queryKeys.settings.byEnvironment(currentEnvironmentId),
+							queryFn: () => settingsService.getSettingsForEnvironmentMerged(currentEnvironmentId)
+						})
+					)
+				: Promise.resolve(null)
+		).then(
+			(loaded) =>
+				loaded ??
+				dataOrNull(
+					queryClient.query({
+						...rootQuery,
+						queryKey: queryKeys.settings.public(currentEnvironmentId),
+						queryFn: () => settingsService.getPublicSettings(currentEnvironmentId)
+					})
+				)
+		);
+		const featuresRequest = featureStore.load(currentEnvironmentId, rootQuery.staleTime === 0);
 		// The all environments preview shows navigation for features in any shown environment. The others load
 		// in the background, so an unreachable environment never stalls navigation.
 		for (const env of environmentStore.shown) {
@@ -163,7 +219,13 @@ async function loadRoot({ url }: Parameters<LayoutLoad>[0], releaseSelection: ((
 		}
 		// Optional discovery: skip it without swarm:read and never toast a denial.
 		const swarmStatusRequest = userHasPermission(user, 'swarm:read', currentEnvironmentId)
-			? dataOrNull(swarmService.getSwarmStatus(currentEnvironmentId, { suppressAccessDeniedToast: true }))
+			? dataOrNull(
+					queryClient.query({
+						...rootQuery,
+						queryKey: queryKeys.swarm.status(currentEnvironmentId),
+						queryFn: () => swarmService.getSwarmStatus(currentEnvironmentId, { suppressAccessDeniedToast: true })
+					})
+				)
 			: Promise.resolve(null);
 		const [loadedSettings, loadedSwarmStatus, loadedPermissionsManifest] = await Promise.all([
 			settingsRequest,
@@ -171,7 +233,15 @@ async function loadRoot({ url }: Parameters<LayoutLoad>[0], releaseSelection: ((
 			permissionsManifestRequest
 		]);
 		// Keep recovery/settings pages reachable while a selected agent is offline.
-		settings = loadedSettings ?? (await dataOrNull(settingsService.getPublicSettings()));
+		settings =
+			loadedSettings ??
+			(await dataOrNull(
+				queryClient.query({
+					...rootQuery,
+					queryKey: queryKeys.settings.public('0'),
+					queryFn: () => settingsService.getPublicSettings()
+				})
+			));
 		await featuresRequest;
 		swarmEnabled = loadedSwarmStatus?.enabled;
 		permissionsManifest = loadedPermissionsManifest;
@@ -181,26 +251,40 @@ async function loadRoot({ url }: Parameters<LayoutLoad>[0], releaseSelection: ((
 		await environmentStore.initialize([]);
 
 		// Try to fetch public settings for login page configuration
-		settings = await dataOrNull(settingsService.getPublicSettings());
+		settings = await dataOrNull(
+			queryClient.query({
+				...rootQuery,
+				queryKey: queryKeys.settings.public('0'),
+				queryFn: () => settingsService.getPublicSettings()
+			})
+		);
 	}
 
-	if (settings) {
+	// Settings saves and the version stream update the stores directly, so only new results replace them.
+	if (settings && settings !== appliedSettings) {
 		settingsStore.set(settings);
+		appliedSettings = settings;
+	}
+	if (versionInformation !== appliedVersion) {
+		versionStore.seed(versionInformation);
+		appliedVersion = versionInformation;
 	}
 
-	versionStore.seed(versionInformation);
+	const telemetry = setTelemetry(
+		{
+			traces: settings?.frontendTracingEnabled ?? false,
+			metrics: settings?.frontendMetricsEnabled ?? false,
+			logs: settings?.frontendLogsEnabled ?? false
+		},
+		versionInformation.currentVersion
+	);
 	// Waiting lets the first page view be traced, but a stalled SDK download must never hold up the app.
-	await Promise.race([
-		setTelemetry(
-			{
-				traces: settings?.frontendTracingEnabled ?? false,
-				metrics: settings?.frontendMetricsEnabled ?? false,
-				logs: settings?.frontendLogsEnabled ?? false
-			},
-			versionInformation.currentVersion
-		),
-		new Promise((resolve) => setTimeout(resolve, 2_000))
-	]);
+	if (!telemetryAwaited) {
+		telemetryAwaited = true;
+		let timeout: ReturnType<typeof setTimeout> | undefined;
+		await Promise.race([telemetry, new Promise((resolve) => (timeout = setTimeout(resolve, 2_000)))]);
+		clearTimeout(timeout);
+	}
 
 	const redirectPath = getAuthRedirectPath(
 		url.pathname,
@@ -215,7 +299,8 @@ async function loadRoot({ url }: Parameters<LayoutLoad>[0], releaseSelection: ((
 	}
 
 	return {
-		user,
+		// The store holds local account edits made since the cached user was fetched.
+		user: user && userStore.current,
 		settings,
 		permissionsManifest,
 		permissionsManifestLoadFailed,

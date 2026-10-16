@@ -707,12 +707,17 @@ func (s *GitRepositoryService) createNewRepository(ctx context.Context, item git
 }
 
 func (s *GitRepositoryService) deleteUnsynced(ctx context.Context, existingMap map[string]*GitRepository, syncedIDs map[string]bool) error {
+	var unsyncedIDs []string
 	for id := range existingMap {
 		if !syncedIDs[id] {
-			if err := s.db.WithContext(ctx).Delete(&GitRepository{}, "id = ?", id).Error; err != nil {
-				return fmt.Errorf("failed to delete repository %s: %w", id, err)
-			}
+			unsyncedIDs = append(unsyncedIDs, id)
 		}
+	}
+	if len(unsyncedIDs) == 0 {
+		return nil
+	}
+	if err := s.db.WithContext(ctx).Delete(&GitRepository{}, "id IN ?", unsyncedIDs).Error; err != nil {
+		return fmt.Errorf("failed to delete repositories %v: %w", unsyncedIDs, err)
 	}
 	return nil
 }

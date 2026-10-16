@@ -36,9 +36,11 @@
 	// Heartbeats arrive every 30s, so three missed ones means the tunnel is struggling.
 	const staleHeartbeatMs = 90_000;
 
-	// Relative times keep ticking between data refreshes; the subscriber re-derives `now` every second while rendered.
+	// Relative times keep ticking between data refreshes; 10s keeps second-level labels close without a per-second render.
 	const subscribeToClock = createSubscriber((update) => {
-		const timer = setInterval(update, 1000);
+		const timer = setInterval(() => {
+			if (!document.hidden) update();
+		}, 10_000);
 		return () => clearInterval(timer);
 	});
 	let now = $derived.by(() => {

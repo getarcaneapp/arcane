@@ -21,6 +21,7 @@
 		buildProvider: z.enum(['local', 'depot']).default('local'),
 		buildsDirectory: z.string().default(''),
 		buildTimeout: z.coerce.number().int().min(60).max(14400),
+		buildHistoryRetentionDays: z.coerce.number().int().min(0).max(3650),
 		depotProjectId: z.string().default(''),
 		depotToken: z.string().optional().default('')
 	});
@@ -35,6 +36,7 @@
 			buildProvider,
 			buildsDirectory: settings.buildsDirectory,
 			buildTimeout: settings.buildTimeout,
+			buildHistoryRetentionDays: settings.buildHistoryRetentionDays ?? 30,
 			depotProjectId: settings.depotProjectId,
 			depotToken: ''
 		};
@@ -50,6 +52,7 @@
 			if (!updated['depotToken']) {
 				delete updated['depotToken'];
 			}
+			if (!supportsBuildHistoryRetention) delete updated['buildHistoryRetentionDays'];
 			await settingsService.updateSettings(updated);
 		},
 		onSuccess: () => {
@@ -61,6 +64,8 @@
 		successMessage: m.build_settings_saved()
 	});
 
+	// Older agents don't report the setting; hide it and leave it out of saves.
+	const supportsBuildHistoryRetention = $derived(currentSettings.buildHistoryRetentionDays !== undefined);
 	const existingDepotProjectId = $derived((currentSettings.depotProjectId ?? '').trim());
 	const existingDepotToken = $derived((currentSettings.depotToken ?? '').trim());
 	const depotConfigured = $derived(Boolean(currentSettings.depotConfigured));
@@ -150,6 +155,23 @@
 						aria-invalid={!!formInputs.buildTimeout.error}
 					/>
 				</SettingsRow>
+				{#if supportsBuildHistoryRetention}
+					<SettingsRow
+						for="build-history-retention-days"
+						label={m.build_history_retention_days()}
+						description={m.build_history_retention_days_description()}
+						helpText={m.build_history_retention_days_help()}
+						error={formInputs.buildHistoryRetentionDays.error}
+					>
+						<Input
+							id="build-history-retention-days"
+							type="number"
+							placeholder={m.build_history_retention_days_placeholder()}
+							bind:value={formInputs.buildHistoryRetentionDays.value}
+							aria-invalid={!!formInputs.buildHistoryRetentionDays.error}
+						/>
+					</SettingsRow>
+				{/if}
 			</SettingsSection>
 
 			<SettingsSection title={m.depot()}>

@@ -980,6 +980,12 @@ func (s *TemplateService) SyncLocalTemplatesFromFilesystem(ctx context.Context) 
 		return fmt.Errorf("read dir %s: %w", dir, err)
 	}
 
+	// One query for every local template; each folder below matches in memory.
+	var localTemplates []ComposeTemplate
+	if findErr := s.db.WithContext(ctx).Where("is_remote = ? AND registry_id IS NULL", false).Order("id").Find(&localTemplates).Error; findErr != nil {
+		return fmt.Errorf("query existing templates: %w", findErr)
+	}
+
 	for _, ent := range entries {
 		// Only process directories; root-level compose files are ignored to prevent duplication.
 		if !ent.IsDirectory {
@@ -994,16 +1000,17 @@ func (s *TemplateService) SyncLocalTemplatesFromFilesystem(ctx context.Context) 
 			folderErr = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 				// Match on description (the absolute compose path) or, for disk imports, the folder name so
 				// directory reconfigurations and compose renames keep a single row.
-				var existing ComposeTemplate
-				findErr := tx.Where("is_remote = ? AND registry_id IS NULL AND (description = ? OR (name = ? AND description LIKE ?))", false, desc, ent.Name, "Imported from %").
-					First(&existing).Error
-				if findErr != nil && !errors.Is(findErr, gorm.ErrRecordNotFound) {
-					return fmt.Errorf("query existing template: %w", findErr)
-				}
-
-				tpl := &existing
-				if findErr != nil {
-					tpl = &ComposeTemplate{ID: uuid.New().String()}
+				existingIndex := slices.IndexFunc(localTemplates, func(t ComposeTemplate) bool {
+					return t.Description == desc || (t.Name == ent.Name && strings.HasPrefix(t.Description, "Imported from "))
+				})
+				exists := existingIndex >= 0
+				tpl := &ComposeTemplate{ID: uuid.New().String()}
+				if exists {
+					// Reload inside the transaction so a concurrent download's metadata isn't overwritten by the preloaded copy.
+					tpl = &ComposeTemplate{}
+					if loadErr := tx.Where("id = ?", localTemplates[existingIndex].ID).First(tpl).Error; loadErr != nil {
+						return fmt.Errorf("reload template %s: %w", localTemplates[existingIndex].ID, loadErr)
+					}
 				}
 				tpl.Name = ent.Name
 				tpl.Description = desc
@@ -1013,7 +1020,7 @@ func (s *TemplateService) SyncLocalTemplatesFromFilesystem(ctx context.Context) 
 				tpl.IsRemote = false
 				setTemplateIconURL(tpl, iconURL)
 
-				if findErr == nil {
+				if exists {
 					if saveErr := tx.Save(tpl).Error; saveErr != nil {
 						return fmt.Errorf("update template %s: %w", tpl.ID, saveErr)
 					}

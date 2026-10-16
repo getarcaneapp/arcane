@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { useQueryClient } from '@tanstack/svelte-query';
-	import { onMount, onDestroy, tick } from 'svelte';
+	import { createQuery } from '@tanstack/svelte-query';
+	import { onDestroy } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import { Temporal } from 'temporal-polyfill';
 
@@ -80,7 +80,6 @@
 		loading?: boolean;
 	} = $props();
 
-	const queryClient = useQueryClient();
 	let isLoading = $state({
 		removing: false,
 		checking: false
@@ -89,9 +88,6 @@
 	const vulnerabilityManagementEnabled = $derived(
 		environmentStore.shown.some((env) => featureStore.isEnabled('vulnerabilityManagement', env.id))
 	);
-	$effect(() => {
-		if (!vulnerabilityManagementEnabled) stopBatchScanPolling();
-	});
 	// Track the user store: hasPermission reads it non-reactively, so without
 	// this the deriveds would cache pre-hydration falses forever.
 	const canDeleteImage = $derived.by(() => {
@@ -121,9 +117,7 @@
 
 	let tagDialogImage = $state<ImageRow | null>(null);
 	let scanRequestedAtByImage = $state<Record<string, string>>({});
-	let scanPollTimeout: ReturnType<typeof setTimeout> | null = null;
-	let scanPollInFlight = false;
-	// Set once on destroy so an in-flight poll can't re-arm a timer on a dead component.
+	// Set once on destroy so late async results don't touch a dead component.
 	let destroyed = false;
 	const SCAN_POLL_INTERVAL_MS = 4000;
 
@@ -245,7 +239,6 @@
 				}
 
 				toast.info(m.vuln_scan_started(), activityToastOptions(data.activityId));
-				startBatchScanPolling();
 			}
 		});
 	}
@@ -296,130 +289,85 @@
 		}
 		if (newScanSummary.status === 'completed' || newScanSummary.status === 'failed') {
 			await onImageUpdated?.();
-		} else if (isVulnerabilityScanInProgress(newScanSummary.status)) {
-			startBatchScanPolling();
 		}
 	}
 
-	function stopBatchScanPolling() {
-		if (scanPollTimeout) {
-			clearTimeout(scanPollTimeout);
-			scanPollTimeout = null;
-		}
-	}
-
-	function getScanningImages(): ImageRow[] {
+	const scanningImages = $derived.by(() => {
 		if (!vulnerabilityManagementEnabled) return [];
 		return (images.data ?? []).filter((item) => isVulnerabilityScanInProgress(item.vulnerabilityScan?.status));
-	}
-
-	let scanPollError = $state<string | null>(null);
-
-	async function pollBatchScanSummaries() {
-		const requestedScope = environmentStore.shownKey;
-		const scanning = getScanningImages();
-		if (scanning.length === 0) {
-			stopBatchScanPolling();
-			return;
-		}
-
-		if (scanPollInFlight) {
-			scheduleBatchScanPolling();
-			return;
-		}
-
-		scanPollInFlight = true;
-		try {
-			const operationResult = await tryCatch(
-				(async () => {
-					const environments = environmentStore.shown.filter((env) => scanning.some((image) => image.environmentId === env.id));
-					// A failing environment is reported; the others' summaries still apply.
-					const { values, failures } = await collectAcrossEnvironments(environments, async (environmentId) => {
-						const ids = scanning.filter((image) => image.environmentId === environmentId).map((image) => image.id);
-						const response = await vulnerabilityService.getScanSummaries(ids, environmentId);
-						return scanning
-							.filter((image) => image.environmentId === environmentId && response?.summaries?.[image.id])
-							.map((image) => [rowKey(image), response.summaries[image.id]!] as const);
-					});
-					if (destroyed || !vulnerabilityManagementEnabled || requestedScope !== environmentStore.shownKey) return [];
-					const summaries = Object.fromEntries(values.flatMap(({ value }) => value));
-
-					if (Object.keys(summaries).length > 0 && images.data?.length) {
-						let changed = false;
-						let completed = false;
-						const nextScanRequestedAtByImage = { ...scanRequestedAtByImage };
-						const nextData = images.data.map((img) => {
-							const key = rowKey(img);
-							const summary = summaries[key];
-							if (!summary) return img;
-
-							if (
-								summary.status === 'failed' &&
-								isLikelyStaleFailedSummary(summary, nextScanRequestedAtByImage[key]) &&
-								isVulnerabilityScanInProgress(img.vulnerabilityScan?.status)
-							) {
-								return img;
-							}
-
-							changed = true;
-							if (summary.status === 'completed' || summary.status === 'failed') {
-								completed = true;
-								delete nextScanRequestedAtByImage[key];
-							}
-							return { ...img, vulnerabilityScan: summary };
-						});
-						if (changed) {
-							images = { ...images, data: nextData };
-							scanRequestedAtByImage = nextScanRequestedAtByImage;
-						}
-						if (completed) {
-							await onImageUpdated?.();
-						}
-					}
-					return failures;
-				})()
-			);
-			scanPollError =
-				operationResult.error !== null
-					? extractApiErrorMessage(operationResult.error)
-					: operationResult.data.map(({ environment, message }) => `${environment.name}: ${message}`).join('\n') || null;
-		} finally {
-			scanPollInFlight = false;
-			if (!destroyed && getScanningImages().length > 0) {
-				scheduleBatchScanPolling();
-			}
-		}
-	}
-
-	function scheduleBatchScanPolling() {
-		stopBatchScanPolling();
-		scanPollTimeout = setTimeout(() => void pollBatchScanSummaries(), SCAN_POLL_INTERVAL_MS);
-	}
-
-	function startBatchScanPolling() {
-		if (scanPollTimeout) return;
-		void pollBatchScanSummaries();
-	}
-
-	onMount(() => {
-		const cache = queryClient.getQueryCache();
-		function updateScanPolling() {
-			if (destroyed) return;
-			if (getScanningImages().length > 0) startBatchScanPolling();
-			else stopBatchScanPolling();
-		}
-		updateScanPolling();
-		return cache.subscribe((event) => {
-			if (event.type !== 'updated' && event.type !== 'observerResultsUpdated') return;
-			if (event.query !== cache.find({ queryKey: queryKeys.images.list(environmentStore.shownKey, requestOptions), exact: true }))
-				return;
-			void tick().then(updateScanPolling);
-		});
 	});
+
+	// Polls only while rows are scanning; TanStack pauses it while the tab is hidden.
+	const scanSummariesQuery = createQuery(() => {
+		const scanning = scanningImages;
+		const scope = environmentStore.shownKey;
+		return {
+			queryKey: queryKeys.vulnerabilities.scanSummaries(scope, scanning.map(rowKey)),
+			queryFn: async () => {
+				const environments = environmentStore.shown.filter((env) => scanning.some((image) => image.environmentId === env.id));
+				// A failing environment is reported; the others' summaries still apply.
+				const { values, failures } = await collectAcrossEnvironments(environments, async (environmentId) => {
+					const ids = scanning.filter((image) => image.environmentId === environmentId).map((image) => image.id);
+					const response = await vulnerabilityService.getScanSummaries(ids, environmentId);
+					return scanning
+						.filter((image) => image.environmentId === environmentId && response?.summaries?.[image.id])
+						.map((image) => [rowKey(image), response.summaries[image.id]!] as const);
+				});
+				const summaries = Object.fromEntries(values.flatMap(({ value }) => value));
+				// Rows update from the fetch itself; a scope switch mid-request discards the result.
+				if (scope === environmentStore.shownKey) await applyScanSummaries(summaries);
+				return { summaries, failures };
+			},
+			enabled: scanning.length > 0,
+			refetchInterval: SCAN_POLL_INTERVAL_MS,
+			staleTime: 0,
+			gcTime: 0
+		};
+	});
+
+	const scanPollError = $derived.by(() => {
+		if (scanSummariesQuery.error) return extractApiErrorMessage(scanSummariesQuery.error);
+		return (
+			scanSummariesQuery.data?.failures.map(({ environment, message }) => `${environment.name}: ${message}`).join('\n') || null
+		);
+	});
+
+	async function applyScanSummaries(summaries: Record<string, VulnerabilityScanSummary>) {
+		if (destroyed || Object.keys(summaries).length === 0 || !images.data?.length) return;
+		let changed = false;
+		let completed = false;
+		const nextScanRequestedAtByImage = { ...scanRequestedAtByImage };
+		const nextData = images.data.map((img) => {
+			const key = rowKey(img);
+			const summary = summaries[key];
+			if (!summary) return img;
+
+			if (
+				summary.status === 'failed' &&
+				isLikelyStaleFailedSummary(summary, nextScanRequestedAtByImage[key]) &&
+				isVulnerabilityScanInProgress(img.vulnerabilityScan?.status)
+			) {
+				return img;
+			}
+
+			changed = true;
+			if (summary.status === 'completed' || summary.status === 'failed') {
+				completed = true;
+				delete nextScanRequestedAtByImage[key];
+			}
+			return { ...img, vulnerabilityScan: summary };
+		});
+		if (changed) {
+			images = { ...images, data: nextData };
+			scanRequestedAtByImage = nextScanRequestedAtByImage;
+		}
+		if (completed) {
+			await onImageUpdated?.();
+		}
+	}
 
 	onDestroy(() => {
 		destroyed = true;
-		stopBatchScanPolling();
 	});
 
 	const allColumns = $derived([

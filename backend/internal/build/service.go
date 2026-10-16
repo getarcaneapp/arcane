@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -52,7 +53,10 @@ type BuildService struct {
 	gitCleanupFn    func(string) error
 }
 
-const buildHistoryOutputLimitBytes = 2 * 1024 * 1024
+const (
+	buildHistoryOutputLimitBytes = 2 * 1024 * 1024
+	deleteBuildsBatchSize        = 500
+)
 
 func NewBuildService(
 	db *database.DB,
@@ -601,6 +605,35 @@ func (s *BuildService) completeBuildRecord(
 		}
 		return nil
 	})
+}
+
+// PruneHistory deletes finished and failed builds completed before the
+// retention window. Running builds are never pruned.
+func (s *BuildService) PruneHistory(ctx context.Context, retentionDays int) (int64, error) {
+	if s.db == nil || retentionDays <= 0 {
+		return 0, nil
+	}
+
+	var buildIDs []string
+	if err := s.db.WithContext(ctx).Model(&ImageBuild{}).
+		Where("status IN ?", []ImageBuildStatus{ImageBuildStatusSuccess, ImageBuildStatusFailed}).
+		Where("COALESCE(completed_at, updated_at, created_at) < ?", time.Now().Add(-time.Duration(retentionDays)*24*time.Hour)).
+		Pluck("id", &buildIDs).Error; err != nil {
+		return 0, fmt.Errorf("failed to find builds older than retention window: %w", err)
+	}
+
+	var deleted int64
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for batch := range slices.Chunk(buildIDs, deleteBuildsBatchSize) {
+			result := tx.Where("id IN ?", batch).Delete(&ImageBuild{})
+			if result.Error != nil {
+				return fmt.Errorf("failed to delete builds: %w", result.Error)
+			}
+			deleted += result.RowsAffected
+		}
+		return nil
+	})
+	return deleted, err
 }
 
 func buildToRecord(build ImageBuild, includeOutput bool) image.BuildRecord {

@@ -143,12 +143,16 @@ func (s *ApiKeyService) BackfillApiKeyPermissions(ctx context.Context) error {
 	}
 
 	return dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+		keyIDs := make([]string, 0, len(keys))
 		for _, key := range keys {
-			var existing int64
-			if err := tx.Model(&role.ApiKeyPermission{}).Where("api_key_id = ?", key.ID).Count(&existing).Error; err != nil {
-				return fmt.Errorf("failed to count permissions for api key %s: %w", key.ID, err)
-			}
-			if existing > 0 {
+			keyIDs = append(keyIDs, key.ID)
+		}
+		var grantedKeyIDs []string
+		if err := tx.Model(&role.ApiKeyPermission{}).Where("api_key_id IN ?", keyIDs).Distinct().Pluck("api_key_id", &grantedKeyIDs).Error; err != nil {
+			return fmt.Errorf("failed to count permissions for bootstrap api keys: %w", err)
+		}
+		for _, key := range keys {
+			if slices.Contains(grantedKeyIDs, key.ID) {
 				continue
 			}
 			perms, err := s.backfillPermsForKeyInternal(ctx, tx, key)

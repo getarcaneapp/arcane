@@ -4744,6 +4744,54 @@ func TestProjectService_ListProjects_FiltersArchivedProjects(t *testing.T) {
 	assert.Equal(t, []string{"active-demo", "archived-demo"}, []string{items[0].Name, items[1].Name})
 }
 
+func TestProjectService_ListProjects_FiltersByExactName(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := t.Context()
+
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
+	require.NoError(t, err)
+	projectsRoot := t.TempDir()
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+
+	for _, name := range []string{"demo", "demo-extra"} {
+		require.NoError(t, db.Create(&Project{
+			ID:      "project-" + name,
+			Name:    name,
+			DirName: new(name),
+			Path:    createComposeProjectDir(t, projectsRoot, name),
+			Status:  ProjectStatusStopped,
+		}).Error)
+	}
+
+	svc := NewProjectService(
+		db,
+		settingsService,
+		event.NewEventService(db, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		testDockerService,
+		testBuildBuilder{},
+		nil,
+		nil,
+		config.Load(),
+		kv.NewKVService(db),
+		testRegistryCredentials,
+	)
+
+	// Sorting by status pages in memory, so both pagination paths are covered.
+	for _, sort := range []string{"name", "status"} {
+		items, page, listErr := svc.ListProjects(ctx, pagination.QueryParams{
+			Filters: map[string]string{"name": "demo"},
+			Limit:   1,
+			Sort:    sort,
+			Order:   pagination.SortAsc,
+		})
+		require.NoError(t, listErr, sort)
+		require.EqualValues(t, 1, page.TotalItems, sort)
+		require.Len(t, items, 1, sort)
+		assert.Equal(t, "project-demo", items[0].ID, sort)
+	}
+}
+
 func TestProjectService_ArchiveProject_RequiresStoppedProject(t *testing.T) {
 	db := setupProjectTestDB(t)
 	ctx := t.Context()

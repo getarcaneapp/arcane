@@ -8,6 +8,7 @@ import (
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/build"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/schedule"
@@ -18,13 +19,15 @@ const EventCleanupJobName = "event-cleanup"
 type EventCleanupJob struct {
 	eventService    *event.EventService
 	activityService *activity.ActivityService
+	buildService    *build.BuildService
 	settingsService *settings.SettingsService
 }
 
-func NewEventCleanupJob(eventService *event.EventService, activityService *activity.ActivityService, settingsService *settings.SettingsService) *EventCleanupJob {
+func NewEventCleanupJob(eventService *event.EventService, activityService *activity.ActivityService, buildService *build.BuildService, settingsService *settings.SettingsService) *EventCleanupJob {
 	return &EventCleanupJob{
 		eventService:    eventService,
 		activityService: activityService,
+		buildService:    buildService,
 		settingsService: settingsService,
 	}
 }
@@ -66,6 +69,19 @@ func (j *EventCleanupJob) Run(ctx context.Context) (schedulertypes.Outcome, erro
 			"maxEntries", maxEntries,
 			"deleted", deleted)
 	}
+
+	buildRetentionDays := j.settingsService.GetIntSetting(ctx, "buildHistoryRetentionDays", 30)
+	deletedBuilds, err := j.buildService.PruneHistory(ctx, buildRetentionDays)
+	if err != nil {
+		slog.ErrorContext(ctx, "Failed to prune image build history", "jobName", EventCleanupJobName, "error", err)
+		return schedulertypes.Outcome{}, err
+	}
+
+	slog.InfoContext(ctx, "Image build history cleanup completed successfully",
+		"jobName", EventCleanupJobName,
+		"retentionDays", buildRetentionDays,
+		"deleted", deletedBuilds)
+
 	return schedulertypes.Outcome{Status: schedulertypes.Succeeded}, nil
 }
 

@@ -1,28 +1,36 @@
 <script lang="ts">
-	import DOMPurify from 'isomorphic-dompurify';
-	import { marked } from 'marked';
+	import { m } from '#lib/paraglide/messages.js';
 
 	let { markdown }: { markdown: string } = $props();
 
-	const html = $derived.by(() => {
-		if (!markdown) return '';
-		try {
-			const parsed = marked.parse(markdown, { async: false }) as string;
-			return DOMPurify.sanitize(parsed, {
-				ADD_ATTR: ['target', 'rel']
-			});
-		} catch {
-			return '';
-		}
-	});
+	// marked and DOMPurify load on first render so they stay out of the app shell bundle.
+	const renderMarkdown = Promise.all([import('marked'), import('isomorphic-dompurify')]).then(
+		([{ marked }, { default: DOMPurify }]) =>
+			(source: string): string => {
+				if (!source) return '';
+				try {
+					const parsed = marked.parse(source, { async: false }) as string;
+					return DOMPurify.sanitize(parsed, {
+						ADD_ATTR: ['target', 'rel']
+					});
+				} catch {
+					return '';
+				}
+			}
+	);
 </script>
 
-{#if html}
-	<div class="release-notes text-sm leading-relaxed">
-		<!-- eslint-disable-next-line svelte/no-at-html-tags -->
-		{@html html}
-	</div>
-{/if}
+{#await renderMarkdown then render}
+	{@const html = render(markdown)}
+	{#if html}
+		<div class="release-notes text-sm leading-relaxed">
+			<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+			{@html html}
+		</div>
+	{/if}
+{:catch}
+	<p class="text-sm text-destructive">{m.release_notes_load_failed()}</p>
+{/await}
 
 <style>
 	.release-notes :global(h1),

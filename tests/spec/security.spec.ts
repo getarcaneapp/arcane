@@ -151,7 +151,7 @@ test.describe('Security Page', () => {
 		const scanRequests: string[] = [];
 		await page.route(/\/api\/environments\/0\/images(?:\?.*)?$/, async (route) => {
 			const requestUrl = new URL(route.request().url());
-			expect(requestUrl.searchParams.get('limit')).toBe('1000');
+			expect(requestUrl.searchParams.get('limit')).toBe('100');
 			await route.fulfill({
 				json: paginated([
 					{ id: 'scan-success', repoTags: ['example/success:latest'] },

@@ -253,11 +253,11 @@ func (s *ImageService) GetImageDetail(ctx context.Context, id string) (*imagetyp
 	g.Go(func() (workerErr error) {
 		defer utils.RecoverToError(&workerErr, "image worker")
 
-		imageList, imageListErr := dockerClient.ImageList(gctx, client.ImageListOptions{})
+		images, imageListErr := s.dockerService.ListImages(gctx)
 		if imageListErr != nil {
 			return fmt.Errorf("failed to list images: %w", imageListErr)
 		}
-		for _, img := range imageList.Items {
+		for _, img := range images {
 			if img.ID == id {
 				listSize = img.Size
 				break

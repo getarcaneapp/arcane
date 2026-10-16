@@ -7,7 +7,7 @@
 	import { EmptyState } from '#lib/components/states/index.js';
 	import { TabBar, type TabItem } from '#lib/components/tab-bar/index.js';
 	import * as Tabs from '#lib/components/ui/tabs/index.js';
-	import { TABLE_PAGE_SIZE_ALL } from '#lib/constants/table-pagination.js';
+	import { BULK_FETCH_MAX_ITEMS, BULK_FETCH_PAGE_SIZE } from '#lib/constants/table-pagination.js';
 	import { useEnvironmentRefresh } from '#lib/hooks/use-environment-refresh.svelte.js';
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';
 	import { ActivityIcon, ImagesIcon, InspectIcon, ScanIcon, ShieldAlertIcon, ShieldCheckIcon } from '#lib/icons/index.js';
@@ -22,7 +22,7 @@
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { extractApiErrorMessage, parallelRefresh } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
-	import { fetchAcrossEnvironments } from '#lib/utils/environments.js';
+	import { fetchAcrossEnvironments, withFailedEnvironments } from '#lib/utils/environments.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 	import {
 		getSeveritySegments,
@@ -195,6 +195,11 @@
 
 		const tick = async () => {
 			if (destroyed || !vulnerabilityManagementEnabled) return;
+			// Hidden tabs skip the refresh without spending an attempt.
+			if (document.hidden) {
+				scanPollTimeout = setTimeout(tick, POLL_INTERVAL_MS);
+				return;
+			}
 			if (attempts >= MAX_ATTEMPTS) {
 				stopScanPolling();
 				return;
@@ -289,22 +294,35 @@
 		try {
 			const operationResult = await tryCatch(
 				(async () => {
-					// Fetch all images with a high limit to get all of them; merged, every environment's whole list.
+					// Walk the merged image list in fixed-size pages, up to a total cap.
 					const environments = vulnerabilityEnvironments().filter((env) => hasPermission('vulnerabilities:scan', env.id));
-					const limit = environments.length > 1 ? TABLE_PAGE_SIZE_ALL : 1000;
-					const imagesResponse = await fetchAcrossEnvironments(
-						environments,
-						{ pagination: { page: 1, limit } },
-						(id, request, config) => imageService.getImagesForEnvironment(id, request, config)
-					);
-					const images = imagesResponse.data ?? [];
+					const fetchImagesPage = (page: number) =>
+						fetchAcrossEnvironments(environments, { pagination: { page, limit: BULK_FETCH_PAGE_SIZE } }, (id, request, config) =>
+							imageService.getImagesForEnvironment(id, request, config)
+						);
+					const firstPage = await fetchImagesPage(1);
+					const imagePages = [firstPage];
+					for (
+						let page = 2;
+						page <= firstPage.pagination.totalPages && imagePages.length * BULK_FETCH_PAGE_SIZE < BULK_FETCH_MAX_ITEMS;
+						page++
+					) {
+						imagePages.push(await fetchImagesPage(page));
+					}
+					const images = imagePages.flatMap((imagePage) => imagePage.data ?? []);
 					// Environments whose images could not be listed were not scanned.
-					const skipped = imagesResponse.failedEnvironments ?? [];
+					const skipped =
+						withFailedEnvironments(firstPage, ...imagePages.slice(1).map((imagePage) => imagePage.failedEnvironments))
+							.failedEnvironments ?? [];
 					for (const { environment, message } of skipped) {
 						toast.error(m.all_environments_request_failed({ environment: environment.name }), {
 							id: `environment-request-failed-${environment.id}`,
 							description: message
 						});
+					}
+
+					if (firstPage.pagination.totalItems > images.length) {
+						toast.warning(m.security_scan_all_capped({ count: images.length, total: firstPage.pagination.totalItems }));
 					}
 
 					if (images.length === 0) {

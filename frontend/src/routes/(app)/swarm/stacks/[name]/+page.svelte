@@ -3,7 +3,6 @@
 	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
-	import CodeEditor from '#lib/components/code-editor/editor.svelte';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 	import EditorTabStrip from '#lib/components/editor-tab-strip.svelte';
 	import ResizableSplit from '#lib/components/resizable-split.svelte';
@@ -327,33 +326,39 @@
 												onClose={closeSourceTab}
 											/>
 											<div class="relative min-h-0 flex-1">
-												{#key activeSourceTab}
-													{#if activeSourceTab === 'compose'}
-														<div class="absolute inset-0 min-h-0 w-full min-w-0">
-															<CodeEditor
-																value={stackSource.composeContent}
-																language="yaml"
-																readOnly={true}
-																fontSize="13px"
-																fileId={`swarm-stack-source:${stackName}:compose.yaml`}
-															/>
-														</div>
-													{:else if stackSource.envContent?.trim()}
-														<div class="absolute inset-0 min-h-0 w-full min-w-0">
-															<CodeEditor
-																value={stackSource.envContent}
-																language="env"
-																readOnly={true}
-																fontSize="13px"
-																fileId={`swarm-stack-source:${stackName}:.env`}
-															/>
-														</div>
-													{:else}
-														<div class="flex h-full items-center justify-center p-6 text-center text-sm text-muted-foreground">
-															No saved `.env` file was stored for this stack.
-														</div>
-													{/if}
-												{/key}
+												{#await import('#lib/components/code-editor/editor.svelte')}
+													<p class="p-4 text-sm text-muted-foreground">{m.common_loading()}</p>
+												{:then { default: CodeEditor }}
+													{#key activeSourceTab}
+														{#if activeSourceTab === 'compose'}
+															<div class="absolute inset-0 min-h-0 w-full min-w-0">
+																<CodeEditor
+																	value={stackSource.composeContent}
+																	language="yaml"
+																	readOnly={true}
+																	fontSize="13px"
+																	fileId={`swarm-stack-source:${stackName}:compose.yaml`}
+																/>
+															</div>
+														{:else if stackSource.envContent?.trim()}
+															<div class="absolute inset-0 min-h-0 w-full min-w-0">
+																<CodeEditor
+																	value={stackSource.envContent}
+																	language="env"
+																	readOnly={true}
+																	fontSize="13px"
+																	fileId={`swarm-stack-source:${stackName}:.env`}
+																/>
+															</div>
+														{:else}
+															<div class="flex h-full items-center justify-center p-6 text-center text-sm text-muted-foreground">
+																No saved `.env` file was stored for this stack.
+															</div>
+														{/if}
+													{/key}
+												{:catch}
+													<p class="p-4 text-sm text-destructive">{m.code_editor_load_failed()}</p>
+												{/await}
 											</div>
 										</div>
 									{/snippet}

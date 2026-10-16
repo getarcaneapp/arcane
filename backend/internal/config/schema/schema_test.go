@@ -293,6 +293,7 @@ var expectedSettingOverrideKeys = []string{
 	"autoUpdateInterval",
 	"avatarMaxUploadSizeMb",
 	"baseServerUrl",
+	"buildHistoryRetentionDays",
 	"buildProvider",
 	"buildTimeout",
 	"buildsDirectory",

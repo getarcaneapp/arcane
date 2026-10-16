@@ -1,5 +1,6 @@
 import { goto, refreshAll } from '$app/navigation';
 import { page } from '$app/state';
+import { replaceEqualDeep } from '@tanstack/svelte-query';
 import { PersistedState } from 'runed';
 
 import userStore from '#lib/stores/user-store.svelte.js';
@@ -147,6 +148,7 @@ function createEnvironmentManagementStore() {
 			return this.shown.map((env) => env.id).join(',');
 		},
 		initialize: async (environmentsData: Environment[]) => {
+			const previousShownKey = environmentStore.shownKey;
 			const available = _updateAvailable(environmentsData);
 			const hasRealEnvironments = environmentsData.length > 0;
 
@@ -167,6 +169,12 @@ function createEnvironmentManagementStore() {
 				return;
 			}
 			const updated = available.find((env) => env.id === _selectedEnvironment!.id);
+			// Like useEnvironmentRefresh's scope key: an unchanged selection and shown set needs no notify.
+			const unchanged =
+				updated?.enabled &&
+				replaceEqualDeep(_selectedEnvironment, updated) === _selectedEnvironment &&
+				previousShownKey === environmentStore.shownKey;
+			if (unchanged) return;
 			if (updated) _assignSelectedEnvironment(updated);
 			if (!updated?.enabled) _selectInitialEnvironment(available);
 		},

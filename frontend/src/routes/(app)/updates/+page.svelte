@@ -111,9 +111,11 @@
 	async function invalidateContainerQueries() {
 		await Promise.all([
 			...listScopes(environmentStore.shown.map((env) => env.id)).map((scope) =>
-				queryClient.invalidateQueries({ queryKey: ['containers', scope], refetchType: 'none' })
+				queryClient.invalidateQueries({ queryKey: queryKeys.containers.listPrefix(scope), refetchType: 'none' })
 			),
-			...environmentStore.shown.map((env) => queryClient.invalidateQueries({ queryKey: ['container', env.id] }))
+			...environmentStore.shown.map((env) =>
+				queryClient.invalidateQueries({ queryKey: queryKeys.containers.environment(env.id) })
+			)
 		]);
 	}
 
@@ -125,12 +127,14 @@
 			toast.success(m.images_update_check_completed());
 			await Promise.all([
 				...listScopes(environments.map((env) => env.id)).flatMap((scope) =>
-					['containers', 'projects', 'images'].map((resource) => queryClient.invalidateQueries({ queryKey: [resource, scope] }))
+					[queryKeys.containers, queryKeys.projects, queryKeys.images].map((keys) =>
+						queryClient.invalidateQueries({ queryKey: keys.listPrefix(scope) })
+					)
 				),
 				...environments.flatMap((env) => [
-					queryClient.invalidateQueries({ queryKey: ['container', env.id] }),
+					queryClient.invalidateQueries({ queryKey: queryKeys.containers.environment(env.id) }),
 					queryClient.invalidateQueries({ queryKey: queryKeys.projects.environment(env.id) }),
-					queryClient.invalidateQueries({ queryKey: ['image', env.id] })
+					queryClient.invalidateQueries({ queryKey: queryKeys.images.environment(env.id) })
 				])
 			]);
 		},

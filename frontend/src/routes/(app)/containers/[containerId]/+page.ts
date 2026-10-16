@@ -3,6 +3,7 @@ import { error } from '@sveltejs/kit';
 import { queryKeys } from '#lib/query/query-keys.js';
 import { containerService } from '#lib/services/container-service.js';
 import { projectService } from '#lib/services/project-service.js';
+import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 import { throwPageLoadError } from '#lib/utils/api.js';
 import { resolveDetailEnvironmentId } from '#lib/utils/environments.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
@@ -33,15 +34,17 @@ export const load: PageLoad = async ({ params, parent, url }) => {
 	if (composeProjectName) {
 		const operationResult = await tryCatch(
 			(async () => {
-				const searchOptions = {
-					search: composeProjectName,
-					pagination: { page: 1, limit: 100 } // Ensure we don't miss projects beyond default page size
+				const findByName = async (options: SearchPaginationSortRequest) => {
+					const projectsResult = await queryClient.query({
+						queryKey: queryKeys.projects.list(envId, options),
+						queryFn: () => projectService.getProjectsForEnvironment(envId, options)
+					});
+					return projectsResult.data.find((p) => p.name === composeProjectName);
 				};
-				const projectsResult = await queryClient.query({
-					queryKey: queryKeys.projects.list(envId, searchOptions),
-					queryFn: () => projectService.getProjectsForEnvironment(envId, searchOptions)
-				});
-				const matched = projectsResult.data.find((p) => p.name === composeProjectName);
+				// Agents without the name filter ignore it, so fall back to the searched lookup.
+				const matched =
+					(await findByName({ filters: { name: composeProjectName }, pagination: { page: 1, limit: 1 } })) ??
+					(await findByName({ search: composeProjectName, pagination: { page: 1, limit: 100 } }));
 				if (matched) {
 					return await queryClient.query({
 						queryKey: queryKeys.projects.detail(envId, matched.id),

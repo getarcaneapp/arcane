@@ -2167,6 +2167,7 @@ func (s *ProjectService) ListProjects(ctx context.Context, params pagination.Que
 		query = query.Where("is_archived = ?", archived)
 	}
 	query = listing.ApplyProjectTagsDBFilter(query, strings.TrimSpace(params.Filters["tags"]))
+	query = pagination.ApplyFilter(query, "name", strings.TrimSpace(params.Filters["name"]))
 	if term := strings.TrimSpace(params.Search); term != "" {
 		pattern := "%" + term + "%"
 		query = query.Where(
@@ -2458,15 +2459,27 @@ func (s *ProjectService) HandleProjectFilesChanged(ctx context.Context, paths []
 		return
 	}
 
-	var projectsList []Project
-	if err := s.db.WithContext(ctx).Find(&projectsList).Error; err != nil {
+	// Match on paths alone, then load full rows only for the affected projects.
+	var candidates []Project
+	if err := s.db.WithContext(ctx).Select("id", "path").Find(&candidates).Error; err != nil {
 		slog.WarnContext(ctx, "failed to resolve changed project files", "error", fmt.Errorf("list projects for changed paths: %w", err))
 		return
 	}
-	for i := range projectsList {
-		if !slices.ContainsFunc(paths, func(changedPath string) bool { return projects.IsSafeSubdirectory(projectsList[i].Path, changedPath) }) {
-			continue
+	var changedIDs []string
+	for _, candidate := range candidates {
+		if slices.ContainsFunc(paths, func(changedPath string) bool { return projects.IsSafeSubdirectory(candidate.Path, changedPath) }) {
+			changedIDs = append(changedIDs, candidate.ID)
 		}
+	}
+	if len(changedIDs) == 0 {
+		return
+	}
+	var projectsList []Project
+	if err := s.db.WithContext(ctx).Where("id IN ?", changedIDs).Find(&projectsList).Error; err != nil {
+		slog.WarnContext(ctx, "failed to resolve changed project files", "error", fmt.Errorf("load projects for changed paths: %w", err))
+		return
+	}
+	for i := range projectsList {
 		s.refreshProjectImageRefs(ctx, &projectsList[i])
 		if err := s.reconcileComposeTagsForProject(ctx, &projectsList[i]); err != nil {
 			slog.WarnContext(ctx, "failed to reconcile Compose project tags after file change", "projectId", projectsList[i].ID, "error", err)
@@ -2530,7 +2543,7 @@ func (s *ProjectService) SyncProjectsFromFileSystem(ctx context.Context) error {
 	// Decide deletions before performing any, so the mass-wipe guard can veto a
 	// suspicious pass (e.g. an unmounted projects volume) as a whole.
 	var all []Project
-	if findErr := s.db.WithContext(ctx).Find(&all).Error; findErr != nil {
+	if findErr := s.db.WithContext(ctx).Select("id", "name", "dir_name", "path", "gitops_managed_by").Find(&all).Error; findErr != nil {
 		slog.WarnContext(ctx, "error during DB cleanup of projects", "error", fmt.Errorf("list projects for cleanup failed: %w", findErr))
 		return nil
 	}
@@ -3297,8 +3310,9 @@ func (s *ProjectService) StreamProjectLogs(ctx context.Context, projectID string
 }
 
 func (s *ProjectService) GetProjectStatusCounts(ctx context.Context) (projecttypes.StatusCounts, error) {
+	// Runtime status comes from containers, so only the matching and fallback columns are read.
 	var projectsList []Project
-	if listProjectsErr := s.db.WithContext(ctx).Find(&projectsList).Error; listProjectsErr != nil {
+	if listProjectsErr := s.db.WithContext(ctx).Select("id", "name", "path", "status", "compose_project_name", "is_archived").Find(&projectsList).Error; listProjectsErr != nil {
 		return projecttypes.StatusCounts{}, fmt.Errorf("failed to list projects: %w", listProjectsErr)
 	}
 	return s.listing.StatusCounts(ctx, projectRecords(projectsList)), nil

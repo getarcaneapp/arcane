@@ -42,6 +42,9 @@ const (
 	// StartActivity's row creation and the worker's Track call.
 	abandonedActivityGrace = 2 * time.Minute
 
+	// abandonedActivitySweepLimit bounds one sweep; later sweeps take the rest.
+	abandonedActivitySweepLimit = 500
+
 	// terminalPublishRetention bounds how long a terminal publish suppresses
 	// stale non-terminal snapshots for the same activity. Stale publishers are
 	// goroutines already past their commit, so they publish within moments; the
@@ -971,59 +974,65 @@ func (s *ActivityService) FailAbandonedActivities(ctx context.Context) (int64, e
 		return 0, nil
 	}
 
-	cutoff := time.Now().Add(-abandonedActivityGrace)
 	activeStatuses := []activity.Status{activity.StatusQueued, activity.StatusRunning}
+	s.runningMu.Lock()
+	trackedIDs := slices.Collect(maps.Keys(s.running))
+	s.runningMu.Unlock()
+	query := s.db.WithContext(ctx).
+		Select("id", "started_at").
+		Where("status IN ? AND started_at < ?", activeStatuses, time.Now().Add(-abandonedActivityGrace)).
+		Where("type <> ?", activity.TypeJobRun)
+	if len(trackedIDs) > 0 {
+		query = query.Where("id NOT IN ?", trackedIDs)
+	}
 	var candidates []Activity
-	if err := s.db.WithContext(ctx).
-		Where("status IN ? AND started_at < ?", activeStatuses, cutoff).
-		Where("type <> ?", activity.TypeJobRun).
-		Find(&candidates).Error; err != nil {
+	if err := query.Order("started_at").Limit(abandonedActivitySweepLimit).Find(&candidates).Error; err != nil {
 		return 0, fmt.Errorf("find abandoned activities: %w", err)
+	}
+	// A worker may have Tracked its activity since the snapshot above.
+	candidates = slices.DeleteFunc(candidates, func(candidate Activity) bool { return s.isTrackedInternal(candidate.ID) })
+	if len(candidates) == 0 {
+		return 0, nil
 	}
 
 	const message = "Activity was marked failed because its worker is no longer running"
-	errMessage := message
-	var swept int64
-	var sweepErrs []error
-	for i := range candidates {
-		activityID := candidates[i].ID
-		if s.isTrackedInternal(activityID) {
-			continue
-		}
+	now := time.Now()
+	ids := make([]string, 0, len(candidates))
+	var durationExpr strings.Builder
+	durationArgs := make([]any, 0, 2*len(candidates))
+	durationExpr.WriteString("CASE id")
+	for _, candidate := range candidates {
+		ids = append(ids, candidate.ID)
+		durationExpr.WriteString(" WHEN ? THEN ?")
+		durationArgs = append(durationArgs, candidate.ID, now.Sub(candidate.StartedAt).Milliseconds())
+	}
+	durationExpr.WriteString(" ELSE duration_ms END")
+	updates := completeActivityUpdatesInternal(now, activity.StatusFailed, message, new(message), nil, now)
+	updates["duration_ms"] = gorm.Expr(durationExpr.String(), durationArgs...)
 
-		now := time.Now()
-		var finalized Activity
-		lostRace := false
-		if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-			updates := completeActivityUpdatesInternal(candidates[i].StartedAt, activity.StatusFailed, message, &errMessage, nil, now)
-			result := tx.Model(&Activity{}).
-				Where("id = ? AND status IN ?", activityID, activeStatuses).
-				Updates(updates)
-			if result.Error != nil {
-				return fmt.Errorf("fail abandoned activity: %w", result.Error)
-			}
-			if result.RowsAffected == 0 {
-				lostRace = true
-				return nil
-			}
-			if err := tx.First(&finalized, "id = ?", activityID).Error; err != nil {
-				return fmt.Errorf("load failed abandoned activity: %w", err)
-			}
-			return nil
-		}); err != nil {
-			sweepErrs = append(sweepErrs, fmt.Errorf("sweep activity %s: %w", activityID, err))
-			continue
+	// Status-guarded so a worker completing concurrently wins; only rows this
+	// sweep failed carry its message, so the reload skips the race losers.
+	var finalized []Activity
+	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&Activity{}).
+			Where("id IN ? AND status IN ?", ids, activeStatuses).
+			Updates(updates).Error; err != nil {
+			return fmt.Errorf("fail abandoned activities: %w", err)
 		}
-		if lostRace {
-			continue
+		if err := tx.Where("id IN ? AND status = ? AND error = ?", ids, activity.StatusFailed, message).Find(&finalized).Error; err != nil {
+			return fmt.Errorf("load failed abandoned activities: %w", err)
 		}
-
-		s.releaseSlotInternal(activityID)
-		s.publishTerminalSnapshotInternal(ctx, &finalized)
-		swept++
+		return nil
+	}); err != nil {
+		return 0, fmt.Errorf("sweep abandoned activities: %w", err)
 	}
 
-	return swept, errors.Join(sweepErrs...)
+	for i := range finalized {
+		s.releaseSlotInternal(finalized[i].ID)
+		s.publishTerminalSnapshotInternal(ctx, &finalized[i])
+	}
+
+	return int64(len(finalized)), nil
 }
 
 // ResolveOrphanedQueuedActivities fails any activity still queued at startup.
@@ -1167,11 +1176,11 @@ func (s *ActivityService) ListActivitiesPaginated(ctx context.Context, environme
 	if term := strings.TrimSpace(params.Search); term != "" {
 		escaped := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(term)
 		searchPattern := "%" + escaped + "%"
+		// Matches the Activity Center's own search fields.
 		q = q.Where(
-			"type LIKE ? ESCAPE '\\' OR COALESCE(resource_name, '') LIKE ? ESCAPE '\\' OR COALESCE(latest_message, "+
-				"'') LIKE ? ESCAPE '\\' OR COALESCE(step, '') LIKE ? ESCAPE '\\' OR COALESCE(error, '') LIKE ? ESCAPE "+
-				"'\\'",
-			searchPattern, searchPattern, searchPattern, searchPattern, searchPattern,
+			"type LIKE ? ESCAPE '\\' OR COALESCE(resource_name, '') LIKE ? ESCAPE '\\' OR "+
+				"COALESCE(latest_message, '') LIKE ? ESCAPE '\\' OR COALESCE(error, '') LIKE ? ESCAPE '\\'",
+			searchPattern, searchPattern, searchPattern, searchPattern,
 		)
 	}
 

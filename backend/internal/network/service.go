@@ -3,12 +3,16 @@ package network
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/netip"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
+	"sync/atomic"
+	"time"
 
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	networktypes "github.com/getarcaneapp/arcane/types/v2/network"
@@ -21,6 +25,7 @@ import (
 	"go.getarcane.app/kit/pkg"
 	"go.getarcane.app/kit/pkg/mapping"
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/singleflight"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
@@ -32,10 +37,27 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 )
 
+const (
+	networkTopologyCacheTTL     = 5 * time.Second
+	networkTopologyBuildTimeout = 30 * time.Second
+)
+
 type NetworkService struct {
 	db            *database.DB
 	dockerService *dockerInternal.DockerClientService
 	eventService  *event.EventService
+
+	// Shared, immutable topology build; network mutations bump topologyGen,
+	// which retires cached entries and in-flight builds started before them.
+	topologyFlight singleflight.Group
+	topologyCache  atomic.Pointer[networkTopologyCacheEntry]
+	topologyGen    atomic.Uint64
+}
+
+type networkTopologyCacheEntry struct {
+	topology *networktypes.Topology
+	builtAt  time.Time
+	gen      uint64
 }
 
 func NewNetworkService(db *database.DB, dockerService *dockerInternal.DockerClientService, eventService *event.EventService) *NetworkService {
@@ -60,7 +82,46 @@ func (s *NetworkService) GetNetworkByID(ctx context.Context, id string) (*networ
 	return new(networkInspect.Network), nil
 }
 
+// GetNetworkTopology returns a short-TTL cached topology shared by all callers; it must not be mutated.
 func (s *NetworkService) GetNetworkTopology(ctx context.Context) (*networktypes.Topology, error) {
+	gen := s.topologyGen.Load()
+	if entry := s.topologyCache.Load(); entry != nil && entry.gen == gen && time.Since(entry.builtAt) < networkTopologyCacheTTL {
+		return entry.topology, nil
+	}
+
+	// Keyed by generation so callers after a network change never join an older build.
+	ch := s.topologyFlight.DoChan(strconv.FormatUint(gen, 10), func() (any, error) {
+		buildCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), networkTopologyBuildTimeout)
+		defer cancel()
+
+		topology, err := s.buildTopology(buildCtx)
+		if err != nil {
+			return nil, err
+		}
+		s.topologyCache.Store(&networkTopologyCacheEntry{
+			topology: topology,
+			builtAt:  time.Now(),
+			gen:      gen,
+		})
+		return topology, nil
+	})
+
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case res := <-ch:
+		if res.Err != nil {
+			return nil, res.Err
+		}
+		topology, ok := res.Val.(*networktypes.Topology)
+		if !ok {
+			return nil, errors.New("network topology cache returned unexpected type")
+		}
+		return topology, nil
+	}
+}
+
+func (s *NetworkService) buildTopology(ctx context.Context) (*networktypes.Topology, error) {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
@@ -170,6 +231,7 @@ func (s *NetworkService) CreateNetwork(ctx context.Context, name string, options
 		s.eventService.LogErrorEvent(ctx, event.EventTypeNetworkError, "network", "", name, user.ID, user.Username, "0", err, database.JSON{"action": "create", "driver": options.Driver})
 		return nil, fmt.Errorf("failed to create network: %w", err)
 	}
+	s.topologyGen.Add(1)
 
 	if logErr := s.eventService.LogNetworkEvent(ctx, event.EventTypeNetworkCreate, response.ID, name, user.ID, user.Username, "0", database.JSON{
 		"action": "create",
@@ -200,6 +262,7 @@ func (s *NetworkService) RemoveNetwork(ctx context.Context, id string, user user
 		s.eventService.LogErrorEvent(ctx, event.EventTypeNetworkError, "network", id, networkName, user.ID, user.Username, "0", networkRemoveErr, database.JSON{"action": "delete"})
 		return fmt.Errorf("failed to remove network: %w", networkRemoveErr)
 	}
+	s.topologyGen.Add(1)
 
 	if logErr := s.eventService.LogNetworkEvent(ctx, event.EventTypeNetworkDelete, id, networkName, user.ID, user.Username, "0", database.JSON{
 		"action":    "delete",
@@ -260,6 +323,7 @@ func (s *NetworkService) ConnectContainer(ctx context.Context, networkID string,
 		)
 		return fmt.Errorf("failed to connect container to network: %w", networkConnectErr)
 	}
+	s.topologyGen.Add(1)
 
 	if logErr := s.eventService.LogNetworkEvent(ctx, event.EventTypeNetworkConnect, networkID, networkID, user.ID, user.Username, "0", database.JSON{
 		"action":      "connect",
@@ -301,6 +365,7 @@ func (s *NetworkService) DisconnectContainer(ctx context.Context, networkID stri
 		)
 		return fmt.Errorf("failed to disconnect container from network: %w", networkDisconnectErr)
 	}
+	s.topologyGen.Add(1)
 
 	if logErr := s.eventService.LogNetworkEvent(ctx, event.EventTypeNetworkDisconnect, networkID, networkID, user.ID, user.Username, "0", database.JSON{
 		"action":      "disconnect",
@@ -324,6 +389,7 @@ func (s *NetworkService) PruneNetworks(ctx context.Context) (*network.PruneRepor
 	if err != nil {
 		return nil, fmt.Errorf("failed to prune networks: %w", err)
 	}
+	s.topologyGen.Add(1)
 
 	if logErr := s.eventService.LogNetworkEvent(ctx, event.EventTypeNetworkDelete, "", "bulk_prune", usertypes.SystemUser.ID, usertypes.SystemUser.Username, "0", database.JSON{
 		"action":          "prune",

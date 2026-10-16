@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { beforeNavigate, goto, refreshAll } from '$app/navigation';
-	import { createQuery } from '@tanstack/svelte-query';
-	import { onMount } from 'svelte';
+	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 
 	import { ActionButtonGroup, type ActionButton } from '#lib/components/action-button-group/index.js';
@@ -73,13 +72,14 @@
 	let lastEnvironment: Environment | undefined;
 	let loadedEnvironment = $derived((lastEnvironment = data.environment ?? lastEnvironment));
 	let environment = $derived(loadedEnvironment);
-	let refreshedEnvironment: Environment | null = $state(null);
-	let runtimeEnvironment: Environment = $derived.by(() => {
-		const refreshed = refreshedEnvironment;
-		return refreshed && refreshed.id === environment.id ? refreshed : environment;
-	});
-
-	let currentEnvironment = $derived(environmentStore.selected);
+	// Edge reachability only reaches the browser through the live environment stream; the certificate is detail-only.
+	const liveEnvironment = $derived(
+		environment.isEdge ? environmentStore.available.find((env) => env.id === environment.id) : undefined
+	);
+	let runtimeEnvironment: Environment = $derived(
+		liveEnvironment ? { ...liveEnvironment, edgeMTLSCertificate: environment.edgeMTLSCertificate } : environment
+	);
+	const queryClient = useQueryClient();
 
 	let isRefreshing = $state(false);
 	let isTestingConnection = $state(false);
@@ -481,18 +481,9 @@
 			if (overridden) throw new Error(featureOverrideMessage(overridden.id));
 		}
 
+		// The root load's refresh re-reads the environment list into the store.
+		await queryClient.invalidateQueries({ queryKey: queryKeys.environments.all });
 		await refreshEnvironment();
-
-		// Update environment store if this is the current environment
-		if (currentEnvironment?.id === environment.id) {
-			await environmentStore.initialize(
-				(
-					await environmentManagementService.getEnvironments({
-						pagination: { page: 1, limit: 1000 }
-					})
-				).data
-			);
-		}
 	}
 
 	function featureOverrideMessage(id: FeatureID): string {
@@ -559,35 +550,6 @@
 	function handleShellSelectChange(value: string) {
 		if (value !== 'custom') {
 			formInputs.defaultShell.value = value;
-		}
-	}
-
-	onMount(() => {
-		if (environment.isEdge) {
-			void refreshRuntimeEnvironment();
-		}
-
-		const interval = window.setInterval(() => {
-			if (!environment.isEdge) return;
-			void refreshRuntimeEnvironment();
-		}, 5000);
-
-		return () => window.clearInterval(interval);
-	});
-
-	async function refreshRuntimeEnvironment() {
-		const operationResult = await tryCatch(
-			(async () => {
-				const latestEnvironment = await environmentManagementService.get(environment.id);
-				if (latestEnvironment.id === environment.id) {
-					refreshedEnvironment = latestEnvironment;
-				}
-			})()
-		);
-		if (operationResult.error !== null) {
-			const error = operationResult.error;
-
-			console.debug('Failed to refresh environment runtime state:', error);
 		}
 	}
 

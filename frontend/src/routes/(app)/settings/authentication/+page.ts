@@ -32,7 +32,7 @@ export const load: PageLoad = async ({ parent }) => {
 			queryFn: () => federatedCredentialService.list(federatedCredentialRequestOptions)
 		}),
 		queryClient.query({
-			queryKey: ['roles', 'all'],
+			queryKey: queryKeys.roles.all(),
 			queryFn: () => roleService.getAll()
 		}),
 		queryClient.query({

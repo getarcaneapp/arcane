@@ -720,6 +720,19 @@ func (s *UpdaterService) PendingImageUpdates(ctx context.Context) ([]updater.Ima
 	if err != nil {
 		return nil, err
 	}
+	// Resolve each container's policy and normalized ref once, not per record.
+	type eligibleContainer struct {
+		id  string
+		ref string
+	}
+	eligible := make([]eligibleContainer, 0, len(running))
+	for _, cnt := range running {
+		resolved, policyErr := tagpolicy.Resolve(cnt.Image, updater.DefaultLabelPolicy().TagPolicy(cnt.Labels))
+		if policyErr != nil || resolved.Strategy == "tag" {
+			continue
+		}
+		eligible = append(eligible, eligibleContainer{id: cnt.ID, ref: refs.NormalizeImageUpdateRef(cnt.Image)})
+	}
 	converted := func(record imageupdate.ImageUpdateRecord, containerID string) updater.ImageUpdateRecord {
 		return updater.ImageUpdateRecord{
 			ContainerID:    containerID,
@@ -742,12 +755,11 @@ func (s *UpdaterService) PendingImageUpdates(ctx context.Context) ([]updater.Ima
 			out = append(out, converted(record, record.ContainerID))
 			continue
 		}
-		for _, cnt := range running {
-			resolved, policyErr := tagpolicy.Resolve(cnt.Image, updater.DefaultLabelPolicy().TagPolicy(cnt.Labels))
-			if policyErr != nil || resolved.Strategy == "tag" || refs.NormalizeImageUpdateRef(cnt.Image) != refs.NormalizeImageUpdateRef(converted(record, "").ImageRef()) {
-				continue
+		recordRef := refs.NormalizeImageUpdateRef(converted(record, "").ImageRef())
+		for _, cnt := range eligible {
+			if cnt.ref == recordRef {
+				out = append(out, converted(record, cnt.id))
 			}
-			out = append(out, converted(record, cnt.ID))
 		}
 	}
 	return out, nil
@@ -1172,6 +1184,8 @@ func (s *UpdaterService) collectUsedImagesFromContainers(ctx context.Context, ou
 		return err
 	}
 
+	// Containers sharing an image add the same tags, so each image is inspected once.
+	inspectedImages := map[string]struct{}{}
 	for _, summary := range listResult.Items {
 		if labels.IsUpdateDisabled(summary.Labels) {
 			slog.DebugContext(ctx, "collectUsedImagesFromContainers: container opted out by labels", "containerId", summary.ID)
@@ -1199,10 +1213,13 @@ func (s *UpdaterService) collectUsedImagesFromContainers(ctx context.Context, ou
 			slog.DebugContext(ctx, "collectUsedImagesFromContainers: container inspect labels opted out", "containerId", summary.ID)
 			continue
 		}
-		if imageInspect, imageErr := dcli.ImageInspect(ctx, inspectResult.Container.Image); imageErr == nil {
-			for _, tag := range imageInspect.RepoTags {
-				if strings.TrimSpace(tag) != "" && tag != "<none>:<none>" {
-					addNormalizedImageUpdateRef(ctx, out, tag, "normalizedTagsForContainer repo tag", "imageId", inspectResult.Container.Image)
+		if _, inspected := inspectedImages[inspectResult.Container.Image]; !inspected {
+			inspectedImages[inspectResult.Container.Image] = struct{}{}
+			if imageInspect, imageErr := dcli.ImageInspect(ctx, inspectResult.Container.Image); imageErr == nil {
+				for _, tag := range imageInspect.RepoTags {
+					if strings.TrimSpace(tag) != "" && tag != "<none>:<none>" {
+						addNormalizedImageUpdateRef(ctx, out, tag, "normalizedTagsForContainer repo tag", "imageId", inspectResult.Container.Image)
+					}
 				}
 			}
 		}

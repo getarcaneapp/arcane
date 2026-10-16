@@ -27,12 +27,12 @@ export const load: PageLoad = async ({ parent }) => {
 			queryFn: () => userService.getUsers(userRequestOptions)
 		}),
 		queryClient.query({
-			queryKey: ['roles', 'all'],
+			queryKey: queryKeys.roles.all(),
 			queryFn: () => roleService.getAll(),
 			staleTime: 30_000
 		}),
 		queryClient.query({
-			queryKey: ['environments', 'all-for-role-assignments'],
+			queryKey: queryKeys.environments.list({ pagination: { page: 1, limit: 1000 } }),
 			queryFn: () => environmentManagementService.getEnvironments({ pagination: { page: 1, limit: 1000 } }),
 			staleTime: 30_000
 		})

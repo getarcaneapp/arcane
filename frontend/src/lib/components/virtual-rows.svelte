@@ -13,7 +13,7 @@
 		virtualizer: ReturnType<typeof createVirtualizer<HTMLElement, HTMLDivElement>>;
 		rows: TRow[];
 		class?: string;
-		row: Snippet<[TRow]>;
+		row: Snippet<[TRow, number]>;
 	} = $props();
 </script>
 
@@ -27,7 +27,7 @@
 				data-index={virtualItem.index}
 				{@attach virtualizer.measureElement}
 			>
-				{@render row(item)}
+				{@render row(item, virtualItem.index)}
 			</div>
 		{/if}
 	{/each}

@@ -354,9 +354,8 @@ func (w *ImageUpdateWatcher) RunNow(ctx context.Context) (err error) {
 	if err != nil {
 		return err
 	}
-	ticker := time.NewTicker(50 * time.Millisecond)
-	defer ticker.Stop()
-	for {
+	// Back off from 50 ms to 1 s so quick runs return fast without polling long scans hard.
+	for delay := 50 * time.Millisecond; ; delay = min(delay*2, time.Second) {
 		current, getErr := coordinator.Get(ctx, run.EnvironmentID, run.JobID, run.ID)
 		if getErr != nil {
 			return getErr
@@ -370,7 +369,7 @@ func (w *ImageUpdateWatcher) RunNow(ctx context.Context) (err error) {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-ticker.C:
+		case <-time.After(delay):
 		case <-w.stopped:
 			return errors.New("image update watcher stopped")
 		}

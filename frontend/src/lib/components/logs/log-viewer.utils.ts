@@ -7,9 +7,14 @@ export interface LogViewerEntry {
 	message: string;
 	service?: string;
 	containerId?: string;
-	parsedJson?: unknown;
-	isJson?: boolean;
-	isStructured?: boolean;
+	/** Parse result cached by getStructuredLog; absent until first requested. */
+	structured?: StructuredLogResult;
+}
+
+export interface StructuredLogResult {
+	isJson: boolean;
+	isStructured: boolean;
+	parsed?: Record<string, unknown> | unknown[];
 }
 
 export interface LogViewerDisplayEntry {
@@ -70,8 +75,8 @@ function canGroupLogEntries(previous: LogViewerEntry, current: LogViewerEntry): 
 		previous.containerId === current.containerId &&
 		previous.level === current.level &&
 		looksLikeMultilineContinuation(previous.message, current.message) &&
-		!previous.isStructured &&
-		!current.isStructured
+		!getStructuredLog(previous).isStructured &&
+		!getStructuredLog(current).isStructured
 	);
 }
 
@@ -254,11 +259,13 @@ function tryParseLogfmt(message: string): Record<string, unknown> | null {
 	return Object.keys(parsed).length > 0 ? parsed : null;
 }
 
-export function tryParseStructuredLog(message: string): {
-	isJson: boolean;
-	isStructured: boolean;
-	parsed?: Record<string, unknown> | unknown[];
-} {
+/** Parses an entry's message on first use and caches the result on the entry. */
+export function getStructuredLog(entry: LogViewerEntry): StructuredLogResult {
+	entry.structured ??= tryParseStructuredLog(entry.message);
+	return entry.structured;
+}
+
+function tryParseStructuredLog(message: string): StructuredLogResult {
 	const trimmed = sanitizeLogText(message).trim();
 	if (!trimmed) {
 		return { isJson: false, isStructured: false };

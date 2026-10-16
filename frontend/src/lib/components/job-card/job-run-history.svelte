@@ -13,7 +13,7 @@
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { formatDateTimeShort } from '#lib/utils/formatting.js';
 
-	import { jobStatusLabel, jobStatusTone, jobStepLabel } from './job-status';
+	import { isJobRunPending, jobStatusLabel, jobStatusTone, jobStepLabel } from './job-status';
 
 	// Renders the run list and selected-run detail; the host decides where it lives (panel or dialog).
 	let {
@@ -42,13 +42,14 @@
 	const runs = createQuery(() => ({
 		queryKey: queryKeys.jobs.runs(environmentId, jobId, page),
 		queryFn: () => jobScheduleService.listRuns(jobId, environmentId, page),
-		refetchInterval: 5000
+		// Idle polling still picks up scheduled runs.
+		refetchInterval: (query) => (query.state.data?.runs.some((run) => isJobRunPending(run.status)) ? 5000 : 30_000)
 	}));
 	const detail = createQuery(() => ({
 		queryKey: queryKeys.jobs.run(environmentId, jobId, selected),
 		queryFn: () => jobScheduleService.getRun(jobId, selected!, environmentId),
 		enabled: !!selected,
-		refetchInterval: 5000
+		refetchInterval: (query) => (isJobRunPending(query.state.data?.status) ? 5000 : false)
 	}));
 	const action = createMutation(() => ({
 		mutationFn: ({ runId, action }: { runId: string; action: 'retry' | 'cancel' }) =>

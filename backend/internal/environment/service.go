@@ -3,6 +3,7 @@ package environment
 import (
 	"cmp"
 	"context"
+	"crypto/subtle"
 	"errors"
 	"fmt"
 	"hash/maphash"
@@ -66,22 +67,16 @@ type EnvironmentService struct {
 	remoteEnvs       *remoteEnvSnapshotCache
 	environmentCache *hot.HotCache[environmentCacheKey, Environment]
 	environmentGens  [environmentCacheStripes]atomic.Uint64
+	accessTokens     *hot.HotCache[string, string]
+	jobs             *entityjobs.Registry
 
-	// jobs holds one health-check job per enabled environment; SetScheduler wires it on the manager.
-	jobs *entityjobs.Registry
-
-	// variableSyncer is set by SetVariableSyncer on the manager to avoid a wire cycle.
-	variableSyncer VariableSyncer
-
+	variableSyncer  VariableSyncer
 	runtimeWatchers runtimeWatchers
-
-	// syncGate skips agent config pushes while the last accepted payload is unchanged.
-	syncGate *utils.SyncGate
-
-	proxy    *proxy.Service
-	health   *health.Service
-	snippets *snippets.Service
-	swarm    *swarm.Service
+	syncGate        *utils.SyncGate
+	proxy           *proxy.Service
+	health          *health.Service
+	snippets        *snippets.Service
+	swarm           *swarm.Service
 }
 
 const (
@@ -167,6 +162,7 @@ func NewEnvironmentService(
 			WithMissingSharedCache().
 			WithJanitor().
 			Build(),
+		accessTokens:    hot.NewHotCache[string, string](hot.LRU, 1024).WithTTL(environmentCacheTTL).WithJanitor().Build(),
 		jobs:            entityjobs.New(environmentHealthJobPrefix, environmentHealthAdmissionScope),
 		runtimeWatchers: runtimeWatchers{chans: make(map[int]chan struct{})},
 		proxy:           proxy.New(db, httpClient, settingsService, syncGate),
@@ -612,6 +608,14 @@ func (s *EnvironmentService) ResolveEnvironmentByAccessToken(ctx context.Context
 		return nil, ErrEnvironmentAccessTokenRequired
 	}
 
+	if envID, ok, _ := s.accessTokens.Get(token); ok {
+		cached, err := s.GetEnvironmentByIDCached(ctx, envID)
+		if err == nil && subtle.ConstantTimeCompare([]byte(kit.FromPtr(cached.AccessToken)), []byte(token)) == 1 {
+			return cached, nil
+		}
+		s.accessTokens.Delete(token)
+	}
+
 	var env Environment
 	if err := s.db.WithContext(ctx).
 		Where("access_token = ?", token).
@@ -622,6 +626,7 @@ func (s *EnvironmentService) ResolveEnvironmentByAccessToken(ctx context.Context
 		return nil, fmt.Errorf("failed to resolve environment by access token: %w", err)
 	}
 
+	s.accessTokens.Set(token, env.ID)
 	return &env, nil
 }
 

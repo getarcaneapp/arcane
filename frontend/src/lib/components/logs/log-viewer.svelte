@@ -2,9 +2,11 @@
 	// Dozzle reference: the grouped row shell and left-side timestamp treatment here were
 	// informed by amir20/dozzle's LogItem.vue and GroupedLogItem.vue.
 	import { dev } from '$app/env';
-	import { onDestroy } from 'svelte';
+	import { onDestroy, untrack } from 'svelte';
 
 	import * as Collapsible from '#lib/components/ui/collapsible/index.js';
+	import { createVirtualizer } from '#lib/components/ui/virtualizer.svelte.js';
+	import VirtualRows from '#lib/components/virtual-rows.svelte';
 	import { ArrowDownIcon, ArrowRightIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
@@ -13,12 +15,7 @@
 	import { tryCatch } from '#lib/utils/try-catch.js';
 	import { ReconnectingWebSocket } from '#lib/utils/ws.js';
 
-	import {
-		buildLogDisplayEntries,
-		tryParseStructuredLog,
-		type LogViewerDisplayEntry,
-		type LogViewerEntry
-	} from './log-viewer.utils';
+	import { buildLogDisplayEntries, getStructuredLog, type LogViewerDisplayEntry, type LogViewerEntry } from './log-viewer.utils';
 	import StructuredLogEntry from './structured-log-entry.svelte';
 
 	interface Props {
@@ -65,8 +62,10 @@
 	}: Props = $props();
 
 	let logs = $state.raw<LogViewerEntry[]>([]);
+	// Bumped when entries are pushed onto `logs` in place, which $state.raw does not track.
+	let logsVersion = $state(0);
 	let pending: LogViewerEntry[] = [];
-	let flushScheduled = false;
+	let flushFrame: number | null = null;
 	let seq = 0;
 
 	let dropBefore = $state(0);
@@ -75,18 +74,21 @@
 	let lastCompactSeq = 0;
 
 	let visibleLogs = $derived.by(() => {
+		void logsVersion;
 		const kept = dropBefore === 0 ? logs : logs.filter((l) => l.id >= dropBefore);
 		const term = searchTerm.trim().toLowerCase();
 		if (!term) return kept;
 		return kept.filter((l) => l.message.toLowerCase().includes(term) || l.service?.toLowerCase().includes(term));
 	});
 
-	let displayLogs = $derived.by(() =>
-		buildLogDisplayEntries(visibleLogs, {
+	// Reads logsVersion directly: an in-place append leaves visibleLogs referentially unchanged.
+	let displayLogs = $derived.by(() => {
+		void logsVersion;
+		return buildLogDisplayEntries(visibleLogs, {
 			groupAdjacentLines,
 			type
-		})
-	);
+		});
+	});
 	let expandedGroups = $state<Set<number>>(new Set());
 	let hasAutoEnabledStructuredView = $state(false);
 
@@ -108,25 +110,26 @@
 	}
 
 	function scheduleFlush() {
-		if (flushScheduled) return;
-		flushScheduled = true;
-		queueMicrotask(() => {
-			flushScheduled = false;
+		if (flushFrame !== null) return;
+		flushFrame = requestAnimationFrame(() => {
+			flushFrame = null;
 			if (!pending.length) return;
-			logs = [...logs, ...pending];
+			for (const entry of pending) logs.push(entry);
 			pending = [];
+			logsVersion++;
 			if (logs.length > maxLines * COMPACT_FACTOR) {
 				maybeCompact();
-			}
-			if (autoScroll && logContainer) {
-				requestAnimationFrame(() => {
-					if (logContainer) logContainer.scrollTop = logContainer.scrollHeight;
-				});
 			}
 		});
 	}
 
+	function cancelFlush() {
+		if (flushFrame !== null) cancelAnimationFrame(flushFrame);
+		flushFrame = null;
+	}
+
 	function resetLogState() {
+		cancelFlush();
 		logs = [];
 		pending = [];
 		seq = 0;
@@ -335,29 +338,29 @@
 	}
 
 	function addLogEntry(logData: { level: string; message: string; timestamp?: string; service?: string; containerId?: string }) {
-		const timestamp = logData.timestamp || nowInstantString();
-		const { isJson, isStructured, parsed } = tryParseStructuredLog(logData.message);
+		const entry: LogViewerEntry = {
+			id: seq++,
+			timestamp: logData.timestamp || nowInstantString(),
+			level: logData.level as LogViewerEntry['level'],
+			message: logData.message,
+			service: logData.service,
+			containerId: logData.containerId ?? (type === 'container' ? (containerId ?? undefined) : undefined)
+		};
 
-		if (isStructured && !hasAutoEnabledStructuredView && !showParsedJson) {
+		// Parse eagerly only while detecting whether to auto-enable the structured view.
+		if (!hasAutoEnabledStructuredView && !showParsedJson && getStructuredLog(entry).isStructured) {
 			hasAutoEnabledStructuredView = true;
 			showParsedJson = true;
 		}
 
-		pending.push({
-			id: seq++,
-			timestamp,
-			level: logData.level as LogViewerEntry['level'],
-			message: logData.message,
-			service: logData.service,
-			containerId: logData.containerId ?? (type === 'container' ? (containerId ?? undefined) : undefined),
-			isJson,
-			isStructured,
-			parsedJson: parsed
-		});
+		pending.push(entry);
+		// Animation frames pause in hidden tabs, so bound the queue to what a flush would keep.
+		if (pending.length > maxLines * COMPACT_FACTOR) pending = pending.slice(-Math.max(1, maxLines));
 		scheduleFlush();
 	}
 
 	onDestroy(() => {
+		cancelFlush();
 		stopLogStream(false);
 	});
 
@@ -415,6 +418,27 @@
 	function isStructuredLogData(value: unknown): value is Record<string, unknown> {
 		return !!value && typeof value === 'object' && !Array.isArray(value);
 	}
+
+	// Keep short logs on the plain render path.
+	const VIRTUALIZE_THRESHOLD = 100;
+	const shouldVirtualize = $derived(displayLogs.length > VIRTUALIZE_THRESHOLD);
+	const rowVirtualizer = createVirtualizer<HTMLElement, HTMLDivElement>(() => ({
+		count: displayLogs.length,
+		getScrollElement: () => logContainer ?? null,
+		getItemKey: (index) => displayLogs[index]?.key ?? index,
+		estimateSize: () => 32,
+		overscan: 12,
+		enabled: shouldVirtualize && !!logContainer
+	}));
+
+	// Follow new output (and late row measurements) to the bottom while auto-scroll is on.
+	$effect(() => {
+		void displayLogs;
+		void rowVirtualizer.totalSize;
+		if (logContainer && untrack(() => autoScroll)) {
+			logContainer.scrollTop = logContainer.scrollHeight;
+		}
+	});
 
 	$effect(() => {
 		const key = streamKey();
@@ -492,9 +516,10 @@
 </script>
 
 {#snippet renderLogMessage(entry: LogViewerEntry, contentClass: string)}
+	{@const structured = showParsedJson ? getStructuredLog(entry) : null}
 	<div class={contentClass}>
-		{#if entry.isStructured && showParsedJson && isStructuredLogData(entry.parsedJson)}
-			<StructuredLogEntry data={entry.parsedJson} rawJson={entry.message} />
+		{#if structured?.isStructured && isStructuredLogData(structured.parsed)}
+			<StructuredLogEntry data={structured.parsed} rawJson={entry.message} />
 		{:else}
 			{@html ansiToHtml(entry.message)}
 		{/if}
@@ -542,6 +567,102 @@
 	</div>
 {/snippet}
 
+{#snippet logRow(displayLog: LogViewerDisplayEntry, index: number)}
+	<!-- Mobile view -->
+	<div
+		class={cn(
+			'border-l-2 border-transparent px-3 py-2 transition-colors hover:border-info hover:bg-card/50 sm:hidden',
+			index % 2 === 1 && 'bg-card/60'
+		)}
+	>
+		<div class="mb-1 flex flex-wrap items-center gap-2 text-xs">
+			{#if showTimestamps && getDisplayEntryTimestamp(displayLog)}
+				<span
+					class="inline-flex shrink-0 self-start rounded-md border border-info/15 bg-card px-2 py-1 font-semibold text-info tabular-nums"
+					title={getDisplayEntryTimestamp(displayLog)}
+				>
+					{formatLogTimestamp(getDisplayEntryTimestamp(displayLog))}
+				</span>
+			{/if}
+			{#if type === 'project' && getDisplayEntryService(displayLog)}
+				<span
+					class="shrink-0 truncate font-semibold {getServiceColor(getDisplayEntryService(displayLog)!)}"
+					title={getDisplayEntryService(displayLog)}
+				>
+					{getDisplayEntryService(displayLog)}
+				</span>
+			{/if}
+			{@render renderLevelLabel(getDisplayEntryLevel(displayLog), '')}
+		</div>
+		{#if displayLog.grouped}
+			<Collapsible.Root open={isGroupExpanded(displayLog)} onOpenChange={(open: boolean) => setGroupExpanded(displayLog, open)}>
+				{@render renderGroupedSummary(displayLog, 'text-sm break-words whitespace-pre-wrap text-foreground/80')}
+				<Collapsible.Content>
+					<div class="mt-2 space-y-1.5 border-l border-border pl-4">
+						{#each displayLog.entries.slice(1) as entry (entry.id)}
+							{@render renderLogMessage(entry, 'text-sm break-words whitespace-pre-wrap text-foreground/80')}
+						{/each}
+					</div>
+				</Collapsible.Content>
+			</Collapsible.Root>
+		{:else}
+			<div class="flex flex-col gap-1.5">
+				{#each displayLog.entries as entry (entry.id)}
+					{@render renderLogMessage(entry, 'text-sm break-words whitespace-pre-wrap text-foreground/80')}
+				{/each}
+			</div>
+		{/if}
+	</div>
+
+	<!-- Desktop view -->
+	<div
+		class={cn(
+			'hidden items-start border-l-2 border-transparent px-3 py-1.5 transition-colors hover:border-info hover:bg-card/50 sm:flex',
+			index % 2 === 1 && 'bg-card/60'
+		)}
+	>
+		{#if showTimestamps && getDisplayEntryTimestamp(displayLog)}
+			<span
+				class="mr-3 inline-flex min-w-44.5 shrink-0 self-start rounded-md border border-info/15 bg-card px-2.5 py-1 text-2xs font-semibold text-info tabular-nums"
+				title={getDisplayEntryTimestamp(displayLog)}
+			>
+				{formatLogTimestamp(getDisplayEntryTimestamp(displayLog))}
+			</span>
+		{/if}
+		{#if type === 'project' && getDisplayEntryService(displayLog)}
+			<span
+				class="mr-3 max-w-30 min-w-30 shrink-0 truncate text-xs font-semibold {getServiceColor(
+					getDisplayEntryService(displayLog)!
+				)}"
+				title={getDisplayEntryService(displayLog)}
+			>
+				{getDisplayEntryService(displayLog)}
+			</span>
+		{/if}
+		{@render renderLevelLabel(getDisplayEntryLevel(displayLog), 'mr-2 min-w-fit pt-1 text-xs')}
+		<div class="min-w-0 flex-1">
+			{#if displayLog.grouped}
+				<Collapsible.Root open={isGroupExpanded(displayLog)} onOpenChange={(open: boolean) => setGroupExpanded(displayLog, open)}>
+					{@render renderGroupedSummary(displayLog, 'break-words whitespace-pre-wrap text-foreground/80')}
+					<Collapsible.Content>
+						<div class="mt-2 space-y-1 border-l border-border pl-4">
+							{#each displayLog.entries.slice(1) as entry (entry.id)}
+								{@render renderLogMessage(entry, 'break-words whitespace-pre-wrap text-foreground/80')}
+							{/each}
+						</div>
+					</Collapsible.Content>
+				</Collapsible.Root>
+			{:else}
+				<div class="flex flex-1 flex-col gap-1">
+					{#each displayLog.entries as entry (entry.id)}
+						{@render renderLogMessage(entry, 'break-words whitespace-pre-wrap text-foreground/80')}
+					{/each}
+				</div>
+			{/if}
+		</div>
+	</div>
+{/snippet}
+
 <div
 	class={cn(
 		'dark rounded-t-none rounded-b-xl border bg-black text-white',
@@ -580,107 +701,11 @@
 					{m.log_viewer_waiting_for_logs()}
 				{/if}
 			</div>
+		{:else if shouldVirtualize}
+			<VirtualRows virtualizer={rowVirtualizer} rows={displayLogs} row={logRow} />
 		{:else}
 			{#each displayLogs as displayLog, index (displayLog.key)}
-				<!-- Mobile view -->
-				<div
-					class={cn(
-						'border-l-2 border-transparent px-3 py-2 transition-colors hover:border-info hover:bg-card/50 sm:hidden',
-						index % 2 === 1 && 'bg-card/60'
-					)}
-				>
-					<div class="mb-1 flex flex-wrap items-center gap-2 text-xs">
-						{#if showTimestamps && getDisplayEntryTimestamp(displayLog)}
-							<span
-								class="inline-flex shrink-0 self-start rounded-md border border-info/15 bg-card px-2 py-1 font-semibold text-info tabular-nums"
-								title={getDisplayEntryTimestamp(displayLog)}
-							>
-								{formatLogTimestamp(getDisplayEntryTimestamp(displayLog))}
-							</span>
-						{/if}
-						{#if type === 'project' && getDisplayEntryService(displayLog)}
-							<span
-								class="shrink-0 truncate font-semibold {getServiceColor(getDisplayEntryService(displayLog)!)}"
-								title={getDisplayEntryService(displayLog)}
-							>
-								{getDisplayEntryService(displayLog)}
-							</span>
-						{/if}
-						{@render renderLevelLabel(getDisplayEntryLevel(displayLog), '')}
-					</div>
-					{#if displayLog.grouped}
-						<Collapsible.Root
-							open={isGroupExpanded(displayLog)}
-							onOpenChange={(open: boolean) => setGroupExpanded(displayLog, open)}
-						>
-							{@render renderGroupedSummary(displayLog, 'text-sm break-words whitespace-pre-wrap text-foreground/80')}
-							<Collapsible.Content>
-								<div class="mt-2 space-y-1.5 border-l border-border pl-4">
-									{#each displayLog.entries.slice(1) as entry (entry.id)}
-										{@render renderLogMessage(entry, 'text-sm break-words whitespace-pre-wrap text-foreground/80')}
-									{/each}
-								</div>
-							</Collapsible.Content>
-						</Collapsible.Root>
-					{:else}
-						<div class="flex flex-col gap-1.5">
-							{#each displayLog.entries as entry (entry.id)}
-								{@render renderLogMessage(entry, 'text-sm break-words whitespace-pre-wrap text-foreground/80')}
-							{/each}
-						</div>
-					{/if}
-				</div>
-
-				<!-- Desktop view -->
-				<div
-					class={cn(
-						'hidden items-start border-l-2 border-transparent px-3 py-1.5 transition-colors hover:border-info hover:bg-card/50 sm:flex',
-						index % 2 === 1 && 'bg-card/60'
-					)}
-				>
-					{#if showTimestamps && getDisplayEntryTimestamp(displayLog)}
-						<span
-							class="mr-3 inline-flex min-w-44.5 shrink-0 self-start rounded-md border border-info/15 bg-card px-2.5 py-1 text-2xs font-semibold text-info tabular-nums"
-							title={getDisplayEntryTimestamp(displayLog)}
-						>
-							{formatLogTimestamp(getDisplayEntryTimestamp(displayLog))}
-						</span>
-					{/if}
-					{#if type === 'project' && getDisplayEntryService(displayLog)}
-						<span
-							class="mr-3 max-w-30 min-w-30 shrink-0 truncate text-xs font-semibold {getServiceColor(
-								getDisplayEntryService(displayLog)!
-							)}"
-							title={getDisplayEntryService(displayLog)}
-						>
-							{getDisplayEntryService(displayLog)}
-						</span>
-					{/if}
-					{@render renderLevelLabel(getDisplayEntryLevel(displayLog), 'mr-2 min-w-fit pt-1 text-xs')}
-					<div class="min-w-0 flex-1">
-						{#if displayLog.grouped}
-							<Collapsible.Root
-								open={isGroupExpanded(displayLog)}
-								onOpenChange={(open: boolean) => setGroupExpanded(displayLog, open)}
-							>
-								{@render renderGroupedSummary(displayLog, 'break-words whitespace-pre-wrap text-foreground/80')}
-								<Collapsible.Content>
-									<div class="mt-2 space-y-1 border-l border-border pl-4">
-										{#each displayLog.entries.slice(1) as entry (entry.id)}
-											{@render renderLogMessage(entry, 'break-words whitespace-pre-wrap text-foreground/80')}
-										{/each}
-									</div>
-								</Collapsible.Content>
-							</Collapsible.Root>
-						{:else}
-							<div class="flex flex-1 flex-col gap-1">
-								{#each displayLog.entries as entry (entry.id)}
-									{@render renderLogMessage(entry, 'break-words whitespace-pre-wrap text-foreground/80')}
-								{/each}
-							</div>
-						{/if}
-					</div>
-				</div>
+				{@render logRow(displayLog, index)}
 			{/each}
 		{/if}
 	</div>

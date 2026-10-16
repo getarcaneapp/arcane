@@ -1,10 +1,12 @@
 package projects
 
 import (
+	"cmp"
 	"context"
 	"io"
 	"log/slog"
 	"maps"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -126,32 +128,30 @@ func NewClient(ctx context.Context, dockerHost string, authConfigs map[string]re
 }
 
 type plainComposeClientEntryInternal struct {
-	dockerHost string
-	client     *Client
+	host   string
+	client *Client
 }
 
 var plainComposeClient atomic.Pointer[plainComposeClientEntryInternal]
 
-func plainComposeClientInternal(ctx context.Context, dockerHost string) (*Client, bool, error) {
-	if dockerHost == "" {
-		c, err := NewClient(ctx, "", nil, nil)
-		return c, false, err
-	}
-
-	if entry := plainComposeClient.Load(); entry != nil && entry.dockerHost == dockerHost {
-		return entry.client, true, nil
+// plainComposeClientInternal returns the shared read-only compose client for
+// dockerHost; empty resolves the host from the process environment.
+func plainComposeClientInternal(dockerHost string) (*Client, error) {
+	host := cmp.Or(dockerHost, os.Getenv("DOCKER_HOST"))
+	if entry := plainComposeClient.Load(); entry != nil && entry.host == host {
+		return entry.client, nil
 	}
 
 	// Built on context.Background so request-scoped values (progress
 	// writers, deadlines) do not leak into the long-lived client.
 	c, err := NewClient(context.Background(), dockerHost, nil, nil) //nolint:contextcheck,forbidigo // Cached Compose client must not retain request values or cancellation.
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
 	// Concurrent first calls may race and briefly duplicate a client; the
 	// last store wins and later calls converge on it.
-	plainComposeClient.Store(&plainComposeClientEntryInternal{dockerHost: dockerHost, client: c})
-	return c, true, nil
+	plainComposeClient.Store(&plainComposeClientEntryInternal{host: host, client: c})
+	return c, nil
 }
 
 func buildComposeAuthConfigsInternal(authConfigs map[string]registry.AuthConfig) map[string]clitypes.AuthConfig {

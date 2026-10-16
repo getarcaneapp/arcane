@@ -24,6 +24,7 @@ import (
 	"go.getarcane.app/kit/pkg/mapping"
 	"go.getarcane.app/streams/agg"
 	"go.getarcane.app/streams/bus"
+	"golang.org/x/sync/semaphore"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
 	"gorm.io/gorm"
@@ -39,12 +40,16 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 )
 
+// maxConcurrentEdgeSyncs bounds in-flight event forwards to the manager.
+const maxConcurrentEdgeSyncs = 16
+
 type EventService struct {
 	changes     *concurrency.Signal[struct{}]
 	correlation *correlation.Service
 	db          *database.DB
 	cfg         *config.Config
 	httpClient  *http.Client
+	edgeSyncs   *semaphore.Weighted
 }
 
 func NewEventService(db *database.DB, cfg *config.Config, httpClient *http.Client) *EventService {
@@ -59,6 +64,7 @@ func NewEventService(db *database.DB, cfg *config.Config, httpClient *http.Clien
 		db:          db,
 		cfg:         cfg,
 		httpClient:  httpClient,
+		edgeSyncs:   semaphore.NewWeighted(maxConcurrentEdgeSyncs),
 	}
 }
 
@@ -176,6 +182,12 @@ func (s *EventService) forwardEventToManager(ctx context.Context, eventModel *Ev
 	go func(parentCtx context.Context, outgoing *edge.TunnelEvent) {
 		syncCtx, cancel := context.WithTimeout(context.WithoutCancel(parentCtx), 10*time.Second)
 		defer cancel()
+
+		if err := s.edgeSyncs.Acquire(syncCtx, 1); err != nil {
+			slog.WarnContext(syncCtx, "Dropped event sync to manager; too many in flight", "type", outgoing.Type, "error", err)
+			return
+		}
+		defer s.edgeSyncs.Release(1)
 
 		if err := edge.PublishEventToManager(syncCtx, outgoing); err != nil {
 			if !errors.Is(err, edge.ErrNoActiveAgentTunnel) {

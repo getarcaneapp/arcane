@@ -1,5 +1,6 @@
 import { redirect } from '@sveltejs/kit';
 
+import { queryKeys } from '#lib/query/query-keys.js';
 import { roleService } from '#lib/services/role-service.js';
 import { userIsGlobalAdmin } from '#lib/utils/auth.js';
 
@@ -16,7 +17,7 @@ export const load: PageLoad = async ({ parent }) => {
 	}
 
 	const permissionsManifest = await queryClient.query({
-		queryKey: ['roles', 'permissions-manifest'],
+		queryKey: queryKeys.roles.permissionsManifest(),
 		queryFn: () => roleService.getPermissionsManifest()
 	});
 
