@@ -785,6 +785,7 @@
   "container_user_placeholder": "1000:1000 or username",
   "container_user_description": "User to run the container as",
   "container_hostname_placeholder": "my-hostname",
+  "container_hostname_invalid": "有効なホスト名を入力してください",
   "container_domain_label": "Domain Name",
   "container_domain_placeholder": "example.com",
   "container_compose_gitops_managed_title": "GitOps Managed - 読み取り専用",
