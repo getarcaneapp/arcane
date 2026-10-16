@@ -785,6 +785,7 @@
   "container_user_placeholder": "1000:1000 veya kullanıcı adı",
   "container_user_description": "Kullanıcının konteyneri şu şekilde çalıştırması",
   "container_hostname_placeholder": "benim-sunucu adım",
+  "container_hostname_invalid": "Geçerli bir ana bilgisayar adı girin",
   "container_domain_label": "Alan Adı",
   "container_domain_placeholder": "example.com",
   "container_compose_gitops_managed_title": "GitOps Yönetilen — Salt Okunur",
