@@ -10,13 +10,16 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"net/url"
 	"path"
 	"slices"
 	"strings"
+	"time"
 	"uuid"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	awss3 "github.com/aws/aws-sdk-go-v2/service/s3"
@@ -293,6 +296,15 @@ func isMissingResourceInternal(err error, codes ...string) bool {
 	return slices.Contains(codes, apiErr.ErrorCode())
 }
 
+type gcsHttpSigner struct {
+	wrapped awss3.HTTPSignerV4
+}
+
+func (s *gcsHttpSigner) SignHTTP(ctx context.Context, credentials aws.Credentials, req *http.Request, payloadHash string, service string, region string, signingTime time.Time, optFns ...func(*v4.SignerOptions)) error {
+	req.Header.Del("Accept-Encoding")
+	return s.wrapped.SignHTTP(ctx, credentials, req, payloadHash, service, region, signingTime, optFns...)
+}
+
 func newClientInternal(ctx context.Context, configuration Configuration) (*awss3.Client, error) {
 	region := cmp.Or(configuration.Region, "us-east-1")
 	awsConfiguration, err := awsconfig.LoadDefaultConfig(
@@ -311,6 +323,9 @@ func newClientInternal(ctx context.Context, configuration Configuration) (*awss3
 		options.ResponseChecksumValidation = aws.ResponseChecksumValidationWhenRequired
 		if endpoint != "" {
 			options.BaseEndpoint = aws.String(endpoint)
+		}
+		if endpoint == "https://storage.googleapis.com" {
+			options.HTTPSignerV4 = &gcsHttpSigner{wrapped: options.HTTPSignerV4}
 		}
 	}), nil
 }
