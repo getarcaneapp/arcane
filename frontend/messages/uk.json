@@ -785,6 +785,7 @@
   "container_user_placeholder": "1000:1000 або ім'я користувача",
   "container_user_description": "Користувач, від імені якого запускати контейнер",
   "container_hostname_placeholder": "my-hostname",
+  "container_hostname_invalid": "Введіть дійсне ім’я хоста",
   "container_domain_label": "Доменне ім'я",
   "container_domain_placeholder": "example.com",
   "container_compose_gitops_managed_title": "GitOps керований - тільки для читання",
