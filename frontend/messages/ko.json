@@ -785,6 +785,7 @@
   "container_user_placeholder": "1000:1000 또는 username",
   "container_user_description": "컨테이너를 실행할 사용자",
   "container_hostname_placeholder": "my-hostname",
+  "container_hostname_invalid": "유효한 호스트 이름을 입력하십시오",
   "container_domain_label": "도메인 이름",
   "container_domain_placeholder": "example.com",
   "container_compose_gitops_managed_title": "GitOps 관리됨 - 읽기 전용",
