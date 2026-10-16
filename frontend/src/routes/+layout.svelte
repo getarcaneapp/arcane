@@ -20,6 +20,7 @@
 	import { isAuthPagePath } from '#lib/services/api-service.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+	import { environmentName } from '#lib/utils/environments.js';
 	import { finishNavigation, startPageView } from '#lib/utils/telemetry.js';
 
 	import type { LayoutProps } from './$types';
@@ -71,9 +72,14 @@
 		}
 	});
 
+	// Detail pages opened with `?env=` return their own envId, which can differ from the selected environment.
+	const titleEnvironmentName = $derived(
+		typeof page.data['envId'] === 'string' ? environmentName(page.data['envId']) : environmentStore.selected?.name
+	);
+
 	// Root layout owns the document title; nested <title> tags are never restored on unmount.
 	const pageTitle = $derived(
-		[m.layout_title(), getNavigationTitleForPath(page.url.pathname), resourceName, environmentStore.selected?.name]
+		[m.layout_title(), getNavigationTitleForPath(page.url.pathname), resourceName, titleEnvironmentName]
 			.filter(Boolean)
 			.join(' | ')
 	);
