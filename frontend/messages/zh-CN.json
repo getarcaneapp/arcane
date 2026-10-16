@@ -785,6 +785,7 @@
   "container_user_placeholder": "1000:1000 或用户名",
   "container_user_description": "运行容器所使用的用户",
   "container_hostname_placeholder": "my-hostname",
+  "container_hostname_invalid": "请输入有效的主机名",
   "container_domain_label": "域名",
   "container_domain_placeholder": "example.com",
   "container_compose_gitops_managed_title": "GitOps 托管——只读",
