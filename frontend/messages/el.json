@@ -785,6 +785,7 @@
   "container_user_placeholder": "1000:1000 ή όνομα χρήστη",
   "container_user_description": "Χρήστης για εκτέλεση του container ως",
   "container_hostname_placeholder": "my-hostname",
+  "container_hostname_invalid": "Εισάγετε ένα έγκυρο όνομα διακομιστή",
   "container_domain_label": "Όνομα Domain",
   "container_domain_placeholder": "example.com",
   "container_compose_gitops_managed_title": "GitOps Managed - Μόνο για ανάγνωση",
