@@ -785,6 +785,7 @@
   "container_user_placeholder": "1000:1000 hoặc username",
   "container_user_description": "Người dùng để chạy Container",
   "container_hostname_placeholder": "tên-máy-chủ-của-tôi",
+  "container_hostname_invalid": "Nhập tên máy chủ hợp lệ",
   "container_domain_label": "Tên miền",
   "container_domain_placeholder": "example.com",
   "container_compose_gitops_managed_title": "GitOps được quản lý — Chỉ đọc",
