@@ -785,6 +785,7 @@
   "container_user_placeholder": "1000:1000 или логин",
   "container_user_description": "Пользователь для запуска контейнера",
   "container_hostname_placeholder": "my-hostname",
+  "container_hostname_invalid": "Введите допустимое имя хоста",
   "container_domain_label": "Доменное имя",
   "container_domain_placeholder": "example.com",
   "container_compose_gitops_managed_title": "Управляется GitOps - только для чтения",
