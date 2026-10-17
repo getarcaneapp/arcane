@@ -488,7 +488,7 @@ func finishLoadedProjectInternal(ctx context.Context,
 	prepare PrepareProjectFunc) (*composetypes.Project,
 	error,
 ) {
-	if err := applyServiceLabelMetadataInternal(project); err != nil {
+	if err := applyServiceLabelMetadata(project); err != nil {
 		return nil, err
 	}
 	project = project.WithoutUnnecessaryResources()

@@ -22,6 +22,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/iconcatalog"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/imageref"
 )
 
 const (
@@ -518,58 +519,65 @@ func NormalizeProjectTagColor(color projecttypes.TagColor) (projecttypes.TagColo
 	return normalized, nil
 }
 
-// applyServiceLabelMetadataInternal translates Compose metadata into the labels the
+// applyServiceLabelMetadata translates Compose metadata into the labels the
 // services consume, before previews or deployment use the model.
-func applyServiceLabelMetadataInternal(project *composetypes.Project) error {
-	defaults, err := updaterMetadataLabelsInternal(project.Extensions[arcaneBlockKey])
+func applyServiceLabelMetadata(project *composetypes.Project) error {
+	blockLabels := func(block any) (map[string]string, error) {
+		labels, err := updaterMetadataLabels(block)
+		if err != nil {
+			return nil, fmt.Errorf("x-arcane.updater: %w", err)
+		}
+		arcane, _ := kit.AsStringMap(block)
+		for _, metadata := range []struct {
+			key   string
+			label string
+		}{
+			{key: "hidden", label: libarcane.HiddenResourceLabel},
+			{key: "update-check", label: imageref.UpdateCheckLabel},
+		} {
+			value, present := arcane[metadata.key]
+			if !present {
+				continue
+			}
+			enabled, boolErr := metadataBool(value)
+			if boolErr != nil {
+				return nil, fmt.Errorf("x-arcane.%s: %w", metadata.key, boolErr)
+			}
+			labels[metadata.label] = strconv.FormatBool(enabled)
+		}
+		return labels, nil
+	}
+
+	defaults, err := blockLabels(project.Extensions[arcaneBlockKey])
 	if err != nil {
-		return fmt.Errorf("x-arcane.updater: %w", err)
+		return err
 	}
-	hiddenDefaults, err := hiddenMetadataLabelInternal(project.Extensions[arcaneBlockKey])
-	if err != nil {
-		return fmt.Errorf("x-arcane.hidden: %w", err)
-	}
-	if defaults == nil {
-		defaults = map[string]string{}
-	}
-	maps.Copy(defaults, hiddenDefaults)
 	for name, service := range project.Services {
-		overrides, updaterMetadataLabelsErr := updaterMetadataLabelsInternal(service.Extensions[arcaneBlockKey])
-		if updaterMetadataLabelsErr != nil {
-			return fmt.Errorf("service %s x-arcane.updater: %w", name, updaterMetadataLabelsErr)
+		overrides, overridesErr := blockLabels(service.Extensions[arcaneBlockKey])
+		if overridesErr != nil {
+			return fmt.Errorf("service %s %w", name, overridesErr)
 		}
-		effective := maps.Clone(defaults)
-		hiddenOverrides, updaterMetadataLabelsErr := hiddenMetadataLabelInternal(service.Extensions[arcaneBlockKey])
-		if updaterMetadataLabelsErr != nil {
-			return fmt.Errorf("service %s x-arcane.hidden: %w", name, updaterMetadataLabelsErr)
-		}
-		maps.Copy(effective, overrides)
-		maps.Copy(effective, hiddenOverrides)
-		if len(effective) == 0 {
+		if len(defaults)+len(overrides) == 0 {
 			continue
 		}
-		service.Labels = maps.Clone(service.Labels)
-		if service.Labels == nil {
-			service.Labels = composetypes.Labels{}
-		}
-		for key, value := range effective {
-			if _, explicit := service.Labels[key]; !explicit {
-				service.Labels[key] = value
-			}
-		}
+		labels := composetypes.Labels{}
+		maps.Copy(labels, defaults)
+		maps.Copy(labels, overrides)
+		maps.Copy(labels, service.Labels)
+		service.Labels = labels
 		project.Services[name] = service
 	}
 	return nil
 }
 
-func updaterMetadataLabelsInternal(block any) (map[string]string, error) {
+func updaterMetadataLabels(block any) (map[string]string, error) {
 	arcane, ok := kit.AsStringMap(block)
 	if !ok {
-		return nil, nil
+		return map[string]string{}, nil
 	}
 	raw, present := arcane["updater"]
 	if !present {
-		return nil, nil
+		return map[string]string{}, nil
 	}
 	config, ok := kit.AsStringMap(raw)
 	if !ok {
@@ -578,7 +586,7 @@ func updaterMetadataLabelsInternal(block any) (map[string]string, error) {
 	result := make(map[string]string, len(config))
 	for key, value := range config {
 		if key == "enabled" {
-			enabled, err := metadataBoolInternal(value)
+			enabled, err := metadataBool(value)
 			if err != nil {
 				return nil, err
 			}
@@ -609,23 +617,7 @@ func updaterMetadataLabelsInternal(block any) (map[string]string, error) {
 	return result, nil
 }
 
-func hiddenMetadataLabelInternal(block any) (map[string]string, error) {
-	arcane, ok := kit.AsStringMap(block)
-	if !ok {
-		return nil, nil
-	}
-	value, present := arcane["hidden"]
-	if !present {
-		return nil, nil
-	}
-	hidden, err := metadataBoolInternal(value)
-	if err != nil {
-		return nil, err
-	}
-	return map[string]string{libarcane.HiddenResourceLabel: strconv.FormatBool(hidden)}, nil
-}
-
-func metadataBoolInternal(value any) (bool, error) {
+func metadataBool(value any) (bool, error) {
 	if enabled, ok := value.(bool); ok {
 		return enabled, nil
 	}

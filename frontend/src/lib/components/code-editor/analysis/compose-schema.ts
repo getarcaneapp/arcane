@@ -72,6 +72,15 @@ const ARCANE_BLOCK_COMPLETIONS: ArcaneCompletionSpec[] = [
 		label: 'tags',
 		detail: 'Arcane project tags',
 		info: 'A tag or list of tags used to group and filter projects. Compose-defined tags are read-only in Arcane.'
+	},
+	{
+		label: 'update-check',
+		get detail() {
+			return m.editor_compose_update_check_detail();
+		},
+		get info() {
+			return m.editor_compose_update_check_info();
+		}
 	}
 ];
 
@@ -107,6 +116,15 @@ const ARCANE_SERVICE_BLOCK_COMPLETIONS: ArcaneCompletionSpec[] = [
 		label: 'icon-dark',
 		detail: 'Arcane service icon for light theme',
 		info: 'Dark service icon URL or catalog slug used in light theme.'
+	},
+	{
+		label: 'update-check',
+		get detail() {
+			return m.editor_compose_update_check_detail();
+		},
+		get info() {
+			return m.editor_compose_update_check_info();
+		}
 	}
 ];
 
@@ -380,6 +398,12 @@ const ARCANE_SCHEMA_DOCS: Record<string, SchemaDoc> = {
 			return m.editor_compose_hidden_info();
 		}
 	},
+	'x-arcane.update-check': {
+		title: 'x-arcane.update-check',
+		get description() {
+			return m.editor_compose_update_check_info();
+		}
+	},
 	'x-arcane.urls': {
 		title: 'x-arcane.urls',
 		description: 'Additional project URLs (for example docs, homepage, or dashboards).'
@@ -408,6 +432,8 @@ function getServiceArcaneSchemaDoc(path: Array<string | number>): SchemaDoc | nu
 	if (path.length === 3) return ARCANE_SCHEMA_DOCS['services.<name>.x-arcane'] ?? null;
 	if (path.length === 4 && path[3] === 'hidden')
 		return { ...ARCANE_SCHEMA_DOCS['x-arcane.hidden'], title: 'services.<name>.x-arcane.hidden' };
+	if (path.length === 4 && path[3] === 'update-check')
+		return { ...ARCANE_SCHEMA_DOCS['x-arcane.update-check'], title: 'services.<name>.x-arcane.update-check' };
 	if (path.length !== 4 || !['icon', 'icon-light', 'icon-dark'].includes(String(path[3]))) return null;
 	return {
 		title: `services.<name>.x-arcane.${String(path[3])}`,
@@ -439,7 +465,10 @@ function getArcaneSchemaDocForPath(path: Array<string | number>): SchemaDoc | nu
 	if (isServiceArcanePath(path.slice(0, 3))) return getServiceArcaneSchemaDoc(path);
 	if (path[0] !== 'x-arcane') return null;
 	if (path.length === 1) return ARCANE_SCHEMA_DOCS['x-arcane'] ?? null;
-	if (path.length === 2 && ['icon', 'icon-light', 'icon-dark', 'urls', 'tags', 'hidden'].includes(String(path[1])))
+	if (
+		path.length === 2 &&
+		['icon', 'icon-light', 'icon-dark', 'urls', 'tags', 'hidden', 'update-check'].includes(String(path[1]))
+	)
 		return ARCANE_SCHEMA_DOCS[`x-arcane.${path[1]}`] ?? null;
 	if (path.length === 4 && path[1] === 'tags' && typeof path[2] === 'number') {
 		return ARCANE_SCHEMA_DOCS[`x-arcane.tags[].${String(path[3])}`] ?? null;
@@ -545,8 +574,8 @@ export function getCompletionOptionsForPath(
 export function getEnumValueCompletions(schema: SchemaObject | null, path: Array<string | number>): Completion[] {
 	const values = new Set<string>();
 	if (
-		(path.length === 2 && path[0] === 'x-arcane' && path[1] === 'hidden') ||
-		(path.length === 4 && isServiceArcanePath(path.slice(0, 3)) && path[3] === 'hidden')
+		(path.length === 2 && path[0] === 'x-arcane' && ['hidden', 'update-check'].includes(String(path[1]))) ||
+		(path.length === 4 && isServiceArcanePath(path.slice(0, 3)) && ['hidden', 'update-check'].includes(String(path[3])))
 	) {
 		values.add('true');
 		values.add('false');

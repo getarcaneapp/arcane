@@ -10,6 +10,8 @@ import (
 	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
 	"github.com/stretchr/testify/require"
 	updaterlabels "go.getarcane.app/updater/labels"
+
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/imageref"
 )
 
 func TestParseArcaneComposeMetadata_InterpolationAndAnchor(t *testing.T) {
@@ -274,6 +276,62 @@ func TestUpdaterMetadataValidationInternal(t *testing.T) {
 			)
 			require.Error(t, err)
 			require.Contains(t, err.Error(), "updater")
+		})
+	}
+}
+
+func TestUpdateCheckMetadataLabels(t *testing.T) {
+	const content = `x-arcane:
+  update-check: false
+services:
+  inherited:
+    image: alpine:3.20.0
+  overridden:
+    image: alpine:3.20.0
+    x-arcane:
+      update-check: true
+  explicit:
+    image: alpine:3.20.0
+    labels:
+      com.getarcaneapp.arcane.update-check: "true"
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "compose.yaml")
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+	disk, err := LoadComposeProject(t.Context(), path, "metadata", dir, false, nil, nil, nil, false, nil, nil, nil)
+	require.NoError(t, err)
+	memory, err := LoadComposeProjectFromContent(
+		t.Context(),
+		projecttypes.ComposeContentOptions{
+			ComposeContent: content,
+			WorkingDir:     dir,
+			ProjectName:    "metadata",
+		},
+	)
+	require.NoError(t, err)
+	for _, project := range []*composetypes.Project{disk, memory} {
+		require.Equal(t, "false", project.Services["inherited"].Labels[imageref.UpdateCheckLabel])
+		require.Equal(t, "true", project.Services["overridden"].Labels[imageref.UpdateCheckLabel])
+		require.Equal(t, "true", project.Services["explicit"].Labels[imageref.UpdateCheckLabel])
+	}
+}
+
+func TestUpdateCheckMetadataValidation(t *testing.T) {
+	for _, content := range []string{
+		"services:\n  app:\n    image: alpine:3.20.0\nx-arcane:\n  update-check: maybe\n",
+		"services:\n  app:\n    image: alpine:3.20.0\n    x-arcane:\n      update-check: maybe\n",
+	} {
+		t.Run(content, func(t *testing.T) {
+			_, err := LoadComposeProjectFromContent(
+				t.Context(),
+				projecttypes.ComposeContentOptions{
+					ComposeContent: content,
+					WorkingDir:     t.TempDir(),
+					ProjectName:    "metadata",
+				},
+			)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "update-check")
 		})
 	}
 }
