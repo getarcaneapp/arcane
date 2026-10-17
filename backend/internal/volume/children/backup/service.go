@@ -687,6 +687,10 @@ func (s *Service) PruneLocalRepository(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	// Skip before re-keying, which would start Rustic against a missing repository.
+	if !s.localRusticRepositoryInitialized(ctx, dockerClient) {
+		return nil
+	}
 	repository, err := s.localRusticRepository(ctx, dockerClient, false)
 	if err != nil {
 		return err

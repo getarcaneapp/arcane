@@ -5,7 +5,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
+	"os"
+	"path"
 	"slices"
 	"strings"
 	"time"
@@ -51,6 +54,18 @@ func resolveBackupStorageMountFromMounts(ctx context.Context, mounts []container
 	}
 	mirroredMount.ReadOnly = readOnly
 	return mirroredMount
+}
+
+// localRusticRepositoryInitialized reports whether the local volume repository
+// has a Rustic config file. Only a /backups mount in the Arcane container can be
+// checked without starting Rustic, so any other setup counts as initialized.
+func (s *Service) localRusticRepositoryInitialized(ctx context.Context, dockerClient *client.Client) bool {
+	inspect, err := libarcane.InspectCurrentArcaneContainer(ctx, dockerClient)
+	if err != nil || docker.MountForDestination(inspect.Mounts, "/backups", "/backups") == nil {
+		return true
+	}
+	_, err = os.Stat(path.Join("/backups", path.Base(volumeRusticRepositoryPath), "config"))
+	return !errors.Is(err, fs.ErrNotExist)
 }
 
 // backupMountWarningFromArcaneMounts warns unless Arcane mounts /backups; a /restores mount also suppresses it for compatibility.
