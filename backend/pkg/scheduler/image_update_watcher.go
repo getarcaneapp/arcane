@@ -153,7 +153,7 @@ func (w *ImageUpdateWatcher) runEventLoopInternal(runCtx context.Context) error 
 	defer timer.Stop()
 	var workers sync.WaitGroup
 	defer workers.Wait()
-	metadata := make(chan error, 1)
+	metadata := make(chan struct{}, 1)
 	submitted := make(chan error, 1)
 	submitting := false
 	workers.Go(func() { w.runMetadataBackfillInternal(runCtx, metadata) })
@@ -220,7 +220,7 @@ func (w *ImageUpdateWatcher) reconnectEventsInternal(eventCh <-chan events.Messa
 	return eventCh, unsubscribe
 }
 
-func (w *ImageUpdateWatcher) runMetadataBackfillInternal(ctx context.Context, metadata chan<- error) {
+func (w *ImageUpdateWatcher) runMetadataBackfillInternal(ctx context.Context, metadata chan<- struct{}) {
 	for attempt := 1; ctx.Err() == nil; attempt++ {
 		var err error
 		func() {
@@ -229,7 +229,7 @@ func (w *ImageUpdateWatcher) runMetadataBackfillInternal(ctx context.Context, me
 		}()
 		if err == nil {
 			select {
-			case metadata <- nil:
+			case metadata <- struct{}{}:
 			case <-ctx.Done():
 			}
 			return

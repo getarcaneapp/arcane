@@ -5,6 +5,7 @@
 	import { toast } from 'svelte-sonner';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import EnvironmentCell from '#lib/components/arcane-table/cells/environment-cell.svelte';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 	import {
 		containerFormSchema,
@@ -81,6 +82,7 @@
 			/>
 			<div class="hidden h-4 w-px bg-border sm:block"></div>
 			<h1 class="truncate text-base font-semibold">{m.common_edit()} · {data.editConfig.name}</h1>
+			<EnvironmentCell value={data.envId} />
 		</div>
 	</div>
 

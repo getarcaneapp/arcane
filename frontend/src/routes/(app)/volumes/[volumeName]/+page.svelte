@@ -8,6 +8,7 @@
 	import { ActionButtonGroup } from '#lib/components/action-button-group/index.js';
 	import type { ActionButton } from '#lib/components/action-button-group/types.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import EnvironmentCell from '#lib/components/arcane-table/cells/environment-cell.svelte';
 	import InUseStatus from '#lib/components/arcane-table/cells/in-use-status.svelte';
 	import CodePanel from '#lib/components/code-panel.svelte';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog//index.js';
@@ -1106,6 +1107,7 @@
 					{#if volume.scope}
 						<Badge variant="purple" minWidth="20">{volume.scope}</Badge>
 					{/if}
+					<EnvironmentCell value={currentEnvId} />
 				</div>
 			</div>
 		{/snippet}

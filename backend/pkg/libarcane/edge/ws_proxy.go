@@ -97,7 +97,8 @@ func ProxyWebSocketRequest(c *echo.Context, tunnel *AgentTunnel, targetPath stri
 			return nil
 		case <-tunnel.done:
 			return nil
-		case <-pending.failureCh:
+		case failErr := <-pending.failureCh:
+			slog.DebugContext(ctx, "Edge WebSocket stream failed", "streamId", streamID, "error", failErr)
 			return nil
 		case <-clientDone:
 			return nil

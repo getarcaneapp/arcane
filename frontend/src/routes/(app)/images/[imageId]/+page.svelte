@@ -6,6 +6,7 @@
 
 	import type { ActionButton } from '#lib/components/action-button-group/types.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import EnvironmentCell from '#lib/components/arcane-table/cells/environment-cell.svelte';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 	import { DetailMetaStrip, DetailSection, KeyValueCard } from '#lib/components/resource-detail/index.js';
 	import { TabBar } from '#lib/components/tab-bar/index.js';
@@ -418,6 +419,10 @@
 </script>
 
 <ResourceDetailLayout backUrl="/images" backLabel={m.images()} title={detailTitle} {actions}>
+	{#snippet badges()}
+		<EnvironmentCell value={currentEnvId} />
+	{/snippet}
+
 	{#if image}
 		{#snippet kvTile(label: string, value: string, wide = false)}
 			<KeyValueCard {label} class={wide ? 'sm:col-span-2 lg:col-span-3' : undefined} valueTitle={value}>

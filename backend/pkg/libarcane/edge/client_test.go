@@ -1340,7 +1340,8 @@ func TestTunnelClient_connectAndServeManagedTunnel_AutoFallsBackToWebSocketWhenG
 	cancel()
 
 	select {
-	case <-errCh:
+	case err := <-errCh:
+		require.Error(t, err)
 	case <-time.After(2 * time.Second):
 		require.FailNow(t, "timeout waiting for auto fallback tunnel shutdown")
 	}
@@ -1378,7 +1379,8 @@ func TestTunnelClient_connectAndServeManagedTunnel_AutoFallsBackToWebSocketWhenG
 	cancel()
 
 	select {
-	case <-errCh:
+	case err := <-errCh:
+		require.Error(t, err)
 	case <-time.After(2 * time.Second):
 		require.FailNow(t, "timeout waiting for auto fallback tunnel shutdown")
 	}
@@ -2333,7 +2335,8 @@ func TestConnectAndServeWebSocket_CancelUnblocksMessageLoop(t *testing.T) {
 	cancel()
 
 	select {
-	case <-done:
+	case err := <-done:
+		require.Error(t, err)
 		// Cancellation must close the socket and unblock the message loop well
 		// under the poll-managed teardown timeout.
 	case <-time.After(defaultPollManagedSessionStopTimeout):

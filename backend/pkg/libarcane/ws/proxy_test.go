@@ -106,8 +106,8 @@ func TestProxyHTTP_RemoteClose(t *testing.T) {
 
 	// The proxy should complete (not hang)
 	select {
-	case <-proxyDone:
-		// OK
+	case proxyErr := <-proxyDone:
+		require.NoError(t, proxyErr)
 	case <-time.After(5 * time.Second):
 		require.FailNow(t, "ProxyHTTP did not return after remote closed")
 	}

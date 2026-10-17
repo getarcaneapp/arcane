@@ -395,7 +395,12 @@ Alternatively, --file replaces all policies from a raw JSON payload.`,
 				return err
 			}
 
-			req, err := opts.request(cmd, c)
+			var req backup.UpdateSystemBackupPolicies
+			if opts.file != "" {
+				req, err = opts.requestFromFile()
+			} else {
+				req, err = opts.requestFromFlags(cmd, c)
+			}
 			if err != nil {
 				return err
 			}
@@ -589,92 +594,96 @@ type policiesUpdateOptions struct {
 	s3Destination string
 }
 
-func (opts policiesUpdateOptions) request(cmd *cobra.Command, c *client.Client) (backup.UpdateSystemBackupPolicies, error) {
+func (opts policiesUpdateOptions) requestFromFile() (backup.UpdateSystemBackupPolicies, error) {
 	var req backup.UpdateSystemBackupPolicies
+	var data []byte
 	var err error
-	if opts.file != "" {
-		var data []byte
-		if opts.file == "-" {
-			data, err = io.ReadAll(os.Stdin)
-			if err != nil {
-				return req, fmt.Errorf("failed to read policies from stdin: %w", err)
-			}
-		} else {
-			data, err = os.ReadFile(opts.file)
-			if err != nil {
-				return req, fmt.Errorf("failed to read file %s: %w", opts.file, err)
-			}
-		}
-		if unmarshalErr := json.Unmarshal(data, &req); unmarshalErr != nil {
-			return req, fmt.Errorf("failed to parse policies file: %w", unmarshalErr)
+	if opts.file == "-" {
+		data, err = io.ReadAll(os.Stdin)
+		if err != nil {
+			return req, fmt.Errorf("failed to read policies from stdin: %w", err)
 		}
 	} else {
-		current, getPoliciesErr := c.DoJSON[backup.SystemBackupPolicyCollection](cmd.Context(), http.MethodGet, types.BackupsPolicies(), nil)
-		if getPoliciesErr != nil {
-			return req, fmt.Errorf("failed to get current backup policies: %w", getPoliciesErr)
+		data, err = os.ReadFile(opts.file)
+		if err != nil {
+			return req, fmt.Errorf("failed to read file %s: %w", opts.file, err)
 		}
+	}
+	if err = json.Unmarshal(data, &req); err != nil {
+		return req, fmt.Errorf("failed to parse policies file: %w", err)
+	}
+	return req, nil
+}
 
-		req.Policies = make([]backup.UpdateSystemBackupPolicy, len(current.Policies))
-		targetIndex := -1
-		for i, p := range current.Policies {
-			req.Policies[i] = backup.UpdateSystemBackupPolicy{
-				ID:              p.ID,
-				Enabled:         p.Enabled,
-				Schedule:        p.Schedule,
-				RetentionCount:  p.RetentionCount,
-				LocalEnabled:    p.LocalEnabled,
-				S3Enabled:       p.S3Enabled,
-				S3DestinationID: p.S3DestinationID,
-			}
-			if opts.id != "" && p.ID == opts.id {
-				targetIndex = i
-			}
-		}
+func (opts policiesUpdateOptions) requestFromFlags(cmd *cobra.Command, c *client.Client) (backup.UpdateSystemBackupPolicies, error) {
+	var req backup.UpdateSystemBackupPolicies
+	current, err := c.DoJSON[backup.SystemBackupPolicyCollection](cmd.Context(), http.MethodGet, types.BackupsPolicies(), nil)
+	if err != nil {
+		return req, fmt.Errorf("failed to get current backup policies: %w", err)
+	}
 
-		switch {
-		case opts.id != "" && targetIndex == -1:
-			return req, fmt.Errorf("policy %q not found; run `arcane admin backups policies`", opts.id)
-		case opts.id == "" && len(req.Policies) > 1:
-			return req, fmt.Errorf("%d backup policies exist; select one with --policy-id", len(req.Policies))
-		case opts.id == "" && len(req.Policies) == 1:
-			targetIndex = 0
-		case targetIndex == -1:
-			if !cmd.Flags().Changed("schedule") {
-				return req, errors.New("--schedule is required when creating a new backup policy")
-			}
-			// New policies default to local storage unless --local was set explicitly.
-			req.Policies = append(req.Policies, backup.UpdateSystemBackupPolicy{LocalEnabled: !cmd.Flags().Changed("local") || opts.local})
-			targetIndex = len(req.Policies) - 1
+	req.Policies = make([]backup.UpdateSystemBackupPolicy, len(current.Policies))
+	targetIndex := -1
+	for i, p := range current.Policies {
+		req.Policies[i] = backup.UpdateSystemBackupPolicy{
+			ID:              p.ID,
+			Enabled:         p.Enabled,
+			Schedule:        p.Schedule,
+			RetentionCount:  p.RetentionCount,
+			LocalEnabled:    p.LocalEnabled,
+			S3Enabled:       p.S3Enabled,
+			S3DestinationID: p.S3DestinationID,
 		}
-
-		target := &req.Policies[targetIndex]
-		// TODO(v3): drop the deprecated flag handling.
-		if cmd.Flags().Changed("enabled") || cmd.Flags().Changed("disabled") {
-			target.Enabled = opts.enabled && !opts.disabled
-		}
-		if cmd.Flags().Changed("schedule") {
-			target.Schedule = opts.schedule
-		}
-		if cmd.Flags().Changed("retention") {
-			target.RetentionCount = opts.retention
-		}
-		if cmd.Flags().Changed("local") {
-			target.LocalEnabled = opts.local
-		}
-		if cmd.Flags().Changed("s3") {
-			target.S3Enabled = opts.s3
-		}
-		if cmd.Flags().Changed("s3-destination") {
-			resolved, _, resolveErr := s3DestinationRef.Resolve(cmd.Context(), c, opts.s3Destination, cmdutil.AllowPrompt(cmd))
-			if resolveErr != nil {
-				return req, resolveErr
-			}
-			target.S3DestinationID = resolved.ID
-			if !cmd.Flags().Changed("s3") {
-				target.S3Enabled = true
-			}
+		if opts.id != "" && p.ID == opts.id {
+			targetIndex = i
 		}
 	}
 
-	return req, nil
+	switch {
+	case opts.id != "" && targetIndex == -1:
+		return req, fmt.Errorf("policy %q not found; run `arcane admin backups policies`", opts.id)
+	case opts.id == "" && len(req.Policies) > 1:
+		return req, fmt.Errorf("%d backup policies exist; select one with --policy-id", len(req.Policies))
+	case opts.id == "" && len(req.Policies) == 1:
+		targetIndex = 0
+	case targetIndex == -1:
+		if !cmd.Flags().Changed("schedule") {
+			return req, errors.New("--schedule is required when creating a new backup policy")
+		}
+		// New policies default to local storage unless --local was set explicitly.
+		req.Policies = append(req.Policies, backup.UpdateSystemBackupPolicy{LocalEnabled: !cmd.Flags().Changed("local") || opts.local})
+		targetIndex = len(req.Policies) - 1
+	}
+
+	return req, opts.applyFlags(cmd, c, &req.Policies[targetIndex])
+}
+
+func (opts policiesUpdateOptions) applyFlags(cmd *cobra.Command, c *client.Client, target *backup.UpdateSystemBackupPolicy) error {
+	// TODO(v3): drop the deprecated flag handling.
+	if cmd.Flags().Changed("enabled") || cmd.Flags().Changed("disabled") {
+		target.Enabled = opts.enabled && !opts.disabled
+	}
+	if cmd.Flags().Changed("schedule") {
+		target.Schedule = opts.schedule
+	}
+	if cmd.Flags().Changed("retention") {
+		target.RetentionCount = opts.retention
+	}
+	if cmd.Flags().Changed("local") {
+		target.LocalEnabled = opts.local
+	}
+	if cmd.Flags().Changed("s3") {
+		target.S3Enabled = opts.s3
+	}
+	if cmd.Flags().Changed("s3-destination") {
+		resolved, _, err := s3DestinationRef.Resolve(cmd.Context(), c, opts.s3Destination, cmdutil.AllowPrompt(cmd))
+		if err != nil {
+			return err
+		}
+		target.S3DestinationID = resolved.ID
+		if !cmd.Flags().Changed("s3") {
+			target.S3Enabled = true
+		}
+	}
+	return nil
 }

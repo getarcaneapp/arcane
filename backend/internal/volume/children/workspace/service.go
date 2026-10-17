@@ -382,7 +382,9 @@ func (s *Service) startVolumeWorkspaceReadInternal(ctx context.Context, containe
 	if payloadSize > uint64(1<<63-1) {
 		cancel()
 		_ = pipeReader.Close()
-		<-done
+		if execErr := <-done; execErr != nil && !errors.Is(execErr, context.Canceled) {
+			slog.DebugContext(ctx, "volume workspace read exec failed after rejecting oversized file", "error", execErr)
+		}
 		cleanup()
 		return nil, 0, errors.New("volume workspace file is too large")
 	}

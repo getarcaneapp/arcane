@@ -83,7 +83,10 @@ func drainLifecycleLogs(ctx context.Context, logsCancel context.CancelFunc, logs
 	timer := time.NewTimer(lifecycleStreamDrainTimeout)
 	defer timer.Stop()
 	select {
-	case <-logDone:
+	case err := <-logDone:
+		if err != nil {
+			slog.DebugContext(ctx, "lifecycle log copy ended with error", "error", err)
+		}
 	case <-timer.C:
 		slog.DebugContext(ctx, "lifecycle log stream did not close after container exit; force-closing")
 	}
