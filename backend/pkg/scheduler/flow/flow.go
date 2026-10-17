@@ -318,7 +318,8 @@ func (e *Engine) Wait(ctx context.Context, wf *Workflow, instanceID string) (sch
 }
 
 // Resume attaches to the run's active instance, or reads the result of one that finished before the run saved it.
-// It returns ErrNotResumable when the instance is gone or belongs to a version this host no longer serves.
+// When the instance is gone or belongs to a version this host no longer serves, a recorded non-failed result is
+// returned; otherwise it returns ErrNotResumable so the job's fallback can run.
 func (e *Engine) Resume(ctx context.Context, wf *Workflow, run scheduler.Run) (scheduler.Outcome, error) {
 	target, ok := activeTarget(run, wf.def.Name, true)
 	if !ok {
@@ -330,6 +331,13 @@ func (e *Engine) Resume(ctx context.Context, wf *Workflow, run scheduler.Run) (s
 		return scheduler.Outcome{}, fmt.Errorf("read %s instance: %w", wf.def.Name, err)
 	}
 	if err != nil || status.Version != wf.def.Version {
+		if target.Status.Terminal() && target.Status != scheduler.Failed {
+			return scheduler.Outcome{
+				Status:     target.Status,
+				Message:    target.Message,
+				ActivityID: target.ActivityID,
+			}, nil
+		}
 		if !target.Status.Terminal() {
 			e.supersede(ctx, wf, target, "Workflow instance could not be resumed")
 		}

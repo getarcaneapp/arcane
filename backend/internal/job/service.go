@@ -665,13 +665,16 @@ func (s *JobService) reconcileRun(ctx context.Context, run scheduler.Run) (sched
 	if err := s.authorizeRun(ctx, run); err != nil {
 		return scheduler.Outcome{Status: scheduler.Failed}, err
 	}
-	if run.EnvironmentID != "0" || safeJob(run.JobID) {
+	if run.EnvironmentID != "0" {
 		return s.executeRun(ctx, run)
 	}
 	if job, ok := s.scheduler.GetJob(run.JobID); ok {
 		if reconciler, localOk := job.(scheduler.Reconciler); localOk {
 			return reconciler.Reconcile(s.runs.ExecutionContext(ctx, run, ""), run)
 		}
+	}
+	if safeJob(run.JobID) {
+		return s.executeRun(ctx, run)
 	}
 	var activityIDs []string
 	for _, target := range run.Outcome.Targets {

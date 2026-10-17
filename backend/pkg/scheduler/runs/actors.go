@@ -25,6 +25,8 @@ const (
 	coordinatorTypeInternal    = "job-coordinator"
 	executorTypeInternal       = "job-executor"
 	healthExecutorTypeInternal = "job-health-executor"
+	orphanedDispatchAge        = 15 * time.Minute
+	outcomePersistGrace        = 30 * time.Second
 )
 
 type coordinatorActorInternal struct {
@@ -159,7 +161,7 @@ func (a *coordinatorActorInternal) flushInternal(ctx context.Context, state *st.
 		return a.q.service.SetAlarm(ctx, coordinatorTypeInternal, a.id, name, actor.AlarmProperties{DueTime: retryAt})
 	}
 	if selected.Status == st.Running {
-		active, err := a.reconcileDispatchInternal(ctx, state, *selected)
+		active, err := a.reconcileDispatch(ctx, state, *selected)
 		if err != nil {
 			return err
 		}
@@ -167,26 +169,27 @@ func (a *coordinatorActorInternal) flushInternal(ctx context.Context, state *st.
 			return nil
 		}
 	}
-	return a.dispatchRunInternal(ctx, state, *selected, selected.AttemptCount+1)
+	return a.dispatchRun(ctx, state, *selected, selected.AttemptCount+1)
 }
 
-// reconcileDispatchInternal recovers a lost job ID before considering redelivery.
-func (a *coordinatorActorInternal) reconcileDispatchInternal(ctx context.Context, state *st.CoordinatorState, run st.Run) (bool, error) {
+// reconcileDispatch recovers a lost job ID before considering redelivery.
+func (a *coordinatorActorInternal) reconcileDispatch(ctx context.Context, state *st.CoordinatorState, run st.Run) (bool, error) {
 	key := fmt.Sprintf("%s-%d", run.ID, run.AttemptCount)
 	previous, exists := state.Dispatches[key]
 	if !exists {
 		return false, nil
 	}
+	actorType := kit.Ternary(
+		strings.HasPrefix(run.JobID, "environment-health") || run.JobID == "docker-client-refresh" || run.JobID == "activity-sweep",
+		healthExecutorTypeInternal,
+		executorTypeInternal,
+	)
 	if previous.JobID == "" {
 		command := st.ExecutionCommand{
 			EnvironmentID: run.EnvironmentID,
 			JobID:         run.JobID,
 			RunID:         run.ID,
 			Attempt:       run.AttemptCount,
-		}
-		actorType := executorTypeInternal
-		if strings.HasPrefix(run.JobID, "environment-health") || run.JobID == "docker-client-refresh" || run.JobID == "activity-sweep" {
-			actorType = healthExecutorTypeInternal
 		}
 		id, _, err := a.q.service.Dispatch(ctx, actorType, a.id, "execute", command, actor.WithIdempotencyKey(key))
 		if err != nil {
@@ -206,22 +209,30 @@ func (a *coordinatorActorInternal) reconcileDispatchInternal(ctx context.Context
 	if err != nil {
 		return false, err
 	}
-	return !job.Status.IsTerminal(), nil
+	if job.Status != actor.JobStatusPending || time.Since(job.DueTime) < orphanedDispatchAge {
+		return !job.Status.IsTerminal(), nil
+	}
+	slog.WarnContext(ctx, "Deleting orphaned job dispatch", "runId", run.ID, "jobId", job.JobID, "dueTime", job.DueTime)
+	if deleteErr := a.q.service.DeleteJob(ctx, actorType, a.id, job.JobID, actor.WithLiveJobsOnly()); deleteErr != nil && !errors.Is(deleteErr, actor.ErrJobNotFound) {
+		return false, deleteErr
+	}
+	return false, nil
 }
 
-func (a *coordinatorActorInternal) dispatchRunInternal(ctx context.Context, state *st.CoordinatorState, run st.Run, attempt int) error {
+func (a *coordinatorActorInternal) dispatchRun(ctx context.Context, state *st.CoordinatorState, run st.Run, attempt int) error {
 	key := fmt.Sprintf("%s-%d", run.ID, attempt)
 	if state.Dispatches == nil {
 		state.Dispatches = make(map[string]st.DispatchIntent)
 	}
-	actorType := executorTypeInternal
-	if strings.HasPrefix(run.JobID, "environment-health") || run.JobID == "docker-client-refresh" || run.JobID == "activity-sweep" {
-		actorType = healthExecutorTypeInternal
-	}
+	actorType := kit.Ternary(
+		strings.HasPrefix(run.JobID, "environment-health") || run.JobID == "docker-client-refresh" || run.JobID == "activity-sweep",
+		healthExecutorTypeInternal,
+		executorTypeInternal,
+	)
 	intent := state.Dispatches[key]
 	if intent.JobID != "" {
 		job, err := a.q.service.GetJob(ctx, intent.JobID)
-		if err == nil && !job.Status.IsTerminal() {
+		if err == nil && !job.Status.IsTerminal() && (job.Status != actor.JobStatusPending || time.Since(job.DueTime) < orphanedDispatchAge) {
 			return nil
 		}
 		if err != nil && !errors.Is(err, actor.ErrJobNotFound) {
@@ -452,14 +463,18 @@ func (a *executorActorInternal) Job(ctx context.Context, _ string, data actor.En
 	if runErr != nil && outcome.Message == "" {
 		outcome.Message = runErr.Error()
 	}
-	if ctx.Err() != nil {
+	if runErr != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		q.persistOutcome(ctx, claim.Run, outcome)
 		return ctx.Err()
 	}
-	q.persistOutcomeInternal(ctx, claim.Run, outcome)
-	if ctx.Err() != nil {
-		return ctx.Err()
-	}
-	return nil
+	persistCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	defer cancel()
+	defer context.AfterFunc(ctx, func() { time.AfterFunc(outcomePersistGrace, cancel) })()
+	q.persistOutcome(persistCtx, claim.Run, outcome)
+	return ctx.Err()
 }
 
 func (q *Coordinator) claimExecutionInternal(ctx context.Context, command st.ExecutionCommand) (st.ExecutionClaim, error) {

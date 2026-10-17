@@ -336,11 +336,14 @@ func (q *Coordinator) dispatchInternal(ctx context.Context) {
 	}
 }
 
-func (q *Coordinator) persistOutcomeInternal(ctx context.Context, run st.Run, outcome st.Outcome) {
+func (q *Coordinator) persistOutcome(ctx context.Context, run st.Run, outcome st.Outcome) {
 	// Keep the execution slot until the terminal result has been durably recorded.
 	for {
+		var conflictOwner string
+		var conflictStatus st.RunStatus
 		err := q.UpdateRun(ctx, run, func(current *st.Run) error {
 			if current.Owner != run.Owner || current.Status != st.Running {
+				conflictOwner, conflictStatus = current.Owner, current.Status
 				return ErrRunConflict
 			}
 			now := time.Now().UTC()
@@ -374,7 +377,16 @@ func (q *Coordinator) persistOutcomeInternal(ctx context.Context, run st.Run, ou
 			}
 			return nil
 		})
-		if err == nil || errors.Is(err, ErrRunConflict) {
+		if errors.Is(err, ErrRunConflict) {
+			slog.WarnContext(ctx, "Discarding job result after ownership changed",
+				"runId", run.ID,
+				"expectedOwner", run.Owner,
+				"currentOwner", conflictOwner,
+				"currentStatus", conflictStatus,
+				"outcomeStatus", outcome.Status)
+			return
+		}
+		if err == nil {
 			return
 		}
 		slog.ErrorContext(ctx, "Unable to persist job result; retaining execution guard", "runId", run.ID, "error", err)

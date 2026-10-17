@@ -312,7 +312,7 @@ func TestAdmissionAndCompletionRejectStaleTokens(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, q.UpdateRun(t.Context(), run, func(current *st.Run) error { current.Status = st.Running; current.Owner = "new-token"; return nil }))
 	run.Owner = "stale-token"
-	q.persistOutcomeInternal(t.Context(), run, st.Outcome{Status: st.Succeeded})
+	q.persistOutcome(t.Context(), run, st.Outcome{Status: st.Succeeded})
 	persisted, err := q.Get(t.Context(), "0", run.JobID, run.ID)
 	require.NoError(t, err)
 	require.Equal(t, st.Running, persisted.Status)

@@ -300,9 +300,9 @@ type gcsHttpSigner struct {
 	wrapped awss3.HTTPSignerV4
 }
 
-func (s *gcsHttpSigner) SignHTTP(ctx context.Context, credentials aws.Credentials, req *http.Request, payloadHash string, service string, region string, signingTime time.Time, optFns ...func(*v4.SignerOptions)) error {
+func (s *gcsHttpSigner) SignHTTP(ctx context.Context, creds aws.Credentials, req *http.Request, payloadHash, service, region string, signingTime time.Time, optFns ...func(*v4.SignerOptions)) error {
 	req.Header.Del("Accept-Encoding")
-	return s.wrapped.SignHTTP(ctx, credentials, req, payloadHash, service, region, signingTime, optFns...)
+	return s.wrapped.SignHTTP(ctx, creds, req, payloadHash, service, region, signingTime, optFns...)
 }
 
 func newClientInternal(ctx context.Context, configuration Configuration) (*awss3.Client, error) {
