@@ -1992,6 +1992,7 @@
   "templates_template_name_placeholder": "Например, Мой проект Nginx",
   "templates_template_name_required": "Имя шаблона обязательно",
   "templates_template_description_placeholder": "Кратко опишите этот шаблон",
+  "templates_name_description_locked": "Название и описание шаблона из каталога шаблонов нельзя изменить.",
   "compose_content_is_required": "Требуется содержимое файла Compose",
   "templates_save_template_failed": "Не удалось сохранить шаблон",
   "templates_create_template_failed": "Не удалось создать шаблон",
