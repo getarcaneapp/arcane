@@ -292,6 +292,8 @@
   "prune_images_dialog_description": "Elektu, kiom agreseme Arcane devus purigi neuzatajn Docker-bildojn.",
   "auto_update_exclude_description": "Elektu ujojn, kiuj ne devus esti aŭtomate ĝisdatigitaj. Arcane daŭre kontrolas ilin por ĝisdatigoj kaj sendas sciigojn.",
   "auto_update_check_label_hint": "Por ĉesigi ĝisdatigokontrolojn kaj sciigojn por ujo, aldonu al ĝi la etikedon {label}.",
+  "auto_update_delay_label": "Ĝisdatiga prokrasto (horoj)",
+  "auto_update_delay_description": "Horoj, dum kiuj nova bildo devas esti disponebla, kalkulataj ekde kiam Arcane unue detektas ĝin, antaŭ ol aŭtomata ĝisdatigo ĝin instalas. 0 instalas tuj kaj manaj ĝisdatigoj neniam estas prokrastitaj. Superregas tion por ĉiu ujo per la etikedo {label}.",
   "auto_update_disabled_checks_continue": "Ĝisdatigaj kontroloj kaj sciigoj restas aktivigitaj; nur aŭtomata instalado estas malŝaltita.",
   "auto_update_title": "Aŭtomata ĝisdatigo",
   "auto_update_enabled_toast": "Aŭtomata ĝisdatigo ebligita",
