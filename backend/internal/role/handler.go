@@ -132,6 +132,8 @@ func (h *RoleHandler) UpdateRole(ctx context.Context, input *UpdateRoleInput) (*
 			return nil, huma.Error409Conflict("role name already in use")
 		case errors.Is(err, common.ErrUnknownPermission):
 			return nil, huma.Error400BadRequest(err.Error())
+		case errors.Is(err, common.ErrNoGlobalAdminRemains):
+			return nil, huma.Error409Conflict(err.Error())
 		}
 		return nil, huma.Error500InternalServerError("failed to update role: " + err.Error())
 	}

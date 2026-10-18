@@ -157,7 +157,11 @@ func legacyRolesContainsAdminInternal(raw string) bool {
 // non-service users resolve to global administrator permissions. Called at boot
 // after the backfill migration; also called from inside mutation paths.
 func (s *RoleService) AssertGlobalAdminExists(ctx context.Context) error {
-	count, err := s.countEffectiveGlobalAdminsInternal(ctx, s.db.WithContext(ctx), "")
+	return s.assertGlobalAdminExistsInternal(ctx, s.db.WithContext(ctx))
+}
+
+func (s *RoleService) assertGlobalAdminExistsInternal(ctx context.Context, tx *gorm.DB) error {
+	count, err := s.countEffectiveGlobalAdminsInternal(ctx, tx, "")
 	if err != nil {
 		return err
 	}
@@ -294,6 +298,12 @@ func (s *RoleService) UpdateRole(ctx context.Context, id, name string, descripti
 		if updateRoleErr := tx.Save(&existing).Error; updateRoleErr != nil {
 			return fmt.Errorf("failed to update role: %w", updateRoleErr)
 		}
+		// Narrowing a role can demote every holder, so re-check the global-admin guard.
+		if len(ids) > 0 {
+			if assertAdminErr := s.assertGlobalAdminExistsInternal(ctx, tx); assertAdminErr != nil {
+				return assertAdminErr
+			}
+		}
 		out = existing
 		return nil
 	})
@@ -328,6 +338,9 @@ func (s *RoleService) DeleteRole(ctx context.Context, id string) error {
 		affected = ids
 		if deleteRoleErr := tx.Delete(&Role{}, "id = ?", id).Error; deleteRoleErr != nil {
 			return fmt.Errorf("failed to delete role: %w", deleteRoleErr)
+		}
+		if len(ids) > 0 {
+			return s.assertGlobalAdminExistsInternal(ctx, tx)
 		}
 		return nil
 	})
@@ -417,14 +430,7 @@ func (s *RoleService) replaceUserAssignmentsForSourceInternal(ctx context.Contex
 				return fmt.Errorf("failed to insert %s assignments: %w", source, err)
 			}
 		}
-		count, err := s.countEffectiveGlobalAdminsInternal(ctx, tx, "")
-		if err != nil {
-			return err
-		}
-		if count == 0 {
-			return common.Classify(common.ErrNoGlobalAdminRemains, errors.New("At least one user must retain a global Admin role assignment")) //nolint:staticcheck // Preserve the existing error message.
-		}
-		return nil
+		return s.assertGlobalAdminExistsInternal(ctx, tx)
 	})
 	if err != nil {
 		return err
