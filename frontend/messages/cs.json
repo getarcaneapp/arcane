@@ -292,6 +292,8 @@
   "prune_images_dialog_description": "Zvolte, jak agresivně má Arcane pročišťovat nepoužívané Docker obrazy.",
   "auto_update_exclude_description": "Vyberte kontejnery, které by se neměly automaticky aktualizovat. Arcane je totiž neustále kontroluje, zda nejsou k dispozici aktualizace, a odesílá o tom oznámení.",
   "auto_update_check_label_hint": "Chcete-li u kontejneru zastavit kontrolu aktualizací a oznámení, přiřaďte mu štítek „ {label}“.",
+  "auto_update_delay_label": "Zpoždění aktualizace (hodiny)",
+  "auto_update_delay_description": "Počet hodin, po který musí být nový obraz k dispozici (počítáno od okamžiku, kdy jej Arcane poprvé detekuje), než jej automatická aktualizace nainstaluje. Hodnota 0 znamená okamžitou instalaci a ruční aktualizace se nikdy neodkládají. Tuto hodnotu lze pro jednotlivé kontejnery přepsat pomocí štítku {label}.",
   "auto_update_disabled_checks_continue": "Kontroly aktualizací a oznámení zůstávají zapnuté; vypnutá je pouze automatická instalace.",
   "auto_update_title": "Automatické aktualizace",
   "auto_update_enabled_toast": "Automatické aktualizace povoleny",
