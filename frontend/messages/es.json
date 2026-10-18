@@ -1992,6 +1992,7 @@
   "templates_template_name_placeholder": "p. ej. Mi proyecto Nginx",
   "templates_template_name_required": "El nombre de la plantilla es obligatorio",
   "templates_template_description_placeholder": "Describa brevemente esta plantilla",
+  "templates_name_description_locked": "No se puede modificar el nombre ni la descripción de una plantilla del directorio de plantillas.",
   "compose_content_is_required": "El contenido de Compose es obligatorio",
   "templates_save_template_failed": "No se ha podido guardar la plantilla",
   "templates_create_template_failed": "Error al crear plantilla",
