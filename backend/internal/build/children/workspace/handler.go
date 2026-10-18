@@ -2,7 +2,6 @@ package workspace
 
 import (
 	"context"
-	"io"
 	"path"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -41,13 +40,6 @@ type DownloadBuildFileInput struct {
 	Path          string `query:"path" doc:"File path"`
 }
 
-type DownloadBuildFileOutput struct {
-	ContentType        string `header:"Content-Type"`
-	ContentDisposition string `header:"Content-Disposition"`
-	ContentLength      int64  `header:"Content-Length"`
-	Body               io.ReadCloser
-}
-
 type UploadBuildFileInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Path          string `query:"path" default:"/" doc:"Destination path"`
@@ -83,17 +75,12 @@ func (h *Handler) GetFileContent(ctx context.Context, input *GetBuildFileContent
 	}}, nil
 }
 
-func (h *Handler) DownloadFile(ctx context.Context, input *DownloadBuildFileInput) (*DownloadBuildFileOutput, error) {
+func (h *Handler) DownloadFile(ctx context.Context, input *DownloadBuildFileInput) (*huma.StreamResponse, error) {
 	reader, size, err := h.service.DownloadFile(ctx, input.Path)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
-	return &DownloadBuildFileOutput{
-		ContentType:        "application/octet-stream",
-		ContentDisposition: "attachment; filename=" + path.Base(input.Path),
-		ContentLength:      size,
-		Body:               reader,
-	}, nil
+	return handlerutil.DownloadResponse(reader, size, path.Base(input.Path)), nil
 }
 
 func (h *Handler) UploadFile(ctx context.Context, input *UploadBuildFileInput) (*base.ApiResponse[base.MessageResponse], error) {
