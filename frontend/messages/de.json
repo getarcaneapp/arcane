@@ -1992,6 +1992,7 @@
   "templates_template_name_placeholder": "z.B. Mein Nginx-Stack",
   "templates_template_name_required": "Name der Vorlage ist erforderlich",
   "templates_template_description_placeholder": "Beschreiben Sie diese Vorlage kurz",
+  "templates_name_description_locked": "Der Name und die Beschreibung einer Vorlage aus dem Vorlagenverzeichnis können nicht geändert werden.",
   "compose_content_is_required": "Verfassen von Inhalten ist erforderlich",
   "templates_save_template_failed": "Vorlage konnte nicht gespeichert werden",
   "templates_create_template_failed": "Vorlage kann nicht erstellt werden",
