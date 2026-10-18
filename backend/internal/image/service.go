@@ -701,7 +701,7 @@ func (s *ImageService) PruneImages(ctx context.Context, options system.PruneImag
 			if strings.TrimSpace(options.Until) == "" {
 				return nil, errors.New("image prune mode olderThan requires until")
 			}
-			return make(client.Filters).Add("until", options.Until), nil
+			return make(client.Filters).Add("dangling", "false").Add("until", options.Until), nil
 		default:
 			return nil, fmt.Errorf("unsupported image prune mode: %s", options.Mode)
 		}
