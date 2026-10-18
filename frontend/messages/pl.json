@@ -292,6 +292,8 @@
   "prune_images_dialog_description": "Wybierz jak Arcane powinien usuwać nieużywane obrazy Docker'a.",
   "auto_update_exclude_description": "Wybierz kontenery, które nie powinny być automatycznie aktualizowane. Arcane ciągle sprawdza je pod kątem aktualizacji i wysyła powiadomienia.",
   "auto_update_check_label_hint": "Aby wyłączyć sprawdzanie dostępności aktualizacji i powiadomienia dla kontenera, należy przypisać do niego etykietę „ {label}”.",
+  "auto_update_delay_label": "Opóźnienie aktualizacji (godziny)",
+  "auto_update_delay_description": "Liczba godzin, po upływie których nowy obraz musi być dostępny – liczona od momentu, gdy Arcane po raz pierwszy go wykryje – zanim zostanie zainstalowany w ramach automatycznej aktualizacji. Wartość 0 oznacza natychmiastową instalację, a aktualizacje ręczne nigdy nie są opóźniane. Ustawienie to można nadpisać dla poszczególnych kontenerów za pomocą etykiety {label}.",
   "auto_update_disabled_checks_continue": "Sprawdzanie aktualizacji i powiadomienia pozostają włączone; wyłączona jest jedynie automatyczna instalacja.",
   "auto_update_title": "Automatyczna aktualizacja",
   "auto_update_enabled_toast": "Włączono automatyczną aktualizację",
