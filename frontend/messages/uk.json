@@ -1992,6 +1992,7 @@
   "templates_template_name_placeholder": "наприклад, мій стек Nginx",
   "templates_template_name_required": "Ім'я шаблону обов'язкове",
   "templates_template_description_placeholder": "Коротко опишіть цей шаблон",
+  "templates_name_description_locked": "Назву та опис шаблону з каталогу шаблонів змінити неможливо.",
   "compose_content_is_required": "Потрібно скласти контент",
   "templates_save_template_failed": "Не вдалося зберегти шаблон",
   "templates_create_template_failed": "Не вдалося створити шаблон",
