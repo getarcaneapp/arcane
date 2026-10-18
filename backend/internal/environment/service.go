@@ -96,7 +96,7 @@ const (
 var (
 	ErrEnvironmentAccessTokenRequired = errors.New("environment access token required")
 	ErrInvalidEnvironmentAccessToken  = errors.New("invalid environment access token")
-	ErrEnvironmentNotFound            = errors.New("environment not found")
+	ErrEnvironmentNotFound            = common.Classify(common.ErrNotFound, errors.New("environment not found"))
 )
 
 // VariableSyncer pushes the effective global-variable set to one environment.
@@ -1368,9 +1368,12 @@ func (s *EnvironmentService) UpdateEnvironmentHeartbeat(ctx context.Context, id 
 
 	if result.RowsAffected > 0 {
 		s.NotifyRuntimeStateChanged()
+		return nil
 	}
 
-	return nil
+	// No row changed: the heartbeat was throttled or the environment does not exist.
+	_, err := s.GetEnvironmentByIDCached(ctx, id)
+	return err
 }
 
 // UpdateEnvironmentConnectionState records an edge tunnel connect or disconnect

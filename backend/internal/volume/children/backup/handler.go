@@ -179,6 +179,9 @@ func (h *Handler) DeleteBackup(ctx context.Context, input *DeleteBackupInput) (*
 	}, func(runtimeCtx context.Context) error {
 		return h.service.DeleteBackup(runtimeCtx, input.BackupID, user)
 	})
+	if errors.Is(err, h.service.deps.AlreadyRunning) {
+		return nil, huma.Error409Conflict(err.Error())
+	}
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
@@ -228,6 +231,9 @@ func (h *Handler) UploadBackup(ctx context.Context, input *UploadBackupInput) (*
 		uploaded, uploadErr = h.service.UploadBackup(runtimeCtx, input.BackupID, input.Body.S3DestinationID)
 		return uploadErr
 	})
+	if errors.Is(err, h.service.deps.AlreadyRunning) {
+		return nil, huma.Error409Conflict(err.Error())
+	}
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}

@@ -84,6 +84,7 @@ var (
 	ErrApnsDeviceConflict                = Classify(ErrConflict, errors.New("Mobile push device is already registered"))
 	ErrApnsRelay                         = Classify(ErrUnavailable, errors.New("Push relay request failed"))
 	ErrGlobalVariableConflict            = Classify(ErrConflict, errors.New("Global variable already exists"))
+	ErrGlobalVariableUnknownEnvironment  = Classify(ErrValidation, errors.New("One or more environments do not exist"))
 	ErrGlobalVariableScopeRequired       = Classify(ErrValidation, errors.New("At least one environment is required when a variable is not scoped to all environments"))
 	ErrGlobalVariableSecretValueRequired = Classify(ErrValidation, errors.New("A new value is required when making a secret variable readable"))
 	ErrImageUntagged                     = Classify(ErrBadRequest, errors.New("image has no tag; only tagged images can be patched"))

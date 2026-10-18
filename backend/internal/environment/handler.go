@@ -514,7 +514,8 @@ func (h *EnvironmentHandler) DeleteEnvironment(ctx context.Context, input *Delet
 
 	userID, username := currentUserRefs(ctx)
 	if err := h.environmentService.DeleteEnvironment(ctx, input.ID, userID, username); err != nil {
-		return nil, huma.Error500InternalServerError("Failed to delete environment: " + err.Error())
+		apiErr := common.ToAPIError(err)
+		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to delete environment: "+apiErr.Message)
 	}
 
 	return handlerutil.MessageOutput("Environment deleted successfully", ""), nil
@@ -559,6 +560,9 @@ func (h *EnvironmentHandler) TestConnection(ctx context.Context, input *TestConn
 // UpdateHeartbeat updates the heartbeat for an environment.
 func (h *EnvironmentHandler) UpdateHeartbeat(ctx context.Context, input *UpdateHeartbeatInput) (*handlerutil.Out[base.MessageResponse], error) {
 	if err := h.environmentService.UpdateEnvironmentHeartbeat(ctx, input.ID); err != nil {
+		if errors.Is(err, ErrEnvironmentNotFound) {
+			return nil, huma.Error404NotFound("Environment not found")
+		}
 		return nil, huma.Error500InternalServerError("Failed to update heartbeat")
 	}
 

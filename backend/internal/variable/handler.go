@@ -178,7 +178,8 @@ func variableMutationHTTPErrorInternal(err error) error {
 	switch {
 	case errors.Is(err, common.ErrInvalidEnvKey),
 		errors.Is(err, common.ErrGlobalVariableSecretValueRequired),
-		errors.Is(err, common.ErrGlobalVariableScopeRequired):
+		errors.Is(err, common.ErrGlobalVariableScopeRequired),
+		errors.Is(err, common.ErrGlobalVariableUnknownEnvironment):
 		return huma.Error400BadRequest(err.Error())
 	case errors.Is(err, common.ErrGlobalVariableNotFound):
 		return huma.Error404NotFound(err.Error())

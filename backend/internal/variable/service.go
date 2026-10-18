@@ -741,7 +741,10 @@ func (s *VariableService) normalizeScopeInternal(ctx context.Context, allEnviron
 		return nil, fmt.Errorf("failed to update global variables: %w", err)
 	}
 	if count != int64(len(unique)) {
-		return nil, errors.New("failed to update global variables: one or more environments do not exist")
+		return nil, common.Classify(
+			common.ErrGlobalVariableUnknownEnvironment,
+			errors.New("failed to update global variables: one or more environments do not exist"),
+		)
 	}
 	return unique, nil
 }

@@ -183,7 +183,8 @@ func (h *NotificationHandler) TestNotification(ctx context.Context, input *TestN
 
 	warning, err := h.notificationService.TestNotification(ctx, input.EnvironmentID, provider, testType)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("Failed to send test notification: " + err.Error())
+		apiErr := common.ToAPIError(err)
+		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to send test notification: "+apiErr.Message)
 	}
 
 	return &handlerutil.Out[notification.TestResponse]{

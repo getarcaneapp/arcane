@@ -415,8 +415,12 @@ func (s *ContainerRegistryService) UpdateRegistry(ctx context.Context, id string
 }
 
 func (s *ContainerRegistryService) DeleteRegistry(ctx context.Context, id string) error {
-	if err := s.db.WithContext(ctx).Where("id = ?", id).Delete(&ContainerRegistry{}).Error; err != nil {
-		return fmt.Errorf("failed to delete container registry: %w", err)
+	result := s.db.WithContext(ctx).Where("id = ?", id).Delete(&ContainerRegistry{})
+	if result.Error != nil {
+		return fmt.Errorf("failed to delete container registry: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return common.ErrContainerRegistryNotFound
 	}
 	return nil
 }
@@ -1124,7 +1128,8 @@ func (s *ContainerRegistryService) SyncRegistries(ctx context.Context, syncItems
 		if slices.ContainsFunc(syncItems, func(item containerregistry.Sync) bool { return item.ID == id }) {
 			continue
 		}
-		if deleteErr := s.DeleteRegistry(ctx, id); deleteErr != nil {
+		// Already gone is the desired state for sync.
+		if deleteErr := s.DeleteRegistry(ctx, id); deleteErr != nil && !errors.Is(deleteErr, common.ErrNotFound) {
 			return deleteErr
 		}
 	}
