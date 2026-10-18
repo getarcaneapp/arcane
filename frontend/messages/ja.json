@@ -292,6 +292,8 @@
   "prune_images_dialog_description": "Arcaneが未使用のDockerイメージをどの程度積極的に削除するかを選択します。",
   "auto_update_exclude_description": "自動的に更新しないようにするコンテナを選択してください。Arcaneは、それらのコンテナに対して更新の有無を頻繁に確認し、通知を送信し続けます。",
   "auto_update_check_label_hint": "コンテナの更新チェックと通知を停止するには、そのコンテナにラベル「 {label} 」を追加します。",
+  "auto_update_delay_label": "更新間隔（時間）",
+  "auto_update_delay_description": "Arcane が新しいイメージを最初に検出した時点から、自動更新によってそのイメージがインストールされるまでの待機時間（時間単位）。0 に設定すると即座にインストールされ、手動更新は決して遅延しません。ラベル ` {label} ` を使用して、コンテナごとにこの設定を上書きできます。",
   "auto_update_disabled_checks_continue": "更新の確認と通知は有効なままです。自動インストールのみが無効になります。",
   "auto_update_title": "自動更新",
   "auto_update_enabled_toast": "自動更新が有効",
