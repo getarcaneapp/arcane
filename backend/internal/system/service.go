@@ -475,22 +475,17 @@ func resolveUpgraderRuntimeOptions(
 	// target. The host pipe may be mounted into this container under a name that differs from its
 	// host path, so take the real host source from the current container's mounts when present
 	// instead of assuming it matches DOCKER_HOST.
-	if pipePath, ok := strings.CutPrefix(strings.TrimSpace(dockerHost), "npipe://"); ok {
-		pipePath = strings.ReplaceAll(pipePath, "/", `\`)
-		pipeSource := pipePath
+	if pipeMount, ok := vuln.NamedPipeMount(dockerHost); ok {
+		pipeSource := pipeMount.Source
 		if currentContainer != nil {
 			for _, m := range currentContainer.Mounts {
-				if strings.EqualFold(m.Destination, pipePath) {
+				if strings.EqualFold(m.Destination, pipeMount.Target) {
 					pipeSource = m.Source
 					break
 				}
 			}
 		}
-		return vuln.BuildDockerHostEnv(dockerHost), []mount.Mount{{
-			Type:   mount.TypeNamedPipe,
-			Source: pipeSource,
-			Target: pipePath,
-		}}, "", nil
+		return vuln.BuildDockerHostEnv(dockerHost), []mount.Mount{{Type: pipeMount.Type, Source: pipeSource, Target: pipeMount.Target}}, "", nil
 	}
 
 	scheme, socketPath, err := vuln.ParseDockerHost(dockerHost)
