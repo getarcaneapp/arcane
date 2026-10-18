@@ -46,8 +46,30 @@ func TestConfigurationRusticEnvironment(t *testing.T) {
 		"AWS_SECRET_ACCESS_KEY=secret-key",
 		"AWS_EC2_METADATA_DISABLED=true",
 		"RUSTIC_REPO_OPT_ENDPOINT=https://s3.example.com",
-		"RUSTIC_REPO_OPT_REGION=auto",
-		"AWS_REGION=auto",
+		"RUSTIC_REPO_OPT_REGION=us-east-1",
+		"AWS_REGION=us-east-1",
 		"RUSTIC_REPO_OPT_ENABLE_VIRTUAL_HOST_STYLE=true",
 	}, configuration.RusticEnvironment("arcane-volume-backups", "instance-1"))
+
+	regional := Configuration{
+		Endpoint:        "https://eu-005.example.com",
+		Bucket:          "backups",
+		Region:          "eu-005",
+		AccessKeyID:     "access-key",
+		SecretAccessKey: "secret-key",
+		UseSSL:          true,
+		ForcePathStyle:  true,
+	}
+
+	require.Equal(t, []string{
+		"RUSTIC_REPOSITORY=opendal:s3",
+		"RUSTIC_REPO_OPT_BUCKET=backups",
+		"RUSTIC_REPO_OPT_ROOT=/arcane-volume-backups",
+		"AWS_ACCESS_KEY_ID=access-key",
+		"AWS_SECRET_ACCESS_KEY=secret-key",
+		"AWS_EC2_METADATA_DISABLED=true",
+		"RUSTIC_REPO_OPT_ENDPOINT=https://eu-005.example.com",
+		"RUSTIC_REPO_OPT_REGION=eu-005",
+		"AWS_REGION=eu-005",
+	}, regional.RusticEnvironment("arcane-volume-backups"))
 }

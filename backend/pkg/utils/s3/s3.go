@@ -143,7 +143,7 @@ func (c Configuration) EndpointURL() string {
 func (c Configuration) RusticEnvironment(rootParts ...string) []string {
 	c = c.Normalized()
 	repositoryParts := append([]string{"/", c.Prefix}, rootParts...)
-	region := cmp.Or(c.Region, "auto")
+	region := cmp.Or(c.Region, "us-east-1")
 	environment := []string{
 		"RUSTIC_REPOSITORY=opendal:s3",
 		"RUSTIC_REPO_OPT_BUCKET=" + c.Bucket,
@@ -306,10 +306,9 @@ func (s *gcsHttpSigner) SignHTTP(ctx context.Context, creds aws.Credentials, req
 }
 
 func newClientInternal(ctx context.Context, configuration Configuration) (*awss3.Client, error) {
-	region := cmp.Or(configuration.Region, "us-east-1")
 	awsConfiguration, err := awsconfig.LoadDefaultConfig(
 		ctx,
-		awsconfig.WithRegion(region),
+		awsconfig.WithRegion(cmp.Or(configuration.Region, "us-east-1")),
 		awsconfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(configuration.AccessKeyID, configuration.SecretAccessKey, "")),
 	)
 	if err != nil {
